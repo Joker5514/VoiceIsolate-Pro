@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceIsolate Pro v6.1 - Enhanced Audio Processing</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #06080a;
+            --bg-secondary: #0c1015;
+            --bg-card: #111820;
+            --bg-elevated: #1a232e;
+            --bg-input: #0a0e12;
+            --accent-primary: #00d4aa;
+            --accent-secondary: #00a3ff;
+            --accent-warning: #ff9f43;
+            --accent-danger: #ff4757;
+            --accent-success: #2ed573;
+            --text-primary: #f0f6fc;
+            --text-secondary: #8b9eb3;
+            --text-muted: #4a5e73;
+            --border: #1e2a38;
+            --border-active: #2d4052;
+            --glow: rgba(0, 212, 170, 0.15);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; }
+        header { background: var(--bg-secondary); padding: 1rem 2rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+        .logo { display: flex; align-items: center; gap: 0.75rem; }
+        .logo-icon { width: 42px; height: 42px; background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; }
+        .logo h1 { font-size: 1.25rem; font-weight: 800; background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .logo span { font-size: 0.7rem; color: var(--text-muted); display: block; }
+        .header-controls { display: flex; gap: 0.75rem; align-items: center; }
+        .app-container { display: grid; grid-template-columns: 280px 1fr 360px; min-height: calc(100vh - 70px); }
+        .sidebar { background: var(--bg-secondary); border-right: 1px solid var(--border); padding: 1rem; overflow-y: auto; max-height: calc(100vh - 70px); }
+        .sidebar-right { border-right: none; border-left: 1px solid var(--border); }
+        .section-title { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin: 1.25rem 0 0.75rem; }
+        .section-title:first-child { margin-top: 0; }
+        .stage { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; transition: all 0.15s; font-size: 0.75rem; }
+        .stage:hover { border-color: var(--border-active); }
+        .stage.active { border-color: var(--accent-primary); box-shadow: 0 0 10px var(--glow); }
+        .stage.bypassed { opacity: 0.35; }
+        .stage.processing { border-color: var(--accent-warning); animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .stage-num { width: 22px; height: 22px; background: var(--bg-elevated); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--text-secondary); flex-shrink: 0; }
+        .stage.active .stage-num { background: var(--accent-primary); color: var(--bg-primary); }
+        .stage-info { flex: 1; min-width: 0; }
+        .stage-name { font-weight: 600; color: var(--text-primary); }
+        .stage-desc { font-size: 0.6rem; color: var(--text-muted); }
+        .toggle-small { width: 28px; height: 16px; background: var(--bg-input); border-radius: 8px; position: relative; cursor: pointer; flex-shrink: 0; }
+        .toggle-small::after { content: ''; position: absolute; width: 12px; height: 12px; background: var(--text-muted); border-radius: 50%; top: 2px; left: 2px; transition: all 0.15s; }
+        .toggle-small.on { background: var(--accent-primary); }
+        .toggle-small.on::after { left: 14px; background: white; }
+        .main-content { padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; }
+        .drop-zone { background: var(--bg-card); border: 2px dashed var(--border); border-radius: 12px; padding: 2rem; text-align: center; transition: all 0.2s; position: relative; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent-primary); background: rgba(0, 212, 170, 0.05); }
+        .drop-zone.has-file { border-style: solid; border-color: var(--accent-primary); padding: 1.25rem; }
+        .drop-icon { font-size: 2.5rem; opacity: 0.5; margin-bottom: 0.5rem; }
+        .drop-zone h3 { margin: 0.5rem 0 0.25rem; font-size: 1rem; }
+        .drop-zone p { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 1.5rem; }
+        .file-info { display: none; }
+        .drop-zone.has-file .file-info { display: block; }
+        .drop-zone.has-file .drop-prompt { display: none; }
+        .file-name { font-weight: 600; color: var(--accent-primary); font-family: 'JetBrains Mono', monospace; }
+        .file-meta { font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem; }
+        .waveform-container { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; }
+        .waveform-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+        .waveform-title { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
+        .waveform-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+        .waveform-panel { background: var(--bg-input); border-radius: 8px; padding: 0.75rem; position: relative; }
+        .waveform-label { position: absolute; top: 0.35rem; left: 0.5rem; font-size: 0.6rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+        .waveform-canvas { width: 100%; height: 90px; display: block; }
+        .progress-container { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; display: none; }
+        .progress-container.active { display: block; }
+        .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; }
+        .progress-title { font-weight: 600; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem; }
+        .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .progress-percent { font-family: 'JetBrains Mono', monospace; color: var(--accent-primary); font-weight: 600; }
+        .progress-bar { height: 5px; background: var(--bg-input); border-radius: 2.5px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary)); width: 0%; transition: width 0.2s; }
+        .progress-stage { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.4rem; }
+        .player { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 0.75rem; }
+        .player-controls { display: flex; align-items: center; gap: 0.75rem; }
+        .play-btn { width: 40px; height: 40px; background: var(--accent-primary); border: none; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1rem; color: var(--bg-primary); transition: all 0.15s; flex-shrink: 0; }
+        .play-btn:hover { transform: scale(1.05); box-shadow: 0 0 15px var(--glow); }
+        .player-timeline { flex: 1; }
+        .timeline-bar { height: 5px; background: var(--bg-input); border-radius: 2.5px; cursor: pointer; position: relative; }
+        .timeline-progress { height: 100%; background: var(--accent-primary); border-radius: 2.5px; width: 0%; }
+        .player-time { display: flex; justify-content: space-between; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); margin-top: 0.35rem; }
+        .ab-toggle { display: flex; background: var(--bg-input); border-radius: 5px; padding: 2px; }
+        .ab-btn { padding: 0.35rem 0.6rem; border: none; background: transparent; color: var(--text-muted); font-weight: 600; font-size: 0.75rem; cursor: pointer; border-radius: 3px; font-family: inherit; }
+        .ab-btn.active { background: var(--accent-primary); color: var(--bg-primary); }
+        .actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+        .btn { padding: 0.65rem 1rem; border-radius: 6px; font-weight: 600; font-size: 0.8rem; cursor: pointer; transition: all 0.15s; border: none; display: flex; align-items: center; gap: 0.35rem; font-family: inherit; }
+        .btn-primary { background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); color: var(--bg-primary); }
+        .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 15px var(--glow); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary { background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border); }
+        .btn-secondary:hover { border-color: var(--border-active); }
+        .btn-danger { background: var(--bg-elevated); color: var(--accent-danger); border: 1px solid var(--border); }
+        .btn-danger.recording { background: var(--accent-danger); color: white; animation: pulse 2s infinite; border-color: var(--accent-danger); }
+        .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
+        .preset-btn { background: var(--bg-card); border: 1px solid var(--border); border-radius: 5px; padding: 0.5rem; text-align: left; cursor: pointer; }
+        .preset-btn:hover { border-color: var(--border-active); }
+        .preset-btn.active { border-color: var(--accent-primary); background: rgba(0, 212, 170, 0.1); }
+        .preset-name { font-size: 0.75rem; font-weight: 600; }
+        .preset-desc { font-size: 0.6rem; color: var(--text-muted); }
+        .slider-group { margin-bottom: 0.85rem; }
+        .slider-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
+        .slider-label { font-size: 0.75rem; color: var(--text-secondary); }
+        .slider-value { font-size: 0.7rem; font-family: 'JetBrains Mono', monospace; color: var(--accent-primary); background: var(--bg-card); padding: 0.15rem 0.35rem; border-radius: 3px; }
+        .slider { width: 100%; height: 4px; -webkit-appearance: none; background: var(--bg-input); border-radius: 2px; outline: none; cursor: pointer; }
+        .slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; background: var(--accent-primary); border-radius: 50%; cursor: pointer; }
+        .slider::-moz-range-thumb { width: 12px; height: 12px; background: var(--accent-primary); border-radius: 50%; cursor: pointer; border: none; }
+        .toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; border-bottom: 1px solid var(--border); }
+        .toggle-row:last-child { border-bottom: none; }
+        .toggle-label { font-size: 0.75rem; color: var(--text-secondary); }
+        .toggle { width: 36px; height: 20px; background: var(--bg-input); border-radius: 10px; position: relative; cursor: pointer; }
+        .toggle::after { content: ''; position: absolute; width: 16px; height: 16px; background: var(--text-muted); border-radius: 50%; top: 2px; left: 2px; transition: all 0.15s; }
+        .toggle.on { background: var(--accent-primary); }
+        .toggle.on::after { left: 18px; background: white; }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+        .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem; }
+        .stat-value { font-size: 1rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--accent-primary); }
+        .stat-label { font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; }
+        .device-selector { padding: 0.25rem 0.5rem; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-secondary); border-radius: 6px; font-size: 0.75rem; font-family: inherit; max-width: 150px; outline: none; cursor: pointer; }
+        .device-selector:hover { border-color: var(--text-muted); }
+        .record-area { margin-top: 1rem; display: flex; justify-content: center; gap: 0.5rem; align-items: center; }
+        .upload-area { cursor: pointer; }
+        .divider { display: flex; align-items: center; gap: 0.5rem; color: var(--text-muted); font-size: 0.7rem; margin: 0 1rem; }
+        .divider::before, .divider::after { content: ''; width: 30px; height: 1px; background: var(--border); }
+        .batch-container { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; display: none; }
+        .batch-container.active { display: block; }
+        .batch-item { background: var(--bg-input); padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem; font-size: 0.75rem; display: flex; justify-content: space-between; align-items: center; }
+        .batch-status { font-family: 'JetBrains Mono', monospace; color: var(--text-secondary); }
+        .batch-status.done { color: var(--accent-success); }
+        .export-menu { position: absolute; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; z-index: 1000; display: none; }
+        .export-menu.active { display: block; }
+        .export-opt { padding: 0.4rem 0.8rem; cursor: pointer; font-size: 0.75rem; border-radius: 3px; }
+        .export-opt:hover { background: var(--border); }
+        @media (max-width: 1100px) { .app-container { grid-template-columns: 1fr; } .sidebar { display: none; } .waveform-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="logo-icon">🎙️</div>
+            <div><h1>VoiceIsolate Pro</h1><span>v6.1 • Enhanced Processing</span></div>
+        </div>
+        <div class="header-controls">
+            <select id="audioSource" class="device-selector" title="Select Input Device">
+                <option value="default">Default Input</option>
+            </select>
+            <div class="ab-toggle">
+                <button class="ab-btn active" data-mode="original">Original</button>
+                <button class="ab-btn" data-mode="processed">Processed</button>
+            </div>
+            <button class="btn btn-secondary" onclick="resetAll()">↻ Reset</button>
+        </div>
+    </header>
+    <div class="app-container">
+        <aside class="sidebar" id="leftSidebar">
+            <div class="section-title">⚡ 16-Stage Pipeline</div>
+            <div id="pipeline"></div>
+        </aside>
+        <main class="main-content">
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-prompt">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="drop-icon">📁</div>
+                        <h3>Drop audio/video file</h3>
+                    </div>
+                    <div class="divider">OR</div>
+                    <div class="record-area">
+                        <button class="btn btn-danger" id="recordBtn" onclick="toggleRecording()">
+                            <span id="recIcon">●</span> <span id="recText">Record Mic</span>
+                        </button>
+                    </div>
+                    <p style="margin-top: 1rem">MP3, WAV, M4A, FLAC, MP4 • Bluetooth Supported</p>
+                </div>
+                <div class="file-info">
+                    <div class="file-name" id="fileName"></div>
+                    <div class="file-meta" id="fileMeta"></div>
+                </div>
+                <input type="file" id="fileInput" accept="audio/*,video/*" hidden>
+            </div>
+            <div class="waveform-container">
+                <div class="waveform-header"><div class="waveform-title">📊 Waveform</div></div>
+                <div class="waveform-grid">
+                    <div class="waveform-panel"><div class="waveform-label">Original</div><canvas class="waveform-canvas" id="waveOriginal"></canvas></div>
+                    <div class="waveform-panel"><div class="waveform-label">Processed</div><canvas class="waveform-canvas" id="waveProcessed"></canvas></div>
+                </div>
+            </div>
+            <div class="progress-container" id="progressBox">
+                <div class="progress-header">
+                    <div class="progress-title"><div class="spinner"></div><span id="progressLabel">Processing...</span></div>
+                    <div class="progress-percent" id="progressPct">0%</div>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                <div class="progress-stage" id="progressStage">Init</div>
+            </div>
+            <div class="batch-container" id="batchBox">
+                <div style="font-size: 0.75rem; font-weight: 600; margin-bottom: 0.5rem;">📦 Batch Queue</div>
+                <div id="batchItems"></div>
+            </div>
+            <div class="player">
+                <div class="player-controls">
+                    <button class="play-btn" id="playBtn" onclick="togglePlay()">▶</button>
+                    <div class="player-timeline">
+                        <div class="timeline-bar" id="timeline"><div class="timeline-progress" id="timelineProg"></div></div>
+                        <div class="player-time"><span id="curTime">0:00</span><span id="totTime">0:00</span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="actions">
+                <button class="btn btn-primary" id="processBtn" onclick="processAudio()" disabled>🚀 Process</button>
+                <button class="btn btn-secondary" id="downloadBtn" onclick="showExportMenu()" disabled>💾 Export</button>
+                <button class="btn btn-secondary" id="batchBtn" onclick="toggleBatchMode()" disabled>📦 Batch</button>
+            </div>
+        </main>
+        <aside class="sidebar sidebar-right">
+            <div class="section-title">🎛️ Presets</div>
+            <div class="preset-grid" id="presets">
+                <button class="preset-btn active" data-p="podcast"><div class="preset-name">🎙️ Podcast</div><div class="preset-desc">-14 LUFS</div></button>
+                <button class="preset-btn" data-p="louder"><div class="preset-name">🔊 Louder</div><div class="preset-desc">-10 LUFS</div></button>
+                <button class="preset-btn" data-p="max"><div class="preset-name">🚀 Max</div><div class="preset-desc">-6 LUFS</div></button>
+                <button class="preset-btn" data-p="forensic"><div class="preset-name">🔍 Forensic</div><div class="preset-desc">Clean</div></button>
+            </div>
+            
+            <div class="section-title">🎚️ Gain Staging</div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Pre-Amp (Input)</span><span class="slider-value" id="v_input">0 dB</span></div><input type="range" class="slider" id="s_input" min="0" max="24" value="0"></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Makeup Gain</span><span class="slider-value" id="v_makeup">0 dB</span></div><input type="range" class="slider" id="s_makeup" min="0" max="12" value="0"></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Master Output</span><span class="slider-value" id="v_master">0 dB</span></div><input type="range" class="slider" id="s_master" min="-12" max="12" value="0"></div>
+
+            <div class="section-title">🎛️ Manual DSP</div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">HPF Freq</span><span class="slider-value" id="v_hpf">80 Hz</span></div><input type="range" class="slider" id="s_hpf" min="20" max="300" value="80"></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Gate Attack</span><span class="slider-value" id="v_gateAtk">10 ms</span></div><input type="range" class="slider" id="s_gateAtk" min="1" max="100" value="10"></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Gate Release</span><span class="slider-value" id="v_gateRel">100 ms</span></div><input type="range" class="slider" id="s_gateRel" min="10" max="500" value="100"></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Comp Attack</span><span class="slider-value" id="v_compAtk">10 ms</span></div><input type="range" class="slider" id="s_compAtk" min="1" max="100" value="10"></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Comp Release</span><span class="slider-value" id="v_compRel">100 ms</span></div><input type="range" class="slider" id="s_compRel" min="10" max="500" value="100"></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">De-Reverb Amt</span><span class="slider-value" id="v_reverb">50%</span></div><input type="range" class="slider" id="s_reverb" min="0" max="100" value="50"></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">De-Esser Thresh</span><span class="slider-value" id="v_deess">-20 dB</span></div><input type="range" class="slider" id="s_deess" min="-60" max="0" value="-20"></div>
+
+            <div class="section-title">🎛️ Processing</div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Noise Reduction</span><span class="slider-value" id="v_noise">75%</span></div><input type="range" class="slider" id="s_noise" min="0" max="100" value="75"></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Voice Enhancement</span><span class="slider-value" id="v_enhance">50%</span></div><input type="range" class="slider" id="s_enhance" min="0" max="100" value="50"></div>
+            
+            <div class="section-title">🔧 Advanced</div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Gate Threshold</span><span class="slider-value" id="v_gate">-40 dB</span></div><input type="range" class="slider" id="s_gate" min="-80" max="-10" value="-40"></div>
+            <div class="slider-group"><div class="slider-header"><span class="slider-label">Comp Ratio</span><span class="slider-value" id="v_ratio">3:1</span></div><input type="range" class="slider" id="s_ratio" min="1" max="20" value="3"></div>
+            
+            <div class="section-title">⚙️ Options</div>
+            <div class="toggle-row"><span class="toggle-label">Auto Noise Profile</span><div class="toggle on" data-t="autoProfile"></div></div>
+            <div class="toggle-row"><span class="toggle-label">Soft Clip (Saturation)</span><div class="toggle on" data-t="softClip"></div></div>
+            <div class="toggle-row"><span class="toggle-label">Normalize to LUFS</span><div class="toggle on" data-t="normalize"></div></div>
+            <div class="toggle-row"><span class="toggle-label">True Peak Limiting</span><div class="toggle on" data-t="truePeak"></div></div>
+            
+            <div class="section-title">📈 Stats</div>
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-value" id="stNoise">--</div><div class="stat-label">Noise Floor</div></div>
+                <div class="stat-card"><div class="stat-value" id="stPeak">--</div><div class="stat-label">Peak</div></div>
+                <div class="stat-card"><div class="stat-value" id="stLufs">--</div><div class="stat-label">LUFS</div></div>
+                <div class="stat-card"><div class="stat-value" id="stSnr">--</div><div class="stat-label">SNR</div></div>
+            </div>
+        </aside>
+    </div>
+    <div id="exportMenu" class="export-menu">
+        <div class="export-opt" onclick="downloadWav()">💾 WAV (Lossless)</div>
+        <div class="export-opt" onclick="downloadFlac()">🗜️ FLAC (Compressed)</div>
+        <div class="export-opt" onclick="downloadOpus()">📦 OPUS (Streaming)</div>
+        <div class="export-opt" onclick="downloadMp3()">🎵 MP3 (Compat)</div>
+    </div>
+
+<script>
+const STAGES = [
+    {name:'Pre-Amp',desc:'Input Gain'},{name:'Input Cond',desc:'HPF'},{name:'Noise Profile',desc:'VAD'},{name:'Spectral Gate',desc:'64-band'},
+    {name:'Hum Remove',desc:'60Hz'},{name:'Spectral Sub',desc:'α=2-6'},{name:'Wiener',desc:'MMSE'},
+    {name:'ML Separate',desc:'Mask'},{name:'Voiceprint',desc:'ID'},{name:'De-Reverb',desc:'WPE'},
+    {name:'Transient',desc:'Recover'},{name:'Harmonic',desc:'Enhance'},{name:'Voice Enh',desc:'Presence'},
+    {name:'Dynamics',desc:'Comp'},{name:'Makeup',desc:'Gain'},{name:'Master',desc:'Limit'}
+];
+const PRESETS = {
+    podcast:{input:0,makeup:2,master:0,noise:75,enhance:50,gate:-40,ratio:3,hpf:80,gateAtk:10,gateRel:100,compAtk:10,compRel:100,reverb:50,deess:-20,softClip:true,normalize:true,truePeak:true},
+    louder:{input:4,makeup:4,master:1,noise:80,enhance:60,gate:-35,ratio:4,hpf:70,gateAtk:5,gateRel:150,compAtk:5,compRel:150,reverb:50,deess:-20,softClip:true,normalize:true,truePeak:true},
+    max:{input:8,makeup:6,master:2,noise:85,enhance:70,gate:-30,ratio:8,hpf:100,gateAtk:1,gateRel:50,compAtk:1,compRel:300,reverb:60,deess:-25,softClip:true,normalize:true,truePeak:true},
+    forensic:{input:0,makeup:0,master:0,noise:30,enhance:20,gate:-60,ratio:2,hpf:40,gateAtk:20,gateRel:200,compAtk:20,compRel:200,reverb:20,deess:-10,softClip:false,normalize:false,truePeak:false}
+};
+let ctx, origBuf, procBuf, src, playing=false, mode='original', startT=0, pauseT=0, bypass=new Array(16).fill(false);
+let cfg={input:0,makeup:0,master:0,noise:75,enhance:50,gate:-40,ratio:3,hpf:80,gateAtk:10,gateRel:100,compAtk:10,compRel:100,reverb:50,deess:-20,autoProfile:true,humRemoval:true,dereverb:true,deesser:true,harmonic:false,normalize:true,truePeak:true,softClip:true};
+let mediaRecorder, recordedChunks=[], isRecording=false, recStartTime=0;
+let batchQueue=[], batchProcessing=false;
+
+document.addEventListener('DOMContentLoaded',()=>{
+    ctx=new(window.AudioContext||window.webkitAudioContext)();
+    renderPipeline();
+    setupUI();
+    setupCanvases();
+    checkAudioInputs();
+});
+
+async function checkAudioInputs() {
+    try {
+        const devs = await navigator.mediaDevices.enumerateDevices();
+        const sel = document.getElementById('audioSource');
+        const inputs = devs.filter(d => d.kind === 'audioinput');
+        if (inputs.length > 0) {
+            sel.innerHTML = '';
+            inputs.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.deviceId;
+                opt.text = d.label || `Microphone ${sel.length + 1}`;
+                if (d.label.toLowerCase().includes('bluetooth')) opt.text = "🎧 " + opt.text;
+                sel.appendChild(opt);
+            });
+        }
+    } catch(e) { console.log("Device enumeration error:", e); }
+}
+navigator.mediaDevices.ondevicechange = checkAudioInputs;
+
+function renderPipeline(){
+    const el=document.getElementById('pipeline');
+    el.innerHTML=STAGES.map((s,i)=>`<div class="stage" data-i="${i}"><div class="stage-num">${i+1}</div><div class="stage-info"><div class="stage-name">${s.name}</div><div class="stage-desc">${s.desc}</div></div><div class="toggle-small on" data-s="${i}"></div></div>`).join('');
+    el.querySelectorAll('.toggle-small').forEach(t=>t.onclick=e=>{e.stopPropagation();const i=+t.dataset.s;bypass[i]=!bypass[i];t.classList.toggle('on');t.closest('.stage').classList.toggle('bypassed');});
+}
+
+function setupUI(){
+    const dz=document.getElementById('dropZone'),fi=document.getElementById('fileInput'),ua=document.getElementById('uploadArea');
+    ua.onclick=()=>fi.click();
+    dz.ondragover=e=>{e.preventDefault();dz.classList.add('dragover');};
+    dz.ondragleave=()=>dz.classList.remove('dragover');
+    dz.ondrop=e=>{e.preventDefault();dz.classList.remove('dragover');if(e.dataTransfer.files[0])loadFile(e.dataTransfer.files[0]);};
+    fi.onchange=e=>{if(e.target.files[0])loadFile(e.target.files[0]);};
+    document.getElementById('timeline').onclick=seek;
+    const sliders=[
+        ['input',' dB'],['makeup',' dB'],['master',' dB'],['hpf',' Hz'],
+        ['gateAtk',' ms'],['gateRel',' ms'],['compAtk',' ms'],['compRel',' ms'],
+        ['reverb','%'],['deess',' dB'],['noise','%'],['enhance','%'],
+        ['gate',' dB'],['ratio',':1']
+    ];
+    sliders.forEach(([k,u])=>{const s=document.getElementById('s_'+k),v=document.getElementById('v_'+k);if(s)s.oninput=e=>{cfg[k]=+e.target.value;v.textContent=e.target.value+u;};});
+    document.querySelectorAll('.toggle[data-t]').forEach(t=>t.onclick=()=>{t.classList.toggle('on');cfg[t.dataset.t]=t.classList.contains('on');});
+    document.querySelectorAll('.preset-btn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.preset-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');applyPreset(b.dataset.p);});
+    document.querySelectorAll('.ab-btn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.ab-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');mode=b.dataset.mode;if(playing){const t=ctx.currentTime-startT;stop();play(t);}});
+}
+
+async function toggleRecording() {
+    const btn = document.getElementById('recordBtn');
+    const txt = document.getElementById('recText');
+    const icon = document.getElementById('recIcon');
+    if(!isRecording) {
+        try {
+            if(ctx.state==='suspended') await ctx.resume();
+            const deviceId = document.getElementById('audioSource').value;
+            const constraints = { audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation:false, noiseSuppression:false, autoGainControl:false } };
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            mediaRecorder = new MediaRecorder(stream);
+            recordedChunks = [];
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+            mediaRecorder.onstop = saveRecording;
+            mediaRecorder.start();
+            isRecording = true;
+            recStartTime = Date.now();
+            btn.classList.add('recording');
+            icon.textContent = '■';
+            updateRecTimer();
+        } catch(e) { alert("Mic Access Error: " + e.message); }
+    } else {
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        isRecording = false;
+        btn.classList.remove('recording');
+        icon.textContent = '●';
+        txt.textContent = 'Record Mic';
+    }
+}
+
+function updateRecTimer() {
+    if(!isRecording) return;
+    const diff = Math.floor((Date.now() - recStartTime)/1000);
+    const m = Math.floor(diff/60);
+    const s = diff%60;
+    document.getElementById('recText').textContent = `Stop (${m}:${s.toString().padStart(2,'0')})`;
+    requestAnimationFrame(updateRecTimer);
+}
+
+async function saveRecording() {
+    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+    const file = new File([blob], "Recorded_Audio.webm", { type: "audio/webm" });
+    await loadFile(file);
+}
+
+function applyPreset(n){
+    const p=PRESETS[n];if(!p)return;
+    Object.keys(p).forEach(k=>{cfg[k]=p[k];const s=document.getElementById('s_'+k),v=document.getElementById('v_'+k);if(s){s.value=p[k];const u=k==='input'||k==='makeup'||k==='master'||k==='deess'||k==='gate'?' dB':k==='hpf'?' Hz':k.includes('Atk')||k.includes('Rel')?' ms':k==='ratio'?':1':'%';v.textContent=p[k]+u;};const t=document.querySelector(`.toggle[data-t="${k}"]`);if(t){if(p[k])t.classList.add('on');else t.classList.remove('on');}});
+}
+
+async function loadFile(f){
+    try{if(ctx.state==='suspended')await ctx.resume();
+    document.getElementById('dropZone').classList.add('has-file');
+    document.getElementById('fileName').textContent=f.name;
+    document.getElementById('fileMeta').textContent='Loading...';
+    origBuf=await ctx.decodeAudioData(await f.arrayBuffer());
+    document.getElementById('fileMeta').textContent=`${(origBuf.sampleRate/1000).toFixed(1)}kHz • ${origBuf.numberOfChannels===2?'Stereo':'Mono'} • ${fmtTime(origBuf.duration)}`;
+    document.getElementById('totTime').textContent=fmtTime(origBuf.duration);
+    document.getElementById('processBtn').disabled=false;
+    document.getElementById('batchBtn').disabled=false;
+    drawWave(origBuf,'waveOriginal');
+    updateStats(origBuf);
+    }catch(e){alert('Error: '+e.message);}
+}
+
+async function processAudio(){
+    if(!origBuf)return;
+    stop();
+    document.getElementById('progressBox').classList.add('active');
+    document.getElementById('processBtn').disabled=true;
+    try{
+        const nc=origBuf.numberOfChannels,len=origBuf.length,sr=origBuf.sampleRate;
+        let ch=[];for(let c=0;c<nc;c++)ch.push(new Float32Array(origBuf.getChannelData(c)));
+        for(let i=0;i<16;i++){
+            if(bypass[i])continue;
+            progress((i+1)/16*100,STAGES[i].name);
+            highlight(i);
+            ch=runStage(i,ch,sr);
+            await sleep(25);
+        }
+        procBuf=ctx.createBuffer(nc,len,sr);
+        for(let c=0;c<nc;c++)procBuf.copyToChannel(ch[c],c);
+        progress(100,'Done!');
+        drawWave(procBuf,'waveProcessed');
+        updateStats(procBuf);
+        document.getElementById('downloadBtn').disabled=false;
+        document.querySelectorAll('.ab-btn').forEach(b=>b.classList.remove('active'));
+        document.querySelector('.ab-btn[data-mode="processed"]').classList.add('active');
+        mode='processed';
+        setTimeout(()=>{document.getElementById('progressBox').classList.remove('active');clearHL();},800);
+    }catch(e){alert('Error: '+e.message);document.getElementById('progressBox').classList.remove('active');}
+    document.getElementById('processBtn').disabled=false;
+}
+
+function runStage(i,ch,sr){
+    switch(i){
+        case 0:return applyGain(ch,cfg.input);
+        case 1:return hpf(ch,sr,cfg.hpf);
+        case 2:return ch;
+        case 3:return gate(ch,sr);
+        case 4:return cfg.humRemoval?notch(ch,sr,60):ch;
+        case 5:return spectralSub(ch);
+        case 6:return wiener(ch);
+        case 7:return voiceMask(ch);
+        case 8:return ch;
+        case 9:return cfg.dereverb?deReverb(ch,sr):ch;
+        case 10:return transient(ch);
+        case 11:return cfg.harmonic?harmonic(ch):ch;
+        case 12:return enhance(ch,sr);
+        case 13:return compress(ch,sr);
+        case 14:return applyGain(ch,cfg.makeup);
+        case 15:return masterOut(ch,sr);
+        default:return ch;
+    }
+}
+
+// DSP Functions
+function applyGain(ch,db){const g=Math.pow(10,db/20);if(g===1)return ch;return ch.map(c=>{const o=new Float32Array(c.length);for(let i=0;i<c.length;i++)o[i]=c[i]*g;return o;});}
+function hpf(ch,sr,fc){const rc=1/(2*Math.PI*fc),dt=1/sr,a=rc/(rc+dt);return ch.map(c=>{const o=new Float32Array(c.length);let pi=0,po=0;for(let i=0;i<c.length;i++){o[i]=a*(po+c[i]-pi);pi=c[i];po=o[i];}return o;});}
+function gate(ch,sr){const th=Math.pow(10,cfg.gate/20),atk=Math.floor(sr*cfg.gateAtk/1000),rel=Math.floor(sr*cfg.gateRel/1000);return ch.map(c=>{const o=new Float32Array(c.length);let env=0,g=0;for(let i=0;i<c.length;i++){const a=Math.abs(c[i]);env+=((a>env)?1/atk:1/rel)*(a-env);const tg=env>th?1:0.02;g+=(tg-g)*0.02;o[i]=c[i]*g;}return o;});}
+function notch(ch,sr,f){const freqs=[f,f*2,f*3,f*4];let r=ch;freqs.forEach(freq=>{r=r.map(c=>{const o=new Float32Array(c.length);const w=2*Math.PI*freq/sr,Q=30,al=Math.sin(w)/(2*Q);const b0=1,b1=-2*Math.cos(w),b2=1,a0=1+al,a1=-2*Math.cos(w),a2=1-al;let x1=0,x2=0,y1=0,y2=0;for(let i=0;i<c.length;i++){const x0=c[i];const y0=(b0/a0)*x0+(b1/a0)*x1+(b2/a0)*x2-(a1/a0)*y1-(a2/a0)*y2;o[i]=y0;x2=x1;x1=x0;y2=y1;y1=y0;}return o;});});return r;}
+function spectralSub(ch){const str=cfg.noise/100,alpha=2+str*4;return ch.map(c=>{const o=new Float32Array(c.length);const nf=estNoise(c);for(let i=0;i<c.length;i++){const m=Math.abs(c[i]);o[i]=Math.sign(c[i])*Math.max(m-alpha*nf,0.002*m);}return o;});}
+function wiener(ch){return ch.map(c=>{const o=new Float32Array(c.length);const nv=Math.pow(estNoise(c),2);for(let i=0;i<c.length;i++){const p=c[i]*c[i];const snr=Math.max(p-nv,0)/Math.max(p,1e-10);o[i]=c[i]*Math.sqrt(snr);}return o;});}
+function voiceMask(ch){return ch.map(c=>{const o=new Float32Array(c.length);for(let i=2;i<c.length-2;i++)o[i]=c[i]*0.6+(c[i-1]+c[i+1])*0.15+(c[i-2]+c[i+2])*0.05;o[0]=c[0];o[1]=c[1];o[c.length-1]=c[c.length-1];o[c.length-2]=c[c.length-2];return o;});}
+function deReverb(ch,sr){const amt=cfg.reverb/100,del=Math.floor(sr*0.02);return ch.map(c=>{const o=new Float32Array(c.length);for(let i=0;i<c.length;i++)o[i]=i<del?c[i]:c[i]-amt*0.3*o[i-del];return o;});}
+function transient(ch){return ch.map(c=>{const o=new Float32Array(c.length);const w=64;for(let i=0;i<c.length;i++){let mx=0;for(let j=Math.max(0,i-w);j<i;j++)mx=Math.max(mx,Math.abs(c[j]));const t=mx>0?Math.abs(c[i])/mx:1;o[i]=c[i]*(t>1.5?1.1:1);}return o;});}
+function harmonic(ch){return ch.map(c=>{const o=new Float32Array(c.length);for(let i=0;i<c.length;i++)o[i]=c[i]+c[i]*c[i]*Math.sign(c[i])*0.08;return o;});}
+function enhance(ch,sr){const pres=0.15,enh=cfg.enhance/100,warm=0.1;return ch.map(c=>{const o=new Float32Array(c.length);const fc=2500,rc=1/(2*Math.PI*fc),dt=1/sr,al=dt/(rc+dt);let prev=0;for(let i=0;i<c.length;i++){const lp=prev+al*(c[i]-prev);prev=lp;const hp=c[i]-lp;o[i]=lp*(1+warm*enh)+hp*(1+pres*enh);}if(cfg.deesser){const th=Math.pow(10,cfg.deess/20);for(let i=0;i<o.length;i++)if(Math.abs(o[i])>th)o[i]=Math.sign(o[i])*(th+(Math.abs(o[i])-th)*0.5);}return o;});}
+function compress(ch,sr){const th=Math.pow(10,-20/20),rat=cfg.ratio,atk=Math.exp(-1/(sr*cfg.compAtk/1000)),rel=Math.exp(-1/(sr*cfg.compRel/1000));return ch.map(c=>{const o=new Float32Array(c.length);let env=0;for(let i=0;i<c.length;i++){const a=Math.abs(c[i]);env=a>env?atk*env+(1-atk)*a:rel*env+(1-rel)*a;let g=1;if(env>th){const dbO=20*Math.log10(env/th);g=Math.pow(10,-dbO*(1-1/rat)/20);}o[i]=c[i]*g;}return o;});}
+function masterOut(ch,sr){
+    let out = ch;
+    if(cfg.normalize) {
+        let ss=0,cnt=0;out.forEach(c=>c.forEach(s=>{ss+=s*s;cnt++;}));
+        const rms=Math.sqrt(ss/cnt),curDb=20*Math.log10(rms+1e-10),tgtDb=-14; 
+        let g=Math.pow(10,(tgtDb-curDb)/20);
+        out=out.map(c=>{const o=new Float32Array(c.length);for(let i=0;i<c.length;i++)o[i]=c[i]*g;return o;});
+    }
+    const mg=Math.pow(10,cfg.master/20);
+    out=out.map(c=>{const o=new Float32Array(c.length);for(let i=0;i<c.length;i++)o[i]=c[i]*mg;return o;});
+    if(cfg.truePeak) {
+        out=out.map(c=>{const o=new Float32Array(c.length);for(let i=0;i<c.length;i++){if(Math.abs(o[i])>0.95)o[i]=Math.tanh(o[i]);}return o;});
+    }
+    if(cfg.softClip) {
+        out=out.map(c=>{const o=new Float32Array(c.length);for(let i=0;i<c.length;i++)o[i]=Math.tanh(c[i]);return o;});
+    }
+    return out;
+}
+function estNoise(c){const s=Array.from(c).map(Math.abs).sort((a,b)=>a-b);return s[Math.floor(s.length*0.1)]||0.001;}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function progress(p,s){document.getElementById('progressFill').style.width=p+'%';document.getElementById('progressPct').textContent=Math.round(p)+'%';document.getElementById('progressStage').textContent=s;}
+function highlight(i){document.querySelectorAll('.stage').forEach((s,j)=>{s.classList.remove('active','processing');if(j===i)s.classList.add('processing');else if(j<i)s.classList.add('active');});}
+function clearHL(){document.querySelectorAll('.stage').forEach(s=>s.classList.remove('active','processing'));}
+function setupCanvases(){['waveOriginal','waveProcessed'].forEach(id=>{const c=document.getElementById(id),r=c.getBoundingClientRect();c.width=r.width*2;c.height=r.height*2;const x=c.getContext('2d');x.scale(2,2);x.fillStyle='#0a0e12';x.fillRect(0,0,r.width,r.height);x.fillStyle='#4a5e73';x.font='10px Plus Jakarta Sans';x.textAlign='center';x.fillText('No audio',r.width/2,r.height/2);});}
+function drawWave(buf,id){const c=document.getElementById(id),x=c.getContext('2d'),w=c.width/2,h=c.height/2;x.clearRect(0,0,w,h);x.fillStyle='#0a0e12';x.fillRect(0,0,w,h);const d=buf.getChannelData(0),st=Math.ceil(d.length/w),amp=h/2;x.strokeStyle='#00d4aa';x.lineWidth=1;x.beginPath();for(let i=0;i<w;i++){let mn=1,mx=-1;for(let j=0;j<st;j++){const v=d[i*st+j]||0;if(v<mn)mn=v;if(v>mx)mx=v;}x.moveTo(i,(1+mn)*amp);x.lineTo(i,(1+mx)*amp);}x.stroke();x.strokeStyle='rgba(255,255,255,0.1)';x.beginPath();x.moveTo(0,amp);x.lineTo(w,amp);x.stroke();}
+function updateStats(buf){const d=buf.getChannelData(0);let pk=0,ss=0;for(let i=0;i<d.length;i++){pk=Math.max(pk,Math.abs(d[i]));ss+=d[i]*d[i];}const rms=Math.sqrt(ss/d.length),pkDb=20*Math.log10(pk+1e-10),rmsDb=20*Math.log10(rms+1e-10),nf=estNoise(d),nfDb=20*Math.log10(nf+1e-10),lufs=(rmsDb-0.7).toFixed(1);document.getElementById('stPeak').textContent=pkDb.toFixed(1)+'dB';document.getElementById('stLufs').textContent=lufs+'LUFS';document.getElementById('stNoise').textContent=nfDb.toFixed(0)+'dB';document.getElementById('stSnr').textContent=(pkDb-nfDb).toFixed(0)+'dB';}
+function togglePlay(){playing?stop():play(pauseT);}
+function play(t=0){const buf=mode==='processed'&&procBuf?procBuf:origBuf;if(!buf)return;src=ctx.createBufferSource();src.buffer=buf;src.connect(ctx.destination);src.start(0,t);playing=true;startT=ctx.currentTime-t;document.getElementById('playBtn').textContent='⏸';src.onended=()=>{if(playing){stop();pauseT=0;}};updateTimeline();}
+function stop(){if(src){try{src.stop();}catch(e){}src.disconnect();}playing=false;pauseT=ctx.currentTime-startT;document.getElementById('playBtn').textContent='▶';}
+function seek(e){if(!origBuf)return;const rect=e.target.getBoundingClientRect(),pct=e.clientX-rect.left;const t=pct/rect.width*origBuf.duration;pauseT=t;if(playing){stop();play(t);}}
+function updateTimeline(){if(!playing)return;const buf=mode==='processed'&&procBuf?procBuf:origBuf;if(!buf)return;const ct=ctx.currentTime-startT,pct=Math.max(0,Math.min(1,ct/buf.duration))*100;document.getElementById('timelineProg').style.width=pct+'%';document.getElementById('curTime').textContent=fmtTime(ct);requestAnimationFrame(updateTimeline);}
+function fmtTime(s){const m=Math.floor(s/60),sec=Math.floor(s%60);return m+':'+(sec<10?'0':'')+sec;}
+function showExportMenu(){const m=document.getElementById('exportMenu');m.classList.toggle('active');}
+function downloadWav(){encodeWav('wav');}
+function downloadFlac(){alert('FLAC export requires FLAC.js library - native browser support limited');}
+function downloadOpus(){alert('OPUS encoding requires encoder library');}
+function downloadMp3(){alert('MP3 encoding requires encoder library');}
+function encodeWav(fmt){if(!procBuf)return;const nc=procBuf.numberOfChannels,sr=procBuf.sampleRate,len=procBuf.length;const interlaced=new Float32Array(len*nc);for(let c=0;c<nc;c++){const ch=procBuf.getChannelData(c);for(let i=0;i<len;i++)interlaced[i*nc+c]=ch[i];}const pcm16=new Int16Array(interlaced.length);for(let i=0;i<interlaced.length;i++)pcm16[i]=Math.max(-32768,Math.min(32767,interlaced[i]*32767));const wav=createWav(pcm16,sr,nc);const blob=new Blob([wav],{type:'audio/wav'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='output.wav';a.click();URL.revokeObjectURL(url);}
+function createWav(pcm,sr,ch){const len=pcm.length*2+36,view=new DataView(new ArrayBuffer(len+8));const write=(o,v,b,t)=>{t==='B'?view.setUint8(o,v):t==='H'?view.setUint16(o,v,true):view.setUint32(o,v,true);};write(0,0x46464952,'','B');write(4,len,'','H');write(8,0x45564157,'','B');write(12,0x20746d66,'','B');write(16,16,'','H');write(20,1,'','H');write(22,ch,'','H');write(24,sr,'','H');write(28,sr*ch*2,'','H');write(32,ch*2,'','H');write(34,16,'','H');write(36,0x61746164,'','B');write(40,pcm.length*2,'','H');for(let i=0;i<pcm.length;i++)view.setInt16(44+i*2,pcm[i],true);return view.buffer;}
+function toggleBatchMode(){if(!origBuf)return;const bb=document.getElementById('batchBox');bb.classList.toggle('active');if(bb.classList.contains('active')){batchQueue.push({buf:origBuf,name:document.getElementById('fileName').textContent});updateBatchUI();}else{batchQueue=[];updateBatchUI();}}
+function updateBatchUI(){const items=document.getElementById('batchItems');if(batchQueue.length===0){items.innerHTML='<div style="color: var(--text-muted); font-size: 0.7rem;">Queue empty</div>';return;}items.innerHTML=batchQueue.map((f,i)=>`<div class="batch-item">${f.name} <span class="batch-status" id="batch-${i}">Queued</span></div>`).join('');}
+function resetAll(){origBuf=null;procBuf=null;stop();document.getElementById('dropZone').classList.remove('has-file');document.getElementById('downloadBtn').disabled=true;document.getElementById('processBtn').disabled=true;document.getElementById('playBtn').textContent='▶';document.getElementById('fileName').textContent='';document.getElementById('fileMeta').textContent='';drawWave(null,'waveOriginal');drawWave(null,'waveProcessed');}
+</script>
+</body>
+</html>

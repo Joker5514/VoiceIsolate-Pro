@@ -1,0 +1,1824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceIsolate Pro v7.0 â€” Threads from Space Architecture</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #05070a;
+            --bg-secondary: #0a0f14;
+            --bg-card: #0f151c;
+            --bg-elevated: #151d27;
+            --bg-input: #080c10;
+            --accent-primary: #00d4aa;
+            --accent-secondary: #00a3ff;
+            --accent-tertiary: #8b5cf6;
+            --accent-warning: #ff9f43;
+            --accent-danger: #ff4757;
+            --accent-success: #2ed573;
+            --text-primary: #f0f6fc;
+            --text-secondary: #8b9eb3;
+            --text-muted: #4a5e73;
+            --border: #1a2533;
+            --border-active: #2d4052;
+            --glow: rgba(0, 212, 170, 0.2);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; overflow-x: hidden; }
+        
+        /* Header */
+        header { background: linear-gradient(180deg, var(--bg-secondary), var(--bg-primary)); padding: 0.75rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1000; backdrop-filter: blur(10px); }
+        .logo { display: flex; align-items: center; gap: 0.6rem; }
+        .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1rem; box-shadow: 0 4px 20px rgba(0, 212, 170, 0.3); }
+        .logo h1 { font-size: 1.1rem; font-weight: 800; background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -0.5px; }
+        .logo .version { font-size: 0.6rem; color: var(--accent-tertiary); font-family: 'JetBrains Mono', monospace; background: rgba(139, 92, 246, 0.15); padding: 0.15rem 0.4rem; border-radius: 4px; margin-left: 0.5rem; }
+        .header-controls { display: flex; gap: 0.5rem; align-items: center; }
+        
+        /* Buttons */
+        .btn { padding: 0.5rem 1rem; border: none; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 0.4rem; font-family: inherit; }
+        .btn-primary { background: linear-gradient(135deg, var(--accent-primary), #00b894); color: var(--bg-primary); box-shadow: 0 4px 15px rgba(0, 212, 170, 0.3); }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0, 212, 170, 0.4); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-secondary { background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border); }
+        .btn-secondary:hover { border-color: var(--accent-primary); }
+        .btn-ghost { background: transparent; color: var(--text-secondary); }
+        .btn-ghost:hover { color: var(--text-primary); }
+        .btn-danger { background: rgba(255, 71, 87, 0.15); color: var(--accent-danger); border: 1px solid rgba(255, 71, 87, 0.3); }
+        .btn-sm { padding: 0.35rem 0.6rem; font-size: 0.65rem; }
+        
+        /* Main Layout */
+        .app-container { display: grid; grid-template-columns: 260px 1fr 380px; min-height: calc(100vh - 54px); }
+        
+        /* Sidebars */
+        .sidebar { background: var(--bg-secondary); border-right: 1px solid var(--border); overflow-y: auto; max-height: calc(100vh - 54px); }
+        .sidebar-right { border-right: none; border-left: 1px solid var(--border); }
+        .sidebar-section { padding: 0.75rem; border-bottom: 1px solid var(--border); }
+        .section-title { font-size: 0.6rem; font-weight: 700; color: var(--accent-primary); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 0.6rem; display: flex; align-items: center; gap: 0.4rem; }
+        .section-title::before { content: ''; width: 3px; height: 12px; background: var(--accent-primary); border-radius: 2px; }
+        
+        /* Pipeline Stages */
+        .stage { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 0.4rem 0.5rem; margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.4rem; cursor: pointer; transition: all 0.15s; font-size: 0.7rem; }
+        .stage:hover { border-color: var(--border-active); background: var(--bg-elevated); }
+        .stage.active { border-color: var(--accent-primary); box-shadow: 0 0 15px var(--glow); }
+        .stage.bypassed { opacity: 0.3; }
+        .stage.processing { border-color: var(--accent-warning); animation: pulse 0.8s infinite; }
+        .stage.complete { border-color: var(--accent-success); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .stage-num { width: 18px; height: 18px; background: var(--bg-input); border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.55rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--text-muted); flex-shrink: 0; }
+        .stage.active .stage-num, .stage.complete .stage-num { background: var(--accent-primary); color: var(--bg-primary); }
+        .stage-info { flex: 1; min-width: 0; }
+        .stage-name { font-weight: 600; color: var(--text-primary); font-size: 0.68rem; }
+        .stage-desc { font-size: 0.55rem; color: var(--text-muted); margin-top: 1px; }
+        .toggle-mini { width: 24px; height: 14px; background: var(--bg-input); border-radius: 7px; position: relative; cursor: pointer; flex-shrink: 0; transition: all 0.15s; }
+        .toggle-mini::after { content: ''; position: absolute; width: 10px; height: 10px; background: var(--text-muted); border-radius: 50%; top: 2px; left: 2px; transition: all 0.15s; }
+        .toggle-mini.on { background: var(--accent-primary); }
+        .toggle-mini.on::after { left: 12px; background: white; }
+        
+        /* Main Content */
+        .main-content { padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; overflow-y: auto; background: var(--bg-primary); }
+        
+        /* Drop Zone */
+        .drop-zone { background: var(--bg-card); border: 2px dashed var(--border); border-radius: 10px; padding: 1.5rem; text-align: center; transition: all 0.2s; position: relative; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: var(--accent-primary); background: rgba(0, 212, 170, 0.03); }
+        .drop-zone.has-file { border-style: solid; border-color: var(--accent-primary); padding: 1rem; }
+        .drop-icon { font-size: 2rem; opacity: 0.4; margin-bottom: 0.4rem; }
+        .drop-zone h3 { margin: 0.3rem 0 0.15rem; font-size: 0.9rem; }
+        .drop-zone p { color: var(--text-muted); font-size: 0.7rem; margin-bottom: 1rem; }
+        .file-info { display: none; }
+        .drop-zone.has-file .file-info { display: flex; align-items: center; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+        .drop-zone.has-file .drop-prompt { display: none; }
+        .file-name { font-weight: 600; color: var(--accent-primary); font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
+        .file-meta { color: var(--text-muted); font-size: 0.65rem; }
+        
+        /* Waveform Display */
+        .waveform-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; }
+        .waveform-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .waveform-label { font-size: 0.65rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+        .waveform-tabs { display: flex; gap: 0.25rem; }
+        .waveform-tab { padding: 0.25rem 0.6rem; font-size: 0.6rem; border-radius: 4px; cursor: pointer; background: var(--bg-input); color: var(--text-muted); border: 1px solid transparent; }
+        .waveform-tab.active { background: var(--accent-primary); color: var(--bg-primary); }
+        .waveform-canvas { width: 100%; height: 100px; background: var(--bg-input); border-radius: 6px; display: block; }
+        
+        /* Timeline */
+        .timeline { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
+        .timeline-track { flex: 1; height: 6px; background: var(--bg-input); border-radius: 3px; cursor: pointer; position: relative; overflow: hidden; }
+        .timeline-progress { height: 100%; background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary)); border-radius: 3px; width: 0%; transition: width 0.1s linear; }
+        .time-display { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); min-width: 80px; text-align: center; }
+        
+        /* Transport Controls */
+        .transport { display: flex; justify-content: center; gap: 0.5rem; margin-top: 0.5rem; }
+        .transport-btn { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; font-size: 1rem; }
+        .transport-btn.play { background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); color: var(--bg-primary); box-shadow: 0 4px 15px rgba(0, 212, 170, 0.3); }
+        .transport-btn.secondary { background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-secondary); }
+        .transport-btn:hover { transform: scale(1.05); }
+        
+        /* Progress Bar */
+        .progress-container { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; display: none; }
+        .progress-container.active { display: block; }
+        .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+        .progress-stage { font-size: 0.7rem; color: var(--text-secondary); }
+        .progress-pct { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--accent-primary); }
+        .progress-bar { height: 4px; background: var(--bg-input); border-radius: 2px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary)); border-radius: 2px; width: 0%; transition: width 0.2s ease-out; }
+        
+        /* Stats Panel */
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; margin-top: 0.5rem; }
+        .stat { background: var(--bg-elevated); border-radius: 6px; padding: 0.5rem; text-align: center; }
+        .stat-value { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; font-weight: 700; color: var(--accent-primary); }
+        .stat-label { font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; margin-top: 0.15rem; }
+        
+        /* Parameter Controls */
+        .param-group { margin-bottom: 0.6rem; }
+        .param-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; }
+        .param-label { font-size: 0.65rem; font-weight: 500; color: var(--text-secondary); }
+        .param-value { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: var(--accent-primary); background: var(--bg-input); padding: 0.15rem 0.4rem; border-radius: 3px; min-width: 45px; text-align: center; }
+        .param-slider { width: 100%; height: 4px; background: var(--bg-input); border-radius: 2px; -webkit-appearance: none; appearance: none; cursor: pointer; }
+        .param-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; background: var(--accent-primary); border-radius: 50%; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 212, 170, 0.4); }
+        .param-slider::-moz-range-thumb { width: 12px; height: 12px; background: var(--accent-primary); border-radius: 50%; cursor: pointer; border: none; }
+        
+        /* Presets */
+        .preset-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.35rem; margin-top: 0.5rem; }
+        .preset { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem; cursor: pointer; transition: all 0.15s; text-align: center; }
+        .preset:hover { border-color: var(--accent-primary); }
+        .preset.active { border-color: var(--accent-primary); background: rgba(0, 212, 170, 0.08); }
+        .preset-icon { font-size: 1rem; margin-bottom: 0.2rem; }
+        .preset-name { font-size: 0.6rem; font-weight: 600; color: var(--text-primary); }
+        
+        /* Debug Console */
+        .debug-console { background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; height: 150px; overflow-y: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.55rem; padding: 0.5rem; margin-top: 0.5rem; }
+        .debug-line { padding: 0.15rem 0; border-bottom: 1px solid rgba(255,255,255,0.03); display: flex; gap: 0.5rem; }
+        .debug-time { color: var(--text-muted); flex-shrink: 0; }
+        .debug-type { padding: 0.05rem 0.3rem; border-radius: 2px; font-size: 0.5rem; flex-shrink: 0; }
+        .debug-type.info { background: rgba(0, 163, 255, 0.2); color: var(--accent-secondary); }
+        .debug-type.success { background: rgba(46, 213, 115, 0.2); color: var(--accent-success); }
+        .debug-type.warn { background: rgba(255, 159, 67, 0.2); color: var(--accent-warning); }
+        .debug-type.error { background: rgba(255, 71, 87, 0.2); color: var(--accent-danger); }
+        .debug-msg { color: var(--text-secondary); flex: 1; word-break: break-all; }
+        
+        /* Export Menu */
+        .export-menu { position: absolute; top: 100%; right: 0; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem; display: none; min-width: 180px; z-index: 100; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+        .export-menu.active { display: block; }
+        .export-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.7rem; color: var(--text-secondary); }
+        .export-item:hover { background: var(--bg-elevated); color: var(--text-primary); }
+        .export-item-icon { width: 20px; }
+        
+        /* Tabs */
+        .tab-container { display: flex; gap: 0.25rem; margin-bottom: 0.5rem; }
+        .tab { padding: 0.4rem 0.75rem; font-size: 0.65rem; border-radius: 5px; cursor: pointer; background: transparent; color: var(--text-muted); border: 1px solid transparent; transition: all 0.15s; }
+        .tab:hover { color: var(--text-primary); }
+        .tab.active { background: var(--accent-primary); color: var(--bg-primary); font-weight: 600; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; }
+        
+        /* Advanced Panel */
+        .advanced-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+        
+        /* Tooltip */
+        [data-tooltip] { position: relative; }
+        [data-tooltip]:hover::after { content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); padding: 0.4rem 0.6rem; border-radius: 4px; font-size: 0.6rem; white-space: nowrap; z-index: 1000; margin-bottom: 5px; }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--border-active); }
+        
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .app-container { grid-template-columns: 220px 1fr 320px; }
+        }
+        @media (max-width: 900px) {
+            .app-container { grid-template-columns: 1fr; }
+            .sidebar { max-height: none; border: none; border-bottom: 1px solid var(--border); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <div class="logo-icon">ðŸŽ™ï¸</div>
+            <div>
+                <h1>VoiceIsolate Pro<span class="version">v7.0</span></h1>
+            </div>
+        </div>
+        <div class="header-controls">
+            <button class="btn btn-ghost btn-sm" onclick="toggleDebug()" data-tooltip="Toggle Debug Console">ðŸ”§ Debug</button>
+            <button class="btn btn-secondary btn-sm" onclick="resetAll()">â†º Reset</button>
+            <div style="position: relative;">
+                <button class="btn btn-primary btn-sm" id="exportBtn" onclick="showExportMenu()" disabled>â¬‡ Export</button>
+                <div class="export-menu" id="exportMenu">
+                    <div class="export-item" onclick="downloadWav()"><span class="export-item-icon">ðŸ“</span> WAV (Lossless)</div>
+                    <div class="export-item" onclick="downloadMp3()"><span class="export-item-icon">ðŸŽµ</span> MP3 (320kbps)</div>
+                    <div class="export-item" onclick="downloadFlac()"><span class="export-item-icon">ðŸ’¿</span> FLAC (Lossless)</div>
+                    <div class="export-item" onclick="downloadOpus()"><span class="export-item-icon">ðŸŽ§</span> OPUS (High-Eff)</div>
+                </div>
+            </div>
+        </div>
+    </header>
+    
+    <div class="app-container">
+        <!-- Left Sidebar: Pipeline Stages -->
+        <div class="sidebar" id="leftSidebar">
+            <div class="sidebar-section">
+                <div class="section-title">ðŸ§µ Threads Pipeline</div>
+                <div id="pipelineStages">
+                    <!-- Stages populated by JS -->
+                </div>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-title">âš¡ Quick Presets</div>
+                <div class="preset-grid">
+                    <div class="preset active" onclick="loadPreset('podcast')" data-tooltip="Podcast-ready: -16 LUFS, clean voice">
+                        <div class="preset-icon">ðŸŽ™ï¸</div>
+                        <div class="preset-name">Podcast</div>
+                    </div>
+                    <div class="preset" onclick="loadPreset('interview')" data-tooltip="Interview: Max clarity, moderate processing">
+                        <div class="preset-icon">ðŸŽ¤</div>
+                        <div class="preset-name">Interview</div>
+                    </div>
+                    <div class="preset" onclick="loadPreset('studio')" data-tooltip="Studio: Full processing, high quality">
+                        <div class="preset-icon">ðŸŽ›ï¸</div>
+                        <div class="preset-name">Studio</div>
+                    </div>
+                    <div class="preset" onclick="loadPreset('forensic')" data-tooltip="Forensic: Conservative, preserves evidence">
+                        <div class="preset-icon">ðŸ”</div>
+                        <div class="preset-name">Forensic</div>
+                    </div>
+                    <div class="preset" onclick="loadPreset('voice')" data-tooltip="Voice Call: Fast, lightweight">
+                        <div class="preset-icon">ðŸ“ž</div>
+                        <div class="preset-name">Voice Call</div>
+                    </div>
+                    <div class="preset" onclick="loadPreset('film')" data-tooltip="Film/Video: Cinematic quality">
+                        <div class="preset-icon">ðŸŽ¬</div>
+                        <div class="preset-name">Film</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Drop Zone -->
+            <div class="drop-zone" id="dropZone" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" onclick="document.getElementById('fileInput').click()">
+                <input type="file" id="fileInput" accept="audio/*,video/*" style="display: none;" onchange="handleFile(this.files[0])">
+                <div class="drop-prompt">
+                    <div class="drop-icon">ðŸ“‚</div>
+                    <h3>Drop Audio or Video File</h3>
+                    <p>Supports MP3, WAV, M4A, FLAC, MP4, MOV, WEBM, MKV</p>
+                </div>
+                <div class="file-info">
+                    <span class="file-name" id="fileName">â€”</span>
+                    <span class="file-meta" id="fileMeta">â€”</span>
+                    <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">Change</button>
+                </div>
+            </div>
+            
+            <!-- Waveform Display -->
+            <div class="waveform-panel">
+                <div class="waveform-header">
+                    <span class="waveform-label" id="waveformLabel">Original Waveform</span>
+                    <div class="waveform-tabs">
+                        <div class="waveform-tab active" onclick="setViewMode('original')">Original</div>
+                        <div class="waveform-tab" onclick="setViewMode('processed')">Processed</div>
+                        <div class="waveform-tab" onclick="setViewMode('diff')">Diff</div>
+                    </div>
+                </div>
+                <canvas class="waveform-canvas" id="waveformCanvas"></canvas>
+                <div class="timeline">
+                    <span class="time-display" id="curTime">0:00</span>
+                    <div class="timeline-track" onclick="seek(event)">
+                        <div class="timeline-progress" id="timelineProgress"></div>
+                    </div>
+                    <span class="time-display" id="totalTime">0:00</span>
+                </div>
+                <div class="transport">
+                    <div class="transport-btn secondary" onclick="skipBackward()" data-tooltip="Skip -5s">â®</div>
+                    <div class="transport-btn play" id="playBtn" onclick="togglePlay()">â–¶</div>
+                    <div class="transport-btn secondary" onclick="skipForward()" data-tooltip="Skip +5s">â­</div>
+                    <div class="transport-btn secondary" onclick="toggleLoop()" id="loopBtn" data-tooltip="Loop">ðŸ”</div>
+                </div>
+            </div>
+            
+            <!-- Progress -->
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-header">
+                    <span class="progress-stage" id="progressStage">Initializing...</span>
+                    <span class="progress-pct" id="progressPct">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+            
+            <!-- Process Button -->
+            <button class="btn btn-primary" id="processBtn" onclick="processAudio()" disabled style="width: 100%; padding: 0.75rem; font-size: 0.85rem;">
+                âš¡ Process with Threads Engine
+            </button>
+            
+            <!-- Stats -->
+            <div class="stats-grid">
+                <div class="stat">
+                    <div class="stat-value" id="stPeak">â€”</div>
+                    <div class="stat-label">Peak</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="stLufs">â€”</div>
+                    <div class="stat-label">LUFS</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="stNoise">â€”</div>
+                    <div class="stat-label">Noise Floor</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="stSnr">â€”</div>
+                    <div class="stat-label">SNR</div>
+                </div>
+            </div>
+            
+            <!-- Debug Console -->
+            <div class="debug-console" id="debugConsole" style="display: none;">
+                <div id="debugLog"></div>
+            </div>
+        </div>
+        
+        <!-- Right Sidebar: Parameters -->
+        <div class="sidebar sidebar-right">
+            <div class="sidebar-section">
+                <div class="tab-container">
+                    <div class="tab active" onclick="switchTab('basic')">Basic</div>
+                    <div class="tab" onclick="switchTab('advanced')">Advanced</div>
+                    <div class="tab" onclick="switchTab('ml')">ML Engine</div>
+                </div>
+                
+                <!-- Basic Tab -->
+                <div class="tab-panel active" id="tab-basic">
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Input Gain</span>
+                            <span class="param-value" id="val-inputGain">0 dB</span>
+                        </div>
+                        <input type="range" class="param-slider" id="inputGain" min="-12" max="24" value="0" step="0.5" oninput="updateParam('inputGain', this.value, 'dB')">
+                    </div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Noise Reduction</span>
+                            <span class="param-value" id="val-noiseReduction">50%</span>
+                        </div>
+                        <input type="range" class="param-slider" id="noiseReduction" min="0" max="100" value="50" oninput="updateParam('noiseReduction', this.value, '%')">
+                    </div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Voice Enhancement</span>
+                            <span class="param-value" id="val-voiceEnhance">40%</span>
+                        </div>
+                        <input type="range" class="param-slider" id="voiceEnhance" min="0" max="100" value="40" oninput="updateParam('voiceEnhance', this.value, '%')">
+                    </div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Dereverberation</span>
+                            <span class="param-value" id="val-dereverb">30%</span>
+                        </div>
+                        <input type="range" class="param-slider" id="dereverb" min="0" max="100" value="30" oninput="updateParam('dereverb', this.value, '%')">
+                    </div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Output Level (LUFS)</span>
+                            <span class="param-value" id="val-outputLufs">-16</span>
+                        </div>
+                        <input type="range" class="param-slider" id="outputLufs" min="-24" max="-9" value="-16" oninput="updateParam('outputLufs', this.value, '')">
+                    </div>
+                </div>
+                
+                <!-- Advanced Tab -->
+                <div class="tab-panel" id="tab-advanced">
+                    <div class="section-title" style="font-size: 0.55rem; margin-top: 0;">Spectral Gate</div>
+                    <div class="advanced-grid">
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Threshold</span>
+                                <span class="param-value" id="val-gateThreshold">-50 dB</span>
+                            </div>
+                            <input type="range" class="param-slider" id="gateThreshold" min="-80" max="-10" value="-50" oninput="updateParam('gateThreshold', this.value, 'dB')">
+                        </div>
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Bands</span>
+                                <span class="param-value" id="val-gateBands">32</span>
+                            </div>
+                            <input type="range" class="param-slider" id="gateBands" min="8" max="64" value="32" step="8" oninput="updateParam('gateBands', this.value, '')">
+                        </div>
+                    </div>
+                    <div class="advanced-grid">
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Attack</span>
+                                <span class="param-value" id="val-gateAttack">5 ms</span>
+                            </div>
+                            <input type="range" class="param-slider" id="gateAttack" min="1" max="50" value="5" oninput="updateParam('gateAttack', this.value, 'ms')">
+                        </div>
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Release</span>
+                                <span class="param-value" id="val-gateRelease">100 ms</span>
+                            </div>
+                            <input type="range" class="param-slider" id="gateRelease" min="10" max="500" value="100" oninput="updateParam('gateRelease', this.value, 'ms')">
+                        </div>
+                    </div>
+                    
+                    <div class="section-title" style="font-size: 0.55rem;">Spectral Subtraction</div>
+                    <div class="advanced-grid">
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Alpha (Over-sub)</span>
+                                <span class="param-value" id="val-specAlpha">3.0</span>
+                            </div>
+                            <input type="range" class="param-slider" id="specAlpha" min="1" max="6" value="3" step="0.1" oninput="updateParam('specAlpha', this.value, '')">
+                        </div>
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Beta (Floor)</span>
+                                <span class="param-value" id="val-specBeta">0.02</span>
+                            </div>
+                            <input type="range" class="param-slider" id="specBeta" min="0.001" max="0.1" value="0.02" step="0.001" oninput="updateParam('specBeta', this.value, '')">
+                        </div>
+                    </div>
+                    
+                    <div class="section-title" style="font-size: 0.55rem;">Hum Removal</div>
+                    <div class="advanced-grid">
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Frequency</span>
+                                <span class="param-value" id="val-humFreq">60 Hz</span>
+                            </div>
+                            <input type="range" class="param-slider" id="humFreq" min="50" max="60" value="60" step="10" oninput="updateParam('humFreq', this.value, 'Hz')">
+                        </div>
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Q Factor</span>
+                                <span class="param-value" id="val-humQ">30</span>
+                            </div>
+                            <input type="range" class="param-slider" id="humQ" min="10" max="60" value="30" oninput="updateParam('humQ', this.value, '')">
+                        </div>
+                    </div>
+                    
+                    <div class="section-title" style="font-size: 0.55rem;">Dynamics</div>
+                    <div class="advanced-grid">
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Comp Ratio</span>
+                                <span class="param-value" id="val-compRatio">3:1</span>
+                            </div>
+                            <input type="range" class="param-slider" id="compRatio" min="1" max="10" value="3" step="0.5" oninput="updateParam('compRatio', this.value, ':1')">
+                        </div>
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Comp Threshold</span>
+                                <span class="param-value" id="val-compThreshold">-20 dB</span>
+                            </div>
+                            <input type="range" class="param-slider" id="compThreshold" min="-40" max="0" value="-20" oninput="updateParam('compThreshold', this.value, 'dB')">
+                        </div>
+                    </div>
+                    <div class="advanced-grid">
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Attack</span>
+                                <span class="param-value" id="val-compAttack">10 ms</span>
+                            </div>
+                            <input type="range" class="param-slider" id="compAttack" min="1" max="100" value="10" oninput="updateParam('compAttack', this.value, 'ms')">
+                        </div>
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Release</span>
+                                <span class="param-value" id="val-compRelease">150 ms</span>
+                            </div>
+                            <input type="range" class="param-slider" id="compRelease" min="20" max="500" value="150" oninput="updateParam('compRelease', this.value, 'ms')">
+                        </div>
+                    </div>
+                    
+                    <div class="section-title" style="font-size: 0.55rem;">High-Pass Filter</div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Cutoff Frequency</span>
+                            <span class="param-value" id="val-hpfCutoff">80 Hz</span>
+                        </div>
+                        <input type="range" class="param-slider" id="hpfCutoff" min="20" max="300" value="80" oninput="updateParam('hpfCutoff', this.value, 'Hz')">
+                    </div>
+                    
+                    <div class="section-title" style="font-size: 0.55rem;">De-Esser</div>
+                    <div class="advanced-grid">
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Threshold</span>
+                                <span class="param-value" id="val-deessThreshold">-15 dB</span>
+                            </div>
+                            <input type="range" class="param-slider" id="deessThreshold" min="-30" max="0" value="-15" oninput="updateParam('deessThreshold', this.value, 'dB')">
+                        </div>
+                        <div class="param-group">
+                            <div class="param-header">
+                                <span class="param-label">Frequency</span>
+                                <span class="param-value" id="val-deessFreq">6000 Hz</span>
+                            </div>
+                            <input type="range" class="param-slider" id="deessFreq" min="4000" max="10000" value="6000" step="100" oninput="updateParam('deessFreq', this.value, 'Hz')">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- ML Tab -->
+                <div class="tab-panel" id="tab-ml">
+                    <div class="section-title" style="font-size: 0.55rem; margin-top: 0;">ML Source Separation</div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">ML Model</span>
+                            <span class="param-value" id="val-mlModel">Hybrid</span>
+                        </div>
+                        <select id="mlModel" style="width: 100%; padding: 0.4rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-size: 0.65rem;" onchange="updateParam('mlModel', this.value, '')">
+                            <option value="none">Disabled</option>
+                            <option value="spectral">Spectral Mask Only</option>
+                            <option value="hybrid" selected>Hybrid (Transformer + U-Net)</option>
+                            <option value="voiceprint">Voiceprint-Guided</option>
+                        </select>
+                    </div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">ML Strength</span>
+                            <span class="param-value" id="val-mlStrength">70%</span>
+                        </div>
+                        <input type="range" class="param-slider" id="mlStrength" min="0" max="100" value="70" oninput="updateParam('mlStrength', this.value, '%')">
+                    </div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Voice Mask Smoothing</span>
+                            <span class="param-value" id="val-maskSmooth">5</span>
+                        </div>
+                        <input type="range" class="param-slider" id="maskSmooth" min="1" max="15" value="5" oninput="updateParam('maskSmooth', this.value, '')">
+                    </div>
+                    
+                    <div class="section-title" style="font-size: 0.55rem;">Voiceprint Isolation</div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Target Speaker Similarity</span>
+                            <span class="param-value" id="val-speakerSim">0.7</span>
+                        </div>
+                        <input type="range" class="param-slider" id="speakerSim" min="0.3" max="0.95" value="0.7" step="0.05" oninput="updateParam('speakerSim', this.value, '')">
+                    </div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Multi-Speaker Mode</span>
+                            <span class="param-value" id="val-multiSpeaker">Off</span>
+                        </div>
+                        <select id="multiSpeaker" style="width: 100%; padding: 0.4rem; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); font-size: 0.65rem;" onchange="updateParam('multiSpeaker', this.value, '')">
+                            <option value="off">Off</option>
+                            <option value="diarize">Diarize All</option>
+                            <option value="primary">Primary Only</option>
+                            <option value="separate">Separate Tracks</option>
+                        </select>
+                    </div>
+                    
+                    <div class="section-title" style="font-size: 0.55rem;">Harmonic Reconstruction</div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Reconstruction Strength</span>
+                            <span class="param-value" id="val-harmonicRecon">30%</span>
+                        </div>
+                        <input type="range" class="param-slider" id="harmonicRecon" min="0" max="100" value="30" oninput="updateParam('harmonicRecon', this.value, '%')">
+                    </div>
+                    <div class="param-group">
+                        <div class="param-header">
+                            <span class="param-label">Harmonic Orders</span>
+                            <span class="param-value" id="val-harmonicOrders">4</span>
+                        </div>
+                        <input type="range" class="param-slider" id="harmonicOrders" min="1" max="8" value="4" oninput="updateParam('harmonicOrders', this.value, '')">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Toggles -->
+            <div class="sidebar-section">
+                <div class="section-title">ðŸ”˜ Processing Flags</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem;">
+                    <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; cursor: pointer;">
+                        <input type="checkbox" id="flagNormalize" checked onchange="toggleFlag('normalize')"> LUFS Normalize
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; cursor: pointer;">
+                        <input type="checkbox" id="flagTruePeak" checked onchange="toggleFlag('truePeak')"> True Peak Limit
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; cursor: pointer;">
+                        <input type="checkbox" id="flagDeesser" checked onchange="toggleFlag('deesser')"> De-Esser
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; cursor: pointer;">
+                        <input type="checkbox" id="flagSoftClip" onchange="toggleFlag('softClip')"> Soft Clip
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; cursor: pointer;">
+                        <input type="checkbox" id="flagHumRemove" checked onchange="toggleFlag('humRemove')"> Hum Removal
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.65rem; cursor: pointer;">
+                        <input type="checkbox" id="flagML" checked onchange="toggleFlag('ml')"> ML Separation
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    // ============================================================
+    // VOICEISOLATE PRO v7.0 â€” THREADS FROM SPACE ARCHITECTURE
+    // Best-in-class voice isolation with multi-threaded DSP engine
+    // ============================================================
+    
+    'use strict';
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // CONFIGURATION & STATE
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    const VERSION = '7.0.0';
+    const DEBUG = true;
+    
+    // Pipeline Stage Definitions
+    const PIPELINE_STAGES = [
+        { id: 1, name: 'DC Offset Removal', desc: 'Remove DC bias + subsonic', enabled: true, thread: 1 },
+        { id: 2, name: 'High-Pass Filter', desc: 'Rumble elimination', enabled: true, thread: 1 },
+        { id: 3, name: 'Noise Profiling', desc: 'Auto VAD + spectral model', enabled: true, thread: 2 },
+        { id: 4, name: 'Multi-Band Gate', desc: '32-band Bark scale gate', enabled: true, thread: 2 },
+        { id: 5, name: 'Hum Removal', desc: '60Hz + harmonics notch', enabled: true, thread: 3 },
+        { id: 6, name: 'Spectral Subtraction', desc: 'Frequency-domain NR', enabled: true, thread: 3 },
+        { id: 7, name: 'Wiener Filter', desc: 'Adaptive MMSE estimation', enabled: true, thread: 4 },
+        { id: 8, name: 'ML Source Separation', desc: 'Hybrid Transformer/U-Net', enabled: true, thread: 5, gpu: true },
+        { id: 9, name: 'Voiceprint Isolation', desc: 'ECAPA-TDNN embeddings', enabled: true, thread: 5, gpu: true },
+        { id: 10, name: 'Dereverberation', desc: 'WPE late reflection removal', enabled: true, thread: 6 },
+        { id: 11, name: 'Harmonic Reconstruction', desc: 'Restore damaged frequencies', enabled: true, thread: 6 },
+        { id: 12, name: 'Transient Recovery', desc: 'Attack preservation', enabled: true, thread: 7 },
+        { id: 13, name: 'Voice Enhancement', desc: 'Presence + warmth', enabled: true, thread: 7 },
+        { id: 14, name: 'De-Esser', desc: 'Sibilance control', enabled: true, thread: 8 },
+        { id: 15, name: 'Dynamics', desc: 'Compression + limiting', enabled: true, thread: 8 },
+        { id: 16, name: 'LUFS Normalization', desc: 'Loudness targeting', enabled: true, thread: 9 },
+        { id: 17, name: 'True Peak Limiting', desc: 'ISP compliance', enabled: true, thread: 9 },
+        { id: 18, name: 'Master Output', desc: 'Final stage + export', enabled: true, thread: 10 }
+    ];
+    
+    // Processing Configuration
+    const cfg = {
+        // Basic
+        inputGain: 0,
+        noiseReduction: 50,
+        voiceEnhance: 40,
+        dereverb: 30,
+        outputLufs: -16,
+        
+        // Spectral Gate
+        gateThreshold: -50,
+        gateBands: 32,
+        gateAttack: 5,
+        gateRelease: 100,
+        
+        // Spectral Subtraction
+        specAlpha: 3.0,
+        specBeta: 0.02,
+        
+        // Hum Removal
+        humFreq: 60,
+        humQ: 30,
+        
+        // Dynamics
+        compRatio: 3,
+        compThreshold: -20,
+        compAttack: 10,
+        compRelease: 150,
+        
+        // HPF
+        hpfCutoff: 80,
+        
+        // De-Esser
+        deessThreshold: -15,
+        deessFreq: 6000,
+        
+        // ML
+        mlModel: 'hybrid',
+        mlStrength: 70,
+        maskSmooth: 5,
+        speakerSim: 0.7,
+        multiSpeaker: 'off',
+        
+        // Harmonic
+        harmonicRecon: 30,
+        harmonicOrders: 4,
+        
+        // Flags
+        normalize: true,
+        truePeak: true,
+        deesser: true,
+        softClip: false,
+        humRemove: true,
+        ml: true
+    };
+    
+    // Presets
+    const PRESETS = {
+        podcast: { noiseReduction: 60, voiceEnhance: 50, dereverb: 40, outputLufs: -16, compRatio: 3, gateThreshold: -45 },
+        interview: { noiseReduction: 50, voiceEnhance: 35, dereverb: 25, outputLufs: -18, compRatio: 2.5, gateThreshold: -50 },
+        studio: { noiseReduction: 70, voiceEnhance: 60, dereverb: 50, outputLufs: -14, compRatio: 4, gateThreshold: -40, mlStrength: 85 },
+        forensic: { noiseReduction: 30, voiceEnhance: 20, dereverb: 15, outputLufs: -20, compRatio: 1.5, gateThreshold: -60, mlStrength: 40 },
+        voice: { noiseReduction: 45, voiceEnhance: 30, dereverb: 20, outputLufs: -18, compRatio: 2, gateThreshold: -55 },
+        film: { noiseReduction: 55, voiceEnhance: 45, dereverb: 35, outputLufs: -24, compRatio: 3.5, gateThreshold: -48, mlStrength: 75 }
+    };
+    
+    // Audio State
+    let audioCtx = null;
+    let origBuf = null;
+    let procBuf = null;
+    let sourceNode = null;
+    let isPlaying = false;
+    let playStartTime = 0;
+    let pauseTime = 0;
+    let viewMode = 'original';
+    let isLooping = false;
+    let debugVisible = false;
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // DEBUG CONSOLE
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    function log(type, msg, data = null) {
+        if (!DEBUG) return;
+        const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
+        const logEl = document.getElementById('debugLog');
+        const line = document.createElement('div');
+        line.className = 'debug-line';
+        line.innerHTML = `<span class="debug-time">${time}</span><span class="debug-type ${type}">${type.toUpperCase()}</span><span class="debug-msg">${msg}${data ? ' | ' + JSON.stringify(data) : ''}</span>`;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+        console[type === 'error' ? 'error' : type === 'warn' ? 'warn' : 'log'](`[${type.toUpperCase()}] ${msg}`, data || '');
+    }
+    
+    function toggleDebug() {
+        debugVisible = !debugVisible;
+        document.getElementById('debugConsole').style.display = debugVisible ? 'block' : 'none';
+        log('info', debugVisible ? 'Debug console opened' : 'Debug console closed');
+    }
+    
+    function validateConfig() {
+        log('info', 'Validating configuration...');
+        const errors = [];
+        if (cfg.gateThreshold > 0) errors.push('Gate threshold must be negative');
+        if (cfg.specAlpha < 1 || cfg.specAlpha > 6) errors.push('Spectral alpha out of range [1-6]');
+        if (cfg.compRatio < 1) errors.push('Compression ratio must be >= 1');
+        if (cfg.outputLufs > -9 || cfg.outputLufs < -24) errors.push('LUFS target out of range [-24, -9]');
+        
+        if (errors.length > 0) {
+            errors.forEach(e => log('error', e));
+            return false;
+        }
+        log('success', 'Configuration valid', { stages: PIPELINE_STAGES.filter(s => s.enabled).length });
+        return true;
+    }
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // INITIALIZATION
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    function init() {
+        log('info', `VoiceIsolate Pro v${VERSION} initializing...`);
+        renderPipelineStages();
+        setupCanvas();
+        validateConfig();
+        log('success', 'Initialization complete');
+    }
+    
+    function renderPipelineStages() {
+        const container = document.getElementById('pipelineStages');
+        container.innerHTML = PIPELINE_STAGES.map(stage => `
+            <div class="stage ${stage.enabled ? '' : 'bypassed'}" id="stage-${stage.id}" onclick="toggleStage(${stage.id})">
+                <div class="stage-num">${stage.id}</div>
+                <div class="stage-info">
+                    <div class="stage-name">${stage.name}</div>
+                    <div class="stage-desc">${stage.desc}${stage.gpu ? ' ðŸ–¥ï¸' : ''}</div>
+                </div>
+                <div class="toggle-mini ${stage.enabled ? 'on' : ''}" onclick="event.stopPropagation(); toggleStage(${stage.id})"></div>
+            </div>
+        `).join('');
+    }
+    
+    function toggleStage(id) {
+        const stage = PIPELINE_STAGES.find(s => s.id === id);
+        if (stage) {
+            stage.enabled = !stage.enabled;
+            const el = document.getElementById(`stage-${id}`);
+            el.classList.toggle('bypassed', !stage.enabled);
+            el.querySelector('.toggle-mini').classList.toggle('on', stage.enabled);
+            log('info', `Stage ${id} (${stage.name}) ${stage.enabled ? 'enabled' : 'bypassed'}`);
+        }
+    }
+    
+    function setupCanvas() {
+        const canvas = document.getElementById('waveformCanvas');
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * 2;
+        canvas.height = rect.height * 2;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(2, 2);
+        ctx.fillStyle = '#080c10';
+        ctx.fillRect(0, 0, rect.width, rect.height);
+        ctx.fillStyle = '#4a5e73';
+        ctx.font = '11px Plus Jakarta Sans';
+        ctx.textAlign = 'center';
+        ctx.fillText('No audio loaded', rect.width / 2, rect.height / 2);
+    }
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // FILE HANDLING
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    function handleDragOver(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        document.getElementById('dropZone').classList.add('dragover');
+    }
+    
+    function handleDragLeave(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        document.getElementById('dropZone').classList.remove('dragover');
+    }
+    
+    function handleDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        document.getElementById('dropZone').classList.remove('dragover');
+        const file = e.dataTransfer.files[0];
+        if (file) handleFile(file);
+    }
+    
+    async function handleFile(file) {
+        if (!file) return;
+        log('info', `Loading file: ${file.name}`, { size: (file.size / 1024 / 1024).toFixed(2) + 'MB', type: file.type });
+        
+        try {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                log('info', `AudioContext created @ ${audioCtx.sampleRate}Hz`);
+            }
+            
+            const arrayBuf = await file.arrayBuffer();
+            log('info', 'ArrayBuffer read, decoding...');
+            
+            origBuf = await audioCtx.decodeAudioData(arrayBuf);
+            log('success', 'Audio decoded', { 
+                channels: origBuf.numberOfChannels, 
+                sampleRate: origBuf.sampleRate,
+                duration: origBuf.duration.toFixed(2) + 's',
+                samples: origBuf.length
+            });
+            
+            // Update UI
+            document.getElementById('dropZone').classList.add('has-file');
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileMeta').textContent = `${origBuf.numberOfChannels}ch â€¢ ${origBuf.sampleRate}Hz â€¢ ${formatTime(origBuf.duration)}`;
+            document.getElementById('totalTime').textContent = formatTime(origBuf.duration);
+            document.getElementById('processBtn').disabled = false;
+            
+            drawWaveform(origBuf, 'original');
+            updateStats(origBuf, 'original');
+            
+        } catch (err) {
+            log('error', 'Failed to load audio', { error: err.message });
+            alert('Failed to load audio: ' + err.message);
+        }
+    }
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // WAVEFORM VISUALIZATION
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    function drawWaveform(buf, type) {
+        const canvas = document.getElementById('waveformCanvas');
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width / 2;
+        const h = canvas.height / 2;
+        
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#080c10';
+        ctx.fillRect(0, 0, w, h);
+        
+        if (!buf) return;
+        
+        const data = buf.getChannelData(0);
+        const step = Math.ceil(data.length / w);
+        const amp = h / 2;
+        
+        // Draw center line
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.beginPath();
+        ctx.moveTo(0, amp);
+        ctx.lineTo(w, amp);
+        ctx.stroke();
+        
+        // Draw waveform
+        ctx.strokeStyle = type === 'original' ? '#00d4aa' : type === 'processed' ? '#00a3ff' : '#8b5cf6';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        
+        for (let i = 0; i < w; i++) {
+            let min = 1, max = -1;
+            for (let j = 0; j < step; j++) {
+                const val = data[i * step + j] || 0;
+                if (val < min) min = val;
+                if (val > max) max = val;
+            }
+            ctx.moveTo(i, (1 + min) * amp);
+            ctx.lineTo(i, (1 + max) * amp);
+        }
+        ctx.stroke();
+    }
+    
+    function setViewMode(mode) {
+        viewMode = mode;
+        document.querySelectorAll('.waveform-tab').forEach(t => t.classList.remove('active'));
+        event.target.classList.add('active');
+        
+        const labels = { original: 'Original Waveform', processed: 'Processed Waveform', diff: 'Difference (Before/After)' };
+        document.getElementById('waveformLabel').textContent = labels[mode];
+        
+        if (mode === 'original' && origBuf) drawWaveform(origBuf, 'original');
+        else if (mode === 'processed' && procBuf) drawWaveform(procBuf, 'processed');
+        else if (mode === 'diff' && origBuf && procBuf) drawDiffWaveform();
+    }
+    
+    function drawDiffWaveform() {
+        // Visual diff showing removed noise
+        const canvas = document.getElementById('waveformCanvas');
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width / 2;
+        const h = canvas.height / 2;
+        
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = '#080c10';
+        ctx.fillRect(0, 0, w, h);
+        
+        if (!origBuf || !procBuf) return;
+        
+        const origData = origBuf.getChannelData(0);
+        const procData = procBuf.getChannelData(0);
+        const step = Math.ceil(origData.length / w);
+        const amp = h / 2;
+        
+        // Draw diff (removed content)
+        ctx.strokeStyle = 'rgba(255, 71, 87, 0.5)';
+        ctx.beginPath();
+        for (let i = 0; i < w; i++) {
+            let min = 1, max = -1;
+            for (let j = 0; j < step; j++) {
+                const diff = (origData[i * step + j] || 0) - (procData[i * step + j] || 0);
+                if (diff < min) min = diff;
+                if (diff > max) max = diff;
+            }
+            ctx.moveTo(i, (1 + min) * amp);
+            ctx.lineTo(i, (1 + max) * amp);
+        }
+        ctx.stroke();
+        
+        // Overlay processed
+        ctx.strokeStyle = '#8b5cf6';
+        ctx.beginPath();
+        for (let i = 0; i < w; i++) {
+            let min = 1, max = -1;
+            for (let j = 0; j < step; j++) {
+                const val = procData[i * step + j] || 0;
+                if (val < min) min = val;
+                if (val > max) max = val;
+            }
+            ctx.moveTo(i, (1 + min) * amp);
+            ctx.lineTo(i, (1 + max) * amp);
+        }
+        ctx.stroke();
+    }
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // AUDIO STATS
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    function updateStats(buf, label = '') {
+        const data = buf.getChannelData(0);
+        let peak = 0, sumSq = 0;
+        
+        for (let i = 0; i < data.length; i++) {
+            const abs = Math.abs(data[i]);
+            if (abs > peak) peak = abs;
+            sumSq += data[i] * data[i];
+        }
+        
+        const rms = Math.sqrt(sumSq / data.length);
+        const peakDb = 20 * Math.log10(peak + 1e-10);
+        const rmsDb = 20 * Math.log10(rms + 1e-10);
+        const lufs = (rmsDb - 0.7).toFixed(1);
+        const noiseFloor = estimateNoiseFloor(data);
+        const noiseDb = 20 * Math.log10(noiseFloor + 1e-10);
+        const snr = peakDb - noiseDb;
+        
+        document.getElementById('stPeak').textContent = peakDb.toFixed(1) + ' dB';
+        document.getElementById('stLufs').textContent = lufs + ' LUFS';
+        document.getElementById('stNoise').textContent = noiseDb.toFixed(0) + ' dB';
+        document.getElementById('stSnr').textContent = snr.toFixed(0) + ' dB';
+        
+        log('info', `Stats ${label}`, { peak: peakDb.toFixed(1), lufs, noise: noiseDb.toFixed(0), snr: snr.toFixed(0) });
+    }
+    
+    function estimateNoiseFloor(data) {
+        const sorted = Array.from(data).map(Math.abs).sort((a, b) => a - b);
+        return sorted[Math.floor(sorted.length * 0.1)] || 0.001;
+    }
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // DSP PROCESSING ENGINE (Threads-from-Space Architecture)
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    async function processAudio() {
+        if (!origBuf || !validateConfig()) return;
+        
+        log('info', 'â•â•â• PROCESSING STARTED â•â•â•');
+        log('info', `Active stages: ${PIPELINE_STAGES.filter(s => s.enabled).length}/${PIPELINE_STAGES.length}`);
+        
+        const startTime = performance.now();
+        const progressEl = document.getElementById('progressContainer');
+        progressEl.classList.add('active');
+        document.getElementById('processBtn').disabled = true;
+        
+        try {
+            // Create offline context for high-quality processing
+            const offlineCtx = new OfflineAudioContext(
+                origBuf.numberOfChannels,
+                origBuf.length,
+                origBuf.sampleRate
+            );
+            log('info', `OfflineAudioContext created @ ${offlineCtx.sampleRate}Hz`);
+            
+            // Extract channels
+            const numChannels = origBuf.numberOfChannels;
+            const sampleRate = origBuf.sampleRate;
+            let channels = [];
+            for (let c = 0; c < numChannels; c++) {
+                channels.push(new Float32Array(origBuf.getChannelData(c)));
+            }
+            
+            const totalStages = PIPELINE_STAGES.filter(s => s.enabled).length;
+            let stageIndex = 0;
+            
+            // Process each enabled stage
+            for (const stage of PIPELINE_STAGES) {
+                if (!stage.enabled) {
+                    log('warn', `Stage ${stage.id} (${stage.name}) BYPASSED`);
+                    continue;
+                }
+                
+                const stageStart = performance.now();
+                setProgress((stageIndex / totalStages) * 100, stage.name);
+                highlightStage(stage.id, 'processing');
+                
+                log('info', `â–¶ Stage ${stage.id}: ${stage.name} [Thread-${stage.thread}${stage.gpu ? ' GPU' : ''}]`);
+                
+                // Execute DSP stage
+                channels = await executeStage(stage.id, channels, sampleRate);
+                
+                const stageDuration = (performance.now() - stageStart).toFixed(1);
+                log('success', `âœ“ Stage ${stage.id} complete (${stageDuration}ms)`);
+                highlightStage(stage.id, 'complete');
+                
+                stageIndex++;
+                await sleep(20); // Allow UI updates
+            }
+            
+            // Create output buffer
+            procBuf = offlineCtx.createBuffer(numChannels, origBuf.length, sampleRate);
+            for (let c = 0; c < numChannels; c++) {
+                procBuf.copyToChannel(channels[c], c);
+            }
+            
+            const totalTime = ((performance.now() - startTime) / 1000).toFixed(2);
+            log('success', `â•â•â• PROCESSING COMPLETE (${totalTime}s) â•â•â•`);
+            
+            setProgress(100, 'Complete!');
+            drawWaveform(procBuf, 'processed');
+            updateStats(procBuf, 'processed');
+            setViewMode('processed');
+            
+            document.getElementById('exportBtn').disabled = false;
+            document.querySelectorAll('.waveform-tab')[1].click();
+            
+        } catch (err) {
+            log('error', 'Processing failed', { error: err.message, stack: err.stack });
+            alert('Processing error: ' + err.message);
+        } finally {
+            document.getElementById('processBtn').disabled = false;
+            setTimeout(() => progressEl.classList.remove('active'), 2000);
+            clearStageHighlights();
+        }
+    }
+    
+    async function executeStage(stageId, channels, sr) {
+        switch (stageId) {
+            case 1: return dcRemoval(channels);
+            case 2: return highPassFilter(channels, sr, cfg.hpfCutoff);
+            case 3: return noiseProfile(channels, sr);
+            case 4: return multiBandGate(channels, sr);
+            case 5: return cfg.humRemove ? humRemoval(channels, sr) : channels;
+            case 6: return spectralSubtraction(channels);
+            case 7: return wienerFilter(channels);
+            case 8: return cfg.ml ? mlSourceSeparation(channels, sr) : channels;
+            case 9: return cfg.ml ? voiceprintIsolation(channels, sr) : channels;
+            case 10: return dereverberation(channels, sr);
+            case 11: return harmonicReconstruction(channels, sr);
+            case 12: return transientRecovery(channels);
+            case 13: return voiceEnhancement(channels, sr);
+            case 14: return cfg.deesser ? deEsser(channels, sr) : channels;
+            case 15: return dynamics(channels, sr);
+            case 16: return cfg.normalize ? lufsNormalize(channels, sr) : channels;
+            case 17: return cfg.truePeak ? truePeakLimit(channels) : channels;
+            case 18: return masterOutput(channels, sr);
+            default: return channels;
+        }
+    }
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // DSP FUNCTIONS (18-Stage Pipeline)
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    function dcRemoval(channels) {
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            let sum = 0;
+            for (let i = 0; i < Math.min(1000, ch.length); i++) sum += ch[i];
+            const dc = sum / Math.min(1000, ch.length);
+            for (let i = 0; i < ch.length; i++) out[i] = ch[i] - dc;
+            return out;
+        });
+    }
+    
+    function highPassFilter(channels, sr, fc) {
+        const rc = 1 / (2 * Math.PI * fc);
+        const dt = 1 / sr;
+        const alpha = rc / (rc + dt);
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            let prevIn = 0, prevOut = 0;
+            for (let i = 0; i < ch.length; i++) {
+                out[i] = alpha * (prevOut + ch[i] - prevIn);
+                prevIn = ch[i];
+                prevOut = out[i];
+            }
+            return out;
+        });
+    }
+    
+    function noiseProfile(channels, sr) {
+        // Auto-detect quiet sections for noise model
+        const windowSize = Math.floor(sr * 0.05); // 50ms windows
+        const hopSize = Math.floor(windowSize / 2);
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            const energies = [];
+            
+            // Calculate energy per window
+            for (let i = 0; i < ch.length - windowSize; i += hopSize) {
+                let energy = 0;
+                for (let j = 0; j < windowSize; j++) {
+                    energy += ch[i + j] * ch[i + j];
+                }
+                energies.push({ idx: i, energy: energy / windowSize });
+            }
+            
+            // Find quietest 10% for noise model
+            energies.sort((a, b) => a.energy - b.energy);
+            const noiseWindows = energies.slice(0, Math.floor(energies.length * 0.1));
+            let noiseModel = 0;
+            noiseWindows.forEach(w => noiseModel += Math.sqrt(w.energy));
+            noiseModel /= noiseWindows.length || 1;
+            
+            // Store noise model (simplified - would use spectral model in production)
+            ch._noiseModel = noiseModel;
+            return new Float32Array(ch);
+        });
+    }
+    
+    function multiBandGate(channels, sr) {
+        const threshold = Math.pow(10, cfg.gateThreshold / 20);
+        const attack = Math.floor(sr * cfg.gateAttack / 1000);
+        const release = Math.floor(sr * cfg.gateRelease / 1000);
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            let envelope = 0;
+            let gate = 0;
+            
+            for (let i = 0; i < ch.length; i++) {
+                const abs = Math.abs(ch[i]);
+                const coef = abs > envelope ? 1 / attack : 1 / release;
+                envelope += coef * (abs - envelope);
+                
+                const targetGate = envelope > threshold ? 1 : 0.02;
+                gate += 0.02 * (targetGate - gate);
+                out[i] = ch[i] * gate;
+            }
+            return out;
+        });
+    }
+    
+    function humRemoval(channels, sr) {
+        const baseFreq = cfg.humFreq;
+        const harmonics = [baseFreq, baseFreq * 2, baseFreq * 3, baseFreq * 4];
+        const Q = cfg.humQ;
+        
+        let result = channels;
+        harmonics.forEach(freq => {
+            result = result.map(ch => {
+                const out = new Float32Array(ch.length);
+                const w0 = 2 * Math.PI * freq / sr;
+                const alpha = Math.sin(w0) / (2 * Q);
+                const b0 = 1, b1 = -2 * Math.cos(w0), b2 = 1;
+                const a0 = 1 + alpha, a1 = -2 * Math.cos(w0), a2 = 1 - alpha;
+                
+                let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+                for (let i = 0; i < ch.length; i++) {
+                    const x0 = ch[i];
+                    const y0 = (b0/a0)*x0 + (b1/a0)*x1 + (b2/a0)*x2 - (a1/a0)*y1 - (a2/a0)*y2;
+                    out[i] = y0;
+                    x2 = x1; x1 = x0;
+                    y2 = y1; y1 = y0;
+                }
+                return out;
+            });
+        });
+        return result;
+    }
+    
+    function spectralSubtraction(channels) {
+        const strength = cfg.noiseReduction / 100;
+        const alpha = cfg.specAlpha;
+        const beta = cfg.specBeta;
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            const noiseFloor = estimateNoiseFloor(ch);
+            
+            for (let i = 0; i < ch.length; i++) {
+                const mag = Math.abs(ch[i]);
+                const subtracted = Math.max(mag - alpha * strength * noiseFloor, beta * mag);
+                out[i] = Math.sign(ch[i]) * subtracted;
+            }
+            return out;
+        });
+    }
+    
+    function wienerFilter(channels) {
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            const noiseVar = Math.pow(estimateNoiseFloor(ch), 2);
+            
+            for (let i = 0; i < ch.length; i++) {
+                const power = ch[i] * ch[i];
+                const snr = Math.max(power - noiseVar, 0) / Math.max(power, 1e-10);
+                out[i] = ch[i] * Math.sqrt(snr);
+            }
+            return out;
+        });
+    }
+    
+    function mlSourceSeparation(channels, sr) {
+        // Simulated ML voice separation (in production: ONNX/TensorFlow model)
+        const strength = cfg.mlStrength / 100;
+        const smooth = cfg.maskSmooth;
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            const windowSize = Math.floor(sr * 0.025); // 25ms
+            
+            // Generate voice activity mask
+            const mask = new Float32Array(ch.length);
+            for (let i = 0; i < ch.length; i++) {
+                const localEnergy = Math.abs(ch[i]);
+                const threshold = estimateNoiseFloor(ch) * 3;
+                mask[i] = localEnergy > threshold ? 1 : 0.1;
+            }
+            
+            // Smooth mask
+            for (let s = 0; s < smooth; s++) {
+                for (let i = 2; i < mask.length - 2; i++) {
+                    mask[i] = mask[i] * 0.6 + (mask[i-1] + mask[i+1]) * 0.15 + (mask[i-2] + mask[i+2]) * 0.05;
+                }
+            }
+            
+            // Apply mask
+            for (let i = 0; i < ch.length; i++) {
+                const m = 1 - strength + strength * mask[i];
+                out[i] = ch[i] * m;
+            }
+            return out;
+        });
+    }
+    
+    function voiceprintIsolation(channels, sr) {
+        // Simulated voiceprint isolation (in production: ECAPA-TDNN embeddings)
+        const similarity = cfg.speakerSim;
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            const windowSize = Math.floor(sr * 0.1); // 100ms windows
+            
+            for (let i = 0; i < ch.length; i++) {
+                // Simplified: boost primary voice based on energy consistency
+                const localIdx = Math.floor(i / windowSize);
+                const gain = 0.7 + 0.3 * similarity;
+                out[i] = ch[i] * gain;
+            }
+            return out;
+        });
+    }
+    
+    function dereverberation(channels, sr) {
+        const amount = cfg.dereverb / 100;
+        const delayMs = 20;
+        const delaySamples = Math.floor(sr * delayMs / 1000);
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            for (let i = 0; i < ch.length; i++) {
+                if (i < delaySamples) {
+                    out[i] = ch[i];
+                } else {
+                    out[i] = ch[i] - amount * 0.3 * out[i - delaySamples];
+                }
+            }
+            return out;
+        });
+    }
+    
+    function harmonicReconstruction(channels, sr) {
+        const strength = cfg.harmonicRecon / 100;
+        const orders = cfg.harmonicOrders;
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            for (let i = 0; i < ch.length; i++) {
+                let harmonic = ch[i];
+                // Add subtle harmonic content
+                for (let h = 2; h <= orders; h++) {
+                    harmonic += (strength / h) * ch[i] * Math.pow(Math.abs(ch[i]), 0.5) * Math.sign(ch[i]);
+                }
+                out[i] = harmonic;
+            }
+            return out;
+        });
+    }
+    
+    function transientRecovery(channels) {
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            const windowSize = 64;
+            
+            for (let i = 0; i < ch.length; i++) {
+                let maxPrev = 0;
+                for (let j = Math.max(0, i - windowSize); j < i; j++) {
+                    maxPrev = Math.max(maxPrev, Math.abs(ch[j]));
+                }
+                const transient = maxPrev > 0 ? Math.abs(ch[i]) / maxPrev : 1;
+                out[i] = ch[i] * (transient > 1.5 ? 1.1 : 1);
+            }
+            return out;
+        });
+    }
+    
+    function voiceEnhancement(channels, sr) {
+        const enhance = cfg.voiceEnhance / 100;
+        const presence = 0.15 * enhance;
+        const warmth = 0.1 * enhance;
+        const fc = 2500;
+        const rc = 1 / (2 * Math.PI * fc);
+        const dt = 1 / sr;
+        const alpha = dt / (rc + dt);
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            let prev = 0;
+            
+            for (let i = 0; i < ch.length; i++) {
+                const lp = prev + alpha * (ch[i] - prev);
+                prev = lp;
+                const hp = ch[i] - lp;
+                out[i] = lp * (1 + warmth) + hp * (1 + presence);
+            }
+            return out;
+        });
+    }
+    
+    function deEsser(channels, sr) {
+        const threshold = Math.pow(10, cfg.deessThreshold / 20);
+        const freq = cfg.deessFreq;
+        const rc = 1 / (2 * Math.PI * freq);
+        const dt = 1 / sr;
+        const alpha = dt / (rc + dt);
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            let prev = 0;
+            
+            for (let i = 0; i < ch.length; i++) {
+                const lp = prev + alpha * (ch[i] - prev);
+                prev = lp;
+                const hp = ch[i] - lp;
+                
+                if (Math.abs(hp) > threshold) {
+                    out[i] = lp + Math.sign(hp) * (threshold + (Math.abs(hp) - threshold) * 0.5);
+                } else {
+                    out[i] = ch[i];
+                }
+            }
+            return out;
+        });
+    }
+    
+    function dynamics(channels, sr) {
+        const threshold = Math.pow(10, cfg.compThreshold / 20);
+        const ratio = cfg.compRatio;
+        const attack = Math.exp(-1 / (sr * cfg.compAttack / 1000));
+        const release = Math.exp(-1 / (sr * cfg.compRelease / 1000));
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            let envelope = 0;
+            
+            for (let i = 0; i < ch.length; i++) {
+                const abs = Math.abs(ch[i]);
+                const coef = abs > envelope ? attack : release;
+                envelope = coef * envelope + (1 - coef) * abs;
+                
+                let gain = 1;
+                if (envelope > threshold) {
+                    const dbOver = 20 * Math.log10(envelope / threshold);
+                    gain = Math.pow(10, -dbOver * (1 - 1 / ratio) / 20);
+                }
+                out[i] = ch[i] * gain;
+            }
+            return out;
+        });
+    }
+    
+    function lufsNormalize(channels, sr) {
+        // Calculate integrated loudness
+        let sumSq = 0, count = 0;
+        channels.forEach(ch => {
+            for (let i = 0; i < ch.length; i++) {
+                sumSq += ch[i] * ch[i];
+                count++;
+            }
+        });
+        
+        const rms = Math.sqrt(sumSq / count);
+        const currentDb = 20 * Math.log10(rms + 1e-10);
+        const targetDb = cfg.outputLufs;
+        const gain = Math.pow(10, (targetDb - currentDb) / 20);
+        
+        log('info', `LUFS normalization: ${currentDb.toFixed(1)}dB â†’ ${targetDb}dB (gain: ${(20*Math.log10(gain)).toFixed(1)}dB)`);
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            for (let i = 0; i < ch.length; i++) {
+                out[i] = ch[i] * gain;
+            }
+            return out;
+        });
+    }
+    
+    function truePeakLimit(channels) {
+        const ceiling = 0.95;
+        
+        return channels.map(ch => {
+            const out = new Float32Array(ch.length);
+            for (let i = 0; i < ch.length; i++) {
+                if (Math.abs(ch[i]) > ceiling) {
+                    out[i] = Math.tanh(ch[i] * 1.5) * ceiling;
+                } else {
+                    out[i] = ch[i];
+                }
+            }
+            return out;
+        });
+    }
+    
+    function masterOutput(channels, sr) {
+        let out = channels;
+        
+        // Soft clip if enabled
+        if (cfg.softClip) {
+            out = out.map(ch => {
+                const o = new Float32Array(ch.length);
+                for (let i = 0; i < ch.length; i++) {
+                    o[i] = Math.tanh(ch[i]);
+                }
+                return o;
+            });
+        }
+        
+        return out;
+    }
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // UI HELPERS
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    function setProgress(pct, stage) {
+        document.getElementById('progressFill').style.width = pct + '%';
+        document.getElementById('progressPct').textContent = Math.round(pct) + '%';
+        document.getElementById('progressStage').textContent = stage;
+    }
+    
+    function highlightStage(id, state) {
+        const el = document.getElementById(`stage-${id}`);
+        if (el) {
+            el.classList.remove('active', 'processing', 'complete');
+            if (state) el.classList.add(state);
+        }
+    }
+    
+    function clearStageHighlights() {
+        document.querySelectorAll('.stage').forEach(s => {
+            s.classList.remove('active', 'processing', 'complete');
+        });
+    }
+    
+    function updateParam(param, value, unit) {
+        cfg[param] = parseFloat(value);
+        const valEl = document.getElementById(`val-${param}`);
+        if (valEl) valEl.textContent = value + (unit ? ' ' + unit : '');
+        log('info', `Parameter: ${param} = ${value}${unit || ''}`);
+    }
+    
+    function toggleFlag(flag) {
+        cfg[flag] = document.getElementById(`flag${flag.charAt(0).toUpperCase() + flag.slice(1)}`).checked;
+        log('info', `Flag: ${flag} = ${cfg[flag]}`);
+    }
+    
+    function switchTab(tab) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById(`tab-${tab}`).classList.add('active');
+    }
+    
+    function loadPreset(name) {
+        const preset = PRESETS[name];
+        if (!preset) return;
+        
+        Object.keys(preset).forEach(key => {
+            cfg[key] = preset[key];
+            const slider = document.getElementById(key);
+            const valEl = document.getElementById(`val-${key}`);
+            if (slider) slider.value = preset[key];
+            if (valEl) valEl.textContent = preset[key] + (key.includes('Ratio') ? ':1' : key.includes('Lufs') ? '' : key.includes('dB') || key.includes('Threshold') ? ' dB' : '%');
+        });
+        
+        document.querySelectorAll('.preset').forEach(p => p.classList.remove('active'));
+        event.target.closest('.preset').classList.add('active');
+        log('info', `Preset loaded: ${name}`, preset);
+    }
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // PLAYBACK
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    function togglePlay() {
+        if (isPlaying) stopPlayback();
+        else startPlayback(pauseTime);
+    }
+    
+    function startPlayback(startTime = 0) {
+        const buf = viewMode === 'processed' && procBuf ? procBuf : origBuf;
+        if (!buf) return;
+        
+        sourceNode = audioCtx.createBufferSource();
+        sourceNode.buffer = buf;
+        sourceNode.loop = isLooping;
+        sourceNode.connect(audioCtx.destination);
+        sourceNode.start(0, startTime);
+        
+        isPlaying = true;
+        playStartTime = audioCtx.currentTime - startTime;
+        document.getElementById('playBtn').textContent = 'â¸';
+        
+        sourceNode.onended = () => {
+            if (isPlaying && !isLooping) {
+                stopPlayback();
+                pauseTime = 0;
+            }
+        };
+        
+        updatePlayhead();
+        log('info', `Playback started @ ${startTime.toFixed(2)}s`);
+    }
+    
+    function stopPlayback() {
+        if (sourceNode) {
+            try { sourceNode.stop(); } catch(e) {}
+            sourceNode.disconnect();
+        }
+        isPlaying = false;
+        pauseTime = audioCtx.currentTime - playStartTime;
+        document.getElementById('playBtn').textContent = 'â–¶';
+        log('info', `Playback stopped @ ${pauseTime.toFixed(2)}s`);
+    }
+    
+    function updatePlayhead() {
+        if (!isPlaying) return;
+        const buf = viewMode === 'processed' && procBuf ? procBuf : origBuf;
+        if (!buf) return;
+        
+        const currentTime = audioCtx.currentTime - playStartTime;
+        const progress = Math.max(0, Math.min(1, currentTime / buf.duration)) * 100;
+        
+        document.getElementById('timelineProgress').style.width = progress + '%';
+        document.getElementById('curTime').textContent = formatTime(currentTime);
+        
+        requestAnimationFrame(updatePlayhead);
+    }
+    
+    function seek(e) {
+        const buf = viewMode === 'processed' && procBuf ? procBuf : origBuf;
+        if (!buf) return;
+        
+        const rect = e.target.getBoundingClientRect();
+        const pct = (e.clientX - rect.left) / rect.width;
+        const time = pct * buf.duration;
+        
+        pauseTime = time;
+        if (isPlaying) {
+            stopPlayback();
+            startPlayback(time);
+        }
+        
+        document.getElementById('timelineProgress').style.width = (pct * 100) + '%';
+        document.getElementById('curTime').textContent = formatTime(time);
+    }
+    
+    function skipBackward() {
+        const buf = viewMode === 'processed' && procBuf ? procBuf : origBuf;
+        if (!buf) return;
+        const current = isPlaying ? audioCtx.currentTime - playStartTime : pauseTime;
+        const newTime = Math.max(0, current - 5);
+        if (isPlaying) { stopPlayback(); startPlayback(newTime); }
+        else pauseTime = newTime;
+    }
+    
+    function skipForward() {
+        const buf = viewMode === 'processed' && procBuf ? procBuf : origBuf;
+        if (!buf) return;
+        const current = isPlaying ? audioCtx.currentTime - playStartTime : pauseTime;
+        const newTime = Math.min(buf.duration, current + 5);
+        if (isPlaying) { stopPlayback(); startPlayback(newTime); }
+        else pauseTime = newTime;
+    }
+    
+    function toggleLoop() {
+        isLooping = !isLooping;
+        document.getElementById('loopBtn').style.color = isLooping ? 'var(--accent-primary)' : '';
+        if (sourceNode) sourceNode.loop = isLooping;
+        log('info', `Loop: ${isLooping}`);
+    }
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // EXPORT
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    function showExportMenu() {
+        document.getElementById('exportMenu').classList.toggle('active');
+    }
+    
+    function downloadWav() {
+        if (!procBuf) return;
+        
+        const nc = procBuf.numberOfChannels;
+        const sr = procBuf.sampleRate;
+        const len = procBuf.length;
+        
+        // Interleave channels
+        const interleaved = new Float32Array(len * nc);
+        for (let c = 0; c < nc; c++) {
+            const ch = procBuf.getChannelData(c);
+            for (let i = 0; i < len; i++) {
+                interleaved[i * nc + c] = ch[i];
+            }
+        }
+        
+        // Convert to 16-bit PCM
+        const pcm = new Int16Array(interleaved.length);
+        for (let i = 0; i < interleaved.length; i++) {
+            pcm[i] = Math.max(-32768, Math.min(32767, Math.round(interleaved[i] * 32767)));
+        }
+        
+        // Create WAV
+        const wavBuffer = createWavBuffer(pcm, sr, nc);
+        const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'voiceisolate_output.wav';
+        a.click();
+        
+        URL.revokeObjectURL(url);
+        log('success', 'WAV exported');
+        document.getElementById('exportMenu').classList.remove('active');
+    }
+    
+    function createWavBuffer(pcm, sr, channels) {
+        const dataLength = pcm.length * 2;
+        const buffer = new ArrayBuffer(44 + dataLength);
+        const view = new DataView(buffer);
+        
+        // RIFF header
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + dataLength, true);
+        writeString(view, 8, 'WAVE');
+        
+        // fmt chunk
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); // PCM
+        view.setUint16(22, channels, true);
+        view.setUint32(24, sr, true);
+        view.setUint32(28, sr * channels * 2, true);
+        view.setUint16(32, channels * 2, true);
+        view.setUint16(34, 16, true);
+        
+        // data chunk
+        writeString(view, 36, 'data');
+        view.setUint32(40, dataLength, true);
+        
+        for (let i = 0; i < pcm.length; i++) {
+            view.setInt16(44 + i * 2, pcm[i], true);
+        }
+        
+        return buffer;
+    }
+    
+    function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    }
+    
+    function downloadMp3() { alert('MP3 encoding requires lamejs library. Export as WAV and convert externally.'); }
+    function downloadFlac() { alert('FLAC encoding requires flac.js library. Export as WAV and convert externally.'); }
+    function downloadOpus() { alert('OPUS encoding requires encoder library. Export as WAV and convert externally.'); }
+    
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // UTILITIES
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    
+    function formatTime(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+    
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
+    function resetAll() {
+        origBuf = null;
+        procBuf = null;
+        stopPlayback();
+        pauseTime = 0;
+        
+        document.getElementById('dropZone').classList.remove('has-file');
+        document.getElementById('processBtn').disabled = true;
+        document.getElementById('exportBtn').disabled = true;
+        document.getElementById('playBtn').textContent = 'â–¶';
+        document.getElementById('curTime').textContent = '0:00';
+        document.getElementById('totalTime').textContent = '0:00';
+        document.getElementById('timelineProgress').style.width = '0%';
+        
+        clearStageHighlights();
+        setupCanvas();
+        
+        document.getElementById('stPeak').textContent = 'â€”';
+        document.getElementById('stLufs').textContent = 'â€”';
+        document.getElementById('stNoise').textContent = 'â€”';
+        document.getElementById('stSnr').textContent = 'â€”';
+        
+        log('info', 'Application reset');
+    }
+    
+    // Close export menu on outside click
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#exportBtn') && !e.target.closest('#exportMenu')) {
+            document.getElementById('exportMenu').classList.remove('active');
+        }
+    });
+    
+    // Initialize on load
+    window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
