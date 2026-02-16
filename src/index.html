@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceIsolate Pro v9.0 — Threads from Space</title>
+    <meta name="description" content="Production-ready voice isolation powered by multi-threaded DSP, GPU acceleration, and ML inference. 100% local processing.">
+    <meta name="theme-color" content="#06080a">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="loading-logo">🎙️</div>
+        <div class="loading-text">VoiceIsolate Pro</div>
+        <div class="loading-sub">Initializing Threads from Space engine...</div>
+        <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+    </div>
+
+    <!-- Header -->
+    <header class="header" id="appHeader">
+        <div class="header-left">
+            <div class="logo">
+                <div class="logo-icon">🎙️</div>
+                <div class="logo-text">
+                    <h1>VoiceIsolate Pro</h1>
+                    <span class="version">v9.0 — Threads from Space</span>
+                </div>
+            </div>
+        </div>
+        <div class="header-center">
+            <div class="mode-selector" id="modeSelector">
+                <button class="mode-btn active" data-mode="creator" title="Full 18-stage pipeline, maximum quality">Creator</button>
+                <button class="mode-btn" data-mode="live" title="Real-time, stages 1-4, <15ms latency">Live</button>
+                <button class="mode-btn" data-mode="forensic" title="Conservative cleanup + audit log">Forensic</button>
+                <button class="mode-btn" data-mode="batch" title="Parallel batch processing">Batch</button>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="header-badge" id="gpuBadge">
+                <span class="dot"></span>
+                <span id="gpuStatus">Detecting...</span>
+            </div>
+            <div class="header-badge" id="threadBadge">
+                <span id="threadCount">--</span> threads
+            </div>
+            <button class="btn-icon" id="settingsBtn" title="Settings">⚙</button>
+        </div>
+    </header>
+
+    <!-- App Container -->
+    <div class="app-container">
+        <!-- Left Sidebar: 18-Stage Pipeline -->
+        <aside class="sidebar" id="leftSidebar">
+            <div class="section-title">18-Stage DSP Pipeline</div>
+            <div id="pipelineStages"></div>
+
+            <div class="section-title" style="margin-top:0.75rem">Thread Pool</div>
+            <div id="threadPoolStatus" style="font-size:0.6rem; color:var(--text-muted); padding:0.25rem;">
+                Workers: <span id="workerCount">--</span> |
+                Active: <span id="activeJobs">0</span> |
+                Queue: <span id="queuedJobs">0</span>
+            </div>
+
+            <div class="section-title">Forensic Audit Log</div>
+            <div class="forensic-log" id="forensicLog"></div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent">
+            <!-- Drop Zone -->
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-prompt">
+                    <div class="drop-icon">📁</div>
+                    <h3>Drop audio or video files here</h3>
+                    <p class="drop-subtitle">Or use the buttons below</p>
+                    <div class="upload-row">
+                        <button class="upload-btn" id="uploadBtn">📂 Browse Files</button>
+                        <span class="divider-text">or</span>
+                        <button class="record-btn" id="recordBtn">● Record Mic</button>
+                    </div>
+                    <p class="file-formats">MP3, WAV, M4A, FLAC, OGG, MP4, MOV, WEBM, MKV — up to 2GB</p>
+                </div>
+                <div class="file-info">
+                    <span class="file-icon">🎵</span>
+                    <div class="file-details">
+                        <div class="file-name" id="fileName"></div>
+                        <div class="file-meta" id="fileMeta"></div>
+                    </div>
+                    <button class="file-remove" id="fileRemove" title="Remove file">✕</button>
+                </div>
+                <input type="file" id="fileInput" accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.mp4,.mov,.webm,.mkv" multiple hidden>
+            </div>
+
+            <!-- One-Tap Clean -->
+            <div class="one-tap-section" id="oneTapSection">
+                <button class="one-tap-btn" id="oneTapBtn" disabled>
+                    ⚡ One-Tap Clean
+                </button>
+                <div class="one-tap-subtitle">Auto-detect content type and apply optimal preset</div>
+            </div>
+
+            <!-- Visualization -->
+            <div class="viz-container" id="vizContainer">
+                <div class="viz-header">
+                    <div class="viz-title" id="vizTitle">Waveform</div>
+                    <div class="viz-tabs">
+                        <button class="viz-tab active" data-viz="waveform">Waveform</button>
+                        <button class="viz-tab" data-viz="spectrogram">Spectrogram</button>
+                        <button class="viz-tab" data-viz="spectrum">Spectrum</button>
+                    </div>
+                </div>
+                <div class="viz-grid" id="vizWaveformGrid">
+                    <div class="viz-panel">
+                        <div class="viz-label">Original</div>
+                        <canvas class="viz-canvas" id="canvasOriginal"></canvas>
+                    </div>
+                    <div class="viz-panel">
+                        <div class="viz-label">Processed</div>
+                        <canvas class="viz-canvas" id="canvasProcessed"></canvas>
+                    </div>
+                </div>
+                <div class="viz-grid" id="vizSpectrogramGrid" style="display:none">
+                    <div class="viz-panel">
+                        <div class="viz-label">Original</div>
+                        <canvas class="viz-canvas spectrogram-canvas" id="spectrogramOriginal"></canvas>
+                    </div>
+                    <div class="viz-panel">
+                        <div class="viz-label">Processed</div>
+                        <canvas class="viz-canvas spectrogram-canvas" id="spectrogramProcessed"></canvas>
+                    </div>
+                </div>
+                <div id="vizSpectrumPanel" style="display:none">
+                    <div class="viz-panel">
+                        <div class="viz-label">Real-time Spectrum</div>
+                        <canvas class="viz-canvas" id="canvasSpectrum"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress -->
+            <div class="progress-container" id="progressBox">
+                <div class="progress-header">
+                    <div class="progress-title">
+                        <div class="spinner"></div>
+                        <span id="progressLabel">Processing...</span>
+                    </div>
+                    <div class="progress-percent" id="progressPct">0%</div>
+                </div>
+                <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                <div class="progress-detail">
+                    <div class="progress-stage" id="progressStage">Initializing</div>
+                    <div class="progress-eta" id="progressEta"></div>
+                </div>
+            </div>
+
+            <!-- Batch Container -->
+            <div class="batch-container" id="batchBox">
+                <div class="batch-header">
+                    <span class="batch-title">Batch Queue</span>
+                    <div class="batch-controls">
+                        <button class="btn-icon" id="batchPauseBtn" title="Pause">⏸</button>
+                        <button class="btn-icon" id="batchCancelBtn" title="Cancel all">✕</button>
+                    </div>
+                </div>
+                <div id="batchItems"></div>
+            </div>
+
+            <!-- Player -->
+            <div class="player" id="playerSection">
+                <div class="player-row">
+                    <button class="play-btn" id="playBtn" title="Play/Pause">▶</button>
+                    <div class="player-timeline">
+                        <div class="timeline-bar" id="timeline">
+                            <div class="timeline-progress" id="timelineProg"></div>
+                        </div>
+                        <div class="player-time">
+                            <span id="curTime">0:00</span>
+                            <span id="totTime">0:00</span>
+                        </div>
+                    </div>
+                    <div class="ab-toggle">
+                        <button class="ab-btn active" data-ab="original">A</button>
+                        <button class="ab-btn" data-ab="processed">B</button>
+                    </div>
+                    <div class="volume-control">
+                        <span class="volume-icon" id="volumeIcon">🔊</span>
+                        <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="100">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="actions-bar">
+                <button class="btn btn-primary" id="processBtn" disabled>Process</button>
+                <button class="btn btn-secondary" id="exportBtn" disabled>Export</button>
+                <button class="btn btn-secondary" id="batchAddBtn" disabled>+ Add to Batch</button>
+                <button class="btn btn-secondary" id="resetBtn">Reset</button>
+            </div>
+
+            <!-- Mobile Controls (shown on small screens) -->
+            <div class="mobile-controls" id="mobileControls">
+                <div class="section-title">Quick Controls</div>
+                <div class="preset-grid" id="mobilePresets"></div>
+                <div class="section-title">Processing</div>
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span class="slider-label">Noise Reduction</span>
+                        <span class="slider-value" id="mv_noise">75%</span>
+                    </div>
+                    <input type="range" class="slider" id="ms_noise" min="0" max="100" value="75">
+                </div>
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span class="slider-label">Voice Enhancement</span>
+                        <span class="slider-value" id="mv_enhance">50%</span>
+                    </div>
+                    <input type="range" class="slider" id="ms_enhance" min="0" max="100" value="50">
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Sidebar: Controls -->
+        <aside class="sidebar sidebar-right" id="rightSidebar">
+            <div class="section-title">Export Presets</div>
+            <div class="preset-grid" id="presetGrid">
+                <button class="preset-btn active" data-preset="crystal">
+                    <div class="preset-name">Crystal Voice</div>
+                    <div class="preset-desc">Voiceover, audiobook</div>
+                </button>
+                <button class="preset-btn" data-preset="podcast">
+                    <div class="preset-name">Podcast Pro</div>
+                    <div class="preset-desc">-16 LUFS broadcast</div>
+                </button>
+                <button class="preset-btn" data-preset="interview">
+                    <div class="preset-name">Interview</div>
+                    <div class="preset-desc">Natural, minimal</div>
+                </button>
+                <button class="preset-btn" data-preset="film">
+                    <div class="preset-name">Film Dialogue</div>
+                    <div class="preset-desc">-24 LUFS cinema</div>
+                </button>
+                <button class="preset-btn" data-preset="forensic">
+                    <div class="preset-name">Forensic</div>
+                    <div class="preset-desc">Preserve + audit</div>
+                </button>
+                <button class="preset-btn" data-preset="camera">
+                    <div class="preset-name">Camera Audio</div>
+                    <div class="preset-desc">Wind + stabilize</div>
+                </button>
+            </div>
+
+            <div class="section-title">Gain Staging</div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Input Gain</span>
+                    <span class="slider-value" id="v_inputGain">0 dB</span>
+                </div>
+                <input type="range" class="slider" id="s_inputGain" min="-12" max="24" value="0" step="0.5">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Output Gain</span>
+                    <span class="slider-value" id="v_outputGain">0 dB</span>
+                </div>
+                <input type="range" class="slider" id="s_outputGain" min="-12" max="12" value="0" step="0.5">
+            </div>
+
+            <div class="section-title">Noise Reduction</div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Reduction Amount</span>
+                    <span class="slider-value" id="v_noiseReduction">75%</span>
+                </div>
+                <input type="range" class="slider" id="s_noiseReduction" min="0" max="100" value="75">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Spectral Floor</span>
+                    <span class="slider-value" id="v_spectralFloor">-80 dB</span>
+                </div>
+                <input type="range" class="slider" id="s_spectralFloor" min="-100" max="-40" value="-80">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Gate Threshold</span>
+                    <span class="slider-value" id="v_gateThreshold">-40 dB</span>
+                </div>
+                <input type="range" class="slider" id="s_gateThreshold" min="-80" max="-10" value="-40">
+            </div>
+
+            <div class="section-title">Voice Enhancement</div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Presence (3kHz)</span>
+                    <span class="slider-value" id="v_presence">3 dB</span>
+                </div>
+                <input type="range" class="slider" id="s_presence" min="-6" max="12" value="3" step="0.5">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Warmth (200Hz)</span>
+                    <span class="slider-value" id="v_warmth">2 dB</span>
+                </div>
+                <input type="range" class="slider" id="s_warmth" min="-6" max="12" value="2" step="0.5">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Air (10kHz)</span>
+                    <span class="slider-value" id="v_air">2 dB</span>
+                </div>
+                <input type="range" class="slider" id="s_air" min="-6" max="12" value="2" step="0.5">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">HPF Frequency</span>
+                    <span class="slider-value" id="v_hpfFreq">80 Hz</span>
+                </div>
+                <input type="range" class="slider" id="s_hpfFreq" min="20" max="300" value="80">
+            </div>
+
+            <div class="section-title">Dynamics</div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Gate Attack</span>
+                    <span class="slider-value" id="v_gateAttack">1 ms</span>
+                </div>
+                <input type="range" class="slider" id="s_gateAttack" min="0.1" max="50" value="1" step="0.1">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Gate Release</span>
+                    <span class="slider-value" id="v_gateRelease">50 ms</span>
+                </div>
+                <input type="range" class="slider" id="s_gateRelease" min="10" max="500" value="50">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">De-Esser Threshold</span>
+                    <span class="slider-value" id="v_deEsserThreshold">-20 dB</span>
+                </div>
+                <input type="range" class="slider" id="s_deEsserThreshold" min="-60" max="0" value="-20">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">De-Reverb Amount</span>
+                    <span class="slider-value" id="v_deReverbAmount">50%</span>
+                </div>
+                <input type="range" class="slider" id="s_deReverbAmount" min="0" max="100" value="50">
+            </div>
+
+            <div class="section-title">ML & Advanced</div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">ML Confidence</span>
+                    <span class="slider-value" id="v_mlConfidence">0.5</span>
+                </div>
+                <input type="range" class="slider" id="s_mlConfidence" min="0" max="1" value="0.5" step="0.05">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Harmonic Weight</span>
+                    <span class="slider-value" id="v_harmonicWeight">30%</span>
+                </div>
+                <input type="range" class="slider" id="s_harmonicWeight" min="0" max="100" value="30">
+            </div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Spectral Tilt</span>
+                    <span class="slider-value" id="v_spectralTilt">3.0</span>
+                </div>
+                <input type="range" class="slider" id="s_spectralTilt" min="1" max="6" value="3" step="0.1">
+            </div>
+
+            <div class="section-title">Options</div>
+            <div class="toggle-row">
+                <span class="toggle-label">LUFS Normalization</span>
+                <div class="toggle on" id="t_lufsNorm" data-key="lufsNorm"></div>
+            </div>
+            <div class="toggle-row">
+                <span class="toggle-label">True Peak Limiting</span>
+                <div class="toggle on" id="t_truePeak" data-key="truePeak"></div>
+            </div>
+            <div class="toggle-row">
+                <span class="toggle-label">Auto Noise Profile</span>
+                <div class="toggle on" id="t_autoProfile" data-key="autoProfile"></div>
+            </div>
+            <div class="toggle-row">
+                <span class="toggle-label">ML Separation</span>
+                <div class="toggle on" id="t_mlSeparation" data-key="mlSeparation"></div>
+            </div>
+            <div class="toggle-row">
+                <span class="toggle-label">Voiceprint Matching</span>
+                <div class="toggle" id="t_voiceprint" data-key="voiceprint"></div>
+            </div>
+
+            <div class="section-title">Voiceprint Enrollment</div>
+            <div class="voiceprint-section">
+                <div class="voiceprint-status" id="voiceprintStatus">No voiceprint enrolled</div>
+                <button class="voiceprint-btn" id="voiceprintBtn">Enroll Voiceprint (10s recording)</button>
+            </div>
+
+            <div class="section-title">Target LUFS</div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span class="slider-label">Target Loudness</span>
+                    <span class="slider-value" id="v_targetLUFS">-16 LUFS</span>
+                </div>
+                <input type="range" class="slider" id="s_targetLUFS" min="-30" max="-6" value="-16">
+            </div>
+
+            <div class="section-title">Audio Stats</div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stNoise">--</div>
+                    <div class="stat-label">Noise Floor</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stPeak">--</div>
+                    <div class="stat-label">Peak</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stLufs">--</div>
+                    <div class="stat-label">LUFS</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stSnr">--</div>
+                    <div class="stat-label">SNR</div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Export Menu -->
+    <div class="export-menu" id="exportMenu">
+        <div class="export-section-title">Lossless</div>
+        <div class="export-opt" data-format="wav16">WAV 16-bit <span class="export-detail">PCM Lossless</span></div>
+        <div class="export-opt" data-format="wav24">WAV 24-bit <span class="export-detail">Studio Quality</span></div>
+        <div class="export-opt" data-format="flac">FLAC <span class="export-detail">Compressed Lossless</span></div>
+        <div class="export-section-title">Lossy</div>
+        <div class="export-opt" data-format="mp3_320">MP3 320kbps <span class="export-detail">High Quality</span></div>
+        <div class="export-opt" data-format="mp3_192">MP3 192kbps <span class="export-detail">Standard</span></div>
+        <div class="export-opt" data-format="mp3_128">MP3 128kbps <span class="export-detail">Compact</span></div>
+        <div class="export-section-title">Batch</div>
+        <div class="export-opt" data-format="batch_zip">ZIP Archive <span class="export-detail">All files + manifest</span></div>
+    </div>
+
+    <!-- Voiceprint Enrollment Modal -->
+    <div class="modal-overlay" id="voiceprintModal">
+        <div class="modal">
+            <div class="modal-title">Voiceprint Enrollment</div>
+            <div class="modal-body">
+                <p>Record 10 seconds of the target speaker's voice. Speak naturally — read aloud or talk freely.</p>
+                <p style="margin-top:0.5rem; font-size:0.7rem; color:var(--text-muted)">The 192-dim speaker embedding will be extracted and stored encrypted in IndexedDB. Used for speaker-targeted isolation.</p>
+                <div style="margin-top:1rem; text-align:center;">
+                    <div id="enrollTimer" style="font-family:var(--font-mono); font-size:1.5rem; color:var(--accent-primary); margin-bottom:0.5rem;">10.0s</div>
+                    <canvas id="enrollWaveform" width="380" height="60" style="width:100%; background:var(--bg-input); border-radius:var(--radius-sm);"></canvas>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="enrollCancelBtn">Cancel</button>
+                <button class="btn btn-primary" id="enrollStartBtn">Start Recording</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal">
+            <div class="modal-title">Settings</div>
+            <div class="modal-body">
+                <div class="toggle-row">
+                    <span class="toggle-label">GPU Acceleration</span>
+                    <div class="toggle on" id="t_gpuAccel" data-key="gpuAccel"></div>
+                </div>
+                <div class="toggle-row">
+                    <span class="toggle-label">SharedArrayBuffer (zero-copy)</span>
+                    <div class="toggle on" id="t_sharedBuffer" data-key="sharedBuffer"></div>
+                </div>
+                <div class="toggle-row">
+                    <span class="toggle-label">4x Oversampling (HQ mode)</span>
+                    <div class="toggle on" id="t_oversample" data-key="oversample"></div>
+                </div>
+                <div class="slider-group" style="margin-top:0.75rem">
+                    <div class="slider-header">
+                        <span class="slider-label">FFT Size</span>
+                        <span class="slider-value" id="v_fftSize">4096</span>
+                    </div>
+                    <input type="range" class="slider" id="s_fftSize" min="0" max="3" value="1" step="1">
+                </div>
+                <div class="slider-group">
+                    <div class="slider-header">
+                        <span class="slider-label">Worker Threads</span>
+                        <span class="slider-value" id="v_workerCount">Auto</span>
+                    </div>
+                    <input type="range" class="slider" id="s_workerCount" min="1" max="16" value="0" step="1">
+                </div>
+                <div style="margin-top:0.75rem; padding-top:0.5rem; border-top:1px solid var(--border);">
+                    <div style="font-size:0.65rem; color:var(--text-muted); margin-bottom:0.3rem;">Storage</div>
+                    <div style="display:flex; gap:0.5rem;">
+                        <button class="btn btn-secondary" id="clearCacheBtn" style="font-size:0.65rem;">Clear Model Cache</button>
+                        <button class="btn btn-danger" id="clearAllBtn" style="font-size:0.65rem;">Clear All Data</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" id="settingsCloseBtn">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Script (ES Module) -->
+    <script type="module" src="js/app.js"></script>
+    <!-- Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
+      }
+    </script>
+</body>
+</html>
