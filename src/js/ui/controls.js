@@ -638,16 +638,29 @@ export class ControlsManager {
         error: '\u2717',      // cross
       };
 
-      const progressBar = item.status === 'processing' && item.progress != null
-        ? `<div class="batch-item__progress" style="width:${item.progress}%"></div>`
-        : '';
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'batch-item__icon';
+      iconSpan.textContent = iconMap[item.status] || '\u25CB';
 
-      el.innerHTML = `
-        <span class="batch-item__icon">${iconMap[item.status] || '\u25CB'}</span>
-        <span class="batch-item__name" title="${this._escapeHTML(item.name)}">${this._escapeHTML(item.name)}</span>
-        <span class="batch-item__status">${item.status}</span>
-        ${progressBar}
-      `;
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'batch-item__name';
+      nameSpan.title = item.name;
+      nameSpan.textContent = item.name;
+
+      const statusSpan = document.createElement('span');
+      statusSpan.className = 'batch-item__status';
+      statusSpan.textContent = item.status;
+
+      el.appendChild(iconSpan);
+      el.appendChild(nameSpan);
+      el.appendChild(statusSpan);
+
+      if (item.status === 'processing' && item.progress != null) {
+        const progressBar = document.createElement('div');
+        progressBar.className = 'batch-item__progress';
+        progressBar.style.width = `${item.progress}%`;
+        el.appendChild(progressBar);
+      }
 
       container.appendChild(el);
     }
@@ -660,7 +673,7 @@ export class ControlsManager {
   /**
    * Show a modal dialog.
    * @param {string} title - Modal title
-   * @param {string} body - Modal body (can contain HTML)
+   * @param {string|HTMLElement} body - Modal body (string or DOM element)
    * @param {Array<{label: string, className?: string, onClick: function}>} actions - Action buttons
    */
   showModal(title, body, actions) {
@@ -671,7 +684,14 @@ export class ControlsManager {
     const actionsEl = this._modalEl.querySelector('[data-modal-actions]');
 
     if (titleEl) titleEl.textContent = title;
-    if (bodyEl) bodyEl.innerHTML = body;
+    if (bodyEl) {
+      bodyEl.innerHTML = '';
+      if (typeof body === 'string') {
+        bodyEl.textContent = body;
+      } else if (body instanceof HTMLElement) {
+        bodyEl.appendChild(body);
+      }
+    }
 
     if (actionsEl) {
       actionsEl.innerHTML = '';
