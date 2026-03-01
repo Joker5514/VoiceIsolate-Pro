@@ -48,8 +48,11 @@ function App() {
             {/* Playback Controls */}
             <div className="bg-surface rounded-lg p-6">
               <div className="flex items-center gap-4">
-                <button className="w-12 h-12 rounded-full bg-accent hover:bg-accent2 flex items-center justify-center transition">
-                  ▶️
+                <button
+                  aria-label="Play"
+                  className="w-12 h-12 rounded-full bg-accent hover:bg-accent2 flex items-center justify-center transition focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                >
+                  <span aria-hidden="true">▶️</span>
                 </button>
                 <div className="flex-1 h-2 bg-surface2 rounded-full">
                   <div className="h-full bg-accent rounded-full" style={{width: '0%'}}></div>
@@ -94,15 +97,16 @@ function App() {
               ].map((slider, idx) => (
                 <div key={idx} className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <label className="text-text">{slider.label}</label>
+                    <label htmlFor={`slider-${idx}`} className="text-text">{slider.label}</label>
                     <span className="text-accent font-medium">{slider.value}</span>
                   </div>
                   <input 
+                    id={`slider-${idx}`}
                     type="range" 
                     min="0" 
                     max="100" 
                     defaultValue={slider.value}
-                    className="w-full h-2 bg-surface2 rounded-lg appearance-none cursor-pointer accent-accent"
+                    className="w-full h-2 bg-surface2 rounded-lg appearance-none cursor-pointer accent-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                   />
                 </div>
               ))}
