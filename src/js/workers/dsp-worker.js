@@ -19,14 +19,14 @@
 /* ================================================================
  * Constants
  * ================================================================ */
-var TWO_PI   = 2.0 * Math.PI;
-var EPSILON  = 1e-10;
-var LOG10_20 = 20.0 / Math.LN10;
+const TWO_PI   = 2.0 * Math.PI;
+const EPSILON  = 1e-10;
+const LOG10_20 = 20.0 / Math.LN10;
 
 /* ================================================================
  * Stage Definitions
  * ================================================================ */
-var STAGE_NAMES = [
+const STAGE_NAMES = [
   /* 0  */ 'Input Validation & Preparation',
   /* 1  */ 'Peak Normalization',
   /* 2  */ 'High-Pass Filter',
@@ -47,7 +47,7 @@ var STAGE_NAMES = [
   /* 17 */ 'True Peak Limiter'
 ];
 
-var TOTAL_STAGES = STAGE_NAMES.length;
+const TOTAL_STAGES = STAGE_NAMES.length;
 
 /* ================================================================
  * Utility Functions
