@@ -47,7 +47,7 @@ var STAGE_NAMES = [
   /* 17 */ 'True Peak Limiter'
 ];
 
-var TOTAL_STAGES = STAGE_NAMES.length;
+const TOTAL_STAGES = STAGE_NAMES.length;
 
 /* ================================================================
  * Utility Functions
