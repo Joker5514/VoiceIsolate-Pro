@@ -144,6 +144,7 @@ export function fftInPlace(
 export class FFTEngine {
   readonly fftSize: number;
   readonly hopSize: number;
+  readonly sampleRate: number;
   private window: Float32Array;
   private overlapBuffer: Float32Array;
   private bitReverseTable: Uint16Array;
@@ -153,11 +154,12 @@ export class FFTEngine {
   private olaScale: number;
 
   constructor(config: AudioConfig) {
-    const { fftSize, hopSize, windowFunction } = config;
+    const { fftSize, hopSize, windowFunction, sampleRate } = config;
     if (fftSize !== 2048) console.warn(`FFTEngine: fftSize=${fftSize}, optimised for 2048`);
 
     this.fftSize = fftSize;
     this.hopSize = hopSize;
+    this.sampleRate = sampleRate;
     this.overlapBuffer = new Float32Array(fftSize);
     this.bitReverseTable = buildBitReverseTable(fftSize);
 
@@ -264,9 +266,9 @@ export class FFTEngine {
     return power;
   }
 
-  /** Convert bin index to frequency in Hz */
+  /** Convert bin index to frequency in Hz using the engine's own sample rate */
   binToHz(bin: number): number {
-    return (bin * this.hopSize) / this.fftSize; // placeholder – callers pass sampleRate
+    return (bin * this.sampleRate) / this.fftSize;
   }
 
   binToFreq(bin: number, sampleRate: number): number {

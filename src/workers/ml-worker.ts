@@ -19,10 +19,13 @@ let vadSession: ort.InferenceSession;
 
 let vadWorkletPort: MessagePort | null = null;
 
+// Use BASE_URL so model paths resolve correctly when deployed to a sub-path
+// (e.g. GitHub Pages at /VoiceIsolate-Pro/). Vite replaces import.meta.env.BASE_URL at build time.
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '');
 const MODELS = {
-  DEMUCS: '/models/demucs_v4_quant.onnx',
-  ECAPA: '/models/ecapa_tdnn.onnx',
-  VAD: '/models/silero_vad.onnx'
+  DEMUCS: `${BASE}/models/demucs_v4_quant.onnx`,
+  ECAPA:  `${BASE}/models/ecapa_tdnn.onnx`,
+  VAD:    `${BASE}/models/silero_vad.onnx`,
 };
 
 // Silero VAD state size — v4: [2,1,128]=256 floats; v5: [2,1,64]=128 floats

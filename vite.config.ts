@@ -5,6 +5,11 @@ import { resolve } from 'path';
 export default defineConfig({
   base: '/VoiceIsolate-Pro/',
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, './src'),
+    },
+  },
   build: {
     outDir: 'dist',
     rollupOptions: {
