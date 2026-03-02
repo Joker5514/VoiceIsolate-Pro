@@ -1188,23 +1188,22 @@ function stage17_truePeakLimiter(buffer, config) {
 
   // True peak detection via 4x oversampling (linear interpolation for efficiency)
   // This finds inter-sample peaks that exceed the ceiling
-  function truePeakScan(buf, start, len) {
-    var peak = 0.0;
-    for (var i = start; i < start + len && i < buf.length - 1; i++) {
-      var s0 = Math.abs(buf[i]);
-      if (s0 > peak) peak = s0;
-      // 4x oversampled check via cubic Hermite interpolation estimate
-      var s1 = Math.abs(buf[i + 1]);
-      // Mid-point estimate
-      var mid = Math.abs((buf[i] + buf[i + 1]) * 0.5);
-      if (mid > peak) peak = mid;
-      // Quarter-point estimates
-      var q1 = Math.abs(buf[i] * 0.75 + buf[i + 1] * 0.25);
-      if (q1 > peak) peak = q1;
-      var q3 = Math.abs(buf[i] * 0.25 + buf[i + 1] * 0.75);
-      if (q3 > peak) peak = q3;
-    }
-    return peak;
+  function getTruePeak(buf, i) {
+    if (i >= buf.length - 1) return Math.abs(buf[buf.length - 1]);
+    var s0 = Math.abs(buf[i]);
+    var s1 = Math.abs(buf[i + 1]);
+    // Mid-point estimate
+    var mid = Math.abs((buf[i] + buf[i + 1]) * 0.5);
+    // Quarter-point estimates
+    var q1 = Math.abs(buf[i] * 0.75 + buf[i + 1] * 0.25);
+    var q3 = Math.abs(buf[i] * 0.25 + buf[i + 1] * 0.75);
+
+    var p = s0;
+    if (s1 > p) p = s1;
+    if (mid > p) p = mid;
+    if (q1 > p) p = q1;
+    if (q3 > p) p = q3;
+    return p;
   }
 
   // Compute gain envelope with lookahead
@@ -1215,13 +1214,49 @@ function stage17_truePeakLimiter(buffer, config) {
 
   var currentGain = 1.0;
 
+  // Initialize the first window
+  var windowPeak = 0.0;
+  var windowPeakIdx = -1;
+  var initialEndIdx = Math.min(lookaheadSamples, buffer.length);
+  for (var k = 0; k < initialEndIdx; k++) {
+    var p = getTruePeak(buffer, k);
+    if (p >= windowPeak) {
+      windowPeak = p;
+      windowPeakIdx = k;
+    }
+  }
+
   for (var i2 = 0; i2 < buffer.length; i2++) {
-    // Look ahead for peaks
-    var peakInWindow = truePeakScan(buffer, i2, lookaheadSamples);
+    // Look ahead for peaks using an optimized sliding window tracker
+    // Reduces O(N*K) scanning to ~O(N) operations
+
+    // Add new sample to the window
+    var newSampleIdx = i2 + lookaheadSamples - 1;
+    if (newSampleIdx < buffer.length && newSampleIdx > windowPeakIdx) {
+      var newPeak = getTruePeak(buffer, newSampleIdx);
+      if (newPeak >= windowPeak) {
+        windowPeak = newPeak;
+        windowPeakIdx = newSampleIdx;
+      }
+    }
+
+    if (windowPeakIdx < i2) {
+      // The previous peak fell out of the window, rescan the current window
+      windowPeak = 0.0;
+      var endIdx = Math.min(i2 + lookaheadSamples, buffer.length);
+      for (var k = i2; k < endIdx; k++) {
+        var p = getTruePeak(buffer, k);
+        if (p >= windowPeak) {
+          windowPeak = p;
+          windowPeakIdx = k;
+        }
+      }
+    }
+
     var targetGain = 1.0;
 
-    if (peakInWindow > ceilingLin) {
-      targetGain = ceilingLin / peakInWindow;
+    if (windowPeak > ceilingLin) {
+      targetGain = ceilingLin / windowPeak;
     }
 
     // Smooth gain: instant attack, slow release
