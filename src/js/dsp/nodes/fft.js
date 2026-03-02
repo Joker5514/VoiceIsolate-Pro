@@ -357,8 +357,9 @@ export default class FFTNode {
     }
 
     // Process complete frames
-    while (this._inputBuffer.length >= N) {
-      const frame = this._inputBuffer.subarray(0, N);
+    let inputOffset = 0;
+    while (this._inputBuffer.length - inputOffset >= N) {
+      const frame = this._inputBuffer.subarray(inputOffset, inputOffset + N);
       const spectrum = this.forward(frame);
       const { real, imag } = this.fromMagnitudePhase(spectrum.magnitude, spectrum.phase);
       const reconstructed = this.inverse(real, imag);
@@ -372,7 +373,12 @@ export default class FFTNode {
       this._outputPosition += hop;
 
       // Advance input buffer by hop size
-      this._inputBuffer = this._inputBuffer.slice(hop);
+      inputOffset += hop;
+    }
+
+    // Keep remaining samples for the next block
+    if (inputOffset > 0) {
+      this._inputBuffer = this._inputBuffer.slice(inputOffset);
     }
 
     // Extract output samples corresponding to the input length

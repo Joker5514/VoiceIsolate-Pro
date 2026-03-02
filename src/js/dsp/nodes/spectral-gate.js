@@ -180,8 +180,9 @@ export default class SpectralGateNode {
     }
 
     // Process complete frames
-    while (this._inputBuffer.length >= N) {
-      const frame = this._inputBuffer.subarray(0, N);
+    let inputOffset = 0;
+    while (this._inputBuffer.length - inputOffset >= N) {
+      const frame = this._inputBuffer.subarray(inputOffset, inputOffset + N);
       const spectrum = this._fft.forward(frame);
 
       // Lookahead: queue frames and process delayed
@@ -206,7 +207,12 @@ export default class SpectralGateNode {
         this._outputWritePos += hop;
       }
 
-      this._inputBuffer = this._inputBuffer.slice(hop);
+      inputOffset += hop;
+    }
+
+    // Keep remaining samples for the next block
+    if (inputOffset > 0) {
+      this._inputBuffer = this._inputBuffer.slice(inputOffset);
     }
 
     // Extract output
