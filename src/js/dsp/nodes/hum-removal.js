@@ -24,9 +24,11 @@ export default class HumRemovalNode {
 
     // Detection state
     this._detectedFrequency = null;
-    this._detectionBuffer = new Float32Array(0);
-    this._detectionComplete = false;
     this._detectionSamples = Math.floor(sampleRate * 0.5); // 500ms for detection
+    this._detectionCapacity = this._detectionSamples;
+    this._detectionBuffer = new Float32Array(this._detectionCapacity);
+    this._detectionLength = 0;
+    this._detectionComplete = false;
 
     // FFT for frequency detection
     this._fft = new FFTNode(sampleRate, blockSize);
@@ -187,17 +189,27 @@ export default class HumRemovalNode {
 
     // Auto-detection phase
     if (this._params.mainsFrequency === 'auto' && !this._detectionComplete) {
-      // Accumulate audio for detection
-      const newBuf = new Float32Array(this._detectionBuffer.length + input.length);
-      newBuf.set(this._detectionBuffer);
-      newBuf.set(input, this._detectionBuffer.length);
-      this._detectionBuffer = newBuf;
+      // Accumulate audio for detection using amortized growth
+      const required = this._detectionLength + input.length;
+      if (this._detectionCapacity < required) {
+        const newCap = Math.max(required, this._detectionCapacity * 2);
+        const newBuf = new Float32Array(newCap);
+        newBuf.set(this._detectionBuffer.subarray(0, this._detectionLength));
+        this._detectionBuffer = newBuf;
+        this._detectionCapacity = newCap;
+      }
+      this._detectionBuffer.set(input, this._detectionLength);
+      this._detectionLength += input.length;
 
-      if (this._detectionBuffer.length >= this._detectionSamples) {
-        this._detectedFrequency = this._detectMainsFrequency(this._detectionBuffer);
+      if (this._detectionLength >= this._detectionSamples) {
+        this._detectedFrequency = this._detectMainsFrequency(
+          this._detectionBuffer.subarray(0, this._detectionLength)
+        );
         this._buildFilterCascade(this._detectedFrequency);
         this._detectionComplete = true;
-        this._detectionBuffer = new Float32Array(0); // Free memory
+        this._detectionBuffer = null; // Free memory
+        this._detectionLength = 0;
+        this._detectionCapacity = 0;
       }
     } else if (!this._filtersBuilt) {
       // Fixed frequency mode
@@ -260,7 +272,9 @@ export default class HumRemovalNode {
         // Reset detection
         this._detectionComplete = false;
         this._filtersBuilt = false;
-        this._detectionBuffer = new Float32Array(0);
+        this._detectionCapacity = this._detectionSamples;
+        this._detectionBuffer = new Float32Array(this._detectionCapacity);
+        this._detectionLength = 0;
       } else if (name === 'harmonics' || name === 'qFactor') {
         // Rebuild filters with new params
         const freq = this._detectedFrequency ||
@@ -286,7 +300,9 @@ export default class HumRemovalNode {
       filter.y2 = 0;
     }
 
-    this._detectionBuffer = new Float32Array(0);
+    this._detectionCapacity = this._detectionSamples;
+    this._detectionBuffer = new Float32Array(this._detectionCapacity);
+    this._detectionLength = 0;
 
     if (this._params.mainsFrequency === 'auto') {
       this._detectionComplete = false;

@@ -36,8 +36,10 @@ export default class SpectralSubtractionNode {
     // Internal noise estimate (updated if no external profile)
     this._internalNoise = null;
 
-    // Overlap-add buffers
-    this._inputBuffer = new Float32Array(0);
+    // Overlap-add buffers (pre-allocated with amortized growth)
+    this._inputCapacity = this._fftSize * 4;
+    this._inputBuffer = new Float32Array(this._inputCapacity);
+    this._inputLength = 0;
     this._outputBuffer = new Float32Array(0);
     this._outputReadPos = 0;
     this._outputWritePos = 0;
@@ -179,11 +181,17 @@ export default class SpectralSubtractionNode {
     const N = this._fftSize;
     const hop = this._hopSize;
 
-    // Append input to buffer
-    const newInput = new Float32Array(this._inputBuffer.length + input.length);
-    newInput.set(this._inputBuffer);
-    newInput.set(input, this._inputBuffer.length);
-    this._inputBuffer = newInput;
+    // Append input to buffer using amortized growth
+    const required = this._inputLength + input.length;
+    if (this._inputCapacity < required) {
+      const newCap = Math.max(required, this._inputCapacity * 2, N * 4);
+      const newBuffer = new Float32Array(newCap);
+      newBuffer.set(this._inputBuffer.subarray(0, this._inputLength));
+      this._inputBuffer = newBuffer;
+      this._inputCapacity = newCap;
+    }
+    this._inputBuffer.set(input, this._inputLength);
+    this._inputLength += input.length;
 
     // Ensure output buffer is large enough
     const requiredOut = this._outputWritePos + input.length + N * 2;
@@ -195,7 +203,7 @@ export default class SpectralSubtractionNode {
 
     // Process complete frames
     let inputOffset = 0;
-    while (this._inputBuffer.length - inputOffset >= N) {
+    while (this._inputLength - inputOffset >= N) {
       const frame = new Float32Array(N);
       frame.set(this._inputBuffer.subarray(inputOffset, inputOffset + N));
 
@@ -210,9 +218,13 @@ export default class SpectralSubtractionNode {
       inputOffset += hop;
     }
 
-    // Keep remaining samples for the next block
+    // Compact remaining samples to the front of the buffer
     if (inputOffset > 0) {
-      this._inputBuffer = this._inputBuffer.slice(inputOffset);
+      const remaining = this._inputLength - inputOffset;
+      if (remaining > 0) {
+        this._inputBuffer.copyWithin(0, inputOffset, this._inputLength);
+      }
+      this._inputLength = remaining;
     }
 
     // Extract output
@@ -294,7 +306,7 @@ export default class SpectralSubtractionNode {
    * Reset internal state.
    */
   reset() {
-    this._inputBuffer = new Float32Array(0);
+    this._inputLength = 0;
     this._outputBuffer = new Float32Array(0);
     this._outputReadPos = 0;
     this._outputWritePos = 0;
