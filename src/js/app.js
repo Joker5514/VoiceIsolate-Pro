@@ -168,10 +168,20 @@ const config = {
 let db, modelManager, visualizer, controls;
 
 /* ===================================================================
- * DOM References
+ * DOM References & Helpers
  * =================================================================== */
 
 const $ = (id) => document.getElementById(id);
+
+function escapeHTML(str) {
+  if (typeof str !== 'string') return str;
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 /* ===================================================================
  * Initialization
@@ -1690,8 +1700,8 @@ function updateBatchUI() {
     const el = document.createElement('div');
     el.className = `batch-item ${item.status}`;
     el.innerHTML = `
-      <span class="batch-name">${item.file.name}</span>
-      <span class="batch-status">${item.status}</span>
+      <span class="batch-name" title="${escapeHTML(item.file.name)}">${escapeHTML(item.file.name)}</span>
+      <span class="batch-status">${escapeHTML(item.status)}</span>
     `;
     container.appendChild(el);
   }
@@ -1726,9 +1736,9 @@ function addForensicEntry(operation, details) {
   const row = document.createElement('div');
   row.className = 'log-entry';
   row.innerHTML = `
-    <span class="log-time">${entry.timestamp.split('T')[1].split('.')[0]}</span>
-    <span class="log-op">${operation}</span>
-    <span class="log-detail">${details}</span>
+    <span class="log-time">${escapeHTML(entry.timestamp.split('T')[1].split('.')[0])}</span>
+    <span class="log-op">${escapeHTML(operation)}</span>
+    <span class="log-detail">${escapeHTML(details)}</span>
   `;
   logEl.appendChild(row);
   logEl.scrollTop = logEl.scrollHeight;
