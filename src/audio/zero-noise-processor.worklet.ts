@@ -261,7 +261,7 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    const t0 = currentTime * 1000;
+    const t0 = performance.now();
     const blockSize = input[0].length; // 128
 
     // Accumulate into ring buffer
@@ -296,7 +296,7 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
     this.s.olaRight.fill(0, this.s.olaRight.length - blockSize);
 
     // Metrics
-    const elapsed = currentTime * 1000 - t0;
+    const elapsed = performance.now() - t0;
     this.s.avgProcMs = 0.95 * this.s.avgProcMs + 0.05 * elapsed;
     if (elapsed > this.s.peakProcMs) this.s.peakProcMs = elapsed;
     this.s.frameCount++;

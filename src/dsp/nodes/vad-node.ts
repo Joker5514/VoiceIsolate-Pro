@@ -1,7 +1,11 @@
-import { PCMBuffer, DSPNode } from '../types';
-
-export class VADNode implements DSPNode {
-  public name = 'VoiceActivityGate';
+/**
+ * Standalone VAD node that communicates with the ML worker via a direct MessageChannel.
+ * This is NOT part of the main DSP pipeline (pipeline.ts has its own energy-based VADNode);
+ * use this when you need ML-backed VAD with smoothed gain gating outside the pipeline.
+ */
+export class VADNode {
+  public readonly id = 'vad-node-ml';
+  public readonly name = 'VoiceActivityGate';
   public bypass = false;
 
   private workerPort: MessagePort;
@@ -50,7 +54,15 @@ export class VADNode implements DSPNode {
     // Clone the input PCM before transfer so we don't detach the caller's buffer
     const frameToProcess = new Float32Array(input);
 
-    const msg: any = {
+    const msg: {
+      taskId: string;
+      payload: {
+        task: 'vad';
+        pcm: Float32Array;
+        sr: number;
+        state?: Float32Array;
+      };
+    } = {
       taskId: `vad_${Date.now()}`,
       payload: {
         task: 'vad',
@@ -79,5 +91,9 @@ export class VADNode implements DSPNode {
     }
 
     return output;
+  }
+
+  public dispose(): void {
+    this.workerPort.close();
   }
 }
