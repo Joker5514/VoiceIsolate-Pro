@@ -631,13 +631,13 @@ function generateJobId() {
  * ================================================================ */
 
 self.onmessage = function (event) {
-  var msg = event.data;
+  const msg = event.data;
   if (!msg || !msg.type) {
     reportError(null, 'INVALID_MESSAGE', 'Message must have a type field');
     return;
   }
 
-  var payload = msg.payload || {};
+  const payload = msg.payload || {};
 
   try {
     switch (msg.type) {
@@ -648,7 +648,7 @@ self.onmessage = function (event) {
           return;
         }
 
-        var workerUrl = payload.workerUrl;
+        const workerUrl = payload.workerUrl;
         if (!workerUrl) {
           reportError(null, 'MISSING_WORKER_URL',
             'init payload must include workerUrl');
@@ -656,15 +656,15 @@ self.onmessage = function (event) {
         }
 
         // Default pool size: half of hardware concurrency, min 1, max 16
-        var requestedSize = payload.poolSize;
-        var hwConcurrency = 4; // safe default inside worker
+        const requestedSize = payload.poolSize;
+        let hwConcurrency = 4; // safe default inside worker
         try {
           if (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) {
             hwConcurrency = navigator.hardwareConcurrency;
           }
         } catch (_e) { /* navigator may not exist */ }
 
-        var size = requestedSize || Math.max(1, Math.min(16, Math.floor(hwConcurrency / 2)));
+        const size = requestedSize || Math.max(1, Math.min(16, Math.floor(hwConcurrency / 2)));
 
         initPool(workerUrl, size);
 
@@ -685,14 +685,14 @@ self.onmessage = function (event) {
           return;
         }
 
-        var id = payload.id || generateJobId();
-        var audio = payload.audio;
+        const id = payload.id || generateJobId();
+        const audio = payload.audio;
         if (!audio) {
           reportError(id, 'MISSING_AUDIO', 'process payload must include audio data');
           return;
         }
 
-        var priority = PRIORITY.CREATOR; // default
+        let priority = PRIORITY.CREATOR; // default
         if (payload.priority === 'realtime' || payload.priority === 0) {
           priority = PRIORITY.REALTIME;
         } else if (payload.priority === 'creator' || payload.priority === 1) {
@@ -701,7 +701,7 @@ self.onmessage = function (event) {
           priority = PRIORITY.BATCH;
         }
 
-        var job = createJob(id, audio, payload.config, priority, false, null);
+        const job = createJob(id, audio, payload.config, priority, false, null);
         enqueueJob(job);
         scheduleNext();
         break;
@@ -713,7 +713,7 @@ self.onmessage = function (event) {
           return;
         }
 
-        var batchPriority = PRIORITY.BATCH;
+        let batchPriority = PRIORITY.BATCH;
         if (payload.priority === 'creator' || payload.priority === 1) {
           batchPriority = PRIORITY.CREATOR;
         } else if (payload.priority === 'realtime' || payload.priority === 0) {
