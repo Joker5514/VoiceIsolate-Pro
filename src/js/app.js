@@ -1689,10 +1689,18 @@ function updateBatchUI() {
   for (const item of state.batchQueue) {
     const el = document.createElement('div');
     el.className = `batch-item ${item.status}`;
-    el.innerHTML = `
-      <span class="batch-name">${item.file.name}</span>
-      <span class="batch-status">${item.status}</span>
-    `;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'batch-name';
+    nameSpan.textContent = item.file.name;
+
+    const statusSpan = document.createElement('span');
+    statusSpan.className = 'batch-status';
+    statusSpan.textContent = item.status;
+
+    el.appendChild(nameSpan);
+    el.appendChild(statusSpan);
+
     container.appendChild(el);
   }
 
@@ -1725,11 +1733,23 @@ function addForensicEntry(operation, details) {
 
   const row = document.createElement('div');
   row.className = 'log-entry';
-  row.innerHTML = `
-    <span class="log-time">${entry.timestamp.split('T')[1].split('.')[0]}</span>
-    <span class="log-op">${operation}</span>
-    <span class="log-detail">${details}</span>
-  `;
+
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'log-time';
+  timeSpan.textContent = entry.timestamp.split('T')[1].split('.')[0];
+
+  const opSpan = document.createElement('span');
+  opSpan.className = 'log-op';
+  opSpan.textContent = operation;
+
+  const detailSpan = document.createElement('span');
+  detailSpan.className = 'log-detail';
+  detailSpan.textContent = details;
+
+  row.appendChild(timeSpan);
+  row.appendChild(opSpan);
+  row.appendChild(detailSpan);
+
   logEl.appendChild(row);
   logEl.scrollTop = logEl.scrollHeight;
 
