@@ -226,8 +226,9 @@ export default class NoiseProfileNode {
     this._inputBuffer = newBuffer;
 
     // Process complete FFT frames
-    while (this._inputBuffer.length >= this._fftSize) {
-      const frame = this._inputBuffer.subarray(0, this._fftSize);
+    let inputOffset = 0;
+    while (this._inputBuffer.length - inputOffset >= this._fftSize) {
+      const frame = this._inputBuffer.subarray(inputOffset, inputOffset + this._fftSize);
       const isInProfileWindow = this._samplesProcessed < this._profileSamples;
       const isSilent = this._isSilence(frame);
 
@@ -243,7 +244,12 @@ export default class NoiseProfileNode {
       }
 
       this._samplesProcessed += this._fftSize;
-      this._inputBuffer = this._inputBuffer.slice(this._fftSize);
+      inputOffset += this._fftSize;
+    }
+
+    // Keep remaining samples for the next block
+    if (inputOffset > 0) {
+      this._inputBuffer = this._inputBuffer.slice(inputOffset);
     }
 
     // Pass audio through unmodified
