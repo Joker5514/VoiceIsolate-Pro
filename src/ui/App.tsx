@@ -4,6 +4,7 @@ function App() {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [activeTab, setActiveTab] = useState('noise');
+  const [isDragging, setIsDragging] = useState(false);
 
   return (
     <div className="min-h-screen bg-bg text-text">
@@ -32,13 +33,28 @@ function App() {
           <div className="space-y-6">
             {/* Upload Zone */}
             <div
-              className="bg-surface rounded-lg border-2 border-dashed border-accent/30 p-12 text-center hover:border-accent/50 transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className={`rounded-lg border-2 border-dashed p-12 text-center transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                isDragging
+                  ? 'border-accent bg-accent/10'
+                  : 'bg-surface border-accent/30 hover:border-accent/50'
+              }`}
               role="button"
               tabIndex={0}
               aria-label="Upload audio or video file"
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+              onDrop={(e) => { e.preventDefault(); setIsDragging(false); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  // Trigger upload action here
+                }
+              }}
             >
-              <div className="text-6xl mb-4" aria-hidden="true">📁</div>
-              <h3 className="text-xl font-semibold mb-2">Drop audio or video file</h3>
+              <div className="text-6xl mb-4" aria-hidden="true">{isDragging ? '📥' : '📁'}</div>
+              <h3 className="text-xl font-semibold mb-2">
+                {isDragging ? 'Release to upload' : 'Drop audio or video file'}
+              </h3>
               <p className="text-dim">MP3, WAV, M4A, FLAC, MP4, MOV, WEBM supported</p>
             </div>
 
