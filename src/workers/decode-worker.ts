@@ -132,8 +132,8 @@ async function decode(payload: DecodePayload, taskId: string): Promise<DecodeRes
     throw new Error(`File too large: ${fileBuffer.byteLength} bytes (max ${config.maxFileSizeBytes})`);
   }
 
-  // Determine extension
-  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  // Determine extension & sanitize to prevent injection
+  const ext = (fileName.split('.').pop()?.toLowerCase() ?? '').replace(/[^a-z0-9]/g, '').slice(0, 10);
   const fmt = EXTENSION_MAP[ext] ?? { inputFmt: 'auto', codec: 'unknown' };
 
   postProgress(taskId, 'detect', 5);
@@ -147,22 +147,29 @@ async function decode(payload: DecodePayload, taskId: string): Promise<DecodeRes
   // Build ffmpeg command
   // Output: raw f32le PCM so we can read it directly
   const outName = 'output.pcm';
+
+  // Validate numeric inputs
+  const safeChannels = Number.isFinite(Number(outputChannels)) && (outputChannels ?? 0) > 0 ? outputChannels : 1;
+  const safeSr       = Number.isFinite(Number(outputSr)) && (outputSr ?? 0) > 0 ? outputSr : config.defaultOutputSr;
+
   const args: string[] = [
     '-i', inName,
     '-vn',                   // drop video
-    '-ac', String(outputChannels || 1),
+    '-ac', String(safeChannels),
   ];
 
-  if (outputSr) args.push('-ar', String(outputSr));
+  if (safeSr) args.push('-ar', String(safeSr));
 
   // Apply silence trim if requested
   if (trimSilenceDB !== undefined) {
-    const t = trimSilenceDB;
-    args.push(
-      '-af',
-      `silenceremove=start_periods=1:start_duration=0.1:start_threshold=${t}dB:detection=peak,` +
-      `areverse,silenceremove=start_periods=1:start_duration=0.1:start_threshold=${t}dB:detection=peak,areverse`
-    );
+    const t = Number(trimSilenceDB);
+    if (Number.isFinite(t)) {
+      args.push(
+        '-af',
+        `silenceremove=start_periods=1:start_duration=0.1:start_threshold=${t}dB:detection=peak,` +
+        `areverse,silenceremove=start_periods=1:start_duration=0.1:start_threshold=${t}dB:detection=peak,areverse`
+      );
+    }
   }
 
   args.push('-f', 'f32le', '-acodec', 'pcm_f32le', outName, '-y');
@@ -330,8 +337,9 @@ async function probe(fileBuffer: ArrayBuffer, fileName: string): Promise<{
   channels: number;
 }> {
   if (!ffmpeg) throw new Error('FFmpeg not initialised');
-  const ext = fileName.split('.').pop()?.toLowerCase() ?? 'bin';
-  const inName = `probe.${ext}`;
+  // Sanitize extension to prevent injection
+  const ext = (fileName.split('.').pop()?.toLowerCase() ?? '').replace(/[^a-z0-9]/g, '').slice(0, 10);
+  const inName = `probe.${ext || 'bin'}`;
   await ffmpeg.writeFile(inName, new Uint8Array(fileBuffer));
 
   // ffprobe equivalent: decode 0 frames, capture stats via log
