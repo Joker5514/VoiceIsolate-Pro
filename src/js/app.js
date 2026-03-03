@@ -1056,8 +1056,6 @@ async function onProcessingDone(workerDuration) {
       `Duration: ${elapsed.toFixed(2)}s | In: ${inputHash.substring(0, 12)}... | Out: ${outputHash.substring(0, 12)}...`
     );
   }
-
-  console.log(`[Processing] Complete in ${elapsed.toFixed(2)}s`);
 }
 
 function handleProcessingError(payload) {
