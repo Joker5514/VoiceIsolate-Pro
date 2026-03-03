@@ -604,7 +604,9 @@ export class DSPPipeline {
   private stages: DSPNode[] = [];
   private eventHandlers: PipelineEventHandler[] = [];
   private frameIndex = 0;
-  private latencies: number[] = [];
+  private latencies = new Float32Array(100);
+  private latencyIndex = 0;
+  private latencyCount = 0;
 
   // Public node references for external control
   readonly dcOffset = new DCOffsetNode();
@@ -714,8 +716,10 @@ export class DSPPipeline {
         this.emit({ type: 'error', nodeId: 'pipeline', error: err as Error });
       }
       const latency = performance.now() - t0;
-      this.latencies.push(latency);
-      if (this.latencies.length > 100) this.latencies.shift();
+      this.latencies[this.latencyIndex] = latency;
+      this.latencyIndex = (this.latencyIndex + 1) % 100;
+      if (this.latencyCount < 100) this.latencyCount++;
+
       this.emit({ type: 'frame_processed', frameIndex: this.frameIndex, latencyMs: latency });
       this.frameIndex++;
     }
@@ -803,8 +807,10 @@ export class DSPPipeline {
   }
 
   private avgLatency(): number {
-    if (!this.latencies.length) return 0;
-    return this.latencies.reduce((a, b) => a + b, 0) / this.latencies.length;
+    if (this.latencyCount === 0) return 0;
+    let sum = 0;
+    for (let i = 0; i < this.latencyCount; i++) sum += this.latencies[i];
+    return sum / this.latencyCount;
   }
 
   /** Bypass a specific node by ID */
@@ -822,7 +828,9 @@ export class DSPPipeline {
     for (const node of this.stages) node.dispose();
     this.stages = [];
     this.eventHandlers = [];
-    this.latencies = [];
+    this.latencies.fill(0);
+    this.latencyIndex = 0;
+    this.latencyCount = 0;
   }
 }
 
