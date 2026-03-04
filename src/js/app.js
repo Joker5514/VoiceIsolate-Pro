@@ -32,6 +32,7 @@ import {
   decrypt,
   hashSHA256,
   generateAuditEntry,
+  generateUUID,
 } from './utils/crypto-utils.js';
 
 /* ===================================================================
@@ -1730,7 +1731,7 @@ function setupVizTabs() {
  * =================================================================== */
 
 function addToBatch(file) {
-  const id = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const id = `batch_${generateUUID()}`;
   state.batchQueue.push({ id, file, status: 'pending', progress: 0 });
   updateBatchUI();
 }
