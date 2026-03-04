@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoiceIsolate Pro v16.1 — Threads from Space v6</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🎙️</div>
+    <div>
+      <h1>VoiceIsolate Pro</h1>
+      <span class="version-tag">v16.1 · Threads from Space v6</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="pipeline-badge"><span class="badge-dot"></span><span>28-Stage Hexa-Pass</span></div>
+    <div class="preset-badge" id="presetBadge">No file</div>
+    <div class="mode-toggle">
+      <button class="mode-btn active" data-mode="clean" id="modeClean">⚡ One-Tap</button>
+      <button class="mode-btn" data-mode="engineer" id="modeEngineer">🎛️ Engineer</button>
+    </div>
+  </div>
+</header>
+
+<!-- ═══ MAIN ═══ -->
+<div class="app-container">
+
+  <!-- INPUT -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">📁</span> Audio Input</div>
+      <div class="engine-status" id="engineStatus">Ready</div>
+    </div>
+    <div class="card-body">
+      <div class="input-grid">
+        <div class="drop-zone" id="dropZone">
+          <div class="upload-icon">📤</div>
+          <div class="drop-text">Drop audio file here</div>
+          <div class="drop-sub">MP3 · WAV · M4A · OGG · OPUS · FLAC</div>
+          <input type="file" id="fileInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac,.webm" style="display:none">
+        </div>
+        <div class="card mic-zone">
+          <button class="mic-btn" id="micBtn">⏺ Record</button>
+        </div>
+      </div>
+      <div class="file-info" id="fileInfo">
+        <span class="filename" id="fileName">—</span>
+        <span class="tag" id="fileMeta">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- WAVEFORM + PLAYBACK -->
+  <div class="card section-hidden" id="waveformSection">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">📊</span> Waveform & Spectrum</div>
+      <div class="ab-toggle">
+        <span class="ab-label">A</span>
+        <input type="checkbox" id="abToggle">
+        <label class="ab-switch" for="abToggle"></label>
+        <span class="ab-label ab-b">B</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="waveform-row">
+        <div class="waveform-container"><canvas id="waveOriginal"></canvas><div class="waveform-label">ORIGINAL</div></div>
+        <div class="waveform-container"><canvas id="waveProcessed"></canvas><div class="waveform-label wl-accent">ISOLATED</div></div>
+      </div>
+      <div class="analyser-container"><canvas id="liveAnalyser"></canvas><div class="waveform-label">LIVE SPECTRUM</div></div>
+      <div class="spectrogram-container"><canvas id="spectrogramCanvas"></canvas><div class="waveform-label">SPECTROGRAM</div></div>
+      <div class="playback-bar">
+        <button class="play-btn" id="playOrigBtn" disabled>▶ Orig</button>
+        <button class="play-btn secondary" id="playProcBtn" disabled>▶ Isolated</button>
+        <div class="progress-track" id="progressTrack"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="time-display" id="timeDisplay">0:00 / 0:00</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROCESSING ENGINE -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">⚡</span> Processing Engine</div>
+      <div class="engine-status" id="engineStatusAlt">Idle</div>
+    </div>
+    <div class="card-body">
+      <div id="onetapControls">
+        <div class="ctrl-row"><label>Isolation Strength</label><input type="range" class="slider" id="sliderIso" min="0" max="100" value="60"><span class="slider-val" id="valIso">60%</span></div>
+        <div class="ctrl-row"><label>Noise Reduction</label><input type="range" class="slider" id="sliderNR" min="0" max="100" value="50"><span class="slider-val" id="valNR">50%</span></div>
+        <div class="ctrl-row"><label>Gate Threshold</label><input type="range" class="slider" id="sliderGate" min="-60" max="-20" value="-45"><span class="slider-val" id="valGate">-45 dB</span></div>
+      </div>
+      <div class="process-section">
+        <button class="process-btn" id="processBtn" disabled>🔬 Process Audio</button>
+        <button class="reset-btn" id="resetBtn">🔄 Reset</button>
+      </div>
+      <div class="pipeline-vis section-hidden" id="pipelineVis">
+        <div class="stage-grid" id="stageGrid"></div>
+      </div>
+      <div class="stats-row" id="statsRow" style="display:none;">
+        <div class="stat-card"><div class="stat-value" id="statNR">0 dB</div><div class="stat-label">NR Applied</div></div>
+        <div class="stat-card"><div class="stat-value" id="statPeak">0 dBFS</div><div class="stat-label">Peak</div></div>
+        <div class="stat-card"><div class="stat-value green" id="statLUFS">—</div><div class="stat-label">LUFS</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRESETS -->
+  <div class="card"><div class="card-header"><div class="card-title"><span class="icon">🎛️</span> Export Presets <span class="preset-count">8 presets · 31 params each</span></div></div><div class="card-body"><div class="preset-grid" id="presetGrid"></div></div></div>
+
+  <!-- ENGINEER PANEL -->
+  <div class="card section-hidden" id="engineerPanel">
+    <div class="card-header"><div class="card-title"><span class="icon">🔧</span> Engineer Panel — Full Pipeline Control</div></div>
+    <div class="card-body"><div class="param-grid" id="paramGrid"></div></div>
+  </div>
+
+  <!-- EXPORT -->
+  <div class="card section-hidden" id="exportSection">
+    <div class="card-header"><div class="card-title"><span class="icon">💾</span> Export</div></div>
+    <div class="card-body">
+      <div class="export-row">
+        <select class="format-select" id="exportFormat"><option value="wav16" selected>WAV 16-bit</option><option value="wav24">WAV 24-bit</option><option value="wav32">WAV 32-float</option></select>
+        <button class="export-btn" id="exportBtn" disabled>⬇ Download Processed</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="card">
+    <div class="card-header"><div class="card-title"><span class="icon">📋</span> Processing Log</div><button class="log-clear-btn" id="logClearBtn">Clear</button></div>
+    <div class="card-body"><div class="log-console" id="logConsole"><div class="log-line"><span class="timestamp">[boot]</span> VoiceIsolate Pro v16.1 initialized</div></div></div>
+  </div>
+
+</div>
+
+<!-- ERROR -->
+<div class="error-banner" id="errorBanner" style="display:none;"><span id="errorMsg"></span><button class="error-close" id="errorClose">✕</button></div>
+
+<script src="app.js"></script>
+</body>
+</html>
