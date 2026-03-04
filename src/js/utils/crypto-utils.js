@@ -246,7 +246,7 @@ function arrayBufferToHex(buffer) {
  *
  * @returns {string}
  */
-function generateUUID() {
+export function generateUUID() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
