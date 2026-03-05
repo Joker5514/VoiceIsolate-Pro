@@ -26,8 +26,6 @@ import {
 } from './utils/audio-utils.js';
 import {
   generateKey,
-  exportKey,
-  importKey,
   encrypt,
   decrypt,
   hashSHA256,
@@ -1503,8 +1501,9 @@ async function startVoiceprintEnrollment() {
       // Encrypt and store
       if (!state.cryptoKey) {
         state.cryptoKey = await generateKey();
-        const jwk = await exportKey(state.cryptoKey);
-        await db.put('settings', { _id: 'cryptoKey', jwk }, 'cryptoKey');
+        // Key stored as non-extractable CryptoKey via structured clone.
+        // Cannot be exported via exportKey(). Upgrade path: derive from user password via PBKDF2.
+        await db.put('settings', { _id: 'cryptoKey', key: state.cryptoKey }, 'cryptoKey');
       }
 
       const encrypted = await encrypt(
@@ -1575,8 +1574,8 @@ async function loadVoiceprint() {
   try {
     // Load crypto key
     const keyData = await db.get('settings', 'cryptoKey');
-    if (keyData && keyData.jwk) {
-      state.cryptoKey = await importKey(keyData.jwk);
+    if (keyData && keyData.key) {
+      state.cryptoKey = keyData.key;
     }
 
     // Load voiceprint

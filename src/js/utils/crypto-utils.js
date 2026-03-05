@@ -47,7 +47,7 @@ export async function generateKey() {
       name: ALGORITHM,
       length: KEY_LENGTH,
     },
-    true, // extractable
+    false, // extractable
     ['encrypt', 'decrypt'],
   );
 }
