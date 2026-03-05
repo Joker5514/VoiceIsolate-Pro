@@ -5,3 +5,7 @@
 ## 2024-03-03 - DSP Hot Loop O(N) Array Operations
 **Learning:** Using `Array.prototype.shift()` (e.g., to manage a history/latency queue) inside a hot DSP loop like `DSPPipeline.processFrame` causes significant O(N) re-indexing overhead and increased garbage collection, which severely impacts realtime audio performance.
 **Action:** Replace `push()` and `shift()` on arrays with a pre-allocated fixed-size `TypedArray` (e.g., `Float32Array(100)`) acting as a ring buffer with a wrap-around index pointer (`this.latencyIndex = (this.latencyIndex + 1) % 100`). This ensures O(1) read/write performance and zeroes out GC pressure.
+
+## 2024-03-05 - WorkerPool PriorityQueue O(N) Shift Overhead
+**Learning:** Using `Array.prototype.shift()` to implement priority queues creates O(N) array reallocation overhead, heavily impacting the `WorkerPool` which manages thousands of tiny, rapid tasks.
+**Action:** Replace `.shift()` with an amortized O(1) index offset pattern (`headIndex`), manually setting dequeued entries to `undefined` for GC, and performing bulk `.slice` cleanups when `headIndex > 256` to prevent memory leaks.
