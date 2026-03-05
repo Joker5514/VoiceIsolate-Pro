@@ -133,7 +133,9 @@ async function decode(payload: DecodePayload, taskId: string): Promise<DecodeRes
   }
 
   // Determine extension
-  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  const rawExt = fileName.split('.').pop()?.toLowerCase() ?? '';
+  // Sanitize extension: allow only alphanumeric characters
+  const ext = rawExt.replace(/[^a-z0-9]/g, '');
   const fmt = EXTENSION_MAP[ext] ?? { inputFmt: 'auto', codec: 'unknown' };
 
   postProgress(taskId, 'detect', 5);
@@ -144,19 +146,23 @@ async function decode(payload: DecodePayload, taskId: string): Promise<DecodeRes
 
   postProgress(taskId, 'write', 15);
 
+  // Validate numeric inputs to prevent command injection
+  const safeChannels = Number.isFinite(outputChannels) && outputChannels! > 0 ? outputChannels : 1;
+  const safeSr = Number.isFinite(outputSr) && outputSr! > 0 ? outputSr : undefined;
+
   // Build ffmpeg command
   // Output: raw f32le PCM so we can read it directly
   const outName = 'output.pcm';
   const args: string[] = [
     '-i', inName,
     '-vn',                   // drop video
-    '-ac', String(outputChannels || 1),
+    '-ac', String(safeChannels),
   ];
 
-  if (outputSr) args.push('-ar', String(outputSr));
+  if (safeSr) args.push('-ar', String(safeSr));
 
   // Apply silence trim if requested
-  if (trimSilenceDB !== undefined) {
+  if (trimSilenceDB !== undefined && Number.isFinite(trimSilenceDB)) {
     const t = trimSilenceDB;
     args.push(
       '-af',
@@ -330,7 +336,9 @@ async function probe(fileBuffer: ArrayBuffer, fileName: string): Promise<{
   channels: number;
 }> {
   if (!ffmpeg) throw new Error('FFmpeg not initialised');
-  const ext = fileName.split('.').pop()?.toLowerCase() ?? 'bin';
+  const rawExt = fileName.split('.').pop()?.toLowerCase() ?? 'bin';
+  // Sanitize extension: allow only alphanumeric characters
+  const ext = rawExt.replace(/[^a-z0-9]/g, '');
   const inName = `probe.${ext}`;
   await ffmpeg.writeFile(inName, new Uint8Array(fileBuffer));
 
