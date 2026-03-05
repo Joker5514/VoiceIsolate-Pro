@@ -85,6 +85,7 @@ interface PendingTask<T = unknown, R = unknown> {
 
 class PriorityQueue<T extends { task: WorkerTask }> {
   private buckets: T[][] = [[], [], [], []]; // one per priority level
+  private heads: number[] = [0, 0, 0, 0]; // ⚡ Bolt: offset tracker to avoid O(N) shift()
   private _size = 0;
 
   enqueue(item: T): void {
@@ -95,7 +96,20 @@ class PriorityQueue<T extends { task: WorkerTask }> {
 
   dequeue(): T | undefined {
     for (let p = 0; p <= 3; p++) {
-      if (this.buckets[p].length) { this._size--; return this.buckets[p].shift(); }
+      if (this.buckets[p].length > this.heads[p]) {
+        this._size--;
+        const item = this.buckets[p][this.heads[p]];
+        this.buckets[p][this.heads[p]] = undefined as unknown as T; // allow GC
+        this.heads[p]++;
+
+        // Cleanup to prevent memory leak
+        if (this.heads[p] > 256 && this.heads[p] > this.buckets[p].length / 2) {
+          this.buckets[p] = this.buckets[p].slice(this.heads[p]);
+          this.heads[p] = 0;
+        }
+
+        return item;
+      }
     }
     return undefined;
   }
@@ -103,7 +117,9 @@ class PriorityQueue<T extends { task: WorkerTask }> {
   /** Peek at next item without removing */
   peek(): T | undefined {
     for (let p = 0; p <= 3; p++) {
-      if (this.buckets[p].length) return this.buckets[p][0];
+      if (this.buckets[p].length > this.heads[p]) {
+        return this.buckets[p][this.heads[p]];
+      }
     }
     return undefined;
   }
@@ -120,9 +136,16 @@ class PriorityQueue<T extends { task: WorkerTask }> {
 
   /** Remove a specific task by id */
   remove(taskId: string): boolean {
-    for (const bucket of this.buckets) {
-      const idx = bucket.findIndex((i) => i.task.id === taskId);
-      if (idx !== -1) { bucket.splice(idx, 1); this._size--; return true; }
+    for (let p = 0; p < this.buckets.length; p++) {
+      const bucket = this.buckets[p];
+      const head = this.heads[p];
+      for (let i = head; i < bucket.length; i++) {
+        if (bucket[i]?.task.id === taskId) {
+          bucket.splice(i, 1);
+          this._size--;
+          return true;
+        }
+      }
     }
     return false;
   }
