@@ -5,6 +5,7 @@ function App() {
   const [progress, setProgress] = useState(0);
   const [activeTab, setActiveTab] = useState('noise');
   const [isDragging, setIsDragging] = useState(false);
+  const [hasAudio, setHasAudio] = useState(false);
 
   return (
     <div className="min-h-screen bg-bg text-text">
@@ -19,7 +20,15 @@ function App() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button className="px-4 py-2 rounded bg-surface2 hover:bg-surface2/80 text-text transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+            <button
+              className={`px-4 py-2 rounded transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${hasAudio ? 'bg-surface2 hover:bg-surface2/80 text-text' : 'bg-surface2/50 text-dim cursor-not-allowed'}`}
+              aria-disabled={!hasAudio}
+              title={!hasAudio ? "Upload an audio file to enable export" : undefined}
+              onClick={(e) => {
+                if (!hasAudio) e.preventDefault();
+                // export logic later
+              }}
+            >
               Export
             </button>
           </div>
@@ -37,10 +46,15 @@ function App() {
               role="button"
               tabIndex={0}
               aria-label="Upload audio or video file"
+              onClick={() => {
+                // open file dialog later
+                setHasAudio(true);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   // open file dialog later
+                  setHasAudio(true);
                 }
               }}
               onDragOver={(e) => {
@@ -58,6 +72,7 @@ function App() {
               onDrop={(e) => {
                 e.preventDefault();
                 setIsDragging(false);
+                setHasAudio(true);
               }}
             >
               <div className="text-6xl mb-4" aria-hidden="true">📁</div>
@@ -69,7 +84,7 @@ function App() {
             <div className="bg-surface rounded-lg p-6">
               <h3 className="text-lg font-semibold mb-4 text-accent">Waveform</h3>
               <div className="h-32 bg-surface2 rounded flex items-center justify-center">
-                <p className="text-dim">No audio loaded</p>
+                <p className="text-dim">{hasAudio ? 'Audio waveform ready' : 'No audio loaded'}</p>
               </div>
             </div>
 
@@ -77,8 +92,14 @@ function App() {
             <div className="bg-surface rounded-lg p-6">
               <div className="flex items-center gap-4">
                 <button
-                  className="w-12 h-12 rounded-full bg-accent hover:bg-accent2 flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  className={`w-12 h-12 rounded-full flex items-center justify-center transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${hasAudio ? 'bg-accent hover:bg-accent2 text-white' : 'bg-surface2/50 text-dim cursor-not-allowed'}`}
+                  aria-disabled={!hasAudio}
                   aria-label="Play audio"
+                  title={!hasAudio ? "Upload an audio file to enable play" : undefined}
+                  onClick={(e) => {
+                    if (!hasAudio) e.preventDefault();
+                    // play logic later
+                  }}
                 >
                   <span aria-hidden="true">▶️</span>
                 </button>
