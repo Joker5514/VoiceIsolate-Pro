@@ -610,7 +610,7 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
         if (data.param && data.value !== undefined) s.params[data.param] = data.value;
         break;
       case 'bypass':
-        if (data.nodeId && data.value !== undefined) s.bypass[data.nodeId] = data.value;
+        if (data.nodeId && data.value !== undefined) s.bypass[data.nodeId] = !!data.value;
         break;
       case 'resetNoise':
         s.noiseReady = false;

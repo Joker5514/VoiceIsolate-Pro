@@ -30,7 +30,7 @@ class VADProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (event) => {
       if (event.data.type === 'init_port') {
         this.workerPort = event.data.port;
-        this.workerPort.onmessage = this.handleWorkerMessage.bind(this);
+        this.workerPort!.onmessage = this.handleWorkerMessage.bind(this);
       }
     };
   }

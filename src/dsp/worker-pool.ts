@@ -71,7 +71,7 @@ interface WorkerSlot {
   totalMs:     number;
   idleSince:   number;
   idleTimer:   ReturnType<typeof setTimeout> | null;
-  currentTask: PendingTask | null;
+  currentTask: PendingTask<any, any> | null;
 }
 
 interface PendingTask<T = unknown, R = unknown> {

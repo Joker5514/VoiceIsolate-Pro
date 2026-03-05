@@ -299,7 +299,7 @@ self.onmessage = async (ev: MessageEvent) => {
         workerIndex,
         processedMs: performance.now() - t0,
       } satisfies { taskId: string; result: DecodeResult; workerIndex: number; processedMs: number },
-      [result.pcm.buffer]
+      { transfer: [result.pcm.buffer as unknown as Transferable] }
     );
   } catch (e) {
     self.postMessage({
