@@ -1731,9 +1731,14 @@ function setupVizTabs() {
  * =================================================================== */
 
 function addToBatch(file) {
-  const id = `batch_${generateUUID()}`;
-  state.batchQueue.push({ id, file, status: 'pending', progress: 0 });
-  updateBatchUI();
+  try {
+    const id = `batch_${generateUUID()}`;
+    state.batchQueue.push({ id, file, status: 'pending', progress: 0 });
+    updateBatchUI();
+  } catch (error) {
+    console.error('[Batch] Failed to add file to batch:', error);
+    alert('Failed to add file to batch: ' + error.message);
+  }
 }
 
 function updateBatchUI() {

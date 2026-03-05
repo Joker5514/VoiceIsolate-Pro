@@ -251,6 +251,13 @@ export function generateUUID() {
     return crypto.randomUUID();
   }
 
+  if (typeof crypto === 'undefined' || typeof crypto.getRandomValues !== 'function') {
+    throw new Error(
+      'Web Crypto API (crypto.getRandomValues) is not available. ' +
+        'This application must be served over HTTPS or from localhost.',
+    );
+  }
+
   // Manual UUID v4 generation using crypto.getRandomValues.
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
