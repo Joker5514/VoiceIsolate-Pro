@@ -255,7 +255,12 @@ async function boot() {
       }, 500);
     }
 
-    console.log('[VoiceIsolate Pro] v9.0 — Threads from Space engine initialized');
+    console.info(JSON.stringify({
+      app: 'VoiceIsolate Pro',
+      version: '9.0',
+      message: 'Threads from Space engine initialized',
+      timestamp: new Date().toISOString()
+    }));
   } catch (err) {
     console.error('[VoiceIsolate Pro] Boot error:', err);
     const loadingScreen = $('loadingScreen');
