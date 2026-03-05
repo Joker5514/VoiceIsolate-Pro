@@ -35,6 +35,24 @@ import {
   generateUUID,
 } from './utils/crypto-utils.js';
 
+
+/* ===================================================================
+ * Structured Logging
+ * =================================================================== */
+
+function structuredLog(level, message, details = {}) {
+  const payload = {
+    app: 'voiceisolate-pro',
+    version: '14.0.0',
+    level,
+    timestamp: new Date().toISOString(),
+    message,
+    ...details
+  };
+  const logMethod = console[level] || console.log;
+  logMethod(JSON.stringify(payload));
+}
+
 /* ===================================================================
  * Constants & Presets
  * =================================================================== */
@@ -256,9 +274,9 @@ async function boot() {
       }, 500);
     }
 
-    console.log('[VoiceIsolate Pro] v9.0 — Threads from Space engine initialized');
+    structuredLog('info', 'Threads from Space engine initialized');
   } catch (err) {
-    console.error('[VoiceIsolate Pro] Boot error:', err);
+    structuredLog('error', 'Boot error', { error: err.message, stack: err.stack });
     const loadingScreen = $('loadingScreen');
     if (loadingScreen) {
       const sub = loadingScreen.querySelector('.loading-sub');
@@ -284,7 +302,7 @@ async function saveSettings() {
   try {
     await db.put('settings', { ...config, _id: 'appConfig' }, 'appConfig');
   } catch (e) {
-    console.warn('[Settings] Save failed:', e);
+    structuredLog('warn', 'Settings save failed', { error: e.message, stack: e.stack });
   }
 }
 
@@ -559,7 +577,7 @@ async function loadFile(file) {
       addForensicEntry('FILE_LOADED', `${file.name} | SHA-256: ${hash.substring(0, 16)}...`);
     }
   } catch (err) {
-    console.error('[LoadFile] Decode error:', err);
+    structuredLog('error', 'Decode error', { error: err.message, stack: err.stack });
     if (fileMeta) fileMeta.textContent = `Error: ${err.message}`;
   }
 }
@@ -607,7 +625,7 @@ async function startMicRecording() {
       };
     }
   } catch (err) {
-    console.error('[Mic] Error:', err);
+    structuredLog('error', 'Mic error', { error: err.message, stack: err.stack });
   }
 }
 
@@ -883,7 +901,7 @@ function initDispatcher() {
 
     state.dispatcherWorker.onmessage = handleWorkerMessage;
     state.dispatcherWorker.onerror = (e) => {
-      console.error('[Dispatcher] Worker error:', e);
+      structuredLog('error', 'Dispatcher worker error', { error: e.message, stack: e.stack });
     };
 
     // Initialize worker pool
@@ -901,7 +919,7 @@ function initDispatcher() {
     const workerCountEl = $('workerCount');
     if (workerCountEl) workerCountEl.textContent = poolSize;
   } catch (err) {
-    console.warn('[Dispatcher] Worker init failed, will use inline processing:', err);
+    structuredLog('warn', 'Worker init failed, will use inline processing', { error: err.message, stack: err.stack });
   }
 }
 
@@ -1058,7 +1076,7 @@ async function onProcessingDone(workerDuration) {
     );
   }
 
-  console.log(`[Processing] Complete in ${elapsed.toFixed(2)}s`);
+  structuredLog('info', 'Processing complete', { durationSec: parseFloat(elapsed.toFixed(2)) });
 }
 
 function handleProcessingError(payload) {
@@ -1071,7 +1089,7 @@ function handleProcessingError(payload) {
     processBtn.textContent = 'Process';
   }
 
-  console.error('[Processing] Error:', payload.message);
+  structuredLog('error', 'Processing error', { error: payload.message });
 
   if (state.mode === 'forensic') {
     addForensicEntry('PROCESSING_ERROR', payload.message);
@@ -1542,7 +1560,7 @@ async function startVoiceprintEnrollment() {
       }
     }, 100);
   } catch (err) {
-    console.error('[Voiceprint] Enrollment error:', err);
+    structuredLog('error', 'Voiceprint enrollment error', { error: err.message, stack: err.stack });
   }
 }
 
@@ -1736,7 +1754,7 @@ function addToBatch(file) {
     state.batchQueue.push({ id, file, status: 'pending', progress: 0 });
     updateBatchUI();
   } catch (error) {
-    console.error('[Batch] Failed to add file to batch:', error);
+    structuredLog('error', 'Failed to add file to batch', { error: error.message, stack: error.stack });
     alert('Failed to add file to batch: ' + error.message);
   }
 }
