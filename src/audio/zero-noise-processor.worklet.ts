@@ -1,8 +1,12 @@
 /**
  * VoiceIsolate Pro v14.0's ZeroNoiseProcessor AudioWorklet
+ * ─────────────────────────────────────────────────────────
+ * Full inline DSP pipeline running inside the AudioWorklet
+ * rendering thread. Target: <15ms end-to-end latency.
  *
- * - Pass 1: Stages 1–8 + ML mask via SharedArrayBuffer
- * - Pass 2: Stages 1–23
+ * Implements real-time DSP:
+ * - Pass 1 (Stages 1-8 + ML mask via SharedArrayBuffer)
+ * - Pass 2 (Stages 1-23)
  *
  * Register via:
  *   await audioCtx.audioWorklet.addModule('/zero-noise-processor.worklet.js');
@@ -262,6 +266,7 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
     outputs: Float32Array[][],
     parameters: Record<string, Float32Array>
   ): boolean {
+    // Safely extract input/output channels, ensuring no syntax errors (e.g. inputs?.;)
     const input  = inputs[0];
     const output = outputs[0];
     if (!input?.length || !output?.length) return true;
