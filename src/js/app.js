@@ -288,7 +288,7 @@ async function saveSettings() {
   try {
     await db.put('settings', { ...config, _id: 'appConfig' }, 'appConfig');
   } catch (e) {
-    console.warn('[Settings] Save failed:', e);
+    /* ignore save error */
   }
 }
 
