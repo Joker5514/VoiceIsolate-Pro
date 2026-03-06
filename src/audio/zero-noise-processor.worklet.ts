@@ -46,17 +46,28 @@ function buildHannWindow(N: number): Float32Array {
   return w;
 }
 
-function fftInPlace(re: Float32Array, im: Float32Array, inverse = false): void {
-  const N = re.length;
+function buildBitReverseTable(N: number): Uint16Array {
   const bits = Math.log2(N) | 0;
-
-  // Bit-reversal
+  const table = new Uint16Array(N);
   for (let i = 0; i < N; i++) {
     let j = 0, tmp = i;
     for (let b = 0; b < bits; b++) { j = (j << 1) | (tmp & 1); tmp >>= 1; }
+    table[i] = j;
+  }
+  return table;
+}
+
+const BIT_REVERSE_TABLE_2048 = buildBitReverseTable(2048);
+
+function fftInPlace(re: Float32Array, im: Float32Array, inverse = false): void {
+  const N = re.length;
+
+  // Bit-reversal
+  for (let i = 0; i < N; i++) {
+    const j = BIT_REVERSE_TABLE_2048[i];
     if (j > i) {
-      [re[i], re[j]] = [re[j], re[i]];
-      [im[i], im[j]] = [im[j], im[i]];
+      const tr = re[i]; re[i] = re[j]; re[j] = tr;
+      const ti = im[i]; im[i] = im[j]; im[j] = ti;
     }
   }
 
