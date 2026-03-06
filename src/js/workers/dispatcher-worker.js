@@ -187,10 +187,17 @@ let jobCounter = 0;
  * inline source (not used in this architecture).
  */
 function createDSPWorkerBlobUrl(url) {
+  // Validate URL to prevent loading cross-origin or malicious data:/blob: scripts
+  const parsedUrl = new URL(url, self.location.href);
+  if (parsedUrl.origin !== self.location.origin) {
+    throw new Error('Cross-origin or unsafe worker scripts are not allowed.');
+  }
+
+  // Use JSON.stringify to safely escape the URL for inclusion in the string literal
   const bootstrap = `
     'use strict';
     try {
-      importScripts('${url}');
+      importScripts(${JSON.stringify(parsedUrl.href)});
     } catch (e) {
       self.postMessage({
         type: 'error',
