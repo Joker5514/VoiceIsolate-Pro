@@ -237,6 +237,10 @@ class InlineState {
 class ZeroNoiseProcessor extends AudioWorkletProcessor {
   private s: InlineState;
   private channels: number;
+  private dcOffsetL = 0;
+  private dcOffsetYL = 0;
+  private dcOffsetR = 0;
+  private dcOffsetYR = 0;
 
   static get parameterDescriptors() {
     return [
@@ -275,11 +279,32 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
     const t0 = performance.now();
     const blockSize = input[0].length; // 128 (was 256)
 
+    // Stage 1: DC Offset Removal
+    const dcAlpha = 0.9999;
+    const cleanedInputL = new Float32Array(blockSize);
+    const cleanedInputR = new Float32Array(blockSize);
+
+    for (let i = 0; i < blockSize; i++) {
+        // Left channel
+        const xL = input[0]?.[i] ?? 0;
+        const yL = xL - this.dcOffsetL + dcAlpha * this.dcOffsetYL;
+        this.dcOffsetL = xL;
+        this.dcOffsetYL = yL;
+        cleanedInputL[i] = yL;
+
+        // Right channel
+        const xR = (this.channels > 1 ? input[1]?.[i] : xL) ?? 0;
+        const yR = xR - this.dcOffsetR + dcAlpha * this.dcOffsetYR;
+        this.dcOffsetR = xR;
+        this.dcOffsetYR = yR;
+        cleanedInputR[i] = yR;
+    }
+
     // Accumulate into ring buffer
     for (let i = 0; i < blockSize; i++) {
       const wi = (this.s.inWrite + i) % (FFT_SIZE * 2);
-      this.s.inRingL[wi] = input[0]?.[i] ?? 0;
-      this.s.inRingR[wi] = (this.channels > 1 ? input[1]?.[i] : input[0]?.[i]) ?? 0;
+      this.s.inRingL[wi] = cleanedInputL[i];
+      this.s.inRingR[wi] = cleanedInputR[i];
     }
     this.s.inWrite  = (this.s.inWrite + blockSize) % (FFT_SIZE * 2);
     this.s.inReady += blockSize;
