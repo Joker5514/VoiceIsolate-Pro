@@ -235,12 +235,29 @@ class InlineState {
 // ─── Main Processor ──────────────────────────────────────────────────────────
 
 class ZeroNoiseProcessor extends AudioWorkletProcessor {
-  private s: InlineState;
+  // 1. Core config
   private channels: number;
+  private s: InlineState;
+
+  // 2. DC offset state (per-channel, Pass 1)
   private dcOffsetL = 0;
   private dcOffsetYL = 0;
   private dcOffsetR = 0;
   private dcOffsetYR = 0;
+
+  // 3. Ring buffer (128-sample block accumulation)
+  private inputRing: Float32Array;
+  private outputRing: Float32Array;
+  private inputWritePos: number = 0;
+  private outputReadPos: number = 0;
+  private outputWritePos: number = 0;
+  private ringFilled: boolean = false;
+
+  // 4. FFT workspace
+  private fftBuffer: Float32Array;
+  private window: Float32Array;
+  private noiseFloor: Float32Array;
+  private noiseEstimated: boolean = false;
 
   static get parameterDescriptors() {
     return [
@@ -254,6 +271,18 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
     super();
     this.channels = (options.processorOptions as { channels?: number })?.channels ?? 1;
     this.s = new InlineState();
+
+    this.inputRing = new Float32Array(FFT_SIZE);
+    this.outputRing = new Float32Array(FFT_SIZE);
+    this.fftBuffer = new Float32Array(FFT_SIZE);
+    this.window = new Float32Array(FFT_SIZE);
+    this.noiseFloor = new Float32Array(FFT_SIZE / 2 + 1);
+
+    // Initialize Hann window
+    for (let i = 0; i < FFT_SIZE; i++) {
+      this.window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (FFT_SIZE - 1)));
+    }
+
     this.port.onmessage = (e) => this.handleMessage(e.data);
   }
 
@@ -308,6 +337,27 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
     }
     this.s.inWrite  = (this.s.inWrite + blockSize) % (FFT_SIZE * 2);
     this.s.inReady += blockSize;
+
+    // Write cleaned samples to main ring buffer
+    for (let i = 0; i < blockSize; i++) {
+      this.inputRing[this.inputWritePos] = cleanedInputL[i]; // mono mix for simplicity here, or as required
+      this.inputWritePos = (this.inputWritePos + 1) % FFT_SIZE;
+    }
+
+    // Check if we have enough samples for FFT (2048 samples)
+    if (!this.ringFilled && this.inputWritePos === 0) {
+      this.ringFilled = true;
+    }
+
+    // Trigger FFT processing when ring buffer is full
+    if (this.ringFilled) {
+      // Copy ring buffer to FFT workspace with window function
+      for (let i = 0; i < FFT_SIZE; i++) {
+        const idx = (this.inputWritePos + i) % FFT_SIZE;
+        this.fftBuffer[i] = this.inputRing[idx] * this.window[i];
+      }
+      // FFT processing hook (stages 6-20 will use this.fftBuffer)
+    }
 
     // Process full hops when enough input accumulated
     while (this.s.inReady >= HOP_SIZE) {
