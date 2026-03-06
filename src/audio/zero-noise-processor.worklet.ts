@@ -266,7 +266,6 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
     outputs: Float32Array[][],
     parameters: Record<string, Float32Array>
   ): boolean {
-    // Safely extract input/output channels, ensuring no syntax errors (e.g. inputs?.;)
     const input  = inputs[0];
     const output = outputs[0];
     if (!input?.length || !output?.length) return true;
