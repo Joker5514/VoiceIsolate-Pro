@@ -186,21 +186,55 @@ function hannWindow(size) {
  * STFT / ISTFT helpers
  * ================================================================ */
 
+// Global buffer cache for STFT/iSTFT optimization
+const bufferCache = {
+  stftReal: null,
+  stftImag: null,
+  istftReal: null,
+  istftImag: null,
+  istftOutput: null,
+  istftWinSum: null,
+  lastFramesCount: 0,
+  lastOutputLength: 0
+};
+
 /**
  * Short-Time Fourier Transform.
  * Returns array of frames, each frame is { real: Float32Array, imag: Float32Array }.
  */
 function stft(buffer, fftSize, hopSize) {
   const win = hannWindow(fftSize);
+  const numFrames = Math.floor((buffer.length - fftSize) / hopSize) + 1;
+  const totalElements = numFrames * fftSize;
+
+  // Lazily initialize or resize buffer >20%
+  if (!bufferCache.stftReal || Math.abs(totalElements - bufferCache.stftReal.length) / (bufferCache.stftReal.length || 1) > 0.2 || bufferCache.stftReal.length < totalElements) {
+    bufferCache.stftReal = new Float32Array(totalElements);
+    bufferCache.stftImag = new Float32Array(totalElements);
+    bufferCache.lastFramesCount = numFrames;
+  } else {
+    // Clear the portion we will use
+    bufferCache.stftReal.fill(0, 0, totalElements);
+    bufferCache.stftImag.fill(0, 0, totalElements);
+  }
+
   const frames = [];
+  const realMega = bufferCache.stftReal;
+  const imagMega = bufferCache.stftImag;
+
+  let f = 0;
   for (let pos = 0; pos + fftSize <= buffer.length; pos += hopSize) {
-    const real = new Float32Array(fftSize);
-    const imag = new Float32Array(fftSize);
+    const offset = f * fftSize;
+    // Subarray references exactly the portion needed
+    const real = realMega.subarray(offset, offset + fftSize);
+    const imag = imagMega.subarray(offset, offset + fftSize);
+
     for (let i = 0; i < fftSize; i++) {
       real[i] = buffer[pos + i] * win[i];
     }
     fft(real, imag, false);
-    frames.push({ real: real, imag: imag, pos: pos });
+    frames.push({ real, imag, pos });
+    f++;
   }
   return frames;
 }
@@ -210,30 +244,57 @@ function stft(buffer, fftSize, hopSize) {
  */
 function istft(frames, fftSize, hopSize, outputLength) {
   const win = hannWindow(fftSize);
-  const output  = new Float32Array(outputLength);
-  const winSum  = new Float32Array(outputLength);
+
+  // Resize istft buffers if needed
+  if (!bufferCache.istftOutput || Math.abs(outputLength - bufferCache.istftOutput.length) / (bufferCache.istftOutput.length || 1) > 0.2 || bufferCache.istftOutput.length < outputLength) {
+    bufferCache.istftOutput = new Float32Array(outputLength);
+    bufferCache.istftWinSum = new Float32Array(outputLength);
+    bufferCache.lastOutputLength = outputLength;
+  } else {
+    bufferCache.istftOutput.fill(0, 0, outputLength);
+    bufferCache.istftWinSum.fill(0, 0, outputLength);
+  }
+
+  // Temporary buffers for IFFT so we don't mutate the cached stft buffers
+  if (!bufferCache.istftReal || bufferCache.istftReal.length < fftSize) {
+    bufferCache.istftReal = new Float32Array(fftSize);
+    bufferCache.istftImag = new Float32Array(fftSize);
+  }
+
+  const output = bufferCache.istftOutput.subarray(0, outputLength);
+  const winSum = bufferCache.istftWinSum.subarray(0, outputLength);
+  const tempReal = bufferCache.istftReal;
+  const tempImag = bufferCache.istftImag;
 
   for (let f = 0; f < frames.length; f++) {
     const frame = frames[f];
-    const real = copyFloat32(frame.real);
-    const imag = copyFloat32(frame.imag);
-    fft(real, imag, true);  // IFFT
+    // Copy into temp arrays for in-place IFFT mutation safety
+    tempReal.set(frame.real);
+    tempImag.set(frame.imag);
+
+    fft(tempReal, tempImag, true);  // IFFT
 
     const pos = frame.pos;
     for (let i = 0; i < fftSize && (pos + i) < outputLength; i++) {
-      output[pos + i] += real[i] * win[i];
+      output[pos + i] += tempReal[i] * win[i];
       winSum[pos + i] += win[i] * win[i];
     }
   }
 
   // Normalize by window sum
+  // We MUST copy output into a NEW array to return, because returning the
+  // subarray would give the caller a reference to our cached array that might be overwritten
+  // on the next call to istft.
+  const finalOutput = new Float32Array(outputLength);
   for (let j = 0; j < outputLength; j++) {
     if (winSum[j] > EPSILON) {
-      output[j] /= winSum[j];
+      finalOutput[j] = output[j] / winSum[j];
+    } else {
+      finalOutput[j] = output[j];
     }
   }
 
-  return output;
+  return finalOutput;
 }
 
 /**
