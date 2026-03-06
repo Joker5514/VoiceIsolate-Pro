@@ -19,7 +19,6 @@
  *   { cmd: 'getProfile' }  → replies { type: 'profile', data: Float32Array }
  *   { cmd: 'getMetrics' }  → replies { type: 'metrics', data: WorkletMetrics }
  */
-
 // ─── TypeScript shim for AudioWorkletGlobalScope ────────────────────────────
 declare function registerProcessor(name: string, ctor: new (options: AudioWorkletNodeOptions) => AudioWorkletProcessor): void;
 declare class AudioWorkletProcessor {
