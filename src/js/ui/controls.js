@@ -622,7 +622,7 @@ export class ControlsManager {
     if (!container) return;
 
     // Clear existing items
-    container.innerHTML = '';
+    container.textContent = '';
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -696,7 +696,7 @@ export class ControlsManager {
     }
 
     if (actionsEl) {
-      actionsEl.innerHTML = '';
+      actionsEl.textContent = '';
       for (const action of actions || []) {
         const btn = document.createElement('button');
         btn.textContent = action.label;
@@ -933,18 +933,35 @@ export class ControlsManager {
       this._modalEl.setAttribute('role', 'dialog');
       this._modalEl.setAttribute('aria-modal', 'true');
       this._modalEl.setAttribute('aria-hidden', 'true');
-      this._modalEl.innerHTML = `
-        <div class="modal__header">
-          <h3 data-modal-title></h3>
-          <button class="modal__close" aria-label="Close">&times;</button>
-        </div>
-        <div class="modal__body" data-modal-body></div>
-        <div class="modal__actions" data-modal-actions></div>
-      `;
+      // Create header
+      const headerDiv = document.createElement('div');
+      headerDiv.className = 'modal__header';
+      const titleH3 = document.createElement('h3');
+      titleH3.setAttribute('data-modal-title', '');
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'modal__close';
+      closeBtn.setAttribute('aria-label', 'Close');
+      closeBtn.textContent = '×';
+      headerDiv.appendChild(titleH3);
+      headerDiv.appendChild(closeBtn);
+
+      // Create body
+      const bodyDiv = document.createElement('div');
+      bodyDiv.className = 'modal__body';
+      bodyDiv.setAttribute('data-modal-body', '');
+
+      // Create actions
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'modal__actions';
+      actionsDiv.setAttribute('data-modal-actions', '');
+
+      this._modalEl.appendChild(headerDiv);
+      this._modalEl.appendChild(bodyDiv);
+      this._modalEl.appendChild(actionsDiv);
+
       document.body.appendChild(this._modalEl);
 
       // Close button
-      const closeBtn = this._modalEl.querySelector('.modal__close');
       if (closeBtn) {
         closeBtn.addEventListener('click', () => this.hideModal(), {
           signal: this._abortController.signal,
