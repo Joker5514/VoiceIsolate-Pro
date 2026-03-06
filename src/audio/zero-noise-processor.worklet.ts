@@ -40,23 +40,36 @@ interface WorkletMetrics {
 
 // ─── Inline FFT (Cooley-Tukey radix-2, optimised for 2048-pt) ───────────────
 
+const FFT_SIZE  = 2048;
+const HOP_SIZE  = 512;      // 75% overlap
+const HALF_BINS = FFT_SIZE / 2 + 1;
+const NOISE_CAPTURE_SEC = 1.5;
+
 function buildHannWindow(N: number): Float32Array {
   const w = new Float32Array(N);
   for (let i = 0; i < N; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
   return w;
 }
 
+// Pre-compute bit-reversal table for fixed FFT_SIZE
+const bitReverseTable = new Uint16Array(FFT_SIZE);
+const fftBits = Math.log2(FFT_SIZE) | 0;
+for (let i = 0; i < FFT_SIZE; i++) {
+  let j = 0, tmp = i;
+  for (let b = 0; b < fftBits; b++) { j = (j << 1) | (tmp & 1); tmp >>= 1; }
+  bitReverseTable[i] = j;
+}
+
 function fftInPlace(re: Float32Array, im: Float32Array, inverse = false): void {
   const N = re.length;
-  const bits = Math.log2(N) | 0;
 
   // Bit-reversal
   for (let i = 0; i < N; i++) {
-    let j = 0, tmp = i;
-    for (let b = 0; b < bits; b++) { j = (j << 1) | (tmp & 1); tmp >>= 1; }
+    const j = bitReverseTable[i];
     if (j > i) {
-      [re[i], re[j]] = [re[j], re[i]];
-      [im[i], im[j]] = [im[j], im[i]];
+      const tr = re[i], ti = im[i];
+      re[i] = re[j]; im[i] = im[j];
+      re[j] = tr;    im[j] = ti;
     }
   }
 
@@ -88,11 +101,6 @@ function fftInPlace(re: Float32Array, im: Float32Array, inverse = false): void {
 }
 
 // ─── Inline DSP State ────────────────────────────────────────────────────────
-
-const FFT_SIZE  = 2048;
-const HOP_SIZE  = 512;      // 75% overlap
-const HALF_BINS = FFT_SIZE / 2 + 1;
-const NOISE_CAPTURE_SEC = 1.5;
 
 class InlineState {
   // Window
