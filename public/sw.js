@@ -23,10 +23,10 @@ const COOP_HEADERS = {
 
 // Resources to pre-cache on install (static app shell)
 const PRECACHE_URLS = [
-  '/VoiceIsolate-Pro/',
-  '/VoiceIsolate-Pro/index.html',
-  '/VoiceIsolate-Pro/manifest.json',
-  '/VoiceIsolate-Pro/favicon.svg',
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/favicon.svg',
 ];
 
 // ── Install ──────────────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ self.addEventListener('fetch', (event) => {
           return addCoopCoep(response);
         })
         .catch(async () => {
-          const cached = await caches.match('/VoiceIsolate-Pro/index.html');
+          const cached = await caches.match('/index.html');
           return cached
             ? addCoopCoep(cached)
             : new Response('Offline', { status: 503 });
