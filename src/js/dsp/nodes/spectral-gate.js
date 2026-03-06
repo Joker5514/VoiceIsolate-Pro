@@ -48,7 +48,11 @@ export default class SpectralGateNode {
     this._lookaheadFrames = Math.ceil(
       (this._params.lookahead * sampleRate) / this._hopSize
     );
-    this._frameQueue = [];
+    // ⚡ Bolt: Use a pre-allocated ring buffer to avoid O(N) Array.shift() and GC overhead in hot loop
+    this._frameQueue = new Array(this._lookaheadFrames + 1);
+    this._queueHead = 0;
+    this._queueTail = 0;
+    this._queueSize = 0;
 
     // Overlap-add state (pre-allocated with amortized growth)
     this._inputCapacity = this._fftSize * 4;
@@ -194,9 +198,11 @@ export default class SpectralGateNode {
       const spectrum = this._fft.forward(frame);
 
       // Lookahead: queue frames and process delayed
-      this._frameQueue.push(spectrum);
+      this._frameQueue[this._queueTail] = spectrum;
+      this._queueTail = (this._queueTail + 1) % this._frameQueue.length;
+      this._queueSize++;
 
-      if (this._frameQueue.length > this._lookaheadFrames) {
+      if (this._queueSize > this._lookaheadFrames) {
         // Look ahead at current frame to prepare gate
         this._updateGateEnvelope(
           spectrum.magnitude,
@@ -204,7 +210,11 @@ export default class SpectralGateNode {
         );
 
         // Process the delayed frame
-        const delayedFrame = this._frameQueue.shift();
+        const delayedFrame = this._frameQueue[this._queueHead];
+        this._frameQueue[this._queueHead] = undefined; // Allow GC
+        this._queueHead = (this._queueHead + 1) % this._frameQueue.length;
+        this._queueSize--;
+
         const { real, imag } = this._processFrame(delayedFrame);
         const reconstructed = this._fft.inverse(real, imag);
 
@@ -270,9 +280,16 @@ export default class SpectralGateNode {
       } else if (name === 'release') {
         this._releaseCoeff = this._computeCoeff(value);
       } else if (name === 'lookahead') {
-        this._lookaheadFrames = Math.ceil(
+        const newFrames = Math.ceil(
           (value * this.sampleRate) / this._hopSize
         );
+        if (newFrames !== this._lookaheadFrames) {
+          this._lookaheadFrames = newFrames;
+          this._frameQueue = new Array(this._lookaheadFrames + 1);
+          this._queueHead = 0;
+          this._queueTail = 0;
+          this._queueSize = 0;
+        }
       } else if (name === 'range') {
         this._rangeLinear = Math.pow(10, value / 20);
       }
@@ -284,7 +301,10 @@ export default class SpectralGateNode {
    */
   reset() {
     this._gateGain.fill(1.0);
-    this._frameQueue = [];
+    this._frameQueue.fill(undefined);
+    this._queueHead = 0;
+    this._queueTail = 0;
+    this._queueSize = 0;
     this._inputLength = 0;
     this._outputBuffer = new Float32Array(0);
     this._outputReadPos = 0;
