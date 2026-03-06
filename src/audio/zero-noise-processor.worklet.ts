@@ -16,7 +16,17 @@ const HOP_SIZE = 512;           // 75% overlap
 const SAMPLE_RATE = 44100;
 
 class ZeroNoiseProcessor extends AudioWorkletProcessor {
-  // Ring buffer: accumulate 128-sample blocks until we have FFT_SIZE samples
+  // 1. Core config
+  private channels: number = 2;
+
+  // 2. DC offset state
+  private dcOffsetL: number = 0;
+  private dcOffsetYL: number = 0;
+  private dcOffsetR: number = 0;
+  private dcOffsetYR: number = 0;
+  private s: number = 0;
+
+  // 3. Ring buffer: accumulate 128-sample blocks until we have FFT_SIZE samples
   private inputRing: Float32Array;
   private outputRing: Float32Array;
   private inputWritePos: number = 0;
@@ -24,7 +34,7 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
   private outputWritePos: number = 0;
   private ringFilled: boolean = false;
 
-  // FFT workspace
+  // 4. FFT workspace
   private fftBuffer: Float32Array;
   private window: Float32Array;
   private noiseFloor: Float32Array;
