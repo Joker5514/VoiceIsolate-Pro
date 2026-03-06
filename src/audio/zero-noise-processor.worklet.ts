@@ -443,4 +443,5 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
   }
 }
 
+// @ts-ignore
 registerProcessor('zero-noise-processor', ZeroNoiseProcessor);
