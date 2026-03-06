@@ -58,7 +58,7 @@ async function init() {
   }
 }
 
-async function runInference(task: MLTask, targetPort: PostTarget = self) {
+async function runInference(task: MLTask, targetPort: PostTarget = self as unknown as PostTarget) {
   const { taskId, payload } = task;
   const { task: type, pcm, sr } = payload;
 
@@ -127,10 +127,10 @@ self.onmessage = (e: MessageEvent) => {
     init();
   } else if (type === 'connect_vad' && port) {
     vadWorkletPort = port;
-    vadWorkletPort.onmessage = (workletEvent: MessageEvent) => {
-      runInference(workletEvent.data, vadWorkletPort!);
+    port.onmessage = (workletEvent: MessageEvent) => {
+      runInference(workletEvent.data, port as unknown as PostTarget);
     };
   } else if (e.data.taskId) {
-    runInference(e.data, self);
+    runInference(e.data, self as unknown as PostTarget);
   }
 };
