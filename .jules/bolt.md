@@ -9,3 +9,7 @@
 ## 2024-03-05 - WorkerPool PriorityQueue O(N) Shift Overhead
 **Learning:** Using `Array.prototype.shift()` to implement priority queues creates O(N) array reallocation overhead, heavily impacting the `WorkerPool` which manages thousands of tiny, rapid tasks.
 **Action:** Replace `.shift()` with an amortized O(1) index offset pattern (`headIndex`), manually setting dequeued entries to `undefined` for GC, and performing bulk `.slice` cleanups when `headIndex > 256` to prevent memory leaks.
+
+## 2026-03-06 - Array.prototype.shift() Overhead in Lookahead Queues
+**Learning:** Using `Array.prototype.shift()` on queues containing object references (like STFT spectra) inside tight audio processing loops (e.g., `SpectralGateNode`) triggers significant O(N) re-indexing and garbage collection overhead. Even with small queue lengths, this degrades realtime performance.
+**Action:** Replace dynamic array lookahead queues with fixed-size ring buffers initialized as `new Array(lookaheadFrames + 1)` alongside head/tail pointers, enabling true O(1) performance and virtually zeroing out GC overhead in the hot loop.
