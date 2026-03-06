@@ -273,7 +273,7 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
     }
 
     const t0 = performance.now();
-    const blockSize = input[0].length; // 128
+    const blockSize = input[0].length; // 128 (was 256)
 
     // Accumulate into ring buffer
     for (let i = 0; i < blockSize; i++) {
