@@ -14,10 +14,10 @@ const CACHE_NAME = 'voiceisolate-v14';
 
 // Resources to pre-cache on install (static app shell)
 const PRECACHE_URLS = [
-  '/VoiceIsolate-Pro/',
-  '/VoiceIsolate-Pro/index.html',
-  '/VoiceIsolate-Pro/manifest.json',
-  '/VoiceIsolate-Pro/favicon.svg',
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/favicon.svg',
 ];
 
 // Install — pre-cache app shell
@@ -90,7 +90,7 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match('/VoiceIsolate-Pro/index.html')
+        .catch(() => caches.match('/index.html')
           .then((cached) => cached ?? new Response('Offline', { status: 503 }))
         )
     );
