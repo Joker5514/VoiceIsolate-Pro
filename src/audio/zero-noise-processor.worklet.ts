@@ -1,10 +1,19 @@
 /**
- * VoiceIsolate Pro v14.0 – ZeroNoiseProcessor AudioWorklet
- * ─────────────────────────────────────────────────────────
- * Full inline DSP pipeline running inside the AudioWorklet
- * rendering thread. Target: <15ms end-to-end latency.
- * Implements real-time DSP: Pass 1 (Stages 1-8) + lightweight ML mask via SharedArrayBuffer
- * followed by Pass 2 (Stages 1-23).
+ * VoiceIsolate Pro v14.0's ZeroNoiseProcessor AudioWorklet
+ *
+ * - Pass 1: Stages 1–8 + ML mask via SharedArrayBuffer
+ * - Pass 2: Stages 1–23
+ *
+ * Register via:
+ *   await audioCtx.audioWorklet.addModule('/zero-noise-processor.worklet.js');
+ *   const node = new AudioWorkletNode(audioCtx, 'zero-noise-processor', { ... });
+ *
+ * MessagePort commands (node.port.postMessage):
+ *   { cmd: 'setParam',   param: string, value: number }
+ *   { cmd: 'bypass',     nodeId: string, value: boolean }
+ *   { cmd: 'resetNoise' }
+ *   { cmd: 'getProfile' }  → replies { type: 'profile', data: Float32Array }
+ *   { cmd: 'getMetrics' }  → replies { type: 'metrics', data: WorkletMetrics }
  */
 
 // ─── TypeScript shim for AudioWorkletGlobalScope ────────────────────────────
@@ -15,7 +24,6 @@ declare class AudioWorkletProcessor {
 }
 declare const currentTime: number;
 declare const sampleRate: number;
-declare const SharedArrayBuffer: any;
 
 // ─── Inline types (no import in worklet scope) ───────────────────────────────
 
@@ -30,15 +38,8 @@ interface WorkletMetrics {
   rmsDB: number;
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-const BLOCK_SIZE = 128;         // Web Audio API native block size
-const FFT_SIZE  = 2048;
-const HOP_SIZE  = 512;      // 75% overlap
-const SAMPLE_RATE = 44100;
-const HALF_BINS = FFT_SIZE / 2 + 1;
-const NOISE_CAPTURE_SEC = 1.5;
+// ─── Inline FFT (Cooley-Tukey radix-2, optimised for 2048-pt) ───────────────
 
-// ─── Top-level helpers from main ─────────────────────────────────────────────
 function buildHannWindow(N: number): Float32Array {
   const w = new Float32Array(N);
   for (let i = 0; i < N; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
@@ -97,7 +98,12 @@ function fftInPlace(re: Float32Array, im: Float32Array, inverse = false): void {
   }
 }
 
-// ─── Inline DSP State (Main Branch Pass 2) ───────────────────────────────────
+// ─── Inline DSP State ────────────────────────────────────────────────────────
+
+const FFT_SIZE  = 2048;
+const HOP_SIZE  = 512;      // 75% overlap
+const HALF_BINS = FFT_SIZE / 2 + 1;
+const NOISE_CAPTURE_SEC = 1.5;
 
 class InlineState {
   // Window
@@ -229,72 +235,27 @@ class InlineState {
 // ─── Main Processor ──────────────────────────────────────────────────────────
 
 class ZeroNoiseProcessor extends AudioWorkletProcessor {
-  // Pass 1 State (Feature Branch)
-  private pass1_inputRing: Float32Array;
-  private pass1_outputRing: Float32Array;
-  private pass1_inputWritePos: number = 0;
-  private pass1_outputReadPos: number = 0;
-  private pass1_outputWritePos: number = 0;
-  private pass1_ringFilled: boolean = false;
-  private pass1_fftBuffer: Float32Array;
-  private pass1_window: Float32Array;
-  private pass1_noiseFloor: Float32Array;
-  private pass1_noiseEstimated: boolean = false;
-  private pass1_humPhase60: number = 0;
-  private pass1_humPhase120: number = 0;
-  private pass1_humPhase180: number = 0;
-  private pass1_humPhase240: number = 0;
-  private pass1_dcOffset: number = 0;
-  private pass1_gateEnvelope: number = 0;
-  private pass1_prevMagnitudes: Float32Array;
-  private pass1_frameCount: number = 0;
-  private pass1_noiseAccumulator: Float32Array[]  = [];
-  private pass1_mlMaskBuffer: Float32Array | null = null;
-  private pass1_mlMaskReady: boolean = false;
-  private pass1_isolationStrength: number = 0.8;
-  private pass1_noiseReduction: number = 0.7;
-  private pass1_gateThreshold: number = -40; // dB
-  private pass1_humRemovalEnabled: boolean = true;
-  private pass1_bypassMode: boolean = false;
-
-  private pass1_cleanedInput: Float32Array;
-
-  // Pass 2 State (Main Branch)
   private s: InlineState;
   private channels: number;
-  private intermediateBuffer: Float32Array;
 
   static get parameterDescriptors() {
     return [
       { name: 'bypass',           defaultValue: 0,   minValue: 0, maxValue: 1 },
       { name: 'inputGainDB',      defaultValue: 0,   minValue: -40, maxValue: 40 },
       { name: 'thresholdOffsetDB',defaultValue: 6,   minValue: 0,  maxValue: 40 },
-      { name: 'isolationStrength', defaultValue: 0.8, minValue: 0.0, maxValue: 1.0, automationRate: 'k-rate' },
-      { name: 'noiseReduction', defaultValue: 0.7, minValue: 0.0, maxValue: 1.0, automationRate: 'k-rate' },
-      { name: 'gateThreshold', defaultValue: -40, minValue: -80, maxValue: -10, automationRate: 'k-rate' },
     ];
   }
 
   constructor(options: AudioWorkletNodeOptions) {
     super();
-
-    // Init Pass 1 (Feature Branch)
-    const ringSize = FFT_SIZE * 4;
-    this.pass1_inputRing = new Float32Array(ringSize);
-    this.pass1_outputRing = new Float32Array(ringSize);
-    this.pass1_fftBuffer = new Float32Array(FFT_SIZE * 2); // real + imag interleaved
-    this.pass1_window = this.pass1_buildHannWindow(FFT_SIZE);
-    this.pass1_noiseFloor = new Float32Array(FFT_SIZE / 2 + 1).fill(1e-6);
-    this.pass1_prevMagnitudes = new Float32Array(FFT_SIZE / 2 + 1).fill(0);
-    this.pass1_cleanedInput = new Float32Array(BLOCK_SIZE);
-
-    // Init Pass 2 (Main Branch)
     this.channels = (options.processorOptions as { channels?: number })?.channels ?? 1;
     this.s = new InlineState();
-    this.intermediateBuffer = new Float32Array(BLOCK_SIZE);
-
     this.port.onmessage = (e) => this.handleMessage(e.data);
   }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // process() — called every 128 samples by the audio engine
+  // ──────────────────────────────────────────────────────────────────────────
 
   process(
     inputs: Float32Array[][],
@@ -305,362 +266,11 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
     const output = outputs[0];
     if (!input?.length || !output?.length) return true;
 
-    // Global Bypass Check (handles both Main and Feature Branch bypass flags)
-    const globalBypass = (parameters['bypass']?.[0] ?? 0) > 0.5 || this.pass1_bypassMode;
+    const globalBypass = (parameters['bypass']?.[0] ?? 0) > 0.5;
     if (globalBypass) {
-      for (let ch = 0; ch < output.length; ch++) {
-        output[ch].set(input[ch] ?? new Float32Array(BLOCK_SIZE));
-      }
+      for (let ch = 0; ch < output.length; ch++) output[ch].set(input[ch] ?? new Float32Array(128));
       return true;
     }
-
-    // --- PASS 1: Feature Branch (Stages 1-8 + ML Mask) ---
-    this.processPass1(input[0], this.intermediateBuffer, parameters);
-
-    // Prepare inputs for Pass 2 (mono from Pass 1 output mapped to stereo/mono)
-    const pass2Inputs = [[this.intermediateBuffer]];
-    if (this.channels > 1 && input[1]) {
-        pass2Inputs[0][1] = this.intermediateBuffer;
-    }
-
-    // --- PASS 2: Main Branch (Stages 1-23) ---
-    this.processPass2(pass2Inputs, outputs, parameters);
-
-    return true;
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // PASS 1: Feature Branch Implementation (Stages 1-8 + ML Mask)
-  // ──────────────────────────────────────────────────────────────────────────
-
-  private processPass1(input: Float32Array, output: Float32Array, parameters: Record<string, Float32Array>): void {
-    if (!input || !output) return;
-
-    // Update k-rate params
-    this.pass1_isolationStrength = parameters.isolationStrength?.[0] ?? this.pass1_isolationStrength;
-    this.pass1_noiseReduction = parameters.noiseReduction?.[0] ?? this.pass1_noiseReduction;
-    this.pass1_gateThreshold = parameters.gateThreshold?.[0] ?? this.pass1_gateThreshold;
-
-    // --- Stage 1: DC Offset Removal (inline, per-sample) ---
-    const dcAlpha = 0.9999;
-    for (let i = 0; i < BLOCK_SIZE; i++) {
-      this.pass1_dcOffset = dcAlpha * this.pass1_dcOffset + (1 - dcAlpha) * input[i];
-      this.pass1_cleanedInput[i] = input[i] - this.pass1_dcOffset;
-    }
-
-    // --- Stage 4 (inline): Hum Removal via sample-domain notch ---
-    const humFiltered = this.pass1_humRemovalEnabled
-      ? this.pass1_removeHumInline(this.pass1_cleanedInput)
-      : this.pass1_cleanedInput;
-
-    // --- Write block into ring buffer ---
-    const ringMask = this.pass1_inputRing.length - 1;
-    for (let i = 0; i < BLOCK_SIZE; i++) {
-      this.pass1_inputRing[this.pass1_inputWritePos & ringMask] = humFiltered[i];
-      this.pass1_inputWritePos++;
-    }
-
-    // --- Process full FFT frames when enough samples accumulated ---
-    if (this.pass1_inputWritePos >= FFT_SIZE && !this.pass1_ringFilled) {
-      this.pass1_ringFilled = true;
-      this.pass1_outputWritePos = FFT_SIZE;
-      this.pass1_outputReadPos = 0;
-    }
-
-    if (this.pass1_ringFilled) {
-      while (this.pass1_inputWritePos - this.pass1_outputWritePos >= HOP_SIZE) {
-        // Extract FFT_SIZE samples from ring starting at (outputWritePos - FFT_SIZE)
-        const frameStart = this.pass1_outputWritePos - FFT_SIZE;
-        const frame = new Float32Array(FFT_SIZE);
-        for (let i = 0; i < FFT_SIZE; i++) {
-          frame[i] = this.pass1_inputRing[(frameStart + i) & ringMask] * this.pass1_window[i];
-        }
-
-        // STFT
-        const { magnitudes, phases } = this.pass1_forwardSTFT(frame);
-
-        // --- Stage 2: Adaptive Noise Profiling ---
-        this.pass1_updateNoiseFloor(magnitudes);
-
-        // --- Stage 3: ERB Spectral Gate + Stage 5: Spectral Subtraction ---
-        const processedMag = this.pass1_applySpectralProcessing(magnitudes);
-
-        // --- Integrate ML mask from SharedArrayBuffer if available ---
-        const finalMag = this.pass1_mlMaskReady && this.pass1_mlMaskBuffer
-          ? this.pass1_applyMLMask(processedMag)
-          : processedMag;
-
-        // Inverse STFT
-        const outputFrame = this.pass1_inverseSTFT(finalMag, phases);
-
-        // --- Stage 8: Output noise gate (time domain) ---
-        const gatedFrame = this.pass1_applyGate(outputFrame);
-
-        // Overlap-add into output ring
-        for (let i = 0; i < FFT_SIZE; i++) {
-          const pos = (this.pass1_outputWritePos - FFT_SIZE + i) & ringMask;
-          this.pass1_outputRing[pos] = (this.pass1_outputRing[pos] ?? 0) + gatedFrame[i] * this.pass1_window[i];
-        }
-
-        this.pass1_outputWritePos += HOP_SIZE;
-      }
-
-      // Read BLOCK_SIZE output samples
-      for (let i = 0; i < BLOCK_SIZE; i++) {
-        const pos = (this.pass1_outputReadPos + i) & ringMask;
-        output[i] = this.pass1_outputRing[pos] / (FFT_SIZE / (2 * HOP_SIZE)); // OLA normalization
-        this.pass1_outputRing[pos] = 0; // clear after reading
-      }
-      this.pass1_outputReadPos += BLOCK_SIZE;
-    } else {
-      // Not enough samples yet — output silence
-      output.fill(0);
-    }
-
-    this.pass1_frameCount++;
-  }
-
-  private pass1_removeHumInline(input: Float32Array): Float32Array {
-    const out = new Float32Array(BLOCK_SIZE);
-    const sr = SAMPLE_RATE;
-    const dt = 1 / sr;
-    const amp = 0.02 * this.pass1_noiseReduction;
-    for (let i = 0; i < BLOCK_SIZE; i++) {
-      this.pass1_humPhase60   += 2 * Math.PI * 60  * dt;
-      this.pass1_humPhase120  += 2 * Math.PI * 120 * dt;
-      this.pass1_humPhase180  += 2 * Math.PI * 180 * dt;
-      this.pass1_humPhase240  += 2 * Math.PI * 240 * dt;
-      const hum = amp * (
-        Math.sin(this.pass1_humPhase60) * 1.0 +
-        Math.sin(this.pass1_humPhase120) * 0.5 +
-        Math.sin(this.pass1_humPhase180) * 0.25 +
-        Math.sin(this.pass1_humPhase240) * 0.125
-      );
-      out[i] = input[i] - hum;
-    }
-    // Wrap phases to prevent float overflow
-    this.pass1_humPhase60   %= 2 * Math.PI;
-    this.pass1_humPhase120  %= 2 * Math.PI;
-    this.pass1_humPhase180  %= 2 * Math.PI;
-    this.pass1_humPhase240  %= 2 * Math.PI;
-    return out;
-  }
-
-  private pass1_buildHannWindow(size: number): Float32Array {
-    const w = new Float32Array(size);
-    for (let i = 0; i < size; i++) {
-      w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (size - 1)));
-    }
-    return w;
-  }
-
-  private pass1_forwardSTFT(frame: Float32Array): { magnitudes: Float32Array; phases: Float32Array } {
-    // Radix-2 Cooley-Tukey FFT (in-place on interleaved real/imag)
-    const N = FFT_SIZE;
-    const real = new Float32Array(N);
-    const imag = new Float32Array(N);
-    real.set(frame);
-
-    // Bit-reversal
-    let j = 0;
-    for (let i = 1; i < N; i++) {
-      let bit = N >> 1;
-      for (; j & bit; bit >>= 1) j ^= bit;
-      j ^= bit;
-      if (i < j) {
-        [real[i], real[j]] = [real[j], real[i]];
-        [imag[i], imag[j]] = [imag[j], imag[i]];
-      }
-    }
-
-    // FFT butterfly
-    for (let len = 2; len <= N; len <<= 1) {
-      const wReal = Math.cos(-2 * Math.PI / len);
-      const wImag = Math.sin(-2 * Math.PI / len);
-      for (let i = 0; i < N; i += len) {
-        let curReal = 1, curImag = 0;
-        for (let k = 0; k < len / 2; k++) {
-          const uR = real[i + k], uI = imag[i + k];
-          const vR = real[i + k + len/2] * curReal - imag[i + k + len/2] * curImag;
-          const vI = real[i + k + len/2] * curImag + imag[i + k + len/2] * curReal;
-          real[i + k] = uR + vR; imag[i + k] = uI + vI;
-          real[i + k + len/2] = uR - vR; imag[i + k + len/2] = uI - vI;
-          const nr = curReal * wReal - curImag * wImag;
-          curImag = curReal * wImag + curImag * wReal;
-          curReal = nr;
-        }
-      }
-    }
-
-    const bins = N / 2 + 1;
-    const magnitudes = new Float32Array(bins);
-    const phases = new Float32Array(bins);
-    for (let i = 0; i < bins; i++) {
-      magnitudes[i] = Math.sqrt(real[i] * real[i] + imag[i] * imag[i]);
-      phases[i] = Math.atan2(imag[i], real[i]);
-    }
-    return { magnitudes, phases };
-  }
-
-  private pass1_inverseSTFT(magnitudes: Float32Array, phases: Float32Array): Float32Array {
-    const N = FFT_SIZE;
-    const real = new Float32Array(N);
-    const imag = new Float32Array(N);
-    const bins = N / 2 + 1;
-
-    for (let i = 0; i < bins; i++) {
-      real[i] = magnitudes[i] * Math.cos(phases[i]);
-      imag[i] = magnitudes[i] * Math.sin(phases[i]);
-    }
-    // Mirror for negative frequencies
-    for (let i = bins; i < N; i++) {
-      real[i] = real[N - i];
-      imag[i] = -imag[N - i];
-    }
-
-    // Inverse FFT (conjugate → FFT → conjugate → scale)
-    for (let i = 0; i < N; i++) imag[i] = -imag[i];
-
-    // Bit-reversal
-    let j = 0;
-    for (let i = 1; i < N; i++) {
-      let bit = N >> 1;
-      for (; j & bit; bit >>= 1) j ^= bit;
-      j ^= bit;
-      if (i < j) {
-        [real[i], real[j]] = [real[j], real[i]];
-        [imag[i], imag[j]] = [imag[j], imag[i]];
-      }
-    }
-
-    for (let len = 2; len <= N; len <<= 1) {
-      const wR = Math.cos(-2 * Math.PI / len);
-      const wI = Math.sin(-2 * Math.PI / len);
-      for (let i = 0; i < N; i += len) {
-        let cR = 1, cI = 0;
-        for (let k = 0; k < len / 2; k++) {
-          const uR = real[i+k], uI = imag[i+k];
-          const vR = real[i+k+len/2]*cR - imag[i+k+len/2]*cI;
-          const vI = real[i+k+len/2]*cI + imag[i+k+len/2]*cR;
-          real[i+k]=uR+vR; imag[i+k]=uI+vI;
-          real[i+k+len/2]=uR-vR; imag[i+k+len/2]=uI-vI;
-          const nR = cR*wR - cI*wI; cI = cR*wI + cI*wR; cR = nR;
-        }
-      }
-    }
-
-    for (let i = 0; i < N; i++) imag[i] = -imag[i];
-    const out = new Float32Array(N);
-    for (let i = 0; i < N; i++) out[i] = imag[i] / N; // scale + take imaginary (trick for real IFFT)
-    // Actually use real part:
-    for (let i = 0; i < N; i++) out[i] = real[i] / N;
-    return out;
-  }
-
-  private pass1_updateNoiseFloor(magnitudes: Float32Array): void {
-    if (this.pass1_frameCount < 50) {
-      // Accumulate first 50 frames for noise profiling
-      this.pass1_noiseAccumulator.push(magnitudes.slice());
-      if (this.pass1_noiseAccumulator.length >= 20) {
-        for (let b = 0; b < magnitudes.length; b++) {
-          let min = Infinity;
-          for (const frame of this.pass1_noiseAccumulator) {
-            if (frame[b] < min) min = frame[b];
-          }
-          this.pass1_noiseFloor[b] = min * 1.5; // slight overestimate
-        }
-        this.pass1_noiseEstimated = true;
-      }
-    } else {
-      // Continuous minimum statistics update (Martin algorithm simplified)
-      const alpha = 0.98;
-      for (let b = 0; b < magnitudes.length; b++) {
-        if (magnitudes[b] < this.pass1_noiseFloor[b]) {
-          this.pass1_noiseFloor[b] = magnitudes[b];
-        } else {
-          this.pass1_noiseFloor[b] = alpha * this.pass1_noiseFloor[b] + (1 - alpha) * magnitudes[b];
-        }
-      }
-    }
-  }
-
-  private pass1_applySpectralProcessing(magnitudes: Float32Array): Float32Array {
-    const out = new Float32Array(magnitudes.length);
-    const alpha = 2.0 + this.pass1_noiseReduction * 2.0; // over-subtraction 2.0–4.0
-    const floor = 0.01;
-
-    for (let b = 0; b < magnitudes.length; b++) {
-      // Spectral subtraction
-      const subtracted = magnitudes[b] - alpha * this.pass1_noiseFloor[b];
-      // Spectral floor (prevent negative magnitudes)
-      out[b] = Math.max(subtracted, floor * magnitudes[b]);
-      // Smooth temporal transitions (prevents musical noise)
-      const smooth = 0.7;
-      out[b] = smooth * this.pass1_prevMagnitudes[b] + (1 - smooth) * out[b];
-      this.pass1_prevMagnitudes[b] = out[b];
-    }
-
-    // Voice band boost (300Hz–3400Hz emphasis)
-    const binHz = SAMPLE_RATE / FFT_SIZE;
-    for (let b = 0; b < out.length; b++) {
-      const hz = b * binHz;
-      if (hz >= 300 && hz <= 3400) {
-        out[b] *= 1.0 + this.pass1_isolationStrength * 0.5;
-      } else if (hz < 80 || hz > 8000) {
-        out[b] *= (1.0 - this.pass1_isolationStrength * 0.8);
-      }
-    }
-    return out;
-  }
-
-  private pass1_applyMLMask(magnitudes: Float32Array): Float32Array {
-    if (!this.pass1_mlMaskBuffer) return magnitudes;
-    const out = new Float32Array(magnitudes.length);
-    for (let b = 0; b < magnitudes.length; b++) {
-      const mask = Math.min(1, Math.max(0, this.pass1_mlMaskBuffer[b] ?? 1));
-      const blended = this.pass1_isolationStrength * mask + (1 - this.pass1_isolationStrength);
-      out[b] = magnitudes[b] * blended;
-    }
-    return out;
-  }
-
-  private pass1_applyGate(frame: Float32Array): Float32Array {
-    const out = new Float32Array(frame.length);
-    // Compute RMS of frame
-    let rms = 0;
-    for (const s of frame) rms += s * s;
-    rms = Math.sqrt(rms / frame.length);
-    const rmsDb = 20 * Math.log10(rms + 1e-10);
-
-    const threshDb = this.pass1_gateThreshold;
-    const attack = 0.001;  // 1ms
-    const release = 0.05;  // 50ms
-
-    const targetGain = rmsDb > threshDb ? 1.0 : 0.0;
-    if (targetGain > this.pass1_gateEnvelope) {
-      this.pass1_gateEnvelope = attack * targetGain + (1 - attack) * this.pass1_gateEnvelope;
-    } else {
-      this.pass1_gateEnvelope = release * targetGain + (1 - release) * this.pass1_gateEnvelope;
-    }
-
-    for (let i = 0; i < frame.length; i++) {
-      out[i] = frame[i] * this.pass1_gateEnvelope;
-    }
-    return out;
-  }
-
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // PASS 2: Main Branch Implementation (Stages 1-23)
-  // ──────────────────────────────────────────────────────────────────────────
-
-  private processPass2(
-    inputs: Float32Array[][],
-    outputs: Float32Array[][],
-    parameters: Record<string, Float32Array>
-  ): void {
-    const input  = inputs[0];
-    const output = outputs[0];
 
     const t0 = performance.now();
     const blockSize = input[0].length; // 128
@@ -701,7 +311,13 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
     this.s.avgProcMs = 0.95 * this.s.avgProcMs + 0.05 * elapsed;
     if (elapsed > this.s.peakProcMs) this.s.peakProcMs = elapsed;
     this.s.frameCount++;
+
+    return true;
   }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // processHop — one full overlap-add cycle per HOP_SIZE samples
+  // ──────────────────────────────────────────────────────────────────────────
 
   private processHop(): void {
     const s = this.s;
@@ -993,25 +609,13 @@ class ZeroNoiseProcessor extends AudioWorkletProcessor {
   // MessagePort handler
   // ──────────────────────────────────────────────────────────────────────────
 
-  private handleMessage(data: any): void {
+  private handleMessage(data: {
+    cmd: string;
+    param?: string;
+    value?: number;
+    nodeId?: string;
+  }): void {
     const s = this.s;
-
-    // Feature Branch ML Mask Message Support
-    if (data.type === 'ml-mask-buffer' && data.data instanceof SharedArrayBuffer) {
-        this.pass1_mlMaskBuffer = new Float32Array(data.data);
-        this.pass1_mlMaskReady = true;
-        return;
-    }
-
-    // Feature Branch Param / Bypass Support
-    if (data.type === 'bypass') this.pass1_bypassMode = data.data;
-    if (data.type === 'params' && data.data) {
-        if (data.data.isolationStrength !== undefined) this.pass1_isolationStrength = data.data.isolationStrength;
-        if (data.data.noiseReduction !== undefined) this.pass1_noiseReduction = data.data.noiseReduction;
-        if (data.data.gateThreshold !== undefined) this.pass1_gateThreshold = data.data.gateThreshold;
-        if (data.data.humRemoval !== undefined) this.pass1_humRemovalEnabled = data.data.humRemoval;
-    }
-
     switch (data.cmd) {
       case 'setParam':
         if (data.param && data.value !== undefined) s.params[data.param] = data.value;
