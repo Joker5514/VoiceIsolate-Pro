@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VoiceIsolate Pro v18.0 – Engineer Mode</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="vip-header">
+    <div class="vip-logo">
+      <div class="vip-logo-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg>
+      </div>
+      <div>
+        <h1>VoiceIsolate Pro <span class="vip-version">v18.0</span></h1>
+        <span class="vip-badge">ENGINEER MODE</span>
+      </div>
+    </div>
+    <div class="vip-header-stats">
+      <div class="vip-hstat">
+        <div class="vip-hstat-val" id="stat-snr">-- dB</div>
+        <div class="vip-hstat-label">SNR Gain</div>
+      </div>
+      <div class="vip-hstat">
+        <div class="vip-hstat-val" id="stat-duration">--s</div>
+        <div class="vip-hstat-label">Duration</div>
+      </div>
+      <div class="vip-hstat">
+        <div class="vip-hstat-val" id="stat-sr">-- Hz</div>
+        <div class="vip-hstat-label">Sample Rate</div>
+      </div>
+      <div class="vip-hstat">
+        <div class="vip-hstat-val" id="stat-status">IDLE</div>
+        <div class="vip-hstat-label">Pipeline</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="vip-main">
+    <!-- LEFT COLUMN: Controls -->
+    <section class="vip-panel vip-controls-panel">
+      <!-- Upload Area -->
+      <div class="vip-upload-card">
+        <div id="uploadZone" class="vip-upload-zone">
+          <div class="vip-upload-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          </div>
+          <p class="vip-upload-title">Drop Audio Here</p>
+          <p class="vip-upload-sub">MP3 · WAV · M4A · OGG · FLAC — up to 30 min</p>
+          <input type="file" id="fileInput" accept="audio/*" hidden />
+          <button id="fileBtn" class="vip-btn vip-btn-outline">Browse Files</button>
+        </div>
+        <div class="vip-upload-actions">
+          <button id="micBtn" class="vip-btn vip-btn-mic">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+            <span id="micLabel">Record Mic</span>
+          </button>
+          <div id="fileInfo" class="vip-file-info">No file loaded</div>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="vip-tabs">
+        <button class="vip-tab active" data-tab="noise">Noise</button>
+        <button class="vip-tab" data-tab="voice">Voice EQ</button>
+        <button class="vip-tab" data-tab="dynamics">Dynamics</button>
+        <button class="vip-tab" data-tab="spectral">Spectral</button>
+        <button class="vip-tab" data-tab="advanced">Advanced</button>
+      </div>
+
+      <!-- Tab Panels -->
+      <div class="vip-tab-panels">
+        <!-- NOISE TAB -->
+        <div class="vip-tab-panel active" id="tab-noise">
+          <div class="vip-slider-row">
+            <label>Isolation Strength</label>
+            <input type="range" id="isoStrength" min="0" max="100" value="70" />
+            <span class="vip-slider-val" id="isoStrengthVal">70%</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Noise Reduction</label>
+            <input type="range" id="nrAmount" min="0" max="100" value="50" />
+            <span class="vip-slider-val" id="nrAmountVal">50%</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Gate Threshold (dB)</label>
+            <input type="range" id="gateThreshold" min="-80" max="-10" value="-45" />
+            <span class="vip-slider-val" id="gateThresholdVal">-45 dB</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Gate Attack (ms)</label>
+            <input type="range" id="gateAttack" min="1" max="100" value="5" />
+            <span class="vip-slider-val" id="gateAttackVal">5 ms</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Gate Release (ms)</label>
+            <input type="range" id="gateRelease" min="10" max="500" value="120" />
+            <span class="vip-slider-val" id="gateReleaseVal">120 ms</span>
+          </div>
+        </div>
+
+        <!-- VOICE EQ TAB -->
+        <div class="vip-tab-panel" id="tab-voice">
+          <div class="vip-slider-row">
+            <label>Sub Cut (80 Hz)</label>
+            <input type="range" id="eqSub" min="-12" max="6" value="-6" step="0.5" />
+            <span class="vip-slider-val" id="eqSubVal">-6 dB</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Warmth (200 Hz)</label>
+            <input type="range" id="eqWarmth" min="-6" max="6" value="1" step="0.5" />
+            <span class="vip-slider-val" id="eqWarmthVal">1 dB</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Body (500 Hz)</label>
+            <input type="range" id="eqBody" min="-6" max="6" value="0" step="0.5" />
+            <span class="vip-slider-val" id="eqBodyVal">0 dB</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Presence (3 kHz)</label>
+            <input type="range" id="eqPresence" min="-6" max="6" value="3" step="0.5" />
+            <span class="vip-slider-val" id="eqPresenceVal">3 dB</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Clarity (5 kHz)</label>
+            <input type="range" id="eqClarity" min="-6" max="6" value="2" step="0.5" />
+            <span class="vip-slider-val" id="eqClarityVal">2 dB</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Air (10 kHz)</label>
+            <input type="range" id="eqAir" min="-6" max="6" value="1" step="0.5" />
+            <span class="vip-slider-val" id="eqAirVal">1 dB</span>
+          </div>
+        </div>
+
+        <!-- DYNAMICS TAB -->
+        <div class="vip-tab-panel" id="tab-dynamics">
+          <div class="vip-slider-row">
+            <label>Compressor Threshold (dB)</label>
+            <input type="range" id="compThreshold" min="-50" max="0" value="-24" />
+            <span class="vip-slider-val" id="compThresholdVal">-24 dB</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Compressor Ratio</label>
+            <input type="range" id="compRatio" min="1" max="20" value="4" />
+            <span class="vip-slider-val" id="compRatioVal">4:1</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Comp Attack (ms)</label>
+            <input type="range" id="compAttack" min="0" max="100" value="10" />
+            <span class="vip-slider-val" id="compAttackVal">10 ms</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Comp Release (ms)</label>
+            <input type="range" id="compRelease" min="10" max="1000" value="250" />
+            <span class="vip-slider-val" id="compReleaseVal">250 ms</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Makeup Gain (dB)</label>
+            <input type="range" id="makeupGain" min="-6" max="24" value="6" />
+            <span class="vip-slider-val" id="makeupGainVal">6 dB</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Output Gain (dB)</label>
+            <input type="range" id="outGain" min="-12" max="12" value="0" />
+            <span class="vip-slider-val" id="outGainVal">0 dB</span>
+          </div>
+        </div>
+
+        <!-- SPECTRAL TAB -->
+        <div class="vip-tab-panel" id="tab-spectral">
+          <div class="vip-slider-row">
+            <label>High-Pass (Hz)</label>
+            <input type="range" id="hpFreq" min="20" max="500" value="80" />
+            <span class="vip-slider-val" id="hpFreqVal">80 Hz</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Low-Pass (Hz)</label>
+            <input type="range" id="lpFreq" min="3000" max="20000" value="12000" />
+            <span class="vip-slider-val" id="lpFreqVal">12000 Hz</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>De-Ess Amount</label>
+            <input type="range" id="deEss" min="0" max="100" value="30" />
+            <span class="vip-slider-val" id="deEssVal">30%</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Spectral Tilt</label>
+            <input type="range" id="spectralTilt" min="-6" max="6" value="0" step="0.5" />
+            <span class="vip-slider-val" id="spectralTiltVal">0 dB/oct</span>
+          </div>
+        </div>
+
+        <!-- ADVANCED TAB -->
+        <div class="vip-tab-panel" id="tab-advanced">
+          <div class="vip-slider-row">
+            <label>Dereverb Strength</label>
+            <input type="range" id="dereverb" min="0" max="100" value="40" />
+            <span class="vip-slider-val" id="dereverbVal">40%</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Harmonic Recovery</label>
+            <input type="range" id="harmonicRecov" min="0" max="100" value="25" />
+            <span class="vip-slider-val" id="harmonicRecovVal">25%</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Stereo Width</label>
+            <input type="range" id="stereoWidth" min="0" max="200" value="100" />
+            <span class="vip-slider-val" id="stereoWidthVal">100%</span>
+          </div>
+          <div class="vip-slider-row">
+            <label>Dry/Wet Mix</label>
+            <input type="range" id="dryWet" min="0" max="100" value="100" />
+            <span class="vip-slider-val" id="dryWetVal">100%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Preset Buttons -->
+      <div class="vip-presets">
+        <span class="vip-presets-label">Presets:</span>
+        <button class="vip-btn vip-btn-preset" data-preset="podcast">Podcast</button>
+        <button class="vip-btn vip-btn-preset" data-preset="film">Film Dialog</button>
+        <button class="vip-btn vip-btn-preset" data-preset="interview">Interview</button>
+        <button class="vip-btn vip-btn-preset" data-preset="forensic">Forensic</button>
+        <button class="vip-btn vip-btn-preset" data-preset="music">Music Vocal</button>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="vip-actions">
+        <button id="processBtn" class="vip-btn vip-btn-primary" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Run 30-Stage Pipeline
+        </button>
+        <button id="stopBtn" class="vip-btn vip-btn-danger" style="display:none;">Stop</button>
+        <button id="exportBtn" class="vip-btn vip-btn-export" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export WAV
+        </button>
+      </div>
+
+      <!-- Pipeline Progress -->
+      <div class="vip-pipeline" id="pipelineSection">
+        <div class="vip-pipeline-header">
+          <span>Pipeline Progress</span>
+          <span id="pipelineStage">Idle</span>
+        </div>
+        <div class="vip-pipeline-bar">
+          <div id="pipelineFill" class="vip-pipeline-fill"></div>
+        </div>
+        <div id="pipelineDetail" class="vip-pipeline-detail"></div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN: Visualizations -->
+    <section class="vip-panel vip-viz-panel">
+      <!-- Playback Controls -->
+      <div class="vip-playback">
+        <div class="vip-ab-controls">
+          <button id="playOrig" class="vip-btn vip-btn-sm" disabled>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+            Original
+          </button>
+          <button id="playProc" class="vip-btn vip-btn-sm" disabled>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
+            Processed
+          </button>
+          <button id="stopPlayback" class="vip-btn vip-btn-sm" disabled>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            Stop
+          </button>
+          <button id="abToggle" class="vip-btn vip-btn-sm vip-btn-ab" disabled>A/B</button>
+        </div>
+        <div class="vip-ab-indicator">
+          <span id="abLabel">No audio loaded</span>
+        </div>
+      </div>
+
+      <!-- Real-Time Spectrogram -->
+      <div class="vip-viz-card">
+        <div class="vip-viz-header">
+          <span>Real-Time Spectrogram</span>
+          <div class="vip-viz-actions">
+            <button class="vip-btn vip-btn-xs" id="spectroToggle">Live</button>
+          </div>
+        </div>
+        <canvas id="spectrogramCanvas"></canvas>
+        <div class="vip-spectro-scale">
+          <span>0 Hz</span><span>2k</span><span>4k</span><span>8k</span><span>16k</span><span>22k</span>
+        </div>
+      </div>
+
+      <!-- Waveforms -->
+      <div class="vip-wave-wrapper">
+        <div class="vip-viz-card vip-wave-card">
+          <div class="vip-viz-header"><span>Original</span></div>
+          <canvas id="inputCanvas"></canvas>
+        </div>
+        <div class="vip-viz-card vip-wave-card">
+          <div class="vip-viz-header"><span>Processed</span></div>
+          <canvas id="outputCanvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Frequency Analyzer -->
+      <div class="vip-viz-card">
+        <div class="vip-viz-header">
+          <span>Frequency Analyzer</span>
+        </div>
+        <canvas id="analyzerCanvas"></canvas>
+      </div>
+
+      <!-- Stats Row -->
+      <div class="vip-stats-row">
+        <div class="vip-stat-box">
+          <span class="vip-stat-label">Channels</span>
+          <span class="vip-stat-value" id="stat-channels">--</span>
+        </div>
+        <div class="vip-stat-box">
+          <span class="vip-stat-label">Bit Depth</span>
+          <span class="vip-stat-value">32-bit float</span>
+        </div>
+        <div class="vip-stat-box">
+          <span class="vip-stat-label">RMS Level</span>
+          <span class="vip-stat-value" id="stat-rms">-- dB</span>
+        </div>
+        <div class="vip-stat-box">
+          <span class="vip-stat-label">Peak</span>
+          <span class="vip-stat-value" id="stat-peak">-- dB</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="vip-footer">
+    <span>VoiceIsolate Pro v18.0 · Threads from Space Architecture · 30-Stage Hexa-Pass Pipeline</span>
+    <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
