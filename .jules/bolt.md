@@ -13,3 +13,7 @@
 ## 2026-03-06 - Array.prototype.shift() Overhead in Lookahead Queues
 **Learning:** Using `Array.prototype.shift()` on queues containing object references (like STFT spectra) inside tight audio processing loops (e.g., `SpectralGateNode`) triggers significant O(N) re-indexing and garbage collection overhead. Even with small queue lengths, this degrades realtime performance.
 **Action:** Replace dynamic array lookahead queues with fixed-size ring buffers initialized as `new Array(lookaheadFrames + 1)` alongside head/tail pointers, enabling true O(1) performance and virtually zeroing out GC overhead in the hot loop.
+
+## 2026-03-07 - TypedArray Initialization in Hot DSP Synthesis Loops
+**Learning:** Instantiating new `TypedArray` objects (`new Float32Array(N)`) inside high-frequency processing methods like `FFTEngine.synthesize` creates massive garbage collection overhead that degrades real-time audio performance.
+**Action:** Pre-allocate these intermediate buffers (like `synthRe` and `synthIm`) as properties on the class instance in the constructor, and reuse them during synthesis. In cases where the entire buffer is deterministically overwritten (such as during a full one-sided to two-sided complex reconstruction), calling `.fill(0)` is unnecessary, saving even more cycles.

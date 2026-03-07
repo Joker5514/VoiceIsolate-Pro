@@ -152,6 +152,8 @@ export class FFTEngine {
   private twiddleSin: Float32Array;
   /** Normalisation scalar for overlap-add reconstruction */
   private olaScale: number;
+  private synthRe: Float32Array;
+  private synthIm: Float32Array;
 
   constructor(config: AudioConfig) {
     const { fftSize, hopSize, windowFunction, sampleRate } = config;
@@ -177,6 +179,9 @@ export class FFTEngine {
     let wsum = 0;
     for (let i = 0; i < fftSize; i++) wsum += this.window[i] * this.window[i];
     this.olaScale = hopSize / wsum;
+
+    this.synthRe = new Float32Array(fftSize);
+    this.synthIm = new Float32Array(fftSize);
   }
 
   // -------------------------------------------------------------------------
@@ -223,10 +228,11 @@ export class FFTEngine {
   synthesize(frame: SpectralFrame, out: Float32Array): void {
     const N = this.fftSize;
     const half = N / 2 + 1;
-    const re = new Float32Array(N);
-    const im = new Float32Array(N);
+    const re = this.synthRe;
+    const im = this.synthIm;
 
     // Reconstruct full spectrum from magnitude + phase (one-sided → two-sided)
+    // ⚡ Bolt: Pre-allocated typed arrays used here instead of re-instantiating.
     for (let k = 0; k < half; k++) {
       re[k] = frame.magnitude[k] * Math.cos(frame.phase[k]);
       im[k] = frame.magnitude[k] * Math.sin(frame.phase[k]);
