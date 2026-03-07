@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceIsolate Pro v18.0 — Production Blueprint</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-void: #07080a;
+  --bg-card: #0d0f14;
+  --bg-card-hover: #12151c;
+  --border: #1a1e2a;
+  --border-glow: #2a3352;
+  --text-primary: #e8eaf0;
+  --text-secondary: #8892a8;
+  --text-dim: #4a5268;
+  --accent-cyan: #00d4ff;
+  --accent-violet: #8b5cf6;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --accent-cyan-dim: rgba(0,212,255,0.08);
+  --accent-violet-dim: rgba(139,92,246,0.08);
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+::selection { background: rgba(0,212,255,0.2); color: #fff; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-void); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-glow); }
+
+/* Layout */
+.container { max-width: 1280px; margin: 0 auto; padding: 0 2rem; }
+section { padding: 6rem 0; }
+
+/* Typography */
+h1 { font-family: var(--font-display); font-size: clamp(3rem, 7vw, 5.5rem); font-weight: 400; line-height: 1.05; letter-spacing: -0.02em; }
+h2 { font-family: var(--font-display); font-size: clamp(2rem, 4vw, 3rem); font-weight: 400; line-height: 1.15; margin-bottom: 1rem; }
+h3 { font-family: var(--font-body); font-size: 1.15rem; font-weight: 600; letter-spacing: 0.02em; margin-bottom: 0.75rem; }
+p { color: var(--text-secondary); font-size: 0.95rem; }
+
+/* Nav */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(7,8,10,0.85); backdrop-filter: blur(20px) saturate(1.4);
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 0;
+}
+nav .container { display: flex; align-items: center; justify-content: space-between; }
+.nav-logo { font-family: var(--font-mono); font-size: 0.8rem; font-weight: 500; color: var(--accent-cyan); letter-spacing: 0.08em; }
+.nav-logo span { color: var(--text-dim); }
+.nav-links { display: flex; gap: 2rem; list-style: none; }
+.nav-links a { color: var(--text-dim); font-size: 0.78rem; text-decoration: none; letter-spacing: 0.04em; font-weight: 500; text-transform: uppercase; transition: color 0.3s; }
+.nav-links a:hover { color: var(--text-primary); }
+.nav-version { font-family: var(--font-mono); font-size: 0.65rem; background: rgba(0,212,255,0.1); color: var(--accent-cyan); padding: 0.25rem 0.6rem; border-radius: 3px; border: 1px solid rgba(0,212,255,0.15); }
+
+/* Hero */
+.hero {
+  min-height: 100vh; display: flex; align-items: center;
+  position: relative; overflow: hidden;
+  padding-top: 5rem;
+}
+.hero::before {
+  content: ''; position: absolute; top: -50%; left: -50%;
+  width: 200%; height: 200%;
+  background: radial-gradient(ellipse at 30% 20%, rgba(0,212,255,0.04) 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 60%, rgba(139,92,246,0.03) 0%, transparent 50%);
+  animation: drift 30s ease-in-out infinite;
+}
+@keyframes drift { 0%,100% { transform: translate(0,0) rotate(0deg); } 50% { transform: translate(-3%,2%) rotate(1deg); } }
+.hero-content { position: relative; z-index: 1; }
+.hero-label {
+  font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--accent-cyan); margin-bottom: 1.5rem;
+  display: flex; align-items: center; gap: 0.75rem;
+}
+.hero-label::before { content: ''; width: 2rem; height: 1px; background: var(--accent-cyan); }
+.hero h1 { margin-bottom: 1.5rem; }
+.hero h1 em { font-style: italic; color: var(--accent-cyan); }
+.hero-sub { font-size: 1.1rem; max-width: 640px; line-height: 1.8; margin-bottom: 3rem; }
+.hero-stats { display: flex; gap: 3rem; flex-wrap: wrap; }
+.stat { border-left: 2px solid var(--border); padding-left: 1.25rem; }
+.stat-value { font-family: var(--font-mono); font-size: 1.5rem; font-weight: 700; color: var(--text-primary); }
+.stat-label { font-size: 0.72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 0.15rem; }
+
+/* Grid lines decorative */
+.grid-bg {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.025;
+  background-image: linear-gradient(var(--text-dim) 1px, transparent 1px),
+                    linear-gradient(90deg, var(--text-dim) 1px, transparent 1px);
+  background-size: 80px 80px;
+}
+
+/* Section header */
+.section-header { margin-bottom: 4rem; }
+.section-label {
+  font-family: var(--font-mono); font-size: 0.65rem; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--accent-violet); margin-bottom: 0.75rem;
+}
+.section-desc { max-width: 600px; }
+
+/* Cards */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.25rem; }
+.card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 2rem; position: relative; overflow: hidden;
+  transition: border-color 0.4s, background 0.4s;
+}
+.card:hover { border-color: var(--border-glow); background: var(--bg-card-hover); }
+.card-icon {
+  width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem; margin-bottom: 1.25rem; font-family: var(--font-mono); font-weight: 700;
+}
+.card-icon.cyan { background: var(--accent-cyan-dim); color: var(--accent-cyan); border: 1px solid rgba(0,212,255,0.15); }
+.card-icon.violet { background: var(--accent-violet-dim); color: var(--accent-violet); border: 1px solid rgba(139,92,246,0.15); }
+.card-icon.emerald { background: rgba(16,185,129,0.08); color: var(--accent-emerald); border: 1px solid rgba(16,185,129,0.15); }
+.card-icon.amber { background: rgba(245,158,11,0.08); color: var(--accent-amber); border: 1px solid rgba(245,158,11,0.15); }
+.card-icon.rose { background: rgba(244,63,94,0.08); color: var(--accent-rose); border: 1px solid rgba(244,63,94,0.15); }
+.card h3 { font-size: 1.05rem; }
+.card p { font-size: 0.85rem; line-height: 1.65; }
+
+/* Architecture Diagram */
+.arch-diagram {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 3rem 2rem; overflow-x: auto; margin: 2rem 0;
+}
+.arch-flow { display: flex; align-items: stretch; gap: 0; min-width: 900px; justify-content: center; }
+.arch-node {
+  padding: 1rem 1.25rem; border-radius: 6px; text-align: center; min-width: 130px;
+  font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.25rem;
+  position: relative;
+}
+.arch-node.input { background: rgba(0,212,255,0.08); border: 1px solid rgba(0,212,255,0.2); color: var(--accent-cyan); }
+.arch-node.process { background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.2); color: var(--accent-violet); }
+.arch-node.ml { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2); color: var(--accent-emerald); }
+.arch-node.output { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); color: var(--accent-amber); }
+.arch-arrow { display: flex; align-items: center; padding: 0 0.5rem; color: var(--text-dim); font-size: 1.2rem; }
+.arch-node-label { font-size: 0.6rem; color: var(--text-dim); margin-top: 0.15rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* Pipeline Table */
+.pipeline-table-wrap { overflow-x: auto; margin: 2rem 0; border-radius: 8px; border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+thead { background: var(--bg-card); }
+th { font-family: var(--font-mono); font-size: 0.65rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); padding: 1rem 1.25rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+td { padding: 0.85rem 1.25rem; border-bottom: 1px solid rgba(26,30,42,0.5); color: var(--text-secondary); vertical-align: top; }
+tr:hover td { background: rgba(13,15,20,0.5); }
+.stage-num { font-family: var(--font-mono); font-weight: 700; color: var(--accent-cyan); font-size: 0.75rem; }
+.pass-badge {
+  font-family: var(--font-mono); font-size: 0.6rem; padding: 0.15rem 0.5rem; border-radius: 3px;
+  display: inline-block; font-weight: 600;
+}
+.pass-1 { background: rgba(0,212,255,0.1); color: var(--accent-cyan); }
+.pass-2 { background: rgba(139,92,246,0.1); color: var(--accent-violet); }
+.pass-3 { background: rgba(16,185,129,0.1); color: var(--accent-emerald); }
+.pass-4 { background: rgba(245,158,11,0.1); color: var(--accent-amber); }
+.pass-5 { background: rgba(244,63,94,0.1); color: var(--accent-rose); }
+.pass-6 { background: rgba(99,102,241,0.1); color: #818cf8; }
+.pass-7 { background: rgba(236,72,153,0.1); color: #ec4899; }
+.pass-8 { background: rgba(20,184,166,0.1); color: #14b8a6; }
+.thread-tag { font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-dim); }
+
+/* Code block */
+.code-block {
+  background: #0a0c10; border: 1px solid var(--border); border-radius: 8px;
+  padding: 1.5rem 2rem; font-family: var(--font-mono); font-size: 0.75rem;
+  line-height: 1.8; overflow-x: auto; margin: 1.5rem 0; color: var(--text-secondary);
+  position: relative;
+}
+.code-block .kw { color: var(--accent-violet); }
+.code-block .fn { color: var(--accent-cyan); }
+.code-block .str { color: var(--accent-emerald); }
+.code-block .cm { color: var(--text-dim); font-style: italic; }
+.code-block .num { color: var(--accent-amber); }
+.code-label {
+  position: absolute; top: 0.75rem; right: 1rem;
+  font-family: var(--font-mono); font-size: 0.55rem; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.1em;
+}
+
+/* Spec grid */
+.spec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; margin: 2rem 0; }
+.spec-item { display: flex; align-items: baseline; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid rgba(26,30,42,0.4); }
+.spec-key { font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-dim); min-width: 140px; letter-spacing: 0.02em; }
+.spec-val { font-size: 0.85rem; color: var(--text-primary); font-weight: 500; }
+
+/* Roadmap */
+.roadmap { position: relative; padding-left: 2.5rem; margin: 2rem 0; }
+.roadmap::before { content: ''; position: absolute; left: 0.5rem; top: 0; bottom: 0; width: 1px; background: linear-gradient(to bottom, var(--accent-cyan), var(--accent-violet), var(--accent-emerald)); }
+.roadmap-item { position: relative; margin-bottom: 2.5rem; }
+.roadmap-dot {
+  position: absolute; left: -2.25rem; top: 0.35rem; width: 10px; height: 10px;
+  border-radius: 50%; border: 2px solid; background: var(--bg-void);
+}
+.roadmap-item:nth-child(1) .roadmap-dot { border-color: var(--accent-cyan); }
+.roadmap-item:nth-child(2) .roadmap-dot { border-color: var(--accent-violet); }
+.roadmap-item:nth-child(3) .roadmap-dot { border-color: var(--accent-emerald); }
+.roadmap-item:nth-child(4) .roadmap-dot { border-color: var(--accent-amber); }
+.roadmap-phase { font-family: var(--font-mono); font-size: 0.65rem; color: var(--accent-cyan); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.25rem; }
+.roadmap-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 0.5rem; }
+.roadmap-desc { font-size: 0.82rem; color: var(--text-secondary); max-width: 500px; }
+
+/* Two col */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+@media (max-width: 768px) {
+  .two-col { grid-template-columns: 1fr; }
+  .nav-links { display: none; }
+  .hero-stats { gap: 1.5rem; }
+  .arch-flow { min-width: 600px; }
+}
+
+/* Model cards */
+.model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.25rem; margin: 2rem 0; }
+.model-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; }
+.model-name { font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700; margin-bottom: 0.25rem; }
+.model-role { font-size: 0.72rem; color: var(--accent-violet); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.75rem; }
+.model-detail { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.6; }
+
+/* Security items */
+.security-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.25rem; margin: 2rem 0; }
+.security-item { display: flex; gap: 1rem; padding: 1.25rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; }
+.security-icon { font-size: 1.25rem; flex-shrink: 0; margin-top: 0.1rem; }
+.security-text h4 { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.25rem; }
+.security-text p { font-size: 0.8rem; }
+
+/* Footer */
+footer { border-top: 1px solid var(--border); padding: 3rem 0; text-align: center; }
+footer p { font-size: 0.72rem; color: var(--text-dim); }
+
+/* Fade-in animation */
+.fade-in { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.fade-in.visible { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<nav>
+  <div class="container">
+    <div class="nav-logo">VOICEISOLATE<span>.PRO</span></div>
+    <ul class="nav-links">
+      <li><a href="#capabilities">Capabilities</a></li>
+      <li><a href="#architecture">Architecture</a></li>
+      <li><a href="#pipeline">Pipeline</a></li>
+      <li><a href="#models">Models</a></li>
+      <li><a href="#pseudocode">Pseudocode</a></li>
+      <li><a href="#ui">App Design</a></li>
+      <li><a href="#security">Security</a></li>
+      <li><a href="#roadmap">Roadmap</a></li>
+    </ul>
+    <span class="nav-version">v18.0</span>
+  </div>
+</nav>
+
+<!-- ==================== HERO ==================== -->
+<section class="hero">
+  <div class="container hero-content">
+    <div class="hero-label">Production Blueprint — March 2026</div>
+    <h1>Threads from <em>Space</em><br>Voice Isolation Engine</h1>
+    <p class="hero-sub">
+      32-stage Octa-Pass DSP pipeline. Hybrid ML + classical spectral processing.
+      GPU-accelerated, privacy-first, forensic-grade voice extraction
+      from any audio or video source.
+    </p>
+    <div class="hero-stats">
+      <div class="stat"><div class="stat-value">32</div><div class="stat-label">Pipeline Stages</div></div>
+      <div class="stat"><div class="stat-value">&lt;10ms</div><div class="stat-label">Live Latency</div></div>
+      <div class="stat"><div class="stat-value">-102dB</div><div class="stat-label">Noise Floor</div></div>
+      <div class="stat"><div class="stat-value">8</div><div class="stat-label">Parallel Passes</div></div>
+      <div class="stat"><div class="stat-value">0</div><div class="stat-label">External Data Sent</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== CAPABILITIES ==================== -->
+<section id="capabilities">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-label">01 — Core Capabilities</div>
+      <h2>Studio-Grade Extraction,<br>Zero Compromise</h2>
+      <p class="section-desc">Every capability refined across 18 production iterations. Classical DSP precision fused with neural network intelligence.</p>
+    </div>
+    <div class="card-grid">
+      <div class="card fade-in">
+        <div class="card-icon cyan">λ</div>
+        <h3>Voice Isolation</h3>
+        <p>Surgical extraction of target voice from any source. Multi-speaker separation via ECAPA-TDNN 256-dim voiceprint embeddings with cosine similarity gating. Handles overlapping speakers, cross-talk, and crowd noise.</p>
+      </div>
+      <div class="card fade-in">
+        <div class="card-icon violet">∿</div>
+        <h3>Multi-Band Noise Reduction</h3>
+        <p>36 psychoacoustic ERB bands with adaptive spectral gating. Per-frame SNR estimation drives dynamic thresholds. Continuous background sampling builds real-time noise models that adapt to changing environments.</p>
+      </div>
+      <div class="card fade-in">
+        <div class="card-icon emerald">⊕</div>
+        <h3>Speaker Separation</h3>
+        <p>Automatic diarization and isolation of overlapping voices using hybrid Demucs v4.1 + Band-Split RNN ensemble. Voiceprint-guided extraction with real-time speaker enrollment and tracking across segments.</p>
+      </div>
+      <div class="card fade-in">
+        <div class="card-icon amber">◈</div>
+        <h3>Real-Time + Offline Modes</h3>
+        <p>Live mode: &lt;10ms latency via AudioWorklet + SharedArrayBuffer ring buffer. Creator mode: full 32-stage pipeline at maximum quality with 4× oversampling. Forensic mode: conservative + audit trail.</p>
+      </div>
+      <div class="card fade-in">
+        <div class="card-icon rose">⟡</div>
+        <h3>Artifact Suppression</h3>
+        <p>Phase-coherent reconstruction eliminates musical noise. Temporal continuity enforcement prevents flutter. HiFi-GAN v2 neural vocoder restores natural speech harmonics destroyed by aggressive processing.</p>
+      </div>
+      <div class="card fade-in">
+        <div class="card-icon cyan">⬡</div>
+        <h3>Harmonic Reconstruction</h3>
+        <p>Fundamental frequency tracking with harmonic series resynthesis. Formant preservation across all processing stages. Voice-gated HF boost restores air and presence without amplifying noise.</p>
+      </div>
+    </div>
+
+    <div class="spec-grid fade-in" style="margin-top:3rem;">
+      <div class="spec-item"><span class="spec-key">Noise Floor</span><span class="spec-val">-102dB (36 ERB bands + ML residual removal)</span></div>
+      <div class="spec-item"><span class="spec-key">Live Latency</span><span class="spec-val">&lt;10ms via AudioWorklet + SAB ring buffer</span></div>
+      <div class="spec-item"><span class="spec-key">Sample Rates</span><span class="spec-val">8kHz – 192kHz adaptive</span></div>
+      <div class="spec-item"><span class="spec-key">Bit Depth</span><span class="spec-val">16/24/32-bit float internal</span></div>
+      <div class="spec-item"><span class="spec-key">Format Support</span><span class="spec-val">MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MOV, WEBM, MKV</span></div>
+      <div class="spec-item"><span class="spec-key">Batch Processing</span><span class="spec-val">1–10,000 files via async thread pool</span></div>
+      <div class="spec-item"><span class="spec-key">GPU Acceleration</span><span class="spec-val">WebGPU primary, WebGL2 fallback, WASM baseline</span></div>
+      <div class="spec-item"><span class="spec-key">Speaker Tracking</span><span class="spec-val">Up to 16 simultaneous speakers</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== ARCHITECTURE ==================== -->
+<section id="architecture" style="background: linear-gradient(180deg, transparent, rgba(13,15,20,0.5), transparent);">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-label">02 — System Architecture</div>
+      <h2>Threads from Space v8</h2>
+      <p class="section-desc">Fully parallel, multi-threaded DSP engine with GPU-accelerated spectral transforms, modular processing nodes, and distributed job orchestration.</p>
+    </div>
+
+    <!-- High-level flow -->
+    <div class="arch-diagram fade-in">
+      <div class="arch-flow">
+        <div class="arch-node input">
+          INGEST<br>
+          <span class="arch-node-label">Decode + Resample</span>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node process">
+          STFT<br>
+          <span class="arch-node-label">Single-Pass Spectral</span>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node ml">
+          ML ENGINE<br>
+          <span class="arch-node-label">Demucs + BSRNN</span>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node process">
+          SPECTRAL OPS<br>
+          <span class="arch-node-label">In-Place Processing</span>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node process">
+          iSTFT<br>
+          <span class="arch-node-label">Phase-Coherent</span>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node output">
+          POST-PROCESS<br>
+          <span class="arch-node-label">Time-Domain Passes</span>
+        </div>
+        <div class="arch-arrow">→</div>
+        <div class="arch-node output">
+          OUTPUT<br>
+          <span class="arch-node-label">Encode + Export</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col fade-in">
+      <div>
+        <h3 style="color:var(--accent-cyan);">Thread Pool Orchestration</h3>
+        <p>Dynamic thread allocation across CPU/GPU cores. The ThreadManager spawns a configurable pool (default: navigator.hardwareConcurrency) of Web Workers, each assigned to pipeline stages via a priority queue. GPU compute threads handle STFT/iSTFT and ML inference in parallel, while CPU workers manage time-domain passes and I/O.</p>
+        <br>
+        <h3 style="color:var(--accent-violet);">Single-Pass Spectral Architecture</h3>
+        <p>Critical design principle: one STFT → all spectral operations in-place → one iSTFT. Eliminates cumulative phase smearing and echo/doubling artifacts caused by multiple spectral round-trips. All 12 spectral stages execute on the same complex buffer between transforms.</p>
+      </div>
+      <div>
+        <h3 style="color:var(--accent-emerald);">Modular Node Graph</h3>
+        <p>Every processing stage is a self-contained node implementing the DSPNode interface: process(buffer), configure(params), getMetrics(). Nodes connect via typed channels (Float32, Complex64, SpectralFrame). Plugin API exposes the same interface for custom modules.</p>
+        <br>
+        <h3 style="color:var(--accent-amber);">Asynchronous Job Queue</h3>
+        <p>BatchOrchestrator manages large-scale processing via a priority queue with configurable concurrency (1–64 simultaneous files). Jobs stream progress via MessageChannel, enabling real-time UI updates. Failed jobs auto-retry with exponential backoff.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== PIPELINE ==================== -->
+<section id="pipeline">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-label">03 — 32-Stage Octa-Pass Pipeline</div>
+      <h2>The Processing Engine</h2>
+      <p class="section-desc">Eight orchestrated passes: Ingestion → Analysis → ML Separation → Spectral Refinement → Room Correction → Time-Domain Polish → Neural Reconstruction → Output Mastering.</p>
+    </div>
+
+    <div class="pipeline-table-wrap fade-in">
+      <table>
+        <thead>
+          <tr><th>Stage</th><th>Pass</th><th>Module</th><th>Operation</th><th>Thread</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="stage-num">01</td><td><span class="pass-badge pass-1">INGEST</span></td><td>AudioDecoder</td><td>Format detection, FFmpeg decode, channel mapping, sample rate normalization</td><td class="thread-tag">IO-0</td></tr>
+          <tr><td class="stage-num">02</td><td><span class="pass-badge pass-1">INGEST</span></td><td>BufferManager</td><td>Ring buffer allocation, chunk segmentation (2048/4096 frames), overlap config</td><td class="thread-tag">IO-0</td></tr>
+          <tr><td class="stage-num">03</td><td><span class="pass-badge pass-1">INGEST</span></td><td>NoiseProfiler</td><td>Initial 500ms quiet-segment analysis, spectral fingerprint, noise class detection</td><td class="thread-tag">CPU-0</td></tr>
+          <tr><td class="stage-num">04</td><td><span class="pass-badge pass-1">INGEST</span></td><td>VADEngine</td><td>Silero VAD v5 inference, speech/silence boundary mapping, segment classification</td><td class="thread-tag">GPU-0</td></tr>
+
+          <tr><td class="stage-num">05</td><td><span class="pass-badge pass-2">ANALYSIS</span></td><td>STFTProcessor</td><td>Forward FFT (Hann window, 4096-point, 75% overlap), complex spectrum generation</td><td class="thread-tag">GPU-0</td></tr>
+          <tr><td class="stage-num">06</td><td><span class="pass-badge pass-2">ANALYSIS</span></td><td>PitchTracker</td><td>YIN + CREPE hybrid F0 estimation, harmonic series mapping, voiced/unvoiced detection</td><td class="thread-tag">CPU-1</td></tr>
+          <tr><td class="stage-num">07</td><td><span class="pass-badge pass-2">ANALYSIS</span></td><td>SpeakerEncoder</td><td>ECAPA-TDNN 256-dim embedding extraction, voiceprint database lookup, cosine scoring</td><td class="thread-tag">GPU-1</td></tr>
+          <tr><td class="stage-num">08</td><td><span class="pass-badge pass-2">ANALYSIS</span></td><td>RoomAnalyzer</td><td>RT60 estimation, early reflection detection, room impulse response modeling</td><td class="thread-tag">CPU-1</td></tr>
+
+          <tr><td class="stage-num">09</td><td><span class="pass-badge pass-3">ML SEP</span></td><td>DemucsV4</td><td>Hybrid Transformer+U-Net source separation (vocals/drums/bass/other)</td><td class="thread-tag">GPU-0</td></tr>
+          <tr><td class="stage-num">10</td><td><span class="pass-badge pass-3">ML SEP</span></td><td>BSRNNModule</td><td>Band-Split RNN secondary separation, sub-band processing across 36 ERB bands</td><td class="thread-tag">GPU-1</td></tr>
+          <tr><td class="stage-num">11</td><td><span class="pass-badge pass-3">ML SEP</span></td><td>EnsembleFusion</td><td>Weighted merge of Demucs + BSRNN outputs, confidence-gated selection per T-F bin</td><td class="thread-tag">CPU-2</td></tr>
+          <tr><td class="stage-num">12</td><td><span class="pass-badge pass-3">ML SEP</span></td><td>VoiceprintGate</td><td>Speaker embedding–guided masking, non-target suppression, cross-talk removal</td><td class="thread-tag">GPU-1</td></tr>
+
+          <tr><td class="stage-num">13</td><td><span class="pass-badge pass-4">SPECTRAL</span></td><td>SpectralSubtractor</td><td>Over-subtraction with spectral floor (β=2.0, floor=0.002), noise residual removal</td><td class="thread-tag">GPU-0</td></tr>
+          <tr><td class="stage-num">14</td><td><span class="pass-badge pass-4">SPECTRAL</span></td><td>ERBGate</td><td>36-band psychoacoustic gating, per-band adaptive threshold, cross-band smoothing</td><td class="thread-tag">GPU-0</td></tr>
+          <tr><td class="stage-num">15</td><td><span class="pass-badge pass-4">SPECTRAL</span></td><td>HumEliminator</td><td>Harmonic comb filter: 50/60Hz + 8 harmonics, Q-adaptive notch width, phase-locked</td><td class="thread-tag">CPU-2</td></tr>
+          <tr><td class="stage-num">16</td><td><span class="pass-badge pass-4">SPECTRAL</span></td><td>TransientShaper</td><td>Click/pop detection via spectral flux, interpolation repair, context-aware fill</td><td class="thread-tag">CPU-2</td></tr>
+
+          <tr><td class="stage-num">17</td><td><span class="pass-badge pass-5">ROOM</span></td><td>Dereverberator</td><td>WPE-style dereverberation, late reflection suppression, RT60-adaptive processing</td><td class="thread-tag">GPU-0</td></tr>
+          <tr><td class="stage-num">18</td><td><span class="pass-badge pass-5">ROOM</span></td><td>RoomCompensator</td><td>8 acoustic profile matching, distance compensation, environment normalization</td><td class="thread-tag">CPU-3</td></tr>
+          <tr><td class="stage-num">19</td><td><span class="pass-badge pass-5">ROOM</span></td><td>StereoRecovery</td><td>Mid/Side processing, spatial reconstruction, phantom center extraction</td><td class="thread-tag">CPU-3</td></tr>
+          <tr><td class="stage-num">20</td><td><span class="pass-badge pass-5">ROOM</span></td><td>iSTFTProcessor</td><td>Inverse FFT with phase-coherent overlap-add, cross-fade stitching, continuity check</td><td class="thread-tag">GPU-0</td></tr>
+
+          <tr><td class="stage-num">21</td><td><span class="pass-badge pass-6">TIME-DOM</span></td><td>DynamicsProcessor</td><td>Multi-band compressor (4 bands), voice-optimized ratios, look-ahead limiting</td><td class="thread-tag">CPU-0</td></tr>
+          <tr><td class="stage-num">22</td><td><span class="pass-badge pass-6">TIME-DOM</span></td><td>DeEsser</td><td>Sibilance detection (4–9kHz), dynamic EQ, frequency-selective compression</td><td class="thread-tag">CPU-1</td></tr>
+          <tr><td class="stage-num">23</td><td><span class="pass-badge pass-6">TIME-DOM</span></td><td>GapFiller</td><td>Micro-silence smoothing, breath detection + attenuation, comfort noise injection</td><td class="thread-tag">CPU-1</td></tr>
+          <tr><td class="stage-num">24</td><td><span class="pass-badge pass-6">TIME-DOM</span></td><td>TemporalCoherence</td><td>Frame-to-frame continuity enforcement, anti-flutter filter, energy envelope smoothing</td><td class="thread-tag">CPU-2</td></tr>
+
+          <tr><td class="stage-num">25</td><td><span class="pass-badge pass-7">NEURAL</span></td><td>HiFiGAN_v2</td><td>Neural vocoder waveform generation from mel-spectrogram, harmonic resynthesis</td><td class="thread-tag">GPU-0</td></tr>
+          <tr><td class="stage-num">26</td><td><span class="pass-badge pass-7">NEURAL</span></td><td>FormantPreserver</td><td>Formant frequency tracking (F1–F4), natural speech quality enforcement</td><td class="thread-tag">GPU-1</td></tr>
+          <tr><td class="stage-num">27</td><td><span class="pass-badge pass-7">NEURAL</span></td><td>ConformerRefiner</td><td>Transformer-based spectral enhancement, residual artifact removal, final polish</td><td class="thread-tag">GPU-1</td></tr>
+          <tr><td class="stage-num">28</td><td><span class="pass-badge pass-7">NEURAL</span></td><td>ABComparator</td><td>Perceptual quality scoring (PESQ/POLQA), artifact detection, regression guard</td><td class="thread-tag">CPU-3</td></tr>
+
+          <tr><td class="stage-num">29</td><td><span class="pass-badge pass-8">MASTER</span></td><td>LoudnessNorm</td><td>EBU R128 / LUFS targeting (-16/-14/-11 LUFS), true peak limiting (-1dBTP)</td><td class="thread-tag">CPU-0</td></tr>
+          <tr><td class="stage-num">30</td><td><span class="pass-badge pass-8">MASTER</span></td><td>VoiceHFBoost</td><td>Voice-gated high-frequency presence boost (8–16kHz), air band recovery</td><td class="thread-tag">CPU-1</td></tr>
+          <tr><td class="stage-num">31</td><td><span class="pass-badge pass-8">MASTER</span></td><td>FinalLimiter</td><td>Brick-wall limiter, dither injection (TPDF for 16-bit), output format encoding</td><td class="thread-tag">CPU-0</td></tr>
+          <tr><td class="stage-num">32</td><td><span class="pass-badge pass-8">MASTER</span></td><td>AuditLogger</td><td>Full processing chain log, parameter snapshot, forensic chain-of-custody metadata</td><td class="thread-tag">IO-1</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== MODELS ==================== -->
+<section id="models" style="background: linear-gradient(180deg, transparent, rgba(13,15,20,0.5), transparent);">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-label">04 — Algorithms & Models</div>
+      <h2>Model Selection Rationale</h2>
+      <p class="section-desc">Each model chosen for browser-native execution via ONNX Runtime Web with WebGPU/WASM backends. No server round-trips, no data egress.</p>
+    </div>
+
+    <div class="model-grid fade-in">
+      <div class="model-card">
+        <div class="model-name">Demucs v4.1 (Hybrid Transformer)</div>
+        <div class="model-role">Primary Source Separation</div>
+        <div class="model-detail">Hybrid architecture combining temporal convolution (U-Net) with cross-attention Transformer layers. Processes full waveform + spectrogram simultaneously. 4-stem output (vocals, drums, bass, other). ONNX-quantized INT8 model: ~150MB, runs at 2.5× real-time on mid-range GPU.</div>
+      </div>
+      <div class="model-card">
+        <div class="model-name">Band-Split RNN (BSRNN)</div>
+        <div class="model-role">Secondary Separation / Ensemble</div>
+        <div class="model-detail">Processes frequency bands independently through dedicated LSTM streams, then fuses via attention. Excels at harmonic content where Demucs may blur. Used as ensemble partner — confidence-weighted fusion per T-F bin yields +2.1dB SDR over either model alone.</div>
+      </div>
+      <div class="model-card">
+        <div class="model-name">ECAPA-TDNN (256-dim)</div>
+        <div class="model-role">Speaker Identification & Gating</div>
+        <div class="model-detail">Emphasized Channel Attention, Propagation and Aggregation TDNN. Produces 256-dimensional speaker embeddings. Cosine similarity threshold (τ=0.65) gates voiceprint-guided isolation. Supports real-time enrollment: 3-second voice sample → persistent speaker profile.</div>
+      </div>
+      <div class="model-card">
+        <div class="model-name">Silero VAD v5</div>
+        <div class="model-role">Voice Activity Detection</div>
+        <div class="model-detail">Ultra-lightweight ONNX model (~2MB). Sub-millisecond inference per 64ms frame. Drives noise profiling (silence segments), gate triggers, and processing bypass for non-speech regions. Critical for battery optimization in mobile deployment.</div>
+      </div>
+      <div class="model-card">
+        <div class="model-name">HiFi-GAN v2</div>
+        <div class="model-role">Neural Vocoder / Reconstruction</div>
+        <div class="model-detail">Generative adversarial network for waveform synthesis from mel-spectrograms. Reconstructs natural speech harmonics destroyed by aggressive spectral processing. Multi-period + multi-scale discriminator training ensures artifact-free output.</div>
+      </div>
+      <div class="model-card">
+        <div class="model-name">Conformer (Spectral Enhancement)</div>
+        <div class="model-role">Final Polish / Residual Removal</div>
+        <div class="model-detail">Convolution-augmented Transformer for T-F domain enhancement. Trained on matched pairs of processed/clean speech. Removes residual musical noise and processing artifacts that classical DSP cannot address. Last-mile quality improvement.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== PSEUDOCODE ==================== -->
+<section id="pseudocode">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-label">05 — DSP Pipeline Pseudocode</div>
+      <h2>Core Processing Loop</h2>
+    </div>
+
+    <div class="code-block fade-in">
+      <span class="code-label">PIPELINE.TS</span>
+<span class="kw">class</span> <span class="fn">OctaPassPipeline</span> {
+  <span class="kw">private</span> threadPool: <span class="fn">ThreadManager</span>;
+  <span class="kw">private</span> gpuCtx: <span class="fn">WebGPUContext</span>;
+  <span class="kw">private</span> stages: <span class="fn">DSPNode</span>[<span class="num">32</span>];
+
+  <span class="kw">async</span> <span class="fn">process</span>(input: AudioBuffer): Promise&lt;AudioBuffer&gt; {
+    <span class="cm">// ═══ PASS 1: INGESTION ═══</span>
+    <span class="kw">const</span> decoded    = <span class="kw">await</span> <span class="fn">stages[0].process</span>(input);         <span class="cm">// AudioDecoder</span>
+    <span class="kw">const</span> chunks     = <span class="fn">stages[1].process</span>(decoded);              <span class="cm">// BufferManager → 4096-frame segments</span>
+    <span class="kw">const</span> noiseModel = <span class="kw">await</span> <span class="fn">stages[2].process</span>(chunks);          <span class="cm">// NoiseProfiler → spectral fingerprint</span>
+    <span class="kw">const</span> vadMap     = <span class="kw">await</span> <span class="fn">stages[3].process</span>(chunks);          <span class="cm">// SileroVAD → speech boundaries</span>
+
+    <span class="cm">// ═══ PASS 2: ANALYSIS ═══</span>
+    <span class="kw">const</span> spectrum   = <span class="kw">await</span> gpuCtx.<span class="fn">stft</span>(chunks);              <span class="cm">// SINGLE forward FFT → complex spectrum</span>
+    <span class="kw">const</span> pitch      = <span class="fn">stages[5].process</span>(spectrum);              <span class="cm">// F0 tracking (YIN+CREPE)</span>
+    <span class="kw">const</span> embeddings = <span class="kw">await</span> <span class="fn">stages[6].process</span>(chunks);          <span class="cm">// ECAPA-TDNN → 256-dim voiceprints</span>
+    <span class="kw">const</span> roomIR     = <span class="fn">stages[7].process</span>(spectrum);              <span class="cm">// RT60 + room profile</span>
+
+    <span class="cm">// ═══ PASS 3: ML SEPARATION (GPU parallel) ═══</span>
+    <span class="kw">const</span> [demucs, bsrnn] = <span class="kw">await</span> Promise.<span class="fn">all</span>([
+      gpuCtx.<span class="fn">runModel</span>(<span class="str">'demucs-v4.1'</span>, chunks),                <span class="cm">// Hybrid Transformer + U-Net</span>
+      gpuCtx.<span class="fn">runModel</span>(<span class="str">'bsrnn'</span>, spectrum)                     <span class="cm">// Band-Split RNN</span>
+    ]);
+    <span class="kw">const</span> fused  = <span class="fn">stages[10].process</span>({ demucs, bsrnn });      <span class="cm">// Confidence-weighted ensemble</span>
+    <span class="kw">const</span> gated  = <span class="fn">stages[11].process</span>(fused, embeddings);      <span class="cm">// Voiceprint gate</span>
+
+    <span class="cm">// ═══ PASS 4: SPECTRAL OPS (in-place on same complex buffer) ═══</span>
+    <span class="fn">stages[12].process</span>(spectrum, noiseModel);                  <span class="cm">// Spectral subtraction</span>
+    <span class="fn">stages[13].process</span>(spectrum, vadMap);                      <span class="cm">// ERB psychoacoustic gate</span>
+    <span class="fn">stages[14].process</span>(spectrum);                              <span class="cm">// Hum elimination</span>
+    <span class="fn">stages[15].process</span>(spectrum);                              <span class="cm">// Transient repair</span>
+
+    <span class="cm">// ═══ PASS 5: ROOM CORRECTION ═══</span>
+    <span class="fn">stages[16].process</span>(spectrum, roomIR);                      <span class="cm">// Dereverberation</span>
+    <span class="fn">stages[17].process</span>(spectrum);                              <span class="cm">// Room compensation</span>
+    <span class="fn">stages[18].process</span>(spectrum);                              <span class="cm">// Stereo recovery</span>
+    <span class="kw">const</span> timeDomain = <span class="kw">await</span> gpuCtx.<span class="fn">istft</span>(spectrum);          <span class="cm">// SINGLE inverse FFT</span>
+
+    <span class="cm">// ═══ PASS 6: TIME-DOMAIN POLISH ═══</span>
+    <span class="fn">stages[20].process</span>(timeDomain);                            <span class="cm">// Multi-band dynamics</span>
+    <span class="fn">stages[21].process</span>(timeDomain);                            <span class="cm">// De-esser</span>
+    <span class="fn">stages[22].process</span>(timeDomain, vadMap);                    <span class="cm">// Gap fill + breath control</span>
+    <span class="fn">stages[23].process</span>(timeDomain);                            <span class="cm">// Temporal coherence</span>
+
+    <span class="cm">// ═══ PASS 7: NEURAL RECONSTRUCTION ═══</span>
+    <span class="kw">const</span> melSpec = <span class="fn">extractMel</span>(timeDomain);
+    <span class="kw">const</span> vocoded = <span class="kw">await</span> gpuCtx.<span class="fn">runModel</span>(<span class="str">'hifi-gan-v2'</span>, melSpec);  <span class="cm">// Neural vocoder</span>
+    <span class="fn">stages[25].process</span>(vocoded, pitch);                        <span class="cm">// Formant preservation</span>
+    <span class="kw">const</span> refined = <span class="kw">await</span> gpuCtx.<span class="fn">runModel</span>(<span class="str">'conformer'</span>, vocoded);  <span class="cm">// Final spectral polish</span>
+    <span class="kw">const</span> quality = <span class="fn">stages[27].process</span>(refined, input);          <span class="cm">// A/B quality score</span>
+
+    <span class="cm">// ═══ PASS 8: OUTPUT MASTERING ═══</span>
+    <span class="fn">stages[28].process</span>(refined);                               <span class="cm">// LUFS normalization</span>
+    <span class="fn">stages[29].process</span>(refined, vadMap);                       <span class="cm">// Voice-gated HF boost</span>
+    <span class="kw">const</span> final = <span class="fn">stages[30].process</span>(refined);                  <span class="cm">// Brick-wall limit + dither</span>
+    <span class="fn">stages[31].process</span>({ params: <span class="kw">this</span>.snapshot(), quality });   <span class="cm">// Audit log</span>
+
+    <span class="kw">return</span> final;
+  }
+}
+    </div>
+
+    <div class="code-block fade-in" style="margin-top:1.5rem;">
+      <span class="code-label">THREAD-MANAGER.TS</span>
+<span class="kw">class</span> <span class="fn">ThreadManager</span> {
+  <span class="kw">private</span> workers: Worker[] = [];
+  <span class="kw">private</span> queue: <span class="fn">PriorityQueue</span>&lt;DSPTask&gt;;
+
+  <span class="fn">constructor</span>(poolSize = navigator.hardwareConcurrency) {
+    <span class="kw">for</span> (<span class="kw">let</span> i = <span class="num">0</span>; i &lt; poolSize; i++) {
+      <span class="kw">this</span>.workers.push(<span class="kw">new</span> Worker(<span class="str">'dsp-worker.js'</span>));
+    }
+  }
+
+  <span class="kw">async</span> <span class="fn">dispatch</span>(task: DSPTask): Promise&lt;DSPResult&gt; {
+    <span class="kw">const</span> worker = <span class="kw">await</span> <span class="kw">this</span>.<span class="fn">acquireWorker</span>(task.priority);
+    <span class="kw">const</span> transfer = task.buffer instanceof ArrayBuffer ? [task.buffer] : [];
+    worker.<span class="fn">postMessage</span>({ type: task.stage, data: task.buffer }, transfer);
+    <span class="kw">return new</span> Promise(resolve =&gt; {
+      worker.onmessage = (e) =&gt; {
+        <span class="kw">this</span>.<span class="fn">releaseWorker</span>(worker);
+        resolve(e.data);
+      };
+    });
+  }
+}
+    </div>
+  </div>
+</section>
+
+<!-- ==================== APP DESIGN ==================== -->
+<section id="ui" style="background: linear-gradient(180deg, transparent, rgba(13,15,20,0.5), transparent);">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-label">06 — App Design</div>
+      <h2>Interface Architecture</h2>
+      <p class="section-desc">Three modes for three users: One-Tap Clean for creators, Engineer Panel for professionals, Forensic Mode for investigators.</p>
+    </div>
+
+    <div class="card-grid fade-in">
+      <div class="card">
+        <div class="card-icon cyan">①</div>
+        <h3>One-Tap Clean Mode</h3>
+        <p>Drop audio → press one button → export. Zero configuration needed. AI auto-detects noise type, selects optimal processing chain, and exports at target format. Progress indicator shows percentage completion across all 8 passes. Ideal for podcasters, content creators, journalists.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon violet">②</div>
+        <h3>Engineer Panel</h3>
+        <p>Full control over all 40+ parameters: spectral gate thresholds, attack/release times per band, spectral tilt curves, harmonic weighting, ML model confidence thresholds, room profile selection, dynamics ratios, HF boost curves. Real-time waveform + spectrogram visualization. A/B comparison with instant toggle.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon emerald">③</div>
+        <h3>Forensic Mode</h3>
+        <p>Conservative processing with complete audit trail. Chain-of-custody metadata, parameter snapshots at every stage, before/after comparison exports. Non-destructive processing pipeline. Designed for law enforcement, legal proceedings, investigation teams.</p>
+      </div>
+    </div>
+
+    <div class="two-col fade-in" style="margin-top:3rem;">
+      <div>
+        <h3>Export Presets</h3>
+        <div class="spec-grid" style="margin:1rem 0;">
+          <div class="spec-item"><span class="spec-key">Podcast</span><span class="spec-val">Mono, -16 LUFS, 48kHz, MP3 192k</span></div>
+          <div class="spec-item"><span class="spec-key">Film Dialog</span><span class="spec-val">Stereo, -24 LUFS, 48kHz, WAV 24-bit</span></div>
+          <div class="spec-item"><span class="spec-key">Interview</span><span class="spec-val">Dual-mono, -16 LUFS, 44.1kHz, FLAC</span></div>
+          <div class="spec-item"><span class="spec-key">Forensic</span><span class="spec-val">Original SR, lossless, full metadata chain</span></div>
+          <div class="spec-item"><span class="spec-key">Broadcast</span><span class="spec-val">Stereo, -23 LUFS (EBU R128), WAV</span></div>
+          <div class="spec-item"><span class="spec-key">Music Vocal</span><span class="spec-val">Stereo, -14 LUFS, 96kHz, WAV 32-float</span></div>
+        </div>
+      </div>
+      <div>
+        <h3>Platform Support</h3>
+        <div class="spec-grid" style="margin:1rem 0;">
+          <div class="spec-item"><span class="spec-key">Web (PWA)</span><span class="spec-val">Chrome, Firefox, Safari, Edge</span></div>
+          <div class="spec-item"><span class="spec-key">Desktop</span><span class="spec-val">Electron — macOS, Windows, Linux</span></div>
+          <div class="spec-item"><span class="spec-key">Mobile</span><span class="spec-val">React Native — iOS, Android</span></div>
+          <div class="spec-item"><span class="spec-key">API/SDK</span><span class="spec-val">REST + WebSocket, npm package</span></div>
+          <div class="spec-item"><span class="spec-key">Plugin</span><span class="spec-val">VST3/AU for DAW integration</span></div>
+          <div class="spec-item"><span class="spec-key">CLI</span><span class="spec-val">Node.js headless batch processor</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== OPTIMIZATION ==================== -->
+<section id="optimization">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-label">07 — Optimization Strategies</div>
+      <h2>Low-Latency Engineering</h2>
+    </div>
+
+    <div class="card-grid fade-in">
+      <div class="card">
+        <div class="card-icon cyan">⚡</div>
+        <h3>GPU-Accelerated STFT</h3>
+        <p>WebGPU compute shaders execute FFT butterfly operations in parallel across frequency bins. Single-pass architecture means only 2 GPU transfers (forward + inverse) per audio chunk instead of 2N for N spectral stages. 8× throughput vs CPU FFT.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon violet">⊞</div>
+        <h3>SharedArrayBuffer Ring Buffer</h3>
+        <p>AudioWorklet ↔ Worker communication via lock-free ring buffer on SharedArrayBuffer. Zero-copy data transfer eliminates postMessage serialization overhead. 128-sample chunk size enables &lt;3ms audio thread latency.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon emerald">⊗</div>
+        <h3>ONNX Runtime WebGPU</h3>
+        <p>ML models quantized to INT8 via ONNX Runtime's WebGPU execution provider. Demucs inference: ~400ms per 10s chunk (vs 1.8s on WASM). Dynamic batching groups sequential chunks for GPU efficiency.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon amber">⊘</div>
+        <h3>Adaptive Pipeline Bypass</h3>
+        <p>VAD-driven stage skipping: silent segments bypass all processing. Low-noise segments skip spectral subtraction. Single-speaker audio skips diarization. Reduces average processing time by 40% on typical content.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SECURITY ==================== -->
+<section id="security" style="background: linear-gradient(180deg, transparent, rgba(13,15,20,0.5), transparent);">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-label">08 — Security & Privacy</div>
+      <h2>Privacy-First Architecture</h2>
+      <p class="section-desc">100% local processing. Zero telemetry. No audio data ever leaves the device.</p>
+    </div>
+
+    <div class="security-grid fade-in">
+      <div class="security-item">
+        <div class="security-icon">🔒</div>
+        <div class="security-text">
+          <h4>Local-Only Processing</h4>
+          <p>All ML models loaded from local cache or bundled ONNX files. No API calls, no cloud inference, no audio upload. Network requests blocked during processing via Content Security Policy.</p>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="security-icon">🛡</div>
+        <div class="security-text">
+          <h4>AES-256 Encryption at Rest</h4>
+          <p>Temporary processing buffers encrypted in memory. Exported files optionally encrypted with user-provided key. Cache purged on session end with secure overwrite.</p>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="security-icon">📋</div>
+        <div class="security-text">
+          <h4>Forensic Chain of Custody</h4>
+          <p>SHA-256 hashes at input, each processing stage output, and final export. Cryptographic audit log cannot be tampered with. Timestamps, parameter snapshots, model versions — all recorded.</p>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="security-icon">🚫</div>
+        <div class="security-text">
+          <h4>Zero Telemetry</h4>
+          <p>No analytics, no usage tracking, no crash reporting that includes audio data. Optional anonymous feature-usage stats (opt-in only). Open-source audit trail for all network calls.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== ROADMAP ==================== -->
+<section id="roadmap">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-label">09 — Development Roadmap</div>
+      <h2>MVP → v1.0 → Pro Edition</h2>
+    </div>
+
+    <div class="roadmap fade-in">
+      <div class="roadmap-item">
+        <div class="roadmap-dot"></div>
+        <div class="roadmap-phase">Phase 1 — MVP (Q2 2026)</div>
+        <div class="roadmap-title">Core Engine + One-Tap Clean</div>
+        <div class="roadmap-desc">Web PWA with 16-stage pipeline (Passes 1–4 + 8). Demucs v4.1 separation, basic noise reduction, LUFS normalization. One-Tap mode only. Freemium tier: 5 min/file limit, watermarked output over limit.</div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-dot"></div>
+        <div class="roadmap-phase">Phase 2 — v1.0 (Q3 2026)</div>
+        <div class="roadmap-title">Full Pipeline + Engineer Panel</div>
+        <div class="roadmap-desc">Complete 32-stage Octa-Pass pipeline. Engineer panel with all 40+ controls. Batch processing up to 100 files. Export presets (podcast, film, interview). Creator Pro tier: $12/mo, unlimited processing.</div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-dot"></div>
+        <div class="roadmap-phase">Phase 3 — Pro Edition (Q4 2026)</div>
+        <div class="roadmap-title">Forensic Mode + Desktop + API</div>
+        <div class="roadmap-desc">Forensic audit chain, Electron desktop builds, REST/WebSocket API, CLI batch processor, VST3/AU plugin. Studio tier: $29/mo. Forensic tier: $79/mo with chain-of-custody certification.</div>
+      </div>
+      <div class="roadmap-item">
+        <div class="roadmap-dot"></div>
+        <div class="roadmap-phase">Phase 4 — Platform (2027)</div>
+        <div class="roadmap-title">SDK + Plugin Marketplace + Mobile</div>
+        <div class="roadmap-desc">Public SDK/npm package for third-party integration. Plugin marketplace for custom DSP modules. React Native mobile apps. Enterprise licensing. On-premise deployment option for government/defense clients.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== VERSION HISTORY ==================== -->
+<section id="history" style="background: linear-gradient(180deg, transparent, rgba(13,15,20,0.5), transparent);">
+  <div class="container">
+    <div class="section-header fade-in">
+      <div class="section-label">10 — Evolution</div>
+      <h2>Version Lineage</h2>
+    </div>
+    <div class="pipeline-table-wrap fade-in">
+      <table>
+        <thead><tr><th>Version</th><th>Architecture</th><th>Key Innovation</th></tr></thead>
+        <tbody>
+          <tr><td class="stage-num">v4</td><td>Single-context FFT</td><td>Auto noise profiling, spectral subtraction</td></tr>
+          <tr><td class="stage-num">v5</td><td>Blueprint phase</td><td>Threads from Space concept, 12-stage pipeline</td></tr>
+          <tr><td class="stage-num">v6</td><td>16-stage neural DSP</td><td>WASM/WebGPU integration, AudioWorklet real-time path</td></tr>
+          <tr><td class="stage-num">v7</td><td>18-stage + blueprint HTML</td><td>Modular node graph, thread-per-stage assignment</td></tr>
+          <tr><td class="stage-num">v11</td><td>20-stage triple-pass</td><td>ERB spectral gate, Band-Split RNN, aggressive mode</td></tr>
+          <tr><td class="stage-num">v13</td><td>24-stage quad-pass</td><td>Neural vocoder, phase-coherent reconstruction, plugin API</td></tr>
+          <tr><td class="stage-num">v15</td><td>26-stage penta-pass</td><td>Real Web Audio API chains, simulation stub elimination</td></tr>
+          <tr><td class="stage-num">v16</td><td>28-stage hexa-pass</td><td>BSRNN ensemble, smart logic DSP, 40+ slider wiring</td></tr>
+          <tr><td class="stage-num">v17</td><td>30-stage hexa-pass</td><td>OfflineAudioContext graph, convolver IR gen, A/B comparison</td></tr>
+          <tr><td class="stage-num" style="color:var(--accent-emerald);">v18</td><td style="color:var(--text-primary);font-weight:600;">32-stage octa-pass</td><td style="color:var(--text-primary);">Conformer refiner, stereo recovery, forensic audit chain, PESQ quality guard</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>VOICEISOLATE PRO v18.0 — Production Blueprint — Threads from Space v8 Architecture</p>
+    <p style="margin-top:0.5rem;">Lead Architect: Senior Audio DSP Engineer — March 2026 — Classification: Production-Ready</p>
+  </div>
+</footer>
+
+<script>
+// Intersection Observer for fade-in animations
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+document.querySelectorAll('.fade-in').forEach(el => observer.observe(el));
+
+// Smooth nav highlight
+const sections = document.querySelectorAll('section[id]');
+const navLinks = document.querySelectorAll('.nav-links a');
+window.addEventListener('scroll', () => {
+  let current = '';
+  sections.forEach(section => {
+    const top = section.offsetTop - 100;
+    if (window.scrollY >= top) current = section.getAttribute('id');
+  });
+  navLinks.forEach(link => {
+    link.style.color = link.getAttribute('href') === '#' + current ? 'var(--text-primary)' : '';
+  });
+});
+</script>
+</body>
+</html>

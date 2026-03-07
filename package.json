@@ -1,0 +1,8 @@
+{
+  "name": "voiceisolate-pro-v18-blueprint",
+  "version": "18.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Static site - no build needed'"
+  }
+}
