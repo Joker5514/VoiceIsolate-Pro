@@ -11,8 +11,6 @@
 # - Prints a final summary of successful and failed merges
 #
 
-set -e
-
 # Configuration
 MAIN_BRANCH="main"
 FAILED_LOG="failed_merges.txt"
@@ -53,7 +51,7 @@ fi
 
 # Get the repository root
 REPO_ROOT=$(git rev-parse --show-toplevel)
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 1
 
 # Clear previous failed merges log
 : > "$FAILED_LOG"
@@ -69,7 +67,7 @@ if ! git checkout "$MAIN_BRANCH" 2>/dev/null; then
 fi
 
 print_info "Pulling latest changes from '$MAIN_BRANCH'..."
-if ! git pull origin "$MAIN_BRANCH" 2>/dev/null; then
+if ! git pull origin "$MAIN_BRANCH"; then
     print_warning "Failed to pull from remote. Continuing with local state..."
 fi
 
@@ -97,13 +95,13 @@ while IFS= read -r branch; do
     print_info "Attempting to merge '$branch' into '$MAIN_BRANCH'..."
     
     # Attempt the merge
-    if git merge "$branch" --no-edit 2>/dev/null; then
+    if git merge "$branch" --no-edit; then
         print_success "Successfully merged '$branch'"
         successful_merges+=("$branch")
     else
         # Merge conflict occurred - abort and log
         print_error "Merge conflict detected for '$branch'. Aborting merge..."
-        git merge --abort 2>/dev/null || true
+        git merge --abort || true
         
         # Log to failed_merges.txt
         echo "$branch" >> "$FAILED_LOG"
