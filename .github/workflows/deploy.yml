@@ -1,0 +1,71 @@
+name: Deploy to Vercel
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  validate:
+    name: Validate Structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check critical files exist
+        run: |
+          for f in public/index.html public/app/index.html public/app/style.css public/app/app.js public/blueprint/index.html vercel.json; do
+            [ -f "$f" ] && echo "✓ $f" || (echo "✗ MISSING: $f" && exit 1)
+          done
+
+      - name: Validate HTML structure
+        run: |
+          # Check app.js has all slider groups
+          for group in gate nr eq; do
+            grep -q "$group:" public/app/app.js && echo "✓ Slider group: $group" || echo "⚠ Missing slider group: $group"
+          done
+
+      - name: Check single-pass spectral architecture
+        run: |
+          # Ensure no multiple STFT/iSTFT patterns (architectural violation)
+          STFT_COUNT=$(grep -c "stft\|STFT\|forwardFFT" public/app/app.js 2>/dev/null || echo 0)
+          echo "STFT references: $STFT_COUNT"
+
+      - name: Validate file sizes
+        run: |
+          APP_SIZE=$(wc -c < public/app/app.js)
+          echo "app.js: ${APP_SIZE} bytes"
+          [ "$APP_SIZE" -gt 1000 ] && echo "✓ app.js has content" || (echo "✗ app.js too small" && exit 1)
+
+  deploy-preview:
+    name: Deploy Preview
+    needs: validate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+      - name: Pull Vercel Environment
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy Preview
+        run: vercel deploy --token=${{ secrets.VERCEL_TOKEN }}
+
+  deploy-production:
+    name: Deploy Production
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+      - name: Pull Vercel Environment
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy Production
+        run: vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }}

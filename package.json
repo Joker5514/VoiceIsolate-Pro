@@ -1,0 +1,19 @@
+{
+  "name": "voiceisolate-pro",
+  "version": "19.0.0",
+  "description": "Studio-grade voice isolation platform. 32-stage Octa-Pass DSP pipeline with hybrid ML + classical spectral processing.",
+  "private": true,
+  "keywords": ["audio", "dsp", "voice-isolation", "noise-reduction", "web-audio", "machine-learning"],
+  "author": "VoiceIsolate Pro",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "npx serve public -l 3000 --cors",
+    "build": "echo 'Static site — no build step'",
+    "lint": "echo 'Add eslint config for app.js linting'",
+    "test": "echo 'Add test runner — see .github/copilot-instructions.md'",
+    "validate": "node scripts/validate.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
