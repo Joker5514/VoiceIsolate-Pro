@@ -1,19 +1,27 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # merge-branches.sh
-# Merges all local Git branches into the main branch.
+# Merges all local Git branches into a main branch.
 #
 # Features:
-# - Checks out and pulls the latest main branch
+# - Checks for clean working tree and no in-progress merge/rebase
+# - Checks out and updates main safely (fetch + ff-only)
 # - Loops through all local branches except main
-# - Attempts to merge each branch into main
-# - Handles merge conflicts by aborting and logging to failed_merges.txt
+# - Attempts to merge each branch into main (or dry-run)
+# - Handles merge failures by aborting and logging to failed_merges.txt
 # - Prints a final summary of successful and failed merges
 #
 
-# Configuration
+# Intentionally not using `set -e` because we want to continue after a failed merge.
+set -u
+
+# Defaults / configuration
 MAIN_BRANCH="main"
-FAILED_LOG="failed_merges.txt"
+REMOTE="origin"
+DO_PULL=1
+DRY_RUN=0
+ASSUME_YES=0
+FAILED_LOG_BASENAME="failed_merges.txt"
 
 # Arrays to track results
 successful_merges=()
@@ -28,20 +36,78 @@ NC='\033[0m' # No Color
 
 # Print colored message
 print_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    echo -e "${BLUE}[INFO]${NC} $*"
 }
 
 print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}[SUCCESS]${NC} $*"
 }
 
 print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo -e "${YELLOW}[WARNING]${NC} $*"
 }
 
 print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $*"
 }
+
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Merge all local Git branches into a main branch.
+
+Options:
+  -m, --main <branch>   Target branch to merge into (default: main)
+  -r, --remote <name>   Remote name for fetching (default: origin)
+  -n, --dry-run         Test merges without committing
+  -y, --yes             Skip confirmation prompt
+  --no-pull             Skip fetching/updating main from remote
+  -h, --help            Show this help message
+
+Examples:
+  $(basename "$0")                    # Interactive mode, merge into main
+  $(basename "$0") --yes              # Skip confirmation
+  $(basename "$0") --dry-run          # Test merges without changes
+  $(basename "$0") --main develop     # Merge into develop instead
+  $(basename "$0") --no-pull --yes    # Local-only, no prompts
+
+EOF
+    exit 0
+}
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -m|--main)
+            MAIN_BRANCH="$2"
+            shift 2
+            ;;
+        -r|--remote)
+            REMOTE="$2"
+            shift 2
+            ;;
+        -n|--dry-run)
+            DRY_RUN=1
+            shift
+            ;;
+        -y|--yes)
+            ASSUME_YES=1
+            shift
+            ;;
+        --no-pull)
+            DO_PULL=0
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            print_error "Unknown option: $1"
+            usage
+            ;;
+    esac
+done
 
 # Ensure we're in a git repository
 if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
@@ -53,63 +119,126 @@ fi
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT" || exit 1
 
-# Clear previous failed merges log
-: > "$FAILED_LOG"
+FAILED_LOG="${REPO_ROOT}/${FAILED_LOG_BASENAME}"
 
-print_info "Starting branch merge process..."
-echo ""
-
-# Step 1: Checkout and pull the latest main branch
-print_info "Checking out '$MAIN_BRANCH' branch..."
-if ! git checkout "$MAIN_BRANCH" 2>/dev/null; then
-    print_error "Failed to checkout '$MAIN_BRANCH' branch. Make sure it exists."
+# Safety checks: in-progress merge/rebase
+GIT_DIR="$(git rev-parse --git-dir)"
+if [[ -f "${GIT_DIR}/MERGE_HEAD" ]] || [[ -d "${GIT_DIR}/rebase-apply" ]] || [[ -d "${GIT_DIR}/rebase-merge" ]]; then
+    print_error "A merge/rebase appears to be in progress. Resolve it before running this script."
     exit 1
 fi
 
-print_info "Pulling latest changes from '$MAIN_BRANCH'..."
-if ! git pull origin "$MAIN_BRANCH"; then
-    print_warning "Failed to pull from remote. Continuing with local state..."
+# Safety checks: clean working tree (unstaged + staged)
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    print_error "Working tree is not clean. Commit/stash changes before running."
+    git status --porcelain
+    exit 1
+fi
+
+# Clear previous failed merges log (overwrite each run)
+: > "$FAILED_LOG"
+
+print_info "Starting branch merge process..."
+print_info "Repository root: $REPO_ROOT"
+print_info "Main branch: $MAIN_BRANCH"
+print_info "Remote: $REMOTE"
+print_info "Update main: $([[ $DO_PULL -eq 1 ]] && echo yes || echo no)"
+print_info "Dry-run: $([[ $DRY_RUN -eq 1 ]] && echo yes || echo no)"
+echo ""
+
+# Ensure main exists locally or can be created from remote
+if ! git show-ref --verify --quiet "refs/heads/${MAIN_BRANCH}"; then
+    print_warning "Local branch '$MAIN_BRANCH' not found."
+    if git show-ref --verify --quiet "refs/remotes/${REMOTE}/${MAIN_BRANCH}"; then
+        print_info "Creating local '$MAIN_BRANCH' from '${REMOTE}/${MAIN_BRANCH}'..."
+        git checkout -b "$MAIN_BRANCH" "${REMOTE}/${MAIN_BRANCH}"
+    else
+        print_error "Neither local '$MAIN_BRANCH' nor '${REMOTE}/${MAIN_BRANCH}' exists."
+        exit 1
+    fi
+fi
+
+print_info "Checking out '$MAIN_BRANCH' branch..."
+git checkout "$MAIN_BRANCH"
+
+if [[ $DO_PULL -eq 1 ]]; then
+    if git remote get-url "$REMOTE" >/dev/null 2>&1; then
+        print_info "Fetching latest changes from '$REMOTE'..."
+        if git fetch "$REMOTE"; then
+            print_info "Fast-forwarding '$MAIN_BRANCH' from '${REMOTE}/${MAIN_BRANCH}' (if possible)..."
+            if ! git merge --ff-only "${REMOTE}/${MAIN_BRANCH}" >/dev/null 2>&1; then
+                print_warning "Could not fast-forward from ${REMOTE}/${MAIN_BRANCH}. Continuing with local state..."
+            fi
+        else
+            print_warning "Fetch failed. Continuing with local state..."
+        fi
+    else
+        print_warning "Remote '$REMOTE' not configured. Skipping update."
+    fi
 fi
 
 echo ""
 
 # Step 2: Get all local branches except main
-branches=$(git branch --format='%(refname:short)' | grep -v "^${MAIN_BRANCH}$" || true)
+mapfile -t branches < <(git for-each-ref --format='%(refname:short)' refs/heads | grep -v -E "^${MAIN_BRANCH}$" || true)
 
-if [ -z "$branches" ]; then
+if [[ ${#branches[@]} -eq 0 ]]; then
     print_info "No other branches found to merge."
     exit 0
 fi
 
 print_info "Found the following branches to merge:"
-echo "$branches" | while read -r branch; do
+for branch in "${branches[@]}"; do
+    [[ -z "$branch" ]] && continue
     echo "  - $branch"
 done
 echo ""
 
+# Confirmation prompt (safe default)
+if [[ $ASSUME_YES -ne 1 ]]; then
+    read -r -p "Proceed merging ${#branches[@]} branch(es) into '${MAIN_BRANCH}'? [y/N] " ans
+    case "${ans}" in
+        y|Y|yes|YES) ;;
+        *) print_info "Aborted by user."; exit 0 ;;
+    esac
+    echo ""
+fi
+
 # Step 3: Loop through and merge each branch
-while IFS= read -r branch; do
+for branch in "${branches[@]}"; do
     # Skip empty lines
     [ -z "$branch" ] && continue
     
     print_info "Attempting to merge '$branch' into '$MAIN_BRANCH'..."
     
-    # Attempt the merge
-    if git merge "$branch" --no-edit; then
-        print_success "Successfully merged '$branch'"
-        successful_merges+=("$branch")
+    if [[ $DRY_RUN -eq 1 ]]; then
+        # Attempt a non-committing merge, then abort to leave main unchanged.
+        if git merge --no-commit --no-ff "$branch" >/dev/null 2>&1; then
+            print_success "Dry-run merge succeeded for '$branch' (aborting to leave no changes)."
+            git merge --abort >/dev/null 2>&1 || true
+            successful_merges+=("$branch")
+        else
+            print_error "Dry-run merge failed for '$branch'. Aborting..."
+            git merge --abort >/dev/null 2>&1 || true
+            echo "$branch" >> "$FAILED_LOG"
+            failed_merges+=("$branch")
+        fi
     else
-        # Merge conflict occurred - abort and log
-        print_error "Merge conflict detected for '$branch'. Aborting merge..."
-        git merge --abort || true
-        
-        # Log to failed_merges.txt
-        echo "$branch" >> "$FAILED_LOG"
-        failed_merges+=("$branch")
+        # Attempt the merge
+        if git merge "$branch" --no-edit; then
+            print_success "Successfully merged '$branch'"
+            successful_merges+=("$branch")
+        else
+            # Merge failed - abort and log
+            print_error "Merge failed for '$branch'. Aborting merge..."
+            git merge --abort >/dev/null 2>&1 || true
+            echo "$branch" >> "$FAILED_LOG"
+            failed_merges+=("$branch")
+        fi
     fi
     
     echo ""
-done <<< "$branches"
+done
 
 # Step 4: Print final summary
 echo "=============================================="
