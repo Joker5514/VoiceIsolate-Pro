@@ -36,19 +36,19 @@ NC='\033[0m' # No Color
 
 # Print colored message
 print_info() {
-    echo -e "${BLUE}[INFO]${NC} $*"
+    printf '%b[INFO]%b %s\n' "${BLUE}" "${NC}" "$*"
 }
 
 print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $*"
+    printf '%b[SUCCESS]%b %s\n' "${GREEN}" "${NC}" "$*"
 }
 
 print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $*"
+    printf '%b[WARNING]%b %s\n' "${YELLOW}" "${NC}" "$*"
 }
 
 print_error() {
-    echo -e "${RED}[ERROR]${NC} $*"
+    printf '%b[ERROR]%b %s\n' "${RED}" "${NC}" "$*"
 }
 
 usage() {
@@ -73,7 +73,7 @@ Examples:
   $(basename "$0") --no-pull --yes    # Local-only, no prompts
 
 EOF
-    exit 0
+    exit "${1:-0}"
 }
 
 # Parse command-line arguments
@@ -100,11 +100,11 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -h|--help)
-            usage
+            usage 0
             ;;
         *)
             print_error "Unknown option: $1"
-            usage
+            usage 1
             ;;
     esac
 done
@@ -131,7 +131,13 @@ fi
 # Safety checks: clean working tree (unstaged + staged)
 if ! git diff --quiet || ! git diff --cached --quiet; then
     print_error "Working tree is not clean. Commit/stash changes before running."
-    git status --porcelain
+    changes=$(git status --porcelain | wc -l)
+    if [[ $changes -gt 20 ]]; then
+        git status --porcelain | head -n 20
+        echo "  ... and $((changes - 20)) more file(s)"
+    else
+        git status --porcelain
+    fi
     exit 1
 fi
 
@@ -180,7 +186,8 @@ fi
 echo ""
 
 # Step 2: Get all local branches except main
-mapfile -t branches < <(git for-each-ref --format='%(refname:short)' refs/heads | grep -v -E "^${MAIN_BRANCH}$" || true)
+# Use grep -F for fixed string matching to avoid regex issues with special chars in branch names
+mapfile -t branches < <(git for-each-ref --format='%(refname:short)' refs/heads | grep -v -F -x "${MAIN_BRANCH}" || true)
 
 if [[ ${#branches[@]} -eq 0 ]]; then
     print_info "No other branches found to merge."
@@ -213,9 +220,10 @@ for branch in "${branches[@]}"; do
     
     if [[ $DRY_RUN -eq 1 ]]; then
         # Attempt a non-committing merge, then abort to leave main unchanged.
-        if git merge --no-commit --no-ff "$branch" >/dev/null 2>&1; then
+        # Using --no-commit without --no-ff to match actual merge behavior
+        if git merge --no-commit "$branch" >/dev/null 2>&1; then
             print_success "Dry-run merge succeeded for '$branch' (aborting to leave no changes)."
-            git merge --abort >/dev/null 2>&1 || true
+            git merge --abort >/dev/null 2>&1 || git reset --hard HEAD >/dev/null 2>&1 || true
             successful_merges+=("$branch")
         else
             print_error "Dry-run merge failed for '$branch'. Aborting..."
