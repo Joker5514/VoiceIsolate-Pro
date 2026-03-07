@@ -1,0 +1,2 @@
+# This directory will contain ONNX model files
+# Run: python scripts/download-models.py

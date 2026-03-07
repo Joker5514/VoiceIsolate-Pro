@@ -1,0 +1,4 @@
+## 2024-05-24 - Prevented XSS in Web Worker importScripts
+**Vulnerability:** String breakout XSS and execution of arbitrary origins in `src/js/workers/dispatcher-worker.js` via `createDSPWorkerBlobUrl`. The `url` parameter was unescaped and injected directly into a template literal for `importScripts('${url}')` inside a generated Blob URL.
+**Learning:** In dynamically generated Web Workers using Blob URLs, dynamically injected variables like `url` inside `importScripts` can be manipulated to break out of the string context and execute arbitrary JS if not properly sanitized and validated against same-origin policies.
+**Prevention:** Always validate dynamically injected URLs using `new URL(url, self.location.href)` to enforce same-origin constraints (`origin === self.location.origin`), and safely serialize the URL using `JSON.stringify(parsedUrl.href)` within the dynamic code block instead of using unescaped quotes.
