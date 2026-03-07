@@ -7,6 +7,23 @@ function App() {
   const [isDragging, setIsDragging] = useState(false);
   const [hasAudio, setHasAudio] = useState(false);
 
+  // UX Fix: Add real-time state for sliders so their values update visually when dragged
+  const [sliderValues, setSliderValues] = useState<Record<string, number>>({
+    'noise-reduction': 75,
+    'voice-presence': 80,
+    'clarity': 65,
+    'de-reverb': 50,
+    'harmonic-boost': 40,
+  });
+
+  // UX Fix: Add state for the active preset for visual feedback
+  const [activePreset, setActivePreset] = useState<string | null>(null);
+
+  const handleSliderChange = (id: string, value: number) => {
+    setSliderValues(prev => ({ ...prev, [id]: value }));
+    setActivePreset(null); // Clear preset when manual adjustments are made
+  };
+
   return (
     <div className="min-h-screen bg-bg text-text">
       {/* Header */}
@@ -147,23 +164,24 @@ function App() {
               
               {/* Sample Sliders */}
               {[
-                { id: 'noise-reduction', label: 'Noise Reduction', value: 75 },
-                { id: 'voice-presence', label: 'Voice Presence', value: 80 },
-                { id: 'clarity', label: 'Clarity', value: 65 },
-                { id: 'de-reverb', label: 'De-reverb', value: 50 },
-                { id: 'harmonic-boost', label: 'Harmonic Boost', value: 40 },
+                { id: 'noise-reduction', label: 'Noise Reduction' },
+                { id: 'voice-presence', label: 'Voice Presence' },
+                { id: 'clarity', label: 'Clarity' },
+                { id: 'de-reverb', label: 'De-reverb' },
+                { id: 'harmonic-boost', label: 'Harmonic Boost' },
               ].map((slider) => (
                 <div key={slider.id} className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <label htmlFor={slider.id} className="text-text">{slider.label}</label>
-                    <span className="text-accent font-medium" aria-hidden="true">{slider.value}</span>
+                    <span className="text-accent font-medium" aria-hidden="true">{sliderValues[slider.id]}</span>
                   </div>
                   <input 
                     id={slider.id}
                     type="range" 
                     min="0" 
                     max="100" 
-                    defaultValue={slider.value}
+                    value={sliderValues[slider.id] ?? 50}
+                    onChange={(e) => handleSliderChange(slider.id, parseInt(e.target.value, 10))}
                     aria-label={`${slider.label} value`}
                     className="w-full h-2 bg-surface2 rounded-lg appearance-none cursor-pointer accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   />
@@ -177,7 +195,13 @@ function App() {
                   {['Podcast Pro', 'Crystal Voice', 'Interview', 'Film Dialogue'].map(preset => (
                     <button
                       key={preset}
-                      className="py-2 px-3 bg-surface2 hover:bg-accent/20 rounded text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      onClick={() => setActivePreset(preset)}
+                      aria-pressed={activePreset === preset}
+                      className={`py-2 px-3 rounded text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                        activePreset === preset
+                          ? 'bg-accent/20 border border-accent/50 text-accent'
+                          : 'bg-surface2 hover:bg-surface2/80 text-text'
+                      }`}
                     >
                       {preset}
                     </button>
