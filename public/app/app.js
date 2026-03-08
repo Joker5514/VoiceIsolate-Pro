@@ -861,12 +861,16 @@ class VoiceIsolatePro {
 
   reset3DView(){if(this.three.cam){this.three.cam.position.set(0,40,60);this.three.cam.lookAt(0,0,0);}}
 
+  // ⚡ Bolt: Optimized 3D Spectrogram buffer updates by replacing nested element-by-element loops
+  // with native TypedArray.copyWithin() and direct array access, reducing per-frame JS overhead.
   update3D(freq){
     if(!this.three.geo)return;
     const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
-    for(let z=gD-1;z>0;z--)for(let x=0;x<gW;x++){const c=z*gW+x;const p=(z-1)*gW+x;pos.setY(c,pos.getY(p));cols[c*3]=cols[p*3];cols[c*3+1]=cols[p*3+1];cols[c*3+2]=cols[p*3+2];}
+    cols.copyWithin(gW*3, 0, (gD-1)*gW*3);
+    const pArr=pos.array;
+    for(let z=gD-1;z>0;z--){let cO=z*gW*3+1;let pO=(z-1)*gW*3+1;for(let x=0;x<gW;x++){pArr[cO]=pArr[pO];cO+=3;pO+=3;}}
     const step=Math.floor(freq.length/gW);
-    for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pos.setY(x,v*15);const f=x/gW;
+    for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pArr[x*3+1]=v*15;const f=x/gW;
       if(f<0.05){cols[x*3]=v*0.15;cols[x*3+1]=v*0.3;cols[x*3+2]=0.3+v*0.7;}
       else if(f<0.3){cols[x*3]=0.3+v*0.7;cols[x*3+1]=v*0.1;cols[x*3+2]=v*0.05;}
       else if(f<0.6){cols[x*3]=v*0.1;cols[x*3+1]=0.2+v*0.6;cols[x*3+2]=v*0.1;}
