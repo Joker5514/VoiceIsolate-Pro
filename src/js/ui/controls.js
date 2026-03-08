@@ -627,7 +627,8 @@ export class ControlsManager {
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const el = document.createElement('div');
-      el.className = `batch-item batch-item--${item.status}`;
+      const safeStatus = String(item.status).replace(/[^a-z]/g, '');
+      el.className = `batch-item batch-item--${safeStatus}`;
       el.dataset.batchIndex = String(i);
 
       // Status icon
@@ -638,16 +639,30 @@ export class ControlsManager {
         error: '\u2717',      // cross
       };
 
-      const progressBar = item.status === 'processing' && item.progress != null
-        ? `<div class="batch-item__progress" style="width:${item.progress}%"></div>`
-        : '';
+      // Build batch item using safe DOM methods to prevent XSS
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'batch-item__icon';
+      iconSpan.textContent = iconMap[item.status] || '\u25CB';
 
-      el.innerHTML = `
-        <span class="batch-item__icon">${iconMap[item.status] || '\u25CB'}</span>
-        <span class="batch-item__name" title="${this._escapeHTML(item.name)}">${this._escapeHTML(item.name)}</span>
-        <span class="batch-item__status">${item.status}</span>
-        ${progressBar}
-      `;
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'batch-item__name';
+      nameSpan.title = item.name;
+      nameSpan.textContent = item.name;
+
+      const statusSpan = document.createElement('span');
+      statusSpan.className = 'batch-item__status';
+      statusSpan.textContent = item.status;
+
+      el.appendChild(iconSpan);
+      el.appendChild(nameSpan);
+      el.appendChild(statusSpan);
+
+      if (item.status === 'processing' && item.progress != null) {
+        const progressDiv = document.createElement('div');
+        progressDiv.className = 'batch-item__progress';
+        progressDiv.style.width = `${Math.max(0, Math.min(100, item.progress))}%`;
+        el.appendChild(progressDiv);
+      }
 
       container.appendChild(el);
     }
@@ -660,7 +675,7 @@ export class ControlsManager {
   /**
    * Show a modal dialog.
    * @param {string} title - Modal title
-   * @param {string} body - Modal body (can contain HTML)
+   * @param {string|HTMLElement} body - Modal body text (plain text) or pre-built DOM element
    * @param {Array<{label: string, className?: string, onClick: function}>} actions - Action buttons
    */
   showModal(title, body, actions) {
@@ -671,7 +686,14 @@ export class ControlsManager {
     const actionsEl = this._modalEl.querySelector('[data-modal-actions]');
 
     if (titleEl) titleEl.textContent = title;
-    if (bodyEl) bodyEl.innerHTML = body;
+    if (bodyEl) {
+      bodyEl.textContent = '';
+      if (body instanceof HTMLElement) {
+        bodyEl.appendChild(body);
+      } else {
+        bodyEl.textContent = body;
+      }
+    }
 
     if (actionsEl) {
       actionsEl.innerHTML = '';
@@ -951,9 +973,13 @@ export class ControlsManager {
    * @returns {string}
    */
   _escapeHTML(str) {
-    const div = document.createElement('div');
-    div.appendChild(document.createTextNode(str));
-    return div.innerHTML;
+    if (typeof str !== 'string') return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 }
 

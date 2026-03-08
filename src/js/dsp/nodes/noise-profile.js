@@ -46,8 +46,10 @@ export default class NoiseProfileNode {
     this._samplesProcessed = 0;
     this._profileSamples = Math.floor(sampleRate * this._params.profileDuration);
 
-    // Internal buffer for frame accumulation
-    this._inputBuffer = new Float32Array(0);
+    // Internal buffer for frame accumulation (pre-allocated with amortized growth)
+    this._inputCapacity = this._fftSize * 4;
+    this._inputBuffer = new Float32Array(this._inputCapacity);
+    this._inputLength = 0;
   }
 
   /**
@@ -219,15 +221,22 @@ export default class NoiseProfileNode {
       return new Float32Array(input);
     }
 
-    // Accumulate input
-    const newBuffer = new Float32Array(this._inputBuffer.length + input.length);
-    newBuffer.set(this._inputBuffer);
-    newBuffer.set(input, this._inputBuffer.length);
-    this._inputBuffer = newBuffer;
+    // Accumulate input using amortized growth
+    const required = this._inputLength + input.length;
+    if (this._inputCapacity < required) {
+      const newCap = Math.max(required, this._inputCapacity * 2, this._fftSize * 4);
+      const newBuffer = new Float32Array(newCap);
+      newBuffer.set(this._inputBuffer.subarray(0, this._inputLength));
+      this._inputBuffer = newBuffer;
+      this._inputCapacity = newCap;
+    }
+    this._inputBuffer.set(input, this._inputLength);
+    this._inputLength += input.length;
 
     // Process complete FFT frames
-    while (this._inputBuffer.length >= this._fftSize) {
-      const frame = this._inputBuffer.subarray(0, this._fftSize);
+    let inputOffset = 0;
+    while (this._inputLength - inputOffset >= this._fftSize) {
+      const frame = this._inputBuffer.subarray(inputOffset, inputOffset + this._fftSize);
       const isInProfileWindow = this._samplesProcessed < this._profileSamples;
       const isSilent = this._isSilence(frame);
 
@@ -243,7 +252,16 @@ export default class NoiseProfileNode {
       }
 
       this._samplesProcessed += this._fftSize;
-      this._inputBuffer = this._inputBuffer.slice(this._fftSize);
+      inputOffset += this._fftSize;
+    }
+
+    // Compact remaining samples to the front of the buffer
+    if (inputOffset > 0) {
+      const remaining = this._inputLength - inputOffset;
+      if (remaining > 0) {
+        this._inputBuffer.copyWithin(0, inputOffset, this._inputLength);
+      }
+      this._inputLength = remaining;
     }
 
     // Pass audio through unmodified
@@ -323,6 +341,6 @@ export default class NoiseProfileNode {
     this._isProfileReady = false;
     this._accumulator.fill(0);
     this._samplesProcessed = 0;
-    this._inputBuffer = new Float32Array(0);
+    this._inputLength = 0;
   }
 }

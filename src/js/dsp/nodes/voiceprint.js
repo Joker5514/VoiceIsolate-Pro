@@ -44,8 +44,10 @@ export default class VoiceprintNode {
 
     // State
     this._lastConfidence = 0;
-    this._embeddingBuffer = new Float32Array(0);
     this._windowSamples = Math.floor(sampleRate * this._params.windowSize);
+    this._embeddingCapacity = this._windowSamples * 2;
+    this._embeddingBuffer = new Float32Array(this._embeddingCapacity);
+    this._embeddingLength = 0;
   }
 
   /**
@@ -434,24 +436,30 @@ export default class VoiceprintNode {
       return new Float32Array(input);
     }
 
-    // Accumulate audio for windowed analysis
-    const newBuffer = new Float32Array(this._embeddingBuffer.length + input.length);
-    newBuffer.set(this._embeddingBuffer);
-    newBuffer.set(input, this._embeddingBuffer.length);
-    this._embeddingBuffer = newBuffer;
+    // Accumulate audio for windowed analysis using amortized growth
+    const required = this._embeddingLength + input.length;
+    if (this._embeddingCapacity < required) {
+      const newCap = Math.max(required, this._embeddingCapacity * 2);
+      const newBuffer = new Float32Array(newCap);
+      newBuffer.set(this._embeddingBuffer.subarray(0, this._embeddingLength));
+      this._embeddingBuffer = newBuffer;
+      this._embeddingCapacity = newCap;
+    }
+    this._embeddingBuffer.set(input, this._embeddingLength);
+    this._embeddingLength += input.length;
 
     // When we have enough audio, compute speaker match
-    if (this._embeddingBuffer.length >= this._windowSamples) {
+    if (this._embeddingLength >= this._windowSamples) {
       const segment = this._embeddingBuffer.subarray(
-        this._embeddingBuffer.length - this._windowSamples
+        this._embeddingLength - this._windowSamples, this._embeddingLength
       );
       this._lastConfidence = this.matchSpeaker(segment);
 
       // Trim buffer to keep only recent window
-      if (this._embeddingBuffer.length > this._windowSamples * 2) {
-        this._embeddingBuffer = this._embeddingBuffer.slice(
-          this._embeddingBuffer.length - this._windowSamples
-        );
+      if (this._embeddingLength > this._windowSamples * 2) {
+        const keep = this._windowSamples;
+        this._embeddingBuffer.copyWithin(0, this._embeddingLength - keep, this._embeddingLength);
+        this._embeddingLength = keep;
       }
     }
 
@@ -502,7 +510,7 @@ export default class VoiceprintNode {
    */
   reset() {
     this._lastConfidence = 0;
-    this._embeddingBuffer = new Float32Array(0);
+    this._embeddingLength = 0;
     // Note: enrolled embedding is intentionally preserved across resets
   }
 }

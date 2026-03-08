@@ -372,10 +372,19 @@ function setupToggles() {
     const el = $(t.id);
     if (!el) continue;
 
-    el.addEventListener('click', () => {
+    const handleToggle = () => {
       const isOn = el.classList.toggle('on');
       config[t.key] = isOn;
+      el.setAttribute('aria-checked', String(isOn));
       saveSettings();
+    };
+
+    el.addEventListener('click', handleToggle);
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleToggle();
+      }
     });
   }
 }
@@ -392,8 +401,12 @@ function setupModeSelector() {
     const btn = e.target.closest('.mode-btn');
     if (!btn) return;
 
-    container.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    container.querySelectorAll('.mode-btn').forEach(b => {
+      b.classList.remove('active');
+      b.setAttribute('aria-pressed', 'false');
+    });
     btn.classList.add('active');
+    btn.setAttribute('aria-pressed', 'true');
 
     state.mode = btn.dataset.mode;
 
@@ -1097,7 +1110,11 @@ function showProcessingProgress(percent, stage) {
   const progressStage = $('progressStage');
 
   if (progressBox) progressBox.style.display = 'block';
-  if (progressFill) progressFill.style.width = `${percent}%`;
+  if (progressFill) {
+    progressFill.style.width = `${percent}%`;
+    const bar = progressFill.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', String(Math.round(percent)));
+  }
   if (progressPct) progressPct.textContent = `${Math.round(percent)}%`;
   if (progressLabel) progressLabel.textContent = 'Processing...';
   if (progressStage) progressStage.textContent = stage;
@@ -1146,11 +1163,20 @@ function buildPipelineUI() {
     const stageEl = document.createElement('div');
     stageEl.className = 'pipeline-stage';
     stageEl.dataset.stage = i;
-    stageEl.innerHTML = `
-      <span class="stage-num">${i}</span>
-      <span class="stage-name">${PIPELINE_STAGES[i]}</span>
-      <span class="stage-indicator"></span>
-    `;
+    const numSpan = document.createElement('span');
+    numSpan.className = 'stage-num';
+    numSpan.textContent = i;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'stage-name';
+    nameSpan.textContent = PIPELINE_STAGES[i];
+
+    const indicator = document.createElement('span');
+    indicator.className = 'stage-indicator';
+
+    stageEl.appendChild(numSpan);
+    stageEl.appendChild(nameSpan);
+    stageEl.appendChild(indicator);
     container.appendChild(stageEl);
   }
 }
@@ -1189,13 +1215,29 @@ function setupExportMenu() {
   const exportMenu = $('exportMenu');
   if (!exportMenu) return;
 
-  exportMenu.addEventListener('click', async (e) => {
-    const opt = e.target.closest('.export-opt');
+  const selectExport = async (opt) => {
     if (!opt) return;
-
     const format = opt.dataset.format;
     exportMenu.classList.remove('visible');
     await exportAudio(format);
+  };
+
+  exportMenu.addEventListener('click', async (e) => {
+    const opt = e.target.closest('.export-opt');
+    await selectExport(opt);
+  });
+
+  // Keyboard navigation for export menu items
+  exportMenu.addEventListener('keydown', async (e) => {
+    const opt = e.target.closest('.export-opt');
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      await selectExport(opt);
+    } else if (e.key === 'Escape') {
+      exportMenu.classList.remove('visible');
+      const exportBtn = $('exportBtn');
+      if (exportBtn) exportBtn.focus();
+    }
   });
 
   // Close on outside click
@@ -1393,7 +1435,10 @@ function syncTogglesToConfig() {
 
   for (const [elId, key] of Object.entries(toggleMap)) {
     const el = $(elId);
-    if (el) el.classList.toggle('on', !!config[key]);
+    if (el) {
+      el.classList.toggle('on', !!config[key]);
+      el.setAttribute('aria-checked', String(!!config[key]));
+    }
   }
 }
 
@@ -1568,10 +1613,19 @@ function setupSettingsModal() {
   for (const t of settingsToggles) {
     const el = $(t.id);
     if (el) {
-      el.addEventListener('click', () => {
+      const handleToggle = () => {
         const isOn = el.classList.toggle('on');
         config[t.key] = isOn;
+        el.setAttribute('aria-checked', String(isOn));
         saveSettings();
+      };
+
+      el.addEventListener('click', handleToggle);
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleToggle();
+        }
       });
     }
   }
@@ -1689,10 +1743,18 @@ function updateBatchUI() {
   for (const item of state.batchQueue) {
     const el = document.createElement('div');
     el.className = `batch-item ${item.status}`;
-    el.innerHTML = `
-      <span class="batch-name">${item.file.name}</span>
-      <span class="batch-status">${item.status}</span>
-    `;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'batch-name';
+    nameSpan.textContent = item.file.name;
+
+    const statusSpan = document.createElement('span');
+    statusSpan.className = 'batch-status';
+    statusSpan.textContent = item.status;
+
+    el.appendChild(nameSpan);
+    el.appendChild(statusSpan);
+
     container.appendChild(el);
   }
 
@@ -1725,11 +1787,23 @@ function addForensicEntry(operation, details) {
 
   const row = document.createElement('div');
   row.className = 'log-entry';
-  row.innerHTML = `
-    <span class="log-time">${entry.timestamp.split('T')[1].split('.')[0]}</span>
-    <span class="log-op">${operation}</span>
-    <span class="log-detail">${details}</span>
-  `;
+
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'log-time';
+  timeSpan.textContent = entry.timestamp.split('T')[1].split('.')[0];
+
+  const opSpan = document.createElement('span');
+  opSpan.className = 'log-op';
+  opSpan.textContent = operation;
+
+  const detailSpan = document.createElement('span');
+  detailSpan.className = 'log-detail';
+  detailSpan.textContent = details;
+
+  row.appendChild(timeSpan);
+  row.appendChild(opSpan);
+  row.appendChild(detailSpan);
+
   logEl.appendChild(row);
   logEl.scrollTop = logEl.scrollHeight;
 
@@ -1765,7 +1839,10 @@ function setupMobileControls() {
     const btn = document.createElement('button');
     btn.className = 'preset-btn';
     btn.dataset.preset = name;
-    btn.innerHTML = `<div class="preset-name">${name.charAt(0).toUpperCase() + name.slice(1)}</div>`;
+    const presetNameDiv = document.createElement('div');
+    presetNameDiv.className = 'preset-name';
+    presetNameDiv.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+    btn.appendChild(presetNameDiv);
     mobilePresets.appendChild(btn);
   }
 
