@@ -9,6 +9,7 @@ on:
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
 
 jobs:
   validate:
@@ -45,7 +46,7 @@ jobs:
   deploy-preview:
     name: Deploy Preview
     needs: validate
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && env.VERCEL_TOKEN != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
