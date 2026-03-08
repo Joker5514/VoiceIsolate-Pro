@@ -10,3 +10,4 @@ dist/
 # ML model files — large binaries, download via models/README.md
 public/app/models/demucs_v4.onnx
 public/app/models/bsrnn.onnx
+public/app/models/deepfilter/

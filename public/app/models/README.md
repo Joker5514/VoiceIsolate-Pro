@@ -29,6 +29,34 @@ Band-Split RNN ensemble partner. Complements Demucs for voice/background separat
 
 Place at `public/app/models/bsrnn.onnx`.
 
+## DeepFilterNet3 (Optional — ~35MB total, 3 files)
+
+Real-time speech denoising and de-reverberation. Operates at 48 kHz with 10 ms
+latency. Runs **before** Demucs in the pipeline: VAD → DeepFilterNet → Demucs.
+Falls back silently if the files are absent — Demucs separation is unaffected.
+
+**Download:**
+```bash
+# From the VoiceIsolate-Pro repo root:
+mkdir -p public/app/models/deepfilter
+curl -L "https://github.com/Rikorose/DeepFilterNet/releases/download/v0.5.6/DeepFilterNet3_ll_onnx.tar.gz" \
+  | tar -xz --strip-components=1 -C public/app/models/deepfilter
+# Extracts: enc.onnx  erb_dec.onnx  df_dec.onnx  (~35 MB combined)
+```
+
+**Load in app.js:**
+```js
+mlWorker.postMessage({ type: 'loadModel', model: 'deepfilter', wasmRoot });
+```
+
+**Enhance before separation:**
+```js
+// 1. Enhance with DeepFilterNet3
+const enhanced = await mlCall({ type: 'runEnhance', signal, sampleRate }, [signal.buffer]);
+// 2. Separate vocals with Demucs
+const vocals   = await mlCall({ type: 'runSeparation', signal: enhanced, sampleRate, model: 'demucs' }, [enhanced.buffer]);
+```
+
 ## Execution Providers
 
 | GPU available | Primary provider | Fallback |
