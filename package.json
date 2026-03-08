@@ -3,15 +3,37 @@
   "version": "19.0.0",
   "description": "Studio-grade voice isolation platform. 32-stage Octa-Pass DSP pipeline with hybrid ML + classical spectral processing.",
   "private": true,
-  "keywords": ["audio", "dsp", "voice-isolation", "noise-reduction", "web-audio", "machine-learning"],
+  "keywords": [
+    "audio",
+    "dsp",
+    "voice-isolation",
+    "noise-reduction",
+    "web-audio",
+    "machine-learning"
+  ],
   "author": "VoiceIsolate Pro",
   "license": "UNLICENSED",
   "scripts": {
     "dev": "npx serve public -l 3000 --cors",
     "build": "echo 'Static site — no build step'",
-    "lint": "echo 'Add eslint config for app.js linting'",
-    "test": "echo 'Add test runner — see .github/copilot-instructions.md'",
+    "lint": "npx eslint public/app/app.js public/app/dsp-worker.js --no-eslintrc --env browser,es2022 --parser-options=ecmaVersion:2022",
+    "test": "jest --testEnvironment=node",
+    "test:watch": "jest --testEnvironment=node --watch",
     "validate": "node scripts/validate.js"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "public/app/app.js",
+      "public/app/dsp-worker.js"
+    ]
   },
   "engines": {
     "node": ">=18.0.0"
