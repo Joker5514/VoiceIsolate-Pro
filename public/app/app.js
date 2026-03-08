@@ -4,6 +4,13 @@
    52 Sliders · Real-Time Chain · 3D Spectrogram
    ============================================ */
 
+// ---- STRUCTURED LOGGING ----
+function structuredLog(level, message, details = {}) {
+  const entry = { app: 'VoiceIsolate Pro', version: '19.0', level, message, timestamp: new Date().toISOString(), ...details };
+  const method = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
+  method(JSON.stringify(entry));
+}
+
 // ---- SLIDER DEFINITIONS (52 total) ----
 const SLIDERS = {
   gate: [
@@ -140,7 +147,7 @@ class VoiceIsolatePro {
 
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
-      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;
@@ -151,17 +158,51 @@ class VoiceIsolatePro {
     for (const [tabKey, sliders] of Object.entries(SLIDERS)) {
       const panel = document.getElementById('tab-' + tabKey);
       if (!panel) continue;
-      let h = '<div class="sr">';
+      panel.textContent = '';
+      const sr = document.createElement('div');
+      sr.className = 'sr';
       for (const s of sliders) {
-        const rtCls = s.rt ? ' realtime' : '';
-        const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
-        h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
-          '<label class="sr-label" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
-          '<input type="range" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
-          '<span class="sr-val" id="' + s.id + 'Val">' + s.val + s.unit + '</span></div>';
+        const row = document.createElement('div');
+        row.className = 'sr-row';
+        row.dataset.desc = s.desc;
+
+        const labelEl = document.createElement('label');
+        labelEl.className = 'sr-label';
+        labelEl.title = s.desc;
+        labelEl.htmlFor = s.id;
+        labelEl.textContent = s.label;
+        if (s.rt) {
+          const badge = document.createElement('span');
+          badge.className = 'rt-badge';
+          badge.textContent = 'RT';
+          labelEl.appendChild(badge);
+        }
+
+        const inputEl = document.createElement('input');
+        inputEl.type = 'range';
+        if (s.rt) inputEl.className = 'realtime';
+        inputEl.id = s.id;
+        inputEl.min = s.min;
+        inputEl.max = s.max;
+        inputEl.value = s.val;
+        inputEl.step = s.step;
+        inputEl.dataset.param = s.id;
+        inputEl.setAttribute('aria-label', s.label);
+        inputEl.setAttribute('aria-valuemin', s.min);
+        inputEl.setAttribute('aria-valuemax', s.max);
+        inputEl.setAttribute('aria-valuenow', s.val);
+
+        const valEl = document.createElement('span');
+        valEl.className = 'sr-val';
+        valEl.id = s.id + 'Val';
+        valEl.textContent = s.val + s.unit;
+
+        row.appendChild(labelEl);
+        row.appendChild(inputEl);
+        row.appendChild(valEl);
+        sr.appendChild(row);
       }
-      h += '</div>';
-      panel.innerHTML = h;
+      panel.appendChild(sr);
     }
   }
 
@@ -181,7 +222,7 @@ class VoiceIsolatePro {
       spectro2DCanvas:g('spectro2DCanvas'),
       waveOrigCanvas:g('waveOrigCanvas'), waveProcCanvas:g('waveProcCanvas'),
       freqCanvas:g('freqCanvas'),
-      pipeFill:g('pipeFill'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
+      pipeFill:g('pipeFill'), pipeBar:g('pipeBar'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
       hSNR:g('hSNR'), hDur:g('hDur'), hSR:g('hSR'), hCh:g('hCh'),
       hRMS:g('hRMS'), hPeak:g('hPeak'), hStatus:g('hStatus'),
       stLatency:g('stLatency'), stProcTime:g('stProcTime'), stVoices:g('stVoices'),
@@ -195,6 +236,7 @@ class VoiceIsolatePro {
     ['dragleave','drop'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uz.classList.remove('dragover'); }));
     uz.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
     uz.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
+    uz.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.dom.fileInput.click(); } });
     this.dom.fileBtn.addEventListener('click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
     this.dom.fileInput.addEventListener('change', e => { if (e.target.files[0]) this.handleFile(e.target.files[0]); this.dom.fileInput.value = ''; });
     this.dom.micBtn.addEventListener('click', () => this.toggleRecording());
@@ -212,8 +254,17 @@ class VoiceIsolatePro {
     this.dom.tpSpeed.addEventListener('change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
     this.dom.tpAB.addEventListener('click', () => this.toggleAB());
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
-      document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t.dataset.tab));
+      document.querySelectorAll('.tab').forEach(x => {
+        const isActive = x === t;
+        x.classList.toggle('active', isActive);
+        x.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+      document.querySelectorAll('.panel').forEach(p => {
+        const isActive = p.id === 'tab-' + t.dataset.tab;
+        p.classList.toggle('active', isActive);
+        if (isActive) p.removeAttribute('hidden');
+        else p.setAttribute('hidden', '');
+      });
     }));
     document.querySelectorAll('.btn-preset').forEach(b => b.addEventListener('click', () => this.applyPreset(b.dataset.preset)));
     document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', () => this.onSlider(el)));
@@ -303,7 +354,7 @@ class VoiceIsolatePro {
       this.onAudioLoaded(file.name);
 
     } catch (err) {
-      console.error('File load error:', err);
+      structuredLog('error', 'File load error', { error: err.message });
       this.dom.fileInfo.textContent = 'Error: ' + err.message;
       this.setStatus('ERROR');
     }
@@ -323,7 +374,7 @@ class VoiceIsolatePro {
           if (!duration || !isFinite(duration)) { reject(new Error('Cannot determine video duration')); return; }
 
           // Use MediaElement source to capture audio
-          const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const tmpCtx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)();
           const source = tmpCtx.createMediaElementSource(vid);
           const dest = tmpCtx.createMediaStreamDestination();
           source.connect(dest);
@@ -658,13 +709,21 @@ class VoiceIsolatePro {
       this.setStatus('COMPLETE');
     } catch(e) {
       if (e==='abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent='Aborted'; }
-      else { console.error('Pipeline:',e); this.setStatus('ERROR'); this.dom.pipeDetail.textContent=e.message||String(e); }
+      else { structuredLog('error', 'Pipeline error', { error: e instanceof Error ? e.message : String(e) }); this.setStatus('ERROR'); this.dom.pipeDetail.textContent=e instanceof Error ? e.message : String(e); }
     } finally {
       this.isProcessing=false; this.dom.processBtn.style.display='inline-flex'; this.dom.stopProcBtn.style.display='none';
     }
   }
 
-  async pip(i,t) { this.dom.pipeFill.style.width=((i+1)/t*100)+'%'; this.dom.pipeStage.textContent=(i+1)+'/'+t; this.dom.pipeDetail.textContent=STAGES[i]; this.dom.hStatus.textContent='S'+(i+1); await new Promise(r=>setTimeout(r,15)); }
+  async pip(i,t) {
+    const pct = Math.round((i+1)/t*100);
+    this.dom.pipeFill.style.width = pct + '%';
+    this.dom.pipeBar.setAttribute('aria-valuenow', pct);
+    this.dom.pipeStage.textContent = (i+1)+'/'+t;
+    this.dom.pipeDetail.textContent = STAGES[i];
+    this.dom.hStatus.textContent = 'S'+(i+1);
+    await new Promise(r=>setTimeout(r,15));
+  }
 
   // ---- DSP HELPERS ----
   applyNR(buf,amt,smooth,floorDb) {

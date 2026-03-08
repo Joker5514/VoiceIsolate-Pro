@@ -36,16 +36,16 @@
     <div class="col-left">
       <!-- Upload -->
       <div class="card upload-card">
-        <div id="uploadZone" class="upload-zone">
-          <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop audio or video file, or click to browse">
+          <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <p class="upload-title">Drop Audio or Video</p>
           <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · MP4 · MOV · WEBM — No limit</p>
-          <input type="file" id="fileInput" accept="audio/*,video/*" hidden />
+          <input type="file" id="fileInput" accept="audio/*,video/*" hidden aria-label="Select audio or video file" />
           <button id="fileBtn" class="btn btn-outline">Browse Files</button>
         </div>
         <div class="upload-row">
-          <button id="micBtn" class="btn btn-mic">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+          <button id="micBtn" class="btn btn-mic" aria-label="Start microphone recording">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
             <span id="micLabel">Record</span>
           </button>
           <span id="fileInfo" class="file-info">No file loaded</span>
@@ -53,27 +53,27 @@
       </div>
 
       <!-- Tabs -->
-      <div class="tabs" id="tabBar">
-        <button class="tab active" data-tab="gate">Gate</button>
-        <button class="tab" data-tab="nr">Noise</button>
-        <button class="tab" data-tab="eq">EQ</button>
-        <button class="tab" data-tab="dyn">Dynamics</button>
-        <button class="tab" data-tab="spec">Spectral</button>
-        <button class="tab" data-tab="adv">Advanced</button>
-        <button class="tab" data-tab="sep">Separation</button>
-        <button class="tab" data-tab="out">Output</button>
+      <div class="tabs" id="tabBar" role="tablist" aria-label="DSP Processing Controls">
+        <button class="tab active" data-tab="gate" role="tab" aria-selected="true" aria-controls="tab-gate" id="tabn-gate">Gate</button>
+        <button class="tab" data-tab="nr" role="tab" aria-selected="false" aria-controls="tab-nr" id="tabn-nr">Noise</button>
+        <button class="tab" data-tab="eq" role="tab" aria-selected="false" aria-controls="tab-eq" id="tabn-eq">EQ</button>
+        <button class="tab" data-tab="dyn" role="tab" aria-selected="false" aria-controls="tab-dyn" id="tabn-dyn">Dynamics</button>
+        <button class="tab" data-tab="spec" role="tab" aria-selected="false" aria-controls="tab-spec" id="tabn-spec">Spectral</button>
+        <button class="tab" data-tab="adv" role="tab" aria-selected="false" aria-controls="tab-adv" id="tabn-adv">Advanced</button>
+        <button class="tab" data-tab="sep" role="tab" aria-selected="false" aria-controls="tab-sep" id="tabn-sep">Separation</button>
+        <button class="tab" data-tab="out" role="tab" aria-selected="false" aria-controls="tab-out" id="tabn-out">Output</button>
       </div>
 
       <!-- Slider Panels (populated by JS) -->
       <div class="panels">
-        <div class="panel active" id="tab-gate"></div>
-        <div class="panel" id="tab-nr"></div>
-        <div class="panel" id="tab-eq"></div>
-        <div class="panel" id="tab-dyn"></div>
-        <div class="panel" id="tab-spec"></div>
-        <div class="panel" id="tab-adv"></div>
-        <div class="panel" id="tab-sep"></div>
-        <div class="panel" id="tab-out"></div>
+        <div class="panel active" id="tab-gate" role="tabpanel" aria-labelledby="tabn-gate"></div>
+        <div class="panel" id="tab-nr" role="tabpanel" aria-labelledby="tabn-nr" hidden></div>
+        <div class="panel" id="tab-eq" role="tabpanel" aria-labelledby="tabn-eq" hidden></div>
+        <div class="panel" id="tab-dyn" role="tabpanel" aria-labelledby="tabn-dyn" hidden></div>
+        <div class="panel" id="tab-spec" role="tabpanel" aria-labelledby="tabn-spec" hidden></div>
+        <div class="panel" id="tab-adv" role="tabpanel" aria-labelledby="tabn-adv" hidden></div>
+        <div class="panel" id="tab-sep" role="tabpanel" aria-labelledby="tabn-sep" hidden></div>
+        <div class="panel" id="tab-out" role="tabpanel" aria-labelledby="tabn-out" hidden></div>
       </div>
 
       <!-- Presets -->
@@ -99,9 +99,9 @@
       </div>
 
       <!-- Pipeline -->
-      <div class="pipeline-box">
+      <div class="pipeline-box" role="status" aria-live="polite" aria-atomic="false">
         <div class="pipe-header"><span>Pipeline</span><span id="pipeStage" class="pipe-stage">Idle</span></div>
-        <div class="pipe-bar"><div id="pipeFill" class="pipe-fill"></div></div>
+        <div class="pipe-bar" id="pipeBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Processing progress"><div id="pipeFill" class="pipe-fill"></div></div>
         <div id="pipeDetail" class="pipe-detail"></div>
       </div>
 
