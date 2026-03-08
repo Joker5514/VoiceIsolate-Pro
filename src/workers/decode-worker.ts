@@ -132,8 +132,9 @@ async function decode(payload: DecodePayload, taskId: string): Promise<DecodeRes
     throw new Error(`File too large: ${fileBuffer.byteLength} bytes (max ${config.maxFileSizeBytes})`);
   }
 
-  // Determine extension
-  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  // Determine extension and sanitize to alphanumeric to prevent injection
+  const rawExt = fileName.split('.').pop()?.toLowerCase() ?? '';
+  const ext = rawExt.replace(/[^a-z0-9]/g, '');
   const fmt = EXTENSION_MAP[ext] ?? { inputFmt: 'auto', codec: 'unknown' };
 
   postProgress(taskId, 'detect', 5);
@@ -153,16 +154,24 @@ async function decode(payload: DecodePayload, taskId: string): Promise<DecodeRes
     '-ac', String(outputChannels || 1),
   ];
 
-  if (outputSr) args.push('-ar', String(outputSr));
+  // Validate and apply outputSr
+  if (outputSr !== undefined) {
+    const sr = Number(outputSr);
+    if (Number.isFinite(sr) && sr > 0) {
+      args.push('-ar', String(sr));
+    }
+  }
 
-  // Apply silence trim if requested
+  // Apply silence trim if requested, validating to prevent filtergraph injection
   if (trimSilenceDB !== undefined) {
-    const t = trimSilenceDB;
-    args.push(
-      '-af',
-      `silenceremove=start_periods=1:start_duration=0.1:start_threshold=${t}dB:detection=peak,` +
-      `areverse,silenceremove=start_periods=1:start_duration=0.1:start_threshold=${t}dB:detection=peak,areverse`
-    );
+    const t = Number(trimSilenceDB);
+    if (Number.isFinite(t)) {
+      args.push(
+        '-af',
+        `silenceremove=start_periods=1:start_duration=0.1:start_threshold=${t}dB:detection=peak,` +
+        `areverse,silenceremove=start_periods=1:start_duration=0.1:start_threshold=${t}dB:detection=peak,areverse`
+      );
+    }
   }
 
   args.push('-f', 'f32le', '-acodec', 'pcm_f32le', outName, '-y');
@@ -330,7 +339,8 @@ async function probe(fileBuffer: ArrayBuffer, fileName: string): Promise<{
   channels: number;
 }> {
   if (!ffmpeg) throw new Error('FFmpeg not initialised');
-  const ext = fileName.split('.').pop()?.toLowerCase() ?? 'bin';
+  const rawExt = fileName.split('.').pop()?.toLowerCase() ?? 'bin';
+  const ext = rawExt.replace(/[^a-z0-9]/g, '') || 'bin';
   const inName = `probe.${ext}`;
   await ffmpeg.writeFile(inName, new Uint8Array(fileBuffer));
 
