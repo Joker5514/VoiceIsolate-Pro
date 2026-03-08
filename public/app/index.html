@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Phase 4: ONNX Runtime Web — local inference for VAD and ML separation -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -28,6 +30,13 @@
       <div class="hdr-stat"><span class="hs-val" id="hRMS">--</span><span class="hs-lbl">RMS</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hPeak">--</span><span class="hs-lbl">Peak</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hStatus">IDLE</span><span class="hs-lbl">Pipeline</span></div>
+      <!-- Phase 5: Forensic Mode toggle -->
+      <div class="hdr-stat forensic-toggle-wrap">
+        <label class="forensic-label" for="forensicToggle" title="Enable SHA-256 audit trail at each processing stage">
+          <input type="checkbox" id="forensicToggle" />
+          <span class="hs-lbl">Forensic</span>
+        </label>
+      </div>
     </div>
   </header>
 
@@ -92,7 +101,7 @@
       <div class="actions-row">
         <button id="processBtn" class="btn btn-primary" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
-          Process (30-Stage)
+          Process (32-Stage)
         </button>
         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
@@ -114,6 +123,11 @@
         <button id="saveProcBtn" class="btn btn-save-proc" disabled>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Save Processed WAV
+        </button>
+        <!-- Phase 5: Forensic audit log download -->
+        <button id="auditLogBtn" class="btn btn-audit" disabled title="Download SHA-256 audit trail (Forensic mode only)">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Audit Log
         </button>
       </div>
     </div>
@@ -212,8 +226,8 @@
   </main>
 
   <footer class="ftr">
-    <span>VoiceIsolate Pro v19.0 · Threads from Space · Hybrid ML+DSP · 30-Stage Hexa-Pass</span>
-    <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
+    <span>VoiceIsolate Pro v19.0 · Threads from Space · Hybrid ML+DSP · 32-Stage Octa-Pass</span>
+    <span>100% Local Processing · Zero Data Transmission · Privacy First · ONNX Runtime Web</span>
   </footer>
 
   <div id="tooltip" class="slider-tooltip"></div>

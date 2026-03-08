@@ -202,6 +202,14 @@ input[type="range"]:focus-visible::-moz-range-thumb {
   .ftr{flex-direction:column;text-align:center;gap:2px}
 }
 
+/* ---- FORENSIC MODE ---- */
+.forensic-toggle-wrap{display:flex;align-items:center;gap:4px}
+.forensic-label{display:flex;align-items:center;gap:5px;cursor:pointer}
+.forensic-label input[type="checkbox"]{accent-color:var(--red);width:14px;height:14px;cursor:pointer}
+.btn-audit{background:transparent;border:1px solid #7c3aed;color:#a78bfa;font-size:11px}
+.btn-audit:not(:disabled):hover{background:rgba(124,58,237,0.15);border-color:#a78bfa}
+.btn-audit:disabled{opacity:0.3;cursor:not-allowed}
+
 /* ---- SCROLLBAR ---- */
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:var(--bg)}

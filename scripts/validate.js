@@ -21,11 +21,16 @@ const required = [
   'public/app/index.html',
   'public/app/style.css',
   'public/app/app.js',
+  'public/app/dsp-worker.js',           // Phase 3: AudioWorklet
+  'public/app/models/README.md',        // Phase 4: ML model docs
   'public/blueprint/index.html',
   'vercel.json',
   'package.json',
   'README.md',
   '.github/copilot-instructions.md',
+  'tests/dsp.test.js',                  // Phase 6: Tests
+  'tests/sliders.test.js',
+  'tests/presets.test.js',
 ];
 required.forEach(f => check(fs.existsSync(path.resolve(__dirname, '..', f)), f));
 
@@ -40,7 +45,48 @@ sliderGroups.forEach(g => check(appJs.includes(`${g}:`), `Slider group: ${g}`));
 // Count slider definitions
 const sliderMatches = appJs.match(/id:\s*'/g);
 const sliderCount = sliderMatches ? sliderMatches.length : 0;
-check(sliderCount >= 40, `Slider count: ${sliderCount} (>=40)`);
+check(sliderCount >= 52, `Slider count: ${sliderCount} (>=52)`);
+
+// Count STAGES
+const stagesMatch = appJs.match(/const STAGES = \[([\s\S]*?)\];/);
+const stageItems = stagesMatch ? (stagesMatch[1].match(/'[^']+'/g) || []) : [];
+check(stageItems.length === 32, `STAGES count: ${stageItems.length} (must be 32)`);
+
+// Phase 1: STFT engine presence
+console.log('\nSpectral Engine (Phase 1):');
+check(appJs.includes('_fft(re, im)'), 'FFT implementation present');
+check(appJs.includes('_ifft(re, im)'), 'IFFT implementation present');
+check(appJs.includes('_makeWindow(N)'), 'Blackman-Harris window present');
+check(appJs.includes('applySpectralNR'), 'Spectral NR function present');
+check(!appJs.includes('applyNR(buf,amt,smooth'), 'Old stub applyNR removed');
+
+// Phase 2: Wired sliders
+console.log('\nWired Sliders (Phase 2):');
+const wiredSliders = ['applyBgSuppress','applyCrosstalkCancel','applyFormantShift','applyPhaseCorr','applyDereverb','applyDither'];
+wiredSliders.forEach(fn => check(appJs.includes(fn), `${fn} implemented`));
+
+// Phase 3: AudioWorklet
+console.log('\nAudioWorklet (Phase 3):');
+const workerJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/dsp-worker.js'))
+  ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/dsp-worker.js'), 'utf8') : '';
+check(workerJs.includes("registerProcessor('voice-isolate-processor'"), 'AudioWorklet registerProcessor present');
+check(workerJs.includes('process(inputs, outputs)'), 'AudioWorklet process() method present');
+check(appJs.includes("addModule('./dsp-worker.js')"), 'AudioWorklet registered in ensureCtx');
+
+// Phase 4: ONNX Runtime
+console.log('\nONNX Runtime (Phase 4):');
+const htmlPath = path.resolve(__dirname, '..', 'public/app/index.html');
+const html = fs.existsSync(htmlPath) ? fs.readFileSync(htmlPath, 'utf8') : '';
+check(html.includes('onnxruntime-web'), 'ONNX Runtime CDN in index.html');
+check(appJs.includes('async loadModels()'), 'loadModels() method present');
+check(appJs.includes('async runVAD(buf)'), 'runVAD() method present');
+
+// Phase 5: Forensic
+console.log('\nForensic Mode (Phase 5):');
+check(html.includes('forensicToggle'), 'Forensic toggle in index.html');
+check(html.includes('auditLogBtn'), 'Audit log button in index.html');
+check(appJs.includes("crypto.subtle.digest('SHA-256'"), 'SHA-256 audit hashing present');
+check(appJs.includes('this.forensicLog = []'), 'forensicLog initialized');
 
 // 3. Balanced braces
 console.log('\nBrace balance:');
