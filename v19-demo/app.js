@@ -141,8 +141,10 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
-    // Phase 4: ML model sessions
-    this.sileroSession = null;
+    // Phase 4: ML Worker (off-main-thread ONNX inference)
+    this.mlWorker = null;
+    this._mlCallbacks = {};  // id → { resolve, reject }
+    this._mlCallId = 0;
     this.mlReady = false;
     // Phase 5: Forensic audit
     this.forensicMode = false;
@@ -156,6 +158,48 @@ class VoiceIsolatePro {
     this.bindEvents();
     this.initCanvases();
     this.init3D();
+    this._spawnMlWorker();
+  }
+
+  // Spawn the ML Web Worker and wire message routing
+  _spawnMlWorker() {
+    try {
+      this.mlWorker = new Worker('./ml-worker.js');
+      this.mlWorker.onmessage = (e) => this._onMlMessage(e.data);
+      this.mlWorker.onerror = (e) => {
+        structuredLog('warn', 'ML Worker error', { message: e.message });
+      };
+    } catch(e) {
+      structuredLog('warn', 'ML Worker unavailable', { error: e.message });
+    }
+  }
+
+  // Route messages from ml-worker back to pending Promise callbacks
+  _onMlMessage(msg) {
+    if (msg.type === 'modelLoaded') {
+      structuredLog('info', 'ML model loaded', { model: msg.model });
+      if (msg.model === 'vad') this.mlReady = true;
+      return;
+    }
+    if (msg.type === 'modelError') {
+      structuredLog('warn', 'ML model load failed', { model: msg.model, error: msg.error });
+      return;
+    }
+    const cb = this._mlCallbacks[msg.id];
+    if (!cb) return;
+    delete this._mlCallbacks[msg.id];
+    if (msg.type === 'result') cb.resolve(msg.data);
+    else cb.reject(new Error(msg.error));
+  }
+
+  // Send a message to the ML Worker and return a Promise for the result
+  _mlCall(payload, transfer) {
+    return new Promise((resolve, reject) => {
+      if (!this.mlWorker) { reject(new Error('ML Worker not available')); return; }
+      const id = ++this._mlCallId;
+      this._mlCallbacks[id] = { resolve, reject };
+      this.mlWorker.postMessage({ ...payload, id }, transfer || []);
+    });
   }
 
   ensureCtx() {
@@ -1167,43 +1211,44 @@ class VoiceIsolatePro {
 
   // ======== PHASE 4: ML / VAD INTEGRATION ========
 
-  // Attempt to load ONNX Runtime models (graceful — no-op if ort not on window)
+  // Trigger VAD model load in the ML Worker (fire-and-forget; mlReady set via _onMlMessage)
   async loadModels() {
-    if (typeof ort === 'undefined') {
-      structuredLog('warn', 'ONNX Runtime not loaded — ML models unavailable');
+    if (!this.mlWorker) {
+      structuredLog('warn', 'ML Worker not available — running without ML');
       return;
     }
+    const wasmRoot = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
+    this.mlWorker.postMessage({ type: 'loadModel', model: 'vad', wasmRoot });
+  }
+
+  // Run Silero VAD via ML Worker; returns boolean[] or null if unavailable
+  async runVAD(buf) {
+    if (!this.mlReady || !this.mlWorker) return null;
     try {
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
-      this.sileroSession = await ort.InferenceSession.create('./models/silero_vad.onnx', {
-        executionProviders: navigator.gpu ? ['webgpu', 'wasm'] : ['wasm']
-      });
-      this.mlReady = true;
-      structuredLog('info', 'Silero VAD loaded', { provider: navigator.gpu ? 'webgpu' : 'wasm' });
+      const signal = new Float32Array(buf.getChannelData(0)); // copy for transfer
+      return await this._mlCall(
+        { type: 'runVAD', signal, sampleRate: buf.sampleRate },
+        [signal.buffer]
+      );
     } catch(e) {
-      structuredLog('warn', 'Model load failed — running without ML', { error: e.message });
+      structuredLog('warn', 'VAD Worker call failed', { error: e.message });
+      return null;
     }
   }
 
-  // Run Silero VAD and return array of booleans (100 frames/sec) indicating speech activity
-  async runVAD(buf) {
-    if (!this.sileroSession) return null;
-    const signal = buf.getChannelData(0);
-    const sr = buf.sampleRate;
-    const frameSize = Math.floor(sr / 100); // 10ms frames
-    const vadResult = [];
-    // State tensors required by Silero v5
-    let h = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-    let c = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-    for (let i = 0; i + frameSize <= signal.length; i += frameSize) {
-      const frame = signal.slice(i, i + frameSize);
-      const input = new ort.Tensor('float32', frame, [1, frame.length]);
-      const srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
-      const result = await this.sileroSession.run({ input, sr: srTensor, h, c });
-      vadResult.push(result.output.data[0] > 0.5);
-      h = result.hn; c = result.cn;
+  // Run source separation (Demucs or BSRNN) via ML Worker; returns Float32Array or null
+  async runSeparation(buf, model = 'demucs') {
+    if (!this.mlWorker) return null;
+    try {
+      const signal = new Float32Array(buf.getChannelData(0));
+      return await this._mlCall(
+        { type: 'runSeparation', signal, sampleRate: buf.sampleRate, model },
+        [signal.buffer]
+      );
+    } catch(e) {
+      structuredLog('warn', 'Separation Worker call failed', { error: e.message });
+      return null;
     }
-    return vadResult;
   }
 
   // ======== PHASE 5: FORENSIC AUDIT ========

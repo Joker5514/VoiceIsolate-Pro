@@ -111,3 +111,27 @@ describe('dsp-worker.js', () => {
     expect(worker).toContain('process(inputs, outputs)');
   });
 });
+
+describe('ml-worker.js', () => {
+  const mlPath = path.join(__dirname, '../public/app/ml-worker.js');
+
+  test('ml-worker.js file should exist', () => {
+    expect(fs.existsSync(mlPath)).toBe(true);
+  });
+
+  test('Should define MODEL_PATHS for all 6 models', () => {
+    const ml = fs.readFileSync(mlPath, 'utf8');
+    ['vad', 'demucs', 'bsrnn', 'ecapa', 'hifigan', 'conformer'].forEach(m => {
+      expect(ml).toContain(`${m}:`);
+    });
+  });
+
+  test('Should use self.onmessage dispatcher', () => {
+    const ml = fs.readFileSync(mlPath, 'utf8');
+    expect(ml).toContain('self.onmessage');
+  });
+
+  test('v19-demo should include ml-worker.js', () => {
+    expect(fs.existsSync(path.join(__dirname, '../v19-demo/ml-worker.js'))).toBe(true);
+  });
+});
