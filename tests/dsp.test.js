@@ -184,3 +184,82 @@ describe('Crosstalk cancellation math', () => {
     expect(R - g * L).toBeCloseTo(R);
   });
 });
+
+describe('Wiener NR — speech-frame gain (applySpectralNR fix)', () => {
+  // Helper: Wiener gain with optional speech-frame noise reduction.
+  // Fixed implementation reduces the noise estimate during speech frames rather than
+  // using nEst (a PSD value) directly as the gain floor, which could exceed 1.0.
+  function wienerGain(sigPSD, nEst, beta, isSpeech) {
+    const nEstFrame = isSpeech ? nEst * 0.3 : nEst;
+    return sigPSD > 1e-12
+      ? Math.max(Math.sqrt(Math.max(sigPSD - nEstFrame, 0) / sigPSD), beta)
+      : beta;
+  }
+
+  test('Gain never exceeds 1.0 for any inputs including large nEst', () => {
+    const beta = 0.05;
+    // Simulate a very noisy environment: nEst >> sigPSD
+    for (let i = 0; i < 50; i++) {
+      const sigPSD = Math.random() * 2;
+      const nEst = Math.random() * 1000; // large PSD values
+      const gain = wienerGain(sigPSD, nEst, beta, /* isSpeech */ true);
+      expect(gain).toBeLessThanOrEqual(1.0);
+      expect(gain).toBeGreaterThanOrEqual(beta);
+    }
+  });
+
+  test('Speech frames receive softer NR than non-speech frames for same input', () => {
+    const beta = 0.05;
+    const sigPSD = 2.0, nEst = 5.0; // signal partially masked by noise
+    const gainSpeech = wienerGain(sigPSD, nEst, beta, true);
+    const gainNonSpeech = wienerGain(sigPSD, nEst, beta, false);
+    // Speech frames should preserve more signal (higher gain)
+    expect(gainSpeech).toBeGreaterThanOrEqual(gainNonSpeech);
+  });
+
+  test('During speech, high nEst still yields gain ≤ 1 (regression: was amplifying)', () => {
+    // Before fix: effectiveAlpha = Math.max(nEst * 0.3, beta) used nEst as gain floor.
+    // With nEst=375, effectiveAlpha=112.5 — multiplied signal by 112.5.
+    const beta = 0.05;
+    const nEst = 375; // realistic value: alpha=3 × smoothedNoise=100 × 1.25
+    const sigPSD = 150;
+    const gain = wienerGain(sigPSD, nEst, beta, /* isSpeech */ true);
+    expect(gain).toBeLessThanOrEqual(1.0);
+    expect(gain).toBeGreaterThan(0);
+  });
+});
+
+describe('Frequency bin mapping (applyBgSuppress fix)', () => {
+  // Standard formula: freq_k = k * sr / N
+  // Buggy formula:    freq_k = (k / halfN) * (sr / 2) = k * sr / (N + 2)
+  function binFreqCorrect(k, N, sr) { return k * sr / N; }
+  function binFreqBuggy(k, N, sr) { const halfN = N / 2 + 1; return (k / halfN) * (sr / 2); }
+
+  test('DC bin (k=0) maps to 0 Hz', () => {
+    expect(binFreqCorrect(0, 2048, 44100)).toBe(0);
+  });
+
+  test('Nyquist bin (k=N/2) maps to sr/2', () => {
+    const N = 2048, sr = 44100;
+    expect(binFreqCorrect(N / 2, N, sr)).toBeCloseTo(sr / 2, 5);
+  });
+
+  test('Correct formula differs from buggy formula for non-zero bins', () => {
+    const N = 2048, sr = 44100;
+    // The buggy denominator (N+2=2050 vs N=2048) creates a ~0.1% error that accumulates
+    // for larger k values; check bins where the absolute difference exceeds 0.1 Hz.
+    for (const k of [10, 100, 512, 1023]) {
+      const correct = binFreqCorrect(k, N, sr);
+      const buggy = binFreqBuggy(k, N, sr);
+      expect(Math.abs(correct - buggy)).toBeGreaterThan(0.1);
+    }
+  });
+
+  test('Voice focus band edges land on correct bins', () => {
+    const N = 2048, sr = 44100;
+    // 300 Hz voice focus low — check correct bin index
+    const lo = 300;
+    const kLo = Math.round(lo * N / sr); // ≈ 14
+    expect(binFreqCorrect(kLo, N, sr)).toBeCloseTo(lo, -1);
+  });
+});

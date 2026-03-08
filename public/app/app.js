@@ -938,10 +938,12 @@ class VoiceIsolatePro {
           const sigPSD = re[k]*re[k] + im[k]*im[k];
           smoothedNoise[k] = sm * smoothedNoise[k] + (1 - sm) * noisePSD[k];
           const nEst = alpha * smoothedNoise[k] * (1 + sensitivity * 0.5);
-          // Apply softer NR during speech frames when VAD is available
-          const effectiveAlpha = isSpeech ? Math.max(nEst * 0.3, beta) : beta;
+          // Apply softer NR during speech frames: reduce noise estimate so Wiener
+          // gain stays higher (less attenuation) rather than using nEst as a gain floor
+          // (nEst is a PSD value, not a valid gain — using it as a floor could amplify).
+          const nEstFrame = isSpeech ? nEst * 0.3 : nEst;
           const gain = sigPSD > 1e-12 ?
-            Math.max(Math.sqrt(Math.max(sigPSD - nEst, 0) / sigPSD), effectiveAlpha) : beta;
+            Math.max(Math.sqrt(Math.max(sigPSD - nEstFrame, 0) / sigPSD), beta) : beta;
           re[k] *= gain; im[k] *= gain;
           if (k > 0 && k < N - k) { re[N-k] = re[k]; im[N-k] = -im[k]; }
         }
@@ -979,7 +981,7 @@ class VoiceIsolatePro {
         for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
         this._fft(re, im);
         for (let k = 0; k < halfN; k++) {
-          const freq = (k / halfN) * (sr / 2);
+          const freq = k * sr / N;
           if (freq < voiceFocusLo || freq > voiceFocusHi) {
             re[k] *= g; im[k] *= g;
             if (k > 0 && k < N - k) { re[N-k] *= g; im[N-k] *= g; }
