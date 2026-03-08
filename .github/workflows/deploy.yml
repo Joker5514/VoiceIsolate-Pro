@@ -47,6 +47,8 @@ jobs:
     needs: validate
     if: ${{ github.event_name == 'pull_request' && secrets.VERCEL_TOKEN != '' }}
     runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Vercel CLI
@@ -61,6 +63,8 @@ jobs:
     needs: validate
     if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.VERCEL_TOKEN != '' }}
     runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Vercel CLI
