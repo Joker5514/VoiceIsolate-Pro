@@ -102,6 +102,31 @@ function copyFloat32(src) {
  * FFT Implementation (Cooley-Tukey Radix-2 DIT)
  * ================================================================ */
 
+// Cache for twiddle factors
+const twiddleCache = {
+  forward: {}, // size -> { wReal: Float32Array, wImag: Float32Array }
+  inverse: {}  // size -> { wReal: Float32Array, wImag: Float32Array }
+};
+
+function initTwiddleFactors(n, inverse) {
+  const cacheMap = inverse ? twiddleCache.inverse : twiddleCache.forward;
+  if (cacheMap[n]) return cacheMap[n];
+
+  const wReal = new Float32Array(n + 1);
+  const wImag = new Float32Array(n + 1);
+  const sign = inverse ? 1.0 : -1.0;
+
+  for (let size = 2; size <= n; size *= 2) {
+    const angle = sign * TWO_PI / size;
+    wReal[size] = Math.cos(angle);
+    wImag[size] = Math.sin(angle);
+  }
+
+  const factors = { wReal: wReal, wImag: wImag };
+  cacheMap[n] = factors;
+  return factors;
+}
+
 /**
  * In-place FFT. real and imag are same-length arrays, length must be power of 2.
  * @param {Float32Array} real
@@ -111,6 +136,11 @@ function copyFloat32(src) {
 function fft(real, imag, inverse) {
   const n = real.length;
   if (n === 0) return;
+
+  // Initialize/get twiddle factors
+  const factors = initTwiddleFactors(n, inverse);
+  const wRealCache = factors.wReal;
+  const wImagCache = factors.wImag;
 
   // Bit-reversal permutation
   let j = 0;
@@ -128,12 +158,10 @@ function fft(real, imag, inverse) {
   }
 
   // Butterfly stages
-  const sign = inverse ? 1.0 : -1.0;
   for (let size = 2; size <= n; size *= 2) {
     const halfSize = size >> 1;
-    const angle = sign * TWO_PI / size;
-    const wReal = Math.cos(angle);
-    const wImag = Math.sin(angle);
+    const wReal = wRealCache[size];
+    const wImag = wImagCache[size];
     for (let start = 0; start < n; start += size) {
       let curReal = 1.0;
       let curImag = 0.0;
