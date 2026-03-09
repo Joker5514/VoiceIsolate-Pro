@@ -6,3 +6,8 @@ node_modules/
 *.log
 dist/
 .cache/
+
+# ML model files — too large for git, download separately (see public/app/models/README.md)
+public/app/models/*.onnx
+public/app/models/*.tar.gz
+public/app/models/*.bin

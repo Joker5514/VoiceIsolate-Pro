@@ -144,6 +144,10 @@ class VoiceIsolatePro {
     // Phase 4: ML model sessions
     this.sileroSession = null;
     this.mlReady = false;
+    // Phase 4b: Dedicated ML Worker (DeepFilterNet3 + Demucs + VAD)
+    this.mlWorker = null;
+    this.mlWorkerReady = false;
+    this.mlWorkerModels = { vad: false, deepfilter: false, demucs: false };
     // Phase 5: Forensic audit
     this.forensicMode = false;
     this.forensicLog = [];
@@ -156,6 +160,7 @@ class VoiceIsolatePro {
     this.bindEvents();
     this.initCanvases();
     this.init3D();
+    this.initMLWorker(); // start loading ML models in background
   }
 
   ensureCtx() {
@@ -703,11 +708,31 @@ class VoiceIsolatePro {
       }
       await this.pip(6, total); // Spectral Fingerprint
       await this.pip(7, total); // STFT Engine Init
+
+      // ---- ML WORKER: DeepFilterNet3 → Demucs (runs between analysis and filter pass) ----
+      // If ml-worker is ready, enhance the input before the classical DSP chain processes it.
+      let mlSourceBuffer = this.inputBuffer;
+      if (this.mlWorkerReady) {
+        try {
+          const mlResult = await this.runMLEnhancement(this.inputBuffer, (stage, pct) => {
+            this.dom.pipeStage && (this.dom.pipeStage.textContent = `ML: ${stage} (${pct}%)`);
+          });
+          if (mlResult && mlResult.signal) {
+            // Wrap the enhanced Float32Array back into an AudioBuffer
+            const mlBuf = this.ctx.createBuffer(1, mlResult.signal.length, mlResult.sampleRate);
+            mlBuf.copyToChannel(mlResult.signal, 0);
+            mlSourceBuffer = mlBuf;
+            if (this.forensicMode) await this.addAuditEntry(mlSourceBuffer, 'ML Enhancement');
+          }
+        } catch (e) {
+          structuredLog('warn', 'ML enhancement failed — using original', { error: e.message });
+        }
+      }
       if (this.abortFlag) throw 'abort';
 
       // ---- PASS 3: FILTER (stages 8-11) via Web Audio nodes ----
       const ofl = new OfflineAudioContext(numCh, len, sr);
-      const src = ofl.createBufferSource(); src.buffer = this.inputBuffer;
+      const src = ofl.createBufferSource(); src.buffer = mlSourceBuffer;
 
       await this.pip(8, total);  const hp = ofl.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=p.hpFreq; hp.Q.value=p.hpQ;
       await this.pip(9, total);  const lp = ofl.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=p.lpFreq; lp.Q.value=p.lpQ;
@@ -1185,6 +1210,65 @@ class VoiceIsolatePro {
     } catch(e) {
       structuredLog('warn', 'Model load failed — running without ML', { error: e.message });
     }
+  }
+
+  // ---- ML WORKER: DeepFilterNet3 + Demucs + VAD ----
+
+  // Spin up ml-worker.js and initialise all models. Non-blocking; pipeline checks
+  // this.mlWorkerReady before dispatching work.
+  initMLWorker() {
+    if (this.mlWorker) return;
+    try {
+      this.mlWorker = new Worker('./ml-worker.js');
+      this.mlWorker.onmessage = (e) => {
+        const { type } = e.data;
+        if (type === 'ready') {
+          this.mlWorkerReady = true;
+          this.mlWorkerModels = e.data.models;
+          structuredLog('info', 'ML worker ready', e.data.models);
+        } else if (type === 'log') {
+          structuredLog(e.data.level, '[ml-worker] ' + e.data.msg);
+        }
+        // 'result' and 'progress' messages are handled per-call via a promise wrapper
+      };
+      this.mlWorker.onerror = (err) => {
+        structuredLog('warn', 'ML worker error', { error: err.message });
+        this.mlWorkerReady = false;
+      };
+      this.mlWorker.postMessage({ type: 'init' });
+    } catch (e) {
+      structuredLog('warn', 'ML worker unavailable', { error: e.message });
+    }
+  }
+
+  // Send audio to the ML worker and resolve with the enhanced Float32Array.
+  // Falls back to the original signal if the worker is not ready.
+  runMLEnhancement(buf, onProgress) {
+    if (!this.mlWorkerReady || !this.mlWorker) {
+      return Promise.resolve(null); // caller keeps original buffer
+    }
+    return new Promise((resolve, reject) => {
+      const signal = buf.getChannelData(0);
+      const copy   = new Float32Array(signal); // transferable copy
+
+      const handler = (e) => {
+        const { type } = e.data;
+        if (type === 'result') {
+          this.mlWorker.removeEventListener('message', handler);
+          resolve(e.data);
+        } else if (type === 'progress' && onProgress) {
+          onProgress(e.data.stage, e.data.pct);
+        } else if (type === 'error') {
+          this.mlWorker.removeEventListener('message', handler);
+          reject(new Error(e.data.msg));
+        }
+      };
+      this.mlWorker.addEventListener('message', handler);
+      this.mlWorker.postMessage(
+        { type: 'process', signal: copy, sampleRate: buf.sampleRate, params: this.params },
+        [copy.buffer]
+      );
+    });
   }
 
   // Run Silero VAD and return array of booleans (100 frames/sec) indicating speech activity
