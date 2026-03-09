@@ -979,7 +979,7 @@ class VoiceIsolatePro {
         for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
         this._fft(re, im);
         for (let k = 0; k < halfN; k++) {
-          const freq = (k / halfN) * (sr / 2);
+          const freq = k * sr / N;
           if (freq < voiceFocusLo || freq > voiceFocusHi) {
             re[k] *= g; im[k] *= g;
             if (k > 0 && k < N - k) { re[N-k] *= g; im[N-k] *= g; }
