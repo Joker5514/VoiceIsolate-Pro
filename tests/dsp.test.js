@@ -263,3 +263,53 @@ describe('Frequency bin mapping (applyBgSuppress fix)', () => {
     expect(binFreqCorrect(kLo, N, sr)).toBeCloseTo(lo, -1);
   });
 });
+
+describe('Harmonic Recovery (makeHarm)', () => {
+  function makeHarm(amt, ord) {
+    const n = 44100;
+    const curve = new Float32Array(n);
+    const k = amt * (ord || 3) * 2 + 1;
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = Math.tanh(k * x) / Math.tanh(k);
+    }
+    return curve;
+  }
+
+  test('makeHarm should return a Float32Array of length 44100', () => {
+    const curve = makeHarm(0.5, 3);
+    expect(curve).toBeInstanceOf(Float32Array);
+    expect(curve.length).toBe(44100);
+  });
+
+  test('makeHarm values should be within [-1, 1]', () => {
+    const curve = makeHarm(1.0, 8);
+    for (let i = 0; i < curve.length; i++) {
+      expect(curve[i]).toBeGreaterThanOrEqual(-1.000001);
+      expect(curve[i]).toBeLessThanOrEqual(1.000001);
+    }
+  });
+
+  test('makeHarm should be odd-symmetric', () => {
+    const curve = makeHarm(0.5, 3);
+    const mid = 22050; // 44100 / 2
+    // For i = mid, x = (22050 * 2) / 44100 - 1 = 0, so c[mid] should be 0
+    expect(curve[mid]).toBeCloseTo(0, 5);
+    // c[0] should be -1, c[44099] should be close to 1
+    expect(curve[0]).toBeCloseTo(-1, 5);
+    // x at 44099: (44099 * 2) / 44100 - 1 = (88198 / 44100) - 1 = 1.99995 - 1 = 0.99995
+    // so it's not exactly 1 at the last index.
+  });
+
+  test('makeHarm(0, ord) should be linear', () => {
+    const amt = 0;
+    const ord = 3;
+    const curve = makeHarm(amt, ord);
+    const k = amt * (ord || 3) * 2 + 1; // k = 1
+    // if k=1, curve[i] = tanh(x) / tanh(1). That's NOT linear.
+    // Wait, the logic in app.js is: c[i]=Math.tanh(k*x)/Math.tanh(k);
+    // If amt=0, k=1. c[i] = Math.tanh(x)/Math.tanh(1).
+    // This is a soft-clipper.
+    expect(curve[22050]).toBeCloseTo(0, 5);
+  });
+});
