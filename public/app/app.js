@@ -1266,6 +1266,43 @@ class VoiceIsolatePro {
     }
   }
 
+  // Generic promise wrapper for ML Worker calls with callback ID tracking
+  _mlCall(payload, transfer = []) {
+    // Ensure callbacks map is initialized
+    if (!this._mlCallbacks) this._mlCallbacks = {};
+    if (typeof this._mlCallId !== 'number') this._mlCallId = 0;
+
+    return new Promise((resolve, reject) => {
+      const id = ++this._mlCallId;
+      this._mlCallbacks[id] = { resolve, reject };
+      
+      // Timeout to prevent memory leaks from unresponsive workers
+      const timeout = setTimeout(() => {
+        this.mlWorker.removeEventListener('message', handler);
+        delete this._mlCallbacks[id];
+        reject(new Error('ML Worker call timed out'));
+      }, 30000); // 30 second timeout
+
+      const handler = (e) => {
+        const { type } = e.data;
+        if (type === 'result') {
+          clearTimeout(timeout);
+          this.mlWorker.removeEventListener('message', handler);
+          delete this._mlCallbacks[id];
+          resolve(e.data);
+        } else if (type === 'error') {
+          clearTimeout(timeout);
+          this.mlWorker.removeEventListener('message', handler);
+          delete this._mlCallbacks[id];
+          reject(new Error(e.data.msg));
+        }
+        // Other message types (progress, log) are handled elsewhere
+      };
+      this.mlWorker.addEventListener('message', handler);
+      this.mlWorker.postMessage({ ...payload, callId: id }, transfer);
+    });
+  }
+
   // Send audio to the ML worker and resolve with the enhanced Float32Array.
   // Falls back to the original signal if the worker is not ready.
   runMLEnhancement(buf, onProgress) {
@@ -1295,24 +1332,6 @@ class VoiceIsolatePro {
       );
     });
   }
-
-  // Run Silero VAD and return array of booleans (100 frames/sec) indicating speech activity
-  async runVAD(buf) {
-    if (!this.sileroSession) return null;
-    const signal = buf.getChannelData(0);
-    const sr = buf.sampleRate;
-    const frameSize = Math.floor(sr / 100); // 10ms frames
-    const vadResult = [];
-    // State tensors required by Silero v5
-    let h = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-    let c = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-    for (let i = 0; i + frameSize <= signal.length; i += frameSize) {
-      const frame = signal.slice(i, i + frameSize);
-      const input = new ort.Tensor('float32', frame, [1, frame.length]);
-      const srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
-      const result = await this.sileroSession.run({ input, sr: srTensor, h, c });
-      vadResult.push(result.output.data[0] > 0.5);
-      h = result.hn; c = result.cn;
 
   // Run source separation (Demucs or BSRNN) via ML Worker; returns Float32Array or null
   async runSeparation(buf, model = 'demucs') {

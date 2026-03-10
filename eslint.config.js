@@ -16,6 +16,7 @@ export default [
         ...globals.browser,
         ort: 'readonly',        // ONNX Runtime Web
         THREE: 'readonly',      // Three.js
+        module: 'readonly',     // CommonJS export check for testing
       },
     },
     rules: {
