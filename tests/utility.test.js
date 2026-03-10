@@ -4,6 +4,12 @@
  * 
  * NOTE: These functions are duplicated as standalone implementations because
  * the main app.js contains browser-only DOM code that cannot be imported in Node.
+ * 
+ * IMPORTANT: If the implementations in public/app/app.js change, these standalone
+ * functions must be manually updated to match. The original implementations are in:
+ * - calcRMS: public/app/app.js (search for 'calcRMS(d)')
+ * - calcPeak: public/app/app.js (search for 'calcPeak(d)')
+ * - fmtDur: public/app/app.js (search for 'fmtDur(s)')
  */
 
 describe('Utility Functions from app.js', () => {

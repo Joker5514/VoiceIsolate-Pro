@@ -152,18 +152,18 @@ describe('ML Worker (Phase 4b)', () => {
     expect(mlWorkerJs).toContain('importScripts');
   });
 
-  test('ml-worker handles runVAD message', () => {
+  test('ml-worker handles init message', () => {
     // ml-worker uses if/else if statements for message routing
     expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]init['"]/);
   });
 
-  test('ml-worker handles runSeparation message', () => {
+  test('ml-worker handles process message', () => {
     // ml-worker uses 'process' message type for audio processing
     expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]process['"]/);
   });
 
-  test('ml-worker handles runVocoder message', () => {
-    // ml-worker uses 'reset' message type
+  test('ml-worker handles reset message', () => {
+    // ml-worker uses 'reset' message type to clear state
     expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]reset['"]/);
   });
 

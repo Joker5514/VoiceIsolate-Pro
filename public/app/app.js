@@ -1268,20 +1268,35 @@ class VoiceIsolatePro {
 
   // Generic promise wrapper for ML Worker calls with callback ID tracking
   _mlCall(payload, transfer = []) {
+    // Ensure callbacks map is initialized
+    if (!this._mlCallbacks) this._mlCallbacks = {};
+    if (typeof this._mlCallId !== 'number') this._mlCallId = 0;
+
     return new Promise((resolve, reject) => {
       const id = ++this._mlCallId;
       this._mlCallbacks[id] = { resolve, reject };
+      
+      // Timeout to prevent memory leaks from unresponsive workers
+      const timeout = setTimeout(() => {
+        this.mlWorker.removeEventListener('message', handler);
+        delete this._mlCallbacks[id];
+        reject(new Error('ML Worker call timed out'));
+      }, 30000); // 30 second timeout
+
       const handler = (e) => {
         const { type } = e.data;
         if (type === 'result') {
+          clearTimeout(timeout);
           this.mlWorker.removeEventListener('message', handler);
           delete this._mlCallbacks[id];
           resolve(e.data);
         } else if (type === 'error') {
+          clearTimeout(timeout);
           this.mlWorker.removeEventListener('message', handler);
           delete this._mlCallbacks[id];
           reject(new Error(e.data.msg));
         }
+        // Other message types (progress, log) are handled elsewhere
       };
       this.mlWorker.addEventListener('message', handler);
       this.mlWorker.postMessage({ ...payload, callId: id }, transfer);
