@@ -3,6 +3,9 @@
  * Tests STFT/iSTFT roundtrip, Wiener NR math, and helper functions.
  */
 
+const fs = require('fs');
+const path = require('path');
+
 // Minimal AudioContext stub for jsdom environment
 class MockAudioBuffer {
   constructor(channels, length, sampleRate) {
@@ -19,6 +22,25 @@ global.AudioContext = class {
   get state() { return 'running'; }
   resume() { return Promise.resolve(); }
 };
+
+// Import actual VoiceIsolatePro from app.js using a scoped eval to avoid syntax errors and DOM initialization crashes
+const appJsPath = path.join(__dirname, '../public/app/app.js');
+const appJs = fs.readFileSync(appJsPath, 'utf8');
+
+// We evaluate the file content inside a function scope to isolate 'const', 'let', and 'class' declarations.
+// We also mock 'document' and 'window' just enough to pass the DOMContentLoaded listener setup at the bottom.
+const VoiceIsolatePro = (() => {
+  const exports = {};
+  const module = { exports };
+  // eslint-disable-next-line no-unused-vars
+  const window = {};
+  // eslint-disable-next-line no-unused-vars
+  const document = { addEventListener: () => {} };
+
+  eval(appJs);
+
+  return module.exports;
+})();
 
 // Import standalone DSP helpers — extracted to avoid browser-only DOM code
 // We pull the math functions out of app.js logic for unit testing
@@ -305,11 +327,94 @@ describe('Harmonic Recovery (makeHarm)', () => {
     const amt = 0;
     const ord = 3;
     const curve = makeHarm(amt, ord);
-    const k = amt * (ord || 3) * 2 + 1; // k = 1
     // if k=1, curve[i] = tanh(x) / tanh(1). That's NOT linear.
     // Wait, the logic in app.js is: c[i]=Math.tanh(k*x)/Math.tanh(k);
     // If amt=0, k=1. c[i] = Math.tanh(x)/Math.tanh(1).
     // This is a soft-clipper.
     expect(curve[22050]).toBeCloseTo(0, 5);
+  });
+});
+
+describe('mixDW (Dry/Wet Mix) - actual implementation from app.js', () => {
+  function mixDW(dry, wet, wAmt) {
+    // Provide mocked AudioContext matching the required interface in mixDW:
+    const mockCtx = {
+      createBuffer: (n, len, sr) => new MockAudioBuffer(n, len, sr)
+    };
+    return VoiceIsolatePro.prototype.mixDW.call({ ctx: mockCtx }, dry, wet, wAmt);
+  }
+
+  test('0% wet (wAmt = 0) should return exactly the dry signal', () => {
+    const dry = new MockAudioBuffer(1, 100, 44100);
+    const wet = new MockAudioBuffer(1, 100, 44100);
+    const dryData = dry.getChannelData(0);
+    const wetData = wet.getChannelData(0);
+
+    for (let i = 0; i < 100; i++) {
+      dryData[i] = Math.random();
+      wetData[i] = Math.random();
+    }
+
+    const out = mixDW(dry, wet, 0);
+    const outData = out.getChannelData(0);
+
+    for (let i = 0; i < 100; i++) {
+      expect(outData[i]).toBeCloseTo(dryData[i], 5);
+    }
+  });
+
+  test('100% wet (wAmt = 1) should return exactly the wet signal', () => {
+    const dry = new MockAudioBuffer(1, 100, 44100);
+    const wet = new MockAudioBuffer(1, 100, 44100);
+    const dryData = dry.getChannelData(0);
+    const wetData = wet.getChannelData(0);
+
+    for (let i = 0; i < 100; i++) {
+      dryData[i] = Math.random();
+      wetData[i] = Math.random();
+    }
+
+    const out = mixDW(dry, wet, 1);
+    const outData = out.getChannelData(0);
+
+    for (let i = 0; i < 100; i++) {
+      expect(outData[i]).toBeCloseTo(wetData[i], 5);
+    }
+  });
+
+  test('50% wet (wAmt = 0.5) should return exactly the average of dry and wet', () => {
+    const dry = new MockAudioBuffer(1, 100, 44100);
+    const wet = new MockAudioBuffer(1, 100, 44100);
+    const dryData = dry.getChannelData(0);
+    const wetData = wet.getChannelData(0);
+
+    for (let i = 0; i < 100; i++) {
+      dryData[i] = 0.8;
+      wetData[i] = 0.2;
+    }
+
+    const out = mixDW(dry, wet, 0.5);
+    const outData = out.getChannelData(0);
+
+    for (let i = 0; i < 100; i++) {
+      expect(outData[i]).toBeCloseTo(0.5, 5); // (0.8 * 0.5) + (0.2 * 0.5) = 0.4 + 0.1 = 0.5
+    }
+  });
+
+  test('Handles mismatched channels and lengths correctly', () => {
+    const dry = new MockAudioBuffer(2, 200, 44100); // 2 channels, length 200
+    const wet = new MockAudioBuffer(1, 100, 44100); // 1 channel, length 100
+
+    dry.getChannelData(0).fill(1.0);
+    wet.getChannelData(0).fill(0.5);
+
+    const out = mixDW(dry, wet, 0.5);
+
+    // Should use minimums: 1 channel, 100 length
+    expect(out.numberOfChannels).toBe(1);
+    expect(out.length).toBe(100);
+
+    const outData = out.getChannelData(0);
+    expect(outData[0]).toBeCloseTo(0.75, 5); // 1.0 * 0.5 + 0.5 * 0.5 = 0.75
   });
 });
