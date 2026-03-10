@@ -11,3 +11,4 @@ dist/
 public/app/models/*.onnx
 public/app/models/*.tar.gz
 public/app/models/*.bin
+public/app/models/deepfilter/

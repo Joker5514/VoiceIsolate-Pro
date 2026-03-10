@@ -118,6 +118,67 @@ describe('ONNX / VAD', () => {
   });
 });
 
+describe('ML Worker (Phase 4b)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const mlWorkerPath = path.resolve(__dirname, '..', 'public/app/ml-worker.js');
+  const mlWorkerJs = fs.existsSync(mlWorkerPath) ? fs.readFileSync(mlWorkerPath, 'utf8') : '';
+
+  test('ml-worker.js file exists', () => {
+    expect(fs.existsSync(mlWorkerPath)).toBe(true);
+  });
+
+  test('app.js spawns ML Worker with _spawnMlWorker', () => {
+    expect(appJs).toContain('_spawnMlWorker()');
+  });
+
+  test('app.js creates Worker at correct path', () => {
+    expect(appJs).toContain("new Worker('./ml-worker.js')");
+  });
+
+  test('app.js has _mlCall promise helper', () => {
+    expect(appJs).toContain('_mlCall(payload, transfer)');
+  });
+
+  test('app.js has _onMlMessage router', () => {
+    expect(appJs).toContain('_onMlMessage(msg)');
+  });
+
+  test('app.js runSeparation delegates to ML Worker', () => {
+    expect(appJs).toContain('async runSeparation(buf, model');
+  });
+
+  test('ml-worker loads ORT via importScripts', () => {
+    expect(mlWorkerJs).toContain('importScripts');
+  });
+
+  test('ml-worker handles runVAD message', () => {
+    expect(mlWorkerJs).toContain("case 'runVAD':");
+  });
+
+  test('ml-worker handles runSeparation message', () => {
+    expect(mlWorkerJs).toContain("case 'runSeparation':");
+  });
+
+  test('ml-worker handles runVocoder message', () => {
+    expect(mlWorkerJs).toContain("case 'runVocoder':");
+  });
+
+  test('ml-worker handles loadModel message', () => {
+    expect(mlWorkerJs).toContain("case 'loadModel':");
+  });
+
+  test('ml-worker supports all 6 model keys', () => {
+    ['vad', 'demucs', 'bsrnn', 'ecapa', 'hifigan', 'conformer'].forEach(m => {
+      expect(mlWorkerJs).toContain(`'${m}'`);
+    });
+  });
+
+  test('ml-worker uses transferable ArrayBuffers for large results', () => {
+    expect(mlWorkerJs).toContain('[separated.buffer]');
+  });
+});
+
 describe('Forensic mode', () => {
   test('addAuditEntry method should be defined', () => {
     expect(appJs).toContain('async addAuditEntry(buf, stageName)');
