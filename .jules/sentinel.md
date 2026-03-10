@@ -1,0 +1,4 @@
+## 2026-03-10 - Eliminate innerHTML usage for DOM construction
+**Vulnerability:** Constructing DOM elements by concatenating strings and assigning to `innerHTML` creates a risk for Cross-Site Scripting (XSS) if any concatenated values are unescaped user inputs. Even if the inputs are currently safe (e.g., config strings), it violates security policies and causes security audits to fail.
+**Learning:** Hardcoded `innerHTML` usage should be avoided altogether for DOM initialization and updates, as it poses a significant structural security risk and is flagged during standard security audits.
+**Prevention:** Always use safe DOM APIs like `document.createElement`, `element.textContent`, and `element.appendChild` instead of `element.innerHTML` to ensure programmatic structure without risking unintended parsing of malicious strings.
