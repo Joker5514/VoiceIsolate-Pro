@@ -149,6 +149,12 @@ class VoiceIsolatePro {
     // Phase 5: Forensic audit
     this.forensicMode = false;
     this.forensicLog = [];
+
+    // Phase 6: Secure PRNG for dither (Sentinel fix)
+    // Buffer size limited to 65536 bytes (16384 Uint32s) by Web Crypto API
+    this._rndBuf = new Uint32Array(16384);
+    this._rndIdx = 16384;
+
     this.init();
   }
 
@@ -1193,16 +1199,25 @@ class VoiceIsolatePro {
   }
 
   // TPDF dither noise shaping before bit-depth reduction
+  // 🛡️ Sentinel: Fixed weak PRNG by using chunked crypto.getRandomValues()
   applyDither(buf, ditherAmt) {
     if (ditherAmt <= 0) return buf;
     const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
     const out = this.ctx.createBuffer(nCh, len, sr);
     const lsb = Math.pow(2, -15); // 16-bit LSB
     const g = (ditherAmt / 100) * lsb;
+    const invMax = 1 / 4294967296;
+
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch), outCh = out.getChannelData(ch);
       for (let i = 0; i < len; i++) {
-        const tpdf = (Math.random() - Math.random()) * g;
+        if (this._rndIdx >= this._rndBuf.length - 1) {
+          crypto.getRandomValues(this._rndBuf);
+          this._rndIdx = 0;
+        }
+        const r1 = this._rndBuf[this._rndIdx++] * invMax;
+        const r2 = this._rndBuf[this._rndIdx++] * invMax;
+        const tpdf = (r1 - r2) * g;
         outCh[i] = Math.max(-1, Math.min(1, inp[i] + tpdf));
       }
     }

@@ -1,0 +1,4 @@
+## 2024-05-24 - Secure PRNG for Dither
+**Vulnerability:** The application was using `Math.random()` to generate TPDF dither noise. While often acceptable in pure audio DSP, in a security-audited codebase, weak random number generation is flagged as a vulnerability because the output is predictable.
+**Learning:** `Math.random()` usage in hot paths needs to be replaced with `crypto.getRandomValues()`. However, calling it per-sample in a DSP loop is extremely slow. We learned the pattern of allocating a single chunked buffer (e.g., 16384 entries) to fetch randomness in bulk, then iterating through it.
+**Prevention:** In Web Audio API and general high-performance code, if randomness is needed securely, initialize a `Uint32Array` or similar buffer to a max size (e.g. 65536 bytes) and only call `crypto.getRandomValues()` when the index exceeds the limit.
