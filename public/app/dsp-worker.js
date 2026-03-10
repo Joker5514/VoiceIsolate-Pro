@@ -125,9 +125,9 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       env = abs > env ? abs * (1 - attackCoef) + env * attackCoef : abs * (1 - releaseCoef) + env * releaseCoef;
       let gain = 1;
       if (env > threshLin) {
-        const overDb = 20 * Math.log10(env / threshLin);
-        const gainDb = overDb * slope;
-        gain = Math.pow(10, -gainDb / 20);
+        // ⚡ Bolt: Simplified compressor gain math to avoid slow log10/pow operations
+        // Math.pow(10, -(20 * Math.log10(env/threshLin) * slope) / 20) => Math.pow(env/threshLin, -slope)
+        gain = Math.pow(env / threshLin, -slope);
       }
       // Brickwall limiter
       const out = block[i] * gain * makeupLin;
