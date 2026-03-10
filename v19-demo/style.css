@@ -180,7 +180,8 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
   outline-offset: 2px;
 }
 input[type="range"]:focus-visible {
-  outline: none;
+  outline: 2px solid var(--cyan);
+  outline-offset: 4px;
 }
 input[type="range"]:focus-visible::-webkit-slider-thumb {
   outline: 2px solid var(--cyan);

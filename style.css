@@ -210,3 +210,21 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 .fs-bg-cv,.fs-overlay-cv{position:absolute;top:0;left:0;width:100%;height:100%;display:block}
 .fs-overlay-cv{pointer-events:none}
 .fs-xaxis-cv{width:100%;height:20px;display:block}
+
+/* ---- ACCESSIBILITY ---- */
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 4px;
+}
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+input[type="range"]:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
