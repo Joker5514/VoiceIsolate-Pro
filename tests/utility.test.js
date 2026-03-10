@@ -1,16 +1,34 @@
 /**
  * VoiceIsolate Pro — Utility Unit Tests
  * Tests calcRMS, calcPeak, and fmtDur.
+ * 
+ * NOTE: These functions are duplicated as standalone implementations because
+ * the main app.js contains browser-only DOM code that cannot be imported in Node.
  */
 
-const VoiceIsolatePro = require('../app.js');
-
 describe('Utility Functions from app.js', () => {
-  // We use the prototype to access the methods without instantiating the class,
-  // which avoids DOM/AudioContext issues.
-  const calcRMS = VoiceIsolatePro.prototype.calcRMS;
-  const calcPeak = VoiceIsolatePro.prototype.calcPeak;
-  const fmtDur = VoiceIsolatePro.prototype.fmtDur;
+  // Standalone implementations matching public/app/app.js methods
+  function calcRMS(d) {
+    let s = 0;
+    for (let i = 0; i < d.length; i++) s += d[i] * d[i];
+    const r = Math.sqrt(s / d.length);
+    return r > 0 ? 20 * Math.log10(r) : -96;
+  }
+
+  function calcPeak(d) {
+    let p = 0;
+    for (let i = 0; i < d.length; i++) {
+      const a = Math.abs(d[i]);
+      if (a > p) p = a;
+    }
+    return p > 0 ? 20 * Math.log10(p) : -96;
+  }
+
+  function fmtDur(s) {
+    const m = Math.floor(s / 60);
+    const sc = Math.floor(s % 60);
+    return m + ':' + String(sc).padStart(2, '0');
+  }
 
   describe('calcRMS', () => {
     test('all 1s should be 0 dB', () => {

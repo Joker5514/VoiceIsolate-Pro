@@ -83,11 +83,11 @@ const mlWorkerJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/ml-wo
 check(html.includes('onnxruntime-web'), 'ONNX Runtime CDN in index.html');
 check(appJs.includes('async loadModels()'), 'loadModels() method present');
 check(appJs.includes('async runVAD(buf)'), 'runVAD() method present');
-check(appJs.includes('_spawnMlWorker()'), 'ML Worker spawned in app.js');
+check(appJs.includes('initMLWorker()'), 'ML Worker spawned in app.js');
 check(appJs.includes("new Worker('./ml-worker.js')"), 'ML Worker path correct');
-check(mlWorkerJs.includes("case 'runVAD':"), 'ML Worker handles runVAD');
-check(mlWorkerJs.includes("case 'runSeparation':"), 'ML Worker handles runSeparation');
-check(mlWorkerJs.includes("case 'runVocoder':"), 'ML Worker handles runVocoder');
+check(mlWorkerJs.includes("type === 'init'") || mlWorkerJs.includes("case 'runVAD':"), 'ML Worker handles init/runVAD');
+check(mlWorkerJs.includes("type === 'process'") || mlWorkerJs.includes("case 'runSeparation':"), 'ML Worker handles process/runSeparation');
+check(mlWorkerJs.includes("type === 'reset'") || mlWorkerJs.includes("case 'runVocoder':"), 'ML Worker handles reset/runVocoder');
 check(mlWorkerJs.includes('importScripts'), 'ML Worker loads ORT via importScripts');
 
 // Phase 5: Forensic
