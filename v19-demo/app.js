@@ -1290,7 +1290,37 @@ class VoiceIsolatePro {
 
   mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
 
-  peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
+  peakNorm(buf, tDb) {
+    const c = this.ctx;
+    const nCh = buf.numberOfChannels;
+    const len = buf.length;
+    const out = c.createBuffer(nCh, len, buf.sampleRate);
+    let pk = 0;
+
+    // Find the peak absolute value
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        const a = Math.abs(d[i]);
+        if (a > pk) pk = a;
+      }
+    }
+
+    // Return original buffer if completely silent
+    if (pk === 0) return buf;
+
+    // Calculate gain and apply it
+    const g = Math.pow(10, tDb / 20) / pk;
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const o = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        o[i] = Math.max(-1, Math.min(1, inp[i] * g));
+      }
+    }
+
+    return out;
+  }
 
   makeHarm(amt,ord){const n=44100;const c=new Float32Array(n);const k=amt*(ord||3)*2+1;for(let i=0;i<n;i++){const x=(i*2)/n-1;c[i]=Math.tanh(k*x)/Math.tanh(k);}return c;}
 
