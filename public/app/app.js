@@ -1376,7 +1376,34 @@ class VoiceIsolatePro {
 
   mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
 
-  peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
+  peakNorm(buf, tDb) {
+    const ctx = this.ctx;
+    const numChannels = buf.numberOfChannels;
+    const length = buf.length;
+    const out = ctx.createBuffer(numChannels, length, buf.sampleRate);
+
+    let peak = 0;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const channelData = buf.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const absVal = Math.abs(channelData[i]);
+        if (absVal > peak) peak = absVal;
+      }
+    }
+
+    if (peak === 0) return buf;
+
+    const gain = Math.pow(10, tDb / 20) / peak;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const inputData = buf.getChannelData(ch);
+      const outputData = out.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        outputData[i] = Math.max(-1, Math.min(1, inputData[i] * gain));
+      }
+    }
+
+    return out;
+  }
 
   makeHarm(amt, ord) {
     const n = 44100;
