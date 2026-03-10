@@ -1,10 +1,22 @@
 # VoiceIsolate Pro
 
 [![CI](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Joker5514/VoiceIsolate-Pro)
 
 **Studio-grade voice isolation. 32-stage Octa-Pass DSP pipeline. Hybrid ML + classical spectral processing. 100% local processing.**
 
 Built on the **Threads from Space v8** architecture.
+
+---
+
+## Open in GitHub Codespaces
+
+Get a full cloud-based editor with live preview in one click:
+
+1. Click the **Open in GitHub Codespaces** badge above (or [click here](https://codespaces.new/Joker5514/VoiceIsolate-Pro))
+2. Dependencies install automatically via `npm install`
+3. Run `npm run dev` to start the preview server on port 3000
+4. The preview URL appears automatically in the **Ports** panel
 
 ---
 
