@@ -602,12 +602,20 @@ class VoiceIsolatePro {
       n.lim.threshold.setTargetAtTime(p.limThresh,t,s); n.lim.release.setTargetAtTime(p.limRelease/1000,t,s);
       n.outG.gain.setTargetAtTime(Math.pow(10,p.outGain/20),t,s);
       n.wG.gain.setTargetAtTime(p.outWidth/100,t,s);
-    } catch(e) {}
+    } catch(e) { console.error('Error updating live chain:', e); }
   }
 
   teardownChain() {
-    if (this.currentSource) { try{this.currentSource.stop();}catch(e){} try{this.currentSource.disconnect();}catch(e){} this.currentSource = null; }
-    if (this.liveNodes.chain) this.liveNodes.chain.forEach(n => { try{n.disconnect();}catch(e){} });
+    if (this.currentSource) {
+      try { this.currentSource.stop(); } catch(e) { console.error('Error stopping current source:', e); }
+      try { this.currentSource.disconnect(); } catch(e) { console.error('Error disconnecting current source:', e); }
+      this.currentSource = null;
+    }
+    if (this.liveNodes.chain) {
+      this.liveNodes.chain.forEach(n => {
+        try { n.disconnect(); } catch(e) { console.error('Error disconnecting live node:', e); }
+      });
+    }
     this.liveNodes = {}; this.liveChainBuilt = false;
   }
 
