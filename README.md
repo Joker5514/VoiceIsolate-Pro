@@ -1,5 +1,7 @@
 # VoiceIsolate Pro
 
+[![CI](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml)
+
 **Studio-grade voice isolation. 32-stage Octa-Pass DSP pipeline. Hybrid ML + classical spectral processing. 100% local processing.**
 
 Built on the **Threads from Space v8** architecture.
