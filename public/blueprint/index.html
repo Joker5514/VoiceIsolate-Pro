@@ -119,9 +119,17 @@ nav .container { display: flex; align-items: center; justify-content: space-betw
 .card {
   background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;
   padding: 2rem; position: relative; overflow: hidden;
-  transition: border-color 0.4s, background 0.4s;
+  transition: border-color 0.4s, background 0.4s, transform 0.3s;
+  cursor: pointer;
 }
-.card:hover { border-color: var(--border-glow); background: var(--bg-card-hover); }
+.card:hover { border-color: var(--border-glow); background: var(--bg-card-hover); transform: translateY(-2px); }
+.card:active { transform: translateY(0); }
+.card.expanded { 
+  border-color: var(--accent-cyan); 
+  background: var(--bg-card-hover); 
+  box-shadow: 0 0 15px rgba(0,212,255,0.15);
+}
+.card.expanded p { color: var(--text-primary); }
 .card-icon {
   width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center;
   font-size: 0.85rem; margin-bottom: 1.25rem; font-family: var(--font-mono); font-weight: 700;
@@ -561,7 +569,7 @@ footer p { font-size: 0.72rem; color: var(--text-dim); }
     <span class="fn">stages[18].process</span>(spectrum);                              <span class="cm">// Stereo recovery</span>
     <span class="kw">const</span> timeDomain = <span class="kw">await</span> gpuCtx.<span class="fn">istft</span>(spectrum);          <span class="cm">// SINGLE inverse FFT</span>
 
-    <span class="cm">// ═══ PASS 6: TIME-DOMAIN POLISH ═══</span>
+    <span class="cm">// ═══ PASS 6: TIME-DOMAIN POLISH ═���═</span>
     <span class="fn">stages[20].process</span>(timeDomain);                            <span class="cm">// Multi-band dynamics</span>
     <span class="fn">stages[21].process</span>(timeDomain);                            <span class="cm">// De-esser</span>
     <span class="fn">stages[22].process</span>(timeDomain, vadMap);                    <span class="cm">// Gap fill + breath control</span>
@@ -836,6 +844,25 @@ window.addEventListener('scroll', () => {
   });
   navLinks.forEach(link => {
     link.style.color = link.getAttribute('href') === '#' + current ? 'var(--text-primary)' : '';
+  });
+});
+
+// Capability cards click interaction - expand/highlight effect
+document.querySelectorAll('#capabilities .card').forEach(card => {
+  card.addEventListener('click', function() {
+    // Toggle expanded state
+    const isExpanded = this.classList.toggle('expanded');
+    
+    // Close other expanded cards
+    document.querySelectorAll('#capabilities .card.expanded').forEach(c => {
+      if (c !== this) c.classList.remove('expanded');
+    });
+    
+    // Visual feedback pulse
+    this.style.boxShadow = '0 0 20px rgba(0,212,255,0.3)';
+    setTimeout(() => {
+      this.style.boxShadow = isExpanded ? '0 0 15px rgba(0,212,255,0.15)' : '';
+    }, 200);
   });
 });
 </script>
