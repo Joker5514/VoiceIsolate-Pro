@@ -1542,7 +1542,8 @@ class VoiceIsolatePro {
     const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
     cols.copyWithin(gW*3, 0, (gD-1)*gW*3);
     const pArr=pos.array;
-    for(let z=gD-1;z>0;z--){let cO=z*gW*3+1;let pO=(z-1)*gW*3+1;for(let x=0;x<gW;x++){pArr[cO]=pArr[pO];cO+=3;pO+=3;}}
+    const end=gD*gW*3;const offset=gW*3;
+    for(let i=end-2;i>=offset;i-=3)pArr[i]=pArr[i-offset];
     const step=Math.floor(freq.length/gW);
     for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pArr[x*3+1]=v*15;const f=x/gW;
       if(f<0.05){cols[x*3]=v*0.15;cols[x*3+1]=v*0.3;cols[x*3+2]=0.3+v*0.7;}

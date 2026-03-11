@@ -5,3 +5,6 @@
 ## 2026-03-10 - Compressor DSP Gain calculation optimization
 **Learning:** High-frequency, per-sample loop calculations (like audio limiters or compressors) that sequence logarithmic and exponential operations (`Math.pow(10, -(20 * Math.log10(x) * slope) / 20)`) introduce major call stack overhead and are completely avoidable. Modern TS AudioWorklet environments also often balk at `Math.log10`.
 **Action:** Always refactor and algebraically reduce log/pow sequences in hot loops into a single exponentiation (`Math.pow(x, -slope)`), completely removing the slow `Math.log10` step.
+## 2024-03-22 - Bypassing Three.js Accessors for Hot 3D Data
+**Learning:** In hot loops like continuous 3D visualizations (e.g., streaming spectrograms), using Three.js high-level geometry accessors (`pos.setY`, `pos.getY`) introduces significant function call overhead.
+**Action:** Bypass these accessors in favor of native `TypedArray.copyWithin` for arrays like colors or full coordinate sets. When specific offsets are required (like just shifting the Y coordinates), iterate directly backward over the flattened `attribute.array` (e.g., `pos.array`).
