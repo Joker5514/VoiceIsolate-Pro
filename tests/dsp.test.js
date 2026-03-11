@@ -418,3 +418,88 @@ describe('mixDW (Dry/Wet Mix) - actual implementation from app.js', () => {
     expect(outData[0]).toBeCloseTo(0.75, 5); // 1.0 * 0.5 + 0.5 * 0.5 = 0.75
   });
 });
+
+describe('peakNorm (Peak Normalization) - actual implementation from app.js', () => {
+  function peakNorm(buffer, targetDb) {
+    const mockCtx = {
+      createBuffer: (n, len, sr) => new MockAudioBuffer(n, len, sr)
+    };
+    return VoiceIsolatePro.prototype.peakNorm.call({ ctx: mockCtx }, buffer, targetDb);
+  }
+
+  test('Silence (0 peak) returns the same buffer (values unchanged)', () => {
+    const buf = new MockAudioBuffer(1, 100, 44100);
+    const data = buf.getChannelData(0);
+    data.fill(0);
+
+    const out = peakNorm(buf, -1);
+
+    // In peakNorm: `if(pk===0)return buf;`
+    expect(out).toBe(buf);
+
+    const outData = out.getChannelData(0);
+    for (let i = 0; i < 100; i++) {
+      expect(outData[i]).toBe(0);
+    }
+  });
+
+  test('Normalizes a 0.5 peak buffer to 0 dBFS (gain = 2.0)', () => {
+    const buf = new MockAudioBuffer(1, 10, 44100);
+    const data = buf.getChannelData(0);
+    // Peak will be 0.5
+    for (let i = 0; i < 10; i++) {
+      data[i] = i % 2 === 0 ? 0.5 : -0.25;
+    }
+
+    const out = peakNorm(buf, 0); // 0 dB target
+    const outData = out.getChannelData(0);
+
+    // Target 0dB -> math.pow(10, 0) = 1.0.  Gain = 1.0 / 0.5 = 2.0
+    expect(outData[0]).toBeCloseTo(1.0, 5); // 0.5 * 2.0
+    expect(outData[1]).toBeCloseTo(-0.5, 5); // -0.25 * 2.0
+  });
+
+  test('Normalizes a 1.0 peak buffer to -6 dBFS (gain ≈ 0.501187)', () => {
+    const buf = new MockAudioBuffer(1, 10, 44100);
+    const data = buf.getChannelData(0);
+    data[0] = 1.0;
+    data[1] = -1.0;
+    data[2] = 0.5;
+
+    const out = peakNorm(buf, -6);
+    const outData = out.getChannelData(0);
+
+    const expectedGain = Math.pow(10, -6 / 20); // ~0.501187
+    expect(outData[0]).toBeCloseTo(expectedGain, 5);
+    expect(outData[1]).toBeCloseTo(-expectedGain, 5);
+    expect(outData[2]).toBeCloseTo(0.5 * expectedGain, 5);
+  });
+
+  test('Finds peak across multiple channels', () => {
+    const buf = new MockAudioBuffer(2, 10, 44100);
+    buf.getChannelData(0)[0] = 0.5;
+    buf.getChannelData(1)[0] = -0.8; // absolute peak is 0.8
+
+    const out = peakNorm(buf, 0);
+    const gain = 1.0 / 0.8; // 1.25
+
+    expect(out.getChannelData(0)[0]).toBeCloseTo(0.5 * gain, 5); // 0.625
+    expect(out.getChannelData(1)[0]).toBeCloseTo(-0.8 * gain, 5); // -1.0
+  });
+
+  test('Hard clips values to [-1, 1] if gain makes them exceed bounds (though logic normally prevents this unless peak calculation is bypassed, but testing the clamp)', () => {
+    // This tests the Math.max(-1, Math.min(1, inp[i] * g)) part
+    // To trigger it naturally, we'd need a targetDb > 0, which gives gain > 1 / peak.
+    const buf = new MockAudioBuffer(1, 10, 44100);
+    const data = buf.getChannelData(0);
+    data[0] = 0.5; // peak is 0.5
+
+    // Normalizing to +6dB (targetDb > 0)
+    // gain = Math.pow(10, 6/20) / 0.5 = 1.995 / 0.5 = 3.99
+    // data[0] * gain = 1.995, should be clipped to 1.0
+    const out = peakNorm(buf, 6);
+    const outData = out.getChannelData(0);
+
+    expect(outData[0]).toBeCloseTo(1.0, 5); // Clamped
+  });
+});
