@@ -170,6 +170,8 @@ function stft(signal) {
   const frames  = [];
   const tmpRe   = new Float32Array(DF_FFT);
   const tmpIm   = new Float32Array(DF_FFT);
+  const flatRe  = new Float32Array(nFrames * nBins);
+  const flatIm  = new Float32Array(nFrames * nBins);
 
   for (let f = 0; f < nFrames; f++) {
     const off = f * DF_HOP;
@@ -178,9 +180,13 @@ function stft(signal) {
       tmpRe[i] = (off + i < signal.length ? signal[off + i] : 0) * HANN[i];
     }
     fftInPlace(tmpRe, tmpIm, false);
-    const re = new Float32Array(nBins);
-    const im = new Float32Array(nBins);
-    for (let k = 0; k < nBins; k++) { re[k] = tmpRe[k]; im[k] = tmpIm[k]; }
+
+    const offset = f * nBins;
+    flatRe.set(tmpRe.subarray(0, nBins), offset);
+    flatIm.set(tmpIm.subarray(0, nBins), offset);
+
+    const re = flatRe.subarray(offset, offset + nBins);
+    const im = flatIm.subarray(offset, offset + nBins);
     frames.push({ re, im });
   }
   return frames;
