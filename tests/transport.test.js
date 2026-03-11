@@ -40,6 +40,56 @@ describe('Transport Methods (Missing Buffers)', () => {
     };
   });
 
+    describe('pause', () => {
+    beforeEach(() => {
+      mockContext.teardownChain = jest.fn();
+      mockContext.stopSpectro = jest.fn();
+      mockContext.isVideo = false;
+      mockContext.dom.videoPlayer = { pause: jest.fn() };
+    });
+
+    it('returns early if not playing', () => {
+      mockContext.isPlaying = false;
+      VoiceIsolatePro.prototype.pause.call(mockContext);
+
+      expect(mockContext.teardownChain).not.toHaveBeenCalled();
+      expect(mockContext.stopSpectro).not.toHaveBeenCalled();
+      expect(mockContext.isPlaying).toBe(false);
+    });
+
+    it('updates playOffset based on currentTime and speed', () => {
+      mockContext.isPlaying = true;
+      mockContext.playStartTime = 10;
+      mockContext.ctx.currentTime = 15;
+      mockContext.playOffset = 5;
+      mockContext.dom.tpSpeed.value = '1.5';
+
+      VoiceIsolatePro.prototype.pause.call(mockContext);
+
+      // (15 - 10) * 1.5 = 7.5. Added to initial playOffset (5) = 12.5.
+      expect(mockContext.playOffset).toBe(12.5);
+    });
+
+    it('cleans up state and stops processing', () => {
+      mockContext.isPlaying = true;
+
+      VoiceIsolatePro.prototype.pause.call(mockContext);
+
+      expect(mockContext.teardownChain).toHaveBeenCalled();
+      expect(mockContext.stopSpectro).toHaveBeenCalled();
+      expect(mockContext.isPlaying).toBe(false);
+    });
+
+    it('pauses video if isVideo is true', () => {
+      mockContext.isPlaying = true;
+      mockContext.isVideo = true;
+
+      VoiceIsolatePro.prototype.pause.call(mockContext);
+
+      expect(mockContext.dom.videoPlayer.pause).toHaveBeenCalled();
+    });
+  });
+
   describe('seekDelta', () => {
     it('returns early when inputBuffer is missing', () => {
       // Intentionally don't set inputBuffer
