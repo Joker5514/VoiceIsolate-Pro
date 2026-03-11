@@ -51,11 +51,51 @@ describe('Transport Methods (Missing Buffers)', () => {
       expect(mockContext.play).not.toHaveBeenCalled();
     });
 
-    it('works normally when inputBuffer exists', () => {
+    it('updates playOffset and DOM when not playing', () => {
       mockContext.inputBuffer = { duration: 100 };
+      mockContext.playOffset = 50;
+      mockContext.fmtDur.mockReturnValue('0:55');
+
       VoiceIsolatePro.prototype.seekDelta.call(mockContext, 5);
 
-      expect(mockContext.playOffset).toBe(5);
+      expect(mockContext.playOffset).toBe(55);
+      expect(mockContext.dom.tpCur.textContent).toBe('0:55');
+      expect(mockContext.fmtDur).toHaveBeenCalledWith(55);
+      expect(mockContext.dom.tpSeek.value).toBe((55 / 100) * 1000);
+      expect(mockContext.play).not.toHaveBeenCalled();
+    });
+
+    it('clamps playOffset to 0 when seeking backwards too far', () => {
+      mockContext.inputBuffer = { duration: 100 };
+      mockContext.playOffset = 10;
+
+      VoiceIsolatePro.prototype.seekDelta.call(mockContext, -20);
+
+      expect(mockContext.playOffset).toBe(0);
+    });
+
+    it('clamps playOffset to duration when seeking forwards too far', () => {
+      mockContext.inputBuffer = { duration: 100 };
+      mockContext.playOffset = 90;
+
+      VoiceIsolatePro.prototype.seekDelta.call(mockContext, 20);
+
+      expect(mockContext.playOffset).toBe(100);
+    });
+
+    it('accounts for current playback time and restarts playback when playing', () => {
+      mockContext.inputBuffer = { duration: 100 };
+      mockContext.isPlaying = true;
+      mockContext.playOffset = 20;
+      mockContext.playStartTime = 5;
+      mockContext.ctx.currentTime = 15;
+      mockContext.dom.tpSpeed.value = '2'; // 10 seconds elapsed * 2 speed = 20 seconds added
+
+      VoiceIsolatePro.prototype.seekDelta.call(mockContext, 10);
+
+      // Initial playOffset(20) + elapsed(20) + delta(10) = 50
+      expect(mockContext.playOffset).toBe(50);
+      expect(mockContext.play).toHaveBeenCalled();
     });
   });
 
