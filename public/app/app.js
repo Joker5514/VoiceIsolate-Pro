@@ -1374,9 +1374,63 @@ class VoiceIsolatePro {
     URL.revokeObjectURL(a.href);
   }
 
-  mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
+  mixDW(dry, wet, wAmt) {
+    const c = this.ctx;
+    const nCh = Math.min(dry.numberOfChannels, wet.numberOfChannels);
+    const len = Math.min(dry.length, wet.length);
+    const out = c.createBuffer(nCh, len, dry.sampleRate);
 
-  peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = dry.getChannelData(ch);
+      const w = wet.getChannelData(ch);
+      const o = out.getChannelData(ch);
+
+      for (let i = 0; i < len; i++) {
+        o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
+      }
+    }
+
+    return out;
+  }
+
+  peakNorm(buffer, targetDb) {
+    const ctx = this.ctx;
+    const numChannels = buffer.numberOfChannels;
+    const length = buffer.length;
+    const outBuffer = ctx.createBuffer(numChannels, length, buffer.sampleRate);
+
+    let peak = 0;
+
+    // Find the maximum absolute peak value across all channels
+    for (let ch = 0; ch < numChannels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const absValue = Math.abs(data[i]);
+        if (absValue > peak) {
+          peak = absValue;
+        }
+      }
+    }
+
+    // If silence, return original buffer
+    if (peak === 0) {
+      return buffer;
+    }
+
+    // Calculate gain needed to reach target dB
+    const gain = Math.pow(10, targetDb / 20) / peak;
+
+    // Apply gain to all channels and hard-clip at -1.0 to 1.0
+    for (let ch = 0; ch < numChannels; ch++) {
+      const inputData = buffer.getChannelData(ch);
+      const outputData = outBuffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        outputData[i] = Math.max(-1, Math.min(1, inputData[i] * gain));
+      }
+    }
+
+    return outBuffer;
+  }
 
   makeHarm(amt, ord) {
     const n = 44100;
@@ -1395,8 +1449,55 @@ class VoiceIsolatePro {
 
   // ---- SAVE ----
   saveWav(buf,label){if(!buf)return;const w=this.encWav(buf);const b=new Blob([w],{type:'audio/wav'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='voiceisolate_v19_'+label+'_'+Date.now()+'.wav';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);}
+  encWav(buf) {
+    const nCh = buf.numberOfChannels;
+    const sr = buf.sampleRate;
+    const dL = buf.length * nCh * 2; // 16-bit (2 bytes per sample)
 
-  encWav(buf){const nCh=buf.numberOfChannels;const sr=buf.sampleRate;const dL=buf.length*nCh*2;const a=new ArrayBuffer(44+dL);const v=new DataView(a);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+dL,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nCh,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nCh*2,true);v.setUint16(32,nCh*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,dL,true);let off=44;for(let i=0;i<buf.length;i++)for(let ch=0;ch<nCh;ch++){let s=buf.getChannelData(ch)[i];s=Math.max(-1,Math.min(1,s));v.setInt16(off,s<0?s*0x8000:s*0x7FFF,true);off+=2;}return a;}
+    // Total size: 44 bytes header + data length
+    const a = new ArrayBuffer(44 + dL);
+    const v = new DataView(a);
+
+    // Helper to write string to DataView
+    const ws = (o, s) => {
+      for (let i = 0; i < s.length; i++) {
+        v.setUint8(o + i, s.charCodeAt(i));
+      }
+    };
+
+    // --- RIFF Chunk ---
+    ws(0, 'RIFF');                     // ChunkID
+    v.setUint32(4, 36 + dL, true);     // ChunkSize (36 + SubChunk2Size)
+    ws(8, 'WAVE');                     // Format
+
+    // --- fmt Subchunk ---
+    ws(12, 'fmt ');                    // Subchunk1ID
+    v.setUint32(16, 16, true);         // Subchunk1Size (16 for PCM)
+    v.setUint16(20, 1, true);          // AudioFormat (1 for PCM)
+    v.setUint16(22, nCh, true);        // NumChannels
+    v.setUint32(24, sr, true);         // SampleRate
+    v.setUint32(28, sr * nCh * 2, true); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
+    v.setUint16(32, nCh * 2, true);    // BlockAlign (NumChannels * BitsPerSample/8)
+    v.setUint16(34, 16, true);         // BitsPerSample
+
+    // --- data Subchunk ---
+    ws(36, 'data');                    // Subchunk2ID
+    v.setUint32(40, dL, true);         // Subchunk2Size (NumSamples * NumChannels * BitsPerSample/8)
+
+    // Write audio data
+    let off = 44;
+    for (let i = 0; i < buf.length; i++) {
+      for (let ch = 0; ch < nCh; ch++) {
+        let s = buf.getChannelData(ch)[i];
+        // Hard clipping
+        s = Math.max(-1, Math.min(1, s));
+        // Convert to 16-bit PCM
+        v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        off += 2;
+      }
+    }
+    return a;
+  }
 
   // ======== VISUALIZATIONS ========
   initCanvases(){[this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas].forEach(c=>this.resizeCanvas(c));this.clearCanvas(this.dom.waveOrigCanvas,'Load audio to begin');this.clearCanvas(this.dom.waveProcCanvas,'Process to see result');this.clearCanvas(this.dom.spectro2DCanvas,'Play audio for spectrogram');this.clearCanvas(this.dom.freqCanvas,'Play audio for analyzer');}
