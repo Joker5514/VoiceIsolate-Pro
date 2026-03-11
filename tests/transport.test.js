@@ -40,6 +40,49 @@ describe('Transport Methods (Missing Buffers)', () => {
     };
   });
 
+
+  describe('stop', () => {
+    it('resets transport state correctly when isVideo is false', () => {
+      mockContext.isPlaying = true;
+      mockContext.playOffset = 5;
+      mockContext.isVideo = false;
+      mockContext.teardownChain = jest.fn();
+      mockContext.stopSpectro = jest.fn();
+
+      VoiceIsolatePro.prototype.stop.call(mockContext);
+
+      expect(mockContext.teardownChain).toHaveBeenCalled();
+      expect(mockContext.isPlaying).toBe(false);
+      expect(mockContext.playOffset).toBe(0);
+      expect(mockContext.stopSpectro).toHaveBeenCalled();
+      expect(mockContext.dom.tpCur.textContent).toBe('0:00');
+      expect(mockContext.dom.tpSeek.value).toBe(0);
+    });
+
+    it('resets transport state and pauses video when isVideo is true', () => {
+      mockContext.isPlaying = true;
+      mockContext.playOffset = 5;
+      mockContext.isVideo = true;
+      mockContext.dom.videoPlayer = {
+        pause: jest.fn(),
+        currentTime: 5
+      };
+      mockContext.teardownChain = jest.fn();
+      mockContext.stopSpectro = jest.fn();
+
+      VoiceIsolatePro.prototype.stop.call(mockContext);
+
+      expect(mockContext.dom.videoPlayer.pause).toHaveBeenCalled();
+      expect(mockContext.dom.videoPlayer.currentTime).toBe(0);
+      expect(mockContext.teardownChain).toHaveBeenCalled();
+      expect(mockContext.isPlaying).toBe(false);
+      expect(mockContext.playOffset).toBe(0);
+      expect(mockContext.stopSpectro).toHaveBeenCalled();
+      expect(mockContext.dom.tpCur.textContent).toBe('0:00');
+      expect(mockContext.dom.tpSeek.value).toBe(0);
+    });
+  });
+
   describe('seekDelta', () => {
     it('returns early when inputBuffer is missing', () => {
       // Intentionally don't set inputBuffer
