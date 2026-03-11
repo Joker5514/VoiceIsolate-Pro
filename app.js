@@ -736,7 +736,44 @@ class VoiceIsolatePro {
 
   mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
 
-  peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
+  peakNorm(buffer, targetDb) {
+    const ctx = this.ctx;
+    const numChannels = buffer.numberOfChannels;
+    const length = buffer.length;
+    const outBuffer = ctx.createBuffer(numChannels, length, buffer.sampleRate);
+
+    let peak = 0;
+
+    // Find the maximum absolute peak value across all channels
+    for (let ch = 0; ch < numChannels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const absValue = Math.abs(data[i]);
+        if (absValue > peak) {
+          peak = absValue;
+        }
+      }
+    }
+
+    // If silence, return original buffer
+    if (peak === 0) {
+      return buffer;
+    }
+
+    // Calculate gain needed to reach target dB
+    const gain = Math.pow(10, targetDb / 20) / peak;
+
+    // Apply gain to all channels and hard-clip at -1.0 to 1.0
+    for (let ch = 0; ch < numChannels; ch++) {
+      const inputData = buffer.getChannelData(ch);
+      const outputData = outBuffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        outputData[i] = Math.max(-1, Math.min(1, inputData[i] * gain));
+      }
+    }
+
+    return outBuffer;
+  }
 
   makeHarm(amt, ord) {
     const n = 44100;
