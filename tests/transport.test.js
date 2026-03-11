@@ -89,12 +89,43 @@ describe('Transport Methods (Missing Buffers)', () => {
       expect(mockContext.dom.tpAB.classList.toggle).not.toHaveBeenCalled();
     });
 
-    it('works normally when outputBuffer exists', () => {
+    it('works normally when outputBuffer exists and is not playing', () => {
       mockContext.outputBuffer = { length: 44100 };
       VoiceIsolatePro.prototype.toggleAB.call(mockContext);
 
       expect(mockContext.abMode).toBe('processed');
       expect(mockContext.dom.tpAB.classList.toggle).toHaveBeenCalledWith('active', true);
+      expect(mockContext.dom.tpABLabel.textContent).toBe('Processed');
+      expect(mockContext.play).not.toHaveBeenCalled();
+    });
+
+    it('works normally when outputBuffer exists and is playing', () => {
+      mockContext.outputBuffer = { length: 44100 };
+      mockContext.isPlaying = true;
+      mockContext.ctx.currentTime = 10;
+      mockContext.playStartTime = 5;
+      mockContext.playOffset = 2;
+      mockContext.dom.tpSpeed.value = '1.5';
+
+      VoiceIsolatePro.prototype.toggleAB.call(mockContext);
+
+      expect(mockContext.abMode).toBe('processed');
+      expect(mockContext.dom.tpAB.classList.toggle).toHaveBeenCalledWith('active', true);
+      // playOffset += (currentTime - playStartTime) * speed -> 2 + (10 - 5) * 1.5 = 9.5
+      expect(mockContext.playOffset).toBe(9.5);
+      expect(mockContext.play).toHaveBeenCalled();
+      expect(mockContext.dom.tpABLabel.textContent).toBe('Processed');
+    });
+
+    it('toggles back to original correctly', () => {
+      mockContext.outputBuffer = { length: 44100 };
+      mockContext.abMode = 'processed';
+
+      VoiceIsolatePro.prototype.toggleAB.call(mockContext);
+
+      expect(mockContext.abMode).toBe('original');
+      expect(mockContext.dom.tpAB.classList.toggle).toHaveBeenCalledWith('active', false);
+      expect(mockContext.dom.tpABLabel.textContent).toBe('Original');
     });
   });
 });
