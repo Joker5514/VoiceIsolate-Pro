@@ -38,9 +38,15 @@ describe('Utility Functions from app.js', () => {
     ws(36, 'data');
     v.setUint32(40, dL, true);
     let off = 44;
+
+    const chans = new Array(nCh);
+    for (let ch = 0; ch < nCh; ch++) {
+      chans[ch] = buf.getChannelData(ch);
+    }
+
     for (let i = 0; i < buf.length; i++) {
       for (let ch = 0; ch < nCh; ch++) {
-        let s = buf.getChannelData(ch)[i];
+        let s = chans[ch][i];
         s = Math.max(-1, Math.min(1, s));
         v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
         off += 2;
