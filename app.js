@@ -689,16 +689,49 @@ class VoiceIsolatePro {
   async pip(i,t) { this.dom.pipeFill.style.width=((i+1)/t*100)+'%'; this.dom.pipeStage.textContent=(i+1)+'/'+t; this.dom.pipeDetail.textContent=STAGES[i]; this.dom.hStatus.textContent='S'+(i+1); await new Promise(r=>setTimeout(r,15)); }
 
   // ---- DSP HELPERS ----
-  applyNR(buf,amt,smooth,floorDb) {
-    const c=this.ctx; const nCh=buf.numberOfChannels; const len=buf.length; const sr=buf.sampleRate; const out=c.createBuffer(nCh,len,sr);
-    for(let ch=0;ch<nCh;ch++){
-      const inp=buf.getChannelData(ch); const o=out.getChannelData(ch);
-      const nLen=Math.min(Math.floor(sr*0.15),len); let nRms=0;
-      for(let i=0;i<nLen;i++)nRms+=inp[i]*inp[i]; nRms=Math.sqrt(nRms/nLen);
-      const flLin=Math.pow(10,floorDb/20); const th=Math.max(nRms,flLin)*(1+amt*4); const bk=256; let pG=1;
-      for(let i=0;i<len;i+=bk){const e=Math.min(i+bk,len);let r=0;for(let j=i;j<e;j++)r+=inp[j]*inp[j];r=Math.sqrt(r/(e-i));
-        let g=r>th?1:Math.max(0.005,r/th);g=pG+(g-pG)*(1-smooth);pG=g;for(let j=i;j<e;j++)o[j]=inp[j]*g;}
-    } return out;
+  applyNR(buf, amt, smooth, floorDb) {
+    const c = this.ctx;
+    const nCh = buf.numberOfChannels;
+    const len = buf.length;
+    const sr = buf.sampleRate;
+    const out = c.createBuffer(nCh, len, sr);
+
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const o = out.getChannelData(ch);
+      const nLen = Math.min(Math.floor(sr * 0.15), len);
+
+      let nRms = 0;
+      for (let i = 0; i < nLen; i++) {
+        nRms += inp[i] * inp[i];
+      }
+      nRms = Math.sqrt(nRms / nLen);
+
+      const flLin = Math.pow(10, floorDb / 20);
+      const th = Math.max(nRms, flLin) * (1 + amt * 4);
+      const bk = 256;
+      let pG = 1;
+
+      for (let i = 0; i < len; i += bk) {
+        const e = Math.min(i + bk, len);
+        let r = 0;
+
+        for (let j = i; j < e; j++) {
+          r += inp[j] * inp[j];
+        }
+        r = Math.sqrt(r / (e - i));
+
+        let g = r > th ? 1 : Math.max(0.005, r / th);
+        g = pG + (g - pG) * (1 - smooth);
+        pG = g;
+
+        for (let j = i; j < e; j++) {
+          o[j] = inp[j] * g;
+        }
+      }
+    }
+
+    return out;
   }
 
   mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
