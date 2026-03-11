@@ -16,7 +16,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "dev": "npx serve public -l 3000 --cors",
-    "build": "echo 'Static site — no build step'",
+    "build": "mkdir -p build && cp index.html app.js style.css build/ && cp -r public v19-demo build/ || echo 'Static site — no build step'",
     "lint": "eslint public/app/app.js public/app/dsp-worker.js public/app/ml-worker.js",
     "lint:fix": "eslint public/app/app.js public/app/dsp-worker.js public/app/ml-worker.js --fix",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node",
