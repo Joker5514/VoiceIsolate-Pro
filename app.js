@@ -642,9 +642,30 @@ class VoiceIsolatePro {
   }
 
   teardownChain() {
-    if (this.currentSource) { try{this.currentSource.stop();}catch(e){} try{this.currentSource.disconnect();}catch(e){} this.currentSource = null; }
-    if (this.liveNodes.chain) this.liveNodes.chain.forEach(n => { try{n.disconnect();}catch(e){} });
-    this.liveNodes = {}; this.liveChainBuilt = false;
+    if (this.currentSource) {
+      try {
+        this.currentSource.stop();
+      } catch (e) {
+        // Ignore errors if the source is already stopped
+      }
+      try {
+        this.currentSource.disconnect();
+      } catch (e) {
+        // Ignore errors if the source is already disconnected
+      }
+      this.currentSource = null;
+    }
+    if (this.liveNodes.chain) {
+      this.liveNodes.chain.forEach(n => {
+        try {
+          n.disconnect();
+        } catch (e) {
+          // Ignore errors if the node is already disconnected
+        }
+      });
+    }
+    this.liveNodes = {};
+    this.liveChainBuilt = false;
   }
 
   // ======== 30-STAGE OFFLINE PIPELINE ========
