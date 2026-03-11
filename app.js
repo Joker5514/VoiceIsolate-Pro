@@ -1132,6 +1132,7 @@ class VoiceIsolatePro {
     const halfFFT = fftSize >> 1;
     const hopSize = Math.max(1, Math.ceil(data.length / W));
     const cmap = this.dom.fsColormap.value;
+    const invLN10_9 = 1 / (9 * Math.LN10);
 
     // Pre-compute Hann window
     const win = new Float32Array(fftSize);
@@ -1168,10 +1169,9 @@ class VoiceIsolatePro {
       // Draw this column
       for (let row = 0; row < H; row++) {
         const bin = rowBin[row];
-        const mag = Math.sqrt(re[bin] * re[bin] + im[bin] * im[bin]);
+        const magSq = re[bin] * re[bin] + im[bin] * im[bin];
         // dB normalized: -90dB → 0dB → 1.0
-        const db = mag > 0 ? 20 * Math.log10(mag) : -90;
-        const v = Math.max(0, Math.min(1, (db + 90) / 90));
+        const v = magSq > 0 ? Math.max(0, Math.min(1, Math.log(magSq) * invLN10_9 + 1)) : 0;
         const [r, g, b] = this.fsColor(v, cmap);
         const idx = (row * W + col) * 4;
         pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
