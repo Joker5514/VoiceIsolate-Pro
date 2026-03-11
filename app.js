@@ -752,6 +752,7 @@ class VoiceIsolatePro {
     const len = buf.length;
     const sr = buf.sampleRate;
     const out = c.createBuffer(nCh, len, sr);
+    const flLin = Math.pow(10, floorDb / 20);
 
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
@@ -763,8 +764,6 @@ class VoiceIsolatePro {
         nRms += inp[i] * inp[i];
       }
       nRms = Math.sqrt(nRms / nLen);
-
-      const flLin = Math.pow(10, floorDb / 20);
       const th = Math.max(nRms, flLin) * (1 + amt * 4);
       const bk = 256;
       let pG = 1;
