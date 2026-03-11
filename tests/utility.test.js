@@ -115,6 +115,10 @@ describe('Utility Functions from app.js', () => {
       expect(calcPeak(new Float32Array([0, 0.5, 0]))).toBeCloseTo(20 * Math.log10(0.5), 5);
       expect(calcPeak(new Float32Array([0, 0, 0.5]))).toBeCloseTo(20 * Math.log10(0.5), 5);
     });
+
+    test('empty array should return -96 dB', () => {
+      expect(calcPeak(new Float32Array([]))).toBe(-96);
+    });
   });
 
   describe('fmtDur', () => {
