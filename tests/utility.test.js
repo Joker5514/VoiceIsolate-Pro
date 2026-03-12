@@ -71,6 +71,21 @@ describe('Utility Functions from app.js', () => {
     return m + ':' + String(sc).padStart(2, '0');
   }
 
+  function estVoices(buf) {
+    const d = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    const bs = Math.floor(sr * 0.5);
+    let act = 0;
+    for (let i = 0; i < d.length; i += bs) {
+      let r = 0;
+      const e = Math.min(i + bs, d.length);
+      for (let j = i; j < e; j++) r += d[j] * d[j];
+      r = Math.sqrt(r / (e - i));
+      if (r > 0.01) act++;
+    }
+    return act < 3 ? '0-1' : act < 10 ? '1' : '1-2+';
+  }
+
   describe('calcRMS', () => {
     test('all 1s should be 0 dB', () => {
       const d = new Float32Array([1, 1, 1, 1]);
@@ -143,6 +158,58 @@ describe('Utility Functions from app.js', () => {
     });
   });
 
+  describe('estVoices', () => {
+    // Helper to create a mock AudioBuffer
+    function makeMockBuffer(sr, numActiveBlocks, numSilentBlocks) {
+      const bs = Math.floor(sr * 0.5);
+      const totalLen = (numActiveBlocks + numSilentBlocks) * bs;
+      const d = new Float32Array(totalLen);
+
+      // Fill active blocks with an RMS > 0.01 (e.g. constant 0.02)
+      for (let i = 0; i < numActiveBlocks * bs; i++) {
+        d[i] = 0.02;
+      }
+      // The rest is 0 (silence)
+
+      return {
+        sampleRate: sr,
+        getChannelData: () => d
+      };
+    }
+
+    test('0 active blocks should return "0-1"', () => {
+      const buf = makeMockBuffer(44100, 0, 5);
+      expect(estVoices(buf)).toBe('0-1');
+    });
+
+    test('2 active blocks should return "0-1"', () => {
+      const buf = makeMockBuffer(44100, 2, 5);
+      expect(estVoices(buf)).toBe('0-1');
+    });
+
+    test('3 active blocks should return "1"', () => {
+      const buf = makeMockBuffer(44100, 3, 5);
+      expect(estVoices(buf)).toBe('1');
+    });
+
+    test('9 active blocks should return "1"', () => {
+      const buf = makeMockBuffer(44100, 9, 2);
+      expect(estVoices(buf)).toBe('1');
+    });
+
+    test('10 active blocks should return "1-2+"', () => {
+      const buf = makeMockBuffer(44100, 10, 0);
+      expect(estVoices(buf)).toBe('1-2+');
+    });
+
+    test('15 active blocks should return "1-2+"', () => {
+      const buf = makeMockBuffer(44100, 15, 0);
+      expect(estVoices(buf)).toBe('1-2+');
+    });
+
+    test('handles empty buffer gracefully (0 blocks)', () => {
+      const buf = makeMockBuffer(44100, 0, 0);
+      expect(estVoices(buf)).toBe('0-1');
   describe('encWav', () => {
     // Helper to create a mock AudioBuffer
     function createMockBuffer(nCh, len, sr, fillValueOrFn) {
