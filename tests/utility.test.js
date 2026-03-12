@@ -210,6 +210,9 @@ describe('Utility Functions from app.js', () => {
     test('handles empty buffer gracefully (0 blocks)', () => {
       const buf = makeMockBuffer(44100, 0, 0);
       expect(estVoices(buf)).toBe('0-1');
+    });
+  });
+
   describe('encWav', () => {
     // Helper to create a mock AudioBuffer
     function createMockBuffer(nCh, len, sr, fillValueOrFn) {
