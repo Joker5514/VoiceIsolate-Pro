@@ -137,7 +137,7 @@
           <div class="tp-time"><span id="tpCur">0:00</span> / <span id="tpTotal">0:00</span></div>
           <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled />
           <div class="tp-speed">
-            <label>Speed</label>
+            <label for="tpSpeed">Speed</label>
             <select id="tpSpeed" disabled>
               <option value="0.25">0.25x</option>
               <option value="0.5">0.5x</option>
@@ -162,7 +162,7 @@
           <div class="viz-actions">
             <span id="fsProgress" class="fs-progress-lbl"></span>
             <button id="fsBtnAB" class="btn btn-xs" disabled>Show Processed</button>
-            <select id="fsColormap" class="fs-cmap-sel">
+            <select id="fsColormap" class="fs-cmap-sel" aria-label="Spectrogram Colormap">
               <option value="plasma">Plasma</option>
               <option value="ocean">Ocean</option>
               <option value="voice">Voice ID</option>
