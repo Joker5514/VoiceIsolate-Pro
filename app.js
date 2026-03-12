@@ -155,17 +155,51 @@ class VoiceIsolatePro {
     for (const [tabKey, sliders] of Object.entries(SLIDERS)) {
       const panel = document.getElementById('tab-' + tabKey);
       if (!panel) continue;
-      let h = '<div class="sr">';
+      panel.textContent = '';
+      const sr = document.createElement('div');
+      sr.className = 'sr';
       for (const s of sliders) {
-        const rtCls = s.rt ? ' realtime' : '';
-        const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
-        h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
-          '<label class="sr-label" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
-          '<input type="range" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
-          '<span class="sr-val" id="' + s.id + 'Val">' + s.val + s.unit + '</span></div>';
+        const row = document.createElement('div');
+        row.className = 'sr-row';
+        row.dataset.desc = s.desc;
+
+        const labelEl = document.createElement('label');
+        labelEl.className = 'sr-label';
+        labelEl.title = s.desc;
+        labelEl.htmlFor = s.id;
+        labelEl.textContent = s.label;
+        if (s.rt) {
+          const badge = document.createElement('span');
+          badge.className = 'rt-badge';
+          badge.textContent = 'RT';
+          labelEl.appendChild(badge);
+        }
+
+        const inputEl = document.createElement('input');
+        inputEl.type = 'range';
+        if (s.rt) inputEl.className = 'realtime';
+        inputEl.id = s.id;
+        inputEl.min = s.min;
+        inputEl.max = s.max;
+        inputEl.value = s.val;
+        inputEl.step = s.step;
+        inputEl.dataset.param = s.id;
+        inputEl.setAttribute('aria-label', s.label);
+        inputEl.setAttribute('aria-valuemin', s.min);
+        inputEl.setAttribute('aria-valuemax', s.max);
+        inputEl.setAttribute('aria-valuenow', s.val);
+
+        const valEl = document.createElement('span');
+        valEl.className = 'sr-val';
+        valEl.id = s.id + 'Val';
+        valEl.textContent = s.val + s.unit;
+
+        row.appendChild(labelEl);
+        row.appendChild(inputEl);
+        row.appendChild(valEl);
+        sr.appendChild(row);
       }
-      h += '</div>';
-      panel.innerHTML = h;
+      panel.appendChild(sr);
     }
   }
 
@@ -264,6 +298,13 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING (FIXED) ========
   async handleFile(file) {
     try {
+      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
+      const MAX_SIZE = 200 * 1024 * 1024;
+      if (file.size > MAX_SIZE) throw new Error('File exceeds maximum allowed size (200MB)');
+
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
+
       this.ensureCtx();
       this.stop(); // stop any current playback
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
@@ -602,13 +643,36 @@ class VoiceIsolatePro {
       n.lim.threshold.setTargetAtTime(p.limThresh,t,s); n.lim.release.setTargetAtTime(p.limRelease/1000,t,s);
       n.outG.gain.setTargetAtTime(Math.pow(10,p.outGain/20),t,s);
       n.wG.gain.setTargetAtTime(p.outWidth/100,t,s);
-    } catch(e) {}
+    } catch(e) {
+      console.error('Error updating live chain:', e);
+    }
   }
 
   teardownChain() {
-    if (this.currentSource) { try{this.currentSource.stop();}catch(e){} try{this.currentSource.disconnect();}catch(e){} this.currentSource = null; }
-    if (this.liveNodes.chain) this.liveNodes.chain.forEach(n => { try{n.disconnect();}catch(e){} });
-    this.liveNodes = {}; this.liveChainBuilt = false;
+    if (this.currentSource) {
+      try {
+        this.currentSource.stop();
+      } catch (e) {
+        // Ignore errors if the source is already stopped
+      }
+      try {
+        this.currentSource.disconnect();
+      } catch (e) {
+        // Ignore errors if the source is already disconnected
+      }
+      this.currentSource = null;
+    }
+    if (this.liveNodes.chain) {
+      this.liveNodes.chain.forEach(n => {
+        try {
+          n.disconnect();
+        } catch (e) {
+          // Ignore errors if the node is already disconnected
+        }
+      });
+    }
+    this.liveNodes = {};
+    this.liveChainBuilt = false;
   }
 
   // ======== 30-STAGE OFFLINE PIPELINE ========
@@ -689,21 +753,107 @@ class VoiceIsolatePro {
   async pip(i,t) { this.dom.pipeFill.style.width=((i+1)/t*100)+'%'; this.dom.pipeStage.textContent=(i+1)+'/'+t; this.dom.pipeDetail.textContent=STAGES[i]; this.dom.hStatus.textContent='S'+(i+1); await new Promise(r=>setTimeout(r,15)); }
 
   // ---- DSP HELPERS ----
-  applyNR(buf,amt,smooth,floorDb) {
-    const c=this.ctx; const nCh=buf.numberOfChannels; const len=buf.length; const sr=buf.sampleRate; const out=c.createBuffer(nCh,len,sr);
-    for(let ch=0;ch<nCh;ch++){
-      const inp=buf.getChannelData(ch); const o=out.getChannelData(ch);
-      const nLen=Math.min(Math.floor(sr*0.15),len); let nRms=0;
-      for(let i=0;i<nLen;i++)nRms+=inp[i]*inp[i]; nRms=Math.sqrt(nRms/nLen);
-      const flLin=Math.pow(10,floorDb/20); const th=Math.max(nRms,flLin)*(1+amt*4); const bk=256; let pG=1;
-      for(let i=0;i<len;i+=bk){const e=Math.min(i+bk,len);let r=0;for(let j=i;j<e;j++)r+=inp[j]*inp[j];r=Math.sqrt(r/(e-i));
-        let g=r>th?1:Math.max(0.005,r/th);g=pG+(g-pG)*(1-smooth);pG=g;for(let j=i;j<e;j++)o[j]=inp[j]*g;}
-    } return out;
+  applyNR(buf, amt, smooth, floorDb) {
+    const c = this.ctx;
+    const nCh = buf.numberOfChannels;
+    const len = buf.length;
+    const sr = buf.sampleRate;
+    const out = c.createBuffer(nCh, len, sr);
+    const flLin = Math.pow(10, floorDb / 20);
+
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const o = out.getChannelData(ch);
+      const nLen = Math.min(Math.floor(sr * 0.15), len);
+
+      let nRms = 0;
+      for (let i = 0; i < nLen; i++) {
+        nRms += inp[i] * inp[i];
+      }
+      nRms = Math.sqrt(nRms / nLen);
+      const th = Math.max(nRms, flLin) * (1 + amt * 4);
+      const bk = 256;
+      let pG = 1;
+
+      for (let i = 0; i < len; i += bk) {
+        const e = Math.min(i + bk, len);
+        let r = 0;
+
+        for (let j = i; j < e; j++) {
+          r += inp[j] * inp[j];
+        }
+        r = Math.sqrt(r / (e - i));
+
+        let g = r > th ? 1 : Math.max(0.005, r / th);
+        g = pG + (g - pG) * (1 - smooth);
+        pG = g;
+
+        for (let j = i; j < e; j++) {
+          o[j] = inp[j] * g;
+        }
+      }
+    }
+
+    return out;
   }
 
-  mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
+  mixDW(dry, wet, wAmt) {
+    const c = this.ctx;
+    const nCh = Math.min(dry.numberOfChannels, wet.numberOfChannels);
+    const len = Math.min(dry.length, wet.length);
+    const out = c.createBuffer(nCh, len, dry.sampleRate);
 
-  peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = dry.getChannelData(ch);
+      const w = wet.getChannelData(ch);
+      const o = out.getChannelData(ch);
+
+      for (let i = 0; i < len; i++) {
+        o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
+      }
+    }
+
+    return out;
+  }
+
+  peakNorm(buffer, targetDb) {
+    const ctx = this.ctx;
+    const numChannels = buffer.numberOfChannels;
+    const length = buffer.length;
+    const outBuffer = ctx.createBuffer(numChannels, length, buffer.sampleRate);
+
+    let peak = 0;
+
+    // Find the maximum absolute peak value across all channels
+    for (let ch = 0; ch < numChannels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const absValue = Math.abs(data[i]);
+        if (absValue > peak) {
+          peak = absValue;
+        }
+      }
+    }
+
+    // If silence, return original buffer
+    if (peak === 0) {
+      return buffer;
+    }
+
+    // Calculate gain needed to reach target dB
+    const gain = Math.pow(10, targetDb / 20) / peak;
+
+    // Apply gain to all channels and hard-clip at -1.0 to 1.0
+    for (let ch = 0; ch < numChannels; ch++) {
+      const inputData = buffer.getChannelData(ch);
+      const outputData = outBuffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        outputData[i] = Math.max(-1, Math.min(1, inputData[i] * gain));
+      }
+    }
+
+    return outBuffer;
+  }
 
   makeHarm(amt, ord) {
     const n = 44100;
@@ -722,8 +872,55 @@ class VoiceIsolatePro {
 
   // ---- SAVE ----
   saveWav(buf,label){if(!buf)return;const w=this.encWav(buf);const b=new Blob([w],{type:'audio/wav'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='voiceisolate_v19_'+label+'_'+Date.now()+'.wav';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);}
+  encWav(buf) {
+    const nCh = buf.numberOfChannels;
+    const sr = buf.sampleRate;
+    const dL = buf.length * nCh * 2; // 16-bit (2 bytes per sample)
 
-  encWav(buf){const nCh=buf.numberOfChannels;const sr=buf.sampleRate;const dL=buf.length*nCh*2;const a=new ArrayBuffer(44+dL);const v=new DataView(a);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+dL,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nCh,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nCh*2,true);v.setUint16(32,nCh*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,dL,true);let off=44;for(let i=0;i<buf.length;i++)for(let ch=0;ch<nCh;ch++){let s=buf.getChannelData(ch)[i];s=Math.max(-1,Math.min(1,s));v.setInt16(off,s<0?s*0x8000:s*0x7FFF,true);off+=2;}return a;}
+    // Total size: 44 bytes header + data length
+    const a = new ArrayBuffer(44 + dL);
+    const v = new DataView(a);
+
+    // Helper to write string to DataView
+    const ws = (o, s) => {
+      for (let i = 0; i < s.length; i++) {
+        v.setUint8(o + i, s.charCodeAt(i));
+      }
+    };
+
+    // --- RIFF Chunk ---
+    ws(0, 'RIFF');                     // ChunkID
+    v.setUint32(4, 36 + dL, true);     // ChunkSize (36 + SubChunk2Size)
+    ws(8, 'WAVE');                     // Format
+
+    // --- fmt Subchunk ---
+    ws(12, 'fmt ');                    // Subchunk1ID
+    v.setUint32(16, 16, true);         // Subchunk1Size (16 for PCM)
+    v.setUint16(20, 1, true);          // AudioFormat (1 for PCM)
+    v.setUint16(22, nCh, true);        // NumChannels
+    v.setUint32(24, sr, true);         // SampleRate
+    v.setUint32(28, sr * nCh * 2, true); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
+    v.setUint16(32, nCh * 2, true);    // BlockAlign (NumChannels * BitsPerSample/8)
+    v.setUint16(34, 16, true);         // BitsPerSample
+
+    // --- data Subchunk ---
+    ws(36, 'data');                    // Subchunk2ID
+    v.setUint32(40, dL, true);         // Subchunk2Size (NumSamples * NumChannels * BitsPerSample/8)
+
+    // Write audio data
+    let off = 44;
+    for (let i = 0; i < buf.length; i++) {
+      for (let ch = 0; ch < nCh; ch++) {
+        let s = buf.getChannelData(ch)[i];
+        // Hard clipping
+        s = Math.max(-1, Math.min(1, s));
+        // Convert to 16-bit PCM
+        v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        off += 2;
+      }
+    }
+    return a;
+  }
 
   // ======== VISUALIZATIONS ========
   initCanvases(){[this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas].forEach(c=>this.resizeCanvas(c));this.clearCanvas(this.dom.waveOrigCanvas,'Load audio to begin');this.clearCanvas(this.dom.waveProcCanvas,'Process to see result');this.clearCanvas(this.dom.spectro2DCanvas,'Play audio for spectrogram');this.clearCanvas(this.dom.freqCanvas,'Play audio for analyzer');}
@@ -941,6 +1138,7 @@ class VoiceIsolatePro {
     const halfFFT = fftSize >> 1;
     const hopSize = Math.max(1, Math.ceil(data.length / W));
     const cmap = this.dom.fsColormap.value;
+    const invLN10_9 = 1 / (9 * Math.LN10);
 
     // Pre-compute Hann window
     const win = new Float32Array(fftSize);
@@ -977,10 +1175,9 @@ class VoiceIsolatePro {
       // Draw this column
       for (let row = 0; row < H; row++) {
         const bin = rowBin[row];
-        const mag = Math.sqrt(re[bin] * re[bin] + im[bin] * im[bin]);
+        const magSq = re[bin] * re[bin] + im[bin] * im[bin];
         // dB normalized: -90dB → 0dB → 1.0
-        const db = mag > 0 ? 20 * Math.log10(mag) : -90;
-        const v = Math.max(0, Math.min(1, (db + 90) / 90));
+        const v = magSq > 0 ? Math.max(0, Math.min(1, Math.log(magSq) * invLN10_9 + 1)) : 0;
         const [r, g, b] = this.fsColor(v, cmap);
         const idx = (row * W + col) * 4;
         pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
