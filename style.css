@@ -224,6 +224,29 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 .tech-stack-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--border)}
 .ts-label{font-size:0.55rem;font-weight:700;letter-spacing:0.1em;color:var(--dim);text-transform:uppercase;margin-right:3px}
 .ts-chip{font-family:var(--fm);font-size:0.58rem;padding:2px 8px;border-radius:3px;background:var(--s3);border:1px solid var(--border);color:var(--text2)}
+.ts-chip-highlight{background:rgba(220,38,38,0.08);border-color:rgba(220,38,38,0.2);color:var(--red2)}
+
+/* New feature badges */
+.tech-card-badge-new{color:var(--cyan);background:rgba(34,211,238,0.07);border-color:rgba(34,211,238,0.18)}
+.tf-badge-ml{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(168,85,247,0.1);color:var(--purple);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
+.tf-badge-new{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(34,211,238,0.1);color:var(--cyan);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
+.tf-badge-restored{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(34,197,94,0.1);color:var(--green);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
+
+/* Highlighted feature items */
+.tf-item-highlight{border-color:rgba(220,38,38,0.2);background:linear-gradient(135deg,var(--s2),rgba(220,38,38,0.03))}
+.tf-icon-ml{background:rgba(168,85,247,0.08);border-color:rgba(168,85,247,0.2);color:var(--purple)}
+.tf-icon-forensic{background:rgba(34,211,238,0.08);border-color:rgba(34,211,238,0.2);color:var(--cyan)}
+.tf-icon-viz{background:rgba(34,197,94,0.08);border-color:rgba(34,197,94,0.2);color:var(--green)}
+
+/* Forensic toggle styles */
+.forensic-toggle-wrap{display:flex;align-items:center}
+.forensic-label{display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+.forensic-label input[type="checkbox"]{width:14px;height:14px;accent-color:var(--cyan);cursor:pointer}
+.forensic-label input[type="checkbox"]:checked + .hs-lbl{color:var(--cyan)}
+
+/* Audit log button */
+.btn-audit{background:rgba(34,211,238,0.08);color:var(--cyan);border:1px solid rgba(34,211,238,0.15)}
+.btn-audit:hover:not(:disabled){border-color:var(--cyan);background:rgba(34,211,238,0.12)}
 
 /* ---- ANIMATIONS ---- */
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
