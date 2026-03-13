@@ -236,6 +236,128 @@
     </div>
   </main>
 
+  <!-- HOW IT WORKS – Technical Features Card -->
+  <section class="tech-card-wrap" aria-label="Technical Features">
+    <div class="tech-card">
+      <div class="tech-card-hdr">
+        <div class="tech-card-title-row">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
+          <h2 class="tech-card-title">How It Works</h2>
+          <span class="tech-card-badge">30-STAGE HEXA-PASS</span>
+        </div>
+        <p class="tech-card-sub">A hybrid ML + DSP pipeline processes audio entirely in-browser — zero data transmission, full privacy.</p>
+      </div>
+
+      <div class="tech-pipeline-flow" aria-label="Pipeline signal flow">
+        <div class="tpf-step">
+          <span class="tpf-num">1</span>
+          <span class="tpf-lbl">Input Conditioning</span>
+        </div>
+        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="tpf-step">
+          <span class="tpf-num">2–6</span>
+          <span class="tpf-lbl">Spectral Gating &amp; Noise Removal</span>
+        </div>
+        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="tpf-step">
+          <span class="tpf-num">7–14</span>
+          <span class="tpf-lbl">Voice Isolation &amp; Enhancement</span>
+        </div>
+        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="tpf-step">
+          <span class="tpf-num">15–30</span>
+          <span class="tpf-lbl">Dynamics, LUFS &amp; Master Output</span>
+        </div>
+      </div>
+
+      <div class="tech-features-grid">
+        <!-- Feature 1 -->
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4l3-9 4 18 3-9h6"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">Spectral Subtraction</h3>
+            <p class="tf-desc">64-band frequency-domain noise removal using over-subtraction with a spectral floor to eliminate musical noise artifacts.</p>
+            <code class="tf-formula">|X̂(ω)| = max(|X(ω)| − α·E[|N(ω)|], β·|X(ω)|)</code>
+          </div>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">Wiener Filtering</h3>
+            <p class="tf-desc">Adaptive MMSE Wiener gain applied per frequency bin — strongest suppression in low-SNR regions for natural-sounding output.</p>
+            <code class="tf-formula">G(t) = √( max(P_signal − P_noise, 0) / max(P_signal, ε) )</code>
+          </div>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">Silero VAD (ML)</h3>
+            <p class="tf-desc">ONNX-powered Voice Activity Detection model running in a Web Worker classifies speech frames in real-time at &lt; 1 ms latency.</p>
+            <code class="tf-formula">P(voice | frame) → gate mask applied per 20 ms chunk</code>
+          </div>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="4" height="10" rx="1"/><rect x="9" y="4" width="4" height="16" rx="1"/><rect x="16" y="9" width="4" height="8" rx="1"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">Dynamics &amp; Compression</h3>
+            <p class="tf-desc">Envelope-follower compressor with per-sample attack/release constants keeps dialogue intelligible across wide dynamic range content.</p>
+            <code class="tf-formula">a = exp(−1 / (SR · t_attack))  ·  GR = −max((L − T)·(1 − 1/R), 0)</code>
+          </div>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">LUFS Normalization</h3>
+            <p class="tf-desc">Output is normalized to broadcast targets — -14 LUFS for streaming, -16 LUFS for podcasts — using ITU-R BS.1770-4 K-weighted measurement.</p>
+            <code class="tf-formula">gain = 10^( (L_target − L_measured) / 20 )</code>
+          </div>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">100% Local Processing</h3>
+            <p class="tf-desc">All DSP runs in-browser via Web Workers and AudioWorklet. Audio never leaves your device — no uploads, no servers, no storage.</p>
+            <code class="tf-formula">Worker Pool → DSP Thread → AudioWorklet → Output Buffer</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="tech-stack-row" aria-label="Technology stack">
+        <span class="ts-label">STACK</span>
+        <span class="ts-chip">Web Audio API</span>
+        <span class="ts-chip">AudioWorklet</span>
+        <span class="ts-chip">Web Workers</span>
+        <span class="ts-chip">ONNX Runtime</span>
+        <span class="ts-chip">Silero VAD</span>
+        <span class="ts-chip">WebAssembly DSP</span>
+        <span class="ts-chip">Three.js 3D</span>
+        <span class="ts-chip">32-bit Float</span>
+      </div>
+    </div>
+  </section>
+
   <footer class="ftr">
     <span>VoiceIsolate Pro v19.0 · Threads from Space · Hybrid ML+DSP · 30-Stage Hexa-Pass</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
