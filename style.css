@@ -191,6 +191,40 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 ::-webkit-scrollbar-thumb{background:var(--s4);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--dim)}
 
+/* ---- TECH FEATURES CARD ---- */
+.tech-card-wrap{max-width:1520px;margin:0 auto;padding:0 10px 10px}
+.tech-card{background:var(--s1);border:1px solid var(--border2);border-radius:var(--r);padding:18px 20px;position:relative;overflow:hidden}
+.tech-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--red3),var(--red),transparent)}
+.tech-card-hdr{margin-bottom:16px}
+.tech-card-title-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--dim)}
+.tech-card-title{font-size:1rem;font-weight:700;color:var(--text);letter-spacing:-0.01em}
+.tech-card-badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.52rem;font-weight:700;letter-spacing:0.1em;color:var(--red2);background:rgba(220,38,38,0.07);border:1px solid rgba(220,38,38,0.18);margin-left:auto}
+.tech-card-sub{font-size:0.7rem;color:var(--text2);line-height:1.5;max-width:680px}
+
+/* Pipeline flow */
+.tech-pipeline-flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--s2);border:1px solid var(--border);border-radius:var(--rs);padding:8px 12px;margin-bottom:16px}
+.tpf-step{display:flex;align-items:center;gap:5px}
+.tpf-num{font-family:var(--fm);font-size:0.6rem;font-weight:700;color:var(--red2);background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.2);border-radius:3px;padding:1px 5px;white-space:nowrap}
+.tpf-lbl{font-size:0.65rem;color:var(--text2);white-space:nowrap}
+.tpf-arrow{color:var(--dim);flex-shrink:0}
+
+/* Feature grid */
+.tech-features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+@media(max-width:1100px){.tech-features-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.tech-features-grid{grid-template-columns:1fr}}
+.tf-item{background:var(--s2);border:1px solid var(--border);border-radius:var(--rs);padding:10px 12px;display:flex;gap:10px;transition:border-color 0.15s}
+.tf-item:hover{border-color:rgba(220,38,38,0.25)}
+.tf-icon{width:32px;height:32px;flex-shrink:0;border-radius:6px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.15);display:flex;align-items:center;justify-content:center;color:var(--red2)}
+.tf-body{min-width:0}
+.tf-title{font-size:0.72rem;font-weight:700;color:var(--text);margin-bottom:3px}
+.tf-desc{font-size:0.62rem;color:var(--text2);line-height:1.55;margin-bottom:5px}
+.tf-formula{display:block;font-family:var(--fm);font-size:0.56rem;color:var(--cyan);background:rgba(34,211,238,0.05);border-left:2px solid rgba(34,211,238,0.3);padding:3px 7px;border-radius:0 3px 3px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Stack chips */
+.tech-stack-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--border)}
+.ts-label{font-size:0.55rem;font-weight:700;letter-spacing:0.1em;color:var(--dim);text-transform:uppercase;margin-right:3px}
+.ts-chip{font-family:var(--fm);font-size:0.58rem;padding:2px 8px;border-radius:3px;background:var(--s3);border:1px solid var(--border);color:var(--text2)}
+
 /* ---- ANIMATIONS ---- */
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .card,.viz-card{animation:fadeUp 0.3s ease-out both}
