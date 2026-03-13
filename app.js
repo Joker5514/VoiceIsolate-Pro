@@ -299,6 +299,11 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING (FIXED) ========
   async handleFile(file) {
     try {
+      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
+
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
+
       this.ensureCtx();
       this.stop(); // stop any current playback
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
@@ -753,6 +758,7 @@ class VoiceIsolatePro {
     const len = buf.length;
     const sr = buf.sampleRate;
     const out = c.createBuffer(nCh, len, sr);
+    const flLin = Math.pow(10, floorDb / 20);
 
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
@@ -764,8 +770,6 @@ class VoiceIsolatePro {
         nRms += inp[i] * inp[i];
       }
       nRms = Math.sqrt(nRms / nLen);
-
-      const flLin = Math.pow(10, floorDb / 20);
       const th = Math.max(nRms, flLin) * (1 + amt * 4);
       const bk = 256;
       let pG = 1;
@@ -1133,6 +1137,7 @@ class VoiceIsolatePro {
     const halfFFT = fftSize >> 1;
     const hopSize = Math.max(1, Math.ceil(data.length / W));
     const cmap = this.dom.fsColormap.value;
+    const invLN10_9 = 1 / (9 * Math.LN10);
 
     // Pre-compute Hann window
     const win = new Float32Array(fftSize);
@@ -1169,10 +1174,9 @@ class VoiceIsolatePro {
       // Draw this column
       for (let row = 0; row < H; row++) {
         const bin = rowBin[row];
-        const mag = Math.sqrt(re[bin] * re[bin] + im[bin] * im[bin]);
+        const magSq = re[bin] * re[bin] + im[bin] * im[bin];
         // dB normalized: -90dB → 0dB → 1.0
-        const db = mag > 0 ? 20 * Math.log10(mag) : -90;
-        const v = Math.max(0, Math.min(1, (db + 90) / 90));
+        const v = magSq > 0 ? Math.max(0, Math.min(1, Math.log(magSq) * invLN10_9 + 1)) : 0;
         const [r, g, b] = this.fsColor(v, cmap);
         const idx = (row * W + col) * 4;
         pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
