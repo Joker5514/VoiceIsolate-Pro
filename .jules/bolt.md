@@ -8,3 +8,6 @@
 ## 2024-03-22 - Bypassing Three.js Accessors for Hot 3D Data
 **Learning:** In hot loops like continuous 3D visualizations (e.g., streaming spectrograms), using Three.js high-level geometry accessors (`pos.setY`, `pos.getY`) introduces significant function call overhead.
 **Action:** Bypass these accessors in favor of native `TypedArray.copyWithin` for arrays like colors or full coordinate sets. When specific offsets are required (like just shifting the Y coordinates), iterate directly backward over the flattened `attribute.array` (e.g., `pos.array`).
+## 2024-05-24 - TypedArray memory allocation overhead in STFT loops
+**Learning:** Frequent small allocations of `Float32Array` within high-frequency DSP loops (like the STFT `nFrames` loop) cause significant garbage collection overhead and memory churn, slowing down execution.
+**Action:** Pre-allocate a single, contiguous "flat" `Float32Array` for the entire dataset upfront. Within the loop, use `.set()` for bulk copying and `.subarray()` to create zero-copy views into the pre-allocated buffer, replacing manual element-by-element assignment loops.
