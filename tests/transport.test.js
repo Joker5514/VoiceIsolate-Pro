@@ -200,11 +200,49 @@ describe('Transport Methods (Missing Buffers)', () => {
       expect(mockContext.play).not.toHaveBeenCalled();
     });
 
-    it('works normally when inputBuffer exists', () => {
+    it('works normally when inputBuffer exists and is playing (accumulates playOffset)', () => {
       mockContext.inputBuffer = { duration: 100 };
+      mockContext.isPlaying = true;
+      mockContext.playOffset = 10;
+      mockContext.ctx.currentTime = 5;
+      mockContext.playStartTime = 2;
+      mockContext.dom.tpSpeed.value = 2; // speed = 2
+
+      VoiceIsolatePro.prototype.seekTo.call(mockContext, 0.5);
+
+      // (5 - 2) * 2 = 6, playOffset becomes 10 + 6 = 16 temporarily, but then is overwritten by frac * duration
+      // The old behavior of accumulating playOffset before overwriting it is technically a bit redundant in the code,
+      // but let's test that play() gets called and the new playOffset is frac * duration.
+      expect(mockContext.playOffset).toBe(50);
+      expect(mockContext.play).toHaveBeenCalled();
+      expect(mockContext.fmtDur).not.toHaveBeenCalled();
+    });
+
+    it('works normally when inputBuffer exists and is not playing (updates UI)', () => {
+      mockContext.inputBuffer = { duration: 100 };
+      mockContext.isPlaying = false;
+      mockContext.fmtDur.mockReturnValue('0:50');
+
       VoiceIsolatePro.prototype.seekTo.call(mockContext, 0.5);
 
       expect(mockContext.playOffset).toBe(50);
+      expect(mockContext.play).not.toHaveBeenCalled();
+      expect(mockContext.fmtDur).toHaveBeenCalledWith(50);
+      expect(mockContext.dom.tpCur.textContent).toBe('0:50');
+    });
+
+    it('handles missing or invalid speed value gracefully', () => {
+      mockContext.inputBuffer = { duration: 100 };
+      mockContext.isPlaying = true;
+      mockContext.playOffset = 10;
+      mockContext.ctx.currentTime = 5;
+      mockContext.playStartTime = 2;
+      mockContext.dom.tpSpeed.value = 'invalid'; // should fallback to 1
+
+      VoiceIsolatePro.prototype.seekTo.call(mockContext, 0.5);
+
+      expect(mockContext.playOffset).toBe(50);
+      expect(mockContext.play).toHaveBeenCalled();
     });
   });
 
