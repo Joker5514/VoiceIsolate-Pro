@@ -1,6 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceIsolate Pro — Studio-Grade Voice Isolation</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#07080a;--card:#0d0f14;--border:#1a1e2a;--text:#e8eaf0;--dim:#4a5268;--cyan:#00d4ff;--red:#dc2626;--violet:#8b5cf6;--green:#10b981;--mono:'JetBrains Mono',monospace;--sans:'DM Sans',system-ui,sans-serif;--serif:'Instrument Serif',Georgia,serif}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;-webkit-font-smoothing:antialiased}
+::selection{background:rgba(0,212,255,0.2);color:#fff}
+.logo{font-family:var(--mono);font-size:0.75rem;letter-spacing:0.12em;color:var(--cyan);margin-bottom:2rem;text-transform:uppercase}
+h1{font-family:var(--serif);font-size:clamp(2.5rem,6vw,4.5rem);font-weight:400;text-align:center;line-height:1.1;margin-bottom:1rem}
+h1 em{font-style:italic;color:var(--cyan)}
+.sub{color:var(--dim);font-size:0.95rem;text-align:center;max-width:500px;margin-bottom:3rem;line-height:1.7}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;max-width:900px;width:100%}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:2rem;text-decoration:none;color:var(--text);transition:border-color 0.3s,transform 0.3s;position:relative;overflow:hidden}
+.card:hover{border-color:rgba(0,212,255,0.3);transform:translateY(-2px)}
+.card-tag{font-family:var(--mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;margin-bottom:0.75rem;display:inline-block;padding:0.2rem 0.5rem;border-radius:3px}
+.card:nth-child(1) .card-tag{color:var(--red);background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.15)}
+.card:nth-child(2) .card-tag{color:var(--cyan);background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.15)}
+.card:nth-child(3) .card-tag{color:var(--violet);background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.15)}
+.card h2{font-family:var(--sans);font-size:1.2rem;font-weight:600;margin-bottom:0.5rem}
+.card p{color:var(--dim);font-size:0.82rem;line-height:1.6}
+.card .arrow{position:absolute;bottom:1.5rem;right:1.5rem;color:var(--dim);font-size:1.2rem;transition:color 0.3s,transform 0.3s}
+.card:hover .arrow{color:var(--text);transform:translateX(3px)}
+.footer{margin-top:4rem;font-family:var(--mono);font-size:0.6rem;color:var(--dim);letter-spacing:0.08em;text-transform:uppercase}
+.grid-bg{position:fixed;inset:0;pointer-events:none;opacity:0.02;background-image:linear-gradient(var(--dim) 1px,transparent 1px),linear-gradient(90deg,var(--dim) 1px,transparent 1px);background-size:80px 80px}
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="logo">VoiceIsolate.Pro</div>
+<h1>Threads from <em>Space</em></h1>
+<p class="sub">Studio-grade voice isolation. 32-stage Octa-Pass DSP pipeline. Hybrid ML + classical spectral processing. 100% local, zero data egress.</p>
+
+<div class="cards">
+  <a href="/app/" class="card">
+    <span class="card-tag">Launch App</span>
+    <h2>Engineer Mode v19.0</h2>
+    <p>Full processing application. 52 real-time sliders, 3D spectrogram, multi-band DSP chain, A/B comparison. Drop audio and process.</p>
+    <span class="arrow">→</span>
+  </a>
+  <a href="/blueprint/" class="card">
+    <span class="card-tag">v18 Blueprint</span>
+    <h2>Technical Architecture</h2>
+    <p>Complete system blueprint. 32-stage pipeline spec, module breakdown, pseudocode, model rationale, optimization strategies, roadmap.</p>
+    <span class="arrow">→</span>
+  </a>
+  <a href="/docs/TECHNICAL_GUIDE.md" class="card">
+    <span class="card-tag">Documentation</span>
+    <h2>Developer Docs</h2>
+    <p>Technical guide, API reference, DSP module documentation, integration guide for custom plugins and SDK usage.</p>
+    <span class="arrow">→</span>
+  </a>
+</div>
+
+<div class="footer">Threads from Space v8 Architecture — Privacy-First — March 2026</div>
   <meta charset="UTF-8" />
   <title>VoiceIsolate Pro v19.0 – Engineer Mode</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />

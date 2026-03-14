@@ -36,6 +36,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     };
   }
 
+  // Pre-compute biquad coefficients from current params
   // Pre-compute biquad coefficients and linear gains from current params
   _computeCoeffs() {
     const sr = this._sr;
@@ -98,6 +99,8 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
 
   // Simple RMS-based noise gate (time domain)
   _applyGate(block, ch) {
+    const threshLin = Math.pow(10, this.params.gateThresh / 20);
+    const releaseCoef = Math.exp(-1 / (this._sr * (this.params.gateRelease / 1000)));
     const threshLin = this._gateThreshLin;
     const releaseCoef = this._gateReleaseCoef;
     let g = this._gateGain[ch];
@@ -112,6 +115,12 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
 
   // Feed-forward compressor with makeup gain
   _applyComp(block, ch) {
+    const threshLin = Math.pow(10, this.params.compThresh / 20);
+    const ratio = Math.max(1, this.params.compRatio);
+    const attackCoef = Math.exp(-1 / (this._sr * (this.params.compAttack / 1000)));
+    const releaseCoef = Math.exp(-1 / (this._sr * (this.params.compRelease / 1000)));
+    const makeupLin = Math.pow(10, this.params.compMakeup / 20);
+    const limThreshLin = Math.pow(10, this.params.limThresh / 20);
     const threshLin = this._compThreshLin;
     const slope = this._compSlope;
     const attackCoef = this._compAttackCoef;
@@ -125,6 +134,9 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       env = abs > env ? abs * (1 - attackCoef) + env * attackCoef : abs * (1 - releaseCoef) + env * releaseCoef;
       let gain = 1;
       if (env > threshLin) {
+        const overDb = 20 * Math.log10(env / threshLin);
+        const gainDb = overDb * (1 - 1/ratio);
+        gain = Math.pow(10, -gainDb / 20);
         // ⚡ Bolt: Simplified compressor gain math to avoid slow log10/pow operations
         // Math.pow(10, -(20 * Math.log10(env/threshLin) * slope) / 20) => Math.pow(env/threshLin, -slope)
         gain = Math.pow(env / threshLin, -slope);
@@ -159,6 +171,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       this._applyComp(outCh, ch);
 
       // Output gain
+      const outGainLin = Math.pow(10, (this.params.outGain || 0) / 20);
       const outGainLin = this._outGainLin;
       for (let i = 0; i < outCh.length; i++) outCh[i] *= outGainLin;
     }

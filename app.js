@@ -151,7 +151,7 @@ class VoiceIsolatePro {
   }
 
   // ---- BUILD SLIDERS ----
-  buildSliderPanels() {
+buildSliderPanels() {
     for (const [tabKey, sliders] of Object.entries(SLIDERS)) {
       const panel = document.getElementById('tab-' + tabKey);
       if (!panel) continue;
