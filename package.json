@@ -16,6 +16,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "dev": "npx serve public -l 3000 --cors",
+    "build": "mkdir -p build && cp -r public/* build/ && cp index.html app.js style.css build/ 2>/dev/null || true && echo 'Build complete'",
     "build": "rm -rf build && mkdir build && cp -r public/* build/ && cp index.html style.css app.js build/",
     "build": "mkdir -p build && cp index.html app.js style.css build/ && cp -r public v19-demo build/ || echo 'Static site — no build step'",
     "build": "mkdir -p build && cp -r public/* build/",

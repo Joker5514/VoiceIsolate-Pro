@@ -903,6 +903,15 @@ class VoiceIsolatePro {
 
     // Write audio data
     let off = 44;
+
+    const chans = new Array(nCh);
+    for (let ch = 0; ch < nCh; ch++) {
+      chans[ch] = buf.getChannelData(ch);
+    }
+
+    for (let i = 0; i < buf.length; i++) {
+      for (let ch = 0; ch < nCh; ch++) {
+        let s = chans[ch][i];
     for (let i = 0; i < buf.length; i++) {
       for (let ch = 0; ch < nCh; ch++) {
         let s = buf.getChannelData(ch)[i];
@@ -1029,6 +1038,9 @@ class VoiceIsolatePro {
   update3D(freq){
     if(!this.three.geo)return;
     const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
+    for(let z=gD-1;z>0;z--)for(let x=0;x<gW;x++){const c=z*gW+x;const p=(z-1)*gW+x;pos.setY(c,pos.getY(p));cols[c*3]=cols[p*3];cols[c*3+1]=cols[p*3+1];cols[c*3+2]=cols[p*3+2];}
+    const step=Math.floor(freq.length/gW);
+    for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pos.setY(x,v*15);const f=x/gW;
     cols.copyWithin(gW*3, 0, (gD-1)*gW*3);
     const pArr=pos.array;
     const end=gD*gW*3;const offset=gW*3;
