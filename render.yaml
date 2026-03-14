@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: voiceisolate-pro
+    env: static
+    buildCommand: "echo 'Static site — no build step'"
+    staticPublishPath: public
