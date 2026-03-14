@@ -15,7 +15,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "dev": "npx serve public -l 3000 --cors",
-    "build": "echo 'Static site — no build step'",
+    "build": "mkdir -p build && cp -r public/* build/",
     "lint": "npx eslint public/app/app.js public/app/dsp-worker.js --no-eslintrc --env browser,es2022 --parser-options=ecmaVersion:2022",
     "test": "jest --testEnvironment=node",
     "test:watch": "jest --testEnvironment=node --watch",
