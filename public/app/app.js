@@ -1545,6 +1545,6 @@ class VoiceIsolatePro {
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = VoiceIsolatePro;
-} else {
+} else if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
 }

@@ -1,42 +1,36 @@
 /**
  * VoiceIsolate Pro — Utility Unit Tests
  * Tests calcRMS, calcPeak, and fmtDur.
- * 
- * NOTE: These functions are duplicated as standalone implementations because
- * the main app.js contains browser-only DOM code that cannot be imported in Node.
- * 
- * IMPORTANT: If the implementations in public/app/app.js change, these standalone
- * functions must be manually updated to match. The original implementations are in:
- * - calcRMS: public/app/app.js (search for 'calcRMS(d)')
- * - calcPeak: public/app/app.js (search for 'calcPeak(d)')
- * - fmtDur: public/app/app.js (search for 'fmtDur(s)')
  */
 
+const fs = require('fs');
+const path = require('path');
+
+// Read the app.js code as a string to extract the real implementation.
+// This guarantees we are testing the actual code without dealing with
+// Jest ESM/CJS module loading conflicts for a browser script.
+const appJsPath = path.resolve(__dirname, '../app.js');
+const appJsCode = fs.readFileSync(appJsPath, 'utf8');
+
+// Use new Function to create the class from the source string.
+// We pass in an empty module object to simulate the environment.
+const extractVoiceIsolatePro = new Function(`
+  const module = { exports: {} };
+  const window = {};
+  const document = { addEventListener: () => {} };
+  ${appJsCode}
+  return module.exports;
+`);
+
+const VoiceIsolatePro = extractVoiceIsolatePro();
+
 describe('Utility Functions from app.js', () => {
-  // Standalone implementations matching public/app/app.js methods
-  function calcRMS(d) {
-    let s = 0;
-    for (let i = 0; i < d.length; i++) s += d[i] * d[i];
-    const r = Math.sqrt(s / d.length);
-    return r > 0 ? 20 * Math.log10(r) : -96;
-  }
-
-  function calcPeak(d) {
-    let p = 0;
-    for (let i = 0; i < d.length; i++) {
-      const a = Math.abs(d[i]);
-      if (a > p) p = a;
-    }
-    return p > 0 ? 20 * Math.log10(p) : -96;
-  }
-
-  function fmtDur(s) {
-    const m = Math.floor(s / 60);
-    const sc = Math.floor(s % 60);
-    return m + ':' + String(sc).padStart(2, '0');
-  }
-
   describe('calcRMS', () => {
+    let calcRMS;
+    beforeAll(() => {
+      calcRMS = VoiceIsolatePro.prototype.calcRMS;
+    });
+
     test('all 1s should be 0 dB', () => {
       const d = new Float32Array([1, 1, 1, 1]);
       expect(calcRMS(d)).toBeCloseTo(0, 5);
@@ -60,6 +54,11 @@ describe('Utility Functions from app.js', () => {
   });
 
   describe('calcPeak', () => {
+    let calcPeak;
+    beforeAll(() => {
+      calcPeak = VoiceIsolatePro.prototype.calcPeak;
+    });
+
     test('all 0s should be -96 dB', () => {
       const d = new Float32Array([0, 0, 0, 0]);
       expect(calcPeak(d)).toBe(-96);
@@ -83,6 +82,11 @@ describe('Utility Functions from app.js', () => {
   });
 
   describe('fmtDur', () => {
+    let fmtDur;
+    beforeAll(() => {
+      fmtDur = VoiceIsolatePro.prototype.fmtDur;
+    });
+
     test('0 seconds -> 0:00', () => {
       expect(fmtDur(0)).toBe('0:00');
     });
