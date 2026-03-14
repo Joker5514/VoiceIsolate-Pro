@@ -49,7 +49,7 @@
           <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <p class="upload-title">Drop Audio or Video</p>
           <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · MP4 · MOV · WEBM — No limit</p>
-          <input type="file" id="fileInput" accept="audio/*,video/*,audio/mp4,audio/x-m4a,audio/m4a" hidden aria-label="Select audio or video file" />
+          <input type="file" id="fileInput" accept="audio/*,video/*" hidden aria-label="Select audio or video file" />
           <button id="fileBtn" class="btn btn-outline">Browse Files</button>
         </div>
         <div class="upload-row">
@@ -151,7 +151,7 @@
           <div class="tp-time"><span id="tpCur">0:00</span> / <span id="tpTotal">0:00</span></div>
           <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled aria-label="Seek through audio" />
           <div class="tp-speed">
-            <label for="tpSpeed">Speed</label>
+            <label>Speed</label>
             <select id="tpSpeed" disabled>
               <option value="0.25">0.25x</option>
               <option value="0.5">0.5x</option>
@@ -232,7 +232,7 @@
 
   <div id="tooltip" class="slider-tooltip"></div>
   <script src="app.js"></script>
-  
+
   <!-- Vercel Speed Insights -->
   <script>
     window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };

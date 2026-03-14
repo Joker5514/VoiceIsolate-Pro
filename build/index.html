@@ -8,15 +8,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <!-- Phase 4: ONNX Runtime Web — local inference for VAD and ML separation -->
-  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <!-- HEADER -->
   <header class="hdr">
     <div class="hdr-left">
-      <img src="/icon.jpg" alt="VoiceIsolate Pro" style="width:40px;height:40px;border-radius:8px;margin-right:0.75rem;">
+      <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
       <div>
         <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v19.0</span></h1>
         <span class="hdr-badge">ENGINEER MODE</span>
@@ -30,13 +28,6 @@
       <div class="hdr-stat"><span class="hs-val" id="hRMS">--</span><span class="hs-lbl">RMS</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hPeak">--</span><span class="hs-lbl">Peak</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hStatus">IDLE</span><span class="hs-lbl">Pipeline</span></div>
-      <!-- Phase 5: Forensic Mode toggle -->
-      <div class="hdr-stat forensic-toggle-wrap">
-        <label class="forensic-label" for="forensicToggle" title="Enable SHA-256 audit trail at each processing stage">
-          <input type="checkbox" id="forensicToggle" />
-          <span class="hs-lbl">Forensic</span>
-        </label>
-      </div>
     </div>
   </header>
 
@@ -45,16 +36,16 @@
     <div class="col-left">
       <!-- Upload -->
       <div class="card upload-card">
-        <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop audio or video file, or click to browse">
-          <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div id="uploadZone" class="upload-zone">
+          <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <p class="upload-title">Drop Audio or Video</p>
           <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · MP4 · MOV · WEBM — No limit</p>
-          <input type="file" id="fileInput" accept="audio/*,video/*,audio/mp4,audio/x-m4a,audio/m4a" hidden aria-label="Select audio or video file" />
+          <input type="file" id="fileInput" accept="audio/*,video/*" hidden />
           <button id="fileBtn" class="btn btn-outline">Browse Files</button>
         </div>
         <div class="upload-row">
-          <button id="micBtn" class="btn btn-mic" aria-label="Start microphone recording">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+          <button id="micBtn" class="btn btn-mic">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
             <span id="micLabel">Record</span>
           </button>
           <span id="fileInfo" class="file-info">No file loaded</span>
@@ -62,27 +53,27 @@
       </div>
 
       <!-- Tabs -->
-      <div class="tabs" id="tabBar" role="tablist" aria-label="DSP Processing Controls">
-        <button class="tab active" data-tab="gate" role="tab" aria-selected="true" aria-controls="tab-gate" id="tabn-gate">Gate</button>
-        <button class="tab" data-tab="nr" role="tab" aria-selected="false" aria-controls="tab-nr" id="tabn-nr">Noise</button>
-        <button class="tab" data-tab="eq" role="tab" aria-selected="false" aria-controls="tab-eq" id="tabn-eq">EQ</button>
-        <button class="tab" data-tab="dyn" role="tab" aria-selected="false" aria-controls="tab-dyn" id="tabn-dyn">Dynamics</button>
-        <button class="tab" data-tab="spec" role="tab" aria-selected="false" aria-controls="tab-spec" id="tabn-spec">Spectral</button>
-        <button class="tab" data-tab="adv" role="tab" aria-selected="false" aria-controls="tab-adv" id="tabn-adv">Advanced</button>
-        <button class="tab" data-tab="sep" role="tab" aria-selected="false" aria-controls="tab-sep" id="tabn-sep">Separation</button>
-        <button class="tab" data-tab="out" role="tab" aria-selected="false" aria-controls="tab-out" id="tabn-out">Output</button>
+      <div class="tabs" id="tabBar">
+        <button class="tab active" data-tab="gate">Gate</button>
+        <button class="tab" data-tab="nr">Noise</button>
+        <button class="tab" data-tab="eq">EQ</button>
+        <button class="tab" data-tab="dyn">Dynamics</button>
+        <button class="tab" data-tab="spec">Spectral</button>
+        <button class="tab" data-tab="adv">Advanced</button>
+        <button class="tab" data-tab="sep">Separation</button>
+        <button class="tab" data-tab="out">Output</button>
       </div>
 
       <!-- Slider Panels (populated by JS) -->
       <div class="panels">
-        <div class="panel active" id="tab-gate" role="tabpanel" aria-labelledby="tabn-gate"></div>
-        <div class="panel" id="tab-nr" role="tabpanel" aria-labelledby="tabn-nr" hidden></div>
-        <div class="panel" id="tab-eq" role="tabpanel" aria-labelledby="tabn-eq" hidden></div>
-        <div class="panel" id="tab-dyn" role="tabpanel" aria-labelledby="tabn-dyn" hidden></div>
-        <div class="panel" id="tab-spec" role="tabpanel" aria-labelledby="tabn-spec" hidden></div>
-        <div class="panel" id="tab-adv" role="tabpanel" aria-labelledby="tabn-adv" hidden></div>
-        <div class="panel" id="tab-sep" role="tabpanel" aria-labelledby="tabn-sep" hidden></div>
-        <div class="panel" id="tab-out" role="tabpanel" aria-labelledby="tabn-out" hidden></div>
+        <div class="panel active" id="tab-gate"></div>
+        <div class="panel" id="tab-nr"></div>
+        <div class="panel" id="tab-eq"></div>
+        <div class="panel" id="tab-dyn"></div>
+        <div class="panel" id="tab-spec"></div>
+        <div class="panel" id="tab-adv"></div>
+        <div class="panel" id="tab-sep"></div>
+        <div class="panel" id="tab-out"></div>
       </div>
 
       <!-- Presets -->
@@ -101,16 +92,16 @@
       <div class="actions-row">
         <button id="processBtn" class="btn btn-primary" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
-          Process (32-Stage)
+          Process (30-Stage)
         </button>
         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
       </div>
 
       <!-- Pipeline -->
-      <div class="pipeline-box" role="status" aria-live="polite" aria-atomic="false">
+      <div class="pipeline-box">
         <div class="pipe-header"><span>Pipeline</span><span id="pipeStage" class="pipe-stage">Idle</span></div>
-        <div class="pipe-bar" id="pipeBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Processing progress"><div id="pipeFill" class="pipe-fill"></div></div>
+        <div class="pipe-bar"><div id="pipeFill" class="pipe-fill"></div></div>
         <div id="pipeDetail" class="pipe-detail"></div>
       </div>
 
@@ -123,11 +114,6 @@
         <button id="saveProcBtn" class="btn btn-save-proc" disabled>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Save Processed WAV
-        </button>
-        <!-- Phase 5: Forensic audit log download -->
-        <button id="auditLogBtn" class="btn btn-audit" disabled title="Download SHA-256 audit trail (Forensic mode only)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-          Audit Log
         </button>
       </div>
     </div>
@@ -143,15 +129,15 @@
       <!-- Transport -->
       <div class="card transport-card">
         <div class="transport-row">
-          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play audio"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg></button>
-          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause audio"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
-          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop audio"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
-          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
-          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
+          <button id="tpPlay" class="btn btn-tp" disabled title="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg></button>
+          <button id="tpPause" class="btn btn-tp" disabled title="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <button id="tpStop" class="btn btn-tp" disabled title="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
+          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
           <div class="tp-time"><span id="tpCur">0:00</span> / <span id="tpTotal">0:00</span></div>
-          <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled aria-label="Seek through audio" />
+          <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled />
           <div class="tp-speed">
-            <label for="tpSpeed">Speed</label>
+            <label>Speed</label>
             <select id="tpSpeed" disabled>
               <option value="0.25">0.25x</option>
               <option value="0.5">0.5x</option>
@@ -167,6 +153,31 @@
             <span id="tpABLabel" class="tp-ab-label">Original</span>
           </div>
         </div>
+      </div>
+
+      <!-- Static Full-File Spectrogram -->
+      <div class="card viz-card" id="fileSpectroCard" style="display:none">
+        <div class="viz-hdr">
+          <span>Full-File Spectrogram <span id="fsModeLbl" class="fs-mode-badge">ORIGINAL</span></span>
+          <div class="viz-actions">
+            <span id="fsProgress" class="fs-progress-lbl"></span>
+            <button id="fsBtnAB" class="btn btn-xs" disabled>Show Processed</button>
+            <select id="fsColormap" class="fs-cmap-sel">
+              <option value="plasma">Plasma</option>
+              <option value="ocean">Ocean</option>
+              <option value="voice">Voice ID</option>
+            </select>
+            <span class="viz-hint">Click to seek · Log freq scale · 20 Hz – 22 kHz</span>
+          </div>
+        </div>
+        <div class="fs-wrap">
+          <canvas id="fsYAxis" class="fs-yaxis-cv"></canvas>
+          <div class="fs-main" id="fsMain">
+            <canvas id="fsCanvas" class="fs-bg-cv"></canvas>
+            <canvas id="fsOverlay" class="fs-overlay-cv"></canvas>
+          </div>
+        </div>
+        <canvas id="fsXAxis" class="fs-xaxis-cv"></canvas>
       </div>
 
       <!-- 3D Spectrogram -->
@@ -226,13 +237,13 @@
   </main>
 
   <footer class="ftr">
-    <span>VoiceIsolate Pro v19.0 · Threads from Space · Hybrid ML+DSP · 32-Stage Octa-Pass</span>
-    <span>100% Local Processing · Zero Data Transmission · Privacy First · ONNX Runtime Web</span>
+    <span>VoiceIsolate Pro v19.0 · Threads from Space · Hybrid ML+DSP · 30-Stage Hexa-Pass</span>
+    <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
 
   <div id="tooltip" class="slider-tooltip"></div>
   <script src="app.js"></script>
-  
+
   <!-- Vercel Speed Insights -->
   <script>
     window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
