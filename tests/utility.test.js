@@ -52,23 +52,38 @@ describe('Utility Functions from app.js', () => {
   function calcRMS(d) {
     let s = 0;
     for (let i = 0; i < d.length; i++) s += d[i] * d[i];
-    const r = Math.sqrt(s / d.length);
-    return r > 0 ? 20 * Math.log10(r) : -96;
+    const rSq = s / d.length;
+    return rSq > 0 ? 10 * Math.log10(rSq) : -96;
   }
 
   function calcPeak(d) {
-    let p = 0;
+    let pSq = 0;
     for (let i = 0; i < d.length; i++) {
-      const a = Math.abs(d[i]);
-      if (a > p) p = a;
+      const aSq = d[i] * d[i];
+      if (aSq > pSq) pSq = aSq;
     }
-    return p > 0 ? 20 * Math.log10(p) : -96;
+    return pSq > 0 ? 10 * Math.log10(pSq) : -96;
   }
 
   function fmtDur(s) {
     const m = Math.floor(s / 60);
     const sc = Math.floor(s % 60);
     return m + ':' + String(sc).padStart(2, '0');
+  }
+
+  function estVoices(buf) {
+    const d = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    const bs = Math.floor(sr * 0.5);
+    let act = 0;
+    for (let i = 0; i < d.length; i += bs) {
+      let r = 0;
+      const e = Math.min(i + bs, d.length);
+      for (let j = i; j < e; j++) r += d[j] * d[j];
+      r = Math.sqrt(r / (e - i));
+      if (r > 0.01) act++;
+    }
+    return act < 3 ? '0-1' : act < 10 ? '1' : '1-2+';
   }
 
   describe('calcRMS', () => {
@@ -140,6 +155,61 @@ describe('Utility Functions from app.js', () => {
 
     test('3601 seconds -> 60:01', () => {
       expect(fmtDur(3601)).toBe('60:01');
+    });
+  });
+
+  describe('estVoices', () => {
+    // Helper to create a mock AudioBuffer
+    function makeMockBuffer(sr, numActiveBlocks, numSilentBlocks) {
+      const bs = Math.floor(sr * 0.5);
+      const totalLen = (numActiveBlocks + numSilentBlocks) * bs;
+      const d = new Float32Array(totalLen);
+
+      // Fill active blocks with an RMS > 0.01 (e.g. constant 0.02)
+      for (let i = 0; i < numActiveBlocks * bs; i++) {
+        d[i] = 0.02;
+      }
+      // The rest is 0 (silence)
+
+      return {
+        sampleRate: sr,
+        getChannelData: () => d
+      };
+    }
+
+    test('0 active blocks should return "0-1"', () => {
+      const buf = makeMockBuffer(44100, 0, 5);
+      expect(estVoices(buf)).toBe('0-1');
+    });
+
+    test('2 active blocks should return "0-1"', () => {
+      const buf = makeMockBuffer(44100, 2, 5);
+      expect(estVoices(buf)).toBe('0-1');
+    });
+
+    test('3 active blocks should return "1"', () => {
+      const buf = makeMockBuffer(44100, 3, 5);
+      expect(estVoices(buf)).toBe('1');
+    });
+
+    test('9 active blocks should return "1"', () => {
+      const buf = makeMockBuffer(44100, 9, 2);
+      expect(estVoices(buf)).toBe('1');
+    });
+
+    test('10 active blocks should return "1-2+"', () => {
+      const buf = makeMockBuffer(44100, 10, 0);
+      expect(estVoices(buf)).toBe('1-2+');
+    });
+
+    test('15 active blocks should return "1-2+"', () => {
+      const buf = makeMockBuffer(44100, 15, 0);
+      expect(estVoices(buf)).toBe('1-2+');
+    });
+
+    test('handles empty buffer gracefully (0 blocks)', () => {
+      const buf = makeMockBuffer(44100, 0, 0);
+      expect(estVoices(buf)).toBe('0-1');
     });
   });
 
