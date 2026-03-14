@@ -350,11 +350,6 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING (FIXED) ========
   async handleFile(file) {
     try {
-      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
-
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
-      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
-
       this.ensureCtx();
       this.stop(); // stop any current playback
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
@@ -1303,7 +1298,7 @@ class VoiceIsolatePro {
     return new Promise((resolve, reject) => {
       const id = ++this._mlCallId;
       this._mlCallbacks[id] = { resolve, reject };
-      
+
       // Timeout to prevent memory leaks from unresponsive workers
       const timeout = setTimeout(() => {
         this.mlWorker.removeEventListener('message', handler);
