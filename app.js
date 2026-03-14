@@ -846,6 +846,27 @@ class VoiceIsolatePro {
       return buffer;
     }
 
+  peakNorm(buf, tDb) {
+    const ctx = this.ctx;
+    const numChannels = buf.numberOfChannels;
+    const length = buf.length;
+    const out = ctx.createBuffer(numChannels, length, buf.sampleRate);
+
+    let peak = 0;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const channelData = buf.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const absVal = Math.abs(channelData[i]);
+        if (absVal > peak) peak = absVal;
+      }
+    }
+
+    if (peak === 0) return buf;
+
+    const gain = Math.pow(10, tDb / 20) / peak;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const inputData = buf.getChannelData(ch);
+      const outputData = out.getChannelData(ch);
     // Calculate gain needed to reach target dB
     const gain = Math.pow(10, targetDb / 20) / peak;
 
@@ -858,6 +879,7 @@ class VoiceIsolatePro {
       }
     }
 
+    return out;
     return outBuffer;
   }
 
