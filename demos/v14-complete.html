@@ -1,5 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VoiceIsolate Pro v14.0 – Engineer Mode</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
 /* ============================================
-   VoiceIsolate Pro v19.0 – Engineer Mode
+   VoiceIsolate Pro v14.0 – Engineer Mode
+   Red-dominant dark industrial aesthetic
+   ============================================ */
+:root {
+  --bg: #060609;
+  --s1: #0c0c12;
+  --s2: #111118;
+  --s3: #181823;
+  --s4: #1f1f2e;
+  --red: #dc2626;
+  --red2: #ef4444;
+  --red3: #b91c1c;
+  --red-glow: rgba(220,38,38,0.25);
+  --cyan: #22d3ee;
+  --green: #22c55e;
+  --yellow: #eab308;
+  --purple: #a855f7;
+  --blue: #3b82f6;
+  --text: #eeeef2;
+  --text2: #b0b0c4;
+  --dim: #5e5e78;
+  --border: rgba(255,255,255,0.05);
+  --border2: rgba(220,38,38,0.12);
+  --r: 10px;
+  --rs: 6px;
+  --ff: 'Outfit', system-ui, sans-serif;
+  --fm: 'JetBrains Mono', monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px;scroll-behavior:smooth}
+body{font-family:var(--ff);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background:linear-gradient(rgba(220,38,38,0.008) 1px,transparent 1px),linear-gradient(90deg,rgba(220,38,38,0.008) 1px,transparent 1px);background-size:32px 32px;pointer-events:none;z-index:0}
+
+/* ---- HEADER ---- */
+.hdr{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(6,6,9,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border2);gap:12px;flex-wrap:wrap}
+.hdr-left{display:flex;align-items:center;gap:10px}
+.hdr-icon{width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,var(--red),var(--red3));display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 16px var(--red-glow)}
+.hdr-title{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em;line-height:1.2}
+.hdr-ver{color:var(--red2);font-family:var(--fm);font-size:0.72rem}
+.hdr-badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.55rem;font-weight:700;letter-spacing:0.12em;color:var(--red2);background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.15)}
+.hdr-stats{display:flex;gap:14px;flex-wrap:wrap}
+.hdr-stat{text-align:right}
+.hs-val{display:block;font-family:var(--fm);font-size:0.8rem;font-weight:600;color:var(--red2)}
+.hs-lbl{font-size:0.55rem;color:var(--dim);letter-spacing:0.05em;text-transform:uppercase}
+
+/* ---- MAIN GRID ---- */
+.main-grid{position:relative;z-index:1;max-width:1520px;margin:8px auto;padding:0 10px 10px;display:grid;grid-template-columns:380px 1fr;gap:10px}
+
+/* ---- CARDS ---- */
+.card{background:var(--s1);border-radius:var(--r);padding:10px;border:1px solid var(--border)}
+
+/* ---- UPLOAD ---- */
+.upload-zone{border:1.5px dashed rgba(255,255,255,0.1);border-radius:var(--r);padding:16px 12px;text-align:center;cursor:pointer;background:var(--s2);transition:all 0.2s}
+.upload-zone:hover,.upload-zone.dragover{border-color:var(--red);background:rgba(220,38,38,0.03)}
+.upload-svg{color:var(--dim);margin-bottom:6px;transition:color 0.2s}
+.upload-zone:hover .upload-svg{color:var(--red)}
+.upload-title{font-weight:600;font-size:0.85rem;margin-bottom:3px}
+.upload-sub{font-size:0.65rem;color:var(--dim);margin-bottom:8px}
+.upload-row{display:flex;align-items:center;gap:6px;margin-top:7px}
+.file-info{font-family:var(--fm);font-size:0.65rem;color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- BUTTONS ---- */
+.btn{display:inline-flex;align-items:center;gap:5px;border:none;border-radius:var(--rs);padding:6px 12px;font-family:var(--ff);font-size:0.72rem;font-weight:600;cursor:pointer;transition:all 0.12s;white-space:nowrap}
+.btn:disabled{opacity:0.3;cursor:not-allowed}
+.btn-outline{background:transparent;border:1px solid rgba(255,255,255,0.12);color:var(--text2)}
+.btn-outline:hover:not(:disabled){border-color:var(--red);color:var(--text)}
+.btn-mic{background:rgba(34,197,94,0.08);color:var(--green);border:1px solid rgba(34,197,94,0.15)}
+.btn-mic.recording{background:rgba(220,38,38,0.12);color:var(--red);border-color:var(--red);animation:pulse-r 1.2s infinite}
+@keyframes pulse-r{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.3)}50%{box-shadow:0 0 0 5px transparent}}
+.btn-primary{background:linear-gradient(135deg,var(--red),var(--red3));color:#fff;font-weight:700;box-shadow:0 2px 10px var(--red-glow)}
+.btn-primary:hover:not(:disabled){box-shadow:0 4px 18px rgba(220,38,38,0.4);transform:translateY(-1px)}
+.btn-reprocess{background:rgba(220,38,38,0.08);color:var(--red2);border:1px solid rgba(220,38,38,0.2)}
+.btn-danger{background:rgba(220,38,38,0.12);color:var(--red);border:1px solid rgba(220,38,38,0.25)}
+.btn-save,.btn-save-proc{background:var(--s3);color:var(--text2);border:1px solid var(--border)}
+.btn-save:hover:not(:disabled){border-color:var(--text2)}
+.btn-save-proc{color:var(--cyan);border-color:rgba(34,211,238,0.15)}
+.btn-save-proc:hover:not(:disabled){border-color:var(--cyan)}
+.btn-preset{padding:3px 9px;font-size:0.62rem;background:var(--s3);color:var(--dim);border:1px solid var(--border)}
+.btn-preset:hover{border-color:var(--red);color:var(--text)}
+.btn-preset.active{border-color:var(--red);color:var(--red);background:rgba(220,38,38,0.06)}
+.btn-tp{padding:5px 8px;background:var(--s3);color:var(--text2);border:1px solid var(--border)}
+.btn-tp:hover:not(:disabled){background:var(--s4);border-color:rgba(255,255,255,0.12)}
+.btn-ab{background:rgba(168,85,247,0.08);color:var(--purple);border:1px solid rgba(168,85,247,0.15);font-family:var(--fm);font-weight:700;font-size:0.68rem}
+.btn-ab.active{background:rgba(168,85,247,0.2)}
+.btn-xs{padding:2px 7px;font-size:0.58rem;background:var(--s3);color:var(--dim);border:1px solid var(--border);border-radius:4px}
+
+/* ---- TABS ---- */
+.tabs{display:flex;gap:3px;margin-bottom:8px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tab{flex:0 0 auto;padding:5px 10px;border:none;border-radius:var(--rs);background:var(--s2);color:var(--dim);font-family:var(--ff);font-size:0.65rem;font-weight:600;cursor:pointer;transition:all 0.12s;white-space:nowrap}
+.tab:hover{color:var(--text2);background:var(--s3)}
+.tab.active{background:var(--red);color:#fff}
+
+/* ---- PANELS ---- */
+.panels{background:var(--s2);border:1px solid var(--border);border-radius:var(--rs);padding:8px 10px 4px;margin-bottom:8px;min-height:120px;max-height:300px;overflow-y:auto}
+.panel{display:none}
+.panel.active{display:block}
+
+/* ---- SLIDERS ---- */
+.sr{display:grid;grid-template-columns:1fr;gap:0;margin-bottom:2px}
+.sr-row{display:grid;grid-template-columns:130px 1fr 48px;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.02);position:relative}
+.sr-row:last-child{border-bottom:none}
+.sr-label{font-size:0.68rem;color:var(--text2);cursor:help;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+.sr-label::after{content:'ⓘ';margin-left:4px;font-size:0.55rem;color:var(--dim);vertical-align:super}
+.sr-val{font-family:var(--fm);font-size:0.65rem;color:var(--red2);text-align:right}
+input[type="range"]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;background:var(--s4);outline:none}
+input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--red);cursor:pointer;box-shadow:0 0 6px var(--red-glow);transition:transform 0.1s}
+input[type="range"]::-webkit-slider-thumb:hover{transform:scale(1.3);box-shadow:0 0 10px rgba(220,38,38,0.5)}
+input[type="range"]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--red);border:none;cursor:pointer}
+input[type="range"].realtime{background:linear-gradient(90deg,rgba(220,38,38,0.15),var(--s4))}
+input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-shadow:0 0 6px rgba(34,211,238,0.4)}
+.rt-badge{display:inline-block;font-size:0.45rem;padding:0 3px;border-radius:2px;background:rgba(34,211,238,0.1);color:var(--cyan);font-weight:700;vertical-align:middle;margin-left:3px;letter-spacing:0.05em}
+
+/* ---- PRESETS ---- */
+.presets-row{display:flex;align-items:center;gap:4px;margin-bottom:8px;flex-wrap:wrap}
+.presets-label{font-size:0.58rem;color:var(--dim);font-weight:700;letter-spacing:0.08em;text-transform:uppercase}
+
+/* ---- ACTIONS ---- */
+.actions-row{display:flex;gap:6px;margin-bottom:8px}
+
+/* ---- PIPELINE ---- */
+.pipeline-box{background:var(--s2);border:1px solid var(--border);border-radius:var(--rs);padding:6px 8px;margin-bottom:8px}
+.pipe-header{display:flex;justify-content:space-between;font-size:0.65rem;color:var(--dim);margin-bottom:4px}
+.pipe-stage{font-family:var(--fm);color:var(--red2)}
+.pipe-bar{width:100%;height:4px;border-radius:2px;background:var(--s4);overflow:hidden}
+.pipe-fill{width:0;height:100%;border-radius:2px;background:linear-gradient(90deg,var(--red3),var(--red),var(--red2));transition:width 0.12s;box-shadow:0 0 6px var(--red-glow)}
+.pipe-detail{font-family:var(--fm);font-size:0.58rem;color:var(--dim);margin-top:3px;min-height:12px}
+
+/* ---- SAVE ROW ---- */
+.save-row{display:flex;gap:6px}
+
+/* ---- VIDEO ---- */
+.video-card{margin-bottom:8px}
+.video-el{width:100%;max-height:280px;border-radius:var(--rs);background:#000;display:block}
+
+/* ---- TRANSPORT ---- */
+.transport-card{margin-bottom:8px;padding:8px 10px}
+.transport-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tp-time{font-family:var(--fm);font-size:0.68rem;color:var(--text2);white-space:nowrap}
+.tp-seek{flex:1;min-width:80px}
+.tp-speed{display:flex;align-items:center;gap:4px}
+.tp-speed label{font-size:0.6rem;color:var(--dim)}
+.tp-speed select{background:var(--s3);color:var(--text2);border:1px solid var(--border);border-radius:4px;font-family:var(--fm);font-size:0.65rem;padding:2px 4px}
+.tp-ab{display:flex;align-items:center;gap:4px}
+.tp-ab-label{font-family:var(--fm);font-size:0.62rem;color:var(--yellow)}
+
+/* ---- VISUALIZATIONS ---- */
+.viz-card{margin-bottom:8px}
+.viz-hdr{display:flex;justify-content:space-between;align-items:center;font-size:0.68rem;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px}
+.viz-actions{display:flex;align-items:center;gap:6px}
+.viz-hint{font-size:0.55rem;color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0}
+.viz-canvas{width:100%;display:block;border-radius:4px;background:#030306}
+.spectro2d{height:110px}
+.spectro-scale{display:flex;justify-content:space-between;font-family:var(--fm);font-size:0.5rem;color:var(--dim);padding:2px 0}
+.spectro3d-container{width:100%;height:200px;border-radius:4px;background:#030306;overflow:hidden;cursor:grab;position:relative}
+.spectro3d-container canvas{width:100%!important;height:100%!important;display:block}
+.spectro-legend{display:flex;gap:10px;margin-top:4px;flex-wrap:wrap}
+.sl-item{display:flex;align-items:center;gap:3px;font-size:0.55rem;color:var(--dim)}
+.sl-dot{width:8px;height:8px;border-radius:2px;display:inline-block}
+.wave-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:0}
+.wave-cv{height:70px}
+.freq-cv{height:80px}
+
+/* ---- STATS ---- */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.stat-box{background:var(--s2);border:1px solid var(--border);border-radius:var(--rs);padding:5px 7px;text-align:center}
+.st-lbl{display:block;font-size:0.52rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:1px}
+.st-val{font-family:var(--fm);font-size:0.72rem;font-weight:600}
+
+/* ---- FOOTER ---- */
+.ftr{max-width:1520px;margin:0 auto;padding:0 10px 8px;display:flex;justify-content:space-between;font-size:0.58rem;color:var(--dim);opacity:0.6}
+
+/* ---- TOOLTIP ---- */
+.slider-tooltip{position:fixed;z-index:9999;background:var(--s4);color:var(--text);border:1px solid var(--border2);border-radius:var(--rs);padding:6px 10px;font-size:0.65rem;max-width:240px;line-height:1.4;pointer-events:none;opacity:0;transition:opacity 0.15s;box-shadow:0 8px 24px rgba(0,0,0,0.5)}
+.slider-tooltip.visible{opacity:1}
+
+/* ---- RESPONSIVE ---- */
+@media(max-width:960px){
+  .main-grid{grid-template-columns:1fr}
+  .col-left{order:2}.col-right{order:1}
+  .hdr{flex-direction:column;text-align:center}
+  .hdr-stats{justify-content:center}
+  .wave-row{grid-template-columns:1fr}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .ftr{flex-direction:column;text-align:center;gap:2px}
+}
+
+/* ---- SCROLLBAR ---- */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--s4);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--dim)}
+
+/* ---- ANIMATIONS ---- */
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.card,.viz-card{animation:fadeUp 0.3s ease-out both}
+.col-right .card:nth-child(2){animation-delay:0.05s}
+.col-right .card:nth-child(3){animation-delay:0.1s}
+.col-right .card:nth-child(4){animation-delay:0.15s}
+
+/* ---- STATIC FULL-FILE SPECTROGRAM ---- */
+.fs-mode-badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.55rem;font-weight:700;letter-spacing:0.1em;color:var(--cyan);background:rgba(34,211,238,0.07);border:1px solid rgba(34,211,238,0.18);margin-left:7px;vertical-align:middle;transition:all 0.2s}
+.fs-mode-badge.proc{color:var(--red2);background:rgba(220,38,38,0.07);border-color:rgba(220,38,38,0.18)}
+.fs-progress-lbl{font-family:var(--fm);font-size:0.6rem;color:var(--dim);min-width:60px}
+.fs-cmap-sel{background:var(--s3);color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:2px 7px 2px 5px;font-size:0.65rem;font-family:var(--ff);cursor:pointer;outline:none}
+.fs-cmap-sel:hover{border-color:rgba(255,255,255,0.15)}
+.fs-wrap{display:flex;gap:0;height:170px;position:relative}
+.fs-yaxis-cv{width:38px;height:100%;flex-shrink:0;display:block}
+.fs-main{flex:1;position:relative;overflow:hidden;cursor:crosshair}
+.fs-bg-cv,.fs-overlay-cv{position:absolute;top:0;left:0;width:100%;height:100%;display:block}
+.fs-overlay-cv{pointer-events:none}
+.fs-xaxis-cv{width:100%;height:20px;display:block}
+
+/* ---- ACCESSIBILITY ---- */
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 4px;
+}
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+input[type="range"]:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+</style>
+</head>
+<body>
+  <!-- HEADER -->
+  <header class="hdr">
+    <div class="hdr-left">
+      <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
+      <div>
+        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v14.0</span></h1>
+        <span class="hdr-badge">ENGINEER MODE</span>
+      </div>
+    </div>
+    <div class="hdr-stats">
+      <div class="hdr-stat"><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR Gain</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hCh">--</span><span class="hs-lbl">Channels</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hRMS">--</span><span class="hs-lbl">RMS</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hPeak">--</span><span class="hs-lbl">Peak</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hStatus">IDLE</span><span class="hs-lbl">Pipeline</span></div>
+    </div>
+  </header>
+
+  <main class="main-grid">
+    <!-- LEFT: Controls -->
+    <div class="col-left">
+      <!-- Upload -->
+      <div class="card upload-card">
+        <div id="uploadZone" class="upload-zone">
+          <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p class="upload-title">Drop Audio or Video</p>
+          <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · MP4 · MOV · WEBM — No limit</p>
+          <input type="file" id="fileInput" accept="audio/*,video/*,audio/mp4,audio/x-m4a,audio/m4a" hidden />
+          <button id="fileBtn" class="btn btn-outline">Browse Files</button>
+        </div>
+        <div class="upload-row">
+          <button id="micBtn" class="btn btn-mic">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+            <span id="micLabel">Record</span>
+          </button>
+          <span id="fileInfo" class="file-info">No file loaded</span>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs" id="tabBar">
+        <button class="tab active" data-tab="gate">Gate</button>
+        <button class="tab" data-tab="nr">Noise</button>
+        <button class="tab" data-tab="eq">EQ</button>
+        <button class="tab" data-tab="dyn">Dynamics</button>
+        <button class="tab" data-tab="spec">Spectral</button>
+        <button class="tab" data-tab="adv">Advanced</button>
+        <button class="tab" data-tab="sep">Separation</button>
+        <button class="tab" data-tab="out">Output</button>
+      </div>
+
+      <!-- Slider Panels (populated by JS) -->
+      <div class="panels">
+        <div class="panel active" id="tab-gate"></div>
+        <div class="panel" id="tab-nr"></div>
+        <div class="panel" id="tab-eq"></div>
+        <div class="panel" id="tab-dyn"></div>
+        <div class="panel" id="tab-spec"></div>
+        <div class="panel" id="tab-adv"></div>
+        <div class="panel" id="tab-sep"></div>
+        <div class="panel" id="tab-out"></div>
+      </div>
+
+      <!-- Presets -->
+      <div class="presets-row">
+        <span class="presets-label">PRESETS</span>
+        <button class="btn btn-preset" data-preset="podcast">Podcast</button>
+        <button class="btn btn-preset" data-preset="film">Film</button>
+        <button class="btn btn-preset" data-preset="interview">Interview</button>
+        <button class="btn btn-preset" data-preset="forensic">Forensic</button>
+        <button class="btn btn-preset" data-preset="music">Music</button>
+        <button class="btn btn-preset" data-preset="broadcast">Broadcast</button>
+        <button class="btn btn-preset" data-preset="restoration">Restoration</button>
+      </div>
+
+      <!-- Actions -->
+      <div class="actions-row">
+        <button id="processBtn" class="btn btn-primary" disabled>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
+          Process (30-Stage)
+        </button>
+        <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
+        <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
+      </div>
+
+      <!-- Pipeline -->
+      <div class="pipeline-box">
+        <div class="pipe-header"><span>Pipeline</span><span id="pipeStage" class="pipe-stage">Idle</span></div>
+        <div class="pipe-bar"><div id="pipeFill" class="pipe-fill"></div></div>
+        <div id="pipeDetail" class="pipe-detail"></div>
+      </div>
+
+      <!-- Save -->
+      <div class="save-row">
+        <button id="saveOrigBtn" class="btn btn-save" disabled>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Save Original WAV
+        </button>
+        <button id="saveProcBtn" class="btn btn-save-proc" disabled>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Save Processed WAV
+        </button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Visualizations -->
+    <div class="col-right">
+      <!-- Video Player -->
+      <div class="card video-card" id="videoCard" style="display:none">
+        <div class="viz-hdr"><span>Video Preview (Processed Audio Synced)</span></div>
+        <video id="videoPlayer" class="video-el" playsinline></video>
+      </div>
+
+      <!-- Transport -->
+      <div class="card transport-card">
+        <div class="transport-row">
+          <button id="tpPlay" class="btn btn-tp" disabled title="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg></button>
+          <button id="tpPause" class="btn btn-tp" disabled title="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <button id="tpStop" class="btn btn-tp" disabled title="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
+          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
+          <div class="tp-time"><span id="tpCur">0:00</span> / <span id="tpTotal">0:00</span></div>
+          <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled />
+          <div class="tp-speed">
+            <label>Speed</label>
+            <select id="tpSpeed" disabled>
+              <option value="0.25">0.25x</option>
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+            </select>
+          </div>
+          <div class="tp-ab">
+            <button id="tpAB" class="btn btn-ab" disabled>A/B</button>
+            <span id="tpABLabel" class="tp-ab-label">Original</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Static Full-File Spectrogram -->
+      <div class="card viz-card" id="fileSpectroCard" style="display:none">
+        <div class="viz-hdr">
+          <span>Full-File Spectrogram <span id="fsModeLbl" class="fs-mode-badge">ORIGINAL</span></span>
+          <div class="viz-actions">
+            <span id="fsProgress" class="fs-progress-lbl"></span>
+            <button id="fsBtnAB" class="btn btn-xs" disabled>Show Processed</button>
+            <select id="fsColormap" class="fs-cmap-sel">
+              <option value="plasma">Plasma</option>
+              <option value="ocean">Ocean</option>
+              <option value="voice">Voice ID</option>
+            </select>
+            <span class="viz-hint">Click to seek · Log freq scale · 20 Hz – 22 kHz</span>
+          </div>
+        </div>
+        <div class="fs-wrap">
+          <canvas id="fsYAxis" class="fs-yaxis-cv"></canvas>
+          <div class="fs-main" id="fsMain">
+            <canvas id="fsCanvas" class="fs-bg-cv"></canvas>
+            <canvas id="fsOverlay" class="fs-overlay-cv"></canvas>
+          </div>
+        </div>
+        <canvas id="fsXAxis" class="fs-xaxis-cv"></canvas>
+      </div>
+
+      <!-- 3D Spectrogram -->
+      <div class="card viz-card">
+        <div class="viz-hdr">
+          <span>3D Spectrogram</span>
+          <div class="viz-actions">
+            <button id="spectro3DReset" class="btn btn-xs">Reset View</button>
+            <span class="viz-hint">Click band to mute · Drag to orbit · Scroll to zoom</span>
+          </div>
+        </div>
+        <div id="spectro3DContainer" class="spectro3d-container">
+          <canvas id="spectro3DCanvas"></canvas>
+        </div>
+        <div class="spectro-legend">
+          <span class="sl-item"><span class="sl-dot" style="background:#dc2626"></span>Voice</span>
+          <span class="sl-item"><span class="sl-dot" style="background:#2563eb"></span>Sub/Low</span>
+          <span class="sl-item"><span class="sl-dot" style="background:#16a34a"></span>Mid</span>
+          <span class="sl-item"><span class="sl-dot" style="background:#eab308"></span>High</span>
+          <span class="sl-item"><span class="sl-dot" style="background:#9333ea"></span>Transients</span>
+        </div>
+      </div>
+
+      <!-- 2D Spectrogram -->
+      <div class="card viz-card">
+        <div class="viz-hdr"><span>Real-Time Spectrogram</span></div>
+        <canvas id="spectro2DCanvas" class="viz-canvas spectro2d"></canvas>
+        <div class="spectro-scale"><span>20</span><span>200</span><span>1k</span><span>4k</span><span>8k</span><span>16k</span><span>22k Hz</span></div>
+      </div>
+
+      <!-- Waveforms -->
+      <div class="wave-row">
+        <div class="card viz-card wave-card">
+          <div class="viz-hdr"><span>Original Waveform</span></div>
+          <canvas id="waveOrigCanvas" class="viz-canvas wave-cv"></canvas>
+        </div>
+        <div class="card viz-card wave-card">
+          <div class="viz-hdr"><span>Processed Waveform</span></div>
+          <canvas id="waveProcCanvas" class="viz-canvas wave-cv"></canvas>
+        </div>
+      </div>
+
+      <!-- Frequency Analyzer -->
+      <div class="card viz-card">
+        <div class="viz-hdr"><span>Frequency Analyzer</span></div>
+        <canvas id="freqCanvas" class="viz-canvas freq-cv"></canvas>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-row">
+        <div class="stat-box"><span class="st-lbl">Bit Depth</span><span class="st-val">32-bit float</span></div>
+        <div class="stat-box"><span class="st-lbl">Latency</span><span class="st-val" id="stLatency">--</span></div>
+        <div class="stat-box"><span class="st-lbl">Process Time</span><span class="st-val" id="stProcTime">--</span></div>
+        <div class="stat-box"><span class="st-lbl">Voices</span><span class="st-val" id="stVoices">--</span></div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="ftr">
+    <span>VoiceIsolate Pro v14.0 · Threads from Space · Hybrid ML+DSP · 30-Stage Hexa-Pass</span>
+    <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
+  </footer>
+
+  <div id="tooltip" class="slider-tooltip"></div>
+
+
+  <!-- Vercel Speed Insights -->
+  <script>
+    window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
+<script>
+/* ============================================
+   VoiceIsolate Pro v14.0 – Engineer Mode
    Threads from Space · Hybrid ML+DSP
    52 Sliders · Real-Time Chain · 3D Spectrogram
    ============================================ */
@@ -298,6 +782,11 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING (FIXED) ========
   async handleFile(file) {
     try {
+      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
+
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
+
       this.ensureCtx();
       this.stop(); // stop any current playback
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
@@ -752,6 +1241,7 @@ class VoiceIsolatePro {
     const len = buf.length;
     const sr = buf.sampleRate;
     const out = c.createBuffer(nCh, len, sr);
+    const flLin = Math.pow(10, floorDb / 20);
 
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
@@ -763,8 +1253,6 @@ class VoiceIsolatePro {
         nRms += inp[i] * inp[i];
       }
       nRms = Math.sqrt(nRms / nLen);
-
-      const flLin = Math.pow(10, floorDb / 20);
       const th = Math.max(nRms, flLin) * (1 + amt * 4);
       const bk = 256;
       let pG = 1;
@@ -903,15 +1391,6 @@ class VoiceIsolatePro {
 
     // Write audio data
     let off = 44;
-
-    const chans = new Array(nCh);
-    for (let ch = 0; ch < nCh; ch++) {
-      chans[ch] = buf.getChannelData(ch);
-    }
-
-    for (let i = 0; i < buf.length; i++) {
-      for (let ch = 0; ch < nCh; ch++) {
-        let s = chans[ch][i];
     for (let i = 0; i < buf.length; i++) {
       for (let ch = 0; ch < nCh; ch++) {
         let s = buf.getChannelData(ch)[i];
@@ -1041,12 +1520,6 @@ class VoiceIsolatePro {
     for(let z=gD-1;z>0;z--)for(let x=0;x<gW;x++){const c=z*gW+x;const p=(z-1)*gW+x;pos.setY(c,pos.getY(p));cols[c*3]=cols[p*3];cols[c*3+1]=cols[p*3+1];cols[c*3+2]=cols[p*3+2];}
     const step=Math.floor(freq.length/gW);
     for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pos.setY(x,v*15);const f=x/gW;
-    cols.copyWithin(gW*3, 0, (gD-1)*gW*3);
-    const pArr=pos.array;
-    const end=gD*gW*3;const offset=gW*3;
-    for(let i=end-2;i>=offset;i-=3)pArr[i]=pArr[i-offset];
-    const step=Math.floor(freq.length/gW);
-    for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pArr[x*3+1]=v*15;const f=x/gW;
       if(f<0.05){cols[x*3]=v*0.15;cols[x*3+1]=v*0.3;cols[x*3+2]=0.3+v*0.7;}
       else if(f<0.3){cols[x*3]=0.3+v*0.7;cols[x*3+1]=v*0.1;cols[x*3+2]=v*0.05;}
       else if(f<0.6){cols[x*3]=v*0.1;cols[x*3+1]=0.2+v*0.6;cols[x*3+2]=v*0.1;}
@@ -1147,6 +1620,7 @@ class VoiceIsolatePro {
     const halfFFT = fftSize >> 1;
     const hopSize = Math.max(1, Math.ceil(data.length / W));
     const cmap = this.dom.fsColormap.value;
+    const invLN10_9 = 1 / (9 * Math.LN10);
 
     // Pre-compute Hann window
     const win = new Float32Array(fftSize);
@@ -1183,10 +1657,9 @@ class VoiceIsolatePro {
       // Draw this column
       for (let row = 0; row < H; row++) {
         const bin = rowBin[row];
-        const mag = Math.sqrt(re[bin] * re[bin] + im[bin] * im[bin]);
+        const magSq = re[bin] * re[bin] + im[bin] * im[bin];
         // dB normalized: -90dB → 0dB → 1.0
-        const db = mag > 0 ? 20 * Math.log10(mag) : -90;
-        const v = Math.max(0, Math.min(1, (db + 90) / 90));
+        const v = magSq > 0 ? Math.max(0, Math.min(1, Math.log(magSq) * invLN10_9 + 1)) : 0;
         const [r, g, b] = this.fsColor(v, cmap);
         const idx = (row * W + col) * 4;
         pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
@@ -1308,8 +1781,8 @@ class VoiceIsolatePro {
 
   // ---- UTILITY ----
   setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
-  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
-  calcPeak(d){let p=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>p)p=a;}return p>0?20*Math.log10(p):-96;}
+  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
+  calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
 }
 
@@ -1318,3 +1791,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
 }
+
+</script>
+</body>
+</html>

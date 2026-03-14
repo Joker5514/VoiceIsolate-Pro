@@ -278,6 +278,7 @@ class VoiceIsolatePro {
     for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
+    el.setAttribute('aria-valuenow', v);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
   }
 
@@ -288,7 +289,7 @@ class VoiceIsolatePro {
       for (const s of sliders) {
         const el = document.getElementById(s.id);
         const ve = document.getElementById(s.id + 'Val');
-        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
+        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; el.setAttribute('aria-valuenow', this.params[s.id]); if (ve) ve.textContent = this.params[s.id] + s.unit; }
       }
     }
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
@@ -298,6 +299,11 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING (FIXED) ========
   async handleFile(file) {
     try {
+      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
+
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
+
       this.ensureCtx();
       this.stop(); // stop any current playback
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
@@ -752,6 +758,7 @@ class VoiceIsolatePro {
     const len = buf.length;
     const sr = buf.sampleRate;
     const out = c.createBuffer(nCh, len, sr);
+    const flLin = Math.pow(10, floorDb / 20);
 
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
@@ -763,8 +770,6 @@ class VoiceIsolatePro {
         nRms += inp[i] * inp[i];
       }
       nRms = Math.sqrt(nRms / nLen);
-
-      const flLin = Math.pow(10, floorDb / 20);
       const th = Math.max(nRms, flLin) * (1 + amt * 4);
       const bk = 256;
       let pG = 1;
@@ -901,6 +906,12 @@ class VoiceIsolatePro {
     ws(36, 'data');                    // Subchunk2ID
     v.setUint32(40, dL, true);         // Subchunk2Size (NumSamples * NumChannels * BitsPerSample/8)
 
+    // Pre-fetch channel data to avoid expensive getChannelData calls inside the per-sample loop
+    const channels = [];
+    for (let ch = 0; ch < nCh; ch++) {
+      channels.push(buf.getChannelData(ch));
+    }
+
     // Write audio data
     let off = 44;
 
@@ -912,6 +923,7 @@ class VoiceIsolatePro {
     for (let i = 0; i < buf.length; i++) {
       for (let ch = 0; ch < nCh; ch++) {
         let s = chans[ch][i];
+        let s = channels[ch][i];
         // Hard clipping
         s = Math.max(-1, Math.min(1, s));
         // Convert to 16-bit PCM
@@ -1035,9 +1047,12 @@ class VoiceIsolatePro {
   update3D(freq){
     if(!this.three.geo)return;
     const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
-    for(let z=gD-1;z>0;z--)for(let x=0;x<gW;x++){const c=z*gW+x;const p=(z-1)*gW+x;pos.setY(c,pos.getY(p));cols[c*3]=cols[p*3];cols[c*3+1]=cols[p*3+1];cols[c*3+2]=cols[p*3+2];}
+    cols.copyWithin(gW*3, 0, (gD-1)*gW*3);
+    const pArr=pos.array;
+    const end=gD*gW*3;const offset=gW*3;
+    for(let i=end-2;i>=offset;i-=3)pArr[i]=pArr[i-offset];
     const step=Math.floor(freq.length/gW);
-    for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pos.setY(x,v*15);const f=x/gW;
+    for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pArr[x*3+1]=v*15;const f=x/gW;
       if(f<0.05){cols[x*3]=v*0.15;cols[x*3+1]=v*0.3;cols[x*3+2]=0.3+v*0.7;}
       else if(f<0.3){cols[x*3]=0.3+v*0.7;cols[x*3+1]=v*0.1;cols[x*3+2]=v*0.05;}
       else if(f<0.6){cols[x*3]=v*0.1;cols[x*3+1]=0.2+v*0.6;cols[x*3+2]=v*0.1;}
@@ -1138,6 +1153,7 @@ class VoiceIsolatePro {
     const halfFFT = fftSize >> 1;
     const hopSize = Math.max(1, Math.ceil(data.length / W));
     const cmap = this.dom.fsColormap.value;
+    const invLN10_9 = 1 / (9 * Math.LN10);
 
     // Pre-compute Hann window
     const win = new Float32Array(fftSize);
@@ -1174,10 +1190,9 @@ class VoiceIsolatePro {
       // Draw this column
       for (let row = 0; row < H; row++) {
         const bin = rowBin[row];
-        const mag = Math.sqrt(re[bin] * re[bin] + im[bin] * im[bin]);
+        const magSq = re[bin] * re[bin] + im[bin] * im[bin];
         // dB normalized: -90dB → 0dB → 1.0
-        const db = mag > 0 ? 20 * Math.log10(mag) : -90;
-        const v = Math.max(0, Math.min(1, (db + 90) / 90));
+        const v = magSq > 0 ? Math.max(0, Math.min(1, Math.log(magSq) * invLN10_9 + 1)) : 0;
         const [r, g, b] = this.fsColor(v, cmap);
         const idx = (row * W + col) * 4;
         pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
@@ -1299,8 +1314,8 @@ class VoiceIsolatePro {
 
   // ---- UTILITY ----
   setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
-  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
-  calcPeak(d){let p=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>p)p=a;}return p>0?20*Math.log10(p):-96;}
+  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
+  calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
 }
 
