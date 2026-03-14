@@ -165,6 +165,53 @@ describe('Utility Functions from app.js', () => {
   });
 
   describe('estVoices', () => {
+    // Helper to create a mock AudioBuffer-like object
+    function createMockBuffer(sr, data) {
+      return {
+        sampleRate: sr,
+        getChannelData: () => data
+      };
+    }
+
+    test('all zeros (silence) -> 0-1', () => {
+      const sr = 44100;
+      const data = new Float32Array(sr * 2); // 2 seconds of silence
+      const buf = createMockBuffer(sr, data);
+      expect(estVoices(buf)).toBe('0-1');
+    });
+
+    test('short burst of noise (< 3 active chunks) -> 0-1', () => {
+      const sr = 44100;
+      const data = new Float32Array(sr * 2); // 2 seconds total, 4 chunks of 0.5s
+      // Make 2 chunks active
+      for (let i = 0; i < sr * 1; i++) {
+        data[i] = 0.5; // High RMS
+      }
+      const buf = createMockBuffer(sr, data);
+      expect(estVoices(buf)).toBe('0-1');
+    });
+
+    test('sustained noise (3 <= active chunks < 10) -> 1', () => {
+      const sr = 44100;
+      const data = new Float32Array(sr * 5); // 5 seconds total, 10 chunks
+      // Make 5 chunks active (2.5 seconds)
+      for (let i = 0; i < sr * 2.5; i++) {
+        data[i] = 0.5; // High RMS
+      }
+      const buf = createMockBuffer(sr, data);
+      expect(estVoices(buf)).toBe('1');
+    });
+
+    test('continuous noise (>= 10 active chunks) -> 1-2+', () => {
+      const sr = 44100;
+      const data = new Float32Array(sr * 6); // 6 seconds total, 12 chunks
+      // Make 11 chunks active (5.5 seconds)
+      for (let i = 0; i < sr * 5.5; i++) {
+        data[i] = 0.5; // High RMS
+      }
+      const buf = createMockBuffer(sr, data);
+      expect(estVoices(buf)).toBe('1-2+');
+    });
     // Helper to create a mock AudioBuffer
     function makeMockBuffer(sr, numActiveBlocks, numSilentBlocks) {
       const bs = Math.floor(sr * 0.5);
