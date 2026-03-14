@@ -771,12 +771,16 @@ class VoiceIsolatePro {
       const inp = buf.getChannelData(ch);
       const o = out.getChannelData(ch);
       const nLen = Math.min(Math.floor(sr * 0.15), len);
+      let nRms = 0;
+
 
       let nRms = 0;
       for (let i = 0; i < nLen; i++) {
         nRms += inp[i] * inp[i];
       }
       nRms = Math.sqrt(nRms / nLen);
+
+      const flLin = Math.pow(10, floorDb / 20);
       const th = Math.max(nRms, flLin) * (1 + amt * 4);
       const bk = 256;
       let pG = 1;
