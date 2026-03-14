@@ -1,5 +1,30 @@
 /**
  * VoiceIsolate Pro — Utility Unit Tests
+ * Tests calcRMS, calcPeak, and fmtDur.
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// Read the app.js code as a string to extract the real implementation.
+// This guarantees we are testing the actual code without dealing with
+// Jest ESM/CJS module loading conflicts for a browser script.
+const appJsPath = path.resolve(__dirname, '../app.js');
+const appJsCode = fs.readFileSync(appJsPath, 'utf8');
+
+// Use new Function to create the class from the source string.
+// We pass in an empty module object to simulate the environment.
+const extractVoiceIsolatePro = new Function(`
+  const module = { exports: {} };
+  const window = {};
+  const document = { addEventListener: () => {} };
+  ${appJsCode}
+  return module.exports;
+`);
+
+const VoiceIsolatePro = extractVoiceIsolatePro();
+
+describe('Utility Functions from app.js', () => {
  * Tests calcRMS, calcPeak, fmtDur, and estVoices.
  * Tests calcRMS, calcPeak, fmtDur, and encWav.
  * 
@@ -96,6 +121,11 @@ describe('Utility Functions from app.js', () => {
   }
 
   describe('calcRMS', () => {
+    let calcRMS;
+    beforeAll(() => {
+      calcRMS = VoiceIsolatePro.prototype.calcRMS;
+    });
+
     test('all 1s should be 0 dB', () => {
       const d = new Float32Array([1, 1, 1, 1]);
       expect(calcRMS(d)).toBeCloseTo(0, 5);
@@ -119,6 +149,11 @@ describe('Utility Functions from app.js', () => {
   });
 
   describe('calcPeak', () => {
+    let calcPeak;
+    beforeAll(() => {
+      calcPeak = VoiceIsolatePro.prototype.calcPeak;
+    });
+
     test('all 0s should be -96 dB', () => {
       const d = new Float32Array([0, 0, 0, 0]);
       expect(calcPeak(d)).toBe(-96);
@@ -146,6 +181,11 @@ describe('Utility Functions from app.js', () => {
   });
 
   describe('fmtDur', () => {
+    let fmtDur;
+    beforeAll(() => {
+      fmtDur = VoiceIsolatePro.prototype.fmtDur;
+    });
+
     test('0 seconds -> 0:00', () => {
       expect(fmtDur(0)).toBe('0:00');
     });
