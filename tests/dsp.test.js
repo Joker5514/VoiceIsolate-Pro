@@ -173,16 +173,27 @@ describe('Wiener gain formula', () => {
 });
 
 describe('TPDF dither', () => {
+  // Use crypto.getRandomValues chunked buffer implementation for tests as well
+  const crypto = require('crypto');
+  function getTpdf() {
+    const invMax = 1 / 4294967296;
+    const buf = new Uint32Array(2);
+    crypto.getRandomValues(buf);
+    return (buf[0] * invMax) - (buf[1] * invMax);
+  }
+
   test('TPDF distribution mean ≈ 0', () => {
     const N = 10000;
     let sum = 0;
-    for (let i = 0; i < N; i++) sum += Math.random() - Math.random();
+    for (let i = 0; i < N; i++) {
+      sum += getTpdf();
+    }
     expect(Math.abs(sum / N)).toBeLessThan(0.05);
   });
 
   test('TPDF distribution stays within [-1, 1]', () => {
     for (let i = 0; i < 1000; i++) {
-      const v = Math.random() - Math.random();
+      const v = getTpdf();
       expect(v).toBeGreaterThanOrEqual(-1);
       expect(v).toBeLessThanOrEqual(1);
     }
