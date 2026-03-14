@@ -1,64 +1,31 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "",
-  "outputDirectory": "public",
-  "framework": null,
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "Referrer-Policy",
-          "value": "strict-origin-when-cross-origin"
-        },
-        {
-          "key": "Permissions-Policy",
-          "value": "microphone=(self), camera=()"
-        },
-        {
-          "key": "Cross-Origin-Opener-Policy",
-          "value": "same-origin"
-        },
-        {
-          "key": "Cross-Origin-Embedder-Policy",
-          "value": "require-corp"
-        },
-        {
-          "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' blob:; media-src 'self' blob: data:; img-src 'self' data: blob:; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none';"
-        }
+        { "key": "Cross-Origin-Opener-Policy",   "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy",  "value": "require-corp" },
+        { "key": "Cross-Origin-Resource-Policy",  "value": "same-origin" },
+        { "key": "X-Content-Type-Options",         "value": "nosniff" },
+        { "key": "X-Frame-Options",                "value": "DENY" },
+        { "key": "Referrer-Policy",                "value": "strict-origin-when-cross-origin" }
       ]
     },
     {
-      "source": "/app/(.*)",
+      "source": "/wasm/(.*)",
       "headers": [
-        {
-          "key": "Cross-Origin-Opener-Policy",
-          "value": "same-origin"
-        },
-        {
-          "key": "Cross-Origin-Embedder-Policy",
-          "value": "require-corp"
-        }
+        { "key": "Content-Type", "value": "application/wasm" },
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/models/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400" }
       ]
     }
   ],
   "rewrites": [
-    {
-      "source": "/app",
-      "destination": "/app/index.html"
-    },
-    {
-      "source": "/blueprint",
-      "destination": "/blueprint/index.html"
-    }
+    { "source": "/health", "destination": "/api/health" }
   ]
 }

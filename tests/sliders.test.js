@@ -118,6 +118,72 @@ describe('ONNX / VAD', () => {
   });
 });
 
+describe('ML Worker (Phase 4b)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const mlWorkerPath = path.resolve(__dirname, '..', 'public/app/ml-worker.js');
+  const mlWorkerJs = fs.existsSync(mlWorkerPath) ? fs.readFileSync(mlWorkerPath, 'utf8') : '';
+
+  test('ml-worker.js file exists', () => {
+    expect(fs.existsSync(mlWorkerPath)).toBe(true);
+  });
+
+  test('app.js spawns ML Worker with initMLWorker', () => {
+    expect(appJs).toContain('initMLWorker()');
+  });
+
+  test('app.js creates Worker at correct path', () => {
+    expect(appJs).toContain("new Worker('./ml-worker.js')");
+  });
+
+  test('app.js has _mlCall promise helper', () => {
+    expect(appJs).toContain('_mlCall(payload, transfer');
+  });
+
+  test('app.js has ML message handler', () => {
+    expect(appJs).toContain('.mlWorker.onmessage');
+  });
+
+  test('app.js runSeparation delegates to ML Worker', () => {
+    expect(appJs).toContain('async runSeparation(buf, model');
+  });
+
+  test('ml-worker loads ORT via importScripts', () => {
+    expect(mlWorkerJs).toContain('importScripts');
+  });
+
+  test('ml-worker handles init message', () => {
+    // ml-worker uses if/else if statements for message routing
+    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]init['"]/);
+  });
+
+  test('ml-worker handles process message', () => {
+    // ml-worker uses 'process' message type for audio processing
+    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]process['"]/);
+  });
+
+  test('ml-worker handles reset message', () => {
+    // ml-worker uses 'reset' message type to clear state
+    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]reset['"]/);
+  });
+
+  test('ml-worker handles loadModel message', () => {
+    // ml-worker initializes models via initModels function
+    expect(mlWorkerJs).toContain('initModels');
+  });
+
+  test('ml-worker supports implemented model types', () => {
+    // Current implementation supports: vad, deepfilter, demucs
+    ['vad', 'demucs'].forEach(m => {
+      expect(mlWorkerJs).toContain(`${m}`);
+    });
+  });
+
+  test('ml-worker uses transferable ArrayBuffers for large results', () => {
+    expect(mlWorkerJs).toContain('[output.buffer]');
+  });
+});
+
 describe('Forensic mode', () => {
   test('addAuditEntry method should be defined', () => {
     expect(appJs).toContain('async addAuditEntry(buf, stageName)');

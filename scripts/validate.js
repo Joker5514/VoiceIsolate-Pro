@@ -22,6 +22,7 @@ const required = [
   'public/app/style.css',
   'public/app/app.js',
   'public/app/dsp-worker.js',           // Phase 3: AudioWorklet
+  'public/app/ml-worker.js',            // Phase 4: ML Web Worker
   'public/app/models/README.md',        // Phase 4: ML model docs
   'public/blueprint/index.html',
   'vercel.json',
@@ -73,13 +74,21 @@ check(workerJs.includes("registerProcessor('voice-isolate-processor'"), 'AudioWo
 check(workerJs.includes('process(inputs, outputs)'), 'AudioWorklet process() method present');
 check(appJs.includes("addModule('./dsp-worker.js')"), 'AudioWorklet registered in ensureCtx');
 
-// Phase 4: ONNX Runtime
+// Phase 4: ONNX Runtime + ML Worker
 console.log('\nONNX Runtime (Phase 4):');
 const htmlPath = path.resolve(__dirname, '..', 'public/app/index.html');
 const html = fs.existsSync(htmlPath) ? fs.readFileSync(htmlPath, 'utf8') : '';
+const mlWorkerJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/ml-worker.js'))
+  ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/ml-worker.js'), 'utf8') : '';
 check(html.includes('onnxruntime-web'), 'ONNX Runtime CDN in index.html');
 check(appJs.includes('async loadModels()'), 'loadModels() method present');
 check(appJs.includes('async runVAD(buf)'), 'runVAD() method present');
+check(appJs.includes('initMLWorker()'), 'ML Worker spawned in app.js');
+check(appJs.includes("new Worker('./ml-worker.js')"), 'ML Worker path correct');
+check(mlWorkerJs.includes("type === 'init'") || mlWorkerJs.includes("case 'runVAD':"), 'ML Worker handles init/runVAD');
+check(mlWorkerJs.includes("type === 'process'") || mlWorkerJs.includes("case 'runSeparation':"), 'ML Worker handles process/runSeparation');
+check(mlWorkerJs.includes("type === 'reset'") || mlWorkerJs.includes("case 'runVocoder':"), 'ML Worker handles reset/runVocoder');
+check(mlWorkerJs.includes('importScripts'), 'ML Worker loads ORT via importScripts');
 
 // Phase 5: Forensic
 console.log('\nForensic Mode (Phase 5):');

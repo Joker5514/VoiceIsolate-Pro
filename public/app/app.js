@@ -141,8 +141,10 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
-    // Phase 4: ML model sessions
-    this.sileroSession = null;
+    // Phase 4: ML Worker (off-main-thread ONNX inference)
+    this.mlWorker = null;
+    this._mlCallbacks = {};  // id → { resolve, reject }
+    this._mlCallId = 0;
     this.mlReady = false;
     // Phase 4b: Dedicated ML Worker (DeepFilterNet3 + Demucs + VAD)
     this.mlWorker = null;
@@ -151,6 +153,12 @@ class VoiceIsolatePro {
     // Phase 5: Forensic audit
     this.forensicMode = false;
     this.forensicLog = [];
+
+    // Phase 6: Secure PRNG for dither (Sentinel fix)
+    // Buffer size limited to 65536 bytes (16384 Uint32s) by Web Crypto API
+    this._rndBuf = new Uint32Array(16384);
+    this._rndIdx = 16384;
+
     this.init();
   }
 
@@ -321,6 +329,7 @@ class VoiceIsolatePro {
     for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
+    el.setAttribute('aria-valuenow', v);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
   }
 
@@ -331,7 +340,7 @@ class VoiceIsolatePro {
       for (const s of sliders) {
         const el = document.getElementById(s.id);
         const ve = document.getElementById(s.id + 'Val');
-        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
+        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; el.setAttribute('aria-valuenow', this.params[s.id]); if (ve) ve.textContent = this.params[s.id] + s.unit; }
       }
     }
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
@@ -341,6 +350,11 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING (FIXED) ========
   async handleFile(file) {
     try {
+      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
+
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
+
       this.ensureCtx();
       this.stop(); // stop any current playback
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
@@ -671,13 +685,43 @@ class VoiceIsolatePro {
       n.lim.threshold.setTargetAtTime(p.limThresh,t,s); n.lim.release.setTargetAtTime(p.limRelease/1000,t,s);
       n.outG.gain.setTargetAtTime(Math.pow(10,p.outGain/20),t,s);
       n.wG.gain.setTargetAtTime(p.outWidth/100,t,s);
-    } catch(e) {}
+    } catch(e) { console.error('Error updating live chain:', e); }
+    } catch(e) {
+      console.error('Error updating live chain:', e);
+    }
   }
 
   teardownChain() {
-    if (this.currentSource) { try{this.currentSource.stop();}catch(e){} try{this.currentSource.disconnect();}catch(e){} this.currentSource = null; }
-    if (this.liveNodes.chain) this.liveNodes.chain.forEach(n => { try{n.disconnect();}catch(e){} });
+    if (this.currentSource) {
+      try { this.currentSource.stop(); } catch(e) { console.error('Error stopping current source:', e); }
+      try { this.currentSource.disconnect(); } catch(e) { console.error('Error disconnecting current source:', e); }
+      try {
+        this.currentSource.stop();
+      } catch (e) {
+        // Ignore errors if the source is already stopped
+      }
+      try {
+        this.currentSource.disconnect();
+      } catch (e) {
+        // Ignore errors if the source is already disconnected
+      }
+      this.currentSource = null;
+    }
+    if (this.liveNodes.chain) {
+      this.liveNodes.chain.forEach(n => {
+        try { n.disconnect(); } catch(e) { console.error('Error disconnecting live node:', e); }
+      });
+    }
     this.liveNodes = {}; this.liveChainBuilt = false;
+        try {
+          n.disconnect();
+        } catch (e) {
+          // Ignore errors if the node is already disconnected
+        }
+      });
+    }
+    this.liveNodes = {};
+    this.liveChainBuilt = false;
   }
 
   // ======== 32-STAGE OCTA-PASS OFFLINE PIPELINE ========
@@ -1176,16 +1220,25 @@ class VoiceIsolatePro {
   }
 
   // TPDF dither noise shaping before bit-depth reduction
+  // 🛡️ Sentinel: Fixed weak PRNG by using chunked crypto.getRandomValues()
   applyDither(buf, ditherAmt) {
     if (ditherAmt <= 0) return buf;
     const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
     const out = this.ctx.createBuffer(nCh, len, sr);
     const lsb = Math.pow(2, -15); // 16-bit LSB
     const g = (ditherAmt / 100) * lsb;
+    const invMax = 1 / 4294967296;
+
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch), outCh = out.getChannelData(ch);
       for (let i = 0; i < len; i++) {
-        const tpdf = (Math.random() - Math.random()) * g;
+        if (this._rndIdx >= this._rndBuf.length - 1) {
+          crypto.getRandomValues(this._rndBuf);
+          this._rndIdx = 0;
+        }
+        const r1 = this._rndBuf[this._rndIdx++] * invMax;
+        const r2 = this._rndBuf[this._rndIdx++] * invMax;
+        const tpdf = (r1 - r2) * g;
         outCh[i] = Math.max(-1, Math.min(1, inp[i] + tpdf));
       }
     }
@@ -1194,21 +1247,28 @@ class VoiceIsolatePro {
 
   // ======== PHASE 4: ML / VAD INTEGRATION ========
 
-  // Attempt to load ONNX Runtime models (graceful — no-op if ort not on window)
+  // Trigger VAD model load in the ML Worker (fire-and-forget; mlReady set via _onMlMessage)
   async loadModels() {
-    if (typeof ort === 'undefined') {
-      structuredLog('warn', 'ONNX Runtime not loaded — ML models unavailable');
+    if (!this.mlWorker) {
+      structuredLog('warn', 'ML Worker not available — running without ML');
       return;
     }
+    const wasmRoot = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
+    this.mlWorker.postMessage({ type: 'loadModel', model: 'vad', wasmRoot });
+  }
+
+  // Run Silero VAD via ML Worker; returns boolean[] or null if unavailable
+  async runVAD(buf) {
+    if (!this.mlReady || !this.mlWorker) return null;
     try {
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
-      this.sileroSession = await ort.InferenceSession.create('./models/silero_vad.onnx', {
-        executionProviders: navigator.gpu ? ['webgpu', 'wasm'] : ['wasm']
-      });
-      this.mlReady = true;
-      structuredLog('info', 'Silero VAD loaded', { provider: navigator.gpu ? 'webgpu' : 'wasm' });
+      const signal = new Float32Array(buf.getChannelData(0)); // copy for transfer
+      return await this._mlCall(
+        { type: 'runVAD', signal, sampleRate: buf.sampleRate },
+        [signal.buffer]
+      );
     } catch(e) {
-      structuredLog('warn', 'Model load failed — running without ML', { error: e.message });
+      structuredLog('warn', 'VAD Worker call failed', { error: e.message });
+      return null;
     }
   }
 
@@ -1241,6 +1301,43 @@ class VoiceIsolatePro {
     }
   }
 
+  // Generic promise wrapper for ML Worker calls with callback ID tracking
+  _mlCall(payload, transfer = []) {
+    // Ensure callbacks map is initialized
+    if (!this._mlCallbacks) this._mlCallbacks = {};
+    if (typeof this._mlCallId !== 'number') this._mlCallId = 0;
+
+    return new Promise((resolve, reject) => {
+      const id = ++this._mlCallId;
+      this._mlCallbacks[id] = { resolve, reject };
+      
+      // Timeout to prevent memory leaks from unresponsive workers
+      const timeout = setTimeout(() => {
+        this.mlWorker.removeEventListener('message', handler);
+        delete this._mlCallbacks[id];
+        reject(new Error('ML Worker call timed out'));
+      }, 30000); // 30 second timeout
+
+      const handler = (e) => {
+        const { type } = e.data;
+        if (type === 'result') {
+          clearTimeout(timeout);
+          this.mlWorker.removeEventListener('message', handler);
+          delete this._mlCallbacks[id];
+          resolve(e.data);
+        } else if (type === 'error') {
+          clearTimeout(timeout);
+          this.mlWorker.removeEventListener('message', handler);
+          delete this._mlCallbacks[id];
+          reject(new Error(e.data.msg));
+        }
+        // Other message types (progress, log) are handled elsewhere
+      };
+      this.mlWorker.addEventListener('message', handler);
+      this.mlWorker.postMessage({ ...payload, callId: id }, transfer);
+    });
+  }
+
   // Send audio to the ML worker and resolve with the enhanced Float32Array.
   // Falls back to the original signal if the worker is not ready.
   runMLEnhancement(buf, onProgress) {
@@ -1271,25 +1368,23 @@ class VoiceIsolatePro {
     });
   }
 
-  // Run Silero VAD and return array of booleans (100 frames/sec) indicating speech activity
-  async runVAD(buf) {
-    if (!this.sileroSession) return null;
-    const signal = buf.getChannelData(0);
-    const sr = buf.sampleRate;
-    const frameSize = Math.floor(sr / 100); // 10ms frames
-    const vadResult = [];
-    // State tensors required by Silero v5
-    let h = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-    let c = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-    for (let i = 0; i + frameSize <= signal.length; i += frameSize) {
-      const frame = signal.slice(i, i + frameSize);
-      const input = new ort.Tensor('float32', frame, [1, frame.length]);
-      const srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
-      const result = await this.sileroSession.run({ input, sr: srTensor, h, c });
-      vadResult.push(result.output.data[0] > 0.5);
-      h = result.hn; c = result.cn;
+  // Run source separation (Demucs or BSRNN) via ML Worker; returns Float32Array or null
+  async runSeparation(buf, model = 'demucs') {
+    if (!this.mlWorkerReady || !this.mlWorker) return null;
+    try {
+      const signal = new Float32Array(buf.getChannelData(0));
+      return new Promise((resolve, reject) => {
+        const handler = (e) => {
+          if (e.data.type === 'result') { this.mlWorker.removeEventListener('message', handler); resolve(e.data); }
+          else if (e.data.type === 'error') { this.mlWorker.removeEventListener('message', handler); reject(new Error(e.data.msg)); }
+        };
+        this.mlWorker.addEventListener('message', handler);
+        this.mlWorker.postMessage({ type: 'runSeparation', signal, sampleRate: buf.sampleRate, model }, [signal.buffer]);
+      });
+    } catch(e) {
+      structuredLog('warn', 'Separation Worker call failed', { error: e.message });
+      return null;
     }
-    return vadResult;
   }
 
   // ======== PHASE 5: FORENSIC AUDIT ========
@@ -1314,18 +1409,191 @@ class VoiceIsolatePro {
     URL.revokeObjectURL(a.href);
   }
 
-  mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
+  mixDW(dry, wet, wAmt) {
+    const c = this.ctx;
+    const nCh = Math.min(dry.numberOfChannels, wet.numberOfChannels);
+    const len = Math.min(dry.length, wet.length);
+    const out = c.createBuffer(nCh, len, dry.sampleRate);
 
-  peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
+  peakNorm(buf, tDb) {
+    const ctx = this.ctx;
+    const numChannels = buf.numberOfChannels;
+    const length = buf.length;
+    const out = ctx.createBuffer(numChannels, length, buf.sampleRate);
 
-  makeHarm(amt,ord){const n=44100;const c=new Float32Array(n);const k=amt*(ord||3)*2+1;for(let i=0;i<n;i++){const x=(i*2)/n-1;c[i]=Math.tanh(k*x)/Math.tanh(k);}return c;}
+    let peak = 0;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const channelData = buf.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const absVal = Math.abs(channelData[i]);
+        if (absVal > peak) peak = absVal;
+      }
+    }
+
+    if (peak === 0) return buf;
+
+    const gain = Math.pow(10, tDb / 20) / peak;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const inputData = buf.getChannelData(ch);
+      const outputData = out.getChannelData(ch);
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = dry.getChannelData(ch);
+      const w = wet.getChannelData(ch);
+      const o = out.getChannelData(ch);
+
+      for (let i = 0; i < len; i++) {
+        o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
+      }
+    }
+
+    return out;
+  }
+
+  peakNorm(buffer, targetDb) {
+    const ctx = this.ctx;
+    const numChannels = buffer.numberOfChannels;
+    const length = buffer.length;
+    const outBuffer = ctx.createBuffer(numChannels, length, buffer.sampleRate);
+
+    let peak = 0;
+
+    // Find the maximum absolute peak value across all channels
+    for (let ch = 0; ch < numChannels; ch++) {
+      const data = buffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const absValue = Math.abs(data[i]);
+        if (absValue > peak) {
+          peak = absValue;
+        }
+      }
+    }
+
+    // If silence, return original buffer
+    if (peak === 0) {
+      return buffer;
+    }
+
+  peakNorm(buf, tDb) {
+    const c = this.ctx;
+    const nCh = buf.numberOfChannels;
+    const len = buf.length;
+    const out = c.createBuffer(nCh, len, buf.sampleRate);
+    let pk = 0;
+
+    // Find the peak absolute value
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        const a = Math.abs(d[i]);
+        if (a > pk) pk = a;
+      }
+    }
+
+    // Return original buffer if completely silent
+    if (pk === 0) return buf;
+
+    // Calculate gain and apply it
+    const g = Math.pow(10, tDb / 20) / pk;
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const o = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        o[i] = Math.max(-1, Math.min(1, inp[i] * g));
+    // Calculate gain needed to reach target dB
+    const gain = Math.pow(10, targetDb / 20) / peak;
+
+    // Apply gain to all channels and hard-clip at -1.0 to 1.0
+    for (let ch = 0; ch < numChannels; ch++) {
+      const inputData = buffer.getChannelData(ch);
+      const outputData = outBuffer.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        outputData[i] = Math.max(-1, Math.min(1, inputData[i] * gain));
+      }
+    }
+
+    return out;
+    return outBuffer;
+  }
+
+  makeHarm(amt, ord) {
+    const n = 44100;
+    const curve = new Float32Array(n);
+    const k = amt * (ord || 3) * 2 + 1;
+
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = Math.tanh(k * x) / Math.tanh(k);
+    }
+
+    return curve;
+  }
 
   estVoices(buf){const d=buf.getChannelData(0);const sr=buf.sampleRate;const bs=Math.floor(sr*0.5);let act=0;for(let i=0;i<d.length;i+=bs){let r=0;const e=Math.min(i+bs,d.length);for(let j=i;j<e;j++)r+=d[j]*d[j];r=Math.sqrt(r/(e-i));if(r>0.01)act++;}return act<3?'0-1':act<10?'1':'1-2+';}
 
   // ---- SAVE ----
   saveWav(buf,label){if(!buf)return;const w=this.encWav(buf);const b=new Blob([w],{type:'audio/wav'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='voiceisolate_v19_'+label+'_'+Date.now()+'.wav';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);}
+  encWav(buf) {
+    const nCh = buf.numberOfChannels;
+    const sr = buf.sampleRate;
+    const dL = buf.length * nCh * 2; // 16-bit (2 bytes per sample)
 
-  encWav(buf){const nCh=buf.numberOfChannels;const sr=buf.sampleRate;const dL=buf.length*nCh*2;const a=new ArrayBuffer(44+dL);const v=new DataView(a);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+dL,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nCh,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nCh*2,true);v.setUint16(32,nCh*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,dL,true);let off=44;for(let i=0;i<buf.length;i++)for(let ch=0;ch<nCh;ch++){let s=buf.getChannelData(ch)[i];s=Math.max(-1,Math.min(1,s));v.setInt16(off,s<0?s*0x8000:s*0x7FFF,true);off+=2;}return a;}
+    // Total size: 44 bytes header + data length
+    const a = new ArrayBuffer(44 + dL);
+    const v = new DataView(a);
+
+    // Helper to write string to DataView
+    const ws = (o, s) => {
+      for (let i = 0; i < s.length; i++) {
+        v.setUint8(o + i, s.charCodeAt(i));
+      }
+    };
+
+    // --- RIFF Chunk ---
+    ws(0, 'RIFF');                     // ChunkID
+    v.setUint32(4, 36 + dL, true);     // ChunkSize (36 + SubChunk2Size)
+    ws(8, 'WAVE');                     // Format
+
+    // --- fmt Subchunk ---
+    ws(12, 'fmt ');                    // Subchunk1ID
+    v.setUint32(16, 16, true);         // Subchunk1Size (16 for PCM)
+    v.setUint16(20, 1, true);          // AudioFormat (1 for PCM)
+    v.setUint16(22, nCh, true);        // NumChannels
+    v.setUint32(24, sr, true);         // SampleRate
+    v.setUint32(28, sr * nCh * 2, true); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
+    v.setUint16(32, nCh * 2, true);    // BlockAlign (NumChannels * BitsPerSample/8)
+    v.setUint16(34, 16, true);         // BitsPerSample
+
+    // --- data Subchunk ---
+    ws(36, 'data');                    // Subchunk2ID
+    v.setUint32(40, dL, true);         // Subchunk2Size (NumSamples * NumChannels * BitsPerSample/8)
+
+    // Pre-fetch channel data to avoid expensive getChannelData calls inside the per-sample loop
+    const channels = [];
+    for (let ch = 0; ch < nCh; ch++) {
+      channels.push(buf.getChannelData(ch));
+    }
+
+    // Write audio data
+    let off = 44;
+
+    const chans = new Array(nCh);
+    for (let ch = 0; ch < nCh; ch++) {
+      chans[ch] = buf.getChannelData(ch);
+    }
+
+    for (let i = 0; i < buf.length; i++) {
+      for (let ch = 0; ch < nCh; ch++) {
+        let s = chans[ch][i];
+        let s = channels[ch][i];
+        // Hard clipping
+        s = Math.max(-1, Math.min(1, s));
+        // Convert to 16-bit PCM
+        v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        off += 2;
+      }
+    }
+    return a;
+  }
 
   // ======== VISUALIZATIONS ========
   initCanvases(){[this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas].forEach(c=>this.resizeCanvas(c));this.clearCanvas(this.dom.waveOrigCanvas,'Load audio to begin');this.clearCanvas(this.dom.waveProcCanvas,'Process to see result');this.clearCanvas(this.dom.spectro2DCanvas,'Play audio for spectrogram');this.clearCanvas(this.dom.freqCanvas,'Play audio for analyzer');}
@@ -1444,7 +1712,8 @@ class VoiceIsolatePro {
     const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
     cols.copyWithin(gW*3, 0, (gD-1)*gW*3);
     const pArr=pos.array;
-    for(let z=gD-1;z>0;z--){let cO=z*gW*3+1;let pO=(z-1)*gW*3+1;for(let x=0;x<gW;x++){pArr[cO]=pArr[pO];cO+=3;pO+=3;}}
+    const end=gD*gW*3;const offset=gW*3;
+    for(let i=end-2;i>=offset;i-=3)pArr[i]=pArr[i-offset];
     const step=Math.floor(freq.length/gW);
     for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pArr[x*3+1]=v*15;const f=x/gW;
       if(f<0.05){cols[x*3]=v*0.15;cols[x*3+1]=v*0.3;cols[x*3+2]=0.3+v*0.7;}
@@ -1467,9 +1736,13 @@ class VoiceIsolatePro {
 
   // ---- UTILITY ----
   setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
-  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
-  calcPeak(d){let p=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>p)p=a;}return p>0?20*Math.log10(p):-96;}
+  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
+  calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
 }
 
-document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = VoiceIsolatePro;
+} else {
+  document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
+}

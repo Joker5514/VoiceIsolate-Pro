@@ -1,6 +1,7 @@
 {
   "name": "voiceisolate-pro",
   "version": "19.0.0",
+  "type": "module",
   "description": "Studio-grade voice isolation platform. 32-stage Octa-Pass DSP pipeline with hybrid ML + classical spectral processing.",
   "private": true,
   "keywords": [
@@ -19,9 +20,20 @@
     "lint": "npx eslint public/app/app.js public/app/dsp-worker.js --no-eslintrc --env browser,es2022 --parser-options=ecmaVersion:2022",
     "test": "jest --testEnvironment=node",
     "test:watch": "jest --testEnvironment=node --watch",
+    "build": "mkdir -p build && cp -r public/* build/ && cp index.html app.js style.css build/ 2>/dev/null || true && echo 'Build complete'",
+    "build": "rm -rf build && mkdir build && cp -r public/* build/ && cp index.html style.css app.js build/",
+    "build": "mkdir -p build && cp index.html app.js style.css build/ && cp -r public v19-demo build/ || echo 'Static site — no build step'",
+    "build": "mkdir -p build && cp -r public/* build/",
+    "lint": "eslint public/app/app.js public/app/dsp-worker.js public/app/ml-worker.js",
+    "lint:fix": "eslint public/app/app.js public/app/dsp-worker.js public/app/ml-worker.js --fix",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --watch",
     "validate": "node scripts/validate.js"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^16.0.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^30.2.0"
   },

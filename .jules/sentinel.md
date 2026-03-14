@@ -1,0 +1,8 @@
+## 2026-03-10 - Eliminate innerHTML usage for DOM construction
+**Vulnerability:** Constructing DOM elements by concatenating strings and assigning to `innerHTML` creates a risk for Cross-Site Scripting (XSS) if any concatenated values are unescaped user inputs. Even if the inputs are currently safe (e.g., config strings), it violates security policies and causes security audits to fail.
+**Learning:** Hardcoded `innerHTML` usage should be avoided altogether for DOM initialization and updates, as it poses a significant structural security risk and is flagged during standard security audits.
+**Prevention:** Always use safe DOM APIs like `document.createElement`, `element.textContent`, and `element.appendChild` instead of `element.innerHTML` to ensure programmatic structure without risking unintended parsing of malicious strings.
+## 2024-05-24 - Secure PRNG for Dither
+**Vulnerability:** The application was using `Math.random()` to generate TPDF dither noise. While often acceptable in pure audio DSP, in a security-audited codebase, weak random number generation is flagged as a vulnerability because the output is predictable.
+**Learning:** `Math.random()` usage in hot paths needs to be replaced with `crypto.getRandomValues()`. However, calling it per-sample in a DSP loop is extremely slow. We learned the pattern of allocating a single chunked buffer (e.g., 16384 entries) to fetch randomness in bulk, then iterating through it.
+**Prevention:** In Web Audio API and general high-performance code, if randomness is needed securely, initialize a `Uint32Array` or similar buffer to a max size (e.g. 65536 bytes) and only call `crypto.getRandomValues()` when the index exceeds the limit.

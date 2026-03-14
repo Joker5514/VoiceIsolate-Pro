@@ -37,12 +37,31 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
   }
 
   // Pre-compute biquad coefficients from current params
+  // Pre-compute biquad coefficients and linear gains from current params
   _computeCoeffs() {
     const sr = this._sr;
     // High-pass Butterworth
     this._hp = this._biquadHP(this.params.hpFreq, this.params.hpQ, sr);
     // Low-pass Butterworth
     this._lp = this._biquadLP(this.params.lpFreq, this.params.lpQ, sr);
+
+    // Gate constants
+    this._gateThreshLin = Math.pow(10, this.params.gateThresh / 20);
+    this._gateReleaseCoef = Math.exp(-1 / (sr * (this.params.gateRelease / 1000)));
+
+    // Compressor constants
+    this._compThreshLin = Math.pow(10, this.params.compThresh / 20);
+    const ratio = Math.max(1, this.params.compRatio);
+    this._compSlope = 1 - 1 / ratio;
+    this._compAttackCoef = Math.exp(-1 / (sr * (this.params.compAttack / 1000)));
+    this._compReleaseCoef = Math.exp(-1 / (sr * (this.params.compRelease / 1000)));
+    this._compMakeupLin = Math.pow(10, this.params.compMakeup / 20);
+
+    // Limiter constants
+    this._limThreshLin = Math.pow(10, this.params.limThresh / 20);
+
+    // Global output gain
+    this._outGainLin = Math.pow(10, (this.params.outGain || 0) / 20);
   }
 
   // Biquad high-pass coefficients
@@ -82,6 +101,8 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
   _applyGate(block, ch) {
     const threshLin = Math.pow(10, this.params.gateThresh / 20);
     const releaseCoef = Math.exp(-1 / (this._sr * (this.params.gateRelease / 1000)));
+    const threshLin = this._gateThreshLin;
+    const releaseCoef = this._gateReleaseCoef;
     let g = this._gateGain[ch];
     for (let i = 0; i < block.length; i++) {
       const abs = Math.abs(block[i]);
@@ -100,6 +121,12 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     const releaseCoef = Math.exp(-1 / (this._sr * (this.params.compRelease / 1000)));
     const makeupLin = Math.pow(10, this.params.compMakeup / 20);
     const limThreshLin = Math.pow(10, this.params.limThresh / 20);
+    const threshLin = this._compThreshLin;
+    const slope = this._compSlope;
+    const attackCoef = this._compAttackCoef;
+    const releaseCoef = this._compReleaseCoef;
+    const makeupLin = this._compMakeupLin;
+    const limThreshLin = this._limThreshLin;
     let env = this._compEnv[ch];
     for (let i = 0; i < block.length; i++) {
       const abs = Math.abs(block[i]);
@@ -110,6 +137,9 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
         const overDb = 20 * Math.log10(env / threshLin);
         const gainDb = overDb * (1 - 1/ratio);
         gain = Math.pow(10, -gainDb / 20);
+        // ⚡ Bolt: Simplified compressor gain math to avoid slow log10/pow operations
+        // Math.pow(10, -(20 * Math.log10(env/threshLin) * slope) / 20) => Math.pow(env/threshLin, -slope)
+        gain = Math.pow(env / threshLin, -slope);
       }
       // Brickwall limiter
       const out = block[i] * gain * makeupLin;
@@ -142,6 +172,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
 
       // Output gain
       const outGainLin = Math.pow(10, (this.params.outGain || 0) / 20);
+      const outGainLin = this._outGainLin;
       for (let i = 0; i < outCh.length; i++) outCh[i] *= outGainLin;
     }
     return true; // keep processor alive
