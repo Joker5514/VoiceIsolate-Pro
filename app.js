@@ -177,6 +177,7 @@ buildSliderPanels() {
 
         const inputEl = document.createElement('input');
         inputEl.type = 'range';
+        inputEl.className = s.rt ? 'realtime' : '';
         if (s.rt) inputEl.className = 'realtime';
         inputEl.id = s.id;
         inputEl.min = s.min;
