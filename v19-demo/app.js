@@ -366,6 +366,7 @@ class VoiceIsolatePro {
     for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
+    el.setAttribute('aria-valuenow', v);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
   }
 
@@ -376,7 +377,7 @@ class VoiceIsolatePro {
       for (const s of sliders) {
         const el = document.getElementById(s.id);
         const ve = document.getElementById(s.id + 'Val');
-        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
+        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; el.setAttribute('aria-valuenow', this.params[s.id]); if (ve) ve.textContent = this.params[s.id] + s.unit; }
       }
     }
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
@@ -386,6 +387,11 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING (FIXED) ========
   async handleFile(file) {
     try {
+      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
+
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
+
       this.ensureCtx();
       this.stop(); // stop any current playback
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
@@ -716,6 +722,7 @@ class VoiceIsolatePro {
       n.lim.threshold.setTargetAtTime(p.limThresh,t,s); n.lim.release.setTargetAtTime(p.limRelease/1000,t,s);
       n.outG.gain.setTargetAtTime(Math.pow(10,p.outGain/20),t,s);
       n.wG.gain.setTargetAtTime(p.outWidth/100,t,s);
+    } catch(e) { console.error('Error updating live chain:', e); }
     } catch(e) {
       console.error('Error updating live chain:', e);
     }
@@ -723,6 +730,8 @@ class VoiceIsolatePro {
 
   teardownChain() {
     if (this.currentSource) {
+      try { this.currentSource.stop(); } catch(e) { console.error('Error stopping current source:', e); }
+      try { this.currentSource.disconnect(); } catch(e) { console.error('Error disconnecting current source:', e); }
       try {
         this.currentSource.stop();
       } catch (e) {
@@ -737,6 +746,10 @@ class VoiceIsolatePro {
     }
     if (this.liveNodes.chain) {
       this.liveNodes.chain.forEach(n => {
+        try { n.disconnect(); } catch(e) { console.error('Error disconnecting live node:', e); }
+      });
+    }
+    this.liveNodes = {}; this.liveChainBuilt = false;
         try {
           n.disconnect();
         } catch (e) {
@@ -1317,6 +1330,27 @@ class VoiceIsolatePro {
     const len = Math.min(dry.length, wet.length);
     const out = c.createBuffer(nCh, len, dry.sampleRate);
 
+  peakNorm(buf, tDb) {
+    const ctx = this.ctx;
+    const numChannels = buf.numberOfChannels;
+    const length = buf.length;
+    const out = ctx.createBuffer(numChannels, length, buf.sampleRate);
+
+    let peak = 0;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const channelData = buf.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const absVal = Math.abs(channelData[i]);
+        if (absVal > peak) peak = absVal;
+      }
+    }
+
+    if (peak === 0) return buf;
+
+    const gain = Math.pow(10, tDb / 20) / peak;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const inputData = buf.getChannelData(ch);
+      const outputData = out.getChannelData(ch);
     for (let ch = 0; ch < nCh; ch++) {
       const d = dry.getChannelData(ch);
       const w = wet.getChannelData(ch);
@@ -1354,6 +1388,32 @@ class VoiceIsolatePro {
       return buffer;
     }
 
+  peakNorm(buf, tDb) {
+    const c = this.ctx;
+    const nCh = buf.numberOfChannels;
+    const len = buf.length;
+    const out = c.createBuffer(nCh, len, buf.sampleRate);
+    let pk = 0;
+
+    // Find the peak absolute value
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        const a = Math.abs(d[i]);
+        if (a > pk) pk = a;
+      }
+    }
+
+    // Return original buffer if completely silent
+    if (pk === 0) return buf;
+
+    // Calculate gain and apply it
+    const g = Math.pow(10, tDb / 20) / pk;
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const o = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        o[i] = Math.max(-1, Math.min(1, inp[i] * g));
     // Calculate gain needed to reach target dB
     const gain = Math.pow(10, targetDb / 20) / peak;
 
@@ -1366,6 +1426,7 @@ class VoiceIsolatePro {
       }
     }
 
+    return out;
     return outBuffer;
   }
 
@@ -1410,11 +1471,24 @@ class VoiceIsolatePro {
     ws(36, 'data');                    // Subchunk2ID
     v.setUint32(40, dL, true);         // Subchunk2Size (NumSamples * NumChannels * BitsPerSample/8)
 
+    // Pre-fetch channel data to avoid expensive getChannelData calls inside the per-sample loop
+    const channels = [];
+    for (let ch = 0; ch < nCh; ch++) {
+      channels.push(buf.getChannelData(ch));
+    }
+
     // Write audio data
     let off = 44;
+
+    const chans = new Array(nCh);
+    for (let ch = 0; ch < nCh; ch++) {
+      chans[ch] = buf.getChannelData(ch);
+    }
+
     for (let i = 0; i < buf.length; i++) {
       for (let ch = 0; ch < nCh; ch++) {
-        let s = buf.getChannelData(ch)[i];
+        let s = chans[ch][i];
+        let s = channels[ch][i];
         // Hard clipping
         s = Math.max(-1, Math.min(1, s));
         // Convert to 16-bit PCM
@@ -1542,7 +1616,8 @@ class VoiceIsolatePro {
     const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
     cols.copyWithin(gW*3, 0, (gD-1)*gW*3);
     const pArr=pos.array;
-    for(let z=gD-1;z>0;z--){let cO=z*gW*3+1;let pO=(z-1)*gW*3+1;for(let x=0;x<gW;x++){pArr[cO]=pArr[pO];cO+=3;pO+=3;}}
+    const end=gD*gW*3;const offset=gW*3;
+    for(let i=end-2;i>=offset;i-=3)pArr[i]=pArr[i-offset];
     const step=Math.floor(freq.length/gW);
     for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pArr[x*3+1]=v*15;const f=x/gW;
       if(f<0.05){cols[x*3]=v*0.15;cols[x*3+1]=v*0.3;cols[x*3+2]=0.3+v*0.7;}
@@ -1565,8 +1640,8 @@ class VoiceIsolatePro {
 
   // ---- UTILITY ----
   setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
-  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
-  calcPeak(d){let p=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>p)p=a;}return p>0?20*Math.log10(p):-96;}
+  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
+  calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
 }
 

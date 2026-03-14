@@ -5,10 +5,12 @@ node_modules/
 .DS_Store
 *.log
 dist/
+build/
 .cache/
 
 # ML model files — too large for git, download separately (see public/app/models/README.md)
 public/app/models/*.onnx
 public/app/models/*.tar.gz
 public/app/models/*.bin
+build/
 public/app/models/deepfilter/
