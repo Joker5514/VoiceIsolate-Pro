@@ -1,5 +1,31 @@
 /**
  * VoiceIsolate Pro — Utility Unit Tests
+ * Tests calcRMS, calcPeak, and fmtDur.
+ */
+
+const fs = require('fs');
+const path = require('path');
+
+// Read the app.js code as a string to extract the real implementation.
+// This guarantees we are testing the actual code without dealing with
+// Jest ESM/CJS module loading conflicts for a browser script.
+const appJsPath = path.resolve(__dirname, '../app.js');
+const appJsCode = fs.readFileSync(appJsPath, 'utf8');
+
+// Use new Function to create the class from the source string.
+// We pass in an empty module object to simulate the environment.
+const extractVoiceIsolatePro = new Function(`
+  const module = { exports: {} };
+  const window = {};
+  const document = { addEventListener: () => {} };
+  ${appJsCode}
+  return module.exports;
+`);
+
+const VoiceIsolatePro = extractVoiceIsolatePro();
+
+describe('Utility Functions from app.js', () => {
+ * Tests calcRMS, calcPeak, fmtDur, and estVoices.
  * Tests calcRMS, calcPeak, fmtDur, and encWav.
  * 
  * NOTE: These functions are duplicated as standalone implementations because
@@ -10,11 +36,13 @@
  * - calcRMS: public/app/app.js (search for 'calcRMS(d)')
  * - calcPeak: public/app/app.js (search for 'calcPeak(d)')
  * - fmtDur: public/app/app.js (search for 'fmtDur(s)')
+ * - estVoices: public/app/app.js (search for 'estVoices(buf)')
  * - encWav: public/app/app.js (search for 'encWav(buf)')
  */
 
 describe('Utility Functions from app.js', () => {
   // Standalone implementations matching public/app/app.js methods
+  function estVoices(buf){const d=buf.getChannelData(0);const sr=buf.sampleRate;const bs=Math.floor(sr*0.5);let act=0;for(let i=0;i<d.length;i+=bs){let r=0;const e=Math.min(i+bs,d.length);for(let j=i;j<e;j++)r+=d[j]*d[j];r=Math.sqrt(r/(e-i));if(r>0.01)act++;}return act<3?'0-1':act<10?'1':'1-2+';}
   function encWav(buf) {
     const nCh = buf.numberOfChannels;
     const sr = buf.sampleRate;
@@ -38,9 +66,15 @@ describe('Utility Functions from app.js', () => {
     ws(36, 'data');
     v.setUint32(40, dL, true);
     let off = 44;
+
+    const chans = new Array(nCh);
+    for (let ch = 0; ch < nCh; ch++) {
+      chans[ch] = buf.getChannelData(ch);
+    }
+
     for (let i = 0; i < buf.length; i++) {
       for (let ch = 0; ch < nCh; ch++) {
-        let s = buf.getChannelData(ch)[i];
+        let s = chans[ch][i];
         s = Math.max(-1, Math.min(1, s));
         v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
         off += 2;
@@ -52,17 +86,17 @@ describe('Utility Functions from app.js', () => {
   function calcRMS(d) {
     let s = 0;
     for (let i = 0; i < d.length; i++) s += d[i] * d[i];
-    const r = Math.sqrt(s / d.length);
-    return r > 0 ? 20 * Math.log10(r) : -96;
+    const rSq = s / d.length;
+    return rSq > 0 ? 10 * Math.log10(rSq) : -96;
   }
 
   function calcPeak(d) {
-    let p = 0;
+    let pSq = 0;
     for (let i = 0; i < d.length; i++) {
-      const a = Math.abs(d[i]);
-      if (a > p) p = a;
+      const aSq = d[i] * d[i];
+      if (aSq > pSq) pSq = aSq;
     }
-    return p > 0 ? 20 * Math.log10(p) : -96;
+    return pSq > 0 ? 10 * Math.log10(pSq) : -96;
   }
 
   function fmtDur(s) {
@@ -87,6 +121,11 @@ describe('Utility Functions from app.js', () => {
   }
 
   describe('calcRMS', () => {
+    let calcRMS;
+    beforeAll(() => {
+      calcRMS = VoiceIsolatePro.prototype.calcRMS;
+    });
+
     test('all 1s should be 0 dB', () => {
       const d = new Float32Array([1, 1, 1, 1]);
       expect(calcRMS(d)).toBeCloseTo(0, 5);
@@ -110,6 +149,11 @@ describe('Utility Functions from app.js', () => {
   });
 
   describe('calcPeak', () => {
+    let calcPeak;
+    beforeAll(() => {
+      calcPeak = VoiceIsolatePro.prototype.calcPeak;
+    });
+
     test('all 0s should be -96 dB', () => {
       const d = new Float32Array([0, 0, 0, 0]);
       expect(calcPeak(d)).toBe(-96);
@@ -137,6 +181,11 @@ describe('Utility Functions from app.js', () => {
   });
 
   describe('fmtDur', () => {
+    let fmtDur;
+    beforeAll(() => {
+      fmtDur = VoiceIsolatePro.prototype.fmtDur;
+    });
+
     test('0 seconds -> 0:00', () => {
       expect(fmtDur(0)).toBe('0:00');
     });
@@ -159,6 +208,121 @@ describe('Utility Functions from app.js', () => {
   });
 
   describe('estVoices', () => {
+    test('Empty buffer or completely silent -> 0 active blocks -> returns "0-1"', () => {
+      const buf = {
+        sampleRate: 44100,
+        getChannelData: () => new Float32Array(44100 * 2) // 2 seconds of silence
+      };
+      expect(estVoices(buf)).toBe('0-1');
+    });
+
+    test('2 active blocks -> act = 2, returns "0-1"', () => {
+      const buf = {
+        sampleRate: 44100,
+        getChannelData: () => {
+          const d = new Float32Array(44100 * 2); // 4 blocks of 0.5s
+          // Block 1 (active)
+          for (let i = 0; i < 22050; i++) d[i] = 1.0;
+          // Block 2 (active)
+          for (let i = 22050; i < 44100; i++) d[i] = 1.0;
+          return d;
+        }
+      };
+      expect(estVoices(buf)).toBe('0-1');
+    });
+
+    test('5 active blocks -> act = 5, returns "1"', () => {
+      const buf = {
+        sampleRate: 44100,
+        getChannelData: () => {
+          const d = new Float32Array(44100 * 5); // 10 blocks
+          // 5 blocks active
+          for (let i = 0; i < 5 * 22050; i++) d[i] = 1.0;
+          return d;
+        }
+      };
+      expect(estVoices(buf)).toBe('1');
+    });
+
+    test('12 active blocks -> act = 12, returns "1-2+"', () => {
+      const buf = {
+        sampleRate: 44100,
+        getChannelData: () => {
+          const d = new Float32Array(44100 * 10); // 20 blocks
+          // 12 blocks active
+          for (let i = 0; i < 12 * 22050; i++) d[i] = 1.0;
+          return d;
+        }
+      };
+      expect(estVoices(buf)).toBe('1-2+');
+    });
+
+    test('Block size is correctly half the sample rate', () => {
+      // If sampleRate is 100, block size should be 50.
+      const buf = {
+        sampleRate: 100,
+        getChannelData: () => {
+          const d = new Float32Array(500); // 10 blocks
+          // Let's make block 1 active
+          for (let i = 0; i < 50; i++) d[i] = 1.0;
+          // Let's make block 2 silent
+          // Let's make block 3 active
+          for (let i = 100; i < 150; i++) d[i] = 1.0;
+          // Let's make block 4 silent
+          // Let's make block 5 active
+          for (let i = 200; i < 250; i++) d[i] = 1.0;
+          return d;
+        }
+      };
+      // 3 active blocks, so return should be '1' since act < 10 but not < 3
+      expect(estVoices(buf)).toBe('1');
+    // Helper to create a mock AudioBuffer-like object
+    function createMockBuffer(sr, data) {
+      return {
+        sampleRate: sr,
+        getChannelData: () => data
+      };
+    }
+
+    test('all zeros (silence) -> 0-1', () => {
+      const sr = 44100;
+      const data = new Float32Array(sr * 2); // 2 seconds of silence
+      const buf = createMockBuffer(sr, data);
+      expect(estVoices(buf)).toBe('0-1');
+    });
+
+    test('short burst of noise (< 3 active chunks) -> 0-1', () => {
+      const sr = 44100;
+      const data = new Float32Array(sr * 2); // 2 seconds total, 4 chunks of 0.5s
+      // Make 2 chunks active
+      for (let i = 0; i < sr * 1; i++) {
+        data[i] = 0.5; // High RMS
+      }
+      const buf = createMockBuffer(sr, data);
+      expect(estVoices(buf)).toBe('0-1');
+    });
+
+    test('sustained noise (3 <= active chunks < 10) -> 1', () => {
+      const sr = 44100;
+      const data = new Float32Array(sr * 5); // 5 seconds total, 10 chunks
+      // Make 5 chunks active (2.5 seconds)
+      for (let i = 0; i < sr * 2.5; i++) {
+        data[i] = 0.5; // High RMS
+      }
+      const buf = createMockBuffer(sr, data);
+      expect(estVoices(buf)).toBe('1');
+    });
+
+    test('continuous noise (>= 10 active chunks) -> 1-2+', () => {
+      const sr = 44100;
+      const data = new Float32Array(sr * 6); // 6 seconds total, 12 chunks
+      // Make 11 chunks active (5.5 seconds)
+      for (let i = 0; i < sr * 5.5; i++) {
+        data[i] = 0.5; // High RMS
+      }
+      const buf = createMockBuffer(sr, data);
+      expect(estVoices(buf)).toBe('1-2+');
+    });
     // Helper to create a mock AudioBuffer
     function makeMockBuffer(sr, numActiveBlocks, numSilentBlocks) {
       const bs = Math.floor(sr * 0.5);
