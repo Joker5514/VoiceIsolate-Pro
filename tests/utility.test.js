@@ -52,17 +52,17 @@ describe('Utility Functions from app.js', () => {
   function calcRMS(d) {
     let s = 0;
     for (let i = 0; i < d.length; i++) s += d[i] * d[i];
-    const r = Math.sqrt(s / d.length);
-    return r > 0 ? 20 * Math.log10(r) : -96;
+    const rSq = s / d.length;
+    return rSq > 0 ? 10 * Math.log10(rSq) : -96;
   }
 
   function calcPeak(d) {
-    let p = 0;
+    let pSq = 0;
     for (let i = 0; i < d.length; i++) {
-      const a = Math.abs(d[i]);
-      if (a > p) p = a;
+      const aSq = d[i] * d[i];
+      if (aSq > pSq) pSq = aSq;
     }
-    return p > 0 ? 20 * Math.log10(p) : -96;
+    return pSq > 0 ? 10 * Math.log10(pSq) : -96;
   }
 
   function fmtDur(s) {
