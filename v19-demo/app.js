@@ -1416,11 +1416,17 @@ class VoiceIsolatePro {
     ws(36, 'data');                    // Subchunk2ID
     v.setUint32(40, dL, true);         // Subchunk2Size (NumSamples * NumChannels * BitsPerSample/8)
 
+    // Pre-fetch channel data to avoid expensive getChannelData calls inside the per-sample loop
+    const channels = [];
+    for (let ch = 0; ch < nCh; ch++) {
+      channels.push(buf.getChannelData(ch));
+    }
+
     // Write audio data
     let off = 44;
     for (let i = 0; i < buf.length; i++) {
       for (let ch = 0; ch < nCh; ch++) {
-        let s = buf.getChannelData(ch)[i];
+        let s = channels[ch][i];
         // Hard clipping
         s = Math.max(-1, Math.min(1, s));
         // Convert to 16-bit PCM
