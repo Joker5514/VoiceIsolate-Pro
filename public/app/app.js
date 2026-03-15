@@ -695,29 +695,11 @@ class VoiceIsolatePro {
     if (this.currentSource) {
       try { this.currentSource.stop(); } catch(e) { console.error('Error stopping current source:', e); }
       try { this.currentSource.disconnect(); } catch(e) { console.error('Error disconnecting current source:', e); }
-      try {
-        this.currentSource.stop();
-      } catch (e) {
-        // Ignore errors if the source is already stopped
-      }
-      try {
-        this.currentSource.disconnect();
-      } catch (e) {
-        // Ignore errors if the source is already disconnected
-      }
       this.currentSource = null;
     }
     if (this.liveNodes.chain) {
       this.liveNodes.chain.forEach(n => {
         try { n.disconnect(); } catch(e) { console.error('Error disconnecting live node:', e); }
-      });
-    }
-    this.liveNodes = {}; this.liveChainBuilt = false;
-        try {
-          n.disconnect();
-        } catch (e) {
-          // Ignore errors if the node is already disconnected
-        }
       });
     }
     this.liveNodes = {};
@@ -1410,68 +1392,21 @@ class VoiceIsolatePro {
   }
 
   mixDW(dry, wet, wAmt) {
+
     const c = this.ctx;
     const nCh = Math.min(dry.numberOfChannels, wet.numberOfChannels);
     const len = Math.min(dry.length, wet.length);
     const out = c.createBuffer(nCh, len, dry.sampleRate);
-
-  peakNorm(buf, tDb) {
-    const ctx = this.ctx;
-    const numChannels = buf.numberOfChannels;
-    const length = buf.length;
-    const out = ctx.createBuffer(numChannels, length, buf.sampleRate);
-
-    let peak = 0;
-    for (let ch = 0; ch < numChannels; ch++) {
-      const channelData = buf.getChannelData(ch);
-      for (let i = 0; i < length; i++) {
-        const absVal = Math.abs(channelData[i]);
-        if (absVal > peak) peak = absVal;
-      }
-    }
-
-    if (peak === 0) return buf;
-
-    const gain = Math.pow(10, tDb / 20) / peak;
-    for (let ch = 0; ch < numChannels; ch++) {
-      const inputData = buf.getChannelData(ch);
-      const outputData = out.getChannelData(ch);
     for (let ch = 0; ch < nCh; ch++) {
       const d = dry.getChannelData(ch);
       const w = wet.getChannelData(ch);
       const o = out.getChannelData(ch);
-
       for (let i = 0; i < len; i++) {
         o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
       }
     }
-
     return out;
   }
-
-  peakNorm(buffer, targetDb) {
-    const ctx = this.ctx;
-    const numChannels = buffer.numberOfChannels;
-    const length = buffer.length;
-    const outBuffer = ctx.createBuffer(numChannels, length, buffer.sampleRate);
-
-    let peak = 0;
-
-    // Find the maximum absolute peak value across all channels
-    for (let ch = 0; ch < numChannels; ch++) {
-      const data = buffer.getChannelData(ch);
-      for (let i = 0; i < length; i++) {
-        const absValue = Math.abs(data[i]);
-        if (absValue > peak) {
-          peak = absValue;
-        }
-      }
-    }
-
-    // If silence, return original buffer
-    if (peak === 0) {
-      return buffer;
-    }
 
   peakNorm(buf, tDb) {
     const c = this.ctx;
@@ -1479,7 +1414,6 @@ class VoiceIsolatePro {
     const len = buf.length;
     const out = c.createBuffer(nCh, len, buf.sampleRate);
     let pk = 0;
-
     // Find the peak absolute value
     for (let ch = 0; ch < nCh; ch++) {
       const d = buf.getChannelData(ch);
@@ -1488,10 +1422,8 @@ class VoiceIsolatePro {
         if (a > pk) pk = a;
       }
     }
-
     // Return original buffer if completely silent
     if (pk === 0) return buf;
-
     // Calculate gain and apply it
     const g = Math.pow(10, tDb / 20) / pk;
     for (let ch = 0; ch < nCh; ch++) {
@@ -1499,20 +1431,9 @@ class VoiceIsolatePro {
       const o = out.getChannelData(ch);
       for (let i = 0; i < len; i++) {
         o[i] = Math.max(-1, Math.min(1, inp[i] * g));
-    // Calculate gain needed to reach target dB
-    const gain = Math.pow(10, targetDb / 20) / peak;
-
-    // Apply gain to all channels and hard-clip at -1.0 to 1.0
-    for (let ch = 0; ch < numChannels; ch++) {
-      const inputData = buffer.getChannelData(ch);
-      const outputData = outBuffer.getChannelData(ch);
-      for (let i = 0; i < length; i++) {
-        outputData[i] = Math.max(-1, Math.min(1, inputData[i] * gain));
       }
     }
-
     return out;
-    return outBuffer;
   }
 
   makeHarm(amt, ord) {
@@ -1739,7 +1660,7 @@ class VoiceIsolatePro {
   calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
   calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
-}
+// End of class VoiceIsolatePro
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = VoiceIsolatePro;
