@@ -137,6 +137,10 @@ function checkDuplicateKeys(filePath) {
     }
   }
   return dupes;
+const { findDuplicateKeys } = require('./check-duplicate-keys.js');
+function checkDuplicateKeys(filePath) {
+  const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
+  return findDuplicateKeys(raw);
 }
 const pkgDupes = checkDuplicateKeys('package.json');
 check(pkgDupes.length === 0, pkgDupes.length === 0

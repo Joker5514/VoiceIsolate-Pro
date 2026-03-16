@@ -685,7 +685,6 @@ class VoiceIsolatePro {
       n.lim.threshold.setTargetAtTime(p.limThresh,t,s); n.lim.release.setTargetAtTime(p.limRelease/1000,t,s);
       n.outG.gain.setTargetAtTime(Math.pow(10,p.outGain/20),t,s);
       n.wG.gain.setTargetAtTime(p.outWidth/100,t,s);
-    } catch(e) { console.error('Error updating live chain:', e); }
     } catch(e) {
       console.error('Error updating live chain:', e);
     }
@@ -1497,14 +1496,8 @@ class VoiceIsolatePro {
     // Write audio data
     let off = 44;
 
-    const chans = new Array(nCh);
-    for (let ch = 0; ch < nCh; ch++) {
-      chans[ch] = buf.getChannelData(ch);
-    }
-
     for (let i = 0; i < buf.length; i++) {
       for (let ch = 0; ch < nCh; ch++) {
-        let s = chans[ch][i];
         let s = channels[ch][i];
         // Hard clipping
         s = Math.max(-1, Math.min(1, s));
@@ -1660,7 +1653,7 @@ class VoiceIsolatePro {
   calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
   calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
-// End of class VoiceIsolatePro
+} // End of class VoiceIsolatePro
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = VoiceIsolatePro;
