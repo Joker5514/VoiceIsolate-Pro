@@ -112,6 +112,31 @@ check(blueprint.includes('Threads from Space'), 'Threads from Space architecture
 
 // 5. Duplicate JSON key check
 console.log('\nJSON duplicate key check:');
+function checkDuplicateKeys(filePath) {
+  const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
+  const dupes = [];
+  // Use a stack of Sets to track keys at each nesting level
+  const stack = [new Set()];
+  const lines = raw.split('\n');
+  const keyPattern = /^\s*"([^"]+)"\s*:/;
+  for (const line of lines) {
+    // Match key at the current depth before processing braces on this line
+    const match = line.match(keyPattern);
+    if (match) {
+      const key = match[1];
+      const currentLevel = stack[stack.length - 1];
+      if (currentLevel.has(key)) {
+        dupes.push(key);
+      }
+      currentLevel.add(key);
+    }
+    // Update depth after matching: opening braces push new scope, closing braces pop
+    for (const ch of line) {
+      if (ch === '{' || ch === '[') stack.push(new Set());
+      if ((ch === '}' || ch === ']') && stack.length > 1) stack.pop();
+    }
+  }
+  return dupes;
 const { findDuplicateKeys } = require('./check-duplicate-keys.js');
 function checkDuplicateKeys(filePath) {
   const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
