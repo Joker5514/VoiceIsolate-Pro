@@ -110,7 +110,40 @@ check(blueprint.includes('Octa-Pass'), 'Contains Octa-Pass pipeline reference');
 check(blueprint.includes('32'), 'References 32 stages');
 check(blueprint.includes('Threads from Space'), 'Threads from Space architecture');
 
-// 5. vercel.json
+// 5. Duplicate JSON key check
+console.log('\nJSON duplicate key check:');
+function checkDuplicateKeys(filePath) {
+  const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
+  const dupes = [];
+  // Use a stack of Sets to track keys at each nesting level
+  const stack = [new Set()];
+  const lines = raw.split('\n');
+  const keyPattern = /^\s*"([^"]+)"\s*:/;
+  for (const line of lines) {
+    // Match key at the current depth before processing braces on this line
+    const match = line.match(keyPattern);
+    if (match) {
+      const key = match[1];
+      const currentLevel = stack[stack.length - 1];
+      if (currentLevel.has(key)) {
+        dupes.push(key);
+      }
+      currentLevel.add(key);
+    }
+    // Update depth after matching: opening braces push new scope, closing braces pop
+    for (const ch of line) {
+      if (ch === '{' || ch === '[') stack.push(new Set());
+      if ((ch === '}' || ch === ']') && stack.length > 1) stack.pop();
+    }
+  }
+  return dupes;
+}
+const pkgDupes = checkDuplicateKeys('package.json');
+check(pkgDupes.length === 0, pkgDupes.length === 0
+  ? 'No duplicate keys in package.json'
+  : `Duplicate keys in package.json: ${pkgDupes.join(', ')}`);
+
+// 6. vercel.json
 console.log('\nVercel config:');
 const vercelJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'vercel.json'), 'utf8'));
 check(vercelJson.outputDirectory === 'public', 'Output directory: public');

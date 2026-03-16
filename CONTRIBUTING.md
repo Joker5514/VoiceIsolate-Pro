@@ -57,7 +57,11 @@ public/
 │   ├── dsp-worker.js       # AudioWorklet processor
 │   ├── ml-worker.js        # ML inference worker (ONNX Runtime)
 │   └── models/             # ONNX model files (download separately)
-└── blueprint/              # Technical architecture docs
+├── blueprint/              # Technical architecture docs
+│   └── index.html          # Full architecture documentation site
+└── docs/                   # Additional documentation
+    ├── TECHNICAL_GUIDE.md
+    └── v7.5-blueprint.md
 ```
 
 ### The 52-Slider System
@@ -155,7 +159,7 @@ These rules MUST be preserved:
 
 ## Questions?
 
-Open an issue or check the [Blueprint](public/blueprint/index.html) for detailed architecture documentation.
+Open an issue or check the [Blueprint](public/blueprint/index.html) or the [Technical Guide](public/docs/TECHNICAL_GUIDE.md) for detailed architecture documentation.
 
 ---
 
