@@ -24,13 +24,12 @@ const extractVoiceIsolatePro = new Function(`
 
 const VoiceIsolatePro = extractVoiceIsolatePro();
 
-describe('Utility Functions from app.js', () => {
- * Tests calcRMS, calcPeak, fmtDur, and estVoices.
- * Tests calcRMS, calcPeak, fmtDur, and encWav.
- * 
+/*
+ * Tests calcRMS, calcPeak, fmtDur, estVoices, and encWav.
+ *
  * NOTE: These functions are duplicated as standalone implementations because
  * the main app.js contains browser-only DOM code that cannot be imported in Node.
- * 
+ *
  * IMPORTANT: If the implementations in public/app/app.js change, these standalone
  * functions must be manually updated to match. The original implementations are in:
  * - calcRMS: public/app/app.js (search for 'calcRMS(d)')
@@ -276,6 +275,8 @@ describe('Utility Functions from app.js', () => {
       };
       // 3 active blocks, so return should be '1' since act < 10 but not < 3
       expect(estVoices(buf)).toBe('1');
+    });
+
     // Helper to create a mock AudioBuffer-like object
     function createMockBuffer(sr, data) {
       return {
