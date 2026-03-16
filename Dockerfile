@@ -7,4 +7,4 @@ COPY . .
 EXPOSE 3000
 RUN chown -R node /usr/src/app
 USER node
-CMD ["npm", "start"]
+CMD ["npx", "serve", "public", "-l", "3000", "--cors"]
