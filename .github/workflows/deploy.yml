@@ -20,22 +20,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
       - name: Run ESLint
         run: npm run lint
-
       - name: Run tests
         run: npm run test
-
       - name: Run validation
         run: npm run validate
 
@@ -44,26 +39,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Check critical files exist
         run: |
           for f in public/index.html public/app/index.html public/app/style.css public/app/app.js public/blueprint/index.html vercel.json; do
             [ -f "$f" ] && echo "✓ $f" || (echo "✗ MISSING: $f" && exit 1)
           done
-
       - name: Validate HTML structure
         run: |
           # Check app.js has all slider groups
           for group in gate nr eq; do
             grep -q "$group:" public/app/app.js && echo "✓ Slider group: $group" || echo "⚠ Missing slider group: $group"
           done
-
       - name: Check single-pass spectral architecture
         run: |
           # Ensure no multiple STFT/iSTFT patterns (architectural violation)
           STFT_COUNT=$(grep -c "stft\|STFT\|forwardFFT" public/app/app.js 2>/dev/null || echo 0)
           echo "STFT references: $STFT_COUNT"
-
       - name: Validate file sizes
         run: |
           APP_SIZE=$(wc -c < public/app/app.js)
@@ -73,7 +64,7 @@ jobs:
   deploy-preview:
     name: Deploy Preview
     needs: [lint-test, validate]
-    if: github.event_name == 'pull_request' && secrets.VERCEL_TOKEN != ''
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -89,7 +80,7 @@ jobs:
   deploy-production:
     name: Deploy Production
     needs: [lint-test, validate]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.VERCEL_TOKEN != ''
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -101,4 +92,3 @@ jobs:
         run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
       - name: Deploy Production
         run: vercel deploy --prod --token=$VERCEL_TOKEN
-
