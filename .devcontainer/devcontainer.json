@@ -3,7 +3,9 @@
   "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
   "postCreateCommand": "npm install",
   "postStartCommand": "npm run dev",
-  "forwardPorts": [3000],
+  "forwardPorts": [
+    3000
+  ],
   "portsAttributes": {
     "3000": {
       "label": "VoiceIsolate Pro Preview",
@@ -22,6 +24,12 @@
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "esbenp.prettier-vscode"
       }
+    },
+    "codespaces": {
+      "openFiles": [
+        "README.md",
+        "public/app/index.html"
+      ]
     }
   }
 }
