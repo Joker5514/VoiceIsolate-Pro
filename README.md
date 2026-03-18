@@ -1,7 +1,7 @@
 # VoiceIsolate Pro
 
 [![CI](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml)
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Joker5514/VoiceIsolate-Pro)
+<!-- codespaces badge marker --> [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Joker5514/VoiceIsolate-Pro)
 ![Version](https://img.shields.io/badge/version-19.0.0-blue)
 ![License](https://img.shields.io/badge/license-UNLICENSED-red)
 ![Node](https://img.shields.io/badge/node-%3E%3D18.0.0-green)
