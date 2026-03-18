@@ -31,10 +31,3 @@ export function createParamBuffer() {
 /** Volume slider 0–1 → linear gain (via dB scale) */
 export const gainMap = (s, dbMin = -60, dbMax = 6) =>
   s <= 0 ? 0 : Math.pow(10, (dbMin + s * (dbMax - dbMin)) / 20);
-
-/** Frequency slider 0–1 → Hz (exponential) */
-export const freqMap = (s, fMin = 20, fMax = 20000) =>
-  fMin * Math.pow(fMax / fMin, Math.max(0, Math.min(1, s)));
-
-/** Threshold / ratio slider 0–1 → square-root (perceptual mid-range precision) */
-export const sqrtMap = (s) => Math.sqrt(Math.max(0, s));
