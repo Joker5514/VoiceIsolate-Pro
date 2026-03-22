@@ -22,9 +22,12 @@ const jsSource = tsSource
   // Remove 'export' keywords so assignments become plain 'const' declarations
   .replace(/^export\s+/gm, '');
 
-const moduleExports = {};
-// eslint-disable-next-line no-new-func
-new Function('exports', jsSource)(moduleExports);
+// Pull out the values we need to test
+const evalResult = (function () {
+  const src = jsSource + '\nreturn { PRESETS, DEFAULT_PRESET_ID };';
+  // eslint-disable-next-line no-new-func
+  return new Function(src)();
+})();
 
 // Pull out the values we need to test
 // They are plain 'const' in the eval scope; capture via the script returning them.
