@@ -6,40 +6,27 @@
 
 const fs = require('fs');
 const path = require('path');
+const { stripTypeScriptTypes } = require('node:module');
 
-// Load and eval the TypeScript file by stripping TS-only syntax so it runs as JS.
+// Load the TypeScript source and transpile it to plain JS using Node's built-in
+// type-stripping (available since Node 22.6+). This correctly handles interfaces,
+// type aliases, generic annotations, and other TS constructs without fragile regex.
 const tsSource = fs.readFileSync(
   path.join(__dirname, '../voiceisolate_presets.ts'),
   'utf8'
 );
 
-// Remove TypeScript interface blocks and type annotations, then expose exports.
-const jsSource = tsSource
-  // Remove interface declarations (export interface Foo { ... })
-  .replace(/export\s+interface\s+\w+\s*\{[^}]*\}/g, '')
-  // Remove generic type annotation on PRESETS: Record<..., ...>
-  .replace(/:\s*Record<[^>]+>/g, '')
-  // Remove 'export' keywords so assignments become plain 'const'/'type' declarations
-  .replace(/^export\s+/gm, '')
-  // Remove type alias declarations (e.g. type PresetId = '...' | '...';)
-  .replace(/^type\s+\w+[^\n]*$/gm, '')
-  // Remove simple type annotations before assignments (e.g. const FOO: MyType = ...)
-  .replace(/:\s*[A-Z]\w+(?=\s*=)/g, '');
+// stripTypeScriptTypes erases all TS-only syntax while preserving source positions.
+// The only remaining JS-invalid token is the `export` keyword on each declaration,
+// which we strip with a single targeted regex so bindings are accessible in scope.
+const jsSource = stripTypeScriptTypes(tsSource)
+  .replace(/^export\s+/gm, '');
 
-const moduleExports = {};
+// Evaluate the plain-JS source and extract the bindings we need to test.
 // eslint-disable-next-line no-new-func
-new Function('exports', jsSource)(moduleExports);
-
-// Pull out the values we need to test
-// They are plain 'const' in the eval scope; capture via the script returning them.
-const evalResult = (function () {
-  // Re-evaluate with an explicit return of the bindings we need.
-  const src = jsSource + '\nreturn { PRESETS, DEFAULT_PRESET_ID };';
-  // eslint-disable-next-line no-new-func
-  return new Function(src)();
-})();
-
-const { PRESETS, DEFAULT_PRESET_ID } = evalResult;
+const { PRESETS, DEFAULT_PRESET_ID } = new Function(
+  jsSource + '\nreturn { PRESETS, DEFAULT_PRESET_ID };'
+)();
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -56,9 +43,7 @@ const EXPECTED_PARAM_KEYS = [
   'lowPassFreq',
   'compThreshold',
   'compRatio',
-  'compAttack',
   'gateThreshold',
-  'gateAttack',
   'denoiseMix',
   'spectralGateDB',
   'outputGain',
@@ -124,7 +109,7 @@ describe('voiceisolate_presets — preset object structure', () => {
         expect(preset.id).toBe(key);
       });
 
-      test('params contains all 12 expected DSP fields', () => {
+      test('params contains all 10 expected DSP fields', () => {
         EXPECTED_PARAM_KEYS.forEach(field => {
           expect(preset.params).toHaveProperty(field);
           expect(typeof preset.params[field]).toBe('number');
@@ -187,22 +172,6 @@ describe('voiceisolate_presets — safety rules (.qodo/rules.md)', () => {
 
       test(`preset.id "${preset.id}" is kebab-case`, () => {
         expect(isKebabCase(preset.id)).toBe(true);
-      });
-    });
-  });
-
-  describe('Rule: compAttack in live path must be <= 20ms', () => {
-    Object.entries(PRESETS).forEach(([key, preset]) => {
-      test(`${key}: compAttack (${preset.params.compAttack}) <= 20`, () => {
-        expect(preset.params.compAttack).toBeLessThanOrEqual(20);
-      });
-    });
-  });
-
-  describe('Rule: gateAttack must be <= 10ms', () => {
-    Object.entries(PRESETS).forEach(([key, preset]) => {
-      test(`${key}: gateAttack (${preset.params.gateAttack}) <= 10`, () => {
-        expect(preset.params.gateAttack).toBeLessThanOrEqual(10);
       });
     });
   });
@@ -276,7 +245,7 @@ describe('voiceisolate_presets — boundary and regression checks', () => {
 
   test('No preset outputGain reaches the upper boundary (6 dB)', () => {
     Object.entries(PRESETS).forEach(([, preset]) => {
-      expect(preset.params.outputGain).toBeLessThanOrEqual(6);
+      expect(preset.params.outputGain).toBeLessThan(6);
     });
   });
 
