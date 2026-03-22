@@ -254,7 +254,7 @@ describe('voiceisolate_presets — boundary and regression checks', () => {
 
   test('No preset outputGain reaches the upper boundary (6 dB)', () => {
     Object.entries(PRESETS).forEach(([, preset]) => {
-      expect(preset.params.outputGain).toBeLessThanOrEqual(6);
+      expect(preset.params.outputGain).toBeLessThan(6);
     });
   });
 
