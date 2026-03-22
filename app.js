@@ -643,7 +643,6 @@ buildSliderPanels() {
       n.lim.threshold.setTargetAtTime(p.limThresh,t,s); n.lim.release.setTargetAtTime(p.limRelease/1000,t,s);
       n.outG.gain.setTargetAtTime(Math.pow(10,p.outGain/20),t,s);
       n.wG.gain.setTargetAtTime(p.outWidth/100,t,s);
-    } catch(e) { console.error('Error updating live chain:', e); }
     } catch(e) {
       console.error('Error updating live chain:', e);
     }
@@ -667,10 +666,6 @@ buildSliderPanels() {
     }
     if (this.liveNodes.chain) {
       this.liveNodes.chain.forEach(n => {
-        try { n.disconnect(); } catch(e) { console.error('Error disconnecting live node:', e); }
-      });
-    }
-    this.liveNodes = {}; this.liveChainBuilt = false;
         try {
           n.disconnect();
         } catch (e) {
@@ -773,9 +768,6 @@ buildSliderPanels() {
       const o = out.getChannelData(ch);
       const nLen = Math.min(Math.floor(sr * 0.15), len);
       let nRms = 0;
-
-
-      let nRms = 0;
       for (let i = 0; i < nLen; i++) {
         nRms += inp[i] * inp[i];
       }
@@ -814,6 +806,17 @@ buildSliderPanels() {
     const len = Math.min(dry.length, wet.length);
     const out = c.createBuffer(nCh, len, dry.sampleRate);
 
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = dry.getChannelData(ch);
+      const w = wet.getChannelData(ch);
+      const o = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
+      }
+    }
+    return out;
+  }
+
   peakNorm(buf, tDb) {
     const c = this.ctx;
     const nCh = buf.numberOfChannels;
@@ -840,42 +843,10 @@ buildSliderPanels() {
       const o = out.getChannelData(ch);
       for (let i = 0; i < len; i++) {
         o[i] = Math.max(-1, Math.min(1, inp[i] * g));
-    for (let ch = 0; ch < nCh; ch++) {
-      const d = dry.getChannelData(ch);
-      const w = wet.getChannelData(ch);
-      const o = out.getChannelData(ch);
-
-      for (let i = 0; i < len; i++) {
-        o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
       }
     }
-
     return out;
   }
-
-  peakNorm(buffer, targetDb) {
-    const ctx = this.ctx;
-    const numChannels = buffer.numberOfChannels;
-    const length = buffer.length;
-    const outBuffer = ctx.createBuffer(numChannels, length, buffer.sampleRate);
-
-    let peak = 0;
-
-    // Find the maximum absolute peak value across all channels
-    for (let ch = 0; ch < numChannels; ch++) {
-      const data = buffer.getChannelData(ch);
-      for (let i = 0; i < length; i++) {
-        const absValue = Math.abs(data[i]);
-        if (absValue > peak) {
-          peak = absValue;
-        }
-      }
-    }
-
-    // If silence, return original buffer
-    if (peak === 0) {
-      return buffer;
-    }
 
   peakNorm(buf, tDb) {
     const ctx = this.ctx;
@@ -898,20 +869,11 @@ buildSliderPanels() {
     for (let ch = 0; ch < numChannels; ch++) {
       const inputData = buf.getChannelData(ch);
       const outputData = out.getChannelData(ch);
-    // Calculate gain needed to reach target dB
-    const gain = Math.pow(10, targetDb / 20) / peak;
-
-    // Apply gain to all channels and hard-clip at -1.0 to 1.0
-    for (let ch = 0; ch < numChannels; ch++) {
-      const inputData = buffer.getChannelData(ch);
-      const outputData = outBuffer.getChannelData(ch);
       for (let i = 0; i < length; i++) {
         outputData[i] = Math.max(-1, Math.min(1, inputData[i] * gain));
       }
     }
-
     return out;
-    return outBuffer;
   }
 
   makeHarm(amt, ord) {
@@ -975,14 +937,8 @@ buildSliderPanels() {
     // Write audio data
     let off = 44;
 
-    const chans = new Array(nCh);
-    for (let ch = 0; ch < nCh; ch++) {
-      chans[ch] = buf.getChannelData(ch);
-    }
-
     for (let i = 0; i < buf.length; i++) {
       for (let ch = 0; ch < nCh; ch++) {
-        let s = chans[ch][i];
         let s = channels[ch][i];
         // Hard clipping
         s = Math.max(-1, Math.min(1, s));
