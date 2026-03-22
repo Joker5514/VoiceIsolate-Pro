@@ -3,9 +3,7 @@ export interface DSPParams {
   lowPassFreq: number;
   compThreshold: number;
   compRatio: number;
-  compAttack: number;
   gateThreshold: number;
-  gateAttack: number;
   denoiseMix: number;
   spectralGateDB: number;
   outputGain: number;
@@ -30,9 +28,7 @@ export const PRESETS: Record<PresetId, VoiceIsolatePreset> = {
       lowPassFreq: 16000,
       compThreshold: -24,
       compRatio: 3.5,
-      compAttack: 10,
       gateThreshold: -48,
-      gateAttack: 5,
       denoiseMix: 0.35,
       spectralGateDB: 8,
       outputGain: 1.5,
@@ -48,9 +44,7 @@ export const PRESETS: Record<PresetId, VoiceIsolatePreset> = {
       lowPassFreq: 14000,
       compThreshold: -20,
       compRatio: 3,
-      compAttack: 8,
       gateThreshold: -44,
-      gateAttack: 3,
       denoiseMix: 0.3,
       spectralGateDB: 6,
       outputGain: 1,
@@ -66,9 +60,7 @@ export const PRESETS: Record<PresetId, VoiceIsolatePreset> = {
       lowPassFreq: 12000,
       compThreshold: -18,
       compRatio: 5,
-      compAttack: 5,
       gateThreshold: -38,
-      gateAttack: 2,
       denoiseMix: 0.85,
       spectralGateDB: 14,
       outputGain: 2,
