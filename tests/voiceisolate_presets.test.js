@@ -31,12 +31,6 @@ const evalResult = (function () {
 
 // Pull out the values we need to test
 // They are plain 'const' in the eval scope; capture via the script returning them.
-const evalResult = (function () {
-  // Re-evaluate with an explicit return of the bindings we need.
-  const src = jsSource + '\nreturn { PRESETS, DEFAULT_PRESET_ID };';
-  // eslint-disable-next-line no-new-func
-  return new Function(src)();
-})();
 
 const { PRESETS, DEFAULT_PRESET_ID } = evalResult;
 
