@@ -6,6 +6,8 @@
 
 const fs = require('fs');
 const path = require('path');
+
+// Load and eval the TypeScript file by stripping TS-only syntax so it runs as JS.
 const { stripTypeScriptTypes } = require('node:module');
 
 // Load the TypeScript source and transpile it to plain JS using Node's built-in
@@ -16,6 +18,26 @@ const tsSource = fs.readFileSync(
   'utf8'
 );
 
+// Remove TypeScript interface blocks and type annotations, then expose exports.
+const jsSource = tsSource
+  // Remove interface declarations (export interface Foo { ... })
+  .replace(/export\s+interface\s+\w+\s*\{[^}]*\}/g, '')
+  // Remove generic type annotation on PRESETS: Record<string, VoiceIsolatePreset>
+  .replace(/:\s*Record<[^>]+>/g, '')
+  // Remove 'export' keywords so assignments become plain 'const' declarations
+  .replace(/^export\s+/gm, '');
+
+// Pull out the values we need to test
+const evalResult = (function () {
+  const src = jsSource + '\nreturn { PRESETS, DEFAULT_PRESET_ID };';
+  // eslint-disable-next-line no-new-func
+  return new Function(src)();
+})();
+
+// Pull out the values we need to test
+// They are plain 'const' in the eval scope; capture via the script returning them.
+
+const { PRESETS, DEFAULT_PRESET_ID } = evalResult;
 // stripTypeScriptTypes erases all TS-only syntax while preserving source positions.
 // The only remaining JS-invalid token is the `export` keyword on each declaration,
 // which we strip with a single targeted regex so bindings are accessible in scope.
