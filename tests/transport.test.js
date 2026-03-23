@@ -81,6 +81,9 @@ describe('Transport Methods', () => {
       expect(mockContext.dom.tpCur.textContent).toBe('0:00');
       expect(mockContext.dom.tpSeek.value).toBe(0);
     });
+  });
+
+  describe('pause', () => {
 
     describe('pause', () => {
     beforeEach(() => {

@@ -400,7 +400,7 @@ class VoiceIsolatePro {
       this.inputBuffer = audioBuf;
       this.outputBuffer = null;
       // Phase 4: Attempt to load ML models if ONNX Runtime is available
-      if (!this.mlReady) this.loadModels().catch(() => {});
+      if (!this.mlReady && typeof this.loadModels === 'function') this.loadModels().catch(err => structuredLog('warn', 'Failed to initiate model loading', { error: err.message }));
       this.onAudioLoaded(file.name);
 
     } catch (err) {
