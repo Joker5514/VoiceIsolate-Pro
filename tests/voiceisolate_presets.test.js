@@ -54,7 +54,6 @@ const evalResult = (function () {
 
 const { PRESETS, DEFAULT_PRESET_ID } = evalResult;
 
-const { PRESETS, DEFAULT_PRESET_ID } = evalResult;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
