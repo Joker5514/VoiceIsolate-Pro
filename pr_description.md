@@ -1,9 +1,7 @@
-🧹 [code health improvement] Fix undefined variable in JS fallback DSP processor
+🎯 **What:** Removed a leftover `console.log` statement from `src/worker-pool.js` that printed "[Worker ID] Loading ONNX model with WebGPU EP..." during initialization.
 
-🎯 **What:** The `w` variable was referenced but undefined in the overlap-add loop within the `_processJS` method in `src/dsp-processor.js`. This has been resolved by correctly utilizing the pre-calculated window array directly using `win[i % N]`.
+💡 **Why:** `console.log` statements meant for debugging during development clutter up the console output in production. Removing it improves code health and cleanliness without impacting functionality.
 
-💡 **Why:** By referencing the intended variables within the loop properly, we guarantee that the JavaScript fallback code works if WASM goes unavailable, improving maintainability by eliminating a silent failure mode in the fallback logic. Unused variables were safely removed.
+✅ **Verification:** Verified by running the test suite (`pnpm test`), which passed perfectly. Inspected the code diff directly to ensure no other logic was disturbed.
 
-✅ **Verification:** Verified by ensuring the code lints without unused variable errors. No tests were broken and the change preserves all existing functionality and structure for the WASM fallback.
-
-✨ **Result:** The fallback processing will no longer crash due to `w is not defined` when evaluating overlap-add.
+✨ **Result:** A cleaner execution environment free from unnecessary debugging logs when the ML worker initializes.
