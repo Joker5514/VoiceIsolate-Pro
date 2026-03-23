@@ -15,7 +15,7 @@ try {
   console.error("Failed to load VoiceIsolatePro from app.js", e);
 }
 
-describe('Transport Methods (Missing Buffers)', () => {
+describe('Transport Methods', () => {
   // Mock the environment to avoid constructor setup errors
   let mockContext;
 
@@ -84,6 +84,8 @@ describe('Transport Methods (Missing Buffers)', () => {
   });
 
   describe('pause', () => {
+
+    describe('pause', () => {
     beforeEach(() => {
       mockContext.teardownChain = jest.fn();
       mockContext.stopSpectro = jest.fn();
@@ -385,5 +387,7 @@ describe('Transport Methods (Missing Buffers)', () => {
       expect(mockContext.dom.videoPlayer.play).toHaveBeenCalled();
     });
   });
+
+});
 
 });

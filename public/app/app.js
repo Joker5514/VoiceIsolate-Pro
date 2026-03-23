@@ -141,13 +141,11 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
-    // Phase 4: ML Worker (off-main-thread ONNX inference)
+    // ML Worker — off-main-thread ONNX inference (DeepFilterNet3 + Demucs + VAD)
     this.mlWorker = null;
     this._mlCallbacks = {};  // id → { resolve, reject }
     this._mlCallId = 0;
     this.mlReady = false;
-    // Phase 4b: Dedicated ML Worker (DeepFilterNet3 + Demucs + VAD)
-    this.mlWorker = null;
     this.mlWorkerReady = false;
     this.mlWorkerModels = { vad: false, deepfilter: false, demucs: false };
     // Phase 5: Forensic audit
