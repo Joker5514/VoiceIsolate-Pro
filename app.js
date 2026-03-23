@@ -145,9 +145,6 @@ class VoiceIsolatePro {
     this.mlWorker = null;
     this._mlCallbacks = {};  // id → { resolve, reject }
     this._mlCallId = 0;
-    this.mlReady = false;
-    // Phase 4b: Dedicated ML Worker (DeepFilterNet3 + Demucs + VAD)
-    this.mlWorker = null;
     this.mlWorkerReady = false;
     this.mlWorkerModels = { vad: false, deepfilter: false, demucs: false };
     // Phase 5: Forensic audit
