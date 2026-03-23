@@ -1020,9 +1020,9 @@ class VoiceIsolatePro {
           smoothedNoise[k] = sm * smoothedNoise[k] + (1 - sm) * noisePSD[k];
           const nEst = alpha * smoothedNoise[k] * (1 + sensitivity * 0.5);
           // Apply softer NR during speech frames when VAD is available
-          const effectiveAlpha = isSpeech ? Math.max(nEst * 0.3, beta) : beta;
+          const nEstFrame = isSpeech ? nEst * 0.3 : nEst;
           const gain = sigPSD > 1e-12 ?
-            Math.max(Math.sqrt(Math.max(sigPSD - nEst, 0) / sigPSD), effectiveAlpha) : beta;
+            Math.max(Math.sqrt(Math.max(sigPSD - nEstFrame, 0) / sigPSD), beta) : beta;
           re[k] *= gain; im[k] *= gain;
           if (k > 0 && k < N - k) { re[N-k] = re[k]; im[N-k] = -im[k]; }
         }

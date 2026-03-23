@@ -99,7 +99,7 @@ function buildErbFilterbank() {
   const hiErb = hzToErb(DF_SR / 2);
   const step  = (hiErb - loErb) / (DF_N_ERB + 1);
 
-  // For each bin, find its ERB band (−1 = unmapped)
+  // For each bin, find its ERB band (unmapped bins are marked as -1)
   const map = new Int16Array(nBins).fill(-1);
   const bands = Array.from({ length: DF_N_ERB }, () => []);
 

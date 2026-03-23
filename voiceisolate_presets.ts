@@ -71,3 +71,4 @@ export const PRESETS: Record<PresetId, VoiceIsolatePreset> = {
 };
 
 export const DEFAULT_PRESET_ID: PresetId = 'podcast-clean';
+export const DEFAULT_PRESET_ID: PresetId = 'podcast-clean';

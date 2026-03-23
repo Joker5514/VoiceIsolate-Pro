@@ -29,6 +29,30 @@ const jsSource = stripTypeScriptTypes(tsSource)
 const evalResult = new Function(
   jsSource + '\nreturn { PRESETS, DEFAULT_PRESET_ID };'
 )();
+// Remove TypeScript interface blocks and type annotations, then expose exports.
+const jsSource = tsSource
+  // Remove interface declarations (export interface Foo { ... })
+  .replace(/export\s+interface\s+\w+\s*\{[^}]*\}/g, '')
+  // Remove type alias declarations (export type Foo = ...; or type Foo = ...;)
+  .replace(/^(export\s+)?type\s+\w+\s*=.+;?\s*$/gm, '')
+  // Remove generic type annotation on PRESETS: Record<string, VoiceIsolatePreset>
+  .replace(/:\s*Record<[^>]+>/g, '')
+  // Remove remaining TS type annotations on const declarations (e.g. `: PresetId`)
+  .replace(/:\s*\w+(?=\s*=)/g, '')
+  // Remove 'export' keywords so assignments become plain 'const' declarations
+  .replace(/^export\s+/gm, '');
+
+// Pull out the values we need to test
+const evalResult = (function () {
+  const src = jsSource + '\nreturn { PRESETS, DEFAULT_PRESET_ID };';
+  // eslint-disable-next-line no-new-func
+  return new Function(src)();
+})();
+
+// Pull out the values we need to test
+// They are plain 'const' in the eval scope; capture via the script returning them.
+
+const { PRESETS, DEFAULT_PRESET_ID } = evalResult;
 
 const { PRESETS, DEFAULT_PRESET_ID } = evalResult;
 
@@ -236,6 +260,87 @@ describe('voiceisolate_presets — individual preset values', () => {
     test('clarityBoost is 3', () => expect(preset.params.clarityBoost).toBe(3));
     test('dryWetMix is 1.0', () => expect(preset.params.dryWetMix).toBe(1.0));
     test('name is "Aggressive Isolation"', () => expect(preset.name).toBe('Aggressive Isolation'));
+  });
+});
+
+// ─── Tests for code changed/added in this PR ─────────────────────────────────
+
+describe('voiceisolate_presets — PresetId type constraints (new in PR)', () => {
+  // The PR introduced the PresetId union type and wired VoiceIsolatePreset.id to it.
+  const VALID_PRESET_IDS = ['podcast-clean', 'voice-stream', 'aggressive-isolation'];
+
+  test('PRESETS has no keys outside the known PresetId union', () => {
+    const extraKeys = Object.keys(PRESETS).filter(k => !VALID_PRESET_IDS.includes(k));
+    expect(extraKeys).toEqual([]);
+  });
+
+  test('PRESETS has exactly every member of the PresetId union as a key', () => {
+    VALID_PRESET_IDS.forEach(id => {
+      expect(PRESETS).toHaveProperty(id);
+    });
+  });
+
+  test('Every preset.id is one of the three valid PresetId values', () => {
+    Object.values(PRESETS).forEach(preset => {
+      expect(VALID_PRESET_IDS).toContain(preset.id);
+    });
+  });
+
+  test('DEFAULT_PRESET_ID is one of the three valid PresetId values', () => {
+    expect(VALID_PRESET_IDS).toContain(DEFAULT_PRESET_ID);
+  });
+
+  test('DEFAULT_PRESET_ID is "podcast-clean" (the intended default)', () => {
+    expect(DEFAULT_PRESET_ID).toBe('podcast-clean');
+  });
+
+  test('Each preset.id matches its own PRESETS key (id wired to PresetId)', () => {
+    Object.entries(PRESETS).forEach(([key, preset]) => {
+      expect(preset.id).toBe(key);
+      expect(VALID_PRESET_IDS).toContain(preset.id);
+    });
+  });
+});
+
+describe('voiceisolate_presets — regex-based TS loading mechanism (new in PR)', () => {
+  // The PR introduced a new regex-stripping approach to load the TS source as JS.
+  // These tests verify the intermediate transformation and eval produce correct output.
+
+  test('jsSource has export keywords removed (plain const declarations)', () => {
+    // The regex .replace(/^export\s+/gm, '') should eliminate all leading 'export'
+    expect(jsSource).not.toMatch(/^export\s+const/m);
+    expect(jsSource).not.toMatch(/^export\s+interface/m);
+    expect(jsSource).not.toMatch(/^export\s+type/m);
+  });
+
+  test('jsSource has interface blocks stripped (no "interface" keyword remaining)', () => {
+    // The regex removes export interface ... { ... } blocks
+    expect(jsSource).not.toMatch(/interface\s+\w+\s*\{/);
+  });
+
+  test('jsSource has Record<...> generic type annotations removed', () => {
+    // The regex removes ": Record<...>" annotations
+    expect(jsSource).not.toMatch(/:\s*Record</);
+  });
+
+  test('evalResult is an object with both PRESETS and DEFAULT_PRESET_ID', () => {
+    expect(evalResult).toBeDefined();
+    expect(typeof evalResult).toBe('object');
+    expect(evalResult).toHaveProperty('PRESETS');
+    expect(evalResult).toHaveProperty('DEFAULT_PRESET_ID');
+  });
+
+  test('evalResult.PRESETS is the same reference as the top-level PRESETS', () => {
+    expect(evalResult.PRESETS).toBe(PRESETS);
+  });
+
+  test('evalResult.DEFAULT_PRESET_ID equals the top-level DEFAULT_PRESET_ID', () => {
+    expect(evalResult.DEFAULT_PRESET_ID).toBe(DEFAULT_PRESET_ID);
+  });
+
+  test('evalResult.PRESETS contains all three expected preset keys', () => {
+    const keys = Object.keys(evalResult.PRESETS).sort();
+    expect(keys).toEqual(['aggressive-isolation', 'podcast-clean', 'voice-stream']);
   });
 });
 
