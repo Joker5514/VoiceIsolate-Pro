@@ -80,7 +80,10 @@ describe('Transport Methods (Missing Buffers)', () => {
       expect(mockContext.stopSpectro).toHaveBeenCalled();
       expect(mockContext.dom.tpCur.textContent).toBe('0:00');
       expect(mockContext.dom.tpSeek.value).toBe(0);
-    describe('pause', () => {
+    });
+  });
+
+  describe('pause', () => {
     beforeEach(() => {
       mockContext.teardownChain = jest.fn();
       mockContext.stopSpectro = jest.fn();
