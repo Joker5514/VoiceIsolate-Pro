@@ -146,9 +146,12 @@ function checkDuplicateKeys(filePath) {
 
 const { findDuplicateKeys } = require('./check-duplicate-keys.js');
 /**
- * Detect duplicate JSON keys in the specified file.
+ * Find duplicate object keys in a JSON file.
+ *
+ * Reads the file at the given path (relative to the repository root) and returns any JSON object keys
+ * that appear more than once within the same object scope.
  * @param {string} filePath - Path to the JSON file relative to the project root.
- * @returns {string[]} An array of duplicate key names found in the file; empty if no duplicates are present.
+ * @returns {string[]} Duplicate key names found in the file; empty array if none are present.
  */
 function checkDuplicateKeysWrapper(filePath) {
   const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
