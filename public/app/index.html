@@ -88,7 +88,9 @@
       <!-- LEFT: Controls -->
       <div class="col-left">
         <!-- Upload -->
-        <div class="card upload-card">
+        <!-- Hero Grid Wrapper -->
+        <div class="vip-hero-grid">
+          <div class="card upload-card">
           <div
             id="uploadZone"
             class="upload-zone"
@@ -148,6 +150,129 @@
             </button>
             <span id="fileInfo" class="file-info">No file loaded</span>
           </div>
+        </div>
+
+          <div class="vip-tech-card">
+            <div class="vtc-header">
+              <h2 class="vtc-title">Engine Specs</h2>
+              <p class="vtc-subtitle">32-Stage Octa-Pass · 100% Local · Zero Cloud</p>
+              <span class="hdr-badge vtc-badge">v19 · Threads from Space v8</span>
+            </div>
+
+            <div class="vtc-section">
+              <h3 class="vtc-sec-title">Execution Runtime</h3>
+              <div class="vtc-pill-row">
+                <span class="vtc-pill vtc-pill-gpu">WebGPU <span class="vtc-tag">Primary</span></span>
+                <span class="vtc-pill vtc-pill-wasm">WASM SIMD <span class="vtc-tag">Fallback</span></span>
+                <span class="vtc-pill">ONNX Runtime Web</span>
+                <span class="vtc-pill">AudioWorklet</span>
+                <span class="vtc-pill">SharedArrayBuffer</span>
+                <span class="vtc-pill">OfflineAudioContext</span>
+              </div>
+            </div>
+
+            <div class="vtc-section">
+              <h3 class="vtc-sec-title">Hybrid ML Models</h3>
+              <div class="vtc-model-grid">
+                <div class="vtc-model-card">
+                  <div class="vtc-mc-title">Demucs v4.1</div>
+                  <div class="vtc-mc-desc">Hybrid source separation, 4-stem</div>
+                  <div class="vtc-mc-note">Executed locally via .onnx</div>
+                </div>
+                <div class="vtc-model-card">
+                  <div class="vtc-mc-title">BSRNN</div>
+                  <div class="vtc-mc-desc">Band-split RNN, sub-band masking</div>
+                  <div class="vtc-mc-note">Executed locally via .onnx</div>
+                </div>
+                <div class="vtc-model-card">
+                  <div class="vtc-mc-title">RNNoise</div>
+                  <div class="vtc-mc-desc">Real-time noise suppression RNN</div>
+                  <div class="vtc-mc-note">Executed locally via .onnx</div>
+                </div>
+                <div class="vtc-model-card">
+                  <div class="vtc-mc-title">Silero VAD</div>
+                  <div class="vtc-mc-desc">Voice activity detection, LSTM</div>
+                  <div class="vtc-mc-note">Executed locally via .onnx</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vtc-section">
+              <h3 class="vtc-sec-title">DSP Pipeline · Single-Pass STFT</h3>
+              <div class="vtc-pipeline">
+                <div class="vtc-step">
+                  <div class="vtc-step-num">1</div>
+                  <div class="vtc-step-content">
+                    <div class="vtc-step-title">Forward STFT</div>
+                    <div class="vtc-step-desc">FFT 4096, Hann window, 75% overlap</div>
+                  </div>
+                </div>
+                <div class="vtc-step">
+                  <div class="vtc-step-num">2–31</div>
+                  <div class="vtc-step-content">
+                    <div class="vtc-step-title">30 Spectral Stages</div>
+                    <div class="vtc-step-desc">In-Place Spectral Processing</div>
+                    <div class="vtc-step-pills">
+                      <span class="vtc-pill">Wiener Filter</span>
+                      <span class="vtc-pill">ML Masking</span>
+                      <span class="vtc-pill">Noise Profile</span>
+                      <span class="vtc-pill">Hum Removal</span>
+                      <span class="vtc-pill">De-reverb</span>
+                      <span class="vtc-pill">10-Band EQ</span>
+                      <span class="vtc-pill">Compressor</span>
+                      <span class="vtc-pill">Limiter</span>
+                      <span class="vtc-pill">De-esser</span>
+                      <span class="vtc-pill">Harmonic Enhance</span>
+                      <span class="vtc-pill">Transient Shape</span>
+                      <span class="vtc-pill">Stereo Width</span>
+                      <span class="vtc-pill">Formant Shift</span>
+                      <span class="vtc-pill">Presence Shelf</span>
+                      <span class="vtc-pill">Air Shelf</span>
+                      <span class="vtc-pill">Spectral Gate</span>
+                      <span class="vtc-pill">Sub Reduction</span>
+                      <span class="vtc-pill">Mid Focus</span>
+                      <span class="vtc-pill">AGC</span>
+                      <span class="vtc-pill">Phase Correction</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="vtc-step vtc-step-istft">
+                  <div class="vtc-step-num">32</div>
+                  <div class="vtc-step-content">
+                    <div class="vtc-step-title">Inverse STFT (iSTFT)</div>
+                    <div class="vtc-step-desc">OLA reconstruction, phase-smear-free</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vtc-section">
+              <h3 class="vtc-sec-title">Processing Modes</h3>
+              <div class="vtc-mode-row">
+                <div class="vtc-mode-card vtc-mode-live">
+                  <div class="vtc-mode-title">Live Mode</div>
+                  <div class="vtc-mode-stat">Latency: <span class="vtc-val">&lt; 10 ms</span></div>
+                  <div class="vtc-mode-tech">AudioWorklet + SharedArrayBuffer + lock-free ring buffer</div>
+                </div>
+                <div class="vtc-mode-card vtc-mode-creator">
+                  <div class="vtc-mode-title">Creator / Forensic Mode</div>
+                  <div class="vtc-mode-stat">Latency: <span class="vtc-val">Offline (full quality)</span></div>
+                  <div class="vtc-mode-tech">OfflineAudioContext + 32-stage full pipeline</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="vtc-section">
+              <h3 class="vtc-sec-title">UI Controls</h3>
+              <div class="vtc-ui-stats">
+                <span class="vtc-ui-stat">52 Sliders</span>
+                <span class="vtc-ui-stat">5 DSP Tabs</span>
+                <span class="vtc-ui-stat">10 Presets</span>
+                <span class="vtc-ui-stat">3D Spectrogram Canvas</span>
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <!-- Tabs -->
