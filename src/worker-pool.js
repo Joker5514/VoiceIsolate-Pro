@@ -97,7 +97,6 @@ self.onmessage = async ({ data }) => {
       paramBuf = new Float32Array(data.paramSab);
       aesKey   = await generateKey();
 
-      console.log(`[Worker ${workerId}] Loading ONNX model with WebGPU EP...`);
       try {
         session_ecapa  = await ort.InferenceSession.create('/models/ecapa_tdnn_int8.onnx', {
           executionProviders: ['webgpu', 'wasm'],
