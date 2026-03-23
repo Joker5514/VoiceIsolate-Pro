@@ -11,8 +11,6 @@ export interface DSPParams {
   dryWetMix: number;
 }
 
-export interface VoiceIsolatePreset {
-  id: string;
 export type PresetId = 'podcast-clean' | 'voice-stream' | 'aggressive-isolation';
 
 export interface VoiceIsolatePreset {
@@ -21,7 +19,6 @@ export interface VoiceIsolatePreset {
   params: DSPParams;
 }
 
-export const PRESETS: Record<string, VoiceIsolatePreset> = {
 export const PRESETS: Record<PresetId, VoiceIsolatePreset> = {
   'podcast-clean': {
     id: 'podcast-clean',
@@ -73,5 +70,4 @@ export const PRESETS: Record<PresetId, VoiceIsolatePreset> = {
   }
 };
 
-export const DEFAULT_PRESET_ID = 'podcast-clean';
 export const DEFAULT_PRESET_ID: PresetId = 'podcast-clean';
