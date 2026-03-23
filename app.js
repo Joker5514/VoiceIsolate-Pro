@@ -91,7 +91,12 @@ const PRESETS = {
   forensic: {gateThresh:-65,gateRange:-20,gateAttack:1,gateRelease:150,gateHold:30,gateLookahead:10,nrAmount:30,nrSensitivity:60,nrSpectralSub:20,nrFloor:-70,nrSmoothing:50,eqSub:-2,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:0,compThresh:-18,compRatio:2,compAttack:15,compRelease:400,compKnee:12,compMakeup:10,limThresh:-0.5,limRelease:20,hpFreq:50,hpQ:0.71,lpFreq:18000,lpQ:0.71,deEssFreq:8000,deEssAmt:10,specTilt:1,formantShift:0,derevAmt:20,derevDecay:0.8,harmRecov:35,harmOrder:4,stereoWidth:100,phaseCorr:30,voiceIso:90,bgSuppress:30,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:3,dryWet:90,ditherAmt:0,outWidth:100},
   music: {gateThresh:-55,gateRange:-25,gateAttack:3,gateRelease:120,gateHold:15,gateLookahead:3,nrAmount:25,nrSensitivity:40,nrSpectralSub:20,nrFloor:-65,nrSmoothing:45,eqSub:-3,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:3,eqBrill:0,compThresh:-30,compRatio:2,compAttack:20,compRelease:350,compKnee:15,compMakeup:3,limThresh:-0.5,limRelease:12,hpFreq:40,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:15,specTilt:-1,formantShift:0,derevAmt:15,derevDecay:1.0,harmRecov:30,harmOrder:4,stereoWidth:150,phaseCorr:0,voiceIso:50,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:0,dryWet:85,ditherAmt:5,outWidth:140},
   broadcast: {gateThresh:-35,gateRange:-40,gateAttack:1.5,gateRelease:50,gateHold:10,gateLookahead:3,nrAmount:65,nrSensitivity:60,nrSpectralSub:50,nrFloor:-50,nrSmoothing:30,eqSub:-12,eqBass:-2,eqWarmth:2,eqBody:0,eqLowMid:-2,eqMid:2,eqPresence:5,eqClarity:3,eqAir:1,eqBrill:-4,compThresh:-18,compRatio:6,compAttack:4,compRelease:150,compKnee:4,compMakeup:10,limThresh:-1,limRelease:5,hpFreq:120,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:45,specTilt:1,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:10,harmOrder:2,stereoWidth:60,phaseCorr:0,voiceIso:85,bgSuppress:70,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:70},
-  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100}
+  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100},
+  // Crystal Voice — Maximum voice-only isolation. Strips everything except human speech.
+  // Tight bandpass (150 Hz–8 kHz), aggressive gating, heavy NR + spectral subtraction,
+  // max voice isolation/BG suppress, mono collapse, strong dereverb, harmonic recovery
+  // to restore warmth lost by aggressive processing. Presence/clarity boosted for intelligibility.
+  crystalVoice: {gateThresh:-30,gateRange:-50,gateAttack:1,gateRelease:40,gateHold:10,gateLookahead:10,nrAmount:85,nrSensitivity:75,nrSpectralSub:70,nrFloor:-45,nrSmoothing:45,eqSub:-12,eqBass:-6,eqWarmth:-2,eqBody:-2,eqLowMid:-3,eqMid:3,eqPresence:6,eqClarity:4,eqAir:1,eqBrill:-5,compThresh:-20,compRatio:4,compAttack:3,compRelease:150,compKnee:8,compMakeup:8,limThresh:-0.5,limRelease:8,hpFreq:150,hpQ:0.71,lpFreq:8000,lpQ:0.71,deEssFreq:7000,deEssAmt:50,specTilt:0.5,formantShift:0,derevAmt:70,derevDecay:0.3,harmRecov:25,harmOrder:3,stereoWidth:0,phaseCorr:0,voiceIso:95,bgSuppress:85,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:15,outGain:2,dryWet:100,ditherAmt:0,outWidth:50}
 };
 
 const STAGES = [
@@ -696,6 +701,11 @@ class VoiceIsolatePro {
     if (this.liveNodes.chain) {
       this.liveNodes.chain.forEach(n => {
         try { n.disconnect(); } catch(e) { console.error('Error disconnecting live node:', e); }
+        try {
+          n.disconnect();
+        } catch (e) {
+          // Ignore errors if the node is already disconnected
+        }
       });
     }
     this.liveNodes = {};
@@ -1018,6 +1028,13 @@ class VoiceIsolatePro {
     const N = 2048, H = 512, halfN = N / 2 + 1;
     const win = this._makeWindow(N);
     const g = 1 - suppressAmt / 100;
+      const o = out.getChannelData(ch);
+      const nLen = Math.min(Math.floor(sr * 0.15), len);
+      let nRms = 0;
+      for (let i = 0; i < nLen; i++) {
+        nRms += inp[i] * inp[i];
+      }
+      nRms = Math.sqrt(nRms / nLen);
 
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
@@ -1404,6 +1421,17 @@ class VoiceIsolatePro {
     return out;
   }
 
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = dry.getChannelData(ch);
+      const w = wet.getChannelData(ch);
+      const o = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
+      }
+    }
+    return out;
+  }
+
   peakNorm(buf, tDb) {
     const c = this.ctx;
     const nCh = buf.numberOfChannels;
@@ -1427,6 +1455,34 @@ class VoiceIsolatePro {
       const o = out.getChannelData(ch);
       for (let i = 0; i < len; i++) {
         o[i] = Math.max(-1, Math.min(1, inp[i] * g));
+      }
+    }
+    return out;
+  }
+
+  peakNorm(buf, tDb) {
+    const ctx = this.ctx;
+    const numChannels = buf.numberOfChannels;
+    const length = buf.length;
+    const out = ctx.createBuffer(numChannels, length, buf.sampleRate);
+
+    let peak = 0;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const channelData = buf.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const absVal = Math.abs(channelData[i]);
+        if (absVal > peak) peak = absVal;
+      }
+    }
+
+    if (peak === 0) return buf;
+
+    const gain = Math.pow(10, tDb / 20) / peak;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const inputData = buf.getChannelData(ch);
+      const outputData = out.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        outputData[i] = Math.max(-1, Math.min(1, inputData[i] * gain));
       }
     }
     return out;

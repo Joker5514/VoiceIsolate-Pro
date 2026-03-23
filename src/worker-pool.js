@@ -1,9 +1,8 @@
-// src/worker-pool.js — Web Worker: ONNX inference (Demucs v4 + ECAPA-TDNN)
+// src/worker-pool.js — Web Worker: ONNX inference (ECAPA-TDNN)
 // Runs in parallel threads; never blocks the UI or AudioWorklet
 
 import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort.esm.min.js';
 
-let session_demucs  = null;
 let session_ecapa   = null;
 let enrolledPrint   = null;  // Float32Array: enrolled voiceprint embedding
 let aesKey          = null;
@@ -98,17 +97,13 @@ self.onmessage = async ({ data }) => {
       paramBuf = new Float32Array(data.paramSab);
       aesKey   = await generateKey();
 
-      console.log(`[Worker ${workerId}] Loading ONNX models with WebGPU EP...`);
+      console.log(`[Worker ${workerId}] Loading ONNX model with WebGPU EP...`);
       try {
-        session_demucs = await ort.InferenceSession.create('/models/demucs_v4_int8.onnx', {
-          executionProviders: ['webgpu', 'wasm'],
-          graphOptimizationLevel: 'all',
-        });
         session_ecapa  = await ort.InferenceSession.create('/models/ecapa_tdnn_int8.onnx', {
           executionProviders: ['webgpu', 'wasm'],
           graphOptimizationLevel: 'all',
         });
-        console.log(`[Worker ${workerId}] Models loaded.`);
+        console.log(`[Worker ${workerId}] Model loaded.`);
 
         // Try to restore encrypted voiceprint from IndexedDB
         const stored = await loadVoiceprint();
