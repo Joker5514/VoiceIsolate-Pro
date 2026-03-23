@@ -112,6 +112,11 @@ check(blueprint.includes('Threads from Space'), 'Threads from Space architecture
 
 // 5. Duplicate JSON key check
 console.log('\nJSON duplicate key check:');
+/**
+ * Find duplicate JSON object keys that appear more than once at the same nesting level in the specified file.
+ * @param {string} filePath - Path to the JSON file, relative to the repository root.
+ * @returns {string[]} An array of duplicated key names found in the file; empty if none.
+ */
 function checkDuplicateKeys(filePath) {
   const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
   const dupes = [];
@@ -140,6 +145,11 @@ function checkDuplicateKeys(filePath) {
 }
 
 const { findDuplicateKeys } = require('./check-duplicate-keys.js');
+/**
+ * Detect duplicate JSON keys in the specified file.
+ * @param {string} filePath - Path to the JSON file relative to the project root.
+ * @returns {string[]} An array of duplicate key names found in the file; empty if no duplicates are present.
+ */
 function checkDuplicateKeysWrapper(filePath) {
   const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
   return findDuplicateKeys(raw);
