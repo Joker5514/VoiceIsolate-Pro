@@ -34,7 +34,7 @@
         "streetsidesoftware.code-spell-checker",
         "christian-kohler.path-intellisense",
         "ms-vscode.vscode-js-profile-flame",
-        "ms-vscode.js-debug-nightly"
+        "ms-vscode.js-debug"
       ],
       "settings": {
         "editor.formatOnSave": true,
