@@ -1664,8 +1664,15 @@ class VoiceIsolatePro {
 
   // ---- 3D Spectrogram ----
   init3D(){
-    const ct=this.dom.spectro3DContainer;const w=ct.clientWidth;const h=ct.clientHeight;
-    if(w===0||h===0)return;
+    if(typeof THREE === 'undefined'){structuredLog('warn','Three.js not loaded — 3D spectrogram disabled');return;}
+    const ct=this.dom.spectro3DContainer;if(!ct)return;
+    const w=ct.clientWidth;const h=ct.clientHeight;
+    if(w===0||h===0){
+      // Container not visible yet — retry after layout settles
+      if(!this._3dRetries)this._3dRetries=0;
+      if(this._3dRetries++<10)setTimeout(()=>this.init3D(),300);
+      return;
+    }
     const scene=new THREE.Scene();scene.background=new THREE.Color(0x030306);
     const cam=new THREE.PerspectiveCamera(45,w/h,0.1,1000);cam.position.set(0,40,60);cam.lookAt(0,0,0);
     const ren=new THREE.WebGLRenderer({canvas:this.dom.spectro3DCanvas,antialias:true});
