@@ -15,12 +15,14 @@
   "author": "VoiceIsolate Pro",
   "license": "UNLICENSED",
   "scripts": {
-    "dev": "npx serve public -l 3000 --cors",
+    "start": "node server.js",
+    "dev": "node server.js",
+    "serve": "npx serve public -l 3000 --cors",
     "build": "mkdir -p build && cp -r public/* build/",
-    "lint": "eslint public/app/app.js public/app/dsp-worker.js public/app/ml-worker.js",
+    "lint": "eslint public/app/app.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --watch",
-    "lint:fix": "eslint public/app/app.js public/app/dsp-worker.js public/app/ml-worker.js --fix",
+    "lint:fix": "eslint public/app/app.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js --fix",
     "validate": "node scripts/validate.js"
   },
   "devDependencies": {
@@ -44,6 +46,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@vercel/analytics": "^2.0.1"
+    "@vercel/analytics": "^2.0.1",
+    "express": "^4.21.0"
   }
 }

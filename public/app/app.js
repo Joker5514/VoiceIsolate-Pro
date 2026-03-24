@@ -171,12 +171,31 @@ class VoiceIsolatePro {
 
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
-      this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)();
-      // Phase 3: Register AudioWorklet processor for low-latency live mode
+      this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)({ latencyHint: 'interactive' });
+      // Load BOTH AudioWorklet processors:
+      //   dsp-processor.js — STFT single-pass spectral engine (NR, ERB gate, hum, EQ, de-ess)
+      //   dsp-worker.js    — time-domain fallback (HP, LP, gate, comp, limiter)
+      this._workletReady = false;
+      this._workletFallback = false;
       if (this.ctx.audioWorklet) {
-        this.ctx.audioWorklet.addModule('./dsp-worker.js').catch(() => {
-          structuredLog('warn', 'AudioWorklet unavailable — live chain uses native Web Audio nodes');
+        Promise.all([
+          this.ctx.audioWorklet.addModule('./dsp-processor.js'),
+          this.ctx.audioWorklet.addModule('./dsp-worker.js'),
+        ]).then(() => {
+          this._workletReady = true;
+          structuredLog('info', 'AudioWorklet processors loaded: dsp-processor (STFT) + dsp-worker (TD)');
+          // Allocate SharedArrayBuffer for spectrogram visualisation (2049 bins)
+          if (typeof SharedArrayBuffer !== 'undefined') {
+            this._spectrumSAB = new SharedArrayBuffer(2049 * Float32Array.BYTES_PER_ELEMENT);
+            this._spectrumView = new Float32Array(this._spectrumSAB);
+            structuredLog('info', 'SharedArrayBuffer allocated for spectrum handoff (crossOriginIsolated=' + self.crossOriginIsolated + ')');
+          }
+        }).catch((err) => {
+          this._workletFallback = true;
+          structuredLog('warn', 'AudioWorklet load failed — live chain uses native Web Audio nodes', { error: err.message });
         });
+      } else {
+        this._workletFallback = true;
       }
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
@@ -629,6 +648,45 @@ class VoiceIsolatePro {
     src.playbackRate.value = parseFloat(this.dom.tpSpeed.value) || 1;
     src.onended = () => { if (this.isPlaying) this.stop(); };
 
+    const ana = ctx.createAnalyser(); ana.fftSize = 4096; ana.smoothingTimeConstant = 0.75;
+
+    // ── PRIMARY PATH: STFT AudioWorklet (dsp-processor.js) ──────────────
+    // Single-pass spectral: one FFT → NR, ERB gate, hum, EQ, de-ess, tilt → iFFT
+    // + time-domain: HP, LP, gate, compressor, limiter, output gain
+    if (this._workletReady && !this._workletFallback) {
+      try {
+        const dspNode = new AudioWorkletNode(ctx, 'dsp-processor', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [buf.numberOfChannels],
+        });
+
+        // Forward ALL 52 slider values to the worklet
+        dspNode.port.postMessage({ sliders: { ...p } });
+
+        // Attach SharedArrayBuffer for spectrogram data
+        if (this._spectrumSAB) {
+          dspNode.port.postMessage({ type: 'sab-spectrum', sab: this._spectrumSAB });
+        }
+
+        // Chain: source → dsp-processor (STFT + TD) → analyser → destination
+        src.connect(dspNode);
+        dspNode.connect(ana);
+        ana.connect(ctx.destination);
+
+        src.start(0, this.playOffset);
+        this.currentSource = src;
+        this.analyserNode = ana;
+        this._dspWorkletNode = dspNode;
+        this.liveNodes = { dspNode, chain: [src, dspNode, ana] };
+        this.liveChainBuilt = true;
+        return;
+      } catch (e) {
+        structuredLog('warn', 'STFT worklet failed, falling back to native nodes', { error: e.message });
+      }
+    }
+
+    // ── FALLBACK PATH: native Web Audio API nodes ───────────────────────
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = p.hpFreq; hp.Q.value = p.hpQ;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = p.lpFreq; lp.Q.value = p.lpQ;
 
@@ -652,7 +710,6 @@ class VoiceIsolatePro {
     const lim = ctx.createDynamicsCompressor(); lim.threshold.value = p.limThresh; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = p.limRelease/1000;
     const outG = ctx.createGain(); outG.gain.value = Math.pow(10, p.outGain/20);
     const wG = ctx.createGain(); wG.gain.value = p.outWidth/100;
-    const ana = ctx.createAnalyser(); ana.fftSize = 4096; ana.smoothingTimeConstant = 0.75;
 
     const chain = [src, hp, lp, ...eqs.map(e=>e.node), deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, ana];
     for (let i = 0; i < chain.length-1; i++) chain[i].connect(chain[i+1]);
@@ -661,13 +718,25 @@ class VoiceIsolatePro {
     src.start(0, this.playOffset);
     this.currentSource = src;
     this.analyserNode = ana;
+    this._dspWorkletNode = null;
     this.liveNodes = { hp, lp, eqs, deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, chain };
     this.liveChainBuilt = true;
   }
 
   updateLiveChain() {
     if (!this.liveChainBuilt) return;
-    const p = this.params; const n = this.liveNodes; const t = this.ctx.currentTime; const s = 0.02;
+    const p = this.params;
+
+    // ── PRIMARY: forward ALL params to STFT AudioWorklet ─────────────────
+    if (this._dspWorkletNode) {
+      try {
+        this._dspWorkletNode.port.postMessage({ sliders: { ...p } });
+      } catch (e) { /* worklet may be disconnected */ }
+      return;
+    }
+
+    // ── FALLBACK: native Web Audio nodes ─────────────────────────────────
+    const n = this.liveNodes; const t = this.ctx.currentTime; const s = 0.02;
     try {
       n.hp.frequency.setTargetAtTime(p.hpFreq,t,s); n.hp.Q.setTargetAtTime(p.hpQ,t,s);
       n.lp.frequency.setTargetAtTime(p.lpFreq,t,s); n.lp.Q.setTargetAtTime(p.lpQ,t,s);
@@ -693,6 +762,10 @@ class VoiceIsolatePro {
       try { this.currentSource.stop(); } catch(e) { console.error('Error stopping current source:', e); }
       try { this.currentSource.disconnect(); } catch(e) { console.error('Error disconnecting current source:', e); }
       this.currentSource = null;
+    }
+    if (this._dspWorkletNode) {
+      try { this._dspWorkletNode.disconnect(); } catch(e) { /* ok */ }
+      this._dspWorkletNode = null;
     }
     if (this.liveNodes.chain) {
       this.liveNodes.chain.forEach(n => {
