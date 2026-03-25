@@ -879,7 +879,7 @@ class VoiceIsolatePro {
       // ---- PASS 4: SPECTRAL NR — actual spectral processing ----
       let fin = rendered;
       if (p.nrAmount > 0) {
-        fin = this.applySpectralNR(fin, p.nrAmount/100, p.nrSensitivity/100, p.nrSpectralSub/100, p.nrFloor, p.nrSmoothing/100, vadMask);
+        fin = this.applySpectralNR(fin, p.nrAmount/100, p.nrSensitivity/100, p.nrSpectralSub/100, p.nrFloor, p.nrSmoothing/100);
         if (this.forensicMode) await this.addAuditEntry(fin, 'Spectral NR');
       }
       if (this.abortFlag) throw 'abort';
@@ -1012,7 +1012,7 @@ class VoiceIsolatePro {
   }
 
   // Real spectral noise reduction via Wiener filtering (replaces the old stub applyNR)
-  applySpectralNR(buf, amt, sensitivity, spectralSub, floorDb, smoothing, vadMask) {
+  applySpectralNR(buf, amt, sensitivity, spectralSub, floorDb, smoothing) {
     // Ephraim-Malah Log-MMSE offline implementation
     // Ref: PDF §8 — decision-directed a priori SNR, Log-MMSE gain, spectral flooring
     const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
@@ -1021,22 +1021,45 @@ class VoiceIsolatePro {
     const win = this._makeWindow(N);
     const specFloor = Math.pow(10, floorDb / 20);
     const alphaDD = Math.max(0, Math.min(0.99, 0.92 + smoothing * 0.07)); // decision-directed smoothing
+    const subStrength = spectralSub;                       // 0–1: spectral subtraction aggressiveness
+    const sensScale = 1 + sensitivity * 0.5;               // noise estimate scaling
 
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
       const outData = out.getChannelData(ch);
       const normBuf = new Float64Array(len);
 
-      // MCRA-style noise estimation from initial quiet segment
+      // Noise estimation from initial quiet segment (only use low-energy frames)
       const profLen = Math.min(Math.floor(sr * 0.5), len);
       const noiseVar = new Float64Array(halfN);
-      let profFrames = 0;
+      // First pass: compute per-frame RMS to identify quiet frames
+      const frameRMS = [];
       for (let s = 0; s + N <= profLen; s += H) {
-        const re = new Float64Array(N), im = new Float64Array(N);
-        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
-        this._fft(re, im);
-        for (let k = 0; k < halfN; k++) noiseVar[k] += re[k]*re[k] + im[k]*im[k];
-        profFrames++;
+        let rms = 0;
+        for (let i = 0; i < N; i++) rms += inp[s + i] * inp[s + i];
+        frameRMS.push({ s, rms: Math.sqrt(rms / N) });
+      }
+      // Use frames below median RMS (or a quiet threshold) for noise profiling
+      const quietThreshold = 0.01;
+      let profFrames = 0;
+      for (const fr of frameRMS) {
+        if (fr.rms < quietThreshold) {
+          const re = new Float64Array(N), im = new Float64Array(N);
+          for (let i = 0; i < N; i++) re[i] = inp[fr.s + i] * win[i];
+          this._fft(re, im);
+          for (let k = 0; k < halfN; k++) noiseVar[k] += re[k]*re[k] + im[k]*im[k];
+          profFrames++;
+        }
+      }
+      // Fallback: if no quiet frames found, use all frames with conservative floor
+      if (profFrames === 0) {
+        for (const fr of frameRMS) {
+          const re = new Float64Array(N), im = new Float64Array(N);
+          for (let i = 0; i < N; i++) re[i] = inp[fr.s + i] * win[i];
+          this._fft(re, im);
+          for (let k = 0; k < halfN; k++) noiseVar[k] += re[k]*re[k] + im[k]*im[k];
+          profFrames++;
+        }
       }
       if (profFrames > 0) for (let k = 0; k < halfN; k++) {
         noiseVar[k] = Math.max(noiseVar[k] / profFrames, 1e-12);
@@ -1051,8 +1074,7 @@ class VoiceIsolatePro {
       let mcraCount = 0;
       const mcraBlock = 15;
 
-      let frameIdx = 0;
-      for (let s = 0; s + N <= len; s += H, frameIdx++) {
+      for (let s = 0; s + N <= len; s += H) {
         const re = new Float64Array(N), im = new Float64Array(N);
         for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
         this._fft(re, im);
@@ -1074,7 +1096,9 @@ class VoiceIsolatePro {
           if (nv < 1e-18) { prevCleanMag[k] = mag; continue; }
 
           // ── A posteriori SNR: γ = |Y|²/σ²_n ──
-          const gammaK = power / nv;
+          //    sensScale adjusts noise estimate aggressiveness
+          const nvScaled = nv * sensScale;
+          const gammaK = power / nvScaled;
           // ── A priori SNR (decision-directed): ξ = α*|Ŝ_{-1}|²/σ²_n + (1-α)*max(γ-1,0) ──
           const xi = Math.max(
             alphaDD * (prevCleanMag[k]*prevCleanMag[k]) / nv

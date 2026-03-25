@@ -175,6 +175,7 @@ class DspProcessor extends AudioWorkletProcessor {
 
     // DC offset removal state (PDF §14.1: "must be removed first")
     this._dcState = 0.0;  // single-pole high-pass at ~5 Hz
+    this._dcPrevX = 0.0;  // previous input sample for DC filter
 
     // Biquad states for post-STFT HP/LP (2nd-order)
     this._hpState = [0, 0, 0, 0]; // x1, x2, y1, y2
@@ -203,6 +204,15 @@ class DspProcessor extends AudioWorkletProcessor {
         this.noiseProfiled   = false;
         this.noiseFrameCount = 0;
         this.noiseProfile.fill(0);
+        // Reset MCRA + Log-MMSE state buffers
+        this.noiseVar.fill(0);
+        this.noisePowerSmth.fill(0);
+        this.noisePowerMin.fill(1e10);
+        this.speechPresProb.fill(0);
+        this.prevGain.fill(1.0);
+        this.prevMagEstimate.fill(0);
+        this.snrPrior.fill(0);
+        this.mcraBlockCount = 0;
       }
     };
   }
@@ -319,7 +329,7 @@ class DspProcessor extends AudioWorkletProcessor {
     this._humRemoval(mag);
 
     // ── Stage 16: De-clipping detection (spectral domain) ─────────────
-    this._deClipRepair(mag, ph);
+    this._deClipRepair(mag);
 
     // ── Stage 13: Ephraim-Malah Log-MMSE broadband NR ─────────────────
     if (this.noiseProfiled) {
@@ -405,9 +415,11 @@ class DspProcessor extends AudioWorkletProcessor {
     this.mcraBlockCount++;
     if (this.mcraBlockCount >= this.mcraBlockSize) {
       this.mcraBlockCount = 0;
-      // Reset minima for next window — carry forward current smoothed as baseline
+      // Reset minima for next search window — set to large value so true
+      // minima are discovered from incoming frames (not current smoothed,
+      // which would collapse ratio→1 and make speech look noise-only)
       for (let k = 0; k < nBins; k++) {
-        this.noisePowerMin[k] = this.noisePowerSmth[k];
+        this.noisePowerMin[k] = 1e10;
       }
     }
 
@@ -453,10 +465,11 @@ class DspProcessor extends AudioWorkletProcessor {
     const nBins    = this.numBins;
     const amount   = this.params.nrAmount / 100;           // 0–1 user control
     if (amount < 0.01) return; // bypass when NR disabled
-    const subAlpha = this.params.nrSpectralSub / 100;      // spectral sub blend
+    const subStrength = this.params.nrSpectralSub / 100;   // 0–1: spectral subtraction aggressiveness
     const floorDB  = this.params.nrFloor;                  // noise floor dB
     const smooth   = 0.92 + (this.params.nrSmoothing / 100) * 0.07; // α_dd: 0.92–0.99
     const specFloor = Math.pow(10, floorDB / 20);          // β spectral floor
+    const sensitivity = this.params.nrSensitivity / 100;   // 0–1: noise detection aggressiveness
     const prevGain  = this.prevGain;
     const snrPrior  = this.snrPrior;
     const prevMag   = this.prevMagEstimate;
@@ -468,7 +481,9 @@ class DspProcessor extends AudioWorkletProcessor {
       const power  = mag[k] * mag[k];
 
       // ── A posteriori SNR: γ(k) = |Y(k)|² / σ²_n(k)
-      const gammaK = power / noiseV;
+      //    sensitivity scales noise estimate: higher = more aggressive detection
+      const noiseScaled = noiseV * (1 + sensitivity * 0.5);
+      const gammaK = power / noiseScaled;
 
       // ── A priori SNR via decision-directed (Ephraim-Malah 1984):
       //    ξ(k) = α_dd * |Ŝ(k-1)|² / σ²_n(k) + (1-α_dd) * max(γ(k)-1, 0)
@@ -497,6 +512,11 @@ class DspProcessor extends AudioWorkletProcessor {
       // ── Log-MMSE gain: G = ξ/(1+ξ) * exp(0.5 * E1(v))
       let gain = (xi / (1 + xi)) * Math.exp(0.5 * e1);
 
+      // ── Spectral subtraction blend: higher subStrength → more aggressive
+      //    Blends Log-MMSE with harder spectral subtraction gain
+      const subGain = Math.max(1 - (noiseScaled / (power + 1e-20)), specFloor);
+      gain = (1 - subStrength) * gain + subStrength * Math.min(gain, subGain);
+
       // ── Apply user-controlled amount (blend between unity and full NR)
       gain = 1.0 - amount * (1.0 - gain);
 
@@ -524,7 +544,7 @@ class DspProcessor extends AudioWorkletProcessor {
   //   and redraw missing waveform peaks before spectral analysis."
   //  In spectral domain: detect flat-top peaks (consecutive max-magnitude
   //  bins) and interpolate surrounding spectral shape.
-  _deClipRepair(mag, phase) {
+  _deClipRepair(mag) {
     const nBins = this.numBins;
     // Find max magnitude in frame
     let maxMag = 0;
@@ -591,13 +611,13 @@ class DspProcessor extends AudioWorkletProcessor {
 
     // ── Cross-band gain smoothing (3-tap moving average) ────────────
     // Prevents sharp gain jumps between adjacent perceptual bands
-    const smoothed = this.erbGains;
-    let prev = smoothed[0];
+    // Use separate buffer to avoid asymmetric in-place modification
+    const src = this.erbGains;
+    const smoothed = new Float32Array(32);
+    smoothed[0] = src[0];
+    smoothed[31] = src[31];
     for (let b = 1; b < 31; b++) {
-      const cur = smoothed[b];
-      const next = smoothed[b + 1];
-      smoothed[b] = 0.25 * prev + 0.5 * cur + 0.25 * next;
-      prev = cur;
+      smoothed[b] = 0.25 * src[b - 1] + 0.5 * src[b] + 0.25 * src[b + 1];
     }
 
     // Apply smoothed gains to bins
