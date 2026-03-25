@@ -15,6 +15,12 @@
 // Table indexed by [stage][position] → (re, im) pairs stored interleaved.
 const FFT_TWIDDLES = new Map();
 
+/**
+ * Get precomputed twiddle factors for an n-point radix-2 FFT and cache them for reuse.
+ *
+ * @param {number} n - FFT size (must be a power of two).
+ * @returns {Float64Array} A Float64Array of interleaved twiddle values: consecutive pairs are [cos(angle), sin(angle)] (real, imaginary). Values are arranged stage-by-stage for a forward transform; inverse transforms should use the conjugate (negate the imaginary components).
+ */
 function ensureTwiddles(n) {
   if (FFT_TWIDDLES.has(n)) return FFT_TWIDDLES.get(n);
   const stages = Math.log2(n);
@@ -35,6 +41,16 @@ function ensureTwiddles(n) {
   return table;
 }
 
+/**
+ * Compute an in-place radix-2 FFT on the provided real and imaginary arrays.
+ *
+ * Performs a forward transform when `inverse` is false and an inverse transform when `inverse` is true.
+ * The transform writes results back into the input arrays and uses a cached twiddle table for performance.
+ *
+ * @param {Float64Array|Float32Array|number[]} re - Real-part array; length must be a power of two.
+ * @param {Float64Array|Float32Array|number[]} im - Imaginary-part array; must match `re.length`.
+ * @param {boolean} inverse - When true, compute the inverse FFT (conjugates twiddles); otherwise compute the forward FFT.
+ */
 function fftInPlace(re, im, inverse) {
   const n = re.length;
   const table = ensureTwiddles(n);
