@@ -29,25 +29,6 @@ const jsSource = stripTypeScriptTypes(tsSource)
 const evalResult = new Function(
   jsSource + '\nreturn { PRESETS, DEFAULT_PRESET_ID };'
 )();
-// Remove TypeScript interface blocks and type annotations, then expose exports.
-const jsSource = tsSource
-  // Remove interface declarations (export interface Foo { ... })
-  .replace(/export\s+interface\s+\w+\s*\{[^}]*\}/g, '')
-  // Remove type alias declarations (export type Foo = ...; or type Foo = ...;)
-  .replace(/^(export\s+)?type\s+\w+\s*=.+;?\s*$/gm, '')
-  // Remove generic type annotation on PRESETS: Record<string, VoiceIsolatePreset>
-  .replace(/:\s*Record<[^>]+>/g, '')
-  // Remove remaining TS type annotations on const declarations (e.g. `: PresetId`)
-  .replace(/:\s*\w+(?=\s*=)/g, '')
-  // Remove 'export' keywords so assignments become plain 'const' declarations
-  .replace(/^export\s+/gm, '');
-
-// Pull out the values we need to test
-const evalResult = (function () {
-  const src = jsSource + '\nreturn { PRESETS, DEFAULT_PRESET_ID };';
-  // eslint-disable-next-line no-new-func
-  return new Function(src)();
-})();
 
 // Pull out the values we need to test
 // They are plain 'const' in the eval scope; capture via the script returning them.
