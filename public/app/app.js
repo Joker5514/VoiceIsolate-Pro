@@ -1119,6 +1119,9 @@ class VoiceIsolatePro {
 
           // ── Log-MMSE gain ──
           let gain = (xi / (1 + xi)) * Math.exp(0.5 * e1);
+          // Spectral subtraction blend: higher subStrength → more aggressive
+          const subGain = Math.max(1 - (nvScaled / (power + 1e-20)), specFloor);
+          gain = (1 - subStrength) * gain + subStrength * Math.min(gain, subGain);
           gain = 1.0 - amt * (1.0 - gain); // user amount control
           gain = Math.max(gain, specFloor); // spectral floor (anti-musical-noise)
           // Adaptive smoothing: fast attack during speech, slow release during noise
@@ -1135,17 +1138,16 @@ class VoiceIsolatePro {
           if (k > 0 && k < N - k) { re[N-k] = re[k]; im[N-k] = -im[k]; }
         }
 
-        // Reset MCRA minima periodically
+        // Reset MCRA minima periodically — set to large value so true
+        // minima are discovered from incoming frames
         if (++mcraCount >= mcraBlock) {
           mcraCount = 0;
-          for (let k = 0; k < halfN; k++) noisePowerMin[k] = noisePowerSmth[k];
+          for (let k = 0; k < halfN; k++) noisePowerMin[k] = 1e10;
         }
 
         this._ifft(re, im);
         for (let i = 0; i < N && s + i < len; i++) {
           outData[s + i] += re[i] * win[i];
-          normBuf[s + i] += win[i] * win[i];
-        }
           normBuf[s + i] += win[i] * win[i];
         }
       }
