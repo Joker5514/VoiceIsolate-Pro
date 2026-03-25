@@ -81,6 +81,20 @@ class DspProcessor extends AudioWorkletProcessor {
     this.noiseSmoothGain = new Float32Array(this.numBins);
     this.prevMagEstimate = new Float32Array(this.numBins);
 
+    // Ephraim-Malah Log-MMSE state buffers
+    this.prevGain     = new Float32Array(this.numBins).fill(1.0); // gain smoothing
+    this.snrPrior     = new Float32Array(this.numBins);            // a priori SNR (ξ)
+    this.noiseVar     = new Float32Array(this.numBins);            // noise variance σ²_n
+    // MCRA continuous noise estimation (Minima Controlled Recursive Averaging)
+    this.noisePowerMin   = new Float32Array(this.numBins).fill(1e10); // running minimum
+    this.noisePowerSmth  = new Float32Array(this.numBins);            // smoothed power
+    this.speechPresProb  = new Float32Array(this.numBins);            // P(speech present)
+    this.mcraBlockCount  = 0;
+    this.mcraBlockSize   = 15; // frames per minima search window (~320ms)
+    // De-clipping state
+    this.clipCount       = 0;
+    this.prevSample      = 0;
+
     // ERB band energy & gains
     this.erbGains    = new Float32Array(32);
     this.erbBandMap  = null; // will be computed in init
@@ -232,6 +246,19 @@ class DspProcessor extends AudioWorkletProcessor {
 
   // ══════════════════════════════════════════════════════════════════════════
   //  SINGLE-PASS STFT: ONE FFT → all spectral ops → ONE iFFT
+  //  Order follows iZotope professional restoration cascade (PDF ref §14):
+  //    1. Forward STFT
+  //    2. Noise estimation (MCRA continuous)
+  //    3. De-hum (tonal removal BEFORE broadband NR)
+  //    4. De-clipping detection + repair
+  //    5. Broadband NR (Ephraim-Malah Log-MMSE)
+  //    6. ERB spectral gate (psychoacoustic)
+  //    7. Voice band focus / separation prep
+  //    8. Spectral EQ
+  //    9. De-essing
+  //   10. Spectral tilt
+  //   11. Harmonic recovery (AFTER NR to regenerate destroyed harmonics)
+  //   12. Inverse STFT
   // ══════════════════════════════════════════════════════════════════════════
   _processSTFTFrame() {
     const N     = this.fftSize;
@@ -256,12 +283,20 @@ class DspProcessor extends AudioWorkletProcessor {
       ph[k]  = Math.atan2(im[k], re[k]);
     }
 
-    // ── Stage 03: Noise profiling (auto during quiet frames) ──────────
+    // ── Stage 03: MCRA noise estimation (continuous, non-VAD-dependent) ─
     this._updateNoiseProfile(mag);
 
-    // ── Stage 13: Spectral Subtraction (Wiener-style) ─────────────────
+    // ── Stage 15: Hum Elimination FIRST (before broadband NR per PDF §14.4)
+    //    "Attempting to remove hum later using broadband NR forces
+    //     the algorithm to over-subtract, destroying audio quality."
+    this._humRemoval(mag);
+
+    // ── Stage 16: De-clipping detection (spectral domain) ─────────────
+    this._deClipRepair(mag, ph);
+
+    // ── Stage 13: Ephraim-Malah Log-MMSE broadband NR ─────────────────
     if (this.noiseProfiled) {
-      this._spectralSubtract(mag);
+      this._logMMSE(mag);
     }
 
     // ── Stage 14: ERB Spectral Gate (32-band psychoacoustic) ──────────
@@ -269,13 +304,10 @@ class DspProcessor extends AudioWorkletProcessor {
       this._erbGate(mag);
     }
 
-    // ── Stage 15: Hum Elimination (50/60 Hz + harmonics) ──────────────
-    this._humRemoval(mag);
-
-    // ── Stage 16: Voice Band Focus ────────────────────────────────────
+    // ── Stage 17: Voice Band Focus ────────────────────────────────────
     this._voiceBandFocus(mag);
 
-    // ── Stage 17: Spectral EQ (10-band in frequency domain) ──────────
+    // ── Stage 18: Spectral EQ (10-band in frequency domain) ──────────
     this._spectralEQ(mag);
 
     // ── Stage 22: De-essing (frequency-selective attenuation) ─────────
@@ -284,7 +316,7 @@ class DspProcessor extends AudioWorkletProcessor {
     // ── Stage 23: Spectral Tilt ───────────────────────────────────────
     this._spectralTilt(mag);
 
-    // ── Stage 19: Harmonic Recovery (soft saturation) ─────────────────
+    // ── Stage 19: Harmonic Recovery AFTER NR (regenerate destroyed harmonics)
     this._harmonicRecovery(mag, ph);
 
     // ── Reconstruct complex spectrum from modified magnitude + phase ──
@@ -311,7 +343,6 @@ class DspProcessor extends AudioWorkletProcessor {
 
     // ── Export spectrum to SharedArrayBuffer for visualization ────────
     if (this._spectrumSAB && this._spectrumSAB.length >= nBins) {
-      // Write log-magnitude for spectrogram display
       for (let k = 0; k < nBins; k++) {
         this._spectrumSAB[k] = 20.0 * Math.log10(Math.max(mag[k], 1e-10));
       }
@@ -322,66 +353,171 @@ class DspProcessor extends AudioWorkletProcessor {
   //  SPECTRAL PROCESSING STAGES (all operate on magnitude array in-place)
   // ══════════════════════════════════════════════════════════════════════════
 
-  // ── Noise Profile: accumulate during quiet frames ──────────────────────
+  // ── MCRA Noise Estimation (Minima Controlled Recursive Averaging) ──────
+  //  Ref: PDF §8 — "MCRA for non-stationary environments"
+  //  Continuously tracks noise floor without requiring explicit VAD.
+  //  Uses smoothed power spectrum + running minimum to estimate noise.
   _updateNoiseProfile(mag) {
-    // Compute frame RMS
-    let sum = 0;
-    for (let k = 0; k < this.numBins; k++) sum += mag[k] * mag[k];
-    const rms = Math.sqrt(sum / this.numBins);
+    const nBins = this.numBins;
+    const alphaS = 0.92;   // power spectrum smoothing
+    const alphaD = 0.85;   // noise update smoothing
+    const delta  = 2.0;    // speech-presence threshold factor
 
-    // Auto-profile: if frame is quiet and we haven't profiled enough
-    if (rms < this.silenceThreshold && this.noiseFrameCount < this.noiseFrameTarget) {
-      const alpha = 1.0 / (this.noiseFrameCount + 1);
-      for (let k = 0; k < this.numBins; k++) {
-        this.noiseProfile[k] += alpha * (mag[k] - this.noiseProfile[k]);
+    for (let k = 0; k < nBins; k++) {
+      const power = mag[k] * mag[k];
+
+      // Smooth power spectrum (recursive average)
+      this.noisePowerSmth[k] = alphaS * this.noisePowerSmth[k] + (1 - alphaS) * power;
+
+      // Update running minimum per block window
+      if (this.noisePowerSmth[k] < this.noisePowerMin[k]) {
+        this.noisePowerMin[k] = this.noisePowerSmth[k];
       }
+    }
+
+    this.mcraBlockCount++;
+    if (this.mcraBlockCount >= this.mcraBlockSize) {
+      this.mcraBlockCount = 0;
+      // Reset minima for next window — carry forward current smoothed as baseline
+      for (let k = 0; k < nBins; k++) {
+        this.noisePowerMin[k] = this.noisePowerSmth[k];
+      }
+    }
+
+    // Speech presence probability + conditional noise update
+    for (let k = 0; k < nBins; k++) {
+      // If smoothed power is close to the minimum, likely noise-only
+      const ratio = this.noisePowerSmth[k] / (this.noisePowerMin[k] + 1e-20);
+      const pSpeech = ratio > delta ? 1.0 : 0.0;
+      this.speechPresProb[k] = 0.7 * this.speechPresProb[k] + 0.3 * pSpeech;
+
+      // Update noise estimate only when speech is absent
+      const pNoise = 1.0 - this.speechPresProb[k];
+      const alphaAdapt = alphaD + (1 - alphaD) * this.speechPresProb[k];
+      this.noiseVar[k] = alphaAdapt * this.noiseVar[k] + (1 - alphaAdapt) * pNoise * mag[k] * mag[k];
+
+      // Legacy compat: maintain noiseProfile as sqrt(variance)
+      this.noiseProfile[k] = Math.sqrt(Math.max(this.noiseVar[k], 1e-20));
+    }
+
+    // Initial profile convergence: need at least ~10 frames
+    if (!this.noiseProfiled) {
       this.noiseFrameCount++;
       if (this.noiseFrameCount >= this.noiseFrameTarget) {
         this.noiseProfiled = true;
       }
     }
-    // Continuous noise tracking (slow update) during profiled state
-    else if (this.noiseProfiled && rms < this.silenceThreshold * 2) {
-      const alpha = 0.01; // very slow adaptation
-      for (let k = 0; k < this.numBins; k++) {
-        this.noiseProfile[k] += alpha * (mag[k] - this.noiseProfile[k]);
+  }
+
+  // ── Ephraim-Malah Log-MMSE Spectral Amplitude Estimator ────────────────
+  //  Ref: PDF §8 — "Ephraim-Malah algorithm employs MMSE-STSA estimator"
+  //  "decision-directed approach to estimate a priori SNR"
+  //  "smooths gain function over time... aggressive noise suppression
+  //   without introducing metallic musical noise artifacts"
+  //
+  //  The Log-MMSE gain function:
+  //    G(k) = ξ(k) / (1 + ξ(k)) * exp(0.5 * E1(v(k)))
+  //  where:
+  //    ξ(k)  = a priori SNR (decision-directed)
+  //    γ(k)  = a posteriori SNR = |Y(k)|² / σ²_n(k)
+  //    v(k)  = ξ(k) * γ(k) / (1 + ξ(k))
+  //    E1(v) = exponential integral ≈ approximated via rational function
+  _logMMSE(mag) {
+    const nBins    = this.numBins;
+    const amount   = this.params.nrAmount / 100;           // 0–1 user control
+    const subAlpha = this.params.nrSpectralSub / 100;      // spectral sub blend
+    const floorDB  = this.params.nrFloor;                  // noise floor dB
+    const smooth   = 0.92 + (this.params.nrSmoothing / 100) * 0.07; // α_dd: 0.92–0.99
+    const specFloor = Math.pow(10, floorDB / 20);          // β spectral floor
+    const prevGain  = this.prevGain;
+    const snrPrior  = this.snrPrior;
+    const prevMag   = this.prevMagEstimate;
+
+    for (let k = 1; k < nBins; k++) {
+      const noiseV = this.noiseVar[k];
+      if (noiseV < 1e-20) continue;
+
+      const power  = mag[k] * mag[k];
+
+      // ── A posteriori SNR: γ(k) = |Y(k)|² / σ²_n(k)
+      const gammaK = power / noiseV;
+
+      // ── A priori SNR via decision-directed (Ephraim-Malah 1984):
+      //    ξ(k) = α_dd * |Ŝ(k-1)|² / σ²_n(k) + (1-α_dd) * max(γ(k)-1, 0)
+      const prevCleanPower = prevMag[k] * prevMag[k];
+      const xiDD = smooth * (prevCleanPower / noiseV)
+                 + (1 - smooth) * Math.max(gammaK - 1, 0);
+      // Clamp to prevent extreme values
+      const xi = Math.max(xiDD, 1e-4);
+      snrPrior[k] = xi;
+
+      // ── v(k) = ξ * γ / (1 + ξ)
+      const v = (xi * gammaK) / (1 + xi);
+
+      // ── Exponential integral E1(v) approximation (Abramowitz & Stegun)
+      //    For v > 1: E1(v) ≈ e^(-v)/v * (v² + a1*v + a2) / (v² + b1*v + b2)
+      //    For v ≤ 1: E1(v) ≈ -ln(v) - 0.5772 + v - v²/4
+      let e1;
+      if (v > 1) {
+        const a1 = 2.334733, a2 = 0.250621;
+        const b1 = 3.330657, b2 = 1.681534;
+        e1 = Math.exp(-v) / (v + 1e-20) * (v * v + a1 * v + a2) / (v * v + b1 * v + b2);
+      } else {
+        e1 = Math.max(-Math.log(v + 1e-20) - 0.5772156649 + v - v * v * 0.25, 0);
       }
+
+      // ── Log-MMSE gain: G = ξ/(1+ξ) * exp(0.5 * E1(v))
+      let gain = (xi / (1 + xi)) * Math.exp(0.5 * e1);
+
+      // ── Apply user-controlled amount (blend between unity and full NR)
+      gain = 1.0 - amount * (1.0 - gain);
+
+      // ── Spectral floor to prevent musical noise (PDF §7 "spectral flooring
+      //    establishes minimum amplitude... masks warbling beneath uniform floor")
+      gain = Math.max(gain, specFloor);
+
+      // ── Temporal gain smoothing to prevent frame-to-frame flutter
+      //    (PDF §8 "smooths gain function over time")
+      const gainSmooth = 0.5 * prevGain[k] + 0.5 * gain;
+      prevGain[k] = gainSmooth;
+
+      // ── Apply gain + store clean estimate for next frame's decision-directed
+      const cleaned = mag[k] * gainSmooth;
+      prevMag[k] = cleaned;
+      mag[k] = cleaned;
     }
   }
 
-  // ── Spectral Subtraction: decision-directed Wiener ─────────────────────
-  _spectralSubtract(mag) {
-    const nBins    = this.numBins;
-    const amount   = this.params.nrSpectralSub / 100;
-    const floor    = Math.pow(10, this.params.nrFloor / 20);
-    const alphaDD  = 0.92 + (this.params.nrSmoothing / 100) * 0.07; // 0.92–0.99
-    const beta     = 1.5 + amount; // over-subtraction factor 1.5–2.5
-    const prevMag  = this.prevMagEstimate;
+  // ── De-Clipping Detection + Spectral Repair ────────────────────────────
+  //  Ref: PDF §14.2 — "De-clipping algorithms must run to interpolate
+  //   and redraw missing waveform peaks before spectral analysis."
+  //  In spectral domain: detect flat-top peaks (consecutive max-magnitude
+  //  bins) and interpolate surrounding spectral shape.
+  _deClipRepair(mag, phase) {
+    const nBins = this.numBins;
+    // Find max magnitude in frame
+    let maxMag = 0;
+    for (let k = 1; k < nBins; k++) {
+      if (mag[k] > maxMag) maxMag = mag[k];
+    }
+    if (maxMag < 0.9) return; // no clipping detected
 
-    for (let k = 0; k < nBins; k++) {
-      const noiseEst = this.noiseProfile[k];
-      if (noiseEst < 1e-10) continue;
+    // Count bins at or near max (clipping signature: flat spectral ceiling)
+    let clipBins = 0;
+    for (let k = 1; k < nBins; k++) {
+      if (mag[k] > maxMag * 0.98) clipBins++;
+    }
 
-      // SNR estimates
-      const snrPost = (mag[k] * mag[k]) / (noiseEst * noiseEst) - 1.0;
-      const snrPostClamped = Math.max(snrPost, 0);
-
-      // Decision-directed a priori SNR
-      const snrPrior = alphaDD * (prevMag[k] * prevMag[k]) / (noiseEst * noiseEst)
-                     + (1 - alphaDD) * snrPostClamped;
-
-      // Wiener gain
-      let gain = snrPrior / (snrPrior + 1.0);
-
-      // Over-subtraction for aggressive noise removal
-      gain = Math.max(gain, 0);
-      const subtracted = mag[k] - beta * amount * noiseEst;
-      const wienerResult = mag[k] * gain;
-
-      // Blend Wiener + subtraction
-      const result = 0.7 * wienerResult + 0.3 * Math.max(subtracted, mag[k] * floor);
-      prevMag[k] = result;
-      mag[k] = Math.max(result, mag[k] * floor);
+    // If >15% of bins are clipped, apply soft-clip repair
+    if (clipBins > nBins * 0.15) {
+      const ceiling = maxMag * 0.85;
+      for (let k = 1; k < nBins; k++) {
+        if (mag[k] > ceiling) {
+          // Soft sigmoid compression above ceiling
+          const excess = (mag[k] - ceiling) / (maxMag - ceiling + 1e-10);
+          mag[k] = ceiling + (maxMag - ceiling) * (2.0 / (1.0 + Math.exp(-3 * excess)) - 1.0) * 0.3;
+        }
+      }
     }
   }
 

@@ -862,8 +862,9 @@ class VoiceIsolatePro {
       const lim = ofl.createDynamicsCompressor(); lim.threshold.value=p.limThresh; lim.knee.value=0; lim.ratio.value=20; lim.attack.value=0.001; lim.release.value=p.limRelease/1000;
       const oG = ofl.createGain(); oG.gain.value=Math.pow(10,p.outGain/20);
 
-      // Connect the Web Audio chain: src → hp → lp → vbp → gate → notch → 10×EQ → de → tlt → hrm → cmp → mkG → lim → oG → dest
-      const chain = [src, hp, lp, vbp, gate, notch, ...eqN, de, tlt, hrm, cmp, mkG, lim, oG];
+      // Connect the Web Audio chain per PDF §14 restoration order:
+      // src → hp → notch (de-hum BEFORE NR) → lp → vbp → gate → 10×EQ → de → tlt → hrm → cmp → mkG → lim → oG → dest
+      const chain = [src, hp, notch, lp, vbp, gate, ...eqN, de, tlt, hrm, cmp, mkG, lim, oG];
       for (let i = 0; i < chain.length-1; i++) chain[i].connect(chain[i+1]);
       chain[chain.length-1].connect(ofl.destination);
       src.start(0);
@@ -1012,62 +1013,106 @@ class VoiceIsolatePro {
 
   // Real spectral noise reduction via Wiener filtering (replaces the old stub applyNR)
   applySpectralNR(buf, amt, sensitivity, spectralSub, floorDb, smoothing, vadMask) {
+    // Ephraim-Malah Log-MMSE offline implementation
+    // Ref: PDF §8 — decision-directed a priori SNR, Log-MMSE gain, spectral flooring
     const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
     const out = this.ctx.createBuffer(nCh, len, sr);
     const N = 2048, H = 512, halfN = N / 2 + 1;
     const win = this._makeWindow(N);
-    // over-subtraction 1..3, spectral floor 0.01..0.1
-    const alpha = 1 + amt * 2;
-    const beta = Math.max(0.01, 0.1 - spectralSub * 0.09);
-    const floorLin = Math.pow(10, floorDb / 20);
-    const sm = Math.max(0, Math.min(0.95, smoothing * 0.95));
+    const specFloor = Math.pow(10, floorDb / 20);
+    const alphaDD = Math.max(0, Math.min(0.99, 0.92 + smoothing * 0.07)); // decision-directed smoothing
 
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
       const outData = out.getChannelData(ch);
       const normBuf = new Float64Array(len);
 
-      // Profile noise PSD from first ~500ms
+      // MCRA-style noise estimation from initial quiet segment
       const profLen = Math.min(Math.floor(sr * 0.5), len);
-      const noisePSD = new Float64Array(halfN);
+      const noiseVar = new Float64Array(halfN);
       let profFrames = 0;
       for (let s = 0; s + N <= profLen; s += H) {
         const re = new Float64Array(N), im = new Float64Array(N);
         for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
         this._fft(re, im);
-        for (let k = 0; k < halfN; k++) noisePSD[k] += re[k]*re[k] + im[k]*im[k];
+        for (let k = 0; k < halfN; k++) noiseVar[k] += re[k]*re[k] + im[k]*im[k];
         profFrames++;
       }
       if (profFrames > 0) for (let k = 0; k < halfN; k++) {
-        noisePSD[k] = Math.max(noisePSD[k] / profFrames, floorLin * floorLin);
+        noiseVar[k] = Math.max(noiseVar[k] / profFrames, 1e-12);
       }
-      const smoothedNoise = new Float64Array(noisePSD);
 
-      // Process all frames
+      // Running state for decision-directed estimator
+      const prevCleanMag = new Float64Array(halfN);
+      const prevGain = new Float64Array(halfN).fill(1.0);
+      // MCRA running minimum for continuous noise tracking
+      const noisePowerSmth = new Float64Array(noiseVar);
+      const noisePowerMin = new Float64Array(noiseVar);
+      let mcraCount = 0;
+      const mcraBlock = 15;
+
       let frameIdx = 0;
       for (let s = 0; s + N <= len; s += H, frameIdx++) {
         const re = new Float64Array(N), im = new Float64Array(N);
         for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
         this._fft(re, im);
 
-        // If VAD mask available: only apply NR during non-speech frames
-        const frameTimeSec = s / sr;
-        const vadFrameIdx = vadMask ? Math.floor(frameTimeSec * 100) : -1;
-        const isSpeech = vadMask && vadFrameIdx < vadMask.length ? vadMask[vadFrameIdx] : false;
-
         for (let k = 0; k < halfN; k++) {
-          const sigPSD = re[k]*re[k] + im[k]*im[k];
-          smoothedNoise[k] = sm * smoothedNoise[k] + (1 - sm) * noisePSD[k];
-          const nEst = alpha * smoothedNoise[k] * (1 + sensitivity * 0.5);
-          // Apply softer NR during speech frames: reduce noise estimate so Wiener
-          // gain stays higher (less attenuation) rather than using nEst as a gain floor
-          // (nEst is a PSD value, not a valid gain — using it as a floor could amplify).
-          const nEstFrame = isSpeech ? nEst * 0.3 : nEst;
-          const gain = sigPSD > 1e-12 ?
-            Math.max(Math.sqrt(Math.max(sigPSD - nEstFrame, 0) / sigPSD), beta) : beta;
-          re[k] *= gain; im[k] *= gain;
+          const power = re[k]*re[k] + im[k]*im[k];
+          const mag = Math.sqrt(power);
+
+          // ── MCRA continuous noise update ──
+          noisePowerSmth[k] = 0.92 * noisePowerSmth[k] + 0.08 * power;
+          if (noisePowerSmth[k] < noisePowerMin[k]) noisePowerMin[k] = noisePowerSmth[k];
+          const ratio = noisePowerSmth[k] / (noisePowerMin[k] + 1e-20);
+          const pNoise = ratio > 2.0 ? 0.0 : 1.0;
+          noiseVar[k] = 0.85 * noiseVar[k] + 0.15 * pNoise * power;
+
+          const nv = Math.max(noiseVar[k], 1e-20);
+          if (nv < 1e-18) { prevCleanMag[k] = mag; continue; }
+
+          // ── A posteriori SNR: γ = |Y|²/σ²_n ──
+          const gammaK = power / nv;
+          // ── A priori SNR (decision-directed): ξ = α*|Ŝ_{-1}|²/σ²_n + (1-α)*max(γ-1,0) ──
+          const xi = Math.max(
+            alphaDD * (prevCleanMag[k]*prevCleanMag[k]) / nv
+            + (1 - alphaDD) * Math.max(gammaK - 1, 0),
+            1e-4
+          );
+
+          // ── v = ξγ/(1+ξ) ──
+          const v = (xi * gammaK) / (1 + xi);
+
+          // ── E1(v) exponential integral (Abramowitz & Stegun) ──
+          let e1;
+          if (v > 1) {
+            e1 = Math.exp(-v) / (v + 1e-20) * (v*v + 2.334733*v + 0.250621) / (v*v + 3.330657*v + 1.681534);
+          } else {
+            e1 = Math.max(-Math.log(v + 1e-20) - 0.5772156649 + v - v*v*0.25, 0);
+          }
+
+          // ── Log-MMSE gain ──
+          let gain = (xi / (1 + xi)) * Math.exp(0.5 * e1);
+          gain = 1.0 - amt * (1.0 - gain); // user amount control
+          gain = Math.max(gain, specFloor); // spectral floor (anti-musical-noise)
+          gain = 0.5 * prevGain[k] + 0.5 * gain; // temporal smoothing
+          prevGain[k] = gain;
+
+          const cleaned = mag * gain;
+          prevCleanMag[k] = cleaned;
+
+          // Apply gain preserving phase
+          const scale = power > 1e-12 ? cleaned / mag : specFloor;
+          re[k] *= scale; im[k] *= scale;
           if (k > 0 && k < N - k) { re[N-k] = re[k]; im[N-k] = -im[k]; }
         }
+
+        // Reset MCRA minima periodically
+        if (++mcraCount >= mcraBlock) {
+          mcraCount = 0;
+          for (let k = 0; k < halfN; k++) noisePowerMin[k] = noisePowerSmth[k];
+        }
+
         this._ifft(re, im);
         for (let i = 0; i < N && s + i < len; i++) {
           outData[s + i] += re[i] * win[i];
