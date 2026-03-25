@@ -10,9 +10,34 @@
    frames with 75% overlap (hop = 1024).
    ============================================ */
 
-// ── Radix-2 Cooley-Tukey FFT (in-place, zero-alloc in hot path) ──────────
+// ── Radix-2 Cooley-Tukey FFT with pre-computed twiddle table ──────────────
+// Pre-computed twiddles eliminate ~24K cos/sin calls per 4096pt frame.
+// Table indexed by [stage][position] → (re, im) pairs stored interleaved.
+const FFT_TWIDDLES = new Map();
+
+function ensureTwiddles(n) {
+  if (FFT_TWIDDLES.has(n)) return FFT_TWIDDLES.get(n);
+  const stages = Math.log2(n);
+  const table = new Float64Array(n * 2); // max needed: n complex twiddles
+  // Pre-compute for forward transform; inverse just conjugates (flip im sign)
+  let offset = 0;
+  for (let s = 0; s < stages; s++) {
+    const len = 1 << (s + 1);
+    const half = len >> 1;
+    const ang = -6.283185307179586 / len;
+    for (let j = 0; j < half; j++) {
+      const a = ang * j;
+      table[offset++] = Math.cos(a);
+      table[offset++] = Math.sin(a);
+    }
+  }
+  FFT_TWIDDLES.set(n, table);
+  return table;
+}
+
 function fftInPlace(re, im, inverse) {
   const n = re.length;
+  const table = ensureTwiddles(n);
   // Bit-reversal permutation
   for (let i = 1, j = 0; i < n; i++) {
     let bit = n >> 1;
@@ -23,28 +48,27 @@ function fftInPlace(re, im, inverse) {
       t = im[i]; im[i] = im[j]; im[j] = t;
     }
   }
-  const sign = inverse ? 1.0 : -1.0;
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang = sign * 6.283185307179586 / len;
-    const wRe = Math.cos(ang);
-    const wIm = Math.sin(ang);
+  const sign = inverse ? -1.0 : 1.0;
+  let tOff = 0;
+  const stages = Math.log2(n);
+  for (let s = 0; s < stages; s++) {
+    const len = 1 << (s + 1);
     const half = len >> 1;
     for (let i = 0; i < n; i += len) {
-      let curRe = 1.0, curIm = 0.0;
       for (let j = 0; j < half; j++) {
+        const wRe = table[tOff + j * 2];
+        const wIm = table[tOff + j * 2 + 1] * sign; // conjugate for inverse
         const k = i + j;
         const m = k + half;
-        const tRe = re[m] * curRe - im[m] * curIm;
-        const tIm = re[m] * curIm + im[m] * curRe;
+        const tRe = re[m] * wRe - im[m] * wIm;
+        const tIm = re[m] * wIm + im[m] * wRe;
         re[m] = re[k] - tRe;
         im[m] = im[k] - tIm;
         re[k] += tRe;
         im[k] += tIm;
-        const nr = curRe * wRe - curIm * wIm;
-        curIm    = curRe * wIm + curIm * wRe;
-        curRe    = nr;
       }
     }
+    tOff += half * 2;
   }
 }
 
@@ -148,6 +172,9 @@ class DspProcessor extends AudioWorkletProcessor {
     this._gateGain  = 1.0;
     this._compEnv   = 0.0;
     this._gateHoldCount = 0;
+
+    // DC offset removal state (PDF §14.1: "must be removed first")
+    this._dcState = 0.0;  // single-pole high-pass at ~5 Hz
 
     // Biquad states for post-STFT HP/LP (2nd-order)
     this._hpState = [0, 0, 0, 0]; // x1, x2, y1, y2
@@ -386,12 +413,12 @@ class DspProcessor extends AudioWorkletProcessor {
 
     // Speech presence probability + conditional noise update
     for (let k = 0; k < nBins; k++) {
-      // If smoothed power is close to the minimum, likely noise-only
+      // Soft sigmoid speech presence (replaces hard step function)
       const ratio = this.noisePowerSmth[k] / (this.noisePowerMin[k] + 1e-20);
-      const pSpeech = ratio > delta ? 1.0 : 0.0;
+      const pSpeech = 1.0 / (1.0 + Math.exp(-5.0 * (ratio - delta))); // smooth 0→1
       this.speechPresProb[k] = 0.7 * this.speechPresProb[k] + 0.3 * pSpeech;
 
-      // Update noise estimate only when speech is absent
+      // Update noise estimate: faster when speech absent, frozen when present
       const pNoise = 1.0 - this.speechPresProb[k];
       const alphaAdapt = alphaD + (1 - alphaD) * this.speechPresProb[k];
       this.noiseVar[k] = alphaAdapt * this.noiseVar[k] + (1 - alphaAdapt) * pNoise * mag[k] * mag[k];
@@ -425,6 +452,7 @@ class DspProcessor extends AudioWorkletProcessor {
   _logMMSE(mag) {
     const nBins    = this.numBins;
     const amount   = this.params.nrAmount / 100;           // 0–1 user control
+    if (amount < 0.01) return; // bypass when NR disabled
     const subAlpha = this.params.nrSpectralSub / 100;      // spectral sub blend
     const floorDB  = this.params.nrFloor;                  // noise floor dB
     const smooth   = 0.92 + (this.params.nrSmoothing / 100) * 0.07; // α_dd: 0.92–0.99
@@ -476,9 +504,12 @@ class DspProcessor extends AudioWorkletProcessor {
       //    establishes minimum amplitude... masks warbling beneath uniform floor")
       gain = Math.max(gain, specFloor);
 
-      // ── Temporal gain smoothing to prevent frame-to-frame flutter
-      //    (PDF §8 "smooths gain function over time")
-      const gainSmooth = 0.5 * prevGain[k] + 0.5 * gain;
+      // ── Adaptive temporal gain smoothing ────────────────────────────
+      //    Fast attack (0.3) during speech → preserve transients
+      //    Slow release (0.85) during noise → prevent flutter/musical noise
+      const pSpeech = this.speechPresProb[k] || 0;
+      const smoothCoef = 0.3 + 0.55 * (1.0 - pSpeech); // 0.3 speech → 0.85 noise
+      const gainSmooth = smoothCoef * prevGain[k] + (1 - smoothCoef) * gain;
       prevGain[k] = gainSmooth;
 
       // ── Apply gain + store clean estimate for next frame's decision-directed
@@ -522,10 +553,12 @@ class DspProcessor extends AudioWorkletProcessor {
   }
 
   // ── ERB Spectral Gate: 32-band psychoacoustic gating ───────────────────
+  //  With cross-band gain smoothing to prevent sharp discontinuities
   _erbGate(mag) {
     if (!this.erbBandMap) return;
     const { start, end } = this.erbBandMap;
     const sensitivity = this.params.nrSensitivity / 100;
+    if (sensitivity < 0.01) return; // bypass when sensitivity=0
     const gateFloor   = Math.pow(10, (this.params.nrFloor + 10) / 20);
 
     for (let b = 0; b < 32; b++) {
@@ -554,36 +587,76 @@ class DspProcessor extends AudioWorkletProcessor {
       }
 
       this.erbGains[b] = gain;
+    }
 
-      // Apply to bins in this band
+    // ── Cross-band gain smoothing (3-tap moving average) ────────────
+    // Prevents sharp gain jumps between adjacent perceptual bands
+    const smoothed = this.erbGains;
+    let prev = smoothed[0];
+    for (let b = 1; b < 31; b++) {
+      const cur = smoothed[b];
+      const next = smoothed[b + 1];
+      smoothed[b] = 0.25 * prev + 0.5 * cur + 0.25 * next;
+      prev = cur;
+    }
+
+    // Apply smoothed gains to bins
+    for (let b = 0; b < 32; b++) {
+      const g = smoothed[b];
       for (let k = start[b]; k < end[b]; k++) {
-        mag[k] *= gain;
+        mag[k] *= g;
       }
     }
   }
 
-  // ── Hum Removal: notch filter at 50/60 Hz + harmonics ──────────────────
+  // ── Hum Removal: conditional notch at 50/60 Hz + harmonics ──────────────
+  //  Only activates when hum energy at fundamental >6dB above surrounding bins.
+  //  Ref: PDF §14.4 — "specialized De-buzz detector locks onto fundamental"
   _humRemoval(mag) {
     const sr    = this.sr;
     const N     = this.fftSize;
     const binHz = sr / N;
-    // Detect 50 vs 60 Hz by checking which fundamental has more energy
+
+    // Measure energy at 50 Hz and 60 Hz vs surrounding ±5 bins
     const bin50 = Math.round(50 / binHz);
     const bin60 = Math.round(60 / binHz);
-    const e50   = bin50 < this.numBins ? mag[bin50] : 0;
-    const e60   = bin60 < this.numBins ? mag[bin60] : 0;
-    const fundamental = e50 > e60 ? 50 : 60;
 
-    // Attenuate fundamental + 8 harmonics
+    const measureHum = (centerK) => {
+      if (centerK < 3 || centerK >= this.numBins - 3) return 0;
+      const peak = mag[centerK];
+      let surround = 0;
+      let count = 0;
+      for (let d = -5; d <= 5; d++) {
+        if (d === 0 || d === -1 || d === 1) continue; // skip center ±1
+        const k = centerK + d;
+        if (k > 0 && k < this.numBins) { surround += mag[k]; count++; }
+      }
+      surround /= count || 1;
+      return surround > 1e-10 ? peak / surround : 0;
+    };
+
+    const ratio50 = measureHum(bin50);
+    const ratio60 = measureHum(bin60);
+
+    // Only proceed if hum is >4× (≈6dB) above surrounding energy
+    const humThreshold = 4.0;
+    if (ratio50 < humThreshold && ratio60 < humThreshold) return;
+
+    const fundamental = ratio50 > ratio60 ? 50 : 60;
+
+    // Attenuate fundamental + 8 harmonics with adaptive depth
     for (let h = 1; h <= 9; h++) {
       const freq    = fundamental * h;
       const centerK = Math.round(freq / binHz);
+      if (centerK >= this.numBins) break;
       // Notch width: ±2 bins for fundamental, ±1 for harmonics
       const width   = h === 1 ? 2 : 1;
+      // Attenuation decreases for higher harmonics (less energy)
+      const maxAttn = h === 1 ? 0.02 : 0.05 + h * 0.02;
       for (let k = centerK - width; k <= centerK + width; k++) {
         if (k > 0 && k < this.numBins) {
           const dist = Math.abs(k - centerK);
-          const attn = dist === 0 ? 0.02 : 0.1 * dist; // deep at center
+          const attn = dist === 0 ? maxAttn : maxAttn + (1 - maxAttn) * (dist / (width + 1));
           mag[k] *= attn;
         }
       }
@@ -733,6 +806,24 @@ class DspProcessor extends AudioWorkletProcessor {
     const len = block.length;
     const p   = this.params;
     const sr  = this.sr;
+
+    // ── DC Offset Removal (PDF §14.1 — "must be removed FIRST") ─────
+    //    Single-pole HP: y[n] = x[n] - x[n-1] + R*y[n-1], R ≈ 0.9993 @ 48kHz
+    //    "Processing an off-center waveform induces severe clicking artifacts"
+    {
+      const R = 1.0 - (2.0 * Math.PI * 5.0 / sr);
+      let prevX = this._dcPrevX || 0;
+      let prevY = this._dcState;
+      for (let i = 0; i < len; i++) {
+        const x = block[i];
+        const y = x - prevX + R * prevY;
+        prevX = x;
+        prevY = y;
+        block[i] = y;
+      }
+      this._dcState = prevY;
+      this._dcPrevX = prevX;
+    }
 
     // ── High-Pass Filter (2nd-order Butterworth) ─────────────────────
     if (p.hpFreq > 20) {

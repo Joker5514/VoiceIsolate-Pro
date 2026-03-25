@@ -1061,12 +1061,14 @@ class VoiceIsolatePro {
           const power = re[k]*re[k] + im[k]*im[k];
           const mag = Math.sqrt(power);
 
-          // ── MCRA continuous noise update ──
+          // ── MCRA continuous noise update (soft speech presence) ──
           noisePowerSmth[k] = 0.92 * noisePowerSmth[k] + 0.08 * power;
           if (noisePowerSmth[k] < noisePowerMin[k]) noisePowerMin[k] = noisePowerSmth[k];
           const ratio = noisePowerSmth[k] / (noisePowerMin[k] + 1e-20);
-          const pNoise = ratio > 2.0 ? 0.0 : 1.0;
-          noiseVar[k] = 0.85 * noiseVar[k] + 0.15 * pNoise * power;
+          const pSpeech = 1.0 / (1.0 + Math.exp(-5.0 * (ratio - 2.0))); // soft sigmoid
+          const pNoise = 1.0 - pSpeech;
+          const alphaAdapt = 0.85 + 0.15 * pSpeech;
+          noiseVar[k] = alphaAdapt * noiseVar[k] + (1 - alphaAdapt) * pNoise * power;
 
           const nv = Math.max(noiseVar[k], 1e-20);
           if (nv < 1e-18) { prevCleanMag[k] = mag; continue; }
@@ -1095,7 +1097,9 @@ class VoiceIsolatePro {
           let gain = (xi / (1 + xi)) * Math.exp(0.5 * e1);
           gain = 1.0 - amt * (1.0 - gain); // user amount control
           gain = Math.max(gain, specFloor); // spectral floor (anti-musical-noise)
-          gain = 0.5 * prevGain[k] + 0.5 * gain; // temporal smoothing
+          // Adaptive smoothing: fast attack during speech, slow release during noise
+          const smoothCoef = 0.3 + 0.55 * pNoise;
+          gain = smoothCoef * prevGain[k] + (1 - smoothCoef) * gain;
           prevGain[k] = gain;
 
           const cleaned = mag * gain;
