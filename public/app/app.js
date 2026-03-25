@@ -171,12 +171,31 @@ class VoiceIsolatePro {
 
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
-      this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)();
-      // Phase 3: Register AudioWorklet processor for low-latency live mode
+      this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)({ latencyHint: 'interactive' });
+      // Load BOTH AudioWorklet processors:
+      //   dsp-processor.js — STFT single-pass spectral engine (NR, ERB gate, hum, EQ, de-ess)
+      //   dsp-worker.js    — time-domain fallback (HP, LP, gate, comp, limiter)
+      this._workletReady = false;
+      this._workletFallback = false;
       if (this.ctx.audioWorklet) {
-        this.ctx.audioWorklet.addModule('./dsp-worker.js').catch(() => {
-          structuredLog('warn', 'AudioWorklet unavailable — live chain uses native Web Audio nodes');
+        Promise.all([
+          this.ctx.audioWorklet.addModule('./dsp-processor.js'),
+          this.ctx.audioWorklet.addModule('./dsp-worker.js'),
+        ]).then(() => {
+          this._workletReady = true;
+          structuredLog('info', 'AudioWorklet processors loaded: dsp-processor (STFT) + dsp-worker (TD)');
+          // Allocate SharedArrayBuffer for spectrogram visualisation (2049 bins)
+          if (typeof SharedArrayBuffer !== 'undefined') {
+            this._spectrumSAB = new SharedArrayBuffer(2049 * Float32Array.BYTES_PER_ELEMENT);
+            this._spectrumView = new Float32Array(this._spectrumSAB);
+            structuredLog('info', 'SharedArrayBuffer allocated for spectrum handoff (crossOriginIsolated=' + self.crossOriginIsolated + ')');
+          }
+        }).catch((err) => {
+          this._workletFallback = true;
+          structuredLog('warn', 'AudioWorklet load failed — live chain uses native Web Audio nodes', { error: err.message });
         });
+      } else {
+        this._workletFallback = true;
       }
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
@@ -400,7 +419,7 @@ class VoiceIsolatePro {
       this.inputBuffer = audioBuf;
       this.outputBuffer = null;
       // Phase 4: Attempt to load ML models if ONNX Runtime is available
-      if (!this.mlReady) this.loadModels().catch(() => {});
+      if (!this.mlReady && typeof this.loadModels === 'function') this.loadModels().catch(err => structuredLog('warn', 'Failed to initiate model loading', { error: err.message }));
       this.onAudioLoaded(file.name);
 
     } catch (err) {
@@ -629,6 +648,45 @@ class VoiceIsolatePro {
     src.playbackRate.value = parseFloat(this.dom.tpSpeed.value) || 1;
     src.onended = () => { if (this.isPlaying) this.stop(); };
 
+    const ana = ctx.createAnalyser(); ana.fftSize = 4096; ana.smoothingTimeConstant = 0.75;
+
+    // ── PRIMARY PATH: STFT AudioWorklet (dsp-processor.js) ──────────────
+    // Single-pass spectral: one FFT → NR, ERB gate, hum, EQ, de-ess, tilt → iFFT
+    // + time-domain: HP, LP, gate, compressor, limiter, output gain
+    if (this._workletReady && !this._workletFallback) {
+      try {
+        const dspNode = new AudioWorkletNode(ctx, 'dsp-processor', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [buf.numberOfChannels],
+        });
+
+        // Forward ALL 52 slider values to the worklet
+        dspNode.port.postMessage({ sliders: { ...p } });
+
+        // Attach SharedArrayBuffer for spectrogram data
+        if (this._spectrumSAB) {
+          dspNode.port.postMessage({ type: 'sab-spectrum', sab: this._spectrumSAB });
+        }
+
+        // Chain: source → dsp-processor (STFT + TD) → analyser → destination
+        src.connect(dspNode);
+        dspNode.connect(ana);
+        ana.connect(ctx.destination);
+
+        src.start(0, this.playOffset);
+        this.currentSource = src;
+        this.analyserNode = ana;
+        this._dspWorkletNode = dspNode;
+        this.liveNodes = { dspNode, chain: [src, dspNode, ana] };
+        this.liveChainBuilt = true;
+        return;
+      } catch (e) {
+        structuredLog('warn', 'STFT worklet failed, falling back to native nodes', { error: e.message });
+      }
+    }
+
+    // ── FALLBACK PATH: native Web Audio API nodes ───────────────────────
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = p.hpFreq; hp.Q.value = p.hpQ;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = p.lpFreq; lp.Q.value = p.lpQ;
 
@@ -652,7 +710,6 @@ class VoiceIsolatePro {
     const lim = ctx.createDynamicsCompressor(); lim.threshold.value = p.limThresh; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = p.limRelease/1000;
     const outG = ctx.createGain(); outG.gain.value = Math.pow(10, p.outGain/20);
     const wG = ctx.createGain(); wG.gain.value = p.outWidth/100;
-    const ana = ctx.createAnalyser(); ana.fftSize = 4096; ana.smoothingTimeConstant = 0.75;
 
     const chain = [src, hp, lp, ...eqs.map(e=>e.node), deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, ana];
     for (let i = 0; i < chain.length-1; i++) chain[i].connect(chain[i+1]);
@@ -661,13 +718,25 @@ class VoiceIsolatePro {
     src.start(0, this.playOffset);
     this.currentSource = src;
     this.analyserNode = ana;
+    this._dspWorkletNode = null;
     this.liveNodes = { hp, lp, eqs, deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, chain };
     this.liveChainBuilt = true;
   }
 
   updateLiveChain() {
     if (!this.liveChainBuilt) return;
-    const p = this.params; const n = this.liveNodes; const t = this.ctx.currentTime; const s = 0.02;
+    const p = this.params;
+
+    // ── PRIMARY: forward ALL params to STFT AudioWorklet ─────────────────
+    if (this._dspWorkletNode) {
+      try {
+        this._dspWorkletNode.port.postMessage({ sliders: { ...p } });
+      } catch (e) { /* worklet may be disconnected */ }
+      return;
+    }
+
+    // ── FALLBACK: native Web Audio nodes ─────────────────────────────────
+    const n = this.liveNodes; const t = this.ctx.currentTime; const s = 0.02;
     try {
       n.hp.frequency.setTargetAtTime(p.hpFreq,t,s); n.hp.Q.setTargetAtTime(p.hpQ,t,s);
       n.lp.frequency.setTargetAtTime(p.lpFreq,t,s); n.lp.Q.setTargetAtTime(p.lpQ,t,s);
@@ -693,6 +762,10 @@ class VoiceIsolatePro {
       try { this.currentSource.stop(); } catch(e) { console.error('Error stopping current source:', e); }
       try { this.currentSource.disconnect(); } catch(e) { console.error('Error disconnecting current source:', e); }
       this.currentSource = null;
+    }
+    if (this._dspWorkletNode) {
+      try { this._dspWorkletNode.disconnect(); } catch(e) { /* ok */ }
+      this._dspWorkletNode = null;
     }
     if (this.liveNodes.chain) {
       this.liveNodes.chain.forEach(n => {
@@ -789,8 +862,9 @@ class VoiceIsolatePro {
       const lim = ofl.createDynamicsCompressor(); lim.threshold.value=p.limThresh; lim.knee.value=0; lim.ratio.value=20; lim.attack.value=0.001; lim.release.value=p.limRelease/1000;
       const oG = ofl.createGain(); oG.gain.value=Math.pow(10,p.outGain/20);
 
-      // Connect the Web Audio chain: src → hp → lp → vbp → gate → notch → 10×EQ → de → tlt → hrm → cmp → mkG → lim → oG → dest
-      const chain = [src, hp, lp, vbp, gate, notch, ...eqN, de, tlt, hrm, cmp, mkG, lim, oG];
+      // Connect the Web Audio chain per PDF §14 restoration order:
+      // src → hp → notch (de-hum BEFORE NR) → lp → vbp → gate → 10×EQ → de → tlt → hrm → cmp → mkG → lim → oG → dest
+      const chain = [src, hp, notch, lp, vbp, gate, ...eqN, de, tlt, hrm, cmp, mkG, lim, oG];
       for (let i = 0; i < chain.length-1; i++) chain[i].connect(chain[i+1]);
       chain[chain.length-1].connect(ofl.destination);
       src.start(0);
@@ -805,7 +879,7 @@ class VoiceIsolatePro {
       // ---- PASS 4: SPECTRAL NR — actual spectral processing ----
       let fin = rendered;
       if (p.nrAmount > 0) {
-        fin = this.applySpectralNR(fin, p.nrAmount/100, p.nrSensitivity/100, p.nrSpectralSub/100, p.nrFloor, p.nrSmoothing/100, vadMask);
+        fin = this.applySpectralNR(fin, p.nrAmount/100, p.nrSensitivity/100, p.nrSpectralSub/100, p.nrFloor, p.nrSmoothing/100);
         if (this.forensicMode) await this.addAuditEntry(fin, 'Spectral NR');
       }
       if (this.abortFlag) throw 'abort';
@@ -938,63 +1012,139 @@ class VoiceIsolatePro {
   }
 
   // Real spectral noise reduction via Wiener filtering (replaces the old stub applyNR)
-  applySpectralNR(buf, amt, sensitivity, spectralSub, floorDb, smoothing, vadMask) {
+  applySpectralNR(buf, amt, sensitivity, spectralSub, floorDb, smoothing) {
+    // Ephraim-Malah Log-MMSE offline implementation
+    // Ref: PDF §8 — decision-directed a priori SNR, Log-MMSE gain, spectral flooring
     const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
     const out = this.ctx.createBuffer(nCh, len, sr);
     const N = 2048, H = 512, halfN = N / 2 + 1;
     const win = this._makeWindow(N);
-    // over-subtraction 1..3, spectral floor 0.01..0.1
-    const alpha = 1 + amt * 2;
-    const beta = Math.max(0.01, 0.1 - spectralSub * 0.09);
-    const floorLin = Math.pow(10, floorDb / 20);
-    const sm = Math.max(0, Math.min(0.95, smoothing * 0.95));
+    const specFloor = Math.pow(10, floorDb / 20);
+    const alphaDD = Math.max(0, Math.min(0.99, 0.92 + smoothing * 0.07)); // decision-directed smoothing
+    const subStrength = spectralSub;                       // 0–1: spectral subtraction aggressiveness
+    const sensScale = 1 + sensitivity * 0.5;               // noise estimate scaling
 
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
       const outData = out.getChannelData(ch);
       const normBuf = new Float64Array(len);
 
-      // Profile noise PSD from first ~500ms
+      // Noise estimation from initial quiet segment (only use low-energy frames)
       const profLen = Math.min(Math.floor(sr * 0.5), len);
-      const noisePSD = new Float64Array(halfN);
-      let profFrames = 0;
+      const noiseVar = new Float64Array(halfN);
+      // First pass: compute per-frame RMS to identify quiet frames
+      const frameRMS = [];
       for (let s = 0; s + N <= profLen; s += H) {
-        const re = new Float64Array(N), im = new Float64Array(N);
-        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
-        this._fft(re, im);
-        for (let k = 0; k < halfN; k++) noisePSD[k] += re[k]*re[k] + im[k]*im[k];
-        profFrames++;
+        let rms = 0;
+        for (let i = 0; i < N; i++) rms += inp[s + i] * inp[s + i];
+        frameRMS.push({ s, rms: Math.sqrt(rms / N) });
+      }
+      // Use frames below median RMS (or a quiet threshold) for noise profiling
+      const quietThreshold = 0.01;
+      let profFrames = 0;
+      for (const fr of frameRMS) {
+        if (fr.rms < quietThreshold) {
+          const re = new Float64Array(N), im = new Float64Array(N);
+          for (let i = 0; i < N; i++) re[i] = inp[fr.s + i] * win[i];
+          this._fft(re, im);
+          for (let k = 0; k < halfN; k++) noiseVar[k] += re[k]*re[k] + im[k]*im[k];
+          profFrames++;
+        }
+      }
+      // Fallback: if no quiet frames found, use all frames with conservative floor
+      if (profFrames === 0) {
+        for (const fr of frameRMS) {
+          const re = new Float64Array(N), im = new Float64Array(N);
+          for (let i = 0; i < N; i++) re[i] = inp[fr.s + i] * win[i];
+          this._fft(re, im);
+          for (let k = 0; k < halfN; k++) noiseVar[k] += re[k]*re[k] + im[k]*im[k];
+          profFrames++;
+        }
       }
       if (profFrames > 0) for (let k = 0; k < halfN; k++) {
-        noisePSD[k] = Math.max(noisePSD[k] / profFrames, floorLin * floorLin);
+        noiseVar[k] = Math.max(noiseVar[k] / profFrames, 1e-12);
       }
-      const smoothedNoise = new Float64Array(noisePSD);
 
-      // Process all frames
-      let frameIdx = 0;
-      for (let s = 0; s + N <= len; s += H, frameIdx++) {
+      // Running state for decision-directed estimator
+      const prevCleanMag = new Float64Array(halfN);
+      const prevGain = new Float64Array(halfN).fill(1.0);
+      // MCRA running minimum for continuous noise tracking
+      const noisePowerSmth = new Float64Array(noiseVar);
+      const noisePowerMin = new Float64Array(noiseVar);
+      let mcraCount = 0;
+      const mcraBlock = 15;
+
+      for (let s = 0; s + N <= len; s += H) {
         const re = new Float64Array(N), im = new Float64Array(N);
         for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
         this._fft(re, im);
 
-        // If VAD mask available: only apply NR during non-speech frames
-        const frameTimeSec = s / sr;
-        const vadFrameIdx = vadMask ? Math.floor(frameTimeSec * 100) : -1;
-        const isSpeech = vadMask && vadFrameIdx < vadMask.length ? vadMask[vadFrameIdx] : false;
-
         for (let k = 0; k < halfN; k++) {
-          const sigPSD = re[k]*re[k] + im[k]*im[k];
-          smoothedNoise[k] = sm * smoothedNoise[k] + (1 - sm) * noisePSD[k];
-          const nEst = alpha * smoothedNoise[k] * (1 + sensitivity * 0.5);
-          // Apply softer NR during speech frames: reduce noise estimate so Wiener
-          // gain stays higher (less attenuation) rather than using nEst as a gain floor
-          // (nEst is a PSD value, not a valid gain — using it as a floor could amplify).
-          const nEstFrame = isSpeech ? nEst * 0.3 : nEst;
-          const gain = sigPSD > 1e-12 ?
-            Math.max(Math.sqrt(Math.max(sigPSD - nEstFrame, 0) / sigPSD), beta) : beta;
-          re[k] *= gain; im[k] *= gain;
+          const power = re[k]*re[k] + im[k]*im[k];
+          const mag = Math.sqrt(power);
+
+          // ── MCRA continuous noise update (soft speech presence) ──
+          noisePowerSmth[k] = 0.92 * noisePowerSmth[k] + 0.08 * power;
+          if (noisePowerSmth[k] < noisePowerMin[k]) noisePowerMin[k] = noisePowerSmth[k];
+          const ratio = noisePowerSmth[k] / (noisePowerMin[k] + 1e-20);
+          const pSpeech = 1.0 / (1.0 + Math.exp(-5.0 * (ratio - 2.0))); // soft sigmoid
+          const pNoise = 1.0 - pSpeech;
+          const alphaAdapt = 0.85 + 0.15 * pSpeech;
+          noiseVar[k] = alphaAdapt * noiseVar[k] + (1 - alphaAdapt) * pNoise * power;
+
+          const nv = Math.max(noiseVar[k], 1e-20);
+          if (nv < 1e-18) { prevCleanMag[k] = mag; continue; }
+
+          // ── A posteriori SNR: γ = |Y|²/σ²_n ──
+          //    sensScale adjusts noise estimate aggressiveness
+          const nvScaled = nv * sensScale;
+          const gammaK = power / nvScaled;
+          // ── A priori SNR (decision-directed): ξ = α*|Ŝ_{-1}|²/σ²_n + (1-α)*max(γ-1,0) ──
+          const xi = Math.max(
+            alphaDD * (prevCleanMag[k]*prevCleanMag[k]) / nv
+            + (1 - alphaDD) * Math.max(gammaK - 1, 0),
+            1e-4
+          );
+
+          // ── v = ξγ/(1+ξ) ──
+          const v = (xi * gammaK) / (1 + xi);
+
+          // ── E1(v) exponential integral (Abramowitz & Stegun) ──
+          let e1;
+          if (v > 1) {
+            e1 = Math.exp(-v) / (v + 1e-20) * (v*v + 2.334733*v + 0.250621) / (v*v + 3.330657*v + 1.681534);
+          } else {
+            e1 = Math.max(-Math.log(v + 1e-20) - 0.5772156649 + v - v*v*0.25, 0);
+          }
+
+          // ── Log-MMSE gain ──
+          let gain = (xi / (1 + xi)) * Math.exp(0.5 * e1);
+          // Spectral subtraction blend: higher subStrength → more aggressive
+          const subGain = Math.max(1 - (nvScaled / (power + 1e-20)), specFloor);
+          gain = (1 - subStrength) * gain + subStrength * Math.min(gain, subGain);
+          gain = 1.0 - amt * (1.0 - gain); // user amount control
+          gain = Math.max(gain, specFloor); // spectral floor (anti-musical-noise)
+          // Adaptive smoothing: fast attack during speech, slow release during noise
+          const smoothCoef = 0.3 + 0.55 * pNoise;
+          gain = smoothCoef * prevGain[k] + (1 - smoothCoef) * gain;
+          prevGain[k] = gain;
+
+          const cleaned = mag * gain;
+          prevCleanMag[k] = cleaned;
+
+          // Apply gain preserving phase
+          const scale = power > 1e-12 ? cleaned / mag : specFloor;
+          re[k] *= scale; im[k] *= scale;
           if (k > 0 && k < N - k) { re[N-k] = re[k]; im[N-k] = -im[k]; }
         }
+
+        // Reset MCRA minima periodically — set to large value so true
+        // minima are discovered from incoming frames
+        if (++mcraCount >= mcraBlock) {
+          mcraCount = 0;
+          for (let k = 0; k < halfN; k++) noisePowerMin[k] = 1e10;
+        }
+
         this._ifft(re, im);
         for (let i = 0; i < N && s + i < len; i++) {
           outData[s + i] += re[i] * win[i];
@@ -1591,8 +1741,15 @@ class VoiceIsolatePro {
 
   // ---- 3D Spectrogram ----
   init3D(){
-    const ct=this.dom.spectro3DContainer;const w=ct.clientWidth;const h=ct.clientHeight;
-    if(w===0||h===0)return;
+    if(typeof THREE === 'undefined'){structuredLog('warn','Three.js not loaded — 3D spectrogram disabled');return;}
+    const ct=this.dom.spectro3DContainer;if(!ct)return;
+    const w=ct.clientWidth;const h=ct.clientHeight;
+    if(w===0||h===0){
+      // Container not visible yet — retry after layout settles
+      if(!this._3dRetries)this._3dRetries=0;
+      if(this._3dRetries++<10)setTimeout(()=>this.init3D(),300);
+      return;
+    }
     const scene=new THREE.Scene();scene.background=new THREE.Color(0x030306);
     const cam=new THREE.PerspectiveCamera(45,w/h,0.1,1000);cam.position.set(0,40,60);cam.lookAt(0,0,0);
     const ren=new THREE.WebGLRenderer({canvas:this.dom.spectro3DCanvas,antialias:true});

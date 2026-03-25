@@ -18,6 +18,17 @@ const tsSource = fs.readFileSync(
   'utf8'
 );
 
+// stripTypeScriptTypes erases all TS-only syntax while preserving source positions.
+// The only remaining JS-invalid token is the `export` keyword on each declaration,
+// which we strip with a single targeted regex so bindings are accessible in scope.
+const jsSource = stripTypeScriptTypes(tsSource)
+  .replace(/^export\s+/gm, '');
+
+// Evaluate the plain-JS source and extract the bindings we need to test.
+// eslint-disable-next-line no-new-func
+const evalResult = new Function(
+  jsSource + '\nreturn { PRESETS, DEFAULT_PRESET_ID };'
+)();
 // Remove TypeScript interface blocks and type annotations, then expose exports.
 const jsSource = tsSource
   // Remove interface declarations (export interface Foo { ... })
@@ -42,6 +53,7 @@ const evalResult = (function () {
 // They are plain 'const' in the eval scope; capture via the script returning them.
 
 const { PRESETS, DEFAULT_PRESET_ID } = evalResult;
+
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
