@@ -1122,6 +1122,8 @@ class VoiceIsolatePro {
           outData[s + i] += re[i] * win[i];
           normBuf[s + i] += win[i] * win[i];
         }
+          normBuf[s + i] += win[i] * win[i];
+        }
       }
       for (let i = 0; i < len; i++) {
         if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
