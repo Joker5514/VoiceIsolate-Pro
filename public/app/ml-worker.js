@@ -77,7 +77,19 @@ self.onmessage = async (e) => {
   }
 };
 
-// ---- Initialization ----
+/**
+ * Initialize ONNX Runtime, select the best execution provider, and load the requested models into the worker's sessions.
+ *
+ * Imports ONNX Runtime if not already present, detects an execution provider, attempts to create inference sessions for
+ * the models specified by the message (or the default set), and posts a `{ type: 'ready', provider, models }` message
+ * containing a `{[modelName]: boolean}` status map on success. If initialization fails, posts a `{ type: 'error', msg }`
+ * message instead.
+ *
+ * @param {Object} msg - Initialization options and overrides.
+ * @param {string} [msg.ortUrl] - Optional URL to load the ONNX Runtime script from (falls back to a bundled CDN URL).
+ * @param {string[]} [msg.models] - Optional list of model names to load (defaults to `['vad','deepfilter','demucs']`).
+ * @param {Object.<string,string>} [msg.modelPaths] - Optional per-model path overrides keyed by model name.
+ */
 async function initialize(msg) {
   try {
     // Import ONNX Runtime
@@ -129,11 +141,21 @@ async function initialize(msg) {
   }
 }
 
-// initModels — load a specific set of models (used by loadModel message)
+/**
+ * Load a specific set of ONNX models according to the provided initialization message.
+ * @param {Object} msg - Initialization message that may include:
+ *   - `models` {string[]} : list of model names to load (e.g. `['vad','deepfilter','demucs']`).
+ *   - `modelPaths` {{[name:string]: string}} : optional per-model path overrides.
+ *   - `ortUrl` {string} : optional URL to the ONNX Runtime script.
+ */
 async function initModels(msg) {
   await initialize(msg);
 }
 
+/**
+ * Selects the best available ONNX Runtime execution provider for the current environment.
+ * @returns {'webgpu'|'webgl'|'wasm'} `webgpu` if WebGPU is available, `webgl` if WebGL2 is available, `wasm` otherwise.
+ */
 async function detectProvider() {
   try {
     if (typeof navigator !== 'undefined' && navigator.gpu) {
@@ -324,6 +346,14 @@ async function handleVAD(msg) {
   }
 }
 
+/**
+ * Perform chunked source separation on the provided audio buffer, post progress updates, and send the separated result.
+ *
+ * @param {Object} msg - Message containing separation parameters.
+ * @param {string|number} msg.id - Identifier echoed back with progress and result messages.
+ * @param {Float32Array} msg.data - Mono audio samples to separate.
+ * @param {number} [msg.chunkSize] - Optional chunk size in samples; defaults to 44100 * 10 (10 seconds).
+ */
 async function handleSeparate(msg) {
   const id = msg.id;
   try {
