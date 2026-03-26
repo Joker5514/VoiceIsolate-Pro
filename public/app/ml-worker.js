@@ -28,8 +28,9 @@ let frameCount = 10;
 const MODEL_PATHS = {
   demucs: 'models/demucs-v4-int8.onnx',
   bsrnn: 'models/bsrnn-int8.onnx',
-  vad: 'models/silero-vad.onnx',
-  ecapa: 'models/ecapa-tdnn-int8.onnx'
+  vad: 'models/silero_vad.onnx',
+  ecapa: 'models/ecapa-tdnn-int8.onnx',
+  deepfilter: 'models/deepfilter-int8.onnx'
 };
 
 // Default blend weights
@@ -39,48 +40,40 @@ let weights = { demucs: 0.7, bsrnn: 0.3 };
 self.onmessage = async (e) => {
   const msg = e.data;
 
-  switch (msg.type) {
-    case 'init':
-      await initialize(msg);
-      break;
-
-    case 'initRingBuffers':
-      setupRingBuffers(msg);
-      break;
-
-    case 'startLoop':
-      startProcessingLoop();
-      break;
-
-    case 'stopLoop':
-      running = false;
-      break;
-
-    case 'setWeights':
-      weights.demucs = msg.demucs ?? weights.demucs;
-      weights.bsrnn = msg.bsrnn ?? weights.bsrnn;
-      break;
-
-    case 'infer':
-      // One-shot inference for offline pipeline
-      await handleInfer(msg);
-      break;
-
-    case 'vad':
-      await handleVAD(msg);
-      break;
-
-    case 'separate':
-      await handleSeparate(msg);
-      break;
-
-    case 'enroll':
-      await handleEnroll(msg);
-      break;
-
-    case 'dispose':
-      await disposeAll();
-      break;
+  if (msg.type === 'init') {
+    await initialize(msg);
+  } else if (msg.type === 'initRingBuffers') {
+    setupRingBuffers(msg);
+  } else if (msg.type === 'startLoop') {
+    startProcessingLoop();
+  } else if (msg.type === 'stopLoop') {
+    running = false;
+  } else if (msg.type === 'setWeights') {
+    weights.demucs = msg.demucs ?? weights.demucs;
+    weights.bsrnn = msg.bsrnn ?? weights.bsrnn;
+  } else if (msg.type === 'infer') {
+    // One-shot inference for offline pipeline
+    await handleInfer(msg);
+  } else if (msg.type === 'vad') {
+    await handleVAD(msg);
+  } else if (msg.type === 'separate') {
+    await handleSeparate(msg);
+  } else if (msg.type === 'process') {
+    // Alias for separate — process audio chunk
+    await handleSeparate(msg);
+  } else if (msg.type === 'reset') {
+    // Reset all loaded models and ring buffers
+    await disposeAll();
+    inputRing = null;
+    maskRing = null;
+    running = false;
+    self.postMessage({ type: 'reset_ok' });
+  } else if (msg.type === 'loadModel') {
+    await initModels(msg);
+  } else if (msg.type === 'enroll') {
+    await handleEnroll(msg);
+  } else if (msg.type === 'dispose') {
+    await disposeAll();
   }
 };
 
@@ -106,27 +99,39 @@ async function initialize(msg) {
     };
 
     // Load available models
-    const models = msg.models || ['vad']; // start with VAD, lazy-load others
+    const models = msg.models || ['vad', 'deepfilter', 'demucs']; // load core models by default
     for (const name of models) {
       const path = msg.modelPaths?.[name] || MODEL_PATHS[name];
       try {
         sessions[name] = await ort.InferenceSession.create(path, sessionOpts);
         log('info', `Loaded model: ${name}`);
       } catch (err) {
-        log('warn', `Model ${name} unavailable: ${err.message}`);
+        const displayName = name === 'vad' ? 'VAD' : name;
+        log('warn', `${displayName} unavailable: ${err.message}`);
       }
+    }
+
+    // Build models status object: { modelName: true/false }
+    const modelsStatus = {};
+    for (const name of models) {
+      modelsStatus[name] = name in sessions;
     }
 
     self.postMessage({
       type: 'ready',
       provider,
-      models: Object.keys(sessions)
+      models: modelsStatus
     });
 
   } catch (err) {
     log('error', `Init failed: ${err.message}`);
     self.postMessage({ type: 'error', msg: err.message });
   }
+}
+
+// initModels — load a specific set of models (used by loadModel message)
+async function initModels(msg) {
+  await initialize(msg);
 }
 
 async function detectProvider() {
@@ -345,7 +350,8 @@ async function handleSeparate(msg) {
       });
     }
 
-    self.postMessage({ type: 'separateResult', id, data: result }, [result.buffer]);
+    const output = result;
+    self.postMessage({ type: 'separateResult', id, data: output }, [output.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', id, msg: err.message });
   }

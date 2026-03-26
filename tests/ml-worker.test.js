@@ -32,10 +32,10 @@ describe('ml-worker.js', () => {
       importScripts: jest.fn(),
       self: {
         postMessage: jest.fn((msg) => postedMessages.push(msg)),
-        onmessage: null
+        onmessage: null,
+        ort: mockOrt  // ort available via self.ort after importScripts
       },
       navigator: {},
-      ort: mockOrt,
       Float32Array: Float32Array,
       Promise: Promise,
       console: console,
@@ -52,7 +52,7 @@ describe('ml-worker.js', () => {
 
   it('should handle Silero VAD loading error path', async () => {
     // Mock the InferenceSession.create to throw an error specifically for silero_vad.onnx
-    workerGlobal.ort.InferenceSession.create.mockImplementation((modelPath) => {
+    workerGlobal.self.ort.InferenceSession.create.mockImplementation((modelPath) => {
       if (modelPath.includes('silero_vad.onnx')) {
         return Promise.reject(new Error('Simulated VAD load error'));
       }
