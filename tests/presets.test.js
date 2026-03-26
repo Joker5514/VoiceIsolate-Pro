@@ -89,8 +89,8 @@ describe('index.html', () => {
     expect(html).toContain('auditLogBtn');
   });
 
-  test('Should reference 36-Stage pipeline', () => {
-    expect(html).toContain('36-Stage');
+  test('Should reference 32-Stage pipeline', () => {
+    expect(html).toContain('32-Stage');
   });
 });
 

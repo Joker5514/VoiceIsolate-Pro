@@ -23,6 +23,7 @@ let maskRing = null;         // SharedRingBuffer (write side)
 let running = false;
 let frameSize = 4096;
 let frameCount = 10;
+let activePromises = new Set(); // Track in-flight async inference
 
 // Model paths (relative to app root)
 const MODEL_PATHS = {
@@ -53,25 +54,37 @@ self.onmessage = async (e) => {
     weights.bsrnn = msg.bsrnn ?? weights.bsrnn;
   } else if (msg.type === 'infer') {
     // One-shot inference for offline pipeline
-    await handleInfer(msg);
+    const promise = handleInfer(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
   } else if (msg.type === 'vad') {
-    await handleVAD(msg);
+    const promise = handleVAD(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
   } else if (msg.type === 'separate') {
-    await handleSeparate(msg);
+    const promise = handleSeparate(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
   } else if (msg.type === 'process') {
     // Alias for separate — process audio chunk
-    await handleSeparate(msg);
+    const promise = handleSeparate(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
   } else if (msg.type === 'reset') {
     // Reset all loaded models and ring buffers
+    // Wait for all in-flight inference to complete before resetting
+    await Promise.all([...activePromises]);
     await disposeAll();
     inputRing = null;
     maskRing = null;
     running = false;
     self.postMessage({ type: 'reset_ok' });
   } else if (msg.type === 'loadModel') {
-    await initModels(msg);
+    await initialize(msg);
   } else if (msg.type === 'enroll') {
-    await handleEnroll(msg);
+    const promise = handleEnroll(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
   } else if (msg.type === 'dispose') {
     await disposeAll();
   }
@@ -139,17 +152,6 @@ async function initialize(msg) {
     log('error', `Init failed: ${err.message}`);
     self.postMessage({ type: 'error', msg: err.message });
   }
-}
-
-/**
- * Load a specific set of ONNX models according to the provided initialization message.
- * @param {Object} msg - Initialization message that may include:
- *   - `models` {string[]} : list of model names to load (e.g. `['vad','deepfilter','demucs']`).
- *   - `modelPaths` {{[name:string]: string}} : optional per-model path overrides.
- *   - `ortUrl` {string} : optional URL to the ONNX Runtime script.
- */
-async function initModels(msg) {
-  await initialize(msg);
 }
 
 /**
