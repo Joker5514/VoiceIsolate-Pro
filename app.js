@@ -1239,4 +1239,5 @@ class VoiceIsolatePro {
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
 }
 
+if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
 document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});

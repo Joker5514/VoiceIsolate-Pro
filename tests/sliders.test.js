@@ -103,8 +103,8 @@ describe('STFT engine', () => {
 });
 
 describe('AudioWorklet registration', () => {
-  test('dsp-worker.js should be referenced in ensureCtx', () => {
-    expect(appJs).toContain("addModule('./dsp-worker.js')");
+  test('voice-isolate-processor.js should be referenced in ensureCtx', () => {
+    expect(appJs).toContain("addModule('./voice-isolate-processor.js')");
   });
 });
 

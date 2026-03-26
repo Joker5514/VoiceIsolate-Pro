@@ -23,13 +23,15 @@ let maskRing = null;         // SharedRingBuffer (write side)
 let running = false;
 let frameSize = 4096;
 let frameCount = 10;
+let activePromises = new Set(); // Track in-flight async inference
 
 // Model paths (relative to app root)
 const MODEL_PATHS = {
   demucs: 'models/demucs-v4-int8.onnx',
   bsrnn: 'models/bsrnn-int8.onnx',
-  vad: 'models/silero-vad.onnx',
-  ecapa: 'models/ecapa-tdnn-int8.onnx'
+  vad: 'models/silero_vad.onnx',
+  ecapa: 'models/ecapa-tdnn-int8.onnx',
+  deepfilter: 'models/deepfilter-int8.onnx'
 };
 
 // Default blend weights
@@ -39,52 +41,68 @@ let weights = { demucs: 0.7, bsrnn: 0.3 };
 self.onmessage = async (e) => {
   const msg = e.data;
 
-  switch (msg.type) {
-    case 'init':
-      await initialize(msg);
-      break;
-
-    case 'initRingBuffers':
-      setupRingBuffers(msg);
-      break;
-
-    case 'startLoop':
-      startProcessingLoop();
-      break;
-
-    case 'stopLoop':
-      running = false;
-      break;
-
-    case 'setWeights':
-      weights.demucs = msg.demucs ?? weights.demucs;
-      weights.bsrnn = msg.bsrnn ?? weights.bsrnn;
-      break;
-
-    case 'infer':
-      // One-shot inference for offline pipeline
-      await handleInfer(msg);
-      break;
-
-    case 'vad':
-      await handleVAD(msg);
-      break;
-
-    case 'separate':
-      await handleSeparate(msg);
-      break;
-
-    case 'enroll':
-      await handleEnroll(msg);
-      break;
-
-    case 'dispose':
-      await disposeAll();
-      break;
+  if (msg.type === 'init') {
+    await initialize(msg);
+  } else if (msg.type === 'initRingBuffers') {
+    setupRingBuffers(msg);
+  } else if (msg.type === 'startLoop') {
+    startProcessingLoop();
+  } else if (msg.type === 'stopLoop') {
+    running = false;
+  } else if (msg.type === 'setWeights') {
+    weights.demucs = msg.demucs ?? weights.demucs;
+    weights.bsrnn = msg.bsrnn ?? weights.bsrnn;
+  } else if (msg.type === 'infer') {
+    // One-shot inference for offline pipeline
+    const promise = handleInfer(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
+  } else if (msg.type === 'vad') {
+    const promise = handleVAD(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
+  } else if (msg.type === 'separate') {
+    const promise = handleSeparate(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
+  } else if (msg.type === 'process') {
+    // Alias for separate — process audio chunk
+    const promise = handleSeparate(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
+  } else if (msg.type === 'reset') {
+    // Reset all loaded models and ring buffers
+    // Wait for all in-flight inference to complete before resetting
+    await Promise.all([...activePromises]);
+    await disposeAll();
+    inputRing = null;
+    maskRing = null;
+    running = false;
+    self.postMessage({ type: 'reset_ok' });
+  } else if (msg.type === 'loadModel') {
+    await initialize(msg);
+  } else if (msg.type === 'enroll') {
+    const promise = handleEnroll(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
+  } else if (msg.type === 'dispose') {
+    await disposeAll();
   }
 };
 
-// ---- Initialization ----
+/**
+ * Initialize ONNX Runtime, select the best execution provider, and load the requested models into the worker's sessions.
+ *
+ * Imports ONNX Runtime if not already present, detects an execution provider, attempts to create inference sessions for
+ * the models specified by the message (or the default set), and posts a `{ type: 'ready', provider, models }` message
+ * containing a `{[modelName]: boolean}` status map on success. If initialization fails, posts a `{ type: 'error', msg }`
+ * message instead.
+ *
+ * @param {Object} msg - Initialization options and overrides.
+ * @param {string} [msg.ortUrl] - Optional URL to load the ONNX Runtime script from (falls back to a bundled CDN URL).
+ * @param {string[]} [msg.models] - Optional list of model names to load (defaults to `['vad','deepfilter','demucs']`).
+ * @param {Object.<string,string>} [msg.modelPaths] - Optional per-model path overrides keyed by model name.
+ */
 async function initialize(msg) {
   try {
     // Import ONNX Runtime
@@ -106,21 +124,28 @@ async function initialize(msg) {
     };
 
     // Load available models
-    const models = msg.models || ['vad']; // start with VAD, lazy-load others
+    const models = msg.models || ['vad', 'deepfilter', 'demucs']; // load core models by default
     for (const name of models) {
       const path = msg.modelPaths?.[name] || MODEL_PATHS[name];
       try {
         sessions[name] = await ort.InferenceSession.create(path, sessionOpts);
         log('info', `Loaded model: ${name}`);
       } catch (err) {
-        log('warn', `Model ${name} unavailable: ${err.message}`);
+        const displayName = name === 'vad' ? 'VAD' : name;
+        log('warn', `${displayName} unavailable: ${err.message}`);
       }
+    }
+
+    // Build models status object: { modelName: true/false }
+    const modelsStatus = {};
+    for (const name of models) {
+      modelsStatus[name] = name in sessions;
     }
 
     self.postMessage({
       type: 'ready',
       provider,
-      models: Object.keys(sessions)
+      models: modelsStatus
     });
 
   } catch (err) {
@@ -129,6 +154,10 @@ async function initialize(msg) {
   }
 }
 
+/**
+ * Selects the best available ONNX Runtime execution provider for the current environment.
+ * @returns {'webgpu'|'webgl'|'wasm'} `webgpu` if WebGPU is available, `webgl` if WebGL2 is available, `wasm` otherwise.
+ */
 async function detectProvider() {
   try {
     if (typeof navigator !== 'undefined' && navigator.gpu) {
@@ -319,6 +348,14 @@ async function handleVAD(msg) {
   }
 }
 
+/**
+ * Perform chunked source separation on the provided audio buffer, post progress updates, and send the separated result.
+ *
+ * @param {Object} msg - Message containing separation parameters.
+ * @param {string|number} msg.id - Identifier echoed back with progress and result messages.
+ * @param {Float32Array} msg.data - Mono audio samples to separate.
+ * @param {number} [msg.chunkSize] - Optional chunk size in samples; defaults to 44100 * 10 (10 seconds).
+ */
 async function handleSeparate(msg) {
   const id = msg.id;
   try {
@@ -345,7 +382,8 @@ async function handleSeparate(msg) {
       });
     }
 
-    self.postMessage({ type: 'separateResult', id, data: result }, [result.buffer]);
+    const output = result;
+    self.postMessage({ type: 'separateResult', id, data: output }, [output.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', id, msg: err.message });
   }

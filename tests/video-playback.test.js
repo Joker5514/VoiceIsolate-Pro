@@ -178,6 +178,7 @@ describe('Video Playback Error Handling', () => {
     vip.buildLiveChain = jest.fn();
     vip.startSpectro = jest.fn();
     vip.startFreq = jest.fn();
+    vip.startDiagnostics = jest.fn();
     vip.tickTime = jest.fn();
     vip.ensureCtx = jest.fn();
     vip.ctx = { currentTime: 0 };

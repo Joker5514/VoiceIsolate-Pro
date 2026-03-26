@@ -7,6 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- onnxruntime-web loaded dynamically in ml-worker.js via importScripts -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js"></script> -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <!-- Vercel Speed Insights: must be defined before app.js -->
   <script>
@@ -122,7 +124,7 @@
       <div class="actions-row">
         <button id="processBtn" class="btn btn-primary" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
-          Process (36-Stage)
+          Process (32-Stage)
         </button>
         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
@@ -425,7 +427,7 @@
   </section>
 
   <footer class="ftr">
-    <span>VoiceIsolate Pro v20.0 · Threads from Space v10 · Hybrid ML+DSP · 36-Stage Deca-Pass</span>
+    <span>VoiceIsolate Pro v20.0 · Threads from Space v10 · Hybrid ML+DSP · 32-Stage Octa-Pass</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
 

@@ -54,6 +54,7 @@ describe('VoiceIsolatePro Video Playback', () => {
       },
       isVideo: true,
       startSpectro: jest.fn(),
+      startDiagnostics: jest.fn(),
       startFreq: jest.fn(),
       tickTime: jest.fn(),
       playOffset: 0

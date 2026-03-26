@@ -36,7 +36,9 @@ describe('Transport Methods', () => {
         tpABLabel: { textContent: '' }
       },
       play: jest.fn(),
-      fmtDur: jest.fn(() => '0:00')
+      fmtDur: jest.fn(() => '0:00'),
+      stopDiagnostics: jest.fn(),
+      startDiagnostics: jest.fn()
     };
   });
 
