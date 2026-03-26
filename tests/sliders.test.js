@@ -169,7 +169,7 @@ describe('ML Worker (Phase 4b)', () => {
 
   test('ml-worker handles loadModel message', () => {
     // ml-worker initializes models via initModels function
-    expect(mlWorkerJs).toContain('initModels');
+    expect(mlWorkerJs).toContain('loadModel');
   });
 
   test('ml-worker supports implemented model types', () => {
