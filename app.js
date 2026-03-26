@@ -1,12 +1,13 @@
 /* ============================================
-   VoiceIsolate Pro v19.0 – Engineer Mode
-   Threads from Space · Hybrid ML+DSP
-   52 Sliders · Real-Time Chain · 3D Spectrogram
+   VoiceIsolate Pro v20.0 – Engineer Mode
+   Threads from Space v10 · Hybrid ML+DSP
+   52 Sliders · 36-Stage Deca-Pass · 3D Spectrogram
+   Modular: PipelineState + PipelineOrchestrator
    ============================================ */
 
 // ---- STRUCTURED LOGGING ----
 function structuredLog(level, message, details = {}) {
-  const entry = { app: 'VoiceIsolate Pro', version: '19.0', level, message, timestamp: new Date().toISOString(), ...details };
+  const entry = { app: 'VoiceIsolate Pro', version: '20.0', level, message, timestamp: new Date().toISOString(), ...details };
   const method = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
   method(JSON.stringify(entry));
 }
@@ -119,6 +120,11 @@ const STAGES = [
 ];
 
 // ============================================
+// v20 Modular Architecture Integration
+// PipelineState → centralized param management
+// PipelineOrchestrator → processing conductor
+// SharedRingBuffer → zero-copy thread transfer
+// ============================================
 class VoiceIsolatePro {
   constructor() {
     this.ctx = null;
@@ -146,6 +152,33 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
+
+    // v20: Initialize PipelineState (centralized 52-param state with pub/sub)
+    this.pipelineState = typeof PipelineState !== 'undefined' ? new PipelineState() : null;
+    if (this.pipelineState) {
+      this.pipelineState.registerSliders(SLIDERS);
+      // Sync param changes from PipelineState → legacy this.params
+      this.pipelineState.onAny(({ key, value }) => { this.params[key] = value; });
+    }
+
+    // v20: Initialize PipelineOrchestrator (processing conductor)
+    this.orchestrator = (typeof PipelineOrchestrator !== 'undefined' && this.pipelineState)
+      ? new PipelineOrchestrator(this.pipelineState) : null;
+    if (this.orchestrator) {
+      this.orchestrator.onStatusChange = (s) => this.setStatus(s.toUpperCase());
+      this.orchestrator.onProgress = (stage, pct, label) => {
+        if (this.dom) {
+          this.dom.pipeFill.style.width = pct + '%';
+          this.dom.pipeStage.textContent = `S${stage}/36`;
+          this.dom.pipeDetail.textContent = label || '';
+        }
+      };
+      this.orchestrator.onError = (msg) => structuredLog('error', 'Pipeline error', { error: msg });
+    }
+
+    // v20: SharedRingBuffer support detection
+    this.sabSupported = typeof SharedArrayBuffer !== 'undefined' && typeof Atomics !== 'undefined';
+
     // Phase 4: ML Worker (off-main-thread ONNX inference)
     this.mlWorker = null;
     this._mlCallbacks = {};  // id → { resolve, reject }
@@ -175,12 +208,16 @@ class VoiceIsolatePro {
 
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
-      this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)();
-      // Phase 3: Register AudioWorklet processor for low-latency live mode
+      this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)({ sampleRate: 48000 });
+      // v20: Register AudioWorklet processor for real-time path
       if (this.ctx.audioWorklet) {
-        this.ctx.audioWorklet.addModule('./dsp-worker.js').catch(() => {
+        this.ctx.audioWorklet.addModule('./voice-isolate-processor.js').catch(() => {
           structuredLog('warn', 'AudioWorklet unavailable — live chain uses native Web Audio nodes');
         });
+      }
+      // v20: Share context with orchestrator
+      if (this.orchestrator && !this.orchestrator.audioCtx) {
+        this.orchestrator.audioCtx = this.ctx;
       }
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
@@ -327,6 +364,8 @@ class VoiceIsolatePro {
     const id = el.dataset.param;
     const v = parseFloat(el.value);
     this.params[id] = v;
+    // v20: Sync to PipelineState (broadcasts to AudioWorklet + pub/sub)
+    if (this.pipelineState) this.pipelineState.set(id, v, { recordHistory: true, source: 'slider' });
     let unit = '';
     for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
     const ve = document.getElementById(id + 'Val');
@@ -337,6 +376,10 @@ class VoiceIsolatePro {
 
   applyPreset(name) {
     const p = PRESETS[name]; if (!p) return;
+    // v20: Batch update through PipelineState (single undo snapshot)
+    if (this.pipelineState) {
+      this.pipelineState.import(p, 'preset');
+    }
     Object.assign(this.params, p);
     for (const [, sliders] of Object.entries(SLIDERS)) {
       for (const s of sliders) {
@@ -1279,8 +1322,10 @@ class VoiceIsolatePro {
         const { type } = e.data;
         if (type === 'ready') {
           this.mlWorkerReady = true;
-          this.mlWorkerModels = e.data.models;
-          structuredLog('info', 'ML worker ready', e.data.models);
+          this.mlWorkerModels = e.data.models || {};
+          structuredLog('info', 'ML worker ready', { provider: e.data.provider, models: e.data.models });
+          // v20: Share ML worker with orchestrator
+          if (this.orchestrator) this.orchestrator.mlWorker = this.mlWorker;
         } else if (type === 'log') {
           structuredLog(e.data.level, '[ml-worker] ' + e.data.msg);
         }
@@ -1290,7 +1335,12 @@ class VoiceIsolatePro {
         structuredLog('warn', 'ML worker error', { error: err.message });
         this.mlWorkerReady = false;
       };
-      this.mlWorker.postMessage({ type: 'init' });
+      // v20: Pass ONNX Runtime URL and initial model list
+      this.mlWorker.postMessage({
+        type: 'init',
+        ortUrl: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js',
+        models: ['vad']
+      });
     } catch (e) {
       structuredLog('warn', 'ML worker unavailable', { error: e.message });
     }
@@ -1397,7 +1447,7 @@ class VoiceIsolatePro {
 
   downloadAuditLog() {
     if (!this.forensicLog.length) return;
-    const blob = new Blob([JSON.stringify({ app:'VoiceIsolate Pro', version:'19.0', mode:'Forensic', entries: this.forensicLog }, null, 2)], { type:'application/json' });
+    const blob = new Blob([JSON.stringify({ app:'VoiceIsolate Pro', version:'20.0', mode:'Forensic', entries: this.forensicLog }, null, 2)], { type:'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = 'voiceisolate_audit_' + Date.now() + '.json';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);

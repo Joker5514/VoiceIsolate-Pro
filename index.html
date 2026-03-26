@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>VoiceIsolate Pro v19.0 – Engineer Mode</title>
+  <title>VoiceIsolate Pro v20.0 – Engineer Mode</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -20,7 +20,7 @@
     <div class="hdr-left">
       <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
       <div>
-        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v19.0</span></h1>
+        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v20.0</span></h1>
         <span class="hdr-badge">ENGINEER MODE</span>
       </div>
     </div>
@@ -122,7 +122,7 @@
       <div class="actions-row">
         <button id="processBtn" class="btn btn-primary" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
-          Process (32-Stage)
+          Process (36-Stage)
         </button>
         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
@@ -283,31 +283,31 @@
         <div class="tech-card-title-row">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
           <h2 class="tech-card-title">How It Works</h2>
-          <span class="tech-card-badge">32-STAGE OCTA-PASS</span>
-          <span class="tech-card-badge tech-card-badge-new">v19 UNIFIED</span>
+          <span class="tech-card-badge">36-STAGE DECA-PASS</span>
+          <span class="tech-card-badge tech-card-badge-new">v20 TFS v10</span>
         </div>
         <p class="tech-card-sub">A hybrid ML + DSP pipeline processes audio entirely in-browser with optional forensic SHA-256 audit trail — zero data transmission, full privacy, court-ready output.</p>
       </div>
 
       <div class="tech-pipeline-flow" aria-label="Pipeline signal flow">
         <div class="tpf-step">
-          <span class="tpf-num">1</span>
-          <span class="tpf-lbl">Input Conditioning</span>
+          <span class="tpf-num">1–4</span>
+          <span class="tpf-lbl">Input Conditioning &amp; Cleanup</span>
         </div>
         <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <div class="tpf-step">
-          <span class="tpf-num">2–8</span>
-          <span class="tpf-lbl">Spectral Gating &amp; Noise Removal</span>
+          <span class="tpf-num">5–10</span>
+          <span class="tpf-lbl">STFT &amp; ML Source Separation</span>
         </div>
         <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <div class="tpf-step">
-          <span class="tpf-num">9–18</span>
-          <span class="tpf-lbl">ML Voice Isolation &amp; Enhancement</span>
+          <span class="tpf-num">11–21</span>
+          <span class="tpf-lbl">Spectral Ops (In-Place) &amp; iSTFT</span>
         </div>
         <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <div class="tpf-step">
-          <span class="tpf-num">19–32</span>
-          <span class="tpf-lbl">Dynamics, LUFS &amp; Forensic Output</span>
+          <span class="tpf-num">22–36</span>
+          <span class="tpf-lbl">EQ, Dynamics, LUFS &amp; Export</span>
         </div>
       </div>
 
@@ -425,11 +425,17 @@
   </section>
 
   <footer class="ftr">
-    <span>VoiceIsolate Pro v19.0 · Threads from Space · Hybrid ML+DSP · 32-Stage Octa-Pass</span>
+    <span>VoiceIsolate Pro v20.0 · Threads from Space v10 · Hybrid ML+DSP · 36-Stage Deca-Pass</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
 
   <div id="tooltip" class="slider-tooltip"></div>
+  <!-- v20 Modular Architecture: TFS v10 -->
+  <script src="pipeline-state.js"></script>
+  <script src="ring-buffer.js"></script>
+  <script src="dsp-core.js"></script>
+  <script src="batch-orchestrator.js"></script>
+  <script src="pipeline-orchestrator.js"></script>
   <script src="app.js"></script>
   <script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
