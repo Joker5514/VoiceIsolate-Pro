@@ -50,6 +50,46 @@ describe('ml-worker.js', () => {
     fn(...argValues);
   });
 
+  it('should handle loadModel message by running initialization and posting ready', async () => {
+    workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({});
+
+    await workerGlobal.self.onmessage({ data: { type: 'loadModel' } });
+
+    const readyMsg = postedMessages.find(m => m.type === 'ready');
+    expect(readyMsg).toBeDefined();
+    expect(readyMsg.models).toBeDefined();
+  });
+
+  it('should handle loadModel with custom models list', async () => {
+    workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({});
+
+    await workerGlobal.self.onmessage({
+      data: { type: 'loadModel', models: ['vad'] }
+    });
+
+    const readyMsg = postedMessages.find(m => m.type === 'ready');
+    expect(readyMsg).toBeDefined();
+    // Only the requested model should appear in the status map
+    expect(Object.keys(readyMsg.models)).toEqual(['vad']);
+  });
+
+  it('should handle loadModel failure and post error message', async () => {
+    workerGlobal.self.ort.InferenceSession.create.mockRejectedValue(
+      new Error('model load failed')
+    );
+
+    // Make importScripts throw to simulate a top-level init failure
+    workerGlobal.importScripts.mockImplementation(() => {
+      throw new Error('script load failed');
+    });
+
+    await workerGlobal.self.onmessage({ data: { type: 'loadModel' } });
+
+    const errorMsg = postedMessages.find(m => m.type === 'error');
+    expect(errorMsg).toBeDefined();
+    expect(errorMsg.msg).toContain('script load failed');
+  });
+
   it('should handle Silero VAD loading error path', async () => {
     // Mock the InferenceSession.create to throw an error specifically for silero_vad.onnx
     workerGlobal.self.ort.InferenceSession.create.mockImplementation((modelPath) => {
