@@ -169,6 +169,7 @@ class VoiceIsolatePro {
       this.orchestrator.onProgress = (stage, pct, label) => {
         if (this.dom) {
           this.dom.pipeFill.style.width = pct + '%';
+          this.dom.pipeBar.setAttribute('aria-valuenow', String(pct));
           this.dom.pipeStage.textContent = `S${stage}/36`;
           this.dom.pipeDetail.textContent = label || '';
         }
