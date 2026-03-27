@@ -289,6 +289,9 @@ class VoiceIsolatePro {
       tpPlay:g('tpPlay'), tpPause:g('tpPause'), tpStop:g('tpStop'),
       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
       tpSeek:g('tpSeek'), tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
+      fileSpectroCard:g('fileSpectroCard'), fsModeLbl:g('fsModeLbl'), fsProgress:g('fsProgress'),
+      fsBtnAB:g('fsBtnAB'), fsColormap:g('fsColormap'),
+      fsYAxis:g('fsYAxis'), fsMain:g('fsMain'), fsCanvas:g('fsCanvas'), fsOverlay:g('fsOverlay'), fsXAxis:g('fsXAxis'),
       spectro3DContainer:g('spectro3DContainer'), spectro3DCanvas:g('spectro3DCanvas'),
       spectro3DReset:g('spectro3DReset'),
       spectro2DCanvas:g('spectro2DCanvas'),
@@ -346,6 +349,9 @@ class VoiceIsolatePro {
     });
     this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
     this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
+    if (this.dom.fsBtnAB) this.dom.fsBtnAB.addEventListener('click', () => this.fsToggleAB());
+    if (this.dom.fsColormap) this.dom.fsColormap.addEventListener('change', () => { if (this.fsCurrentBuf) this.renderFileSpectrogram(this.fsCurrentBuf); });
+    if (this.dom.fsMain) this.dom.fsMain.addEventListener('click', e => this.fsSeekClick(e));
     // Phase 5: Forensic mode toggle
     if (this.dom.forensicToggle) {
       this.dom.forensicToggle.addEventListener('change', () => {
@@ -532,6 +538,16 @@ class VoiceIsolatePro {
     this.resizeCanvas(this.dom.waveOrigCanvas);
     this.drawWaveform(buf, this.dom.waveOrigCanvas, '#dc2626');
     this.clearCanvas(this.dom.waveProcCanvas, 'Process to see result');
+    // Show full-file spectrogram card and render initial view
+    if (this.dom.fileSpectroCard) {
+      this.dom.fileSpectroCard.style.display = '';
+      this.fsMode = 'original';
+      this.fsCurrentBuf = buf;
+      this.fsImageData = null;
+      if (this.dom.fsModeLbl) this.dom.fsModeLbl.textContent = 'ORIGINAL';
+      if (this.dom.fsBtnAB) { this.dom.fsBtnAB.textContent = 'Show Processed'; this.dom.fsBtnAB.disabled = true; }
+      this.renderFileSpectrogram(buf);
+    }
     this.setStatus('READY');
   }
 
@@ -568,7 +584,7 @@ class VoiceIsolatePro {
         } catch (e) { this.dom.fileInfo.textContent = 'Decode error: ' + e.message; this.setStatus('ERROR'); }
       };
       this.mediaRecorder.start(100);
-    } catch (e) { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
+    } catch { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
   }
 
   stopRecording() {
@@ -664,6 +680,7 @@ class VoiceIsolatePro {
       if (elapsed >= dur) { this.stop(); return; }
       this.dom.tpCur.textContent = this.fmtDur(elapsed);
       this.dom.tpSeek.value = dur > 0 ? (elapsed / dur) * 1000 : 0;
+      if (dur > 0) this.drawFsPlayhead(elapsed / dur);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -917,6 +934,7 @@ class VoiceIsolatePro {
       this.dom.stVoices.textContent = this.estVoices(fin);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
       this.dom.tpABLabel.textContent = 'Ready — A/B';
+      if (this.dom.fsBtnAB) this.dom.fsBtnAB.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = !this.forensicMode || this.forensicLog.length === 0;
       this.setStatus('COMPLETE');
     } catch(e) {
@@ -1432,7 +1450,7 @@ class VoiceIsolatePro {
       const hashBuf = await crypto.subtle.digest('SHA-256', bytes);
       const hex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
       this.forensicLog.push({ stage: stageName, sha256: hex, timestamp: new Date().toISOString(), channels: buf.numberOfChannels, length: buf.length, sampleRate: buf.sampleRate });
-    } catch(e) { /* crypto unavailable in some contexts */ }
+    } catch { /* crypto unavailable in some contexts */ }
   }
 
   downloadAuditLog() {
@@ -1700,6 +1718,160 @@ class VoiceIsolatePro {
     if(this.outputBuffer)this.drawWaveform(this.outputBuffer,this.dom.waveProcCanvas,'#22d3ee');
     const ct=this.dom.spectro3DContainer;
     if(this.three.ren){this.three.ren.setSize(ct.clientWidth,ct.clientHeight);this.three.cam.aspect=ct.clientWidth/ct.clientHeight;this.three.cam.updateProjectionMatrix();}
+  }
+
+  // ---- Full-File Spectrogram ----
+  async renderFileSpectrogram(buf) {
+    if (!this.dom.fsCanvas || !this.dom.fsMain) return;
+    const wrap = this.dom.fsMain;
+    const W = Math.max(wrap.clientWidth || 800, 200);
+    const H = Math.max(wrap.clientHeight || 170, 80);
+    const canvas = this.dom.fsCanvas;
+    canvas.width = W; canvas.height = H;
+    if (this.dom.fsOverlay) { this.dom.fsOverlay.width = W; this.dom.fsOverlay.height = H; }
+    const ctx2d = canvas.getContext('2d');
+    ctx2d.fillStyle = '#030306'; ctx2d.fillRect(0, 0, W, H);
+    const data = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    const nyq = sr / 2;
+    const fftSize = 2048;
+    const halfFFT = fftSize >> 1;
+    const hopSize = Math.max(1, Math.ceil(data.length / W));
+    const cmap = this.dom.fsColormap ? this.dom.fsColormap.value : 'plasma';
+    const invLN10_9 = 1 / (9 * Math.LN10);
+    const win = new Float32Array(fftSize);
+    for (let i = 0; i < fftSize; i++) win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / fftSize));
+    const logMin = Math.log(20), logMax = Math.log(nyq);
+    const rowBin = new Uint16Array(H);
+    for (let row = 0; row < H; row++) {
+      const frac = 1 - row / H;
+      const freq = Math.exp(logMin + frac * (logMax - logMin));
+      rowBin[row] = Math.min(Math.round(freq / nyq * halfFFT), halfFFT - 1);
+    }
+    const imgData = ctx2d.createImageData(W, H);
+    const pixels = imgData.data;
+    const re = new Float32Array(fftSize);
+    const im = new Float32Array(fftSize);
+    const BATCH = 64;
+    const totalCols = Math.min(W, Math.ceil(data.length / hopSize));
+    for (let col = 0; col < totalCols; col++) {
+      const offset = col * hopSize;
+      for (let i = 0; i < fftSize; i++) { const si = offset + i; re[i] = (si < data.length ? data[si] : 0) * win[i]; im[i] = 0; }
+      this._fft(re, im);
+      for (let row = 0; row < H; row++) {
+        const bin = rowBin[row];
+        const magSq = re[bin] * re[bin] + im[bin] * im[bin];
+        const v = magSq > 0 ? Math.max(0, Math.min(1, Math.log(magSq) * invLN10_9 + 1)) : 0;
+        const [r, g, b] = this.fsColor(v, cmap);
+        const idx = (row * W + col) * 4;
+        pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
+      }
+      if ((col % BATCH === BATCH - 1) || col === totalCols - 1) {
+        ctx2d.putImageData(imgData, 0, 0);
+        const pct = Math.round((col + 1) / totalCols * 100);
+        if (this.dom.fsProgress) this.dom.fsProgress.textContent = pct < 100 ? `Rendering ${pct}%` : '';
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    this.fsImageData = ctx2d.getImageData(0, 0, W, H);
+    if (this.dom.fsProgress) this.dom.fsProgress.textContent = '';
+    this.drawFsYAxis(sr, H);
+    this.drawFsXAxis(buf.duration, W);
+    this.drawFsPlayhead(0);
+  }
+
+  fsColor(v, cmap) {
+    v = Math.max(0, Math.min(1, v));
+    if (cmap === 'ocean') return this.lerpStops([[3,3,20],[5,20,80],[0,100,180],[0,200,230],[180,240,255],[255,255,255]], v);
+    if (cmap === 'voice') return this.lerpStops([[3,3,8],[30,5,60],[180,10,30],[220,80,0],[255,200,20],[255,255,180]], v);
+    if (cmap === 'thermal') return this.lerpStops([[0,0,0],[70,0,20],[180,0,0],[220,100,0],[255,220,40],[255,255,220]], v);
+    // plasma (default)
+    return this.lerpStops([[5,1,15],[60,5,110],[140,20,170],[200,60,50],[240,140,0],[255,230,40],[255,255,220]], v);
+  }
+
+  lerpStops(stops, v) {
+    const idx = v * (stops.length - 1);
+    const lo = Math.floor(idx), hi = Math.min(lo + 1, stops.length - 1);
+    const t = idx - lo;
+    return stops[lo].map((c, i) => Math.round(c + (stops[hi][i] - c) * t));
+  }
+
+  drawFsYAxis(sr, H) {
+    const cv = this.dom.fsYAxis; if (!cv) return;
+    cv.width = 38; cv.height = H;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#030306'; ctx.fillRect(0, 0, 38, H);
+    const nyq = sr / 2;
+    const logMin = Math.log(20), logMax = Math.log(nyq);
+    const freqs = [100,250,500,1000,2000,4000,8000,16000].filter(f => f < nyq);
+    ctx.font = '8px JetBrains Mono, monospace'; ctx.textAlign = 'right';
+    for (const f of freqs) {
+      const frac = (Math.log(f) - logMin) / (logMax - logMin);
+      const y = Math.round((1 - frac) * H);
+      ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(34, y, 4, 1);
+      ctx.fillStyle = 'rgba(180,180,200,0.5)';
+      ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f, 32, y + 3);
+    }
+    ctx.save(); ctx.translate(9, H / 2); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,180,200,0.35)'; ctx.font = '7px JetBrains Mono, monospace';
+    ctx.fillText('Hz', 0, 0); ctx.restore();
+  }
+
+  drawFsXAxis(duration, W) {
+    const cv = this.dom.fsXAxis; if (!cv) return;
+    cv.width = W + 38; cv.height = 20;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#030306'; ctx.fillRect(0, 0, W + 38, 20);
+    ctx.font = '8px JetBrains Mono, monospace'; ctx.fillStyle = 'rgba(180,180,200,0.5)'; ctx.textAlign = 'center';
+    const step = duration < 30 ? 5 : duration < 120 ? 15 : duration < 300 ? 30 : 60;
+    for (let t = 0; t <= duration; t += step) {
+      const x = 38 + Math.round(t / duration * W);
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(x, 0, 1, 5);
+      ctx.fillStyle = 'rgba(180,180,200,0.5)';
+      ctx.fillText(t >= 60 ? Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') : t + 's', x, 14);
+    }
+  }
+
+  drawFsPlayhead(frac) {
+    const cv = this.dom.fsOverlay; if (!cv || !cv.width) return;
+    const W = cv.width, H = cv.height;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    if (!this.inputBuffer || frac <= 0) return;
+    const x = Math.round(frac * W);
+    ctx.shadowBlur = 6; ctx.shadowColor = '#dc2626';
+    ctx.strokeStyle = 'rgba(220,38,38,0.9)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    ctx.shadowBlur = 0;
+    const elapsed = frac * this.inputBuffer.duration;
+    const label = this.fmtDur(elapsed);
+    ctx.font = '700 9px JetBrains Mono, monospace';
+    const tw = ctx.measureText(label).width;
+    const bx = Math.min(x + 3, W - tw - 8);
+    ctx.fillStyle = 'rgba(220,38,38,0.85)'; ctx.fillRect(bx - 2, 2, tw + 8, 14);
+    ctx.fillStyle = '#fff'; ctx.fillText(label, bx + 2, 12);
+  }
+
+  fsToggleAB() {
+    if (!this.outputBuffer) return;
+    this.fsMode = this.fsMode === 'original' ? 'processed' : 'original';
+    const isProc = this.fsMode === 'processed';
+    if (this.dom.fsModeLbl) { this.dom.fsModeLbl.textContent = isProc ? 'PROCESSED' : 'ORIGINAL'; this.dom.fsModeLbl.classList.toggle('proc', isProc); }
+    if (this.dom.fsBtnAB) this.dom.fsBtnAB.textContent = isProc ? 'Show Original' : 'Show Processed';
+    this.fsCurrentBuf = isProc ? this.outputBuffer : this.inputBuffer;
+    this.fsImageData = null;
+    this.renderFileSpectrogram(this.fsCurrentBuf);
+  }
+
+  fsSeekClick(e) {
+    if (!this.inputBuffer) return;
+    const rect = this.dom.fsMain.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    this.playOffset = frac * this.inputBuffer.duration;
+    this.dom.tpSeek.value = frac * 1000;
+    this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+    this.drawFsPlayhead(frac);
+    if (this.isPlaying) this.play();
   }
 
   // ---- UTILITY ----
