@@ -86,8 +86,6 @@ describe('Transport Methods', () => {
   });
 
   describe('pause', () => {
-
-    describe('pause', () => {
     beforeEach(() => {
       mockContext.teardownChain = jest.fn();
       mockContext.stopSpectro = jest.fn();
@@ -236,6 +234,7 @@ describe('Transport Methods', () => {
       expect(mockContext.play).not.toHaveBeenCalled();
       expect(mockContext.fmtDur).toHaveBeenCalledWith(50);
       expect(mockContext.dom.tpCur.textContent).toBe('0:50');
+      expect(mockContext.dom.tpSeek.value).toBe(500);
     });
 
     it('handles missing or invalid speed value gracefully', () => {
@@ -389,7 +388,5 @@ describe('Transport Methods', () => {
       expect(mockContext.dom.videoPlayer.play).toHaveBeenCalled();
     });
   });
-
-});
 
 });

@@ -14,9 +14,11 @@ export default [
       sourceType: 'script',
       globals: {
         ...globals.browser,
-        ort: 'readonly',        // ONNX Runtime Web
-        THREE: 'readonly',      // Three.js
-        module: 'readonly',     // CommonJS export check for testing
+        ort: 'readonly',                  // ONNX Runtime Web
+        THREE: 'readonly',                // Three.js
+        module: 'readonly',               // CommonJS export check for testing
+        PipelineState: 'readonly',        // loaded via separate script tag
+        PipelineOrchestrator: 'readonly', // loaded via separate script tag
       },
     },
     rules: {
@@ -28,7 +30,8 @@ export default [
     },
   },
   {
-    files: ['public/app/dsp-worker.js'],
+    // AudioWorklet processor — runs in AudioWorkletGlobalScope
+    files: ['public/app/dsp-processor.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',
@@ -48,13 +51,30 @@ export default [
     },
   },
   {
+    // Offline DSP Web Worker — uses importScripts
+    files: ['public/app/dsp-worker.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        ...globals.worker,
+        importScripts: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  {
+    // ML inference Web Worker — uses importScripts to load ONNX Runtime
     files: ['public/app/ml-worker.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',
       globals: {
         ...globals.worker,
-        ort: 'readonly',        // ONNX Runtime Web (via importScripts)
         importScripts: 'readonly',
       },
     },
