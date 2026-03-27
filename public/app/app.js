@@ -642,7 +642,7 @@ class VoiceIsolatePro {
     if (this.isPlaying) this.play();
     else {
       this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
-      this.dom.tpSeek.value = (this.playOffset / this.inputBuffer.duration) * 1000;
+      this.dom.tpSeek.value = this.inputBuffer.duration > 0 ? (this.playOffset / this.inputBuffer.duration) * 1000 : 0;
     }
   }
 
