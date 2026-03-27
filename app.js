@@ -200,7 +200,7 @@ class VoiceIsolatePro {
       spectro2DCanvas:g('spectro2DCanvas'),
       waveOrigCanvas:g('waveOrigCanvas'), waveProcCanvas:g('waveProcCanvas'),
       freqCanvas:g('freqCanvas'),
-      pipeFill:g('pipeFill'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
+      pipeFill:g('pipeFill'), pipeBar:g('pipeBar'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
       hSNR:g('hSNR'), hDur:g('hDur'), hSR:g('hSR'), hCh:g('hCh'),
       hRMS:g('hRMS'), hPeak:g('hPeak'), hLUFS:g('hLUFS'), hStatus:g('hStatus'),
       stLatency:g('stLatency'), stProcTime:g('stProcTime'), stVoices:g('stVoices'),
@@ -677,7 +677,7 @@ class VoiceIsolatePro {
     }
   }
 
-  async pip(i,t) { this.dom.pipeFill.style.width=((i+1)/t*100)+'%'; this.dom.pipeStage.textContent=(i+1)+'/'+t; this.dom.pipeDetail.textContent=STAGES[i]||'Finalizing'; this.dom.hStatus.textContent='S'+(i+1); await new Promise(r=>setTimeout(r,12)); }
+  async pip(i,t) { const pct=Math.round((i+1)/t*100); this.dom.pipeFill.style.width=pct+'%'; this.dom.pipeBar.setAttribute('aria-valuenow',String(pct)); this.dom.pipeStage.textContent=(i+1)+'/'+t; this.dom.pipeDetail.textContent=STAGES[i]||'Finalizing'; this.dom.hStatus.textContent='S'+(i+1); await new Promise(r=>setTimeout(r,12)); }
 
   // ---- DSP HELPERS ----
   applyNR(buf,amt,smooth,floorDb) {
