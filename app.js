@@ -499,7 +499,10 @@ class VoiceIsolatePro {
     if (this.isPlaying) this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.playOffset = frac * this.inputBuffer.duration;
     if (this.isPlaying) this.play();
-    else this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+    else {
+      this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+      this.dom.tpSeek.value = this.inputBuffer.duration > 0 ? (this.playOffset / this.inputBuffer.duration) * 1000 : 0;
+    }
   }
 
   toggleAB() {

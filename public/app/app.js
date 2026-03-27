@@ -640,7 +640,10 @@ class VoiceIsolatePro {
     if (this.isPlaying) this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.playOffset = frac * this.inputBuffer.duration;
     if (this.isPlaying) this.play();
-    else this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+    else {
+      this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+      this.dom.tpSeek.value = this.inputBuffer.duration > 0 ? (this.playOffset / this.inputBuffer.duration) * 1000 : 0;
+    }
   }
 
   toggleAB() {
@@ -744,11 +747,6 @@ class VoiceIsolatePro {
     if (this.liveNodes.chain) {
       this.liveNodes.chain.forEach(n => {
         try { n.disconnect(); } catch(e) { console.error('Error disconnecting live node:', e); }
-        try {
-          n.disconnect();
-        } catch (e) {
-          // Ignore errors if the node is already disconnected
-        }
       });
     }
     this.liveNodes = {};
@@ -1071,14 +1069,6 @@ class VoiceIsolatePro {
     const N = 2048, H = 512, halfN = N / 2 + 1;
     const win = this._makeWindow(N);
     const g = 1 - suppressAmt / 100;
-      const o = out.getChannelData(ch);
-      const nLen = Math.min(Math.floor(sr * 0.15), len);
-      let nRms = 0;
-      for (let i = 0; i < nLen; i++) {
-        nRms += inp[i] * inp[i];
-      }
-      nRms = Math.sqrt(nRms / nLen);
-
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
       const outData = out.getChannelData(ch);
@@ -1466,34 +1456,6 @@ class VoiceIsolatePro {
       const o = out.getChannelData(ch);
       for (let i = 0; i < len; i++) {
         o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
-      }
-    }
-    return out;
-  }
-
-  peakNorm(buf, tDb) {
-    const c = this.ctx;
-    const nCh = buf.numberOfChannels;
-    const len = buf.length;
-    const out = c.createBuffer(nCh, len, buf.sampleRate);
-    let pk = 0;
-    // Find the peak absolute value
-    for (let ch = 0; ch < nCh; ch++) {
-      const d = buf.getChannelData(ch);
-      for (let i = 0; i < len; i++) {
-        const a = Math.abs(d[i]);
-        if (a > pk) pk = a;
-      }
-    }
-    // Return original buffer if completely silent
-    if (pk === 0) return buf;
-    // Calculate gain and apply it
-    const g = Math.pow(10, tDb / 20) / pk;
-    for (let ch = 0; ch < nCh; ch++) {
-      const inp = buf.getChannelData(ch);
-      const o = out.getChannelData(ch);
-      for (let i = 0; i < len; i++) {
-        o[i] = Math.max(-1, Math.min(1, inp[i] * g));
       }
     }
     return out;
