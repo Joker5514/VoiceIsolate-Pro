@@ -239,10 +239,11 @@ const AIIntelligence = {
   computeSNRImprovement(original, processed) {
     const origRMS  = this._calcRMS(original);
     const procRMS  = this._calcRMS(processed);
-    const noiseRMS = this._calcNoiseRMS(original);
+    const origNoiseRMS = this._calcNoiseRMS(original);
+    const procNoiseRMS = this._calcNoiseRMS(processed);
 
-    const origSNR = 20 * Math.log10((origRMS + 1e-10) / (noiseRMS + 1e-10));
-    const procSNR = 20 * Math.log10((procRMS + 1e-10) / (noiseRMS + 1e-10));
+    const origSNR = 20 * Math.log10((origRMS + 1e-10) / (origNoiseRMS + 1e-10));
+    const procSNR = 20 * Math.log10((procRMS + 1e-10) / (procNoiseRMS + 1e-10));
 
     return {
       originalSNR: origSNR,
