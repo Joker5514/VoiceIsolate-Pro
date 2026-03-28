@@ -348,8 +348,9 @@ const AIIntelligence = {
   _calcSpectralFlux(audio) {
     // Measure frame-to-frame spectral change using energy variance
     // Fast approximation: compare RMS of consecutive short frames
-    const frameSize = 256;
-    const maxFrames = 20;  // Limit to 20 frames for speed
+    const SPECTRAL_FLUX_FRAME_SIZE = 256;
+    const SPECTRAL_FLUX_MAX_FRAMES = 20; // Limit frames for performance
+
     const nFrames = Math.min(maxFrames, Math.floor(audio.length / frameSize));
     if (nFrames < 2) return 0;
 
