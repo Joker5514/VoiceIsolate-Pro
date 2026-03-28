@@ -35,7 +35,7 @@
     "cap:open:ios": "npx cap open ios",
     "android:build": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
     "android:release": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
-    "ios:build": "npm run build && npx cap sync ios"
+    "ios:sync": "npm run build && npx cap sync ios"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
