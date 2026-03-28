@@ -106,7 +106,7 @@ const AIIntelligence = {
    */
   classifyScene(audio, sr = 48000) {
     const len = audio.length;
-    if (len < 1024) return { scene: 'podcast', confidence: 0.5, scores: {} };
+    if (len < 1024) return { scene: 'podcast', confidence: 0.5, scores: {}, features: { rms: 0, peak: 0, crestFactor: 0, zcr: 0, spectralCentroid: 0, spectralFlux: 0, dynamicRange: 0 } };
 
     // Feature extraction
     const rms = this._calcRMS(audio);
