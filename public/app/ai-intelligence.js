@@ -322,8 +322,9 @@ const AIIntelligence = {
     const N = 512;
     const frame = audio.subarray(0, Math.min(N, audio.length));
 
-    // Autocorrelation-based spectral centroid approximation
-    // Much faster than full DFT for feature extraction
+    // Calculates spectral centroid from a DFT.
+    // Faster than a full analysis, but not autocorrelation-based.
+
     let weightedSum = 0;
     let totalPower = 0;
     const halfN = N / 2;
