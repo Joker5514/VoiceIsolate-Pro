@@ -1,7 +1,9 @@
-name: CI & Deploy
+name: Deploy to Vercel
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
 
 
@@ -40,9 +42,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check critical files exist
         run: |
-          for f in public/index.html public/app/index.html public/app/style.css public/app/app.js public/blueprint/index.html vercel.json; do
+          for f in public/index.html public/app/index.html public/app/style.css public/app/app.js public/blueprint/index.html vercel.json public/manifest.json capacitor.config.json; do
             [ -f "$f" ] && echo "✓ $f" || (echo "✗ MISSING: $f" && exit 1)
           done
+      - name: Validate Capacitor config
+        run: |
+          node -e "
+            const cfg = require('./capacitor.config.json');
+            if (!cfg.appId || !cfg.appName || !cfg.webDir) { process.exit(1); }
+            console.log('✓ Capacitor config valid:', cfg.appId);
+          "
       - name: Validate HTML structure
         run: |
           # Check app.js has all slider groups

@@ -1,8 +1,8 @@
 {
   "name": "voiceisolate-pro",
-  "version": "19.0.0",
+  "version": "21.0.0",
   "type": "module",
-  "description": "Studio-grade voice isolation platform. 32-stage Octa-Pass DSP pipeline with hybrid ML + classical spectral processing.",
+  "description": "Studio-grade voice isolation platform. 32-stage Octa-Pass DSP pipeline with hybrid ML + classical spectral processing. Mobile-ready via Capacitor for Android & iOS.",
   "private": true,
   "keywords": [
     "audio",
@@ -10,9 +10,13 @@
     "voice-isolation",
     "noise-reduction",
     "web-audio",
-    "machine-learning"
+    "machine-learning",
+    "mobile",
+    "android",
+    "ios",
+    "capacitor"
   ],
-  "author": "VoiceIsolate Pro",
+  "author": "Randy Jordan <randyejjordan7827@gmail.com>",
   "license": "UNLICENSED",
   "scripts": {
     "start": "node server.js",
@@ -23,7 +27,15 @@
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --watch",
     "lint:fix": "eslint public/app/app.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js --fix",
-    "validate": "node scripts/validate.js"
+    "validate": "node scripts/validate.js",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --coverage",
+    "build:mobile": "npm run build && npx cap sync",
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios",
+    "android:build": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
+    "android:release": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
+    "ios:build": "npm run build && npx cap sync ios"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
@@ -46,7 +58,11 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@capacitor/android": "^7.2.0",
+    "@capacitor/cli": "^7.2.0",
+    "@capacitor/core": "^7.2.0",
+    "@capacitor/ios": "^7.2.0",
     "@vercel/analytics": "^2.0.1",
-    "express": "^4.21.0"
+    "express": "^4.21.2"
   }
 }

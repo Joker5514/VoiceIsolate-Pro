@@ -1,0 +1,169 @@
+/* ============================================
+   VoiceIsolate Pro v21.0 — Mobile Styles
+   Capacitor Android/iOS native shell support
+   Safe area insets, touch targets, gestures
+   ============================================ */
+
+/* ── Safe Area Insets (iPhone notch / Android cutout) ── */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+/* ── Capacitor Native Shell Overrides ── */
+.capacitor-native body {
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.capacitor-native .hdr {
+  padding-top: calc(0.75rem + var(--safe-top));
+}
+
+.capacitor-native .ftr {
+  padding-bottom: calc(1rem + var(--safe-bottom));
+}
+
+/* ── Touch Target Minimum Size (WCAG 2.5.5) ── */
+@media (pointer: coarse) {
+  .btn,
+  .tab,
+  .btn-tp,
+  .btn-preset {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Larger sliders for touch */
+  input[type="range"] {
+    height: 32px;
+    cursor: pointer;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+/* ── Mobile Layout Adjustments ── */
+@media (max-width: 768px) {
+  .main-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .col-right {
+    order: -1; /* Show visualizations first on mobile */
+  }
+
+  .hdr-stats {
+    display: none; /* Hide stats bar on small screens */
+  }
+
+  .hdr-stats.expanded {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* Collapsible stats toggle for mobile */
+  .hdr-stats-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--text-muted, #888);
+    font-size: 12px;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap !important;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .presets-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap !important;
+    padding-bottom: 4px;
+  }
+
+  .presets-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .wave-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .tech-features-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .tech-stack-row {
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Prevent text selection on UI controls ── */
+.btn,
+.tab,
+.hdr,
+.presets-row,
+.actions-row,
+.save-row,
+.transport-row {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Smooth scrolling for mobile ── */
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* ── Upload zone touch improvements ── */
+.upload-zone {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* ── Haptic feedback visual cue ── */
+@media (pointer: coarse) {
+  .btn:active {
+    transform: scale(0.97);
+    transition: transform 0.1s ease;
+  }
+}
+
+/* ── Status bar color for Android ── */
+@media (display-mode: standalone) {
+  body {
+    background-color: #0a0a0f;
+  }
+}
