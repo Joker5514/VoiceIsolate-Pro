@@ -12,7 +12,8 @@ echo "Keeping branches matching: $KEEP_PATTERN"
 echo ""
 
 # Get all remote branches
-BRANCHES=$(git branch -r | sed 's|origin/||' | tr -d ' ' | grep -v "^HEAD")
+BRANCHES=$(git for-each-ref --format='%(refname:short)' refs/remotes/origin | sed 's/^origin\///' | grep -v '^HEAD$')
+
 
 DELETED=0
 KEPT=0
