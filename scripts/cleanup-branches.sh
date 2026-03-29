@@ -24,8 +24,17 @@ for branch in $BRANCHES; do
     KEPT=$((KEPT + 1))
   else
     echo "DELETE: $branch"
-    gh api -X DELETE "repos/$REPO/git/refs/heads/$branch" 2>/dev/null && \
-      echo "  ✓ Deleted" || echo "  ⚠ Failed (may already be deleted)"
+    if ERROR=$(gh api -X DELETE "repos/$REPO/git/refs/heads/$branch" 2>&1); then
+      echo "  ✓ Deleted"
+      DELETED=$((DELETED + 1))
+    else
+      if echo "$ERROR" | grep -q "Reference does not exist"; then
+        echo "  ⚠ Already deleted"
+      else
+        echo "  ✗ Failed: $ERROR" >&2
+        FAILED=$((FAILED + 1))
+      fi
+    fi
     DELETED=$((DELETED + 1))
   fi
 done
