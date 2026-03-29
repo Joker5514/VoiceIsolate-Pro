@@ -93,6 +93,7 @@ const PRESETS = {
   music: {gateThresh:-55,gateRange:-25,gateAttack:3,gateRelease:120,gateHold:15,gateLookahead:3,nrAmount:25,nrSensitivity:40,nrSpectralSub:20,nrFloor:-65,nrSmoothing:45,eqSub:-3,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:3,eqBrill:0,compThresh:-30,compRatio:2,compAttack:20,compRelease:350,compKnee:15,compMakeup:3,limThresh:-0.5,limRelease:12,hpFreq:40,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:15,specTilt:-1,formantShift:0,derevAmt:15,derevDecay:1.0,harmRecov:30,harmOrder:4,stereoWidth:150,phaseCorr:0,voiceIso:50,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:0,dryWet:85,ditherAmt:5,outWidth:140},
   broadcast: {gateThresh:-35,gateRange:-40,gateAttack:1.5,gateRelease:50,gateHold:10,gateLookahead:3,nrAmount:65,nrSensitivity:60,nrSpectralSub:50,nrFloor:-50,nrSmoothing:30,eqSub:-12,eqBass:-2,eqWarmth:2,eqBody:0,eqLowMid:-2,eqMid:2,eqPresence:5,eqClarity:3,eqAir:1,eqBrill:-4,compThresh:-18,compRatio:6,compAttack:4,compRelease:150,compKnee:4,compMakeup:10,limThresh:-1,limRelease:5,hpFreq:120,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:45,specTilt:1,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:10,harmOrder:2,stereoWidth:60,phaseCorr:0,voiceIso:85,bgSuppress:70,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:70},
   restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100},
+  whisper: {gateThresh:-65,gateRange:-20,gateAttack:1,gateRelease:100,gateHold:10,gateLookahead:5,nrAmount:20,nrSensitivity:70,nrSpectralSub:15,nrFloor:-70,nrSmoothing:60,eqSub:0,eqBass:2,eqWarmth:3,eqBody:1,eqLowMid:2,eqMid:5,eqPresence:8,eqClarity:6,eqAir:4,eqBrill:2,compThresh:-40,compRatio:8,compAttack:2,compRelease:150,compKnee:12,compMakeup:18,limThresh:-1,limRelease:10,hpFreq:80,hpQ:0.71,lpFreq:15000,lpQ:0.71,deEssFreq:6000,deEssAmt:25,specTilt:0.5,formantShift:0,derevAmt:10,derevDecay:0.8,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:0,voiceIso:95,bgSuppress:20,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:0,outGain:6,dryWet:100,ditherAmt:0,outWidth:100},
   // Crystal Voice — Maximum voice-only isolation. Strips everything except human speech.
   // Tight bandpass (150 Hz–8 kHz), aggressive gating, heavy NR + spectral subtraction,
   // max voice isolation/BG suppress, mono collapse, strong dereverb, harmonic recovery
@@ -154,6 +155,8 @@ class VoiceIsolatePro {
     this.three = {};
 
     // v20: Initialize PipelineState (centralized 52-param state with pub/sub)
+    this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
+    Object.assign(PRESETS, this.customPresets);
     this.pipelineState = typeof PipelineState !== 'undefined' ? new PipelineState() : null;
     if (this.pipelineState) {
       this.pipelineState.registerSliders(SLIDERS);
@@ -342,6 +345,8 @@ class VoiceIsolatePro {
       });
     }));
     document.querySelectorAll('.btn-preset').forEach(b => b.addEventListener('click', () => this.applyPreset(b.dataset.preset)));
+    const saveBtn = document.getElementById('saveCustomPresetBtn');
+    if (saveBtn) saveBtn.addEventListener('click', () => this.saveCustomPreset());
     document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', () => this.onSlider(el)));
     document.querySelectorAll('.sr-row').forEach(r => {
       r.addEventListener('mouseenter', e => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }});
@@ -378,6 +383,54 @@ class VoiceIsolatePro {
     if (ve) ve.textContent = v + unit;
     el.setAttribute('aria-valuenow', v);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
+  }
+
+
+
+  renderCustomPresets() {
+    const row = document.querySelector('.presets-row');
+    const actions = document.querySelector('.custom-preset-actions');
+    if (!row || !actions) return;
+
+    for (const [id, preset] of Object.entries(this.customPresets)) {
+      if (document.querySelector(`.btn-preset[data-preset="${id}"]`)) continue;
+      const name = id.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-preset';
+      btn.dataset.preset = id;
+      btn.textContent = name;
+      btn.addEventListener('click', () => this.applyPreset(id));
+      row.insertBefore(btn, actions);
+    }
+  }
+
+  saveCustomPreset() {
+    const nameInput = document.getElementById('customPresetName');
+    const name = nameInput ? nameInput.value.trim() : '';
+    if (!name) return alert('Please enter a preset name');
+    const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    this.customPresets[id] = { ...this.params };
+    PRESETS[id] = this.customPresets[id];
+    localStorage.setItem('vip_custom_presets', JSON.stringify(this.customPresets));
+
+    // Add button if it doesn't exist
+    if (!document.querySelector(`.btn-preset[data-preset="${id}"]`)) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-preset';
+      btn.dataset.preset = id;
+      btn.textContent = name;
+      btn.addEventListener('click', () => this.applyPreset(id));
+      const row = document.querySelector('.presets-row');
+      if (row) {
+        // insert before custom actions div
+        const actions = document.querySelector('.custom-preset-actions');
+        if (actions) row.insertBefore(btn, actions);
+        else row.appendChild(btn);
+      }
+    }
+
+    nameInput.value = '';
+    this.applyPreset(id);
   }
 
   applyPreset(name) {
@@ -602,10 +655,21 @@ class VoiceIsolatePro {
 
   // ======== TRANSPORT ========
   play() {
-    this.stop();
+    // Teardown previous playback state without resetting playOffset
+    this.teardownChain();
+    if (this.isVideo && this.isPlaying) this.dom.videoPlayer.pause();
+    this.stopSpectro();
+    if (typeof this.stopDiagnostics === 'function') this.stopDiagnostics();
+    this.isPlaying = false;
+
     this.ensureCtx();
     const buf = this.abMode === 'processed' && this.outputBuffer ? this.outputBuffer : this.inputBuffer;
     if (!buf) return;
+
+    // If we are at the end, restart from 0
+    if (this.playOffset >= buf.duration) {
+      this.playOffset = 0;
+    }
     this.buildLiveChain(buf);
     this.isPlaying = true;
     this.playStartTime = this.ctx.currentTime;
