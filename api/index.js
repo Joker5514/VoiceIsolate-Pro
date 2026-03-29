@@ -35,6 +35,9 @@ router.get('/health', (req, res) => {
   });
 });
 
+// ─── JSON Body Parser (for all non-webhook routes) ────────────────────────────
+router.use(express.json());
+
 // ─── Monetization Routes ──────────────────────────────────────────────────────
 router.use('/', monetizationRouter);
 
