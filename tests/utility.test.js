@@ -41,7 +41,6 @@ const VoiceIsolatePro = extractVoiceIsolatePro();
 
 describe('Utility Functions from app.js', () => {
   // Standalone implementations matching public/app/app.js methods
-  function estVoices(buf){const d=buf.getChannelData(0);const sr=buf.sampleRate;const bs=Math.floor(sr*0.5);let act=0;for(let i=0;i<d.length;i+=bs){let r=0;const e=Math.min(i+bs,d.length);for(let j=i;j<e;j++)r+=d[j]*d[j];r=Math.sqrt(r/(e-i));if(r>0.01)act++;}return act<3?'0-1':act<10?'1':'1-2+';}
   function encWav(buf) {
     const nCh = buf.numberOfChannels;
     const sr = buf.sampleRate;

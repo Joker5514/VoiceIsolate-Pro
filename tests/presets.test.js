@@ -96,19 +96,20 @@ describe('index.html', () => {
 
 describe('dsp-worker.js', () => {
   const workerPath = path.join(__dirname, '../public/app/dsp-worker.js');
+  const processorPath = path.join(__dirname, '../public/app/voice-isolate-processor.js');
 
   test('dsp-worker.js file should exist', () => {
     expect(fs.existsSync(workerPath)).toBe(true);
   });
 
   test('Should register VoiceIsolateProcessor', () => {
-    const worker = fs.readFileSync(workerPath, 'utf8');
-    expect(worker).toContain("registerProcessor('voice-isolate-processor'");
+    const processor = fs.readFileSync(processorPath, 'utf8');
+    expect(processor).toContain("registerProcessor('voice-isolate-processor'");
   });
 
   test('Should implement process() method', () => {
-    const worker = fs.readFileSync(workerPath, 'utf8');
-    expect(worker).toContain('process(inputs, outputs)');
+    const processor = fs.readFileSync(processorPath, 'utf8');
+    expect(processor).toContain('process(inputs, outputs');
   });
 });
 

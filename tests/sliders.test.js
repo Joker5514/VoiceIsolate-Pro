@@ -103,8 +103,8 @@ describe('STFT engine', () => {
 });
 
 describe('AudioWorklet registration', () => {
-  test('dsp-worker.js should be referenced in ensureCtx', () => {
-    expect(appJs).toContain("addModule('./dsp-worker.js')");
+  test('voice-isolate-processor.js should be referenced in ensureCtx', () => {
+    expect(appJs).toContain("addModule('./voice-isolate-processor.js')");
   });
 });
 
@@ -168,8 +168,8 @@ describe('ML Worker (Phase 4b)', () => {
   });
 
   test('ml-worker handles loadModel message', () => {
-    // ml-worker initializes models via initModels function
-    expect(mlWorkerJs).toContain('initModels');
+    // ml-worker handles model loading via 'loadModel' message
+    expect(mlWorkerJs).toContain('loadModel');
   });
 
   test('ml-worker supports implemented model types', () => {

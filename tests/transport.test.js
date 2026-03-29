@@ -15,7 +15,7 @@ try {
   console.error("Failed to load VoiceIsolatePro from app.js", e);
 }
 
-describe('Transport Methods (Missing Buffers)', () => {
+describe('Transport Methods', () => {
   // Mock the environment to avoid constructor setup errors
   let mockContext;
 
@@ -36,7 +36,9 @@ describe('Transport Methods (Missing Buffers)', () => {
         tpABLabel: { textContent: '' }
       },
       play: jest.fn(),
-      fmtDur: jest.fn(() => '0:00')
+      fmtDur: jest.fn(() => '0:00'),
+      stopDiagnostics: jest.fn(),
+      startDiagnostics: jest.fn()
     };
   });
 
@@ -80,7 +82,10 @@ describe('Transport Methods (Missing Buffers)', () => {
       expect(mockContext.stopSpectro).toHaveBeenCalled();
       expect(mockContext.dom.tpCur.textContent).toBe('0:00');
       expect(mockContext.dom.tpSeek.value).toBe(0);
-    describe('pause', () => {
+    });
+  });
+
+  describe('pause', () => {
     beforeEach(() => {
       mockContext.teardownChain = jest.fn();
       mockContext.stopSpectro = jest.fn();
@@ -229,6 +234,7 @@ describe('Transport Methods (Missing Buffers)', () => {
       expect(mockContext.play).not.toHaveBeenCalled();
       expect(mockContext.fmtDur).toHaveBeenCalledWith(50);
       expect(mockContext.dom.tpCur.textContent).toBe('0:50');
+      expect(mockContext.dom.tpSeek.value).toBe(500);
     });
 
     it('handles missing or invalid speed value gracefully', () => {

@@ -1,142 +1,112 @@
 # VoiceIsolate Pro
 
-[![CI](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml)
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Joker5514/VoiceIsolate-Pro)
+[![CI](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/ci.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/ci.yml)
+[![Android Build](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/android-build.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/android-build.yml)
+[![Deploy](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml)
+![Version](https://img.shields.io/badge/version-22.0.0-blue)
+![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-red)
+![Platform](https://img.shields.io/badge/platform-browser%20%7C%20android%20%7C%20ios-lightgrey)
+![Privacy](https://img.shields.io/badge/privacy-100%25%20local-brightgreen)
 
-> **Studio-grade voice isolation and audio enhancement — 100% local, zero cloud inference.**
+> **Studio-grade voice isolation and audio enhancement — 100% local, zero cloud inference. Now with Monetization, AI Engine v2, and Cloud Sync.**
 
-VoiceIsolate Pro is a browser-based audio processing platform powered by a **32-stage Octa-Pass DSP pipeline** that combines hybrid ML and classical spectral processing. Built on the **Threads from Space v8** architecture, every byte of audio stays on your device.
+VoiceIsolate Pro is a cross-platform audio processing engine powered by a **36-stage Deca-Pass DSP pipeline** that combines hybrid ML and classical spectral processing. Built on the **Threads from Space v10** architecture, every byte of audio stays on your device — no uploads, no telemetry, no exceptions.
+
+---
+
+## Current Version: v22.0.0 — Monetization & AI Engine v2 Upgrade
+
+**Version 22** introduces a comprehensive monetization architecture and major AI upgrades:
+
+- **Freemium Monetization System**: Free, Pro ($12/mo), Studio ($29/mo), and Enterprise tiers.
+- **Paywall & Licensing**: Secure offline JWT license validation, feature gating, and Stripe/RevenueCat integration.
+- **AI Engine v2**: Voice fingerprinting, advanced auto-tune via gradient descent, noise profile library, and multi-speaker detection.
+- **Batch Processing**: Process multiple files concurrently with ZIP export (Studio/Enterprise feature).
+- **Cloud Sync**: Sync presets, noise profiles, and history across devices (Studio/Enterprise feature).
+- **Privacy-First Analytics**: Local usage tracking with optional server reporting.
 
 ---
 
 ## Features
 
-- **32-stage Octa-Pass DSP** — 8 parallel passes, 4 stages each, for maximum quality
-- **Hybrid ML + Classical Spectral** — Demucs v4.1, BSRNN, and classical filters working in tandem
-- **100% Local Processing** — no server uploads, no telemetry, no cloud inference
-- **Three Execution Modes** — Live (<10ms), Creator (full quality), and Forensic (SHA-256 audit trail)
-- **Engineer Mode v19** — 52-slider real-time control interface with 3D spectrogram
-- **WebGPU-accelerated** — falls back to WASM automatically
+| Feature | Detail |
+|---------|--------|
+| **36-stage Deca-Pass DSP** | 10 passes × 4 stages: Ingest → Analysis → Filter → Spectral NR → EQ → Spectral Processing → Dynamics → Master → Export |
+| **AI Engine v2** | Voice fingerprinting, noise profile library, adaptive spectral masking, and PESQ-inspired quality estimation |
+| **Monetization Tiers** | Flexible pricing with feature gates, usage quotas, and trial support |
+| **Batch Processing** | Concurrent processing queue with progress tracking and ZIP export |
+| **Cloud Sync** | Cross-device synchronization of presets and profiles via REST API |
+| **Mobile Native** | Runs as a native app on Android and iOS using Capacitor, with RevenueCat IAP support |
+| **Hybrid ML + Classical** | Demucs v4.1, BSRNN, DeepFilterNet3 working alongside Wiener filtering and spectral subtraction |
+| **100% Local Processing** | Audio never leaves your device. No server uploads. No cloud inference. |
 
 ---
 
 ## Quick Start
 
-### Local Development
+### Local Web Development
 
 ```bash
-# Serve with CORS support
-npx serve public -l 3000 --cors
-
-# Or open directly in browser
-open public/app/index.html
+git clone https://github.com/Joker5514/VoiceIsolate-Pro.git
+cd VoiceIsolate-Pro
+npm install
+npm run dev          # Serves public/ on http://localhost:3000 with CORS
 ```
 
-### Deploy to Vercel
+### Mobile App Development (Capacitor)
 
-Push to `main` — Vercel auto-deploys on every commit. No configuration needed.
+```bash
+npm install
+npm run build
 
----
+# Android
+npx cap add android
+npx cap sync android
+npx cap open android   # Opens Android Studio
 
-## Open in GitHub Codespaces
-
-Get a full cloud-based editor with live preview in one click:
-
-1. Click the **Open in GitHub Codespaces** badge above (or [click here](https://codespaces.new/Joker5514/VoiceIsolate-Pro))
-2. Dependencies install automatically via `npm install`
-3. Run `npm run dev` to start the preview server on port 3000
-4. The preview URL appears automatically in the **Ports** panel
-
----
-
-## Architecture
-
-```
-Audio Input
-  → [INGEST]        4 stages  — format normalization, sample-rate conversion
-  → [ANALYSIS]      4 stages  — FFT, VAD, speaker embedding
-  → [ML SEPARATION] 4 stages  — Demucs v4.1 + BSRNN ensemble
-  → [SPECTRAL]      4 stages  — single-pass STFT spectral ops
-  → [ROOM]          4 stages  — reverb estimation and removal
-  → [TIME-DOMAIN]   4 stages  — transient shaping, de-essing
-  → [NEURAL]        4 stages  — HiFi-GAN v2 vocoder reconstruction
-  → [MASTER]        4 stages  — loudness normalization, limiter
-  → Output
-```
-
-### Critical Design Principle
-
-> **Single-pass spectral architecture**: One STFT → all spectral operations in-place → one iSTFT. Eliminates phase smearing caused by multiple spectral round-trips.
-
----
-
-## Execution Modes
-
-| Mode | Latency | Pipeline | Use Case |
-|------|---------|----------|----------|
-| **Live** | <10ms | AudioWorklet + SharedArrayBuffer, reduced stages | Real-time streaming |
-| **Creator** | Offline | Full 32-stage OfflineAudioContext | Maximum quality export |
-| **Forensic** | Offline | Conservative + SHA-256 audit trail at every stage | Evidentiary / legal |
-
----
-
-## ML Models (ONNX Runtime Web)
-
-| Model | Role | Size |
-|-------|------|------|
-| Demucs v4.1 | Source separation (Transformer + U-Net) | ~150MB INT8 |
-| BSRNN | Band-Split RNN ensemble partner | ~80MB |
-| ECAPA-TDNN | Speaker embeddings (256-dim) | ~25MB |
-| Silero VAD v5 | Voice activity detection | ~2MB |
-| HiFi-GAN v2 | Neural vocoder reconstruction | ~55MB |
-| Conformer | Spectral enhancement / final polish | ~40MB |
-
-All models run locally via ONNX Runtime Web — **WebGPU primary, WASM fallback. Zero cloud inference.**
-
----
-
-## Project Structure
-
-```
-public/
-├── index.html          # Landing page
-├── app/                # Engineer Mode v19
-│   ├── index.html      # 52-slider processing interface
-│   ├── style.css       # Dark industrial theme
-│   └── app.js          # DSP pipeline + real-time audio chain
-├── blueprint/          # v18 Technical Blueprint
-│   └── index.html      # Full architecture documentation site
-└── docs/               # Additional documentation
-    ├── TECHNICAL_GUIDE.md
-    └── v7.5-blueprint.md
+# iOS (macOS only)
+npx cap add ios
+npx cap sync ios
+npx cap open ios       # Opens Xcode
 ```
 
 ---
 
-## Version History
+## Monetization Architecture
 
-| Version | Key Innovation |
-|---------|----------------|
-| v4 | Auto noise profiling, spectral subtraction |
-| v5 | Threads from Space concept, 12-stage pipeline |
-| v7 | Modular node graph, thread-per-stage |
-| v11 | ERB spectral gate, Band-Split RNN |
-| v13 | Neural vocoder, phase-coherent reconstruction |
-| v15 | Real Web Audio API chains |
-| v16 | BSRNN ensemble, 40+ slider wiring |
-| v17 | OfflineAudioContext graph, A/B comparison |
-| v18 | Conformer refiner, forensic audit chain |
-| **v19** | **52-slider Engineer Mode, 3D spectrogram** |
+The v22 release includes a full monetization stack:
 
----
+1. **License Manager (`license-manager.js`)**: Handles offline JWT validation, tier definitions, and usage quotas.
+2. **Paywall UI (`paywall.js`)**: Renders pricing cards, feature gates, and trial banners.
+3. **RevenueCat (`revenuecat.js`)**: Manages native in-app purchases for iOS and Android.
+4. **Backend API (`api/monetization.js`)**: Express routes for Stripe Checkout, webhooks, and license generation.
 
-## Privacy
+### Tiers
 
-- 100% local processing — audio never leaves your device
-- Zero telemetry
-- AES-256 encryption at rest (optional)
-- CSP header blocks all network calls during processing
+- **Free**: Basic noise reduction, 5-min limit, watermarked exports.
+- **Pro ($12/mo)**: Full 36-stage pipeline, ML models, unlimited duration, no watermark.
+- **Studio ($29/mo)**: Pro features + Batch processing, Cloud Sync, API access.
+- **Enterprise ($199/mo)**: White-label, custom models, SLA.
 
 ---
 
-**Threads from Space v8** — Privacy-First — March 2026
+## Available Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Serve `public/` on port 3000 with CORS |
+| `npm run build` | Copy `public/` into `build/` directory |
+| `npm run lint` | Run ESLint on core pipeline files |
+| `npm test` | Run Jest test suite |
+| `npm run validate` | Run custom pipeline validation script |
+
+---
+
+## License
+
+Copyright © 2024–2026 VoiceIsolate Pro. All Rights Reserved.
+See [LICENSE](./LICENSE) for full terms.
+
+---
+
+**VoiceIsolate Pro v22.0.0** · Threads from Space v10 · Privacy-First · Updated March 2026

@@ -1,0 +1,20 @@
+{
+  "appId": "com.voiceisolatepro.app",
+  "appName": "VoiceIsolate Pro",
+  "webDir": "build",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false,
+    "appendUserAgent": "VoiceIsolatePro/21.0"
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "allowsLinkPreview": false,
+    "scrollEnabled": true,
+    "appendUserAgent": "VoiceIsolatePro/21.0"
+  }
+}

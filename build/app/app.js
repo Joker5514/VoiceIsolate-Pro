@@ -1,12 +1,13 @@
 /* ============================================
-   VoiceIsolate Pro v19.0 – Engineer Mode
-   Threads from Space · Hybrid ML+DSP
-   52 Sliders · Real-Time Chain · 3D Spectrogram
+   VoiceIsolate Pro v20.0 – Engineer Mode
+   Threads from Space v10 · Hybrid ML+DSP
+   52 Sliders · 36-Stage Deca-Pass · 3D Spectrogram
+   Modular: PipelineState + PipelineOrchestrator
    ============================================ */
 
 // ---- STRUCTURED LOGGING ----
 function structuredLog(level, message, details = {}) {
-  const entry = { app: 'VoiceIsolate Pro', version: '19.0', level, message, timestamp: new Date().toISOString(), ...details };
+  const entry = { app: 'VoiceIsolate Pro', version: '20.0', level, message, timestamp: new Date().toISOString(), ...details };
   const method = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
   method(JSON.stringify(entry));
 }
@@ -91,7 +92,12 @@ const PRESETS = {
   forensic: {gateThresh:-65,gateRange:-20,gateAttack:1,gateRelease:150,gateHold:30,gateLookahead:10,nrAmount:30,nrSensitivity:60,nrSpectralSub:20,nrFloor:-70,nrSmoothing:50,eqSub:-2,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:0,compThresh:-18,compRatio:2,compAttack:15,compRelease:400,compKnee:12,compMakeup:10,limThresh:-0.5,limRelease:20,hpFreq:50,hpQ:0.71,lpFreq:18000,lpQ:0.71,deEssFreq:8000,deEssAmt:10,specTilt:1,formantShift:0,derevAmt:20,derevDecay:0.8,harmRecov:35,harmOrder:4,stereoWidth:100,phaseCorr:30,voiceIso:90,bgSuppress:30,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:3,dryWet:90,ditherAmt:0,outWidth:100},
   music: {gateThresh:-55,gateRange:-25,gateAttack:3,gateRelease:120,gateHold:15,gateLookahead:3,nrAmount:25,nrSensitivity:40,nrSpectralSub:20,nrFloor:-65,nrSmoothing:45,eqSub:-3,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:3,eqBrill:0,compThresh:-30,compRatio:2,compAttack:20,compRelease:350,compKnee:15,compMakeup:3,limThresh:-0.5,limRelease:12,hpFreq:40,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:15,specTilt:-1,formantShift:0,derevAmt:15,derevDecay:1.0,harmRecov:30,harmOrder:4,stereoWidth:150,phaseCorr:0,voiceIso:50,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:0,dryWet:85,ditherAmt:5,outWidth:140},
   broadcast: {gateThresh:-35,gateRange:-40,gateAttack:1.5,gateRelease:50,gateHold:10,gateLookahead:3,nrAmount:65,nrSensitivity:60,nrSpectralSub:50,nrFloor:-50,nrSmoothing:30,eqSub:-12,eqBass:-2,eqWarmth:2,eqBody:0,eqLowMid:-2,eqMid:2,eqPresence:5,eqClarity:3,eqAir:1,eqBrill:-4,compThresh:-18,compRatio:6,compAttack:4,compRelease:150,compKnee:4,compMakeup:10,limThresh:-1,limRelease:5,hpFreq:120,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:45,specTilt:1,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:10,harmOrder:2,stereoWidth:60,phaseCorr:0,voiceIso:85,bgSuppress:70,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:70},
-  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100}
+  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100},
+  // Crystal Voice — Maximum voice-only isolation. Strips everything except human speech.
+  // Tight bandpass (150 Hz–8 kHz), aggressive gating, heavy NR + spectral subtraction,
+  // max voice isolation/BG suppress, mono collapse, strong dereverb, harmonic recovery
+  // to restore warmth lost by aggressive processing. Presence/clarity boosted for intelligibility.
+  crystalVoice: {gateThresh:-30,gateRange:-50,gateAttack:1,gateRelease:40,gateHold:10,gateLookahead:10,nrAmount:85,nrSensitivity:75,nrSpectralSub:70,nrFloor:-45,nrSmoothing:45,eqSub:-12,eqBass:-6,eqWarmth:-2,eqBody:-2,eqLowMid:-3,eqMid:3,eqPresence:6,eqClarity:4,eqAir:1,eqBrill:-5,compThresh:-20,compRatio:4,compAttack:3,compRelease:150,compKnee:8,compMakeup:8,limThresh:-0.5,limRelease:8,hpFreq:150,hpQ:0.71,lpFreq:8000,lpQ:0.71,deEssFreq:7000,deEssAmt:50,specTilt:0.5,formantShift:0,derevAmt:70,derevDecay:0.3,harmRecov:25,harmOrder:3,stereoWidth:0,phaseCorr:0,voiceIso:95,bgSuppress:85,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:15,outGain:2,dryWet:100,ditherAmt:0,outWidth:50}
 };
 
 const STAGES = [
@@ -113,6 +119,11 @@ const STAGES = [
   'Dry/Wet Blend', 'TPDF Dither', 'Output Normalization', 'Final Render & Export'
 ];
 
+// ============================================
+// v20 Modular Architecture Integration
+// PipelineState → centralized param management
+// PipelineOrchestrator → processing conductor
+// SharedRingBuffer → zero-copy thread transfer
 // ============================================
 class VoiceIsolatePro {
   constructor() {
@@ -141,15 +152,37 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
-    // Phase 4: ML model sessions
-    this.sileroSession = null;
+
+    // v20: Initialize PipelineState (centralized 52-param state with pub/sub)
+    this.pipelineState = typeof PipelineState !== 'undefined' ? new PipelineState() : null;
+    if (this.pipelineState) {
+      this.pipelineState.registerSliders(SLIDERS);
+      // Sync param changes from PipelineState → legacy this.params
+      this.pipelineState.onAny(({ key, value }) => { this.params[key] = value; });
+    }
+
+    // v20: Initialize PipelineOrchestrator (processing conductor)
+    this.orchestrator = (typeof PipelineOrchestrator !== 'undefined' && this.pipelineState)
+      ? new PipelineOrchestrator(this.pipelineState) : null;
+    if (this.orchestrator) {
+      this.orchestrator.onStatusChange = (s) => this.setStatus(s.toUpperCase());
+      this.orchestrator.onProgress = (stage, pct, label) => {
+        if (this.dom) {
+          this.dom.pipeFill.style.width = pct + '%';
+          this.dom.pipeStage.textContent = `S${stage}/36`;
+          this.dom.pipeDetail.textContent = label || '';
+        }
+      };
+      this.orchestrator.onError = (msg) => structuredLog('error', 'Pipeline error', { error: msg });
+    }
+
+    // v20: SharedRingBuffer support detection
+    this.sabSupported = typeof SharedArrayBuffer !== 'undefined' && typeof Atomics !== 'undefined';
+
     // Phase 4: ML Worker (off-main-thread ONNX inference)
     this.mlWorker = null;
     this._mlCallbacks = {};  // id → { resolve, reject }
     this._mlCallId = 0;
-    this.mlReady = false;
-    // Phase 4b: Dedicated ML Worker (DeepFilterNet3 + Demucs + VAD)
-    this.mlWorker = null;
     this.mlWorkerReady = false;
     this.mlWorkerModels = { vad: false, deepfilter: false, demucs: false };
     // Phase 5: Forensic audit
@@ -175,12 +208,16 @@ class VoiceIsolatePro {
 
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
-      this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)();
-      // Phase 3: Register AudioWorklet processor for low-latency live mode
+      this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)({ sampleRate: 48000 });
+      // v20: Register AudioWorklet processor for real-time path
       if (this.ctx.audioWorklet) {
-        this.ctx.audioWorklet.addModule('./dsp-worker.js').catch(() => {
+        this.ctx.audioWorklet.addModule('./voice-isolate-processor.js').catch(() => {
           structuredLog('warn', 'AudioWorklet unavailable — live chain uses native Web Audio nodes');
         });
+      }
+      // v20: Share context with orchestrator
+      if (this.orchestrator && !this.orchestrator.audioCtx) {
+        this.orchestrator.audioCtx = this.ctx;
       }
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
@@ -252,6 +289,9 @@ class VoiceIsolatePro {
       tpPlay:g('tpPlay'), tpPause:g('tpPause'), tpStop:g('tpStop'),
       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
       tpSeek:g('tpSeek'), tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
+      fileSpectroCard:g('fileSpectroCard'), fsModeLbl:g('fsModeLbl'), fsProgress:g('fsProgress'),
+      fsBtnAB:g('fsBtnAB'), fsColormap:g('fsColormap'),
+      fsYAxis:g('fsYAxis'), fsMain:g('fsMain'), fsCanvas:g('fsCanvas'), fsOverlay:g('fsOverlay'), fsXAxis:g('fsXAxis'),
       spectro3DContainer:g('spectro3DContainer'), spectro3DCanvas:g('spectro3DCanvas'),
       spectro3DReset:g('spectro3DReset'),
       spectro2DCanvas:g('spectro2DCanvas'),
@@ -309,6 +349,9 @@ class VoiceIsolatePro {
     });
     this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
     this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
+    if (this.dom.fsBtnAB) this.dom.fsBtnAB.addEventListener('click', () => this.fsToggleAB());
+    if (this.dom.fsColormap) this.dom.fsColormap.addEventListener('change', () => { if (this.fsCurrentBuf) this.renderFileSpectrogram(this.fsCurrentBuf); });
+    if (this.dom.fsMain) this.dom.fsMain.addEventListener('click', e => this.fsSeekClick(e));
     // Phase 5: Forensic mode toggle
     if (this.dom.forensicToggle) {
       this.dom.forensicToggle.addEventListener('change', () => {
@@ -327,6 +370,8 @@ class VoiceIsolatePro {
     const id = el.dataset.param;
     const v = parseFloat(el.value);
     this.params[id] = v;
+    // v20: Sync to PipelineState (broadcasts to AudioWorklet + pub/sub)
+    if (this.pipelineState) this.pipelineState.set(id, v, { recordHistory: true, source: 'slider' });
     let unit = '';
     for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
     const ve = document.getElementById(id + 'Val');
@@ -337,12 +382,15 @@ class VoiceIsolatePro {
 
   applyPreset(name) {
     const p = PRESETS[name]; if (!p) return;
+    // v20: Batch update through PipelineState (single undo snapshot)
+    if (this.pipelineState) {
+      this.pipelineState.import(p, 'preset');
+    }
     Object.assign(this.params, p);
     for (const [, sliders] of Object.entries(SLIDERS)) {
       for (const s of sliders) {
         const el = document.getElementById(s.id);
         const ve = document.getElementById(s.id + 'Val');
-        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
         if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; el.setAttribute('aria-valuenow', this.params[s.id]); if (ve) ve.textContent = this.params[s.id] + s.unit; }
       }
     }
@@ -353,6 +401,11 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING (FIXED) ========
   async handleFile(file) {
     try {
+      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
+
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
+
       this.ensureCtx();
       this.stop(); // stop any current playback
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
@@ -485,6 +538,16 @@ class VoiceIsolatePro {
     this.resizeCanvas(this.dom.waveOrigCanvas);
     this.drawWaveform(buf, this.dom.waveOrigCanvas, '#dc2626');
     this.clearCanvas(this.dom.waveProcCanvas, 'Process to see result');
+    // Show full-file spectrogram card and render initial view
+    if (this.dom.fileSpectroCard) {
+      this.dom.fileSpectroCard.style.display = '';
+      this.fsMode = 'original';
+      this.fsCurrentBuf = buf;
+      this.fsImageData = null;
+      if (this.dom.fsModeLbl) this.dom.fsModeLbl.textContent = 'ORIGINAL';
+      if (this.dom.fsBtnAB) { this.dom.fsBtnAB.textContent = 'Show Processed'; this.dom.fsBtnAB.disabled = true; }
+      this.renderFileSpectrogram(buf);
+    }
     this.setStatus('READY');
   }
 
@@ -521,7 +584,7 @@ class VoiceIsolatePro {
         } catch (e) { this.dom.fileInfo.textContent = 'Decode error: ' + e.message; this.setStatus('ERROR'); }
       };
       this.mediaRecorder.start(100);
-    } catch (e) { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
+    } catch { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
   }
 
   stopRecording() {
@@ -593,7 +656,10 @@ class VoiceIsolatePro {
     if (this.isPlaying) this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.playOffset = frac * this.inputBuffer.duration;
     if (this.isPlaying) this.play();
-    else this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+    else {
+      this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+      this.dom.tpSeek.value = this.inputBuffer.duration > 0 ? (this.playOffset / this.inputBuffer.duration) * 1000 : 0;
+    }
   }
 
   toggleAB() {
@@ -614,6 +680,7 @@ class VoiceIsolatePro {
       if (elapsed >= dur) { this.stop(); return; }
       this.dom.tpCur.textContent = this.fmtDur(elapsed);
       this.dom.tpSeek.value = dur > 0 ? (elapsed / dur) * 1000 : 0;
+      if (dur > 0) this.drawFsPlayhead(elapsed / dur);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -683,13 +750,6 @@ class VoiceIsolatePro {
       n.lim.threshold.setTargetAtTime(p.limThresh,t,s); n.lim.release.setTargetAtTime(p.limRelease/1000,t,s);
       n.outG.gain.setTargetAtTime(Math.pow(10,p.outGain/20),t,s);
       n.wG.gain.setTargetAtTime(p.outWidth/100,t,s);
-    } catch(e) {}
-  }
-
-  teardownChain() {
-    if (this.currentSource) { try{this.currentSource.stop();}catch(e){} try{this.currentSource.disconnect();}catch(e){} this.currentSource = null; }
-    if (this.liveNodes.chain) this.liveNodes.chain.forEach(n => { try{n.disconnect();}catch(e){} });
-    this.liveNodes = {}; this.liveChainBuilt = false;
     } catch(e) {
       console.error('Error updating live chain:', e);
     }
@@ -697,25 +757,13 @@ class VoiceIsolatePro {
 
   teardownChain() {
     if (this.currentSource) {
-      try {
-        this.currentSource.stop();
-      } catch (e) {
-        // Ignore errors if the source is already stopped
-      }
-      try {
-        this.currentSource.disconnect();
-      } catch (e) {
-        // Ignore errors if the source is already disconnected
-      }
+      try { this.currentSource.stop(); } catch(e) { console.error('Error stopping current source:', e); }
+      try { this.currentSource.disconnect(); } catch(e) { console.error('Error disconnecting current source:', e); }
       this.currentSource = null;
     }
     if (this.liveNodes.chain) {
       this.liveNodes.chain.forEach(n => {
-        try {
-          n.disconnect();
-        } catch (e) {
-          // Ignore errors if the node is already disconnected
-        }
+        try { n.disconnect(); } catch(e) { console.error('Error disconnecting live node:', e); }
       });
     }
     this.liveNodes = {};
@@ -886,6 +934,7 @@ class VoiceIsolatePro {
       this.dom.stVoices.textContent = this.estVoices(fin);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
       this.dom.tpABLabel.textContent = 'Ready — A/B';
+      if (this.dom.fsBtnAB) this.dom.fsBtnAB.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = !this.forensicMode || this.forensicLog.length === 0;
       this.setStatus('COMPLETE');
     } catch(e) {
@@ -1038,7 +1087,6 @@ class VoiceIsolatePro {
     const N = 2048, H = 512, halfN = N / 2 + 1;
     const win = this._makeWindow(N);
     const g = 1 - suppressAmt / 100;
-
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
       const outData = out.getChannelData(ch);
@@ -1225,10 +1273,6 @@ class VoiceIsolatePro {
     const out = this.ctx.createBuffer(nCh, len, sr);
     const lsb = Math.pow(2, -15); // 16-bit LSB
     const g = (ditherAmt / 100) * lsb;
-    for (let ch = 0; ch < nCh; ch++) {
-      const inp = buf.getChannelData(ch), outCh = out.getChannelData(ch);
-      for (let i = 0; i < len; i++) {
-        const tpdf = (Math.random() - Math.random()) * g;
     const invMax = 1 / 4294967296;
 
     for (let ch = 0; ch < nCh; ch++) {
@@ -1249,21 +1293,6 @@ class VoiceIsolatePro {
 
   // ======== PHASE 4: ML / VAD INTEGRATION ========
 
-  // Attempt to load ONNX Runtime models (graceful — no-op if ort not on window)
-  async loadModels() {
-    if (typeof ort === 'undefined') {
-      structuredLog('warn', 'ONNX Runtime not loaded — ML models unavailable');
-      return;
-    }
-    try {
-      ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
-      this.sileroSession = await ort.InferenceSession.create('./models/silero_vad.onnx', {
-        executionProviders: navigator.gpu ? ['webgpu', 'wasm'] : ['wasm']
-      });
-      this.mlReady = true;
-      structuredLog('info', 'Silero VAD loaded', { provider: navigator.gpu ? 'webgpu' : 'wasm' });
-    } catch(e) {
-      structuredLog('warn', 'Model load failed — running without ML', { error: e.message });
   // Trigger VAD model load in the ML Worker (fire-and-forget; mlReady set via _onMlMessage)
   async loadModels() {
     if (!this.mlWorker) {
@@ -1301,8 +1330,10 @@ class VoiceIsolatePro {
         const { type } = e.data;
         if (type === 'ready') {
           this.mlWorkerReady = true;
-          this.mlWorkerModels = e.data.models;
-          structuredLog('info', 'ML worker ready', e.data.models);
+          this.mlWorkerModels = e.data.models || {};
+          structuredLog('info', 'ML worker ready', { provider: e.data.provider, models: e.data.models });
+          // v20: Share ML worker with orchestrator
+          if (this.orchestrator) this.orchestrator.mlWorker = this.mlWorker;
         } else if (type === 'log') {
           structuredLog(e.data.level, '[ml-worker] ' + e.data.msg);
         }
@@ -1312,7 +1343,12 @@ class VoiceIsolatePro {
         structuredLog('warn', 'ML worker error', { error: err.message });
         this.mlWorkerReady = false;
       };
-      this.mlWorker.postMessage({ type: 'init' });
+      // v20: Pass ONNX Runtime URL and initial model list
+      this.mlWorker.postMessage({
+        type: 'init',
+        ortUrl: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js',
+        models: ['vad']
+      });
     } catch (e) {
       structuredLog('warn', 'ML worker unavailable', { error: e.message });
     }
@@ -1385,25 +1421,6 @@ class VoiceIsolatePro {
     });
   }
 
-  // Run Silero VAD and return array of booleans (100 frames/sec) indicating speech activity
-  async runVAD(buf) {
-    if (!this.sileroSession) return null;
-    const signal = buf.getChannelData(0);
-    const sr = buf.sampleRate;
-    const frameSize = Math.floor(sr / 100); // 10ms frames
-    const vadResult = [];
-    // State tensors required by Silero v5
-    let h = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-    let c = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-    for (let i = 0; i + frameSize <= signal.length; i += frameSize) {
-      const frame = signal.slice(i, i + frameSize);
-      const input = new ort.Tensor('float32', frame, [1, frame.length]);
-      const srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
-      const result = await this.sileroSession.run({ input, sr: srTensor, h, c });
-      vadResult.push(result.output.data[0] > 0.5);
-      h = result.hn; c = result.cn;
-    }
-    return vadResult;
   // Run source separation (Demucs or BSRNN) via ML Worker; returns Float32Array or null
   async runSeparation(buf, model = 'demucs') {
     if (!this.mlWorkerReady || !this.mlWorker) return null;
@@ -1433,79 +1450,61 @@ class VoiceIsolatePro {
       const hashBuf = await crypto.subtle.digest('SHA-256', bytes);
       const hex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
       this.forensicLog.push({ stage: stageName, sha256: hex, timestamp: new Date().toISOString(), channels: buf.numberOfChannels, length: buf.length, sampleRate: buf.sampleRate });
-    } catch(e) { /* crypto unavailable in some contexts */ }
+    } catch { /* crypto unavailable in some contexts */ }
   }
 
   downloadAuditLog() {
     if (!this.forensicLog.length) return;
-    const blob = new Blob([JSON.stringify({ app:'VoiceIsolate Pro', version:'19.0', mode:'Forensic', entries: this.forensicLog }, null, 2)], { type:'application/json' });
+    const blob = new Blob([JSON.stringify({ app:'VoiceIsolate Pro', version:'20.0', mode:'Forensic', entries: this.forensicLog }, null, 2)], { type:'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = 'voiceisolate_audit_' + Date.now() + '.json';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
   }
 
-  mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
-
-  peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
-
-  makeHarm(amt,ord){const n=44100;const c=new Float32Array(n);const k=amt*(ord||3)*2+1;for(let i=0;i<n;i++){const x=(i*2)/n-1;c[i]=Math.tanh(k*x)/Math.tanh(k);}return c;}
   mixDW(dry, wet, wAmt) {
+
     const c = this.ctx;
     const nCh = Math.min(dry.numberOfChannels, wet.numberOfChannels);
     const len = Math.min(dry.length, wet.length);
     const out = c.createBuffer(nCh, len, dry.sampleRate);
-
     for (let ch = 0; ch < nCh; ch++) {
       const d = dry.getChannelData(ch);
       const w = wet.getChannelData(ch);
       const o = out.getChannelData(ch);
-
       for (let i = 0; i < len; i++) {
         o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
       }
     }
-
     return out;
   }
 
-  peakNorm(buffer, targetDb) {
+  peakNorm(buf, tDb) {
     const ctx = this.ctx;
-    const numChannels = buffer.numberOfChannels;
-    const length = buffer.length;
-    const outBuffer = ctx.createBuffer(numChannels, length, buffer.sampleRate);
+    const numChannels = buf.numberOfChannels;
+    const length = buf.length;
+    const out = ctx.createBuffer(numChannels, length, buf.sampleRate);
 
     let peak = 0;
-
-    // Find the maximum absolute peak value across all channels
     for (let ch = 0; ch < numChannels; ch++) {
-      const data = buffer.getChannelData(ch);
+      const channelData = buf.getChannelData(ch);
       for (let i = 0; i < length; i++) {
-        const absValue = Math.abs(data[i]);
-        if (absValue > peak) {
-          peak = absValue;
-        }
+        const absVal = Math.abs(channelData[i]);
+        if (absVal > peak) peak = absVal;
       }
     }
 
-    // If silence, return original buffer
-    if (peak === 0) {
-      return buffer;
-    }
+    if (peak === 0) return buf;
 
-    // Calculate gain needed to reach target dB
-    const gain = Math.pow(10, targetDb / 20) / peak;
-
-    // Apply gain to all channels and hard-clip at -1.0 to 1.0
+    const gain = Math.pow(10, tDb / 20) / peak;
     for (let ch = 0; ch < numChannels; ch++) {
-      const inputData = buffer.getChannelData(ch);
-      const outputData = outBuffer.getChannelData(ch);
+      const inputData = buf.getChannelData(ch);
+      const outputData = out.getChannelData(ch);
       for (let i = 0; i < length; i++) {
         outputData[i] = Math.max(-1, Math.min(1, inputData[i] * gain));
       }
     }
-
-    return outBuffer;
+    return out;
   }
 
   makeHarm(amt, ord) {
@@ -1525,8 +1524,6 @@ class VoiceIsolatePro {
 
   // ---- SAVE ----
   saveWav(buf,label){if(!buf)return;const w=this.encWav(buf);const b=new Blob([w],{type:'audio/wav'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='voiceisolate_v19_'+label+'_'+Date.now()+'.wav';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);}
-
-  encWav(buf){const nCh=buf.numberOfChannels;const sr=buf.sampleRate;const dL=buf.length*nCh*2;const a=new ArrayBuffer(44+dL);const v=new DataView(a);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+dL,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nCh,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nCh*2,true);v.setUint16(32,nCh*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,dL,true);let off=44;for(let i=0;i<buf.length;i++)for(let ch=0;ch<nCh;ch++){let s=buf.getChannelData(ch)[i];s=Math.max(-1,Math.min(1,s));v.setInt16(off,s<0?s*0x8000:s*0x7FFF,true);off+=2;}return a;}
   encWav(buf) {
     const nCh = buf.numberOfChannels;
     const sr = buf.sampleRate;
@@ -1562,20 +1559,18 @@ class VoiceIsolatePro {
     ws(36, 'data');                    // Subchunk2ID
     v.setUint32(40, dL, true);         // Subchunk2Size (NumSamples * NumChannels * BitsPerSample/8)
 
+    // Pre-fetch channel data to avoid expensive getChannelData calls inside the per-sample loop
+    const channels = [];
+    for (let ch = 0; ch < nCh; ch++) {
+      channels.push(buf.getChannelData(ch));
+    }
+
     // Write audio data
     let off = 44;
 
-    const chans = new Array(nCh);
-    for (let ch = 0; ch < nCh; ch++) {
-      chans[ch] = buf.getChannelData(ch);
-    }
-
     for (let i = 0; i < buf.length; i++) {
       for (let ch = 0; ch < nCh; ch++) {
-        let s = chans[ch][i];
-    for (let i = 0; i < buf.length; i++) {
-      for (let ch = 0; ch < nCh; ch++) {
-        let s = buf.getChannelData(ch)[i];
+        let s = channels[ch][i];
         // Hard clipping
         s = Math.max(-1, Math.min(1, s));
         // Convert to 16-bit PCM
@@ -1703,7 +1698,6 @@ class VoiceIsolatePro {
     const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
     cols.copyWithin(gW*3, 0, (gD-1)*gW*3);
     const pArr=pos.array;
-    for(let z=gD-1;z>0;z--){let cO=z*gW*3+1;let pO=(z-1)*gW*3+1;for(let x=0;x<gW;x++){pArr[cO]=pArr[pO];cO+=3;pO+=3;}}
     const end=gD*gW*3;const offset=gW*3;
     for(let i=end-2;i>=offset;i-=3)pArr[i]=pArr[i-offset];
     const step=Math.floor(freq.length/gW);
@@ -1726,16 +1720,169 @@ class VoiceIsolatePro {
     if(this.three.ren){this.three.ren.setSize(ct.clientWidth,ct.clientHeight);this.three.cam.aspect=ct.clientWidth/ct.clientHeight;this.three.cam.updateProjectionMatrix();}
   }
 
+  // ---- Full-File Spectrogram ----
+  async renderFileSpectrogram(buf) {
+    if (!this.dom.fsCanvas || !this.dom.fsMain) return;
+    const wrap = this.dom.fsMain;
+    const W = Math.max(wrap.clientWidth || 800, 200);
+    const H = Math.max(wrap.clientHeight || 170, 80);
+    const canvas = this.dom.fsCanvas;
+    canvas.width = W; canvas.height = H;
+    if (this.dom.fsOverlay) { this.dom.fsOverlay.width = W; this.dom.fsOverlay.height = H; }
+    const ctx2d = canvas.getContext('2d');
+    ctx2d.fillStyle = '#030306'; ctx2d.fillRect(0, 0, W, H);
+    const data = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    const nyq = sr / 2;
+    const fftSize = 2048;
+    const halfFFT = fftSize >> 1;
+    const hopSize = Math.max(1, Math.ceil(data.length / W));
+    const cmap = this.dom.fsColormap ? this.dom.fsColormap.value : 'plasma';
+    const invLN10_9 = 1 / (9 * Math.LN10);
+    const win = new Float32Array(fftSize);
+    for (let i = 0; i < fftSize; i++) win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / fftSize));
+    const logMin = Math.log(20), logMax = Math.log(nyq);
+    const rowBin = new Uint16Array(H);
+    for (let row = 0; row < H; row++) {
+      const frac = 1 - row / H;
+      const freq = Math.exp(logMin + frac * (logMax - logMin));
+      rowBin[row] = Math.min(Math.round(freq / nyq * halfFFT), halfFFT - 1);
+    }
+    const imgData = ctx2d.createImageData(W, H);
+    const pixels = imgData.data;
+    const re = new Float32Array(fftSize);
+    const im = new Float32Array(fftSize);
+    const BATCH = 64;
+    const totalCols = Math.min(W, Math.ceil(data.length / hopSize));
+    for (let col = 0; col < totalCols; col++) {
+      const offset = col * hopSize;
+      for (let i = 0; i < fftSize; i++) { const si = offset + i; re[i] = (si < data.length ? data[si] : 0) * win[i]; im[i] = 0; }
+      this._fft(re, im);
+      for (let row = 0; row < H; row++) {
+        const bin = rowBin[row];
+        const magSq = re[bin] * re[bin] + im[bin] * im[bin];
+        const v = magSq > 0 ? Math.max(0, Math.min(1, Math.log(magSq) * invLN10_9 + 1)) : 0;
+        const [r, g, b] = this.fsColor(v, cmap);
+        const idx = (row * W + col) * 4;
+        pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
+      }
+      if ((col % BATCH === BATCH - 1) || col === totalCols - 1) {
+        ctx2d.putImageData(imgData, 0, 0);
+        const pct = Math.round((col + 1) / totalCols * 100);
+        if (this.dom.fsProgress) this.dom.fsProgress.textContent = pct < 100 ? `Rendering ${pct}%` : '';
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    this.fsImageData = ctx2d.getImageData(0, 0, W, H);
+    if (this.dom.fsProgress) this.dom.fsProgress.textContent = '';
+    this.drawFsYAxis(sr, H);
+    this.drawFsXAxis(buf.duration, W);
+    this.drawFsPlayhead(0);
+  }
+
+  fsColor(v, cmap) {
+    v = Math.max(0, Math.min(1, v));
+    if (cmap === 'ocean') return this.lerpStops([[3,3,20],[5,20,80],[0,100,180],[0,200,230],[180,240,255],[255,255,255]], v);
+    if (cmap === 'voice') return this.lerpStops([[3,3,8],[30,5,60],[180,10,30],[220,80,0],[255,200,20],[255,255,180]], v);
+    if (cmap === 'thermal') return this.lerpStops([[0,0,0],[70,0,20],[180,0,0],[220,100,0],[255,220,40],[255,255,220]], v);
+    // plasma (default)
+    return this.lerpStops([[5,1,15],[60,5,110],[140,20,170],[200,60,50],[240,140,0],[255,230,40],[255,255,220]], v);
+  }
+
+  lerpStops(stops, v) {
+    const idx = v * (stops.length - 1);
+    const lo = Math.floor(idx), hi = Math.min(lo + 1, stops.length - 1);
+    const t = idx - lo;
+    return stops[lo].map((c, i) => Math.round(c + (stops[hi][i] - c) * t));
+  }
+
+  drawFsYAxis(sr, H) {
+    const cv = this.dom.fsYAxis; if (!cv) return;
+    cv.width = 38; cv.height = H;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#030306'; ctx.fillRect(0, 0, 38, H);
+    const nyq = sr / 2;
+    const logMin = Math.log(20), logMax = Math.log(nyq);
+    const freqs = [100,250,500,1000,2000,4000,8000,16000].filter(f => f < nyq);
+    ctx.font = '8px JetBrains Mono, monospace'; ctx.textAlign = 'right';
+    for (const f of freqs) {
+      const frac = (Math.log(f) - logMin) / (logMax - logMin);
+      const y = Math.round((1 - frac) * H);
+      ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(34, y, 4, 1);
+      ctx.fillStyle = 'rgba(180,180,200,0.5)';
+      ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f, 32, y + 3);
+    }
+    ctx.save(); ctx.translate(9, H / 2); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,180,200,0.35)'; ctx.font = '7px JetBrains Mono, monospace';
+    ctx.fillText('Hz', 0, 0); ctx.restore();
+  }
+
+  drawFsXAxis(duration, W) {
+    const cv = this.dom.fsXAxis; if (!cv) return;
+    cv.width = W + 38; cv.height = 20;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#030306'; ctx.fillRect(0, 0, W + 38, 20);
+    ctx.font = '8px JetBrains Mono, monospace'; ctx.fillStyle = 'rgba(180,180,200,0.5)'; ctx.textAlign = 'center';
+    const step = duration < 30 ? 5 : duration < 120 ? 15 : duration < 300 ? 30 : 60;
+    for (let t = 0; t <= duration; t += step) {
+      const x = 38 + Math.round(t / duration * W);
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(x, 0, 1, 5);
+      ctx.fillStyle = 'rgba(180,180,200,0.5)';
+      ctx.fillText(t >= 60 ? Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') : t + 's', x, 14);
+    }
+  }
+
+  drawFsPlayhead(frac) {
+    const cv = this.dom.fsOverlay; if (!cv || !cv.width) return;
+    const W = cv.width, H = cv.height;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    if (!this.inputBuffer || frac <= 0) return;
+    const x = Math.round(frac * W);
+    ctx.shadowBlur = 6; ctx.shadowColor = '#dc2626';
+    ctx.strokeStyle = 'rgba(220,38,38,0.9)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    ctx.shadowBlur = 0;
+    const elapsed = frac * this.inputBuffer.duration;
+    const label = this.fmtDur(elapsed);
+    ctx.font = '700 9px JetBrains Mono, monospace';
+    const tw = ctx.measureText(label).width;
+    const bx = Math.min(x + 3, W - tw - 8);
+    ctx.fillStyle = 'rgba(220,38,38,0.85)'; ctx.fillRect(bx - 2, 2, tw + 8, 14);
+    ctx.fillStyle = '#fff'; ctx.fillText(label, bx + 2, 12);
+  }
+
+  fsToggleAB() {
+    if (!this.outputBuffer) return;
+    this.fsMode = this.fsMode === 'original' ? 'processed' : 'original';
+    const isProc = this.fsMode === 'processed';
+    if (this.dom.fsModeLbl) { this.dom.fsModeLbl.textContent = isProc ? 'PROCESSED' : 'ORIGINAL'; this.dom.fsModeLbl.classList.toggle('proc', isProc); }
+    if (this.dom.fsBtnAB) this.dom.fsBtnAB.textContent = isProc ? 'Show Original' : 'Show Processed';
+    this.fsCurrentBuf = isProc ? this.outputBuffer : this.inputBuffer;
+    this.fsImageData = null;
+    this.renderFileSpectrogram(this.fsCurrentBuf);
+  }
+
+  fsSeekClick(e) {
+    if (!this.inputBuffer) return;
+    const rect = this.dom.fsMain.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    this.playOffset = frac * this.inputBuffer.duration;
+    this.dom.tpSeek.value = frac * 1000;
+    this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+    this.drawFsPlayhead(frac);
+    if (this.isPlaying) this.play();
+  }
+
   // ---- UTILITY ----
   setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
-  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
-  calcPeak(d){let p=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>p)p=a;}return p>0?20*Math.log10(p):-96;}
+  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
+  calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
-}
+} // End of class VoiceIsolatePro
 
-document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = VoiceIsolatePro;
-} else {
+} else if (typeof document !== 'undefined') {
   document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
 }

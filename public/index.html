@@ -27,6 +27,19 @@ h1 em{font-style:italic;color:var(--cyan)}
 .card:hover .arrow{color:var(--text);transform:translateX(3px)}
 .footer{margin-top:4rem;font-family:var(--mono);font-size:0.6rem;color:var(--dim);letter-spacing:0.08em;text-transform:uppercase}
 .grid-bg{position:fixed;inset:0;pointer-events:none;opacity:0.02;background-image:linear-gradient(var(--dim) 1px,transparent 1px),linear-gradient(90deg,var(--dim) 1px,transparent 1px);background-size:80px 80px}
+.expand-arrow{font-size:0.8rem;color:var(--dim);transition:transform 0.3s;display:inline-block}
+.card-expand.open .expand-arrow{transform:rotate(90deg)}
+.specs-detail{max-height:0;overflow:hidden;transition:max-height 0.4s ease,opacity 0.3s;opacity:0;margin-top:0}
+.card-expand.open .specs-detail{max-height:800px;opacity:1;margin-top:1rem}
+.spec-group{margin-bottom:1rem}
+.spec-group h3{font-family:var(--mono);font-size:0.65rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--cyan);margin-bottom:0.4rem}
+.spec-group p{font-size:0.78rem;color:var(--dim);line-height:1.5;margin-bottom:0.2rem}
+.spec-group strong{color:var(--text)}
+.spec-flow{font-family:var(--mono);font-size:0.7rem;color:var(--dim);margin-bottom:0.5rem}
+.spec-pills{display:flex;flex-wrap:wrap;gap:0.3rem}
+.spec-pills span{font-family:var(--mono);font-size:0.55rem;padding:0.15rem 0.45rem;border-radius:3px;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.12);color:var(--dim)}
+.spec-models{display:flex;flex-direction:column;gap:0.25rem}
+.spec-models span{font-size:0.75rem;color:var(--dim)}
 </style>
 </head>
 <body>
@@ -43,6 +56,40 @@ h1 em{font-style:italic;color:var(--cyan)}
     <p>Full processing application. 52 real-time sliders, 3D spectrogram, multi-band DSP chain, A/B comparison. Drop audio and process.</p>
     <span class="arrow">→</span>
   </a>
+  <div class="card card-expand" onclick="this.classList.toggle('open')" style="cursor:pointer;">
+    <span class="card-tag">Technical Specs</span>
+    <h2>How It Works <span class="expand-arrow">▸</span></h2>
+    <p>Hybrid ML + DSP pipeline. 100% in-browser. Forensic SHA-256 audit trail. Tap to see full engine specs.</p>
+    <div class="specs-detail">
+      <div class="spec-group">
+        <h3>Single-Pass STFT Pipeline</h3>
+        <p class="spec-flow">Forward FFT 4096 → 30 in-place spectral stages → Inverse FFT</p>
+        <div class="spec-pills">
+          <span>Wiener Filter</span><span>ML Masking</span><span>Noise Profile</span><span>Hum Removal</span><span>De-reverb</span><span>10-Band EQ</span><span>Compressor</span><span>Limiter</span><span>De-esser</span><span>Harmonic Enhance</span><span>Spectral Gate</span><span>Phase Correction</span>
+        </div>
+      </div>
+      <div class="spec-group">
+        <h3>ML Models (Local ONNX)</h3>
+        <div class="spec-models">
+          <span><strong>Demucs v4.1</strong> — 4-stem separation</span>
+          <span><strong>BSRNN</strong> — Sub-band masking</span>
+          <span><strong>Silero VAD</strong> — Voice activity</span>
+          <span><strong>RNNoise</strong> — Real-time denoise</span>
+        </div>
+      </div>
+      <div class="spec-group">
+        <h3>Runtime</h3>
+        <div class="spec-pills">
+          <span>WebGPU</span><span>WASM SIMD</span><span>ONNX Runtime Web</span><span>AudioWorklet</span><span>SharedArrayBuffer</span><span>OfflineAudioContext</span>
+        </div>
+      </div>
+      <div class="spec-group">
+        <h3>Modes</h3>
+        <p><strong>Live:</strong> &lt;10ms via AudioWorklet + lock-free ring buffer</p>
+        <p><strong>Creator/Forensic:</strong> Offline full-quality 32-stage pipeline</p>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="footer">Threads from Space v8 Architecture — Privacy-First — March 2026</div>

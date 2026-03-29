@@ -82,7 +82,6 @@ class DspProcessor extends AudioWorkletProcessor {
 
     // Simple windowed gain + noise gate (placeholder for full FFT path)
     for (let i = 0; i < input.length; i++) {
-      const w = win[i % N];
       // Minimum statistics: exponential minimum tracker
       const mag = Math.abs(input[i]);
       nf[i % bins] = Math.min(
@@ -99,7 +98,7 @@ class DspProcessor extends AudioWorkletProcessor {
 
     // Overlap-add
     for (let i = 0; i < input.length; i++) {
-      output[i] = output[i] * w + over[i];
+      output[i] = output[i] * win[i % N] + over[i];
     }
     for (let i = 0; i < hop; i++) {
       over[i] = output[hop + i] || 0;

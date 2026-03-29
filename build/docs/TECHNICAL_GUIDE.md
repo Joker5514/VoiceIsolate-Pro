@@ -176,7 +176,7 @@ Current implementation stores queue in memory; production version would:
 - **Quality**: Lossless
 - **File Size**: Moderate
 - **Implementation**: Requires `FLAC.js` (WASM-compiled encoder)
-- **Integration**:
+- **Integration**: 
 ```javascript
 // Future: Replace encodeWav() with encodeFlac() using FLAC.js
 import init, { encode_flac } from 'flac-wasm';
@@ -189,7 +189,7 @@ import init, { encode_flac } from 'flac-wasm';
 - **Quality**: High for speech (tuned perceptual codec)
 - **File Size**: Minimal (~1/7 of WAV)
 - **Use Case**: Web streaming, distribution
-- **Implementation**:
+- **Implementation**: 
 ```javascript
 // Production: Integrate opus.wasm encoder
 const encoded = opusEncoder.encode(pcm16, sampleRate, 48000);
@@ -227,7 +227,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     const output = outputs[0];
-
+    
     // Apply DSP pipeline in high-priority thread
     for (let channel = 0; channel < input.length; channel++) {
       const inData = input[channel];
@@ -410,6 +410,6 @@ For questions or issues, contact: engineering@voiceisolate.dev
 
 ---
 
-**Version**: 6.1 (January 31, 2026)
-**Built for**: Modern browsers (Chrome 90+, Firefox 76+, Safari 14.1+)
+**Version**: 6.1 (January 31, 2026)  
+**Built for**: Modern browsers (Chrome 90+, Firefox 76+, Safari 14.1+)  
 **Target Users**: Podcasters, content creators, audio engineers, researchers

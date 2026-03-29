@@ -68,11 +68,11 @@ wiredSliders.forEach(fn => check(appJs.includes(fn), `${fn} implemented`));
 
 // Phase 3: AudioWorklet
 console.log('\nAudioWorklet (Phase 3):');
-const workerJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/dsp-worker.js'))
-  ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/dsp-worker.js'), 'utf8') : '';
-check(workerJs.includes("registerProcessor('voice-isolate-processor'"), 'AudioWorklet registerProcessor present');
-check(workerJs.includes('process(inputs, outputs)'), 'AudioWorklet process() method present');
-check(appJs.includes("addModule('./dsp-worker.js')"), 'AudioWorklet registered in ensureCtx');
+const awJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/voice-isolate-processor.js'))
+  ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/voice-isolate-processor.js'), 'utf8') : '';
+check(awJs.includes("registerProcessor('voice-isolate-processor'"), 'AudioWorklet registerProcessor present');
+check(awJs.includes('process(inputs, outputs'), 'AudioWorklet process() method present');
+check(appJs.includes("addModule('./voice-isolate-processor.js')"), 'AudioWorklet registered in ensureCtx');
 
 // Phase 4: ONNX Runtime + ML Worker
 console.log('\nONNX Runtime (Phase 4):');
@@ -138,6 +138,7 @@ function checkDuplicateKeys(filePath) {
   }
   return dupes;
 }
+
 const { findDuplicateKeys } = require('./check-duplicate-keys.js');
 function checkDuplicateKeysWrapper(filePath) {
   const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
