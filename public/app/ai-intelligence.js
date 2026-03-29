@@ -352,14 +352,14 @@ const AIIntelligence = {
     const SPECTRAL_FLUX_FRAME_SIZE = 256;
     const SPECTRAL_FLUX_MAX_FRAMES = 20; // Limit frames for performance
 
-    const nFrames = Math.min(maxFrames, Math.floor(audio.length / frameSize));
+    const nFrames = Math.min(SPECTRAL_FLUX_MAX_FRAMES, Math.floor(audio.length / SPECTRAL_FLUX_FRAME_SIZE));
     if (nFrames < 2) return 0;
 
     let totalFlux = 0;
-    let prevRMS = this._calcRMS(audio.subarray(0, frameSize));
+    let prevRMS = this._calcRMS(audio.subarray(0, SPECTRAL_FLUX_FRAME_SIZE));
 
     for (let f = 1; f < nFrames; f++) {
-      const frame = audio.subarray(f * frameSize, (f + 1) * frameSize);
+      const frame = audio.subarray(f * SPECTRAL_FLUX_FRAME_SIZE, (f + 1) * SPECTRAL_FLUX_FRAME_SIZE);
       const rms = this._calcRMS(frame);
       const diff = Math.abs(rms - prevRMS);
       totalFlux += diff;

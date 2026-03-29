@@ -245,6 +245,8 @@ class VoiceIsolatePro {
       document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t.dataset.tab));
     }));
     document.querySelectorAll('.btn-preset').forEach(b => b.addEventListener('click', () => this.applyPreset(b.dataset.preset)));
+    const saveBtn = document.getElementById('saveCustomPresetBtn');
+    if (saveBtn) saveBtn.addEventListener('click', () => this.saveCustomPreset());
     document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', () => this.onSlider(el)));
     document.querySelectorAll('.sr-row').forEach(r => {
       r.addEventListener('mouseenter', e => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }});
@@ -279,6 +281,54 @@ class VoiceIsolatePro {
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
+  }
+
+
+
+  renderCustomPresets() {
+    const row = document.querySelector('.presets-row');
+    const actions = document.querySelector('.custom-preset-actions');
+    if (!row || !actions) return;
+
+    for (const [id] of Object.entries(this.customPresets)) {
+      if (document.querySelector(`.btn-preset[data-preset="${id}"]`)) continue;
+      const name = id.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-preset';
+      btn.dataset.preset = id;
+      btn.textContent = name;
+      btn.addEventListener('click', () => this.applyPreset(id));
+      row.insertBefore(btn, actions);
+    }
+  }
+
+  saveCustomPreset() {
+    const nameInput = document.getElementById('customPresetName');
+    const name = nameInput ? nameInput.value.trim() : '';
+    if (!name) return alert('Please enter a preset name');
+    const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    this.customPresets[id] = { ...this.params };
+    PRESETS[id] = this.customPresets[id];
+    localStorage.setItem('vip_custom_presets', JSON.stringify(this.customPresets));
+
+    // Add button if it doesn't exist
+    if (!document.querySelector(`.btn-preset[data-preset="${id}"]`)) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-preset';
+      btn.dataset.preset = id;
+      btn.textContent = name;
+      btn.addEventListener('click', () => this.applyPreset(id));
+      const row = document.querySelector('.presets-row');
+      if (row) {
+        // insert before custom actions div
+        const actions = document.querySelector('.custom-preset-actions');
+        if (actions) row.insertBefore(btn, actions);
+        else row.appendChild(btn);
+      }
+    }
+
+    nameInput.value = '';
+    this.applyPreset(id);
   }
 
   applyPreset(name) {
@@ -442,10 +492,21 @@ class VoiceIsolatePro {
 
   // ======== TRANSPORT ========
   play() {
-    this.stop();
+    // Teardown previous playback state without resetting playOffset
+    if (typeof this.teardownChain === 'function') this.teardownChain();
+    if (this.isVideo && this.isPlaying) this.dom.videoPlayer.pause();
+    if (typeof this.stopSpectro === 'function') this.stopSpectro();
+    if (typeof this.stopDiagnostics === 'function') this.stopDiagnostics();
+    this.isPlaying = false;
+
     this.ensureCtx();
     const buf = this.abMode === 'processed' && this.outputBuffer ? this.outputBuffer : this.inputBuffer;
     if (!buf) return;
+
+    // If we are at the end, restart from 0
+    if (this.playOffset >= buf.duration) {
+      this.playOffset = 0;
+    }
     this.buildLiveChain(buf);
     this.isPlaying = true;
     this.playStartTime = this.ctx.currentTime;
