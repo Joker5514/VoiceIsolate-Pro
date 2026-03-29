@@ -1,0 +1,25 @@
+{
+  "name": "VoiceIsolate Pro",
+  "short_name": "VoiceIsolate",
+  "description": "Studio-grade voice isolation and audio enhancement. 32-stage DSP pipeline with ML-powered noise removal. 100% local processing.",
+  "version": "21.0.0",
+  "start_url": "/app/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a0a0f",
+  "theme_color": "#0a0a0f",
+  "lang": "en",
+  "categories": ["audio", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
