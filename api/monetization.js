@@ -64,7 +64,7 @@ function validateLicenseToken(token) {
       .createHmac('sha256', LICENSE_SECRET)
       .update(`${parts[0]}.${parts[1]}`)
       .digest('base64url');
-    if (expectedSig !== parts[2]) return null;
+    if (!crypto.timingSafeEqual(Buffer.from(expectedSig, 'base64url'), Buffer.from(parts[2], 'base64url'))) return null;
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
     if (Date.now() / 1000 > payload.exp) return null;
     return payload;
