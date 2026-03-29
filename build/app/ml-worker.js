@@ -164,14 +164,14 @@ async function detectProvider() {
       const adapter = await navigator.gpu.requestAdapter();
       if (adapter) return 'webgpu';
     }
-  } catch (_) { /* fallback */ }
+  } catch { /* fallback */ }
 
   try {
     // Test WebGL2
     const canvas = new OffscreenCanvas(1, 1);
     const gl = canvas.getContext('webgl2');
     if (gl) return 'webgl';
-  } catch (_) { /* fallback */ }
+  } catch { /* fallback */ }
 
   return 'wasm';
 }
@@ -420,7 +420,7 @@ async function disposeAll() {
     try {
       await session.release?.();
       log('info', `Disposed model: ${name}`);
-    } catch (_) {}
+    } catch {}
   }
   sessions = {};
 }
