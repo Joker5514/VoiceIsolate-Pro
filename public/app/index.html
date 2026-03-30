@@ -204,8 +204,16 @@
             </select>
           </div>
           <div class="tp-ab">
-            <button id="tpAB" class="btn btn-ab" disabled>A/B</button>
+            <button id="tpAB" class="btn btn-ab" disabled title="Toggle between Original and Processed audio">A/B</button>
             <span id="tpABLabel" class="tp-ab-label">Original</span>
+          </div>
+          <div class="tp-source-toggle">
+            <label class="source-switch" title="Switch between Original and Processed audio">
+              <input type="checkbox" id="tpSourceToggle" disabled />
+              <span class="source-slider"></span>
+              <span class="source-label-orig">Original</span>
+              <span class="source-label-proc">Processed</span>
+            </label>
           </div>
         </div>
       </div>

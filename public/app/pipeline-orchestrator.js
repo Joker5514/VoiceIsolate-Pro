@@ -225,9 +225,18 @@ class PipelineOrchestrator {
   resume() {
     if (this.isPlaying || !this.audioCtx) return;
 
-    this.audioCtx.resume().then(() => {
+    if (this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume().then(() => {
+        this.play();
+      });
+    } else {
       this.play();
-    });
+    }
+  }
+
+  /** Get which buffer is currently active */
+  getActiveSource() {
+    return this.sourceNode?.buffer === this.outputBuffer ? 'processed' : 'original';
   }
 
   /** Stop playback, reset position */
