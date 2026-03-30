@@ -189,23 +189,23 @@ html {
     min-width: 52px;
     text-align: center;
   }
-  input[type="range"] {
+  .sr-row > input[type="range"] {
     grid-column: 1 / -1;
     grid-row: 2;
     height: var(--mob-slider-track);
     border-radius: calc(var(--mob-slider-track) / 2);
     /* track gradient shape still driven by --pct */
   }
-  input[type="range"]::-webkit-slider-runnable-track {
+  .sr-row > input[type="range"]::-webkit-slider-runnable-track {
     height: var(--mob-slider-track);
   }
-  input[type="range"]::-webkit-slider-thumb {
+  .sr-row > input[type="range"]::-webkit-slider-thumb {
     width: var(--mob-slider-thumb);
     height: var(--mob-slider-thumb);
     margin-top: calc((var(--mob-slider-thumb) / -2) + (var(--mob-slider-track) / 2));
     border-width: 3px;
   }
-  input[type="range"]::-moz-range-thumb {
+  .sr-row > input[type="range"]::-moz-range-thumb {
     width: var(--mob-slider-thumb);
     height: var(--mob-slider-thumb);
     border-width: 3px;
