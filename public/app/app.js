@@ -608,7 +608,7 @@ class VoiceIsolatePro {
     this.dom.fileInfo.textContent = (name || 'Recording') + ' (' + dur + ')';
     this.dom.processBtn.disabled = false;
     if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
-    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled;
     this.dom.saveOrigBtn.disabled = false;
     this.dom.reprocessBtn.disabled = true;
     this.dom.saveProcBtn.disabled = true;
@@ -1044,7 +1044,7 @@ class VoiceIsolatePro {
     } finally {
       this.isProcessing=false; this.dom.processBtn.style.display='inline-flex'; this.dom.stopProcBtn.style.display='none';
       if (this.dom.mobileProcessBtn)   { this.dom.mobileProcessBtn.style.display='inline-flex'; }
-      if (this.dom.mobileReprocessBtn) { this.dom.mobileReprocessBtn.style.display='inline-flex'; }
+      if (this.dom.mobileReprocessBtn) { this.dom.mobileReprocessBtn.style.display='inline-flex'; this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled; }
       if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display='none';
     }
   }
