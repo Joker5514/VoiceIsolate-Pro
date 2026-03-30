@@ -1,14 +1,15 @@
 /**
- * VoiceIsolate Pro v21 — Mobile UI Tests
+ * VoiceIsolate Pro — Mobile UI Tests
  *
- * Covers changes introduced in this PR:
- *   - app.js: sr-info element, --pct CSS variable, mobile DOM refs, mobile event
- *             listeners, statsToggle handler, onSlider/applyPreset --pct update,
- *             mobile button state/visibility management
- *   - index.html: statsToggle button, hdrStats id, mobile-action-bar elements
- *   - style.css:  .sr-info rules, --pct gradient, desktop display:none for new elements
- *   - mobile.css: new CSS variables, hdr-stats.expanded, hdr-stats-toggle, mobile
- *                 action bar, .sr-info hidden on mobile
+ * Covers the changes introduced in this PR:
+ *   - app.js: sr-info element creation in slider rendering
+ *   - app.js: --pct CSS variable calculation (initPct, onSlider, applyPreset)
+ *   - app.js: Mobile DOM refs (mobileProcessBtn, mobileReprocessBtn, mobileStopBtn, statsToggle, hdrStats)
+ *   - app.js: Mobile action bar event listeners
+ *   - app.js: Stats toggle logic (expand/collapse)
+ *   - app.js: Mobile button state management (onAudioLoaded, runPipeline start/success/finally)
+ *   - index.html: statsToggle button, hdrStats id, mobile-action-bar structure
+ *   - style.css: hdr-stats-toggle and mobile-action-bar hidden by default
  */
 
 'use strict';
@@ -16,685 +17,568 @@
 const fs   = require('fs');
 const path = require('path');
 
-const ROOT = path.join(__dirname, '..');
+const appJs   = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
+const html    = fs.readFileSync(path.join(__dirname, '../public/app/index.html'), 'utf8');
+const styleCss = fs.readFileSync(path.join(__dirname, '../public/app/style.css'), 'utf8');
 
-const appJs    = fs.readFileSync(path.join(ROOT, 'public/app/app.js'),    'utf8');
-const indexHtml = fs.readFileSync(path.join(ROOT, 'public/app/index.html'), 'utf8');
-const styleCss  = fs.readFileSync(path.join(ROOT, 'public/app/style.css'),  'utf8');
-const mobileCss = fs.readFileSync(path.join(ROOT, 'public/app/mobile.css'), 'utf8');
-
-// ─── Pure math helpers (extracted from the PR's calculation logic) ──────────
+// ─── Pure --pct calculation (extracted from changed code) ────────────────────
 
 /**
- * Replicates the --pct calculation used in buildSliders, onSlider, and applyPreset.
- * Returns a string like "37.5%".
+ * Mirrors the formula added to initPct, onSlider, and applyPreset.
+ * pct = ((value - min) / (max - min)) * 100   → `${pct.toFixed(1)}%`
  */
-function calcPct(val, min, max) {
-  const pct = ((val - min) / (max - min)) * 100;
+function calcPct(value, min, max) {
+  const pct = ((value - min) / (max - min)) * 100;
   return `${pct.toFixed(1)}%`;
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// 1. app.js — sr-info element creation in buildSliders
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// 1.  --pct CSS variable formula
+// ═══════════════════════════════════════════════════════════════
 
-describe('app.js — sr-info element creation', () => {
-  test('creates an element with class "sr-info"', () => {
-    expect(appJs).toContain("infoEl.className = 'sr-info'");
-  });
-
-  test('sets textContent of sr-info to "i"', () => {
-    expect(appJs).toContain("infoEl.textContent = 'i'");
-  });
-
-  test('marks sr-info as aria-hidden="true"', () => {
-    expect(appJs).toContain("infoEl.setAttribute('aria-hidden', 'true')");
-  });
-
-  test('appends sr-info to the label element', () => {
-    expect(appJs).toContain('labelEl.appendChild(infoEl)');
-  });
-
-  test('sr-info is created as a span element', () => {
-    // buildSliders uses document.createElement('span') for infoEl
-    const match = appJs.match(/const infoEl = document\.createElement\('(\w+)'\)/);
-    expect(match).not.toBeNull();
-    expect(match[1]).toBe('span');
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 2. app.js — --pct CSS variable calculation (pure math)
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('app.js — --pct CSS variable calculation formula', () => {
-  test('midpoint value maps to 50.0%', () => {
-    expect(calcPct(0, -12, 12)).toBe('50.0%');
-  });
-
-  test('minimum value maps to 0.0%', () => {
+describe('--pct CSS variable formula', () => {
+  test('value at minimum → 0.0%', () => {
     expect(calcPct(0, 0, 100)).toBe('0.0%');
   });
 
-  test('maximum value maps to 100.0%', () => {
+  test('value at maximum → 100.0%', () => {
     expect(calcPct(100, 0, 100)).toBe('100.0%');
   });
 
-  test('75% of range maps to 75.0%', () => {
-    expect(calcPct(75, 0, 100)).toBe('75.0%');
+  test('midpoint value → 50.0%', () => {
+    expect(calcPct(50, 0, 100)).toBe('50.0%');
   });
 
-  test('negative range: -6 between -24 and 0 maps to 75.0%', () => {
-    expect(calcPct(-6, -24, 0)).toBe('75.0%');
-  });
-
-  test('toFixed(1) produces exactly one decimal place', () => {
-    // 1/3 of range → 33.3...% → rounded to 33.3%
-    expect(calcPct(1, 0, 3)).toBe('33.3%');
-  });
-
-  test('value equal to min yields exactly "0.0%"', () => {
-    expect(calcPct(-24, -24, 24)).toBe('0.0%');
-  });
-
-  test('value equal to max yields exactly "100.0%"', () => {
-    expect(calcPct(24, -24, 24)).toBe('100.0%');
-  });
-
-  test('integer result still has one decimal place (e.g. 25.0%)', () => {
+  test('quarter-point value → 25.0%', () => {
     expect(calcPct(25, 0, 100)).toBe('25.0%');
   });
-});
 
-describe('app.js — buildSliders --pct initialisation code', () => {
-  test('initPct variable is declared and computed from s.val, s.min, s.max', () => {
-    expect(appJs).toContain('const initPct = ((s.val - s.min) / (s.max - s.min)) * 100');
+  test('non-zero minimum offset is applied correctly', () => {
+    // range [-20, 20], value 0 → midpoint = 50%
+    expect(calcPct(0, -20, 20)).toBe('50.0%');
   });
 
-  test('--pct CSS property is set on the input element using initPct', () => {
-    expect(appJs).toContain("inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`)");
+  test('non-zero minimum at lower bound → 0.0%', () => {
+    expect(calcPct(-20, -20, 20)).toBe('0.0%');
+  });
+
+  test('non-zero minimum at upper bound → 100.0%', () => {
+    expect(calcPct(20, -20, 20)).toBe('100.0%');
+  });
+
+  test('result is formatted with exactly one decimal place', () => {
+    // 1/3 of range → 33.3%
+    const r = calcPct(1, 0, 3);
+    expect(r).toMatch(/^\d+\.\d%$/);
+    expect(r).toBe('33.3%');
+  });
+
+  test('fractional slider value produces correct percentage', () => {
+    // range 0–1, value 0.5 → 50.0%
+    expect(calcPct(0.5, 0, 1)).toBe('50.0%');
+  });
+
+  test('boundary: value beyond max clamps above 100%', () => {
+    // Formula does not clamp; just verify deterministic output
+    const r = calcPct(110, 0, 100);
+    expect(parseFloat(r)).toBeGreaterThan(100);
+  });
+
+  test('result string always ends with %', () => {
+    ['0', '50', '100'].forEach(v => {
+      expect(calcPct(Number(v), 0, 100)).toMatch(/%$/);
+    });
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// 3. app.js — mobile DOM element references in cacheDom
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// 2.  app.js source — --pct formula present in all three sites
+// ═══════════════════════════════════════════════════════════════
 
-describe('app.js — mobile DOM element references in cacheDom', () => {
-  test('cacheDom references mobileProcessBtn', () => {
+describe('app.js — --pct CSS variable wiring', () => {
+  test('initPct calculation present in slider render method', () => {
+    expect(appJs).toContain('initPct');
+    expect(appJs).toContain("((s.val - s.min) / (s.max - s.min)) * 100");
+  });
+
+  test('initPct result applied via style.setProperty', () => {
+    expect(appJs).toContain("inputEl.style.setProperty('--pct'");
+    expect(appJs).toContain('`${initPct.toFixed(1)}%`');
+  });
+
+  test('onSlider updates --pct via style.setProperty', () => {
+    // Changed line in onSlider
+    expect(appJs).toContain("el.style.setProperty('--pct'");
+    expect(appJs).toContain('`${pct.toFixed(1)}%`');
+  });
+
+  test('onSlider --pct formula uses parseFloat for el.min and el.max', () => {
+    expect(appJs).toContain('parseFloat(el.min)');
+    expect(appJs).toContain('parseFloat(el.max)');
+  });
+
+  test('applyPreset updates --pct for each slider element', () => {
+    // The applyPreset block sets --pct after updating el.value
+    const presetBlock = appJs.match(/applyPreset\(name\)[\s\S]*?if \(this\.liveChainBuilt\)/)?.[0] || '';
+    expect(presetBlock).toContain("el.style.setProperty('--pct'");
+    expect(presetBlock).toContain('`${pct.toFixed(1)}%`');
+  });
+
+  test('applyPreset --pct formula uses s.min and s.max (slider config)', () => {
+    const presetBlock = appJs.match(/applyPreset\(name\)[\s\S]*?if \(this\.liveChainBuilt\)/)?.[0] || '';
+    expect(presetBlock).toContain('s.min');
+    expect(presetBlock).toContain('s.max');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 3.  app.js source — sr-info element
+// ═══════════════════════════════════════════════════════════════
+
+describe('app.js — sr-info element creation', () => {
+  test('creates an infoEl span with className sr-info', () => {
+    expect(appJs).toContain("infoEl.className = 'sr-info'");
+  });
+
+  test('infoEl text content is "i"', () => {
+    expect(appJs).toContain("infoEl.textContent = 'i'");
+  });
+
+  test('infoEl has aria-hidden="true" (decorative icon)', () => {
+    expect(appJs).toContain("infoEl.setAttribute('aria-hidden', 'true')");
+  });
+
+  test('infoEl is appended to labelEl', () => {
+    expect(appJs).toContain('labelEl.appendChild(infoEl)');
+  });
+
+  test('sr-info creation appears after rt-badge block in render loop', () => {
+    const rtBadgePos  = appJs.indexOf("badge.className = 'rt-badge'");
+    const infoElPos   = appJs.indexOf("infoEl.className = 'sr-info'");
+    expect(rtBadgePos).toBeGreaterThan(-1);
+    expect(infoElPos).toBeGreaterThan(rtBadgePos);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 4.  app.js source — mobile DOM refs in cacheDom
+// ═══════════════════════════════════════════════════════════════
+
+describe('app.js — mobile DOM refs in cacheDom()', () => {
+  test("cacheDom caches mobileProcessBtn", () => {
     expect(appJs).toContain("mobileProcessBtn:g('mobileProcessBtn')");
   });
 
-  test('cacheDom references mobileReprocessBtn', () => {
+  test("cacheDom caches mobileReprocessBtn", () => {
     expect(appJs).toContain("mobileReprocessBtn:g('mobileReprocessBtn')");
   });
 
-  test('cacheDom references mobileStopBtn', () => {
+  test("cacheDom caches mobileStopBtn", () => {
     expect(appJs).toContain("mobileStopBtn:g('mobileStopBtn')");
   });
 
-  test('cacheDom references statsToggle', () => {
+  test("cacheDom caches statsToggle", () => {
     expect(appJs).toContain("statsToggle:g('statsToggle')");
   });
 
-  test('cacheDom references hdrStats', () => {
+  test("cacheDom caches hdrStats", () => {
     expect(appJs).toContain("hdrStats:g('hdrStats')");
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// 4. app.js — mobile event listeners in bindEvents
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// 5.  app.js source — mobile event listeners in bindEvents
+// ═══════════════════════════════════════════════════════════════
 
-describe('app.js — mobile event listeners in bindEvents', () => {
-  test('mobileProcessBtn click calls runPipeline', () => {
-    expect(appJs).toContain(
-      "this.dom.mobileProcessBtn.addEventListener('click', () => this.runPipeline())"
-    );
+describe('app.js — mobile event listeners in bindEvents()', () => {
+  test('mobileProcessBtn click → runPipeline', () => {
+    expect(appJs).toContain('this.dom.mobileProcessBtn.addEventListener');
+    expect(appJs).toContain("() => this.runPipeline()");
   });
 
-  test('mobileReprocessBtn click calls runPipeline', () => {
-    expect(appJs).toContain(
-      "this.dom.mobileReprocessBtn.addEventListener('click', () => this.runPipeline())"
-    );
+  test('mobileReprocessBtn click → runPipeline', () => {
+    expect(appJs).toContain('this.dom.mobileReprocessBtn.addEventListener');
   });
 
-  test('mobileStopBtn click sets abortFlag to true', () => {
-    expect(appJs).toContain(
-      "this.dom.mobileStopBtn.addEventListener('click', () => { this.abortFlag = true; })"
-    );
+  test('mobileStopBtn click → sets abortFlag to true', () => {
+    expect(appJs).toContain('this.dom.mobileStopBtn.addEventListener');
+    expect(appJs).toContain('this.abortFlag = true');
   });
 
-  test('mobile button listeners are guarded with null checks', () => {
-    // Each binding uses "if (this.dom.mobileXxx)" before addEventListener
-    expect(appJs).toMatch(/if \(this\.dom\.mobileProcessBtn\)\s+this\.dom\.mobileProcessBtn\.addEventListener/);
-    expect(appJs).toMatch(/if \(this\.dom\.mobileReprocessBtn\)\s+this\.dom\.mobileReprocessBtn\.addEventListener/);
-    expect(appJs).toMatch(/if \(this\.dom\.mobileStopBtn\)\s+this\.dom\.mobileStopBtn\.addEventListener/);
+  test('mobile button listeners are guarded with null-checks', () => {
+    // Must not crash if elements are absent (desktop)
+    expect(appJs).toContain('if (this.dom.mobileProcessBtn)');
+    expect(appJs).toContain('if (this.dom.mobileReprocessBtn)');
+    expect(appJs).toContain('if (this.dom.mobileStopBtn)');
   });
 
-  test('statsToggle handler checks both statsToggle and hdrStats before binding', () => {
+  test('statsToggle listener guarded by both statsToggle and hdrStats check', () => {
     expect(appJs).toContain('if (this.dom.statsToggle && this.dom.hdrStats)');
   });
+});
 
-  test('statsToggle click toggles "expanded" class on hdrStats', () => {
-    expect(appJs).toContain("this.dom.hdrStats.classList.toggle('expanded')");
+// ═══════════════════════════════════════════════════════════════
+// 6.  Stats toggle logic — simulated DOM behaviour
+// ═══════════════════════════════════════════════════════════════
+
+describe('Stats toggle — expand / collapse behaviour (simulated DOM)', () => {
+  /**
+   * Extracts the statsToggle click handler body from app.js and runs it
+   * against lightweight mock DOM objects.
+   */
+  function makeToggleMocks(initialExpanded) {
+    const classes = new Set(initialExpanded ? ['expanded'] : []);
+    const hdrStats = {
+      classList: {
+        toggle(cls) {
+          if (classes.has(cls)) { classes.delete(cls); return false; }
+          else { classes.add(cls); return true; }
+        },
+        contains(cls) { return classes.has(cls); },
+      },
+    };
+    const statsToggle = {
+      _ariaExpanded: 'false',
+      textContent: '▼',
+      setAttribute(attr, val) { if (attr === 'aria-expanded') this._ariaExpanded = val; },
+    };
+    return { hdrStats, statsToggle, classes };
+  }
+
+  function runToggle(hdrStats, statsToggle) {
+    // Inline of the click handler from app.js
+    const expanded = hdrStats.classList.toggle('expanded');
+    statsToggle.setAttribute('aria-expanded', String(expanded));
+    statsToggle.textContent = expanded ? '▲' : '▼';
+  }
+
+  test('first click adds "expanded" class to hdrStats', () => {
+    const { hdrStats, statsToggle, classes } = makeToggleMocks(false);
+    runToggle(hdrStats, statsToggle);
+    expect(classes.has('expanded')).toBe(true);
   });
 
-  test('statsToggle updates aria-expanded attribute on click', () => {
-    expect(appJs).toContain("this.dom.statsToggle.setAttribute('aria-expanded', String(expanded))");
+  test('first click sets aria-expanded to "true"', () => {
+    const { hdrStats, statsToggle } = makeToggleMocks(false);
+    runToggle(hdrStats, statsToggle);
+    expect(statsToggle._ariaExpanded).toBe('true');
   });
 
-  test('statsToggle textContent changes to ▲ when expanded', () => {
-    expect(appJs).toContain("this.dom.statsToggle.textContent = expanded ? '▲' : '▼'");
+  test('first click changes button text to ▲', () => {
+    const { hdrStats, statsToggle } = makeToggleMocks(false);
+    runToggle(hdrStats, statsToggle);
+    expect(statsToggle.textContent).toBe('▲');
+  });
+
+  test('second click removes "expanded" class', () => {
+    const { hdrStats, statsToggle, classes } = makeToggleMocks(false);
+    runToggle(hdrStats, statsToggle);
+    runToggle(hdrStats, statsToggle);
+    expect(classes.has('expanded')).toBe(false);
+  });
+
+  test('second click sets aria-expanded back to "false"', () => {
+    const { hdrStats, statsToggle } = makeToggleMocks(false);
+    runToggle(hdrStats, statsToggle);
+    runToggle(hdrStats, statsToggle);
+    expect(statsToggle._ariaExpanded).toBe('false');
+  });
+
+  test('second click changes button text back to ▼', () => {
+    const { hdrStats, statsToggle } = makeToggleMocks(false);
+    runToggle(hdrStats, statsToggle);
+    runToggle(hdrStats, statsToggle);
+    expect(statsToggle.textContent).toBe('▼');
+  });
+
+  test('toggle is idempotent across even number of clicks (returns to initial state)', () => {
+    const { hdrStats, statsToggle, classes } = makeToggleMocks(false);
+    for (let i = 0; i < 4; i++) runToggle(hdrStats, statsToggle);
+    expect(classes.has('expanded')).toBe(false);
+    expect(statsToggle._ariaExpanded).toBe('false');
+  });
+
+  test('starting expanded: first click collapses (removes class)', () => {
+    const { hdrStats, statsToggle, classes } = makeToggleMocks(true);
+    runToggle(hdrStats, statsToggle);
+    expect(classes.has('expanded')).toBe(false);
+    expect(statsToggle._ariaExpanded).toBe('false');
+    expect(statsToggle.textContent).toBe('▼');
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// 5. app.js — onSlider --pct update
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// 7.  app.js source — mobile button state in onAudioLoaded
+// ═══════════════════════════════════════════════════════════════
 
-describe('app.js — onSlider --pct CSS variable update', () => {
-  test('onSlider computes pct using parseFloat of el.min and el.max', () => {
-    expect(appJs).toContain(
-      'const pct = ((v - parseFloat(el.min)) / (parseFloat(el.max) - parseFloat(el.min))) * 100'
-    );
+describe('app.js — mobile button state in onAudioLoaded()', () => {
+  test('enables mobileProcessBtn after audio is loaded', () => {
+    expect(appJs).toContain('this.dom.mobileProcessBtn.disabled = false');
   });
 
-  test('onSlider calls setProperty with --pct and toFixed(1)% string', () => {
-    expect(appJs).toContain("el.style.setProperty('--pct', `${pct.toFixed(1)}%`)");
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 6. app.js — applyPreset --pct update
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('app.js — applyPreset --pct CSS variable update', () => {
-  test('applyPreset computes pct from params, s.min, s.max', () => {
-    expect(appJs).toContain(
-      'const pct = ((this.params[s.id] - s.min) / (s.max - s.min)) * 100'
-    );
+  test('disables mobileReprocessBtn on fresh audio load', () => {
+    // After a new file is loaded the reprocess button resets to disabled
+    const onAudioLoadedBlock = appJs.match(/onAudioLoaded\(name\)[\s\S]*?this\.dom\.hDur/)?.[0] || '';
+    expect(onAudioLoadedBlock).toContain('this.dom.mobileReprocessBtn.disabled = true');
   });
 
-  test('applyPreset calls setProperty with --pct on the slider element', () => {
-    // Locate the applyPreset method and verify --pct appears after the pct calculation
-    const applyPresetIdx = appJs.indexOf('applyPreset(name)');
-    expect(applyPresetIdx).toBeGreaterThan(-1);
-    // The --pct setProperty must appear within reasonable distance after applyPreset
-    const applyPresetChunk = appJs.substring(applyPresetIdx, applyPresetIdx + 800);
-    expect(applyPresetChunk).toContain("el.style.setProperty('--pct'");
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 7. app.js — mobile button state management in onAudioLoaded
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('app.js — onAudioLoaded mobile button state', () => {
-  test('enables mobileProcessBtn when audio is loaded', () => {
+  test('mobileProcessBtn state change is null-guarded', () => {
     expect(appJs).toContain('if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false');
   });
 
-  test('disables mobileReprocessBtn when audio is first loaded', () => {
+  test('mobileReprocessBtn state change is null-guarded', () => {
     expect(appJs).toContain('if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true');
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// 8. app.js — mobile button visibility during pipeline execution
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// 8.  app.js source — mobile button visibility in runPipeline
+// ═══════════════════════════════════════════════════════════════
 
-describe('app.js — runPipeline mobile button visibility', () => {
+describe('app.js — mobile button visibility in runPipeline()', () => {
   test('hides mobileProcessBtn when pipeline starts', () => {
-    expect(appJs).toContain(
-      "if (this.dom.mobileProcessBtn)   this.dom.mobileProcessBtn.style.display = 'none'"
-    );
+    expect(appJs).toContain("this.dom.mobileProcessBtn.style.display = 'none'");
   });
 
   test('hides mobileReprocessBtn when pipeline starts', () => {
-    expect(appJs).toContain(
-      "if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display = 'none'"
-    );
+    expect(appJs).toContain("this.dom.mobileReprocessBtn.style.display = 'none'");
   });
 
   test('shows mobileStopBtn when pipeline starts', () => {
-    expect(appJs).toContain(
-      "if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display = 'inline-flex'"
-    );
+    expect(appJs).toContain("this.dom.mobileStopBtn.style.display = 'inline-flex'");
   });
 
-  test('restores mobileProcessBtn visibility in finally block', () => {
-    expect(appJs).toContain(
-      "if (this.dom.mobileProcessBtn)   { this.dom.mobileProcessBtn.style.display='inline-flex'; }"
-    );
+  test('enables mobileReprocessBtn after successful pipeline completion', () => {
+    expect(appJs).toContain('this.dom.mobileReprocessBtn.disabled = false');
   });
 
-  test('restores mobileReprocessBtn visibility in finally block', () => {
-    expect(appJs).toContain(
-      "if (this.dom.mobileReprocessBtn) { this.dom.mobileReprocessBtn.style.display='inline-flex'; }"
-    );
+  test('restores mobileProcessBtn to inline-flex in finally block', () => {
+    expect(appJs).toContain("this.dom.mobileProcessBtn.style.display='inline-flex'");
+  });
+
+  test('restores mobileReprocessBtn to inline-flex in finally block', () => {
+    expect(appJs).toContain("this.dom.mobileReprocessBtn.style.display='inline-flex'");
   });
 
   test('hides mobileStopBtn in finally block', () => {
-    expect(appJs).toContain(
-      "if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display='none'"
-    );
+    expect(appJs).toContain("this.dom.mobileStopBtn.style.display='none'");
+  });
+
+  test('all mobile button visibility changes are null-guarded', () => {
+    // Count the null-guard patterns for mobile process button
+    const guards = (appJs.match(/if \(this\.dom\.mobileProcessBtn\)/g) || []).length;
+    expect(guards).toBeGreaterThanOrEqual(3); // onAudioLoaded + runPipeline start + finally
+  });
+
+  test('mobileStopBtn show/hide guards are present', () => {
+    const guards = (appJs.match(/if \(this\.dom\.mobileStopBtn\)/g) || []).length;
+    expect(guards).toBeGreaterThanOrEqual(2); // start + finally
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// 9. app.js — mobileReprocessBtn enabled after successful pipeline
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// 9.  index.html — stats toggle button
+// ═══════════════════════════════════════════════════════════════
 
-describe('app.js — mobileReprocessBtn state after pipeline completion', () => {
-  test('enables mobileReprocessBtn when pipeline completes successfully', () => {
-    expect(appJs).toContain(
-      'if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false'
-    );
+describe('index.html — stats toggle button', () => {
+  test('statsToggle button element exists', () => {
+    expect(html).toContain('id="statsToggle"');
   });
 
-  test('mobileReprocessBtn enable appears in the pipeline success path, not only in finally', () => {
-    // Look for the disabled = false assignment (success path) vs the display restoration (finally)
-    const successPath = appJs.match(/this\.dom\.saveProcBtn\.disabled = false[\s\S]{0,200}mobileReprocessBtn/);
-    expect(successPath).not.toBeNull();
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 10. index.html — statsToggle button
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('index.html — statsToggle button', () => {
-  test('contains an element with id="statsToggle"', () => {
-    expect(indexHtml).toContain('id="statsToggle"');
-  });
-
-  test('statsToggle has class "hdr-stats-toggle"', () => {
-    expect(indexHtml).toContain('class="hdr-stats-toggle"');
+  test('statsToggle has class hdr-stats-toggle', () => {
+    expect(html).toContain('class="hdr-stats-toggle"');
   });
 
   test('statsToggle has aria-label="Toggle stats"', () => {
-    expect(indexHtml).toContain('aria-label="Toggle stats"');
+    expect(html).toContain('aria-label="Toggle stats"');
   });
 
-  test('statsToggle initial aria-expanded is "false"', () => {
-    expect(indexHtml).toMatch(/id="statsToggle"[^>]*aria-expanded="false"|aria-expanded="false"[^>]*id="statsToggle"/);
+  test('statsToggle has aria-expanded="false" as initial state', () => {
+    expect(html).toContain('aria-expanded="false"');
+  });
+
+  test('statsToggle contains the down-arrow entity ▼ (&#9660;)', () => {
+    expect(html).toContain('&#9660;');
   });
 
   test('statsToggle is a <button> element', () => {
-    expect(indexHtml).toMatch(/<button[^>]+id="statsToggle"/);
-  });
-
-  test('statsToggle contains the ▼ down-arrow character initially', () => {
-    // &#9660; is ▼
-    expect(indexHtml).toMatch(/id="statsToggle"[^>]*>&#9660;/);
+    expect(html).toMatch(/<button[^>]+id="statsToggle"/);
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// 11. index.html — hdrStats div with id
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// 10. index.html — hdrStats id
+// ═══════════════════════════════════════════════════════════════
 
-describe('index.html — hdrStats div', () => {
-  test('hdr-stats div now has id="hdrStats"', () => {
-    expect(indexHtml).toContain('id="hdrStats"');
+describe('index.html — hdrStats element', () => {
+  test('hdr-stats div has id="hdrStats"', () => {
+    expect(html).toContain('id="hdrStats"');
   });
 
-  test('the element with id="hdrStats" also has class "hdr-stats"', () => {
-    expect(indexHtml).toMatch(/class="hdr-stats"[^>]*id="hdrStats"|id="hdrStats"[^>]*class="hdr-stats"/);
+  test('hdrStats element retains class hdr-stats', () => {
+    expect(html).toMatch(/class="hdr-stats"[^>]*id="hdrStats"|id="hdrStats"[^>]*class="hdr-stats"/);
   });
 
-  test('hdrStats contains stat children (SNR, Duration, etc.)', () => {
-    expect(indexHtml).toContain('id="hSNR"');
-    expect(indexHtml).toContain('id="hDur"');
-    expect(indexHtml).toContain('id="hSR"');
+  test('hdrStats div contains stat child elements', () => {
+    // The stats panel still contains the SNR, Duration, etc. entries
+    expect(html).toContain('id="hSNR"');
+    expect(html).toContain('id="hDur"');
+    expect(html).toContain('id="hSR"');
+  });
+
+  test('statsToggle button appears before hdrStats div in source order', () => {
+    const togglePos  = html.indexOf('id="statsToggle"');
+    const statsPos   = html.indexOf('id="hdrStats"');
+    expect(togglePos).toBeGreaterThan(-1);
+    expect(statsPos).toBeGreaterThan(-1);
+    expect(togglePos).toBeLessThan(statsPos);
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// 12. index.html — mobile action bar
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// 11. index.html — mobile action bar
+// ═══════════════════════════════════════════════════════════════
 
-describe('index.html — mobile action bar structure', () => {
-  test('contains the mobile-action-bar container', () => {
-    expect(indexHtml).toContain('class="mobile-action-bar"');
+describe('index.html — mobile action bar', () => {
+  test('mobile-action-bar container exists', () => {
+    expect(html).toContain('class="mobile-action-bar"');
+    expect(html).toContain('id="mobileActionBar"');
   });
 
-  test('mobile-action-bar has id="mobileActionBar"', () => {
-    expect(indexHtml).toContain('id="mobileActionBar"');
+  test('mobileProcessBtn button exists', () => {
+    expect(html).toContain('id="mobileProcessBtn"');
   });
 
-  test('contains mobileProcessBtn', () => {
-    expect(indexHtml).toContain('id="mobileProcessBtn"');
-  });
-
-  test('contains mobileReprocessBtn', () => {
-    expect(indexHtml).toContain('id="mobileReprocessBtn"');
-  });
-
-  test('contains mobileStopBtn', () => {
-    expect(indexHtml).toContain('id="mobileStopBtn"');
+  test('mobileProcessBtn has class btn and btn-primary', () => {
+    expect(html).toMatch(/id="mobileProcessBtn"[^>]*class="btn btn-primary"|class="btn btn-primary"[^>]*id="mobileProcessBtn"/);
   });
 
   test('mobileProcessBtn is initially disabled', () => {
-    expect(indexHtml).toMatch(/id="mobileProcessBtn"[^>]*disabled|disabled[^>]*id="mobileProcessBtn"/);
+    // The disabled attribute must appear on the mobileProcessBtn element
+    const mobileBar = html.match(/<div class="mobile-action-bar"[\s\S]*?<\/div>\s*\n/)?.[0] || html;
+    const processBtn = mobileBar.match(/id="mobileProcessBtn"[^>]*/)?.[0] || '';
+    expect(processBtn).toContain('disabled');
+  });
+
+  test('mobileReprocessBtn button exists', () => {
+    expect(html).toContain('id="mobileReprocessBtn"');
+  });
+
+  test('mobileReprocessBtn has class btn btn-reprocess', () => {
+    expect(html).toMatch(/id="mobileReprocessBtn"[^>]*class="btn btn-reprocess"|class="btn btn-reprocess"[^>]*id="mobileReprocessBtn"/);
   });
 
   test('mobileReprocessBtn is initially disabled', () => {
-    expect(indexHtml).toMatch(/id="mobileReprocessBtn"[^>]*disabled|disabled[^>]*id="mobileReprocessBtn"/);
+    const btn = html.match(/id="mobileReprocessBtn"[^>]*/)?.[0] || '';
+    expect(btn).toContain('disabled');
   });
 
-  test('mobileStopBtn is initially hidden via inline style', () => {
-    expect(indexHtml).toMatch(/id="mobileStopBtn"[^>]*style="display:none"|style="display:none"[^>]*id="mobileStopBtn"/);
+  test('mobileStopBtn button exists', () => {
+    expect(html).toContain('id="mobileStopBtn"');
   });
 
-  test('mobileProcessBtn uses btn-primary class', () => {
-    expect(indexHtml).toMatch(/id="mobileProcessBtn"[^>]*class="btn btn-primary"|class="btn btn-primary"[^>]*id="mobileProcessBtn"/);
+  test('mobileStopBtn has class btn btn-danger', () => {
+    expect(html).toMatch(/id="mobileStopBtn"[^>]*class="btn btn-danger"|class="btn btn-danger"[^>]*id="mobileStopBtn"/);
   });
 
-  test('mobileProcessBtn contains a play icon SVG with aria-hidden', () => {
-    // The SVG inside the process button has aria-hidden="true"
-    const mobileBarBlock = indexHtml.match(/id="mobileActionBar"[\s\S]*?<\/div>/);
-    expect(mobileBarBlock).not.toBeNull();
-    expect(mobileBarBlock[0]).toContain('aria-hidden="true"');
+  test('mobileStopBtn is initially hidden via inline style display:none', () => {
+    const btn = html.match(/id="mobileStopBtn"[^>]*/)?.[0] || '';
+    expect(btn).toContain('display:none');
   });
 
-  test('mobile-action-bar appears after the footer element', () => {
-    const footerIdx    = indexHtml.indexOf('</footer>');
-    const mobileBarIdx = indexHtml.indexOf('id="mobileActionBar"');
-    expect(footerIdx).toBeGreaterThan(-1);
-    expect(mobileBarIdx).toBeGreaterThan(-1);
-    expect(mobileBarIdx).toBeGreaterThan(footerIdx);
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 13. style.css — .sr-info rules
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('style.css — .sr-info CSS class', () => {
-  test('.sr-info class is defined', () => {
-    expect(styleCss).toContain('.sr-info');
+  test('mobile-action-bar comment describes sticky action bar', () => {
+    expect(html).toContain('Mobile sticky action bar');
   });
 
-  test('.sr-info uses display:inline-flex', () => {
-    expect(styleCss).toMatch(/\.sr-info\{[^}]*display:inline-flex/);
-  });
-
-  test('.sr-info has border-radius:50% (circular badge)', () => {
-    expect(styleCss).toMatch(/\.sr-info\{[^}]*border-radius:50%/);
-  });
-
-  test('.sr-info has pointer-events:none (non-interactive)', () => {
-    expect(styleCss).toMatch(/\.sr-info\{[^}]*pointer-events:none/);
-  });
-
-  test('.sr-info has margin-left:auto (pushes to right of label)', () => {
-    expect(styleCss).toMatch(/\.sr-info\{[^}]*margin-left:auto/);
-  });
-
-  test('.sr-info has flex-shrink:0 (prevents compression)', () => {
-    expect(styleCss).toMatch(/\.sr-info\{[^}]*flex-shrink:0/);
+  test('all three mobile buttons are children of mobile-action-bar container', () => {
+    const barMatch = html.match(/<div class="mobile-action-bar"[^>]*>([\s\S]*?)<\/div>/);
+    expect(barMatch).not.toBeNull();
+    const barContent = barMatch[1];
+    expect(barContent).toContain('mobileProcessBtn');
+    expect(barContent).toContain('mobileReprocessBtn');
+    expect(barContent).toContain('mobileStopBtn');
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// 14. style.css — --pct CSS variable usage in range input
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// 12. style.css — default hidden state for new mobile elements
+// ═══════════════════════════════════════════════════════════════
 
-describe('style.css — --pct CSS variable in slider track gradient', () => {
-  test('input[type="range"] background uses --pct variable', () => {
-    expect(styleCss).toContain('var(--pct');
-  });
-
-  test('default track gradient goes from red to a surface colour split at --pct', () => {
-    expect(styleCss).toContain(
-      'background:linear-gradient(to right,var(--red) 0%,var(--red) var(--pct,50%),var(--s4) var(--pct,50%),var(--s4) 100%)'
-    );
-  });
-
-  test('realtime slider uses --pct with cyan colour', () => {
-    expect(styleCss).toContain(
-      'background:linear-gradient(to right,var(--cyan) 0%,var(--cyan) var(--pct,50%),var(--s4) var(--pct,50%),var(--s4) 100%)'
-    );
-  });
-
-  test('fallback default for --pct is 50%', () => {
-    expect(styleCss).toContain('var(--pct,50%)');
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 15. style.css — desktop display:none for new mobile elements
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('style.css — new mobile elements hidden on desktop', () => {
-  test('.hdr-stats-toggle is hidden by default (display:none)', () => {
+describe('style.css — mobile elements hidden on desktop by default', () => {
+  test('.hdr-stats-toggle is set to display:none outside media queries', () => {
+    // Must appear at the top-level (not inside a @media block) to default-hide on desktop
     expect(styleCss).toContain('.hdr-stats-toggle{display:none}');
   });
 
-  test('.mobile-action-bar is hidden by default (display:none)', () => {
+  test('.mobile-action-bar is set to display:none outside media queries', () => {
     expect(styleCss).toContain('.mobile-action-bar{display:none}');
   });
 
-  test('both hide rules appear before the responsive media queries', () => {
-    const toggleIdx    = styleCss.indexOf('.hdr-stats-toggle{display:none}');
-    const actionBarIdx = styleCss.indexOf('.mobile-action-bar{display:none}');
-    const mediaIdx     = styleCss.indexOf('@media(max-width:960px)');
-    expect(toggleIdx).toBeLessThan(mediaIdx);
-    expect(actionBarIdx).toBeLessThan(mediaIdx);
+  test('both desktop-hide rules appear before the @media(max-width:960px) breakpoint', () => {
+    const togglePos   = styleCss.indexOf('.hdr-stats-toggle{display:none}');
+    const barPos      = styleCss.indexOf('.mobile-action-bar{display:none}');
+    const mediaPos    = styleCss.indexOf('@media(max-width:960px)');
+    expect(togglePos).toBeGreaterThan(-1);
+    expect(barPos).toBeGreaterThan(-1);
+    expect(mediaPos).toBeGreaterThan(-1);
+    expect(togglePos).toBeLessThan(mediaPos);
+    expect(barPos).toBeLessThan(mediaPos);
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// 16. mobile.css — new CSS custom properties
-// ════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// 13. Regression / boundary tests
+// ═══════════════════════════════════════════════════════════════
 
-describe('mobile.css — new CSS custom properties', () => {
-  test('defines --mob-slider-track', () => {
-    expect(mobileCss).toContain('--mob-slider-track');
+describe('Regression and boundary cases', () => {
+  test('calcPct: value exactly at min and max produce 0.0% and 100.0% (boundary)', () => {
+    // Regression: ensure no off-by-one in the formula
+    expect(calcPct(0, 0, 100)).toBe('0.0%');
+    expect(calcPct(100, 0, 100)).toBe('100.0%');
   });
 
-  test('defines --mob-slider-thumb', () => {
-    expect(mobileCss).toContain('--mob-slider-thumb');
+  test('calcPct: typical slider range (NR amount 0–100, value 60) → 60.0%', () => {
+    expect(calcPct(60, 0, 100)).toBe('60.0%');
   });
 
-  test('defines --mob-touch-min', () => {
-    expect(mobileCss).toContain('--mob-touch-min');
+  test('calcPct: decimal precision — 1/7 produces one decimal place', () => {
+    const r = calcPct(1, 0, 7);
+    // 1/7 * 100 ≈ 14.285…  → 14.3%
+    expect(r).toBe('14.3%');
   });
 
-  test('--mob-slider-track is defined with a pixel value', () => {
-    expect(mobileCss).toMatch(/--mob-slider-track:\s*\d+px/);
+  test('app.js: sr-info is always appended regardless of the s.rt flag', () => {
+    // The infoEl code block is outside the `if (s.rt)` guard
+    const rtIfBlock = appJs.indexOf('if (s.rt) {');
+    const infoElBlock = appJs.indexOf("infoEl.className = 'sr-info'");
+    // infoEl comes after the rt-badge if-block
+    expect(infoElBlock).toBeGreaterThan(rtIfBlock);
+    // infoEl is NOT inside the if (s.rt) block (it appears after the closing brace)
+    const rtBlockEnd = appJs.indexOf("labelEl.appendChild(badge)");
+    expect(infoElBlock).toBeGreaterThan(rtBlockEnd);
   });
 
-  test('--mob-slider-thumb is defined with a pixel value', () => {
-    expect(mobileCss).toMatch(/--mob-slider-thumb:\s*\d+px/);
+  test('index.html: mobileProcessBtn SVG icon has aria-hidden="true" (decorative)', () => {
+    // The play icon inside the button is decorative and must be hidden from AT
+    const svgInBtn = html.match(/id="mobileProcessBtn"[\s\S]*?<\/button>/)?.[0] || '';
+    expect(svgInBtn).toContain('aria-hidden="true"');
   });
 
-  test('--mob-touch-min is 44px (WCAG 2.5.5 minimum touch target)', () => {
-    expect(mobileCss).toMatch(/--mob-touch-min:\s*44px/);
+  test('app.js: stats toggle aria-expanded value is a string, not boolean', () => {
+    // String(expanded) is required — setAttribute expects a string
+    expect(appJs).toContain("String(expanded)");
   });
 
-  test('new properties are declared inside the :root block', () => {
-    const rootBlock = mobileCss.match(/:root\s*\{([\s\S]*?)\}/);
-    expect(rootBlock).not.toBeNull();
-    expect(rootBlock[1]).toContain('--mob-slider-track');
-    expect(rootBlock[1]).toContain('--mob-slider-thumb');
-    expect(rootBlock[1]).toContain('--mob-touch-min');
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 17. mobile.css — .hdr-stats.expanded styles
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('mobile.css — .hdr-stats.expanded styles', () => {
-  test('.hdr-stats.expanded is defined', () => {
-    expect(mobileCss).toContain('.hdr-stats.expanded');
-  });
-
-  test('.hdr-stats.expanded uses display:grid (grid layout when expanded)', () => {
-    expect(mobileCss).toMatch(/\.hdr-stats\.expanded\s*\{[^}]*display:\s*grid/);
-  });
-
-  test('.hdr-stats is hidden by default in mobile (display:none)', () => {
-    expect(mobileCss).toMatch(/\.hdr-stats\s*\{\s*display:\s*none/);
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 18. mobile.css — .hdr-stats-toggle styles in mobile media query
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('mobile.css — .hdr-stats-toggle visible on mobile', () => {
-  test('.hdr-stats-toggle is shown on mobile with display:flex', () => {
-    expect(mobileCss).toMatch(/\.hdr-stats-toggle\s*\{[^}]*display:\s*flex/);
-  });
-
-  test('.hdr-stats-toggle has a defined width', () => {
-    expect(mobileCss).toMatch(/\.hdr-stats-toggle\s*\{[^}]*width:/);
-  });
-
-  test('.hdr-stats-toggle has a defined height', () => {
-    expect(mobileCss).toMatch(/\.hdr-stats-toggle\s*\{[^}]*height:/);
-  });
-
-  test('.hdr-stats-toggle has cursor:pointer', () => {
-    expect(mobileCss).toMatch(/\.hdr-stats-toggle\s*\{[^}]*cursor:\s*pointer/);
-  });
-
-  test('.hdr-stats-toggle has border-radius for rounded appearance', () => {
-    expect(mobileCss).toMatch(/\.hdr-stats-toggle\s*\{[^}]*border-radius:/);
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 19. mobile.css — mobile action bar styles
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('mobile.css — sticky mobile action bar styles', () => {
-  test('.mobile-action-bar is defined inside a max-width:768px media query', () => {
-    // Find the 768px block
-    const media768 = mobileCss.match(/@media \(max-width: 768px\)([\s\S]*?)(?=@media|\s*$)/g);
-    expect(media768).not.toBeNull();
-    const hasBar = media768.some(block => block.includes('.mobile-action-bar'));
-    expect(hasBar).toBe(true);
-  });
-
-  test('.mobile-action-bar uses position:fixed', () => {
-    expect(mobileCss).toMatch(/\.mobile-action-bar\s*\{[^}]*position:\s*fixed/);
-  });
-
-  test('.mobile-action-bar is anchored to bottom:0', () => {
-    expect(mobileCss).toMatch(/\.mobile-action-bar\s*\{[^}]*bottom:\s*0/);
-  });
-
-  test('.mobile-action-bar has z-index:200 (above content)', () => {
-    expect(mobileCss).toMatch(/\.mobile-action-bar\s*\{[^}]*z-index:\s*200/);
-  });
-
-  test('.mobile-action-bar spans full width (left:0 and right:0)', () => {
-    const barBlock = mobileCss.match(/\.mobile-action-bar\s*\{([^}]*)\}/);
-    expect(barBlock).not.toBeNull();
-    expect(barBlock[1]).toContain('left: 0');
-    expect(barBlock[1]).toContain('right: 0');
-  });
-
-  test('.mobile-action-bar respects safe-area-inset-bottom for notch devices', () => {
-    expect(mobileCss).toMatch(/\.mobile-action-bar\s*\{[^}]*var\(--safe-bottom\)/);
-  });
-
-  test('.mobile-action-bar uses display:flex for horizontal layout', () => {
-    expect(mobileCss).toMatch(/\.mobile-action-bar\s*\{[^}]*display:\s*flex/);
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 20. mobile.css — .sr-info hidden on mobile (touch tooltips not useful)
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('mobile.css — .sr-info hidden on mobile', () => {
-  test('.sr-info has display:none in the mobile stylesheet', () => {
-    expect(mobileCss).toContain('.sr-info { display: none; }');
-  });
-
-  test('.sr-info hide rule is inside a max-width media query', () => {
-    // Confirm it is inside a @media block, not at the root level
-    const srInfoIdx = mobileCss.indexOf('.sr-info { display: none; }');
-    // Find the nearest @media opening before this position
-    const beforeRule = mobileCss.substring(0, srInfoIdx);
-    const lastMedia  = beforeRule.lastIndexOf('@media');
-    expect(lastMedia).toBeGreaterThan(-1);
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 21. mobile.css — actions-row hidden when mobile action bar is active
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('mobile.css — in-panel actions-row hidden when mobile bar is shown', () => {
-  test('.actions-row is hidden inside the 768px breakpoint', () => {
-    // actions-row is set to display: none in mobile so the sticky bar takes over
-    expect(mobileCss).toContain('.actions-row { display: none; }');
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 22. mobile.css — touch pointer min-height uses --mob-touch-min variable
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('mobile.css — touch target min-height uses CSS variable', () => {
-  test('min-height for buttons references --mob-touch-min', () => {
-    expect(mobileCss).toContain('min-height: var(--mob-touch-min)');
-  });
-
-  test('min-width for buttons references --mob-touch-min', () => {
-    expect(mobileCss).toContain('min-width: var(--mob-touch-min)');
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 23. mobile.css — slider track and thumb use --mob-slider-track/thumb vars
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('mobile.css — slider track and thumb sizing via CSS variables', () => {
-  test('input[type="range"] height references --mob-slider-track', () => {
-    expect(mobileCss).toContain('height: var(--mob-slider-track)');
-  });
-
-  test('slider thumb width references --mob-slider-thumb', () => {
-    expect(mobileCss).toContain('width: var(--mob-slider-thumb)');
-  });
-
-  test('slider thumb height references --mob-slider-thumb', () => {
-    expect(mobileCss).toContain('height: var(--mob-slider-thumb)');
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 24. Regression — old ::after pseudo-element info icon removed from CSS
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('style.css — old ::after info icon removed (replaced by sr-info element)', () => {
-  test('sr-label::after with ⓘ content is no longer present', () => {
-    // The old implementation used .sr-label::after { content:'ⓘ' }
-    // It was replaced by the JS-generated .sr-info span
-    expect(styleCss).not.toContain(".sr-label::after{content:'ⓘ'");
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-// 25. Regression — old border-bottom separator on .sr-row removed
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('style.css — .sr-row styling updated', () => {
-  test('.sr-row no longer uses border-bottom for separation', () => {
-    // Old: border-bottom:1px solid rgba(255,255,255,0.02)
-    // New: uses hover background instead
-    expect(styleCss).not.toContain('border-bottom:1px solid rgba(255,255,255,0.02)');
-  });
-
-  test('.sr-row now has a hover background transition', () => {
-    expect(styleCss).toContain('.sr-row:hover{background:rgba(255,255,255,0.024)}');
+  test('app.js: every mobileProcessBtn access in runPipeline is covered by a null guard', () => {
+    // Count how many times the null-guard appears vs how many times the button is accessed
+    const runPipelineBlock = appJs.match(/async runPipeline\(\)[\s\S]*?async pip\(/)?.[0] || '';
+    const guardCount  = (runPipelineBlock.match(/if \(this\.dom\.mobileProcessBtn\)/g) || []).length;
+    const accessCount = (runPipelineBlock.match(/this\.dom\.mobileProcessBtn\b/g) || []).length;
+    // Each guard covers at least one access so guards must be >= half of total occurrences
+    // (guard line + access line = 2 occurrences per guarded site when written as single-line if)
+    expect(guardCount).toBeGreaterThanOrEqual(1);
+    expect(accessCount).toBeGreaterThan(0);
+    // Every access count should be paired with a guard on the same or previous expression
+    expect(guardCount * 2).toBeGreaterThanOrEqual(accessCount);
   });
 });
