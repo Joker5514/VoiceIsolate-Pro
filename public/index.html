@@ -30,7 +30,8 @@ h1 em{font-style:italic;color:var(--cyan)}
 .expand-arrow{font-size:0.8rem;color:var(--dim);transition:transform 0.3s;display:inline-block}
 .card-expand.open .expand-arrow{transform:rotate(90deg)}
 .specs-detail{max-height:0;overflow:hidden;transition:max-height 0.4s ease,opacity 0.3s;opacity:0;margin-top:0}
-.card-expand.open .specs-detail{max-height:800px;opacity:1;margin-top:1rem}
+.card-expand.open .specs-detail{max-height:3000px;opacity:1;margin-top:1rem}
+.card-expand.open{grid-column:1/-1}
 .spec-group{margin-bottom:1rem}
 .spec-group h3{font-family:var(--mono);font-size:0.65rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--cyan);margin-bottom:0.4rem}
 .spec-group p{font-size:0.78rem;color:var(--dim);line-height:1.5;margin-bottom:0.2rem}
@@ -40,6 +41,37 @@ h1 em{font-style:italic;color:var(--cyan)}
 .spec-pills span{font-family:var(--mono);font-size:0.55rem;padding:0.15rem 0.45rem;border-radius:3px;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.12);color:var(--dim)}
 .spec-models{display:flex;flex-direction:column;gap:0.25rem}
 .spec-models span{font-size:0.75rem;color:var(--dim)}
+/* Tech-card styles (adapted from app) */
+.tech-card-hdr{margin-bottom:14px}
+.tech-card-title-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--dim);flex-wrap:wrap}
+.tech-card-badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.52rem;font-weight:700;letter-spacing:0.1em;color:var(--cyan);background:rgba(0,212,255,0.07);border:1px solid rgba(0,212,255,0.18)}
+.tech-card-badge-new{color:var(--cyan);background:rgba(0,212,255,0.07);border-color:rgba(0,212,255,0.18)}
+.tech-card-sub{font-size:0.72rem;color:var(--dim);line-height:1.5;max-width:680px}
+.tech-pipeline-flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:rgba(13,15,20,0.7);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:14px}
+.tpf-step{display:flex;align-items:center;gap:5px}
+.tpf-num{font-family:var(--mono);font-size:0.6rem;font-weight:700;color:var(--cyan);background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.2);border-radius:3px;padding:1px 5px;white-space:nowrap}
+.tpf-lbl{font-size:0.65rem;color:var(--dim);white-space:nowrap}
+.tpf-arrow{color:var(--dim);flex-shrink:0}
+.tech-features-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+@media(max-width:640px){.tech-features-grid{grid-template-columns:1fr}}
+.tf-item{background:rgba(13,15,20,0.7);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:flex;gap:10px;transition:border-color 0.15s}
+.tf-item:hover{border-color:rgba(0,212,255,0.25)}
+.tf-icon{width:32px;height:32px;flex-shrink:0;border-radius:6px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.15);display:flex;align-items:center;justify-content:center;color:var(--cyan)}
+.tf-body{min-width:0}
+.tf-title{font-size:0.72rem;font-weight:700;color:var(--text);margin-bottom:3px}
+.tf-desc{font-size:0.62rem;color:var(--dim);line-height:1.55;margin-bottom:5px}
+.tf-formula{display:block;font-family:var(--mono);font-size:0.56rem;color:var(--cyan);background:rgba(0,212,255,0.05);border-left:2px solid rgba(0,212,255,0.3);padding:3px 7px;border-radius:0 3px 3px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tf-item-highlight{border-color:rgba(0,212,255,0.2);background:linear-gradient(135deg,rgba(13,15,20,0.7),rgba(0,212,255,0.03))}
+.tf-icon-ml{background:rgba(139,92,246,0.08);border-color:rgba(139,92,246,0.2);color:var(--violet)}
+.tf-icon-forensic{background:rgba(0,212,255,0.08);border-color:rgba(0,212,255,0.2);color:var(--cyan)}
+.tf-icon-viz{background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.2);color:var(--green)}
+.tf-badge-ml{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(139,92,246,0.1);color:var(--violet);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
+.tf-badge-new{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(0,212,255,0.1);color:var(--cyan);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
+.tf-badge-restored{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(16,185,129,0.1);color:var(--green);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
+.tech-stack-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--border)}
+.ts-label{font-size:0.55rem;font-weight:700;letter-spacing:0.1em;color:var(--dim);text-transform:uppercase;margin-right:3px}
+.ts-chip{font-family:var(--mono);font-size:0.58rem;padding:2px 8px;border-radius:3px;background:rgba(26,30,42,0.5);border:1px solid var(--border);color:var(--dim)}
+.ts-chip-highlight{background:rgba(0,212,255,0.08);border-color:rgba(0,212,255,0.2);color:var(--cyan)}
 </style>
 </head>
 <body>
@@ -52,47 +84,153 @@ h1 em{font-style:italic;color:var(--cyan)}
 <div class="cards">
   <a href="/app/" class="card">
     <span class="card-tag">Launch App</span>
-    <h2>Engineer Mode v19.0</h2>
+    <h2>Engineer Mode v22.0</h2>
     <p>Full processing application. 52 real-time sliders, 3D spectrogram, multi-band DSP chain, A/B comparison. Drop audio and process.</p>
     <span class="arrow">→</span>
   </a>
   <div class="card card-expand" onclick="this.classList.toggle('open')" style="cursor:pointer;">
     <span class="card-tag">Technical Specs</span>
     <h2>How It Works <span class="expand-arrow">▸</span></h2>
-    <p>Hybrid ML + DSP pipeline. 100% in-browser. Forensic SHA-256 audit trail. Tap to see full engine specs.</p>
+    <p>36-stage Deca-Pass hybrid ML + DSP pipeline. 100% in-browser. Tap to expand full engine specs.</p>
     <div class="specs-detail">
-      <div class="spec-group">
-        <h3>Single-Pass STFT Pipeline</h3>
-        <p class="spec-flow">Forward FFT 4096 → 30 in-place spectral stages → Inverse FFT</p>
-        <div class="spec-pills">
-          <span>Wiener Filter</span><span>ML Masking</span><span>Noise Profile</span><span>Hum Removal</span><span>De-reverb</span><span>10-Band EQ</span><span>Compressor</span><span>Limiter</span><span>De-esser</span><span>Harmonic Enhance</span><span>Spectral Gate</span><span>Phase Correction</span>
+      <div class="tech-card-hdr">
+        <div class="tech-card-title-row">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
+          <span class="tech-card-badge">36-STAGE DECA-PASS</span>
+          <span class="tech-card-badge tech-card-badge-new">v22 TFS v10</span>
+        </div>
+        <p class="tech-card-sub">A hybrid ML + DSP pipeline processes audio entirely in-browser with optional forensic SHA-256 audit trail — zero data transmission, full privacy, court-ready output.</p>
+      </div>
+
+      <div class="tech-pipeline-flow" aria-label="Pipeline signal flow">
+        <div class="tpf-step">
+          <span class="tpf-num">1–4</span>
+          <span class="tpf-lbl">Input Conditioning &amp; Cleanup</span>
+        </div>
+        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="tpf-step">
+          <span class="tpf-num">5–10</span>
+          <span class="tpf-lbl">STFT &amp; ML Source Separation</span>
+        </div>
+        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="tpf-step">
+          <span class="tpf-num">11–21</span>
+          <span class="tpf-lbl">Spectral Ops (In-Place) &amp; iSTFT</span>
+        </div>
+        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="tpf-step">
+          <span class="tpf-num">22–36</span>
+          <span class="tpf-lbl">EQ, Dynamics, LUFS &amp; Export</span>
         </div>
       </div>
-      <div class="spec-group">
-        <h3>ML Models (Local ONNX)</h3>
-        <div class="spec-models">
-          <span><strong>Demucs v4.1</strong> — 4-stem separation</span>
-          <span><strong>BSRNN</strong> — Sub-band masking</span>
-          <span><strong>Silero VAD</strong> — Voice activity</span>
-          <span><strong>RNNoise</strong> — Real-time denoise</span>
+
+      <div class="tech-features-grid">
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4l3-9 4 18 3-9h6"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">Spectral Subtraction</h3>
+            <p class="tf-desc">64-band frequency-domain noise removal using over-subtraction with a spectral floor to eliminate musical noise artifacts.</p>
+            <code class="tf-formula">|X&#770;(&#969;)| = max(|X(&#969;)| - &#945;&#183;E[|N(&#969;)|], &#946;&#183;|X(&#969;)|)</code>
+          </div>
+        </div>
+
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">Wiener Filtering</h3>
+            <p class="tf-desc">Adaptive MMSE Wiener gain applied per frequency bin — strongest suppression in low-SNR regions for natural-sounding output.</p>
+            <code class="tf-formula">G(t) = &#8730;( max(P_signal - P_noise, 0) / max(P_signal, &#949;) )</code>
+          </div>
+        </div>
+
+        <div class="tf-item tf-item-highlight">
+          <div class="tf-icon tf-icon-ml" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">Silero VAD + ONNX Runtime <span class="tf-badge-ml">ML</span></h3>
+            <p class="tf-desc">ONNX Runtime Web powers real-time Voice Activity Detection in a dedicated Web Worker — classifying speech frames at sub-millisecond latency with zero network calls.</p>
+            <code class="tf-formula">P(voice | frame) &#8594; gate mask @ 20 ms chunks &#183; ONNX WebGL backend</code>
+          </div>
+        </div>
+
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="4" height="10" rx="1"/><rect x="9" y="4" width="4" height="16" rx="1"/><rect x="16" y="9" width="4" height="8" rx="1"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">Dynamics &amp; Compression</h3>
+            <p class="tf-desc">Envelope-follower compressor with per-sample attack/release constants keeps dialogue intelligible across wide dynamic range content.</p>
+            <code class="tf-formula">a = exp(-1 / (SR &#183; t_attack)) &#183; GR = -max((L - T)&#183;(1 - 1/R), 0)</code>
+          </div>
+        </div>
+
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">LUFS Normalization</h3>
+            <p class="tf-desc">Output is normalized to broadcast targets — -14 LUFS for streaming, -16 LUFS for podcasts — using ITU-R BS.1770-4 K-weighted measurement.</p>
+            <code class="tf-formula">gain = 10^( (L_target - L_measured) / 20 )</code>
+          </div>
+        </div>
+
+        <div class="tf-item">
+          <div class="tf-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">100% Local Processing</h3>
+            <p class="tf-desc">All DSP runs in-browser via Web Workers and AudioWorklet. Audio never leaves your device — no uploads, no servers, no storage.</p>
+            <code class="tf-formula">Worker Pool &#8594; DSP Thread &#8594; AudioWorklet &#8594; Output Buffer</code>
+          </div>
+        </div>
+
+        <div class="tf-item tf-item-highlight">
+          <div class="tf-icon tf-icon-forensic" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">Forensic Mode <span class="tf-badge-new">NEW</span></h3>
+            <p class="tf-desc">Enable SHA-256 cryptographic hashing at each processing stage to create a court-admissible audit trail. Download the complete chain-of-custody log after processing.</p>
+            <code class="tf-formula">SHA-256(stage_n) &#8594; audit_log.json &#183; timestamp + stage + hash</code>
+          </div>
+        </div>
+
+        <div class="tf-item tf-item-highlight">
+          <div class="tf-icon tf-icon-viz" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          </div>
+          <div class="tf-body">
+            <h3 class="tf-title">Full-File Spectrogram <span class="tf-badge-restored">RESTORED</span></h3>
+            <p class="tf-desc">Interactive overview spectrogram with A/B toggle for original vs processed comparison. Click to seek, multiple colormaps (Plasma, Ocean, Voice ID, Thermal), log frequency scale.</p>
+            <code class="tf-formula">FFT &#8594; Log-Mel &#8594; Canvas2D &#183; 20 Hz - 22 kHz &#183; Click-to-seek</code>
+          </div>
         </div>
       </div>
-      <div class="spec-group">
-        <h3>Runtime</h3>
-        <div class="spec-pills">
-          <span>WebGPU</span><span>WASM SIMD</span><span>ONNX Runtime Web</span><span>AudioWorklet</span><span>SharedArrayBuffer</span><span>OfflineAudioContext</span>
-        </div>
-      </div>
-      <div class="spec-group">
-        <h3>Modes</h3>
-        <p><strong>Live:</strong> &lt;10ms via AudioWorklet + lock-free ring buffer</p>
-        <p><strong>Creator/Forensic:</strong> Offline full-quality 32-stage pipeline</p>
+
+      <div class="tech-stack-row" aria-label="Technology stack">
+        <span class="ts-label">STACK</span>
+        <span class="ts-chip">Web Audio API</span>
+        <span class="ts-chip">AudioWorklet</span>
+        <span class="ts-chip">Web Workers</span>
+        <span class="ts-chip ts-chip-highlight">ONNX Runtime Web</span>
+        <span class="ts-chip">Silero VAD</span>
+        <span class="ts-chip">WebAssembly DSP</span>
+        <span class="ts-chip">Three.js 3D</span>
+        <span class="ts-chip">32-bit Float</span>
+        <span class="ts-chip ts-chip-highlight">SHA-256 Forensic</span>
       </div>
     </div>
   </div>
 </div>
 
-<div class="footer">Threads from Space v8 Architecture — Privacy-First — March 2026</div>
+<div class="footer">Threads from Space v10 Architecture — Privacy-First — March 2026</div>
 
 <!-- Vercel Speed Insights -->
 <script>
