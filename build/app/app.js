@@ -251,6 +251,11 @@ class VoiceIsolatePro {
           badge.textContent = 'RT';
           labelEl.appendChild(badge);
         }
+        const infoEl = document.createElement('span');
+        infoEl.className = 'sr-info';
+        infoEl.textContent = 'i';
+        infoEl.setAttribute('aria-hidden', 'true');
+        labelEl.appendChild(infoEl);
 
         const inputEl = document.createElement('input');
         inputEl.type = 'range';
@@ -265,6 +270,9 @@ class VoiceIsolatePro {
         inputEl.setAttribute('aria-valuemin', s.min);
         inputEl.setAttribute('aria-valuemax', s.max);
         inputEl.setAttribute('aria-valuenow', s.val);
+        // Set initial fill percentage for styled track
+        const initPct = ((s.val - s.min) / (s.max - s.min)) * 100;
+        inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
 
         const valEl = document.createElement('span');
         valEl.className = 'sr-val';
@@ -286,6 +294,8 @@ class VoiceIsolatePro {
       uploadZone:g('uploadZone'), fileInput:g('fileInput'), fileBtn:g('fileBtn'),
       micBtn:g('micBtn'), micLabel:g('micLabel'), fileInfo:g('fileInfo'),
       processBtn:g('processBtn'), reprocessBtn:g('reprocessBtn'), stopProcBtn:g('stopProcBtn'),
+      mobileProcessBtn:g('mobileProcessBtn'), mobileReprocessBtn:g('mobileReprocessBtn'), mobileStopBtn:g('mobileStopBtn'),
+      statsToggle:g('statsToggle'), hdrStats:g('hdrStats'),
       saveOrigBtn:g('saveOrigBtn'), saveProcBtn:g('saveProcBtn'),
       auditLogBtn:g('auditLogBtn'), forensicToggle:g('forensicToggle'),
       videoCard:g('videoCard'), videoPlayer:g('videoPlayer'),
@@ -368,6 +378,18 @@ class VoiceIsolatePro {
     if (this.dom.auditLogBtn) {
       this.dom.auditLogBtn.addEventListener('click', () => this.downloadAuditLog());
     }
+    // Mobile action bar mirrors desktop process buttons
+    if (this.dom.mobileProcessBtn)   this.dom.mobileProcessBtn.addEventListener('click', () => this.runPipeline());
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.addEventListener('click', () => this.runPipeline());
+    if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.addEventListener('click', () => { this.abortFlag = true; });
+    // Mobile stats toggle
+    if (this.dom.statsToggle && this.dom.hdrStats) {
+      this.dom.statsToggle.addEventListener('click', () => {
+        const expanded = this.dom.hdrStats.classList.toggle('expanded');
+        this.dom.statsToggle.setAttribute('aria-expanded', String(expanded));
+        this.dom.statsToggle.textContent = expanded ? '▲' : '▼';
+      });
+    }
     window.addEventListener('resize', () => this.onResize());
   }
 
@@ -382,6 +404,9 @@ class VoiceIsolatePro {
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
     el.setAttribute('aria-valuenow', v);
+    // Update filled-track CSS variable
+    const pct = ((v - parseFloat(el.min)) / (parseFloat(el.max) - parseFloat(el.min))) * 100;
+    el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
   }
 
@@ -392,7 +417,7 @@ class VoiceIsolatePro {
     const actions = document.querySelector('.custom-preset-actions');
     if (!row || !actions) return;
 
-    for (const [id, preset] of Object.entries(this.customPresets)) {
+    for (const [id] of Object.entries(this.customPresets)) {
       if (document.querySelector(`.btn-preset[data-preset="${id}"]`)) continue;
       const name = id.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
       const btn = document.createElement('button');
@@ -444,7 +469,13 @@ class VoiceIsolatePro {
       for (const s of sliders) {
         const el = document.getElementById(s.id);
         const ve = document.getElementById(s.id + 'Val');
-        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; el.setAttribute('aria-valuenow', this.params[s.id]); if (ve) ve.textContent = this.params[s.id] + s.unit; }
+        if (el && this.params[s.id] !== undefined) {
+          el.value = this.params[s.id];
+          el.setAttribute('aria-valuenow', this.params[s.id]);
+          if (ve) ve.textContent = this.params[s.id] + s.unit;
+          const pct = ((this.params[s.id] - s.min) / (s.max - s.min)) * 100;
+          el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
+        }
       }
     }
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
@@ -576,6 +607,8 @@ class VoiceIsolatePro {
     const dur = this.fmtDur(buf.duration);
     this.dom.fileInfo.textContent = (name || 'Recording') + ' (' + dur + ')';
     this.dom.processBtn.disabled = false;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled;
     this.dom.saveOrigBtn.disabled = false;
     this.dom.reprocessBtn.disabled = true;
     this.dom.saveProcBtn.disabled = true;
@@ -656,9 +689,9 @@ class VoiceIsolatePro {
   // ======== TRANSPORT ========
   play() {
     // Teardown previous playback state without resetting playOffset
-    this.teardownChain();
+    if (typeof this.teardownChain === 'function') this.teardownChain();
     if (this.isVideo && this.isPlaying) this.dom.videoPlayer.pause();
-    this.stopSpectro();
+    if (typeof this.stopSpectro === 'function') this.stopSpectro();
     if (typeof this.stopDiagnostics === 'function') this.stopDiagnostics();
     this.isPlaying = false;
 
@@ -839,6 +872,9 @@ class VoiceIsolatePro {
     if (!this.inputBuffer || this.isProcessing) return;
     this.isProcessing = true; this.abortFlag = false;
     this.dom.processBtn.style.display = 'none'; this.dom.stopProcBtn.style.display = 'inline-flex';
+    if (this.dom.mobileProcessBtn)   this.dom.mobileProcessBtn.style.display = 'none';
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display = 'none';
+    if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display = 'inline-flex';
     this.dom.saveProcBtn.disabled = true; this.dom.tpAB.disabled = true;
     this.setStatus('PROCESSING');
     if (this.forensicMode) { this.forensicLog = []; }
@@ -997,6 +1033,7 @@ class VoiceIsolatePro {
       this.drawWaveform(fin, this.dom.waveProcCanvas, '#22d3ee');
       this.dom.stVoices.textContent = this.estVoices(fin);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
+      if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
       this.dom.tpABLabel.textContent = 'Ready — A/B';
       if (this.dom.fsBtnAB) this.dom.fsBtnAB.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = !this.forensicMode || this.forensicLog.length === 0;
@@ -1006,6 +1043,9 @@ class VoiceIsolatePro {
       else { structuredLog('error', 'Pipeline error', { error: e instanceof Error ? e.message : String(e) }); this.setStatus('ERROR'); this.dom.pipeDetail.textContent=e instanceof Error ? e.message : String(e); }
     } finally {
       this.isProcessing=false; this.dom.processBtn.style.display='inline-flex'; this.dom.stopProcBtn.style.display='none';
+      if (this.dom.mobileProcessBtn)   { this.dom.mobileProcessBtn.style.display='inline-flex'; }
+      if (this.dom.mobileReprocessBtn) { this.dom.mobileReprocessBtn.style.display='inline-flex'; this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled; }
+      if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display='none';
     }
   }
 

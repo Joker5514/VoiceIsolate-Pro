@@ -36,7 +36,9 @@
         <span class="hdr-badge">ENGINEER MODE</span>
       </div>
     </div>
-    <div class="hdr-stats">
+    <!-- Mobile stats toggle (visible only on small screens via CSS) -->
+    <button class="hdr-stats-toggle" id="statsToggle" aria-label="Toggle stats" aria-expanded="false">&#9660;</button>
+    <div class="hdr-stats" id="hdrStats">
       <div class="hdr-stat"><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR Gain</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
@@ -446,6 +448,16 @@
     <span>VoiceIsolate Pro v21.0 · Threads from Space v10 · Hybrid ML+DSP · 32-Stage Octa-Pass · Mobile-Ready</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
+
+  <!-- Mobile sticky action bar (hidden on desktop via CSS) -->
+  <div class="mobile-action-bar" id="mobileActionBar">
+    <button id="mobileProcessBtn" class="btn btn-primary" disabled>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+      Process
+    </button>
+    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Re-run</button>
+    <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Abort</button>
+  </div>
 
   <div id="tooltip" class="slider-tooltip"></div>
   <!-- v21 Modular Architecture: TFS v10 + Capacitor Mobile -->

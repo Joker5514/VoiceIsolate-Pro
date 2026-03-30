@@ -2,6 +2,7 @@
    VoiceIsolate Pro v21.0 — Mobile Styles
    Capacitor Android/iOS native shell support
    Safe area insets, touch targets, gestures
+   Complete mobile UI layout
    ============================================ */
 
 /* ── Safe Area Insets (iPhone notch / Android cutout) ── */
@@ -10,6 +11,10 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+  /* Mobile-specific sizing */
+  --mob-slider-track: 6px;
+  --mob-slider-thumb: 24px;
+  --mob-touch-min: 44px;
 }
 
 /* ── Capacitor Native Shell Overrides ── */
@@ -23,109 +28,17 @@
 }
 
 .capacitor-native .hdr {
-  padding-top: calc(0.75rem + var(--safe-top));
+  padding-top: calc(0.5rem + var(--safe-top));
 }
 
 .capacitor-native .ftr {
-  padding-bottom: calc(1rem + var(--safe-bottom));
+  padding-bottom: calc(0.75rem + var(--safe-bottom));
 }
 
-/* ── Touch Target Minimum Size (WCAG 2.5.5) ── */
-@media (pointer: coarse) {
-  .btn,
-  .tab,
-  .btn-tp,
-  .btn-preset {
-    min-height: 44px;
-    min-width: 44px;
-  }
-
-  /* Larger sliders for touch */
-  input[type="range"] {
-    height: 32px;
-    cursor: pointer;
-  }
-
-  input[type="range"]::-webkit-slider-thumb {
-    width: 24px;
-    height: 24px;
-  }
-
-  input[type="range"]::-moz-range-thumb {
-    width: 24px;
-    height: 24px;
-  }
-}
-
-/* ── Mobile Layout Adjustments ── */
-@media (max-width: 768px) {
-  .main-grid {
-    grid-template-columns: 1fr !important;
-  }
-
-  .col-right {
-    order: -1; /* Show visualizations first on mobile */
-  }
-
-  .hdr-stats {
-    display: none; /* Hide stats bar on small screens */
-  }
-
-  .hdr-stats.expanded {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  /* Collapsible stats toggle for mobile */
-  .hdr-stats-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    cursor: pointer;
-    color: var(--text-muted, #888);
-    font-size: 12px;
-  }
-
-  .tabs {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    flex-wrap: nowrap !important;
-  }
-
-  .tabs::-webkit-scrollbar {
-    display: none;
-  }
-
-  .presets-row {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-    flex-wrap: nowrap !important;
-    padding-bottom: 4px;
-  }
-
-  .presets-row::-webkit-scrollbar {
-    display: none;
-  }
-
-  .wave-row {
-    grid-template-columns: 1fr !important;
-  }
-
-  .tech-features-grid {
-    grid-template-columns: 1fr !important;
-  }
-
-  .tech-stack-row {
-    flex-wrap: wrap;
-  }
+/* ── Smooth scrolling + font size lock ── */
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
 }
 
 /* ── Prevent text selection on UI controls ── */
@@ -141,29 +54,382 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-/* ── Smooth scrolling for mobile ── */
-html {
-  scroll-behavior: smooth;
-  -webkit-text-size-adjust: 100%;
-}
-
-/* ── Upload zone touch improvements ── */
 .upload-zone {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
 
-/* ── Haptic feedback visual cue ── */
+/* ═══════════════════════════════════════════
+   BREAKPOINT: Tablet / phablet  ≤ 960px
+   ═══════════════════════════════════════════ */
+@media (max-width: 960px) {
+  .main-grid {
+    grid-template-columns: 1fr;
+    margin: 6px auto;
+    padding: 0 8px 80px; /* room for mobile action bar */
+  }
+
+  /* Visualisations above controls on tablet */
+  .col-right { order: -1; }
+  .col-left  { order:  1; }
+
+  .wave-row { grid-template-columns: 1fr; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .ftr { flex-direction: column; text-align: center; gap: 2px; }
+}
+
+/* ═══════════════════════════════════════════
+   BREAKPOINT: Mobile  ≤ 768px
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* ── Header ── */
+  .hdr {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .hdr-left { gap: 8px; }
+  .hdr-icon { width: 30px; height: 30px; border-radius: 6px; }
+  .hdr-title { font-size: 0.95rem; }
+  .hdr-ver   { font-size: 0.65rem; }
+  .hdr-badge { font-size: 0.5rem; padding: 1px 5px; }
+
+  /* Stats collapsed by default, toggled via JS .expanded */
+  .hdr-stats { display: none; width: 100%; }
+  .hdr-stats.expanded {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px 8px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .hdr-stat { text-align: center; }
+  .hs-val   { font-size: 0.72rem; }
+  .hs-lbl   { font-size: 0.5rem; }
+
+  /* Stats toggle button (injected by app.js or present in HTML) */
+  .hdr-stats-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    cursor: pointer;
+    color: var(--dim);
+    font-size: 14px;
+    -webkit-tap-highlight-color: transparent;
+    flex-shrink: 0;
+  }
+  .hdr-stats-toggle:active { background: rgba(255,255,255,0.1); }
+
+  /* ── Cards ── */
+  .card { padding: 8px; border-radius: 8px; }
+
+  /* ── Upload ── */
+  .upload-zone { padding: 14px 10px; }
+
+  /* ── Tabs ── */
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap;
+    gap: 4px;
+    padding-bottom: 2px;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    padding: 7px 12px;
+    font-size: 0.68rem;
+    border-radius: 8px;
+  }
+
+  /* ── Slider panels ── */
+  .panels {
+    max-height: none;
+    overflow-y: visible;
+    padding: 4px 6px 6px;
+    border-radius: 8px;
+  }
+
+  /* ── Slider rows: 2-row layout on mobile ──
+     Top row: label + value
+     Bottom row: full-width track              */
+  .sr-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 4px 8px;
+    padding: 9px 8px;
+    border-radius: 8px;
+  }
+  .sr-label {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text);
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    line-height: 1.3;
+  }
+  /* Hide the info icon on mobile — tooltip not useful on touch */
+  .sr-info { display: none; }
+
+  .sr-val {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 0.7rem;
+    padding: 3px 7px;
+    align-self: center;
+    min-width: 52px;
+    text-align: center;
+  }
+  input[type="range"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    height: var(--mob-slider-track);
+    border-radius: calc(var(--mob-slider-track) / 2);
+    /* track gradient shape still driven by --pct */
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: var(--mob-slider-track);
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    width: var(--mob-slider-thumb);
+    height: var(--mob-slider-thumb);
+    margin-top: calc((var(--mob-slider-thumb) / -2) + (var(--mob-slider-track) / 2));
+    border-width: 3px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: var(--mob-slider-thumb);
+    height: var(--mob-slider-thumb);
+    border-width: 3px;
+  }
+
+  /* RT badge sizing */
+  .rt-badge { font-size: 0.5rem; padding: 1px 5px; }
+
+  /* ── Presets row ── */
+  .presets-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-wrap: nowrap !important;
+    padding-bottom: 4px;
+    gap: 5px;
+  }
+  .presets-row::-webkit-scrollbar { display: none; }
+  .btn-preset {
+    padding: 6px 11px;
+    font-size: 0.65rem;
+    border-radius: 7px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .presets-label { flex-shrink: 0; }
+
+  /* Custom preset input area */
+  .custom-preset-actions {
+    flex-shrink: 0;
+    gap: 5px !important;
+  }
+
+  /* ── Action buttons ── */
+  .actions-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .actions-row .btn {
+    width: 100%;
+    justify-content: center;
+    font-size: 0.78rem;
+    padding: 11px 14px;
+    border-radius: 9px;
+  }
+  /* Hide abort in actions-row; shown in sticky bar if needed */
+
+  /* ── Pipeline box ── */
+  .pipeline-box { padding: 8px 10px; }
+  .pipe-bar { height: 5px; border-radius: 3px; }
+  .pipe-fill { border-radius: 3px; }
+
+  /* ── Save row ── */
+  .save-row { flex-wrap: wrap; gap: 5px; }
+  .save-row .btn { flex: 1 1 auto; justify-content: center; }
+
+  /* ── Tech card ── */
+  .tech-features-grid { grid-template-columns: 1fr !important; }
+  .tech-stack-row { flex-wrap: wrap; }
+  .tech-pipeline-flow { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .tpf-arrow { transform: rotate(90deg); margin-left: 8px; }
+
+  /* ── Stats row ── */
+  .stats-row { grid-template-columns: repeat(2, 1fr); gap: 5px; }
+
+  /* ── Footer ── */
+  .ftr { flex-direction: column; text-align: center; gap: 2px; font-size: 0.54rem; }
+}
+
+/* ═══════════════════════════════════════════
+   BREAKPOINT: Small phones  ≤ 480px
+   ═══════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .hdr-stats.expanded {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  /* Forensic toggle — move to bottom of stats on tiny screens */
+  .forensic-toggle-wrap {
+    grid-column: 1 / -1;
+    justify-content: center;
+    padding-top: 2px;
+  }
+  .sr-label { font-size: 0.7rem; }
+  .sr-val   { font-size: 0.67rem; min-width: 46px; }
+  .tab      { padding: 6px 10px; font-size: 0.65rem; }
+}
+
+/* ═══════════════════════════════════════════
+   TOUCH INPUT (pointer: coarse)
+   Applies to any touch device regardless of size
+   ═══════════════════════════════════════════ */
 @media (pointer: coarse) {
+  /* WCAG 2.5.5 — 44×44 px minimum touch targets */
+  .btn,
+  .tab,
+  .btn-tp,
+  .btn-preset {
+    min-height: var(--mob-touch-min);
+    min-width: var(--mob-touch-min);
+  }
+
+  /* Slider hit-area — invisible expansion */
+  input[type="range"] {
+    cursor: pointer;
+    padding: 14px 0; /* expands tap area without changing visual height */
+  }
+
+  /* Haptic visual cue on active */
   .btn:active {
-    transform: scale(0.97);
-    transition: transform 0.1s ease;
+    transform: scale(0.96);
+    transition: transform 0.08s ease;
+  }
+
+  /* Tap highlight removed */
+  .btn,
+  .tab,
+  input[type="range"] {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
-/* ── Status bar color for Android ── */
-@media (display-mode: standalone) {
-  body {
-    background-color: #0a0a0f;
+/* ═══════════════════════════════════════════
+   STICKY MOBILE ACTION BAR
+   Fixed bottom bar with primary action
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .mobile-action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: rgba(6,6,9,0.97);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(220,38,38,0.15);
+    padding: 8px 12px calc(8px + var(--safe-bottom));
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
+
+  .mobile-action-bar .btn-primary {
+    flex: 1;
+    justify-content: center;
+    font-size: 0.82rem;
+    padding: 12px 16px;
+    border-radius: 10px;
+  }
+  .mobile-action-bar .btn-reprocess,
+  .mobile-action-bar .btn-danger {
+    flex-shrink: 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+  }
+
+  /* Hide the in-panel actions-row on mobile (moved to sticky bar) */
+  .actions-row { display: none; }
+}
+
+/* ═══════════════════════════════════════════
+   TRANSPORT CONTROLS  — mobile
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .transport-card { padding: 8px; }
+  .transport-row {
+    display: grid;
+    grid-template-columns: repeat(5, auto) 1fr;
+    grid-template-rows: auto auto;
+    gap: 6px;
+    align-items: center;
+  }
+
+  /* Playback buttons row 1 */
+  .btn-tp {
+    padding: 8px;
+    border-radius: 8px;
+  }
+  #tpPlay, #tpPause, #tpStop, #tpRew, #tpFwd { grid-row: 1; }
+
+  /* Time display */
+  .tp-time {
+    grid-row: 1;
+    grid-column: 6;
+    text-align: right;
+    font-size: 0.65rem;
+  }
+
+  /* Seek slider full width row 2 */
+  .tp-seek {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    width: 100%;
+    padding: 14px 0; /* touch area */
+  }
+
+  /* Speed + AB on row 2 — hide or compact */
+  .tp-speed { display: none; }
+  .tp-ab {
+    grid-row: 1;
+    grid-column: 5;
+    display: none; /* show via .transport-row.has-audio .tp-ab if desired */
+  }
+  .tp-ab-label { display: none; }
+}
+
+/* ═══════════════════════════════════════════
+   VISUALIZATIONS — mobile
+   ═══════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .wave-row { grid-template-columns: 1fr !important; gap: 6px; }
+  .spectro3d-container { height: 160px; }
+  .spectro2d { height: 90px; }
+  .wave-cv   { height: 60px; }
+  .freq-cv   { height: 70px; }
+  .fs-wrap   { height: 130px; }
+  .viz-hdr   { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .viz-actions { flex-wrap: wrap; gap: 4px; }
+}
+
+/* ═══════════════════════════════════════════
+   STATUS BAR (standalone/PWA mode)
+   ═══════════════════════════════════════════ */
+@media (display-mode: standalone) {
+  body { background-color: #0a0a0f; }
+  .hdr { padding-top: calc(0.5rem + var(--safe-top)); }
 }
