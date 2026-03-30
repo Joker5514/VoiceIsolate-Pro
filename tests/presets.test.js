@@ -19,14 +19,14 @@ while ((m = sliderIdRegex.exec(appJs)) !== null) {
 // Extract preset names
 const presetNameRegex = /const PRESETS = \{([\s\S]*?)\};\s*const STAGES/;
 const presetsBlock = appJs.match(presetNameRegex)?.[1] || '';
-const presetNames = ['podcast','film','interview','forensic','music','broadcast','restoration'];
+const presetNames = ['podcast','film','interview','forensic','music','broadcast','restoration','whisper','crystalVoice'];
 
 describe('Presets', () => {
-  test('Should define exactly 7 named presets', () => {
+  test('Should define exactly 9 named presets', () => {
     presetNames.forEach(name => {
       expect(presetsBlock).toContain(`${name}:`);
     });
-    expect(presetNames.length).toBe(7);
+    expect(presetNames.length).toBe(9);
   });
 
   presetNames.forEach(presetName => {
