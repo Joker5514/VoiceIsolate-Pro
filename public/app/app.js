@@ -280,7 +280,8 @@ class VoiceIsolatePro {
         inputEl.setAttribute('aria-valuemax', s.max);
         inputEl.setAttribute('aria-valuenow', s.val);
         // Set initial fill percentage for styled track
-        const initPct = ((s.val - s.min) / (s.max - s.min)) * 100;
+        const range = s.max - s.min;
+        const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
         inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
 
         const valEl = document.createElement('span');
@@ -416,7 +417,8 @@ class VoiceIsolatePro {
     if (ve) ve.textContent = v + unit;
     el.setAttribute('aria-valuenow', v);
     // Update filled-track CSS variable
-    const pct = ((v - parseFloat(el.min)) / (parseFloat(el.max) - parseFloat(el.min))) * 100;
+    const range = parseFloat(el.max) - parseFloat(el.min);
+    const pct = range > 0 ? ((v - parseFloat(el.min)) / range) * 100 : 0;
     el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
   }
@@ -484,7 +486,8 @@ class VoiceIsolatePro {
           el.value = this.params[s.id];
           el.setAttribute('aria-valuenow', this.params[s.id]);
           if (ve) ve.textContent = this.params[s.id] + s.unit;
-          const pct = ((this.params[s.id] - s.min) / (s.max - s.min)) * 100;
+          const range = s.max - s.min;
+          const pct = range > 0 ? ((this.params[s.id] - s.min) / range) * 100 : 0;
           el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
         }
       }
@@ -619,7 +622,7 @@ class VoiceIsolatePro {
     this.dom.fileInfo.textContent = (name || 'Recording') + ' (' + dur + ')';
     this.dom.processBtn.disabled = false;
     if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
-    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
     this.dom.saveOrigBtn.disabled = false;
     this.dom.reprocessBtn.disabled = true;
     this.dom.saveProcBtn.disabled = true;
@@ -1081,7 +1084,7 @@ class VoiceIsolatePro {
     } finally {
       this.isProcessing=false; this.dom.processBtn.style.display='inline-flex'; this.dom.stopProcBtn.style.display='none';
       if (this.dom.mobileProcessBtn)   { this.dom.mobileProcessBtn.style.display='inline-flex'; }
-      if (this.dom.mobileReprocessBtn) { this.dom.mobileReprocessBtn.style.display='inline-flex'; this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled; }
+      if (this.dom.mobileReprocessBtn && this.dom.reprocessBtn) { this.dom.mobileReprocessBtn.style.display='inline-flex'; this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled; }
       if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display='none';
     }
   }
