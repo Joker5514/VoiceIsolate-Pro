@@ -501,8 +501,8 @@ class VoiceIsolatePro {
     try {
       // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
 
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska'];
-      if (file.type && !allowedTypes.includes(file.type.toLowerCase())) throw new Error('Unsupported file type');
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
+      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
 
       this.ensureCtx();
       this.stop(); // stop any current playback
@@ -1774,18 +1774,17 @@ class VoiceIsolatePro {
     return 'rgb('+Math.floor(60+v*195)+','+Math.floor(50+v*160)+','+Math.floor(v*20)+')';
   }
 
-  isBandMuted(fi,total,sr){
-    const freq=(fi/total)*(sr/2);
-    const bandIdx=Math.min(9,Math.floor(freq/(sr/20)));
-    return this.mutedBands.has(bandIdx.toString());
-  }
+  isBandMuted(fi,total,sr){const freq=(fi/total)*(sr/2);for(const b of this.mutedBands)if(freq>=b.lo&&freq<b.hi)return true;return false;}
 
   onSpectroClick(e){
     const r=this.dom.spectro3DCanvas.getBoundingClientRect();
     const y=1-((e.clientY-r.top)/r.height);
-    const bandIdx=Math.min(9,Math.floor(y*10));
-    const key=bandIdx.toString();
-    if(this.mutedBands.has(key)){this.mutedBands.delete(key);}else{this.mutedBands.add(key);}
+    const sr=this.ctx?this.ctx.sampleRate:44100;
+    const freq=y*(sr/2);const bw=sr/20;
+    const lo=Math.max(0,freq-bw/2);const hi=freq+bw/2;const key=Math.round(lo)+'-'+Math.round(hi);
+    let found=false;
+    for(const b of this.mutedBands){if(b.key===key){this.mutedBands.delete(b);found=true;break;}}
+    if(!found)this.mutedBands.add({lo,hi,key});
   }
 
   // ---- Frequency Analyzer ----
