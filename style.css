@@ -243,3 +243,10 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 @keyframes glow-pulse{0%,100%{box-shadow:0 0 4px rgba(34,211,238,0.15)}50%{box-shadow:0 0 12px rgba(34,211,238,0.3)}}
 .diag-section .card{border-color:rgba(34,211,238,0.08)}
 .diag-section .card:hover{border-color:rgba(34,211,238,0.15)}
+
+/* ---- ACCESSIBILITY ---- */
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
