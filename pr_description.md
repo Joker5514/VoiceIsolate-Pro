@@ -1,7 +1,16 @@
-🎯 **What:** Removed a leftover `console.log` statement from `src/worker-pool.js` that printed "[Worker ID] Loading ONNX model with WebGPU EP..." during initialization.
+# 🧪 [testing improvement] Add Integration Tests for Server.js Headers
 
-💡 **Why:** `console.log` statements meant for debugging during development clutter up the console output in production. Removing it improves code health and cleanliness without impacting functionality.
+### 🎯 What:
+The local development server (`server.js`) utilizes an Express application that sets cross-origin isolation and security hardening headers crucial for the successful functionality of SharedArrayBuffers and production safety. Previously, there were no integration tests asserting these response headers were set correctly. This PR implements a new test suite (`tests/server.test.js`) leveraging `supertest` to verify `server.js` responses directly.
 
-✅ **Verification:** Verified by running the test suite (`pnpm test`), which passed perfectly. Inspected the code diff directly to ensure no other logic was disturbed.
+### 📊 Coverage:
+The following scenarios are now verified and explicitly tested:
+*   **Root Path Cross-Origin Headers**: Asserts presence and specific required values of `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`, and `Cross-Origin-Resource-Policy` headers.
+*   **Health Endpoint Cross-Origin Headers**: Ensures standard `/health` endpoints return identical cross-origin policies.
+*   **Security Headers**: Asserts strict security headers like `x-content-type-options: nosniff`, `x-frame-options: DENY`, `referrer-policy`, and `permissions-policy`.
+*   **Content-Security-Policy (CSP)**: Confirms the presence of CSP configurations, verifying necessary allowances for Web Workers, WASM modules, inline scripts/styles, and images.
+*   **API Verification**: Asserts structural logic for `/health` and `/api/version` endpoints.
+*   **Static Asset Serving**: Specifically ensures `.js` worker files return required `Cross-Origin-Resource-Policy` headers during static service.
 
-✨ **Result:** A cleaner execution environment free from unnecessary debugging logs when the ML worker initializes.
+### ✨ Result:
+Increased integration testing coverage ensuring the Express server safely deploys structural dependencies and HTTP headers needed for local execution paths. Regressions in header misconfigurations (for SharedArrayBuffer implementation) will now trigger failing tests.
