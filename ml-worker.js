@@ -382,9 +382,7 @@ async function disposeAll() {
     try {
       await session.release?.();
       log('info', `Disposed model: ${name}`);
-    } catch (e) {
-      log('error', `Failed to dispose model ${name}: ${e}`);
-    }
+    } catch (_) {}
   }
   sessions = {};
 }
