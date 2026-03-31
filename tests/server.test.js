@@ -1,13 +1,7 @@
-const request = require('supertest');
+import request from 'supertest';
+import { app } from '../server.js';
 
 describe('Server Headers', () => {
-  let app;
-
-  beforeAll(async () => {
-    // Dynamic import since server.js is an ES module
-    const serverModule = await import('../server.js');
-    app = serverModule.app;
-  });
 
   it('should return cross-origin isolation headers on root path', async () => {
     const res = await request(app).get('/');
