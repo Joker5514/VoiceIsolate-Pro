@@ -416,7 +416,8 @@ class VoiceIsolatePro {
     if (ve) ve.textContent = v + unit;
     el.setAttribute('aria-valuenow', v);
     // Update filled-track CSS variable
-    const pct = ((v - parseFloat(el.min)) / (parseFloat(el.max) - parseFloat(el.min))) * 100;
+    const range = parseFloat(el.max) - parseFloat(el.min);
+    const pct = range > 0 ? ((v - parseFloat(el.min)) / range) * 100 : 0;
     el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
   }
