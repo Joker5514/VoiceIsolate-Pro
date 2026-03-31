@@ -92,12 +92,7 @@ describe('PipelineState', () => {
 
     test('set() ignores tiny changes (less than 1% of step)', () => {
       state.set('slider1', 50);
-      const historyLength = state._history.length;
-
-      // Changes less than 0.01 step should be ignored
-      state.set('slider1', 50.005);
-      expect(state.get('slider1')).toBe(50);
-      expect(state._history.length).toBe(historyLength); // No undo frame added
+    // Changes less than 0.01 step should be ignored\n    state.set('slider1', 50.005);\n    expect(state.get('slider1')).toBe(50);\n    expect(state.undo()).toBe(false); // No undo frame added
     });
   });
 
