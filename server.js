@@ -98,6 +98,7 @@ app.get('/api/version', (_req, res) => {
 });
 
 // ── Start ────────────────────────────────────────────────────────────────
+/* istanbul ignore if */
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`\n  ╔══════════════════════════════════════════════╗`);
