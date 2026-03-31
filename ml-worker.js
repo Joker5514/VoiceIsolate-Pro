@@ -383,7 +383,7 @@ async function disposeAll() {
       await session.release?.();
       log('info', `Disposed model: ${name}`);
     } catch (e) {
-      log('error', `Failed to dispose model ${name}: ${e.message || e}`);
+      log('error', `Failed to dispose model ${name}: ${e}`);
     }
   }
   sessions = {};
