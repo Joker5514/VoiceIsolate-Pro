@@ -45,9 +45,10 @@ function runRingBufferTests(SharedRingBuffer, description) {
       });
 
       it('handles overflow properly by rejecting push', () => {
-        const data = new Float32Array(15);
+        const space = rb.space();
+        const data = new Float32Array(space);
         expect(rb.push(data)).toBe(true);
-        expect(rb.available()).toBe(15);
+        expect(rb.available()).toBe(space);
 
         const overflowData = new Float32Array([1.0]);
         expect(rb.push(overflowData)).toBe(false); // only capacity-1 space available initially
