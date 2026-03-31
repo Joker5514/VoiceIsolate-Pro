@@ -86,8 +86,8 @@ function runRingBufferTests(SharedRingBuffer, description) {
         expect(rb.available()).toBe(4);
 
         // push more to trigger wrap-around
-        const out2 = rb.push(new Float32Array([13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0]));
-        expect(out2).toBe(true);
+        const pushed = rb.push(new Float32Array([13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0]));
+        expect(pushed).toBe(true);
         expect(rb.available()).toBe(11); // 4 left + 7 new
 
         // pull to verify wrap-around read
