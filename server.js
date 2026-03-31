@@ -99,4 +99,5 @@ app.get('/api/version', (_req, res) => {
 
 // ── Start ────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
+  console.log(`VoiceIsolate Pro Dev Server running on port ${PORT}`);
 });

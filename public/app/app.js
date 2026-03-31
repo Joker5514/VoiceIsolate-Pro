@@ -280,8 +280,7 @@ class VoiceIsolatePro {
         inputEl.setAttribute('aria-valuemax', s.max);
         inputEl.setAttribute('aria-valuenow', s.val);
         // Set initial fill percentage for styled track
-        const range = s.max - s.min;
-        const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
+        const initPct = ((s.val - s.min) / (s.max - s.min)) * 100;
         inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
 
         const valEl = document.createElement('span');
