@@ -176,7 +176,7 @@ class VoiceIsolatePro {
         const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
         h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
           '<label class="sr-label" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
-          '<input type="range" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
+          '<input type="range" aria-label="' + s.label + '" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
           '<span class="sr-val" id="' + s.id + 'Val">' + s.val + s.unit + '</span></div>';
       }
       h += '</div>';
