@@ -86,19 +86,27 @@ const SLIDERS = {
 
 // ---- PRESETS ----
 const PRESETS = {
-  podcast: {gateThresh:-38,gateRange:-35,gateAttack:2,gateRelease:60,gateHold:15,gateLookahead:5,nrAmount:60,nrSensitivity:55,nrSpectralSub:45,nrFloor:-55,nrSmoothing:40,eqSub:-10,eqBass:-1,eqWarmth:2,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:4,eqClarity:2,eqAir:1,eqBrill:-3,compThresh:-20,compRatio:5,compAttack:6,compRelease:180,compKnee:6,compMakeup:8,limThresh:-1,limRelease:8,hpFreq:80,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:40,specTilt:0.5,formantShift:0,derevAmt:50,derevDecay:0.4,harmRecov:15,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:80,bgSuppress:60,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
-  film: {gateThresh:-50,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:25,gateLookahead:5,nrAmount:40,nrSensitivity:45,nrSpectralSub:30,nrFloor:-60,nrSmoothing:40,eqSub:-6,eqBass:1,eqWarmth:1,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:2,eqBrill:-1,compThresh:-28,compRatio:3,compAttack:12,compRelease:300,compKnee:10,compMakeup:4,limThresh:-1,limRelease:15,hpFreq:60,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:-0.5,formantShift:0,derevAmt:30,derevDecay:0.6,harmRecov:25,harmOrder:3,stereoWidth:120,phaseCorr:0,voiceIso:60,bgSuppress:40,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:110},
-  interview: {gateThresh:-42,gateRange:-38,gateAttack:2,gateRelease:80,gateHold:20,gateLookahead:5,nrAmount:55,nrSensitivity:50,nrSpectralSub:40,nrFloor:-58,nrSmoothing:35,eqSub:-8,eqBass:0,eqWarmth:1,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-2,compThresh:-22,compRatio:5,compAttack:5,compRelease:200,compKnee:6,compMakeup:6,limThresh:-1,limRelease:10,hpFreq:100,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:35,specTilt:0,formantShift:0,derevAmt:45,derevDecay:0.5,harmRecov:20,harmOrder:3,stereoWidth:80,phaseCorr:0,voiceIso:75,bgSuppress:55,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:20,outGain:0,dryWet:100,ditherAmt:0,outWidth:90},
-  forensic: {gateThresh:-65,gateRange:-20,gateAttack:1,gateRelease:150,gateHold:30,gateLookahead:10,nrAmount:30,nrSensitivity:60,nrSpectralSub:20,nrFloor:-70,nrSmoothing:50,eqSub:-2,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:0,compThresh:-18,compRatio:2,compAttack:15,compRelease:400,compKnee:12,compMakeup:10,limThresh:-0.5,limRelease:20,hpFreq:50,hpQ:0.71,lpFreq:18000,lpQ:0.71,deEssFreq:8000,deEssAmt:10,specTilt:1,formantShift:0,derevAmt:20,derevDecay:0.8,harmRecov:35,harmOrder:4,stereoWidth:100,phaseCorr:30,voiceIso:90,bgSuppress:30,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:3,dryWet:90,ditherAmt:0,outWidth:100},
-  music: {gateThresh:-55,gateRange:-25,gateAttack:3,gateRelease:120,gateHold:15,gateLookahead:3,nrAmount:25,nrSensitivity:40,nrSpectralSub:20,nrFloor:-65,nrSmoothing:45,eqSub:-3,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:3,eqBrill:0,compThresh:-30,compRatio:2,compAttack:20,compRelease:350,compKnee:15,compMakeup:3,limThresh:-0.5,limRelease:12,hpFreq:40,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:15,specTilt:-1,formantShift:0,derevAmt:15,derevDecay:1.0,harmRecov:30,harmOrder:4,stereoWidth:150,phaseCorr:0,voiceIso:50,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:0,dryWet:85,ditherAmt:5,outWidth:140},
-  broadcast: {gateThresh:-35,gateRange:-40,gateAttack:1.5,gateRelease:50,gateHold:10,gateLookahead:3,nrAmount:65,nrSensitivity:60,nrSpectralSub:50,nrFloor:-50,nrSmoothing:30,eqSub:-12,eqBass:-2,eqWarmth:2,eqBody:0,eqLowMid:-2,eqMid:2,eqPresence:5,eqClarity:3,eqAir:1,eqBrill:-4,compThresh:-18,compRatio:6,compAttack:4,compRelease:150,compKnee:4,compMakeup:10,limThresh:-1,limRelease:5,hpFreq:120,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:45,specTilt:1,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:10,harmOrder:2,stereoWidth:60,phaseCorr:0,voiceIso:85,bgSuppress:70,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:70},
-  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100},
-  whisper: {gateThresh:-65,gateRange:-20,gateAttack:1,gateRelease:100,gateHold:10,gateLookahead:5,nrAmount:20,nrSensitivity:70,nrSpectralSub:15,nrFloor:-70,nrSmoothing:60,eqSub:0,eqBass:2,eqWarmth:3,eqBody:1,eqLowMid:2,eqMid:5,eqPresence:8,eqClarity:6,eqAir:4,eqBrill:2,compThresh:-40,compRatio:8,compAttack:2,compRelease:150,compKnee:12,compMakeup:18,limThresh:-1,limRelease:10,hpFreq:80,hpQ:0.71,lpFreq:15000,lpQ:0.71,deEssFreq:6000,deEssAmt:25,specTilt:0.5,formantShift:0,derevAmt:10,derevDecay:0.8,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:0,voiceIso:95,bgSuppress:20,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:0,outGain:6,dryWet:100,ditherAmt:0,outWidth:100},
+  // Podcast — Optimized for spoken word: tight gate, strong NR, presence boost, -16 LUFS target
+  podcast: {gateThresh:-36,gateRange:-40,gateAttack:1.5,gateRelease:55,gateHold:20,gateLookahead:5,nrAmount:65,nrSensitivity:58,nrSpectralSub:50,nrFloor:-52,nrSmoothing:38,eqSub:-12,eqBass:-2,eqWarmth:2.5,eqBody:0.5,eqLowMid:-1.5,eqMid:1.5,eqPresence:4.5,eqClarity:3,eqAir:1.5,eqBrill:-3,compThresh:-22,compRatio:4.5,compAttack:5,compRelease:160,compKnee:8,compMakeup:7,limThresh:-1,limRelease:8,hpFreq:90,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:38,specTilt:0.5,formantShift:0,derevAmt:50,derevDecay:0.4,harmRecov:18,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:82,bgSuppress:65,voiceFocusLo:120,voiceFocusHi:6500,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
+  // Film — Natural dialogue: gentle processing, wide bandwidth, preserve room tone and dynamics
+  film: {gateThresh:-52,gateRange:-25,gateAttack:4,gateRelease:120,gateHold:30,gateLookahead:8,nrAmount:35,nrSensitivity:42,nrSpectralSub:25,nrFloor:-62,nrSmoothing:45,eqSub:-5,eqBass:1.5,eqWarmth:1.5,eqBody:1,eqLowMid:0,eqMid:0.5,eqPresence:2,eqClarity:1.5,eqAir:2,eqBrill:-0.5,compThresh:-30,compRatio:2.5,compAttack:15,compRelease:320,compKnee:12,compMakeup:3,limThresh:-1.5,limRelease:18,hpFreq:55,hpQ:0.71,lpFreq:17000,lpQ:0.71,deEssFreq:6500,deEssAmt:18,specTilt:-0.5,formantShift:0,derevAmt:25,derevDecay:0.7,harmRecov:28,harmOrder:3,stereoWidth:130,phaseCorr:0,voiceIso:55,bgSuppress:35,voiceFocusLo:90,voiceFocusHi:8500,crosstalkCancel:0,outGain:0,dryWet:95,ditherAmt:0,outWidth:120},
+  // Interview — Multi-speaker clarity: balanced NR, crosstalk cancel, focused voice band
+  interview: {gateThresh:-40,gateRange:-36,gateAttack:2,gateRelease:75,gateHold:25,gateLookahead:5,nrAmount:58,nrSensitivity:52,nrSpectralSub:42,nrFloor:-56,nrSmoothing:35,eqSub:-8,eqBass:-0.5,eqWarmth:1.5,eqBody:0.5,eqLowMid:-1,eqMid:2,eqPresence:3.5,eqClarity:2.5,eqAir:1,eqBrill:-2.5,compThresh:-24,compRatio:4,compAttack:5,compRelease:180,compKnee:8,compMakeup:6,limThresh:-1,limRelease:10,hpFreq:100,hpQ:0.71,lpFreq:13000,lpQ:0.71,deEssFreq:7000,deEssAmt:32,specTilt:0,formantShift:0,derevAmt:48,derevDecay:0.45,harmRecov:22,harmOrder:3,stereoWidth:85,phaseCorr:10,voiceIso:78,bgSuppress:58,voiceFocusLo:110,voiceFocusHi:6500,crosstalkCancel:25,outGain:0,dryWet:100,ditherAmt:0,outWidth:90},
+  // Forensic — Maximum detail preservation: minimal processing, wide spectrum, phase correction
+  forensic: {gateThresh:-68,gateRange:-15,gateAttack:1,gateRelease:180,gateHold:35,gateLookahead:12,nrAmount:30,nrSensitivity:65,nrSpectralSub:18,nrFloor:-72,nrSmoothing:55,eqSub:-1,eqBass:0.5,eqWarmth:0,eqBody:0,eqLowMid:0.5,eqMid:2.5,eqPresence:5,eqClarity:4.5,eqAir:3,eqBrill:0.5,compThresh:-16,compRatio:1.8,compAttack:18,compRelease:450,compKnee:15,compMakeup:10,limThresh:-0.3,limRelease:25,hpFreq:40,hpQ:0.71,lpFreq:19000,lpQ:0.71,deEssFreq:8000,deEssAmt:8,specTilt:1,formantShift:0,derevAmt:15,derevDecay:0.9,harmRecov:38,harmOrder:5,stereoWidth:100,phaseCorr:35,voiceIso:92,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:11000,crosstalkCancel:0,outGain:3,dryWet:88,ditherAmt:0,outWidth:100},
+  // Music — Vocal extraction with musicality: gentle touch, preserve harmonics, wide stereo
+  music: {gateThresh:-58,gateRange:-20,gateAttack:4,gateRelease:140,gateHold:20,gateLookahead:4,nrAmount:22,nrSensitivity:38,nrSpectralSub:18,nrFloor:-68,nrSmoothing:48,eqSub:-2,eqBass:1.5,eqWarmth:2.5,eqBody:1,eqLowMid:0.5,eqMid:0,eqPresence:1.5,eqClarity:1,eqAir:3.5,eqBrill:1,compThresh:-32,compRatio:2,compAttack:22,compRelease:380,compKnee:18,compMakeup:2.5,limThresh:-0.5,limRelease:14,hpFreq:35,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:12,specTilt:-1,formantShift:0,derevAmt:12,derevDecay:1.2,harmRecov:35,harmOrder:5,stereoWidth:160,phaseCorr:0,voiceIso:45,bgSuppress:20,voiceFocusLo:80,voiceFocusHi:11000,crosstalkCancel:0,outGain:0,dryWet:82,ditherAmt:5,outWidth:150},
+  // Broadcast — Loud, clean, aggressive: heavy compression, tight band, -14 LUFS target
+  broadcast: {gateThresh:-34,gateRange:-45,gateAttack:1,gateRelease:45,gateHold:12,gateLookahead:3,nrAmount:70,nrSensitivity:62,nrSpectralSub:55,nrFloor:-48,nrSmoothing:28,eqSub:-12,eqBass:-3,eqWarmth:2.5,eqBody:0.5,eqLowMid:-2,eqMid:2.5,eqPresence:5.5,eqClarity:3.5,eqAir:0.5,eqBrill:-5,compThresh:-20,compRatio:7,compAttack:3,compRelease:120,compKnee:3,compMakeup:12,limThresh:-0.5,limRelease:4,hpFreq:130,hpQ:0.71,lpFreq:11000,lpQ:0.71,deEssFreq:7000,deEssAmt:48,specTilt:1.5,formantShift:0,derevAmt:60,derevDecay:0.25,harmRecov:8,harmOrder:2,stereoWidth:50,phaseCorr:0,voiceIso:88,bgSuppress:75,voiceFocusLo:160,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:60},
+  // Restoration — Recover damaged/old recordings: gentle NR, harmonic recovery, preserve character
+  restoration: {gateThresh:-62,gateRange:-12,gateAttack:6,gateRelease:220,gateHold:45,gateLookahead:12,nrAmount:50,nrSensitivity:58,nrSpectralSub:38,nrFloor:-68,nrSmoothing:55,eqSub:-3,eqBass:0.5,eqWarmth:0.5,eqBody:0,eqLowMid:0,eqMid:1.5,eqPresence:3.5,eqClarity:2.5,eqAir:1.5,eqBrill:-0.5,compThresh:-28,compRatio:2.5,compAttack:12,compRelease:280,compKnee:10,compMakeup:5,limThresh:-0.5,limRelease:16,hpFreq:45,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:18,specTilt:0,formantShift:0,derevAmt:38,derevDecay:0.8,harmRecov:45,harmOrder:4,stereoWidth:100,phaseCorr:25,voiceIso:62,bgSuppress:42,voiceFocusLo:90,voiceFocusHi:8500,crosstalkCancel:12,outGain:2,dryWet:92,ditherAmt:5,outWidth:100},
+  // Whisper — Extreme low-level voice recovery: heavy compression, max presence, gentle NR to avoid artifacts
+  whisper: {gateThresh:-70,gateRange:-15,gateAttack:0.5,gateRelease:120,gateHold:15,gateLookahead:8,nrAmount:22,nrSensitivity:72,nrSpectralSub:15,nrFloor:-75,nrSmoothing:62,eqSub:0,eqBass:2.5,eqWarmth:3,eqBody:1.5,eqLowMid:2,eqMid:5.5,eqPresence:8,eqClarity:6,eqAir:4,eqBrill:2,compThresh:-42,compRatio:10,compAttack:1.5,compRelease:130,compKnee:15,compMakeup:20,limThresh:-1,limRelease:8,hpFreq:70,hpQ:0.71,lpFreq:15000,lpQ:0.71,deEssFreq:6000,deEssAmt:22,specTilt:0.5,formantShift:0,derevAmt:8,derevDecay:0.9,harmRecov:45,harmOrder:4,stereoWidth:100,phaseCorr:0,voiceIso:95,bgSuppress:18,voiceFocusLo:90,voiceFocusHi:9000,crosstalkCancel:0,outGain:6,dryWet:100,ditherAmt:0,outWidth:100},
   // Crystal Voice — Maximum voice-only isolation. Strips everything except human speech.
   // Tight bandpass (150 Hz–8 kHz), aggressive gating, heavy NR + spectral subtraction,
   // max voice isolation/BG suppress, mono collapse, strong dereverb, harmonic recovery
   // to restore warmth lost by aggressive processing. Presence/clarity boosted for intelligibility.
-  crystalVoice: {gateThresh:-30,gateRange:-50,gateAttack:1,gateRelease:40,gateHold:10,gateLookahead:10,nrAmount:85,nrSensitivity:75,nrSpectralSub:70,nrFloor:-45,nrSmoothing:45,eqSub:-12,eqBass:-6,eqWarmth:-2,eqBody:-2,eqLowMid:-3,eqMid:3,eqPresence:6,eqClarity:4,eqAir:1,eqBrill:-5,compThresh:-20,compRatio:4,compAttack:3,compRelease:150,compKnee:8,compMakeup:8,limThresh:-0.5,limRelease:8,hpFreq:150,hpQ:0.71,lpFreq:8000,lpQ:0.71,deEssFreq:7000,deEssAmt:50,specTilt:0.5,formantShift:0,derevAmt:70,derevDecay:0.3,harmRecov:25,harmOrder:3,stereoWidth:0,phaseCorr:0,voiceIso:95,bgSuppress:85,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:15,outGain:2,dryWet:100,ditherAmt:0,outWidth:50}
+  crystalVoice: {gateThresh:-28,gateRange:-55,gateAttack:0.8,gateRelease:35,gateHold:8,gateLookahead:12,nrAmount:88,nrSensitivity:78,nrSpectralSub:72,nrFloor:-42,nrSmoothing:42,eqSub:-12,eqBass:-6,eqWarmth:-2,eqBody:-2,eqLowMid:-3,eqMid:3.5,eqPresence:6,eqClarity:5,eqAir:1,eqBrill:-6,compThresh:-18,compRatio:5,compAttack:2,compRelease:130,compKnee:6,compMakeup:9,limThresh:-0.5,limRelease:6,hpFreq:160,hpQ:0.71,lpFreq:8000,lpQ:0.71,deEssFreq:7000,deEssAmt:52,specTilt:0.5,formantShift:0,derevAmt:75,derevDecay:0.25,harmRecov:28,harmOrder:3,stereoWidth:0,phaseCorr:0,voiceIso:98,bgSuppress:90,voiceFocusLo:160,voiceFocusHi:5000,crosstalkCancel:18,outGain:2,dryWet:100,ditherAmt:0,outWidth:40}
 };
 
 const STAGES = [
@@ -149,6 +157,7 @@ class VoiceIsolatePro {
     this.playStartTime = 0;
     this.playOffset = 0;
     this.isPlaying = false;
+    this.isPaused = false;
     this.mutedBands = new Set();
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
@@ -302,6 +311,7 @@ class VoiceIsolatePro {
       tpPlay:g('tpPlay'), tpPause:g('tpPause'), tpStop:g('tpStop'),
       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
       tpSeek:g('tpSeek'), tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
+      tpSourceToggle:g('tpSourceToggle'),
       fileSpectroCard:g('fileSpectroCard'), fsModeLbl:g('fsModeLbl'), fsProgress:g('fsProgress'),
       fsBtnAB:g('fsBtnAB'), fsColormap:g('fsColormap'),
       fsYAxis:g('fsYAxis'), fsMain:g('fsMain'), fsCanvas:g('fsCanvas'), fsOverlay:g('fsOverlay'), fsXAxis:g('fsXAxis'),
@@ -333,7 +343,7 @@ class VoiceIsolatePro {
     this.dom.stopProcBtn.addEventListener('click', () => { this.abortFlag = true; });
     this.dom.saveOrigBtn.addEventListener('click', () => this.saveWav(this.inputBuffer,'original'));
     this.dom.saveProcBtn.addEventListener('click', () => this.saveWav(this.outputBuffer,'processed'));
-    this.dom.tpPlay.addEventListener('click', () => this.play());
+    this.dom.tpPlay.addEventListener('click', () => this.playOrResume());
     this.dom.tpPause.addEventListener('click', () => this.pause());
     this.dom.tpStop.addEventListener('click', () => this.stop());
     this.dom.tpRew.addEventListener('click', () => this.seekDelta(-5));
@@ -341,6 +351,7 @@ class VoiceIsolatePro {
     this.dom.tpSeek.addEventListener('input', () => this.seekTo(this.dom.tpSeek.value / 1000));
     this.dom.tpSpeed.addEventListener('change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
     this.dom.tpAB.addEventListener('click', () => this.toggleAB());
+    if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.addEventListener('change', () => this.toggleAB());
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(x => {
         const isActive = x === t;
@@ -613,6 +624,7 @@ class VoiceIsolatePro {
     this.dom.reprocessBtn.disabled = true;
     this.dom.saveProcBtn.disabled = true;
     this.dom.tpAB.disabled = true;
+    if (this.dom.tpSourceToggle) { this.dom.tpSourceToggle.disabled = true; this.dom.tpSourceToggle.checked = false; }
     [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew, this.dom.tpFwd, this.dom.tpSeek, this.dom.tpSpeed].forEach(el => el.disabled = false);
     this.dom.tpTotal.textContent = dur;
     this.dom.tpABLabel.textContent = 'Original';
@@ -687,6 +699,16 @@ class VoiceIsolatePro {
   }
 
   // ======== TRANSPORT ========
+  playOrResume() {
+    if (this.isPaused && this.playOffset > 0) {
+      // Resume from paused position
+      this.isPaused = false;
+      this.play();
+    } else {
+      this.play();
+    }
+  }
+
   play() {
     // Teardown previous playback state without resetting playOffset
     if (typeof this.teardownChain === 'function') this.teardownChain();
@@ -724,6 +746,7 @@ class VoiceIsolatePro {
     this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.teardownChain();
     this.isPlaying = false;
+    this.isPaused = true;
     if (this.isVideo) this.dom.videoPlayer.pause();
     this.stopSpectro();
   }
@@ -731,6 +754,7 @@ class VoiceIsolatePro {
   stop() {
     this.teardownChain();
     this.isPlaying = false;
+    this.isPaused = false;
     this.playOffset = 0;
     if (this.isVideo) { this.dom.videoPlayer.pause(); this.dom.videoPlayer.currentTime = 0; }
     this.stopSpectro();
@@ -762,10 +786,21 @@ class VoiceIsolatePro {
   toggleAB() {
     if (!this.outputBuffer) return;
     this.abMode = this.abMode === 'original' ? 'processed' : 'original';
-    this.dom.tpAB.classList.toggle('active', this.abMode === 'processed');
+    const isProcessed = this.abMode === 'processed';
+    this.dom.tpAB.classList.toggle('active', isProcessed);
+    if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.checked = isProcessed;
     const speed = parseFloat(this.dom.tpSpeed.value) || 1;
     if (this.isPlaying) { this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed; this.play(); }
-    this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
+    this.dom.tpABLabel.textContent = isProcessed ? 'Processed' : 'Original';
+    // Sync spectrogram with A/B toggle
+    if (this.fsMode !== this.abMode) {
+      this.fsMode = this.abMode;
+      if (this.dom.fsModeLbl) { this.dom.fsModeLbl.textContent = isProcessed ? 'PROCESSED' : 'ORIGINAL'; this.dom.fsModeLbl.classList.toggle('proc', isProcessed); }
+      if (this.dom.fsBtnAB) this.dom.fsBtnAB.textContent = isProcessed ? 'Show Original' : 'Show Processed';
+      this.fsCurrentBuf = isProcessed ? this.outputBuffer : this.inputBuffer;
+      this.fsImageData = null;
+      if (this.fsCurrentBuf) this.renderFileSpectrogram(this.fsCurrentBuf);
+    }
   }
 
   tickTime() {
@@ -876,6 +911,7 @@ class VoiceIsolatePro {
     if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display = 'none';
     if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display = 'inline-flex';
     this.dom.saveProcBtn.disabled = true; this.dom.tpAB.disabled = true;
+    if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.disabled = true;
     this.setStatus('PROCESSING');
     if (this.forensicMode) { this.forensicLog = []; }
     const t0 = performance.now();
@@ -1033,6 +1069,7 @@ class VoiceIsolatePro {
       this.drawWaveform(fin, this.dom.waveProcCanvas, '#22d3ee');
       this.dom.stVoices.textContent = this.estVoices(fin);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
+      if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.disabled = false;
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
       this.dom.tpABLabel.textContent = 'Ready — A/B';
       if (this.dom.fsBtnAB) this.dom.fsBtnAB.disabled = false;
@@ -1965,6 +2002,15 @@ class VoiceIsolatePro {
     this.fsCurrentBuf = isProc ? this.outputBuffer : this.inputBuffer;
     this.fsImageData = null;
     this.renderFileSpectrogram(this.fsCurrentBuf);
+    // Sync transport A/B with spectrogram toggle
+    if (this.abMode !== this.fsMode) {
+      this.abMode = this.fsMode;
+      this.dom.tpAB.classList.toggle('active', isProc);
+      if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.checked = isProc;
+      this.dom.tpABLabel.textContent = isProc ? 'Processed' : 'Original';
+      const speed = parseFloat(this.dom.tpSpeed.value) || 1;
+      if (this.isPlaying) { this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed; this.play(); }
+    }
   }
 
   fsSeekClick(e) {

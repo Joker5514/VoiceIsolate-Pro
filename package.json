@@ -1,6 +1,6 @@
 {
   "name": "voiceisolate-pro",
-  "version": "21.0.0",
+  "version": "22.1.0",
   "type": "module",
   "description": "Studio-grade voice isolation platform. 32-stage Octa-Pass DSP pipeline with hybrid ML + classical spectral processing. Mobile-ready via Capacitor for Android & iOS.",
   "private": true,
