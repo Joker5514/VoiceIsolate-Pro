@@ -484,7 +484,8 @@ class VoiceIsolatePro {
           el.value = this.params[s.id];
           el.setAttribute('aria-valuenow', this.params[s.id]);
           if (ve) ve.textContent = this.params[s.id] + s.unit;
-          const pct = ((this.params[s.id] - s.min) / (s.max - s.min)) * 100;
+          const range = s.max - s.min;
+          const pct = range > 0 ? ((this.params[s.id] - s.min) / range) * 100 : 0;
           el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
         }
       }
