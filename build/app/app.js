@@ -487,8 +487,8 @@ class VoiceIsolatePro {
     try {
       // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
 
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
-      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska', 'audio/midi'];
+      if (file.type && !allowedTypes.includes(file.type.toLowerCase())) throw new Error('Unsupported file type');
 
       this.ensureCtx();
       this.stop(); // stop any current playback
