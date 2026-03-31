@@ -662,7 +662,12 @@ class VoiceIsolatePro {
       n.lim.threshold.setTargetAtTime(p.limThresh,t,s); n.lim.release.setTargetAtTime(p.limRelease/1000,t,s);
       n.outG.gain.setTargetAtTime(Math.pow(10,p.outGain/20),t,s);
       n.wG.gain.setTargetAtTime(p.outWidth/100,t,s);
-    } catch(e) {}
+    } catch(e) {
+      if (!this._hasLoggedUpdateError) {
+        console.error('Error updating live chain:', e);
+        this._hasLoggedUpdateError = true;
+      }
+    }
   }
 
   teardownChain() {
