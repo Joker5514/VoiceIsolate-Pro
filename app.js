@@ -663,10 +663,7 @@ class VoiceIsolatePro {
       n.outG.gain.setTargetAtTime(Math.pow(10,p.outGain/20),t,s);
       n.wG.gain.setTargetAtTime(p.outWidth/100,t,s);
     } catch(e) {
-      if (!this._hasLoggedUpdateError) {
-        console.error('Error updating live chain:', e);
-        this._hasLoggedUpdateError = true;
-      }
+      console.error('Error updating live chain:', e);
     }
   }
 
