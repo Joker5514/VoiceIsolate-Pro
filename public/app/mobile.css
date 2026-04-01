@@ -1,5 +1,5 @@
 /* ============================================
-   VoiceIsolate Pro v21.0 — Mobile Styles
+   VoiceIsolate Pro v22.1 — Mobile Styles
    Capacitor Android/iOS native shell support
    Safe area insets, touch targets, gestures
    Complete mobile UI layout
@@ -180,31 +180,6 @@ html {
   /* Hide the info icon on mobile — tooltip not useful on touch */
   .sr-info { display: none; }
 
-  /* ── Slider rows: 2-row layout on mobile ──
-     Top row: label + value
-     Bottom row: full-width track              */
-  .sr-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto;
-    gap: 4px 8px;
-    padding: 9px 8px;
-    border-radius: 8px;
-  }
-  .sr-label {
-    grid-column: 1;
-    grid-row: 1;
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--text);
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    line-height: 1.3;
-  }
-  /* Hide the info icon on mobile — tooltip not useful on touch */
-  .sr-info { display: none; }
-
   .sr-val {
     grid-column: 2;
     grid-row: 1;
@@ -219,7 +194,6 @@ html {
     grid-row: 2;
     height: var(--mob-slider-track);
     border-radius: calc(var(--mob-slider-track) / 2);
-    /* track gradient shape still driven by --pct */
   }
   .sr-row > input[type="range"]::-webkit-slider-runnable-track {
     height: var(--mob-slider-track);
@@ -231,40 +205,6 @@ html {
     border-width: 3px;
   }
   .sr-row > input[type="range"]::-moz-range-thumb {
-    width: var(--mob-slider-thumb);
-    height: var(--mob-slider-thumb);
-    border-width: 3px;
-  }
-
-  /* RT badge sizing */
-  .rt-badge { font-size: 0.5rem; padding: 1px 5px; }
-
-  .sr-val {
-    grid-column: 2;
-    grid-row: 1;
-    font-size: 0.7rem;
-    padding: 3px 7px;
-    align-self: center;
-    min-width: 52px;
-    text-align: center;
-  }
-  input[type="range"] {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    height: var(--mob-slider-track);
-    border-radius: calc(var(--mob-slider-track) / 2);
-    /* track gradient shape still driven by --pct */
-  }
-  input[type="range"]::-webkit-slider-runnable-track {
-    height: var(--mob-slider-track);
-  }
-  input[type="range"]::-webkit-slider-thumb {
-    width: var(--mob-slider-thumb);
-    height: var(--mob-slider-thumb);
-    margin-top: calc((var(--mob-slider-thumb) / -2) + (var(--mob-slider-track) / 2));
-    border-width: 3px;
-  }
-  input[type="range"]::-moz-range-thumb {
     width: var(--mob-slider-thumb);
     height: var(--mob-slider-thumb);
     border-width: 3px;
@@ -310,7 +250,6 @@ html {
     padding: 11px 14px;
     border-radius: 9px;
   }
-  /* Hide abort in actions-row; shown in sticky bar if needed */
 
   /* ── Pipeline box ── */
   .pipeline-box { padding: 8px 10px; }
@@ -332,6 +271,83 @@ html {
 
   /* ── Footer ── */
   .ftr { flex-direction: column; text-align: center; gap: 2px; font-size: 0.54rem; }
+
+  /* ── Transport controls ── */
+  .transport-card { padding: 8px; }
+  .transport-row {
+    display: grid;
+    grid-template-columns: repeat(5, auto) 1fr;
+    grid-template-rows: auto auto;
+    gap: 6px;
+    align-items: center;
+  }
+  .btn-tp {
+    padding: 8px;
+    border-radius: 8px;
+  }
+  #tpPlay, #tpPause, #tpStop, #tpRew, #tpFwd { grid-row: 1; }
+  .tp-time {
+    grid-row: 1;
+    grid-column: 6;
+    text-align: right;
+    font-size: 0.65rem;
+  }
+  .tp-seek {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    width: 100%;
+    padding: 14px 0;
+  }
+  .tp-speed { display: none; }
+  .tp-ab {
+    grid-row: 1;
+    grid-column: 5;
+    display: none;
+  }
+  .tp-ab-label { display: none; }
+
+  /* ── Visualizations ── */
+  .wave-row { grid-template-columns: 1fr !important; gap: 6px; }
+  .spectro3d-container { height: 160px; }
+  .spectro2d { height: 90px; }
+  .wave-cv   { height: 60px; }
+  .freq-cv   { height: 70px; }
+  .fs-wrap   { height: 130px; }
+  .viz-hdr   { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .viz-actions { flex-wrap: wrap; gap: 4px; }
+
+  /* ── Sticky mobile action bar ── */
+  .mobile-action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: rgba(6,6,9,0.97);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(220,38,38,0.15);
+    padding: 8px 12px calc(8px + var(--safe-bottom));
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .mobile-action-bar .btn-primary {
+    flex: 1;
+    justify-content: center;
+    font-size: 0.82rem;
+    padding: 12px 16px;
+    border-radius: 10px;
+  }
+  .mobile-action-bar .btn-reprocess,
+  .mobile-action-bar .btn-danger {
+    flex-shrink: 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+  }
+
+  /* Hide the in-panel actions-row on mobile (moved to sticky bar) */
+  .actions-row { display: none; }
 }
 
 /* ═══════════════════════════════════════════
@@ -384,191 +400,6 @@ html {
   input[type="range"] {
     -webkit-tap-highlight-color: transparent;
   }
-}
-
-/* ═══════════════════════════════════════════
-   STICKY MOBILE ACTION BAR
-   Fixed bottom bar with primary action
-   ═══════════════════════════════════════════ */
-@media (max-width: 768px) {
-  .mobile-action-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 200;
-    background: rgba(6,6,9,0.97);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-top: 1px solid rgba(220,38,38,0.15);
-    padding: 8px 12px calc(8px + var(--safe-bottom));
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .mobile-action-bar .btn-primary {
-    flex: 1;
-    justify-content: center;
-    font-size: 0.82rem;
-    padding: 12px 16px;
-    border-radius: 10px;
-  }
-  .mobile-action-bar .btn-reprocess,
-  .mobile-action-bar .btn-danger {
-    flex-shrink: 0;
-    padding: 12px 14px;
-    border-radius: 10px;
-  }
-
-  /* Hide the in-panel actions-row on mobile (moved to sticky bar) */
-  .actions-row { display: none; }
-  }
-
-  .mobile-action-bar .btn-primary {
-    flex: 1;
-    justify-content: center;
-    font-size: 0.82rem;
-    padding: 12px 16px;
-    border-radius: 10px;
-  }
-  .mobile-action-bar .btn-reprocess,
-  .mobile-action-bar .btn-danger {
-    flex-shrink: 0;
-    padding: 12px 14px;
-    border-radius: 10px;
-  }
-
-  /* Hide the in-panel actions-row on mobile (moved to sticky bar) */
-  .actions-row { display: none; }
-}
-
-/* ═══════════════════════════════════════════
-   TRANSPORT CONTROLS  — mobile
-   ═══════════════════════════════════════════ */
-@media (max-width: 768px) {
-  .transport-card { padding: 8px; }
-  .transport-row {
-    display: grid;
-    grid-template-columns: repeat(5, auto) 1fr;
-    grid-template-rows: auto auto;
-    gap: 6px;
-    align-items: center;
-  }
-
-  /* Playback buttons row 1 */
-  .btn-tp {
-    padding: 8px;
-    border-radius: 8px;
-  }
-  #tpPlay, #tpPause, #tpStop, #tpRew, #tpFwd { grid-row: 1; }
-
-  /* Time display */
-  .tp-time {
-    grid-row: 1;
-    grid-column: 6;
-    text-align: right;
-    font-size: 0.65rem;
-  }
-
-  /* Seek slider full width row 2 */
-  .tp-seek {
-    grid-row: 2;
-    grid-column: 1 / -1;
-    width: 100%;
-    padding: 14px 0; /* touch area */
-  }
-
-  /* Speed + AB on row 2 — hide or compact */
-  .tp-speed { display: none; }
-  .tp-ab {
-    grid-row: 1;
-    grid-column: 5;
-    display: none; /* show via .transport-row.has-audio .tp-ab if desired */
-  }
-  .tp-ab-label { display: none; }
-}
-
-/* ═══════════════════════════════════════════
-   VISUALIZATIONS — mobile
-   ═══════════════════════════════════════════ */
-@media (max-width: 768px) {
-  .wave-row { grid-template-columns: 1fr !important; gap: 6px; }
-  .spectro3d-container { height: 160px; }
-  .spectro2d { height: 90px; }
-  .wave-cv   { height: 60px; }
-  .freq-cv   { height: 70px; }
-  .fs-wrap   { height: 130px; }
-  .viz-hdr   { flex-direction: column; align-items: flex-start; gap: 4px; }
-  .viz-actions { flex-wrap: wrap; gap: 4px; }
-}
-
-/* ═══════════════════════════════════════════
-   STATUS BAR (standalone/PWA mode)
-   ═══════════════════════════════════════════ */
-@media (display-mode: standalone) {
-  body { background-color: #0a0a0f; }
-  .hdr { padding-top: calc(0.5rem + var(--safe-top)); }
-}
-
-/* ═══════════════════════════════════════════
-   TRANSPORT CONTROLS  — mobile
-   ═══════════════════════════════════════════ */
-@media (max-width: 768px) {
-  .transport-card { padding: 8px; }
-  .transport-row {
-    display: grid;
-    grid-template-columns: repeat(5, auto) 1fr;
-    grid-template-rows: auto auto;
-    gap: 6px;
-    align-items: center;
-  }
-
-  /* Playback buttons row 1 */
-  .btn-tp {
-    padding: 8px;
-    border-radius: 8px;
-  }
-  #tpPlay, #tpPause, #tpStop, #tpRew, #tpFwd { grid-row: 1; }
-
-  /* Time display */
-  .tp-time {
-    grid-row: 1;
-    grid-column: 6;
-    text-align: right;
-    font-size: 0.65rem;
-  }
-
-  /* Seek slider full width row 2 */
-  .tp-seek {
-    grid-row: 2;
-    grid-column: 1 / -1;
-    width: 100%;
-    padding: 14px 0; /* touch area */
-  }
-
-  /* Speed + AB on row 2 — hide or compact */
-  .tp-speed { display: none; }
-  .tp-ab {
-    grid-row: 1;
-    grid-column: 5;
-    display: none; /* show via .transport-row.has-audio .tp-ab if desired */
-  }
-  .tp-ab-label { display: none; }
-}
-
-/* ═══════════════════════════════════════════
-   VISUALIZATIONS — mobile
-   ═══════════════════════════════════════════ */
-@media (max-width: 768px) {
-  .wave-row { grid-template-columns: 1fr !important; gap: 6px; }
-  .spectro3d-container { height: 160px; }
-  .spectro2d { height: 90px; }
-  .wave-cv   { height: 60px; }
-  .freq-cv   { height: 70px; }
-  .fs-wrap   { height: 130px; }
-  .viz-hdr   { flex-direction: column; align-items: flex-start; gap: 4px; }
-  .viz-actions { flex-wrap: wrap; gap: 4px; }
 }
 
 /* ═══════════════════════════════════════════
