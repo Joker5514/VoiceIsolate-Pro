@@ -1182,9 +1182,11 @@ class VoiceIsolatePro {
         frameEnergy[fi] = e;
       }
       // Sorted indices by ascending energy
-      const sortedIdx = Array.from({ length: totalFrames }, (_, i) => i)
-        .sort((a, b) => frameEnergy[a] - frameEnergy[b]);
-      const profCount = Math.max(4, Math.floor(totalFrames * 0.10));
+      const sortedIdx = new Int32Array(totalFrames);
+      for (let i = 0; i < totalFrames; i++) sortedIdx[i] = i;
+      sortedIdx.sort((a, b) => frameEnergy[a] - frameEnergy[b]);
+
+      const profCount = Math.min(totalFrames, Math.max(4, Math.floor(totalFrames * 0.10)));
       const noisePSD = new Float64Array(halfN);
       let profFrames = 0;
       for (let fi = 0; fi < profCount; fi++) {
