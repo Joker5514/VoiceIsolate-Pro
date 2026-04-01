@@ -248,10 +248,11 @@ async function processLoop() {
 async function generateMask(frame) {
   let demucsMask = null;
   let bsrnnMask = null;
+  const len = frame.length;
 
   // Demucs inference
   if (sessions.demucs && weights.demucs > 0) {
-    const tensor = new ort.Tensor('float32', frame, [1, 1, frameSize]);
+    const tensor = new ort.Tensor('float32', frame, [1, 1, len]);
     try {
       const result = await sessions.demucs.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -264,7 +265,7 @@ async function generateMask(frame) {
 
   // BSRNN inference
   if (sessions.bsrnn && weights.bsrnn > 0) {
-    const tensor = new ort.Tensor('float32', frame, [1, 1, frameSize]);
+    const tensor = new ort.Tensor('float32', frame, [1, 1, len]);
     try {
       const result = await sessions.bsrnn.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -276,8 +277,8 @@ async function generateMask(frame) {
   }
 
   // Ensemble fusion
-  const mask = new Float32Array(frameSize);
-  for (let i = 0; i < frameSize; i++) {
+  const mask = new Float32Array(len);
+  for (let i = 0; i < len; i++) {
     const d = demucsMask ? demucsMask[i] * weights.demucs : 0;
     const b = bsrnnMask ? bsrnnMask[i] * weights.bsrnn : 0;
     const total = (demucsMask ? weights.demucs : 0) + (bsrnnMask ? weights.bsrnn : 0);
