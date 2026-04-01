@@ -224,6 +224,7 @@ class VoiceIsolatePro {
     ['dragleave','drop'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uz.classList.remove('dragover'); }));
     uz.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
     uz.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
+    uz.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.dom.fileInput.click(); } });
     this.dom.fileBtn.addEventListener('click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
     this.dom.fileInput.addEventListener('change', e => { if (e.target.files[0]) this.handleFile(e.target.files[0]); this.dom.fileInput.value = ''; });
     this.dom.micBtn.addEventListener('click', () => this.toggleRecording());
