@@ -87,26 +87,26 @@ const SLIDERS = {
 // ---- PRESETS ----
 const PRESETS = {
   // Podcast — Optimized for spoken word: tight gate, strong NR, presence boost, -16 LUFS target
-  podcast: {gateThresh:-36,gateRange:-40,gateAttack:1.5,gateRelease:55,gateHold:20,gateLookahead:5,nrAmount:65,nrSensitivity:58,nrSpectralSub:50,nrFloor:-52,nrSmoothing:38,eqSub:-12,eqBass:-2,eqWarmth:2.5,eqBody:0.5,eqLowMid:-1.5,eqMid:1.5,eqPresence:4.5,eqClarity:3,eqAir:1.5,eqBrill:-3,compThresh:-22,compRatio:4.5,compAttack:5,compRelease:160,compKnee:8,compMakeup:7,limThresh:-1,limRelease:8,hpFreq:90,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:38,specTilt:0.5,formantShift:0,derevAmt:50,derevDecay:0.4,harmRecov:18,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:82,bgSuppress:65,voiceFocusLo:120,voiceFocusHi:6500,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
+  podcast: {gateThresh:-36,gateRange:-40,gateAttack:1.5,gateRelease:55,gateHold:20,gateLookahead:5,nrAmount:52,nrSensitivity:50,nrSpectralSub:40,nrFloor:-52,nrSmoothing:38,eqSub:-12,eqBass:-2,eqWarmth:2.5,eqBody:0.5,eqLowMid:-1.5,eqMid:1.5,eqPresence:4.5,eqClarity:3,eqAir:1.5,eqBrill:-3,compThresh:-22,compRatio:4.5,compAttack:5,compRelease:160,compKnee:8,compMakeup:7,limThresh:-1,limRelease:8,hpFreq:90,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:38,specTilt:0.5,formantShift:0,derevAmt:40,derevDecay:0.4,harmRecov:18,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:82,bgSuppress:60,voiceFocusLo:120,voiceFocusHi:6500,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
   // Film — Natural dialogue: gentle processing, wide bandwidth, preserve room tone and dynamics
-  film: {gateThresh:-52,gateRange:-25,gateAttack:4,gateRelease:120,gateHold:30,gateLookahead:8,nrAmount:35,nrSensitivity:42,nrSpectralSub:25,nrFloor:-62,nrSmoothing:45,eqSub:-5,eqBass:1.5,eqWarmth:1.5,eqBody:1,eqLowMid:0,eqMid:0.5,eqPresence:2,eqClarity:1.5,eqAir:2,eqBrill:-0.5,compThresh:-30,compRatio:2.5,compAttack:15,compRelease:320,compKnee:12,compMakeup:3,limThresh:-1.5,limRelease:18,hpFreq:55,hpQ:0.71,lpFreq:17000,lpQ:0.71,deEssFreq:6500,deEssAmt:18,specTilt:-0.5,formantShift:0,derevAmt:25,derevDecay:0.7,harmRecov:28,harmOrder:3,stereoWidth:130,phaseCorr:0,voiceIso:55,bgSuppress:35,voiceFocusLo:90,voiceFocusHi:8500,crosstalkCancel:0,outGain:0,dryWet:95,ditherAmt:0,outWidth:120},
+  film: {gateThresh:-52,gateRange:-25,gateAttack:4,gateRelease:120,gateHold:30,gateLookahead:8,nrAmount:28,nrSensitivity:40,nrSpectralSub:20,nrFloor:-62,nrSmoothing:45,eqSub:-5,eqBass:1.5,eqWarmth:1.5,eqBody:1,eqLowMid:0,eqMid:0.5,eqPresence:2,eqClarity:1.5,eqAir:2,eqBrill:-0.5,compThresh:-30,compRatio:2.5,compAttack:15,compRelease:320,compKnee:12,compMakeup:3,limThresh:-1.5,limRelease:18,hpFreq:55,hpQ:0.71,lpFreq:17000,lpQ:0.71,deEssFreq:6500,deEssAmt:18,specTilt:-0.5,formantShift:0,derevAmt:22,derevDecay:0.7,harmRecov:28,harmOrder:3,stereoWidth:130,phaseCorr:0,voiceIso:55,bgSuppress:32,voiceFocusLo:90,voiceFocusHi:8500,crosstalkCancel:0,outGain:0,dryWet:95,ditherAmt:0,outWidth:120},
   // Interview — Multi-speaker clarity: balanced NR, crosstalk cancel, focused voice band
-  interview: {gateThresh:-40,gateRange:-36,gateAttack:2,gateRelease:75,gateHold:25,gateLookahead:5,nrAmount:58,nrSensitivity:52,nrSpectralSub:42,nrFloor:-56,nrSmoothing:35,eqSub:-8,eqBass:-0.5,eqWarmth:1.5,eqBody:0.5,eqLowMid:-1,eqMid:2,eqPresence:3.5,eqClarity:2.5,eqAir:1,eqBrill:-2.5,compThresh:-24,compRatio:4,compAttack:5,compRelease:180,compKnee:8,compMakeup:6,limThresh:-1,limRelease:10,hpFreq:100,hpQ:0.71,lpFreq:13000,lpQ:0.71,deEssFreq:7000,deEssAmt:32,specTilt:0,formantShift:0,derevAmt:48,derevDecay:0.45,harmRecov:22,harmOrder:3,stereoWidth:85,phaseCorr:10,voiceIso:78,bgSuppress:58,voiceFocusLo:110,voiceFocusHi:6500,crosstalkCancel:25,outGain:0,dryWet:100,ditherAmt:0,outWidth:90},
+  interview: {gateThresh:-40,gateRange:-36,gateAttack:2,gateRelease:75,gateHold:25,gateLookahead:5,nrAmount:48,nrSensitivity:48,nrSpectralSub:35,nrFloor:-56,nrSmoothing:35,eqSub:-8,eqBass:-0.5,eqWarmth:1.5,eqBody:0.5,eqLowMid:-1,eqMid:2,eqPresence:3.5,eqClarity:2.5,eqAir:1,eqBrill:-2.5,compThresh:-24,compRatio:4,compAttack:5,compRelease:180,compKnee:8,compMakeup:6,limThresh:-1,limRelease:10,hpFreq:100,hpQ:0.71,lpFreq:13000,lpQ:0.71,deEssFreq:7000,deEssAmt:32,specTilt:0,formantShift:0,derevAmt:40,derevDecay:0.45,harmRecov:22,harmOrder:3,stereoWidth:85,phaseCorr:10,voiceIso:78,bgSuppress:55,voiceFocusLo:110,voiceFocusHi:6500,crosstalkCancel:25,outGain:0,dryWet:100,ditherAmt:0,outWidth:90},
   // Forensic — Maximum detail preservation: minimal processing, wide spectrum, phase correction
-  forensic: {gateThresh:-68,gateRange:-15,gateAttack:1,gateRelease:180,gateHold:35,gateLookahead:12,nrAmount:30,nrSensitivity:65,nrSpectralSub:18,nrFloor:-72,nrSmoothing:55,eqSub:-1,eqBass:0.5,eqWarmth:0,eqBody:0,eqLowMid:0.5,eqMid:2.5,eqPresence:5,eqClarity:4.5,eqAir:3,eqBrill:0.5,compThresh:-16,compRatio:1.8,compAttack:18,compRelease:450,compKnee:15,compMakeup:10,limThresh:-0.3,limRelease:25,hpFreq:40,hpQ:0.71,lpFreq:19000,lpQ:0.71,deEssFreq:8000,deEssAmt:8,specTilt:1,formantShift:0,derevAmt:15,derevDecay:0.9,harmRecov:38,harmOrder:5,stereoWidth:100,phaseCorr:35,voiceIso:92,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:11000,crosstalkCancel:0,outGain:3,dryWet:88,ditherAmt:0,outWidth:100},
+  forensic: {gateThresh:-68,gateRange:-15,gateAttack:1,gateRelease:180,gateHold:35,gateLookahead:12,nrAmount:25,nrSensitivity:55,nrSpectralSub:15,nrFloor:-72,nrSmoothing:55,eqSub:-1,eqBass:0.5,eqWarmth:0,eqBody:0,eqLowMid:0.5,eqMid:2.5,eqPresence:5,eqClarity:4.5,eqAir:3,eqBrill:0.5,compThresh:-16,compRatio:1.8,compAttack:18,compRelease:450,compKnee:15,compMakeup:10,limThresh:-0.3,limRelease:25,hpFreq:40,hpQ:0.71,lpFreq:19000,lpQ:0.71,deEssFreq:8000,deEssAmt:8,specTilt:1,formantShift:0,derevAmt:12,derevDecay:0.9,harmRecov:38,harmOrder:5,stereoWidth:100,phaseCorr:35,voiceIso:85,bgSuppress:22,voiceFocusLo:80,voiceFocusHi:11000,crosstalkCancel:0,outGain:3,dryWet:88,ditherAmt:0,outWidth:100},
   // Music — Vocal extraction with musicality: gentle touch, preserve harmonics, wide stereo
-  music: {gateThresh:-58,gateRange:-20,gateAttack:4,gateRelease:140,gateHold:20,gateLookahead:4,nrAmount:22,nrSensitivity:38,nrSpectralSub:18,nrFloor:-68,nrSmoothing:48,eqSub:-2,eqBass:1.5,eqWarmth:2.5,eqBody:1,eqLowMid:0.5,eqMid:0,eqPresence:1.5,eqClarity:1,eqAir:3.5,eqBrill:1,compThresh:-32,compRatio:2,compAttack:22,compRelease:380,compKnee:18,compMakeup:2.5,limThresh:-0.5,limRelease:14,hpFreq:35,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:12,specTilt:-1,formantShift:0,derevAmt:12,derevDecay:1.2,harmRecov:35,harmOrder:5,stereoWidth:160,phaseCorr:0,voiceIso:45,bgSuppress:20,voiceFocusLo:80,voiceFocusHi:11000,crosstalkCancel:0,outGain:0,dryWet:82,ditherAmt:5,outWidth:150},
+  music: {gateThresh:-58,gateRange:-20,gateAttack:4,gateRelease:140,gateHold:20,gateLookahead:4,nrAmount:18,nrSensitivity:35,nrSpectralSub:15,nrFloor:-68,nrSmoothing:48,eqSub:-2,eqBass:1.5,eqWarmth:2.5,eqBody:1,eqLowMid:0.5,eqMid:0,eqPresence:1.5,eqClarity:1,eqAir:3.5,eqBrill:1,compThresh:-32,compRatio:2,compAttack:22,compRelease:380,compKnee:18,compMakeup:2.5,limThresh:-0.5,limRelease:14,hpFreq:35,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:12,specTilt:-1,formantShift:0,derevAmt:10,derevDecay:1.2,harmRecov:35,harmOrder:5,stereoWidth:160,phaseCorr:0,voiceIso:45,bgSuppress:55,voiceFocusLo:80,voiceFocusHi:11000,crosstalkCancel:0,outGain:0,dryWet:82,ditherAmt:5,outWidth:150},
   // Broadcast — Loud, clean, aggressive: heavy compression, tight band, -14 LUFS target
-  broadcast: {gateThresh:-34,gateRange:-45,gateAttack:1,gateRelease:45,gateHold:12,gateLookahead:3,nrAmount:70,nrSensitivity:62,nrSpectralSub:55,nrFloor:-48,nrSmoothing:28,eqSub:-12,eqBass:-3,eqWarmth:2.5,eqBody:0.5,eqLowMid:-2,eqMid:2.5,eqPresence:5.5,eqClarity:3.5,eqAir:0.5,eqBrill:-5,compThresh:-20,compRatio:7,compAttack:3,compRelease:120,compKnee:3,compMakeup:12,limThresh:-0.5,limRelease:4,hpFreq:130,hpQ:0.71,lpFreq:11000,lpQ:0.71,deEssFreq:7000,deEssAmt:48,specTilt:1.5,formantShift:0,derevAmt:60,derevDecay:0.25,harmRecov:8,harmOrder:2,stereoWidth:50,phaseCorr:0,voiceIso:88,bgSuppress:75,voiceFocusLo:160,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:60},
+  broadcast: {gateThresh:-34,gateRange:-45,gateAttack:1,gateRelease:45,gateHold:12,gateLookahead:3,nrAmount:55,nrSensitivity:55,nrSpectralSub:45,nrFloor:-48,nrSmoothing:28,eqSub:-12,eqBass:-3,eqWarmth:2.5,eqBody:0.5,eqLowMid:-2,eqMid:2.5,eqPresence:5.5,eqClarity:3.5,eqAir:0.5,eqBrill:-5,compThresh:-20,compRatio:7,compAttack:3,compRelease:120,compKnee:3,compMakeup:12,limThresh:-0.5,limRelease:4,hpFreq:130,hpQ:0.71,lpFreq:11000,lpQ:0.71,deEssFreq:7000,deEssAmt:48,specTilt:1.5,formantShift:0,derevAmt:48,derevDecay:0.25,harmRecov:8,harmOrder:2,stereoWidth:50,phaseCorr:0,voiceIso:88,bgSuppress:70,voiceFocusLo:160,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:60},
   // Restoration — Recover damaged/old recordings: gentle NR, harmonic recovery, preserve character
-  restoration: {gateThresh:-62,gateRange:-12,gateAttack:6,gateRelease:220,gateHold:45,gateLookahead:12,nrAmount:50,nrSensitivity:58,nrSpectralSub:38,nrFloor:-68,nrSmoothing:55,eqSub:-3,eqBass:0.5,eqWarmth:0.5,eqBody:0,eqLowMid:0,eqMid:1.5,eqPresence:3.5,eqClarity:2.5,eqAir:1.5,eqBrill:-0.5,compThresh:-28,compRatio:2.5,compAttack:12,compRelease:280,compKnee:10,compMakeup:5,limThresh:-0.5,limRelease:16,hpFreq:45,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:18,specTilt:0,formantShift:0,derevAmt:38,derevDecay:0.8,harmRecov:45,harmOrder:4,stereoWidth:100,phaseCorr:25,voiceIso:62,bgSuppress:42,voiceFocusLo:90,voiceFocusHi:8500,crosstalkCancel:12,outGain:2,dryWet:92,ditherAmt:5,outWidth:100},
+  restoration: {gateThresh:-62,gateRange:-12,gateAttack:6,gateRelease:220,gateHold:45,gateLookahead:12,nrAmount:42,nrSensitivity:50,nrSpectralSub:32,nrFloor:-68,nrSmoothing:55,eqSub:-3,eqBass:0.5,eqWarmth:0.5,eqBody:0,eqLowMid:0,eqMid:1.5,eqPresence:3.5,eqClarity:2.5,eqAir:1.5,eqBrill:-0.5,compThresh:-28,compRatio:2.5,compAttack:12,compRelease:280,compKnee:10,compMakeup:5,limThresh:-0.5,limRelease:16,hpFreq:45,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:18,specTilt:0,formantShift:0,derevAmt:32,derevDecay:0.8,harmRecov:45,harmOrder:4,stereoWidth:100,phaseCorr:25,voiceIso:62,bgSuppress:40,voiceFocusLo:90,voiceFocusHi:8500,crosstalkCancel:12,outGain:2,dryWet:92,ditherAmt:5,outWidth:100},
   // Whisper — Extreme low-level voice recovery: heavy compression, max presence, gentle NR to avoid artifacts
-  whisper: {gateThresh:-70,gateRange:-15,gateAttack:0.5,gateRelease:120,gateHold:15,gateLookahead:8,nrAmount:22,nrSensitivity:72,nrSpectralSub:15,nrFloor:-75,nrSmoothing:62,eqSub:0,eqBass:2.5,eqWarmth:3,eqBody:1.5,eqLowMid:2,eqMid:5.5,eqPresence:8,eqClarity:6,eqAir:4,eqBrill:2,compThresh:-42,compRatio:10,compAttack:1.5,compRelease:130,compKnee:15,compMakeup:20,limThresh:-1,limRelease:8,hpFreq:70,hpQ:0.71,lpFreq:15000,lpQ:0.71,deEssFreq:6000,deEssAmt:22,specTilt:0.5,formantShift:0,derevAmt:8,derevDecay:0.9,harmRecov:45,harmOrder:4,stereoWidth:100,phaseCorr:0,voiceIso:95,bgSuppress:18,voiceFocusLo:90,voiceFocusHi:9000,crosstalkCancel:0,outGain:6,dryWet:100,ditherAmt:0,outWidth:100},
+  whisper: {gateThresh:-70,gateRange:-15,gateAttack:0.5,gateRelease:120,gateHold:15,gateLookahead:8,nrAmount:20,nrSensitivity:65,nrSpectralSub:12,nrFloor:-75,nrSmoothing:62,eqSub:0,eqBass:2.5,eqWarmth:3,eqBody:1.5,eqLowMid:2,eqMid:5.5,eqPresence:8,eqClarity:6,eqAir:4,eqBrill:2,compThresh:-42,compRatio:10,compAttack:1.5,compRelease:130,compKnee:15,compMakeup:20,limThresh:-1,limRelease:8,hpFreq:70,hpQ:0.71,lpFreq:15000,lpQ:0.71,deEssFreq:6000,deEssAmt:22,specTilt:0.5,formantShift:0,derevAmt:8,derevDecay:0.9,harmRecov:45,harmOrder:4,stereoWidth:100,phaseCorr:0,voiceIso:95,bgSuppress:18,voiceFocusLo:90,voiceFocusHi:9000,crosstalkCancel:0,outGain:6,dryWet:100,ditherAmt:0,outWidth:100},
   // Crystal Voice — Maximum voice-only isolation. Strips everything except human speech.
-  // Tight bandpass (150 Hz–8 kHz), aggressive gating, heavy NR + spectral subtraction,
-  // max voice isolation/BG suppress, mono collapse, strong dereverb, harmonic recovery
-  // to restore warmth lost by aggressive processing. Presence/clarity boosted for intelligibility.
-  crystalVoice: {gateThresh:-28,gateRange:-55,gateAttack:0.8,gateRelease:35,gateHold:8,gateLookahead:12,nrAmount:88,nrSensitivity:78,nrSpectralSub:72,nrFloor:-42,nrSmoothing:42,eqSub:-12,eqBass:-6,eqWarmth:-2,eqBody:-2,eqLowMid:-3,eqMid:3.5,eqPresence:6,eqClarity:5,eqAir:1,eqBrill:-6,compThresh:-18,compRatio:5,compAttack:2,compRelease:130,compKnee:6,compMakeup:9,limThresh:-0.5,limRelease:6,hpFreq:160,hpQ:0.71,lpFreq:8000,lpQ:0.71,deEssFreq:7000,deEssAmt:52,specTilt:0.5,formantShift:0,derevAmt:75,derevDecay:0.25,harmRecov:28,harmOrder:3,stereoWidth:0,phaseCorr:0,voiceIso:98,bgSuppress:90,voiceFocusLo:160,voiceFocusHi:5000,crosstalkCancel:18,outGain:2,dryWet:100,ditherAmt:0,outWidth:40}
+  // Uses tonal suppression (sustained = music, transient = voice) + tight bandpass
+  // gating + strong NR. NR values are moderated vs the old preset which caused garbling
+  // because over-subtraction (alpha>2) treated voice itself as noise.
+  crystalVoice: {gateThresh:-28,gateRange:-55,gateAttack:0.8,gateRelease:35,gateHold:8,gateLookahead:12,nrAmount:68,nrSensitivity:65,nrSpectralSub:52,nrFloor:-48,nrSmoothing:42,eqSub:-12,eqBass:-6,eqWarmth:-2,eqBody:-2,eqLowMid:-3,eqMid:3.5,eqPresence:6,eqClarity:5,eqAir:1,eqBrill:-6,compThresh:-18,compRatio:5,compAttack:2,compRelease:130,compKnee:6,compMakeup:9,limThresh:-0.5,limRelease:6,hpFreq:150,hpQ:0.71,lpFreq:8000,lpQ:0.71,deEssFreq:7000,deEssAmt:52,specTilt:0.5,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:32,harmOrder:3,stereoWidth:0,phaseCorr:0,voiceIso:95,bgSuppress:82,voiceFocusLo:150,voiceFocusHi:6000,crosstalkCancel:18,outGain:2,dryWet:100,ditherAmt:0,outWidth:40}
 };
 
 const STAGES = [
@@ -1138,12 +1138,15 @@ class VoiceIsolatePro {
     for (let i = 0; i < n; i++) { re[i] /= n; im[i] = -im[i] / n; }
   }
 
-  // Blackman-Harris window
+  // Periodic (DFT-even) Hann window.
+  // Using N (not N−1) in the denominator gives the periodic form which satisfies
+  // the COLA condition at 50 % and 75 % overlap, making OLA synthesis artefact-free.
+  // Blackman-Harris was replaced because its near-zero edge values caused amplitude
+  // modulation artefacts when overlap-add normalisation was applied at boundaries.
   _makeWindow(N) {
     const win = new Float64Array(N);
     for (let i = 0; i < N; i++) {
-      const c = (2 * Math.PI * i) / (N - 1);
-      win[i] = 0.35875 - 0.48829*Math.cos(c) + 0.14128*Math.cos(2*c) - 0.01168*Math.cos(3*c);
+      win[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / N));
     }
     return win;
   }
@@ -1154,9 +1157,9 @@ class VoiceIsolatePro {
     const out = this.ctx.createBuffer(nCh, len, sr);
     const N = 2048, H = 512, halfN = N / 2 + 1;
     const win = this._makeWindow(N);
-    // over-subtraction 1..3, spectral floor 0.01..0.1
-    const alpha = 1 + amt * 2;
-    const beta = Math.max(0.01, 0.1 - spectralSub * 0.09);
+    // over-subtraction 1..2 (capped lower to avoid musical noise), spectral floor 0.05..0.15
+    const alpha = 1 + amt * 1.0;
+    const beta = Math.max(0.05, 0.15 - spectralSub * 0.08);
     const floorLin = Math.pow(10, floorDb / 20);
     const sm = Math.max(0, Math.min(0.95, smoothing * 0.95));
 
@@ -1165,11 +1168,30 @@ class VoiceIsolatePro {
       const outData = out.getChannelData(ch);
       const normBuf = new Float64Array(len);
 
-      // Profile noise PSD from first ~500ms
-      const profLen = Math.min(Math.floor(sr * 0.5), len);
+      // --- Noise profiling from quietest frames ---
+      // Using the first N ms as the noise profile silently breaks whenever audio
+      // starts immediately with voice or music.  Instead, rank all frames by energy
+      // and profile from the bottom 10 % (genuine silence / room tone).
+      const totalFrames = Math.floor((len - N) / H) + 1;
+      const frameEnergy = new Float32Array(totalFrames);
+      for (let fi = 0; fi < totalFrames; fi++) {
+        const s = fi * H;
+        if (s + N > len) break;
+        let e = 0;
+        for (let i = 0; i < N; i++) e += inp[s + i] * inp[s + i];
+        frameEnergy[fi] = e;
+      }
+      // Sorted indices by ascending energy
+      const sortedIdx = new Int32Array(totalFrames);
+      for (let i = 0; i < totalFrames; i++) sortedIdx[i] = i;
+      sortedIdx.sort((a, b) => frameEnergy[a] - frameEnergy[b]);
+
+      const profCount = Math.min(totalFrames, Math.max(4, Math.floor(totalFrames * 0.10)));
       const noisePSD = new Float64Array(halfN);
       let profFrames = 0;
-      for (let s = 0; s + N <= profLen; s += H) {
+      for (let fi = 0; fi < profCount; fi++) {
+        const s = sortedIdx[fi] * H;
+        if (s + N > len) continue;
         const re = new Float64Array(N), im = new Float64Array(N);
         for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
         this._fft(re, im);
@@ -1181,6 +1203,10 @@ class VoiceIsolatePro {
       }
       const smoothedNoise = new Float64Array(noisePSD);
 
+      // Pre-compute total noise floor energy for energy-based VAD
+      let noiseFloorEnergy = 0;
+      for (let k = 0; k < halfN; k++) noiseFloorEnergy += noisePSD[k];
+
       // Process all frames
       let frameIdx = 0;
       for (let s = 0; s + N <= len; s += H, frameIdx++) {
@@ -1188,19 +1214,25 @@ class VoiceIsolatePro {
         for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
         this._fft(re, im);
 
-        // If VAD mask available: only apply NR during non-speech frames
+        // Voice activity detection — use ML VAD mask when available, otherwise fall
+        // back to simple energy ratio: frames significantly louder than the noise floor
+        // are almost certainly speech and should be protected from aggressive NR.
         const frameTimeSec = s / sr;
         const vadFrameIdx = vadMask ? Math.floor(frameTimeSec * 100) : -1;
-        const isSpeech = vadMask && vadFrameIdx < vadMask.length ? vadMask[vadFrameIdx] : false;
+        const mlSpeech = vadMask && vadFrameIdx < vadMask.length ? vadMask[vadFrameIdx] : false;
+        let curFrameEnergy = 0;
+        for (let k = 0; k < halfN; k++) curFrameEnergy += re[k]*re[k] + im[k]*im[k];
+        // Energy 3× above noise floor → treat as speech even without ML VAD
+        const energySpeech = noiseFloorEnergy > 0 && curFrameEnergy > noiseFloorEnergy * (3 + sensitivity * 4);
+        const isSpeech = mlSpeech || energySpeech;
 
         for (let k = 0; k < halfN; k++) {
           const sigPSD = re[k]*re[k] + im[k]*im[k];
           smoothedNoise[k] = sm * smoothedNoise[k] + (1 - sm) * noisePSD[k];
           const nEst = alpha * smoothedNoise[k] * (1 + sensitivity * 0.5);
-          // Apply softer NR during speech frames: reduce noise estimate so Wiener
-          // gain stays higher (less attenuation) rather than using nEst as a gain floor
-          // (nEst is a PSD value, not a valid gain — using it as a floor could amplify).
-          const nEstFrame = isSpeech ? nEst * 0.3 : nEst;
+          // During speech frames apply much softer NR so voice is not attenuated.
+          // nEst is a PSD value — halving it raises the Wiener gain significantly.
+          const nEstFrame = isSpeech ? nEst * 0.15 : nEst;
           const gain = sigPSD > 1e-12 ?
             Math.max(Math.sqrt(Math.max(sigPSD - nEstFrame, 0) / sigPSD), beta) : beta;
           re[k] *= gain; im[k] *= gain;
@@ -1222,25 +1254,60 @@ class VoiceIsolatePro {
 
   // ======== PHASE 2: WIRED SLIDERS — SPECTRAL PROCESSING ========
 
-  // Background suppression: attenuate bins outside voice focus band
+  // Background suppression: attenuate out-of-band frequencies AND sustained tonal
+  // components (background music) inside the voice band.
+  //
+  // The old implementation was a pure bandpass filter which couldn't distinguish
+  // background music from voice when both occupy the same 120–6500 Hz range.
+  //
+  // New approach — two-stage per-bin masking:
+  //   1. Out-of-band: attenuate fully (same as before).
+  //   2. In-band tonal suppression: track each bin's running-mean magnitude and
+  //      variance.  Bins with low coefficient-of-variation (CV = σ/μ < threshold)
+  //      are "sustained" (music/hum/drone) and get attenuated.  Voice bins are
+  //      transient and irregular → high CV → left untouched.
   applyBgSuppress(buf, suppressAmt, voiceFocusLo, voiceFocusHi) {
     if (suppressAmt <= 0) return buf;
     const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
     const out = this.ctx.createBuffer(nCh, len, sr);
     const N = 2048, H = 512, halfN = N / 2 + 1;
     const win = this._makeWindow(N);
-    const g = 1 - suppressAmt / 100;
+    const g = 1 - suppressAmt / 100;          // gain for suppressed bins (0.1 at 90%)
+    const tonalSm = 0.90;                       // temporal smoothing for tonal detector
+    // CV threshold: bins with σ/μ below this are considered tonal (music).
+    // 0.5 is a reasonable heuristic — voice typically has CV > 0.8.
+    const cvThreshold = 0.50;
+
     for (let ch = 0; ch < nCh; ch++) {
       const inp = buf.getChannelData(ch);
       const outData = out.getChannelData(ch);
       const normBuf = new Float64Array(len);
+      // Per-bin running statistics for tonal detection
+      const magMean = new Float64Array(halfN).fill(1e-6);
+      const magVar  = new Float64Array(halfN).fill(1e-6);
+
       for (let s = 0; s + N <= len; s += H) {
         const re = new Float64Array(N), im = new Float64Array(N);
         for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
         this._fft(re, im);
+
         for (let k = 0; k < halfN; k++) {
           const freq = k * sr / N;
-          if (freq < voiceFocusLo || freq > voiceFocusHi) {
+          const inVoiceBand = freq >= voiceFocusLo && freq <= voiceFocusHi;
+          const mag = Math.sqrt(re[k]*re[k] + im[k]*im[k]);
+
+          // Update running mean and variance (exponential moving average)
+          const diff = mag - magMean[k];
+          magMean[k] = tonalSm * magMean[k] + (1 - tonalSm) * mag;
+          magVar[k]  = tonalSm * magVar[k]  + (1 - tonalSm) * diff * diff;
+
+          // Coefficient of variation: low → tonal/sustained (music), high → transient (voice)
+          const cv = magMean[k] > 1e-7 ? Math.sqrt(Math.max(magVar[k], 0)) / magMean[k] : 1.0;
+          const isTonal = cv < cvThreshold && mag > 1e-7;
+
+          // Suppress: always outside voice band; inside band only when tonal (music)
+          const suppress = !inVoiceBand || isTonal;
+          if (suppress) {
             re[k] *= g; im[k] *= g;
             if (k > 0 && k < N - k) { re[N-k] *= g; im[N-k] *= g; }
           }
