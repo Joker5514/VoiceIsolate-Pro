@@ -404,6 +404,22 @@ class VoiceIsolatePro {
     });
     this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
     this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
+    // Spectrogram v2: mode toggle, mel scale, freeze, snapshot
+    const spectroModeBtn     = document.getElementById('spectroModeBtn');
+    const spectroMelBtn      = document.getElementById('spectroMelBtn');
+    const spectroFreezeBtn   = document.getElementById('spectroFreezeBtn');
+    const spectroSnapshotBtn = document.getElementById('spectroSnapshotBtn');
+    if (spectroModeBtn)     spectroModeBtn.addEventListener('click',     () => this._spectroV2ToggleMode());
+    if (spectroMelBtn)      spectroMelBtn.addEventListener('click',      () => this._spectroV2ToggleMel());
+    if (spectroFreezeBtn)   spectroFreezeBtn.addEventListener('click',   () => this._spectroV2ToggleFreeze());
+    if (spectroSnapshotBtn) spectroSnapshotBtn.addEventListener('click', () => this._spectroV2Snapshot());
+    // Keyboard shortcuts: V=2D/3D, M=mel/linear, F=freeze
+    window.addEventListener('keydown', e => {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+      if (e.key === 'v' || e.key === 'V') this._spectroV2ToggleMode();
+      if (e.key === 'm' || e.key === 'M') this._spectroV2ToggleMel();
+      if (e.key === 'f' || e.key === 'F') this._spectroV2ToggleFreeze();
+    });
     // 2D Spectrogram controls
     if (this.dom.spectroFreeze)  this.dom.spectroFreeze.addEventListener('click', () => this._spectroToggleFreeze());
     if (this.dom.spectroZoomIn)  this.dom.spectroZoomIn.addEventListener('click', () => this._spectroZoom(2));
@@ -1689,6 +1705,8 @@ class VoiceIsolatePro {
     // Persist updated profiles and refresh UI
     this.speakerRegistry.save().catch(() => {});
     this.updateSpeakerUI();
+    // v2: update speaker legend overlay on 3D spectrogram
+    this._spectroV2UpdateSpeakerLegend(speaker.id);
   }
 
   /** Render the speaker list and diarization timeline in the UI. */
@@ -2071,6 +2089,8 @@ class VoiceIsolatePro {
         this.spectroX+=sw;
       }
       this.update3D(arr);
+      // v2: drive 2D waterfall if active
+      this._spectroV2UpdateRow(arr, 0.5, null);
     };
     draw();
   }
@@ -2153,7 +2173,7 @@ class VoiceIsolatePro {
     if(w===0||h===0)return;
     const scene=new THREE.Scene();scene.background=new THREE.Color(0x030306);
     const cam=new THREE.PerspectiveCamera(45,w/h,0.1,1000);cam.position.set(0,40,60);cam.lookAt(0,0,0);
-    const ren=new THREE.WebGLRenderer({canvas:this.dom.spectro3DCanvas,antialias:true});
+    const ren=new THREE.WebGLRenderer({canvas:this.dom.spectro3DCanvas,antialias:true,preserveDrawingBuffer:true});
     ren.setSize(w,h);ren.setPixelRatio(Math.min(window.devicePixelRatio,2));
     const gW=64;const gD=128;
     const geo=new THREE.PlaneGeometry(80,40,gW-1,gD-1);geo.rotateX(-Math.PI*0.4);
@@ -2196,7 +2216,146 @@ class VoiceIsolatePro {
 
   render3D(){requestAnimationFrame(()=>this.render3D());if(this.three.ren)this.three.ren.render(this.three.scene,this.three.cam);}
 
-  // ---- Audio-Reactive Glow (rAF loop updating CSS --glow-level) ----
+  // ---- Spectrogram v2: 2D/3D mode, mel scale, freeze, snapshot, speaker lanes ----
+  // State stored on instance so it survives re-renders
+  _spectroV2Init(){
+    if(this._v2inited)return;this._v2inited=true;
+    this._v2mode2D=false;this._v2mel=false;this._v2frozen=false;
+    // Pre-allocate mel lookup (80Hz–20kHz, 128 bins)
+    const MEL_BINS=128,FFT_BINS=512,SR=48000,nyq=SR/2,minHz=80,maxHz=20000;
+    const hzToMel=hz=>2595*Math.log10(1+hz/700);
+    const melMin=hzToMel(minHz),melMax=hzToMel(maxHz);
+    this._v2melLut=new Int16Array(MEL_BINS);
+    for(let i=0;i<MEL_BINS;i++){const mel=melMin+(melMax-melMin)*(i/(MEL_BINS-1));const hz=700*(Math.pow(10,mel/2595)-1);this._v2melLut[i]=Math.round((hz/nyq)*(FFT_BINS-1));}
+    this._v2melMag=new Float32Array(MEL_BINS);
+    // Create 2D canvas overlay inside spectro3DContainer
+    const ct=this.dom.spectro3DContainer;
+    const c2=document.createElement('canvas');
+    c2.style.cssText='position:absolute;inset:0;width:100%;height:100%;display:none;image-rendering:pixelated';
+    c2.setAttribute('aria-label','2D spectrogram waterfall');c2.setAttribute('role','img');
+    ct.appendChild(c2);
+    this._v2canvas=c2;this._v2ctx=c2.getContext('2d');
+    // Zoom/pan state
+    this._v2zoomSec=10;this._v2panCol=0;
+    // Wire scroll/drag/dblclick on 3D canvas for zoom/pan
+    const cv3=this.dom.spectro3DCanvas;
+    const zoomHandler=e=>{e.preventDefault();const d=e.deltaY>0?1:-1;this._v2zoomSec=Math.max(1,Math.min(60,this._v2zoomSec+d*2));this._v2updateZoomBadge();};
+    cv3.addEventListener('wheel',zoomHandler,{passive:false});
+    c2.addEventListener('wheel',zoomHandler,{passive:false});
+    cv3.addEventListener('dblclick',()=>{this._v2zoomSec=10;this._v2panCol=0;this._v2updateZoomBadge();});
+    c2.addEventListener('dblclick',()=>{this._v2zoomSec=10;this._v2panCol=0;this._v2updateZoomBadge();});
+    let isDrag=false,dragX=0,dragPan=0;
+    const mdHandler=e=>{isDrag=true;dragX=e.clientX;dragPan=this._v2panCol;};
+    cv3.addEventListener('mousedown',mdHandler);c2.addEventListener('mousedown',mdHandler);
+    window.addEventListener('mouseup',()=>{isDrag=false;});
+    window.addEventListener('mousemove',e=>{if(!isDrag)return;const dx=e.clientX-dragX;const cols=128;const pxW=ct.clientWidth||400;const cPx=cols/pxW;this._v2panCol=Math.max(0,Math.min(cols-1,Math.round(dragPan-dx*cPx)));});
+    // Pinch zoom
+    let lastPinch=null;
+    cv3.addEventListener('touchstart',e=>{if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;lastPinch=Math.sqrt(dx*dx+dy*dy);}},{passive:true});
+    cv3.addEventListener('touchmove',e=>{if(e.touches.length===2&&lastPinch){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const d=Math.sqrt(dx*dx+dy*dy);this._v2zoomSec=Math.max(1,Math.min(60,this._v2zoomSec*(lastPinch/d)));this._v2updateZoomBadge();lastPinch=d;}},{passive:false});
+    cv3.addEventListener('touchend',()=>{lastPinch=null;},{passive:true});
+    this._v2updateZoomBadge();
+  }
+
+  _v2updateZoomBadge(){const el=document.getElementById('spectroZoomBadge');if(el)el.textContent=Math.round(this._v2zoomSec)+'s';}
+
+  _spectroV2ToggleMode(){
+    this._spectroV2Init();
+    this._v2mode2D=!this._v2mode2D;
+    const cv3=this.dom.spectro3DCanvas;const c2=this._v2canvas;const btn=document.getElementById('spectroModeBtn');
+    if(this._v2mode2D){
+      c2.style.display='block';cv3.style.transition='opacity 0.5s';cv3.style.opacity='0';
+      setTimeout(()=>{cv3.style.display='none';},500);
+      const ct=this.dom.spectro3DContainer;c2.width=ct.clientWidth||400;c2.height=ct.clientHeight||200;
+      if(btn)btn.textContent='3D View';
+    }else{
+      cv3.style.display='block';cv3.style.opacity='0';cv3.style.transition='opacity 0.5s';c2.style.display='none';
+      requestAnimationFrame(()=>{cv3.style.opacity='1';});
+      if(btn)btn.textContent='2D View';
+    }
+  }
+
+  _spectroV2ToggleMel(){
+    this._spectroV2Init();
+    this._v2mel=!this._v2mel;
+    const btn=document.getElementById('spectroMelBtn');
+    if(btn)btn.textContent=this._v2mel?'Linear Scale':'Mel Scale';
+    if(this._v2ctx&&this._v2mode2D)this._v2ctx.clearRect(0,0,this._v2canvas.width,this._v2canvas.height);
+  }
+
+  _spectroV2ToggleFreeze(){
+    this._spectroV2Init();
+    this._v2frozen=!this._v2frozen;
+    const badge=document.getElementById('spectroFrozenBadge');const btn=document.getElementById('spectroFreezeBtn');
+    if(badge)badge.style.display=this._v2frozen?'flex':'none';
+    if(btn){btn.textContent=this._v2frozen?'▶ Resume':'❄ Freeze';btn.setAttribute('aria-pressed',this._v2frozen?'true':'false');}
+  }
+
+  _spectroV2Snapshot(){
+    this._spectroV2Init();
+    const ts=new Date().toISOString().replace(/[:.]/g,'-');
+    const name='voiceisolate-spectrogram-'+ts+'.png';
+    const src=this._v2mode2D?this._v2canvas:this.dom.spectro3DCanvas;
+    if(!src)return;
+    if(!this._v2mode2D&&this.three&&this.three.ren)this.three.ren.render(this.three.scene,this.three.cam);
+    const url=src.toDataURL('image/png');
+    const a=document.createElement('a');a.href=url;a.download=name;a.click();
+  }
+
+  // Called from update3D and startSpectro hot path to draw 2D waterfall row
+  // freq: Uint8Array (0-255) from getByteFrequencyData, or pre-normalized Float32Array
+  _spectroV2UpdateRow(freq,similarity,speakerId){
+    if(!this._v2inited||!this._v2mode2D||this._v2frozen)return;
+    const ctx=this._v2ctx;if(!ctx)return;
+    const c=this._v2canvas;const W=c.width||400;const H=c.height||200;
+    if(W===0||H===0)return;
+    // Determine if normalization is needed (Uint8Array = byte data 0-255)
+    const isByte=freq instanceof Uint8Array;
+    let bins;let binCount;
+    if(this._v2mel){
+      const lut=this._v2melLut;const mel=this._v2melMag;const BC=lut.length;
+      for(let i=0;i<BC;i++)mel[i]=isByte?((freq[lut[i]]??0)/255):(freq[lut[i]]??0);
+      bins=mel;binCount=BC;
+    }else{
+      // Use full frequency spectrum, normalized to 0-1
+      binCount=freq.length;
+      bins=isByte?null:freq; // for byte data we normalize inline below
+    }
+    const visibleCols=Math.min(128,Math.round(this._v2zoomSec/(512/48000)));
+    const colW=Math.max(1,W/visibleCols);
+    ctx.drawImage(c,-colW,0);
+    const xStart=W-colW;
+    // Per-speaker or similarity color
+    const SPEAKER_COLORS={speaker_1:185,speaker_2:280,speaker_3:45,speaker_4:120};
+    for(let k=0;k<binCount;k++){
+      const raw=bins?bins[k]:(freq[k]||0);
+      const v=Math.min(isByte&&!bins?raw/255:raw,1.0);
+      const yTop=H-(k+1)/binCount*H;const yH=H/binCount+1;
+      let css;
+      if(speakerId&&SPEAKER_COLORS[speakerId]){const h=SPEAKER_COLORS[speakerId];const l=Math.round(20+60*v);css=`hsl(${h},90%,${l}%)`;}
+      else if(similarity>0.7){const l=Math.round(20+60*v);css=`hsl(185,100%,${l}%)`;}
+      else if(similarity<0.4){const l=Math.round(10+30*v);css=`hsl(0,50%,${l}%)`;}
+      else{const l=Math.round(10+50*v);css=`hsl(220,30%,${l}%)`;}
+      ctx.fillStyle=css;ctx.fillRect(xStart,yTop,colW+1,yH);
+    }
+  }
+
+  // Update per-speaker legend overlay (called from speaker identification path)
+  _spectroV2UpdateSpeakerLegend(speakerId){
+    const el=document.getElementById('spectroSpeakerLegend');if(!el)return;
+    const SPEAKERS={speaker_1:{hue:185,label:'Speaker 1'},speaker_2:{hue:280,label:'Speaker 2'},speaker_3:{hue:45,label:'Speaker 3'},speaker_4:{hue:120,label:'Speaker 4'}};
+    el.innerHTML='';
+    if(!speakerId){el.style.display='none';return;}
+    for(const[key,{hue,label}]of Object.entries(SPEAKERS)){
+      const item=document.createElement('span');item.className='sl-speaker-item';
+      const dot=document.createElement('span');dot.className='sl-speaker-dot';
+      dot.style.background=`hsl(${hue},90%,55%)`;
+      if(key===speakerId)dot.style.outline='2px solid #fff';
+      item.appendChild(dot);item.appendChild(document.createTextNode(label));
+      el.appendChild(item);
+    }
+    el.style.display='flex';
+  }
   startGlowLoop(){
     // Ensure any previous loop is fully stopped before starting a new one
     if(this._glowRunning){return;}
