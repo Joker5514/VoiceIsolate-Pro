@@ -85,6 +85,10 @@ self.onmessage = async (e) => {
     const promise = handleEnroll(msg);
     activePromises.add(promise);
     await promise.finally(() => activePromises.delete(promise));
+  } else if (msg.type === 'identify') {
+    const promise = handleIdentify(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
   } else if (msg.type === 'dispose') {
     await disposeAll();
   }
@@ -411,6 +415,39 @@ async function handleEnroll(msg) {
     }
   } catch (err) {
     self.postMessage({ type: 'error', id, msg: err.message });
+  }
+}
+
+/**
+ * Extract a speaker embedding from an audio segment for real-time identification.
+ * Posts { type: 'identifyResult', id, embedding } — or embedding: null when model unavailable.
+ *
+ * @param {Object} msg
+ * @param {string|number} msg.id    - Call identifier echoed back in the result.
+ * @param {Float32Array}  msg.data  - Mono audio samples (any sample rate, model normalises internally).
+ */
+async function handleIdentify(msg) {
+  const id = msg.id;
+  if (!sessions.ecapa) {
+    self.postMessage({ type: 'identifyResult', id, embedding: null });
+    return;
+  }
+
+  try {
+    const data = msg.data;
+    const tensor = new ort.Tensor('float32', data, [1, 1, data.length]);
+    try {
+      const result = await sessions.ecapa.run({ input: tensor });
+      const output = result[Object.keys(result)[0]];
+      const embedding = new Float32Array(output.data);
+      output.dispose?.();
+      self.postMessage({ type: 'identifyResult', id, embedding }, [embedding.buffer]);
+    } finally {
+      tensor.dispose?.();
+    }
+  } catch (err) {
+    self.postMessage({ type: 'identifyResult', id, embedding: null, error: err.message });
+    log('warn', `Speaker identification error: ${err.message}`);
   }
 }
 

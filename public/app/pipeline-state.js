@@ -229,3 +229,244 @@ if (typeof window !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = PipelineState;
 }
+
+/* ============================================
+   SpeakerRegistry — Biometric Voice Profiles
+   IndexedDB persistence · Cosine similarity
+   Color-coded identities · Diarization support
+   ============================================ */
+
+/**
+ * Manages biometric speaker profiles extracted via ECAPA-TDNN embeddings.
+ * - Assigns each unique voice a persistent color-coded identity label
+ * - Persists profiles to IndexedDB across page reloads
+ * - Uses cosine similarity to match incoming embeddings against known profiles
+ */
+class SpeakerRegistry {
+  constructor() {
+    this._profiles = [];       // Array of { id, label, color, embedding: Float32Array, createdAt, lastSeen }
+    this._nextId = 1;
+    this._threshold = 0.65;   // Cosine similarity threshold for speaker match
+    this._dbName = 'VoiceIsolateProDB';
+    this._storeName = 'speakerProfiles';
+    this._listeners = new Set();
+    // Perceptually distinct colors for speaker identities
+    this._colors = [
+      '#ef4444', // Red
+      '#3b82f6', // Blue
+      '#22c55e', // Green
+      '#eab308', // Yellow
+      '#a855f7', // Purple
+      '#f97316', // Orange
+      '#06b6d4', // Cyan
+      '#ec4899', // Pink
+    ];
+  }
+
+  /**
+   * Compute cosine similarity between two Float32Array embeddings.
+   * @param {Float32Array} a
+   * @param {Float32Array} b
+   * @returns {number} Similarity in [-1, 1]; returns 0 if either vector is zero.
+   */
+  static cosineSimilarity(a, b) {
+    let dot = 0, na = 0, nb = 0;
+    const len = Math.min(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      dot += a[i] * b[i];
+      na  += a[i] * a[i];
+      nb  += b[i] * b[i];
+    }
+    if (na === 0 || nb === 0) return 0;
+    return dot / (Math.sqrt(na) * Math.sqrt(nb));
+  }
+
+  /**
+   * Match an embedding against existing profiles, or create a new speaker profile.
+   * @param {Float32Array} embedding - Speaker embedding from ECAPA-TDNN.
+   * @returns {{ speaker: Object, similarity: number, isNew: boolean }}
+   */
+  identify(embedding) {
+    let bestMatch = null;
+    let bestSim = -1;
+
+    for (const profile of this._profiles) {
+      const sim = SpeakerRegistry.cosineSimilarity(embedding, profile.embedding);
+      if (sim > bestSim) { bestSim = sim; bestMatch = profile; }
+    }
+
+    if (bestMatch && bestSim >= this._threshold) {
+      bestMatch.lastSeen = Date.now();
+      return { speaker: bestMatch, similarity: bestSim, isNew: false };
+    }
+
+    // No match — create a new profile
+    const speaker = this._createProfile(embedding);
+    this._emit();
+    return { speaker, similarity: bestSim, isNew: true };
+  }
+
+  /**
+   * Explicitly enroll a speaker with an optional custom label.
+   * @param {Float32Array} embedding
+   * @param {string} [label]
+   * @returns {Object} The created speaker profile.
+   */
+  enroll(embedding, label) {
+    const speaker = this._createProfile(embedding, label);
+    this._emit();
+    return speaker;
+  }
+
+  /**
+   * Get all registered profiles (embedding data excluded).
+   * @returns {Array<{ id: number, label: string, color: string, createdAt: number, lastSeen: number }>}
+   */
+  getProfiles() {
+    return this._profiles.map(({ id, label, color, createdAt, lastSeen }) =>
+      ({ id, label, color, createdAt, lastSeen })
+    );
+  }
+
+  /** Remove a profile by its numeric ID. */
+  removeProfile(id) {
+    const before = this._profiles.length;
+    this._profiles = this._profiles.filter(p => p.id !== id);
+    if (this._profiles.length !== before) this._emit();
+  }
+
+  /** Remove all speaker profiles and reset the ID counter. */
+  clearAll() {
+    if (this._profiles.length > 0) {
+      this._profiles = [];
+      this._nextId = 1;
+      this._emit();
+    }
+  }
+
+  /**
+   * Subscribe to profile list changes.
+   * @param {Function} fn - Called with the current profile list on every change.
+   * @returns {Function} Unsubscribe function.
+   */
+  onChange(fn) {
+    this._listeners.add(fn);
+    return () => this._listeners.delete(fn);
+  }
+
+  /** Persist all profiles to IndexedDB. Silently fails in non-browser environments. */
+  async save() {
+    try {
+      const db = await this._openDB();
+      const tx = db.transaction(this._storeName, 'readwrite');
+      const store = tx.objectStore(this._storeName);
+      await this._idbClear(store);
+      for (const p of this._profiles) {
+        await this._idbPut(store, {
+          id: p.id,
+          label: p.label,
+          color: p.color,
+          embedding: Array.from(p.embedding),
+          createdAt: p.createdAt,
+          lastSeen: p.lastSeen
+        });
+      }
+      await this._idbCommit(tx);
+      db.close();
+    } catch (_) { /* IndexedDB unavailable (e.g., test environment) */ }
+  }
+
+  /** Load profiles from IndexedDB. Silently fails in non-browser environments. */
+  async load() {
+    try {
+      const db = await this._openDB();
+      const tx = db.transaction(this._storeName, 'readonly');
+      const rows = await this._idbGetAll(tx.objectStore(this._storeName));
+      db.close();
+      this._profiles = rows.map(r => ({
+        ...r,
+        embedding: new Float32Array(r.embedding)
+      }));
+      if (this._profiles.length > 0) {
+        this._nextId = Math.max(...this._profiles.map(p => p.id)) + 1;
+      }
+      if (this._profiles.length > 0) this._emit();
+    } catch (_) { /* IndexedDB unavailable — start fresh */ }
+  }
+
+  // ---- Private helpers ----
+
+  _createProfile(embedding, label) {
+    const id = this._nextId++;
+    const color = this._colors[(id - 1) % this._colors.length];
+    const speaker = {
+      id,
+      label: label || `Speaker ${id}`,
+      color,
+      embedding: Float32Array.from(embedding),
+      createdAt: Date.now(),
+      lastSeen: Date.now()
+    };
+    this._profiles.push(speaker);
+    return speaker;
+  }
+
+  _emit() {
+    const profiles = this.getProfiles();
+    for (const fn of this._listeners) fn(profiles);
+  }
+
+  _openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(this._dbName, SpeakerRegistry.DB_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(this._storeName)) {
+          db.createObjectStore(this._storeName, { keyPath: 'id' });
+        }
+      };
+      req.onsuccess  = (e) => resolve(e.target.result);
+      req.onerror    = (e) => reject(e.target.error);
+    });
+  }
+
+  _idbPut(store, record) {
+    return new Promise((resolve, reject) => {
+      const req = store.put(record);
+      req.onsuccess = () => resolve();
+      req.onerror   = (e) => reject(e.target.error);
+    });
+  }
+
+  _idbClear(store) {
+    return new Promise((resolve, reject) => {
+      const req = store.clear();
+      req.onsuccess = () => resolve();
+      req.onerror   = (e) => reject(e.target.error);
+    });
+  }
+
+  _idbGetAll(store) {
+    return new Promise((resolve, reject) => {
+      const req = store.getAll();
+      req.onsuccess = (e) => resolve(e.target.result);
+      req.onerror   = (e) => reject(e.target.error);
+    });
+  }
+
+  _idbCommit(tx) {
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror    = (e) => reject(e.target.error);
+    });
+  }
+}
+
+// Export SpeakerRegistry alongside PipelineState
+SpeakerRegistry.DB_VERSION = 2; // Increment when IndexedDB schema changes
+if (typeof window !== 'undefined') {
+  window.SpeakerRegistry = SpeakerRegistry;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { PipelineState, SpeakerRegistry };
+}

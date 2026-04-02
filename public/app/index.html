@@ -294,6 +294,18 @@
         <canvas id="freqCanvas" class="viz-canvas freq-cv"></canvas>
       </div>
 
+      <!-- Speaker Fingerprinting -->
+      <div class="card viz-card" id="speakerCard" style="display:none">
+        <div class="viz-hdr">
+          <span>Speaker Fingerprinting</span>
+          <div class="viz-actions">
+            <button id="speakerClearBtn" class="btn btn-xs" title="Remove all voice profiles">Clear Profiles</button>
+          </div>
+        </div>
+        <div id="speakerList" class="speaker-list" aria-label="Identified speakers" aria-live="polite"></div>
+        <canvas id="speakerTimeline" class="speaker-timeline-cv" aria-label="Speaker diarization timeline"></canvas>
+      </div>
+
       <!-- Stats -->
       <div class="stats-row">
         <div class="stat-box"><span class="st-lbl">Bit Depth</span><span class="st-val">32-bit float</span></div>
