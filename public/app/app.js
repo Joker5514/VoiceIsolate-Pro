@@ -215,6 +215,12 @@ class VoiceIsolatePro {
     this.forensicMode = false;
     this.forensicLog = [];
 
+    // Speaker fingerprinting (additive — does not affect audio processing)
+    this.speakerRegistry = typeof SpeakerRegistry !== 'undefined' ? new SpeakerRegistry() : null;
+    this._speakerSegments = []; // [{ startSec, endSec, speakerId, color, label }]
+    this._identifyCallId = 0;   // Counter for pending identify calls
+    this._identifyPending = {}; // callId → { startSec, endSec }
+
     // Phase 6: Secure PRNG for dither (Sentinel fix)
     // Buffer size limited to 65536 bytes (16384 Uint32s) by Web Crypto API
     this._rndBuf = new Uint32Array(16384);
@@ -230,6 +236,11 @@ class VoiceIsolatePro {
     this.initCanvases();
     this.init3D();
     this.initMLWorker(); // start loading ML models in background
+    // Load persisted speaker profiles
+    if (this.speakerRegistry) {
+      this.speakerRegistry.load().catch(() => {});
+      this.speakerRegistry.onChange(() => this.updateSpeakerUI());
+    }
   }
 
   ensureCtx() {
@@ -336,6 +347,7 @@ class VoiceIsolatePro {
       spectroPanUp:g('spectroPanUp'), spectroPanDn:g('spectroPanDn'),
       waveOrigCanvas:g('waveOrigCanvas'), waveProcCanvas:g('waveProcCanvas'),
       freqCanvas:g('freqCanvas'),
+      speakerCard:g('speakerCard'), speakerList:g('speakerList'), speakerTimeline:g('speakerTimeline'), speakerClearBtn:g('speakerClearBtn'),
       hdrWaveCanvas:g('hdrWaveCanvas'), speakerAuras:g('speakerAuras'),
       pipeFill:g('pipeFill'), pipeBar:g('pipeBar'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
       hSNR:g('hSNR'), hDur:g('hDur'), hSR:g('hSR'), hCh:g('hCh'),
@@ -434,6 +446,17 @@ class VoiceIsolatePro {
         const expanded = this.dom.hdrStats.classList.toggle('expanded');
         this.dom.statsToggle.setAttribute('aria-expanded', String(expanded));
         this.dom.statsToggle.textContent = expanded ? '▲' : '▼';
+      });
+    }
+    // Speaker fingerprinting: clear profiles button
+    if (this.dom.speakerClearBtn) {
+      this.dom.speakerClearBtn.addEventListener('click', () => {
+        if (this.speakerRegistry) {
+          this.speakerRegistry.clearAll();
+          this._speakerSegments = [];
+          this.speakerRegistry.save().catch(() => {});
+          this.updateSpeakerUI();
+        }
       });
     }
     window.addEventListener('resize', () => this.onResize());
@@ -1126,6 +1149,8 @@ class VoiceIsolatePro {
       if (this.dom.fsBtnAB) this.dom.fsBtnAB.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = !this.forensicMode || this.forensicLog.length === 0;
       this.setStatus('COMPLETE');
+      // Kick off speaker identification on the processed output (non-blocking)
+      this.runSpeakerIdentification(fin);
     } catch(e) {
       if (e==='abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent='Aborted'; }
       else { structuredLog('error', 'Pipeline error', { error: e instanceof Error ? e.message : String(e) }); this.setStatus('ERROR'); this.dom.pipeDetail.textContent=e instanceof Error ? e.message : String(e); }
@@ -1593,6 +1618,8 @@ class VoiceIsolatePro {
           structuredLog('info', 'ML worker ready', { provider: e.data.provider, models: e.data.models });
           // v20: Share ML worker with orchestrator
           if (this.orchestrator) this.orchestrator.mlWorker = this.mlWorker;
+        } else if (type === 'identifyResult') {
+          this._onIdentifyResult(e.data);
         } else if (type === 'log') {
           structuredLog(e.data.level, '[ml-worker] ' + e.data.msg);
         }
@@ -1610,6 +1637,124 @@ class VoiceIsolatePro {
       });
     } catch (e) {
       structuredLog('warn', 'ML worker unavailable', { error: e.message });
+    }
+  }
+
+  // ---- Speaker Fingerprinting ----
+
+  /**
+   * Segment an AudioBuffer into overlapping windows and send each to the ML worker
+   * for ECAPA-TDNN embedding extraction. Identification happens when identifyResult
+   * messages arrive via _onIdentifyResult().
+   *
+   * @param {AudioBuffer} buf - The audio buffer to diarize.
+   */
+  runSpeakerIdentification(buf) {
+    if (!this.speakerRegistry || !this.mlWorker || !this.mlWorkerModels || !this.mlWorkerModels.ecapa) return;
+
+    const samples = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    const segDur = 3;           // 3-second segments
+    const segLen = segDur * sr;
+    this._speakerSegments = [];
+
+    for (let offset = 0; offset < samples.length; offset += segLen) {
+      const end = Math.min(offset + segLen, samples.length);
+      // Transfer chunk directly — slice() returns a copy so no detachment risk
+      const chunk = samples.slice(offset, end);
+      const id = ++this._identifyCallId;
+      this._identifyPending[id] = { startSec: offset / sr, endSec: end / sr };
+      this.mlWorker.postMessage({ type: 'identify', id, data: chunk }, [chunk.buffer]);
+    }
+  }
+
+  /**
+   * Handle an identifyResult message from the ML worker.
+   * Matches the embedding against the SpeakerRegistry and updates the UI.
+   *
+   * @param {{ id: number|string, embedding: Float32Array|null }} data
+   */
+  _onIdentifyResult(data) {
+    const { id, embedding } = data;
+    const pending = this._identifyPending[id];
+    if (!pending) return;
+    delete this._identifyPending[id];
+
+    if (!embedding || !this.speakerRegistry) return;
+
+    const { speaker } = this.speakerRegistry.identify(embedding);
+    // Segments are pushed in chronological order (offset is monotonically increasing)
+    this._speakerSegments.push({ ...pending, speakerId: speaker.id, color: speaker.color, label: speaker.label });
+
+    // Persist updated profiles and refresh UI
+    this.speakerRegistry.save().catch(() => {});
+    this.updateSpeakerUI();
+  }
+
+  /** Render the speaker list and diarization timeline in the UI. */
+  updateSpeakerUI() {
+    if (!this.dom || !this.dom.speakerCard) return;
+
+    const profiles = this.speakerRegistry ? this.speakerRegistry.getProfiles() : [];
+    const hasData = profiles.length > 0 || this._speakerSegments.length > 0;
+    this.dom.speakerCard.style.display = hasData ? '' : 'none';
+
+    // Render speaker chips
+    if (this.dom.speakerList) {
+      this.dom.speakerList.innerHTML = '';
+      for (const p of profiles) {
+        const chip = document.createElement('div');
+        chip.className = 'speaker-chip';
+        chip.setAttribute('aria-label', p.label);
+        chip.innerHTML =
+          `<span class="speaker-dot" style="background:${p.color}"></span>` +
+          `<span class="speaker-name">${p.label}</span>` +
+          `<button class="speaker-remove btn btn-xs" data-id="${p.id}" aria-label="Remove ${p.label}" title="Remove">✕</button>`;
+        chip.querySelector('.speaker-remove').addEventListener('click', (e) => {
+          const rid = parseInt(e.currentTarget.dataset.id, 10);
+          this.speakerRegistry.removeProfile(rid);
+          this._speakerSegments = this._speakerSegments.filter(s => s.speakerId !== rid);
+          this.speakerRegistry.save().catch(() => {});
+          this.updateSpeakerUI();
+        });
+        this.dom.speakerList.appendChild(chip);
+      }
+    }
+
+    // Draw diarization timeline
+    this.drawSpeakerTimeline();
+  }
+
+  /** Draw the speaker diarization timeline onto the speakerTimeline canvas. */
+  drawSpeakerTimeline() {
+    const cv = this.dom && this.dom.speakerTimeline;
+    if (!cv || this._speakerSegments.length === 0) return;
+
+    const segs = this._speakerSegments;
+    const totalSec = segs[segs.length - 1].endSec;
+    const W = cv.offsetWidth || 400;
+    const H = 32;
+    cv.width = W;
+    cv.height = H;
+    const ctx = cv.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, W, H);
+
+    for (const seg of segs) {
+      const x1 = (seg.startSec / totalSec) * W;
+      const x2 = (seg.endSec   / totalSec) * W;
+      ctx.fillStyle = seg.color + 'cc'; // slight transparency
+      ctx.fillRect(x1, 4, Math.max(x2 - x1, 1), H - 8);
+
+      // Draw label if wide enough
+      const segW = x2 - x1;
+      if (segW > 36) {
+        ctx.fillStyle = '#fff';
+        ctx.font = '10px sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(seg.label, x1 + 4, H / 2);
+      }
     }
   }
 
