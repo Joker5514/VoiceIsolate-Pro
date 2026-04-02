@@ -131,7 +131,8 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
-    this.customPresets = {};
+    this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
+    this.renderCustomPresets();
     // Diagnostic state
     this.oscMode = 'wave';
     this.overlays = { noise: true, erb: true, ml: false };
