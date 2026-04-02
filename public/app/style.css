@@ -39,7 +39,7 @@
   --rs: 8px;
   --ff: 'Outfit', system-ui, sans-serif;
   --fm: 'JetBrains Mono', monospace;
-  /* Audio-reactive glow intensity (updated by JS rAF) */
+  /* Audio-reactive glow intensity (updated by JS rAF; range: 0.0 – 1.0) */
   --glow-level: 0;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}

@@ -128,6 +128,9 @@ const STAGES = [
   'Dry/Wet Blend', 'TPDF Dither', 'Output Normalization', 'Final Render & Export'
 ];
 
+// Per-speaker aura palette — 8 distinct vibrant hues for speaker identification
+const SPEAKER_COLORS = ['#00f5ff','#7c3aed','#22c55e','#f59e0b','#ec4899','#3b82f6','#f97316','#a855f7'];
+
 // ============================================
 // v20 Modular Architecture Integration
 // PipelineState → centralized param management
@@ -1077,8 +1080,13 @@ class VoiceIsolatePro {
       this.drawWaveform(fin, this.dom.waveProcCanvas, '#7c3aed');
       const voices = this.estVoices(fin);
       this.dom.stVoices.textContent = voices;
-      // Update speaker aura indicators
-      const speakerCount = voices === '0-1' ? 1 : voices === '1' ? 1 : 2;
+      // Update speaker aura indicators based on voice activity estimate.
+      // estVoices() returns '0-1' (none/single), '1' (one confirmed), or '1-2+' (multiple).
+      let speakerCount = 1;
+      if(voices === '0-1') speakerCount = 1;
+      else if(voices === '1') speakerCount = 1;
+      else if(voices === '1-2+') speakerCount = 2;
+      else speakerCount = Math.max(1, parseInt(voices, 10) || 1);
       this.updateSpeakerAuras(speakerCount);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
       if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.disabled = false;
@@ -1935,7 +1943,9 @@ class VoiceIsolatePro {
 
   // ---- Audio-Reactive Glow (rAF loop updating CSS --glow-level) ----
   startGlowLoop(){
-    if(this._glowAnimId)return;
+    // Ensure any previous loop is fully stopped before starting a new one
+    if(this._glowRunning){return;}
+    if(this._glowAnimId){cancelAnimationFrame(this._glowAnimId);this._glowAnimId=null;}
     const buf=new Float32Array(128);
     const root=document.documentElement;
     const loop=()=>{
@@ -2011,8 +2021,7 @@ class VoiceIsolatePro {
   // Called from updateStats() with a speaker count, or directly with an array of speaker IDs.
   updateSpeakerAuras(speakerCount){
     const container=this.dom.speakerAuras;if(!container)return;
-    const SPEAKER_COLORS=['#00f5ff','#7c3aed','#22c55e','#f59e0b','#ec4899','#3b82f6','#f97316','#a855f7'];
-    // If count is 0 or less than current, rebuild
+    // If count is 0, clear auras
     const existing=container.querySelectorAll('.speaker-aura').length;
     if(speakerCount===0){container.textContent='';return;}
     if(existing===speakerCount)return;
@@ -2022,7 +2031,13 @@ class VoiceIsolatePro {
       const el=document.createElement('div');
       el.className='speaker-aura';
       el.style.color=col;
-      el.innerHTML='<span class="aura-dot" style="background:'+col+';box-shadow:0 0 6px '+col+'"></span>S'+(i+1);
+      const dot=document.createElement('span');
+      dot.className='aura-dot';
+      dot.style.background=col;
+      dot.style.boxShadow='0 0 6px '+col;
+      const lbl=document.createTextNode('S'+(i+1));
+      el.appendChild(dot);
+      el.appendChild(lbl);
       container.appendChild(el);
     }
   }
