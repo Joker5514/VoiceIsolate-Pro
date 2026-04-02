@@ -349,6 +349,7 @@ class VoiceIsolatePro {
       freqCanvas:g('freqCanvas'),
       speakerCard:g('speakerCard'), speakerList:g('speakerList'), speakerTimeline:g('speakerTimeline'), speakerClearBtn:g('speakerClearBtn'),
       hdrWaveCanvas:g('hdrWaveCanvas'), speakerAuras:g('speakerAuras'),
+      noiseClassBadge:g('noiseClassBadge'),
       pipeFill:g('pipeFill'), pipeBar:g('pipeBar'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
       hSNR:g('hSNR'), hDur:g('hDur'), hSR:g('hSR'), hCh:g('hCh'),
       hRMS:g('hRMS'), hPeak:g('hPeak'), hStatus:g('hStatus'),
@@ -2196,12 +2197,13 @@ class VoiceIsolatePro {
 
   render3D(){requestAnimationFrame(()=>this.render3D());if(this.three.ren)this.three.ren.render(this.three.scene,this.three.cam);}
 
-  // ---- Audio-Reactive Glow (rAF loop updating CSS --glow-level) ----
+  // ---- Audio-Reactive Glow (rAF loop updating CSS --glow-level, --audio-intensity, --audio-bass) ----
   startGlowLoop(){
     // Ensure any previous loop is fully stopped before starting a new one
     if(this._glowRunning){return;}
     if(this._glowAnimId){cancelAnimationFrame(this._glowAnimId);this._glowAnimId=null;}
     const buf=new Float32Array(128);
+    const freqBuf=new Uint8Array(128);  // allocated once outside rAF loop
     const root=document.documentElement;
     const loop=()=>{
       if(!this._glowRunning)return;
@@ -2212,6 +2214,13 @@ class VoiceIsolatePro {
       rms=Math.sqrt(rms/buf.length);
       const level=Math.min(1,rms*6);
       root.style.setProperty('--glow-level',level.toFixed(3));
+      // --audio-intensity: overall RMS for ambient glow
+      root.style.setProperty('--audio-intensity',level.toFixed(3));
+      // --audio-bass: energy in low-frequency bins (0..7 out of 128)
+      this.analyserNode.getByteFrequencyData(freqBuf);
+      let bassSum=0;for(let i=0;i<8;i++)bassSum+=freqBuf[i];
+      const bassLevel=Math.min(1,(bassSum/(8*255))*4);
+      root.style.setProperty('--audio-bass',bassLevel.toFixed(3));
       // Also drive the header waveform
       this._drawHeaderWave(buf);
     };
@@ -2223,6 +2232,8 @@ class VoiceIsolatePro {
     this._glowRunning=false;
     if(this._glowAnimId){cancelAnimationFrame(this._glowAnimId);this._glowAnimId=null;}
     document.documentElement.style.setProperty('--glow-level','0');
+    document.documentElement.style.setProperty('--audio-intensity','0');
+    document.documentElement.style.setProperty('--audio-bass','0');
     // Clear header waveform canvas
     const c=this.dom.hdrWaveCanvas;
     if(c){const x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);}
@@ -2286,6 +2297,9 @@ class VoiceIsolatePro {
       const el=document.createElement('div');
       el.className='speaker-aura';
       el.style.color=col;
+      // Set CSS custom properties for the aura ring animation
+      el.style.setProperty('--spk-color',col);
+      el.style.setProperty('--spk-active','0');
       const dot=document.createElement('span');
       dot.className='aura-dot';
       dot.style.background=col;
@@ -2301,13 +2315,17 @@ class VoiceIsolatePro {
   setSpeakerActive(speakerIdx,active){
     const container=this.dom.speakerAuras;if(!container)return;
     const auras=container.querySelectorAll('.speaker-aura');
-    if(auras[speakerIdx]){auras[speakerIdx].classList.toggle('active',active);}
+    if(auras[speakerIdx]){
+      auras[speakerIdx].classList.toggle('active',active);
+      // Drive the CSS aura-pulse ring via --spk-active property
+      auras[speakerIdx].style.setProperty('--spk-active',active?'1':'0');
+    }
   }
 
   onResize(){
     [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas].forEach(c=>this.resizeCanvas(c));
-    if(this.inputBuffer)this.drawWaveform(this.inputBuffer,this.dom.waveOrigCanvas,'#00f5ff');
-    if(this.outputBuffer)this.drawWaveform(this.outputBuffer,this.dom.waveProcCanvas,'#7c3aed');
+    if(this.inputBuffer)this.drawWaveform(this.inputBuffer,this.dom.waveOrigCanvas,'#22d3ee');
+    if(this.outputBuffer)this.drawWaveform(this.outputBuffer,this.dom.waveProcCanvas,'#6366f1');
     const ct=this.dom.spectro3DContainer;
     if(this.three.ren){this.three.ren.setSize(ct.clientWidth,ct.clientHeight);this.three.cam.aspect=ct.clientWidth/ct.clientHeight;this.three.cam.updateProjectionMatrix();}
   }
@@ -2476,7 +2494,24 @@ class VoiceIsolatePro {
   }
 
   // ---- UTILITY ----
-  setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#52527a',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#00f5ff',COMPLETE:'#7c3aed',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#52527a';}
+  setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#52527a',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#818cf8',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#52527a';}
+
+  // Update the noise class badge in the header (fed by noise profiler or manual detection)
+  updateNoiseClassBadge(cls){
+    const badge=this.dom.noiseClassBadge;if(!badge)return;
+    const MAP={
+      music:   {label:'🎵 Music',   key:'music'},
+      white:   {label:'🌊 White Noise', key:'white'},
+      crowd:   {label:'👥 Crowd',   key:'crowd'},
+      hvac:    {label:'💨 HVAC',    key:'hvac'},
+      keyboard:{label:'⌨️ Keyboard',key:'keyboard'},
+      traffic: {label:'🚗 Traffic', key:'traffic'},
+      idle:    {label:'● IDLE',    key:'idle'},
+    };
+    const entry=MAP[cls]||MAP.idle;
+    badge.textContent=entry.label;
+    badge.dataset.class=entry.key;
+  }
   calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
   calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
