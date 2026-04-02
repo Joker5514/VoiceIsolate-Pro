@@ -1494,9 +1494,9 @@ class VoiceIsolatePro {
       }
     }
 
-    if (peak === 0) return buf;
+    if (peak < 1e-8) return buf; // avoid huge gain on near-silence
 
-    const gain = Math.pow(10, tDb / 20) / peak;
+    const gain = Math.min(Math.pow(10, tDb / 20) / peak, 1e6);
     for (let ch = 0; ch < numChannels; ch++) {
       const inputData = buf.getChannelData(ch);
       const outputData = out.getChannelData(ch);

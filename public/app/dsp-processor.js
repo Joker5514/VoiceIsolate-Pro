@@ -514,7 +514,7 @@ class DspProcessor extends AudioWorkletProcessor {
 
       // ── Spectral subtraction blend: higher subStrength → more aggressive
       //    Blends Log-MMSE with harder spectral subtraction gain
-      const subGain = Math.max(1 - (noiseScaled / (power + 1e-20)), specFloor);
+      const subGain = Math.max(1 - Math.sqrt(noiseScaled / (power + 1e-20)), specFloor);
       gain = (1 - subStrength) * gain + subStrength * Math.min(gain, subGain);
 
       // ── Apply user-controlled amount (blend between unity and full NR)
@@ -812,7 +812,11 @@ class DspProcessor extends AudioWorkletProcessor {
         const harmonicMag = mag[k] * recov / (h * h);
         if (harmonicMag > mag[hk]) {
           mag[hk] = harmonicMag;
-          phase[hk] = phase[k] * h; // phase-locked
+          // Wrap harmonic phase to [-π, π] to avoid discontinuities
+          const TWO_PI = 6.283185307179586;
+          let hp = phase[k] * h;
+          hp -= TWO_PI * Math.round(hp / TWO_PI);
+          phase[hk] = hp;
         }
       }
     }

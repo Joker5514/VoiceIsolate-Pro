@@ -367,7 +367,7 @@ const DSPCore = {
   /** S15: Wiener-MMSE spectral noise subtraction */
   wienerMMSE(mag, noiseProfile, amount) {
     const alpha = amount / 100;
-    const floor = 0.01; // spectral floor
+    const floor = 0.001; // spectral floor (~-60 dB, consistent with dsp-processor default)
     for (let f = 0; f < mag.length; f++) {
       for (let k = 0; k < mag[f].length; k++) {
         const noise = noiseProfile ? (noiseProfile[k] || 0) : 0;
