@@ -254,17 +254,27 @@
         <canvas id="fsXAxis" class="fs-xaxis-cv" aria-label="Time axis"></canvas>
       </div>
 
-      <!-- 3D Spectrogram -->
+      <!-- 3D/2D Spectrogram v2 -->
       <div class="card viz-card">
         <div class="viz-hdr">
-          <span>3D Spectrogram</span>
+          <span>Spectrogram <span class="spectro-v2-badge">v2</span></span>
           <div class="viz-actions">
-            <button id="spectro3DReset" class="btn btn-xs">Reset View</button>
-            <span class="viz-hint">Click band to mute · Drag to orbit · Scroll to zoom</span>
+            <button id="spectro3DReset" class="btn btn-xs" aria-label="Reset 3D camera view">Reset View</button>
+            <button id="spectroModeBtn" class="btn btn-xs" aria-label="Toggle 2D / 3D mode" title="Toggle 2D/3D (V key)">2D View</button>
+            <button id="spectroMelBtn" class="btn btn-xs" aria-label="Toggle mel / linear frequency scale" title="Toggle mel scale (M key)">Mel Scale</button>
+            <button id="spectroFreezeBtn" class="btn btn-xs" aria-label="Freeze spectrogram display" aria-pressed="false" title="Freeze frame (F key)">❄ Freeze</button>
+            <button id="spectroSnapshotBtn" class="btn btn-xs" aria-label="Export spectrogram snapshot as PNG" title="Save PNG snapshot">📷 Snapshot</button>
+            <span class="viz-hint">V=2D/3D · M=Mel · F=Freeze · Scroll=Zoom · Drag=Pan</span>
           </div>
         </div>
         <div id="spectro3DContainer" class="spectro3d-container">
           <canvas id="spectro3DCanvas"></canvas>
+          <!-- Frozen indicator (shown when freeze is active) -->
+          <div id="spectroFrozenBadge" class="spectro-frozen-badge" aria-live="polite" style="display:none">❄ FROZEN</div>
+          <!-- Zoom level badge -->
+          <div id="spectroZoomBadge" class="spectro-zoom-badge" aria-label="Zoom window">10s</div>
+          <!-- Per-speaker legend overlay (populated by JS when fingerprinting active) -->
+          <div id="spectroSpeakerLegend" class="spectro-speaker-legend" aria-label="Speaker color legend" style="display:none"></div>
         </div>
         <div class="spectro-legend">
           <span class="sl-item"><span class="sl-dot" style="background:#dc2626"></span>Voice</span>

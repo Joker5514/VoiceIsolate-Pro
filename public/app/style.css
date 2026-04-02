@@ -263,10 +263,19 @@ input[type="range"].realtime ~ .sr-val{color:var(--accent);border-color:rgba(34,
 .spectro-scale{display:flex;justify-content:space-between;font-family:var(--fm);font-size:0.5rem;color:var(--dim);padding:2px 0}
 .btn-xs.btn-frozen{background:rgba(34,211,238,0.18);color:#22d3ee;border-color:rgba(34,211,238,0.4)}
 .spectro3d-container{width:100%;height:200px;border-radius:4px;background:#030306;overflow:hidden;cursor:grab;position:relative}
-.spectro3d-container canvas{width:100%!important;height:100%!important;display:block}
+.spectro3d-container canvas{width:100%!important;height:100%!important;display:block;position:absolute;inset:0}
 .spectro-legend{display:flex;gap:10px;margin-top:4px;flex-wrap:wrap}
 .sl-item{display:flex;align-items:center;gap:3px;font-size:0.55rem;color:var(--dim)}
 .sl-dot{width:8px;height:8px;border-radius:2px;display:inline-block}
+
+/* ---- Spectrogram v2 overlays ---- */
+.spectro-v2-badge{font-family:var(--fm);font-size:0.5rem;font-weight:700;letter-spacing:0.08em;color:var(--accent);background:rgba(0,245,255,0.1);border:1px solid rgba(0,245,255,0.25);border-radius:3px;padding:1px 5px;vertical-align:middle}
+.spectro-frozen-badge{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.7);border:1px solid rgba(34,211,238,0.5);color:#22d3ee;font-family:var(--fm);font-size:0.6rem;font-weight:700;letter-spacing:0.15em;padding:3px 8px;border-radius:4px;display:flex;align-items:center;gap:5px;z-index:10;pointer-events:none}
+.spectro-zoom-badge{position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);font-family:var(--fm);font-size:0.55rem;padding:2px 6px;border-radius:3px;z-index:10;pointer-events:none;min-width:28px;text-align:center}
+.spectro-speaker-legend{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:4px;z-index:10;pointer-events:none}
+.sl-speaker-item{display:flex;align-items:center;gap:5px;font-size:0.55rem;color:rgba(255,255,255,0.85);font-family:var(--fm);background:rgba(0,0,0,0.55);border:1px solid rgba(255,255,255,0.1);border-radius:3px;padding:2px 6px}
+.sl-speaker-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:outline 0.2s}
+
 .wave-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:0}
 .wave-cv{height:70px}
 .freq-cv{height:80px}
