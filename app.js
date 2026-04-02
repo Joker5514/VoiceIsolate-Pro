@@ -131,6 +131,7 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
+    this.customPresets = {};
     // Diagnostic state
     this.oscMode = 'wave';
     this.overlays = { noise: true, erb: true, ml: false };
@@ -175,7 +176,7 @@ class VoiceIsolatePro {
         const rtCls = s.rt ? ' realtime' : '';
         const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
         h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
-          '<label class="sr-label" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
+          '<label class="sr-label" for="' + s.id + '" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
           '<input type="range" aria-label="' + s.label.replace(/"/g, '&quot;') + (s.rt ? ' (Real-time)' : '') + '" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
           '<span class="sr-val" id="' + s.id + 'Val">' + s.val + s.unit + '</span></div>';
       }
@@ -248,6 +249,8 @@ class VoiceIsolatePro {
     document.querySelectorAll('.btn-preset').forEach(b => b.addEventListener('click', () => this.applyPreset(b.dataset.preset)));
     const saveBtn = document.getElementById('saveCustomPresetBtn');
     if (saveBtn) saveBtn.addEventListener('click', () => this.saveCustomPreset());
+    const nameInput = document.getElementById('customPresetName');
+    if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') this.saveCustomPreset(); });
     document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', () => this.onSlider(el)));
     document.querySelectorAll('.sr-row').forEach(r => {
       r.addEventListener('mouseenter', e => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }});
