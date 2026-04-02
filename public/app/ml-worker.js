@@ -2,6 +2,7 @@
    VoiceIsolate Pro v20.0 — ML Worker
    Threads from Space v10 · ONNX Inference
    Demucs v4 + BSRNN + Silero VAD + ECAPA-TDNN
+   DNS v2 · Noise Classifier · Multi-Speaker Sep
    WebGPU > WASM fallback · Tensor disposal
    ============================================ */
 
@@ -12,7 +13,8 @@
  * - Initializes ONNX Runtime sessions with WebGPU > WASM fallback
  * - Continuous processing loop using Atomics.wait for ring buffer
  * - Explicit tensor disposal to prevent VRAM leaks
- * - Supports: Demucs v4, BSRNN, Silero VAD, ECAPA-TDNN
+ * - Supports: Demucs v4, BSRNN, Silero VAD, ECAPA-TDNN,
+ *             DNS v2 (conformer), noise classifier, ConvTasNet multi-speaker sep
  */
 
 let ort = null;             // ONNX Runtime reference
@@ -31,7 +33,10 @@ const MODEL_PATHS = {
   bsrnn: 'models/bsrnn-int8.onnx',
   vad: 'models/silero_vad.onnx',
   ecapa: 'models/ecapa-tdnn-int8.onnx',
-  deepfilter: 'models/deepfilter-int8.onnx'
+  deepfilter: 'models/deepfilter-int8.onnx',
+  dns2: 'models/dns2_conformer_small.onnx',
+  noiseClassifier: 'models/noise_classifier.onnx',
+  convtasnet: 'models/convtasnet-int8.onnx'
 };
 
 // Default blend weights
@@ -87,6 +92,21 @@ self.onmessage = async (e) => {
     await promise.finally(() => activePromises.delete(promise));
   } else if (msg.type === 'identify') {
     const promise = handleIdentify(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
+  } else if (msg.type === 'dns2') {
+    // DNS v2 ONNX model: compute per-bin gain mask from STFT magnitude frame
+    const promise = handleDNS2(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
+  } else if (msg.type === 'classifyNoise') {
+    // Noise classifier: identify noise type from magnitude spectrum
+    const promise = handleClassifyNoise(msg);
+    activePromises.add(promise);
+    await promise.finally(() => activePromises.delete(promise));
+  } else if (msg.type === 'multiSeparate') {
+    // Multi-speaker source separation using ConvTasNet
+    const promise = handleMultiSeparate(msg);
     activePromises.add(promise);
     await promise.finally(() => activePromises.delete(promise));
   } else if (msg.type === 'dispose') {
@@ -448,6 +468,183 @@ async function handleIdentify(msg) {
   } catch (err) {
     self.postMessage({ type: 'identifyResult', id, embedding: null, error: err.message });
     log('warn', `Speaker identification error: ${err.message}`);
+  }
+}
+
+/**
+ * DNS v2 (Microsoft DNS Challenge v2) ONNX inference.
+ * Computes a per-frequency-bin gain mask from a 512-point STFT magnitude frame
+ * at 16 kHz. The mask (0..1) is posted as { type: 'dns2_mask', id, mask }.
+ *
+ * Graceful fallback: if the dns2 model failed to load, posts an all-ones mask
+ * (passthrough) instead of crashing.
+ *
+ * @param {object} msg
+ * @param {string|number} msg.id        - Call identifier
+ * @param {Float32Array}  msg.magnitude - 512-point STFT magnitude (16 kHz)
+ */
+async function handleDNS2(msg) {
+  const id = msg.id;
+  const magnitude = msg.magnitude;
+
+  if (!sessions.dns2 || !magnitude) {
+    // Graceful fallback: passthrough mask
+    const mask = new Float32Array(magnitude ? magnitude.length : 257).fill(1);
+    self.postMessage({ type: 'dns2_mask', id, mask }, [mask.buffer]);
+    return;
+  }
+
+  try {
+    const tensor = new ort.Tensor('float32', magnitude, [1, 1, magnitude.length]);
+    try {
+      const result = await sessions.dns2.run({ input: tensor });
+      const output = result[Object.keys(result)[0]];
+      // Clamp gain mask to [0, 1]
+      const rawMask = new Float32Array(output.data);
+      for (let i = 0; i < rawMask.length; i++) {
+        rawMask[i] = Math.max(0, Math.min(1, rawMask[i]));
+      }
+      output.dispose?.();
+      self.postMessage({ type: 'dns2_mask', id, mask: rawMask }, [rawMask.buffer]);
+    } finally {
+      tensor.dispose?.();
+    }
+  } catch (err) {
+    log('warn', `DNS v2 inference failed: ${err.message} — using passthrough mask`);
+    const mask = new Float32Array(magnitude.length).fill(1);
+    self.postMessage({ type: 'dns2_mask', id, mask }, [mask.buffer]);
+  }
+}
+
+/**
+ * Noise classifier: identify the dominant background noise type from a
+ * compact spectral feature vector derived from STFT magnitude frames.
+ *
+ * Attempts ONNX inference with the noiseClassifier model. Falls back to
+ * posting { noiseClass: 'unknown', confidence: 0 } on failure.
+ *
+ * @param {object} msg
+ * @param {string|number} msg.id       - Call identifier
+ * @param {Float32Array}  msg.features - Compact feature vector (e.g. 64-dim mel-band energies)
+ * @param {string[]}      [msg.labels] - Optional class label array (overrides default)
+ */
+async function handleClassifyNoise(msg) {
+  const id = msg.id;
+  const features = msg.features;
+  const labels = msg.labels || ['music', 'white_noise', 'crowd', 'HVAC', 'keyboard', 'traffic', 'silence'];
+
+  if (!sessions.noiseClassifier || !features) {
+    self.postMessage({ type: 'noiseClassResult', id, noiseClass: 'unknown', confidence: 0 });
+    return;
+  }
+
+  try {
+    const tensor = new ort.Tensor('float32', features, [1, features.length]);
+    try {
+      const result = await sessions.noiseClassifier.run({ input: tensor });
+      const output = result[Object.keys(result)[0]];
+      const logits = new Float32Array(output.data);
+      output.dispose?.();
+
+      // Softmax over logits
+      const maxLogit = Math.max(...logits);
+      let sumExp = 0;
+      const probs = new Float32Array(logits.length);
+      for (let i = 0; i < logits.length; i++) {
+        probs[i] = Math.exp(logits[i] - maxLogit);
+        sumExp += probs[i];
+      }
+      for (let i = 0; i < probs.length; i++) probs[i] /= sumExp;
+
+      // Best class
+      let bestIdx = 0;
+      for (let i = 1; i < probs.length; i++) {
+        if (probs[i] > probs[bestIdx]) bestIdx = i;
+      }
+      const noiseClass = labels[bestIdx] || `class_${bestIdx}`;
+      const confidence = probs[bestIdx];
+
+      self.postMessage({ type: 'noiseClassResult', id, noiseClass, confidence });
+    } finally {
+      tensor.dispose?.();
+    }
+  } catch (err) {
+    log('warn', `Noise classifier inference failed: ${err.message}`);
+    self.postMessage({ type: 'noiseClassResult', id, noiseClass: 'unknown', confidence: 0 });
+  }
+}
+
+/**
+ * Multi-speaker source separation using ConvTasNet (or SepFormer variant).
+ * Separates the mixed audio into up to 4 speaker streams.
+ *
+ * Each separated stream is tagged with a speaker index (0-based). If the
+ * ConvTasNet model is unavailable, the original mix is returned as the sole
+ * stream (graceful fallback, no crash).
+ *
+ * @param {object}        msg
+ * @param {string|number} msg.id             - Call identifier
+ * @param {Float32Array}  msg.data           - Mixed mono audio samples
+ * @param {string}        [msg.mode]         - 'target-only' | 'all-speakers' | 'off'
+ * @param {number}        [msg.targetSpeaker] - 0-based index of the target speaker
+ * @param {number}        [msg.attenuationDb] - Attenuation for non-target streams (default -24 dB)
+ */
+async function handleMultiSeparate(msg) {
+  const id = msg.id;
+  const data = msg.data;
+  const mode = msg.mode || 'target-only';
+  const targetSpeaker = msg.targetSpeaker ?? 0;
+  const attenuationLin = Math.pow(10, (msg.attenuationDb ?? -24) / 20);
+
+  if (mode === 'off' || !sessions.convtasnet || !data) {
+    // Passthrough: single stream = original mix
+    self.postMessage({
+      type: 'multiSeparateResult',
+      id,
+      streams: [{ speakerId: 0, data: new Float32Array(data || []) }]
+    }, data ? [data.buffer] : []);
+    return;
+  }
+
+  try {
+    const tensor = new ort.Tensor('float32', data, [1, 1, data.length]);
+    let streams;
+    try {
+      const result = await sessions.convtasnet.run({ input: tensor });
+      const output = result[Object.keys(result)[0]];
+      // Expected output shape: [1, numSpeakers, numSamples]
+      const numSpeakers = Math.min(4, output.dims[1] || 1);
+      const numSamples = data.length;
+      streams = [];
+      for (let s = 0; s < numSpeakers; s++) {
+        const start = s * numSamples;
+        const streamData = new Float32Array(output.data.slice(start, start + numSamples));
+
+        if (mode === 'target-only' && s !== targetSpeaker) {
+          // Attenuate non-target speakers (kept at -24 dB for monitoring)
+          for (let i = 0; i < streamData.length; i++) streamData[i] *= attenuationLin;
+        }
+
+        streams.push({ speakerId: s, data: streamData });
+      }
+      output.dispose?.();
+    } finally {
+      tensor.dispose?.();
+    }
+
+    // Transfer all stream buffers zero-copy
+    const transferables = streams.map(s => s.data.buffer);
+    self.postMessage({ type: 'multiSeparateResult', id, streams }, transferables);
+
+  } catch (err) {
+    log('warn', `Multi-speaker separation failed: ${err.message} — passthrough`);
+    // Graceful fallback: return original mix as single stream
+    const fallback = new Float32Array(data);
+    self.postMessage({
+      type: 'multiSeparateResult',
+      id,
+      streams: [{ speakerId: 0, data: fallback }]
+    }, [fallback.buffer]);
   }
 }
 

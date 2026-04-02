@@ -231,6 +231,158 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 
 /* ============================================
+   DSPConfig — Feature Flags & Runtime State
+   Adaptive Wiener · DNS v2 · Multi-Speaker
+   Harmonic v2 · Noise Classifier
+   ============================================ */
+
+/**
+ * Runtime configuration and state for the advanced DSP features added in v21.
+ * Holds feature-enable flags, the current noise classification result, the
+ * multi-speaker separation mode, and adaptive noise floor state for display.
+ *
+ * Designed to be read by dsp-worker.js (via params export) and written to
+ * by pipeline-orchestrator.js when ML results arrive.
+ */
+class DSPConfig {
+  constructor() {
+    // ---- Feature flags (all individually toggleable) ----
+    /** Enable per-bin adaptive Wiener filter (replaces fixed noise profile path) */
+    this.adaptiveWienerEnabled = true;
+
+    /** Enable DNS v2 ONNX gain mask after Wiener filter */
+    this.dns2Enabled = true;
+
+    /** Enable multi-speaker source separation (Pass 4.5) */
+    this.multiSpeakerEnabled = false; // opt-in (resource intensive)
+
+    /** Enable Harmonic Enhancer v2 (SBR + formant + breathiness) */
+    this.harmonicV2Enabled = true;
+
+    /** Enable lightweight spectral noise classifier */
+    this.noiseClassifierEnabled = true;
+
+    // ---- Multi-speaker separation config ----
+    /**
+     * Source separation routing mode.
+     * 'target-only' — route target speaker to Pass 5; attenuate others
+     * 'all-speakers' — mix all separated streams back before Pass 5
+     * 'off'          — bypass separation entirely
+     * @type {'target-only'|'all-speakers'|'off'}
+     */
+    this.separationMode = 'target-only';
+
+    /** 0-based index of the target speaker to route to Pass 5 */
+    this.targetSpeaker = 0;
+
+    /** Attenuation in dB applied to non-target speaker streams for monitoring */
+    this.separationAttenuationDb = -24;
+
+    // ---- Adaptive Wiener config ----
+    /** Smoothing time constant for the noise floor tracker (ms) */
+    this.adaptiveWienerSmoothingMs = 200;
+
+    /** Over-subtraction factor α for the adaptive Wiener filter */
+    this.adaptiveWienerOverSubtraction = 1.2;
+
+    // ---- Harmonic v2 config ----
+    /** Enable Spectral Band Replication above 8 kHz */
+    this.harmonicV2SBR = true;
+
+    /** Enable formant (F1/F2) preservation in harmonic enhancer */
+    this.harmonicV2FormantProtection = true;
+
+    /** Breathiness gain applied to aperiodic component (0–2) */
+    this.harmonicV2BreathinessGain = 0.8;
+
+    // ---- Runtime results (updated by ML worker callbacks) ----
+    /**
+     * Most recently classified noise type.
+     * @type {'music'|'white_noise'|'crowd'|'HVAC'|'keyboard'|'traffic'|'silence'|'unknown'}
+     */
+    this.noiseClass = 'unknown';
+
+    /** Confidence of the current noise class prediction (0..1) */
+    this.noiseClassConfidence = 0;
+
+    /** Whether the adaptive noise floor tracker has been initialized */
+    this.adaptiveNoiseFloorReady = false;
+
+    // ---- Change listeners ----
+    this._listeners = new Set();
+  }
+
+  /** Apply a strategy update based on noise class (adjusts params for best suppression) */
+  applyNoiseStrategy(noiseClass, extraConfig = {}) {
+    switch (noiseClass) {
+      case 'music':
+        // Increase over-subtraction; enable Demucs vocal stem
+        this.adaptiveWienerOverSubtraction = extraConfig.overSubtraction ?? 1.6;
+        break;
+      case 'white_noise':
+        // Standard Wiener — reset to defaults
+        this.adaptiveWienerOverSubtraction = 1.2;
+        break;
+      case 'crowd':
+        // Enable multi-speaker separation for crowd noise
+        this.multiSpeakerEnabled = true;
+        this.separationMode = extraConfig.separationMode ?? 'target-only';
+        break;
+      case 'HVAC':
+      case 'traffic':
+        // Fast noise floor tracking
+        this.adaptiveWienerSmoothingMs = extraConfig.smoothingMs ?? 80;
+        break;
+      default:
+        break;
+    }
+    this._emit('noiseStrategy', { noiseClass, ...extraConfig });
+  }
+
+  /** Update noise class from ML classifier result */
+  setNoiseClass(noiseClass, confidence) {
+    const changed = this.noiseClass !== noiseClass;
+    this.noiseClass = noiseClass;
+    this.noiseClassConfidence = confidence;
+    if (changed) this.applyNoiseStrategy(noiseClass);
+    this._emit('noiseClass', { noiseClass, confidence });
+  }
+
+  /** Subscribe to DSPConfig changes */
+  onChange(fn) {
+    this._listeners.add(fn);
+    return () => this._listeners.delete(fn);
+  }
+
+  /** Export config as a plain object (for passing to dsp-worker as params) */
+  export() {
+    return {
+      adaptiveWienerEnabled:           this.adaptiveWienerEnabled,
+      dns2Enabled:                     this.dns2Enabled,
+      multiSpeakerEnabled:             this.multiSpeakerEnabled,
+      harmonicV2Enabled:               this.harmonicV2Enabled,
+      noiseClassifierEnabled:          this.noiseClassifierEnabled,
+      separationMode:                  this.separationMode,
+      targetSpeaker:                   this.targetSpeaker,
+      separationAttenuationDb:         this.separationAttenuationDb,
+      adaptiveWienerSmoothingMs:       this.adaptiveWienerSmoothingMs,
+      adaptiveWienerOverSubtraction:   this.adaptiveWienerOverSubtraction,
+      harmonicV2SBR:                   this.harmonicV2SBR,
+      harmonicV2FormantProtection:     this.harmonicV2FormantProtection,
+      harmonicV2BreathinessGain:       this.harmonicV2BreathinessGain,
+      noiseClass:                      this.noiseClass,
+      noiseClassConfidence:            this.noiseClassConfidence
+    };
+  }
+
+  _emit(event, detail) {
+    for (const fn of this._listeners) {
+      try { fn(event, detail); } catch (_) {}
+    }
+  }
+}
+
+/* ============================================
    SpeakerRegistry — Biometric Voice Profiles
    IndexedDB persistence · Cosine similarity
    Color-coded identities · Diarization support
@@ -466,7 +618,8 @@ class SpeakerRegistry {
 SpeakerRegistry.DB_VERSION = 2; // Increment when IndexedDB schema changes
 if (typeof window !== 'undefined') {
   window.SpeakerRegistry = SpeakerRegistry;
+  window.DSPConfig = DSPConfig;
 }
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { PipelineState, SpeakerRegistry };
+  module.exports = { PipelineState, SpeakerRegistry, DSPConfig };
 }

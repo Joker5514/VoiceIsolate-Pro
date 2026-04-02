@@ -2,6 +2,7 @@
    VoiceIsolate Pro v20.0 — DSP Worker
    Threads from Space v10 · 36-Stage Pipeline
    Deca-Pass Offline Processing · Full Quality
+   Adaptive Wiener · DNS v2 · Multi-Speaker
    ============================================ */
 
 'use strict';
@@ -9,6 +10,7 @@
 importScripts('dsp-core.js');
 
 const DSP = self.DSPCore;
+const AdaptiveNoiseFloor = self.AdaptiveNoiseFloor;
 const SR = 48000;
 
 /**
@@ -181,18 +183,100 @@ async function runPipeline(msg) {
     }
     progress(14, 45, 'ML Separation Complete');
 
+    // ===== PASS 4.5: MULTI-SPEAKER SOURCE SEPARATION (optional) =====
+    const multiSpeakerEnabled = params.multiSpeakerEnabled ?? false;
+    const separationMode = params.separationMode ?? 'off';
+    if (multiSpeakerEnabled && separationMode !== 'off') {
+      progress(14, 46, 'Multi-Speaker Separation');
+      const msData = new Float32Array(data);
+      const msResult = await callML('multiSeparate', msData, {
+        mode: separationMode,
+        targetSpeaker: params.targetSpeaker ?? 0,
+        attenuationDb: params.separationAttenuationDb ?? -24
+      });
+
+      if (msResult.streams && msResult.streams.length > 0) {
+        const targetSpeaker = params.targetSpeaker ?? 0;
+        // Find the target speaker stream
+        const targetStream = msResult.streams.find(s => s.speakerId === targetSpeaker)
+          || msResult.streams[0];
+
+        if (targetStream && targetStream.data) {
+          // Update mag/phase from separated target speaker stream
+          const targetData = new Float32Array(targetStream.data);
+          const targetSTFT = DSP.forwardSTFT(targetData, fftSize, hopSize);
+          for (let f = 0; f < Math.min(frameCount, targetSTFT.frameCount); f++) {
+            for (let k = 0; k < mag[f].length; k++) {
+              mag[f][k] = targetSTFT.mag[f][k];
+              phase[f][k] = targetSTFT.phase[f][k];
+            }
+          }
+        }
+      }
+      progress(14, 47, 'Multi-Speaker Separation Complete');
+    }
+
     if (self._aborted) return abort();
 
     // ===== PASS 5: SPECTRAL OPERATIONS IN-PLACE (S15–S19) =====
     progress(15, 48, 'Spectral Operations');
 
-    // Estimate noise profile from silent segments
-    const noiseProfile = DSP.estimateNoiseProfile(data, vadConfidence, fftSize, hopSize);
+    // Noise classifier: run before Wiener to inform strategy
+    if (params.noiseClassifierEnabled !== false) {
+      // Build compact feature vector: 64-band mel-like log energies
+      const classFeatures = _buildNoiseFeatures(mag, sr, fftSize);
+      // Fire-and-forget (results forwarded back via ML port to orchestrator)
+      callML('classifyNoise', classFeatures, {}).catch(() => {});
+      // Also run the spectral classifier locally for fast strategy update
+      // (the ONNX model result will arrive asynchronously)
+      const localClass = DSP.classifyNoiseSpectral(mag, sr, fftSize);
+      // Store locally for adaptive Wiener over-subtraction tuning
+      if (localClass.noiseClass === 'music') {
+        params._effectiveOverSubtraction = (params.adaptiveWienerOverSubtraction ?? 1.2) * 1.3;
+      } else {
+        params._effectiveOverSubtraction = params.adaptiveWienerOverSubtraction ?? 1.2;
+      }
+    }
 
-    // S15: Spectral noise subtraction (Wiener-MMSE)
-    const nrAmount = params.nrAmount ?? 55;
-    DSP.wienerMMSE(mag, noiseProfile, nrAmount);
+    // S15: Spectral noise subtraction
+    const adaptiveWienerEnabled = params.adaptiveWienerEnabled !== false;
+    if (adaptiveWienerEnabled && AdaptiveNoiseFloor) {
+      // Per-bin adaptive Wiener filter (Martin 2001)
+      const smoothingMs = params.adaptiveWienerSmoothingMs ?? 200;
+      const overSub = params._effectiveOverSubtraction ?? params.adaptiveWienerOverSubtraction ?? 1.2;
+      const halfN = mag[0].length;
+      const tracker = new AdaptiveNoiseFloor(halfN, smoothingMs, hopSize, sr);
+      DSP.applyAdaptiveWiener(mag, vadConfidence, tracker, {
+        overSubtraction: overSub,
+        spectralFloor: 0.001
+      });
+    } else {
+      // Fallback: fixed noise profile Wiener-MMSE
+      const noiseProfile = DSP.estimateNoiseProfile(data, vadConfidence, fftSize, hopSize);
+      const nrAmount = params.nrAmount ?? 55;
+      DSP.wienerMMSE(mag, noiseProfile, nrAmount);
+    }
     progress(15, 52, 'Spectral Noise Subtracted');
+
+    // DNS v2: apply per-bin gain mask from ML model (applied after Wiener)
+    if (params.dns2Enabled !== false) {
+      // Build 512-point magnitude frame (use middle frame of STFT, 16 kHz compatible)
+      const midFrame = Math.floor(frameCount / 2);
+      const dns2Input = _buildDNS2Frame(mag, midFrame, sr, fftSize);
+      const dns2Result = await callML('dns2', dns2Input, {});
+      if (dns2Result.mask) {
+        const mask = new Float32Array(dns2Result.mask);
+        // Apply mask to each STFT frame (interpolate mask length if needed)
+        const halfN = mag[0].length;
+        for (let f = 0; f < frameCount; f++) {
+          for (let k = 0; k < halfN; k++) {
+            const maskIdx = Math.min(k, mask.length - 1);
+            mag[f][k] *= mask[maskIdx];
+          }
+        }
+      }
+    }
+    progress(15, 54, 'DNS v2 Gain Mask Applied');
 
     // S16: 32 ERB band spectral gate
     const nrFloor = params.nrFloor ?? -60;
@@ -201,7 +285,17 @@ async function runPipeline(msg) {
 
     // S17: Harmonic enhancement
     const harmRecov = params.harmRecov ?? 20;
-    DSP.harmonicEnhance(mag, phase, harmRecov);
+    if (params.harmonicV2Enabled !== false) {
+      DSP.harmonicEnhanceV2(mag, phase, harmRecov, {
+        sbr:               params.harmonicV2SBR !== false,
+        formantProtection: params.harmonicV2FormantProtection !== false,
+        breathinessGain:   params.harmonicV2BreathinessGain ?? 0.8,
+        sampleRate:        sr,
+        fftSize
+      });
+    } else {
+      DSP.harmonicEnhance(mag, phase, harmRecov);
+    }
     progress(17, 60, 'Harmonics Enhanced');
 
     // S18: Temporal smoothing
@@ -341,4 +435,70 @@ async function runPipeline(msg) {
 
 function abort() {
   self.postMessage({ type: 'aborted' });
+}
+
+// ===== HELPER FUNCTIONS FOR NEW DSP PASSES =====
+
+/**
+ * Build a compact noise feature vector from STFT magnitude frames.
+ * Computes 64-band log mel-like energies suitable for the noise classifier model.
+ * @param {Float32Array[]} mag - STFT magnitude frames
+ * @param {number} sr          - Sample rate
+ * @param {number} fftSize     - FFT size
+ * @returns {Float32Array} 64-element feature vector
+ */
+function _buildNoiseFeatures(mag, _sr, _fftSize) {
+  const numBands = 64;
+  const halfN = mag[0] ? mag[0].length : 0;
+  const features = new Float32Array(numBands);
+  if (halfN === 0) return features;
+
+  const bandSize = halfN / numBands;
+
+  // Average across frames
+  const avg = new Float32Array(halfN);
+  for (const frame of mag) {
+    for (let k = 0; k < halfN; k++) avg[k] += frame[k];
+  }
+  const nFrames = Math.max(1, mag.length);
+  for (let k = 0; k < halfN; k++) avg[k] /= nFrames;
+
+  // Band log energies
+  for (let b = 0; b < numBands; b++) {
+    const lo = Math.floor(b * bandSize);
+    const hi = Math.min(halfN - 1, Math.floor((b + 1) * bandSize));
+    let e = 0;
+    for (let k = lo; k <= hi; k++) e += avg[k] * avg[k];
+    features[b] = Math.log(e / Math.max(1, hi - lo + 1) + 1e-10);
+  }
+  return features;
+}
+
+/**
+ * Build a 512-point magnitude frame for DNS v2 ONNX inference.
+ * The DNS v2 model expects 512-point STFT magnitudes at 16 kHz.
+ * This function resamples from the current STFT resolution.
+ * @param {Float32Array[]} mag - STFT magnitude frames
+ * @param {number} midFrame    - Frame index to use
+ * @param {number} sr          - Current sample rate
+ * @param {number} fftSize     - Current FFT size
+ * @returns {Float32Array} 257-point magnitude (512-pt FFT, half+1)
+ */
+function _buildDNS2Frame(mag, midFrame, sr, _fftSize) {
+  const dns2Bins = 257; // 512-pt STFT half+1
+  const output = new Float32Array(dns2Bins);
+  if (!mag || mag.length === 0) return output;
+
+  const srcFrame = mag[Math.min(midFrame, mag.length - 1)];
+  const srcBins = srcFrame.length;
+  // Frequency scaling ratio (src bins → 512-pt at 16 kHz)
+  const srcNyquist = sr / 2;
+  const dstNyquist = 8000; // 16 kHz / 2
+  const freqScale = dstNyquist / srcNyquist;
+
+  for (let k = 0; k < dns2Bins; k++) {
+    const srcK = Math.round(k / freqScale);
+    output[k] = srcK < srcBins ? srcFrame[srcK] : 0;
+  }
+  return output;
 }

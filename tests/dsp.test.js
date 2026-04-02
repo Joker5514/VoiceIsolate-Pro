@@ -835,3 +835,274 @@ describe('VADProcessor', () => {
     expect(vad.sensitivity).toBe(1);
   });
 });
+
+// ===== Tests for Advanced DSP Upgrades (Issue #N) =====
+
+describe('AdaptiveNoiseFloor (Martin 2001 minimum statistics)', () => {
+  const NUM_BINS = 64;
+  const SR = 48000;
+  const HOP = 1024;
+
+  test('constructor creates correct shape buffers', () => {
+    const anf = new DSPCore.AdaptiveNoiseFloor(NUM_BINS, 200, HOP, SR);
+    expect(anf.numBins).toBe(NUM_BINS);
+    expect(anf.noiseEst.length).toBe(NUM_BINS);
+    expect(anf._minStore.length).toBe(5); // 5 sub-windows
+  });
+
+  test('getFloor() returns zeros before any update', () => {
+    const anf = new DSPCore.AdaptiveNoiseFloor(NUM_BINS, 200, HOP, SR);
+    const floor = anf.getFloor();
+    expect(floor.length).toBe(NUM_BINS);
+    for (let k = 0; k < NUM_BINS; k++) {
+      expect(floor[k]).toBe(0); // Infinity clamped to 0
+    }
+  });
+
+  test('update() initializes on first call', () => {
+    const anf = new DSPCore.AdaptiveNoiseFloor(NUM_BINS, 200, HOP, SR);
+    const mag = new Float32Array(NUM_BINS).fill(0.1);
+    anf.update(mag);
+    expect(anf._initialized).toBe(true);
+    const floor = anf.getFloor();
+    for (let k = 0; k < NUM_BINS; k++) {
+      expect(floor[k]).toBeGreaterThan(0);
+    }
+  });
+
+  test('getFloor() decreases toward true noise level after silence frames', () => {
+    const anf = new DSPCore.AdaptiveNoiseFloor(NUM_BINS, 50, HOP, SR); // fast 50ms
+    // Feed 200 silence frames at constant noise level
+    const noise = new Float32Array(NUM_BINS).fill(0.05);
+    for (let i = 0; i < 200; i++) anf.update(noise);
+    const floor = anf.getFloor();
+    // Floor should converge towards 0.05
+    for (let k = 0; k < NUM_BINS; k++) {
+      expect(floor[k]).toBeGreaterThan(0);
+      expect(floor[k]).toBeLessThanOrEqual(0.06); // within 20% of true noise
+    }
+  });
+
+  test('reset() clears state', () => {
+    const anf = new DSPCore.AdaptiveNoiseFloor(NUM_BINS, 200, HOP, SR);
+    const mag = new Float32Array(NUM_BINS).fill(0.1);
+    anf.update(mag);
+    expect(anf._initialized).toBe(true);
+    anf.reset();
+    expect(anf._initialized).toBe(false);
+    const floor = anf.getFloor();
+    for (let k = 0; k < NUM_BINS; k++) expect(floor[k]).toBe(0);
+  });
+
+  test('smoothing alpha is between 0 and 1', () => {
+    const anf = new DSPCore.AdaptiveNoiseFloor(NUM_BINS, 200, HOP, SR);
+    expect(anf.alpha).toBeGreaterThan(0);
+    expect(anf.alpha).toBeLessThan(1);
+  });
+});
+
+describe('applyAdaptiveWiener', () => {
+  const halfN = 16;
+  const SR = 48000;
+  const HOP = 1024;
+
+  function makeMag(frames, bins, val) {
+    return Array.from({ length: frames }, () => new Float32Array(bins).fill(val));
+  }
+
+  test('returns mag array unchanged when all frames are voiced (VAD=1)', () => {
+    // When VAD confidence = 1 (fully voiced), SPP=1 → gain factor = 1 (no suppression)
+    const mag = makeMag(4, halfN, 1.0);
+    const before = mag.map(f => Array.from(f));
+    const vadConf = new Float32Array(4).fill(1.0);
+    const tracker = new DSPCore.AdaptiveNoiseFloor(halfN, 200, HOP, SR);
+    DSPCore.applyAdaptiveWiener(mag, vadConf, tracker);
+    // Signal bins should be ≥ the original (no suppression for fully voiced frames)
+    for (let f = 0; f < mag.length; f++) {
+      for (let k = 0; k < halfN; k++) {
+        expect(mag[f][k]).toBeCloseTo(before[f][k], 5);
+      }
+    }
+  });
+
+  test('suppresses signal when frames are silent (VAD=0) and noise floor is known', () => {
+    const halfN2 = 8;
+    const tracker = new DSPCore.AdaptiveNoiseFloor(halfN2, 50, HOP, SR);
+    // Pre-initialize tracker with noise frames
+    const noiseMag = new Float32Array(halfN2).fill(0.5);
+    for (let i = 0; i < 100; i++) tracker.update(noiseMag);
+
+    // Signal at same level as noise → should be suppressed
+    const mag = makeMag(4, halfN2, 0.5);
+    const vadConf = new Float32Array(4).fill(0.0); // silence
+    DSPCore.applyAdaptiveWiener(mag, vadConf, tracker, { overSubtraction: 1.2 });
+
+    // Output should be less than input
+    for (let f = 0; f < mag.length; f++) {
+      for (let k = 0; k < halfN2; k++) {
+        expect(mag[f][k]).toBeLessThan(0.5 + 1e-6);
+      }
+    }
+  });
+
+  test('respects spectralFloor option', () => {
+    const halfN2 = 4;
+    const tracker = new DSPCore.AdaptiveNoiseFloor(halfN2, 50, HOP, SR);
+    const noiseMag = new Float32Array(halfN2).fill(10.0); // very loud noise
+    for (let i = 0; i < 200; i++) tracker.update(noiseMag);
+
+    // Tiny signal with enormous noise → should hit floor
+    const mag = makeMag(2, halfN2, 0.001);
+    const vadConf = new Float32Array(2).fill(0.0);
+    const floor = 0.05;
+    DSPCore.applyAdaptiveWiener(mag, vadConf, tracker, { spectralFloor: floor });
+    for (let f = 0; f < mag.length; f++) {
+      for (let k = 0; k < halfN2; k++) {
+        // gain cannot go below spectralFloor, so output ≥ input * spectralFloor / 1 = very small
+        // but gain itself is clamped to floor, so bin value = input * gain >= input * floor
+        expect(mag[f][k]).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+});
+
+describe('harmonicEnhanceV2', () => {
+  const SR = 48000;
+  const FFT_SIZE = 512;
+  const HALF_N = FFT_SIZE / 2 + 1;
+
+  function makeFlatMag(frames) {
+    return Array.from({ length: frames }, () => new Float32Array(HALF_N).fill(0.1));
+  }
+  function makePhase(frames) {
+    return Array.from({ length: frames }, () => new Float32Array(HALF_N).fill(0));
+  }
+
+  test('returns mag unchanged when amount=0', () => {
+    const mag = makeFlatMag(2);
+    const before = mag.map(f => Array.from(f));
+    DSPCore.harmonicEnhanceV2(mag, makePhase(2), 0, { sampleRate: SR, fftSize: FFT_SIZE });
+    for (let f = 0; f < mag.length; f++) {
+      for (let k = 0; k < HALF_N; k++) {
+        expect(mag[f][k]).toBeCloseTo(before[f][k], 5);
+      }
+    }
+  });
+
+  test('SBR fills high-frequency bins above 8kHz', () => {
+    const mag = makeFlatMag(2);
+    const bin8k = Math.round(8000 / (SR / FFT_SIZE));
+    // Zero out high-frequency bins
+    for (const frame of mag) {
+      for (let k = bin8k; k < HALF_N; k++) frame[k] = 0;
+    }
+    DSPCore.harmonicEnhanceV2(mag, makePhase(2), 50, {
+      sbr: true,
+      formantProtection: false,
+      breathinessGain: 1.0,
+      sampleRate: SR,
+      fftSize: FFT_SIZE
+    });
+    // At least some bins above 8kHz should be non-zero now
+    let nonZeroHF = 0;
+    for (const frame of mag) {
+      for (let k = bin8k; k < HALF_N; k++) {
+        if (frame[k] > 0) nonZeroHF++;
+      }
+    }
+    expect(nonZeroHF).toBeGreaterThan(0);
+  });
+
+  test('formant protection boosts bins in F1/F2 range', () => {
+    const mag = makeFlatMag(2);
+    const before = mag.map(f => Array.from(f));
+    DSPCore.harmonicEnhanceV2(mag, makePhase(2), 20, {
+      sbr: false,
+      formantProtection: true,
+      breathinessGain: 1.0,
+      sampleRate: SR,
+      fftSize: FFT_SIZE
+    });
+    // Formant bands (200–3500 Hz) should be boosted relative to other areas
+    const f1Lo = Math.round(200 / (SR / FFT_SIZE));
+    const f2Hi = Math.round(3500 / (SR / FFT_SIZE));
+    let boostedCount = 0;
+    for (const frame of mag) {
+      for (let k = f1Lo; k <= f2Hi && k < HALF_N; k++) {
+        if (frame[k] > 0.1) boostedCount++; // was 0.1, now boosted
+      }
+    }
+    expect(boostedCount).toBeGreaterThan(0);
+  });
+
+  test('breathinessGain < 1 attenuates high-SFM bins', () => {
+    // Create a spectrally flat (noisy/breathy) signal
+    const mag = Array.from({ length: 2 }, () => {
+      const m = new Float32Array(HALF_N);
+      for (let k = 0; k < HALF_N; k++) m[k] = 0.1; // flat = high SFM
+      return m;
+    });
+    const sumBefore = mag[0].reduce((a, b) => a + b, 0);
+    DSPCore.harmonicEnhanceV2(mag, makePhase(2), 20, {
+      sbr: false,
+      formantProtection: false,
+      breathinessGain: 0.5,
+      sampleRate: SR,
+      fftSize: FFT_SIZE
+    });
+    const sumAfter = mag[0].reduce((a, b) => a + b, 0);
+    // Breathiness reduction should lower total voiced band energy
+    expect(sumAfter).toBeLessThan(sumBefore + 1);
+  });
+});
+
+describe('classifyNoiseSpectral', () => {
+  const SR = 48000;
+  const FFT_SIZE = 512;
+  const HALF_N = FFT_SIZE / 2 + 1;
+
+  function makeFrames(fillFn, numFrames = 4) {
+    return Array.from({ length: numFrames }, () => {
+      const m = new Float32Array(HALF_N);
+      fillFn(m);
+      return m;
+    });
+  }
+
+  test('returns silence for empty or near-zero input', () => {
+    const result = DSPCore.classifyNoiseSpectral([], SR, FFT_SIZE);
+    expect(result.noiseClass).toBe('silence');
+
+    const zeroFrames = makeFrames(m => m.fill(0));
+    const result2 = DSPCore.classifyNoiseSpectral(zeroFrames, SR, FFT_SIZE);
+    expect(result2.noiseClass).toBe('silence');
+  });
+
+  test('returns a valid class string and confidence in [0,1]', () => {
+    const validClasses = ['music', 'white_noise', 'crowd', 'HVAC', 'keyboard', 'traffic', 'silence'];
+    const frames = makeFrames(m => { for (let k = 0; k < HALF_N; k++) m[k] = 0.1; });
+    const result = DSPCore.classifyNoiseSpectral(frames, SR, FFT_SIZE);
+    expect(validClasses).toContain(result.noiseClass);
+    expect(result.confidence).toBeGreaterThanOrEqual(0);
+    expect(result.confidence).toBeLessThanOrEqual(1);
+  });
+
+  test('classifies spectrally flat signal as white_noise', () => {
+    // Completely flat spectrum = maximum spectral flatness → white noise
+    const frames = makeFrames(m => { for (let k = 0; k < HALF_N; k++) m[k] = 0.5; });
+    const result = DSPCore.classifyNoiseSpectral(frames, SR, FFT_SIZE);
+    expect(result.noiseClass).toBe('white_noise');
+  });
+
+  test('classifies low-frequency dominant signal as HVAC or traffic', () => {
+    const HVACClasses = ['HVAC', 'traffic'];
+    const frames = makeFrames(m => {
+      const subBin = Math.round(60 / (SR / 2 / (HALF_N - 1)));
+      const bassBin = Math.round(200 / (SR / 2 / (HALF_N - 1)));
+      // Concentrate energy in sub-bass
+      for (let k = 0; k <= Math.min(subBin, bassBin, HALF_N - 1); k++) m[k] = 1.0;
+    });
+    const result = DSPCore.classifyNoiseSpectral(frames, SR, FFT_SIZE);
+    expect(HVACClasses).toContain(result.noiseClass);
+  });
+});

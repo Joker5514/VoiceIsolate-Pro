@@ -2,9 +2,106 @@
    VoiceIsolate Pro v20.0 — DSPCore
    Threads from Space v10 · Pure DSP Math
    STFT/iSTFT · Biquad · Spectral · ERB
+   Adaptive Wiener · Harmonic v2 · Noise Class
    ============================================ */
 
 'use strict';
+
+/**
+ * Per-bin adaptive noise floor tracker using a minimum statistics approach
+ * (Martin 2001). Maintains a rolling minimum over a configurable window of
+ * past noise-magnitude estimates and updates only during VAD-inactive frames.
+ */
+class AdaptiveNoiseFloor {
+  /**
+   * @param {number} numBins      - Number of FFT bins (fftSize/2 + 1)
+   * @param {number} smoothingMs  - Noise-floor smoothing time constant in ms
+   * @param {number} hopSize      - Hop size in samples
+   * @param {number} sampleRate   - Sample rate in Hz
+   */
+  constructor(numBins, smoothingMs = 200, hopSize = 1024, sampleRate = 48000) {
+    this.numBins = numBins;
+    // Per-bin smoothed noise magnitude estimate
+    this.noiseEst = new Float32Array(numBins);
+    // Rolling minimum window: 5 sub-windows (Martin 2001 §3.2)
+    this._windowCount = 5;
+    this._subWinLen = Math.max(
+      1,
+      Math.round((smoothingMs / 1000) * (sampleRate / hopSize) / this._windowCount)
+    );
+    this._minStore = Array.from({ length: this._windowCount }, () => new Float32Array(numBins).fill(Infinity));
+    this._tmpMin = new Float32Array(numBins).fill(Infinity);
+    this._subFrameIdx = 0;
+    this._subWinIdx = 0;
+    // Smoothing coefficient (IIR one-pole)
+    const smoothFrames = Math.max(1, Math.round((smoothingMs / 1000) * (sampleRate / hopSize)));
+    this.alpha = Math.exp(-1 / smoothFrames);
+    this._initialized = false;
+  }
+
+  /**
+   * Update the noise floor estimate with a new magnitude frame.
+   * Only call this during VAD-inactive (silence) frames.
+   * @param {Float32Array} mag - Magnitude spectrum for the current frame
+   */
+  update(mag) {
+    if (!this._initialized) {
+      this.noiseEst.set(mag);
+      for (const w of this._minStore) w.set(mag);
+      this._tmpMin.set(mag);
+      this._initialized = true;
+      return;
+    }
+
+    for (let k = 0; k < this.numBins; k++) {
+      // Smooth current magnitude into running estimate
+      this.noiseEst[k] = this.alpha * this.noiseEst[k] + (1 - this.alpha) * mag[k];
+      // Update rolling minimum
+      if (this.noiseEst[k] < this._tmpMin[k]) this._tmpMin[k] = this.noiseEst[k];
+    }
+
+    this._subFrameIdx++;
+    if (this._subFrameIdx >= this._subWinLen) {
+      // Rotate sub-windows
+      this._minStore[this._subWinIdx].set(this._tmpMin);
+      this._subWinIdx = (this._subWinIdx + 1) % this._windowCount;
+      // Reset tmp min for next sub-window
+      this._tmpMin.fill(Infinity);
+      for (let k = 0; k < this.numBins; k++) {
+        this._tmpMin[k] = this.noiseEst[k];
+      }
+      this._subFrameIdx = 0;
+    }
+  }
+
+  /**
+   * Return the current per-bin minimum noise floor estimate.
+   * @returns {Float32Array}
+   */
+  getFloor() {
+    const floor = new Float32Array(this.numBins).fill(Infinity);
+    for (const w of this._minStore) {
+      for (let k = 0; k < this.numBins; k++) {
+        if (w[k] < floor[k]) floor[k] = w[k];
+      }
+    }
+    // Clamp Infinity (uninitialized) to 0
+    for (let k = 0; k < this.numBins; k++) {
+      if (!isFinite(floor[k])) floor[k] = 0;
+    }
+    return floor;
+  }
+
+  /** Reset all state (e.g. between files) */
+  reset() {
+    this.noiseEst.fill(0);
+    for (const w of this._minStore) w.fill(Infinity);
+    this._tmpMin.fill(Infinity);
+    this._subFrameIdx = 0;
+    this._subWinIdx = 0;
+    this._initialized = false;
+  }
+}
 
 /**
  * Pure DSP math library. No Web Audio API dependency.
@@ -12,10 +109,12 @@
  * - Biquad filter implementation (Direct Form II)
  * - Cascaded notch chains, parametric EQ
  * - Spectral noise subtraction (Wiener-MMSE)
+ * - Adaptive Wiener filter (per-bin, Martin 2001 minimum statistics)
  * - 32 ERB band spectral gate
- * - Temporal smoothing, harmonic enhancement
+ * - Temporal smoothing, harmonic enhancement v2 (SBR + formant + breathiness)
  * - Dereverberation, de-essing, de-clicking
  * - LUFS measurement, true-peak limiting, dither
+ * - Lightweight spectral noise classifier
  */
 const DSPCore = {
 
@@ -380,6 +479,46 @@ const DSPCore = {
     return mag;
   },
 
+  /**
+   * S15-alt: Per-bin adaptive Wiener filter (upgrade to wienerMMSE).
+   * Uses a pre-computed AdaptiveNoiseFloor tracker's minimum-statistics
+   * noise estimate and applies a Speech Presence Probability (SPP) weighting
+   * to avoid over-suppression during voiced frames.
+   *
+   * @param {Float32Array[]} mag          - STFT magnitude frames (modified in-place)
+   * @param {Float32Array[]} vadConf      - Per-frame VAD confidence [0..1]
+   * @param {AdaptiveNoiseFloor} tracker  - Noise floor tracker (updated for silence frames)
+   * @param {object} opts
+   * @param {number} [opts.overSubtraction=1.2] - Over-subtraction factor α
+   * @param {number} [opts.spectralFloor=0.001]  - Minimum gain floor (~-60 dB)
+   * @returns {Float32Array[]} mag (in-place)
+   */
+  applyAdaptiveWiener(mag, vadConf, tracker, { overSubtraction = 1.2, spectralFloor = 0.001 } = {}) {
+    const vadLen = vadConf ? vadConf.length : 0;
+    for (let f = 0; f < mag.length; f++) {
+      const conf = vadLen > 0 ? (vadConf[Math.min(f, vadLen - 1)] || 0) : 0;
+      const isSilence = conf < 0.3;
+
+      if (isSilence) {
+        tracker.update(mag[f]);
+      }
+
+      const floor = tracker.getFloor();
+      // Speech Presence Probability: higher VAD conf → trust signal more → less suppression
+      const spp = Math.min(1, conf);
+
+      for (let k = 0; k < mag[f].length; k++) {
+        const noiseMag = floor[k] || 0;
+        const sigPow = mag[f][k] * mag[f][k];
+        const noisePow = noiseMag * noiseMag * overSubtraction;
+        // Wiener gain with SPP blending: SPP=1 → no suppression, SPP=0 → full suppression
+        const wienerGain = Math.max(spectralFloor, 1 - noisePow / (sigPow + 1e-10));
+        mag[f][k] *= (spp + (1 - spp) * wienerGain);
+      }
+    }
+    return mag;
+  },
+
   /** S16: 32 ERB band spectral gate */
   spectralGate(mag, floorDb, sr) {
     const erbBands = this._computeERBBands(32, sr, mag[0]?.length || 2049);
@@ -416,6 +555,120 @@ const DSPCore = {
         if (mag[f][k] > mag[f][k-1] && mag[f][k] > mag[f][k+1] &&
             mag[f][k] > mag[f][k-2] && mag[f][k] > mag[f][k+2]) {
           mag[f][k] *= boost;
+        }
+      }
+    }
+    return mag;
+  },
+
+  /**
+   * S17-v2: Harmonic Enhancer v2.
+   * - Spectral Band Replication (SBR): synthesizes harmonics above 8 kHz from
+   *   lower-band content by mirroring even-order energy into the high-frequency range.
+   * - Formant preservation: detects F1/F2 via spectral envelope peaks and protects
+   *   those bins from over-suppression by boosting them relative to neighbours.
+   * - Breathiness control: separates aperiodic (noisy) from periodic (tonal) energy
+   *   and applies an independent breathiness gain.
+   *
+   * @param {Float32Array[]} mag  - STFT magnitude frames (modified in-place)
+   * @param {Float32Array[]} phase - STFT phase frames (read-only)
+   * @param {number} amount       - Overall enhancement amount 0–100
+   * @param {object} opts
+   * @param {boolean} [opts.sbr=true]               - Enable Spectral Band Replication
+   * @param {boolean} [opts.formantProtection=true]  - Enable formant preservation
+   * @param {number}  [opts.breathinessGain=0.8]     - Gain for aperiodic component (0–2)
+   * @param {number}  [opts.sampleRate=48000]         - Sample rate (for 8 kHz bin calc)
+   * @param {number}  [opts.fftSize=4096]             - FFT size (for 8 kHz bin calc)
+   * @returns {Float32Array[]} mag (in-place)
+   */
+  harmonicEnhanceV2(mag, phase, amount, {
+    sbr = true,
+    formantProtection = true,
+    breathinessGain = 0.8,
+    sampleRate = 48000,
+    fftSize = 4096
+  } = {}) {
+    if (amount <= 0) return mag;
+    const boost = 1 + amount / 100;
+    const halfN = mag[0] ? mag[0].length : 0;
+    if (halfN === 0) return mag;
+
+    // Bin index corresponding to 8 kHz
+    const bin8k = Math.round(8000 / (sampleRate / fftSize));
+    // Formant search range: F1 typically 200–1000 Hz, F2 1000–3500 Hz
+    const f1Lo = Math.round(200 / (sampleRate / fftSize));
+    const f1Hi = Math.round(1000 / (sampleRate / fftSize));
+    const f2Lo = Math.round(1000 / (sampleRate / fftSize));
+    const f2Hi = Math.round(3500 / (sampleRate / fftSize));
+
+    for (let f = 0; f < mag.length; f++) {
+      const m = mag[f];
+
+      // ---- Formant preservation ----
+      if (formantProtection && f1Lo < f1Hi && f2Lo < f2Hi) {
+        // Detect F1 peak
+        let f1Bin = f1Lo;
+        let f1Max = 0;
+        for (let k = f1Lo; k <= Math.min(f1Hi, halfN - 1); k++) {
+          if (m[k] > f1Max) { f1Max = m[k]; f1Bin = k; }
+        }
+        // Detect F2 peak
+        let f2Bin = f2Lo;
+        let f2Max = 0;
+        for (let k = f2Lo; k <= Math.min(f2Hi, halfN - 1); k++) {
+          if (m[k] > f2Max) { f2Max = m[k]; f2Bin = k; }
+        }
+        // Protect ±2 bins around each formant from attenuation
+        const protect = (center) => {
+          const lo = Math.max(0, center - 2);
+          const hi = Math.min(halfN - 1, center + 2);
+          for (let k = lo; k <= hi; k++) m[k] *= 1.15; // slight boost to protect
+        };
+        if (f1Max > 0) protect(f1Bin);
+        if (f2Max > 0) protect(f2Bin);
+      }
+
+      // ---- Breathiness control ----
+      // Estimate aperiodic energy (spectral flatness in voiced region 80–3000 Hz)
+      const vLo = Math.round(80 / (sampleRate / fftSize));
+      const vHi = Math.min(halfN - 1, Math.round(3000 / (sampleRate / fftSize)));
+      if (vHi > vLo + 1) {
+        let geomSum = 0, arithSum = 0;
+        const vLen = vHi - vLo + 1;
+        for (let k = vLo; k <= vHi; k++) {
+          const v = m[k] + 1e-10;
+          geomSum += Math.log(v);
+          arithSum += v;
+        }
+        const sfm = Math.exp(geomSum / vLen) / (arithSum / vLen); // 0=tonal, 1=white
+        // High sfm = more aperiodic → breathiness gain applies
+        const aperiodicFrac = Math.min(1, sfm * 4); // scale to 0..1
+        for (let k = vLo; k <= vHi; k++) {
+          m[k] *= (1 - aperiodicFrac) + aperiodicFrac * breathinessGain;
+        }
+      }
+
+      // ---- Harmonic peak boost (original v1 logic, preserved) ----
+      for (let k = 2; k < Math.min(bin8k, halfN - 2); k++) {
+        if (m[k] > m[k-1] && m[k] > m[k+1] &&
+            m[k] > m[k-2] && m[k] > m[k+2]) {
+          m[k] *= boost;
+        }
+      }
+
+      // ---- Spectral Band Replication (SBR) above 8 kHz ----
+      if (sbr && bin8k > 4 && bin8k < halfN - 1) {
+        // Map lower-band bins (4k-8k Hz reflected) into the 8k+ region
+        const srcLo = Math.round(4000 / (sampleRate / fftSize));
+        const srcRange = bin8k - srcLo;
+        for (let k = bin8k; k < halfN; k++) {
+          const dist = k - bin8k;
+          const srcBin = bin8k - 1 - (dist % Math.max(1, srcRange));
+          if (srcBin >= srcLo && srcBin < bin8k) {
+            // Attenuate with distance; use original phase
+            const decay = Math.exp(-dist / Math.max(1, srcRange));
+            m[k] = Math.max(m[k], m[srcBin] * decay * (amount / 100));
+          }
         }
       }
     }
@@ -647,6 +900,113 @@ const DSPCore = {
       for (let k = 0; k < halfN; k++) profile[k] /= count;
     }
     return profile;
+  },
+
+  /**
+   * Lightweight spectral noise classifier.
+   * Classifies the dominant noise type from an averaged STFT magnitude spectrum
+   * using hand-crafted spectral feature heuristics (no ML model required on this path).
+   *
+   * Classes: 'music' | 'white_noise' | 'crowd' | 'HVAC' | 'keyboard' | 'traffic' | 'silence'
+   *
+   * @param {Float32Array[]} mag - STFT magnitude frames
+   * @param {number} sr          - Sample rate in Hz
+   * @param {number} fftSize     - FFT frame size
+   * @returns {{ noiseClass: string, confidence: number }}
+   */
+  classifyNoiseSpectral(mag, sr, fftSize = 4096) {
+    if (!mag || mag.length === 0) return { noiseClass: 'silence', confidence: 1 };
+
+    const halfN = mag[0].length;
+    const nyquist = sr / 2;
+    const binHz = nyquist / (halfN - 1);
+
+    // Compute averaged magnitude spectrum
+    const avg = new Float32Array(halfN);
+    for (const frame of mag) {
+      for (let k = 0; k < halfN; k++) avg[k] += frame[k];
+    }
+    const nFrames = mag.length;
+    for (let k = 0; k < halfN; k++) avg[k] /= nFrames;
+
+    // Band energy helpers
+    const bandEnergy = (loHz, hiHz) => {
+      const lo = Math.max(0, Math.round(loHz / binHz));
+      const hi = Math.min(halfN - 1, Math.round(hiHz / binHz));
+      let e = 0;
+      for (let k = lo; k <= hi; k++) e += avg[k] * avg[k];
+      return e / Math.max(1, hi - lo + 1);
+    };
+
+    // Spectral Flatness Measure across full band
+    const vLo = Math.round(20 / binHz);
+    const vHi = Math.min(halfN - 1, Math.round(8000 / binHz));
+    let geomSum = 0, arithSum = 0;
+    const vLen = vHi - vLo + 1;
+    for (let k = vLo; k <= vHi; k++) {
+      const v = avg[k] + 1e-10;
+      geomSum += Math.log(v);
+      arithSum += v;
+    }
+    const sfm = Math.exp(geomSum / vLen) / (arithSum / vLen);
+
+    // Band energies
+    const subE  = bandEnergy(20, 120);
+    const bassE = bandEnergy(120, 500);
+    const midE  = bandEnergy(500, 2000);
+    const hiE   = bandEnergy(2000, 8000);
+    const airE  = bandEnergy(8000, nyquist);
+    const totalE = subE + bassE + midE + hiE + airE + 1e-20;
+
+    // Silence: very low total energy
+    const rmsAll = Math.sqrt(totalE / 5);
+    if (rmsAll < 1e-5) return { noiseClass: 'silence', confidence: 0.99 };
+
+    // --- Feature-based classification ---
+    const scores = {
+      music:       0,
+      white_noise: 0,
+      crowd:       0,
+      HVAC:        0,
+      keyboard:    0,
+      traffic:     0
+    };
+
+    // White noise: high spectral flatness, energy spread evenly
+    scores.white_noise += sfm * 3;
+
+    // Music: strong bass+mid, relatively flat across bands, harmonic peaks (low sfm)
+    const musicBalance = (bassE + midE) / totalE;
+    scores.music += musicBalance * 2 * (1 - sfm);
+
+    // Crowd: mid-dominant, moderate flatness, high vocal band
+    const crowdMid = midE / totalE;
+    scores.crowd += crowdMid * 2 * (sfm > 0.3 ? 1 : 0.5);
+
+    // HVAC: strong low-frequency rumble, low spectral flatness decay
+    const hvacLow = (subE + bassE) / totalE;
+    scores.HVAC += hvacLow * 2 * (1 - sfm * 0.5);
+
+    // Traffic: low-frequency and rumble, with intermittent transients
+    const trafficLow = (subE * 2 + bassE) / totalE;
+    scores.traffic += trafficLow * 1.5;
+
+    // Keyboard: high-frequency clicks, energy in hi+air bands
+    const kbHigh = (hiE + airE) / totalE;
+    scores.keyboard += kbHigh * 2 * (1 - sfm);
+
+    // Find best class
+    let best = 'white_noise';
+    let bestScore = -1;
+    for (const [cls, score] of Object.entries(scores)) {
+      if (score > bestScore) { bestScore = score; best = cls; }
+    }
+
+    // Normalize confidence with softmax-like scale
+    const totalScore = Object.values(scores).reduce((a, b) => a + b, 0) + 1e-10;
+    const confidence = Math.min(0.99, bestScore / totalScore);
+
+    return { noiseClass: best, confidence };
   },
 
   // ===== WAV ENCODING =====
@@ -1001,10 +1361,13 @@ const DSPCore = {
 // Export
 if (typeof window !== 'undefined') {
   window.DSPCore = DSPCore;
+  window.AdaptiveNoiseFloor = AdaptiveNoiseFloor;
 }
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = DSPCore;
+  module.exports.AdaptiveNoiseFloor = AdaptiveNoiseFloor;
 }
 if (typeof self !== 'undefined' && typeof window === 'undefined') {
   self.DSPCore = DSPCore; // Worker context
+  self.AdaptiveNoiseFloor = AdaptiveNoiseFloor;
 }
