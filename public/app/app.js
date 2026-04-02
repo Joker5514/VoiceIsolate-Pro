@@ -128,6 +128,9 @@ const STAGES = [
   'Dry/Wet Blend', 'TPDF Dither', 'Output Normalization', 'Final Render & Export'
 ];
 
+// Per-speaker aura palette — 8 distinct vibrant hues for speaker identification
+const SPEAKER_COLORS = ['#00f5ff','#7c3aed','#22c55e','#f59e0b','#ec4899','#3b82f6','#f97316','#a855f7'];
+
 // ============================================
 // v20 Modular Architecture Integration
 // PipelineState → centralized param management
@@ -162,6 +165,17 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
+
+    // Spectrogram visualization state (zoom/pan/freeze + voice analysis)
+    this.spectroSt = {
+      zoom: 1,        // 1x, 2x, 4x, 8x — frequency axis zoom level
+      panY: 0,        // 0.0–1.0 — fractional pan offset within the zoomed frequency range
+      frozen: false,  // when true, time-axis scrolling is paused
+      noiseFloor: null, // Float32Array per bin, lazily initialized
+      vadActive: false,
+      vadCounter: 0,
+      speakerBuf: [0, 0], // smoothed energy in low/high voice ranges for speaker A/B
+    };
 
     // v20: Initialize PipelineState (centralized 52-param state with pub/sub)
     this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
@@ -329,9 +343,12 @@ class VoiceIsolatePro {
       spectro3DContainer:g('spectro3DContainer'), spectro3DCanvas:g('spectro3DCanvas'),
       spectro3DReset:g('spectro3DReset'),
       spectro2DCanvas:g('spectro2DCanvas'),
+      spectroFreeze:g('spectroFreeze'), spectroZoomIn:g('spectroZoomIn'), spectroZoomOut:g('spectroZoomOut'),
+      spectroPanUp:g('spectroPanUp'), spectroPanDn:g('spectroPanDn'),
       waveOrigCanvas:g('waveOrigCanvas'), waveProcCanvas:g('waveProcCanvas'),
       freqCanvas:g('freqCanvas'),
       speakerCard:g('speakerCard'), speakerList:g('speakerList'), speakerTimeline:g('speakerTimeline'), speakerClearBtn:g('speakerClearBtn'),
+      hdrWaveCanvas:g('hdrWaveCanvas'), speakerAuras:g('speakerAuras'),
       pipeFill:g('pipeFill'), pipeBar:g('pipeBar'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
       hSNR:g('hSNR'), hDur:g('hDur'), hSR:g('hSR'), hCh:g('hCh'),
       hRMS:g('hRMS'), hPeak:g('hPeak'), hStatus:g('hStatus'),
@@ -387,6 +404,24 @@ class VoiceIsolatePro {
     });
     this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
     this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
+    // 2D Spectrogram controls
+    if (this.dom.spectroFreeze)  this.dom.spectroFreeze.addEventListener('click', () => this._spectroToggleFreeze());
+    if (this.dom.spectroZoomIn)  this.dom.spectroZoomIn.addEventListener('click', () => this._spectroZoom(2));
+    if (this.dom.spectroZoomOut) this.dom.spectroZoomOut.addEventListener('click', () => this._spectroZoom(0.5));
+    if (this.dom.spectroPanUp)   this.dom.spectroPanUp.addEventListener('click', () => this._spectroPan(-0.1));
+    if (this.dom.spectroPanDn)   this.dom.spectroPanDn.addEventListener('click', () => this._spectroPan(0.1));
+    // Mouse wheel zoom on the 2D canvas
+    this.dom.spectro2DCanvas.addEventListener('wheel', e => { e.preventDefault(); this._spectroZoom(e.deltaY < 0 ? 2 : 0.5); }, { passive: false });
+    // Mouse drag to pan on the 2D canvas
+    (() => { let dragging = false, lastY = 0;
+      this.dom.spectro2DCanvas.addEventListener('mousedown', e => { dragging = true; lastY = e.clientY; });
+      window.addEventListener('mouseup', () => { dragging = false; });
+      window.addEventListener('mousemove', e => { if (!dragging) return; const dy = (lastY - e.clientY) / (this.dom.spectro2DCanvas.clientHeight || 140); lastY = e.clientY; this._spectroPan(dy); });
+      // Touch support for pan on mobile
+      this.dom.spectro2DCanvas.addEventListener('touchstart', e => { if (e.touches.length === 1) { dragging = true; lastY = e.touches[0].clientY; } }, { passive: true });
+      window.addEventListener('touchend', () => { dragging = false; });
+      window.addEventListener('touchmove', e => { if (!dragging || e.touches.length !== 1) return; const dy = (lastY - e.touches[0].clientY) / (this.dom.spectro2DCanvas.clientHeight || 140); lastY = e.touches[0].clientY; this._spectroPan(dy); }, { passive: true });
+    })();
     if (this.dom.fsBtnAB) this.dom.fsBtnAB.addEventListener('click', () => this.fsToggleAB());
     if (this.dom.fsColormap) this.dom.fsColormap.addEventListener('change', () => { if (this.fsCurrentBuf) this.renderFileSpectrogram(this.fsCurrentBuf); });
     if (this.dom.fsMain) this.dom.fsMain.addEventListener('click', e => this.fsSeekClick(e));
@@ -659,7 +694,7 @@ class VoiceIsolatePro {
     this.dom.hRMS.textContent = this.calcRMS(buf.getChannelData(0)).toFixed(1) + ' dB';
     this.dom.hPeak.textContent = this.calcPeak(buf.getChannelData(0)).toFixed(1) + ' dB';
     this.resizeCanvas(this.dom.waveOrigCanvas);
-    this.drawWaveform(buf, this.dom.waveOrigCanvas, '#dc2626');
+    this.drawWaveform(buf, this.dom.waveOrigCanvas, '#00f5ff');
     this.clearCanvas(this.dom.waveProcCanvas, 'Process to see result');
     // Show full-file spectrogram card and render initial view
     if (this.dom.fileSpectroCard) {
@@ -690,12 +725,14 @@ class VoiceIsolatePro {
       this.analyserNode.fftSize = 4096;
       src.connect(this.analyserNode);
       this.startSpectro(this.analyserNode);
+      this.startGlowLoop();
       const mt = this.getMime();
       this.mediaRecorder = new MediaRecorder(stream, { mimeType: mt });
       this.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) this.recordedChunks.push(e.data); };
       this.mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         this.stopSpectro();
+        this.stopGlowLoop();
         const blob = new Blob(this.recordedChunks, { type: mt });
         const ab = await blob.arrayBuffer();
         try {
@@ -762,6 +799,7 @@ class VoiceIsolatePro {
     }
     this.startSpectro(this.analyserNode);
     this.startFreq(this.analyserNode);
+    this.startGlowLoop();
     this.tickTime();
   }
 
@@ -774,6 +812,7 @@ class VoiceIsolatePro {
     this.isPaused = true;
     if (this.isVideo) this.dom.videoPlayer.pause();
     this.stopSpectro();
+    this.stopGlowLoop();
   }
 
   stop() {
@@ -783,6 +822,7 @@ class VoiceIsolatePro {
     this.playOffset = 0;
     if (this.isVideo) { this.dom.videoPlayer.pause(); this.dom.videoPlayer.currentTime = 0; }
     this.stopSpectro();
+    this.stopGlowLoop();
     this.dom.tpCur.textContent = '0:00';
     this.dom.tpSeek.value = 0;
   }
@@ -1091,8 +1131,17 @@ class VoiceIsolatePro {
       const snr = this.calcRMS(fin.getChannelData(0)) - this.calcRMS(this.inputBuffer.getChannelData(0));
       this.dom.hSNR.textContent = (snr>=0?'+':'') + snr.toFixed(1) + ' dB';
       this.resizeCanvas(this.dom.waveProcCanvas);
-      this.drawWaveform(fin, this.dom.waveProcCanvas, '#22d3ee');
-      this.dom.stVoices.textContent = this.estVoices(fin);
+      this.drawWaveform(fin, this.dom.waveProcCanvas, '#7c3aed');
+      const voices = this.estVoices(fin);
+      this.dom.stVoices.textContent = voices;
+      // Update speaker aura indicators based on voice activity estimate.
+      // estVoices() returns '0-1' (none/single), '1' (one confirmed), or '1-2+' (multiple).
+      let speakerCount = 1;
+      if(voices === '0-1') speakerCount = 1;
+      else if(voices === '1') speakerCount = 1;
+      else if(voices === '1-2+') speakerCount = 2;
+      else speakerCount = Math.max(1, parseInt(voices, 10) || 1);
+      this.updateSpeakerAuras(speakerCount);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
       if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.disabled = false;
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
@@ -1945,36 +1994,115 @@ class VoiceIsolatePro {
 
   drawWaveform(buf,canvas,color){const x=canvas.getContext('2d');const w=canvas.width;const h=canvas.height;x.fillStyle='#030306';x.fillRect(0,0,w,h);if(!buf)return;const d=buf.getChannelData(0);const step=Math.max(1,Math.floor(d.length/w));x.strokeStyle='rgba(255,255,255,0.04)';x.lineWidth=1;x.beginPath();x.moveTo(0,h/2);x.lineTo(w,h/2);x.stroke();x.fillStyle=color;for(let px=0;px<w;px++){const idx=px*step;let mn=1,mx=-1;for(let i=0;i<step&&(idx+i)<d.length;i++){const v=d[idx+i];if(v<mn)mn=v;if(v>mx)mx=v;}const y1=((1-mx)*0.5)*h;const y2=((1-mn)*0.5)*h;x.globalAlpha=0.8;x.fillRect(px,y1,1,Math.max(1,y2-y1));}x.globalAlpha=1;}
 
-  // ---- 2D Spectrogram (FIXED: no DPR scaling issues) ----
+  // ---- 2D Spectrogram — Real-Time with Voice Overlay, VAD, Noise Floor, Speaker Colors ----
   startSpectro(ana){
     this.stopSpectro(); this.spectroRunning=true; this.spectroX=0;
+    const st=this.spectroSt;
     const c=this.dom.spectro2DCanvas; this.resizeCanvas(c);
     const x=c.getContext('2d'); x.fillStyle='#030306'; x.fillRect(0,0,c.width,c.height);
     const bLen=ana.frequencyBinCount; const arr=new Uint8Array(bLen);
+    // Init per-bin noise floor (fast-attack / slow-decay EMA tracking the quietest energy per bin)
+    if(!st.noiseFloor||st.noiseFloor.length!==bLen){ st.noiseFloor=new Float32Array(bLen).fill(32); }
+    const nf=st.noiseFloor;
+    const sr=ana.context?ana.context.sampleRate:48000;
+    const VAD_THRESHOLD=1.6; // energy ratio to noise floor above which VAD triggers
+    // Pre-compute constant frequency-bin boundaries (avoid recalculating every frame)
+    const vLo=Math.max(1,Math.floor(bLen*(80/(sr/2))));       // ~80 Hz lower voice bound
+    const vHi=Math.min(bLen-1,Math.floor(bLen*(6000/(sr/2)))); // ~6 kHz upper voice bound
+    const vMid=Math.floor(bLen*(600/(sr/2)));                   // ~600 Hz speaker A/B split
     const draw=()=>{
       if(!this.spectroRunning)return; this.animId=requestAnimationFrame(draw);
       ana.getByteFrequencyData(arr);
-      const w=c.width;const h=c.height;const sw=2;
-      if(this.spectroX+sw>=w){
-        const img=x.getImageData(sw,0,w-sw,h);
-        x.putImageData(img,0,0);
-        x.fillStyle='#030306';x.fillRect(w-sw,0,sw,h);
-        this.spectroX=w-sw;
+      const w=c.width; const h=c.height; const sw=2;
+      // === Update noise floor (fast-attack toward quieter values, slow-decay otherwise) ===
+      for(let i=0;i<bLen;i++){
+        const alpha=arr[i]<nf[i]?0.015:0.001;
+        nf[i]=nf[i]*(1-alpha)+arr[i]*alpha;
       }
-      for(let y=0;y<h;y++){
-        const fi=Math.floor((y/h)*bLen);
-        const val=arr[bLen-1-fi];
-        const muted=this.isBandMuted(fi,bLen,ana.context?ana.context.sampleRate:44100);
-        x.fillStyle=muted?'rgba(30,30,30,0.8)':this.sColor(val,fi,bLen);
-        x.fillRect(this.spectroX,y,sw,1);
+      // === Real-time VAD (energy in voice band vs noise floor, hysteresis over 4 frames) ===
+      let sigE=0,nfE=0;
+      for(let i=vLo;i<vHi;i++){sigE+=arr[i];nfE+=nf[i];}
+      const newVad=nfE>0&&sigE>nfE*VAD_THRESHOLD;
+      if(newVad!==st.vadActive){st.vadCounter++;if(st.vadCounter>4){st.vadActive=newVad;st.vadCounter=0;}}else{st.vadCounter=0;}
+      // === Speaker energy split: low voice range = Speaker A (cyan), high = Speaker B (amber) ===
+      let eA=0,eB=0;
+      for(let i=vLo;i<vMid;i++)eA+=arr[i];
+      for(let i=vMid;i<vHi;i++)eB+=arr[i];
+      st.speakerBuf[0]=st.speakerBuf[0]*0.92+eA*0.08;
+      st.speakerBuf[1]=st.speakerBuf[1]*0.92+eB*0.08;
+      const spkA=st.speakerBuf[0]; const spkB=st.speakerBuf[1];
+      const spkTotal=spkA+spkB+1; const spkAFrac=spkA/spkTotal; const spkBFrac=spkB/spkTotal;
+      // === Update freeze button UI ===
+      if(this.dom.spectroFreeze){
+        this.dom.spectroFreeze.textContent=st.frozen?'▶ Live':'❄ Freeze';
+        this.dom.spectroFreeze.classList.toggle('btn-frozen',st.frozen);
       }
-      this.spectroX+=sw;
+      const wrap=this.dom.spectro2DCanvas.parentElement;
+      if(wrap)wrap.classList.toggle('frozen-state',st.frozen);
+      // === Bail from time-scrolling update when frozen (still update 3D for live feedback) ===
+      if(!st.frozen){
+        // Scroll canvas left
+        if(this.spectroX+sw>=w){const img=x.getImageData(sw,0,w-sw,h);x.putImageData(img,0,0);x.fillStyle='#030306';x.fillRect(w-sw,0,sw,h);this.spectroX=w-sw;}
+        // === Zoom / pan: determine visible frequency bin range ===
+        const zoom=Math.max(1,st.zoom); const visBins=Math.floor(bLen/zoom);
+        const maxPan=Math.max(0,bLen-visBins);
+        const panBin=Math.round(Math.max(0,Math.min(maxPan,st.panY*maxPan)));
+        const startBin=panBin; const endBin=Math.min(bLen-1,panBin+visBins);
+        // === Draw new time column ===
+        for(let py=0;py<h;py++){
+          // Map pixel row → frequency bin (top=high freq, bottom=low freq)
+          const freqFrac=1-(py/h);
+          const fi=Math.floor(startBin+freqFrac*(endBin-startBin));
+          if(fi<0||fi>=bLen)continue;
+          const val=arr[fi];
+          const muted=this.isBandMuted(fi,bLen,sr);
+          x.fillStyle=muted?'rgba(20,20,20,0.9)':this.sColorVoice(val,fi,nf,spkAFrac,spkBFrac,st.vadActive);
+          x.fillRect(this.spectroX,py,sw,1);
+        }
+        // === Noise floor indicator: pink horizontal line at median voice-band bin position ===
+        const nfRefBin=Math.round((vLo+vHi)/2);
+        if(nfRefBin>=startBin&&nfRefBin<=endBin){
+          const nfY=Math.round((1-(nfRefBin-startBin)/(endBin-startBin))*h);
+          if(nfY>2&&nfY<h-2){x.fillStyle='rgba(236,72,153,0.7)';x.fillRect(this.spectroX,nfY,sw,1);}
+        }
+        // === VAD activity strip (3 px) at very top of column ===
+        x.fillStyle=st.vadActive?'rgba(34,211,238,0.75)':'rgba(80,0,0,0.5)';
+        x.fillRect(this.spectroX,0,sw,3);
+        this.spectroX+=sw;
+      }
       this.update3D(arr);
     };
     draw();
   }
 
+  // Voice-isolation color mapping: cyan/amber=voice+VAD, muted-green=voice only, red-orange=noise, dark=silence
+  sColorVoice(val,fi,noiseFloor,spkAFrac,spkBFrac,vadActive){
+    const nfv=noiseFloor[fi]||0; const v=val/255;
+    if(val<8){return 'rgb(3,3,6)';}  // silence
+    const overNoise=val>nfv*1.5;
+    if(overNoise&&vadActive){
+      // Voice-dominant bin — blend Speaker A (cyan #22d3ee) and Speaker B (amber #f59e0b)
+      const rA=Math.floor(34*spkAFrac+245*spkBFrac);
+      const gA=Math.floor(211*spkAFrac+158*spkBFrac);
+      const bA=Math.floor(238*spkAFrac+11*spkBFrac);
+      const br=0.3+v*0.7;
+      return 'rgb('+Math.floor(rA*br)+','+Math.floor(gA*br)+','+Math.floor(bA*br)+')';
+    }
+    if(overNoise){
+      // Signal above noise but VAD inactive — muted green (voice candidate)
+      return 'rgb('+Math.floor(v*30)+','+Math.floor(60+v*140)+','+Math.floor(60+v*80)+')';
+    }
+    // Below noise floor — red-orange ramp proportional to energy
+    const nv=Math.min(1,(val/Math.max(1,nfv))*0.6);
+    return 'rgb('+Math.floor(60+nv*195)+','+Math.floor(nv*70)+','+Math.floor(nv*15)+')';
+  }
+
   stopSpectro(){this.spectroRunning=false;if(this.animId){cancelAnimationFrame(this.animId);this.animId=null;}}
+
+  // Spectrogram control helpers
+  _spectroToggleFreeze(){this.spectroSt.frozen=!this.spectroSt.frozen;}
+  _spectroZoom(factor){const st=this.spectroSt;const MAX_ZOOM=16;st.zoom=Math.max(1,Math.min(MAX_ZOOM,st.zoom*factor));if(st.zoom===1)st.panY=0;}
+  _spectroPan(delta){const st=this.spectroSt;if(st.zoom<=1)return;st.panY=Math.max(0,Math.min(1,st.panY+delta));}
 
   sColor(val,fi,total){
     const v=val/255;const f=fi/total;
@@ -2068,10 +2196,118 @@ class VoiceIsolatePro {
 
   render3D(){requestAnimationFrame(()=>this.render3D());if(this.three.ren)this.three.ren.render(this.three.scene,this.three.cam);}
 
+  // ---- Audio-Reactive Glow (rAF loop updating CSS --glow-level) ----
+  startGlowLoop(){
+    // Ensure any previous loop is fully stopped before starting a new one
+    if(this._glowRunning){return;}
+    if(this._glowAnimId){cancelAnimationFrame(this._glowAnimId);this._glowAnimId=null;}
+    const buf=new Float32Array(128);
+    const root=document.documentElement;
+    const loop=()=>{
+      if(!this._glowRunning)return;
+      this._glowAnimId=requestAnimationFrame(loop);
+      if(!this.analyserNode)return;
+      this.analyserNode.getFloatTimeDomainData(buf);
+      let rms=0;for(let i=0;i<buf.length;i++)rms+=buf[i]*buf[i];
+      rms=Math.sqrt(rms/buf.length);
+      const level=Math.min(1,rms*6);
+      root.style.setProperty('--glow-level',level.toFixed(3));
+      // Also drive the header waveform
+      this._drawHeaderWave(buf);
+    };
+    this._glowRunning=true;
+    this._glowAnimId=requestAnimationFrame(loop);
+  }
+
+  stopGlowLoop(){
+    this._glowRunning=false;
+    if(this._glowAnimId){cancelAnimationFrame(this._glowAnimId);this._glowAnimId=null;}
+    document.documentElement.style.setProperty('--glow-level','0');
+    // Clear header waveform canvas
+    const c=this.dom.hdrWaveCanvas;
+    if(c){const x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);}
+  }
+
+  // ---- Header Waveform Canvas ----
+  _drawHeaderWave(timeDomainData){
+    const c=this.dom.hdrWaveCanvas;
+    if(!c||!c.parentElement)return;
+    const dpr=window.devicePixelRatio||1;
+    const w=c.parentElement.clientWidth||200;
+    const h=c.parentElement.clientHeight||30;
+    if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){
+      c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);
+      c.style.width=w+'px';c.style.height=h+'px';
+    }
+    const ctx=c.getContext('2d');const cw=c.width;const ch=c.height;
+    ctx.clearRect(0,0,cw,ch);
+    // Background
+    ctx.fillStyle='rgba(0,245,255,0.04)';ctx.fillRect(0,0,cw,ch);
+    // Waveform
+    const grad=ctx.createLinearGradient(0,0,cw,0);
+    grad.addColorStop(0,'rgba(124,58,237,0.8)');
+    grad.addColorStop(0.5,'rgba(0,245,255,0.9)');
+    grad.addColorStop(1,'rgba(124,58,237,0.8)');
+    ctx.strokeStyle=grad;ctx.lineWidth=1.5*dpr;ctx.lineJoin='round';
+    ctx.beginPath();
+    const buf=timeDomainData;
+    const sliceW=cw/buf.length;
+    for(let i=0;i<buf.length;i++){
+      const y=(0.5+buf[i]*0.45)*ch;
+      if(i===0)ctx.moveTo(0,y);else ctx.lineTo(i*sliceW,y);
+    }
+    ctx.stroke();
+    // Glow overlay
+    const glow=ctx.createLinearGradient(0,0,cw,0);
+    glow.addColorStop(0,'rgba(124,58,237,0.1)');
+    glow.addColorStop(0.5,'rgba(0,245,255,0.15)');
+    glow.addColorStop(1,'rgba(124,58,237,0.1)');
+    ctx.strokeStyle=glow;ctx.lineWidth=4*dpr;
+    ctx.beginPath();
+    for(let i=0;i<buf.length;i++){
+      const y=(0.5+buf[i]*0.45)*ch;
+      if(i===0)ctx.moveTo(0,y);else ctx.lineTo(i*sliceW,y);
+    }
+    ctx.stroke();
+  }
+
+  // ---- Speaker Aura System ----
+  // Generates vibrant per-speaker colors and shows pulsing auras when voices are active.
+  // Called from updateStats() with a speaker count, or directly with an array of speaker IDs.
+  updateSpeakerAuras(speakerCount){
+    const container=this.dom.speakerAuras;if(!container)return;
+    // If count is 0, clear auras
+    const existing=container.querySelectorAll('.speaker-aura').length;
+    if(speakerCount===0){container.textContent='';return;}
+    if(existing===speakerCount)return;
+    container.textContent='';
+    for(let i=0;i<Math.min(speakerCount,8);i++){
+      const col=SPEAKER_COLORS[i%SPEAKER_COLORS.length];
+      const el=document.createElement('div');
+      el.className='speaker-aura';
+      el.style.color=col;
+      const dot=document.createElement('span');
+      dot.className='aura-dot';
+      dot.style.background=col;
+      dot.style.boxShadow='0 0 6px '+col;
+      const lbl=document.createTextNode('S'+(i+1));
+      el.appendChild(dot);
+      el.appendChild(lbl);
+      container.appendChild(el);
+    }
+  }
+
+  // Activate/deactivate a speaker aura (e.g. when VAD detects voice for that speaker)
+  setSpeakerActive(speakerIdx,active){
+    const container=this.dom.speakerAuras;if(!container)return;
+    const auras=container.querySelectorAll('.speaker-aura');
+    if(auras[speakerIdx]){auras[speakerIdx].classList.toggle('active',active);}
+  }
+
   onResize(){
     [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas].forEach(c=>this.resizeCanvas(c));
-    if(this.inputBuffer)this.drawWaveform(this.inputBuffer,this.dom.waveOrigCanvas,'#dc2626');
-    if(this.outputBuffer)this.drawWaveform(this.outputBuffer,this.dom.waveProcCanvas,'#22d3ee');
+    if(this.inputBuffer)this.drawWaveform(this.inputBuffer,this.dom.waveOrigCanvas,'#00f5ff');
+    if(this.outputBuffer)this.drawWaveform(this.outputBuffer,this.dom.waveProcCanvas,'#7c3aed');
     const ct=this.dom.spectro3DContainer;
     if(this.three.ren){this.three.ren.setSize(ct.clientWidth,ct.clientHeight);this.three.cam.aspect=ct.clientWidth/ct.clientHeight;this.three.cam.updateProjectionMatrix();}
   }
@@ -2240,7 +2476,7 @@ class VoiceIsolatePro {
   }
 
   // ---- UTILITY ----
-  setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
+  setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#52527a',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#00f5ff',COMPLETE:'#7c3aed',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#52527a';}
   calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
   calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}

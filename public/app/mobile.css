@@ -326,7 +326,7 @@ html {
     background: rgba(6,6,9,0.97);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    border-top: 1px solid rgba(220,38,38,0.15);
+    border-top: 1px solid rgba(0,245,255,0.12);
     padding: 8px 12px calc(8px + var(--safe-bottom));
     display: flex;
     gap: 8px;

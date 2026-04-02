@@ -32,9 +32,13 @@
     <div class="hdr-left">
       <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
       <div>
-        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v22.0</span></h1>
+        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v23.0</span></h1>
         <span class="hdr-badge">ENGINEER MODE</span>
       </div>
+    </div>
+    <!-- Live waveform visualizer (hidden on mobile) -->
+    <div class="hdr-wave" aria-hidden="true">
+      <canvas id="hdrWaveCanvas" class="hdr-wave-canvas"></canvas>
     </div>
     <!-- Mobile stats toggle (visible only on small screens via CSS) -->
     <button class="hdr-stats-toggle" id="statsToggle" aria-label="Toggle stats" aria-expanded="false">&#9660;</button>
@@ -269,11 +273,39 @@
         </div>
       </div>
 
-      <!-- 2D Spectrogram -->
+      <!-- 2D Spectrogram (enhanced: voice overlay, VAD, noise floor, zoom/pan/freeze) -->
       <div class="card viz-card">
-        <div class="viz-hdr"><span>Real-Time Spectrogram</span></div>
-        <canvas id="spectro2DCanvas" class="viz-canvas spectro2d"></canvas>
+        <div class="viz-hdr">
+          <span>Real-Time Spectrogram</span>
+          <div class="viz-actions">
+            <button id="spectroFreeze" class="btn btn-xs" title="Freeze / resume display" aria-label="Freeze spectrogram">❄ Freeze</button>
+            <button id="spectroZoomIn" class="btn btn-xs" title="Zoom in (frequency)" aria-label="Zoom in frequency">＋</button>
+            <button id="spectroZoomOut" class="btn btn-xs" title="Zoom out (frequency)" aria-label="Zoom out frequency">－</button>
+            <button id="spectroPanUp" class="btn btn-xs" title="Pan toward higher frequencies" aria-label="Pan up frequency">↑</button>
+            <button id="spectroPanDn" class="btn btn-xs" title="Pan toward lower frequencies" aria-label="Pan down frequency">↓</button>
+            <span class="viz-hint">Drag to pan · Scroll to zoom</span>
+          </div>
+        </div>
+        <div class="spectro2d-wrap">
+          <canvas id="spectro2DCanvas" class="viz-canvas spectro2d" role="img" aria-label="Real-time spectrogram"></canvas>
+          <div class="spectro-band-labels" id="spectroBandLabels" aria-hidden="true">
+            <span style="top:6%">Air</span>
+            <span style="top:27%">Treble</span>
+            <span style="top:50%">High-Mid</span>
+            <span style="top:68%">Mid</span>
+            <span style="top:85%">Bass</span>
+            <span style="top:96%">Sub</span>
+          </div>
+        </div>
         <div class="spectro-scale"><span>20</span><span>200</span><span>1k</span><span>4k</span><span>8k</span><span>16k</span><span>22k Hz</span></div>
+        <div class="spectro-legend">
+          <span class="sl-item"><span class="sl-dot" style="background:#22d3ee"></span>Voice</span>
+          <span class="sl-item"><span class="sl-dot" style="background:#dc2626"></span>Noise</span>
+          <span class="sl-item"><span class="sl-dot" style="background:rgba(34,211,238,0.4)"></span>VAD Active</span>
+          <span class="sl-item"><span class="sl-dot" style="background:#ec4899"></span>Noise Floor</span>
+          <span class="sl-item"><span class="sl-dot" style="background:#38bdf8"></span>Speaker A</span>
+          <span class="sl-item"><span class="sl-dot" style="background:#f59e0b"></span>Speaker B</span>
+        </div>
       </div>
 
       <!-- Waveforms -->
@@ -290,7 +322,11 @@
 
       <!-- Frequency Analyzer -->
       <div class="card viz-card">
-        <div class="viz-hdr"><span>Frequency Analyzer</span></div>
+        <div class="viz-hdr">
+          <span>Frequency Analyzer</span>
+          <!-- Speaker aura indicators (populated by JS when voice separation is active) -->
+          <div class="speaker-auras" id="speakerAuras" aria-label="Active speakers"></div>
+        </div>
         <canvas id="freqCanvas" class="viz-canvas freq-cv"></canvas>
       </div>
 
@@ -317,7 +353,7 @@
   </main>
 
   <footer class="ftr">
-    <span>VoiceIsolate Pro v22.0 · Threads from Space v10 · Hybrid ML+DSP · 36-Stage Deca-Pass · Mobile-Ready</span>
+    <span>VoiceIsolate Pro v23.0 · Threads from Space v10 · Hybrid ML+DSP · 36-Stage Deca-Pass · Mobile-Ready</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
 
