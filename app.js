@@ -251,7 +251,7 @@ class VoiceIsolatePro {
     const saveBtn = document.getElementById('saveCustomPresetBtn');
     if (saveBtn) saveBtn.addEventListener('click', () => this.saveCustomPreset());
     const nameInput = document.getElementById('customPresetName');
-    if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') this.saveCustomPreset(); });
+    if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); this.saveCustomPreset(); } });
     document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', () => this.onSlider(el)));
     document.querySelectorAll('.sr-row').forEach(r => {
       r.addEventListener('mouseenter', e => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }});
