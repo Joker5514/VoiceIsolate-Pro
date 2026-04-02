@@ -7,6 +7,49 @@
 'use strict';
 
 /**
+ * HarmonicEnhancer — real-time harmonic enhancement via waveshaping.
+ * Adds subtle even and odd harmonics to restore voice presence that is
+ * lost during aggressive noise suppression. The enhancement amount is
+ * continuously adjustable without clicks via parameter smoothing.
+ */
+class HarmonicEnhancer {
+  /**
+   * @param {number} amount - enhancement amount 0–100 (0 = bypassed)
+   */
+  constructor(amount = 0) {
+    this.setAmount(amount);
+  }
+
+  /**
+   * Update enhancement amount (safe to call every audio block).
+   * @param {number} amt - new amount 0–100
+   */
+  setAmount(amt) {
+    this.amount = Math.max(0, Math.min(100, amt));
+    this.enabled = this.amount > 0;
+    // Drive factor: 1 at 0%, 5 at 100% — keeps tanh saturation moderate
+    this.drive = 1 + this.amount / 100 * 4;
+    this.tanhDrive = Math.tanh(this.drive); // precompute for normalization
+    this.wetGain = this.amount / 100;
+    this.dryGain = 1 - this.wetGain;
+  }
+
+  /**
+   * Process a single sample.
+   * @param {number} sample - input sample [-1, 1]
+   * @returns {number} harmonically enhanced sample
+   *
+   * Normalization: Math.tanh(drive * x) / Math.tanh(drive) maps ±1 → ±1,
+   * preserving peak amplitude while adding harmonic saturation.
+   */
+  processSample(sample) {
+    if (!this.enabled) return sample;
+    const enhanced = Math.tanh(this.drive * sample) / this.tanhDrive;
+    return this.dryGain * sample + this.wetGain * enhanced;
+  }
+}
+
+/**
  * AudioWorklet processor for real-time voice isolation.
  * - Pushes input to SharedRingBuffer for ML Worker consumption
  * - Reads ML-generated masks from mask ring buffer
@@ -25,7 +68,8 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       gateRelease: 80,
       gateHold: 20,
       outGain: 0,
-      dryWet: 100
+      dryWet: 100,
+      harmonicEnhance: 0   // 0 = bypassed, 1–100 = enhancement amount
     };
     this.gateEnv = 0;       // current gate envelope (0–1)
     this.holdCounter = 0;    // gate hold timer in samples
@@ -35,6 +79,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     this.maskIdx = 0;        // position within cached mask
     this.frameSize = 4096;
     this.bypassed = false;
+    this.harmonicEnhancer = new HarmonicEnhancer(0);
 
     // MessagePort for param updates & ring buffer init
     this.port.onmessage = (e) => this._handleMessage(e.data);
@@ -45,12 +90,20 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       case 'param':
         if (msg.key in this.params) {
           this.params[msg.key] = msg.value;
+          if (msg.key === 'harmonicEnhance') {
+            this.harmonicEnhancer.setAmount(msg.value);
+          }
         }
         break;
 
       case 'paramBulk':
         for (const [key, value] of Object.entries(msg.params)) {
-          if (key in this.params) this.params[key] = value;
+          if (key in this.params) {
+            this.params[key] = value;
+            if (key === 'harmonicEnhance') {
+              this.harmonicEnhancer.setAmount(value);
+            }
+          }
         }
         break;
 
@@ -178,6 +231,9 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
         gated *= this.maskCache[this.maskIdx];
         this.maskIdx++;
       }
+
+      // Harmonic enhancement (post-gate, pre-mix) — restores voice presence
+      gated = this.harmonicEnhancer.processSample(gated);
 
       // Dry/wet mix + output gain
       outCh[i] = (dry * sample + wet * gated) * outGainLin;
