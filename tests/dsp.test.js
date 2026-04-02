@@ -45,6 +45,21 @@ const VoiceIsolatePro = (() => {
 // Import standalone DSP helpers — extracted to avoid browser-only DOM code
 // We pull the math functions out of app.js logic for unit testing
 
+// Load DSPCore for the new advanced DSP classes
+// dsp-core.js lives in the ESM root, so we eval it to extract the CommonJS export
+// (same pattern as how app.js is loaded below)
+const dspCoreJs = fs.readFileSync(path.join(__dirname, '../dsp-core.js'), 'utf8');
+const DSPCore = (() => {
+  const exports = {};
+  const module = { exports };
+  // eslint-disable-next-line no-unused-vars
+  const window = {};
+  // eslint-disable-next-line no-unused-vars
+  const self = {};
+  eval(dspCoreJs);
+  return module.exports;
+})();
+
 /**
  * Standalone radix-2 FFT for testing (mirrors app.js _fft)
  */
@@ -512,5 +527,311 @@ describe('peakNorm (Peak Normalization) - actual implementation from app.js', ()
     const outData = out.getChannelData(0);
 
     expect(outData[0]).toBeCloseTo(1.0, 5); // Clamped
+  });
+});
+
+// ============================================================
+// Advanced DSP: AdaptiveNoiseEstimator
+// ============================================================
+
+describe('AdaptiveNoiseEstimator', () => {
+  const NUM_BINS = 512;
+
+  test('initializes noisePSD to zero before first update', () => {
+    const est = new DSPCore.AdaptiveNoiseEstimator(NUM_BINS);
+    expect(est.noisePSD).toBeInstanceOf(Float32Array);
+    expect(est.noisePSD.length).toBe(NUM_BINS);
+    expect(est.initialized).toBe(false);
+    for (const v of est.noisePSD) expect(v).toBe(0);
+  });
+
+  test('after first update, noisePSD equals the input PSD (mag^2)', () => {
+    const est = new DSPCore.AdaptiveNoiseEstimator(NUM_BINS);
+    const mag = new Float32Array(NUM_BINS).map(() => Math.random() * 0.5 + 0.1);
+    est.update(mag);
+    expect(est.initialized).toBe(true);
+    for (let k = 0; k < NUM_BINS; k++) {
+      expect(est.noisePSD[k]).toBeCloseTo(mag[k] * mag[k], 5);
+    }
+  });
+
+  test('noise floor rises quickly when signal exceeds current estimate (attack)', () => {
+    const est = new DSPCore.AdaptiveNoiseEstimator(NUM_BINS, 0.5, 0.999);
+    const lowMag = new Float32Array(NUM_BINS).fill(0.1);
+    est.update(lowMag); // init
+    const highMag = new Float32Array(NUM_BINS).fill(1.0);
+    est.update(highMag); // attack: psd > noisePSD → uses attackCoeff 0.5
+    // After one attack-step: new = 0.5 * 0.01 + 0.5 * 1.0 = 0.505
+    expect(est.noisePSD[0]).toBeCloseTo(0.505, 4);
+  });
+
+  test('noise floor decreases slowly when signal drops below estimate (release)', () => {
+    const est = new DSPCore.AdaptiveNoiseEstimator(NUM_BINS, 0.5, 0.9);
+    const highMag = new Float32Array(NUM_BINS).fill(1.0);
+    est.update(highMag); // init at 1.0 PSD
+    const lowMag = new Float32Array(NUM_BINS).fill(0.1);
+    est.update(lowMag); // release: psd (0.01) < noisePSD (1.0) → uses releaseCoeff 0.9
+    // After one release-step: new = 0.9 * 1.0 + 0.1 * 0.01 = 0.901
+    expect(est.noisePSD[0]).toBeCloseTo(0.901, 4);
+  });
+
+  test('release is strictly slower than attack (asymmetry)', () => {
+    const attackCoeff = 0.5, releaseCoeff = 0.95;
+    const est = new DSPCore.AdaptiveNoiseEstimator(NUM_BINS, attackCoeff, releaseCoeff);
+    const initMag = new Float32Array(NUM_BINS).fill(0.5);
+    est.update(initMag);
+    const init = est.noisePSD[0];
+
+    // Attack step (higher signal)
+    const highMag = new Float32Array(NUM_BINS).fill(1.0);
+    est.update(highMag);
+    const afterAttack = est.noisePSD[0] - init;
+
+    // Reset and re-init, then release step
+    est.reset();
+    const highInit = new Float32Array(NUM_BINS).fill(1.0);
+    est.update(highInit);
+    const lowMag = new Float32Array(NUM_BINS).fill(0.1);
+    est.update(lowMag);
+    const afterRelease = est.noisePSD[0] - 1.0;
+
+    // After attack: noisePSD moves towards 1.0 quickly (large delta)
+    // After release: noisePSD moves towards 0.01 slowly (small delta in magnitude)
+    expect(Math.abs(afterAttack)).toBeGreaterThan(Math.abs(afterRelease));
+  });
+
+  test('getProfile returns the same Float32Array reference as noisePSD', () => {
+    const est = new DSPCore.AdaptiveNoiseEstimator(NUM_BINS);
+    expect(est.getProfile()).toBe(est.noisePSD);
+  });
+
+  test('reset clears state and reinitializes correctly on next update', () => {
+    const est = new DSPCore.AdaptiveNoiseEstimator(NUM_BINS);
+    const mag = new Float32Array(NUM_BINS).fill(0.5);
+    est.update(mag);
+    est.reset();
+    expect(est.initialized).toBe(false);
+    for (const v of est.noisePSD) expect(v).toBe(0);
+    // Next update should re-initialize from the new magnitude
+    const mag2 = new Float32Array(NUM_BINS).fill(0.2);
+    est.update(mag2);
+    expect(est.initialized).toBe(true);
+    expect(est.noisePSD[0]).toBeCloseTo(0.04, 5); // 0.2^2
+  });
+
+  test('noisePSD values are always non-negative', () => {
+    const est = new DSPCore.AdaptiveNoiseEstimator(NUM_BINS);
+    for (let i = 0; i < 20; i++) {
+      const mag = new Float32Array(NUM_BINS).map(() => Math.random() * 2);
+      est.update(mag);
+    }
+    for (const v of est.noisePSD) expect(v).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ============================================================
+// Advanced DSP: MultibandWienerFilter
+// ============================================================
+
+describe('MultibandWienerFilter', () => {
+  const NUM_BINS = 257; // fftSize=512, halfN=257
+  const SR = 48000;
+  const FFT_SIZE = 512;
+
+  function makeMag(numBins, value) {
+    return new Float32Array(numBins).fill(value);
+  }
+
+  test('returns the magnitude array (in-place modification)', () => {
+    const wf = new DSPCore.MultibandWienerFilter(8, SR, FFT_SIZE);
+    const mag = makeMag(NUM_BINS, 0.5);
+    const result = wf.process(mag, null, 1, 0);
+    expect(result).toBe(mag); // same reference
+  });
+
+  test('with no noise (noisePSD = null), magnitude is minimally changed', () => {
+    const wf = new DSPCore.MultibandWienerFilter(8, SR, FFT_SIZE);
+    const mag = makeMag(NUM_BINS, 0.5);
+    const original = new Float32Array(mag);
+    // No noise → sigPow - 0 = sigPow → gain = 1 (theoretically), smoothing reduces slightly
+    wf.process(mag, null, 1, 0); // no temporal smoothing (alpha=0)
+    for (let k = 0; k < NUM_BINS; k++) {
+      expect(mag[k]).toBeGreaterThanOrEqual(original[k] * 0.95); // within 5%
+    }
+  });
+
+  test('with noise >> signal, magnitude is substantially attenuated (min gain = floor)', () => {
+    const wf = new DSPCore.MultibandWienerFilter(8, SR, FFT_SIZE);
+    const mag = makeMag(NUM_BINS, 0.01);  // weak signal
+    const noisePSD = new Float32Array(NUM_BINS).fill(100); // dominant noise
+    wf.process(mag, noisePSD, 1, 0);
+    // All bins should be at or near the spectral floor (0.01 gain factor)
+    for (let k = 0; k < NUM_BINS; k++) {
+      expect(mag[k]).toBeLessThan(0.02); // heavily attenuated
+    }
+  });
+
+  test('zero strength (strength=0) leaves magnitude unchanged', () => {
+    const wf = new DSPCore.MultibandWienerFilter(8, SR, FFT_SIZE);
+    const mag = makeMag(NUM_BINS, 0.5);
+    const noisePSD = new Float32Array(NUM_BINS).fill(1);
+    const original = new Float32Array(mag);
+    wf.process(mag, noisePSD, 0, 0); // strength=0 means no noise subtracted
+    for (let k = 0; k < NUM_BINS; k++) {
+      expect(mag[k]).toBeCloseTo(original[k], 4);
+    }
+  });
+
+  test('temporal smoothing causes output gain to lag behind instantaneous value', () => {
+    const wf = new DSPCore.MultibandWienerFilter(1, SR, FFT_SIZE);
+    // Band covers entire spectrum
+    wf._bands = [{ lo: 0, hi: NUM_BINS - 1 }];
+
+    // First call with moderate noise — smoothGains starts at 1, will lag
+    const mag1 = makeMag(NUM_BINS, 1.0);
+    const noisePSD1 = new Float32Array(NUM_BINS).fill(0.5);
+    wf.process(new Float32Array(mag1), noisePSD1, 1, 0.9); // strong smoothing
+    const smoothedGain = wf.smoothGains[0];
+
+    // The instantaneous Wiener gain for SNR 2:1 (sigPow=1, noisePow=0.5) is ~0.707
+    // After strong smoothing: smoothed = 0.9 * 1.0 + 0.1 * 0.707 ≈ 0.971
+    expect(smoothedGain).toBeGreaterThan(0.5);
+    expect(smoothedGain).toBeLessThan(1.0);
+  });
+
+  test('reset restores smoothGains to 1', () => {
+    const wf = new DSPCore.MultibandWienerFilter(8, SR, FFT_SIZE);
+    const mag = makeMag(NUM_BINS, 0.1);
+    const noisePSD = new Float32Array(NUM_BINS).fill(10);
+    wf.process(mag, noisePSD, 1, 0.9);
+    // smoothGains should have been reduced from 1
+    const hadReduction = wf.smoothGains.some(g => g < 0.99);
+    expect(hadReduction).toBe(true);
+    wf.reset();
+    for (const g of wf.smoothGains) expect(g).toBe(1);
+  });
+
+  test('bands are lazily initialized and cached across calls', () => {
+    const wf = new DSPCore.MultibandWienerFilter(8, SR, FFT_SIZE);
+    expect(wf._bands).toBeNull();
+    const mag = makeMag(NUM_BINS, 0.5);
+    wf.process(mag, null, 0, 0);
+    expect(wf._bands).not.toBeNull();
+    const firstRef = wf._bands;
+    wf.process(mag, null, 0, 0);
+    expect(wf._bands).toBe(firstRef); // same reference, not recomputed
+  });
+});
+
+// ============================================================
+// Advanced DSP: VADProcessor
+// ============================================================
+
+describe('VADProcessor', () => {
+  const SR = 48000;
+  const FRAME_MS = 20;
+
+  function makeSilence(sr, durationMs) {
+    return new Float32Array(Math.floor(sr * durationMs / 1000));
+  }
+
+  function makeTone(sr, durationMs, freq = 440, amplitude = 0.8) {
+    const len = Math.floor(sr * durationMs / 1000);
+    const data = new Float32Array(len);
+    for (let i = 0; i < len; i++) {
+      data[i] = amplitude * Math.sin(2 * Math.PI * freq * i / sr);
+    }
+    return data;
+  }
+
+  test('constructs with correct defaults', () => {
+    const vad = new DSPCore.VADProcessor(SR, FRAME_MS, 0.5);
+    expect(vad.sr).toBe(SR);
+    expect(vad.sensitivity).toBeCloseTo(0.5, 5);
+    expect(vad.frameSize).toBeGreaterThan(0);
+  });
+
+  test('silence returns 0 confidence (no voice)', () => {
+    const vad = new DSPCore.VADProcessor(SR, FRAME_MS, 0.5);
+    const silence = makeSilence(SR, FRAME_MS * 2);
+    const confidence = vad.processSignal(silence);
+    // All frames should be silence (confidence = 0)
+    for (const c of confidence) expect(c).toBe(0);
+  });
+
+  test('loud sine tone returns 1 confidence (voice detected)', () => {
+    const vad = new DSPCore.VADProcessor(SR, FRAME_MS, 0.5);
+    // 440 Hz tone — low ZCR, high energy → should be detected as voiced
+    const tone = makeTone(SR, FRAME_MS * 3, 440, 0.9);
+    const confidence = vad.processSignal(tone);
+    const hasSpeech = Array.from(confidence).some(c => c > 0);
+    expect(hasSpeech).toBe(true);
+  });
+
+  test('processSignal returns Float32Array with one value per frame', () => {
+    const vad = new DSPCore.VADProcessor(SR, FRAME_MS, 0.5);
+    const data = makeTone(SR, 100, 440, 0.5); // 100 ms
+    const result = vad.processSignal(data);
+    expect(result).toBeInstanceOf(Float32Array);
+    const expectedFrames = Math.floor(data.length / vad.frameSize);
+    expect(result.length).toBe(expectedFrames);
+  });
+
+  test('processFrame returns value in {0, 0.5, 1}', () => {
+    const vad = new DSPCore.VADProcessor(SR, FRAME_MS, 0.5);
+    const frameLen = vad.frameSize;
+    const tone = makeTone(SR, FRAME_MS, 440, 0.9).subarray(0, frameLen);
+    const val = vad.processFrame(tone);
+    expect([0, 0.5, 1]).toContain(val);
+  });
+
+  test('hangover keeps confidence > 0 for a few frames after speech ends', () => {
+    const vad = new DSPCore.VADProcessor(SR, FRAME_MS, 0.8); // high sensitivity = more hangover
+    // One frame of loud speech followed by silence
+    const frameLen = vad.frameSize;
+    const speech = makeTone(SR, FRAME_MS, 440, 0.9).subarray(0, frameLen);
+    vad.processFrame(speech); // trigger speech detection
+    // Now silence — hangover should keep non-zero
+    const silence = new Float32Array(frameLen);
+    const c = vad.processFrame(silence);
+    expect(c).toBeGreaterThan(0); // hangover active
+  });
+
+  test('setSensitivity updates energy threshold and ZCR threshold', () => {
+    const vad = new DSPCore.VADProcessor(SR, FRAME_MS, 0.5);
+    const prevEThresh = vad.energyThreshDb;
+    const prevZCR = vad.zcrThresh;
+    vad.setSensitivity(0.9); // higher sensitivity
+    expect(vad.energyThreshDb).toBeLessThan(prevEThresh); // lower energy needed to detect voice
+    expect(vad.zcrThresh).toBeGreaterThan(prevZCR); // tolerates higher ZCR
+  });
+
+  test('high sensitivity detects quieter signals that low sensitivity misses', () => {
+    const vadHigh = new DSPCore.VADProcessor(SR, FRAME_MS, 0.9);
+    const vadLow = new DSPCore.VADProcessor(SR, FRAME_MS, 0.1);
+    const quietTone = makeTone(SR, FRAME_MS * 5, 440, 0.01); // very quiet
+    const highResult = vadHigh.processSignal(quietTone);
+    const lowResult = vadLow.processSignal(quietTone);
+    const highSum = Array.from(highResult).reduce((a, b) => a + b, 0);
+    const lowSum = Array.from(lowResult).reduce((a, b) => a + b, 0);
+    expect(highSum).toBeGreaterThanOrEqual(lowSum);
+  });
+
+  test('reset clears smoothedEnergy and hangover', () => {
+    const vad = new DSPCore.VADProcessor(SR, FRAME_MS, 0.8);
+    const tone = makeTone(SR, FRAME_MS, 440, 0.9);
+    vad.processSignal(tone);
+    expect(vad.hangover > 0 || vad.smoothedEnergy !== 0).toBe(true);
+    vad.reset();
+    expect(vad.smoothedEnergy).toBe(0);
+    expect(vad.hangover).toBe(0);
+  });
+
+  test('sensitivity clamps to [0, 1]', () => {
+    const vad = new DSPCore.VADProcessor(SR, FRAME_MS, 0.5);
+    vad.setSensitivity(-5);
+    expect(vad.sensitivity).toBe(0);
+    vad.setSensitivity(99);
+    expect(vad.sensitivity).toBe(1);
   });
 });
