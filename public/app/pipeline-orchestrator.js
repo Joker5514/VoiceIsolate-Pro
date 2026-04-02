@@ -17,6 +17,7 @@
 class PipelineOrchestrator {
   constructor(state) {
     this.state = state;          // PipelineState instance
+    this.dspConfig = null;       // DSPConfig instance (set externally or lazily)
     this.audioCtx = null;
     this.mlWorker = null;
     this.dspWorker = null;
@@ -45,6 +46,8 @@ class PipelineOrchestrator {
     this.onProgress = () => {};
     this.onProcessComplete = () => {};
     this.onError = () => {};
+    /** Called with (noiseClass, confidence) when the ML classifier emits a result */
+    this.onNoiseClassChange = null;
   }
 
   /** Initialize AudioContext lazily inside user gesture */
@@ -291,6 +294,11 @@ class PipelineOrchestrator {
     const sr = buf.sampleRate;
     const exportParams = params || this.state.export();
 
+    // Merge DSPConfig feature flags into params if available
+    if (this.dspConfig) {
+      Object.assign(exportParams, this.dspConfig.export());
+    }
+
     return new Promise((resolve, reject) => {
       const worker = new Worker('dsp-worker.js');
 
@@ -299,12 +307,28 @@ class PipelineOrchestrator {
         const channel = new MessageChannel();
         worker.postMessage({ type: 'setMLPort' }, [channel.port1]);
 
-        // Forward ML messages
+        // Forward DSP→ML messages; collect all TypedArray buffers as transferables
         channel.port2.onmessage = (e) => {
-          this.mlWorker.postMessage(e.data, e.data.data ? [e.data.data.buffer] : []);
+          const transferables = [];
+          for (const val of Object.values(e.data)) {
+            if (ArrayBuffer.isView(val) && val.buffer instanceof ArrayBuffer) {
+              transferables.push(val.buffer);
+            }
+          }
+          this.mlWorker.postMessage(e.data, transferables);
         };
+
+        // Forward ML→DSP messages; also intercept relevant result types
         this.mlWorker.addEventListener('message', (e) => {
-          try { channel.port2.postMessage(e.data); } catch (_) {}
+          const msg = e.data;
+
+          // Update DSPConfig noise class when classifier result arrives
+          if (msg.type === 'noiseClassResult' && this.dspConfig) {
+            this.dspConfig.setNoiseClass(msg.noiseClass, msg.confidence);
+            this.onNoiseClassChange?.(msg.noiseClass, msg.confidence);
+          }
+
+          try { channel.port2.postMessage(msg); } catch (_) {}
         });
       }
 
