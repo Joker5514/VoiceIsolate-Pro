@@ -2217,9 +2217,6 @@ class VoiceIsolatePro {
 
   render3D(){requestAnimationFrame(()=>this.render3D());if(this.three.ren)this.three.ren.render(this.three.scene,this.three.cam);}
 
-<<<<<<< copilot/ui-overhaul-v2-glassmorphism
-  // ---- Audio-Reactive Glow (rAF loop updating CSS --glow-level, --audio-intensity, --audio-bass) ----
-=======
   // ---- Spectrogram v2: 2D/3D mode, mel scale, freeze, snapshot, speaker lanes ----
   // State stored on instance so it survives re-renders
   _spectroV2Init(){
@@ -2360,7 +2357,7 @@ class VoiceIsolatePro {
     }
     el.style.display='flex';
   }
->>>>>>> main
+
   startGlowLoop(){
     // Ensure any previous loop is fully stopped before starting a new one
     if(this._glowRunning){return;}
