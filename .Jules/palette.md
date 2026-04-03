@@ -1,5 +1,3 @@
-## 2024-05-24 - Dynamically Generated UI Elements Need A11y
-**Learning:** In complex audio interfaces (like the 52-slider DSP engine), dynamically generating DOM elements from JS arrays often strips away critical a11y context (like `<label for>` relationships and `aria-label`s) if not explicitly handled in the template string. Furthermore, heavily customized dark-mode themes often accidentally omit or override browser default focus rings, completely breaking keyboard navigation.
-**Action:** When auditing or building dynamic templates (`h += '<input...>'`), always ensure standard a11y attributes (`aria-label`, `title`) are injected using the configuration data. Always provide a high-contrast global `:focus-visible` style in the CSS when building custom themes to ensure keyboard users can find their place on the page.## 2026-04-02 - Explicit Label Associations
-**Learning:** When dynamically generating DOM elements from JS arrays or objects (e.g., building templates via string concatenation), explicit accessibility attributes like `<label for>` mappings are often lost, preventing proper click-to-focus and screen reader association.
-**Action:** Always explicitly inject `for="[id]"` mappings corresponding to input `id`s when constructing template strings.
+## 2024-03-24 - Keyboard Accessibility for Custom Tooltips
+**Learning:** Custom tooltips that only respond to mouse events (`mouseenter`/`mouseleave`) inadvertently hide vital contextual information from keyboard-only users who navigate the UI via the `Tab` key.
+**Action:** When implementing custom tooltips on interactive elements (like custom sliders), always ensure that the tooltip's visibility logic is also bound to the element's `focus` and `blur` events to guarantee full accessibility.
