@@ -246,9 +246,16 @@ class VoiceIsolatePro {
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)({ sampleRate: 48000 });
-      // v20: Register AudioWorklet processor for real-time path
+      // v20: Register AudioWorklet processors; v19: also load full STFT DSP worklet
       if (this.ctx.audioWorklet) {
-        this.ctx.audioWorklet.addModule('./voice-isolate-processor.js').catch(() => {
+        Promise.all([
+          this.ctx.audioWorklet.addModule('./voice-isolate-processor.js'),
+          this.ctx.audioWorklet.addModule('./dsp-processor.js'),
+        ]).then(() => {
+          this._initDspWorklet().catch(err =>
+            structuredLog('warn', 'DSP worklet init failed', { error: err.message })
+          );
+        }).catch(() => {
           structuredLog('warn', 'AudioWorklet unavailable — live chain uses native Web Audio nodes');
         });
       }
@@ -483,8 +490,13 @@ class VoiceIsolatePro {
     const id = el.dataset.param;
     const v = parseFloat(el.value);
     this.params[id] = v;
-    // v20: Sync to PipelineState (broadcasts to AudioWorklet + pub/sub)
+    // v20: Sync to PipelineState (broadcasts rt params to AudioWorklet via _workletPort)
     if (this.pipelineState) this.pipelineState.set(id, v, { recordHistory: true, source: 'slider' });
+    // v19: Also send ALL params (including non-rt) directly to DSP worklet port so the
+    // full STFT pipeline stays in sync with every slider change, not just realtime ones.
+    if (this._dspWorkletNode) {
+      this._dspWorkletNode.port.postMessage({ type: 'param', key: id, value: v });
+    }
     let unit = '';
     for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
     const ve = document.getElementById(id + 'Val');
@@ -2672,6 +2684,175 @@ class VoiceIsolatePro {
     badge.textContent=entry.label;
     badge.dataset.class=entry.key;
   }
+  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
+  calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
+  fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
+
+  // ── v19: DSP AudioWorklet init (dsp-processor.js / 'dsp-processor') ─────────
+  // Called once after both AudioWorklet modules have loaded.
+  // Creates the full-STFT DspProcessor node, wires:
+  //   • PipelineState → worklet port (all 52 slider params)
+  //   • SharedArrayBuffer ML rings (input/output/ctrl) for ONNX handoff
+  //   • Spectrum SAB for 3D spectrogram visualization
+  // The node is stored as this._dspWorkletNode; it is connected into the audio
+  // graph when buildLiveChain() runs (mic → dspNode → destination).
+  async _initDspWorklet() {
+    if (!this.ctx || this._dspWorkletNode) return;
+
+    // Create the AudioWorkletNode backed by DspProcessor
+    this._dspWorkletNode = new AudioWorkletNode(this.ctx, 'dsp-processor', {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+    });
+
+    // Wire PipelineState → worklet port so all 52 slider changes propagate
+    if (this.pipelineState) {
+      this.pipelineState.setWorkletPort(this._dspWorkletNode.port);
+    }
+
+    // Send current params as initial bulk snapshot
+    const allParams = {};
+    for (const tab of Object.values(SLIDERS)) {
+      for (const s of tab) allParams[s.id] = this.params[s.id] ?? s.val;
+    }
+    this._dspWorkletNode.port.postMessage({ type: 'paramBulk', params: allParams });
+
+    // Setup SharedArrayBuffer rings (requires COOP/COEP headers or same-origin)
+    if (this.sabSupported) {
+      // Spectrum SAB: 2049 bins × 4 bytes (Float32) for 3D spectrogram
+      const spectrumSAB = new SharedArrayBuffer(2049 * 4);
+      this._dspWorkletNode.port.postMessage({ type: 'sab-spectrum', sab: spectrumSAB });
+      this._spectrumSAB = new Float32Array(spectrumSAB);
+
+      // ML rings: 2049 bins each for input/output + 2 Int32 control words
+      // ctrlSAB[0] = inputReady (worklet→main), ctrlSAB[1] = outputReady (main→worklet)
+      const mlInputSAB  = new SharedArrayBuffer(2049 * 4);
+      const mlOutputSAB = new SharedArrayBuffer(2049 * 4);
+      const mlCtrlSAB   = new SharedArrayBuffer(2 * 4); // Int32[2]
+      this._mlInputSAB  = new Float32Array(mlInputSAB);
+      this._mlOutputSAB = new Float32Array(mlOutputSAB);
+      this._mlCtrlSAB   = new Int32Array(mlCtrlSAB);
+
+      // Pass ML rings to DSP worklet
+      this._dspWorkletNode.port.postMessage({
+        type: 'ml-rings',
+        inputSAB:  mlInputSAB,
+        outputSAB: mlOutputSAB,
+        ctrlSAB:   mlCtrlSAB,
+      });
+
+      // Start main-thread ONNX inference loop (WebGPU→WASM fallback)
+      this.initONNXDirect().then(session => {
+        if (session) {
+          this._onnxSession = session;
+          this._startMLOnnxLoop();
+        }
+      }).catch(err =>
+        structuredLog('warn', 'Direct ONNX init failed — ML path disabled', { error: err.message })
+      );
+    }
+
+    structuredLog('info', 'DSP AudioWorklet node ready', { processor: 'dsp-processor' });
+  }
+
+  // ── v19: Direct ONNX init on main thread (WebGPU first, WASM fallback) ───
+  // Returns an ort.InferenceSession or null if ONNX Runtime is unavailable.
+  // Model: ./models/demucs-v4-vocals.onnx (int8 quantized, ~40 MB).
+  // Falls back gracefully: if model file is missing, returns null (classical DSP only).
+  async initONNXDirect() {
+    try {
+      // Dynamic import so bundle doesn't hard-depend on onnxruntime-web
+      const ort = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js')
+        .catch(() => null);
+      if (!ort) return null;
+
+      const sessionOptions = {
+        executionProviders: ['webgpu', 'wasm'],
+        graphOptimizationLevel: 'all',
+      };
+
+      // Try Demucs vocal isolation model; fall back to VAD model already bundled
+      const modelPaths = [
+        './models/demucs-v4-vocals.onnx',
+        './models/silero_vad.onnx',
+      ];
+
+      for (const modelPath of modelPaths) {
+        try {
+          const session = await ort.InferenceSession.create(modelPath, sessionOptions);
+          structuredLog('info', 'ONNX session created', { model: modelPath });
+          return session;
+        } catch (_) {
+          // Try next model
+        }
+      }
+      return null;
+    } catch (err) {
+      structuredLog('warn', 'ONNX direct init error', { error: err.message });
+      return null;
+    }
+  }
+
+  // ── v19: Main-thread ONNX inference loop via Atomics.waitAsync ────────────
+  // Polls _mlCtrlSAB[0] for inputReady=1 (set by AudioWorklet after spectral DSP).
+  // Runs ONNX on the spectral frame, writes result to _mlOutputSAB, signals worklet.
+  // Uses Atomics.waitAsync (non-blocking, safe on main thread).
+  _startMLOnnxLoop() {
+    if (!this._mlCtrlSAB || !this._onnxSession) return;
+
+    const poll = async () => {
+      // Atomics.waitAsync: resolves when ctrlSAB[0] changes from 0, or after 50ms timeout
+      const { async: isAsync, value: waitResult } = Atomics.waitAsync
+        ? Atomics.waitAsync(this._mlCtrlSAB, 0, 0, 50)
+        : { async: false, value: 'ok' };
+
+      const proceed = async () => {
+        const inputReady = Atomics.load(this._mlCtrlSAB, 0) === 1;
+        if (inputReady && this._mlInputSAB && this._mlOutputSAB && this._onnxSession) {
+          try {
+            const inputMag = this._mlInputSAB.slice(); // snapshot to avoid race
+            // Mark input consumed before inference (worklet can write next frame)
+            Atomics.store(this._mlCtrlSAB, 0, 0);
+
+            // Build ONNX input tensor [1, 1, numBins]
+            const ort = this._onnxSession.constructor;
+            const tensor = new (await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js')
+              .then(m => m.Tensor).catch(() => null))(
+              'float32', inputMag, [1, 1, inputMag.length]
+            );
+            if (!tensor) { poll(); return; }
+
+            const feeds = { input: tensor };
+            const results = await this._onnxSession.run(feeds);
+            const outputKey = Object.keys(results)[0];
+            const outputData = results[outputKey]?.data;
+
+            if (outputData && this._mlOutputSAB) {
+              const len = Math.min(outputData.length, this._mlOutputSAB.length);
+              for (let i = 0; i < len; i++) this._mlOutputSAB[i] = outputData[i];
+              // Signal worklet: ONNX result ready
+              Atomics.store(this._mlCtrlSAB, 1, 1);
+            }
+          } catch (err) {
+            structuredLog('warn', 'ONNX inference error', { error: err.message });
+          }
+        }
+        // Schedule next poll
+        poll();
+      };
+
+      if (isAsync && waitResult && typeof waitResult.then === 'function') {
+        waitResult.then(proceed);
+      } else {
+        // Synchronous result or no Atomics.waitAsync support — use rAF fallback
+        requestAnimationFrame(proceed);
+      }
+    };
+
+    poll();
+  }
+
   calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
   calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}

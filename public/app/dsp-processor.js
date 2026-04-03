@@ -185,21 +185,55 @@ class DspProcessor extends AudioWorkletProcessor {
     this._spectrumSAB = null; // for main thread 3D spectrogram viz
     this._controlSAB  = null;
 
+    // ── ML ring-buffer SABs (ONNX handoff, v19 spec) ──
+    // _mlInputSAB:  worklet writes processed spectral magnitude → main thread reads for ONNX
+    // _mlOutputSAB: main thread writes ONNX-processed magnitude → worklet reads before iFFT
+    // _mlCtrlSAB:   Int32[0]=inputReady (1=new frame), Int32[1]=outputReady (1=ONNX result ready)
+    this._mlInputSAB  = null;
+    this._mlOutputSAB = null;
+    this._mlCtrlSAB   = null;
+
     // Build ERB band map for current sample rate
     this._buildERBMap();
 
     // ── Message port: receive slider updates + SAB refs ──
     this.port.onmessage = (e) => {
       const d = e.data;
+
+      // Legacy format: { sliders: { paramId: value, ... } }
       if (d.sliders) {
         Object.assign(this.params, d.sliders);
       }
+
+      // PipelineState format (single rt param): { type: 'param', key, value }
+      if (d.type === 'param' && d.key !== undefined && d.key in this.params) {
+        this.params[d.key] = d.value;
+      }
+
+      // PipelineState batch format (preset / bulk): { type: 'paramBulk', params: {...} }
+      if (d.type === 'paramBulk' && d.params) {
+        for (const k of Object.keys(d.params)) {
+          if (k in this.params) this.params[k] = d.params[k];
+        }
+      }
+
       if (d.type === 'sab-spectrum' && d.sab instanceof SharedArrayBuffer) {
         this._spectrumSAB = new Float32Array(d.sab);
       }
       if (d.type === 'sab-control' && d.sab instanceof SharedArrayBuffer) {
         this._controlSAB = new Int32Array(d.sab);
       }
+
+      // ML ring-buffer handoff (v19): SharedArrayBuffers for ONNX ↔ worklet sync
+      if (d.type === 'ml-rings') {
+        if (d.inputSAB instanceof SharedArrayBuffer)
+          this._mlInputSAB = new Float32Array(d.inputSAB);
+        if (d.outputSAB instanceof SharedArrayBuffer)
+          this._mlOutputSAB = new Float32Array(d.outputSAB);
+        if (d.ctrlSAB instanceof SharedArrayBuffer)
+          this._mlCtrlSAB = new Int32Array(d.ctrlSAB);
+      }
+
       if (d.type === 'reset-noise') {
         this.noiseProfiled   = false;
         this.noiseFrameCount = 0;
@@ -355,6 +389,31 @@ class DspProcessor extends AudioWorkletProcessor {
 
     // ── Stage 19: Harmonic Recovery AFTER NR (regenerate destroyed harmonics)
     this._harmonicRecovery(mag, ph);
+
+    // ── ML ring handoff (v19 spec): post-DSP spectrum → ONNX → refined mag ──
+    // Non-blocking: write to input ring only when main thread has consumed previous frame.
+    // Non-blocking: read from output ring only when ONNX result is available.
+    if (this._mlInputSAB && this._mlCtrlSAB) {
+      const inputConsumed = Atomics.load(this._mlCtrlSAB, 0) === 0;
+      if (inputConsumed) {
+        // Write processed magnitude frame for main-thread ONNX inference
+        const copyLen = Math.min(nBins, this._mlInputSAB.length);
+        this._mlInputSAB.set(mag.subarray(0, copyLen));
+        // Signal main thread: new spectral frame ready (atomic store + notify)
+        Atomics.store(this._mlCtrlSAB, 0, 1);
+        Atomics.notify(this._mlCtrlSAB, 0, 1);
+      }
+    }
+    if (this._mlOutputSAB && this._mlCtrlSAB) {
+      const outputReady = Atomics.load(this._mlCtrlSAB, 1) === 1;
+      if (outputReady) {
+        // Read ONNX-refined magnitude back, replace classical DSP result
+        const copyLen = Math.min(nBins, this._mlOutputSAB.length);
+        for (let k = 0; k < copyLen; k++) mag[k] = this._mlOutputSAB[k];
+        // Mark output consumed
+        Atomics.store(this._mlCtrlSAB, 1, 0);
+      }
+    }
 
     // ── Reconstruct complex spectrum from modified magnitude + phase ──
     for (let k = 0; k < nBins; k++) {
