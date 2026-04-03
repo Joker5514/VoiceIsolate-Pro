@@ -20,6 +20,8 @@ VoiceIsolate Pro is a cross-platform audio processing engine powered by a **36-s
 - **Original/Processed Toggle**: Visual toggle switch in the transport bar to instantly switch between original and processed audio, synced with the spectrogram view.
 - **Improved Presets**: All 9 presets (Podcast, Film, Interview, Forensic, Music, Broadcast, Restoration, Whisper, Crystal Voice) have been professionally retuned for better results out of the box.
 - **Spectrogram Sync**: A/B toggle in transport, spectrogram, and source toggle are all bidirectionally synced.
+- **File Uploads Fixed**: Solved strict MIME type validation bugs that previously prevented common audio/video types (like MP3s and MKVs) from uploading correctly.
+- **Engineer Mode Refined**: Removed the clunky "How It Works" card from the main app interface to streamline the mobile UI and save space.
 - **CI/CD Fixes**: Deploy workflow now triggers on pull requests, CSP hardened (removed `wasm-unsafe-eval`, added `cdnjs.cloudflare.com`).
 
 ### Previous: v22.0.0 — Monetization & AI Engine v2

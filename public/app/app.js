@@ -281,7 +281,7 @@ class VoiceIsolatePro {
         inputEl.setAttribute('aria-valuenow', s.val);
         // Set initial fill percentage for styled track
         const range = s.max - s.min;
-        const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
+        const initPct = ((s.val - s.min) / (s.max - s.min)) * 100;
         inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
 
         const valEl = document.createElement('span');
@@ -501,7 +501,7 @@ class VoiceIsolatePro {
     try {
       // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
 
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska'];
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska', 'audio/midi'];
       if (file.type && !allowedTypes.includes(file.type.toLowerCase())) throw new Error('Unsupported file type');
 
       this.ensureCtx();
