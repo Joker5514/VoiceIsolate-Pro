@@ -1,5 +1,14 @@
 # VoiceIsolate Pro
 
+[![CI](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/ci.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/ci.yml)
+[![Android Build](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/android-build.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/android-build.yml)
+[![Deploy](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml)
+![Version](https://img.shields.io/badge/version-22.0.0-blue)
+![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-red)
+![Platform](https://img.shields.io/badge/platform-browser%20%7C%20android%20%7C%20ios-lightgrey)
+![Privacy](https://img.shields.io/badge/privacy-100%25%20local-brightgreen)
+
+> **Studio-grade voice isolation and audio enhancement — 100% local, zero cloud inference. Now with Monetization, AI Engine v2, and Cloud Sync.**
 > **v22.0** — Studio-grade voice isolation powered by real STFT spectral processing, adaptive Wiener filtering, and a 35-stage deca-pass DSP pipeline. 100% browser-native. Zero cloud egress.
 
 ---
@@ -12,6 +21,16 @@ VoiceIsolate Pro is a production-grade audio processing platform that isolates v
 
 ---
 
+## Current Version: v22.0.0 — Monetization & AI Engine v2 Upgrade
+
+**Version 22** introduces a comprehensive monetization architecture and major AI upgrades:
+
+- **Freemium Monetization System**: Free, Pro ($12/mo), Studio ($29/mo), and Enterprise tiers.
+- **Paywall & Licensing**: Secure offline JWT license validation, feature gating, and Stripe/RevenueCat integration.
+- **AI Engine v2**: Voice fingerprinting, advanced auto-tune via gradient descent, noise profile library, and multi-speaker detection.
+- **Batch Processing**: Process multiple files concurrently with ZIP export (Studio/Enterprise feature).
+- **Cloud Sync**: Sync presets, noise profiles, and history across devices (Studio/Enterprise feature).
+- **Privacy-First Analytics**: Local-only usage tracking by default. Server reporting is strictly opt-in and never includes audio data or content.
 ## Architecture
 
 ```
@@ -53,6 +72,16 @@ Threads from Space v11 — Browser-Native DSP Engine
 
 ## 35-Stage Deca-Pass Pipeline
 
+| Feature | Detail |
+|---------|--------|
+| **36-stage Deca-Pass DSP** | 10 passes × 4 stages: Ingest → Analysis → Filter → Spectral NR → EQ → Spectral Processing → Dynamics → Master → Export |
+| **AI Engine v2** | Voice fingerprinting, noise profile library, adaptive spectral masking, and PESQ-inspired quality estimation |
+| **Monetization Tiers** | Flexible pricing with feature gates, usage quotas, and trial support |
+| **Batch Processing** | Concurrent processing queue with progress tracking and ZIP export |
+| **Cloud Sync** | Cross-device synchronization of presets and profiles via REST API |
+| **Mobile Native** | Runs as a native app on Android and iOS using Capacitor, with RevenueCat IAP support |
+| **Hybrid ML + Classical** | Demucs v4.1, BSRNN, DeepFilterNet3 working alongside Wiener filtering and spectral subtraction |
+| **100% Local Processing** | Audio never leaves your device. No server uploads. No cloud inference. |
 The core processing engine. Single forward STFT → all spectral ops in-place → single inverse STFT. No phase smearing.
 
 | Pass | Stages | Operations |
@@ -132,12 +161,28 @@ Classical DSP pipeline operates independently without ML for lightweight deploym
 ## Privacy & Security
 
 - **100% Local Processing** — All audio stays in the browser. Zero network requests during processing.
-- **Zero Telemetry** — No analytics, tracking, or fingerprinting.
+- **Zero Audio Telemetry** — No audio data, content, or fingerprints are ever transmitted. Usage analytics (e.g., session counts) are local-only by default; server reporting requires explicit opt-in.
 - **COOP/COEP Headers** — Required for SharedArrayBuffer, configured in `vercel.json`.
 - **Strict CSP** — Only allows self, cdnjs.cloudflare.com (Three.js), and blob/data URIs.
 
+### Tiers
+
+- **Free**: Basic noise reduction, 5-min limit, watermarked exports.
+- **Pro ($12/mo)**: Full 36-stage pipeline, ML models, unlimited duration, no watermark.
+- **Studio ($29/mo)**: Pro features + Batch processing, Cloud Sync, API access.
+- **Enterprise ($199/mo)**: White-label, custom models, SLA.
+
 ---
 
+## Available Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Serve `public/` on port 3000 with CORS |
+| `npm run build` | Copy `public/` into `build/` directory |
+| `npm run lint` | Run ESLint on core pipeline files |
+| `npm test` | Run Jest test suite |
+| `npm run validate` | Run custom pipeline validation script |
 ## Deployment
 
 Auto-deploys to Vercel on push to `main` via GitHub integration.
@@ -192,6 +237,7 @@ Output directory: `public/` (Vercel) / `build/` (alternate).
 
 ---
 
+**VoiceIsolate Pro v22.0.0** · Threads from Space v10 · Privacy-First · Updated March 2026
 ## License
 
 [MIT](LICENSE)

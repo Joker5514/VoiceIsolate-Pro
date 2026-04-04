@@ -155,6 +155,48 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
+
+    // v20: Initialize PipelineState (centralized 52-param state with pub/sub)
+    this.pipelineState = typeof PipelineState !== 'undefined' ? new PipelineState() : null;
+    if (this.pipelineState) {
+      this.pipelineState.registerSliders(SLIDERS);
+      // Sync param changes from PipelineState → legacy this.params
+      this.pipelineState.onAny(({ key, value }) => { this.params[key] = value; });
+    }
+
+    // v20: Initialize PipelineOrchestrator (processing conductor)
+    this.orchestrator = (typeof PipelineOrchestrator !== 'undefined' && this.pipelineState)
+      ? new PipelineOrchestrator(this.pipelineState) : null;
+    if (this.orchestrator) {
+      this.orchestrator.onStatusChange = (s) => this.setStatus(s.toUpperCase());
+      this.orchestrator.onProgress = (stage, pct, label) => {
+        if (this.dom) {
+          this.dom.pipeFill.style.width = pct + '%';
+          this.dom.pipeStage.textContent = `S${stage}/36`;
+          this.dom.pipeDetail.textContent = label || '';
+        }
+      };
+      this.orchestrator.onError = (msg) => structuredLog('error', 'Pipeline error', { error: msg });
+    }
+
+    // v20: SharedRingBuffer support detection
+    this.sabSupported = typeof SharedArrayBuffer !== 'undefined' && typeof Atomics !== 'undefined';
+
+    // Phase 4: ML Worker (off-main-thread ONNX inference)
+    this.mlWorker = null;
+    this._mlCallbacks = {};  // id → { resolve, reject }
+    this._mlCallId = 0;
+    this.mlWorkerReady = false;
+    this.mlWorkerModels = { vad: false, deepfilter: false, demucs: false };
+    // Phase 5: Forensic audit
+    this.forensicMode = false;
+    this.forensicLog = [];
+
+    // Phase 6: Secure PRNG for dither (Sentinel fix)
+    // Buffer size limited to 65536 bytes (16384 Uint32s) by Web Crypto API
+    this._rndBuf = new Uint32Array(16384);
+    this._rndIdx = 16384;
+
     this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
     this.renderCustomPresets();
     // Diagnostic state
@@ -221,6 +263,9 @@ class VoiceIsolatePro {
       tpPlay:g('tpPlay'), tpPause:g('tpPause'), tpStop:g('tpStop'),
       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
       tpSeek:g('tpSeek'), tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
+      fileSpectroCard:g('fileSpectroCard'), fsModeLbl:g('fsModeLbl'), fsProgress:g('fsProgress'),
+      fsBtnAB:g('fsBtnAB'), fsColormap:g('fsColormap'),
+      fsYAxis:g('fsYAxis'), fsMain:g('fsMain'), fsCanvas:g('fsCanvas'), fsOverlay:g('fsOverlay'), fsXAxis:g('fsXAxis'),
       spectro3DContainer:g('spectro3DContainer'), spectro3DCanvas:g('spectro3DCanvas'),
       spectro3DReset:g('spectro3DReset'),
       spectro2DCanvas:g('spectro2DCanvas'),
@@ -290,6 +335,20 @@ class VoiceIsolatePro {
     });
     this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
     this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
+    if (this.dom.fsBtnAB) this.dom.fsBtnAB.addEventListener('click', () => this.fsToggleAB());
+    if (this.dom.fsColormap) this.dom.fsColormap.addEventListener('change', () => { if (this.fsCurrentBuf) this.renderFileSpectrogram(this.fsCurrentBuf); });
+    if (this.dom.fsMain) this.dom.fsMain.addEventListener('click', e => this.fsSeekClick(e));
+    // Phase 5: Forensic mode toggle
+    if (this.dom.forensicToggle) {
+      this.dom.forensicToggle.addEventListener('change', () => {
+        this.forensicMode = this.dom.forensicToggle.checked;
+        structuredLog('info', 'Forensic mode', { enabled: this.forensicMode });
+      });
+    }
+    // Phase 5: Audit log download
+    if (this.dom.auditLogBtn) {
+      this.dom.auditLogBtn.addEventListener('click', () => this.downloadAuditLog());
+    }
     window.addEventListener('resize', () => this.onResize());
 
     // Diagnostic bindings
@@ -473,6 +532,16 @@ class VoiceIsolatePro {
     this.resizeCanvas(this.dom.waveOrigCanvas);
     this.drawWaveform(buf, this.dom.waveOrigCanvas, '#dc2626');
     this.clearCanvas(this.dom.waveProcCanvas, 'Process to see result');
+    // Show full-file spectrogram card and render initial view
+    if (this.dom.fileSpectroCard) {
+      this.dom.fileSpectroCard.style.display = '';
+      this.fsMode = 'original';
+      this.fsCurrentBuf = buf;
+      this.fsImageData = null;
+      if (this.dom.fsModeLbl) this.dom.fsModeLbl.textContent = 'ORIGINAL';
+      if (this.dom.fsBtnAB) { this.dom.fsBtnAB.textContent = 'Show Processed'; this.dom.fsBtnAB.disabled = true; }
+      this.renderFileSpectrogram(buf);
+    }
     this.setStatus('READY');
   }
 
@@ -512,7 +581,7 @@ class VoiceIsolatePro {
         } catch (e) { this.dom.fileInfo.textContent = 'Decode error: ' + e.message; this.setStatus('ERROR'); }
       };
       this.mediaRecorder.start(100);
-    } catch (e) { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
+    } catch { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
   }
 
   stopRecording() {
@@ -622,6 +691,7 @@ class VoiceIsolatePro {
       if (elapsed >= dur) { this.stop(); return; }
       this.dom.tpCur.textContent = this.fmtDur(elapsed);
       this.dom.tpSeek.value = dur > 0 ? (elapsed / dur) * 1000 : 0;
+      if (dur > 0) this.drawFsPlayhead(elapsed / dur);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -1006,6 +1076,8 @@ class VoiceIsolatePro {
       this.dom.stVoices.textContent = this.estVoices(fin);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
       this.dom.tpABLabel.textContent = 'Ready — A/B';
+      if (this.dom.fsBtnAB) this.dom.fsBtnAB.disabled = false;
+      if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = !this.forensicMode || this.forensicLog.length === 0;
       this.setStatus('COMPLETE');
     } catch (e) {
       if (e === 'abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent = 'Aborted'; }
@@ -1100,6 +1172,42 @@ class VoiceIsolatePro {
     cv.addEventListener('wheel',e=>{e.preventDefault();cam.position.z+=e.deltaY*0.05;cam.position.z=Math.max(20,Math.min(120,cam.position.z));},{passive:false});
     this.render3D();
   }
+
+  // ======== PHASE 2: WIRED SLIDERS — SPECTRAL PROCESSING ========
+
+  // Background suppression: attenuate bins outside voice focus band
+  applyBgSuppress(buf, suppressAmt, voiceFocusLo, voiceFocusHi) {
+    if (suppressAmt <= 0) return buf;
+    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
+    const out = this.ctx.createBuffer(nCh, len, sr);
+    const N = 2048, H = 512, halfN = N / 2 + 1;
+    const win = this._makeWindow(N);
+    const g = 1 - suppressAmt / 100;
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const outData = out.getChannelData(ch);
+      const normBuf = new Float64Array(len);
+      for (let s = 0; s + N <= len; s += H) {
+        const re = new Float64Array(N), im = new Float64Array(N);
+        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
+        this._fft(re, im);
+        for (let k = 0; k < halfN; k++) {
+          const freq = k * sr / N;
+          if (freq < voiceFocusLo || freq > voiceFocusHi) {
+            re[k] *= g; im[k] *= g;
+            if (k > 0 && k < N - k) { re[N-k] *= g; im[N-k] *= g; }
+          }
+        }
+        this._ifft(re, im);
+        for (let i = 0; i < N && s + i < len; i++) {
+          outData[s + i] += re[i] * win[i];
+          normBuf[s + i] += win[i] * win[i];
+        }
+      }
+      for (let i = 0; i < len; i++) {
+        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
+        outData[i] = Math.max(-1, Math.min(1, outData[i]));
+      }
   reset3DView(){if(this.three.cam){this.three.cam.position.set(0,40,60);this.three.cam.lookAt(0,0,0);}}
   update3D(freq){
     if(!this.three.geo)return;const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
@@ -1251,6 +1359,15 @@ class VoiceIsolatePro {
     x.shadowColor = '#22c55e'; x.shadowBlur = 3;
     x.beginPath();
 
+  // Compute SHA-256 of the first channel of an AudioBuffer and store in forensicLog
+  async addAuditEntry(buf, stageName) {
+    try {
+      const data = buf.getChannelData(0);
+      const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      const hashBuf = await crypto.subtle.digest('SHA-256', bytes);
+      const hex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
+      this.forensicLog.push({ stage: stageName, sha256: hex, timestamp: new Date().toISOString(), channels: buf.numberOfChannels, length: buf.length, sampleRate: buf.sampleRate });
+    } catch { /* crypto unavailable in some contexts */ }
     if (this.oscMode === 'wave') {
       const step = buf.length / w;
       for (let i = 0; i < w; i++) {
@@ -1317,6 +1434,18 @@ class VoiceIsolatePro {
       x.fillRect(this.specOverlayX, y, sw, 1);
     }
 
+  peakNorm(buf, tDb) {
+    const ctx = this.ctx;
+    const numChannels = buf.numberOfChannels;
+    const length = buf.length;
+    const out = ctx.createBuffer(numChannels, length, buf.sampleRate);
+
+    let peak = 0;
+    for (let ch = 0; ch < numChannels; ch++) {
+      const channelData = buf.getChannelData(ch);
+      for (let i = 0; i < length; i++) {
+        const absVal = Math.abs(channelData[i]);
+        if (absVal > peak) peak = absVal;
     // Noise profile overlay (pink line)
     if (this.overlays.noise) {
       x.strokeStyle = 'rgba(236,72,153,0.6)'; x.lineWidth = 1;
@@ -1560,6 +1689,160 @@ class VoiceIsolatePro {
     if(this.three.ren){this.three.ren.setSize(ct.clientWidth,ct.clientHeight);this.three.cam.aspect=ct.clientWidth/ct.clientHeight;this.three.cam.updateProjectionMatrix();}
   }
 
+  // ---- Full-File Spectrogram ----
+  async renderFileSpectrogram(buf) {
+    if (!this.dom.fsCanvas || !this.dom.fsMain) return;
+    const wrap = this.dom.fsMain;
+    const W = Math.max(wrap.clientWidth || 800, 200);
+    const H = Math.max(wrap.clientHeight || 170, 80);
+    const canvas = this.dom.fsCanvas;
+    canvas.width = W; canvas.height = H;
+    if (this.dom.fsOverlay) { this.dom.fsOverlay.width = W; this.dom.fsOverlay.height = H; }
+    const ctx2d = canvas.getContext('2d');
+    ctx2d.fillStyle = '#030306'; ctx2d.fillRect(0, 0, W, H);
+    const data = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    const nyq = sr / 2;
+    const fftSize = 2048;
+    const halfFFT = fftSize >> 1;
+    const hopSize = Math.max(1, Math.ceil(data.length / W));
+    const cmap = this.dom.fsColormap ? this.dom.fsColormap.value : 'plasma';
+    const invLN10_9 = 1 / (9 * Math.LN10);
+    const win = new Float32Array(fftSize);
+    for (let i = 0; i < fftSize; i++) win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / fftSize));
+    const logMin = Math.log(20), logMax = Math.log(nyq);
+    const rowBin = new Uint16Array(H);
+    for (let row = 0; row < H; row++) {
+      const frac = 1 - row / H;
+      const freq = Math.exp(logMin + frac * (logMax - logMin));
+      rowBin[row] = Math.min(Math.round(freq / nyq * halfFFT), halfFFT - 1);
+    }
+    const imgData = ctx2d.createImageData(W, H);
+    const pixels = imgData.data;
+    const re = new Float32Array(fftSize);
+    const im = new Float32Array(fftSize);
+    const BATCH = 64;
+    const totalCols = Math.min(W, Math.ceil(data.length / hopSize));
+    for (let col = 0; col < totalCols; col++) {
+      const offset = col * hopSize;
+      for (let i = 0; i < fftSize; i++) { const si = offset + i; re[i] = (si < data.length ? data[si] : 0) * win[i]; im[i] = 0; }
+      this._fft(re, im);
+      for (let row = 0; row < H; row++) {
+        const bin = rowBin[row];
+        const magSq = re[bin] * re[bin] + im[bin] * im[bin];
+        const v = magSq > 0 ? Math.max(0, Math.min(1, Math.log(magSq) * invLN10_9 + 1)) : 0;
+        const [r, g, b] = this.fsColor(v, cmap);
+        const idx = (row * W + col) * 4;
+        pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
+      }
+      if ((col % BATCH === BATCH - 1) || col === totalCols - 1) {
+        ctx2d.putImageData(imgData, 0, 0);
+        const pct = Math.round((col + 1) / totalCols * 100);
+        if (this.dom.fsProgress) this.dom.fsProgress.textContent = pct < 100 ? `Rendering ${pct}%` : '';
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    this.fsImageData = ctx2d.getImageData(0, 0, W, H);
+    if (this.dom.fsProgress) this.dom.fsProgress.textContent = '';
+    this.drawFsYAxis(sr, H);
+    this.drawFsXAxis(buf.duration, W);
+    this.drawFsPlayhead(0);
+  }
+
+  fsColor(v, cmap) {
+    v = Math.max(0, Math.min(1, v));
+    if (cmap === 'ocean') return this.lerpStops([[3,3,20],[5,20,80],[0,100,180],[0,200,230],[180,240,255],[255,255,255]], v);
+    if (cmap === 'voice') return this.lerpStops([[3,3,8],[30,5,60],[180,10,30],[220,80,0],[255,200,20],[255,255,180]], v);
+    if (cmap === 'thermal') return this.lerpStops([[0,0,0],[70,0,20],[180,0,0],[220,100,0],[255,220,40],[255,255,220]], v);
+    // plasma (default)
+    return this.lerpStops([[5,1,15],[60,5,110],[140,20,170],[200,60,50],[240,140,0],[255,230,40],[255,255,220]], v);
+  }
+
+  lerpStops(stops, v) {
+    const idx = v * (stops.length - 1);
+    const lo = Math.floor(idx), hi = Math.min(lo + 1, stops.length - 1);
+    const t = idx - lo;
+    return stops[lo].map((c, i) => Math.round(c + (stops[hi][i] - c) * t));
+  }
+
+  drawFsYAxis(sr, H) {
+    const cv = this.dom.fsYAxis; if (!cv) return;
+    cv.width = 38; cv.height = H;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#030306'; ctx.fillRect(0, 0, 38, H);
+    const nyq = sr / 2;
+    const logMin = Math.log(20), logMax = Math.log(nyq);
+    const freqs = [100,250,500,1000,2000,4000,8000,16000].filter(f => f < nyq);
+    ctx.font = '8px JetBrains Mono, monospace'; ctx.textAlign = 'right';
+    for (const f of freqs) {
+      const frac = (Math.log(f) - logMin) / (logMax - logMin);
+      const y = Math.round((1 - frac) * H);
+      ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(34, y, 4, 1);
+      ctx.fillStyle = 'rgba(180,180,200,0.5)';
+      ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f, 32, y + 3);
+    }
+    ctx.save(); ctx.translate(9, H / 2); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,180,200,0.35)'; ctx.font = '7px JetBrains Mono, monospace';
+    ctx.fillText('Hz', 0, 0); ctx.restore();
+  }
+
+  drawFsXAxis(duration, W) {
+    const cv = this.dom.fsXAxis; if (!cv) return;
+    cv.width = W + 38; cv.height = 20;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#030306'; ctx.fillRect(0, 0, W + 38, 20);
+    ctx.font = '8px JetBrains Mono, monospace'; ctx.fillStyle = 'rgba(180,180,200,0.5)'; ctx.textAlign = 'center';
+    const step = duration < 30 ? 5 : duration < 120 ? 15 : duration < 300 ? 30 : 60;
+    for (let t = 0; t <= duration; t += step) {
+      const x = 38 + Math.round(t / duration * W);
+      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(x, 0, 1, 5);
+      ctx.fillStyle = 'rgba(180,180,200,0.5)';
+      ctx.fillText(t >= 60 ? Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') : t + 's', x, 14);
+    }
+  }
+
+  drawFsPlayhead(frac) {
+    const cv = this.dom.fsOverlay; if (!cv || !cv.width) return;
+    const W = cv.width, H = cv.height;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    if (!this.inputBuffer || frac <= 0) return;
+    const x = Math.round(frac * W);
+    ctx.shadowBlur = 6; ctx.shadowColor = '#dc2626';
+    ctx.strokeStyle = 'rgba(220,38,38,0.9)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    ctx.shadowBlur = 0;
+    const elapsed = frac * this.inputBuffer.duration;
+    const label = this.fmtDur(elapsed);
+    ctx.font = '700 9px JetBrains Mono, monospace';
+    const tw = ctx.measureText(label).width;
+    const bx = Math.min(x + 3, W - tw - 8);
+    ctx.fillStyle = 'rgba(220,38,38,0.85)'; ctx.fillRect(bx - 2, 2, tw + 8, 14);
+    ctx.fillStyle = '#fff'; ctx.fillText(label, bx + 2, 12);
+  }
+
+  fsToggleAB() {
+    if (!this.outputBuffer) return;
+    this.fsMode = this.fsMode === 'original' ? 'processed' : 'original';
+    const isProc = this.fsMode === 'processed';
+    if (this.dom.fsModeLbl) { this.dom.fsModeLbl.textContent = isProc ? 'PROCESSED' : 'ORIGINAL'; this.dom.fsModeLbl.classList.toggle('proc', isProc); }
+    if (this.dom.fsBtnAB) this.dom.fsBtnAB.textContent = isProc ? 'Show Original' : 'Show Processed';
+    this.fsCurrentBuf = isProc ? this.outputBuffer : this.inputBuffer;
+    this.fsImageData = null;
+    this.renderFileSpectrogram(this.fsCurrentBuf);
+  }
+
+  fsSeekClick(e) {
+    if (!this.inputBuffer) return;
+    const rect = this.dom.fsMain.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    this.playOffset = frac * this.inputBuffer.duration;
+    this.dom.tpSeek.value = frac * 1000;
+    this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+    this.drawFsPlayhead(frac);
+    if (this.isPlaying) this.play();
+  }
+
   // ---- UTILITY ----
   setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
   calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
@@ -1567,5 +1850,10 @@ class VoiceIsolatePro {
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
 }
 
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = VoiceIsolatePro;
+} else if (typeof document !== 'undefined') {
+  document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
+}
 if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
 document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
