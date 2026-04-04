@@ -267,6 +267,10 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 .slider-tooltip{position:fixed;z-index:9999;background:var(--s4);color:var(--text);border:1px solid var(--border2);border-radius:var(--rs);padding:6px 10px;font-size:0.65rem;max-width:240px;line-height:1.4;pointer-events:none;opacity:0;transition:opacity 0.15s;box-shadow:0 8px 24px rgba(0,0,0,0.5)}
 .slider-tooltip.visible{opacity:1}
 
+/* ---- MOBILE ELEMENTS (hidden on desktop by default) ---- */
+.hdr-stats-toggle{display:none}
+.mobile-action-bar{display:none}
+
 /* ---- RESPONSIVE ---- */
 @media(max-width:960px){
   .main-grid{grid-template-columns:1fr}
