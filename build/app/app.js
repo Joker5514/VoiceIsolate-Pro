@@ -456,6 +456,8 @@ class VoiceIsolatePro {
     const dur = this.fmtDur(buf.duration);
     this.dom.fileInfo.textContent = (name || 'Recording') + ' (' + dur + ')';
     this.dom.processBtn.disabled = false;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
     this.dom.saveOrigBtn.disabled = false;
     this.dom.reprocessBtn.disabled = true;
     this.dom.saveProcBtn.disabled = true;

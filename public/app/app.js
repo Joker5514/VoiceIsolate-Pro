@@ -198,6 +198,54 @@ class VoiceIsolatePro {
       if (!panel) continue;
       let h = '<div class="sr">';
       for (const s of sliders) {
+        const row = document.createElement('div');
+        row.className = 'sr-row';
+        row.dataset.desc = s.desc;
+
+        const labelEl = document.createElement('label');
+        labelEl.className = 'sr-label';
+        labelEl.title = s.desc;
+        labelEl.htmlFor = s.id;
+        labelEl.textContent = s.label;
+        if (s.rt) {
+          const badge = document.createElement('span');
+          badge.className = 'rt-badge';
+          badge.textContent = 'RT';
+          labelEl.appendChild(badge);
+        }
+        const infoEl = document.createElement('span');
+        infoEl.className = 'sr-info';
+        infoEl.textContent = 'i';
+        infoEl.setAttribute('aria-hidden', 'true');
+        labelEl.appendChild(infoEl);
+
+        const inputEl = document.createElement('input');
+        inputEl.type = 'range';
+        if (s.rt) inputEl.className = 'realtime';
+        inputEl.id = s.id;
+        inputEl.min = s.min;
+        inputEl.max = s.max;
+        inputEl.value = s.val;
+        inputEl.step = s.step;
+        inputEl.dataset.param = s.id;
+        inputEl.setAttribute('aria-label', s.label);
+        inputEl.setAttribute('aria-valuemin', s.min);
+        inputEl.setAttribute('aria-valuemax', s.max);
+        inputEl.setAttribute('aria-valuenow', s.val);
+        // Set initial fill percentage for styled track
+        const range = s.max - s.min;
+        const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
+        inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
+
+        const valEl = document.createElement('span');
+        valEl.className = 'sr-val';
+        valEl.id = s.id + 'Val';
+        valEl.textContent = s.val + s.unit;
+
+        row.appendChild(labelEl);
+        row.appendChild(inputEl);
+        row.appendChild(valEl);
+        sr.appendChild(row);
         const rtCls = s.rt ? ' realtime' : '';
         const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
         h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
@@ -316,6 +364,11 @@ class VoiceIsolatePro {
     for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
+    el.setAttribute('aria-valuenow', v);
+    // Update filled-track CSS variable
+    const range = parseFloat(el.max) - parseFloat(el.min);
+    const pct = range > 0 ? ((v - parseFloat(el.min)) / range) * 100 : 0;
+    el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
   }
 
@@ -374,6 +427,14 @@ class VoiceIsolatePro {
       for (const s of sliders) {
         const el = document.getElementById(s.id);
         const ve = document.getElementById(s.id + 'Val');
+        if (el && this.params[s.id] !== undefined) {
+          el.value = this.params[s.id];
+          el.setAttribute('aria-valuenow', this.params[s.id]);
+          if (ve) ve.textContent = this.params[s.id] + s.unit;
+          const range = s.max - s.min;
+          const pct = range > 0 ? ((this.params[s.id] - s.min) / range) * 100 : 0;
+          el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
+        }
         if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
       }
     }
@@ -456,6 +517,8 @@ class VoiceIsolatePro {
     const dur = this.fmtDur(buf.duration);
     this.dom.fileInfo.textContent = (name || 'Recording') + ' (' + dur + ')';
     this.dom.processBtn.disabled = false;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
     this.dom.saveOrigBtn.disabled = false;
     this.dom.reprocessBtn.disabled = true;
     this.dom.saveProcBtn.disabled = true;
@@ -1005,6 +1068,421 @@ class VoiceIsolatePro {
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
       this.dom.tpABLabel.textContent = 'Ready — A/B';
       this.setStatus('COMPLETE');
+    } catch(e) {
+      if (e==='abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent='Aborted'; }
+      else { structuredLog('error', 'Pipeline error', { error: e instanceof Error ? e.message : String(e) }); this.setStatus('ERROR'); this.dom.pipeDetail.textContent=e instanceof Error ? e.message : String(e); }
+    } finally {
+      this.isProcessing=false; this.dom.processBtn.style.display='inline-flex'; this.dom.stopProcBtn.style.display='none';
+      if (this.dom.mobileProcessBtn)   { this.dom.mobileProcessBtn.style.display='inline-flex'; }
+      if (this.dom.mobileReprocessBtn && this.dom.reprocessBtn) { this.dom.mobileReprocessBtn.style.display='inline-flex'; this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled; }
+      if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display='none';
+    }
+  }
+
+  async pip(i,t) {
+    const pct = Math.round((i+1)/t*100);
+    this.dom.pipeFill.style.width = pct + '%';
+    this.dom.pipeBar.setAttribute('aria-valuenow', pct);
+    this.dom.pipeStage.textContent = (i+1)+'/'+t;
+    this.dom.pipeDetail.textContent = STAGES[i];
+    this.dom.hStatus.textContent = 'S'+(i+1);
+    await new Promise(r=>setTimeout(r,15));
+  }
+
+  // ---- DSP HELPERS ----
+
+  // ======== PHASE 1: SPECTRAL ENGINE (STFT / iSTFT / Wiener NR) ========
+
+  // Radix-2 DIT FFT in-place (size must be power of 2)
+  _fft(re, im) {
+    const n = re.length;
+    // Bit-reversal permutation
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { const tr=re[i]; re[i]=re[j]; re[j]=tr; const ti=im[i]; im[i]=im[j]; im[j]=ti; }
+    }
+    // Cooley-Tukey butterfly
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = -2 * Math.PI / len;
+      const wr = Math.cos(ang), wi = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let j = 0; j < (len >> 1); j++) {
+          const ur=re[i+j], ui=im[i+j];
+          const vr=re[i+j+(len>>1)]*cr - im[i+j+(len>>1)]*ci;
+          const vi=re[i+j+(len>>1)]*ci + im[i+j+(len>>1)]*cr;
+          re[i+j]=ur+vr; im[i+j]=ui+vi;
+          re[i+j+(len>>1)]=ur-vr; im[i+j+(len>>1)]=ui-vi;
+          const nr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=nr;
+        }
+      }
+    }
+  }
+
+  // IFFT via conjugate trick
+  _ifft(re, im) {
+    for (let i = 0; i < im.length; i++) im[i] = -im[i];
+    this._fft(re, im);
+    const n = re.length;
+    for (let i = 0; i < n; i++) { re[i] /= n; im[i] = -im[i] / n; }
+  }
+
+  // Blackman-Harris window
+  _makeWindow(N) {
+    const win = new Float64Array(N);
+    for (let i = 0; i < N; i++) {
+      const c = (2 * Math.PI * i) / (N - 1);
+      win[i] = 0.35875 - 0.48829*Math.cos(c) + 0.14128*Math.cos(2*c) - 0.01168*Math.cos(3*c);
+    }
+    return win;
+  }
+
+  // Real spectral noise reduction via Wiener filtering (replaces the old stub applyNR)
+  applySpectralNR(buf, amt, sensitivity, spectralSub, floorDb, smoothing, vadMask) {
+    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
+    const out = this.ctx.createBuffer(nCh, len, sr);
+    const N = 2048, H = 512, halfN = N / 2 + 1;
+    const win = this._makeWindow(N);
+    // over-subtraction 1..3, spectral floor 0.01..0.1
+    const alpha = 1 + amt * 2;
+    const beta = Math.max(0.01, 0.1 - spectralSub * 0.09);
+    const floorLin = Math.pow(10, floorDb / 20);
+    const sm = Math.max(0, Math.min(0.95, smoothing * 0.95));
+
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const outData = out.getChannelData(ch);
+      const normBuf = new Float64Array(len);
+
+      // Profile noise PSD from first ~500ms
+      const profLen = Math.min(Math.floor(sr * 0.5), len);
+      const noisePSD = new Float64Array(halfN);
+      let profFrames = 0;
+      for (let s = 0; s + N <= profLen; s += H) {
+        const re = new Float64Array(N), im = new Float64Array(N);
+        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
+        this._fft(re, im);
+        for (let k = 0; k < halfN; k++) noisePSD[k] += re[k]*re[k] + im[k]*im[k];
+        profFrames++;
+      }
+      if (profFrames > 0) for (let k = 0; k < halfN; k++) {
+        noisePSD[k] = Math.max(noisePSD[k] / profFrames, floorLin * floorLin);
+      }
+      const smoothedNoise = new Float64Array(noisePSD);
+
+      // Process all frames
+      let frameIdx = 0;
+      for (let s = 0; s + N <= len; s += H, frameIdx++) {
+        const re = new Float64Array(N), im = new Float64Array(N);
+        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
+        this._fft(re, im);
+
+        // If VAD mask available: only apply NR during non-speech frames
+        const frameTimeSec = s / sr;
+        const vadFrameIdx = vadMask ? Math.floor(frameTimeSec * 100) : -1;
+        const isSpeech = vadMask && vadFrameIdx < vadMask.length ? vadMask[vadFrameIdx] : false;
+
+        for (let k = 0; k < halfN; k++) {
+          const sigPSD = re[k]*re[k] + im[k]*im[k];
+          smoothedNoise[k] = sm * smoothedNoise[k] + (1 - sm) * noisePSD[k];
+          const nEst = alpha * smoothedNoise[k] * (1 + sensitivity * 0.5);
+          // Apply softer NR during speech frames: reduce noise estimate so Wiener
+          // gain stays higher (less attenuation) rather than using nEst as a gain floor
+          // (nEst is a PSD value, not a valid gain — using it as a floor could amplify).
+          const nEstFrame = isSpeech ? nEst * 0.3 : nEst;
+          const gain = sigPSD > 1e-12 ?
+            Math.max(Math.sqrt(Math.max(sigPSD - nEstFrame, 0) / sigPSD), beta) : beta;
+          re[k] *= gain; im[k] *= gain;
+          if (k > 0 && k < N - k) { re[N-k] = re[k]; im[N-k] = -im[k]; }
+        }
+        this._ifft(re, im);
+        for (let i = 0; i < N && s + i < len; i++) {
+          outData[s + i] += re[i] * win[i];
+          normBuf[s + i] += win[i] * win[i];
+        }
+      }
+      for (let i = 0; i < len; i++) {
+        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
+        outData[i] = Math.max(-1, Math.min(1, outData[i]));
+      }
+    }
+    return out;
+  }
+
+  // ======== PHASE 2: WIRED SLIDERS — SPECTRAL PROCESSING ========
+
+  // Background suppression: attenuate bins outside voice focus band
+  applyBgSuppress(buf, suppressAmt, voiceFocusLo, voiceFocusHi) {
+    if (suppressAmt <= 0) return buf;
+    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
+    const out = this.ctx.createBuffer(nCh, len, sr);
+    const N = 2048, H = 512, halfN = N / 2 + 1;
+    const win = this._makeWindow(N);
+    const g = 1 - suppressAmt / 100;
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const outData = out.getChannelData(ch);
+      const normBuf = new Float64Array(len);
+      for (let s = 0; s + N <= len; s += H) {
+        const re = new Float64Array(N), im = new Float64Array(N);
+        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
+        this._fft(re, im);
+        for (let k = 0; k < halfN; k++) {
+          const freq = k * sr / N;
+          if (freq < voiceFocusLo || freq > voiceFocusHi) {
+            re[k] *= g; im[k] *= g;
+            if (k > 0 && k < N - k) { re[N-k] *= g; im[N-k] *= g; }
+          }
+        }
+        this._ifft(re, im);
+        for (let i = 0; i < N && s + i < len; i++) {
+          outData[s + i] += re[i] * win[i];
+          normBuf[s + i] += win[i] * win[i];
+        }
+      }
+      for (let i = 0; i < len; i++) {
+        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
+        outData[i] = Math.max(-1, Math.min(1, outData[i]));
+      }
+    }
+    return out;
+  }
+
+  // Spectral dereverberation via temporal variance suppression
+  applyDereverb(buf, amt, decaySec) {
+    if (amt <= 0) return buf;
+    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
+    const out = this.ctx.createBuffer(nCh, len, sr);
+    const N = 2048, H = 512, halfN = N / 2 + 1;
+    const win = this._makeWindow(N);
+    const g = amt / 100;
+    const smCoef = Math.exp(-H / (sr * Math.max(0.05, decaySec)));
+
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const outData = out.getChannelData(ch);
+      const normBuf = new Float64Array(len);
+      const magMean = new Float64Array(halfN).fill(1e-6);
+      for (let s = 0; s + N <= len; s += H) {
+        const re = new Float64Array(N), im = new Float64Array(N);
+        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
+        this._fft(re, im);
+        for (let k = 0; k < halfN; k++) {
+          const mag = Math.sqrt(re[k]*re[k] + im[k]*im[k]);
+          // Reverb tail = magnitude smoothly less than running mean
+          const isReverb = mag < magMean[k] * 0.75;
+          const gain = isReverb ? Math.max(1 - g, 0.05) : 1;
+          re[k] *= gain; im[k] *= gain;
+          if (k > 0 && k < N - k) { re[N-k] *= gain; im[N-k] *= gain; }
+          magMean[k] = smCoef * magMean[k] + (1 - smCoef) * mag;
+        }
+        this._ifft(re, im);
+        for (let i = 0; i < N && s + i < len; i++) {
+          outData[s + i] += re[i] * win[i];
+          normBuf[s + i] += win[i] * win[i];
+        }
+      }
+      for (let i = 0; i < len; i++) {
+        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
+        outData[i] = Math.max(-1, Math.min(1, outData[i]));
+      }
+    }
+    return out;
+  }
+
+  // Formant shift via spectral envelope warping
+  applyFormantShift(buf, semitones) {
+    if (semitones === 0) return buf;
+    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
+    const out = this.ctx.createBuffer(nCh, len, sr);
+    const N = 2048, H = 512, halfN = N / 2 + 1;
+    const win = this._makeWindow(N);
+    const shiftFactor = Math.pow(2, semitones / 12);
+    const envWin = 20;
+
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const outData = out.getChannelData(ch);
+      const normBuf = new Float64Array(len);
+      for (let s = 0; s + N <= len; s += H) {
+        const re = new Float64Array(N), im = new Float64Array(N);
+        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
+        this._fft(re, im);
+        // Compute log-magnitude and extract spectral envelope via smoothing
+        const logMag = new Float64Array(halfN);
+        const phase = new Float64Array(halfN);
+        for (let k = 0; k < halfN; k++) {
+          logMag[k] = Math.log(Math.max(Math.sqrt(re[k]*re[k]+im[k]*im[k]), 1e-10));
+          phase[k] = Math.atan2(im[k], re[k]);
+        }
+        const envelope = new Float64Array(halfN);
+        for (let k = 0; k < halfN; k++) {
+          let sum = 0, cnt = 0;
+          for (let j = Math.max(0,k-envWin); j <= Math.min(halfN-1,k+envWin); j++) { sum+=logMag[j]; cnt++; }
+          envelope[k] = sum / cnt;
+        }
+        const detail = logMag.map((v,k) => v - envelope[k]);
+        // Warp envelope by shiftFactor
+        const newEnv = new Float64Array(halfN);
+        for (let k = 0; k < halfN; k++) {
+          const src = k / shiftFactor;
+          const lo = Math.floor(src), hi = Math.min(lo+1, halfN-1);
+          if (lo >= 0 && lo < halfN) newEnv[k] = (1-(src-lo))*envelope[lo] + (src-lo)*envelope[hi];
+        }
+        const reOut = new Float64Array(N), imOut = new Float64Array(N);
+        for (let k = 0; k < halfN; k++) {
+          const newMag = Math.exp(newEnv[k] + detail[k]);
+          reOut[k] = newMag * Math.cos(phase[k]);
+          imOut[k] = newMag * Math.sin(phase[k]);
+          if (k > 0 && k < N - k) { reOut[N-k] = reOut[k]; imOut[N-k] = -imOut[k]; }
+        }
+        this._ifft(reOut, imOut);
+        for (let i = 0; i < N && s + i < len; i++) {
+          outData[s + i] += reOut[i] * win[i];
+          normBuf[s + i] += win[i] * win[i];
+        }
+      }
+      for (let i = 0; i < len; i++) {
+        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
+        outData[i] = Math.max(-1, Math.min(1, outData[i]));
+      }
+    }
+    return out;
+  }
+
+  // Cross-channel phase alignment via cross-correlation lag detection
+  applyPhaseCorr(buf, corrAmt) {
+    if (corrAmt <= 0 || buf.numberOfChannels < 2) return buf;
+    const len = buf.length, sr = buf.sampleRate;
+    const out = this.ctx.createBuffer(buf.numberOfChannels, len, sr);
+    const L = buf.getChannelData(0), R = buf.getChannelData(1);
+    const oL = out.getChannelData(0), oR = out.getChannelData(1);
+    // Find best cross-correlation lag within ±5ms
+    const maxLag = Math.floor(sr * 0.005);
+    let bestLag = 0, bestCorr = -Infinity;
+    const sampleCount = Math.min(len, Math.floor(sr * 2));
+    for (let lag = -maxLag; lag <= maxLag; lag++) {
+      let corr = 0;
+      for (let i = maxLag; i < sampleCount - maxLag; i++) corr += L[i] * (R[i + lag] || 0);
+      if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
+    }
+    const actualLag = Math.round(bestLag * corrAmt / 100);
+    for (let i = 0; i < len; i++) {
+      oL[i] = L[i];
+      oR[i] = R[Math.max(0, Math.min(len-1, i - actualLag))];
+    }
+    for (let ch = 2; ch < buf.numberOfChannels; ch++) {
+      const inCh = buf.getChannelData(ch), outCh = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) outCh[i] = inCh[i];
+    }
+    return out;
+  }
+
+  // Crosstalk cancellation via mid/side matrix
+  applyCrosstalkCancel(buf, cancelAmt) {
+    if (cancelAmt <= 0 || buf.numberOfChannels < 2) return buf;
+    const len = buf.length, sr = buf.sampleRate;
+    const out = this.ctx.createBuffer(buf.numberOfChannels, len, sr);
+    const g = (cancelAmt / 100) * 0.5;
+    const L = buf.getChannelData(0), R = buf.getChannelData(1);
+    const oL = out.getChannelData(0), oR = out.getChannelData(1);
+    for (let i = 0; i < len; i++) {
+      oL[i] = L[i] - g * R[i];
+      oR[i] = R[i] - g * L[i];
+    }
+    for (let ch = 2; ch < buf.numberOfChannels; ch++) {
+      const inCh = buf.getChannelData(ch), outCh = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) outCh[i] = inCh[i];
+    }
+    return out;
+  }
+
+  // TPDF dither noise shaping before bit-depth reduction
+  // 🛡️ Sentinel: Fixed weak PRNG by using chunked crypto.getRandomValues()
+  applyDither(buf, ditherAmt) {
+    if (ditherAmt <= 0) return buf;
+    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
+    const out = this.ctx.createBuffer(nCh, len, sr);
+    const lsb = Math.pow(2, -15); // 16-bit LSB
+    const g = (ditherAmt / 100) * lsb;
+    const invMax = 1 / 4294967296;
+
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch), outCh = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        if (this._rndIdx >= this._rndBuf.length - 1) {
+          crypto.getRandomValues(this._rndBuf);
+          this._rndIdx = 0;
+        }
+        const r1 = this._rndBuf[this._rndIdx++] * invMax;
+        const r2 = this._rndBuf[this._rndIdx++] * invMax;
+        const tpdf = (r1 - r2) * g;
+        outCh[i] = Math.max(-1, Math.min(1, inp[i] + tpdf));
+      }
+    }
+    return out;
+  }
+
+  // ======== PHASE 4: ML / VAD INTEGRATION ========
+
+  // Trigger VAD model load in the ML Worker (fire-and-forget; mlReady set via _onMlMessage)
+  async loadModels() {
+    if (!this.mlWorker) {
+      structuredLog('warn', 'ML Worker not available — running without ML');
+      return;
+    }
+    const wasmRoot = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
+    this.mlWorker.postMessage({ type: 'loadModel', model: 'vad', wasmRoot });
+  }
+
+  // Run Silero VAD via ML Worker; returns boolean[] or null if unavailable
+  async runVAD(buf) {
+    if (!this.mlReady || !this.mlWorker) return null;
+    try {
+      const signal = new Float32Array(buf.getChannelData(0)); // copy for transfer
+      return await this._mlCall(
+        { type: 'runVAD', signal, sampleRate: buf.sampleRate },
+        [signal.buffer]
+      );
+    } catch(e) {
+      structuredLog('warn', 'VAD Worker call failed', { error: e.message });
+      return null;
+    }
+  }
+
+  // ---- ML WORKER: DeepFilterNet3 + Demucs + VAD ----
+
+  // Spin up ml-worker.js and initialise all models. Non-blocking; pipeline checks
+  // this.mlWorkerReady before dispatching work.
+  initMLWorker() {
+    if (this.mlWorker) return;
+    try {
+      this.mlWorker = new Worker('./ml-worker.js');
+      this.mlWorker.onmessage = (e) => {
+        const { type } = e.data;
+        if (type === 'ready') {
+          this.mlWorkerReady = true;
+          this.mlWorkerModels = e.data.models || {};
+          structuredLog('info', 'ML worker ready', { provider: e.data.provider, models: e.data.models });
+          // v20: Share ML worker with orchestrator
+          if (this.orchestrator) this.orchestrator.mlWorker = this.mlWorker;
+        } else if (type === 'log') {
+          structuredLog(e.data.level, '[ml-worker] ' + e.data.msg);
+        }
+        // 'result' and 'progress' messages are handled per-call via a promise wrapper
+      };
+      this.mlWorker.onerror = (err) => {
+        structuredLog('warn', 'ML worker error', { error: err.message });
+        this.mlWorkerReady = false;
+      };
+      // v20: Pass ONNX Runtime URL and initial model list
+      this.mlWorker.postMessage({
+        type: 'init',
+        ortUrl: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js',
+        models: ['vad']
+      });
     } catch (e) {
       if (e === 'abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent = 'Aborted'; }
       else { console.error('Pipeline:', e); this.setStatus('ERROR'); this.dom.pipeDetail.textContent = e.message || String(e); }

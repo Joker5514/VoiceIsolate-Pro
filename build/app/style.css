@@ -245,6 +245,12 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 .diag-section .card:hover{border-color:rgba(34,211,238,0.15)}
 
 /* ---- ACCESSIBILITY ---- */
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.sr-row > input[type="range"]:focus-visible{outline:none}
+.sr-row > input[type="range"]:focus-visible::-webkit-slider-thumb{
+  box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--cyan),0 2px 8px rgba(0,0,0,0.5)}
+.sr-row > input[type="range"]:focus-visible::-moz-range-thumb{
+  box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--cyan)}
 :focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
