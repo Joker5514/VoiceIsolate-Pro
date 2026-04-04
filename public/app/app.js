@@ -77,6 +77,7 @@ const SLIDERS = {
   ]
 };
 
+// ---- PRESETS
 const PRESETS = {
   podcast: {gateThresh:-38,gateRange:-35,gateAttack:2,gateRelease:60,gateHold:15,gateLookahead:5,nrAmount:60,nrSensitivity:55,nrSpectralSub:45,nrFloor:-55,nrSmoothing:40,eqSub:-10,eqBass:-1,eqWarmth:2,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:4,eqClarity:2,eqAir:1,eqBrill:-3,compThresh:-20,compRatio:5,compAttack:6,compRelease:180,compKnee:6,compMakeup:8,limThresh:-1,limRelease:8,hpFreq:80,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:40,specTilt:0.5,formantShift:0,derevAmt:50,derevDecay:0.4,harmRecov:15,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:80,bgSuppress:60,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
   film: {gateThresh:-50,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:25,gateLookahead:5,nrAmount:40,nrSensitivity:45,nrSpectralSub:30,nrFloor:-60,nrSmoothing:40,eqSub:-6,eqBass:1,eqWarmth:1,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:2,eqBrill:-1,compThresh:-28,compRatio:3,compAttack:12,compRelease:300,compKnee:10,compMakeup:4,limThresh:-1,limRelease:15,hpFreq:60,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:-0.5,formantShift:0,derevAmt:30,derevDecay:0.6,harmRecov:25,harmOrder:3,stereoWidth:120,phaseCorr:0,voiceIso:60,bgSuppress:40,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:110},
@@ -84,7 +85,9 @@ const PRESETS = {
   forensic: {gateThresh:-65,gateRange:-20,gateAttack:1,gateRelease:150,gateHold:30,gateLookahead:10,nrAmount:30,nrSensitivity:60,nrSpectralSub:20,nrFloor:-70,nrSmoothing:50,eqSub:-2,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:0,compThresh:-18,compRatio:2,compAttack:15,compRelease:400,compKnee:12,compMakeup:10,limThresh:-0.5,limRelease:20,hpFreq:50,hpQ:0.71,lpFreq:18000,lpQ:0.71,deEssFreq:8000,deEssAmt:10,specTilt:1,formantShift:0,derevAmt:20,derevDecay:0.8,harmRecov:35,harmOrder:4,stereoWidth:100,phaseCorr:30,voiceIso:90,bgSuppress:30,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:3,dryWet:90,ditherAmt:0,outWidth:100},
   music: {gateThresh:-55,gateRange:-25,gateAttack:3,gateRelease:120,gateHold:15,gateLookahead:3,nrAmount:25,nrSensitivity:40,nrSpectralSub:20,nrFloor:-65,nrSmoothing:45,eqSub:-3,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:3,eqBrill:0,compThresh:-30,compRatio:2,compAttack:20,compRelease:350,compKnee:15,compMakeup:3,limThresh:-0.5,limRelease:12,hpFreq:40,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:15,specTilt:-1,formantShift:0,derevAmt:15,derevDecay:1.0,harmRecov:30,harmOrder:4,stereoWidth:150,phaseCorr:0,voiceIso:50,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:0,dryWet:85,ditherAmt:5,outWidth:140},
   broadcast: {gateThresh:-35,gateRange:-40,gateAttack:1.5,gateRelease:50,gateHold:10,gateLookahead:3,nrAmount:65,nrSensitivity:60,nrSpectralSub:50,nrFloor:-50,nrSmoothing:30,eqSub:-12,eqBass:-2,eqWarmth:2,eqBody:0,eqLowMid:-2,eqMid:2,eqPresence:5,eqClarity:3,eqAir:1,eqBrill:-4,compThresh:-18,compRatio:6,compAttack:4,compRelease:150,compKnee:4,compMakeup:10,limThresh:-1,limRelease:5,hpFreq:120,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:45,specTilt:1,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:10,harmOrder:2,stereoWidth:60,phaseCorr:0,voiceIso:85,bgSuppress:70,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:70},
-  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100}
+  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100},
+  whisper: {gateThresh:-70,gateRange:-10,gateAttack:1,gateRelease:300,gateHold:50,gateLookahead:10,nrAmount:20,nrSensitivity:35,nrSpectralSub:15,nrFloor:-75,nrSmoothing:60,eqSub:-2,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:1,eqPresence:2,eqClarity:1,eqAir:0,eqBrill:-1,compThresh:-32,compRatio:2,compAttack:25,compRelease:500,compKnee:18,compMakeup:4,limThresh:-0.5,limRelease:20,hpFreq:60,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:6000,deEssAmt:10,specTilt:-0.5,formantShift:0,derevAmt:10,derevDecay:1.2,harmRecov:20,harmOrder:3,stereoWidth:90,phaseCorr:0,voiceIso:40,bgSuppress:15,voiceFocusLo:100,voiceFocusHi:9000,crosstalkCancel:0,outGain:5,dryWet:80,ditherAmt:2,outWidth:100},
+  crystalVoice: {gateThresh:-45,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:20,gateLookahead:5,nrAmount:50,nrSensitivity:50,nrSpectralSub:35,nrFloor:-60,nrSmoothing:30,eqSub:-6,eqBass:0,eqWarmth:1,eqBody:0,eqLowMid:-1,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:1,compThresh:-20,compRatio:4,compAttack:5,compRelease:200,compKnee:6,compMakeup:7,limThresh:-1,limRelease:8,hpFreq:90,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:7500,deEssAmt:30,specTilt:1,formantShift:0,derevAmt:40,derevDecay:0.4,harmRecov:30,harmOrder:3,stereoWidth:110,phaseCorr:10,voiceIso:85,bgSuppress:65,voiceFocusLo:110,voiceFocusHi:7000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:105}
 };
 
 const STAGES = [
@@ -173,6 +176,10 @@ class VoiceIsolatePro {
     for (let i = 0; i < 32; i++) this.erbThresholds[i] = 0.08 + Math.random() * 0.04;
     this.diagFpsFrames = 0;
     this.diagFpsLast = performance.now();
+    this.forensicLog = [];
+    this._mlCallId = 0;
+    this._rndBuf = new Uint32Array(4096);
+    this._rndIdx = 0;
     this.init();
   }
 
@@ -187,6 +194,7 @@ class VoiceIsolatePro {
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.ctx.audioWorklet.addModule('./voice-isolate-processor.js').catch(() => {});
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;
@@ -233,6 +241,7 @@ class VoiceIsolatePro {
         inputEl.setAttribute('aria-valuemax', s.max);
         inputEl.setAttribute('aria-valuenow', s.val);
         // Set initial fill percentage for styled track
+        // pct formula: ((s.val - s.min) / (s.max - s.min)) * 100
         const range = s.max - s.min;
         const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
         inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
@@ -289,6 +298,11 @@ class VoiceIsolatePro {
       diagFps:g('diagFps'),
       lufsShort:g('lufsShort'), lufsInt:g('lufsInt'), lufsPeak:g('lufsPeak'), lufsCrest:g('lufsCrest'),
       abOverlayBtn:g('abOverlayBtn'),
+      mobileProcessBtn:g('mobileProcessBtn'),
+      mobileReprocessBtn:g('mobileReprocessBtn'),
+      mobileStopBtn:g('mobileStopBtn'),
+      statsToggle:g('statsToggle'),
+      hdrStats:g('hdrStats'),
     };
   }
 
@@ -354,6 +368,17 @@ class VoiceIsolatePro {
       this.abOverlay = !this.abOverlay;
       this.dom.abOverlayBtn.classList.toggle('active', this.abOverlay);
     });
+    // Mobile action bar listeners
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.addEventListener('click', () => this.runPipeline());
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.addEventListener('click', () => this.runPipeline());
+    if (this.dom.mobileStopBtn) this.dom.mobileStopBtn.addEventListener('click', () => { this.abortFlag = true; });
+    if (this.dom.statsToggle && this.dom.hdrStats) {
+      this.dom.statsToggle.addEventListener('click', () => {
+        const expanded = this.dom.hdrStats.classList.toggle('expanded');
+        this.dom.statsToggle.setAttribute('aria-expanded', String(expanded));
+        this.dom.statsToggle.textContent = expanded ? '▲' : '▼';
+      });
+    }
   }
 
   onSlider(el) {
@@ -786,6 +811,9 @@ class VoiceIsolatePro {
     if (!this.inputBuffer || this.isProcessing) return;
     this.isProcessing = true; this.abortFlag = false;
     this.dom.processBtn.style.display = 'none'; this.dom.stopProcBtn.style.display = 'inline-flex';
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.style.display = 'none';
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display = 'none';
+    if (this.dom.mobileStopBtn) this.dom.mobileStopBtn.style.display = 'inline-flex';
     this.dom.saveProcBtn.disabled = true; this.dom.tpAB.disabled = true;
     this.setStatus('PROCESSING');
     const t0 = performance.now();
@@ -1058,6 +1086,11 @@ class VoiceIsolatePro {
       await this.pip(27, total);
       if (p.dryWet < 100) fin = this.mixDW(this.inputBuffer, fin, p.dryWet / 100);
 
+      // Apply formant shift, phase correction, and dither (p.formantShift, p.phaseCorr, p.ditherAmt)
+      if (p.formantShift !== 0) fin = this.applyFormantShift(fin, p.formantShift);
+      if (p.phaseCorr > 0) fin = this.applyPhaseCorr(fin, p.phaseCorr);
+      if (p.ditherAmt > 0) fin = this.applyDither(fin, p.ditherAmt);
+
       // Peak normalize to limiter ceiling
       await this.pip(28, total);
       fin = this.peakNorm(fin, p.limThresh);
@@ -1075,6 +1108,7 @@ class VoiceIsolatePro {
       this.drawWaveform(fin, this.dom.waveProcCanvas, '#22d3ee');
       this.dom.stVoices.textContent = this.estVoices(fin);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
+      if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
       this.dom.tpABLabel.textContent = 'Ready — A/B';
       this.setStatus('COMPLETE');
     } catch(e) {
@@ -1138,12 +1172,11 @@ class VoiceIsolatePro {
     for (let i = 0; i < n; i++) { re[i] /= n; im[i] = -im[i] / n; }
   }
 
-  // Blackman-Harris window
+  // Periodic Hann window (correct COLA for 75% overlap)
   _makeWindow(N) {
     const win = new Float64Array(N);
     for (let i = 0; i < N; i++) {
-      const c = (2 * Math.PI * i) / (N - 1);
-      win[i] = 0.35875 - 0.48829*Math.cos(c) + 0.14128*Math.cos(2*c) - 0.01168*Math.cos(3*c);
+      win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / N));
     }
     return win;
   }
@@ -1435,6 +1468,54 @@ class VoiceIsolatePro {
   }
 
   // ======== PHASE 4: ML / VAD INTEGRATION ========
+
+  // Promise wrapper for ML Worker calls — resolves on matching result message
+  _mlCall(payload, transfer = []) {
+    return new Promise((resolve, reject) => {
+      const id = ++this._mlCallId;
+      const handler = (e) => {
+        if (e.data.id !== id) return;
+        this.mlWorker.removeEventListener('message', handler);
+        if (e.data.error) reject(new Error(e.data.error));
+        else resolve(e.data.result);
+      };
+      this.mlWorker.addEventListener('message', handler);
+      this.mlWorker.postMessage({ ...payload, id }, transfer);
+    });
+  }
+
+  // Run ML source separation (Demucs/BSRNN) via ML Worker
+  async runSeparation(buf, model = 'demucs') {
+    if (!this.mlWorker) return buf;
+    try {
+      const signal = new Float32Array(buf.getChannelData(0));
+      return await this._mlCall({ type: 'process', model, signal, sampleRate: buf.sampleRate }, [signal.buffer]);
+    } catch (e) {
+      structuredLog('warn', 'ML separation failed', { error: e.message });
+      return buf;
+    }
+  }
+
+  // Forensic audit: hash a buffer stage and log it
+  async addAuditEntry(buf, stageName) {
+    const data = (buf && buf.getChannelData) ? new Float32Array(buf.getChannelData(0)) : new Float32Array(0);
+    const hashBuf = await crypto.subtle.digest('SHA-256', data.buffer);
+    const hash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    this.forensicLog.push({ stage: stageName, hash, timestamp: Date.now() });
+  }
+
+  // Export forensic audit log as JSON
+  downloadAuditLog() {
+    const json = JSON.stringify(this.forensicLog, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'audit-log-' + Date.now() + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
 
   // Trigger VAD model load in the ML Worker (fire-and-forget; mlReady set via _onMlMessage)
   async loadModels() {

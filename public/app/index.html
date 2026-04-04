@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -21,7 +22,8 @@
         <span class="hdr-badge diag-badge">6-PANEL DIAGNOSTICS</span>
       </div>
     </div>
-    <div class="hdr-stats">
+    <button id="statsToggle" class="hdr-stats-toggle" aria-label="Toggle stats" aria-expanded="false">&#9660;</button>
+    <div class="hdr-stats" id="hdrStats">
       <div class="hdr-stat"><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR Gain</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
@@ -100,10 +102,12 @@
       <div class="actions-row">
         <button id="processBtn" class="btn btn-primary" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
-          Process (35-Stage)
+          Process (32-Stage)
         </button>
         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
+        <button id="forensicToggle" class="btn btn-xs">Forensic</button>
+        <button id="auditLogBtn" class="btn btn-xs" disabled>Audit Log</button>
       </div>
 
       <!-- Pipeline -->
@@ -299,6 +303,17 @@
   </footer>
 
   <div id="tooltip" class="slider-tooltip"></div>
+
+  <!-- Mobile sticky action bar -->
+  <div class="mobile-action-bar" id="mobileActionBar">
+    <button id="mobileProcessBtn" class="btn btn-primary" disabled aria-label="Process audio">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+      Process
+    </button>
+    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
+    <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Stop</button>
+  </div>
+
   <script src="dsp-core.js"></script>
   <script src="app.js"></script>
 </body>
