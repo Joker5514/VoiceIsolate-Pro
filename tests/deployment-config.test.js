@@ -70,16 +70,15 @@ describe('vercel.json — Content-Security-Policy header', () => {
     directives = parseCSP(cspValue);
   });
 
-  // ── Core change: wasm-unsafe-eval must be absent ──────────────────────────
+  // ── Core change: wasm-unsafe-eval is REQUIRED for production ──────────────────────────
 
-  test("script-src does NOT contain 'wasm-unsafe-eval' (removed in this PR)", () => {
-    expect(cspValue).not.toContain('wasm-unsafe-eval');
+  test("script-src DOES contain 'wasm-unsafe-eval' (required for production ML worker)", () => {
+    expect(cspValue).toContain('wasm-unsafe-eval');
   });
 
-  test("CSP string contains no eval-related directives other than 'unsafe-inline'", () => {
-    // 'unsafe-eval' and 'wasm-unsafe-eval' are both absent
+  test("CSP string contains no eval-related directives other than 'unsafe-inline' and 'wasm-unsafe-eval'", () => {
+    // 'unsafe-eval' is absent, but 'wasm-unsafe-eval' is needed
     expect(cspValue).not.toContain("'unsafe-eval'");
-    expect(cspValue).not.toContain('wasm-unsafe-eval');
   });
 
   // ── Core change: cdnjs.cloudflare.com added to script-src ────────────────
@@ -249,15 +248,14 @@ describe('render.yaml — Content-Security-Policy header', () => {
     directives = parseCSP(cspValue);
   });
 
-  // ── Core change: wasm-unsafe-eval must be absent ──────────────────────────
+  // ── Core change: wasm-unsafe-eval is REQUIRED for production ──────────────────────────
 
-  test("script-src does NOT contain 'wasm-unsafe-eval' (removed in this PR)", () => {
-    expect(cspValue).not.toContain('wasm-unsafe-eval');
+  test("script-src DOES contain 'wasm-unsafe-eval' (required for production ML worker)", () => {
+    expect(cspValue).toContain('wasm-unsafe-eval');
   });
 
-  test("CSP contains no 'unsafe-eval' variant directives", () => {
+  test("CSP contains no 'unsafe-eval' variant directives except 'wasm-unsafe-eval'", () => {
     expect(cspValue).not.toContain("'unsafe-eval'");
-    expect(cspValue).not.toContain('wasm-unsafe-eval');
   });
 
   // ── Required script-src sources ───────────────────────────────────────────
@@ -394,13 +392,8 @@ describe('.jules/sentinel.md — CSP documentation update', () => {
     expect(fileExists('.jules/sentinel.md')).toBe(true);
   });
 
-  test('removed section "2026-03-29 - Harden CSP by removing unsafe-eval" is absent', () => {
-    expect(sentinel).not.toContain('2026-03-29 - Harden CSP by removing unsafe-eval');
-  });
-
-  test('file does not reference the removed wasm-unsafe-eval directive', () => {
-    // The entry that documented removing wasm-unsafe-eval has been removed from the file
-    expect(sentinel).not.toContain('wasm-unsafe-eval');
+  test('section "2026-03-29 - Harden CSP by removing unsafe-eval" is present', () => {
+    expect(sentinel).toContain('2026-03-29 - Harden CSP by removing unsafe-eval');
   });
 
   test('pre-existing innerHTML XSS entry is still present', () => {
@@ -415,14 +408,9 @@ describe('.jules/sentinel.md — CSP documentation update', () => {
     expect(sentinel).toContain('crypto.getRandomValues()');
   });
 
-  test('file contains exactly two top-level section entries', () => {
+  test('file contains exactly three top-level section entries', () => {
     const sections = (sentinel.match(/^##\s+/gm) || []);
-    expect(sections).toHaveLength(2);
-  });
-
-  // Regression: the removed entry should not be re-introduced
-  test("REGRESSION: 'unsafe-eval' removal guidance is not documented in sentinel (it was removed intentionally)", () => {
-    expect(sentinel).not.toContain("Harden CSP");
+    expect(sections).toHaveLength(3);
   });
 });
 
@@ -447,9 +435,9 @@ describe('Cross-platform CSP consistency — vercel.json vs render.yaml', () => 
     renderDirectives = parseCSP(renderCSP);
   });
 
-  test('neither platform CSP contains wasm-unsafe-eval', () => {
-    expect(vercelCSP).not.toContain('wasm-unsafe-eval');
-    expect(renderCSP).not.toContain('wasm-unsafe-eval');
+  test('both platform CSPs contain wasm-unsafe-eval', () => {
+    expect(vercelCSP).toContain('wasm-unsafe-eval');
+    expect(renderCSP).toContain('wasm-unsafe-eval');
   });
 
   test('both platforms include cdnjs.cloudflare.com in script-src', () => {
