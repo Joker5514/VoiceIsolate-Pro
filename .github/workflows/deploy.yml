@@ -60,7 +60,7 @@ jobs:
       - name: Check single-pass spectral architecture
         run: |
           # Ensure no multiple STFT/iSTFT patterns (architectural violation)
-          STFT_COUNT=$(grep -c "stft\|STFT\|forwardFFT" public/app/app.js 2>/dev/null || echo 0)
+          STFT_COUNT=$(grep -c "stft|STFT|forwardFFT" public/app/app.js 2>/dev/null || echo 0)
           echo "STFT references: $STFT_COUNT"
       - name: Validate file sizes
         run: |
@@ -72,7 +72,7 @@ jobs:
   deploy-preview:
     name: Deploy Preview
     needs: [lint-test, validate]
-    if: github.event_name == 'pull_request' && secrets.VERCEL_TOKEN != ''
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -89,7 +89,7 @@ jobs:
   deploy-production:
     name: Deploy Production
     needs: [lint-test, validate]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.VERCEL_TOKEN != ''
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -101,4 +101,3 @@ jobs:
         run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
       - name: Deploy Production
         run: vercel deploy --prod --token=$VERCEL_TOKEN
-
