@@ -98,7 +98,8 @@ describe('--pct CSS variable formula', () => {
 describe('app.js — --pct CSS variable wiring', () => {
   test('initPct calculation present in slider render method', () => {
     expect(appJs).toContain('initPct');
-    expect(appJs).toContain("((s.val - s.min) / (s.max - s.min)) * 100");
+    expect(appJs).toContain('const range = s.max - s.min');
+    expect(appJs).toContain('range > 0 ? ((s.val - s.min) / range) * 100 : 0');
   });
 
   test('initPct result applied via style.setProperty', () => {
