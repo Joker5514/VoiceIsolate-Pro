@@ -1,5 +1,6 @@
 name: CI & Deploy
 
+
 on:
   push:
     branches: [main]
@@ -7,13 +8,17 @@ on:
     branches: [main]
 
 
+
+
 # Restrict GITHUB_TOKEN permissions to minimum required
 permissions:
   contents: read
 
+
 env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
 
 jobs:
   lint-test:
@@ -34,6 +39,7 @@ jobs:
         run: npm run test
       - name: Run validation
         run: npm run validate
+
 
   validate:
     name: Validate Structure
@@ -62,10 +68,11 @@ jobs:
           echo "app.js: ${APP_SIZE} bytes"
           [ "$APP_SIZE" -gt 1000 ] && echo "✓ app.js has content" || (echo "✗ app.js too small" && exit 1)
 
+
   deploy-preview:
     name: Deploy Preview
     needs: [lint-test, validate]
-    if: github.event_name == 'pull_request' && env.VERCEL_TOKEN != ''
+    if: github.event_name == 'pull_request' && secrets.VERCEL_TOKEN != ''
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -78,10 +85,11 @@ jobs:
       - name: Deploy Preview
         run: vercel deploy --token=$VERCEL_TOKEN
 
+
   deploy-production:
     name: Deploy Production
     needs: [lint-test, validate]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && env.VERCEL_TOKEN != ''
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.VERCEL_TOKEN != ''
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -93,3 +101,4 @@ jobs:
         run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
       - name: Deploy Production
         run: vercel deploy --prod --token=$VERCEL_TOKEN
+
