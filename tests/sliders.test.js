@@ -96,9 +96,9 @@ describe('STFT engine', () => {
     expect(appJs).toContain('_makeWindow(N)');
   });
 
-  test('Blackman-Harris coefficients should be present', () => {
-    expect(appJs).toContain('0.35875');
-    expect(appJs).toContain('0.48829');
+  test('Hann window formula should be present', () => {
+    // Window was updated from Blackman-Harris to periodic Hann for correct COLA
+    expect(appJs).toContain('0.5 * (1 - Math.cos(');
   });
 });
 

@@ -19,6 +19,7 @@ export default [
         module: 'readonly',               // CommonJS export check for testing
         PipelineState: 'readonly',        // loaded via separate script tag
         PipelineOrchestrator: 'readonly', // loaded via separate script tag
+        SpeakerRegistry: 'readonly',      // loaded via separate script tag
       },
     },
     rules: {

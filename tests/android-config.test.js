@@ -66,8 +66,8 @@ describe('capacitor.config.json — structure and values', () => {
     expect(cfg.android.captureInput).toBe(true);
   });
 
-  test('android.appendUserAgent includes VoiceIsolatePro version', () => {
-    expect(cfg.android.appendUserAgent).toMatch(/VoiceIsolatePro\/\d+\.\d+/);
+  test('android.appendUserAgent includes VoiceIsolatePro/22.1', () => {
+    expect(cfg.android.appendUserAgent).toBe('VoiceIsolatePro/22.1');
   });
 
   test('ios section is defined', () => {
@@ -88,6 +88,20 @@ describe('capacitor.config.json — structure and values', () => {
 
   test('ios.appendUserAgent matches android user agent version', () => {
     expect(cfg.ios.appendUserAgent).toBe(cfg.android.appendUserAgent);
+  });
+
+  test('server.iosScheme is configured', () => {
+    expect(cfg.server.iosScheme).toBe('capacitor');
+  });
+
+  test('server.hostname is configured', () => {
+    expect(cfg.server.hostname).toBe('voiceisolatepro.app');
+  });
+
+  test('plugins section is configured with SplashScreen', () => {
+    expect(cfg.plugins).toBeDefined();
+    expect(cfg.plugins.SplashScreen).toBeDefined();
+    expect(cfg.plugins.SplashScreen.backgroundColor).toBe('#0a0a0f');
   });
 
   test('appId format is valid reverse-domain notation', () => {
@@ -150,9 +164,23 @@ describe('AndroidManifest.xml — structure and security', () => {
     expect(manifest).toContain('android.permission.INTERNET');
   });
 
-  test('no dangerous permissions beyond INTERNET', () => {
-    // The app only needs INTERNET for web content loading
-    expect(manifest).not.toContain('android.permission.RECORD_AUDIO');
+  test('RECORD_AUDIO permission is declared (required for live audio capture)', () => {
+    expect(manifest).toContain('android.permission.RECORD_AUDIO');
+  });
+
+  test('MODIFY_AUDIO_SETTINGS permission is declared', () => {
+    expect(manifest).toContain('android.permission.MODIFY_AUDIO_SETTINGS');
+  });
+
+  test('READ_MEDIA_AUDIO permission is declared (Android 13+ media access)', () => {
+    expect(manifest).toContain('android.permission.READ_MEDIA_AUDIO');
+  });
+
+  test('FOREGROUND_SERVICE permission is declared (background audio processing)', () => {
+    expect(manifest).toContain('android.permission.FOREGROUND_SERVICE');
+  });
+
+  test('no legacy storage permissions (use scoped storage instead)', () => {
     expect(manifest).not.toContain('android.permission.READ_EXTERNAL_STORAGE');
     expect(manifest).not.toContain('android.permission.WRITE_EXTERNAL_STORAGE');
   });
@@ -418,12 +446,12 @@ describe('build.gradle — app namespace and applicationId', () => {
     expect(nsMatch[1]).toBe(idMatch[1]);
   });
 
-  test('versionCode is defined', () => {
-    expect(buildGradle).toContain('versionCode 1');
+  test('versionCode is 22100 (matching v22.1.0)', () => {
+    expect(buildGradle).toContain('versionCode 22100');
   });
 
-  test('versionName is defined', () => {
-    expect(buildGradle).toMatch(/versionName\s+["']\d+\.\d+["']/);
+  test('versionName is 22.1.0', () => {
+    expect(buildGradle).toContain('versionName "22.1.0"');
   });
 
   test('testInstrumentationRunner is AndroidJUnitRunner', () => {

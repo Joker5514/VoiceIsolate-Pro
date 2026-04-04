@@ -3,18 +3,47 @@
   "appName": "VoiceIsolate Pro",
   "webDir": "build",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "iosScheme": "capacitor",
+    "hostname": "voiceisolatepro.app"
   },
   "android": {
     "allowMixedContent": false,
     "captureInput": true,
     "webContentsDebuggingEnabled": false,
-    "appendUserAgent": "VoiceIsolatePro/21.0"
+    "appendUserAgent": "VoiceIsolatePro/22.1",
+    "backgroundColor": "#0a0a0f",
+    "minWebViewVersion": 90,
+    "overrideUserAgent": false
   },
   "ios": {
     "contentInset": "automatic",
     "allowsLinkPreview": false,
     "scrollEnabled": true,
-    "appendUserAgent": "VoiceIsolatePro/21.0"
+    "appendUserAgent": "VoiceIsolatePro/22.1",
+    "backgroundColor": "#0a0a0f",
+    "preferredContentMode": "mobile",
+    "limitsNavigationsToAppBoundDomains": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "backgroundColor": "#0a0a0f",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0a0a0f"
+    },
+    "Keyboard": {
+      "resize": "body",
+      "resizeOnFullScreen": true
+    }
   }
 }

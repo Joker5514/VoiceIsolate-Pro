@@ -1,0 +1,104 @@
+# VoiceIsolate Pro — Fastlane Configuration
+# Automates build, test, and release for Android and iOS
+
+default_platform(:ios)
+
+# ─── iOS ─────────────────────────────────────────────────────────────────────────
+
+platform :ios do
+  desc "Build iOS app for development"
+  lane :build_dev do
+    sh "cd ../.. && npm run build"
+    sh "cd ../.. && npx cap sync ios"
+    build_app(
+      workspace: "../ios/App/App.xcworkspace",
+      scheme: "App",
+      configuration: "Debug",
+      export_method: "development",
+      output_directory: "../ios/App/output",
+      output_name: "VoiceIsolatePro-dev.ipa"
+    )
+  end
+
+  desc "Build iOS app for release"
+  lane :build_release do
+    sh "cd ../.. && npm run build"
+    sh "cd ../.. && npx cap sync ios"
+    increment_build_number(
+      build_number: ENV["BUILD_NUMBER"] || "22100",
+      xcodeproj: "../ios/App/App.xcodeproj"
+    )
+    build_app(
+      workspace: "../ios/App/App.xcworkspace",
+      scheme: "App",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "../ios/App/output",
+      output_name: "VoiceIsolatePro.ipa"
+    )
+  end
+
+  desc "Upload to TestFlight"
+  lane :beta do
+    build_release
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc "Upload to App Store"
+  lane :release do
+    build_release
+    upload_to_app_store(
+      force: true,
+      skip_metadata: false,
+      skip_screenshots: true
+    )
+  end
+end
+
+# ─── Android ─────────────────────────────────────────────────────────────────────
+
+platform :android do
+  desc "Build Android app for development (debug APK)"
+  lane :build_dev do
+    sh "cd ../.. && npm run build"
+    sh "cd ../.. && npx cap sync android"
+    gradle(
+      project_dir: "../android",
+      task: "assembleDebug"
+    )
+  end
+
+  desc "Build Android app for release (signed AAB)"
+  lane :build_release do
+    sh "cd ../.. && npm run build"
+    sh "cd ../.. && npx cap sync android"
+    gradle(
+      project_dir: "../android",
+      task: "bundleRelease"
+    )
+  end
+
+  desc "Upload to Google Play internal track"
+  lane :beta do
+    build_release
+    upload_to_play_store(
+      track: "internal",
+      aab: "../android/app/build/outputs/bundle/release/app-release.aab",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
+  desc "Promote to production on Google Play"
+  lane :release do
+    upload_to_play_store(
+      track: "internal",
+      track_promote_to: "production",
+      skip_upload_aab: true,
+      skip_upload_metadata: false
+    )
+  end
+end

@@ -40,6 +40,7 @@ function _validateToken(token) {
     const expectedSigBuf = Buffer.from(expectedSig, 'base64url');
     const providedSigBuf = Buffer.from(parts[2], 'base64url');
     if (expectedSigBuf.length !== providedSigBuf.length || !crypto.timingSafeEqual(expectedSigBuf, providedSigBuf)) return null;
+    if (expectedSig !== parts[2]) return null;
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
     if (Date.now() / 1000 > payload.exp) return null;
     return payload;
