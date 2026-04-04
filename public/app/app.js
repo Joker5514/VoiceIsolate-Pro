@@ -501,9 +501,13 @@ class VoiceIsolatePro {
     try {
       // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
 
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska', 'audio/midi'];
-      if (file.type && !allowedTypes.includes(file.type.toLowerCase())) throw new Error('Unsupported file type');
+      const normalizedType = (file.type || '').toLowerCase();
+      const normalizedName = (file.name || '').toLowerCase();
+      const isMidiFile = normalizedType === 'audio/midi' || normalizedType === 'audio/x-midi' || normalizedName.endsWith('.mid') || normalizedName.endsWith('.midi');
+      if (isMidiFile) throw new Error('MIDI files are not supported in this audio decode path. Please export the MIDI to WAV, MP3, or another rendered audio format first.');
 
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska'];
+      if (normalizedType && !allowedTypes.includes(normalizedType)) throw new Error('Unsupported file type');
       this.ensureCtx();
       this.stop(); // stop any current playback
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
