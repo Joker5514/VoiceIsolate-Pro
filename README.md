@@ -30,7 +30,7 @@ VoiceIsolate Pro is a production-grade audio processing platform that isolates v
 - **AI Engine v2**: Voice fingerprinting, advanced auto-tune via gradient descent, noise profile library, and multi-speaker detection.
 - **Batch Processing**: Process multiple files concurrently with ZIP export (Studio/Enterprise feature).
 - **Cloud Sync**: Sync presets, noise profiles, and history across devices (Studio/Enterprise feature).
-- **Privacy-First Analytics**: Local usage tracking with optional server reporting.
+- **Privacy-First Analytics**: Local-only usage tracking by default. Server reporting is strictly opt-in and never includes audio data or content.
 ## Architecture
 
 ```
@@ -161,7 +161,7 @@ Classical DSP pipeline operates independently without ML for lightweight deploym
 ## Privacy & Security
 
 - **100% Local Processing** — All audio stays in the browser. Zero network requests during processing.
-- **Zero Telemetry** — No analytics, tracking, or fingerprinting.
+- **Zero Audio Telemetry** — No audio data, content, or fingerprints are ever transmitted. Usage analytics (e.g., session counts) are local-only by default; server reporting requires explicit opt-in.
 - **COOP/COEP Headers** — Required for SharedArrayBuffer, configured in `vercel.json`.
 - **Strict CSP** — Only allows self, cdnjs.cloudflare.com (Three.js), and blob/data URIs.
 
