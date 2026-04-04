@@ -194,7 +194,7 @@ class VoiceIsolatePro {
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      this.ctx.audioWorklet.addModule('./voice-isolate-processor.js').catch(() => {});
+      this.ctx.audioWorklet.addModule('./voice-isolate-processor.js').catch(err => console.error('Failed to add AudioWorklet module:', err));
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;
