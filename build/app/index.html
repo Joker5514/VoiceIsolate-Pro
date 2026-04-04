@@ -2,29 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>VoiceIsolate Pro v21.0 – Engineer Mode</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="description" content="Studio-grade voice isolation and audio enhancement. 32-stage DSP pipeline with ML-powered noise removal. 100% local processing." />
-  <meta name="theme-color" content="#0a0a0f" />
-  <!-- Mobile App Meta -->
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="VoiceIsolate Pro" />
-  <!-- PWA Manifest -->
-  <link rel="manifest" href="/manifest.json" />
+  <title>VoiceIsolate Pro v22.0 – Engineer Mode</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-  <!-- onnxruntime-web loaded dynamically in ml-worker.js via importScripts -->
-  <!-- <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js"></script> -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <!-- Vercel Speed Insights: must be defined before app.js -->
-  <script>
-    window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
-  </script>
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="mobile.css" />
 </head>
 <body>
   <!-- HEADER -->
@@ -32,27 +16,20 @@
     <div class="hdr-left">
       <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
       <div>
-        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v21.0</span></h1>
+        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v22.0</span></h1>
         <span class="hdr-badge">ENGINEER MODE</span>
+        <span class="hdr-badge diag-badge">6-PANEL DIAGNOSTICS</span>
       </div>
     </div>
-    <!-- Mobile stats toggle (visible only on small screens via CSS) -->
-    <button class="hdr-stats-toggle" id="statsToggle" aria-label="Toggle stats" aria-expanded="false">&#9660;</button>
-    <div class="hdr-stats" id="hdrStats">
+    <div class="hdr-stats">
       <div class="hdr-stat"><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR Gain</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hCh">--</span><span class="hs-lbl">Channels</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hRMS">--</span><span class="hs-lbl">RMS</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hPeak">--</span><span class="hs-lbl">Peak</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hLUFS">--</span><span class="hs-lbl">LUFS</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hStatus">IDLE</span><span class="hs-lbl">Pipeline</span></div>
-      <!-- Forensic Mode toggle (v19 feature) -->
-      <div class="hdr-stat forensic-toggle-wrap">
-        <label class="forensic-label" for="forensicToggle" title="Enable SHA-256 audit trail at each processing stage">
-          <input type="checkbox" id="forensicToggle" />
-          <span class="hs-lbl">Forensic</span>
-        </label>
-      </div>
     </div>
   </header>
 
@@ -61,34 +38,16 @@
     <div class="col-left">
       <!-- Upload -->
       <div class="card upload-card">
-        <!-- FIX #4: Added role, tabindex, aria-label for keyboard accessibility and consistent click-target handling -->
-        <div
-          id="uploadZone"
-          class="upload-zone"
-          role="button"
-          tabindex="0"
-          aria-label="Drop audio or video file here, or press Enter to browse files"
-        >
+        <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop Audio or Video file (formats: MP3, WAV, FLAC, OGG, M4A, MP4, MOV, WEBM, no limit), or press Enter to browse files">
           <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <p class="upload-title">Drop Audio or Video</p>
           <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · MP4 · MOV · WEBM — No limit</p>
-          <!-- FIX #1: Use opacity/position hidden instead of `hidden` attribute.
-               The `hidden` attribute sets display:none which causes programmatic
-               .click() to be blocked by browser security policy in Safari & Firefox.
-               This approach keeps the input invisible but still triggerable. -->
-          <input
-            type="file"
-            id="fileInput"
-            accept="audio/*,video/*,audio/mp4,audio/x-m4a,audio/m4a"
-            style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;"
-            aria-hidden="true"
-            tabindex="-1"
-          />
+          <input type="file" id="fileInput" accept="audio/*,video/*,audio/mp4,audio/x-m4a,audio/m4a" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;" tabindex="-1" />
           <button id="fileBtn" class="btn btn-outline">Browse Files</button>
         </div>
         <div class="upload-row">
-          <button id="micBtn" class="btn btn-mic" aria-label="Record using microphone">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+          <button id="micBtn" class="btn btn-mic">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
             <span id="micLabel">Record</span>
           </button>
           <span id="fileInfo" class="file-info">No file loaded</span>
@@ -107,7 +66,7 @@
         <button class="tab" data-tab="out">Output</button>
       </div>
 
-      <!-- Slider Panels (populated by JS) -->
+      <!-- Slider Panels -->
       <div class="panels">
         <div class="panel active" id="tab-gate"></div>
         <div class="panel" id="tab-nr"></div>
@@ -132,17 +91,16 @@
         <button class="btn btn-preset" data-preset="whisper">Whisper</button>
         <button class="btn btn-preset" data-preset="crystalVoice">Crystal Voice</button>
         <div class="custom-preset-actions" style="display:inline-flex; gap: 8px; margin-left: auto;">
-          <input type="text" id="customPresetName" placeholder="Preset name" class="slider-val" style="width: 100px; font-size:11px; padding: 2px 4px;">
+          <input type="text" aria-label="Custom preset name" id="customPresetName" placeholder="Preset name" class="slider-val" style="width: 100px; font-size:11px; padding: 2px 4px;">
           <button id="saveCustomPresetBtn" class="btn">Save Custom</button>
         </div>
-
       </div>
 
       <!-- Actions -->
       <div class="actions-row">
         <button id="processBtn" class="btn btn-primary" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
-          Process (32-Stage)
+          Process (35-Stage)
         </button>
         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
@@ -165,11 +123,6 @@
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Save Processed WAV
         </button>
-        <!-- Forensic Audit Log (v19 feature) -->
-        <button id="auditLogBtn" class="btn btn-audit" disabled title="Download SHA-256 audit trail (Forensic mode only)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-          Audit Log
-        </button>
       </div>
     </div>
 
@@ -184,23 +137,18 @@
       <!-- Transport -->
       <div class="card transport-card">
         <div class="transport-row">
-          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play audio"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg></button>
-          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause audio"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
-          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop audio"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
-          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
-          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
+          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg></button>
+          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
+          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
           <div class="tp-time"><span id="tpCur">0:00</span> / <span id="tpTotal">0:00</span></div>
-          <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled aria-label="Seek through audio" />
+          <input type="range" aria-label="Seek playback" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled />
           <div class="tp-speed">
             <label for="tpSpeed">Speed</label>
-            <select id="tpSpeed" disabled>
-              <option value="0.25">0.25x</option>
-              <option value="0.5">0.5x</option>
-              <option value="0.75">0.75x</option>
-              <option value="1" selected>1x</option>
-              <option value="1.25">1.25x</option>
-              <option value="1.5">1.5x</option>
-              <option value="2">2x</option>
+            <select aria-label="Playback speed" id="tpSpeed" disabled>
+              <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="0.75">0.75x</option>
+              <option value="1" selected>1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2x</option>
             </select>
           </div>
           <div class="tp-ab">
@@ -210,34 +158,82 @@
         </div>
       </div>
 
-      <!-- FIX #2: Removed the duplicate #fileSpectroCard block that had style="display:none".
-           That block contained 8 duplicate IDs (fsModeLbl, fsProgress, fsBtnAB, fsColormap,
-           fsYAxis, fsCanvas, fsOverlay, fsMain, fsXAxis) which caused document.getElementById()
-           to always return the hidden card, making all canvas rendering invisible.
-           Keeping only this single canonical block. Visibility is controlled by app.js. -->
-      <div class="card viz-card" id="fileSpectroCard" style="display:none">
-        <div class="viz-hdr">
-          <span>Full-File Spectrogram <span id="fsModeLbl" class="fs-mode-badge">ORIGINAL</span></span>
-          <div class="viz-actions">
-            <span id="fsProgress" class="fs-progress-lbl"></span>
-            <button id="fsBtnAB" class="btn btn-xs" disabled>Show Processed</button>
-            <select id="fsColormap" class="fs-cmap-sel" aria-label="Spectrogram Colormap">
-              <option value="plasma">Plasma</option>
-              <option value="ocean">Ocean</option>
-              <option value="voice">Voice ID</option>
-              <option value="thermal">Thermal</option>
-            </select>
-            <span class="viz-hint">Click to seek · Log freq scale · 20 Hz – 22 kHz</span>
+      <!-- ═══ DIAGNOSTIC DASHBOARD (6 Panels) ═══ -->
+      <div class="diag-section">
+        <div class="diag-header">
+          <span class="diag-title">DIAGNOSTIC DASHBOARD</span>
+          <span class="diag-fps" id="diagFps">-- fps</span>
+        </div>
+
+        <!-- Row 1: A/B Waveform (full width) -->
+        <div class="card viz-card diag-ab">
+          <div class="viz-hdr">
+            <span>A/B Waveform Comparison</span>
+            <div class="viz-actions">
+              <button id="abOverlayBtn" class="btn btn-xs">Overlay</button>
+              <span class="diag-legend"><span class="dl-dot" style="background:#3b82f6"></span>Original <span class="dl-dot" style="background:#a855f7"></span>Processed</span>
+            </div>
+          </div>
+          <canvas id="abWaveCanvas" class="viz-canvas diag-ab-cv"></canvas>
+        </div>
+
+        <!-- Row 2: Oscilloscope | Spectrogram+Overlays | LUFS -->
+        <div class="diag-row3">
+          <div class="card viz-card diag-osc">
+            <div class="viz-hdr">
+              <span>Oscilloscope</span>
+              <div class="viz-actions">
+                <button class="btn btn-xs osc-mode active" data-mode="wave">Wave</button>
+                <button class="btn btn-xs osc-mode" data-mode="mirror">Mirror</button>
+                <button class="btn btn-xs osc-mode" data-mode="lissajous">XY</button>
+              </div>
+            </div>
+            <canvas id="oscCanvas" class="viz-canvas diag-osc-cv"></canvas>
+          </div>
+          <div class="card viz-card diag-spec-overlay">
+            <div class="viz-hdr">
+              <span>Spectrogram + Overlays</span>
+              <div class="viz-actions">
+                <button id="overlayNoise" class="btn btn-xs overlay-toggle active" data-overlay="noise">Noise</button>
+                <button id="overlayERB" class="btn btn-xs overlay-toggle active" data-overlay="erb">ERB</button>
+                <button id="overlayML" class="btn btn-xs overlay-toggle" data-overlay="ml">ML Mask</button>
+              </div>
+            </div>
+            <canvas id="specOverlayCanvas" class="viz-canvas diag-spec-cv"></canvas>
+          </div>
+          <div class="card viz-card diag-lufs">
+            <div class="viz-hdr"><span>LUFS Meter</span></div>
+            <canvas id="lufsCanvas" class="viz-canvas diag-lufs-cv"></canvas>
+            <div class="lufs-readouts">
+              <span class="lufs-rd"><span class="lufs-val" id="lufsShort">--</span><span class="lufs-lbl">Short</span></span>
+              <span class="lufs-rd"><span class="lufs-val" id="lufsInt">--</span><span class="lufs-lbl">Integrated</span></span>
+              <span class="lufs-rd"><span class="lufs-val" id="lufsPeak">--</span><span class="lufs-lbl">Peak dBTP</span></span>
+              <span class="lufs-rd"><span class="lufs-val" id="lufsCrest">--</span><span class="lufs-lbl">Crest</span></span>
+            </div>
           </div>
         </div>
-        <div class="fs-wrap">
-          <canvas id="fsYAxis" class="fs-yaxis-cv" aria-label="Frequency axis"></canvas>
-          <div class="fs-main" id="fsMain">
-            <canvas id="fsCanvas" class="fs-bg-cv" aria-label="Full file spectrogram visualization"></canvas>
-            <canvas id="fsOverlay" class="fs-overlay-cv"></canvas>
+
+        <!-- Row 3: ML Saliency | Speaker PCA -->
+        <div class="diag-row2">
+          <div class="card viz-card diag-saliency">
+            <div class="viz-hdr">
+              <span>ML Saliency Heatmap</span>
+              <div class="viz-actions">
+                <span class="diag-legend"><span class="dl-dot" style="background:#ef4444"></span>High <span class="dl-dot" style="background:#eab308"></span>Mid <span class="dl-dot" style="background:transparent;border:1px solid #333"></span>Low</span>
+              </div>
+            </div>
+            <canvas id="saliencyCanvas" class="viz-canvas diag-saliency-cv"></canvas>
+          </div>
+          <div class="card viz-card diag-cluster">
+            <div class="viz-hdr">
+              <span>Speaker PCA Cluster</span>
+              <div class="viz-actions">
+                <span class="diag-legend"><span class="dl-dot" style="background:#a855f7"></span>Target <span class="dl-dot" style="background:#3b82f6"></span>Other <span class="dl-dot" style="background:#f97316"></span>Noise</span>
+              </div>
+            </div>
+            <canvas id="clusterCanvas" class="viz-canvas diag-cluster-cv"></canvas>
           </div>
         </div>
-        <canvas id="fsXAxis" class="fs-xaxis-cv" aria-label="Time axis"></canvas>
       </div>
 
       <!-- 3D Spectrogram -->
@@ -297,36 +293,12 @@
   </main>
 
   <footer class="ftr">
-    <span>VoiceIsolate Pro v21.0 · Threads from Space v10 · Hybrid ML+DSP · 32-Stage Octa-Pass · Mobile-Ready</span>
+    <span>VoiceIsolate Pro v22.0 · Threads from Space v11 · Hybrid ML+DSP · 35-Stage Deca-Pass</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
 
-  <!-- Mobile sticky action bar (hidden on desktop via CSS) -->
-  <div class="mobile-action-bar" id="mobileActionBar">
-    <button id="mobileProcessBtn" class="btn btn-primary" disabled>
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
-      Process
-    </button>
-    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Re-run</button>
-    <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Abort</button>
-  </div>
-
   <div id="tooltip" class="slider-tooltip"></div>
-  <!-- v21 Modular Architecture: TFS v10 + Capacitor Mobile -->
-  <script src="pipeline-state.js"></script>
-  <script src="ring-buffer.js"></script>
   <script src="dsp-core.js"></script>
-  <script src="batch-orchestrator.js"></script>
-  <script src="pipeline-orchestrator.js"></script>
   <script src="app.js"></script>
-  <!-- Capacitor Bridge (injected by native shell on Android/iOS) -->
-  <script>
-    // Detect Capacitor environment and enable native features
-    if (window.Capacitor) {
-      document.documentElement.classList.add('capacitor-native');
-      console.log('[VoiceIsolate] Running in Capacitor native shell:', window.Capacitor.getPlatform());
-    }
-  </script>
-  <script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>

@@ -1,141 +1,127 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 – Engineer Mode
-   Threads from Space v10 · Hybrid ML+DSP
-   52 Sliders · 36-Stage Deca-Pass · 3D Spectrogram
-   Modular: PipelineState + PipelineOrchestrator
+   VoiceIsolate Pro v22.0 – Engineer Mode
+   Threads from Space v11 · Hybrid ML+DSP
+   52 Sliders · 6-Panel Diagnostics · 3D Spectrogram
+   35-Stage Deca-Pass Pipeline with Real STFT DSP
    ============================================ */
-
-// ---- STRUCTURED LOGGING ----
-function structuredLog(level, message, details = {}) {
-  const entry = { app: 'VoiceIsolate Pro', version: '20.0', level, message, timestamp: new Date().toISOString(), ...details };
-  const method = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
-  method(JSON.stringify(entry));
-}
 
 // ---- SLIDER DEFINITIONS (52 total) ----
 const SLIDERS = {
   gate: [
     { id:'gateThresh', label:'Threshold', min:-80, max:-5, val:-42, step:1, unit:' dB', rt:true, desc:'Signal level below which the gate closes. Lower values let quieter sounds through.' },
     { id:'gateRange', label:'Range', min:-90, max:0, val:-40, step:1, unit:' dB', rt:false, desc:'Maximum attenuation when gate is closed. -90dB = full silence, -20dB = gentle reduction.' },
-    { id:'gateAttack', label:'Attack', min:0.1, max:50, val:2, step:0.1, unit:' ms', rt:true, desc:'How fast the gate opens when signal exceeds threshold. Shorter = tighter, may clip transients.' },
-    { id:'gateRelease', label:'Release', min:5, max:500, val:80, step:1, unit:' ms', rt:true, desc:'How fast the gate closes after signal drops below threshold. Longer = smoother tails.' },
-    { id:'gateHold', label:'Hold', min:0, max:200, val:20, step:1, unit:' ms', rt:false, desc:'Minimum time gate stays open after triggering. Prevents rapid flutter on borderline signals.' },
-    { id:'gateLookahead', label:'Lookahead', min:0, max:20, val:5, step:0.5, unit:' ms', rt:false, desc:'Pre-delay allowing the gate to open before transients arrive. Preserves attack of voice.' },
+    { id:'gateAttack', label:'Attack', min:0.1, max:50, val:2, step:0.1, unit:' ms', rt:true, desc:'How fast the gate opens when signal exceeds threshold.' },
+    { id:'gateRelease', label:'Release', min:5, max:500, val:80, step:1, unit:' ms', rt:true, desc:'How fast the gate closes after signal drops below threshold.' },
+    { id:'gateHold', label:'Hold', min:0, max:200, val:20, step:1, unit:' ms', rt:false, desc:'Minimum time gate stays open after triggering. Prevents rapid flutter.' },
+    { id:'gateLookahead', label:'Lookahead', min:0, max:20, val:5, step:0.5, unit:' ms', rt:false, desc:'Pre-delay allowing the gate to open before transients arrive.' },
   ],
   nr: [
-    { id:'nrAmount', label:'Reduction Amount', min:0, max:100, val:55, step:1, unit:'%', rt:false, desc:'How much noise is removed. Higher = more removal but potential artifacts. 40-60% is usually optimal.' },
-    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'How aggressively noise is detected. Higher catches more noise but may eat voice edges.' },
-    { id:'nrSpectralSub', label:'Spectral Subtract', min:0, max:100, val:40, step:1, unit:'%', rt:false, desc:'Subtracts estimated noise spectrum from signal. The core noise reduction algorithm.' },
-    { id:'nrFloor', label:'Noise Floor', min:-80, max:-20, val:-60, step:1, unit:' dB', rt:false, desc:'Estimated noise floor level. Audio below this is treated as noise. Profile from silent sections.' },
-    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:35, step:1, unit:'%', rt:false, desc:'Temporal smoothing of noise estimate. Prevents musical noise artifacts from frame-to-frame variation.' },
+    { id:'nrAmount', label:'Reduction Amount', min:0, max:100, val:55, step:1, unit:'%', rt:false, desc:'How much noise is removed. 40-60% is usually optimal.' },
+    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'How aggressively noise is detected.' },
+    { id:'nrSpectralSub', label:'Spectral Subtract', min:0, max:100, val:40, step:1, unit:'%', rt:false, desc:'Subtracts estimated noise spectrum from signal.' },
+    { id:'nrFloor', label:'Noise Floor', min:-80, max:-20, val:-60, step:1, unit:' dB', rt:false, desc:'Estimated noise floor level.' },
+    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:35, step:1, unit:'%', rt:false, desc:'Temporal smoothing of noise estimate.' },
   ],
   eq: [
-    { id:'eqSub', label:'Sub (40 Hz)', min:-12, max:6, val:-8, step:0.5, unit:' dB', rt:true, desc:'Sub-bass frequencies. Cut to remove rumble, mic handling noise, and HVAC.' },
-    { id:'eqBass', label:'Bass (100 Hz)', min:-8, max:8, val:0, step:0.5, unit:' dB', rt:true, desc:'Low bass. Boost for warmth in thin voices, cut to reduce boominess and proximity effect.' },
-    { id:'eqWarmth', label:'Warmth (200 Hz)', min:-6, max:6, val:1, step:0.5, unit:' dB', rt:true, desc:'Lower midrange warmth. Gives body to the voice. Too much = muddy.' },
-    { id:'eqBody', label:'Body (400 Hz)', min:-6, max:6, val:0, step:0.5, unit:' dB', rt:true, desc:'Core body of the voice. The chest frequency. Cut reduces boxiness in room recordings.' },
-    { id:'eqLowMid', label:'Low-Mid (800 Hz)', min:-6, max:6, val:-1, step:0.5, unit:' dB', rt:true, desc:'Nasal/honky frequencies. Slight cut often helps clarity. The telephone zone.' },
-    { id:'eqMid', label:'Mid (1.5 kHz)', min:-6, max:6, val:1, step:0.5, unit:' dB', rt:true, desc:'Core intelligibility. The most critical band for speech comprehension.' },
-    { id:'eqPresence', label:'Presence (3 kHz)', min:-6, max:8, val:3, step:0.5, unit:' dB', rt:true, desc:'Vocal presence and forward projection. Boost for clarity, cut to push voice back.' },
-    { id:'eqClarity', label:'Clarity (5 kHz)', min:-6, max:6, val:2, step:0.5, unit:' dB', rt:true, desc:'Consonant definition. Sibilance begins here. Helps speech cut through background.' },
-    { id:'eqAir', label:'Air (10 kHz)', min:-6, max:6, val:1, step:0.5, unit:' dB', rt:true, desc:'High-frequency air and sparkle. Adds openness. Too much = hissy on noisy recordings.' },
-    { id:'eqBrill', label:'Brilliance (16 kHz)', min:-8, max:4, val:-2, step:0.5, unit:' dB', rt:true, desc:'Ultra-high frequencies. Usually cut for noise reduction. Boost only on clean recordings.' },
+    { id:'eqSub', label:'Sub (40 Hz)', min:-12, max:6, val:-8, step:0.5, unit:' dB', rt:true, desc:'Sub-bass. Cut to remove rumble.' },
+    { id:'eqBass', label:'Bass (100 Hz)', min:-8, max:8, val:0, step:0.5, unit:' dB', rt:true, desc:'Low bass. Boost for warmth.' },
+    { id:'eqWarmth', label:'Warmth (200 Hz)', min:-6, max:6, val:1, step:0.5, unit:' dB', rt:true, desc:'Lower midrange warmth.' },
+    { id:'eqBody', label:'Body (400 Hz)', min:-6, max:6, val:0, step:0.5, unit:' dB', rt:true, desc:'Core body of the voice.' },
+    { id:'eqLowMid', label:'Low-Mid (800 Hz)', min:-6, max:6, val:-1, step:0.5, unit:' dB', rt:true, desc:'Nasal/honky frequencies.' },
+    { id:'eqMid', label:'Mid (1.5 kHz)', min:-6, max:6, val:1, step:0.5, unit:' dB', rt:true, desc:'Core intelligibility band.' },
+    { id:'eqPresence', label:'Presence (3 kHz)', min:-6, max:8, val:3, step:0.5, unit:' dB', rt:true, desc:'Vocal presence and projection.' },
+    { id:'eqClarity', label:'Clarity (5 kHz)', min:-6, max:6, val:2, step:0.5, unit:' dB', rt:true, desc:'Consonant definition.' },
+    { id:'eqAir', label:'Air (10 kHz)', min:-6, max:6, val:1, step:0.5, unit:' dB', rt:true, desc:'High-frequency sparkle.' },
+    { id:'eqBrill', label:'Brilliance (16 kHz)', min:-8, max:4, val:-2, step:0.5, unit:' dB', rt:true, desc:'Ultra-high frequencies.' },
   ],
   dyn: [
-    { id:'compThresh', label:'Comp Threshold', min:-50, max:0, val:-24, step:1, unit:' dB', rt:true, desc:'Level above which compression begins. Lower = more compression. -24dB is moderate.' },
-    { id:'compRatio', label:'Comp Ratio', min:1, max:20, val:4, step:0.5, unit:':1', rt:true, desc:'Compression ratio. 2:1 gentle, 4:1 moderate, 10:1+ limiting.' },
-    { id:'compAttack', label:'Comp Attack', min:0, max:100, val:8, step:1, unit:' ms', rt:true, desc:'How fast compressor reacts. Short catches transients, Long lets them through (punch).' },
-    { id:'compRelease', label:'Comp Release', min:10, max:1000, val:200, step:5, unit:' ms', rt:true, desc:'How fast compressor lets go. Too fast = pumping. Too slow = dull dynamics.' },
-    { id:'compKnee', label:'Comp Knee', min:0, max:30, val:6, step:1, unit:' dB', rt:true, desc:'Soft/hard knee. 0 = hard (abrupt), 30 = very soft (gradual). 6dB is natural.' },
-    { id:'compMakeup', label:'Makeup Gain', min:0, max:24, val:6, step:0.5, unit:' dB', rt:true, desc:'Gain added after compression to restore loudness.' },
-    { id:'limThresh', label:'Limiter Ceiling', min:-6, max:0, val:-1, step:0.1, unit:' dB', rt:true, desc:'Brickwall ceiling. No signal passes above this. -1dBFS standard for broadcast.' },
-    { id:'limRelease', label:'Limiter Release', min:1, max:100, val:10, step:1, unit:' ms', rt:true, desc:'How fast limiter recovers. Very fast for transparent limiting.' },
+    { id:'compThresh', label:'Comp Threshold', min:-50, max:0, val:-24, step:1, unit:' dB', rt:true, desc:'Level above which compression begins.' },
+    { id:'compRatio', label:'Comp Ratio', min:1, max:20, val:4, step:0.5, unit:':1', rt:true, desc:'Compression ratio.' },
+    { id:'compAttack', label:'Comp Attack', min:0, max:100, val:8, step:1, unit:' ms', rt:true, desc:'How fast compressor reacts.' },
+    { id:'compRelease', label:'Comp Release', min:10, max:1000, val:200, step:5, unit:' ms', rt:true, desc:'How fast compressor lets go.' },
+    { id:'compKnee', label:'Comp Knee', min:0, max:30, val:6, step:1, unit:' dB', rt:true, desc:'Soft/hard knee.' },
+    { id:'compMakeup', label:'Makeup Gain', min:0, max:24, val:6, step:0.5, unit:' dB', rt:true, desc:'Gain added after compression.' },
+    { id:'limThresh', label:'Limiter Ceiling', min:-6, max:0, val:-1, step:0.1, unit:' dB', rt:true, desc:'Brickwall ceiling.' },
+    { id:'limRelease', label:'Limiter Release', min:1, max:100, val:10, step:1, unit:' ms', rt:true, desc:'How fast limiter recovers.' },
   ],
   spec: [
-    { id:'hpFreq', label:'High-Pass Freq', min:20, max:500, val:80, step:1, unit:' Hz', rt:true, desc:'Removes everything below this frequency. 80Hz standard for voice. 120Hz for noisy rooms.' },
-    { id:'hpQ', label:'HP Resonance', min:0.5, max:5, val:0.71, step:0.01, unit:' Q', rt:true, desc:'Filter steepness. 0.707 = Butterworth (flat). Higher = steeper but resonant peak.' },
-    { id:'lpFreq', label:'Low-Pass Freq', min:3000, max:20000, val:14000, step:100, unit:' Hz', rt:true, desc:'Removes everything above this frequency. 12kHz for noise, 20kHz for full fidelity.' },
-    { id:'lpQ', label:'LP Resonance', min:0.5, max:5, val:0.71, step:0.01, unit:' Q', rt:true, desc:'Low-pass filter resonance. Keep at 0.707 for transparent rolloff.' },
-    { id:'deEssFreq', label:'De-Ess Center', min:4000, max:10000, val:7000, step:100, unit:' Hz', rt:true, desc:'Center frequency for sibilance reduction. 6-8kHz for most voices.' },
-    { id:'deEssAmt', label:'De-Ess Amount', min:0, max:100, val:30, step:1, unit:'%', rt:true, desc:'How much sibilance is reduced. 20-40% natural. Higher may lisp.' },
-    { id:'specTilt', label:'Spectral Tilt', min:-6, max:6, val:0, step:0.5, unit:' dB/oct', rt:true, desc:'Overall spectral slope. Positive = brighter. Negative = darker.' },
-    { id:'formantShift', label:'Formant Shift', min:-12, max:12, val:0, step:0.5, unit:' semi', rt:false, desc:'Shifts vocal formants without changing pitch. Adjusts perceived voice character.' },
+    { id:'hpFreq', label:'High-Pass Freq', min:20, max:500, val:80, step:1, unit:' Hz', rt:true, desc:'Removes everything below this frequency.' },
+    { id:'hpQ', label:'HP Resonance', min:0.5, max:5, val:0.71, step:0.01, unit:' Q', rt:true, desc:'Filter steepness.' },
+    { id:'lpFreq', label:'Low-Pass Freq', min:3000, max:20000, val:14000, step:100, unit:' Hz', rt:true, desc:'Removes everything above this frequency.' },
+    { id:'lpQ', label:'LP Resonance', min:0.5, max:5, val:0.71, step:0.01, unit:' Q', rt:true, desc:'Low-pass filter resonance.' },
+    { id:'deEssFreq', label:'De-Ess Center', min:4000, max:10000, val:7000, step:100, unit:' Hz', rt:true, desc:'Center frequency for sibilance reduction.' },
+    { id:'deEssAmt', label:'De-Ess Amount', min:0, max:100, val:30, step:1, unit:'%', rt:true, desc:'How much sibilance is reduced.' },
+    { id:'specTilt', label:'Spectral Tilt', min:-6, max:6, val:0, step:0.5, unit:' dB/oct', rt:true, desc:'Overall spectral slope.' },
+    { id:'formantShift', label:'Formant Shift', min:-12, max:12, val:0, step:0.5, unit:' semi', rt:false, desc:'Shifts vocal formants without changing pitch.' },
   ],
   adv: [
-    { id:'derevAmt', label:'Dereverb Amount', min:0, max:100, val:40, step:1, unit:'%', rt:false, desc:'Removes room reverb/echo. Higher = drier sound. Too much = unnatural.' },
-    { id:'derevDecay', label:'Dereverb Decay', min:0.1, max:3, val:0.5, step:0.1, unit:' s', rt:false, desc:'Estimated room reverb decay time. Match to actual room for best results.' },
-    { id:'harmRecov', label:'Harmonic Recovery', min:0, max:100, val:20, step:1, unit:'%', rt:false, desc:'Regenerates harmonics lost during noise reduction via soft saturation.' },
-    { id:'harmOrder', label:'Harmonic Order', min:2, max:8, val:3, step:1, unit:'x', rt:false, desc:'Which harmonics to regenerate. 2=octave, 3=octave+fifth. Higher = more overtones.' },
-    { id:'stereoWidth', label:'Stereo Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'0%=mono, 100%=original, 200%=extra wide. Mono can reduce ambient noise.' },
-    { id:'phaseCorr', label:'Phase Correction', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Corrects phase issues between stereo channels. Useful for multi-mic recordings.' },
+    { id:'derevAmt', label:'Dereverb Amount', min:0, max:100, val:40, step:1, unit:'%', rt:false, desc:'Removes room reverb/echo.' },
+    { id:'derevDecay', label:'Dereverb Decay', min:0.1, max:3, val:0.5, step:0.1, unit:' s', rt:false, desc:'Estimated room reverb decay time.' },
+    { id:'harmRecov', label:'Harmonic Recovery', min:0, max:100, val:20, step:1, unit:'%', rt:false, desc:'Regenerates harmonics lost during noise reduction.' },
+    { id:'harmOrder', label:'Harmonic Order', min:2, max:8, val:3, step:1, unit:'x', rt:false, desc:'Which harmonics to regenerate.' },
+    { id:'stereoWidth', label:'Stereo Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'0%=mono, 100%=original, 200%=extra wide.' },
+    { id:'phaseCorr', label:'Phase Correction', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Corrects phase issues between stereo channels.' },
   ],
   sep: [
-    { id:'voiceIso', label:'Voice Isolation', min:0, max:100, val:70, step:1, unit:'%', rt:false, desc:'Strength of voice/non-voice separation. Higher = more aggressive extraction.' },
-    { id:'bgSuppress', label:'Background Suppress', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Attenuation of non-voice background. Music, traffic, ambient noise.' },
-    { id:'voiceFocusLo', label:'Voice Focus Low', min:80, max:500, val:120, step:5, unit:' Hz', rt:true, desc:'Lower bound of voice focus band. Male ~85Hz, female ~165Hz.' },
-    { id:'voiceFocusHi', label:'Voice Focus High', min:2000, max:12000, val:6000, step:100, unit:' Hz', rt:true, desc:'Upper bound of voice focus band. Speech intelligibility extends to ~8kHz.' },
-    { id:'crosstalkCancel', label:'Crosstalk Cancel', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Reduces bleed between speakers in multi-person recordings.' },
+    { id:'voiceIso', label:'Voice Isolation', min:0, max:100, val:70, step:1, unit:'%', rt:false, desc:'Strength of voice/non-voice separation.' },
+    { id:'bgSuppress', label:'Background Suppress', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Attenuation of non-voice background.' },
+    { id:'voiceFocusLo', label:'Voice Focus Low', min:80, max:500, val:120, step:5, unit:' Hz', rt:true, desc:'Lower bound of voice focus band.' },
+    { id:'voiceFocusHi', label:'Voice Focus High', min:2000, max:12000, val:6000, step:100, unit:' Hz', rt:true, desc:'Upper bound of voice focus band.' },
+    { id:'crosstalkCancel', label:'Crosstalk Cancel', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Reduces bleed between speakers.' },
   ],
   out: [
     { id:'outGain', label:'Output Gain', min:-18, max:18, val:0, step:0.5, unit:' dB', rt:true, desc:'Final output level adjustment.' },
-    { id:'dryWet', label:'Dry/Wet Mix', min:0, max:100, val:100, step:1, unit:'%', rt:false, desc:'Balance between original (dry) and processed (wet). 100% = fully processed.' },
-    { id:'ditherAmt', label:'Dither', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Adds shaped noise before bit-depth reduction. Prevents quantization distortion.' },
-    { id:'outWidth', label:'Output Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Final stereo width control applied after all processing.' },
+    { id:'dryWet', label:'Dry/Wet Mix', min:0, max:100, val:100, step:1, unit:'%', rt:false, desc:'Balance between original and processed.' },
+    { id:'ditherAmt', label:'Dither', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Adds shaped noise before bit-depth reduction.' },
+    { id:'outWidth', label:'Output Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Final stereo width control.' },
   ]
 };
 
-// ---- PRESETS ----
 const PRESETS = {
-  // Podcast — Optimized for spoken word: tight gate, strong NR, presence boost, -16 LUFS target
-  podcast: {gateThresh:-36,gateRange:-40,gateAttack:1.5,gateRelease:55,gateHold:20,gateLookahead:5,nrAmount:52,nrSensitivity:50,nrSpectralSub:40,nrFloor:-52,nrSmoothing:38,eqSub:-12,eqBass:-2,eqWarmth:2.5,eqBody:0.5,eqLowMid:-1.5,eqMid:1.5,eqPresence:4.5,eqClarity:3,eqAir:1.5,eqBrill:-3,compThresh:-22,compRatio:4.5,compAttack:5,compRelease:160,compKnee:8,compMakeup:7,limThresh:-1,limRelease:8,hpFreq:90,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:38,specTilt:0.5,formantShift:0,derevAmt:40,derevDecay:0.4,harmRecov:18,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:82,bgSuppress:60,voiceFocusLo:120,voiceFocusHi:6500,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
-  // Film — Natural dialogue: gentle processing, wide bandwidth, preserve room tone and dynamics
-  film: {gateThresh:-52,gateRange:-25,gateAttack:4,gateRelease:120,gateHold:30,gateLookahead:8,nrAmount:28,nrSensitivity:40,nrSpectralSub:20,nrFloor:-62,nrSmoothing:45,eqSub:-5,eqBass:1.5,eqWarmth:1.5,eqBody:1,eqLowMid:0,eqMid:0.5,eqPresence:2,eqClarity:1.5,eqAir:2,eqBrill:-0.5,compThresh:-30,compRatio:2.5,compAttack:15,compRelease:320,compKnee:12,compMakeup:3,limThresh:-1.5,limRelease:18,hpFreq:55,hpQ:0.71,lpFreq:17000,lpQ:0.71,deEssFreq:6500,deEssAmt:18,specTilt:-0.5,formantShift:0,derevAmt:22,derevDecay:0.7,harmRecov:28,harmOrder:3,stereoWidth:130,phaseCorr:0,voiceIso:55,bgSuppress:32,voiceFocusLo:90,voiceFocusHi:8500,crosstalkCancel:0,outGain:0,dryWet:95,ditherAmt:0,outWidth:120},
-  // Interview — Multi-speaker clarity: balanced NR, crosstalk cancel, focused voice band
-  interview: {gateThresh:-40,gateRange:-36,gateAttack:2,gateRelease:75,gateHold:25,gateLookahead:5,nrAmount:48,nrSensitivity:48,nrSpectralSub:35,nrFloor:-56,nrSmoothing:35,eqSub:-8,eqBass:-0.5,eqWarmth:1.5,eqBody:0.5,eqLowMid:-1,eqMid:2,eqPresence:3.5,eqClarity:2.5,eqAir:1,eqBrill:-2.5,compThresh:-24,compRatio:4,compAttack:5,compRelease:180,compKnee:8,compMakeup:6,limThresh:-1,limRelease:10,hpFreq:100,hpQ:0.71,lpFreq:13000,lpQ:0.71,deEssFreq:7000,deEssAmt:32,specTilt:0,formantShift:0,derevAmt:40,derevDecay:0.45,harmRecov:22,harmOrder:3,stereoWidth:85,phaseCorr:10,voiceIso:78,bgSuppress:55,voiceFocusLo:110,voiceFocusHi:6500,crosstalkCancel:25,outGain:0,dryWet:100,ditherAmt:0,outWidth:90},
-  // Forensic — Maximum detail preservation: minimal processing, wide spectrum, phase correction
-  forensic: {gateThresh:-68,gateRange:-15,gateAttack:1,gateRelease:180,gateHold:35,gateLookahead:12,nrAmount:25,nrSensitivity:55,nrSpectralSub:15,nrFloor:-72,nrSmoothing:55,eqSub:-1,eqBass:0.5,eqWarmth:0,eqBody:0,eqLowMid:0.5,eqMid:2.5,eqPresence:5,eqClarity:4.5,eqAir:3,eqBrill:0.5,compThresh:-16,compRatio:1.8,compAttack:18,compRelease:450,compKnee:15,compMakeup:10,limThresh:-0.3,limRelease:25,hpFreq:40,hpQ:0.71,lpFreq:19000,lpQ:0.71,deEssFreq:8000,deEssAmt:8,specTilt:1,formantShift:0,derevAmt:12,derevDecay:0.9,harmRecov:38,harmOrder:5,stereoWidth:100,phaseCorr:35,voiceIso:85,bgSuppress:22,voiceFocusLo:80,voiceFocusHi:11000,crosstalkCancel:0,outGain:3,dryWet:88,ditherAmt:0,outWidth:100},
-  // Music — Vocal extraction with musicality: gentle touch, preserve harmonics, wide stereo
-  music: {gateThresh:-58,gateRange:-20,gateAttack:4,gateRelease:140,gateHold:20,gateLookahead:4,nrAmount:18,nrSensitivity:35,nrSpectralSub:15,nrFloor:-68,nrSmoothing:48,eqSub:-2,eqBass:1.5,eqWarmth:2.5,eqBody:1,eqLowMid:0.5,eqMid:0,eqPresence:1.5,eqClarity:1,eqAir:3.5,eqBrill:1,compThresh:-32,compRatio:2,compAttack:22,compRelease:380,compKnee:18,compMakeup:2.5,limThresh:-0.5,limRelease:14,hpFreq:35,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:12,specTilt:-1,formantShift:0,derevAmt:10,derevDecay:1.2,harmRecov:35,harmOrder:5,stereoWidth:160,phaseCorr:0,voiceIso:45,bgSuppress:55,voiceFocusLo:80,voiceFocusHi:11000,crosstalkCancel:0,outGain:0,dryWet:82,ditherAmt:5,outWidth:150},
-  // Broadcast — Loud, clean, aggressive: heavy compression, tight band, -14 LUFS target
-  broadcast: {gateThresh:-34,gateRange:-45,gateAttack:1,gateRelease:45,gateHold:12,gateLookahead:3,nrAmount:55,nrSensitivity:55,nrSpectralSub:45,nrFloor:-48,nrSmoothing:28,eqSub:-12,eqBass:-3,eqWarmth:2.5,eqBody:0.5,eqLowMid:-2,eqMid:2.5,eqPresence:5.5,eqClarity:3.5,eqAir:0.5,eqBrill:-5,compThresh:-20,compRatio:7,compAttack:3,compRelease:120,compKnee:3,compMakeup:12,limThresh:-0.5,limRelease:4,hpFreq:130,hpQ:0.71,lpFreq:11000,lpQ:0.71,deEssFreq:7000,deEssAmt:48,specTilt:1.5,formantShift:0,derevAmt:48,derevDecay:0.25,harmRecov:8,harmOrder:2,stereoWidth:50,phaseCorr:0,voiceIso:88,bgSuppress:70,voiceFocusLo:160,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:60},
-  // Restoration — Recover damaged/old recordings: gentle NR, harmonic recovery, preserve character
-  restoration: {gateThresh:-62,gateRange:-12,gateAttack:6,gateRelease:220,gateHold:45,gateLookahead:12,nrAmount:42,nrSensitivity:50,nrSpectralSub:32,nrFloor:-68,nrSmoothing:55,eqSub:-3,eqBass:0.5,eqWarmth:0.5,eqBody:0,eqLowMid:0,eqMid:1.5,eqPresence:3.5,eqClarity:2.5,eqAir:1.5,eqBrill:-0.5,compThresh:-28,compRatio:2.5,compAttack:12,compRelease:280,compKnee:10,compMakeup:5,limThresh:-0.5,limRelease:16,hpFreq:45,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:18,specTilt:0,formantShift:0,derevAmt:32,derevDecay:0.8,harmRecov:45,harmOrder:4,stereoWidth:100,phaseCorr:25,voiceIso:62,bgSuppress:40,voiceFocusLo:90,voiceFocusHi:8500,crosstalkCancel:12,outGain:2,dryWet:92,ditherAmt:5,outWidth:100},
-  // Whisper — Extreme low-level voice recovery: heavy compression, max presence, gentle NR to avoid artifacts
-  whisper: {gateThresh:-70,gateRange:-15,gateAttack:0.5,gateRelease:120,gateHold:15,gateLookahead:8,nrAmount:20,nrSensitivity:65,nrSpectralSub:12,nrFloor:-75,nrSmoothing:62,eqSub:0,eqBass:2.5,eqWarmth:3,eqBody:1.5,eqLowMid:2,eqMid:5.5,eqPresence:8,eqClarity:6,eqAir:4,eqBrill:2,compThresh:-42,compRatio:10,compAttack:1.5,compRelease:130,compKnee:15,compMakeup:20,limThresh:-1,limRelease:8,hpFreq:70,hpQ:0.71,lpFreq:15000,lpQ:0.71,deEssFreq:6000,deEssAmt:22,specTilt:0.5,formantShift:0,derevAmt:8,derevDecay:0.9,harmRecov:45,harmOrder:4,stereoWidth:100,phaseCorr:0,voiceIso:95,bgSuppress:18,voiceFocusLo:90,voiceFocusHi:9000,crosstalkCancel:0,outGain:6,dryWet:100,ditherAmt:0,outWidth:100},
-  // Crystal Voice — Maximum voice-only isolation. Strips everything except human speech.
-  // Uses tonal suppression (sustained = music, transient = voice) + tight bandpass
-  // gating + strong NR. NR values are moderated vs the old preset which caused garbling
-  // because over-subtraction (alpha>2) treated voice itself as noise.
-  crystalVoice: {gateThresh:-28,gateRange:-55,gateAttack:0.8,gateRelease:35,gateHold:8,gateLookahead:12,nrAmount:68,nrSensitivity:65,nrSpectralSub:52,nrFloor:-48,nrSmoothing:42,eqSub:-12,eqBass:-6,eqWarmth:-2,eqBody:-2,eqLowMid:-3,eqMid:3.5,eqPresence:6,eqClarity:5,eqAir:1,eqBrill:-6,compThresh:-18,compRatio:5,compAttack:2,compRelease:130,compKnee:6,compMakeup:9,limThresh:-0.5,limRelease:6,hpFreq:150,hpQ:0.71,lpFreq:8000,lpQ:0.71,deEssFreq:7000,deEssAmt:52,specTilt:0.5,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:32,harmOrder:3,stereoWidth:0,phaseCorr:0,voiceIso:95,bgSuppress:82,voiceFocusLo:150,voiceFocusHi:6000,crosstalkCancel:18,outGain:2,dryWet:100,ditherAmt:0,outWidth:40}
+  podcast: {gateThresh:-38,gateRange:-35,gateAttack:2,gateRelease:60,gateHold:15,gateLookahead:5,nrAmount:60,nrSensitivity:55,nrSpectralSub:45,nrFloor:-55,nrSmoothing:40,eqSub:-10,eqBass:-1,eqWarmth:2,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:4,eqClarity:2,eqAir:1,eqBrill:-3,compThresh:-20,compRatio:5,compAttack:6,compRelease:180,compKnee:6,compMakeup:8,limThresh:-1,limRelease:8,hpFreq:80,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:40,specTilt:0.5,formantShift:0,derevAmt:50,derevDecay:0.4,harmRecov:15,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:80,bgSuppress:60,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
+  film: {gateThresh:-50,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:25,gateLookahead:5,nrAmount:40,nrSensitivity:45,nrSpectralSub:30,nrFloor:-60,nrSmoothing:40,eqSub:-6,eqBass:1,eqWarmth:1,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:2,eqBrill:-1,compThresh:-28,compRatio:3,compAttack:12,compRelease:300,compKnee:10,compMakeup:4,limThresh:-1,limRelease:15,hpFreq:60,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:-0.5,formantShift:0,derevAmt:30,derevDecay:0.6,harmRecov:25,harmOrder:3,stereoWidth:120,phaseCorr:0,voiceIso:60,bgSuppress:40,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:110},
+  interview: {gateThresh:-42,gateRange:-38,gateAttack:2,gateRelease:80,gateHold:20,gateLookahead:5,nrAmount:55,nrSensitivity:50,nrSpectralSub:40,nrFloor:-58,nrSmoothing:35,eqSub:-8,eqBass:0,eqWarmth:1,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-2,compThresh:-22,compRatio:5,compAttack:5,compRelease:200,compKnee:6,compMakeup:6,limThresh:-1,limRelease:10,hpFreq:100,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:35,specTilt:0,formantShift:0,derevAmt:45,derevDecay:0.5,harmRecov:20,harmOrder:3,stereoWidth:80,phaseCorr:0,voiceIso:75,bgSuppress:55,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:20,outGain:0,dryWet:100,ditherAmt:0,outWidth:90},
+  forensic: {gateThresh:-65,gateRange:-20,gateAttack:1,gateRelease:150,gateHold:30,gateLookahead:10,nrAmount:30,nrSensitivity:60,nrSpectralSub:20,nrFloor:-70,nrSmoothing:50,eqSub:-2,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:0,compThresh:-18,compRatio:2,compAttack:15,compRelease:400,compKnee:12,compMakeup:10,limThresh:-0.5,limRelease:20,hpFreq:50,hpQ:0.71,lpFreq:18000,lpQ:0.71,deEssFreq:8000,deEssAmt:10,specTilt:1,formantShift:0,derevAmt:20,derevDecay:0.8,harmRecov:35,harmOrder:4,stereoWidth:100,phaseCorr:30,voiceIso:90,bgSuppress:30,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:3,dryWet:90,ditherAmt:0,outWidth:100},
+  music: {gateThresh:-55,gateRange:-25,gateAttack:3,gateRelease:120,gateHold:15,gateLookahead:3,nrAmount:25,nrSensitivity:40,nrSpectralSub:20,nrFloor:-65,nrSmoothing:45,eqSub:-3,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:3,eqBrill:0,compThresh:-30,compRatio:2,compAttack:20,compRelease:350,compKnee:15,compMakeup:3,limThresh:-0.5,limRelease:12,hpFreq:40,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:15,specTilt:-1,formantShift:0,derevAmt:15,derevDecay:1.0,harmRecov:30,harmOrder:4,stereoWidth:150,phaseCorr:0,voiceIso:50,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:0,dryWet:85,ditherAmt:5,outWidth:140},
+  broadcast: {gateThresh:-35,gateRange:-40,gateAttack:1.5,gateRelease:50,gateHold:10,gateLookahead:3,nrAmount:65,nrSensitivity:60,nrSpectralSub:50,nrFloor:-50,nrSmoothing:30,eqSub:-12,eqBass:-2,eqWarmth:2,eqBody:0,eqLowMid:-2,eqMid:2,eqPresence:5,eqClarity:3,eqAir:1,eqBrill:-4,compThresh:-18,compRatio:6,compAttack:4,compRelease:150,compKnee:4,compMakeup:10,limThresh:-1,limRelease:5,hpFreq:120,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:45,specTilt:1,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:10,harmOrder:2,stereoWidth:60,phaseCorr:0,voiceIso:85,bgSuppress:70,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:70},
+  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100}
 };
 
 const STAGES = [
-  // Pass 1 – INGEST (4)
-  'Input Decode', 'Channel Analysis', 'DC Offset Removal', 'Peak Normalization',
-  // Pass 2 – ANALYSIS (4)
-  'Noise Floor Profiling', 'VAD — Voice Activity Detection', 'Spectral Fingerprint', 'STFT Engine Init',
-  // Pass 3 – FILTER (4)
-  'High-Pass Filter', 'Low-Pass Filter', 'Voice Band Isolation', 'Adaptive Noise Gate',
-  // Pass 4 – SPECTRAL NR (4)
-  'Spectral Subtraction', 'Wiener Filter', 'Background Suppression', 'Dereverberation',
-  // Pass 5 – EQ (4)
-  'EQ — Low Shelf (Sub/Bass)', 'EQ — Low-Mid Band (Warmth/Body)', 'EQ — Mid Band (Presence/Clarity)', 'EQ — High Shelf (Air/Brilliance)',
-  // Pass 6 – SPECTRAL PROCESSING (4)
-  'De-Essing', 'Spectral Tilt', 'Formant Shift', 'Phase Correction',
-  // Pass 7 – DYNAMICS (4)
-  'Harmonic Reconstruction', 'Dynamics Compression', 'Brickwall Limiter', 'Crosstalk Cancellation',
-  // Pass 8 – MASTER (4)
-  'Dry/Wet Blend', 'TPDF Dither', 'Output Normalization', 'Final Render & Export'
+  'S01: Input Decode',                    // 0
+  'S02: Buffer Allocation',               // 1
+  'S03: DC Offset Removal',               // 2
+  'S04: Peak Normalization',              // 3
+  'S05: Voice Activity Detection',        // 4
+  'S06: Noise Gate (Time-Domain)',        // 5
+  'S07: Click/Pop Removal',              // 6
+  'S08: Hum Removal (60Hz + Harmonics)', // 7
+  'S09: De-Essing',                       // 8
+  'S10: Forward STFT',                    // 9
+  'S11: Adaptive Wiener NR',             // 10
+  'S12: Residual Wiener Pass',           // 11
+  'S13: ERB Spectral Gate (32-band)',    // 12
+  'S14: Voice-Band Spectral Emphasis',   // 13
+  'S15: Crosstalk Cancellation',         // 14
+  'S16: Temporal Smoothing (Anti-Garble)', // 15
+  'S17: Spectral Tilt Compensation',     // 16
+  'S18: Dereverberation',                // 17
+  'S19: Harmonic Reconstruction v2',     // 18
+  'S20: Inverse STFT',                   // 19
+  'S21: OfflineAudioContext Setup',      // 20
+  'S22: High-Pass / Low-Pass Filters',  // 21
+  'S23: 10-Band Parametric EQ',          // 22
+  'S24: Dynamics Compression',           // 23
+  'S25: Brickwall Limiter',              // 24
+  'S26: Rendering OfflineAudioContext',  // 25
+  'S27: Post-Render Cleanup',           // 26
+  'S28: Dry/Wet Mix',                    // 27
+  'S29: Peak Normalization',             // 28
+  'S30: Quality Metrics',                // 29
+  'S31: Waveform Update',               // 30
+  'S32: Final Export Ready'              // 31
 ];
 
-// Per-speaker aura palette — 8 distinct vibrant hues for speaker identification
-const SPEAKER_COLORS = ['#00f5ff','#7c3aed','#22c55e','#f59e0b','#ec4899','#3b82f6','#f97316','#a855f7'];
-
-// ============================================
-// v20 Modular Architecture Integration
-// PipelineState → centralized param management
-// PipelineOrchestrator → processing conductor
-// SharedRingBuffer → zero-copy thread transfer
 // ============================================
 class VoiceIsolatePro {
   constructor() {
@@ -143,7 +129,9 @@ class VoiceIsolatePro {
     this.inputBuffer = null;
     this.outputBuffer = null;
     this.currentSource = null;
-    this.analyserNode = null;
+    this.analyserNode = null;     // post-chain (for existing viz)
+    this.analyserOrig = null;     // pre-chain (for A/B comparison)
+    this.analyserProc = null;     // post-chain (for diagnostics)
     this.isProcessing = false;
     this.isRecording = false;
     this.mediaRecorder = null;
@@ -153,79 +141,38 @@ class VoiceIsolatePro {
     this.videoUrl = null;
     this.spectroRunning = false;
     this.animId = null;
+    this.diagRunning = false;
+    this.diagAnimId = null;
     this.spectroX = 0;
+    this.specOverlayX = 0;
     this.abortFlag = false;
     this.liveNodes = {};
     this.liveChainBuilt = false;
     this.playStartTime = 0;
     this.playOffset = 0;
     this.isPlaying = false;
-    this.isPaused = false;
     this.mutedBands = new Set();
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
-
-    // Spectrogram visualization state (zoom/pan/freeze + voice analysis)
-    this.spectroSt = {
-      zoom: 1,        // 1x, 2x, 4x, 8x — frequency axis zoom level
-      panY: 0,        // 0.0–1.0 — fractional pan offset within the zoomed frequency range
-      frozen: false,  // when true, time-axis scrolling is paused
-      noiseFloor: null, // Float32Array per bin, lazily initialized
-      vadActive: false,
-      vadCounter: 0,
-      speakerBuf: [0, 0], // smoothed energy in low/high voice ranges for speaker A/B
-    };
-
-    // v20: Initialize PipelineState (centralized 52-param state with pub/sub)
     this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
-    Object.assign(PRESETS, this.customPresets);
-    this.pipelineState = typeof PipelineState !== 'undefined' ? new PipelineState() : null;
-    if (this.pipelineState) {
-      this.pipelineState.registerSliders(SLIDERS);
-      // Sync param changes from PipelineState → legacy this.params
-      this.pipelineState.onAny(({ key, value }) => { this.params[key] = value; });
-    }
-
-    // v20: Initialize PipelineOrchestrator (processing conductor)
-    this.orchestrator = (typeof PipelineOrchestrator !== 'undefined' && this.pipelineState)
-      ? new PipelineOrchestrator(this.pipelineState) : null;
-    if (this.orchestrator) {
-      this.orchestrator.onStatusChange = (s) => this.setStatus(s.toUpperCase());
-      this.orchestrator.onProgress = (stage, pct, label) => {
-        if (this.dom) {
-          this.dom.pipeFill.style.width = pct + '%';
-          this.dom.pipeStage.textContent = `S${stage}/36`;
-          this.dom.pipeDetail.textContent = label || '';
-        }
-      };
-      this.orchestrator.onError = (msg) => structuredLog('error', 'Pipeline error', { error: msg });
-    }
-
-    // v20: SharedRingBuffer support detection
-    this.sabSupported = typeof SharedArrayBuffer !== 'undefined' && typeof Atomics !== 'undefined';
-
-    // Phase 4: ML Worker (off-main-thread ONNX inference)
-    this.mlWorker = null;
-    this._mlCallbacks = {};  // id → { resolve, reject }
-    this._mlCallId = 0;
-    this.mlWorkerReady = false;
-    this.mlWorkerModels = { vad: false, deepfilter: false, demucs: false };
-    // Phase 5: Forensic audit
-    this.forensicMode = false;
-    this.forensicLog = [];
-
-    // Speaker fingerprinting (additive — does not affect audio processing)
-    this.speakerRegistry = typeof SpeakerRegistry !== 'undefined' ? new SpeakerRegistry() : null;
-    this._speakerSegments = []; // [{ startSec, endSec, speakerId, color, label }]
-    this._identifyCallId = 0;   // Counter for pending identify calls
-    this._identifyPending = {}; // callId → { startSec, endSec }
-
-    // Phase 6: Secure PRNG for dither (Sentinel fix)
-    // Buffer size limited to 65536 bytes (16384 Uint32s) by Web Crypto API
-    this._rndBuf = new Uint32Array(16384);
-    this._rndIdx = 16384;
-
+    this.renderCustomPresets();
+    // Diagnostic state
+    this.oscMode = 'wave';
+    this.overlays = { noise: true, erb: true, ml: false };
+    this.abOverlay = false;
+    this.lufsHistory = new Float32Array(600).fill(-60);  // 60 seconds @ 10Hz
+    this.lufsIdx = 0;
+    this.lufsIntegrated = -60;
+    this.lufsFrameCount = 0;
+    this.lufsSumSq = 0;
+    this.clusterPoints = [];  // simulated PCA points
+    this.saliencyBuf = new Float32Array(256);
+    this.noiseProfile = new Float32Array(256).fill(0.05);
+    this.erbThresholds = new Float32Array(32);
+    for (let i = 0; i < 32; i++) this.erbThresholds[i] = 0.08 + Math.random() * 0.04;
+    this.diagFpsFrames = 0;
+    this.diagFpsLast = performance.now();
     this.init();
   }
 
@@ -235,97 +182,31 @@ class VoiceIsolatePro {
     this.bindEvents();
     this.initCanvases();
     this.init3D();
-    this.initMLWorker(); // start loading ML models in background
-    // Load persisted speaker profiles
-    if (this.speakerRegistry) {
-      this.speakerRegistry.load().catch(() => {});
-      this.speakerRegistry.onChange(() => this.updateSpeakerUI());
-    }
   }
 
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
-      this.ctx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)({ sampleRate: 48000 });
-      // v20: Register AudioWorklet processors; v19: also load full STFT DSP worklet
-      if (this.ctx.audioWorklet) {
-        Promise.all([
-          this.ctx.audioWorklet.addModule('./voice-isolate-processor.js'),
-          this.ctx.audioWorklet.addModule('./dsp-processor.js'),
-        ]).then(() => {
-          this._initDspWorklet().catch(err =>
-            structuredLog('warn', 'DSP worklet init failed', { error: err.message })
-          );
-        }).catch(() => {
-          structuredLog('warn', 'AudioWorklet unavailable — live chain uses native Web Audio nodes');
-        });
-      }
-      // v20: Share context with orchestrator
-      if (this.orchestrator && !this.orchestrator.audioCtx) {
-        this.orchestrator.audioCtx = this.ctx;
-      }
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;
   }
 
-  // ---- BUILD SLIDERS ----
   buildSliderPanels() {
     for (const [tabKey, sliders] of Object.entries(SLIDERS)) {
       const panel = document.getElementById('tab-' + tabKey);
       if (!panel) continue;
-      panel.textContent = '';
-      const sr = document.createElement('div');
-      sr.className = 'sr';
+      let h = '<div class="sr">';
       for (const s of sliders) {
-        const row = document.createElement('div');
-        row.className = 'sr-row';
-        row.dataset.desc = s.desc;
-
-        const labelEl = document.createElement('label');
-        labelEl.className = 'sr-label';
-        labelEl.title = s.desc;
-        labelEl.htmlFor = s.id;
-        labelEl.textContent = s.label;
-        if (s.rt) {
-          const badge = document.createElement('span');
-          badge.className = 'rt-badge';
-          badge.textContent = 'RT';
-          labelEl.appendChild(badge);
-        }
-        const infoEl = document.createElement('span');
-        infoEl.className = 'sr-info';
-        infoEl.textContent = 'i';
-        infoEl.setAttribute('aria-hidden', 'true');
-        labelEl.appendChild(infoEl);
-
-        const inputEl = document.createElement('input');
-        inputEl.type = 'range';
-        if (s.rt) inputEl.className = 'realtime';
-        inputEl.id = s.id;
-        inputEl.min = s.min;
-        inputEl.max = s.max;
-        inputEl.value = s.val;
-        inputEl.step = s.step;
-        inputEl.dataset.param = s.id;
-        inputEl.setAttribute('aria-label', s.label);
-        inputEl.setAttribute('aria-valuemin', s.min);
-        inputEl.setAttribute('aria-valuemax', s.max);
-        inputEl.setAttribute('aria-valuenow', s.val);
-        // Set initial fill percentage for styled track
-        const initPct = (s.max - s.min) > 0 ? ((s.val - s.min) / (s.max - s.min)) * 100 : 0;
-        inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
-
-        const valEl = document.createElement('span');
-        valEl.className = 'sr-val';
-        valEl.id = s.id + 'Val';
-        valEl.textContent = s.val + s.unit;
-
-        row.appendChild(labelEl);
-        row.appendChild(inputEl);
-        row.appendChild(valEl);
-        sr.appendChild(row);
+        const rtCls = s.rt ? ' realtime' : '';
+        const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
+        h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
+          '<label class="sr-label" for="' + s.id + '" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
+          '<input type="range" aria-label="' + s.label.replace(/"/g, '&quot;') + (s.rt ? ' (Real-time)' : '') + '" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
+          '<span class="sr-val" id="' + s.id + 'Val">' + s.val + s.unit + '</span></div>';
       }
-      panel.appendChild(sr);
+      h += '</div>';
+      panel.innerHTML = h;
     }
   }
 
@@ -335,33 +216,31 @@ class VoiceIsolatePro {
       uploadZone:g('uploadZone'), fileInput:g('fileInput'), fileBtn:g('fileBtn'),
       micBtn:g('micBtn'), micLabel:g('micLabel'), fileInfo:g('fileInfo'),
       processBtn:g('processBtn'), reprocessBtn:g('reprocessBtn'), stopProcBtn:g('stopProcBtn'),
-      mobileProcessBtn:g('mobileProcessBtn'), mobileReprocessBtn:g('mobileReprocessBtn'), mobileStopBtn:g('mobileStopBtn'),
-      statsToggle:g('statsToggle'), hdrStats:g('hdrStats'),
       saveOrigBtn:g('saveOrigBtn'), saveProcBtn:g('saveProcBtn'),
-      auditLogBtn:g('auditLogBtn'), forensicToggle:g('forensicToggle'),
       videoCard:g('videoCard'), videoPlayer:g('videoPlayer'),
       tpPlay:g('tpPlay'), tpPause:g('tpPause'), tpStop:g('tpStop'),
       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
       tpSeek:g('tpSeek'), tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
-      tpSourceToggle:g('tpSourceToggle'),
-      fileSpectroCard:g('fileSpectroCard'), fsModeLbl:g('fsModeLbl'), fsProgress:g('fsProgress'),
-      fsBtnAB:g('fsBtnAB'), fsColormap:g('fsColormap'),
-      fsYAxis:g('fsYAxis'), fsMain:g('fsMain'), fsCanvas:g('fsCanvas'), fsOverlay:g('fsOverlay'), fsXAxis:g('fsXAxis'),
       spectro3DContainer:g('spectro3DContainer'), spectro3DCanvas:g('spectro3DCanvas'),
       spectro3DReset:g('spectro3DReset'),
       spectro2DCanvas:g('spectro2DCanvas'),
-      spectroFreeze:g('spectroFreeze'), spectroZoomIn:g('spectroZoomIn'), spectroZoomOut:g('spectroZoomOut'),
-      spectroPanUp:g('spectroPanUp'), spectroPanDn:g('spectroPanDn'),
       waveOrigCanvas:g('waveOrigCanvas'), waveProcCanvas:g('waveProcCanvas'),
       freqCanvas:g('freqCanvas'),
-      speakerCard:g('speakerCard'), speakerList:g('speakerList'), speakerTimeline:g('speakerTimeline'), speakerClearBtn:g('speakerClearBtn'),
-      hdrWaveCanvas:g('hdrWaveCanvas'), speakerAuras:g('speakerAuras'),
-      noiseClassBadge:g('noiseClassBadge'),
       pipeFill:g('pipeFill'), pipeBar:g('pipeBar'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
       hSNR:g('hSNR'), hDur:g('hDur'), hSR:g('hSR'), hCh:g('hCh'),
-      hRMS:g('hRMS'), hPeak:g('hPeak'), hStatus:g('hStatus'),
+      hRMS:g('hRMS'), hPeak:g('hPeak'), hLUFS:g('hLUFS'), hStatus:g('hStatus'),
       stLatency:g('stLatency'), stProcTime:g('stProcTime'), stVoices:g('stVoices'),
-      tooltip:g('tooltip')
+      tooltip:g('tooltip'),
+      // Diagnostic canvases
+      abWaveCanvas:g('abWaveCanvas'),
+      oscCanvas:g('oscCanvas'),
+      specOverlayCanvas:g('specOverlayCanvas'),
+      lufsCanvas:g('lufsCanvas'),
+      saliencyCanvas:g('saliencyCanvas'),
+      clusterCanvas:g('clusterCanvas'),
+      diagFps:g('diagFps'),
+      lufsShort:g('lufsShort'), lufsInt:g('lufsInt'), lufsPeak:g('lufsPeak'), lufsCrest:g('lufsCrest'),
+      abOverlayBtn:g('abOverlayBtn'),
     };
   }
 
@@ -371,7 +250,7 @@ class VoiceIsolatePro {
     ['dragleave','drop'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uz.classList.remove('dragover'); }));
     uz.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
     uz.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
-    uz.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.dom.fileInput.click(); } });
+    uz.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.dom.fileInput.click(); } });
     this.dom.fileBtn.addEventListener('click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
     this.dom.fileInput.addEventListener('change', e => { if (e.target.files[0]) this.handleFile(e.target.files[0]); this.dom.fileInput.value = ''; });
     this.dom.micBtn.addEventListener('click', () => this.toggleRecording());
@@ -380,7 +259,7 @@ class VoiceIsolatePro {
     this.dom.stopProcBtn.addEventListener('click', () => { this.abortFlag = true; });
     this.dom.saveOrigBtn.addEventListener('click', () => this.saveWav(this.inputBuffer,'original'));
     this.dom.saveProcBtn.addEventListener('click', () => this.saveWav(this.outputBuffer,'processed'));
-    this.dom.tpPlay.addEventListener('click', () => this.playOrResume());
+    this.dom.tpPlay.addEventListener('click', () => this.play());
     this.dom.tpPause.addEventListener('click', () => this.pause());
     this.dom.tpStop.addEventListener('click', () => this.stop());
     this.dom.tpRew.addEventListener('click', () => this.seekDelta(-5));
@@ -388,124 +267,55 @@ class VoiceIsolatePro {
     this.dom.tpSeek.addEventListener('input', () => this.seekTo(this.dom.tpSeek.value / 1000));
     this.dom.tpSpeed.addEventListener('change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
     this.dom.tpAB.addEventListener('click', () => this.toggleAB());
-    if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.addEventListener('change', () => this.toggleAB());
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(x => {
-        const isActive = x === t;
-        x.classList.toggle('active', isActive);
-        x.setAttribute('aria-selected', isActive ? 'true' : 'false');
-      });
-      document.querySelectorAll('.panel').forEach(p => {
-        const isActive = p.id === 'tab-' + t.dataset.tab;
-        p.classList.toggle('active', isActive);
-        if (isActive) p.removeAttribute('hidden');
-        else p.setAttribute('hidden', '');
-      });
+      document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+      document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t.dataset.tab));
     }));
     document.querySelectorAll('.btn-preset').forEach(b => b.addEventListener('click', () => this.applyPreset(b.dataset.preset)));
     const saveBtn = document.getElementById('saveCustomPresetBtn');
     if (saveBtn) saveBtn.addEventListener('click', () => this.saveCustomPreset());
+    const nameInput = document.getElementById('customPresetName');
+    if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); this.saveCustomPreset(); } });
     document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', () => this.onSlider(el)));
     document.querySelectorAll('.sr-row').forEach(r => {
-      r.addEventListener('mouseenter', e => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }});
-      r.addEventListener('mouseleave', () => this.dom.tooltip.classList.remove('visible'));
+      const showTt = () => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }};
+      const hideTt = () => this.dom.tooltip.classList.remove('visible');
+      r.addEventListener('mouseenter', showTt);
+      r.addEventListener('mouseleave', hideTt);
+      const input = r.querySelector('input');
+      if (input) {
+        input.addEventListener('focus', showTt);
+        input.addEventListener('blur', hideTt);
+      }
     });
     this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
     this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
-    // Spectrogram v2: mode toggle, mel scale, freeze, snapshot
-    const spectroModeBtn     = document.getElementById('spectroModeBtn');
-    const spectroMelBtn      = document.getElementById('spectroMelBtn');
-    const spectroFreezeBtn   = document.getElementById('spectroFreezeBtn');
-    const spectroSnapshotBtn = document.getElementById('spectroSnapshotBtn');
-    if (spectroModeBtn)     spectroModeBtn.addEventListener('click',     () => this._spectroV2ToggleMode());
-    if (spectroMelBtn)      spectroMelBtn.addEventListener('click',      () => this._spectroV2ToggleMel());
-    if (spectroFreezeBtn)   spectroFreezeBtn.addEventListener('click',   () => this._spectroV2ToggleFreeze());
-    if (spectroSnapshotBtn) spectroSnapshotBtn.addEventListener('click', () => this._spectroV2Snapshot());
-    // Keyboard shortcuts: V=2D/3D, M=mel/linear, F=freeze
-    window.addEventListener('keydown', e => {
-      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
-      if (e.key === 'v' || e.key === 'V') this._spectroV2ToggleMode();
-      if (e.key === 'm' || e.key === 'M') this._spectroV2ToggleMel();
-      if (e.key === 'f' || e.key === 'F') this._spectroV2ToggleFreeze();
-    });
-    // 2D Spectrogram controls
-    if (this.dom.spectroFreeze)  this.dom.spectroFreeze.addEventListener('click', () => this._spectroToggleFreeze());
-    if (this.dom.spectroZoomIn)  this.dom.spectroZoomIn.addEventListener('click', () => this._spectroZoom(2));
-    if (this.dom.spectroZoomOut) this.dom.spectroZoomOut.addEventListener('click', () => this._spectroZoom(0.5));
-    if (this.dom.spectroPanUp)   this.dom.spectroPanUp.addEventListener('click', () => this._spectroPan(-0.1));
-    if (this.dom.spectroPanDn)   this.dom.spectroPanDn.addEventListener('click', () => this._spectroPan(0.1));
-    // Mouse wheel zoom on the 2D canvas
-    this.dom.spectro2DCanvas.addEventListener('wheel', e => { e.preventDefault(); this._spectroZoom(e.deltaY < 0 ? 2 : 0.5); }, { passive: false });
-    // Mouse drag to pan on the 2D canvas
-    (() => { let dragging = false, lastY = 0;
-      this.dom.spectro2DCanvas.addEventListener('mousedown', e => { dragging = true; lastY = e.clientY; });
-      window.addEventListener('mouseup', () => { dragging = false; });
-      window.addEventListener('mousemove', e => { if (!dragging) return; const dy = (lastY - e.clientY) / (this.dom.spectro2DCanvas.clientHeight || 140); lastY = e.clientY; this._spectroPan(dy); });
-      // Touch support for pan on mobile
-      this.dom.spectro2DCanvas.addEventListener('touchstart', e => { if (e.touches.length === 1) { dragging = true; lastY = e.touches[0].clientY; } }, { passive: true });
-      window.addEventListener('touchend', () => { dragging = false; });
-      window.addEventListener('touchmove', e => { if (!dragging || e.touches.length !== 1) return; const dy = (lastY - e.touches[0].clientY) / (this.dom.spectro2DCanvas.clientHeight || 140); lastY = e.touches[0].clientY; this._spectroPan(dy); }, { passive: true });
-    })();
-    if (this.dom.fsBtnAB) this.dom.fsBtnAB.addEventListener('click', () => this.fsToggleAB());
-    if (this.dom.fsColormap) this.dom.fsColormap.addEventListener('change', () => { if (this.fsCurrentBuf) this.renderFileSpectrogram(this.fsCurrentBuf); });
-    if (this.dom.fsMain) this.dom.fsMain.addEventListener('click', e => this.fsSeekClick(e));
-    // Phase 5: Forensic mode toggle
-    if (this.dom.forensicToggle) {
-      this.dom.forensicToggle.addEventListener('change', () => {
-        this.forensicMode = this.dom.forensicToggle.checked;
-        structuredLog('info', 'Forensic mode', { enabled: this.forensicMode });
-      });
-    }
-    // Phase 5: Audit log download
-    if (this.dom.auditLogBtn) {
-      this.dom.auditLogBtn.addEventListener('click', () => this.downloadAuditLog());
-    }
-    // Mobile action bar mirrors desktop process buttons
-    if (this.dom.mobileProcessBtn)   this.dom.mobileProcessBtn.addEventListener('click', () => this.runPipeline());
-    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.addEventListener('click', () => this.runPipeline());
-    if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.addEventListener('click', () => { this.abortFlag = true; });
-    // Mobile stats toggle
-    if (this.dom.statsToggle && this.dom.hdrStats) {
-      this.dom.statsToggle.addEventListener('click', () => {
-        const expanded = this.dom.hdrStats.classList.toggle('expanded');
-        this.dom.statsToggle.setAttribute('aria-expanded', String(expanded));
-        this.dom.statsToggle.textContent = expanded ? '▲' : '▼';
-      });
-    }
-    // Speaker fingerprinting: clear profiles button
-    if (this.dom.speakerClearBtn) {
-      this.dom.speakerClearBtn.addEventListener('click', () => {
-        if (this.speakerRegistry) {
-          this.speakerRegistry.clearAll();
-          this._speakerSegments = [];
-          this.speakerRegistry.save().catch(() => {});
-          this.updateSpeakerUI();
-        }
-      });
-    }
     window.addEventListener('resize', () => this.onResize());
+
+    // Diagnostic bindings
+    document.querySelectorAll('.osc-mode').forEach(b => b.addEventListener('click', () => {
+      document.querySelectorAll('.osc-mode').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      this.oscMode = b.dataset.mode;
+    }));
+    document.querySelectorAll('.overlay-toggle').forEach(b => b.addEventListener('click', () => {
+      b.classList.toggle('active');
+      this.overlays[b.dataset.overlay] = b.classList.contains('active');
+    }));
+    if (this.dom.abOverlayBtn) this.dom.abOverlayBtn.addEventListener('click', () => {
+      this.abOverlay = !this.abOverlay;
+      this.dom.abOverlayBtn.classList.toggle('active', this.abOverlay);
+    });
   }
 
   onSlider(el) {
     const id = el.dataset.param;
     const v = parseFloat(el.value);
     this.params[id] = v;
-    // v20: Sync to PipelineState (broadcasts rt params to AudioWorklet via _workletPort)
-    if (this.pipelineState) this.pipelineState.set(id, v, { recordHistory: true, source: 'slider' });
-    // v19: Also send ALL params (including non-rt) directly to DSP worklet port so the
-    // full STFT pipeline stays in sync with every slider change, not just realtime ones.
-    if (this._dspWorkletNode) {
-      this._dspWorkletNode.port.postMessage({ type: 'param', key: id, value: v });
-    }
     let unit = '';
     for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
-    el.setAttribute('aria-valuenow', v);
-    // Update filled-track CSS variable
-    const range = parseFloat(el.max) - parseFloat(el.min);
-    const pct = range > 0 ? ((v - parseFloat(el.min)) / range) * 100 : 0;
-    el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
   }
 
@@ -559,146 +369,85 @@ class VoiceIsolatePro {
 
   applyPreset(name) {
     const p = PRESETS[name]; if (!p) return;
-    // v20: Batch update through PipelineState (single undo snapshot)
-    if (this.pipelineState) {
-      this.pipelineState.import(p, 'preset');
-    }
     Object.assign(this.params, p);
     for (const [, sliders] of Object.entries(SLIDERS)) {
       for (const s of sliders) {
         const el = document.getElementById(s.id);
         const ve = document.getElementById(s.id + 'Val');
-        if (el && this.params[s.id] !== undefined) {
-          el.value = this.params[s.id];
-          el.setAttribute('aria-valuenow', this.params[s.id]);
-          if (ve) ve.textContent = this.params[s.id] + s.unit;
-          const range = s.max - s.min;
-          const pct = range > 0 ? ((this.params[s.id] - s.min) / range) * 100 : 0;
-          el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
-        }
+        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
       }
     }
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
     if (this.liveChainBuilt) this.updateLiveChain();
   }
 
-  // ======== FILE HANDLING (FIXED) ========
+  // ======== FILE HANDLING ========
   async handleFile(file) {
     try {
-      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
-
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
-      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
-
       this.ensureCtx();
-      this.stop(); // stop any current playback
+      this.stop();
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
       this.setStatus('LOADING');
-
       this.isVideo = file.type.startsWith('video/');
-
-      // Always read file as ArrayBuffer FIRST (works for both audio and video)
       const fileArrayBuffer = await file.arrayBuffer();
-
-      // Try to decode audio from the file bytes
-      // decodeAudioData needs a COPY because it detaches the buffer
       let audioBuf = null;
       try {
         audioBuf = await this.ctx.decodeAudioData(fileArrayBuffer.slice(0));
       } catch (decodeErr) {
-        // Fallback: if direct decode fails (some video formats), use video element
-        if (this.isVideo) {
-          audioBuf = await this.decodeViaVideoElement(file);
-        } else {
-          throw new Error('Cannot decode this audio format. Try WAV or MP3. (' + decodeErr.message + ')');
-        }
+        if (this.isVideo) { audioBuf = await this.decodeViaVideoElement(file); }
+        else { throw new Error('Cannot decode this audio format. (' + decodeErr.message + ')'); }
       }
-
-      if (!audioBuf || audioBuf.length === 0) {
-        throw new Error('Decoded audio is empty. The file may be corrupt or unsupported.');
-      }
-
-      // Set up video player if video
+      if (!audioBuf || audioBuf.length === 0) throw new Error('Decoded audio is empty.');
       if (this.isVideo) {
         if (this.videoUrl) URL.revokeObjectURL(this.videoUrl);
         this.videoUrl = URL.createObjectURL(file);
         this.dom.videoPlayer.src = this.videoUrl;
         this.dom.videoCard.style.display = 'block';
-        // Wait for metadata
         await new Promise((res, rej) => {
           this.dom.videoPlayer.onloadedmetadata = res;
           this.dom.videoPlayer.onerror = () => rej(new Error('Video metadata load failed'));
-          setTimeout(res, 5000); // timeout fallback
+          setTimeout(res, 5000);
         });
-      } else {
-        this.dom.videoCard.style.display = 'none';
-      }
-
+      } else { this.dom.videoCard.style.display = 'none'; }
       this.inputBuffer = audioBuf;
       this.outputBuffer = null;
-      // Phase 4: Attempt to load ML models if ONNX Runtime is available
-      if (!this.mlReady) this.loadModels().catch(() => {});
       this.onAudioLoaded(file.name);
-
     } catch (err) {
-      structuredLog('error', 'File load error', { error: err.message });
+      console.error('File load error:', err);
       this.dom.fileInfo.textContent = 'Error: ' + err.message;
       this.setStatus('ERROR');
     }
   }
 
-  // Fallback: decode audio by playing video element into an offline context
   async decodeViaVideoElement(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const vid = document.createElement('video');
-      vid.muted = true;
-      vid.src = url;
-
+      vid.muted = true; vid.src = url;
       vid.onloadedmetadata = async () => {
         try {
           const duration = vid.duration;
           if (!duration || !isFinite(duration)) { reject(new Error('Cannot determine video duration')); return; }
-
-          // Use MediaElement source to capture audio
-          const tmpCtx = new (typeof AudioContext !== 'undefined' ? AudioContext : window.webkitAudioContext)();
+          const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
           const source = tmpCtx.createMediaElementSource(vid);
           const dest = tmpCtx.createMediaStreamDestination();
           source.connect(dest);
-
-          // Record the stream
           const chunks = [];
           const recorder = new MediaRecorder(dest.stream);
           recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-
           recorder.onstop = async () => {
-            vid.pause();
-            URL.revokeObjectURL(url);
+            vid.pause(); URL.revokeObjectURL(url);
             const blob = new Blob(chunks, { type: 'audio/webm' });
             const ab = await blob.arrayBuffer();
-            try {
-              const decoded = await this.ctx.decodeAudioData(ab);
-              tmpCtx.close();
-              resolve(decoded);
-            } catch (e) {
-              tmpCtx.close();
-              reject(new Error('Failed to decode extracted video audio: ' + e.message));
-            }
+            try { const decoded = await this.ctx.decodeAudioData(ab); tmpCtx.close(); resolve(decoded); }
+            catch (e) { tmpCtx.close(); reject(new Error('Failed to decode video audio: ' + e.message)); }
           };
-
-          recorder.start();
-          vid.play();
-
-          // Stop after video ends
+          recorder.start(); vid.play();
           vid.onended = () => { recorder.stop(); };
-          // Safety timeout
           setTimeout(() => { if (recorder.state === 'recording') { vid.pause(); recorder.stop(); } }, (duration + 2) * 1000);
-        } catch (e) {
-          reject(e);
-        }
+        } catch (e) { reject(e); }
       };
-
-      vid.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Video element failed to load')); };
+      vid.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Video element failed')); };
     });
   }
 
@@ -707,13 +456,10 @@ class VoiceIsolatePro {
     const dur = this.fmtDur(buf.duration);
     this.dom.fileInfo.textContent = (name || 'Recording') + ' (' + dur + ')';
     this.dom.processBtn.disabled = false;
-    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
-    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
     this.dom.saveOrigBtn.disabled = false;
     this.dom.reprocessBtn.disabled = true;
     this.dom.saveProcBtn.disabled = true;
     this.dom.tpAB.disabled = true;
-    if (this.dom.tpSourceToggle) { this.dom.tpSourceToggle.disabled = true; this.dom.tpSourceToggle.checked = false; }
     [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew, this.dom.tpFwd, this.dom.tpSeek, this.dom.tpSpeed].forEach(el => el.disabled = false);
     this.dom.tpTotal.textContent = dur;
     this.dom.tpABLabel.textContent = 'Original';
@@ -723,18 +469,8 @@ class VoiceIsolatePro {
     this.dom.hRMS.textContent = this.calcRMS(buf.getChannelData(0)).toFixed(1) + ' dB';
     this.dom.hPeak.textContent = this.calcPeak(buf.getChannelData(0)).toFixed(1) + ' dB';
     this.resizeCanvas(this.dom.waveOrigCanvas);
-    this.drawWaveform(buf, this.dom.waveOrigCanvas, '#00f5ff');
+    this.drawWaveform(buf, this.dom.waveOrigCanvas, '#dc2626');
     this.clearCanvas(this.dom.waveProcCanvas, 'Process to see result');
-    // Show full-file spectrogram card and render initial view
-    if (this.dom.fileSpectroCard) {
-      this.dom.fileSpectroCard.style.display = '';
-      this.fsMode = 'original';
-      this.fsCurrentBuf = buf;
-      this.fsImageData = null;
-      if (this.dom.fsModeLbl) this.dom.fsModeLbl.textContent = 'ORIGINAL';
-      if (this.dom.fsBtnAB) { this.dom.fsBtnAB.textContent = 'Show Processed'; this.dom.fsBtnAB.disabled = true; }
-      this.renderFileSpectrogram(buf);
-    }
     this.setStatus('READY');
   }
 
@@ -750,30 +486,31 @@ class VoiceIsolatePro {
       this.dom.micLabel.textContent = 'Stop';
       this.setStatus('RECORDING');
       const src = this.ctx.createMediaStreamSource(stream);
-      this.analyserNode = this.ctx.createAnalyser();
-      this.analyserNode.fftSize = 4096;
-      src.connect(this.analyserNode);
-      this.startSpectro(this.analyserNode);
-      this.startGlowLoop();
+      const ana = this.ctx.createAnalyser(); ana.fftSize = 4096;
+      src.connect(ana);
+      this.analyserNode = ana;
+      this.analyserOrig = ana;
+      this.analyserProc = ana;
+      this.startSpectro(ana);
+      this.startFreq(ana);
+      this.startDiagnostics();
       const mt = this.getMime();
       this.mediaRecorder = new MediaRecorder(stream, { mimeType: mt });
       this.mediaRecorder.ondataavailable = e => { if (e.data.size > 0) this.recordedChunks.push(e.data); };
       this.mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
-        this.stopSpectro();
-        this.stopGlowLoop();
+        this.stopSpectro(); this.stopDiagnostics();
         const blob = new Blob(this.recordedChunks, { type: mt });
         const ab = await blob.arrayBuffer();
         try {
           this.inputBuffer = await this.ctx.decodeAudioData(ab);
           this.outputBuffer = null;
-          this.dom.videoCard.style.display = 'none';
-          this.isVideo = false;
+          this.dom.videoCard.style.display = 'none'; this.isVideo = false;
           this.onAudioLoaded('Recording');
         } catch (e) { this.dom.fileInfo.textContent = 'Decode error: ' + e.message; this.setStatus('ERROR'); }
       };
       this.mediaRecorder.start(100);
-    } catch { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
+    } catch (e) { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
   }
 
   stopRecording() {
@@ -790,16 +527,6 @@ class VoiceIsolatePro {
   }
 
   // ======== TRANSPORT ========
-  playOrResume() {
-    if (this.isPaused && this.playOffset > 0) {
-      // Resume from paused position
-      this.isPaused = false;
-      this.play();
-    } else {
-      this.play();
-    }
-  }
-
   play() {
     // Teardown previous playback state without resetting playOffset
     if (typeof this.teardownChain === 'function') this.teardownChain();
@@ -828,7 +555,7 @@ class VoiceIsolatePro {
     }
     this.startSpectro(this.analyserNode);
     this.startFreq(this.analyserNode);
-    this.startGlowLoop();
+    this.startDiagnostics();
     this.tickTime();
   }
 
@@ -838,20 +565,18 @@ class VoiceIsolatePro {
     this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.teardownChain();
     this.isPlaying = false;
-    this.isPaused = true;
     if (this.isVideo) this.dom.videoPlayer.pause();
     this.stopSpectro();
-    this.stopGlowLoop();
+    this.stopDiagnostics();
   }
 
   stop() {
     this.teardownChain();
     this.isPlaying = false;
-    this.isPaused = false;
     this.playOffset = 0;
     if (this.isVideo) { this.dom.videoPlayer.pause(); this.dom.videoPlayer.currentTime = 0; }
     this.stopSpectro();
-    this.stopGlowLoop();
+    this.stopDiagnostics();
     this.dom.tpCur.textContent = '0:00';
     this.dom.tpSeek.value = 0;
   }
@@ -880,21 +605,10 @@ class VoiceIsolatePro {
   toggleAB() {
     if (!this.outputBuffer) return;
     this.abMode = this.abMode === 'original' ? 'processed' : 'original';
-    const isProcessed = this.abMode === 'processed';
-    this.dom.tpAB.classList.toggle('active', isProcessed);
-    if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.checked = isProcessed;
+    this.dom.tpAB.classList.toggle('active', this.abMode === 'processed');
     const speed = parseFloat(this.dom.tpSpeed.value) || 1;
     if (this.isPlaying) { this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed; this.play(); }
-    this.dom.tpABLabel.textContent = isProcessed ? 'Processed' : 'Original';
-    // Sync spectrogram with A/B toggle
-    if (this.fsMode !== this.abMode) {
-      this.fsMode = this.abMode;
-      if (this.dom.fsModeLbl) { this.dom.fsModeLbl.textContent = isProcessed ? 'PROCESSED' : 'ORIGINAL'; this.dom.fsModeLbl.classList.toggle('proc', isProcessed); }
-      if (this.dom.fsBtnAB) this.dom.fsBtnAB.textContent = isProcessed ? 'Show Original' : 'Show Processed';
-      this.fsCurrentBuf = isProcessed ? this.outputBuffer : this.inputBuffer;
-      this.fsImageData = null;
-      if (this.fsCurrentBuf) this.renderFileSpectrogram(this.fsCurrentBuf);
-    }
+    this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
   }
 
   tickTime() {
@@ -906,13 +620,12 @@ class VoiceIsolatePro {
       if (elapsed >= dur) { this.stop(); return; }
       this.dom.tpCur.textContent = this.fmtDur(elapsed);
       this.dom.tpSeek.value = dur > 0 ? (elapsed / dur) * 1000 : 0;
-      if (dur > 0) this.drawFsPlayhead(elapsed / dur);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   }
 
-  // ======== LIVE AUDIO CHAIN ========
+  // ======== LIVE AUDIO CHAIN (with dual analysers) ========
   buildLiveChain(buf) {
     this.teardownChain();
     const ctx = this.ensureCtx();
@@ -921,6 +634,9 @@ class VoiceIsolatePro {
     src.buffer = buf;
     src.playbackRate.value = parseFloat(this.dom.tpSpeed.value) || 1;
     src.onended = () => { if (this.isPlaying) this.stop(); };
+
+    // Pre-chain analyser (original signal)
+    const anaOrig = ctx.createAnalyser(); anaOrig.fftSize = 4096; anaOrig.smoothingTimeConstant = 0.75;
 
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = p.hpFreq; hp.Q.value = p.hpQ;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = p.lpFreq; lp.Q.value = p.lpQ;
@@ -945,16 +661,22 @@ class VoiceIsolatePro {
     const lim = ctx.createDynamicsCompressor(); lim.threshold.value = p.limThresh; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = p.limRelease/1000;
     const outG = ctx.createGain(); outG.gain.value = Math.pow(10, p.outGain/20);
     const wG = ctx.createGain(); wG.gain.value = p.outWidth/100;
-    const ana = ctx.createAnalyser(); ana.fftSize = 4096; ana.smoothingTimeConstant = 0.75;
 
-    const chain = [src, hp, lp, ...eqs.map(e=>e.node), deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, ana];
+    // Post-chain analyser (processed signal)
+    const anaProc = ctx.createAnalyser(); anaProc.fftSize = 4096; anaProc.smoothingTimeConstant = 0.75;
+
+    // Wire: src -> anaOrig -> hp -> ... -> wG -> anaProc -> destination
+    src.connect(anaOrig);
+    const chain = [anaOrig, hp, lp, ...eqs.map(e=>e.node), deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, anaProc];
     for (let i = 0; i < chain.length-1; i++) chain[i].connect(chain[i+1]);
-    ana.connect(ctx.destination);
+    anaProc.connect(ctx.destination);
 
     src.start(0, this.playOffset);
     this.currentSource = src;
-    this.analyserNode = ana;
-    this.liveNodes = { hp, lp, eqs, deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, chain };
+    this.analyserNode = anaProc;
+    this.analyserOrig = anaOrig;
+    this.analyserProc = anaProc;
+    this.liveNodes = { hp, lp, eqs, deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, chain: [src, ...chain] };
     this.liveChainBuilt = true;
   }
 
@@ -982,1201 +704,374 @@ class VoiceIsolatePro {
   }
 
   teardownChain() {
-    if (this.currentSource) {
-      try { this.currentSource.stop(); } catch(e) { console.error('Error stopping current source:', e); }
-      try { this.currentSource.disconnect(); } catch(e) { console.error('Error disconnecting current source:', e); }
-      this.currentSource = null;
-    }
-    if (this.liveNodes.chain) {
-      this.liveNodes.chain.forEach(n => {
-        try { n.disconnect(); } catch(e) { console.error('Error disconnecting live node:', e); }
-      });
-    }
-    this.liveNodes = {};
-    this.liveChainBuilt = false;
+    if (this.currentSource) { try{this.currentSource.stop();}catch(e){} try{this.currentSource.disconnect();}catch(e){} this.currentSource = null; }
+    if (this.liveNodes.chain) this.liveNodes.chain.forEach(n => { try{n.disconnect();}catch(e){} });
+    this.liveNodes = {}; this.liveChainBuilt = false;
   }
 
-  // ======== 32-STAGE OCTA-PASS OFFLINE PIPELINE ========
+  // ======== 35-STAGE DECA-PASS OFFLINE PIPELINE (v22) ========
   async runPipeline() {
     if (!this.inputBuffer || this.isProcessing) return;
     this.isProcessing = true; this.abortFlag = false;
     this.dom.processBtn.style.display = 'none'; this.dom.stopProcBtn.style.display = 'inline-flex';
-    if (this.dom.mobileProcessBtn)   this.dom.mobileProcessBtn.style.display = 'none';
-    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display = 'none';
-    if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display = 'inline-flex';
     this.dom.saveProcBtn.disabled = true; this.dom.tpAB.disabled = true;
-    if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.disabled = true;
     this.setStatus('PROCESSING');
-    if (this.forensicMode) { this.forensicLog = []; }
     const t0 = performance.now();
     const p = this.params;
     const sr = this.inputBuffer.sampleRate;
     const numCh = this.inputBuffer.numberOfChannels;
     const len = this.inputBuffer.length;
-    const total = STAGES.length; // 32
+    const total = STAGES.length;
+    const fftSize = 4096;
+    const hopSize = 1024;
 
     try {
-      // ---- PASS 1: INGEST (stages 0-3) ----
-      for (let i = 0; i < 4; i++) { await this.pip(i, total); if (this.abortFlag) throw 'abort'; }
+      const DSP = window.DSPCore;
+      if (!DSP) throw new Error('DSPCore not loaded — ensure dsp-core.js is included');
 
-      // ---- PASS 2: ANALYSIS (stages 4-7) ----
-      await this.pip(4, total); // Noise Floor Profiling
-      await this.pip(5, total); // VAD
-      let vadMask = null;
-      if (this.sileroSession) {
-        try { vadMask = await this.runVAD(this.inputBuffer); } catch(e) { structuredLog('warn','VAD failed',{error:e.message}); }
-      }
-      await this.pip(6, total); // Spectral Fingerprint
-      await this.pip(7, total); // STFT Engine Init
+      // ═══ PASS 1: INGESTION & PRE-CONDITIONING (per-channel) ═══
+      await this.pip(0, total); // S01: Decode (already done)
+      if (this.abortFlag) throw 'abort';
 
-      // ---- ML WORKER: DeepFilterNet3 → Demucs (runs between analysis and filter pass) ----
-      // If ml-worker is ready, enhance the input before the classical DSP chain processes it.
-      let mlSourceBuffer = this.inputBuffer;
-      if (this.mlWorkerReady) {
-        try {
-          const mlResult = await this.runMLEnhancement(this.inputBuffer, (stage, pct) => {
-            this.dom.pipeStage && (this.dom.pipeStage.textContent = `ML: ${stage} (${pct}%)`);
+      const cleanChannels = [];
+      for (let ch = 0; ch < numCh; ch++) {
+        // Get raw channel data (copy to avoid mutating input)
+        let data = new Float32Array(this.inputBuffer.getChannelData(ch));
+
+        await this.pip(1, total); // S02: Buffer allocation
+        if (this.abortFlag) throw 'abort';
+
+        // S03: DC Offset Removal
+        await this.pip(2, total);
+        data = DSP.removeDCOffset(data, sr);
+
+        // S04: Peak normalization to -1 dBFS
+        await this.pip(3, total);
+        data = DSP.peakNormalize(data, -1);
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ PASS 2: ANALYSIS ═══
+        // S05: VAD for noise profiling
+        await this.pip(4, total);
+        const vad = new DSP.VADProcessor(sr, 20, p.nrSensitivity / 100);
+        const vadConf = vad.processSignal(data);
+
+        // S06: Noise gate (time-domain, before spectral)
+        await this.pip(5, total);
+        data = DSP.noiseGate(data, {
+          threshold: p.gateThresh,
+          range: p.gateRange,
+          attack: p.gateAttack,
+          release: p.gateRelease,
+          hold: p.gateHold,
+          lookahead: p.gateLookahead
+        }, sr);
+        if (this.abortFlag) throw 'abort';
+
+        // S07: Click/pop removal
+        await this.pip(6, total);
+        data = DSP.removeClicks(data, 3);
+
+        // S08: Hum removal (50/60 Hz + harmonics)
+        await this.pip(7, total);
+        const humFreqs = [60, 120, 180, 240, 300, 360];
+        DSP.cascadedNotch(data, humFreqs, 35, sr);
+
+        // S09: De-essing (time-domain)
+        await this.pip(8, total);
+        data = DSP.deEss(data, p.deEssFreq, p.deEssAmt, sr);
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ SINGLE FORWARD STFT ═══
+        await this.pip(9, total);
+        const stft = DSP.forwardSTFT(data, fftSize, hopSize);
+        let { mag, phase } = stft;
+
+        // ═══ PASS 3: SPECTRAL NOISE REDUCTION (all in-place on mag) ═══
+        // S10: Adaptive Wiener noise subtraction with VAD-gated profiling
+        await this.pip(10, total);
+        if (p.nrAmount > 0) {
+          const tracker = new window.AdaptiveNoiseFloor(
+            mag[0].length,
+            200 + p.nrSmoothing * 3,  // smoothing ms
+            hopSize, sr
+          );
+          const overSub = 1.0 + (p.nrSpectralSub / 100) * 4;  // 1x - 5x over-subtraction
+          const spectralFloor = Math.pow(10, p.nrFloor / 20);
+          DSP.applyAdaptiveWiener(mag, vadConf, tracker, {
+            overSubtraction: overSub,
+            spectralFloor: Math.max(0.0001, spectralFloor)
           });
-          if (mlResult && mlResult.signal) {
-            // Wrap the enhanced Float32Array back into an AudioBuffer
-            const mlBuf = this.ctx.createBuffer(1, mlResult.signal.length, mlResult.sampleRate);
-            mlBuf.copyToChannel(mlResult.signal, 0);
-            mlSourceBuffer = mlBuf;
-            if (this.forensicMode) await this.addAuditEntry(mlSourceBuffer, 'ML Enhancement');
-          }
-        } catch (e) {
-          structuredLog('warn', 'ML enhancement failed — using original', { error: e.message });
         }
+        if (this.abortFlag) throw 'abort';
+
+        // S11: Secondary Wiener pass for residual noise
+        await this.pip(11, total);
+        if (p.nrAmount > 30) {
+          // Build noise profile from quietest frames
+          const noiseProfile = new Float32Array(mag[0].length);
+          let noiseFrames = 0;
+          for (let f = 0; f < mag.length; f++) {
+            const vi = Math.min(f, vadConf.length - 1);
+            if (vadConf[vi] < 0.2) {
+              for (let k = 0; k < mag[f].length; k++) noiseProfile[k] += mag[f][k];
+              noiseFrames++;
+            }
+          }
+          if (noiseFrames > 0) {
+            for (let k = 0; k < noiseProfile.length; k++) noiseProfile[k] /= noiseFrames;
+            DSP.wienerMMSE(mag, noiseProfile, p.nrAmount * 0.6);
+          }
+        }
+        if (this.abortFlag) throw 'abort';
+
+        // S12: 32-band ERB spectral gate
+        await this.pip(12, total);
+        DSP.spectralGate(mag, p.nrFloor, sr);
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ PASS 4: VOICE ISOLATION (spectral domain) ═══
+        // S13: Voice-band spectral emphasis
+        await this.pip(13, total);
+        if (p.voiceIso > 0 || p.bgSuppress > 0) {
+          const voiceLoBin = Math.round(p.voiceFocusLo / (sr / fftSize));
+          const voiceHiBin = Math.round(p.voiceFocusHi / (sr / fftSize));
+          const halfN = mag[0].length;
+          const suppressGain = 1 - (p.bgSuppress / 100) * 0.95;
+          const boostGain = 1 + (p.voiceIso / 100) * 0.5;
+          for (let f = 0; f < mag.length; f++) {
+            for (let k = 0; k < halfN; k++) {
+              if (k >= voiceLoBin && k <= voiceHiBin) {
+                mag[f][k] *= boostGain;
+              } else {
+                mag[f][k] *= suppressGain;
+              }
+            }
+          }
+        }
+        if (this.abortFlag) throw 'abort';
+
+        // S14: Crosstalk cancellation (voice-band SNR enhancement)
+        await this.pip(14, total);
+        // Placeholder for ML separation - uses spectral masking approximation
+        if (p.crosstalkCancel > 0) {
+          const cancelAmt = p.crosstalkCancel / 100;
+          for (let f = 0; f < mag.length; f++) {
+            const vi = Math.min(f, vadConf.length - 1);
+            if (vadConf[vi] < 0.3) {
+              for (let k = 0; k < mag[f].length; k++) {
+                mag[f][k] *= (1 - cancelAmt * 0.8);
+              }
+            }
+          }
+        }
+
+        // ═══ PASS 5: SPECTRAL REFINEMENT (Anti-Garble) ═══
+        // S15: Temporal smoothing to kill musical noise / garbled artifacts
+        await this.pip(15, total);
+        DSP.temporalSmooth(mag, Math.max(p.nrSmoothing, 20));
+        if (this.abortFlag) throw 'abort';
+
+        // S16: Spectral tilt compensation
+        await this.pip(16, total);
+        if (Math.abs(p.specTilt) > 0.1) {
+          const halfN = mag[0].length;
+          for (let f = 0; f < mag.length; f++) {
+            for (let k = 0; k < halfN; k++) {
+              const freq = k * sr / fftSize;
+              const octavesFrom1k = freq > 0 ? Math.log2(freq / 1000) : 0;
+              const tiltGain = Math.pow(10, (p.specTilt * octavesFrom1k) / 20);
+              mag[f][k] *= Math.max(0.01, Math.min(10, tiltGain));
+            }
+          }
+        }
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ PASS 6: ROOM CORRECTION ═══
+        // S17: Dereverberation
+        await this.pip(17, total);
+        DSP.dereverb(mag, p.derevAmt, p.derevDecay, sr, hopSize);
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ PASS 7: HARMONIC RECONSTRUCTION ═══
+        // S18: Harmonic enhancement v2 (SBR + formant + breathiness)
+        await this.pip(18, total);
+        DSP.harmonicEnhanceV2(mag, phase, p.harmRecov, {
+          sbr: p.harmOrder >= 4,
+          formantProtection: true,
+          breathinessGain: 0.8,
+          sampleRate: sr,
+          fftSize: fftSize
+        });
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ SINGLE INVERSE STFT ═══
+        await this.pip(19, total);
+        let processed = DSP.inverseSTFT(mag, phase, fftSize, hopSize, data.length);
+
+        // Trim/pad to exact original length
+        if (processed.length > len) processed = processed.subarray(0, len);
+        else if (processed.length < len) {
+          const padded = new Float32Array(len);
+          padded.set(processed);
+          processed = padded;
+        }
+
+        cleanChannels.push(processed);
       }
       if (this.abortFlag) throw 'abort';
 
-      // ---- PASS 3: FILTER (stages 8-11) via Web Audio nodes ----
+      // ═══ PASS 8: EQ + DYNAMICS via OfflineAudioContext ═══
+      await this.pip(20, total);
+      // Create intermediate buffer with spectrally-cleaned audio
+      const cleanBuf = this.ctx.createBuffer(numCh, len, sr);
+      for (let ch = 0; ch < numCh; ch++) cleanBuf.getChannelData(ch).set(cleanChannels[ch]);
+
+      // Build Web Audio node chain for EQ + dynamics
       const ofl = new OfflineAudioContext(numCh, len, sr);
-      const src = ofl.createBufferSource(); src.buffer = mlSourceBuffer;
+      const src = ofl.createBufferSource();
+      src.buffer = cleanBuf;
 
-      await this.pip(8, total);  const hp = ofl.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=p.hpFreq; hp.Q.value=p.hpQ;
-      await this.pip(9, total);  const lp = ofl.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=p.lpFreq; lp.Q.value=p.lpQ;
-      await this.pip(10, total); const vbp = ofl.createBiquadFilter(); vbp.type='peaking'; vbp.frequency.value=1500; vbp.Q.value=0.5; vbp.gain.value=(p.voiceIso/100)*6;
-      await this.pip(11, total);
-      const gate = ofl.createDynamicsCompressor(); gate.threshold.value=p.gateThresh; gate.knee.value=2; gate.ratio.value=20; gate.attack.value=p.gateAttack/1000; gate.release.value=p.gateRelease/1000;
-      const notch = ofl.createBiquadFilter(); notch.type='notch'; notch.frequency.value=60; notch.Q.value=30;
-      if (this.abortFlag) throw 'abort';
+      // HP/LP filters
+      await this.pip(21, total);
+      const hp = ofl.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = p.hpFreq; hp.Q.value = p.hpQ;
+      const lp = ofl.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = p.lpFreq; lp.Q.value = p.lpQ;
 
-      // ---- PASS 5: EQ (stages 16-19) via Web Audio nodes (built alongside filter) ----
+      // 10-band EQ
+      await this.pip(22, total);
       const eqDefs = [
-        {id:'eqSub',f:40,t:'lowshelf'},{id:'eqBass',f:100,t:'peaking',q:1.2},
-        {id:'eqWarmth',f:200,t:'peaking',q:1},{id:'eqBody',f:400,t:'peaking',q:1},
-        {id:'eqLowMid',f:800,t:'peaking',q:1},{id:'eqMid',f:1500,t:'peaking',q:1.2},
+        {id:'eqSub',f:40,t:'lowshelf'},{id:'eqBass',f:100,t:'peaking',q:1.2},{id:'eqWarmth',f:200,t:'peaking',q:1},
+        {id:'eqBody',f:400,t:'peaking',q:1},{id:'eqLowMid',f:800,t:'peaking',q:1},{id:'eqMid',f:1500,t:'peaking',q:1.2},
         {id:'eqPresence',f:3000,t:'peaking',q:1.5},{id:'eqClarity',f:5000,t:'peaking',q:1.2},
         {id:'eqAir',f:10000,t:'highshelf'},{id:'eqBrill',f:16000,t:'highshelf'}
       ];
       const eqN = eqDefs.map(b => {
-        const n = ofl.createBiquadFilter(); n.type=b.t; n.frequency.value=b.f;
-        if (b.q) n.Q.value=b.q; n.gain.value=p[b.id]||0; return n;
+        const n = ofl.createBiquadFilter(); n.type = b.t; n.frequency.value = b.f;
+        if (b.q) n.Q.value = b.q; n.gain.value = p[b.id] || 0; return n;
       });
+      if (this.abortFlag) throw 'abort';
 
-      // ---- PASS 6: SPECTRAL PROCESSING (stages 20-23) via Web Audio ----
-      const de = ofl.createBiquadFilter(); de.type='peaking'; de.frequency.value=p.deEssFreq; de.Q.value=3; de.gain.value=-(p.deEssAmt/100)*10;
-      const tlt = ofl.createBiquadFilter(); tlt.type='highshelf'; tlt.frequency.value=1000; tlt.gain.value=p.specTilt;
+      // Compressor + makeup gain
+      await this.pip(23, total);
+      const cmp = ofl.createDynamicsCompressor();
+      cmp.threshold.value = p.compThresh; cmp.ratio.value = p.compRatio;
+      cmp.attack.value = p.compAttack / 1000; cmp.release.value = p.compRelease / 1000; cmp.knee.value = p.compKnee;
+      const mkG = ofl.createGain(); mkG.gain.value = Math.pow(10, p.compMakeup / 20);
 
-      // ---- PASS 7: DYNAMICS (stages 24-27) via Web Audio ----
-      const hrm = ofl.createWaveShaper(); hrm.curve=this.makeHarm(p.harmRecov/100,p.harmOrder); hrm.oversample='2x';
-      const cmp = ofl.createDynamicsCompressor(); cmp.threshold.value=p.compThresh; cmp.ratio.value=p.compRatio; cmp.attack.value=p.compAttack/1000; cmp.release.value=p.compRelease/1000; cmp.knee.value=p.compKnee;
-      const mkG = ofl.createGain(); mkG.gain.value=Math.pow(10,p.compMakeup/20);
-      const lim = ofl.createDynamicsCompressor(); lim.threshold.value=p.limThresh; lim.knee.value=0; lim.ratio.value=20; lim.attack.value=0.001; lim.release.value=p.limRelease/1000;
-      const oG = ofl.createGain(); oG.gain.value=Math.pow(10,p.outGain/20);
+      // Limiter
+      await this.pip(24, total);
+      const lim = ofl.createDynamicsCompressor();
+      lim.threshold.value = p.limThresh; lim.knee.value = 0; lim.ratio.value = 20;
+      lim.attack.value = 0.001; lim.release.value = p.limRelease / 1000;
 
-      // Connect the Web Audio chain: src → hp → lp → vbp → gate → notch → 10×EQ → de → tlt → hrm → cmp → mkG → lim → oG → dest
-      const chain = [src, hp, lp, vbp, gate, notch, ...eqN, de, tlt, hrm, cmp, mkG, lim, oG];
-      for (let i = 0; i < chain.length-1; i++) chain[i].connect(chain[i+1]);
-      chain[chain.length-1].connect(ofl.destination);
+      // Output gain
+      const oG = ofl.createGain(); oG.gain.value = Math.pow(10, p.outGain / 20);
+      if (this.abortFlag) throw 'abort';
+
+      // Wire chain: src → hp → lp → EQ → comp → makeup → lim → outGain → dest
+      const chain = [src, hp, lp, ...eqN, cmp, mkG, lim, oG];
+      for (let i = 0; i < chain.length - 1; i++) chain[i].connect(chain[i + 1]);
+      chain[chain.length - 1].connect(ofl.destination);
       src.start(0);
+
+      await this.pip(25, total);
       const rendered = await ofl.startRendering();
       if (this.abortFlag) throw 'abort';
 
-      // Report Web Audio passes as complete
-      for (let i = 12; i < 16; i++) await this.pip(i, total); // PASS 4 labels (spectral NR placeholder)
-      for (let i = 16; i < 20; i++) await this.pip(i, total); // PASS 5: EQ labels
-      for (let i = 20; i < 22; i++) await this.pip(i, total); // PASS 6: De-Ess + Tilt
-
-      // ---- PASS 4: SPECTRAL NR — actual spectral processing ----
+      // ═══ PASS 9: MASTERING ═══
+      await this.pip(26, total);
       let fin = rendered;
-      if (p.nrAmount > 0) {
-        fin = this.applySpectralNR(fin, p.nrAmount/100, p.nrSensitivity/100, p.nrSpectralSub/100, p.nrFloor, p.nrSmoothing/100, vadMask);
-        if (this.forensicMode) await this.addAuditEntry(fin, 'Spectral NR');
-      }
-      if (this.abortFlag) throw 'abort';
 
-      // Background suppression
-      if (p.bgSuppress > 0) {
-        fin = this.applyBgSuppress(fin, p.bgSuppress, p.voiceFocusLo, p.voiceFocusHi);
-        if (this.forensicMode) await this.addAuditEntry(fin, 'Background Suppression');
-      }
+      // Dry/wet mix
+      await this.pip(27, total);
+      if (p.dryWet < 100) fin = this.mixDW(this.inputBuffer, fin, p.dryWet / 100);
 
-      // Dereverberation (spectral)
-      if (p.derevAmt > 0) {
-        fin = this.applyDereverb(fin, p.derevAmt, p.derevDecay);
-        if (this.forensicMode) await this.addAuditEntry(fin, 'Dereverberation');
-      }
+      // Peak normalize to limiter ceiling
+      await this.pip(28, total);
+      fin = this.peakNorm(fin, p.limThresh);
 
-      // ---- PASS 6 continued: Formant shift + Phase correction ----
-      await this.pip(22, total); // Formant Shift
-      if (p.formantShift !== 0) {
-        fin = this.applyFormantShift(fin, p.formantShift);
-        if (this.forensicMode) await this.addAuditEntry(fin, 'Formant Shift');
-      }
-      await this.pip(23, total); // Phase Correction
-      if (p.phaseCorr > 0) {
-        fin = this.applyPhaseCorr(fin, p.phaseCorr);
-        if (this.forensicMode) await this.addAuditEntry(fin, 'Phase Correction');
-      }
-      if (this.abortFlag) throw 'abort';
+      // ═══ PASS 10: FINALIZE ═══
+      await this.pip(29, total);
+      await this.pip(30, total);
+      await this.pip(31, total);
 
-      // ---- PASS 7 continued: Crosstalk cancellation ----
-      for (let i = 24; i < 27; i++) await this.pip(i, total); // Harmonic, Comp, Limiter labels
-      await this.pip(27, total); // Crosstalk Cancellation
-      if (p.crosstalkCancel > 0) {
-        fin = this.applyCrosstalkCancel(fin, p.crosstalkCancel);
-        if (this.forensicMode) await this.addAuditEntry(fin, 'Crosstalk Cancellation');
-      }
-
-      // ---- PASS 8: MASTER (stages 28-31) ----
-      await this.pip(28, total); // Dry/Wet
-      if (p.dryWet < 100) fin = this.mixDW(this.inputBuffer, fin, p.dryWet/100);
-
-      await this.pip(29, total); // Dither
-      if (p.ditherAmt > 0) fin = this.applyDither(fin, p.ditherAmt);
-
-      await this.pip(30, total); // Output Normalization
-      // Forensic mode skips normalization to preserve original dynamics
-      if (!this.forensicMode) fin = this.peakNorm(fin, p.limThresh);
-      if (this.forensicMode) await this.addAuditEntry(fin, 'Final Output');
-
-      await this.pip(31, total); // Final Render
-
-      // ---- COMPLETE ----
-      this.dom.stProcTime.textContent = ((performance.now()-t0)/1000).toFixed(2)+'s';
+      this.dom.stProcTime.textContent = ((performance.now() - t0) / 1000).toFixed(2) + 's';
       this.outputBuffer = fin;
       const snr = this.calcRMS(fin.getChannelData(0)) - this.calcRMS(this.inputBuffer.getChannelData(0));
-      this.dom.hSNR.textContent = (snr>=0?'+':'') + snr.toFixed(1) + ' dB';
+      this.dom.hSNR.textContent = (snr >= 0 ? '+' : '') + snr.toFixed(1) + ' dB';
       this.resizeCanvas(this.dom.waveProcCanvas);
-      this.drawWaveform(fin, this.dom.waveProcCanvas, '#7c3aed');
-      const voices = this.estVoices(fin);
-      this.dom.stVoices.textContent = voices;
-      // Update speaker aura indicators based on voice activity estimate.
-      // estVoices() returns '0-1' (none/single), '1' (one confirmed), or '1-2+' (multiple).
-      let speakerCount = 1;
-      if(voices === '0-1') speakerCount = 1;
-      else if(voices === '1') speakerCount = 1;
-      else if(voices === '1-2+') speakerCount = 2;
-      else speakerCount = Math.max(1, parseInt(voices, 10) || 1);
-      this.updateSpeakerAuras(speakerCount);
+      this.drawWaveform(fin, this.dom.waveProcCanvas, '#22d3ee');
+      this.dom.stVoices.textContent = this.estVoices(fin);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
-      if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.disabled = false;
-      if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
       this.dom.tpABLabel.textContent = 'Ready — A/B';
-      if (this.dom.fsBtnAB) this.dom.fsBtnAB.disabled = false;
-      if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = !this.forensicMode || this.forensicLog.length === 0;
       this.setStatus('COMPLETE');
-      // Kick off speaker identification on the processed output (non-blocking)
-      this.runSpeakerIdentification(fin);
-    } catch(e) {
-      if (e==='abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent='Aborted'; }
-      else { structuredLog('error', 'Pipeline error', { error: e instanceof Error ? e.message : String(e) }); this.setStatus('ERROR'); this.dom.pipeDetail.textContent=e instanceof Error ? e.message : String(e); }
-    } finally {
-      this.isProcessing=false; this.dom.processBtn.style.display='inline-flex'; this.dom.stopProcBtn.style.display='none';
-      if (this.dom.mobileProcessBtn)   { this.dom.mobileProcessBtn.style.display='inline-flex'; }
-      if (this.dom.mobileReprocessBtn && this.dom.reprocessBtn) { this.dom.mobileReprocessBtn.style.display='inline-flex'; this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled; }
-      if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display='none';
-    }
-  }
-
-  async pip(i,t) {
-    const pct = Math.round((i+1)/t*100);
-    this.dom.pipeFill.style.width = pct + '%';
-    this.dom.pipeBar.setAttribute('aria-valuenow', pct);
-    this.dom.pipeStage.textContent = (i+1)+'/'+t;
-    this.dom.pipeDetail.textContent = STAGES[i];
-    this.dom.hStatus.textContent = 'S'+(i+1);
-    await new Promise(r=>setTimeout(r,15));
-  }
-
-  // ---- DSP HELPERS ----
-
-  // ======== PHASE 1: SPECTRAL ENGINE (STFT / iSTFT / Wiener NR) ========
-
-  // Radix-2 DIT FFT in-place (size must be power of 2)
-  _fft(re, im) {
-    const n = re.length;
-    // Bit-reversal permutation
-    for (let i = 1, j = 0; i < n; i++) {
-      let bit = n >> 1;
-      for (; j & bit; bit >>= 1) j ^= bit;
-      j ^= bit;
-      if (i < j) { const tr=re[i]; re[i]=re[j]; re[j]=tr; const ti=im[i]; im[i]=im[j]; im[j]=ti; }
-    }
-    // Cooley-Tukey butterfly
-    for (let len = 2; len <= n; len <<= 1) {
-      const ang = -2 * Math.PI / len;
-      const wr = Math.cos(ang), wi = Math.sin(ang);
-      for (let i = 0; i < n; i += len) {
-        let cr = 1, ci = 0;
-        for (let j = 0; j < (len >> 1); j++) {
-          const ur=re[i+j], ui=im[i+j];
-          const vr=re[i+j+(len>>1)]*cr - im[i+j+(len>>1)]*ci;
-          const vi=re[i+j+(len>>1)]*ci + im[i+j+(len>>1)]*cr;
-          re[i+j]=ur+vr; im[i+j]=ui+vi;
-          re[i+j+(len>>1)]=ur-vr; im[i+j+(len>>1)]=ui-vi;
-          const nr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=nr;
-        }
-      }
-    }
-  }
-
-  // IFFT via conjugate trick
-  _ifft(re, im) {
-    for (let i = 0; i < im.length; i++) im[i] = -im[i];
-    this._fft(re, im);
-    const n = re.length;
-    for (let i = 0; i < n; i++) { re[i] /= n; im[i] = -im[i] / n; }
-  }
-
-  // Periodic (DFT-even) Hann window.
-  // Using N (not N−1) in the denominator gives the periodic form which satisfies
-  // the COLA condition at 50 % and 75 % overlap, making OLA synthesis artefact-free.
-  // Blackman-Harris was replaced because its near-zero edge values caused amplitude
-  // modulation artefacts when overlap-add normalisation was applied at boundaries.
-  _makeWindow(N) {
-    const win = new Float64Array(N);
-    for (let i = 0; i < N; i++) {
-      win[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / N));
-    }
-    return win;
-  }
-
-  // Real spectral noise reduction via Wiener filtering (replaces the old stub applyNR)
-  applySpectralNR(buf, amt, sensitivity, spectralSub, floorDb, smoothing, vadMask) {
-    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
-    const out = this.ctx.createBuffer(nCh, len, sr);
-    const N = 2048, H = 512, halfN = N / 2 + 1;
-    const win = this._makeWindow(N);
-    // over-subtraction 1..2 (capped lower to avoid musical noise), spectral floor 0.05..0.15
-    const alpha = 1 + amt * 1.0;
-    const beta = Math.max(0.05, 0.15 - spectralSub * 0.08);
-    const floorLin = Math.pow(10, floorDb / 20);
-    const sm = Math.max(0, Math.min(0.95, smoothing * 0.95));
-
-    for (let ch = 0; ch < nCh; ch++) {
-      const inp = buf.getChannelData(ch);
-      const outData = out.getChannelData(ch);
-      const normBuf = new Float64Array(len);
-
-      // --- Noise profiling from quietest frames ---
-      // Using the first N ms as the noise profile silently breaks whenever audio
-      // starts immediately with voice or music.  Instead, rank all frames by energy
-      // and profile from the bottom 10 % (genuine silence / room tone).
-      const totalFrames = Math.floor((len - N) / H) + 1;
-      const frameEnergy = new Float32Array(totalFrames);
-      for (let fi = 0; fi < totalFrames; fi++) {
-        const s = fi * H;
-        if (s + N > len) break;
-        let e = 0;
-        for (let i = 0; i < N; i++) e += inp[s + i] * inp[s + i];
-        frameEnergy[fi] = e;
-      }
-      // Sorted indices by ascending energy
-      const sortedIdx = new Int32Array(totalFrames);
-      for (let i = 0; i < totalFrames; i++) sortedIdx[i] = i;
-      sortedIdx.sort((a, b) => frameEnergy[a] - frameEnergy[b]);
-
-      const profCount = Math.min(totalFrames, Math.max(4, Math.floor(totalFrames * 0.10)));
-      const noisePSD = new Float64Array(halfN);
-      let profFrames = 0;
-      for (let fi = 0; fi < profCount; fi++) {
-        const s = sortedIdx[fi] * H;
-        if (s + N > len) continue;
-        const re = new Float64Array(N), im = new Float64Array(N);
-        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
-        this._fft(re, im);
-        for (let k = 0; k < halfN; k++) noisePSD[k] += re[k]*re[k] + im[k]*im[k];
-        profFrames++;
-      }
-      if (profFrames > 0) for (let k = 0; k < halfN; k++) {
-        noisePSD[k] = Math.max(noisePSD[k] / profFrames, floorLin * floorLin);
-      }
-      const smoothedNoise = new Float64Array(noisePSD);
-
-      // Pre-compute total noise floor energy for energy-based VAD
-      let noiseFloorEnergy = 0;
-      for (let k = 0; k < halfN; k++) noiseFloorEnergy += noisePSD[k];
-
-      // Process all frames
-      let frameIdx = 0;
-      for (let s = 0; s + N <= len; s += H, frameIdx++) {
-        const re = new Float64Array(N), im = new Float64Array(N);
-        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
-        this._fft(re, im);
-
-        // Voice activity detection — use ML VAD mask when available, otherwise fall
-        // back to simple energy ratio: frames significantly louder than the noise floor
-        // are almost certainly speech and should be protected from aggressive NR.
-        const frameTimeSec = s / sr;
-        const vadFrameIdx = vadMask ? Math.floor(frameTimeSec * 100) : -1;
-        const mlSpeech = vadMask && vadFrameIdx < vadMask.length ? vadMask[vadFrameIdx] : false;
-        let curFrameEnergy = 0;
-        for (let k = 0; k < halfN; k++) curFrameEnergy += re[k]*re[k] + im[k]*im[k];
-        // Energy 3× above noise floor → treat as speech even without ML VAD
-        const energySpeech = noiseFloorEnergy > 0 && curFrameEnergy > noiseFloorEnergy * (3 + sensitivity * 4);
-        const isSpeech = mlSpeech || energySpeech;
-
-        for (let k = 0; k < halfN; k++) {
-          const sigPSD = re[k]*re[k] + im[k]*im[k];
-          smoothedNoise[k] = sm * smoothedNoise[k] + (1 - sm) * noisePSD[k];
-          const nEst = alpha * smoothedNoise[k] * (1 + sensitivity * 0.5);
-          // During speech frames apply much softer NR so voice is not attenuated.
-          // nEst is a PSD value — halving it raises the Wiener gain significantly.
-          const nEstFrame = isSpeech ? nEst * 0.15 : nEst;
-          const gain = sigPSD > 1e-12 ?
-            Math.max(Math.sqrt(Math.max(sigPSD - nEstFrame, 0) / sigPSD), beta) : beta;
-          re[k] *= gain; im[k] *= gain;
-          if (k > 0 && k < N - k) { re[N-k] = re[k]; im[N-k] = -im[k]; }
-        }
-        this._ifft(re, im);
-        for (let i = 0; i < N && s + i < len; i++) {
-          outData[s + i] += re[i] * win[i];
-          normBuf[s + i] += win[i] * win[i];
-        }
-      }
-      for (let i = 0; i < len; i++) {
-        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
-        outData[i] = Math.max(-1, Math.min(1, outData[i]));
-      }
-    }
-    return out;
-  }
-
-  // ======== PHASE 2: WIRED SLIDERS — SPECTRAL PROCESSING ========
-
-  // Background suppression: attenuate out-of-band frequencies AND sustained tonal
-  // components (background music) inside the voice band.
-  //
-  // The old implementation was a pure bandpass filter which couldn't distinguish
-  // background music from voice when both occupy the same 120–6500 Hz range.
-  //
-  // New approach — two-stage per-bin masking:
-  //   1. Out-of-band: attenuate fully (same as before).
-  //   2. In-band tonal suppression: track each bin's running-mean magnitude and
-  //      variance.  Bins with low coefficient-of-variation (CV = σ/μ < threshold)
-  //      are "sustained" (music/hum/drone) and get attenuated.  Voice bins are
-  //      transient and irregular → high CV → left untouched.
-  applyBgSuppress(buf, suppressAmt, voiceFocusLo, voiceFocusHi) {
-    if (suppressAmt <= 0) return buf;
-    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
-    const out = this.ctx.createBuffer(nCh, len, sr);
-    const N = 2048, H = 512, halfN = N / 2 + 1;
-    const win = this._makeWindow(N);
-    const g = 1 - suppressAmt / 100;          // gain for suppressed bins (0.1 at 90%)
-    const tonalSm = 0.90;                       // temporal smoothing for tonal detector
-    // CV threshold: bins with σ/μ below this are considered tonal (music).
-    // 0.5 is a reasonable heuristic — voice typically has CV > 0.8.
-    const cvThreshold = 0.50;
-
-    for (let ch = 0; ch < nCh; ch++) {
-      const inp = buf.getChannelData(ch);
-      const outData = out.getChannelData(ch);
-      const normBuf = new Float64Array(len);
-      // Per-bin running statistics for tonal detection
-      const magMean = new Float64Array(halfN).fill(1e-6);
-      const magVar  = new Float64Array(halfN).fill(1e-6);
-
-      for (let s = 0; s + N <= len; s += H) {
-        const re = new Float64Array(N), im = new Float64Array(N);
-        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
-        this._fft(re, im);
-
-        for (let k = 0; k < halfN; k++) {
-          const freq = k * sr / N;
-          const inVoiceBand = freq >= voiceFocusLo && freq <= voiceFocusHi;
-          const mag = Math.sqrt(re[k]*re[k] + im[k]*im[k]);
-
-          // Update running mean and variance (exponential moving average)
-          const diff = mag - magMean[k];
-          magMean[k] = tonalSm * magMean[k] + (1 - tonalSm) * mag;
-          magVar[k]  = tonalSm * magVar[k]  + (1 - tonalSm) * diff * diff;
-
-          // Coefficient of variation: low → tonal/sustained (music), high → transient (voice)
-          const cv = magMean[k] > 1e-7 ? Math.sqrt(Math.max(magVar[k], 0)) / magMean[k] : 1.0;
-          const isTonal = cv < cvThreshold && mag > 1e-7;
-
-          // Suppress: always outside voice band; inside band only when tonal (music)
-          const suppress = !inVoiceBand || isTonal;
-          if (suppress) {
-            re[k] *= g; im[k] *= g;
-            if (k > 0 && k < N - k) { re[N-k] *= g; im[N-k] *= g; }
-          }
-        }
-        this._ifft(re, im);
-        for (let i = 0; i < N && s + i < len; i++) {
-          outData[s + i] += re[i] * win[i];
-          normBuf[s + i] += win[i] * win[i];
-        }
-      }
-      for (let i = 0; i < len; i++) {
-        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
-        outData[i] = Math.max(-1, Math.min(1, outData[i]));
-      }
-    }
-    return out;
-  }
-
-  // Spectral dereverberation via temporal variance suppression
-  applyDereverb(buf, amt, decaySec) {
-    if (amt <= 0) return buf;
-    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
-    const out = this.ctx.createBuffer(nCh, len, sr);
-    const N = 2048, H = 512, halfN = N / 2 + 1;
-    const win = this._makeWindow(N);
-    const g = amt / 100;
-    const smCoef = Math.exp(-H / (sr * Math.max(0.05, decaySec)));
-
-    for (let ch = 0; ch < nCh; ch++) {
-      const inp = buf.getChannelData(ch);
-      const outData = out.getChannelData(ch);
-      const normBuf = new Float64Array(len);
-      const magMean = new Float64Array(halfN).fill(1e-6);
-      for (let s = 0; s + N <= len; s += H) {
-        const re = new Float64Array(N), im = new Float64Array(N);
-        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
-        this._fft(re, im);
-        for (let k = 0; k < halfN; k++) {
-          const mag = Math.sqrt(re[k]*re[k] + im[k]*im[k]);
-          // Reverb tail = magnitude smoothly less than running mean
-          const isReverb = mag < magMean[k] * 0.75;
-          const gain = isReverb ? Math.max(1 - g, 0.05) : 1;
-          re[k] *= gain; im[k] *= gain;
-          if (k > 0 && k < N - k) { re[N-k] *= gain; im[N-k] *= gain; }
-          magMean[k] = smCoef * magMean[k] + (1 - smCoef) * mag;
-        }
-        this._ifft(re, im);
-        for (let i = 0; i < N && s + i < len; i++) {
-          outData[s + i] += re[i] * win[i];
-          normBuf[s + i] += win[i] * win[i];
-        }
-      }
-      for (let i = 0; i < len; i++) {
-        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
-        outData[i] = Math.max(-1, Math.min(1, outData[i]));
-      }
-    }
-    return out;
-  }
-
-  // Formant shift via spectral envelope warping
-  applyFormantShift(buf, semitones) {
-    if (semitones === 0) return buf;
-    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
-    const out = this.ctx.createBuffer(nCh, len, sr);
-    const N = 2048, H = 512, halfN = N / 2 + 1;
-    const win = this._makeWindow(N);
-    const shiftFactor = Math.pow(2, semitones / 12);
-    const envWin = 20;
-
-    for (let ch = 0; ch < nCh; ch++) {
-      const inp = buf.getChannelData(ch);
-      const outData = out.getChannelData(ch);
-      const normBuf = new Float64Array(len);
-      for (let s = 0; s + N <= len; s += H) {
-        const re = new Float64Array(N), im = new Float64Array(N);
-        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
-        this._fft(re, im);
-        // Compute log-magnitude and extract spectral envelope via smoothing
-        const logMag = new Float64Array(halfN);
-        const phase = new Float64Array(halfN);
-        for (let k = 0; k < halfN; k++) {
-          logMag[k] = Math.log(Math.max(Math.sqrt(re[k]*re[k]+im[k]*im[k]), 1e-10));
-          phase[k] = Math.atan2(im[k], re[k]);
-        }
-        const envelope = new Float64Array(halfN);
-        for (let k = 0; k < halfN; k++) {
-          let sum = 0, cnt = 0;
-          for (let j = Math.max(0,k-envWin); j <= Math.min(halfN-1,k+envWin); j++) { sum+=logMag[j]; cnt++; }
-          envelope[k] = sum / cnt;
-        }
-        const detail = logMag.map((v,k) => v - envelope[k]);
-        // Warp envelope by shiftFactor
-        const newEnv = new Float64Array(halfN);
-        for (let k = 0; k < halfN; k++) {
-          const src = k / shiftFactor;
-          const lo = Math.floor(src), hi = Math.min(lo+1, halfN-1);
-          if (lo >= 0 && lo < halfN) newEnv[k] = (1-(src-lo))*envelope[lo] + (src-lo)*envelope[hi];
-        }
-        const reOut = new Float64Array(N), imOut = new Float64Array(N);
-        for (let k = 0; k < halfN; k++) {
-          const newMag = Math.exp(newEnv[k] + detail[k]);
-          reOut[k] = newMag * Math.cos(phase[k]);
-          imOut[k] = newMag * Math.sin(phase[k]);
-          if (k > 0 && k < N - k) { reOut[N-k] = reOut[k]; imOut[N-k] = -imOut[k]; }
-        }
-        this._ifft(reOut, imOut);
-        for (let i = 0; i < N && s + i < len; i++) {
-          outData[s + i] += reOut[i] * win[i];
-          normBuf[s + i] += win[i] * win[i];
-        }
-      }
-      for (let i = 0; i < len; i++) {
-        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
-        outData[i] = Math.max(-1, Math.min(1, outData[i]));
-      }
-    }
-    return out;
-  }
-
-  // Cross-channel phase alignment via cross-correlation lag detection
-  applyPhaseCorr(buf, corrAmt) {
-    if (corrAmt <= 0 || buf.numberOfChannels < 2) return buf;
-    const len = buf.length, sr = buf.sampleRate;
-    const out = this.ctx.createBuffer(buf.numberOfChannels, len, sr);
-    const L = buf.getChannelData(0), R = buf.getChannelData(1);
-    const oL = out.getChannelData(0), oR = out.getChannelData(1);
-    // Find best cross-correlation lag within ±5ms
-    const maxLag = Math.floor(sr * 0.005);
-    let bestLag = 0, bestCorr = -Infinity;
-    const sampleCount = Math.min(len, Math.floor(sr * 2));
-    for (let lag = -maxLag; lag <= maxLag; lag++) {
-      let corr = 0;
-      for (let i = maxLag; i < sampleCount - maxLag; i++) corr += L[i] * (R[i + lag] || 0);
-      if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
-    }
-    const actualLag = Math.round(bestLag * corrAmt / 100);
-    for (let i = 0; i < len; i++) {
-      oL[i] = L[i];
-      oR[i] = R[Math.max(0, Math.min(len-1, i - actualLag))];
-    }
-    for (let ch = 2; ch < buf.numberOfChannels; ch++) {
-      const inCh = buf.getChannelData(ch), outCh = out.getChannelData(ch);
-      for (let i = 0; i < len; i++) outCh[i] = inCh[i];
-    }
-    return out;
-  }
-
-  // Crosstalk cancellation via mid/side matrix
-  applyCrosstalkCancel(buf, cancelAmt) {
-    if (cancelAmt <= 0 || buf.numberOfChannels < 2) return buf;
-    const len = buf.length, sr = buf.sampleRate;
-    const out = this.ctx.createBuffer(buf.numberOfChannels, len, sr);
-    const g = (cancelAmt / 100) * 0.5;
-    const L = buf.getChannelData(0), R = buf.getChannelData(1);
-    const oL = out.getChannelData(0), oR = out.getChannelData(1);
-    for (let i = 0; i < len; i++) {
-      oL[i] = L[i] - g * R[i];
-      oR[i] = R[i] - g * L[i];
-    }
-    for (let ch = 2; ch < buf.numberOfChannels; ch++) {
-      const inCh = buf.getChannelData(ch), outCh = out.getChannelData(ch);
-      for (let i = 0; i < len; i++) outCh[i] = inCh[i];
-    }
-    return out;
-  }
-
-  // TPDF dither noise shaping before bit-depth reduction
-  // 🛡️ Sentinel: Fixed weak PRNG by using chunked crypto.getRandomValues()
-  applyDither(buf, ditherAmt) {
-    if (ditherAmt <= 0) return buf;
-    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
-    const out = this.ctx.createBuffer(nCh, len, sr);
-    const lsb = Math.pow(2, -15); // 16-bit LSB
-    const g = (ditherAmt / 100) * lsb;
-    const invMax = 1 / 4294967296;
-
-    for (let ch = 0; ch < nCh; ch++) {
-      const inp = buf.getChannelData(ch), outCh = out.getChannelData(ch);
-      for (let i = 0; i < len; i++) {
-        if (this._rndIdx >= this._rndBuf.length - 1) {
-          crypto.getRandomValues(this._rndBuf);
-          this._rndIdx = 0;
-        }
-        const r1 = this._rndBuf[this._rndIdx++] * invMax;
-        const r2 = this._rndBuf[this._rndIdx++] * invMax;
-        const tpdf = (r1 - r2) * g;
-        outCh[i] = Math.max(-1, Math.min(1, inp[i] + tpdf));
-      }
-    }
-    return out;
-  }
-
-  // ======== PHASE 4: ML / VAD INTEGRATION ========
-
-  // Trigger VAD model load in the ML Worker (fire-and-forget; mlReady set via _onMlMessage)
-  async loadModels() {
-    if (!this.mlWorker) {
-      structuredLog('warn', 'ML Worker not available — running without ML');
-      return;
-    }
-    const wasmRoot = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
-    this.mlWorker.postMessage({ type: 'loadModel', model: 'vad', wasmRoot });
-  }
-
-  // Run Silero VAD via ML Worker; returns boolean[] or null if unavailable
-  async runVAD(buf) {
-    if (!this.mlReady || !this.mlWorker) return null;
-    try {
-      const signal = new Float32Array(buf.getChannelData(0)); // copy for transfer
-      return await this._mlCall(
-        { type: 'runVAD', signal, sampleRate: buf.sampleRate },
-        [signal.buffer]
-      );
-    } catch(e) {
-      structuredLog('warn', 'VAD Worker call failed', { error: e.message });
-      return null;
-    }
-  }
-
-  // ---- ML WORKER: DeepFilterNet3 + Demucs + VAD ----
-
-  // Spin up ml-worker.js and initialise all models. Non-blocking; pipeline checks
-  // this.mlWorkerReady before dispatching work.
-  initMLWorker() {
-    if (this.mlWorker) return;
-    try {
-      this.mlWorker = new Worker('./ml-worker.js');
-      this.mlWorker.onmessage = (e) => {
-        const { type } = e.data;
-        if (type === 'ready') {
-          this.mlWorkerReady = true;
-          this.mlWorkerModels = e.data.models || {};
-          structuredLog('info', 'ML worker ready', { provider: e.data.provider, models: e.data.models });
-          // v20: Share ML worker with orchestrator
-          if (this.orchestrator) this.orchestrator.mlWorker = this.mlWorker;
-        } else if (type === 'identifyResult') {
-          this._onIdentifyResult(e.data);
-        } else if (type === 'log') {
-          structuredLog(e.data.level, '[ml-worker] ' + e.data.msg);
-        }
-        // 'result' and 'progress' messages are handled per-call via a promise wrapper
-      };
-      this.mlWorker.onerror = (err) => {
-        structuredLog('warn', 'ML worker error', { error: err.message });
-        this.mlWorkerReady = false;
-      };
-      // v20: Pass ONNX Runtime URL and initial model list
-      this.mlWorker.postMessage({
-        type: 'init',
-        ortUrl: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js',
-        models: ['vad']
-      });
     } catch (e) {
-      structuredLog('warn', 'ML worker unavailable', { error: e.message });
+      if (e === 'abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent = 'Aborted'; }
+      else { console.error('Pipeline:', e); this.setStatus('ERROR'); this.dom.pipeDetail.textContent = e.message || String(e); }
+    } finally {
+      this.isProcessing = false; this.dom.processBtn.style.display = 'inline-flex'; this.dom.stopProcBtn.style.display = 'none';
     }
   }
 
-  // ---- Speaker Fingerprinting ----
-
-  /**
-   * Segment an AudioBuffer into overlapping windows and send each to the ML worker
-   * for ECAPA-TDNN embedding extraction. Identification happens when identifyResult
-   * messages arrive via _onIdentifyResult().
-   *
-   * @param {AudioBuffer} buf - The audio buffer to diarize.
-   */
-  runSpeakerIdentification(buf) {
-    if (!this.speakerRegistry || !this.mlWorker || !this.mlWorkerModels || !this.mlWorkerModels.ecapa) return;
-
-    const samples = buf.getChannelData(0);
-    const sr = buf.sampleRate;
-    const segDur = 3;           // 3-second segments
-    const segLen = segDur * sr;
-    this._speakerSegments = [];
-
-    for (let offset = 0; offset < samples.length; offset += segLen) {
-      const end = Math.min(offset + segLen, samples.length);
-      // Transfer chunk directly — slice() returns a copy so no detachment risk
-      const chunk = samples.slice(offset, end);
-      const id = ++this._identifyCallId;
-      this._identifyPending[id] = { startSec: offset / sr, endSec: end / sr };
-      this.mlWorker.postMessage({ type: 'identify', id, data: chunk }, [chunk.buffer]);
-    }
-  }
-
-  /**
-   * Handle an identifyResult message from the ML worker.
-   * Matches the embedding against the SpeakerRegistry and updates the UI.
-   *
-   * @param {{ id: number|string, embedding: Float32Array|null }} data
-   */
-  _onIdentifyResult(data) {
-    const { id, embedding } = data;
-    const pending = this._identifyPending[id];
-    if (!pending) return;
-    delete this._identifyPending[id];
-
-    if (!embedding || !this.speakerRegistry) return;
-
-    const { speaker } = this.speakerRegistry.identify(embedding);
-    // Segments are pushed in chronological order (offset is monotonically increasing)
-    this._speakerSegments.push({ ...pending, speakerId: speaker.id, color: speaker.color, label: speaker.label });
-
-    // Persist updated profiles and refresh UI
-    this.speakerRegistry.save().catch(() => {});
-    this.updateSpeakerUI();
-    // v2: update speaker legend overlay on 3D spectrogram
-    this._spectroV2UpdateSpeakerLegend(speaker.id);
-  }
-
-  /** Render the speaker list and diarization timeline in the UI. */
-  updateSpeakerUI() {
-    if (!this.dom || !this.dom.speakerCard) return;
-
-    const profiles = this.speakerRegistry ? this.speakerRegistry.getProfiles() : [];
-    const hasData = profiles.length > 0 || this._speakerSegments.length > 0;
-    this.dom.speakerCard.style.display = hasData ? '' : 'none';
-
-    // Render speaker chips
-    if (this.dom.speakerList) {
-      this.dom.speakerList.innerHTML = '';
-      for (const p of profiles) {
-        const chip = document.createElement('div');
-        chip.className = 'speaker-chip';
-        chip.setAttribute('aria-label', p.label);
-        chip.innerHTML =
-          `<span class="speaker-dot" style="background:${p.color}"></span>` +
-          `<span class="speaker-name">${p.label}</span>` +
-          `<button class="speaker-remove btn btn-xs" data-id="${p.id}" aria-label="Remove ${p.label}" title="Remove">✕</button>`;
-        chip.querySelector('.speaker-remove').addEventListener('click', (e) => {
-          const rid = parseInt(e.currentTarget.dataset.id, 10);
-          this.speakerRegistry.removeProfile(rid);
-          this._speakerSegments = this._speakerSegments.filter(s => s.speakerId !== rid);
-          this.speakerRegistry.save().catch(() => {});
-          this.updateSpeakerUI();
-        });
-        this.dom.speakerList.appendChild(chip);
-      }
-    }
-
-    // Draw diarization timeline
-    this.drawSpeakerTimeline();
-  }
-
-  /** Draw the speaker diarization timeline onto the speakerTimeline canvas. */
-  drawSpeakerTimeline() {
-    const cv = this.dom && this.dom.speakerTimeline;
-    if (!cv || this._speakerSegments.length === 0) return;
-
-    const segs = this._speakerSegments;
-    const totalSec = segs[segs.length - 1].endSec;
-    const W = cv.offsetWidth || 400;
-    const H = 32;
-    cv.width = W;
-    cv.height = H;
-    const ctx = cv.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, W, H);
-
-    for (const seg of segs) {
-      const x1 = (seg.startSec / totalSec) * W;
-      const x2 = (seg.endSec   / totalSec) * W;
-      ctx.fillStyle = seg.color + 'cc'; // slight transparency
-      ctx.fillRect(x1, 4, Math.max(x2 - x1, 1), H - 8);
-
-      // Draw label if wide enough
-      const segW = x2 - x1;
-      if (segW > 36) {
-        ctx.fillStyle = '#fff';
-        ctx.font = '10px sans-serif';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(seg.label, x1 + 4, H / 2);
-      }
-    }
-  }
-
-  // Generic promise wrapper for ML Worker calls with callback ID tracking
-  _mlCall(payload, transfer = []) {
-    // Ensure callbacks map is initialized
-    if (!this._mlCallbacks) this._mlCallbacks = {};
-    if (typeof this._mlCallId !== 'number') this._mlCallId = 0;
-
-    return new Promise((resolve, reject) => {
-      const id = ++this._mlCallId;
-      this._mlCallbacks[id] = { resolve, reject };
-
-      // Timeout to prevent memory leaks from unresponsive workers
-      const timeout = setTimeout(() => {
-        this.mlWorker.removeEventListener('message', handler);
-        delete this._mlCallbacks[id];
-        reject(new Error('ML Worker call timed out'));
-      }, 30000); // 30 second timeout
-
-      const handler = (e) => {
-        const { type } = e.data;
-        if (type === 'result') {
-          clearTimeout(timeout);
-          this.mlWorker.removeEventListener('message', handler);
-          delete this._mlCallbacks[id];
-          resolve(e.data);
-        } else if (type === 'error') {
-          clearTimeout(timeout);
-          this.mlWorker.removeEventListener('message', handler);
-          delete this._mlCallbacks[id];
-          reject(new Error(e.data.msg));
-        }
-        // Other message types (progress, log) are handled elsewhere
-      };
-      this.mlWorker.addEventListener('message', handler);
-      this.mlWorker.postMessage({ ...payload, callId: id }, transfer);
-    });
-  }
-
-  // Send audio to the ML worker and resolve with the enhanced Float32Array.
-  // Falls back to the original signal if the worker is not ready.
-  runMLEnhancement(buf, onProgress) {
-    if (!this.mlWorkerReady || !this.mlWorker) {
-      return Promise.resolve(null); // caller keeps original buffer
-    }
-    return new Promise((resolve, reject) => {
-      const signal = buf.getChannelData(0);
-      const copy   = new Float32Array(signal); // transferable copy
-
-      const handler = (e) => {
-        const { type } = e.data;
-        if (type === 'result') {
-          this.mlWorker.removeEventListener('message', handler);
-          resolve(e.data);
-        } else if (type === 'progress' && onProgress) {
-          onProgress(e.data.stage, e.data.pct);
-        } else if (type === 'error') {
-          this.mlWorker.removeEventListener('message', handler);
-          reject(new Error(e.data.msg));
-        }
-      };
-      this.mlWorker.addEventListener('message', handler);
-      this.mlWorker.postMessage(
-        { type: 'process', signal: copy, sampleRate: buf.sampleRate, params: this.params },
-        [copy.buffer]
-      );
-    });
-  }
-
-  // Run source separation (Demucs or BSRNN) via ML Worker; returns Float32Array or null
-  async runSeparation(buf, model = 'demucs') {
-    if (!this.mlWorkerReady || !this.mlWorker) return null;
-    try {
-      const signal = new Float32Array(buf.getChannelData(0));
-      return new Promise((resolve, reject) => {
-        const handler = (e) => {
-          if (e.data.type === 'result') { this.mlWorker.removeEventListener('message', handler); resolve(e.data); }
-          else if (e.data.type === 'error') { this.mlWorker.removeEventListener('message', handler); reject(new Error(e.data.msg)); }
-        };
-        this.mlWorker.addEventListener('message', handler);
-        this.mlWorker.postMessage({ type: 'runSeparation', signal, sampleRate: buf.sampleRate, model }, [signal.buffer]);
-      });
-    } catch(e) {
-      structuredLog('warn', 'Separation Worker call failed', { error: e.message });
-      return null;
-    }
-  }
-
-  // ======== PHASE 5: FORENSIC AUDIT ========
-
-  // Compute SHA-256 of the first channel of an AudioBuffer and store in forensicLog
-  async addAuditEntry(buf, stageName) {
-    try {
-      const data = buf.getChannelData(0);
-      const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-      const hashBuf = await crypto.subtle.digest('SHA-256', bytes);
-      const hex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
-      this.forensicLog.push({ stage: stageName, sha256: hex, timestamp: new Date().toISOString(), channels: buf.numberOfChannels, length: buf.length, sampleRate: buf.sampleRate });
-    } catch { /* crypto unavailable in some contexts */ }
-  }
-
-  downloadAuditLog() {
-    if (!this.forensicLog.length) return;
-    const blob = new Blob([JSON.stringify({ app:'VoiceIsolate Pro', version:'20.0', mode:'Forensic', entries: this.forensicLog }, null, 2)], { type:'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = 'voiceisolate_audit_' + Date.now() + '.json';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(a.href);
-  }
-
-  mixDW(dry, wet, wAmt) {
-
-    const c = this.ctx;
-    const nCh = Math.min(dry.numberOfChannels, wet.numberOfChannels);
-    const len = Math.min(dry.length, wet.length);
-    const out = c.createBuffer(nCh, len, dry.sampleRate);
-    for (let ch = 0; ch < nCh; ch++) {
-      const d = dry.getChannelData(ch);
-      const w = wet.getChannelData(ch);
-      const o = out.getChannelData(ch);
-      for (let i = 0; i < len; i++) {
-        o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
-      }
-    }
-    return out;
-  }
-
-  peakNorm(buf, tDb) {
-    const ctx = this.ctx;
-    const numChannels = buf.numberOfChannels;
-    const length = buf.length;
-    const out = ctx.createBuffer(numChannels, length, buf.sampleRate);
-
-    let peak = 0;
-    for (let ch = 0; ch < numChannels; ch++) {
-      const channelData = buf.getChannelData(ch);
-      for (let i = 0; i < length; i++) {
-        const absVal = Math.abs(channelData[i]);
-        if (absVal > peak) peak = absVal;
-      }
-    }
-
-    if (peak < 1e-8) return buf; // avoid huge gain on near-silence
-
-    const gain = Math.min(Math.pow(10, tDb / 20) / peak, 1e6);
-    for (let ch = 0; ch < numChannels; ch++) {
-      const inputData = buf.getChannelData(ch);
-      const outputData = out.getChannelData(ch);
-      for (let i = 0; i < length; i++) {
-        outputData[i] = Math.max(-1, Math.min(1, inputData[i] * gain));
-      }
-    }
-    return out;
-  }
-
-  makeHarm(amt, ord) {
-    const n = 44100;
-    const curve = new Float32Array(n);
-    const k = amt * (ord || 3) * 2 + 1;
-
-    for (let i = 0; i < n; i++) {
-      const x = (i * 2) / n - 1;
-      curve[i] = Math.tanh(k * x) / Math.tanh(k);
-    }
-
-    return curve;
-  }
-
+  async pip(i, t) { const pct = Math.round((i + 1) / t * 100); this.dom.pipeFill.style.width = pct + '%'; this.dom.pipeBar.setAttribute('aria-valuenow', String(pct)); this.dom.pipeStage.textContent = (i + 1) + '/' + t; this.dom.pipeDetail.textContent = STAGES[i] || 'Finalizing'; this.dom.hStatus.textContent = 'S' + (i + 1); await new Promise(r => setTimeout(r, 8)); }
+  mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
+  peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
+  makeHarm(amt,ord){const n=44100;const c=new Float32Array(n);const k=amt*(ord||3)*2+1;for(let i=0;i<n;i++){const x=(i*2)/n-1;c[i]=Math.tanh(k*x)/Math.tanh(k);}return c;}
   estVoices(buf){const d=buf.getChannelData(0);const sr=buf.sampleRate;const bs=Math.floor(sr*0.5);let act=0;for(let i=0;i<d.length;i+=bs){let r=0;const e=Math.min(i+bs,d.length);for(let j=i;j<e;j++)r+=d[j]*d[j];r=Math.sqrt(r/(e-i));if(r>0.01)act++;}return act<3?'0-1':act<10?'1':'1-2+';}
 
   // ---- SAVE ----
-  saveWav(buf,label){if(!buf)return;const w=this.encWav(buf);const b=new Blob([w],{type:'audio/wav'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='voiceisolate_v19_'+label+'_'+Date.now()+'.wav';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);}
-  encWav(buf) {
-    const nCh = buf.numberOfChannels;
-    const sr = buf.sampleRate;
-    const dL = buf.length * nCh * 2; // 16-bit (2 bytes per sample)
+  saveWav(buf,label){if(!buf)return;const w=this.encWav(buf);const b=new Blob([w],{type:'audio/wav'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='voiceisolate_v22_'+label+'_'+Date.now()+'.wav';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);}
+  encWav(buf){const nCh=buf.numberOfChannels;const sr=buf.sampleRate;const dL=buf.length*nCh*2;const a=new ArrayBuffer(44+dL);const v=new DataView(a);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+dL,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nCh,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nCh*2,true);v.setUint16(32,nCh*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,dL,true);let off=44;for(let i=0;i<buf.length;i++)for(let ch=0;ch<nCh;ch++){let s=buf.getChannelData(ch)[i];s=Math.max(-1,Math.min(1,s));v.setInt16(off,s<0?s*0x8000:s*0x7FFF,true);off+=2;}return a;}
 
-    // Total size: 44 bytes header + data length
-    const a = new ArrayBuffer(44 + dL);
-    const v = new DataView(a);
-
-    // Helper to write string to DataView
-    const ws = (o, s) => {
-      for (let i = 0; i < s.length; i++) {
-        v.setUint8(o + i, s.charCodeAt(i));
-      }
-    };
-
-    // --- RIFF Chunk ---
-    ws(0, 'RIFF');                     // ChunkID
-    v.setUint32(4, 36 + dL, true);     // ChunkSize (36 + SubChunk2Size)
-    ws(8, 'WAVE');                     // Format
-
-    // --- fmt Subchunk ---
-    ws(12, 'fmt ');                    // Subchunk1ID
-    v.setUint32(16, 16, true);         // Subchunk1Size (16 for PCM)
-    v.setUint16(20, 1, true);          // AudioFormat (1 for PCM)
-    v.setUint16(22, nCh, true);        // NumChannels
-    v.setUint32(24, sr, true);         // SampleRate
-    v.setUint32(28, sr * nCh * 2, true); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
-    v.setUint16(32, nCh * 2, true);    // BlockAlign (NumChannels * BitsPerSample/8)
-    v.setUint16(34, 16, true);         // BitsPerSample
-
-    // --- data Subchunk ---
-    ws(36, 'data');                    // Subchunk2ID
-    v.setUint32(40, dL, true);         // Subchunk2Size (NumSamples * NumChannels * BitsPerSample/8)
-
-    // Pre-fetch channel data to avoid expensive getChannelData calls inside the per-sample loop
-    const channels = [];
-    for (let ch = 0; ch < nCh; ch++) {
-      channels.push(buf.getChannelData(ch));
-    }
-
-    // Write audio data
-    let off = 44;
-
-    for (let i = 0; i < buf.length; i++) {
-      for (let ch = 0; ch < nCh; ch++) {
-        let s = channels[ch][i];
-        // Hard clipping
-        s = Math.max(-1, Math.min(1, s));
-        // Convert to 16-bit PCM
-        v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        off += 2;
-      }
-    }
-    return a;
+  // ======== VISUALIZATIONS (existing) ========
+  initCanvases(){
+    const all = [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas,
+      this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
+      this.dom.saliencyCanvas,this.dom.clusterCanvas];
+    all.forEach(c => { if(c) this.resizeCanvas(c); });
+    this.clearCanvas(this.dom.waveOrigCanvas,'Load audio to begin');
+    this.clearCanvas(this.dom.waveProcCanvas,'Process to see result');
+    this.clearCanvas(this.dom.spectro2DCanvas,'Play audio for spectrogram');
+    this.clearCanvas(this.dom.freqCanvas,'Play audio for analyzer');
+    this.clearCanvas(this.dom.abWaveCanvas,'Play audio for A/B comparison');
+    this.clearCanvas(this.dom.oscCanvas,'Play audio for oscilloscope');
+    this.clearCanvas(this.dom.specOverlayCanvas,'Play audio for spectrogram overlays');
+    this.clearCanvas(this.dom.lufsCanvas,'Play audio for LUFS meter');
+    this.clearCanvas(this.dom.saliencyCanvas,'Play audio for ML saliency');
+    this.clearCanvas(this.dom.clusterCanvas,'Play audio for speaker clusters');
   }
 
-  // ======== VISUALIZATIONS ========
-  initCanvases(){[this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas].forEach(c=>this.resizeCanvas(c));this.clearCanvas(this.dom.waveOrigCanvas,'Load audio to begin');this.clearCanvas(this.dom.waveProcCanvas,'Process to see result');this.clearCanvas(this.dom.spectro2DCanvas,'Play audio for spectrogram');this.clearCanvas(this.dom.freqCanvas,'Play audio for analyzer');}
+  resizeCanvas(c){if(!c)return;const r=c.getBoundingClientRect();c.width=Math.floor(r.width);c.height=Math.floor(r.height);}
+  clearCanvas(c,txt){if(!c)return;const x=c.getContext('2d');x.fillStyle='#030306';x.fillRect(0,0,c.width,c.height);if(txt){x.font='11px Outfit,sans-serif';x.fillStyle='rgba(255,255,255,0.12)';x.textAlign='center';x.fillText(txt,c.width/2,c.height/2+3);}}
 
-  resizeCanvas(c){const r=c.getBoundingClientRect();c.width=Math.floor(r.width);c.height=Math.floor(r.height);c._w=r.width;c._h=r.height;}
+  drawWaveform(buf,canvas,color){if(!canvas)return;const x=canvas.getContext('2d');const w=canvas.width;const h=canvas.height;x.fillStyle='#030306';x.fillRect(0,0,w,h);if(!buf)return;const d=buf.getChannelData(0);const step=Math.max(1,Math.floor(d.length/w));x.strokeStyle='rgba(255,255,255,0.04)';x.lineWidth=1;x.beginPath();x.moveTo(0,h/2);x.lineTo(w,h/2);x.stroke();x.fillStyle=color;for(let px=0;px<w;px++){const idx=px*step;let mn=1,mx=-1;for(let i=0;i<step&&(idx+i)<d.length;i++){const v=d[idx+i];if(v<mn)mn=v;if(v>mx)mx=v;}const y1=((1-mx)*0.5)*h;const y2=((1-mn)*0.5)*h;x.globalAlpha=0.8;x.fillRect(px,y1,1,Math.max(1,y2-y1));}x.globalAlpha=1;}
 
-  clearCanvas(c,txt){const x=c.getContext('2d');x.fillStyle='#030306';x.fillRect(0,0,c.width,c.height);if(txt){x.font='11px Outfit,sans-serif';x.fillStyle='rgba(255,255,255,0.12)';x.textAlign='center';x.fillText(txt,c.width/2,c.height/2+3);}}
-
-  drawWaveform(buf,canvas,color){const x=canvas.getContext('2d');const w=canvas.width;const h=canvas.height;x.fillStyle='#030306';x.fillRect(0,0,w,h);if(!buf)return;const d=buf.getChannelData(0);const step=Math.max(1,Math.floor(d.length/w));x.strokeStyle='rgba(255,255,255,0.04)';x.lineWidth=1;x.beginPath();x.moveTo(0,h/2);x.lineTo(w,h/2);x.stroke();x.fillStyle=color;for(let px=0;px<w;px++){const idx=px*step;let mn=1,mx=-1;for(let i=0;i<step&&(idx+i)<d.length;i++){const v=d[idx+i];if(v<mn)mn=v;if(v>mx)mx=v;}const y1=((1-mx)*0.5)*h;const y2=((1-mn)*0.5)*h;x.globalAlpha=0.8;x.fillRect(px,y1,1,Math.max(1,y2-y1));}x.globalAlpha=1;}
-
-  // ---- 2D Spectrogram — Real-Time with Voice Overlay, VAD, Noise Floor, Speaker Colors ----
+  // ---- 2D Spectrogram ----
   startSpectro(ana){
-    this.stopSpectro(); this.spectroRunning=true; this.spectroX=0;
-    const st=this.spectroSt;
+    this.stopSpectro(); this.spectroRunning=true; this.spectroX=0; this.specOverlayX=0;
     const c=this.dom.spectro2DCanvas; this.resizeCanvas(c);
     const x=c.getContext('2d'); x.fillStyle='#030306'; x.fillRect(0,0,c.width,c.height);
     const bLen=ana.frequencyBinCount; const arr=new Uint8Array(bLen);
-    // Init per-bin noise floor (fast-attack / slow-decay EMA tracking the quietest energy per bin)
-    if(!st.noiseFloor||st.noiseFloor.length!==bLen){ st.noiseFloor=new Float32Array(bLen).fill(32); }
-    const nf=st.noiseFloor;
-    const sr=ana.context?ana.context.sampleRate:48000;
-    const VAD_THRESHOLD=1.6; // energy ratio to noise floor above which VAD triggers
-    // Pre-compute constant frequency-bin boundaries (avoid recalculating every frame)
-    const vLo=Math.max(1,Math.floor(bLen*(80/(sr/2))));       // ~80 Hz lower voice bound
-    const vHi=Math.min(bLen-1,Math.floor(bLen*(6000/(sr/2)))); // ~6 kHz upper voice bound
-    const vMid=Math.floor(bLen*(600/(sr/2)));                   // ~600 Hz speaker A/B split
     const draw=()=>{
       if(!this.spectroRunning)return; this.animId=requestAnimationFrame(draw);
       ana.getByteFrequencyData(arr);
-      const w=c.width; const h=c.height; const sw=2;
-      // === Update noise floor (fast-attack toward quieter values, slow-decay otherwise) ===
-      for(let i=0;i<bLen;i++){
-        const alpha=arr[i]<nf[i]?0.015:0.001;
-        nf[i]=nf[i]*(1-alpha)+arr[i]*alpha;
-      }
-      // === Real-time VAD (energy in voice band vs noise floor, hysteresis over 4 frames) ===
-      let sigE=0,nfE=0;
-      for(let i=vLo;i<vHi;i++){sigE+=arr[i];nfE+=nf[i];}
-      const newVad=nfE>0&&sigE>nfE*VAD_THRESHOLD;
-      if(newVad!==st.vadActive){st.vadCounter++;if(st.vadCounter>4){st.vadActive=newVad;st.vadCounter=0;}}else{st.vadCounter=0;}
-      // === Speaker energy split: low voice range = Speaker A (cyan), high = Speaker B (amber) ===
-      let eA=0,eB=0;
-      for(let i=vLo;i<vMid;i++)eA+=arr[i];
-      for(let i=vMid;i<vHi;i++)eB+=arr[i];
-      st.speakerBuf[0]=st.speakerBuf[0]*0.92+eA*0.08;
-      st.speakerBuf[1]=st.speakerBuf[1]*0.92+eB*0.08;
-      const spkA=st.speakerBuf[0]; const spkB=st.speakerBuf[1];
-      const spkTotal=spkA+spkB+1; const spkAFrac=spkA/spkTotal; const spkBFrac=spkB/spkTotal;
-      // === Update freeze button UI ===
-      if(this.dom.spectroFreeze){
-        this.dom.spectroFreeze.textContent=st.frozen?'▶ Live':'❄ Freeze';
-        this.dom.spectroFreeze.classList.toggle('btn-frozen',st.frozen);
-      }
-      const wrap=this.dom.spectro2DCanvas.parentElement;
-      if(wrap)wrap.classList.toggle('frozen-state',st.frozen);
-      // === Bail from time-scrolling update when frozen (still update 3D for live feedback) ===
-      if(!st.frozen){
-        // Scroll canvas left
-        if(this.spectroX+sw>=w){const img=x.getImageData(sw,0,w-sw,h);x.putImageData(img,0,0);x.fillStyle='#030306';x.fillRect(w-sw,0,sw,h);this.spectroX=w-sw;}
-        // === Zoom / pan: determine visible frequency bin range ===
-        const zoom=Math.max(1,st.zoom); const visBins=Math.floor(bLen/zoom);
-        const maxPan=Math.max(0,bLen-visBins);
-        const panBin=Math.round(Math.max(0,Math.min(maxPan,st.panY*maxPan)));
-        const startBin=panBin; const endBin=Math.min(bLen-1,panBin+visBins);
-        // === Draw new time column ===
-        for(let py=0;py<h;py++){
-          // Map pixel row → frequency bin (top=high freq, bottom=low freq)
-          const freqFrac=1-(py/h);
-          const fi=Math.floor(startBin+freqFrac*(endBin-startBin));
-          if(fi<0||fi>=bLen)continue;
-          const val=arr[fi];
-          const muted=this.isBandMuted(fi,bLen,sr);
-          x.fillStyle=muted?'rgba(20,20,20,0.9)':this.sColorVoice(val,fi,nf,spkAFrac,spkBFrac,st.vadActive);
-          x.fillRect(this.spectroX,py,sw,1);
-        }
-        // === Noise floor indicator: pink horizontal line at median voice-band bin position ===
-        const nfRefBin=Math.round((vLo+vHi)/2);
-        if(nfRefBin>=startBin&&nfRefBin<=endBin){
-          const nfY=Math.round((1-(nfRefBin-startBin)/(endBin-startBin))*h);
-          if(nfY>2&&nfY<h-2){x.fillStyle='rgba(236,72,153,0.7)';x.fillRect(this.spectroX,nfY,sw,1);}
-        }
-        // === VAD activity strip (3 px) at very top of column ===
-        x.fillStyle=st.vadActive?'rgba(34,211,238,0.75)':'rgba(80,0,0,0.5)';
-        x.fillRect(this.spectroX,0,sw,3);
-        this.spectroX+=sw;
-      }
+      const w=c.width;const h=c.height;const sw=2;
+      if(this.spectroX+sw>=w){const img=x.getImageData(sw,0,w-sw,h);x.putImageData(img,0,0);x.fillStyle='#030306';x.fillRect(w-sw,0,sw,h);this.spectroX=w-sw;}
+      for(let y=0;y<h;y++){const fi=Math.floor((y/h)*bLen);const val=arr[bLen-1-fi];const muted=this.isBandMuted(fi,bLen,ana.context?ana.context.sampleRate:44100);x.fillStyle=muted?'rgba(30,30,30,0.8)':this.sColor(val,fi,bLen);x.fillRect(this.spectroX,y,sw,1);}
+      this.spectroX+=sw;
       this.update3D(arr);
-      // v2: drive 2D waterfall if active
-      this._spectroV2UpdateRow(arr, 0.5, null);
     };
     draw();
   }
-
-  // Voice-isolation color mapping: cyan/amber=voice+VAD, muted-green=voice only, red-orange=noise, dark=silence
-  sColorVoice(val,fi,noiseFloor,spkAFrac,spkBFrac,vadActive){
-    const nfv=noiseFloor[fi]||0; const v=val/255;
-    if(val<8){return 'rgb(3,3,6)';}  // silence
-    const overNoise=val>nfv*1.5;
-    if(overNoise&&vadActive){
-      // Voice-dominant bin — blend Speaker A (cyan #22d3ee) and Speaker B (amber #f59e0b)
-      const rA=Math.floor(34*spkAFrac+245*spkBFrac);
-      const gA=Math.floor(211*spkAFrac+158*spkBFrac);
-      const bA=Math.floor(238*spkAFrac+11*spkBFrac);
-      const br=0.3+v*0.7;
-      return 'rgb('+Math.floor(rA*br)+','+Math.floor(gA*br)+','+Math.floor(bA*br)+')';
-    }
-    if(overNoise){
-      // Signal above noise but VAD inactive — muted green (voice candidate)
-      return 'rgb('+Math.floor(v*30)+','+Math.floor(60+v*140)+','+Math.floor(60+v*80)+')';
-    }
-    // Below noise floor — red-orange ramp proportional to energy
-    const nv=Math.min(1,(val/Math.max(1,nfv))*0.6);
-    return 'rgb('+Math.floor(60+nv*195)+','+Math.floor(nv*70)+','+Math.floor(nv*15)+')';
-  }
-
   stopSpectro(){this.spectroRunning=false;if(this.animId){cancelAnimationFrame(this.animId);this.animId=null;}}
 
-  // Spectrogram control helpers
-  _spectroToggleFreeze(){this.spectroSt.frozen=!this.spectroSt.frozen;}
-  _spectroZoom(factor){const st=this.spectroSt;const MAX_ZOOM=16;st.zoom=Math.max(1,Math.min(MAX_ZOOM,st.zoom*factor));if(st.zoom===1)st.panY=0;}
-  _spectroPan(delta){const st=this.spectroSt;if(st.zoom<=1)return;st.panY=Math.max(0,Math.min(1,st.panY+delta));}
+  sColor(val,fi,total){const v=val/255;const f=fi/total;if(f<0.05)return 'rgb('+Math.floor(v*40)+','+Math.floor(v*80)+','+Math.floor(60+v*195)+')';if(f<0.2)return 'rgb('+Math.floor(60+v*195)+','+Math.floor(v*30)+','+Math.floor(v*20)+')';if(f<0.5)return 'rgb('+Math.floor(80+v*175)+','+Math.floor(v*60)+','+Math.floor(v*10)+')';if(f<0.75)return 'rgb('+Math.floor(v*30)+','+Math.floor(50+v*180)+','+Math.floor(v*30)+')';return 'rgb('+Math.floor(60+v*195)+','+Math.floor(50+v*160)+','+Math.floor(v*20)+')';}
+  isBandMuted(fi,total,sr){const freq=(fi/total)*(sr/2);for(const b of this.mutedBands)if(freq>=b.lo&&freq<b.hi)return true;return false;}
+  onSpectroClick(e){const r=this.dom.spectro3DCanvas.getBoundingClientRect();const y=1-((e.clientY-r.top)/r.height);const sr=this.ctx?this.ctx.sampleRate:44100;const freq=y*(sr/2);const bw=sr/20;const lo=Math.max(0,freq-bw/2);const hi=freq+bw/2;const key=Math.round(lo)+'-'+Math.round(hi);let found=false;for(const b of this.mutedBands){if(b.key===key){this.mutedBands.delete(b);found=true;break;}}if(!found)this.mutedBands.add({lo,hi,key});}
 
-  sColor(val,fi,total){
-    const v=val/255;const f=fi/total;
-    if(f<0.05)return 'rgb('+Math.floor(v*40)+','+Math.floor(v*80)+','+Math.floor(60+v*195)+')';
-    if(f<0.2)return 'rgb('+Math.floor(60+v*195)+','+Math.floor(v*30)+','+Math.floor(v*20)+')';
-    if(f<0.5)return 'rgb('+Math.floor(80+v*175)+','+Math.floor(v*60)+','+Math.floor(v*10)+')';
-    if(f<0.75)return 'rgb('+Math.floor(v*30)+','+Math.floor(50+v*180)+','+Math.floor(v*30)+')';
-    return 'rgb('+Math.floor(60+v*195)+','+Math.floor(50+v*160)+','+Math.floor(v*20)+')';
-  }
-
-  isBandMuted(fi,total,sr){
-    const freq=(fi/total)*(sr/2);
-    const bandIdx=Math.min(9,Math.floor(freq/(sr/20)));
-    return this.mutedBands.has(bandIdx.toString());
-  }
-
-  onSpectroClick(e){
-    const r=this.dom.spectro3DCanvas.getBoundingClientRect();
-    const y=1-((e.clientY-r.top)/r.height);
-    const bandIdx=Math.min(9,Math.floor(y*10));
-    const key=bandIdx.toString();
-    if(this.mutedBands.has(key)){this.mutedBands.delete(key);}else{this.mutedBands.add(key);}
-  }
-
-  // ---- Frequency Analyzer ----
   startFreq(ana){
-    const c=this.dom.freqCanvas;this.resizeCanvas(c);
-    const x=c.getContext('2d');const bLen=ana.frequencyBinCount;const arr=new Uint8Array(bLen);
-    const draw=()=>{
-      if(!this.spectroRunning)return;requestAnimationFrame(draw);
-      ana.getByteFrequencyData(arr);const w=c.width;const h=c.height;
-      x.fillStyle='#030306';x.fillRect(0,0,w,h);
-      x.strokeStyle='rgba(255,255,255,0.03)';x.lineWidth=1;
-      for(let i=1;i<5;i++){const gy=(i/5)*h;x.beginPath();x.moveTo(0,gy);x.lineTo(w,gy);x.stroke();}
-      const bW=(w/bLen)*2.5;let px=0;
-      for(let i=0;i<bLen&&px<w;i++){
-        const bH=(arr[i]/255)*h;const f=i/bLen;
-        let hue;if(f<0.05)hue=220;else if(f<0.2)hue=0;else if(f<0.5)hue=10;else if(f<0.75)hue=130;else hue=50;
-        x.fillStyle='hsla('+hue+',75%,50%,0.75)';x.fillRect(px,h-bH,Math.max(1,bW-1),bH);px+=bW;
-      }
-    };
+    const c=this.dom.freqCanvas;this.resizeCanvas(c);const x=c.getContext('2d');const bLen=ana.frequencyBinCount;const arr=new Uint8Array(bLen);
+    const draw=()=>{if(!this.spectroRunning)return;requestAnimationFrame(draw);ana.getByteFrequencyData(arr);const w=c.width;const h=c.height;x.fillStyle='#030306';x.fillRect(0,0,w,h);x.strokeStyle='rgba(255,255,255,0.03)';x.lineWidth=1;for(let i=1;i<5;i++){const gy=(i/5)*h;x.beginPath();x.moveTo(0,gy);x.lineTo(w,gy);x.stroke();}const bW=(w/bLen)*2.5;let px=0;for(let i=0;i<bLen&&px<w;i++){const bH=(arr[i]/255)*h;const f=i/bLen;let hue;if(f<0.05)hue=220;else if(f<0.2)hue=0;else if(f<0.5)hue=10;else if(f<0.75)hue=130;else hue=50;x.fillStyle='hsla('+hue+',75%,50%,0.75)';x.fillRect(px,h-bH,Math.max(1,bW-1),bH);px+=bW;}};
     draw();
   }
 
@@ -2186,7 +1081,7 @@ class VoiceIsolatePro {
     if(w===0||h===0)return;
     const scene=new THREE.Scene();scene.background=new THREE.Color(0x030306);
     const cam=new THREE.PerspectiveCamera(45,w/h,0.1,1000);cam.position.set(0,40,60);cam.lookAt(0,0,0);
-    const ren=new THREE.WebGLRenderer({canvas:this.dom.spectro3DCanvas,antialias:true,preserveDrawingBuffer:true});
+    const ren=new THREE.WebGLRenderer({canvas:this.dom.spectro3DCanvas,antialias:true});
     ren.setSize(w,h);ren.setPixelRatio(Math.min(window.devicePixelRatio,2));
     const gW=64;const gD=128;
     const geo=new THREE.PlaneGeometry(80,40,gW-1,gD-1);geo.rotateX(-Math.PI*0.4);
@@ -2196,29 +1091,19 @@ class VoiceIsolatePro {
     const mesh=new THREE.Mesh(geo,mat);scene.add(mesh);
     scene.add(new THREE.AmbientLight(0xffffff,0.5));
     this.three={scene,cam,ren,mesh,geo,gW,gD,cols};
-
-    let drag=false,pX=0,pY=0;
-    const cv=this.dom.spectro3DCanvas;
+    let drag=false,pX=0,pY=0;const cv=this.dom.spectro3DCanvas;
     cv.addEventListener('mousedown',e=>{drag=true;pX=e.clientX;pY=e.clientY;});
     window.addEventListener('mouseup',()=>drag=false);
     window.addEventListener('mousemove',e=>{if(!drag)return;cam.position.x-=(e.clientX-pX)*0.15;cam.position.y+=(e.clientY-pY)*0.15;cam.lookAt(0,0,0);pX=e.clientX;pY=e.clientY;});
     cv.addEventListener('wheel',e=>{e.preventDefault();cam.position.z+=e.deltaY*0.05;cam.position.z=Math.max(20,Math.min(120,cam.position.z));},{passive:false});
     this.render3D();
   }
-
   reset3DView(){if(this.three.cam){this.three.cam.position.set(0,40,60);this.three.cam.lookAt(0,0,0);}}
-
-  // ⚡ Bolt: Optimized 3D Spectrogram buffer updates by replacing nested element-by-element loops
-  // with native TypedArray.copyWithin() and direct array access, reducing per-frame JS overhead.
   update3D(freq){
-    if(!this.three.geo)return;
-    const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
-    cols.copyWithin(gW*3, 0, (gD-1)*gW*3);
-    const pArr=pos.array;
-    const end=gD*gW*3;const offset=gW*3;
-    for(let i=end-2;i>=offset;i-=3)pArr[i]=pArr[i-offset];
+    if(!this.three.geo)return;const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
+    for(let z=gD-1;z>0;z--)for(let x=0;x<gW;x++){const c=z*gW+x;const p=(z-1)*gW+x;pos.setY(c,pos.getY(p));cols[c*3]=cols[p*3];cols[c*3+1]=cols[p*3+1];cols[c*3+2]=cols[p*3+2];}
     const step=Math.floor(freq.length/gW);
-    for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pArr[x*3+1]=v*15;const f=x/gW;
+    for(let x=0;x<gW;x++){const fi=Math.min(x*step,freq.length-1);const v=(freq[fi]||0)/255;pos.setY(x,v*15);const f=x/gW;
       if(f<0.05){cols[x*3]=v*0.15;cols[x*3+1]=v*0.3;cols[x*3+2]=0.3+v*0.7;}
       else if(f<0.3){cols[x*3]=0.3+v*0.7;cols[x*3+1]=v*0.1;cols[x*3+2]=v*0.05;}
       else if(f<0.6){cols[x*3]=v*0.1;cols[x*3+1]=0.2+v*0.6;cols[x*3+2]=v*0.1;}
@@ -2226,640 +1111,459 @@ class VoiceIsolatePro {
     }
     pos.needsUpdate=true;colA.needsUpdate=true;
   }
-
   render3D(){requestAnimationFrame(()=>this.render3D());if(this.three.ren)this.three.ren.render(this.three.scene,this.three.cam);}
 
-  // ---- Spectrogram v2: 2D/3D mode, mel scale, freeze, snapshot, speaker lanes ----
-  // State stored on instance so it survives re-renders
-  _spectroV2Init(){
-    if(this._v2inited)return;this._v2inited=true;
-    this._v2mode2D=false;this._v2mel=false;this._v2frozen=false;
-    // Pre-allocate mel lookup (80Hz–20kHz, 128 bins)
-    const MEL_BINS=128,FFT_BINS=512,SR=48000,nyq=SR/2,minHz=80,maxHz=20000;
-    const hzToMel=hz=>2595*Math.log10(1+hz/700);
-    const melMin=hzToMel(minHz),melMax=hzToMel(maxHz);
-    this._v2melLut=new Int16Array(MEL_BINS);
-    for(let i=0;i<MEL_BINS;i++){const mel=melMin+(melMax-melMin)*(i/(MEL_BINS-1));const hz=700*(Math.pow(10,mel/2595)-1);this._v2melLut[i]=Math.round((hz/nyq)*(FFT_BINS-1));}
-    this._v2melMag=new Float32Array(MEL_BINS);
-    // Create 2D canvas overlay inside spectro3DContainer
-    const ct=this.dom.spectro3DContainer;
-    const c2=document.createElement('canvas');
-    c2.style.cssText='position:absolute;inset:0;width:100%;height:100%;display:none;image-rendering:pixelated';
-    c2.setAttribute('aria-label','2D spectrogram waterfall');c2.setAttribute('role','img');
-    ct.appendChild(c2);
-    this._v2canvas=c2;this._v2ctx=c2.getContext('2d');
-    // Zoom/pan state
-    this._v2zoomSec=10;this._v2panCol=0;
-    // Wire scroll/drag/dblclick on 3D canvas for zoom/pan
-    const cv3=this.dom.spectro3DCanvas;
-    const zoomHandler=e=>{e.preventDefault();const d=e.deltaY>0?1:-1;this._v2zoomSec=Math.max(1,Math.min(60,this._v2zoomSec+d*2));this._v2updateZoomBadge();};
-    cv3.addEventListener('wheel',zoomHandler,{passive:false});
-    c2.addEventListener('wheel',zoomHandler,{passive:false});
-    cv3.addEventListener('dblclick',()=>{this._v2zoomSec=10;this._v2panCol=0;this._v2updateZoomBadge();});
-    c2.addEventListener('dblclick',()=>{this._v2zoomSec=10;this._v2panCol=0;this._v2updateZoomBadge();});
-    let isDrag=false,dragX=0,dragPan=0;
-    const mdHandler=e=>{isDrag=true;dragX=e.clientX;dragPan=this._v2panCol;};
-    cv3.addEventListener('mousedown',mdHandler);c2.addEventListener('mousedown',mdHandler);
-    window.addEventListener('mouseup',()=>{isDrag=false;});
-    window.addEventListener('mousemove',e=>{if(!isDrag)return;const dx=e.clientX-dragX;const cols=128;const pxW=ct.clientWidth||400;const cPx=cols/pxW;this._v2panCol=Math.max(0,Math.min(cols-1,Math.round(dragPan-dx*cPx)));});
-    // Pinch zoom
-    let lastPinch=null;
-    cv3.addEventListener('touchstart',e=>{if(e.touches.length===2){const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;lastPinch=Math.sqrt(dx*dx+dy*dy);}},{passive:true});
-    cv3.addEventListener('touchmove',e=>{if(e.touches.length===2&&lastPinch){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;const d=Math.sqrt(dx*dx+dy*dy);this._v2zoomSec=Math.max(1,Math.min(60,this._v2zoomSec*(lastPinch/d)));this._v2updateZoomBadge();lastPinch=d;}},{passive:false});
-    cv3.addEventListener('touchend',()=>{lastPinch=null;},{passive:true});
-    this._v2updateZoomBadge();
-  }
+  // ════════════════════════════════════════════
+  // 6-PANEL DIAGNOSTIC DASHBOARD
+  // ════════════════════════════════════════════
+  startDiagnostics() {
+    if (this.diagRunning) return;
+    this.diagRunning = true;
+    this.specOverlayX = 0;
+    // Resize all diagnostic canvases
+    [this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,
+     this.dom.lufsCanvas,this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c => this.resizeCanvas(c));
+    // Clear spec overlay
+    const sx = this.dom.specOverlayCanvas.getContext('2d');
+    sx.fillStyle = '#030306'; sx.fillRect(0,0,this.dom.specOverlayCanvas.width,this.dom.specOverlayCanvas.height);
 
-  _v2updateZoomBadge(){const el=document.getElementById('spectroZoomBadge');if(el)el.textContent=Math.round(this._v2zoomSec)+'s';}
+    const origBuf = new Float32Array(2048);
+    const procBuf = new Float32Array(2048);
+    const freqBuf = new Uint8Array(this.analyserProc ? this.analyserProc.frequencyBinCount : 2048);
+    let lufsTimer = 0;
+    let clusterTimer = 0;
 
-  _spectroV2ToggleMode(){
-    this._spectroV2Init();
-    this._v2mode2D=!this._v2mode2D;
-    const cv3=this.dom.spectro3DCanvas;const c2=this._v2canvas;const btn=document.getElementById('spectroModeBtn');
-    if(this._v2mode2D){
-      c2.style.display='block';cv3.style.transition='opacity 0.5s';cv3.style.opacity='0';
-      setTimeout(()=>{cv3.style.display='none';},500);
-      const ct=this.dom.spectro3DContainer;c2.width=ct.clientWidth||400;c2.height=ct.clientHeight||200;
-      if(btn)btn.textContent='3D View';
-    }else{
-      cv3.style.display='block';cv3.style.opacity='0';cv3.style.transition='opacity 0.5s';c2.style.display='none';
-      requestAnimationFrame(()=>{cv3.style.opacity='1';});
-      if(btn)btn.textContent='2D View';
-    }
-  }
+    const drawAll = () => {
+      if (!this.diagRunning) return;
+      this.diagAnimId = requestAnimationFrame(drawAll);
+      const now = performance.now();
 
-  _spectroV2ToggleMel(){
-    this._spectroV2Init();
-    this._v2mel=!this._v2mel;
-    const btn=document.getElementById('spectroMelBtn');
-    if(btn)btn.textContent=this._v2mel?'Linear Scale':'Mel Scale';
-    if(this._v2ctx&&this._v2mode2D)this._v2ctx.clearRect(0,0,this._v2canvas.width,this._v2canvas.height);
-  }
+      // FPS counter
+      this.diagFpsFrames++;
+      if (now - this.diagFpsLast > 1000) {
+        if (this.dom.diagFps) this.dom.diagFps.textContent = this.diagFpsFrames + ' fps';
+        this.diagFpsFrames = 0;
+        this.diagFpsLast = now;
+      }
 
-  _spectroV2ToggleFreeze(){
-    this._spectroV2Init();
-    this._v2frozen=!this._v2frozen;
-    const badge=document.getElementById('spectroFrozenBadge');const btn=document.getElementById('spectroFreezeBtn');
-    if(badge)badge.style.display=this._v2frozen?'flex':'none';
-    if(btn){btn.textContent=this._v2frozen?'▶ Resume':'❄ Freeze';btn.setAttribute('aria-pressed',this._v2frozen?'true':'false');}
-  }
+      // Get data from analysers
+      if (this.analyserOrig) this.analyserOrig.getFloatTimeDomainData(origBuf);
+      if (this.analyserProc) {
+        this.analyserProc.getFloatTimeDomainData(procBuf);
+        this.analyserProc.getByteFrequencyData(freqBuf);
+      }
 
-  _spectroV2Snapshot(){
-    this._spectroV2Init();
-    const ts=new Date().toISOString().replace(/[:.]/g,'-');
-    const name='voiceisolate-spectrogram-'+ts+'.png';
-    const src=this._v2mode2D?this._v2canvas:this.dom.spectro3DCanvas;
-    if(!src)return;
-    if(!this._v2mode2D&&this.three&&this.three.ren)this.three.ren.render(this.three.scene,this.three.cam);
-    const url=src.toDataURL('image/png');
-    const a=document.createElement('a');a.href=url;a.download=name;a.click();
-  }
+      // Panel 1: A/B Waveform
+      this.drawABWave(origBuf, procBuf);
 
-  // Called from update3D and startSpectro hot path to draw 2D waterfall row
-  // freq: Uint8Array (0-255) from getByteFrequencyData, or pre-normalized Float32Array
-  _spectroV2UpdateRow(freq,similarity,speakerId){
-    if(!this._v2inited||!this._v2mode2D||this._v2frozen)return;
-    const ctx=this._v2ctx;if(!ctx)return;
-    const c=this._v2canvas;const W=c.width||400;const H=c.height||200;
-    if(W===0||H===0)return;
-    // Determine if normalization is needed (Uint8Array = byte data 0-255)
-    const isByte=freq instanceof Uint8Array;
-    let bins;let binCount;
-    if(this._v2mel){
-      const lut=this._v2melLut;const mel=this._v2melMag;const BC=lut.length;
-      for(let i=0;i<BC;i++)mel[i]=isByte?((freq[lut[i]]??0)/255):(freq[lut[i]]??0);
-      bins=mel;binCount=BC;
-    }else{
-      // Use full frequency spectrum, normalized to 0-1
-      binCount=freq.length;
-      bins=isByte?null:freq; // for byte data we normalize inline below
-    }
-    const visibleCols=Math.min(128,Math.round(this._v2zoomSec/(512/48000)));
-    const colW=Math.max(1,W/visibleCols);
-    ctx.drawImage(c,-colW,0);
-    const xStart=W-colW;
-    // Per-speaker or similarity color
-    const SPEAKER_COLORS={speaker_1:185,speaker_2:280,speaker_3:45,speaker_4:120};
-    for(let k=0;k<binCount;k++){
-      const raw=bins?bins[k]:(freq[k]||0);
-      const v=Math.min(isByte&&!bins?raw/255:raw,1.0);
-      const yTop=H-(k+1)/binCount*H;const yH=H/binCount+1;
-      let css;
-      if(speakerId&&SPEAKER_COLORS[speakerId]){const h=SPEAKER_COLORS[speakerId];const l=Math.round(20+60*v);css=`hsl(${h},90%,${l}%)`;}
-      else if(similarity>0.7){const l=Math.round(20+60*v);css=`hsl(185,100%,${l}%)`;}
-      else if(similarity<0.4){const l=Math.round(10+30*v);css=`hsl(0,50%,${l}%)`;}
-      else{const l=Math.round(10+50*v);css=`hsl(220,30%,${l}%)`;}
-      ctx.fillStyle=css;ctx.fillRect(xStart,yTop,colW+1,yH);
-    }
-  }
+      // Panel 2: Oscilloscope
+      this.drawOscilloscope(procBuf);
 
-  // Update per-speaker legend overlay (called from speaker identification path)
-  _spectroV2UpdateSpeakerLegend(speakerId){
-    const el=document.getElementById('spectroSpeakerLegend');if(!el)return;
-    const SPEAKERS={speaker_1:{hue:185,label:'Speaker 1'},speaker_2:{hue:280,label:'Speaker 2'},speaker_3:{hue:45,label:'Speaker 3'},speaker_4:{hue:120,label:'Speaker 4'}};
-    el.innerHTML='';
-    if(!speakerId){el.style.display='none';return;}
-    for(const[key,{hue,label}]of Object.entries(SPEAKERS)){
-      const item=document.createElement('span');item.className='sl-speaker-item';
-      const dot=document.createElement('span');dot.className='sl-speaker-dot';
-      dot.style.background=`hsl(${hue},90%,55%)`;
-      if(key===speakerId)dot.style.outline='2px solid #fff';
-      item.appendChild(dot);item.appendChild(document.createTextNode(label));
-      el.appendChild(item);
-    }
-    el.style.display='flex';
-  }
+      // Panel 3: Spectrogram + Overlays
+      this.drawSpecOverlay(freqBuf);
 
-  startGlowLoop(){
-    // Ensure any previous loop is fully stopped before starting a new one
-    if(this._glowRunning){return;}
-    if(this._glowAnimId){cancelAnimationFrame(this._glowAnimId);this._glowAnimId=null;}
-    const buf=new Float32Array(128);
-    const freqBuf=new Uint8Array(128);  // allocated once outside rAF loop
-    const root=document.documentElement;
-    const loop=()=>{
-      if(!this._glowRunning)return;
-      this._glowAnimId=requestAnimationFrame(loop);
-      if(!this.analyserNode)return;
-      this.analyserNode.getFloatTimeDomainData(buf);
-      let rms=0;for(let i=0;i<buf.length;i++)rms+=buf[i]*buf[i];
-      rms=Math.sqrt(rms/buf.length);
-      const level=Math.min(1,rms*6);
-      root.style.setProperty('--glow-level',level.toFixed(3));
-      // --audio-intensity: overall RMS for ambient glow
-      root.style.setProperty('--audio-intensity',level.toFixed(3));
-      // --audio-bass: energy in low-frequency bins (0..7 out of 128)
-      this.analyserNode.getByteFrequencyData(freqBuf);
-      let bassSum=0;for(let i=0;i<8;i++)bassSum+=freqBuf[i];
-      const bassLevel=Math.min(1,(bassSum/(8*255))*4);
-      root.style.setProperty('--audio-bass',bassLevel.toFixed(3));
-      // Also drive the header waveform
-      this._drawHeaderWave(buf);
+      // Panel 4: LUFS Meter (~100ms update)
+      if (now - lufsTimer > 100) {
+        this.drawLUFS(procBuf);
+        lufsTimer = now;
+      }
+
+      // Panel 5: ML Saliency Heatmap
+      this.drawSaliency(freqBuf);
+
+      // Panel 6: Speaker PCA Cluster (~200ms update)
+      if (now - clusterTimer > 200) {
+        this.updateCluster(procBuf, freqBuf);
+        clusterTimer = now;
+      }
+      this.drawCluster();
     };
-    this._glowRunning=true;
-    this._glowAnimId=requestAnimationFrame(loop);
+    drawAll();
   }
 
-  stopGlowLoop(){
-    this._glowRunning=false;
-    if(this._glowAnimId){cancelAnimationFrame(this._glowAnimId);this._glowAnimId=null;}
-    document.documentElement.style.setProperty('--glow-level','0');
-    document.documentElement.style.setProperty('--audio-intensity','0');
-    document.documentElement.style.setProperty('--audio-bass','0');
-    // Clear header waveform canvas
-    const c=this.dom.hdrWaveCanvas;
-    if(c){const x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);}
+  stopDiagnostics() {
+    this.diagRunning = false;
+    if (this.diagAnimId) { cancelAnimationFrame(this.diagAnimId); this.diagAnimId = null; }
   }
 
-  // ---- Header Waveform Canvas ----
-  _drawHeaderWave(timeDomainData){
-    const c=this.dom.hdrWaveCanvas;
-    if(!c||!c.parentElement)return;
-    const dpr=window.devicePixelRatio||1;
-    const w=c.parentElement.clientWidth||200;
-    const h=c.parentElement.clientHeight||30;
-    if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){
-      c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);
-      c.style.width=w+'px';c.style.height=h+'px';
-    }
-    const ctx=c.getContext('2d');const cw=c.width;const ch=c.height;
-    ctx.clearRect(0,0,cw,ch);
-    // Background
-    ctx.fillStyle='rgba(0,245,255,0.04)';ctx.fillRect(0,0,cw,ch);
-    // Waveform
-    const grad=ctx.createLinearGradient(0,0,cw,0);
-    grad.addColorStop(0,'rgba(124,58,237,0.8)');
-    grad.addColorStop(0.5,'rgba(0,245,255,0.9)');
-    grad.addColorStop(1,'rgba(124,58,237,0.8)');
-    ctx.strokeStyle=grad;ctx.lineWidth=1.5*dpr;ctx.lineJoin='round';
-    ctx.beginPath();
-    const buf=timeDomainData;
-    const sliceW=cw/buf.length;
-    for(let i=0;i<buf.length;i++){
-      const y=(0.5+buf[i]*0.45)*ch;
-      if(i===0)ctx.moveTo(0,y);else ctx.lineTo(i*sliceW,y);
-    }
-    ctx.stroke();
-    // Glow overlay
-    const glow=ctx.createLinearGradient(0,0,cw,0);
-    glow.addColorStop(0,'rgba(124,58,237,0.1)');
-    glow.addColorStop(0.5,'rgba(0,245,255,0.15)');
-    glow.addColorStop(1,'rgba(124,58,237,0.1)');
-    ctx.strokeStyle=glow;ctx.lineWidth=4*dpr;
-    ctx.beginPath();
-    for(let i=0;i<buf.length;i++){
-      const y=(0.5+buf[i]*0.45)*ch;
-      if(i===0)ctx.moveTo(0,y);else ctx.lineTo(i*sliceW,y);
-    }
-    ctx.stroke();
-  }
+  // Panel 1: A/B Waveform
+  drawABWave(origBuf, procBuf) {
+    const c = this.dom.abWaveCanvas; if (!c) return;
+    const x = c.getContext('2d');
+    const w = c.width, h = c.height;
+    x.fillStyle = '#030306'; x.fillRect(0, 0, w, h);
 
-  // ---- Speaker Aura System ----
-  // Generates vibrant per-speaker colors and shows pulsing auras when voices are active.
-  // Called from updateStats() with a speaker count, or directly with an array of speaker IDs.
-  updateSpeakerAuras(speakerCount){
-    const container=this.dom.speakerAuras;if(!container)return;
-    // If count is 0, clear auras
-    const existing=container.querySelectorAll('.speaker-aura').length;
-    if(speakerCount===0){container.textContent='';return;}
-    if(existing===speakerCount)return;
-    container.textContent='';
-    for(let i=0;i<Math.min(speakerCount,8);i++){
-      const col=SPEAKER_COLORS[i%SPEAKER_COLORS.length];
-      const el=document.createElement('div');
-      el.className='speaker-aura';
-      el.style.color=col;
-      // Set CSS custom properties for the aura ring animation
-      el.style.setProperty('--spk-color',col);
-      el.style.setProperty('--spk-active','0');
-      const dot=document.createElement('span');
-      dot.className='aura-dot';
-      dot.style.background=col;
-      dot.style.boxShadow='0 0 6px '+col;
-      const lbl=document.createTextNode('S'+(i+1));
-      el.appendChild(dot);
-      el.appendChild(lbl);
-      container.appendChild(el);
+    // Grid
+    x.strokeStyle = 'rgba(255,255,255,0.03)'; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(0, h/2); x.lineTo(w, h/2); x.stroke();
+    if (!this.abOverlay) {
+      x.beginPath(); x.moveTo(0, h/4); x.lineTo(w, h/4); x.stroke();
+      x.beginPath(); x.moveTo(0, h*3/4); x.lineTo(w, h*3/4); x.stroke();
+    }
+
+    const drawLine = (buf, color, yOff, yScale) => {
+      x.save();
+      x.strokeStyle = color; x.lineWidth = 1.5;
+      x.shadowColor = color; x.shadowBlur = 4;
+      x.beginPath();
+      const step = buf.length / w;
+      for (let i = 0; i < w; i++) {
+        const v = buf[Math.floor(i * step)] || 0;
+        const y = yOff + (-v * yScale);
+        if (i === 0) x.moveTo(i, y); else x.lineTo(i, y);
+      }
+      x.stroke();
+      x.restore();
+    };
+
+    if (this.abOverlay) {
+      drawLine(origBuf, '#3b82f6', h/2, h/2 * 0.8);
+      drawLine(procBuf, '#a855f7', h/2, h/2 * 0.8);
+    } else {
+      // Stacked: top = original, bottom = processed
+      drawLine(origBuf, '#3b82f6', h/4, h/4 * 0.8);
+      drawLine(procBuf, '#a855f7', h*3/4, h/4 * 0.8);
+      // Labels
+      x.font = '9px JetBrains Mono'; x.fillStyle = 'rgba(59,130,246,0.5)';
+      x.fillText('ORIG', 4, 12);
+      x.fillStyle = 'rgba(168,85,247,0.5)';
+      x.fillText('PROC', 4, h/2 + 12);
     }
   }
 
-  // Activate/deactivate a speaker aura (e.g. when VAD detects voice for that speaker)
-  setSpeakerActive(speakerIdx,active){
-    const container=this.dom.speakerAuras;if(!container)return;
-    const auras=container.querySelectorAll('.speaker-aura');
-    if(auras[speakerIdx]){
-      auras[speakerIdx].classList.toggle('active',active);
-      // Drive the CSS aura-pulse ring via --spk-active property
-      auras[speakerIdx].style.setProperty('--spk-active',active?'1':'0');
+  // Panel 2: Oscilloscope
+  drawOscilloscope(buf) {
+    const c = this.dom.oscCanvas; if (!c) return;
+    const x = c.getContext('2d');
+    const w = c.width, h = c.height;
+    x.fillStyle = 'rgba(3,3,6,0.3)'; x.fillRect(0, 0, w, h);
+
+    // Grid
+    x.strokeStyle = 'rgba(34,197,94,0.06)'; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(0, h/2); x.lineTo(w, h/2); x.stroke();
+    if (this.oscMode === 'lissajous') {
+      x.beginPath(); x.moveTo(w/2, 0); x.lineTo(w/2, h); x.stroke();
     }
+
+    x.strokeStyle = '#22c55e'; x.lineWidth = 1.2;
+    x.shadowColor = '#22c55e'; x.shadowBlur = 3;
+    x.beginPath();
+
+    if (this.oscMode === 'wave') {
+      const step = buf.length / w;
+      for (let i = 0; i < w; i++) {
+        const v = buf[Math.floor(i * step)] || 0;
+        const y = h/2 + (-v * h/2 * 0.85);
+        if (i === 0) x.moveTo(i, y); else x.lineTo(i, y);
+      }
+    } else if (this.oscMode === 'mirror') {
+      const step = buf.length / w;
+      // Top half (positive)
+      for (let i = 0; i < w; i++) {
+        const v = Math.abs(buf[Math.floor(i * step)] || 0);
+        const y = h/2 - v * h/2 * 0.85;
+        if (i === 0) x.moveTo(i, y); else x.lineTo(i, y);
+      }
+      x.stroke();
+      // Bottom half (mirrored)
+      x.beginPath();
+      x.strokeStyle = 'rgba(34,197,94,0.5)';
+      for (let i = 0; i < w; i++) {
+        const v = Math.abs(buf[Math.floor(i * step)] || 0);
+        const y = h/2 + v * h/2 * 0.85;
+        if (i === 0) x.moveTo(i, y); else x.lineTo(i, y);
+      }
+    } else if (this.oscMode === 'lissajous') {
+      // XY mode: use consecutive samples as L/R proxy
+      const len = Math.min(buf.length, 1024);
+      for (let i = 0; i < len - 1; i++) {
+        const lx = w/2 + buf[i] * w/2 * 0.8;
+        const ly = h/2 + (-buf[i+1]) * h/2 * 0.8;
+        if (i === 0) x.moveTo(lx, ly); else x.lineTo(lx, ly);
+      }
+    }
+    x.stroke();
+    x.shadowBlur = 0;
+  }
+
+  // Panel 3: Spectrogram + Overlays
+  drawSpecOverlay(freqBuf) {
+    const c = this.dom.specOverlayCanvas; if (!c) return;
+    const x = c.getContext('2d');
+    const w = c.width, h = c.height;
+    const bLen = freqBuf.length;
+    const sw = 2;
+
+    // Scroll
+    if (this.specOverlayX + sw >= w) {
+      const img = x.getImageData(sw, 0, w - sw, h);
+      x.putImageData(img, 0, 0);
+      x.fillStyle = '#030306'; x.fillRect(w - sw, 0, sw, h);
+      this.specOverlayX = w - sw;
+    }
+
+    // Base spectrogram
+    for (let y = 0; y < h; y++) {
+      const fi = Math.floor((y / h) * bLen);
+      const val = freqBuf[bLen - 1 - fi];
+      const v = val / 255;
+      // Blue-cyan-yellow-white colormap
+      const r = Math.floor(v * v * 255);
+      const g = Math.floor(v * 180);
+      const b = Math.floor(60 + v * 195);
+      x.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+      x.fillRect(this.specOverlayX, y, sw, 1);
+    }
+
+    // Noise profile overlay (pink line)
+    if (this.overlays.noise) {
+      x.strokeStyle = 'rgba(236,72,153,0.6)'; x.lineWidth = 1;
+      x.beginPath();
+      for (let y = 0; y < h; y++) {
+        const fi = Math.floor((y / h) * Math.min(256, bLen));
+        const nv = this.noiseProfile[Math.min(fi, 255)] * h;
+        const px = this.specOverlayX + sw/2;
+        if (y === 0) x.moveTo(px - nv * 0.3, y); else x.lineTo(px - nv * 0.3, y);
+      }
+      x.stroke();
+    }
+
+    // ERB gate overlay (cyan bands)
+    if (this.overlays.erb) {
+      for (let b = 0; b < 32; b++) {
+        const yStart = Math.floor((b / 32) * h);
+        const yEnd = Math.floor(((b + 1) / 32) * h);
+        const thresh = this.erbThresholds[b];
+        const fi = Math.floor((b / 32) * bLen);
+        const val = (freqBuf[fi] || 0) / 255;
+        if (val < thresh) {
+          x.fillStyle = 'rgba(34,211,238,0.15)';
+          x.fillRect(this.specOverlayX, h - yEnd, sw, yEnd - yStart);
+        }
+      }
+    }
+
+    // ML mask overlay (magenta tint)
+    if (this.overlays.ml) {
+      for (let y = 0; y < h; y += 2) {
+        const fi = Math.floor((y / h) * Math.min(256, bLen));
+        const val = (freqBuf[bLen - 1 - Math.floor((y/h)*bLen)] || 0) / 255;
+        // Simulate ML mask: voice band (80Hz-6kHz) = low attenuation, rest = high
+        const bandFrac = (h - y) / h;
+        const isVoice = bandFrac > 0.02 && bandFrac < 0.35;
+        const maskAmt = isVoice ? 0.05 : 0.3 + val * 0.2;
+        x.fillStyle = 'rgba(168,85,247,' + (maskAmt * 0.4) + ')';
+        x.fillRect(this.specOverlayX, y, sw, 2);
+      }
+    }
+
+    this.specOverlayX += sw;
+
+    // Update noise profile (slow adaptation)
+    for (let i = 0; i < Math.min(256, bLen); i++) {
+      const v = (freqBuf[i] || 0) / 255;
+      this.noiseProfile[i] = this.noiseProfile[i] * 0.995 + v * 0.005;
+    }
+  }
+
+  // Panel 4: LUFS Meter
+  drawLUFS(buf) {
+    // Compute short-term loudness (simplified K-weighted)
+    let sumSq = 0;
+    for (let i = 0; i < buf.length; i++) sumSq += buf[i] * buf[i];
+    const rms = Math.sqrt(sumSq / buf.length);
+    const lufs = rms > 0 ? -0.691 + 10 * Math.log10(rms * rms) : -60;
+    const clamped = Math.max(-60, Math.min(0, lufs));
+
+    // Rolling history
+    this.lufsHistory[this.lufsIdx % this.lufsHistory.length] = clamped;
+    this.lufsIdx++;
+
+    // Integrated
+    this.lufsSumSq += rms * rms;
+    this.lufsFrameCount++;
+    const intRms = Math.sqrt(this.lufsSumSq / this.lufsFrameCount);
+    this.lufsIntegrated = intRms > 0 ? -0.691 + 10 * Math.log10(intRms * intRms) : -60;
+
+    // Peak
+    let pk = 0;
+    for (let i = 0; i < buf.length; i++) { const a = Math.abs(buf[i]); if (a > pk) pk = a; }
+    const peakDb = pk > 0 ? 20 * Math.log10(pk) : -96;
+
+    // Crest factor
+    const crest = peakDb - clamped;
+
+    // Update readouts
+    if (this.dom.lufsShort) this.dom.lufsShort.textContent = clamped.toFixed(1);
+    if (this.dom.lufsInt) this.dom.lufsInt.textContent = this.lufsIntegrated.toFixed(1);
+    if (this.dom.lufsPeak) this.dom.lufsPeak.textContent = peakDb.toFixed(1);
+    if (this.dom.lufsCrest) this.dom.lufsCrest.textContent = crest.toFixed(1);
+    if (this.dom.hLUFS) this.dom.hLUFS.textContent = clamped.toFixed(1);
+
+    // Draw trace
+    const c = this.dom.lufsCanvas; if (!c) return;
+    const x = c.getContext('2d');
+    const w = c.width, h = c.height;
+    x.fillStyle = '#030306'; x.fillRect(0, 0, w, h);
+
+    // Grid lines
+    x.strokeStyle = 'rgba(255,255,255,0.04)'; x.lineWidth = 1;
+    for (const db of [-14, -16, -23]) {
+      const gy = h * (1 - (db + 60) / 60);
+      x.beginPath(); x.moveTo(0, gy); x.lineTo(w, gy); x.stroke();
+    }
+
+    // Target line
+    const targetLUFS = -16;
+    const ty = h * (1 - (targetLUFS + 60) / 60);
+    x.strokeStyle = 'rgba(234,179,8,0.3)'; x.setLineDash([4,4]);
+    x.beginPath(); x.moveTo(0, ty); x.lineTo(w, ty); x.stroke();
+    x.setLineDash([]);
+
+    // LUFS trace
+    x.strokeStyle = '#a855f7'; x.lineWidth = 1.5;
+    x.shadowColor = '#a855f7'; x.shadowBlur = 3;
+    x.beginPath();
+    const histLen = Math.min(this.lufsIdx, this.lufsHistory.length);
+    const startIdx = Math.max(0, this.lufsIdx - w);
+    for (let i = 0; i < w && i < histLen; i++) {
+      const idx = (startIdx + i) % this.lufsHistory.length;
+      const v = this.lufsHistory[idx];
+      const py = h * (1 - (v + 60) / 60);
+      if (i === 0) x.moveTo(i, py); else x.lineTo(i, py);
+    }
+    x.stroke();
+    x.shadowBlur = 0;
+
+    // Labels
+    x.font = '8px JetBrains Mono'; x.fillStyle = 'rgba(234,179,8,0.4)';
+    x.fillText('-16 LUFS', w - 52, ty - 2);
+  }
+
+  // Panel 5: ML Saliency Heatmap
+  drawSaliency(freqBuf) {
+    const c = this.dom.saliencyCanvas; if (!c) return;
+    const x = c.getContext('2d');
+    const w = c.width, h = c.height;
+    const bLen = freqBuf.length;
+
+    // Shift left
+    const img = x.getImageData(2, 0, w - 2, h);
+    x.putImageData(img, 0, 0);
+    x.fillStyle = '#030306'; x.fillRect(w - 2, 0, 2, h);
+
+    // Simulate saliency via spectral gradient magnitude
+    for (let i = 0; i < Math.min(256, bLen); i++) {
+      const v = (freqBuf[i] || 0) / 255;
+      const prev = i > 0 ? (freqBuf[i-1] || 0) / 255 : v;
+      this.saliencyBuf[i] = this.saliencyBuf[i] * 0.7 + Math.abs(v - prev) * 3 * 0.3;
+    }
+
+    // Draw column
+    for (let y = 0; y < h; y++) {
+      const fi = Math.floor(((h - y) / h) * 256);
+      const sal = Math.min(1, this.saliencyBuf[Math.min(fi, 255)] * 4);
+      // Hot colormap: transparent -> yellow -> red -> white
+      let r, g, b, a;
+      if (sal < 0.25) { r = 0; g = 0; b = 0; a = sal * 2; }
+      else if (sal < 0.5) { r = 239; g = 68; b = 68; a = 0.3 + sal; }
+      else if (sal < 0.75) { r = 234; g = 179; b = 8; a = 0.5 + sal * 0.3; }
+      else { r = 255; g = 240; b = 240; a = 0.6 + sal * 0.3; }
+      x.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',' + Math.min(1, a) + ')';
+      x.fillRect(w - 2, y, 2, 1);
+    }
+  }
+
+  // Panel 6: Speaker PCA Cluster
+  updateCluster(timeBuf, freqBuf) {
+    // Simulate 192-dim embedding -> 2D PCA by using spectral centroid + energy
+    let energy = 0, centroid = 0, weightSum = 0;
+    const bLen = freqBuf.length;
+    for (let i = 0; i < bLen; i++) {
+      const v = freqBuf[i] / 255;
+      energy += v * v;
+      centroid += v * i;
+      weightSum += v;
+    }
+    energy = Math.sqrt(energy / bLen);
+    centroid = weightSum > 0 ? centroid / weightSum / bLen : 0.5;
+
+    // Classify: voice-like (centroid 0.05-0.3, high energy) vs noise
+    const isVoice = centroid > 0.03 && centroid < 0.35 && energy > 0.15;
+    const isOther = centroid > 0.35 && energy > 0.1;
+
+    // PCA coords (simulated)
+    const px = centroid * 2 - 0.3 + (Math.random() - 0.5) * 0.08;
+    const py = energy * 1.5 - 0.2 + (Math.random() - 0.5) * 0.08;
+
+    this.clusterPoints.push({
+      x: px, y: py,
+      type: isVoice ? 'target' : (isOther ? 'other' : 'noise'),
+      age: 0
+    });
+
+    // Keep last 200 points
+    if (this.clusterPoints.length > 200) this.clusterPoints.splice(0, this.clusterPoints.length - 200);
+    this.clusterPoints.forEach(p => p.age++);
+  }
+
+  drawCluster() {
+    const c = this.dom.clusterCanvas; if (!c) return;
+    const x = c.getContext('2d');
+    const w = c.width, h = c.height;
+    x.fillStyle = 'rgba(3,3,6,0.15)'; x.fillRect(0, 0, w, h);
+
+    // Grid
+    x.strokeStyle = 'rgba(255,255,255,0.03)'; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(w/2, 0); x.lineTo(w/2, h); x.stroke();
+    x.beginPath(); x.moveTo(0, h/2); x.lineTo(w, h/2); x.stroke();
+
+    const colors = { target: '#a855f7', other: '#3b82f6', noise: '#f97316' };
+    const glows = { target: 'rgba(168,85,247,0.4)', other: 'rgba(59,130,246,0.3)', noise: 'rgba(249,115,22,0.3)' };
+
+    for (const pt of this.clusterPoints) {
+      const px = (pt.x + 0.5) * w;
+      const py = (1 - (pt.y + 0.3)) * h;
+      const alpha = Math.max(0.1, 1 - pt.age / 200);
+      const radius = pt.type === 'target' ? 3 : 2;
+
+      x.beginPath();
+      x.arc(px, py, radius, 0, Math.PI * 2);
+      x.fillStyle = colors[pt.type];
+      x.globalAlpha = alpha;
+      x.fill();
+
+      if (pt.age < 5) {
+        x.beginPath();
+        x.arc(px, py, radius + 2, 0, Math.PI * 2);
+        x.fillStyle = glows[pt.type];
+        x.fill();
+      }
+    }
+    x.globalAlpha = 1;
+
+    // Axis labels
+    x.font = '8px JetBrains Mono'; x.fillStyle = 'rgba(255,255,255,0.15)';
+    x.fillText('PC1', w - 22, h - 4);
+    x.fillText('PC2', 4, 10);
   }
 
   onResize(){
-    [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas].forEach(c=>this.resizeCanvas(c));
-    if(this.inputBuffer)this.drawWaveform(this.inputBuffer,this.dom.waveOrigCanvas,'#22d3ee');
-    if(this.outputBuffer)this.drawWaveform(this.outputBuffer,this.dom.waveProcCanvas,'#6366f1');
+    [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas,
+     this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
+     this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c=> { if(c) this.resizeCanvas(c); });
+    if(this.inputBuffer)this.drawWaveform(this.inputBuffer,this.dom.waveOrigCanvas,'#dc2626');
+    if(this.outputBuffer)this.drawWaveform(this.outputBuffer,this.dom.waveProcCanvas,'#22d3ee');
     const ct=this.dom.spectro3DContainer;
     if(this.three.ren){this.three.ren.setSize(ct.clientWidth,ct.clientHeight);this.three.cam.aspect=ct.clientWidth/ct.clientHeight;this.three.cam.updateProjectionMatrix();}
   }
 
-  // ---- Full-File Spectrogram ----
-  async renderFileSpectrogram(buf) {
-    if (!this.dom.fsCanvas || !this.dom.fsMain) return;
-    const wrap = this.dom.fsMain;
-    const W = Math.max(wrap.clientWidth || 800, 200);
-    const H = Math.max(wrap.clientHeight || 170, 80);
-    const canvas = this.dom.fsCanvas;
-    canvas.width = W; canvas.height = H;
-    if (this.dom.fsOverlay) { this.dom.fsOverlay.width = W; this.dom.fsOverlay.height = H; }
-    const ctx2d = canvas.getContext('2d');
-    ctx2d.fillStyle = '#030306'; ctx2d.fillRect(0, 0, W, H);
-    const data = buf.getChannelData(0);
-    const sr = buf.sampleRate;
-    const nyq = sr / 2;
-    const fftSize = 2048;
-    const halfFFT = fftSize >> 1;
-    const hopSize = Math.max(1, Math.ceil(data.length / W));
-    const cmap = this.dom.fsColormap ? this.dom.fsColormap.value : 'plasma';
-    const invLN10_9 = 1 / (9 * Math.LN10);
-    const win = new Float32Array(fftSize);
-    for (let i = 0; i < fftSize; i++) win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / fftSize));
-    const logMin = Math.log(20), logMax = Math.log(nyq);
-    const rowBin = new Uint16Array(H);
-    for (let row = 0; row < H; row++) {
-      const frac = 1 - row / H;
-      const freq = Math.exp(logMin + frac * (logMax - logMin));
-      rowBin[row] = Math.min(Math.round(freq / nyq * halfFFT), halfFFT - 1);
-    }
-    const imgData = ctx2d.createImageData(W, H);
-    const pixels = imgData.data;
-    const re = new Float32Array(fftSize);
-    const im = new Float32Array(fftSize);
-    const BATCH = 64;
-    const totalCols = Math.min(W, Math.ceil(data.length / hopSize));
-    for (let col = 0; col < totalCols; col++) {
-      const offset = col * hopSize;
-      for (let i = 0; i < fftSize; i++) { const si = offset + i; re[i] = (si < data.length ? data[si] : 0) * win[i]; im[i] = 0; }
-      this._fft(re, im);
-      for (let row = 0; row < H; row++) {
-        const bin = rowBin[row];
-        const magSq = re[bin] * re[bin] + im[bin] * im[bin];
-        const v = magSq > 0 ? Math.max(0, Math.min(1, Math.log(magSq) * invLN10_9 + 1)) : 0;
-        const [r, g, b] = this.fsColor(v, cmap);
-        const idx = (row * W + col) * 4;
-        pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
-      }
-      if ((col % BATCH === BATCH - 1) || col === totalCols - 1) {
-        ctx2d.putImageData(imgData, 0, 0);
-        const pct = Math.round((col + 1) / totalCols * 100);
-        if (this.dom.fsProgress) this.dom.fsProgress.textContent = pct < 100 ? `Rendering ${pct}%` : '';
-        await new Promise(r => setTimeout(r, 0));
-      }
-    }
-    this.fsImageData = ctx2d.getImageData(0, 0, W, H);
-    if (this.dom.fsProgress) this.dom.fsProgress.textContent = '';
-    this.drawFsYAxis(sr, H);
-    this.drawFsXAxis(buf.duration, W);
-    this.drawFsPlayhead(0);
-  }
-
-  fsColor(v, cmap) {
-    v = Math.max(0, Math.min(1, v));
-    if (cmap === 'ocean') return this.lerpStops([[3,3,20],[5,20,80],[0,100,180],[0,200,230],[180,240,255],[255,255,255]], v);
-    if (cmap === 'voice') return this.lerpStops([[3,3,8],[30,5,60],[180,10,30],[220,80,0],[255,200,20],[255,255,180]], v);
-    if (cmap === 'thermal') return this.lerpStops([[0,0,0],[70,0,20],[180,0,0],[220,100,0],[255,220,40],[255,255,220]], v);
-    // plasma (default)
-    return this.lerpStops([[5,1,15],[60,5,110],[140,20,170],[200,60,50],[240,140,0],[255,230,40],[255,255,220]], v);
-  }
-
-  lerpStops(stops, v) {
-    const idx = v * (stops.length - 1);
-    const lo = Math.floor(idx), hi = Math.min(lo + 1, stops.length - 1);
-    const t = idx - lo;
-    return stops[lo].map((c, i) => Math.round(c + (stops[hi][i] - c) * t));
-  }
-
-  drawFsYAxis(sr, H) {
-    const cv = this.dom.fsYAxis; if (!cv) return;
-    cv.width = 38; cv.height = H;
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#030306'; ctx.fillRect(0, 0, 38, H);
-    const nyq = sr / 2;
-    const logMin = Math.log(20), logMax = Math.log(nyq);
-    const freqs = [100,250,500,1000,2000,4000,8000,16000].filter(f => f < nyq);
-    ctx.font = '8px JetBrains Mono, monospace'; ctx.textAlign = 'right';
-    for (const f of freqs) {
-      const frac = (Math.log(f) - logMin) / (logMax - logMin);
-      const y = Math.round((1 - frac) * H);
-      ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(34, y, 4, 1);
-      ctx.fillStyle = 'rgba(180,180,200,0.5)';
-      ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f, 32, y + 3);
-    }
-    ctx.save(); ctx.translate(9, H / 2); ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,180,200,0.35)'; ctx.font = '7px JetBrains Mono, monospace';
-    ctx.fillText('Hz', 0, 0); ctx.restore();
-  }
-
-  drawFsXAxis(duration, W) {
-    const cv = this.dom.fsXAxis; if (!cv) return;
-    cv.width = W + 38; cv.height = 20;
-    const ctx = cv.getContext('2d');
-    ctx.fillStyle = '#030306'; ctx.fillRect(0, 0, W + 38, 20);
-    ctx.font = '8px JetBrains Mono, monospace'; ctx.fillStyle = 'rgba(180,180,200,0.5)'; ctx.textAlign = 'center';
-    const step = duration < 30 ? 5 : duration < 120 ? 15 : duration < 300 ? 30 : 60;
-    for (let t = 0; t <= duration; t += step) {
-      const x = 38 + Math.round(t / duration * W);
-      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(x, 0, 1, 5);
-      ctx.fillStyle = 'rgba(180,180,200,0.5)';
-      ctx.fillText(t >= 60 ? Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') : t + 's', x, 14);
-    }
-  }
-
-  drawFsPlayhead(frac) {
-    const cv = this.dom.fsOverlay; if (!cv || !cv.width) return;
-    const W = cv.width, H = cv.height;
-    const ctx = cv.getContext('2d');
-    ctx.clearRect(0, 0, W, H);
-    if (!this.inputBuffer || frac <= 0) return;
-    const x = Math.round(frac * W);
-    ctx.shadowBlur = 6; ctx.shadowColor = '#dc2626';
-    ctx.strokeStyle = 'rgba(220,38,38,0.9)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
-    ctx.shadowBlur = 0;
-    const elapsed = frac * this.inputBuffer.duration;
-    const label = this.fmtDur(elapsed);
-    ctx.font = '700 9px JetBrains Mono, monospace';
-    const tw = ctx.measureText(label).width;
-    const bx = Math.min(x + 3, W - tw - 8);
-    ctx.fillStyle = 'rgba(220,38,38,0.85)'; ctx.fillRect(bx - 2, 2, tw + 8, 14);
-    ctx.fillStyle = '#fff'; ctx.fillText(label, bx + 2, 12);
-  }
-
-  fsToggleAB() {
-    if (!this.outputBuffer) return;
-    this.fsMode = this.fsMode === 'original' ? 'processed' : 'original';
-    const isProc = this.fsMode === 'processed';
-    if (this.dom.fsModeLbl) { this.dom.fsModeLbl.textContent = isProc ? 'PROCESSED' : 'ORIGINAL'; this.dom.fsModeLbl.classList.toggle('proc', isProc); }
-    if (this.dom.fsBtnAB) this.dom.fsBtnAB.textContent = isProc ? 'Show Original' : 'Show Processed';
-    this.fsCurrentBuf = isProc ? this.outputBuffer : this.inputBuffer;
-    this.fsImageData = null;
-    this.renderFileSpectrogram(this.fsCurrentBuf);
-    // Sync transport A/B with spectrogram toggle
-    if (this.abMode !== this.fsMode) {
-      this.abMode = this.fsMode;
-      this.dom.tpAB.classList.toggle('active', isProc);
-      if (this.dom.tpSourceToggle) this.dom.tpSourceToggle.checked = isProc;
-      this.dom.tpABLabel.textContent = isProc ? 'Processed' : 'Original';
-      const speed = parseFloat(this.dom.tpSpeed.value) || 1;
-      if (this.isPlaying) { this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed; this.play(); }
-    }
-  }
-
-  fsSeekClick(e) {
-    if (!this.inputBuffer) return;
-    const rect = this.dom.fsMain.getBoundingClientRect();
-    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    this.playOffset = frac * this.inputBuffer.duration;
-    this.dom.tpSeek.value = frac * 1000;
-    this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
-    this.drawFsPlayhead(frac);
-    if (this.isPlaying) this.play();
-  }
-
   // ---- UTILITY ----
-  setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#52527a',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#818cf8',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#52527a';}
-
-  // Update the noise class badge in the header (fed by noise profiler or manual detection)
-  updateNoiseClassBadge(cls){
-    const badge=this.dom.noiseClassBadge;if(!badge)return;
-    const MAP={
-      music:   {label:'🎵 Music',   key:'music'},
-      white:   {label:'🌊 White Noise', key:'white'},
-      crowd:   {label:'👥 Crowd',   key:'crowd'},
-      hvac:    {label:'💨 HVAC',    key:'hvac'},
-      keyboard:{label:'⌨️ Keyboard',key:'keyboard'},
-      traffic: {label:'🚗 Traffic', key:'traffic'},
-      idle:    {label:'● IDLE',    key:'idle'},
-    };
-    const entry=MAP[cls]||MAP.idle;
-    badge.textContent=entry.label;
-    badge.dataset.class=entry.key;
-  }
-  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
-  calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
+  setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
+  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
+  calcPeak(d){let p=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>p)p=a;}return p>0?20*Math.log10(p):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
-
-  // ── v19: DSP AudioWorklet init (dsp-processor.js / 'dsp-processor') ─────────
-  // Called once after both AudioWorklet modules have loaded.
-  // Creates the full-STFT DspProcessor node, wires:
-  //   • PipelineState → worklet port (all 52 slider params)
-  //   • SharedArrayBuffer ML rings (input/output/ctrl) for ONNX handoff
-  //   • Spectrum SAB for 3D spectrogram visualization
-  // The node is stored as this._dspWorkletNode; it is connected into the audio
-  // graph when buildLiveChain() runs (mic → dspNode → destination).
-  async _initDspWorklet() {
-    if (!this.ctx || this._dspWorkletNode) return;
-
-    // Create the AudioWorkletNode backed by DspProcessor
-    this._dspWorkletNode = new AudioWorkletNode(this.ctx, 'dsp-processor', {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [2],
-    });
-
-    // Wire PipelineState → worklet port so all 52 slider changes propagate
-    if (this.pipelineState) {
-      this.pipelineState.setWorkletPort(this._dspWorkletNode.port);
-    }
-
-    // Send current params as initial bulk snapshot
-    const allParams = {};
-    for (const tab of Object.values(SLIDERS)) {
-      for (const s of tab) allParams[s.id] = this.params[s.id] ?? s.val;
-    }
-    this._dspWorkletNode.port.postMessage({ type: 'paramBulk', params: allParams });
-
-    // Setup SharedArrayBuffer rings (requires COOP/COEP headers or same-origin)
-    if (this.sabSupported) {
-      // Spectrum SAB: 2049 bins × 4 bytes (Float32) for 3D spectrogram
-      const spectrumSAB = new SharedArrayBuffer(2049 * 4);
-      this._dspWorkletNode.port.postMessage({ type: 'sab-spectrum', sab: spectrumSAB });
-      this._spectrumSAB = new Float32Array(spectrumSAB);
-
-      // ML rings: 2049 bins each for input/output + 2 Int32 control words
-      // ctrlSAB[0] = inputReady (worklet→main), ctrlSAB[1] = outputReady (main→worklet)
-      const mlInputSAB  = new SharedArrayBuffer(2049 * 4);
-      const mlOutputSAB = new SharedArrayBuffer(2049 * 4);
-      const mlCtrlSAB   = new SharedArrayBuffer(2 * 4); // Int32[2]
-      this._mlInputSAB  = new Float32Array(mlInputSAB);
-      this._mlOutputSAB = new Float32Array(mlOutputSAB);
-      this._mlCtrlSAB   = new Int32Array(mlCtrlSAB);
-
-      // Pass ML rings to DSP worklet
-      this._dspWorkletNode.port.postMessage({
-        type: 'ml-rings',
-        inputSAB:  mlInputSAB,
-        outputSAB: mlOutputSAB,
-        ctrlSAB:   mlCtrlSAB,
-      });
-
-      // Start main-thread ONNX inference loop (WebGPU→WASM fallback)
-      this.initONNXDirect().then(session => {
-        if (session) {
-          this._onnxSession = session;
-          this._startMLOnnxLoop();
-        }
-      }).catch(err =>
-        structuredLog('warn', 'Direct ONNX init failed — ML path disabled', { error: err.message })
-      );
-    }
-
-    structuredLog('info', 'DSP AudioWorklet node ready', { processor: 'dsp-processor' });
-  }
-
-  // ── v19: Direct ONNX init on main thread (WebGPU first, WASM fallback) ───
-  // Returns an ort.InferenceSession or null if ONNX Runtime is unavailable.
-  // Model: ./models/demucs-v4-vocals.onnx (int8 quantized, ~40 MB).
-  // Falls back gracefully: if model file is missing, returns null (classical DSP only).
-  async initONNXDirect() {
-    try {
-      // Dynamic import so bundle doesn't hard-depend on onnxruntime-web
-      const ort = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js')
-        .catch(() => null);
-      if (!ort) return null;
-
-      const sessionOptions = {
-        executionProviders: ['webgpu', 'wasm'],
-        graphOptimizationLevel: 'all',
-      };
-
-      // Try Demucs vocal isolation model; fall back to VAD model already bundled
-      const modelPaths = [
-        './models/demucs-v4-vocals.onnx',
-        './models/silero_vad.onnx',
-      ];
-
-      for (const modelPath of modelPaths) {
-        try {
-          const session = await ort.InferenceSession.create(modelPath, sessionOptions);
-          structuredLog('info', 'ONNX session created', { model: modelPath });
-          return session;
-        } catch (_) {
-          // Try next model
-        }
-      }
-      return null;
-    } catch (err) {
-      structuredLog('warn', 'ONNX direct init error', { error: err.message });
-      return null;
-    }
-  }
-
-  // ── v19: Main-thread ONNX inference loop via Atomics.waitAsync ────────────
-  // Polls _mlCtrlSAB[0] for inputReady=1 (set by AudioWorklet after spectral DSP).
-  // Runs ONNX on the spectral frame, writes result to _mlOutputSAB, signals worklet.
-  // Uses Atomics.waitAsync (non-blocking, safe on main thread).
-  _startMLOnnxLoop() {
-    if (!this._mlCtrlSAB || !this._onnxSession) return;
-
-    const poll = async () => {
-      // Atomics.waitAsync: resolves when ctrlSAB[0] changes from 0, or after 50ms timeout
-      const { async: isAsync, value: waitResult } = Atomics.waitAsync
-        ? Atomics.waitAsync(this._mlCtrlSAB, 0, 0, 50)
-        : { async: false, value: 'ok' };
-
-      const proceed = async () => {
-        const inputReady = Atomics.load(this._mlCtrlSAB, 0) === 1;
-        if (inputReady && this._mlInputSAB && this._mlOutputSAB && this._onnxSession) {
-          try {
-            const inputMag = this._mlInputSAB.slice(); // snapshot to avoid race
-            // Mark input consumed before inference (worklet can write next frame)
-            Atomics.store(this._mlCtrlSAB, 0, 0);
-
-            // Build ONNX input tensor [1, 1, numBins]
-            const ort = this._onnxSession.constructor;
-            const tensor = new (await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js')
-              .then(m => m.Tensor).catch(() => null))(
-              'float32', inputMag, [1, 1, inputMag.length]
-            );
-            if (!tensor) { poll(); return; }
-
-            const feeds = { input: tensor };
-            const results = await this._onnxSession.run(feeds);
-            const outputKey = Object.keys(results)[0];
-            const outputData = results[outputKey]?.data;
-
-            if (outputData && this._mlOutputSAB) {
-              const len = Math.min(outputData.length, this._mlOutputSAB.length);
-              for (let i = 0; i < len; i++) this._mlOutputSAB[i] = outputData[i];
-              // Signal worklet: ONNX result ready
-              Atomics.store(this._mlCtrlSAB, 1, 1);
-            }
-          } catch (err) {
-            structuredLog('warn', 'ONNX inference error', { error: err.message });
-          }
-        }
-        // Schedule next poll
-        poll();
-      };
-
-      if (isAsync && waitResult && typeof waitResult.then === 'function') {
-        waitResult.then(proceed);
-      } else {
-        // Synchronous result or no Atomics.waitAsync support — use rAF fallback
-        requestAnimationFrame(proceed);
-      }
-    };
-
-    poll();
-  }
-
-  calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const rSq=s/d.length;return rSq>0?10*Math.log10(rSq):-96;}
-  calcPeak(d){let pSq=0;for(let i=0;i<d.length;i++){const aSq=d[i]*d[i];if(aSq>pSq)pSq=aSq;}return pSq>0?10*Math.log10(pSq):-96;}
-  fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
-} // End of class VoiceIsolatePro
-
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = VoiceIsolatePro;
-} else if (typeof document !== 'undefined') {
-  document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
 }
+
+if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
+document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});

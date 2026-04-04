@@ -466,7 +466,7 @@ const DSPCore = {
   /** S15: Wiener-MMSE spectral noise subtraction */
   wienerMMSE(mag, noiseProfile, amount) {
     const alpha = amount / 100;
-    const floor = 0.001; // spectral floor (~-60 dB, consistent with dsp-processor default)
+    const floor = 0.01; // spectral floor
     for (let f = 0; f < mag.length; f++) {
       for (let k = 0; k < mag[f].length; k++) {
         const noise = noiseProfile ? (noiseProfile[k] || 0) : 0;
@@ -1058,6 +1058,260 @@ const DSPCore = {
     }
 
     return buffer;
+  },
+
+  // ===== ADVANCED DSP: ADAPTIVE NOISE ESTIMATION =====
+
+  /**
+   * AdaptiveNoiseEstimator — per-bin noise floor tracker.
+   * Uses asymmetric exponential smoothing: fast attack (noise rises quickly)
+   * and slow release (noise floor decreases slowly), preventing over-subtraction
+   * during speech activity.
+   *
+   * Usage:
+   *   const est = new DSPCore.AdaptiveNoiseEstimator(halfN);
+   *   est.update(mag[f]);          // call each spectral frame
+   *   const profile = est.getProfile();  // use for Wiener filtering
+   */
+  AdaptiveNoiseEstimator: class {
+    /**
+     * @param {number} numBins - number of FFT bins (fftSize/2 + 1)
+     * @param {number} attackCoeff - per-frame smoothing when noise increases (0–1, default 0.9)
+     * @param {number} releaseCoeff - per-frame smoothing when noise decreases (0–1, default 0.998)
+     */
+    constructor(numBins, attackCoeff = 0.9, releaseCoeff = 0.998) {
+      this.noisePSD = new Float32Array(numBins);
+      this.initialized = false;
+      this.attackCoeff = Math.max(0, Math.min(1, attackCoeff));
+      this.releaseCoeff = Math.max(0, Math.min(1, releaseCoeff));
+    }
+
+    /**
+     * Update the noise PSD estimate with a new magnitude frame.
+     * @param {Float32Array} mag - magnitude spectrum for current frame
+     */
+    update(mag) {
+      if (!this.initialized) {
+        for (let k = 0; k < this.noisePSD.length; k++) {
+          this.noisePSD[k] = mag[k] * mag[k];
+        }
+        this.initialized = true;
+        return;
+      }
+      for (let k = 0; k < this.noisePSD.length; k++) {
+        const psd = mag[k] * mag[k];
+        const coeff = psd > this.noisePSD[k] ? this.attackCoeff : this.releaseCoeff;
+        this.noisePSD[k] = coeff * this.noisePSD[k] + (1 - coeff) * psd;
+      }
+    }
+
+    /** Return the current per-bin noise PSD estimate. */
+    getProfile() { return this.noisePSD; }
+
+    /** Reset estimator state. */
+    reset() {
+      this.noisePSD.fill(0);
+      this.initialized = false;
+    }
+  },
+
+  // ===== ADVANCED DSP: MULTIBAND WIENER FILTER =====
+
+  /**
+   * MultibandWienerFilter — frequency-band-level Wiener noise suppression.
+   * Divides the spectrum into logarithmically-spaced bands and computes a
+   * per-band Wiener gain, then applies temporal smoothing to suppress
+   * musical noise artifacts.
+   *
+   * Usage (operates on a single magnitude frame in-place):
+   *   const wf = new DSPCore.MultibandWienerFilter(16, 48000, 4096);
+   *   wf.process(mag[f], noisePSD, strength);  // modifies mag[f] in-place
+   */
+  MultibandWienerFilter: class {
+    /**
+     * @param {number} numBands - number of frequency bands (default 16)
+     * @param {number} sr - sample rate (default 48000)
+     * @param {number} fftSize - FFT size (default 4096)
+     */
+    constructor(numBands = 16, sr = 48000, fftSize = 4096) {
+      this.numBands = numBands;
+      this.sr = sr;
+      this.fftSize = fftSize;
+      this.smoothGains = new Float32Array(numBands).fill(1);
+      this._bands = null; // lazily computed
+    }
+
+    /** Build logarithmically-spaced band boundaries (20 Hz – Nyquist). */
+    _getBands(numBins) {
+      if (this._bands) return this._bands;
+      const nyquist = this.sr / 2;
+      const loHz = 20;
+      this._bands = [];
+      for (let b = 0; b < this.numBands; b++) {
+        const t0 = b / this.numBands;
+        const t1 = (b + 1) / this.numBands;
+        const f0 = loHz * Math.pow(nyquist / loHz, t0);
+        const f1 = loHz * Math.pow(nyquist / loHz, t1);
+        const binLo = Math.max(0, Math.floor(f0 * numBins / nyquist));
+        const binHi = Math.min(numBins - 1, Math.ceil(f1 * numBins / nyquist));
+        this._bands.push({ lo: binLo, hi: Math.max(binLo, binHi) });
+      }
+      return this._bands;
+    }
+
+    /**
+     * Process a single magnitude frame in-place.
+     * @param {Float32Array} mag - magnitude spectrum (modified in-place)
+     * @param {Float32Array|null} noisePSD - per-bin noise PSD from AdaptiveNoiseEstimator
+     * @param {number} strength - Wiener suppression strength 0–1 (default 1)
+     * @param {number} temporalSmoothing - inter-frame gain smoothing 0–1 (default 0.85)
+     * @returns {Float32Array} modified mag
+     */
+    process(mag, noisePSD, strength = 1, temporalSmoothing = 0.85) {
+      const numBins = mag.length;
+      const bands = this._getBands(numBins);
+      const floor = 0.01; // minimum gain to preserve speech residual
+
+      for (let b = 0; b < bands.length; b++) {
+        const { lo, hi } = bands[b];
+        const bandLen = hi - lo + 1;
+        let sigPow = 0, noisePow = 0;
+        for (let k = lo; k <= hi; k++) {
+          sigPow += mag[k] * mag[k];
+          if (noisePSD) noisePow += noisePSD[k];
+        }
+        sigPow /= bandLen;
+        noisePow /= bandLen;
+
+        let gain;
+        if (sigPow > 1e-10) {
+          const reduced = Math.max(0, sigPow - strength * noisePow);
+          gain = Math.max(floor, Math.sqrt(reduced / sigPow));
+        } else {
+          gain = floor;
+        }
+
+        // Temporal smoothing to suppress musical noise
+        this.smoothGains[b] = temporalSmoothing * this.smoothGains[b] + (1 - temporalSmoothing) * gain;
+
+        const g = this.smoothGains[b];
+        for (let k = lo; k <= hi; k++) {
+          mag[k] *= g;
+        }
+      }
+      return mag;
+    }
+
+    /** Reset gain smoothing state. */
+    reset() { this.smoothGains.fill(1); }
+  },
+
+  // ===== ADVANCED DSP: VOICE ACTIVITY DETECTION =====
+
+  /**
+   * VADProcessor — lightweight energy + zero-crossing rate voice activity detector.
+   * Suitable for offline batch processing and for gating noisy frames before
+   * spectral subtraction. Includes a configurable hangover to avoid clipping
+   * the trailing edges of speech.
+   *
+   * Usage:
+   *   const vad = new DSPCore.VADProcessor(48000, 20, 0.6);
+   *   const confidence = vad.processSignal(audioData);  // Float32Array per frame
+   */
+  VADProcessor: class {
+    /**
+     * @param {number} sr - sample rate (default 48000)
+     * @param {number} frameSizeMs - analysis frame size in milliseconds (default 20)
+     * @param {number} sensitivity - detection sensitivity 0–1; higher = more sensitive (default 0.5)
+     */
+    constructor(sr = 48000, frameSizeMs = 20, sensitivity = 0.5) {
+      this.sr = sr;
+      this.frameSize = Math.max(64, Math.floor(frameSizeMs * 0.001 * sr));
+      this.smoothedEnergy = 0;
+      this.hangover = 0;
+      this.setSensitivity(sensitivity);
+    }
+
+    /**
+     * Adjust VAD sensitivity without recreating the object.
+     * @param {number} s - new sensitivity 0–1
+     */
+    setSensitivity(s) {
+      this.sensitivity = Math.max(0, Math.min(1, s));
+      // Higher sensitivity → lower energy threshold → more speech detected
+      this.energyThreshDb = -50 + (1 - this.sensitivity) * 30; // -50 dB at max, -20 dB at min
+      // Higher sensitivity → tolerate higher ZCR (captures fricatives and noisy speech)
+      this.zcrThresh = 0.25 + this.sensitivity * 0.35;
+      // Hangover: prevent clipping trailing speech edges.
+      // Duration ranges from 50 ms (low sensitivity) to 200 ms (high sensitivity).
+      const MIN_HANGOVER_SEC = 0.05;
+      const MAX_HANGOVER_SEC = 0.20;
+      this.hangoverFrames = Math.max(2, Math.round(
+        (MIN_HANGOVER_SEC + this.sensitivity * (MAX_HANGOVER_SEC - MIN_HANGOVER_SEC)) * this.sr / this.frameSize
+      ));
+    }
+
+    /**
+     * Process a single frame and return voice confidence [0, 1].
+     * @param {Float32Array} frame - audio samples
+     * @returns {number} confidence 0 (silence) or 0.5 (hangover) or 1 (speech)
+     */
+    processFrame(frame) {
+      // Short-time energy
+      let energy = 0;
+      for (let i = 0; i < frame.length; i++) energy += frame[i] * frame[i];
+      energy /= frame.length;
+      const energyDb = energy > 1e-12 ? 10 * Math.log10(energy) : -96;
+
+      // Zero-crossing rate
+      let zcr = 0;
+      for (let i = 1; i < frame.length; i++) {
+        if ((frame[i] >= 0) !== (frame[i - 1] >= 0)) zcr++;
+      }
+      zcr /= frame.length;
+
+      // Smooth energy estimate (fast track upward, slow downward)
+      if (energyDb > this.smoothedEnergy) {
+        this.smoothedEnergy = 0.7 * this.smoothedEnergy + 0.3 * energyDb;
+      } else {
+        this.smoothedEnergy = 0.95 * this.smoothedEnergy + 0.05 * energyDb;
+      }
+
+      const energyVoiced = energyDb > this.energyThreshDb;
+      const zcrVoiced = zcr < this.zcrThresh;
+      const voiced = energyVoiced && zcrVoiced;
+
+      if (voiced) {
+        this.hangover = this.hangoverFrames;
+        return 1;
+      }
+      if (this.hangover > 0) {
+        this.hangover--;
+        return 0.5;
+      }
+      return 0;
+    }
+
+    /**
+     * Process an entire signal and return per-frame confidence.
+     * @param {Float32Array} data - full audio signal
+     * @returns {Float32Array} confidence values, one per analysis frame
+     */
+    processSignal(data) {
+      const numFrames = Math.floor(data.length / this.frameSize);
+      const out = new Float32Array(numFrames);
+      for (let f = 0; f < numFrames; f++) {
+        const frame = data.subarray(f * this.frameSize, (f + 1) * this.frameSize);
+        out[f] = this.processFrame(frame);
+      }
+      return out;
+    }
+
+    /** Reset internal state. */
+    reset() {
+      this.smoothedEnergy = 0;
+      this.hangover = 0;
+    }
   },
 
   // ===== HELPERS =====
