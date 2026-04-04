@@ -1,0 +1,2121 @@
+diff --git a/build/app/app.js b/build/app/app.js
+index c15218d..5ae56e3 100644
+--- a/build/app/app.js
++++ b/build/app/app.js
+@@ -77,6 +77,7 @@ const SLIDERS = {
+   ]
+ };
+
++// ---- PRESETS
+ const PRESETS = {
+   podcast: {gateThresh:-38,gateRange:-35,gateAttack:2,gateRelease:60,gateHold:15,gateLookahead:5,nrAmount:60,nrSensitivity:55,nrSpectralSub:45,nrFloor:-55,nrSmoothing:40,eqSub:-10,eqBass:-1,eqWarmth:2,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:4,eqClarity:2,eqAir:1,eqBrill:-3,compThresh:-20,compRatio:5,compAttack:6,compRelease:180,compKnee:6,compMakeup:8,limThresh:-1,limRelease:8,hpFreq:80,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:40,specTilt:0.5,formantShift:0,derevAmt:50,derevDecay:0.4,harmRecov:15,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:80,bgSuppress:60,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
+   film: {gateThresh:-50,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:25,gateLookahead:5,nrAmount:40,nrSensitivity:45,nrSpectralSub:30,nrFloor:-60,nrSmoothing:40,eqSub:-6,eqBass:1,eqWarmth:1,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:2,eqBrill:-1,compThresh:-28,compRatio:3,compAttack:12,compRelease:300,compKnee:10,compMakeup:4,limThresh:-1,limRelease:15,hpFreq:60,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:-0.5,formantShift:0,derevAmt:30,derevDecay:0.6,harmRecov:25,harmOrder:3,stereoWidth:120,phaseCorr:0,voiceIso:60,bgSuppress:40,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:110},
+@@ -84,7 +85,9 @@ const PRESETS = {
+   forensic: {gateThresh:-65,gateRange:-20,gateAttack:1,gateRelease:150,gateHold:30,gateLookahead:10,nrAmount:30,nrSensitivity:60,nrSpectralSub:20,nrFloor:-70,nrSmoothing:50,eqSub:-2,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:0,compThresh:-18,compRatio:2,compAttack:15,compRelease:400,compKnee:12,compMakeup:10,limThresh:-0.5,limRelease:20,hpFreq:50,hpQ:0.71,lpFreq:18000,lpQ:0.71,deEssFreq:8000,deEssAmt:10,specTilt:1,formantShift:0,derevAmt:20,derevDecay:0.8,harmRecov:35,harmOrder:4,stereoWidth:100,phaseCorr:30,voiceIso:90,bgSuppress:30,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:3,dryWet:90,ditherAmt:0,outWidth:100},
+   music: {gateThresh:-55,gateRange:-25,gateAttack:3,gateRelease:120,gateHold:15,gateLookahead:3,nrAmount:25,nrSensitivity:40,nrSpectralSub:20,nrFloor:-65,nrSmoothing:45,eqSub:-3,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:3,eqBrill:0,compThresh:-30,compRatio:2,compAttack:20,compRelease:350,compKnee:15,compMakeup:3,limThresh:-0.5,limRelease:12,hpFreq:40,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:15,specTilt:-1,formantShift:0,derevAmt:15,derevDecay:1.0,harmRecov:30,harmOrder:4,stereoWidth:150,phaseCorr:0,voiceIso:50,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:0,dryWet:85,ditherAmt:5,outWidth:140},
+   broadcast: {gateThresh:-35,gateRange:-40,gateAttack:1.5,gateRelease:50,gateHold:10,gateLookahead:3,nrAmount:65,nrSensitivity:60,nrSpectralSub:50,nrFloor:-50,nrSmoothing:30,eqSub:-12,eqBass:-2,eqWarmth:2,eqBody:0,eqLowMid:-2,eqMid:2,eqPresence:5,eqClarity:3,eqAir:1,eqBrill:-4,compThresh:-18,compRatio:6,compAttack:4,compRelease:150,compKnee:4,compMakeup:10,limThresh:-1,limRelease:5,hpFreq:120,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:45,specTilt:1,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:10,harmOrder:2,stereoWidth:60,phaseCorr:0,voiceIso:85,bgSuppress:70,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:70},
+-  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100}
++  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100},
++  whisper: {gateThresh:-70,gateRange:-10,gateAttack:1,gateRelease:300,gateHold:50,gateLookahead:10,nrAmount:20,nrSensitivity:35,nrSpectralSub:15,nrFloor:-75,nrSmoothing:60,eqSub:-2,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:1,eqPresence:2,eqClarity:1,eqAir:0,eqBrill:-1,compThresh:-32,compRatio:2,compAttack:25,compRelease:500,compKnee:18,compMakeup:4,limThresh:-0.5,limRelease:20,hpFreq:60,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:6000,deEssAmt:10,specTilt:-0.5,formantShift:0,derevAmt:10,derevDecay:1.2,harmRecov:20,harmOrder:3,stereoWidth:90,phaseCorr:0,voiceIso:40,bgSuppress:15,voiceFocusLo:100,voiceFocusHi:9000,crosstalkCancel:0,outGain:5,dryWet:80,ditherAmt:2,outWidth:100},
++  crystalVoice: {gateThresh:-45,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:20,gateLookahead:5,nrAmount:50,nrSensitivity:50,nrSpectralSub:35,nrFloor:-60,nrSmoothing:30,eqSub:-6,eqBass:0,eqWarmth:1,eqBody:0,eqLowMid:-1,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:1,compThresh:-20,compRatio:4,compAttack:5,compRelease:200,compKnee:6,compMakeup:7,limThresh:-1,limRelease:8,hpFreq:90,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:7500,deEssAmt:30,specTilt:1,formantShift:0,derevAmt:40,derevDecay:0.4,harmRecov:30,harmOrder:3,stereoWidth:110,phaseCorr:10,voiceIso:85,bgSuppress:65,voiceFocusLo:110,voiceFocusHi:7000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:105}
+ };
+
+ const STAGES = [
+@@ -155,48 +158,6 @@ class VoiceIsolatePro {
+     this.params = {};
+     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
+     this.three = {};
+-
+-    // v20: Initialize PipelineState (centralized 52-param state with pub/sub)
+-    this.pipelineState = typeof PipelineState !== 'undefined' ? new PipelineState() : null;
+-    if (this.pipelineState) {
+-      this.pipelineState.registerSliders(SLIDERS);
+-      // Sync param changes from PipelineState → legacy this.params
+-      this.pipelineState.onAny(({ key, value }) => { this.params[key] = value; });
+-    }
+-
+-    // v20: Initialize PipelineOrchestrator (processing conductor)
+-    this.orchestrator = (typeof PipelineOrchestrator !== 'undefined' && this.pipelineState)
+-      ? new PipelineOrchestrator(this.pipelineState) : null;
+-    if (this.orchestrator) {
+-      this.orchestrator.onStatusChange = (s) => this.setStatus(s.toUpperCase());
+-      this.orchestrator.onProgress = (stage, pct, label) => {
+-        if (this.dom) {
+-          this.dom.pipeFill.style.width = pct + '%';
+-          this.dom.pipeStage.textContent = `S${stage}/36`;
+-          this.dom.pipeDetail.textContent = label || '';
+-        }
+-      };
+-      this.orchestrator.onError = (msg) => structuredLog('error', 'Pipeline error', { error: msg });
+-    }
+-
+-    // v20: SharedRingBuffer support detection
+-    this.sabSupported = typeof SharedArrayBuffer !== 'undefined' && typeof Atomics !== 'undefined';
+-
+-    // Phase 4: ML Worker (off-main-thread ONNX inference)
+-    this.mlWorker = null;
+-    this._mlCallbacks = {};  // id → { resolve, reject }
+-    this._mlCallId = 0;
+-    this.mlWorkerReady = false;
+-    this.mlWorkerModels = { vad: false, deepfilter: false, demucs: false };
+-    // Phase 5: Forensic audit
+-    this.forensicMode = false;
+-    this.forensicLog = [];
+-
+-    // Phase 6: Secure PRNG for dither (Sentinel fix)
+-    // Buffer size limited to 65536 bytes (16384 Uint32s) by Web Crypto API
+-    this._rndBuf = new Uint32Array(16384);
+-    this._rndIdx = 16384;
+-
+     this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
+     this.renderCustomPresets();
+     // Diagnostic state
+@@ -215,6 +176,10 @@ class VoiceIsolatePro {
+     for (let i = 0; i < 32; i++) this.erbThresholds[i] = 0.08 + Math.random() * 0.04;
+     this.diagFpsFrames = 0;
+     this.diagFpsLast = performance.now();
++    this.forensicLog = [];
++    this._mlCallId = 0;
++    this._rndBuf = new Uint32Array(4096);
++    this._rndIdx = 0;
+     this.init();
+   }
+
+@@ -229,6 +194,7 @@ class VoiceIsolatePro {
+   ensureCtx() {
+     if (!this.ctx || this.ctx.state === 'closed') {
+       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
++      this.ctx.audioWorklet.addModule('./voice-isolate-processor.js').catch(err => console.error('Failed to add AudioWorklet module:', err));
+     }
+     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+     return this.ctx;
+@@ -240,6 +206,55 @@ class VoiceIsolatePro {
+       if (!panel) continue;
+       let h = '<div class="sr">';
+       for (const s of sliders) {
++        const row = document.createElement('div');
++        row.className = 'sr-row';
++        row.dataset.desc = s.desc;
++
++        const labelEl = document.createElement('label');
++        labelEl.className = 'sr-label';
++        labelEl.title = s.desc;
++        labelEl.htmlFor = s.id;
++        labelEl.textContent = s.label;
++        if (s.rt) {
++          const badge = document.createElement('span');
++          badge.className = 'rt-badge';
++          badge.textContent = 'RT';
++          labelEl.appendChild(badge);
++        }
++        const infoEl = document.createElement('span');
++        infoEl.className = 'sr-info';
++        infoEl.textContent = 'i';
++        infoEl.setAttribute('aria-hidden', 'true');
++        labelEl.appendChild(infoEl);
++
++        const inputEl = document.createElement('input');
++        inputEl.type = 'range';
++        if (s.rt) inputEl.className = 'realtime';
++        inputEl.id = s.id;
++        inputEl.min = s.min;
++        inputEl.max = s.max;
++        inputEl.value = s.val;
++        inputEl.step = s.step;
++        inputEl.dataset.param = s.id;
++        inputEl.setAttribute('aria-label', s.label);
++        inputEl.setAttribute('aria-valuemin', s.min);
++        inputEl.setAttribute('aria-valuemax', s.max);
++        inputEl.setAttribute('aria-valuenow', s.val);
++        // Set initial fill percentage for styled track
++        // pct formula: ((s.val - s.min) / (s.max - s.min)) * 100
++        const range = s.max - s.min;
++        const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
++        inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
++
++        const valEl = document.createElement('span');
++        valEl.className = 'sr-val';
++        valEl.id = s.id + 'Val';
++        valEl.textContent = s.val + s.unit;
++
++        row.appendChild(labelEl);
++        row.appendChild(inputEl);
++        row.appendChild(valEl);
++        sr.appendChild(row);
+         const rtCls = s.rt ? ' realtime' : '';
+         const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
+         h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
+@@ -263,9 +278,6 @@ class VoiceIsolatePro {
+       tpPlay:g('tpPlay'), tpPause:g('tpPause'), tpStop:g('tpStop'),
+       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
+       tpSeek:g('tpSeek'), tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
+-      fileSpectroCard:g('fileSpectroCard'), fsModeLbl:g('fsModeLbl'), fsProgress:g('fsProgress'),
+-      fsBtnAB:g('fsBtnAB'), fsColormap:g('fsColormap'),
+-      fsYAxis:g('fsYAxis'), fsMain:g('fsMain'), fsCanvas:g('fsCanvas'), fsOverlay:g('fsOverlay'), fsXAxis:g('fsXAxis'),
+       spectro3DContainer:g('spectro3DContainer'), spectro3DCanvas:g('spectro3DCanvas'),
+       spectro3DReset:g('spectro3DReset'),
+       spectro2DCanvas:g('spectro2DCanvas'),
+@@ -286,6 +298,11 @@ class VoiceIsolatePro {
+       diagFps:g('diagFps'),
+       lufsShort:g('lufsShort'), lufsInt:g('lufsInt'), lufsPeak:g('lufsPeak'), lufsCrest:g('lufsCrest'),
+       abOverlayBtn:g('abOverlayBtn'),
++      mobileProcessBtn:g('mobileProcessBtn'),
++      mobileReprocessBtn:g('mobileReprocessBtn'),
++      mobileStopBtn:g('mobileStopBtn'),
++      statsToggle:g('statsToggle'),
++      hdrStats:g('hdrStats'),
+     };
+   }
+
+@@ -335,20 +352,6 @@ class VoiceIsolatePro {
+     });
+     this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
+     this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
+-    if (this.dom.fsBtnAB) this.dom.fsBtnAB.addEventListener('click', () => this.fsToggleAB());
+-    if (this.dom.fsColormap) this.dom.fsColormap.addEventListener('change', () => { if (this.fsCurrentBuf) this.renderFileSpectrogram(this.fsCurrentBuf); });
+-    if (this.dom.fsMain) this.dom.fsMain.addEventListener('click', e => this.fsSeekClick(e));
+-    // Phase 5: Forensic mode toggle
+-    if (this.dom.forensicToggle) {
+-      this.dom.forensicToggle.addEventListener('change', () => {
+-        this.forensicMode = this.dom.forensicToggle.checked;
+-        structuredLog('info', 'Forensic mode', { enabled: this.forensicMode });
+-      });
+-    }
+-    // Phase 5: Audit log download
+-    if (this.dom.auditLogBtn) {
+-      this.dom.auditLogBtn.addEventListener('click', () => this.downloadAuditLog());
+-    }
+     window.addEventListener('resize', () => this.onResize());
+
+     // Diagnostic bindings
+@@ -365,6 +368,17 @@ class VoiceIsolatePro {
+       this.abOverlay = !this.abOverlay;
+       this.dom.abOverlayBtn.classList.toggle('active', this.abOverlay);
+     });
++    // Mobile action bar listeners
++    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.addEventListener('click', () => this.runPipeline());
++    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.addEventListener('click', () => this.runPipeline());
++    if (this.dom.mobileStopBtn) this.dom.mobileStopBtn.addEventListener('click', () => { this.abortFlag = true; });
++    if (this.dom.statsToggle && this.dom.hdrStats) {
++      this.dom.statsToggle.addEventListener('click', () => {
++        const expanded = this.dom.hdrStats.classList.toggle('expanded');
++        this.dom.statsToggle.setAttribute('aria-expanded', String(expanded));
++        this.dom.statsToggle.textContent = expanded ? '▲' : '▼';
++      });
++    }
+   }
+
+   onSlider(el) {
+@@ -375,6 +389,11 @@ class VoiceIsolatePro {
+     for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
+     const ve = document.getElementById(id + 'Val');
+     if (ve) ve.textContent = v + unit;
++    el.setAttribute('aria-valuenow', v);
++    // Update filled-track CSS variable
++    const range = parseFloat(el.max) - parseFloat(el.min);
++    const pct = range > 0 ? ((v - parseFloat(el.min)) / range) * 100 : 0;
++    el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
+     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
+   }
+
+@@ -433,6 +452,14 @@ class VoiceIsolatePro {
+       for (const s of sliders) {
+         const el = document.getElementById(s.id);
+         const ve = document.getElementById(s.id + 'Val');
++        if (el && this.params[s.id] !== undefined) {
++          el.value = this.params[s.id];
++          el.setAttribute('aria-valuenow', this.params[s.id]);
++          if (ve) ve.textContent = this.params[s.id] + s.unit;
++          const range = s.max - s.min;
++          const pct = range > 0 ? ((this.params[s.id] - s.min) / range) * 100 : 0;
++          el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
++        }
+         if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
+       }
+     }
+@@ -445,9 +472,13 @@ class VoiceIsolatePro {
+     try {
+       // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
+
+-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska', 'audio/midi'];
+-      if (file.type && !allowedTypes.includes(file.type.toLowerCase())) throw new Error('Unsupported file type');
++      const normalizedType = (file.type || '').toLowerCase();
++      const normalizedName = (file.name || '').toLowerCase();
++      const isMidiFile = normalizedType === 'audio/midi' || normalizedType === 'audio/x-midi' || normalizedName.endsWith('.mid') || normalizedName.endsWith('.midi');
++      if (isMidiFile) throw new Error('MIDI files are not supported in this audio decode path. Please export the MIDI to WAV, MP3, or another rendered audio format first.');
+
++      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska'];
++      if (normalizedType && !allowedTypes.includes(normalizedType)) throw new Error('Unsupported file type');
+       this.ensureCtx();
+       this.stop();
+       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
+@@ -537,16 +568,6 @@ class VoiceIsolatePro {
+     this.resizeCanvas(this.dom.waveOrigCanvas);
+     this.drawWaveform(buf, this.dom.waveOrigCanvas, '#dc2626');
+     this.clearCanvas(this.dom.waveProcCanvas, 'Process to see result');
+-    // Show full-file spectrogram card and render initial view
+-    if (this.dom.fileSpectroCard) {
+-      this.dom.fileSpectroCard.style.display = '';
+-      this.fsMode = 'original';
+-      this.fsCurrentBuf = buf;
+-      this.fsImageData = null;
+-      if (this.dom.fsModeLbl) this.dom.fsModeLbl.textContent = 'ORIGINAL';
+-      if (this.dom.fsBtnAB) { this.dom.fsBtnAB.textContent = 'Show Processed'; this.dom.fsBtnAB.disabled = true; }
+-      this.renderFileSpectrogram(buf);
+-    }
+     this.setStatus('READY');
+   }
+
+@@ -586,7 +607,7 @@ class VoiceIsolatePro {
+         } catch (e) { this.dom.fileInfo.textContent = 'Decode error: ' + e.message; this.setStatus('ERROR'); }
+       };
+       this.mediaRecorder.start(100);
+-    } catch { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
++    } catch (e) { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
+   }
+
+   stopRecording() {
+@@ -696,7 +717,6 @@ class VoiceIsolatePro {
+       if (elapsed >= dur) { this.stop(); return; }
+       this.dom.tpCur.textContent = this.fmtDur(elapsed);
+       this.dom.tpSeek.value = dur > 0 ? (elapsed / dur) * 1000 : 0;
+-      if (dur > 0) this.drawFsPlayhead(elapsed / dur);
+       requestAnimationFrame(tick);
+     };
+     requestAnimationFrame(tick);
+@@ -791,6 +811,9 @@ class VoiceIsolatePro {
+     if (!this.inputBuffer || this.isProcessing) return;
+     this.isProcessing = true; this.abortFlag = false;
+     this.dom.processBtn.style.display = 'none'; this.dom.stopProcBtn.style.display = 'inline-flex';
++    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.style.display = 'none';
++    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display = 'none';
++    if (this.dom.mobileStopBtn) this.dom.mobileStopBtn.style.display = 'inline-flex';
+     this.dom.saveProcBtn.disabled = true; this.dom.tpAB.disabled = true;
+     this.setStatus('PROCESSING');
+     const t0 = performance.now();
+@@ -1063,6 +1086,11 @@ class VoiceIsolatePro {
+       await this.pip(27, total);
+       if (p.dryWet < 100) fin = this.mixDW(this.inputBuffer, fin, p.dryWet / 100);
+
++      // Apply formant shift, phase correction, and dither (p.formantShift, p.phaseCorr, p.ditherAmt)
++      if (p.formantShift !== 0) fin = this.applyFormantShift(fin, p.formantShift);
++      if (p.phaseCorr > 0) fin = this.applyPhaseCorr(fin, p.phaseCorr);
++      if (p.ditherAmt > 0) fin = this.applyDither(fin, p.ditherAmt);
++
+       // Peak normalize to limiter ceiling
+       await this.pip(28, total);
+       fin = this.peakNorm(fin, p.limThresh);
+@@ -1080,10 +1108,471 @@ class VoiceIsolatePro {
+       this.drawWaveform(fin, this.dom.waveProcCanvas, '#22d3ee');
+       this.dom.stVoices.textContent = this.estVoices(fin);
+       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
++      if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
+       this.dom.tpABLabel.textContent = 'Ready — A/B';
+-      if (this.dom.fsBtnAB) this.dom.fsBtnAB.disabled = false;
+-      if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = !this.forensicMode || this.forensicLog.length === 0;
+       this.setStatus('COMPLETE');
++    } catch(e) {
++      if (e==='abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent='Aborted'; }
++      else { structuredLog('error', 'Pipeline error', { error: e instanceof Error ? e.message : String(e) }); this.setStatus('ERROR'); this.dom.pipeDetail.textContent=e instanceof Error ? e.message : String(e); }
++    } finally {
++      this.isProcessing=false; this.dom.processBtn.style.display='inline-flex'; this.dom.stopProcBtn.style.display='none';
++      if (this.dom.mobileProcessBtn)   { this.dom.mobileProcessBtn.style.display='inline-flex'; }
++      if (this.dom.mobileReprocessBtn && this.dom.reprocessBtn) { this.dom.mobileReprocessBtn.style.display='inline-flex'; this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled; }
++      if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display='none';
++    }
++  }
++
++  async pip(i,t) {
++    const pct = Math.round((i+1)/t*100);
++    this.dom.pipeFill.style.width = pct + '%';
++    this.dom.pipeBar.setAttribute('aria-valuenow', pct);
++    this.dom.pipeStage.textContent = (i+1)+'/'+t;
++    this.dom.pipeDetail.textContent = STAGES[i];
++    this.dom.hStatus.textContent = 'S'+(i+1);
++    await new Promise(r=>setTimeout(r,15));
++  }
++
++  // ---- DSP HELPERS ----
++
++  // ======== PHASE 1: SPECTRAL ENGINE (STFT / iSTFT / Wiener NR) ========
++
++  // Radix-2 DIT FFT in-place (size must be power of 2)
++  _fft(re, im) {
++    const n = re.length;
++    // Bit-reversal permutation
++    for (let i = 1, j = 0; i < n; i++) {
++      let bit = n >> 1;
++      for (; j & bit; bit >>= 1) j ^= bit;
++      j ^= bit;
++      if (i < j) { const tr=re[i]; re[i]=re[j]; re[j]=tr; const ti=im[i]; im[i]=im[j]; im[j]=ti; }
++    }
++    // Cooley-Tukey butterfly
++    for (let len = 2; len <= n; len <<= 1) {
++      const ang = -2 * Math.PI / len;
++      const wr = Math.cos(ang), wi = Math.sin(ang);
++      for (let i = 0; i < n; i += len) {
++        let cr = 1, ci = 0;
++        for (let j = 0; j < (len >> 1); j++) {
++          const ur=re[i+j], ui=im[i+j];
++          const vr=re[i+j+(len>>1)]*cr - im[i+j+(len>>1)]*ci;
++          const vi=re[i+j+(len>>1)]*ci + im[i+j+(len>>1)]*cr;
++          re[i+j]=ur+vr; im[i+j]=ui+vi;
++          re[i+j+(len>>1)]=ur-vr; im[i+j+(len>>1)]=ui-vi;
++          const nr=cr*wr-ci*wi; ci=cr*wi+ci*wr; cr=nr;
++        }
++      }
++    }
++  }
++
++  // IFFT via conjugate trick
++  _ifft(re, im) {
++    for (let i = 0; i < im.length; i++) im[i] = -im[i];
++    this._fft(re, im);
++    const n = re.length;
++    for (let i = 0; i < n; i++) { re[i] /= n; im[i] = -im[i] / n; }
++  }
++
++  // Periodic Hann window (correct COLA for 75% overlap)
++  _makeWindow(N) {
++    const win = new Float64Array(N);
++    for (let i = 0; i < N; i++) {
++      win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / N));
++    }
++    return win;
++  }
++
++  // Real spectral noise reduction via Wiener filtering (replaces the old stub applyNR)
++  applySpectralNR(buf, amt, sensitivity, spectralSub, floorDb, smoothing, vadMask) {
++    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
++    const out = this.ctx.createBuffer(nCh, len, sr);
++    const N = 2048, H = 512, halfN = N / 2 + 1;
++    const win = this._makeWindow(N);
++    // over-subtraction 1..3, spectral floor 0.01..0.1
++    const alpha = 1 + amt * 2;
++    const beta = Math.max(0.01, 0.1 - spectralSub * 0.09);
++    const floorLin = Math.pow(10, floorDb / 20);
++    const sm = Math.max(0, Math.min(0.95, smoothing * 0.95));
++
++    for (let ch = 0; ch < nCh; ch++) {
++      const inp = buf.getChannelData(ch);
++      const outData = out.getChannelData(ch);
++      const normBuf = new Float64Array(len);
++
++      // Profile noise PSD from first ~500ms
++      const profLen = Math.min(Math.floor(sr * 0.5), len);
++      const noisePSD = new Float64Array(halfN);
++      let profFrames = 0;
++      for (let s = 0; s + N <= profLen; s += H) {
++        const re = new Float64Array(N), im = new Float64Array(N);
++        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
++        this._fft(re, im);
++        for (let k = 0; k < halfN; k++) noisePSD[k] += re[k]*re[k] + im[k]*im[k];
++        profFrames++;
++      }
++      if (profFrames > 0) for (let k = 0; k < halfN; k++) {
++        noisePSD[k] = Math.max(noisePSD[k] / profFrames, floorLin * floorLin);
++      }
++      const smoothedNoise = new Float64Array(noisePSD);
++
++      // Process all frames
++      let frameIdx = 0;
++      for (let s = 0; s + N <= len; s += H, frameIdx++) {
++        const re = new Float64Array(N), im = new Float64Array(N);
++        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
++        this._fft(re, im);
++
++        // If VAD mask available: only apply NR during non-speech frames
++        const frameTimeSec = s / sr;
++        const vadFrameIdx = vadMask ? Math.floor(frameTimeSec * 100) : -1;
++        const isSpeech = vadMask && vadFrameIdx < vadMask.length ? vadMask[vadFrameIdx] : false;
++
++        for (let k = 0; k < halfN; k++) {
++          const sigPSD = re[k]*re[k] + im[k]*im[k];
++          smoothedNoise[k] = sm * smoothedNoise[k] + (1 - sm) * noisePSD[k];
++          const nEst = alpha * smoothedNoise[k] * (1 + sensitivity * 0.5);
++          // Apply softer NR during speech frames: reduce noise estimate so Wiener
++          // gain stays higher (less attenuation) rather than using nEst as a gain floor
++          // (nEst is a PSD value, not a valid gain — using it as a floor could amplify).
++          const nEstFrame = isSpeech ? nEst * 0.3 : nEst;
++          const gain = sigPSD > 1e-12 ?
++            Math.max(Math.sqrt(Math.max(sigPSD - nEstFrame, 0) / sigPSD), beta) : beta;
++          re[k] *= gain; im[k] *= gain;
++          if (k > 0 && k < N - k) { re[N-k] = re[k]; im[N-k] = -im[k]; }
++        }
++        this._ifft(re, im);
++        for (let i = 0; i < N && s + i < len; i++) {
++          outData[s + i] += re[i] * win[i];
++          normBuf[s + i] += win[i] * win[i];
++        }
++      }
++      for (let i = 0; i < len; i++) {
++        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
++        outData[i] = Math.max(-1, Math.min(1, outData[i]));
++      }
++    }
++    return out;
++  }
++
++  // ======== PHASE 2: WIRED SLIDERS — SPECTRAL PROCESSING ========
++
++  // Background suppression: attenuate bins outside voice focus band
++  applyBgSuppress(buf, suppressAmt, voiceFocusLo, voiceFocusHi) {
++    if (suppressAmt <= 0) return buf;
++    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
++    const out = this.ctx.createBuffer(nCh, len, sr);
++    const N = 2048, H = 512, halfN = N / 2 + 1;
++    const win = this._makeWindow(N);
++    const g = 1 - suppressAmt / 100;
++    for (let ch = 0; ch < nCh; ch++) {
++      const inp = buf.getChannelData(ch);
++      const outData = out.getChannelData(ch);
++      const normBuf = new Float64Array(len);
++      for (let s = 0; s + N <= len; s += H) {
++        const re = new Float64Array(N), im = new Float64Array(N);
++        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
++        this._fft(re, im);
++        for (let k = 0; k < halfN; k++) {
++          const freq = k * sr / N;
++          if (freq < voiceFocusLo || freq > voiceFocusHi) {
++            re[k] *= g; im[k] *= g;
++            if (k > 0 && k < N - k) { re[N-k] *= g; im[N-k] *= g; }
++          }
++        }
++        this._ifft(re, im);
++        for (let i = 0; i < N && s + i < len; i++) {
++          outData[s + i] += re[i] * win[i];
++          normBuf[s + i] += win[i] * win[i];
++        }
++      }
++      for (let i = 0; i < len; i++) {
++        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
++        outData[i] = Math.max(-1, Math.min(1, outData[i]));
++      }
++    }
++    return out;
++  }
++
++  // Spectral dereverberation via temporal variance suppression
++  applyDereverb(buf, amt, decaySec) {
++    if (amt <= 0) return buf;
++    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
++    const out = this.ctx.createBuffer(nCh, len, sr);
++    const N = 2048, H = 512, halfN = N / 2 + 1;
++    const win = this._makeWindow(N);
++    const g = amt / 100;
++    const smCoef = Math.exp(-H / (sr * Math.max(0.05, decaySec)));
++
++    for (let ch = 0; ch < nCh; ch++) {
++      const inp = buf.getChannelData(ch);
++      const outData = out.getChannelData(ch);
++      const normBuf = new Float64Array(len);
++      const magMean = new Float64Array(halfN).fill(1e-6);
++      for (let s = 0; s + N <= len; s += H) {
++        const re = new Float64Array(N), im = new Float64Array(N);
++        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
++        this._fft(re, im);
++        for (let k = 0; k < halfN; k++) {
++          const mag = Math.sqrt(re[k]*re[k] + im[k]*im[k]);
++          // Reverb tail = magnitude smoothly less than running mean
++          const isReverb = mag < magMean[k] * 0.75;
++          const gain = isReverb ? Math.max(1 - g, 0.05) : 1;
++          re[k] *= gain; im[k] *= gain;
++          if (k > 0 && k < N - k) { re[N-k] *= gain; im[N-k] *= gain; }
++          magMean[k] = smCoef * magMean[k] + (1 - smCoef) * mag;
++        }
++        this._ifft(re, im);
++        for (let i = 0; i < N && s + i < len; i++) {
++          outData[s + i] += re[i] * win[i];
++          normBuf[s + i] += win[i] * win[i];
++        }
++      }
++      for (let i = 0; i < len; i++) {
++        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
++        outData[i] = Math.max(-1, Math.min(1, outData[i]));
++      }
++    }
++    return out;
++  }
++
++  // Formant shift via spectral envelope warping
++  applyFormantShift(buf, semitones) {
++    if (semitones === 0) return buf;
++    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
++    const out = this.ctx.createBuffer(nCh, len, sr);
++    const N = 2048, H = 512, halfN = N / 2 + 1;
++    const win = this._makeWindow(N);
++    const shiftFactor = Math.pow(2, semitones / 12);
++    const envWin = 20;
++
++    for (let ch = 0; ch < nCh; ch++) {
++      const inp = buf.getChannelData(ch);
++      const outData = out.getChannelData(ch);
++      const normBuf = new Float64Array(len);
++      for (let s = 0; s + N <= len; s += H) {
++        const re = new Float64Array(N), im = new Float64Array(N);
++        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
++        this._fft(re, im);
++        // Compute log-magnitude and extract spectral envelope via smoothing
++        const logMag = new Float64Array(halfN);
++        const phase = new Float64Array(halfN);
++        for (let k = 0; k < halfN; k++) {
++          logMag[k] = Math.log(Math.max(Math.sqrt(re[k]*re[k]+im[k]*im[k]), 1e-10));
++          phase[k] = Math.atan2(im[k], re[k]);
++        }
++        const envelope = new Float64Array(halfN);
++        for (let k = 0; k < halfN; k++) {
++          let sum = 0, cnt = 0;
++          for (let j = Math.max(0,k-envWin); j <= Math.min(halfN-1,k+envWin); j++) { sum+=logMag[j]; cnt++; }
++          envelope[k] = sum / cnt;
++        }
++        const detail = logMag.map((v,k) => v - envelope[k]);
++        // Warp envelope by shiftFactor
++        const newEnv = new Float64Array(halfN);
++        for (let k = 0; k < halfN; k++) {
++          const src = k / shiftFactor;
++          const lo = Math.floor(src), hi = Math.min(lo+1, halfN-1);
++          if (lo >= 0 && lo < halfN) newEnv[k] = (1-(src-lo))*envelope[lo] + (src-lo)*envelope[hi];
++        }
++        const reOut = new Float64Array(N), imOut = new Float64Array(N);
++        for (let k = 0; k < halfN; k++) {
++          const newMag = Math.exp(newEnv[k] + detail[k]);
++          reOut[k] = newMag * Math.cos(phase[k]);
++          imOut[k] = newMag * Math.sin(phase[k]);
++          if (k > 0 && k < N - k) { reOut[N-k] = reOut[k]; imOut[N-k] = -imOut[k]; }
++        }
++        this._ifft(reOut, imOut);
++        for (let i = 0; i < N && s + i < len; i++) {
++          outData[s + i] += reOut[i] * win[i];
++          normBuf[s + i] += win[i] * win[i];
++        }
++      }
++      for (let i = 0; i < len; i++) {
++        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
++        outData[i] = Math.max(-1, Math.min(1, outData[i]));
++      }
++    }
++    return out;
++  }
++
++  // Cross-channel phase alignment via cross-correlation lag detection
++  applyPhaseCorr(buf, corrAmt) {
++    if (corrAmt <= 0 || buf.numberOfChannels < 2) return buf;
++    const len = buf.length, sr = buf.sampleRate;
++    const out = this.ctx.createBuffer(buf.numberOfChannels, len, sr);
++    const L = buf.getChannelData(0), R = buf.getChannelData(1);
++    const oL = out.getChannelData(0), oR = out.getChannelData(1);
++    // Find best cross-correlation lag within ±5ms
++    const maxLag = Math.floor(sr * 0.005);
++    let bestLag = 0, bestCorr = -Infinity;
++    const sampleCount = Math.min(len, Math.floor(sr * 2));
++    for (let lag = -maxLag; lag <= maxLag; lag++) {
++      let corr = 0;
++      for (let i = maxLag; i < sampleCount - maxLag; i++) corr += L[i] * (R[i + lag] || 0);
++      if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
++    }
++    const actualLag = Math.round(bestLag * corrAmt / 100);
++    for (let i = 0; i < len; i++) {
++      oL[i] = L[i];
++      oR[i] = R[Math.max(0, Math.min(len-1, i - actualLag))];
++    }
++    for (let ch = 2; ch < buf.numberOfChannels; ch++) {
++      const inCh = buf.getChannelData(ch), outCh = out.getChannelData(ch);
++      for (let i = 0; i < len; i++) outCh[i] = inCh[i];
++    }
++    return out;
++  }
++
++  // Crosstalk cancellation via mid/side matrix
++  applyCrosstalkCancel(buf, cancelAmt) {
++    if (cancelAmt <= 0 || buf.numberOfChannels < 2) return buf;
++    const len = buf.length, sr = buf.sampleRate;
++    const out = this.ctx.createBuffer(buf.numberOfChannels, len, sr);
++    const g = (cancelAmt / 100) * 0.5;
++    const L = buf.getChannelData(0), R = buf.getChannelData(1);
++    const oL = out.getChannelData(0), oR = out.getChannelData(1);
++    for (let i = 0; i < len; i++) {
++      oL[i] = L[i] - g * R[i];
++      oR[i] = R[i] - g * L[i];
++    }
++    for (let ch = 2; ch < buf.numberOfChannels; ch++) {
++      const inCh = buf.getChannelData(ch), outCh = out.getChannelData(ch);
++      for (let i = 0; i < len; i++) outCh[i] = inCh[i];
++    }
++    return out;
++  }
++
++  // TPDF dither noise shaping before bit-depth reduction
++  // 🛡️ Sentinel: Fixed weak PRNG by using chunked crypto.getRandomValues()
++  applyDither(buf, ditherAmt) {
++    if (ditherAmt <= 0) return buf;
++    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
++    const out = this.ctx.createBuffer(nCh, len, sr);
++    const lsb = Math.pow(2, -15); // 16-bit LSB
++    const g = (ditherAmt / 100) * lsb;
++    const invMax = 1 / 4294967296;
++
++    for (let ch = 0; ch < nCh; ch++) {
++      const inp = buf.getChannelData(ch), outCh = out.getChannelData(ch);
++      for (let i = 0; i < len; i++) {
++        if (this._rndIdx >= this._rndBuf.length - 1) {
++          crypto.getRandomValues(this._rndBuf);
++          this._rndIdx = 0;
++        }
++        const r1 = this._rndBuf[this._rndIdx++] * invMax;
++        const r2 = this._rndBuf[this._rndIdx++] * invMax;
++        const tpdf = (r1 - r2) * g;
++        outCh[i] = Math.max(-1, Math.min(1, inp[i] + tpdf));
++      }
++    }
++    return out;
++  }
++
++  // ======== PHASE 4: ML / VAD INTEGRATION ========
++
++  // Promise wrapper for ML Worker calls — resolves on matching result message
++  _mlCall(payload, transfer = []) {
++    return new Promise((resolve, reject) => {
++      const id = ++this._mlCallId;
++      const handler = (e) => {
++        if (e.data.id !== id) return;
++        this.mlWorker.removeEventListener('message', handler);
++        if (e.data.error) reject(new Error(e.data.error));
++        else resolve(e.data.result);
++      };
++      this.mlWorker.addEventListener('message', handler);
++      this.mlWorker.postMessage({ ...payload, id }, transfer);
++    });
++  }
++
++  // Run ML source separation (Demucs/BSRNN) via ML Worker
++  async runSeparation(buf, model = 'demucs') {
++    if (!this.mlWorker) return buf;
++    try {
++      const signal = new Float32Array(buf.getChannelData(0));
++      return await this._mlCall({ type: 'process', model, signal, sampleRate: buf.sampleRate }, [signal.buffer]);
++    } catch (e) {
++      structuredLog('warn', 'ML separation failed', { error: e.message });
++      return buf;
++    }
++  }
++
++  // Forensic audit: hash a buffer stage and log it
++  async addAuditEntry(buf, stageName) {
++    const data = (buf && buf.getChannelData) ? new Float32Array(buf.getChannelData(0)) : new Float32Array(0);
++    const hashBuf = await crypto.subtle.digest('SHA-256', data.buffer);
++    const hash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
++    this.forensicLog.push({ stage: stageName, hash, timestamp: Date.now() });
++  }
++
++  // Export forensic audit log as JSON
++  downloadAuditLog() {
++    const json = JSON.stringify(this.forensicLog, null, 2);
++    const blob = new Blob([json], { type: 'application/json' });
++    const a = document.createElement('a');
++    a.href = URL.createObjectURL(blob);
++    a.download = 'audit-log-' + Date.now() + '.json';
++    document.body.appendChild(a);
++    a.click();
++    document.body.removeChild(a);
++    URL.revokeObjectURL(a.href);
++  }
++
++  // Trigger VAD model load in the ML Worker (fire-and-forget; mlReady set via _onMlMessage)
++  async loadModels() {
++    if (!this.mlWorker) {
++      structuredLog('warn', 'ML Worker not available — running without ML');
++      return;
++    }
++    const wasmRoot = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
++    this.mlWorker.postMessage({ type: 'loadModel', model: 'vad', wasmRoot });
++  }
++
++  // Run Silero VAD via ML Worker; returns boolean[] or null if unavailable
++  async runVAD(buf) {
++    if (!this.mlReady || !this.mlWorker) return null;
++    try {
++      const signal = new Float32Array(buf.getChannelData(0)); // copy for transfer
++      return await this._mlCall(
++        { type: 'runVAD', signal, sampleRate: buf.sampleRate },
++        [signal.buffer]
++      );
++    } catch(e) {
++      structuredLog('warn', 'VAD Worker call failed', { error: e.message });
++      return null;
++    }
++  }
++
++  // ---- ML WORKER: DeepFilterNet3 + Demucs + VAD ----
++
++  // Spin up ml-worker.js and initialise all models. Non-blocking; pipeline checks
++  // this.mlWorkerReady before dispatching work.
++  initMLWorker() {
++    if (this.mlWorker) return;
++    try {
++      this.mlWorker = new Worker('./ml-worker.js');
++      this.mlWorker.onmessage = (e) => {
++        const { type } = e.data;
++        if (type === 'ready') {
++          this.mlWorkerReady = true;
++          this.mlWorkerModels = e.data.models || {};
++          structuredLog('info', 'ML worker ready', { provider: e.data.provider, models: e.data.models });
++          // v20: Share ML worker with orchestrator
++          if (this.orchestrator) this.orchestrator.mlWorker = this.mlWorker;
++        } else if (type === 'log') {
++          structuredLog(e.data.level, '[ml-worker] ' + e.data.msg);
++        }
++        // 'result' and 'progress' messages are handled per-call via a promise wrapper
++      };
++      this.mlWorker.onerror = (err) => {
++        structuredLog('warn', 'ML worker error', { error: err.message });
++        this.mlWorkerReady = false;
++      };
++      // v20: Pass ONNX Runtime URL and initial model list
++      this.mlWorker.postMessage({
++        type: 'init',
++        ortUrl: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js',
++        models: ['vad']
++      });
+     } catch (e) {
+       if (e === 'abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent = 'Aborted'; }
+       else { console.error('Pipeline:', e); this.setStatus('ERROR'); this.dom.pipeDetail.textContent = e.message || String(e); }
+@@ -1177,42 +1666,6 @@ class VoiceIsolatePro {
+     cv.addEventListener('wheel',e=>{e.preventDefault();cam.position.z+=e.deltaY*0.05;cam.position.z=Math.max(20,Math.min(120,cam.position.z));},{passive:false});
+     this.render3D();
+   }
+-
+-  // ======== PHASE 2: WIRED SLIDERS — SPECTRAL PROCESSING ========
+-
+-  // Background suppression: attenuate bins outside voice focus band
+-  applyBgSuppress(buf, suppressAmt, voiceFocusLo, voiceFocusHi) {
+-    if (suppressAmt <= 0) return buf;
+-    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
+-    const out = this.ctx.createBuffer(nCh, len, sr);
+-    const N = 2048, H = 512, halfN = N / 2 + 1;
+-    const win = this._makeWindow(N);
+-    const g = 1 - suppressAmt / 100;
+-    for (let ch = 0; ch < nCh; ch++) {
+-      const inp = buf.getChannelData(ch);
+-      const outData = out.getChannelData(ch);
+-      const normBuf = new Float64Array(len);
+-      for (let s = 0; s + N <= len; s += H) {
+-        const re = new Float64Array(N), im = new Float64Array(N);
+-        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
+-        this._fft(re, im);
+-        for (let k = 0; k < halfN; k++) {
+-          const freq = k * sr / N;
+-          if (freq < voiceFocusLo || freq > voiceFocusHi) {
+-            re[k] *= g; im[k] *= g;
+-            if (k > 0 && k < N - k) { re[N-k] *= g; im[N-k] *= g; }
+-          }
+-        }
+-        this._ifft(re, im);
+-        for (let i = 0; i < N && s + i < len; i++) {
+-          outData[s + i] += re[i] * win[i];
+-          normBuf[s + i] += win[i] * win[i];
+-        }
+-      }
+-      for (let i = 0; i < len; i++) {
+-        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
+-        outData[i] = Math.max(-1, Math.min(1, outData[i]));
+-      }
+   reset3DView(){if(this.three.cam){this.three.cam.position.set(0,40,60);this.three.cam.lookAt(0,0,0);}}
+   update3D(freq){
+     if(!this.three.geo)return;const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
+@@ -1364,15 +1817,6 @@ class VoiceIsolatePro {
+     x.shadowColor = '#22c55e'; x.shadowBlur = 3;
+     x.beginPath();
+
+-  // Compute SHA-256 of the first channel of an AudioBuffer and store in forensicLog
+-  async addAuditEntry(buf, stageName) {
+-    try {
+-      const data = buf.getChannelData(0);
+-      const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+-      const hashBuf = await crypto.subtle.digest('SHA-256', bytes);
+-      const hex = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2,'0')).join('');
+-      this.forensicLog.push({ stage: stageName, sha256: hex, timestamp: new Date().toISOString(), channels: buf.numberOfChannels, length: buf.length, sampleRate: buf.sampleRate });
+-    } catch { /* crypto unavailable in some contexts */ }
+     if (this.oscMode === 'wave') {
+       const step = buf.length / w;
+       for (let i = 0; i < w; i++) {
+@@ -1439,18 +1883,6 @@ class VoiceIsolatePro {
+       x.fillRect(this.specOverlayX, y, sw, 1);
+     }
+
+-  peakNorm(buf, tDb) {
+-    const ctx = this.ctx;
+-    const numChannels = buf.numberOfChannels;
+-    const length = buf.length;
+-    const out = ctx.createBuffer(numChannels, length, buf.sampleRate);
+-
+-    let peak = 0;
+-    for (let ch = 0; ch < numChannels; ch++) {
+-      const channelData = buf.getChannelData(ch);
+-      for (let i = 0; i < length; i++) {
+-        const absVal = Math.abs(channelData[i]);
+-        if (absVal > peak) peak = absVal;
+     // Noise profile overlay (pink line)
+     if (this.overlays.noise) {
+       x.strokeStyle = 'rgba(236,72,153,0.6)'; x.lineWidth = 1;
+@@ -1694,160 +2126,6 @@ class VoiceIsolatePro {
+     if(this.three.ren){this.three.ren.setSize(ct.clientWidth,ct.clientHeight);this.three.cam.aspect=ct.clientWidth/ct.clientHeight;this.three.cam.updateProjectionMatrix();}
+   }
+
+-  // ---- Full-File Spectrogram ----
+-  async renderFileSpectrogram(buf) {
+-    if (!this.dom.fsCanvas || !this.dom.fsMain) return;
+-    const wrap = this.dom.fsMain;
+-    const W = Math.max(wrap.clientWidth || 800, 200);
+-    const H = Math.max(wrap.clientHeight || 170, 80);
+-    const canvas = this.dom.fsCanvas;
+-    canvas.width = W; canvas.height = H;
+-    if (this.dom.fsOverlay) { this.dom.fsOverlay.width = W; this.dom.fsOverlay.height = H; }
+-    const ctx2d = canvas.getContext('2d');
+-    ctx2d.fillStyle = '#030306'; ctx2d.fillRect(0, 0, W, H);
+-    const data = buf.getChannelData(0);
+-    const sr = buf.sampleRate;
+-    const nyq = sr / 2;
+-    const fftSize = 2048;
+-    const halfFFT = fftSize >> 1;
+-    const hopSize = Math.max(1, Math.ceil(data.length / W));
+-    const cmap = this.dom.fsColormap ? this.dom.fsColormap.value : 'plasma';
+-    const invLN10_9 = 1 / (9 * Math.LN10);
+-    const win = new Float32Array(fftSize);
+-    for (let i = 0; i < fftSize; i++) win[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / fftSize));
+-    const logMin = Math.log(20), logMax = Math.log(nyq);
+-    const rowBin = new Uint16Array(H);
+-    for (let row = 0; row < H; row++) {
+-      const frac = 1 - row / H;
+-      const freq = Math.exp(logMin + frac * (logMax - logMin));
+-      rowBin[row] = Math.min(Math.round(freq / nyq * halfFFT), halfFFT - 1);
+-    }
+-    const imgData = ctx2d.createImageData(W, H);
+-    const pixels = imgData.data;
+-    const re = new Float32Array(fftSize);
+-    const im = new Float32Array(fftSize);
+-    const BATCH = 64;
+-    const totalCols = Math.min(W, Math.ceil(data.length / hopSize));
+-    for (let col = 0; col < totalCols; col++) {
+-      const offset = col * hopSize;
+-      for (let i = 0; i < fftSize; i++) { const si = offset + i; re[i] = (si < data.length ? data[si] : 0) * win[i]; im[i] = 0; }
+-      this._fft(re, im);
+-      for (let row = 0; row < H; row++) {
+-        const bin = rowBin[row];
+-        const magSq = re[bin] * re[bin] + im[bin] * im[bin];
+-        const v = magSq > 0 ? Math.max(0, Math.min(1, Math.log(magSq) * invLN10_9 + 1)) : 0;
+-        const [r, g, b] = this.fsColor(v, cmap);
+-        const idx = (row * W + col) * 4;
+-        pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
+-      }
+-      if ((col % BATCH === BATCH - 1) || col === totalCols - 1) {
+-        ctx2d.putImageData(imgData, 0, 0);
+-        const pct = Math.round((col + 1) / totalCols * 100);
+-        if (this.dom.fsProgress) this.dom.fsProgress.textContent = pct < 100 ? `Rendering ${pct}%` : '';
+-        await new Promise(r => setTimeout(r, 0));
+-      }
+-    }
+-    this.fsImageData = ctx2d.getImageData(0, 0, W, H);
+-    if (this.dom.fsProgress) this.dom.fsProgress.textContent = '';
+-    this.drawFsYAxis(sr, H);
+-    this.drawFsXAxis(buf.duration, W);
+-    this.drawFsPlayhead(0);
+-  }
+-
+-  fsColor(v, cmap) {
+-    v = Math.max(0, Math.min(1, v));
+-    if (cmap === 'ocean') return this.lerpStops([[3,3,20],[5,20,80],[0,100,180],[0,200,230],[180,240,255],[255,255,255]], v);
+-    if (cmap === 'voice') return this.lerpStops([[3,3,8],[30,5,60],[180,10,30],[220,80,0],[255,200,20],[255,255,180]], v);
+-    if (cmap === 'thermal') return this.lerpStops([[0,0,0],[70,0,20],[180,0,0],[220,100,0],[255,220,40],[255,255,220]], v);
+-    // plasma (default)
+-    return this.lerpStops([[5,1,15],[60,5,110],[140,20,170],[200,60,50],[240,140,0],[255,230,40],[255,255,220]], v);
+-  }
+-
+-  lerpStops(stops, v) {
+-    const idx = v * (stops.length - 1);
+-    const lo = Math.floor(idx), hi = Math.min(lo + 1, stops.length - 1);
+-    const t = idx - lo;
+-    return stops[lo].map((c, i) => Math.round(c + (stops[hi][i] - c) * t));
+-  }
+-
+-  drawFsYAxis(sr, H) {
+-    const cv = this.dom.fsYAxis; if (!cv) return;
+-    cv.width = 38; cv.height = H;
+-    const ctx = cv.getContext('2d');
+-    ctx.fillStyle = '#030306'; ctx.fillRect(0, 0, 38, H);
+-    const nyq = sr / 2;
+-    const logMin = Math.log(20), logMax = Math.log(nyq);
+-    const freqs = [100,250,500,1000,2000,4000,8000,16000].filter(f => f < nyq);
+-    ctx.font = '8px JetBrains Mono, monospace'; ctx.textAlign = 'right';
+-    for (const f of freqs) {
+-      const frac = (Math.log(f) - logMin) / (logMax - logMin);
+-      const y = Math.round((1 - frac) * H);
+-      ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(34, y, 4, 1);
+-      ctx.fillStyle = 'rgba(180,180,200,0.5)';
+-      ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f, 32, y + 3);
+-    }
+-    ctx.save(); ctx.translate(9, H / 2); ctx.rotate(-Math.PI / 2);
+-    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(180,180,200,0.35)'; ctx.font = '7px JetBrains Mono, monospace';
+-    ctx.fillText('Hz', 0, 0); ctx.restore();
+-  }
+-
+-  drawFsXAxis(duration, W) {
+-    const cv = this.dom.fsXAxis; if (!cv) return;
+-    cv.width = W + 38; cv.height = 20;
+-    const ctx = cv.getContext('2d');
+-    ctx.fillStyle = '#030306'; ctx.fillRect(0, 0, W + 38, 20);
+-    ctx.font = '8px JetBrains Mono, monospace'; ctx.fillStyle = 'rgba(180,180,200,0.5)'; ctx.textAlign = 'center';
+-    const step = duration < 30 ? 5 : duration < 120 ? 15 : duration < 300 ? 30 : 60;
+-    for (let t = 0; t <= duration; t += step) {
+-      const x = 38 + Math.round(t / duration * W);
+-      ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(x, 0, 1, 5);
+-      ctx.fillStyle = 'rgba(180,180,200,0.5)';
+-      ctx.fillText(t >= 60 ? Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') : t + 's', x, 14);
+-    }
+-  }
+-
+-  drawFsPlayhead(frac) {
+-    const cv = this.dom.fsOverlay; if (!cv || !cv.width) return;
+-    const W = cv.width, H = cv.height;
+-    const ctx = cv.getContext('2d');
+-    ctx.clearRect(0, 0, W, H);
+-    if (!this.inputBuffer || frac <= 0) return;
+-    const x = Math.round(frac * W);
+-    ctx.shadowBlur = 6; ctx.shadowColor = '#dc2626';
+-    ctx.strokeStyle = 'rgba(220,38,38,0.9)'; ctx.lineWidth = 1.5;
+-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+-    ctx.shadowBlur = 0;
+-    const elapsed = frac * this.inputBuffer.duration;
+-    const label = this.fmtDur(elapsed);
+-    ctx.font = '700 9px JetBrains Mono, monospace';
+-    const tw = ctx.measureText(label).width;
+-    const bx = Math.min(x + 3, W - tw - 8);
+-    ctx.fillStyle = 'rgba(220,38,38,0.85)'; ctx.fillRect(bx - 2, 2, tw + 8, 14);
+-    ctx.fillStyle = '#fff'; ctx.fillText(label, bx + 2, 12);
+-  }
+-
+-  fsToggleAB() {
+-    if (!this.outputBuffer) return;
+-    this.fsMode = this.fsMode === 'original' ? 'processed' : 'original';
+-    const isProc = this.fsMode === 'processed';
+-    if (this.dom.fsModeLbl) { this.dom.fsModeLbl.textContent = isProc ? 'PROCESSED' : 'ORIGINAL'; this.dom.fsModeLbl.classList.toggle('proc', isProc); }
+-    if (this.dom.fsBtnAB) this.dom.fsBtnAB.textContent = isProc ? 'Show Original' : 'Show Processed';
+-    this.fsCurrentBuf = isProc ? this.outputBuffer : this.inputBuffer;
+-    this.fsImageData = null;
+-    this.renderFileSpectrogram(this.fsCurrentBuf);
+-  }
+-
+-  fsSeekClick(e) {
+-    if (!this.inputBuffer) return;
+-    const rect = this.dom.fsMain.getBoundingClientRect();
+-    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+-    this.playOffset = frac * this.inputBuffer.duration;
+-    this.dom.tpSeek.value = frac * 1000;
+-    this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+-    this.drawFsPlayhead(frac);
+-    if (this.isPlaying) this.play();
+-  }
+-
+   // ---- UTILITY ----
+   setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
+   calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
+@@ -1855,10 +2133,5 @@ class VoiceIsolatePro {
+   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
+ }
+
+-if (typeof module !== 'undefined' && module.exports) {
+-  module.exports = VoiceIsolatePro;
+-} else if (typeof document !== 'undefined') {
+-  document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
+-}
+ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
+-document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
++document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
+\ No newline at end of file
+diff --git a/build/app/dsp-worker.js b/build/app/dsp-worker.js
+index d590bad..2d006bb 100644
+--- a/build/app/dsp-worker.js
++++ b/build/app/dsp-worker.js
+@@ -2,6 +2,7 @@
+    VoiceIsolate Pro v20.0 — DSP Worker
+    Threads from Space v10 · 36-Stage Pipeline
+    Deca-Pass Offline Processing · Full Quality
++   Adaptive Wiener · DNS v2 · Multi-Speaker
+    ============================================ */
+
+ 'use strict';
+@@ -9,6 +10,7 @@
+ importScripts('dsp-core.js');
+
+ const DSP = self.DSPCore;
++const AdaptiveNoiseFloor = self.AdaptiveNoiseFloor;
+ const SR = 48000;
+
+ /**
+@@ -181,19 +183,101 @@ async function runPipeline(msg) {
+     }
+     progress(14, 45, 'ML Separation Complete');
+
++    // ===== PASS 4.5: MULTI-SPEAKER SOURCE SEPARATION (optional) =====
++    const multiSpeakerEnabled = params.multiSpeakerEnabled ?? false;
++    const separationMode = params.separationMode ?? 'off';
++    if (multiSpeakerEnabled && separationMode !== 'off') {
++      progress(14, 46, 'Multi-Speaker Separation');
++      const msData = new Float32Array(data);
++      const msResult = await callML('multiSeparate', msData, {
++        mode: separationMode,
++        targetSpeaker: params.targetSpeaker ?? 0,
++        attenuationDb: params.separationAttenuationDb ?? -24
++      });
++
++      if (msResult.streams && msResult.streams.length > 0) {
++        const targetSpeaker = params.targetSpeaker ?? 0;
++        // Find the target speaker stream
++        const targetStream = msResult.streams.find(s => s.speakerId === targetSpeaker)
++          || msResult.streams[0];
++
++        if (targetStream && targetStream.data) {
++          // Update mag/phase from separated target speaker stream
++          const targetData = new Float32Array(targetStream.data);
++          const targetSTFT = DSP.forwardSTFT(targetData, fftSize, hopSize);
++          for (let f = 0; f < Math.min(frameCount, targetSTFT.frameCount); f++) {
++            for (let k = 0; k < mag[f].length; k++) {
++              mag[f][k] = targetSTFT.mag[f][k];
++              phase[f][k] = targetSTFT.phase[f][k];
++            }
++          }
++        }
++      }
++      progress(14, 47, 'Multi-Speaker Separation Complete');
++    }
++
+     if (self._aborted) return abort();
+
+     // ===== PASS 5: SPECTRAL OPERATIONS IN-PLACE (S15–S19) =====
+     progress(15, 48, 'Spectral Operations');
+
+-    // Estimate noise profile from silent segments
+-    const noiseProfile = DSP.estimateNoiseProfile(data, vadConfidence, fftSize, hopSize);
++    // Noise classifier: run before Wiener to inform strategy
++    if (params.noiseClassifierEnabled !== false) {
++      // Build compact feature vector: 64-band mel-like log energies
++      const classFeatures = _buildNoiseFeatures(mag, sr, fftSize);
++      // Fire-and-forget (results forwarded back via ML port to orchestrator)
++      callML('classifyNoise', classFeatures, {}).catch(() => {});
++      // Also run the spectral classifier locally for fast strategy update
++      // (the ONNX model result will arrive asynchronously)
++      const localClass = DSP.classifyNoiseSpectral(mag, sr, fftSize);
++      // Store locally for adaptive Wiener over-subtraction tuning
++      if (localClass.noiseClass === 'music') {
++        params._effectiveOverSubtraction = (params.adaptiveWienerOverSubtraction ?? 1.2) * 1.3;
++      } else {
++        params._effectiveOverSubtraction = params.adaptiveWienerOverSubtraction ?? 1.2;
++      }
++    }
+
+-    // S15: Spectral noise subtraction (Wiener-MMSE)
+-    const nrAmount = params.nrAmount ?? 55;
+-    DSP.wienerMMSE(mag, noiseProfile, nrAmount);
++    // S15: Spectral noise subtraction
++    const adaptiveWienerEnabled = params.adaptiveWienerEnabled !== false;
++    if (adaptiveWienerEnabled && AdaptiveNoiseFloor) {
++      // Per-bin adaptive Wiener filter (Martin 2001)
++      const smoothingMs = params.adaptiveWienerSmoothingMs ?? 200;
++      const overSub = params._effectiveOverSubtraction ?? params.adaptiveWienerOverSubtraction ?? 1.2;
++      const halfN = mag[0].length;
++      const tracker = new AdaptiveNoiseFloor(halfN, smoothingMs, hopSize, sr);
++      DSP.applyAdaptiveWiener(mag, vadConfidence, tracker, {
++        overSubtraction: overSub,
++        spectralFloor: 0.001
++      });
++    } else {
++      // Fallback: fixed noise profile Wiener-MMSE
++      const noiseProfile = DSP.estimateNoiseProfile(data, vadConfidence, fftSize, hopSize);
++      const nrAmount = params.nrAmount ?? 55;
++      DSP.wienerMMSE(mag, noiseProfile, nrAmount);
++    }
+     progress(15, 52, 'Spectral Noise Subtracted');
+
++    // DNS v2: apply per-bin gain mask from ML model (applied after Wiener)
++    if (params.dns2Enabled !== false) {
++      // Build 512-point magnitude frame (use middle frame of STFT, 16 kHz compatible)
++      const midFrame = Math.floor(frameCount / 2);
++      const dns2Input = _buildDNS2Frame(mag, midFrame, sr, fftSize);
++      const dns2Result = await callML('dns2', dns2Input, {});
++      if (dns2Result.mask) {
++        const mask = new Float32Array(dns2Result.mask);
++        // Apply mask to each STFT frame (interpolate mask length if needed)
++        const halfN = mag[0].length;
++        for (let f = 0; f < frameCount; f++) {
++          for (let k = 0; k < halfN; k++) {
++            const maskIdx = Math.min(k, mask.length - 1);
++            mag[f][k] *= mask[maskIdx];
++          }
++        }
++      }
++    }
++    progress(15, 54, 'DNS v2 Gain Mask Applied');
++
+     // S16: 32 ERB band spectral gate
+     const nrFloor = params.nrFloor ?? -60;
+     DSP.spectralGate(mag, nrFloor, sr);
+@@ -201,7 +285,17 @@ async function runPipeline(msg) {
+
+     // S17: Harmonic enhancement
+     const harmRecov = params.harmRecov ?? 20;
+-    DSP.harmonicEnhance(mag, phase, harmRecov);
++    if (params.harmonicV2Enabled !== false) {
++      DSP.harmonicEnhanceV2(mag, phase, harmRecov, {
++        sbr:               params.harmonicV2SBR !== false,
++        formantProtection: params.harmonicV2FormantProtection !== false,
++        breathinessGain:   params.harmonicV2BreathinessGain ?? 0.8,
++        sampleRate:        sr,
++        fftSize
++      });
++    } else {
++      DSP.harmonicEnhance(mag, phase, harmRecov);
++    }
+     progress(17, 60, 'Harmonics Enhanced');
+
+     // S18: Temporal smoothing
+@@ -342,3 +436,69 @@ async function runPipeline(msg) {
+ function abort() {
+   self.postMessage({ type: 'aborted' });
+ }
++
++// ===== HELPER FUNCTIONS FOR NEW DSP PASSES =====
++
++/**
++ * Build a compact noise feature vector from STFT magnitude frames.
++ * Computes 64-band log mel-like energies suitable for the noise classifier model.
++ * @param {Float32Array[]} mag - STFT magnitude frames
++ * @param {number} sr          - Sample rate
++ * @param {number} fftSize     - FFT size
++ * @returns {Float32Array} 64-element feature vector
++ */
++function _buildNoiseFeatures(mag, _sr, _fftSize) {
++  const numBands = 64;
++  const halfN = mag[0] ? mag[0].length : 0;
++  const features = new Float32Array(numBands);
++  if (halfN === 0) return features;
++
++  const bandSize = halfN / numBands;
++
++  // Average across frames
++  const avg = new Float32Array(halfN);
++  for (const frame of mag) {
++    for (let k = 0; k < halfN; k++) avg[k] += frame[k];
++  }
++  const nFrames = Math.max(1, mag.length);
++  for (let k = 0; k < halfN; k++) avg[k] /= nFrames;
++
++  // Band log energies
++  for (let b = 0; b < numBands; b++) {
++    const lo = Math.floor(b * bandSize);
++    const hi = Math.min(halfN - 1, Math.floor((b + 1) * bandSize));
++    let e = 0;
++    for (let k = lo; k <= hi; k++) e += avg[k] * avg[k];
++    features[b] = Math.log(e / Math.max(1, hi - lo + 1) + 1e-10);
++  }
++  return features;
++}
++
++/**
++ * Build a 512-point magnitude frame for DNS v2 ONNX inference.
++ * The DNS v2 model expects 512-point STFT magnitudes at 16 kHz.
++ * This function resamples from the current STFT resolution.
++ * @param {Float32Array[]} mag - STFT magnitude frames
++ * @param {number} midFrame    - Frame index to use
++ * @param {number} sr          - Current sample rate
++ * @param {number} fftSize     - Current FFT size
++ * @returns {Float32Array} 257-point magnitude (512-pt FFT, half+1)
++ */
++function _buildDNS2Frame(mag, midFrame, sr, _fftSize) {
++  const dns2Bins = 257; // 512-pt STFT half+1
++  const output = new Float32Array(dns2Bins);
++  if (!mag || mag.length === 0) return output;
++
++  const srcFrame = mag[Math.min(midFrame, mag.length - 1)];
++  const srcBins = srcFrame.length;
++  // Frequency scaling ratio (src bins → 512-pt at 16 kHz)
++  const srcNyquist = sr / 2;
++  const dstNyquist = 8000; // 16 kHz / 2
++  const freqScale = dstNyquist / srcNyquist;
++
++  for (let k = 0; k < dns2Bins; k++) {
++    const srcK = Math.round(k / freqScale);
++    output[k] = srcK < srcBins ? srcFrame[srcK] : 0;
++  }
++  return output;
++}
+diff --git a/build/app/index.html b/build/app/index.html
+index f27361a..a711bc8 100644
+--- a/build/app/index.html
++++ b/build/app/index.html
+@@ -2,25 +2,14 @@
+ <html lang="en">
+ <head>
+   <meta charset="UTF-8" />
+-  <title>VoiceIsolate Pro v21.0 – Engineer Mode</title>
+-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+-  <meta name="description" content="Studio-grade voice isolation and audio enhancement. 32-stage DSP pipeline with ML-powered noise removal. 100% local processing." />
+-  <meta name="theme-color" content="#0a0a0f" />
+-  <!-- Mobile App Meta -->
+-  <meta name="mobile-web-app-capable" content="yes" />
+-  <meta name="apple-mobile-web-app-capable" content="yes" />
+-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+-  <meta name="apple-mobile-web-app-title" content="VoiceIsolate Pro" />
+-  <!-- PWA Manifest -->
+-  <link rel="manifest" href="/manifest.json" />
+   <title>VoiceIsolate Pro v22.0 – Engineer Mode</title>
+   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+   <link rel="preconnect" href="https://fonts.googleapis.com" />
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
++  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+   <link rel="stylesheet" href="style.css" />
+-  <link rel="stylesheet" href="mobile.css" />
+ </head>
+ <body>
+   <!-- HEADER -->
+@@ -28,13 +17,13 @@
+     <div class="hdr-left">
+       <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
+       <div>
+-        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v21.0</span></h1>
+         <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v22.0</span></h1>
+         <span class="hdr-badge">ENGINEER MODE</span>
+         <span class="hdr-badge diag-badge">6-PANEL DIAGNOSTICS</span>
+       </div>
+     </div>
+-    <div class="hdr-stats">
++    <button id="statsToggle" class="hdr-stats-toggle" aria-label="Toggle stats" aria-expanded="false">&#9660;</button>
++    <div class="hdr-stats" id="hdrStats">
+       <div class="hdr-stat"><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR Gain</span></div>
+       <div class="hdr-stat"><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
+       <div class="hdr-stat"><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
+@@ -60,7 +49,7 @@
+         </div>
+         <div class="upload-row">
+           <button id="micBtn" class="btn btn-mic">
+-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
++            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+             <span id="micLabel">Record</span>
+           </button>
+           <span id="fileInfo" class="file-info">No file loaded</span>
+@@ -112,11 +101,13 @@
+       <!-- Actions -->
+       <div class="actions-row">
+         <button id="processBtn" class="btn btn-primary" disabled>
+-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
+-          Process (35-Stage)
++          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
++          Process (32-Stage)
+         </button>
+         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
+         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
++        <button id="forensicToggle" class="btn btn-xs">Forensic</button>
++        <button id="auditLogBtn" class="btn btn-xs" disabled>Audit Log</button>
+       </div>
+
+       <!-- Pipeline -->
+@@ -129,11 +120,11 @@
+       <!-- Save -->
+       <div class="save-row">
+         <button id="saveOrigBtn" class="btn btn-save" disabled>
+-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
++          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+           Save Original WAV
+         </button>
+         <button id="saveProcBtn" class="btn btn-save-proc" disabled>
+-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
++          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+           Save Processed WAV
+         </button>
+       </div>
+@@ -150,11 +141,11 @@
+       <!-- Transport -->
+       <div class="card transport-card">
+         <div class="transport-row">
+-          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg></button>
+-          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+-          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+-          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
+-          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
++          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg></button>
++          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
++          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
++          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
++          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
+           <div class="tp-time"><span id="tpCur">0:00</span> / <span id="tpTotal">0:00</span></div>
+           <input type="range" aria-label="Seek playback" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled />
+           <div class="tp-speed">
+@@ -305,175 +296,25 @@
+     </div>
+   </main>
+
+-  <!-- HOW IT WORKS – Comprehensive Technical Features Card (v19 Unified) -->
+-  <section class="tech-card-wrap" aria-label="Technical Features">
+-    <div class="tech-card">
+-      <div class="tech-card-hdr">
+-        <div class="tech-card-title-row">
+-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
+-          <h2 class="tech-card-title">How It Works</h2>
+-          <span class="tech-card-badge">36-STAGE DECA-PASS</span>
+-          <span class="tech-card-badge tech-card-badge-new">v21 TFS v10</span>
+-        </div>
+-        <p class="tech-card-sub">A hybrid ML + DSP pipeline processes audio entirely in-browser with optional forensic SHA-256 audit trail — zero data transmission, full privacy, court-ready output.</p>
+-      </div>
+-
+-      <div class="tech-pipeline-flow" aria-label="Pipeline signal flow">
+-        <div class="tpf-step">
+-          <span class="tpf-num">1–4</span>
+-          <span class="tpf-lbl">Input Conditioning &amp; Cleanup</span>
+-        </div>
+-        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+-        <div class="tpf-step">
+-          <span class="tpf-num">5–10</span>
+-          <span class="tpf-lbl">STFT &amp; ML Source Separation</span>
+-        </div>
+-        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+-        <div class="tpf-step">
+-          <span class="tpf-num">11–21</span>
+-          <span class="tpf-lbl">Spectral Ops (In-Place) &amp; iSTFT</span>
+-        </div>
+-        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+-        <div class="tpf-step">
+-          <span class="tpf-num">22–36</span>
+-          <span class="tpf-lbl">EQ, Dynamics, LUFS &amp; Export</span>
+-        </div>
+-      </div>
+-
+-      <div class="tech-features-grid">
+-        <!-- Feature 1 -->
+-        <div class="tf-item">
+-          <div class="tf-icon" aria-hidden="true">
+-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4l3-9 4 18 3-9h6"/></svg>
+-          </div>
+-          <div class="tf-body">
+-            <h3 class="tf-title">Spectral Subtraction</h3>
+-            <p class="tf-desc">64-band frequency-domain noise removal using over-subtraction with a spectral floor to eliminate musical noise artifacts.</p>
+-            <code class="tf-formula">|X&#770;(&#969;)| = max(|X(&#969;)| - &#945;&#183;E[|N(&#969;)|], &#946;&#183;|X(&#969;)|)</code>
+-          </div>
+-        </div>
+-
+-        <!-- Feature 2 -->
+-        <div class="tf-item">
+-          <div class="tf-icon" aria-hidden="true">
+-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+-          </div>
+-          <div class="tf-body">
+-            <h3 class="tf-title">Wiener Filtering</h3>
+-            <p class="tf-desc">Adaptive MMSE Wiener gain applied per frequency bin — strongest suppression in low-SNR regions for natural-sounding output.</p>
+-            <code class="tf-formula">G(t) = &#8730;( max(P_signal - P_noise, 0) / max(P_signal, &#949;) )</code>
+-          </div>
+-        </div>
+-
+-        <!-- Feature 3 -->
+-        <div class="tf-item tf-item-highlight">
+-          <div class="tf-icon tf-icon-ml" aria-hidden="true">
+-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>
+-          </div>
+-          <div class="tf-body">
+-            <h3 class="tf-title">Silero VAD + ONNX Runtime <span class="tf-badge-ml">ML</span></h3>
+-            <p class="tf-desc">ONNX Runtime Web powers real-time Voice Activity Detection in a dedicated Web Worker — classifying speech frames at sub-millisecond latency with zero network calls.</p>
+-            <code class="tf-formula">P(voice | frame) &#8594; gate mask @ 20 ms chunks &#183; ONNX WebGL backend</code>
+-          </div>
+-        </div>
+-
+-        <!-- Feature 4 -->
+-        <div class="tf-item">
+-          <div class="tf-icon" aria-hidden="true">
+-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="4" height="10" rx="1"/><rect x="9" y="4" width="4" height="16" rx="1"/><rect x="16" y="9" width="4" height="8" rx="1"/></svg>
+-          </div>
+-          <div class="tf-body">
+-            <h3 class="tf-title">Dynamics &amp; Compression</h3>
+-            <p class="tf-desc">Envelope-follower compressor with per-sample attack/release constants keeps dialogue intelligible across wide dynamic range content.</p>
+-            <code class="tf-formula">a = exp(-1 / (SR &#183; t_attack)) &#183; GR = -max((L - T)&#183;(1 - 1/R), 0)</code>
+-          </div>
+-        </div>
+
+-        <!-- Feature 5 -->
+-        <div class="tf-item">
+-          <div class="tf-icon" aria-hidden="true">
+-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+-          </div>
+-          <div class="tf-body">
+-            <h3 class="tf-title">LUFS Normalization</h3>
+-            <p class="tf-desc">Output is normalized to broadcast targets — -14 LUFS for streaming, -16 LUFS for podcasts — using ITU-R BS.1770-4 K-weighted measurement.</p>
+-            <code class="tf-formula">gain = 10^( (L_target - L_measured) / 20 )</code>
+-          </div>
+-        </div>
+-
+-        <!-- Feature 6 -->
+-        <div class="tf-item">
+-          <div class="tf-icon" aria-hidden="true">
+-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+-          </div>
+-          <div class="tf-body">
+-            <h3 class="tf-title">100% Local Processing</h3>
+-            <p class="tf-desc">All DSP runs in-browser via Web Workers and AudioWorklet. Audio never leaves your device — no uploads, no servers, no storage.</p>
+-            <code class="tf-formula">Worker Pool &#8594; DSP Thread &#8594; AudioWorklet &#8594; Output Buffer</code>
+-          </div>
+-        </div>
+-
+-        <!-- Feature 7 -->
+-        <div class="tf-item tf-item-highlight">
+-          <div class="tf-icon tf-icon-forensic" aria-hidden="true">
+-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>
+-          </div>
+-          <div class="tf-body">
+-            <h3 class="tf-title">Forensic Mode <span class="tf-badge-new">NEW</span></h3>
+-            <p class="tf-desc">Enable SHA-256 cryptographic hashing at each processing stage to create a court-admissible audit trail. Download the complete chain-of-custody log after processing.</p>
+-            <code class="tf-formula">SHA-256(stage_n) &#8594; audit_log.json &#183; timestamp + stage + hash</code>
+-          </div>
+-        </div>
+-
+-        <!-- Feature 8 -->
+-        <div class="tf-item tf-item-highlight">
+-          <div class="tf-icon tf-icon-viz" aria-hidden="true">
+-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+-          </div>
+-          <div class="tf-body">
+-            <h3 class="tf-title">Full-File Spectrogram <span class="tf-badge-restored">RESTORED</span></h3>
+-            <p class="tf-desc">Interactive overview spectrogram with A/B toggle for original vs processed comparison. Click to seek, multiple colormaps (Plasma, Ocean, Voice ID, Thermal), log frequency scale.</p>
+-            <code class="tf-formula">FFT &#8594; Log-Mel &#8594; Canvas2D &#183; 20 Hz - 22 kHz &#183; Click-to-seek</code>
+-          </div>
+-        </div>
+-      </div>
+-
+-      <div class="tech-stack-row" aria-label="Technology stack">
+-        <span class="ts-label">STACK</span>
+-        <span class="ts-chip">Web Audio API</span>
+-        <span class="ts-chip">AudioWorklet</span>
+-        <span class="ts-chip">Web Workers</span>
+-        <span class="ts-chip ts-chip-highlight">ONNX Runtime Web</span>
+-        <span class="ts-chip">Silero VAD</span>
+-        <span class="ts-chip">WebAssembly DSP</span>
+-        <span class="ts-chip">Three.js 3D</span>
+-        <span class="ts-chip">32-bit Float</span>
+-        <span class="ts-chip ts-chip-highlight">SHA-256 Forensic</span>
+-      </div>
+-    </div>
+-  </section>
+-
+-  <footer class="ftr">
+-    <span>VoiceIsolate Pro v21.0 · Threads from Space v10 · Hybrid ML+DSP · 32-Stage Octa-Pass · Mobile-Ready</span>
+   <footer class="ftr">
+     <span>VoiceIsolate Pro v22.0 · Threads from Space v11 · Hybrid ML+DSP · 35-Stage Deca-Pass</span>
+     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
+   </footer>
+
+   <div id="tooltip" class="slider-tooltip"></div>
+-  <!-- v21 Modular Architecture: TFS v10 + Capacitor Mobile -->
+-  <script src="pipeline-state.js"></script>
+-  <script src="ring-buffer.js"></script>
++
++  <!-- Mobile sticky action bar -->
++  <div class="mobile-action-bar" id="mobileActionBar">
++    <button id="mobileProcessBtn" class="btn btn-primary" disabled aria-label="Process audio">
++      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
++      Process
++    </button>
++    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
++    <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Stop</button>
++  </div>
++
+   <script src="dsp-core.js"></script>
+   <script src="app.js"></script>
+-  <!-- Capacitor Bridge (injected by native shell on Android/iOS) -->
+-  <script>
+-    // Detect Capacitor environment and enable native features
+-    if (window.Capacitor) {
+-      document.documentElement.classList.add('capacitor-native');
+-      console.log('[VoiceIsolate] Running in Capacitor native shell:', window.Capacitor.getPlatform());
+-    }
+-  </script>
+-  <script defer src="/_vercel/speed-insights/script.js"></script>
+ </body>
+ </html>
+diff --git a/build/app/ml-worker.js b/build/app/ml-worker.js
+index de405a3..59f22be 100644
+--- a/build/app/ml-worker.js
++++ b/build/app/ml-worker.js
+@@ -2,6 +2,7 @@
+    VoiceIsolate Pro v20.0 — ML Worker
+    Threads from Space v10 · ONNX Inference
+    Demucs v4 + BSRNN + Silero VAD + ECAPA-TDNN
++   DNS v2 · Noise Classifier · Multi-Speaker Sep
+    WebGPU > WASM fallback · Tensor disposal
+    ============================================ */
+
+@@ -12,7 +13,8 @@
+  * - Initializes ONNX Runtime sessions with WebGPU > WASM fallback
+  * - Continuous processing loop using Atomics.wait for ring buffer
+  * - Explicit tensor disposal to prevent VRAM leaks
+- * - Supports: Demucs v4, BSRNN, Silero VAD, ECAPA-TDNN
++ * - Supports: Demucs v4, BSRNN, Silero VAD, ECAPA-TDNN,
++ *             DNS v2 (conformer), noise classifier, ConvTasNet multi-speaker sep
+  */
+
+ let ort = null;             // ONNX Runtime reference
+@@ -31,7 +33,10 @@ const MODEL_PATHS = {
+   bsrnn: 'models/bsrnn-int8.onnx',
+   vad: 'models/silero_vad.onnx',
+   ecapa: 'models/ecapa-tdnn-int8.onnx',
+-  deepfilter: 'models/deepfilter-int8.onnx'
++  deepfilter: 'models/deepfilter-int8.onnx',
++  dns2: 'models/dns2_conformer_small.onnx',
++  noiseClassifier: 'models/noise_classifier.onnx',
++  convtasnet: 'models/convtasnet-int8.onnx'
+ };
+
+ // Default blend weights
+@@ -85,6 +90,25 @@ self.onmessage = async (e) => {
+     const promise = handleEnroll(msg);
+     activePromises.add(promise);
+     await promise.finally(() => activePromises.delete(promise));
++  } else if (msg.type === 'identify') {
++    const promise = handleIdentify(msg);
++    activePromises.add(promise);
++    await promise.finally(() => activePromises.delete(promise));
++  } else if (msg.type === 'dns2') {
++    // DNS v2 ONNX model: compute per-bin gain mask from STFT magnitude frame
++    const promise = handleDNS2(msg);
++    activePromises.add(promise);
++    await promise.finally(() => activePromises.delete(promise));
++  } else if (msg.type === 'classifyNoise') {
++    // Noise classifier: identify noise type from magnitude spectrum
++    const promise = handleClassifyNoise(msg);
++    activePromises.add(promise);
++    await promise.finally(() => activePromises.delete(promise));
++  } else if (msg.type === 'multiSeparate') {
++    // Multi-speaker source separation using ConvTasNet
++    const promise = handleMultiSeparate(msg);
++    activePromises.add(promise);
++    await promise.finally(() => activePromises.delete(promise));
+   } else if (msg.type === 'dispose') {
+     await disposeAll();
+   }
+@@ -248,10 +272,11 @@ async function processLoop() {
+ async function generateMask(frame) {
+   let demucsMask = null;
+   let bsrnnMask = null;
++  const len = frame.length;
+
+   // Demucs inference
+   if (sessions.demucs && weights.demucs > 0) {
+-    const tensor = new ort.Tensor('float32', frame, [1, 1, frameSize]);
++    const tensor = new ort.Tensor('float32', frame, [1, 1, len]);
+     try {
+       const result = await sessions.demucs.run({ input: tensor });
+       const output = result[Object.keys(result)[0]];
+@@ -264,7 +289,7 @@ async function generateMask(frame) {
+
+   // BSRNN inference
+   if (sessions.bsrnn && weights.bsrnn > 0) {
+-    const tensor = new ort.Tensor('float32', frame, [1, 1, frameSize]);
++    const tensor = new ort.Tensor('float32', frame, [1, 1, len]);
+     try {
+       const result = await sessions.bsrnn.run({ input: tensor });
+       const output = result[Object.keys(result)[0]];
+@@ -276,8 +301,8 @@ async function generateMask(frame) {
+   }
+
+   // Ensemble fusion
+-  const mask = new Float32Array(frameSize);
+-  for (let i = 0; i < frameSize; i++) {
++  const mask = new Float32Array(len);
++  for (let i = 0; i < len; i++) {
+     const d = demucsMask ? demucsMask[i] * weights.demucs : 0;
+     const b = bsrnnMask ? bsrnnMask[i] * weights.bsrnn : 0;
+     const total = (demucsMask ? weights.demucs : 0) + (bsrnnMask ? weights.bsrnn : 0);
+@@ -413,6 +438,216 @@ async function handleEnroll(msg) {
+   }
+ }
+
++/**
++ * Extract a speaker embedding from an audio segment for real-time identification.
++ * Posts { type: 'identifyResult', id, embedding } — or embedding: null when model unavailable.
++ *
++ * @param {Object} msg
++ * @param {string|number} msg.id    - Call identifier echoed back in the result.
++ * @param {Float32Array}  msg.data  - Mono audio samples (any sample rate, model normalises internally).
++ */
++async function handleIdentify(msg) {
++  const id = msg.id;
++  if (!sessions.ecapa) {
++    self.postMessage({ type: 'identifyResult', id, embedding: null });
++    return;
++  }
++
++  try {
++    const data = msg.data;
++    const tensor = new ort.Tensor('float32', data, [1, 1, data.length]);
++    try {
++      const result = await sessions.ecapa.run({ input: tensor });
++      const output = result[Object.keys(result)[0]];
++      const embedding = new Float32Array(output.data);
++      output.dispose?.();
++      self.postMessage({ type: 'identifyResult', id, embedding }, [embedding.buffer]);
++    } finally {
++      tensor.dispose?.();
++    }
++  } catch (err) {
++    self.postMessage({ type: 'identifyResult', id, embedding: null, error: err.message });
++    log('warn', `Speaker identification error: ${err.message}`);
++  }
++}
++
++/**
++ * DNS v2 (Microsoft DNS Challenge v2) ONNX inference.
++ * Computes a per-frequency-bin gain mask from a 512-point STFT magnitude frame
++ * at 16 kHz. The mask (0..1) is posted as { type: 'dns2_mask', id, mask }.
++ *
++ * Graceful fallback: if the dns2 model failed to load, posts an all-ones mask
++ * (passthrough) instead of crashing.
++ *
++ * @param {object} msg
++ * @param {string|number} msg.id        - Call identifier
++ * @param {Float32Array}  msg.magnitude - 512-point STFT magnitude (16 kHz)
++ */
++async function handleDNS2(msg) {
++  const id = msg.id;
++  const magnitude = msg.magnitude;
++
++  if (!sessions.dns2 || !magnitude) {
++    // Graceful fallback: passthrough mask
++    const mask = new Float32Array(magnitude ? magnitude.length : 257).fill(1);
++    self.postMessage({ type: 'dns2_mask', id, mask }, [mask.buffer]);
++    return;
++  }
++
++  try {
++    const tensor = new ort.Tensor('float32', magnitude, [1, 1, magnitude.length]);
++    try {
++      const result = await sessions.dns2.run({ input: tensor });
++      const output = result[Object.keys(result)[0]];
++      // Clamp gain mask to [0, 1]
++      const rawMask = new Float32Array(output.data);
++      for (let i = 0; i < rawMask.length; i++) {
++        rawMask[i] = Math.max(0, Math.min(1, rawMask[i]));
++      }
++      output.dispose?.();
++      self.postMessage({ type: 'dns2_mask', id, mask: rawMask }, [rawMask.buffer]);
++    } finally {
++      tensor.dispose?.();
++    }
++  } catch (err) {
++    log('warn', `DNS v2 inference failed: ${err.message} — using passthrough mask`);
++    const mask = new Float32Array(magnitude.length).fill(1);
++    self.postMessage({ type: 'dns2_mask', id, mask }, [mask.buffer]);
++  }
++}
++
++/**
++ * Noise classifier: identify the dominant background noise type from a
++ * compact spectral feature vector derived from STFT magnitude frames.
++ *
++ * Attempts ONNX inference with the noiseClassifier model. Falls back to
++ * posting { noiseClass: 'unknown', confidence: 0 } on failure.
++ *
++ * @param {object} msg
++ * @param {string|number} msg.id       - Call identifier
++ * @param {Float32Array}  msg.features - Compact feature vector (e.g. 64-dim mel-band energies)
++ * @param {string[]}      [msg.labels] - Optional class label array (overrides default)
++ */
++async function handleClassifyNoise(msg) {
++  const id = msg.id;
++  const features = msg.features;
++  const labels = msg.labels || ['music', 'white_noise', 'crowd', 'HVAC', 'keyboard', 'traffic', 'silence'];
++
++  if (!sessions.noiseClassifier || !features) {
++    self.postMessage({ type: 'noiseClassResult', id, noiseClass: 'unknown', confidence: 0 });
++    return;
++  }
++
++  try {
++    const tensor = new ort.Tensor('float32', features, [1, features.length]);
++    try {
++      const result = await sessions.noiseClassifier.run({ input: tensor });
++      const output = result[Object.keys(result)[0]];
++      const logits = new Float32Array(output.data);
++      output.dispose?.();
++
++      // Softmax over logits
++      const maxLogit = Math.max(...logits);
++      let sumExp = 0;
++      const probs = new Float32Array(logits.length);
++      for (let i = 0; i < logits.length; i++) {
++        probs[i] = Math.exp(logits[i] - maxLogit);
++        sumExp += probs[i];
++      }
++      for (let i = 0; i < probs.length; i++) probs[i] /= sumExp;
++
++      // Best class
++      let bestIdx = 0;
++      for (let i = 1; i < probs.length; i++) {
++        if (probs[i] > probs[bestIdx]) bestIdx = i;
++      }
++      const noiseClass = labels[bestIdx] || `class_${bestIdx}`;
++      const confidence = probs[bestIdx];
++
++      self.postMessage({ type: 'noiseClassResult', id, noiseClass, confidence });
++    } finally {
++      tensor.dispose?.();
++    }
++  } catch (err) {
++    log('warn', `Noise classifier inference failed: ${err.message}`);
++    self.postMessage({ type: 'noiseClassResult', id, noiseClass: 'unknown', confidence: 0 });
++  }
++}
++
++/**
++ * Multi-speaker source separation using ConvTasNet (or SepFormer variant).
++ * Separates the mixed audio into up to 4 speaker streams.
++ *
++ * Each separated stream is tagged with a speaker index (0-based). If the
++ * ConvTasNet model is unavailable, the original mix is returned as the sole
++ * stream (graceful fallback, no crash).
++ *
++ * @param {object}        msg
++ * @param {string|number} msg.id             - Call identifier
++ * @param {Float32Array}  msg.data           - Mixed mono audio samples
++ * @param {string}        [msg.mode]         - 'target-only' | 'all-speakers' | 'off'
++ * @param {number}        [msg.targetSpeaker] - 0-based index of the target speaker
++ * @param {number}        [msg.attenuationDb] - Attenuation for non-target streams (default -24 dB)
++ */
++async function handleMultiSeparate(msg) {
++  const id = msg.id;
++  const data = msg.data;
++  const mode = msg.mode || 'target-only';
++  const targetSpeaker = msg.targetSpeaker ?? 0;
++  const attenuationLin = Math.pow(10, (msg.attenuationDb ?? -24) / 20);
++
++  if (mode === 'off' || !sessions.convtasnet || !data) {
++    // Passthrough: single stream = original mix
++    self.postMessage({
++      type: 'multiSeparateResult',
++      id,
++      streams: [{ speakerId: 0, data: new Float32Array(data || []) }]
++    }, data ? [data.buffer] : []);
++    return;
++  }
++
++  try {
++    const tensor = new ort.Tensor('float32', data, [1, 1, data.length]);
++    let streams;
++    try {
++      const result = await sessions.convtasnet.run({ input: tensor });
++      const output = result[Object.keys(result)[0]];
++      // Expected output shape: [1, numSpeakers, numSamples]
++      const numSpeakers = Math.min(4, output.dims[1] || 1);
++      const numSamples = data.length;
++      streams = [];
++      for (let s = 0; s < numSpeakers; s++) {
++        const start = s * numSamples;
++        const streamData = new Float32Array(output.data.slice(start, start + numSamples));
++
++        if (mode === 'target-only' && s !== targetSpeaker) {
++          // Attenuate non-target speakers (kept at -24 dB for monitoring)
++          for (let i = 0; i < streamData.length; i++) streamData[i] *= attenuationLin;
++        }
++
++        streams.push({ speakerId: s, data: streamData });
++      }
++      output.dispose?.();
++    } finally {
++      tensor.dispose?.();
++    }
++
++    // Transfer all stream buffers zero-copy
++    const transferables = streams.map(s => s.data.buffer);
++    self.postMessage({ type: 'multiSeparateResult', id, streams }, transferables);
++
++  } catch (err) {
++    log('warn', `Multi-speaker separation failed: ${err.message} — passthrough`);
++    // Graceful fallback: return original mix as single stream
++    const fallback = new Float32Array(data);
++    self.postMessage({
++      type: 'multiSeparateResult',
++      id,
++      streams: [{ speakerId: 0, data: fallback }]
++    }, [fallback.buffer]);
++  }
++}
++
+ // ---- Disposal ----
+ async function disposeAll() {
+   running = false;
+@@ -420,7 +655,9 @@ async function disposeAll() {
+     try {
+       await session.release?.();
+       log('info', `Disposed model: ${name}`);
+-    } catch {}
++    } catch (e) {
++      log('error', `Failed to dispose model ${name}: ${e.message || e}`);
++    }
+   }
+   sessions = {};
+ }
+diff --git a/build/app/style.css b/build/app/style.css
+index f912b19..9f4c4ef 100644
+--- a/build/app/style.css
++++ b/build/app/style.css
+@@ -100,6 +100,58 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(rgba(2
+ .panel.active{display:block}
+
+ /* ---- SLIDERS ---- */
++.sr{display:grid;grid-template-columns:1fr;gap:1px;margin-bottom:2px}
++.sr-row{display:grid;grid-template-columns:118px 1fr 58px;align-items:center;gap:8px;padding:5px 6px;border-radius:7px;position:relative;transition:background 0.12s}
++.sr-row:hover{background:rgba(255,255,255,0.024)}
++.sr-label{font-size:0.67rem;font-weight:500;color:var(--text2);cursor:help;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px;min-width:0}
++.sr-info{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;font-size:0.48rem;font-weight:700;color:var(--dim);border:1px solid rgba(255,255,255,0.1);flex-shrink:0;line-height:1;font-style:normal;pointer-events:none;margin-left:auto}
++.sr-val{font-family:var(--fm);font-size:0.62rem;font-weight:500;color:var(--red2);text-align:right;background:rgba(220,38,38,0.07);border:1px solid rgba(220,38,38,0.12);border-radius:5px;padding:2px 5px;white-space:nowrap;min-width:0;transition:border-color 0.15s,color 0.15s}
++.sr-row:hover .sr-val{border-color:rgba(220,38,38,0.22)}
++
++/* Track & thumb — scoped to parameter rows only; #tpSeek uses browser-default */
++/* Track & thumb */
++.sr-row > input[type="range"]{
++  -webkit-appearance:none;appearance:none;
++  width:100%;height:5px;border-radius:3px;
++  background:linear-gradient(to right,var(--red) 0%,var(--red) var(--pct,50%),var(--s4) var(--pct,50%),var(--s4) 100%);
++  outline:none;cursor:pointer;transition:height 0.1s}
++.sr-row > input[type="range"]::-webkit-slider-runnable-track{height:5px;border-radius:3px}
++.sr-row > input[type="range"]::-webkit-slider-thumb{
++  -webkit-appearance:none;width:16px;height:16px;border-radius:50%;
++  background:#fff;border:2.5px solid var(--red);
++  cursor:pointer;margin-top:-5.5px;
++  box-shadow:0 1px 5px rgba(0,0,0,0.45),0 0 0 0 rgba(220,38,38,0);
++  transition:box-shadow 0.15s,transform 0.1s,border-color 0.1s}
++.sr-row > input[type="range"]::-webkit-slider-thumb:hover{
++  transform:scale(1.18);
++  box-shadow:0 2px 8px rgba(0,0,0,0.5),0 0 0 5px rgba(220,38,38,0.15)}
++.sr-row > input[type="range"]:active::-webkit-slider-thumb{
++  transform:scale(1.08);
++  box-shadow:0 2px 12px rgba(0,0,0,0.55),0 0 0 7px rgba(220,38,38,0.2)}
++.sr-row > input[type="range"]::-moz-range-track{height:5px;border-radius:3px;background:var(--s4);border:none}
++.sr-row > input[type="range"]::-moz-range-progress{height:5px;border-radius:3px;background:var(--red)}
++.sr-row > input[type="range"]::-moz-range-thumb{
++  width:16px;height:16px;border-radius:50%;
++  background:#fff;border:2.5px solid var(--red);
++  cursor:pointer;box-shadow:0 1px 5px rgba(0,0,0,0.45)}
++
++/* Realtime sliders — cyan accent */
++.sr-row > input[type="range"].realtime{
++  background:linear-gradient(to right,var(--cyan) 0%,var(--cyan) var(--pct,50%),var(--s4) var(--pct,50%),var(--s4) 100%)}
++.sr-row > input[type="range"].realtime::-webkit-slider-thumb{
++  border-color:var(--cyan);
++  box-shadow:0 1px 5px rgba(0,0,0,0.45),0 0 0 0 rgba(34,211,238,0)}
++.sr-row > input[type="range"].realtime::-webkit-slider-thumb:hover{
++  box-shadow:0 2px 8px rgba(0,0,0,0.5),0 0 0 5px rgba(34,211,238,0.2)}
++.sr-row > input[type="range"].realtime:active::-webkit-slider-thumb{
++  box-shadow:0 2px 12px rgba(0,0,0,0.55),0 0 0 7px rgba(34,211,238,0.25)}
++.sr-row > input[type="range"].realtime::-moz-range-progress{background:var(--cyan)}
++.sr-row > input[type="range"].realtime::-moz-range-thumb{border-color:var(--cyan)}
++.sr-row:hover input[type="range"].realtime + .sr-val{border-color:rgba(34,211,238,0.25);color:var(--cyan)}
++.sr-row > input[type="range"].realtime ~ .sr-val{color:var(--cyan);border-color:rgba(34,211,238,0.12);background:rgba(34,211,238,0.06)}
++input[type="range"].realtime ~ .sr-val{color:var(--cyan);border-color:rgba(34,211,238,0.12);background:rgba(34,211,238,0.06)}
++
++.rt-badge{display:inline-block;font-size:0.44rem;padding:1px 4px;border-radius:3px;background:rgba(34,211,238,0.12);color:var(--cyan);font-weight:700;vertical-align:middle;margin-left:2px;letter-spacing:0.06em;border:1px solid rgba(34,211,238,0.2)}
+ .sr{display:grid;grid-template-columns:1fr;gap:0;margin-bottom:2px}
+ .sr-row{display:grid;grid-template-columns:130px 1fr 48px;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.02);position:relative}
+ .sr-row:last-child{border-bottom:none}
+@@ -215,6 +267,10 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
+ .slider-tooltip{position:fixed;z-index:9999;background:var(--s4);color:var(--text);border:1px solid var(--border2);border-radius:var(--rs);padding:6px 10px;font-size:0.65rem;max-width:240px;line-height:1.4;pointer-events:none;opacity:0;transition:opacity 0.15s;box-shadow:0 8px 24px rgba(0,0,0,0.5)}
+ .slider-tooltip.visible{opacity:1}
+
++/* ---- MOBILE ELEMENTS (hidden on desktop by default) ---- */
++.hdr-stats-toggle{display:none}
++.mobile-action-bar{display:none}
++
+ /* ---- RESPONSIVE ---- */
+ @media(max-width:960px){
+   .main-grid{grid-template-columns:1fr}
+@@ -251,6 +307,12 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
+   box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--cyan),0 2px 8px rgba(0,0,0,0.5)}
+ .sr-row > input[type="range"]:focus-visible::-moz-range-thumb{
+   box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--cyan)}
++  box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--cyan),0 2px 8px rgba(0,0,0,0.5)}
++input[type="range"]:focus-visible{outline:none}
++input[type="range"]:focus-visible::-webkit-slider-thumb{
++  box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--cyan),0 2px 8px rgba(0,0,0,0.5)}
++input[type="range"]:focus-visible::-moz-range-thumb{
++  box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--cyan)}
+ :focus-visible {
+   outline: 2px solid var(--cyan);
+   outline-offset: 2px;
+diff --git a/build/index.html b/build/index.html
+index 4018928..cad3624 100644
+--- a/build/index.html
++++ b/build/index.html
+@@ -30,7 +30,8 @@ h1 em{font-style:italic;color:var(--cyan)}
+ .expand-arrow{font-size:0.8rem;color:var(--dim);transition:transform 0.3s;display:inline-block}
+ .card-expand.open .expand-arrow{transform:rotate(90deg)}
+ .specs-detail{max-height:0;overflow:hidden;transition:max-height 0.4s ease,opacity 0.3s;opacity:0;margin-top:0}
+-.card-expand.open .specs-detail{max-height:800px;opacity:1;margin-top:1rem}
++.card-expand.open .specs-detail{max-height:3000px;opacity:1;margin-top:1rem}
++.card-expand.open{grid-column:1/-1}
+ .spec-group{margin-bottom:1rem}
+ .spec-group h3{font-family:var(--mono);font-size:0.65rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--cyan);margin-bottom:0.4rem}
+ .spec-group p{font-size:0.78rem;color:var(--dim);line-height:1.5;margin-bottom:0.2rem}
+@@ -40,6 +41,37 @@ h1 em{font-style:italic;color:var(--cyan)}
+ .spec-pills span{font-family:var(--mono);font-size:0.55rem;padding:0.15rem 0.45rem;border-radius:3px;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.12);color:var(--dim)}
+ .spec-models{display:flex;flex-direction:column;gap:0.25rem}
+ .spec-models span{font-size:0.75rem;color:var(--dim)}
++/* Tech-card styles (adapted from app) */
++.tech-card-hdr{margin-bottom:14px}
++.tech-card-title-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--dim);flex-wrap:wrap}
++.tech-card-badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.52rem;font-weight:700;letter-spacing:0.1em;color:var(--cyan);background:rgba(0,212,255,0.07);border:1px solid rgba(0,212,255,0.18)}
++.tech-card-badge-new{color:var(--cyan);background:rgba(0,212,255,0.07);border-color:rgba(0,212,255,0.18)}
++.tech-card-sub{font-size:0.72rem;color:var(--dim);line-height:1.5;max-width:680px}
++.tech-pipeline-flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:rgba(13,15,20,0.7);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:14px}
++.tpf-step{display:flex;align-items:center;gap:5px}
++.tpf-num{font-family:var(--mono);font-size:0.6rem;font-weight:700;color:var(--cyan);background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.2);border-radius:3px;padding:1px 5px;white-space:nowrap}
++.tpf-lbl{font-size:0.65rem;color:var(--dim);white-space:nowrap}
++.tpf-arrow{color:var(--dim);flex-shrink:0}
++.tech-features-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
++@media(max-width:640px){.tech-features-grid{grid-template-columns:1fr}}
++.tf-item{background:rgba(13,15,20,0.7);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:flex;gap:10px;transition:border-color 0.15s}
++.tf-item:hover{border-color:rgba(0,212,255,0.25)}
++.tf-icon{width:32px;height:32px;flex-shrink:0;border-radius:6px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.15);display:flex;align-items:center;justify-content:center;color:var(--cyan)}
++.tf-body{min-width:0}
++.tf-title{font-size:0.72rem;font-weight:700;color:var(--text);margin-bottom:3px}
++.tf-desc{font-size:0.62rem;color:var(--dim);line-height:1.55;margin-bottom:5px}
++.tf-formula{display:block;font-family:var(--mono);font-size:0.56rem;color:var(--cyan);background:rgba(0,212,255,0.05);border-left:2px solid rgba(0,212,255,0.3);padding:3px 7px;border-radius:0 3px 3px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
++.tf-item-highlight{border-color:rgba(0,212,255,0.2);background:linear-gradient(135deg,rgba(13,15,20,0.7),rgba(0,212,255,0.03))}
++.tf-icon-ml{background:rgba(139,92,246,0.08);border-color:rgba(139,92,246,0.2);color:var(--violet)}
++.tf-icon-forensic{background:rgba(0,212,255,0.08);border-color:rgba(0,212,255,0.2);color:var(--cyan)}
++.tf-icon-viz{background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.2);color:var(--green)}
++.tf-badge-ml{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(139,92,246,0.1);color:var(--violet);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
++.tf-badge-new{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(0,212,255,0.1);color:var(--cyan);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
++.tf-badge-restored{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(16,185,129,0.1);color:var(--green);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
++.tech-stack-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--border)}
++.ts-label{font-size:0.55rem;font-weight:700;letter-spacing:0.1em;color:var(--dim);text-transform:uppercase;margin-right:3px}
++.ts-chip{font-family:var(--mono);font-size:0.58rem;padding:2px 8px;border-radius:3px;background:rgba(26,30,42,0.5);border:1px solid var(--border);color:var(--dim)}
++.ts-chip-highlight{background:rgba(0,212,255,0.08);border-color:rgba(0,212,255,0.2);color:var(--cyan)}
+ </style>
+ </head>
+ <body>
+@@ -52,13 +84,13 @@ h1 em{font-style:italic;color:var(--cyan)}
+ <div class="cards">
+   <a href="/app/" class="card">
+     <span class="card-tag">Launch App</span>
+-    <h2>Engineer Mode v19.0</h2>
++    <h2>Engineer Mode v22.0</h2>
+     <p>Full processing application. 52 real-time sliders, 3D spectrogram, multi-band DSP chain, A/B comparison. Drop audio and process.</p>
+     <span class="arrow">→</span>
+   </a>
+ </div>
+
+-<div class="footer">Threads from Space v8 Architecture — Privacy-First — March 2026</div>
++<div class="footer">Threads from Space v10 Architecture — Privacy-First — March 2026</div>
+
+ <!-- Vercel Speed Insights -->
+ <script>
+diff --git a/index.html b/index.html
+index fc69bdd..e427f98 100644
+--- a/index.html
++++ b/index.html
+@@ -47,7 +47,7 @@
+         </div>
+         <div class="upload-row">
+           <button id="micBtn" class="btn btn-mic">
+-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
++            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+             <span id="micLabel">Record</span>
+           </button>
+           <span id="fileInfo" class="file-info">No file loaded</span>
+@@ -99,7 +99,7 @@
+       <!-- Actions -->
+       <div class="actions-row">
+         <button id="processBtn" class="btn btn-primary" disabled>
+-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
++          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+           Process (35-Stage)
+         </button>
+         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
+@@ -116,11 +116,11 @@
+       <!-- Save -->
+       <div class="save-row">
+         <button id="saveOrigBtn" class="btn btn-save" disabled>
+-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
++          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+           Save Original WAV
+         </button>
+         <button id="saveProcBtn" class="btn btn-save-proc" disabled>
+-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
++          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+           Save Processed WAV
+         </button>
+       </div>
+@@ -137,11 +137,11 @@
+       <!-- Transport -->
+       <div class="card transport-card">
+         <div class="transport-row">
+-          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg></button>
+-          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+-          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+-          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
+-          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
++          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg></button>
++          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
++          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
++          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
++          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
+           <div class="tp-time"><span id="tpCur">0:00</span> / <span id="tpTotal">0:00</span></div>
+           <input type="range" aria-label="Seek playback" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled />
+           <div class="tp-speed">
+diff --git a/public/app/index.html b/public/app/index.html
+index a012ace..a711bc8 100644
+--- a/public/app/index.html
++++ b/public/app/index.html
+@@ -49,7 +49,7 @@
+         </div>
+         <div class="upload-row">
+           <button id="micBtn" class="btn btn-mic">
+-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
++            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+             <span id="micLabel">Record</span>
+           </button>
+           <span id="fileInfo" class="file-info">No file loaded</span>
+@@ -101,7 +101,7 @@
+       <!-- Actions -->
+       <div class="actions-row">
+         <button id="processBtn" class="btn btn-primary" disabled>
+-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
++          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+           Process (32-Stage)
+         </button>
+         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
+@@ -120,11 +120,11 @@
+       <!-- Save -->
+       <div class="save-row">
+         <button id="saveOrigBtn" class="btn btn-save" disabled>
+-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
++          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+           Save Original WAV
+         </button>
+         <button id="saveProcBtn" class="btn btn-save-proc" disabled>
+-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
++          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+           Save Processed WAV
+         </button>
+       </div>
+@@ -141,11 +141,11 @@
+       <!-- Transport -->
+       <div class="card transport-card">
+         <div class="transport-row">
+-          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg></button>
+-          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+-          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+-          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
+-          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
++          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg></button>
++          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
++          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
++          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
++          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
+           <div class="tp-time"><span id="tpCur">0:00</span> / <span id="tpTotal">0:00</span></div>
+           <input type="range" aria-label="Seek playback" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled />
+           <div class="tp-speed">
