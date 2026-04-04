@@ -1,5 +1,5 @@
 /* ============================================
-   VoiceIsolate Pro v21.0 — Mobile Styles
+   VoiceIsolate Pro v22.1 — Mobile Styles
    Capacitor Android/iOS native shell support
    Safe area insets, touch targets, gestures
    Complete mobile UI layout
@@ -248,23 +248,22 @@ html {
     min-width: 52px;
     text-align: center;
   }
-  input[type="range"] {
+  .sr-row > input[type="range"] {
     grid-column: 1 / -1;
     grid-row: 2;
     height: var(--mob-slider-track);
     border-radius: calc(var(--mob-slider-track) / 2);
-    /* track gradient shape still driven by --pct */
   }
-  input[type="range"]::-webkit-slider-runnable-track {
+  .sr-row > input[type="range"]::-webkit-slider-runnable-track {
     height: var(--mob-slider-track);
   }
-  input[type="range"]::-webkit-slider-thumb {
+  .sr-row > input[type="range"]::-webkit-slider-thumb {
     width: var(--mob-slider-thumb);
     height: var(--mob-slider-thumb);
     margin-top: calc((var(--mob-slider-thumb) / -2) + (var(--mob-slider-track) / 2));
     border-width: 3px;
   }
-  input[type="range"]::-moz-range-thumb {
+  .sr-row > input[type="range"]::-moz-range-thumb {
     width: var(--mob-slider-thumb);
     height: var(--mob-slider-thumb);
     border-width: 3px;
@@ -310,7 +309,6 @@ html {
     padding: 11px 14px;
     border-radius: 9px;
   }
-  /* Hide abort in actions-row; shown in sticky bar if needed */
 
   /* ── Pipeline box ── */
   .pipeline-box { padding: 8px 10px; }
@@ -332,6 +330,83 @@ html {
 
   /* ── Footer ── */
   .ftr { flex-direction: column; text-align: center; gap: 2px; font-size: 0.54rem; }
+
+  /* ── Transport controls ── */
+  .transport-card { padding: 8px; }
+  .transport-row {
+    display: grid;
+    grid-template-columns: repeat(5, auto) 1fr;
+    grid-template-rows: auto auto;
+    gap: 6px;
+    align-items: center;
+  }
+  .btn-tp {
+    padding: 8px;
+    border-radius: 8px;
+  }
+  #tpPlay, #tpPause, #tpStop, #tpRew, #tpFwd { grid-row: 1; }
+  .tp-time {
+    grid-row: 1;
+    grid-column: 6;
+    text-align: right;
+    font-size: 0.65rem;
+  }
+  .tp-seek {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    width: 100%;
+    padding: 14px 0;
+  }
+  .tp-speed { display: none; }
+  .tp-ab {
+    grid-row: 1;
+    grid-column: 5;
+    display: none;
+  }
+  .tp-ab-label { display: none; }
+
+  /* ── Visualizations ── */
+  .wave-row { grid-template-columns: 1fr !important; gap: 6px; }
+  .spectro3d-container { height: 160px; }
+  .spectro2d { height: 90px; }
+  .wave-cv   { height: 60px; }
+  .freq-cv   { height: 70px; }
+  .fs-wrap   { height: 130px; }
+  .viz-hdr   { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .viz-actions { flex-wrap: wrap; gap: 4px; }
+
+  /* ── Sticky mobile action bar ── */
+  .mobile-action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: rgba(6,6,9,0.97);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(0,245,255,0.12);
+    padding: 8px 12px calc(8px + var(--safe-bottom));
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .mobile-action-bar .btn-primary {
+    flex: 1;
+    justify-content: center;
+    font-size: 0.82rem;
+    padding: 12px 16px;
+    border-radius: 10px;
+  }
+  .mobile-action-bar .btn-reprocess,
+  .mobile-action-bar .btn-danger {
+    flex-shrink: 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+  }
+
+  /* Hide the in-panel actions-row on mobile (moved to sticky bar) */
+  .actions-row { display: none; }
 }
 
 /* ═══════════════════════════════════════════

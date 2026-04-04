@@ -236,6 +236,7 @@ const LicenseManager = (() => {
     try {
       const parts = token.split('.');
       if (parts.length !== 3) return null;
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
       const payload = JSON.parse(atob(parts[1]));
       if (!payload.tier || !payload.exp) return null;
       if (Date.now() / 1000 > payload.exp) return null; // expired

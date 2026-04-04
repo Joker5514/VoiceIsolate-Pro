@@ -29,7 +29,8 @@ const MODEL_PATHS = {
   demucs: 'models/demucs-v4-int8.onnx',
   bsrnn: 'models/bsrnn-int8.onnx',
   vad: 'models/silero-vad.onnx',
-  ecapa: 'models/ecapa-tdnn-int8.onnx'
+  ecapa: 'models/ecapa-tdnn-int8.onnx',
+  dns: 'models/dns-int8.onnx'   // Deep Noise Suppression (Microsoft DNS / RNNoise-style)
 };
 
 // Default blend weights
@@ -76,6 +77,11 @@ self.onmessage = async (e) => {
 
     case 'enroll':
       await handleEnroll(msg);
+      break;
+
+    case 'dns':
+      // Deep Noise Suppression via DNS ONNX model
+      await handleDNS(msg);
       break;
 
     case 'dispose':
@@ -375,6 +381,40 @@ async function handleEnroll(msg) {
   }
 }
 
+// ---- DNS (Deep Noise Suppression) ----
+
+/**
+ * Handle DNS inference for one-shot offline noise suppression.
+ * The DNS model accepts a frame of audio (typically 512 or 1024 samples)
+ * and returns a suppressed frame. Falls back gracefully if model not loaded.
+ */
+async function handleDNS(msg) {
+  const id = msg.id;
+  if (!sessions.dns) {
+    self.postMessage({ type: 'dnsResult', id, signal: msg.data, msg: 'DNS model not loaded — passthrough' });
+    return;
+  }
+
+  try {
+    const data = new Float32Array(msg.data);
+    const frameLen = data.length;
+    const tensor = new ort.Tensor('float32', data, [1, 1, frameLen]);
+    try {
+      const result = await sessions.dns.run({ input: tensor });
+      // Use the first output key; DNS models typically have a single output ('output' or 'audio').
+      // If the model has multiple outputs, the primary denoised signal is conventionally first.
+      const output = result[Object.keys(result)[0]];
+      const signal = new Float32Array(output.data);
+      output.dispose?.();
+      self.postMessage({ type: 'dnsResult', id, signal }, [signal.buffer]);
+    } finally {
+      tensor.dispose?.();
+    }
+  } catch (err) {
+    self.postMessage({ type: 'error', id, msg: err.message });
+  }
+}
+
 // ---- Disposal ----
 async function disposeAll() {
   running = false;
@@ -382,7 +422,9 @@ async function disposeAll() {
     try {
       await session.release?.();
       log('info', `Disposed model: ${name}`);
-    } catch (_) {}
+    } catch (e) {
+      log('error', `Failed to dispose model ${name}: ${e}`);
+    }
   }
   sessions = {};
 }

@@ -99,10 +99,5 @@ app.get('/api/version', (_req, res) => {
 
 // ── Start ────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`\n  ╔══════════════════════════════════════════════╗`);
-  console.log(`  ║  VoiceIsolate Pro v${APP_VERSION} — Dev Server    ║`);
-  console.log(`  ║  http://localhost:${PORT}                       ║`);
-  console.log(`  ║  COOP/COEP: enabled (SharedArrayBuffer ✓)     ║`);
-  console.log(`  ║  Mobile: Capacitor Android/iOS ready          ║`);
-  console.log(`  ╚══════════════════════════════════════════════╝\n`);
+  console.log(`VoiceIsolate Pro Dev Server running on port ${PORT}`);
 });

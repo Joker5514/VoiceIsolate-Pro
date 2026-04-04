@@ -1,7 +1,8 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 – Engineer Mode
-   Threads from Space v9 · Hybrid ML+DSP
+   VoiceIsolate Pro v22.0 – Engineer Mode
+   Threads from Space v11 · Hybrid ML+DSP
    52 Sliders · 6-Panel Diagnostics · 3D Spectrogram
+   35-Stage Deca-Pass Pipeline with Real STFT DSP
    ============================================ */
 
 // ---- SLIDER DEFINITIONS (52 total) ----
@@ -87,15 +88,38 @@ const PRESETS = {
 };
 
 const STAGES = [
-  'Input Decode','Channel Analysis','DC Offset Removal','Peak Normalization',
-  'Noise Floor Profiling','Spectral Fingerprint','Voice Activity Detection',
-  'High-Pass Filter','Low-Pass Filter','Voice Band Isolation',
-  'Spectral Subtraction','Adaptive Noise Gate','Wiener Filter',
-  'Sub EQ','Bass EQ','Warmth EQ','Body EQ','Low-Mid EQ','Mid EQ',
-  'Presence EQ','Clarity EQ','Air EQ','Brilliance EQ',
-  'De-Essing','Spectral Tilt','Dereverberation',
-  'Harmonic Reconstruction','Dynamics Compression','Brickwall Limiter',
-  'Artifact Score','Neural Vocoder Check','Dry/Wet Mix & Final Render'
+  'S01: Input Decode',                    // 0
+  'S02: Buffer Allocation',               // 1
+  'S03: DC Offset Removal',               // 2
+  'S04: Peak Normalization',              // 3
+  'S05: Voice Activity Detection',        // 4
+  'S06: Noise Gate (Time-Domain)',        // 5
+  'S07: Click/Pop Removal',              // 6
+  'S08: Hum Removal (60Hz + Harmonics)', // 7
+  'S09: De-Essing',                       // 8
+  'S10: Forward STFT',                    // 9
+  'S11: Adaptive Wiener NR',             // 10
+  'S12: Residual Wiener Pass',           // 11
+  'S13: ERB Spectral Gate (32-band)',    // 12
+  'S14: Voice-Band Spectral Emphasis',   // 13
+  'S15: Crosstalk Cancellation',         // 14
+  'S16: Temporal Smoothing (Anti-Garble)', // 15
+  'S17: Spectral Tilt Compensation',     // 16
+  'S18: Dereverberation',                // 17
+  'S19: Harmonic Reconstruction v2',     // 18
+  'S20: Inverse STFT',                   // 19
+  'S21: OfflineAudioContext Setup',      // 20
+  'S22: High-Pass / Low-Pass Filters',  // 21
+  'S23: 10-Band Parametric EQ',          // 22
+  'S24: Dynamics Compression',           // 23
+  'S25: Brickwall Limiter',              // 24
+  'S26: Rendering OfflineAudioContext',  // 25
+  'S27: Post-Render Cleanup',           // 26
+  'S28: Dry/Wet Mix',                    // 27
+  'S29: Peak Normalization',             // 28
+  'S30: Quality Metrics',                // 29
+  'S31: Waveform Update',               // 30
+  'S32: Final Export Ready'              // 31
 ];
 
 // ============================================
@@ -131,6 +155,8 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
+    this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
+    this.renderCustomPresets();
     // Diagnostic state
     this.oscMode = 'wave';
     this.overlays = { noise: true, erb: true, ml: false };
@@ -175,8 +201,8 @@ class VoiceIsolatePro {
         const rtCls = s.rt ? ' realtime' : '';
         const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
         h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
-          '<label class="sr-label" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
-          '<input type="range" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
+          '<label class="sr-label" for="' + s.id + '" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
+          '<input type="range" aria-label="' + s.label.replace(/"/g, '&quot;') + (s.rt ? ' (Real-time)' : '') + '" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
           '<span class="sr-val" id="' + s.id + 'Val">' + s.val + s.unit + '</span></div>';
       }
       h += '</div>';
@@ -224,6 +250,7 @@ class VoiceIsolatePro {
     ['dragleave','drop'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uz.classList.remove('dragover'); }));
     uz.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
     uz.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
+    uz.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.dom.fileInput.click(); } });
     this.dom.fileBtn.addEventListener('click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
     this.dom.fileInput.addEventListener('change', e => { if (e.target.files[0]) this.handleFile(e.target.files[0]); this.dom.fileInput.value = ''; });
     this.dom.micBtn.addEventListener('click', () => this.toggleRecording());
@@ -247,10 +274,19 @@ class VoiceIsolatePro {
     document.querySelectorAll('.btn-preset').forEach(b => b.addEventListener('click', () => this.applyPreset(b.dataset.preset)));
     const saveBtn = document.getElementById('saveCustomPresetBtn');
     if (saveBtn) saveBtn.addEventListener('click', () => this.saveCustomPreset());
+    const nameInput = document.getElementById('customPresetName');
+    if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); this.saveCustomPreset(); } });
     document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', () => this.onSlider(el)));
     document.querySelectorAll('.sr-row').forEach(r => {
-      r.addEventListener('mouseenter', e => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }});
-      r.addEventListener('mouseleave', () => this.dom.tooltip.classList.remove('visible'));
+      const showTt = () => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }};
+      const hideTt = () => this.dom.tooltip.classList.remove('visible');
+      r.addEventListener('mouseenter', showTt);
+      r.addEventListener('mouseleave', hideTt);
+      const input = r.querySelector('input');
+      if (input) {
+        input.addEventListener('focus', showTt);
+        input.addEventListener('blur', hideTt);
+      }
     });
     this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
     this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
@@ -662,7 +698,9 @@ class VoiceIsolatePro {
       n.lim.threshold.setTargetAtTime(p.limThresh,t,s); n.lim.release.setTargetAtTime(p.limRelease/1000,t,s);
       n.outG.gain.setTargetAtTime(Math.pow(10,p.outGain/20),t,s);
       n.wG.gain.setTargetAtTime(p.outWidth/100,t,s);
-    } catch(e) {}
+    } catch(e) {
+      console.error('Error updating live chain:', e);
+    }
   }
 
   teardownChain() {
@@ -671,7 +709,7 @@ class VoiceIsolatePro {
     this.liveNodes = {}; this.liveChainBuilt = false;
   }
 
-  // ======== 32-STAGE OFFLINE PIPELINE ========
+  // ======== 35-STAGE DECA-PASS OFFLINE PIPELINE (v22) ========
   async runPipeline() {
     if (!this.inputBuffer || this.isProcessing) return;
     this.isProcessing = true; this.abortFlag = false;
@@ -679,86 +717,310 @@ class VoiceIsolatePro {
     this.dom.saveProcBtn.disabled = true; this.dom.tpAB.disabled = true;
     this.setStatus('PROCESSING');
     const t0 = performance.now();
-    const p = this.params; const sr = this.inputBuffer.sampleRate; const numCh = this.inputBuffer.numberOfChannels; const len = this.inputBuffer.length; const total = STAGES.length;
+    const p = this.params;
+    const sr = this.inputBuffer.sampleRate;
+    const numCh = this.inputBuffer.numberOfChannels;
+    const len = this.inputBuffer.length;
+    const total = STAGES.length;
+    const fftSize = 4096;
+    const hopSize = 1024;
+
     try {
-      const ofl = new OfflineAudioContext(numCh, len, sr);
-      const src = ofl.createBufferSource(); src.buffer = this.inputBuffer;
-      for (let i = 0; i < 7; i++) { await this.pip(i,total); if (this.abortFlag) throw 'abort'; }
-      await this.pip(7,total); const hp = ofl.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=p.hpFreq; hp.Q.value=p.hpQ;
-      await this.pip(8,total); const lp = ofl.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=p.lpFreq; lp.Q.value=p.lpQ;
-      await this.pip(9,total); const vbp = ofl.createBiquadFilter(); vbp.type='peaking'; vbp.frequency.value=1500; vbp.Q.value=0.5; vbp.gain.value=(p.voiceIso/100)*6;
-      await this.pip(10,total);
-      const gate = ofl.createDynamicsCompressor(); gate.threshold.value=p.gateThresh; gate.knee.value=2; gate.ratio.value=20; gate.attack.value=p.gateAttack/1000; gate.release.value=p.gateRelease/1000;
-      await this.pip(11,total); if (this.abortFlag) throw 'abort';
-      await this.pip(12,total); const notch = ofl.createBiquadFilter(); notch.type='notch'; notch.frequency.value=60; notch.Q.value=30;
-      const eqDefs = [{id:'eqSub',f:40,t:'lowshelf'},{id:'eqBass',f:100,t:'peaking',q:1.2},{id:'eqWarmth',f:200,t:'peaking',q:1},{id:'eqBody',f:400,t:'peaking',q:1},{id:'eqLowMid',f:800,t:'peaking',q:1},{id:'eqMid',f:1500,t:'peaking',q:1.2},{id:'eqPresence',f:3000,t:'peaking',q:1.5},{id:'eqClarity',f:5000,t:'peaking',q:1.2},{id:'eqAir',f:10000,t:'highshelf'},{id:'eqBrill',f:16000,t:'highshelf'}];
-      const eqN = [];
-      for (let i=0;i<eqDefs.length;i++) {
-        await this.pip(13+i,total);
-        const b=eqDefs[i]; const n=ofl.createBiquadFilter(); n.type=b.t; n.frequency.value=b.f; if(b.q)n.Q.value=b.q; n.gain.value=p[b.id]||0; eqN.push(n);
-        if (this.abortFlag) throw 'abort';
-      }
-      await this.pip(23,total); const de=ofl.createBiquadFilter(); de.type='peaking'; de.frequency.value=p.deEssFreq; de.Q.value=3; de.gain.value=-(p.deEssAmt/100)*10;
-      await this.pip(24,total); const tlt=ofl.createBiquadFilter(); tlt.type='highshelf'; tlt.frequency.value=1000; tlt.gain.value=p.specTilt;
-      await this.pip(25,total); const drv=ofl.createBiquadFilter(); drv.type='highpass'; drv.frequency.value=100+(p.derevAmt/100)*200; drv.Q.value=0.5;
-      await this.pip(26,total); const hrm=ofl.createWaveShaper(); hrm.curve=this.makeHarm(p.harmRecov/100,p.harmOrder); hrm.oversample='2x';
-      await this.pip(27,total); const cmp=ofl.createDynamicsCompressor(); cmp.threshold.value=p.compThresh; cmp.ratio.value=p.compRatio; cmp.attack.value=p.compAttack/1000; cmp.release.value=p.compRelease/1000; cmp.knee.value=p.compKnee;
-      const mkG=ofl.createGain(); mkG.gain.value=Math.pow(10,p.compMakeup/20);
-      await this.pip(28,total); const lim=ofl.createDynamicsCompressor(); lim.threshold.value=p.limThresh; lim.knee.value=0; lim.ratio.value=20; lim.attack.value=0.001; lim.release.value=p.limRelease/1000;
-      const oG=ofl.createGain(); oG.gain.value=Math.pow(10,p.outGain/20);
+      const DSP = window.DSPCore;
+      if (!DSP) throw new Error('DSPCore not loaded — ensure dsp-core.js is included');
+
+      // ═══ PASS 1: INGESTION & PRE-CONDITIONING (per-channel) ═══
+      await this.pip(0, total); // S01: Decode (already done)
       if (this.abortFlag) throw 'abort';
-      const chain=[src,hp,lp,vbp,gate,notch,...eqN,de,tlt,drv,hrm,cmp,mkG,lim,oG];
-      for(let i=0;i<chain.length-1;i++)chain[i].connect(chain[i+1]);
-      chain[chain.length-1].connect(ofl.destination);
+
+      const cleanChannels = [];
+      for (let ch = 0; ch < numCh; ch++) {
+        // Get raw channel data (copy to avoid mutating input)
+        let data = new Float32Array(this.inputBuffer.getChannelData(ch));
+
+        await this.pip(1, total); // S02: Buffer allocation
+        if (this.abortFlag) throw 'abort';
+
+        // S03: DC Offset Removal
+        await this.pip(2, total);
+        data = DSP.removeDCOffset(data, sr);
+
+        // S04: Peak normalization to -1 dBFS
+        await this.pip(3, total);
+        data = DSP.peakNormalize(data, -1);
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ PASS 2: ANALYSIS ═══
+        // S05: VAD for noise profiling
+        await this.pip(4, total);
+        const vad = new DSP.VADProcessor(sr, 20, p.nrSensitivity / 100);
+        const vadConf = vad.processSignal(data);
+
+        // S06: Noise gate (time-domain, before spectral)
+        await this.pip(5, total);
+        data = DSP.noiseGate(data, {
+          threshold: p.gateThresh,
+          range: p.gateRange,
+          attack: p.gateAttack,
+          release: p.gateRelease,
+          hold: p.gateHold,
+          lookahead: p.gateLookahead
+        }, sr);
+        if (this.abortFlag) throw 'abort';
+
+        // S07: Click/pop removal
+        await this.pip(6, total);
+        data = DSP.removeClicks(data, 3);
+
+        // S08: Hum removal (50/60 Hz + harmonics)
+        await this.pip(7, total);
+        const humFreqs = [60, 120, 180, 240, 300, 360];
+        DSP.cascadedNotch(data, humFreqs, 35, sr);
+
+        // S09: De-essing (time-domain)
+        await this.pip(8, total);
+        data = DSP.deEss(data, p.deEssFreq, p.deEssAmt, sr);
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ SINGLE FORWARD STFT ═══
+        await this.pip(9, total);
+        const stft = DSP.forwardSTFT(data, fftSize, hopSize);
+        let { mag, phase } = stft;
+
+        // ═══ PASS 3: SPECTRAL NOISE REDUCTION (all in-place on mag) ═══
+        // S10: Adaptive Wiener noise subtraction with VAD-gated profiling
+        await this.pip(10, total);
+        if (p.nrAmount > 0) {
+          const tracker = new window.AdaptiveNoiseFloor(
+            mag[0].length,
+            200 + p.nrSmoothing * 3,  // smoothing ms
+            hopSize, sr
+          );
+          const overSub = 1.0 + (p.nrSpectralSub / 100) * 4;  // 1x - 5x over-subtraction
+          const spectralFloor = Math.pow(10, p.nrFloor / 20);
+          DSP.applyAdaptiveWiener(mag, vadConf, tracker, {
+            overSubtraction: overSub,
+            spectralFloor: Math.max(0.0001, spectralFloor)
+          });
+        }
+        if (this.abortFlag) throw 'abort';
+
+        // S11: Secondary Wiener pass for residual noise
+        await this.pip(11, total);
+        if (p.nrAmount > 30) {
+          // Build noise profile from quietest frames
+          const noiseProfile = new Float32Array(mag[0].length);
+          let noiseFrames = 0;
+          for (let f = 0; f < mag.length; f++) {
+            const vi = Math.min(f, vadConf.length - 1);
+            if (vadConf[vi] < 0.2) {
+              for (let k = 0; k < mag[f].length; k++) noiseProfile[k] += mag[f][k];
+              noiseFrames++;
+            }
+          }
+          if (noiseFrames > 0) {
+            for (let k = 0; k < noiseProfile.length; k++) noiseProfile[k] /= noiseFrames;
+            DSP.wienerMMSE(mag, noiseProfile, p.nrAmount * 0.6);
+          }
+        }
+        if (this.abortFlag) throw 'abort';
+
+        // S12: 32-band ERB spectral gate
+        await this.pip(12, total);
+        DSP.spectralGate(mag, p.nrFloor, sr);
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ PASS 4: VOICE ISOLATION (spectral domain) ═══
+        // S13: Voice-band spectral emphasis
+        await this.pip(13, total);
+        if (p.voiceIso > 0 || p.bgSuppress > 0) {
+          const voiceLoBin = Math.round(p.voiceFocusLo / (sr / fftSize));
+          const voiceHiBin = Math.round(p.voiceFocusHi / (sr / fftSize));
+          const halfN = mag[0].length;
+          const suppressGain = 1 - (p.bgSuppress / 100) * 0.95;
+          const boostGain = 1 + (p.voiceIso / 100) * 0.5;
+          for (let f = 0; f < mag.length; f++) {
+            for (let k = 0; k < halfN; k++) {
+              if (k >= voiceLoBin && k <= voiceHiBin) {
+                mag[f][k] *= boostGain;
+              } else {
+                mag[f][k] *= suppressGain;
+              }
+            }
+          }
+        }
+        if (this.abortFlag) throw 'abort';
+
+        // S14: Crosstalk cancellation (voice-band SNR enhancement)
+        await this.pip(14, total);
+        // Placeholder for ML separation - uses spectral masking approximation
+        if (p.crosstalkCancel > 0) {
+          const cancelAmt = p.crosstalkCancel / 100;
+          for (let f = 0; f < mag.length; f++) {
+            const vi = Math.min(f, vadConf.length - 1);
+            if (vadConf[vi] < 0.3) {
+              for (let k = 0; k < mag[f].length; k++) {
+                mag[f][k] *= (1 - cancelAmt * 0.8);
+              }
+            }
+          }
+        }
+
+        // ═══ PASS 5: SPECTRAL REFINEMENT (Anti-Garble) ═══
+        // S15: Temporal smoothing to kill musical noise / garbled artifacts
+        await this.pip(15, total);
+        DSP.temporalSmooth(mag, Math.max(p.nrSmoothing, 20));
+        if (this.abortFlag) throw 'abort';
+
+        // S16: Spectral tilt compensation
+        await this.pip(16, total);
+        if (Math.abs(p.specTilt) > 0.1) {
+          const halfN = mag[0].length;
+          for (let f = 0; f < mag.length; f++) {
+            for (let k = 0; k < halfN; k++) {
+              const freq = k * sr / fftSize;
+              const octavesFrom1k = freq > 0 ? Math.log2(freq / 1000) : 0;
+              const tiltGain = Math.pow(10, (p.specTilt * octavesFrom1k) / 20);
+              mag[f][k] *= Math.max(0.01, Math.min(10, tiltGain));
+            }
+          }
+        }
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ PASS 6: ROOM CORRECTION ═══
+        // S17: Dereverberation
+        await this.pip(17, total);
+        DSP.dereverb(mag, p.derevAmt, p.derevDecay, sr, hopSize);
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ PASS 7: HARMONIC RECONSTRUCTION ═══
+        // S18: Harmonic enhancement v2 (SBR + formant + breathiness)
+        await this.pip(18, total);
+        DSP.harmonicEnhanceV2(mag, phase, p.harmRecov, {
+          sbr: p.harmOrder >= 4,
+          formantProtection: true,
+          breathinessGain: 0.8,
+          sampleRate: sr,
+          fftSize: fftSize
+        });
+        if (this.abortFlag) throw 'abort';
+
+        // ═══ SINGLE INVERSE STFT ═══
+        await this.pip(19, total);
+        let processed = DSP.inverseSTFT(mag, phase, fftSize, hopSize, data.length);
+
+        // Trim/pad to exact original length
+        if (processed.length > len) processed = processed.subarray(0, len);
+        else if (processed.length < len) {
+          const padded = new Float32Array(len);
+          padded.set(processed);
+          processed = padded;
+        }
+
+        cleanChannels.push(processed);
+      }
+      if (this.abortFlag) throw 'abort';
+
+      // ═══ PASS 8: EQ + DYNAMICS via OfflineAudioContext ═══
+      await this.pip(20, total);
+      // Create intermediate buffer with spectrally-cleaned audio
+      const cleanBuf = this.ctx.createBuffer(numCh, len, sr);
+      for (let ch = 0; ch < numCh; ch++) cleanBuf.getChannelData(ch).set(cleanChannels[ch]);
+
+      // Build Web Audio node chain for EQ + dynamics
+      const ofl = new OfflineAudioContext(numCh, len, sr);
+      const src = ofl.createBufferSource();
+      src.buffer = cleanBuf;
+
+      // HP/LP filters
+      await this.pip(21, total);
+      const hp = ofl.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = p.hpFreq; hp.Q.value = p.hpQ;
+      const lp = ofl.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = p.lpFreq; lp.Q.value = p.lpQ;
+
+      // 10-band EQ
+      await this.pip(22, total);
+      const eqDefs = [
+        {id:'eqSub',f:40,t:'lowshelf'},{id:'eqBass',f:100,t:'peaking',q:1.2},{id:'eqWarmth',f:200,t:'peaking',q:1},
+        {id:'eqBody',f:400,t:'peaking',q:1},{id:'eqLowMid',f:800,t:'peaking',q:1},{id:'eqMid',f:1500,t:'peaking',q:1.2},
+        {id:'eqPresence',f:3000,t:'peaking',q:1.5},{id:'eqClarity',f:5000,t:'peaking',q:1.2},
+        {id:'eqAir',f:10000,t:'highshelf'},{id:'eqBrill',f:16000,t:'highshelf'}
+      ];
+      const eqN = eqDefs.map(b => {
+        const n = ofl.createBiquadFilter(); n.type = b.t; n.frequency.value = b.f;
+        if (b.q) n.Q.value = b.q; n.gain.value = p[b.id] || 0; return n;
+      });
+      if (this.abortFlag) throw 'abort';
+
+      // Compressor + makeup gain
+      await this.pip(23, total);
+      const cmp = ofl.createDynamicsCompressor();
+      cmp.threshold.value = p.compThresh; cmp.ratio.value = p.compRatio;
+      cmp.attack.value = p.compAttack / 1000; cmp.release.value = p.compRelease / 1000; cmp.knee.value = p.compKnee;
+      const mkG = ofl.createGain(); mkG.gain.value = Math.pow(10, p.compMakeup / 20);
+
+      // Limiter
+      await this.pip(24, total);
+      const lim = ofl.createDynamicsCompressor();
+      lim.threshold.value = p.limThresh; lim.knee.value = 0; lim.ratio.value = 20;
+      lim.attack.value = 0.001; lim.release.value = p.limRelease / 1000;
+
+      // Output gain
+      const oG = ofl.createGain(); oG.gain.value = Math.pow(10, p.outGain / 20);
+      if (this.abortFlag) throw 'abort';
+
+      // Wire chain: src → hp → lp → EQ → comp → makeup → lim → outGain → dest
+      const chain = [src, hp, lp, ...eqN, cmp, mkG, lim, oG];
+      for (let i = 0; i < chain.length - 1; i++) chain[i].connect(chain[i + 1]);
+      chain[chain.length - 1].connect(ofl.destination);
       src.start(0);
+
+      await this.pip(25, total);
       const rendered = await ofl.startRendering();
       if (this.abortFlag) throw 'abort';
-      await this.pip(29,total);
-      await this.pip(30,total);
+
+      // ═══ PASS 9: MASTERING ═══
+      await this.pip(26, total);
       let fin = rendered;
-      if (p.nrAmount>0) fin = this.applyNR(fin, p.nrAmount/100, p.nrSmoothing/100, p.nrFloor);
-      if (p.dryWet<100) fin = this.mixDW(this.inputBuffer, fin, p.dryWet/100);
+
+      // Dry/wet mix
+      await this.pip(27, total);
+      if (p.dryWet < 100) fin = this.mixDW(this.inputBuffer, fin, p.dryWet / 100);
+
+      // Peak normalize to limiter ceiling
+      await this.pip(28, total);
       fin = this.peakNorm(fin, p.limThresh);
-      await this.pip(31,total);
-      this.dom.stProcTime.textContent = ((performance.now()-t0)/1000).toFixed(2)+'s';
+
+      // ═══ PASS 10: FINALIZE ═══
+      await this.pip(29, total);
+      await this.pip(30, total);
+      await this.pip(31, total);
+
+      this.dom.stProcTime.textContent = ((performance.now() - t0) / 1000).toFixed(2) + 's';
       this.outputBuffer = fin;
       const snr = this.calcRMS(fin.getChannelData(0)) - this.calcRMS(this.inputBuffer.getChannelData(0));
-      this.dom.hSNR.textContent = (snr>=0?'+':'') + snr.toFixed(1) + ' dB';
+      this.dom.hSNR.textContent = (snr >= 0 ? '+' : '') + snr.toFixed(1) + ' dB';
       this.resizeCanvas(this.dom.waveProcCanvas);
       this.drawWaveform(fin, this.dom.waveProcCanvas, '#22d3ee');
       this.dom.stVoices.textContent = this.estVoices(fin);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
       this.dom.tpABLabel.textContent = 'Ready — A/B';
       this.setStatus('COMPLETE');
-    } catch(e) {
-      if (e==='abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent='Aborted'; }
-      else { console.error('Pipeline:',e); this.setStatus('ERROR'); this.dom.pipeDetail.textContent=e.message||String(e); }
+    } catch (e) {
+      if (e === 'abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent = 'Aborted'; }
+      else { console.error('Pipeline:', e); this.setStatus('ERROR'); this.dom.pipeDetail.textContent = e.message || String(e); }
     } finally {
-      this.isProcessing=false; this.dom.processBtn.style.display='inline-flex'; this.dom.stopProcBtn.style.display='none';
+      this.isProcessing = false; this.dom.processBtn.style.display = 'inline-flex'; this.dom.stopProcBtn.style.display = 'none';
     }
   }
 
-  async pip(i,t) { const pct=Math.round((i+1)/t*100); this.dom.pipeFill.style.width=pct+'%'; this.dom.pipeBar.setAttribute('aria-valuenow',String(pct)); this.dom.pipeStage.textContent=(i+1)+'/'+t; this.dom.pipeDetail.textContent=STAGES[i]||'Finalizing'; this.dom.hStatus.textContent='S'+(i+1); await new Promise(r=>setTimeout(r,12)); }
-
-  // ---- DSP HELPERS ----
-  applyNR(buf,amt,smooth,floorDb) {
-    const c=this.ctx; const nCh=buf.numberOfChannels; const len=buf.length; const sr=buf.sampleRate; const out=c.createBuffer(nCh,len,sr);
-    for(let ch=0;ch<nCh;ch++){
-      const inp=buf.getChannelData(ch); const o=out.getChannelData(ch);
-      const nLen=Math.min(Math.floor(sr*0.15),len); let nRms=0;
-      for(let i=0;i<nLen;i++)nRms+=inp[i]*inp[i]; nRms=Math.sqrt(nRms/nLen);
-      const flLin=Math.pow(10,floorDb/20); const th=Math.max(nRms,flLin)*(1+amt*4); const bk=256; let pG=1;
-      for(let i=0;i<len;i+=bk){const e=Math.min(i+bk,len);let r=0;for(let j=i;j<e;j++)r+=inp[j]*inp[j];r=Math.sqrt(r/(e-i));
-        let g=r>th?1:Math.max(0.005,r/th);g=pG+(g-pG)*(1-smooth);pG=g;for(let j=i;j<e;j++)o[j]=inp[j]*g;}
-    } return out;
-  }
+  async pip(i, t) { const pct = Math.round((i + 1) / t * 100); this.dom.pipeFill.style.width = pct + '%'; this.dom.pipeBar.setAttribute('aria-valuenow', String(pct)); this.dom.pipeStage.textContent = (i + 1) + '/' + t; this.dom.pipeDetail.textContent = STAGES[i] || 'Finalizing'; this.dom.hStatus.textContent = 'S' + (i + 1); await new Promise(r => setTimeout(r, 8)); }
   mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
   peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
   makeHarm(amt,ord){const n=44100;const c=new Float32Array(n);const k=amt*(ord||3)*2+1;for(let i=0;i<n;i++){const x=(i*2)/n-1;c[i]=Math.tanh(k*x)/Math.tanh(k);}return c;}
   estVoices(buf){const d=buf.getChannelData(0);const sr=buf.sampleRate;const bs=Math.floor(sr*0.5);let act=0;for(let i=0;i<d.length;i+=bs){let r=0;const e=Math.min(i+bs,d.length);for(let j=i;j<e;j++)r+=d[j]*d[j];r=Math.sqrt(r/(e-i));if(r>0.01)act++;}return act<3?'0-1':act<10?'1':'1-2+';}
 
   // ---- SAVE ----
-  saveWav(buf,label){if(!buf)return;const w=this.encWav(buf);const b=new Blob([w],{type:'audio/wav'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='voiceisolate_v20_'+label+'_'+Date.now()+'.wav';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);}
+  saveWav(buf,label){if(!buf)return;const w=this.encWav(buf);const b=new Blob([w],{type:'audio/wav'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='voiceisolate_v22_'+label+'_'+Date.now()+'.wav';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);}
   encWav(buf){const nCh=buf.numberOfChannels;const sr=buf.sampleRate;const dL=buf.length*nCh*2;const a=new ArrayBuffer(44+dL);const v=new DataView(a);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+dL,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nCh,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nCh*2,true);v.setUint16(32,nCh*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,dL,true);let off=44;for(let i=0;i<buf.length;i++)for(let ch=0;ch<nCh;ch++){let s=buf.getChannelData(ch)[i];s=Math.max(-1,Math.min(1,s));v.setInt16(off,s<0?s*0x8000:s*0x7FFF,true);off+=2;}return a;}
 
   // ======== VISUALIZATIONS (existing) ========
