@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /* ============================================
-   VoiceIsolate Pro v21.0 — Local Dev Server
+   VoiceIsolate Pro v22.1 — Local Dev Server
    Express + COOP/COEP for SharedArrayBuffer
-   Threads from Space v10 · server.js
+   Threads from Space v11 · server.js
    Mobile-ready: Capacitor Android/iOS support
    ============================================ */
 'use strict';
@@ -14,7 +14,7 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 const PORT       = process.env.PORT || 3000;
-const APP_VERSION = '21.0.0';
+const APP_VERSION = '22.1.0';
 const app        = express();
 
 // ── Cross-Origin Isolation (required for SharedArrayBuffer) ──────────────
@@ -83,7 +83,7 @@ app.get('/health', (_req, res) => {
     crossOriginIsolated: true,
     sharedArrayBuffer: true,
     features: {
-      dsp: '32-stage Octa-Pass',
+      dsp: '35-stage Deca-Pass',
       ml: 'ONNX Runtime Web (WebGPU/WASM)',
       vad: 'Silero VAD v5',
       mobile: 'Capacitor Android/iOS',

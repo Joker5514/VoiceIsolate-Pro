@@ -25,7 +25,7 @@ const router = express.Router();
 router.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    version: '22.0.0',
+    version: '22.1.0',
     timestamp: new Date().toISOString(),
     services: {
       stripe: !!process.env.STRIPE_SECRET_KEY,
