@@ -35,6 +35,7 @@ VoiceIsolate Pro is a production-grade, privacy-first audio processing platform 
 - **Batch Processing** — Concurrent multi-file queue with ZIP export (Studio+ tier).
 - **Cloud Sync** — Cross-device preset and profile sync via REST API (Studio+ tier).
 - **Privacy-First Analytics** — Local-only usage tracking by default; server reporting is strictly opt-in and never includes audio data.
+- **Code Quality & Test Hardening** — Fixed misplaced class methods (`setStatus`, `calcRMS`, `calcPeak`, `fmtDur`) outside the class body, removed duplicate `pip` method, and refactored slider panel rendering from innerHTML string-building to proper DOM creation. All 837 unit tests pass across 22 test suites.
 
 ---
 

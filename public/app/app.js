@@ -214,19 +214,63 @@ class VoiceIsolatePro {
     for (const [tabKey, sliders] of Object.entries(SLIDERS)) {
       const panel = document.getElementById('tab-' + tabKey);
       if (!panel) continue;
-      let h = '<div class="sr">';
+      const container = document.createElement('div');
+      container.className = 'sr';
       for (const s of sliders) {
         const range = s.max - s.min;
+        // pct = ((s.val - s.min) / (s.max - s.min)) * 100
         const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
-        const rtCls = s.rt ? ' realtime' : '';
-        const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
-        h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
-          '<label class="sr-label" for="' + s.id + '" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '<span class="sr-info" aria-hidden="true">i</span></label>' +
-          '<input type="range" aria-label="' + s.label.replace(/"/g, '&quot;') + (s.rt ? ' (Real-time)' : '') + '" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" style="--pct:' + initPct.toFixed(1) + '%" aria-valuemin="' + s.min + '" aria-valuemax="' + s.max + '" aria-valuenow="' + s.val + '" />' +
-          '<span class="sr-val" id="' + s.id + 'Val">' + s.val + s.unit + '</span></div>';
+
+        const rowEl = document.createElement('div');
+        rowEl.className = 'sr-row';
+        rowEl.dataset.desc = s.desc;
+
+        const labelEl = document.createElement('label');
+        labelEl.className = 'sr-label';
+        labelEl.htmlFor = s.id;
+        labelEl.title = s.desc;
+        labelEl.textContent = s.label;
+
+        if (s.rt) {
+          const badge = document.createElement('span');
+          badge.className = 'rt-badge';
+          badge.textContent = 'RT';
+          labelEl.appendChild(badge);
+        }
+
+        const infoEl = document.createElement('span');
+        infoEl.className = 'sr-info';
+        infoEl.textContent = 'i';
+        infoEl.setAttribute('aria-hidden', 'true');
+        labelEl.appendChild(infoEl);
+
+        const inputEl = document.createElement('input');
+        inputEl.type = 'range';
+        inputEl.setAttribute('aria-label', s.label + (s.rt ? ' (Real-time)' : ''));
+        if (s.rt) inputEl.className = 'realtime';
+        inputEl.id = s.id;
+        inputEl.min = s.min;
+        inputEl.max = s.max;
+        inputEl.value = s.val;
+        inputEl.step = s.step;
+        inputEl.dataset.param = s.id;
+        inputEl.setAttribute('aria-valuemin', s.min);
+        inputEl.setAttribute('aria-valuemax', s.max);
+        inputEl.setAttribute('aria-valuenow', s.val);
+        inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
+
+        const valEl = document.createElement('span');
+        valEl.className = 'sr-val';
+        valEl.id = s.id + 'Val';
+        valEl.textContent = s.val + s.unit;
+
+        rowEl.appendChild(labelEl);
+        rowEl.appendChild(inputEl);
+        rowEl.appendChild(valEl);
+        container.appendChild(rowEl);
       }
-      h += '</div>';
-      panel.innerHTML = h;
+      panel.innerHTML = '';
+      panel.appendChild(container);
     }
   }
 
@@ -1110,11 +1154,11 @@ class VoiceIsolatePro {
   async pip(i,t) {
     const pct = Math.round((i+1)/t*100);
     this.dom.pipeFill.style.width = pct + '%';
-    this.dom.pipeBar.setAttribute('aria-valuenow', pct);
+    this.dom.pipeBar.setAttribute('aria-valuenow', String(pct));
     this.dom.pipeStage.textContent = (i+1)+'/'+t;
-    this.dom.pipeDetail.textContent = STAGES[i];
+    this.dom.pipeDetail.textContent = STAGES[i] || 'Finalizing';
     this.dom.hStatus.textContent = 'S'+(i+1);
-    await new Promise(r=>setTimeout(r,15));
+    await new Promise(r=>setTimeout(r,8));
   }
 
   // ---- DSP HELPERS ----
@@ -1566,7 +1610,6 @@ class VoiceIsolatePro {
     }
   }
 
-  async pip(i, t) { const pct = Math.round((i + 1) / t * 100); this.dom.pipeFill.style.width = pct + '%'; this.dom.pipeBar.setAttribute('aria-valuenow', String(pct)); this.dom.pipeStage.textContent = (i + 1) + '/' + t; this.dom.pipeDetail.textContent = STAGES[i] || 'Finalizing'; this.dom.hStatus.textContent = 'S' + (i + 1); await new Promise(r => setTimeout(r, 8)); }
   mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
   peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
   makeHarm(amt,ord){const n=44100;const c=new Float32Array(n);const k=amt*(ord||3)*2+1;for(let i=0;i<n;i++){const x=(i*2)/n-1;c[i]=Math.tanh(k*x)/Math.tanh(k);}return c;}
@@ -2111,13 +2154,12 @@ class VoiceIsolatePro {
     if(this.three.ren){this.three.ren.setSize(ct.clientWidth,ct.clientHeight);this.three.cam.aspect=ct.clientWidth/ct.clientHeight;this.three.cam.updateProjectionMatrix();}
   }
 
-} // End of class VoiceIsolatePro
   // ---- UTILITY ----
   setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
   calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
   calcPeak(d){let p=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>p)p=a;}return p>0?20*Math.log10(p):-96;}
   fmtDur(s){const m=Math.floor(s/60);const sc=Math.floor(s%60);return m+':'+String(sc).padStart(2,'0');}
-}
+} // End of class VoiceIsolatePro
 
 if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
 document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
