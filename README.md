@@ -124,7 +124,7 @@ Single forward STFT → all spectral ops in-place → single inverse STFT. No ph
 | BS-RoFormer | Ensemble separation | ~30 MB | Studio+ |
 | ECAPA-TDNN | Speaker embeddings (256-dim) | ~2–3 MB | Pro+ |
 | HiFi-GAN v2 | Neural vocoder | ~4 MB | Studio+ |
-| Conformer-S | Residual artifact cleanup | ~8 MB | Forensic+ |
+| Conformer-S | Residual artifact cleanup | ~8 MB | Enterprise |
 
 The classical DSP pipeline (passes 1–10 above) operates independently without ML for lightweight deployments. All models are optional and lazily downloaded on first use.
 
