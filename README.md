@@ -7,6 +7,7 @@
 ![License](https://img.shields.io/badge/license-All%20Rights%20Reserved-red)
 ![Platform](https://img.shields.io/badge/platform-browser%20%7C%20android%20%7C%20ios-lightgrey)
 ![Privacy](https://img.shields.io/badge/privacy-100%25%20local-brightgreen)
+[![Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?logo=vercel)](https://v0-voice-isolate-pro.vercel.app)
 
 > **Studio-grade voice isolation and audio enhancement — 100% local, zero cloud inference.**
 > **v22.1** — Powered by real STFT spectral processing, adaptive Wiener filtering, and a 35-stage deca-pass DSP pipeline. Fully browser-native. Zero cloud egress.
@@ -17,7 +18,7 @@
 
 VoiceIsolate Pro is a production-grade, privacy-first audio processing platform that isolates voices from any audio or video source — music, crowd noise, HVAC, reverb, hum — using real spectral math, not toy filters. Built on the **Threads from Space v11** architecture: a multi-threaded, GPU-acceleratable DSP engine running entirely in the browser via Web Audio API, AudioWorklet, and ONNX Runtime Web.
 
-**Live:** Auto-deployed to Vercel on push to `main`.
+**Live:** [v0-voice-isolate-pro.vercel.app](https://v0-voice-isolate-pro.vercel.app) — Auto-deployed to Vercel on push to `main`.
 
 ---
 
