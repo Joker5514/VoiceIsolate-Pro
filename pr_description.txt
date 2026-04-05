@@ -1,13 +1,13 @@
-🧹 [code health improvement] Fix Vercel validation failure
+🧹 [code health improvement] Remove duplicated utility methods to fix lint error
 
 🎯 **What:**
-Added the missing `"outputDirectory": "public"` configuration to the root `vercel.json` file.
+Removed duplicate declarations of `calcRMS`, `calcPeak`, and `fmtDur` at the end of the `VoiceIsolatePro` class in `public/app/app.js`.
 
 💡 **Why:**
-The structural validation script (`scripts/validate.js`) explicitly checks for this configuration property to ensure deployments correctly serve static assets from the `public` directory rather than the repository root. This prevents the build from failing during CI and ensures correct environment configuration for Vercel.
+A previous, hallucinated automated refactoring mistakenly placed duplicate copies of these utility methods at the bottom of the file (lines 2856-2858), leaving the original methods correctly positioned higher up (lines 2687-2689). This duplication caused `eslint` to trigger a `no-dupe-class-members` fatal error, blocking the GitHub Actions CI pipeline. Removing the duplicates resolves the linting failure without altering runtime behavior.
 
 ✅ **Verification:**
-Verified that `pnpm run validate` now passes completely, returning a "✅ All checks passed" status, and all unit tests continue to pass via `pnpm test`.
+Verified that `pnpm run lint` now completes without errors. Tests pass via `pnpm test` and the validation script via `pnpm run validate` completes successfully.
 
 ✨ **Result:**
-The repository validation checks are now fully passing and the Vercel deployment structure is explicitly defined.
+The CI pipeline failure is resolved, restoring code health and unlocking subsequent deployment steps.
