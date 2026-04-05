@@ -125,6 +125,16 @@ const STAGES = [
   'S32: Final Export Ready'              // 31
 ];
 
+// ---- Structured logging utility ----
+function structuredLog(level, msg, data) {
+  const entry = { level, msg, ...(data || {}), ts: new Date().toISOString() };
+  if (level === 'error') console.error('[VIP]', msg, data || '');
+  else if (level === 'warn') console.warn('[VIP]', msg, data || '');
+  else console.log('[VIP]', msg, data || '');
+  // Expose on window for external tooling
+  (window._vipLogs = window._vipLogs || []).push(entry);
+}
+
 // ============================================
 class VoiceIsolatePro {
   constructor() {
@@ -206,60 +216,13 @@ class VoiceIsolatePro {
       if (!panel) continue;
       let h = '<div class="sr">';
       for (const s of sliders) {
-        const row = document.createElement('div');
-        row.className = 'sr-row';
-        row.dataset.desc = s.desc;
-
-        const labelEl = document.createElement('label');
-        labelEl.className = 'sr-label';
-        labelEl.title = s.desc;
-        labelEl.htmlFor = s.id;
-        labelEl.textContent = s.label;
-        if (s.rt) {
-          const badge = document.createElement('span');
-          badge.className = 'rt-badge';
-          badge.textContent = 'RT';
-          labelEl.appendChild(badge);
-        }
-        const infoEl = document.createElement('span');
-        infoEl.className = 'sr-info';
-        infoEl.textContent = 'i';
-        infoEl.setAttribute('aria-hidden', 'true');
-        labelEl.appendChild(infoEl);
-
-        const inputEl = document.createElement('input');
-        inputEl.type = 'range';
-        if (s.rt) inputEl.className = 'realtime';
-        inputEl.id = s.id;
-        inputEl.min = s.min;
-        inputEl.max = s.max;
-        inputEl.value = s.val;
-        inputEl.step = s.step;
-        inputEl.dataset.param = s.id;
-        inputEl.setAttribute('aria-label', s.label);
-        inputEl.setAttribute('aria-valuemin', s.min);
-        inputEl.setAttribute('aria-valuemax', s.max);
-        inputEl.setAttribute('aria-valuenow', s.val);
-        // Set initial fill percentage for styled track
-        // pct formula: ((s.val - s.min) / (s.max - s.min)) * 100
         const range = s.max - s.min;
         const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
-        inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
-
-        const valEl = document.createElement('span');
-        valEl.className = 'sr-val';
-        valEl.id = s.id + 'Val';
-        valEl.textContent = s.val + s.unit;
-
-        row.appendChild(labelEl);
-        row.appendChild(inputEl);
-        row.appendChild(valEl);
-        sr.appendChild(row);
         const rtCls = s.rt ? ' realtime' : '';
         const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
         h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
-          '<label class="sr-label" for="' + s.id + '" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
-          '<input type="range" aria-label="' + s.label.replace(/"/g, '&quot;') + (s.rt ? ' (Real-time)' : '') + '" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
+          '<label class="sr-label" for="' + s.id + '" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '<span class="sr-info" aria-hidden="true">i</span></label>' +
+          '<input type="range" aria-label="' + s.label.replace(/"/g, '&quot;') + (s.rt ? ' (Real-time)' : '') + '" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" style="--pct:' + initPct.toFixed(1) + '%" aria-valuemin="' + s.min + '" aria-valuemax="' + s.max + '" aria-valuenow="' + s.val + '" />' +
           '<span class="sr-val" id="' + s.id + 'Val">' + s.val + s.unit + '</span></div>';
       }
       h += '</div>';
@@ -379,6 +342,23 @@ class VoiceIsolatePro {
         this.dom.statsToggle.textContent = expanded ? '▲' : '▼';
       });
     }
+    // Forensic mode toggle
+    const forensicToggleBtn = document.getElementById('forensicToggle');
+    if (forensicToggleBtn) {
+      forensicToggleBtn.addEventListener('click', () => {
+        this.forensicMode = !this.forensicMode;
+        forensicToggleBtn.classList.toggle('active', this.forensicMode);
+        const auditBtn = document.getElementById('auditLogBtn');
+        if (auditBtn) auditBtn.disabled = !this.forensicMode;
+        if (this.forensicMode) {
+          this.forensicLog = [];
+          structuredLog('info', 'Forensic mode enabled');
+        }
+      });
+    }
+    // Audit log download
+    const auditLogBtn = document.getElementById('auditLogBtn');
+    if (auditLogBtn) auditLogBtn.addEventListener('click', () => this.downloadAuditLog());
   }
 
   onSlider(el) {
@@ -477,13 +457,18 @@ class VoiceIsolatePro {
       const isMidiFile = normalizedType === 'audio/midi' || normalizedType === 'audio/x-midi' || normalizedName.endsWith('.mid') || normalizedName.endsWith('.midi');
       if (isMidiFile) throw new Error('MIDI files are not supported in this audio decode path. Please export the MIDI to WAV, MP3, or another rendered audio format first.');
 
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska'];
-      if (normalizedType && !allowedTypes.includes(normalizedType)) throw new Error('Unsupported file type');
+      const allowedTypes = ['audio/wav','audio/mpeg','audio/ogg','audio/flac','audio/webm','audio/mp4','audio/aac','audio/x-m4a','audio/m4a','audio/mp3','audio/x-wav','audio/x-aiff','audio/aiff','audio/opus','audio/x-ms-wma','video/mp4','video/webm','video/ogg','video/quicktime','video/x-m4v','video/mkv','video/x-matroska','video/avi','video/x-msvideo','video/x-ms-wmv','video/mts','video/m2ts','application/ogg'];
+      const audioExts = ['.mp3','.wav','.flac','.ogg','.m4a','.aac','.opus','.wma','.aiff','.aif','.au','.ra'];
+      const videoExts = ['.mp4','.mov','.webm','.mkv','.avi','.m4v','.ogv','.mts','.m2ts','.wmv','.3gp','.ts'];
+      const dotExt = normalizedName.includes('.') ? '.' + normalizedName.split('.').pop() : '';
+      const isKnownAudioExt = audioExts.includes(dotExt);
+      const isKnownVideoExt = videoExts.includes(dotExt);
+      if (normalizedType && normalizedType !== 'application/octet-stream' && !allowedTypes.includes(normalizedType) && !isKnownAudioExt && !isKnownVideoExt) throw new Error('Unsupported file type: ' + normalizedType);
       this.ensureCtx();
       this.stop();
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
       this.setStatus('LOADING');
-      this.isVideo = file.type.startsWith('video/');
+      this.isVideo = file.type.startsWith('video/') || isKnownVideoExt;
       const fileArrayBuffer = await file.arrayBuffer();
       let audioBuf = null;
       try {
