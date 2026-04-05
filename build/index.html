@@ -30,7 +30,8 @@ h1 em{font-style:italic;color:var(--cyan)}
 .expand-arrow{font-size:0.8rem;color:var(--dim);transition:transform 0.3s;display:inline-block}
 .card-expand.open .expand-arrow{transform:rotate(90deg)}
 .specs-detail{max-height:0;overflow:hidden;transition:max-height 0.4s ease,opacity 0.3s;opacity:0;margin-top:0}
-.card-expand.open .specs-detail{max-height:800px;opacity:1;margin-top:1rem}
+.card-expand.open .specs-detail{max-height:3000px;opacity:1;margin-top:1rem}
+.card-expand.open{grid-column:1/-1}
 .spec-group{margin-bottom:1rem}
 .spec-group h3{font-family:var(--mono);font-size:0.65rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--cyan);margin-bottom:0.4rem}
 .spec-group p{font-size:0.78rem;color:var(--dim);line-height:1.5;margin-bottom:0.2rem}
@@ -40,6 +41,37 @@ h1 em{font-style:italic;color:var(--cyan)}
 .spec-pills span{font-family:var(--mono);font-size:0.55rem;padding:0.15rem 0.45rem;border-radius:3px;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.12);color:var(--dim)}
 .spec-models{display:flex;flex-direction:column;gap:0.25rem}
 .spec-models span{font-size:0.75rem;color:var(--dim)}
+/* Tech-card styles (adapted from app) */
+.tech-card-hdr{margin-bottom:14px}
+.tech-card-title-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--dim);flex-wrap:wrap}
+.tech-card-badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.52rem;font-weight:700;letter-spacing:0.1em;color:var(--cyan);background:rgba(0,212,255,0.07);border:1px solid rgba(0,212,255,0.18)}
+.tech-card-badge-new{color:var(--cyan);background:rgba(0,212,255,0.07);border-color:rgba(0,212,255,0.18)}
+.tech-card-sub{font-size:0.72rem;color:var(--dim);line-height:1.5;max-width:680px}
+.tech-pipeline-flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:rgba(13,15,20,0.7);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:14px}
+.tpf-step{display:flex;align-items:center;gap:5px}
+.tpf-num{font-family:var(--mono);font-size:0.6rem;font-weight:700;color:var(--cyan);background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.2);border-radius:3px;padding:1px 5px;white-space:nowrap}
+.tpf-lbl{font-size:0.65rem;color:var(--dim);white-space:nowrap}
+.tpf-arrow{color:var(--dim);flex-shrink:0}
+.tech-features-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+@media(max-width:640px){.tech-features-grid{grid-template-columns:1fr}}
+.tf-item{background:rgba(13,15,20,0.7);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:flex;gap:10px;transition:border-color 0.15s}
+.tf-item:hover{border-color:rgba(0,212,255,0.25)}
+.tf-icon{width:32px;height:32px;flex-shrink:0;border-radius:6px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.15);display:flex;align-items:center;justify-content:center;color:var(--cyan)}
+.tf-body{min-width:0}
+.tf-title{font-size:0.72rem;font-weight:700;color:var(--text);margin-bottom:3px}
+.tf-desc{font-size:0.62rem;color:var(--dim);line-height:1.55;margin-bottom:5px}
+.tf-formula{display:block;font-family:var(--mono);font-size:0.56rem;color:var(--cyan);background:rgba(0,212,255,0.05);border-left:2px solid rgba(0,212,255,0.3);padding:3px 7px;border-radius:0 3px 3px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tf-item-highlight{border-color:rgba(0,212,255,0.2);background:linear-gradient(135deg,rgba(13,15,20,0.7),rgba(0,212,255,0.03))}
+.tf-icon-ml{background:rgba(139,92,246,0.08);border-color:rgba(139,92,246,0.2);color:var(--violet)}
+.tf-icon-forensic{background:rgba(0,212,255,0.08);border-color:rgba(0,212,255,0.2);color:var(--cyan)}
+.tf-icon-viz{background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.2);color:var(--green)}
+.tf-badge-ml{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(139,92,246,0.1);color:var(--violet);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
+.tf-badge-new{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(0,212,255,0.1);color:var(--cyan);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
+.tf-badge-restored{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(16,185,129,0.1);color:var(--green);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
+.tech-stack-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--border)}
+.ts-label{font-size:0.55rem;font-weight:700;letter-spacing:0.1em;color:var(--dim);text-transform:uppercase;margin-right:3px}
+.ts-chip{font-family:var(--mono);font-size:0.58rem;padding:2px 8px;border-radius:3px;background:rgba(26,30,42,0.5);border:1px solid var(--border);color:var(--dim)}
+.ts-chip-highlight{background:rgba(0,212,255,0.08);border-color:rgba(0,212,255,0.2);color:var(--cyan)}
 </style>
 </head>
 <body>
@@ -52,47 +84,13 @@ h1 em{font-style:italic;color:var(--cyan)}
 <div class="cards">
   <a href="/app/" class="card">
     <span class="card-tag">Launch App</span>
-    <h2>Engineer Mode v19.0</h2>
+    <h2>Engineer Mode v22.0</h2>
     <p>Full processing application. 52 real-time sliders, 3D spectrogram, multi-band DSP chain, A/B comparison. Drop audio and process.</p>
     <span class="arrow">→</span>
   </a>
-  <div class="card card-expand" onclick="this.classList.toggle('open')" style="cursor:pointer;">
-    <span class="card-tag">Technical Specs</span>
-    <h2>How It Works <span class="expand-arrow">▸</span></h2>
-    <p>Hybrid ML + DSP pipeline. 100% in-browser. Forensic SHA-256 audit trail. Tap to see full engine specs.</p>
-    <div class="specs-detail">
-      <div class="spec-group">
-        <h3>Single-Pass STFT Pipeline</h3>
-        <p class="spec-flow">Forward FFT 4096 → 30 in-place spectral stages → Inverse FFT</p>
-        <div class="spec-pills">
-          <span>Wiener Filter</span><span>ML Masking</span><span>Noise Profile</span><span>Hum Removal</span><span>De-reverb</span><span>10-Band EQ</span><span>Compressor</span><span>Limiter</span><span>De-esser</span><span>Harmonic Enhance</span><span>Spectral Gate</span><span>Phase Correction</span>
-        </div>
-      </div>
-      <div class="spec-group">
-        <h3>ML Models (Local ONNX)</h3>
-        <div class="spec-models">
-          <span><strong>Demucs v4.1</strong> — 4-stem separation</span>
-          <span><strong>BSRNN</strong> — Sub-band masking</span>
-          <span><strong>Silero VAD</strong> — Voice activity</span>
-          <span><strong>RNNoise</strong> — Real-time denoise</span>
-        </div>
-      </div>
-      <div class="spec-group">
-        <h3>Runtime</h3>
-        <div class="spec-pills">
-          <span>WebGPU</span><span>WASM SIMD</span><span>ONNX Runtime Web</span><span>AudioWorklet</span><span>SharedArrayBuffer</span><span>OfflineAudioContext</span>
-        </div>
-      </div>
-      <div class="spec-group">
-        <h3>Modes</h3>
-        <p><strong>Live:</strong> &lt;10ms via AudioWorklet + lock-free ring buffer</p>
-        <p><strong>Creator/Forensic:</strong> Offline full-quality 32-stage pipeline</p>
-      </div>
-    </div>
-  </div>
 </div>
 
-<div class="footer">Threads from Space v8 Architecture — Privacy-First — March 2026</div>
+<div class="footer">Threads from Space v10 Architecture — Privacy-First — March 2026</div>
 
 <!-- Vercel Speed Insights -->
 <script>

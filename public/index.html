@@ -6,236 +6,384 @@
 <title>VoiceIsolate Pro — Studio-Grade Voice Isolation</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#07080a;--card:#0d0f14;--border:#1a1e2a;--text:#e8eaf0;--dim:#4a5268;--cyan:#00d4ff;--red:#dc2626;--violet:#8b5cf6;--green:#10b981;--mono:'JetBrains Mono',monospace;--sans:'DM Sans',system-ui,sans-serif;--serif:'Instrument Serif',Georgia,serif}
+:root{
+  --bg:#07080a;--card:#0d0f14;--border:#1a1e2a;--text:#e8eaf0;--dim:#4a5268;
+  --cyan:#00d4ff;--red:#dc2626;--violet:#8b5cf6;--green:#10b981;--orange:#f97316;
+  --mono:'JetBrains Mono',monospace;--sans:'DM Sans',system-ui,sans-serif;--serif:'Instrument Serif',Georgia,serif;
+}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem;-webkit-font-smoothing:antialiased}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 ::selection{background:rgba(0,212,255,0.2);color:#fff}
-.logo{font-family:var(--mono);font-size:0.75rem;letter-spacing:0.12em;color:var(--cyan);margin-bottom:2rem;text-transform:uppercase}
-h1{font-family:var(--serif);font-size:clamp(2.5rem,6vw,4.5rem);font-weight:400;text-align:center;line-height:1.1;margin-bottom:1rem}
-h1 em{font-style:italic;color:var(--cyan)}
-.sub{color:var(--dim);font-size:0.95rem;text-align:center;max-width:500px;margin-bottom:3rem;line-height:1.7}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;max-width:900px;width:100%}
-.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:2rem;text-decoration:none;color:var(--text);transition:border-color 0.3s,transform 0.3s;position:relative;overflow:hidden}
-.card:hover{border-color:rgba(0,212,255,0.3);transform:translateY(-2px)}
-.card-tag{font-family:var(--mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;margin-bottom:0.75rem;display:inline-block;padding:0.2rem 0.5rem;border-radius:3px}
-.card:nth-child(1) .card-tag{color:var(--red);background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.15)}
-.card:nth-child(2) .card-tag{color:var(--cyan);background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.15)}
-.card:nth-child(3) .card-tag{color:var(--violet);background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.15)}
-.card h2{font-family:var(--sans);font-size:1.2rem;font-weight:600;margin-bottom:0.5rem}
-.card p{color:var(--dim);font-size:0.82rem;line-height:1.6}
-.card .arrow{position:absolute;bottom:1.5rem;right:1.5rem;color:var(--dim);font-size:1.2rem;transition:color 0.3s,transform 0.3s}
-.card:hover .arrow{color:var(--text);transform:translateX(3px)}
-.footer{margin-top:4rem;font-family:var(--mono);font-size:0.6rem;color:var(--dim);letter-spacing:0.08em;text-transform:uppercase}
-.grid-bg{position:fixed;inset:0;pointer-events:none;opacity:0.02;background-image:linear-gradient(var(--dim) 1px,transparent 1px),linear-gradient(90deg,var(--dim) 1px,transparent 1px);background-size:80px 80px}
-.expand-arrow{font-size:0.8rem;color:var(--dim);transition:transform 0.3s;display:inline-block}
-.card-expand.open .expand-arrow{transform:rotate(90deg)}
-.specs-detail{max-height:0;overflow:hidden;transition:max-height 0.4s ease,opacity 0.3s;opacity:0;margin-top:0}
-.card-expand.open .specs-detail{max-height:3000px;opacity:1;margin-top:1rem}
-.card-expand.open{grid-column:1/-1}
-.spec-group{margin-bottom:1rem}
-.spec-group h3{font-family:var(--mono);font-size:0.65rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--cyan);margin-bottom:0.4rem}
-.spec-group p{font-size:0.78rem;color:var(--dim);line-height:1.5;margin-bottom:0.2rem}
-.spec-group strong{color:var(--text)}
-.spec-flow{font-family:var(--mono);font-size:0.7rem;color:var(--dim);margin-bottom:0.5rem}
-.spec-pills{display:flex;flex-wrap:wrap;gap:0.3rem}
-.spec-pills span{font-family:var(--mono);font-size:0.55rem;padding:0.15rem 0.45rem;border-radius:3px;background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.12);color:var(--dim)}
-.spec-models{display:flex;flex-direction:column;gap:0.25rem}
-.spec-models span{font-size:0.75rem;color:var(--dim)}
-/* Tech-card styles (adapted from app) */
-.tech-card-hdr{margin-bottom:14px}
-.tech-card-title-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;color:var(--dim);flex-wrap:wrap}
-.tech-card-badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:0.52rem;font-weight:700;letter-spacing:0.1em;color:var(--cyan);background:rgba(0,212,255,0.07);border:1px solid rgba(0,212,255,0.18)}
-.tech-card-badge-new{color:var(--cyan);background:rgba(0,212,255,0.07);border-color:rgba(0,212,255,0.18)}
-.tech-card-sub{font-size:0.72rem;color:var(--dim);line-height:1.5;max-width:680px}
-.tech-pipeline-flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:rgba(13,15,20,0.7);border:1px solid var(--border);border-radius:6px;padding:8px 12px;margin-bottom:14px}
-.tpf-step{display:flex;align-items:center;gap:5px}
-.tpf-num{font-family:var(--mono);font-size:0.6rem;font-weight:700;color:var(--cyan);background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.2);border-radius:3px;padding:1px 5px;white-space:nowrap}
-.tpf-lbl{font-size:0.65rem;color:var(--dim);white-space:nowrap}
-.tpf-arrow{color:var(--dim);flex-shrink:0}
-.tech-features-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
-@media(max-width:640px){.tech-features-grid{grid-template-columns:1fr}}
-.tf-item{background:rgba(13,15,20,0.7);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:flex;gap:10px;transition:border-color 0.15s}
-.tf-item:hover{border-color:rgba(0,212,255,0.25)}
-.tf-icon{width:32px;height:32px;flex-shrink:0;border-radius:6px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.15);display:flex;align-items:center;justify-content:center;color:var(--cyan)}
-.tf-body{min-width:0}
-.tf-title{font-size:0.72rem;font-weight:700;color:var(--text);margin-bottom:3px}
-.tf-desc{font-size:0.62rem;color:var(--dim);line-height:1.55;margin-bottom:5px}
-.tf-formula{display:block;font-family:var(--mono);font-size:0.56rem;color:var(--cyan);background:rgba(0,212,255,0.05);border-left:2px solid rgba(0,212,255,0.3);padding:3px 7px;border-radius:0 3px 3px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tf-item-highlight{border-color:rgba(0,212,255,0.2);background:linear-gradient(135deg,rgba(13,15,20,0.7),rgba(0,212,255,0.03))}
-.tf-icon-ml{background:rgba(139,92,246,0.08);border-color:rgba(139,92,246,0.2);color:var(--violet)}
-.tf-icon-forensic{background:rgba(0,212,255,0.08);border-color:rgba(0,212,255,0.2);color:var(--cyan)}
-.tf-icon-viz{background:rgba(16,185,129,0.08);border-color:rgba(16,185,129,0.2);color:var(--green)}
-.tf-badge-ml{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(139,92,246,0.1);color:var(--violet);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
-.tf-badge-new{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(0,212,255,0.1);color:var(--cyan);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
-.tf-badge-restored{display:inline-block;font-size:0.5rem;padding:1px 5px;border-radius:3px;background:rgba(16,185,129,0.1);color:var(--green);font-weight:700;letter-spacing:0.05em;vertical-align:middle;margin-left:4px}
-.tech-stack-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--border)}
-.ts-label{font-size:0.55rem;font-weight:700;letter-spacing:0.1em;color:var(--dim);text-transform:uppercase;margin-right:3px}
-.ts-chip{font-family:var(--mono);font-size:0.58rem;padding:2px 8px;border-radius:3px;background:rgba(26,30,42,0.5);border:1px solid var(--border);color:var(--dim)}
-.ts-chip-highlight{background:rgba(0,212,255,0.08);border-color:rgba(0,212,255,0.2);color:var(--cyan)}
+
+/* ── Grid background ── */
+.grid-bg{position:fixed;inset:0;pointer-events:none;opacity:0.025;
+  background-image:linear-gradient(var(--dim) 1px,transparent 1px),linear-gradient(90deg,var(--dim) 1px,transparent 1px);
+  background-size:60px 60px;z-index:0}
+
+/* ── Glow orbs ── */
+.orb{position:fixed;border-radius:50%;filter:blur(120px);opacity:0.07;pointer-events:none;z-index:0}
+.orb-1{width:600px;height:600px;background:var(--cyan);top:-200px;left:-100px}
+.orb-2{width:500px;height:500px;background:var(--violet);bottom:-150px;right:-100px}
+
+/* ── Layout wrapper ── */
+.wrap{max-width:960px;margin:0 auto;padding:0 1.5rem;position:relative;z-index:1}
+
+/* ══════════════════════════════════
+   HERO
+══════════════════════════════════ */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:4rem 1.5rem 3rem;position:relative;overflow:hidden}
+
+/* Animated SVG waveform */
+.hero-wave{position:absolute;inset:0;pointer-events:none;opacity:0.12}
+.hero-wave path{fill:none;stroke:var(--cyan);stroke-width:1.5}
+.wave-anim-1{animation:waveDrift 8s ease-in-out infinite}
+.wave-anim-2{animation:waveDrift 10s ease-in-out infinite reverse;stroke:var(--violet)!important;opacity:0.6}
+.wave-anim-3{animation:waveDrift 6s ease-in-out infinite 2s;stroke:var(--green)!important;opacity:0.4}
+@keyframes waveDrift{0%,100%{d:path("M0,80 C160,60 320,100 480,80 C640,60 800,100 960,80 L960,160 L0,160Z")}
+  50%{d:path("M0,100 C160,80 320,60 480,100 C640,130 800,70 960,100 L960,160 L0,160Z")}}
+
+.hero-icon{width:80px;height:80px;border-radius:18px;margin-bottom:1.25rem;box-shadow:0 8px 32px rgba(0,212,255,0.2);position:relative;z-index:1}
+.hero-logo{font-family:var(--mono);font-size:0.7rem;letter-spacing:0.18em;color:var(--cyan);margin-bottom:1.5rem;text-transform:uppercase;opacity:0.8}
+.hero h1{font-family:var(--serif);font-size:clamp(2.8rem,7vw,5rem);font-weight:400;line-height:1.08;margin-bottom:1.25rem}
+.hero h1 em{font-style:italic;color:var(--cyan)}
+.hero-sub{color:var(--dim);font-size:0.95rem;max-width:540px;margin:0 auto 2.5rem;line-height:1.75}
+
+/* Stat counters */
+.hero-stats{display:flex;gap:2rem;flex-wrap:wrap;justify-content:center;margin-bottom:2.5rem}
+.stat{text-align:center}
+.stat-num{font-family:var(--mono);font-size:2rem;font-weight:700;color:var(--cyan);line-height:1;display:block}
+.stat-lbl{font-size:0.65rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--dim);margin-top:0.25rem;display:block}
+
+/* Hero CTA */
+.hero-cta{display:inline-flex;align-items:center;gap:0.6rem;background:var(--cyan);color:#07080a;font-family:var(--mono);font-size:0.8rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;padding:0.75rem 1.75rem;border-radius:6px;transition:opacity 0.2s,transform 0.2s;position:relative;overflow:hidden}
+.hero-cta::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent);transform:translateX(-100%);transition:transform 0.5s}
+.hero-cta:hover{opacity:0.9;transform:translateY(-2px)}
+.hero-cta:hover::before{transform:translateX(100%)}
+.hero-cta svg{flex-shrink:0}
+
+/* ══════════════════════════════════
+   SECTION HEADERS
+══════════════════════════════════ */
+.section{padding:5rem 0}
+.section-tag{font-family:var(--mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--cyan);margin-bottom:0.6rem}
+.section-title{font-family:var(--serif);font-size:clamp(1.8rem,4vw,2.8rem);font-weight:400;margin-bottom:0.75rem}
+.section-sub{color:var(--dim);font-size:0.9rem;line-height:1.7;max-width:520px}
+
+/* ══════════════════════════════════
+   HOW IT WORKS — 3 steps
+══════════════════════════════════ */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.25rem;margin-top:2.5rem}
+.step{background:var(--card);border:1px solid var(--border);border-left:3px solid transparent;border-radius:10px;padding:1.75rem 1.5rem;transition:border-color 0.25s,transform 0.25s,box-shadow 0.25s;cursor:default;position:relative}
+.step:hover{border-left-color:var(--cyan);transform:translateY(-3px);box-shadow:0 8px 32px rgba(0,212,255,0.08)}
+.step-num{font-family:var(--mono);font-size:0.6rem;font-weight:700;letter-spacing:0.15em;color:var(--cyan);background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.18);border-radius:3px;padding:2px 7px;display:inline-block;margin-bottom:1rem}
+.step-icon{width:40px;height:40px;border-radius:10px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.15);display:flex;align-items:center;justify-content:center;color:var(--cyan);margin-bottom:1rem}
+.step h3{font-size:1rem;font-weight:600;margin-bottom:0.5rem}
+.step p{font-size:0.8rem;color:var(--dim);line-height:1.65}
+.step-formats{display:flex;flex-wrap:wrap;gap:0.3rem;margin-top:0.75rem}
+.step-formats span{font-family:var(--mono);font-size:0.5rem;padding:2px 6px;border-radius:3px;background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.1);color:var(--dim)}
+
+/* connector arrows between steps */
+.steps-connector{display:flex;align-items:center;justify-content:center;gap:1.25rem;margin-top:1rem;color:var(--dim)}
+.steps-connector span{font-size:1.2rem}
+
+/* ══════════════════════════════════
+   WHAT MAKES IT DIFFERENT — feature grid
+══════════════════════════════════ */
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-top:2.5rem}
+.feat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.5rem;display:flex;gap:1rem;transition:border-color 0.25s,box-shadow 0.25s,transform 0.25s}
+.feat:hover{border-color:rgba(0,212,255,0.3);box-shadow:0 4px 24px rgba(0,212,255,0.06);transform:translateY(-2px)}
+.feat-icon{width:38px;height:38px;flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center}
+.feat-icon-cyan{background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.18);color:var(--cyan)}
+.feat-icon-violet{background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.18);color:var(--violet)}
+.feat-icon-green{background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.18);color:var(--green)}
+.feat-icon-red{background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.18);color:var(--red)}
+.feat-icon-orange{background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.18);color:var(--orange)}
+.feat-body h4{font-size:0.85rem;font-weight:600;margin-bottom:0.3rem}
+.feat-body p{font-size:0.75rem;color:var(--dim);line-height:1.6}
+.feat-body code{font-family:var(--mono);font-size:0.62rem;color:var(--cyan);background:rgba(0,212,255,0.06);padding:1px 5px;border-radius:3px}
+
+/* ══════════════════════════════════
+   LAUNCH CTA CARD
+══════════════════════════════════ */
+.launch-wrap{padding:4rem 0 6rem}
+.launch-card{background:var(--card);border-radius:14px;padding:2.5rem;position:relative;overflow:hidden;text-decoration:none;color:var(--text);display:block;transition:transform 0.3s}
+.launch-card:hover{transform:translateY(-3px)}
+/* animated shimmer border */
+.launch-card::before{
+  content:'';position:absolute;inset:-2px;border-radius:16px;z-index:-1;
+  background:linear-gradient(90deg,var(--border),var(--cyan),var(--violet),var(--border),var(--border));
+  background-size:300% 100%;
+  animation:shimmerBorder 4s linear infinite}
+.launch-card::after{content:'';position:absolute;inset:1px;background:var(--card);border-radius:13px;z-index:-1}
+@keyframes shimmerBorder{0%{background-position:0% 0}100%{background-position:300% 0}}
+.launch-inner{position:relative;z-index:1;display:flex;align-items:center;gap:2rem;flex-wrap:wrap}
+.launch-text{flex:1;min-width:220px}
+.launch-tag{font-family:var(--mono);font-size:0.58rem;letter-spacing:0.18em;text-transform:uppercase;color:var(--cyan);background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.18);border-radius:3px;padding:2px 8px;display:inline-block;margin-bottom:0.75rem}
+.launch-text h2{font-family:var(--serif);font-size:clamp(1.6rem,4vw,2.4rem);font-weight:400;margin-bottom:0.6rem}
+.launch-text p{color:var(--dim);font-size:0.85rem;line-height:1.65;max-width:480px}
+.launch-btn{display:inline-flex;align-items:center;gap:0.5rem;background:var(--cyan);color:#07080a;font-family:var(--mono);font-size:0.78rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:0.85rem 1.75rem;border-radius:7px;white-space:nowrap;flex-shrink:0;transition:opacity 0.2s,transform 0.2s;position:relative;overflow:hidden}
+.launch-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent);transform:translateX(-100%);transition:transform 0.5s}
+.launch-card:hover .launch-btn{opacity:0.92;transform:translateY(-1px)}
+.launch-card:hover .launch-btn::before{transform:translateX(100%)}
+
+/* Feature pills below launch */
+.launch-pills{display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:1.25rem}
+.launch-pills span{font-family:var(--mono);font-size:0.55rem;padding:3px 8px;border-radius:3px;background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.1);color:var(--dim)}
+
+/* ══════════════════════════════════
+   FOOTER
+══════════════════════════════════ */
+footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;font-family:var(--mono);font-size:0.58rem;color:var(--dim);letter-spacing:0.08em;text-transform:uppercase;position:relative;z-index:1}
+
+/* ══════════════════════════════════
+   RESPONSIVE
+══════════════════════════════════ */
+@media(max-width:640px){
+  .hero-stats{gap:1.25rem}
+  .stat-num{font-size:1.5rem}
+  .launch-inner{flex-direction:column;gap:1.5rem}
+  .launch-btn{width:100%;justify-content:center}
+  .steps-connector{display:none}
+}
 </style>
 </head>
 <body>
+
+<!-- Ambient background -->
 <div class="grid-bg"></div>
-<img src="/icon.jpg" alt="VoiceIsolate Pro" style="width:120px;height:120px;border-radius:20px;margin-bottom:1.5rem;box-shadow:0 8px 32px rgba(0,212,255,0.15);">
-<div class="logo">VoiceIsolate.Pro</div>
-<h1>Threads from <em>Space</em></h1>
-<p class="sub">Studio-grade voice isolation. 32-stage Octa-Pass DSP pipeline. Hybrid ML + classical spectral processing. 100% local, zero data egress.</p>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
 
-<div class="cards">
-  <a href="/app/" class="card">
-    <span class="card-tag">Launch App</span>
-    <h2>Engineer Mode v22.0</h2>
-    <p>Full processing application. 52 real-time sliders, 3D spectrogram, multi-band DSP chain, A/B comparison. Drop audio and process.</p>
-    <span class="arrow">→</span>
+<!-- ══════════════════════════════════
+     HERO
+══════════════════════════════════ -->
+<section class="hero">
+  <!-- Animated waveform backdrop -->
+  <svg class="hero-wave" viewBox="0 0 960 160" preserveAspectRatio="none" aria-hidden="true">
+    <path class="wave-anim-1" d="M0,80 C160,60 320,100 480,80 C640,60 800,100 960,80 L960,160 L0,160Z"/>
+    <path class="wave-anim-2" d="M0,100 C160,120 320,70 480,100 C640,130 800,60 960,100 L960,160 L0,160Z"/>
+    <path class="wave-anim-3" d="M0,60 C160,80 320,50 480,70 C640,90 800,50 960,65 L960,160 L0,160Z"/>
+  </svg>
+
+  <img src="/icon.jpg" alt="VoiceIsolate Pro" class="hero-icon">
+  <div class="hero-logo">VoiceIsolate.Pro</div>
+
+  <h1>VoiceIsolate <em>Pro</em></h1>
+  <p class="hero-sub">Studio-grade voice isolation. 35-Stage Deca-Pass DSP pipeline. Hybrid ML + classical spectral processing. 100% local — zero data egress.</p>
+
+  <!-- Animated stat counters -->
+  <div class="hero-stats">
+    <div class="stat"><span class="stat-num" data-target="35" data-suffix="">0</span><span class="stat-lbl">Pipeline Stages</span></div>
+    <div class="stat"><span class="stat-num" data-target="52" data-suffix="">0</span><span class="stat-lbl">Real-Time Controls</span></div>
+    <div class="stat"><span class="stat-num" data-target="0" data-suffix="">0</span><span class="stat-lbl">Servers Used</span></div>
+    <div class="stat"><span class="stat-num" data-target="100" data-suffix="%">0%</span><span class="stat-lbl">Local Processing</span></div>
+  </div>
+
+  <a href="/app/" class="hero-cta">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+    Launch Engineer Mode
   </a>
-  <div class="card card-expand" onclick="this.classList.toggle('open')" style="cursor:pointer;">
-    <span class="card-tag">Technical Specs</span>
-    <h2>How It Works <span class="expand-arrow">▸</span></h2>
-    <p>32-stage Octa-Pass hybrid ML + DSP pipeline. 100% in-browser. Tap to expand full engine specs.</p>
-    <div class="specs-detail">
-      <div class="tech-card-hdr">
-        <div class="tech-card-title-row">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
-          <span class="tech-card-badge">36-STAGE DECA-PASS</span>
-          <span class="tech-card-badge tech-card-badge-new">v22 TFS v10</span>
-        </div>
-        <p class="tech-card-sub">A hybrid ML + DSP pipeline processes audio entirely in-browser with optional forensic SHA-256 audit trail — zero data transmission, full privacy, court-ready output.</p>
-      </div>
+</section>
 
-      <div class="tech-pipeline-flow" aria-label="Pipeline signal flow">
-        <div class="tpf-step">
-          <span class="tpf-num">1–4</span>
-          <span class="tpf-lbl">Input Conditioning &amp; Cleanup</span>
+<!-- ══════════════════════════════════
+     HOW IT WORKS
+══════════════════════════════════ -->
+<section class="section">
+  <div class="wrap">
+    <div class="section-tag">How It Works</div>
+    <h2 class="section-title">Three steps to studio-clean audio</h2>
+    <p class="section-sub">Everything runs in your browser. No account, no uploads, no limits.</p>
+
+    <div class="steps">
+      <!-- Step 1 -->
+      <div class="step">
+        <div class="step-num">01 — UPLOAD</div>
+        <div class="step-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         </div>
-        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <div class="tpf-step">
-          <span class="tpf-num">5–10</span>
-          <span class="tpf-lbl">STFT &amp; ML Source Separation</span>
-        </div>
-        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <div class="tpf-step">
-          <span class="tpf-num">11–21</span>
-          <span class="tpf-lbl">Spectral Ops (In-Place) &amp; iSTFT</span>
-        </div>
-        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <div class="tpf-step">
-          <span class="tpf-num">22–36</span>
-          <span class="tpf-lbl">EQ, Dynamics, LUFS &amp; Export</span>
+        <h3>Upload Any Format</h3>
+        <p>Drag and drop your file, browse from disk, or record live from your microphone. No size limit.</p>
+        <div class="step-formats">
+          <span>MP3</span><span>WAV</span><span>FLAC</span><span>OGG</span><span>M4A</span><span>AAC</span>
+          <span>MP4</span><span>MOV</span><span>WEBM</span><span>MKV</span><span>AVI</span><span>+ more</span>
         </div>
       </div>
 
-      <div class="tech-features-grid">
-        <div class="tf-item">
-          <div class="tf-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4l3-9 4 18 3-9h6"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Spectral Subtraction</h3>
-            <p class="tf-desc">64-band frequency-domain noise removal using over-subtraction with a spectral floor to eliminate musical noise artifacts.</p>
-            <code class="tf-formula">|X&#770;(&#969;)| = max(|X(&#969;)| - &#945;&#183;E[|N(&#969;)|], &#946;&#183;|X(&#969;)|)</code>
-          </div>
+      <!-- Step 2 -->
+      <div class="step">
+        <div class="step-num">02 — PROCESS</div>
+        <div class="step-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </div>
-
-        <div class="tf-item">
-          <div class="tf-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Wiener Filtering</h3>
-            <p class="tf-desc">Adaptive MMSE Wiener gain applied per frequency bin — strongest suppression in low-SNR regions for natural-sounding output.</p>
-            <code class="tf-formula">G(t) = &#8730;( max(P_signal - P_noise, 0) / max(P_signal, &#949;) )</code>
-          </div>
-        </div>
-
-        <div class="tf-item tf-item-highlight">
-          <div class="tf-icon tf-icon-ml" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Silero VAD + ONNX Runtime <span class="tf-badge-ml">ML</span></h3>
-            <p class="tf-desc">ONNX Runtime Web powers real-time Voice Activity Detection in a dedicated Web Worker — classifying speech frames at sub-millisecond latency with zero network calls.</p>
-            <code class="tf-formula">P(voice | frame) &#8594; gate mask @ 20 ms chunks &#183; ONNX WebGL backend</code>
-          </div>
-        </div>
-
-        <div class="tf-item">
-          <div class="tf-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="4" height="10" rx="1"/><rect x="9" y="4" width="4" height="16" rx="1"/><rect x="16" y="9" width="4" height="8" rx="1"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Dynamics &amp; Compression</h3>
-            <p class="tf-desc">Envelope-follower compressor with per-sample attack/release constants keeps dialogue intelligible across wide dynamic range content.</p>
-            <code class="tf-formula">a = exp(-1 / (SR &#183; t_attack)) &#183; GR = -max((L - T)&#183;(1 - 1/R), 0)</code>
-          </div>
-        </div>
-
-        <div class="tf-item">
-          <div class="tf-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">LUFS Normalization</h3>
-            <p class="tf-desc">Output is normalized to broadcast targets — -14 LUFS for streaming, -16 LUFS for podcasts — using ITU-R BS.1770-4 K-weighted measurement.</p>
-            <code class="tf-formula">gain = 10^( (L_target - L_measured) / 20 )</code>
-          </div>
-        </div>
-
-        <div class="tf-item">
-          <div class="tf-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">100% Local Processing</h3>
-            <p class="tf-desc">All DSP runs in-browser via Web Workers and AudioWorklet. Audio never leaves your device — no uploads, no servers, no storage.</p>
-            <code class="tf-formula">Worker Pool &#8594; DSP Thread &#8594; AudioWorklet &#8594; Output Buffer</code>
-          </div>
-        </div>
-
-        <div class="tf-item tf-item-highlight">
-          <div class="tf-icon tf-icon-forensic" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Forensic Mode <span class="tf-badge-new">NEW</span></h3>
-            <p class="tf-desc">Enable SHA-256 cryptographic hashing at each processing stage to create a court-admissible audit trail. Download the complete chain-of-custody log after processing.</p>
-            <code class="tf-formula">SHA-256(stage_n) &#8594; audit_log.json &#183; timestamp + stage + hash</code>
-          </div>
-        </div>
-
-        <div class="tf-item tf-item-highlight">
-          <div class="tf-icon tf-icon-viz" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Full-File Spectrogram <span class="tf-badge-restored">RESTORED</span></h3>
-            <p class="tf-desc">Interactive overview spectrogram with A/B toggle for original vs processed comparison. Click to seek, multiple colormaps (Plasma, Ocean, Voice ID, Thermal), log frequency scale.</p>
-            <code class="tf-formula">FFT &#8594; Log-Mel &#8594; Canvas2D &#183; 20 Hz - 22 kHz &#183; Click-to-seek</code>
-          </div>
+        <h3>35-Stage Pipeline</h3>
+        <p>Runs entirely inside your browser. Noise gate → Wiener NR → ERB spectral gate → harmonic reconstruction → dereverberation → ML VAD → dynamics chain.</p>
+        <div class="step-formats">
+          <span>Wiener NR</span><span>ERB Gate</span><span>VAD</span><span>Dereverb</span><span>De-ess</span><span>52 sliders</span>
         </div>
       </div>
 
-      <div class="tech-stack-row" aria-label="Technology stack">
-        <span class="ts-label">STACK</span>
-        <span class="ts-chip">Web Audio API</span>
-        <span class="ts-chip">AudioWorklet</span>
-        <span class="ts-chip">Web Workers</span>
-        <span class="ts-chip ts-chip-highlight">ONNX Runtime Web</span>
-        <span class="ts-chip">Silero VAD</span>
-        <span class="ts-chip">WebAssembly DSP</span>
-        <span class="ts-chip">Three.js 3D</span>
-        <span class="ts-chip">32-bit Float</span>
-        <span class="ts-chip ts-chip-highlight">SHA-256 Forensic</span>
+      <!-- Step 3 -->
+      <div class="step">
+        <div class="step-num">03 — DOWNLOAD</div>
+        <div class="step-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </div>
+        <h3>Download Studio WAV</h3>
+        <p>Get studio-clean WAV output. A/B compare original versus processed in real time. Save at 32-bit float precision — no quality loss.</p>
+        <div class="step-formats">
+          <span>32-bit float</span><span>A/B compare</span><span>WAV export</span><span>zero loss</span>
+        </div>
       </div>
     </div>
   </div>
+</section>
+
+<!-- ══════════════════════════════════
+     WHAT MAKES IT DIFFERENT
+══════════════════════════════════ -->
+<section class="section" style="padding-top:0">
+  <div class="wrap">
+    <div class="section-tag">What Makes It Different</div>
+    <h2 class="section-title">Not another noise filter</h2>
+    <p class="section-sub">Every other tool clips to a cloud server. VoiceIsolate Pro combines neural network VAD with classical spectral DSP — fully offline.</p>
+
+    <div class="features">
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-violet">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>ML + Classical Hybrid</h4>
+          <p>Silero VAD neural network identifies speech frames. Wiener-MMSE spectral filtering removes noise. Neither alone is as accurate.</p>
+          <code>VAD → Wiener → ERB Gate</code>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-green">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>100% Private &amp; Local</h4>
+          <p>Zero server uploads. All 35 stages run inside <code>OfflineAudioContext</code> in your browser tab — your audio never leaves your device.</p>
+          <code>0 bytes transmitted</code>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-cyan">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>52 Real-Time Controls</h4>
+          <p>Gate, EQ, compressor, limiter, de-esser, dereverb, stereo width — all update the live playback chain instantly without reprocessing.</p>
+          <code>RT-tagged sliders update in &lt;20ms</code>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-cyan">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>3D Spectrograms</h4>
+          <p>Interactive Three.js 3D spectrogram — click a frequency band to mute it, drag to orbit the view, scroll to zoom. Plus 2D scrolling spectrogram, oscilloscope, and LUFS meter.</p>
+          <code>Three.js r128 · WebGL</code>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-orange">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>Every Audio &amp; Video Format</h4>
+          <p>MP3, WAV, FLAC, OGG, M4A, AAC, MP4, MOV, WEBM, MKV, AVI — audio and video. The browser's Web Audio API decodes everything natively.</p>
+          <code>audio/* · video/* · no size limit</code>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-violet">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>9 One-Click Presets</h4>
+          <p>Podcast, Film, Interview, Forensic, Broadcast, Restoration, Whisper, Crystal Voice, Music — all 52 sliders tuned by use case. Save your own custom presets too.</p>
+          <code>+ custom preset save</code>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════
+     LAUNCH CTA
+══════════════════════════════════ -->
+<div class="launch-wrap">
+  <div class="wrap">
+    <a href="/app/" class="launch-card">
+      <div class="launch-inner">
+        <div class="launch-text">
+          <span class="launch-tag">Engineer Mode v22.0</span>
+          <h2>Launch the App</h2>
+          <p>52 sliders. 6-panel diagnostic dashboard. A/B comparison. 3D spectrogram. 35-stage pipeline. Drop audio or video and get studio-clean output in seconds.</p>
+          <div class="launch-pills">
+            <span>35-Stage DSP</span><span>ML VAD</span><span>52 Sliders</span><span>A/B Compare</span>
+            <span>3D Spectrogram</span><span>32-bit WAV</span><span>100% Local</span><span>Zero Upload</span>
+          </div>
+        </div>
+        <div class="launch-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+          Open Engineer Mode
+        </div>
+      </div>
+    </a>
+  </div>
 </div>
 
-<div class="footer">Threads from Space v10 Architecture — Privacy-First — March 2026</div>
+<!-- ══════════════════════════════════
+     FOOTER
+══════════════════════════════════ -->
+<footer>
+  VoiceIsolate Pro v22.0 &nbsp;·&nbsp; Threads from Space v11 &nbsp;·&nbsp; Hybrid ML+DSP &nbsp;·&nbsp; Privacy-First &nbsp;·&nbsp; April 2026
+</footer>
+
+<!-- Stat counter animation -->
+<script>
+(function(){
+  function animateCounter(el){
+    const target = parseInt(el.dataset.target, 10);
+    const suffix = el.dataset.suffix || '';
+    if(target === 0){ el.textContent = '0' + suffix; return; }
+    const dur = 1400;
+    const start = performance.now();
+    function step(now){
+      const t = Math.min((now - start) / dur, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      el.textContent = Math.round(ease * target) + suffix;
+      if(t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  // Trigger when hero is visible
+  const counters = document.querySelectorAll('.stat-num[data-target]');
+  if('IntersectionObserver' in window){
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => { if(e.isIntersecting){ animateCounter(e.target); io.unobserve(e.target); }});
+    }, {threshold:0.5});
+    counters.forEach(c => io.observe(c));
+  } else {
+    counters.forEach(animateCounter);
+  }
+})();
+</script>
 
 <!-- Vercel Speed Insights -->
-<script>
-  window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
-</script>
+<script>window.si = window.si || function(){(window.siq = window.siq || []).push(arguments);};</script>
 <script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>

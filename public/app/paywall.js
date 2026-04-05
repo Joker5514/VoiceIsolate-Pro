@@ -402,16 +402,17 @@ const Paywall = (() => {
         );
         if (confirmed) {
           const LM = window.LicenseManager;
-          if (LM) {
-            const token = LM._createDemoTokenPublic ? LM._createDemoTokenPublic(tier, 30) : null;
-            if (token) {
-              const result = LM.activate(token, 'demo@voiceisolatepro.com');
-              if (result.success) {
-                PW.closeModal();
-                PW.showSuccessToast(`${tier} activated! (Demo mode)`);
-                window.dispatchEvent(new CustomEvent('vip:tier-changed', { detail: { tier } }));
-              }
+          if (LM && typeof LM.activateTrial === 'function') {
+            const result = LM.activateTrial(tier, 'demo@voiceisolatepro.com');
+            if (result && result.success) {
+              PW.closeModal();
+              PW.showSuccessToast(`${tier} activated! (Demo mode)`);
+              window.dispatchEvent(new CustomEvent('vip:tier-changed', { detail: { tier } }));
+            } else {
+              alert('Demo activation failed. Please try again.');
             }
+          } else {
+            alert('Demo activation is unavailable in this build.');
           }
         }
         return;
