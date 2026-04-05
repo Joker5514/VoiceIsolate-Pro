@@ -2,25 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>VoiceIsolate Pro v21.0 – Engineer Mode</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="description" content="Studio-grade voice isolation and audio enhancement. 32-stage DSP pipeline with ML-powered noise removal. 100% local processing." />
-  <meta name="theme-color" content="#0a0a0f" />
-  <!-- Mobile App Meta -->
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="VoiceIsolate Pro" />
-  <!-- PWA Manifest -->
-  <link rel="manifest" href="/manifest.json" />
   <title>VoiceIsolate Pro v22.0 – Engineer Mode</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
   <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="mobile.css" />
 </head>
 <body>
   <!-- HEADER -->
@@ -28,13 +17,13 @@
     <div class="hdr-left">
       <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
       <div>
-        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v21.0</span></h1>
         <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v22.0</span></h1>
         <span class="hdr-badge">ENGINEER MODE</span>
         <span class="hdr-badge diag-badge">6-PANEL DIAGNOSTICS</span>
       </div>
     </div>
-    <div class="hdr-stats">
+    <button id="statsToggle" class="hdr-stats-toggle" aria-label="Toggle stats" aria-expanded="false">&#9660;</button>
+    <div class="hdr-stats" id="hdrStats">
       <div class="hdr-stat"><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR Gain</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
@@ -60,7 +49,7 @@
         </div>
         <div class="upload-row">
           <button id="micBtn" class="btn btn-mic">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
             <span id="micLabel">Record</span>
           </button>
           <span id="fileInfo" class="file-info">No file loaded</span>
@@ -112,11 +101,13 @@
       <!-- Actions -->
       <div class="actions-row">
         <button id="processBtn" class="btn btn-primary" disabled>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21"/></svg>
-          Process (35-Stage)
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+          Process (32-Stage)
         </button>
         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
+        <button id="forensicToggle" class="btn btn-xs">Forensic</button>
+        <button id="auditLogBtn" class="btn btn-xs" disabled>Audit Log</button>
       </div>
 
       <!-- Pipeline -->
@@ -129,11 +120,11 @@
       <!-- Save -->
       <div class="save-row">
         <button id="saveOrigBtn" class="btn btn-save" disabled>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Save Original WAV
         </button>
         <button id="saveProcBtn" class="btn btn-save-proc" disabled>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Save Processed WAV
         </button>
       </div>
@@ -150,11 +141,11 @@
       <!-- Transport -->
       <div class="card transport-card">
         <div class="transport-row">
-          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg></button>
-          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
-          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
-          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
-          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
+          <button id="tpPlay" class="btn btn-tp" disabled title="Play" aria-label="Play"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg></button>
+          <button id="tpPause" class="btn btn-tp" disabled title="Pause" aria-label="Pause"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+          <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
+          <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
+          <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
           <div class="tp-time"><span id="tpCur">0:00</span> / <span id="tpTotal">0:00</span></div>
           <input type="range" aria-label="Seek playback" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled />
           <div class="tp-speed">
@@ -305,175 +296,25 @@
     </div>
   </main>
 
-  <!-- HOW IT WORKS – Comprehensive Technical Features Card (v19 Unified) -->
-  <section class="tech-card-wrap" aria-label="Technical Features">
-    <div class="tech-card">
-      <div class="tech-card-hdr">
-        <div class="tech-card-title-row">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
-          <h2 class="tech-card-title">How It Works</h2>
-          <span class="tech-card-badge">36-STAGE DECA-PASS</span>
-          <span class="tech-card-badge tech-card-badge-new">v21 TFS v10</span>
-        </div>
-        <p class="tech-card-sub">A hybrid ML + DSP pipeline processes audio entirely in-browser with optional forensic SHA-256 audit trail — zero data transmission, full privacy, court-ready output.</p>
-      </div>
 
-      <div class="tech-pipeline-flow" aria-label="Pipeline signal flow">
-        <div class="tpf-step">
-          <span class="tpf-num">1–4</span>
-          <span class="tpf-lbl">Input Conditioning &amp; Cleanup</span>
-        </div>
-        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <div class="tpf-step">
-          <span class="tpf-num">5–10</span>
-          <span class="tpf-lbl">STFT &amp; ML Source Separation</span>
-        </div>
-        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <div class="tpf-step">
-          <span class="tpf-num">11–21</span>
-          <span class="tpf-lbl">Spectral Ops (In-Place) &amp; iSTFT</span>
-        </div>
-        <svg class="tpf-arrow" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true"><path d="M0 5h14M9 1l5 4-5 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <div class="tpf-step">
-          <span class="tpf-num">22–36</span>
-          <span class="tpf-lbl">EQ, Dynamics, LUFS &amp; Export</span>
-        </div>
-      </div>
-
-      <div class="tech-features-grid">
-        <!-- Feature 1 -->
-        <div class="tf-item">
-          <div class="tf-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h4l3-9 4 18 3-9h6"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Spectral Subtraction</h3>
-            <p class="tf-desc">64-band frequency-domain noise removal using over-subtraction with a spectral floor to eliminate musical noise artifacts.</p>
-            <code class="tf-formula">|X&#770;(&#969;)| = max(|X(&#969;)| - &#945;&#183;E[|N(&#969;)|], &#946;&#183;|X(&#969;)|)</code>
-          </div>
-        </div>
-
-        <!-- Feature 2 -->
-        <div class="tf-item">
-          <div class="tf-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Wiener Filtering</h3>
-            <p class="tf-desc">Adaptive MMSE Wiener gain applied per frequency bin — strongest suppression in low-SNR regions for natural-sounding output.</p>
-            <code class="tf-formula">G(t) = &#8730;( max(P_signal - P_noise, 0) / max(P_signal, &#949;) )</code>
-          </div>
-        </div>
-
-        <!-- Feature 3 -->
-        <div class="tf-item tf-item-highlight">
-          <div class="tf-icon tf-icon-ml" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Silero VAD + ONNX Runtime <span class="tf-badge-ml">ML</span></h3>
-            <p class="tf-desc">ONNX Runtime Web powers real-time Voice Activity Detection in a dedicated Web Worker — classifying speech frames at sub-millisecond latency with zero network calls.</p>
-            <code class="tf-formula">P(voice | frame) &#8594; gate mask @ 20 ms chunks &#183; ONNX WebGL backend</code>
-          </div>
-        </div>
-
-        <!-- Feature 4 -->
-        <div class="tf-item">
-          <div class="tf-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="4" height="10" rx="1"/><rect x="9" y="4" width="4" height="16" rx="1"/><rect x="16" y="9" width="4" height="8" rx="1"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Dynamics &amp; Compression</h3>
-            <p class="tf-desc">Envelope-follower compressor with per-sample attack/release constants keeps dialogue intelligible across wide dynamic range content.</p>
-            <code class="tf-formula">a = exp(-1 / (SR &#183; t_attack)) &#183; GR = -max((L - T)&#183;(1 - 1/R), 0)</code>
-          </div>
-        </div>
-
-        <!-- Feature 5 -->
-        <div class="tf-item">
-          <div class="tf-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">LUFS Normalization</h3>
-            <p class="tf-desc">Output is normalized to broadcast targets — -14 LUFS for streaming, -16 LUFS for podcasts — using ITU-R BS.1770-4 K-weighted measurement.</p>
-            <code class="tf-formula">gain = 10^( (L_target - L_measured) / 20 )</code>
-          </div>
-        </div>
-
-        <!-- Feature 6 -->
-        <div class="tf-item">
-          <div class="tf-icon" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">100% Local Processing</h3>
-            <p class="tf-desc">All DSP runs in-browser via Web Workers and AudioWorklet. Audio never leaves your device — no uploads, no servers, no storage.</p>
-            <code class="tf-formula">Worker Pool &#8594; DSP Thread &#8594; AudioWorklet &#8594; Output Buffer</code>
-          </div>
-        </div>
-
-        <!-- Feature 7 -->
-        <div class="tf-item tf-item-highlight">
-          <div class="tf-icon tf-icon-forensic" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Forensic Mode <span class="tf-badge-new">NEW</span></h3>
-            <p class="tf-desc">Enable SHA-256 cryptographic hashing at each processing stage to create a court-admissible audit trail. Download the complete chain-of-custody log after processing.</p>
-            <code class="tf-formula">SHA-256(stage_n) &#8594; audit_log.json &#183; timestamp + stage + hash</code>
-          </div>
-        </div>
-
-        <!-- Feature 8 -->
-        <div class="tf-item tf-item-highlight">
-          <div class="tf-icon tf-icon-viz" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
-          </div>
-          <div class="tf-body">
-            <h3 class="tf-title">Full-File Spectrogram <span class="tf-badge-restored">RESTORED</span></h3>
-            <p class="tf-desc">Interactive overview spectrogram with A/B toggle for original vs processed comparison. Click to seek, multiple colormaps (Plasma, Ocean, Voice ID, Thermal), log frequency scale.</p>
-            <code class="tf-formula">FFT &#8594; Log-Mel &#8594; Canvas2D &#183; 20 Hz - 22 kHz &#183; Click-to-seek</code>
-          </div>
-        </div>
-      </div>
-
-      <div class="tech-stack-row" aria-label="Technology stack">
-        <span class="ts-label">STACK</span>
-        <span class="ts-chip">Web Audio API</span>
-        <span class="ts-chip">AudioWorklet</span>
-        <span class="ts-chip">Web Workers</span>
-        <span class="ts-chip ts-chip-highlight">ONNX Runtime Web</span>
-        <span class="ts-chip">Silero VAD</span>
-        <span class="ts-chip">WebAssembly DSP</span>
-        <span class="ts-chip">Three.js 3D</span>
-        <span class="ts-chip">32-bit Float</span>
-        <span class="ts-chip ts-chip-highlight">SHA-256 Forensic</span>
-      </div>
-    </div>
-  </section>
-
-  <footer class="ftr">
-    <span>VoiceIsolate Pro v21.0 · Threads from Space v10 · Hybrid ML+DSP · 32-Stage Octa-Pass · Mobile-Ready</span>
   <footer class="ftr">
     <span>VoiceIsolate Pro v22.0 · Threads from Space v11 · Hybrid ML+DSP · 35-Stage Deca-Pass</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
 
   <div id="tooltip" class="slider-tooltip"></div>
-  <!-- v21 Modular Architecture: TFS v10 + Capacitor Mobile -->
-  <script src="pipeline-state.js"></script>
-  <script src="ring-buffer.js"></script>
+
+  <!-- Mobile sticky action bar -->
+  <div class="mobile-action-bar" id="mobileActionBar">
+    <button id="mobileProcessBtn" class="btn btn-primary" disabled aria-label="Process audio">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+      Process
+    </button>
+    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
+    <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Stop</button>
+  </div>
+
   <script src="dsp-core.js"></script>
   <script src="app.js"></script>
-  <!-- Capacitor Bridge (injected by native shell on Android/iOS) -->
-  <script>
-    // Detect Capacitor environment and enable native features
-    if (window.Capacitor) {
-      document.documentElement.classList.add('capacitor-native');
-      console.log('[VoiceIsolate] Running in Capacitor native shell:', window.Capacitor.getPlatform());
-    }
-  </script>
-  <script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>
