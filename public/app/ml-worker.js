@@ -18,7 +18,6 @@
  *             DNS v2 (conformer), noise classifier, ConvTasNet multi-speaker sep
  */
 
-let ort = null;             // ONNX Runtime reference
 let sessions = {};          // { demucs, bsrnn, vad, ecapa }
 let provider = 'wasm';      // active execution provider
 let inputRing = null;        // SharedRingBuffer (read side)
@@ -130,9 +129,8 @@ self.onmessage = async (e) => {
  */
 async function initialize(msg) {
   try {
-    if (!ort) {
+    if (!self.ort) {
       importScripts('/lib/ort.min.js');
-      ort = self.ort;
     }
 
     provider = await detectProvider();
@@ -149,7 +147,7 @@ async function initialize(msg) {
     for (const name of models) {
       const path = msg.modelPaths?.[name] || MODEL_PATHS[name];
       try {
-        sessions[name] = await ort.InferenceSession.create(path, sessionOpts);
+        sessions[name] = await self.ort.InferenceSession.create(path, sessionOpts);
         log('info', `Loaded model: ${name}`);
       } catch (err) {
         const displayName = name === 'vad' ? 'VAD' : name;
@@ -295,7 +293,7 @@ async function processChunkWithMask(chunk, session) {
   let gainMask;
   if (session) {
     try {
-      const tensor = new ort.Tensor('float32', mag, [1, 1, halfN]);
+      const tensor = new self.ort.Tensor('float32', mag, [1, 1, halfN]);
       const results = await session.run({ input: tensor });
       const outputKey = Object.keys(results)[0];
       const rawMask = results[outputKey];
@@ -346,7 +344,7 @@ async function generateMask(frame) {
     const stereo = new Float32Array(len * 2);
     stereo.set(frame, 0);
     stereo.set(frame, len);
-    const tensor = new ort.Tensor('float32', stereo, [1, 2, len]);
+    const tensor = new self.ort.Tensor('float32', stereo, [1, 2, len]);
     try {
       const result = await sessions.demucs.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -366,7 +364,7 @@ async function generateMask(frame) {
     const stereo = new Float32Array(len * 2);
     stereo.set(frame, 0);
     stereo.set(frame, len);
-    const tensor = new ort.Tensor('float32', stereo, [1, 2, len]);
+    const tensor = new self.ort.Tensor('float32', stereo, [1, 2, len]);
     try {
       const result = await sessions.bsrnn.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -427,9 +425,9 @@ async function handleVAD(msg) {
          chunk = padded;
       }
 
-      const inputTensor = new ort.Tensor('float32', chunk, [1, chunk.length]);
-      const srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
-      const stateTensor = new ort.Tensor('float32', state, [2, 1, stateSize]);
+      const inputTensor = new self.ort.Tensor('float32', chunk, [1, chunk.length]);
+      const srTensor = new self.ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
+      const stateTensor = new self.ort.Tensor('float32', state, [2, 1, stateSize]);
 
       try {
         const result = await sessions.vad.run({
@@ -518,7 +516,7 @@ async function handleEnroll(msg) {
 
   try {
     const data = msg.data;
-    const tensor = new ort.Tensor('float32', data, [1, 1, data.length]);
+    const tensor = new self.ort.Tensor('float32', data, [1, 1, data.length]);
     try {
       const result = await sessions.ecapa.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -550,7 +548,7 @@ async function handleIdentify(msg) {
 
   try {
     const data = msg.data;
-    const tensor = new ort.Tensor('float32', data, [1, 1, data.length]);
+    const tensor = new self.ort.Tensor('float32', data, [1, 1, data.length]);
     try {
       const result = await sessions.ecapa.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -589,7 +587,7 @@ async function handleDNS2(msg) {
   }
 
   try {
-    const tensor = new ort.Tensor('float32', magnitude, [1, 1, magnitude.length]);
+    const tensor = new self.ort.Tensor('float32', magnitude, [1, 1, magnitude.length]);
     try {
       const result = await sessions.dns2.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -632,7 +630,7 @@ async function handleClassifyNoise(msg) {
   }
 
   try {
-    const tensor = new ort.Tensor('float32', features, [1, features.length]);
+    const tensor = new self.ort.Tensor('float32', features, [1, features.length]);
     try {
       const result = await sessions.noiseClassifier.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -700,7 +698,7 @@ async function handleMultiSeparate(msg) {
   }
 
   try {
-    const tensor = new ort.Tensor('float32', data, [1, 1, data.length]);
+    const tensor = new self.ort.Tensor('float32', data, [1, 1, data.length]);
     let streams;
     try {
       const result = await sessions.convtasnet.run({ input: tensor });
