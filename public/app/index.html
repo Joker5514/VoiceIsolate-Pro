@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>VoiceIsolate Pro v22.0 – Engineer Mode</title>
+  <title>VoiceIsolate Pro v22.1 – Engineer Mode</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -17,7 +17,7 @@
     <div class="hdr-left">
       <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
       <div>
-        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v22.0</span></h1>
+        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v22.1</span></h1>
         <span class="hdr-badge">ENGINEER MODE</span>
         <span class="hdr-badge diag-badge">6-PANEL DIAGNOSTICS</span>
       </div>
@@ -146,159 +146,95 @@
           <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
           <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
           <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
-          <div class="tp-time"><span id="tpCur">0:00</span> / <span id="tpTotal">0:00</span></div>
-          <input type="range" aria-label="Seek playback" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" disabled />
-          <div class="tp-speed">
-            <label for="tpSpeed">Speed</label>
-            <select aria-label="Playback speed" id="tpSpeed" disabled>
-              <option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="0.75">0.75x</option>
-              <option value="1" selected>1x</option><option value="1.25">1.25x</option><option value="1.5">1.5x</option><option value="2">2x</option>
-            </select>
+          <div class="tp-time"><span id="tpCur">0:00</span><span class="tp-sep">/​</span><span id="tpDur">0:00</span></div>
+          <div class="tp-vol">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+            <input type="range" id="tpVol" class="tp-vol-slider" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
           </div>
-          <div class="tp-ab">
-            <button id="tpAB" class="btn btn-ab" disabled>A/B</button>
-            <span id="tpABLabel" class="tp-ab-label">Original</span>
-          </div>
+          <label class="tp-ab-label" title="A/B compare">
+            <input type="checkbox" id="tpAB" />
+            <span>A/B</span>
+          </label>
         </div>
-      </div>
-
-      <!-- ═══ DIAGNOSTIC DASHBOARD (6 Panels) ═══ -->
-      <div class="diag-section">
-        <div class="diag-header">
-          <span class="diag-title">DIAGNOSTIC DASHBOARD</span>
-          <span class="diag-fps" id="diagFps">-- fps</span>
-        </div>
-
-        <!-- Row 1: A/B Waveform (full width) -->
-        <div class="card viz-card diag-ab">
-          <div class="viz-hdr">
-            <span>A/B Waveform Comparison</span>
-            <div class="viz-actions">
-              <button id="abOverlayBtn" class="btn btn-xs">Overlay</button>
-              <span class="diag-legend"><span class="dl-dot" style="background:#3b82f6"></span>Original <span class="dl-dot" style="background:#a855f7"></span>Processed</span>
-            </div>
-          </div>
-          <canvas id="abWaveCanvas" class="viz-canvas diag-ab-cv"></canvas>
-        </div>
-
-        <!-- Row 2: Oscilloscope | Spectrogram+Overlays | LUFS -->
-        <div class="diag-row3">
-          <div class="card viz-card diag-osc">
-            <div class="viz-hdr">
-              <span>Oscilloscope</span>
-              <div class="viz-actions">
-                <button class="btn btn-xs osc-mode active" data-mode="wave">Wave</button>
-                <button class="btn btn-xs osc-mode" data-mode="mirror">Mirror</button>
-                <button class="btn btn-xs osc-mode" data-mode="lissajous">XY</button>
-              </div>
-            </div>
-            <canvas id="oscCanvas" class="viz-canvas diag-osc-cv"></canvas>
-          </div>
-          <div class="card viz-card diag-spec-overlay">
-            <div class="viz-hdr">
-              <span>Spectrogram + Overlays</span>
-              <div class="viz-actions">
-                <button id="overlayNoise" class="btn btn-xs overlay-toggle active" data-overlay="noise">Noise</button>
-                <button id="overlayERB" class="btn btn-xs overlay-toggle active" data-overlay="erb">ERB</button>
-                <button id="overlayML" class="btn btn-xs overlay-toggle" data-overlay="ml">ML Mask</button>
-              </div>
-            </div>
-            <canvas id="specOverlayCanvas" class="viz-canvas diag-spec-cv"></canvas>
-          </div>
-          <div class="card viz-card diag-lufs">
-            <div class="viz-hdr"><span>LUFS Meter</span></div>
-            <canvas id="lufsCanvas" class="viz-canvas diag-lufs-cv"></canvas>
-            <div class="lufs-readouts">
-              <span class="lufs-rd"><span class="lufs-val" id="lufsShort">--</span><span class="lufs-lbl">Short</span></span>
-              <span class="lufs-rd"><span class="lufs-val" id="lufsInt">--</span><span class="lufs-lbl">Integrated</span></span>
-              <span class="lufs-rd"><span class="lufs-val" id="lufsPeak">--</span><span class="lufs-lbl">Peak dBTP</span></span>
-              <span class="lufs-rd"><span class="lufs-val" id="lufsCrest">--</span><span class="lufs-lbl">Crest</span></span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Row 3: ML Saliency | Speaker PCA -->
-        <div class="diag-row2">
-          <div class="card viz-card diag-saliency">
-            <div class="viz-hdr">
-              <span>ML Saliency Heatmap</span>
-              <div class="viz-actions">
-                <span class="diag-legend"><span class="dl-dot" style="background:#ef4444"></span>High <span class="dl-dot" style="background:#eab308"></span>Mid <span class="dl-dot" style="background:transparent;border:1px solid #333"></span>Low</span>
-              </div>
-            </div>
-            <canvas id="saliencyCanvas" class="viz-canvas diag-saliency-cv"></canvas>
-          </div>
-          <div class="card viz-card diag-cluster">
-            <div class="viz-hdr">
-              <span>Speaker PCA Cluster</span>
-              <div class="viz-actions">
-                <span class="diag-legend"><span class="dl-dot" style="background:#a855f7"></span>Target <span class="dl-dot" style="background:#3b82f6"></span>Other <span class="dl-dot" style="background:#f97316"></span>Noise</span>
-              </div>
-            </div>
-            <canvas id="clusterCanvas" class="viz-canvas diag-cluster-cv"></canvas>
+        <div class="tp-scrub-row">
+          <div class="tp-scrub-track" id="tpScrubTrack" role="slider" aria-label="Playback position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+            <div id="tpScrubFill" class="tp-scrub-fill"></div>
+            <div id="tpScrubThumb" class="tp-scrub-thumb"></div>
           </div>
         </div>
       </div>
 
-      <!-- 3D Spectrogram -->
-      <div class="card viz-card">
-        <div class="viz-hdr">
-          <span>3D Spectrogram</span>
-          <div class="viz-actions">
-            <button id="spectro3DReset" class="btn btn-xs">Reset View</button>
-            <span class="viz-hint">Click band to mute · Drag to orbit · Scroll to zoom</span>
-          </div>
-        </div>
-        <div id="spectro3DContainer" class="spectro3d-container">
-          <canvas id="spectro3DCanvas"></canvas>
-        </div>
-        <div class="spectro-legend">
-          <span class="sl-item"><span class="sl-dot" style="background:#dc2626"></span>Voice</span>
-          <span class="sl-item"><span class="sl-dot" style="background:#2563eb"></span>Sub/Low</span>
-          <span class="sl-item"><span class="sl-dot" style="background:#16a34a"></span>Mid</span>
-          <span class="sl-item"><span class="sl-dot" style="background:#eab308"></span>High</span>
-          <span class="sl-item"><span class="sl-dot" style="background:#9333ea"></span>Transients</span>
-        </div>
+      <!-- Waveform -->
+      <div class="card viz-card" id="waveCard">
+        <div class="viz-hdr"><span>Waveform</span><span class="viz-badge">RMS + Peak</span></div>
+        <canvas id="waveCanvas" class="viz-canvas" aria-label="Audio waveform visualization"></canvas>
       </div>
 
-      <!-- 2D Spectrogram -->
-      <div class="card viz-card">
-        <div class="viz-hdr"><span>Real-Time Spectrogram</span></div>
-        <canvas id="spectro2DCanvas" class="viz-canvas spectro2d"></canvas>
-        <div class="spectro-scale"><span>20</span><span>200</span><span>1k</span><span>4k</span><span>8k</span><span>16k</span><span>22k Hz</span></div>
-      </div>
-
-      <!-- Waveforms -->
-      <div class="wave-row">
-        <div class="card viz-card wave-card">
-          <div class="viz-hdr"><span>Original Waveform</span></div>
-          <canvas id="waveOrigCanvas" class="viz-canvas wave-cv"></canvas>
+      <!-- Spectrogram -->
+      <div class="card viz-card" id="specCard">
+        <div class="viz-hdr"><span>Spectrogram</span><span class="viz-badge">FFT 2048</span><span class="viz-badge" id="specModeBadge">2D</span>
+          <button id="spec3dBtn" class="btn btn-xs" style="margin-left:auto">Toggle 3D</button>
         </div>
-        <div class="card viz-card wave-card">
-          <div class="viz-hdr"><span>Processed Waveform</span></div>
-          <canvas id="waveProcCanvas" class="viz-canvas wave-cv"></canvas>
+        <canvas id="specCanvas" class="viz-canvas" aria-label="Spectrogram visualization"></canvas>
+        <canvas id="spec3dCanvas" class="viz-canvas" style="display:none" aria-label="3D spectrogram visualization"></canvas>
+      </div>
+
+      <!-- Comparison -->
+      <div class="card viz-card" id="compCard">
+        <div class="viz-hdr"><span>Before / After</span><span class="viz-badge">Spectral Diff</span></div>
+        <canvas id="compCanvas" class="viz-canvas" aria-label="Before/after comparison visualization"></canvas>
+      </div>
+
+      <!-- Noise Floor -->
+      <div class="card viz-card" id="noiseCard">
+        <div class="viz-hdr"><span>Noise Floor</span><span class="viz-badge">dBFS</span></div>
+        <canvas id="noiseCanvas" class="viz-canvas" aria-label="Noise floor visualization"></canvas>
+      </div>
+
+      <!-- Pipeline Diagnostics -->
+      <div class="card viz-card" id="diagCard">
+        <div class="viz-hdr"><span>Pipeline Diagnostics</span><span class="viz-badge">35-Stage</span></div>
+        <canvas id="diagCanvas" class="viz-canvas" aria-label="Pipeline diagnostics visualization"></canvas>
+      </div>
+
+      <!-- Forensic Report -->
+      <div class="card forensic-card" id="forensicCard" style="display:none">
+        <div class="viz-hdr"><span>Forensic Analysis Report</span><span class="viz-badge">v22.1</span></div>
+        <div id="forensicReport" class="forensic-report"></div>
+      </div>
+
+      <!-- Batch Processing -->
+      <div class="card" id="batchCard" style="display:none">
+        <div class="viz-hdr"><span>Batch Processing</span><span id="batchCount" class="viz-badge">0 files</span></div>
+        <div class="batch-drop" id="batchDrop" role="button" tabindex="0" aria-label="Drop multiple audio files for batch processing">
+          Drop multiple files here
         </div>
-      </div>
-
-      <!-- Frequency Analyzer -->
-      <div class="card viz-card">
-        <div class="viz-hdr"><span>Frequency Analyzer</span></div>
-        <canvas id="freqCanvas" class="viz-canvas freq-cv"></canvas>
-      </div>
-
-      <!-- Stats -->
-      <div class="stats-row">
-        <div class="stat-box"><span class="st-lbl">Bit Depth</span><span class="st-val">32-bit float</span></div>
-        <div class="stat-box"><span class="st-lbl">Latency</span><span class="st-val" id="stLatency">--</span></div>
-        <div class="stat-box"><span class="st-lbl">Process Time</span><span class="st-val" id="stProcTime">--</span></div>
-        <div class="stat-box"><span class="st-lbl">Voices</span><span class="st-val" id="stVoices">--</span></div>
+        <div id="batchList" class="batch-list"></div>
+        <div class="batch-actions">
+          <button id="batchProcessBtn" class="btn btn-primary" disabled>Process All</button>
+          <button id="batchClearBtn" class="btn">Clear</button>
+          <span id="batchProgress" class="batch-progress"></span>
+        </div>
       </div>
     </div>
   </main>
 
+  <!-- Status Bar -->
+  <div class="status-bar" id="statusBar">
+    <span id="statusMsg" class="st-msg">Ready</span>
+    <div class="st-right">
+      <div class="stat-box"><span class="st-lbl">Sample Rate</span><span class="st-val" id="stSR">--</span></div>
+      <div class="stat-box"><span class="st-lbl">Bit Depth</span><span class="st-val">32-bit float</span></div>
+      <div class="stat-box"><span class="st-lbl">Latency</span><span class="st-val" id="stLatency">--</span></div>
+      <div class="stat-box"><span class="st-lbl">Process Time</span><span class="st-val" id="stProcTime">--</span></div>
+      <div class="stat-box"><span class="st-lbl">Voices</span><span class="st-val" id="stVoices">--</span></div>
+    </div>
+  </div>
+  </main>
+
 
   <footer class="ftr">
-    <span>VoiceIsolate Pro v22.0 · Threads from Space v11 · Hybrid ML+DSP · 35-Stage Deca-Pass</span>
+    <span>VoiceIsolate Pro v22.1 · Threads from Space v11 · Hybrid ML+DSP · 35-Stage Deca-Pass</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
 
@@ -314,7 +250,16 @@
     <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Stop</button>
   </div>
 
+  <!-- BUG-C FIX: Load all required modules in dependency order before app.js -->
+  <script src="ring-buffer.js"></script>
+  <script src="pipeline-state.js"></script>
   <script src="dsp-core.js"></script>
+  <script src="pipeline-orchestrator.js"></script>
+  <script src="batch-orchestrator.js"></script>
+  <script src="analytics.js"></script>
+  <script src="license-manager.js"></script>
+  <script src="paywall.js"></script>
+  <script src="revenuecat.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
