@@ -95,8 +95,9 @@ const _bannedImport = (url) => { throw new Error(`BLOCKED: external script load:
 
 // ---- Initialization ----
 async function initialize(msg) {
-  // FIX 1: Block any ortUrl from msg — ORT must be loaded locally only
-  if (msg.ortUrl) _bannedImport(msg.ortUrl);
+  try {
+    // FIX 1: Block any ortUrl from msg — ORT must be loaded locally only
+    if (msg.ortUrl) _bannedImport(msg.ortUrl);
 
   try {
     // Import ONNX Runtime from vendored local copy only
