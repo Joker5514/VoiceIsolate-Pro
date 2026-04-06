@@ -1,3 +1,7 @@
+## 2024-03-24 - Keyboard Accessibility for Custom Tooltips
+**Learning:** Custom tooltips that only respond to mouse events (`mouseenter`/`mouseleave`) inadvertently hide vital contextual information from keyboard-only users who navigate the UI via the `Tab` key.
+**Action:** When implementing custom tooltips on interactive elements (like custom sliders), always ensure that the tooltip's visibility logic is also bound to the element's `focus` and `blur` events to guarantee full accessibility.
+
 ## 2024-05-24 - Custom Range Inputs Mask Keyboard Focus
 **Learning:** When using `-webkit-appearance: none` or `appearance: none` to create custom `<input type="range">` sliders, the browser's default focus ring is often removed (due to `outline: none` being explicitly set to clear native styling artifacts). Without explicitly styling `:focus-visible` on the slider thumb (`::-webkit-slider-thumb` / `::-moz-range-thumb`), keyboard users completely lose track of which slider they are modifying.
 **Action:** Always verify keyboard accessibility on custom range inputs, and ensure there is an `outline` or visual indicator specifically tied to `:focus-visible` on both the input itself and the pseudo-element thumb.

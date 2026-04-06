@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — ML Worker
-   Threads from Space v10 · ONNX Inference
+   VoiceIsolate Pro v22.1 — ML Worker
+   Threads from Space v11 · ONNX Inference
    Demucs v4 + BSRNN + Silero VAD + ECAPA-TDNN
    WebGPU > WASM fallback · Tensor disposal
    ============================================ */
@@ -90,12 +90,18 @@ self.onmessage = async (e) => {
   }
 };
 
+// Safety guard: prevent any runtime CDN loading
+const _bannedImport = (url) => { throw new Error(`BLOCKED: external script load: ${url}`); };
+
 // ---- Initialization ----
 async function initialize(msg) {
+  // FIX 1: Block any ortUrl from msg — ORT must be loaded locally only
+  if (msg.ortUrl) _bannedImport(msg.ortUrl);
+
   try {
-    // Import ONNX Runtime
+    // Import ONNX Runtime from vendored local copy only
     if (!ort) {
-      importScripts(msg.ortUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js');
+      importScripts('/lib/ort.min.js'); // FIX 1: local vendored copy, never CDN
       ort = self.ort;
     }
 
