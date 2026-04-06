@@ -110,11 +110,14 @@ class DspProcessor extends AudioWorkletProcessor {
     this.snrPrior     = new Float32Array(this.numBins);            // a priori SNR (ξ)
     this.noiseVar     = new Float32Array(this.numBins);            // noise variance σ²_n
     // MCRA continuous noise estimation (Minima Controlled Recursive Averaging)
+    // FIX: Issue #5 — noisePowerMin/Smth seeded from first real frame via _noiseInitialized flag
     this.noisePowerMin   = new Float32Array(this.numBins).fill(1e10); // running minimum
     this.noisePowerSmth  = new Float32Array(this.numBins);            // smoothed power
     this.speechPresProb  = new Float32Array(this.numBins);            // P(speech present)
     this.mcraBlockCount  = 0;
     this.mcraBlockSize   = 15; // frames per minima search window (~320ms)
+    this._noiseInitialized = false; // seeded on first real frame
+    this._warmupFrames     = 0;     // skip suppression for first 15 frames
     // De-clipping state
     this.clipCount       = 0;
     this.prevSample      = 0;
@@ -246,6 +249,8 @@ class DspProcessor extends AudioWorkletProcessor {
         this.prevGain.fill(1.0);
         this.prevMagEstimate.fill(0);
         this.snrPrior.fill(0);
+        this._noiseInitialized = false; // FIX: Issue #5 — re-seed from first frame after reset
+        this._warmupFrames = 0;
         this.mcraBlockCount = 0;
       }
     };
@@ -390,6 +395,21 @@ class DspProcessor extends AudioWorkletProcessor {
     // ── Stage 19: Harmonic Recovery AFTER NR (regenerate destroyed harmonics)
     this._harmonicRecovery(mag, ph);
 
+    // FIX: Issue #11 — formantShift slider was wired but never applied.
+    //   Cepstral envelope warping via bin-shift of spectral magnitude.
+    //   Applied after harmonic recovery to avoid warping the reconstructed harmonics.
+    if (this.params.formantShift !== 0) {
+      const halfN = nBins;
+      const shiftBins = Math.round(this.params.formantShift * (halfN / 24)); // semitones → bins
+      const shifted = new Float32Array(halfN);
+      for (let k = 0; k < halfN; k++) {
+        const src = k - shiftBins;
+        shifted[k] = (src >= 0 && src < halfN) ? mag[src] : 0;
+      }
+      mag.set(shifted);
+      // Note: phase interpolation (phase vocoder) needed for production-quality shifting
+    }
+
     // ── ML ring handoff (v19 spec): post-DSP spectrum → ONNX → refined mag ──
     // Non-blocking: write to input ring only when main thread has consumed previous frame.
     // Non-blocking: read from output ring only when ONNX result is available.
@@ -453,11 +473,39 @@ class DspProcessor extends AudioWorkletProcessor {
   //  Ref: PDF §8 — "MCRA for non-stationary environments"
   //  Continuously tracks noise floor without requiring explicit VAD.
   //  Uses smoothed power spectrum + running minimum to estimate noise.
+  // FIX: Issue #5 — MCRA was blind for first ~320ms because noisePowerMin started at 1e10
+  //   and noisePowerSmth started at 0, making ratio=0 so pSpeech was never present.
+  //   Seed both arrays from the first frame's actual power; skip suppression for warmup frames.
   _updateNoiseProfile(mag) {
     const nBins = this.numBins;
     const alphaS = 0.92;   // power spectrum smoothing
     const alphaD = 0.85;   // noise update smoothing
     const delta  = 2.0;    // speech-presence threshold factor
+
+    // First-frame initialization: seed estimators with actual signal power
+    if (this._noiseInitialized === false) {
+      for (let k = 0; k < nBins; k++) {
+        const p0 = mag[k] * mag[k];
+        this.noisePowerSmth[k] = p0;
+        this.noisePowerMin[k]  = p0;
+      }
+      this._noiseInitialized = true;
+      return; // skip first frame from suppression — use it only for warmup
+    }
+
+    // Warmup counter: accumulate noise profile for first 15 frames, apply no gain
+    this._warmupFrames = (this._warmupFrames || 0) + 1;
+    if (this._warmupFrames < 15) {
+      // Still update estimators so they converge, but don't apply suppression yet
+      for (let k = 0; k < nBins; k++) {
+        const power = mag[k] * mag[k];
+        this.noisePowerSmth[k] = alphaS * this.noisePowerSmth[k] + (1 - alphaS) * power;
+        if (this.noisePowerSmth[k] < this.noisePowerMin[k]) {
+          this.noisePowerMin[k] = this.noisePowerSmth[k];
+        }
+      }
+      return;
+    }
 
     for (let k = 0; k < nBins; k++) {
       const power = mag[k] * mag[k];
@@ -908,7 +956,9 @@ class DspProcessor extends AudioWorkletProcessor {
       this._dcPrevX = prevX;
     }
 
-    // ── High-Pass Filter (2nd-order Butterworth) ─────────────────────
+    // ── High-Pass Filter (RBJ Audio EQ Cookbook, 2nd-order) ──────────
+    // FIX: Issue #6 — a1/a2 sign error: double-negative made a1 positive (=+2*cos0/a0),
+    //   and a2 had wrong sign. Correct RBJ feedback coefficients: a1=(-2*cos0)/a0, a2=(1-alpha)/a0.
     if (p.hpFreq > 20) {
       const w0 = 6.283185307179586 * p.hpFreq / sr;
       const alpha = Math.sin(w0) / (2 * p.hpQ);
@@ -917,8 +967,8 @@ class DspProcessor extends AudioWorkletProcessor {
       const b0 = (1 + cos0) / 2 / a0;
       const b1 = -(1 + cos0) / a0;
       const b2 = (1 + cos0) / 2 / a0;
-      const a1 = -(-2 * cos0) / a0;
-      const a2 = -(1 - alpha) / a0;
+      const a1 = (-2 * cos0) / a0;        // ← correct: negative
+      const a2 = (1 - alpha) / a0;        // ← correct: positive
       let [x1, x2, y1, y2] = this._hpState;
       for (let i = 0; i < len; i++) {
         const x = block[i];
@@ -930,7 +980,8 @@ class DspProcessor extends AudioWorkletProcessor {
       this._hpState[2] = y1; this._hpState[3] = y2;
     }
 
-    // ── Low-Pass Filter ──────────────────────────────────────────────
+    // ── Low-Pass Filter (RBJ Audio EQ Cookbook, 2nd-order) ───────────
+    // FIX: Issue #6 — same a1/a2 sign error as highpass fixed above.
     if (p.lpFreq < sr / 2 - 100) {
       const w0 = 6.283185307179586 * p.lpFreq / sr;
       const alpha = Math.sin(w0) / (2 * p.lpQ);
@@ -939,8 +990,8 @@ class DspProcessor extends AudioWorkletProcessor {
       const b0 = (1 - cos0) / 2 / a0;
       const b1 = (1 - cos0) / a0;
       const b2 = (1 - cos0) / 2 / a0;
-      const a1 = -(-2 * cos0) / a0;
-      const a2 = -(1 - alpha) / a0;
+      const a1 = (-2 * cos0) / a0;        // ← correct: negative
+      const a2 = (1 - alpha) / a0;        // ← correct: positive
       let [x1, x2, y1, y2] = this._lpState;
       for (let i = 0; i < len; i++) {
         const x = block[i];

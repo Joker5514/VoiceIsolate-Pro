@@ -83,26 +83,11 @@ const Analytics = (() => {
       _session.featuresUsed.add(properties.feature);
     }
 
-    // Server flush (debounced)
-    if (_serverEnabled && _serverEndpoint) {
-      clearTimeout(_flushTimer);
-      _flushTimer = setTimeout(_flushToServer, 5000);
-    }
+    // FIX: Issue #4 — Server flush removed; _flushToServer() no longer exists.
   }
 
-  // ─── Server Flush ─────────────────────────────────────────────────────────────
-  async function _flushToServer() {
-    if (!_serverEnabled || !_serverEndpoint || _events.length === 0) return;
-    const toFlush = _events.slice(-50); // Send last 50 events
-    try {
-      await fetch(_serverEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ events: toFlush, sessionId: _session?.id }),
-        keepalive: true,
-      });
-    } catch { /* network error, events stay local */ }
-  }
+  // FIX: Issue #4 — Removed _flushToServer() entirely. VoiceIsolate Pro is 100% local;
+  //   all analytics remain in localStorage / in-memory only. No external fetch permitted.
 
   // ─── Aggregation ──────────────────────────────────────────────────────────────
   function _aggregate(events) {
@@ -214,7 +199,7 @@ const Analytics = (() => {
         totalMinutes: _session.totalMinutesProcessed,
         featuresUsed: Array.from(_session.featuresUsed),
       });
-      if (_serverEnabled) _flushToServer();
+      // FIX: Issue #4 — _flushToServer() removed; session end is local-only.
     },
 
     // ── Analytics Dashboard ─────────────────────────────────────────────────────
@@ -245,9 +230,10 @@ const Analytics = (() => {
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* ok */ }
     },
 
-    enableServerReporting(endpoint) {
-      _serverEndpoint = endpoint;
-      _serverEnabled = true;
+    // FIX: Issue #4 — enableServerReporting() stubbed out; server reporting is permanently disabled.
+    enableServerReporting(endpoint) { // eslint-disable-line no-unused-vars
+      // Intentionally disabled — VoiceIsolate Pro is 100% local
+      throw new Error('Server reporting is disabled. All analytics are local-only.');
     },
 
     disableServerReporting() {
