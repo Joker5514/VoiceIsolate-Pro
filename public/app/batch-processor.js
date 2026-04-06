@@ -93,11 +93,11 @@ const BatchProcessor = (() => {
       job.progress = 10;
       _emit('job:progress', { job, progress: 10 });
 
-      // Decode audio
-      const audioCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(
-        1, 44100, 44100
-      );
+      // Decode audio — use AudioContext (not OfflineAudioContext) so the native
+      // device sample rate is preserved and files are not silently resampled to 44100 Hz.
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      audioCtx.close().catch(() => {});
       const audioData = audioBuffer.getChannelData(0);
       const sampleRate = audioBuffer.sampleRate;
 
