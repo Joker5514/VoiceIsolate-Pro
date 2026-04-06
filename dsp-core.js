@@ -216,7 +216,7 @@ const DSPCore = {
       for (let i = 0; i < fftSize; i++) {
         if (offset + i < len) {
           output[offset + i] += real[i] * window[i];
-          windowSum[offset + i] += window[i];
+          windowSum[offset + i] += window[i] * window[i];
         }
       }
     }
