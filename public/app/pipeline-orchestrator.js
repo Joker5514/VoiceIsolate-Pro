@@ -52,6 +52,9 @@ class PipelineOrchestrator {
     this._inputRingSAB = null;
     // maskRing:  ML worker → worklet  (per-bin gain mask)
     this._maskRingSAB  = null;
+
+    // Cached ML worker init promise — allows idempotent pre-warming before gesture
+    this._mlInitPromise = null;
   }
 
   // ── One-time initialisation ─────────────────────────────────────────────
@@ -157,6 +160,18 @@ class PipelineOrchestrator {
         inputRing: this._inputRingSAB,
         maskRing:  this._maskRingSAB
       });
+
+      // Forward SABs to ML worker if it was pre-warmed before the gesture
+      if (this.mlWorker) {
+        this.mlWorker.postMessage({
+          type:         'initRingBuffers',
+          inputRing:    this._inputRingSAB,
+          maskRing:     this._maskRingSAB,
+          ringCapacity: this._ringCapacity,
+          quantumSize:  this._quantumSize,
+          halfN:        this._halfN
+        });
+      }
     } catch (err) {
       // SharedArrayBuffer blocked (missing COOP/COEP) — graceful degradation
       console.warn('[Orchestrator] SharedArrayBuffer unavailable; live ML masking disabled:', err.message);
@@ -166,7 +181,15 @@ class PipelineOrchestrator {
   }
 
   // ── ONNX Runtime + ML Worker initialisation ─────────────────────────────
-  async _initMLWorker() {
+  // Idempotent: safe to call immediately at bootstrap (no user gesture needed
+  // for Web Workers) AND again from _doInit() — returns the cached promise.
+  _initMLWorker() {
+    if (this._mlInitPromise) return this._mlInitPromise;
+    this._mlInitPromise = this._doInitMLWorker();
+    return this._mlInitPromise;
+  }
+
+  async _doInitMLWorker() {
     return new Promise((resolve) => {
       // ── Construct the ML Worker ──────────────────────────────────────────
       this.mlWorker = new Worker('./ml-worker.js');
@@ -262,6 +285,9 @@ class PipelineOrchestrator {
       };
 
       // ── Init message ─────────────────────────────────────────────────────
+      // SABs are NOT included here — they may not be allocated yet when the
+      // worker is pre-warmed before the first gesture. They are forwarded
+      // separately via 'initRingBuffers' inside _allocateRings() once ready.
       const msg = {
         type:      'init',
         ortUrl:    '/lib/ort.min.js',
@@ -270,15 +296,6 @@ class PipelineOrchestrator {
                     'ecapa_tdnn', 'convtasnet', 'bsrnn', 'demucs',
                     'noise_classifier']
       };
-
-      // Only include SABs if they were successfully allocated
-      if (this._inputRingSAB && this._maskRingSAB) {
-        msg.inputRing    = this._inputRingSAB;
-        msg.maskRing     = this._maskRingSAB;
-        msg.ringCapacity = this._ringCapacity;
-        msg.quantumSize  = this._quantumSize;
-        msg.halfN        = this._halfN;
-      }
 
       this.mlWorker.postMessage(msg);
     });
@@ -417,6 +434,15 @@ class PipelineOrchestrator {
       }
       return _origToggle();
     };
+
+    // ── Pre-warm ML Worker immediately ────────────────────────────────
+    // Web Workers don't require a user gesture. Starting the ML Worker
+    // now restores the eager-load behaviour that previously lived in the
+    // VoiceIsolatePro constructor, so models begin loading at page open.
+    // AudioContext + AudioWorklet are still deferred to first gesture below.
+    orch._initMLWorker().catch(e =>
+      console.warn('[Orchestrator] ML worker prewarm error:', e)
+    );
 
     // ── Lazy init on first gesture ─────────────────────────────────────
     // We defer AudioContext creation to first user interaction to satisfy
