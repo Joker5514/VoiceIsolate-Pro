@@ -108,7 +108,7 @@ async function initialize(msg) {
 
     // Configure session options
     const sessionOpts = {
-      executionProviders: [provider],
+      executionProviders: provider !== 'wasm' ? [provider, 'wasm'] : ['wasm'],
       graphOptimizationLevel: 'all',
       enableCpuMemArena: true,
       enableMemPattern: true

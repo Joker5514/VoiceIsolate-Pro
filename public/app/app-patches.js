@@ -243,7 +243,54 @@
       requestAnimationFrame(tick);
     };
 
-    console.info('[app-patches] VoiceIsolatePro.prototype patched ✓  (5 fixes applied)');
+    // ─────────────────────────────────────────────────────────────────
+    // BUG 5 FIX: stop() / seekDelta() / seekTo() — null tpSeek guard
+    // tpSeek is null in the current HTML (replaced by custom scrubber
+    // divs). These methods access tpSeek.value unconditionally.
+    // ─────────────────────────────────────────────────────────────────
+    P.stop = function () {
+      this.teardownChain();
+      this.isPlaying = false;
+      this.playOffset = 0;
+      if (this.isVideo && this.dom.videoPlayer) {
+        this.dom.videoPlayer.pause();
+        this.dom.videoPlayer.currentTime = 0;
+      }
+      this.stopSpectro();
+      this.stopDiagnostics();
+      if (this.dom.tpCur)        this.dom.tpCur.textContent = '0:00';
+      if (this.dom.tpSeek)       this.dom.tpSeek.value = 0;
+      if (this.dom.tpScrubFill)  this.dom.tpScrubFill.style.width = '0%';
+      if (this.dom.tpScrubThumb) this.dom.tpScrubThumb.style.left = '0%';
+      if (this.dom.tpScrubTrack) this.dom.tpScrubTrack.setAttribute('aria-valuenow', 0);
+    };
+
+    P.seekDelta = function (d) {
+      const buf = this.inputBuffer; if (!buf) return;
+      const speed = parseFloat((this.dom.tpSpeed && this.dom.tpSpeed.value) || 1);
+      if (this.isPlaying) this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
+      this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset + d));
+      if (this.isPlaying) { this.play(); return; }
+      const frac = buf.duration > 0 ? this.playOffset / buf.duration : 0;
+      if (this.dom.tpCur)        this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+      if (this.dom.tpSeek)       this.dom.tpSeek.value = frac * 1000;
+      if (this.dom.tpScrubFill)  this.dom.tpScrubFill.style.width  = (frac * 100) + '%';
+      if (this.dom.tpScrubThumb) this.dom.tpScrubThumb.style.left  = (frac * 100) + '%';
+    };
+
+    P.seekTo = function (frac) {
+      if (!this.inputBuffer) return;
+      const speed = parseFloat((this.dom.tpSpeed && this.dom.tpSpeed.value) || 1);
+      if (this.isPlaying) this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
+      this.playOffset = frac * this.inputBuffer.duration;
+      if (this.isPlaying) { this.play(); return; }
+      if (this.dom.tpCur)        this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+      if (this.dom.tpSeek)       this.dom.tpSeek.value = this.inputBuffer.duration > 0 ? frac * 1000 : 0;
+      if (this.dom.tpScrubFill)  this.dom.tpScrubFill.style.width  = (frac * 100) + '%';
+      if (this.dom.tpScrubThumb) this.dom.tpScrubThumb.style.left  = (frac * 100) + '%';
+    };
+
+    console.info('[app-patches] VoiceIsolatePro.prototype patched ✓  (8 fixes applied)');
   }
 
   // Run immediately if DOM is ready, else defer
