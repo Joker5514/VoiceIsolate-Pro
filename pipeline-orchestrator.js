@@ -277,7 +277,7 @@ class PipelineOrchestrator {
 
   // ===== PROCESSING =====
 
-  /** Run offline 36-stage pipeline */
+  /** Run offline 35-stage pipeline */
   async processOffline(params = null) {
     // FIX 4: Abort and terminate any in-flight processing before starting new run
     if (this.dspWorker) {
