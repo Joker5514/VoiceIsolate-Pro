@@ -1,17 +1,39 @@
 {
   "outputDirectory": "public",
   "buildCommand": "echo 'Static site — no build step'",
+  "routes": [
+    {
+      "src": "/app/voice-isolate-processor.js",
+      "dest": "/app/voice-isolate-processor.js"
+    },
+    {
+      "src": "/app/dsp-processor.js",
+      "dest": "/app/dsp-processor.js"
+    },
+    {
+      "src": "/app/ml-worker.js",
+      "dest": "/app/ml-worker.js"
+    },
+    {
+      "src": "/app/dsp-worker.js",
+      "dest": "/app/dsp-worker.js"
+    },
+    {
+      "src": "/app/(.*)",
+      "dest": "/app/$1"
+    },
+    {
+      "src": "/",
+      "dest": "/index.html"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
         { "key": "Cross-Origin-Opener-Policy",   "value": "same-origin" },
         { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
-        {
-          "key": "Cross-Origin-Resource-Policy",
-          "value": "cross-origin",
-          "comment": "MUST be cross-origin (not same-origin) so ml-worker.js can fetch .onnx model files via fetch('/models/...') from its worker origin context. same-origin would block the model loads and throw a CORP error."
-        },
+        { "key": "Cross-Origin-Resource-Policy", "value": "cross-origin" },
         { "key": "X-Frame-Options",              "value": "DENY" },
         { "key": "X-Content-Type-Options",       "value": "nosniff" },
         { "key": "Strict-Transport-Security",    "value": "max-age=63072000; includeSubDomains; preload" },
@@ -28,6 +50,20 @@
       "headers": [
         { "key": "Cross-Origin-Resource-Policy", "value": "same-site" },
         { "key": "Cache-Control", "value": "public, max-age=86400, immutable" }
+      ]
+    },
+    {
+      "source": "/app/voice-isolate-processor.js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript" },
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
+      "source": "/app/dsp-processor.js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript" },
+        { "key": "Cache-Control", "value": "no-cache" }
       ]
     }
   ]
