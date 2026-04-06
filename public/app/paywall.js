@@ -5,6 +5,17 @@
  */
 
 const Paywall = (() => {
+
+  // SEC-02 FIX: Safe innerHTML setter — DOMParser strips injected scripts
+  // All paywall markup is internal, but defence-in-depth prevents future regressions.
+  function _setHTML(el, html) {
+    if (!el) return;
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    // Remove any script/object/embed nodes the parser may have retained
+    doc.querySelectorAll('script,object,embed,iframe').forEach(n => n.remove());
+    el.innerHTML = doc.body.innerHTML;
+  }
+
   // ─── Stripe Price IDs (replace with real ones from Stripe Dashboard) ──────────
   const STRIPE_PRICES = {
     PRO_MONTHLY:        'price_pro_monthly_placeholder',
@@ -344,7 +355,7 @@ const Paywall = (() => {
       _injectStyles();
       if (_modalEl) _modalEl.remove();
       _modalEl = document.createElement('div');
-      _modalEl.innerHTML = _renderModal();
+      _setHTML(_modalEl, _renderModal()); // SEC-02
       document.body.appendChild(_modalEl);
       document.body.style.overflow = 'hidden';
 
@@ -372,9 +383,9 @@ const Paywall = (() => {
           const LM = window.LicenseManager;
           const tiers = LM ? LM.getAllTiers() : {};
           const currentTier = LM ? LM.getTier() : 'FREE';
-          grid.innerHTML = Object.entries(tiers).map(([tier, def]) =>
+          _setHTML(grid, Object.entries(tiers).map(([tier, def]) =>
             _renderPricingCard(tier, def, tier === currentTier)
-          ).join('');
+          ).join(''); // SEC-02
         }
         // Update toggle buttons
         _modalEl.querySelectorAll('.vip-toggle-btn').forEach(btn => {
@@ -452,13 +463,13 @@ const Paywall = (() => {
     showLicenseInput() {
       const footer = _modalEl?.querySelector('.vip-modal-footer');
       if (!footer) return;
-      footer.innerHTML += `
+      footer.insertAdjacentHTML('beforeend', `
         <div class="vip-license-input-group">
           <input type="text" class="vip-license-input" id="vip-license-key-input"
                  placeholder="Enter license key (e.g. eyJ...)" />
           <button class="vip-license-submit" onclick="Paywall.submitLicenseKey()">Activate</button>
         </div>
-      `;
+      `); // SEC-02: insertAdjacentHTML avoids full re-parse
     },
 
     submitLicenseKey() {
@@ -490,7 +501,7 @@ const Paywall = (() => {
       if (!containerEl) return;
       containerEl.style.position = 'relative';
       const gate = document.createElement('div');
-      gate.innerHTML = _renderFeatureGate(featureName, requiredTier);
+      _setHTML(gate, _renderFeatureGate(featureName, requiredTier)); // SEC-02
       gate.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(15,15,19,0.92);border-radius:inherit;z-index:10;';
       containerEl.appendChild(gate);
     },
@@ -502,7 +513,7 @@ const Paywall = (() => {
       _injectStyles();
       if (_bannerEl) _bannerEl.remove();
       _bannerEl = document.createElement('div');
-      _bannerEl.innerHTML = _renderTrialBanner(tier, daysRemaining);
+      _setHTML(_bannerEl, _renderTrialBanner(tier, daysRemaining)); // SEC-02
       document.body.insertBefore(_bannerEl, document.body.firstChild);
     },
 
@@ -534,7 +545,7 @@ const Paywall = (() => {
       const pct = usage.exportLimitToday === -1 ? 0
         : Math.min(100, (usage.exportsToday / usage.exportLimitToday) * 100);
       const color = pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : '#10b981';
-      containerEl.innerHTML = `
+      _setHTML(containerEl, `
         <div class="vip-usage-bar-wrap">
           <div class="vip-usage-label">
             <span>Exports today</span>
@@ -544,7 +555,7 @@ const Paywall = (() => {
             <div class="vip-usage-fill" style="width:${pct}%;background:${color}"></div>
           </div>
         </div>
-      `;
+      `); // SEC-02
     },
   };
 
