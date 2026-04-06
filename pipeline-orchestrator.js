@@ -232,7 +232,7 @@ class PipelineOrchestrator {
 
     this.audioCtx.resume().then(() => {
       this.isPlaying = true;
-      this.startedAt = this.audioCtx.currentTime - this.pauseOffset;
+      this.startedAt = this.audioCtx.currentTime;
       this.onStatusChange('playing');
     }).catch(err => console.warn('AudioContext resume failed:', err));
   }
