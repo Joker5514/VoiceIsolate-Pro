@@ -1,271 +1,290 @@
-# VoiceIsolate Pro — ML Model Files
+# VoiceIsolate Pro — ML Models Reference
 
-**Location:** `public/app/models/`  
-**Required by:** `ml-worker.js` (Threads from Space v11)  
-**Execution:** `onnxruntime-web` — WebGPU → WASM fallback, 100% local, no cloud
-
-> **Models directory is currently empty.**  
-> The DSP-only stages still produce output. Stages S04, S05, S08, S10, S11, S13, S17, S22 will run in passthrough mode until models are placed here.
+> **Threads from Space v11** | Pipeline: 35-stage Deca-Pass DSP  
+> All models run 100% locally via `onnxruntime-web` (WebGPU → WASM fallback).  
+> No cloud APIs. No telemetry. Models are **never** bundled in the repo — you must place them here.
 
 ---
 
-## Quick Reference
+## Quick Start
 
-| File | Stage | Size | Quantization | Priority |
-|------|-------|------|--------------|----------|
-| `silero_vad.onnx` | S05 VAD | 1.7 MB | fp32 | **High** — gates all downstream processing |
-| `deepfilter-int8.onnx` | S08 Noise Suppression | 9 MB | INT8 | High |
-| `dns2_conformer_small.onnx` | S10 DNS v2 | 14 MB | fp32 | Medium |
-| `bsrnn-int8.onnx` | S11 BSRNN | 37 MB | INT8 | High — ensemble partner for Demucs |
-| `demucs-v4-int8.onnx` | S13 Voice Isolation | 82 MB | INT8 | **Critical** — main vocal separator |
-| `ecapa-tdnn-int8.onnx` | S17 Speaker ID | 20 MB | INT8 | Low (forensic mode only) |
-| `noise_classifier.onnx` | S04 Noise Class | 2.5 MB | fp32 | Medium |
-| `convtasnet-int8.onnx` | S22 Multi-Speaker | 18 MB | INT8 | Low (advanced mode) |
-
-**Total: ~184 MB** (all models). Minimum useful set: `silero_vad.onnx` + `demucs-v4-int8.onnx` (~84 MB).
-
----
-
-## Model Details
-
-### `silero_vad.onnx` — Silero VAD v4
-**Stage:** S05 · **Size:** ~1.7 MB · **Source:** https://github.com/snakers4/silero-vad
-
-**Tensor interface:**
-
-| Name | Shape | dtype | Description |
-|------|-------|-------|-------------|
-| `input` | `[1, 512]` | float32 | 512 audio samples @ 16 kHz (32ms window) |
-| `sr` | `[1]` | int64 | Sample rate (16000 or 8000) |
-| `state` | `[2, 1, 64]` | float32 | LSTM hidden state — thread between windows |
-| `output` | `[1, 1]` | float32 | Speech probability [0..1] |
-| `stateN` | `[2, 1, 64]` | float32 | Updated LSTM state |
-
-**Get it:**
 ```bash
-# Direct download (pre-exported ONNX):
-curl -L -o public/app/models/silero_vad.onnx \
-  "https://github.com/snakers4/silero-vad/raw/master/files/silero_vad.onnx"
+# Place .onnx files in this directory:
+# public/app/models/<filename>.onnx
+# Then reload the browser. The UI will auto-detect presence via HEAD requests.
+```
+
+Total download: ~189 MB (all models, INT8 quantised where available)
+
+---
+
+## Model Inventory
+
+| Stage | Model key | Filename | Size | Quantization | Source |
+|-------|-----------|----------|------|-------------|--------|
+| S04   | `noise_classifier` | `noise_classifier.onnx` | ~2.5 MB | fp32 | Custom / ESC-50 |
+| S05   | `silero_vad` | `silero_vad.onnx` | ~1.7 MB | fp32 | [snakers4/silero-vad](https://github.com/snakers4/silero-vad/tree/master/files) |
+| S08   | `deepfilter` | `deepfilter-int8.onnx` | ~9 MB | INT8 | [Rikorose/DeepFilterNet](https://github.com/Rikorose/DeepFilterNet/releases) |
+| S10   | `dns2_conformer_small` | `dns2_conformer_small.onnx` | ~14 MB | fp32 | [microsoft/DNS-Challenge](https://github.com/microsoft/DNS-Challenge) |
+| S11   | `bsrnn` | `bsrnn-int8.onnx` | ~37 MB | INT8 | [bytedance/music_source_separation](https://github.com/bytedance/music_source_separation) |
+| S13   | `demucs` | `demucs-v4-int8.onnx` | ~82 MB | INT8 | [facebookresearch/demucs](https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th) |
+| S17   | `ecapa-tdnn` | `ecapa-tdnn-int8.onnx` | ~20 MB | INT8 | [speechbrain/spkrec-ecapa-voxceleb](https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb) |
+| S22   | `convtasnet` | `convtasnet-int8.onnx` | ~18 MB | INT8 | [asteroid-team/asteroid](https://github.com/asteroid-team/asteroid) |
+
+---
+
+## Tensor Specifications
+
+### S05 — Silero VAD (`silero_vad.onnx`)
+
+```
+Inputs:
+  input  float32  [1, 512]        — 512 PCM samples @ 16 kHz (32ms window)
+  sr     int64    [1]             — sample rate (16000 or 8000)
+  state  float32  [2, 1, 64]     — LSTM hidden state (persist between windows)
+
+Outputs:
+  output  float32  [1, 1]        — speech probability scalar 0..1
+  stateN  float32  [2, 1, 64]   — updated LSTM state (feed back next call)
+
+Notes:
+  - Window: 512 samples = 32ms @ 16kHz. Use 256 samples for 8 kHz.
+  - Threshold: >0.5 = speech. >0.7 = confident speech.
+  - Resample to 16kHz before feeding. ml-worker.js handles resampling internally.
+  - State MUST be threaded between consecutive windows or VAD accuracy degrades.
+  - Model download: direct .onnx from GitHub releases — no conversion needed.
+```
+
+### S08 — DeepFilterNet2 (`deepfilter-int8.onnx`)
+
+```
+Inputs:
+  input   float32  [1, 1, 2049]  — per-bin STFT magnitude @ 48kHz, FFT=4096
+                                    bins = fftSize/2 + 1 = 2049
+
+Outputs:
+  output  float32  [1, 1, 2049]  — per-bin real-valued gain mask [0..1]
+
+Notes:
+  - Sample rate: 48 kHz. Resample if source is 44.1 kHz.
+  - FFT size: 4096 → 2049 positive-frequency bins.
+  - Output mask applied in-place: magnitude[k] *= mask[k]
+  - INT8 quantised — use WebGPU EP for best throughput.
+  - Conversion: pip install deepfilternet; python -c "from df import init_df; ..."
+    See: https://github.com/Rikorose/DeepFilterNet/blob/main/onnx_export.py
+```
+
+### S10 — DNS v2 Conformer Small (`dns2_conformer_small.onnx`)
+
+```
+Inputs:
+  input   float32  [1, 1, 513]   — STFT magnitude @ 16kHz, FFT=1024
+                                    bins = fftSize/2 + 1 = 513
+
+Outputs:
+  output  float32  [1, 1, 513]   — per-bin gain mask [0..1]
+
+Notes:
+  - Sample rate: 16 kHz. Normalize magnitude to ~[0, 1] before inference.
+  - Conversion from DNS-Challenge PyTorch checkpoint:
+    python scripts/export_onnx.py --model conformer_small --out dns2_conformer_small.onnx
+```
+
+### S11 — BSRNN (`bsrnn-int8.onnx`)
+
+```
+Inputs:
+  input   float32  [1, 2, 44100] — 1 second stereo audio @ 44.1 kHz
+                                    shape: [batch=1, channels=2, samples=44100]
+
+Outputs:
+  output  float32  [1, 2, 44100] — separated vocals (stereo)
+
+Notes:
+  - For mono input: duplicate channel → stereo: input[:,0,:] = input[:,1,:] = mono
+  - Average output channels back to mono for the pipeline.
+  - Chunk 44100 samples (1s) with 50% overlap-add for longer files.
+  - Ensemble with Demucs: blended_mask = demucs*0.7 + bsrnn*0.3
+  - Conversion from bytedance repo:
+    python export.py --model bsrnn_vocals --quantize int8 --out bsrnn-int8.onnx
+    Dynamic axes: --dynamic-axes input:2 output:2
+```
+
+### S13 — Demucs v4 (`demucs-v4-int8.onnx`)
+
+```
+Inputs:
+  input   float32  [1, 2, 44100] — 1 second stereo audio @ 44.1 kHz
+                                    shape: [batch=1, channels=2, samples=44100]
+
+Outputs:
+  output  float32  [1, 2, 44100] — separated vocals (stereo), 4-source model
+                                    output[:, :, :] = vocals track only
+                                    (htdemucs_ft_vocals — single-source fine-tuned)
+
+Notes:
+  - Source: htdemucs_ft model fine-tuned on vocals.
+  - PyTorch weights: 955717e8-8726e21a.th (~320MB fp32)
+  - Convert to ONNX INT8:
+    pip install demucs torch onnxruntime
+    python -c "
+    import torch, demucs.pretrained as p
+    model = p.get_model('htdemucs_ft')
+    # Export only the vocals stem (index 3)
+    dummy = torch.zeros(1, 2, 44100)
+    torch.onnx.export(model, dummy, 'demucs-v4.onnx',
+      input_names=['input'], output_names=['output'],
+      dynamic_axes={'input': {2: 'samples'}, 'output': {2: 'samples'}},
+      opset_version=17)
+    "
+    # Quantize:
+    python -m onnxruntime.quantization.quantize \
+      --input demucs-v4.onnx --output demucs-v4-int8.onnx \
+      --quant_type QInt8 --per_channel
+  - CRITICAL: Run on WebGPU EP. CPU WASM is ~8× slower than real-time.
+  - CRITICAL: context window = 44100 samples (1s). Use overlap-add for
+    longer files with a 512-sample fade at chunk boundaries.
+```
+
+### S17 — ECAPA-TDNN (`ecapa-tdnn-int8.onnx`)
+
+```
+Inputs:
+  input   float32  [1, 1, N]     — variable-length mono audio (any N)
+                                    preferred: 16kHz, 2–10 seconds for enrollment
+
+Outputs:
+  output  float32  [1, 192]      — 192-dim L2-normalized speaker embedding
+
+Notes:
+  - Identification: cosine_similarity(emb_a, emb_b) > 0.75 → same speaker
+  - Enrollment: average multiple embeddings for robustness.
+  - Conversion from SpeechBrain:
+    import speechbrain as sb
+    model = sb.pretrained.SpeakerRecognition.from_hparams(
+      'speechbrain/spkrec-ecapa-voxceleb')
+    # Use speechbrain's ONNX export utility:
+    model.encode_batch = torch.jit.trace(model.encode_batch,
+      example_inputs=(torch.zeros(1,1,16000),))
+    torch.onnx.export(model.encode_batch, torch.zeros(1,1,16000),
+      'ecapa-tdnn.onnx', input_names=['input'], output_names=['output'],
+      dynamic_axes={'input':{2:'samples'}})
+    # Then INT8 quantize as above.
+```
+
+### S22 — ConvTasNet (`convtasnet-int8.onnx`)
+
+```
+Inputs:
+  input   float32  [1, 1, N]     — variable-length mono mix (any N)
+                                    shape: [batch=1, channels=1, samples=N]
+
+Outputs:
+  output  float32  [1, 4, N]     — up to 4 separated speaker streams
+                                    output[:,0,:] = speaker 0 (loudest)
+                                    output[:,1,:] = speaker 1
+                                    ...
+
+Notes:
+  - Dynamic ONNX axes required for variable N.
+  - Conversion from asteroid:
+    from asteroid.models import ConvTasNet
+    model = ConvTasNet.from_pretrained('mpariente/ConvTasNet_WHAM!_sepclean')
+    model.eval()
+    dummy = torch.zeros(1, 1, 16000)
+    torch.onnx.export(model, dummy, 'convtasnet.onnx',
+      input_names=['input'], output_names=['output'],
+      dynamic_axes={'input':{2:'T'},'output':{2:'T'}},
+      opset_version=17)
+    # Quantize:
+    python -m onnxruntime.quantization.quantize \
+      --input convtasnet.onnx --output convtasnet-int8.onnx --quant_type QInt8
+  - Max speakers: 4. If model outputs fewer, remaining streams are zero.
+  - targetSpeaker index 0 = highest energy speaker.
+```
+
+### Noise Classifier (`noise_classifier.onnx`)
+
+```
+Inputs:
+  input   float32  [1, 64]       — 64-dim log mel-band energies
+                                    aggregated over 512ms window
+
+Outputs:
+  output  float32  [1, 7]        — class logits (apply softmax)
+                                    classes: music, white_noise, crowd,
+                                             HVAC, keyboard, traffic, silence
+
+Notes:
+  - Custom model — train on ESC-50 + UrbanSound8K.
+  - Architecture: 2-layer MLP (64→128→128→7) or lightweight CNN.
+  - Feature extraction (512ms @ 16kHz = 8192 samples):
+    1. Compute 512-point FFT with 50% overlap, take magnitude
+    2. Apply 64-band mel filterbank (16kHz, fmin=50, fmax=8000)
+    3. Log-compress: log(mel + 1e-8)
+    4. Average across time frames → single 64-dim vector
+  - Training:
+    from sklearn.preprocessing import StandardScaler
+    # Normalize features with StandardScaler fitted on training set.
+    # Bake mean/std into model as a normalisation layer for portability.
+  - Export:
+    torch.onnx.export(model, torch.zeros(1,64), 'noise_classifier.onnx',
+      input_names=['input'], output_names=['output'], opset_version=17)
 ```
 
 ---
 
-### `deepfilter-int8.onnx` — DeepFilterNet2
-**Stage:** S08 · **Size:** ~9 MB · **Source:** https://github.com/Rikorose/DeepFilterNet
+## Fetch & Cache Strategy
 
-**Tensor interface:**
+Models are loaded at runtime by `ml-worker.js` via `ort.InferenceSession.create(path, opts)`.  
+The `ml-worker-fetch-cache.js` patch (loaded on the main thread) adds:
 
-| Name | Shape | dtype | Description |
-|------|-------|-------|-------------|
-| `input` | `[1, 1, 2049]` | float32 | STFT magnitude, FFT=4096, 48 kHz |
-| `output` | `[1, 1, 2049]` | float32 | Per-bin gain mask [0..1] |
-
-**Get it:**
-```bash
-pip install deepfilternet
-python - <<'PY'
-import torch
-from df import init_df
-model, df_state, _ = init_df()
-dummy = torch.zeros(1, 1, 2049)
-torch.onnx.export(model.enc, dummy, "deepfilter-int8.onnx",
-  input_names=["input"], output_names=["output"],
-  dynamic_axes={"input":{0:"batch"},"output":{0:"batch"}},
-  opset_version=17)
-PY
-cp deepfilter-int8.onnx public/app/models/
-```
-
----
-
-### `demucs-v4-int8.onnx` — htdemucs_ft (vocals fine-tuned)
-**Stage:** S13 · **Size:** ~82 MB · **Source:** https://github.com/facebookresearch/demucs
-
-**Tensor interface:**
-
-| Name | Shape | dtype | Description |
-|------|-------|-------|-------------|
-| `input` | `[1, 2, 44100]` | float32 | Stereo audio, 1 second @ 44.1 kHz |
-| `output` | `[1, 2, 44100]` | float32 | Separated vocals (stereo) |
-
-> **Mono input:** Duplicate channel — `stereo[0] = stereo[1] = monoSignal`  
-> **Long audio:** Overlap-add with 25% overlap across 44100-sample chunks  
-
-**Export:**
-```bash
-pip install demucs onnxruntime
-python - <<'PY'
-import torch, demucs.pretrained
-model = demucs.pretrained.get_model("htdemucs_ft")
-model.eval()
-dummy = torch.zeros(1, 2, 44100)
-torch.onnx.export(
-  model, dummy,
-  "demucs-v4-int8.onnx",
-  input_names=["input"], output_names=["output"],
-  dynamic_axes={"input":{2:"samples"},"output":{2:"samples"}},
-  opset_version=17
-)
-from onnxruntime.quantization import quantize_dynamic, QuantType
-quantize_dynamic("demucs-v4-int8.onnx", "demucs-v4-int8.onnx", weight_type=QuantType.QInt8)
-PY
-cp demucs-v4-int8.onnx public/app/models/
-```
-
-> ⚠ **Size note:** Full htdemucs is ~680 MB fp32. INT8 quantization reduces to ~82 MB.  
-> WebGPU strongly recommended — WASM inference is ~8× real-time on a modern machine.
-
----
-
-### `bsrnn-int8.onnx` — Band-Split RNN (vocals)
-**Stage:** S11 · **Size:** ~37 MB · **Source:** https://github.com/bytedance/music_source_separation
-
-**Tensor interface:** Identical to Demucs — `[1, 2, 44100]` stereo in/out.
-
-```bash
-python - <<'PY'
-import torch
-from models.bsrnn import BSRNN
-model = BSRNN.from_pretrained("vocals")
-model.eval()
-dummy = torch.zeros(1, 2, 44100)
-torch.onnx.export(model, dummy, "bsrnn-int8.onnx",
-  input_names=["input"], output_names=["output"], opset_version=17)
-from onnxruntime.quantization import quantize_dynamic, QuantType
-quantize_dynamic("bsrnn-int8.onnx", "bsrnn-int8.onnx", weight_type=QuantType.QInt8)
-PY
-cp bsrnn-int8.onnx public/app/models/
-```
-
----
-
-### `ecapa-tdnn-int8.onnx` — ECAPA-TDNN Speaker Embeddings
-**Stage:** S17 · **Size:** ~20 MB · **Source:** https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb
-
-**Tensor interface:**
-
-| Name | Shape | dtype | Description |
-|------|-------|-------|-------------|
-| `input` | `[1, 1, T]` | float32 | Variable-length mono audio (16 kHz) |
-| `output` | `[1, 192]` | float32 | L2-normalized 192-dim speaker embedding |
-
-```bash
-pip install speechbrain
-python - <<'PY'
-import torch, speechbrain.pretrained as sp
-classifier = sp.EncoderClassifier.from_hparams("speechbrain/spkrec-ecapa-voxceleb")
-dummy = torch.zeros(1, 1, 16000)
-torch.onnx.export(
-  classifier.mods.embedding_model, dummy,
-  "ecapa-tdnn-int8.onnx",
-  input_names=["input"], output_names=["output"],
-  dynamic_axes={"input":{2:"samples"}}, opset_version=17
-)
-from onnxruntime.quantization import quantize_dynamic, QuantType
-quantize_dynamic("ecapa-tdnn-int8.onnx", "ecapa-tdnn-int8.onnx", weight_type=QuantType.QInt8)
-PY
-cp ecapa-tdnn-int8.onnx public/app/models/
-```
-
----
-
-### `dns2_conformer_small.onnx` — Microsoft DNS Challenge v2
-**Stage:** S10 · **Size:** ~14 MB · **Source:** https://github.com/microsoft/DNS-Challenge
-
-**Tensor interface:**
-
-| Name | Shape | dtype | Description |
-|------|-------|-------|-------------|
-| `input` | `[1, 1, 513]` | float32 | STFT magnitude, FFT=1024, 16 kHz |
-| `output` | `[1, 1, 513]` | float32 | Per-bin gain mask |
-
----
-
-### `noise_classifier.onnx` — Custom Noise Classifier
-**Stage:** S04 · **Size:** ~2.5 MB · **Source:** Train yourself (ESC-50 + UrbanSound8K)
-
-**Tensor interface:**
-
-| Name | Shape | dtype | Description |
-|------|-------|-------|-------------|
-| `input` | `[1, 64]` | float32 | 64-dim log mel energies (512ms window) |
-| `output` | `[1, 7]` | float32 | Logits over 7 noise classes |
-
-**Classes (index order):** `music`, `white_noise`, `crowd`, `HVAC`, `keyboard`, `traffic`, `silence`
-
-```bash
-python - <<'PY'
-import torch, torch.nn as nn
-model = nn.Sequential(nn.Linear(64,128), nn.ReLU(), nn.Linear(128,7))
-dummy = torch.zeros(1, 64)
-torch.onnx.export(model, dummy, "noise_classifier.onnx",
-  input_names=["input"], output_names=["output"], opset_version=17)
-PY
-# Fine-tune on ESC-50 / UrbanSound8K before deploying
-cp noise_classifier.onnx public/app/models/
-```
-
----
-
-### `convtasnet-int8.onnx` — ConvTasNet Multi-Speaker
-**Stage:** S22 · **Size:** ~18 MB · **Source:** https://github.com/asteroid-team/asteroid
-
-**Tensor interface:**
-
-| Name | Shape | dtype | Description |
-|------|-------|-------|-------------|
-| `input` | `[1, 1, T]` | float32 | Variable-length mono mix |
-| `output` | `[1, 4, T]` | float32 | 4 separated speaker streams |
-
-```bash
-pip install asteroid
-python - <<'PY'
-import torch
-from asteroid.models import ConvTasNet
-model = ConvTasNet.from_pretrained("mpariente/ConvTasNet_WHAM!_sepclean")
-model.eval()
-dummy = torch.zeros(1, 1, 44100)
-torch.onnx.export(model, dummy, "convtasnet-int8.onnx",
-  input_names=["input"], output_names=["output"],
-  dynamic_axes={"input":{2:"samples"},"output":{2:"samples"}}, opset_version=17)
-from onnxruntime.quantization import quantize_dynamic, QuantType
-quantize_dynamic("convtasnet-int8.onnx", "convtasnet-int8.onnx", weight_type=QuantType.QInt8)
-PY
-cp convtasnet-int8.onnx public/app/models/
-```
-
----
-
-## Verification
-
-After placing model files, run this in the browser DevTools console:
+1. **IndexedDB cache** — models stored as `ArrayBuffer` after first fetch
+2. **Chunked download with progress** — `ReadableStream` with UI progress bar
+3. **SHA-256 integrity check** — optional, verifies file not corrupted
+4. **Fallback URL support** — alternate CDN path if local file 404s
 
 ```js
-(async () => {
-  const models = window._vipModelManifest;
-  for (const [key, meta] of Object.entries(models)) {
-    try {
-      const sess = await ort.InferenceSession.create(meta.path, {executionProviders:['wasm']});
-      console.log(`\u2713 ${key}: inputs=${JSON.stringify(sess.inputNames)}`);
-      await sess.dispose?.();
-    } catch(e) {
-      console.warn(`\u2717 ${key}: ${e.message}`);
-    }
-  }
-})();
+// Usage (auto-wired in vip-boot.js):
+await window._vipPreloadModels(['silero_vad', 'deepfilter', 'demucs']);
+// Models served to ml-worker via Object URL after download+cache.
 ```
 
 ---
 
-## Deployment Notes
+## Prioritized Loading Order
 
-- All `.onnx` files must be served from the same origin (CORS).
-- **git-lfs required** for files > 50 MB:
-  ```bash
-  git lfs track "*.onnx"
-  git add .gitattributes
-  git add public/app/models/*.onnx
-  git commit -m "feat: add ONNX model files"
-  ```
-- Vercel: LFS files served correctly with GitHub integration.
-- Add a service worker cache for instant second-load (models don't change often).
+For fastest perceived startup, load models in this order:
+
+| Priority | Model | Reason |
+|----------|-------|---------|
+| 1 | `silero_vad` (1.7 MB) | Needed immediately for live mic gating |
+| 2 | `deepfilter` (9 MB) | Highest perceptual improvement in Creator mode |
+| 3 | `dns2_conformer_small` (14 MB) | DNS noise gate |
+| 4 | `ecapa-tdnn` (20 MB) | Speaker ID (non-blocking) |
+| 5 | `convtasnet` (18 MB) | Multi-speaker (non-blocking) |
+| 6 | `bsrnn` (37 MB) | Heavy — load last |
+| 7 | `demucs` (82 MB) | Heaviest — background load |
+
+---
+
+## DSP Fallback Behavior (No Models)
+
+Every ML stage degrades gracefully when its model file is absent:  
+
+| Stage | ML behavior | Fallback behavior |
+|-------|-------------|-------------------|
+| S04 Noise Classify | Classifies noise type | Returns `unknown` — adaptive EQ skipped |
+| S05 VAD | Speech probability per frame | Assumes all frames = speech (no gating) |
+| S08 DeepFilter | Per-bin spectral suppression | Passthrough (gain mask = all-1s) |
+| S10 DNS v2 | Conformer noise gate | Passthrough |
+| S11 BSRNN | Band-split RNN vocal extraction | Demucs-only or straight passthrough |
+| S13 Demucs | htdemucs vocal isolation | Passthrough — spectral-only stages still run |
+| S17 ECAPA | Speaker embedding | No speaker ID — multi-speaker mode disabled |
+| S22 ConvTasNet | Multi-speaker separation | Single-stream passthrough |
+
+> DSP-only stages (S01–S03, S06–S07, S09, S12, S14–S16, S19–S21, S23–S35) are unaffected by model absence and run at full quality regardless.
+
+---
+
+*Auto-detected by `ml-worker-models-patch.js` on every page load via HEAD requests to `models/*.onnx`.*
