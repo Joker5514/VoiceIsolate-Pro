@@ -1477,8 +1477,10 @@ class VoiceIsolatePro {
   _mlCall(payload, transfer = []) {
     return new Promise((resolve, reject) => {
       const id = ++this._mlCallId;
+      // SEC-03: Dedicated Worker — origin checks don't apply (same-origin by design).
+      // RPC safety is enforced by matching e.data.id to the outbound call id.
       const handler = (e) => {
-        if (e.data.id !== id) return;
+        if (e.data.id !== id) return; // RPC id guard
         this.mlWorker.removeEventListener('message', handler);
         if (e.data.error) reject(new Error(e.data.error));
         else resolve(e.data.result);
