@@ -65,21 +65,45 @@ app.use('/app/models', express.static(join(__dirname, 'public', 'app', 'models')
   }
 }));
 
-// ── FIX 6: Serve root-level source files (app.js, dsp-worker.js, ml-worker.js, etc.) ──
+// ── FIX 6: Serve only allowlisted root-level runtime files ─────────────────
 // Root-level files must be served BEFORE /public to avoid 404s
-app.use(express.static(join(__dirname, '.'), {
-  index: 'index.html',
-  setHeaders: (res, filePath) => {
-    if (filePath.endsWith('worker.js') || filePath.includes('processor.js')) {
-      res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-    }
-    if (filePath.endsWith('.wasm')) {
-      res.setHeader('Content-Type', 'application/wasm');
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    }
-  }
-}));
+const ROOT_STATIC_ALLOWLIST = new Set([
+  'app.js',
+  'dsp-worker.js',
+  'ml-worker.js',
+]);
 
+function setRootAssetHeaders(res, filePath) {
+  if (filePath.endsWith('worker.js') || filePath.includes('processor.js')) {
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  }
+  if (filePath.endsWith('.wasm')) {
+    res.setHeader('Content-Type', 'application/wasm');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  }
+}
+
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+
+  const requestedPath = req.path.replace(/^\/+/, '');
+
+  // Only allow single-segment root files; never expose directories or arbitrary repo files.
+  if (!requestedPath || requestedPath.includes('/')) return next();
+
+  const isAllowedRootRuntimeAsset =
+    ROOT_STATIC_ALLOWLIST.has(requestedPath) ||
+    requestedPath.endsWith('worker.js') ||
+    requestedPath.includes('processor.js');
+
+  if (!isAllowedRootRuntimeAsset) return next();
+
+  const filePath = join(__dirname, requestedPath);
+  setRootAssetHeaders(res, filePath);
+  res.sendFile(filePath, (err) => {
+    if (err) next();
+  });
+});
 // ── Serve /public as fallback ────────────────────────────────────────────
 app.use(express.static(join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
