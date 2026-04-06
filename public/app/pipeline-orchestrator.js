@@ -1,533 +1,309 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — PipelineOrchestrator
-   Threads from Space v10 · Main Thread Conductor
-   Lazy AudioContext · Worker Lifecycle · Modes
+   VoiceIsolate Pro v22.1 — Pipeline Orchestrator
+   Threads from Space v11
+   ONNX Runtime Web init · AudioWorklet setup
+   52-slider → AudioWorkletNode param mapping
+   WebGPU > WASM fallback · SharedArrayBuffer rings
    ============================================ */
 
 'use strict';
 
 /**
- * Main thread conductor for VoiceIsolate Pro.
- * - Lazy AudioContext initialization (user gesture only)
- * - Worker lifecycle management (ML, DSP, AudioWorklet)
- * - SharedArrayBuffer allocation for ring buffers
- * - Mode switching: real-time ↔ offline processing
- * - Transport controls with proper pause/resume
+ * PipelineOrchestrator
+ * ─────────────────────
+ * Owns:
+ *  - The AudioContext and AudioWorkletNode (live path)
+ *  - ONNX Runtime session initialisation (via ml-worker.js)
+ *  - SharedArrayBuffer ring buffer allocation
+ *  - Slider → worklet parameter forwarding
+ *
+ * Lifecycle:
+ *   const orch = new PipelineOrchestrator();
+ *   await orch.init();          // one-time setup
+ *   orch.connectSource(srcNode) // wire microphone / file source
+ *   orch.updateParams(params);  // called on every slider change
  */
-class PipelineOrchestrator {
-  constructor(state) {
-    this.state = state;          // PipelineState instance
-    this.dspConfig = null;       // DSPConfig instance (set externally or lazily)
-    this.audioCtx = null;
-    this.mlWorker = null;
-    this.dspWorker = null;
-    this.workletNode = null;
-    this.inputRingSAB = null;
-    this.maskRingSAB = null;
-    this.frameSize = 4096;
-    this.frameCount = 10;
+export class PipelineOrchestrator {
+  constructor() {
+    /** @type {AudioContext|null} */
+    this.ctx          = null;
+    /** @type {AudioWorkletNode|null} */
+    this.workletNode  = null;
+    /** @type {Worker|null} */
+    this.mlWorker     = null;
+    /** @type {boolean} */
+    this.mlReady      = false;
+    /** @type {string} */
+    this.mlProvider   = 'wasm';  // updated after ONNX init
 
-    // Transport state
-    this.sourceNode = null;
-    this.gainNode = null;
-    this.analyserNode = null;
-    this.inputBuffer = null;
-    this.outputBuffer = null;
-    this.isPlaying = false;
-    this.startedAt = 0;
-    this.pauseOffset = 0;
+    // Shared ring buffers  (allocated once, shared between worklet + ML worker)
+    // Each SAB layout:  Int32[0]=writePtr, Int32[1]=readPtr, Float32[2..]
+    this._ringCapacity = 32;  // slots
+    this._quantumSize  = 128; // render quantum samples
+    this._halfN        = 1025; // fftSize/2+1 = 2048/2+1
 
-    // Status
-    this.mode = 'idle'; // idle | realtime | processing | complete
-    this.sabSupported = typeof SharedArrayBuffer !== 'undefined';
-
-    // Callbacks
-    this.onStatusChange = () => {};
-    this.onProgress = () => {};
-    this.onProcessComplete = () => {};
-    this.onError = () => {};
-    /** Called with (noiseClass, confidence) when the ML classifier emits a result */
-    this.onNoiseClassChange = null;
+    // inputRing: worklet → ML worker  (raw PCM quanta)
+    this._inputRingSAB = null;
+    // maskRing:  ML worker → worklet  (per-bin gain mask)
+    this._maskRingSAB  = null;
   }
 
-  /** Initialize AudioContext lazily inside user gesture */
-  ensureContext() {
-    if (this.audioCtx) return this.audioCtx;
+  // ── One-time initialisation ─────────────────────────────────────────────
+  /**
+   * Must be called from a user-gesture handler (e.g. button click)
+   * to satisfy browser autoplay policy.
+   */
+  async init() {
+    await this._createAudioContext();
+    await this._loadWorklet();
+    this._allocateRings();
+    await this._initMLWorker();
+    this._bindSliders();
+  }
 
-    this.audioCtx = new (window.AudioContext || window.webkitAudioContext)({
-      sampleRate: 48000,
-      latencyHint: 'interactive'
+  // ── AudioContext ────────────────────────────────────────────────────────
+  async _createAudioContext() {
+    if (this.ctx && this.ctx.state !== 'closed') {
+      if (this.ctx.state === 'suspended') await this.ctx.resume();
+      return;
+    }
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)({
+      // Hint the browser to prefer low latency (Chrome honours this)
+      latencyHint: 'interactive',
+      sampleRate: 48000  // prefer 48 kHz for telephony / voice
+    });
+    if (this.ctx.state === 'suspended') await this.ctx.resume();
+  }
+
+  // ── AudioWorklet loading ─────────────────────────────────────────────────
+  async _loadWorklet() {
+    if (!this.ctx) throw new Error('AudioContext not initialised');
+    try {
+      // Registers 'dsp-processor' on the audio rendering thread
+      await this.ctx.audioWorklet.addModule('./dsp-processor.js');
+    } catch (err) {
+      console.error('[Orchestrator] Failed to load AudioWorklet module:', err);
+      throw err;
+    }
+
+    this.workletNode = new AudioWorkletNode(this.ctx, 'dsp-processor', {
+      numberOfInputs:  1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2],
+      processorOptions: {
+        frameSize:    4096,
+        fftSize:      2048,
+        hopSize:      512,
+        ringCapacity: this._ringCapacity
+      }
     });
 
-    // Create persistent nodes
-    this.gainNode = this.audioCtx.createGain();
-    this.analyserNode = this.audioCtx.createAnalyser();
-    this.analyserNode.fftSize = 2048;
-    this.analyserNode.smoothingTimeConstant = 0.8;
+    // Route: workletNode → destination
+    this.workletNode.connect(this.ctx.destination);
 
-    this.gainNode.connect(this.analyserNode);
-    this.analyserNode.connect(this.audioCtx.destination);
-
-    return this.audioCtx;
+    // Listen for 'ready' ack from processor
+    this.workletNode.port.onmessage = (e) => {
+      if (e.data.type === 'ready') {
+        console.info('[Orchestrator] DSP worklet ready');
+      }
+    };
   }
 
-  /** Initialize ML Worker */
-  async initMLWorker(options = {}) {
-    if (this.mlWorker) return;
+  // ── SharedArrayBuffer ring allocation ───────────────────────────────────
+  _allocateRings() {
+    // Input ring: worklet writes 128-sample PCM quanta
+    // Size = 2 Int32 (pointers) + capacity * quantumSize * Float32
+    const inputBytes =
+      Int32Array.BYTES_PER_ELEMENT * 2 +
+      this._ringCapacity * this._quantumSize * Float32Array.BYTES_PER_ELEMENT;
+    this._inputRingSAB = new SharedArrayBuffer(inputBytes);
 
-    this.mlWorker = new Worker('ml-worker.js');
+    // Mask ring: ML worker writes halfN-length Float32 gain masks
+    const maskBytes =
+      Int32Array.BYTES_PER_ELEMENT * 2 +
+      this._ringCapacity * this._halfN * Float32Array.BYTES_PER_ELEMENT;
+    this._maskRingSAB = new SharedArrayBuffer(maskBytes);
 
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('ML init timeout')), 15000);
+    // Initialise pointers to 0
+    new Int32Array(this._inputRingSAB).fill(0);
+    new Int32Array(this._maskRingSAB ).fill(0);
+
+    // Send both SABs to the worklet (zero-copy transfer via postMessage)
+    this.workletNode.port.postMessage({
+      type:      'initRings',
+      inputRing: this._inputRingSAB,
+      maskRing:  this._maskRingSAB
+    });
+  }
+
+  // ── ONNX Runtime + ML Worker initialisation ─────────────────────────────
+  /**
+   * Spins up ml-worker.js and asks it to:
+   *  1. Load onnxruntime-web with WebGPU > WASM fallback.
+   *  2. Initialise the VAD model immediately (small, fast).
+   *  3. Initialise Demucs + BSRNN lazily on first process() call.
+   *  4. Block on Atomics.wait(inputRing) for PCM data,
+   *     run inference, write mask back to maskRing.
+   */
+  async _initMLWorker() {
+    return new Promise((resolve) => {
+      this.mlWorker = new Worker('./ml-worker.js');
 
       this.mlWorker.onmessage = (e) => {
-        if (e.data.type === 'ready') {
-          clearTimeout(timeout);
+        const { type } = e.data;
 
-          // Set up ring buffers if SAB supported
-          if (this.sabSupported) {
-            this._allocateRingBuffers();
-            this.mlWorker.postMessage({
-              type: 'initRingBuffers',
-              inputSAB: this.inputRingSAB,
-              maskSAB: this.maskRingSAB,
-              frameSize: this.frameSize,
-              frameCount: this.frameCount
-            });
-          }
+        if (type === 'ready') {
+          this.mlReady    = true;
+          this.mlProvider = e.data.provider || 'wasm';
+          console.info(
+            `[Orchestrator] ML worker ready — provider: ${this.mlProvider}`,
+            e.data.models
+          );
+          resolve();
 
-          resolve(e.data);
-        } else if (e.data.type === 'log') {
-          console.log(`[ML] ${e.data.level}: ${e.data.msg}`);
+        } else if (type === 'log') {
+          console[e.data.level] && console[e.data.level]('[ml-worker]', e.data.msg);
         }
+        // inference 'result' messages are handled by individual _mlCall() promises
       };
 
       this.mlWorker.onerror = (err) => {
-        clearTimeout(timeout);
-        reject(err);
+        console.warn('[Orchestrator] ML worker error:', err.message);
+        this.mlReady = false;
+        resolve(); // non-fatal: pipeline runs without ML if worker fails
       };
 
+      // ── Init message ────────────────────────────────────────────────────
+      // CRITICAL: providers array order = priority.  WebGPU first, then wasm.
+      // The worker will try each in order and report back which one succeeded.
       this.mlWorker.postMessage({
-        type: 'init',
-        models: options.models || ['vad'],
-        modelPaths: options.modelPaths || {},
-        ortUrl: options.ortUrl || '/lib/ort.min.js' // BUG-CONSTRAINT FIX: local only, never CDN
-      });
+        type:      'init',
+        ortUrl:    '/lib/ort.min.js',   // 100% local — no CDN
+        providers: ['webgpu', 'wasm'],  // WebGPU > WASM fallback
+        models:    ['vad'],             // eager-load only VAD; rest are lazy
+
+        // Pass SABs so the ML worker can Atomics.wait on input and write masks
+        inputRing: this._inputRingSAB,
+        maskRing:  this._maskRingSAB,
+        ringCapacity:  this._ringCapacity,
+        quantumSize:   this._quantumSize,
+        halfN:         this._halfN
+      }, [
+        // Transfer (not copy) the SABs  — SharedArrayBuffers are
+        // transferable and will be shared between all recipients.
+        // Note: postMessage with SAB does NOT detach them (unlike ArrayBuffer).
+        // The transfer list here is intentionally empty because SABs are
+        // shared by definition; listing them causes a TypeError in some browsers.
+      ]);
     });
   }
 
-  /** Initialize AudioWorklet for real-time processing */
-  async initWorklet() {
-    const ctx = this.ensureContext();
+  // ── Connect an audio source ──────────────────────────────────────────────
+  /**
+   * @param {AudioNode} sourceNode  e.g. AudioBufferSourceNode or MediaStreamSourceNode
+   */
+  connectSource(sourceNode) {
+    if (!this.workletNode) throw new Error('Worklet not initialised — call init() first');
+    sourceNode.connect(this.workletNode);
+  }
 
-    try {
-      // BUG-M FIX: Resume suspended AudioContext (required on mobile after user gesture)
-      if (ctx.state === 'suspended') { await ctx.resume(); }
-      await ctx.audioWorklet.addModule('./voice-isolate-processor.js'); // BUG-M: explicit ./ path
+  disconnectSource(sourceNode) {
+    try { sourceNode.disconnect(this.workletNode); } catch (_) {}
+  }
 
-      this.workletNode = new AudioWorkletNode(ctx, 'voice-isolate-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [1]
-      });
-
-      // Set up ring buffers in worklet
-      if (this.sabSupported && this.inputRingSAB && this.maskRingSAB) {
-        this.workletNode.port.postMessage({
-          type: 'initRingBuffers',
-          inputSAB: this.inputRingSAB,
-          maskSAB: this.maskRingSAB,
-          frameSize: this.frameSize,
-          frameCount: this.frameCount
-        });
+  // ── Slider → Worklet parameter forwarding ───────────────────────────────
+  /**
+   * Called by VoiceIsolatePro.onSlider() and applyPreset().
+   * Forwards the full params snapshot to the AudioWorkletProcessor
+   * via the message port (non-blocking, copied by the browser's
+   * structured-clone algorithm).
+   *
+   * Only params relevant to the worklet (gate, NR, voice isolation,
+   * outGain, dryWet) are forwarded — EQ/compression are handled on
+   * the main-thread BiquadFilter chain.
+   *
+   * @param {Object} params  Full params snapshot from VoiceIsolatePro
+   */
+  updateParams(params) {
+    if (!this.workletNode) return;
+    this.workletNode.port.postMessage({
+      type: 'setParams',
+      params: {
+        // Noise Gate
+        gateThresh:    params.gateThresh,
+        gateRange:     params.gateRange,
+        gateAttack:    params.gateAttack,
+        gateRelease:   params.gateRelease,
+        gateHold:      params.gateHold,
+        gateLookahead: params.gateLookahead,
+        // Spectral NR
+        nrAmount:      params.nrAmount,
+        nrSensitivity: params.nrSensitivity,
+        nrSpectralSub: params.nrSpectralSub,
+        nrFloor:       params.nrFloor,
+        nrSmoothing:   params.nrSmoothing,
+        // Voice Isolation
+        voiceIso:      params.voiceIso,
+        bgSuppress:    params.bgSuppress,
+        voiceFocusLo:  params.voiceFocusLo,
+        voiceFocusHi:  params.voiceFocusHi,
+        // Output
+        outGain:       params.outGain,
+        dryWet:        params.dryWet
       }
-
-      // Connect state to worklet port
-      this.state.setWorkletPort(this.workletNode.port);
-
-      // Send initial params
-      const rtParams = {};
-      for (const key of this.state.keys()) {
-        const meta = this.state.getMeta(key);
-        if (meta && meta.rt) rtParams[key] = meta.value;
-      }
-      this.workletNode.port.postMessage({ type: 'paramBulk', params: rtParams });
-
-      return true;
-    } catch (err) {
-      console.warn('AudioWorklet unavailable:', err.message);
-      return false;
-    }
-  }
-
-  /** Decode audio from File */
-  async decodeFile(file) {
-    const ctx = this.ensureContext();
-    const arrayBuf = await file.arrayBuffer();
-
-    try {
-      this.inputBuffer = await ctx.decodeAudioData(arrayBuf.slice(0));
-      return this.inputBuffer;
-    } catch (_) {
-      // Video files: try decoding via arrayBuffer directly
-      try {
-        this.inputBuffer = await ctx.decodeAudioData(arrayBuf);
-        return this.inputBuffer;
-      } catch (e2) {
-        throw new Error('Cannot decode audio: ' + e2.message);
-      }
-    }
-  }
-
-  // ===== TRANSPORT CONTROLS =====
-
-  /** Play audio (processed if available, else original) */
-  play(buffer = null) {
-    const ctx = this.ensureContext();
-    if (ctx.state === 'suspended') ctx.resume();
-
-    const buf = buffer || this.outputBuffer || this.inputBuffer;
-    if (!buf) return;
-
-    this.stop(false); // stop without resetting offset
-
-    this.sourceNode = ctx.createBufferSource();
-    this.sourceNode.buffer = buf;
-
-    // Connect through processing chain
-    if (this.workletNode && this.mode === 'realtime') {
-      this.sourceNode.connect(this.workletNode);
-      this.workletNode.connect(this.gainNode);
-    } else {
-      this.sourceNode.connect(this.gainNode);
-    }
-
-    this.sourceNode.onended = () => {
-      if (this.isPlaying) {
-        this.isPlaying = false;
-        this.pauseOffset = 0;
-        this.onStatusChange('complete');
-      }
-    };
-
-    this.sourceNode.start(0, this.pauseOffset);
-    this.startedAt = ctx.currentTime;
-    this.isPlaying = true;
-    this.onStatusChange('playing');
-  }
-
-  /** Pause — suspend context, store position (NO reset) */
-  pause() {
-    if (!this.isPlaying || !this.audioCtx) return;
-
-    this.pauseOffset += this.audioCtx.currentTime - this.startedAt;
-    this.audioCtx.suspend();
-    this.isPlaying = false;
-    this.onStatusChange('paused');
-  }
-
-  /** Resume from paused position */
-  resume() {
-    if (this.isPlaying || !this.audioCtx) return;
-
-    if (this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume().then(() => {
-        this.play();
-      });
-    } else {
-      this.play();
-    }
-  }
-
-  /** Get which buffer is currently active */
-  getActiveSource() {
-    return this.sourceNode?.buffer === this.outputBuffer ? 'processed' : 'original';
-  }
-
-  /** Stop playback, reset position */
-  stop(resetOffset = true) {
-    if (this.sourceNode) {
-      try {
-        // Critical: disconnect gainNode first, clear callbacks
-        this.sourceNode.onended = null;
-        this.sourceNode.disconnect();
-        this.sourceNode.stop();
-      } catch (_) {}
-      this.sourceNode = null;
-    }
-
-    if (resetOffset) this.pauseOffset = 0;
-    this.isPlaying = false;
-    if (resetOffset) this.onStatusChange('stopped');
-  }
-
-  /** Seek to fraction (0–1) of total duration */
-  seekTo(fraction) {
-    const buf = this.outputBuffer || this.inputBuffer;
-    if (!buf) return;
-    this.pauseOffset = fraction * buf.duration;
-    if (this.isPlaying) this.play();
-  }
-
-  /** Get current playback position in seconds */
-  getCurrentTime() {
-    if (this.isPlaying && this.audioCtx) {
-      return this.pauseOffset + (this.audioCtx.currentTime - this.startedAt);
-    }
-    return this.pauseOffset;
-  }
-
-  /** Get analyser node for visualizations */
-  getAnalyser() {
-    return this.analyserNode;
-  }
-
-  // ===== PROCESSING =====
-
-  /** Run offline 35-stage pipeline */
-  async processOffline(params = null) {
-    const buf = this.inputBuffer;
-    if (!buf) throw new Error('No audio loaded');
-
-    this.mode = 'processing';
-    this.onStatusChange('processing');
-
-    const audioData = buf.getChannelData(0);
-    const sr = buf.sampleRate;
-    const exportParams = params || this.state.export();
-
-    // Merge DSPConfig feature flags into params if available
-    if (this.dspConfig) {
-      Object.assign(exportParams, this.dspConfig.export());
-    }
-
-    return new Promise((resolve, reject) => {
-      const worker = new Worker('dsp-worker.js');
-
-      // If ML Worker exists, set up MessageChannel for DSP→ML communication
-      if (this.mlWorker) {
-        const channel = new MessageChannel();
-        worker.postMessage({ type: 'setMLPort' }, [channel.port1]);
-
-        // Forward DSP→ML messages; collect all TypedArray buffers as transferables
-        channel.port2.onmessage = (e) => {
-          const transferables = [];
-          for (const val of Object.values(e.data)) {
-            if (ArrayBuffer.isView(val) && val.buffer instanceof ArrayBuffer) {
-              transferables.push(val.buffer);
-            }
-          }
-          this.mlWorker.postMessage(e.data, transferables);
-        };
-
-        // Forward ML→DSP messages; also intercept relevant result types
-        // SEC-03: Dedicated Worker — same-origin, no cross-frame spoofing possible.
-        // Type guard below (msg.type === ...) is the correct RPC validation for Workers.
-        this.mlWorker.addEventListener('message', (e) => {
-          const msg = e.data;
-
-          // Update DSPConfig noise class when classifier result arrives
-          if (msg.type === 'noiseClassResult' && this.dspConfig) {
-            this.dspConfig.setNoiseClass(msg.noiseClass, msg.confidence);
-            this.onNoiseClassChange?.(msg.noiseClass, msg.confidence);
-          }
-
-          try { channel.port2.postMessage(msg); } catch (_) {}
-        });
-      }
-
-      worker.onmessage = (e) => {
-        const msg = e.data;
-        switch (msg.type) {
-          case 'progress':
-            this.onProgress(msg.stage, msg.pct, msg.label);
-            break;
-
-          case 'result': {
-            worker.terminate();
-            const ctx = this.ensureContext();
-            const outputBuf = ctx.createBuffer(1, msg.data.length, msg.sampleRate);
-            outputBuf.getChannelData(0).set(msg.data);
-            this.outputBuffer = outputBuf;
-            this.mode = 'complete';
-            this.onStatusChange('complete');
-            this.onProcessComplete({
-              buffer: outputBuf,
-              stats: msg.stats
-            });
-            resolve(outputBuf);
-            break;
-          }
-
-          case 'error':
-            worker.terminate();
-            this.mode = 'idle';
-            this.onStatusChange('error');
-            this.onError(msg.msg);
-            reject(new Error(msg.msg));
-            break;
-
-          case 'aborted':
-            worker.terminate();
-            this.mode = 'idle';
-            this.onStatusChange('idle');
-            reject(new Error('Processing aborted'));
-            break;
-        }
-      };
-
-      worker.onerror = (err) => {
-        worker.terminate();
-        this.mode = 'idle';
-        reject(err);
-      };
-
-      // Send audio data (Transferable for zero-copy)
-      const dataCopy = new Float32Array(audioData);
-      worker.postMessage({
-        type: 'process',
-        data: dataCopy,
-        sampleRate: sr,
-        params: exportParams
-      }, [dataCopy.buffer]);
-
-      this.dspWorker = worker;
     });
-  }
 
-  /** Abort current offline processing */
-  abortProcessing() {
-    if (this.dspWorker) {
-      this.dspWorker.postMessage({ type: 'abort' });
-    }
-  }
-
-  /** Switch to real-time mode */
-  async enableRealtime() {
-    const workletReady = await this.initWorklet();
-    if (workletReady) {
-      this.mode = 'realtime';
-
-      // Start ML worker processing loop if available
-      if (this.mlWorker && this.sabSupported) {
-        this.mlWorker.postMessage({ type: 'startLoop' });
-      }
-    }
-    return workletReady;
-  }
-
-  /** Switch to offline mode */
-  disableRealtime() {
-    this.mode = 'idle';
+    // Also forward blend weights to the ML worker for Demucs/BSRNN mixing
     if (this.mlWorker) {
-      this.mlWorker.postMessage({ type: 'stopLoop' });
+      this.mlWorker.postMessage({
+        type:   'setWeights',
+        demucs: params.voiceIso / 100,
+        bsrnn:  1 - params.voiceIso / 100
+      });
     }
   }
 
-  /** Export processed audio as WAV ArrayBuffer */
-  exportWAV(bitDepth = 16) {
-    const buf = this.outputBuffer || this.inputBuffer;
-    if (!buf) return null;
-
-    const data = buf.getChannelData(0);
-    if (typeof DSPCore !== 'undefined') {
-      return DSPCore.encodeWAV(data, buf.sampleRate, bitDepth);
-    }
-
-    // Inline fallback
-    return this._encodeWAV(data, buf.sampleRate, bitDepth);
+  // ── Bind all 52 sliders once the DOM is ready ────────────────────────────
+  /**
+   * Iterates every <input data-param> and wires its 'input' event to
+   * updateParams().  This replaces the old VoiceIsolatePro.onSlider()
+   * path for worklet-relevant params.
+   *
+   * Safe to call before workletNode is created — updateParams() is
+   * guarded with an early return.
+   */
+  _bindSliders() {
+    // We piggyback on the existing SLIDERS registry defined in app.js
+    // All 52 sliders fire this handler; non-worklet params are simply
+    // forwarded but ignored by the worklet (cheap no-op).
+    document.querySelectorAll('input[type="range"][data-param]').forEach((el) => {
+      el.addEventListener('input', () => {
+        // Build a minimal snapshot from the current DOM state
+        // (VoiceIsolatePro.params is the authoritative store;
+        //  we read directly from DOM here to avoid a circular dep)
+        const snapshot = {};
+        document.querySelectorAll('input[type="range"][data-param]').forEach((s) => {
+          snapshot[s.dataset.param] = parseFloat(s.value);
+        });
+        this.updateParams(snapshot);
+      });
+    });
   }
 
-  /** A/B comparison toggle */
-  toggleAB() {
-    if (!this.inputBuffer || !this.outputBuffer) return;
-    const currentBuf = this.sourceNode?.buffer;
-    const next = (currentBuf === this.outputBuffer) ? this.inputBuffer : this.outputBuffer;
-    const wasPlaying = this.isPlaying;
-    if (wasPlaying) {
-      this.pauseOffset += this.audioCtx.currentTime - this.startedAt;
-      this.stop(false);
-      this.play(next);
-    }
-    return next === this.outputBuffer ? 'processed' : 'original';
+  // ── Suspend / resume AudioContext ────────────────────────────────────────
+  async suspend() {
+    if (this.ctx && this.ctx.state === 'running') await this.ctx.suspend();
   }
 
-  // ===== CLEANUP =====
+  async resume() {
+    if (this.ctx && this.ctx.state === 'suspended') await this.ctx.resume();
+  }
 
-  /** Tear down everything */
+  // ── Teardown ──────────────────────────────────────────────────────────────
   destroy() {
-    this.stop(true);
-
-    if (this.workletNode) {
-      try { this.workletNode.disconnect(); } catch (_) {}
-      this.workletNode = null;
-    }
-
-    if (this.gainNode) {
-      try { this.gainNode.disconnect(); } catch (_) {}
-    }
-
-    if (this.mlWorker) {
-      this.mlWorker.postMessage({ type: 'dispose' });
-      this.mlWorker.terminate();
-      this.mlWorker = null;
-    }
-
-    if (this.dspWorker) {
-      this.dspWorker.terminate();
-      this.dspWorker = null;
-    }
-
-    if (this.audioCtx && this.audioCtx.state !== 'closed') {
-      this.audioCtx.close();
-    }
-    this.audioCtx = null;
+    if (this.mlWorker) { this.mlWorker.terminate(); this.mlWorker = null; }
+    if (this.workletNode) { try { this.workletNode.disconnect(); } catch (_) {} this.workletNode = null; }
+    if (this.ctx && this.ctx.state !== 'closed') { this.ctx.close(); this.ctx = null; }
+    this.mlReady = false;
   }
-
-  // ===== Internal =====
-
-  _allocateRingBuffers() {
-    const headerBytes = 16;
-    const dataBytes = this.frameSize * this.frameCount * Float32Array.BYTES_PER_ELEMENT;
-    const totalBytes = headerBytes + dataBytes;
-
-    this.inputRingSAB = new SharedArrayBuffer(totalBytes);
-    this.maskRingSAB = new SharedArrayBuffer(totalBytes);
-
-    // Initialize control headers
-    const initCtrl = (sab) => {
-      const ctrl = new Int32Array(sab, 0, 4);
-      Atomics.store(ctrl, 0, 0);
-      Atomics.store(ctrl, 1, 0);
-      Atomics.store(ctrl, 2, this.frameSize * this.frameCount);
-      Atomics.store(ctrl, 3, 0);
-    };
-    initCtrl(this.inputRingSAB);
-    initCtrl(this.maskRingSAB);
-  }
-
-  _encodeWAV(data, sr, bits = 16) {
-    const bps = bits / 8;
-    const ds = data.length * bps;
-    const b = new ArrayBuffer(44 + ds);
-    const v = new DataView(b);
-    const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
-    w(0,'RIFF'); v.setUint32(4,36+ds,true); w(8,'WAVE'); w(12,'fmt ');
-    v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
-    v.setUint32(24,sr,true); v.setUint32(28,sr*bps,true);
-    v.setUint16(32,bps,true); v.setUint16(34,bits,true);
-    w(36,'data'); v.setUint32(40,ds,true);
-    for (let i=0;i<data.length;i++) {
-      v.setInt16(44+i*2, Math.max(-1,Math.min(1,data[i]))*0x7FFF, true);
-    }
-    return b;
-  }
-}
-
-// Export
-if (typeof window !== 'undefined') {
-  window.PipelineOrchestrator = PipelineOrchestrator;
-}
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = PipelineOrchestrator;
 }
