@@ -269,8 +269,10 @@
     10. app-patches.js      — monkey-patches prototype (4 bug fixes)
     11. ai-engine-v2.js     — AI reasoning engine
     12. ai-intelligence.js  — AI analysis helpers
-    13. pipeline-orchestrator.js — PipelineOrchestrator + bootstrap IIFE
-    14. vip-boot.js         — instantiates app, sets window._vipApp,
+    13. ml-worker-models-patch.js — ML model manifest + graceful degradation
+    14. ml-worker-fetch-cache.js  — IndexedDB model cache + chunked download
+    15. pipeline-orchestrator.js  — PipelineOrchestrator + bootstrap IIFE
+    16. vip-boot.js               — instantiates app, sets window._vipApp,
                                calls initMLWorker()  — MUST BE LAST
   -->
   <script src="ring-buffer.js"></script>
@@ -285,6 +287,8 @@
   <script src="app-patches.js"></script>
   <script src="ai-engine-v2.js"></script>
   <script src="ai-intelligence.js"></script>
+  <script src="ml-worker-models-patch.js"></script>
+  <script src="ml-worker-fetch-cache.js"></script>
   <script src="pipeline-orchestrator.js"></script>
   <script src="vip-boot.js"></script>
 </body>
