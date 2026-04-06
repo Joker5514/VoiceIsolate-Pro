@@ -321,6 +321,8 @@ class PipelineOrchestrator {
         };
 
         // Forward ML→DSP messages; also intercept relevant result types
+        // SEC-03: Dedicated Worker — same-origin, no cross-frame spoofing possible.
+        // Type guard below (msg.type === ...) is the correct RPC validation for Workers.
         this.mlWorker.addEventListener('message', (e) => {
           const msg = e.data;
 
