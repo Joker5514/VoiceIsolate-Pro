@@ -84,15 +84,17 @@ async function runPipeline(msg) {
   self._aborted = false;
   const params = msg.params;
 
-  // [A17] Normalize SR: default 48kHz unless input clearly differs
+  // [A17] Preserve input SR for final resample-back/reporting, but process at fixed 48kHz.
   const originalSR = msg.sampleRate || SR;
-  const sr = (originalSR && Math.abs(originalSR - 48000) > 100) ? originalSR : 48000;
+  const processingSR = SR;
+  const needsResample = !!originalSR && Math.abs(originalSR - processingSR) > 100;
+  const sr = processingSR;
 
   let data = new Float32Array(msg.data);
 
-  // [A17] Resample to 48kHz if input SR differs
-  if (sr !== 48000) {
-    const ratio = 48000 / sr;
+  // [A17] Resample input to the fixed processing SR before any downstream DSP/ML stages.
+  if (needsResample) {
+    const ratio = processingSR / originalSR;
     const outLen = Math.round(data.length * ratio);
     const resampled = new Float32Array(outLen);
     for (let i = 0; i < outLen; i++) {
