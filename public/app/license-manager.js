@@ -268,7 +268,7 @@ const LicenseManager = (() => {
   // ─── Usage Tracking ───────────────────────────────────────────────────────────
   function _loadUsage() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEYS.USAGE);
+      (()=>{ try { return localStorage.getItem(STORAGE_KEYS.USAGE); } catch { return null; } })();
       if (!raw) return _resetUsage();
       const usage = JSON.parse(raw);
       // Reset daily counters if it's a new day
@@ -299,7 +299,7 @@ const LicenseManager = (() => {
 
   function _saveUsage(usage) {
     try {
-      localStorage.setItem(STORAGE_KEYS.USAGE, JSON.stringify(usage));
+      try { localStorage.setItem(STORAGE_KEYS.USAGE, JSON.stringify(usage)); } catch { /* ARCH-06: sandboxed */ }
     } catch { /* storage full or unavailable */ }
   }
 
@@ -313,7 +313,7 @@ const LicenseManager = (() => {
 
       // Load saved license
       try {
-        const saved = localStorage.getItem(STORAGE_KEYS.LICENSE);
+        (()=>{ try { return localStorage.getItem(STORAGE_KEYS.LICENSE); } catch { return null; } })();
         if (saved) {
           const parsed = JSON.parse(saved);
           const payload = _validateToken(parsed.token);
@@ -354,7 +354,7 @@ const LicenseManager = (() => {
       };
 
       try {
-        localStorage.setItem(STORAGE_KEYS.LICENSE, JSON.stringify({ token, email }));
+        try { localStorage.setItem(STORAGE_KEYS.LICENSE, JSON.stringify({ token, email })); } catch { /* ARCH-06: sandboxed */ }
       } catch { /* storage error */ }
 
       _notify('license:activated', _currentLicense);
@@ -372,7 +372,7 @@ const LicenseManager = (() => {
         const trialData = JSON.parse(localStorage.getItem(STORAGE_KEYS.TRIAL) || '{}');
         if (trialData[tierKey]) return { success: false, error: 'Trial already used for this tier' };
         trialData[tierKey] = Date.now();
-        localStorage.setItem(STORAGE_KEYS.TRIAL, JSON.stringify(trialData));
+        try { localStorage.setItem(STORAGE_KEYS.TRIAL, JSON.stringify(trialData)); } catch { /* ARCH-06: sandboxed */ }
       } catch { /* storage error */ }
 
       const token = _createDemoToken(tierKey, 14);
@@ -385,7 +385,7 @@ const LicenseManager = (() => {
     deactivate() {
       _currentLicense = { tier: 'FREE', token: null, email: null, source: 'default' };
       try {
-        localStorage.removeItem(STORAGE_KEYS.LICENSE);
+        try { localStorage.removeItem(STORAGE_KEYS.LICENSE); } catch { /* ARCH-06: sandboxed */ }
       } catch { /* storage error */ }
       _notify('license:deactivated', null);
     },
