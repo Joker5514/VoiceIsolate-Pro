@@ -787,7 +787,7 @@ const DSPCore = {
       const blockRMS = Math.sqrt(blockSum / (end - b) + 1e-10);
 
       // IIR envelope follower on power
-      const target = blockRMS * blockRMS;
+      const target = blockSum / (end - b) + 1e-10;
       const coeff = target > envPow ? (1 - attackCoeff) : (1 - releaseCoeff);
       envPow += coeff * (target - envPow);
 
