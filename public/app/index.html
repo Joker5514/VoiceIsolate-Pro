@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <!-- onnxruntime-web loaded locally in ml-worker.js via /lib/ort.min.js (no CDN) -->
   <!-- 32-Stage Deca-Pass DSP pipeline: single STFT→32 in-place spectral ops→single iSTFT -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="/lib/three.min.js"></script>
   <link rel="stylesheet" href="style.css" />
   <!-- Diagnostics log panel styles (injected by app-missing-methods.js) -->
   <link rel="stylesheet" href="style-diag-log.css" />
@@ -270,34 +270,33 @@
      4. batch-orchestrator       — batch queue
      5. analytics                — telemetry stub
      6. license-manager          — paywall gate
-     7. paywall                  — UI paywall
-     8. revenuecat               — RevenueCat SDK stub
-     9. app.js                   — defines VoiceIsolatePro class
-    10. app-patches.js           — monkey-patches prototype (5 bug fixes)
-    11. app-missing-methods.js   — adds setStatus, structuredLog, onResize, ML boot (5 fixes)
-    12. ai-engine-v2.js          — AI reasoning engine
-    13. ai-intelligence.js       — AI analysis helpers
-    14. ml-worker-models-patch.js— ML model manifest + graceful degradation
-    15. ml-worker-fetch-cache.js — IndexedDB model cache + chunked download
-    16. pipeline-orchestrator.js — PipelineOrchestrator + bootstrap IIFE
-    17. vip-boot.js              — instantiates app, sets window._vipApp — MUST BE LAST
+     7. app.js                   — defines VoiceIsolatePro class (includes merged patches)
+     8. ai-engine-v2.js          — AI reasoning engine
+     9. ai-intelligence.js       — AI analysis helpers
+    10. ml-worker-models-patch.js— ML model manifest + graceful degradation
+    11. ml-worker-fetch-cache.js — IndexedDB model cache + chunked download
+    12. pipeline-orchestrator.js — PipelineOrchestrator + bootstrap IIFE
+    13. vip-boot.js              — instantiates app, sets window._vipApp — MUST BE LAST
   -->
-  <script src="ring-buffer.js"></script>
-  <script src="pipeline-state.js"></script>
-  <script src="dsp-core.js"></script>
-  <script src="batch-orchestrator.js"></script>
-  <script src="analytics.js"></script>
-  <script src="license-manager.js"></script>
-  <script src="paywall.js"></script>
-  <script src="revenuecat.js"></script>
-  <script src="app.js"></script>
-  <script src="app-patches.js"></script>
-  <script src="app-missing-methods.js"></script>
-  <script src="ai-engine-v2.js"></script>
-  <script src="ai-intelligence.js"></script>
-  <script src="ml-worker-models-patch.js"></script>
-  <script src="ml-worker-fetch-cache.js"></script>
-  <script src="pipeline-orchestrator.js"></script>
-  <script src="vip-boot.js"></script>
+  <!-- Libs (local only, no CDN) -->
+  <!-- /lib/three.min.js already loaded in <head> -->
+
+  <!-- Core modules -->
+  <script src="./dsp-core.js"></script>
+  <script src="./ring-buffer.js"></script>
+  <script src="./pipeline-state.js"></script>
+  <script src="./cloud-sync.js"></script>
+  <script src="./batch-orchestrator.js"></script>
+  <script src="./analytics.js"></script>
+  <script src="./license-manager.js"></script>
+  <script src="./ai-engine-v2.js"></script>
+  <script src="./ai-intelligence.js"></script>
+  <script src="./ml-worker-models-patch.js"></script>
+  <script src="./ml-worker-fetch-cache.js"></script>
+  <script src="./pipeline-orchestrator.js"></script>
+
+  <!-- Main app — must be before vip-boot -->
+  <script src="./app.js"></script>
+  <script src="./vip-boot.js"></script>
 </body>
 </html>

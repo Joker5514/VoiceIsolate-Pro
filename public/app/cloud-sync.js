@@ -1,23 +1,23 @@
-// VoiceIsolate Pro — Cloud Sync (DISABLED)
-// BUG-H FIX: Replaced IIFE throw with silent no-op stub.
-// The previous implementation threw on import, which would crash the page if this
-// script was ever loaded. Now returns a safe stub object with no-op methods.
-// Cloud sync violates the 100% local processing constraint — this module is permanently disabled.
+/* cloud-sync.js — VoiceIsolate Pro
+   LOCAL-ONLY stub. 100% offline. No network calls are made.
+   This module exists solely to prevent import/reference errors. */
 
-const CloudSync = (() => {
-  'use strict';
+const CloudSync = {
+  init: () => Promise.resolve({ ok: true, local: true }),
+  save: (_key, _data) => Promise.resolve({ ok: true, local: true }),
+  load: (_key) => Promise.resolve(null),
+  sync: () => Promise.resolve({ ok: true, synced: 0 }),
+  push: (_data) => Promise.resolve({ ok: true }),
+  pull: () => Promise.resolve([]),
+  isAvailable: () => false,
+  getStatus: () => ({ online: false, lastSync: null }),
+  on: (_event, _cb) => {},
+  off: (_event, _cb) => {},
+};
 
-  const _disabled = () => { /* no-op: cloud sync disabled */ };
-
-  return {
-    sync: _disabled,
-    push: _disabled,
-    pull: _disabled,
-    flush: _disabled,
-    enable: _disabled,
-    disable: _disabled,
-    isEnabled: () => false,
-  };
-})();
-
-if (typeof module !== 'undefined' && module.exports) module.exports = CloudSync;
+// Support both ES module and global script usage
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = CloudSync;
+} else {
+  window.CloudSync = CloudSync;
+}
