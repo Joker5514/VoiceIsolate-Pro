@@ -12,7 +12,7 @@ function structuredLog(level, msg, data = {}) {
   else console.log('[VIP]', msg, data);
   // Store last 200 entries for forensic export
   if (!window._vipLogs) window._vipLogs = [];
-  if (window._vipLogs.length > 200) window._vipLogs.shift();
+  if (window._vipLogs.length >= 200) window._vipLogs.shift();
   window._vipLogs.push(entry);
 }
 
