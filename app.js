@@ -256,6 +256,24 @@ class VoiceIsolatePro {
     uz.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
     uz.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.dom.fileInput.click(); } });
     this.dom.fileBtn.addEventListener('click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
+
+    // Global Spacebar Playback Toggle
+    window.addEventListener('keydown', e => {
+      if (e.key === ' ') {
+        const tag = e.target.tagName;
+        // Don't intercept if user is interacting with text inputs, buttons, or the upload zone (which handles its own space)
+        // Ensure checkbox and radio buttons can still be toggled natively with spacebar
+        if (tag === 'INPUT' && e.target.type !== 'range') return;
+        if (tag === 'TEXTAREA' || tag === 'BUTTON' || e.target.id === 'uploadZone') return;
+
+        e.preventDefault(); // Prevent page scrolling
+
+        if (this.inputBuffer) {
+          if (this.isPlaying) this.pause();
+          else this.play();
+        }
+      }
+    });
     this.dom.fileInput.addEventListener('change', e => { if (e.target.files[0]) this.handleFile(e.target.files[0]); this.dom.fileInput.value = ''; });
     this.dom.micBtn.addEventListener('click', () => this.toggleRecording());
     this.dom.processBtn.addEventListener('click', () => this.runPipeline());
