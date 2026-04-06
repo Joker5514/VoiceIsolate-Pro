@@ -15,7 +15,6 @@
  * - Supports: Demucs v4, BSRNN, Silero VAD, ECAPA-TDNN
  */
 
-let ort = null;             // ONNX Runtime reference
 let sessions = {};          // { demucs, bsrnn, vad, ecapa }
 let provider = 'wasm';      // active execution provider
 let inputRing = null;        // SharedRingBuffer (read side)
@@ -99,9 +98,8 @@ async function initialize(msg) {
     if (msg.ortUrl) _bannedImport(msg.ortUrl);
 
     // Import ONNX Runtime from vendored local copy only
-    if (!ort) {
+    if (!self.ort) {
       importScripts('/lib/ort.min.js');
-      ort = self.ort;
     }
 
     // Detect best execution provider
@@ -121,7 +119,7 @@ async function initialize(msg) {
     for (const name of models) {
       const path = msg.modelPaths?.[name] || MODEL_PATHS[name];
       try {
-        sessions[name] = await ort.InferenceSession.create(path, sessionOpts);
+        sessions[name] = await self.ort.InferenceSession.create(path, sessionOpts);
         log('info', `Loaded model: ${name}`);
       } catch (err) {
         log('warn', `Model ${name} unavailable: ${err.message}`);
@@ -231,7 +229,7 @@ async function generateMask(frame) {
 
   // Demucs inference
   if (sessions.demucs && weights.demucs > 0) {
-    const tensor = new ort.Tensor('float32', frame, [1, 1, frameSize]);
+    const tensor = new self.ort.Tensor('float32', frame, [1, 1, frameSize]);
     try {
       const result = await sessions.demucs.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -244,7 +242,7 @@ async function generateMask(frame) {
 
   // BSRNN inference
   if (sessions.bsrnn && weights.bsrnn > 0) {
-    const tensor = new ort.Tensor('float32', frame, [1, 1, frameSize]);
+    const tensor = new self.ort.Tensor('float32', frame, [1, 1, frameSize]);
     try {
       const result = await sessions.bsrnn.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -303,9 +301,9 @@ async function handleVAD(msg) {
       const padded = new Float32Array(windowSize);
       padded.set(chunk);
 
-      const inputTensor = new ort.Tensor('float32', padded, [1, windowSize]);
-      const srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
-      const stateTensor = new ort.Tensor('float32', state, [2, 1, stateSize]);
+      const inputTensor = new self.ort.Tensor('float32', padded, [1, windowSize]);
+      const srTensor = new self.ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
+      const stateTensor = new self.ort.Tensor('float32', state, [2, 1, stateSize]);
 
       try {
         const result = await sessions.vad.run({
@@ -373,7 +371,7 @@ async function handleEnroll(msg) {
 
   try {
     const data = msg.data;
-    const tensor = new ort.Tensor('float32', data, [1, 1, data.length]);
+    const tensor = new self.ort.Tensor('float32', data, [1, 1, data.length]);
     try {
       const result = await sessions.ecapa.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -413,7 +411,7 @@ async function handleDNS(msg) {
       const end = Math.min(start + chunkSize, data.length);
       const chunk = data.subarray(start, end);
 
-      const tensor = new ort.Tensor('float32', chunk, [1, 1, chunk.length]);
+      const tensor = new self.ort.Tensor('float32', chunk, [1, 1, chunk.length]);
       try {
         const out = await sessions.dns.run({ input: tensor });
         const output = out[Object.keys(out)[0]];
