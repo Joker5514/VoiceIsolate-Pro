@@ -4,7 +4,7 @@
  *
  * Tiers:
  *   FREE       — Basic noise removal, 5-min file limit, watermark on export
- *   PRO        — Full 36-stage pipeline, unlimited files, no watermark ($12/mo)
+ *   PRO        — Full 35-stage pipeline, unlimited files, no watermark ($12/mo)
  *   STUDIO     — Pro + batch processing, API access, priority support ($29/mo)
  *   ENTERPRISE — White-label, custom models, SLA, per-seat ($199/mo)
  *

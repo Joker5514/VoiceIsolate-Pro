@@ -39,7 +39,7 @@ const Paywall = (() => {
       { label: 'File size limit', value: tierDef.limits.fileSizeMB === -1 ? 'Unlimited' : `${tierDef.limits.fileSizeMB} MB`, included: true },
       { label: 'Duration limit', value: tierDef.limits.durationMinutes === -1 ? 'Unlimited' : `${tierDef.limits.durationMinutes} min`, included: true },
       { label: 'Exports per day', value: tierDef.limits.exportsPerDay === -1 ? 'Unlimited' : tierDef.limits.exportsPerDay, included: true },
-      { label: 'Full 36-stage pipeline', value: '', included: tierDef.features.mlModels },
+      { label: 'Full 35-stage pipeline', value: '', included: tierDef.features.mlModels },
       { label: 'AI Voice Isolation', value: '', included: tierDef.features.voiceIsolation },
       { label: 'ML Models (Demucs/BSRNN)', value: '', included: tierDef.features.mlModels },
       { label: 'Forensic Mode + SHA-256', value: '', included: tierDef.features.forensicMode },

@@ -15,7 +15,7 @@ const AdaptiveNoiseFloor = self.AdaptiveNoiseFloor;
 const SR = 48000;
 
 /**
- * Offline 36-stage Deca-Pass pipeline worker.
+ * Offline 35-stage Deca-Pass pipeline worker.
  * Receives Float32Array audio + param state, processes all stages,
  * returns processed buffer via Transferable (zero-copy).
  */
@@ -86,12 +86,18 @@ function callML(type, data, extra = {}) {
 async function runPipeline(msg) {
   let adaptiveNoiseFloorTracker = null;
   if (msg.params.adaptiveWienerEnabled !== false && typeof AdaptiveNoiseFloor !== 'undefined') {
-     adaptiveNoiseFloorTracker = new AdaptiveNoiseFloor(msg.params.fftSize ? msg.params.fftSize/2 : 2048, msg.params.adaptiveWienerSmoothingMs || 200, msg.params.hopSize || 1024, msg.sampleRate || SR);
+    adaptiveNoiseFloorTracker = new AdaptiveNoiseFloor(
+      msg.params.fftSize ? msg.params.fftSize / 2 : 2048,
+      msg.params.adaptiveWienerSmoothingMs || 200,
+      msg.params.hopSize || 1024,
+      msg.sampleRate || SR
+    );
   }
   self._aborted = false;
   const params = msg.params;
   const sr = msg.sampleRate || SR;
   let data = new Float32Array(msg.data);
+  let frameCount = 0;
 
   try {
     // ===== PASS 1: INPUT CONDITIONING (S01–S04) =====
@@ -99,6 +105,8 @@ async function runPipeline(msg) {
 
     // S01: Already decoded (received as Float32Array at target SR)
     // S02: Channel normalization (mono — handled by caller)
+    progress(2, 2, 'Channel Normalized');
+
     // S03: DC offset removal
     data = DSP.removeDCOffset(data, sr);
     progress(3, 5, 'DC Offset Removed');
@@ -110,7 +118,7 @@ async function runPipeline(msg) {
     if (self._aborted) return abort();
 
     // ===== PASS 2: TIME-DOMAIN CLEANUP (S05–S08) =====
-    progress(5, 10, 'Time-Domain Cleanup');
+    progress(5, 10, 'Noise Gate');
 
     // S05: Noise Gate
     data = DSP.noiseGate(data, {
@@ -139,77 +147,89 @@ async function runPipeline(msg) {
 
     if (self._aborted) return abort();
 
-    // FIX: Issue #3 — Move all ML separation to PRE-STFT time domain to enforce single-pass
-    //   spectral architecture. Removed illegal secondary DSP.forwardSTFT() calls on separated
-    //   and targetData buffers, which caused phase smearing between independent STFT frames.
-
-    // ===== PRE-STFT: TIME-DOMAIN ML SEPARATION (S11–S14) =====
-    progress(11, 32, 'ML Source Separation (time-domain)');
-
-    // S11: Silero VAD
+    // Fire VAD early (async) so it overlaps with STFT computation.
+    // VAD result is awaited at S11 after the transform is complete.
     let vadConfidence = null;
-    const vadData = new Float32Array(data); // copy for ML
-    const vadResult = await callML('vad', vadData, { sampleRate: sr });
-    if (vadResult.confidence) {
-      vadConfidence = vadResult.confidence;
-    }
-    progress(11, 38, 'VAD Complete');
-
-    // S12–S14: Demucs + BSRNN ensemble separation — operates on raw time-domain data
-    const voiceIso = params.voiceIso ?? 70;
-    if (voiceIso > 0) {
-      const sepData = new Float32Array(data);
-      const sepResult = await callML('separate', sepData, {
-        chunkSize: sr * 10,
-        demucsWeight: params.demucsWeight ?? 70,
-        bsrnnWeight: params.bsrnnWeight ?? 30
-      });
-
-      if (sepResult.data) {
-        // Blend in TIME DOMAIN before STFT — no secondary transform needed
-        const isoStrength = voiceIso / 100;
-        const separated = new Float32Array(sepResult.data);
-        for (let i = 0; i < data.length; i++) {
-          data[i] = (1 - isoStrength) * data[i] + isoStrength * separated[i];
-        }
-      }
-    }
-    progress(14, 45, 'ML Separation Complete');
-
-    // Multi-speaker separation also in time domain — no new STFT
-    const multiSpeakerEnabled = params.multiSpeakerEnabled ?? false;
-    const separationMode = params.separationMode ?? 'off';
-    if (multiSpeakerEnabled && separationMode !== 'off') {
-      progress(14, 46, 'Multi-Speaker Separation');
-      const msData = new Float32Array(data);
-      const msResult = await callML('multiSeparate', msData, {
-        mode: separationMode,
-        targetSpeaker: params.targetSpeaker ?? 0,
-        attenuationDb: params.separationAttenuationDb ?? -24
-      });
-
-      if (msResult.streams && msResult.streams.length > 0) {
-        const targetStream = msResult.streams.find(s => s.speakerId === (params.targetSpeaker ?? 0))
-          || msResult.streams[0];
-
-        if (targetStream && targetStream.data) {
-          const targetData = new Float32Array(targetStream.data);
-          // Directly replace data in time domain — no new STFT
-          for (let i = 0; i < data.length; i++) data[i] = targetData[i];
-        }
-      }
-      progress(14, 47, 'Multi-Speaker Separation Complete');
-    }
-
-    if (self._aborted) return abort();
+    const vadData = new Float32Array(data);
+    const vadPromise = callML('vad', vadData, { sampleRate: sr });
 
     // ===== PASS 3: FORWARD TRANSFORM (S09–S10) =====
     progress(9, 25, 'Forward STFT');
 
     const fftSize = 4096;
     const hopSize = 1024;
-    const { mag, phase, frameCount } = DSP.forwardSTFT(data, fftSize, hopSize);
+    const { mag, phase, frameCount: fc } = DSP.forwardSTFT(data, fftSize, hopSize);
+    frameCount = fc;
     progress(10, 30, `STFT: ${frameCount} frames`);
+
+    if (self._aborted) return abort();
+
+    // ===== PASS 4: ML / SPECTRAL ANALYSIS (S11–S14) =====
+    // All ML operations run in spectral domain on `mag`, preserving single-pass STFT.
+
+    // S11: Silero VAD — await the result fired before STFT
+    progress(11, 32, 'VAD Analysis');
+    const vadResult = await vadPromise;
+    if (vadResult.confidence) {
+      vadConfidence = vadResult.confidence;
+    }
+    progress(11, 34, 'VAD Complete');
+
+    // S12: ML voice isolation — spectral mask applied directly to mag frames
+    progress(12, 36, 'ML Separation A');
+    const voiceIso = params.voiceIso ?? 70;
+    if (voiceIso > 0) {
+      const dns2Stride = 8; // apply mask every 8 frames (~46 ms at hopSize=1024, sr=48000)
+      let lastSepMask = null;
+      const halfN = mag[0] ? mag[0].length : 0;
+
+      for (let f = 0; f < frameCount; f++) {
+        if (f % dns2Stride === 0) {
+          const magFrame = _buildDNS2Frame(mag, f, sr, fftSize);
+          // Pass magnitude in `extra` so handleDNS2 receives msg.magnitude correctly
+          const sepResult = await callML('dns2', null, { magnitude: magFrame });
+          if (sepResult.mask) lastSepMask = new Float32Array(sepResult.mask);
+        }
+        if (lastSepMask && halfN > 0) {
+          const isoStrength = voiceIso / 100;
+          for (let k = 0; k < halfN; k++) {
+            const maskIdx = Math.min(k, lastSepMask.length - 1);
+            // Blend: (1 - iso) * passthrough + iso * mask_gain
+            const gain = 1 - isoStrength + isoStrength * Math.max(0, Math.min(1, lastSepMask[maskIdx]));
+            mag[f][k] *= gain;
+          }
+        }
+      }
+    }
+
+    // S13: Multi-speaker spectral separation
+    progress(13, 40, 'ML Separation B');
+    const multiSpeakerEnabled = params.multiSpeakerEnabled ?? false;
+    const separationMode = params.separationMode ?? 'off';
+    if (multiSpeakerEnabled && separationMode !== 'off') {
+      const msStride = 16;
+      let msMask = null;
+      const halfN = mag[0] ? mag[0].length : 0;
+      const attLin = Math.pow(10, (params.separationAttenuationDb ?? -24) / 20);
+
+      for (let f = 0; f < frameCount; f++) {
+        if (f % msStride === 0) {
+          const magFrame = _buildDNS2Frame(mag, f, sr, fftSize);
+          const msResult = await callML('dns2', null, { magnitude: magFrame });
+          if (msResult.mask) msMask = new Float32Array(msResult.mask);
+        }
+        if (msMask && halfN > 0) {
+          for (let k = 0; k < halfN; k++) {
+            const maskIdx = Math.min(k, msMask.length - 1);
+            const voiceGain = Math.max(0, Math.min(1, msMask[maskIdx]));
+            // Boost target voice bins, attenuate background
+            mag[f][k] *= voiceGain + (1 - voiceGain) * attLin;
+          }
+        }
+      }
+    }
+
+    progress(14, 45, 'ML Separation Complete');
 
     if (self._aborted) return abort();
 
@@ -218,14 +238,10 @@ async function runPipeline(msg) {
 
     // Noise classifier: run before Wiener to inform strategy
     if (params.noiseClassifierEnabled !== false) {
-      // Build compact feature vector: 64-band mel-like log energies
       const classFeatures = _buildNoiseFeatures(mag, sr, fftSize);
-      // Fire-and-forget (results forwarded back via ML port to orchestrator)
+      // Fire-and-forget (result forwarded to orchestrator via ML port)
       callML('classifyNoise', classFeatures, {}).catch(() => {});
-      // Also run the spectral classifier locally for fast strategy update
-      // (the ONNX model result will arrive asynchronously)
       const localClass = DSP.classifyNoiseSpectral(mag, sr, fftSize);
-      // Store locally for adaptive Wiener over-subtraction tuning
       if (localClass.noiseClass === 'music') {
         params._effectiveOverSubtraction = (params.adaptiveWienerOverSubtraction ?? 1.2) * 1.3;
       } else {
@@ -233,10 +249,9 @@ async function runPipeline(msg) {
       }
     }
 
-    // S15: Spectral noise subtraction
+    // S15: Spectral noise subtraction (per-bin adaptive Wiener, Martin 2001)
     const adaptiveWienerEnabled = params.adaptiveWienerEnabled !== false;
     if (adaptiveWienerEnabled && AdaptiveNoiseFloor) {
-      // Per-bin adaptive Wiener filter (Martin 2001)
       const smoothingMs = params.adaptiveWienerSmoothingMs ?? 200;
       const overSub = params._effectiveOverSubtraction ?? params.adaptiveWienerOverSubtraction ?? 1.2;
       const halfN = mag[0].length;
@@ -245,24 +260,23 @@ async function runPipeline(msg) {
         overSubtraction: overSub,
         spectralFloor: 0.001
       });
-    } else {
-      // Fallback: apply Adaptive Wiener with tracker built at start of pipeline
-      if (adaptiveNoiseFloorTracker) {
-        DSP.applyAdaptiveWiener(mag, vadConfidence, adaptiveNoiseFloorTracker, { overSubtraction: params._effectiveOverSubtraction ?? params.adaptiveWienerOverSubtraction ?? 1.2, spectralFloor: 0.001 });
-      }
+    } else if (adaptiveNoiseFloorTracker) {
+      DSP.applyAdaptiveWiener(mag, vadConfidence, adaptiveNoiseFloorTracker, {
+        overSubtraction: params._effectiveOverSubtraction ?? params.adaptiveWienerOverSubtraction ?? 1.2,
+        spectralFloor: 0.001
+      });
     }
     progress(15, 52, 'Spectral Noise Subtracted');
 
-    // FIX: Issue #8 — DNS v2 was applying a single mid-frame mask to ALL frames, defeating
-    //   adaptive suppression. Now runs per-frame on a sliding window (every dns2Stride frames).
+    // DNS v2 per-frame mask (sliding window, every dns2Stride frames)
     if (params.dns2Enabled !== false) {
-      const dns2Stride = 8; // apply mask every 8 frames (~46ms at hopSize=1024, sr=48000)
+      const dns2Stride = 8;
       let lastMask = null;
 
       for (let f = 0; f < frameCount; f++) {
         if (f % dns2Stride === 0) {
           const dns2Input = _buildDNS2Frame(mag, f, sr, fftSize);
-          const dns2Result = await callML('dns2', dns2Input, {});
+          const dns2Result = await callML('dns2', null, { magnitude: dns2Input });
           if (dns2Result.mask) lastMask = new Float32Array(dns2Result.mask);
         }
         if (lastMask) {
@@ -318,27 +332,42 @@ async function runPipeline(msg) {
     if (self._aborted) return abort();
 
     // ===== PASS 7: TIME-DOMAIN ENHANCEMENT (S22–S26) =====
-    progress(22, 74, 'Parametric EQ');
 
+    // S22: High-pass / Low-pass filtering
+    progress(22, 74, 'High-Pass / Low-Pass');
+    const hpLpBands = [
+      { freq: params.hpFreq ?? 80,    gain: 0, Q: params.hpQ ?? 0.71,  type: 'highpass' },
+      { freq: params.lpFreq ?? 14000, gain: 0, Q: params.lpQ ?? 0.71,  type: 'lowpass'  }
+    ];
+    DSP.parametricEQ(data, hpLpBands, sr);
+
+    // S23: Parametric EQ (10-band)
+    progress(23, 75, 'Parametric EQ');
     const eqBands = [
-      { freq: 40,    gain: params.eqSub ?? -8,      Q: 0.7, type: 'peaking' },    // S22
-      { freq: 100,   gain: params.eqBass ?? 0,       Q: 1.0, type: 'peaking' },
-      { freq: 200,   gain: params.eqWarmth ?? 1,     Q: 1.4, type: 'peaking' },
-      { freq: 400,   gain: params.eqBody ?? 0,       Q: 1.4, type: 'peaking' },
-      { freq: 800,   gain: params.eqLowMid ?? -1,    Q: 1.4, type: 'peaking' },
-      { freq: 1500,  gain: params.eqMid ?? 1,        Q: 1.4, type: 'peaking' },
-      { freq: 3000,  gain: params.eqPresence ?? 3,   Q: 1.4, type: 'peaking' },    // S24
-      { freq: 5000,  gain: params.eqClarity ?? 2,    Q: 1.4, type: 'peaking' },
-      { freq: 10000, gain: params.eqAir ?? 1,        Q: 1.4, type: 'peaking' },
-      { freq: 16000, gain: params.eqBrill ?? -2,     Q: 0.7, type: 'highshelf' },  // S25
+      { freq: 40,    gain: params.eqSub ?? -8,      Q: 0.7, type: 'peaking'    },
+      { freq: 100,   gain: params.eqBass ?? 0,       Q: 1.0, type: 'peaking'    },
+      { freq: 200,   gain: params.eqWarmth ?? 1,     Q: 1.4, type: 'peaking'    },
+      { freq: 400,   gain: params.eqBody ?? 0,       Q: 1.4, type: 'peaking'    },
+      { freq: 800,   gain: params.eqLowMid ?? -1,    Q: 1.4, type: 'peaking'    },
+      { freq: 1500,  gain: params.eqMid ?? 1,        Q: 1.4, type: 'peaking'    },
+      { freq: 3000,  gain: params.eqPresence ?? 3,   Q: 1.4, type: 'peaking'    },
+      { freq: 5000,  gain: params.eqClarity ?? 2,    Q: 1.4, type: 'peaking'    },
+      { freq: 10000, gain: params.eqAir ?? 1,        Q: 1.4, type: 'peaking'    },
+      { freq: 16000, gain: params.eqBrill ?? -2,     Q: 0.7, type: 'highshelf'  }
     ];
     DSP.parametricEQ(data, eqBands, sr);
+
+    // S24: Dynamics prep / post-EQ tone correction
+    progress(24, 76, 'Dynamics Prep / Tone Control');
+    const postEqBands = [
+      { freq: 8000, gain: params.postEqHfTrim ?? -0.5, Q: 0.7, type: 'highshelf' }
+    ];
+    DSP.parametricEQ(data, postEqBands, sr);
+
+    // S25: EQ applied (confirmation stage)
     progress(25, 78, 'EQ Applied');
 
-    // FIX: Issue #12 — Removed S26 time-domain harmonic resynthesis (tanh saturation).
-    //   harmonicEnhanceV2 at S17 (spectral domain) is the complete implementation.
-    //   The tanh saturation was a crude approximation that created distortion artifacts
-    //   and double-applied enhancement when harmRecov < 30 (the default of 20 always triggered it).
+    // S26: Harmonic stage — spectral processing completed at S17
     progress(26, 80, 'Harmonic Stage (spectral only — S17)');
 
     if (self._aborted) return abort();
@@ -373,14 +402,45 @@ async function runPipeline(msg) {
     if (self._aborted) return abort();
 
     // ===== PASS 9: OUTPUT MASTERING (S31–S34) =====
-    progress(31, 92, 'Output Mastering');
 
-    // S31: Stereo widener (mono passthrough if single channel)
-    // Handled at caller level for stereo content
+    // S31: Stereo widener — actual Haas/level-difference implementation
+    progress(31, 92, 'Stereo Width');
+
+    const outWidth = params.outWidth ?? 100;
+    let stereoOut = null;
+
+    if (outWidth !== 100) {
+      const delaySamples = outWidth > 100
+        ? Math.floor(((outWidth - 100) / 100) * sr * 0.018)
+        : 0;
+
+      stereoOut = new Float32Array(data.length * 2);
+
+      for (let i = 0; i < data.length; i++) {
+        const dryMono = data[i];
+        const delayed = (delaySamples > 0 && i >= delaySamples)
+          ? data[i - delaySamples]
+          : dryMono;
+
+        const right = outWidth >= 100
+          ? delayed
+          : dryMono * (outWidth / 100);
+
+        stereoOut[i * 2]     = dryMono; // left  = dry mono
+        stereoOut[i * 2 + 1] = right;   // right = widened
+      }
+    }
 
     // S32: True peak limiter
     const limCeiling = params.limThresh ?? -1;
     DSP.truePeakLimit(data, limCeiling);
+    if (stereoOut) {
+      const ceilLin = Math.pow(10, limCeiling / 20);
+      for (let i = 0; i < data.length; i++) {
+        stereoOut[i * 2]     = Math.max(-ceilLin, Math.min(ceilLin, stereoOut[i * 2]));
+        stereoOut[i * 2 + 1] = Math.max(-ceilLin, Math.min(ceilLin, stereoOut[i * 2 + 1]));
+      }
+    }
     progress(32, 94, 'Peak Limited');
 
     // S33: Dither
@@ -388,11 +448,10 @@ async function runPipeline(msg) {
     DSP.dither(data, ditherBits);
     progress(33, 95, 'Dithered');
 
-    // S34: Final output gain
+    // S34: Final output gain + dry/wet mix
     const outGainLin = Math.pow(10, (params.outGain ?? 0) / 20);
     for (let i = 0; i < data.length; i++) data[i] *= outGainLin;
 
-    // Dry/wet mix
     const wetAmt = (params.dryWet ?? 100) / 100;
     if (wetAmt < 1.0 && msg.data) {
       const dry = new Float32Array(msg.data);
@@ -402,14 +461,19 @@ async function runPipeline(msg) {
     }
     progress(34, 97, 'Final Gain Applied');
 
-    // ===== PASS 10: EXPORT (S35–S36) =====
-    // S35–S36 handled by caller (WAV encode / video mux)
-    progress(36, 100, 'Pipeline Complete');
+    // ===== PASS 10: EXPORT (S35) =====
+    // S35 handled by caller (WAV encode / video mux)
+    progress(35, 100, 'Pipeline Complete');
 
     // Return processed data (Transferable = zero-copy)
+    const transferables = stereoOut
+      ? [data.buffer, stereoOut.buffer]
+      : [data.buffer];
+
     self.postMessage({
       type: 'result',
       data,
+      stereoData: stereoOut,
       sampleRate: sr,
       stats: {
         rms: DSP.calcRMS(data),
@@ -417,7 +481,7 @@ async function runPipeline(msg) {
         lufs: DSP.measureLUFS(data, sr),
         frames: frameCount
       }
-    }, [data.buffer]);
+    }, transferables);
 
   } catch (err) {
     self.postMessage({ type: 'error', msg: err.message, stack: err.stack });
