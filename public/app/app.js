@@ -1571,7 +1571,7 @@ class VoiceIsolatePro {
         models: ['vad']
       });
     } catch (e) {
-      structuredLog('warn', 'Could not start ML worker', { error: e.message });
+      structuredLog('warn', 'Could not start ML worker', { error: e?.message || String(e) });
     }
   }
 
