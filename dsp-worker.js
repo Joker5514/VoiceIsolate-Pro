@@ -356,8 +356,8 @@ async function runPipeline(msg) {
     progress(36, 100, 'Pipeline Complete');
 
     // [C18] Inline calcPeak/calcRMS (methods not on DSP instance)
-    const peak = outputData.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-    const rms = Math.sqrt(outputData.reduce((s, v) => s + v * v, 0) / outputData.length);
+    const peak = DSP.calcPeak(outputData);
+    const rms = DSP.calcRMS(outputData);
 
     // Return processed data (Transferable = zero-copy)
     self.postMessage({
