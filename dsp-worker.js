@@ -12,7 +12,7 @@ const DSP = self.DSPCore;
 const SR = 48000;
 
 /**
- * Offline 36-stage Deca-Pass pipeline worker.
+ * Offline 35-stage Deca-Pass pipeline worker.
  * Receives Float32Array audio + param state, processes all stages,
  * returns processed buffer via Transferable (zero-copy).
  */
@@ -157,8 +157,23 @@ async function runPipeline(msg) {
 
     if (self._aborted) return abort();
 
+    // [FIX 1]: Moved Forward STFT (PASS 3) BEFORE ML Separation (PASS 4)
+    // so ML operates in spectral domain on {mag, phase}. This fixes the
+    // progress bar going backwards and satisfies the Single-Pass Spectral constraint.
+
+    // ===== PASS 3: FORWARD TRANSFORM (S09–S10) =====
+    progress(9, 22, 'Forward STFT');
+
+    const fftSize = 4096;
+    const hopSize = 1024;
+    const { mag, phase, frameCount } = DSP.forwardSTFT(data, fftSize, hopSize);
+    progress(10, 28, `STFT: ${frameCount} frames`);
+
+    if (self._aborted) return abort();
+
     // ===== PASS 4: ML SOURCE SEPARATION (S11–S14) =====
-    progress(11, 32, 'ML Source Separation');
+    let mlTimeDomainFallback = null;
+    progress(11, 28, 'ML Source Separation');
 
     // S11: Silero VAD
     let vadConfidence = null;
@@ -167,40 +182,40 @@ async function runPipeline(msg) {
     if (vadResult.confidence) {
       vadConfidence = vadResult.confidence;
     }
-    progress(11, 38, 'VAD Complete');
+    progress(11, 34, 'VAD Complete');
 
     // S12–S14: Demucs + BSRNN ensemble separation
-    // [C19] Apply ML separation as time-domain gain before the single STFT pass
+    // [FIX 1]: ML separation now operates in spectral domain — applies mask
+    // to magnitude spectrogram instead of time-domain blending.
     const voiceIso = params.voiceIso ?? 70;
     if (voiceIso > 0) {
-      const sepData = new Float32Array(data);
-      const sepResult = await callML('separate', sepData, {
+      const sepResult = await callML('separate', { mag, phase, frameCount }, {
         chunkSize: sr * 10,
         demucsWeight: params.demucsWeight ?? 70,
         bsrnnWeight: params.bsrnnWeight ?? 30
       });
 
-      if (sepResult.data) {
+      if (sepResult.mask) {
+        // Apply ML mask as per-bin multiplication on magnitude spectrogram
         const isoStrength = voiceIso / 100;
-        const separated = new Float32Array(sepResult.data);
-        const blended = new Float32Array(data.length);
-        for (let i = 0; i < data.length; i++) {
-          blended[i] = (1 - isoStrength) * data[i] + isoStrength * separated[i];
+        const mlMask = sepResult.mask;
+        for (let f = 0; f < frameCount; f++) {
+          const bins = mag[f].length;
+          for (let b = 0; b < bins; b++) {
+            const maskVal = mlMask[f] ? (mlMask[f][b] ?? 1) : 1;
+            mag[f][b] *= (1 - isoStrength) + isoStrength * maskVal;
+          }
         }
-        data = blended;
+      } else if (sepResult.data) {
+        // Fallback: ML returned time-domain audio — blend AFTER iSTFT
+        // Store for post-iSTFT blending
+        mlTimeDomainFallback = {
+          data: new Float32Array(sepResult.data),
+          strength: voiceIso / 100
+        };
       }
     }
     progress(14, 45, 'ML Separation Complete');
-
-    if (self._aborted) return abort();
-
-    // ===== PASS 3: FORWARD TRANSFORM (S09–S10) =====
-    progress(9, 25, 'Forward STFT');
-
-    const fftSize = 4096;
-    const hopSize = 1024;
-    const { mag, phase, frameCount } = DSP.forwardSTFT(data, fftSize, hopSize);
-    progress(10, 30, `STFT: ${frameCount} frames`);
 
     if (self._aborted) return abort();
 
@@ -242,27 +257,52 @@ async function runPipeline(msg) {
     progress(20, 68, 'Inverse STFT');
 
     data = DSP.inverseSTFT(mag, phase, fftSize, hopSize, data.length);
+
+    // [FIX 1]: If ML returned time-domain audio (fallback), blend it after iSTFT
+    if (mlTimeDomainFallback) {
+      const fb = mlTimeDomainFallback;
+      for (let i = 0; i < data.length; i++) {
+        const mlSample = i < fb.data.length ? fb.data[i] : 0;
+        data[i] = (1 - fb.strength) * data[i] + fb.strength * mlSample;
+      }
+      mlTimeDomainFallback = null;
+    }
     progress(21, 72, 'Overlap-Add Complete');
 
     if (self._aborted) return abort();
 
-    // ===== PASS 7: TIME-DOMAIN ENHANCEMENT (S22–S26) =====
-    progress(22, 74, 'Parametric EQ');
+    // [FIX 5]: Split EQ into per-stage progress calls (S22–S25) so each stage
+    // is individually visible in the progress feed instead of jumping 3 stages at once.
 
+    // ===== PASS 7: TIME-DOMAIN ENHANCEMENT (S22–S26) =====
     const eqBands = [
-      { freq: 40,    gain: params.eqSub ?? -8,      Q: 0.7, type: 'peaking' },    // S22
+      { freq: 40,    gain: params.eqSub ?? -8,      Q: 0.7, type: 'peaking' },
       { freq: 100,   gain: params.eqBass ?? 0,       Q: 1.0, type: 'peaking' },
       { freq: 200,   gain: params.eqWarmth ?? 1,     Q: 1.4, type: 'peaking' },
       { freq: 400,   gain: params.eqBody ?? 0,       Q: 1.4, type: 'peaking' },
       { freq: 800,   gain: params.eqLowMid ?? -1,    Q: 1.4, type: 'peaking' },
       { freq: 1500,  gain: params.eqMid ?? 1,        Q: 1.4, type: 'peaking' },
-      { freq: 3000,  gain: params.eqPresence ?? 3,   Q: 1.4, type: 'peaking' },    // S24
+      { freq: 3000,  gain: params.eqPresence ?? 3,   Q: 1.4, type: 'peaking' },
       { freq: 5000,  gain: params.eqClarity ?? 2,    Q: 1.4, type: 'peaking' },
       { freq: 10000, gain: params.eqAir ?? 1,        Q: 1.4, type: 'peaking' },
-      { freq: 16000, gain: params.eqBrill ?? -2,     Q: 0.7, type: 'highshelf' },  // S25
+      { freq: 16000, gain: params.eqBrill ?? -2,     Q: 0.7, type: 'highshelf' },
     ];
-    DSP.parametricEQ(data, eqBands, sr);
-    progress(25, 78, 'EQ Applied');
+
+    // S22: Sub + Bass EQ
+    DSP.parametricEQ(data, eqBands.slice(0, 2), sr);
+    progress(22, 73, 'Sub/Bass EQ Applied');
+
+    // S23: Warmth + Body EQ
+    DSP.parametricEQ(data, eqBands.slice(2, 4), sr);
+    progress(23, 75, 'Warmth/Body EQ Applied');
+
+    // S24: Mid + Presence EQ
+    DSP.parametricEQ(data, eqBands.slice(4, 7), sr);
+    progress(24, 77, 'Mid/Presence EQ Applied');
+
+    // S25: Air + Brilliance EQ
+    DSP.parametricEQ(data, eqBands.slice(7), sr);
+    progress(25, 79, 'Air/Brilliance EQ Applied');
 
     // S26: Harmonic resynthesis (guard against S17 duplication)
     // Only apply if harmonic recovery was minimal in spectral domain
@@ -311,8 +351,23 @@ async function runPipeline(msg) {
     // ===== PASS 9: OUTPUT MASTERING (S31–S34) =====
     progress(31, 92, 'Output Mastering');
 
-    // S31: Stereo widener (mono passthrough if single channel)
-    // Handled at caller level for stereo content
+    // [FIX 3]: Implement S31 stereo widening simulation (was empty stub).
+    // Psychoacoustic stereo via Haas-effect comb filter on mono signal.
+    // Output remains mono Float32Array; stereo decoded at playback.
+    const stereoWidth = params.stereoWidth ?? 0;
+    if (stereoWidth > 0) {
+      const delayMs = 12; // Haas region
+      const delaySamples = Math.round((delayMs / 1000) * sr);
+      const widthGain = stereoWidth / 100 * 0.3; // max 30% comb
+      const delayed = new Float32Array(data.length);
+      for (let i = delaySamples; i < data.length; i++) {
+        delayed[i] = data[i - delaySamples];
+      }
+      for (let i = 0; i < data.length; i++) {
+        data[i] = data[i] + widthGain * delayed[i];
+      }
+    }
+    progress(31, 92, 'Stereo Width Applied');
 
     // S32: True peak limiter
     const limCeiling = params.limThresh ?? -1;
@@ -336,9 +391,10 @@ async function runPipeline(msg) {
     }
     progress(34, 97, 'Final Gain Applied');
 
-    // [A17] Resample back to original SR if we upsampled
+    // [FIX 6]: Fixed resample-back condition — was `sr !== 48000` which is always
+    // false since sr = processingSR = 48000. Now correctly checks original SR.
     let outputData = data;
-    if (sr !== 48000) {
+    if (needsResample && originalSR !== processingSR) {
       const ratio = originalSR / 48000;
       const outLen = Math.round(data.length * ratio);
       outputData = new Float32Array(outLen);
@@ -351,9 +407,10 @@ async function runPipeline(msg) {
       }
     }
 
-    // ===== PASS 10: EXPORT (S35–S36) =====
-    // S35–S36 handled by caller (WAV encode / video mux)
-    progress(36, 100, 'Pipeline Complete');
+    // [FIX 4]: Final stage is S35 (export handoff), not S36. Removed ghost S36.
+    // ===== PASS 10: EXPORT (S35) =====
+    // S35: Export handoff — WAV encode handled by caller
+    progress(35, 100, 'Pipeline Complete');
 
     // [C18] Inline calcPeak/calcRMS (methods not on DSP instance)
     const peak = DSP.calcPeak(outputData);

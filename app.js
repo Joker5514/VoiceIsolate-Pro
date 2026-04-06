@@ -87,39 +87,43 @@ const PRESETS = {
   restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100}
 };
 
+// [FIX 2]: Updated from 32 to 35 stages to match the v22 Deca-Pass pipeline.
 const STAGES = [
   'S01: Input Decode',                    // 0
-  'S02: Buffer Allocation',               // 1
+  'S02: Channel Normalization',           // 1
   'S03: DC Offset Removal',               // 2
-  'S04: Peak Normalization',              // 3
-  'S05: Voice Activity Detection',        // 4
-  'S06: Noise Gate (Time-Domain)',        // 5
+  'S04: Peak Normalization (-3dBFS)',     // 3
+  'S05: Noise Gate (Time-Domain)',        // 4
+  'S06: Hum Removal (60Hz + Harmonics)', // 5
   'S07: Click/Pop Removal',              // 6
-  'S08: Hum Removal (60Hz + Harmonics)', // 7
-  'S09: De-Essing',                       // 8
-  'S10: Forward STFT',                    // 9
-  'S11: Adaptive Wiener NR',             // 10
-  'S12: Residual Wiener Pass',           // 11
-  'S13: ERB Spectral Gate (32-band)',    // 12
-  'S14: Voice-Band Spectral Emphasis',   // 13
-  'S15: Crosstalk Cancellation',         // 14
-  'S16: Temporal Smoothing (Anti-Garble)', // 15
-  'S17: Spectral Tilt Compensation',     // 16
-  'S18: Dereverberation',                // 17
-  'S19: Harmonic Reconstruction v2',     // 18
+  'S08: De-Essing',                       // 7
+  'S09: Forward STFT',                    // 8
+  'S10: STFT Frame Analysis',            // 9
+  'S11: ML Voice Activity Detection',    // 10
+  'S12: ML Demucs Separation',           // 11
+  'S13: ML BSRNN Separation',            // 12
+  'S14: ML Ensemble Blend',              // 13
+  'S15: Spectral Noise Subtraction',     // 14
+  'S16: ERB Spectral Gate (32-band)',    // 15
+  'S17: Harmonic Enhancement',           // 16
+  'S18: Temporal Smoothing',             // 17
+  'S19: Dereverberation',                // 18
   'S20: Inverse STFT',                   // 19
-  'S21: OfflineAudioContext Setup',      // 20
-  'S22: High-Pass / Low-Pass Filters',  // 21
-  'S23: 10-Band Parametric EQ',          // 22
-  'S24: Dynamics Compression',           // 23
-  'S25: Brickwall Limiter',              // 24
-  'S26: Rendering OfflineAudioContext',  // 25
-  'S27: Post-Render Cleanup',           // 26
-  'S28: Dry/Wet Mix',                    // 27
-  'S29: Peak Normalization',             // 28
-  'S30: Quality Metrics',                // 29
-  'S31: Waveform Update',               // 30
-  'S32: Final Export Ready'              // 31
+  'S21: Overlap-Add Reconstruction',     // 20
+  'S22: Sub/Bass EQ',                    // 21
+  'S23: Warmth/Body EQ',                 // 22
+  'S24: Mid/Presence EQ',                // 23
+  'S25: Air/Brilliance EQ',              // 24
+  'S26: Harmonic Resynthesis',           // 25
+  'S27: Downward Expander',              // 26
+  'S28: Dynamics Compression',           // 27
+  'S29: LUFS Normalization',             // 28
+  'S30: De-Clipper',                      // 29
+  'S31: Stereo Widening',                // 30
+  'S32: True Peak Limiter',              // 31
+  'S33: Dither',                          // 32
+  'S34: Final Output Gain',              // 33
+  'S35: Pipeline Complete'                // 34
 ];
 
 // ============================================
