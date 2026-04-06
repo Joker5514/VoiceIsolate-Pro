@@ -202,7 +202,8 @@ class VoiceIsolatePro {
     this.bindEvents();
     this.initCanvases();
     this.init3D();
-    this.initMLWorker();
+    // ML worker ownership lives in PipelineOrchestrator to prevent
+    // duplicate workers, duplicate ORT/model init, and race conditions.
   }
 
   ensureCtx() {
@@ -2201,4 +2202,13 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
     }
   }, { once: true });
 })();
-document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
+document.addEventListener('DOMContentLoaded', () => {
+  if (!window.vip && !window._vipApp) {
+    window.vip = new VoiceIsolatePro();
+    window._vipApp = window.vip;
+  } else if (window.vip && !window._vipApp) {
+    window._vipApp = window.vip;
+  } else if (!window.vip && window._vipApp) {
+    window.vip = window._vipApp;
+  }
+});
