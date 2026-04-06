@@ -146,15 +146,21 @@
           <button id="tpStop" class="btn btn-tp" disabled title="Stop" aria-label="Stop"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2"/></svg></button>
           <button id="tpRew" class="btn btn-tp" disabled title="Rewind 5s" aria-label="Rewind 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg></button>
           <button id="tpFwd" class="btn btn-tp" disabled title="Forward 5s" aria-label="Forward 5 seconds"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg></button>
-          <!-- FIX: id=tpTotal (was tpDur) to match cacheDom() in app.js -->
           <div class="tp-time"><span id="tpCur">0:00</span><span class="tp-sep">/​</span><span id="tpTotal">0:00</span></div>
+          <select id="tpSpeed" class="tp-speed" aria-label="Playback speed">
+            <option value="0.5">0.5x</option>
+            <option value="0.75">0.75x</option>
+            <option value="1" selected>1x</option>
+            <option value="1.25">1.25x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+          </select>
           <div class="tp-vol">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
             <input type="range" id="tpVol" class="tp-vol-slider" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
           </div>
-          <label class="tp-ab-label" title="A/B compare">
-            <input type="checkbox" id="tpAB" />
-            <span>A/B</span>
+          <label class="tp-ab-label" title="A/B compare" id="tpABLabel">
+            <button id="tpAB" class="btn btn-xs">A/B</button>
           </label>
         </div>
         <div class="tp-scrub-row">
@@ -251,19 +257,21 @@
 
   <!--
     Script load order (MUST NOT CHANGE):
-    1. ring-buffer        — SAB ring helpers (no deps)
-    2. pipeline-state     — shared state store (no deps)
-    3. dsp-core           — offline DSP engine (no deps)
-    4. batch-orchestrator — batch queue (no deps)
-    5. analytics          — telemetry stub (no deps)
-    6. license-manager    — paywall gate (no deps)
-    7. paywall            — UI paywall (depends on license-manager)
-    8. revenuecat         — RevenueCat SDK stub (no deps)
-    9. app.js             — defines VoiceIsolatePro class (depends on dsp-core)
-   10. pipeline-orchestrator — PipelineOrchestrator class + bootstrapOrchestrator IIFE
-                              (polls window._vipApp — must load after app.js)
-   11. vip-boot.js        — instantiates VoiceIsolatePro, sets window._vipApp,
-                              calls initMLWorker()  — MUST BE LAST
+     1. ring-buffer         — SAB ring helpers
+     2. pipeline-state      — shared state store
+     3. dsp-core            — offline DSP engine
+     4. batch-orchestrator  — batch queue
+     5. analytics           — telemetry stub
+     6. license-manager     — paywall gate
+     7. paywall             — UI paywall
+     8. revenuecat          — RevenueCat SDK stub
+     9. app.js              — defines VoiceIsolatePro class
+    10. app-patches.js      — monkey-patches prototype (4 bug fixes)
+    11. ai-engine-v2.js     — AI reasoning engine
+    12. ai-intelligence.js  — AI analysis helpers
+    13. pipeline-orchestrator.js — PipelineOrchestrator + bootstrap IIFE
+    14. vip-boot.js         — instantiates app, sets window._vipApp,
+                               calls initMLWorker()  — MUST BE LAST
   -->
   <script src="ring-buffer.js"></script>
   <script src="pipeline-state.js"></script>
@@ -274,6 +282,9 @@
   <script src="paywall.js"></script>
   <script src="revenuecat.js"></script>
   <script src="app.js"></script>
+  <script src="app-patches.js"></script>
+  <script src="ai-engine-v2.js"></script>
+  <script src="ai-intelligence.js"></script>
   <script src="pipeline-orchestrator.js"></script>
   <script src="vip-boot.js"></script>
 </body>
