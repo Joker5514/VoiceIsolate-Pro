@@ -52,7 +52,7 @@ const Analytics = (() => {
   // ─── Event Storage ────────────────────────────────────────────────────────────
   function _loadEvents() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      let raw = null; try { raw = localStorage.getItem(STORAGE_KEY); } catch { raw = null; } // ARCH-06
       return raw ? JSON.parse(raw) : [];
     } catch { return []; }
   }
@@ -61,7 +61,7 @@ const Analytics = (() => {
     try {
       // Keep only the most recent MAX_EVENTS
       const toSave = _events.slice(-MAX_EVENTS);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave)); } catch { /* ARCH-06: sandboxed */ }
     } catch { /* storage full */ }
   }
 
