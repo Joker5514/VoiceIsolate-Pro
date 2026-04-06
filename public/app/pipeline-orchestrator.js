@@ -168,8 +168,75 @@ class PipelineOrchestrator {
   // ── ONNX Runtime + ML Worker initialisation ─────────────────────────────
   async _initMLWorker() {
     return new Promise((resolve) => {
+      // ── Construct the ML Worker ──────────────────────────────────────────
       this.mlWorker = new Worker('./ml-worker.js');
 
+      // ── Apply graceful-degradation patch (ml-worker-models-patch.js) ────
+      // Stamps ⚠ DSP badges on pipeline stage UI elements for any missing
+      // .onnx files. Non-destructive — worker still functions without models.
+      if (typeof window._mlWorkerPatch === 'function') {
+        window._mlWorkerPatch(this.mlWorker, {
+          logToConsole: true,
+          onWarning: (stageId, modelKey, meta) => {
+            // Stamp individual stage badge
+            const el = document.querySelector(
+              `[data-stage-id="${stageId}"], [data-stage="${stageId}"]`
+            );
+            if (!el) return;
+            const existing = el.querySelector('.vip-stage-ml-status');
+            if (existing) existing.remove();
+            const badge = document.createElement('span');
+            badge.className    = 'vip-stage-ml-status';
+            badge.textContent  = '⚠ DSP';
+            badge.style.cssText =
+              'color:#f59e0b;font-size:10px;font-weight:700;' +
+              'margin-left:4px;cursor:help;vertical-align:middle;';
+            badge.title =
+              `${meta.stageName || modelKey}: model file absent
+` +
+              `Expected: models/${meta.filename || modelKey + '.onnx'}
+` +
+              `Stage running in DSP passthrough mode.`;
+            const label =
+              el.querySelector('.stage-name,.stage-label,h4,h3,span') || el;
+            label.appendChild(badge);
+          },
+          onManifest: (manifest) => {
+            if (typeof window._stampPipelineStages === 'function') {
+              window._stampPipelineStages(manifest);
+            }
+          }
+        });
+      }
+
+      // ── Apply IndexedDB model cache patch (ml-worker-fetch-cache.js) ────
+      // If models are cached in IDB, pass Object URLs so the worker skips
+      // re-fetching them from disk. Falls back gracefully if cache is empty.
+      if (typeof window._vipPreloadModels === 'function') {
+        // Fire-and-forget preload — models load while audio context inits.
+        // The 'vip:modelsPreloaded' event (fired by fetch-cache.js) notifies
+        // the worker to swap in the cached sessions once they're ready.
+        window._vipPreloadModels(
+          ['silero_vad', 'noise_classifier', 'deepfilter',
+           'dns2_conformer_small', 'ecapa_tdnn', 'convtasnet', 'bsrnn', 'demucs'],
+          { forceRefresh: false }
+        ).then((modelPaths) => {
+          // Forward any resolved Object URLs to the already-running worker
+          const cached = Object.keys(modelPaths);
+          if (cached.length > 0) {
+            this.mlWorker.postMessage({ type: 'cacheModelPaths', modelPaths });
+            console.info(
+              `[Orchestrator] Forwarded ${cached.length} cached model URL(s) to ML worker:`,
+              cached
+            );
+          }
+        }).catch((err) => {
+          // Preload failure is fully non-fatal — DSP passthrough continues
+          console.warn('[Orchestrator] Model preload warning:', err.message);
+        });
+      }
+
+      // ── Standard message handler ─────────────────────────────────────────
       this.mlWorker.onmessage = (e) => {
         const { type } = e.data;
         if (type === 'ready') {
@@ -191,14 +258,17 @@ class PipelineOrchestrator {
       this.mlWorker.onerror = (err) => {
         console.warn('[Orchestrator] ML worker error:', err.message);
         this.mlReady = false;
-        resolve(); // non-fatal
+        resolve(); // non-fatal — DSP passthrough still runs
       };
 
+      // ── Init message ─────────────────────────────────────────────────────
       const msg = {
         type:      'init',
         ortUrl:    '/lib/ort.min.js',
         providers: ['webgpu', 'wasm'],
-        models:    ['vad']
+        models:    ['vad', 'deepfilter', 'dns2_conformer_small',
+                    'ecapa_tdnn', 'convtasnet', 'bsrnn', 'demucs',
+                    'noise_classifier']
       };
 
       // Only include SABs if they were successfully allocated
