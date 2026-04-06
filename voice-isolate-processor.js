@@ -226,9 +226,13 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       // Apply gate
       let gated = sample * this.gateEnv;
 
-      // Apply ML mask if available
+      // [FIX 7]: ML worker now outputs pre-processed time-domain audio
+      // (already through STFT→mask→iSTFT in the ML worker), not raw spectral
+      // masks. Blend ML output with gated input using dryWet instead of
+      // per-sample spectral mask multiplication which caused clicks/artifacts.
       if (this.maskCache && this.maskIdx < this.frameSize) {
-        gated *= this.maskCache[this.maskIdx];
+        const mlOut = this.maskCache[this.maskIdx];
+        gated = wet * mlOut + dry * gated;
         this.maskIdx++;
       }
 
