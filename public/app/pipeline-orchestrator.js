@@ -111,7 +111,7 @@ class PipelineOrchestrator {
         type: 'init',
         models: options.models || ['vad'],
         modelPaths: options.modelPaths || {},
-        ortUrl: options.ortUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js'
+        ortUrl: options.ortUrl || '/lib/ort.min.js' // BUG-CONSTRAINT FIX: local only, never CDN
       });
     });
   }
@@ -121,7 +121,9 @@ class PipelineOrchestrator {
     const ctx = this.ensureContext();
 
     try {
-      await ctx.audioWorklet.addModule('voice-isolate-processor.js');
+      // BUG-M FIX: Resume suspended AudioContext (required on mobile after user gesture)
+      if (ctx.state === 'suspended') { await ctx.resume(); }
+      await ctx.audioWorklet.addModule('./voice-isolate-processor.js'); // BUG-M: explicit ./ path
 
       this.workletNode = new AudioWorkletNode(ctx, 'voice-isolate-processor', {
         numberOfInputs: 1,
