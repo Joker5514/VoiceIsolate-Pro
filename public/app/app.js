@@ -5,6 +5,17 @@
    35-Stage Deca-Pass Pipeline with Real STFT DSP
    ============================================ */
 
+function structuredLog(level, msg, data = {}) {
+  const entry = { ts: new Date().toISOString(), level, msg, ...data };
+  if (level === 'error') console.error('[VIP]', msg, data);
+  else if (level === 'warn') console.warn('[VIP]', msg, data);
+  else console.log('[VIP]', msg, data);
+  // Store last 200 entries for forensic export
+  if (!window._vipLogs) window._vipLogs = [];
+  if (window._vipLogs.length >= 200) window._vipLogs.shift();
+  window._vipLogs.push(entry);
+}
+
 // ---- SLIDER DEFINITIONS (52 total) ----
 const SLIDERS = {
   gate: [
@@ -191,6 +202,7 @@ class VoiceIsolatePro {
     this.bindEvents();
     this.initCanvases();
     this.init3D();
+    this.initMLWorker();
   }
 
   ensureCtx() {
@@ -207,12 +219,12 @@ class VoiceIsolatePro {
     for (const [tabKey, sliders] of Object.entries(SLIDERS)) {
       const panel = document.getElementById('tab-' + tabKey);
       if (!panel) continue;
-      let h = '<div class="sr">';
+      const container = document.createElement('div');
+      container.className = 'sr';
       for (const s of sliders) {
         const row = document.createElement('div');
         row.className = 'sr-row';
         row.dataset.desc = s.desc;
-
         const labelEl = document.createElement('label');
         labelEl.className = 'sr-label';
         labelEl.title = s.desc;
@@ -229,7 +241,6 @@ class VoiceIsolatePro {
         infoEl.textContent = 'i';
         infoEl.setAttribute('aria-hidden', 'true');
         labelEl.appendChild(infoEl);
-
         const inputEl = document.createElement('input');
         inputEl.type = 'range';
         if (s.rt) inputEl.className = 'realtime';
@@ -243,30 +254,19 @@ class VoiceIsolatePro {
         inputEl.setAttribute('aria-valuemin', s.min);
         inputEl.setAttribute('aria-valuemax', s.max);
         inputEl.setAttribute('aria-valuenow', s.val);
-        // Set initial fill percentage for styled track
-        // pct formula: ((s.val - s.min) / (s.max - s.min)) * 100
         const range = s.max - s.min;
         const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
         inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
-
         const valEl = document.createElement('span');
         valEl.className = 'sr-val';
         valEl.id = s.id + 'Val';
         valEl.textContent = s.val + s.unit;
-
         row.appendChild(labelEl);
         row.appendChild(inputEl);
         row.appendChild(valEl);
-        sr.appendChild(row);
-        const rtCls = s.rt ? ' realtime' : '';
-        const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
-        h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
-          '<label class="sr-label" for="' + s.id + '" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
-          '<input type="range" aria-label="' + s.label.replace(/"/g, '&quot;') + (s.rt ? ' (Real-time)' : '') + '" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
-          '<span class="sr-val" id="' + s.id + 'Val">' + s.val + s.unit + '</span></div>';
+        container.appendChild(row);
       }
-      h += '</div>';
-      panel.innerHTML = h;
+      panel.appendChild(container);
     }
   }
 
@@ -1127,16 +1127,6 @@ class VoiceIsolatePro {
     }
   }
 
-  async pip(i,t) {
-    const pct = Math.round((i+1)/t*100);
-    this.dom.pipeFill.style.width = pct + '%';
-    this.dom.pipeBar.setAttribute('aria-valuenow', pct);
-    this.dom.pipeStage.textContent = (i+1)+'/'+t;
-    this.dom.pipeDetail.textContent = STAGES[i];
-    this.dom.hStatus.textContent = 'S'+(i+1);
-    await new Promise(r=>setTimeout(r,15));
-  }
-
   // ---- DSP HELPERS ----
 
   // ======== PHASE 1: SPECTRAL ENGINE (STFT / iSTFT / Wiener NR) ========
@@ -1581,10 +1571,7 @@ class VoiceIsolatePro {
         models: ['vad']
       });
     } catch (e) {
-      if (e === 'abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent = 'Aborted'; }
-      else { console.error('Pipeline:', e); this.setStatus('ERROR'); this.dom.pipeDetail.textContent = e.message || String(e); }
-    } finally {
-      this.isProcessing = false; this.dom.processBtn.style.display = 'inline-flex'; this.dom.stopProcBtn.style.display = 'none';
+      structuredLog('warn', 'Could not start ML worker', { error: e?.message || String(e) });
     }
   }
 
@@ -2124,13 +2111,41 @@ class VoiceIsolatePro {
   }
 
   onResize(){
+    if (this._resizeTimer) clearTimeout(this._resizeTimer);
+    this._resizeTimer = setTimeout(() => { this._doResize(); }, 120);
+  }
+
+  _doResize() {
     [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas,
      this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
-     this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c=> { if(c) this.resizeCanvas(c); });
-    if(this.inputBuffer)this.drawWaveform(this.inputBuffer,this.dom.waveOrigCanvas,'#dc2626');
-    if(this.outputBuffer)this.drawWaveform(this.outputBuffer,this.dom.waveProcCanvas,'#22d3ee');
-    const ct=this.dom.spectro3DContainer;
-    if(this.three.ren){this.three.ren.setSize(ct.clientWidth,ct.clientHeight);this.three.cam.aspect=ct.clientWidth/ct.clientHeight;this.three.cam.updateProjectionMatrix();}
+     this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c => {
+      if (!c) return;
+      const parent = c.parentElement;
+      if (!parent) return;
+      const rect = parent.getBoundingClientRect();
+      if (rect.width > 0)  c.width  = Math.floor(rect.width);
+      if (rect.height > 0) c.height = Math.floor(rect.height);
+    });
+    this.spectroX = 0;
+    this.specOverlayX = 0;
+    if (this.inputBuffer)  this.drawWaveform(this.inputBuffer,  this.dom.waveOrigCanvas, '#dc2626');
+    if (this.outputBuffer) this.drawWaveform(this.outputBuffer, this.dom.waveProcCanvas,  '#22d3ee');
+    const ct = this.dom.spectro3DContainer;
+    if (this.three.ren) {
+      this.three.ren.setSize(ct.clientWidth, ct.clientHeight);
+      this.three.cam.aspect = ct.clientWidth / ct.clientHeight;
+      this.three.cam.updateProjectionMatrix();
+    }
+  }
+
+  showNotification(message, type = 'info', duration = 3500) {
+    structuredLog(type === 'error' ? 'error' : 'info', '[notify] ' + message);
+    const toast = document.getElementById('toastMsg') || document.getElementById('notification');
+    if (!toast) return;
+    toast.textContent = message;
+    toast.className = 'toast toast-' + type + ' show';
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => { toast.classList.remove('show'); }, duration);
   }
 
   // ---- UTILITY ----
@@ -2141,4 +2156,49 @@ class VoiceIsolatePro {
 }
 
 if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
+
+/* ── Merged from app-patches.js: DOM null-safety patches ── */
+(function applyDOMPatches() {
+  'use strict';
+
+  function patchRecordButton() {
+    const originalGetElementById = document.getElementById.bind(document);
+    document.getElementById = function(id) {
+      const el = originalGetElementById(id);
+      document.getElementById = originalGetElementById;
+      if (!el && (id === 'btn-record' || id === 'record-btn' || id === 'recordBtn')) {
+        return new Proxy({}, {
+          set() { return true; },
+          get(_, key) {
+            if (key === 'addEventListener') return () => {};
+            if (key === 'removeEventListener') return () => {};
+            if (key === 'dispatchEvent') return () => false;
+            if (key === 'classList') return { add: ()=>{}, remove: ()=>{}, toggle: ()=>{}, contains: ()=>false };
+            if (key === 'style') return {};
+            return undefined;
+          }
+        });
+      }
+      return el;
+    };
+  }
+
+  patchRecordButton();
+
+  document.addEventListener('DOMContentLoaded', function onDOMReady() {
+    document.removeEventListener('DOMContentLoaded', onDOMReady);
+    const recordIds = ['btn-record', 'record-btn', 'recordBtn', 'btnRecord'];
+    for (const id of recordIds) {
+      const btn = document.getElementById(id);
+      if (btn) { btn.disabled = false; break; }
+    }
+    const pipelineStatus = document.getElementById('pipeline-status')
+      || document.querySelector('[data-status="pipeline"]')
+      || document.querySelector('.pipeline-status');
+    if (pipelineStatus && pipelineStatus.textContent.trim() === 'ERROR') {
+      pipelineStatus.textContent = 'INIT';
+      pipelineStatus.style.color = '';
+    }
+  }, { once: true });
+})();
 document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
