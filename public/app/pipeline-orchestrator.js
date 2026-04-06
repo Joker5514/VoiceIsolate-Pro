@@ -282,7 +282,7 @@ class PipelineOrchestrator {
 
   // ===== PROCESSING =====
 
-  /** Run offline 36-stage pipeline */
+  /** Run offline 35-stage pipeline */
   async processOffline(params = null) {
     const buf = this.inputBuffer;
     if (!buf) throw new Error('No audio loaded');

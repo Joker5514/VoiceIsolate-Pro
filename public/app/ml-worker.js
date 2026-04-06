@@ -239,21 +239,100 @@ async function processLoop() {
     const frame = ringPull(inputRing, frameSize, pullBuf);
     if (!frame) continue;
 
-    // Generate mask
-    let mask = null;
+    // Produce time-domain processed audio (not a raw gain mask).
+    // The worklet reads these samples directly as mlOut.
+    let processedAudio = null;
     try {
-      mask = await generateMask(frame);
+      const session = sessions.deepfilter || sessions.dns2 || sessions.demucs || null;
+      processedAudio = await processChunkWithMask(frame, session);
     } catch (err) {
       log('warn', `Inference error: ${err.message}`);
-      // Fallback: passthrough mask
-      mask = new Float32Array(frameSize).fill(1);
+      // Fallback: passthrough (copy input as-is)
+      processedAudio = new Float32Array(frame);
     }
 
-    // Push mask to output ring
-    if (maskRing && mask) {
-      ringPush(maskRing, mask);
+    // Push reconstructed audio into the ring buffer read by the worklet
+    if (maskRing && processedAudio) {
+      ringPush(maskRing, processedAudio);
     }
   }
+}
+
+/**
+ * Run spectral masking inference on one audio chunk and return time-domain output.
+ * Steps: window → FFT → model inference (gain mask) → apply mask → iFFT → return audio.
+ * Falls back to a passthrough (all-ones mask) if no session is available.
+ *
+ * @param {Float32Array} chunk   - Input audio samples (up to fftSize)
+ * @param {object|null}  session - ONNX InferenceSession, or null for passthrough
+ * @returns {Float32Array} Reconstructed time-domain audio (same length as chunk)
+ */
+async function processChunkWithMask(chunk, session) {
+  const fftSize = 4096;
+  const halfN = fftSize / 2 + 1;
+
+  // Zero-pad to fftSize and apply Hann window
+  const padded = new Float32Array(fftSize);
+  padded.set(chunk.subarray(0, Math.min(chunk.length, fftSize)));
+  for (let i = 0; i < fftSize; i++) {
+    padded[i] *= 0.5 * (1 - Math.cos(2 * Math.PI * i / fftSize));
+  }
+
+  // Forward FFT
+  const re = new Float32Array(padded);
+  const im = new Float32Array(fftSize);
+  simpleRadix2FFT(re, im, false);
+
+  // Polar form (magnitude + phase) for positive frequencies
+  const mag = new Float32Array(halfN);
+  const phase = new Float32Array(halfN);
+  for (let k = 0; k < halfN; k++) {
+    mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+    phase[k] = Math.atan2(im[k], re[k]);
+  }
+
+  // Model inference → per-bin gain mask
+  let gainMask;
+  if (session) {
+    try {
+      const tensor = new ort.Tensor('float32', mag, [1, 1, halfN]);
+      const results = await session.run({ input: tensor });
+      const outputKey = Object.keys(results)[0];
+      const rawMask = results[outputKey];
+      gainMask = new Float32Array(rawMask.data);
+      rawMask.dispose?.();
+      tensor.dispose?.();
+    } catch (_) {
+      gainMask = new Float32Array(halfN).fill(1);
+    }
+  } else {
+    gainMask = new Float32Array(halfN).fill(1);
+  }
+
+  // Apply gain mask in spectral domain and reconstruct complex spectrum
+  const outRe = new Float32Array(fftSize);
+  const outIm = new Float32Array(fftSize);
+  for (let k = 0; k < halfN; k++) {
+    const gain = Math.max(0, Math.min(1, gainMask[k]));
+    const m = mag[k] * gain;
+    outRe[k] = m * Math.cos(phase[k]);
+    outIm[k] = m * Math.sin(phase[k]);
+    // Conjugate symmetry for real IFFT
+    if (k > 0 && k < fftSize - k) {
+      outRe[fftSize - k] = outRe[k];
+      outIm[fftSize - k] = -outIm[k];
+    }
+  }
+
+  // Inverse FFT — simpleRadix2FFT divides by N internally when inverse=true
+  simpleRadix2FFT(outRe, outIm, true);
+
+  const audioOut = new Float32Array(chunk.length);
+  const copyLen = Math.min(chunk.length, fftSize);
+  for (let i = 0; i < copyLen; i++) {
+    audioOut[i] = outRe[i];
+  }
+  return audioOut;
 }
 
 async function generateMask(frame) {
@@ -666,7 +745,7 @@ async function disposeAll() {
   running = false;
   for (const [name, session] of Object.entries(sessions)) {
     try {
-      await session.release?.();
+      await session?.dispose?.();
       log('info', `Disposed model: ${name}`);
     } catch (e) {
       log('error', `Failed to dispose model ${name}: ${e.message || e}`);

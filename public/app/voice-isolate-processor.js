@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — AudioWorklet
-   Threads from Space v10 · Real-Time DSP
+   VoiceIsolate Pro v22.1 — AudioWorklet
+   Threads from Space v11 · Real-Time DSP
    128-sample render quanta · Ring Buffer I/O
    ============================================ */
 
@@ -173,14 +173,17 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       // Apply gate
       let gated = sample * this.gateEnv;
 
-      // Apply ML mask if available
+      // Read time-domain processed audio from ML ring buffer.
+      // maskCache contains reconstructed audio frames (not a multiplicative mask),
+      // so use it directly as mlOut rather than multiplying it against gated.
+      let mlOut = gated;
       if (this.maskCache && this.maskIdx < this.frameSize) {
-        gated *= this.maskCache[this.maskIdx];
+        mlOut = this.maskCache[this.maskIdx];
         this.maskIdx++;
       }
 
-      // Dry/wet mix + output gain
-      outCh[i] = (dry * sample + wet * gated) * outGainLin;
+      // Dry/wet mix + output gain — single application, no inner blend
+      outCh[i] = (dry * sample + wet * mlOut) * outGainLin;
     }
 
     return true;
