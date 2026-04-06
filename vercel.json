@@ -1,1 +1,20 @@
-PLACEHOLDER_VERCEL
+{
+  "outputDirectory": "public",
+  "buildCommand": "echo 'Static site — no build step'",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Cross-Origin-Opener-Policy",   "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
+        { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
+        { "key": "X-Frame-Options",              "value": "DENY" },
+        { "key": "X-Content-Type-Options",       "value": "nosniff" },
+        { "key": "Strict-Transport-Security",    "value": "max-age=63072000; includeSubDomains; preload" },
+        { "key": "Permissions-Policy",           "value": "microphone=(self), camera=(), geolocation=(), payment=(), usb=()" },
+        { "key": "Referrer-Policy",              "value": "strict-origin-when-cross-origin" },
+        { "key": "Content-Security-Policy",      "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdnjs.cloudflare.com https://fonts.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' blob:; worker-src 'self' blob:; img-src 'self' data: blob:; media-src 'self' blob: data:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'" }
+      ]
+    }
+  ]
+}
