@@ -1,12 +1,23 @@
-// DISABLED: This module is intentionally non-functional. VoiceIsolate Pro processes all audio locally.
-// FIX: Issue #1 — Remove all external fetch() calls; cloud sync violates 100% local constraint.
-// All _flushToServer(), _apiCall(), and enableServerReporting() have been removed.
-// If cloud sync is needed as a future feature, re-enable only after a full security review.
+// VoiceIsolate Pro — Cloud Sync (DISABLED)
+// BUG-H FIX: Replaced IIFE throw with silent no-op stub.
+// The previous implementation threw on import, which would crash the page if this
+// script was ever loaded. Now returns a safe stub object with no-op methods.
+// Cloud sync violates the 100% local processing constraint — this module is permanently disabled.
 
 const CloudSync = (() => {
   'use strict';
 
-  throw new Error('Cloud sync disabled — VoiceIsolate Pro runs 100% locally');
+  const _disabled = () => { /* no-op: cloud sync disabled */ };
+
+  return {
+    sync: _disabled,
+    push: _disabled,
+    pull: _disabled,
+    flush: _disabled,
+    enable: _disabled,
+    disable: _disabled,
+    isEnabled: () => false,
+  };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = CloudSync;
