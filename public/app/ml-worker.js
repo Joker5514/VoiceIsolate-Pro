@@ -137,7 +137,7 @@ async function initialize(msg) {
     log('info', `ONNX provider: ${provider}`);
 
     const sessionOpts = {
-      executionProviders: [provider],
+      executionProviders: provider !== 'wasm' ? [provider, 'wasm'] : ['wasm'],
       graphOptimizationLevel: 'all',
       enableCpuMemArena: true,
       enableMemPattern: true
