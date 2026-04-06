@@ -158,7 +158,9 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
-    this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
+    try {
+      this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
+    } catch { this.customPresets = {}; } // ARCH-06 FIX: try/catch for sandboxed iframe safety
     this.renderCustomPresets();
     // Diagnostic state
     this.oscMode = 'wave';
@@ -423,7 +425,9 @@ class VoiceIsolatePro {
     const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
     this.customPresets[id] = { ...this.params };
     PRESETS[id] = this.customPresets[id];
-    localStorage.setItem('vip_custom_presets', JSON.stringify(this.customPresets));
+    try {
+      localStorage.setItem('vip_custom_presets', JSON.stringify(this.customPresets));
+    } catch { /* ARCH-06 FIX: sandboxed iframe — no-op */ }
 
     // Add button if it doesn't exist
     if (!document.querySelector(`.btn-preset[data-preset="${id}"]`)) {
@@ -1523,7 +1527,7 @@ class VoiceIsolatePro {
       structuredLog('warn', 'ML Worker not available — running without ML');
       return;
     }
-    const wasmRoot = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
+    const wasmRoot = '/lib/'; // ARCH-04 FIX: local wasm root only, no CDN
     this.mlWorker.postMessage({ type: 'loadModel', model: 'vad', wasmRoot });
   }
 
@@ -1570,7 +1574,7 @@ class VoiceIsolatePro {
       // v20: Pass ONNX Runtime URL and initial model list
       this.mlWorker.postMessage({
         type: 'init',
-        ortUrl: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js',
+        ortUrl: '/lib/ort.min.js', // ARCH-04 FIX: local only, never CDN
         models: ['vad']
       });
     } catch (e) {
