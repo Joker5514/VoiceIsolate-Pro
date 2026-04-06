@@ -44,9 +44,10 @@ self.onmessage = async function (e) {
 // Init
 // ---------------------------------------------------------------------------
 async function handleInit(payload) {
-  dspCore = new DSPCore(payload.sampleRate || 48000, payload.fftSize || 2048);
+  // DSPCore is a plain-object singleton, not a class — do not call with `new`
+  dspCore = DSPCore;
   isInitialized = true;
-  return { status: 'initialized', sampleRate: dspCore.sampleRate };
+  return { status: 'initialized', sampleRate: payload.sampleRate || 48000 };
 }
 
 // ---------------------------------------------------------------------------
@@ -109,10 +110,7 @@ async function handleProcess(payload) {
   const input = new Float32Array(audioData);
   let processed = input;
 
-  // Single Forward STFT — do not add a second one anywhere in this function
-  const { real, imag } = dspCore.forwardSTFT(processed);
-
-  // ML separation (operates in time domain before spectral ops)
+  // ML separation first (time-domain) — must run before STFT so spectral ops see ML output
   if (enabledModels?.includes('demucs') && ortSessions['demucs']) {
     try {
       const tensor = new self.ort.Tensor('float32', processed, [1, 1, processed.length]);
@@ -123,15 +121,21 @@ async function handleProcess(payload) {
     }
   }
 
-  // In-place spectral operations
+  // Single Forward STFT — do not add a second one anywhere in this function
+  const { mag, phase } = dspCore.forwardSTFT(processed);
+
+  // In-place spectral operations on mag/phase arrays
   if (params) {
-    dspCore.applySpectralGate(real, imag, params);
-    dspCore.applyNoiseReduction(real, imag, params);
-    dspCore.applyEQ(real, imag, params);
+    // ERB spectral gate using noise floor parameter
+    dspCore.spectralGate(mag, params.nrFloor ?? -60, sampleRate);
+    // Wiener noise subtraction (no pre-computed profile available at worker level)
+    if ((params.nrAmount ?? 0) > 0) {
+      dspCore.wienerMMSE(mag, null, params.nrAmount);
+    }
   }
 
   // Single Inverse STFT — do not add a second one anywhere
-  const output = dspCore.inverseSTFT(real, imag);
+  const output = dspCore.inverseSTFT(mag, phase);
 
   return {
     processedData: output.buffer,

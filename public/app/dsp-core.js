@@ -130,11 +130,11 @@ const DSPCore = {
 
   // ===== WINDOWING =====
 
-  /** Generate Hann window of given length */
+  /** Generate periodic Hann window of given length (required for COLA at 75% overlap) */
   hannWindow(N) {
     const w = new Float32Array(N);
     for (let i = 0; i < N; i++) {
-      w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (N - 1)));
+      w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / N));
     }
     return w;
   },
