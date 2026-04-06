@@ -172,9 +172,11 @@
       </div>
 
       <!-- Waveform -->
+      <!-- NOTE: canvas IDs unified to match app.js cacheDom() lookups -->
       <div class="card viz-card" id="waveCard">
         <div class="viz-hdr"><span>Waveform</span><span class="viz-badge">RMS + Peak</span></div>
-        <canvas id="waveCanvas" class="viz-canvas" aria-label="Audio waveform visualization"></canvas>
+        <canvas id="waveformCanvas" class="viz-canvas" aria-label="Processed audio waveform"></canvas>
+        <canvas id="waveformOrig" class="viz-canvas" style="opacity:0.45" aria-label="Original audio waveform"></canvas>
       </div>
 
       <!-- Spectrogram -->
@@ -202,6 +204,8 @@
       <div class="card viz-card" id="diagCard">
         <div class="viz-hdr"><span>Pipeline Diagnostics</span><span class="viz-badge">35-Stage</span></div>
         <canvas id="diagCanvas" class="viz-canvas" aria-label="Pipeline diagnostics visualization"></canvas>
+        <!-- Structured log panel for structuredLog() output -->
+        <div id="diagLog" class="diag-log" style="max-height:120px;overflow-y:auto;font-size:10px;font-family:'JetBrains Mono',monospace;padding:4px;background:#0a0a0f;color:#8899aa;"></div>
       </div>
 
       <!-- Forensic Report -->
@@ -257,23 +261,23 @@
 
   <!--
     Script load order (MUST NOT CHANGE):
-     1. ring-buffer         — SAB ring helpers
-     2. pipeline-state      — shared state store
-     3. dsp-core            — offline DSP engine
-     4. batch-orchestrator  — batch queue
-     5. analytics           — telemetry stub
-     6. license-manager     — paywall gate
-     7. paywall             — UI paywall
-     8. revenuecat          — RevenueCat SDK stub
-     9. app.js              — defines VoiceIsolatePro class
-    10. app-patches.js      — monkey-patches prototype (4 bug fixes)
-    11. ai-engine-v2.js     — AI reasoning engine
-    12. ai-intelligence.js  — AI analysis helpers
-    13. ml-worker-models-patch.js — ML model manifest + graceful degradation
-    14. ml-worker-fetch-cache.js  — IndexedDB model cache + chunked download
-    15. pipeline-orchestrator.js  — PipelineOrchestrator + bootstrap IIFE
-    16. vip-boot.js               — instantiates app, sets window._vipApp,
-                               calls initMLWorker()  — MUST BE LAST
+     1. ring-buffer              — SAB ring helpers
+     2. pipeline-state           — shared state store
+     3. dsp-core                 — offline DSP engine
+     4. batch-orchestrator       — batch queue
+     5. analytics                — telemetry stub
+     6. license-manager          — paywall gate
+     7. paywall                  — UI paywall
+     8. revenuecat               — RevenueCat SDK stub
+     9. app.js                   — defines VoiceIsolatePro class
+    10. app-patches.js           — monkey-patches prototype (5 bug fixes)
+    11. app-missing-methods.js   — adds setStatus, structuredLog, onResize, ML boot (5 fixes)
+    12. ai-engine-v2.js          — AI reasoning engine
+    13. ai-intelligence.js       — AI analysis helpers
+    14. ml-worker-models-patch.js— ML model manifest + graceful degradation
+    15. ml-worker-fetch-cache.js — IndexedDB model cache + chunked download
+    16. pipeline-orchestrator.js — PipelineOrchestrator + bootstrap IIFE
+    17. vip-boot.js              — instantiates app, sets window._vipApp — MUST BE LAST
   -->
   <script src="ring-buffer.js"></script>
   <script src="pipeline-state.js"></script>
@@ -285,6 +289,7 @@
   <script src="revenuecat.js"></script>
   <script src="app.js"></script>
   <script src="app-patches.js"></script>
+  <script src="app-missing-methods.js"></script>
   <script src="ai-engine-v2.js"></script>
   <script src="ai-intelligence.js"></script>
   <script src="ml-worker-models-patch.js"></script>
