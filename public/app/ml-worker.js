@@ -124,7 +124,7 @@ self.onmessage = async (e) => {
  * message instead.
  *
  * @param {Object} msg - Initialization options and overrides.
- * @param {string} [msg.ortUrl] - Optional URL to load the ONNX Runtime script from (falls back to a bundled CDN URL).
+ * @param {string} [msg.ortUrl] - Unused. ONNX Runtime is always loaded from /lib/ort.min.js. CDN fallback is prohibited by architecture constraint.
  * @param {string[]} [msg.models] - Optional list of model names to load (defaults to `['vad','deepfilter','demucs']`).
  * @param {Object.<string,string>} [msg.modelPaths] - Optional per-model path overrides keyed by model name.
  */
