@@ -14,7 +14,7 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 const PORT       = process.env.PORT || 3000;
-const APP_VERSION = '21.0.0';
+const APP_VERSION = '22.1.0'; // FIX 9: updated from 21.0.0
 const app        = express();
 
 // ── Cross-Origin Isolation (required for SharedArrayBuffer) ──────────────
@@ -30,17 +30,17 @@ app.use((_req, res, next) => {
   res.setHeader('Referrer-Policy',         'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy',      'microphone=(self), camera=(), geolocation=()');
 
-  // CSP — allow self + CDN for ORT WASM + fonts
+  // FIX 3: CSP — local-only; no CDN, no telemetry (ONNX Runtime is vendored at /lib/ort.min.js)
   res.setHeader('Content-Security-Policy', [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com",
+    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
     "media-src 'self' blob: mediastream:",
-    "connect-src 'self' https://cdn.jsdelivr.net https://va.vercel-scripts.com",
+    "connect-src 'self' data: blob:",
     "worker-src 'self' blob:",
-    "wasm-src 'self' https://cdn.jsdelivr.net",
+    "wasm-src 'self'",
   ].join('; '));
 
   next();
@@ -65,7 +65,46 @@ app.use('/app/models', express.static(join(__dirname, 'public', 'app', 'models')
   }
 }));
 
-// ── Serve /public as root ────────────────────────────────────────────────
+// ── FIX 6: Serve only allowlisted root-level runtime files ─────────────────
+// Root-level files must be served BEFORE /public to avoid 404s
+const ROOT_STATIC_ALLOWLIST = new Set([
+  'app.js',
+  'dsp-worker.js',
+  'ml-worker.js',
+]);
+
+function setRootAssetHeaders(res, filePath) {
+  if (filePath.endsWith('worker.js') || filePath.includes('processor.js')) {
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  }
+  if (filePath.endsWith('.wasm')) {
+    res.setHeader('Content-Type', 'application/wasm');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  }
+}
+
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+
+  const requestedPath = req.path.replace(/^\/+/, '');
+
+  // Only allow single-segment root files; never expose directories or arbitrary repo files.
+  if (!requestedPath || requestedPath.includes('/')) return next();
+
+  const isAllowedRootRuntimeAsset =
+    ROOT_STATIC_ALLOWLIST.has(requestedPath) ||
+    requestedPath.endsWith('worker.js') ||
+    requestedPath.includes('processor.js');
+
+  if (!isAllowedRootRuntimeAsset) return next();
+
+  const filePath = join(__dirname, requestedPath);
+  setRootAssetHeaders(res, filePath);
+  res.sendFile(filePath, (err) => {
+    if (err) next();
+  });
+});
+// ── Serve /public as fallback ────────────────────────────────────────────
 app.use(express.static(join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.js') && filePath.includes('worker')) {
@@ -83,10 +122,13 @@ app.get('/health', (_req, res) => {
     crossOriginIsolated: true,
     sharedArrayBuffer: true,
     features: {
-      dsp: '32-stage Octa-Pass',
-      ml: 'ONNX Runtime Web (WebGPU/WASM)',
+      // FIX 9: Updated from stale '32-stage Octa-Pass' / v21 values
+      dsp: '35-stage Deca-Pass',
+      ml: 'ONNX Runtime Web v1.18.0 (WebGPU/WASM)',
       vad: 'Silero VAD v5',
+      separation: 'Demucs v4 + BSRNN ensemble',
       mobile: 'Capacitor Android/iOS',
+      architecture: 'Threads from Space v11',
     },
     timestamp: new Date().toISOString(),
   });

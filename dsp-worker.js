@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — DSP Worker
-   Threads from Space v10 · 36-Stage Pipeline
+   VoiceIsolate Pro v22.1 — DSP Worker
+   Threads from Space v11 · 35-Stage Pipeline
    Deca-Pass Offline Processing · Full Quality
    ============================================ */
 

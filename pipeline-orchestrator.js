@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — PipelineOrchestrator
-   Threads from Space v10 · Main Thread Conductor
+   VoiceIsolate Pro v22.1 — PipelineOrchestrator
+   Threads from Space v11 · Main Thread Conductor
    Lazy AudioContext · Worker Lifecycle · Modes
    ============================================ */
 
@@ -39,6 +39,8 @@ class PipelineOrchestrator {
     // Status
     this.mode = 'idle'; // idle | realtime | processing | complete
     this.sabSupported = typeof SharedArrayBuffer !== 'undefined';
+    this._workletLoaded = false; // FIX 2: guard against re-registration on repeated ensureContext() calls
+    this._currentPlayingBuffer = null; // FIX 14: explicit tracker for toggleAB() while paused
 
     // Callbacks
     this.onStatusChange = () => {};
@@ -104,11 +106,12 @@ class PipelineOrchestrator {
         reject(err);
       };
 
+      // FIX 1: Remove ortUrl — ml-worker.js loads ORT locally via importScripts('/lib/ort.min.js')
       this.mlWorker.postMessage({
         type: 'init',
         models: options.models || ['vad'],
-        modelPaths: options.modelPaths || {},
-        ortUrl: options.ortUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js'
+        modelPaths: options.modelPaths || {}
+        // ortUrl intentionally omitted — ONNX Runtime is vendored at /lib/ort.min.js
       });
     });
   }
@@ -116,9 +119,11 @@ class PipelineOrchestrator {
   /** Initialize AudioWorklet for real-time processing */
   async initWorklet() {
     const ctx = this.ensureContext();
+    if (this._workletLoaded) return true; // FIX 2: guard against re-registration
 
     try {
       await ctx.audioWorklet.addModule('voice-isolate-processor.js');
+      this._workletLoaded = true;
 
       this.workletNode = new AudioWorkletNode(ctx, 'voice-isolate-processor', {
         numberOfInputs: 1,
@@ -151,6 +156,7 @@ class PipelineOrchestrator {
       return true;
     } catch (err) {
       console.warn('AudioWorklet unavailable:', err.message);
+      this._workletLoaded = false;
       return false;
     }
   }
@@ -189,13 +195,9 @@ class PipelineOrchestrator {
     this.sourceNode = ctx.createBufferSource();
     this.sourceNode.buffer = buf;
 
-    // Connect through processing chain
-    if (this.workletNode && this.mode === 'realtime') {
-      this.sourceNode.connect(this.workletNode);
-      this.workletNode.connect(this.gainNode);
-    } else {
-      this.sourceNode.connect(this.gainNode);
-    }
+    // FIX 8: Never route file/buffer playback through worklet — worklet is for mic input only.
+    // Always connect directly to gainNode for file playback.
+    this.sourceNode.connect(this.gainNode);
 
     this.sourceNode.onended = () => {
       if (this.isPlaying) {
@@ -208,6 +210,7 @@ class PipelineOrchestrator {
     this.sourceNode.start(0, this.pauseOffset);
     this.startedAt = ctx.currentTime;
     this.isPlaying = true;
+    this._currentPlayingBuffer = buf; // FIX 14: track for toggleAB()
     this.onStatusChange('playing');
   }
 
@@ -223,11 +226,15 @@ class PipelineOrchestrator {
 
   /** Resume from paused position */
   resume() {
+    // FIX 7: Just resume the context — the scheduled source resumes automatically.
+    // Calling play() here would create a second BufferSourceNode, doubling output.
     if (this.isPlaying || !this.audioCtx) return;
 
     this.audioCtx.resume().then(() => {
-      this.play();
-    });
+      this.isPlaying = true;
+      this.startedAt = this.audioCtx.currentTime;
+      this.onStatusChange('playing');
+    }).catch(err => console.warn('AudioContext resume failed:', err));
   }
 
   /** Stop playback, reset position */
@@ -270,8 +277,18 @@ class PipelineOrchestrator {
 
   // ===== PROCESSING =====
 
-  /** Run offline 36-stage pipeline */
+  /** Run offline 35-stage pipeline */
   async processOffline(params = null) {
+    // FIX 4: Abort and terminate any in-flight processing before starting new run
+    if (this.dspWorker) {
+      try {
+        this.dspWorker.postMessage({ type: 'abort' });
+        await new Promise(r => setTimeout(r, 50)); // brief drain
+      } catch (_) {}
+      this.dspWorker.terminate();
+      this.dspWorker = null;
+    }
+
     const buf = this.inputBuffer;
     if (!buf) throw new Error('No audio loaded');
 
@@ -285,18 +302,28 @@ class PipelineOrchestrator {
     return new Promise((resolve, reject) => {
       const worker = new Worker('dsp-worker.js');
 
+      // FIX 5: declare cleanupML before the if-block so worker.onmessage can always call it
+      let cleanupML = () => {};
+
       // If ML Worker exists, set up MessageChannel for DSP→ML communication
       if (this.mlWorker) {
         const channel = new MessageChannel();
         worker.postMessage({ type: 'setMLPort' }, [channel.port1]);
 
-        // Forward ML messages
         channel.port2.onmessage = (e) => {
           this.mlWorker.postMessage(e.data, e.data.data ? [e.data.data.buffer] : []);
         };
-        this.mlWorker.addEventListener('message', (e) => {
+
+        // FIX 5: store reference so we can remove it in all terminal cases
+        const mlForwarder = (e) => {
           try { channel.port2.postMessage(e.data); } catch (_) {}
-        });
+        };
+        this.mlWorker.addEventListener('message', mlForwarder);
+
+        cleanupML = () => {
+          this.mlWorker?.removeEventListener('message', mlForwarder);
+          channel.port2.onmessage = null;
+        };
       }
 
       worker.onmessage = (e) => {
@@ -307,6 +334,7 @@ class PipelineOrchestrator {
             break;
 
           case 'result': {
+            cleanupML(); // FIX 5: remove ML listener
             worker.terminate();
             const ctx = this.ensureContext();
             const outputBuf = ctx.createBuffer(1, msg.data.length, msg.sampleRate);
@@ -323,6 +351,7 @@ class PipelineOrchestrator {
           }
 
           case 'error':
+            cleanupML(); // FIX 5: remove ML listener
             worker.terminate();
             this.mode = 'idle';
             this.onStatusChange('error');
@@ -331,6 +360,7 @@ class PipelineOrchestrator {
             break;
 
           case 'aborted':
+            cleanupML(); // FIX 5: remove ML listener
             worker.terminate();
             this.mode = 'idle';
             this.onStatusChange('idle');
@@ -340,6 +370,7 @@ class PipelineOrchestrator {
       };
 
       worker.onerror = (err) => {
+        cleanupML(); // FIX 5: remove ML listener
         worker.terminate();
         this.mode = 'idle';
         reject(err);
@@ -404,14 +435,18 @@ class PipelineOrchestrator {
   /** A/B comparison toggle */
   toggleAB() {
     if (!this.inputBuffer || !this.outputBuffer) return;
-    const currentBuf = this.sourceNode?.buffer;
-    const next = (currentBuf === this.outputBuffer) ? this.inputBuffer : this.outputBuffer;
+    // FIX 14: Use explicit tracker instead of sourceNode?.buffer which is null when paused
+    const next = (this._currentPlayingBuffer === this.outputBuffer)
+      ? this.inputBuffer
+      : this.outputBuffer;
     const wasPlaying = this.isPlaying;
-    if (wasPlaying) {
-      this.pauseOffset += this.audioCtx.currentTime - this.startedAt;
-      this.stop(false);
-      this.play(next);
-    }
+    const savedOffset = wasPlaying
+      ? this.pauseOffset + (this.audioCtx.currentTime - this.startedAt)
+      : this.pauseOffset;
+    this.stop(false);
+    this.pauseOffset = savedOffset;
+    this._currentPlayingBuffer = next;
+    if (wasPlaying) this.play(next);
     return next === this.outputBuffer ? 'processed' : 'original';
   }
 
