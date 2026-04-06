@@ -75,6 +75,7 @@
     "@vercel/analytics": "^2.0.1",
     "express": "^4.21.2",
     "jsdom": "^29.0.1",
+    "onnxruntime-web": "1.17.0",
     "puppeteer": "^24.40.0"
   },
   "pnpm": {
