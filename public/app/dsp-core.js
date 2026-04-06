@@ -12,6 +12,11 @@
  * (Martin 2001). Maintains a rolling minimum over a configurable window of
  * past noise-magnitude estimates and updates only during VAD-inactive frames.
  */
+/**
+ * AdaptiveNoiseFloor: used by applyAdaptiveWiener()
+ * Tracks minimum statistics. Designed for offline Creator Mode
+ * and Forensic Mode where latency is acceptable.
+ */
 class AdaptiveNoiseFloor {
   /**
    * @param {number} numBins      - Number of FFT bins (fftSize/2 + 1)
@@ -978,6 +983,9 @@ const DSPCore = {
     // Music: strong bass+mid, relatively flat across bands, harmonic peaks (low sfm)
     const musicBalance = (bassE + midE) / totalE;
     scores.music += musicBalance * 2 * (1 - sfm);
+    if ((bassE / totalE) > 0.35 && sfm < 0.25) {
+      scores.music += 1.5;
+    }
 
     // Crowd: mid-dominant, moderate flatness, high vocal band
     const crowdMid = midE / totalE;
@@ -988,7 +996,7 @@ const DSPCore = {
     scores.HVAC += hvacLow * 2 * (1 - sfm * 0.5);
 
     // Traffic: low-frequency and rumble, with intermittent transients
-    const trafficLow = (subE * 2 + bassE) / totalE;
+    const trafficLow = (subE + bassE * 0.5) / totalE;
     scores.traffic += trafficLow * 1.5;
 
     // Keyboard: high-frequency clicks, energy in hi+air bands

@@ -130,19 +130,14 @@ self.onmessage = async (e) => {
  */
 async function initialize(msg) {
   try {
-    // FIX: Issue #9/#10 — Load ONNX Runtime from vendored local path only.
-    //   Removed CDN fallback (cdn.jsdelivr.net) to enforce 100% local constraint.
-    //   Standardized to onnxruntime-web@1.18.0 (was 1.17.0).
     if (!ort) {
       importScripts('/lib/ort.min.js');
       ort = self.ort;
     }
 
-    // Detect best execution provider
     provider = await detectProvider();
     log('info', `ONNX provider: ${provider}`);
 
-    // Configure session options
     const sessionOpts = {
       executionProviders: [provider],
       graphOptimizationLevel: 'all',
@@ -150,8 +145,7 @@ async function initialize(msg) {
       enableMemPattern: true
     };
 
-    // Load available models
-    const models = msg.models || ['vad', 'deepfilter', 'demucs']; // load core models by default
+    const models = msg.models || ['vad', 'deepfilter', 'demucs'];
     for (const name of models) {
       const path = msg.modelPaths?.[name] || MODEL_PATHS[name];
       try {
@@ -163,7 +157,6 @@ async function initialize(msg) {
       }
     }
 
-    // Build models status object: { modelName: true/false }
     const modelsStatus = {};
     for (const name of models) {
       modelsStatus[name] = name in sessions;
@@ -191,15 +184,9 @@ async function detectProvider() {
       const adapter = await navigator.gpu.requestAdapter();
       if (adapter) return 'webgpu';
     }
-  } catch { /* fallback */ }
-
-  try {
-    // Test WebGL2
-    const canvas = new OffscreenCanvas(1, 1);
-    const gl = canvas.getContext('webgl2');
-    if (gl) return 'webgl';
-  } catch { /* fallback */ }
-
+  } catch (e) {
+    console.warn("WebGPU not available, falling back to wasm");
+  }
   return 'wasm';
 }
 
@@ -238,15 +225,12 @@ async function processLoop() {
   const pullBuf = new Float32Array(frameSize);
 
   while (running) {
-    // Wait for data notification from AudioWorklet
     if (inputRing) {
-      const current = Atomics.load(inputRing.control, 0);
-      const result = Atomics.wait(inputRing.control, 0, current, 10); // 10ms timeout
-      if (result === 'timed-out' && ringAvailable(inputRing) < frameSize) {
+      if (ringAvailable(inputRing) < frameSize) {
+        await new Promise(r => setTimeout(r, 0));
         continue;
       }
     } else {
-      // No ring buffer — yield
       await new Promise(r => setTimeout(r, 10));
       continue;
     }
@@ -279,11 +263,18 @@ async function generateMask(frame) {
 
   // Demucs inference
   if (sessions.demucs && weights.demucs > 0) {
-    const tensor = new ort.Tensor('float32', frame, [1, 1, len]);
+    // Duplicate mono to channel 2 for demucs (stereo expected)
+    const stereo = new Float32Array(len * 2);
+    stereo.set(frame, 0);
+    stereo.set(frame, len);
+    const tensor = new ort.Tensor('float32', stereo, [1, 2, len]);
     try {
       const result = await sessions.demucs.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
-      demucsMask = new Float32Array(output.data);
+      const outData = new Float32Array(output.data);
+      demucsMask = new Float32Array(len);
+      // Average stereo mask back to mono
+      for(let i=0; i<len; i++) demucsMask[i] = (outData[i] + outData[len + i]) / 2;
       output.dispose?.();
     } finally {
       tensor.dispose?.();
@@ -292,7 +283,11 @@ async function generateMask(frame) {
 
   // BSRNN inference
   if (sessions.bsrnn && weights.bsrnn > 0) {
-    const tensor = new ort.Tensor('float32', frame, [1, 1, len]);
+    // Duplicate mono to channel 2 for demucs (stereo expected)
+    const stereo = new Float32Array(len * 2);
+    stereo.set(frame, 0);
+    stereo.set(frame, len);
+    const tensor = new ort.Tensor('float32', stereo, [1, 2, len]);
     try {
       const result = await sessions.bsrnn.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
@@ -341,15 +336,21 @@ async function handleVAD(msg) {
     const confidence = new Float32Array(Math.ceil(data.length / windowSize));
 
     // Process in windows
-    let state = new Float32Array(2 * 1 * 128).fill(0); // LSTM state
+    const stateSize = sr === 16000 ? 64 : 128;
+    let state = new Float32Array(2 * 1 * stateSize).fill(0); // LSTM state
     for (let i = 0; i < confidence.length; i++) {
       const start = i * windowSize;
       const end = Math.min(start + windowSize, data.length);
-      const chunk = data.subarray(start, end);
+      let chunk = data.subarray(start, end);
+      if (chunk.length < windowSize) {
+         const padded = new Float32Array(windowSize);
+         padded.set(chunk);
+         chunk = padded;
+      }
 
       const inputTensor = new ort.Tensor('float32', chunk, [1, chunk.length]);
       const srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
-      const stateTensor = new ort.Tensor('float32', state, [2, 1, 128]);
+      const stateTensor = new ort.Tensor('float32', state, [2, 1, stateSize]);
 
       try {
         const result = await sessions.vad.run({
@@ -388,7 +389,7 @@ async function handleSeparate(msg) {
   const id = msg.id;
   try {
     const data = msg.data;
-    const chunkSize = msg.chunkSize || 44100 * 10; // 10s chunks
+    const chunkSize = msg.chunkSize || 4096; // Need pow2 for FFT
     const result = new Float32Array(data.length);
     const totalChunks = Math.ceil(data.length / chunkSize);
 
@@ -397,21 +398,32 @@ async function handleSeparate(msg) {
       const end = Math.min(start + chunkSize, data.length);
       const chunk = data.subarray(start, end);
 
-      const mask = await generateMask(chunk);
-      for (let i = 0; i < chunk.length; i++) {
-        result[start + i] = chunk[i] * mask[i];
+      const re = new Float32Array(chunkSize);
+      re.set(chunk);
+      const im = new Float32Array(chunkSize);
+
+      simpleRadix2FFT(re, im, false);
+
+      const mag = new Float32Array(chunkSize);
+      for(let i=0; i<chunkSize; i++) mag[i] = Math.sqrt(re[i]*re[i] + im[i]*im[i]);
+
+      // Inference on magnitude using generateMask (which handles bsrnn/demucs internally)
+      const mask = await generateMask(mag);
+
+      for(let i=0; i<chunkSize; i++) {
+        re[i] *= mask[i];
+        im[i] *= mask[i];
       }
 
-      self.postMessage({
-        type: 'progress',
-        id,
-        stage: 'separation',
-        pct: Math.round(((c + 1) / totalChunks) * 100)
-      });
-    }
+      simpleRadix2FFT(re, im, true);
 
-    const output = result;
-    self.postMessage({ type: 'separateResult', id, data: output }, [output.buffer]);
+      for(let i=0; i<chunk.length; i++) {
+        result[start + i] = re[i];
+      }
+
+      self.postMessage({ type: 'progress', id, stage: 'separation', pct: Math.round(((c+1)/totalChunks)*100) });
+    }
+    self.postMessage({ type: 'separateResult', id, data: result }, [result.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', id, msg: err.message });
   }
@@ -491,8 +503,7 @@ async function handleDNS2(msg) {
   const magnitude = msg.magnitude;
 
   if (!sessions.dns2 || !magnitude) {
-    // Graceful fallback: passthrough mask
-    const mask = new Float32Array(magnitude ? magnitude.length : 257).fill(1);
+    const mask = new Float32Array(magnitude ? magnitude.length : 513).fill(1);
     self.postMessage({ type: 'dns2_mask', id, mask }, [mask.buffer]);
     return;
   }
@@ -502,7 +513,6 @@ async function handleDNS2(msg) {
     try {
       const result = await sessions.dns2.run({ input: tensor });
       const output = result[Object.keys(result)[0]];
-      // Clamp gain mask to [0, 1]
       const rawMask = new Float32Array(output.data);
       for (let i = 0; i < rawMask.length; i++) {
         rawMask[i] = Math.max(0, Math.min(1, rawMask[i]));
@@ -513,7 +523,7 @@ async function handleDNS2(msg) {
       tensor.dispose?.();
     }
   } catch (err) {
-    log('warn', `DNS v2 inference failed: ${err.message} — using passthrough mask`);
+    log('warn', `DNS v2 inference failed: ${err.message}`);
     const mask = new Float32Array(magnitude.length).fill(1);
     self.postMessage({ type: 'dns2_mask', id, mask }, [mask.buffer]);
   }
@@ -698,4 +708,42 @@ function ringPush(ring, samples) {
 // ---- Logging ----
 function log(level, message) {
   self.postMessage({ type: 'log', level, msg: message });
+}
+
+function simpleRadix2FFT(re, im, inverse) {
+  const N = re.length;
+  let j = 0;
+  for (let i = 0; i < N - 1; i++) {
+    if (i < j) {
+      let tr = re[i]; let ti = im[i];
+      re[i] = re[j]; im[i] = im[j];
+      re[j] = tr; im[j] = ti;
+    }
+    let m = N >> 1;
+    while (m >= 1 && j >= m) { j -= m; m >>= 1; }
+    j += m;
+  }
+  const dir = inverse ? 1 : -1;
+  for (let m = 2; m <= N; m <<= 1) {
+    const w = 2 * Math.PI / m;
+    const wpr = Math.cos(w);
+    const wpi = dir * Math.sin(w);
+    let wr = 1; let wi = 0;
+    const m2 = m >> 1;
+    for (let j = 0; j < m2; j++) {
+      for (let i = j; i < N; i += m) {
+        const k = i + m2;
+        const tr = wr * re[k] - wi * im[k];
+        const ti = wr * im[k] + wi * re[k];
+        re[k] = re[i] - tr; im[k] = im[i] - ti;
+        re[i] += tr; im[i] += ti;
+      }
+      let tpr = wr;
+      wr = wr * wpr - wi * wpi;
+      wi = wi * wpr + tpr * wpi;
+    }
+  }
+  if (inverse) {
+    for (let i = 0; i < N; i++) { re[i] /= N; im[i] /= N; }
+  }
 }
