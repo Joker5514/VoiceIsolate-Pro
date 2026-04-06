@@ -83,8 +83,31 @@ function callML(type, data, extra = {}) {
 async function runPipeline(msg) {
   self._aborted = false;
   const params = msg.params;
-  const sr = msg.sampleRate || SR;
+
+  // [A17] Normalize SR: default 48kHz unless input clearly differs
+  const originalSR = msg.sampleRate || SR;
+  const sr = (originalSR && Math.abs(originalSR - 48000) > 100) ? originalSR : 48000;
+
   let data = new Float32Array(msg.data);
+
+  // [A17] Resample to 48kHz if input SR differs
+  if (sr !== 48000) {
+    const ratio = 48000 / sr;
+    const outLen = Math.round(data.length * ratio);
+    const resampled = new Float32Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+      const srcIdx = i / ratio;
+      const lo = Math.floor(srcIdx);
+      const hi = Math.min(lo + 1, data.length - 1);
+      const frac = srcIdx - lo;
+      resampled[i] = data[lo] * (1 - frac) + data[hi] * frac;
+    }
+    data = resampled;
+  }
+
+  // [C17] Save original before any processing for dry/wet mix
+  const wetAmt = (params.dryWet ?? 100) / 100;
+  const originalData = wetAmt < 1.0 ? new Float32Array(data) : null;
 
   try {
     // ===== PASS 1: INPUT CONDITIONING (S01–S04) =====
@@ -132,16 +155,6 @@ async function runPipeline(msg) {
 
     if (self._aborted) return abort();
 
-    // ===== PASS 3: FORWARD TRANSFORM (S09–S10) =====
-    progress(9, 25, 'Forward STFT');
-
-    const fftSize = 4096;
-    const hopSize = 1024;
-    const { mag, phase, frameCount } = DSP.forwardSTFT(data, fftSize, hopSize);
-    progress(10, 30, `STFT: ${frameCount} frames`);
-
-    if (self._aborted) return abort();
-
     // ===== PASS 4: ML SOURCE SEPARATION (S11–S14) =====
     progress(11, 32, 'ML Source Separation');
 
@@ -155,6 +168,7 @@ async function runPipeline(msg) {
     progress(11, 38, 'VAD Complete');
 
     // S12–S14: Demucs + BSRNN ensemble separation
+    // [C19] Apply ML separation as time-domain gain before the single STFT pass
     const voiceIso = params.voiceIso ?? 70;
     if (voiceIso > 0) {
       const sepData = new Float32Array(data);
@@ -165,21 +179,26 @@ async function runPipeline(msg) {
       });
 
       if (sepResult.data) {
-        // Blend separated voice with original based on voiceIso strength
         const isoStrength = voiceIso / 100;
         const separated = new Float32Array(sepResult.data);
-        // Re-apply STFT to separated data for spectral ops
-        // (the ML separation happens in time-domain, we need to update mag/phase)
-        const sepSTFT = DSP.forwardSTFT(separated, fftSize, hopSize);
-        for (let f = 0; f < Math.min(frameCount, sepSTFT.frameCount); f++) {
-          for (let k = 0; k < mag[f].length; k++) {
-            mag[f][k] = (1 - isoStrength) * mag[f][k] + isoStrength * sepSTFT.mag[f][k];
-            phase[f][k] = (1 - isoStrength) * phase[f][k] + isoStrength * sepSTFT.phase[f][k];
-          }
+        const blended = new Float32Array(data.length);
+        for (let i = 0; i < data.length; i++) {
+          blended[i] = (1 - isoStrength) * data[i] + isoStrength * separated[i];
         }
+        data = blended;
       }
     }
     progress(14, 45, 'ML Separation Complete');
+
+    if (self._aborted) return abort();
+
+    // ===== PASS 3: FORWARD TRANSFORM (S09–S10) =====
+    progress(9, 25, 'Forward STFT');
+
+    const fftSize = 4096;
+    const hopSize = 1024;
+    const { mag, phase, frameCount } = DSP.forwardSTFT(data, fftSize, hopSize);
+    progress(10, 30, `STFT: ${frameCount} frames`);
 
     if (self._aborted) return abort();
 
@@ -307,32 +326,49 @@ async function runPipeline(msg) {
     const outGainLin = Math.pow(10, (params.outGain ?? 0) / 20);
     for (let i = 0; i < data.length; i++) data[i] *= outGainLin;
 
-    // Dry/wet mix
-    const wetAmt = (params.dryWet ?? 100) / 100;
-    if (wetAmt < 1.0 && msg.data) {
-      const dry = new Float32Array(msg.data);
+    // [C17] Dry/wet mix using pre-processing copy saved before any transforms
+    if (wetAmt < 1.0 && originalData) {
       for (let i = 0; i < data.length; i++) {
-        data[i] = (1 - wetAmt) * dry[i] + wetAmt * data[i];
+        data[i] = (1 - wetAmt) * originalData[i] + wetAmt * data[i];
       }
     }
     progress(34, 97, 'Final Gain Applied');
+
+    // [A17] Resample back to original SR if we upsampled
+    let outputData = data;
+    if (sr !== 48000) {
+      const ratio = originalSR / 48000;
+      const outLen = Math.round(data.length * ratio);
+      outputData = new Float32Array(outLen);
+      for (let i = 0; i < outLen; i++) {
+        const srcIdx = i / ratio;
+        const lo = Math.floor(srcIdx);
+        const hi = Math.min(lo + 1, data.length - 1);
+        const frac = srcIdx - lo;
+        outputData[i] = data[lo] * (1 - frac) + data[hi] * frac;
+      }
+    }
 
     // ===== PASS 10: EXPORT (S35–S36) =====
     // S35–S36 handled by caller (WAV encode / video mux)
     progress(36, 100, 'Pipeline Complete');
 
+    // [C18] Inline calcPeak/calcRMS (methods not on DSP instance)
+    const peak = outputData.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    const rms = Math.sqrt(outputData.reduce((s, v) => s + v * v, 0) / outputData.length);
+
     // Return processed data (Transferable = zero-copy)
     self.postMessage({
       type: 'result',
-      data,
-      sampleRate: sr,
+      data: outputData,
+      sampleRate: originalSR,
       stats: {
-        rms: DSP.calcRMS(data),
-        peak: DSP.calcPeak(data),
-        lufs: DSP.measureLUFS(data, sr),
+        rms,
+        peak,
+        lufs: DSP.measureLUFS(outputData, originalSR),
         frames: frameCount
       }
-    }, [data.buffer]);
+    }, [outputData.buffer]);
 
   } catch (err) {
     self.postMessage({ type: 'error', msg: err.message, stack: err.stack });

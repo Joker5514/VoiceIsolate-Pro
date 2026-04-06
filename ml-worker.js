@@ -96,13 +96,11 @@ const _bannedImport = (url) => { throw new Error(`BLOCKED: external script load:
 // ---- Initialization ----
 async function initialize(msg) {
   try {
-    // FIX 1: Block any ortUrl from msg — ORT must be loaded locally only
     if (msg.ortUrl) _bannedImport(msg.ortUrl);
 
-  try {
     // Import ONNX Runtime from vendored local copy only
     if (!ort) {
-      importScripts('/lib/ort.min.js'); // FIX 1: local vendored copy, never CDN
+      importScripts('/lib/ort.min.js');
       ort = self.ort;
     }
 
@@ -144,18 +142,18 @@ async function initialize(msg) {
 
 async function detectProvider() {
   try {
-    if (typeof navigator !== 'undefined' && navigator.gpu) {
+    if (typeof navigator !== 'undefined' && navigator.gpu != null) {
       const adapter = await navigator.gpu.requestAdapter();
       if (adapter) return 'webgpu';
     }
   } catch (_) { /* fallback */ }
 
   try {
-    // Test WebGL2
+    // OffscreenCanvas.getContext('webgl2') is unavailable in Workers on Safari
     const canvas = new OffscreenCanvas(1, 1);
     const gl = canvas.getContext('webgl2');
     if (gl) return 'webgl';
-  } catch (_) { /* fallback */ }
+  } catch (_) { /* Safari Worker — no WebGL2 */ }
 
   return 'wasm';
 }
@@ -195,11 +193,9 @@ async function processLoop() {
   const pullBuf = new Float32Array(frameSize);
 
   while (running) {
-    // Wait for data notification from AudioWorklet
     if (inputRing) {
-      const current = Atomics.load(inputRing.control, 0);
-      const result = Atomics.wait(inputRing.control, 0, current, 10); // 10ms timeout
-      if (result === 'timed-out' && ringAvailable(inputRing) < frameSize) {
+      if (ringAvailable(inputRing) < frameSize) {
+        await new Promise(r => setTimeout(r, 1));
         continue;
       }
     } else {
@@ -297,15 +293,19 @@ async function handleVAD(msg) {
     const confidence = new Float32Array(Math.ceil(data.length / windowSize));
 
     // Process in windows
-    let state = new Float32Array(2 * 1 * 128).fill(0); // LSTM state
+    const stateSize = sr === 16000 ? 64 : 128;
+    let state = new Float32Array(2 * 1 * stateSize).fill(0); // LSTM state
     for (let i = 0; i < confidence.length; i++) {
       const start = i * windowSize;
       const end = Math.min(start + windowSize, data.length);
       const chunk = data.subarray(start, end);
 
-      const inputTensor = new ort.Tensor('float32', chunk, [1, chunk.length]);
+      const padded = new Float32Array(windowSize);
+      padded.set(chunk);
+
+      const inputTensor = new ort.Tensor('float32', padded, [1, windowSize]);
       const srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
-      const stateTensor = new ort.Tensor('float32', state, [2, 1, 128]);
+      const stateTensor = new ort.Tensor('float32', state, [2, 1, stateSize]);
 
       try {
         const result = await sessions.vad.run({
@@ -404,19 +404,34 @@ async function handleDNS(msg) {
 
   try {
     const data = new Float32Array(msg.data);
-    const frameLen = data.length;
-    const tensor = new ort.Tensor('float32', data, [1, 1, frameLen]);
-    try {
-      const result = await sessions.dns.run({ input: tensor });
-      // Use the first output key; DNS models typically have a single output ('output' or 'audio').
-      // If the model has multiple outputs, the primary denoised signal is conventionally first.
-      const output = result[Object.keys(result)[0]];
-      const signal = new Float32Array(output.data);
-      output.dispose?.();
-      self.postMessage({ type: 'dnsResult', id, signal }, [signal.buffer]);
-    } finally {
-      tensor.dispose?.();
+    const chunkSize = msg.chunkSize || 1024 * 10;
+    const result = new Float32Array(data.length);
+    const totalChunks = Math.ceil(data.length / chunkSize);
+
+    for (let c = 0; c < totalChunks; c++) {
+      const start = c * chunkSize;
+      const end = Math.min(start + chunkSize, data.length);
+      const chunk = data.subarray(start, end);
+
+      const tensor = new ort.Tensor('float32', chunk, [1, 1, chunk.length]);
+      try {
+        const out = await sessions.dns.run({ input: tensor });
+        const output = out[Object.keys(out)[0]];
+        result.set(new Float32Array(output.data).subarray(0, end - start), start);
+        output.dispose?.();
+      } finally {
+        tensor.dispose?.();
+      }
+
+      self.postMessage({
+        type: 'progress',
+        id,
+        stage: 'dns',
+        pct: Math.round(((c + 1) / totalChunks) * 100)
+      });
     }
+
+    self.postMessage({ type: 'dnsResult', id, signal: result }, [result.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', id, msg: err.message });
   }
