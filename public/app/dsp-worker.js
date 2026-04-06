@@ -1,8 +1,9 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — DSP Worker
-   Threads from Space v10 · 36-Stage Pipeline
+   VoiceIsolate Pro v22.1 — DSP Worker
+   Threads from Space v11 · 35-Stage Pipeline
    Deca-Pass Offline Processing · Full Quality
    Adaptive Wiener · DNS v2 · Multi-Speaker
+   FIX: Issue #15 — updated from v20.0/v10 to v22.1/v11
    ============================================ */
 
 'use strict';
@@ -134,18 +135,12 @@ async function runPipeline(msg) {
 
     if (self._aborted) return abort();
 
-    // ===== PASS 3: FORWARD TRANSFORM (S09–S10) =====
-    progress(9, 25, 'Forward STFT');
+    // FIX: Issue #3 — Move all ML separation to PRE-STFT time domain to enforce single-pass
+    //   spectral architecture. Removed illegal secondary DSP.forwardSTFT() calls on separated
+    //   and targetData buffers, which caused phase smearing between independent STFT frames.
 
-    const fftSize = 4096;
-    const hopSize = 1024;
-    const { mag, phase, frameCount } = DSP.forwardSTFT(data, fftSize, hopSize);
-    progress(10, 30, `STFT: ${frameCount} frames`);
-
-    if (self._aborted) return abort();
-
-    // ===== PASS 4: ML SOURCE SEPARATION (S11–S14) =====
-    progress(11, 32, 'ML Source Separation');
+    // ===== PRE-STFT: TIME-DOMAIN ML SEPARATION (S11–S14) =====
+    progress(11, 32, 'ML Source Separation (time-domain)');
 
     // S11: Silero VAD
     let vadConfidence = null;
@@ -156,7 +151,7 @@ async function runPipeline(msg) {
     }
     progress(11, 38, 'VAD Complete');
 
-    // S12–S14: Demucs + BSRNN ensemble separation
+    // S12–S14: Demucs + BSRNN ensemble separation — operates on raw time-domain data
     const voiceIso = params.voiceIso ?? 70;
     if (voiceIso > 0) {
       const sepData = new Float32Array(data);
@@ -167,23 +162,17 @@ async function runPipeline(msg) {
       });
 
       if (sepResult.data) {
-        // Blend separated voice with original based on voiceIso strength
+        // Blend in TIME DOMAIN before STFT — no secondary transform needed
         const isoStrength = voiceIso / 100;
         const separated = new Float32Array(sepResult.data);
-        // Re-apply STFT to separated data for spectral ops
-        // (the ML separation happens in time-domain, we need to update mag/phase)
-        const sepSTFT = DSP.forwardSTFT(separated, fftSize, hopSize);
-        for (let f = 0; f < Math.min(frameCount, sepSTFT.frameCount); f++) {
-          for (let k = 0; k < mag[f].length; k++) {
-            mag[f][k] = (1 - isoStrength) * mag[f][k] + isoStrength * sepSTFT.mag[f][k];
-            phase[f][k] = (1 - isoStrength) * phase[f][k] + isoStrength * sepSTFT.phase[f][k];
-          }
+        for (let i = 0; i < data.length; i++) {
+          data[i] = (1 - isoStrength) * data[i] + isoStrength * separated[i];
         }
       }
     }
     progress(14, 45, 'ML Separation Complete');
 
-    // ===== PASS 4.5: MULTI-SPEAKER SOURCE SEPARATION (optional) =====
+    // Multi-speaker separation also in time domain — no new STFT
     const multiSpeakerEnabled = params.multiSpeakerEnabled ?? false;
     const separationMode = params.separationMode ?? 'off';
     if (multiSpeakerEnabled && separationMode !== 'off') {
@@ -196,25 +185,27 @@ async function runPipeline(msg) {
       });
 
       if (msResult.streams && msResult.streams.length > 0) {
-        const targetSpeaker = params.targetSpeaker ?? 0;
-        // Find the target speaker stream
-        const targetStream = msResult.streams.find(s => s.speakerId === targetSpeaker)
+        const targetStream = msResult.streams.find(s => s.speakerId === (params.targetSpeaker ?? 0))
           || msResult.streams[0];
 
         if (targetStream && targetStream.data) {
-          // Update mag/phase from separated target speaker stream
           const targetData = new Float32Array(targetStream.data);
-          const targetSTFT = DSP.forwardSTFT(targetData, fftSize, hopSize);
-          for (let f = 0; f < Math.min(frameCount, targetSTFT.frameCount); f++) {
-            for (let k = 0; k < mag[f].length; k++) {
-              mag[f][k] = targetSTFT.mag[f][k];
-              phase[f][k] = targetSTFT.phase[f][k];
-            }
-          }
+          // Directly replace data in time domain — no new STFT
+          for (let i = 0; i < data.length; i++) data[i] = targetData[i];
         }
       }
       progress(14, 47, 'Multi-Speaker Separation Complete');
     }
+
+    if (self._aborted) return abort();
+
+    // ===== PASS 3: FORWARD TRANSFORM (S09–S10) =====
+    progress(9, 25, 'Forward STFT');
+
+    const fftSize = 4096;
+    const hopSize = 1024;
+    const { mag, phase, frameCount } = DSP.forwardSTFT(data, fftSize, hopSize);
+    progress(10, 30, `STFT: ${frameCount} frames`);
 
     if (self._aborted) return abort();
 
@@ -258,20 +249,23 @@ async function runPipeline(msg) {
     }
     progress(15, 52, 'Spectral Noise Subtracted');
 
-    // DNS v2: apply per-bin gain mask from ML model (applied after Wiener)
+    // FIX: Issue #8 — DNS v2 was applying a single mid-frame mask to ALL frames, defeating
+    //   adaptive suppression. Now runs per-frame on a sliding window (every dns2Stride frames).
     if (params.dns2Enabled !== false) {
-      // Build 512-point magnitude frame (use middle frame of STFT, 16 kHz compatible)
-      const midFrame = Math.floor(frameCount / 2);
-      const dns2Input = _buildDNS2Frame(mag, midFrame, sr, fftSize);
-      const dns2Result = await callML('dns2', dns2Input, {});
-      if (dns2Result.mask) {
-        const mask = new Float32Array(dns2Result.mask);
-        // Apply mask to each STFT frame (interpolate mask length if needed)
-        const halfN = mag[0].length;
-        for (let f = 0; f < frameCount; f++) {
+      const dns2Stride = 8; // apply mask every 8 frames (~46ms at hopSize=1024, sr=48000)
+      let lastMask = null;
+
+      for (let f = 0; f < frameCount; f++) {
+        if (f % dns2Stride === 0) {
+          const dns2Input = _buildDNS2Frame(mag, f, sr, fftSize);
+          const dns2Result = await callML('dns2', dns2Input, {});
+          if (dns2Result.mask) lastMask = new Float32Array(dns2Result.mask);
+        }
+        if (lastMask) {
+          const halfN = mag[f].length;
           for (let k = 0; k < halfN; k++) {
-            const maskIdx = Math.min(k, mask.length - 1);
-            mag[f][k] *= mask[maskIdx];
+            const maskIdx = Math.min(k, lastMask.length - 1);
+            mag[f][k] *= lastMask[maskIdx];
           }
         }
       }
@@ -337,18 +331,11 @@ async function runPipeline(msg) {
     DSP.parametricEQ(data, eqBands, sr);
     progress(25, 78, 'EQ Applied');
 
-    // S26: Harmonic resynthesis (guard against S17 duplication)
-    // Only apply if harmonic recovery was minimal in spectral domain
-    if (harmRecov < 30) {
-      const harmOrder = params.harmOrder ?? 3;
-      // Soft saturation for harmonic regeneration
-      const amount = (params.harmRecov ?? 20) / 100;
-      for (let i = 0; i < data.length; i++) {
-        const x = data[i];
-        data[i] = x + amount * 0.3 * Math.tanh(harmOrder * x);
-      }
-    }
-    progress(26, 80, 'Harmonic Resynthesis');
+    // FIX: Issue #12 — Removed S26 time-domain harmonic resynthesis (tanh saturation).
+    //   harmonicEnhanceV2 at S17 (spectral domain) is the complete implementation.
+    //   The tanh saturation was a crude approximation that created distortion artifacts
+    //   and double-applied enhancement when harmRecov < 30 (the default of 20 always triggered it).
+    progress(26, 80, 'Harmonic Stage (spectral only — S17)');
 
     if (self._aborted) return abort();
 

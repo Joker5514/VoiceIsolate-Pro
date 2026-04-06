@@ -122,7 +122,11 @@ const STAGES = [
   'S29: Peak Normalization',             // 28
   'S30: Quality Metrics',                // 29
   'S31: Waveform Update',               // 30
-  'S32: Final Export Ready'              // 31
+  'S32: Final Export Ready',            // 31
+  // FIX: Issue #15 — added 3 missing stages to match 35-stage Deca-Pass pipeline in dsp-worker.js
+  'S33: True Peak Limiter',             // 32
+  'S34: Dither',                        // 33
+  'S35: Final Output Gain'              // 34
 ];
 
 // ---- Structured logging utility ----
@@ -201,10 +205,17 @@ class VoiceIsolatePro {
     this.init3D();
   }
 
+  // FIX: Issue #2 — Wrong AudioWorklet module path ('voice-isolate-processor.js' → 'dsp-processor.js');
+  //   add _workletLoaded flag to prevent repeated addModule() calls on every ensureCtx() invocation.
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      this.ctx.audioWorklet.addModule('./voice-isolate-processor.js').catch(err => console.error('Failed to add AudioWorklet module:', err));
+      this._workletLoaded = false;
+    }
+    if (!this._workletLoaded) {
+      this.ctx.audioWorklet.addModule('./dsp-processor.js')
+        .then(() => { this._workletLoaded = true; })
+        .catch(err => structuredLog('error', 'AudioWorklet load failed', { error: err.message }));
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;
@@ -476,6 +487,7 @@ class VoiceIsolatePro {
       for (const s of sliders) {
         const el = document.getElementById(s.id);
         const ve = document.getElementById(s.id + 'Val');
+        // FIX: Issue #14 — Removed duplicate assignment block that was an exact partial copy of above.
         if (el && this.params[s.id] !== undefined) {
           el.value = this.params[s.id];
           el.setAttribute('aria-valuenow', this.params[s.id]);
@@ -484,7 +496,6 @@ class VoiceIsolatePro {
           const pct = range > 0 ? ((this.params[s.id] - s.min) / range) * 100 : 0;
           el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
         }
-        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
       }
     }
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
@@ -1162,6 +1173,9 @@ class VoiceIsolatePro {
   }
 
   // ---- DSP HELPERS ----
+  // FIX: Issue #13 — applySpectralNR() removed (dead code; pipeline uses window.DSPCore).
+  //   _fft(), _ifft(), _makeWindow() retained: they ARE called transitively via applyFormantShift()
+  //   (runPipeline line ~1126), which is not replaceable by DSPCore in the OfflineAudioContext path.
 
   // ======== PHASE 1: SPECTRAL ENGINE (STFT / iSTFT / Wiener NR) ========
 
@@ -1210,77 +1224,7 @@ class VoiceIsolatePro {
     return win;
   }
 
-  // Real spectral noise reduction via Wiener filtering (replaces the old stub applyNR)
-  applySpectralNR(buf, amt, sensitivity, spectralSub, floorDb, smoothing, vadMask) {
-    const nCh = buf.numberOfChannels, len = buf.length, sr = buf.sampleRate;
-    const out = this.ctx.createBuffer(nCh, len, sr);
-    const N = 2048, H = 512, halfN = N / 2 + 1;
-    const win = this._makeWindow(N);
-    // over-subtraction 1..3, spectral floor 0.01..0.1
-    const alpha = 1 + amt * 2;
-    const beta = Math.max(0.01, 0.1 - spectralSub * 0.09);
-    const floorLin = Math.pow(10, floorDb / 20);
-    const sm = Math.max(0, Math.min(0.95, smoothing * 0.95));
-
-    for (let ch = 0; ch < nCh; ch++) {
-      const inp = buf.getChannelData(ch);
-      const outData = out.getChannelData(ch);
-      const normBuf = new Float64Array(len);
-
-      // Profile noise PSD from first ~500ms
-      const profLen = Math.min(Math.floor(sr * 0.5), len);
-      const noisePSD = new Float64Array(halfN);
-      let profFrames = 0;
-      for (let s = 0; s + N <= profLen; s += H) {
-        const re = new Float64Array(N), im = new Float64Array(N);
-        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
-        this._fft(re, im);
-        for (let k = 0; k < halfN; k++) noisePSD[k] += re[k]*re[k] + im[k]*im[k];
-        profFrames++;
-      }
-      if (profFrames > 0) for (let k = 0; k < halfN; k++) {
-        noisePSD[k] = Math.max(noisePSD[k] / profFrames, floorLin * floorLin);
-      }
-      const smoothedNoise = new Float64Array(noisePSD);
-
-      // Process all frames
-      let frameIdx = 0;
-      for (let s = 0; s + N <= len; s += H, frameIdx++) {
-        const re = new Float64Array(N), im = new Float64Array(N);
-        for (let i = 0; i < N; i++) re[i] = inp[s + i] * win[i];
-        this._fft(re, im);
-
-        // If VAD mask available: only apply NR during non-speech frames
-        const frameTimeSec = s / sr;
-        const vadFrameIdx = vadMask ? Math.floor(frameTimeSec * 100) : -1;
-        const isSpeech = vadMask && vadFrameIdx < vadMask.length ? vadMask[vadFrameIdx] : false;
-
-        for (let k = 0; k < halfN; k++) {
-          const sigPSD = re[k]*re[k] + im[k]*im[k];
-          smoothedNoise[k] = sm * smoothedNoise[k] + (1 - sm) * noisePSD[k];
-          const nEst = alpha * smoothedNoise[k] * (1 + sensitivity * 0.5);
-          // Apply softer NR during speech frames: reduce noise estimate so Wiener
-          // gain stays higher (less attenuation) rather than using nEst as a gain floor
-          // (nEst is a PSD value, not a valid gain — using it as a floor could amplify).
-          const nEstFrame = isSpeech ? nEst * 0.3 : nEst;
-          const gain = sigPSD > 1e-12 ?
-            Math.max(Math.sqrt(Math.max(sigPSD - nEstFrame, 0) / sigPSD), beta) : beta;
-          re[k] *= gain; im[k] *= gain;
-          if (k > 0 && k < N - k) { re[N-k] = re[k]; im[N-k] = -im[k]; }
-        }
-        this._ifft(re, im);
-        for (let i = 0; i < N && s + i < len; i++) {
-          outData[s + i] += re[i] * win[i];
-          normBuf[s + i] += win[i] * win[i];
-        }
-      }
-      for (let i = 0; i < len; i++) {
-        if (normBuf[i] > 1e-8) outData[i] /= normBuf[i];
-        outData[i] = Math.max(-1, Math.min(1, outData[i]));
-      }
-    }
-    return out;
-  }
+  // REMOVED: applySpectralNR() — FIX Issue #13: dead code; pipeline uses DSP.applyAdaptiveWiener().
 
   // ======== PHASE 2: WIRED SLIDERS — SPECTRAL PROCESSING ========
 
@@ -1552,8 +1496,8 @@ class VoiceIsolatePro {
       structuredLog('warn', 'ML Worker not available — running without ML');
       return;
     }
-    const wasmRoot = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
-    this.mlWorker.postMessage({ type: 'loadModel', model: 'vad', wasmRoot });
+    // FIX: Issue #9 — Removed CDN wasmRoot; ONNX Runtime is loaded locally in ml-worker.js.
+    this.mlWorker.postMessage({ type: 'loadModel', model: 'vad' });
   }
 
   // Run Silero VAD via ML Worker; returns boolean[] or null if unavailable
@@ -1575,6 +1519,10 @@ class VoiceIsolatePro {
 
   // Spin up ml-worker.js and initialise all models. Non-blocking; pipeline checks
   // this.mlWorkerReady before dispatching work.
+  // FIX: Issue #7 — Removed catch/finally that set isProcessing=false and toggled processBtn/stopProcBtn.
+  //   Those UI elements belong exclusively to runPipeline(). Worker init failures now log a warning
+  //   and set mlWorker=null so the pipeline continues without ML inference.
+  // FIX: Issue #9/#10 — Removed ortUrl from postMessage; worker loads ONNX Runtime locally.
   initMLWorker() {
     if (this.mlWorker) return;
     try {
@@ -1585,7 +1533,7 @@ class VoiceIsolatePro {
           this.mlWorkerReady = true;
           this.mlWorkerModels = e.data.models || {};
           structuredLog('info', 'ML worker ready', { provider: e.data.provider, models: e.data.models });
-          // v20: Share ML worker with orchestrator
+          // Share ML worker with orchestrator
           if (this.orchestrator) this.orchestrator.mlWorker = this.mlWorker;
         } else if (type === 'log') {
           structuredLog(e.data.level, '[ml-worker] ' + e.data.msg);
@@ -1593,20 +1541,18 @@ class VoiceIsolatePro {
         // 'result' and 'progress' messages are handled per-call via a promise wrapper
       };
       this.mlWorker.onerror = (err) => {
-        structuredLog('warn', 'ML worker error', { error: err.message });
-        this.mlWorkerReady = false;
+        structuredLog('warn', 'ML Worker error', { error: err.message });
+        this.mlWorker = null; // disable ML, pipeline continues without it
       };
-      // v20: Pass ONNX Runtime URL and initial model list
+      // Load ONNX Runtime locally (no CDN); worker resolves /lib/ort.min.js itself
       this.mlWorker.postMessage({
         type: 'init',
-        ortUrl: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js',
         models: ['vad']
       });
-    } catch (e) {
-      if (e === 'abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent = 'Aborted'; }
-      else { console.error('Pipeline:', e); this.setStatus('ERROR'); this.dom.pipeDetail.textContent = e.message || String(e); }
-    } finally {
-      this.isProcessing = false; this.dom.processBtn.style.display = 'inline-flex'; this.dom.stopProcBtn.style.display = 'none';
+    } catch (err) {
+      structuredLog('warn', 'ML Worker unavailable — running without ML inference', { error: err.message });
+      this.mlWorker = null;
+      // DO NOT touch this.isProcessing or any pipeline UI elements here
     }
   }
 

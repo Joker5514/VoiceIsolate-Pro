@@ -1,9 +1,10 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — ML Worker
-   Threads from Space v10 · ONNX Inference
+   VoiceIsolate Pro v22.1 — ML Worker
+   Threads from Space v11 · ONNX Inference
    Demucs v4 + BSRNN + Silero VAD + ECAPA-TDNN
    DNS v2 · Noise Classifier · Multi-Speaker Sep
    WebGPU > WASM fallback · Tensor disposal
+   FIX: Issue #15 — updated from v20.0/v10 to v22.1/v11
    ============================================ */
 
 'use strict';
@@ -129,9 +130,11 @@ self.onmessage = async (e) => {
  */
 async function initialize(msg) {
   try {
-    // Import ONNX Runtime
+    // FIX: Issue #9/#10 — Load ONNX Runtime from vendored local path only.
+    //   Removed CDN fallback (cdn.jsdelivr.net) to enforce 100% local constraint.
+    //   Standardized to onnxruntime-web@1.18.0 (was 1.17.0).
     if (!ort) {
-      importScripts(msg.ortUrl || 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js');
+      importScripts('/lib/ort.min.js');
       ort = self.ort;
     }
 
