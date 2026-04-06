@@ -1,6 +1,6 @@
 {
   "outputDirectory": "public",
-  "buildCommand": "echo 'Static site — no build step'",
+  "buildCommand": "bash scripts/bootstrap-libs.sh",
   "routes": [
     {
       "src": "/app/voice-isolate-processor.js",
