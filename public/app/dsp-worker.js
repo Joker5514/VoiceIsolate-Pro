@@ -84,6 +84,10 @@ function callML(type, data, extra = {}) {
 }
 
 async function runPipeline(msg) {
+  let adaptiveNoiseFloorTracker = null;
+  if (msg.params.adaptiveWienerEnabled !== false && typeof AdaptiveNoiseFloor !== 'undefined') {
+     adaptiveNoiseFloorTracker = new AdaptiveNoiseFloor(msg.params.fftSize ? msg.params.fftSize/2 : 2048, msg.params.adaptiveWienerSmoothingMs || 200, msg.params.hopSize || 1024, msg.sampleRate || SR);
+  }
   self._aborted = false;
   const params = msg.params;
   const sr = msg.sampleRate || SR;
@@ -242,10 +246,10 @@ async function runPipeline(msg) {
         spectralFloor: 0.001
       });
     } else {
-      // Fallback: fixed noise profile Wiener-MMSE
-      const noiseProfile = DSP.estimateNoiseProfile(data, vadConfidence, fftSize, hopSize);
-      const nrAmount = params.nrAmount ?? 55;
-      DSP.wienerMMSE(mag, noiseProfile, nrAmount);
+      // Fallback: apply Adaptive Wiener with tracker built at start of pipeline
+      if (adaptiveNoiseFloorTracker) {
+        DSP.applyAdaptiveWiener(mag, vadConfidence, adaptiveNoiseFloorTracker, { overSubtraction: params._effectiveOverSubtraction ?? params.adaptiveWienerOverSubtraction ?? 1.2, spectralFloor: 0.001 });
+      }
     }
     progress(15, 52, 'Spectral Noise Subtracted');
 
