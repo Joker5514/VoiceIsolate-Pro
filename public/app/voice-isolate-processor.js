@@ -190,6 +190,8 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
   }
 
   static get parameterDescriptors() {
+    // BUG-N FIX: params handled via port.postMessage({type:'param',key,value}).
+    // AudioWorklet AudioParams intentionally unused — avoids per-sample interpolation overhead.
     return [];
   }
 }
