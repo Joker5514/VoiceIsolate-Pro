@@ -74,9 +74,8 @@ describe('ml-worker.js', () => {
   });
 
   it('should handle loadModel failure and post error message', async () => {
-    workerGlobal.self.ort.InferenceSession.create.mockRejectedValue(
-      new Error('model load failed')
-    );
+    // Remove ort from self so that initialize() calls importScripts (which we make throw)
+    delete workerGlobal.self.ort;
 
     // Make importScripts throw to simulate a top-level init failure
     workerGlobal.importScripts.mockImplementation(() => {
