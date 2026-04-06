@@ -21,8 +21,8 @@ const Analytics = (() => {
 
   let _events = [];
   let _session = null;
-  let _serverEndpoint = null;
-  let _serverEnabled = false;
+  let _serverEndpoint = null; // BUG-F: server reporting disabled in v22.1
+  let _serverEnabled = false; // BUG-F: forced false, no server calls
   let _flushTimer = null;
 
   // ─── Session Management ───────────────────────────────────────────────────────
@@ -123,7 +123,7 @@ const Analytics = (() => {
       _events = _loadEvents();
       _session = _startSession();
       _serverEndpoint = options.endpoint || null;
-      _serverEnabled = options.serverEnabled || false;
+      _serverEnabled = false; // BUG-F: ignore caller option — no server calls ever
 
       // Track app open
       _track('app:open', { version: '22.0.0' });
@@ -255,7 +255,8 @@ const Analytics = (() => {
   // Auto-track session end on page unload
   if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', () => AN.trackSessionEnd());
-    window.addEventListener('DOMContentLoaded', () => AN.init());
+    windo// BUG-F FIX: Auto-init removed. Call Analytics.init() explicitly after user consent.
+    // w.addEventListener('DOMContentLoaded', () => AN.init());
     window.Analytics = AN;
   }
 
