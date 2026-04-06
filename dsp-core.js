@@ -116,6 +116,8 @@ class AdaptiveNoiseFloor {
  * - LUFS measurement, true-peak limiting, dither
  * - Lightweight spectral noise classifier
  */
+const _hannCache = new Map();
+
 const DSPCore = {
 
   // ===== CONSTANTS =====
@@ -127,10 +129,12 @@ const DSPCore = {
 
   /** Generate Hann window of given length */
   hannWindow(N) {
+    if (_hannCache.has(N)) return _hannCache.get(N);
     const w = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (N - 1)));
     }
+    _hannCache.set(N, w);
     return w;
   },
 
@@ -234,8 +238,8 @@ const DSPCore = {
       for (; j & bit; bit >>= 1) j ^= bit;
       j ^= bit;
       if (i < j) {
-        [real[i], real[j]] = [real[j], real[i]];
-        [imag[i], imag[j]] = [imag[j], imag[i]];
+        let t = real[i]; real[i] = real[j]; real[j] = t;
+        t = imag[i]; imag[i] = imag[j]; imag[j] = t;
       }
     }
 
@@ -402,8 +406,8 @@ const DSPCore = {
         target = rangeLin;
       }
 
-      const coeff = (target > env) ? (1 - attackCoeff) : (1 - releaseCoeff);
-      env += coeff * (target - env);
+      const coeff = target > env ? attackCoeff : releaseCoeff;
+      env = coeff * env + (1 - coeff) * target;
 
       out[i] = data[i] * env;
     }
@@ -442,20 +446,39 @@ const DSPCore = {
   /** S08: De-essing with dynamic compression on sibilance band */
   deEss(data, centerFreq, amount, sr) {
     if (amount <= 0) return data;
-    // Band-isolate sibilance, compress, subtract excess
     const bpCoeffs = this.biquadCoeffs('peaking', centerFreq, 2, 12, sr);
-    const sibilance = new Float32Array(data);
-    this.biquadProcess(sibilance, bpCoeffs);
-
     const threshold = 0.1;
-    const ratio = 1 + amount / 25; // 1:1 to 5:1
-    for (let i = 0; i < data.length; i++) {
-      const sAbs = Math.abs(sibilance[i]);
-      if (sAbs > threshold) {
-        const excess = sAbs - threshold;
+    const ratio = 1 + amount / 25;
+    const blockSize = 128;
+    let z1 = 0, z2 = 0;
+    const { b0, b1, b2, a1, a2 } = bpCoeffs;
+
+    for (let b = 0; b < data.length; b += blockSize) {
+      const end = Math.min(b + blockSize, data.length);
+      let energy = 0;
+      // Run biquad in-place on a block to measure sibilance energy, accumulate without alloc
+      const blockStates = { z1, z2 };
+      let bz1 = z1, bz2 = z2;
+      for (let i = b; i < end; i++) {
+        const x = data[i];
+        const y = b0 * x + bz1;
+        bz1 = b1 * x - a1 * y + bz2;
+        bz2 = b2 * x - a2 * y;
+        energy += y * y;
+      }
+      const rms = Math.sqrt(energy / (end - b));
+      if (rms > threshold) {
+        const excess = rms - threshold;
         const reduced = threshold + excess / ratio;
-        const reduction = sAbs > 0 ? reduced / sAbs : 1;
-        data[i] *= (1 - amount / 100) + (amount / 100) * reduction;
+        const reduction = (1 - amount / 100) + (amount / 100) * (reduced / rms);
+        for (let i = b; i < end; i++) data[i] *= reduction;
+      }
+      // Advance filter state through block for continuity
+      for (let i = b; i < end; i++) {
+        const x = data[i];
+        const y = b0 * x + z1;
+        z1 = b1 * x - a1 * y + z2;
+        z2 = b2 * x - a2 * y;
       }
     }
     return data;
@@ -521,7 +544,11 @@ const DSPCore = {
 
   /** S16: 32 ERB band spectral gate */
   spectralGate(mag, floorDb, sr) {
-    const erbBands = this._computeERBBands(32, sr, mag[0]?.length || 2049);
+    const numBins = mag[0]?.length || 2049;
+    if (!this._erbCache || this._erbCache.sr !== sr || this._erbCache.bins !== numBins) {
+      this._erbCache = { sr, bins: numBins, bands: this._computeERBBands(32, sr, numBins) };
+    }
+    const erbBands = this._erbCache.bands;
     const floorLin = Math.pow(10, floorDb / 20);
 
     for (let f = 0; f < mag.length; f++) {
@@ -748,17 +775,23 @@ const DSPCore = {
     const attackCoeff = Math.exp(-1 / (attack * 0.001 * sr));
     const releaseCoeff = Math.exp(-1 / (release * 0.001 * sr));
     const makeupLin = Math.pow(10, (makeup || 0) / 20);
-    let envDb = -96;
+    const blockSize = 64;
+    let envPow = 1e-10; // IIR envelope on |data[i]|²
 
-    for (let i = 0; i < data.length; i++) {
-      const inputDb = data[i] !== 0 ? 20 * Math.log10(Math.abs(data[i])) : -96;
+    for (let b = 0; b < data.length; b += blockSize) {
+      const end = Math.min(b + blockSize, data.length);
 
-      // Envelope follower
-      if (inputDb > envDb) {
-        envDb = attackCoeff * envDb + (1 - attackCoeff) * inputDb;
-      } else {
-        envDb = releaseCoeff * envDb + (1 - releaseCoeff) * inputDb;
-      }
+      // Block-RMS: compute log once per block
+      let blockSum = 0;
+      for (let i = b; i < end; i++) blockSum += data[i] * data[i];
+      const blockRMS = Math.sqrt(blockSum / (end - b) + 1e-10);
+
+      // IIR envelope follower on power
+      const target = blockSum / (end - b) + 1e-10;
+      const coeff = target > envPow ? (1 - attackCoeff) : (1 - releaseCoeff);
+      envPow += coeff * (target - envPow);
+
+      const envDb = 10 * Math.log10(envPow + 1e-10);
 
       // Gain computation with soft knee
       let gainDb = 0;
@@ -766,26 +799,33 @@ const DSPCore = {
         gainDb = threshDb + (envDb - threshDb) / ratio - envDb;
       } else if (envDb > threshDb - kneeHalf) {
         const x = envDb - threshDb + kneeHalf;
-        gainDb = ((1 / ratio - 1) * x * x) / (2 * knee) ;
+        gainDb = ((1 / ratio - 1) * x * x) / (2 * knee);
       }
 
-      data[i] *= Math.pow(10, gainDb / 20) * makeupLin;
+      const gain = Math.pow(10, gainDb / 20) * makeupLin;
+      for (let i = b; i < end; i++) data[i] *= gain;
     }
     return data;
   },
 
   /** S29: ITU-R BS.1770 LUFS measurement */
   measureLUFS(data, sr) {
-    // Simplified integrated loudness measurement
+    // K-weighting: Stage 1 high-shelf +4dB at 1500Hz, Stage 2 highpass at 38Hz Q=0.5
+    const filtered = new Float32Array(data);
+    const shelf = this.biquadCoeffs('highshelf', 1500, 0.707, 4, sr);
+    const hp = this.biquadCoeffs('highpass', 38, 0.5, 0, sr);
+    this.biquadProcess(filtered, shelf);
+    this.biquadProcess(filtered, hp);
+
     const blockSize = Math.floor(0.4 * sr); // 400ms blocks
     const stepSize = Math.floor(blockSize * 0.25); // 75% overlap
     let sumSquared = 0;
     let blockCount = 0;
 
-    for (let i = 0; i <= data.length - blockSize; i += stepSize) {
+    for (let i = 0; i <= filtered.length - blockSize; i += stepSize) {
       let blockPower = 0;
       for (let j = 0; j < blockSize; j++) {
-        blockPower += data[i + j] * data[i + j];
+        blockPower += filtered[i + j] * filtered[i + j];
       }
       blockPower /= blockSize;
       if (blockPower > 1e-10) {
@@ -838,16 +878,25 @@ const DSPCore = {
     return { left: out_l, right: out_r };
   },
 
-  /** S32: True peak limiter with 4x oversampling */
+  /** S32: True peak limiter with 2x oversampling (linear interpolation) */
   truePeakLimit(data, ceilingDb) {
     const ceiling = Math.pow(10, ceilingDb / 20);
-    // Simplified: hard clip with soft-knee
-    for (let i = 0; i < data.length; i++) {
-      if (data[i] > ceiling) {
-        data[i] = ceiling * Math.tanh(data[i] / ceiling);
-      } else if (data[i] < -ceiling) {
-        data[i] = -ceiling * Math.tanh(data[i] / -ceiling);
+    // 2x upsample via linear interpolation, detect peaks, apply ceiling, downsample
+    for (let i = 0; i < data.length - 1; i++) {
+      const s0 = data[i];
+      const s1 = data[i + 1];
+      const mid = (s0 + s1) * 0.5; // interpolated sample between i and i+1
+      const peak = Math.max(Math.abs(s0), Math.abs(mid));
+      if (peak > ceiling) {
+        const gain = ceiling / peak;
+        data[i] *= gain;
+        // mid is virtual — reflect gain back to neighbors
+        data[i + 1] *= gain;
       }
+    }
+    // Handle last sample
+    if (Math.abs(data[data.length - 1]) > ceiling) {
+      data[data.length - 1] = Math.sign(data[data.length - 1]) * ceiling;
     }
     return data;
   },
@@ -1046,10 +1095,10 @@ const DSPCore = {
     } else if (bitDepth === 24) {
       for (let i = 0; i < numSamples; i++) {
         const s = Math.max(-1, Math.min(1, data[i]));
-        const val = Math.floor(s * 0x7FFFFF);
+        const val = (Math.round(s * 8388607) & 0xFFFFFF) >>> 0;
         view.setUint8(offset + i * 3, val & 0xFF);
-        view.setUint8(offset + i * 3 + 1, (val >> 8) & 0xFF);
-        view.setUint8(offset + i * 3 + 2, (val >> 16) & 0xFF);
+        view.setUint8(offset + i * 3 + 1, (val >>> 8) & 0xFF);
+        view.setUint8(offset + i * 3 + 2, (val >>> 16) & 0xFF);
       }
     } else { // 32-bit float
       for (let i = 0; i < numSamples; i++) {

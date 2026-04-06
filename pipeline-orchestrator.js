@@ -41,6 +41,7 @@ class PipelineOrchestrator {
     this.sabSupported = typeof SharedArrayBuffer !== 'undefined';
     this._workletLoaded = false; // FIX 2: guard against re-registration on repeated ensureContext() calls
     this._currentPlayingBuffer = null; // FIX 14: explicit tracker for toggleAB() while paused
+    this._activeReject = null;
 
     // Callbacks
     this.onStatusChange = () => {};
@@ -225,16 +226,20 @@ class PipelineOrchestrator {
   }
 
   /** Resume from paused position */
-  resume() {
+  async resume() {
     // FIX 7: Just resume the context — the scheduled source resumes automatically.
     // Calling play() here would create a second BufferSourceNode, doubling output.
     if (this.isPlaying || !this.audioCtx) return;
 
-    this.audioCtx.resume().then(() => {
+    const resumeStart = this.audioCtx.currentTime;
+    try {
+      await this.audioCtx.resume();
+      this.startedAt = resumeStart;
       this.isPlaying = true;
-      this.startedAt = this.audioCtx.currentTime;
       this.onStatusChange('playing');
-    }).catch(err => console.warn('AudioContext resume failed:', err));
+    } catch (err) {
+      console.warn('AudioContext resume failed:', err);
+    }
   }
 
   /** Stop playback, reset position */
@@ -289,6 +294,11 @@ class PipelineOrchestrator {
       this.dspWorker = null;
     }
 
+    if (this._activeReject) {
+      this._activeReject(new Error('Superseded'));
+      this._activeReject = null;
+    }
+
     const buf = this.inputBuffer;
     if (!buf) throw new Error('No audio loaded');
 
@@ -300,6 +310,7 @@ class PipelineOrchestrator {
     const exportParams = params || this.state.export();
 
     return new Promise((resolve, reject) => {
+      this._activeReject = reject;
       const worker = new Worker('dsp-worker.js');
 
       // FIX 5: declare cleanupML before the if-block so worker.onmessage can always call it
@@ -336,6 +347,7 @@ class PipelineOrchestrator {
           case 'result': {
             cleanupML(); // FIX 5: remove ML listener
             worker.terminate();
+            this._activeReject = null;
             const ctx = this.ensureContext();
             const outputBuf = ctx.createBuffer(1, msg.data.length, msg.sampleRate);
             outputBuf.getChannelData(0).set(msg.data);
@@ -353,6 +365,7 @@ class PipelineOrchestrator {
           case 'error':
             cleanupML(); // FIX 5: remove ML listener
             worker.terminate();
+            this._activeReject = null;
             this.mode = 'idle';
             this.onStatusChange('error');
             this.onError(msg.msg);
@@ -362,6 +375,7 @@ class PipelineOrchestrator {
           case 'aborted':
             cleanupML(); // FIX 5: remove ML listener
             worker.terminate();
+            this._activeReject = null;
             this.mode = 'idle';
             this.onStatusChange('idle');
             reject(new Error('Processing aborted'));
@@ -372,6 +386,7 @@ class PipelineOrchestrator {
       worker.onerror = (err) => {
         cleanupML(); // FIX 5: remove ML listener
         worker.terminate();
+        this._activeReject = null;
         this.mode = 'idle';
         reject(err);
       };
@@ -453,7 +468,7 @@ class PipelineOrchestrator {
   // ===== CLEANUP =====
 
   /** Tear down everything */
-  destroy() {
+  async destroy() {
     this.stop(true);
 
     if (this.workletNode) {
@@ -467,6 +482,7 @@ class PipelineOrchestrator {
 
     if (this.mlWorker) {
       this.mlWorker.postMessage({ type: 'dispose' });
+      await new Promise(r => setTimeout(r, 200));
       this.mlWorker.terminate();
       this.mlWorker = null;
     }
@@ -505,18 +521,32 @@ class PipelineOrchestrator {
   }
 
   _encodeWAV(data, sr, bits = 16) {
+    const channels = 1;
     const bps = bits / 8;
     const ds = data.length * bps;
     const b = new ArrayBuffer(44 + ds);
     const v = new DataView(b);
     const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
     w(0,'RIFF'); v.setUint32(4,36+ds,true); w(8,'WAVE'); w(12,'fmt ');
-    v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true);
-    v.setUint32(24,sr,true); v.setUint32(28,sr*bps,true);
-    v.setUint16(32,bps,true); v.setUint16(34,bits,true);
+    v.setUint32(16,16,true);
+    v.setUint16(20, bits === 32 ? 3 : 1, true); // 3=float, 1=PCM
+    v.setUint16(22,channels,true);
+    v.setUint32(24,sr,true);
+    v.setUint32(28, sr * channels * bps, true); // byteRate
+    v.setUint16(32, channels * bps, true);      // blockAlign
+    v.setUint16(34,bits,true);
     w(36,'data'); v.setUint32(40,ds,true);
-    for (let i=0;i<data.length;i++) {
-      v.setInt16(44+i*2, Math.max(-1,Math.min(1,data[i]))*0x7FFF, true);
+    for (let i = 0; i < data.length; i++) {
+      if (bits === 32) {
+        v.setFloat32(44 + i * 4, data[i], true);
+      } else if (bits === 24) {
+        const val = (Math.round(Math.max(-1, Math.min(1, data[i])) * 8388607) & 0xFFFFFF) >>> 0;
+        v.setUint8(44 + i * 3,      val & 0xFF);
+        v.setUint8(44 + i * 3 + 1, (val >>> 8) & 0xFF);
+        v.setUint8(44 + i * 3 + 2, (val >>> 16) & 0xFF);
+      } else {
+        v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, data[i])) * 0x7FFF, true);
+      }
     }
     return b;
   }
