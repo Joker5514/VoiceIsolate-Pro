@@ -502,7 +502,8 @@ async function handleSeparate(msg) {
 
       self.postMessage({ type: 'progress', id, stage: 'separation', pct: Math.round(((c+1)/totalChunks)*100) });
     }
-    self.postMessage({ type: 'separateResult', id, data: result }, [result.buffer]);
+    const output = result;
+    self.postMessage({ type: 'separateResult', id, data: output }, [output.buffer]);
   } catch (err) {
     self.postMessage({ type: 'error', id, msg: err.message });
   }

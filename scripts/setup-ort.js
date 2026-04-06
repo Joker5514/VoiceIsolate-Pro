@@ -18,11 +18,11 @@
  *   public/lib/ort-wasm-simd-threaded.wasm
  */
 
-import { existsSync, mkdirSync, copyFileSync, readdirSync } from 'fs';
-import { join, resolve } from 'path';
-import { fileURLToPath } from 'url';
+'use strict';
 
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const { existsSync, mkdirSync, copyFileSync, readdirSync } = require('fs');
+const { join, resolve } = require('path');
+
 const ROOT      = resolve(__dirname, '..');
 const SRC_DIR   = join(ROOT, 'node_modules', 'onnxruntime-web', 'dist');
 const DEST_DIR  = join(ROOT, 'public', 'lib');

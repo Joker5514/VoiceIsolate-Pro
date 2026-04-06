@@ -197,6 +197,7 @@ class VoiceIsolatePro {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
       // BUG-A FIX: addModule() belongs only in PipelineOrchestrator.initWorklet().
+      // Worklet registration: ctx.audioWorklet.addModule('./voice-isolate-processor.js')
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;
