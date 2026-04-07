@@ -167,28 +167,27 @@
           </label>
         </div>
         <div class="tp-scrub-row">
-          <div class="tp-scrub-track" id="tpScrubTrack" role="slider" aria-label="Playback position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
-            <div id="tpScrubFill" class="tp-scrub-fill"></div>
-            <div id="tpScrubThumb" class="tp-scrub-thumb"></div>
-          </div>
+          <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" step="1" value="0" disabled aria-label="Playback position" />
         </div>
       </div>
 
       <!-- Waveform -->
-      <!-- NOTE: canvas IDs unified to match app.js cacheDom() lookups -->
       <div class="card viz-card" id="waveCard">
         <div class="viz-hdr"><span>Waveform</span><span class="viz-badge">RMS + Peak</span></div>
-        <canvas id="waveformCanvas" class="viz-canvas" aria-label="Processed audio waveform"></canvas>
-        <canvas id="waveformOrig" class="viz-canvas" style="opacity:0.45" aria-label="Original audio waveform"></canvas>
+        <canvas id="waveProcCanvas" class="viz-canvas" aria-label="Processed audio waveform"></canvas>
+        <canvas id="waveOrigCanvas" class="viz-canvas" style="opacity:0.45" aria-label="Original audio waveform"></canvas>
       </div>
 
       <!-- Spectrogram -->
       <div class="card viz-card" id="specCard">
         <div class="viz-hdr"><span>Spectrogram</span><span class="viz-badge">FFT 2048</span><span class="viz-badge" id="specModeBadge">2D</span>
+          <button id="spectro3DReset" class="btn btn-xs">Reset 3D</button>
           <button id="spec3dBtn" class="btn btn-xs" style="margin-left:auto">Toggle 3D</button>
         </div>
-        <canvas id="specCanvas" class="viz-canvas" aria-label="Spectrogram visualization"></canvas>
-        <canvas id="spec3dCanvas" class="viz-canvas" style="display:none" aria-label="3D spectrogram visualization"></canvas>
+        <div id="spectro3DContainer" style="position:relative;width:100%;flex:1;min-height:0">
+          <canvas id="spectro2DCanvas" class="viz-canvas" aria-label="Spectrogram visualization"></canvas>
+          <canvas id="spectro3DCanvas" class="viz-canvas" style="display:none" aria-label="3D spectrogram visualization"></canvas>
+        </div>
       </div>
 
       <!-- Comparison -->

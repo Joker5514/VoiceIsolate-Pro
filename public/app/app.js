@@ -1576,7 +1576,7 @@ class VoiceIsolatePro {
   // ---- 2D Spectrogram ----
   startSpectro(ana){
     this.stopSpectro(); this.spectroRunning=true; this.spectroX=0; this.specOverlayX=0;
-    const c=this.dom.spectro2DCanvas; this.resizeCanvas(c);
+    const c=this.dom.spectro2DCanvas; if(!c)return; this.resizeCanvas(c);
     const x=c.getContext('2d'); x.fillStyle='#030306'; x.fillRect(0,0,c.width,c.height);
     const bLen=ana.frequencyBinCount; const arr=new Uint8Array(bLen);
     const draw=()=>{
@@ -1597,7 +1597,7 @@ class VoiceIsolatePro {
   onSpectroClick(e){const r=this.dom.spectro3DCanvas.getBoundingClientRect();const y=1-((e.clientY-r.top)/r.height);const sr=this.ctx?this.ctx.sampleRate:44100;const freq=y*(sr/2);const bw=sr/20;const lo=Math.max(0,freq-bw/2);const hi=freq+bw/2;const key=Math.round(lo)+'-'+Math.round(hi);let found=false;for(const b of this.mutedBands){if(b.key===key){this.mutedBands.delete(b);found=true;break;}}if(!found)this.mutedBands.add({lo,hi,key});}
 
   startFreq(ana){
-    const c=this.dom.freqCanvas;this.resizeCanvas(c);const x=c.getContext('2d');const bLen=ana.frequencyBinCount;const arr=new Uint8Array(bLen);
+    const c=this.dom.freqCanvas;if(!c)return;this.resizeCanvas(c);const x=c.getContext('2d');const bLen=ana.frequencyBinCount;const arr=new Uint8Array(bLen);
     const draw=()=>{if(!this.spectroRunning)return;requestAnimationFrame(draw);ana.getByteFrequencyData(arr);const w=c.width;const h=c.height;x.fillStyle='#030306';x.fillRect(0,0,w,h);x.strokeStyle='rgba(255,255,255,0.03)';x.lineWidth=1;for(let i=1;i<5;i++){const gy=(i/5)*h;x.beginPath();x.moveTo(0,gy);x.lineTo(w,gy);x.stroke();}const bW=(w/bLen)*2.5;let px=0;for(let i=0;i<bLen&&px<w;i++){const bH=(arr[i]/255)*h;const f=i/bLen;let hue;if(f<0.05)hue=220;else if(f<0.2)hue=0;else if(f<0.5)hue=10;else if(f<0.75)hue=130;else hue=50;x.fillStyle='hsla('+hue+',75%,50%,0.75)';x.fillRect(px,h-bH,Math.max(1,bW-1),bH);px+=bW;}};
     draw();
   }
@@ -1651,8 +1651,10 @@ class VoiceIsolatePro {
     [this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,
      this.dom.lufsCanvas,this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c => this.resizeCanvas(c));
     // Clear spec overlay
-    const sx = this.dom.specOverlayCanvas.getContext('2d');
-    sx.fillStyle = '#030306'; sx.fillRect(0,0,this.dom.specOverlayCanvas.width,this.dom.specOverlayCanvas.height);
+    if (this.dom.specOverlayCanvas) {
+      const sx = this.dom.specOverlayCanvas.getContext('2d');
+      sx.fillStyle = '#030306'; sx.fillRect(0,0,this.dom.specOverlayCanvas.width,this.dom.specOverlayCanvas.height);
+    }
 
     const origBuf = new Float32Array(2048);
     const procBuf = new Float32Array(2048);
