@@ -408,9 +408,9 @@ class DSPProcessor extends AudioWorkletProcessor {
       const binHz      = sampleRate / N;
       let loBin        = Math.round((p.voiceFocusLo || 0) / binHz);
       let hiBin        = Math.round((p.voiceFocusHi || 0) / binHz);
-      if (!Number.isFinite(loBin) || loBin < 0) loBin = 0;
-      else if (loBin >= halfN) loBin = halfN - 1;
-      if (!Number.isFinite(hiBin) || hiBin >= halfN) hiBin = halfN - 1;
+      loBin = Math.max(0, Math.min(Number.isFinite(loBin) ? loBin : 0, halfN - 1));
+      hiBin = Math.max(0, Math.min(Number.isFinite(hiBin) ? hiBin : 0, halfN - 1));
+      if (loBin > hiBin) [loBin, hiBin] = [hiBin, loBin];
       else if (hiBin < 0) hiBin = 0;
       if (hiBin < loBin) hiBin = loBin;
       if (hiBin >= halfN) hiBin = halfN - 1;
