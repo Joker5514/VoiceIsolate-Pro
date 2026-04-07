@@ -1540,42 +1540,6 @@ class VoiceIsolatePro {
     }
   }
 
-  // ---- ML WORKER: DeepFilterNet3 + Demucs + VAD ----
-
-  // Spin up ml-worker.js and initialise all models. Non-blocking; pipeline checks
-  // this.mlWorkerReady before dispatching work.
-  initMLWorker() {
-    if (this.mlWorker) return;
-    try {
-      this.mlWorker = new Worker('./ml-worker.js');
-      this.mlWorker.onmessage = (e) => {
-        const { type } = e.data;
-        if (type === 'ready') {
-          this.mlWorkerReady = true;
-          this.mlWorkerModels = e.data.models || {};
-          structuredLog('info', 'ML worker ready', { provider: e.data.provider, models: e.data.models });
-          // v20: Share ML worker with orchestrator
-          if (this.orchestrator) this.orchestrator.mlWorker = this.mlWorker;
-        } else if (type === 'log') {
-          structuredLog(e.data.level, '[ml-worker] ' + e.data.msg);
-        }
-        // 'result' and 'progress' messages are handled per-call via a promise wrapper
-      };
-      this.mlWorker.onerror = (err) => {
-        structuredLog('warn', 'ML worker error', { error: err.message });
-        this.mlWorkerReady = false;
-      };
-      // v20: Pass ONNX Runtime URL and initial model list
-      this.mlWorker.postMessage({
-        type: 'init',
-        ortUrl: '/lib/ort.min.js', // ARCH-04 FIX: local only, never CDN
-        models: ['vad']
-      });
-    } catch (e) {
-      structuredLog('warn', 'Could not start ML worker', { error: e?.message || String(e) });
-    }
-  }
-
   async pip(i, t) { const pct = Math.round((i + 1) / t * 100); this.dom.pipeFill.style.width = pct + '%'; this.dom.pipeBar.setAttribute('aria-valuenow', String(pct)); this.dom.pipeStage.textContent = (i + 1) + '/' + t; this.dom.pipeDetail.textContent = STAGES[i] || 'Finalizing'; this.dom.hStatus.textContent = 'S' + (i + 1); await new Promise(r => setTimeout(r, 8)); }
   mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
   peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
@@ -2202,13 +2166,3 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
     }
   }, { once: true });
 })();
-document.addEventListener('DOMContentLoaded', () => {
-  if (!window.vip && !window._vipApp) {
-    window.vip = new VoiceIsolatePro();
-    window._vipApp = window.vip;
-  } else if (window.vip && !window._vipApp) {
-    window._vipApp = window.vip;
-  } else if (!window.vip && window._vipApp) {
-    window.vip = window._vipApp;
-  }
-});

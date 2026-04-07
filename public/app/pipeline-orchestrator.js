@@ -86,6 +86,16 @@ class PipelineOrchestrator {
 
   // ── AudioContext ────────────────────────────────────────────────────────
   async _createAudioContext() {
+    // Re-use pre-warmed suspended ctx if available (set by bootstrapOrchestrator prewarm)
+    if (this._preWarmedCtx && this._preWarmedCtx.state !== 'closed') {
+      this.ctx = this._preWarmedCtx;
+      this._preWarmedCtx = null;
+      this._workletModulesLoaded = true;
+      if (this.ctx.state === 'suspended') await this.ctx.resume();
+      const app = window._vipApp;
+      if (app) app.ctx = this.ctx;
+      return;
+    }
     // Re-use app's existing AudioContext if available to avoid double-context
     const app = window._vipApp;
     if (app && app.ctx && app.ctx.state !== 'closed') {
@@ -109,11 +119,14 @@ class PipelineOrchestrator {
   // ── AudioWorklet loading ─────────────────────────────────────────────────
   async _loadWorklet() {
     if (!this.ctx) throw new Error('AudioContext not initialised');
-    try {
-      await this.ctx.audioWorklet.addModule('./dsp-processor.js');
-    } catch (err) {
-      console.error('[Orchestrator] Failed to load AudioWorklet module:', err);
-      throw err;
+    if (!this._workletModulesLoaded) {
+      try {
+        await this.ctx.audioWorklet.addModule('./dsp-processor.js');
+        await this.ctx.audioWorklet.addModule('./voice-isolate-processor.js');
+      } catch (err) {
+        console.error('[Orchestrator] Failed to load AudioWorklet module:', err);
+        throw err;
+      }
     }
 
     this.workletNode = new AudioWorkletNode(this.ctx, 'dsp-processor', {
@@ -443,6 +456,22 @@ class PipelineOrchestrator {
     orch._initMLWorker().catch(e =>
       console.warn('[Orchestrator] ML worker prewarm error:', e)
     );
+
+    // ── Pre-warm AudioWorklet modules ─────────────────────────────────
+    // A suspended AudioContext can be created without a user gesture;
+    // addModule() only requires an AudioContext to exist, not be running.
+    // This eliminates 50-200 ms of worklet compile latency on first gesture.
+    orch._preWarmWorklet = (async () => {
+      try {
+        const suspCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+        await suspCtx.audioWorklet.addModule('./dsp-processor.js');
+        await suspCtx.audioWorklet.addModule('./voice-isolate-processor.js');
+        orch._preWarmedCtx = suspCtx;
+        console.info('[Orchestrator] AudioWorklet pre-warmed');
+      } catch (e) {
+        console.warn('[Orchestrator] Worklet prewarm failed (non-fatal):', e);
+      }
+    })();
 
     // ── Lazy init on first gesture ─────────────────────────────────────
     // We defer AudioContext creation to first user interaction to satisfy
