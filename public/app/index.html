@@ -172,6 +172,8 @@
             <div id="tpScrubFill" class="tp-scrub-fill"></div>
             <div id="tpScrubThumb" class="tp-scrub-thumb"></div>
           </div>
+          <!-- Hidden range input for app.js seek logic compatibility -->
+          <input type="range" id="tpSeek" min="0" max="1000" value="0" step="1" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;" tabindex="-1" aria-hidden="true" />
         </div>
       </div>
 
