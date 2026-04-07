@@ -405,8 +405,12 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     // ── Voice Isolation (spectral mask, in-place) ─────────────────────────
     if (p.voiceIso > 0 || p.bgSuppress > 0) {
-      const loBin      = Math.round(p.voiceFocusLo / (sampleRate / N));
-      const hiBin      = Math.round(p.voiceFocusHi / (sampleRate / N));
+      const binHz      = sampleRate / N;
+      let loBin        = Math.round((p.voiceFocusLo || 0) / binHz);
+      let hiBin        = Math.round((p.voiceFocusHi || 0) / binHz);
+      if (!Number.isFinite(loBin) || loBin < 0) loBin = 0;
+      if (!Number.isFinite(hiBin) || hiBin >= halfN) hiBin = halfN - 1;
+      if (hiBin < loBin) hiBin = loBin;
       const suppress   = 1.0 - (p.bgSuppress / 100) * 0.95;
       const boost      = 1.0 + (p.voiceIso   / 100) * 0.5;
       for (let k = 0; k < halfN; k++) {
