@@ -100,6 +100,7 @@ function makeHannWindow(N) {
 // Layout:  Int32[0] = writePtr,  Int32[1] = readPtr,  Float32[2…] = data
 // All pointer arithmetic is modulo `capacity` (number of slots).
 
+// eslint-disable-next-line no-unused-vars
 function ringWrite(view32, f32view, writeSlot, frameData, capacity) {
   // Write PCM frame into slot, then atomically advance writePtr
   const offset = 2 + writeSlot * frameData.length;
@@ -108,6 +109,7 @@ function ringWrite(view32, f32view, writeSlot, frameData, capacity) {
   Atomics.notify(view32, 0);
 }
 
+// eslint-disable-next-line no-unused-vars
 function ringRead(view32, f32view, readSlot, out, capacity) {
   const offset = 2 + readSlot * out.length;
   for (let i = 0; i < out.length; i++) out[i] = f32view[offset + i];
@@ -230,7 +232,7 @@ class DSPProcessor extends AudioWorkletProcessor {
    *  - SharedArrayBuffer access via Atomics is non-blocking here
    *    (Atomics.store / Atomics.load only — never Atomics.wait).
    */
-  process(inputs, outputs, parameters) {
+  process(inputs, outputs) {
     const input  = inputs[0];
     const output = outputs[0];
     if (!input || !input[0]) return true;
@@ -240,7 +242,6 @@ class DSPProcessor extends AudioWorkletProcessor {
     const N     = this.fftSize;
     const H     = this.hopSize;
     const halfN = N / 2 + 1;
-    const win   = this.hannWin;
     const p     = this.params;
 
     // ── 1. Noise gate (time-domain, sample-by-sample) ──────────────────────
@@ -359,7 +360,6 @@ class DSPProcessor extends AudioWorkletProcessor {
   _processFrame() {
     const N     = this.fftSize;
     const halfN = N / 2 + 1;
-    const H     = this.hopSize;
     const win   = this.hannWin;
     const p     = this.params;
 

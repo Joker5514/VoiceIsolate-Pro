@@ -1927,7 +1927,6 @@ class VoiceIsolatePro {
     // ML mask overlay (magenta tint)
     if (this.overlays.ml) {
       for (let y = 0; y < h; y += 2) {
-        const fi = Math.floor((y / h) * Math.min(256, bLen));
         const val = (freqBuf[bLen - 1 - Math.floor((y/h)*bLen)] || 0) / 255;
         // Simulate ML mask: voice band (80Hz-6kHz) = low attenuation, rest = high
         const bandFrac = (h - y) / h;

@@ -9,6 +9,9 @@
 // BUG-K FIX: explicit relative path prevents failure in some worker origins
 importScripts('./dsp-core.js');
 
+// eslint-disable-next-line no-undef
+const DSPCoreLocal = self.DSPCore || DSPCore;
+
 // ONNX Runtime is loaded by the main thread before creating this worker.
 // Never importScripts ort.min.js here — it must come from /lib/ort.min.js
 // and be loaded via WorkerManager before this worker is spawned.
@@ -45,7 +48,7 @@ self.onmessage = async function (e) {
 // ---------------------------------------------------------------------------
 async function handleInit(payload) {
   // DSPCore is a plain-object singleton, not a class — do not call with `new`
-  dspCore = DSPCore;
+  dspCore = DSPCoreLocal;
   isInitialized = true;
   return { status: 'initialized', sampleRate: payload.sampleRate || 48000 };
 }

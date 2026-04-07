@@ -300,7 +300,7 @@ async function processChunkWithMask(chunk, session) {
       gainMask = new Float32Array(rawMask.data);
       rawMask.dispose?.();
       tensor.dispose?.();
-    } catch (_) {
+    } catch (err) {
       gainMask = new Float32Array(halfN).fill(1);
     }
   } else {
