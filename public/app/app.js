@@ -288,6 +288,7 @@ class VoiceIsolatePro {
       spectro2DCanvas:g('specCanvas'),
       waveOrigCanvas:g('waveformOrig'), waveProcCanvas:g('waveformCanvas'),
       freqCanvas:g('noiseCanvas'),
+      compCanvas:g('compCanvas'),
       pipeFill:g('pipeFill'), pipeBar:g('pipeBar'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
       hSNR:g('hSNR'), hDur:g('hDur'), hSR:g('hSR'), hCh:g('hCh'),
       hRMS:g('hRMS'), hPeak:g('hPeak'), hLUFS:g('hLUFS'), hStatus:g('hStatus'),
@@ -1117,6 +1118,8 @@ class VoiceIsolatePro {
       this.dom.hSNR.textContent = (snr >= 0 ? '+' : '') + snr.toFixed(1) + ' dB';
       this.resizeCanvas(this.dom.waveProcCanvas);
       this.drawWaveform(fin, this.dom.waveProcCanvas, '#22d3ee');
+      this.resizeCanvas(this.dom.compCanvas);
+      this.drawComparison(this.inputBuffer, fin);
       this.dom.stVoices.textContent = this.estVoices(fin);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
@@ -1558,13 +1561,14 @@ class VoiceIsolatePro {
   // ======== VISUALIZATIONS (existing) ========
   initCanvases(){
     const all = [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas,
-      this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
+      this.dom.compCanvas,this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
       this.dom.saliencyCanvas,this.dom.clusterCanvas];
     all.forEach(c => { if(c) this.resizeCanvas(c); });
     this.clearCanvas(this.dom.waveOrigCanvas,'Load audio to begin');
     this.clearCanvas(this.dom.waveProcCanvas,'Process to see result');
     this.clearCanvas(this.dom.spectro2DCanvas,'Play audio for spectrogram');
     this.clearCanvas(this.dom.freqCanvas,'Play audio for analyzer');
+    this.clearCanvas(this.dom.compCanvas,'Process audio for before/after comparison');
     this.clearCanvas(this.dom.abWaveCanvas,'Play audio for A/B comparison');
     this.clearCanvas(this.dom.oscCanvas,'Play audio for oscilloscope');
     this.clearCanvas(this.dom.specOverlayCanvas,'Play audio for spectrogram overlays');
@@ -1577,6 +1581,49 @@ class VoiceIsolatePro {
   clearCanvas(c,txt){if(!c)return;const x=c.getContext('2d');x.fillStyle='#030306';x.fillRect(0,0,c.width,c.height);if(txt){x.font='11px Outfit,sans-serif';x.fillStyle='rgba(255,255,255,0.12)';x.textAlign='center';x.fillText(txt,c.width/2,c.height/2+3);}}
 
   drawWaveform(buf,canvas,color){if(!canvas)return;const x=canvas.getContext('2d');const w=canvas.width;const h=canvas.height;x.fillStyle='#030306';x.fillRect(0,0,w,h);if(!buf)return;const d=buf.getChannelData(0);const step=Math.max(1,Math.floor(d.length/w));x.strokeStyle='rgba(255,255,255,0.04)';x.lineWidth=1;x.beginPath();x.moveTo(0,h/2);x.lineTo(w,h/2);x.stroke();x.fillStyle=color;for(let px=0;px<w;px++){const idx=px*step;let mn=1,mx=-1;for(let i=0;i<step&&(idx+i)<d.length;i++){const v=d[idx+i];if(v<mn)mn=v;if(v>mx)mx=v;}const y1=((1-mx)*0.5)*h;const y2=((1-mn)*0.5)*h;x.globalAlpha=0.8;x.fillRect(px,y1,1,Math.max(1,y2-y1));}x.globalAlpha=1;}
+
+  // ---- Before/After Comparison ----
+  drawComparison(origBuf, procBuf) {
+    const c = this.dom.compCanvas; if (!c) return;
+    const x = c.getContext('2d');
+    const w = c.width, h = c.height;
+    x.fillStyle = '#030306'; x.fillRect(0, 0, w, h);
+    if (!origBuf || !procBuf) return;
+    const half = Math.floor(w / 2);
+    // Divider
+    x.strokeStyle = 'rgba(255,255,255,0.06)'; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(half, 0); x.lineTo(half, h); x.stroke();
+    // Labels
+    x.font = '9px JetBrains Mono';
+    x.fillStyle = 'rgba(220,38,38,0.45)'; x.textAlign = 'center';
+    x.fillText('BEFORE', half / 2, 11);
+    x.fillStyle = 'rgba(34,211,238,0.45)'; x.textAlign = 'center';
+    x.fillText('AFTER', half + half / 2, 11);
+    // Helper: draw waveform into a horizontal region [x0, x0+rw]
+    const drawHalf = (buf, x0, rw, color) => {
+      const d = buf.getChannelData(0);
+      const step = Math.max(1, Math.floor(d.length / rw));
+      x.fillStyle = color;
+      for (let px = 0; px < rw; px++) {
+        const idx = px * step;
+        let mn = 1, mx = -1;
+        for (let i = 0; i < step && (idx + i) < d.length; i++) {
+          const v = d[idx + i]; if (v < mn) mn = v; if (v > mx) mx = v;
+        }
+        const y1 = ((1 - mx) * 0.5) * h;
+        const y2 = ((1 - mn) * 0.5) * h;
+        x.globalAlpha = 0.75;
+        x.fillRect(x0 + px, y1, 1, Math.max(1, y2 - y1));
+      }
+      x.globalAlpha = 1;
+    };
+    // Center line for each half
+    x.strokeStyle = 'rgba(255,255,255,0.04)'; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(0, h / 2); x.lineTo(half, h / 2); x.stroke();
+    x.beginPath(); x.moveTo(half, h / 2); x.lineTo(w, h / 2); x.stroke();
+    drawHalf(origBuf, 0, half, '#dc2626');
+    drawHalf(procBuf, half, half, '#22d3ee');
+  }
 
   // ---- 2D Spectrogram ----
   startSpectro(ana){
@@ -2089,7 +2136,7 @@ class VoiceIsolatePro {
 
   _doResize() {
     [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas,
-     this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
+     this.dom.compCanvas,this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
      this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c => {
       if (!c) return;
       const parent = c.parentElement;
@@ -2102,6 +2149,7 @@ class VoiceIsolatePro {
     this.specOverlayX = 0;
     if (this.inputBuffer)  this.drawWaveform(this.inputBuffer,  this.dom.waveOrigCanvas, '#dc2626');
     if (this.outputBuffer) this.drawWaveform(this.outputBuffer, this.dom.waveProcCanvas,  '#22d3ee');
+    if (this.inputBuffer && this.outputBuffer) this.drawComparison(this.inputBuffer, this.outputBuffer);
     const ct = this.dom.spectro3DContainer;
     if (this.three.ren && ct) {
       this.three.ren.setSize(ct.clientWidth, ct.clientHeight);
