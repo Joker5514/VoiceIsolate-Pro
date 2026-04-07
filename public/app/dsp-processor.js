@@ -409,8 +409,11 @@ class DSPProcessor extends AudioWorkletProcessor {
       let loBin        = Math.round((p.voiceFocusLo || 0) / binHz);
       let hiBin        = Math.round((p.voiceFocusHi || 0) / binHz);
       if (!Number.isFinite(loBin) || loBin < 0) loBin = 0;
+      else if (loBin >= halfN) loBin = halfN - 1;
       if (!Number.isFinite(hiBin) || hiBin >= halfN) hiBin = halfN - 1;
+      else if (hiBin < 0) hiBin = 0;
       if (hiBin < loBin) hiBin = loBin;
+      if (hiBin >= halfN) hiBin = halfN - 1;
       const suppress   = 1.0 - (p.bgSuppress / 100) * 0.95;
       const boost      = 1.0 + (p.voiceIso   / 100) * 0.5;
       for (let k = 0; k < halfN; k++) {
