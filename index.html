@@ -56,27 +56,27 @@
       </div>
 
       <!-- Tabs -->
-      <div class="tabs" id="tabBar">
-        <button class="tab active" data-tab="gate">Gate</button>
-        <button class="tab" data-tab="nr">Noise</button>
-        <button class="tab" data-tab="eq">EQ</button>
-        <button class="tab" data-tab="dyn">Dynamics</button>
-        <button class="tab" data-tab="spec">Spectral</button>
-        <button class="tab" data-tab="adv">Advanced</button>
-        <button class="tab" data-tab="sep">Separation</button>
-        <button class="tab" data-tab="out">Output</button>
+      <div class="tabs" id="tabBar" role="tablist" aria-label="Processing Categories">
+        <button class="tab active" role="tab" aria-selected="true" aria-controls="tab-gate" id="tabbtn-gate" data-tab="gate">Gate</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="tab-nr" id="tabbtn-nr" data-tab="nr">Noise</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="tab-eq" id="tabbtn-eq" data-tab="eq">EQ</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="tab-dyn" id="tabbtn-dyn" data-tab="dyn">Dynamics</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="tab-spec" id="tabbtn-spec" data-tab="spec">Spectral</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="tab-adv" id="tabbtn-adv" data-tab="adv">Advanced</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="tab-sep" id="tabbtn-sep" data-tab="sep">Separation</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="tab-out" id="tabbtn-out" data-tab="out">Output</button>
       </div>
 
       <!-- Slider Panels -->
       <div class="panels">
-        <div class="panel active" id="tab-gate"></div>
-        <div class="panel" id="tab-nr"></div>
-        <div class="panel" id="tab-eq"></div>
-        <div class="panel" id="tab-dyn"></div>
-        <div class="panel" id="tab-spec"></div>
-        <div class="panel" id="tab-adv"></div>
-        <div class="panel" id="tab-sep"></div>
-        <div class="panel" id="tab-out"></div>
+        <div class="panel active" role="tabpanel" aria-labelledby="tabbtn-gate" tabindex="0" id="tab-gate"></div>
+        <div class="panel" role="tabpanel" aria-labelledby="tabbtn-nr" tabindex="0" id="tab-nr"></div>
+        <div class="panel" role="tabpanel" aria-labelledby="tabbtn-eq" tabindex="0" id="tab-eq"></div>
+        <div class="panel" role="tabpanel" aria-labelledby="tabbtn-dyn" tabindex="0" id="tab-dyn"></div>
+        <div class="panel" role="tabpanel" aria-labelledby="tabbtn-spec" tabindex="0" id="tab-spec"></div>
+        <div class="panel" role="tabpanel" aria-labelledby="tabbtn-adv" tabindex="0" id="tab-adv"></div>
+        <div class="panel" role="tabpanel" aria-labelledby="tabbtn-sep" tabindex="0" id="tab-sep"></div>
+        <div class="panel" role="tabpanel" aria-labelledby="tabbtn-out" tabindex="0" id="tab-out"></div>
       </div>
 
       <!-- Presets -->
