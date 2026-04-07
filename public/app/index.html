@@ -162,9 +162,10 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
             <input type="range" id="tpVol" class="tp-vol-slider" min="0" max="1" step="0.01" value="1" aria-label="Volume" />
           </div>
-          <label class="tp-ab-label" title="A/B compare" id="tpABLabel">
-            <button id="tpAB" class="btn btn-xs">A/B</button>
-          </label>
+          <div class="tp-ab">
+            <button id="tpAB" class="btn btn-ab" disabled title="Toggle Original / Processed">A/B</button>
+            <span id="tpABLabel" class="tp-ab-label">Original</span>
+          </div>
         </div>
         <div class="tp-scrub-row">
           <div class="tp-scrub-track" id="tpScrubTrack" role="slider" aria-label="Playback position" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
