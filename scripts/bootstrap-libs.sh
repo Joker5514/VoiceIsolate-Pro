@@ -8,7 +8,7 @@
 # =============================================================
 set -euo pipefail
 
-ORT_VERSION="1.20.1"
+ORT_VERSION="1.18.0"
 ORT_CDN="https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist"
 THREE_VERSION="0.128.0"
 THREE_CDN="https://cdn.jsdelivr.net/npm/three@${THREE_VERSION}/build"

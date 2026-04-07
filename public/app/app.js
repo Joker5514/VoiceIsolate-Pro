@@ -281,12 +281,13 @@ class VoiceIsolatePro {
       videoCard:g('videoCard'), videoPlayer:g('videoPlayer'),
       tpPlay:g('tpPlay'), tpPause:g('tpPause'), tpStop:g('tpStop'),
       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
-      tpSeek:g('tpSeek'), tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
-      spectro3DContainer:g('spectro3DContainer'), spectro3DCanvas:g('spectro3DCanvas'),
-      spectro3DReset:g('spectro3DReset'),
-      spectro2DCanvas:g('spectro2DCanvas'),
-      waveOrigCanvas:g('waveOrigCanvas'), waveProcCanvas:g('waveProcCanvas'),
-      freqCanvas:g('freqCanvas'),
+      tpSeek:g('tpSeek'), tpScrubTrack:g('tpScrubTrack'), tpScrubFill:g('tpScrubFill'), tpScrubThumb:g('tpScrubThumb'),
+      tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
+      spectro3DContainer:g('specCard'), spectro3DCanvas:g('spec3dCanvas'),
+      spectro3DReset:g('spec3dBtn'),
+      spectro2DCanvas:g('specCanvas'),
+      waveOrigCanvas:g('waveformOrig'), waveProcCanvas:g('waveformCanvas'),
+      freqCanvas:g('noiseCanvas'),
       pipeFill:g('pipeFill'), pipeBar:g('pipeBar'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
       hSNR:g('hSNR'), hDur:g('hDur'), hSR:g('hSR'), hCh:g('hCh'),
       hRMS:g('hRMS'), hPeak:g('hPeak'), hLUFS:g('hLUFS'), hStatus:g('hStatus'),
@@ -330,7 +331,11 @@ class VoiceIsolatePro {
     this.dom.tpStop.addEventListener('click', () => this.stop());
     this.dom.tpRew.addEventListener('click', () => this.seekDelta(-5));
     this.dom.tpFwd.addEventListener('click', () => this.seekDelta(5));
-    this.dom.tpSeek.addEventListener('input', () => this.seekTo(this.dom.tpSeek.value / 1000));
+    if (this.dom.tpSeek) this.dom.tpSeek.addEventListener('input', () => this.seekTo(this.dom.tpSeek.value / 1000));
+    if (this.dom.tpScrubTrack) this.dom.tpScrubTrack.addEventListener('pointerdown', e => {
+      const r = this.dom.tpScrubTrack.getBoundingClientRect();
+      this.seekTo((e.clientX - r.left) / r.width);
+    });
     this.dom.tpSpeed.addEventListener('change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
     this.dom.tpAB.addEventListener('click', () => this.toggleAB());
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
@@ -354,8 +359,8 @@ class VoiceIsolatePro {
         input.addEventListener('blur', hideTt);
       }
     });
-    this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
-    this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
+    if (this.dom.spectro3DCanvas) this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
+    if (this.dom.spectro3DReset) this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
     window.addEventListener('resize', () => this.onResize());
 
     // Diagnostic bindings
@@ -563,7 +568,7 @@ class VoiceIsolatePro {
     this.dom.reprocessBtn.disabled = true;
     this.dom.saveProcBtn.disabled = true;
     this.dom.tpAB.disabled = true;
-    [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew, this.dom.tpFwd, this.dom.tpSeek, this.dom.tpSpeed].forEach(el => el.disabled = false);
+    [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew, this.dom.tpFwd, this.dom.tpSeek, this.dom.tpSpeed].forEach(el => { if (el) el.disabled = false; });
     this.dom.tpTotal.textContent = dur;
     this.dom.tpABLabel.textContent = 'Original';
     this.dom.hDur.textContent = dur;
@@ -681,7 +686,7 @@ class VoiceIsolatePro {
     this.stopSpectro();
     this.stopDiagnostics();
     this.dom.tpCur.textContent = '0:00';
-    this.dom.tpSeek.value = 0;
+    this._setScrubPos(0);
   }
 
   seekDelta(d) {
@@ -690,7 +695,7 @@ class VoiceIsolatePro {
     if (this.isPlaying) this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset + d));
     if (this.isPlaying) this.play();
-    else { this.dom.tpCur.textContent = this.fmtDur(this.playOffset); this.dom.tpSeek.value = (this.playOffset / buf.duration) * 1000; }
+    else { this.dom.tpCur.textContent = this.fmtDur(this.playOffset); this._setScrubPos(this.playOffset / buf.duration); }
   }
 
   seekTo(frac) {
@@ -701,7 +706,7 @@ class VoiceIsolatePro {
     if (this.isPlaying) this.play();
     else {
       this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
-      this.dom.tpSeek.value = this.inputBuffer.duration > 0 ? (this.playOffset / this.inputBuffer.duration) * 1000 : 0;
+      this._setScrubPos(this.inputBuffer.duration > 0 ? this.playOffset / this.inputBuffer.duration : 0);
     }
   }
 
@@ -722,7 +727,7 @@ class VoiceIsolatePro {
       const dur = this.inputBuffer ? this.inputBuffer.duration : 0;
       if (elapsed >= dur) { this.stop(); return; }
       this.dom.tpCur.textContent = this.fmtDur(elapsed);
-      this.dom.tpSeek.value = dur > 0 ? (elapsed / dur) * 1000 : 0;
+      this._setScrubPos(dur > 0 ? elapsed / dur : 0);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -1597,14 +1602,14 @@ class VoiceIsolatePro {
   onSpectroClick(e){const r=this.dom.spectro3DCanvas.getBoundingClientRect();const y=1-((e.clientY-r.top)/r.height);const sr=this.ctx?this.ctx.sampleRate:44100;const freq=y*(sr/2);const bw=sr/20;const lo=Math.max(0,freq-bw/2);const hi=freq+bw/2;const key=Math.round(lo)+'-'+Math.round(hi);let found=false;for(const b of this.mutedBands){if(b.key===key){this.mutedBands.delete(b);found=true;break;}}if(!found)this.mutedBands.add({lo,hi,key});}
 
   startFreq(ana){
-    const c=this.dom.freqCanvas;this.resizeCanvas(c);const x=c.getContext('2d');const bLen=ana.frequencyBinCount;const arr=new Uint8Array(bLen);
+    const c=this.dom.freqCanvas;if(!c)return;this.resizeCanvas(c);const x=c.getContext('2d');const bLen=ana.frequencyBinCount;const arr=new Uint8Array(bLen);
     const draw=()=>{if(!this.spectroRunning)return;requestAnimationFrame(draw);ana.getByteFrequencyData(arr);const w=c.width;const h=c.height;x.fillStyle='#030306';x.fillRect(0,0,w,h);x.strokeStyle='rgba(255,255,255,0.03)';x.lineWidth=1;for(let i=1;i<5;i++){const gy=(i/5)*h;x.beginPath();x.moveTo(0,gy);x.lineTo(w,gy);x.stroke();}const bW=(w/bLen)*2.5;let px=0;for(let i=0;i<bLen&&px<w;i++){const bH=(arr[i]/255)*h;const f=i/bLen;let hue;if(f<0.05)hue=220;else if(f<0.2)hue=0;else if(f<0.5)hue=10;else if(f<0.75)hue=130;else hue=50;x.fillStyle='hsla('+hue+',75%,50%,0.75)';x.fillRect(px,h-bH,Math.max(1,bW-1),bH);px+=bW;}};
     draw();
   }
 
   // ---- 3D Spectrogram ----
   init3D(){
-    const ct=this.dom.spectro3DContainer;const w=ct.clientWidth;const h=ct.clientHeight;
+    const ct=this.dom.spectro3DContainer;if(!ct)return;const w=ct.clientWidth;const h=ct.clientHeight;
     if(w===0||h===0)return;
     const scene=new THREE.Scene();scene.background=new THREE.Color(0x030306);
     const cam=new THREE.PerspectiveCamera(45,w/h,0.1,1000);cam.position.set(0,40,60);cam.lookAt(0,0,0);
@@ -1651,8 +1656,10 @@ class VoiceIsolatePro {
     [this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,
      this.dom.lufsCanvas,this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c => this.resizeCanvas(c));
     // Clear spec overlay
-    const sx = this.dom.specOverlayCanvas.getContext('2d');
-    sx.fillStyle = '#030306'; sx.fillRect(0,0,this.dom.specOverlayCanvas.width,this.dom.specOverlayCanvas.height);
+    if (this.dom.specOverlayCanvas) {
+      const sx = this.dom.specOverlayCanvas.getContext('2d');
+      sx.fillStyle = '#030306'; sx.fillRect(0,0,this.dom.specOverlayCanvas.width,this.dom.specOverlayCanvas.height);
+    }
 
     const origBuf = new Float32Array(2048);
     const procBuf = new Float32Array(2048);
@@ -2096,7 +2103,7 @@ class VoiceIsolatePro {
     if (this.inputBuffer)  this.drawWaveform(this.inputBuffer,  this.dom.waveOrigCanvas, '#dc2626');
     if (this.outputBuffer) this.drawWaveform(this.outputBuffer, this.dom.waveProcCanvas,  '#22d3ee');
     const ct = this.dom.spectro3DContainer;
-    if (this.three.ren) {
+    if (this.three.ren && ct) {
       this.three.ren.setSize(ct.clientWidth, ct.clientHeight);
       this.three.cam.aspect = ct.clientWidth / ct.clientHeight;
       this.three.cam.updateProjectionMatrix();
@@ -2114,6 +2121,13 @@ class VoiceIsolatePro {
   }
 
   // ---- UTILITY ----
+  _setScrubPos(frac) {
+    const pct = Math.max(0, Math.min(1, frac)) * 100;
+    if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+    if (this.dom.tpScrubFill) this.dom.tpScrubFill.style.width = pct + '%';
+    if (this.dom.tpScrubThumb) this.dom.tpScrubThumb.style.left = pct + '%';
+  }
+
   setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
   calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
   calcPeak(d){let p=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>p)p=a;}return p>0?20*Math.log10(p):-96;}
