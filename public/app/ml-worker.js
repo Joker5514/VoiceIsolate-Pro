@@ -723,8 +723,10 @@ async function handleMultiSeparate(msg) {
       tensor.dispose?.();
     }
 
-    // Transfer all stream buffers zero-copy
-    const transferables = streams.map(s => s.data.buffer);
+    // Transfer all stream buffers zero-copy (guard against null entries)
+    const transferables = streams
+      .map(s => s && s.data && s.data.buffer)
+      .filter(Boolean);
     self.postMessage({ type: 'multiSeparateResult', id, streams }, transferables);
 
   } catch (err) {

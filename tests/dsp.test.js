@@ -1106,3 +1106,191 @@ describe('classifyNoiseSpectral', () => {
     expect(HVACClasses).toContain(result.noiseClass);
   });
 });
+
+// ============================================================
+// Voice Isolation Bin Clamping (dsp-processor.js PR fix)
+// ============================================================
+// The logic from dsp-processor.js lines 408-416, extracted for unit testing.
+// This mirrors the exact clamping algorithm added in the PR.
+function clampVoiceBins(voiceFocusLo, voiceFocusHi, sampleRate, N) {
+  const halfN = N / 2 + 1;
+  const binHz = sampleRate / N;
+  let loBin = Math.round((voiceFocusLo || 0) / binHz);
+  let hiBin = Math.round((voiceFocusHi || 0) / binHz);
+  if (!Number.isFinite(loBin) || loBin < 0) loBin = 0;
+  else if (loBin >= halfN) loBin = halfN - 1;
+  if (!Number.isFinite(hiBin) || hiBin >= halfN) hiBin = halfN - 1;
+  else if (hiBin < 0) hiBin = 0;
+  if (hiBin < loBin) hiBin = loBin;
+  if (hiBin >= halfN) hiBin = halfN - 1;
+  return { loBin, hiBin, halfN };
+}
+
+describe('Voice Isolation bin clamping (dsp-processor.js PR fix)', () => {
+  const SR = 44100;
+  const N  = 2048;
+  const halfN = N / 2 + 1; // 1025
+
+  // ── Normal values ─────────────────────────────────────────────────────────
+
+  test('typical voice band (300 Hz – 3400 Hz) maps to correct bin indices', () => {
+    const { loBin, hiBin } = clampVoiceBins(300, 3400, SR, N);
+    const binHz = SR / N;
+    expect(loBin).toBe(Math.round(300 / binHz));
+    expect(hiBin).toBe(Math.round(3400 / binHz));
+    expect(loBin).toBeGreaterThanOrEqual(0);
+    expect(hiBin).toBeLessThan(halfN);
+    expect(hiBin).toBeGreaterThanOrEqual(loBin);
+  });
+
+  test('DC frequency (0 Hz) maps loBin to 0', () => {
+    const { loBin } = clampVoiceBins(0, 1000, SR, N);
+    expect(loBin).toBe(0);
+  });
+
+  // ── Null / undefined fallback (|| 0) ──────────────────────────────────────
+
+  test('undefined voiceFocusLo falls back via || 0 to bin 0', () => {
+    const { loBin } = clampVoiceBins(undefined, 1000, SR, N);
+    expect(loBin).toBe(0);
+  });
+
+  test('null voiceFocusHi falls back via || 0 to bin 0, then clamped to loBin', () => {
+    const { loBin, hiBin } = clampVoiceBins(500, null, SR, N);
+    // null || 0 → Math.round(0 / binHz) = 0; 0 < loBin → hiBin set to loBin
+    expect(hiBin).toBe(loBin);
+  });
+
+  test('both undefined yield loBin = 0, hiBin = 0', () => {
+    const { loBin, hiBin } = clampVoiceBins(undefined, undefined, SR, N);
+    expect(loBin).toBe(0);
+    expect(hiBin).toBe(0);
+  });
+
+  // ── Infinity inputs ───────────────────────────────────────────────────────
+
+  test('Infinity voiceFocusLo is clamped to 0 (non-finite guard)', () => {
+    // Infinity / binHz = Infinity → !isFinite → loBin = 0
+    const { loBin } = clampVoiceBins(Infinity, 3000, SR, N);
+    expect(loBin).toBe(0);
+  });
+
+  test('Infinity voiceFocusHi is clamped to halfN - 1 (non-finite guard)', () => {
+    // Infinity / binHz = Infinity → !isFinite → hiBin = halfN - 1
+    const { hiBin, halfN: hn } = clampVoiceBins(0, Infinity, SR, N);
+    expect(hiBin).toBe(hn - 1);
+  });
+
+  test('-Infinity voiceFocusLo is clamped to 0 (negative + non-finite guard)', () => {
+    const { loBin } = clampVoiceBins(-Infinity, 2000, SR, N);
+    expect(loBin).toBe(0);
+  });
+
+  test('-Infinity voiceFocusHi is clamped to 0 (negative guard)', () => {
+    // -Infinity / binHz = -Infinity → hiBin < 0 → hiBin = 0, then hiBin < loBin? If loBin=0, equal
+    const { hiBin } = clampVoiceBins(0, -Infinity, SR, N);
+    expect(hiBin).toBe(0);
+  });
+
+  // ── NaN inputs ────────────────────────────────────────────────────────────
+
+  test('NaN voiceFocusLo is clamped to 0 (non-finite guard catches NaN)', () => {
+    const { loBin } = clampVoiceBins(NaN, 2000, SR, N);
+    expect(loBin).toBe(0);
+  });
+
+  test('NaN voiceFocusHi is clamped to halfN - 1 (non-finite guard)', () => {
+    const { hiBin, halfN: hn } = clampVoiceBins(0, NaN, SR, N);
+    expect(hiBin).toBe(hn - 1);
+  });
+
+  // ── Negative frequency inputs ─────────────────────────────────────────────
+
+  test('negative voiceFocusLo is clamped to 0', () => {
+    const { loBin } = clampVoiceBins(-500, 2000, SR, N);
+    expect(loBin).toBe(0);
+  });
+
+  test('negative voiceFocusHi is clamped to 0, hiBin adjusted to loBin', () => {
+    const { loBin, hiBin } = clampVoiceBins(300, -100, SR, N);
+    // -100 / binHz < 0 → hiBin = 0; 0 < loBin → hiBin = loBin
+    expect(hiBin).toBe(loBin);
+  });
+
+  // ── Frequencies above Nyquist ─────────────────────────────────────────────
+
+  test('voiceFocusLo above Nyquist is clamped to halfN - 1', () => {
+    const { loBin, halfN: hn } = clampVoiceBins(SR, 1000, SR, N);
+    // SR / binHz = N → loBin = N >= halfN → loBin = halfN - 1
+    expect(loBin).toBe(hn - 1);
+  });
+
+  test('voiceFocusHi above Nyquist is clamped to halfN - 1', () => {
+    const { hiBin, halfN: hn } = clampVoiceBins(300, SR * 2, SR, N);
+    expect(hiBin).toBe(hn - 1);
+  });
+
+  test('voiceFocusHi exactly at halfN boundary is clamped to halfN - 1', () => {
+    // Produce a raw hiBin = halfN exactly: freq = halfN * binHz
+    const binHz = SR / N;
+    const freq = halfN * binHz;
+    const { hiBin, halfN: hn } = clampVoiceBins(0, freq, SR, N);
+    expect(hiBin).toBe(hn - 1);
+  });
+
+  // ── Inverted range (loBin > hiBin) ───────────────────────────────────────
+
+  test('inverted range (voiceFocusLo > voiceFocusHi) sets hiBin = loBin', () => {
+    // e.g. lo=3000, hi=300 — user mistake or corrupted params
+    const { loBin, hiBin } = clampVoiceBins(3000, 300, SR, N);
+    expect(hiBin).toBe(loBin);
+  });
+
+  test('equal lo and hi frequencies map to same bin (loBin === hiBin)', () => {
+    const { loBin, hiBin } = clampVoiceBins(1000, 1000, SR, N);
+    expect(loBin).toBe(hiBin);
+  });
+
+  // ── Output bounds invariants ──────────────────────────────────────────────
+
+  test('loBin is always in [0, halfN - 1] for any numeric input', () => {
+    const cases = [0, 100, 300, 1000, 5000, 22050, 44100, 88200, -1, -500];
+    for (const freq of cases) {
+      const { loBin, halfN: hn } = clampVoiceBins(freq, 22050, SR, N);
+      expect(loBin).toBeGreaterThanOrEqual(0);
+      expect(loBin).toBeLessThan(hn);
+    }
+  });
+
+  test('hiBin is always in [0, halfN - 1] for any numeric input', () => {
+    const cases = [0, 100, 300, 1000, 5000, 22050, 44100, 88200, -1, -500];
+    for (const freq of cases) {
+      const { hiBin, halfN: hn } = clampVoiceBins(0, freq, SR, N);
+      expect(hiBin).toBeGreaterThanOrEqual(0);
+      expect(hiBin).toBeLessThan(hn);
+    }
+  });
+
+  test('hiBin is always >= loBin after clamping', () => {
+    const pairs = [
+      [0, 0], [300, 3400], [3400, 300], [0, SR], [SR, 0],
+      [undefined, undefined], [NaN, NaN], [Infinity, -Infinity],
+    ];
+    for (const [lo, hi] of pairs) {
+      const { loBin, hiBin } = clampVoiceBins(lo, hi, SR, N);
+      expect(hiBin).toBeGreaterThanOrEqual(loBin);
+    }
+  });
+
+  // ── Regression: zero sampleRate produces valid (non-crash) output ─────────
+
+  test('zero sampleRate (binHz=0) produces finite, in-range bin indices', () => {
+    // sampleRate=0 → binHz=0, freq/0 = NaN or Infinity → guards must catch
+    const { loBin, hiBin, halfN: hn } = clampVoiceBins(300, 3400, 0, N);
+    expect(Number.isFinite(loBin)).toBe(true);
+    expect(Number.isFinite(hiBin)).toBe(true);
+    expect(loBin).toBeGreaterThanOrEqual(0);
+    expect(hiBin).toBeGreaterThanOrEqual(loBin);
+    expect(hiBin).toBeLessThan(hn);
+  });
+});
