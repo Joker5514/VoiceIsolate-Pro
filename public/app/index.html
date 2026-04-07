@@ -206,12 +206,82 @@
         <canvas id="noiseCanvas" class="viz-canvas" aria-label="Noise floor visualization"></canvas>
       </div>
 
-      <!-- Pipeline Diagnostics -->
+      <!-- Pipeline Diagnostics — 6-Panel Dashboard -->
       <div class="card viz-card" id="diagCard">
-        <div class="viz-hdr"><span>Pipeline Diagnostics</span><span class="viz-badge">35-Stage</span></div>
-        <canvas id="diagCanvas" class="viz-canvas" aria-label="Pipeline diagnostics visualization"></canvas>
-        <!-- Structured log panel for structuredLog() output -->
-        <div id="diagLog" class="diag-log" style="max-height:120px;overflow-y:auto;font-size:10px;font-family:'JetBrains Mono',monospace;padding:4px;background:#0a0a0f;color:#8899aa;"></div>
+        <!-- Dashboard header -->
+        <div class="diag-header">
+          <span class="diag-title">Pipeline Diagnostics · 6-Panel</span>
+          <span class="diag-fps" id="diagFps">-- fps</span>
+          <div class="diag-legend">
+            <span class="dl-dot" style="background:#3b82f6"></span>Orig&nbsp;
+            <span class="dl-dot" style="background:#a855f7"></span>Proc&nbsp;
+            <span class="dl-dot" style="background:#22c55e"></span>OSC&nbsp;
+            <span class="dl-dot" style="background:#22d3ee"></span>Spec
+          </div>
+        </div>
+
+        <!-- Row 1: A/B Waveform (full width) -->
+        <div class="diag-section diag-ab">
+          <div class="viz-hdr" style="margin-bottom:3px">
+            <span>A/B Waveform</span>
+            <button id="abOverlayBtn" class="btn btn-xs" title="Toggle overlay mode">Overlay</button>
+          </div>
+          <canvas id="abWaveCanvas" class="viz-canvas diag-ab-cv" aria-label="A/B waveform comparison"></canvas>
+        </div>
+
+        <!-- Row 2: Oscilloscope | Spectrogram Overlay | LUFS -->
+        <div class="diag-row3">
+          <!-- Oscilloscope -->
+          <div>
+            <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem">
+              <span>Oscilloscope</span>
+              <div style="display:flex;gap:2px">
+                <button class="btn btn-xs osc-mode active" data-mode="wave">W</button>
+                <button class="btn btn-xs osc-mode" data-mode="mirror">M</button>
+                <button class="btn btn-xs osc-mode" data-mode="lissajous">XY</button>
+              </div>
+            </div>
+            <canvas id="oscCanvas" class="viz-canvas diag-osc-cv" aria-label="Oscilloscope"></canvas>
+          </div>
+          <!-- Spectrogram Overlay -->
+          <div>
+            <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem">
+              <span>Spec Overlay</span>
+              <div style="display:flex;gap:2px">
+                <button class="btn btn-xs overlay-toggle active" data-overlay="noise">Noise</button>
+                <button class="btn btn-xs overlay-toggle active" data-overlay="erb">ERB</button>
+                <button class="btn btn-xs overlay-toggle" data-overlay="ml">ML</button>
+              </div>
+            </div>
+            <canvas id="specOverlayCanvas" class="viz-canvas diag-spec-cv" aria-label="Spectrogram overlays"></canvas>
+          </div>
+          <!-- LUFS Meter -->
+          <div>
+            <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem"><span>LUFS Meter</span></div>
+            <canvas id="lufsCanvas" class="viz-canvas diag-lufs-cv" aria-label="LUFS meter"></canvas>
+            <div class="lufs-readouts">
+              <div class="lufs-rd"><span class="lufs-val" id="lufsShort">--</span><span class="lufs-lbl">Short</span></div>
+              <div class="lufs-rd"><span class="lufs-val" id="lufsInt">--</span><span class="lufs-lbl">Int</span></div>
+              <div class="lufs-rd"><span class="lufs-val" id="lufsPeak">--</span><span class="lufs-lbl">Peak</span></div>
+              <div class="lufs-rd"><span class="lufs-val" id="lufsCrest">--</span><span class="lufs-lbl">Crest</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: ML Saliency | Speaker Cluster -->
+        <div class="diag-row2">
+          <div>
+            <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem"><span>ML Saliency</span><span class="viz-badge">Hot</span></div>
+            <canvas id="saliencyCanvas" class="viz-canvas diag-saliency-cv" aria-label="ML saliency heatmap"></canvas>
+          </div>
+          <div>
+            <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem"><span>Speaker Cluster</span><span class="viz-badge">PCA</span></div>
+            <canvas id="clusterCanvas" class="viz-canvas diag-cluster-cv" aria-label="Speaker cluster analysis"></canvas>
+          </div>
+        </div>
+
+        <!-- Structured log panel -->
+        <div id="diagLog" class="diag-log"></div>
       </div>
 
       <!-- Forensic Report -->
