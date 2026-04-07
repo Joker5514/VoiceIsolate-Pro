@@ -1,39 +1,10 @@
 {
   "outputDirectory": "public",
   "buildCommand": "bash scripts/bootstrap-libs.sh",
-  "routes": [
-    {
-      "src": "/app/voice-isolate-processor.js",
-      "dest": "/app/voice-isolate-processor.js"
-    },
-    {
-      "src": "/app/dsp-processor.js",
-      "dest": "/app/dsp-processor.js"
-    },
-    {
-      "src": "/app/ml-worker.js",
-      "dest": "/app/ml-worker.js"
-    },
-    {
-      "src": "/app/dsp-worker.js",
-      "dest": "/app/dsp-worker.js"
-    },
-    {
-      "src": "/app/models/(.*)",
-      "dest": "/app/models/$1"
-    },
-    {
-      "src": "/lib/(.*)",
-      "dest": "/lib/$1"
-    },
-    {
-      "src": "/app/(.*)",
-      "dest": "/app/$1"
-    },
-    {
-      "src": "/",
-      "dest": "/index.html"
-    }
+  "rewrites": [
+    { "source": "/app/:path*", "destination": "/app/:path*" },
+    { "source": "/lib/:path*", "destination": "/lib/:path*" },
+    { "source": "/", "destination": "/index.html" }
   ],
   "headers": [
     {
@@ -82,13 +53,6 @@
       "headers": [
         { "key": "Cross-Origin-Resource-Policy", "value": "same-site" },
         { "key": "Cache-Control", "value": "public, max-age=86400, immutable" }
-      ]
-    },
-    {
-      "source": "/app/voice-isolate-processor.js",
-      "headers": [
-        { "key": "Content-Type", "value": "application/javascript" },
-        { "key": "Cache-Control", "value": "no-cache" }
       ]
     },
     {
