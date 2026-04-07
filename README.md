@@ -1,16 +1,16 @@
-# VoiceIsolate Pro · v22.1
+# VoiceIsolate Pro · v23.0
 
-> **Browser-based, 100% local, 35-stage audio processing platform.**
+> **Browser-based, 100% local, 36-stage audio processing platform.**
 > Zero cloud. Zero telemetry. Privacy-first.
 
 [![Deploy](https://img.shields.io/badge/Vercel-live-brightgreen?logo=vercel)](https://voice-isolate-pro.vercel.app)
-[![Version](https://img.shields.io/badge/version-v22.1-blue)](#changelog)
-[![Pipeline](https://img.shields.io/badge/pipeline-35--stage-purple)](#pipeline)
+[![Version](https://img.shields.io/badge/version-v23.0-blue)](#changelog)
+[![Pipeline](https://img.shields.io/badge/pipeline-36--stage-purple)](#pipeline)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ---
 
-## Architecture — Threads from Space v11
+## Architecture — Threads from Space v12
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -31,7 +31,7 @@
             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │          PipelineOrchestrator (pipeline-orchestrator.js)    │
-│  Forward STFT → 32 in-place spectral ops → iSTFT           │
+│  Forward STFT → 34 in-place spectral ops → iSTFT           │
 │  (SINGLE STFT/iSTFT pair — no phase smearing)              │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -44,7 +44,7 @@
 | `public/app/style.css` | Dark theme · CSS custom properties |
 | `public/app/app.js` | Main-thread orchestration · UI ↔ pipeline bridge |
 | `public/app/dsp-core.js` | All DSP math (STFT, iSTFT, gates, EQ, dynamics) |
-| `public/app/pipeline-orchestrator.js` | 35-stage pipeline runner · ONNX init |
+| `public/app/pipeline-orchestrator.js` | 36-stage pipeline runner · ONNX init |
 | `public/app/voice-isolate-processor.js` | AudioWorkletProcessor · real-time live mode |
 | `public/app/dsp-worker.js` | Worker thread · ML inference + CPU-heavy DSP |
 | `public/app/ml-worker.js` | Secondary ML worker · model management |
@@ -140,6 +140,18 @@ This file is never fetched from CDN. The pipeline falls back to classical DSP-on
 
 ## Changelog
 
+### v23.0 — April 7 2026 (Definitive Blueprint)
+
+- **VoiceIsolate_Pro_v23_Blueprint.docx** — Full 12-section production blueprint (36-stage Deca-Pass, TFS v12)
+- 36-stage pipeline (up from 35): added Stage 36 (Forensic Chain & Batch ZIP)
+- Threads from Space v12: 10-pass architecture with single-STFT constraint
+- 7 ML models documented: Demucs v4, BS-RoFormer, ECAPA-TDNN, Silero VAD, RNNoise, VoiceFixer, HiFi-GAN
+- Complete pseudocode for pipeline orchestrator + thread pool dispatcher
+- Security architecture: AES-256, SHA-256 chain-of-custody, GDPR/HIPAA/FRE compliance
+- Monetization tiers: Creator Pro ($12/mo), Studio ($29/mo), Forensic ($79/mo)
+- Roadmap: MVP (Q2 2026) → v1.0 (Q3) → Pro Edition (Q4) → Platform (2027)
+- Old v22.1 markdown blueprint removed (single-blueprint-at-root policy)
+
 ### v22.1 — April 6 2026 (Deep Pipeline Audit)
 
 | Bug ID | File | Fix |
@@ -174,4 +186,4 @@ This file is never fetched from CDN. The pipeline falls back to classical DSP-on
 
 ---
 
-*VoiceIsolate Pro · Threads from Space v11 · 100% Local Processing · Zero Data Transmission*
+*VoiceIsolate Pro · Threads from Space v12 · 100% Local Processing · Zero Data Transmission*
