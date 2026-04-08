@@ -182,7 +182,7 @@ async function detectProvider() {
       const adapter = await navigator.gpu.requestAdapter();
       if (adapter) return 'webgpu';
     }
-  } catch (e) {
+  } catch {
     console.warn("WebGPU not available, falling back to wasm");
   }
   return 'wasm';
@@ -300,7 +300,7 @@ async function processChunkWithMask(chunk, session) {
       gainMask = new Float32Array(rawMask.data);
       rawMask.dispose?.();
       tensor.dispose?.();
-    } catch (_) {
+    } catch {
       gainMask = new Float32Array(halfN).fill(1);
     }
   } else {

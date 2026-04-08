@@ -678,7 +678,7 @@ class VoiceIsolatePro {
         } catch (e) { this.dom.fileInfo.textContent = 'Decode error: ' + e.message; this.setStatus('ERROR'); }
       };
       this.mediaRecorder.start(100);
-    } catch (e) { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
+    } catch { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
   }
 
   stopRecording() {
@@ -872,8 +872,8 @@ class VoiceIsolatePro {
   }
 
   teardownChain() {
-    if (this.currentSource) { try{this.currentSource.stop();}catch(e){} try{this.currentSource.disconnect();}catch(e){} this.currentSource = null; }
-    if (this.liveNodes.chain) this.liveNodes.chain.forEach(n => { try{n.disconnect();}catch(e){} });
+    if (this.currentSource) { try{this.currentSource.stop();}catch{} try{this.currentSource.disconnect();}catch{} this.currentSource = null; }
+    if (this.liveNodes.chain) this.liveNodes.chain.forEach(n => { try{n.disconnect();}catch{} });
     this.liveNodes = {}; this.liveChainBuilt = false;
   }
 
@@ -1992,7 +1992,6 @@ class VoiceIsolatePro {
     // ML mask overlay (magenta tint)
     if (this.overlays.ml) {
       for (let y = 0; y < h; y += 2) {
-        const fi = Math.floor((y / h) * Math.min(256, bLen));
         const val = (freqBuf[bLen - 1 - Math.floor((y/h)*bLen)] || 0) / 255;
         // Simulate ML mask: voice band (80Hz-6kHz) = low attenuation, rest = high
         const bandFrac = (h - y) / h;
