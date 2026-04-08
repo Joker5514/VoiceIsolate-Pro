@@ -290,7 +290,8 @@ class VoiceIsolatePro {
     this.dom.tpSpeed.addEventListener('change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
     this.dom.tpAB.addEventListener('click', () => this.toggleAB());
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(x => {
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(x => {
         const isActive = x === t;
         x.classList.toggle('active', isActive);
         x.setAttribute('aria-selected', isActive ? 'true' : 'false');
