@@ -179,6 +179,12 @@ class DSPProcessor extends AudioWorkletProcessor {
     // Current ML mask (spectral gains, 0..1 per bin)
     this._mlMask = new Float32Array(N / 2 + 1).fill(1.0);
 
+    // SPECTRAL_FRAME emission throttle — post every Nth hop to keep the
+    // message channel below ~30 Hz even at 48 kHz / hop=512 (which would
+    // otherwise be ~93 Hz). See `_processFrame` for the emit site.
+    this._specFrameHopCount   = 0;
+    this._specFrameHopInterval = 4;   // emit every 4 hops ≈ 23–24 Hz
+
     // Message channel from main thread
     this.port.onmessage = (e) => this._onMessage(e.data);
 
@@ -378,6 +384,35 @@ class DSPProcessor extends AudioWorkletProcessor {
     for (let k = 0; k < halfN; k++) {
       mag[k]   = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
       phase[k] = Math.atan2(im[k], re[k]);
+    }
+
+    // ── SPECTRAL_FRAME emission (throttled, passive consumer) ─────────────
+    //    Post a copy of the current frame's mag/phase to the main thread
+    //    every N hops (see constructor). Copies are made on purpose so
+    //    subsequent in-place NR/ISO modifications don't mutate what the
+    //    visualizer sees. Throttled to keep postMessage below ~30 Hz.
+    this._specFrameHopCount++;
+    if (this._specFrameHopCount >= this._specFrameHopInterval) {
+      this._specFrameHopCount = 0;
+      // Frame RMS in dBFS (pre-NR input, not post-processing output)
+      let sumSq = 0;
+      for (let i = 0; i < N; i++) sumSq += this.inputBuf[i] * this.inputBuf[i];
+      const rms = Math.sqrt(sumSq / N);
+      const rmsDb = rms > 1e-6 ? 20 * Math.log10(rms) : -120;
+      // Copy to fresh buffers — required because `mag`/`phase` are mutated
+      // by subsequent in-place spectral ops below, and because transferring
+      // would null our local references.
+      const magCopy   = new Float32Array(halfN);
+      const phaseCopy = new Float32Array(halfN);
+      magCopy.set(mag);
+      phaseCopy.set(phase);
+      this.port.postMessage({
+        type:      'SPECTRAL_FRAME',
+        magnitude: magCopy,
+        phase:     phaseCopy,
+        rms:       rmsDb,
+        timestamp: currentTime,
+      }, [magCopy.buffer, phaseCopy.buffer]);
     }
 
     // ── Adaptive Spectral NR (Wiener MMSE, in-place on mag) ───────────────
