@@ -784,7 +784,6 @@ const DSPCore = {
       // Block-RMS: compute log once per block
       let blockSum = 0;
       for (let i = b; i < end; i++) blockSum += data[i] * data[i];
-      const blockRMS = Math.sqrt(blockSum / (end - b) + 1e-10);
 
       // IIR envelope follower on power
       const target = blockSum / (end - b) + 1e-10;

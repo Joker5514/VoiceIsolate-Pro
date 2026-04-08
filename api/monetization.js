@@ -36,7 +36,10 @@ function getStripe() {
 }
 
 // ─── License Token Utilities ──────────────────────────────────────────────────
-const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET || 'dev_secret_replace_in_prod';
+if (!process.env.LICENSE_JWT_SECRET) {
+  throw new Error('LICENSE_JWT_SECRET environment variable is required');
+}
+const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
 
 function createLicenseToken(userId, email, tier, daysValid = 365) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');

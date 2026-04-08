@@ -81,6 +81,11 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     this.bypassed = false;
     this.harmonicEnhancer = new HarmonicEnhancer(0);
 
+    // Cached derived params (recomputed in _handleMessage when params change)
+    this._attackCoeff  = Math.exp(-1 / (this.params.gateAttack  * 0.001 * sampleRate));
+    this._releaseCoeff = Math.exp(-1 / (this.params.gateRelease * 0.001 * sampleRate));
+    this._outGainLin   = Math.pow(10, this.params.outGain / 20);
+
     // MessagePort for param updates & ring buffer init
     this.port.onmessage = (e) => this._handleMessage(e.data);
   }
@@ -92,6 +97,12 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
           this.params[msg.key] = msg.value;
           if (msg.key === 'harmonicEnhance') {
             this.harmonicEnhancer.setAmount(msg.value);
+          } else if (msg.key === 'gateAttack') {
+            this._attackCoeff = Math.exp(-1 / (msg.value * 0.001 * sampleRate));
+          } else if (msg.key === 'gateRelease') {
+            this._releaseCoeff = Math.exp(-1 / (msg.value * 0.001 * sampleRate));
+          } else if (msg.key === 'outGain') {
+            this._outGainLin = Math.pow(10, msg.value / 20);
           }
         }
         break;
@@ -102,6 +113,12 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
             this.params[key] = value;
             if (key === 'harmonicEnhance') {
               this.harmonicEnhancer.setAmount(value);
+            } else if (key === 'gateAttack') {
+              this._attackCoeff = Math.exp(-1 / (value * 0.001 * sampleRate));
+            } else if (key === 'gateRelease') {
+              this._releaseCoeff = Math.exp(-1 / (value * 0.001 * sampleRate));
+            } else if (key === 'outGain') {
+              this._outGainLin = Math.pow(10, value / 20);
             }
           }
         }
@@ -197,10 +214,10 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     // Gate parameters
     const threshLin = Math.pow(10, this.params.gateThresh / 20);
     const rangeLin = Math.pow(10, this.params.gateRange / 20);
-    const attackCoeff = Math.exp(-1 / (this.params.gateAttack * 0.001 * sampleRate));
-    const releaseCoeff = Math.exp(-1 / (this.params.gateRelease * 0.001 * sampleRate));
+    const attackCoeff = this._attackCoeff;
+    const releaseCoeff = this._releaseCoeff;
     const holdSamples = Math.floor(this.params.gateHold * 0.001 * sampleRate);
-    const outGainLin = Math.pow(10, this.params.outGain / 20);
+    const outGainLin = this._outGainLin;
     const wet = this.params.dryWet / 100;
     const dry = 1 - wet;
 
@@ -232,7 +249,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       // per-sample spectral mask multiplication which caused clicks/artifacts.
       if (this.maskCache && this.maskIdx < this.frameSize) {
         const mlOut = this.maskCache[this.maskIdx];
-        gated = wet * mlOut + dry * gated;
+        gated = mlOut;
         this.maskIdx++;
       }
 

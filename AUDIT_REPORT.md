@@ -4,6 +4,17 @@
 
 ---
 
+## Patch v1 — Applied 2026-04-08
+- Fixed auth bypass in api/sync.js (native_purchase token skip)
+- Fixed hardcoded LICENSE_JWT_SECRET fallback in api/monetization.js and api/sync.js
+- Fixed double dry/wet application bug in voice-isolate-processor.js
+- Added 500-item limit on sync push endpoint
+- Removed dead blockRMS code in dsp-core.js compress()
+- Cached gate coefficients in AudioWorklet process() loop
+- Added 1mb body size limit to sync router
+
+---
+
 ## 1. Repository Structure — Confirmed Layout
 
 | Location | Role | Status |
