@@ -290,10 +290,10 @@
       <div class="card viz-card" id="diarCard">
         <div class="viz-hdr">
           <span>Diarization Timeline</span>
-          <span class="viz-badge">Per-Speaker</span>
+          <span class="viz-badge" id="vuMeterPanelLabel">Per-Speaker</span>
         </div>
         <canvas id="diarCanvas" class="viz-canvas" aria-label="Diarization timeline"></canvas>
-        <div class="vu-meter-container" id="vuMeterPanel" aria-label="Per-speaker VU meters"></div>
+        <div class="vu-meter-container" id="vuMeterPanel" role="group" aria-labelledby="vuMeterPanelLabel"></div>
       </div>
 
       <!-- Forensic Report -->
