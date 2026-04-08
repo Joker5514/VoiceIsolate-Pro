@@ -1,3 +1,4 @@
+/* global VisualizationEngine */
 /* ============================================
    VoiceIsolate Pro v22.1 – Engineer Mode
    Threads from Space v11 · Hybrid ML+DSP
@@ -255,7 +256,7 @@ class VoiceIsolatePro {
     try {
       workletNode.port.addEventListener('message',
         this._visEngine._onWorkletMessage);
-      try { workletNode.port.start(); } catch (_) { /* noop */ }
+      try { workletNode.port.start(); } catch (e) { console.warn(e); }
       this._visEngine.workletNode = workletNode;
     } catch (e) {
       structuredLog('warn', 'attachDspWorkletToVisuals failed', { msg: e.message });
@@ -2260,7 +2261,7 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
       if (!el && (id === 'btn-record' || id === 'record-btn' || id === 'recordBtn')) {
         return new Proxy({}, {
           set() { return true; },
-          get(_, key) {
+          get(_t, key) {
             if (key === 'addEventListener') return () => {};
             if (key === 'removeEventListener') return () => {};
             if (key === 'dispatchEvent') return () => false;
