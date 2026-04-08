@@ -179,6 +179,12 @@ class DSPProcessor extends AudioWorkletProcessor {
     // Current ML mask (spectral gains, 0..1 per bin)
     this._mlMask = new Float32Array(N / 2 + 1).fill(1.0);
 
+    // SPECTRAL_FRAME emission throttle — post every Nth hop to keep the
+    // message channel below ~30 Hz even at 48 kHz / hop=512 (which would
+    // otherwise be ~93 Hz). See `_processFrame` for the emit site.
+    this._specFrameHopCount   = 0;
+    this._specFrameHopInterval = 4;   // emit every 4 hops ≈ 23–24 Hz
+
     // Message channel from main thread
     this.port.onmessage = (e) => this._onMessage(e.data);
 
@@ -378,6 +384,56 @@ class DSPProcessor extends AudioWorkletProcessor {
     for (let k = 0; k < halfN; k++) {
       mag[k]   = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
       phase[k] = Math.atan2(im[k], re[k]);
+    }
+
+    // ── SPECTRAL_FRAME emission (opt-in, throttled, reduced payload) ──────
+    //    Visualization export must stay off the real-time path unless a
+    //    consumer explicitly enables it. We also send a smaller payload by
+    //    default: downsampled magnitude only, with phase included only when
+    //    explicitly requested.
+    if (this._spectralFrameEnabled === undefined) this._spectralFrameEnabled = false;
+    if (this._spectralFrameBinStride === undefined) this._spectralFrameBinStride = 2;
+    if (this._spectralFrameIncludePhase === undefined) this._spectralFrameIncludePhase = false;
+
+    if (this._spectralFrameEnabled === true) {
+      this._specFrameHopCount++;
+      if (this._specFrameHopCount >= this._specFrameHopInterval) {
+        this._specFrameHopCount = 0;
+
+        // Frame RMS in dBFS (pre-NR input, not post-processing output)
+        let sumSq = 0;
+        for (let i = 0; i < N; i++) sumSq += this.inputBuf[i] * this.inputBuf[i];
+        const rms = Math.sqrt(sumSq / N);
+        const rmsDb = rms > 1e-6 ? 20 * Math.log10(rms) : -120;
+
+        // Downsample spectral bins to reduce allocation/message pressure.
+        const binStride = Math.max(1, this._spectralFrameBinStride | 0);
+        const outBins = Math.ceil(halfN / binStride);
+        const magCopy = new Float32Array(outBins);
+        for (let src = 0, dst = 0; src < halfN; src += binStride, dst++) {
+          magCopy[dst] = mag[src];
+        }
+
+        const message = {
+          type:      'SPECTRAL_FRAME',
+          magnitude: magCopy,
+          rms:       rmsDb,
+          timestamp: currentTime,
+          binStride: binStride,
+        };
+        const transfers = [magCopy.buffer];
+
+        if (this._spectralFrameIncludePhase === true) {
+          const phaseCopy = new Float32Array(outBins);
+          for (let src = 0, dst = 0; src < halfN; src += binStride, dst++) {
+            phaseCopy[dst] = phase[src];
+          }
+          message.phase = phaseCopy;
+          transfers.push(phaseCopy.buffer);
+        }
+
+        this.port.postMessage(message, transfers);
+      }
     }
 
     // ── Adaptive Spectral NR (Wiener MMSE, in-place on mag) ───────────────

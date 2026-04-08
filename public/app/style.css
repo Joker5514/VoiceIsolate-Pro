@@ -361,3 +361,102 @@ input[type="range"]:focus-visible::-moz-range-thumb{
   .hdr-stats{display:none}
   .hdr-stats.expanded{display:flex}
 }
+
+/* ============================================================================
+   VISUALIZATION ENGINE (visuals.js) — VU meters + diarization timeline
+   Additive — does not override any existing viz-card styling.
+   ============================================================================ */
+
+/* Diarization card layout */
+#diarCard .viz-canvas{display:block;width:100%;height:90px;border-radius:var(--rs);background:#030306;margin-bottom:8px}
+
+/* VU meter container — horizontal strip below the diarization timeline */
+.vu-meter-container{
+  display:flex;
+  gap:8px;
+  align-items:flex-end;
+  padding:10px 8px 8px;
+  background:#0d0d0f;
+  border-radius:var(--rs);
+  border:1px solid var(--border);
+  overflow-x:auto;
+}
+.vu-meter-container::-webkit-scrollbar{height:4px}
+.vu-meter-container::-webkit-scrollbar-thumb{background:var(--s4);border-radius:2px}
+
+/* Each meter. Uses CSS custom properties set by visuals.js:
+     --speaker-color  — the speaker's accent color
+     --vu-level       — 0..100% bar height
+     --peak-top       — 0..100% peak indicator position (0% = top) */
+.vu-meter{
+  position:relative;
+  width:26px;
+  height:140px;
+  background:#111114;
+  border-radius:4px;
+  border:1px solid rgba(255,255,255,0.05);
+  flex-shrink:0;
+  overflow:hidden;
+}
+.vu-meter-fill{
+  position:absolute;
+  bottom:0;
+  left:0;
+  right:0;
+  height:var(--vu-level,0%);
+  background:linear-gradient(
+    to top,
+    var(--speaker-color,#22d3ee) 0%,
+    var(--speaker-color,#22d3ee) 70%,
+    #ffea00 85%,
+    #ff1744 100%
+  );
+  transition:height 30ms linear;
+  pointer-events:none;
+}
+.vu-meter-peak{
+  position:absolute;
+  left:0;
+  right:0;
+  top:var(--peak-top,100%);
+  height:2px;
+  background:var(--speaker-color,#22d3ee);
+  filter:brightness(1.6);
+  transition:top 60ms linear;
+  pointer-events:none;
+}
+.vu-meter-label{
+  position:absolute;
+  bottom:2px;
+  left:0;
+  right:0;
+  font-family:var(--fm);
+  font-size:8px;
+  letter-spacing:0.05em;
+  text-align:center;
+  color:var(--speaker-color,#22d3ee);
+  text-shadow:0 0 2px rgba(0,0,0,0.9);
+  pointer-events:none;
+}
+.vu-meter.is-target{
+  box-shadow:0 0 10px var(--speaker-color,#22d3ee);
+  border-color:var(--speaker-color,#22d3ee);
+}
+
+/* Speaker color indicator dot (usable anywhere) */
+.speaker-dot{
+  display:inline-block;
+  width:10px;
+  height:10px;
+  border-radius:50%;
+  background:var(--speaker-color,#22d3ee);
+  box-shadow:0 0 6px var(--speaker-color,#22d3ee);
+  vertical-align:middle;
+}
+@keyframes vip-speaker-pulse{
+  0%,100%{box-shadow:0 0 4px var(--speaker-color,#22d3ee)}
+  50%    {box-shadow:0 0 14px var(--speaker-color,#22d3ee)}
+}
+.speaker-dot.is-active{
+  animation:vip-speaker-pulse 1.2s ease-in-out infinite;
+}

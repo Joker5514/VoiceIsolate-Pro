@@ -284,6 +284,18 @@
         <div id="diagLog" class="diag-log"></div>
       </div>
 
+      <!-- Diarization Timeline + Per-Speaker VU Meters
+           Powered by VisualizationEngine in visuals.js. These are additive —
+           they do not duplicate the 6-panel diagnostic dashboard above. -->
+      <div class="card viz-card" id="diarCard">
+        <div class="viz-hdr">
+          <span>Diarization Timeline</span>
+          <span class="viz-badge" id="vuMeterPanelLabel">Per-Speaker</span>
+        </div>
+        <canvas id="diarCanvas" class="viz-canvas" aria-label="Diarization timeline"></canvas>
+        <div class="vu-meter-container" id="vuMeterPanel" role="group" aria-labelledby="vuMeterPanelLabel"></div>
+      </div>
+
       <!-- Forensic Report -->
       <div class="card forensic-card" id="forensicCard" style="display:none">
         <div class="viz-hdr"><span>Forensic Analysis Report</span><span class="viz-badge">v22.1</span></div>
@@ -369,6 +381,12 @@
   <script src="./pipeline-orchestrator.js"></script>
 
   <script src="./batch-processor.js"></script>
+
+  <!-- Visualization Engine (VU meters, diarization timeline, Inferno LUT,
+       speaker color palette). Must be loaded BEFORE app.js so that
+       `VisualizationEngine` and `VIP_SPEAKER_COLORS` are available when the
+       app constructs its engine instance during init(). -->
+  <script src="./visuals.js"></script>
 
   <!-- Main app — must be before vip-boot -->
   <script src="./app.js"></script>

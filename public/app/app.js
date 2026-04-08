@@ -202,8 +202,64 @@ class VoiceIsolatePro {
     this.bindEvents();
     this.initCanvases();
     this.init3D();
+    this._initVisualEngine();
     // ML worker ownership lives in PipelineOrchestrator to prevent
     // duplicate workers, duplicate ORT/model init, and race conditions.
+  }
+
+  // ------------------------------------------------------------------
+  //  Visualization Engine (visuals.js) — additive to 6-panel diagnostics.
+  //  Drives per-speaker VU meters and the diarization timeline. Reads
+  //  from the SAME analyser nodes that startDiagnostics() already uses —
+  //  no duplicate polling, no extra analyser allocations.
+  // ------------------------------------------------------------------
+  _initVisualEngine() {
+    if (typeof VisualizationEngine !== 'function') {
+      structuredLog('warn', 'VisualizationEngine not available — visuals.js missing?');
+      return;
+    }
+    // Shared live state object the engine reads every frame. Other parts
+    // of the app (diarization output, ML worker post-processing) can
+    // mutate this object in place.
+    this.diarizationState = {
+      activeSpeaker: 0,
+      numSpeakers:   1,
+      confidence:    1.0,
+      speakerRMS:    null,
+      history:       [],
+      currentTime:   null,
+      isActive:      false,
+    };
+    try {
+      this._visEngine = new VisualizationEngine({
+        getAnalysers:    () => ({ orig: this.analyserOrig, proc: this.analyserProc }),
+        workletNode:     null, // set later when pipeline-orchestrator wires the worklet
+        vuPanel:         this.dom.vuMeterPanel,
+        diarCanvas:      this.dom.diarCanvas,
+        getSpeakerState: () => this.diarizationState,
+        maxSpeakers:     8,
+      });
+      structuredLog('info', 'VisualizationEngine initialized');
+    } catch (e) {
+      structuredLog('error', 'VisualizationEngine init failed', { msg: e.message });
+      this._visEngine = null;
+    }
+  }
+
+  // Called by pipeline-orchestrator (or anyone else) once a dsp-processor
+  // AudioWorkletNode is available, so the engine can subscribe to its
+  // SPECTRAL_FRAME messages. Safe to call multiple times.
+  attachDspWorkletToVisuals(workletNode) {
+    if (!this._visEngine || !workletNode || !workletNode.port) return;
+    // Rebind: remove any previous listener, add a new one
+    try {
+      workletNode.port.addEventListener('message',
+        this._visEngine._onWorkletMessage);
+      try { workletNode.port.start(); } catch (_) { /* noop */ }
+      this._visEngine.workletNode = workletNode;
+    } catch (e) {
+      structuredLog('warn', 'attachDspWorkletToVisuals failed', { msg: e.message });
+    }
   }
 
   ensureCtx() {
@@ -304,6 +360,9 @@ class VoiceIsolatePro {
       diagFps:g('diagFps'),
       lufsShort:g('lufsShort'), lufsInt:g('lufsInt'), lufsPeak:g('lufsPeak'), lufsCrest:g('lufsCrest'),
       abOverlayBtn:g('abOverlayBtn'),
+      // Visualization Engine (visuals.js) — additive to diagnostics
+      diarCanvas:g('diarCanvas'),
+      vuMeterPanel:g('vuMeterPanel'),
       mobileProcessBtn:g('mobileProcessBtn'),
       mobileReprocessBtn:g('mobileReprocessBtn'),
       mobileStopBtn:g('mobileStopBtn'),
@@ -1562,7 +1621,7 @@ class VoiceIsolatePro {
   initCanvases(){
     const all = [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas,
       this.dom.compCanvas,this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
-      this.dom.saliencyCanvas,this.dom.clusterCanvas];
+      this.dom.saliencyCanvas,this.dom.clusterCanvas,this.dom.diarCanvas];
     all.forEach(c => { if(c) this.resizeCanvas(c); });
     this.clearCanvas(this.dom.waveOrigCanvas,'Load audio to begin');
     this.clearCanvas(this.dom.waveProcCanvas,'Process to see result');
@@ -1701,7 +1760,12 @@ class VoiceIsolatePro {
     this.specOverlayX = 0;
     // Resize all diagnostic canvases
     [this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,
-     this.dom.lufsCanvas,this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c => this.resizeCanvas(c));
+     this.dom.lufsCanvas,this.dom.saliencyCanvas,this.dom.clusterCanvas,
+     this.dom.diarCanvas].forEach(c => this.resizeCanvas(c));
+    // Start the VisualizationEngine (VU meters + diarization timeline).
+    // Safe to call even if analysers aren't ready — the engine will
+    // no-op meter updates until getAnalysers() returns a valid proc.
+    if (this._visEngine) this._visEngine.start();
     // Clear spec overlay
     if (this.dom.specOverlayCanvas) {
       const sx = this.dom.specOverlayCanvas.getContext('2d');
@@ -1765,6 +1829,7 @@ class VoiceIsolatePro {
   stopDiagnostics() {
     this.diagRunning = false;
     if (this.diagAnimId) { cancelAnimationFrame(this.diagAnimId); this.diagAnimId = null; }
+    if (this._visEngine) this._visEngine.stop();
   }
 
   // Panel 1: A/B Waveform
@@ -2137,7 +2202,7 @@ class VoiceIsolatePro {
   _doResize() {
     [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas,
      this.dom.compCanvas,this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
-     this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c => {
+     this.dom.saliencyCanvas,this.dom.clusterCanvas,this.dom.diarCanvas].forEach(c => {
       if (!c) return;
       const parent = c.parentElement;
       if (!parent) return;
