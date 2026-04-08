@@ -9,3 +9,7 @@
 ## 2024-05-25 - Avoid Stateful ARIA on Static HTML
 **Learning:** Adding stateful ARIA attributes (e.g., `aria-selected`, `aria-valuenow`, `role="tab"`) to purely static HTML without corresponding JavaScript logic to dynamically update them creates stale accessibility states. For example, adding `aria-selected="true"` to a static tab means a screen reader will constantly read that the tab is selected regardless of the user's interaction.
 **Action:** When enhancing static HTML for accessibility, prefer purely static attributes like `aria-label` or `aria-hidden="true"`. Avoid adding stateful ARIA attributes unless you are also implementing the JavaScript logic to maintain their state accurately.
+
+## 2024-05-26 - CSS Specificity Defeats Global Focus Styles
+**Learning:** Global `:focus-visible` rules (specificity 0,1,0) can be silently defeated by element-specific resets like `input[type="range"] { outline: none; }` (specificity 0,1,1). Because of this specificity clash, keyboard users lose the focus ring entirely on critical interactive elements like sliders, rendering them inaccessible.
+**Action:** When clearing native outlines on specific elements using selectors with higher specificity, always write a matching or higher-specificity `:focus-visible` rule (e.g., `input[type="range"]:focus-visible`) to ensure the focus ring is explicitly restored.
