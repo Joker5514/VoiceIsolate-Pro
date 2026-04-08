@@ -225,9 +225,9 @@ class VoiceIsolatePro {
       activeSpeaker: 0,
       numSpeakers:   1,
       confidence:    1.0,
-      speakerRMS:    new Float32Array(8),
+      speakerRMS:    null,
       history:       [],
-      currentTime:   0,
+      currentTime:   null,
       isActive:      false,
     };
     try {
