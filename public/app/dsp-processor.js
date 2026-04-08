@@ -386,33 +386,54 @@ class DSPProcessor extends AudioWorkletProcessor {
       phase[k] = Math.atan2(im[k], re[k]);
     }
 
-    // ── SPECTRAL_FRAME emission (throttled, passive consumer) ─────────────
-    //    Post a copy of the current frame's mag/phase to the main thread
-    //    every N hops (see constructor). Copies are made on purpose so
-    //    subsequent in-place NR/ISO modifications don't mutate what the
-    //    visualizer sees. Throttled to keep postMessage below ~30 Hz.
-    this._specFrameHopCount++;
-    if (this._specFrameHopCount >= this._specFrameHopInterval) {
-      this._specFrameHopCount = 0;
-      // Frame RMS in dBFS (pre-NR input, not post-processing output)
-      let sumSq = 0;
-      for (let i = 0; i < N; i++) sumSq += this.inputBuf[i] * this.inputBuf[i];
-      const rms = Math.sqrt(sumSq / N);
-      const rmsDb = rms > 1e-6 ? 20 * Math.log10(rms) : -120;
-      // Copy to fresh buffers — required because `mag`/`phase` are mutated
-      // by subsequent in-place spectral ops below, and because transferring
-      // would null our local references.
-      const magCopy   = new Float32Array(halfN);
-      const phaseCopy = new Float32Array(halfN);
-      magCopy.set(mag);
-      phaseCopy.set(phase);
-      this.port.postMessage({
-        type:      'SPECTRAL_FRAME',
-        magnitude: magCopy,
-        phase:     phaseCopy,
-        rms:       rmsDb,
-        timestamp: currentTime,
-      }, [magCopy.buffer, phaseCopy.buffer]);
+    // ── SPECTRAL_FRAME emission (opt-in, throttled, reduced payload) ──────
+    //    Visualization export must stay off the real-time path unless a
+    //    consumer explicitly enables it. We also send a smaller payload by
+    //    default: downsampled magnitude only, with phase included only when
+    //    explicitly requested.
+    if (this._spectralFrameEnabled === undefined) this._spectralFrameEnabled = false;
+    if (this._spectralFrameBinStride === undefined) this._spectralFrameBinStride = 2;
+    if (this._spectralFrameIncludePhase === undefined) this._spectralFrameIncludePhase = false;
+
+    if (this._spectralFrameEnabled === true) {
+      this._specFrameHopCount++;
+      if (this._specFrameHopCount >= this._specFrameHopInterval) {
+        this._specFrameHopCount = 0;
+
+        // Frame RMS in dBFS (pre-NR input, not post-processing output)
+        let sumSq = 0;
+        for (let i = 0; i < N; i++) sumSq += this.inputBuf[i] * this.inputBuf[i];
+        const rms = Math.sqrt(sumSq / N);
+        const rmsDb = rms > 1e-6 ? 20 * Math.log10(rms) : -120;
+
+        // Downsample spectral bins to reduce allocation/message pressure.
+        const binStride = Math.max(1, this._spectralFrameBinStride | 0);
+        const outBins = Math.ceil(halfN / binStride);
+        const magCopy = new Float32Array(outBins);
+        for (let src = 0, dst = 0; src < halfN; src += binStride, dst++) {
+          magCopy[dst] = mag[src];
+        }
+
+        const message = {
+          type:      'SPECTRAL_FRAME',
+          magnitude: magCopy,
+          rms:       rmsDb,
+          timestamp: currentTime,
+          binStride: binStride,
+        };
+        const transfers = [magCopy.buffer];
+
+        if (this._spectralFrameIncludePhase === true) {
+          const phaseCopy = new Float32Array(outBins);
+          for (let src = 0, dst = 0; src < halfN; src += binStride, dst++) {
+            phaseCopy[dst] = phase[src];
+          }
+          message.phase = phaseCopy;
+          transfers.push(phaseCopy.buffer);
+        }
+
+        this.port.postMessage(message, transfers);
+      }
     }
 
     // ── Adaptive Spectral NR (Wiener MMSE, in-place on mag) ───────────────
