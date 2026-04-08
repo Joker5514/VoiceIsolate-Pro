@@ -479,21 +479,6 @@
     }
   };
 
-  /* ---- Manual update API (for callers who don't pass a full state) ---- */
-  VisualizationEngine.prototype.pushDiarizationSegment = function (segment) {
-    // Convenience helper — the host app can keep its own history array
-    // and simply push segments here if it wants. Not used internally.
-    if (!segment || typeof segment.speaker !== 'number') return;
-    if (!this._localHistory) this._localHistory = [];
-    this._localHistory.push(segment);
-    // Cap at 1000 segments
-    if (this._localHistory.length > 1000) this._localHistory.shift();
-  };
-
-  VisualizationEngine.prototype.setActiveSpeaker = function (idx) {
-    this._overrideActive = idx;
-  };
-
   /* ------------------------------------------------------------------ */
   /* 5. Global exports                                                   */
   /* ------------------------------------------------------------------ */
