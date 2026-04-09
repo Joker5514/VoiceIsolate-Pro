@@ -80,11 +80,14 @@ const htmlPath = path.resolve(__dirname, '..', 'public/app/index.html');
 const html = fs.existsSync(htmlPath) ? fs.readFileSync(htmlPath, 'utf8') : '';
 const mlWorkerJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/ml-worker.js'))
   ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/ml-worker.js'), 'utf8') : '';
-check(html.includes('onnxruntime-web'), 'ONNX Runtime CDN in index.html');
+const orchPath = path.resolve(__dirname, '..', 'public/app/pipeline-orchestrator.js');
+const orchJs = fs.existsSync(orchPath) ? fs.readFileSync(orchPath, 'utf8') : '';
+check(html.includes('pipeline-orchestrator.js'), 'Pipeline Orchestrator script tag in index.html');
 check(appJs.includes('async loadModels()'), 'loadModels() method present');
 check(appJs.includes('async runVAD(buf)'), 'runVAD() method present');
-check(appJs.includes('initMLWorker()'), 'ML Worker spawned in app.js');
-check(appJs.includes("new Worker('./ml-worker.js')"), 'ML Worker path correct');
+// ML Worker ownership lives in PipelineOrchestrator (single source of truth)
+check(orchJs.includes('_initMLWorker'), 'ML Worker spawned by PipelineOrchestrator');
+check(orchJs.includes("new Worker('./ml-worker.js')"), 'ML Worker path correct in orchestrator');
 check(mlWorkerJs.includes("type === 'init'") || mlWorkerJs.includes("case 'runVAD':"), 'ML Worker handles init/runVAD');
 check(mlWorkerJs.includes("type === 'process'") || mlWorkerJs.includes("case 'runSeparation':"), 'ML Worker handles process/runSeparation');
 check(mlWorkerJs.includes("type === 'reset'") || mlWorkerJs.includes("case 'runVocoder':"), 'ML Worker handles reset/runVocoder');

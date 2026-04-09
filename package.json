@@ -32,7 +32,6 @@
     "validate": "node scripts/validate.js",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --coverage",
     "build:mobile": "npm run build && npx cap sync",
-    "cap:build": "tsc capacitor.config.ts && cap sync",
     "cap:sync": "npx cap sync",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios",
