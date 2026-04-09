@@ -28,6 +28,16 @@ if (!process.env.LICENSE_JWT_SECRET) {
 }
 const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
 
+/**
+ * Validate and decode a license token, returning its payload when valid.
+ *
+ * Verifies the token is a three-part dot-separated string, checks its HMAC-SHA256
+ * signature using the module's license secret, and ensures the payload's `exp`
+ * timestamp has not passed.
+ *
+ * @param {string} token - License token in `header.payload.signature` form (Base64URL parts).
+ * @returns {Object|null} The decoded payload object when the token is valid and not expired, `null` otherwise.
+ */
 function _validateToken(token) {
   try {
     const parts = token.split('.');
@@ -45,6 +55,11 @@ function _validateToken(token) {
   } catch { return null; }
 }
 
+/**
+ * Authenticate the request using a Bearer license JWT and enforce Studio/Enterprise tier for cloud sync.
+ *
+ * Validates the Authorization header contains a Bearer token and verifies the token payload and expiry; on success assigns the token payload to `req.user` and calls `next()`. If the header is missing or the token is invalid/expired, responds with 401 Unauthorized. If the token's `tier` is not `STUDIO` or `ENTERPRISE`, responds with 403 Forbidden and an explanatory error.
+ */
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) {
@@ -70,7 +85,17 @@ function requireAuth(req, res, next) {
 // ─── Rate Limiter (per-user, in-memory; replace with Redis in production) ─────
 const _rateLimits = new Map(); // userId → { count, windowStart }
 const RATE_LIMIT_MAX = 20;    // requests per window
-const RATE_LIMIT_MS  = 60_000; // 1 minute window
+const RATE_LIMIT_MS  = 60_000; /**
+ * Enforces a per-user rate limit and rejects requests that exceed the allowed quota.
+ *
+ * Uses req.user.sub as the user identifier; if no user ID is present the middleware is a no-op.
+ * Limits each user to 20 requests per 60 seconds and, when the limit is exceeded, responds with
+ * HTTP 429 and a JSON error: `{ error: 'Too many requests. Please wait before syncing again.' }`.
+ *
+ * @param {import("express").Request} req - Express request; expects `req.user?.sub` to identify the user.
+ * @param {import("express").Response} res - Express response used to send a 429 when the rate limit is exceeded.
+ * @param {import("express").NextFunction} next - Express next middleware function called when the request is allowed.
+ */
 
 function requireRateLimit(req, res, next) {
   const userId = req.user?.sub;
@@ -92,10 +117,21 @@ function requireRateLimit(req, res, next) {
 // ─── Input Validation ─────────────────────────────────────────────────────────
 const ID_RE = /^[a-zA-Z0-9_\-]{1,128}$/;
 
+/**
+ * Determine whether a candidate identifier conforms to the allowed character set and length.
+ * @param {string} id - Identifier to validate; must match /^[a-zA-Z0-9_\-]{1,128}$/ (letters, digits, underscore, or hyphen, length 1–128).
+ * @returns {boolean} `true` if `id` is a string matching the allowed pattern, `false` otherwise.
+ */
 function _validateId(id) {
   return typeof id === 'string' && ID_RE.test(id);
 }
 
+/**
+ * Determine whether an object is a valid preset with required id and name fields.
+ *
+ * @param {object} p - Preset candidate; must be a non-null object containing an `id` and `name`.
+ * @returns {boolean} `true` if `p` has a valid `id` matching allowed ID pattern and a `name` string with length 1–256, `false` otherwise.
+ */
 function _validatePreset(p) {
   if (!p || typeof p !== 'object') return false;
   if (!_validateId(p.id)) return false;
@@ -103,6 +139,15 @@ function _validatePreset(p) {
   return true;
 }
 
+/**
+ * Produce a sanitized preset object containing only allowed fields and controlled values.
+ * @param {object} p - Input preset object (may contain extra or untrusted fields).
+ * @returns {object} Sanitized preset with:
+ *   - `id` (string): truncated to 128 characters,
+ *   - `name` (string): truncated to 256 characters,
+ *   - `params` (object): preserved if an object, otherwise `{}`,
+ *   - optionally `createdAt` and `updatedAt` if present on the input.
+ */
 function _sanitizePreset(p) {
   // Only keep known fields to prevent arbitrary data injection
   return {
@@ -114,12 +159,23 @@ function _sanitizePreset(p) {
   };
 }
 
+/**
+ * Validate that a noise profile object is well-formed for storage.
+ *
+ * @param {object} p - Noise profile to validate. Must be a non-null object containing a `name` string with length between 1 and 256 characters.
+ * @returns {boolean} `true` if `p` meets the required shape and `name` constraints, `false` otherwise.
+ */
 function _validateNoiseProfile(p) {
   if (!p || typeof p !== 'object') return false;
   if (typeof p.name !== 'string' || p.name.length === 0 || p.name.length > 256) return false;
   return true;
 }
 
+/**
+ * Sanitizes a noise profile object to only include allowed fields.
+ * @param {object} p - The input noise profile; may contain `name`, `data`, and optionally `createdAt`.
+ * @returns {{name: string, data: object, createdAt?: any}} An object with `name` truncated to 256 characters, `data` ensured to be an object (defaults to `{}`), and `createdAt` included only if present on the input.
+ */
 function _sanitizeNoiseProfile(p) {
   return {
     name:    String(p.name).slice(0, 256),

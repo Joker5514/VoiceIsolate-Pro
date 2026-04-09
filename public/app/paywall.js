@@ -7,7 +7,14 @@
 const Paywall = (() => {
 
   // SEC-02 FIX: Safe innerHTML setter — DOMParser strips injected scripts
-  // All paywall markup is internal, but defence-in-depth prevents future regressions.
+  /**
+   * Set an element's HTML from a string after removing active/insecure elements.
+   *
+   * Parses the provided HTML string, removes any <script>, <object>, <embed>, and <iframe> nodes, and assigns the sanitized markup to the element's innerHTML. If `el` is falsy the function is a no-op.
+   *
+   * @param {Element|null|undefined} el - Target DOM element to receive the sanitized HTML.
+   * @param {string} html - HTML string to parse and sanitize before insertion.
+   */
   function _setHTML(el, html) {
     if (!el) return;
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -19,7 +26,14 @@ const Paywall = (() => {
   // ─── Stripe Price IDs — loaded from server at runtime ─────────────────────────
   // Price IDs are managed server-side via environment variables (STRIPE_PRICE_* in .env).
   // The client never needs raw price IDs; the backend /api/checkout resolves them by tier+cycle.
-  const STRIPE_PRICES = {}; // populated lazily by _loadPrices()
+  const STRIPE_PRICES = {}; /**
+   * Load Stripe price IDs from the backend into the in-memory STRIPE_PRICES map.
+   *
+   * Populates STRIPE_PRICES with keys of the form `${tier}_MONTHLY` and `${tier}_ANNUAL`
+   * using each tier's `priceIds.monthly` and `priceIds.annual`. If STRIPE_PRICES is already
+   * populated this function returns immediately. Network errors or unexpected responses are
+   * silently ignored so checkout can proceed using tier and cycle identifiers.
+   */
 
   async function _loadPrices() {
     if (Object.keys(STRIPE_PRICES).length > 0) return; // already loaded

@@ -373,7 +373,15 @@ window._vipCacheStatus = async function cacheStatus() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  PROGRESS UI
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Create or reset a small on-page progress panel and populate it with one row per model key.
+ *
+ * The panel is inserted into document.body with id "vip-model-load-panel" (or cleared if already present),
+ * includes a scoped style block, an accessible heading, a progress row for each key (label, track/fill with
+ * id `vip-mlp-fill-<key>`, and status with id `vip-mlp-status-<key>`), and a footer hint about missing files.
+ *
+ * @param {string[]} keys - Array of model keys to display as individual progress rows.
+ */
 
 function _ensureProgressPanel(keys) {
   let panel = document.getElementById('vip-model-load-panel');

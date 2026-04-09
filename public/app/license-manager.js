@@ -227,9 +227,10 @@ const LicenseManager = (() => {
 
   // ─── License Token Validation (offline JWT-like) ──────────────────────────────
   /**
-   * Validates a license token. Format: base64(header).base64(payload).signature
-   * For offline use, we verify the payload structure and expiry.
-   * In production, replace with real JWT verification using a public key.
+   * Validate an offline license token and return its decoded payload when valid.
+   *
+   * @param {string} token - Token in the form "base64(header).base64(payload).signature".
+   * @returns {Object|null} The parsed payload object if the token is well-formed, contains a valid `tier` and `exp`, is not expired, and the tier exists; `null` otherwise.
    */
   function _validateToken(token) {
     if (!token || typeof token !== 'string') return null;
@@ -247,8 +248,15 @@ const LicenseManager = (() => {
   }
 
   /**
-   * Creates a demo/trial license token (for testing without a real backend).
-   * In production this would come from your Stripe webhook → license server.
+   * Generate a non-production demo/trial license token for the given tier.
+   *
+   * The token is a JWT-like string whose payload encodes the tier, a demo subject,
+   * issuance and expiration times, available feature keys, and a `source: 'demo'`.
+   * The signature portion is a randomly generated demo value and is not cryptographically secure.
+   *
+   * @param {string} tier - Tier identifier (e.g., "PRO", "FREE"); case is normalized internally.
+   * @param {number} [daysValid=30] - Number of days the demo token should remain valid.
+   * @returns {string} A demo license token in the form "header.payload.signature".
    */
   function _createDemoToken(tier, daysValid = 30) {
     const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
@@ -265,7 +273,21 @@ const LicenseManager = (() => {
     return `${header}.${payload}.${sig}`;
   }
 
-  // ─── Usage Tracking ───────────────────────────────────────────────────────────
+  /**
+   * Load persisted usage counters, ensure they are up-to-date for today, and fall back to a reset baseline on error.
+   *
+   * Attempts to read usage data from localStorage, resets daily counters if the stored date differs from today,
+   * and returns the resulting usage object.
+   *
+   * @returns {Object} The usage counters object containing at minimum:
+   *  - {string} date - today's date string
+   *  - {number} exportsToday - exports performed today
+   *  - {number} totalExports - cumulative exports
+   *  - {number} totalMinutesProcessed - cumulative processed minutes
+   *  - {number} apiCallsThisMonth - API calls in the current month
+   *  - {string} monthKey - current month in `YYYY-MM` format
+   * If reading or parsing stored data fails, returns a freshly reset usage object.
+   */
   function _loadUsage() {
     try {
       const raw = (() => { try { return localStorage.getItem(STORAGE_KEYS.USAGE); } catch { return null; } })();
