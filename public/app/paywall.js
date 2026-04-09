@@ -23,34 +23,10 @@ const Paywall = (() => {
     el.innerHTML = doc.body.innerHTML;
   }
 
-  // ─── Stripe Price IDs — loaded from server at runtime ─────────────────────────
+  // ─── Stripe Checkout pricing ──────────────────────────────────────────────────
   // Price IDs are managed server-side via environment variables (STRIPE_PRICE_* in .env).
-  // The client never needs raw price IDs; the backend /api/checkout resolves them by tier+cycle.
-  const STRIPE_PRICES = {}; /**
-   * Load Stripe price IDs from the backend into the in-memory STRIPE_PRICES map.
-   *
-   * Populates STRIPE_PRICES with keys of the form `${tier}_MONTHLY` and `${tier}_ANNUAL`
-   * using each tier's `priceIds.monthly` and `priceIds.annual`. If STRIPE_PRICES is already
-   * populated this function returns immediately. Network errors or unexpected responses are
-   * silently ignored so checkout can proceed using tier and cycle identifiers.
-   */
-
-  async function _loadPrices() {
-    if (Object.keys(STRIPE_PRICES).length > 0) return; // already loaded
-    try {
-      const res = await fetch('/api/pricing');
-      if (!res.ok) return;
-      const data = await res.json();
-      const tiers = data.tiers || {};
-      for (const [tier, def] of Object.entries(tiers)) {
-        if (def.priceIds) {
-          if (def.priceIds.monthly) STRIPE_PRICES[`${tier}_MONTHLY`] = def.priceIds.monthly;
-          if (def.priceIds.annual)  STRIPE_PRICES[`${tier}_ANNUAL`]  = def.priceIds.annual;
-        }
-      }
-    } catch { /* backend unavailable — checkout still works via tier+cycle */ }
-  }
-
+  // The client only sends tier and billing cycle; the backend /api/checkout resolves
+  // the correct Stripe price ID for the session.
   // ─── RevenueCat Product IDs (for mobile in-app purchases) ────────────────────
   const RC_PRODUCTS = {
     PRO_MONTHLY:    'voiceisolate_pro_monthly',
