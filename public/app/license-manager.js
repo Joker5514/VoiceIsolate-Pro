@@ -225,6 +225,17 @@ const LicenseManager = (() => {
   let _usageCounters = null;
   let _listeners = [];
 
+  // ─── Storage Helpers ──────────────────────────────────────────────────────────
+  /**
+   * Safely read a value from localStorage, returning null on any error
+   * (e.g. SecurityError in sandboxed/private-browsing contexts).
+   * @param {string} key
+   * @returns {string|null}
+   */
+  function safeLocalGet(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
   // ─── License Token Validation (offline JWT-like) ──────────────────────────────
   /**
    * Validate an offline license token and return its decoded payload when valid.
@@ -237,7 +248,10 @@ const LicenseManager = (() => {
     try {
       const parts = token.split('.');
       if (parts.length !== 3) return null;
-      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+      const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      // Add '=' padding to reach a multiple of 4, as required by atob()
+      const padded = b64 + '=='.slice(0, (4 - b64.length % 4) % 4);
+      const payload = JSON.parse(atob(padded));
       if (!payload.tier || !payload.exp) return null;
       if (Date.now() / 1000 > payload.exp) return null; // expired
       if (!TIERS[payload.tier.toUpperCase()]) return null;
@@ -290,7 +304,7 @@ const LicenseManager = (() => {
    */
   function _loadUsage() {
     try {
-      const raw = (() => { try { return localStorage.getItem(STORAGE_KEYS.USAGE); } catch { return null; } })();
+      const raw = safeLocalGet(STORAGE_KEYS.USAGE);
       if (!raw) return _resetUsage();
       const usage = JSON.parse(raw);
       // Reset daily counters if it's a new day
@@ -335,7 +349,7 @@ const LicenseManager = (() => {
 
       // Load saved license
       try {
-        const saved = (() => { try { return localStorage.getItem(STORAGE_KEYS.LICENSE); } catch { return null; } })();
+        const saved = safeLocalGet(STORAGE_KEYS.LICENSE);
         if (saved) {
           const parsed = JSON.parse(saved);
           const payload = _validateToken(parsed.token);
@@ -391,7 +405,7 @@ const LicenseManager = (() => {
       if (!TIERS[tierKey]) return { success: false, error: 'Unknown tier' };
 
       try {
-        const raw = (() => { try { return localStorage.getItem(STORAGE_KEYS.TRIAL); } catch { return null; } })();
+        const raw = safeLocalGet(STORAGE_KEYS.TRIAL);
         const trialData = JSON.parse(raw || '{}');
         if (trialData[tierKey]) return { success: false, error: 'Trial already used for this tier' };
         trialData[tierKey] = Date.now();

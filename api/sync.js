@@ -78,6 +78,12 @@ function requireAuth(req, res, next) {
     return res.status(403).json({ error: 'Cloud sync requires Studio or Enterprise tier' });
   }
 
+  // Require a stable user identity for rate limiting and data storage
+  if (!payload.sub || typeof payload.sub !== 'string') {
+    console.warn(`[AUTH FAIL] ip=${req.ip} path=${req.path} reason=missing_sub`);
+    return res.status(401).json({ error: 'Invalid token: missing user identity' });
+  }
+
   req.user = payload;
   next();
 }
@@ -101,6 +107,12 @@ function requireRateLimit(req, res, next) {
   const userId = req.user?.sub;
   if (!userId) return next();
   const now = Date.now();
+
+  // Evict stale entries to prevent unbounded map growth
+  for (const [uid, entry] of _rateLimits) {
+    if (now - entry.windowStart > RATE_LIMIT_MS * 2) _rateLimits.delete(uid);
+  }
+
   const entry = _rateLimits.get(userId) || { count: 0, windowStart: now };
   if (now - entry.windowStart > RATE_LIMIT_MS) {
     entry.count = 0;
@@ -116,6 +128,9 @@ function requireRateLimit(req, res, next) {
 
 // ─── Input Validation ─────────────────────────────────────────────────────────
 const ID_RE = /^[a-zA-Z0-9_\-]{1,128}$/;
+const MAX_PRESET_PARAMS_BYTES   = 64 * 1024;  //  64 KB
+const MAX_NOISE_PROFILE_BYTES   = 256 * 1024; // 256 KB
+const MAX_HISTORY_ENTRY_BYTES   = 16 * 1024;  //  16 KB
 
 /**
  * Determine whether a candidate identifier conforms to the allowed character set and length.
@@ -150,13 +165,26 @@ function _validatePreset(p) {
  */
 function _sanitizePreset(p) {
   // Only keep known fields to prevent arbitrary data injection
-  return {
+  const rawParams = p.params && typeof p.params === 'object' ? p.params : {};
+  // Cap params payload to prevent oversized objects
+  const paramsStr = JSON.stringify(rawParams);
+  const params = paramsStr.length <= MAX_PRESET_PARAMS_BYTES ? rawParams : {};
+
+  const result = {
     id:     String(p.id).slice(0, 128),
     name:   String(p.name).slice(0, 256),
-    params: p.params && typeof p.params === 'object' ? p.params : {},
-    ...(p.createdAt  !== undefined ? { createdAt:  p.createdAt  } : {}),
-    ...(p.updatedAt  !== undefined ? { updatedAt:  p.updatedAt  } : {}),
+    params,
   };
+
+  // Only include timestamps if they are valid finite numbers
+  if (p.createdAt !== undefined && Number.isFinite(Number(p.createdAt))) {
+    result.createdAt = Number(p.createdAt);
+  }
+  if (p.updatedAt !== undefined && Number.isFinite(Number(p.updatedAt))) {
+    result.updatedAt = Number(p.updatedAt);
+  }
+
+  return result;
 }
 
 /**
@@ -177,11 +205,21 @@ function _validateNoiseProfile(p) {
  * @returns {{name: string, data: object, createdAt?: any}} An object with `name` truncated to 256 characters, `data` ensured to be an object (defaults to `{}`), and `createdAt` included only if present on the input.
  */
 function _sanitizeNoiseProfile(p) {
-  return {
-    name:    String(p.name).slice(0, 256),
-    data:    p.data && typeof p.data === 'object' ? p.data : {},
-    ...(p.createdAt !== undefined ? { createdAt: p.createdAt } : {}),
+  const rawData = p.data && typeof p.data === 'object' ? p.data : {};
+  // Cap data payload (noise profiles can be larger than presets)
+  const dataStr = JSON.stringify(rawData);
+  const data = dataStr.length <= MAX_NOISE_PROFILE_BYTES ? rawData : {};
+
+  const result = {
+    name: String(p.name).slice(0, 256),
+    data,
   };
+
+  if (p.createdAt !== undefined && Number.isFinite(Number(p.createdAt))) {
+    result.createdAt = Number(p.createdAt);
+  }
+
+  return result;
 }
 
 // ─── GET /api/sync/pull ───────────────────────────────────────────────────────
@@ -238,7 +276,13 @@ router.post('/push', requireAuth, requireRateLimit, (req, res) => {
       }
       case 'history:add': {
         if (change.data && typeof change.data === 'object') {
-          data.history = [...(data.history || []), change.data].slice(-100);
+          // Cap each history entry to prevent injection of oversized objects
+          const entryStr = JSON.stringify(change.data);
+          if (entryStr.length <= MAX_HISTORY_ENTRY_BYTES) {
+            data.history = [...(data.history || []), change.data].slice(-100);
+          } else {
+            errors.push('history:add entry exceeds maximum size (16 KB)');
+          }
         }
         break;
       }
@@ -248,7 +292,7 @@ router.post('/push', requireAuth, requireRateLimit, (req, res) => {
   data.updatedAt = Date.now();
   _store.set(userId, data);
 
-  res.json({ success: true, applied: changes.length - errors.length, errors, syncedAt: data.updatedAt });
+  res.json({ success: errors.length === 0, applied: changes.length - errors.length, errors, syncedAt: data.updatedAt });
 });
 
 export default router;
