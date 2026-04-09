@@ -159,7 +159,12 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
-    this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
+    let _savedPresets = null;
+    try { _savedPresets = localStorage.getItem('vip_custom_presets'); } catch { /* private/sandboxed */ }
+    this.customPresets = {};
+    if (_savedPresets) {
+      try { this.customPresets = JSON.parse(_savedPresets); } catch { this.customPresets = {}; }
+    }
     this.renderCustomPresets();
     // Diagnostic state
     this.oscMode = 'wave';
@@ -372,7 +377,7 @@ class VoiceIsolatePro {
     const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
     this.customPresets[id] = { ...this.params };
     PRESETS[id] = this.customPresets[id];
-    localStorage.setItem('vip_custom_presets', JSON.stringify(this.customPresets));
+    try { localStorage.setItem('vip_custom_presets', JSON.stringify(this.customPresets)); } catch { /* private/full */ }
 
     // Add button if it doesn't exist
     if (!document.querySelector(`.btn-preset[data-preset="${id}"]`)) {

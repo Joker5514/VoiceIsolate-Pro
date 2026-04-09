@@ -225,19 +225,33 @@ const LicenseManager = (() => {
   let _usageCounters = null;
   let _listeners = [];
 
+  // ─── Storage Helpers ──────────────────────────────────────────────────────────
+  /**
+   * Safely read a value from localStorage, returning null on any error
+   * (e.g. SecurityError in sandboxed/private-browsing contexts).
+   * @param {string} key
+   * @returns {string|null}
+   */
+  function safeLocalGet(key) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
   // ─── License Token Validation (offline JWT-like) ──────────────────────────────
   /**
-   * Validates a license token. Format: base64(header).base64(payload).signature
-   * For offline use, we verify the payload structure and expiry.
-   * In production, replace with real JWT verification using a public key.
+   * Validate an offline license token and return its decoded payload when valid.
+   *
+   * @param {string} token - Token in the form "base64(header).base64(payload).signature".
+   * @returns {Object|null} The parsed payload object if the token is well-formed, contains a valid `tier` and `exp`, is not expired, and the tier exists; `null` otherwise.
    */
   function _validateToken(token) {
     if (!token || typeof token !== 'string') return null;
     try {
       const parts = token.split('.');
       if (parts.length !== 3) return null;
-      const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-      const payload = JSON.parse(atob(parts[1]));
+      const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      // Add '=' padding to reach a multiple of 4, as required by atob()
+      const padded = b64 + '=='.slice(0, (4 - b64.length % 4) % 4);
+      const payload = JSON.parse(atob(padded));
       if (!payload.tier || !payload.exp) return null;
       if (Date.now() / 1000 > payload.exp) return null; // expired
       if (!TIERS[payload.tier.toUpperCase()]) return null;
@@ -248,8 +262,15 @@ const LicenseManager = (() => {
   }
 
   /**
-   * Creates a demo/trial license token (for testing without a real backend).
-   * In production this would come from your Stripe webhook → license server.
+   * Generate a non-production demo/trial license token for the given tier.
+   *
+   * The token is a JWT-like string whose payload encodes the tier, a demo subject,
+   * issuance and expiration times, available feature keys, and a `source: 'demo'`.
+   * The signature portion is a randomly generated demo value and is not cryptographically secure.
+   *
+   * @param {string} tier - Tier identifier (e.g., "PRO", "FREE"); case is normalized internally.
+   * @param {number} [daysValid=30] - Number of days the demo token should remain valid.
+   * @returns {string} A demo license token in the form "header.payload.signature".
    */
   function _createDemoToken(tier, daysValid = 30) {
     const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
@@ -261,14 +282,29 @@ const LicenseManager = (() => {
       features: Object.keys(TIERS[tier.toUpperCase()].features),
       source: 'demo',
     }));
-    const sig = btoa(`demo_sig_${tier}_${Date.now()}`);
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+    const sig = btoa(`demo_${nonce}`);
     return `${header}.${payload}.${sig}`;
   }
 
-  // ─── Usage Tracking ───────────────────────────────────────────────────────────
+  /**
+   * Load persisted usage counters, ensure they are up-to-date for today, and fall back to a reset baseline on error.
+   *
+   * Attempts to read usage data from localStorage, resets daily counters if the stored date differs from today,
+   * and returns the resulting usage object.
+   *
+   * @returns {Object} The usage counters object containing at minimum:
+   *  - {string} date - today's date string
+   *  - {number} exportsToday - exports performed today
+   *  - {number} totalExports - cumulative exports
+   *  - {number} totalMinutesProcessed - cumulative processed minutes
+   *  - {number} apiCallsThisMonth - API calls in the current month
+   *  - {string} monthKey - current month in `YYYY-MM` format
+   * If reading or parsing stored data fails, returns a freshly reset usage object.
+   */
   function _loadUsage() {
     try {
-      (()=>{ try { return localStorage.getItem(STORAGE_KEYS.USAGE); } catch { return null; } })();
+      const raw = safeLocalGet(STORAGE_KEYS.USAGE);
       if (!raw) return _resetUsage();
       const usage = JSON.parse(raw);
       // Reset daily counters if it's a new day
@@ -313,7 +349,7 @@ const LicenseManager = (() => {
 
       // Load saved license
       try {
-        (()=>{ try { return localStorage.getItem(STORAGE_KEYS.LICENSE); } catch { return null; } })();
+        const saved = safeLocalGet(STORAGE_KEYS.LICENSE);
         if (saved) {
           const parsed = JSON.parse(saved);
           const payload = _validateToken(parsed.token);
@@ -369,7 +405,8 @@ const LicenseManager = (() => {
       if (!TIERS[tierKey]) return { success: false, error: 'Unknown tier' };
 
       try {
-        const trialData = JSON.parse(localStorage.getItem(STORAGE_KEYS.TRIAL) || '{}');
+        const raw = safeLocalGet(STORAGE_KEYS.TRIAL);
+        const trialData = JSON.parse(raw || '{}');
         if (trialData[tierKey]) return { success: false, error: 'Trial already used for this tier' };
         trialData[tierKey] = Date.now();
         try { localStorage.setItem(STORAGE_KEYS.TRIAL, JSON.stringify(trialData)); } catch { /* ARCH-06: sandboxed */ }
