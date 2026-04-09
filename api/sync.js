@@ -248,7 +248,7 @@ router.post('/push', requireAuth, requireRateLimit, (req, res) => {
   data.updatedAt = Date.now();
   _store.set(userId, data);
 
-  res.json({ success: true, applied: changes.length, errors, syncedAt: data.updatedAt });
+  res.json({ success: true, applied: changes.length - errors.length, errors, syncedAt: data.updatedAt });
 });
 
 export default router;
