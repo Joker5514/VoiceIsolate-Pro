@@ -127,6 +127,67 @@ This file is never fetched from CDN. The pipeline falls back to classical DSP-on
 
 ---
 
+## Mobile Apps (Capacitor 7)
+
+VoiceIsolate Pro runs natively on Android and iOS via [Capacitor 7](https://capacitorjs.com/).
+The web build is synced into each platform's native shell — same DSP pipeline, same UI, native performance.
+
+| Platform | Min Version | App ID | Version Code |
+|---|---|---|---|
+| **Android** | API 23 (6.0) | `com.voiceisolatepro.app` | 22100 |
+| **iOS** | 14.1 | `com.voiceisolatepro.app` | 22100 |
+
+### Android
+
+```bash
+# Build & sync web assets into Android project
+pnpm run android:build        # debug APK
+
+# Or step-by-step:
+pnpm run build                # copy public/ → build/
+npx cap sync android          # sync into android/
+cd android && ./gradlew assembleDebug
+
+# Release AAB for Google Play
+pnpm run android:bundle
+```
+
+Open in Android Studio: `npx cap open android`
+
+### iOS
+
+```bash
+# Install CocoaPods dependencies (first time only)
+cd ios/App && pod install && cd ../..
+
+# Build & sync web assets into iOS project
+pnpm run ios:sync
+
+# Open in Xcode to build/run
+npx cap open ios
+```
+
+> **iOS Requirements**: Xcode 15+, CocoaPods, valid Apple Developer certificate for device builds.
+
+### Fastlane (CI/CD)
+
+Both platforms have Fastlane lanes for automated builds and store uploads:
+
+```bash
+# Android
+cd fastlane
+fastlane android build_dev      # debug APK
+fastlane android build_release  # signed AAB
+fastlane android beta           # upload to Play Store internal track
+
+# iOS
+fastlane ios build_dev          # development IPA
+fastlane ios build_release      # App Store IPA
+fastlane ios beta               # upload to TestFlight
+```
+
+---
+
 ## Architecture Constraints (DO NOT VIOLATE)
 
 1. **No cloud APIs.** No `fetch()` to external servers. All models are local `.onnx` files.
@@ -139,6 +200,17 @@ This file is never fetched from CDN. The pipeline falls back to classical DSP-on
 ---
 
 ## Changelog
+
+### v23.1 — April 9 2026 (Full Audit + Mobile Completion)
+
+| Fix | File(s) | Description |
+|---|---|---|
+| **Capacitor config dedup** | `capacitor.config.ts` (deleted), `package.json` | Removed conflicting `.ts` config (wrong appId `pro.voiceisolate.app`); canonical `.json` config retained (`com.voiceisolatepro.app`) |
+| **Android colors.xml** | `android/app/src/main/res/values/colors.xml` | Created missing color resources referenced by `styles.xml` — build would fail without them |
+| **validate.js fix** | `scripts/validate.js` | ML Worker checks now target `pipeline-orchestrator.js` (the actual owner) instead of `app.js` |
+| **iOS Xcode scaffold** | `ios/App/App.xcodeproj/`, storyboards, assets, config.xml | Full Capacitor 7 Xcode project: pbxproj, Main + LaunchScreen storyboards, asset catalog, config.xml, workspace files |
+| **iOS .gitignore** | `ios/.gitignore` | Narrowed xcworkspace ignore to `App/Pods.xcworkspace` only — allows tracking of App.xcworkspace and project.xcworkspace |
+| **README update** | `README.md` | Added mobile build instructions (Android + iOS + Fastlane), documented all audit fixes |
 
 ### v23.0 — April 7 2026 (Definitive Blueprint)
 
