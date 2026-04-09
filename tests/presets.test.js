@@ -1,6 +1,6 @@
 /**
  * VoiceIsolate Pro — Preset Completeness Tests (Phase 6)
- * Verifies all 7 presets define values for all 52 slider parameters.
+ * Verifies all 9 presets define values for all 52 slider parameters.
  */
 
 const fs = require('fs');
