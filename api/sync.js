@@ -17,22 +17,21 @@ import crypto from 'crypto';
 
 const router = express.Router();
 
+router.use(express.json({ limit: '1mb' }));
+
 // ─── In-Memory Store (replace with DB in production) ─────────────────────────
 const _store = new Map(); // userId → { presets, noiseProfiles, history, updatedAt }
 
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
-const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET || 'dev_secret_replace_in_prod';
+if (!process.env.LICENSE_JWT_SECRET) {
+  throw new Error('LICENSE_JWT_SECRET environment variable is required');
+}
+const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
 
 function _validateToken(token) {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
-    // Skip signature check for native RC tokens
-    if (parts[2] === 'native_purchase') {
-      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-      if (Date.now() / 1000 > payload.exp) return null;
-      return payload;
-    }
     const expectedSig = crypto
       .createHmac('sha256', LICENSE_SECRET)
       .update(`${parts[0]}.${parts[1]}`)
@@ -82,6 +81,7 @@ router.post('/push', requireAuth, (req, res) => {
   const { changes = [] } = req.body;
 
   if (!Array.isArray(changes)) return res.status(400).json({ error: 'changes must be an array' });
+  if (changes.length > 500) return res.status(413).json({ error: 'Too many changes per sync request (max 500)' });
 
   const data = _store.get(userId) || { presets: [], noiseProfiles: [], history: [] };
 
