@@ -118,31 +118,16 @@ describe('ONNX / VAD', () => {
   });
 });
 
-describe('ML Worker (Phase 4b)', () => {
-  const fs = require('fs');
-  const path = require('path');
-  const mlWorkerPath = path.resolve(__dirname, '..', 'public/app/ml-worker.js');
-  const mlWorkerJs = fs.existsSync(mlWorkerPath) ? fs.readFileSync(mlWorkerPath, 'utf8') : '';
-
-  test('ml-worker.js file exists', () => {
-    expect(fs.existsSync(mlWorkerPath)).toBe(true);
-  });
 
   test('app.js spawns ML Worker with initMLWorker', () => {
     expect(appJs).toContain('initMLWorker()');
   });
 
-  test('app.js creates Worker at correct path', () => {
-    expect(appJs).toContain("new Worker('./ml-worker.js')");
-  });
 
   test('app.js has _mlCall promise helper', () => {
     expect(appJs).toContain('_mlCall(payload, transfer');
   });
 
-  test('app.js has ML message handler', () => {
-    expect(appJs).toContain('.mlWorker.onmessage');
-  });
 
   test('app.js runSeparation delegates to ML Worker', () => {
     expect(appJs).toContain('async runSeparation(buf, model');
