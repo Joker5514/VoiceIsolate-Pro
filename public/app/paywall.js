@@ -16,14 +16,26 @@ const Paywall = (() => {
     el.innerHTML = doc.body.innerHTML;
   }
 
-  // ─── Stripe Price IDs (replace with real ones from Stripe Dashboard) ──────────
-  const STRIPE_PRICES = {
-    PRO_MONTHLY:        'price_pro_monthly_placeholder',
-    PRO_ANNUAL:         'price_pro_annual_placeholder',
-    STUDIO_MONTHLY:     'price_studio_monthly_placeholder',
-    STUDIO_ANNUAL:      'price_studio_annual_placeholder',
-    ENTERPRISE_MONTHLY: 'price_enterprise_monthly_placeholder',
-  };
+  // ─── Stripe Price IDs — loaded from server at runtime ─────────────────────────
+  // Price IDs are managed server-side via environment variables (STRIPE_PRICE_* in .env).
+  // The client never needs raw price IDs; the backend /api/checkout resolves them by tier+cycle.
+  const STRIPE_PRICES = {}; // populated lazily by _loadPrices()
+
+  async function _loadPrices() {
+    if (Object.keys(STRIPE_PRICES).length > 0) return; // already loaded
+    try {
+      const res = await fetch('/api/pricing');
+      if (!res.ok) return;
+      const data = await res.json();
+      const tiers = data.tiers || {};
+      for (const [tier, def] of Object.entries(tiers)) {
+        if (def.priceIds) {
+          if (def.priceIds.monthly) STRIPE_PRICES[`${tier}_MONTHLY`] = def.priceIds.monthly;
+          if (def.priceIds.annual)  STRIPE_PRICES[`${tier}_ANNUAL`]  = def.priceIds.annual;
+        }
+      }
+    } catch { /* backend unavailable — checkout still works via tier+cycle */ }
+  }
 
   // ─── RevenueCat Product IDs (for mobile in-app purchases) ────────────────────
   const RC_PRODUCTS = {
@@ -398,17 +410,13 @@ const Paywall = (() => {
      * Redirect to Stripe Checkout for the given tier and billing cycle.
      * In production, this calls your backend /api/checkout which creates a Stripe session.
      */
-    checkout(tier, cycle = 'monthly') {
-      const priceKey = `${tier}_${cycle.toUpperCase()}`;
-      const priceId = STRIPE_PRICES[priceKey];
-
+    async checkout(tier, cycle = 'monthly') {
       // In production: POST to /api/checkout → get Stripe session URL → redirect
       // For now: show a demo activation
       if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         const confirmed = confirm(
           `[DEMO MODE]\n\nThis would redirect to Stripe Checkout for:\n` +
-          `Plan: VoiceIsolate ${tier} (${cycle})\n` +
-          `Price ID: ${priceId}\n\n` +
+          `Plan: VoiceIsolate ${tier} (${cycle})\n\n` +
           `Activate a demo license instead?`
         );
         if (confirmed) {
@@ -429,15 +437,19 @@ const Paywall = (() => {
         return;
       }
 
-      // Production: call backend
-      fetch('/api/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ priceId, tier, cycle }),
-      })
-        .then(r => r.json())
-        .then(data => { if (data.url) window.location.href = data.url; })
-        .catch(() => alert('Checkout unavailable. Please try again.'));
+      // Production: call backend — price resolution happens server-side via env vars
+      try {
+        const res = await fetch('/api/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tier, cycle }),
+        });
+        const data = await res.json();
+        if (data.url) window.location.href = data.url;
+        else alert('Checkout unavailable. Please try again.');
+      } catch {
+        alert('Checkout unavailable. Please try again.');
+      }
     },
 
     /**

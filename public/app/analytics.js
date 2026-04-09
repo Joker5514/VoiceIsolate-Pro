@@ -255,8 +255,8 @@ const Analytics = (() => {
   // Auto-track session end on page unload
   if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', () => AN.trackSessionEnd());
-    windo// BUG-F FIX: Auto-init removed. Call Analytics.init() explicitly after user consent.
-    // w.addEventListener('DOMContentLoaded', () => AN.init());
+    // BUG-F FIX: Auto-init removed. Call Analytics.init() explicitly after user consent.
+    // window.addEventListener('DOMContentLoaded', () => AN.init());
     window.Analytics = AN;
   }
 

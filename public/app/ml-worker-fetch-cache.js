@@ -452,14 +452,30 @@ function _ensureProgressPanel(keys) {
   panel.appendChild(title);
 
   for (const key of keys) {
-    const row   = document.createElement('div');
+    const row = document.createElement('div');
     row.className = 'vip-mlp-row';
     row.id = `vip-mlp-row-${key}`;
-    row.innerHTML = `
-      <span class="vip-mlp-label" title="${key}">${key}</span>
-      <div class="vip-mlp-track"><div class="vip-mlp-fill" id="vip-mlp-fill-${key}"></div></div>
-      <span class="vip-mlp-status" id="vip-mlp-status-${key}">Pending</span>
-    `;
+
+    const label = document.createElement('span');
+    label.className = 'vip-mlp-label';
+    label.title = key;
+    label.textContent = key;
+
+    const track = document.createElement('div');
+    track.className = 'vip-mlp-track';
+    const fill = document.createElement('div');
+    fill.className = 'vip-mlp-fill';
+    fill.id = `vip-mlp-fill-${key}`;
+    track.appendChild(fill);
+
+    const status = document.createElement('span');
+    status.className = 'vip-mlp-status';
+    status.id = `vip-mlp-status-${key}`;
+    status.textContent = 'Pending';
+
+    row.appendChild(label);
+    row.appendChild(track);
+    row.appendChild(status);
     panel.appendChild(row);
   }
 

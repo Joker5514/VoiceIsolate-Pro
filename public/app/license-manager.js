@@ -237,7 +237,6 @@ const LicenseManager = (() => {
       const parts = token.split('.');
       if (parts.length !== 3) return null;
       const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-      const payload = JSON.parse(atob(parts[1]));
       if (!payload.tier || !payload.exp) return null;
       if (Date.now() / 1000 > payload.exp) return null; // expired
       if (!TIERS[payload.tier.toUpperCase()]) return null;
@@ -261,14 +260,15 @@ const LicenseManager = (() => {
       features: Object.keys(TIERS[tier.toUpperCase()].features),
       source: 'demo',
     }));
-    const sig = btoa(`demo_sig_${tier}_${Date.now()}`);
+    const nonce = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+    const sig = btoa(`demo_${nonce}`);
     return `${header}.${payload}.${sig}`;
   }
 
   // ─── Usage Tracking ───────────────────────────────────────────────────────────
   function _loadUsage() {
     try {
-      (()=>{ try { return localStorage.getItem(STORAGE_KEYS.USAGE); } catch { return null; } })();
+      const raw = (() => { try { return localStorage.getItem(STORAGE_KEYS.USAGE); } catch { return null; } })();
       if (!raw) return _resetUsage();
       const usage = JSON.parse(raw);
       // Reset daily counters if it's a new day
@@ -313,7 +313,7 @@ const LicenseManager = (() => {
 
       // Load saved license
       try {
-        (()=>{ try { return localStorage.getItem(STORAGE_KEYS.LICENSE); } catch { return null; } })();
+        const saved = (() => { try { return localStorage.getItem(STORAGE_KEYS.LICENSE); } catch { return null; } })();
         if (saved) {
           const parsed = JSON.parse(saved);
           const payload = _validateToken(parsed.token);
@@ -369,7 +369,8 @@ const LicenseManager = (() => {
       if (!TIERS[tierKey]) return { success: false, error: 'Unknown tier' };
 
       try {
-        const trialData = JSON.parse(localStorage.getItem(STORAGE_KEYS.TRIAL) || '{}');
+        const raw = (() => { try { return localStorage.getItem(STORAGE_KEYS.TRIAL); } catch { return null; } })();
+        const trialData = JSON.parse(raw || '{}');
         if (trialData[tierKey]) return { success: false, error: 'Trial already used for this tier' };
         trialData[tierKey] = Date.now();
         try { localStorage.setItem(STORAGE_KEYS.TRIAL, JSON.stringify(trialData)); } catch { /* ARCH-06: sandboxed */ }

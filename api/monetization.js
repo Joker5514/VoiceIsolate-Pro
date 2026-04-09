@@ -124,7 +124,7 @@ router.post('/checkout', async (req, res) => {
     res.json({ url: session.url, sessionId: session.id });
   } catch (err) {
     console.error('[Checkout Error]', err.message);
-    res.status(500).json({ error: 'Checkout failed', message: err.message });
+    res.status(500).json({ error: 'Checkout failed. Please try again.' });
   }
 });
 
