@@ -161,7 +161,10 @@ class VoiceIsolatePro {
     this.three = {};
     let _savedPresets = null;
     try { _savedPresets = localStorage.getItem('vip_custom_presets'); } catch { /* private/sandboxed */ }
-    this.customPresets = JSON.parse(_savedPresets || '{}');
+    this.customPresets = {};
+    if (_savedPresets) {
+      try { this.customPresets = JSON.parse(_savedPresets); } catch { this.customPresets = {}; }
+    }
     this.renderCustomPresets();
     // Diagnostic state
     this.oscMode = 'wave';
