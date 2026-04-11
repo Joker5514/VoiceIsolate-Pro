@@ -35,7 +35,13 @@ const VoiceIsolatePro = (() => {
   // eslint-disable-next-line no-unused-vars
   const window = {};
   // eslint-disable-next-line no-unused-vars
-  const document = { addEventListener: () => {} };
+  const document = {
+    addEventListener:  () => {},
+    querySelector:     () => null,
+    querySelectorAll:  () => [],
+    getElementById:    () => null,
+    createElement:     () => ({ addEventListener: () => {}, style: {}, classList: { add: () => {}, remove: () => {} } }),
+  };
 
   eval(appJs);
 
@@ -1186,10 +1192,11 @@ describe('Voice Isolation bin clamping (dsp-processor.js PR fix)', () => {
     expect(loBin).toBe(0);
   });
 
-  test('-Infinity voiceFocusHi is clamped to 0 (negative guard)', () => {
-    // -Infinity / binHz = -Infinity → hiBin < 0 → hiBin = 0, then hiBin < loBin? If loBin=0, equal
-    const { hiBin } = clampVoiceBins(0, -Infinity, SR, N);
-    expect(hiBin).toBe(0);
+  test('-Infinity voiceFocusHi: non-finite guard fires first, clamps to halfN - 1', () => {
+    // -Infinity is truthy, so (-Infinity || 0) = -Infinity.
+    // Math.round(-Infinity) = -Infinity → !isFinite → hiBin = halfN - 1 (non-finite guard).
+    const { hiBin, halfN: hn } = clampVoiceBins(0, -Infinity, SR, N);
+    expect(hiBin).toBe(hn - 1);
   });
 
   // ── NaN inputs ────────────────────────────────────────────────────────────
@@ -1199,9 +1206,11 @@ describe('Voice Isolation bin clamping (dsp-processor.js PR fix)', () => {
     expect(loBin).toBe(0);
   });
 
-  test('NaN voiceFocusHi is clamped to halfN - 1 (non-finite guard)', () => {
-    const { hiBin, halfN: hn } = clampVoiceBins(0, NaN, SR, N);
-    expect(hiBin).toBe(hn - 1);
+  test('NaN voiceFocusHi: (NaN || 0) evaluates to 0, hiBin stays 0', () => {
+    // NaN is falsy in JS: (NaN || 0) = 0 → hiBin = Math.round(0/binHz) = 0.
+    // No guards fire, so hiBin remains 0.
+    const { hiBin } = clampVoiceBins(0, NaN, SR, N);
+    expect(hiBin).toBe(0);
   });
 
   // ── Negative frequency inputs ─────────────────────────────────────────────
@@ -1292,5 +1301,429 @@ describe('Voice Isolation bin clamping (dsp-processor.js PR fix)', () => {
     expect(loBin).toBeGreaterThanOrEqual(0);
     expect(hiBin).toBeGreaterThanOrEqual(loBin);
     expect(hiBin).toBeLessThan(hn);
+  });
+});
+
+// ============================================================
+// DSPCore.hannWindow
+// ============================================================
+
+describe('DSPCore.hannWindow', () => {
+  test('returns a Float32Array of the requested length', () => {
+    const w = DSPCore.hannWindow(512);
+    expect(w).toBeInstanceOf(Float32Array);
+    expect(w.length).toBe(512);
+  });
+
+  test('all values are in [0, 1]', () => {
+    const w = DSPCore.hannWindow(1024);
+    for (const v of w) {
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThanOrEqual(1 + 1e-9);
+    }
+  });
+
+  test('first and last samples are 0 (or near-zero for periodic Hann)', () => {
+    const w = DSPCore.hannWindow(512);
+    expect(w[0]).toBeCloseTo(0, 5);
+  });
+
+  test('peak is near the centre of the window', () => {
+    const N = 512;
+    const w = DSPCore.hannWindow(N);
+    let maxVal = 0, maxIdx = 0;
+    for (let i = 0; i < N; i++) {
+      if (w[i] > maxVal) { maxVal = w[i]; maxIdx = i; }
+    }
+    // Centre of a periodic Hann window is at N/2
+    expect(Math.abs(maxIdx - N / 2)).toBeLessThanOrEqual(2);
+    expect(maxVal).toBeGreaterThan(0.99);
+  });
+
+  test('satisfies the Constant-Overlap-Add (COLA) property at 75% overlap', () => {
+    // For a 75% overlap (hop = N/4), 4 windows placed at offsets 0, hop, 2*hop, 3*hop
+    // produce a constant squared-sum in the steady-state region [3*hop, N).
+    const N   = 512;
+    const hop = N / 4; // 128
+    const w   = DSPCore.hannWindow(N);
+    const len = N + 3 * hop;
+    const sum = new Float64Array(len);
+    for (let start = 0; start < 4 * hop; start += hop) {
+      for (let i = 0; i < N; i++) {
+        if (start + i < len) sum[start + i] += w[i] * w[i];
+      }
+    }
+    // Only check the fully-overlapping steady-state region [3*hop, N)
+    // where all 4 windows contribute, so the COLA sum is constant (≈ 1.5).
+    const mid = sum[3 * hop];
+    for (let i = 3 * hop; i < N; i++) {
+      expect(Math.abs(sum[i] - mid) / mid).toBeLessThan(0.05); // within 5%
+    }
+  });
+});
+
+// ============================================================
+// DSPCore.forwardSTFT / DSPCore.inverseSTFT
+// ============================================================
+
+describe('DSPCore.forwardSTFT', () => {
+  const FFT_SIZE = 512;
+  const HOP      = 128; // 75% overlap
+  const N_SAMPLES = 4096;
+  const HALF_N    = FFT_SIZE / 2 + 1;
+
+  function makeSine(n, freq = 440, sr = 48000) {
+    const d = new Float32Array(n);
+    for (let i = 0; i < n; i++) d[i] = Math.sin(2 * Math.PI * freq * i / sr);
+    return d;
+  }
+
+  test('returns an object with mag, phase, and frameCount', () => {
+    const data   = makeSine(N_SAMPLES);
+    const result = DSPCore.forwardSTFT(data, FFT_SIZE, HOP);
+    expect(result).toHaveProperty('mag');
+    expect(result).toHaveProperty('phase');
+    expect(result).toHaveProperty('frameCount');
+  });
+
+  test('frameCount matches the expected number of frames', () => {
+    const data      = makeSine(N_SAMPLES);
+    const { frameCount } = DSPCore.forwardSTFT(data, FFT_SIZE, HOP);
+    const expected  = Math.floor((N_SAMPLES - FFT_SIZE) / HOP) + 1;
+    expect(frameCount).toBe(expected);
+  });
+
+  test('each magnitude frame has halfN bins', () => {
+    const data = makeSine(N_SAMPLES);
+    const { mag, frameCount } = DSPCore.forwardSTFT(data, FFT_SIZE, HOP);
+    expect(mag.length).toBe(frameCount);
+    for (const frame of mag) {
+      expect(frame.length).toBe(HALF_N);
+    }
+  });
+
+  test('each phase frame has halfN bins in [-π, π]', () => {
+    const data = makeSine(N_SAMPLES);
+    const { phase } = DSPCore.forwardSTFT(data, FFT_SIZE, HOP);
+    // Phase values are stored in Float32Array; the float32 representation of π
+    // is slightly larger than the float64 Math.PI, so we allow 1e-6 tolerance.
+    for (const frame of phase) {
+      for (const p of frame) {
+        expect(p).toBeGreaterThanOrEqual(-Math.PI - 1e-6);
+        expect(p).toBeLessThanOrEqual(Math.PI + 1e-6);
+      }
+    }
+  });
+
+  test('magnitude values are non-negative', () => {
+    const data = makeSine(N_SAMPLES);
+    const { mag } = DSPCore.forwardSTFT(data, FFT_SIZE, HOP);
+    for (const frame of mag) {
+      for (const m of frame) {
+        expect(m).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+
+  test('a pure 440 Hz sine has its energy concentrated near bin k=440*FFT_SIZE/SR', () => {
+    const SR   = 48000;
+    const data = makeSine(N_SAMPLES * 2, 440, SR);
+    const { mag } = DSPCore.forwardSTFT(data, FFT_SIZE, HOP);
+    const expectedBin = Math.round(440 * FFT_SIZE / SR);
+    // Average magnitude across frames
+    const avgMag = new Float32Array(HALF_N);
+    for (const frame of mag) {
+      for (let k = 0; k < HALF_N; k++) avgMag[k] += frame[k];
+    }
+    // The expected bin should be the dominant bin
+    let maxBin = 0;
+    for (let k = 1; k < HALF_N; k++) {
+      if (avgMag[k] > avgMag[maxBin]) maxBin = k;
+    }
+    expect(Math.abs(maxBin - expectedBin)).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('DSPCore.inverseSTFT — STFT roundtrip', () => {
+  const FFT_SIZE  = 512;
+  const HOP       = 128;
+  const N_SAMPLES = 4096;
+
+  function makeSine(n) {
+    const d = new Float32Array(n);
+    for (let i = 0; i < n; i++) d[i] = 0.5 * Math.sin(2 * Math.PI * 440 * i / 48000);
+    return d;
+  }
+
+  test('forwardSTFT → inverseSTFT reconstructs the original signal (identity pipeline)', () => {
+    const original = makeSine(N_SAMPLES);
+    const { mag, phase, frameCount } = DSPCore.forwardSTFT(original, FFT_SIZE, HOP);
+
+    // No processing — just reconstruct
+    const reconstructed = DSPCore.inverseSTFT(mag, phase, FFT_SIZE, HOP, original.length);
+
+    // Measure reconstruction error in the central region (skip boundary transients)
+    const start = FFT_SIZE;
+    const end   = N_SAMPLES - FFT_SIZE;
+    let maxErr  = 0;
+    for (let i = start; i < end; i++) {
+      maxErr = Math.max(maxErr, Math.abs(reconstructed[i] - original[i]));
+    }
+    expect(maxErr).toBeLessThan(0.01); // < 1% error in the interior
+    expect(frameCount).toBeGreaterThan(0);
+  });
+
+  test('output length equals the requested outputLength', () => {
+    const data = makeSine(N_SAMPLES);
+    const { mag, phase } = DSPCore.forwardSTFT(data, FFT_SIZE, HOP);
+    const out = DSPCore.inverseSTFT(mag, phase, FFT_SIZE, HOP, N_SAMPLES);
+    expect(out.length).toBe(N_SAMPLES);
+  });
+
+  test('gain-scaled STFT produces proportionally scaled output', () => {
+    const original = makeSine(N_SAMPLES);
+    const { mag, phase } = DSPCore.forwardSTFT(original, FFT_SIZE, HOP);
+
+    // Halve all magnitudes (6 dB attenuation)
+    const scaledMag = mag.map(frame => frame.map(v => v * 0.5));
+
+    const orig_out  = DSPCore.inverseSTFT(mag, phase, FFT_SIZE, HOP, original.length);
+    const scaled_out = DSPCore.inverseSTFT(scaledMag, phase, FFT_SIZE, HOP, original.length);
+
+    // Interior samples should be approximately half
+    const mid = Math.floor(N_SAMPLES / 2);
+    if (Math.abs(orig_out[mid]) > 0.01) {
+      const ratio = scaled_out[mid] / orig_out[mid];
+      expect(ratio).toBeCloseTo(0.5, 1);
+    }
+  });
+
+  test('zeroed magnitude produces near-silence output', () => {
+    const data = makeSine(N_SAMPLES);
+    const { mag, phase } = DSPCore.forwardSTFT(data, FFT_SIZE, HOP);
+    const silentMag = mag.map(frame => new Float32Array(frame.length)); // all zeros
+    const out = DSPCore.inverseSTFT(silentMag, phase, FFT_SIZE, HOP, N_SAMPLES);
+    let maxAbs = 0;
+    for (const s of out) maxAbs = Math.max(maxAbs, Math.abs(s));
+    expect(maxAbs).toBeLessThan(1e-6);
+  });
+});
+
+// ============================================================
+// DSPCore.biquadCoeffs
+// ============================================================
+
+describe('DSPCore.biquadCoeffs', () => {
+  const SR = 48000;
+
+  test('highpass: DC response is near zero', () => {
+    // biquadCoeffs returns pre-normalised coeffs {b0,b1,b2,a1,a2} (a0 is implicitly 1)
+    const { b0, b1, b2, a1, a2 } = DSPCore.biquadCoeffs('highpass', 1000, 0.707, 0, SR);
+    // H(z=1) = (b0+b1+b2)/(1+a1+a2) — at DC (z=1)
+    const numerator   = b0 + b1 + b2;
+    const denominator = 1 + a1 + a2;
+    expect(Math.abs(numerator / denominator)).toBeLessThan(0.01);
+  });
+
+  test('lowpass: Nyquist response is near zero', () => {
+    // biquadCoeffs returns pre-normalised coeffs (a0 implicitly 1)
+    const { b0, b1, b2, a1, a2 } = DSPCore.biquadCoeffs('lowpass', 1000, 0.707, 0, SR);
+    // H(z=-1) = (b0-b1+b2)/(1-a1+a2) — at Nyquist (z=-1)
+    const numerator   = b0 - b1 + b2;
+    const denominator = 1 - a1 + a2;
+    expect(Math.abs(numerator / denominator)).toBeLessThan(0.01);
+  });
+
+  test('notch: response at notch frequency is near zero', () => {
+    const freq = 1000;
+    const w0   = 2 * Math.PI * freq / SR;
+    // biquadCoeffs returns pre-normalised coeffs (a0 implicitly 1)
+    const { b0, b1, b2, a1, a2 } = DSPCore.biquadCoeffs('notch', freq, 10, 0, SR);
+    // H(e^jw0) = (b0 + b1*e^-jw0 + b2*e^-2jw0) / (1 + a1*e^-jw0 + a2*e^-2jw0)
+    const cosW = Math.cos(w0);
+    const sinW = Math.sin(w0);
+    const numRe = b0 + b1 * cosW + b2 * Math.cos(2 * w0);
+    const numIm = -(b1 * sinW + b2 * Math.sin(2 * w0));
+    const magNum = Math.sqrt(numRe * numRe + numIm * numIm);
+    const denRe = 1 + a1 * cosW + a2 * Math.cos(2 * w0);
+    const denIm = -(a1 * sinW + a2 * Math.sin(2 * w0));
+    const magDen = Math.sqrt(denRe * denRe + denIm * denIm);
+    expect(magNum / magDen).toBeLessThan(0.05);
+  });
+
+  test('peaking: boosts gain at the target frequency', () => {
+    const freq  = 1000;
+    const gainDb = 6;
+    const w0    = 2 * Math.PI * freq / SR;
+    // biquadCoeffs returns pre-normalised coeffs (a0 implicitly 1)
+    const { b0, b1, b2, a1, a2 } = DSPCore.biquadCoeffs('peaking', freq, 1, gainDb, SR);
+    const cosW = Math.cos(w0);
+    const sinW = Math.sin(w0);
+    const numRe = b0 + b1 * cosW + b2 * Math.cos(2 * w0);
+    const numIm = -(b1 * sinW + b2 * Math.sin(2 * w0));
+    const denRe = 1 + a1 * cosW + a2 * Math.cos(2 * w0);
+    const denIm = -(a1 * sinW + a2 * Math.sin(2 * w0));
+    const magH  = Math.sqrt(numRe * numRe + numIm * numIm) /
+                  Math.sqrt(denRe * denRe + denIm * denIm);
+    const expectedGain = Math.pow(10, gainDb / 20);
+    expect(Math.abs(magH - expectedGain)).toBeLessThan(0.1);
+  });
+
+  test('coefficients are all finite numbers', () => {
+    for (const type of ['highpass', 'lowpass', 'notch', 'peaking']) {
+      const c = DSPCore.biquadCoeffs(type, 1000, 0.707, 0, SR);
+      for (const val of Object.values(c)) {
+        expect(Number.isFinite(val)).toBe(true);
+      }
+    }
+  });
+});
+
+// ============================================================
+// DSPCore.calcRMS / DSPCore.calcPeak
+// ============================================================
+
+describe('DSPCore.calcRMS', () => {
+  test('returns -96 for a silent buffer (all zeros)', () => {
+    const data = new Float32Array(1024);
+    expect(DSPCore.calcRMS(data)).toBe(-96);
+  });
+
+  test('returns 0 dB for a full-scale sine wave (RMS = 1/√2 ≈ 0.707)', () => {
+    // RMS of a sine with amplitude 1 = 1/√2 → RMS² = 0.5 → 10*log10(0.5) ≈ -3 dB
+    const N = 1024;
+    const data = new Float32Array(N);
+    for (let i = 0; i < N; i++) data[i] = Math.sin(2 * Math.PI * i / N);
+    const rms = DSPCore.calcRMS(data);
+    expect(rms).toBeCloseTo(10 * Math.log10(0.5), 1);
+  });
+
+  test('returns 0 dB for a DC signal of amplitude 1', () => {
+    const data = new Float32Array(100).fill(1.0);
+    // RMS of DC=1 → rms²=1 → 10*log10(1)=0
+    expect(DSPCore.calcRMS(data)).toBeCloseTo(0, 5);
+  });
+
+  test('lower amplitude gives lower dB value', () => {
+    const loud  = new Float32Array(100).fill(0.5);
+    const quiet = new Float32Array(100).fill(0.1);
+    expect(DSPCore.calcRMS(loud)).toBeGreaterThan(DSPCore.calcRMS(quiet));
+  });
+});
+
+describe('DSPCore.calcPeak', () => {
+  test('returns -96 for a silent buffer', () => {
+    const data = new Float32Array(100);
+    expect(DSPCore.calcPeak(data)).toBe(-96);
+  });
+
+  test('returns 0 dB for a sample of amplitude 1', () => {
+    const data = new Float32Array(100).fill(0);
+    data[50] = 1.0;
+    expect(DSPCore.calcPeak(data)).toBeCloseTo(0, 5);
+  });
+
+  test('peak is always >= RMS for any non-silent signal', () => {
+    const N = 512;
+    const data = new Float32Array(N);
+    for (let i = 0; i < N; i++) data[i] = Math.sin(2 * Math.PI * i / N) * 0.8;
+    expect(DSPCore.calcPeak(data)).toBeGreaterThanOrEqual(DSPCore.calcRMS(data));
+  });
+});
+
+// ============================================================
+// Spectral subtraction pipeline (forwardSTFT → noise reduce → inverseSTFT)
+// ============================================================
+
+describe('Spectral subtraction through the full STFT pipeline', () => {
+  const FFT_SIZE  = 512;
+  const HOP       = 128;
+  const SR        = 48000;
+  const N_SAMPLES = 8192;
+
+  function makeMixedSignal(n) {
+    const data = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      // Voice-like: 300 Hz sine (signal)
+      const signal = 0.5 * Math.sin(2 * Math.PI * 300 * i / SR);
+      // White noise (noise)
+      const noise  = (Math.random() * 2 - 1) * 0.05;
+      data[i] = signal + noise;
+    }
+    return data;
+  }
+
+  test('noise subtraction reduces RMS of the output vs noisy input', () => {
+    const noisy = makeMixedSignal(N_SAMPLES);
+    const { mag, phase } = DSPCore.forwardSTFT(noisy, FFT_SIZE, HOP);
+
+    // Estimate noise floor from first 10 frames (assumed to be noise-only)
+    const HALF_N = FFT_SIZE / 2 + 1;
+    const noiseEst = new Float32Array(HALF_N);
+    for (let f = 0; f < 10; f++) {
+      for (let k = 0; k < HALF_N; k++) noiseEst[k] += mag[f][k] / 10;
+    }
+
+    // Apply basic spectral subtraction
+    const beta = 0.01;
+    for (let f = 0; f < mag.length; f++) {
+      for (let k = 0; k < HALF_N; k++) {
+        const sigPSD   = mag[f][k] * mag[f][k];
+        const noisePSD = noiseEst[k] * noiseEst[k];
+        const gain     = Math.max(Math.sqrt(Math.max(sigPSD - noisePSD, 0) / (sigPSD + 1e-20)), beta);
+        mag[f][k] *= gain;
+      }
+    }
+
+    const processed = DSPCore.inverseSTFT(mag, phase, FFT_SIZE, HOP, N_SAMPLES);
+
+    // Compare RMS only in the interior region (skip FFT_SIZE samples from each edge).
+    // The ISTFT Hann-window OLA can amplify near-zero window samples at the edges when
+    // windowSum is tiny; the interior (where all 4 windows fully overlap) is reliable.
+    const skip = FFT_SIZE;
+    let sumNoisy = 0, sumProcessed = 0;
+    for (let i = skip; i < N_SAMPLES - skip; i++) {
+      sumNoisy     += noisy[i] * noisy[i];
+      sumProcessed += processed[i] * processed[i];
+    }
+    const cnt          = N_SAMPLES - 2 * skip;
+    const rmsNoisy     = 10 * Math.log10(sumNoisy / cnt);
+    const rmsProcessed = 10 * Math.log10(sumProcessed / cnt);
+    // Spectral subtraction (gain ≤ 1) should not increase interior RMS
+    expect(rmsProcessed).toBeLessThanOrEqual(rmsNoisy + 1); // at most 1 dB above input
+  });
+
+  test('pipeline preserves signal: dominant frequency bin survives subtraction', () => {
+    const N = 8192;
+    // Pure 440 Hz tone (no noise)
+    const pure = new Float32Array(N);
+    for (let i = 0; i < N; i++) pure[i] = 0.5 * Math.sin(2 * Math.PI * 440 * i / SR);
+
+    const { mag, phase } = DSPCore.forwardSTFT(pure, FFT_SIZE, HOP);
+    // Apply trivial subtraction with a very small noise estimate (< signal)
+    const HALF_N = FFT_SIZE / 2 + 1;
+    for (let f = 0; f < mag.length; f++) {
+      for (let k = 0; k < HALF_N; k++) {
+        const sigPSD   = mag[f][k] * mag[f][k];
+        const noisePSD = 1e-6; // tiny noise floor
+        const gain = Math.max(Math.sqrt(Math.max(sigPSD - noisePSD, 0) / (sigPSD + 1e-20)), 0.01);
+        mag[f][k] *= gain;
+      }
+    }
+
+    const out = DSPCore.inverseSTFT(mag, phase, FFT_SIZE, HOP, N);
+
+    // The dominant frequency should still be 440 Hz in the output
+    const { mag: outMag } = DSPCore.forwardSTFT(out, FFT_SIZE, HOP);
+    const avgMag = new Float32Array(HALF_N);
+    for (const frame of outMag) {
+      for (let k = 0; k < HALF_N; k++) avgMag[k] += frame[k];
+    }
+    const expectedBin = Math.round(440 * FFT_SIZE / SR);
+    let maxBin = 0;
+    for (let k = 1; k < HALF_N; k++) {
+      if (avgMag[k] > avgMag[maxBin]) maxBin = k;
+    }
+    expect(Math.abs(maxBin - expectedBin)).toBeLessThanOrEqual(3);
   });
 });

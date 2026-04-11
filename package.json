@@ -59,8 +59,16 @@
       "**/tests/**/*.test.js"
     ],
     "collectCoverageFrom": [
-      "public/app/app.js",
-      "public/app/dsp-worker.js"
+      "public/app/dsp-core.js",
+      "public/app/pipeline-state.js",
+      "public/app/pipeline-orchestrator.js",
+      "public/app/license-manager.js",
+      "public/app/ring-buffer.js",
+      "public/app/ml-worker.js",
+      "public/app/batch-processor.js",
+      "public/app/analytics.js",
+      "api/monetization.js",
+      "api/sync.js"
     ]
   },
   "packageManager": "pnpm@9.0.0",
