@@ -150,11 +150,14 @@ function _validateId(id) {
  */
 function _isDeep(obj, maxDepth = 10) {
   if (!obj || typeof obj !== 'object') return false;
+  const visited = new WeakSet();
   const stack = [[obj, 0]];
   while (stack.length > 0) {
     const [curr, depth] = stack.pop();
     if (depth > maxDepth) return true;
     if (curr && typeof curr === 'object') {
+      if (visited.has(curr)) return true;
+      visited.add(curr);
       const keys = Object.keys(curr);
       for (let i = 0; i < keys.length; i++) {
         stack.push([curr[keys[i]], depth + 1]);
@@ -195,7 +198,7 @@ function _sanitizePreset(p) {
     try {
       // Cap params payload to prevent oversized objects
       const paramsStr = JSON.stringify(rawParams);
-      if (paramsStr.length <= MAX_PRESET_PARAMS_BYTES) {
+      if (Buffer.byteLength(paramsStr) <= MAX_PRESET_PARAMS_BYTES) {
         params = rawParams;
       }
     } catch {
@@ -245,7 +248,7 @@ function _sanitizeNoiseProfile(p) {
     try {
       // Cap data payload (noise profiles can be larger than presets)
       const dataStr = JSON.stringify(rawData);
-      if (dataStr.length <= MAX_NOISE_PROFILE_BYTES) {
+      if (Buffer.byteLength(dataStr) <= MAX_NOISE_PROFILE_BYTES) {
         data = rawData;
       }
     } catch {
@@ -325,14 +328,14 @@ router.post('/push', requireAuth, requireRateLimit, (req, res) => {
             try {
               // Cap each history entry to prevent injection of oversized objects
               const entryStr = JSON.stringify(change.data);
-              if (entryStr.length <= MAX_HISTORY_ENTRY_BYTES) {
+              if (Buffer.byteLength(entryStr) <= MAX_HISTORY_ENTRY_BYTES) {
                 data.history.push(change.data);
                 if (data.history.length > 100) data.history.shift();
               } else {
                 errors.push('history:add entry exceeds maximum size (16 KB)');
               }
             } catch {
-              errors.push('history:add entry is invalid or contains circular references');
+              errors.push('history:add entry is invalid');
             }
           }
         }

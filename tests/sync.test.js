@@ -47,11 +47,14 @@ function _validateId(id) {
 
 function _isDeep(obj, maxDepth = 10) {
   if (!obj || typeof obj !== 'object') return false;
+  const visited = new WeakSet();
   const stack = [[obj, 0]];
   while (stack.length > 0) {
     const [curr, depth] = stack.pop();
     if (depth > maxDepth) return true;
     if (curr && typeof curr === 'object') {
+      if (visited.has(curr)) return true;
+      visited.add(curr);
       const keys = Object.keys(curr);
       for (let i = 0; i < keys.length; i++) {
         stack.push([curr[keys[i]], depth + 1]);
@@ -74,7 +77,7 @@ function _sanitizePreset(p) {
   if (!_isDeep(rawParams)) {
     try {
       const paramsStr = JSON.stringify(rawParams);
-      if (paramsStr.length <= MAX_PRESET_PARAMS_BYTES) params = rawParams;
+      if (Buffer.byteLength(paramsStr) <= MAX_PRESET_PARAMS_BYTES) params = rawParams;
     } catch {
       params = {};
     }
@@ -101,7 +104,7 @@ function _sanitizeNoiseProfile(p) {
   if (!_isDeep(rawData)) {
     try {
       const dataStr = JSON.stringify(rawData);
-      if (dataStr.length <= MAX_NOISE_PROFILE_BYTES) data = rawData;
+      if (Buffer.byteLength(dataStr) <= MAX_NOISE_PROFILE_BYTES) data = rawData;
     } catch {
       data = {};
     }
@@ -121,6 +124,38 @@ function makeToken({ tier = 'studio', sub = 'user_123', daysValid = 30 } = {}) {
   const sig = crypto.createHmac('sha256', SECRET).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${sig}`;
 }
+
+// ── _isDeep ───────────────────────────────────────────────────────────────────
+describe('_isDeep()', () => {
+  test('returns false for shallow objects', () => {
+    expect(_isDeep({ a: 1, b: { c: 2 } })).toBe(false);
+  });
+
+  test('returns false for non-objects', () => {
+    expect(_isDeep(null)).toBe(false);
+    expect(_isDeep('string')).toBe(false);
+    expect(_isDeep(42)).toBe(false);
+  });
+
+  test('returns true when nesting exceeds maxDepth', () => {
+    let deep = {};
+    for (let i = 0; i < 12; i++) deep = { a: deep };
+    expect(_isDeep(deep)).toBe(true);
+  });
+
+  test('returns true for circular references without infinite looping', () => {
+    const circular = {};
+    circular.self = circular;
+    expect(_isDeep(circular)).toBe(true);
+  });
+
+  test('returns true for indirect circular references', () => {
+    const a = {};
+    const b = { parent: a };
+    a.child = b;
+    expect(_isDeep(a)).toBe(true);
+  });
+});
 
 // ── _validateId ───────────────────────────────────────────────────────────────
 describe('_validateId()', () => {
@@ -386,13 +421,13 @@ function buildSyncApp() {
             } else {
               try {
                 const str = JSON.stringify(change.data);
-                if (str.length <= MAX_HISTORY_ENTRY_BYTES) {
+                if (Buffer.byteLength(str) <= MAX_HISTORY_ENTRY_BYTES) {
                   data.history = [...(data.history || []), change.data].slice(-100);
                 } else {
                   errors.push('history:add entry exceeds maximum size (16 KB)');
                 }
               } catch {
-                errors.push('history:add entry is invalid or contains circular references');
+                errors.push('history:add entry is invalid');
               }
             }
           }
