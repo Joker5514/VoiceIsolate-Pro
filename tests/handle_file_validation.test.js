@@ -63,12 +63,18 @@ beforeAll(() => {
     performance:      { now: jest.fn(() => Date.now()) },
   };
 
-  // Redirect window.LicenseManager lookups into sandbox.window
+  // Redirect window.LicenseManager lookups so per-test injection via
+  // global.window (set/restored around each call) is visible to the VM code.
+  // When global.window is not set (e.g. during beforeAll bootstrap) fall back
+  // to a stable sandbox object so window._vipApp access does not throw.
+  const _sandboxWindow = { LicenseManager: undefined };
   Object.defineProperty(sandbox, 'window', {
-    get: () => sandbox._window,
-    set: (v) => { sandbox._window = v; },
+    get: () => (typeof global !== 'undefined' && global.window != null)
+      ? global.window
+      : _sandboxWindow,
+    set: () => {},
+    configurable: true,
   });
-  sandbox._window = sandbox.window;
 
   vm.createContext(sandbox);
   vm.runInContext(appJs, sandbox);
