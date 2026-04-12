@@ -2,10 +2,16 @@
   "outputDirectory": "public",
   "buildCommand": "bash scripts/bootstrap-libs.sh",
   "rewrites": [
-    { "source": "/app/:path*", "destination": "/app/:path*" },
-    { "source": "/lib/:path*", "destination": "/lib/:path*" },
-    { "source": "/", "destination": "/index.html" }
+    { "source": "/api/:path*",    "destination": "/api/:path*" },
+    { "source": "/app/:path*",    "destination": "/app/:path*" },
+    { "source": "/lib/:path*",    "destination": "/lib/:path*" },
+    { "source": "/",             "destination": "/index.html" }
   ],
+  "functions": {
+    "api/**/*.js": {
+      "runtime": "nodejs20.x"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
@@ -52,7 +58,7 @@
       "source": "/app/models/(.*)",
       "headers": [
         { "key": "Cross-Origin-Resource-Policy", "value": "same-site" },
-        { "key": "Cache-Control", "value": "public, max-age=86400, immutable" }
+        { "key": "Cache-Control",                "value": "public, max-age=86400, immutable" }
       ]
     },
     {
