@@ -150,6 +150,11 @@ self.onmessage = async (ev) => {
     if (payload && payload.allowedModels) allowedModels = payload.allowedModels;
     if (payload && payload.allowedStages) allowedStages = payload.allowedStages;
   }
+
+  // ── multi_separate: multi-speaker stream separation ──────────────────────────
+  if (type === 'multi_separate') {
+    await handleMultiSeparate(payload && payload.streams);
+  }
 };
 
 // ── 2. Multi-speaker separation ───────────────────────────────────────────────
