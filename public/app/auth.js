@@ -8,22 +8,59 @@
 // To generate a SHA-256 hash in DevTools:
 //   const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('yourpassword'));
 //   console.log([...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join(''));
+//
+// Passwords match the seeded accounts in api/auth.js for consistency.
 
 const USERS = [
   {
     username:     'joker5514',
     displayName:  'Randy Jordan',
-    // SHA-256 of your actual password — replace this hash
-    passHash:     'a665a45920422f9d417e4867efdc4fb8a04a1f3fff1fa07e998e86f7f7a27ae3',
+    passHash:     'fc157fd1df28bbac5e71f6c38d64c6ecae40f45318a866989947196aba244c03', // SHA-256("Admin8052")
     tier:         'ENTERPRISE',
     role:         'admin',
     filesUsed:    0,
     filesAllowed: Infinity,
   },
   {
+    username:     'test_free',
+    displayName:  'Free Test User',
+    passHash:     '7d2d9e1ce9bf847d900f72ab5da00972d584b41fec53854d05488acc979ea27a', // SHA-256("TestFree123")
+    tier:         'FREE',
+    role:         'user',
+    filesUsed:    0,
+    filesAllowed: 3,
+  },
+  {
+    username:     'test_pro',
+    displayName:  'Pro Test User',
+    passHash:     '7461f3545d99833b86bd16c4ccdeaa8c413158cd66befb95296be110307ef950', // SHA-256("TestPro123")
+    tier:         'PRO',
+    role:         'user',
+    filesUsed:    0,
+    filesAllowed: 50,
+  },
+  {
+    username:     'test_studio',
+    displayName:  'Studio Test User',
+    passHash:     '30f8dc347b710b75c826f3f4a157ec2c3fcdfb3d2b7b1bb098ba2e65c7f5290f', // SHA-256("TestStudio123")
+    tier:         'STUDIO',
+    role:         'user',
+    filesUsed:    0,
+    filesAllowed: Infinity,
+  },
+  {
+    username:     'test_enterprise',
+    displayName:  'Enterprise Test User',
+    passHash:     '3d1a00956888609e2555f4bb4d49c3365c47fc05cd97384b79ec67b887a44078', // SHA-256("TestEnterprise123")
+    tier:         'ENTERPRISE',
+    role:         'user',
+    filesUsed:    0,
+    filesAllowed: Infinity,
+  },
+  {
     username:     'demo',
     displayName:  'Demo User',
-    passHash:     '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824', // "hello"
+    passHash:     '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824', // SHA-256("hello")
     tier:         'FREE',
     role:         'user',
     filesUsed:    0,
@@ -192,8 +229,11 @@ function renderLoginModal() {
       <button id="vip-auth-submit">Sign In</button>
       <div id="vip-auth-error"></div>
       <div class="vip-auth-tier-hint">
-        <strong style="color:#f3f3f5">Tiers:</strong>
-        FREE · PRO ($9.99/mo) · STUDIO ($24.99/mo) · ENTERPRISE (custom)
+        <strong style="color:#f3f3f5">Test accounts:</strong>
+        joker5514 / Admin8052 (ENTERPRISE · admin) &nbsp;·&nbsp;
+        test_pro / TestPro123 (PRO) &nbsp;·&nbsp;
+        test_studio / TestStudio123 (STUDIO) &nbsp;·&nbsp;
+        demo / hello (FREE)
       </div>
     </div>
   `;
