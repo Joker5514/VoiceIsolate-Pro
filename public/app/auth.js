@@ -156,6 +156,41 @@ const Auth = (() => {
       .vip-status-warn  { background: rgba(245,158,11,.1);  color: #f59e0b; }
       .vip-status-ok    { background: rgba(16,185,129,.12); color: #10b981; }
       .vip-auth-hint { font-size: 10px; color: #555; text-align: center; line-height: 1.5; }
+      /* ── See Password toggle ── */
+      .vip-pw-wrapper { position: relative; display: flex; align-items: center; }
+      .vip-pw-wrapper input { width: 100%; padding-right: 34px !important; box-sizing: border-box; }
+      .vip-eye-btn {
+        position: absolute; right: 8px;
+        background: transparent; border: none; cursor: pointer;
+        color: #555; padding: 2px; display: flex; align-items: center;
+        transition: color .15s;
+      }
+      .vip-eye-btn:hover { color: #dc2626; }
+      .vip-eye-btn:focus { outline: 2px solid #dc2626; border-radius: 3px; }
+      /* ── Save Login row ── */
+      .vip-save-row {
+        display: flex; justify-content: space-between; align-items: center;
+        margin: -4px 0 0;
+      }
+      .vip-save-label {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 11px; color: #666; cursor: pointer; user-select: none;
+      }
+      .vip-save-label input[type="checkbox"] { display: none; }
+      .vip-check-box {
+        width: 14px; height: 14px;
+        border: 1.5px solid #333; border-radius: 3px;
+        background: #0c0c10; display: inline-block;
+        position: relative; flex-shrink: 0;
+        transition: background .15s, border-color .15s;
+      }
+      .vip-save-label input:checked + .vip-check-box { background: #dc2626; border-color: #dc2626; }
+      .vip-save-label input:checked + .vip-check-box::after {
+        content: ''; position: absolute;
+        left: 3px; top: 0; width: 4px; height: 8px;
+        border: 1.5px solid #fff; border-top: none; border-left: none;
+        transform: rotate(45deg);
+      }
       #vip-user-badge {
         display: none; align-items: center; gap: 8px;
         font-size: 11px; color: #888; padding: 0 4px;
@@ -184,10 +219,24 @@ const Auth = (() => {
 
         <div class="vip-auth-field">
           <input id="vip-username" type="text"     placeholder="Username" autocomplete="username"         />
-          <input id="vip-password" type="password" placeholder="Password" autocomplete="current-password"/>
+          <div class="vip-pw-wrapper">
+            <input id="vip-password" type="password" placeholder="Password" autocomplete="current-password"/>
+            <button type="button" class="vip-eye-btn" id="vip-eye-btn" aria-label="Show password">
+              <svg id="vip-eye-show" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg id="vip-eye-hide" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+          </div>
         </div>
 
-        <div class="vip-auth-btns">
+        <div class="vip-save-row">
+          <label class="vip-save-label" for="vip-save-login">
+            <input type="checkbox" id="vip-save-login" />
+            <span class="vip-check-box"></span>
+            Save login
+          </label>
+        </div>
+
+                <div class="vip-auth-btns">
           <button id="vip-login-btn"  class="vip-auth-btn vip-btn-primary"  >Sign In</button>
           <button id="vip-guest-btn"  class="vip-auth-btn vip-btn-secondary">Guest</button>
         </div>
@@ -222,6 +271,59 @@ const Auth = (() => {
     el('vip-password')?.addEventListener('keydown', e => {
       if (e.key === 'Enter') _handleLogin();
     });
+    _initEyeToggle();
+    _initSaveLogin();
+  }
+
+  function _initEyeToggle() {
+    const btn    = el('vip-eye-btn');
+    const input  = el('vip-password');
+    const show   = el('vip-eye-show');
+    const hide   = el('vip-eye-hide');
+    if (!btn || !input) return;
+    btn.addEventListener('click', () => {
+      const visible  = input.type === 'text';
+      input.type     = visible ? 'password' : 'text';
+      show.style.display = visible ? 'inline' : 'none';
+      hide.style.display = visible ? 'none'   : 'inline';
+      btn.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
+    });
+  }
+
+  function _initSaveLogin() {
+    const CB_EMAIL = 'vip_saved_user';
+    const CB_PASS  = 'vip_saved_pw';
+    const checkbox = el('vip-save-login');
+    const userIn   = el('vip-username');
+    const passIn   = el('vip-password');
+    if (!checkbox) return;
+    // Restore saved credentials
+    try {
+      const savedUser = localStorage.getItem(CB_EMAIL);
+      const savedPw   = localStorage.getItem(CB_PASS);
+      if (savedUser && savedPw) {
+        if (userIn) userIn.value = savedUser;
+        if (passIn) passIn.value = atob(savedPw);
+        checkbox.checked = true;
+      }
+    } catch (_) {}
+    // Persist on checkbox change
+    checkbox.addEventListener('change', () => {
+      if (!checkbox.checked) {
+        try {
+          localStorage.removeItem(CB_EMAIL);
+          localStorage.removeItem(CB_PASS);
+        } catch (_) {}
+      }
+    });
+    // Expose helper so _handleLogin can call it
+    _modal._persistLogin = () => {
+      if (!checkbox.checked) return;
+      try {
+        localStorage.setItem(CB_EMAIL, userIn?.value?.trim() || '');
+        localStorage.setItem(CB_PASS,  btoa(passIn?.value || ''));
+      } catch (_) {}
+    };
   }
 
   function _showModal() {
@@ -283,6 +385,7 @@ const Auth = (() => {
       }
 
       _saveSession(data.token, data.user);
+      if (_modal?._persistLogin) _modal._persistLogin();
       _syncLicense(data.user);
       _setStatus(`Welcome, ${data.user.username}!`, 'ok');
       _renderBadge(data.user);
@@ -307,9 +410,13 @@ const Auth = (() => {
     await _apiLogout();
     _clearSession();
     _renderBadge(null);
-    // Clear password field
+    // Clear password field and optionally saved creds
     const passEl = el('vip-password');
     if (passEl) passEl.value = '';
+    const cb = el('vip-save-login');
+    if (!cb?.checked) {
+      try { localStorage.removeItem('vip_saved_user'); localStorage.removeItem('vip_saved_pw'); } catch(_) {}
+    }
     _setStatus('', '');
     _setButtonsDisabled(false);
     _showModal();
