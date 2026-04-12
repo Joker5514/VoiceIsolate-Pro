@@ -2260,46 +2260,36 @@ class VoiceIsolatePro {
 if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
 
 /* ── Merged from app-patches.js: DOM null-safety patches ── */
-(function applyDOMPatches() {
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bootstrap: set window._vipApp synchronously (or after DOMContentLoaded)
+// so that pipeline-orchestrator.js can attach without polling.
+// vip-boot.js also calls app.init() and Auth.init() — this block is
+// the fallback for environments where vip-boot.js might not be present.
+// ─────────────────────────────────────────────────────────────────────────────
+(function _vipBootstrap() {
   'use strict';
-
-  function patchRecordButton() {
-    const originalGetElementById = document.getElementById.bind(document);
-    document.getElementById = function(id) {
-      const el = originalGetElementById(id);
-      document.getElementById = originalGetElementById;
-      if (!el && (id === 'btn-record' || id === 'record-btn' || id === 'recordBtn')) {
-        return new Proxy({}, {
-          set() { return true; },
-          get(_t, key) {
-            if (key === 'addEventListener') return () => {};
-            if (key === 'removeEventListener') return () => {};
-            if (key === 'dispatchEvent') return () => false;
-            if (key === 'classList') return { add: ()=>{}, remove: ()=>{}, toggle: ()=>{}, contains: ()=>false };
-            if (key === 'style') return {};
-            return undefined;
-          }
-        });
+  function _setup() {
+    // Skip if vip-boot.js already handled instantiation
+    if (window._vipApp) return;
+    try {
+      var app = new VoiceIsolatePro();
+      app._initCalled = true;
+      window.vip     = app;
+      window._vipApp = app;
+      // Auth.init() will be called by vip-boot.js after this runs.
+      // If vip-boot.js is absent, call it here as a safety net.
+      if (typeof Auth !== 'undefined' && typeof Auth.init === 'function' && !Auth.isLoggedIn && Auth.currentUser === null) {
+        Auth.init().catch(function(e){ console.warn('[app] Auth.init error:', e); });
       }
-      return el;
-    };
+      console.info('[app] VoiceIsolatePro ready via app.js bootstrap ✓');
+    } catch (err) {
+      console.error('[app] Bootstrap failed:', err);
+    }
   }
-
-  patchRecordButton();
-
-  document.addEventListener('DOMContentLoaded', function onDOMReady() {
-    document.removeEventListener('DOMContentLoaded', onDOMReady);
-    const recordIds = ['btn-record', 'record-btn', 'recordBtn', 'btnRecord'];
-    for (const id of recordIds) {
-      const btn = document.getElementById(id);
-      if (btn) { btn.disabled = false; break; }
-    }
-    const pipelineStatus = document.getElementById('pipeline-status')
-      || document.querySelector('[data-status="pipeline"]')
-      || document.querySelector('.pipeline-status');
-    if (pipelineStatus && pipelineStatus.textContent.trim() === 'ERROR') {
-      pipelineStatus.textContent = 'INIT';
-      pipelineStatus.style.color = '';
-    }
-  }, { once: true });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _setup, { once: true });
+  } else {
+    _setup();
+  }
 })();

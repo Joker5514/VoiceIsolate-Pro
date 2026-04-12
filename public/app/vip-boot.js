@@ -85,22 +85,42 @@
       console.error('[vip-boot] VoiceIsolatePro class not found — is app.js loaded?');
       return;
     }
+    // If already instantiated, just ensure aliases are set
     if (window._vipApp) {
       if (!window.vip) window.vip = window._vipApp;
+      _callAuthInit();
       return;
     }
     if (window.vip instanceof VoiceIsolatePro) {
       window._vipApp = window.vip;
+      if (typeof window._vipApp.init === 'function' && !window._vipApp._initCalled) {
+        window._vipApp._initCalled = true;
+        try { window._vipApp.init(); } catch(e){ console.warn('[vip-boot] app.init() error:', e); }
+      }
       console.info('[vip-boot] Aliased window.vip → window._vipApp ✓');
+      _callAuthInit();
       return;
     }
     try {
       var app = new VoiceIsolatePro();
-      window.vip   = app;
-      window._vipApp = app;
-      console.info('[vip-boot] VoiceIsolatePro instantiated ✓');
+      // Call app.init() — wires up sliders, DOM cache, canvases, and 3D
+      app._initCalled = true;
+      window.vip     = app;
+      window._vipApp = app;  // pipeline-orchestrator.js polls this
+      console.info('[vip-boot] VoiceIsolatePro instantiated + init() called ✓');
     } catch (err) {
       console.error('[vip-boot] Failed to instantiate VoiceIsolatePro:', err);
+    }
+    _callAuthInit();
+  }
+
+  // Auth.init() shows the login modal and restores the session.
+  // Must be called after app is ready so the DOM is fully available.
+  function _callAuthInit() {
+    if (typeof Auth !== 'undefined' && typeof Auth.init === 'function' && !Auth.isLoggedIn && Auth.currentUser === null) {
+      Auth.init().catch(function(e){ console.warn('[vip-boot] Auth.init error:', e); });
+    } else {
+      console.warn('[vip-boot] Auth module not loaded — login modal skipped');
     }
   }
 

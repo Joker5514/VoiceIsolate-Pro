@@ -432,5 +432,39 @@
   <!-- Main app — must be before vip-boot -->
   <script src="./app.js"></script>
   <script src="./vip-boot.js"></script>
+
+  <!-- ── Runtime bootstrap safety net ──────────────────────────────────────
+       Fires after ALL scripts have parsed. Catches the edge case where
+       vip-boot.js ran before Auth was defined (script-order race).
+       Does nothing if vip-boot.js already handled everything correctly.
+  ── -->
+  <script>
+    (function _vipSafetyNet() {
+      function run() {
+        // 1. Ensure app is instantiated
+        if (!window._vipApp && typeof VoiceIsolatePro === 'function') {
+          try {
+            var app = new VoiceIsolatePro();
+            app._initCalled = true;
+            window.vip     = app;
+            window._vipApp = app;
+            console.info('[safety-net] VoiceIsolatePro instantiated ✓');
+          } catch(e){ console.warn('[safety-net] instantiation failed:', e); }
+        }
+        // 2. Ensure Auth modal is shown
+        if (typeof Auth !== 'undefined' && typeof Auth.init === 'function') {
+          // Only call if not already initialised (Auth.isLoggedIn is set after init)
+          if (!Auth.isLoggedIn && Auth.currentUser === null) {
+            Auth.init().catch(function(e){ console.warn('[safety-net] Auth.init:', e); });
+          }
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', run, { once: true });
+      } else {
+        run();
+      }
+    })();
+  </script>
 </body>
 </html>
