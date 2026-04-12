@@ -170,6 +170,53 @@ describe('ML Worker wiring', () => {
   test('ml-worker uses transferable ArrayBuffers for large results', () => {
     expect(mlWorkerJs).toContain('[output.buffer]');
   });
+
+  // ── Regression: old test checked for initMLWorker which no longer exists ──
+
+  test('app.js does NOT use the old initMLWorker() pattern (replaced by _mlCall)', () => {
+    // The PR replaced `initMLWorker()` invocation with the `_mlCall` helper pattern.
+    // This regression test confirms the old symbol is gone.
+    expect(appJs).not.toContain('initMLWorker()');
+  });
+
+  // ── mlWorkerJs file load validation ────────────────────────────────────────
+
+  test('mlWorkerJs was loaded and is non-empty', () => {
+    expect(typeof mlWorkerJs).toBe('string');
+    expect(mlWorkerJs.length).toBeGreaterThan(0);
+  });
+
+  // ── _mlCall implementation details ─────────────────────────────────────────
+
+  test('app.js _mlCall has a default value of [] for the transfer parameter', () => {
+    expect(appJs).toContain('_mlCall(payload, transfer = [])');
+  });
+
+  test('app.js _mlCall increments an ID counter for request tracking', () => {
+    expect(appJs).toContain('_mlCallId');
+    expect(appJs).toContain('++this._mlCallId');
+  });
+
+  test('app.js _mlCall returns a Promise', () => {
+    // _mlCall wraps responses in a Promise for async/await callers
+    const mlCallBlock = appJs.match(/_mlCall\(payload,[\s\S]*?\n  \}/)?.[0] || '';
+    expect(mlCallBlock).toContain('Promise');
+  });
+
+  // ── ml-worker.js null-guard filter ─────────────────────────────────────────
+
+  test('ml-worker.js includes .filter(Boolean) null-guard for transferables', () => {
+    // The PR added `.filter(Boolean)` to guard against null stream entries
+    expect(mlWorkerJs).toContain('.filter(Boolean)');
+  });
+
+  test('ml-worker.js defines the handleMultiSeparate function', () => {
+    expect(mlWorkerJs).toContain('handleMultiSeparate');
+  });
+
+  test('ml-worker.js null-guard uses short-circuit: s && s.data && s.data.buffer', () => {
+    expect(mlWorkerJs).toContain('s && s.data && s.data.buffer');
+  });
 });
 
 describe('Forensic mode', () => {
