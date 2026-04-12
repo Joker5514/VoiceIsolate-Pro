@@ -75,11 +75,7 @@ const db = {
 
 // ─── License Token Utilities ──────────────────────────────────────────────────
 if (!process.env.LICENSE_JWT_SECRET) {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('LICENSE_JWT_SECRET environment variable is required');
-  }
-  process.env.LICENSE_JWT_SECRET = 'voiceisolate-dev-secret-key-minimum-32-chars';
-  console.warn('[monetization] LICENSE_JWT_SECRET not set — using dev default. Do NOT use in production.');
+  throw new Error('LICENSE_JWT_SECRET environment variable is required');
 }
 const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
 
