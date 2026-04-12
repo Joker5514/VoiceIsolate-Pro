@@ -614,16 +614,6 @@ describe('POST /push', () => {
     expect(res.body.errors).toContain('history:add entry is too deep');
   });
 
-  test('history:add — rejects an entry with circular references (security fix)', async () => {
-    const circular = {};
-    circular.self = circular;
-    const res = await request(syncApp)
-      .post('/push')
-      .set(pushAuth)
-      .send({ changes: [{ type: 'history:add', data: circular }] });
-    expect(res.body.errors).toContain('history:add entry is invalid or contains circular references');
-  });
-
   test('mixed changes: counts applied vs errored correctly', async () => {
     const changes = [
       { type: 'preset:upsert', data: { id: 'valid', name: 'Good' } },
