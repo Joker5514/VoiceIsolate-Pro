@@ -213,7 +213,8 @@ describe('incrementFileUsage()', () => {
 
   test('persists updated session back to sessionStorage', () => {
     // incrementFileUsage must re-save the session after incrementing
-    const funcBlock = authSrc.match(/function incrementFileUsage[\s\S]*?^}/m)?.[0] || authSrc;
+    const funcMatch = authSrc.match(/function incrementFileUsage\b[\s\S]*?\n\}/);
+    const funcBlock = funcMatch ? funcMatch[0] : authSrc;
     expect(funcBlock).toContain('sessionStorage');
   });
 });
