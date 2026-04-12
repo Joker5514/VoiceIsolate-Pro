@@ -54,8 +54,16 @@
         },
         {
           "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'"
+        }
+      ]
+    },
     {
-      "source": "/app/(voice-isolate-processor|dsp-processor|ml-worker)\\.js",
+      "source": "/app/(voice-isolate-processor|dsp-processor|ml-worker|app-init|auth)\\.js",
       "headers": [
         {
           "key": "Content-Type",
@@ -63,6 +71,10 @@
         },
         {
           "key": "Cache-Control",
+          "value": "no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Pragma",
           "value": "no-cache"
         }
       ]
