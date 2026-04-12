@@ -412,6 +412,10 @@ async function toggleLiveMode() {
 let _pendingFileBuffer = null; // Set by wireFileInput() when a file is loaded
 
 async function processOffline(mode = 'creator') {
+  if (mode === 'forensic' && session?.tier !== 'ENTERPRISE') {
+    showToast('Forensic mode requires the ENTERPRISE plan.', 'error');
+    return;
+  }
   if (!_pendingFileBuffer) {
     showToast('Drop or select an audio file first.', 'warning');
     return;
