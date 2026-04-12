@@ -550,7 +550,7 @@ class VoiceIsolatePro {
       const LM = window.LicenseManager;
       if (LM && typeof LM.checkFileLimit === 'function') {
         const fileSizeMB = file.size / (1024 * 1024);
-        const check = LM.checkFileLimit(fileSizeMB, Infinity);
+        const check = LM.checkFileLimit(fileSizeMB, 0);
         if (!check.allowed) throw new Error(check.reason);
       }
 
