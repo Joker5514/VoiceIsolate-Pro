@@ -31,7 +31,6 @@ async function initAudio() {
 
 // ── Worker Pool (ONNX Demucs + ECAPA-TDNN) ───────────────────────────────────
 const POOL_SIZE = Math.max(2, (navigator.hardwareConcurrency || 4) - 2);
-console.log(`[VoiceIsolate] Spawning ${POOL_SIZE} inference workers`);
 
 const workerPool = Array.from({ length: POOL_SIZE }, (_, i) => {
   const w = new Worker(new URL('./worker-pool.js', import.meta.url), { type: 'module' });
@@ -42,7 +41,6 @@ const workerPool = Array.from({ length: POOL_SIZE }, (_, i) => {
       updateVisualizer(null, data.score);
     }
     if (data.type === 'ENROLLED') {
-      console.log('[VoiceIsolate] Voiceprint enrolled successfully');
       document.getElementById('btn-enroll').textContent = 'Voiceprint ✓';
     }
   };
