@@ -142,6 +142,29 @@ function _validateId(id) {
 }
 
 /**
+ * Check if an object exceeds a maximum depth using an iterative approach.
+ * This prevents stack overflow errors during recursive operations like JSON.stringify.
+ * @param {any} obj - The object to check.
+ * @param {number} maxDepth - Maximum allowed nesting depth.
+ * @returns {boolean} True if the object is too deep.
+ */
+function _isDeep(obj, maxDepth = 10) {
+  if (!obj || typeof obj !== 'object') return false;
+  const stack = [[obj, 0]];
+  while (stack.length > 0) {
+    const [curr, depth] = stack.pop();
+    if (depth > maxDepth) return true;
+    if (curr && typeof curr === 'object') {
+      const keys = Object.keys(curr);
+      for (let i = 0; i < keys.length; i++) {
+        stack.push([curr[keys[i]], depth + 1]);
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * Determine whether an object is a valid preset with required id and name fields.
  *
  * @param {object} p - Preset candidate; must be a non-null object containing an `id` and `name`.
@@ -166,9 +189,19 @@ function _validatePreset(p) {
 function _sanitizePreset(p) {
   // Only keep known fields to prevent arbitrary data injection
   const rawParams = p.params && typeof p.params === 'object' ? p.params : {};
-  // Cap params payload to prevent oversized objects
-  const paramsStr = JSON.stringify(rawParams);
-  const params = paramsStr.length <= MAX_PRESET_PARAMS_BYTES ? rawParams : {};
+
+  let params = {};
+  if (!_isDeep(rawParams)) {
+    try {
+      // Cap params payload to prevent oversized objects
+      const paramsStr = JSON.stringify(rawParams);
+      if (paramsStr.length <= MAX_PRESET_PARAMS_BYTES) {
+        params = rawParams;
+      }
+    } catch {
+      params = {};
+    }
+  }
 
   const result = {
     id:     String(p.id).slice(0, 128),
@@ -206,9 +239,19 @@ function _validateNoiseProfile(p) {
  */
 function _sanitizeNoiseProfile(p) {
   const rawData = p.data && typeof p.data === 'object' ? p.data : {};
-  // Cap data payload (noise profiles can be larger than presets)
-  const dataStr = JSON.stringify(rawData);
-  const data = dataStr.length <= MAX_NOISE_PROFILE_BYTES ? rawData : {};
+
+  let data = {};
+  if (!_isDeep(rawData)) {
+    try {
+      // Cap data payload (noise profiles can be larger than presets)
+      const dataStr = JSON.stringify(rawData);
+      if (dataStr.length <= MAX_NOISE_PROFILE_BYTES) {
+        data = rawData;
+      }
+    } catch {
+      data = {};
+    }
+  }
 
   const result = {
     name: String(p.name).slice(0, 256),
@@ -276,12 +319,20 @@ router.post('/push', requireAuth, requireRateLimit, (req, res) => {
       }
       case 'history:add': {
         if (change.data && typeof change.data === 'object') {
-          // Cap each history entry to prevent injection of oversized objects
-          const entryStr = JSON.stringify(change.data);
-          if (entryStr.length <= MAX_HISTORY_ENTRY_BYTES) {
-            data.history = [...(data.history || []), change.data].slice(-100);
+          if (_isDeep(change.data)) {
+            errors.push('history:add entry is too deep');
           } else {
-            errors.push('history:add entry exceeds maximum size (16 KB)');
+            try {
+              // Cap each history entry to prevent injection of oversized objects
+              const entryStr = JSON.stringify(change.data);
+              if (entryStr.length <= MAX_HISTORY_ENTRY_BYTES) {
+                data.history = [...(data.history || []), change.data].slice(-100);
+              } else {
+                errors.push('history:add entry exceeds maximum size (16 KB)');
+              }
+            } catch {
+              errors.push('history:add entry is invalid or contains circular references');
+            }
           }
         }
         break;
