@@ -140,14 +140,18 @@ async function ensureAudioContext() {
 
 async function initMLWorker() {
   return new Promise((resolve, reject) => {
-    mlWorker = new Worker(WORKER_PATH, { type: 'module' });
+    mlWorker = new Worker(WORKER_PATH);
 
     mlWorker.onmessage = (ev) => {
       const { type, modelId, models, error } = ev.data;
 
       if (type === 'ready') {
-        console.info(`[VIP] ML Worker ready. Sessions: ${models.join(', ') || 'none'}`);
-        updateModelStatusUI(models);
+        // models is an object { modelId: bool } in v8 ml-worker
+        const loadedIds = typeof models === 'object' && !Array.isArray(models)
+          ? Object.keys(models).filter(k => models[k])
+          : (Array.isArray(models) ? models : []);
+        console.info(`[VIP] ML Worker ready. Sessions: ${loadedIds.join(', ') || 'none'}`);
+        updateModelStatusUI(loadedIds);
         resolve();
       }
       if (type === 'model_loaded') {
@@ -157,6 +161,10 @@ async function initMLWorker() {
       if (type === 'model_error') {
         console.warn(`[VIP] Model error: ${modelId} — ${error}`);
         setModelBadge(modelId, 'error');
+      }
+      if (type === 'log') {
+        const { level, msg } = ev.data;
+        console[level] ? console[level](`[ml-worker] ${msg}`) : console.warn(`[ml-worker] ${msg}`);
       }
     };
 

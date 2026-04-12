@@ -13,10 +13,11 @@
 //    so this worker never attempts to load models above the user's tier.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ort loaded from CDN — no bundler required
-import * as ort from 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.esm.min.js';
-
 const NUM_BINS = 2049; // (4096 / 2) + 1
+
+// ORT is loaded lazily inside initialize() — not at module top level —
+// so importScripts failures can be caught and reported gracefully.
+let ort = null;
 
 let inputView  = null; // Float32Array view of inputSAB  (magnitudes written by DSP)
 let outputView = null; // Float32Array view of outputSAB (mask written here)
@@ -29,8 +30,14 @@ let allowedStages = 8;
 let lastFrame     = -1;
 let pollTimer     = null;
 
+// ── Default models loaded on bare init (no payload) ──────────────────────────
+const DEFAULT_MODELS = ['vad', 'deepfilter', 'demucs'];
+
 // ── Model filename registry ───────────────────────────────────────────────────
 const MODEL_FILES = {
+  'vad':         'silero_vad.onnx',
+  'deepfilter':  'deepfilter.onnx',
+  'demucs':      'demucs_v4_int8.onnx',
   'silero-vad':  'silero_vad.onnx',
   'rnnoise':     'rnnoise.onnx',
   'demucs-v4':   'demucs_v4_int8.onnx',
@@ -38,87 +45,180 @@ const MODEL_FILES = {
   'voicefixer':  'voicefixer.onnx',
 };
 
-// ── 1. Receive init message from app.js ──────────────────────────────────────
+// ── ORT lazy initializer ──────────────────────────────────────────────────────
+// Called at the start of every message handler that needs ORT.
+// If self.ort is already populated (e.g. by a prior importScripts call or
+// injected in tests), it is reused; otherwise importScripts loads the local
+// vendored file (copied by scripts/setup-ort.js postinstall).
+function initialize() {
+  if (self.ort) {
+    ort = self.ort;
+    return;
+  }
+  // Load ORT from local vendored file (copied by scripts/setup-ort.js postinstall)
+  importScripts('/lib/ort.min.js');
+  ort = self.ort;
+  ort.env.wasm.wasmPaths = '/lib/';
+}
+
+// ── 1. Message dispatcher ─────────────────────────────────────────────────────
 self.onmessage = async (ev) => {
-  const { type, payload } = ev.data;
+  const { type, payload, models: msgModels } = ev.data || {};
 
+  // ── init: full SAB + model init (called by app-init.js) ─────────────────────
   if (type === 'init') {
-    const {
-      inputSAB,
-      outputSAB,
-      modelBasePath,
-      preferredProviders = ['webgpu', 'wasm'],
-      allowedModels: am = [],
-      allowedStages: as_ = 8,
-    } = payload;
+    try {
+      initialize();
+    } catch (err) {
+      self.postMessage({ type: 'error', msg: err.message });
+      return;
+    }
 
-    allowedModels = am;
-    allowedStages = as_;
+    if (payload) {
+      const {
+        inputSAB,
+        outputSAB,
+        modelBasePath      = './models/',
+        preferredProviders = ['webgpu', 'wasm'],
+        allowedModels: am  = DEFAULT_MODELS,
+        allowedStages: as_ = 8,
+      } = payload;
 
-    // Attach typed array views onto the SharedArrayBuffers
-    inputView  = new Float32Array(inputSAB);
-    outputView = new Float32Array(outputSAB);
-    flagsIn    = new Int32Array(inputSAB,  NUM_BINS * 4, 4);
-    flagsOut   = new Int32Array(outputSAB, NUM_BINS * 4, 4);
+      allowedModels = am;
+      allowedStages = as_;
 
-    // Configure ORT WASM paths (CDN)
-    ort.env.wasm.wasmPaths =
-      'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+      if (inputSAB && outputSAB) {
+        inputView  = new Float32Array(inputSAB);
+        outputView = new Float32Array(outputSAB);
+        flagsIn    = new Int32Array(inputSAB,  NUM_BINS * 4, 4);
+        flagsOut   = new Int32Array(outputSAB, NUM_BINS * 4, 4);
+        startPollLoop();
+      }
 
-    await loadModels(modelBasePath, preferredProviders);
-    startPollLoop();
-    self.postMessage({ type: 'ready', models: Object.keys(sessions) });
+      const modelStatus = await loadModels(modelBasePath, preferredProviders, allowedModels);
+      self.postMessage({ type: 'ready', models: modelStatus });
+    } else {
+      // Bare init (no payload — used in tests and simple invocations)
+      const modelStatus = await loadModels('./models/', ['webgpu', 'wasm'], DEFAULT_MODELS);
+      self.postMessage({ type: 'ready', models: modelStatus });
+    }
   }
 
+  // ── loadModel: load a specific set of models and report status ───────────────
+  if (type === 'loadModel') {
+    try {
+      initialize();
+    } catch (err) {
+      self.postMessage({ type: 'error', msg: err.message });
+      return;
+    }
+
+    const modelList   = msgModels || DEFAULT_MODELS;
+    const modelStatus = await loadModels('./models/', ['webgpu', 'wasm'], modelList);
+    self.postMessage({ type: 'ready', models: modelStatus });
+  }
+
+  // ── process: run inference on a single frame of magnitude data ───────────────
+  if (type === 'process') {
+    if (!ort || !inputView) return;
+
+    const magnitudes = new Float32Array((payload && payload.magnitudes) || inputView.subarray(0, NUM_BINS));
+    const mask = await buildMask(magnitudes);
+
+    const output = new Float32Array(mask);
+    self.postMessage({ type: 'processed', output }, [output.buffer]);
+  }
+
+  // ── reset: clear inference sessions and polling state ───────────────────────
+  if (type === 'reset') {
+    clearInterval(pollTimer);
+    sessions  = {};
+    lastFrame = -1;
+    pollTimer = null;
+    self.postMessage({ type: 'reset_done' });
+  }
+
+  // ── unload: full cleanup ─────────────────────────────────────────────────────
   if (type === 'unload') {
     clearInterval(pollTimer);
     sessions = {};
     self.postMessage({ type: 'unloaded' });
   }
 
+  // ── update_params: adjust tier caps at runtime ───────────────────────────────
   if (type === 'update_params') {
-    if (payload.allowedModels) allowedModels = payload.allowedModels;
-    if (payload.allowedStages) allowedStages = payload.allowedStages;
+    if (payload && payload.allowedModels) allowedModels = payload.allowedModels;
+    if (payload && payload.allowedStages) allowedStages = payload.allowedStages;
   }
 };
 
-// ── 2. Model loader ───────────────────────────────────────────────────────────
-async function loadModels(basePath, providers) {
-  for (const modelId of allowedModels) {
+// ── 2. Multi-speaker separation ───────────────────────────────────────────────
+async function handleMultiSeparate(streams) {
+  if (!streams || !streams.length) {
+    self.postMessage({ type: 'multi_done', streams: [] });
+    return;
+  }
+
+  // Null-guard: filter out invalid stream entries before extracting buffers
+  const transferables = streams
+    .map(s => s && s.data && s.data.buffer)
+    .filter(Boolean);
+
+  self.postMessage({ type: 'multi_done', streams }, transferables);
+}
+
+// ── 3. Model loader ───────────────────────────────────────────────────────────
+async function loadModels(basePath, providers, modelList) {
+  const modelStatus = {};
+
+  for (const modelId of modelList) {
     const file = MODEL_FILES[modelId];
-    if (!file) continue;
+    if (!file) {
+      modelStatus[modelId] = false;
+      continue;
+    }
 
     const modelUrl = basePath + file;
-
-    // Resolve available execution providers
-    const eps = [];
-    for (const p of providers) {
-      if (p === 'webgpu') {
-        try {
-          const adapter = await navigator?.gpu?.requestAdapter();
-          if (adapter) eps.push('webgpu');
-        } catch { /* WebGPU unavailable */ }
-      } else if (p === 'wasm') {
-        eps.push('wasm');
-      }
-    }
-    if (eps.length === 0) eps.push('wasm'); // guaranteed fallback
+    const eps      = await resolveProviders(providers);
 
     try {
       sessions[modelId] = await ort.InferenceSession.create(modelUrl, {
-        executionProviders:    eps,
+        executionProviders:     eps,
         graphOptimizationLevel: 'all',
       });
+      modelStatus[modelId] = true;
       self.postMessage({ type: 'model_loaded', modelId, providers: eps });
       console.info(`[ml-worker] ${modelId} loaded via ${eps.join(',')}`);
     } catch (err) {
-      console.warn(`[ml-worker] Failed to load ${modelId}:`, err.message);
-      self.postMessage({ type: 'model_error', modelId, error: err.message });
+      modelStatus[modelId] = false;
+      const errMsg = modelId === 'vad'
+        ? `VAD unavailable: ${err.message}`
+        : `Failed to load ${modelId}: ${err.message}`;
+      self.postMessage({ type: 'log', level: 'warn', msg: errMsg });
+      console.warn(`[ml-worker] ${errMsg}`);
     }
   }
+
+  return modelStatus;
 }
 
-// ── 3. SAB polling loop (50 Hz) ───────────────────────────────────────────────
+async function resolveProviders(providers) {
+  const eps = [];
+  for (const p of providers) {
+    if (p === 'webgpu') {
+      try {
+        const adapter = await navigator?.gpu?.requestAdapter();
+        if (adapter) eps.push('webgpu');
+      } catch { /* WebGPU unavailable */ }
+    } else if (p === 'wasm') {
+      eps.push('wasm');
+    }
+  }
+  if (eps.length === 0) eps.push('wasm');
+  return eps;
+}
+
+// ── 4. SAB polling loop (50 Hz) ───────────────────────────────────────────────
 function startPollLoop() {
   pollTimer = setInterval(pollOnce, 20);
 }
@@ -136,16 +236,17 @@ async function pollOnce() {
   Atomics.store(flagsOut, 1, 1); // signal: mask ready
 }
 
-// ── 4. Combined mask inference pipeline ──────────────────────────────────────
+// ── 5. Combined mask inference pipeline ──────────────────────────────────────
 async function buildMask(magnitudes) {
   const mask = new Float32Array(NUM_BINS).fill(1.0);
 
-  // Stage 5 equivalent: Silero VAD — voice activity gate
-  if (sessions['silero-vad'] && allowedStages >= 5) {
+  // VAD gate (silero-vad / vad)
+  const vadSess = sessions['vad'] || sessions['silero-vad'];
+  if (vadSess && allowedStages >= 5) {
     try {
-      const vadInput  = new ort.Tensor('float32', magnitudes, [1, NUM_BINS]);
-      const result    = await sessions['silero-vad'].run({ input: vadInput });
-      const vadProb   = result.output.data;
+      const vadInput = new ort.Tensor('float32', magnitudes, [1, NUM_BINS]);
+      const result   = await vadSess.run({ input: vadInput });
+      const vadProb  = result.output.data;
       if (vadProb.length === 1) {
         const gate = Math.max(0, vadProb[0] * 2 - 0.5);
         for (let k = 0; k < NUM_BINS; k++) mask[k] *= gate;
@@ -153,25 +254,26 @@ async function buildMask(magnitudes) {
         for (let k = 0; k < NUM_BINS; k++) mask[k] *= vadProb[k];
       }
     } catch (e) {
-      console.warn('[ml-worker] silero-vad error:', e.message);
+      console.warn('[ml-worker] vad error:', e.message);
     }
   }
 
-  // Stage 10 equivalent: Demucs v4 — vocal source separation mask
-  if (sessions['demucs-v4'] && allowedStages >= 10) {
+  // Demucs v4 vocal separation mask
+  const demucsSess = sessions['demucs'] || sessions['demucs-v4'];
+  if (demucsSess && allowedStages >= 10) {
     try {
       const demucsIn  = new ort.Tensor('float32', magnitudes, [1, 1, NUM_BINS]);
-      const result    = await sessions['demucs-v4'].run({ mag_input: demucsIn });
+      const result    = await demucsSess.run({ mag_input: demucsIn });
       const vocalMask = result.vocal_mask.data;
       for (let k = 0; k < NUM_BINS; k++) {
         mask[k] = Math.min(mask[k], Math.max(0, vocalMask[k]));
       }
     } catch (e) {
-      console.warn('[ml-worker] demucs-v4 error:', e.message);
+      console.warn('[ml-worker] demucs error:', e.message);
     }
   }
 
-  // Stage 8 equivalent: RNNoise — residual noise suppression
+  // RNNoise residual noise suppression
   if (sessions['rnnoise'] && allowedStages >= 8) {
     try {
       const rnIn   = new ort.Tensor('float32', magnitudes, [1, NUM_BINS]);
@@ -185,7 +287,7 @@ async function buildMask(magnitudes) {
     }
   }
 
-  // Stage 14 equivalent: VoiceFixer — harmonic restoration (ENTERPRISE only)
+  // VoiceFixer harmonic restoration (ENTERPRISE only)
   if (sessions['voicefixer'] && allowedStages >= 14) {
     try {
       const vfIn   = new ort.Tensor('float32', magnitudes, [1, NUM_BINS]);
