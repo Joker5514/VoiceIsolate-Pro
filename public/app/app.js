@@ -89,6 +89,13 @@ const SLIDERS = {
   ]
 };
 
+const SLIDER_MAP = {};
+for (const tab of Object.values(SLIDERS)) {
+  for (const s of tab) {
+    SLIDER_MAP[s.id] = s;
+  }
+}
+
 // ---- PRESETS
 const SLIDER_MAP = {};
 for (const tab of Object.values(SLIDERS)) { for (const s of tab) { SLIDER_MAP[s.id] = s; } }
@@ -467,6 +474,9 @@ class VoiceIsolatePro {
     const v = parseFloat(el.value);
     this.params[id] = v;
     let unit = SLIDER_MAP[id] ? SLIDER_MAP[id].unit : '';
+    let unit = '';
+    const s = SLIDER_MAP[id];
+    if (s) { unit = s.unit; }
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
     el.setAttribute('aria-valuenow', v);

@@ -13,3 +13,6 @@
 ## 2024-05-26 - CSS Specificity Defeats Global Focus Styles
 **Learning:** Global `:focus-visible` rules (specificity 0,1,0) can be silently defeated by element-specific resets like `input[type="range"] { outline: none; }` (specificity 0,1,1). Because of this specificity clash, keyboard users lose the focus ring entirely on critical interactive elements like sliders, rendering them inaccessible.
 **Action:** When clearing native outlines on specific elements using selectors with higher specificity, always write a matching or higher-specificity `:focus-visible` rule (e.g., `input[type="range"]:focus-visible`) to ensure the focus ring is explicitly restored.
+## 2026-04-12 - Implementation of License DB/Email
+**Learning:** Understanding the mocked architecture within an API backend helps establish realistic and predictable integration tests.
+**Action:** Consistently adhere to established mocking structures (e.g., using Maps for in-memory DB mocks) across all related APIs.
