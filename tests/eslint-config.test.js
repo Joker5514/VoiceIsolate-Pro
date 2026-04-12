@@ -86,7 +86,7 @@ describe('ESLint Configuration Validation', () => {
   });
 
   test('should define configuration for Node scripts and Jest tests', () => {
-    const scriptsConfig = config.find(c => c.files && c.files.includes('scripts/**/*.js'));
+    const scriptsConfig = config.find(c => c.files && c.files.includes('scripts/**/*.js') && c.files.includes('tests/**/*.test.js'));
     expect(scriptsConfig).toBeDefined();
     expect(scriptsConfig.languageOptions.sourceType).toBe('commonjs');
 
