@@ -23,8 +23,8 @@ which file is the real implementation.
 ## TypeScript → JavaScript
 
 `voiceisolate_presets.ts` had no build step and was dead at runtime.
-Converted to `voiceisolate_presets.js` (same content, type annotations stripped).
-The original `.ts` file is preserved as `voiceisolate_presets.ts.bak.md` for reference.
+A JavaScript copy was created as `voiceisolate_presets.js` (same content, type annotations stripped).
+The original `voiceisolate_presets.ts` still remains at the repo root; no `voiceisolate_presets.ts.bak.md` archive exists in this branch.
 
 ## Vercel Deployment Verification
 
