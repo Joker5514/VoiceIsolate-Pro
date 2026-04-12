@@ -89,7 +89,17 @@ const SLIDERS = {
   ]
 };
 
+const SLIDER_MAP = {};
+for (const tab of Object.values(SLIDERS)) {
+  for (const s of tab) {
+    SLIDER_MAP[s.id] = s;
+  }
+}
+
 // ---- PRESETS
+const SLIDER_MAP = {};
+for (const tab of Object.values(SLIDERS)) { for (const s of tab) { SLIDER_MAP[s.id] = s; } }
+
 const PRESETS = {
   podcast: {gateThresh:-38,gateRange:-35,gateAttack:2,gateRelease:60,gateHold:15,gateLookahead:5,nrAmount:60,nrSensitivity:55,nrSpectralSub:45,nrFloor:-55,nrSmoothing:40,eqSub:-10,eqBass:-1,eqWarmth:2,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:4,eqClarity:2,eqAir:1,eqBrill:-3,compThresh:-20,compRatio:5,compAttack:6,compRelease:180,compKnee:6,compMakeup:8,limThresh:-1,limRelease:8,hpFreq:80,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:40,specTilt:0.5,formantShift:0,derevAmt:50,derevDecay:0.4,harmRecov:15,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:80,bgSuppress:60,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
   film: {gateThresh:-50,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:25,gateLookahead:5,nrAmount:40,nrSensitivity:45,nrSpectralSub:30,nrFloor:-60,nrSmoothing:40,eqSub:-6,eqBass:1,eqWarmth:1,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:2,eqBrill:-1,compThresh:-28,compRatio:3,compAttack:12,compRelease:300,compKnee:10,compMakeup:4,limThresh:-1,limRelease:15,hpFreq:60,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:-0.5,formantShift:0,derevAmt:30,derevDecay:0.6,harmRecov:25,harmOrder:3,stereoWidth:120,phaseCorr:0,voiceIso:60,bgSuppress:40,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:110},
@@ -330,6 +340,14 @@ class VoiceIsolatePro {
 
   cacheDom() {
     const g = id => document.getElementById(id);
+
+    this.slidersDom = {};
+    for (const id in SLIDER_MAP) {
+      this.slidersDom[id] = {
+        el: g(id),
+        ve: g(id + 'Val')
+      };
+    }
     this.dom = {
       uploadZone:g('uploadZone'), fileInput:g('fileInput'), fileBtn:g('fileBtn'),
       micBtn:g('micBtn'), micLabel:g('micLabel'), fileInfo:g('fileInfo'),
@@ -455,8 +473,10 @@ class VoiceIsolatePro {
     const id = el.dataset.param;
     const v = parseFloat(el.value);
     this.params[id] = v;
+    let unit = SLIDER_MAP[id] ? SLIDER_MAP[id].unit : '';
     let unit = '';
-    for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
+    const s = SLIDER_MAP[id];
+    if (s) { unit = s.unit; }
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
     el.setAttribute('aria-valuenow', v);
@@ -520,19 +540,18 @@ class VoiceIsolatePro {
   applyPreset(name) {
     const p = PRESETS[name]; if (!p) return;
     Object.assign(this.params, p);
-    for (const [, sliders] of Object.entries(SLIDERS)) {
-      for (const s of sliders) {
-        const el = document.getElementById(s.id);
-        const ve = document.getElementById(s.id + 'Val');
-        if (el && this.params[s.id] !== undefined) {
-          el.value = this.params[s.id];
-          el.setAttribute('aria-valuenow', this.params[s.id]);
-          if (ve) ve.textContent = this.params[s.id] + s.unit;
+    for (const id in SLIDER_MAP) {
+      if (this.params[id] !== undefined && this.slidersDom && this.slidersDom[id]) {
+        const { el, ve } = this.slidersDom[id];
+        const s = SLIDER_MAP[id];
+        if (el) {
+          el.value = this.params[id];
+          el.setAttribute('aria-valuenow', this.params[id]);
+          if (ve) ve.textContent = this.params[id] + s.unit;
           const range = s.max - s.min;
-          const pct = range > 0 ? ((this.params[s.id] - s.min) / range) * 100 : 0;
+          const pct = range > 0 ? ((this.params[id] - s.min) / range) * 100 : 0;
           el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
         }
-        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
       }
     }
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));

@@ -89,6 +89,13 @@ const SLIDERS = {
   ]
 };
 
+const SLIDER_MAP = {};
+for (const tab of Object.values(SLIDERS)) {
+  for (const s of tab) {
+    SLIDER_MAP[s.id] = s;
+  }
+}
+
 // ---- PRESETS
 const PRESETS = {
   podcast: {gateThresh:-38,gateRange:-35,gateAttack:2,gateRelease:60,gateHold:15,gateLookahead:5,nrAmount:60,nrSensitivity:55,nrSpectralSub:45,nrFloor:-55,nrSmoothing:40,eqSub:-10,eqBass:-1,eqWarmth:2,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:4,eqClarity:2,eqAir:1,eqBrill:-3,compThresh:-20,compRatio:5,compAttack:6,compRelease:180,compKnee:6,compMakeup:8,limThresh:-1,limRelease:8,hpFreq:80,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:40,specTilt:0.5,formantShift:0,derevAmt:50,derevDecay:0.4,harmRecov:15,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:80,bgSuppress:60,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
@@ -456,7 +463,8 @@ class VoiceIsolatePro {
     const v = parseFloat(el.value);
     this.params[id] = v;
     let unit = '';
-    for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
+    const s = SLIDER_MAP[id];
+    if (s) { unit = s.unit; }
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
     el.setAttribute('aria-valuenow', v);
@@ -2292,4 +2300,5 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
   } else {
     _setup();
   }
+})();
 })();

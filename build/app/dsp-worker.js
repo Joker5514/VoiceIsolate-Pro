@@ -154,3 +154,8 @@ function handleReset() {
   if (dspCore?.reset) dspCore.reset();
   return { status: 'reset' };
 }
+
+function handleReset() {
+  if (dspCore?.reset) dspCore.reset();
+  return { status: 'reset' };
+}

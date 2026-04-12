@@ -26,6 +26,30 @@ import crypto from 'crypto';
 
 const router = express.Router();
 
+
+// ─── Simulated Database ───────────────────────────────────────────────────────
+const _licensesStore = new Map();
+const db = {
+  licenses: {
+    upsert: async (data) => {
+      const existing = _licensesStore.get(data.customerId) || {};
+      _licensesStore.set(data.customerId, { ...existing, ...data });
+      return _licensesStore.get(data.customerId);
+    },
+    get: async (customerId) => {
+      return _licensesStore.get(customerId) || null;
+    }
+  }
+};
+
+// ─── Simulated Email ──────────────────────────────────────────────────────────
+async function sendEmail(to, subject, token) {
+  console.log(`[Email] Sending to ${to}...`);
+  console.log(`[Email] Subject: ${subject}`);
+  console.log(`[Email] Token: ${token}`);
+  return true;
+}
+
 // ─── Lazy-load Stripe (only when keys are available) ─────────────────────────
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -35,13 +59,23 @@ function getStripe() {
   return Stripe(key);
 }
 
+
+// ─── Simulated Database ───────────────────────────────────────────────────────
+const db = {
+  licenses: {
+    _store: new Map(),
+    async upsert(data) {
+      this._store.set(data.customerId, { ...(this._store.get(data.customerId) || {}), ...data });
+    },
+    async get(customerId) {
+      return this._store.get(customerId) || null;
+    }
+  }
+};
+
 // ─── License Token Utilities ──────────────────────────────────────────────────
 if (!process.env.LICENSE_JWT_SECRET) {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('LICENSE_JWT_SECRET environment variable is required');
-  }
-  process.env.LICENSE_JWT_SECRET = 'voiceisolate-dev-secret-key-minimum-32-chars';
-  console.warn('[monetization] LICENSE_JWT_SECRET not set — using dev default. Do NOT use in production.');
+  throw new Error('LICENSE_JWT_SECRET environment variable is required');
 }
 const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
 
@@ -159,8 +193,11 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
         const token = createLicenseToken(customerId, email, tier, 400);
         console.log(`[Webhook] New subscription: ${email} → ${tier} (${subscriptionId})`);
 
+        // Store in database and email the token to the user
+        await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
+        await sendEmail(email, 'Your VoiceIsolate Pro License', token);
         // TODO: Store in database and email the token to the user
-        // await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
+        await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
         // await sendEmail(email, 'Your VoiceIsolate Pro License', token);
         break;
       }
@@ -171,14 +208,14 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
         const tier = PRICE_TO_TIER[priceId] || 'PRO';
         const customerId = sub.customer;
         console.log(`[Webhook] Subscription updated: ${customerId} → ${tier}`);
-        // TODO: Update license in database
+        await db.licenses.upsert({ customerId, tier });
         break;
       }
 
       case 'customer.subscription.deleted': {
         const sub = event.data.object;
         console.log(`[Webhook] Subscription cancelled: ${sub.customer}`);
-        // TODO: Downgrade to FREE in database
+        await db.licenses.upsert({ customerId: sub.customer, tier: 'FREE' });
         break;
       }
 

@@ -7,22 +7,46 @@
 const fs = require('fs');
 const path = require('path');
 
-// Load and eval the TypeScript file by stripping TS-only syntax so it runs as JS.
-const { stripTypeScriptTypes } = require('node:module');
-
-// Load the TypeScript source and transpile it to plain JS using Node's built-in
-// type-stripping (available since Node 22.6+). This correctly handles interfaces,
-// type aliases, generic annotations, and other TS constructs without fragile regex.
+// Load the TypeScript source and strip TS-only syntax so it runs as plain JS.
+// This uses a regex-based approach compatible with Node.js >= 18 (no Node 22+ APIs).
 const tsSource = fs.readFileSync(
   path.join(__dirname, '../voiceisolate_presets.ts'),
   'utf8'
 );
 
-// stripTypeScriptTypes erases all TS-only syntax while preserving source positions.
-// The only remaining JS-invalid token is the `export` keyword on each declaration,
-// which we strip with a single targeted regex so bindings are accessible in scope.
-const jsSource = stripTypeScriptTypes(tsSource)
-  .replace(/^export\s+/gm, '');
+/**
+ * Minimal TypeScript → JavaScript stripper (regex-based, Node 18+ compatible).
+ *
+ * Handles the TS constructs present in voiceisolate_presets.ts:
+ *   1. Leading `export` keywords on each declaration
+ *   2. `interface Foo { ... }` blocks (single-level braces)
+ *   3. `type Foo = ...;` declarations (including union types with `|`)
+ *   4. `: TypeAnnotation` on const declarations — including generics like
+ *      `Record<K, V>` — by stripping everything between `:` and the first `=`
+ *
+ * NOTE: This is NOT a general-purpose TS transpiler. It is intentionally
+ * scoped to the constructs that actually appear in voiceisolate_presets.ts.
+ * The order of operations matters: `export` is stripped first so that
+ * subsequent patterns do not need to account for the `export` prefix.
+ */
+function stripTypeScriptTypes(src) {
+  return src
+    // 1. Remove leading `export` keywords so bindings land in eval scope
+    //    and subsequent patterns see bare `interface`, `type`, `const`.
+    .replace(/^export\s+/gm, '')
+    // 2. Remove interface blocks: `interface Foo { ... }` (non-nested)
+    .replace(/interface\s+\w+\s*\{[^}]*\}/gs, '')
+    // 3. Remove `type Foo = ...;` declarations (handles quoted union types)
+    .replace(/^\s*type\s+\w+\s*=.+;\s*$/gm, '')
+    // 4. Remove `: TypeAnnotation` on `const NAME: Type =` declarations.
+    //    Replaces `const NAME: <anything up to =>` with `const NAME = `.
+    .replace(/(const\s+\w+)\s*:[^=]+=\s*/g, '$1 = ')
+    // 5. Clean up blank lines left by stripping
+    .replace(/^\s*\n/gm, '');
+}
+
+// Produce the plain-JS source using the stripper above.
+const jsSource = stripTypeScriptTypes(tsSource);
 
 // Evaluate the plain-JS source and extract the bindings we need to test.
 // eslint-disable-next-line no-new-func

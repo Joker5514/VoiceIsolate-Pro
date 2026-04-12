@@ -150,22 +150,27 @@ self.onmessage = async (ev) => {
     if (payload && payload.allowedModels) allowedModels = payload.allowedModels;
     if (payload && payload.allowedStages) allowedStages = payload.allowedStages;
   }
+
+  // ── multi_separate: multi-speaker stream separation ──────────────────────────
+  if (type === 'multi_separate') {
+    await handleMultiSeparate(payload && payload.streams);
+  }
 };
 
 // ── 2. Multi-speaker separation ───────────────────────────────────────────────
-async function handleMultiSeparate(streams) {
-  if (!streams || !streams.length) {
-    self.postMessage({ type: 'multi_done', streams: [] });
-    return;
-  }
-
-  // Null-guard: filter out invalid stream entries before extracting buffers
-  const transferables = streams
-    .map(s => s && s.data && s.data.buffer)
-    .filter(Boolean);
-
-  self.postMessage({ type: 'multi_done', streams }, transferables);
-}
+// async function handleMultiSeparate(streams) {
+//   if (!streams || !streams.length) {
+//     self.postMessage({ type: 'multi_done', streams: [] });
+//     return;
+//   }
+//
+//   // Null-guard: filter out invalid stream entries before extracting buffers
+//   const transferables = streams
+//     .map(s => s && s.data && s.data.buffer)
+//     .filter(Boolean);
+//
+//   self.postMessage({ type: 'multi_done', streams }, transferables);
+// }
 
 // ── 3. Model loader ───────────────────────────────────────────────────────────
 async function loadModels(basePath, providers, modelList) {
