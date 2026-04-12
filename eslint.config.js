@@ -20,6 +20,7 @@ export default [
         PipelineState: 'readonly',        // loaded via separate script tag
         PipelineOrchestrator: 'readonly', // loaded via separate script tag
         SpeakerRegistry: 'readonly',      // loaded via separate script tag
+        Auth: 'readonly',                 // optional global from auth.js / vip-boot.js
       },
     },
     rules: {
