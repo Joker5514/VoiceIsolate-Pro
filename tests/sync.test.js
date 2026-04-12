@@ -45,6 +45,25 @@ function _validateId(id) {
   return typeof id === 'string' && ID_RE.test(id);
 }
 
+function _isDeep(obj, maxDepth = 10) {
+  if (!obj || typeof obj !== 'object') return false;
+  const visited = new WeakSet();
+  const stack = [[obj, 0]];
+  while (stack.length > 0) {
+    const [curr, depth] = stack.pop();
+    if (depth > maxDepth) return true;
+    if (curr && typeof curr === 'object') {
+      if (visited.has(curr)) return true;
+      visited.add(curr);
+      const keys = Object.keys(curr);
+      for (let i = 0; i < keys.length; i++) {
+        stack.push([curr[keys[i]], depth + 1]);
+      }
+    }
+  }
+  return false;
+}
+
 function _validatePreset(p) {
   if (!p || typeof p !== 'object') return false;
   if (!_validateId(p.id)) return false;
@@ -54,8 +73,15 @@ function _validatePreset(p) {
 
 function _sanitizePreset(p) {
   const rawParams  = p.params && typeof p.params === 'object' ? p.params : {};
-  const paramsStr  = JSON.stringify(rawParams);
-  const params     = paramsStr.length <= MAX_PRESET_PARAMS_BYTES ? rawParams : {};
+  let params = {};
+  if (!_isDeep(rawParams)) {
+    try {
+      const paramsStr = JSON.stringify(rawParams);
+      if (Buffer.byteLength(paramsStr) <= MAX_PRESET_PARAMS_BYTES) params = rawParams;
+    } catch {
+      params = {};
+    }
+  }
   const result     = {
     id:   String(p.id).slice(0, 128),
     name: String(p.name).slice(0, 256),
@@ -74,8 +100,15 @@ function _validateNoiseProfile(p) {
 
 function _sanitizeNoiseProfile(p) {
   const rawData = p.data && typeof p.data === 'object' ? p.data : {};
-  const dataStr = JSON.stringify(rawData);
-  const data    = dataStr.length <= MAX_NOISE_PROFILE_BYTES ? rawData : {};
+  let data = {};
+  if (!_isDeep(rawData)) {
+    try {
+      const dataStr = JSON.stringify(rawData);
+      if (Buffer.byteLength(dataStr) <= MAX_NOISE_PROFILE_BYTES) data = rawData;
+    } catch {
+      data = {};
+    }
+  }
   const result  = { name: String(p.name).slice(0, 256), data };
   if (p.createdAt !== undefined && Number.isFinite(Number(p.createdAt))) result.createdAt = Number(p.createdAt);
   return result;
@@ -91,6 +124,38 @@ function makeToken({ tier = 'studio', sub = 'user_123', daysValid = 30 } = {}) {
   const sig = crypto.createHmac('sha256', SECRET).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${sig}`;
 }
+
+// ── _isDeep ───────────────────────────────────────────────────────────────────
+describe('_isDeep()', () => {
+  test('returns false for shallow objects', () => {
+    expect(_isDeep({ a: 1, b: { c: 2 } })).toBe(false);
+  });
+
+  test('returns false for non-objects', () => {
+    expect(_isDeep(null)).toBe(false);
+    expect(_isDeep('string')).toBe(false);
+    expect(_isDeep(42)).toBe(false);
+  });
+
+  test('returns true when nesting exceeds maxDepth', () => {
+    let deeplyNestedObj = {};
+    for (let i = 0; i < 12; i++) deeplyNestedObj = { a: deeplyNestedObj };
+    expect(_isDeep(deeplyNestedObj)).toBe(true);
+  });
+
+  test('returns true for circular references without infinite looping', () => {
+    const circular = {};
+    circular.self = circular;
+    expect(_isDeep(circular)).toBe(true);
+  });
+
+  test('returns true for indirect circular references', () => {
+    const parent = {};
+    const child = { parent };
+    parent.child = child;
+    expect(_isDeep(parent)).toBe(true);
+  });
+});
 
 // ── _validateId ───────────────────────────────────────────────────────────────
 describe('_validateId()', () => {
@@ -201,6 +266,20 @@ describe('_sanitizePreset()', () => {
     expect(clean).not.toHaveProperty('createdAt');
     expect(clean).not.toHaveProperty('updatedAt');
   });
+
+  test('drops params when the nesting depth is too high (security fix)', () => {
+    let deep = {};
+    for (let i = 0; i < 20; i++) deep = { a: deep };
+    const clean = _sanitizePreset({ id: 'ok', name: 'Test', params: deep });
+    expect(clean.params).toEqual({});
+  });
+
+  test('gracefully handles circular references in params (security fix)', () => {
+    const circular = {};
+    circular.self = circular;
+    const clean = _sanitizePreset({ id: 'ok', name: 'Test', params: circular });
+    expect(clean.params).toEqual({});
+  });
 });
 
 // ── _validateNoiseProfile ─────────────────────────────────────────────────────
@@ -239,6 +318,13 @@ describe('_sanitizeNoiseProfile()', () => {
 
   test('defaults data to {} when data is not an object', () => {
     const clean = _sanitizeNoiseProfile({ name: 'Test', data: 'not-an-object' });
+    expect(clean.data).toEqual({});
+  });
+
+  test('drops data when the nesting depth is too high (security fix)', () => {
+    let deep = {};
+    for (let i = 0; i < 20; i++) deep = { a: deep };
+    const clean = _sanitizeNoiseProfile({ name: 'Test', data: deep });
     expect(clean.data).toEqual({});
   });
 });
@@ -330,11 +416,19 @@ function buildSyncApp() {
         }
         case 'history:add': {
           if (change.data && typeof change.data === 'object') {
-            const str = JSON.stringify(change.data);
-            if (str.length <= MAX_HISTORY_ENTRY_BYTES) {
-              data.history = [...(data.history || []), change.data].slice(-100);
+            if (_isDeep(change.data)) {
+              errors.push('history:add entry is too deep');
             } else {
-              errors.push('history:add entry exceeds maximum size (16 KB)');
+              try {
+                const str = JSON.stringify(change.data);
+                if (Buffer.byteLength(str) <= MAX_HISTORY_ENTRY_BYTES) {
+                  data.history = [...(data.history || []), change.data].slice(-100);
+                } else {
+                  errors.push('history:add entry exceeds maximum size (16 KB)');
+                }
+              } catch {
+                errors.push('history:add entry is invalid');
+              }
             }
           }
           break;
@@ -543,6 +637,16 @@ describe('POST /push', () => {
       .set(pushAuth)
       .send({ changes: [{ type: 'history:add', data: big }] });
     expect(res.body.errors.length).toBeGreaterThan(0);
+  });
+
+  test('history:add — rejects an entry that is too deep (security fix)', async () => {
+    let deep = {};
+    for (let i = 0; i < 20; i++) deep = { a: deep };
+    const res = await request(syncApp)
+      .post('/push')
+      .set(pushAuth)
+      .send({ changes: [{ type: 'history:add', data: deep }] });
+    expect(res.body.errors).toContain('history:add entry is too deep');
   });
 
   test('mixed changes: counts applied vs errored correctly', async () => {
