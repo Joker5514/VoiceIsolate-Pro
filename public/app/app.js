@@ -2279,7 +2279,7 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
       window._vipApp = app;
       // Auth.init() will be called by vip-boot.js after this runs.
       // If vip-boot.js is absent, call it here as a safety net.
-      if (typeof Auth !== 'undefined' && typeof Auth.init === 'function') {
+      if (typeof Auth !== 'undefined' && typeof Auth.init === 'function' && !Auth.isLoggedIn && Auth.currentUser === null) {
         Auth.init().catch(function(e){ console.warn('[app] Auth.init error:', e); });
       }
       console.info('[app] VoiceIsolatePro ready via app.js bootstrap ✓');
