@@ -8,7 +8,7 @@
 
 The following root-level files were **stale duplicates** of canonical files inside `public/app/`.
 Vercel `outputDirectory: "public"` means these root files were **never served** in any deployment.
-They existed only in the git tree, consuming ~156 KB and creating developer confusion about
+They existed only in the git tree, consuming ~186 KB and creating developer confusion about
 which file is the real implementation.
 
 | Removed File | Canonical Replacement | Why Removed |
