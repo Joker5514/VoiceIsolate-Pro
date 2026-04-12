@@ -141,15 +141,13 @@ describe('buildTransferables (ml-worker.js PR null-guard)', () => {
   // ── Normal cases ──────────────────────────────────────────────────────────
 
   it('returns all buffers when every stream entry is valid', () => {
-    const buf0 = new Float32Array(4).buffer;
-    const buf1 = new Float32Array(8).buffer;
+    // Create Float32Arrays backed by known ArrayBuffers for identity assertions
+    const buf0 = new ArrayBuffer(16); // 4 floats * 4 bytes
+    const buf1 = new ArrayBuffer(32); // 8 floats * 4 bytes
     const streams = [
-      { speakerId: 0, data: new Float32Array(4) },
-      { speakerId: 1, data: new Float32Array(8) },
+      { speakerId: 0, data: new Float32Array(buf0) },
+      { speakerId: 1, data: new Float32Array(buf1) },
     ];
-    // Attach the known buffers so we can assert identity
-    streams[0].data = Object.assign(new Float32Array(4), { buffer: buf0 });
-    streams[1].data = Object.assign(new Float32Array(8), { buffer: buf1 });
     const result = buildTransferables(streams);
     expect(result).toHaveLength(2);
     expect(result[0]).toBe(streams[0].data.buffer);
@@ -244,9 +242,9 @@ describe('buildTransferables (ml-worker.js PR null-guard)', () => {
     ];
     const result = buildTransferables(streams);
     expect(result).toHaveLength(2);
-    // Both results must be ArrayBuffer instances
+    // Both results must be ArrayBuffer instances (toString avoids cross-realm instanceof issues)
     for (const buf of result) {
-      expect(buf).toBeInstanceOf(ArrayBuffer);
+      expect(Object.prototype.toString.call(buf)).toBe('[object ArrayBuffer]');
     }
   });
 
@@ -261,5 +259,109 @@ describe('buildTransferables (ml-worker.js PR null-guard)', () => {
   it('does NOT throw when streams contains an entry with null .data (regression)', () => {
     const streams = [{ speakerId: 0, data: null }, { speakerId: 1, data: new Float32Array(4) }];
     expect(() => buildTransferables(streams)).not.toThrow();
+  });
+});
+
+// ============================================================
+// ArrayBuffer identity: new Float32Array(buf).buffer === buf
+// These tests validate the buffer-creation approach used in the
+// PR fix: createing a Float32Array from a known ArrayBuffer
+// guarantees that .buffer returns that exact same object.
+// ============================================================
+
+describe('ArrayBuffer identity — PR fix approach (new Float32Array(buf))', () => {
+  it('Float32Array constructed from an ArrayBuffer preserves buffer identity', () => {
+    const buf = new ArrayBuffer(16);
+    const arr = new Float32Array(buf);
+    expect(arr.buffer).toBe(buf);
+  });
+
+  it('buffer identity holds for ArrayBuffer of any byte length', () => {
+    [4, 8, 16, 32, 64, 256].forEach(byteLength => {
+      const buf = new ArrayBuffer(byteLength);
+      const arr = new Float32Array(buf);
+      expect(arr.buffer).toBe(buf);
+    });
+  });
+
+  it('two Float32Arrays from the same ArrayBuffer share the same buffer reference', () => {
+    const buf = new ArrayBuffer(32);
+    const a = new Float32Array(buf, 0, 4);
+    const b = new Float32Array(buf, 16, 4);
+    expect(a.buffer).toBe(b.buffer);
+    expect(a.buffer).toBe(buf);
+  });
+
+  it('buildTransferables returns the exact ArrayBuffer passed to Float32Array constructor', () => {
+    const buf0 = new ArrayBuffer(16);
+    const buf1 = new ArrayBuffer(32);
+    const streams = [
+      { speakerId: 0, data: new Float32Array(buf0) },
+      { speakerId: 1, data: new Float32Array(buf1) },
+    ];
+    const result = buildTransferables(streams);
+    expect(result[0]).toBe(buf0);
+    expect(result[1]).toBe(buf1);
+  });
+
+  it('result buffer from buildTransferables is not a copy — it is the identical object', () => {
+    const buf = new ArrayBuffer(8);
+    const streams = [{ speakerId: 0, data: new Float32Array(buf) }];
+    const result = buildTransferables(streams);
+    // Strict identity, not just structural equality
+    expect(result[0] === buf).toBe(true);
+  });
+});
+
+// ============================================================
+// Object.prototype.toString ArrayBuffer detection
+// Validates the cross-realm-safe check introduced in the PR:
+//   Object.prototype.toString.call(buf) === '[object ArrayBuffer]'
+// ============================================================
+
+describe('Object.prototype.toString — cross-realm ArrayBuffer detection', () => {
+  it('returns "[object ArrayBuffer]" for a plain new ArrayBuffer()', () => {
+    const buf = new ArrayBuffer(8);
+    expect(Object.prototype.toString.call(buf)).toBe('[object ArrayBuffer]');
+  });
+
+  it('returns "[object ArrayBuffer]" for a zero-byte ArrayBuffer', () => {
+    expect(Object.prototype.toString.call(new ArrayBuffer(0))).toBe('[object ArrayBuffer]');
+  });
+
+  it('returns "[object ArrayBuffer]" for an ArrayBuffer obtained from Float32Array.buffer', () => {
+    const arr = new Float32Array(4);
+    expect(Object.prototype.toString.call(arr.buffer)).toBe('[object ArrayBuffer]');
+  });
+
+  it('does NOT return "[object ArrayBuffer]" for a plain object', () => {
+    expect(Object.prototype.toString.call({})).not.toBe('[object ArrayBuffer]');
+  });
+
+  it('does NOT return "[object ArrayBuffer]" for null', () => {
+    expect(Object.prototype.toString.call(null)).not.toBe('[object ArrayBuffer]');
+  });
+
+  it('does NOT return "[object ArrayBuffer]" for a TypedArray itself', () => {
+    const arr = new Float32Array(4);
+    expect(Object.prototype.toString.call(arr)).not.toBe('[object ArrayBuffer]');
+  });
+
+  it('all buffers returned by buildTransferables pass the cross-realm check', () => {
+    const streams = [
+      { speakerId: 0, data: new Float32Array(new ArrayBuffer(8)) },
+      { speakerId: 1, data: new Float32Array(new ArrayBuffer(16)) },
+    ];
+    const result = buildTransferables(streams);
+    for (const buf of result) {
+      expect(Object.prototype.toString.call(buf)).toBe('[object ArrayBuffer]');
+    }
+  });
+
+  it('toString check is equivalent to instanceof for same-realm buffers', () => {
+    const buf = new ArrayBuffer(4);
+    const toStringMatch = Object.prototype.toString.call(buf) === '[object ArrayBuffer]';
+    const instanceofMatch = buf instanceof ArrayBuffer;
+    expect(toStringMatch).toBe(instanceofMatch);
   });
 });

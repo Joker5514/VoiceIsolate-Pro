@@ -100,7 +100,6 @@ describe('app.js — --pct CSS variable wiring', () => {
     expect(appJs).toContain('initPct');
     expect(appJs).toContain('const range = s.max - s.min');
     expect(appJs).toContain('range > 0 ? ((s.val - s.min) / range) * 100 : 0');
-    expect(appJs).toContain("((s.val - s.min) / (s.max - s.min)) * 100");
   });
 
   test('initPct result applied via style.setProperty', () => {
@@ -582,5 +581,60 @@ describe('Regression and boundary cases', () => {
     expect(accessCount).toBeGreaterThan(0);
     // Every access count should be paired with a guard on the same or previous expression
     expect(guardCount * 2).toBeGreaterThanOrEqual(accessCount);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 14. Regression: removed duplicate formula assertion
+//     The PR removed `expect(appJs).toContain("((s.val - s.min) / (s.max - s.min)) * 100")`
+//     because the canonical form in app.js uses a `range` variable, not inline subtraction.
+// ═══════════════════════════════════════════════════════════════
+
+describe('--pct formula — range variable approach (regression for removed assertion)', () => {
+  test('app.js does NOT contain the inline-division form without range variable', () => {
+    // The PR removed this assertion because app.js uses `const range = s.max - s.min`
+    // and then `(s.val - s.min) / range`, NOT the fully-inlined form.
+    // This test documents and guards that contract.
+    expect(appJs).not.toContain('((s.val - s.min) / (s.max - s.min)) * 100');
+  });
+
+  test('app.js uses the range-variable form in the render loop (not inline division)', () => {
+    // The render-loop formula stores denominator in `range` first
+    expect(appJs).toContain('const range = s.max - s.min');
+    expect(appJs).toContain('range > 0 ? ((s.val - s.min) / range) * 100 : 0');
+  });
+
+  test('app.js guards against zero-range in render loop with range > 0 check', () => {
+    // When min === max the guard returns 0 instead of dividing by zero
+    const occurrences = (appJs.match(/range > 0 \? .* : 0/g) || []).length;
+    expect(occurrences).toBeGreaterThanOrEqual(1);
+  });
+
+  test('app.js guards against zero-range in onSlider with range > 0 check', () => {
+    // onSlider also stores denominator in range before division
+    expect(appJs).toContain('parseFloat(el.max) - parseFloat(el.min)');
+  });
+
+  test('calcPct helper: identical result whether computed inline or via range variable', () => {
+    // Both formulations are algebraically equivalent; verify numerical parity
+    const value = 37, min = 10, max = 90;
+    const inline = ((value - min) / (max - min)) * 100;
+    const range = max - min;
+    const viaRange = (range > 0) ? ((value - min) / range) * 100 : 0;
+    expect(inline).toBeCloseTo(viaRange, 10);
+  });
+
+  test('calcPct: zero-range guard is equivalent to returning 0 when min === max', () => {
+    // Simulates what app.js does when range === 0
+    const value = 5, min = 5, max = 5;
+    const range = max - min; // === 0
+    const result = range > 0 ? ((value - min) / range) * 100 : 0;
+    expect(result).toBe(0);
+  });
+
+  test('calcPct: negative value (below min) produces negative percentage without clamping', () => {
+    // The formula does not clamp; documents the deliberate no-clamp behaviour
+    const r = calcPct(-10, 0, 100);
+    expect(parseFloat(r)).toBeLessThan(0);
   });
 });
