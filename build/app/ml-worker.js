@@ -303,3 +303,4 @@ async function buildMask(magnitudes) {
 
   return mask;
 }
+}

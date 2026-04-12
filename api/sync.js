@@ -23,10 +23,15 @@ router.use(express.json({ limit: '1mb' }));
 const _store = new Map(); // userId → { presets, noiseProfiles, history, updatedAt }
 
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
-if (!process.env.LICENSE_JWT_SECRET) {
-  throw new Error('LICENSE_JWT_SECRET environment variable is required');
-}
-const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
+const LICENSE_SECRET = (() => {
+  if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('LICENSE_JWT_SECRET environment variable is required');
+  }
+  const fallback = 'voiceisolate-dev-secret-key-minimum-32-chars';
+  console.warn('[Sync] LICENSE_JWT_SECRET not set — using dev default. Do NOT use in production.');
+  return fallback;
+})();
 
 /**
  * Validate and decode a license token, returning its payload when valid.

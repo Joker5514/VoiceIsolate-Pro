@@ -2301,3 +2301,4 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
     _setup();
   }
 })();
+})();

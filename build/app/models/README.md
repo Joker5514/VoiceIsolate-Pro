@@ -12,3 +12,4 @@ These are NOT committed to the repo due to file size.
 Run `npm run download-models` or download from the project release page.
 
 The ml-worker-fetch-cache.js module will cache loaded models in IndexedDB automatically.
+The ml-worker-fetch-cache.js module will cache loaded models in IndexedDB automatically.

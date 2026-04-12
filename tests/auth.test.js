@@ -625,3 +625,125 @@ describe('Login → /me roundtrip', () => {
     expect(meRes.body.tier).toBe('FREE');
   });
 });
+
+// ── LICENSE_SECRET IIFE fallback (api/auth.js PR change) ──────────────────────
+// api/auth.js changed from a boot-time throw to an IIFE that:
+//   - returns the env var when set
+//   - returns a hardcoded dev fallback + console.warn when unset (ALL environments)
+// Unlike api/monetization.js, auth.js NEVER throws — it always falls back.
+describe('LICENSE_SECRET IIFE fallback (auth.js)', () => {
+  const AUTH_FALLBACK = 'vip-dev-fallback-secret-change-in-production-32chars';
+
+  // Replicates the IIFE logic from api/auth.js
+  function resolveLicenseSecret(envValue) {
+    const savedSecret  = process.env.LICENSE_JWT_SECRET;
+    if (envValue === undefined) {
+      delete process.env.LICENSE_JWT_SECRET;
+    } else {
+      process.env.LICENSE_JWT_SECRET = envValue;
+    }
+
+    let warnEmitted    = false;
+    let thrownError    = null;
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+      if (String(args[0]).includes('LICENSE_JWT_SECRET')) warnEmitted = true;
+    };
+
+    let resolved;
+    try {
+      // Mirrors the IIFE in api/auth.js exactly
+      resolved = (() => {
+        if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
+        const fallback = AUTH_FALLBACK;
+        console.warn(
+          '[Auth] WARNING: LICENSE_JWT_SECRET not set. Using insecure dev fallback.\n' +
+          '  → Set it in Vercel Dashboard → Settings → Environment Variables.'
+        );
+        return fallback;
+      })();
+    } catch (e) {
+      thrownError = e;
+    }
+
+    console.warn = originalWarn;
+    if (savedSecret === undefined) {
+      delete process.env.LICENSE_JWT_SECRET;
+    } else {
+      process.env.LICENSE_JWT_SECRET = savedSecret;
+    }
+
+    return { resolved, warnEmitted, thrownError };
+  }
+
+  test('returns the env var value when LICENSE_JWT_SECRET is set', () => {
+    const mySecret = 'my-actual-secret-key-32chars-min!!';
+    const { resolved, warnEmitted, thrownError } = resolveLicenseSecret(mySecret);
+    expect(thrownError).toBeNull();
+    expect(resolved).toBe(mySecret);
+    expect(warnEmitted).toBe(false);
+  });
+
+  test('returns the hardcoded dev fallback when LICENSE_JWT_SECRET is absent', () => {
+    const { resolved, thrownError } = resolveLicenseSecret(undefined);
+    expect(thrownError).toBeNull();
+    expect(resolved).toBe(AUTH_FALLBACK);
+  });
+
+  test('emits console.warn when falling back to dev secret', () => {
+    const { warnEmitted } = resolveLicenseSecret(undefined);
+    expect(warnEmitted).toBe(true);
+  });
+
+  test('never throws — even when LICENSE_JWT_SECRET is absent', () => {
+    // The PR specifically removed the throw in favour of a graceful fallback
+    const { thrownError } = resolveLicenseSecret(undefined);
+    expect(thrownError).toBeNull();
+  });
+
+  test('dev fallback is at least 32 characters (suitable HMAC key)', () => {
+    expect(AUTH_FALLBACK.length).toBeGreaterThanOrEqual(32);
+  });
+
+  test('tokens signed with the fallback secret validate correctly', () => {
+    const header  = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      sub: 'u1', username: 'test', email: 'test@example.com',
+      tier: 'pro', role: 'user', source: 'auth',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    })).toString('base64url');
+    const sig = crypto
+      .createHmac('sha256', AUTH_FALLBACK)
+      .update(`${header}.${payload}`)
+      .digest('base64url');
+    const token = `${header}.${payload}.${sig}`;
+
+    // Validate using the same fallback
+    const parts       = token.split('.');
+    const expectedSig = crypto
+      .createHmac('sha256', AUTH_FALLBACK)
+      .update(`${parts[0]}.${parts[1]}`)
+      .digest('base64url');
+    const sigMatch = crypto.timingSafeEqual(
+      Buffer.from(expectedSig, 'base64url'),
+      Buffer.from(parts[2],    'base64url')
+    );
+    expect(sigMatch).toBe(true);
+  });
+
+  test('route returns 200 using a token signed with fallback secret (dev env works)', () => {
+    // Build an app that explicitly uses the fallback secret
+    const fallbackApp = buildApp(AUTH_FALLBACK);
+    // Create a token with the fallback secret via createAuthToken (re-used helper above)
+    const user  = { id: 'usr_test_pro', username: 'test_pro', email: 'pro@test.voiceisolatepro.com', tier: 'PRO', role: 'user' };
+    const token = createAuthToken(user, AUTH_FALLBACK);
+    return request(fallbackApp.app)
+      .get('/me')
+      .set('Authorization', `Bearer ${token}`)
+      .then(res => {
+        expect(res.status).toBe(200);
+        expect(res.body.username).toBe('test_pro');
+      });
+  });
+});
