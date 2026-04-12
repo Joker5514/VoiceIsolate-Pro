@@ -30,10 +30,11 @@ describe('ESLint Configuration Validation', () => {
     };
 
     // Robust extraction of the configuration array:
-    // 1. Strip all import statements (flexible regex)
+    // 1. Strip static import statements, including both `import ... from '...'`
+    //    and bare side-effect imports like `import 'foo';`
     // 2. Replace 'export default' with 'return'
     const code = source
-      .replace(/import\s+[\s\S]+?from\s+['"].+?['"];?/g, '')
+      .replace(/^\s*import(?:[\s\S]*?\s+from\s+)?['"][^'"\n]+['"]\s*;?\s*$/gm, '')
       .replace(/export\s+default/g, 'return');
 
     try {
