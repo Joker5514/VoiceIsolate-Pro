@@ -31,6 +31,20 @@
       ]
     },
     {
+      "source": "/app/voice-isolate-processor.js",
+      "headers": [
+        { "key": "Content-Type",  "value": "application/javascript" },
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
+      "source": "/app/dsp-processor.js",
+      "headers": [
+        { "key": "Content-Type",  "value": "application/javascript" },
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
       "source": "/app/models/(.*\\.onnx)",
       "headers": [
         { "key": "Content-Type",                 "value": "application/octet-stream" },
@@ -59,13 +73,6 @@
       "headers": [
         { "key": "Cross-Origin-Resource-Policy", "value": "same-site" },
         { "key": "Cache-Control",                "value": "public, max-age=86400, immutable" }
-      ]
-    },
-    {
-      "source": "/app/dsp-processor.js",
-      "headers": [
-        { "key": "Content-Type", "value": "application/javascript" },
-        { "key": "Cache-Control", "value": "no-cache" }
       ]
     }
   ]
