@@ -118,7 +118,7 @@
   // Auth.init() shows the login modal and restores the session.
   // Must be called after app is ready so the DOM is fully available.
   function _callAuthInit() {
-    if (typeof Auth !== 'undefined' && typeof Auth.init === 'function') {
+    if (typeof Auth !== 'undefined' && typeof Auth.init === 'function' && !Auth.isLoggedIn && Auth.currentUser === null) {
       Auth.init().catch(function(e){ console.warn('[vip-boot] Auth.init error:', e); });
     } else {
       console.warn('[vip-boot] Auth module not loaded — login modal skipped');
