@@ -26,6 +26,30 @@ import crypto from 'crypto';
 
 const router = express.Router();
 
+
+// ─── Simulated Database ───────────────────────────────────────────────────────
+const _licensesStore = new Map();
+const db = {
+  licenses: {
+    upsert: async (data) => {
+      const existing = _licensesStore.get(data.customerId) || {};
+      _licensesStore.set(data.customerId, { ...existing, ...data });
+      return _licensesStore.get(data.customerId);
+    },
+    get: async (customerId) => {
+      return _licensesStore.get(customerId) || null;
+    }
+  }
+};
+
+// ─── Simulated Email ──────────────────────────────────────────────────────────
+async function sendEmail(to, subject, token) {
+  console.log(`[Email] Sending to ${to}...`);
+  console.log(`[Email] Subject: ${subject}`);
+  console.log(`[Email] Token: ${token}`);
+  return true;
+}
+
 // ─── Lazy-load Stripe (only when keys are available) ─────────────────────────
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -159,9 +183,9 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
         const token = createLicenseToken(customerId, email, tier, 400);
         console.log(`[Webhook] New subscription: ${email} → ${tier} (${subscriptionId})`);
 
-        // TODO: Store in database and email the token to the user
-        // await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
-        // await sendEmail(email, 'Your VoiceIsolate Pro License', token);
+        // Store in database and email the token to the user
+        await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
+        await sendEmail(email, 'Your VoiceIsolate Pro License', token);
         break;
       }
 
