@@ -230,10 +230,8 @@ function renderLoginModal() {
       <div id="vip-auth-error"></div>
       <div class="vip-auth-tier-hint">
         <strong style="color:#f3f3f5">Test accounts:</strong>
-        joker5514 / Admin8052 (ENTERPRISE · admin) &nbsp;·&nbsp;
-        test_pro / TestPro123 (PRO) &nbsp;·&nbsp;
-        test_studio / TestStudio123 (STUDIO) &nbsp;·&nbsp;
-        demo / hello (FREE)
+        joker5514 (ENTERPRISE · admin) &nbsp;·&nbsp;
+        test_enterprise / test_studio / test_pro / test_free / demo
       </div>
     </div>
   `;
