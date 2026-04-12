@@ -2275,7 +2275,6 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
     try {
       var app = new VoiceIsolatePro();
       app._initCalled = true;
-      app.init();
       window.vip     = app;
       window._vipApp = app;
       // Auth.init() will be called by vip-boot.js after this runs.
