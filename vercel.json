@@ -2,7 +2,7 @@
   "outputDirectory": "public",
   "buildCommand": "bash scripts/bootstrap-libs.sh",
   "rewrites": [
-    { "source": "/api/:path*",    "destination": "/api/:path*" },
+    { "source": "/api/:path*",    "destination": "/api/handler" },
     { "source": "/app/:path*",    "destination": "/app/:path*" },
     { "source": "/lib/:path*",    "destination": "/lib/:path*" },
     { "source": "/",             "destination": "/index.html" }

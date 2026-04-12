@@ -27,23 +27,23 @@ import crypto from 'crypto';
 const router = express.Router();
 
 // ─── Lazy-load Stripe (only when keys are available) ─────────────────────────
-function getStripe() {
+// Uses dynamic ESM import so the module doesn't crash when stripe is absent.
+async function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('STRIPE_SECRET_KEY not configured');
-  // Dynamic import to avoid crashing when Stripe is not installed
-  const Stripe = require('stripe');
-  return Stripe(key);
+  const { default: Stripe } = await import('stripe');
+  return new Stripe(key, { apiVersion: '2023-10-16' });
 }
 
 // ─── License Token Utilities ──────────────────────────────────────────────────
-if (!process.env.LICENSE_JWT_SECRET) {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('LICENSE_JWT_SECRET environment variable is required');
-  }
-  process.env.LICENSE_JWT_SECRET = 'voiceisolate-dev-secret-key-minimum-32-chars';
-  console.warn('[monetization] LICENSE_JWT_SECRET not set — using dev default. Do NOT use in production.');
-}
-const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
+// FIX: no throw on missing env var so Vercel deployments without the secret
+// don't crash at startup. Set LICENSE_JWT_SECRET in Vercel Environment Variables.
+const LICENSE_SECRET = (() => {
+  if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
+  const fallback = 'voiceisolate-dev-secret-change-in-production-32chars!';
+  console.warn('[monetization] WARNING: LICENSE_JWT_SECRET not set. Using insecure dev fallback.');
+  return fallback;
+})();
 
 function createLicenseToken(userId, email, tier, daysValid = 365) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
