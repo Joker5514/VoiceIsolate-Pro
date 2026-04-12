@@ -10,6 +10,7 @@
 import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import apiRouter from './api/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
@@ -45,6 +46,9 @@ app.use((_req, res, next) => {
 
   next();
 });
+
+// ── API Routes ──────────────────────────────────────────────────────────
+app.use('/api', apiRouter);
 
 // ── WASM MIME type & caching ─────────────────────────────────────────────
 app.use('/wasm', express.static(join(__dirname, 'wasm'), {

@@ -37,7 +37,11 @@ function getStripe() {
 
 // ─── License Token Utilities ──────────────────────────────────────────────────
 if (!process.env.LICENSE_JWT_SECRET) {
-  throw new Error('LICENSE_JWT_SECRET environment variable is required');
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('LICENSE_JWT_SECRET environment variable is required');
+  }
+  process.env.LICENSE_JWT_SECRET = 'voiceisolate-dev-secret-key-minimum-32-chars';
+  console.warn('[monetization] LICENSE_JWT_SECRET not set — using dev default. Do NOT use in production.');
 }
 const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
 
