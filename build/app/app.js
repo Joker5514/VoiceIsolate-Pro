@@ -1,9 +1,21 @@
+/* global VisualizationEngine */
 /* ============================================
-   VoiceIsolate Pro v22.0 – Engineer Mode
+   VoiceIsolate Pro v22.1 – Engineer Mode
    Threads from Space v11 · Hybrid ML+DSP
    52 Sliders · 6-Panel Diagnostics · 3D Spectrogram
    35-Stage Deca-Pass Pipeline with Real STFT DSP
    ============================================ */
+
+function structuredLog(level, msg, data = {}) {
+  const entry = { ts: new Date().toISOString(), level, msg, ...data };
+  if (level === 'error') console.error('[VIP]', msg, data);
+  else if (level === 'warn') console.warn('[VIP]', msg, data);
+  else console.log('[VIP]', msg, data);
+  // Store last 200 entries for forensic export
+  if (!window._vipLogs) window._vipLogs = [];
+  if (window._vipLogs.length >= 200) window._vipLogs.shift();
+  window._vipLogs.push(entry);
+}
 
 // ---- SLIDER DEFINITIONS (52 total) ----
 const SLIDERS = {
@@ -86,7 +98,7 @@ const PRESETS = {
   music: {gateThresh:-55,gateRange:-25,gateAttack:3,gateRelease:120,gateHold:15,gateLookahead:3,nrAmount:25,nrSensitivity:40,nrSpectralSub:20,nrFloor:-65,nrSmoothing:45,eqSub:-3,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:3,eqBrill:0,compThresh:-30,compRatio:2,compAttack:20,compRelease:350,compKnee:15,compMakeup:3,limThresh:-0.5,limRelease:12,hpFreq:40,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:15,specTilt:-1,formantShift:0,derevAmt:15,derevDecay:1.0,harmRecov:30,harmOrder:4,stereoWidth:150,phaseCorr:0,voiceIso:50,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:0,dryWet:85,ditherAmt:5,outWidth:140},
   broadcast: {gateThresh:-35,gateRange:-40,gateAttack:1.5,gateRelease:50,gateHold:10,gateLookahead:3,nrAmount:65,nrSensitivity:60,nrSpectralSub:50,nrFloor:-50,nrSmoothing:30,eqSub:-12,eqBass:-2,eqWarmth:2,eqBody:0,eqLowMid:-2,eqMid:2,eqPresence:5,eqClarity:3,eqAir:1,eqBrill:-4,compThresh:-18,compRatio:6,compAttack:4,compRelease:150,compKnee:4,compMakeup:10,limThresh:-1,limRelease:5,hpFreq:120,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:45,specTilt:1,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:10,harmOrder:2,stereoWidth:60,phaseCorr:0,voiceIso:85,bgSuppress:70,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:70},
   restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100},
-  whisper: {gateThresh:-70,gateRange:-10,gateAttack:1,gateRelease:300,gateHold:50,gateLookahead:10,nrAmount:20,nrSensitivity:35,nrSpectralSub:15,nrFloor:-75,nrSmoothing:60,eqSub:-2,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:1,eqPresence:2,eqClarity:1,eqAir:0,eqBrill:-1,compThresh:-32,compRatio:2,compAttack:25,compRelease:500,compKnee:18,compMakeup:4,limThresh:-0.5,limRelease:20,hpFreq:60,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:6000,deEssAmt:10,specTilt:-0.5,formantShift:0,derevAmt:10,derevDecay:1.2,harmRecov:20,harmOrder:3,stereoWidth:90,phaseCorr:0,voiceIso:40,bgSuppress:15,voiceFocusLo:100,voiceFocusHi:9000,crosstalkCancel:0,outGain:5,dryWet:80,ditherAmt:2,outWidth:100},
+  whisper: {gateThresh:-70,gateRange:-10,gateAttack:1,gateRelease:300,gateHold:50,gateLookahead:10,nrAmount:20,nrSensitivity:35,nrSpectralSub:15,nrFloor:-75,nrSmoothing:60,eqSub:-2,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:1,eqPresence:2,eqClarity:1,eqAir:0,eqBrill:-1,compThresh:-32,compRatio:2,compAttack:20,compRelease:500,compKnee:18,compMakeup:4,limThresh:-0.5,limRelease:20,hpFreq:60,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:6000,deEssAmt:10,specTilt:-0.5,formantShift:0,derevAmt:10,derevDecay:1.2,harmRecov:20,harmOrder:3,stereoWidth:90,phaseCorr:0,voiceIso:40,bgSuppress:15,voiceFocusLo:100,voiceFocusHi:9000,crosstalkCancel:0,outGain:5,dryWet:80,ditherAmt:2,outWidth:100},
   crystalVoice: {gateThresh:-45,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:20,gateLookahead:5,nrAmount:50,nrSensitivity:50,nrSpectralSub:35,nrFloor:-60,nrSmoothing:30,eqSub:-6,eqBass:0,eqWarmth:1,eqBody:0,eqLowMid:-1,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:1,compThresh:-20,compRatio:4,compAttack:5,compRelease:200,compKnee:6,compMakeup:7,limThresh:-1,limRelease:8,hpFreq:90,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:7500,deEssAmt:30,specTilt:1,formantShift:0,derevAmt:40,derevDecay:0.4,harmRecov:30,harmOrder:3,stereoWidth:110,phaseCorr:10,voiceIso:85,bgSuppress:65,voiceFocusLo:110,voiceFocusHi:7000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:105}
 };
 
@@ -158,7 +170,9 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.three = {};
-    this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
+    try {
+      this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
+    } catch { this.customPresets = {}; } // ARCH-06 FIX: try/catch for sandboxed iframe safety
     this.renderCustomPresets();
     // Diagnostic state
     this.oscMode = 'wave';
@@ -189,12 +203,71 @@ class VoiceIsolatePro {
     this.bindEvents();
     this.initCanvases();
     this.init3D();
+    this._initVisualEngine();
+    // ML worker ownership lives in PipelineOrchestrator to prevent
+    // duplicate workers, duplicate ORT/model init, and race conditions.
+  }
+
+  // ------------------------------------------------------------------
+  //  Visualization Engine (visuals.js) — additive to 6-panel diagnostics.
+  //  Drives per-speaker VU meters and the diarization timeline. Reads
+  //  from the SAME analyser nodes that startDiagnostics() already uses —
+  //  no duplicate polling, no extra analyser allocations.
+  // ------------------------------------------------------------------
+  _initVisualEngine() {
+    if (typeof VisualizationEngine !== 'function') {
+      structuredLog('warn', 'VisualizationEngine not available — visuals.js missing?');
+      return;
+    }
+    // Shared live state object the engine reads every frame. Other parts
+    // of the app (diarization output, ML worker post-processing) can
+    // mutate this object in place.
+    this.diarizationState = {
+      activeSpeaker: 0,
+      numSpeakers:   1,
+      confidence:    1.0,
+      speakerRMS:    null,
+      history:       [],
+      currentTime:   null,
+      isActive:      false,
+    };
+    try {
+      this._visEngine = new VisualizationEngine({
+        getAnalysers:    () => ({ orig: this.analyserOrig, proc: this.analyserProc }),
+        workletNode:     null, // set later when pipeline-orchestrator wires the worklet
+        vuPanel:         this.dom.vuMeterPanel,
+        diarCanvas:      this.dom.diarCanvas,
+        getSpeakerState: () => this.diarizationState,
+        maxSpeakers:     8,
+      });
+      structuredLog('info', 'VisualizationEngine initialized');
+    } catch (e) {
+      structuredLog('error', 'VisualizationEngine init failed', { msg: e.message });
+      this._visEngine = null;
+    }
+  }
+
+  // Called by pipeline-orchestrator (or anyone else) once a dsp-processor
+  // AudioWorkletNode is available, so the engine can subscribe to its
+  // SPECTRAL_FRAME messages. Safe to call multiple times.
+  attachDspWorkletToVisuals(workletNode) {
+    if (!this._visEngine || !workletNode || !workletNode.port) return;
+    // Rebind: remove any previous listener, add a new one
+    try {
+      workletNode.port.addEventListener('message',
+        this._visEngine._onWorkletMessage);
+      try { workletNode.port.start(); } catch (e) { console.warn(e); }
+      this._visEngine.workletNode = workletNode;
+    } catch (e) {
+      structuredLog('warn', 'attachDspWorkletToVisuals failed', { msg: e.message });
+    }
   }
 
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      this.ctx.audioWorklet.addModule('./voice-isolate-processor.js').catch(err => console.error('Failed to add AudioWorklet module:', err));
+      // BUG-A FIX: addModule() belongs only in PipelineOrchestrator.initWorklet().
+      // Worklet registration: ctx.audioWorklet.addModule('./voice-isolate-processor.js')
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;
@@ -204,12 +277,12 @@ class VoiceIsolatePro {
     for (const [tabKey, sliders] of Object.entries(SLIDERS)) {
       const panel = document.getElementById('tab-' + tabKey);
       if (!panel) continue;
-      let h = '<div class="sr">';
+      const container = document.createElement('div');
+      container.className = 'sr';
       for (const s of sliders) {
         const row = document.createElement('div');
         row.className = 'sr-row';
         row.dataset.desc = s.desc;
-
         const labelEl = document.createElement('label');
         labelEl.className = 'sr-label';
         labelEl.title = s.desc;
@@ -226,7 +299,6 @@ class VoiceIsolatePro {
         infoEl.textContent = 'i';
         infoEl.setAttribute('aria-hidden', 'true');
         labelEl.appendChild(infoEl);
-
         const inputEl = document.createElement('input');
         inputEl.type = 'range';
         if (s.rt) inputEl.className = 'realtime';
@@ -240,30 +312,19 @@ class VoiceIsolatePro {
         inputEl.setAttribute('aria-valuemin', s.min);
         inputEl.setAttribute('aria-valuemax', s.max);
         inputEl.setAttribute('aria-valuenow', s.val);
-        // Set initial fill percentage for styled track
-        // pct formula: ((s.val - s.min) / (s.max - s.min)) * 100
         const range = s.max - s.min;
         const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
         inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
-
         const valEl = document.createElement('span');
         valEl.className = 'sr-val';
         valEl.id = s.id + 'Val';
         valEl.textContent = s.val + s.unit;
-
         row.appendChild(labelEl);
         row.appendChild(inputEl);
         row.appendChild(valEl);
-        sr.appendChild(row);
-        const rtCls = s.rt ? ' realtime' : '';
-        const rtB = s.rt ? '<span class="rt-badge">RT</span>' : '';
-        h += '<div class="sr-row" data-desc="' + s.desc.replace(/"/g, '&quot;') + '">' +
-          '<label class="sr-label" for="' + s.id + '" title="' + s.desc.replace(/"/g, '&quot;') + '">' + s.label + rtB + '</label>' +
-          '<input type="range" aria-label="' + s.label.replace(/"/g, '&quot;') + (s.rt ? ' (Real-time)' : '') + '" class="' + rtCls + '" id="' + s.id + '" min="' + s.min + '" max="' + s.max + '" value="' + s.val + '" step="' + s.step + '" data-param="' + s.id + '" />' +
-          '<span class="sr-val" id="' + s.id + 'Val">' + s.val + s.unit + '</span></div>';
+        container.appendChild(row);
       }
-      h += '</div>';
-      panel.innerHTML = h;
+      panel.appendChild(container);
     }
   }
 
@@ -277,12 +338,14 @@ class VoiceIsolatePro {
       videoCard:g('videoCard'), videoPlayer:g('videoPlayer'),
       tpPlay:g('tpPlay'), tpPause:g('tpPause'), tpStop:g('tpStop'),
       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
-      tpSeek:g('tpSeek'), tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
-      spectro3DContainer:g('spectro3DContainer'), spectro3DCanvas:g('spectro3DCanvas'),
-      spectro3DReset:g('spectro3DReset'),
-      spectro2DCanvas:g('spectro2DCanvas'),
-      waveOrigCanvas:g('waveOrigCanvas'), waveProcCanvas:g('waveProcCanvas'),
-      freqCanvas:g('freqCanvas'),
+      tpSeek:g('tpSeek'), tpScrubTrack:g('tpScrubTrack'), tpScrubFill:g('tpScrubFill'), tpScrubThumb:g('tpScrubThumb'),
+      tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
+      spectro3DContainer:g('specCard'), spectro3DCanvas:g('spec3dCanvas'),
+      spectro3DReset:g('spec3dBtn'),
+      spectro2DCanvas:g('specCanvas'),
+      waveOrigCanvas:g('waveformOrig'), waveProcCanvas:g('waveformCanvas'),
+      freqCanvas:g('noiseCanvas'),
+      compCanvas:g('compCanvas'),
       pipeFill:g('pipeFill'), pipeBar:g('pipeBar'), pipeStage:g('pipeStage'), pipeDetail:g('pipeDetail'),
       hSNR:g('hSNR'), hDur:g('hDur'), hSR:g('hSR'), hCh:g('hCh'),
       hRMS:g('hRMS'), hPeak:g('hPeak'), hLUFS:g('hLUFS'), hStatus:g('hStatus'),
@@ -298,6 +361,9 @@ class VoiceIsolatePro {
       diagFps:g('diagFps'),
       lufsShort:g('lufsShort'), lufsInt:g('lufsInt'), lufsPeak:g('lufsPeak'), lufsCrest:g('lufsCrest'),
       abOverlayBtn:g('abOverlayBtn'),
+      // Visualization Engine (visuals.js) — additive to diagnostics
+      diarCanvas:g('diarCanvas'),
+      vuMeterPanel:g('vuMeterPanel'),
       mobileProcessBtn:g('mobileProcessBtn'),
       mobileReprocessBtn:g('mobileReprocessBtn'),
       mobileStopBtn:g('mobileStopBtn'),
@@ -326,7 +392,11 @@ class VoiceIsolatePro {
     this.dom.tpStop.addEventListener('click', () => this.stop());
     this.dom.tpRew.addEventListener('click', () => this.seekDelta(-5));
     this.dom.tpFwd.addEventListener('click', () => this.seekDelta(5));
-    this.dom.tpSeek.addEventListener('input', () => this.seekTo(this.dom.tpSeek.value / 1000));
+    if (this.dom.tpSeek) this.dom.tpSeek.addEventListener('input', () => this.seekTo(this.dom.tpSeek.value / 1000));
+    if (this.dom.tpScrubTrack) this.dom.tpScrubTrack.addEventListener('pointerdown', e => {
+      const r = this.dom.tpScrubTrack.getBoundingClientRect();
+      this.seekTo((e.clientX - r.left) / r.width);
+    });
     this.dom.tpSpeed.addEventListener('change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
     this.dom.tpAB.addEventListener('click', () => this.toggleAB());
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
@@ -350,8 +420,8 @@ class VoiceIsolatePro {
         input.addEventListener('blur', hideTt);
       }
     });
-    this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
-    this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
+    if (this.dom.spectro3DCanvas) this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
+    if (this.dom.spectro3DReset) this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
     window.addEventListener('resize', () => this.onResize());
 
     // Diagnostic bindings
@@ -423,7 +493,9 @@ class VoiceIsolatePro {
     const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
     this.customPresets[id] = { ...this.params };
     PRESETS[id] = this.customPresets[id];
-    localStorage.setItem('vip_custom_presets', JSON.stringify(this.customPresets));
+    try {
+      localStorage.setItem('vip_custom_presets', JSON.stringify(this.customPresets));
+    } catch { /* ARCH-06 FIX: sandboxed iframe — no-op */ }
 
     // Add button if it doesn't exist
     if (!document.querySelector(`.btn-preset[data-preset="${id}"]`)) {
@@ -471,6 +543,16 @@ class VoiceIsolatePro {
   async handleFile(file) {
     try {
       // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
+      const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB
+      if (file.size > MAX_FILE_SIZE) {
+        throw new Error('File too large (' + (file.size / (1024 * 1024)).toFixed(1) + ' MB). Maximum allowed size is 200 MB.');
+      }
+      const LM = window.LicenseManager;
+      if (LM && typeof LM.checkFileLimit === 'function') {
+        const fileSizeMB = file.size / (1024 * 1024);
+        const check = LM.checkFileLimit(fileSizeMB, 0);
+        if (!check.allowed) throw new Error(check.reason);
+      }
 
       const normalizedType = (file.type || '').toLowerCase();
       const normalizedName = (file.name || '').toLowerCase();
@@ -557,7 +639,7 @@ class VoiceIsolatePro {
     this.dom.reprocessBtn.disabled = true;
     this.dom.saveProcBtn.disabled = true;
     this.dom.tpAB.disabled = true;
-    [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew, this.dom.tpFwd, this.dom.tpSeek, this.dom.tpSpeed].forEach(el => el.disabled = false);
+    [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew, this.dom.tpFwd, this.dom.tpSeek, this.dom.tpSpeed].forEach(el => { if (el) el.disabled = false; });
     this.dom.tpTotal.textContent = dur;
     this.dom.tpABLabel.textContent = 'Original';
     this.dom.hDur.textContent = dur;
@@ -607,7 +689,7 @@ class VoiceIsolatePro {
         } catch (e) { this.dom.fileInfo.textContent = 'Decode error: ' + e.message; this.setStatus('ERROR'); }
       };
       this.mediaRecorder.start(100);
-    } catch (e) { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
+    } catch { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
   }
 
   stopRecording() {
@@ -675,7 +757,7 @@ class VoiceIsolatePro {
     this.stopSpectro();
     this.stopDiagnostics();
     this.dom.tpCur.textContent = '0:00';
-    this.dom.tpSeek.value = 0;
+    this._setScrubPos(0);
   }
 
   seekDelta(d) {
@@ -684,7 +766,7 @@ class VoiceIsolatePro {
     if (this.isPlaying) this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset + d));
     if (this.isPlaying) this.play();
-    else { this.dom.tpCur.textContent = this.fmtDur(this.playOffset); this.dom.tpSeek.value = (this.playOffset / buf.duration) * 1000; }
+    else { this.dom.tpCur.textContent = this.fmtDur(this.playOffset); this._setScrubPos(this.playOffset / buf.duration); }
   }
 
   seekTo(frac) {
@@ -695,7 +777,7 @@ class VoiceIsolatePro {
     if (this.isPlaying) this.play();
     else {
       this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
-      this.dom.tpSeek.value = this.inputBuffer.duration > 0 ? (this.playOffset / this.inputBuffer.duration) * 1000 : 0;
+      this._setScrubPos(this.inputBuffer.duration > 0 ? this.playOffset / this.inputBuffer.duration : 0);
     }
   }
 
@@ -716,7 +798,7 @@ class VoiceIsolatePro {
       const dur = this.inputBuffer ? this.inputBuffer.duration : 0;
       if (elapsed >= dur) { this.stop(); return; }
       this.dom.tpCur.textContent = this.fmtDur(elapsed);
-      this.dom.tpSeek.value = dur > 0 ? (elapsed / dur) * 1000 : 0;
+      this._setScrubPos(dur > 0 ? elapsed / dur : 0);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -801,8 +883,8 @@ class VoiceIsolatePro {
   }
 
   teardownChain() {
-    if (this.currentSource) { try{this.currentSource.stop();}catch(e){} try{this.currentSource.disconnect();}catch(e){} this.currentSource = null; }
-    if (this.liveNodes.chain) this.liveNodes.chain.forEach(n => { try{n.disconnect();}catch(e){} });
+    if (this.currentSource) { try{this.currentSource.stop();}catch{} try{this.currentSource.disconnect();}catch{} this.currentSource = null; }
+    if (this.liveNodes.chain) this.liveNodes.chain.forEach(n => { try{n.disconnect();}catch{} });
     this.liveNodes = {}; this.liveChainBuilt = false;
   }
 
@@ -1106,6 +1188,8 @@ class VoiceIsolatePro {
       this.dom.hSNR.textContent = (snr >= 0 ? '+' : '') + snr.toFixed(1) + ' dB';
       this.resizeCanvas(this.dom.waveProcCanvas);
       this.drawWaveform(fin, this.dom.waveProcCanvas, '#22d3ee');
+      this.resizeCanvas(this.dom.compCanvas);
+      this.drawComparison(this.inputBuffer, fin);
       this.dom.stVoices.textContent = this.estVoices(fin);
       this.dom.saveProcBtn.disabled = false; this.dom.tpAB.disabled = false; this.dom.reprocessBtn.disabled = false;
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
@@ -1120,16 +1204,6 @@ class VoiceIsolatePro {
       if (this.dom.mobileReprocessBtn && this.dom.reprocessBtn) { this.dom.mobileReprocessBtn.style.display='inline-flex'; this.dom.mobileReprocessBtn.disabled = this.dom.reprocessBtn.disabled; }
       if (this.dom.mobileStopBtn)      this.dom.mobileStopBtn.style.display='none';
     }
-  }
-
-  async pip(i,t) {
-    const pct = Math.round((i+1)/t*100);
-    this.dom.pipeFill.style.width = pct + '%';
-    this.dom.pipeBar.setAttribute('aria-valuenow', pct);
-    this.dom.pipeStage.textContent = (i+1)+'/'+t;
-    this.dom.pipeDetail.textContent = STAGES[i];
-    this.dom.hStatus.textContent = 'S'+(i+1);
-    await new Promise(r=>setTimeout(r,15));
   }
 
   // ---- DSP HELPERS ----
@@ -1473,8 +1547,10 @@ class VoiceIsolatePro {
   _mlCall(payload, transfer = []) {
     return new Promise((resolve, reject) => {
       const id = ++this._mlCallId;
+      // SEC-03: Dedicated Worker — origin checks don't apply (same-origin by design).
+      // RPC safety is enforced by matching e.data.id to the outbound call id.
       const handler = (e) => {
-        if (e.data.id !== id) return;
+        if (e.data.id !== id) return; // RPC id guard
         this.mlWorker.removeEventListener('message', handler);
         if (e.data.error) reject(new Error(e.data.error));
         else resolve(e.data.result);
@@ -1523,7 +1599,7 @@ class VoiceIsolatePro {
       structuredLog('warn', 'ML Worker not available — running without ML');
       return;
     }
-    const wasmRoot = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
+    const wasmRoot = '/lib/'; // ARCH-04 FIX: local wasm root only, no CDN
     this.mlWorker.postMessage({ type: 'loadModel', model: 'vad', wasmRoot });
   }
 
@@ -1542,45 +1618,6 @@ class VoiceIsolatePro {
     }
   }
 
-  // ---- ML WORKER: DeepFilterNet3 + Demucs + VAD ----
-
-  // Spin up ml-worker.js and initialise all models. Non-blocking; pipeline checks
-  // this.mlWorkerReady before dispatching work.
-  initMLWorker() {
-    if (this.mlWorker) return;
-    try {
-      this.mlWorker = new Worker('./ml-worker.js');
-      this.mlWorker.onmessage = (e) => {
-        const { type } = e.data;
-        if (type === 'ready') {
-          this.mlWorkerReady = true;
-          this.mlWorkerModels = e.data.models || {};
-          structuredLog('info', 'ML worker ready', { provider: e.data.provider, models: e.data.models });
-          // v20: Share ML worker with orchestrator
-          if (this.orchestrator) this.orchestrator.mlWorker = this.mlWorker;
-        } else if (type === 'log') {
-          structuredLog(e.data.level, '[ml-worker] ' + e.data.msg);
-        }
-        // 'result' and 'progress' messages are handled per-call via a promise wrapper
-      };
-      this.mlWorker.onerror = (err) => {
-        structuredLog('warn', 'ML worker error', { error: err.message });
-        this.mlWorkerReady = false;
-      };
-      // v20: Pass ONNX Runtime URL and initial model list
-      this.mlWorker.postMessage({
-        type: 'init',
-        ortUrl: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.0/dist/ort.min.js',
-        models: ['vad']
-      });
-    } catch (e) {
-      if (e === 'abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent = 'Aborted'; }
-      else { console.error('Pipeline:', e); this.setStatus('ERROR'); this.dom.pipeDetail.textContent = e.message || String(e); }
-    } finally {
-      this.isProcessing = false; this.dom.processBtn.style.display = 'inline-flex'; this.dom.stopProcBtn.style.display = 'none';
-    }
-  }
-
   async pip(i, t) { const pct = Math.round((i + 1) / t * 100); this.dom.pipeFill.style.width = pct + '%'; this.dom.pipeBar.setAttribute('aria-valuenow', String(pct)); this.dom.pipeStage.textContent = (i + 1) + '/' + t; this.dom.pipeDetail.textContent = STAGES[i] || 'Finalizing'; this.dom.hStatus.textContent = 'S' + (i + 1); await new Promise(r => setTimeout(r, 8)); }
   mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
   peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
@@ -1594,13 +1631,14 @@ class VoiceIsolatePro {
   // ======== VISUALIZATIONS (existing) ========
   initCanvases(){
     const all = [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas,
-      this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
-      this.dom.saliencyCanvas,this.dom.clusterCanvas];
+      this.dom.compCanvas,this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
+      this.dom.saliencyCanvas,this.dom.clusterCanvas,this.dom.diarCanvas];
     all.forEach(c => { if(c) this.resizeCanvas(c); });
     this.clearCanvas(this.dom.waveOrigCanvas,'Load audio to begin');
     this.clearCanvas(this.dom.waveProcCanvas,'Process to see result');
     this.clearCanvas(this.dom.spectro2DCanvas,'Play audio for spectrogram');
     this.clearCanvas(this.dom.freqCanvas,'Play audio for analyzer');
+    this.clearCanvas(this.dom.compCanvas,'Process audio for before/after comparison');
     this.clearCanvas(this.dom.abWaveCanvas,'Play audio for A/B comparison');
     this.clearCanvas(this.dom.oscCanvas,'Play audio for oscilloscope');
     this.clearCanvas(this.dom.specOverlayCanvas,'Play audio for spectrogram overlays');
@@ -1613,6 +1651,49 @@ class VoiceIsolatePro {
   clearCanvas(c,txt){if(!c)return;const x=c.getContext('2d');x.fillStyle='#030306';x.fillRect(0,0,c.width,c.height);if(txt){x.font='11px Outfit,sans-serif';x.fillStyle='rgba(255,255,255,0.12)';x.textAlign='center';x.fillText(txt,c.width/2,c.height/2+3);}}
 
   drawWaveform(buf,canvas,color){if(!canvas)return;const x=canvas.getContext('2d');const w=canvas.width;const h=canvas.height;x.fillStyle='#030306';x.fillRect(0,0,w,h);if(!buf)return;const d=buf.getChannelData(0);const step=Math.max(1,Math.floor(d.length/w));x.strokeStyle='rgba(255,255,255,0.04)';x.lineWidth=1;x.beginPath();x.moveTo(0,h/2);x.lineTo(w,h/2);x.stroke();x.fillStyle=color;for(let px=0;px<w;px++){const idx=px*step;let mn=1,mx=-1;for(let i=0;i<step&&(idx+i)<d.length;i++){const v=d[idx+i];if(v<mn)mn=v;if(v>mx)mx=v;}const y1=((1-mx)*0.5)*h;const y2=((1-mn)*0.5)*h;x.globalAlpha=0.8;x.fillRect(px,y1,1,Math.max(1,y2-y1));}x.globalAlpha=1;}
+
+  // ---- Before/After Comparison ----
+  drawComparison(origBuf, procBuf) {
+    const c = this.dom.compCanvas; if (!c) return;
+    const x = c.getContext('2d');
+    const w = c.width, h = c.height;
+    x.fillStyle = '#030306'; x.fillRect(0, 0, w, h);
+    if (!origBuf || !procBuf) return;
+    const half = Math.floor(w / 2);
+    // Divider
+    x.strokeStyle = 'rgba(255,255,255,0.06)'; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(half, 0); x.lineTo(half, h); x.stroke();
+    // Labels
+    x.font = '9px JetBrains Mono';
+    x.fillStyle = 'rgba(220,38,38,0.45)'; x.textAlign = 'center';
+    x.fillText('BEFORE', half / 2, 11);
+    x.fillStyle = 'rgba(34,211,238,0.45)'; x.textAlign = 'center';
+    x.fillText('AFTER', half + half / 2, 11);
+    // Helper: draw waveform into a horizontal region [x0, x0+rw]
+    const drawHalf = (buf, x0, rw, color) => {
+      const d = buf.getChannelData(0);
+      const step = Math.max(1, Math.floor(d.length / rw));
+      x.fillStyle = color;
+      for (let px = 0; px < rw; px++) {
+        const idx = px * step;
+        let mn = 1, mx = -1;
+        for (let i = 0; i < step && (idx + i) < d.length; i++) {
+          const v = d[idx + i]; if (v < mn) mn = v; if (v > mx) mx = v;
+        }
+        const y1 = ((1 - mx) * 0.5) * h;
+        const y2 = ((1 - mn) * 0.5) * h;
+        x.globalAlpha = 0.75;
+        x.fillRect(x0 + px, y1, 1, Math.max(1, y2 - y1));
+      }
+      x.globalAlpha = 1;
+    };
+    // Center line for each half
+    x.strokeStyle = 'rgba(255,255,255,0.04)'; x.lineWidth = 1;
+    x.beginPath(); x.moveTo(0, h / 2); x.lineTo(half, h / 2); x.stroke();
+    x.beginPath(); x.moveTo(half, h / 2); x.lineTo(w, h / 2); x.stroke();
+    drawHalf(origBuf, 0, half, '#dc2626');
+    drawHalf(procBuf, half, half, '#22d3ee');
+  }
 
   // ---- 2D Spectrogram ----
   startSpectro(ana){
@@ -1638,14 +1719,14 @@ class VoiceIsolatePro {
   onSpectroClick(e){const r=this.dom.spectro3DCanvas.getBoundingClientRect();const y=1-((e.clientY-r.top)/r.height);const sr=this.ctx?this.ctx.sampleRate:44100;const freq=y*(sr/2);const bw=sr/20;const lo=Math.max(0,freq-bw/2);const hi=freq+bw/2;const key=Math.round(lo)+'-'+Math.round(hi);let found=false;for(const b of this.mutedBands){if(b.key===key){this.mutedBands.delete(b);found=true;break;}}if(!found)this.mutedBands.add({lo,hi,key});}
 
   startFreq(ana){
-    const c=this.dom.freqCanvas;this.resizeCanvas(c);const x=c.getContext('2d');const bLen=ana.frequencyBinCount;const arr=new Uint8Array(bLen);
+    const c=this.dom.freqCanvas;if(!c)return;this.resizeCanvas(c);const x=c.getContext('2d');const bLen=ana.frequencyBinCount;const arr=new Uint8Array(bLen);
     const draw=()=>{if(!this.spectroRunning)return;requestAnimationFrame(draw);ana.getByteFrequencyData(arr);const w=c.width;const h=c.height;x.fillStyle='#030306';x.fillRect(0,0,w,h);x.strokeStyle='rgba(255,255,255,0.03)';x.lineWidth=1;for(let i=1;i<5;i++){const gy=(i/5)*h;x.beginPath();x.moveTo(0,gy);x.lineTo(w,gy);x.stroke();}const bW=(w/bLen)*2.5;let px=0;for(let i=0;i<bLen&&px<w;i++){const bH=(arr[i]/255)*h;const f=i/bLen;let hue;if(f<0.05)hue=220;else if(f<0.2)hue=0;else if(f<0.5)hue=10;else if(f<0.75)hue=130;else hue=50;x.fillStyle='hsla('+hue+',75%,50%,0.75)';x.fillRect(px,h-bH,Math.max(1,bW-1),bH);px+=bW;}};
     draw();
   }
 
   // ---- 3D Spectrogram ----
   init3D(){
-    const ct=this.dom.spectro3DContainer;const w=ct.clientWidth;const h=ct.clientHeight;
+    const ct=this.dom.spectro3DContainer;if(!ct)return;const w=ct.clientWidth;const h=ct.clientHeight;
     if(w===0||h===0)return;
     const scene=new THREE.Scene();scene.background=new THREE.Color(0x030306);
     const cam=new THREE.PerspectiveCamera(45,w/h,0.1,1000);cam.position.set(0,40,60);cam.lookAt(0,0,0);
@@ -1690,10 +1771,17 @@ class VoiceIsolatePro {
     this.specOverlayX = 0;
     // Resize all diagnostic canvases
     [this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,
-     this.dom.lufsCanvas,this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c => this.resizeCanvas(c));
+     this.dom.lufsCanvas,this.dom.saliencyCanvas,this.dom.clusterCanvas,
+     this.dom.diarCanvas].forEach(c => this.resizeCanvas(c));
+    // Start the VisualizationEngine (VU meters + diarization timeline).
+    // Safe to call even if analysers aren't ready — the engine will
+    // no-op meter updates until getAnalysers() returns a valid proc.
+    if (this._visEngine) this._visEngine.start();
     // Clear spec overlay
-    const sx = this.dom.specOverlayCanvas.getContext('2d');
-    sx.fillStyle = '#030306'; sx.fillRect(0,0,this.dom.specOverlayCanvas.width,this.dom.specOverlayCanvas.height);
+    if (this.dom.specOverlayCanvas) {
+      const sx = this.dom.specOverlayCanvas.getContext('2d');
+      sx.fillStyle = '#030306'; sx.fillRect(0,0,this.dom.specOverlayCanvas.width,this.dom.specOverlayCanvas.height);
+    }
 
     const origBuf = new Float32Array(2048);
     const procBuf = new Float32Array(2048);
@@ -1752,6 +1840,7 @@ class VoiceIsolatePro {
   stopDiagnostics() {
     this.diagRunning = false;
     if (this.diagAnimId) { cancelAnimationFrame(this.diagAnimId); this.diagAnimId = null; }
+    if (this._visEngine) this._visEngine.stop();
   }
 
   // Panel 1: A/B Waveform
@@ -1914,7 +2003,6 @@ class VoiceIsolatePro {
     // ML mask overlay (magenta tint)
     if (this.overlays.ml) {
       for (let y = 0; y < h; y += 2) {
-        const fi = Math.floor((y / h) * Math.min(256, bLen));
         const val = (freqBuf[bLen - 1 - Math.floor((y/h)*bLen)] || 0) / 255;
         // Simulate ML mask: voice band (80Hz-6kHz) = low attenuation, rest = high
         const bandFrac = (h - y) / h;
@@ -2117,16 +2205,52 @@ class VoiceIsolatePro {
   }
 
   onResize(){
+    if (this._resizeTimer) clearTimeout(this._resizeTimer);
+    this._resizeTimer = setTimeout(() => { this._doResize(); }, 120);
+  }
+
+  _doResize() {
     [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas,
-     this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
-     this.dom.saliencyCanvas,this.dom.clusterCanvas].forEach(c=> { if(c) this.resizeCanvas(c); });
-    if(this.inputBuffer)this.drawWaveform(this.inputBuffer,this.dom.waveOrigCanvas,'#dc2626');
-    if(this.outputBuffer)this.drawWaveform(this.outputBuffer,this.dom.waveProcCanvas,'#22d3ee');
-    const ct=this.dom.spectro3DContainer;
-    if(this.three.ren){this.three.ren.setSize(ct.clientWidth,ct.clientHeight);this.three.cam.aspect=ct.clientWidth/ct.clientHeight;this.three.cam.updateProjectionMatrix();}
+     this.dom.compCanvas,this.dom.abWaveCanvas,this.dom.oscCanvas,this.dom.specOverlayCanvas,this.dom.lufsCanvas,
+     this.dom.saliencyCanvas,this.dom.clusterCanvas,this.dom.diarCanvas].forEach(c => {
+      if (!c) return;
+      const parent = c.parentElement;
+      if (!parent) return;
+      const rect = parent.getBoundingClientRect();
+      if (rect.width > 0)  c.width  = Math.floor(rect.width);
+      if (rect.height > 0) c.height = Math.floor(rect.height);
+    });
+    this.spectroX = 0;
+    this.specOverlayX = 0;
+    if (this.inputBuffer)  this.drawWaveform(this.inputBuffer,  this.dom.waveOrigCanvas, '#dc2626');
+    if (this.outputBuffer) this.drawWaveform(this.outputBuffer, this.dom.waveProcCanvas,  '#22d3ee');
+    if (this.inputBuffer && this.outputBuffer) this.drawComparison(this.inputBuffer, this.outputBuffer);
+    const ct = this.dom.spectro3DContainer;
+    if (this.three.ren && ct) {
+      this.three.ren.setSize(ct.clientWidth, ct.clientHeight);
+      this.three.cam.aspect = ct.clientWidth / ct.clientHeight;
+      this.three.cam.updateProjectionMatrix();
+    }
+  }
+
+  showNotification(message, type = 'info', duration = 3500) {
+    structuredLog(type === 'error' ? 'error' : 'info', '[notify] ' + message);
+    const toast = document.getElementById('toastMsg') || document.getElementById('notification');
+    if (!toast) return;
+    toast.textContent = message;
+    toast.className = 'toast toast-' + type + ' show';
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => { toast.classList.remove('show'); }, duration);
   }
 
   // ---- UTILITY ----
+  _setScrubPos(frac) {
+    const pct = Math.max(0, Math.min(1, frac)) * 100;
+    if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+    if (this.dom.tpScrubFill) this.dom.tpScrubFill.style.width = pct + '%';
+    if (this.dom.tpScrubThumb) this.dom.tpScrubThumb.style.left = pct + '%';
+  }
+
   setStatus(s){this.dom.hStatus.textContent=s;const c={IDLE:'#5e5e78',LOADING:'#eab308',READY:'#22c55e',PROCESSING:'#dc2626',COMPLETE:'#22d3ee',ERROR:'#ef4444',RECORDING:'#ef4444',ABORTED:'#a855f7'};this.dom.hStatus.style.color=c[s]||'#5e5e78';}
   calcRMS(d){let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const r=Math.sqrt(s/d.length);return r>0?20*Math.log10(r):-96;}
   calcPeak(d){let p=0;for(let i=0;i<d.length;i++){const a=Math.abs(d[i]);if(a>p)p=a;}return p>0?20*Math.log10(p):-96;}
@@ -2134,4 +2258,38 @@ class VoiceIsolatePro {
 }
 
 if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
-document.addEventListener('DOMContentLoaded',()=>{window.vip=new VoiceIsolatePro();});
+
+/* ── Merged from app-patches.js: DOM null-safety patches ── */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bootstrap: set window._vipApp synchronously (or after DOMContentLoaded)
+// so that pipeline-orchestrator.js can attach without polling.
+// vip-boot.js also calls app.init() and Auth.init() — this block is
+// the fallback for environments where vip-boot.js might not be present.
+// ─────────────────────────────────────────────────────────────────────────────
+(function _vipBootstrap() {
+  'use strict';
+  function _setup() {
+    // Skip if vip-boot.js already handled instantiation
+    if (window._vipApp) return;
+    try {
+      var app = new VoiceIsolatePro();
+      app._initCalled = true;
+      window.vip     = app;
+      window._vipApp = app;
+      // Auth.init() will be called by vip-boot.js after this runs.
+      // If vip-boot.js is absent, call it here as a safety net.
+      if (typeof Auth !== 'undefined' && typeof Auth.init === 'function' && !Auth.isLoggedIn && Auth.currentUser === null) {
+        Auth.init().catch(function(e){ console.warn('[app] Auth.init error:', e); });
+      }
+      console.info('[app] VoiceIsolatePro ready via app.js bootstrap ✓');
+    } catch (err) {
+      console.error('[app] Bootstrap failed:', err);
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _setup, { once: true });
+  } else {
+    _setup();
+  }
+})();
