@@ -11,6 +11,7 @@
  *   /api/license/*         → License validation and activation
  *   /api/usage/*           → Usage recording for metered billing
  *   /api/pricing           → Public pricing info
+ *   /api/auth/*            → Authentication (login, me, logout)
  *   /api/sync/*            → Cloud sync (Studio/Enterprise)
  *   /api/health            → Health check
  */
@@ -18,6 +19,7 @@
 import express from 'express';
 import monetizationRouter from './monetization.js';
 import syncRouter from './sync.js';
+import authRouter from './auth.js';
 
 const router = express.Router();
 
@@ -40,6 +42,9 @@ router.use(express.json());
 
 // ─── Monetization Routes ──────────────────────────────────────────────────────
 router.use('/', monetizationRouter);
+
+// ─── Authentication Routes ───────────────────────────────────────────────────
+router.use('/auth', authRouter);
 
 // ─── Cloud Sync Routes ────────────────────────────────────────────────────────
 router.use('/sync', syncRouter);
