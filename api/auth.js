@@ -102,13 +102,16 @@ function seedUser(id, username, email, password, tier, role = 'user') {
 }
 
 // Admin account
-seedUser('usr_admin_001', 'joker5514', 'admin@voiceisolatepro.com', 'Admin8052', 'ENTERPRISE', 'admin');
+if (process.env.NODE_ENV !== 'production') {
+  // Admin account
+  seedUser('usr_admin_001', 'joker5514', 'admin@voiceisolatepro.com', 'Admin8052', 'ENTERPRISE', 'admin');
 
-// Test accounts per tier
-seedUser('usr_test_free', 'test_free', 'free@test.voiceisolatepro.com', 'TestFree123', 'FREE', 'user');
-seedUser('usr_test_pro', 'test_pro', 'pro@test.voiceisolatepro.com', 'TestPro123', 'PRO', 'user');
-seedUser('usr_test_studio', 'test_studio', 'studio@test.voiceisolatepro.com', 'TestStudio123', 'STUDIO', 'user');
-seedUser('usr_test_enterprise', 'test_enterprise', 'enterprise@test.voiceisolatepro.com', 'TestEnterprise123', 'ENTERPRISE', 'user');
+  // Test accounts per tier
+  seedUser('usr_test_free', 'test_free', 'free@test.voiceisolatepro.com', 'TestFree123', 'FREE', 'user');
+  seedUser('usr_test_pro', 'test_pro', 'pro@test.voiceisolatepro.com', 'TestPro123', 'PRO', 'user');
+  seedUser('usr_test_studio', 'test_studio', 'studio@test.voiceisolatepro.com', 'TestStudio123', 'STUDIO', 'user');
+  seedUser('usr_test_enterprise', 'test_enterprise', 'enterprise@test.voiceisolatepro.com', 'TestEnterprise123', 'ENTERPRISE', 'user');
+}
 
 // ─── POST /api/auth/login ────────────────────────────────────────────────────
 router.post('/login', (req, res) => {
