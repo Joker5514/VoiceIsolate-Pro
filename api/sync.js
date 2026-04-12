@@ -326,7 +326,8 @@ router.post('/push', requireAuth, requireRateLimit, (req, res) => {
               // Cap each history entry to prevent injection of oversized objects
               const entryStr = JSON.stringify(change.data);
               if (entryStr.length <= MAX_HISTORY_ENTRY_BYTES) {
-                data.history = [...(data.history || []), change.data].slice(-100);
+                data.history.push(change.data);
+                if (data.history.length > 100) data.history.shift();
               } else {
                 errors.push('history:add entry exceeds maximum size (16 KB)');
               }
