@@ -13,7 +13,7 @@ const mlWorkerPath = path.join(__dirname, '../public/app/ml-worker.js');
 const mlWorkerJs = fs.readFileSync(mlWorkerPath, 'utf8');
 
 // Extract slider IDs only from the SLIDERS constant block
-const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\s*\n\/\/ ---- PRESETS/);
+const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\n*const SLIDER_MAP/);
 const slidersBlock = slidersBlockMatch ? slidersBlockMatch[1] : appJs;
 const sliderIdRegex = /id:'(\w+)'/g;
 const sliderIds = [];
