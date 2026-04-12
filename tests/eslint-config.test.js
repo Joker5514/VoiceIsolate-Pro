@@ -105,7 +105,7 @@ describe('ESLint Configuration Validation', () => {
   });
 
   test('should apply strict rules (no-undef) to browser files', () => {
-    const browserFiles = ['public/app/app.js', 'public/app/dsp-processor.js', 'public/app/dsp-worker.js'];
+    const browserFiles = ['public/app/app.js', 'public/app/dsp-processor.js', 'public/app/dsp-worker.js', 'public/app/ml-worker.js'];
     browserFiles.forEach(file => {
       const fileConfig = config.find(c => c.files && c.files.includes(file));
       expect(fileConfig.rules).toHaveProperty('no-undef', 'error');
