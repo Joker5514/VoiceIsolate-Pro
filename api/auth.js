@@ -25,15 +25,10 @@ import crypto  from 'crypto';
 const router = express.Router();
 
 // ─── Secret resolution (FIX: no throw on missing env var) ────────────────────
-const LICENSE_SECRET = (() => {
-  if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
-  const fallback = 'vip-dev-fallback-secret-change-in-production-32chars';
-  console.warn(
-    '[Auth] WARNING: LICENSE_JWT_SECRET not set. Using insecure dev fallback.\n' +
-    '  → Set it in Vercel Dashboard → Settings → Environment Variables.'
-  );
-  return fallback;
-})();
+if (!process.env.LICENSE_JWT_SECRET) {
+  throw new Error('LICENSE_JWT_SECRET environment variable is required');
+}
+const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
 
 // ─── Password Hashing (scrypt) ───────────────────────────────────────────────
 const SCRYPT_KEYLEN = 64;
