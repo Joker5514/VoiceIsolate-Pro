@@ -35,6 +35,20 @@ function getStripe() {
   return Stripe(key);
 }
 
+
+// ─── Simulated Database ───────────────────────────────────────────────────────
+const db = {
+  licenses: {
+    _store: new Map(),
+    async upsert(data) {
+      this._store.set(data.customerId, { ...(this._store.get(data.customerId) || {}), ...data });
+    },
+    async get(customerId) {
+      return this._store.get(customerId) || null;
+    }
+  }
+};
+
 // ─── License Token Utilities ──────────────────────────────────────────────────
 if (!process.env.LICENSE_JWT_SECRET) {
   if (process.env.NODE_ENV === 'production') {
@@ -160,7 +174,7 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
         console.log(`[Webhook] New subscription: ${email} → ${tier} (${subscriptionId})`);
 
         // TODO: Store in database and email the token to the user
-        // await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
+        await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
         // await sendEmail(email, 'Your VoiceIsolate Pro License', token);
         break;
       }
@@ -171,14 +185,14 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
         const tier = PRICE_TO_TIER[priceId] || 'PRO';
         const customerId = sub.customer;
         console.log(`[Webhook] Subscription updated: ${customerId} → ${tier}`);
-        // TODO: Update license in database
+        await db.licenses.upsert({ customerId, tier });
         break;
       }
 
       case 'customer.subscription.deleted': {
         const sub = event.data.object;
         console.log(`[Webhook] Subscription cancelled: ${sub.customer}`);
-        // TODO: Downgrade to FREE in database
+        await db.licenses.upsert({ customerId: sub.customer, tier: 'FREE' });
         break;
       }
 
