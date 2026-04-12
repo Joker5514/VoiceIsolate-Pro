@@ -120,7 +120,7 @@ self.onmessage = async (ev) => {
 
   // ── process: run inference on a single frame of magnitude data ───────────────
   if (type === 'process') {
-    if (!ort || !inputView) return;
+    if (!ort || (!inputView && !(payload && payload.magnitudes))) return;
 
     const magnitudes = new Float32Array((payload && payload.magnitudes) || inputView.subarray(0, NUM_BINS));
     const mask = await buildMask(magnitudes);
