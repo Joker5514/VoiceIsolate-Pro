@@ -138,9 +138,9 @@ describe('_isDeep()', () => {
   });
 
   test('returns true when nesting exceeds maxDepth', () => {
-    let deep = {};
-    for (let i = 0; i < 12; i++) deep = { a: deep };
-    expect(_isDeep(deep)).toBe(true);
+    let deeplyNestedObj = {};
+    for (let i = 0; i < 12; i++) deeplyNestedObj = { a: deeplyNestedObj };
+    expect(_isDeep(deeplyNestedObj)).toBe(true);
   });
 
   test('returns true for circular references without infinite looping', () => {
@@ -150,10 +150,10 @@ describe('_isDeep()', () => {
   });
 
   test('returns true for indirect circular references', () => {
-    const a = {};
-    const b = { parent: a };
-    a.child = b;
-    expect(_isDeep(a)).toBe(true);
+    const parent = {};
+    const child = { parent };
+    parent.child = child;
+    expect(_isDeep(parent)).toBe(true);
   });
 });
 
