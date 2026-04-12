@@ -83,6 +83,7 @@ describe('ESLint Configuration Validation', () => {
       const workerConfig = config.find(c => c.files && c.files.includes(file));
       expect(workerConfig).toBeDefined();
       expect(workerConfig.languageOptions.globals).toHaveProperty('importScripts', 'readonly');
+      expect(workerConfig.languageOptions.globals).toHaveProperty('self', 'readonly');
     });
   });
 
