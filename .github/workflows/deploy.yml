@@ -93,9 +93,14 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel
       - name: Pull Vercel Environment
+        if: env.VERCEL_TOKEN != ''
         run: vercel pull --yes --environment=preview --token=$VERCEL_TOKEN
       - name: Deploy Preview
+        if: env.VERCEL_TOKEN != ''
         run: vercel deploy --token=$VERCEL_TOKEN
+      - name: Skip deploy (no VERCEL_TOKEN configured)
+        if: env.VERCEL_TOKEN == ''
+        run: echo "⚠️  Skipping Vercel preview deploy — VERCEL_TOKEN secret not configured. Set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID in GitHub repository secrets to enable deployments."
 
 
   deploy-production:
@@ -114,6 +119,11 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel
       - name: Pull Vercel Environment
+        if: env.VERCEL_TOKEN != ''
         run: vercel pull --yes --environment=production --token=$VERCEL_TOKEN
       - name: Deploy Production
+        if: env.VERCEL_TOKEN != ''
         run: vercel deploy --prod --token=$VERCEL_TOKEN
+      - name: Skip deploy (no VERCEL_TOKEN configured)
+        if: env.VERCEL_TOKEN == ''
+        run: echo "⚠️  Skipping Vercel production deploy — VERCEL_TOKEN secret not configured. Set VERCEL_TOKEN, VERCEL_ORG_ID, and VERCEL_PROJECT_ID in GitHub repository secrets to enable deployments."
