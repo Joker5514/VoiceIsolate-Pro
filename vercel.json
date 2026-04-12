@@ -1,6 +1,11 @@
 {
   "outputDirectory": "public",
   "buildCommand": "bash scripts/bootstrap-libs.sh",
+  "functions": {
+    "api/**/*.js": {
+      "runtime": "nodejs20.x"
+    }
+  },
   "rewrites": [
     {
       "source": "/app/:path*",
