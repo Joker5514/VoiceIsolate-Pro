@@ -9,6 +9,9 @@ const path = require('path');
 const appJsPath = path.join(__dirname, '../public/app/app.js');
 const appJs = fs.readFileSync(appJsPath, 'utf8');
 
+const mlWorkerPath = path.join(__dirname, '../public/app/ml-worker.js');
+const mlWorkerJs = fs.readFileSync(mlWorkerPath, 'utf8');
+
 // Extract slider IDs only from the SLIDERS constant block
 const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\s*\n\/\/ ---- PRESETS/);
 const slidersBlock = slidersBlockMatch ? slidersBlockMatch[1] : appJs;
@@ -118,9 +121,9 @@ describe('ONNX / VAD', () => {
   });
 });
 
-
-  test('app.js spawns ML Worker with initMLWorker', () => {
-    expect(appJs).toContain('initMLWorker()');
+describe('ML Worker wiring', () => {
+  test('app.js communicates with ML Worker via _mlCall helper', () => {
+    expect(appJs).toContain('_mlCall(payload, transfer');
   });
 
 

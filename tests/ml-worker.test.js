@@ -141,15 +141,13 @@ describe('buildTransferables (ml-worker.js PR null-guard)', () => {
   // ── Normal cases ──────────────────────────────────────────────────────────
 
   it('returns all buffers when every stream entry is valid', () => {
-    const buf0 = new Float32Array(4).buffer;
-    const buf1 = new Float32Array(8).buffer;
+    // Create Float32Arrays backed by known ArrayBuffers for identity assertions
+    const buf0 = new ArrayBuffer(16); // 4 floats * 4 bytes
+    const buf1 = new ArrayBuffer(32); // 8 floats * 4 bytes
     const streams = [
-      { speakerId: 0, data: new Float32Array(4) },
-      { speakerId: 1, data: new Float32Array(8) },
+      { speakerId: 0, data: new Float32Array(buf0) },
+      { speakerId: 1, data: new Float32Array(buf1) },
     ];
-    // Attach the known buffers so we can assert identity
-    streams[0].data = Object.assign(new Float32Array(4), { buffer: buf0 });
-    streams[1].data = Object.assign(new Float32Array(8), { buffer: buf1 });
     const result = buildTransferables(streams);
     expect(result).toHaveLength(2);
     expect(result[0]).toBe(streams[0].data.buffer);
@@ -244,9 +242,9 @@ describe('buildTransferables (ml-worker.js PR null-guard)', () => {
     ];
     const result = buildTransferables(streams);
     expect(result).toHaveLength(2);
-    // Both results must be ArrayBuffer instances
+    // Both results must be ArrayBuffer instances (toString avoids cross-realm instanceof issues)
     for (const buf of result) {
-      expect(buf).toBeInstanceOf(ArrayBuffer);
+      expect(Object.prototype.toString.call(buf)).toBe('[object ArrayBuffer]');
     }
   });
 
