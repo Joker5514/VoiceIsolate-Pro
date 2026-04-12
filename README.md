@@ -6,7 +6,7 @@
 [![Deploy](https://img.shields.io/badge/Vercel-live-brightgreen?logo=vercel)](https://voice-isolate-pro.vercel.app)
 [![Version](https://img.shields.io/badge/version-v24.0-blue)](#changelog)
 [![Pipeline](https://img.shields.io/badge/pipeline-36--stage-purple)](#pipeline)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/license-Proprietary-red)](LICENSE)
 
 ---
 
@@ -184,7 +184,7 @@ Sections:
 
 ## License
 
-MIT — Open source, free for commercial use.
+This software is proprietary and all rights are reserved by VoiceIsolate Pro. Please refer to the `LICENSE` file for detailed terms and conditions.
 
 ---
 
