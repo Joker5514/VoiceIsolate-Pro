@@ -406,16 +406,13 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     const oLen = this.outputAccum.length;
     for (let i = 0; i < RENDER; i++) {
       // ISSUE 5 FIX: During the startup latency window (first FFT_SIZE input
-      // samples), output silence but still advance drainHead so the ring
-      // never stalls. The old code used `continue` without advancing drainHead,
-      // which let outputAccum fill up while the drain pointer stayed frozen.
+      const idx = (this.drainHead + i) % oLen;
       if (this.hopsSinceInit * this.HOP_SIZE < this.FFT_SIZE) {
         outBuf[i] = 0;
-        // drainHead is advanced post-loop (line 450) — no in-loop advance needed
+        this.outputAccum[idx] = 0;
+        this.outputWindowSum[idx] = 0;
         continue;
       }
-
-      const idx  = (this.drainHead + i) % oLen;
       const wsum = this.outputWindowSum[idx];
       let sample = wsum > 1e-8 ? this.outputAccum[idx] / wsum : 0;
 
