@@ -422,6 +422,7 @@ class VoiceIsolatePro {
         const isActive = x === t;
         x.classList.toggle('active', isActive);
         x.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        x.setAttribute('tabindex', isActive ? '0' : '-1');
       });
       document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t.dataset.tab));
     }));
