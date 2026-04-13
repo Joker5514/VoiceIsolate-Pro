@@ -411,7 +411,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       // which let outputAccum fill up while the drain pointer stayed frozen.
       if (this.hopsSinceInit * this.HOP_SIZE < this.FFT_SIZE) {
         outBuf[i] = 0;
-        this.drainHead = (this.drainHead + 1) % oLen;
+        // drainHead is advanced post-loop (line 450) — no in-loop advance needed
         continue;
       }
 
