@@ -81,10 +81,12 @@ describe('vercel.json — Content-Security-Policy header', () => {
     expect(cspValue).not.toContain("'unsafe-eval'");
   });
 
-  // ── Core change: cdnjs.cloudflare.com added to script-src ────────────────
+  // ── Privacy-first: no external CDN domains in script-src ──────────────────
 
-  test('script-src includes https://cdnjs.cloudflare.com (added in this PR)', () => {
-    expect(directives['script-src']).toContain('https://cdnjs.cloudflare.com');
+  test('script-src does not include external CDN domains (privacy-first)', () => {
+    const scriptSrc = directives['script-src'].join(' ');
+    expect(scriptSrc).not.toContain('https://cdnjs.cloudflare.com');
+    expect(scriptSrc).not.toContain('https://cdn.jsdelivr.net');
   });
 
   // ── All required script-src sources are present ───────────────────────────
@@ -95,10 +97,6 @@ describe('vercel.json — Content-Security-Policy header', () => {
 
   test("script-src includes 'unsafe-inline'", () => {
     expect(directives['script-src']).toContain("'unsafe-inline'");
-  });
-
-  test('script-src includes https://cdn.jsdelivr.net', () => {
-    expect(directives['script-src']).toContain('https://cdn.jsdelivr.net');
   });
 
   test('script-src includes /_vercel (Vercel runtime scripts)', () => {
@@ -268,15 +266,13 @@ describe('render.yaml — Content-Security-Policy header', () => {
     expect(directives['script-src']).toContain("'unsafe-inline'");
   });
 
-  test('script-src includes https://cdnjs.cloudflare.com', () => {
-    expect(directives['script-src']).toContain('https://cdnjs.cloudflare.com');
+  test('script-src does not include external CDN domains (privacy-first)', () => {
+    const scriptSrc = directives['script-src'].join(' ');
+    expect(scriptSrc).not.toContain('https://cdnjs.cloudflare.com');
+    expect(scriptSrc).not.toContain('https://cdn.jsdelivr.net');
   });
 
-  test('script-src includes https://cdn.jsdelivr.net', () => {
-    expect(directives['script-src']).toContain('https://cdn.jsdelivr.net');
-  });
-
-  test('script-src includes /_vercel/ path (Render CDN scripts)', () => {
+  test('script-src includes /_vercel/ path (deployment platform scripts)', () => {
     const scriptSrc = directives['script-src'].join(' ');
     expect(scriptSrc).toContain('/_vercel/');
   });
@@ -440,14 +436,13 @@ describe('Cross-platform CSP consistency — vercel.json vs render.yaml', () => 
     expect(renderCSP).toContain('wasm-unsafe-eval');
   });
 
-  test('both platforms include cdnjs.cloudflare.com in script-src', () => {
-    expect(vercelDirectives['script-src']).toContain('https://cdnjs.cloudflare.com');
-    expect(renderDirectives['script-src']).toContain('https://cdnjs.cloudflare.com');
-  });
-
-  test('both platforms include cdn.jsdelivr.net in script-src', () => {
-    expect(vercelDirectives['script-src']).toContain('https://cdn.jsdelivr.net');
-    expect(renderDirectives['script-src']).toContain('https://cdn.jsdelivr.net');
+  test('both platforms do not include external CDN domains (privacy-first)', () => {
+    const vercelScript = vercelDirectives['script-src'].join(' ');
+    const renderScript = renderDirectives['script-src'].join(' ');
+    expect(vercelScript).not.toContain('https://cdnjs.cloudflare.com');
+    expect(renderScript).not.toContain('https://cdnjs.cloudflare.com');
+    expect(vercelScript).not.toContain('https://cdn.jsdelivr.net');
+    expect(renderScript).not.toContain('https://cdn.jsdelivr.net');
   });
 
   test("both platforms keep 'unsafe-inline' in script-src", () => {
