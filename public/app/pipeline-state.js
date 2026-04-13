@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — PipelineState
-   Threads from Space v10 · State Management
+   VoiceIsolate Pro v24.0 — PipelineState
+   Threads from Space v12 · State Management
    52-Param Pub/Sub · Undo/Redo · Wildcard
    ============================================ */
 
