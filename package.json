@@ -3,6 +3,7 @@
   "version": "24.0.0",
   "type": "module",
   "description": "Studio-grade voice isolation platform. 32-stage Octa-Pass DSP pipeline with hybrid ML + classical spectral processing. Mobile-ready via Capacitor for Android & iOS.",
+  "description": "Studio-grade voice isolation platform. 36-stage Deca-Pass DSP pipeline with hybrid ML + classical spectral processing. Mobile-ready via Capacitor for Android & iOS.",
   "private": true,
   "keywords": [
     "audio",
