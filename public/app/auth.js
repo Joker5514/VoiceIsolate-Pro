@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  auth.js  —  VoiceIsolate Pro v24.0
+//  auth.js  —  VoiceIsolate Pro v24.0 / Threads from Space v12
 //  100% local, tab-scoped session. No network calls. No cookies.
 //  SHA-256 password hashing via SubtleCrypto (built into every modern browser).
 // ─────────────────────────────────────────────────────────────────────────────
