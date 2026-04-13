@@ -1,8 +1,8 @@
 {
   "name": "voiceisolate-pro",
-  "version": "22.1.0",
+  "version": "24.0.0",
   "type": "module",
-  "description": "Studio-grade voice isolation platform. 35-stage Deca-Pass DSP pipeline with hybrid ML + classical spectral processing. Mobile-ready via Capacitor for Android & iOS.",
+  "description": "Studio-grade voice isolation platform. 36-stage Deca-Pass DSP pipeline with hybrid ML + classical spectral processing. Mobile-ready via Capacitor for Android & iOS.",
   "private": true,
   "keywords": [
     "audio",
@@ -43,7 +43,7 @@
     "ios:build": "npm run build && npx cap sync ios && npx cap open ios",
     "ios:pods": "cd ios/App && pod install",
     "mobile:dev": "npm run build && npx cap sync && echo 'Synced to both platforms'",
-    "mobile:version": "echo 'Android: 22.1.0 (22100) | iOS: 22.1.0 (22100)'"
+    "mobile:version": "echo 'Android: 24.0.0 (24000) | iOS: 24.0.0 (24000)'"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
