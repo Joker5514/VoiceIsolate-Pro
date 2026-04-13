@@ -1,5 +1,5 @@
 /* ============================================================
-   app-patches.js — VoiceIsolate Pro v22.1
+   app-patches.js — VoiceIsolate Pro v24.0
    Null-safety patches for DOM elements that may not exist
    when scripts execute (record button, pipeline status, etc.)
    Applied as early as possible via DOMContentLoaded guard.
