@@ -158,6 +158,7 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
   let event;
   try {
     const stripe = await getStripe();
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
   } catch (err) {
     console.error('[Webhook Signature Error]', err.message);
     return res.status(400).json({ error: 'Invalid signature' });
