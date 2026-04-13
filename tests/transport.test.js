@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Read app.js and evaluate to get VoiceIsolatePro without importing ES Module in Jest Node context
-const appJsPath = path.join(__dirname, '../app.js');
+const appJsPath = path.join(__dirname, '../public/app/app.js');
 const appJs = fs.readFileSync(appJsPath, 'utf8');
 
 // Use new Function to create a local scope and evaluate the code, bypassing the DOMContentLoaded listener and module system
@@ -37,6 +37,9 @@ describe('Transport Methods', () => {
       },
       play: jest.fn(),
       fmtDur: jest.fn(() => '0:00'),
+      _setScrubPos: function(frac) {
+        if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+      },
       stopDiagnostics: jest.fn(),
       startDiagnostics: jest.fn()
     };

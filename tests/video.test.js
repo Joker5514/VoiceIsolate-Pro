@@ -9,7 +9,7 @@ describe('VoiceIsolatePro Video Playback', () => {
     // The test framework can't directly `import` app.js because it contains
     // browser-only code (document) that executes globally at the bottom if `module`
     // is not defined. We use `vm` to simulate a browser/module environment.
-    const code = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
+    const code = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
     const sandbox = {
       window: {},
       document: {

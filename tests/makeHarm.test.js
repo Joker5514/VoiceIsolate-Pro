@@ -6,7 +6,7 @@ describe('VoiceIsolatePro.prototype.makeHarm', () => {
 
   beforeAll(() => {
     // Read app.js
-    const appJsPath = path.join(__dirname, '../app.js');
+    const appJsPath = path.join(__dirname, '../public/app/app.js');
     const appJsCode = fs.readFileSync(appJsPath, 'utf8');
 
     // Setup global environment to safely evaluate the file
