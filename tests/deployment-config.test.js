@@ -258,9 +258,10 @@ describe('render.yaml — Content-Security-Policy header', () => {
     expect(directives['script-src']).toContain("'unsafe-inline'");
   });
 
-  test('script-src includes /_vercel/ path', () => {
-    const scriptSrc = directives['script-src'].join(' ');
-    expect(scriptSrc).toContain('/_vercel/');
+  test("script-src allows same-origin scripts via 'self' without invalid path tokens", () => {
+    const scriptSrc = directives['script-src'];
+    expect(scriptSrc).toContain("'self'");
+    expect(scriptSrc).not.toContain('/_vercel');
   });
 
   // ── Required CSP directives ───────────────────────────────────────────────

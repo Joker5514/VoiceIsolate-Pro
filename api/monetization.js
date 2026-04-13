@@ -51,12 +51,11 @@ async function sendEmail(to, subject, token) {
 }
 
 // ─── Lazy-load Stripe (only when keys are available) ─────────────────────────
-function getStripe() {
+async function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('STRIPE_SECRET_KEY not configured');
-  // Dynamic import to avoid crashing when Stripe is not installed
-  const Stripe = require('stripe');
-  return Stripe(key);
+  const { default: Stripe } = await import('stripe');
+  return new Stripe(key);
 }
 
 // ─── License Token Utilities ──────────────────────────────────────────────────
@@ -130,8 +129,7 @@ router.post('/checkout', async (req, res) => {
     const priceId = PRICE_IDS[priceKey];
     if (!priceId) return res.status(400).json({ error: 'Price not configured' });
 
-    const stripe = getStripe();
-    const session = await stripe.checkout.sessions.create({
+    const stripe = await getStripe();
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
@@ -159,8 +157,7 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
 
   let event;
   try {
-    const stripe = getStripe();
-    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    const stripe = await getStripe();
   } catch (err) {
     console.error('[Webhook Signature Error]', err.message);
     return res.status(400).json({ error: 'Invalid signature' });
