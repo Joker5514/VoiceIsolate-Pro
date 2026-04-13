@@ -1,6 +1,7 @@
 {
   "outputDirectory": "public",
-  "buildCommand": "bash scripts/bootstrap-libs.sh",
+  "buildCommand": "node scripts/setup-ort.js",
+  "installCommand": "pnpm install --frozen-lockfile",
   "functions": {
     "api/**/*.js": {
       "runtime": "nodejs20.x"
@@ -17,6 +18,10 @@
     },
     {
       "source": "/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],
