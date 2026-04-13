@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  app-init.js  —  VoiceIsolate Pro · Threads from Space v8
+//  app-init.js  —  VoiceIsolate Pro v24.0 · Threads from Space v12
 //
 //  Entry point wiring:
 //    ① Auth gate (requireAuth)
