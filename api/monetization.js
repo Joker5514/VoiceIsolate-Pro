@@ -130,6 +130,7 @@ router.post('/checkout', async (req, res) => {
     if (!priceId) return res.status(400).json({ error: 'Price not configured' });
 
     const stripe = await getStripe();
+    const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
