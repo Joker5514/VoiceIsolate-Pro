@@ -174,7 +174,7 @@ Sections:
 - **IMPROVED**: Real-time latency target: <16ms on all platforms
 - **VERIFIED**: 36-stage pipeline, 10-pass architecture validated
 
-### v24.0 (Previous)
+### v23.0 (Previous)
 - Threads from Space v12 architecture
 - 36-stage pipeline
 - Real-time + offline modes
