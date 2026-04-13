@@ -90,9 +90,10 @@ describe('vercel.json — Content-Security-Policy header', () => {
     expect(directives['script-src']).toContain("'unsafe-inline'");
   });
 
-  test('script-src includes /_vercel (Vercel Speed Insights)', () => {
-    const scriptSrc = directives['script-src'].join(' ');
-    expect(scriptSrc).toContain('/_vercel');
+  test("script-src allows same-origin /_vercel scripts via 'self' without requiring an invalid path token", () => {
+    const scriptSrc = directives['script-src'];
+    expect(scriptSrc).toContain("'self'");
+    expect(scriptSrc).not.toContain('/_vercel');
   });
 
   // ── Required CSP directives ───────────────────────────────────────────────
