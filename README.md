@@ -7,7 +7,6 @@
 [![Version](https://img.shields.io/badge/version-v24.0-blue)](#changelog)
 [![Pipeline](https://img.shields.io/badge/pipeline-36--stage-purple)](#pipeline)
 [![License](https://img.shields.io/badge/license-PROPRIETARY-red)](LICENSE)
-[![License](https://img.shields.io/badge/license-Proprietary-red)](LICENSE)
 
 ---
 
@@ -126,19 +125,19 @@ git clone https://github.com/Joker5514/VoiceIsolate-Pro.git
 cd VoiceIsolate-Pro
 
 # Install dependencies
-npm install
+pnpm install
 
 # Development server
-npm run dev  # localhost:3000
+pnpm dev  # localhost:3000
 
 # Build
-npm run build
+pnpm build
 
 # Validate (syntax, pipeline audit)
-npm run validate
+pnpm validate
 
 # Test
-npm test
+pnpm test
 ```
 
 ---
@@ -174,6 +173,7 @@ Sections:
 - **IMPROVED**: Multi-worker batch processing for offline high-fidelity
 - **IMPROVED**: Real-time latency target: <16ms on all platforms
 - **VERIFIED**: 36-stage pipeline, 10-pass architecture validated
+- **FIXED**: Removed invalid `functions.runtime` from vercel.json — resolves all Vercel ERROR deployments
 
 ### v23.0 (Previous)
 - Threads from Space v12 architecture
@@ -186,7 +186,6 @@ Sections:
 ## License
 
 This software is proprietary and all rights are reserved by VoiceIsolate Pro. Please refer to the `LICENSE` file for detailed terms and conditions.
-
 
 ## Links
 

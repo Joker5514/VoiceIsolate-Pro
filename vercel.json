@@ -2,10 +2,8 @@
   "outputDirectory": "public",
   "buildCommand": "node scripts/setup-ort.js",
   "installCommand": "pnpm install --frozen-lockfile",
-  "functions": {
-    "api/**/*.js": {
-      "runtime": "nodejs20.x"
-    }
+  "github": {
+    "autoJobCancelation": false
   },
   "rewrites": [
     {
