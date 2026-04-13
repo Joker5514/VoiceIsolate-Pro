@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Read app.js and evaluate to get VoiceIsolatePro without importing ES Module in Jest Node context
-const appJsPath = path.join(__dirname, '../app.js');
+const appJsPath = path.join(__dirname, '../public/app/app.js');
 const appJs = fs.readFileSync(appJsPath, 'utf8');
 
 // Use new Function to create a local scope and evaluate the code, bypassing the DOMContentLoaded listener and module system
@@ -38,7 +38,8 @@ describe('Transport Methods', () => {
       play: jest.fn(),
       fmtDur: jest.fn(() => '0:00'),
       stopDiagnostics: jest.fn(),
-      startDiagnostics: jest.fn()
+      startDiagnostics: jest.fn(),
+      _setScrubPos: jest.fn()
     };
   });
 
@@ -156,7 +157,7 @@ describe('Transport Methods', () => {
       expect(mockContext.playOffset).toBe(55);
       expect(mockContext.dom.tpCur.textContent).toBe('0:55');
       expect(mockContext.fmtDur).toHaveBeenCalledWith(55);
-      expect(mockContext.dom.tpSeek.value).toBe((55 / 100) * 1000);
+      expect(mockContext._setScrubPos).toHaveBeenCalledWith(55 / 100);
       expect(mockContext.play).not.toHaveBeenCalled();
     });
 
@@ -234,7 +235,7 @@ describe('Transport Methods', () => {
       expect(mockContext.play).not.toHaveBeenCalled();
       expect(mockContext.fmtDur).toHaveBeenCalledWith(50);
       expect(mockContext.dom.tpCur.textContent).toBe('0:50');
-      expect(mockContext.dom.tpSeek.value).toBe(500);
+      expect(mockContext._setScrubPos).toHaveBeenCalledWith(0.5);
     });
 
     it('handles missing or invalid speed value gracefully', () => {

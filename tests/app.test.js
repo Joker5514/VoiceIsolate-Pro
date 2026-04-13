@@ -18,15 +18,17 @@ const path = require('path');
 
 // ── Source inspection helpers ─────────────────────────────────────────────────
 const appSrc = fs.readFileSync(
-  path.join(__dirname, '../app.js'),
+  path.join(__dirname, '../public/app/app.js'),
   'utf8'
 );
 
 // Extract the SLIDERS object literal from source
 // (used in structural tests without requiring the module)
 function extractSlidersFromSrc() {
-  // Collect all id values from SLIDERS
-  const idMatches = [...appSrc.matchAll(/id\s*:\s*'([^']+)'/g)];
+  // Extract only from the SLIDERS block (between SLIDERS = { and SLIDER_MAP)
+  const slidersBlockMatch = appSrc.match(/const SLIDERS = \{([\s\S]*?)\};\n*const SLIDER_MAP/);
+  const slidersBlock = slidersBlockMatch ? slidersBlockMatch[1] : appSrc;
+  const idMatches = [...slidersBlock.matchAll(/id\s*:\s*'([^']+)'/g)];
   return idMatches.map(m => m[1]);
 }
 
@@ -157,22 +159,22 @@ describe('STAGES array', () => {
     expect(appSrc).toContain('const STAGES');
   });
 
-  test('contains exactly 35 stage entries (v22 Deca-Pass pipeline)', () => {
-    // Count entries like 'S01: ...' through 'S35: ...'
+  test('contains exactly 32 stage entries (Deca-Pass pipeline)', () => {
+    // Count entries like 'S01: ...' through 'S32: ...'
     const stageMatches = [...appSrc.matchAll(/'S\d{2}:/g)];
-    expect(stageMatches).toHaveLength(35);
+    expect(stageMatches).toHaveLength(32);
   });
 
   test('first stage is S01: Input Decode', () => {
     expect(appSrc).toContain('S01: Input Decode');
   });
 
-  test('last stage is S35: Pipeline Complete', () => {
-    expect(appSrc).toContain('S35: Pipeline Complete');
+  test('last stage is S32: Final Export Ready', () => {
+    expect(appSrc).toContain('S32: Final Export Ready');
   });
 
-  test('includes the STFT stage (S09)', () => {
-    expect(appSrc).toContain('S09: Forward STFT');
+  test('includes the Forward STFT stage (S10)', () => {
+    expect(appSrc).toContain('S10: Forward STFT');
   });
 
   test('includes the Inverse STFT stage (S20)', () => {
@@ -385,12 +387,10 @@ describe('VoiceIsolatePro class structure', () => {
     expect(appSrc).toContain('async runPipeline()');
   });
 
-  test('pipeline has 35 stages to match STAGES array', () => {
-    // The comment in source reads "35-Stage Deca-Pass Pipeline"
-    expect(appSrc).toContain('35-Stage Deca-Pass Pipeline');
-    // And STAGES is sized accordingly
+  test('pipeline has 32 stages to match STAGES array', () => {
+    // The STAGES array contains 32 entries
     const stageMatches = [...appSrc.matchAll(/'S\d{2}:/g)];
-    expect(stageMatches).toHaveLength(35);
+    expect(stageMatches).toHaveLength(32);
   });
 });
 
@@ -440,7 +440,7 @@ describe('estVoices() logic', () => {
 
   test('returns "1" for 3–9 active half-second windows', () => {
     // 5 active windows = 5 * 22050 = 110250 samples of signal
-    const d = new Float32Array(44100 * 5).fill(0.5);
+    const d = new Float32Array(5 * 22050).fill(0.5);
     expect(estVoices(makeMockBuffer(d))).toBe('1');
   });
 

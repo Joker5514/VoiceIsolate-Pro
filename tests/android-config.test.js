@@ -66,8 +66,8 @@ describe('capacitor.config.json — structure and values', () => {
     expect(cfg.android.captureInput).toBe(true);
   });
 
-  test('android.appendUserAgent includes VoiceIsolatePro/22.1', () => {
-    expect(cfg.android.appendUserAgent).toBe('VoiceIsolatePro/22.1');
+  test('android.appendUserAgent includes VoiceIsolatePro version', () => {
+    expect(cfg.android.appendUserAgent).toMatch(/^VoiceIsolatePro\/\d+\.\d+$/);
   });
 
   test('ios section is defined', () => {

@@ -6,6 +6,7 @@
 // Note that app.js doesn't export the module correctly if we import it via module
 // because it's configured as commonjs via module.exports
 const fs = require('fs');
+const path = require('path');
 
 describe('Video Playback Error Handling', () => {
   let VoiceIsolatePro;
@@ -146,7 +147,7 @@ describe('Video Playback Error Handling', () => {
     window.HTMLMediaElement.prototype.pause = () => {};
 
     // Load code dynamically using eval
-    const appJsCode = fs.readFileSync('app.js', 'utf8');
+    const appJsCode = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
     const exportsObj = {};
     const moduleObj = { exports: exportsObj };
 

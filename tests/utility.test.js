@@ -9,7 +9,7 @@ const path = require('path');
 // Read the app.js code as a string to extract the real implementation.
 // This guarantees we are testing the actual code without dealing with
 // Jest ESM/CJS module loading conflicts for a browser script.
-const appJsPath = path.resolve(__dirname, '../app.js');
+const appJsPath = path.resolve(__dirname, '../public/app/app.js');
 const appJsCode = fs.readFileSync(appJsPath, 'utf8');
 
 // Use new Function to create the class from the source string.
