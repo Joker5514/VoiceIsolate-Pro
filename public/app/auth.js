@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  auth.js  —  VoiceIsolate Pro · Threads from Space v8
+//  auth.js  —  VoiceIsolate Pro v24.0
 //  100% local, tab-scoped session. No network calls. No cookies.
 //  SHA-256 password hashing via SubtleCrypto (built into every modern browser).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -214,8 +214,8 @@ function renderLoginModal() {
   overlay.id = 'vip-auth-overlay';
   overlay.innerHTML = `
     <div id="vip-auth-box">
-      <h2>🎙 VoiceIsolate Pro</h2>
-      <p>Threads from Space v8 · Sign in to continue</p>
+      <h2>🎙 VoiceIsolate Pro v24.0</h2>
+      <p>Threads from Space v12 · Sign in to continue</p>
       <div class="vip-auth-field">
         <label for="vip-username">Username</label>
         <input id="vip-username" type="text" autocomplete="username"
