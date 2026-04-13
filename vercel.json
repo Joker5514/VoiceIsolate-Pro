@@ -1,26 +1,22 @@
 {
   "outputDirectory": "public",
-  "buildCommand": "node scripts/setup-ort.js",
   "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "echo 'Static site - ORT files copied by postinstall hook'",
   "github": {
     "autoJobCancelation": false
   },
   "rewrites": [
     {
-      "source": "/app/:path*",
-      "destination": "/app/:path*"
-    },
-    {
-      "source": "/lib/:path*",
-      "destination": "/lib/:path*"
-    },
-    {
       "source": "/",
       "destination": "/index.html"
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "source": "/app",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/app/",
+      "destination": "/app/index.html"
     }
   ],
   "headers": [
@@ -66,7 +62,7 @@
       ]
     },
     {
-      "source": "/app/(voice-isolate-processor|dsp-processor|ml-worker|app-init|auth)\\.js",
+      "source": "/app/(voice-isolate-processor|dsp-processor|ml-worker|app-init|auth|vip-boot).js",
       "headers": [
         {
           "key": "Content-Type",
