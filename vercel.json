@@ -2,6 +2,9 @@
   "outputDirectory": "public",
   "buildCommand": "node scripts/setup-ort.js",
   "installCommand": "pnpm install --frozen-lockfile",
+  "github": {
+    "autoJobCancelation": false
+  },
   "rewrites": [
     {
       "source": "/app/:path*",
