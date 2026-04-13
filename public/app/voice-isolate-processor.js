@@ -4,6 +4,14 @@
    Single-Pass STFT via SharedArrayBuffer bridge
    STFT happens HERE (worklet side) for framing;
    spectral masking via ML output from main thread.
+
+   PATCH LOG (April 13 2026 — Audit Fix PR):
+   - Bug 1: inputProcessed pointer replaces broken outputHead/outputTail
+             condition in the STFT while-loop
+   - Bug 2: order-lock comment before _inverseSTFTFrame (scratch buffer safety)
+   - Bug 3: drainHead pointer replaces (outputTail - RENDER + i) drain formula
+   - Issue 5: latency guard now advances drainHead so ring never stalls
+   - Issue 6: initRingBuffers fully resets ALL overlap-add ring state
    ============================================ */
 'use strict';
 
@@ -60,7 +68,8 @@ function hannWindow(N) {
 }
 
 // ---------------------------------------------------------------------------
-// Harmonic enhancer (post-gate, pre-mix — identical to v20 root version)
+// Harmonic enhancer (post-gate, pre-mix)
+// Normalization: tanh(drive*x)/tanh(drive) preserves ±1 ceiling
 // ---------------------------------------------------------------------------
 class HarmonicEnhancer {
   constructor(amount = 0) { this.setAmount(amount); }
@@ -84,19 +93,22 @@ class HarmonicEnhancer {
 // Architecture:
 //   AudioWorklet (this file)
 //     ├─ Accumulates 128-sample render quanta into inputAccum[]
-//     ├─ When inputAccum has ≥ HOP_SIZE samples:
+//     ├─ When inputAccum has ≥ HOP_SIZE new unprocessed samples
+//     │    (tracked by inputProcessed — Bug 1 fix):
 //     │    • Copies newest FFT_SIZE samples into a windowed frame
 //     │    • Runs single Forward FFT  → writes mag+phase to inputSAB
 //     │    • Atomics.notify wakes ML Worker on main thread
 //     │    • Reads processed spectral frame (mag only) from outputSAB
 //     │    • Runs single Inverse FFT (iFFT) → overlap-adds to outputAccum
-//     └─ Drains 128 samples from outputAccum into output buffer
+//     │    • NOTE (Bug 2): fallbackMag is copied BEFORE _inverseSTFTFrame
+//     │      because iFFT clobbers fftReal/fftImag in-place. Do not reorder.
+//     └─ Drains 128 samples from outputAccum using drainHead (Bug 3 fix)
 //
 // SharedArrayBuffer layout (both inputSAB and outputSAB):
-//   [0]  Int32 writeIdx   (sample position, wraps at capacity)
-//   [1]  Int32 readIdx
+//   [0]  Int32 writeIdx   (reserved)
+//   [1]  Int32 readIdx    (reserved)
 //   [2]  Int32 frameReady (0|1 flag, Atomics.notify target)
-//   [3]  Int32 overruns
+//   [3]  Int32 overruns   (reserved)
 //   [16..16+capacity*4]  Float32Array payload
 // ---------------------------------------------------------------------------
 class VoiceIsolateProcessor extends AudioWorkletProcessor {
@@ -108,16 +120,34 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     this.HOP_SIZE = 1024;
     this.HALF_N   = this.FFT_SIZE / 2 + 1;
 
-    // Overlap-add accumulation buffers (2× FFT_SIZE headroom)
+    // Overlap-add accumulation buffers (4× FFT_SIZE headroom)
     this.inputAccum  = new Float32Array(this.FFT_SIZE * 4);
-    this.inputHead   = 0;  // write pointer into inputAccum
-    this.outputAccum = new Float32Array(this.FFT_SIZE * 4);
-    this.outputTail  = 0;  // read pointer from outputAccum
-    this.outputHead  = 0;  // write pointer into outputAccum
-    this.outputWindowSum = new Float32Array(this.FFT_SIZE * 4);
-    this.hopsSinceInit = 0; // latency compensation: don't drain until first iFFT done
+    this.inputHead   = 0;  // write pointer into inputAccum (absolute sample count)
 
-    // Reusable FFT scratch buffers (avoid per-frame alloc)
+    // BUG 1 FIX: inputProcessed tracks how many input samples have been
+    // consumed by completed STFT hops. The while-loop condition compares
+    // inputHead - inputProcessed >= HOP_SIZE, which is the correct and
+    // stable way to schedule hops without mixing in output pointers.
+    this.inputProcessed = 0;
+
+    this.outputAccum     = new Float32Array(this.FFT_SIZE * 4);
+    this.outputWindowSum = new Float32Array(this.FFT_SIZE * 4);
+    this.outputHead      = 0; // write pointer for overlap-add (not used in drain)
+
+    // BUG 3 FIX: drainHead is the dedicated read pointer for the output drain
+    // section. It advances by exactly RENDER (128) samples per process() call,
+    // independent of hop scheduling. The old formula used
+    // (outputTail - RENDER + i) which was tied to hop scheduling and read
+    // from the wrong ring position (896 samples behind at HOP_SIZE=1024).
+    this.drainHead = 0;
+
+    this.hopsSinceInit = 0; // latency compensation: silence until first iFFT
+
+    // Reusable FFT scratch buffers (avoid per-frame alloc in hot path)
+    // ORDER LOCK (Bug 2): fallbackMag must be copied from these buffers
+    // AFTER _forwardSTFTFrame() returns and BEFORE _inverseSTFTFrame() is
+    // called, because iFFT runs in-place on fftReal/fftImag and will
+    // overwrite any mag data still needed for fallback.
     this.fftReal = new Float32Array(this.FFT_SIZE);
     this.fftImag = new Float32Array(this.FFT_SIZE);
 
@@ -125,8 +155,8 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     this.window = hannWindow(this.FFT_SIZE);
 
     // SharedArrayBuffer ring views (set via initRingBuffers message)
-    this.inputSAB  = null;  // Float32Array[HALF_N] written by worklet, read by ML worker
-    this.outputSAB = null;  // Float32Array[HALF_N] written by ML worker, read by worklet
+    this.inputSAB  = null;  // Float32Array[HALF_N*2] — mag+phase, written by worklet
+    this.outputSAB = null;  // Float32Array[HALF_N]   — processed mag, written by worker
     this.ctrlIn    = null;  // Int32Array[4] control for inputSAB
     this.ctrlOut   = null;  // Int32Array[4] control for outputSAB
 
@@ -149,7 +179,6 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
 
     this.harmonicEnhancer = new HarmonicEnhancer(0);
 
-    // Message handler — runs on audio thread message queue
     this.port.onmessage = ({ data }) => this._onMessage(data);
   }
 
@@ -158,23 +187,39 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     switch (msg.type) {
 
       case 'initRingBuffers': {
-        // inputSAB: worklet writes spectral frames → ML Worker reads
-        // outputSAB: ML Worker writes processed mags → worklet reads
-        this.FFT_SIZE = msg.fftSize  || this.FFT_SIZE;
-        this.HOP_SIZE = msg.hopSize  || this.HOP_SIZE;
+        // ISSUE 6 FIX: Fully reset ALL overlap-add and ring state when
+        // fftSize/hopSize change, not just the FFT scratch buffers.
+        // Previously, inputAccum, outputAccum, drainHead, inputProcessed,
+        // and hopsSinceInit were left stale after a reinit, causing
+        // overlap-add corruption on the new buffer dimensions.
+        this.FFT_SIZE = msg.fftSize || this.FFT_SIZE;
+        this.HOP_SIZE = msg.hopSize || this.HOP_SIZE;
         this.HALF_N   = this.FFT_SIZE / 2 + 1;
         this.window   = hannWindow(this.FFT_SIZE);
         this.fftReal  = new Float32Array(this.FFT_SIZE);
         this.fftImag  = new Float32Array(this.FFT_SIZE);
 
+        // Full ring reset
+        this.inputAccum      = new Float32Array(this.FFT_SIZE * 4);
+        this.outputAccum     = new Float32Array(this.FFT_SIZE * 4);
+        this.outputWindowSum = new Float32Array(this.FFT_SIZE * 4);
+        this.inputHead       = 0;
+        this.inputProcessed  = 0;
+        this.outputHead      = 0;
+        this.drainHead       = 0;
+        this.hopsSinceInit   = 0;
+        this.gateEnv         = 0;
+        this.holdCounter     = 0;
+
         if (msg.inputSAB) {
           this.ctrlIn   = new Int32Array(msg.inputSAB, 0, 4);
-          this.inputSAB = new Float32Array(msg.inputSAB, 16, this.HALF_N * 2); // mag+phase
+          this.inputSAB = new Float32Array(msg.inputSAB, 16, this.HALF_N * 2);
         }
         if (msg.outputSAB) {
           this.ctrlOut   = new Int32Array(msg.outputSAB, 0, 4);
-          this.outputSAB = new Float32Array(msg.outputSAB, 16, this.HALF_N);   // mag only
+          this.outputSAB = new Float32Array(msg.outputSAB, 16, this.HALF_N);
         }
+        this.port.postMessage({ type: 'ready' });
         break;
       }
 
@@ -201,8 +246,11 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
   }
 
   // ─── Single Forward STFT Frame ─────────────────────────────────────────
-  // Writes HALF_N magnitudes then HALF_N phases into inputSAB starting at offset 0.
-  // Returns phase array (Float32Array) for later iFFT reconstruction.
+  // Writes HALF_N magnitudes then HALF_N phases into inputSAB.
+  // Returns phase array (Float32Array view of HALF_N) for iFFT reconstruction.
+  // IMPORTANT (Bug 2 order lock): caller must copy fallbackMag from
+  // fftReal/fftImag immediately after this returns and BEFORE calling
+  // _inverseSTFTFrame, because iFFT runs in-place on the same scratch arrays.
   _forwardSTFTFrame(audioData) {
     const N = this.FFT_SIZE;
     const halfN = this.HALF_N;
@@ -210,29 +258,25 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     const imag = this.fftImag;
     const w    = this.window;
 
-    // Window and copy into real[], zero imag[]
     for (let i = 0; i < N; i++) {
       real[i] = (i < audioData.length) ? audioData[i] * w[i] : 0;
       imag[i] = 0;
     }
 
-    // ── SINGLE FORWARD FFT ──
+    // ── SINGLE FORWARD FFT (one per hop — architectural constraint) ──
     fft(real, imag, false);
 
-    // Extract mag + phase for positive frequencies
     const phase = new Float32Array(halfN);
     if (this.inputSAB) {
       for (let k = 0; k < halfN; k++) {
         const mag = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
-        this.inputSAB[k]        = mag;                         // [0..halfN-1] = mag
-        this.inputSAB[halfN + k] = Math.atan2(imag[k], real[k]); // [halfN..] = phase
+        this.inputSAB[k]         = mag;
+        this.inputSAB[halfN + k] = Math.atan2(imag[k], real[k]);
         phase[k] = this.inputSAB[halfN + k];
       }
-      // Signal ML Worker: new spectral frame ready
       Atomics.store(this.ctrlIn, 2, 1);
       Atomics.notify(this.ctrlIn, 2, 1);
     } else {
-      // No SAB yet — extract phase locally for passthrough
       for (let k = 0; k < halfN; k++) {
         phase[k] = Math.atan2(imag[k], real[k]);
       }
@@ -242,9 +286,11 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
   }
 
   // ─── Single Inverse STFT Frame ─────────────────────────────────────────
-  // Reads processed magnitudes from outputSAB (or falls back to forward mag).
-  // Reconstructs complex spectrum using the original phase (phase vocoder passthrough).
+  // Reads processed magnitudes from outputSAB (or falls back to fallbackMag).
+  // Reconstructs complex spectrum using the original forward phase.
   // Overlap-adds result into outputAccum.
+  // NOTE (Bug 2): This clobbers fftReal/fftImag in-place via iFFT.
+  // fallbackMag MUST be a separate Float32Array copy, not a view of fftReal/fftImag.
   _inverseSTFTFrame(phase, fallbackMag) {
     const N     = this.FFT_SIZE;
     const halfN = this.HALF_N;
@@ -252,35 +298,30 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     const imag  = this.fftImag;
     const w     = this.window;
 
-    // Determine which magnitude array to use
     let magArr = fallbackMag;
     if (this.outputSAB && Atomics.load(this.ctrlOut, 2) === 1) {
-      // ML Worker has a processed frame ready — use it
       magArr = this.outputSAB.subarray(0, halfN);
-      Atomics.store(this.ctrlOut, 2, 0); // consume
+      Atomics.store(this.ctrlOut, 2, 0);
     }
 
-    // Reconstruct complex spectrum
     for (let k = 0; k < halfN; k++) {
       const m = magArr ? magArr[k] : 0;
       real[k] = m * Math.cos(phase[k]);
       imag[k] = m * Math.sin(phase[k]);
     }
-    // Mirror negative frequencies
     for (let k = halfN; k < N; k++) {
       real[k] =  real[N - k];
       imag[k] = -imag[N - k];
     }
 
-    // ── SINGLE INVERSE FFT ──
+    // ── SINGLE INVERSE FFT (one per hop — architectural constraint) ──
     fft(real, imag, true);
 
-    // Overlap-add into outputAccum with synthesis Hann window
     const offset = this.outputHead;
     const len    = this.outputAccum.length;
     for (let i = 0; i < N; i++) {
       const idx = (offset + i) % len;
-      this.outputAccum[idx]    += real[i] * w[i];
+      this.outputAccum[idx]     += real[i] * w[i];
       this.outputWindowSum[idx] += w[i] * w[i];
     }
     this.outputHead = (offset + this.HOP_SIZE) % len;
@@ -293,9 +334,8 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     const outBuf = outputs[0]?.[0];
     if (!inBuf || !outBuf) return true;
 
-    const RENDER = 128; // Web Audio render quantum size
+    const RENDER = 128;
 
-    // Bypass: passthrough only
     if (this.params.bypass) {
       outBuf.set(inBuf);
       return true;
@@ -308,21 +348,29 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       this.inputHead++;
     }
 
-    // ── 2. Run STFT frames whenever we have a full hop ────────────────────
-    while (this.inputHead - (this.outputHead === 0 ? 0 : this.outputTail) >= this.HOP_SIZE) {
-      // Gather newest FFT_SIZE samples from ring buffer
+    // ── 2. Run STFT frames whenever we have a full unprocessed hop ────────
+    // BUG 1 FIX: inputProcessed is the number of input samples that have
+    // already been used to start a hop. The condition
+    //   inputHead - inputProcessed >= HOP_SIZE
+    // is stable and correct. The old condition mixed outputHead and
+    // outputTail pointers, which caused the loop to terminate immediately
+    // after the first hop, producing silence or stutter.
+    while (this.inputHead - this.inputProcessed >= this.HOP_SIZE) {
       const frame = new Float32Array(this.FFT_SIZE);
-      const base  = this.inputHead - this.FFT_SIZE;
+      const base  = this.inputProcessed + this.HOP_SIZE - this.FFT_SIZE;
       for (let i = 0; i < this.FFT_SIZE; i++) {
-        const idx = (base + i + accumLen) % accumLen;
-        frame[i] = base + i >= 0 ? this.inputAccum[(base + i) % accumLen] : 0;
+        const absIdx = base + i;
+        frame[i] = absIdx >= 0
+          ? this.inputAccum[(absIdx) % accumLen]
+          : 0;
       }
 
-      // Build fallback magnitude from forward FFT (in case ML Worker has no frame yet)
-      const halfN    = this.HALF_N;
+      // Forward FFT — populates fftReal/fftImag and inputSAB
       const fwdPhase = this._forwardSTFTFrame(frame);
 
-      // Compute fallback mag from fftReal/fftImag (already populated by _forwardSTFTFrame)
+      // BUG 2 ORDER LOCK: copy fallbackMag HERE, after forward FFT and
+      // before iFFT, because _inverseSTFTFrame clobbers fftReal/fftImag.
+      const halfN = this.HALF_N;
       const fallbackMag = new Float32Array(halfN);
       for (let k = 0; k < halfN; k++) {
         fallbackMag[k] = Math.sqrt(
@@ -331,13 +379,14 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
         );
       }
 
+      // Inverse FFT — overlap-adds to outputAccum
       this._inverseSTFTFrame(fwdPhase, fallbackMag);
 
-      // Advance output tail by one hop
-      this.outputTail += this.HOP_SIZE;
+      // Advance inputProcessed by exactly one hop
+      this.inputProcessed += this.HOP_SIZE;
     }
 
-    // ── 3. Gate + dynamics params (precomputed once per render quantum) ───
+    // ── 3. Gate + dynamics coefficients (precomputed once per render) ─────
     const p = this.params;
     const threshLin   = Math.pow(10, p.gateThresh  / 20);
     const rangeLin    = Math.pow(10, p.gateRange   / 20);
@@ -349,20 +398,29 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     const dry = 1 - wet;
 
     // ── 4. Drain outputAccum → output buffer ─────────────────────────────
+    // BUG 3 FIX: drainHead advances by RENDER (128) each process() call,
+    // independent of hop scheduling. The old formula
+    //   (outputTail - RENDER + i + oLen) % oLen
+    // used outputTail (a hop-scheduling pointer) as the drain base, which
+    // read from 896 samples behind the correct position at HOP_SIZE=1024.
     const oLen = this.outputAccum.length;
     for (let i = 0; i < RENDER; i++) {
-      // Don't read until we have latency of at least 1 FFT frame
-      if (this.hopsSinceInit < Math.ceil(this.FFT_SIZE / this.HOP_SIZE)) {
+      // ISSUE 5 FIX: During the startup latency window (first FFT_SIZE input
+      // samples), output silence but still advance drainHead so the ring
+      // never stalls. The old code used `continue` without advancing drainHead,
+      // which let outputAccum fill up while the drain pointer stayed frozen.
+      if (this.hopsSinceInit * this.HOP_SIZE < this.FFT_SIZE) {
         outBuf[i] = 0;
+        this.drainHead = (this.drainHead + 1) % oLen;
         continue;
       }
 
-      const idx    = (this.outputTail - RENDER + i + oLen) % oLen;
-      const wsum   = this.outputWindowSum[idx];
-      let   sample = wsum > 1e-8 ? this.outputAccum[idx] / wsum : 0;
+      const idx  = (this.drainHead + i) % oLen;
+      const wsum = this.outputWindowSum[idx];
+      let sample = wsum > 1e-8 ? this.outputAccum[idx] / wsum : 0;
 
       // Clear consumed slot
-      this.outputAccum[idx]    = 0;
+      this.outputAccum[idx]     = 0;
       this.outputWindowSum[idx] = 0;
 
       // Noise gate
@@ -381,12 +439,15 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       this.gateEnv = coeff * this.gateEnv + (1 - coeff) * target;
       sample *= this.gateEnv;
 
-      // Harmonic enhancement
+      // Harmonic enhancement (drive-normalized tanh)
       sample = this.harmonicEnhancer.processSample(sample);
 
-      // Dry/wet + output gain
+      // Dry/wet blend + output gain
       outBuf[i] = (dry * inBuf[i] + wet * sample) * outGainLin;
     }
+
+    // Advance drainHead by one full render quantum
+    this.drainHead = (this.drainHead + RENDER) % oLen;
 
     return true;
   }
