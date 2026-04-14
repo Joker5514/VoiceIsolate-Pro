@@ -58,7 +58,7 @@ beforeAll(() => {
       removeItem: jest.fn(),
     },
     AudioContext:     jest.fn(() => ({})),
-    requestAnimationFrame: jest.fn(),
+    requestAnimationFrame: jest.fn(cb => setTimeout(cb, 0)),
     cancelAnimationFrame:  jest.fn(),
     performance:      { now: jest.fn(() => Date.now()) },
   };

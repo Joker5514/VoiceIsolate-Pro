@@ -561,6 +561,7 @@ class VoiceIsolatePro {
 
   // ======== FILE HANDLING ========
   async handleFile(file) {
+    this.dom.fileInfo.textContent = '⏳ Loading...';
     try {
       const sizeCapMB = 200;
       const fileSizeMB = file.size / (1024 * 1024);
@@ -586,6 +587,8 @@ class VoiceIsolatePro {
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
       this.setStatus('LOADING');
       this.isVideo = file.type.startsWith('video/');
+      if (this.ctx.state === 'suspended') await this.ctx.resume().catch(() => {});
+      await new Promise(r => setTimeout(r, 0));
       const fileArrayBuffer = await file.arrayBuffer();
       let audioBuf = null;
       try {
@@ -608,6 +611,7 @@ class VoiceIsolatePro {
       } else { this.dom.videoCard.style.display = 'none'; }
       this.inputBuffer = audioBuf;
       this.outputBuffer = null;
+      await new Promise(r => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(r, 0));
       this.onAudioLoaded(file.name);
     } catch (err) {
       console.error('File load error:', err);
