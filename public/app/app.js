@@ -579,13 +579,19 @@ class VoiceIsolatePro {
       const isMidiFile = normalizedType === 'audio/midi' || normalizedType === 'audio/x-midi' || normalizedName.endsWith('.mid') || normalizedName.endsWith('.midi');
       if (isMidiFile) throw new Error('MIDI files are not supported in this audio decode path. Please export the MIDI to WAV, MP3, or another rendered audio format first.');
 
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska'];
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/x-flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska', 'audio/opus', 'audio/x-aiff', 'audio/aiff', 'audio/aif', 'audio/x-ms-wma', 'video/avi', 'video/x-msvideo'];
       if (normalizedType && !allowedTypes.includes(normalizedType)) throw new Error('Unsupported file type');
       this.ensureCtx();
       this.stop();
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
       this.setStatus('LOADING');
       this.isVideo = file.type.startsWith('video/');
+      // Await AudioContext resume before decode — suspended context causes decodeAudioData to stall
+      if (this.ctx.state === 'suspended') {
+        try { await this.ctx.resume(); } catch (_e) {}
+      }
+      // Yield to browser paint cycle to prevent UI freeze on large files
+      await new Promise(r => setTimeout(r, 0));
       const fileArrayBuffer = await file.arrayBuffer();
       let audioBuf = null;
       try {
