@@ -43,7 +43,7 @@ handleFile(file) {
         await new Promise(r => setTimeout(r, 0));
 
         // 3. .slice(0) prevents detached ArrayBuffer on retry
-        const buffer = await App.ctx.decodeAudioData(e.target.result.slice(0));
+        const buffer = await App.ctx.decodeAudioData(e.target.result);
 
         App.audioBuffer = buffer;
         App.duration = buffer.duration;
