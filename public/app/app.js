@@ -562,6 +562,11 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING ========
   async handleFile(file) {
     try {
+      const sizeCapMB = 200;
+      const fileSizeMB = file.size / (1024 * 1024);
+      if (fileSizeMB > sizeCapMB) {
+        throw new Error(`File too large: ${fileSizeMB.toFixed(1)} MB. The hard limit is ${sizeCapMB} MB.`);
+      }
       const LM = window.LicenseManager;
       if (LM && typeof LM.checkFileLimit === 'function') {
         const fileSizeMB = file.size / (1024 * 1024);
