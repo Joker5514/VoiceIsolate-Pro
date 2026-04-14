@@ -25,10 +25,13 @@ const appSrc = fs.readFileSync(
 // Extract the SLIDERS object literal from source
 // (used in structural tests without requiring the module)
 function extractSlidersFromSrc() {
-  // Only collect id values from within the SLIDERS block (not from presets or other code)
+  // Only collect id values from within the SLIDERS block (not from presets or other code).
+  // The regex captures everything between `const SLIDERS = {` and the following `const SLIDER_MAP`.
   const slidersBlockMatch = appSrc.match(/const SLIDERS = \{([\s\S]*?)\};\s*\nconst SLIDER_MAP/);
-  const slidersBlock = slidersBlockMatch ? slidersBlockMatch[1] : '';
-  const idMatches = [...slidersBlock.matchAll(/id\s*:\s*'([^']+)'/g)];
+  if (!slidersBlockMatch) {
+    throw new Error('Could not locate SLIDERS block in app.js — check that const SLIDER_MAP follows immediately after the closing brace');
+  }
+  const idMatches = [...slidersBlockMatch[1].matchAll(/id\s*:\s*'([^']+)'/g)];
   return idMatches.map(m => m[1]);
 }
 
