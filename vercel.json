@@ -1,22 +1,22 @@
 {
   "outputDirectory": "public",
-  "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "echo 'Static site - ORT files copied by postinstall hook'",
+  "installCommand": "PUPPETEER_SKIP_DOWNLOAD=true pnpm install --no-frozen-lockfile",
+  "buildCommand": "node scripts/setup-ort.js",
   "github": {
     "autoJobCancelation": false
   },
   "rewrites": [
     {
-      "source": "/",
-      "destination": "/index.html"
+      "source": "/app/(.*)",
+      "destination": "/app/index.html"
     },
     {
       "source": "/app",
       "destination": "/app/index.html"
     },
     {
-      "source": "/app/",
-      "destination": "/app/index.html"
+      "source": "/((?!api/|lib/|assets/|app/).*)",
+      "destination": "/index.html"
     }
   ],
   "headers": [
@@ -58,74 +58,6 @@
         {
           "key": "Content-Security-Policy",
           "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; worker-src 'self' blob:; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'"
-        }
-      ]
-    },
-    {
-      "source": "/app/(voice-isolate-processor|dsp-processor|ml-worker|app-init|auth|vip-boot).js",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/javascript"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "no-cache, must-revalidate"
-        },
-        {
-          "key": "Pragma",
-          "value": "no-cache"
-        }
-      ]
-    },
-    {
-      "source": "/app/models/(.*\\.onnx)",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/octet-stream"
-        },
-        {
-          "key": "Cross-Origin-Resource-Policy",
-          "value": "same-origin"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=86400, immutable"
-        }
-      ]
-    },
-    {
-      "source": "/lib/(.*\\.wasm)",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/wasm"
-        },
-        {
-          "key": "Cross-Origin-Resource-Policy",
-          "value": "same-origin"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=86400, immutable"
-        }
-      ]
-    },
-    {
-      "source": "/lib/(.*\\.js)",
-      "headers": [
-        {
-          "key": "Content-Type",
-          "value": "application/javascript"
-        },
-        {
-          "key": "Cross-Origin-Resource-Policy",
-          "value": "same-origin"
-        },
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=86400"
         }
       ]
     }
