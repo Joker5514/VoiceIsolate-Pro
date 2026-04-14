@@ -29,6 +29,7 @@ const router = express.Router();
 
 // ─── Simulated Database ───────────────────────────────────────────────────────
 const _licensesStore = new Map();
+const _usageStore = [];
 const db = {
   licenses: {
     upsert: async (data) => {
@@ -38,6 +39,16 @@ const db = {
     },
     get: async (customerId) => {
       return _licensesStore.get(customerId) || null;
+    }
+  },
+  usage: {
+    record: async (data) => {
+      const entry = { ...data, recordedAt: Math.floor(Date.now() / 1000) };
+      _usageStore.push(entry);
+      return entry;
+    },
+    list: async (email) => {
+      return email ? _usageStore.filter(e => e.email === email) : [..._usageStore];
     }
   }
 };
@@ -274,7 +285,7 @@ router.get('/license/status', (req, res) => {
 });
 
 // ─── POST /api/usage/record ───────────────────────────────────────────────────
-router.post('/usage/record', (req, res) => {
+router.post('/usage/record', async (req, res) => {
   const { event: usageEvent, units = 1 } = req.body;
   const authHeader = req.headers.authorization;
 
@@ -286,8 +297,8 @@ router.post('/usage/record', (req, res) => {
   const payload = validateLicenseToken(token);
   if (!payload) return res.status(401).json({ error: 'Invalid token' });
 
-  // TODO: Record usage in database for metered billing
-  console.log(`[Usage] ${payload.email} — ${usageEvent} × ${units}`);
+  const entry = await db.usage.record({ email: payload.email, event: usageEvent, units });
+  console.log(`[Usage] ${entry.email} — ${entry.event} × ${entry.units}`);
   res.json({ recorded: true, event: usageEvent, units });
 });
 
