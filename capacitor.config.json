@@ -11,14 +11,14 @@
     "allowMixedContent": false,
     "webContentsDebuggingEnabled": false,
     "captureInput": true,
-    "appendUserAgent": "VoiceIsolatePro/24.0",
+    "appendUserAgent": "VoiceIsolatePro/22.1",
     "backgroundColor": "#0a0a0f"
   },
   "ios": {
     "contentInset": "automatic",
     "allowsLinkPreview": false,
     "scrollEnabled": true,
-    "appendUserAgent": "VoiceIsolatePro/24.0",
+    "appendUserAgent": "VoiceIsolatePro/22.1",
     "backgroundColor": "#0a0a0f",
     "preferredContentMode": "mobile",
     "webContentsDebuggingEnabled": false,

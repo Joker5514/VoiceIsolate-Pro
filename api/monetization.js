@@ -60,19 +60,6 @@ function getStripe() {
 }
 
 
-// ─── Simulated Database ───────────────────────────────────────────────────────
-const db = {
-  licenses: {
-    _store: new Map(),
-    async upsert(data) {
-      this._store.set(data.customerId, { ...(this._store.get(data.customerId) || {}), ...data });
-    },
-    async get(customerId) {
-      return this._store.get(customerId) || null;
-    }
-  }
-};
-
 // ─── License Token Utilities ──────────────────────────────────────────────────
 if (!process.env.LICENSE_JWT_SECRET) {
   throw new Error('LICENSE_JWT_SECRET environment variable is required');
