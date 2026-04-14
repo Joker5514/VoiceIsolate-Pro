@@ -1,7 +1,11 @@
 {
   "outputDirectory": "public",
-  "installCommand": "PUPPETEER_SKIP_DOWNLOAD=true pnpm install --no-frozen-lockfile",
+  "installCommand": "pnpm install --no-frozen-lockfile",
   "buildCommand": "node scripts/setup-ort.js",
+  "env": {
+    "PUPPETEER_SKIP_DOWNLOAD": "true",
+    "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": "true"
+  },
   "github": {
     "autoJobCancelation": false
   },
