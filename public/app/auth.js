@@ -29,7 +29,7 @@ const USERS = [
     tier:         'FREE',
     role:         'user',
     filesUsed:    0,
-    filesAllowed: 3,
+    filesAllowed: Infinity,
   },
   {
     username:     'test_pro',
@@ -65,15 +65,13 @@ const USERS = [
     tier:         'FREE',
     role:         'user',
     filesUsed:    0,
-    filesAllowed: 3,
-  },
-];
+    filesAllowed: Infinity,
 
 // ── 2. Tier Capability Map ───────────────────────────────────────────────────
 const TIER_CAPS = {
   FREE: {
-    maxFileSizeMB:   50,
-    filesPerMonth:   3,
+    maxFileSizeMB:   Infinity,
+    filesPerMonth:   Infinity,
     maxStages:       8,
     mlModels:        [],
     exportFormats:   ['wav'],

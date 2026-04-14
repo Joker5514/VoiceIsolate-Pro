@@ -562,11 +562,6 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING ========
   async handleFile(file) {
     try {
-      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
-      const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB
-      if (file.size > MAX_FILE_SIZE) {
-        throw new Error('File too large (' + (file.size / (1024 * 1024)).toFixed(1) + ' MB). Maximum allowed size is 200 MB.');
-      }
       const LM = window.LicenseManager;
       if (LM && typeof LM.checkFileLimit === 'function') {
         const fileSizeMB = file.size / (1024 * 1024);
