@@ -96,12 +96,14 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._sampleRate = sampleRate; // AudioWorklet global
 
     // ── Working buffers ──────────────────────────────────────────────────────
-    this._inBuf    = new Float32Array(FFT_SIZE);
-    this._outBuf   = new Float32Array(FFT_SIZE);
+    this._inBuf        = new Float32Array(FFT_SIZE);
+    this._outBuf       = new Float32Array(FFT_SIZE);
+    this._outWindowSum = new Float32Array(FFT_SIZE);  // BUG 1 FIX: track window sum for normalized OLA
     this._writePos = 0;
     this._reBuffer = new Float32Array(FFT_SIZE);
     this._imBuffer = new Float32Array(FFT_SIZE);
     this._prevMag  = new Float32Array(NUM_BINS);
+    this._fastMag  = new Float32Array(NUM_BINS);      // BUG 3 FIX: fast EMA for spectral reference
     this._mlMask   = new Float32Array(NUM_BINS).fill(1);
 
     // ── SharedArrayBuffer rings ──────────────────────────────────────────────
@@ -203,8 +205,13 @@ class DSPProcessor extends AudioWorkletProcessor {
           this._processSpectralHop();
         }
 
+        // BUG 1 FIX: normalize by window sum and zero slots after read to prevent ghost bleed
         const readPos = (this._writePos - blockSize + n + FFT_SIZE) & (FFT_SIZE - 1);
-        outData[n] = this._outBuf[readPos] * this._params.outGain;
+        const wsum = this._outWindowSum[readPos];
+        const normalized = wsum > 1e-8 ? this._outBuf[readPos] / wsum : 0;
+        this._outBuf[readPos]       = 0;
+        this._outWindowSum[readPos] = 0;
+        outData[n] = normalized * this._params.outGain;
       }
     }
     return true;
@@ -233,10 +240,18 @@ class DSPProcessor extends AudioWorkletProcessor {
       phase[k] = Math.atan2(im[k], re[k]);
     }
 
-    // Stage 3: Noise profile (slow EMA)
-    const alpha = 0.005;
+    // Stage 3: Noise profile — BUG 3 FIX: dual EMA (slow floor + fast reference)
+    // Slow EMA tracks true background noise (~10s TC); only updates when bin is
+    // below the fast-tracked mean (i.e., non-speech). Fast EMA (~3 hops) provides
+    // a responsive spectral reference so transient speech peaks are not absorbed
+    // into the noise floor, eliminating ghost pre-echo / spectral smear artifacts.
+    const alphaSlow = 0.002;
+    const alphaFast = 0.15;
     for (let k = 0; k < NUM_BINS; k++) {
-      this._prevMag[k] = alpha * mag[k] + (1 - alpha) * this._prevMag[k];
+      if (mag[k] < this._fastMag[k] * 1.5) {
+        this._prevMag[k] = alphaSlow * mag[k] + (1 - alphaSlow) * this._prevMag[k];
+      }
+      this._fastMag[k] = alphaFast * mag[k] + (1 - alphaFast) * this._fastMag[k];
     }
 
     // Stage 4: Spectral subtraction — mag' = max(mag - β·noise, floor·mag)
@@ -275,9 +290,16 @@ class DSPProcessor extends AudioWorkletProcessor {
     for (let k = 0; k < NUM_BINS; k++) mag[k] *= this._mlMask[k];
 
     // Stage 8: Harmonic enhancement (even-order in spectral domain)
+    // BUG 2 FIX: stop 15% below Nyquist to prevent alias ghosts from energy
+    // folding back at the spectral boundary. Clamp at +6dB ceiling per bin.
     if (this._params.harmonicEnhance > 0) {
-      const h = this._params.harmonicEnhance * 0.1;
-      for (let k = 0; k < NUM_BINS; k++) mag[k] += h * mag[k] * mag[k];
+      const h        = this._params.harmonicEnhance * 0.1;
+      const guardBin = Math.floor(NUM_BINS * 0.85);
+      for (let k = 0; k < guardBin; k++) {
+        const enhanced = mag[k] + h * mag[k] * mag[k];
+        mag[k] = Math.min(enhanced, mag[k] * 2.0);
+      }
+      // leave bins guardBin..NUM_BINS-1 unmodified
     }
 
     // Reconstruct complex spectrum from modified magnitudes + original phase
@@ -295,10 +317,16 @@ class DSPProcessor extends AudioWorkletProcessor {
     fft(re, im, true);
 
     // Overlap-add into output ring buffer
-    const olaScale = FFT_SIZE / HOP_SIZE * 0.5;
+    // BUG 1 FIX + BUG 4 FIX: accumulate windowed samples and squared-window sum
+    // into parallel ring buffers. Per-sample normalization (outBuf / outWindowSum)
+    // happens at read time in process(), which also zeroes both slots — preventing
+    // stale energy from bleeding across hops (the primary ghost cause).
+    // The incorrect olaScale constant (was FFT_SIZE/HOP_SIZE*0.5 = 2.0) is removed
+    // entirely; normalization is now exact via the per-sample window sum.
     for (let i = 0; i < FFT_SIZE; i++) {
       const writeIdx = (this._writePos - FFT_SIZE + i + FFT_SIZE) & (FFT_SIZE - 1);
-      this._outBuf[writeIdx] += re[i] * HANN[i] / olaScale;
+      this._outBuf[writeIdx]       += re[i] * HANN[i];
+      this._outWindowSum[writeIdx] += HANN[i] * HANN[i];
     }
 
     this._frameCount++;
