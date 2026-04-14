@@ -43,7 +43,7 @@ const db = {
   },
   usage: {
     record: async (data) => {
-      const entry = { ...data, recordedAt: Date.now() };
+      const entry = { ...data, recordedAt: Math.floor(Date.now() / 1000) };
       _usageStore.push(entry);
       return entry;
     },
