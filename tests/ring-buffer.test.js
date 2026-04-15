@@ -163,6 +163,38 @@ describe('SharedRingBuffer — wraparound', () => {
       expect(out[i]).toBeCloseTo(i + 1, 5);
     }
   });
+
+  test('maintains FIFO order after writing an aggregate 1.5x capacity across wrap-around', () => {
+    const rb = new SharedRingBuffer(8, 8); // capacity = 64, usable = 63
+    const capacity = rb.capacity;
+
+    const totalToWrite = Math.floor(capacity * 1.5);
+    let nextValue = 0;
+    const readBack = [];
+
+    while (nextValue < totalToWrite) {
+      const chunkLen = Math.min(17, totalToWrite - nextValue);
+      while (rb.space() < chunkLen) {
+        const pullLen = Math.min(9, rb.available());
+        const partial = rb.pull(pullLen);
+        expect(partial).not.toBeNull();
+        for (let i = 0; i < partial.length; i++) readBack.push(partial[i]);
+      }
+      const chunk = new Float32Array(chunkLen);
+      for (let i = 0; i < chunkLen; i++) chunk[i] = nextValue + i;
+      expect(rb.push(chunk)).toBe(true);
+      nextValue += chunkLen;
+    }
+
+    const remaining = rb.pull(rb.available());
+    expect(remaining).not.toBeNull();
+    for (let i = 0; i < remaining.length; i++) readBack.push(remaining[i]);
+
+    expect(readBack.length).toBe(totalToWrite);
+    for (let i = 0; i < totalToWrite; i++) {
+      expect(readBack[i]).toBeCloseTo(i, 5);
+    }
+  });
 });
 
 describe('SharedRingBuffer — peek', () => {

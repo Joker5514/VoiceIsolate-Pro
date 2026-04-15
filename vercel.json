@@ -30,14 +30,18 @@
       "source": "/app/voice-isolate-processor.js",
       "headers": [
         { "key": "Content-Type",  "value": "application/javascript" },
-        { "key": "Cache-Control", "value": "no-cache" }
+        { "key": "Cache-Control", "value": "no-cache" },
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
       ]
     },
     {
       "source": "/app/dsp-processor.js",
       "headers": [
         { "key": "Content-Type",  "value": "application/javascript" },
-        { "key": "Cache-Control", "value": "no-cache" }
+        { "key": "Cache-Control", "value": "no-cache" },
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
       ]
     },
     {
@@ -49,7 +53,24 @@
         },
         {
           "key": "Cross-Origin-Resource-Policy",
-          "value": "same-origin"
+          "value": "cross-origin"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=604800, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/models/(.*)\\.onnx",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/octet-stream"
+        },
+        {
+          "key": "Cross-Origin-Resource-Policy",
+          "value": "cross-origin"
         },
         {
           "key": "Cache-Control",

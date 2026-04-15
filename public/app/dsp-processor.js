@@ -133,6 +133,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._outBuf       = new Float32Array(FFT_SIZE);
     this._outWindowSum = new Float32Array(FFT_SIZE);
     this._writePos     = 0;
+    this._readPos      = 0;
     this._reBuffer     = new Float32Array(FFT_SIZE);
     this._imBuffer     = new Float32Array(FFT_SIZE);
     this._prevMag      = new Float32Array(NUM_BINS);   // slow noise floor EMA
@@ -175,7 +176,6 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._deEssEnv  = [makeEnvFollower(), makeEnvFollower()];
     // Wideband envelope follower for gate sidechain
     this._gateEnv   = [makeEnvFollower(), makeEnvFollower()];
-    this._rebuildFilters(this._sampleRate);
 
     // ── DSP parameter state (updated via port.onmessage) ────────────────────
     // Mirrors the 52-slider SLIDER_MAP keys that are relevant to live mode
@@ -213,6 +213,7 @@ class DSPProcessor extends AudioWorkletProcessor {
       humReduce:        50,    // %
       bypass:        false,
     };
+    this._rebuildFilters(this._sampleRate);
 
     this._frameCount = 0;
     // How often to send SPECTRAL_FRAME to main thread (every N hops)
@@ -241,10 +242,21 @@ class DSPProcessor extends AudioWorkletProcessor {
         this._sampleRate = d.sampleRate || sampleRate;
         this._rebuildFilters(this._sampleRate);
         this._initLookahead();
+      } else if (d?.type === 'disconnect') {
+        this._resetSharedState();
       }
     };
+    // Reset shared state on port close so re-init starts from a clean cursor/frame state.
+    this.port.addEventListener('close', () => this._resetSharedState());
 
     this._initLookahead();
+  }
+
+  _resetSharedState() {
+    if (!this._hasSAB) return;
+    Atomics.store(this._flagsIn, 0, 0);
+    Atomics.store(this._flagsIn, 1, 0);
+    Atomics.store(this._flagsOut, 1, 0);
   }
 
   // Allocate lookahead ring buffer based on gateLookahead param
@@ -282,7 +294,20 @@ class DSPProcessor extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const input  = inputs[0];
     const output = outputs[0];
-    if (!input?.length || !output?.length) return true;
+    if (!output?.length) return true;
+    if (!input?.length) {
+      const blockSize = output[0]?.length || 0;
+      for (let n = 0; n < blockSize; n++) {
+        const readPos = (this._readPos + n) & (FFT_SIZE - 1);
+        const wsum    = this._outWindowSum[readPos];
+        const normalized = wsum > 1e-8 ? this._outBuf[readPos] / wsum : 0;
+        this._outBuf[readPos]       = 0;
+        this._outWindowSum[readPos] = 0;
+        for (let ch = 0; ch < output.length; ch++) output[ch][n] = normalized;
+      }
+      this._readPos = (this._readPos + blockSize) & (FFT_SIZE - 1);
+      return true;
+    }
 
     const numChannels = Math.min(input.length, output.length);
     const blockSize   = input[0].length;
@@ -307,8 +332,8 @@ class DSPProcessor extends AudioWorkletProcessor {
       const deEssEf  = this._deEssEnv[ch]  || this._deEssEnv[0];
       const gateEf   = this._gateEnv[ch]   || this._gateEnv[0];
 
-      // FIX v8.1: capture writePos BEFORE the sample loop so readPos is stable
-      const baseWritePos = this._writePos;
+      // Capture read pointer before processing this render quantum; advance once per block.
+      const baseReadPos = this._readPos;
 
       for (let n = 0; n < blockSize; n++) {
         let x = inData[n];
@@ -371,8 +396,7 @@ class DSPProcessor extends AudioWorkletProcessor {
           this._processSpectralHop();
         }
 
-        // FIX v8.1: use baseWritePos (pre-loop snapshot) for stable OLA read index
-        const readPos = (baseWritePos + n) & (FFT_SIZE - 1);
+        const readPos = (baseReadPos + n) & (FFT_SIZE - 1);
         const wsum    = this._outWindowSum[readPos];
         const normalized = wsum > 1e-8 ? this._outBuf[readPos] / wsum : 0;
         this._outBuf[readPos]       = 0;
@@ -383,6 +407,7 @@ class DSPProcessor extends AudioWorkletProcessor {
         outData[n]   = dry * (1 - dryWetFrac) + wetSig * dryWetFrac;
       }
     }
+    this._readPos = (this._readPos + blockSize) & (FFT_SIZE - 1);
     return true;
   }
 
@@ -406,7 +431,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     const mag   = this._magBuffer;
     const phase = this._phaseBuffer;
     for (let k = 0; k < NUM_BINS; k++) {
-      mag[k]   = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+      mag[k]   = Math.sqrt(re[k] * re[k] + im[k] * im[k]) || 0;
       phase[k] = Math.atan2(im[k], re[k]);
     }
 

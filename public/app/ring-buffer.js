@@ -41,15 +41,15 @@ class SharedRingBuffer {
     }
   }
   available() {
-    const w = Atomics.load(this.control, 0);
-    const r = Atomics.load(this.control, 1);
+    const w = Atomics.load(this.control, 0) % this.capacity;
+    const r = Atomics.load(this.control, 1) % this.capacity;
     return (w - r + this.capacity) % this.capacity;
   }
   space() { return this.capacity - 1 - this.available(); }
   push(samples) {
     const len = samples.length;
     if (len > this.space()) { Atomics.add(this.control, 3, 1); return false; }
-    let w = Atomics.load(this.control, 0);
+    let w = Atomics.load(this.control, 0) % this.capacity;
     const firstPart = Math.min(len, this.capacity - w);
     this.data.set(samples.subarray(0, firstPart), w);
     if (firstPart < len) this.data.set(samples.subarray(firstPart), 0);
@@ -59,7 +59,7 @@ class SharedRingBuffer {
   pull(count, dest) {
     if (this.available() < count) return null;
     const out = dest || new Float32Array(count);
-    let r = Atomics.load(this.control, 1);
+    let r = Atomics.load(this.control, 1) % this.capacity;
     const firstPart = Math.min(count, this.capacity - r);
     out.set(this.data.subarray(r, r + firstPart));
     if (firstPart < count) out.set(this.data.subarray(0, count - firstPart), firstPart);
@@ -69,7 +69,7 @@ class SharedRingBuffer {
   peek(count) {
     if (this.available() < count) return null;
     const out = new Float32Array(count);
-    const r = Atomics.load(this.control, 1);
+    const r = Atomics.load(this.control, 1) % this.capacity;
     const firstPart = Math.min(count, this.capacity - r);
     out.set(this.data.subarray(r, r + firstPart));
     if (firstPart < count) out.set(this.data.subarray(0, count - firstPart), firstPart);

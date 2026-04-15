@@ -238,7 +238,8 @@
     // ── Bind slider input events ─────────────────────────────────────────────
     _bindSliders() {
       for (const [sliderId, workletKey] of SLIDER_WORKLET_MAP) {
-        const el = document.getElementById(sliderId);
+        const altId = `slider-${sliderId.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
+        const el = document.getElementById(sliderId) || document.getElementById(altId);
         if (!el) continue;
 
         const isRT = el.classList.contains('realtime');

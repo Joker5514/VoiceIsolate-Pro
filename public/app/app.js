@@ -430,7 +430,12 @@ class VoiceIsolatePro {
     if (saveBtn) saveBtn.addEventListener('click', () => this.saveCustomPreset());
     const nameInput = document.getElementById('customPresetName');
     if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); this.saveCustomPreset(); } });
-    document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', () => this.onSlider(el)));
+    document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', async () => {
+      if (this.ctx && this.ctx.state === 'suspended') {
+        try { await this.ctx.resume(); } catch {}
+      }
+      this.onSlider(el);
+    }));
     document.querySelectorAll('.sr-row').forEach(r => {
       const showTt = () => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }};
       const hideTt = () => this.dom.tooltip.classList.remove('visible');
@@ -474,7 +479,11 @@ class VoiceIsolatePro {
   }
 
   onSlider(el) {
-    const id = el.dataset.param;
+    const rawId = el.dataset.param || el.id || '';
+    const id = rawId.startsWith('slider-')
+      ? rawId.replace(/^slider-/, '').replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+      : rawId;
+    if (!id) return;
     const v = parseFloat(el.value);
     this.params[id] = v;
     let unit = '';
@@ -587,7 +596,7 @@ class VoiceIsolatePro {
       this.isVideo = normalizedType.startsWith('video/');
       // Await AudioContext resume before decode — suspended context causes decodeAudioData to stall
       if (this.ctx.state === 'suspended') {
-        try { await this.ctx.resume(); } catch (_e) {}
+        try { await this.ctx.resume(); } catch {}
       }
       // Yield to browser paint cycle to prevent UI freeze on large files
       await new Promise(r => setTimeout(r, 0));

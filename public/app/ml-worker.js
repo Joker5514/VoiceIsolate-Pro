@@ -13,7 +13,8 @@
 //   so this worker never attempts to load models above the user's tier.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const NUM_BINS = 2049; // (4096 / 2) + 1
+const DEFAULT_NUM_BINS = 2049; // (4096 / 2) + 1
+const FLAG_SLOTS = 4;
 
 // ORT is loaded lazily inside initialize() — not at module top level —
 // so importScripts failures can be caught and reported gracefully.
@@ -29,6 +30,7 @@ let allowedModels = [];
 let allowedStages = 8;
 let lastFrame     = -1;
 let pollTimer     = null;
+let currentNumBins = DEFAULT_NUM_BINS;
 
 // ── Default models loaded on bare init (no payload) ──────────────────────────
 const DEFAULT_MODELS = ['vad', 'deepfilter', 'demucs'];
@@ -90,8 +92,9 @@ self.onmessage = async (ev) => {
       if (inputSAB && outputSAB) {
         inputView  = new Float32Array(inputSAB);
         outputView = new Float32Array(outputSAB);
-        flagsIn    = new Int32Array(inputSAB,  NUM_BINS * 4, 4);
-        flagsOut   = new Int32Array(outputSAB, NUM_BINS * 4, 4);
+        currentNumBins = Math.max(1, inputView.length - FLAG_SLOTS);
+        flagsIn    = new Int32Array(inputSAB,  currentNumBins * 4, FLAG_SLOTS);
+        flagsOut   = new Int32Array(outputSAB, currentNumBins * 4, FLAG_SLOTS);
         startPollLoop();
       }
 
@@ -122,7 +125,9 @@ self.onmessage = async (ev) => {
   if (type === 'process') {
     if (!ort || (!inputView && !(payload && payload.magnitudes))) return;
 
-    const magnitudes = new Float32Array((payload && payload.magnitudes) || inputView.subarray(0, NUM_BINS));
+    const magnitudes = payload && payload.magnitudes
+      ? new Float32Array(payload.magnitudes)
+      : new Float32Array(inputView.subarray(0, currentNumBins));
     const mask       = await buildMask(magnitudes);
 
     const output = new Float32Array(mask);
@@ -187,13 +192,12 @@ async function loadModels(basePath, providers, modelList) {
     const eps      = await resolveProviders(providers);
 
     try {
-      sessions[modelId] = await ort.InferenceSession.create(modelUrl, {
-        executionProviders: ['webgpu', 'wasm'],
-        graphOptimizationLevel: 'all',
-      });
+      const { session, provider } = await createSessionWithFallback(modelUrl);
+      sessions[modelId] = session;
+      await warmupSession(modelId, session);
       modelStatus[modelId] = true;
       self.postMessage({ type: 'model_loaded', modelId, providers: eps });
-      console.info(`[ml-worker] ${modelId} loaded via ${eps.join(',')}`);
+      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')}`);
     } catch (err) {
       modelStatus[modelId] = false;
       const errMsg = modelId === 'vad'
@@ -223,6 +227,38 @@ async function resolveProviders(providers) {
   return eps;
 }
 
+async function createSessionWithFallback(modelUrl) {
+  try {
+    const session = await ort.InferenceSession.create(modelUrl, {
+      executionProviders: ['webgpu', 'wasm'],
+      graphOptimizationLevel: 'all',
+    });
+    return { session, provider: 'webgpu' };
+  } catch {
+    const session = await ort.InferenceSession.create(modelUrl, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    });
+    return { session, provider: 'wasm' };
+  }
+}
+
+async function warmupSession(modelId, session) {
+  if (!session || typeof session.run !== 'function') return;
+  try {
+    const dims = modelId === 'demucs' || modelId === 'demucs-v4'
+      ? [1, 1, currentNumBins]
+      : [1, currentNumBins];
+    const input = new ort.Tensor('float32', new Float32Array(currentNumBins), dims);
+    const feeds = modelId === 'demucs' || modelId === 'demucs-v4'
+      ? { mag_input: input }
+      : { input };
+    await session.run(feeds);
+  } catch (err) {
+    console.warn(`[ml-worker] ${modelId} warm-up skipped:`, err.message);
+  }
+}
+
 // ── 4. SAB polling loop (50 Hz) ───────────────────────────────────────────────
 function startPollLoop() {
   pollTimer = setInterval(pollOnce, 20);
@@ -234,7 +270,7 @@ async function pollOnce() {
   if (currentFrame === lastFrame) return;
   lastFrame = currentFrame;
 
-  const magnitudes = new Float32Array(inputView.subarray(0, NUM_BINS));
+  const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
   const mask       = await buildMask(magnitudes);
 
   outputView.set(mask);
@@ -243,20 +279,21 @@ async function pollOnce() {
 
 // ── 5. Combined mask inference pipeline ──────────────────────────────────────
 async function buildMask(magnitudes) {
-  const mask = new Float32Array(NUM_BINS).fill(1.0);
+  const numBins = magnitudes.length;
+  const mask = new Float32Array(numBins).fill(1.0);
 
   // VAD gate (silero-vad / vad)
   const vadSess = sessions['vad'] || sessions['silero-vad'];
   if (vadSess && allowedStages >= 5) {
     try {
-      const vadInput = new ort.Tensor('float32', magnitudes, [1, NUM_BINS]);
+      const vadInput = new ort.Tensor('float32', magnitudes, [1, numBins]);
       const result   = await vadSess.run({ input: vadInput });
       const vadProb  = result.output.data;
       if (vadProb.length === 1) {
         const gate = Math.max(0, vadProb[0] * 2 - 0.5);
-        for (let k = 0; k < NUM_BINS; k++) mask[k] *= gate;
+        for (let k = 0; k < numBins; k++) mask[k] *= gate;
       } else {
-        for (let k = 0; k < NUM_BINS; k++) mask[k] *= vadProb[k];
+        for (let k = 0; k < numBins; k++) mask[k] *= vadProb[k];
       }
     } catch (e) {
       console.warn('[ml-worker] vad error:', e.message);
@@ -267,10 +304,10 @@ async function buildMask(magnitudes) {
   const demucsSess = sessions['demucs'] || sessions['demucs-v4'];
   if (demucsSess && allowedStages >= 10) {
     try {
-      const demucsIn = new ort.Tensor('float32', magnitudes, [1, 1, NUM_BINS]);
+      const demucsIn = new ort.Tensor('float32', magnitudes, [1, 1, numBins]);
       const result   = await demucsSess.run({ mag_input: demucsIn });
       const vocalMask = result.vocal_mask.data;
-      for (let k = 0; k < NUM_BINS; k++) {
+      for (let k = 0; k < numBins; k++) {
         mask[k] = Math.min(mask[k], Math.max(0, vocalMask[k]));
       }
     } catch (e) {
@@ -281,10 +318,10 @@ async function buildMask(magnitudes) {
   // RNNoise residual noise suppression
   if (sessions['rnnoise'] && allowedStages >= 8) {
     try {
-      const rnIn   = new ort.Tensor('float32', magnitudes, [1, NUM_BINS]);
+      const rnIn   = new ort.Tensor('float32', magnitudes, [1, numBins]);
       const result = await sessions['rnnoise'].run({ input: rnIn });
       const rnMask = result.output.data;
-      for (let k = 0; k < NUM_BINS; k++) {
+      for (let k = 0; k < numBins; k++) {
         mask[k] *= Math.max(0.01, rnMask[k]); // floor prevents total silence
       }
     } catch (e) {
@@ -295,10 +332,10 @@ async function buildMask(magnitudes) {
   // VoiceFixer harmonic restoration (ENTERPRISE only)
   if (sessions['voicefixer'] && allowedStages >= 14) {
     try {
-      const vfIn   = new ort.Tensor('float32', magnitudes, [1, NUM_BINS]);
+      const vfIn   = new ort.Tensor('float32', magnitudes, [1, numBins]);
       const result = await sessions['voicefixer'].run({ input: vfIn });
       const vfGain = result.gain.data;
-      for (let k = 0; k < NUM_BINS; k++) {
+      for (let k = 0; k < numBins; k++) {
         mask[k] = mask[k] * (0.5 + 0.5 * Math.min(2, vfGain[k]));
       }
     } catch (e) {
