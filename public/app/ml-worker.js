@@ -1,16 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  ml-worker.js  —  VoiceIsolate Pro · Threads from Space v8
-//  Standard Web Worker (NOT AudioWorklet).
+// ml-worker.js — VoiceIsolate Pro · Threads from Space v8
+// Standard Web Worker (NOT AudioWorklet).
 //
-//  Responsibilities:
-//    1. Load ONNX models via onnxruntime-web (WebGPU → WASM fallback)
-//    2. Poll SharedArrayBuffer for new magnitude frames from dsp-processor
-//    3. Run inference pipeline to produce a combined soft mask
-//    4. Write mask back to outputSAB for dsp-processor to apply in-band
+// Responsibilities:
+//   1. Load ONNX models via onnxruntime-web (WebGPU → WASM fallback)
+//   2. Poll SharedArrayBuffer for new magnitude frames from dsp-processor
+//   3. Run inference pipeline to produce a combined soft mask
+//   4. Write mask back to outputSAB for dsp-processor to apply in-band
 //
-//  Tier gating:
-//    Main thread passes allowedModels[] and allowedStages from auth.js getCaps()
-//    so this worker never attempts to load models above the user's tier.
+// Tier gating:
+//   Main thread passes allowedModels[] and allowedStages from auth.js getCaps()
+//   so this worker never attempts to load models above the user's tier.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const NUM_BINS = 2049; // (4096 / 2) + 1
@@ -19,7 +19,7 @@ const NUM_BINS = 2049; // (4096 / 2) + 1
 // so importScripts failures can be caught and reported gracefully.
 let ort = null;
 
-let inputView  = null; // Float32Array view of inputSAB  (magnitudes written by DSP)
+let inputView  = null; // Float32Array view of inputSAB (magnitudes written by DSP)
 let outputView = null; // Float32Array view of outputSAB (mask written here)
 let flagsIn    = null; // Int32Array: [frameCounter, ...]
 let flagsOut   = null; // Int32Array: [..., maskReady]
@@ -78,10 +78,10 @@ self.onmessage = async (ev) => {
       const {
         inputSAB,
         outputSAB,
-        modelBasePath      = './models/',
-        preferredProviders = ['webgpu', 'wasm'],
-        allowedModels: am  = DEFAULT_MODELS,
-        allowedStages: as_ = 8,
+        modelBasePath       = './models/',
+        preferredProviders  = ['webgpu', 'wasm'],
+        allowedModels: am   = DEFAULT_MODELS,
+        allowedStages: as_  = 8,
       } = payload;
 
       allowedModels = am;
@@ -123,7 +123,7 @@ self.onmessage = async (ev) => {
     if (!ort || (!inputView && !(payload && payload.magnitudes))) return;
 
     const magnitudes = new Float32Array((payload && payload.magnitudes) || inputView.subarray(0, NUM_BINS));
-    const mask = await buildMask(magnitudes);
+    const mask       = await buildMask(magnitudes);
 
     const output = new Float32Array(mask);
     self.postMessage({ type: 'processed', output }, [output.buffer]);
@@ -188,7 +188,7 @@ async function loadModels(basePath, providers, modelList) {
 
     try {
       sessions[modelId] = await ort.InferenceSession.create(modelUrl, {
-        executionProviders:     eps,
+        executionProviders: ['webgpu', 'wasm'],
         graphOptimizationLevel: 'all',
       });
       modelStatus[modelId] = true;
@@ -267,8 +267,8 @@ async function buildMask(magnitudes) {
   const demucsSess = sessions['demucs'] || sessions['demucs-v4'];
   if (demucsSess && allowedStages >= 10) {
     try {
-      const demucsIn  = new ort.Tensor('float32', magnitudes, [1, 1, NUM_BINS]);
-      const result    = await demucsSess.run({ mag_input: demucsIn });
+      const demucsIn = new ort.Tensor('float32', magnitudes, [1, 1, NUM_BINS]);
+      const result   = await demucsSess.run({ mag_input: demucsIn });
       const vocalMask = result.vocal_mask.data;
       for (let k = 0; k < NUM_BINS; k++) {
         mask[k] = Math.min(mask[k], Math.max(0, vocalMask[k]));
