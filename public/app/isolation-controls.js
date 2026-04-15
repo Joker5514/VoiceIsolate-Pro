@@ -313,7 +313,7 @@ async function _enrollFromSegments(speakerId) {
     type: 'enrollFromDiarization',
     payload: { speakerId },
   });
-  _setVoiceprintStatus(`Reference set: ${speakerId} ✓`, 'ready');
+  // Status will be updated when worker responds with 'voiceprintEnrolled'
 }
 
 function _setVoiceprintStatus(msg, state = 'idle') {
