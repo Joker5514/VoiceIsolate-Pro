@@ -460,4 +460,3 @@ input[type="range"]:focus-visible::-moz-range-thumb{
 .speaker-dot.is-active{
   animation:vip-speaker-pulse 1.2s ease-in-out infinite;
 }
-}
