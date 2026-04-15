@@ -164,6 +164,7 @@ async function extractAudioFromVideo(file, mime) {
   const offlineCtx = new OfflineAudioContext(2, Math.ceil(videoEl.duration * sr), sr);
   const src        = offlineCtx.createMediaElementSource(videoEl);
   src.connect(offlineCtx.destination);
+  videoEl.muted = true;
   videoEl.play();
 
   const rendered = await offlineCtx.startRendering();
