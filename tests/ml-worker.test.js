@@ -170,6 +170,7 @@ describe('ml-worker.js', () => {
     expect(processed.output.length).toBe(chunkSize);
     expect(demucsRun).toHaveBeenCalled();
     const processCall = demucsRun.mock.calls.find(([feeds]) => feeds && feeds.mag_input);
+    expect(processCall).toBeDefined();
     expect(processCall[0].mag_input.dims).toEqual([1, 1, chunkSize]);
 
     await workerGlobal.self.onmessage({ data: { type: 'reset' } });

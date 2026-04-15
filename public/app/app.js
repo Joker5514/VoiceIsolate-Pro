@@ -201,6 +201,7 @@ class VoiceIsolatePro {
     this._mlCallId = 0;
     this._rndBuf = new Uint32Array(4096);
     this._rndIdx = 0;
+    this._sliderContextResumed = false;
     this.init();
   }
 
@@ -431,9 +432,10 @@ class VoiceIsolatePro {
     const nameInput = document.getElementById('customPresetName');
     if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); this.saveCustomPreset(); } });
     document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', async () => {
-      if (this.ctx && this.ctx.state === 'suspended') {
+      if (!this._sliderContextResumed && this.ctx && this.ctx.state === 'suspended') {
         try { await this.ctx.resume(); } catch {}
       }
+      this._sliderContextResumed = true;
       this.onSlider(el);
     }));
     document.querySelectorAll('.sr-row').forEach(r => {

@@ -193,8 +193,8 @@ async function loadModels(basePath, providers, modelList) {
 
     try {
       const { session, provider } = await createSessionWithFallback(modelUrl);
-      sessions[modelId] = session;
       await warmupSession(modelId, session);
+      sessions[modelId] = session;
       modelStatus[modelId] = true;
       self.postMessage({ type: 'model_loaded', modelId, providers: eps });
       console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')}`);
@@ -234,7 +234,8 @@ async function createSessionWithFallback(modelUrl) {
       graphOptimizationLevel: 'all',
     });
     return { session, provider: 'webgpu' };
-  } catch {
+  } catch (err) {
+    console.warn('[ml-worker] WebGPU session creation failed, falling back to WASM:', err?.message || err);
     const session = await ort.InferenceSession.create(modelUrl, {
       executionProviders: ['wasm'],
       graphOptimizationLevel: 'all',
@@ -255,7 +256,10 @@ async function warmupSession(modelId, session) {
       : { input };
     await session.run(feeds);
   } catch (err) {
-    console.warn(`[ml-worker] ${modelId} warm-up skipped:`, err.message);
+    console.warn('[ml-worker] warm-up skipped', {
+      modelId,
+      reason: String(err && err.message ? err.message : err),
+    });
   }
 }
 

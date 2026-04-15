@@ -245,8 +245,8 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
     }
   });
 
-  test('ONNX model route sets Cross-Origin-Resource-Policy to cross-origin', () => {
-    const modelHeaders = cfg.headers.find((h) => h.source === '/app/models/(.*)\\.onnx');
+  test('/models ONNX route sets Cross-Origin-Resource-Policy to cross-origin', () => {
+    const modelHeaders = cfg.headers.find((h) => h.source === '/models/(.*)\\.onnx');
     expect(modelHeaders).toBeDefined();
     const corp = modelHeaders.headers.find((h) => h.key === 'Cross-Origin-Resource-Policy');
     expect(corp).toBeDefined();

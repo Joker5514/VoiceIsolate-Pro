@@ -7,7 +7,7 @@ const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf
 const workletInitJs = fs.readFileSync(path.join(__dirname, '../public/app/pipeline-orchestrator-worklet-init.js'), 'utf8');
 
 function getSliderIds() {
-  const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\n\nconst SLIDER_MAP/);
+  const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\s*const SLIDER_MAP/);
   const slidersBlock = slidersBlockMatch ? slidersBlockMatch[1] : '';
   const sliderIdRegex = /id:'(\w+)'/g;
   const sliderIds = [];
