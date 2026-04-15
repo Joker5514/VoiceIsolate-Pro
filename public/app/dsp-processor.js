@@ -103,7 +103,8 @@ function processBiquad(bq, x) {
 
 // ── Simple peak-envelope follower for de-essing ──────────────────────────────
 function makeEnvFollower() {
-  return { env: 0, attack: 0.0005, release: 0.05 };
+  return { env: 0, attack: 0.05, release: 0.0005 };
+}
 }
 function processEnvFollower(ef, x) {
   const abs = Math.abs(x);
