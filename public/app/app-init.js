@@ -9,6 +9,7 @@ import {
   getCaps,
   getAllowedStages,
   checkFileSizeLimit,
+  checkFilesRemaining,
   incrementFileUsage
 } from './auth.js';
 
@@ -26,33 +27,21 @@ if (logoutBtn) {
   logoutBtn.addEventListener('click', logout);
 }
 
-// File size guard on the upload input
-document.getElementById('fileBtn')?.addEventListener('change', e => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const sizeMB = file.size / (1024 * 1024);
-  if (!checkFileSizeLimit(sizeMB)) {
-    alert(
-      `Your ${session.tier} tier allows files up to ` +
-      `${caps.maxFileSizeMB === Infinity ? 'unlimited' : caps.maxFileSizeMB + ' MB'}. ` +
-      `This file is ${sizeMB.toFixed(1)} MB.`
-    );
-    e.target.value = '';
-  }
-});
+const getById = (...ids) => ids.map(id => document.getElementById(id)).find(Boolean) ?? null;
 
 // ─── 2. SHARED ARRAY BUFFERS ─────────────────────────────────────────────────
 // Layout (bytes):
 //   inputSAB  [0 .. NUMBINS*4-1]  Float32 magnitudes written by dsp-processor
-//             [NUMBINS*4 .. +7]   Int32[0]=frameCounter, Int32[1]=reserved
+//             [NUMBINS*4 .. +15]  Int32 flags[4]
 //   outputSAB [0 .. NUMBINS*4-1]  Float32 mask written by ml-worker
-//             [NUMBINS*4 .. +7]   Int32[0]=maskReady flag
+//             [NUMBINS*4 .. +15]  Int32 flags[4]
 const FFTSIZE  = 4096;
 const NUMBINS  = FFTSIZE / 2 + 1;   // 2049
 const F32BYTES = NUMBINS * 4;
 
-const inputSAB  = new SharedArrayBuffer(F32BYTES + 16);
-const outputSAB = new SharedArrayBuffer(F32BYTES + 16);
+const FLAG_BYTES = Int32Array.BYTES_PER_ELEMENT * 4;
+const inputSAB  = new SharedArrayBuffer(F32BYTES + FLAG_BYTES);
+const outputSAB = new SharedArrayBuffer(F32BYTES + FLAG_BYTES);
 
 // ─── 3. APP STATE ────────────────────────────────────────────────────────────
 const App = {
@@ -88,13 +77,15 @@ async function initAudio() {
 
   // Receive RMS meter events from the worklet
   App.workletNode.port.onmessage = ev => {
-    if (ev.data?.type === 'meter') {
-      const db = 20 * Math.log10(Math.max(ev.data.rms, 1e-9));
-      const el = document.getElementById('meter-rms');
-      if (el) el.textContent = db.toFixed(1);
+    if (ev.data?.type === 'SPECTRAL_FRAME') {
+      const db = 20 * Math.log10(Math.max(ev.data.rms ?? 0, 1e-9));
+      const el = getById('hRMS', 'meter-rms');
+      if (el) el.textContent = `${db.toFixed(1)} dB`;
+      const status = getById('pipeStage', 'pipelineStage', 'hStatus');
+      if (status) status.textContent = `Frame ${ev.data.frame ?? 0}`;
     }
     if (ev.data?.type === 'pipeline-stage') {
-      const el = document.getElementById('pipelineStage');
+      const el = getById('pipeStage', 'pipelineStage', 'hStatus');
       if (el) el.textContent = ev.data.stage;
     }
   };
@@ -110,7 +101,7 @@ function initMLWorker() {
     App.mlWorker = null;
   }
 
-  App.mlWorker = new Worker('./ml-worker.js', { type: 'module' });
+  App.mlWorker = new Worker('./ml-worker.js');
 
   App.mlWorker.postMessage({
     type: 'init',
@@ -126,17 +117,20 @@ function initMLWorker() {
 
   App.mlWorker.onmessage = ev => {
     const { type, modelId, providers, latencyMs, error } = ev.data ?? {};
-    if (type === 'model-loaded') {
+    if (type === 'model_loaded') {
       console.info(`[ml-worker] ✓ ${modelId} via ${providers?.join(',') ?? '?'}`);
       const el = document.getElementById('stat-worker-latency');
       if (el && latencyMs != null) el.textContent = latencyMs.toFixed(0);
     }
-    if (type === 'model-error') {
-      console.warn(`[ml-worker] ✗ ${modelId}: ${error}`);
+    if (type === 'log' && ev.data?.level === 'warn') {
+      console.warn(`[ml-worker] ${ev.data?.msg ?? 'warning'}`);
     }
     if (type === 'ready') {
-      const pill = document.getElementById('pipelineStage');
+      const pill = getById('pipeStage', 'pipelineStage', 'hStatus');
       if (pill) pill.textContent = 'ML Ready';
+    }
+    if (type === 'error') {
+      console.warn(`[ml-worker] ✗ ${error ?? ev.data?.msg ?? 'unknown error'}`);
     }
   };
 
@@ -174,7 +168,7 @@ document.querySelectorAll('input[type="range"][id^="slider-"]').forEach(el => {
 });
 
 // ─── 7. LIVE MODE ────────────────────────────────────────────────────────────
-const liveBtn = document.getElementById('btn-live');
+const liveBtn = getById('btn-live', 'micBtn');
 if (liveBtn) {
   liveBtn.addEventListener('click', async () => {
     await initAudio();
@@ -185,7 +179,12 @@ if (liveBtn) {
       App.liveSource?.disconnect();
       App.liveStream = null;
       App.liveSource  = null;
-      liveBtn.textContent = 'Start Live';
+      if (liveBtn.id === 'micBtn') {
+        const label = document.getElementById('micLabel');
+        if (label) label.textContent = 'Record';
+      } else {
+        liveBtn.textContent = 'Start Live';
+      }
       liveBtn.classList.remove('vip-btn--active');
       return;
     }
@@ -202,7 +201,12 @@ if (liveBtn) {
       });
       App.liveSource = App.ctx.createMediaStreamSource(App.liveStream);
       App.liveSource.connect(App.workletNode);
-      liveBtn.textContent = 'Stop Live';
+      if (liveBtn.id === 'micBtn') {
+        const label = document.getElementById('micLabel');
+        if (label) label.textContent = 'Stop';
+      } else {
+        liveBtn.textContent = 'Stop Live';
+      }
       liveBtn.classList.add('vip-btn--active');
 
       // Boot the ML worker once mic is confirmed live
@@ -226,7 +230,7 @@ async function loadFile(file) {
   }
 
   const setStatus = msg => {
-    const el = document.getElementById('pipelineStage');
+    const el = getById('pipeStage', 'pipelineStage', 'hStatus');
     if (el) el.textContent = msg;
   };
 
@@ -237,14 +241,14 @@ async function loadFile(file) {
     App.fileBuffer = await tmpCtx.decodeAudioData(arrayBuffer);
     await tmpCtx.close();
 
-    drawWaveform(App.fileBuffer, 'inputCanvas');
+    drawWaveform(App.fileBuffer, 'waveformOrig');
 
-    const srEl = document.getElementById('stat-sr');
-    const chEl = document.getElementById('stat-channels');
+    const srEl = getById('hSR', 'stat-sr');
+    const chEl = getById('hCh', 'stat-channels');
     if (srEl) srEl.textContent = App.fileBuffer.sampleRate;
     if (chEl) chEl.textContent = App.fileBuffer.numberOfChannels;
 
-    document.getElementById('btn-process')?.removeAttribute('disabled');
+    getById('processBtn', 'btn-process')?.removeAttribute('disabled');
     setStatus('Ready');
   } catch (err) {
     setStatus('Decode error');
@@ -253,7 +257,35 @@ async function loadFile(file) {
 }
 
 // Drag-drop
-const dropzone = document.getElementById('dropzone');
+const dropzone = getById('uploadZone', 'dropzone');
+const fileInput = getById('fileInput', 'file-input');
+const fileBtn = getById('fileBtn');
+
+if (fileBtn && fileInput) {
+  fileBtn.addEventListener('click', e => {
+    e.preventDefault();
+    fileInput.click();
+  });
+}
+
+if (fileInput) {
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const sizeMB = file.size / (1024 * 1024);
+    if (!checkFileSizeLimit(sizeMB)) {
+      alert(
+        `Your ${session.tier} tier allows files up to ` +
+        `${caps.maxFileSizeMB === Infinity ? 'unlimited' : caps.maxFileSizeMB + ' MB'}. ` +
+        `This file is ${sizeMB.toFixed(1)} MB.`
+      );
+      e.target.value = '';
+      return;
+    }
+    loadFile(file);
+  });
+}
+
 if (dropzone) {
   ['dragenter', 'dragover'].forEach(ev =>
     dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('over'); })
@@ -267,32 +299,30 @@ if (dropzone) {
   });
 }
 
-// File input button
-document.getElementById('fileBtn')?.addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (file) loadFile(file);
-}, { capture: false });
-
 // ─── 9. CREATOR / FORENSIC MODE (OfflineAudioContext) ───────────────────────
-const processBtn = document.getElementById('btn-process');
+const processBtn = getById('processBtn', 'btn-process');
 if (processBtn) {
   processBtn.addEventListener('click', async () => {
     if (!App.fileBuffer) return;
 
     const setStage = s => {
-      const el = document.getElementById('pipelineStage');
+      const el = getById('pipeStage', 'pipelineStage', 'hStatus');
       if (el) el.textContent = s;
     };
     const fillBar = pct => {
-      const el = document.getElementById('pipelineFill');
-      if (el) el.style.width = pct + '%';
+      const el = getById('pipeFill', 'pipelineFill');
+      if (el) el.style.width = `${pct}%`;
     };
 
     await initAudio();
-    initMLWorker();
+    if (!checkFilesRemaining()) {
+      setStage('Monthly file limit reached');
+      alert(`Your ${session.tier} tier monthly processing limit has been reached.`);
+      return;
+    }
     incrementFileUsage();
 
-    setStage('Rendering…'); fillBar(10);
+    setStage('Rendering (offline DSP, ML disabled)…'); fillBar(10);
 
     const { numberOfChannels, length, sampleRate } = App.fileBuffer;
     const offline = new OfflineAudioContext(numberOfChannels, length, sampleRate);
@@ -303,7 +333,7 @@ if (processBtn) {
       numberOfInputs:     1,
       numberOfOutputs:    1,
       outputChannelCount: [numberOfChannels],
-      processorOptions:   { inputSAB, outputSAB }
+      processorOptions:   {}
     });
 
     // Send current slider params to the offline worklet
@@ -319,7 +349,7 @@ if (processBtn) {
     App.processedBuffer = await offline.startRendering();
 
     fillBar(100); setStage('Done ✓');
-    drawWaveform(App.processedBuffer, 'outputCanvas');
+    drawWaveform(App.processedBuffer, 'waveformCanvas');
     document.getElementById('btn-export')?.removeAttribute('disabled');
   });
 }
