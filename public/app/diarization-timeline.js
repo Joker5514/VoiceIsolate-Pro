@@ -389,15 +389,38 @@ function _zoom(factor) {
   _render();
 }
 
+function _resizeTimelineCanvas() {
+  if (!Timeline.canvas || !Timeline.container) return;
+  const speakerCount = Math.max(1, Object.keys(Timeline.speakers).length);
+  Timeline.canvas.width  = Timeline.container.clientWidth;
+  Timeline.canvas.height = HEADER_HEIGHT + speakerCount * TRACK_HEIGHT;
+  _render();
+}
+
 function _bindResize() {
-  const ro = new ResizeObserver(() => {
-    if (!Timeline.canvas || !Timeline.container) return;
-    const speakerCount = Math.max(1, Object.keys(Timeline.speakers).length);
-    Timeline.canvas.width  = Timeline.container.clientWidth;
-    Timeline.canvas.height = HEADER_HEIGHT + speakerCount * TRACK_HEIGHT;
-    _render();
-  });
-  ro.observe(Timeline.container);
+  if (!Timeline.canvas || !Timeline.container) return;
+
+  if (Timeline.resizeObserver && typeof Timeline.resizeObserver.disconnect === 'function') {
+    Timeline.resizeObserver.disconnect();
+  }
+  if (Timeline.resizeFallbackHandler) {
+    window.removeEventListener('resize', Timeline.resizeFallbackHandler);
+    Timeline.resizeFallbackHandler = null;
+  }
+
+  if (typeof ResizeObserver !== 'undefined') {
+    Timeline.resizeObserver = new ResizeObserver(() => {
+      _resizeTimelineCanvas();
+    });
+    Timeline.resizeObserver.observe(Timeline.container);
+  } else {
+    Timeline.resizeFallbackHandler = () => {
+      _resizeTimelineCanvas();
+    };
+    window.addEventListener('resize', Timeline.resizeFallbackHandler);
+  }
+
+  _resizeTimelineCanvas();
 }
 
 // ─────────────────────────────────────────────
