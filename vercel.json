@@ -38,6 +38,9 @@
       "headers": [
         { "key": "Content-Type",  "value": "application/javascript" },
         { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
       "source": "/app/models/(.*)\\.onnx",
       "headers": [
         {
