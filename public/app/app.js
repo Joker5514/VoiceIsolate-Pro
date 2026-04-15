@@ -564,16 +564,11 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING ========
   async handleFile(file) {
     try {
-      const sizeCapMB = 200;
-      const fileSizeMB = file.size / (1024 * 1024);
-      if (fileSizeMB > sizeCapMB) {
-        throw new Error(`File too large: ${fileSizeMB.toFixed(1)} MB. The hard limit is ${sizeCapMB} MB.`);
-      }
       const LM = window.LicenseManager;
       if (LM && typeof LM.checkFileLimit === 'function') {
         const fileSizeMB = file.size / (1024 * 1024);
         const check = LM.checkFileLimit(fileSizeMB, 0);
-        if (!check.allowed) throw new Error(check.reason);
+        if (!check.allowed && check.reason && !check.reason.includes('size')) throw new Error(check.reason);
       }
 
       const normalizedType = (file.type || '').toLowerCase();

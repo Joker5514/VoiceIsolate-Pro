@@ -23,7 +23,7 @@ const LicenseManager = (() => {
       color: '#6b7280',
       badge: null,
       limits: {
-        fileSizeMB: 50,
+        fileSizeMB: -1,
         durationMinutes: 5,
         exportsPerDay: 3,
         batchFiles: 0,
@@ -72,7 +72,7 @@ const LicenseManager = (() => {
       color: '#6366f1',
       badge: 'Most Popular',
       limits: {
-        fileSizeMB: 500,
+        fileSizeMB: -1,
         durationMinutes: 120,
         exportsPerDay: 50,
         batchFiles: 10,
@@ -121,7 +121,7 @@ const LicenseManager = (() => {
       color: '#f59e0b',
       badge: 'Best Value',
       limits: {
-        fileSizeMB: 2000,
+        fileSizeMB: -1,
         durationMinutes: -1,    // unlimited
         exportsPerDay: -1,
         batchFiles: 100,
