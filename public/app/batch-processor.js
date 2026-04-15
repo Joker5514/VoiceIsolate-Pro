@@ -174,6 +174,7 @@ const BatchProcessor = (() => {
   // ─── Audio Utilities ──────────────────────────────────────────────────────────
   function _readFile(file, signal) {
     return new Promise((resolve, reject) => {
+      if (signal.aborted) { reject(new Error('Cancelled')); return; }
       const reader = new FileReader();
       reader.onload = e => resolve(e.target.result);
       reader.onerror = () => reject(new Error('File read error'));

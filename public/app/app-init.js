@@ -520,7 +520,7 @@ function wireFileInput() {
     showToast(`Loaded: ${file.name}`, 'success');
   }
 
-  fileInput?.addEventListener('change', (e) => handleFile(e.target.files[0]));
+  fileInput?.addEventListener('change', (e) => { handleFile(e.target.files[0]); e.target.value = ''; });
 
   if (dropZone) {
     dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
