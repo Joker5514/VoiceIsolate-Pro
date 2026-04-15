@@ -568,7 +568,9 @@ class VoiceIsolatePro {
       if (LM && typeof LM.checkFileLimit === 'function') {
         const fileSizeMB = file.size / (1024 * 1024);
         const check = LM.checkFileLimit(fileSizeMB, 0);
-        if (!check.allowed && check.reason && !check.reason.includes('size')) throw new Error(check.reason);
+        if (!check.allowed) {
+          throw new Error(check.reason || 'This file exceeds the limits for your current plan.');
+        }
       }
 
       const normalizedType = (file.type || '').toLowerCase();
