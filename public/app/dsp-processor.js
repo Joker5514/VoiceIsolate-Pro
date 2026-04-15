@@ -125,6 +125,8 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._imBuffer     = new Float32Array(FFT_SIZE);
     this._prevMag      = new Float32Array(NUM_BINS);   // slow noise floor EMA
     this._fastMag      = new Float32Array(NUM_BINS);   // fast spectral reference EMA
+    this._magBuffer    = new Float32Array(NUM_BINS);
+    this._phaseBuffer  = new Float32Array(NUM_BINS);
     this._mlMask       = new Float32Array(NUM_BINS).fill(1);
 
     // ── SharedArrayBuffer rings ──────────────────────────────────────────────
