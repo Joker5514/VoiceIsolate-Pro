@@ -166,7 +166,6 @@
       const orch = window._pipelineOrchestrator || window._vipApp?._orchestrator;
       if (orch && !orch.workletNode) {
         orch.workletNode = this._node;
-        if (!orch.ctx) orch.ctx = audioCtx;
       }
       try { this._node.port.start(); } catch (_) {}
 

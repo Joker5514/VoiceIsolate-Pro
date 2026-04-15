@@ -16,6 +16,10 @@ const FFT_SIZE = 4096;   // STFT window (samples) — ~85ms @ 48 kHz
 const HOP_SIZE = 1024;   // 75% overlap
 const HALF     = FFT_SIZE >>> 1;
 const NUM_BINS = HALF + 1;
+const EPSILON = 1e-9;
+const DEESS_RATIO_THRESHOLD = 0.35;
+const DEESS_RATIO_RANGE = 0.65;
+const DEESS_MAX_REDUCTION = 0.85;
 
 // ── Cooley-Tukey in-place iterative FFT ─────────────────────────────────────
 function fft(re, im, inverse = false) {
@@ -205,7 +209,11 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._frameCount = 0;
     // How often to send SPECTRAL_FRAME to main thread (every N hops)
     this._spectralFrameInterval = 4;
-    this._spectralFrameMag = new Float32Array(NUM_BINS);
+    this._spectralFrameMags = [
+      new Float32Array(NUM_BINS),
+      new Float32Array(NUM_BINS),
+    ];
+    this._spectralFrameMagIndex = 0;
 
     // Receive slider updates from main thread
     this.port.onmessage = (ev) => {
@@ -335,8 +343,11 @@ class DSPProcessor extends AudioWorkletProcessor {
         if (this._params.deEssAmt > 0) {
           const sibBand = processBiquad(deEssBq, x);
           const sibEnv = processEnvFollower(deEssEf, sibBand);
-          const ratio = Math.min(1, sibEnv / (Math.abs(x) + 1e-9));
-          const reduction = Math.max(0, Math.min(0.85, ((ratio - 0.35) / 0.65) * (this._params.deEssAmt / 100) * 0.85));
+          const ratio = Math.min(1, sibEnv / (Math.abs(x) + EPSILON));
+          const reduction = Math.max(0, Math.min(DEESS_MAX_REDUCTION,
+            ((ratio - DEESS_RATIO_THRESHOLD) / DEESS_RATIO_RANGE)
+            * (this._params.deEssAmt / 100) * DEESS_MAX_REDUCTION
+          ));
           x -= sibBand * reduction;
         }
 
@@ -496,11 +507,14 @@ class DSPProcessor extends AudioWorkletProcessor {
     // ── Post SPECTRAL_FRAME to main thread for VisualizationEngine VU meters ─
     // Send every _spectralFrameInterval hops to cap postMessage overhead.
     if (this._frameCount % this._spectralFrameInterval === 0) {
-      this._spectralFrameMag.set(mag);
+      const spectralFrameMag = this._spectralFrameMags[this._spectralFrameMagIndex];
+      spectralFrameMag.set(mag);
+      this._spectralFrameMagIndex =
+        (this._spectralFrameMagIndex + 1) % this._spectralFrameMags.length;
       this.port.postMessage({
         type:  'SPECTRAL_FRAME',
         frame: this._frameCount,
-        mag:   this._spectralFrameMag,
+        mag:   spectralFrameMag,
         rms:   this._calcRMS(re),
       });
     }
