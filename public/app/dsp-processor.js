@@ -10,6 +10,11 @@
 //     Magnitude spectrum slices are written to SharedArrayBuffer;
 //     main-thread ml-worker.js reads/writes masks asynchronously.
 //   • Classical DSP (gate, notch, de-ess, spectral subtract, Wiener) runs inline.
+//
+//  PATCH LOG:
+//   v8.1 — Fix stray } after makeEnvFollower() (SyntaxError → worklet crash)
+//   v8.1 — Fix FFT butterfly: len/2 float → len>>>1 integer (array index bug)
+//   v8.1 — Fix OLA readPos: capture baseWritePos before sample loop (off-by-one)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FFT_SIZE = 4096;   // STFT window (samples) — ~85ms @ 48 kHz
@@ -41,15 +46,17 @@ function fft(re, im, inverse = false) {
     const wIm  = Math.sin(ang);
     for (let i = 0; i < N; i += len) {
       let curRe = 1, curIm = 0;
-      for (let k = 0; k < len >>> 1; k++) {
+      // FIX v8.1: use integer bitshift instead of float division for array index
+      const half = len >>> 1;
+      for (let k = 0; k < half; k++) {
         const uRe = re[i + k];
         const uIm = im[i + k];
-        const tRe = curRe * re[i + k + len / 2] - curIm * im[i + k + len / 2];
-        const tIm = curRe * im[i + k + len / 2] + curIm * re[i + k + len / 2];
-        re[i + k]           =  uRe + tRe;
-        im[i + k]           =  uIm + tIm;
-        re[i + k + len / 2] =  uRe - tRe;
-        im[i + k + len / 2] =  uIm - tIm;
+        const tRe = curRe * re[i + k + half] - curIm * im[i + k + half];
+        const tIm = curRe * im[i + k + half] + curIm * re[i + k + half];
+        re[i + k]        =  uRe + tRe;
+        im[i + k]        =  uIm + tIm;
+        re[i + k + half] =  uRe - tRe;
+        im[i + k + half] =  uIm - tIm;
         const newCurRe = curRe * wRe - curIm * wIm;
         curIm = curRe * wIm + curIm * wRe;
         curRe = newCurRe;
@@ -102,9 +109,9 @@ function processBiquad(bq, x) {
 }
 
 // ── Simple peak-envelope follower for de-essing ──────────────────────────────
+// FIX v8.1: removed stray closing brace that caused SyntaxError
 function makeEnvFollower() {
   return { env: 0, attack: 0.05, release: 0.0005 };
-}
 }
 function processEnvFollower(ef, x) {
   const abs = Math.abs(x);
@@ -300,6 +307,9 @@ class DSPProcessor extends AudioWorkletProcessor {
       const deEssEf  = this._deEssEnv[ch]  || this._deEssEnv[0];
       const gateEf   = this._gateEnv[ch]   || this._gateEnv[0];
 
+      // FIX v8.1: capture writePos BEFORE the sample loop so readPos is stable
+      const baseWritePos = this._writePos;
+
       for (let n = 0; n < blockSize; n++) {
         let x = inData[n];
         const dry = x;
@@ -361,8 +371,8 @@ class DSPProcessor extends AudioWorkletProcessor {
           this._processSpectralHop();
         }
 
-        // Read OLA output (normalized by window sum, then clear slots)
-        const readPos = (this._writePos - blockSize + n + FFT_SIZE) & (FFT_SIZE - 1);
+        // FIX v8.1: use baseWritePos (pre-loop snapshot) for stable OLA read index
+        const readPos = (baseWritePos + n) & (FFT_SIZE - 1);
         const wsum    = this._outWindowSum[readPos];
         const normalized = wsum > 1e-8 ? this._outBuf[readPos] / wsum : 0;
         this._outBuf[readPos]       = 0;

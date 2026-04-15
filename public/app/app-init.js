@@ -1,6 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  app-init.js  —  VoiceIsolate Pro v24.0 / Threads from Space v12
-//  app-init.js  —  VoiceIsolate Pro v24.0 · Threads from Space v12
 //
 //  Entry point wiring:
 //    ① Auth gate (requireAuth)
@@ -10,6 +9,10 @@
 //    ⑤ 52-slider → WorkletNode param bridge
 //    ⑥ Live mode (getUserMedia) + Creator/Forensic mode (OfflineAudioContext)
 //    ⑦ RMS meter → UI level bar
+//
+//  PATCH LOG:
+//   v24.1 — Handle SPECTRAL_FRAME from worklet (was silently discarded)
+//   v24.1 — Call checkFileSizeLimit() before arrayBuffer() to prevent OOM
 //
 //  Add to index.html:
 //    <script type="module" src="./app-init.js"></script>
@@ -126,7 +129,7 @@ async function ensureAudioContext() {
   // Connect to speakers
   workletNode.connect(audioCtx.destination);
 
-  // Listen to meter events from the processor
+  // Listen to meter + spectrogram events from the processor
   workletNode.port.onmessage = handleWorkletMessage;
 
   // Push current slider state immediately
@@ -314,7 +317,12 @@ function wireSliders() {
 }
 
 function sendParamsToWorklet() {
-  if (!workletNode) return;
+  if (!workletNode) {
+    // Worklet not yet initialized (pre-user-gesture) — params are queued
+    // in sliderParams and will be flushed by ensureAudioContext()
+    console.debug('[VIP] Worklet not ready — params queued for first use');
+    return;
+  }
   workletNode.port.postMessage({ type: 'params', params: { ...sliderParams } });
 }
 
@@ -502,10 +510,16 @@ function wireFileInput() {
   const fileInput = document.getElementById('file-input') ||
                     document.querySelector('input[type="file"]');
 
+  // FIX v24.1: guard file size BEFORE loading into memory to prevent OOM
   async function handleFile(file) {
     if (!file) return;
 
     const sizeMB = file.size / (1024 * 1024);
+
+    if (!checkFileSizeLimit(file.size)) {
+      showToast(`File too large for your plan (${sizeMB.toFixed(1)} MB). Upgrade to increase the limit.`, 'error');
+      return;
+    }
 
     _pendingFileBuffer = await file.arrayBuffer();
     setFileLabel(file.name, sizeMB);
@@ -532,14 +546,26 @@ function setFileLabel(name, sizeMB) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  ⑨ Worklet message handler (meter / RMS → UI)
+//  ⑨ Worklet message handler (meter + spectrogram → UI)
+//  FIX v24.1: was only handling 'meter'; now handles 'SPECTRAL_FRAME' too
 // ─────────────────────────────────────────────────────────────────────────────
 
 function handleWorkletMessage(ev) {
-  const { type, rms, frame } = ev.data;
+  const { type, rms, mag, frame } = ev.data;
 
   if (type === 'meter') {
     updateLevelMeter(rms);
+  } else if (type === 'SPECTRAL_FRAME') {
+    // rms is included in SPECTRAL_FRAME payload from the worklet
+    updateLevelMeter(rms);
+    // Forward mag array to visuals.js spectrogram renderer if present
+    if (typeof window.updateSpectrogram === 'function') {
+      window.updateSpectrogram(mag, frame);
+    }
+    // Also forward to any other registered visualizer
+    if (typeof window.onSpectralFrame === 'function') {
+      window.onSpectralFrame({ mag, rms, frame });
+    }
   }
 }
 
