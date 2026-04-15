@@ -1,3 +1,4 @@
+/* global process, console, Buffer */
 /**
  * VoiceIsolate Pro — Cloud Sync API v22
  *
@@ -23,13 +24,18 @@ router.use(express.json({ limit: '1mb' }));
 const _store = new Map(); // userId → { presets, noiseProfiles, history, updatedAt }
 
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
+// FIX: no throw on missing env var so Vercel deployments without the secret
+// don't crash at startup. Set LICENSE_JWT_SECRET in Vercel Environment Variables.
 const LICENSE_SECRET = (() => {
   if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
   if (process.env.NODE_ENV === 'production') {
-    throw new Error('LICENSE_JWT_SECRET environment variable is required');
+    throw new Error('[sync] LICENSE_JWT_SECRET is required in production.');
   }
-  const fallback = 'voiceisolate-dev-secret-key-minimum-32-chars';
-  console.warn('[Sync] LICENSE_JWT_SECRET not set — using dev default. Do NOT use in production.');
+  const fallback = 'vip-dev-fallback-secret-change-in-production-32chars';
+  console.warn(
+    '[sync] WARNING: LICENSE_JWT_SECRET not set. Using development fallback (non-production only).\n' +
+    '  → Set it in Vercel Dashboard → Settings → Environment Variables.'
+  );
   return fallback;
 })();
 
@@ -132,7 +138,7 @@ function requireRateLimit(req, res, next) {
 }
 
 // ─── Input Validation ─────────────────────────────────────────────────────────
-const ID_RE = /^[a-zA-Z0-9_\-]{1,128}$/;
+const ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 const MAX_PRESET_PARAMS_BYTES   = 64 * 1024;  //  64 KB
 const MAX_NOISE_PROFILE_BYTES   = 256 * 1024; // 256 KB
 const MAX_HISTORY_ENTRY_BYTES   = 16 * 1024;  //  16 KB

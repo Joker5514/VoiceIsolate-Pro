@@ -168,12 +168,12 @@ async function handleMultiSeparate(streams) {
     self.postMessage({ type: 'multi_done', streams: [] });
     return;
   }
-//
+
   // Null-guard: filter out invalid stream entries before extracting buffers
   const transferables = streams
     .map(s => s && s.data && s.data.buffer)
     .filter(Boolean);
-//
+
   self.postMessage({ type: 'multi_done', streams }, transferables);
 }
 

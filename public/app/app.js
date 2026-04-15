@@ -3,7 +3,7 @@
    VoiceIsolate Pro v22.1 – Engineer Mode
    Threads from Space v11 · Hybrid ML+DSP
    52 Sliders · 6-Panel Diagnostics · 3D Spectrogram
-   35-Stage Deca-Pass Pipeline with Real STFT DSP
+   32-Stage Deca-Pass Pipeline with Real STFT DSP
    ============================================ */
 
 function structuredLog(level, msg, data = {}) {
@@ -574,6 +574,7 @@ class VoiceIsolatePro {
 
   // ======== FILE HANDLING ========
   async handleFile(file) {
+    this.dom.fileInfo.textContent = '⏳ Loading...';
     try {
       const LM = window.LicenseManager;
       if (LM && typeof LM.checkFileLimit === 'function') {
@@ -625,6 +626,7 @@ class VoiceIsolatePro {
       } else { this.dom.videoCard.style.display = 'none'; }
       this.inputBuffer = audioBuf;
       this.outputBuffer = null;
+      await new Promise(r => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(r, 0));
       this.onAudioLoaded(file.name);
     } catch (err) {
       console.error('File load error:', err);

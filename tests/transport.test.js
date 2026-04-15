@@ -37,6 +37,9 @@ describe('Transport Methods', () => {
       },
       play: jest.fn(),
       fmtDur: jest.fn(() => '0:00'),
+      _setScrubPos: function(frac) {
+        if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+      },
       stopDiagnostics: jest.fn(),
       startDiagnostics: jest.fn(),
       _setScrubPos: jest.fn(function(frac) {
