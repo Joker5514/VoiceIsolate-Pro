@@ -115,7 +115,7 @@ describe('vip-boot.js — _callAuthInit()', () => {
   test('calls Auth.init() when Auth is defined, not logged in, and currentUser is null', () => {
     const auth = makeAuth({ isLoggedIn: false, currentUser: null });
     const VIP  = jest.fn().mockImplementation(function () { this._initCalled = false; });
-    const { con } = runAndBoot({ VoiceIsolatePro: VIP, Auth: auth });
+    runAndBoot({ VoiceIsolatePro: VIP, Auth: auth });
     expect(auth.init).toHaveBeenCalledTimes(1);
   });
 

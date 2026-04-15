@@ -111,7 +111,6 @@ function runInScope(codeStr, globals) {
   // Build a wrapper that exposes each global as a local name.
   // `with` is used so that bare identifiers such as `window`, `document`,
   // `VoiceIsolatePro`, and `Auth` resolve correctly without needing `global.X`.
-  // eslint-disable-next-line no-new-func
   const wrapper = new Function('__g__', `with (__g__) { ${codeStr} }`);
   wrapper(globals);
   return globals;
@@ -127,7 +126,7 @@ function makeDocument(readyState = 'complete', captureListeners = false) {
   const _listeners = {};
   const doc = {
     readyState,
-    addEventListener: jest.fn((event, cb, opts) => {
+    addEventListener: jest.fn((event, cb, _opts) => {
       if (captureListeners) {
         _listeners[event] = _listeners[event] || [];
         _listeners[event].push(cb);

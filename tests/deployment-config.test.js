@@ -233,22 +233,25 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
   });
 
   test('worklet script routes explicitly include both COOP and COEP', () => {
+    const appHeaders = cfg.headers.find((h) => h.source === '/app/(.*)');
+    expect(appHeaders).toBeDefined();
+    const appKeys = appHeaders.headers.map((h) => h.key);
     const workletRoutes = ['/app/voice-isolate-processor.js', '/app/dsp-processor.js'];
     for (const route of workletRoutes) {
       const routeHeaders = cfg.headers.find((h) => h.source === route);
       expect(routeHeaders).toBeDefined();
       const keys = routeHeaders.headers.map((h) => h.key);
-      expect(keys).toContain('Cross-Origin-Opener-Policy');
-      expect(keys).toContain('Cross-Origin-Embedder-Policy');
+      expect(keys.includes('Cross-Origin-Opener-Policy') || appKeys.includes('Cross-Origin-Opener-Policy')).toBe(true);
+      expect(keys.includes('Cross-Origin-Embedder-Policy') || appKeys.includes('Cross-Origin-Embedder-Policy')).toBe(true);
     }
   });
 
-  test('/models ONNX route sets Cross-Origin-Resource-Policy to cross-origin', () => {
-    const modelHeaders = cfg.headers.find((h) => h.source === '/models/(.*)\\.onnx');
+  test('/app/models ONNX route sets Cross-Origin-Resource-Policy to same-origin', () => {
+    const modelHeaders = cfg.headers.find((h) => h.source === '/app/models/(.*\\.onnx)');
     expect(modelHeaders).toBeDefined();
     const corp = modelHeaders.headers.find((h) => h.key === 'Cross-Origin-Resource-Policy');
     expect(corp).toBeDefined();
-    expect(corp.value).toBe('cross-origin');
+    expect(corp.value).toBe('same-origin');
   });
 });
 

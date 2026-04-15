@@ -1,3 +1,4 @@
+/* global process, console, Buffer */
 /**
  * VoiceIsolate Pro — Monetization API v22
  *
@@ -76,8 +77,11 @@ async function getStripe() {
 // don't crash at startup. Set LICENSE_JWT_SECRET in Vercel Environment Variables.
 const LICENSE_SECRET = (() => {
   if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[monetization] LICENSE_JWT_SECRET is required in production.');
+  }
   const fallback = 'voiceisolate-dev-secret-change-in-production-32chars!';
-  console.warn('[monetization] WARNING: LICENSE_JWT_SECRET not set. Using insecure dev fallback.');
+  console.warn('[monetization] WARNING: LICENSE_JWT_SECRET not set. Using development fallback (non-production only).');
   return fallback;
 })();
 
@@ -146,7 +150,7 @@ router.post('/checkout', async (req, res) => {
     const priceId = PRICE_IDS[priceKey];
     if (!priceId) return res.status(400).json({ error: 'Price not configured' });
 
-    const stripe = getStripe();
+    const stripe = await getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
@@ -175,7 +179,7 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
 
   let event;
   try {
-    const stripe = getStripe();
+    const stripe = await getStripe();
     event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
   } catch (err) {
     console.error('[Webhook Signature Error]', err.message);
