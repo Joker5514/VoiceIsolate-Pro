@@ -62,7 +62,7 @@ describe('vercel.json — Content-Security-Policy header', () => {
 
   beforeAll(() => {
     const cfg = JSON.parse(readFile('vercel.json'));
-    const globalHeaders = cfg.headers.find(h => h.source === '/(.*)');
+    const globalHeaders = cfg.headers.find(h => h.source === '/((?!api/).*)');
     expect(globalHeaders).toBeDefined();
     const cspEntry = globalHeaders.headers.find(h => h.key === 'Content-Security-Policy');
     expect(cspEntry).toBeDefined();
@@ -182,7 +182,7 @@ describe('vercel.json — other security headers still present', () => {
 
   beforeAll(() => {
     const cfg = JSON.parse(readFile('vercel.json'));
-    const section = cfg.headers.find(h => h.source === '/(.*)');
+    const section = cfg.headers.find(h => h.source === '/((?!api/).*)');
     expect(section).toBeDefined();
     globalHeaders = section.headers;
   });
@@ -224,25 +224,22 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
     cfg = JSON.parse(readFile('vercel.json'));
   });
 
-  test('/app/(.*) headers include both COOP and COEP', () => {
-    const appHeaders = cfg.headers.find((h) => h.source === '/app/(.*)');
-    expect(appHeaders).toBeDefined();
-    const keys = appHeaders.headers.map((h) => h.key);
+  test('global non-api headers include both COOP and COEP', () => {
+    const globalHeaders = cfg.headers.find((h) => h.source === '/((?!api/).*)');
+    expect(globalHeaders).toBeDefined();
+    const keys = globalHeaders.headers.map((h) => h.key);
     expect(keys).toContain('Cross-Origin-Opener-Policy');
     expect(keys).toContain('Cross-Origin-Embedder-Policy');
   });
 
   test('worklet script routes explicitly include both COOP and COEP', () => {
-    const appHeaders = cfg.headers.find((h) => h.source === '/app/(.*)');
-    expect(appHeaders).toBeDefined();
-    const appKeys = appHeaders.headers.map((h) => h.key);
     const workletRoutes = ['/app/voice-isolate-processor.js', '/app/dsp-processor.js'];
     for (const route of workletRoutes) {
       const routeHeaders = cfg.headers.find((h) => h.source === route);
       expect(routeHeaders).toBeDefined();
       const keys = routeHeaders.headers.map((h) => h.key);
-      expect(keys.includes('Cross-Origin-Opener-Policy') || appKeys.includes('Cross-Origin-Opener-Policy')).toBe(true);
-      expect(keys.includes('Cross-Origin-Embedder-Policy') || appKeys.includes('Cross-Origin-Embedder-Policy')).toBe(true);
+      expect(keys).toContain('Cross-Origin-Opener-Policy');
+      expect(keys).toContain('Cross-Origin-Embedder-Policy');
     }
   });
 
@@ -458,7 +455,7 @@ describe('Cross-platform CSP consistency — vercel.json vs render.yaml', () => 
 
   beforeAll(() => {
     const vercelCfg = JSON.parse(readFile('vercel.json'));
-    const globalHeaders = vercelCfg.headers.find(h => h.source === '/(.*)');
+    const globalHeaders = vercelCfg.headers.find(h => h.source === '/((?!api/).*)');
     const vercelEntry = globalHeaders.headers.find(h => h.key === 'Content-Security-Policy');
     vercelCSP = vercelEntry.value;
     vercelDirectives = parseCSP(vercelCSP);
