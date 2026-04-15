@@ -91,9 +91,9 @@ export function initDiarizationTimeline({ mlWorker, audioContext, onSpeakerSelec
   Timeline.audioContext = audioContext;
   Timeline.onSpeakerSelect = onSpeakerSelect ?? (() => {});
 
-  Timeline.canvas     = document.getElementById('diarization-canvas');
-  Timeline.playheadEl = document.getElementById('diarization-playhead');
-  Timeline.container  = document.getElementById('diarization-section');
+  Timeline.canvas     = document.getElementById('diarCanvas');
+  Timeline.playheadEl = document.getElementById('diarPlayhead');
+  Timeline.container  = document.getElementById('diarCard');
 
   if (!Timeline.canvas) {
     console.warn('[DiarizationTimeline] #diarization-canvas not found — skipping init');
