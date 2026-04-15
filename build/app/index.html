@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>VoiceIsolate Pro v22.1 – Engineer Mode</title>
+  <title>VoiceIsolate Pro v24.0 – Engineer Mode</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -59,7 +59,7 @@
     <div class="hdr-left">
       <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
       <div>
-        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v22.1</span></h1>
+        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v24.0</span></h1>
         <span class="hdr-badge">ENGINEER MODE</span>
         <span class="hdr-badge diag-badge">6-PANEL DIAGNOSTICS</span>
       </div>
@@ -99,27 +99,27 @@
       </div>
 
       <!-- Tabs -->
-      <div class="tabs" id="tabBar">
-        <button class="tab active" data-tab="gate">Gate</button>
-        <button class="tab" data-tab="nr">Noise</button>
-        <button class="tab" data-tab="eq">EQ</button>
-        <button class="tab" data-tab="dyn">Dynamics</button>
-        <button class="tab" data-tab="spec">Spectral</button>
-        <button class="tab" data-tab="adv">Advanced</button>
-        <button class="tab" data-tab="sep">Separation</button>
-        <button class="tab" data-tab="out">Output</button>
+      <div class="tabs" id="tabBar" role="tablist" aria-label="Processing stages">
+        <button class="tab active" data-tab="gate" id="tab-btn-gate" role="tab" aria-controls="tab-gate" aria-selected="true" tabindex="0">Gate</button>
+        <button class="tab" data-tab="nr" id="tab-btn-nr" role="tab" aria-controls="tab-nr" aria-selected="false" tabindex="-1">Noise</button>
+        <button class="tab" data-tab="eq" id="tab-btn-eq" role="tab" aria-controls="tab-eq" aria-selected="false" tabindex="-1">EQ</button>
+        <button class="tab" data-tab="dyn" id="tab-btn-dyn" role="tab" aria-controls="tab-dyn" aria-selected="false" tabindex="-1">Dynamics</button>
+        <button class="tab" data-tab="spec" id="tab-btn-spec" role="tab" aria-controls="tab-spec" aria-selected="false" tabindex="-1">Spectral</button>
+        <button class="tab" data-tab="adv" id="tab-btn-adv" role="tab" aria-controls="tab-adv" aria-selected="false" tabindex="-1">Advanced</button>
+        <button class="tab" data-tab="sep" id="tab-btn-sep" role="tab" aria-controls="tab-sep" aria-selected="false" tabindex="-1">Separation</button>
+        <button class="tab" data-tab="out" id="tab-btn-out" role="tab" aria-controls="tab-out" aria-selected="false" tabindex="-1">Output</button>
       </div>
 
       <!-- Slider Panels -->
       <div class="panels">
-        <div class="panel active" id="tab-gate"></div>
-        <div class="panel" id="tab-nr"></div>
-        <div class="panel" id="tab-eq"></div>
-        <div class="panel" id="tab-dyn"></div>
-        <div class="panel" id="tab-spec"></div>
-        <div class="panel" id="tab-adv"></div>
-        <div class="panel" id="tab-sep"></div>
-        <div class="panel" id="tab-out"></div>
+        <div class="panel active" id="tab-gate" role="tabpanel" aria-labelledby="tab-btn-gate"></div>
+        <div class="panel" id="tab-nr" role="tabpanel" aria-labelledby="tab-btn-nr"></div>
+        <div class="panel" id="tab-eq" role="tabpanel" aria-labelledby="tab-btn-eq"></div>
+        <div class="panel" id="tab-dyn" role="tabpanel" aria-labelledby="tab-btn-dyn"></div>
+        <div class="panel" id="tab-spec" role="tabpanel" aria-labelledby="tab-btn-spec"></div>
+        <div class="panel" id="tab-adv" role="tabpanel" aria-labelledby="tab-btn-adv"></div>
+        <div class="panel" id="tab-sep" role="tabpanel" aria-labelledby="tab-btn-sep"></div>
+        <div class="panel" id="tab-out" role="tabpanel" aria-labelledby="tab-btn-out"></div>
       </div>
 
       <!-- Presets -->
@@ -144,7 +144,8 @@
       <div class="actions-row">
         <button id="processBtn" class="btn btn-primary" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
-          Process (35-Stage)
+          Process (32-Stage)
+          Process (36-Stage)
         </button>
         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
@@ -337,7 +338,7 @@
 
       <!-- Forensic Report -->
       <div class="card forensic-card" id="forensicCard" style="display:none">
-        <div class="viz-hdr"><span>Forensic Analysis Report</span><span class="viz-badge">v22.1</span></div>
+        <div class="viz-hdr"><span>Forensic Analysis Report</span><span class="viz-badge">v24.0</span></div>
         <div id="forensicReport" class="forensic-report"></div>
       </div>
 
@@ -370,7 +371,8 @@
   </div>
 
   <footer class="ftr">
-    <span>VoiceIsolate Pro v22.1 · Threads from Space v11 · Hybrid ML+DSP · 35-Stage Deca-Pass</span>
+    <span>VoiceIsolate Pro v24.0 · Threads from Space v12 · Hybrid ML+DSP · 32-Stage Deca-Pass</span>
+    <span>VoiceIsolate Pro v24.0 · Threads from Space v12 · Hybrid ML+DSP · 36-Stage Deca-Pass</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
 

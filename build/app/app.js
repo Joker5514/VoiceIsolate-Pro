@@ -201,6 +201,7 @@ class VoiceIsolatePro {
     this._mlCallId = 0;
     this._rndBuf = new Uint32Array(4096);
     this._rndIdx = 0;
+    this._sliderContextResumed = false;
     this.init();
   }
 
@@ -337,6 +338,14 @@ class VoiceIsolatePro {
 
   cacheDom() {
     const g = id => document.getElementById(id);
+
+    this.slidersDom = {};
+    for (const id in SLIDER_MAP) {
+      this.slidersDom[id] = {
+        el: g(id),
+        ve: g(id + 'Val')
+      };
+    }
     this.dom = {
       uploadZone:g('uploadZone'), fileInput:g('fileInput'), fileBtn:g('fileBtn'),
       micBtn:g('micBtn'), micLabel:g('micLabel'), fileInfo:g('fileInfo'),
@@ -381,9 +390,11 @@ class VoiceIsolatePro {
 
   bindEvents() {
     const uz = this.dom.uploadZone;
-    ['dragenter','dragover'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uz.classList.add('dragover'); }));
-    ['dragleave','drop'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uz.classList.remove('dragover'); }));
-    uz.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
+    let dragCounter = 0;
+    uz.addEventListener('dragenter', e => { e.preventDefault(); e.stopPropagation(); dragCounter++; uz.classList.add('dragover'); });
+    uz.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
+    uz.addEventListener('dragleave', e => { e.preventDefault(); e.stopPropagation(); dragCounter--; if (dragCounter <= 0) { dragCounter = 0; uz.classList.remove('dragover'); } });
+    uz.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); dragCounter = 0; uz.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
     uz.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
     uz.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.dom.fileInput.click(); } });
     this.dom.fileBtn.addEventListener('click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
@@ -407,7 +418,12 @@ class VoiceIsolatePro {
     this.dom.tpSpeed.addEventListener('change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
     this.dom.tpAB.addEventListener('click', () => this.toggleAB());
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+      document.querySelectorAll('.tab').forEach(x => {
+        const isActive = x === t;
+        x.classList.toggle('active', isActive);
+        x.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        x.setAttribute('tabindex', isActive ? '0' : '-1');
+      });
       document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t.dataset.tab));
     }));
     document.querySelectorAll('.btn-preset').forEach(b => b.addEventListener('click', () => this.applyPreset(b.dataset.preset)));
@@ -415,7 +431,13 @@ class VoiceIsolatePro {
     if (saveBtn) saveBtn.addEventListener('click', () => this.saveCustomPreset());
     const nameInput = document.getElementById('customPresetName');
     if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); this.saveCustomPreset(); } });
-    document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', () => this.onSlider(el)));
+    document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', async () => {
+      if (!this._sliderContextResumed && this.ctx && this.ctx.state === 'suspended') {
+        try { await this.ctx.resume(); } catch {}
+      }
+      this._sliderContextResumed = true;
+      this.onSlider(el);
+    }));
     document.querySelectorAll('.sr-row').forEach(r => {
       const showTt = () => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }};
       const hideTt = () => this.dom.tooltip.classList.remove('visible');
@@ -459,7 +481,11 @@ class VoiceIsolatePro {
   }
 
   onSlider(el) {
-    const id = el.dataset.param;
+    const rawId = el.dataset.param || el.id || '';
+    const id = rawId.startsWith('slider-')
+      ? rawId.replace(/^slider-/, '').replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+      : rawId;
+    if (!id) return;
     const v = parseFloat(el.value);
     this.params[id] = v;
     let unit = '';
@@ -528,19 +554,18 @@ class VoiceIsolatePro {
   applyPreset(name) {
     const p = PRESETS[name]; if (!p) return;
     Object.assign(this.params, p);
-    for (const [, sliders] of Object.entries(SLIDERS)) {
-      for (const s of sliders) {
-        const el = document.getElementById(s.id);
-        const ve = document.getElementById(s.id + 'Val');
-        if (el && this.params[s.id] !== undefined) {
-          el.value = this.params[s.id];
-          el.setAttribute('aria-valuenow', this.params[s.id]);
-          if (ve) ve.textContent = this.params[s.id] + s.unit;
+    for (const id in SLIDER_MAP) {
+      if (this.params[id] !== undefined && this.slidersDom && this.slidersDom[id]) {
+        const { el, ve } = this.slidersDom[id];
+        const s = SLIDER_MAP[id];
+        if (el) {
+          el.value = this.params[id];
+          el.setAttribute('aria-valuenow', this.params[id]);
+          if (ve) ve.textContent = this.params[id] + s.unit;
           const range = s.max - s.min;
-          const pct = range > 0 ? ((this.params[s.id] - s.min) / range) * 100 : 0;
+          const pct = range > 0 ? ((this.params[id] - s.min) / range) * 100 : 0;
           el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
         }
-        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
       }
     }
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
@@ -550,16 +575,13 @@ class VoiceIsolatePro {
   // ======== FILE HANDLING ========
   async handleFile(file) {
     try {
-      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
-      const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB
-      if (file.size > MAX_FILE_SIZE) {
-        throw new Error('File too large (' + (file.size / (1024 * 1024)).toFixed(1) + ' MB). Maximum allowed size is 200 MB.');
-      }
       const LM = window.LicenseManager;
       if (LM && typeof LM.checkFileLimit === 'function') {
         const fileSizeMB = file.size / (1024 * 1024);
         const check = LM.checkFileLimit(fileSizeMB, 0);
-        if (!check.allowed) throw new Error(check.reason);
+        if (!check.allowed) {
+          throw new Error(check.reason || 'This file exceeds the limits for your current plan.');
+        }
       }
 
       const normalizedType = (file.type || '').toLowerCase();
@@ -567,13 +589,19 @@ class VoiceIsolatePro {
       const isMidiFile = normalizedType === 'audio/midi' || normalizedType === 'audio/x-midi' || normalizedName.endsWith('.mid') || normalizedName.endsWith('.midi');
       if (isMidiFile) throw new Error('MIDI files are not supported in this audio decode path. Please export the MIDI to WAV, MP3, or another rendered audio format first.');
 
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska'];
+      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/x-flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska', 'audio/opus', 'audio/x-aiff', 'audio/aiff', 'audio/aif', 'audio/x-ms-wma', 'video/avi', 'video/x-msvideo'];
       if (normalizedType && !allowedTypes.includes(normalizedType)) throw new Error('Unsupported file type');
       this.ensureCtx();
       this.stop();
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
       this.setStatus('LOADING');
-      this.isVideo = file.type.startsWith('video/');
+      this.isVideo = normalizedType.startsWith('video/');
+      // Await AudioContext resume before decode — suspended context causes decodeAudioData to stall
+      if (this.ctx.state === 'suspended') {
+        try { await this.ctx.resume(); } catch {}
+      }
+      // Yield to browser paint cycle to prevent UI freeze on large files
+      await new Promise(r => setTimeout(r, 0));
       const fileArrayBuffer = await file.arrayBuffer();
       let audioBuf = null;
       try {
@@ -589,9 +617,10 @@ class VoiceIsolatePro {
         this.dom.videoPlayer.src = this.videoUrl;
         this.dom.videoCard.style.display = 'block';
         await new Promise((res, rej) => {
-          this.dom.videoPlayer.onloadedmetadata = res;
-          this.dom.videoPlayer.onerror = () => rej(new Error('Video metadata load failed'));
-          setTimeout(res, 5000);
+          let settled = false;
+          const timeout = setTimeout(() => { if (!settled) { settled = true; rej(new Error('Video metadata load timeout')); } }, 5000);
+          this.dom.videoPlayer.onloadedmetadata = () => { if (!settled) { settled = true; clearTimeout(timeout); res(); } };
+          this.dom.videoPlayer.onerror = () => { if (!settled) { settled = true; clearTimeout(timeout); rej(new Error('Video metadata load failed')); } };
         });
       } else { this.dom.videoCard.style.display = 'none'; }
       this.inputBuffer = audioBuf;
@@ -607,12 +636,13 @@ class VoiceIsolatePro {
   async decodeViaVideoElement(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
+      const cleanup = () => { try { URL.revokeObjectURL(url); } catch {} };
       const vid = document.createElement('video');
       vid.muted = true; vid.src = url;
       vid.onloadedmetadata = async () => {
         try {
           const duration = vid.duration;
-          if (!duration || !isFinite(duration)) { reject(new Error('Cannot determine video duration')); return; }
+          if (!duration || !isFinite(duration)) { cleanup(); reject(new Error('Cannot determine video duration')); return; }
           const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
           const source = tmpCtx.createMediaElementSource(vid);
           const dest = tmpCtx.createMediaStreamDestination();
@@ -621,7 +651,7 @@ class VoiceIsolatePro {
           const recorder = new MediaRecorder(dest.stream);
           recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
           recorder.onstop = async () => {
-            vid.pause(); URL.revokeObjectURL(url);
+            vid.pause(); cleanup();
             const blob = new Blob(chunks, { type: 'audio/webm' });
             const ab = await blob.arrayBuffer();
             try { const decoded = await this.ctx.decodeAudioData(ab); tmpCtx.close(); resolve(decoded); }
@@ -630,9 +660,9 @@ class VoiceIsolatePro {
           recorder.start(); vid.play();
           vid.onended = () => { recorder.stop(); };
           setTimeout(() => { if (recorder.state === 'recording') { vid.pause(); recorder.stop(); } }, (duration + 2) * 1000);
-        } catch (e) { reject(e); }
+        } catch (e) { cleanup(); reject(e); }
       };
-      vid.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Video element failed')); };
+      vid.onerror = () => { cleanup(); reject(new Error('Video element failed')); };
     });
   }
 
@@ -2300,5 +2330,4 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
   } else {
     _setup();
   }
-})();
 })();
