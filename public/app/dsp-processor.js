@@ -24,6 +24,7 @@ const NUM_BINS = HALF + 1;
 const EPSILON = 1e-9;
 const DEESS_RATIO_THRESHOLD = 0.35;
 const DEESS_RATIO_RANGE = 0.65;
+const DEESS_RATIO_HYSTERESIS = 0.02;
 const DEESS_MAX_REDUCTION = 0.85;
 
 // ── Cooley-Tukey in-place iterative FFT ─────────────────────────────────────
@@ -174,6 +175,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     // De-essing sidechain filter (peaking) + envelope followers
     this._deEssBand = [makeBiquad(), makeBiquad()];
     this._deEssEnv  = [makeEnvFollower(), makeEnvFollower()];
+    this._deEssActive = [false, false]; // FIX v8.2: hysteresis state for de-ess thresholding
     // Wideband envelope follower for gate sidechain
     this._gateEnv   = [makeEnvFollower(), makeEnvFollower()];
 
@@ -380,11 +382,23 @@ class DSPProcessor extends AudioWorkletProcessor {
           const sibBand = processBiquad(deEssBq, x);
           const sibEnv = processEnvFollower(deEssEf, sibBand);
           const ratio = Math.min(1, sibEnv / (Math.abs(x) + EPSILON));
-          const reduction = Math.max(0, Math.min(DEESS_MAX_REDUCTION,
-            ((ratio - DEESS_RATIO_THRESHOLD) / DEESS_RATIO_RANGE)
-            * (this._params.deEssAmt / 100) * DEESS_MAX_REDUCTION
-          ));
+          // FIX v8.2: hysteresis around threshold to avoid rapid toggling/zipper artifacts
+          const onThreshold = DEESS_RATIO_THRESHOLD + DEESS_RATIO_HYSTERESIS;
+          const offThreshold = DEESS_RATIO_THRESHOLD - DEESS_RATIO_HYSTERESIS;
+          if (this._deEssActive[gateCh]) {
+            if (ratio < offThreshold) this._deEssActive[gateCh] = false;
+          } else if (ratio > onThreshold) {
+            this._deEssActive[gateCh] = true;
+          }
+          const reduction = this._deEssActive[gateCh]
+            ? Math.max(0, Math.min(DEESS_MAX_REDUCTION,
+              ((ratio - DEESS_RATIO_THRESHOLD) / DEESS_RATIO_RANGE)
+              * (this._params.deEssAmt / 100) * DEESS_MAX_REDUCTION
+            ))
+            : 0;
           x -= sibBand * reduction;
+        } else {
+          this._deEssActive[gateCh] = false; // FIX v8.2: clear latch when de-ess is bypassed
         }
 
         // ── Feed OLA input ring ───────────────────────────────────────────────
@@ -393,7 +407,7 @@ class DSPProcessor extends AudioWorkletProcessor {
 
         // Trigger spectral pass every HOP_SIZE samples
         if (this._writePos % HOP_SIZE === 0) {
-          this._processSpectralHop();
+          this._processSpectralHop(this._writePos); // FIX v8.2: snapshot write position per hop
         }
 
         const readPos = (baseReadPos + n) & (FFT_SIZE - 1);
@@ -412,14 +426,14 @@ class DSPProcessor extends AudioWorkletProcessor {
   }
 
   // ── Single spectral pass: ONE forward STFT → in-place ops → ONE iSTFT ──────
-  _processSpectralHop() {
+  _processSpectralHop(snapWritePos = this._writePos) {
     const re = this._reBuffer;
     const im = this._imBuffer;
     const sr = this._sampleRate;
 
     // ── Copy windowed frame into re[], zero im[] ─────────────────────────────
     for (let i = 0; i < FFT_SIZE; i++) {
-      const idx = (this._writePos - FFT_SIZE + i + FFT_SIZE) & (FFT_SIZE - 1);
+      const idx = (snapWritePos - FFT_SIZE + i + FFT_SIZE) & (FFT_SIZE - 1); // FIX v8.2: stable read snapshot
       re[i] = this._inBuf[idx] * HANN[i];
       im[i] = 0;
     }
@@ -454,8 +468,9 @@ class DSPProcessor extends AudioWorkletProcessor {
     const smCoef    = Math.max(0, Math.min(0.98, this._params.nrSmoothing / 100 * 0.98));
     for (let k = 0; k < NUM_BINS; k++) {
       const noise = beta * this._prevMag[k] * (1 + this._params.nrSensitivity / 200);
+      const absFloor = Math.max(floorLin * mag[k], 1e-7); // FIX v8.2: absolute floor to prevent metallic spikes
       // Smoothed over-subtraction (anti-musical-noise)
-      const suppressed = Math.max(mag[k] - noise, floorLin * mag[k]);
+      const suppressed = Math.max(mag[k] - noise, absFloor);
       mag[k] = smCoef * mag[k] + (1 - smCoef) * suppressed;
     }
 
@@ -509,9 +524,12 @@ class DSPProcessor extends AudioWorkletProcessor {
       const guardBin = Math.floor(NUM_BINS * 0.85);
       for (let k = 0; k < guardBin; k++) {
         // Polynomial harmonic boost, clamped to +6 dB (×2) per bin
+        const normed = Math.min(mag[k], 1.0); // FIX v8.2: normalize input before polynomial powers
         let enhanced = mag[k];
         for (let o = 2; o <= ord; o++) {
-          enhanced += h / (o - 1) * Math.pow(mag[k], o);
+          const term = h / (o - 1) * Math.pow(normed, o);
+          if (!isFinite(term)) break; // FIX v8.2: guard against NaN/Inf polynomial term
+          enhanced += term;
         }
         mag[k] = Math.min(enhanced, mag[k] * 2.0);
       }
@@ -533,7 +551,7 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     // ── Overlap-add into output ring (normalized by windowed sum at read time) ─
     for (let i = 0; i < FFT_SIZE; i++) {
-      const widx = (this._writePos - FFT_SIZE + i + FFT_SIZE) & (FFT_SIZE - 1);
+      const widx = (snapWritePos - FFT_SIZE + i + FFT_SIZE) & (FFT_SIZE - 1); // FIX v8.2: stable write snapshot
       this._outBuf[widx]       += re[i] * HANN[i];
       this._outWindowSum[widx] += HANN[i] * HANN[i];
     }
@@ -551,7 +569,7 @@ class DSPProcessor extends AudioWorkletProcessor {
         type:  'SPECTRAL_FRAME',
         frame: this._frameCount,
         mag:   spectralFrameMag,
-        rms:   this._calcRMS(re),
+        rms:   this._calcRMS(mag), // FIX v8.2: compute RMS from spectral magnitudes, not post-iFFT buffer
       });
     }
   }

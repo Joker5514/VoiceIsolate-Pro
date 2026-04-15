@@ -57,4 +57,53 @@ describe('dsp-processor AudioWorklet behavior', () => {
     expect(Atomics.load(flagsIn, 1)).toBe(0);
     expect(Atomics.load(flagsOut, 1)).toBe(0);
   });
+
+  test('passes write-position snapshot into _processSpectralHop() at hop boundaries', () => {
+    const processor = loadProcessor();
+    const hopSpy = jest.fn();
+    processor._processSpectralHop = hopSpy;
+
+    const inputBlock = new Float32Array(1024);
+    const outputBlock = new Float32Array(1024);
+    processor.process([[inputBlock]], [[outputBlock]]);
+
+    expect(hopSpy).toHaveBeenCalledTimes(1);
+    expect(hopSpy).toHaveBeenCalledWith(1024);
+  });
+
+  test('clears de-ess hysteresis latch when de-essing is disabled', () => {
+    const processor = loadProcessor();
+    processor._deEssActive[0] = true;
+    processor._params.deEssAmt = 0;
+
+    const inputBlock = new Float32Array([0.25]);
+    const outputBlock = new Float32Array(1);
+    processor.process([[inputBlock]], [[outputBlock]]);
+
+    expect(processor._deEssActive[0]).toBe(false);
+  });
+
+  test('SPECTRAL_FRAME RMS is computed from spectral magnitude data', () => {
+    const processor = loadProcessor();
+    processor._spectralFrameInterval = 1;
+    processor._writePos = 0;
+
+    for (let i = 0; i < processor._inBuf.length; i++) {
+      processor._inBuf[i] = Math.sin((2 * Math.PI * i) / 64) * 0.5;
+    }
+
+    processor._processSpectralHop(0);
+
+    const frameCall = processor.port.postMessage.mock.calls
+      .map(([msg]) => msg)
+      .find((msg) => msg?.type === 'SPECTRAL_FRAME');
+    expect(frameCall).toBeTruthy();
+    expect(frameCall.rms).toBeCloseTo(processor._calcRMS(frameCall.mag), 8);
+  });
+
+  test('includes v8.2 overflow and floor guards in spectral ops', () => {
+    expect(processorSource).toContain('const normed = Math.min(mag[k], 1.0)');
+    expect(processorSource).toContain('if (!isFinite(term)) break;');
+    expect(processorSource).toContain('const absFloor = Math.max(floorLin * mag[k], 1e-7);');
+  });
 });
