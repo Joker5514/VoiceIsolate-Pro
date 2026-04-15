@@ -12,14 +12,30 @@
  * ════════════════════════════════════════════════════════════════
  */
 
-// ── PATCH 1: Add imports at top of app.js ────────────────────────
+// ── PATCH 1: Load helpers as classic scripts and bind from `window` ──
 //
-//   INSERT after the existing `import * as ort from 'onnxruntime-web';` line:
+//   `public/app/app.js` is loaded by `public/app/index.html` as a classic
+//   `<script src="./app.js">`, so DO NOT add ESM `import ... from ...`
+//   statements here unless the entrypoint is explicitly converted to
+//   `<script type="module">`.
 //
-import { initDiarizationTimeline, onDiarizationResult, seekTimeline }
-  from './diarization-timeline.js';
-import { initIsolationControls, updateSpeakerCards, setActiveSpeakerCard }
-  from './isolation-controls.js';
+//   Instead, load the helper files BEFORE `app.js` in `public/app/index.html`:
+//
+//   <script src="./diarization-timeline.js"></script>
+//   <script src="./isolation-controls.js"></script>
+//   <script src="./app.js"></script>
+//
+//   Ensure those helper files expose their APIs on `window`:
+//     - `window.DiarizationTimeline = { initDiarizationTimeline, onDiarizationResult, seekTimeline }`
+//     - `window.IsolationControls = { initIsolationControls, updateSpeakerCards, setActiveSpeakerCard }`
+//
+//   Then, in `public/app/app.js`, INSERT after the existing
+//   `import * as ort from 'onnxruntime-web';` line:
+//
+const { initDiarizationTimeline, onDiarizationResult, seekTimeline } =
+  window.DiarizationTimeline;
+const { initIsolationControls, updateSpeakerCards, setActiveSpeakerCard } =
+  window.IsolationControls;
 
 
 // ── PATCH 2: Extend App state object ────────────────────────────
