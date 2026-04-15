@@ -252,7 +252,7 @@ function _render() {
         const xEnd   = _timeToX(seg.end,   W, viewStart, viewDuration);
         const segW   = Math.max(2, xEnd - xStart);
 
-        const alpha = isActive ? CONFIDENCE_ALPHA(seg.confidence) : 0.2;
+        const alpha = isActive ? CONFIDENCE_ALPHA(seg.confidence ?? 1) : 0.2;
         ctx.globalAlpha = alpha;
         ctx.fillStyle   = spk.color;
         ctx.fillRect(xStart, y + 4, segW, TRACK_HEIGHT - 8);
