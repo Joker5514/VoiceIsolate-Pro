@@ -351,7 +351,9 @@ function _bindCanvasClick() {
     setSpeakerSolo(sid);
 
     // rebuild isolation-controls panel if wired
-    document.dispatchEvent(new CustomEvent('diarization:speakerSelected', { detail: { speakerId: sid } }));
+    document.dispatchEvent(new CustomEvent('diarization:speakerSelected', {
+      detail: { speakerId: Timeline.activeSpeaker }
+    }));
   });
 
   // Hover tooltip
