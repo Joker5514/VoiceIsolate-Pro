@@ -81,7 +81,7 @@ const TIER_CAPS = {
     forensicMode:    false,
   },
   PRO: {
-    maxFileSizeMB:   500,
+    maxFileSizeMB:   Infinity,
     filesPerMonth:   50,
     maxStages:       18,
     mlModels:        ['silero-vad', 'rnnoise'],
@@ -92,7 +92,7 @@ const TIER_CAPS = {
     forensicMode:    false,
   },
   STUDIO: {
-    maxFileSizeMB:   2048,
+    maxFileSizeMB:   Infinity,
     filesPerMonth:   Infinity,
     maxStages:       32,
     mlModels:        ['silero-vad', 'rnnoise', 'demucs-v4', 'ecapa-tdnn'],

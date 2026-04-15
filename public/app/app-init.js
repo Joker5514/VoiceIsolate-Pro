@@ -506,14 +506,6 @@ function wireFileInput() {
     if (!file) return;
 
     const sizeMB = file.size / (1024 * 1024);
-    if (!checkFileSizeLimit(sizeMB)) {
-      showToast(
-        `File too large (${sizeMB.toFixed(1)} MB). ` +
-        `Your tier allows ${caps.maxFileSizeMB} MB max.`,
-        'error'
-      );
-      return;
-    }
 
     _pendingFileBuffer = await file.arrayBuffer();
     setFileLabel(file.name, sizeMB);
