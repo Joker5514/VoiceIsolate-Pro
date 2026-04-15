@@ -372,8 +372,8 @@ class DSPProcessor extends AudioWorkletProcessor {
     fft(re, im, false);
 
     // Extract magnitude and phase (positive bins only)
-    const mag   = new Float32Array(NUM_BINS);
-    const phase = new Float32Array(NUM_BINS);
+    const mag   = this._magBuffer;
+    const phase = this._phaseBuffer;
     for (let k = 0; k < NUM_BINS; k++) {
       mag[k]   = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
       phase[k] = Math.atan2(im[k], re[k]);
