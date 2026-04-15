@@ -7,7 +7,6 @@ import {
   requireAuth,
   logout,
   getCaps,
-  getAllowedStages,
   checkFileSizeLimit,
   checkFilesRemaining,
   incrementFileUsage
@@ -27,6 +26,7 @@ if (logoutBtn) {
   logoutBtn.addEventListener('click', logout);
 }
 
+// Returns the first existing element for a list of candidate IDs, or null.
 const getById = (...ids) => ids.map(id => document.getElementById(id)).find(Boolean) ?? null;
 
 // ─── 2. SHARED ARRAY BUFFERS ─────────────────────────────────────────────────
@@ -95,46 +95,15 @@ async function initAudio() {
 }
 
 // ─── 5. ML WORKER ────────────────────────────────────────────────────────────
-function initMLWorker() {
-  if (App.mlWorker) {
-    App.mlWorker.terminate();
-    App.mlWorker = null;
+function referenceMLWorker() {
+  if (App.mlWorker) return;
+  App.mlWorker =
+    window._vipApp?.orchestrator?.mlWorker ||
+    window.PipelineOrchestrator?.mlWorker ||
+    null;
+  if (!App.mlWorker) {
+    console.info('[app-init] ML worker is managed by pipeline-orchestrator.js; local spawn skipped.');
   }
-
-  App.mlWorker = new Worker('./ml-worker.js');
-
-  App.mlWorker.postMessage({
-    type: 'init',
-    payload: {
-      inputSAB,
-      outputSAB,
-      modelBasePath:      './models/',
-      preferredProviders: ['webgpu', 'wasm'],
-      allowedModels:      caps.mlModels,
-      allowedStages:      getAllowedStages()
-    }
-  });
-
-  App.mlWorker.onmessage = ev => {
-    const { type, modelId, providers, latencyMs, error } = ev.data ?? {};
-    if (type === 'model_loaded') {
-      console.info(`[ml-worker] ✓ ${modelId} via ${providers?.join(',') ?? '?'}`);
-      const el = document.getElementById('stat-worker-latency');
-      if (el && latencyMs != null) el.textContent = latencyMs.toFixed(0);
-    }
-    if (type === 'log' && ev.data?.level === 'warn') {
-      console.warn(`[ml-worker] ${ev.data?.msg ?? 'warning'}`);
-    }
-    if (type === 'ready') {
-      const pill = getById('pipeStage', 'pipelineStage', 'hStatus');
-      if (pill) pill.textContent = 'ML Ready';
-    }
-    if (type === 'error') {
-      console.warn(`[ml-worker] ✗ ${error ?? ev.data?.msg ?? 'unknown error'}`);
-    }
-  };
-
-  App.mlWorker.onerror = err => console.error('[ml-worker] fatal:', err);
 }
 
 // ─── 6. 52-SLIDER AUTO-DISCOVERY ─────────────────────────────────────────────
@@ -209,8 +178,8 @@ if (liveBtn) {
       }
       liveBtn.classList.add('vip-btn--active');
 
-      // Boot the ML worker once mic is confirmed live
-      initMLWorker();
+      // Resolve ML worker reference owned by pipeline-orchestrator.
+      referenceMLWorker();
     } catch (err) {
       alert('Microphone access denied: ' + err.message);
     }
@@ -234,7 +203,7 @@ async function loadFile(file) {
     if (el) el.textContent = msg;
   };
 
-  setStatus('Decoding…');
+  setStatus('Decoding...');
   try {
     const arrayBuffer = await file.arrayBuffer();
     const tmpCtx = new AudioContext();
@@ -322,7 +291,7 @@ if (processBtn) {
     }
     incrementFileUsage();
 
-    setStage('Rendering (offline DSP, ML disabled)…'); fillBar(10);
+    setStage('Rendering (offline DSP-safe mode, ML bypassed in app-init)...'); fillBar(10);
 
     const { numberOfChannels, length, sampleRate } = App.fileBuffer;
     const offline = new OfflineAudioContext(numberOfChannels, length, sampleRate);
@@ -333,6 +302,7 @@ if (processBtn) {
       numberOfInputs:     1,
       numberOfOutputs:    1,
       outputChannelCount: [numberOfChannels],
+      // DSP-only path: dsp-processor supports missing SAB buffers.
       processorOptions:   {}
     });
 
