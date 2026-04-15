@@ -340,7 +340,8 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     while (this.inputHead - this.inputProcessed >= this.HOP_SIZE) {
       // Gather newest FFT_SIZE samples (the analysis frame)
       const frame = new Float32Array(this.FFT_SIZE);
-      const base  = this.inputHead - this.FFT_SIZE;
+      const base  = this.inputProcessed + this.HOP_SIZE - this.FFT_SIZE;
+
       for (let i = 0; i < this.FFT_SIZE; i++) {
         frame[i] = (base + i >= 0)
           ? this.inputAccum[(base + i) % accumLen]
