@@ -115,6 +115,66 @@ describe('ml-worker.js', () => {
     expect(readyMsg.models.deepfilter).toBe(true); // Assuming others succeed
     expect(readyMsg.models.demucs).toBe(true); // Assuming others succeed
   });
+
+  it('falls back to WASM provider when WebGPU session creation fails', async () => {
+    const runMock = jest.fn().mockResolvedValue({ output: { data: new Float32Array([1]) } });
+    workerGlobal.self.ort.InferenceSession.create.mockImplementation((_modelPath, options) => {
+      if (options.executionProviders[0] === 'webgpu') {
+        return Promise.reject(new Error('webgpu unavailable'));
+      }
+      return Promise.resolve({ run: runMock });
+    });
+
+    await workerGlobal.self.onmessage({
+      data: { type: 'loadModel', models: ['vad'] }
+    });
+
+    expect(workerGlobal.self.ort.InferenceSession.create).toHaveBeenCalledTimes(2);
+    expect(workerGlobal.self.ort.InferenceSession.create.mock.calls[0][1].executionProviders).toEqual(['webgpu', 'wasm']);
+    expect(workerGlobal.self.ort.InferenceSession.create.mock.calls[1][1].executionProviders).toEqual(['wasm']);
+
+    const readyMsg = postedMessages.find(m => m.type === 'ready');
+    expect(readyMsg).toBeDefined();
+    expect(readyMsg.models.vad).toBe(true);
+  });
+
+  it('uses dynamic SAB chunk size for demucs tensor shape', async () => {
+    const demucsRun = jest.fn().mockImplementation(async (feeds) => {
+      const bins = feeds.mag_input ? feeds.mag_input.dims[2] : 0;
+      return { vocal_mask: { data: new Float32Array(bins).fill(1) } };
+    });
+    workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({ run: demucsRun });
+
+    const chunkSize = 333;
+    const inputSAB = new SharedArrayBuffer((chunkSize + 4) * Float32Array.BYTES_PER_ELEMENT);
+    const outputSAB = new SharedArrayBuffer((chunkSize + 4) * Float32Array.BYTES_PER_ELEMENT);
+
+    await workerGlobal.self.onmessage({
+      data: {
+        type: 'init',
+        payload: {
+          inputSAB,
+          outputSAB,
+          allowedModels: ['demucs'],
+          allowedStages: 10,
+          preferredProviders: ['wasm'],
+          modelBasePath: './models/',
+        },
+      },
+    });
+
+    await workerGlobal.self.onmessage({ data: { type: 'process' } });
+
+    const processed = postedMessages.find((m) => m.type === 'processed');
+    expect(processed).toBeDefined();
+    expect(processed.output.length).toBe(chunkSize);
+    expect(demucsRun).toHaveBeenCalled();
+    const processCall = demucsRun.mock.calls.find(([feeds]) => feeds && feeds.mag_input);
+    expect(processCall).toBeDefined();
+    expect(processCall[0].mag_input.dims).toEqual([1, 1, chunkSize]);
+
+    await workerGlobal.self.onmessage({ data: { type: 'reset' } });
+  });
 });
 
 // ============================================================
