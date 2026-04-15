@@ -574,6 +574,7 @@ class VoiceIsolatePro {
 
   // ======== FILE HANDLING ========
   async handleFile(file) {
+    this.dom.fileInfo.textContent = '⏳ Loading...';
     try {
       const LM = window.LicenseManager;
       if (LM && typeof LM.checkFileLimit === 'function') {
@@ -625,6 +626,7 @@ class VoiceIsolatePro {
       } else { this.dom.videoCard.style.display = 'none'; }
       this.inputBuffer = audioBuf;
       this.outputBuffer = null;
+      await new Promise(r => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(r, 0));
       this.onAudioLoaded(file.name);
     } catch (err) {
       console.error('File load error:', err);
