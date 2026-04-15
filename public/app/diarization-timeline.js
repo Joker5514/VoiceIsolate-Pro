@@ -405,6 +405,7 @@ function _bindResize() {
 // ─────────────────────────────────────────────
 
 function _startRAF() {
+  if (Timeline.rafId) return;
   const loop = () => {
     Timeline.rafId = requestAnimationFrame(loop);
     tickTimeline();
