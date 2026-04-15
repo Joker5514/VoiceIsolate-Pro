@@ -133,7 +133,6 @@ class DSPProcessor extends AudioWorkletProcessor {
     // inputSAB  layout: [Float32 mag × NUM_BINS] [Int32 flags × 4]
     //   flagsIn[0]  = frame counter (written by worklet)
     //   flagsIn[1]  = (reserved)
-    //   flagsIn[2]  = formant-protect request (1 = protect harmonics)
     // outputSAB layout: [Float32 mask × NUM_BINS] [Int32 flags × 4]
     //   flagsOut[1] = mask-ready flag (written by ml-worker)
     if (options?.processorOptions?.inputSAB) {
@@ -149,10 +148,10 @@ class DSPProcessor extends AudioWorkletProcessor {
     }
 
     // ── Noise gate state ─────────────────────────────────────────────────────
-    this._gateOpen     = false;
-    this._gateHoldSamp = 0;   // remaining hold samples
-    this._gateLookBuf  = null;
-    this._gateLookPos  = 0;
+    this._gateOpen     = [false, false];
+    this._gateHoldSamp = [0, 0];   // remaining hold samples
+    this._gateLookBuf  = [null, null];
+    this._gateLookPos  = [0, 0];
 
     // ── Per-channel IIR filters ──────────────────────────────────────────────
     // Hum notch filters (60/120/180 Hz, two channels)
@@ -206,6 +205,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._frameCount = 0;
     // How often to send SPECTRAL_FRAME to main thread (every N hops)
     this._spectralFrameInterval = 4;
+    this._spectralFrameMag = new Float32Array(NUM_BINS);
 
     // Receive slider updates from main thread
     this.port.onmessage = (ev) => {
@@ -236,8 +236,10 @@ class DSPProcessor extends AudioWorkletProcessor {
     const lookSamp = Math.max(1, Math.round(
       (this._params.gateLookahead / 1000) * this._sampleRate
     ));
-    this._gateLookBuf = new Float32Array(lookSamp);
-    this._gateLookPos = 0;
+    for (let ch = 0; ch < 2; ch++) {
+      this._gateLookBuf[ch] = new Float32Array(lookSamp);
+      this._gateLookPos[ch] = 0;
+    }
   }
 
   _rebuildFilters(sr) {
@@ -279,6 +281,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     const humReduce     = Math.max(0, Math.min(1, this._params.humReduce / 100));
 
     for (let ch = 0; ch < numChannels; ch++) {
+      const gateCh = ch < 2 ? ch : 0;
       const inData  = input[ch];
       const outData = output[ch];
       const notch60  = this._notch60[ch]  || this._notch60[0];
@@ -307,28 +310,34 @@ class DSPProcessor extends AudioWorkletProcessor {
 
         // ── Pre-spectral Stage B: Lookahead noise gate ───────────────────────
         // Write to lookahead ring; read back the delayed sample
-        const lookLen = this._gateLookBuf.length;
-        const delayed = this._gateLookBuf[this._gateLookPos];
-        this._gateLookBuf[this._gateLookPos] = x;
-        this._gateLookPos = (this._gateLookPos + 1) % lookLen;
+        const gateLookBuf = this._gateLookBuf[gateCh] || this._gateLookBuf[0];
+        let gateLookPos = this._gateLookPos[gateCh];
+        if (gateLookPos === undefined) gateLookPos = this._gateLookPos[0];
+        const lookLen = gateLookBuf.length;
+        const delayed = gateLookBuf[gateLookPos];
+        gateLookBuf[gateLookPos] = x;
+        gateLookPos = (gateLookPos + 1) % lookLen;
+        this._gateLookPos[gateCh] = gateLookPos;
 
         // Sidechain: track signal level
         const envVal = processEnvFollower(gateEf, x);
         if (envVal > gateThreshLin) {
-          this._gateOpen     = true;
-          this._gateHoldSamp = holdSamples;
-        } else if (this._gateHoldSamp > 0) {
-          this._gateHoldSamp--;
+          this._gateOpen[gateCh]     = true;
+          this._gateHoldSamp[gateCh] = holdSamples;
+        } else if (this._gateHoldSamp[gateCh] > 0) {
+          this._gateHoldSamp[gateCh]--;
         } else {
-          this._gateOpen = false;
+          this._gateOpen[gateCh] = false;
         }
-        x = this._gateOpen ? delayed : delayed * gateRangeGain;
+        x = this._gateOpen[gateCh] ? delayed : delayed * gateRangeGain;
 
         // ── Pre-spectral Stage C: Time-domain de-essing ──────────────────────
         if (this._params.deEssAmt > 0) {
-          // The biquad filter already applies attenuation at the sibilance band.
-          // This stage runs the signal through the peaked filter (cut preset).
-          x = processBiquad(deEssBq, x);
+          const sibBand = processBiquad(deEssBq, x);
+          const sibEnv = processEnvFollower(deEssEf, sibBand);
+          const ratio = Math.min(1, sibEnv / (Math.abs(x) + 1e-9));
+          const reduction = Math.max(0, Math.min(0.85, ((ratio - 0.35) / 0.65) * (this._params.deEssAmt / 100) * 0.85));
+          x -= sibBand * reduction;
         }
 
         // ── Feed OLA input ring ───────────────────────────────────────────────
@@ -441,9 +450,6 @@ class DSPProcessor extends AudioWorkletProcessor {
         for (let k = 0; k < NUM_BINS; k++) this._mlMask[k] = this._outputView[k];
         Atomics.store(this._flagsOut, 1, 0);
       }
-      // Signal formant-protect mode to ml-worker if harmRecov > 30%
-      const protectFormants = this._params.harmRecov > 30 ? 1 : 0;
-      Atomics.store(this._flagsIn, 2, protectFormants);
       this._inputView.set(mag);
       Atomics.add(this._flagsIn, 0, 1);
     }
@@ -489,15 +495,14 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     // ── Post SPECTRAL_FRAME to main thread for VisualizationEngine VU meters ─
     // Send every _spectralFrameInterval hops to cap postMessage overhead.
-    // Transfers ownership of a new Float32Array (zero-copy via Transferable).
     if (this._frameCount % this._spectralFrameInterval === 0) {
-      const magCopy = new Float32Array(mag); // slice NUM_BINS
+      this._spectralFrameMag.set(mag);
       this.port.postMessage({
         type:  'SPECTRAL_FRAME',
         frame: this._frameCount,
-        mag:   magCopy,
+        mag:   this._spectralFrameMag,
         rms:   this._calcRMS(re),
-      }, [magCopy.buffer]);
+      });
     }
   }
 

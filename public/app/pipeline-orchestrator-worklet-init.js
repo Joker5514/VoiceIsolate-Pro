@@ -151,6 +151,7 @@
         outputChannelCount: [audioCtx.destination.channelCount || 2],
         processorOptions,
       });
+      this._node.connect(audioCtx.destination);
 
       // 4. Send init message with sampleRate
       this._node.port.postMessage({
@@ -161,14 +162,12 @@
       // 5. Forward SABs to ml-worker (if the PipelineOrchestrator has one)
       this._forwardSABsToMlWorker();
 
-      // 6. Attach SPECTRAL_FRAME listener so VisualizationEngine gets data
-      this._node.port.addEventListener('message', (ev) => {
-        if (ev.data?.type === 'SPECTRAL_FRAME') {
-          // Re-dispatch as a CustomEvent so VisualizationEngine._onWorkletMessage
-          // can subscribe via the standard port.addEventListener path.
-          // (VisualizationEngine attaches directly in app.js attachDspWorkletToVisuals)
-        }
-      });
+      // 6. Expose on app/orchestrator for VisualizationEngine + live graph routing
+      const orch = window._pipelineOrchestrator || window._vipApp?._orchestrator;
+      if (orch && !orch.workletNode) {
+        orch.workletNode = this._node;
+        if (!orch.ctx) orch.ctx = audioCtx;
+      }
       try { this._node.port.start(); } catch (_) {}
 
       // 7. Expose on app for VisualizationEngine attachment
@@ -199,24 +198,33 @@
       if (!this._inputSAB || !this._outputSAB) return;
       const orch = window._pipelineOrchestrator || window._vipApp?._orchestrator;
       const mlWorker = orch?.mlWorker || window._vipApp?.mlWorker;
-      if (mlWorker) {
-        mlWorker.postMessage({
-          type:      'setSABs',
-          inputSAB:  this._inputSAB,
-          outputSAB: this._outputSAB,
+      const postInit = (worker) => {
+        worker.postMessage({
+          type: 'init',
+          payload: {
+            inputSAB: this._inputSAB,
+            outputSAB: this._outputSAB,
+          },
         });
+      };
+      if (mlWorker) {
+        postInit(mlWorker);
       } else {
         // ml-worker not yet available — retry once it's assigned
+        let attempts = 0;
+        const maxAttempts = 20;
         const retryId = setInterval(() => {
           const w = window._pipelineOrchestrator?.mlWorker
                  || window._vipApp?.mlWorker;
           if (w) {
             clearInterval(retryId);
-            w.postMessage({
-              type:      'setSABs',
-              inputSAB:  this._inputSAB,
-              outputSAB: this._outputSAB,
-            });
+            postInit(w);
+            return;
+          }
+          attempts++;
+          if (attempts >= maxAttempts) {
+            clearInterval(retryId);
+            console.warn('[WorkletInit] ml-worker unavailable; SAB forwarding timed out.');
           }
         }, 300);
       }
@@ -267,7 +275,7 @@
   window._workletInit = workletInit;
 
   // Auto-init when _vipApp is ready and has an AudioContext
-  // Uses polling with exponential back-off (max 4s total)
+  // Uses fixed polling interval with max retry cap.
   let _retryCount = 0;
   const _maxRetries = 20;
   const _retryInterval = setInterval(async () => {
@@ -275,12 +283,7 @@
     if (app?.ctx && app.ctx.state !== 'closed') {
       clearInterval(_retryInterval);
       try {
-        const node = await workletInit.init(app.ctx);
-        // Attach to PipelineOrchestrator if available
-        const orch = window._pipelineOrchestrator || app._orchestrator;
-        if (orch && typeof orch._attachWorkletNode === 'function') {
-          orch._attachWorkletNode(node, workletInit.getSABs());
-        }
+        await workletInit.init(app.ctx);
       } catch (e) {
         console.error('[WorkletInit] Auto-init failed:', e);
       }
