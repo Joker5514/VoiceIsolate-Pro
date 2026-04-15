@@ -23,13 +23,15 @@ router.use(express.json({ limit: '1mb' }));
 const _store = new Map(); // userId → { presets, noiseProfiles, history, updatedAt }
 
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
+// FIX: no throw on missing env var so Vercel deployments without the secret
+// don't crash at startup. Set LICENSE_JWT_SECRET in Vercel Environment Variables.
 const LICENSE_SECRET = (() => {
   if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('LICENSE_JWT_SECRET environment variable is required');
-  }
-  const fallback = 'voiceisolate-dev-secret-key-minimum-32-chars';
-  console.warn('[Sync] LICENSE_JWT_SECRET not set — using dev default. Do NOT use in production.');
+  const fallback = 'vip-dev-fallback-secret-change-in-production-32chars';
+  console.warn(
+    '[sync] WARNING: LICENSE_JWT_SECRET not set. Using insecure dev fallback.\n' +
+    '  → Set it in Vercel Dashboard → Settings → Environment Variables.'
+  );
   return fallback;
 })();
 

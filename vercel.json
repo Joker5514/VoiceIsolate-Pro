@@ -8,6 +8,11 @@
     "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": "true",
     "NODE_ENV": "production"
   },
+  "functions": {
+    "api/**/*.js": {
+      "runtime": "nodejs20.x"
+    }
+  },
   "github": {
     "autoJobCancelation": false
   },
