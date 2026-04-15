@@ -51,8 +51,8 @@ const FFTSIZE  = 4096;
 const NUMBINS  = FFTSIZE / 2 + 1;   // 2049
 const F32BYTES = NUMBINS * 4;
 
-const inputSAB  = new SharedArrayBuffer(F32BYTES + 8);
-const outputSAB = new SharedArrayBuffer(F32BYTES + 8);
+const inputSAB  = new SharedArrayBuffer(F32BYTES + 16);
+const outputSAB = new SharedArrayBuffer(F32BYTES + 16);
 
 // ─── 3. APP STATE ────────────────────────────────────────────────────────────
 const App = {
