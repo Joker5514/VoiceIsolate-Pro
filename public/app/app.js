@@ -389,9 +389,11 @@ class VoiceIsolatePro {
 
   bindEvents() {
     const uz = this.dom.uploadZone;
-    ['dragenter','dragover'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uz.classList.add('dragover'); }));
-    ['dragleave','drop'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uz.classList.remove('dragover'); }));
-    uz.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
+    let dragCounter = 0;
+    uz.addEventListener('dragenter', e => { e.preventDefault(); e.stopPropagation(); dragCounter++; uz.classList.add('dragover'); });
+    uz.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
+    uz.addEventListener('dragleave', e => { e.preventDefault(); e.stopPropagation(); dragCounter--; if (dragCounter <= 0) { dragCounter = 0; uz.classList.remove('dragover'); } });
+    uz.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); dragCounter = 0; uz.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
     uz.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
     uz.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.dom.fileInput.click(); } });
     this.dom.fileBtn.addEventListener('click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
@@ -585,7 +587,7 @@ class VoiceIsolatePro {
       this.stop();
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
       this.setStatus('LOADING');
-      this.isVideo = file.type.startsWith('video/');
+      this.isVideo = normalizedType.startsWith('video/');
       // Await AudioContext resume before decode — suspended context causes decodeAudioData to stall
       if (this.ctx.state === 'suspended') {
         try { await this.ctx.resume(); } catch (_e) {}
@@ -607,9 +609,10 @@ class VoiceIsolatePro {
         this.dom.videoPlayer.src = this.videoUrl;
         this.dom.videoCard.style.display = 'block';
         await new Promise((res, rej) => {
-          this.dom.videoPlayer.onloadedmetadata = res;
-          this.dom.videoPlayer.onerror = () => rej(new Error('Video metadata load failed'));
-          setTimeout(res, 5000);
+          let settled = false;
+          const timeout = setTimeout(() => { if (!settled) { settled = true; rej(new Error('Video metadata load timeout')); } }, 5000);
+          this.dom.videoPlayer.onloadedmetadata = () => { if (!settled) { settled = true; clearTimeout(timeout); res(); } };
+          this.dom.videoPlayer.onerror = () => { if (!settled) { settled = true; clearTimeout(timeout); rej(new Error('Video metadata load failed')); } };
         });
       } else { this.dom.videoCard.style.display = 'none'; }
       this.inputBuffer = audioBuf;
@@ -625,12 +628,13 @@ class VoiceIsolatePro {
   async decodeViaVideoElement(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
+      const cleanup = () => { try { URL.revokeObjectURL(url); } catch {} };
       const vid = document.createElement('video');
       vid.muted = true; vid.src = url;
       vid.onloadedmetadata = async () => {
         try {
           const duration = vid.duration;
-          if (!duration || !isFinite(duration)) { reject(new Error('Cannot determine video duration')); return; }
+          if (!duration || !isFinite(duration)) { cleanup(); reject(new Error('Cannot determine video duration')); return; }
           const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
           const source = tmpCtx.createMediaElementSource(vid);
           const dest = tmpCtx.createMediaStreamDestination();
@@ -639,7 +643,7 @@ class VoiceIsolatePro {
           const recorder = new MediaRecorder(dest.stream);
           recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
           recorder.onstop = async () => {
-            vid.pause(); URL.revokeObjectURL(url);
+            vid.pause(); cleanup();
             const blob = new Blob(chunks, { type: 'audio/webm' });
             const ab = await blob.arrayBuffer();
             try { const decoded = await this.ctx.decodeAudioData(ab); tmpCtx.close(); resolve(decoded); }
@@ -648,9 +652,9 @@ class VoiceIsolatePro {
           recorder.start(); vid.play();
           vid.onended = () => { recorder.stop(); };
           setTimeout(() => { if (recorder.state === 'recording') { vid.pause(); recorder.stop(); } }, (duration + 2) * 1000);
-        } catch (e) { reject(e); }
+        } catch (e) { cleanup(); reject(e); }
       };
-      vid.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Video element failed')); };
+      vid.onerror = () => { cleanup(); reject(new Error('Video element failed')); };
     });
   }
 
