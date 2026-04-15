@@ -119,14 +119,23 @@ function isRegisteredSpeaker(embedding) {
 }
 
 function clusterIdForEmbedding(embedding) {
-  let bestId  = 'UNREGISTERED_0';
+  let bestId = null;
   let bestSim = -1;
+
+  // 1. Check registered speakers
   for (const reg of State.registeredEmbeddings) {
     const sim = cosineSimilarity(embedding, reg.embedding);
     if (sim > bestSim) { bestSim = sim; bestId = reg.id; }
   }
+
+  // 2. Check existing unregistered clusters
+  for (const cluster of State.clusterBuffer) {
+    const sim = cosineSimilarity(embedding, cluster.embedding);
+    if (sim > bestSim) { bestSim = sim; bestId = cluster.clusterId; }
+  }
+
   if (bestSim < State.COVERT_CLUSTER_SIM) {
-    const newId = `UNREGISTERED_${State.registeredEmbeddings.length}`;
+    const newId = `UNREGISTERED_${State.unregisteredCounter++}`;
     State.clusterBuffer.push({ embedding, clusterId: newId });
     if (State.clusterBuffer.length > 200) State.clusterBuffer.shift();
     return newId;
