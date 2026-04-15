@@ -22,6 +22,7 @@ const HOP_SIZE = 1024;   // 75% overlap
 const HALF     = FFT_SIZE >>> 1;
 const NUM_BINS = HALF + 1;
 const EPSILON = 1e-9;
+const SPECTRAL_ABS_FLOOR_MIN = 1e-7;
 const DEESS_RATIO_THRESHOLD = 0.35;
 const DEESS_RATIO_RANGE = 0.65;
 const DEESS_RATIO_HYSTERESIS = 0.02;
@@ -433,7 +434,8 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     // ── Copy windowed frame into re[], zero im[] ─────────────────────────────
     for (let i = 0; i < FFT_SIZE; i++) {
-      const idx = (snapWritePos - FFT_SIZE + i + FFT_SIZE) & (FFT_SIZE - 1); // FIX v8.2: stable read snapshot
+      // FIX v8.2: stable read snapshot (caller freezes writePos per hop); algebraically same ring-wrap
+      const idx = (snapWritePos + i) & (FFT_SIZE - 1);
       re[i] = this._inBuf[idx] * HANN[i];
       im[i] = 0;
     }
@@ -468,7 +470,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     const smCoef    = Math.max(0, Math.min(0.98, this._params.nrSmoothing / 100 * 0.98));
     for (let k = 0; k < NUM_BINS; k++) {
       const noise = beta * this._prevMag[k] * (1 + this._params.nrSensitivity / 200);
-      const absFloor = Math.max(floorLin * mag[k], 1e-7); // FIX v8.2: absolute floor to prevent metallic spikes
+      const absFloor = Math.max(floorLin * mag[k], SPECTRAL_ABS_FLOOR_MIN); // FIX v8.2: absolute floor to prevent metallic spikes
       // Smoothed over-subtraction (anti-musical-noise)
       const suppressed = Math.max(mag[k] - noise, absFloor);
       mag[k] = smCoef * mag[k] + (1 - smCoef) * suppressed;
@@ -551,7 +553,8 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     // ── Overlap-add into output ring (normalized by windowed sum at read time) ─
     for (let i = 0; i < FFT_SIZE; i++) {
-      const widx = (snapWritePos - FFT_SIZE + i + FFT_SIZE) & (FFT_SIZE - 1); // FIX v8.2: stable write snapshot
+      // FIX v8.2: stable write snapshot (caller freezes writePos per hop); algebraically same ring-wrap
+      const widx = (snapWritePos + i) & (FFT_SIZE - 1);
       this._outBuf[widx]       += re[i] * HANN[i];
       this._outWindowSum[widx] += HANN[i] * HANN[i];
     }

@@ -66,9 +66,10 @@ describe('dsp-processor AudioWorklet behavior', () => {
     const inputBlock = new Float32Array(1024);
     const outputBlock = new Float32Array(1024);
     processor.process([[inputBlock]], [[outputBlock]]);
+    const expectedSnapshot = processor._writePos;
 
     expect(hopSpy).toHaveBeenCalledTimes(1);
-    expect(hopSpy).toHaveBeenCalledWith(1024);
+    expect(hopSpy).toHaveBeenCalledWith(expectedSnapshot);
   });
 
   test('clears de-ess hysteresis latch when de-essing is disabled', () => {
@@ -99,11 +100,41 @@ describe('dsp-processor AudioWorklet behavior', () => {
       .find((msg) => msg?.type === 'SPECTRAL_FRAME');
     expect(frameCall).toBeTruthy();
     expect(frameCall.rms).toBeCloseTo(processor._calcRMS(frameCall.mag), 8);
+    expect(Math.abs(frameCall.rms - processor._calcRMS(processor._reBuffer))).toBeGreaterThan(1e-6);
   });
 
-  test('includes v8.2 overflow and floor guards in spectral ops', () => {
-    expect(processorSource).toContain('const normed = Math.min(mag[k], 1.0)');
-    expect(processorSource).toContain('if (!isFinite(term)) break;');
-    expect(processorSource).toContain('const absFloor = Math.max(floorLin * mag[k], 1e-7);');
+  test('harmonic enhancement stays finite at extreme amplitudes', () => {
+    const processor = loadProcessor();
+    processor._params.harmRecov = 100;
+    processor._params.harmOrder = 8;
+    processor._spectralFrameInterval = 1;
+
+    for (let i = 0; i < processor._inBuf.length; i++) {
+      processor._inBuf[i] = 1e6;
+    }
+
+    processor._processSpectralHop(0);
+    for (let i = 0; i < processor._magBuffer.length; i++) {
+      expect(Number.isFinite(processor._magBuffer[i])).toBe(true);
+    }
+  });
+
+  test('spectral subtraction keeps a non-zero absolute floor under heavy suppression', () => {
+    const processor = loadProcessor();
+    processor._params.nrAmount = 100;
+    processor._params.nrSpectralSub = 100;
+    processor._params.nrSensitivity = 100;
+    processor._params.nrSmoothing = 0;
+    processor._params.nrFloor = -120;
+    processor._params.harmRecov = 0;
+
+    processor._inBuf.fill(0);
+    processor._processSpectralHop(0);
+
+    let minMag = Infinity;
+    for (let i = 0; i < processor._magBuffer.length; i++) {
+      if (processor._magBuffer[i] < minMag) minMag = processor._magBuffer[i];
+    }
+    expect(minMag).toBeGreaterThan(0);
   });
 });
