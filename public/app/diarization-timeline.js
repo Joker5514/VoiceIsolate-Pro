@@ -432,7 +432,7 @@ function _pushSpeakerVolumes() {
 // ─────────────────────────────────────────────
 
 function _updatePlayheadDOM() {
-  if (!Timeline.playheadEl || !Timeline.canvas) return;
+  if (!Timeline.playheadEl || !Timeline.canvas || Timeline.viewDuration === 0) return;
   const x = _timeToX(Timeline.currentTime, Timeline.canvas.width, Timeline.viewStart, Timeline.viewDuration);
   Timeline.playheadEl.style.left = `${x}px`;
 }
