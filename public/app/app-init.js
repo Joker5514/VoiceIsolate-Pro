@@ -67,7 +67,7 @@ const App = {
 
 // ─── 4. AUDIO CONTEXT + WORKLET ──────────────────────────────────────────────
 async function initAudio() {
-  if (App.ctx) {
+  if (App.ctx && App.ctx.state !== 'closed') {
     if (App.ctx.state === 'suspended') await App.ctx.resume();
     return;
   }
