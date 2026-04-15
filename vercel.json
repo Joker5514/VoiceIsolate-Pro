@@ -27,6 +27,23 @@
   ],
   "headers": [
     {
+      "source": "/app/models/(.*)\\.onnx",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/octet-stream"
+        },
+        {
+          "key": "Cross-Origin-Resource-Policy",
+          "value": "same-origin"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=604800, immutable"
+        }
+      ]
+    },
+    {
       "source": "/app/(.*)",
       "headers": [
         {
