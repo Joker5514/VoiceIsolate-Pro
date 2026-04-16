@@ -449,15 +449,23 @@ class VoiceIsolatePro {
         const rc = r.getBoundingClientRect();
         // Center tooltip horizontally on screen
         const vh = window.innerHeight;
+        const margin = 10;
+        const gap = 8;
         tt.style.left = '50%';
         tt.style.transform = 'translateX(-50%)';
-        // Position vertically: above or below the control row
-        const topPos = rc.bottom + 8;
-        if (topPos + 80 > vh) {
-          tt.style.top = Math.max(10, rc.top - 60) + 'px';
+        // Measure the rendered tooltip so long descriptions are positioned correctly.
+        const ttRect = tt.getBoundingClientRect();
+        const belowTop = rc.bottom + gap;
+        const aboveTop = rc.top - gap - ttRect.height;
+        let top;
+        if (belowTop + ttRect.height <= vh - margin) {
+          top = belowTop;
+        } else if (aboveTop >= margin) {
+          top = aboveTop;
         } else {
-          tt.style.top = topPos + 'px';
+          top = Math.min(Math.max(margin, belowTop), Math.max(margin, vh - ttRect.height - margin));
         }
+        tt.style.top = top + 'px';
       };
       const hideTt = () => { const tt = this.dom.tooltip; tt.classList.remove('visible'); tt.style.transform = ''; };
       r.addEventListener('mouseenter', showTt);
