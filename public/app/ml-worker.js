@@ -405,7 +405,8 @@ async function pollOnce() {
   if (currentFrame === lastFrame) return;
   lastFrame = currentFrame;
 
-  const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
+  // subarray() is a zero-copy view — buildMask reads it before any next poll overwrites it.
+  const magnitudes = inputView.subarray(0, currentNumBins);
   const mask       = await buildMask(magnitudes);
 
   outputView.set(mask);
@@ -413,9 +414,17 @@ async function pollOnce() {
 }
 
 // ── 5. Combined mask inference pipeline ──────────────────────────────────────
+// Reusable mask buffer — avoids one Float32Array allocation per inference call.
+let _maskBuffer = null;
+
 async function buildMask(magnitudes) {
   const numBins = magnitudes.length;
-  const mask = new Float32Array(numBins).fill(1.0);
+  // Grow buffer only when numBins increases (rare); reuse otherwise.
+  if (!_maskBuffer || _maskBuffer.length < numBins) {
+    _maskBuffer = new Float32Array(numBins);
+  }
+  const mask = _maskBuffer;
+  mask.fill(1.0);
 
   // VAD gate (silero-vad / vad)
   const vadSess = sessions['vad'] || sessions['silero-vad'];
