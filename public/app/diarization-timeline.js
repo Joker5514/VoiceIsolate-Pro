@@ -257,8 +257,10 @@ function _onMouseMove(e) {
   if (!_isDragging || !_canvas) return;
   const viewLen = _viewEnd - _viewStart;
   const dSec    = (dx / _canvas.offsetWidth) * viewLen;
-  _viewStart    = Math.max(0, _dragViewStart - dSec);
-  _viewEnd      = Math.min(_duration, _viewStart + viewLen);
+  const viewLen = _viewEnd - _viewStart;
+  const dSec    = (dx / _canvas.offsetWidth) * viewLen;
+  _viewStart    = Math.max(0, Math.min(_duration - viewLen, _dragViewStart - dSec));
+  _viewEnd      = _viewStart + viewLen;
 }
 function _onMouseUp() {
   _isDragging = false;
