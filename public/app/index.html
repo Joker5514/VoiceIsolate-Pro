@@ -586,7 +586,7 @@
 
     // Poll for orchestrator ready (typically < 200ms)
     const t = setInterval(() => {
-      if (window._vipOrchestrator?.initialized) { clearInterval(t); _boot(); }
+      if (window._vipOrch?.initialized) { clearInterval(t); _boot(); }
     }, 100);
     // Timeout fallback
     setTimeout(() => { clearInterval(t); _boot(); }, 8000);
