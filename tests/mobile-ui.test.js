@@ -118,17 +118,16 @@ describe('app.js — --pct CSS variable wiring', () => {
     expect(appJs).toContain('parseFloat(el.max)');
   });
 
-  test('applyPreset updates --pct for each slider element', () => {
-    // The applyPreset block sets --pct after updating el.value
+  test('applyPreset dispatches slider input/change events for each slider element', () => {
     const presetBlock = appJs.match(/applyPreset\(name\)[\s\S]*?if \(this\.liveChainBuilt\)/)?.[0] || '';
-    expect(presetBlock).toContain("el.style.setProperty('--pct'");
-    expect(presetBlock).toContain('`${pct.toFixed(1)}%`');
+    expect(presetBlock).toContain("dispatchEvent(new Event('input'");
+    expect(presetBlock).toContain("dispatchEvent(new Event('change'");
   });
 
-  test('applyPreset --pct formula uses s.min and s.max (slider config)', () => {
+  test('applyPreset still updates slider value and aria metadata before dispatch', () => {
     const presetBlock = appJs.match(/applyPreset\(name\)[\s\S]*?if \(this\.liveChainBuilt\)/)?.[0] || '';
-    expect(presetBlock).toContain('s.min');
-    expect(presetBlock).toContain('s.max');
+    expect(presetBlock).toContain('sliderDom.el.value = value');
+    expect(presetBlock).toContain("sliderDom.el.setAttribute('aria-valuenow', value)");
   });
 });
 

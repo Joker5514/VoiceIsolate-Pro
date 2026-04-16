@@ -63,13 +63,28 @@ describe('dsp-processor AudioWorklet behavior', () => {
     const hopSpy = jest.fn();
     processor._processSpectralHop = hopSpy;
 
-    const inputBlock = new Float32Array(1024);
+    const inputBlock = new Float32Array(1024).fill(0.1);
     const outputBlock = new Float32Array(1024);
     processor.process([[inputBlock]], [[outputBlock]]);
     const expectedSnapshot = processor._writePos;
 
     expect(hopSpy).toHaveBeenCalledTimes(1);
     expect(hopSpy).toHaveBeenCalledWith(expectedSnapshot);
+  });
+
+  test('VAD skips spectral processing and outputs silence for quiet frames', () => {
+    const processor = loadProcessor();
+    const hopSpy = jest.fn();
+    processor._processSpectralHop = hopSpy;
+
+    const inputBlock = new Float32Array(1024).fill(1e-5);
+    const outputBlock = new Float32Array(1024);
+    processor.process([[inputBlock]], [[outputBlock]]);
+
+    expect(hopSpy).toHaveBeenCalledTimes(0);
+    for (let i = 0; i < outputBlock.length; i++) {
+      expect(outputBlock[i]).toBe(0);
+    }
   });
 
   test('clears de-ess hysteresis latch when de-essing is disabled', () => {

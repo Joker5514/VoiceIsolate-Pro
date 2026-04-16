@@ -125,15 +125,14 @@
       <!-- Presets -->
       <div class="presets-row">
         <span class="presets-label">PRESETS</span>
-        <button class="btn btn-preset" data-preset="podcast">Podcast</button>
-        <button class="btn btn-preset" data-preset="film">Film</button>
-        <button class="btn btn-preset" data-preset="interview">Interview</button>
-        <button class="btn btn-preset" data-preset="forensic">Forensic</button>
-        <button class="btn btn-preset" data-preset="music">Music</button>
-        <button class="btn btn-preset" data-preset="broadcast">Broadcast</button>
-        <button class="btn btn-preset" data-preset="restoration">Restoration</button>
-        <button class="btn btn-preset" data-preset="whisper">Whisper</button>
-        <button class="btn btn-preset" data-preset="crystalVoice">Crystal Voice</button>
+        <button class="btn btn-preset" data-preset="Voice Clarity">Voice Clarity</button>
+        <button class="btn btn-preset" data-preset="Podcast Clean">Podcast Clean</button>
+        <button class="btn btn-preset" data-preset="Forensic Extract">Forensic Extract</button>
+        <button class="btn btn-preset" data-preset="Music Vocal">Music Vocal</button>
+        <button class="btn btn-preset" data-preset="Whisper Boost">Whisper Boost</button>
+        <button class="btn btn-preset" data-preset="Phone/Radio">Phone/Radio</button>
+        <button class="btn btn-preset" data-preset="Live Performance">Live Performance</button>
+        <button class="btn btn-preset" data-preset="Surveillance">Surveillance</button>
         <div class="custom-preset-actions" style="display:inline-flex; gap: 8px; margin-left: auto;">
           <input type="text" aria-label="Custom preset name" id="customPresetName" placeholder="Preset name" class="slider-val" style="width: 100px; font-size:11px; padding: 2px 4px;">
           <button id="saveCustomPresetBtn" class="btn">Save Custom</button>
@@ -486,6 +485,8 @@
        `VisualizationEngine` and `VIP_SPEAKER_COLORS` are available when the
        app constructs its engine instance during init(). -->
   <script src="./visuals.js"></script>
+
+  <script src="./session-persist.js"></script>
 
   <!-- Main app — must be before vip-boot -->
   <script src="./app.js"></script>

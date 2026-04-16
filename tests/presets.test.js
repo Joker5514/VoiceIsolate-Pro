@@ -1,6 +1,6 @@
 /**
  * VoiceIsolate Pro — Preset Completeness Tests (Phase 6)
- * Verifies all 9 presets define values for all 52 slider parameters.
+ * Verifies tuned voice-isolation presets and wiring.
  */
 
 const fs = require('fs');
@@ -8,59 +8,55 @@ const path = require('path');
 
 const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
 
-// Extract slider IDs
-const sliderIdRegex = /id:'(\w+)'/g;
-const sliderIds = [];
-let m;
-while ((m = sliderIdRegex.exec(appJs)) !== null) {
-  sliderIds.push(m[1]);
-}
-
 // Extract preset names
 const presetNameRegex = /const PRESETS = \{([\s\S]*?)\};\s*const STAGES/;
 const presetsBlock = appJs.match(presetNameRegex)?.[1] || '';
-const presetNames = ['podcast','film','interview','forensic','music','broadcast','restoration','whisper','crystalVoice'];
+const presetNames = [
+  'Voice Clarity',
+  'Podcast Clean',
+  'Forensic Extract',
+  'Music Vocal',
+  'Whisper Boost',
+  'Phone/Radio',
+  'Live Performance',
+  'Surveillance'
+];
 
 describe('Presets', () => {
-  test('Should define exactly 9 named presets', () => {
+  test('Should define exactly 8 tuned preset names', () => {
     presetNames.forEach(name => {
-      expect(presetsBlock).toContain(`${name}:`);
+      expect(presetsBlock).toContain(`'${name}':`);
     });
-    expect(presetNames.length).toBe(9);
+    expect(presetNames.length).toBe(8);
   });
 
-  presetNames.forEach(presetName => {
-    describe(`Preset: ${presetName}`, () => {
-      test(`Should include all 52 slider parameters`, () => {
-        // Find preset block
-        const presetRegex = new RegExp(`${presetName}:\\s*\\{([^}]+)\\}`);
-        const presetMatch = appJs.match(presetRegex);
-        expect(presetMatch).not.toBeNull();
-        const presetStr = presetMatch[1];
-
-        sliderIds.forEach(id => {
-          expect(presetStr).toContain(id + ':');
-        });
+  test('Every tuned preset contains required isolation keys', () => {
+    const requiredKeys = ['noiseReduction', 'voiceIsolation', 'highpassFreq', 'lowpassFreq', 'deEsser', 'compression', 'gate', 'vadThreshold', 'noiseOverSubtract', 'spectralFloor', 'voiceBoost', 'reverbReduction', 'description'];
+    presetNames.forEach((presetName) => {
+      const escapedPreset = presetName.replace('/', '\\/');
+      const presetRegex = new RegExp(`'${escapedPreset}':\\s*\\{([\\s\\S]*?)\\n\\s*\\}`);
+      const presetMatch = appJs.match(presetRegex);
+      expect(presetMatch).not.toBeNull();
+      const presetStr = presetMatch[1];
+      requiredKeys.forEach((key) => {
+        expect(presetStr).toContain(`${key}:`);
       });
     });
   });
 
-  test('Podcast preset should have nrAmount ≥ 50 (noise-heavy use case)', () => {
-    const m = appJs.match(/podcast:\s*\{[^}]+nrAmount:(\d+)/);
+  test('Surveillance preset keeps aggressive extraction values', () => {
+    const m = appJs.match(/'Surveillance':\s*\{[\s\S]*?noiseOverSubtract:\s*3\.0,[\s\S]*?spectralFloor:\s*0\.0004,[\s\S]*?voiceBoost:\s*2\.0/);
     expect(m).not.toBeNull();
-    expect(parseInt(m[1])).toBeGreaterThanOrEqual(50);
   });
 
-  test('Forensic preset should have phaseCorr > 0', () => {
-    const m = appJs.match(/forensic:\s*\{[^}]+phaseCorr:(\d+)/);
-    expect(m).not.toBeNull();
-    expect(parseInt(m[1])).toBeGreaterThan(0);
+  test('Preset application dispatches input and change events', () => {
+    expect(appJs).toContain("dispatchEvent(new Event('input', { bubbles: true }))");
+    expect(appJs).toContain("dispatchEvent(new Event('change', { bubbles: true }))");
   });
 
-  test('Music preset should have dryWet < 100 (preserve natural sound)', () => {
-    const m = appJs.match(/music:\s*\{[^}]+dryWet:(\d+)/);
-    expect(m).not.toBeNull();
-    expect(parseInt(m[1])).toBeLessThan(100);
+  test('Preset application stores non-slider values in VIP params', () => {
+    expect(appJs).toContain('window.VIP_PARAMS = window.VIP_PARAMS || {}');
+    expect(appJs).toContain('window.VIP_PARAMS[key] = value');
   });
 });
 
@@ -91,6 +87,13 @@ describe('index.html', () => {
 
   test('Should reference 32-Stage pipeline', () => {
     expect(html).toContain('32-Stage');
+  });
+
+  test('Should load session-persist.js before app.js', () => {
+    const sessionPersistPos = html.indexOf('session-persist.js');
+    const appJsPos = html.indexOf('./app.js');
+    expect(sessionPersistPos).toBeGreaterThan(-1);
+    expect(appJsPos).toBeGreaterThan(sessionPersistPos);
   });
 });
 

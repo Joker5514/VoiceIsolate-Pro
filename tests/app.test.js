@@ -136,21 +136,23 @@ describe('PRESETS constant', () => {
     expect(appSrc).toContain('const PRESETS');
   });
 
-  test('contains the seven built-in preset names', () => {
-    const presets = ['podcast', 'film', 'interview', 'forensic', 'music', 'broadcast', 'restoration'];
+  test('contains the eight tuned preset names', () => {
+    const presets = ['Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Music Vocal', 'Whisper Boost', 'Phone/Radio', 'Live Performance', 'Surveillance'];
     for (const name of presets) {
-      expect(appSrc).toContain(`${name}:`);
+      expect(appSrc).toContain(`'${name}':`);
     }
   });
 
-  test('podcast preset contains gateThresh key', () => {
+  test('preset objects contain tuned voice isolation keys', () => {
     // Verify preset objects contain slider parameter keys
-    expect(appSrc).toContain('gateThresh:');
+    ['noiseReduction:', 'voiceIsolation:', 'noiseOverSubtract:', 'spectralFloor:', 'voiceBoost:', 'vadThreshold:'].forEach((key) => {
+      expect(appSrc).toContain(key);
+    });
   });
 
-  test('all presets include output parameters outGain, dryWet, ditherAmt, outWidth', () => {
-    const outputParams = ['outGain:', 'dryWet:', 'ditherAmt:', 'outWidth:'];
-    for (const param of outputParams) {
+  test('all presets include tuned DSP control keys', () => {
+    const tunedParams = ['vadThreshold:', 'noiseOverSubtract:', 'spectralFloor:', 'voiceBoost:'];
+    for (const param of tunedParams) {
       expect(appSrc).toContain(param);
     }
   });
