@@ -406,7 +406,7 @@ async function pollOnce() {
   lastFrame = currentFrame;
 
   // subarray() is a zero-copy view — buildMask reads it before any next poll overwrites it.
-  const magnitudes = inputView.subarray(0, currentNumBins);
+  const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
   const mask       = await buildMask(magnitudes);
 
   outputView.set(mask);
