@@ -415,6 +415,7 @@ async function pollOnce() {
 
 // ── 5. Combined mask inference pipeline ──────────────────────────────────────
 // Reusable mask buffer — avoids one Float32Array allocation per inference call.
+let _isProcessing = false;
 let _maskBuffer = null;
 
 async function buildMask(magnitudes) {
