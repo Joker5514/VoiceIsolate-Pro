@@ -123,6 +123,9 @@ function processEnvFollower(ef, x) {
   return ef.env;
 }
 
+// NOTE: duplicated intentionally from public/app/dsp-core.js (canonical helper).
+// AudioWorkletProcessor runs in an isolated global scope and this file is loaded
+// directly via addModule(); direct imports from dsp-core are not used here.
 // Hardened Wiener filter — aggressive voice isolation
 function wienerFilter(noiseMag, signalMag, params = {}) {
   const alpha = params.noiseOverSubtract || 2.0;
@@ -328,25 +331,24 @@ class DSPProcessor extends AudioWorkletProcessor {
   // Minimum statistics noise floor estimator
   // Call once per frame, before Wiener filter
   _updateNoiseFloor(magSpectrum) {
-    const alpha = 0.95; // smoothing — higher = slower adaptation
+    const alpha = 0.95; // high smoothing for stable minimum tracking
 
     if (!this._noiseFloor) {
       this._noiseFloor = new Float32Array(magSpectrum.length);
       this._noiseFloor.set(magSpectrum);
-      this._noiseHoldCount = new Uint8Array(magSpectrum.length);
     }
 
     for (let i = 0; i < magSpectrum.length; i++) {
       this._noiseFloor[i] = Math.min(
         this._noiseFloor[i] * alpha + magSpectrum[i] * (1 - alpha),
-        magSpectrum[i] * 1.05
+        magSpectrum[i] * 1.05 // cap floor at +5% of current bin magnitude
       );
       if (this._noiseFloor[i] < 1e-6) this._noiseFloor[i] = 1e-6;
     }
     return this._noiseFloor;
   }
 
-  _vad(inputBuffer) {
+  _detectVoiceActivity(inputBuffer) {
     let energy = 0;
     for (let i = 0; i < inputBuffer.length; i++) energy += inputBuffer[i] * inputBuffer[i];
     const rms = Math.sqrt(energy / inputBuffer.length);
@@ -376,11 +378,9 @@ class DSPProcessor extends AudioWorkletProcessor {
     const blockSize   = input[0].length;
     const sr          = this._sampleRate;
 
-    if (!this._vad(input[0])) {
+    if (!this._detectVoiceActivity(input[0])) {
       for (let n = 0; n < blockSize; n++) {
-        const writePos = (this._writePos + n) & (FFT_SIZE - 1);
         const readPos = (this._readPos + n) & (FFT_SIZE - 1);
-        this._inBuf[writePos] = 0;
         this._outBuf[readPos] = 0;
         this._outWindowSum[readPos] = 0;
         for (let ch = 0; ch < output.length; ch++) output[ch][n] = 0;

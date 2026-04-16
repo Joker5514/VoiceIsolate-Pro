@@ -11,7 +11,16 @@ const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf
 // Extract preset names
 const presetNameRegex = /const PRESETS = \{([\s\S]*?)\};\s*const STAGES/;
 const presetsBlock = appJs.match(presetNameRegex)?.[1] || '';
-const presetNames = ['Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Music Vocal', 'Whisper Boost', 'Phone/Radio', 'Live Performance', 'Surveillance'];
+const presetNames = [
+  'Voice Clarity',
+  'Podcast Clean',
+  'Forensic Extract',
+  'Music Vocal',
+  'Whisper Boost',
+  'Phone/Radio',
+  'Live Performance',
+  'Surveillance'
+];
 
 describe('Presets', () => {
   test('Should define exactly 8 tuned preset names', () => {

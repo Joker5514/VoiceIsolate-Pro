@@ -708,9 +708,11 @@ class VoiceIsolatePro {
       }
       const sliderId = PRESET_PARAM_ALIASES[key] || key;
       this.params[key] = value;
-      this.params[sliderId] = value;
       window.VIP_PARAMS[key] = value;
-      window.VIP_PARAMS[sliderId] = value;
+      if (sliderId !== key) {
+        this.params[sliderId] = value;
+        window.VIP_PARAMS[sliderId] = value;
+      }
       const sliderDom = this.slidersDom && this.slidersDom[sliderId];
       if (sliderDom && sliderDom.el) {
         sliderDom.el.value = value;
