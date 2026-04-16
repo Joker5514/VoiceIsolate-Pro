@@ -29,9 +29,50 @@
   --fm: 'JetBrains Mono', monospace;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{font-size:14px;scroll-behavior:smooth}
-body{font-family:var(--ff);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+html{font-size:14px;scroll-behavior:smooth;height:100%;overflow-y:scroll}
+body{font-family:var(--ff);background:var(--bg);color:var(--text);min-height:100%;min-height:100dvh;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 body::before{content:'';position:fixed;inset:0;background:linear-gradient(rgba(220,38,38,0.008) 1px,transparent 1px),linear-gradient(90deg,rgba(220,38,38,0.008) 1px,transparent 1px);background-size:32px 32px;pointer-events:none;z-index:0}
+
+/* === SCROLL FIX: force GPU layer on root === */
+.app-container,#app,.main-wrapper,.workspace,.app-layout,.main-layout,.page-wrapper{
+  min-height:100vh;
+  min-height:100dvh;
+  height:auto !important;
+  overflow:visible;
+}
+canvas{
+  will-change:transform;
+  transform:translateZ(0);
+  backface-visibility:hidden;
+  contain:strict;
+  display:block;
+}
+.spectrogram-container,.spectrum-container,.visualizer-container,
+.waveform-container,#spectrogram-canvas,#waveform-canvas,
+.canvas-wrapper,.viz-wrapper,.spectro3d-container{
+  contain:layout style paint;
+  will-change:transform;
+  transform:translateZ(0);
+  isolation:isolate;
+  position:relative;
+  overflow:hidden;
+}
+.header,.toolbar,.top-bar,nav,.nav,.sidebar,.side-panel,.hdr{
+  will-change:transform;
+  transform:translateZ(0);
+  backface-visibility:hidden;
+}
+#spectrogram-3d,.spectrogram-3d,[id*='spectrogram'],[class*='spectrogram']{
+  position:absolute !important;
+  top:0;left:0;
+  width:100% !important;
+  height:100% !important;
+  contain:strict;
+}
+input[type='range']{
+  contain:layout;
+  will-change:auto;
+}
 
 /* ---- HEADER ---- */
 .hdr{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(6,6,9,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border2);gap:12px;flex-wrap:wrap}

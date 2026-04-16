@@ -98,15 +98,135 @@ for (const tab of Object.values(SLIDERS)) {
 
 // ---- PRESETS
 const PRESETS = {
-  podcast: {gateThresh:-38,gateRange:-35,gateAttack:2,gateRelease:60,gateHold:15,gateLookahead:5,nrAmount:60,nrSensitivity:55,nrSpectralSub:45,nrFloor:-55,nrSmoothing:40,eqSub:-10,eqBass:-1,eqWarmth:2,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:4,eqClarity:2,eqAir:1,eqBrill:-3,compThresh:-20,compRatio:5,compAttack:6,compRelease:180,compKnee:6,compMakeup:8,limThresh:-1,limRelease:8,hpFreq:80,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:40,specTilt:0.5,formantShift:0,derevAmt:50,derevDecay:0.4,harmRecov:15,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:80,bgSuppress:60,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
-  film: {gateThresh:-50,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:25,gateLookahead:5,nrAmount:40,nrSensitivity:45,nrSpectralSub:30,nrFloor:-60,nrSmoothing:40,eqSub:-6,eqBass:1,eqWarmth:1,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:2,eqBrill:-1,compThresh:-28,compRatio:3,compAttack:12,compRelease:300,compKnee:10,compMakeup:4,limThresh:-1,limRelease:15,hpFreq:60,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:-0.5,formantShift:0,derevAmt:30,derevDecay:0.6,harmRecov:25,harmOrder:3,stereoWidth:120,phaseCorr:0,voiceIso:60,bgSuppress:40,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:110},
-  interview: {gateThresh:-42,gateRange:-38,gateAttack:2,gateRelease:80,gateHold:20,gateLookahead:5,nrAmount:55,nrSensitivity:50,nrSpectralSub:40,nrFloor:-58,nrSmoothing:35,eqSub:-8,eqBass:0,eqWarmth:1,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-2,compThresh:-22,compRatio:5,compAttack:5,compRelease:200,compKnee:6,compMakeup:6,limThresh:-1,limRelease:10,hpFreq:100,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:35,specTilt:0,formantShift:0,derevAmt:45,derevDecay:0.5,harmRecov:20,harmOrder:3,stereoWidth:80,phaseCorr:0,voiceIso:75,bgSuppress:55,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:20,outGain:0,dryWet:100,ditherAmt:0,outWidth:90},
-  forensic: {gateThresh:-65,gateRange:-20,gateAttack:1,gateRelease:150,gateHold:30,gateLookahead:10,nrAmount:30,nrSensitivity:60,nrSpectralSub:20,nrFloor:-70,nrSmoothing:50,eqSub:-2,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:0,compThresh:-18,compRatio:2,compAttack:15,compRelease:400,compKnee:12,compMakeup:10,limThresh:-0.5,limRelease:20,hpFreq:50,hpQ:0.71,lpFreq:18000,lpQ:0.71,deEssFreq:8000,deEssAmt:10,specTilt:1,formantShift:0,derevAmt:20,derevDecay:0.8,harmRecov:35,harmOrder:4,stereoWidth:100,phaseCorr:30,voiceIso:90,bgSuppress:30,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:3,dryWet:90,ditherAmt:0,outWidth:100},
-  music: {gateThresh:-55,gateRange:-25,gateAttack:3,gateRelease:120,gateHold:15,gateLookahead:3,nrAmount:25,nrSensitivity:40,nrSpectralSub:20,nrFloor:-65,nrSmoothing:45,eqSub:-3,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:3,eqBrill:0,compThresh:-30,compRatio:2,compAttack:20,compRelease:350,compKnee:15,compMakeup:3,limThresh:-0.5,limRelease:12,hpFreq:40,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:15,specTilt:-1,formantShift:0,derevAmt:15,derevDecay:1.0,harmRecov:30,harmOrder:4,stereoWidth:150,phaseCorr:0,voiceIso:50,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:0,dryWet:85,ditherAmt:5,outWidth:140},
-  broadcast: {gateThresh:-35,gateRange:-40,gateAttack:1.5,gateRelease:50,gateHold:10,gateLookahead:3,nrAmount:65,nrSensitivity:60,nrSpectralSub:50,nrFloor:-50,nrSmoothing:30,eqSub:-12,eqBass:-2,eqWarmth:2,eqBody:0,eqLowMid:-2,eqMid:2,eqPresence:5,eqClarity:3,eqAir:1,eqBrill:-4,compThresh:-18,compRatio:6,compAttack:4,compRelease:150,compKnee:4,compMakeup:10,limThresh:-1,limRelease:5,hpFreq:120,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:45,specTilt:1,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:10,harmOrder:2,stereoWidth:60,phaseCorr:0,voiceIso:85,bgSuppress:70,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:70},
-  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100},
-  whisper: {gateThresh:-70,gateRange:-10,gateAttack:1,gateRelease:300,gateHold:50,gateLookahead:10,nrAmount:20,nrSensitivity:35,nrSpectralSub:15,nrFloor:-75,nrSmoothing:60,eqSub:-2,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:1,eqPresence:2,eqClarity:1,eqAir:0,eqBrill:-1,compThresh:-32,compRatio:2,compAttack:20,compRelease:500,compKnee:18,compMakeup:4,limThresh:-0.5,limRelease:20,hpFreq:60,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:6000,deEssAmt:10,specTilt:-0.5,formantShift:0,derevAmt:10,derevDecay:1.2,harmRecov:20,harmOrder:3,stereoWidth:90,phaseCorr:0,voiceIso:40,bgSuppress:15,voiceFocusLo:100,voiceFocusHi:9000,crosstalkCancel:0,outGain:5,dryWet:80,ditherAmt:2,outWidth:100},
-  crystalVoice: {gateThresh:-45,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:20,gateLookahead:5,nrAmount:50,nrSensitivity:50,nrSpectralSub:35,nrFloor:-60,nrSmoothing:30,eqSub:-6,eqBass:0,eqWarmth:1,eqBody:0,eqLowMid:-1,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:1,compThresh:-20,compRatio:4,compAttack:5,compRelease:200,compKnee:6,compMakeup:7,limThresh:-1,limRelease:8,hpFreq:90,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:7500,deEssAmt:30,specTilt:1,formantShift:0,derevAmt:40,derevDecay:0.4,harmRecov:30,harmOrder:3,stereoWidth:110,phaseCorr:10,voiceIso:85,bgSuppress:65,voiceFocusLo:110,voiceFocusHi:7000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:105}
+  'Voice Clarity': {
+    noiseReduction: 82,
+    voiceIsolation: 91,
+    highpassFreq: 120,
+    lowpassFreq: 8000,
+    deEsser: 45,
+    compression: 55,
+    gate: 35,
+    vadThreshold: 0.008,
+    noiseOverSubtract: 2.2,
+    spectralFloor: 0.001,
+    voiceBoost: 1.6,
+    reverbReduction: 60,
+    description: 'Max voice clarity — best for speech in noise'
+  },
+  'Podcast Clean': {
+    noiseReduction: 70,
+    voiceIsolation: 85,
+    highpassFreq: 100,
+    lowpassFreq: 12000,
+    deEsser: 35,
+    compression: 65,
+    gate: 25,
+    vadThreshold: 0.006,
+    noiseOverSubtract: 1.8,
+    spectralFloor: 0.002,
+    voiceBoost: 1.4,
+    reverbReduction: 50,
+    description: 'Balanced — clean podcast/interview audio'
+  },
+  'Forensic Extract': {
+    noiseReduction: 95,
+    voiceIsolation: 98,
+    highpassFreq: 80,
+    lowpassFreq: 6000,
+    deEsser: 20,
+    compression: 40,
+    gate: 55,
+    vadThreshold: 0.003,
+    noiseOverSubtract: 2.8,
+    spectralFloor: 0.0005,
+    voiceBoost: 1.8,
+    reverbReduction: 85,
+    description: 'Maximum extraction — forensic/law enforcement'
+  },
+  'Music Vocal': {
+    noiseReduction: 45,
+    voiceIsolation: 78,
+    highpassFreq: 80,
+    lowpassFreq: 16000,
+    deEsser: 55,
+    compression: 70,
+    gate: 15,
+    vadThreshold: 0.004,
+    noiseOverSubtract: 1.4,
+    spectralFloor: 0.003,
+    voiceBoost: 1.3,
+    reverbReduction: 30,
+    description: 'Vocal separation from music'
+  },
+  'Whisper Boost': {
+    noiseReduction: 88,
+    voiceIsolation: 94,
+    highpassFreq: 100,
+    lowpassFreq: 7000,
+    deEsser: 15,
+    compression: 80,
+    gate: 10,
+    vadThreshold: 0.002,
+    noiseOverSubtract: 2.5,
+    spectralFloor: 0.0008,
+    voiceBoost: 2.2,
+    reverbReduction: 70,
+    description: 'Amplify and isolate whispered speech'
+  },
+  'Phone/Radio': {
+    noiseReduction: 75,
+    voiceIsolation: 88,
+    highpassFreq: 300,
+    lowpassFreq: 3400,
+    deEsser: 30,
+    compression: 75,
+    gate: 40,
+    vadThreshold: 0.007,
+    noiseOverSubtract: 2.0,
+    spectralFloor: 0.002,
+    voiceBoost: 1.5,
+    reverbReduction: 65,
+    description: 'Optimize narrow-band telephone/radio voice'
+  },
+  'Live Performance': {
+    noiseReduction: 55,
+    voiceIsolation: 72,
+    highpassFreq: 90,
+    lowpassFreq: 14000,
+    deEsser: 50,
+    compression: 60,
+    gate: 20,
+    vadThreshold: 0.010,
+    noiseOverSubtract: 1.5,
+    spectralFloor: 0.005,
+    voiceBoost: 1.2,
+    reverbReduction: 20,
+    description: 'Live stage — preserve natural room character'
+  },
+  'Surveillance': {
+    noiseReduction: 90,
+    voiceIsolation: 96,
+    highpassFreq: 80,
+    lowpassFreq: 5000,
+    deEsser: 10,
+    compression: 85,
+    gate: 60,
+    vadThreshold: 0.003,
+    noiseOverSubtract: 3.0,
+    spectralFloor: 0.0004,
+    voiceBoost: 2.0,
+    reverbReduction: 90,
+    description: 'Maximum SNR boost for covert/distant recording'
+  }
+};
+
+const PRESET_PARAM_ALIASES = {
+  noiseReduction: 'nrAmount',
+  voiceIsolation: 'voiceIso',
+  highpassFreq: 'hpFreq',
+  lowpassFreq: 'lpFreq',
+  deEsser: 'deEssAmt',
+  reverbReduction: 'derevAmt'
 };
 
 const STAGES = [
@@ -580,19 +700,23 @@ class VoiceIsolatePro {
 
   applyPreset(name) {
     const p = PRESETS[name]; if (!p) return;
-    Object.assign(this.params, p);
-    for (const id in SLIDER_MAP) {
-      if (this.params[id] !== undefined && this.slidersDom && this.slidersDom[id]) {
-        const { el, ve } = this.slidersDom[id];
-        const s = SLIDER_MAP[id];
-        if (el) {
-          el.value = this.params[id];
-          el.setAttribute('aria-valuenow', this.params[id]);
-          if (ve) ve.textContent = this.params[id] + s.unit;
-          const range = s.max - s.min;
-          const pct = range > 0 ? ((this.params[id] - s.min) / range) * 100 : 0;
-          el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
-        }
+    window.VIP_PARAMS = window.VIP_PARAMS || {};
+    for (const [key, value] of Object.entries(p)) {
+      if (key === 'description') {
+        window.VIP_PARAMS[key] = value;
+        continue;
+      }
+      const sliderId = PRESET_PARAM_ALIASES[key] || key;
+      this.params[key] = value;
+      this.params[sliderId] = value;
+      window.VIP_PARAMS[key] = value;
+      window.VIP_PARAMS[sliderId] = value;
+      const sliderDom = this.slidersDom && this.slidersDom[sliderId];
+      if (sliderDom && sliderDom.el) {
+        sliderDom.el.value = value;
+        sliderDom.el.setAttribute('aria-valuenow', value);
+        sliderDom.el.dispatchEvent(new Event('input', { bubbles: true }));
+        sliderDom.el.dispatchEvent(new Event('change', { bubbles: true }));
       }
     }
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));

@@ -111,6 +111,38 @@ class AdaptiveNoiseFloor {
   }
 }
 
+// Hardened Wiener filter — aggressive voice isolation
+function wienerFilter(noiseMag, signalMag, params = {}) {
+  const alpha = params.noiseOverSubtract || 2.0; // over-subtraction factor (was 1.0)
+  const beta = params.spectralFloor || 0.001;   // spectral floor (was 0.01 — lower = cleaner)
+  const voiceBoost = params.voiceBoost || 1.5;   // boost voice band 80Hz-4kHz
+
+  const noisePow = noiseMag * noiseMag;
+  const sigPow = signalMag * signalMag;
+  const snr = sigPow / (alpha * noisePow + 1e-10);
+
+  // Sigmoid-shaped suppression curve for sharper voice/noise boundary
+  const suppressionCurve = snr / (snr + 1.0);
+  const gain = Math.max(beta, suppressionCurve * suppressionCurve); // squared for aggression
+
+  return gain * voiceBoost;
+}
+
+// Voice frequency mask — boosts 80Hz-4kHz, hard-suppresses outside
+// binIndex: the FFT bin index, sampleRate: audio sample rate, fftSize: FFT size
+function getVoiceMaskGain(binIndex, sampleRate, fftSize) {
+  const freq = binIndex * sampleRate / fftSize;
+
+  if (freq < 60) return 0.0;           // sub-bass: kill
+  if (freq < 80) return 0.3;           // low rolloff
+  if (freq < 300) return 0.85;         // low voice fundamentals
+  if (freq <= 3400) return 1.0;        // CORE VOICE BAND — full pass
+  if (freq <= 4000) return 0.9;        // soft rolloff
+  if (freq <= 6000) return 0.6;        // sibilants — partial keep
+  if (freq <= 8000) return 0.25;       // high presence — attenuate
+  return 0.05;                         // ultra-high: near-kill
+}
+
 /**
  * Pure DSP math library. No Web Audio API dependency.
  * - Forward/inverse STFT with Hann windowing
@@ -480,6 +512,14 @@ const DSPCore = {
   },
 
   // ===== PASS 5: SPECTRAL OPERATIONS (IN-PLACE) =====
+
+  wienerFilter(noiseMag, signalMag, params = {}) {
+    return wienerFilter(noiseMag, signalMag, params);
+  },
+
+  getVoiceMaskGain(binIndex, sampleRate, fftSize) {
+    return getVoiceMaskGain(binIndex, sampleRate, fftSize);
+  },
 
   /** S15: Wiener-MMSE spectral noise subtraction */
   wienerMMSE(mag, noiseProfile, amount) {

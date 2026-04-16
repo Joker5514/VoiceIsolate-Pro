@@ -123,6 +123,33 @@ function processEnvFollower(ef, x) {
   return ef.env;
 }
 
+// Hardened Wiener filter — aggressive voice isolation
+function wienerFilter(noiseMag, signalMag, params = {}) {
+  const alpha = params.noiseOverSubtract || 2.0;
+  const beta = params.spectralFloor || 0.001;
+  const voiceBoost = params.voiceBoost || 1.5;
+
+  const noisePow = noiseMag * noiseMag;
+  const sigPow = signalMag * signalMag;
+  const snr = sigPow / (alpha * noisePow + 1e-10);
+  const suppressionCurve = snr / (snr + 1.0);
+  const gain = Math.max(beta, suppressionCurve * suppressionCurve);
+  return gain * voiceBoost;
+}
+
+// Voice frequency mask — boosts 80Hz-4kHz, hard-suppresses outside
+function getVoiceMaskGain(binIndex, sampleRate, fftSize) {
+  const freq = binIndex * sampleRate / fftSize;
+  if (freq < 60) return 0.0;
+  if (freq < 80) return 0.3;
+  if (freq < 300) return 0.85;
+  if (freq <= 3400) return 1.0;
+  if (freq <= 4000) return 0.9;
+  if (freq <= 6000) return 0.6;
+  if (freq <= 8000) return 0.25;
+  return 0.05;
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 class DSPProcessor extends AudioWorkletProcessor {
   constructor(options) {
@@ -214,6 +241,10 @@ class DSPProcessor extends AudioWorkletProcessor {
       dryWet:          100,    // %
       // Misc
       humReduce:        50,    // %
+      vadThreshold:  0.005,
+      noiseOverSubtract: 2.0,
+      spectralFloor: 0.001,
+      voiceBoost: 1.5,
       bypass:        false,
     };
     this._rebuildFilters(this._sampleRate);
@@ -294,6 +325,35 @@ class DSPProcessor extends AudioWorkletProcessor {
     }
   }
 
+  // Minimum statistics noise floor estimator
+  // Call once per frame, before Wiener filter
+  _updateNoiseFloor(magSpectrum) {
+    const alpha = 0.95; // smoothing — higher = slower adaptation
+
+    if (!this._noiseFloor) {
+      this._noiseFloor = new Float32Array(magSpectrum.length);
+      this._noiseFloor.set(magSpectrum);
+      this._noiseHoldCount = new Uint8Array(magSpectrum.length);
+    }
+
+    for (let i = 0; i < magSpectrum.length; i++) {
+      this._noiseFloor[i] = Math.min(
+        this._noiseFloor[i] * alpha + magSpectrum[i] * (1 - alpha),
+        magSpectrum[i] * 1.05
+      );
+      if (this._noiseFloor[i] < 1e-6) this._noiseFloor[i] = 1e-6;
+    }
+    return this._noiseFloor;
+  }
+
+  _vad(inputBuffer) {
+    let energy = 0;
+    for (let i = 0; i < inputBuffer.length; i++) energy += inputBuffer[i] * inputBuffer[i];
+    const rms = Math.sqrt(energy / inputBuffer.length);
+    this._isVoiceActive = rms > (this._params.vadThreshold || 0.005);
+    return this._isVoiceActive;
+  }
+
   process(inputs, outputs) {
     const input  = inputs[0];
     const output = outputs[0];
@@ -315,6 +375,20 @@ class DSPProcessor extends AudioWorkletProcessor {
     const numChannels = Math.min(input.length, output.length);
     const blockSize   = input[0].length;
     const sr          = this._sampleRate;
+
+    if (!this._vad(input[0])) {
+      for (let n = 0; n < blockSize; n++) {
+        const writePos = (this._writePos + n) & (FFT_SIZE - 1);
+        const readPos = (this._readPos + n) & (FFT_SIZE - 1);
+        this._inBuf[writePos] = 0;
+        this._outBuf[readPos] = 0;
+        this._outWindowSum[readPos] = 0;
+        for (let ch = 0; ch < output.length; ch++) output[ch][n] = 0;
+      }
+      this._writePos = (this._writePos + blockSize) & (FFT_SIZE - 1);
+      this._readPos = (this._readPos + blockSize) & (FFT_SIZE - 1);
+      return true;
+    }
 
     // Pre-compute param-derived constants (avoids per-sample division)
     const gateThreshLin = Math.pow(10, this._params.gateThresh / 20);
@@ -451,25 +525,15 @@ class DSPProcessor extends AudioWorkletProcessor {
       phase[k] = Math.atan2(im[k], re[k]);
     }
 
-    // ── In-place op 1: Dual-EMA noise floor tracking ─────────────────────────
-    // Slow EMA (~10s TC) = true noise floor; only advances when bin is below
-    // the fast reference (speech formants do not contaminate the floor).
-    // Fast EMA (~3 hops) = spectral reference to detect transient speech peaks.
-    const alphaSlow = 0.002;
-    const alphaFast = 0.15;
-    for (let k = 0; k < NUM_BINS; k++) {
-      this._fastMag[k] = alphaFast * mag[k] + (1 - alphaFast) * this._fastMag[k];
-      if (mag[k] < this._fastMag[k] * 1.5) {
-        this._prevMag[k] = alphaSlow * mag[k] + (1 - alphaSlow) * this._prevMag[k];
-      }
-    }
+    // ── In-place op 1: Minimum-statistics noise floor tracking ───────────────
+    const noiseFloor = this._updateNoiseFloor(mag);
 
     // ── In-place op 2: Spectral subtraction ─────────────────────────────────
     const beta      = 1 + (this._params.nrAmount / 100) * (1 + this._params.nrSpectralSub / 100) * 3;
     const floorLin  = Math.pow(10, this._params.nrFloor / 20);
     const smCoef    = Math.max(0, Math.min(0.98, this._params.nrSmoothing / 100 * 0.98));
     for (let k = 0; k < NUM_BINS; k++) {
-      const noise = beta * this._prevMag[k] * (1 + this._params.nrSensitivity / 200);
+      const noise = beta * noiseFloor[k] * (1 + this._params.nrSensitivity / 200);
       const absFloor = Math.max(floorLin * mag[k], SPECTRAL_ABS_FLOOR_MIN); // FIX v8.2: absolute floor to prevent metallic spikes
       // Smoothed over-subtraction (anti-musical-noise)
       const suppressed = Math.max(mag[k] - noise, absFloor);
@@ -480,8 +544,9 @@ class DSPProcessor extends AudioWorkletProcessor {
     const w = this._params.nrAmount / 100 * 0.9;
     if (w > 0) {
       for (let k = 0; k < NUM_BINS; k++) {
-        const snr  = mag[k] / (this._prevMag[k] + 1e-9);
-        const gain = snr / (snr + 1);
+        const wienerGain = wienerFilter(noiseFloor[k], mag[k], this._params);
+        const voiceMask = getVoiceMaskGain(k, sr, FFT_SIZE);
+        const gain = Math.max(this._params.spectralFloor || 0.001, wienerGain * voiceMask);
         mag[k] = mag[k] * (1 - w) + mag[k] * gain * w;
       }
     }
