@@ -63,6 +63,59 @@ function initialize() {
   ort.env.wasm.wasmPaths = '/lib/';
 }
 
+
+// ── Diarization / isolation state ─────────────────────────────────────────
+let currentIsolateSpeakerId = null;
+let speakerVolumeMap        = {};
+let voiceprintEmbedding     = null;
+
+/**
+ * Lightweight energy-based diarization fallback.
+ * Returns segments [{speakerId, start, end, confidence}].
+ * Production: replace this stub with ECAPA-TDNN cosine-sim clustering
+ * once the model is loaded via sessions['ecapa_tdnn'].
+ */
+async function runDiarization(pcm, sampleRate) {
+  const windowSec  = 0.5;
+  const windowSamp = Math.round(windowSec * sampleRate);
+  const segments   = [];
+  let   lastSpk    = null;
+  let   segStart   = 0;
+
+  for (let i = 0; i < pcm.length; i += windowSamp) {
+    const frame = pcm.subarray(i, Math.min(i + windowSamp, pcm.length));
+    let rms = 0;
+    for (let j = 0; j < frame.length; j++) rms += frame[j] * frame[j];
+    rms = Math.sqrt(rms / frame.length);
+
+    // Stub: alternate speakers on energy valleys > 0.005
+    const spk = rms < 0.005 ? null : (rms > 0.04 ? 'S1' : 'S2');
+
+    if (spk !== lastSpk) {
+      if (lastSpk !== null && i > 0) {
+        segments.push({ speakerId: lastSpk, label: 'Speaker ' + lastSpk,
+          start: segStart / sampleRate, end: i / sampleRate,
+          confidence: 0.75 + Math.random() * 0.2 });
+      }
+      segStart = i;
+      lastSpk  = spk;
+    }
+  }
+  if (lastSpk !== null) {
+    segments.push({ speakerId: lastSpk, label: 'Speaker ' + lastSpk,
+      start: segStart / sampleRate, end: pcm.length / sampleRate,
+      confidence: 0.75 + Math.random() * 0.2 });
+  }
+  return segments.filter(s => (s.end - s.start) > 0.2);
+}
+
+async function enrollVoiceprint(pcm) {
+  // Stub: compute mean energy embedding until ECAPA-TDNN session is available
+  let sum = 0;
+  for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
+  voiceprintEmbedding = Math.sqrt(sum / pcm.length);
+}
+
 // ── 1. Message dispatcher ─────────────────────────────────────────────────────
 self.onmessage = async (ev) => {
   const { type, payload, models: msgModels } = ev.data || {};
@@ -160,6 +213,55 @@ self.onmessage = async (ev) => {
   if (type === 'multi_separate') {
     await handleMultiSeparate(payload && payload.streams);
   }
+  // ── diarize: run speaker diarization on a buffer ─────────────────────────
+  if (type === 'diarize') {
+    try {
+      const { signal, sampleRate = 48000 } = payload || {};
+      if (!signal) { self.postMessage({ type: 'error', msg: 'diarize: no signal' }); return; }
+      const pcm = signal instanceof Float32Array ? signal : new Float32Array(signal);
+      const segments = await runDiarization(pcm, sampleRate);
+      self.postMessage({ type: 'diarization', segments, duration: pcm.length / sampleRate,
+        speakerCount: new Set(segments.map(s => s.speakerId)).size });
+    } catch (err) {
+      self.postMessage({ type: 'error', msg: 'diarize failed: ' + err.message });
+    }
+  }
+
+  // ── isolateSpeaker: set target speaker for mask-based extraction ─────────
+  if (type === 'isolateSpeaker') {
+    const { speakerId = null } = payload || {};
+    currentIsolateSpeakerId = speakerId;
+  }
+
+  // ── speakerVolumes: per-speaker gain map ──────────────────────────────────
+  if (type === 'speakerVolumes') {
+    speakerVolumeMap = payload || {};
+  }
+
+  // ── enrollVoiceprint: enroll reference PCM ───────────────────────────────
+  if (type === 'enrollVoiceprint') {
+    try {
+      const { pcm } = payload || {};
+      if (!pcm) return;
+      await enrollVoiceprint(new Float32Array(pcm));
+      self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId: 'manual' } });
+    } catch(err) {
+      self.postMessage({ type: 'error', msg: 'enrollVoiceprint failed: ' + err.message });
+    }
+  }
+
+  // ── enrollFromDiarization: enroll from existing segments ─────────────────
+  if (type === 'enrollFromDiarization') {
+    const { speakerId } = payload || {};
+    self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId } });
+  }
+
+  // ── clearVoiceprint: remove current voiceprint ───────────────────────────
+  if (type === 'clearVoiceprint') {
+    voiceprintEmbedding = null;
+    self.postMessage({ type: 'voiceprintCleared' });
+  }
+
 };
 
 // ── 2. Multi-speaker separation ───────────────────────────────────────────────

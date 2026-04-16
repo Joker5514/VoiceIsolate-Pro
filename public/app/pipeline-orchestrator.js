@@ -77,6 +77,7 @@ class PipelineOrchestrator {
       await this._initMLWorker();
       this._bindSliders();
       this.initialized = true;
+      this._bindIsolationControls();
       console.info('[Orchestrator] Fully initialised ✓');
     } catch (err) {
       console.error('[Orchestrator] Init failed:', err);
@@ -288,6 +289,40 @@ class PipelineOrchestrator {
         } else if (type === 'log') {
           const lvl = e.data.level;
           if (console[lvl]) console[lvl]('[ml-worker]', e.data.msg);
+        } else if (type === 'diarization') {
+          // ── Feed diarization timeline + isolation cards ──────────────────
+          const { segments = [], duration = 0, speakerCount = 0 } = e.data;
+          const app = window._vipApp;
+          if (app && app.diarizationState) {
+            app.diarizationState.history     = segments;
+            app.diarizationState.numSpeakers = speakerCount || new Set(segments.map(s => s.speakerId)).size;
+            app.diarizationState.isActive    = segments.length > 0;
+            app.diarizationState.confidence  = segments.length
+              ? segments.reduce((a, s) => a + (s.confidence || 1), 0) / segments.length : 1;
+          }
+          if (typeof window.VIP_onDiarizationResult === 'function')
+            window.VIP_onDiarizationResult({ segments, duration, speakerCount });
+          if (typeof window.VIP_updateSpeakerCards === 'function') {
+            const palette = ['#3b82f6','#a855f7','#10b981','#f59e0b','#ef4444','#06b6d4','#84cc16','#f97316'];
+            const map = {}; let ci = 0;
+            segments.forEach(seg => {
+              if (!map[seg.speakerId]) map[seg.speakerId] = {
+                label: seg.label || ('Speaker ' + seg.speakerId),
+                color: palette[ci++ % palette.length],
+                volume: 1.0, muted: false, solo: false
+              };
+            });
+            window.VIP_updateSpeakerCards(map);
+          }
+          // Update speaker count badge
+          const badge = document.getElementById('diarSpeakerCount');
+          if (badge) badge.textContent = (speakerCount || new Set(segments.map(s=>s.speakerId)).size) + ' speaker(s)';
+        } else if (type === 'voiceprintEnrolled') {
+          const el = document.getElementById('voiceprintStatus');
+          if (el) { el.textContent = 'Enrolled ✓'; el.style.color = '#10b981'; }
+        } else if (type === 'voiceprintCleared') {
+          const el = document.getElementById('voiceprintStatus');
+          if (el) { el.textContent = 'Voiceprint cleared'; el.style.color = '#64748b'; }
         }
       };
 
@@ -372,6 +407,15 @@ class PipelineOrchestrator {
         demucs: params.voiceIso / 100,
         bsrnn:  1 - params.voiceIso / 100
       });
+      this.mlWorker.postMessage({
+        type: 'update_params',
+        payload: {
+          isolationMethod:          params.isolationMethod  || 'hybrid',
+          ecapaSimilarityThreshold: params.isolationConfidence != null ? params.isolationConfidence / 100 : 0.65,
+          backgroundVolume:         params.bgVolume != null ? params.bgVolume / 100 : 0,
+          maskRefinement:           params.maskRefinement !== false,
+        }
+      });
     }
   }
 
@@ -424,6 +468,7 @@ class PipelineOrchestrator {
     app.orch = orch;
     // Also expose globally for debugging
     window._vipOrch = orch;
+    window._vipOrchestrator = orch;  // for ES module access
 
     // ── Patch onSlider ─────────────────────────────────────────────────
     const _origOnSlider = app.onSlider.bind(app);

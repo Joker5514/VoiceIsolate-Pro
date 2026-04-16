@@ -356,6 +356,88 @@
         </div>
       </div>
     </div>
+
+      <!-- ════════════════════════════════════════════════════════
+           DIARIZATION TIMELINE  — Speaker Timeline Canvas
+           ════════════════════════════════════════════════════════ -->
+      <div class="card viz-card" id="diarCard" style="grid-column:1/-1">
+        <div class="viz-hdr">
+          <span>🎙 Speaker Timeline</span>
+          <span class="viz-badge" id="diarSpeakerCount">0 speakers</span>
+          <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+            <span id="diarTimeLabel" style="font-size:11px;color:#9ca3af;font-family:monospace;min-width:52px;">00:00.0</span>
+            <button id="diarZoomIn"  class="btn btn-xs" title="Zoom in">＋</button>
+            <button id="diarZoomOut" class="btn btn-xs" title="Zoom out">－</button>
+            <button id="diarZoomFit" class="btn btn-xs" title="Fit full duration">⤢</button>
+          </div>
+        </div>
+        <div style="position:relative;overflow:hidden;min-height:80px;">
+          <canvas id="diarCanvas" class="viz-canvas"
+                  aria-label="Speaker diarization timeline"
+                  style="display:block;width:100%;min-height:80px;background:#0f172a;"></canvas>
+          <div id="diarPlayhead"
+               style="position:absolute;top:0;bottom:0;width:2px;
+                      background:#ef4444;pointer-events:none;left:0;z-index:5;"></div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════════
+           SPEAKER ISOLATION CONTROLS
+           ════════════════════════════════════════════════════════ -->
+      <div class="card" id="isolationCard" style="grid-column:1/-1">
+        <div class="viz-hdr">
+          <span>🎯 Speaker Isolation</span>
+          <span class="viz-badge">Hybrid ML+DSP</span>
+        </div>
+
+        <!-- Global controls row -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;padding:10px 0 6px;">
+          <div class="sr-row">
+            <label class="sr-label" for="isolationMethodSelect">Method</label>
+            <select id="isolationMethodSelect" class="vip-select"
+                    style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:3px 8px;font-size:12px;flex:1;">
+              <option value="hybrid" selected>Hybrid (ML+DSP)</option>
+              <option value="ml">ML Only (Demucs+BSRNN)</option>
+              <option value="classical">Classical (Spectral Gate)</option>
+            </select>
+          </div>
+          <div class="sr-row">
+            <label class="sr-label" for="isolationConfidenceSlider">Confidence</label>
+            <input type="range" id="isolationConfidenceSlider"
+                   min="40" max="95" value="65" step="1" style="flex:1;" />
+            <span id="isolationConfidenceReadout" class="sr-val">65%</span>
+          </div>
+          <div class="sr-row">
+            <label class="sr-label" for="isolationBgVolumeSlider">Bg Vol</label>
+            <input type="range" id="isolationBgVolumeSlider"
+                   min="0" max="100" value="0" step="1" style="flex:1;" />
+            <span id="isolationBgReadout" class="sr-val">0%</span>
+          </div>
+          <div class="sr-row" style="align-items:center;gap:8px;">
+            <label class="sr-label" for="isolationMaskRefine">Mask Refine</label>
+            <input type="checkbox" id="isolationMaskRefine" checked
+                   style="width:16px;height:16px;accent-color:#3b82f6;cursor:pointer;" />
+          </div>
+        </div>
+
+        <!-- Dynamic speaker cards (built by isolation-controls.js) -->
+        <div id="speakerCardsGrid"
+             style="display:flex;flex-wrap:wrap;gap:10px;padding:8px 0 4px;">
+          <div style="color:#4b5563;font-size:12px;padding:12px 4px;">
+            🎙 Process audio to detect and isolate speakers
+          </div>
+        </div>
+
+        <!-- Voiceprint enrollment strip -->
+        <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:6px;
+                    display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="sr-label" style="min-width:80px;">🔑 Voiceprint</span>
+          <span id="voiceprintStatus"
+                style="font-size:11px;color:#64748b;font-family:monospace;">Not enrolled</span>
+          <button id="enrollVoiceprintBtn" class="btn btn-xs btn-primary">⏺ Record 5s</button>
+          <button id="clearVoiceprintBtn"  class="btn btn-xs">🗑 Clear</button>
+        </div>
+      </div>
   </main>
 
   <!-- Status Bar -->
@@ -468,5 +550,61 @@
       }
     })();
   </script>
+
+  <!-- ── Diarization Timeline + Isolation Controls bridge ──────────── -->
+  <script type="module">
+    import {
+      initDiarizationTimeline, onDiarizationResult,
+      seekTimeline, setSpeakerVolume, setSpeakerMute, setSpeakerSolo,
+    } from './diarization-timeline.js';
+    import {
+      initIsolationControls, updateSpeakerCards, setActiveSpeakerCard
+    } from './isolation-controls.js';
+
+    // Expose to classic-script orchestrator via window.VIP_*
+    window.VIP_onDiarizationResult = onDiarizationResult;
+    window.VIP_seekTimeline        = seekTimeline;
+    window.VIP_setSpeakerVolume    = setSpeakerVolume;
+    window.VIP_setSpeakerMute      = setSpeakerMute;
+    window.VIP_setSpeakerSolo      = setSpeakerSolo;
+    window.VIP_updateSpeakerCards  = updateSpeakerCards;
+    window.VIP_setActiveSpeakerCard= setActiveSpeakerCard;
+
+    // Expose zoom helpers used by _bindIsolationControls()
+    window.VIP_diarZoomFit = null;  // set by initDiarizationTimeline
+    window.VIP_diarZoom    = null;
+
+    // Boot once orchestrator is ready (may already be ready)
+    function bootModules() {
+      const orch = window._vipOrch || window._vipOrchestrator;
+      const app  = window._vipApp;
+      if (!orch || !app) return false;
+
+      initDiarizationTimeline({
+        mlWorker:     orch.mlWorker,
+        audioContext: orch.ctx,
+        onSpeakerSelect: (speakerId) => {
+          if (app.diarizationState) app.diarizationState.activeSpeaker = speakerId;
+          setActiveSpeakerCard(speakerId);
+          // Forward solo to worker
+          orch.mlWorker?.postMessage({ type: 'isolateSpeaker', payload: { speakerId } });
+        },
+      });
+
+      initIsolationControls({
+        mlWorker:    orch.mlWorker,
+        audioContext: orch.ctx,
+        mediaStream: app.mediaStream || null,
+      });
+
+      return true;
+    }
+
+    if (!bootModules()) {
+      // Poll until orchestrator boots (first user gesture)
+      const tid = setInterval(() => { if (bootModules()) clearInterval(tid); }, 250);
+    }
+  </script>
+
 </body>
 </html>
