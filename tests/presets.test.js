@@ -1,6 +1,6 @@
 /**
- * VoiceIsolate Pro — Preset Completeness Tests (Phase 6)
- * Verifies tuned voice-isolation presets and wiring.
+ * VoiceIsolate Pro — Preset Completeness Tests
+ * Verifies all 8 presets cover every one of the 52 slider IDs defined in SLIDERS.
  */
 
 const fs = require('fs');
@@ -8,10 +8,17 @@ const path = require('path');
 
 const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
 
-// Extract preset names
-const presetNameRegex = /const PRESETS = \{([\s\S]*?)\};\s*const STAGES/;
+// Extract slider IDs from the SLIDERS block
+const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\s*\nconst SLIDER_MAP/);
+const sliderIds = slidersBlockMatch
+  ? [...slidersBlockMatch[1].matchAll(/id\s*:\s*'(\w+)'/g)].map(m => m[1])
+  : [];
+
+// Extract preset block text
+const presetNameRegex = /const PRESETS = \{([\s\S]*?)\};\s*\n\/\/ Aliases/;
 const presetsBlock = appJs.match(presetNameRegex)?.[1] || '';
-const presetNames = [
+
+const PRESET_NAMES = [
   'Voice Clarity',
   'Podcast Clean',
   'Forensic Extract',
@@ -23,30 +30,40 @@ const presetNames = [
 ];
 
 describe('Presets', () => {
-  test('Should define exactly 8 tuned preset names', () => {
-    presetNames.forEach(name => {
+  test('Should define exactly 8 preset names', () => {
+    PRESET_NAMES.forEach(name => {
       expect(presetsBlock).toContain(`'${name}':`);
     });
-    expect(presetNames.length).toBe(8);
+    expect(PRESET_NAMES.length).toBe(8);
   });
 
-  test('Every tuned preset contains required isolation keys', () => {
-    const requiredKeys = ['noiseReduction', 'voiceIsolation', 'highpassFreq', 'lowpassFreq', 'deEsser', 'compression', 'gate', 'vadThreshold', 'noiseOverSubtract', 'spectralFloor', 'voiceBoost', 'reverbReduction', 'description'];
-    presetNames.forEach((presetName) => {
+  test('SLIDERS block defines exactly 52 slider IDs', () => {
+    expect(sliderIds.length).toBe(52);
+  });
+
+  test('Every preset covers all 52 slider IDs', () => {
+    PRESET_NAMES.forEach(presetName => {
       const escapedPreset = presetName.replace('/', '\\/');
-      const presetRegex = new RegExp(`'${escapedPreset}':\\s*\\{([\\s\\S]*?)\\n\\s*\\}`);
-      const presetMatch = appJs.match(presetRegex);
+      // Match from preset key to the next preset key or end of PRESETS block
+      const presetRegex = new RegExp(`'${escapedPreset}':\\s*\\{([\\s\\S]*?)\\},?\\s*(?='[A-Z]|$)`);
+      const presetMatch = presetsBlock.match(presetRegex);
       expect(presetMatch).not.toBeNull();
       const presetStr = presetMatch[1];
-      requiredKeys.forEach((key) => {
-        expect(presetStr).toContain(`${key}:`);
+
+      sliderIds.forEach(sliderId => {
+        expect(presetStr).toContain(`${sliderId}:`);
       });
     });
   });
 
-  test('Surveillance preset keeps aggressive extraction values', () => {
-    const m = appJs.match(/'Surveillance':\s*\{[\s\S]*?noiseOverSubtract:\s*3\.0,[\s\S]*?spectralFloor:\s*0\.0004,[\s\S]*?voiceBoost:\s*2\.0/);
-    expect(m).not.toBeNull();
+  test('Every preset has a description string', () => {
+    PRESET_NAMES.forEach(presetName => {
+      const escapedPreset = presetName.replace('/', '\\/');
+      const presetRegex = new RegExp(`'${escapedPreset}':\\s*\\{([\\s\\S]*?)\\},?\\s*(?='[A-Z]|$)`);
+      const presetMatch = presetsBlock.match(presetRegex);
+      expect(presetMatch).not.toBeNull();
+      expect(presetMatch[1]).toContain('description:');
+    });
   });
 
   test('Preset application dispatches input and change events', () => {
@@ -57,6 +74,33 @@ describe('Presets', () => {
   test('Preset application stores non-slider values in VIP params', () => {
     expect(appJs).toContain('window.VIP_PARAMS = window.VIP_PARAMS || {}');
     expect(appJs).toContain('window.VIP_PARAMS[key] = value');
+  });
+
+  test('Forensic Extract uses maximum voice isolation', () => {
+    expect(presetsBlock).toContain("'Forensic Extract':");
+    const m = presetsBlock.match(/'Forensic Extract':\s*\{[\s\S]*?voiceIso:\s*(\d+)/);
+    expect(m).not.toBeNull();
+    expect(parseInt(m[1])).toBeGreaterThanOrEqual(95);
+  });
+
+  test('Surveillance uses maximum noise reduction', () => {
+    const m = presetsBlock.match(/'Surveillance':\s*\{[\s\S]*?nrAmount:\s*(\d+)/);
+    expect(m).not.toBeNull();
+    expect(parseInt(m[1])).toBeGreaterThanOrEqual(88);
+  });
+
+  test('Phone/Radio uses narrow high-pass frequency', () => {
+    const m = presetsBlock.match(/'Phone\/Radio':\s*\{[\s\S]*?hpFreq:\s*(\d+)/);
+    expect(m).not.toBeNull();
+    expect(parseInt(m[1])).toBeGreaterThanOrEqual(200);
+  });
+
+  test('Live Performance uses a lower noise reduction than Forensic Extract', () => {
+    const liveNR = presetsBlock.match(/'Live Performance':\s*\{[\s\S]*?nrAmount:\s*(\d+)/);
+    const forensicNR = presetsBlock.match(/'Forensic Extract':\s*\{[\s\S]*?nrAmount:\s*(\d+)/);
+    expect(liveNR).not.toBeNull();
+    expect(forensicNR).not.toBeNull();
+    expect(parseInt(liveNR[1])).toBeLessThan(parseInt(forensicNR[1]));
   });
 });
 
@@ -125,7 +169,6 @@ describe('ml-worker.js', () => {
 
   test('Should reference implemented model types', () => {
     const ml = fs.readFileSync(mlPath, 'utf8');
-    // Current implementation includes: vad, deepfilter, demucs
     ['vad', 'demucs'].forEach(m => {
       expect(ml).toContain(`${m}`);
     });

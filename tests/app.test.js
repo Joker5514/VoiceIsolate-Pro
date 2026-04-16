@@ -143,17 +143,18 @@ describe('PRESETS constant', () => {
     }
   });
 
-  test('preset objects contain tuned voice isolation keys', () => {
-    // Verify preset objects contain slider parameter keys
-    ['noiseReduction:', 'voiceIsolation:', 'noiseOverSubtract:', 'spectralFloor:', 'voiceBoost:', 'vadThreshold:'].forEach((key) => {
+  test('preset objects use actual slider IDs as keys', () => {
+    // Verify presets use the real 52-slider parameter IDs
+    ['nrAmount:', 'voiceIso:', 'hpFreq:', 'lpFreq:', 'deEssAmt:', 'derevAmt:', 'compThresh:', 'compRatio:', 'gateThresh:', 'outGain:'].forEach((key) => {
       expect(appSrc).toContain(key);
     });
   });
 
-  test('all presets include tuned DSP control keys', () => {
-    const tunedParams = ['vadThreshold:', 'noiseOverSubtract:', 'spectralFloor:', 'voiceBoost:'];
-    for (const param of tunedParams) {
-      expect(appSrc).toContain(param);
+  test('all presets cover every slider section', () => {
+    // Spot-check that every slider tab group has entries in preset block
+    const sectionsPresent = ['gateThresh:', 'nrAmount:', 'eqSub:', 'compThresh:', 'hpFreq:', 'derevAmt:', 'voiceIso:', 'outGain:'];
+    for (const key of sectionsPresent) {
+      expect(appSrc).toContain(key);
     }
   });
 });
