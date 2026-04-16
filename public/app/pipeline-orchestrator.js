@@ -55,6 +55,13 @@ class PipelineOrchestrator {
 
     // Cached ML worker init promise — allows idempotent pre-warming before gesture
     this._mlInitPromise = null;
+
+    this._isolationParams = {
+      isolationMethod: 'hybrid',
+      ecapaSimilarityThreshold: 0.65,
+      backgroundVolume: 0,
+      maskRefinement: true,
+    };
   }
 
   // ── One-time initialisation ─────────────────────────────────────────────
@@ -406,15 +413,19 @@ class PipelineOrchestrator {
         demucs: params.voiceIso / 100,
         bsrnn:  1 - params.voiceIso / 100
       });
-      // Diarization / isolation params
+    }
+  }
+
+  updateIsolationParams(nextParams) {
+    if (!nextParams || typeof nextParams !== 'object') return;
+    this._isolationParams = {
+      ...this._isolationParams,
+      ...nextParams,
+    };
+    if (this.mlWorker) {
       this.mlWorker.postMessage({
-        type: 'update_params',
-        payload: {
-          isolationMethod:          params.isolationMethod  || 'hybrid',
-          ecapaSimilarityThreshold: (params.isolationConfidence ?? 65) / 100,
-          backgroundVolume:         (params.bgVolume ?? 0) / 100,
-          maskRefinement:           params.maskRefinement !== false,
-        }
+        type: 'setIsolationConfig',
+        payload: this._isolationParams,
       });
     }
   }
@@ -435,6 +446,82 @@ class PipelineOrchestrator {
         this.updateParams(snapshot);
       });
     });
+  }
+
+  // ── Bind diarization timeline + isolation control events ─────────────────
+  _bindIsolationControls() {
+    const _set = (payload) => this.updateIsolationParams(payload);
+
+    // Method select
+    const mSel = document.getElementById('isolationMethodSelect');
+    mSel?.addEventListener('change', () => _set({ isolationMethod: mSel.value }));
+
+    // Confidence slider
+    const cSl = document.getElementById('isolationConfidenceSlider');
+    const cOut = document.getElementById('isolationConfidenceReadout');
+    cSl?.addEventListener('input', () => {
+      if (cOut) cOut.textContent = cSl.value + '%';
+      _set({ ecapaSimilarityThreshold: Number(cSl.value) / 100 });
+    });
+
+    // Background volume slider
+    const bgSl = document.getElementById('isolationBgVolumeSlider');
+    const bgOut = document.getElementById('isolationBgReadout');
+    bgSl?.addEventListener('input', () => {
+      if (bgOut) bgOut.textContent = bgSl.value + '%';
+      _set({ backgroundVolume: Number(bgSl.value) / 100 });
+    });
+
+    // Mask refinement checkbox
+    const mRef = document.getElementById('isolationMaskRefine');
+    mRef?.addEventListener('change', () => _set({ maskRefinement: mRef.checked }));
+
+    // Zoom controls
+    document.getElementById('diarZoomIn') ?.addEventListener('click', () => window._diarZoom?.(2));
+    document.getElementById('diarZoomOut')?.addEventListener('click', () => window._diarZoom?.(0.5));
+    document.getElementById('diarZoomFit')?.addEventListener('click', () => window._diarZoomFit?.());
+
+    // Voiceprint enroll
+    const enrollBtn = document.getElementById('enrollVoiceprintBtn');
+    const clearBtn  = document.getElementById('clearVoiceprintBtn');
+    const statusEl  = document.getElementById('voiceprintStatus');
+
+    enrollBtn?.addEventListener('click', async () => {
+      const app = window._vipApp;
+      if (!app?.mediaStream) {
+        if (statusEl) { statusEl.textContent = 'Start mic first'; statusEl.style.color = '#f59e0b'; }
+        return;
+      }
+      if (statusEl) { statusEl.textContent = 'Recording 5s…'; statusEl.style.color = '#f59e0b'; }
+      enrollBtn.disabled = true;
+      try {
+        const rec = new MediaRecorder(app.mediaStream, { mimeType: 'audio/webm;codecs=opus' });
+        const chunks = [];
+        rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+        rec.start(100);
+        await new Promise(r => setTimeout(r, 5000));
+        rec.stop();
+        await new Promise(r => { rec.onstop = r; });
+        const blob    = new Blob(chunks, { type: 'audio/webm' });
+        const arrBuf  = await blob.arrayBuffer();
+        const decoded = await this.ctx.decodeAudioData(arrBuf);
+        const pcm     = new Float32Array(decoded.getChannelData(0));
+        if (this.mlWorker) {
+          this.mlWorker.postMessage({ type: 'enrollVoiceprint', payload: { pcm } }, [pcm.buffer]);
+        }
+      } catch(err) {
+        if (statusEl) { statusEl.textContent = 'Error: ' + err.message; statusEl.style.color = '#ef4444'; }
+      } finally { enrollBtn.disabled = false; }
+    });
+
+    clearBtn?.addEventListener('click', () => this.mlWorker && this.mlWorker.postMessage({ type: 'clearVoiceprint' }));
+
+    const initialParams = {};
+    if (mSel?.value) initialParams.isolationMethod = mSel.value;
+    if (cSl?.value) initialParams.ecapaSimilarityThreshold = Number(cSl.value) / 100;
+    if (bgSl?.value) initialParams.backgroundVolume = Number(bgSl.value) / 100;
+    if (mRef) initialParams.maskRefinement = mRef.checked;
+    if (Object.keys(initialParams).length > 0) this.updateIsolationParams(initialParams);
   }
 
   // ── Suspend / resume AudioContext ────────────────────────────────────────
@@ -550,72 +637,3 @@ class PipelineOrchestrator {
     }, 50);
   }
 })();
-
-  // ── Bind diarization timeline + isolation control events ─────────────────
-  _bindIsolationControls() {
-    const w = this.mlWorker;
-    const _send = (payload) => w && w.postMessage({ type: 'update_params', payload });
-
-    // Method select
-    const mSel = document.getElementById('isolationMethodSelect');
-    mSel?.addEventListener('change', () => _send({ isolationMethod: mSel.value }));
-
-    // Confidence slider
-    const cSl = document.getElementById('isolationConfidenceSlider');
-    const cOut = document.getElementById('isolationConfidenceReadout');
-    cSl?.addEventListener('input', () => {
-      if (cOut) cOut.textContent = cSl.value + '%';
-      _send({ ecapaSimilarityThreshold: Number(cSl.value) / 100 });
-    });
-
-    // Background volume slider
-    const bgSl = document.getElementById('isolationBgVolumeSlider');
-    const bgOut = document.getElementById('isolationBgReadout');
-    bgSl?.addEventListener('input', () => {
-      if (bgOut) bgOut.textContent = bgSl.value + '%';
-      _send({ backgroundVolume: Number(bgSl.value) / 100 });
-    });
-
-    // Mask refinement checkbox
-    const mRef = document.getElementById('isolationMaskRefine');
-    mRef?.addEventListener('change', () => _send({ maskRefinement: mRef.checked }));
-
-    // Zoom controls
-    document.getElementById('diarZoomIn') ?.addEventListener('click', () => window._diarZoom?.(2));
-    document.getElementById('diarZoomOut')?.addEventListener('click', () => window._diarZoom?.(0.5));
-    document.getElementById('diarZoomFit')?.addEventListener('click', () => window._diarZoomFit?.());
-
-    // Voiceprint enroll
-    const enrollBtn = document.getElementById('enrollVoiceprintBtn');
-    const clearBtn  = document.getElementById('clearVoiceprintBtn');
-    const statusEl  = document.getElementById('voiceprintStatus');
-
-    enrollBtn?.addEventListener('click', async () => {
-      const app = window._vipApp;
-      if (!app?.mediaStream) {
-        if (statusEl) { statusEl.textContent = 'Start mic first'; statusEl.style.color = '#f59e0b'; }
-        return;
-      }
-      if (statusEl) { statusEl.textContent = 'Recording 5s…'; statusEl.style.color = '#f59e0b'; }
-      enrollBtn.disabled = true;
-      try {
-        const rec = new MediaRecorder(app.mediaStream, { mimeType: 'audio/webm;codecs=opus' });
-        const chunks = [];
-        rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-        rec.start(100);
-        await new Promise(r => setTimeout(r, 5000));
-        rec.stop();
-        await new Promise(r => { rec.onstop = r; });
-        const blob    = new Blob(chunks, { type: 'audio/webm' });
-        const arrBuf  = await blob.arrayBuffer();
-        const decoded = await this.ctx.decodeAudioData(arrBuf);
-        const pcm     = decoded.getChannelData(0);
-        w && w.postMessage({ type: 'enrollVoiceprint', payload: { pcm } }, [pcm.buffer]);
-      } catch(err) {
-        if (statusEl) { statusEl.textContent = 'Error: ' + err.message; statusEl.style.color = '#ef4444'; }
-      } finally { enrollBtn.disabled = false; }
-    });
-
-    clearBtn?.addEventListener('click', () => w && w.postMessage({ type: 'clearVoiceprint' }));
-  }
-

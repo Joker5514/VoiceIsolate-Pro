@@ -218,6 +218,22 @@ self.onmessage = async (ev) => {
     if (payload && payload.allowedStages) allowedStages = payload.allowedStages;
   }
 
+  // ── setIsolationConfig: diarization/isolation UI runtime controls ───────────
+  if (type === 'setIsolationConfig') {
+    if (payload && typeof payload.isolationMethod === 'string') {
+      self._isolationMethod = payload.isolationMethod;
+    }
+    if (payload && typeof payload.ecapaSimilarityThreshold === 'number') {
+      self._ecapaSimilarityThreshold = payload.ecapaSimilarityThreshold;
+    }
+    if (payload && typeof payload.backgroundVolume === 'number') {
+      self._backgroundVolume = payload.backgroundVolume;
+    }
+    if (payload && typeof payload.maskRefinement === 'boolean') {
+      self._maskRefinement = payload.maskRefinement;
+    }
+  }
+
   // ── multi_separate: multi-speaker stream separation ──────────────────────────
   if (type === 'multi_separate') {
     await handleMultiSeparate(payload && payload.streams);

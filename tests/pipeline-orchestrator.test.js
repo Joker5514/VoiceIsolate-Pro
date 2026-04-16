@@ -257,6 +257,40 @@ describe('PipelineOrchestrator — updateParams()', () => {
     expect(weightMsg.demucs).toBeCloseTo(0.6, 5);
     expect(weightMsg.bsrnn).toBeCloseTo(0.4, 5);
   });
+
+  test('does not resend isolation defaults when sliders update', () => {
+    const orch = new PipelineOrchestrator();
+    orch.workletNode = new MockAudioWorkletNode();
+    orch.mlWorker = new MockWorker();
+    orch.updateParams({ voiceIso: 55, dryWet: 1.0 });
+    const isolationMsg = orch.mlWorker._messages.find(m => m.type === 'setIsolationConfig');
+    expect(isolationMsg).toBeUndefined();
+  });
+});
+
+describe('PipelineOrchestrator — updateIsolationParams()', () => {
+  test('posts dedicated isolation config without mutating slider snapshot flow', () => {
+    const orch = new PipelineOrchestrator();
+    orch.mlWorker = new MockWorker();
+
+    orch.updateIsolationParams({
+      isolationMethod: 'ecapa',
+      ecapaSimilarityThreshold: 0.78,
+    });
+    orch.updateIsolationParams({
+      backgroundVolume: 0.25,
+      maskRefinement: false,
+    });
+
+    const messages = orch.mlWorker._messages.filter(m => m.type === 'setIsolationConfig');
+    expect(messages.length).toBe(2);
+    expect(messages[1].payload).toEqual({
+      isolationMethod: 'ecapa',
+      ecapaSimilarityThreshold: 0.78,
+      backgroundVolume: 0.25,
+      maskRefinement: false,
+    });
+  });
 });
 
 // ── connectSource / disconnectSource ─────────────────────────────────────────
