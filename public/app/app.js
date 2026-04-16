@@ -96,138 +96,164 @@ for (const tab of Object.values(SLIDERS)) {
   }
 }
 
-// ---- PRESETS
+// ---- PRESETS (all 52 slider IDs covered per preset)
 const PRESETS = {
   'Voice Clarity': {
-    noiseReduction: 82,
-    voiceIsolation: 91,
-    highpassFreq: 120,
-    lowpassFreq: 8000,
-    deEsser: 45,
-    compression: 55,
-    gate: 35,
-    vadThreshold: 0.008,
-    noiseOverSubtract: 2.2,
-    spectralFloor: 0.001,
-    voiceBoost: 1.6,
-    reverbReduction: 60,
+    // Gate
+    gateThresh: -45, gateRange: -60, gateAttack: 2, gateRelease: 80, gateHold: 20, gateLookahead: 5,
+    // Noise Reduction
+    nrAmount: 82, nrSensitivity: 75, nrSpectralSub: 70, nrFloor: -55, nrSmoothing: 50,
+    // EQ
+    eqSub: -8, eqBass: -2, eqWarmth: 1, eqBody: 2, eqLowMid: -2, eqMid: 3, eqPresence: 5, eqClarity: 4, eqAir: 2, eqBrill: -2,
+    // Dynamics
+    compThresh: -24, compRatio: 4, compAttack: 8, compRelease: 200, compKnee: 6, compMakeup: 6, limThresh: -1, limRelease: 10,
+    // Spectral
+    hpFreq: 120, hpQ: 0.71, lpFreq: 8000, lpQ: 0.71, deEssFreq: 7000, deEssAmt: 45, specTilt: 0, formantShift: 0,
+    // Advanced
+    derevAmt: 60, derevDecay: 0.5, harmRecov: 30, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
+    // Separation
+    voiceIso: 91, bgSuppress: 80, voiceFocusLo: 120, voiceFocusHi: 6000, crosstalkCancel: 0,
+    // Output
+    outGain: 2, dryWet: 100, ditherAmt: 0, outWidth: 100,
     description: 'Max voice clarity — best for speech in noise'
   },
   'Podcast Clean': {
-    noiseReduction: 70,
-    voiceIsolation: 85,
-    highpassFreq: 100,
-    lowpassFreq: 12000,
-    deEsser: 35,
-    compression: 65,
-    gate: 25,
-    vadThreshold: 0.006,
-    noiseOverSubtract: 1.8,
-    spectralFloor: 0.002,
-    voiceBoost: 1.4,
-    reverbReduction: 50,
+    // Gate
+    gateThresh: -50, gateRange: -40, gateAttack: 5, gateRelease: 100, gateHold: 30, gateLookahead: 5,
+    // Noise Reduction
+    nrAmount: 70, nrSensitivity: 60, nrSpectralSub: 50, nrFloor: -60, nrSmoothing: 40,
+    // EQ
+    eqSub: -6, eqBass: 1, eqWarmth: 2, eqBody: 1, eqLowMid: -1, eqMid: 2, eqPresence: 3, eqClarity: 2, eqAir: 1, eqBrill: -2,
+    // Dynamics
+    compThresh: -20, compRatio: 3, compAttack: 10, compRelease: 250, compKnee: 8, compMakeup: 5, limThresh: -1, limRelease: 10,
+    // Spectral
+    hpFreq: 100, hpQ: 0.71, lpFreq: 12000, lpQ: 0.71, deEssFreq: 7000, deEssAmt: 35, specTilt: 0, formantShift: 0,
+    // Advanced
+    derevAmt: 50, derevDecay: 0.5, harmRecov: 20, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
+    // Separation
+    voiceIso: 85, bgSuppress: 60, voiceFocusLo: 120, voiceFocusHi: 8000, crosstalkCancel: 0,
+    // Output
+    outGain: 0, dryWet: 100, ditherAmt: 0, outWidth: 100,
     description: 'Balanced — clean podcast/interview audio'
   },
   'Forensic Extract': {
-    noiseReduction: 95,
-    voiceIsolation: 98,
-    highpassFreq: 80,
-    lowpassFreq: 6000,
-    deEsser: 20,
-    compression: 40,
-    gate: 55,
-    vadThreshold: 0.003,
-    noiseOverSubtract: 2.8,
-    spectralFloor: 0.0005,
-    voiceBoost: 1.8,
-    reverbReduction: 85,
+    // Gate
+    gateThresh: -38, gateRange: -80, gateAttack: 1, gateRelease: 50, gateHold: 10, gateLookahead: 8,
+    // Noise Reduction
+    nrAmount: 95, nrSensitivity: 90, nrSpectralSub: 85, nrFloor: -45, nrSmoothing: 60,
+    // EQ
+    eqSub: -12, eqBass: -2, eqWarmth: 0, eqBody: 1, eqLowMid: -3, eqMid: 4, eqPresence: 6, eqClarity: 5, eqAir: 0, eqBrill: -4,
+    // Dynamics
+    compThresh: -30, compRatio: 6, compAttack: 5, compRelease: 150, compKnee: 4, compMakeup: 8, limThresh: -0.5, limRelease: 5,
+    // Spectral
+    hpFreq: 80, hpQ: 1.0, lpFreq: 6000, lpQ: 0.71, deEssFreq: 6000, deEssAmt: 20, specTilt: 0, formantShift: 0,
+    // Advanced
+    derevAmt: 85, derevDecay: 0.3, harmRecov: 50, harmOrder: 4, stereoWidth: 0, phaseCorr: 80,
+    // Separation
+    voiceIso: 98, bgSuppress: 95, voiceFocusLo: 80, voiceFocusHi: 4000, crosstalkCancel: 50,
+    // Output
+    outGain: 6, dryWet: 100, ditherAmt: 0, outWidth: 0,
     description: 'Maximum extraction — forensic/law enforcement'
   },
   'Music Vocal': {
-    noiseReduction: 45,
-    voiceIsolation: 78,
-    highpassFreq: 80,
-    lowpassFreq: 16000,
-    deEsser: 55,
-    compression: 70,
-    gate: 15,
-    vadThreshold: 0.004,
-    noiseOverSubtract: 1.4,
-    spectralFloor: 0.003,
-    voiceBoost: 1.3,
-    reverbReduction: 30,
+    // Gate
+    gateThresh: -55, gateRange: -30, gateAttack: 5, gateRelease: 150, gateHold: 50, gateLookahead: 5,
+    // Noise Reduction
+    nrAmount: 45, nrSensitivity: 40, nrSpectralSub: 30, nrFloor: -65, nrSmoothing: 30,
+    // EQ
+    eqSub: -6, eqBass: -2, eqWarmth: 0, eqBody: 1, eqLowMid: -1, eqMid: 2, eqPresence: 4, eqClarity: 3, eqAir: 3, eqBrill: 0,
+    // Dynamics
+    compThresh: -20, compRatio: 3.5, compAttack: 15, compRelease: 300, compKnee: 8, compMakeup: 4, limThresh: -1, limRelease: 15,
+    // Spectral
+    hpFreq: 80, hpQ: 0.71, lpFreq: 16000, lpQ: 0.71, deEssFreq: 8000, deEssAmt: 55, specTilt: 0, formantShift: 0,
+    // Advanced
+    derevAmt: 30, derevDecay: 0.8, harmRecov: 15, harmOrder: 2, stereoWidth: 120, phaseCorr: 0,
+    // Separation
+    voiceIso: 78, bgSuppress: 65, voiceFocusLo: 100, voiceFocusHi: 8000, crosstalkCancel: 0,
+    // Output
+    outGain: 0, dryWet: 100, ditherAmt: 0, outWidth: 110,
     description: 'Vocal separation from music'
   },
   'Whisper Boost': {
-    noiseReduction: 88,
-    voiceIsolation: 94,
-    highpassFreq: 100,
-    lowpassFreq: 7000,
-    deEsser: 15,
-    compression: 80,
-    gate: 10,
-    vadThreshold: 0.002,
-    noiseOverSubtract: 2.5,
-    spectralFloor: 0.0008,
-    voiceBoost: 2.2,
-    reverbReduction: 70,
+    // Gate
+    gateThresh: -65, gateRange: -45, gateAttack: 1, gateRelease: 200, gateHold: 50, gateLookahead: 10,
+    // Noise Reduction
+    nrAmount: 88, nrSensitivity: 80, nrSpectralSub: 60, nrFloor: -50, nrSmoothing: 55,
+    // EQ
+    eqSub: -12, eqBass: -3, eqWarmth: 0, eqBody: 2, eqLowMid: -2, eqMid: 4, eqPresence: 6, eqClarity: 5, eqAir: 2, eqBrill: -4,
+    // Dynamics
+    compThresh: -35, compRatio: 8, compAttack: 5, compRelease: 300, compKnee: 6, compMakeup: 12, limThresh: -0.5, limRelease: 5,
+    // Spectral
+    hpFreq: 100, hpQ: 0.71, lpFreq: 7000, lpQ: 0.71, deEssFreq: 6500, deEssAmt: 15, specTilt: 2, formantShift: 0,
+    // Advanced
+    derevAmt: 70, derevDecay: 0.4, harmRecov: 60, harmOrder: 4, stereoWidth: 100, phaseCorr: 20,
+    // Separation
+    voiceIso: 94, bgSuppress: 85, voiceFocusLo: 100, voiceFocusHi: 5000, crosstalkCancel: 30,
+    // Output
+    outGain: 10, dryWet: 100, ditherAmt: 0, outWidth: 100,
     description: 'Amplify and isolate whispered speech'
   },
   'Phone/Radio': {
-    noiseReduction: 75,
-    voiceIsolation: 88,
-    highpassFreq: 300,
-    lowpassFreq: 3400,
-    deEsser: 30,
-    compression: 75,
-    gate: 40,
-    vadThreshold: 0.007,
-    noiseOverSubtract: 2.0,
-    spectralFloor: 0.002,
-    voiceBoost: 1.5,
-    reverbReduction: 65,
+    // Gate
+    gateThresh: -45, gateRange: -60, gateAttack: 3, gateRelease: 100, gateHold: 25, gateLookahead: 5,
+    // Noise Reduction
+    nrAmount: 75, nrSensitivity: 65, nrSpectralSub: 60, nrFloor: -55, nrSmoothing: 45,
+    // EQ
+    eqSub: -12, eqBass: -6, eqWarmth: -2, eqBody: 1, eqLowMid: 0, eqMid: 4, eqPresence: 6, eqClarity: 3, eqAir: -6, eqBrill: -8,
+    // Dynamics
+    compThresh: -24, compRatio: 5, compAttack: 6, compRelease: 200, compKnee: 4, compMakeup: 8, limThresh: -1, limRelease: 8,
+    // Spectral
+    hpFreq: 300, hpQ: 0.71, lpFreq: 3400, lpQ: 0.71, deEssFreq: 4500, deEssAmt: 30, specTilt: 1, formantShift: 0,
+    // Advanced
+    derevAmt: 65, derevDecay: 0.3, harmRecov: 40, harmOrder: 3, stereoWidth: 0, phaseCorr: 60,
+    // Separation
+    voiceIso: 88, bgSuppress: 75, voiceFocusLo: 300, voiceFocusHi: 3400, crosstalkCancel: 40,
+    // Output
+    outGain: 4, dryWet: 100, ditherAmt: 0, outWidth: 0,
     description: 'Optimize narrow-band telephone/radio voice'
   },
   'Live Performance': {
-    noiseReduction: 55,
-    voiceIsolation: 72,
-    highpassFreq: 90,
-    lowpassFreq: 14000,
-    deEsser: 50,
-    compression: 60,
-    gate: 20,
-    vadThreshold: 0.010,
-    noiseOverSubtract: 1.5,
-    spectralFloor: 0.005,
-    voiceBoost: 1.2,
-    reverbReduction: 20,
+    // Gate
+    gateThresh: -55, gateRange: -25, gateAttack: 8, gateRelease: 200, gateHold: 60, gateLookahead: 3,
+    // Noise Reduction
+    nrAmount: 55, nrSensitivity: 45, nrSpectralSub: 30, nrFloor: -65, nrSmoothing: 25,
+    // EQ
+    eqSub: -6, eqBass: 1, eqWarmth: 2, eqBody: 1, eqLowMid: -1, eqMid: 2, eqPresence: 3, eqClarity: 2, eqAir: 2, eqBrill: 0,
+    // Dynamics
+    compThresh: -18, compRatio: 2.5, compAttack: 20, compRelease: 400, compKnee: 10, compMakeup: 4, limThresh: -1.5, limRelease: 15,
+    // Spectral
+    hpFreq: 90, hpQ: 0.71, lpFreq: 14000, lpQ: 0.71, deEssFreq: 7500, deEssAmt: 50, specTilt: 0, formantShift: 0,
+    // Advanced
+    derevAmt: 20, derevDecay: 1.2, harmRecov: 10, harmOrder: 2, stereoWidth: 130, phaseCorr: 0,
+    // Separation
+    voiceIso: 72, bgSuppress: 40, voiceFocusLo: 100, voiceFocusHi: 10000, crosstalkCancel: 0,
+    // Output
+    outGain: 0, dryWet: 85, ditherAmt: 0, outWidth: 130,
     description: 'Live stage — preserve natural room character'
   },
   'Surveillance': {
-    noiseReduction: 90,
-    voiceIsolation: 96,
-    highpassFreq: 80,
-    lowpassFreq: 5000,
-    deEsser: 10,
-    compression: 85,
-    gate: 60,
-    vadThreshold: 0.003,
-    noiseOverSubtract: 3.0,
-    spectralFloor: 0.0004,
-    voiceBoost: 2.0,
-    reverbReduction: 90,
+    // Gate
+    gateThresh: -38, gateRange: -70, gateAttack: 2, gateRelease: 60, gateHold: 15, gateLookahead: 10,
+    // Noise Reduction
+    nrAmount: 90, nrSensitivity: 85, nrSpectralSub: 80, nrFloor: -45, nrSmoothing: 65,
+    // EQ
+    eqSub: -12, eqBass: -4, eqWarmth: -1, eqBody: 2, eqLowMid: -3, eqMid: 5, eqPresence: 6, eqClarity: 5, eqAir: -2, eqBrill: -8,
+    // Dynamics
+    compThresh: -28, compRatio: 8, compAttack: 3, compRelease: 100, compKnee: 4, compMakeup: 12, limThresh: -0.5, limRelease: 5,
+    // Spectral
+    hpFreq: 80, hpQ: 1.0, lpFreq: 5000, lpQ: 0.71, deEssFreq: 5500, deEssAmt: 10, specTilt: 1, formantShift: 0,
+    // Advanced
+    derevAmt: 90, derevDecay: 0.3, harmRecov: 70, harmOrder: 5, stereoWidth: 0, phaseCorr: 90,
+    // Separation
+    voiceIso: 96, bgSuppress: 92, voiceFocusLo: 80, voiceFocusHi: 4000, crosstalkCancel: 60,
+    // Output
+    outGain: 12, dryWet: 100, ditherAmt: 0, outWidth: 0,
     description: 'Maximum SNR boost for covert/distant recording'
   }
 };
 
-const PRESET_PARAM_ALIASES = {
-  noiseReduction: 'nrAmount',
-  voiceIsolation: 'voiceIso',
-  highpassFreq: 'hpFreq',
-  lowpassFreq: 'lpFreq',
-  deEsser: 'deEssAmt',
-  reverbReduction: 'derevAmt'
-};
+// Aliases kept for backward-compat with any custom presets saved before v23
+const PRESET_PARAM_ALIASES = {};
 
 const STAGES = [
   'S01: Input Decode',                    // 0
@@ -729,19 +755,6 @@ class VoiceIsolatePro {
   async handleFile(file) {
     this.dom.fileInfo.textContent = '⏳ Loading...';
     try {
-      const fileSizeMB = file.size / (1024 * 1024);
-      if (fileSizeMB > 200) {
-        throw new Error(`File too large: ${fileSizeMB.toFixed(1)} MB exceeds 200 MB hard cap.`);
-      }
-
-      const LM = window.LicenseManager;
-      if (LM && typeof LM.checkFileLimit === 'function') {
-        const check = LM.checkFileLimit(fileSizeMB, 0);
-        if (!check.allowed) {
-          throw new Error(check.reason || 'This file exceeds the limits for your current plan.');
-        }
-      }
-
       const normalizedType = (file.type || '').toLowerCase();
       const normalizedName = (file.name || '').toLowerCase();
       const isMidiFile = normalizedType === 'audio/midi' || normalizedType === 'audio/x-midi' || normalizedName.endsWith('.mid') || normalizedName.endsWith('.midi');

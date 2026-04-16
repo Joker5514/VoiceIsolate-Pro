@@ -1,13 +1,10 @@
 /**
  * VoiceIsolate Pro — handleFile() Validation Tests
  *
- * Tests the new file-size sentinel (200 MB hard cap) and LicenseManager
- * checkFileLimit integration added to VoiceIsolatePro.handleFile() in
- * public/app/app.js.
+ * Verifies that handleFile() accepts all file sizes (no upload limit),
+ * rejects unsupported file types, and handles MIDI files with a clear error.
  *
- * Loads the class from public/app/app.js (not the root app.js, which is a
- * different, smaller file) using the same VM + fake-globals technique as
- * handle_file_decode.test.js.
+ * Loads the class from public/app/app.js using the VM + fake-globals technique.
  */
 
 'use strict';
@@ -34,9 +31,7 @@ beforeAll(() => {
       readyState:         'complete',
       body:               { appendChild: jest.fn() },
     },
-    window: {
-      LicenseManager: undefined, // overridden per-test in global.window
-    },
+    window: { LicenseManager: undefined },
     module:       { exports: {} },
     Float32Array: Float32Array,
     Math:         Math,
@@ -63,10 +58,6 @@ beforeAll(() => {
     performance:      { now: jest.fn(() => Date.now()) },
   };
 
-  // Redirect window.LicenseManager lookups so per-test injection via
-  // global.window (set/restored around each call) is visible to the VM code.
-  // When global.window is not set (e.g. during beforeAll bootstrap) fall back
-  // to a stable sandbox object so window._vipApp access does not throw.
   const _sandboxWindow = { LicenseManager: undefined };
   Object.defineProperty(sandbox, 'window', {
     get: () => (typeof global !== 'undefined' && global.window != null)
@@ -84,7 +75,7 @@ beforeAll(() => {
 });
 
 // ── Helper: build a minimal mockVip ──────────────────────────────────────────
-function makeMockVip(windowOverride = {}) {
+function makeMockVip() {
   return {
     ensureCtx:   jest.fn(),
     stop:        jest.fn(),
@@ -100,64 +91,13 @@ function makeMockVip(windowOverride = {}) {
       decodeAudioData: jest.fn().mockResolvedValue({ length: 100 }),
     },
     params: {},
-    _window: {
-      LicenseManager: windowOverride.LicenseManager || undefined,
-    },
   };
 }
 
-// ── File-size validation (MAX 200 MB hard cap) ────────────────────────────────
-describe('handleFile() — file size validation (200 MB hard cap)', () => {
-  test('rejects a file larger than 200 MB with a descriptive error message', async () => {
-    const mockVip  = makeMockVip();
-    const overSize = 201 * 1024 * 1024; // 201 MB
-    const mockFile = {
-      name: 'huge.wav', size: overSize, type: 'audio/wav',
-      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
-    };
-
-    await handleFile.call(mockVip, mockFile);
-
-    expect(mockVip.setStatus).toHaveBeenCalledWith('ERROR');
-    expect(mockVip.dom.fileInfo.textContent).toContain('File too large');
-    expect(mockVip.dom.fileInfo.textContent).toContain('201.0 MB');
-    expect(mockVip.dom.fileInfo.textContent).toContain('200 MB');
-  });
-
-  test('rejects a file at exactly 200 MB + 1 byte', async () => {
-    const mockVip  = makeMockVip();
-    const oneOver  = 200 * 1024 * 1024 + 1;
-    const mockFile = {
-      name: 'over.mp3', size: oneOver, type: 'audio/mpeg',
-      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
-    };
-
-    await handleFile.call(mockVip, mockFile);
-
-    expect(mockVip.setStatus).toHaveBeenCalledWith('ERROR');
-    expect(mockVip.dom.fileInfo.textContent).toContain('File too large');
-  });
-
-  test('does not reject a file at exactly 200 MB', async () => {
-    const mockVip  = makeMockVip();
-    const exactly  = 200 * 1024 * 1024;
-    const mockFile = {
-      name: 'max.wav', size: exactly, type: 'audio/wav',
-      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
-    };
-
-    await handleFile.call(mockVip, mockFile);
-
-    // Should NOT be called with 'ERROR' due to the size check
-    const errorCalls = mockVip.setStatus.mock.calls.filter(c => c[0] === 'ERROR');
-    // If ERROR was called it must not be because of size limit
-    if (errorCalls.length > 0) {
-      expect(mockVip.dom.fileInfo.textContent).not.toContain('File too large');
-    }
-  });
-
-  test('does not reject a normally-sized file (5 MB)', async () => {
-    const mockVip  = makeMockVip();
+// ── No upload limit — any file size is accepted ───────────────────────────────
+describe('handleFile() — no upload size limit', () => {
+  test('accepts a normally-sized file (5 MB) without error', async () => {
+    const mockVip = makeMockVip();
     const mockFile = {
       name: 'normal.wav', size: 5 * 1024 * 1024, type: 'audio/wav',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
@@ -166,144 +106,109 @@ describe('handleFile() — file size validation (200 MB hard cap)', () => {
     await handleFile.call(mockVip, mockFile);
 
     expect(mockVip.dom.fileInfo.textContent).not.toContain('File too large');
+    expect(mockVip.dom.fileInfo.textContent).not.toContain('too large');
   });
 
-  test('error message includes the actual file size in MB (two decimal places)', async () => {
-    const mockVip  = makeMockVip();
-    // 250.5 MB
-    const fileSize = Math.round(250.5 * 1024 * 1024);
+  test('accepts a large file (500 MB) without a size error', async () => {
+    const mockVip = makeMockVip();
     const mockFile = {
-      name: 'big.wav', size: fileSize, type: 'audio/wav',
+      name: 'large.wav', size: 500 * 1024 * 1024, type: 'audio/wav',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
     };
 
     await handleFile.call(mockVip, mockFile);
 
-    const msg = mockVip.dom.fileInfo.textContent;
-    // size displayed as X.X MB (one decimal)
-    expect(msg).toMatch(/\d+\.\d\s*MB/);
+    expect(mockVip.dom.fileInfo.textContent).not.toContain('File too large');
+    expect(mockVip.dom.fileInfo.textContent).not.toContain('hard cap');
+  });
+
+  test('accepts a very large file (2 GB) without a size error', async () => {
+    const mockVip = makeMockVip();
+    const mockFile = {
+      name: 'huge.wav', size: 2 * 1024 * 1024 * 1024, type: 'audio/wav',
+      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
+    };
+
+    await handleFile.call(mockVip, mockFile);
+
+    expect(mockVip.dom.fileInfo.textContent).not.toContain('File too large');
+  });
+
+  test('handleFile source contains no hard-coded 200 MB cap', () => {
+    const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
+    expect(appJs).not.toContain('exceeds 200 MB hard cap');
+    expect(appJs).not.toContain('fileSizeMB > 200');
+  });
+
+  test('handleFile source contains no LicenseManager file size check', () => {
+    const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
+    expect(appJs).not.toContain('LM.checkFileLimit');
   });
 });
 
-// ── LicenseManager.checkFileLimit integration ─────────────────────────────────
-describe('handleFile() — LicenseManager.checkFileLimit integration', () => {
-  test('calls checkFileLimit with fileSizeMB and 0 when LicenseManager is present', async () => {
-    const checkFileLimit = jest.fn().mockReturnValue({ allowed: true });
-    const mockVip  = makeMockVip({ LicenseManager: { checkFileLimit } });
-    const fileSize = 50 * 1024 * 1024; // 50 MB
+// ── MIME type / format validation ─────────────────────────────────────────────
+describe('handleFile() — file type validation', () => {
+  test('rejects MIDI files with a clear error', async () => {
+    const mockVip = makeMockVip();
     const mockFile = {
-      name: 'audio.wav', size: fileSize, type: 'audio/wav',
+      name: 'song.mid', size: 10 * 1024, type: 'audio/midi',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
     };
 
-    // Provide window.LicenseManager accessible to the handleFile code
-    mockVip.ctx.decodeAudioData = jest.fn().mockResolvedValue({ length: 100 });
-
-    // Patch global.window for this call so the code inside VM can read it
-    const savedWindow = global.window;
-    global.window = { LicenseManager: { checkFileLimit } };
-
     await handleFile.call(mockVip, mockFile);
-
-    global.window = savedWindow;
-
-    // checkFileLimit should have been called with the file size in MB and 0
-    expect(checkFileLimit).toHaveBeenCalledWith(50, 0);
-  });
-
-  test('blocks the file when checkFileLimit returns allowed:false', async () => {
-    const checkFileLimit = jest.fn().mockReturnValue({
-      allowed: false,
-      reason: 'File size exceeds your plan limit of 25 MB.',
-    });
-    const mockVip  = makeMockVip();
-    const mockFile = {
-      name: 'big.wav', size: 30 * 1024 * 1024, type: 'audio/wav',
-      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
-    };
-
-    const savedWindow = global.window;
-    global.window = { LicenseManager: { checkFileLimit } };
-
-    await handleFile.call(mockVip, mockFile);
-
-    global.window = savedWindow;
 
     expect(mockVip.setStatus).toHaveBeenCalledWith('ERROR');
-    expect(mockVip.dom.fileInfo.textContent).toContain('File size exceeds your plan limit of 25 MB.');
+    expect(mockVip.dom.fileInfo.textContent).toContain('MIDI');
   });
 
-  test('uses check.reason as the error message when blocked by LicenseManager', async () => {
-    const reason        = 'Upgrade to PRO to process files larger than 25 MB.';
-    const checkFileLimit = jest.fn().mockReturnValue({ allowed: false, reason });
-    const mockVip  = makeMockVip();
+  test('rejects .midi extension files with a clear error', async () => {
+    const mockVip = makeMockVip();
     const mockFile = {
-      name: 'medium.wav', size: 30 * 1024 * 1024, type: 'audio/wav',
+      name: 'track.midi', size: 10 * 1024, type: '',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
     };
 
-    const savedWindow = global.window;
-    global.window = { LicenseManager: { checkFileLimit } };
-
     await handleFile.call(mockVip, mockFile);
 
-    global.window = savedWindow;
-
-    expect(mockVip.dom.fileInfo.textContent).toContain(reason);
+    expect(mockVip.setStatus).toHaveBeenCalledWith('ERROR');
+    expect(mockVip.dom.fileInfo.textContent).toContain('MIDI');
   });
 
-  test('proceeds normally when LicenseManager is absent (window.LicenseManager undefined)', async () => {
-    const mockVip  = makeMockVip();
+  test('rejects unsupported MIME types', async () => {
+    const mockVip = makeMockVip();
     const mockFile = {
-      name: 'audio.wav', size: 5 * 1024 * 1024, type: 'audio/wav',
+      name: 'data.bin', size: 1024, type: 'application/octet-stream',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
     };
 
-    const savedWindow = global.window;
-    global.window = {};    // no LicenseManager
-
     await handleFile.call(mockVip, mockFile);
 
-    global.window = savedWindow;
-
-    expect(mockVip.dom.fileInfo.textContent).not.toContain('File too large');
+    expect(mockVip.setStatus).toHaveBeenCalledWith('ERROR');
+    expect(mockVip.dom.fileInfo.textContent).toContain('Unsupported');
   });
 
-  test('proceeds normally when LicenseManager lacks checkFileLimit method', async () => {
-    const mockVip  = makeMockVip();
+  test('accepts audio/wav files', async () => {
+    const mockVip = makeMockVip();
     const mockFile = {
-      name: 'audio.wav', size: 5 * 1024 * 1024, type: 'audio/wav',
+      name: 'audio.wav', size: 1024, type: 'audio/wav',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
     };
 
-    const savedWindow = global.window;
-    global.window = { LicenseManager: { someOtherMethod: jest.fn() } };
-
     await handleFile.call(mockVip, mockFile);
 
-    global.window = savedWindow;
-
-    expect(mockVip.dom.fileInfo.textContent).not.toContain('File too large');
+    expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
+    expect(mockVip.dom.fileInfo.textContent).not.toContain('MIDI');
   });
 
-  test('size check runs before LicenseManager check (oversized file never calls LM)', async () => {
-    const checkFileLimit = jest.fn().mockReturnValue({ allowed: true });
-    const mockVip  = makeMockVip();
+  test('accepts audio/mpeg (MP3) files', async () => {
+    const mockVip = makeMockVip();
     const mockFile = {
-      name: 'huge.wav', size: 300 * 1024 * 1024, type: 'audio/wav',
+      name: 'track.mp3', size: 1024, type: 'audio/mpeg',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
     };
 
-    const savedWindow = global.window;
-    global.window = { LicenseManager: { checkFileLimit } };
-
     await handleFile.call(mockVip, mockFile);
 
-    global.window = savedWindow;
-
-    // The hard-cap error fires before the LM check
-    expect(mockVip.dom.fileInfo.textContent).toContain('File too large');
-    // LM checkFileLimit should NOT have been called since the hard cap triggered first
-    expect(checkFileLimit).not.toHaveBeenCalled();
+    expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
   });
 });
