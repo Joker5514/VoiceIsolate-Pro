@@ -42,21 +42,27 @@ export function initIsolationControls(opts = {}) {
 
 // ── Public: update speaker cards from diarization result ─────────────────────
 export function updateSpeakerCards(speakerMap) {
-  // Merge new data preserving volume/mute/solo state
-  Object.entries(speakerMap).forEach(([id, info]) => {
-    if (!_speakerMap[id]) {
-      _speakerMap[id] = {
-        label:  info.label  || 'Speaker ' + id,
-        color:  info.color  || PALETTE[_colorIdx++ % PALETTE.length],
-        volume: 1.0,
-        muted:  false,
-        solo:   false,
-      };
-    } else {
-      _speakerMap[id].label = info.label || _speakerMap[id].label;
-      _speakerMap[id].color = info.color || _speakerMap[id].color;
-    }
+  // Rebuild from the latest diarization result while preserving user state
+  // for speaker IDs that still exist in the new map.
+  const incomingSpeakerMap = speakerMap || {};
+  const nextSpeakerMap = {};
+
+  Object.entries(incomingSpeakerMap).forEach(([id, info]) => {
+    const prev = _speakerMap[id];
+    nextSpeakerMap[id] = {
+      label:  info.label || (prev && prev.label) || ('Speaker ' + id),
+      color:  info.color || (prev && prev.color) || PALETTE[_colorIdx++ % PALETTE.length],
+      volume: prev ? prev.volume : 1.0,
+      muted:  prev ? prev.muted  : false,
+      solo:   prev ? prev.solo   : false,
+    };
   });
+
+  _speakerMap = nextSpeakerMap;
+
+  if (_activeSoloId && !_speakerMap[_activeSoloId]) {
+    _activeSoloId = null;
+  }
   _rebuildGrid();
 }
 
