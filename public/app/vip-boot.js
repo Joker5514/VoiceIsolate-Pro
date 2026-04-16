@@ -105,6 +105,9 @@
       var app = new VoiceIsolatePro();
       // Call app.init() — wires up sliders, DOM cache, canvases, and 3D
       app._initCalled = true;
+      if (typeof app.init === 'function') {
+        try { app.init(); } catch(e){ console.warn('[vip-boot] app.init() error:', e); }
+      }
       window.vip     = app;
       window._vipApp = app;  // pipeline-orchestrator.js polls this
       console.info('[vip-boot] VoiceIsolatePro instantiated + init() called ✓');

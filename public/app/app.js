@@ -576,9 +576,13 @@ class VoiceIsolatePro {
   async handleFile(file) {
     this.dom.fileInfo.textContent = '⏳ Loading...';
     try {
+      const fileSizeMB = file.size / (1024 * 1024);
+      if (fileSizeMB > 200) {
+        throw new Error(`File too large: ${fileSizeMB.toFixed(1)} MB exceeds 200 MB hard cap.`);
+      }
+
       const LM = window.LicenseManager;
       if (LM && typeof LM.checkFileLimit === 'function') {
-        const fileSizeMB = file.size / (1024 * 1024);
         const check = LM.checkFileLimit(fileSizeMB, 0);
         if (!check.allowed) {
           throw new Error(check.reason || 'This file exceeds the limits for your current plan.');

@@ -23,7 +23,7 @@ const LicenseManager = (() => {
       color: '#6b7280',
       badge: null,
       limits: {
-        fileSizeMB: -1,
+        fileSizeMB: 50,
         durationMinutes: 5,
         exportsPerDay: 3,
         batchFiles: 0,

@@ -519,6 +519,9 @@
         if (!window._vipApp && typeof VoiceIsolatePro === 'function') {
           try {
             var app = new VoiceIsolatePro();
+            if (typeof app.init === 'function' && !app._initCalled) {
+              app.init();
+            }
             app._initCalled = true;
             window.vip     = app;
             window._vipApp = app;
