@@ -99,8 +99,8 @@ class PipelineState {
     this._batchChanges.clear();
 
     // Collect rt params for a single bulk worklet message BEFORE notifying
-    // listeners. Use '_batch' as the internal source so _notify() skips the
-    // per-key worklet postMessage — the bulk message below replaces them.
+    // listeners. Per-key _notify() calls below preserve the original source
+    // but pass skipWorklet=true, so the bulk message replaces individual posts.
     const bulk = {};
     for (const [key, { value }] of changes) {
       const p = this._params.get(key);
