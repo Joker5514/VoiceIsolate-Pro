@@ -1845,13 +1845,21 @@ class VoiceIsolatePro {
     const btn = this.dom.spectro3DReset;
     if (this.is3D) {
       if (c2d) c2d.style.display = 'none';
-      if (c3d) { c3d.style.display = 'block'; c3d.style.height = '200px'; }
+      if (c3d) c3d.style.display = 'block';
       if (badge) badge.textContent = '3D';
       if (btn) btn.textContent = 'Toggle 2D';
       this.reset3DView();
       if (this.three.ren) {
         const ct = this.dom.spectro3DContainer;
-        if (ct) this.three.ren.setSize(ct.clientWidth, 200);
+        if (ct) {
+          const w = ct.clientWidth;
+          const h = ct.clientHeight;
+          if (w > 0 && h > 0) {
+            this.three.ren.setSize(w, h);
+            this.three.cam.aspect = w / h;
+            this.three.cam.updateProjectionMatrix();
+          }
+        }
       }
     } else {
       if (c3d) c3d.style.display = 'none';
