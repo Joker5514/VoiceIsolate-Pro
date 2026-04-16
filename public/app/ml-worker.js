@@ -424,7 +424,7 @@ async function buildMask(magnitudes) {
   if (!_maskBuffer || _maskBuffer.length < numBins) {
     _maskBuffer = new Float32Array(numBins);
   }
-  const mask = _maskBuffer;
+  const mask = _maskBuffer.subarray(0, numBins);
   mask.fill(1.0);
 
   // VAD gate (silero-vad / vad)
