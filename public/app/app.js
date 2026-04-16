@@ -668,22 +668,23 @@ class VoiceIsolatePro {
     });
   }
 
-
-  // ── Auto-trigger diarization after audio loads ──────────────────────────
+  // ── Trigger diarization after audio loads ────────────────────────────────
   async _triggerDiarization(audioBuf) {
+    const orch = window._vipOrch;
+    if (!orch || !orch.mlWorker) return;
     try {
-      const orch = window._vipOrch || window._vipOrchestrator;
-      if (!orch || !orch.mlWorker) return;
       const signal = new Float32Array(audioBuf.getChannelData(0));
-      orch.mlWorker.postMessage({ type: 'diarize', payload: { signal, sampleRate: audioBuf.sampleRate } }, [signal.buffer]);
-      structuredLog('info', 'Diarization triggered', { duration: audioBuf.duration });
-    } catch (e) {
+      orch.mlWorker.postMessage(
+        { type: 'diarize', payload: { signal, sampleRate: audioBuf.sampleRate } },
+        [signal.buffer]
+      );
+    } catch(e) {
       structuredLog('warn', 'Diarization trigger failed', { error: e.message });
     }
   }
 
   onAudioLoaded(name) {
-    if (this.inputBuffer) this._triggerDiarization(this.inputBuffer).catch(()=>{});
+    if (this.inputBuffer) this._triggerDiarization(this.inputBuffer).catch(() => {});
     const buf = this.inputBuffer;
     const dur = this.fmtDur(buf.duration);
     this.dom.fileInfo.textContent = (name || 'Recording') + ' (' + dur + ')';
@@ -854,7 +855,8 @@ class VoiceIsolatePro {
       if (elapsed >= dur) { this.stop(); return; }
       this.dom.tpCur.textContent = this.fmtDur(elapsed);
       this._setScrubPos(dur > 0 ? elapsed / dur : 0);
-      if (typeof window.VIP_seekTimeline === 'function') window.VIP_seekTimeline(elapsed);
+      // ── Sync diarization timeline playhead
+      if (typeof window.seekTimeline === 'function') window.seekTimeline(elapsed);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);

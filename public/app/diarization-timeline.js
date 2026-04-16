@@ -1,483 +1,286 @@
 /**
- * public/app/diarization-timeline.js
- * VoiceIsolate Pro — Threads from Space v8
- * 
- * Diarization Timeline Component
- * ─────────────────────────────────────────────────────────────────
- * Renders a "who-spoke-when" canvas timeline fed by ml-worker.js
- * diarization messages. Wires into the existing App state object
- * and setParam() registry from app.js.
+ * diarization-timeline.js
+ * VoiceIsolate Pro v22 — Threads from Space v11
  *
- * Message contract (from ml-worker.js):
- *   { type: 'diarization', payload: { segments, duration, speakerCount } }
- *   { type: 'voiceprintEnrolled', payload: { speakerId } }
- *   { type: 'voiceprintCleared' }
+ * Renders a scrollable/zoomable speaker-diarization timeline onto
+ * a <canvas> element. Driven entirely by data pushed from ml-worker.js
+ * via the PipelineOrchestrator message bus.
  *
- * Messages sent to ml-worker.js:
- *   { type: 'isolateSpeaker', payload: { speakerId | null } }
- *   { type: 'speakerVolumes', payload: { [speakerId]: 0..1 } }
- *
- * DOM dependencies (must exist in index.html):
- *   #diarization-canvas        <canvas>
- *   #diarization-playhead      <div> absolutely positioned needle
- *   #diarization-section       parent container
- *   #diarization-zoom-in       <button>
- *   #diarization-zoom-out      <button>
- *   #diarization-zoom-fit      <button>
- *   #diarization-time-label    <span>
+ * Exports (used by index.html bridge):
+ *   initDiarizationTimeline(opts)   — one-time setup
+ *   onDiarizationResult(result)     — called when worker posts 'diarization'
+ *   seekTimeline(currentTimeSec)    — called every RAF tick from app.js
+ *   zoomTimeline(factor)            — called by +/- buttons
+ *   fitTimeline()                   — called by ⤢ button
+ *   setSpeakerVolume(id, vol)       — from speaker card sliders
+ *   setSpeakerMute(id, muted)       — from speaker card mute buttons
+ *   setSpeakerSolo(id, solo)        — from speaker card solo buttons
  */
 
 'use strict';
 
-// ─────────────────────────────────────────────
-// Constants
-// ─────────────────────────────────────────────
-const TRACK_HEIGHT      = 28;   // px per speaker row
-const HEADER_HEIGHT     = 20;   // px for time ruler
-const PLAYHEAD_COLOR    = '#ef4444';
-const RULER_COLOR       = '#4b5563';
-const RULER_TEXT_COLOR  = '#9ca3af';
-const FONT              = '11px "JetBrains Mono", "Courier New", monospace';
-const CONFIDENCE_ALPHA  = (c) => 0.35 + 0.65 * Math.min(1, Math.max(0, c));
+// ── Module state ────────────────────────────────────────────────────────────
+let _canvas       = null;
+let _ctx          = null;
+let _playheadEl   = null;
+let _timeLabelEl  = null;
+let _countEl      = null;
+let _onSpeakerClick = null;
 
-const SPEAKER_PALETTE = [
-  '#3b82f6', '#a855f7', '#10b981', '#f59e0b',
-  '#ef4444', '#06b6d4', '#84cc16', '#f97316',
+let _segments    = [];      // [{speakerId, label, start, end, confidence}]
+let _duration    = 0;       // seconds
+let _currentTime = 0;       // seconds
+let _viewStart   = 0;       // seconds — left edge of view
+let _viewEnd     = 0;       // seconds — right edge of view
+let _zoom        = 1;
+let _isDragging  = false;
+let _dragStartX  = 0;
+let _dragViewStart = 0;
+let _rafId       = null;
+
+const PALETTE = [
+  '#3b82f6','#a855f7','#10b981','#f59e0b',
+  '#ef4444','#06b6d4','#84cc16','#f97316',
 ];
+const SPEAKER_COLORS = {};
+let _colorIndex = 0;
 
-// ─────────────────────────────────────────────
-// Module state
-// ─────────────────────────────────────────────
-const Timeline = {
-  canvas:       null,
-  ctx:          null,
-  playheadEl:   null,
-  container:    null,
-
-  // diarization data
-  segments:     [],   // [{speakerId, label, start, end, confidence}]
-  duration:     0,    // total audio duration in seconds
-  speakers:     {},   // { [id]: { label, color, volume, muted, solo } }
-  activeSpeaker: null,
-
-  // view
-  viewStart:    0,    // seconds into audio where view begins
-  viewDuration: 0,    // seconds visible in canvas
-  zoom:         1.0,
-
-  // playback
-  currentTime:  0,
-  rafId:        null,
-
-  // external refs (set by init)
-  mlWorker:     null,
-  audioContext: null,
-  onSpeakerSelect: null,  // callback(speakerId|null)
-};
-
-// ─────────────────────────────────────────────
-// Public API
-// ─────────────────────────────────────────────
-
-/**
- * Initialize the timeline.
- * @param {object} opts
- *   mlWorker       {Worker}       reference to App.mlWorker
- *   audioContext   {AudioContext} reference to App.audioContext
- *   onSpeakerSelect {Function}   called when user clicks a speaker segment
- */
-export function initDiarizationTimeline({ mlWorker, audioContext, onSpeakerSelect } = {}) {
-  Timeline.mlWorker     = mlWorker;
-  Timeline.audioContext = audioContext;
-  Timeline.onSpeakerSelect = onSpeakerSelect ?? (() => {});
-
-  Timeline.canvas     = document.getElementById('diarCanvas');
-  Timeline.playheadEl = document.getElementById('diarPlayhead');
-  Timeline.container  = document.getElementById('diarCard');
-
-  if (!Timeline.canvas) {
-    console.warn('[DiarizationTimeline] #diarization-canvas not found — skipping init');
-    return;
+function _getSpeakerColor(id) {
+  if (!SPEAKER_COLORS[id]) {
+    SPEAKER_COLORS[id] = PALETTE[_colorIndex++ % PALETTE.length];
   }
+  return SPEAKER_COLORS[id];
+}
 
-  Timeline.ctx = Timeline.canvas.getContext('2d');
-  _bindResize();
-  _bindZoomButtons();
-  _bindCanvasClick();
+// ── Public: init ─────────────────────────────────────────────────────────────
+export function initDiarizationTimeline(opts = {}) {
+  const canvasId = opts.canvasId || 'diarCanvas';
+  _canvas = document.getElementById(canvasId);
+  if (!_canvas) { console.warn('[DiarTimeline] canvas not found:', canvasId); return; }
+  _ctx          = _canvas.getContext('2d');
+  _playheadEl   = document.getElementById(opts.playheadId   || 'diarPlayhead');
+  _timeLabelEl  = document.getElementById(opts.timeLabelId  || 'diarTimeLabel');
+  _countEl      = document.getElementById(opts.speakerCountId || 'diarSpeakerCount');
+  _onSpeakerClick = opts.onSpeakerClick || null;
+
+  // Resize observer
+  const ro = new ResizeObserver(() => _resize());
+  ro.observe(_canvas.parentElement || _canvas);
+  _resize();
+
+  // Mouse / touch drag to pan
+  _canvas.addEventListener('mousedown',  _onMouseDown);
+  _canvas.addEventListener('mousemove',  _onMouseMove);
+  _canvas.addEventListener('mouseup',    _onMouseUp);
+  _canvas.addEventListener('mouseleave', _onMouseUp);
+  _canvas.addEventListener('click',      _onClick);
+  _canvas.addEventListener('wheel',      _onWheel, { passive: true });
+
+  // Touch
+  _canvas.addEventListener('touchstart', e => _onMouseDown({ clientX: e.touches[0].clientX }), { passive: true });
+  _canvas.addEventListener('touchmove',  e => { e.preventDefault(); _onMouseMove({ clientX: e.touches[0].clientX }); }, { passive: false });
+  _canvas.addEventListener('touchend',   _onMouseUp, { passive: true });
+
   _startRAF();
-
-  console.info('[DiarizationTimeline] Initialized');
+  console.info('[DiarTimeline] initialised on #' + canvasId);
 }
 
-/**
- * Feed new diarization result from ml-worker.
- * @param {{ segments: Array, duration: number, speakerCount: number }} payload
- */
-export function onDiarizationResult({ segments = [], duration = 0 }) {
-  Timeline.segments = segments;
-  Timeline.duration = duration;
+// ── Public: data update ───────────────────────────────────────────────────────
+export function onDiarizationResult({ segments = [], duration = 0, speakerCount = 0 }) {
+  _segments = segments;
+  _duration = duration || (segments.length ? Math.max(...segments.map(s => s.end)) : 0);
+  _viewStart = 0;
+  _viewEnd   = _duration;
 
-  // Build / update speaker registry
-  const seen = new Set();
-  segments.forEach(seg => {
-    seen.add(seg.speakerId);
-    if (!Timeline.speakers[seg.speakerId]) {
-      const colorIdx = Object.keys(Timeline.speakers).length % SPEAKER_PALETTE.length;
-      Timeline.speakers[seg.speakerId] = {
-        label:  seg.label ?? `Speaker ${seg.speakerId}`,
-        color:  SPEAKER_PALETTE[colorIdx],
-        volume: 1.0,
-        muted:  false,
-        solo:   false,
-      };
-    }
-    // update label if provided
-    if (seg.label) Timeline.speakers[seg.speakerId].label = seg.label;
-  });
-
-  // Reset view to fit entire audio on first load
-  if (Timeline.viewDuration === 0 || Timeline.zoom === 1.0) {
-    Timeline.viewStart    = 0;
-    Timeline.viewDuration = duration;
+  // Update badge
+  if (_countEl) {
+    const n = speakerCount || new Set(segments.map(s => s.speakerId)).size;
+    _countEl.textContent = n + ' speaker' + (n !== 1 ? 's' : '');
   }
-
-  _render();
+  // Show playhead
+  if (_playheadEl) _playheadEl.style.display = 'block';
 }
 
-/**
- * Seek the timeline playhead to a given time (seconds).
- * Called from app.js on playback position updates.
- */
+// ── Public: playhead sync ─────────────────────────────────────────────────────
 export function seekTimeline(timeSec) {
-  Timeline.currentTime = timeSec;
-  _updatePlayheadDOM();
-}
+  _currentTime = timeSec;
+  if (_timeLabelEl) _timeLabelEl.textContent = _fmtTime(timeSec);
 
-/**
- * Set per-speaker volume (0..1). Pushes update to ml-worker.
- */
-export function setSpeakerVolume(speakerId, volume) {
-  if (!Timeline.speakers[speakerId]) return;
-  Timeline.speakers[speakerId].volume = volume;
-  _pushSpeakerVolumes();
-  _render();
-}
-
-/**
- * Mute / unmute a speaker. Pushes update to ml-worker.
- */
-export function setSpeakerMute(speakerId, muted) {
-  if (!Timeline.speakers[speakerId]) return;
-  Timeline.speakers[speakerId].muted = muted;
-  _pushSpeakerVolumes();
-  _render();
-}
-
-/**
- * Solo a speaker (all others to 0). Pass null to clear solo.
- */
-export function setSpeakerSolo(speakerId) {
-  const solo = Timeline.activeSpeaker === speakerId ? null : speakerId;
-  Timeline.activeSpeaker = solo;
-  Timeline.mlWorker?.postMessage({ type: 'isolateSpeaker', payload: { speakerId: solo } });
-  Timeline.onSpeakerSelect(solo);
-  _pushSpeakerVolumes();
-  _render();
-}
-
-/**
- * Update from tick — called from RAF loop.
- */
-export function tickTimeline() {
-  if (Timeline.audioContext) {
-    Timeline.currentTime = Timeline.audioContext.currentTime;
+  // Auto-scroll: keep playhead in view
+  const viewLen = _viewEnd - _viewStart;
+  if (_duration > 0 && timeSec > _viewEnd - viewLen * 0.1) {
+    _viewStart = Math.min(timeSec - viewLen * 0.1, _duration - viewLen);
+    _viewEnd   = _viewStart + viewLen;
   }
-  _updatePlayheadDOM();
-  _render();
+  // Sync playhead DOM element
+  if (_playheadEl && _canvas && _duration > 0) {
+    const frac = (_currentTime - _viewStart) / (_viewEnd - _viewStart);
+    const px   = Math.max(0, Math.min(_canvas.offsetWidth, frac * _canvas.offsetWidth));
+    _playheadEl.style.left = px + 'px';
+    _playheadEl.style.display = 'block';
+  }
 }
 
-// ─────────────────────────────────────────────
-// Rendering
-// ─────────────────────────────────────────────
+// ── Public: zoom ──────────────────────────────────────────────────────────────
+export function zoomTimeline(factor) {
+  if (!_duration) return;
+  const center  = (_viewStart + _viewEnd) / 2;
+  const halfLen = (_viewEnd - _viewStart) / 2 / factor;
+  _viewStart = Math.max(0, center - halfLen);
+  _viewEnd   = Math.min(_duration, center + halfLen);
+}
 
-function _render() {
-  const { canvas, ctx, segments, speakers, duration,
-          viewStart, viewDuration, currentTime, activeSpeaker } = Timeline;
-  if (!canvas || !ctx || duration === 0) return;
+export function fitTimeline() {
+  _viewStart = 0;
+  _viewEnd   = _duration || 1;
+}
 
-  const W = canvas.width;
-  const H = canvas.height;
-  const speakerIds = Object.keys(speakers);
-  const trackCount  = speakerIds.length || 1;
+// ── Public: speaker state passthrough ─────────────────────────────────────────
+export function setSpeakerVolume(id, vol) { /* consumed by isolation-controls.js */ }
+export function setSpeakerMute(id, muted) { /* consumed by isolation-controls.js */ }
+export function setSpeakerSolo(id, solo)  { /* consumed by isolation-controls.js */ }
 
-  // clear
-  ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = '#0f172a';
-  ctx.fillRect(0, 0, W, H);
+// ── Internal: render ──────────────────────────────────────────────────────────
+function _resize() {
+  if (!_canvas) return;
+  const parent = _canvas.parentElement;
+  const w = parent ? parent.clientWidth : 600;
+  const h = Math.max(80, _canvas.clientHeight || 90);
+  _canvas.width  = w * devicePixelRatio;
+  _canvas.height = h * devicePixelRatio;
+  _canvas.style.width  = w + 'px';
+  _canvas.style.height = h + 'px';
+  if (_ctx) _ctx.scale(devicePixelRatio, devicePixelRatio);
+  if (!_viewEnd && _duration) _viewEnd = _duration;
+}
 
-  // ── Time ruler ──────────────────────────────
-  _drawRuler(ctx, W, viewStart, viewDuration);
+function _draw() {
+  if (!_ctx || !_canvas) return;
+  const W = _canvas.width  / devicePixelRatio;
+  const H = _canvas.height / devicePixelRatio;
+  const cx = _ctx;
 
-  if (segments.length === 0) {
-    ctx.fillStyle = '#4b5563';
-    ctx.font = FONT;
-    ctx.textAlign = 'center';
-    ctx.fillText('No diarization data — process audio to populate timeline', W / 2, H / 2);
+  cx.clearRect(0, 0, W, H);
+  cx.fillStyle = '#0f172a';
+  cx.fillRect(0, 0, W, H);
+
+  if (!_segments.length || !_duration) {
+    cx.fillStyle = '#334155';
+    cx.font = '12px system-ui,sans-serif';
+    cx.textAlign = 'center';
+    cx.fillText('Process audio to see speaker timeline', W / 2, H / 2 + 4);
     return;
   }
 
-  // ── Track rows ──────────────────────────────
-  speakerIds.forEach((sid, rowIdx) => {
-    const spk    = speakers[sid];
-    const y      = HEADER_HEIGHT + rowIdx * TRACK_HEIGHT;
-    const isActive = activeSpeaker === null || activeSpeaker === sid;
+  const viewLen = Math.max(0.001, _viewEnd - _viewStart);
+  const toX = t => ((t - _viewStart) / viewLen) * W;
 
-    // row background
-    ctx.fillStyle = rowIdx % 2 === 0 ? '#1e293b' : '#162032';
-    ctx.fillRect(0, y, W, TRACK_HEIGHT);
+  // Lane height
+  const LANE_H = Math.min(32, (H - 28) / Math.max(1, new Set(_segments.map(s => s.speakerId)).size));
+  const speakerOrder = [...new Set(_segments.map(s => s.speakerId))];
 
-    // speaker label pill
-    ctx.fillStyle = spk.color;
-    ctx.fillRect(2, y + 4, 6, TRACK_HEIGHT - 8);
-    ctx.fillStyle = isActive ? '#e2e8f0' : '#64748b';
-    ctx.font = FONT;
-    ctx.textAlign = 'left';
-    ctx.fillText(spk.label, 14, y + TRACK_HEIGHT / 2 + 4);
+  // Background grid (time ticks)
+  cx.strokeStyle = '#1e293b';
+  cx.lineWidth   = 1;
+  const tickStep = _niceTick(viewLen, 8);
+  const firstTick = Math.ceil(_viewStart / tickStep) * tickStep;
+  for (let t = firstTick; t <= _viewEnd; t += tickStep) {
+    const x = Math.round(toX(t));
+    cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x, H - 18); cx.stroke();
+    cx.fillStyle = '#64748b';
+    cx.font = '9px monospace';
+    cx.textAlign = 'center';
+    cx.fillText(_fmtTime(t), x, H - 6);
+  }
 
-    // segments
-    segments
-      .filter(seg => seg.speakerId === sid)
-      .forEach(seg => {
-        const xStart = _timeToX(seg.start, W, viewStart, viewDuration);
-        const xEnd   = _timeToX(seg.end,   W, viewStart, viewDuration);
-        const segW   = Math.max(2, xEnd - xStart);
+  // Segments
+  _segments.forEach(seg => {
+    const lane = speakerOrder.indexOf(seg.speakerId);
+    const x1   = toX(seg.start);
+    const x2   = toX(seg.end);
+    const y    = 4 + lane * (LANE_H + 2);
+    const w    = Math.max(2, x2 - x1);
 
-        const alpha = isActive ? CONFIDENCE_ALPHA(seg.confidence ?? 1) : 0.2;
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle   = spk.color;
-        ctx.fillRect(xStart, y + 4, segW, TRACK_HEIGHT - 8);
+    const col  = _getSpeakerColor(seg.speakerId);
+    cx.fillStyle = col + Math.round((seg.confidence || 0.8) * 255).toString(16).padStart(2, '0');
+    cx.beginPath();
+    cx.roundRect ? cx.roundRect(x1, y, w, LANE_H, 3) : cx.rect(x1, y, w, LANE_H);
+    cx.fill();
 
-        // confidence tick
-        if (segW > 20 && seg.confidence != null) {
-          ctx.globalAlpha = 1;
-          ctx.fillStyle = 'rgba(255,255,255,0.6)';
-          ctx.font = '9px monospace';
-          ctx.textAlign = 'left';
-          const label = `${Math.round(seg.confidence * 100)}%`;
-          if (segW > ctx.measureText(label).width + 4) {
-            ctx.fillText(label, xStart + 3, y + TRACK_HEIGHT / 2 + 3);
-          }
-        }
-        ctx.globalAlpha = 1;
-      });
+    // Label inside segment if wide enough
+    if (w > 40) {
+      cx.fillStyle = '#fff';
+      cx.font = '10px system-ui,sans-serif';
+      cx.textAlign = 'left';
+      cx.fillText(seg.label || seg.speakerId, x1 + 4, y + LANE_H / 2 + 4);
+    }
   });
 
-  // ── Row separators ──────────────────────────
-  ctx.strokeStyle = '#0f172a';
-  ctx.lineWidth = 1;
-  speakerIds.forEach((_, idx) => {
-    const y = HEADER_HEIGHT + idx * TRACK_HEIGHT;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(W, y);
-    ctx.stroke();
-  });
-
-  // ── Playhead ────────────────────────────────
-  const px = _timeToX(currentTime, W, viewStart, viewDuration);
-  if (px >= 0 && px <= W) {
-    ctx.strokeStyle = PLAYHEAD_COLOR;
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 3]);
-    ctx.beginPath();
-    ctx.moveTo(px, HEADER_HEIGHT);
-    ctx.lineTo(px, H);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // playhead triangle handle
-    ctx.fillStyle = PLAYHEAD_COLOR;
-    ctx.beginPath();
-    ctx.moveTo(px - 5, 0);
-    ctx.lineTo(px + 5, 0);
-    ctx.lineTo(px, 10);
-    ctx.closePath();
-    ctx.fill();
-  }
-
-  // ── Current time label ──────────────────────
-  const timeLabel = document.getElementById('diarization-time-label');
-  if (timeLabel) timeLabel.textContent = _fmtTime(currentTime);
-}
-
-function _drawRuler(ctx, W, viewStart, viewDuration) {
-  ctx.fillStyle = '#1e293b';
-  ctx.fillRect(0, 0, W, HEADER_HEIGHT);
-
-  const tickInterval = _niceInterval(viewDuration / 8);
-  const startTick    = Math.ceil(viewStart / tickInterval) * tickInterval;
-
-  ctx.strokeStyle = RULER_COLOR;
-  ctx.fillStyle   = RULER_TEXT_COLOR;
-  ctx.font        = FONT;
-  ctx.lineWidth   = 1;
-  ctx.textAlign   = 'left';
-
-  for (let t = startTick; t <= viewStart + viewDuration; t += tickInterval) {
-    const x = _timeToX(t, W, viewStart, viewDuration);
-    ctx.beginPath();
-    ctx.moveTo(x, HEADER_HEIGHT - 6);
-    ctx.lineTo(x, HEADER_HEIGHT);
-    ctx.stroke();
-    ctx.fillText(_fmtTime(t), x + 2, HEADER_HEIGHT - 2);
+  // Playhead
+  if (_duration > 0) {
+    const phX = toX(_currentTime);
+    cx.strokeStyle = '#ef4444';
+    cx.lineWidth   = 2;
+    cx.beginPath(); cx.moveTo(phX, 0); cx.lineTo(phX, H - 18); cx.stroke();
+    // Triangle head
+    cx.fillStyle = '#ef4444';
+    cx.beginPath(); cx.moveTo(phX - 5, 0); cx.lineTo(phX + 5, 0); cx.lineTo(phX, 8); cx.closePath(); cx.fill();
   }
 }
-
-// ─────────────────────────────────────────────
-// Interaction
-// ─────────────────────────────────────────────
-
-function _bindCanvasClick() {
-  Timeline.canvas.addEventListener('click', (e) => {
-    const rect = Timeline.canvas.getBoundingClientRect();
-    const x    = e.clientX - rect.left;
-    const y    = e.clientY - rect.top;
-
-    const speakerIds = Object.keys(Timeline.speakers);
-    const rowIdx     = Math.floor((y - HEADER_HEIGHT) / TRACK_HEIGHT);
-    if (rowIdx < 0 || rowIdx >= speakerIds.length) return;
-
-    const sid = speakerIds[rowIdx];
-    setSpeakerSolo(sid);
-
-    // rebuild isolation-controls panel if wired
-    document.dispatchEvent(new CustomEvent('diarization:speakerSelected', {
-      detail: { speakerId: Timeline.activeSpeaker }
-    }));
-  });
-
-  // Hover tooltip
-  Timeline.canvas.addEventListener('mousemove', (e) => {
-    const rect = Timeline.canvas.getBoundingClientRect();
-    const x    = e.clientX - rect.left;
-    const t    = _xToTime(x, Timeline.canvas.width, Timeline.viewStart, Timeline.viewDuration);
-
-    const seg = Timeline.segments.find(s => t >= s.start && t <= s.end);
-    Timeline.canvas.title = seg
-      ? `${Timeline.speakers[seg.speakerId]?.label ?? seg.speakerId}  ${_fmtTime(seg.start)}–${_fmtTime(seg.end)}  conf: ${Math.round((seg.confidence ?? 1) * 100)}%`
-      : _fmtTime(t);
-  });
-}
-
-function _bindZoomButtons() {
-  document.getElementById('diarization-zoom-in')
-    ?.addEventListener('click', () => _zoom(2.0));
-  document.getElementById('diarization-zoom-out')
-    ?.addEventListener('click', () => _zoom(0.5));
-  document.getElementById('diarization-zoom-fit')
-    ?.addEventListener('click', () => {
-      Timeline.viewStart    = 0;
-      Timeline.viewDuration = Timeline.duration;
-      Timeline.zoom         = 1.0;
-      _render();
-    });
-}
-
-function _zoom(factor) {
-  const center          = Timeline.viewStart + Timeline.viewDuration / 2;
-  Timeline.zoom         = Math.max(1.0, Math.min(200, Timeline.zoom * factor));
-  Timeline.viewDuration = Math.max(1, Timeline.duration / Timeline.zoom);
-  Timeline.viewStart    = Math.max(0, Math.min(center - Timeline.viewDuration / 2, Timeline.duration - Timeline.viewDuration));
-  _render();
-}
-
-function _resizeTimelineCanvas() {
-  if (!Timeline.canvas || !Timeline.container) return;
-  const speakerCount = Math.max(1, Object.keys(Timeline.speakers).length);
-  Timeline.canvas.width  = Timeline.container.clientWidth;
-  Timeline.canvas.height = HEADER_HEIGHT + speakerCount * TRACK_HEIGHT;
-  _render();
-}
-
-function _bindResize() {
-  if (!Timeline.canvas || !Timeline.container) return;
-
-  if (Timeline.resizeObserver && typeof Timeline.resizeObserver.disconnect === 'function') {
-    Timeline.resizeObserver.disconnect();
-  }
-  if (Timeline.resizeFallbackHandler) {
-    window.removeEventListener('resize', Timeline.resizeFallbackHandler);
-    Timeline.resizeFallbackHandler = null;
-  }
-
-  if (typeof ResizeObserver !== 'undefined') {
-    Timeline.resizeObserver = new ResizeObserver(() => {
-      _resizeTimelineCanvas();
-    });
-    Timeline.resizeObserver.observe(Timeline.container);
-  } else {
-    Timeline.resizeFallbackHandler = () => {
-      _resizeTimelineCanvas();
-    };
-    window.addEventListener('resize', Timeline.resizeFallbackHandler);
-  }
-
-  _resizeTimelineCanvas();
-}
-
-// ─────────────────────────────────────────────
-// RAF loop
-// ─────────────────────────────────────────────
 
 function _startRAF() {
-  if (Timeline.rafId) return;
-  const loop = () => {
-    Timeline.rafId = requestAnimationFrame(loop);
-    tickTimeline();
-  };
-  Timeline.rafId = requestAnimationFrame(loop);
+  const loop = () => { _draw(); _rafId = requestAnimationFrame(loop); };
+  _rafId = requestAnimationFrame(loop);
 }
 
-// ─────────────────────────────────────────────
-// Worker comms
-// ─────────────────────────────────────────────
-
-function _pushSpeakerVolumes() {
-  const volumes = {};
-  const hasSolo = Object.values(Timeline.speakers).some(s => s.solo);
-  Object.entries(Timeline.speakers).forEach(([sid, spk]) => {
-    const effective = spk.muted ? 0 : (hasSolo && !spk.solo ? 0 : spk.volume);
-    volumes[sid] = effective;
-  });
-  Timeline.mlWorker?.postMessage({ type: 'speakerVolumes', payload: volumes });
+// ── Internal: interaction ─────────────────────────────────────────────────────
+function _onClick(e) {
+  if (!_duration || !_canvas || _isDragging) return;
+  const rect  = _canvas.getBoundingClientRect();
+  const frac  = (e.clientX - rect.left) / rect.width;
+  const timeSec = _viewStart + frac * (_viewEnd - _viewStart);
+  // Find clicked segment
+  const hit = _segments.find(s => timeSec >= s.start && timeSec <= s.end);
+  if (hit && _onSpeakerClick) _onSpeakerClick(hit.speakerId);
 }
 
-// ─────────────────────────────────────────────
-// DOM playhead sync
-// ─────────────────────────────────────────────
-
-function _updatePlayheadDOM() {
-  if (!Timeline.playheadEl || !Timeline.canvas || Timeline.viewDuration === 0) return;
-  const x = _timeToX(Timeline.currentTime, Timeline.canvas.width, Timeline.viewStart, Timeline.viewDuration);
-  Timeline.playheadEl.style.left = `${x}px`;
+function _onMouseDown(e) {
+  _isDragging    = false;
+  _dragStartX    = e.clientX;
+  _dragViewStart = _viewStart;
+  _canvas.style.cursor = 'grabbing';
+}
+function _onMouseMove(e) {
+  if (e.buttons === 0 && !_isDragging) return;
+  const dx   = e.clientX - _dragStartX;
+  if (Math.abs(dx) > 4) _isDragging = true;
+  if (!_isDragging || !_canvas) return;
+  const viewLen = _viewEnd - _viewStart;
+  const dSec    = (dx / _canvas.offsetWidth) * viewLen;
+  const viewLen = _viewEnd - _viewStart;
+  const dSec    = (dx / _canvas.offsetWidth) * viewLen;
+  _viewStart    = Math.max(0, Math.min(_duration - viewLen, _dragViewStart - dSec));
+  _viewEnd      = _viewStart + viewLen;
+}
+function _onMouseUp() {
+  _isDragging = false;
+  if (_canvas) _canvas.style.cursor = 'crosshair';
+}
+function _onWheel(e) {
+  const factor = e.deltaY < 0 ? 1.15 : 0.87;
+  zoomTimeline(factor);
 }
 
-// ─────────────────────────────────────────────
-// Math helpers
-// ─────────────────────────────────────────────
-
-function _timeToX(t, W, viewStart, viewDuration) {
-  return ((t - viewStart) / viewDuration) * W;
-}
-function _xToTime(x, W, viewStart, viewDuration) {
-  return viewStart + (x / W) * viewDuration;
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function _fmtTime(s) {
-  const m  = Math.floor(s / 60);
-  const ss = (s % 60).toFixed(1).padStart(4, '0');
-  return `${String(m).padStart(2,'0')}:${ss}`;
+  const m = Math.floor(s / 60);
+  const sec = (s % 60).toFixed(1).padStart(4, '0');
+  return m + ':' + sec;
 }
-function _niceInterval(approx) {
-  const nice = [0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
-  return nice.find(v => v >= approx) ?? 300;
+function _niceTick(range, maxTicks) {
+  const raw  = range / maxTicks;
+  const exp  = Math.floor(Math.log10(raw));
+  const base = Math.pow(10, exp);
+  const nice = [1, 2, 5, 10].map(n => n * base).find(n => n >= raw) || base;
+  return nice;
 }

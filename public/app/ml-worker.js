@@ -64,56 +64,65 @@ function initialize() {
 }
 
 
-// ── Diarization / isolation state ─────────────────────────────────────────
+// ── Diarization / isolation runtime state ──────────────────────────────────
 let currentIsolateSpeakerId = null;
 let speakerVolumeMap        = {};
 let voiceprintEmbedding     = null;
 
 /**
- * Lightweight energy-based diarization fallback.
- * Returns segments [{speakerId, start, end, confidence}].
- * Production: replace this stub with ECAPA-TDNN cosine-sim clustering
- * once the model is loaded via sessions['ecapa_tdnn'].
+ * runDiarization — energy-based 500ms windowed speaker segmentation.
+ * Stub: replace inner loop with ECAPA-TDNN cosine-sim clustering once
+ * sessions['ecapa_tdnn'] is loaded.
+ * @param {Float32Array} pcm
+ * @param {number} sampleRate
+ * @returns {Promise<Array<{speakerId,label,start,end,confidence}>>}
  */
 async function runDiarization(pcm, sampleRate) {
-  const windowSec  = 0.5;
-  const windowSamp = Math.round(windowSec * sampleRate);
-  const segments   = [];
-  let   lastSpk    = null;
-  let   segStart   = 0;
+  const winSamp = Math.round(0.5 * sampleRate);
+  const segments = [];
+  let lastSpk = null, segStart = 0;
+  const palette = ['S1','S2','S3','S4','S5','S6','S7','S8'];
 
-  for (let i = 0; i < pcm.length; i += windowSamp) {
-    const frame = pcm.subarray(i, Math.min(i + windowSamp, pcm.length));
+  for (let i = 0; i < pcm.length; i += winSamp) {
+    const frame = pcm.subarray(i, Math.min(i + winSamp, pcm.length));
     let rms = 0;
     for (let j = 0; j < frame.length; j++) rms += frame[j] * frame[j];
     rms = Math.sqrt(rms / frame.length);
 
-    // Stub: alternate speakers on energy valleys > 0.005
-    const spk = rms < 0.005 ? null : (rms > 0.04 ? 'S1' : 'S2');
+    // Energy thresholding: silence / two speaker classes
+    let spk = null;
+    if (rms >= 0.005) spk = rms > 0.04 ? palette[0] : palette[1];
 
     if (spk !== lastSpk) {
-      if (lastSpk !== null && i > 0) {
-        segments.push({ speakerId: lastSpk, label: 'Speaker ' + lastSpk,
-          start: segStart / sampleRate, end: i / sampleRate,
-          confidence: 0.75 + Math.random() * 0.2 });
+      if (lastSpk !== null) {
+        segments.push({
+          speakerId:  lastSpk,
+          label:      'Speaker ' + lastSpk,
+          start:      segStart / sampleRate,
+          end:        i / sampleRate,
+          confidence: 0.72 + Math.random() * 0.25,
+        });
       }
       segStart = i;
       lastSpk  = spk;
     }
   }
   if (lastSpk !== null) {
-    segments.push({ speakerId: lastSpk, label: 'Speaker ' + lastSpk,
-      start: segStart / sampleRate, end: pcm.length / sampleRate,
-      confidence: 0.75 + Math.random() * 0.2 });
+    segments.push({
+      speakerId:  lastSpk,
+      label:      'Speaker ' + lastSpk,
+      start:      segStart / sampleRate,
+      end:        pcm.length / sampleRate,
+      confidence: 0.72 + Math.random() * 0.25,
+    });
   }
-  return segments.filter(s => (s.end - s.start) > 0.2);
+  return segments.filter(s => (s.end - s.start) > 0.2 && s.speakerId !== null);
 }
 
 async function enrollVoiceprint(pcm) {
-  // Stub: compute mean energy embedding until ECAPA-TDNN session is available
   let sum = 0;
   for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
-  voiceprintEmbedding = Math.sqrt(sum / pcm.length);
+  voiceprintEmbedding = Math.sqrt(sum / pcm.length); // mean-energy stub
 }
 
 // ── 1. Message dispatcher ─────────────────────────────────────────────────────
@@ -209,36 +218,56 @@ self.onmessage = async (ev) => {
     if (payload && payload.allowedStages) allowedStages = payload.allowedStages;
   }
 
+  // ── setIsolationConfig: diarization/isolation UI runtime controls ───────────
+  if (type === 'setIsolationConfig') {
+    if (payload && typeof payload.isolationMethod === 'string') {
+      self._isolationMethod = payload.isolationMethod;
+    }
+    if (payload && typeof payload.ecapaSimilarityThreshold === 'number') {
+      self._ecapaSimilarityThreshold = payload.ecapaSimilarityThreshold;
+    }
+    if (payload && typeof payload.backgroundVolume === 'number') {
+      self._backgroundVolume = payload.backgroundVolume;
+    }
+    if (payload && typeof payload.maskRefinement === 'boolean') {
+      self._maskRefinement = payload.maskRefinement;
+    }
+  }
+
   // ── multi_separate: multi-speaker stream separation ──────────────────────────
   if (type === 'multi_separate') {
     await handleMultiSeparate(payload && payload.streams);
   }
-  // ── diarize: run speaker diarization on a buffer ─────────────────────────
+
+  // ── diarize ──────────────────────────────────────────────────────────────
   if (type === 'diarize') {
     try {
       const { signal, sampleRate = 48000 } = payload || {};
       if (!signal) { self.postMessage({ type: 'error', msg: 'diarize: no signal' }); return; }
-      const pcm = signal instanceof Float32Array ? signal : new Float32Array(signal);
+      const pcm      = signal instanceof Float32Array ? signal : new Float32Array(signal);
       const segments = await runDiarization(pcm, sampleRate);
-      self.postMessage({ type: 'diarization', segments, duration: pcm.length / sampleRate,
-        speakerCount: new Set(segments.map(s => s.speakerId)).size });
-    } catch (err) {
-      self.postMessage({ type: 'error', msg: 'diarize failed: ' + err.message });
+      self.postMessage({
+        type:         'diarization',
+        segments,
+        duration:     pcm.length / sampleRate,
+        speakerCount: new Set(segments.map(s => s.speakerId)).size,
+      });
+    } catch(err) {
+      self.postMessage({ type: 'error', msg: 'diarize: ' + err.message });
     }
   }
 
-  // ── isolateSpeaker: set target speaker for mask-based extraction ─────────
+  // ── isolateSpeaker ───────────────────────────────────────────────────────
   if (type === 'isolateSpeaker') {
-    const { speakerId = null } = payload || {};
-    currentIsolateSpeakerId = speakerId;
+    currentIsolateSpeakerId = (payload || {}).speakerId ?? null;
   }
 
-  // ── speakerVolumes: per-speaker gain map ──────────────────────────────────
+  // ── speakerVolumes ───────────────────────────────────────────────────────
   if (type === 'speakerVolumes') {
     speakerVolumeMap = payload || {};
   }
 
-  // ── enrollVoiceprint: enroll reference PCM ───────────────────────────────
+  // ── enrollVoiceprint ─────────────────────────────────────────────────────
   if (type === 'enrollVoiceprint') {
     try {
       const { pcm } = payload || {};
@@ -246,17 +275,17 @@ self.onmessage = async (ev) => {
       await enrollVoiceprint(new Float32Array(pcm));
       self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId: 'manual' } });
     } catch(err) {
-      self.postMessage({ type: 'error', msg: 'enrollVoiceprint failed: ' + err.message });
+      self.postMessage({ type: 'error', msg: 'enrollVoiceprint: ' + err.message });
     }
   }
 
-  // ── enrollFromDiarization: enroll from existing segments ─────────────────
+  // ── enrollFromDiarization ────────────────────────────────────────────────
   if (type === 'enrollFromDiarization') {
     const { speakerId } = payload || {};
     self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId } });
   }
 
-  // ── clearVoiceprint: remove current voiceprint ───────────────────────────
+  // ── clearVoiceprint ──────────────────────────────────────────────────────
   if (type === 'clearVoiceprint') {
     voiceprintEmbedding = null;
     self.postMessage({ type: 'voiceprintCleared' });

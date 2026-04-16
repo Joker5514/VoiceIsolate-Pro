@@ -55,6 +55,13 @@ class PipelineOrchestrator {
 
     // Cached ML worker init promise — allows idempotent pre-warming before gesture
     this._mlInitPromise = null;
+
+    this._isolationParams = {
+      isolationMethod: 'hybrid',
+      ecapaSimilarityThreshold: 0.65,
+      backgroundVolume: 0,
+      maskRefinement: true,
+    };
   }
 
   // ── One-time initialisation ─────────────────────────────────────────────
@@ -290,21 +297,23 @@ class PipelineOrchestrator {
           const lvl = e.data.level;
           if (console[lvl]) console[lvl]('[ml-worker]', e.data.msg);
         } else if (type === 'diarization') {
-          // ── Feed diarization timeline + isolation cards ──────────────────
+          // ── Diarization result → update app state + timeline + speaker cards
           const { segments = [], duration = 0, speakerCount = 0 } = e.data;
           const app = window._vipApp;
           if (app && app.diarizationState) {
             app.diarizationState.history     = segments;
-            app.diarizationState.numSpeakers = speakerCount || new Set(segments.map(s => s.speakerId)).size;
+            app.diarizationState.numSpeakers = speakerCount ||
+              new Set(segments.map(s => s.speakerId)).size;
             app.diarizationState.isActive    = segments.length > 0;
-            app.diarizationState.confidence  = segments.length
+            app.diarizationState.confidence  = segments.length > 0
               ? segments.reduce((a, s) => a + (s.confidence || 1), 0) / segments.length : 1;
           }
-          if (typeof window.VIP_onDiarizationResult === 'function')
-            window.VIP_onDiarizationResult({ segments, duration, speakerCount });
-          if (typeof window.VIP_updateSpeakerCards === 'function') {
-            const palette = ['#3b82f6','#a855f7','#10b981','#f59e0b','#ef4444','#06b6d4','#84cc16','#f97316'];
-            const map = {}; let ci = 0;
+          if (typeof window.onDiarizationResult === 'function')
+            window.onDiarizationResult({ segments, duration, speakerCount });
+          if (typeof window.updateSpeakerCards === 'function') {
+            const palette = ['#3b82f6','#a855f7','#10b981','#f59e0b',
+                             '#ef4444','#06b6d4','#84cc16','#f97316'];
+            const map = {};  let ci = 0;
             segments.forEach(seg => {
               if (!map[seg.speakerId]) map[seg.speakerId] = {
                 label: seg.label || ('Speaker ' + seg.speakerId),
@@ -312,17 +321,14 @@ class PipelineOrchestrator {
                 volume: 1.0, muted: false, solo: false
               };
             });
-            window.VIP_updateSpeakerCards(map);
+            window.updateSpeakerCards(map);
           }
-          // Update speaker count badge
-          const badge = document.getElementById('diarSpeakerCount');
-          if (badge) badge.textContent = (speakerCount || new Set(segments.map(s=>s.speakerId)).size) + ' speaker(s)';
         } else if (type === 'voiceprintEnrolled') {
           const el = document.getElementById('voiceprintStatus');
-          if (el) { el.textContent = 'Enrolled ✓'; el.style.color = '#10b981'; }
+          if (el) { el.textContent = '✓ Enrolled'; el.style.color = '#10b981'; }
         } else if (type === 'voiceprintCleared') {
           const el = document.getElementById('voiceprintStatus');
-          if (el) { el.textContent = 'Voiceprint cleared'; el.style.color = '#64748b'; }
+          if (el) { el.textContent = 'Not enrolled'; el.style.color = '#9ca3af'; }
         }
       };
 
@@ -400,21 +406,26 @@ class PipelineOrchestrator {
       }
     });
 
-    // Also forward blend weights to the ML worker for Demucs/BSRNN mixing
+    // Forward blend weights to ML worker
     if (this.mlWorker) {
       this.mlWorker.postMessage({
         type:   'setWeights',
         demucs: params.voiceIso / 100,
         bsrnn:  1 - params.voiceIso / 100
       });
+    }
+  }
+
+  updateIsolationParams(nextParams) {
+    if (!nextParams || typeof nextParams !== 'object') return;
+    this._isolationParams = {
+      ...this._isolationParams,
+      ...nextParams,
+    };
+    if (this.mlWorker) {
       this.mlWorker.postMessage({
-        type: 'update_params',
-        payload: {
-          isolationMethod:          params.isolationMethod  || 'hybrid',
-          ecapaSimilarityThreshold: params.isolationConfidence != null ? params.isolationConfidence / 100 : 0.65,
-          backgroundVolume:         params.bgVolume != null ? params.bgVolume / 100 : 0,
-          maskRefinement:           params.maskRefinement !== false,
-        }
+        type: 'setIsolationConfig',
+        payload: this._isolationParams,
       });
     }
   }
@@ -435,6 +446,82 @@ class PipelineOrchestrator {
         this.updateParams(snapshot);
       });
     });
+  }
+
+  // ── Bind diarization timeline + isolation control events ─────────────────
+  _bindIsolationControls() {
+    const _set = (payload) => this.updateIsolationParams(payload);
+
+    // Method select
+    const mSel = document.getElementById('isolationMethodSelect');
+    mSel?.addEventListener('change', () => _set({ isolationMethod: mSel.value }));
+
+    // Confidence slider
+    const cSl = document.getElementById('isolationConfidenceSlider');
+    const cOut = document.getElementById('isolationConfidenceReadout');
+    cSl?.addEventListener('input', () => {
+      if (cOut) cOut.textContent = cSl.value + '%';
+      _set({ ecapaSimilarityThreshold: Number(cSl.value) / 100 });
+    });
+
+    // Background volume slider
+    const bgSl = document.getElementById('isolationBgVolumeSlider');
+    const bgOut = document.getElementById('isolationBgReadout');
+    bgSl?.addEventListener('input', () => {
+      if (bgOut) bgOut.textContent = bgSl.value + '%';
+      _set({ backgroundVolume: Number(bgSl.value) / 100 });
+    });
+
+    // Mask refinement checkbox
+    const mRef = document.getElementById('isolationMaskRefine');
+    mRef?.addEventListener('change', () => _set({ maskRefinement: mRef.checked }));
+
+    // Zoom controls
+    document.getElementById('diarZoomIn') ?.addEventListener('click', () => window._diarZoom?.(2));
+    document.getElementById('diarZoomOut')?.addEventListener('click', () => window._diarZoom?.(0.5));
+    document.getElementById('diarZoomFit')?.addEventListener('click', () => window._diarZoomFit?.());
+
+    // Voiceprint enroll
+    const enrollBtn = document.getElementById('enrollVoiceprintBtn');
+    const clearBtn  = document.getElementById('clearVoiceprintBtn');
+    const statusEl  = document.getElementById('voiceprintStatus');
+
+    enrollBtn?.addEventListener('click', async () => {
+      const app = window._vipApp;
+      if (!app?.mediaStream) {
+        if (statusEl) { statusEl.textContent = 'Start mic first'; statusEl.style.color = '#f59e0b'; }
+        return;
+      }
+      if (statusEl) { statusEl.textContent = 'Recording 5s…'; statusEl.style.color = '#f59e0b'; }
+      enrollBtn.disabled = true;
+      try {
+        const rec = new MediaRecorder(app.mediaStream, { mimeType: 'audio/webm;codecs=opus' });
+        const chunks = [];
+        rec.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+        rec.start(100);
+        await new Promise(r => setTimeout(r, 5000));
+        rec.stop();
+        await new Promise(r => { rec.onstop = r; });
+        const blob    = new Blob(chunks, { type: 'audio/webm' });
+        const arrBuf  = await blob.arrayBuffer();
+        const decoded = await this.ctx.decodeAudioData(arrBuf);
+        const pcm     = new Float32Array(decoded.getChannelData(0));
+        if (this.mlWorker) {
+          this.mlWorker.postMessage({ type: 'enrollVoiceprint', payload: { pcm } }, [pcm.buffer]);
+        }
+      } catch(err) {
+        if (statusEl) { statusEl.textContent = 'Error: ' + err.message; statusEl.style.color = '#ef4444'; }
+      } finally { enrollBtn.disabled = false; }
+    });
+
+    clearBtn?.addEventListener('click', () => this.mlWorker && this.mlWorker.postMessage({ type: 'clearVoiceprint' }));
+
+    const initialParams = {};
+    if (mSel?.value) initialParams.isolationMethod = mSel.value;
+    if (cSl?.value) initialParams.ecapaSimilarityThreshold = Number(cSl.value) / 100;
+    if (bgSl?.value) initialParams.backgroundVolume = Number(bgSl.value) / 100;
+    if (mRef) initialParams.maskRefinement = mRef.checked;
+    if (Object.keys(initialParams).length > 0) this.updateIsolationParams(initialParams);
   }
 
   // ── Suspend / resume AudioContext ────────────────────────────────────────
@@ -468,7 +555,6 @@ class PipelineOrchestrator {
     app.orch = orch;
     // Also expose globally for debugging
     window._vipOrch = orch;
-    window._vipOrchestrator = orch;  // for ES module access
 
     // ── Patch onSlider ─────────────────────────────────────────────────
     const _origOnSlider = app.onSlider.bind(app);

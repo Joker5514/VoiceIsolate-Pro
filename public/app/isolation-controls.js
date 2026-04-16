@@ -1,344 +1,206 @@
 /**
- * public/app/isolation-controls.js
- * VoiceIsolate Pro — Threads from Space v8
+ * isolation-controls.js
+ * VoiceIsolate Pro v22 — Threads from Space v11
  *
- * Speaker Isolation Controls Panel
- * ─────────────────────────────────────────────────────────────────
- * Dynamically builds per-speaker cards + global isolation controls.
- * Wires into the existing setParam() / App.mlWorker pattern.
- *
- * DOM dependencies:
- *   #isolation-controls-root    root container (emptied + rebuilt on diarization update)
- *   #isolation-method-select    <select> classical | ml | hybrid
- *   #isolation-confidence       <input type=range>
- *   #isolation-bg-volume        <input type=range>
- *   #enroll-voiceprint-btn      <button>
- *   #clear-voiceprint-btn       <button>
- *   #voiceprint-status          <span>
- *
- * Dispatches / listens:
- *   CustomEvent 'diarization:speakerSelected' (from diarization-timeline.js)
- *   Calls setSpeakerVolume / setSpeakerMute / setSpeakerSolo from diarization-timeline.js
+ * Dynamically renders per-speaker control cards inside #speakerCardsGrid.
+ * Cards include: volume slider, mute, solo, "Enroll Voiceprint" buttons.
+ * Driven by data from the diarization pipeline.
  */
 
 'use strict';
 
-import {
-  setSpeakerVolume,
-  setSpeakerMute,
-  setSpeakerSolo,
-} from './diarization-timeline.js';
+// ── Module state ────────────────────────────────────────────────────────────
+let _gridEl         = null;
+let _mlWorker       = null;
+let _audioContext   = null;
+let _onSolo         = null;
+let _onMute         = null;
+let _onVolume       = null;
+let _onEnrollFromSeg= null;
 
-// ─────────────────────────────────────────────
-// Module state
-// ─────────────────────────────────────────────
-const IsolationControls = {
-  mlWorker:      null,
-  audioContext:  null,
-  mediaStream:   null,  // for voiceprint enrollment recording
-  enrollRecorder: null,
-  enrollChunks:  [],
-  activeSpeaker: null,
-  speakers:      {},   // mirror of Timeline.speakers
-};
+let _speakerMap  = {};   // { id: { label, color, volume, muted, solo } }
+let _activeSoloId = null;
 
-// ─────────────────────────────────────────────
-// Public API
-// ─────────────────────────────────────────────
+const PALETTE = [
+  '#3b82f6','#a855f7','#10b981','#f59e0b',
+  '#ef4444','#06b6d4','#84cc16','#f97316',
+];
+let _colorIdx = 0;
 
-/**
- * Initialize isolation controls.
- * @param {{ mlWorker, audioContext, mediaStream }} opts
- */
-export function initIsolationControls({ mlWorker, audioContext, mediaStream } = {}) {
-  IsolationControls.mlWorker     = mlWorker;
-  IsolationControls.audioContext = audioContext;
-  IsolationControls.mediaStream  = mediaStream;
-
-  _bindGlobalControls();
-  _bindVoiceprintButtons();
-  _bindSpeakerSelectedEvent();
-
-  console.info('[IsolationControls] Initialized');
+// ── Public: init ─────────────────────────────────────────────────────────────
+export function initIsolationControls(opts = {}) {
+  _gridEl          = document.getElementById(opts.gridId || 'speakerCardsGrid');
+  _mlWorker        = opts.mlWorker       || null;
+  _audioContext    = opts.audioContext   || null;
+  _onSolo          = opts.onSolo         || null;
+  _onMute          = opts.onMute         || null;
+  _onVolume        = opts.onVolume       || null;
+  _onEnrollFromSeg = opts.onEnrollFromSeg|| null;
+  if (!_gridEl) { console.warn('[IsolationControls] grid element not found'); return; }
+  console.info('[IsolationControls] initialised');
 }
 
-/**
- * Rebuild speaker cards when new diarization data arrives.
- * @param {{ [speakerId]: { label, color, volume, muted, solo } }} speakers
- */
-export function updateSpeakerCards(speakers) {
-  IsolationControls.speakers = speakers;
-  _renderSpeakerCards(speakers);
+// ── Public: update speaker cards from diarization result ─────────────────────
+export function updateSpeakerCards(speakerMap) {
+  // Rebuild from the latest diarization result while preserving user state
+  // for speaker IDs that still exist in the new map.
+  const incomingSpeakerMap = speakerMap || {};
+  const nextSpeakerMap = {};
+
+  Object.entries(incomingSpeakerMap).forEach(([id, info]) => {
+    const prev = _speakerMap[id];
+    nextSpeakerMap[id] = {
+      label:  info.label || (prev && prev.label) || ('Speaker ' + id),
+      color:  info.color || (prev && prev.color) || PALETTE[_colorIdx++ % PALETTE.length],
+      volume: prev ? prev.volume : 1.0,
+      muted:  prev ? prev.muted  : false,
+      solo:   prev ? prev.solo   : false,
+    };
+  });
+
+  _speakerMap = nextSpeakerMap;
+
+  if (_activeSoloId && !_speakerMap[_activeSoloId]) {
+    _activeSoloId = null;
+  }
+  _rebuildGrid();
 }
 
-/**
- * Highlight the active (isolated) speaker card.
- */
+// ── Public: highlight the active (currently-speaking) card ───────────────────
 export function setActiveSpeakerCard(speakerId) {
-  IsolationControls.activeSpeaker = speakerId;
-  document.querySelectorAll('.speaker-card').forEach(card => {
-    const isActive = card.dataset.speakerId === speakerId || speakerId === null;
-    card.classList.toggle('speaker-card--active', isActive);
-    card.classList.toggle('speaker-card--muted',  !isActive && speakerId !== null);
+  document.querySelectorAll('.speaker-card').forEach(el => {
+    el.classList.toggle('speaker-card--active', el.dataset.speakerId === speakerId);
   });
 }
 
-// ─────────────────────────────────────────────
-// Speaker cards renderer
-// ─────────────────────────────────────────────
-
-function _renderSpeakerCards(speakers) {
-  const root = document.getElementById('isolation-controls-root');
-  if (!root) return;
-
-  // Keep global controls, only replace the cards section
-  let cardsSection = root.querySelector('#speaker-cards-section');
-  if (!cardsSection) {
-    cardsSection = document.createElement('div');
-    cardsSection.id = 'speaker-cards-section';
-    cardsSection.className = 'speaker-cards-grid';
-    root.appendChild(cardsSection);
-  }
-  cardsSection.innerHTML = '';
-
-  if (Object.keys(speakers).length === 0) {
-    cardsSection.innerHTML = `
-      <div class="isolation-empty">
-        <span class="isolation-empty__icon">🎙</span>
-        <p>Process audio to detect speakers</p>
-      </div>`;
+// ── Internal: rebuild DOM grid ────────────────────────────────────────────────
+function _rebuildGrid() {
+  if (!_gridEl) return;
+  _gridEl.innerHTML = '';
+  const ids = Object.keys(_speakerMap);
+  if (!ids.length) {
+    _gridEl.innerHTML = '<span style="color:#4b5563;font-size:12px;">No speakers detected</span>';
     return;
   }
-
-  Object.entries(speakers).forEach(([speakerId, spk]) => {
-    const card = _buildSpeakerCard(speakerId, spk);
-    cardsSection.appendChild(card);
-  });
+  ids.forEach(id => _gridEl.appendChild(_buildCard(id)));
 }
 
-function _buildSpeakerCard(speakerId, spk) {
+function _buildCard(id) {
+  const spk = _speakerMap[id];
   const card = document.createElement('div');
-  card.className = 'speaker-card';
-  card.dataset.speakerId = speakerId;
-
-  const volPct = Math.round(spk.volume * 100);
+  card.className = 'speaker-card' + (spk.muted ? ' speaker-card--muted' : '');
+  card.dataset.speakerId = id;
 
   card.innerHTML = `
     <div class="speaker-card__header">
-      <span class="speaker-card__swatch" style="background:${spk.color}"></span>
-      <span class="speaker-card__label">${_escHtml(spk.label)}</span>
-      <span class="speaker-card__id">#${speakerId}</span>
+      <span class="speaker-card__swatch" style="background:${spk.color};"></span>
+      <span class="speaker-card__label">${_esc(spk.label)}</span>
+      <span class="speaker-card__id">${_esc(id)}</span>
     </div>
-
-    <div class="speaker-card__controls">
-      <label class="speaker-card__vol-label">Vol</label>
-      <input
-        type="range" min="0" max="100" value="${volPct}"
-        class="vip-slider speaker-card__vol"
-        data-speaker-id="${speakerId}"
-        aria-label="Speaker ${speakerId} volume"
-      />
-      <span class="speaker-card__vol-readout">${volPct}%</span>
+    <div class="speaker-card__vol-row">
+      <span class="speaker-card__vol-lbl">Vol</span>
+      <input class="speaker-card__vol" type="range" min="0" max="100"
+             value="${Math.round(spk.volume * 100)}" step="1"
+             aria-label="Volume for ${_esc(spk.label)}" />
+      <span class="speaker-card__vol-val">${Math.round(spk.volume * 100)}%</span>
     </div>
-
     <div class="speaker-card__actions">
-      <button
-        class="vip-btn vip-btn--sm speaker-card__mute ${spk.muted ? 'active' : ''}"
-        data-speaker-id="${speakerId}"
-        title="Mute speaker"
-        aria-pressed="${spk.muted}"
-      >${spk.muted ? '🔇' : '🔊'}</button>
-
-      <button
-        class="vip-btn vip-btn--sm speaker-card__solo ${spk.solo ? 'active' : ''}"
-        data-speaker-id="${speakerId}"
-        title="Solo / isolate this speaker"
-        aria-pressed="${spk.solo}"
-      >Solo</button>
-
-      <button
-        class="vip-btn vip-btn--sm speaker-card__enroll-ref"
-        data-speaker-id="${speakerId}"
-        title="Use this speaker as voiceprint reference"
-      >🎯 Ref</button>
-    </div>`;
+      <button class="mute-btn ${spk.muted ? 'active' : ''}"
+              aria-pressed="${spk.muted}" aria-label="Mute ${_esc(spk.label)}">
+        ${spk.muted ? '🔇 Muted' : '🔊 Mute'}
+      </button>
+      <button class="solo-btn ${spk.solo ? 'active' : ''}"
+              aria-pressed="${spk.solo}" aria-label="Solo ${_esc(spk.label)}">
+        ${spk.solo ? '★ Solo' : '☆ Solo'}
+      </button>
+      <button class="isolate-btn" aria-label="Isolate ${_esc(spk.label)}">
+        🎯 Isolate
+      </button>
+      <button class="enroll-btn" aria-label="Enroll voiceprint from ${_esc(spk.label)}">
+        🔑 Enroll
+      </button>
+    </div>
+  `;
 
   // Volume slider
   const volSlider = card.querySelector('.speaker-card__vol');
-  const volReadout = card.querySelector('.speaker-card__vol-readout');
+  const volVal    = card.querySelector('.speaker-card__vol-val');
   volSlider.addEventListener('input', () => {
     const v = Number(volSlider.value) / 100;
-    volReadout.textContent = `${volSlider.value}%`;
-    setSpeakerVolume(speakerId, v);
+    spk.volume = v;
+    volVal.textContent = volSlider.value + '%';
+    _dispatchVolumes('volume', id);
   });
 
-  // Mute button
-  card.querySelector('.speaker-card__mute').addEventListener('click', (e) => {
-    const btn   = e.currentTarget;
-    const muted = btn.getAttribute('aria-pressed') !== 'true';
-    btn.setAttribute('aria-pressed', String(muted));
-    btn.textContent = muted ? '🔇' : '🔊';
-    btn.classList.toggle('active', muted);
-    setSpeakerMute(speakerId, muted);
+  // Mute
+  card.querySelector('.mute-btn').addEventListener('click', (e) => {
+    spk.muted = !spk.muted;
+    card.classList.toggle('speaker-card--muted', spk.muted);
+    e.currentTarget.textContent = spk.muted ? '🔇 Muted' : '🔊 Mute';
+    e.currentTarget.classList.toggle('active', spk.muted);
+    e.currentTarget.setAttribute('aria-pressed', String(spk.muted));
+    _dispatchVolumes('mute', id);
   });
 
-  // Solo button
-  card.querySelector('.speaker-card__solo').addEventListener('click', () => {
-    setSpeakerSolo(speakerId);
-    // UI updated by setActiveSpeakerCard() called via 'diarization:speakerSelected'
+  // Solo
+  card.querySelector('.solo-btn').addEventListener('click', (e) => {
+    const wasSolo = spk.solo;
+    // Clear all solos first
+    Object.values(_speakerMap).forEach(s => { s.solo = false; });
+    _activeSoloId = null;
+    if (!wasSolo) { spk.solo = true; _activeSoloId = id; }
+    // Re-render all solo buttons
+    document.querySelectorAll('.speaker-card').forEach(c => {
+      const cid = c.dataset.speakerId;
+      const btn = c.querySelector('.solo-btn');
+      if (!btn) return;
+      const active = _speakerMap[cid]?.solo;
+      btn.classList.toggle('active', active);
+      btn.textContent = active ? '★ Solo' : '☆ Solo';
+      btn.setAttribute('aria-pressed', String(active));
+    });
+    _dispatchVolumes('solo', id);
+    // Tell ML worker which speaker to isolate
+    if (_mlWorker) {
+      _mlWorker.postMessage({ type: 'isolateSpeaker', payload: { speakerId: _activeSoloId } });
+    }
   });
 
-  // Reference voiceprint button
-  card.querySelector('.speaker-card__enroll-ref').addEventListener('click', () => {
-    _enrollFromSegments(speakerId);
+  // Isolate (hard isolate — zero all other volumes)
+  card.querySelector('.isolate-btn').addEventListener('click', () => {
+    Object.entries(_speakerMap).forEach(([sid, s]) => {
+      s.volume = sid === id ? 1 : 0;
+    });
+    _rebuildGrid();
+    _dispatchVolumes('volume', id);
+    if (_mlWorker) _mlWorker.postMessage({ type: 'isolateSpeaker', payload: { speakerId: id } });
+  });
+
+  // Enroll voiceprint from this speaker's segments
+  card.querySelector('.enroll-btn').addEventListener('click', () => {
+    if (_onEnrollFromSeg) _onEnrollFromSeg(id);
+    if (_mlWorker) _mlWorker.postMessage({ type: 'enrollFromDiarization', payload: { speakerId: id } });
   });
 
   return card;
 }
 
-// ─────────────────────────────────────────────
-// Global isolation controls
-// ─────────────────────────────────────────────
-
-function _bindGlobalControls() {
-  // Isolation method
-  const methodSel = document.getElementById('isolation-method-select');
-  methodSel?.addEventListener('change', () => {
-    IsolationControls.mlWorker?.postMessage({
-      type: 'param',
-      payload: { key: 'isolationMethod', value: methodSel.value },
-    });
+// ── Internal helpers ──────────────────────────────────────────────────────────
+function _dispatchVolumes(eventType, changedId) {
+  const volumes = {};
+  Object.entries(_speakerMap).forEach(([id, s]) => {
+    if (s.muted) volumes[id] = 0;
+    else if (_activeSoloId && _activeSoloId !== id) volumes[id] = 0;
+    else volumes[id] = s.volume;
   });
-
-  // Confidence threshold
-  const confSlider   = document.getElementById('isolation-confidence');
-  const confReadout  = document.getElementById('isolation-confidence-readout');
-  confSlider?.addEventListener('input', () => {
-    const v = Number(confSlider.value) / 100;
-    if (confReadout) confReadout.textContent = confSlider.value + '%';
-    IsolationControls.mlWorker?.postMessage({
-      type: 'param',
-      payload: { key: 'ecapaSimilarityThreshold', value: v },
-    });
-  });
-
-  // Background volume
-  const bgSlider  = document.getElementById('isolation-bg-volume');
-  const bgReadout = document.getElementById('isolation-bg-readout');
-  bgSlider?.addEventListener('input', () => {
-    const v = Number(bgSlider.value) / 100;
-    if (bgReadout) bgReadout.textContent = bgSlider.value + '%';
-    IsolationControls.mlWorker?.postMessage({
-      type: 'param',
-      payload: { key: 'backgroundVolume', value: v },
-    });
-  });
-
-  // Mask refinement toggle
-  document.getElementById('isolation-mask-refine')?.addEventListener('change', (e) => {
-    IsolationControls.mlWorker?.postMessage({
-      type: 'param',
-      payload: { key: 'maskRefinement', value: e.target.checked },
-    });
-  });
+  if (_mlWorker) _mlWorker.postMessage({ type: 'speakerVolumes', payload: volumes });
+  if (eventType === 'solo'   && _onSolo)   _onSolo(changedId, volumes);
+  if (eventType === 'mute'   && _onMute)   _onMute(changedId, volumes);
+  if (eventType === 'volume' && _onVolume) _onVolume(changedId, volumes);
 }
 
-// ─────────────────────────────────────────────
-// Voiceprint enrollment
-// ─────────────────────────────────────────────
-
-function _bindVoiceprintButtons() {
-  const enrollBtn = document.getElementById('enroll-voiceprint-btn');
-  const clearBtn  = document.getElementById('clear-voiceprint-btn');
-  const status    = document.getElementById('voiceprint-status');
-
-  enrollBtn?.addEventListener('click', async () => {
-    if (!IsolationControls.mediaStream) {
-      _setVoiceprintStatus('No mic stream — start Live mode first', 'warn');
-      return;
-    }
-    await _recordVoiceprint(enrollBtn, status);
-  });
-
-  clearBtn?.addEventListener('click', () => {
-    IsolationControls.mlWorker?.postMessage({ type: 'clearVoiceprint' });
-    _setVoiceprintStatus('Voiceprint cleared', 'idle');
-  });
-}
-
-async function _recordVoiceprint(btn, statusEl) {
-  const stream  = IsolationControls.mediaStream;
-  const DURATION = 5000; // 5 seconds
-
-  _setVoiceprintStatus('Recording 5s…', 'recording');
-  btn.disabled = true;
-
-  try {
-    const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-    const chunks   = [];
-
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.start(100);
-
-    await new Promise(r => setTimeout(r, DURATION));
-    recorder.stop();
-
-    await new Promise(r => { recorder.onstop = r; });
-
-    const blob   = new Blob(chunks, { type: 'audio/webm' });
-    const arrBuf = await blob.arrayBuffer();
-    const decoded = await IsolationControls.audioContext.decodeAudioData(arrBuf);
-    const pcm     = decoded.getChannelData(0);
-
-    IsolationControls.mlWorker?.postMessage({ type: 'enrollVoiceprint', payload: { pcm } }, [pcm.buffer]);
-    _setVoiceprintStatus('Enrolled ✓', 'ready');
-  } catch (err) {
-    console.error('[IsolationControls] Voiceprint enrollment failed', err);
-    _setVoiceprintStatus(`Error: ${err.message}`, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-/**
- * Extract PCM from already-recorded segments of a specific speaker
- * and send as voiceprint enrollment material.
- */
-async function _enrollFromSegments(speakerId) {
-  const status = document.getElementById('voiceprint-status');
-  _setVoiceprintStatus(`Extracting voiceprint for ${speakerId}…`, 'recording');
-
-  // Signal ml-worker to extract embedding from existing diarization segments
-  IsolationControls.mlWorker?.postMessage({
-    type: 'enrollFromDiarization',
-    payload: { speakerId },
-  });
-  // Status will be updated when worker responds with 'voiceprintEnrolled'
-}
-
-function _setVoiceprintStatus(msg, state = 'idle') {
-  const el = document.getElementById('voiceprint-status');
-  if (!el) return;
-  el.textContent = msg;
-  el.className = `voiceprint-status voiceprint-status--${state}`;
-}
-
-// ─────────────────────────────────────────────
-// Event listeners
-// ─────────────────────────────────────────────
-
-function _bindSpeakerSelectedEvent() {
-  document.addEventListener('diarization:speakerSelected', (e) => {
-    setActiveSpeakerCard(e.detail?.speakerId ?? null);
-  });
-}
-
-// ─────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────
-
-function _escHtml(str) {
+function _esc(str) {
   return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
