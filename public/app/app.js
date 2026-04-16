@@ -670,7 +670,7 @@ class VoiceIsolatePro {
 
   // ── Trigger diarization after audio loads ────────────────────────────────
   async _triggerDiarization(audioBuf) {
-    const orch = window._vipOrchestrator;
+    const orch = window._vipOrch;
     if (!orch || !orch.mlWorker) return;
     try {
       const signal = new Float32Array(audioBuf.getChannelData(0));
