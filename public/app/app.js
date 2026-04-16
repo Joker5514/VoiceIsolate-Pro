@@ -162,6 +162,7 @@ class VoiceIsolatePro {
     this.isVideo = false;
     this.videoUrl = null;
     this.spectroRunning = false;
+    this.is3D = false;
     this.animId = null;
     this.diagRunning = false;
     this.diagAnimId = null;
@@ -439,8 +440,26 @@ class VoiceIsolatePro {
       this.onSlider(el);
     }));
     document.querySelectorAll('.sr-row').forEach(r => {
-      const showTt = () => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }};
-      const hideTt = () => this.dom.tooltip.classList.remove('visible');
+      const showTt = () => {
+        const d = r.dataset.desc;
+        if (!d) return;
+        const tt = this.dom.tooltip;
+        tt.textContent = d;
+        tt.classList.add('visible');
+        const rc = r.getBoundingClientRect();
+        // Center tooltip horizontally on screen
+        const vh = window.innerHeight;
+        tt.style.left = '50%';
+        tt.style.transform = 'translateX(-50%)';
+        // Position vertically: above or below the control row
+        const topPos = rc.bottom + 8;
+        if (topPos + 80 > vh) {
+          tt.style.top = Math.max(10, rc.top - 60) + 'px';
+        } else {
+          tt.style.top = topPos + 'px';
+        }
+      };
+      const hideTt = () => { const tt = this.dom.tooltip; tt.classList.remove('visible'); tt.style.transform = ''; };
       r.addEventListener('mouseenter', showTt);
       r.addEventListener('mouseleave', hideTt);
       const input = r.querySelector('input');
@@ -450,7 +469,7 @@ class VoiceIsolatePro {
       }
     });
     if (this.dom.spectro3DCanvas) this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
-    if (this.dom.spectro3DReset) this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
+    if (this.dom.spectro3DReset) this.dom.spectro3DReset.addEventListener('click', () => this.toggle3DView());
     window.addEventListener('resize', () => this.onResize());
 
     // Diagnostic bindings
@@ -1810,6 +1829,29 @@ class VoiceIsolatePro {
     this.render3D();
   }
   reset3DView(){if(this.three.cam){this.three.cam.position.set(0,40,60);this.three.cam.lookAt(0,0,0);}}
+  toggle3DView(){
+    this.is3D = !this.is3D;
+    const c2d = this.dom.spectro2DCanvas;
+    const c3d = this.dom.spectro3DCanvas;
+    const badge = document.getElementById('specModeBadge');
+    const btn = this.dom.spectro3DReset;
+    if (this.is3D) {
+      if (c2d) c2d.style.display = 'none';
+      if (c3d) { c3d.style.display = 'block'; c3d.style.height = '200px'; }
+      if (badge) badge.textContent = '3D';
+      if (btn) btn.textContent = 'Toggle 2D';
+      this.reset3DView();
+      if (this.three.ren) {
+        const ct = this.dom.spectro3DContainer;
+        if (ct) this.three.ren.setSize(ct.clientWidth, 200);
+      }
+    } else {
+      if (c3d) c3d.style.display = 'none';
+      if (c2d) c2d.style.display = 'block';
+      if (badge) badge.textContent = '2D';
+      if (btn) btn.textContent = 'Toggle 3D';
+    }
+  }
   update3D(freq){
     if(!this.three.geo)return;const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
     for(let z=gD-1;z>0;z--)for(let x=0;x<gW;x++){const c=z*gW+x;const p=(z-1)*gW+x;pos.setY(c,pos.getY(p));cols[c*3]=cols[p*3];cols[c*3+1]=cols[p*3+1];cols[c*3+2]=cols[p*3+2];}

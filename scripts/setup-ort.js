@@ -8,17 +8,10 @@
  *
  * Run automatically via package.json "postinstall" hook.
  * Safe to re-run: existing files are overwritten.
- *
- * NOTE: Written as ESM to match package.json "type": "module"
  */
 
-import { existsSync, mkdirSync, copyFileSync, readdirSync } from 'fs';
-import { join } from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = dirname(__filename);
+const { existsSync, mkdirSync, copyFileSync, readdirSync } = require('fs');
+const { join } = require('path');
 
 const ROOT     = join(__dirname, '..');
 const SRC_DIR  = join(ROOT, 'node_modules', 'onnxruntime-web', 'dist');

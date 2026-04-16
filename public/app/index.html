@@ -144,7 +144,6 @@
       <div class="actions-row">
         <button id="processBtn" class="btn btn-primary" disabled>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
-          Process (32-Stage)
           Process (36-Stage)
         </button>
         <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
@@ -324,16 +323,74 @@
         <div id="diagLog" class="diag-log"></div>
       </div>
 
-      <!-- Diarization Timeline + Per-Speaker VU Meters
-           Powered by VisualizationEngine in visuals.js. These are additive —
-           they do not duplicate the 6-panel diagnostic dashboard above. -->
+      <!-- Diarization Timeline + Per-Speaker VU Meters -->
       <div class="card viz-card" id="diarCard">
         <div class="viz-hdr">
-          <span>Diarization Timeline</span>
+          <span>Speaker Timeline</span>
+          <span class="viz-badge" id="diarSpeakerCount">Waiting…</span>
           <span class="viz-badge" id="vuMeterPanelLabel">Per-Speaker</span>
+          <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+            <span id="diarTimeLabel" style="font-size:11px;color:#9ca3af;font-family:monospace;">00:00.0</span>
+            <button id="diarZoomIn"  class="btn btn-xs" title="Zoom in">＋</button>
+            <button id="diarZoomOut" class="btn btn-xs" title="Zoom out">－</button>
+            <button id="diarZoomFit" class="btn btn-xs" title="Fit all">⤢</button>
+          </div>
         </div>
-        <canvas id="diarCanvas" class="viz-canvas" aria-label="Diarization timeline"></canvas>
+        <div style="position:relative;overflow:hidden;">
+          <canvas id="diarCanvas" class="viz-canvas" aria-label="Speaker diarization timeline" style="min-height:80px;width:100%;background:#0f172a;"></canvas>
+          <div id="diarPlayhead" style="position:absolute;top:0;bottom:0;width:2px;background:#ef4444;pointer-events:none;left:0;display:none;"></div>
+        </div>
         <div class="vu-meter-container" id="vuMeterPanel" role="group" aria-labelledby="vuMeterPanelLabel"></div>
+      </div>
+
+      <!-- Speaker Isolation Controls -->
+      <div class="card" id="isolationCard">
+        <div class="viz-hdr">
+          <span>Speaker Isolation</span>
+          <span class="viz-badge">Hybrid ML+DSP</span>
+        </div>
+
+        <!-- Global isolation settings with explanations -->
+        <div class="isolation-globals">
+          <div class="sr-row" data-desc="Selects the isolation algorithm. Hybrid combines ML neural separation with classical DSP filters for best quality. ML Only uses BSRNN neural network exclusively. Classical DSP uses traditional spectral gating and filtering.">
+            <label class="sr-label" for="isolationMethodSelect">Method</label>
+            <select id="isolationMethodSelect" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:3px 8px;font-size:12px;">
+              <option value="hybrid" selected>Hybrid (ML+DSP)</option>
+              <option value="ml">ML Only (BSRNN)</option>
+              <option value="classical">Classical DSP</option>
+            </select>
+          </div>
+          <div class="sr-row" data-desc="Minimum confidence threshold for speaker detection. Higher values require stronger voice signatures — fewer false positives but may miss quieter speech. Lower values catch more speech but risk including noise.">
+            <label class="sr-label" for="isolationConfidenceSlider">Confidence</label>
+            <input type="range" id="isolationConfidenceSlider" min="40" max="95" value="65" step="1" />
+            <span id="isolationConfidenceReadout" class="sr-val">65%</span>
+          </div>
+          <div class="sr-row" data-desc="Controls how much background audio (non-voice) remains in the output. 0% = fully suppressed background (clean voice only). 100% = full background level preserved alongside the isolated voice.">
+            <label class="sr-label" for="isolationBgVolumeSlider">Bg Level</label>
+            <input type="range" id="isolationBgVolumeSlider" min="0" max="100" value="0" step="1" />
+            <span id="isolationBgReadout" class="sr-val">0%</span>
+          </div>
+          <div class="sr-row" data-desc="Applies post-processing refinement to the spectral separation mask. Smooths edges between voice and noise regions, reducing artifacts like musical noise and spectral tearing. Disable for raw unprocessed masks.">
+            <label class="sr-label" for="isolationMaskRefine">Mask Refine</label>
+            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+              <input type="checkbox" id="isolationMaskRefine" checked />
+              <span style="font-size:11px;color:#9ca3af;">Enabled</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Dynamic speaker cards (built by isolation-controls.js) -->
+        <div id="speakerCardsGrid">
+          <span style="color:#4b5563;font-size:12px;">Process audio to detect speakers</span>
+        </div>
+
+        <!-- Voiceprint enrollment -->
+        <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="sr-label">Voiceprint</span>
+          <span id="voiceprintStatus" style="font-size:11px;color:#9ca3af;">Not enrolled</span>
+          <button id="enrollVoiceprintBtn" class="btn btn-xs">Record 5s</button>
+          <button id="clearVoiceprintBtn"  class="btn btn-xs">Clear</button>
+        </div>
       </div>
 
       <!-- Forensic Report -->
@@ -356,78 +413,6 @@
         </div>
       </div>
     </div>
-
-      <!-- ══════════════════════════════════════════════════════════════════
-           DIARIZATION TIMELINE  —  who-spoke-when canvas
-           ══════════════════════════════════════════════════════════════════ -->
-      <div class="card viz-card" id="diarCard">
-        <div class="viz-hdr">
-          <span>Speaker Timeline</span>
-          <span class="viz-badge" id="diarSpeakerCount">Waiting…</span>
-          <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
-            <span id="diarTimeLabel" style="font-size:11px;color:#9ca3af;font-family:monospace;">00:00.0</span>
-            <button id="diarZoomIn"  class="btn btn-xs" title="Zoom in">＋</button>
-            <button id="diarZoomOut" class="btn btn-xs" title="Zoom out">－</button>
-            <button id="diarZoomFit" class="btn btn-xs" title="Fit all">⤢</button>
-          </div>
-        </div>
-        <div style="position:relative;overflow:hidden;">
-          <canvas id="diarTimelineCanvas" class="viz-canvas" aria-label="Speaker diarization timeline" style="min-height:80px;width:100%;background:#0f172a;"></canvas>
-          <div id="diarPlayhead" style="position:absolute;top:0;bottom:0;width:2px;background:#ef4444;pointer-events:none;left:0;display:none;"></div>
-        </div>
-      </div>
-
-      <!-- ══════════════════════════════════════════════════════════════════
-           SPEAKER ISOLATION CONTROLS
-           ══════════════════════════════════════════════════════════════════ -->
-      <div class="card" id="isolationCard">
-        <div class="viz-hdr">
-          <span>Speaker Isolation</span>
-          <span class="viz-badge">Hybrid ML+DSP</span>
-        </div>
-
-        <!-- Global isolation settings -->
-        <div class="isolation-globals">
-          <div class="sr-row">
-            <label class="sr-label" for="isolationMethodSelect">Method</label>
-            <select id="isolationMethodSelect" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:3px 8px;font-size:12px;">
-              <option value="hybrid" selected>Hybrid (ML+DSP)</option>
-              <option value="ml">ML Only (BSRNN)</option>
-              <option value="classical">Classical DSP</option>
-            </select>
-          </div>
-          <div class="sr-row">
-            <label class="sr-label" for="isolationConfidenceSlider">Confidence</label>
-            <input type="range" id="isolationConfidenceSlider" min="40" max="95" value="65" step="1" />
-            <span id="isolationConfidenceReadout" class="sr-val">65%</span>
-          </div>
-          <div class="sr-row">
-            <label class="sr-label" for="isolationBgVolumeSlider">Bg Level</label>
-            <input type="range" id="isolationBgVolumeSlider" min="0" max="100" value="0" step="1" />
-            <span id="isolationBgReadout" class="sr-val">0%</span>
-          </div>
-          <div class="sr-row">
-            <label class="sr-label" for="isolationMaskRefine">Mask Refine</label>
-            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="isolationMaskRefine" checked />
-              <span style="font-size:11px;color:#9ca3af;">Enabled</span>
-            </label>
-          </div>
-        </div>
-
-        <!-- Dynamic speaker cards (built by isolation-controls.js) -->
-        <div id="speakerCardsGrid">
-          <span style="color:#4b5563;font-size:12px;">Process audio to detect speakers</span>
-        </div>
-
-        <!-- Voiceprint enrollment -->
-        <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <span class="sr-label">🔑 Voiceprint</span>
-          <span id="voiceprintStatus" style="font-size:11px;color:#9ca3af;">Not enrolled</span>
-          <button id="enrollVoiceprintBtn" class="btn btn-xs">⏺ Record 5s</button>
-          <button id="clearVoiceprintBtn"  class="btn btn-xs">🗑 Clear</button>
-        </div>
-      </div>
   </main>
 
   <!-- Status Bar -->
@@ -443,7 +428,6 @@
   </div>
 
   <footer class="ftr">
-    <span>VoiceIsolate Pro v24.0 · Threads from Space v12 · Hybrid ML+DSP · 32-Stage Deca-Pass</span>
     <span>VoiceIsolate Pro v24.0 · Threads from Space v12 · Hybrid ML+DSP · 36-Stage Deca-Pass</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
