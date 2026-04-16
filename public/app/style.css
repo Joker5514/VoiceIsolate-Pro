@@ -264,7 +264,7 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 .ftr{max-width:1520px;margin:0 auto;padding:0 10px 8px;display:flex;justify-content:space-between;font-size:0.58rem;color:var(--dim);opacity:0.6}
 
 /* ---- TOOLTIP ---- */
-.slider-tooltip{position:fixed;z-index:9999;background:var(--s4);color:var(--text);border:1px solid var(--border2);border-radius:var(--rs);padding:6px 10px;font-size:0.65rem;max-width:240px;line-height:1.4;pointer-events:none;opacity:0;transition:opacity 0.15s;box-shadow:0 8px 24px rgba(0,0,0,0.5)}
+.slider-tooltip{position:fixed;z-index:9999;background:var(--s4);color:var(--text);border:1px solid var(--border2);border-radius:var(--rs);padding:8px 14px;font-size:0.72rem;width:max-content;max-width:min(400px, calc(100vw - 20px));box-sizing:border-box;line-height:1.5;pointer-events:none;opacity:0;transition:opacity 0.15s;box-shadow:0 8px 24px rgba(0,0,0,0.5);text-align:center}
 .slider-tooltip.visible{opacity:1}
 
 /* ---- MOBILE ELEMENTS (hidden on desktop by default) ---- */
