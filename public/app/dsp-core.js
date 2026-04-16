@@ -81,10 +81,13 @@ class AdaptiveNoiseFloor {
 
   /**
    * Return the current per-bin minimum noise floor estimate.
+   * @param {Float32Array} [out] - Optional pre-allocated output buffer (length >= numBins).
+   *   Pass a reusable buffer to avoid per-call allocation in hot loops.
    * @returns {Float32Array}
    */
-  getFloor() {
-    const floor = new Float32Array(this.numBins).fill(Infinity);
+  getFloor(out = null) {
+    const floor = out || new Float32Array(this.numBins);
+    floor.fill(Infinity);
     for (const w of this._minStore) {
       for (let k = 0; k < this.numBins; k++) {
         if (w[k] < floor[k]) floor[k] = w[k];
@@ -130,12 +133,17 @@ const DSPCore = {
 
   // ===== WINDOWING =====
 
+  // Cache for hannWindow — keyed by N so identical sizes are only computed once.
+  _hannCache: new Map(),
+
   /** Generate periodic Hann window of given length (required for COLA at 75% overlap) */
   hannWindow(N) {
+    if (this._hannCache.has(N)) return this._hannCache.get(N);
     const w = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / N));
     }
+    this._hannCache.set(N, w);
     return w;
   },
 
@@ -156,11 +164,14 @@ const DSPCore = {
     const mag = [];
     const phase = [];
 
+    // Reuse buffers across frames to reduce GC pressure.
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
     for (let f = 0; f < frameCount; f++) {
       const offset = f * hopSize;
-      // Windowed frame → real/imag
-      const real = new Float32Array(fftSize);
-      const imag = new Float32Array(fftSize);
+      // Windowed frame → real/imag (imag is always 0 for real input)
+      imag.fill(0);
       for (let i = 0; i < fftSize; i++) {
         real[i] = (offset + i < data.length) ? data[offset + i] * window[i] : 0;
       }
@@ -194,12 +205,14 @@ const DSPCore = {
     const output = new Float32Array(len);
     const windowSum = new Float32Array(len);
 
+    // Reuse buffers across frames to avoid per-frame Float32Array allocation.
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
     for (let f = 0; f < frameCount; f++) {
       const offset = f * hopSize;
-      const real = new Float32Array(fftSize);
-      const imag = new Float32Array(fftSize);
 
-      // Reconstruct complex spectrum
+      // Reconstruct complex spectrum (clear only used region)
       for (let k = 0; k < halfN; k++) {
         real[k] = mag[f][k] * Math.cos(phase[f][k]);
         imag[k] = mag[f][k] * Math.sin(phase[f][k]);
@@ -500,6 +513,8 @@ const DSPCore = {
    */
   applyAdaptiveWiener(mag, vadConf, tracker, { overSubtraction = 1.2, spectralFloor = 0.001 } = {}) {
     const vadLen = vadConf ? vadConf.length : 0;
+    // Single reusable buffer for getFloor() — avoids one allocation per frame.
+    const floorBuf = new Float32Array(tracker.numBins);
     for (let f = 0; f < mag.length; f++) {
       const conf = vadLen > 0 ? (vadConf[Math.min(f, vadLen - 1)] || 0) : 0;
       const isSilence = conf < 0.3;
@@ -508,7 +523,7 @@ const DSPCore = {
         tracker.update(mag[f]);
       }
 
-      const floor = tracker.getFloor();
+      const floor = tracker.getFloor(floorBuf);
       // Speech Presence Probability: higher VAD conf → trust signal more → less suppression
       const spp = Math.min(1, conf);
 
@@ -1324,8 +1339,13 @@ const DSPCore = {
 
   // ===== HELPERS =====
 
+  // Cache for _computeERBBands — keyed by "numBands_sr_numBins".
+  _erbCache: new Map(),
+
   /** Compute 32 ERB (Equivalent Rectangular Bandwidth) bands */
   _computeERBBands(numBands, sr, numBins) {
+    const key = `${numBands}_${sr}_${numBins}`;
+    if (this._erbCache.has(key)) return this._erbCache.get(key);
     const nyquist = sr / 2;
     const bands = [];
 
@@ -1344,6 +1364,7 @@ const DSPCore = {
       const binHi = Math.min(numBins - 1, Math.ceil(fHi / nyquist * (numBins - 1)));
       bands.push({ lo: binLo, hi: binHi, fLo, fHi });
     }
+    this._erbCache.set(key, bands);
     return bands;
   },
 
