@@ -190,6 +190,23 @@ describe('handleFile() — file type validation', () => {
     expect(mockVip.dom.fileInfo.textContent).toContain('Unsupported');
   });
 
+  test('restores process button states after a rejected file', async () => {
+    const mockVip = makeMockVip();
+    mockVip.dom.processBtn.disabled = false;
+    mockVip.dom.reprocessBtn.disabled = true;
+    mockVip.dom.mobileReprocessBtn.disabled = false;
+    const mockFile = {
+      name: 'data.bin', size: 1024, type: 'application/octet-stream',
+      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
+    };
+
+    await handleFile.call(mockVip, mockFile);
+
+    expect(mockVip.dom.processBtn.disabled).toBe(false);
+    expect(mockVip.dom.reprocessBtn.disabled).toBe(true);
+    expect(mockVip.dom.mobileReprocessBtn.disabled).toBe(false);
+  });
+
   test('accepts audio/wav files', async () => {
     const mockVip = makeMockVip();
     const mockFile = {

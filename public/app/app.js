@@ -290,10 +290,13 @@ const STAGES = [
   'S32: Final Export Ready'              // 31
 ];
 
-const ACCEPTED_UPLOAD_TYPES = [
-  'audio/wav', 'audio/x-wav', 'audio/mp3', 'audio/mpeg', 'audio/flac', 'audio/x-flac', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/opus', 'audio/x-aiff', 'audio/aiff', 'audio/aif', 'audio/x-ms-wma',
+const ACCEPTED_AUDIO_UPLOAD_TYPES = [
+  'audio/wav', 'audio/x-wav', 'audio/mp3', 'audio/mpeg', 'audio/flac', 'audio/x-flac', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/opus', 'audio/x-aiff', 'audio/aiff', 'audio/aif', 'audio/x-ms-wma'
+];
+const ACCEPTED_VIDEO_UPLOAD_TYPES = [
   'video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/x-m4v', 'video/ogg', 'video/avi', 'video/x-msvideo'
 ];
+const ACCEPTED_UPLOAD_TYPES = [...ACCEPTED_AUDIO_UPLOAD_TYPES, ...ACCEPTED_VIDEO_UPLOAD_TYPES];
 const VIDEO_UPLOAD_EXTENSIONS = ['.mp4', '.webm', '.mov', '.mkv', '.m4v', '.avi'];
 const AUDIO_UPLOAD_EXTENSIONS = ['.wav', '.mp3', '.flac', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.aiff', '.aif'];
 
@@ -760,8 +763,9 @@ class VoiceIsolatePro {
 
   // ======== FILE HANDLING ========
   async handleFile(file) {
-    const previousProcessDisabled = this.dom.processBtn ? this.dom.processBtn.disabled : true;
-    const previousReprocessDisabled = this.dom.reprocessBtn ? this.dom.reprocessBtn.disabled : true;
+    const previousProcessDisabled = this.dom.processBtn ? this.dom.processBtn.disabled : undefined;
+    const previousReprocessDisabled = this.dom.reprocessBtn ? this.dom.reprocessBtn.disabled : undefined;
+    const previousMobileReprocessDisabled = this.dom.mobileReprocessBtn ? this.dom.mobileReprocessBtn.disabled : undefined;
     if (this.dom.processBtn) this.dom.processBtn.disabled = true;
     if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
     if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
@@ -773,10 +777,11 @@ class VoiceIsolatePro {
       if (isMidiFile) throw new Error('MIDI files are not supported in this audio decode path. Please export the MIDI to WAV, MP3, or another rendered audio format first.');
       const hasKnownVideoExtension = VIDEO_UPLOAD_EXTENSIONS.some(ext => normalizedName.endsWith(ext));
       const hasKnownAudioExtension = AUDIO_UPLOAD_EXTENSIONS.some(ext => normalizedName.endsWith(ext));
-      this.isVideo = normalizedType.startsWith('video/') || hasKnownVideoExtension;
+      const isVideoFile = normalizedType.startsWith('video/') || hasKnownVideoExtension;
       const isSupportedByMime = normalizedType ? ACCEPTED_UPLOAD_TYPES.includes(normalizedType) : false;
       const isSupportedByExtension = hasKnownVideoExtension || hasKnownAudioExtension;
       if (!isSupportedByMime && !isSupportedByExtension) throw new Error('Unsupported file type: ' + (file.type || 'unknown'));
+      this.isVideo = isVideoFile;
       this.ensureCtx();
       this.stop();
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
@@ -819,9 +824,9 @@ class VoiceIsolatePro {
     } catch (err) {
       console.error('File load error:', err);
       this.dom.fileInfo.textContent = 'Error: ' + err.message;
-      if (this.dom.processBtn) this.dom.processBtn.disabled = previousProcessDisabled;
-      if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = previousReprocessDisabled;
-      if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = previousReprocessDisabled;
+      if (this.dom.processBtn && typeof previousProcessDisabled === 'boolean') this.dom.processBtn.disabled = previousProcessDisabled;
+      if (this.dom.reprocessBtn && typeof previousReprocessDisabled === 'boolean') this.dom.reprocessBtn.disabled = previousReprocessDisabled;
+      if (this.dom.mobileReprocessBtn && typeof previousMobileReprocessDisabled === 'boolean') this.dom.mobileReprocessBtn.disabled = previousMobileReprocessDisabled;
       this.setStatus('ERROR');
     }
   }
@@ -848,8 +853,14 @@ class VoiceIsolatePro {
             const blob = new Blob(chunks, { type: 'audio/webm' });
             const ab = await blob.arrayBuffer();
             const safeCopy = ab.slice(0);
-            try { const decoded = await this.ctx.decodeAudioData(safeCopy); tmpCtx.close(); resolve(decoded); }
-            catch (e) { tmpCtx.close(); reject(new Error('Failed to decode video audio: ' + e.message)); }
+            try {
+              const decoded = await this.ctx.decodeAudioData(safeCopy);
+              await tmpCtx.close();
+              resolve(decoded);
+            } catch (e) {
+              try { await tmpCtx.close(); } catch {}
+              reject(new Error('Failed to decode video audio: ' + e.message));
+            }
           };
           recorder.start(); vid.play();
           vid.onended = () => { recorder.stop(); };
