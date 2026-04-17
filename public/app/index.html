@@ -373,7 +373,7 @@
             <input type="range" id="isolationConfidenceSlider" min="40" max="95" value="65" step="1" />
             <span id="isolationConfidenceReadout" class="sr-val">65%</span>
           </div>
-          <div class="sr-row" data-desc="Controls how much background audio remains in the output.">
+          <div class="sr-row" data-desc="Controls how much background audio (non-voice) remains in the output. 0% = fully suppressed background (clean voice only). 100% = full background level preserved alongside the isolated voice.">
             <label class="sr-label" for="isolationBgVolumeSlider">Bg Level</label>
             <input type="range" id="isolationBgVolumeSlider" min="0" max="100" value="0" step="1" />
             <span id="isolationBgReadout" class="sr-val">0%</span>
