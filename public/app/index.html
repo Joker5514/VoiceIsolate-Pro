@@ -378,7 +378,7 @@
             <input type="range" id="isolationBgVolumeSlider" min="0" max="100" value="0" step="1" />
             <span id="isolationBgReadout" class="sr-val">0%</span>
           </div>
-          <div class="sr-row" data-desc="Applies post-processing refinement to the spectral separation mask.">
+          <div class="sr-row" data-desc="Applies post-processing refinement to the spectral separation mask. Smooths edges between voice and noise regions, reducing artifacts like musical noise and spectral tearing. Disable for raw unprocessed masks.">
             <label class="sr-label" for="isolationMaskRefine">Mask Refine</label>
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
               <input type="checkbox" id="isolationMaskRefine" checked />
