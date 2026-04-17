@@ -1429,7 +1429,8 @@ class VoiceIsolatePro {
       await this.pip(27, total);
       if (p.dryWet < 100) fin = this.mixDW(this.inputBuffer, fin, p.dryWet / 100);
 
-      // Apply formant shift, phase correction, and dither (p.formantShift, p.phaseCorr, p.ditherAmt)
+      // Apply crosstalk cancellation, formant shift, phase correction, and dither
+      if (p.crosstalkCancel > 0) fin = this.applyCrosstalkCancel(fin, p.crosstalkCancel);
       if (p.formantShift !== 0) fin = this.applyFormantShift(fin, p.formantShift);
       if (p.phaseCorr > 0) fin = this.applyPhaseCorr(fin, p.phaseCorr);
       if (p.ditherAmt > 0) fin = this.applyDither(fin, p.ditherAmt);
