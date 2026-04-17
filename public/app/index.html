@@ -84,10 +84,11 @@
       <div class="card upload-card">
         <!--
           FIX: fileInput is placed OUTSIDE uploadZone and rendered off-screen.
-          This prevents the uploadZone click-guard (which blocks BUTTON children)
-          from ever blocking programmatic .click() calls on the input.
-          pointer-events is intentionally NOT set to none — programmatic .click()
-          requires the element to be interactable in the DOM.
+          This avoids nested click handling inside uploadZone from re-triggering
+          or interfering with the file picker when the zone or Browse button
+          dispatches fileInput.click(). The input stays visually hidden off-screen
+          instead of using display:none/disabled so file selection remains
+          compatible with browser file-picker activation behavior.
         -->
         <input
           type="file"
