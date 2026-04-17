@@ -129,8 +129,10 @@ function processEnvFollower(ef, x) {
 // Wiener suppression gain in [beta, 1]. Pure attenuation — never amplifies.
 // Kept in sync with public/app/dsp-core.js (canonical).
 function wienerFilter(noiseMag, signalMag, params = {}) {
-  const alpha = params.noiseOverSubtract || 1.2;
-  const beta = params.spectralFloor || 0.02;
+  const alphaRaw = Number.isFinite(params.noiseOverSubtract) ? params.noiseOverSubtract : 1.2;
+  const betaRaw = Number.isFinite(params.spectralFloor) ? params.spectralFloor : 0.02;
+  const alpha = Math.max(1e-6, alphaRaw);
+  const beta = Math.min(1.0, Math.max(0.0, betaRaw));
 
   const noisePow = noiseMag * noiseMag;
   const sigPow = signalMag * signalMag;
