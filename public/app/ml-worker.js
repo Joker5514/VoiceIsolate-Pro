@@ -614,5 +614,11 @@ async function buildMask(magnitudes) {
     }
   }
 
+  // Final safety pass: clamp all values to [0, 1]; replace NaN/Inf with 1 (passthrough)
+  for (let k = 0; k < numBins; k++) {
+    const v = mask[k];
+    mask[k] = (Number.isFinite(v) && v >= 0) ? Math.min(v, 1) : 1;
+  }
+
   return mask;
 }

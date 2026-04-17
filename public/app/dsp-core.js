@@ -250,8 +250,10 @@ const DSPCore = {
 
       // Reconstruct complex spectrum (clear only used region)
       for (let k = 0; k < halfN; k++) {
-        real[k] = mag[f][k] * Math.cos(phase[f][k]);
-        imag[k] = mag[f][k] * Math.sin(phase[f][k]);
+        // Guard NaN/Inf/negative magnitudes — any corrupt bin becomes silence for that bin
+        const m = (Number.isFinite(mag[f][k]) && mag[f][k] >= 0) ? mag[f][k] : 0;
+        real[k] = m * Math.cos(phase[f][k]);
+        imag[k] = m * Math.sin(phase[f][k]);
       }
       // Mirror for negative frequencies
       for (let k = halfN; k < fftSize; k++) {
@@ -734,6 +736,11 @@ const DSPCore = {
             m[k] = Math.max(m[k], m[srcBin] * decay * (amount / 100));
           }
         }
+      }
+
+      // Guard NaN/Inf/negative values that any of the above operations may have introduced
+      for (let k = 0; k < halfN; k++) {
+        if (!isFinite(m[k]) || m[k] < 0) m[k] = 0;
       }
     }
     return mag;
