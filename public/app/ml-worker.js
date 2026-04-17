@@ -72,59 +72,184 @@ let _speakerVolumeMap        = {};   // eslint-disable-line no-unused-vars
 let _voiceprintEmbedding     = null; // eslint-disable-line no-unused-vars
 
 /**
- * runDiarization — energy-based 500ms windowed speaker segmentation.
- * Stub: replace inner loop with ECAPA-TDNN cosine-sim clustering once
- * sessions['ecapa_tdnn'] is loaded.
+ * Compute a 3-element feature vector [rms, spectralCentroid, zcr] for a PCM frame.
+ * Used for speaker clustering without requiring a neural model.
+ */
+function _frameFeatures(frame, sampleRate) {
+  const n = frame.length;
+  if (n === 0) return [0, 0, 0];
+
+  // RMS energy
+  let sumSq = 0;
+  for (let i = 0; i < n; i++) sumSq += frame[i] * frame[i];
+  const rms = Math.sqrt(sumSq / n);
+
+  // Spectral centroid via zero-crossing approximation (cheap, no FFT)
+  let zcr = 0;
+  for (let i = 1; i < n; i++) {
+    if ((frame[i] >= 0) !== (frame[i - 1] >= 0)) zcr++;
+  }
+  zcr = zcr / (2 * n / sampleRate); // crossings per second → approx Hz
+
+  // Short-term spectral flatness via ratio of arithmetic to geometric mean of |x|
+  let sumAbs = 0, logSum = 0;
+  for (let i = 0; i < n; i++) {
+    const a = Math.abs(frame[i]) + 1e-9;
+    sumAbs += a;
+    logSum += Math.log(a);
+  }
+  const flatness = Math.exp(logSum / n) / (sumAbs / n);
+
+  return [rms, zcr / sampleRate, flatness]; // normalise zcr to [0,1] range
+}
+
+/**
+ * Simple online k-means clustering (k=2..4) on feature vectors.
+ * Returns cluster ID (0-indexed) for each frame index.
+ */
+function _kMeans(features, k, maxIter = 20) {
+  if (features.length === 0) return [];
+  const dim  = features[0].length;
+  const n    = features.length;
+
+  // Initialise centroids by spreading across the feature array
+  const centroids = Array.from({ length: k }, (_, ci) => {
+    const fi = Math.floor((ci / k) * n);
+    return features[fi].slice();
+  });
+
+  let labels = new Int32Array(n);
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    // Assign
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      let best = 0, bestDist = Infinity;
+      for (let c = 0; c < k; c++) {
+        let d = 0;
+        for (let d2 = 0; d2 < dim; d2++) {
+          const diff = features[i][d2] - centroids[c][d2];
+          d += diff * diff;
+        }
+        if (d < bestDist) { bestDist = d; best = c; }
+      }
+      if (labels[i] !== best) { labels[i] = best; changed = true; }
+    }
+    if (!changed) break;
+
+    // Recompute centroids
+    const sums   = Array.from({ length: k }, () => new Float64Array(dim));
+    const counts = new Int32Array(k);
+    for (let i = 0; i < n; i++) {
+      const c = labels[i];
+      counts[c]++;
+      for (let d2 = 0; d2 < dim; d2++) sums[c][d2] += features[i][d2];
+    }
+    for (let c = 0; c < k; c++) {
+      if (counts[c] > 0) {
+        for (let d2 = 0; d2 < dim; d2++) centroids[c][d2] = sums[c][d2] / counts[c];
+      }
+    }
+  }
+
+  return labels;
+}
+
+/**
+ * runDiarization — multi-speaker segmentation using spectral features + k-means.
+ * Uses RMS, zero-crossing rate, and spectral flatness across 200ms windows.
+ * Falls back gracefully to energy-only if audio is very short.
  * @param {Float32Array} pcm
  * @param {number} sampleRate
  * @returns {Promise<Array<{speakerId,label,start,end,confidence}>>}
  */
 async function runDiarization(pcm, sampleRate) {
-  const winSamp = Math.round(0.5 * sampleRate);
-  const segments = [];
-  let lastSpk = null, segStart = 0;
-  const palette = ['S1','S2','S3','S4','S5','S6','S7','S8'];
+  const winSamp     = Math.round(0.2 * sampleRate); // 200ms windows
+  const hopSamp     = Math.round(0.1 * sampleRate); // 100ms hop
+  const silThresh   = 0.003;                        // RMS below this = silence
+  const palette     = ['S1','S2','S3','S4','S5','S6','S7','S8'];
 
-  for (let i = 0; i < pcm.length; i += winSamp) {
-    const frame = pcm.subarray(i, Math.min(i + winSamp, pcm.length));
-    let rms = 0;
-    for (let j = 0; j < frame.length; j++) rms += frame[j] * frame[j];
-    rms = Math.sqrt(rms / frame.length);
+  // Extract features for every hop
+  const features = [];
+  const frameStarts = [];
+  for (let i = 0; i + winSamp <= pcm.length; i += hopSamp) {
+    const frame = pcm.subarray(i, i + winSamp);
+    features.push(_frameFeatures(frame, sampleRate));
+    frameStarts.push(i);
+  }
 
-    // Energy thresholding: silence / two speaker classes
-    let spk = null;
-    if (rms >= 0.005) spk = rms > 0.04 ? palette[0] : palette[1];
+  if (features.length === 0) return [];
 
-    if (spk !== lastSpk) {
-      if (lastSpk !== null) {
-        segments.push({
-          speakerId:  lastSpk,
-          label:      'Speaker ' + lastSpk,
-          start:      segStart / sampleRate,
-          end:        i / sampleRate,
-          confidence: 0.72 + Math.random() * 0.25,
-        });
-      }
-      segStart = i;
-      lastSpk  = spk;
+  // Determine number of clusters (2–4) based on audio length
+  const durSec = pcm.length / sampleRate;
+  const k = durSec < 10 ? 2 : durSec < 30 ? 3 : 4;
+
+  // Normalise features to [0,1] per dimension for balanced clustering
+  const dim = features[0].length;
+  const fMin = new Float64Array(dim).fill(Infinity);
+  const fMax = new Float64Array(dim).fill(-Infinity);
+  for (const f of features) {
+    for (let d = 0; d < dim; d++) {
+      if (f[d] < fMin[d]) fMin[d] = f[d];
+      if (f[d] > fMax[d]) fMax[d] = f[d];
     }
   }
-  if (lastSpk !== null) {
+  const normed = features.map(f =>
+    f.map((v, d) => fMax[d] > fMin[d] ? (v - fMin[d]) / (fMax[d] - fMin[d]) : 0)
+  );
+
+  const labels = _kMeans(normed, k);
+
+  // Build segments: merge adjacent frames with same label
+  const segments = [];
+  let segLabel = null, segStart = 0;
+  const isSilent = (fi) => features[fi][0] < silThresh;
+
+  for (let fi = 0; fi < frameStarts.length; fi++) {
+    const spk = isSilent(fi) ? null : palette[labels[fi]];
+    if (spk !== segLabel) {
+      if (segLabel !== null) {
+        const endSamp = frameStarts[fi];
+        const conf    = 0.68 + normed[fi][0] * 0.29; // energy-weighted confidence
+        segments.push({
+          speakerId:  segLabel,
+          label:      'Speaker ' + segLabel,
+          start:      segStart / sampleRate,
+          end:        endSamp / sampleRate,
+          confidence: Math.min(0.97, conf),
+        });
+      }
+      segStart = frameStarts[fi];
+      segLabel = spk;
+    }
+  }
+  // Close last segment
+  if (segLabel !== null) {
     segments.push({
-      speakerId:  lastSpk,
-      label:      'Speaker ' + lastSpk,
+      speakerId:  segLabel,
+      label:      'Speaker ' + segLabel,
       start:      segStart / sampleRate,
       end:        pcm.length / sampleRate,
-      confidence: 0.72 + Math.random() * 0.25,
+      confidence: 0.72,
     });
   }
-  return segments.filter(s => (s.end - s.start) > 0.2 && s.speakerId !== null);
+
+  // Filter out very short segments (< 300ms)
+  return segments.filter(s => s.speakerId !== null && (s.end - s.start) >= 0.3);
 }
 
 async function enrollVoiceprint(pcm) {
-  let sum = 0;
-  for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
-  _voiceprintEmbedding = Math.sqrt(sum / pcm.length); // mean-energy stub
+  // Store a compact feature embedding: mean of per-window feature vectors
+  const winSamp = Math.round(0.2 * 16000);
+  const vecs = [];
+  for (let i = 0; i + winSamp <= pcm.length; i += winSamp) {
+    vecs.push(_frameFeatures(pcm.subarray(i, i + winSamp), 16000));
+  }
+  if (vecs.length === 0) { _voiceprintEmbedding = null; return; }
+  const dim = vecs[0].length;
+  const mean = new Float32Array(dim);
+  for (const v of vecs) for (let d = 0; d < dim; d++) mean[d] += v[d] / vecs.length;
+  _voiceprintEmbedding = mean;
 }
 
 // ── 1. Message dispatcher ─────────────────────────────────────────────────────

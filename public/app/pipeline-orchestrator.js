@@ -459,16 +459,22 @@ class PipelineOrchestrator {
     // Confidence slider
     const cSl = document.getElementById('isolationConfidenceSlider');
     const cOut = document.getElementById('isolationConfidenceReadout');
+    const _cPct = () => ((Number(cSl.value) - Number(cSl.min)) / (Number(cSl.max) - Number(cSl.min)) * 100).toFixed(1) + '%';
+    if (cSl) cSl.style.setProperty('--pct', _cPct());
     cSl?.addEventListener('input', () => {
       if (cOut) cOut.textContent = cSl.value + '%';
+      cSl.style.setProperty('--pct', _cPct());
       _set({ ecapaSimilarityThreshold: Number(cSl.value) / 100 });
     });
 
     // Background volume slider
     const bgSl = document.getElementById('isolationBgVolumeSlider');
     const bgOut = document.getElementById('isolationBgReadout');
+    const _bgPct = () => ((Number(bgSl.value) - Number(bgSl.min)) / (Number(bgSl.max) - Number(bgSl.min)) * 100).toFixed(1) + '%';
+    if (bgSl) bgSl.style.setProperty('--pct', _bgPct());
     bgSl?.addEventListener('input', () => {
       if (bgOut) bgOut.textContent = bgSl.value + '%';
+      bgSl.style.setProperty('--pct', _bgPct());
       _set({ backgroundVolume: Number(bgSl.value) / 100 });
     });
 

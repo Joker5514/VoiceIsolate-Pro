@@ -507,7 +507,7 @@
     window.updateSpeakerCards  = IC.updateSpeakerCards;
     window.setActiveSpeakerCard= IC.setActiveSpeakerCard;
     function _boot() {
-      const orch = window._vipOrchestrator;
+      const orch = window._vipOrch;
       if (!orch) return;
       DT.initDiarizationTimeline({
         canvasId:        'diarCanvas',
@@ -530,6 +530,11 @@
         onVolume: (id, volumes) => orch.mlWorker?.postMessage({ type: 'speakerVolumes', payload: volumes }),
         onEnrollFromSeg: (id) => orch.mlWorker?.postMessage({ type: 'enrollFromDiarization', payload: { speakerId: id } }),
       });
+      // Re-trigger diarization if audio was loaded before the UI was ready
+      const app = window._vipApp;
+      if (app?.inputBuffer && orch.mlWorker) {
+        app._triggerDiarization(app.inputBuffer).catch(() => {});
+      }
     }
     const t = setInterval(() => {
       if (window._vipOrch?.initialized) { clearInterval(t); _boot(); }
