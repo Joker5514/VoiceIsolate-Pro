@@ -10,7 +10,7 @@ This file provides AI assistants with everything needed to navigate, understand,
 
 - **Zero cloud processing**: All audio is processed on-device using Web Audio API + ONNX Runtime Web
 - **Privacy-first**: No telemetry, no external API calls during audio processing
-- **36-Stage Deca-Pass Pipeline**: Advanced DSP + hybrid ML (10 passes, 36 stages total)
+- **32-Stage Deca-Pass Pipeline**: Advanced DSP + hybrid ML (10 passes, 32 stages total)
 - **Cross-platform**: Web (Vercel), native Android (API 23+), native iOS (14.1+) via Capacitor 7
 - **Engineer Mode UI**: 52 sliders across 8 tabs, 6-panel diagnostics, 3D spectrogram visualization
 
@@ -118,10 +118,10 @@ These are non-negotiable architectural rules enforced by `scripts/validate.js` a
 
 ### 1. Single-Pass Spectral Architecture
 
-The pipeline has **exactly one forward STFT** (Stage 07) and **exactly one iSTFT** (Stage 30). All spectral operations (noise reduction, voice separation, EQ, etc.) occur **in-place** between these two transforms. Never add a second STFT/iSTFT pair.
+The pipeline has **exactly one forward STFT** (Stage 10) and **exactly one iSTFT** (Stage 20). All spectral operations (noise reduction, voice separation, EQ, etc.) occur **in-place** between these two transforms. Never add a second STFT/iSTFT pair.
 
 ```
-[Time Domain] → STFT (Stage 07) → [Spectral Ops Stages 08–29] → iSTFT (Stage 30) → [Time Domain]
+[Time Domain] → STFT (Stage 10) → [Spectral Ops Stages 11–19] → iSTFT (Stage 20) → [Time Domain]
 ```
 
 ### 2. AudioWorklet Ownership
@@ -146,22 +146,22 @@ SharedArrayBuffer requires COOP and COEP headers. These are set in `server.js` f
 
 ---
 
-## 36-Stage Deca-Pass Pipeline
+## 32-Stage Deca-Pass Pipeline
 
-The pipeline is defined in `pipeline-orchestrator.js` as the `STAGES` array. Stages are numbered 01–36:
+The stage labels are defined in `public/app/app.js` as the `STAGES` array (S01–S32). `scripts/validate.js` asserts exactly 32 entries. Stage order:
 
 | Pass | Stages | Purpose |
 |------|--------|---------|
-| Pass 1 | 01–06 | Input conditioning, DC blocking, high-pass filter, RMS normalization |
-| Pass 2 | 07 | Forward STFT (512-pt Blackman-Harris window, 75% overlap) |
-| Pass 3 | 08–12 | Noise floor estimation, spectral gating, initial Wiener filter |
-| Pass 4 | 13–18 | Voice/noise separation (Silero VAD, BSRNN, Demucs v4.1) |
-| Pass 5 | 19–22 | Transient detection, de-click, de-crackle |
-| Pass 6 | 23–26 | Parametric EQ, de-reverb, de-echo, RNNoise refinement |
-| Pass 7 | 27–29 | Harmonic exciter, stereo widener, loudness normalization |
-| Pass 8 | 30 | Inverse STFT (iSTFT) |
-| Pass 9 | 31–34 | Output limiting, true-peak clipping prevention, VoiceFixer, HiFi-GAN |
-| Pass 10 | 35–36 | Forensic SHA-256 chain-of-custody log, output render |
+| Pass 1 | S01–S04 | Input decode, buffer allocation, DC offset removal, peak normalization |
+| Pass 2 | S05–S09 | VAD, time-domain noise gate, click/pop removal, hum removal, de-essing |
+| Pass 3 | S10 | Forward STFT (Blackman-Harris window) |
+| Pass 4 | S11–S12 | Adaptive Wiener NR + residual Wiener pass |
+| Pass 5 | S13–S19 | ERB spectral gate, voice-band emphasis, crosstalk cancel, temporal smoothing, spectral tilt, dereverb, harmonic reconstruction |
+| Pass 6 | S20 | Inverse STFT |
+| Pass 7 | S21–S25 | OfflineAudioContext setup, HP/LP filters, 10-band EQ, compression, limiter |
+| Pass 8 | S26–S28 | Render, post-render cleanup, dry/wet mix |
+| Pass 9 | S29–S31 | Peak normalization, quality metrics, waveform update |
+| Pass 10 | S32 | Final export ready (SHA-256 forensic hash written to `_forensicLog`) |
 
 ---
 

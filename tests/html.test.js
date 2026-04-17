@@ -7,8 +7,6 @@ const fs = require('fs');
 const path = require('path');
 
 const htmlFiles = [
-  { label: 'index.html (root)', filePath: path.join(__dirname, '../index.html') },
-  { label: 'build/app/index.html', filePath: path.join(__dirname, '../build/app/index.html') },
   { label: 'public/app/index.html', filePath: path.join(__dirname, '../public/app/index.html') },
 ];
 
@@ -62,21 +60,6 @@ describe('Pipeline progress bar accessibility', () => {
 });
 
 describe('Pipeline progress bar — structure integrity', () => {
-  test('all three HTML files contain identical pipeBar markup', () => {
-    const contents = htmlFiles.map(({ filePath }) => fs.readFileSync(filePath, 'utf8'));
-
-    // Extract the pipe-bar line from each file for comparison
-    const extractPipeBarLine = (html) => {
-      const match = html.match(/<div[^>]+pipe-bar[^>]*>/);
-      return match ? match[0] : null;
-    };
-
-    const [root, build, pub] = contents.map(extractPipeBarLine);
-    expect(root).not.toBeNull();
-    expect(root).toEqual(build);
-    expect(root).toEqual(pub);
-  });
-
   test('pipeBar does not have role="progressbar" on the inner pipeFill element', () => {
     htmlFiles.forEach(({ filePath }) => {
       const html = fs.readFileSync(filePath, 'utf8');

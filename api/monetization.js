@@ -199,12 +199,8 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
         const token = createLicenseToken(customerId, email, tier, 400);
         console.log(`[Webhook] New subscription: ${email} → ${tier} (${subscriptionId})`);
 
-        // Store in database and email the token to the user
         await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
         await sendEmail(email, 'Your VoiceIsolate Pro License', token);
-        // TODO: Store in database and email the token to the user
-        await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
-        // await sendEmail(email, 'Your VoiceIsolate Pro License', token);
         break;
       }
 

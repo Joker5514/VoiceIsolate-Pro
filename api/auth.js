@@ -24,11 +24,17 @@ import crypto  from 'crypto';
 
 const router = express.Router();
 
-// ─── Secret resolution (FIX: no throw on missing env var) ────────────────────
-if (!process.env.LICENSE_JWT_SECRET) {
-  throw new Error('LICENSE_JWT_SECRET environment variable is required');
-}
-const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
+// ─── Secret resolution ───────────────────────────────────────────────────────
+// In production the env var is required. In dev/test/preview fall back to a
+// deterministic placeholder so the API module doesn't crash-start.
+const LICENSE_SECRET = (() => {
+  if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[api/auth] LICENSE_JWT_SECRET is required in production.');
+  }
+  console.warn('[api/auth] WARNING: LICENSE_JWT_SECRET not set. Using development fallback (non-production only).');
+  return 'voiceisolate-dev-secret-change-in-production-32chars!';
+})();
 
 // ─── Password Hashing (scrypt) ───────────────────────────────────────────────
 const SCRYPT_KEYLEN = 64;

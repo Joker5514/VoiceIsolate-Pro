@@ -207,14 +207,19 @@ describe('logout()', () => {
 
 // ── incrementFileUsage() logic ────────────────────────────────────────────────
 describe('incrementFileUsage()', () => {
-  test('increments filesUsed counter in session', () => {
-    expect(authSrc).toContain('filesUsed');
+  test('exported as a function', () => {
+    expect(authSrc).toMatch(/export function incrementFileUsage\b/);
   });
 
-  test('persists updated session back to sessionStorage', () => {
-    // incrementFileUsage must re-save the session after incrementing
-    const funcMatch = authSrc.match(/function incrementFileUsage\b[\s\S]*?\n\}/);
-    const funcBlock = funcMatch ? funcMatch[0] : authSrc;
-    expect(funcBlock).toContain('sessionStorage');
+  // DEV BYPASS: incrementFileUsage is currently a no-op while all quotas are
+  // disabled. When tier enforcement is reintroduced, this test should assert
+  // that it persists updated session state back to sessionStorage.
+  test('is a no-op under dev bypass', () => {
+    const funcMatch = authSrc.match(/export function incrementFileUsage[\s\S]*?\n\}/);
+    expect(funcMatch).not.toBeNull();
+    const body = funcMatch[0];
+    // filesUsed still referenced elsewhere (session schema), but the function
+    // itself should not mutate sessionStorage while bypass is on.
+    expect(body).not.toContain('sessionStorage');
   });
 });
