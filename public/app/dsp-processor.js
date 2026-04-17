@@ -174,6 +174,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._magBuffer    = new Float32Array(NUM_BINS);
     this._phaseBuffer  = new Float32Array(NUM_BINS);
     this._mlMask       = new Float32Array(NUM_BINS).fill(1);
+    this._smoothGainLin = 1.0; // Exponentially-smoothed output gain (prevents clicks)
 
     // ── SharedArrayBuffer rings ──────────────────────────────────────────────
     // inputSAB  layout: [Float32 mag × NUM_BINS] [Int32 flags × 4]
@@ -394,7 +395,10 @@ class DSPProcessor extends AudioWorkletProcessor {
     const gateThreshLin = Math.pow(10, this._params.gateThresh / 20);
     const gateRangeGain = Math.pow(10, this._params.gateRange  / 20);  // < 1.0
     const holdSamples   = Math.round((this._params.gateHold / 1000) * sr);
-    const outGainLin    = Math.pow(10, this._params.outGain / 20);
+    // Smooth output gain toward target over ~4 render quanta (~10 ms) to prevent clicks
+    const targetGainLin = Math.pow(10, this._params.outGain / 20);
+    this._smoothGainLin += 0.25 * (targetGainLin - this._smoothGainLin);
+    const outGainLin    = this._smoothGainLin;
     const dryWetFrac    = Math.max(0, Math.min(1, this._params.dryWet / 100));
     const humReduce     = Math.max(0, Math.min(1, this._params.humReduce / 100));
 
@@ -576,7 +580,11 @@ class DSPProcessor extends AudioWorkletProcessor {
     // ── In-place op 6: ML mask from SAB (async, non-blocking) ────────────────
     if (this._hasSAB) {
       if (Atomics.load(this._flagsOut, 1) === 1) {
-        for (let k = 0; k < NUM_BINS; k++) this._mlMask[k] = this._outputView[k];
+        for (let k = 0; k < NUM_BINS; k++) {
+          const v = this._outputView[k];
+          // Clamp to [0, 1] and guard NaN/Inf; fall back to passthrough (1) on bad values
+          this._mlMask[k] = (Number.isFinite(v) && v >= 0) ? Math.min(v, 1) : 1;
+        }
         Atomics.store(this._flagsOut, 1, 0);
       }
       this._inputView.set(mag);
@@ -595,11 +603,16 @@ class DSPProcessor extends AudioWorkletProcessor {
         let enhanced = mag[k];
         for (let o = 2; o <= ord; o++) {
           const term = h / (o - 1) * Math.pow(normed, o);
-          if (!isFinite(term)) break; // FIX v8.2: guard against NaN/Inf polynomial term
+          if (!isFinite(term)) { enhanced = mag[k]; break; } // reset to original on bad term
           enhanced += term;
         }
-        mag[k] = Math.min(enhanced, mag[k] * 2.0);
+        mag[k] = isFinite(enhanced) ? Math.min(enhanced, mag[k] * 2.0) : mag[k];
       }
+    }
+
+    // Safety: eliminate any NaN/Inf/negative magnitudes before reconstruction
+    for (let k = 0; k < NUM_BINS; k++) {
+      if (!isFinite(mag[k]) || mag[k] < 0) mag[k] = 0;
     }
 
     // ── Reconstruct complex spectrum (magnitude + original phase) ────────────
