@@ -82,12 +82,36 @@
     <div class="col-left">
       <!-- Upload -->
       <div class="card upload-card">
+        <!--
+          FIX: fileInput is placed OUTSIDE uploadZone and rendered off-screen.
+          This prevents the uploadZone click-guard (which blocks BUTTON children)
+          from ever blocking programmatic .click() calls on the input.
+          pointer-events is intentionally NOT set to none — programmatic .click()
+          requires the element to be interactable in the DOM.
+        -->
+        <input
+          type="file"
+          id="fileInput"
+          accept="audio/*,video/mp4,video/webm,video/quicktime,video/x-matroska,video/x-m4v,video/avi,video/x-msvideo,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.wma,.aiff,.aif,.mp4,.webm,.mov,.mkv,.m4v,.avi"
+          style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;overflow:hidden;"
+          tabindex="-1"
+          aria-hidden="true"
+        />
         <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop Audio or Video file (formats: MP3, WAV, FLAC, OGG, M4A, MP4, MOV, WEBM, no limit), or press Enter to browse files">
           <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <p class="upload-title">Drop Audio or Video</p>
           <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · AAC · MP4 · MOV · WEBM · MKV · AVI — No limit</p>
-          <input type="file" id="fileInput" accept="audio/*,video/mp4,video/webm,video/quicktime,video/x-matroska,video/x-m4v,video/avi,video/x-msvideo,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.wma,.aiff,.aif,.mp4,.webm,.mov,.mkv,.m4v,.avi" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;" tabindex="-1" />
-          <button id="fileBtn" class="btn btn-outline">Browse Files</button>
+          <!--
+            FIX: fileBtn has explicit position:relative and z-index:10 so no
+            canvas, overlay, or sibling element can sit on top of it and steal
+            pointer events. cursor:pointer makes it clearly clickable.
+          -->
+          <button
+            id="fileBtn"
+            class="btn btn-outline"
+            type="button"
+            style="position:relative;z-index:10;cursor:pointer;"
+          >Browse Files</button>
         </div>
         <div class="upload-row">
           <button id="micBtn" class="btn btn-mic">
@@ -216,7 +240,6 @@
       </div>
 
       <!-- Waveform -->
-      <!-- NOTE: canvas IDs unified to match app.js cacheDom() lookups -->
       <div class="card viz-card" id="waveCard">
         <div class="viz-hdr"><span>Waveform</span><span class="viz-badge">RMS + Peak</span></div>
         <canvas id="waveformCanvas" class="viz-canvas" aria-label="Processed audio waveform"></canvas>
@@ -246,7 +269,6 @@
 
       <!-- Pipeline Diagnostics — 6-Panel Dashboard -->
       <div class="card viz-card" id="diagCard">
-        <!-- Dashboard header -->
         <div class="diag-header">
           <span class="diag-title">Pipeline Diagnostics · 6-Panel</span>
           <span class="diag-fps" id="diagFps">-- fps</span>
@@ -257,8 +279,6 @@
             <span class="dl-dot" style="background:#22d3ee"></span>Spec
           </div>
         </div>
-
-        <!-- Row 1: A/B Waveform (full width) -->
         <div class="diag-section diag-ab">
           <div class="viz-hdr" style="margin-bottom:3px">
             <span>A/B Waveform</span>
@@ -266,10 +286,7 @@
           </div>
           <canvas id="abWaveCanvas" class="viz-canvas diag-ab-cv" aria-label="A/B waveform comparison"></canvas>
         </div>
-
-        <!-- Row 2: Oscilloscope | Spectrogram Overlay | LUFS -->
         <div class="diag-row3">
-          <!-- Oscilloscope -->
           <div>
             <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem">
               <span>Oscilloscope</span>
@@ -281,7 +298,6 @@
             </div>
             <canvas id="oscCanvas" class="viz-canvas diag-osc-cv" aria-label="Oscilloscope"></canvas>
           </div>
-          <!-- Spectrogram Overlay -->
           <div>
             <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem">
               <span>Spec Overlay</span>
@@ -293,7 +309,6 @@
             </div>
             <canvas id="specOverlayCanvas" class="viz-canvas diag-spec-cv" aria-label="Spectrogram overlays"></canvas>
           </div>
-          <!-- LUFS Meter -->
           <div>
             <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem"><span>LUFS Meter</span></div>
             <canvas id="lufsCanvas" class="viz-canvas diag-lufs-cv" aria-label="LUFS meter"></canvas>
@@ -305,8 +320,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Row 3: ML Saliency | Speaker Cluster -->
         <div class="diag-row2">
           <div>
             <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem"><span>ML Saliency</span><span class="viz-badge">Hot</span></div>
@@ -317,8 +330,6 @@
             <canvas id="clusterCanvas" class="viz-canvas diag-cluster-cv" aria-label="Speaker cluster analysis"></canvas>
           </div>
         </div>
-
-        <!-- Structured log panel -->
         <div id="diagLog" class="diag-log"></div>
       </div>
 
@@ -348,8 +359,6 @@
           <span>Speaker Isolation</span>
           <span class="viz-badge">Hybrid ML+DSP</span>
         </div>
-
-        <!-- Global isolation settings with explanations -->
         <div class="isolation-globals">
           <div class="sr-row" data-desc="Selects the isolation algorithm. Hybrid combines ML neural separation with classical DSP filters for best quality. ML Only uses BSRNN neural network exclusively. Classical DSP uses traditional spectral gating and filtering.">
             <label class="sr-label" for="isolationMethodSelect">Method</label>
@@ -359,17 +368,17 @@
               <option value="classical">Classical DSP</option>
             </select>
           </div>
-          <div class="sr-row" data-desc="Minimum confidence threshold for speaker detection. Higher values require stronger voice signatures — fewer false positives but may miss quieter speech. Lower values catch more speech but risk including noise.">
+          <div class="sr-row" data-desc="Minimum confidence threshold for speaker detection.">
             <label class="sr-label" for="isolationConfidenceSlider">Confidence</label>
             <input type="range" id="isolationConfidenceSlider" min="40" max="95" value="65" step="1" />
             <span id="isolationConfidenceReadout" class="sr-val">65%</span>
           </div>
-          <div class="sr-row" data-desc="Controls how much background audio (non-voice) remains in the output. 0% = fully suppressed background (clean voice only). 100% = full background level preserved alongside the isolated voice.">
+          <div class="sr-row" data-desc="Controls how much background audio remains in the output.">
             <label class="sr-label" for="isolationBgVolumeSlider">Bg Level</label>
             <input type="range" id="isolationBgVolumeSlider" min="0" max="100" value="0" step="1" />
             <span id="isolationBgReadout" class="sr-val">0%</span>
           </div>
-          <div class="sr-row" data-desc="Applies post-processing refinement to the spectral separation mask. Smooths edges between voice and noise regions, reducing artifacts like musical noise and spectral tearing. Disable for raw unprocessed masks.">
+          <div class="sr-row" data-desc="Applies post-processing refinement to the spectral separation mask.">
             <label class="sr-label" for="isolationMaskRefine">Mask Refine</label>
             <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
               <input type="checkbox" id="isolationMaskRefine" checked />
@@ -377,13 +386,9 @@
             </label>
           </div>
         </div>
-
-        <!-- Dynamic speaker cards (built by isolation-controls.js) -->
         <div id="speakerCardsGrid">
           <span style="color:#4b5563;font-size:12px;">Process audio to detect speakers</span>
         </div>
-
-        <!-- Voiceprint enrollment -->
         <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <span class="sr-label">Voiceprint</span>
           <span id="voiceprintStatus" style="font-size:11px;color:#9ca3af;">Not enrolled</span>
@@ -443,26 +448,6 @@
     <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Stop</button>
   </div>
 
-  <!--
-    Script load order (MUST NOT CHANGE):
-     1. ring-buffer              — SAB ring helpers
-     2. pipeline-state           — shared state store
-     3. dsp-core                 — offline DSP engine
-     4. batch-orchestrator       — batch queue
-     5. analytics                — telemetry stub
-     6. license-manager          — paywall gate
-     6b. auth.js                  — login overlay + session management
-     7. app.js                   — defines VoiceIsolatePro class (includes merged patches)
-     8. ai-engine-v2.js          — AI reasoning engine
-     9. ai-intelligence.js       — AI analysis helpers
-    10. ml-worker-models-patch.js— ML model manifest + graceful degradation
-    11. ml-worker-fetch-cache.js — IndexedDB model cache + chunked download
-    12. pipeline-orchestrator.js — PipelineOrchestrator + bootstrap IIFE
-    13. vip-boot.js              — instantiates app, sets window._vipApp — MUST BE LAST
-  -->
-  <!-- Libs (local only, no CDN) -->
-  <!-- /lib/three.min.js already loaded in <head> -->
-
   <!-- Core modules -->
   <script src="./dsp-core.js"></script>
   <script src="./ring-buffer.js"></script>
@@ -477,45 +462,26 @@
   <script src="./ml-worker-models-patch.js"></script>
   <script src="./ml-worker-fetch-cache.js"></script>
   <script src="./pipeline-orchestrator.js"></script>
-
   <script src="./batch-processor.js"></script>
-
-  <!-- Visualization Engine (VU meters, diarization timeline, Inferno LUT,
-       speaker color palette). Must be loaded BEFORE app.js so that
-       `VisualizationEngine` and `VIP_SPEAKER_COLORS` are available when the
-       app constructs its engine instance during init(). -->
   <script src="./visuals.js"></script>
-
   <script src="./session-persist.js"></script>
-
-  <!-- Main app — must be before vip-boot -->
   <script src="./app.js"></script>
   <script src="./vip-boot.js"></script>
 
-  <!-- ── Runtime bootstrap safety net ──────────────────────────────────────
-       Fires after ALL scripts have parsed. Catches the edge case where
-       vip-boot.js ran before Auth was defined (script-order race).
-       Does nothing if vip-boot.js already handled everything correctly.
-  ── -->
   <script>
     (function _vipSafetyNet() {
       function run() {
-        // 1. Ensure app is instantiated
         if (!window._vipApp && typeof VoiceIsolatePro === 'function') {
           try {
             var app = new VoiceIsolatePro();
-            if (typeof app.init === 'function' && !app._initCalled) {
-              app.init();
-            }
+            if (typeof app.init === 'function' && !app._initCalled) { app.init(); }
             app._initCalled = true;
             window.vip     = app;
             window._vipApp = app;
             console.info('[safety-net] VoiceIsolatePro instantiated ✓');
           } catch(e){ console.warn('[safety-net] instantiation failed:', e); }
         }
-        // 2. Ensure Auth modal is shown
         if (typeof Auth !== 'undefined' && typeof Auth.init === 'function') {
-          // Only call if not already initialised (Auth.isLoggedIn is set after init)
           if (!Auth.isLoggedIn && Auth.currentUser === null) {
             Auth.init().catch(function(e){ console.warn('[safety-net] Auth.init:', e); });
           }
@@ -523,18 +489,13 @@
       }
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', run, { once: true });
-      } else {
-        run();
-      }
+      } else { run(); }
     })();
   </script>
 
-  <!-- Diarization timeline + Isolation controls bridge -->
   <script type="module">
     import * as DT from './diarization-timeline.js';
     import * as IC from './isolation-controls.js';
-
-    // Expose to window for classic-script interop
     window.onDiarizationResult = DT.onDiarizationResult;
     window.seekTimeline        = DT.seekTimeline;
     window.setSpeakerVolume    = DT.setSpeakerVolume;
@@ -544,8 +505,6 @@
     window._diarZoomFit        = DT.fitTimeline;
     window.updateSpeakerCards  = IC.updateSpeakerCards;
     window.setActiveSpeakerCard= IC.setActiveSpeakerCard;
-
-    // Init both modules once orchestrator is ready
     function _boot() {
       const orch = window._vipOrchestrator;
       if (!orch) return;
@@ -571,12 +530,9 @@
         onEnrollFromSeg: (id) => orch.mlWorker?.postMessage({ type: 'enrollFromDiarization', payload: { speakerId: id } }),
       });
     }
-
-    // Poll for orchestrator ready (typically < 200ms)
     const t = setInterval(() => {
       if (window._vipOrch?.initialized) { clearInterval(t); _boot(); }
     }, 100);
-    // Timeout fallback
     setTimeout(() => { clearInterval(t); _boot(); }, 8000);
   </script>
 
