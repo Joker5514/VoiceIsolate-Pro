@@ -368,7 +368,7 @@
               <option value="classical">Classical DSP</option>
             </select>
           </div>
-          <div class="sr-row" data-desc="Minimum confidence threshold for speaker detection.">
+          <div class="sr-row" data-desc="Minimum confidence threshold for speaker detection. Higher values require stronger voice signatures — fewer false positives but may miss quieter speech. Lower values catch more speech but risk including noise.">
             <label class="sr-label" for="isolationConfidenceSlider">Confidence</label>
             <input type="range" id="isolationConfidenceSlider" min="40" max="95" value="65" step="1" />
             <span id="isolationConfidenceReadout" class="sr-val">65%</span>
