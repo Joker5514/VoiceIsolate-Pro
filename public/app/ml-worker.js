@@ -65,9 +65,11 @@ function initialize() {
 
 
 // ── Diarization / isolation runtime state ──────────────────────────────────
-let currentIsolateSpeakerId = null;
-let speakerVolumeMap        = {};
-let voiceprintEmbedding     = null;
+// Stubbed state: populated by message handlers below; will be consumed once
+// ECAPA-TDNN cosine-sim clustering replaces the energy-based stub.
+let _currentIsolateSpeakerId = null; // eslint-disable-line no-unused-vars
+let _speakerVolumeMap        = {};   // eslint-disable-line no-unused-vars
+let _voiceprintEmbedding     = null; // eslint-disable-line no-unused-vars
 
 /**
  * runDiarization — energy-based 500ms windowed speaker segmentation.
@@ -122,7 +124,7 @@ async function runDiarization(pcm, sampleRate) {
 async function enrollVoiceprint(pcm) {
   let sum = 0;
   for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
-  voiceprintEmbedding = Math.sqrt(sum / pcm.length); // mean-energy stub
+  _voiceprintEmbedding = Math.sqrt(sum / pcm.length); // mean-energy stub
 }
 
 // ── 1. Message dispatcher ─────────────────────────────────────────────────────
@@ -259,12 +261,12 @@ self.onmessage = async (ev) => {
 
   // ── isolateSpeaker ───────────────────────────────────────────────────────
   if (type === 'isolateSpeaker') {
-    currentIsolateSpeakerId = (payload || {}).speakerId ?? null;
+    _currentIsolateSpeakerId = (payload || {}).speakerId ?? null;
   }
 
   // ── speakerVolumes ───────────────────────────────────────────────────────
   if (type === 'speakerVolumes') {
-    speakerVolumeMap = payload || {};
+    _speakerVolumeMap = payload || {};
   }
 
   // ── enrollVoiceprint ─────────────────────────────────────────────────────
@@ -287,7 +289,7 @@ self.onmessage = async (ev) => {
 
   // ── clearVoiceprint ──────────────────────────────────────────────────────
   if (type === 'clearVoiceprint') {
-    voiceprintEmbedding = null;
+    _voiceprintEmbedding = null;
     self.postMessage({ type: 'voiceprintCleared' });
   }
 
@@ -415,7 +417,6 @@ async function pollOnce() {
 
 // ── 5. Combined mask inference pipeline ──────────────────────────────────────
 // Reusable mask buffer — avoids one Float32Array allocation per inference call.
-let _isProcessing = false;
 let _maskBuffer = null;
 
 async function buildMask(magnitudes) {

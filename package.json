@@ -86,11 +86,12 @@
     "@vercel/analytics": "^2.0.1",
     "express": "^4.21.2",
     "jsdom": "^29.0.1",
-    "onnxruntime-web": "1.17.0"
+    "onnxruntime-web": "1.20.1"
   },
   "pnpm": {
     "overrides": {
-      "path-to-regexp": "0.1.12",
+      "path-to-regexp": "0.1.13",
+      "protobufjs": ">=7.5.5",
       "@xmldom/xmldom": ">=0.8.12",
       "picomatch@<2.3.2": "2.3.2",
       "picomatch@>=4.0.0 <4.0.4": "4.0.4",

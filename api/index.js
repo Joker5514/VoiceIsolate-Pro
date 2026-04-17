@@ -27,7 +27,7 @@ const router = express.Router();
 router.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    version: '22.0.0',
+    version: '24.0.0',
     timestamp: new Date().toISOString(),
     services: {
       stripe: !!process.env.STRIPE_SECRET_KEY,
@@ -36,6 +36,10 @@ router.get('/health', (req, res) => {
     },
   });
 });
+
+// ─── Stripe webhook needs the raw body for signature verification — mount
+//     express.raw() BEFORE express.json() so it wins for this one route.
+router.use('/webhook/stripe', express.raw({ type: 'application/json' }));
 
 // ─── JSON Body Parser (for all non-webhook routes) ────────────────────────────
 router.use(express.json());
