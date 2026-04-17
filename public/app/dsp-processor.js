@@ -126,31 +126,32 @@ function processEnvFollower(ef, x) {
 // NOTE: duplicated intentionally from public/app/dsp-core.js (canonical helper).
 // AudioWorkletProcessor runs in an isolated global scope and this file is loaded
 // directly via addModule(); direct imports from dsp-core are not used here.
-// Hardened Wiener filter — aggressive voice isolation
+// Wiener suppression gain in [beta, 1]. Pure attenuation — never amplifies.
+// Kept in sync with public/app/dsp-core.js (canonical).
 function wienerFilter(noiseMag, signalMag, params = {}) {
-  const alpha = params.noiseOverSubtract || 2.0;
-  const beta = params.spectralFloor || 0.001;
-  const voiceBoost = params.voiceBoost || 1.5;
+  const alphaRaw = Number.isFinite(params.noiseOverSubtract) ? params.noiseOverSubtract : 1.2;
+  const betaRaw = Number.isFinite(params.spectralFloor) ? params.spectralFloor : 0.02;
+  const alpha = Math.max(1e-6, alphaRaw);
+  const beta = Math.min(1.0, Math.max(0.0, betaRaw));
 
   const noisePow = noiseMag * noiseMag;
   const sigPow = signalMag * signalMag;
   const snr = sigPow / (alpha * noisePow + 1e-10);
-  const suppressionCurve = snr / (snr + 1.0);
-  const gain = Math.max(beta, suppressionCurve * suppressionCurve);
-  return gain * voiceBoost;
+  const gain = snr / (snr + 1.0);
+  return Math.max(beta, Math.min(1.0, gain));
 }
 
-// Voice frequency mask — boosts 80Hz-4kHz, hard-suppresses outside
+// Voice frequency mask — gentle bandpass weighting (kept in sync with dsp-core.js).
 function getVoiceMaskGain(binIndex, sampleRate, fftSize) {
   const freq = binIndex * sampleRate / fftSize;
-  if (freq < 60) return 0.0;
-  if (freq < 80) return 0.3;
-  if (freq < 300) return 0.85;
-  if (freq <= 3400) return 1.0;
-  if (freq <= 4000) return 0.9;
-  if (freq <= 6000) return 0.6;
-  if (freq <= 8000) return 0.25;
-  return 0.05;
+  if (freq < 40)    return 0.30;
+  if (freq < 80)    return 0.60;
+  if (freq < 200)   return 0.90;
+  if (freq <= 4000) return 1.0;
+  if (freq <= 6000) return 0.90;
+  if (freq <= 9000) return 0.75;
+  if (freq <= 12000) return 0.55;
+  return 0.40;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -245,9 +246,8 @@ class DSPProcessor extends AudioWorkletProcessor {
       // Misc
       humReduce:        50,    // %
       vadThreshold:  0.005,
-      noiseOverSubtract: 2.0,
-      spectralFloor: 0.001,
-      voiceBoost: 1.5,
+      noiseOverSubtract: 1.2,
+      spectralFloor: 0.02,
       bypass:        false,
     };
     this._rebuildFilters(this._sampleRate);

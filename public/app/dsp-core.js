@@ -111,36 +111,40 @@ class AdaptiveNoiseFloor {
   }
 }
 
-// Hardened Wiener filter — aggressive voice isolation
+// Wiener suppression gain in [beta, 1]. Pure attenuation — never amplifies.
+// Frequency-dependent boosting belongs in a separate post-stage (see voice mask),
+// not baked into the Wiener gain, where >1 multipliers re-introduce noise and clip.
 function wienerFilter(noiseMag, signalMag, params = {}) {
-  const alpha = params.noiseOverSubtract || 2.0; // over-subtraction factor (was 1.0)
-  const beta = params.spectralFloor || 0.001;   // spectral floor (was 0.01 — lower = cleaner)
-  const voiceBoost = params.voiceBoost || 1.5;   // boost voice band 80Hz-4kHz
+  const alphaRaw = Number.isFinite(params.noiseOverSubtract) ? params.noiseOverSubtract : 1.2; // mild over-subtraction (was 2.0 — caused hollow voice)
+  const betaRaw = Number.isFinite(params.spectralFloor) ? params.spectralFloor : 0.02;         // -34 dB floor prevents musical noise (was 0.001)
+  const alpha = Math.max(1e-6, alphaRaw);
+  const beta = Math.min(1.0, Math.max(0.0, betaRaw));
 
   const noisePow = noiseMag * noiseMag;
   const sigPow = signalMag * signalMag;
   const snr = sigPow / (alpha * noisePow + 1e-10);
 
-  // Sigmoid-shaped suppression curve for sharper voice/noise boundary
-  const suppressionCurve = snr / (snr + 1.0);
-  const gain = Math.max(beta, suppressionCurve * suppressionCurve); // squared for aggression
-
-  return gain * voiceBoost;
+  // Wiener-style suppression curve, single-power (not squared). Squaring produced
+  // double the attenuation in dB and created spectral holes / chirping artifacts.
+  const gain = snr / (snr + 1.0);
+  return Math.max(beta, Math.min(1.0, gain));
 }
 
-// Voice frequency mask — boosts 80Hz-4kHz, hard-suppresses outside
-// binIndex: the FFT bin index, sampleRate: audio sample rate, fftSize: FFT size
+// Voice frequency mask — gentle bandpass weighting.
+// Brick-wall cuts (0.0 sub-bass, 0.05 high-band) made output sound like a
+// telephone line. Use a smooth weighting that preserves naturalness while
+// favouring the 200 Hz–5 kHz speech intelligibility range.
 function getVoiceMaskGain(binIndex, sampleRate, fftSize) {
   const freq = binIndex * sampleRate / fftSize;
 
-  if (freq < 60) return 0.0;           // sub-bass: kill
-  if (freq < 80) return 0.3;           // low rolloff
-  if (freq < 300) return 0.85;         // low voice fundamentals
-  if (freq <= 3400) return 1.0;        // CORE VOICE BAND — full pass
-  if (freq <= 4000) return 0.9;        // soft rolloff
-  if (freq <= 6000) return 0.6;        // sibilants — partial keep
-  if (freq <= 8000) return 0.25;       // high presence — attenuate
-  return 0.05;                         // ultra-high: near-kill
+  if (freq < 40)   return 0.30;        // very low: rumble — attenuate, don't kill
+  if (freq < 80)   return 0.60;        // bass / male fundamentals
+  if (freq < 200)  return 0.90;        // voice fundamentals: keep nearly full
+  if (freq <= 4000) return 1.0;        // CORE VOICE BAND
+  if (freq <= 6000) return 0.90;       // sibilants / presence — keep
+  if (freq <= 9000) return 0.75;       // upper presence / breath — preserve naturalness
+  if (freq <= 12000) return 0.55;      // air band
+  return 0.40;                         // ultra-high: gently attenuate (no near-kill)
 }
 
 /**
@@ -898,16 +902,21 @@ const DSPCore = {
     return { left: out_l, right: out_r };
   },
 
-  /** S32: True peak limiter with 4x oversampling */
+  /** S32: Soft-knee peak limiter. Output is strictly bounded by `ceiling`.
+   *  The knee starts ~3 dB below the ceiling so peaks compress smoothly
+   *  rather than slamming into a hard threshold (which created derivative
+   *  discontinuities and clicks on transients). */
   truePeakLimit(data, ceilingDb) {
     const ceiling = Math.pow(10, ceilingDb / 20);
-    // Simplified: hard clip with soft-knee
+    const knee = ceiling * 0.7079;             // -3 dB below ceiling
+    const range = ceiling - knee;
     for (let i = 0; i < data.length; i++) {
-      if (data[i] > ceiling) {
-        data[i] = ceiling * Math.tanh(data[i] / ceiling);
-      } else if (data[i] < -ceiling) {
-        data[i] = -ceiling * Math.tanh(data[i] / -ceiling);
-      }
+      const x = data[i];
+      const a = Math.abs(x);
+      if (a <= knee) continue;                 // linear region
+      const over = (a - knee) / range;         // ≥ 0
+      const compressed = knee + range * Math.tanh(over);
+      data[i] = (x < 0 ? -compressed : compressed);
     }
     return data;
   },

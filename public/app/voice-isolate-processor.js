@@ -63,7 +63,8 @@ const _hannCache = new Map();
 function hannWindow(N) {
   if (_hannCache.has(N)) return _hannCache.get(N);
   const w = new Float32Array(N);
-  for (let i = 0; i < N; i++) w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (N - 1)));
+  // Periodic Hann (divisor N, not N-1) — required for COLA at 75% overlap
+  for (let i = 0; i < N; i++) w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / N));
   _hannCache.set(N, w);
   return w;
 }
