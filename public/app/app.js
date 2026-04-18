@@ -601,7 +601,8 @@ class VoiceIsolatePro {
     const clamped = Math.max(this._uiScaleMin, Math.min(this._uiScaleMax, Math.round(s * 100) / 100));
     const isSavedScale = clamped === this._uiScaleSaved;
     this._uiScale = clamped;
-    document.documentElement.style.zoom = clamped === 1 ? '' : String(clamped);
+    const docEl = typeof document !== 'undefined' ? document.documentElement : null;
+    if (docEl && docEl.style) docEl.style.zoom = clamped === 1 ? '' : String(clamped);
     if (this.dom.uiScaleVal) this.dom.uiScaleVal.textContent = Math.round(clamped * 100) + '%';
     if (!isSavedScale && this._uiScaleSaveTimer) {
       clearTimeout(this._uiScaleSaveTimer);
