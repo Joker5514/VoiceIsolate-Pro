@@ -35,6 +35,8 @@ class PipelineOrchestrator {
     this.mlWorker     = null;
     /** @type {boolean} */
     this.mlReady      = false;
+    /** @type {boolean} */
+    this.workletReady = false;
     /** @type {string} */
     this.mlProvider   = 'wasm';  // updated after ONNX init
     /** @type {boolean} */
@@ -55,6 +57,7 @@ class PipelineOrchestrator {
 
     // Cached ML worker init promise — allows idempotent pre-warming before gesture
     this._mlInitPromise = null;
+    this._workletReadyPromise = null;
 
     this._isolationParams = {
       isolationMethod: 'hybrid',
@@ -129,8 +132,11 @@ class PipelineOrchestrator {
     if (!this.ctx) throw new Error('AudioContext not initialised');
     if (!this._workletModulesLoaded) {
       try {
-        await this.ctx.audioWorklet.addModule('./dsp-processor.js');
-        await this.ctx.audioWorklet.addModule('./voice-isolate-processor.js');
+        await this.ctx.audioWorklet.addModule('/app/dsp-processor.js');
+        await this.ctx.audioWorklet.addModule('/app/voice-isolate-processor.js');
+        console.info('[Orchestrator] AudioWorklet modules loaded', {
+          processorPath: '/app/voice-isolate-processor.js'
+        });
       } catch (err) {
         console.error('[Orchestrator] Failed to load AudioWorklet module:', err);
         throw err;
@@ -155,9 +161,13 @@ class PipelineOrchestrator {
     // Listen for 'ready' ack from processor
     this.workletNode.port.onmessage = (e) => {
       if (e.data.type === 'ready') {
+        this.workletReady = true;
         console.info('[Orchestrator] DSP worklet ready');
+      } else if (e.data.type === 'error') {
+        console.warn('[Orchestrator] DSP worklet error:', e.data.msg);
       }
     };
+    this.workletReady = true;
   }
 
   // ── SharedArrayBuffer ring allocation ───────────────────────────────────
@@ -193,12 +203,23 @@ class PipelineOrchestrator {
           halfN:        this._halfN
         });
       }
+      this.workletReady = true;
     } catch (err) {
       // SharedArrayBuffer blocked (missing COOP/COEP) — graceful degradation
       console.warn('[Orchestrator] SharedArrayBuffer unavailable; live ML masking disabled:', err.message);
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
+      this.workletReady = false;
     }
+  }
+
+  async waitForReadiness(timeoutMs = 5000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (this.workletReady && this.mlReady) return true;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    return false;
   }
 
   // ── ONNX Runtime + ML Worker initialisation ─────────────────────────────
@@ -296,6 +317,11 @@ class PipelineOrchestrator {
         } else if (type === 'log') {
           const lvl = e.data.level;
           if (console[lvl]) console[lvl]('[ml-worker]', e.data.msg);
+        } else if (type === 'vad_status') {
+          if (window._vipApp) window._vipApp.vadModelMissing = !!e.data.vadModelMissing;
+          if (e.data.vadModelMissing) {
+            console.warn('[Orchestrator] Fallback VAD active (Silero model missing)');
+          }
         } else if (type === 'diarization') {
           // ── Diarization result → update app state + timeline + speaker cards
           const { segments = [], duration = 0, speakerCount = 0 } = e.data;
@@ -362,6 +388,13 @@ class PipelineOrchestrator {
       console.warn('[Orchestrator] connectSource called before init()');
       return;
     }
+    if (!this.workletReady || !this.mlReady) {
+      console.warn('[Orchestrator] connectSource blocked: pipeline not ready', {
+        workletReady: this.workletReady,
+        workerReady: this.mlReady
+      });
+      return;
+    }
     sourceNode.connect(this.workletNode);
   }
 
@@ -412,6 +445,14 @@ class PipelineOrchestrator {
         type:   'setWeights',
         demucs: params.voiceIso / 100,
         bsrnn:  1 - params.voiceIso / 100
+      });
+      this.mlWorker.postMessage({
+        type: 'setParams',
+        payload: {
+          spectralFloor: Number.isFinite(params.spectralFloor) ? params.spectralFloor : 0.005,
+          noiseReduce: Math.max(0, Math.min(1, (params.nrAmount || 0) / 100)),
+          forensicMode: !!window._vipApp?.forensicMode
+        }
       });
     }
   }
@@ -601,8 +642,8 @@ class PipelineOrchestrator {
     orch._preWarmWorklet = (async () => {
       try {
         const suspCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-        await suspCtx.audioWorklet.addModule('./dsp-processor.js');
-        await suspCtx.audioWorklet.addModule('./voice-isolate-processor.js');
+        await suspCtx.audioWorklet.addModule('/app/dsp-processor.js');
+        await suspCtx.audioWorklet.addModule('/app/voice-isolate-processor.js');
         orch._preWarmedCtx = suspCtx;
         console.info('[Orchestrator] AudioWorklet pre-warmed');
       } catch (e) {

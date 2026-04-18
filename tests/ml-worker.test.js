@@ -138,16 +138,19 @@ describe('ml-worker.js', () => {
     expect(readyMsg.models.vad).toBe(true);
   });
 
-  it('uses dynamic SAB chunk size for demucs tensor shape', async () => {
+  it('uses PCM chunks for demucs input and never spectral mag_input', async () => {
     const demucsRun = jest.fn().mockImplementation(async (feeds) => {
-      const bins = feeds.mag_input ? feeds.mag_input.dims[2] : 0;
+      const bins = feeds.input ? feeds.input.dims[2] : 0;
       return { vocal_mask: { data: new Float32Array(bins).fill(1) } };
     });
     workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({ run: demucsRun });
 
     const chunkSize = 333;
-    const inputSAB = new SharedArrayBuffer((chunkSize + 4) * Float32Array.BYTES_PER_ELEMENT);
-    const outputSAB = new SharedArrayBuffer((chunkSize + 4) * Float32Array.BYTES_PER_ELEMENT);
+    const inputBytes = Int32Array.BYTES_PER_ELEMENT * 4 + Float32Array.BYTES_PER_ELEMENT * chunkSize * 2;
+    const outputBytes = Int32Array.BYTES_PER_ELEMENT * 4 + Float32Array.BYTES_PER_ELEMENT * chunkSize;
+    const inputSAB = new SharedArrayBuffer(inputBytes);
+    const outputSAB = new SharedArrayBuffer(outputBytes);
+    const pcmChunk = new Float32Array(chunkSize).fill(0.1);
 
     await workerGlobal.self.onmessage({
       data: {
@@ -155,6 +158,8 @@ describe('ml-worker.js', () => {
         payload: {
           inputSAB,
           outputSAB,
+          fftSize: 664,
+          halfN: chunkSize,
           allowedModels: ['demucs'],
           allowedStages: 10,
           preferredProviders: ['wasm'],
@@ -163,15 +168,18 @@ describe('ml-worker.js', () => {
       },
     });
 
-    await workerGlobal.self.onmessage({ data: { type: 'process' } });
+    for (let i = 0; i < 95; i++) {
+      await workerGlobal.self.onmessage({ data: { type: 'process', payload: { pcmChunk } } });
+    }
 
     const processed = postedMessages.find((m) => m.type === 'processed');
     expect(processed).toBeDefined();
     expect(processed.output.length).toBe(chunkSize);
     expect(demucsRun).toHaveBeenCalled();
-    const processCall = demucsRun.mock.calls.find(([feeds]) => feeds && feeds.mag_input);
+    const processCall = demucsRun.mock.calls.find(([feeds]) => feeds && feeds.input);
     expect(processCall).toBeDefined();
-    expect(processCall[0].mag_input.dims).toEqual([1, 1, chunkSize]);
+    expect(processCall[0].input.dims).toEqual([1, 1, chunkSize]);
+    expect(processCall[0].mag_input).toBeUndefined();
 
     await workerGlobal.self.onmessage({ data: { type: 'reset' } });
   });

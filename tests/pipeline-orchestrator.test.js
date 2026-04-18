@@ -305,6 +305,8 @@ describe('PipelineOrchestrator — connectSource / disconnectSource', () => {
   test('connectSource calls node.connect(workletNode) when workletNode exists', () => {
     const orch         = new PipelineOrchestrator();
     orch.workletNode   = new MockAudioWorkletNode();
+    orch.workletReady  = true;
+    orch.mlReady       = true;
     const sourceNode   = { connect: jest.fn() };
     orch.connectSource(sourceNode);
     expect(sourceNode.connect).toHaveBeenCalledWith(orch.workletNode);
