@@ -51,7 +51,19 @@
       try {
         var s = parseFloat(localStorage.getItem('vip_ui_scale'));
         if (isFinite(s) && s >= 0.5 && s <= 2) {
-          document.documentElement.style.zoom = s;
+          var rootStyle = document.documentElement.style;
+          var supportsZoom = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('zoom', '1');
+          if (supportsZoom) {
+            rootStyle.zoom = String(s);
+            rootStyle.transform = '';
+            rootStyle.transformOrigin = '';
+            rootStyle.width = '';
+          } else {
+            rootStyle.zoom = '';
+            rootStyle.transform = 'scale(' + s + ')';
+            rootStyle.transformOrigin = 'top left';
+            rootStyle.width = (100 / s) + '%';
+          }
         }
       } catch(e) {}
     })();
