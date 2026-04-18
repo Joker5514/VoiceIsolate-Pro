@@ -359,6 +359,7 @@ class VoiceIsolatePro {
     this._rndBuf = new Uint32Array(4096);
     this._rndIdx = 0;
     this._sliderContextResumed = false;
+    this._uiScaleSaveTimer = 0;
     this.init();
   }
 
@@ -598,19 +599,28 @@ class VoiceIsolatePro {
   }
   _uiScaleApply(s) {
     const clamped = Math.max(this._uiScaleMin, Math.min(this._uiScaleMax, Math.round(s * 100) / 100));
+    const isSavedScale = clamped === this._uiScaleSaved;
     this._uiScale = clamped;
     document.documentElement.style.zoom = clamped === 1 ? '' : String(clamped);
     if (this.dom.uiScaleVal) this.dom.uiScaleVal.textContent = Math.round(clamped * 100) + '%';
-    if (this.dom.uiScaleSave) this.dom.uiScaleSave.classList.toggle('saved', clamped === this._uiScaleSaved);
+    if (!isSavedScale && this._uiScaleSaveTimer) {
+      clearTimeout(this._uiScaleSaveTimer);
+      this._uiScaleSaveTimer = 0;
+    }
+    if (this.dom.uiScaleSave) {
+      this.dom.uiScaleSave.classList.toggle('saved', isSavedScale);
+      this.dom.uiScaleSave.textContent = isSavedScale ? 'Saved' : 'Save';
+    }
   }
   _uiScaleSave() {
     try { localStorage.setItem('vip_ui_scale', String(this._uiScale)); } catch { /* storage sandboxed */ }
     this._uiScaleSaved = this._uiScale;
-    if (this.dom.uiScaleSave) {
-      this.dom.uiScaleSave.classList.add('saved');
-      this.dom.uiScaleSave.textContent = 'Saved';
-      setTimeout(() => { if (this.dom.uiScaleSave) this.dom.uiScaleSave.textContent = 'Save'; }, 1200);
-    }
+    this._uiScaleApply(this._uiScale);
+    if (this._uiScaleSaveTimer) clearTimeout(this._uiScaleSaveTimer);
+    this._uiScaleSaveTimer = setTimeout(() => {
+      this._uiScaleSaveTimer = 0;
+      this._uiScaleApply(this._uiScale);
+    }, 1200);
   }
 
   bindEvents() {
