@@ -483,12 +483,15 @@ class PipelineOrchestrator {
    * Safe to call before workletNode is created — updateParams() guards itself.
    */
   _bindSliders() {
-    document.querySelectorAll('input[type="range"][data-param]').forEach((el) => {
+    // Build the snapshot once up-front, then mutate the single changed field
+    // on each 'input' event. Re-querying all 52 sliders per-event was O(N)
+    // DOM work on every interaction; this drops it to O(1).
+    const sliders = document.querySelectorAll('input[type="range"][data-param]');
+    const snapshot = {};
+    sliders.forEach((s) => { snapshot[s.dataset.param] = parseFloat(s.value); });
+    sliders.forEach((el) => {
       el.addEventListener('input', () => {
-        const snapshot = {};
-        document.querySelectorAll('input[type="range"][data-param]').forEach((s) => {
-          snapshot[s.dataset.param] = parseFloat(s.value);
-        });
+        snapshot[el.dataset.param] = parseFloat(el.value);
         this.updateParams(snapshot);
       });
     });
