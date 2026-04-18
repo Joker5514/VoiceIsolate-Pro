@@ -148,6 +148,13 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     this.fftReal = new Float32Array(this.FFT_SIZE);
     this.fftImag = new Float32Array(this.FFT_SIZE);
 
+    // Hot-path scratch buffers — reused every hop to avoid ~600KB/s GC churn
+    // at 48kHz/1024-hop. Resized together with fftReal/fftImag when FFT_SIZE
+    // is renegotiated via 'initRingBuffers'.
+    this._frameScratch    = new Float32Array(this.FFT_SIZE);
+    this._phaseScratch    = new Float32Array(this.HALF_N);
+    this._fallbackMagScratch = new Float32Array(this.HALF_N);
+
     // Hann window (precomputed)
     this.window = hannWindow(this.FFT_SIZE);
 
@@ -190,6 +197,9 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
         this.window   = hannWindow(this.FFT_SIZE);
         this.fftReal  = new Float32Array(this.FFT_SIZE);
         this.fftImag  = new Float32Array(this.FFT_SIZE);
+        this._frameScratch       = new Float32Array(this.FFT_SIZE);
+        this._phaseScratch       = new Float32Array(this.HALF_N);
+        this._fallbackMagScratch = new Float32Array(this.HALF_N);
         // Re-size accumulation buffers if FFT_SIZE changed
         this.inputAccum      = new Float32Array(this.FFT_SIZE * 4);
         this.outputAccum     = new Float32Array(this.FFT_SIZE * 4);
@@ -255,8 +265,9 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
   // ─── Single Forward STFT Frame ─────────────────────────────────────────
   // Populates fftReal[] and fftImag[] via in-place FFT.
   // Writes HALF_N magnitudes then HALF_N phases into inputSAB.
-  // Returns a NEW Float32Array containing the phase values so the caller
-  // can reconstruct the spectrum after iFFT clobbers fftReal/fftImag.
+  // Returns the cached phase scratch buffer so the caller can reconstruct
+  // the spectrum after iFFT clobbers fftReal/fftImag. The buffer is owned
+  // by the processor and must be consumed before the next STFT frame.
   _forwardSTFTFrame(audioData) {
     const N = this.FFT_SIZE;
     const halfN = this.HALF_N;
@@ -264,21 +275,30 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     const imag = this.fftImag;
     const w    = this.window;
 
-    for (let i = 0; i < N; i++) {
-      real[i] = (i < audioData.length) ? audioData[i] * w[i] : 0;
+    const audioLen = audioData.length;
+    const copyLen  = audioLen < N ? audioLen : N;
+    for (let i = 0; i < copyLen; i++) {
+      real[i] = audioData[i] * w[i];
+      imag[i] = 0;
+    }
+    for (let i = copyLen; i < N; i++) {
+      real[i] = 0;
       imag[i] = 0;
     }
 
     // ── SINGLE FORWARD FFT ──
     fft(real, imag, false);
 
-    const phase = new Float32Array(halfN);
+    const phase = this._phaseScratch;
     if (this.inputSAB) {
       for (let k = 0; k < halfN; k++) {
-        const mag = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
+        const re = real[k];
+        const im = imag[k];
+        const mag = Math.sqrt(re * re + im * im);
+        const ph  = Math.atan2(im, re);
         this.inputSAB[k]         = mag;
-        this.inputSAB[halfN + k] = Math.atan2(imag[k], real[k]);
-        phase[k]                 = this.inputSAB[halfN + k];
+        this.inputSAB[halfN + k] = ph;
+        phase[k]                 = ph;
       }
       Atomics.store(this.ctrlIn, 2, 1);
       Atomics.notify(this.ctrlIn, 2, 1);
@@ -358,14 +378,16 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     // [BUG 1 FIX] Use inputProcessed (not outputHead/outputTail) to track
     // how many samples have been fed through the STFT pipeline.
     while (this.inputHead - this.inputProcessed >= this.HOP_SIZE) {
-      // Gather newest FFT_SIZE samples (the analysis frame)
-      const frame = new Float32Array(this.FFT_SIZE);
-      const base  = this.inputProcessed + this.HOP_SIZE - this.FFT_SIZE;
-
-      for (let i = 0; i < this.FFT_SIZE; i++) {
-        frame[i] = (base + i >= 0)
-          ? this.inputAccum[(base + i) % accumLen]
-          : 0;
+      // Gather newest FFT_SIZE samples (the analysis frame) into a reusable
+      // scratch buffer. Splitting into three regions removes a per-sample
+      // branch on (base + i >= 0).
+      const frame = this._frameScratch;
+      const N     = this.FFT_SIZE;
+      const base  = this.inputProcessed + this.HOP_SIZE - N;
+      const zeroPrefix = base < 0 ? -base : 0;
+      for (let i = 0; i < zeroPrefix; i++) frame[i] = 0;
+      for (let i = zeroPrefix; i < N; i++) {
+        frame[i] = this.inputAccum[(base + i) % accumLen];
       }
 
       // [ORDER LOCK — Bug 2]: _forwardSTFTFrame populates fftReal/fftImag.
@@ -374,12 +396,11 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       const fwdPhase = this._forwardSTFTFrame(frame);
 
       const halfN = this.HALF_N;
-      const fallbackMag = new Float32Array(halfN);
+      const fallbackMag = this._fallbackMagScratch;
       for (let k = 0; k < halfN; k++) {
-        fallbackMag[k] = Math.sqrt(
-          this.fftReal[k] * this.fftReal[k] +
-          this.fftImag[k] * this.fftImag[k]
-        );
+        const re = this.fftReal[k];
+        const im = this.fftImag[k];
+        fallbackMag[k] = Math.sqrt(re * re + im * im);
       }
       // fftReal/fftImag may now be safely overwritten by iFFT below.
 
