@@ -876,7 +876,7 @@ class VoiceIsolatePro {
         try { await this.ctx.resume(); } catch {}
       }
       // Yield to browser paint cycle to prevent UI freeze on large files
-      await new Promise(r => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(r, 0));
+      await new Promise(r => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(() => r()) : setTimeout(r, 0));
       let audioBuf = null;
       if (this.isVideo) {
         audioBuf = await this.decodeViaVideoElement(file);
