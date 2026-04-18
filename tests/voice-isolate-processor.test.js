@@ -184,7 +184,7 @@ describe('VoiceIsolateProcessor._onMessage', () => {
   });
 
   test('initRingBuffers: posts error when inputSAB is too small', () => {
-    const tinyBuf = new SharedArrayBuffer ? (() => {
+    const tinyBuf = typeof SharedArrayBuffer !== 'undefined' ? (() => {
       try { return new SharedArrayBuffer(4); } catch { return null; }
     })() : null;
 
