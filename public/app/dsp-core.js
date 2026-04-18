@@ -235,6 +235,7 @@ const DSPCore = {
    */
   inverseSTFT(mag, phase, fftSize = 4096, hopSize = 1024, outputLength = 0) {
     const window = this.hannWindow(fftSize);
+    const windowSq = this._hannSqCache(fftSize, window);
     const frameCount = mag.length;
     const halfN = fftSize / 2 + 1;
     const len = outputLength || (frameCount - 1) * hopSize + fftSize;
@@ -247,13 +248,17 @@ const DSPCore = {
 
     for (let f = 0; f < frameCount; f++) {
       const offset = f * hopSize;
+      const magF = mag[f];
+      const phaseF = phase[f];
 
       // Reconstruct complex spectrum (clear only used region)
       for (let k = 0; k < halfN; k++) {
         // Guard NaN/Inf/negative magnitudes — any corrupt bin becomes silence for that bin
-        const m = (Number.isFinite(mag[f][k]) && mag[f][k] >= 0) ? mag[f][k] : 0;
-        real[k] = m * Math.cos(phase[f][k]);
-        imag[k] = m * Math.sin(phase[f][k]);
+        const rawM = magF[k];
+        const m = (rawM >= 0 && rawM < Infinity) ? rawM : 0;
+        const ph = phaseF[k];
+        real[k] = m * Math.cos(ph);
+        imag[k] = m * Math.sin(ph);
       }
       // Mirror for negative frequencies
       for (let k = halfN; k < fftSize; k++) {
@@ -264,12 +269,12 @@ const DSPCore = {
       // Inverse FFT
       this._fft(real, imag, true);
 
-      // Overlap-add with synthesis window
-      for (let i = 0; i < fftSize; i++) {
-        if (offset + i < len) {
-          output[offset + i] += real[i] * window[i];
-          windowSum[offset + i] += window[i] * window[i];
-        }
+      // Overlap-add with synthesis window — iterate only over the in-range slice
+      // so the per-sample bounds check inside the inner loop can be removed.
+      const nMax = Math.min(fftSize, len - offset);
+      for (let i = 0; i < nMax; i++) {
+        output[offset + i] += real[i] * window[i];
+        windowSum[offset + i] += windowSq[i];
       }
     }
 
@@ -281,45 +286,81 @@ const DSPCore = {
     return output;
   },
 
-  /** Cooley-Tukey radix-2 FFT (in-place) */
+  // Cache for window² arrays (used by iSTFT overlap-add normalisation).
+  _hannSqCacheMap: new Map(),
+  _hannSqCache(N, window) {
+    let sq = this._hannSqCacheMap.get(N);
+    if (sq) return sq;
+    sq = new Float32Array(N);
+    for (let i = 0; i < N; i++) sq[i] = window[i] * window[i];
+    this._hannSqCacheMap.set(N, sq);
+    return sq;
+  },
+
+  // Twiddle-factor cache keyed by signed size: +N for forward, -N for inverse.
+  // Each entry stores precomputed cos/sin for the full half-table (N/2 bins),
+  // allowing smaller butterfly stages to index via stride without recomputing trig.
+  _twiddleCache: new Map(),
+
+  _getTwiddles(N, inverse) {
+    const key = inverse ? -N : N;
+    let t = this._twiddleCache.get(key);
+    if (t) return t;
+    const half = N >> 1;
+    const cosT = new Float32Array(half);
+    const sinT = new Float32Array(half);
+    const dir = inverse ? 1 : -1;
+    const k0 = dir * 2 * Math.PI / N;
+    for (let k = 0; k < half; k++) {
+      const a = k0 * k;
+      cosT[k] = Math.cos(a);
+      sinT[k] = Math.sin(a);
+    }
+    t = { cosT, sinT };
+    this._twiddleCache.set(key, t);
+    return t;
+  },
+
+  /** Cooley-Tukey radix-2 FFT (in-place, cached twiddle tables) */
   _fft(real, imag, inverse) {
     const N = real.length;
-    // Bit-reversal permutation
+    // Bit-reversal permutation (temp-swap avoids array-destructure allocation)
     for (let i = 1, j = 0; i < N; i++) {
       let bit = N >> 1;
       for (; j & bit; bit >>= 1) j ^= bit;
       j ^= bit;
       if (i < j) {
-        [real[i], real[j]] = [real[j], real[i]];
-        [imag[i], imag[j]] = [imag[j], imag[i]];
+        const tr = real[i]; real[i] = real[j]; real[j] = tr;
+        const ti = imag[i]; imag[i] = imag[j]; imag[j] = ti;
       }
     }
 
-    // Butterfly stages
+    const { cosT, sinT } = this._getTwiddles(N, inverse);
+
+    // Butterfly stages — table lookup replaces per-inner-iter rotation accumulator
     for (let len = 2; len <= N; len <<= 1) {
       const halfLen = len >> 1;
-      const angle = (inverse ? 2 : -2) * Math.PI / len;
-      const wR = Math.cos(angle);
-      const wI = Math.sin(angle);
-
+      const stride = N / len;
       for (let i = 0; i < N; i += len) {
-        let curR = 1, curI = 0;
         for (let j = 0; j < halfLen; j++) {
-          const tR = curR * real[i + j + halfLen] - curI * imag[i + j + halfLen];
-          const tI = curR * imag[i + j + halfLen] + curI * real[i + j + halfLen];
+          const ti = j * stride;
+          const wR = cosT[ti];
+          const wI = sinT[ti];
+          const ar = real[i + j + halfLen];
+          const ai = imag[i + j + halfLen];
+          const tR = wR * ar - wI * ai;
+          const tI = wR * ai + wI * ar;
           real[i + j + halfLen] = real[i + j] - tR;
           imag[i + j + halfLen] = imag[i + j] - tI;
           real[i + j] += tR;
           imag[i + j] += tI;
-          const newCurR = curR * wR - curI * wI;
-          curI = curR * wI + curI * wR;
-          curR = newCurR;
         }
       }
     }
 
     if (inverse) {
-      for (let i = 0; i < N; i++) { real[i] /= N; imag[i] /= N; }
+      const inv = 1 / N;
+      for (let i = 0; i < N; i++) { real[i] *= inv; imag[i] *= inv; }
     }
   },
 
@@ -950,6 +991,10 @@ const DSPCore = {
 
     const framesPerVad = Math.floor(fftSize / 512); // VAD window ratio
 
+    // Reuse real/imag buffers across frames to avoid per-frame GC pressure.
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
     for (let f = 0; ; f++) {
       const offset = f * hopSize;
       if (offset + fftSize > data.length) break;
@@ -959,8 +1004,7 @@ const DSPCore = {
       const confidence = vadConfidence ? vadConfidence[Math.floor(vadIdx)] : 0.5;
       if (confidence > 0.3) continue; // skip voiced frames
 
-      const real = new Float32Array(fftSize);
-      const imag = new Float32Array(fftSize);
+      imag.fill(0);
       for (let i = 0; i < fftSize; i++) {
         real[i] = data[offset + i] * window[i];
       }

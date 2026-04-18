@@ -37,7 +37,12 @@ self.onmessage = async function (e) {
       case 'reset':      result = handleReset();                  break;
       default: throw new Error(`Unknown message type: ${type}`);
     }
-    self.postMessage({ type: 'result', id, result });
+    // Transfer any ArrayBuffer payload (processedData) instead of structured-cloning
+    // — this saves a full PCM copy on every processed block.
+    const transfers = (result && result.processedData instanceof ArrayBuffer)
+      ? [result.processedData]
+      : undefined;
+    self.postMessage({ type: 'result', id, result }, transfers);
   } catch (err) {
     self.postMessage({ type: 'error', id, error: err.message, stack: err.stack });
   }
@@ -118,7 +123,8 @@ async function handleProcess(payload) {
     try {
       const tensor = new self.ort.Tensor('float32', processed, [1, 1, processed.length]);
       const out = await runInference('demucs', tensor);
-      processed = new Float32Array(out[Object.keys(out)[0]].data);
+      // out[key].data is already a Float32Array — reference it directly instead of copying.
+      processed = out[Object.keys(out)[0]].data;
     } catch (err) {
       console.warn('[dsp-worker] Demucs failed, continuing classical DSP:', err.message);
     }
