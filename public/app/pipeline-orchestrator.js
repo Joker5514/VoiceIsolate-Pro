@@ -8,6 +8,8 @@
 
 'use strict';
 
+const WORKLET_READY_FALLBACK_MS = 250;
+
 /**
  * PipelineOrchestrator
  * ─────────────────────
@@ -57,7 +59,6 @@ class PipelineOrchestrator {
 
     // Cached ML worker init promise — allows idempotent pre-warming before gesture
     this._mlInitPromise = null;
-    this._workletReadyPromise = null;
 
     this._isolationParams = {
       isolationMethod: 'hybrid',
@@ -167,7 +168,6 @@ class PipelineOrchestrator {
         console.warn('[Orchestrator] DSP worklet error:', e.data.msg);
       }
     };
-    this.workletReady = true;
   }
 
   // ── SharedArrayBuffer ring allocation ───────────────────────────────────
@@ -203,13 +203,18 @@ class PipelineOrchestrator {
           halfN:        this._halfN
         });
       }
-      this.workletReady = true;
+      // Some worklets acknowledge ring init asynchronously. If no explicit
+      // ready message arrives, fall back after a short grace period.
+      setTimeout(() => {
+        if (!this.workletReady) {
+          this.workletReady = true;
+        }
+      }, WORKLET_READY_FALLBACK_MS);
     } catch (err) {
       // SharedArrayBuffer blocked (missing COOP/COEP) — graceful degradation
       console.warn('[Orchestrator] SharedArrayBuffer unavailable; live ML masking disabled:', err.message);
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
-      this.workletReady = false;
     }
   }
 

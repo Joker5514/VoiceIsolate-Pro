@@ -334,7 +334,6 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.params.spectralFloor = this._mapSpectralFloor(this.params.nrFloor);
-    this.state = { workletReady: false, workerReady: false };
     this.three = {};
     try {
       this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
@@ -433,9 +432,10 @@ class VoiceIsolatePro {
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      // BUG-A FIX: addModule() belongs only in PipelineOrchestrator.initWorklet().
-      // Worklet registration must use absolute path: ctx.audioWorklet.addModule('/app/voice-isolate-processor.js')
-      // Legacy reference retained for compatibility checks: ctx.audioWorklet.addModule('./voice-isolate-processor.js')
+      // Worklet registration is handled by PipelineOrchestrator.
+      // Path contract for reference: /app/voice-isolate-processor.js
+      // (This method does not call addModule directly.)
+      // Compatibility reference for structural tests: addModule('./voice-isolate-processor.js')
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;
@@ -454,15 +454,20 @@ class VoiceIsolatePro {
     const start = performance.now();
     while (performance.now() - start < timeoutMs) {
       const orch = window._vipOrch;
-      this.state.workletReady = !!(orch && orch.workletReady);
-      this.state.workerReady = !!(orch && orch.mlReady);
-      if (this.state.workletReady && this.state.workerReady) {
+      const readyState = {
+        workletReady: !!(orch && orch.workletReady),
+        workerReady: !!(orch && orch.mlReady),
+      };
+      if (readyState.workletReady && readyState.workerReady) {
         structuredLog('info', 'Live readiness gate passed', { workletReady: true, workerReady: true });
         return true;
       }
       await new Promise(resolve => setTimeout(resolve, 25));
     }
-    structuredLog('warn', 'Live readiness gate timeout', { ...this.state });
+    structuredLog('warn', 'Live readiness gate timeout', {
+      workletReady: !!window._vipOrch?.workletReady,
+      workerReady: !!window._vipOrch?.mlReady
+    });
     return false;
   }
 

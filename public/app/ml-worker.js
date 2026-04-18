@@ -17,6 +17,18 @@ const DEFAULT_NUM_BINS = 2049; // (4096 / 2) + 1
 const FLAG_SLOTS = 4;
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
 const NOISE_WARMUP_FRAMES = 90;
+const FORENSIC_ALPHA_FLOOR_THRESHOLD = 0.005;
+const ALPHA_CAP_DEFAULT = 2.0;
+const ALPHA_CAP_FORENSIC = 3.0;
+const SNR_MAX = 1e6;
+
+const VAD_FALLBACK_RMS_BASELINE = 1e-4;
+const VAD_FALLBACK_RMS_RANGE = 7e-4;
+const VAD_FALLBACK_RATIO_BASELINE = 0.35;
+const VAD_FALLBACK_RATIO_RANGE = 0.45;
+const VAD_FALLBACK_BLEND_RMS = 0.45;
+const VAD_FALLBACK_BLEND_RATIO = 0.55;
+const NOISE_SEED_SCALE = 1.5;
 
 // ORT is loaded lazily inside initialize() — not at module top level —
 // so importScripts failures can be caught and reported gracefully.
@@ -43,6 +55,7 @@ let speechStreak = 0;
 let noiseProfile = null;
 let noiseFrames = 0;
 let warmupComplete = false;
+let demucsPcmMissingWarned = false;
 
 let runtimeParams = {
   spectralFloor: 0.005,
@@ -398,6 +411,7 @@ self.onmessage = async (ev) => {
     speechConfidence = 0;
     speechStreak = 0;
     latestPcmChunk = null;
+    demucsPcmMissingWarned = false;
     self.postMessage({ type: 'reset_done' });
   }
 
@@ -406,6 +420,7 @@ self.onmessage = async (ev) => {
     clearInterval(pollTimer);
     sessions = {};
     latestPcmChunk = null;
+    demucsPcmMissingWarned = false;
     self.postMessage({ type: 'unloaded' });
   }
 
@@ -694,6 +709,10 @@ async function buildMask(magnitudes, pcmChunk = null) {
   } else if (demucsSess && allowedStages >= 10) {
     // Intentional no-op: never feed magnitude spectra to Demucs.
     // Unity mask is safer than invalid spectral approximation.
+    if (!demucsPcmMissingWarned) {
+      demucsPcmMissingWarned = true;
+      console.warn('[ml-worker] Demucs skipped: PCM chunk unavailable; using unity fallback');
+    }
   }
 
   // RNNoise residual noise suppression
@@ -745,9 +764,9 @@ function runVADFallback(magnitudes) {
   }
   const totalRMS = Math.sqrt(sum / Math.max(1, magnitudes.length));
   const energyRatio = voiceBand / Math.max(sum, 1e-9);
-  const rmsScore = Math.max(0, Math.min(1, (totalRMS - 1e-4) / 7e-4));
-  const ratioScore = Math.max(0, Math.min(1, (energyRatio - 0.35) / 0.45));
-  const rawScore = 0.45 * rmsScore + 0.55 * ratioScore;
+  const rmsScore = Math.max(0, Math.min(1, (totalRMS - VAD_FALLBACK_RMS_BASELINE) / VAD_FALLBACK_RMS_RANGE));
+  const ratioScore = Math.max(0, Math.min(1, (energyRatio - VAD_FALLBACK_RATIO_BASELINE) / VAD_FALLBACK_RATIO_RANGE));
+  const rawScore = VAD_FALLBACK_BLEND_RMS * rmsScore + VAD_FALLBACK_BLEND_RATIO * ratioScore;
   speechConfidence = speechConfidence * 0.85 + rawScore * 0.15;
   speechStreak = speechConfidence > 0.6 ? speechStreak + 1 : Math.max(0, speechStreak - 1);
   return { isVoice: speechStreak >= 3, speechConfidence };
@@ -761,7 +780,9 @@ function updateNoiseProfile(magnitudes) {
   }
   let sumSq = 0;
   for (let k = 0; k < magnitudes.length; k++) sumSq += magnitudes[k] * magnitudes[k];
-  const broadbandSeed = Math.sqrt(sumSq / Math.max(1, magnitudes.length)) * 1.5 + 1e-6;
+  // Seed with a conservative broadband estimate so warmup starts suppressing
+  // immediately instead of passing near-raw noise during early frames.
+  const broadbandSeed = Math.sqrt(sumSq / Math.max(1, magnitudes.length)) * NOISE_SEED_SCALE + 1e-6;
   const alpha = noiseFrames < 5 ? 0.5 : 0.92;
   for (let k = 0; k < magnitudes.length; k++) {
     if (noiseFrames === 0) noiseProfile[k] = broadbandSeed;
@@ -776,13 +797,17 @@ function applyWienerFilter(magnitudes, mask, isVoice) {
   const spectralFloor = Math.max(0.001, Math.min(0.05, Number(runtimeParams.spectralFloor) || 0.005));
   const forensicMode = !!runtimeParams.forensicMode;
   const noiseReduce = Math.max(0, Math.min(1, Number(runtimeParams.noiseReduce) || 0.7));
-  const alphaCap = (forensicMode && spectralFloor < 0.005) ? 3.0 : 2.0;
+  // For forensic mode with very low floor, allow stronger subtraction.
+  // Otherwise keep alpha capped for voice quality to reduce musical noise.
+  const alphaCap = (forensicMode && spectralFloor < FORENSIC_ALPHA_FLOOR_THRESHOLD)
+    ? ALPHA_CAP_FORENSIC
+    : ALPHA_CAP_DEFAULT;
   const alpha = Math.min(alphaCap, 1.0 + noiseReduce);
 
   for (let k = 0; k < magnitudes.length; k++) {
     const signalPow = magnitudes[k] * magnitudes[k];
     const noisePow = Math.max(1e-12, noiseProfile[k] * noiseProfile[k] * alpha);
-    const snr = signalPow / noisePow;
+    const snr = Math.min(SNR_MAX, signalPow / noisePow);
     const gain = snr / (snr + 1.0);
     mask[k] *= Math.max(spectralFloor, Math.min(1, gain));
   }
