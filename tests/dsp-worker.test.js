@@ -152,7 +152,7 @@ describe('dsp-worker: process', () => {
       audioData: audio.buffer, sampleRate: 48000, params: null
     }, 2);
     // Should not crash — STFT will have 0 frames; iSTFT returns empty buffer
-    expect(['result', 'error']).toContain(r.msg.type);
+    expect(r.msg.type).toBe('result');
   });
 });
 
