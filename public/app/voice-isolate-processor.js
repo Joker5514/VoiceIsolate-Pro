@@ -170,6 +170,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       gateHold:         20,
       outGain:           0,
       dryWet:          100,
+      spectralFloor: 0.005,
       harmonicEnhance:   0,
       bypass:        false,
     };
@@ -185,7 +186,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       case 'initRingBuffers': {
         this.FFT_SIZE = msg.fftSize  || this.FFT_SIZE;
         this.HOP_SIZE = msg.hopSize  || this.HOP_SIZE;
-        this.HALF_N   = this.FFT_SIZE / 2 + 1;
+        this.HALF_N   = Math.floor(this.FFT_SIZE / 2) + 1;
         this.window   = hannWindow(this.FFT_SIZE);
         this.fftReal  = new Float32Array(this.FFT_SIZE);
         this.fftImag  = new Float32Array(this.FFT_SIZE);
@@ -201,13 +202,31 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
         this.hopsSinceInit = 0;
 
         if (msg.inputSAB) {
+          const inputBytes = Int32Array.BYTES_PER_ELEMENT * 4
+            + Float32Array.BYTES_PER_ELEMENT * this.HALF_N * 2;
+          if (msg.inputSAB.byteLength < inputBytes) {
+            this.port.postMessage({ type: 'error', msg: `inputSAB size mismatch: expected >= ${inputBytes}, got ${msg.inputSAB.byteLength}` });
+            break;
+          }
           this.ctrlIn   = new Int32Array(msg.inputSAB, 0, 4);
           this.inputSAB = new Float32Array(msg.inputSAB, 16, this.HALF_N * 2);
         }
         if (msg.outputSAB) {
+          const outputBytes = Int32Array.BYTES_PER_ELEMENT * 4
+            + Float32Array.BYTES_PER_ELEMENT * this.HALF_N;
+          if (msg.outputSAB.byteLength < outputBytes) {
+            this.port.postMessage({ type: 'error', msg: `outputSAB size mismatch: expected >= ${outputBytes}, got ${msg.outputSAB.byteLength}` });
+            break;
+          }
           this.ctrlOut   = new Int32Array(msg.outputSAB, 0, 4);
           this.outputSAB = new Float32Array(msg.outputSAB, 16, this.HALF_N);
         }
+        this.port.postMessage({
+          type: 'ready',
+          fftSize: this.FFT_SIZE,
+          hopSize: this.HOP_SIZE,
+          halfN: this.HALF_N
+        });
         break;
       }
 

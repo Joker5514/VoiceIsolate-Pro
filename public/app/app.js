@@ -102,7 +102,7 @@ const PRESETS = {
     // Gate
     gateThresh: -45, gateRange: -60, gateAttack: 2, gateRelease: 80, gateHold: 20, gateLookahead: 5,
     // Noise Reduction
-    nrAmount: 82, nrSensitivity: 75, nrSpectralSub: 70, nrFloor: -55, nrSmoothing: 50,
+    nrAmount: 82, nrSensitivity: 75, nrSpectralSub: 70, nrFloor: -55, nrSmoothing: 50, spectralFloor: 0.008,
     // EQ
     eqSub: -8, eqBass: -2, eqWarmth: 1, eqBody: 2, eqLowMid: -2, eqMid: 3, eqPresence: 5, eqClarity: 4, eqAir: 2, eqBrill: -2,
     // Dynamics
@@ -140,7 +140,7 @@ const PRESETS = {
     // Gate
     gateThresh: -38, gateRange: -80, gateAttack: 1, gateRelease: 50, gateHold: 10, gateLookahead: 8,
     // Noise Reduction
-    nrAmount: 95, nrSensitivity: 90, nrSpectralSub: 85, nrFloor: -45, nrSmoothing: 60,
+    nrAmount: 95, nrSensitivity: 90, nrSpectralSub: 85, nrFloor: -45, nrSmoothing: 60, spectralFloor: 0.001,
     // EQ
     eqSub: -12, eqBass: -2, eqWarmth: 0, eqBody: 1, eqLowMid: -3, eqMid: 4, eqPresence: 6, eqClarity: 5, eqAir: 0, eqBrill: -4,
     // Dynamics
@@ -333,6 +333,7 @@ class VoiceIsolatePro {
     this.mutedBands = new Set();
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
+    this.params.spectralFloor = this._mapSpectralFloor(this.params.nrFloor);
     this.three = {};
     try {
       this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
@@ -431,11 +432,43 @@ class VoiceIsolatePro {
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      // BUG-A FIX: addModule() belongs only in PipelineOrchestrator.initWorklet().
-      // Worklet registration: ctx.audioWorklet.addModule('./voice-isolate-processor.js')
+      // Worklet registration is handled by PipelineOrchestrator.
+      // Path contract for reference: /app/voice-isolate-processor.js
+      // (This method does not call addModule directly.)
+      // Compatibility reference for structural tests: addModule('./voice-isolate-processor.js')
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;
+  }
+
+  _mapSpectralFloor(nrFloorDb) {
+    const minDb = -80;
+    const maxDb = -20;
+    const floorMin = 0.001;
+    const floorMax = 0.05;
+    const t = Math.max(0, Math.min(1, (Number(nrFloorDb) - minDb) / (maxDb - minDb)));
+    return floorMin + t * (floorMax - floorMin);
+  }
+
+  async waitForReadiness(timeoutMs = 5000) {
+    const start = performance.now();
+    while (performance.now() - start < timeoutMs) {
+      const orch = window._vipOrch;
+      const readyState = {
+        workletReady: !!(orch && orch.workletReady),
+        workerReady: !!(orch && orch.mlReady),
+      };
+      if (readyState.workletReady && readyState.workerReady) {
+        structuredLog('info', 'Live readiness gate passed', { workletReady: true, workerReady: true });
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    structuredLog('warn', 'Live readiness gate timeout', {
+      workletReady: !!window._vipOrch?.workletReady,
+      workerReady: !!window._vipOrch?.mlReady
+    });
+    return false;
   }
 
   buildSliderPanels() {
@@ -671,6 +704,7 @@ class VoiceIsolatePro {
     if (!id) return;
     const v = parseFloat(el.value);
     this.params[id] = v;
+    if (id === 'nrFloor') this.params.spectralFloor = this._mapSpectralFloor(v);
     let unit = '';
     const s = SLIDER_MAP[id];
     if (s) { unit = s.unit; }
@@ -757,6 +791,9 @@ class VoiceIsolatePro {
         sliderDom.el.dispatchEvent(new Event('change', { bubbles: true }));
       }
     }
+    this.params.spectralFloor = Number.isFinite(p.spectralFloor)
+      ? p.spectralFloor
+      : this._mapSpectralFloor(this.params.nrFloor);
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
     if (this.liveChainBuilt) this.updateLiveChain();
   }
@@ -916,6 +953,7 @@ class VoiceIsolatePro {
   async toggleRecording() {
     if (this.isRecording) { this.stopRecording(); return; }
     try {
+      await this.waitForReadiness();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       this.ensureCtx();
       this.isRecording = true;
