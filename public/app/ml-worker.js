@@ -638,6 +638,9 @@ async function pollOnce() {
 // ── 5. Combined mask inference pipeline ──────────────────────────────────────
 // Reusable mask buffer — avoids one Float32Array allocation per inference call.
 let _maskBuffer = null;
+// Reusable 3-bin smoothing scratch — avoids a full-spectrum Float32Array
+// allocation per applyWienerFilter() call (~400KB/s GC churn at 50 Hz).
+let _smoothBuffer = null;
 
 async function buildMask(magnitudes, pcmChunk = null) {
   const numBins = magnitudes.length;
@@ -813,15 +816,19 @@ function applyWienerFilter(magnitudes, mask, isVoice) {
   }
 
   // 3-bin moving-average smoothing reduces isolated spectral holes (musical noise).
-  const smooth = new Float32Array(mask.length);
-  for (let k = 0; k < mask.length; k++) {
-    const a = mask[Math.max(0, k - 1)];
-    const b = mask[k];
-    const c = mask[Math.min(mask.length - 1, k + 1)];
-    smooth[k] = (a + b + c) / 3;
+  // Boundary-unrolled to avoid per-bin Math.max/Math.min; buffer is cached.
+  const len = mask.length;
+  if (!_smoothBuffer || _smoothBuffer.length < len) _smoothBuffer = new Float32Array(len);
+  const smooth = _smoothBuffer;
+  if (len > 0) {
+    smooth[0] = len > 1 ? (mask[0] + mask[0] + mask[1]) / 3 : mask[0];
+    const last = len - 1;
+    for (let k = 1; k < last; k++) smooth[k] = (mask[k - 1] + mask[k] + mask[k + 1]) / 3;
+    if (last > 0) smooth[last] = (mask[last - 1] + mask[last] + mask[last]) / 3;
   }
   const voiceFloor = isVoice ? spectralFloor : Math.min(1, spectralFloor * runtimeParams.nonVoiceSuppression);
-  for (let k = 0; k < mask.length; k++) {
-    mask[k] = Math.max(voiceFloor, Math.min(1, smooth[k]));
+  for (let k = 0; k < len; k++) {
+    const s = smooth[k];
+    mask[k] = s > 1 ? 1 : (s < voiceFloor ? voiceFloor : s);
   }
 }
