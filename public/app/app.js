@@ -318,7 +318,6 @@ class VoiceIsolatePro {
     this.isVideo = false;
     this.videoUrl = null;
     this.spectroRunning = false;
-    this.is3D = false;
     this.animId = null;
     this.diagRunning = false;
     this.diagAnimId = null;
@@ -546,8 +545,8 @@ class VoiceIsolatePro {
       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
       tpSeek:g('tpSeek'), tpScrubTrack:g('tpScrubTrack'), tpScrubFill:g('tpScrubFill'), tpScrubThumb:g('tpScrubThumb'),
       tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
-      spectro3DContainer:g('specCard'), spectro3DCanvas:g('spec3dCanvas'),
-      spectro3DReset:g('spec3dBtn'),
+      spectro3DContainer:g('spec3dContainer'), spectro3DCanvas:g('spec3dCanvas'),
+      spectro3DReset:g('spec3dResetBtn'),
       spectro2DCanvas:g('specCanvas'),
       waveOrigCanvas:g('waveformOrig'), waveProcCanvas:g('waveformCanvas'),
       freqCanvas:g('noiseCanvas'),
@@ -666,7 +665,7 @@ class VoiceIsolatePro {
       }
     });
     if (this.dom.spectro3DCanvas) this.dom.spectro3DCanvas.addEventListener('click', e => this.onSpectroClick(e));
-    if (this.dom.spectro3DReset) this.dom.spectro3DReset.addEventListener('click', () => this.toggle3DView());
+    if (this.dom.spectro3DReset) this.dom.spectro3DReset.addEventListener('click', () => this.reset3DView());
     window.addEventListener('resize', () => this.onResize());
 
     // Diagnostic bindings
@@ -2047,36 +2046,20 @@ class VoiceIsolatePro {
     cv.addEventListener('wheel',e=>{e.preventDefault();cam.position.z+=e.deltaY*0.05;cam.position.z=Math.max(20,Math.min(120,cam.position.z));},{passive:false});
     this.render3D();
   }
-  reset3DView(){if(this.three.cam){this.three.cam.position.set(0,40,60);this.three.cam.lookAt(0,0,0);}}
-  toggle3DView(){
-    this.is3D = !this.is3D;
-    const c2d = this.dom.spectro2DCanvas;
-    const c3d = this.dom.spectro3DCanvas;
-    const badge = document.getElementById('specModeBadge');
-    const btn = this.dom.spectro3DReset;
-    if (this.is3D) {
-      if (c2d) c2d.style.display = 'none';
-      if (c3d) c3d.style.display = 'block';
-      if (badge) badge.textContent = '3D';
-      if (btn) btn.textContent = 'Toggle 2D';
-      this.reset3DView();
-      if (this.three.ren) {
-        const ct = this.dom.spectro3DContainer;
-        if (ct) {
-          const w = ct.clientWidth;
-          const h = ct.clientHeight;
-          if (w > 0 && h > 0) {
-            this.three.ren.setSize(w, h);
-            this.three.cam.aspect = w / h;
-            this.three.cam.updateProjectionMatrix();
-          }
+  reset3DView(){
+    if(!this.three.cam)return;
+    this.three.cam.position.set(0,40,60);
+    this.three.cam.lookAt(0,0,0);
+    if(this.three.ren){
+      const ct = this.dom.spectro3DContainer;
+      if(ct){
+        const w = ct.clientWidth, h = ct.clientHeight;
+        if(w>0 && h>0){
+          this.three.ren.setSize(w,h);
+          this.three.cam.aspect = w/h;
+          this.three.cam.updateProjectionMatrix();
         }
       }
-    } else {
-      if (c3d) c3d.style.display = 'none';
-      if (c2d) c2d.style.display = 'block';
-      if (badge) badge.textContent = '2D';
-      if (btn) btn.textContent = 'Toggle 3D';
     }
   }
   update3D(freq){
