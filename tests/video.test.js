@@ -22,7 +22,9 @@ describe('VoiceIsolatePro Video Playback', () => {
       console,
       URL: { createObjectURL: () => {}, revokeObjectURL: () => {} },
       setTimeout,
-      clearTimeout
+      clearTimeout,
+      requestAnimationFrame: jest.fn(cb => setTimeout(cb, 0)),
+      cancelAnimationFrame: jest.fn()
     };
     vm.createContext(sandbox);
     vm.runInContext(code, sandbox);
