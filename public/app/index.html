@@ -247,13 +247,21 @@
         <canvas id="waveformOrig" class="viz-canvas" style="opacity:0.45" aria-label="Original audio waveform"></canvas>
       </div>
 
-      <!-- Spectrogram -->
+      <!-- Spectrogram (2D) -->
       <div class="card viz-card" id="specCard">
-        <div class="viz-hdr"><span>Spectrogram</span><span class="viz-badge">FFT 2048</span><span class="viz-badge" id="specModeBadge">2D</span>
-          <button id="spec3dBtn" class="btn btn-xs" style="margin-left:auto">Toggle 3D</button>
-        </div>
+        <div class="viz-hdr"><span>Spectrogram</span><span class="viz-badge">FFT 2048</span><span class="viz-badge">2D</span></div>
         <canvas id="specCanvas" class="viz-canvas" aria-label="Spectrogram visualization"></canvas>
-        <canvas id="spec3dCanvas" class="viz-canvas" style="display:none" aria-label="3D spectrogram visualization"></canvas>
+      </div>
+
+      <!-- 3D Spectrogram (dedicated space) -->
+      <div class="card viz-card" id="spec3dCard">
+        <div class="viz-hdr">
+          <span>3D Spectrogram</span><span class="viz-badge">Three.js</span>
+          <button id="spec3dResetBtn" class="btn btn-xs" style="margin-left:auto" title="Reset camera view">Reset View</button>
+        </div>
+        <div id="spec3dContainer" class="spectro3d-container">
+          <canvas id="spec3dCanvas" aria-label="3D spectrogram visualization"></canvas>
+        </div>
       </div>
 
       <!-- Comparison -->
