@@ -717,6 +717,14 @@ describe('DSPCore STFT/iSTFT roundtrip', () => {
     const expected = Math.floor((48000 - 4096) / 1024) + 1;
     expect(frameCount).toBe(expected);
   });
+
+  test('short clips smaller than fftSize produce zero frames with empty spectra', () => {
+    const data = new Float32Array(1024);
+    const { frameCount, mag, phase } = DSPCore.forwardSTFT(data, 4096, 1024);
+    expect(frameCount).toBe(0);
+    expect(mag).toEqual([]);
+    expect(phase).toEqual([]);
+  });
 });
 
 // ── calcRMS / calcPeak ────────────────────────────────────────────────────────

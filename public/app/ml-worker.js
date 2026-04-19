@@ -690,7 +690,12 @@ async function buildMask(magnitudes, pcmChunk = null) {
 
   if (!warmupComplete) {
     updateNoiseProfile(magnitudes);
-    mask.fill(0);
+    // Ramp mask from near-silence up to full passthrough over the warmup
+    // window instead of clamping to 0. Users previously heard ~1.8s of dead
+    // silence before the noise profile was considered converged.
+    const ramp = Math.min(1, noiseFrames / NOISE_WARMUP_FRAMES);
+    const rampGain = 0.05 + 0.95 * ramp * ramp;
+    for (let k = 0; k < numBins; k++) mask[k] *= rampGain;
     return mask;
   }
 

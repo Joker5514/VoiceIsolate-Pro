@@ -196,7 +196,11 @@ const DSPCore = {
   forwardSTFT(data, fftSize = 4096, hopSize = 1024) {
     const window = this.hannWindow(fftSize);
     const halfN = fftSize / 2 + 1;
-    const frameCount = Math.floor((data.length - fftSize) / hopSize) + 1;
+    // Guard: clips in shorter than one FFT window produce 0 frames rather
+    // than a negative frameCount (which would have overflowed downstream).
+    const frameCount = data.length >= fftSize
+      ? Math.floor((data.length - fftSize) / hopSize) + 1
+      : 0;
     const mag = [];
     const phase = [];
 
