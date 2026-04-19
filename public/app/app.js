@@ -20,7 +20,7 @@ function structuredLog(level, msg, data = {}) {
 // ---- SLIDER DEFINITIONS (52 total) ----
 const SLIDERS = {
   gate: [
-    { id:'gateThresh', label:'Threshold', min:-80, max:-5, val:-42, step:1, unit:' dB', rt:true, desc:'Signal level below which the gate closes. Lower values let quieter sounds through.' },
+    { id:'gateThresh', label:'Threshold', min:-80, max:-5, val:-55, step:1, unit:' dB', rt:true, desc:'Signal level below which the gate closes. Lower values let quieter sounds (whispers) through.' },
     { id:'gateRange', label:'Range', min:-90, max:0, val:-40, step:1, unit:' dB', rt:false, desc:'Maximum attenuation when gate is closed. -90dB = full silence, -20dB = gentle reduction.' },
     { id:'gateAttack', label:'Attack', min:0.1, max:50, val:2, step:0.1, unit:' ms', rt:true, desc:'How fast the gate opens when signal exceeds threshold.' },
     { id:'gateRelease', label:'Release', min:5, max:500, val:80, step:1, unit:' ms', rt:true, desc:'How fast the gate closes after signal drops below threshold.' },
@@ -28,11 +28,11 @@ const SLIDERS = {
     { id:'gateLookahead', label:'Lookahead', min:0, max:20, val:5, step:0.5, unit:' ms', rt:false, desc:'Pre-delay allowing the gate to open before transients arrive.' },
   ],
   nr: [
-    { id:'nrAmount', label:'Reduction Amount', min:0, max:100, val:55, step:1, unit:'%', rt:false, desc:'How much noise is removed. 40-60% is usually optimal.' },
-    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'How aggressively noise is detected.' },
-    { id:'nrSpectralSub', label:'Spectral Subtract', min:0, max:100, val:40, step:1, unit:'%', rt:false, desc:'Subtracts estimated noise spectrum from signal.' },
-    { id:'nrFloor', label:'Noise Floor', min:-80, max:-20, val:-60, step:1, unit:' dB', rt:false, desc:'Estimated noise floor level.' },
-    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:35, step:1, unit:'%', rt:false, desc:'Temporal smoothing of noise estimate.' },
+    { id:'nrAmount', label:'Reduction Amount', min:0, max:100, val:78, step:1, unit:'%', rt:false, desc:'How much noise is removed. 70-85% for voice/whisper isolation in noisy environments.' },
+    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:72, step:1, unit:'%', rt:false, desc:'How aggressively noise is detected.' },
+    { id:'nrSpectralSub', label:'Spectral Subtract', min:0, max:100, val:62, step:1, unit:'%', rt:false, desc:'Subtracts estimated noise spectrum from signal.' },
+    { id:'nrFloor', label:'Noise Floor', min:-80, max:-20, val:-55, step:1, unit:' dB', rt:false, desc:'Estimated noise floor level.' },
+    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:45, step:1, unit:'%', rt:false, desc:'Temporal smoothing of noise estimate.' },
   ],
   eq: [
     { id:'eqSub', label:'Sub (40 Hz)', min:-12, max:6, val:-8, step:0.5, unit:' dB', rt:true, desc:'Sub-bass. Cut to remove rumble.' },
@@ -75,8 +75,8 @@ const SLIDERS = {
     { id:'phaseCorr', label:'Phase Correction', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Corrects phase issues between stereo channels.' },
   ],
   sep: [
-    { id:'voiceIso', label:'Voice Isolation', min:0, max:100, val:70, step:1, unit:'%', rt:false, desc:'Strength of voice/non-voice separation.' },
-    { id:'bgSuppress', label:'Background Suppress', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Attenuation of non-voice background.' },
+    { id:'voiceIso', label:'Voice Isolation', min:0, max:100, val:88, step:1, unit:'%', rt:false, desc:'Strength of voice/non-voice separation.' },
+    { id:'bgSuppress', label:'Background Suppress', min:0, max:100, val:80, step:1, unit:'%', rt:false, desc:'Attenuation of non-voice background.' },
     { id:'voiceFocusLo', label:'Voice Focus Low', min:80, max:500, val:120, step:5, unit:' Hz', rt:true, desc:'Lower bound of voice focus band.' },
     { id:'voiceFocusHi', label:'Voice Focus High', min:2000, max:12000, val:6000, step:100, unit:' Hz', rt:true, desc:'Upper bound of voice focus band.' },
     { id:'crosstalkCancel', label:'Crosstalk Cancel', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Reduces bleed between speakers.' },

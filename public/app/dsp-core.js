@@ -115,8 +115,8 @@ class AdaptiveNoiseFloor {
 // Frequency-dependent boosting belongs in a separate post-stage (see voice mask),
 // not baked into the Wiener gain, where >1 multipliers re-introduce noise and clip.
 function wienerFilter(noiseMag, signalMag, params = {}) {
-  const alphaRaw = Number.isFinite(params.noiseOverSubtract) ? params.noiseOverSubtract : 1.2; // mild over-subtraction (was 2.0 — caused hollow voice)
-  const betaRaw = Number.isFinite(params.spectralFloor) ? params.spectralFloor : 0.02;         // -34 dB floor prevents musical noise (was 0.001)
+  const alphaRaw = Number.isFinite(params.noiseOverSubtract) ? params.noiseOverSubtract : 1.5; // moderate over-subtraction — balances audible NR vs. hollow voice
+  const betaRaw = Number.isFinite(params.spectralFloor) ? params.spectralFloor : 0.008;        // -42 dB floor — suppresses residual noise without musical artifacts
   const alpha = Math.max(1e-6, alphaRaw);
   const beta = Math.min(1.0, Math.max(0.0, betaRaw));
 

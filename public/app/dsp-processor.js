@@ -216,18 +216,18 @@ class DSPProcessor extends AudioWorkletProcessor {
     // Mirrors the 52-slider SLIDER_MAP keys that are relevant to live mode
     this._params = {
       // Gate
-      gateThresh:      -42,    // dB
+      gateThresh:      -55,    // dB  (low enough to pass whispers)
       gateRange:       -40,    // dB  (attenuation when gate closed)
       gateAttack:        2,    // ms
       gateRelease:      80,    // ms
       gateHold:         20,    // ms
       gateLookahead:     5,    // ms (lookahead ring buffer)
-      // NR
-      nrAmount:         55,    // %
-      nrSensitivity:    50,    // %
-      nrSpectralSub:    40,    // %
-      nrFloor:         -60,    // dB
-      nrSmoothing:      35,    // %
+      // NR — tuned for voice/whisper isolation against noisy backgrounds
+      nrAmount:         78,    // %
+      nrSensitivity:    72,    // %
+      nrSpectralSub:    62,    // %
+      nrFloor:         -55,    // dB
+      nrSmoothing:      45,    // %
       // De-ess
       deEssFreq:      7000,    // Hz
       deEssAmt:         30,    // %
@@ -236,8 +236,8 @@ class DSPProcessor extends AudioWorkletProcessor {
       // Voice focus
       voiceFocusLo:    120,    // Hz
       voiceFocusHi:   6000,    // Hz
-      voiceIso:         70,    // %
-      bgSuppress:       50,    // %
+      voiceIso:         88,    // %
+      bgSuppress:       80,    // %
       // Harmonic enhance
       harmRecov:        20,    // %
       harmOrder:         3,    // x
@@ -247,8 +247,8 @@ class DSPProcessor extends AudioWorkletProcessor {
       // Misc
       humReduce:        50,    // %
       vadThreshold:  0.005,
-      noiseOverSubtract: 1.2,
-      spectralFloor: 0.02,
+      noiseOverSubtract: 1.5,  // stronger over-subtraction for audible NR
+      spectralFloor: 0.008,    // -42 dB floor — suppresses residual noise without musical artifacts
       bypass:        false,
     };
     this._rebuildFilters(this._sampleRate);
