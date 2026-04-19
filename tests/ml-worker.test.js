@@ -183,6 +183,44 @@ describe('ml-worker.js', () => {
 
     await workerGlobal.self.onmessage({ data: { type: 'reset' } });
   });
+
+  it('applies non-zero warmup mask floor and ramps up during noise-profile warmup', async () => {
+    const vadRun = jest.fn().mockResolvedValue({ output: { data: new Float32Array([0.75]) } });
+    workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({ run: vadRun });
+
+    await workerGlobal.self.onmessage({
+      data: {
+        type: 'init',
+        payload: {
+          allowedModels: ['vad'],
+          preferredProviders: ['wasm'],
+          modelBasePath: './models/',
+        },
+      },
+    });
+
+    const magnitudes = new Float32Array(16).fill(0.2);
+    const gains = [];
+    const sampleFrames = new Set([1, 45, 90]);
+
+    for (let frame = 1; frame <= 90; frame++) {
+      await workerGlobal.self.onmessage({ data: { type: 'process', payload: { magnitudes } } });
+      if (sampleFrames.has(frame)) {
+        const processed = postedMessages.filter((m) => m.type === 'processed').at(-1);
+        gains.push({ frame, gain: processed.output[0] });
+      }
+    }
+
+    const gainAt = (frame) => gains.find((g) => g.frame === frame).gain;
+    const expectedGain = (frame) => 0.05 + 0.95 * Math.pow(frame / 90, 2);
+
+    expect(gainAt(1)).toBeGreaterThanOrEqual(0.05);
+    expect(gainAt(1)).toBeLessThan(gainAt(45));
+    expect(gainAt(45)).toBeLessThan(gainAt(90));
+    expect(gainAt(1)).toBeCloseTo(expectedGain(1), 6);
+    expect(gainAt(45)).toBeCloseTo(expectedGain(45), 6);
+    expect(gainAt(90)).toBeCloseTo(1, 6);
+  });
 });
 
 // ============================================================
