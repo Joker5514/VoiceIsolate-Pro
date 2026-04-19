@@ -1085,8 +1085,8 @@ class VoiceIsolatePro {
     }
     if (this.isPlaying) { this.pause(); return; }
     if (this.currentSource) {
-      try { this.currentSource.stop(); } catch {}
-      try { this.currentSource.disconnect(); } catch {}
+      try { this.currentSource.stop(); } catch (e) { console.debug('togglePlayback source stop skipped:', e && e.message ? e.message : e); }
+      try { this.currentSource.disconnect(); } catch (e) { console.debug('togglePlayback source disconnect skipped:', e && e.message ? e.message : e); }
       this.currentSource = null;
     }
     this.play();
