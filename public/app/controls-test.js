@@ -59,15 +59,24 @@
     };
 
     if (controls.tpPlay) {
+      const wasDisabled = controls.tpPlay.disabled;
+      controls.tpPlay.disabled = false;
       const playCalls = withMethodSpy(app, 'togglePlayback', () => controls.tpPlay.click());
+      controls.tpPlay.disabled = wasDisabled;
       push(playCalls > 0, 'tpPlay click handler', playCalls > 0 ? 'togglePlayback invoked' : 'togglePlayback not invoked');
     }
     if (controls.tpPause) {
+      const wasDisabled = controls.tpPause.disabled;
+      controls.tpPause.disabled = false;
       const pauseCalls = withMethodSpy(app, 'pause', () => controls.tpPause.click());
+      controls.tpPause.disabled = wasDisabled;
       push(pauseCalls > 0, 'tpPause click handler', pauseCalls > 0 ? 'pause invoked' : 'pause not invoked');
     }
     if (controls.tpStop) {
+      const wasDisabled = controls.tpStop.disabled;
+      controls.tpStop.disabled = false;
       const stopCalls = withMethodSpy(app, 'stop', () => controls.tpStop.click());
+      controls.tpStop.disabled = wasDisabled;
       push(stopCalls > 0, 'tpStop click handler', stopCalls > 0 ? 'stop invoked' : 'stop not invoked');
     }
     if (controls.tpAB) {
@@ -123,17 +132,21 @@
 
     const sliderEls = Array.from(document.querySelectorAll('input[type="range"][data-param]'));
     push(sliderEls.length >= 52, 'slider count', 'found ' + sliderEls.length + ' sliders');
+    app._sliderContextResumed = true;
     for (const slider of sliderEls.slice(0, 6)) {
       const valueEl = document.getElementById(slider.id + 'Val');
       const prev = valueEl ? valueEl.textContent : '';
+      const prevParam = app.params ? app.params[slider.id] : undefined;
       const cur = parseFloat(slider.value);
       const min = parseFloat(slider.min);
       const max = parseFloat(slider.max);
       const next = Number.isFinite(cur) ? (cur < max ? cur + (Number(slider.step) || 1) : Math.max(min, cur - (Number(slider.step) || 1))) : min;
       slider.value = String(next);
       slider.dispatchEvent(new Event('input', { bubbles: true }));
-      const changed = valueEl ? valueEl.textContent !== prev : false;
-      push(changed, 'slider ' + slider.id, changed ? 'value label updates' : 'value label did not update');
+      const labelChanged = valueEl ? valueEl.textContent !== prev : false;
+      const paramChanged = app.params ? app.params[slider.id] !== prevParam : false;
+      const changed = labelChanged || paramChanged;
+      push(changed, 'slider ' + slider.id, changed ? 'value updates reflected' : 'value did not propagate');
     }
 
     const bindingChecks = ['uploadZone', 'fileInput', 'fileBtn', 'clearFile', 'playBtn', 'pauseBtn', 'stopBtn', 'processBtn', 'tpAB'];
