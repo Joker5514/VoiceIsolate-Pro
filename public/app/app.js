@@ -360,6 +360,7 @@ class VoiceIsolatePro {
     this._rndIdx = 0;
     this._sliderContextResumed = false;
     this._uiScaleSaveTimer = 0;
+    this._controlBindings = {};
     this.init();
   }
 
@@ -546,7 +547,15 @@ class VoiceIsolatePro {
       tpPlay:g('tpPlay'), tpPause:g('tpPause'), tpStop:g('tpStop'),
       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
       tpSeek:g('tpSeek'), tpScrubTrack:g('tpScrubTrack'), tpScrubFill:g('tpScrubFill'), tpScrubThumb:g('tpScrubThumb'),
-      tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
+      tpSpeed:g('tpSpeed'), tpVol:g('tpVol'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
+      playBtn:g('playBtn') || g('tpPlay'),
+      pauseBtn:g('pauseBtn') || g('tpPause'),
+      stopBtn:g('stopBtn') || g('tpStop'),
+      currentTime:g('currentTime') || g('tpCur'),
+      totalTime:g('totalTime') || g('tpTotal'),
+      waveformCanvas:g('waveformCanvas'),
+      clearFile:g('clearFile'),
+      exportBtn:g('exportBtn') || g('saveProcBtn'),
       spectro3DContainer:g('spec3dContainer'), spectro3DCanvas:g('spec3dCanvas'),
       spectro3DReset:g('spec3dResetBtn'),
       spectro2DCanvas:g('specCanvas'),
@@ -625,34 +634,50 @@ class VoiceIsolatePro {
   }
 
   bindEvents() {
+    const bind = (key, el, eventName, handler) => {
+      if (!el || typeof el.addEventListener !== 'function') return;
+      el.addEventListener(eventName, handler);
+      if (!this._controlBindings[key]) this._controlBindings[key] = {};
+      this._controlBindings[key][eventName] = true;
+    };
     const uz = this.dom.uploadZone;
     let dragCounter = 0;
-    uz.addEventListener('dragenter', e => { e.preventDefault(); e.stopPropagation(); dragCounter++; uz.classList.add('dragover'); });
-    uz.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
-    uz.addEventListener('dragleave', e => { e.preventDefault(); e.stopPropagation(); dragCounter--; if (dragCounter <= 0) { dragCounter = 0; uz.classList.remove('dragover'); } });
-    uz.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); dragCounter = 0; uz.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
-    uz.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
-    uz.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.dom.fileInput.click(); } });
-    this.dom.fileBtn.addEventListener('click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
-    this.dom.fileInput.addEventListener('change', e => { if (e.target.files[0]) this.handleFile(e.target.files[0]); this.dom.fileInput.value = ''; });
-    this.dom.micBtn.addEventListener('click', () => this.toggleRecording());
-    this.dom.processBtn.addEventListener('click', () => this.runPipeline());
-    this.dom.reprocessBtn.addEventListener('click', () => this.runPipeline());
-    this.dom.stopProcBtn.addEventListener('click', () => { this.abortFlag = true; });
-    this.dom.saveOrigBtn.addEventListener('click', () => this.saveWav(this.inputBuffer,'original'));
-    this.dom.saveProcBtn.addEventListener('click', () => this.saveWav(this.outputBuffer,'processed'));
-    this.dom.tpPlay.addEventListener('click', () => this.play());
-    this.dom.tpPause.addEventListener('click', () => this.pause());
-    this.dom.tpStop.addEventListener('click', () => this.stop());
-    this.dom.tpRew.addEventListener('click', () => this.seekDelta(-5));
-    this.dom.tpFwd.addEventListener('click', () => this.seekDelta(5));
-    if (this.dom.tpSeek) this.dom.tpSeek.addEventListener('input', () => this.seekTo(this.dom.tpSeek.value / 1000));
-    if (this.dom.tpScrubTrack) this.dom.tpScrubTrack.addEventListener('pointerdown', e => {
+    bind('uploadZone', uz, 'dragenter', e => { e.preventDefault(); e.stopPropagation(); dragCounter++; uz.classList.add('dragover'); });
+    bind('uploadZone', uz, 'dragover', e => { e.preventDefault(); e.stopPropagation(); });
+    bind('uploadZone', uz, 'dragleave', e => { e.preventDefault(); e.stopPropagation(); dragCounter--; if (dragCounter <= 0) { dragCounter = 0; uz.classList.remove('dragover'); } });
+    bind('uploadZone', uz, 'drop', e => { e.preventDefault(); e.stopPropagation(); dragCounter = 0; uz.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
+    bind('uploadZone', uz, 'click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
+    bind('uploadZone', uz, 'keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.dom.fileInput.click(); } });
+    bind('fileBtn', this.dom.fileBtn, 'click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
+    bind('fileInput', this.dom.fileInput, 'change', e => { if (e.target.files[0]) this.handleFile(e.target.files[0]); this.dom.fileInput.value = ''; });
+    bind('micBtn', this.dom.micBtn, 'click', () => this.toggleRecording());
+    bind('processBtn', this.dom.processBtn, 'click', () => this.runPipeline());
+    bind('reprocessBtn', this.dom.reprocessBtn, 'click', () => this.runPipeline());
+    bind('stopProcBtn', this.dom.stopProcBtn, 'click', () => { this.abortFlag = true; });
+    bind('saveOrigBtn', this.dom.saveOrigBtn, 'click', () => this.saveWav(this.inputBuffer,'original'));
+    bind('saveProcBtn', this.dom.saveProcBtn, 'click', () => this.saveWav(this.outputBuffer,'processed'));
+    bind('playBtn', this.dom.tpPlay, 'click', () => { this.togglePlayback(); });
+    if (this.dom.playBtn && this.dom.playBtn !== this.dom.tpPlay) bind('playBtn', this.dom.playBtn, 'click', () => { this.togglePlayback(); });
+    bind('pauseBtn', this.dom.tpPause, 'click', () => this.pause());
+    bind('stopBtn', this.dom.tpStop, 'click', () => this.stop());
+    bind('tpRew', this.dom.tpRew, 'click', () => this.seekDelta(-5));
+    bind('tpFwd', this.dom.tpFwd, 'click', () => this.seekDelta(5));
+    if (this.dom.tpSeek) bind('tpSeek', this.dom.tpSeek, 'input', () => this.seekTo(this.dom.tpSeek.value / 1000));
+    if (this.dom.tpScrubTrack) bind('tpScrubTrack', this.dom.tpScrubTrack, 'pointerdown', e => {
       const r = this.dom.tpScrubTrack.getBoundingClientRect();
       this.seekTo((e.clientX - r.left) / r.width);
     });
-    this.dom.tpSpeed.addEventListener('change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
-    this.dom.tpAB.addEventListener('click', () => this.toggleAB());
+    bind('tpSpeed', this.dom.tpSpeed, 'change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
+    bind('tpAB', this.dom.tpAB, 'click', () => this.toggleAB());
+    if (this.dom.waveProcCanvas) bind('waveformCanvas', this.dom.waveProcCanvas, 'click', e => {
+      const r = this.dom.waveProcCanvas.getBoundingClientRect();
+      if (r.width > 0) this.seekTo((e.clientX - r.left) / r.width);
+    });
+    if (this.dom.waveOrigCanvas) bind('waveformOrig', this.dom.waveOrigCanvas, 'click', e => {
+      const r = this.dom.waveOrigCanvas.getBoundingClientRect();
+      if (r.width > 0) this.seekTo((e.clientX - r.left) / r.width);
+    });
+    bind('clearFile', this.dom.clearFile, 'click', () => this.clearLoadedFile());
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
       document.querySelectorAll('.tab').forEach(x => {
         const isActive = x === t;
@@ -985,6 +1010,7 @@ class VoiceIsolatePro {
     this.dom.saveProcBtn.disabled = true;
     this.dom.tpAB.disabled = true;
     [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew, this.dom.tpFwd, this.dom.tpSeek, this.dom.tpSpeed].forEach(el => { if (el) el.disabled = false; });
+    if (this.dom.playBtn) this.dom.playBtn.disabled = false;
     this.dom.tpTotal.textContent = dur;
     this.dom.tpABLabel.textContent = 'Original';
     this.dom.hDur.textContent = dur;
@@ -1052,6 +1078,20 @@ class VoiceIsolatePro {
   }
 
   // ======== TRANSPORT ========
+  async togglePlayback() {
+    this.ensureCtx();
+    if (this.ctx && this.ctx.state === 'suspended') {
+      try { await this.ctx.resume(); } catch {}
+    }
+    if (this.isPlaying) { this.pause(); return; }
+    if (this.currentSource) {
+      try { this.currentSource.stop(); } catch {}
+      try { this.currentSource.disconnect(); } catch {}
+      this.currentSource = null;
+    }
+    this.play();
+  }
+
   play() {
     // Teardown previous playback state without resetting playOffset
     if (typeof this.teardownChain === 'function') this.teardownChain();
@@ -1104,6 +1144,28 @@ class VoiceIsolatePro {
     this.stopDiagnostics();
     this.dom.tpCur.textContent = '0:00';
     this._setScrubPos(0);
+  }
+
+  clearLoadedFile() {
+    this.stop();
+    this.inputBuffer = null;
+    this.outputBuffer = null;
+    this.abMode = 'original';
+    if (this.videoUrl) {
+      try { URL.revokeObjectURL(this.videoUrl); } catch {}
+      this.videoUrl = null;
+    }
+    if (this.dom.videoPlayer) this.dom.videoPlayer.src = '';
+    if (this.dom.videoCard) this.dom.videoCard.style.display = 'none';
+    if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'No file loaded';
+    if (this.dom.processBtn) this.dom.processBtn.disabled = true;
+    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
+    if (this.dom.saveOrigBtn) this.dom.saveOrigBtn.disabled = true;
+    if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = true;
+    if (this.dom.tpAB) this.dom.tpAB.disabled = true;
+    if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = 'Original';
+    [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew, this.dom.tpFwd, this.dom.tpSeek, this.dom.tpSpeed].forEach(el => { if (el) el.disabled = true; });
+    this.setStatus('IDLE');
   }
 
   seekDelta(d) {
