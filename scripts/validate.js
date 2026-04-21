@@ -45,7 +45,7 @@ sliderGroups.forEach(g => check(appJs.includes(`${g}:`), `Slider group: ${g}`));
 
 // Count slider definitions inside the SLIDERS literal only (avoid counting
 // EQ-band config objects and other `id:` occurrences elsewhere in app.js).
-const slidersBlock = appJs.match(/const SLIDERS\s*=\s*\{([\s\S]*?)\n\};/);
+const slidersBlock = appJs.match(/const SLIDERS\s*=\s*\{([\s\S]*?)\s*\};/);
 const sliderMatches = slidersBlock ? slidersBlock[1].match(/\{\s*id\s*:\s*'/g) : null;
 const sliderCount = sliderMatches ? sliderMatches.length : 0;
 check(sliderCount === 52, `Slider count: ${sliderCount} (must be 52)`);
