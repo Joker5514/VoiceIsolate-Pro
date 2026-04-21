@@ -212,7 +212,7 @@ router.post('/checkout', async (req, res) => {
     const priceId = PRICE_IDS[priceKey];
     if (!priceId) return res.status(400).json({ error: 'Price not configured' });
 
-    const origin = req.headers.origin;
+    const origin = req.headers.origin || (req.get('host') ? `${req.protocol}://${req.get('host')}` : null);
     const safeSuccess =
       safeRedirectUrl(successUrl, origin) ||
       (origin ? `${origin}/app/?payment=success&session_id={CHECKOUT_SESSION_ID}` : null);
