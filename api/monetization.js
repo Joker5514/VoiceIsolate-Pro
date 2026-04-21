@@ -184,23 +184,27 @@ const PRICE_IDS = {
 };
 
 // ─── POST /api/checkout ───────────────────────────────────────────────────────
-// Requires a valid Bearer auth token. The authenticated user's email is used
-// as Stripe customer_email (the request body's `email` is ignored) so one
-// account cannot spam checkout sessions for another user. success/cancel
-// URLs must be same-origin; anything else is silently dropped in favour of
-// the safe default.
+// Bearer auth is preferred. When present and valid, the token email is used
+// as Stripe customer_email (request body email is ignored). For backwards
+// compatibility with clients that do not send Authorization yet, checkout
+// still works without Bearer auth and may use request-body email if provided.
+// success/cancel URLs must be same-origin; anything else is silently dropped
+// in favour of the safe default.
 router.post('/checkout', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-    const payload = validateLicenseToken(authHeader.slice(7));
-    if (!payload || !payload.email) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
+    let payload = null;
+    if (authHeader) {
+      if (!authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+      payload = validateLicenseToken(authHeader.slice(7));
+      if (!payload || !payload.email) {
+        return res.status(401).json({ error: 'Invalid or expired token' });
+      }
     }
 
-    const { tier, cycle = 'monthly', successUrl, cancelUrl } = req.body;
+    const { tier, cycle = 'monthly', successUrl, cancelUrl, email } = req.body;
     if (!tier || !['PRO', 'STUDIO', 'ENTERPRISE'].includes(tier.toUpperCase())) {
       return res.status(400).json({ error: 'Invalid tier' });
     }
@@ -224,16 +228,17 @@ router.post('/checkout', async (req, res) => {
     }
 
     const stripe = await getStripe();
+    const customerEmail = payload?.email || (typeof email === 'string' ? email.trim() : '');
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
-      customer_email: payload.email,
+      ...(customerEmail ? { customer_email: customerEmail } : {}),
       success_url: safeSuccess,
       cancel_url: safeCancel,
-      metadata: { tier: tier.toUpperCase(), cycle, userId: payload.sub || '' },
+      metadata: { tier: tier.toUpperCase(), cycle, userId: payload?.sub || '' },
       subscription_data: {
-        metadata: { tier: tier.toUpperCase(), cycle, userId: payload.sub || '' },
+        metadata: { tier: tier.toUpperCase(), cycle, userId: payload?.sub || '' },
         trial_period_days: 14,
       },
     });

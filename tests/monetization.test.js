@@ -978,11 +978,10 @@ describe('Webhook idempotency — hasProcessedEvent / markEventProcessed', () =>
   });
 });
 
-// ── Checkout endpoint requires Bearer auth (api/monetization.js v24 change) ──
-// v24 added an authentication requirement to POST /checkout. The endpoint now
-// validates the Bearer token and uses the token's email — the request body
-// email is ignored.
-describe('POST /checkout — requires Bearer auth (v24)', () => {
+// ── Checkout endpoint prefers Bearer auth, but supports legacy clients ───────
+// If Bearer auth is present and valid, token email wins. Without Authorization,
+// request-body email may be used for backwards compatibility.
+describe('POST /checkout — auth optional compatibility mode (v24)', () => {
   function buildCheckoutApp() {
     const app = express();
     app.use(express.json());
@@ -990,24 +989,27 @@ describe('POST /checkout — requires Bearer auth (v24)', () => {
     // Mirrors the new checkout auth guard from api/monetization.js v24
     app.post('/checkout', (req, res) => {
       const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Authentication required' });
-      }
-      const token = authHeader.slice(7);
-      const payload = validateLicenseToken(token);
-      if (!payload || !payload.email) {
-        return res.status(401).json({ error: 'Invalid or expired token' });
+      let payload = null;
+      if (authHeader) {
+        if (!authHeader.startsWith('Bearer ')) {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+        const token = authHeader.slice(7);
+        payload = validateLicenseToken(token);
+        if (!payload || !payload.email) {
+          return res.status(401).json({ error: 'Invalid or expired token' });
+        }
       }
 
-      const { tier, cycle = 'monthly', successUrl, cancelUrl } = req.body;
+      const { tier, cycle = 'monthly', successUrl, cancelUrl, email } = req.body;
       if (!tier || !['PRO', 'STUDIO', 'ENTERPRISE'].includes(tier.toUpperCase())) {
         return res.status(400).json({ error: 'Invalid tier' });
       }
 
-      // Use authenticated user's email, not request body email
+      // Use authenticated user's email when available, else request email
       res.json({
         ok: true,
-        userEmail: payload.email,
+        userEmail: payload?.email || email || null,
         tier: tier.toUpperCase(),
         cycle,
       });
@@ -1018,12 +1020,12 @@ describe('POST /checkout — requires Bearer auth (v24)', () => {
 
   const checkoutApp = buildCheckoutApp();
 
-  test('returns 401 when no Authorization header is sent', async () => {
+  test('allows checkout when no Authorization header is sent', async () => {
     const res = await request(checkoutApp)
       .post('/checkout')
-      .send({ tier: 'PRO', cycle: 'monthly' });
-    expect(res.status).toBe(401);
-    expect(res.body.error).toBe('Authentication required');
+      .send({ tier: 'PRO', cycle: 'monthly', email: 'guest@example.com' });
+    expect(res.status).toBe(200);
+    expect(res.body.userEmail).toBe('guest@example.com');
   });
 
   test('returns 401 when Authorization header is missing Bearer prefix', async () => {
