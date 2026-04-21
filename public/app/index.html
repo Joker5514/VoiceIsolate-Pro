@@ -336,9 +336,9 @@
             <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem">
               <span>Oscilloscope</span>
               <div style="display:flex;gap:2px">
-                <button class="btn btn-xs osc-mode active" data-mode="wave">W</button>
-                <button class="btn btn-xs osc-mode" data-mode="mirror">M</button>
-                <button class="btn btn-xs osc-mode" data-mode="lissajous">XY</button>
+                <button class="btn btn-xs osc-mode active" data-mode="wave" aria-label="Oscilloscope mode: Wave" aria-pressed="true">W</button>
+                <button class="btn btn-xs osc-mode" data-mode="mirror" aria-label="Oscilloscope mode: Mirror" aria-pressed="false">M</button>
+                <button class="btn btn-xs osc-mode" data-mode="lissajous" aria-label="Oscilloscope mode: Lissajous (XY)" aria-pressed="false">XY</button>
               </div>
             </div>
             <canvas id="oscCanvas" class="viz-canvas diag-osc-cv" aria-label="Oscilloscope"></canvas>
@@ -347,9 +347,9 @@
             <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem">
               <span>Spec Overlay</span>
               <div style="display:flex;gap:2px">
-                <button class="btn btn-xs overlay-toggle active" data-overlay="noise">Noise</button>
-                <button class="btn btn-xs overlay-toggle active" data-overlay="erb">ERB</button>
-                <button class="btn btn-xs overlay-toggle" data-overlay="ml">ML</button>
+                <button class="btn btn-xs overlay-toggle active" data-overlay="noise" aria-label="Toggle noise overlay" aria-pressed="true">Noise</button>
+                <button class="btn btn-xs overlay-toggle active" data-overlay="erb" aria-label="Toggle ERB overlay" aria-pressed="true">ERB</button>
+                <button class="btn btn-xs overlay-toggle" data-overlay="ml" aria-label="Toggle ML overlay" aria-pressed="false">ML</button>
               </div>
             </div>
             <canvas id="specOverlayCanvas" class="viz-canvas diag-spec-cv" aria-label="Spectrogram overlays"></canvas>
@@ -386,9 +386,9 @@
           <span class="viz-badge" id="vuMeterPanelLabel">Per-Speaker</span>
           <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
             <span id="diarTimeLabel" style="font-size:11px;color:#9ca3af;font-family:monospace;">00:00.0</span>
-            <button id="diarZoomIn"  class="btn btn-xs" title="Zoom in">＋</button>
-            <button id="diarZoomOut" class="btn btn-xs" title="Zoom out">－</button>
-            <button id="diarZoomFit" class="btn btn-xs" title="Fit all">⤢</button>
+            <button id="diarZoomIn"  class="btn btn-xs" title="Zoom in" aria-label="Zoom in">＋</button>
+            <button id="diarZoomOut" class="btn btn-xs" title="Zoom out" aria-label="Zoom out">－</button>
+            <button id="diarZoomFit" class="btn btn-xs" title="Fit all" aria-label="Fit all">⤢</button>
           </div>
         </div>
         <div style="position:relative;overflow:hidden;">
