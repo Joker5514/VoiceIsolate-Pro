@@ -430,7 +430,8 @@ const Paywall = (() => {
       // Production: call backend — price resolution happens server-side via env vars
       try {
         const headers = { 'Content-Type': 'application/json' };
-        const authToken = (typeof window !== 'undefined' && window.Auth?.currentUser?.token) || null;
+        const authTokenRaw = window.Auth?.currentUser?.token || null;
+        const authToken = typeof authTokenRaw === 'string' ? authTokenRaw.trim() : '';
         if (authToken) headers.Authorization = `Bearer ${authToken}`;
         const res = await fetch('/api/checkout', {
           method: 'POST',

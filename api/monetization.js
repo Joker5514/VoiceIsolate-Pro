@@ -108,6 +108,21 @@ function safeRedirectUrl(candidate, originHeader) {
   }
 }
 
+// ReDoS-safe email normalization for legacy checkout callers that pass email
+// in request body. Accepts trimmed strings within sane length bounds (5..254),
+// exactly one "@", and domains containing at least one dot that is not leading/
+// trailing. Returns normalized email or empty string when invalid.
+function normalizeCheckoutEmail(candidate) {
+  if (typeof candidate !== 'string') return '';
+  const email = candidate.trim();
+  if (email.length < 5 || email.length > 254 || email.includes(' ')) return '';
+  const at = email.indexOf('@');
+  if (at <= 0 || at !== email.lastIndexOf('@') || at === email.length - 1) return '';
+  const domain = email.slice(at + 1);
+  if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.')) return '';
+  return email;
+}
+
 // Simple in-memory idempotency cache for Stripe webhook event IDs. For
 // serverless or multi-instance production deployments, swap for Redis.
 const _processedWebhookEvents = new Map(); // eventId → expiresAt ms
@@ -228,7 +243,7 @@ router.post('/checkout', async (req, res) => {
     }
 
     const stripe = await getStripe();
-    const customerEmail = payload?.email || (typeof email === 'string' ? email.trim() : '');
+    const customerEmail = payload?.email || normalizeCheckoutEmail(email);
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
