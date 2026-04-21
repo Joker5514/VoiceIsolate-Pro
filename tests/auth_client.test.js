@@ -223,3 +223,48 @@ describe('incrementFileUsage()', () => {
     expect(body).not.toContain('sessionStorage');
   });
 });
+
+// ── v24: Admin user removed from USERS array (public/app/auth.js PR change) ──
+// v24 removed the hardcoded admin account (joker5514 / Admin8052) from the
+// client-side USERS array. Admin access is now provisioned server-side only.
+describe('Removed hardcoded admin from USERS array (v24)', () => {
+  test('does NOT contain the username "joker5514" in USERS', () => {
+    expect(authSrc).not.toContain("'joker5514'");
+    expect(authSrc).not.toContain('"joker5514"');
+  });
+
+  test('does NOT contain the hardcoded password hash for Admin8052', () => {
+    // The previous hash: fc157fd1df28bbac5e71f6c38d64c6ecae40f45318a866989947196aba244c03
+    expect(authSrc).not.toContain('fc157fd1df28bbac5e71f6c38d64c6ecae40f45318a866989947196aba244c03');
+  });
+
+  test('does NOT contain displayName "Randy Jordan"', () => {
+    expect(authSrc).not.toContain('Randy Jordan');
+  });
+
+  test('USERS array does not hardcode any admin role entry', () => {
+    // Extract the USERS array literal from source
+    const usersMatch = authSrc.match(/const USERS\s*=\s*\[([\s\S]*?)\];/);
+    expect(usersMatch).not.toBeNull();
+    const usersBlock = usersMatch[1];
+    // No entry in the array should have role: 'admin'
+    expect(usersBlock).not.toContain("role:         'admin'");
+    expect(usersBlock).not.toContain("role: 'admin'");
+  });
+
+  test('login modal hint text no longer shows admin credentials', () => {
+    // v24 changed the hint from showing "joker5514 / Admin8052" to dev-mode advice
+    expect(authSrc).not.toContain('joker5514 / Admin8052');
+  });
+
+  test('login modal hint points to api/auth.js instead of hardcoded creds', () => {
+    expect(authSrc).toContain('api/auth.js');
+  });
+
+  test('USERS array still contains the test accounts', () => {
+    expect(authSrc).toContain("'test_free'");
+    expect(authSrc).toContain("'test_pro'");
+    expect(authSrc).toContain("'test_studio'");
+    expect(authSrc).toContain("'test_enterprise'");
+  });
+});
