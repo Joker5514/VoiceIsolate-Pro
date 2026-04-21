@@ -1,11 +1,11 @@
 # VoiceIsolate Pro · v24.0
 
-> **Browser-based, 100% local, 40-stage audio processing platform.**
+> **Browser-based, 100% local, 32-stage audio processing platform.**
 > Zero cloud. Zero telemetry. Privacy-first.
 
 [![Deploy](https://img.shields.io/badge/Vercel-live-brightgreen?logo=vercel)](https://voice-isolate-pro.vercel.app)
 [![Version](https://img.shields.io/badge/version-v24.0-blue)](#changelog)
-[![Pipeline](https://img.shields.io/badge/pipeline-40--stage-purple)](#pipeline)
+[![Pipeline](https://img.shields.io/badge/pipeline-32--stage-purple)](#pipeline)
 [![License](https://img.shields.io/badge/license-PROPRIETARY-red)](LICENSE)
 
 ---
@@ -33,22 +33,20 @@
 ┌─────────────────────────────────────────────────────────────┐
 │          PipelineOrchestrator (pipeline-orchestrator.js)    │
 │  ┌─ Single-Pass STFT (Critical for phase coherence)        │
-│  │  Forward FFT → 40-stage spectral ops (in-place)         │
-│  │  → Inverse iFFT → Overlap-Add                            │
+│  │  Forward FFT (S10) → spectral ops in-place (S11–S19)    │
+│  │  → Inverse iFFT (S20) → Overlap-Add                      │
 │  │                                                           │
-│  └─ 12 Passes, 40 Stages (Dodeca-Pass):                    │
-│     Pass  1: Ingestion & Normalization (S1–S4)             │
-│     Pass  2: Analysis & Classification (S5–S8)             │
-│     Pass  3: Classical DSP Annihilation (S9–S14)           │
-│     Pass  4: ML Source Separation (S15–S19)                │
-│     Pass  5: Spectral Refinement (S20–S22)                 │
-│     Pass  6: Room Correction (S23–S26)                     │
-│     Pass  7: Time-Domain Polish (S27–S29)                  │
-│     Pass  8: Neural Reconstruction (S30–S33)               │
-│     Pass  9: Stereo Recovery & Spatial (S34–S35)           │
-│     Pass 10: Perceptual QA (S36–S37)                       │
-│     Pass 11: Forensic Certification (S38)                  │
-│     Pass 12: Output Mastering (S39–S40)                    │
+│  └─ 10 Passes, 32 Stages (Deca-Pass):                      │
+│     Pass  1: Input & Normalization (S01–S04)               │
+│     Pass  2: Pre-Spectral Cleanup (S05–S09)                │
+│     Pass  3: Forward STFT (S10)                             │
+│     Pass  4: Wiener NR (S11–S12)                            │
+│     Pass  5: Spectral Refinement (S13–S19)                 │
+│     Pass  6: Inverse STFT (S20)                             │
+│     Pass  7: Offline Audio Graph (S21–S25)                 │
+│     Pass  8: Render & Mix (S26–S28)                         │
+│     Pass  9: Finalize & Metrics (S29–S31)                  │
+│     Pass 10: Forensic Export (S32)                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -60,7 +58,7 @@
 | `public/app/style.css` | Dark theme · CSS custom properties · Responsive |
 | `public/app/app.js` | Main-thread orchestration · UI ↔ pipeline bridge |
 | `public/app/dsp-core.js` | All DSP math (STFT, iSTFT, gates, EQ, dynamics, filters) |
-| `public/app/pipeline-orchestrator.js` | 40-stage pipeline runner · ONNX model init |
+| `public/app/pipeline-orchestrator.js` | 32-stage pipeline runner · ONNX model init |
 | `public/app/voice-isolate-processor.js` | AudioWorkletProcessor · real-time live mode |
 | `public/app/dsp-worker.js` | Worker thread · ML inference + CPU-heavy DSP |
 | `public/app/ml-worker.js` | ML worker · ONNX Runtime Web · model management |
@@ -73,35 +71,33 @@
 
 ### New in v24.0
 - **Threads from Space v13**: Upgraded architecture with adaptive ML routing and plugin bus
-- **40-Stage Dodeca-Pass Pipeline**: 12 processing passes (up from 10 passes / 36 stages)
-- **New Stages**: Micro-pitch correction (S28), spatial audio (S35), LUFS mastering (S39), scene classification (S08)
-- **<10ms Latency**: Reduced from <16ms via optimized AudioWorklet + ring buffer
-- **HiFi-GAN v2 Vocoder**: Neural speech resynthesis with natural breathiness
-- **Stereo Recovery Pass**: Mid-side decomposition and spatial cue preservation
+- **32-Stage Deca-Pass Pipeline**: 10 processing passes, enforced by `scripts/validate.js`
+- **Single-Pass STFT**: One forward STFT (S10) + one iSTFT (S20) per processing path, all spectral ops in-place
 - **Forensic Certification**: SHA-256 chain-of-custody with timestamped audit chain
+- **HiFi-GAN v2 Vocoder**: Neural speech resynthesis with natural breathiness
 - **Ensemble Fusion**: Demucs v4.1 + BS-RoFormer + BSRNN with learned per-band weights
+- **Stronger NR defaults** (v24 point releases): tuned noise-reduction and voice-isolation defaults to actually strip background noise in Engineer Mode
 
 ### Core Capabilities
-- **Studio-Grade Voice Isolation**: -96dB noise floor, 32 ERB bands, forensic-grade
+- **Studio-Grade Voice Isolation**: low noise floor, 32 ERB bands, forensic-grade
 - **Multi-Band Noise Reduction**: Adaptive spectral gating with continuous noise tracking
 - **Overlapping Voice Separation**: Attention-based mask estimation per speaker via voiceprint
-- **Real-Time Processing**: <10ms end-to-end latency on desktop/mobile
-- **Offline High-Fidelity**: Full 40-stage pipeline, 4x oversampling, neural reconstruction
+- **Real-Time Processing**: low-latency AudioWorklet path with SharedArrayBuffer ring buffer
+- **Offline High-Fidelity**: Full 32-stage pipeline + neural reconstruction
 - **Artifact Suppression**: Temporal coherence + harmonic reconstruction + musical noise removal
 
 ---
 
-## Performance Metrics (v24)
+## Performance Targets (v24)
 
-| Metric | Value |
+> These are design targets, not measured guarantees. Benchmarks vary by device, model backend (WebGPU/WASM), and input material.
+
+| Metric | Target |
 |---|---|
-| **Real-Time Latency** | <10ms end-to-end (AudioWorklet) |
-| **Offline Throughput** | 6–8x real-time (GPU), 2–4x (CPU) |
-| **Noise Floor** | -96dB (offline), -72dB (real-time) |
-| **SNR Improvement** | +10–15 dB |
-| **PESQ Score** | >3.5 MOS |
-| **Intelligibility (STOI)** | >97% |
-| **ML Model Footprint** | ~50MB total (lazy loaded) |
+| **Real-Time Latency** | Low-latency AudioWorklet path (<20 ms end-to-end on desktop) |
+| **Offline Throughput** | Several× real-time on modern GPU/CPU |
+| **SNR Improvement** | +10–15 dB on typical speech-in-noise material |
+| **ML Model Footprint** | ~50 MB total (lazy loaded, cached in IndexedDB) |
 | **Supported Formats** | MP3, WAV, M4A, FLAC, OGG, OPUS, AAC, MP4, MOV, WEBM, MKV |
 
 ---
@@ -168,13 +164,13 @@ pnpm test
 
 ## Documentation
 
-**Complete Technical Blueprint**: See `VoiceIsolate_Pro_v24_Blueprint.docx`
+**Complete Technical Blueprint**: See `VoiceIsolate_Pro_v24_Blueprint.docx` for the long-form design doc. Note that the blueprint describes a target architecture; the shipped code currently implements the 32-stage Deca-Pass variant above. `CLAUDE.md` is the authoritative contributor reference — read it before editing.
 
-Sections:
+Blueprint sections:
 1. Executive Summary & Version Evolution
 2. Core Capabilities & Noise Classification Matrix
 3. System Architecture (Threads from Space v13)
-4. 40-Stage Dodeca-Pass Pipeline (all 12 passes detailed)
+4. 32-Stage Deca-Pass Pipeline
 5. Algorithms & Models (ensemble fusion, voiceprint gating, adaptive noise)
 6. Module-by-Module Breakdown with Critical Integration Points
 7. Pseudocode: Complete Pipeline (offline + real-time AudioWorklet)
@@ -191,21 +187,18 @@ Sections:
 
 ## Changelog
 
-### v24.0 (April 2026) — Threads from Space v13
-- **ARCHITECTURE**: Threads from Space v13 — adaptive ML routing, plugin bus, 7-layer system
-- **PIPELINE**: 40-stage Dodeca-Pass (12 passes, up from 36-stage/10-pass)
-- **NEW**: Micro-pitch correction (S28), spatial audio (S35), LUFS mastering (S39), scene classifier (S08)
+### v24.0 (2026) — Threads from Space v13
+- **ARCHITECTURE**: Threads from Space v13 — adaptive ML routing, plugin bus
+- **PIPELINE**: 32-stage Deca-Pass (10 passes), enforced by `scripts/validate.js`
 - **NEW**: HiFi-GAN v2 neural vocoder for speech resynthesis
-- **NEW**: Stereo recovery pass with mid-side decomposition
-- **NEW**: Comprehensive v24 blueprint (15 sections, full pseudocode, architecture diagrams)
-- **IMPROVED**: Real-time latency <10ms (down from <16ms)
-- **IMPROVED**: Noise floor -96dB offline (up from -80dB)
+- **NEW**: Comprehensive v24 blueprint (target architecture, pseudocode, diagrams)
 - **IMPROVED**: 3-model ensemble fusion (Demucs + BS-RoFormer + BSRNN) with learned per-band weights
-- **VERIFIED**: Single-pass STFT architecture enforced across all spectral operations
+- **IMPROVED**: Stronger default NR + voice-isolation parameters so background noise is actually removed
+- **IMPROVED**: Hardened playback controls + controls diagnostic script
+- **VERIFIED**: Single-pass STFT architecture enforced across all three processing paths (main thread, DSP worker, AudioWorklet)
 
 ### v23.0 (Previous)
 - Threads from Space v12 architecture
-- 36-stage Deca-Pass pipeline
 - Real-time + offline modes
 - WebAudio integration
 

@@ -43,10 +43,12 @@ check(appJs.length > 10000, `Size: ${appJs.length} bytes (>10KB)`);
 const sliderGroups = ['gate', 'nr', 'eq'];
 sliderGroups.forEach(g => check(appJs.includes(`${g}:`), `Slider group: ${g}`));
 
-// Count slider definitions
-const sliderMatches = appJs.match(/id:\s*'/g);
+// Count slider definitions inside the SLIDERS literal only (avoid counting
+// EQ-band config objects and other `id:` occurrences elsewhere in app.js).
+const slidersBlock = appJs.match(/const SLIDERS\s*=\s*\{([\s\S]*?)\s*\};/);
+const sliderMatches = slidersBlock ? slidersBlock[1].match(/\{\s*id\s*:\s*'/g) : null;
 const sliderCount = sliderMatches ? sliderMatches.length : 0;
-check(sliderCount >= 52, `Slider count: ${sliderCount} (>=52)`);
+check(sliderCount === 52, `Slider count: ${sliderCount} (must be 52)`);
 
 // Count STAGES
 const stagesMatch = appJs.match(/const STAGES = \[([\s\S]*?)\];/);
@@ -115,33 +117,6 @@ check(blueprint.includes('Threads from Space'), 'Threads from Space architecture
 
 // 5. Duplicate JSON key check
 console.log('\nJSON duplicate key check:');
-function checkDuplicateKeys(filePath) {
-  const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
-  const dupes = [];
-  // Use a stack of Sets to track keys at each nesting level
-  const stack = [new Set()];
-  const lines = raw.split('\n');
-  const keyPattern = /^\s*"([^"]+)"\s*:/;
-  for (const line of lines) {
-    // Match key at the current depth before processing braces on this line
-    const match = line.match(keyPattern);
-    if (match) {
-      const key = match[1];
-      const currentLevel = stack[stack.length - 1];
-      if (currentLevel.has(key)) {
-        dupes.push(key);
-      }
-      currentLevel.add(key);
-    }
-    // Update depth after matching: opening braces push new scope, closing braces pop
-    for (const ch of line) {
-      if (ch === '{' || ch === '[') stack.push(new Set());
-      if ((ch === '}' || ch === ']') && stack.length > 1) stack.pop();
-    }
-  }
-  return dupes;
-}
-
 const { findDuplicateKeys } = require('./check-duplicate-keys.js');
 function checkDuplicateKeysWrapper(filePath) {
   const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');

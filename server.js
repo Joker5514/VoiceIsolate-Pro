@@ -8,6 +8,7 @@
 'use strict';
 
 import express from 'express';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import apiRouter from './api/index.js';
@@ -15,7 +16,7 @@ import apiRouter from './api/index.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 const PORT       = process.env.PORT || 3000;
-const APP_VERSION = '22.1.0'; // FIX 9: updated from 21.0.0
+const APP_VERSION = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')).version;
 const app        = express();
 
 // ── Cross-Origin Isolation (required for SharedArrayBuffer) ──────────────
