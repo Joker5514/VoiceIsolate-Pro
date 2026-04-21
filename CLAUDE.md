@@ -6,13 +6,15 @@ This file provides AI assistants with everything needed to navigate, understand,
 
 ## Project Overview
 
-**VoiceIsolate Pro** (v23.1) is a **browser-based, 100% local audio processing platform** for professional voice isolation and audio enhancement. Key attributes:
+**VoiceIsolate Pro** (v24.0.0) is a **browser-based, 100% local audio processing platform** for professional voice isolation and audio enhancement. Key attributes:
 
 - **Zero cloud processing**: All audio is processed on-device using Web Audio API + ONNX Runtime Web
 - **Privacy-first**: No telemetry, no external API calls during audio processing
 - **32-Stage Deca-Pass Pipeline**: Advanced DSP + hybrid ML (10 passes, 32 stages total)
 - **Cross-platform**: Web (Vercel), native Android (API 23+), native iOS (14.1+) via Capacitor 7
 - **Engineer Mode UI**: 52 sliders across 8 tabs, 6-panel diagnostics, 3D spectrogram visualization
+
+> Canonical version lives in `package.json#version`. `server.js` reads it from `package.json` at startup; when bumping the version, update `package.json`, `README.md`, this file, `capacitor.config.json`, and the `mobile:version` script together.
 
 ---
 
@@ -118,11 +120,21 @@ These are non-negotiable architectural rules enforced by `scripts/validate.js` a
 
 ### 1. Single-Pass Spectral Architecture
 
-The pipeline has **exactly one forward STFT** (Stage 10) and **exactly one iSTFT** (Stage 20). All spectral operations (noise reduction, voice separation, EQ, etc.) occur **in-place** between these two transforms. Never add a second STFT/iSTFT pair.
+**Within any single processing path**, there is exactly one forward STFT and one iSTFT, with all spectral operations (noise reduction, voice separation, EQ, etc.) occurring **in-place** between them. Never add a second STFT/iSTFT pair to the same path.
 
 ```
 [Time Domain] → STFT (Stage 10) → [Spectral Ops Stages 11–19] → iSTFT (Stage 20) → [Time Domain]
 ```
+
+There are three independent processing paths, each honoring this rule:
+
+| Path | STFT call | iSTFT call |
+|------|-----------|------------|
+| Offline main thread | `app.js` → `DSP.forwardSTFT` | `app.js` → `DSP.inverseSTFT` |
+| Offline worker pool | `dsp-worker.js` → `dspCore.forwardSTFT` | `dsp-worker.js` → `dspCore.inverseSTFT` |
+| Real-time AudioWorklet | `voice-isolate-processor.js` → `_forwardSTFTFrame` | `voice-isolate-processor.js` → `_inverseSTFTFrame` |
+
+Both implementations live in `public/app/dsp-core.js` (`forwardSTFT`/`inverseSTFT`) — do not fork additional copies.
 
 ### 2. AudioWorklet Ownership
 
@@ -183,7 +195,20 @@ All 52 sliders are defined in `app.js` as the `SLIDERS` array. Each slider objec
 }
 ```
 
-Sliders are organized into 8 tabs: Gate, Noise Reduction, EQ, Compression, Reverb/Echo, Stereo, Loudness, Advanced.
+Sliders are organized into 8 tab groups in the `SLIDERS` object:
+
+| Key    | Sliders | Purpose                                                  |
+|--------|---------|----------------------------------------------------------|
+| `gate` | 6       | Threshold, range, attack/release/hold, lookahead         |
+| `nr`   | 5       | Spectral noise reduction amount/sensitivity/floor/smoothing |
+| `eq`   | 10      | 10-band parametric EQ (Sub/Bass/Warmth/.../Brilliance)   |
+| `dyn`  | 8       | Compressor + brickwall limiter                           |
+| `spec` | 8       | HP/LP filters, de-esser, spectral tilt, formant shift    |
+| `adv`  | 6       | Dereverb, harmonic recovery, stereo width, phase correction |
+| `sep`  | 5       | Voice isolation, background suppress, focus band, crosstalk |
+| `out`  | 4       | Output gain, dry/wet, dither, output width               |
+
+Total: 6 + 5 + 10 + 8 + 8 + 6 + 5 + 4 = **52** (enforced by `scripts/validate.js` and `tests/sliders.test.js`).
 
 **When adding a new slider**:
 1. Add the object to `SLIDERS` in `app.js`
@@ -195,8 +220,8 @@ Sliders are organized into 8 tabs: Gate, Noise Reduction, EQ, Compression, Rever
 
 ## Preset System
 
-7 named presets defined in `app.js` as the `PRESETS` object:
-- `Podcast`, `Film`, `Interview`, `Forensic`, `Music`, `Broadcast`, `Restoration`
+8 named presets defined in `app.js` as the `PRESETS` object:
+- `Voice Clarity`, `Podcast Clean`, `Forensic Extract`, `Music Vocal`, `Whisper Boost`, `Phone/Radio`, `Live Performance`, `Surveillance`
 
 Each preset must define a value for **all 52 slider IDs**. The test `tests/presets.test.js` validates completeness. Applied via `applyPreset(presetName)`.
 
@@ -381,17 +406,19 @@ Node 24 + pnpm 9.0.0 on `ubuntu-latest`.
 
 ## Key Files Quick Reference
 
+Sizes are approximate; authoritative counts come from `wc -c`.
+
 | File | Size | Purpose |
 |------|------|---------|
-| `public/app/app.js` | 113KB | Main orchestrator: slider defs, presets, UI, transport |
-| `public/app/dsp-core.js` | 47KB | Pure DSP math: STFT, filters, spectral algorithms |
-| `public/app/pipeline-orchestrator.js` | 21KB | 36-stage Deca-Pass runner, AudioWorklet + ML worker init |
-| `public/app/pipeline-state.js` | 19KB | Centralized state, event bus |
-| `public/app/ml-worker.js` | 28KB | ONNX inference worker (Demucs, BSRNN, VAD) |
-| `public/app/ml-worker-fetch-cache.js` | 24KB | Model caching via IndexedDB |
-| `public/app/voice-isolate-processor.js` | 15KB | AudioWorklet real-time processor |
-| `public/app/batch-processor.js` | 14KB | Multi-file batch queue |
-| `public/app/visuals.js` | 20KB | Three.js 3D spectrogram |
+| `public/app/app.js` | ~128KB | Main orchestrator: slider defs, presets, UI, transport |
+| `public/app/dsp-core.js` | ~52KB | Pure DSP math: STFT, filters, spectral algorithms |
+| `public/app/pipeline-orchestrator.js` | ~29KB | 32-stage Deca-Pass runner, AudioWorklet + ML worker init |
+| `public/app/pipeline-state.js` | ~19KB | Centralized state, event bus |
+| `public/app/ml-worker.js` | ~32KB | ONNX inference worker (Demucs, BSRNN, VAD) |
+| `public/app/ml-worker-fetch-cache.js` | ~24KB | Model caching via IndexedDB |
+| `public/app/voice-isolate-processor.js` | ~19KB | AudioWorklet real-time processor |
+| `public/app/batch-processor.js` | ~14KB | Multi-file batch queue |
+| `public/app/visuals.js` | ~19KB | Three.js 3D spectrogram |
 | `server.js` | — | Express dev server with required COOP/COEP headers |
 | `api/monetization.js` | — | Stripe checkout, JWT license generation |
 
