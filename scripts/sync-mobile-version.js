@@ -22,7 +22,8 @@ if (!match) {
   process.exit(1);
 }
 const [, major, minor, patch] = match.map(Number);
-const buildNumber = major * 10000 + minor * 100 + patch;
+const buildNumber = major * 1000 + minor * 100 + patch;
+
 
 // ── Android build.gradle ─────────────────────────────────────────────────────
 const gradlePath = join(ROOT, 'android/app/build.gradle');
