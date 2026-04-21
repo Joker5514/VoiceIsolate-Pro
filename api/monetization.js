@@ -73,17 +73,65 @@ async function getStripe() {
 
 
 // ─── License Token Utilities ──────────────────────────────────────────────────
-// FIX: no throw on missing env var so Vercel deployments without the secret
-// don't crash at startup. Set LICENSE_JWT_SECRET in Vercel Environment Variables.
+// Production: env var is required. Non-production: use a random per-process
+// secret so tokens never reuse a hardcoded value, and so preview deploys
+// without env vars still boot.
 const LICENSE_SECRET = (() => {
   if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
   if (process.env.NODE_ENV === 'production') {
     throw new Error('[monetization] LICENSE_JWT_SECRET is required in production.');
   }
-  const fallback = 'voiceisolate-dev-secret-change-in-production-32chars!';
-  console.warn('[monetization] WARNING: LICENSE_JWT_SECRET not set. Using development fallback (non-production only).');
-  return fallback;
+  const random = crypto.randomBytes(48).toString('base64url');
+  console.warn(
+    '[monetization] WARNING: LICENSE_JWT_SECRET not set. Using random per-process secret. ' +
+    'License tokens will not validate after restart. Set LICENSE_JWT_SECRET for stability.'
+  );
+  return random;
 })();
+
+// Validate that a user-supplied redirect URL is safe. Accepts same-origin
+// relative paths (starting with "/") or absolute URLs whose origin matches
+// the request origin. Returns the trusted URL or null.
+function safeRedirectUrl(candidate, originHeader) {
+  if (!candidate || typeof candidate !== 'string') return null;
+  try {
+    if (candidate.startsWith('/') && !candidate.startsWith('//')) {
+      return originHeader ? new URL(candidate, originHeader).toString() : null;
+    }
+    const url = new URL(candidate);
+    if (!originHeader) return null;
+    const origin = new URL(originHeader);
+    if (url.origin !== origin.origin) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+// Simple in-memory idempotency cache for Stripe webhook event IDs. For
+// serverless or multi-instance production deployments, swap for Redis.
+const _processedWebhookEvents = new Map(); // eventId → expiresAt ms
+const WEBHOOK_DEDUP_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+function hasProcessedEvent(eventId) {
+  if (!eventId) return false;
+  const exp = _processedWebhookEvents.get(eventId);
+  if (!exp) return false;
+  if (exp < Date.now()) { _processedWebhookEvents.delete(eventId); return false; }
+  return true;
+}
+
+function markEventProcessed(eventId) {
+  if (!eventId) return;
+  _processedWebhookEvents.set(eventId, Date.now() + WEBHOOK_DEDUP_TTL_MS);
+  // Periodic eviction to bound memory
+  if (_processedWebhookEvents.size > 10000) {
+    const now = Date.now();
+    for (const [id, exp] of _processedWebhookEvents) {
+      if (exp < now) _processedWebhookEvents.delete(id);
+    }
+  }
+}
 
 function createLicenseToken(userId, email, tier, daysValid = 365) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -136,9 +184,23 @@ const PRICE_IDS = {
 };
 
 // ─── POST /api/checkout ───────────────────────────────────────────────────────
+// Requires a valid Bearer auth token. The authenticated user's email is used
+// as Stripe customer_email (the request body's `email` is ignored) so one
+// account cannot spam checkout sessions for another user. success/cancel
+// URLs must be same-origin; anything else is silently dropped in favour of
+// the safe default.
 router.post('/checkout', async (req, res) => {
   try {
-    const { tier, cycle = 'monthly', email, successUrl, cancelUrl } = req.body;
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const payload = validateLicenseToken(authHeader.slice(7));
+    if (!payload || !payload.email) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    const { tier, cycle = 'monthly', successUrl, cancelUrl } = req.body;
     if (!tier || !['PRO', 'STUDIO', 'ENTERPRISE'].includes(tier.toUpperCase())) {
       return res.status(400).json({ error: 'Invalid tier' });
     }
@@ -150,17 +212,28 @@ router.post('/checkout', async (req, res) => {
     const priceId = PRICE_IDS[priceKey];
     if (!priceId) return res.status(400).json({ error: 'Price not configured' });
 
+    const origin = req.headers.origin;
+    const safeSuccess =
+      safeRedirectUrl(successUrl, origin) ||
+      (origin ? `${origin}/app/?payment=success&session_id={CHECKOUT_SESSION_ID}` : null);
+    const safeCancel =
+      safeRedirectUrl(cancelUrl, origin) ||
+      (origin ? `${origin}/app/?payment=cancelled` : null);
+    if (!safeSuccess || !safeCancel) {
+      return res.status(400).json({ error: 'Missing or invalid redirect URL' });
+    }
+
     const stripe = await getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: priceId, quantity: 1 }],
-      customer_email: email || undefined,
-      success_url: successUrl || `${req.headers.origin}/app/?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: cancelUrl || `${req.headers.origin}/app/?payment=cancelled`,
-      metadata: { tier: tier.toUpperCase(), cycle },
+      customer_email: payload.email,
+      success_url: safeSuccess,
+      cancel_url: safeCancel,
+      metadata: { tier: tier.toUpperCase(), cycle, userId: payload.sub || '' },
       subscription_data: {
-        metadata: { tier: tier.toUpperCase(), cycle },
+        metadata: { tier: tier.toUpperCase(), cycle, userId: payload.sub || '' },
         trial_period_days: 14,
       },
     });
@@ -184,6 +257,13 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
   } catch (err) {
     console.error('[Webhook Signature Error]', err.message);
     return res.status(400).json({ error: 'Invalid signature' });
+  }
+
+  // Idempotency: Stripe retries on any non-2xx or network timeout. Short-
+  // circuit duplicate deliveries so we don't issue licenses or send emails
+  // multiple times for the same event.
+  if (hasProcessedEvent(event.id)) {
+    return res.json({ received: true, duplicate: true });
   }
 
   try {
@@ -229,6 +309,7 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
       }
     }
 
+    markEventProcessed(event.id);
     res.json({ received: true });
   } catch (err) {
     console.error('[Webhook Processing Error]', err.message);

@@ -90,7 +90,7 @@ function buildSeededUsers() {
       createdAt: new Date().toISOString(),
     };
   }
-  seedUser('usr_admin_001',       'joker5514',         'admin@voiceisolatepro.com',             'Admin8052',         'ENTERPRISE', 'admin');
+  seedUser('usr_admin_001',       'test_admin',         'admin@voiceisolatepro.com',             'TestAdmin123',         'ENTERPRISE', 'admin');
   seedUser('usr_test_free',       'test_free',         'free@test.voiceisolatepro.com',          'TestFree123',       'FREE');
   seedUser('usr_test_pro',        'test_pro',          'pro@test.voiceisolatepro.com',           'TestPro123',        'PRO');
   seedUser('usr_test_studio',     'test_studio',       'studio@test.voiceisolatepro.com',        'TestStudio123',     'STUDIO');
@@ -324,16 +324,20 @@ describe('Seeded USERS store', () => {
 
   test('contains all five seeded accounts', () => {
     expect(Object.keys(USERS)).toHaveLength(5);
-    expect(USERS).toHaveProperty('joker5514');
+    expect(USERS).toHaveProperty('test_admin');
     expect(USERS).toHaveProperty('test_free');
     expect(USERS).toHaveProperty('test_pro');
     expect(USERS).toHaveProperty('test_studio');
     expect(USERS).toHaveProperty('test_enterprise');
   });
 
-  test('joker5514 has ENTERPRISE tier and admin role', () => {
-    expect(USERS['joker5514'].tier).toBe('ENTERPRISE');
-    expect(USERS['joker5514'].role).toBe('admin');
+  test('test_admin has ENTERPRISE tier and admin role', () => {
+    expect(USERS['test_admin'].tier).toBe('ENTERPRISE');
+    expect(USERS['test_admin'].role).toBe('admin');
+  });
+
+  test('no real admin credentials leak into seeded users', () => {
+    expect(USERS).not.toHaveProperty('joker5514');
   });
 
   test('tier-named accounts have correct tiers', () => {
@@ -361,7 +365,7 @@ describe('Seeded USERS store', () => {
   });
 
   test('passwords verify correctly for seeded accounts', () => {
-    expect(verifyPassword('Admin8052',         USERS['joker5514'].passwordHash)).toBe(true);
+    expect(verifyPassword('TestAdmin123',         USERS['test_admin'].passwordHash)).toBe(true);
     expect(verifyPassword('TestFree123',       USERS['test_free'].passwordHash)).toBe(true);
     expect(verifyPassword('TestPro123',        USERS['test_pro'].passwordHash)).toBe(true);
     expect(verifyPassword('TestStudio123',     USERS['test_studio'].passwordHash)).toBe(true);
@@ -398,7 +402,7 @@ describe('POST /login', () => {
   test('admin login returns role=admin and ENTERPRISE tier', async () => {
     const res = await request(app)
       .post('/login')
-      .send({ username: 'joker5514', password: 'Admin8052' });
+      .send({ username: 'test_admin', password: 'TestAdmin123' });
     expect(res.status).toBe(200);
     expect(res.body.user.role).toBe('admin');
     expect(res.body.user.tier).toBe('ENTERPRISE');
@@ -516,7 +520,7 @@ describe('GET /me', () => {
   });
 
   test('returns isAdmin=true for the admin token', async () => {
-    const token = await loginAndGetToken('joker5514', 'Admin8052');
+    const token = await loginAndGetToken('test_admin', 'TestAdmin123');
     const res   = await request(app)
       .get('/me')
       .set('Authorization', `Bearer ${token}`);

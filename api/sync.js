@@ -24,19 +24,20 @@ router.use(express.json({ limit: '1mb' }));
 const _store = new Map(); // userId → { presets, noiseProfiles, history, updatedAt }
 
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
-// FIX: no throw on missing env var so Vercel deployments without the secret
-// don't crash at startup. Set LICENSE_JWT_SECRET in Vercel Environment Variables.
+// Production: env var required. Non-production: use a random per-process
+// secret so tokens never reuse a hardcoded value, and preview deploys still
+// boot. Tokens won't validate across restarts, which is the intended trade-off.
 const LICENSE_SECRET = (() => {
   if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
   if (process.env.NODE_ENV === 'production') {
     throw new Error('[sync] LICENSE_JWT_SECRET is required in production.');
   }
-  const fallback = 'vip-dev-fallback-secret-change-in-production-32chars';
+  const random = crypto.randomBytes(48).toString('base64url');
   console.warn(
-    '[sync] WARNING: LICENSE_JWT_SECRET not set. Using development fallback (non-production only).\n' +
-    '  → Set it in Vercel Dashboard → Settings → Environment Variables.'
+    '[sync] WARNING: LICENSE_JWT_SECRET not set. Using random per-process secret. ' +
+    'Sync tokens will not validate after restart.'
   );
-  return fallback;
+  return random;
 })();
 
 /**
