@@ -194,6 +194,9 @@ const DSPCore = {
    * @returns {{ mag: Float32Array[], phase: Float32Array[], frameCount: number }}
    */
   forwardSTFT(data, fftSize = 4096, hopSize = 1024) {
+    if (!Number.isInteger(fftSize) || fftSize < 2 || (fftSize & (fftSize - 1)) !== 0) {
+      throw new RangeError(`forwardSTFT: fftSize must be a power of two >= 2 (got ${fftSize})`);
+    }
     const window = this.hannWindow(fftSize);
     const halfN = fftSize / 2 + 1;
     // Guard: clips in shorter than one FFT window produce 0 frames rather
@@ -238,6 +241,9 @@ const DSPCore = {
    * Single exit point after all spectral operations.
    */
   inverseSTFT(mag, phase, fftSize = 4096, hopSize = 1024, outputLength = 0) {
+    if (!Number.isInteger(fftSize) || fftSize < 2 || (fftSize & (fftSize - 1)) !== 0) {
+      throw new RangeError(`inverseSTFT: fftSize must be a power of two >= 2 (got ${fftSize})`);
+    }
     const window = this.hannWindow(fftSize);
     const windowSq = this._hannSqCache(fftSize, window);
     const frameCount = mag.length;
