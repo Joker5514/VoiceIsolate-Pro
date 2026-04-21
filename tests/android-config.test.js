@@ -446,12 +446,12 @@ describe('build.gradle — app namespace and applicationId', () => {
     expect(nsMatch[1]).toBe(idMatch[1]);
   });
 
-  test('versionCode is 22100 (matching v22.1.0)', () => {
-    expect(buildGradle).toContain('versionCode 22100');
+  test('versionCode is 24000 (matching v24.0.0)', () => {
+    expect(buildGradle).toContain('versionCode 24000');
   });
 
-  test('versionName is 22.1.0', () => {
-    expect(buildGradle).toContain('versionName "22.1.0"');
+  test('versionName is 24.0.0', () => {
+    expect(buildGradle).toContain('versionName "24.0.0"');
   });
 
   test('testInstrumentationRunner is AndroidJUnitRunner', () => {
