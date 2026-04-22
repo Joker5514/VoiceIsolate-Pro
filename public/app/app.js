@@ -914,7 +914,7 @@ class VoiceIsolatePro {
 
   _bufToRaw(buf) {
     const channels = [];
-    for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch).slice());
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch));
     return { channels, sampleRate: buf.sampleRate, length: buf.length, numberOfChannels: buf.numberOfChannels, cachedAt: Date.now() };
   }
 
@@ -922,6 +922,23 @@ class VoiceIsolatePro {
     const buf = this.ctx.createBuffer(raw.numberOfChannels, raw.length, raw.sampleRate);
     for (let ch = 0; ch < raw.numberOfChannels; ch++) buf.copyToChannel(raw.channels[ch], ch);
     return buf;
+  }
+
+  _scheduleIdle(fn) {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(fn, { timeout: 750 });
+      return;
+    }
+    setTimeout(fn, 0);
+  }
+
+  _cacheResultLater(file, buf) {
+    if (!file || !buf) return;
+    const MAX_CACHE_BYTES = 64 * 1024 * 1024;
+    const estimatedBytes = buf.numberOfChannels * buf.length * Float32Array.BYTES_PER_ELEMENT;
+    if (estimatedBytes > MAX_CACHE_BYTES) return;
+    const cacheKey = this._rcKey(file);
+    this._scheduleIdle(() => this._rcPut(cacheKey, this._bufToRaw(buf)).catch(() => {}));
   }
 
   // ---- Uploaded file persistence (IndexedDB) ------------------------------
@@ -1856,8 +1873,7 @@ class VoiceIsolatePro {
       this.outputBuffer = fin;
       // Persist result so next load of same file + params is instant (non-blocking)
       if (this._lastLoadedFile) {
-        const cacheKey = this._rcKey(this._lastLoadedFile);
-        this._rcPut(cacheKey, this._bufToRaw(fin)).catch(() => {});
+        this._cacheResultLater(this._lastLoadedFile, fin);
       }
       const snr = this.calcRMS(fin.getChannelData(0)) - this.calcRMS(this.inputBuffer.getChannelData(0));
       this.dom.hSNR.textContent = (snr >= 0 ? '+' : '') + snr.toFixed(1) + ' dB';
