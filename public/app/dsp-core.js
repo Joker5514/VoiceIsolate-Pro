@@ -557,7 +557,7 @@ const DSPCore = {
     let absSum = 0;
     for (let i = 0; i < N; i++) absSum += Math.abs(data[i]);
     const globalLevel = absSum / N;
-    const ABS_FLOOR = Math.max(0.005, K * globalLevel);
+    const ABS_FLOOR = Math.max(0.005, globalLevel * 0.5);
 
     const flagged = new Uint8Array(N);
     const tmp = new Float32Array(blockSize);
