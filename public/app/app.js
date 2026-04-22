@@ -880,11 +880,25 @@ class VoiceIsolatePro {
   }
 
   async _rcPut(key, value) {
+    const MAX_ENTRIES = 5;
     try {
       const db = await this._rcOpen();
       await new Promise((res, rej) => {
         const tx = db.transaction('results', 'readwrite');
-        tx.objectStore('results').put(value, key);
+        const store = tx.objectStore('results');
+        store.put(value, key);
+        // Prune oldest entries when the store exceeds MAX_ENTRIES
+        const countReq = store.count();
+        countReq.onsuccess = () => {
+          if (countReq.result > MAX_ENTRIES) {
+            const cursorReq = store.openCursor();
+            let toDelete = countReq.result - MAX_ENTRIES;
+            cursorReq.onsuccess = e => {
+              const cursor = e.target.result;
+              if (cursor && toDelete > 0) { cursor.delete(); toDelete--; cursor.continue(); }
+            };
+          }
+        };
         tx.oncomplete = res;
         tx.onerror = () => rej(tx.error);
       });
@@ -901,7 +915,7 @@ class VoiceIsolatePro {
   _bufToRaw(buf) {
     const channels = [];
     for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch).slice());
-    return { channels, sampleRate: buf.sampleRate, length: buf.length, numberOfChannels: buf.numberOfChannels };
+    return { channels, sampleRate: buf.sampleRate, length: buf.length, numberOfChannels: buf.numberOfChannels, cachedAt: Date.now() };
   }
 
   _rawToBuf(raw) {
@@ -925,12 +939,13 @@ class VoiceIsolatePro {
     });
   }
 
-  async _saveFileToCache(file) {
+  async _saveFileToCache(file, preReadBuffer) {
+    if (this.isVideo) return; // video decode requires a user gesture; skip
     const MAX_BYTES = 500 * 1024 * 1024; // skip files over 500 MB
     if (file.size > MAX_BYTES) return;
     try {
-      const data = await file.arrayBuffer();
-      const entry = { data, name: file.name, type: file.type || '', lastModified: file.lastModified || Date.now(), isVideo: this.isVideo };
+      const data = preReadBuffer || await file.arrayBuffer();
+      const entry = { data, name: file.name, type: file.type || '', lastModified: file.lastModified || Date.now() };
       const db = await this._fcOpen();
       await new Promise((res, rej) => {
         const tx = db.transaction('file', 'readwrite');
@@ -954,6 +969,8 @@ class VoiceIsolatePro {
   }
 
   async _restoreSavedFile() {
+    // Skip if user already loaded a file before this async restore resolved
+    if (this.inputBuffer) return;
     try {
       const db = await this._fcOpen();
       const entry = await new Promise((res, rej) => {
@@ -963,6 +980,9 @@ class VoiceIsolatePro {
         req.onerror = () => rej(req.error);
       });
       if (!entry) return;
+      // Double-check after the async IDB read — user may have loaded a file in the meantime
+      if (this.inputBuffer) return;
+      if (this.dom.fileInfo) this.dom.fileInfo.textContent = '⏳ Restoring session…';
       const file = new File([entry.data], entry.name, { type: entry.type, lastModified: entry.lastModified });
       await this.handleFile(file);
     } catch { /* non-critical — user will just see empty state */ }
@@ -1095,10 +1115,11 @@ class VoiceIsolatePro {
       // Yield to browser paint cycle to prevent UI freeze on large files
       await new Promise(r => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(() => r()) : setTimeout(r, 0));
       let audioBuf = null;
+      let rawBuffer = null;
       if (this.isVideo) {
         audioBuf = await this.decodeViaVideoElement(file);
       } else {
-        const rawBuffer = await file.arrayBuffer();
+        rawBuffer = await file.arrayBuffer();
         const safeCopy = rawBuffer.slice(0);
         try {
           audioBuf = await this.ctx.decodeAudioData(safeCopy);
@@ -1123,7 +1144,8 @@ class VoiceIsolatePro {
       this.outputBuffer = null;
       this._lastLoadedFile = file;
       // Persist file so it auto-reloads after a page refresh (non-blocking)
-      this._saveFileToCache(file).catch(() => {});
+      // Pass the already-read rawBuffer to avoid a second file.arrayBuffer() call
+      this._saveFileToCache(file, rawBuffer).catch(() => {});
       // Check result cache — restore instantly if same file + same params were processed before
       try {
         const cacheKey = this._rcKey(file);
@@ -1189,7 +1211,8 @@ class VoiceIsolatePro {
               reject(new Error('Failed to decode video audio: ' + e.message));
             }
           };
-          recorder.start(); vid.play();
+          recorder.start();
+          vid.play().catch(e => { vid.pause(); recorder.stop(); reject(new Error('Video playback blocked: ' + e.message)); });
           vid.onended = () => { recorder.stop(); };
           setTimeout(() => { if (recorder.state === 'recording') { vid.pause(); recorder.stop(); } }, (duration + 2) * 1000);
         } catch (e) { cleanup(); reject(e); }
