@@ -154,7 +154,7 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
             <span id="micLabel">Record</span>
           </button>
-          <button id="clearFile" class="btn btn-outline" type="button">Clear</button>
+          <button id="clearFile" class="btn btn-outline" type="button" aria-label="Clear loaded file">Clear</button>
           <span id="fileInfo" class="file-info">No file loaded</span>
         </div>
       </div>
@@ -202,14 +202,14 @@
 
       <!-- Actions -->
       <div class="actions-row">
-        <button id="processBtn" class="btn btn-primary" disabled>
+        <button id="processBtn" class="btn btn-primary" disabled title="Load an audio file to process">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
           Process (32-Stage)
         </button>
-        <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
+        <button id="reprocessBtn" class="btn btn-reprocess" disabled title="Process an audio file first">Re-Process</button>
         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
         <button id="forensicToggle" class="btn btn-xs">Forensic</button>
-        <button id="auditLogBtn" class="btn btn-xs" disabled>Audit Log</button>
+        <button id="auditLogBtn" class="btn btn-xs" disabled title="Process an audio file to view the audit log">Audit Log</button>
       </div>
 
       <!-- Pipeline -->
@@ -221,11 +221,11 @@
 
       <!-- Save -->
       <div class="save-row">
-        <button id="saveOrigBtn" class="btn btn-save" disabled>
+        <button id="saveOrigBtn" class="btn btn-save" disabled title="Load an audio file to save">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Save Original WAV
         </button>
-        <button id="saveProcBtn" class="btn btn-save-proc" disabled>
+        <button id="saveProcBtn" class="btn btn-save-proc" disabled title="Process an audio file to save the result">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Save Processed WAV
         </button>
@@ -456,7 +456,7 @@
         </div>
         <div id="batchList" class="batch-list"></div>
         <div class="batch-actions">
-          <button id="batchProcessBtn" class="btn btn-primary" disabled>Process All</button>
+          <button id="batchProcessBtn" class="btn btn-primary" disabled title="Add files to the batch list to process">Process All</button>
           <button id="batchClearBtn" class="btn">Clear</button>
           <span id="batchProgress" class="batch-progress"></span>
         </div>
@@ -489,8 +489,8 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
       Process
     </button>
-    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
-    <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Stop</button>
+    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled title="Process an audio file first" aria-label="Re-process audio">Re-Process</button>
+    <button id="mobileStopBtn" class="btn btn-danger" style="display:none" aria-label="Stop processing">Stop</button>
   </div>
 
   <!-- Core modules -->
