@@ -444,8 +444,13 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
         continue;
       }
 
+      // Stricter underflow guard: Hann window edges can legitimately produce
+      // wsum values well below 1e-8 without being degenerate, so the old
+      // threshold silenced valid edge samples and caused intermittent clicks
+      // at frame boundaries. 1e-12 acts as a near-zero guard, rejecting
+      // only numerically tiny overlap sums that are unsafe to normalize.
       const wsum   = this.outputWindowSum[idx];
-      let   sample = wsum > 1e-8 ? this.outputAccum[idx] / wsum : 0;
+      let   sample = wsum > 1e-12 ? this.outputAccum[idx] / wsum : 0;
 
       // Clear consumed slot
       this.outputAccum[idx]     = 0;
