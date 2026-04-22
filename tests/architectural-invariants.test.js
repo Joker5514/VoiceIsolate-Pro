@@ -44,8 +44,8 @@ describe('CLAUDE.md §1 — single STFT + iSTFT per processing path', () => {
     const invCalls = src.match(/DSP\.inverseSTFT\s*\(/g) || [];
     // The offline path runs through these once per buffer; multiple definitions
     // would create a second STFT/iSTFT pair within a path.
-    expect(fwdCalls.length).toBeLessThanOrEqual(1);
-    expect(invCalls.length).toBeLessThanOrEqual(1);
+    expect(fwdCalls.length).toBe(1);
+    expect(invCalls.length).toBe(1);
   });
 
   test('voice-isolate-processor.js (real-time path) defines its own _forwardSTFTFrame / _inverseSTFTFrame', () => {
