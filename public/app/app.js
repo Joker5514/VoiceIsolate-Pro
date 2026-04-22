@@ -378,6 +378,7 @@ class VoiceIsolatePro {
     this._paramSaveTimer = 0;
     this._lastLoadedFile = null;
     this._rcDB = null;
+    this._fcDB = null;
     this.three = {};
     try {
       this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
@@ -419,6 +420,8 @@ class VoiceIsolatePro {
     this._initVisualEngine();
     // ML worker ownership lives in PipelineOrchestrator to prevent
     // duplicate workers, duplicate ORT/model init, and race conditions.
+    // Restore last uploaded file (runs async, non-blocking)
+    this._restoreSavedFile().catch(() => {});
   }
 
   // ------------------------------------------------------------------
@@ -907,6 +910,64 @@ class VoiceIsolatePro {
     return buf;
   }
 
+  // ---- Uploaded file persistence (IndexedDB) ------------------------------
+
+  async _fcOpen() {
+    if (this._fcDB) return this._fcDB;
+    return new Promise((res, rej) => {
+      const req = indexedDB.open('vip-file-cache-v1', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('file')) db.createObjectStore('file');
+      };
+      req.onsuccess = e => { this._fcDB = e.target.result; res(this._fcDB); };
+      req.onerror = () => rej(req.error);
+    });
+  }
+
+  async _saveFileToCache(file) {
+    const MAX_BYTES = 500 * 1024 * 1024; // skip files over 500 MB
+    if (file.size > MAX_BYTES) return;
+    try {
+      const data = await file.arrayBuffer();
+      const entry = { data, name: file.name, type: file.type || '', lastModified: file.lastModified || Date.now(), isVideo: this.isVideo };
+      const db = await this._fcOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction('file', 'readwrite');
+        tx.objectStore('file').put(entry, 'current');
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch { /* non-critical */ }
+  }
+
+  async _clearSavedFile() {
+    try {
+      const db = await this._fcOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction('file', 'readwrite');
+        tx.objectStore('file').delete('current');
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch { /* non-critical */ }
+  }
+
+  async _restoreSavedFile() {
+    try {
+      const db = await this._fcOpen();
+      const entry = await new Promise((res, rej) => {
+        const tx = db.transaction('file', 'readonly');
+        const req = tx.objectStore('file').get('current');
+        req.onsuccess = () => res(req.result || null);
+        req.onerror = () => rej(req.error);
+      });
+      if (!entry) return;
+      const file = new File([entry.data], entry.name, { type: entry.type, lastModified: entry.lastModified });
+      await this.handleFile(file);
+    } catch { /* non-critical — user will just see empty state */ }
+  }
+
   // -------------------------------------------------------------------------
 
   renderCustomPresets() {
@@ -1061,6 +1122,8 @@ class VoiceIsolatePro {
       this.inputBuffer = audioBuf;
       this.outputBuffer = null;
       this._lastLoadedFile = file;
+      // Persist file so it auto-reloads after a page refresh (non-blocking)
+      this._saveFileToCache(file).catch(() => {});
       // Check result cache — restore instantly if same file + same params were processed before
       try {
         const cacheKey = this._rcKey(file);
@@ -1305,6 +1368,8 @@ class VoiceIsolatePro {
     this.stop();
     this.inputBuffer = null;
     this.outputBuffer = null;
+    this._lastLoadedFile = null;
+    this._clearSavedFile().catch(() => {});
     this.abMode = 'original';
     if (this.videoUrl) {
       try { URL.revokeObjectURL(this.videoUrl); } catch {}
