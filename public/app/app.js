@@ -360,6 +360,24 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.params.spectralFloor = this._mapSpectralFloor(this.params.nrFloor);
+    // Restore persisted slider params from previous session
+    try {
+      const savedParams = JSON.parse(localStorage.getItem('vip_params') || 'null');
+      if (savedParams && typeof savedParams === 'object') {
+        for (const tab of Object.values(SLIDERS)) {
+          for (const s of tab) {
+            const v = savedParams[s.id];
+            if (typeof v === 'number' && isFinite(v)) {
+              this.params[s.id] = Math.min(s.max, Math.max(s.min, v));
+            }
+          }
+        }
+        this.params.spectralFloor = this._mapSpectralFloor(this.params.nrFloor);
+      }
+    } catch { /* storage sandboxed */ }
+    this._paramSaveTimer = 0;
+    this._lastLoadedFile = null;
+    this._rcDB = null;
     this.three = {};
     try {
       this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
@@ -537,20 +555,21 @@ class VoiceIsolatePro {
         inputEl.id = s.id;
         inputEl.min = s.min;
         inputEl.max = s.max;
-        inputEl.value = s.val;
+        const initVal = this.params[s.id] !== undefined ? this.params[s.id] : s.val;
+        inputEl.value = initVal;
         inputEl.step = s.step;
         inputEl.dataset.param = s.id;
         inputEl.setAttribute('aria-label', s.label);
         inputEl.setAttribute('aria-valuemin', s.min);
         inputEl.setAttribute('aria-valuemax', s.max);
-        inputEl.setAttribute('aria-valuenow', s.val);
+        inputEl.setAttribute('aria-valuenow', initVal);
         const range = s.max - s.min;
-        const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
+        const initPct = range > 0 ? ((initVal - s.min) / range) * 100 : 0;
         inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
         const valEl = document.createElement('span');
         valEl.className = 'sr-val';
         valEl.id = s.id + 'Val';
-        valEl.textContent = s.val + s.unit;
+        valEl.textContent = initVal + s.unit;
         row.appendChild(labelEl);
         row.appendChild(inputEl);
         row.appendChild(valEl);
@@ -822,9 +841,73 @@ class VoiceIsolatePro {
     const pct = range > 0 ? ((v - parseFloat(el.min)) / range) * 100 : 0;
     el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
+    clearTimeout(this._paramSaveTimer);
+    this._paramSaveTimer = setTimeout(() => this._saveParams(), 500);
   }
 
+  _saveParams() {
+    try { localStorage.setItem('vip_params', JSON.stringify(this.params)); } catch { /* storage sandboxed */ }
+  }
 
+  // ---- Processed-result cache (IndexedDB) --------------------------------
+
+  async _rcOpen() {
+    if (this._rcDB) return this._rcDB;
+    return new Promise((res, rej) => {
+      const req = indexedDB.open('vip-results-v1', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('results')) db.createObjectStore('results');
+      };
+      req.onsuccess = e => { this._rcDB = e.target.result; res(this._rcDB); };
+      req.onerror = () => rej(req.error);
+    });
+  }
+
+  async _rcGet(key) {
+    try {
+      const db = await this._rcOpen();
+      return new Promise((res, rej) => {
+        const tx = db.transaction('results', 'readonly');
+        const req = tx.objectStore('results').get(key);
+        req.onsuccess = () => res(req.result || null);
+        req.onerror = () => rej(req.error);
+      });
+    } catch { return null; }
+  }
+
+  async _rcPut(key, value) {
+    try {
+      const db = await this._rcOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction('results', 'readwrite');
+        tx.objectStore('results').put(value, key);
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch { /* non-critical */ }
+  }
+
+  _rcKey(file) {
+    const paramStr = JSON.stringify(
+      Object.keys(this.params).sort().reduce((o, k) => { o[k] = this.params[k]; return o; }, {})
+    );
+    return `${file.name}:${file.size}:${file.lastModified || 0}:${paramStr}`;
+  }
+
+  _bufToRaw(buf) {
+    const channels = [];
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch).slice());
+    return { channels, sampleRate: buf.sampleRate, length: buf.length, numberOfChannels: buf.numberOfChannels };
+  }
+
+  _rawToBuf(raw) {
+    const buf = this.ctx.createBuffer(raw.numberOfChannels, raw.length, raw.sampleRate);
+    for (let ch = 0; ch < raw.numberOfChannels; ch++) buf.copyToChannel(raw.channels[ch], ch);
+    return buf;
+  }
+
+  // -------------------------------------------------------------------------
 
   renderCustomPresets() {
     const row = document.querySelector('.presets-row');
@@ -916,6 +999,7 @@ class VoiceIsolatePro {
       : this._mapSpectralFloor(this.params.nrFloor);
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
     if (this.liveChainBuilt) this.updateLiveChain();
+    this._saveParams();
   }
 
   // ======== FILE HANDLING ========
@@ -976,6 +1060,29 @@ class VoiceIsolatePro {
       } else { this.dom.videoCard.style.display = 'none'; }
       this.inputBuffer = audioBuf;
       this.outputBuffer = null;
+      this._lastLoadedFile = file;
+      // Check result cache — restore instantly if same file + same params were processed before
+      try {
+        const cacheKey = this._rcKey(file);
+        const cached = await this._rcGet(cacheKey);
+        if (cached) {
+          this.outputBuffer = this._rawToBuf(cached);
+          await new Promise(r => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(r, 0));
+          this.onAudioLoaded(file.name);
+          this.resizeCanvas(this.dom.waveProcCanvas);
+          this.drawWaveform(this.outputBuffer, this.dom.waveProcCanvas, '#22d3ee');
+          this.resizeCanvas(this.dom.compCanvas);
+          this.drawComparison(this.inputBuffer, this.outputBuffer);
+          this.dom.saveProcBtn.disabled = false;
+          this.dom.tpAB.disabled = false;
+          this.dom.reprocessBtn.disabled = false;
+          if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
+          this.dom.tpABLabel.textContent = 'Restored — A/B';
+          this.setStatus('COMPLETE');
+          this.dom.pipeStage.textContent = 'Restored from cache';
+          return;
+        }
+      } catch { /* non-critical — fall through to normal load */ }
       await new Promise(r => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(r, 0));
       this.onAudioLoaded(file.name);
     } catch (err) {
@@ -1659,6 +1766,11 @@ class VoiceIsolatePro {
 
       this.dom.stProcTime.textContent = ((performance.now() - t0) / 1000).toFixed(2) + 's';
       this.outputBuffer = fin;
+      // Persist result so next load of same file + params is instant (non-blocking)
+      if (this._lastLoadedFile) {
+        const cacheKey = this._rcKey(this._lastLoadedFile);
+        this._rcPut(cacheKey, this._bufToRaw(fin)).catch(() => {});
+      }
       const snr = this.calcRMS(fin.getChannelData(0)) - this.calcRMS(this.inputBuffer.getChannelData(0));
       this.dom.hSNR.textContent = (snr >= 0 ? '+' : '') + snr.toFixed(1) + ' dB';
       this.resizeCanvas(this.dom.waveProcCanvas);
