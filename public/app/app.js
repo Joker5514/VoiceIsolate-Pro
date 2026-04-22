@@ -914,7 +914,7 @@ class VoiceIsolatePro {
 
   _bufToRaw(buf) {
     const channels = [];
-    for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch));
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch).slice());
     return { channels, sampleRate: buf.sampleRate, length: buf.length, numberOfChannels: buf.numberOfChannels, cachedAt: Date.now() };
   }
 
@@ -938,7 +938,12 @@ class VoiceIsolatePro {
     const estimatedBytes = buf.numberOfChannels * buf.length * Float32Array.BYTES_PER_ELEMENT;
     if (estimatedBytes > MAX_CACHE_BYTES) return;
     const cacheKey = this._rcKey(file);
-    this._scheduleIdle(() => this._rcPut(cacheKey, this._bufToRaw(buf)).catch(() => {}));
+    const raw = this._bufToRaw(buf);
+    const serializedBytes = raw.channels.reduce((sum, ch) => sum + ((ch && ch.byteLength) || 0), 0);
+    if (serializedBytes > MAX_CACHE_BYTES) return;
+    this._scheduleIdle(() => this._rcPut(cacheKey, raw).catch(err => {
+      structuredLog('warn', 'Result cache write failed', { error: err instanceof Error ? err.message : String(err) });
+    }));
   }
 
   // ---- Uploaded file persistence (IndexedDB) ------------------------------
