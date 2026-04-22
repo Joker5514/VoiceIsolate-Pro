@@ -104,6 +104,54 @@ describe('Presets', () => {
   });
 });
 
+// ── Preset value-range validation ─────────────────────────────────────────────
+// Ensures every numeric value a preset assigns is within the [min, max] range
+// declared on its corresponding slider. Catches out-of-range typos like
+// gateThresh: 9999 that the previous "key completeness" test would miss.
+describe('Preset value-range validation', () => {
+  // Build a sliderId → {min, max} table by parsing the SLIDERS literal.
+  const slidersBlock = appJs.match(/const SLIDERS\s*=\s*\{([\s\S]*?)\};\s*\nconst SLIDER_MAP/);
+  const sliderRanges = {};
+  if (slidersBlock) {
+    const sliderObjRegex = /\{\s*id\s*:\s*'(\w+)'[^{}]*?min\s*:\s*(-?\d+(?:\.\d+)?)[^{}]*?max\s*:\s*(-?\d+(?:\.\d+)?)/g;
+    let m;
+    while ((m = sliderObjRegex.exec(slidersBlock[1])) !== null) {
+      sliderRanges[m[1]] = { min: parseFloat(m[2]), max: parseFloat(m[3]) };
+    }
+  }
+
+  test('parsed at least 50 of 52 sliders with min/max metadata', () => {
+    // A few sliders may declare min/max in a different key order; require the
+    // parser to cover the bulk of the surface so the test is meaningful.
+    expect(Object.keys(sliderRanges).length).toBeGreaterThanOrEqual(50);
+  });
+
+  PRESET_NAMES.forEach((presetName) => {
+    test(`'${presetName}' assigns only in-range numeric values`, () => {
+      const escapedPreset = presetName.replace('/', '\\/');
+      const presetRegex = new RegExp(`'${escapedPreset}':\\s*\\{([\\s\\S]*?)\\},?\\s*(?='[A-Z]|$)`);
+      const match = presetsBlock.match(presetRegex);
+      expect(match).not.toBeNull();
+      const body = match[1];
+
+      // Tokenize "key: numericLiteral" pairs (skip strings, booleans, objects).
+      const pairRegex = /(\w+)\s*:\s*(-?\d+(?:\.\d+)?)\b/g;
+      const offenders = [];
+      let p;
+      while ((p = pairRegex.exec(body)) !== null) {
+        const id    = p[1];
+        const value = parseFloat(p[2]);
+        const range = sliderRanges[id];
+        if (!range) continue; // non-slider field (e.g. description, embedded sub-objects)
+        if (value < range.min || value > range.max) {
+          offenders.push(`${id}=${value} not in [${range.min}, ${range.max}]`);
+        }
+      }
+      expect(offenders).toEqual([]);
+    });
+  });
+});
+
 describe('STAGES array', () => {
   test('Should define exactly 32 stages', () => {
     const stagesMatch = appJs.match(/const STAGES = \[([\s\S]*?)\];/);

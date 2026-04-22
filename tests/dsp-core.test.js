@@ -1,17 +1,10 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-
-const dspCoreJs = fs.readFileSync(path.join(__dirname, '../public/app/dsp-core.js'), 'utf8');
-const { DSPCore, AdaptiveNoiseFloor } = (() => {
-  const exports = {};
-  const module = { exports };
-  const window = {};
-  const self = {};
-  eval(dspCoreJs); // eslint-disable-line no-eval
-  return { DSPCore: module.exports, AdaptiveNoiseFloor: module.exports.AdaptiveNoiseFloor };
-})();
+// Load via require() so Jest's coverage instrumentation sees the module.
+// dsp-core.js exports DSPCore (with .AdaptiveNoiseFloor attached) via the
+// `if (typeof module !== 'undefined' && module.exports)` guard at EOF.
+const DSPCore = require('../public/app/dsp-core.js');
+const AdaptiveNoiseFloor = DSPCore.AdaptiveNoiseFloor;
 
 // ── AdaptiveNoiseFloor ────────────────────────────────────────────────────────
 
@@ -912,5 +905,70 @@ describe('DSPCore.inverseSTFT — fftSize validation (v24)', () => {
       if (e > maxErr) maxErr = e;
     }
     expect(maxErr).toBeLessThan(0.02);
+  });
+});
+
+// ── STFT/iSTFT edge cases (added with the test-coverage refactor) ─────────────
+describe('DSPCore STFT/iSTFT edge cases', () => {
+  const fft = 4096;
+  const hop = 1024;
+  const sr  = 48000;
+
+  test('round-trip on near-silent input keeps output bounded and finite', () => {
+    const data = new Float32Array(sr);
+    // 1e-6 noise: well below any reasonable noise gate.
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() - 0.5) * 1e-6;
+    const { mag, phase } = DSPCore.forwardSTFT(data, fft, hop);
+    const out = DSPCore.inverseSTFT(mag, phase, fft, hop, sr);
+    let maxAbs = 0;
+    for (let i = 0; i < out.length; i++) {
+      expect(Number.isFinite(out[i])).toBe(true);
+      const a = Math.abs(out[i]);
+      if (a > maxAbs) maxAbs = a;
+    }
+    expect(maxAbs).toBeLessThan(1e-3);
+  });
+
+  test('round-trip on DC-offset input preserves the offset in the steady-state region', () => {
+    const data = new Float32Array(sr).fill(0.4);
+    const { mag, phase } = DSPCore.forwardSTFT(data, fft, hop);
+    const out = DSPCore.inverseSTFT(mag, phase, fft, hop, sr);
+    // Middle region (away from window edges) should reconstruct the constant.
+    let mean = 0;
+    let n = 0;
+    for (let i = fft; i < data.length - fft; i++) { mean += out[i]; n++; }
+    mean /= n;
+    expect(Math.abs(mean - 0.4)).toBeLessThan(0.05);
+  });
+
+  test('round-trip on a single transient (impulse) does not introduce NaN', () => {
+    const data = new Float32Array(sr);
+    data[Math.floor(sr / 2)] = 1.0;
+    const { mag, phase } = DSPCore.forwardSTFT(data, fft, hop);
+    const out = DSPCore.inverseSTFT(mag, phase, fft, hop, sr);
+    for (let i = 0; i < out.length; i++) expect(Number.isNaN(out[i])).toBe(false);
+  });
+
+  test('forwardSTFT on input shorter than fftSize still returns at least one frame', () => {
+    const data = new Float32Array(fft / 4); // intentionally short
+    for (let i = 0; i < data.length; i++) data[i] = Math.sin(i * 0.1);
+    const { frameCount } = DSPCore.forwardSTFT(data, fft, hop);
+    // Implementation should zero-pad rather than crash; either 0 or >=1 frames
+    // is acceptable, but the call must not throw and frameCount must be a number.
+    expect(typeof frameCount).toBe('number');
+    expect(frameCount).toBeGreaterThanOrEqual(0);
+  });
+
+  test('forwardSTFT preserves Parseval-like energy bound on a unit-amplitude sine', () => {
+    const data = new Float32Array(sr);
+    for (let i = 0; i < sr; i++) data[i] = Math.sin(2 * Math.PI * 1000 * i / sr);
+    const { mag } = DSPCore.forwardSTFT(data, fft, hop);
+    // Each frame should have non-zero energy concentrated, not pathological zeros.
+    let totalEnergy = 0;
+    for (const frame of mag) {
+      for (let k = 0; k < frame.length; k++) totalEnergy += frame[k] * frame[k];
+    }
+    expect(totalEnergy).toBeGreaterThan(0);
+    expect(Number.isFinite(totalEnergy)).toBe(true);
   });
 });

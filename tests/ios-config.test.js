@@ -73,13 +73,15 @@ describe('Info.plist — iOS app configuration', () => {
     expect(versionMatch[1]).toBe('24.0.0');
   });
 
-  test('CFBundleVersion is 24000', () => {
+  test('CFBundleVersion matches the major*10000 + minor*100 + patch formula', () => {
     expect(plist).toContain('<key>CFBundleVersion</key>');
     const buildMatch = plist.match(
       /<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/
     );
     expect(buildMatch).not.toBeNull();
-    expect(buildMatch[1]).toBe('24000');
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    const [maj, min, pat] = pkg.version.split('.').map(Number);
+    expect(buildMatch[1]).toBe(String(maj * 10000 + min * 100 + pat));
   });
 
   test('NSMicrophoneUsageDescription is present (App Store requirement)', () => {

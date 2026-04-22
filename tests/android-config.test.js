@@ -446,8 +446,13 @@ describe('build.gradle — app namespace and applicationId', () => {
     expect(nsMatch[1]).toBe(idMatch[1]);
   });
 
-  test('versionCode is 24000 (matching v24.0.0)', () => {
-    expect(buildGradle).toContain('versionCode 24000');
+  test('versionCode matches the major*10000 + minor*100 + patch formula', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    const [maj, min, pat] = pkg.version.split('.').map(Number);
+    const expected = maj * 10000 + min * 100 + pat;
+    const m = buildGradle.match(/versionCode\s+(\d+)/);
+    expect(m).not.toBeNull();
+    expect(Number(m[1])).toBe(expected);
   });
 
   test('versionName is 24.0.0', () => {

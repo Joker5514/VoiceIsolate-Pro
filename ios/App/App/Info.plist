@@ -19,7 +19,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>24.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>24000</string>
+	<string>240000</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

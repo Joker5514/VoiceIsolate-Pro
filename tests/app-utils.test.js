@@ -356,9 +356,12 @@ describe('SLIDER_BY_ID (v24 flat slider lookup)', () => {
   });
 
   test('SLIDER_BY_ID is frozen (immutable)', () => {
-    // Attempting to add a property should silently fail (strict mode) or be a no-op
+    // Object.freeze in strict mode throws on property add/mutate; in sloppy
+    // mode it is a silent no-op. Either way, the object must be unchanged.
     const original = SLIDER_BY_ID['nrAmount'];
-    SLIDER_BY_ID['newProp'] = 'test';
+    expect(Object.isFrozen(SLIDER_BY_ID)).toBe(true);
+    try { SLIDER_BY_ID['newProp'] = 'test'; } catch (_) { /* strict: throws */ }
+    try { SLIDER_BY_ID['nrAmount'] = 'mutated'; } catch (_) { /* strict: throws */ }
     expect(SLIDER_BY_ID['newProp']).toBeUndefined();
     expect(SLIDER_BY_ID['nrAmount']).toBe(original);
   });

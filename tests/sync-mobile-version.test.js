@@ -278,7 +278,10 @@ describe('sync-mobile-version.js source structure', () => {
     expect(scriptSrc).toContain('process.exit(1)');
   });
 
-  test('script is an ES module (uses import)', () => {
-    expect(scriptSrc.trimStart()).toMatch(/^(\/\*[\s\S]*?\*\/\s*)?import /m);
+  test('script is CommonJS (matches scripts/package.json type)', () => {
+    // scripts/package.json declares { "type": "commonjs" }, so this script
+    // must use require() — using ESM `import` here would crash at runtime.
+    expect(scriptSrc).toContain('require(');
+    expect(scriptSrc).not.toMatch(/^\s*import\s/m);
   });
 });

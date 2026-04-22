@@ -9,9 +9,6 @@
 
 'use strict';
 
-const fs   = require('fs');
-const path = require('path');
-
 // ── localStorage mock ─────────────────────────────────────────────────────────
 let _localStore = {};
 const localStorageMock = {
@@ -25,26 +22,13 @@ beforeEach(() => {
   _localStore = {};
 });
 
-// ── Browser global stubs ──────────────────────────────────────────────────────
-global.localStorage        = localStorageMock;
-global.window              = { addEventListener: () => {} };
+// Browser globals must be set before requiring the module — license-manager.js
+// references `localStorage` at top level inside its IIFE.
+global.localStorage = localStorageMock;
+global.window       = { addEventListener: () => {} };
 
-// ── Load LicenseManager via eval (CJS-compatible export path) ─────────────────
-const lmSrc = fs.readFileSync(
-  path.join(__dirname, '../public/app/license-manager.js'),
-  'utf8'
-);
-
-const LicenseManager = (() => {
-  const exports = {};
-  const module  = { exports };
-  /* eslint-disable no-unused-vars */
-  const window   = global.window;
-  const localStorage = global.localStorage;
-  /* eslint-enable no-unused-vars */
-  eval(lmSrc); // eslint-disable-line no-eval
-  return module.exports;
-})();
+// Loaded via require() so Jest coverage instrumentation sees license-manager.js.
+const LicenseManager = require('../public/app/license-manager.js');
 
 function makeToken(tier = 'PRO') {
   const payload = {

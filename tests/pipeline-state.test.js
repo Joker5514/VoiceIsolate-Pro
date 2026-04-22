@@ -1,11 +1,5 @@
-const fs = require('fs');
-const path = require('path');
-
-const stateCodePath = path.join(__dirname, '../public/app/pipeline-state.js');
-const stateCode = fs.readFileSync(stateCodePath, 'utf8');
-
-// Load PipelineState class by evaluating the file content
-const PipelineState = new Function('module', 'window', stateCode + '\nreturn module.exports || window.PipelineState;')({}, {});
+// Loaded via require() so Jest coverage instrumentation sees pipeline-state.js.
+const { PipelineState } = require('../public/app/pipeline-state.js');
 
 describe('PipelineState', () => {
   let state;
