@@ -99,7 +99,7 @@ describe('app.js — --pct CSS variable wiring', () => {
   test('initPct calculation present in slider render method', () => {
     expect(appJs).toContain('initPct');
     expect(appJs).toContain('const range = s.max - s.min');
-    expect(appJs).toContain('range > 0 ? ((s.val - s.min) / range) * 100 : 0');
+    expect(appJs).toContain('range > 0 ? ((initVal - s.min) / range) * 100 : 0');
   });
 
   test('initPct result applied via style.setProperty', () => {
@@ -600,7 +600,7 @@ describe('--pct formula — range variable approach (regression for removed asse
   test('app.js uses the range-variable form in the render loop (not inline division)', () => {
     // The render-loop formula stores denominator in `range` first
     expect(appJs).toContain('const range = s.max - s.min');
-    expect(appJs).toContain('range > 0 ? ((s.val - s.min) / range) * 100 : 0');
+    expect(appJs).toContain('range > 0 ? ((initVal - s.min) / range) * 100 : 0');
   });
 
   test('app.js guards against zero-range in render loop with range > 0 check', () => {

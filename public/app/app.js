@@ -360,6 +360,25 @@ class VoiceIsolatePro {
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.params.spectralFloor = this._mapSpectralFloor(this.params.nrFloor);
+    // Restore persisted slider params from previous session
+    try {
+      const savedParams = JSON.parse(localStorage.getItem('vip_params') || 'null');
+      if (savedParams && typeof savedParams === 'object') {
+        for (const tab of Object.values(SLIDERS)) {
+          for (const s of tab) {
+            const v = savedParams[s.id];
+            if (typeof v === 'number' && isFinite(v)) {
+              this.params[s.id] = Math.min(s.max, Math.max(s.min, v));
+            }
+          }
+        }
+        this.params.spectralFloor = this._mapSpectralFloor(this.params.nrFloor);
+      }
+    } catch { /* storage sandboxed */ }
+    this._paramSaveTimer = 0;
+    this._lastLoadedFile = null;
+    this._rcDB = null;
+    this._fcDB = null;
     this.three = {};
     try {
       this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
@@ -401,6 +420,8 @@ class VoiceIsolatePro {
     this._initVisualEngine();
     // ML worker ownership lives in PipelineOrchestrator to prevent
     // duplicate workers, duplicate ORT/model init, and race conditions.
+    // Restore last uploaded file (runs async, non-blocking)
+    this._restoreSavedFile().catch(() => {});
   }
 
   // ------------------------------------------------------------------
@@ -537,20 +558,21 @@ class VoiceIsolatePro {
         inputEl.id = s.id;
         inputEl.min = s.min;
         inputEl.max = s.max;
-        inputEl.value = s.val;
+        const initVal = this.params[s.id] !== undefined ? this.params[s.id] : s.val;
+        inputEl.value = initVal;
         inputEl.step = s.step;
         inputEl.dataset.param = s.id;
         inputEl.setAttribute('aria-label', s.label);
         inputEl.setAttribute('aria-valuemin', s.min);
         inputEl.setAttribute('aria-valuemax', s.max);
-        inputEl.setAttribute('aria-valuenow', s.val);
+        inputEl.setAttribute('aria-valuenow', initVal);
         const range = s.max - s.min;
-        const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
+        const initPct = range > 0 ? ((initVal - s.min) / range) * 100 : 0;
         inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
         const valEl = document.createElement('span');
         valEl.className = 'sr-val';
         valEl.id = s.id + 'Val';
-        valEl.textContent = s.val + s.unit;
+        valEl.textContent = initVal + s.unit;
         row.appendChild(labelEl);
         row.appendChild(inputEl);
         row.appendChild(valEl);
@@ -822,9 +844,185 @@ class VoiceIsolatePro {
     const pct = range > 0 ? ((v - parseFloat(el.min)) / range) * 100 : 0;
     el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
+    clearTimeout(this._paramSaveTimer);
+    this._paramSaveTimer = setTimeout(() => this._saveParams(), 500);
   }
 
+  _saveParams() {
+    try { localStorage.setItem('vip_params', JSON.stringify(this.params)); } catch { /* storage sandboxed */ }
+  }
 
+  // ---- Processed-result cache (IndexedDB) --------------------------------
+
+  async _rcOpen() {
+    if (this._rcDB) return this._rcDB;
+    return new Promise((res, rej) => {
+      const req = indexedDB.open('vip-results-v1', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('results')) db.createObjectStore('results');
+      };
+      req.onsuccess = e => { this._rcDB = e.target.result; res(this._rcDB); };
+      req.onerror = () => rej(req.error);
+    });
+  }
+
+  async _rcGet(key) {
+    try {
+      const db = await this._rcOpen();
+      return new Promise((res, rej) => {
+        const tx = db.transaction('results', 'readonly');
+        const req = tx.objectStore('results').get(key);
+        req.onsuccess = () => res(req.result || null);
+        req.onerror = () => rej(req.error);
+      });
+    } catch { return null; }
+  }
+
+  async _rcPut(key, value) {
+    const MAX_ENTRIES = 5;
+    try {
+      const db = await this._rcOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction('results', 'readwrite');
+        const store = tx.objectStore('results');
+        store.put(value, key);
+        // Prune oldest entries when the store exceeds MAX_ENTRIES
+        const countReq = store.count();
+        countReq.onsuccess = () => {
+          if (countReq.result > MAX_ENTRIES) {
+            const entries = [];
+            const cursorReq = store.openCursor();
+            cursorReq.onsuccess = e => {
+              const cursor = e.target.result;
+              if (cursor) {
+                const cachedAt = cursor.value && typeof cursor.value.cachedAt === 'number'
+                  ? cursor.value.cachedAt
+                  : 0;
+                entries.push({ key: cursor.key, cachedAt });
+                cursor.continue();
+                return;
+              }
+              const toDelete = countReq.result - MAX_ENTRIES;
+              entries
+                .sort((a, b) => a.cachedAt - b.cachedAt)
+                .slice(0, toDelete)
+                .forEach(entry => { store.delete(entry.key); });
+            };
+          }
+        };
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch { /* non-critical */ }
+  }
+
+  _rcKey(file) {
+    const paramStr = JSON.stringify(
+      Object.keys(this.params).sort().reduce((o, k) => { o[k] = this.params[k]; return o; }, {})
+    );
+    return `${file.name}:${file.size}:${file.lastModified || 0}:${paramStr}`;
+  }
+
+  _bufToRaw(buf) {
+    const channels = [];
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch).slice());
+    return { channels, sampleRate: buf.sampleRate, length: buf.length, numberOfChannels: buf.numberOfChannels, cachedAt: Date.now() };
+  }
+
+  _rawToBuf(raw) {
+    const buf = this.ctx.createBuffer(raw.numberOfChannels, raw.length, raw.sampleRate);
+    for (let ch = 0; ch < raw.numberOfChannels; ch++) buf.copyToChannel(raw.channels[ch], ch);
+    return buf;
+  }
+
+  _scheduleIdle(fn) {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(fn, { timeout: 750 });
+      return;
+    }
+    setTimeout(fn, 0);
+  }
+
+  _cacheResultLater(file, buf) {
+    if (!file || !buf) return;
+    const MAX_CACHE_BYTES = 64 * 1024 * 1024;
+    const estimatedBytes = buf.numberOfChannels * buf.length * Float32Array.BYTES_PER_ELEMENT;
+    if (estimatedBytes > MAX_CACHE_BYTES) return;
+    const cacheKey = this._rcKey(file);
+    const raw = this._bufToRaw(buf);
+    const serializedBytes = raw.channels.reduce((sum, ch) => sum + ((ch && ch.byteLength) || 0), 0);
+    if (serializedBytes > MAX_CACHE_BYTES) return;
+    this._scheduleIdle(() => this._rcPut(cacheKey, raw).catch(err => {
+      structuredLog('warn', 'Result cache write failed', { error: err instanceof Error ? err.message : String(err) });
+    }));
+  }
+
+  // ---- Uploaded file persistence (IndexedDB) ------------------------------
+
+  async _fcOpen() {
+    if (this._fcDB) return this._fcDB;
+    return new Promise((res, rej) => {
+      const req = indexedDB.open('vip-file-cache-v1', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('file')) db.createObjectStore('file');
+      };
+      req.onsuccess = e => { this._fcDB = e.target.result; res(this._fcDB); };
+      req.onerror = () => rej(req.error);
+    });
+  }
+
+  async _saveFileToCache(file, preReadBuffer) {
+    if (this.isVideo) return; // video decode requires a user gesture; skip
+    const MAX_BYTES = 500 * 1024 * 1024; // skip files over 500 MB
+    if (file.size > MAX_BYTES) return;
+    try {
+      const data = preReadBuffer || await file.arrayBuffer();
+      const entry = { data, name: file.name, type: file.type || '', lastModified: file.lastModified || Date.now() };
+      const db = await this._fcOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction('file', 'readwrite');
+        tx.objectStore('file').put(entry, 'current');
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch { /* non-critical */ }
+  }
+
+  async _clearSavedFile() {
+    try {
+      const db = await this._fcOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction('file', 'readwrite');
+        tx.objectStore('file').delete('current');
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch { /* non-critical */ }
+  }
+
+  async _restoreSavedFile() {
+    // Skip if user already loaded a file before this async restore resolved
+    if (this.inputBuffer) return;
+    try {
+      const db = await this._fcOpen();
+      const entry = await new Promise((res, rej) => {
+        const tx = db.transaction('file', 'readonly');
+        const req = tx.objectStore('file').get('current');
+        req.onsuccess = () => res(req.result || null);
+        req.onerror = () => rej(req.error);
+      });
+      if (!entry) return;
+      // Double-check after the async IDB read — user may have loaded a file in the meantime
+      if (this.inputBuffer) return;
+      if (this.dom.fileInfo) this.dom.fileInfo.textContent = '⏳ Restoring session…';
+      const file = new File([entry.data], entry.name, { type: entry.type, lastModified: entry.lastModified });
+      await this.handleFile(file);
+    } catch { /* non-critical — user will just see empty state */ }
+  }
+
+  // -------------------------------------------------------------------------
 
   renderCustomPresets() {
     const row = document.querySelector('.presets-row');
@@ -916,6 +1114,7 @@ class VoiceIsolatePro {
       : this._mapSpectralFloor(this.params.nrFloor);
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
     if (this.liveChainBuilt) this.updateLiveChain();
+    this._saveParams();
   }
 
   // ======== FILE HANDLING ========
@@ -950,10 +1149,11 @@ class VoiceIsolatePro {
       // Yield to browser paint cycle to prevent UI freeze on large files
       await new Promise(r => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(() => r()) : setTimeout(r, 0));
       let audioBuf = null;
+      let rawBuffer = null;
       if (this.isVideo) {
         audioBuf = await this.decodeViaVideoElement(file);
       } else {
-        const rawBuffer = await file.arrayBuffer();
+        rawBuffer = await file.arrayBuffer();
         const safeCopy = rawBuffer.slice(0);
         try {
           audioBuf = await this.ctx.decodeAudioData(safeCopy);
@@ -976,6 +1176,32 @@ class VoiceIsolatePro {
       } else { this.dom.videoCard.style.display = 'none'; }
       this.inputBuffer = audioBuf;
       this.outputBuffer = null;
+      this._lastLoadedFile = file;
+      // Persist file so it auto-reloads after a page refresh (non-blocking)
+      // Pass the already-read rawBuffer to avoid a second file.arrayBuffer() call
+      this._saveFileToCache(file, rawBuffer).catch(() => {});
+      // Check result cache — restore instantly if same file + same params were processed before
+      try {
+        const cacheKey = this._rcKey(file);
+        const cached = await this._rcGet(cacheKey);
+        if (cached) {
+          this.outputBuffer = this._rawToBuf(cached);
+          await new Promise(r => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(r, 0));
+          this.onAudioLoaded(file.name);
+          this.resizeCanvas(this.dom.waveProcCanvas);
+          this.drawWaveform(this.outputBuffer, this.dom.waveProcCanvas, '#22d3ee');
+          this.resizeCanvas(this.dom.compCanvas);
+          this.drawComparison(this.inputBuffer, this.outputBuffer);
+          this.dom.saveProcBtn.disabled = false;
+          this.dom.tpAB.disabled = false;
+          this.dom.reprocessBtn.disabled = false;
+          if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
+          this.dom.tpABLabel.textContent = 'Restored — A/B';
+          this.setStatus('COMPLETE');
+          this.dom.pipeStage.textContent = 'Restored from cache';
+          return;
+        }
+      } catch { /* non-critical — fall through to normal load */ }
       await new Promise(r => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(r, 0));
       this.onAudioLoaded(file.name);
     } catch (err) {
@@ -1019,7 +1245,8 @@ class VoiceIsolatePro {
               reject(new Error('Failed to decode video audio: ' + e.message));
             }
           };
-          recorder.start(); vid.play();
+          recorder.start();
+          vid.play().catch(e => { vid.pause(); recorder.stop(); reject(new Error('Video playback blocked: ' + e.message)); });
           vid.onended = () => { recorder.stop(); };
           setTimeout(() => { if (recorder.state === 'recording') { vid.pause(); recorder.stop(); } }, (duration + 2) * 1000);
         } catch (e) { cleanup(); reject(e); }
@@ -1198,6 +1425,8 @@ class VoiceIsolatePro {
     this.stop();
     this.inputBuffer = null;
     this.outputBuffer = null;
+    this._lastLoadedFile = null;
+    this._clearSavedFile().catch(() => {});
     this.abMode = 'original';
     if (this.videoUrl) {
       try { URL.revokeObjectURL(this.videoUrl); } catch {}
@@ -1659,6 +1888,10 @@ class VoiceIsolatePro {
 
       this.dom.stProcTime.textContent = ((performance.now() - t0) / 1000).toFixed(2) + 's';
       this.outputBuffer = fin;
+      // Persist result so next load of same file + params is instant (non-blocking)
+      if (this._lastLoadedFile) {
+        this._cacheResultLater(this._lastLoadedFile, fin);
+      }
       const snr = this.calcRMS(fin.getChannelData(0)) - this.calcRMS(this.inputBuffer.getChannelData(0));
       this.dom.hSNR.textContent = (snr >= 0 ? '+' : '') + snr.toFixed(1) + ' dB';
       this.resizeCanvas(this.dom.waveProcCanvas);
