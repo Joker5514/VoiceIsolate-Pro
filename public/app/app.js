@@ -891,11 +891,23 @@ class VoiceIsolatePro {
         const countReq = store.count();
         countReq.onsuccess = () => {
           if (countReq.result > MAX_ENTRIES) {
+            const entries = [];
             const cursorReq = store.openCursor();
-            let toDelete = countReq.result - MAX_ENTRIES;
             cursorReq.onsuccess = e => {
               const cursor = e.target.result;
-              if (cursor && toDelete > 0) { cursor.delete(); toDelete--; cursor.continue(); }
+              if (cursor) {
+                const cachedAt = cursor.value && typeof cursor.value.cachedAt === 'number'
+                  ? cursor.value.cachedAt
+                  : 0;
+                entries.push({ key: cursor.key, cachedAt });
+                cursor.continue();
+                return;
+              }
+              const toDelete = countReq.result - MAX_ENTRIES;
+              entries
+                .sort((a, b) => a.cachedAt - b.cachedAt)
+                .slice(0, toDelete)
+                .forEach(entry => { store.delete(entry.key); });
             };
           }
         };
