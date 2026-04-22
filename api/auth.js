@@ -1,22 +1,22 @@
 /**
- * VoiceIsolate Pro — Authentication API v23
+ * VoiceIsolate Pro — Authentication API v24
  *
  * Endpoints:
  *   POST /api/auth/login   — Authenticate with username + password, returns JWT
  *   GET  /api/auth/me      — Get current user info from Bearer token
  *   POST /api/auth/logout  — Invalidate session (client-side only for now)
  *
- * Seeded accounts (all environments):
- *   joker5514 / Admin8052          (ENTERPRISE + admin)
- *   test_free / TestFree123        (FREE)
- *   test_pro / TestPro123          (PRO)
- *   test_studio / TestStudio123    (STUDIO)
- *   test_enterprise / TestEnterprise123 (ENTERPRISE)
- *
- * FIX: removed boot-time throw so Vercel deployments without LICENSE_JWT_SECRET
- * don't crash-start. Falls back to a hardcoded dev secret with a console warning.
- * Set LICENSE_JWT_SECRET in Vercel Dashboard → Settings → Environment Variables
- * for production.
+ * Security model:
+ *   - LICENSE_JWT_SECRET is required in production. In non-production we use a
+ *     cryptographically-random per-process secret so preview/test deploys work,
+ *     but the secret is never shared across processes or committed to git.
+ *     Tokens signed with the random fallback won't validate after a redeploy.
+ *   - No admin account is seeded from source. To provision an admin, set
+ *     VIP_ADMIN_USERNAME + VIP_ADMIN_PASSWORD (and optionally VIP_ADMIN_EMAIL).
+ *     These are read once at module load.
+ *   - Test accounts (test_free/test_pro/test_studio/test_enterprise) are
+ *     seeded only when NODE_ENV !== 'production'. Opt out with
+ *     VIP_DISABLE_TEST_ACCOUNTS=1.
  */
 
 import express from 'express';
@@ -25,15 +25,20 @@ import crypto  from 'crypto';
 const router = express.Router();
 
 // ─── Secret resolution ───────────────────────────────────────────────────────
-// In production the env var is required. In dev/test/preview fall back to a
-// deterministic placeholder so the API module doesn't crash-start.
+// Production: env var is required. Non-production: fall back to a random
+// per-process secret so preview/test deploys don't crash-start, and so the
+// fallback is never reusable across processes or known to an attacker.
 const LICENSE_SECRET = (() => {
   if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
   if (process.env.NODE_ENV === 'production') {
     throw new Error('[api/auth] LICENSE_JWT_SECRET is required in production.');
   }
-  console.warn('[api/auth] WARNING: LICENSE_JWT_SECRET not set. Using development fallback (non-production only).');
-  return 'voiceisolate-dev-secret-change-in-production-32chars!';
+  const random = crypto.randomBytes(48).toString('base64url');
+  console.warn(
+    '[api/auth] WARNING: LICENSE_JWT_SECRET not set. Using random per-process secret. ' +
+    'Tokens will not validate after restart. Set LICENSE_JWT_SECRET for stable tokens.'
+  );
+  return random;
 })();
 
 // ─── Password Hashing (scrypt) ───────────────────────────────────────────────
@@ -104,12 +109,33 @@ function seedUser(id, username, email, password, tier, role = 'user') {
   };
 }
 
-// Seed in ALL environments so Vercel preview deployments work without a DB
-seedUser('usr_admin_001',       'joker5514',        'admin@voiceisolatepro.com',               'Admin8052',         'ENTERPRISE', 'admin');
-seedUser('usr_test_free',       'test_free',        'free@test.voiceisolatepro.com',           'TestFree123',       'FREE');
-seedUser('usr_test_pro',        'test_pro',         'pro@test.voiceisolatepro.com',            'TestPro123',        'PRO');
-seedUser('usr_test_studio',     'test_studio',      'studio@test.voiceisolatepro.com',         'TestStudio123',     'STUDIO');
-seedUser('usr_test_enterprise', 'test_enterprise',  'enterprise@test.voiceisolatepro.com',     'TestEnterprise123', 'ENTERPRISE');
+// Admin account: seeded only when explicitly provisioned via env vars.
+// Never hardcode credentials here.
+if (process.env.VIP_ADMIN_USERNAME && process.env.VIP_ADMIN_PASSWORD) {
+  seedUser(
+    'usr_admin_001',
+    process.env.VIP_ADMIN_USERNAME,
+    process.env.VIP_ADMIN_EMAIL || 'admin@voiceisolatepro.com',
+    process.env.VIP_ADMIN_PASSWORD,
+    'ENTERPRISE',
+    'admin'
+  );
+} else if (process.env.NODE_ENV === 'production') {
+  console.warn('[api/auth] No admin account provisioned. Set VIP_ADMIN_USERNAME + VIP_ADMIN_PASSWORD.');
+}
+
+// Test accounts: seeded only in non-production, and only if not explicitly
+// disabled. Useful for Vercel preview deploys where there's no real DB.
+const enableTestAccounts =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.VIP_DISABLE_TEST_ACCOUNTS !== '1';
+
+if (enableTestAccounts) {
+  seedUser('usr_test_free',       'test_free',        'free@test.voiceisolatepro.com',       'TestFree123',       'FREE');
+  seedUser('usr_test_pro',        'test_pro',         'pro@test.voiceisolatepro.com',        'TestPro123',        'PRO');
+  seedUser('usr_test_studio',     'test_studio',      'studio@test.voiceisolatepro.com',     'TestStudio123',     'STUDIO');
+  seedUser('usr_test_enterprise', 'test_enterprise',  'enterprise@test.voiceisolatepro.com', 'TestEnterprise123', 'ENTERPRISE');
+}
 
 // ─── POST /api/auth/login ────────────────────────────────────────────────────
 router.post('/login', (req, res) => {

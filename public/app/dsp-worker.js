@@ -127,6 +127,13 @@ async function handleProcess(payload) {
       processed = out[Object.keys(out)[0]].data;
     } catch (err) {
       console.warn('[dsp-worker] Demucs failed, continuing classical DSP:', err.message);
+      try {
+        self.postMessage({
+          type:  'modelFailed',
+          model: 'demucs',
+          error: err?.message || String(err)
+        });
+      } catch { /* postMessage can fail during teardown */ }
     }
   }
 

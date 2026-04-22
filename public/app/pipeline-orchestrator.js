@@ -215,6 +215,13 @@ class PipelineOrchestrator {
       console.warn('[Orchestrator] SharedArrayBuffer unavailable; live ML masking disabled:', err.message);
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
+      try {
+        if (typeof globalThis !== 'undefined' && typeof globalThis.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+          globalThis.dispatchEvent(new CustomEvent('ringAllocationFailed', {
+            detail: { reason: err?.message || String(err) }
+          }));
+        }
+      } catch (_) { /* event dispatch is best-effort */ }
     }
   }
 
@@ -387,20 +394,35 @@ class PipelineOrchestrator {
   }
 
   // ── Connect / disconnect an audio source ────────────────────────────────
-  /** @param {AudioNode} sourceNode */
+  /**
+   * Connect an audio source to the pipeline. Synchronous when the pipeline
+   * is already ready; otherwise defers the actual connection until readiness
+   * (or until timeout) so callers don't silently drop the source.
+   * @param {AudioNode} sourceNode
+   * @returns {Promise<boolean>} resolves true if connected, false otherwise.
+   */
   connectSource(sourceNode) {
     if (!this.workletNode) {
       console.warn('[Orchestrator] connectSource called before init()');
-      return;
+      return Promise.resolve(false);
     }
-    if (!this.workletReady || !this.mlReady) {
-      console.warn('[Orchestrator] connectSource blocked: pipeline not ready', {
-        workletReady: this.workletReady,
-        workerReady: this.mlReady
-      });
-      return;
+    if (this.workletReady && this.mlReady) {
+      sourceNode.connect(this.workletNode);
+      return Promise.resolve(true);
     }
-    sourceNode.connect(this.workletNode);
+    // Deferred connect: wait for readiness, then connect.
+    return this.waitForReadiness().then((ready) => {
+      if (!ready) {
+        console.warn('[Orchestrator] connectSource timed out waiting for readiness', {
+          workletReady: this.workletReady,
+          workerReady:  this.mlReady
+        });
+        return false;
+      }
+      if (!this.workletNode) return false;
+      try { sourceNode.connect(this.workletNode); } catch (_) { return false; }
+      return true;
+    });
   }
 
   disconnectSource(sourceNode) {

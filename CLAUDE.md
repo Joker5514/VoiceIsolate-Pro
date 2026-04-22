@@ -34,7 +34,7 @@ pnpm build
 pnpm lint
 pnpm lint:fix
 
-# Run all tests (23 Jest suites)
+# Run all tests (41 Jest suites)
 pnpm test
 pnpm test:watch
 pnpm test:coverage
@@ -71,7 +71,7 @@ VoiceIsolate-Pro/
 │   │   ├── dsp-core.js       # 47KB — pure DSP math (STFT, filters, spectral ops)
 │   │   ├── dsp-processor.js  # AudioWorklet processor (real-time live mode)
 │   │   ├── dsp-worker.js     # Web Worker for heavy offline DSP
-│   │   ├── pipeline-orchestrator.js  # 36-stage Deca-Pass pipeline runner
+│   │   ├── pipeline-orchestrator.js  # 32-stage Deca-Pass pipeline runner
 │   │   ├── pipeline-state.js # Centralized state management + event bus
 │   │   ├── ml-worker.js      # ML inference worker (ONNX Runtime)
 │   │   ├── ml-worker-fetch-cache.js  # Model caching (IndexedDB)
@@ -283,7 +283,7 @@ Rules: `semi: warn`, `quotes: ['warn', 'single']`, `no-unused-vars: warn` (ignor
 
 ## Testing
 
-23 Jest test suites covering all major subsystems:
+41 Jest test suites covering all major subsystems:
 
 ```bash
 pnpm test                     # Run all suites
@@ -387,7 +387,7 @@ pnpm ios:sync            # Sync web assets
 # Then open ios/App/App.xcworkspace in Xcode
 ```
 
-App ID: `com.voiceisolatepro.app`, version: 22.1
+App ID: `com.voiceisolatepro.app`, version: 24.0.0
 
 ---
 
@@ -395,7 +395,7 @@ App ID: `com.voiceisolatepro.app`, version: 22.1
 
 `.github/workflows/deploy.yml` runs on push to `main` and on PRs:
 
-1. **lint-test**: ESLint + Jest (all 23 suites) + `pnpm validate`
+1. **lint-test**: ESLint + Jest (all 41 suites) + `pnpm validate`
 2. **validate**: Structural file existence checks
 3. **deploy-preview**: Vercel preview URL (PRs only)
 4. **deploy-production**: Vercel production deploy (merge to `main` only)

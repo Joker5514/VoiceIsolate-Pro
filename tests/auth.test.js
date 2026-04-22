@@ -90,7 +90,7 @@ function buildSeededUsers() {
       createdAt: new Date().toISOString(),
     };
   }
-  seedUser('usr_admin_001',       'joker5514',         'admin@voiceisolatepro.com',             'Admin8052',         'ENTERPRISE', 'admin');
+  seedUser('usr_admin_001',       'test_admin',         'admin@voiceisolatepro.com',             'TestAdmin123',         'ENTERPRISE', 'admin');
   seedUser('usr_test_free',       'test_free',         'free@test.voiceisolatepro.com',          'TestFree123',       'FREE');
   seedUser('usr_test_pro',        'test_pro',          'pro@test.voiceisolatepro.com',           'TestPro123',        'PRO');
   seedUser('usr_test_studio',     'test_studio',       'studio@test.voiceisolatepro.com',        'TestStudio123',     'STUDIO');
@@ -324,16 +324,20 @@ describe('Seeded USERS store', () => {
 
   test('contains all five seeded accounts', () => {
     expect(Object.keys(USERS)).toHaveLength(5);
-    expect(USERS).toHaveProperty('joker5514');
+    expect(USERS).toHaveProperty('test_admin');
     expect(USERS).toHaveProperty('test_free');
     expect(USERS).toHaveProperty('test_pro');
     expect(USERS).toHaveProperty('test_studio');
     expect(USERS).toHaveProperty('test_enterprise');
   });
 
-  test('joker5514 has ENTERPRISE tier and admin role', () => {
-    expect(USERS['joker5514'].tier).toBe('ENTERPRISE');
-    expect(USERS['joker5514'].role).toBe('admin');
+  test('test_admin has ENTERPRISE tier and admin role', () => {
+    expect(USERS['test_admin'].tier).toBe('ENTERPRISE');
+    expect(USERS['test_admin'].role).toBe('admin');
+  });
+
+  test('no real admin credentials leak into seeded users', () => {
+    expect(USERS).not.toHaveProperty('joker5514');
   });
 
   test('tier-named accounts have correct tiers', () => {
@@ -361,7 +365,7 @@ describe('Seeded USERS store', () => {
   });
 
   test('passwords verify correctly for seeded accounts', () => {
-    expect(verifyPassword('Admin8052',         USERS['joker5514'].passwordHash)).toBe(true);
+    expect(verifyPassword('TestAdmin123',         USERS['test_admin'].passwordHash)).toBe(true);
     expect(verifyPassword('TestFree123',       USERS['test_free'].passwordHash)).toBe(true);
     expect(verifyPassword('TestPro123',        USERS['test_pro'].passwordHash)).toBe(true);
     expect(verifyPassword('TestStudio123',     USERS['test_studio'].passwordHash)).toBe(true);
@@ -398,7 +402,7 @@ describe('POST /login', () => {
   test('admin login returns role=admin and ENTERPRISE tier', async () => {
     const res = await request(app)
       .post('/login')
-      .send({ username: 'joker5514', password: 'Admin8052' });
+      .send({ username: 'test_admin', password: 'TestAdmin123' });
     expect(res.status).toBe(200);
     expect(res.body.user.role).toBe('admin');
     expect(res.body.user.tier).toBe('ENTERPRISE');
@@ -516,7 +520,7 @@ describe('GET /me', () => {
   });
 
   test('returns isAdmin=true for the admin token', async () => {
-    const token = await loginAndGetToken('joker5514', 'Admin8052');
+    const token = await loginAndGetToken('test_admin', 'TestAdmin123');
     const res   = await request(app)
       .get('/me')
       .set('Authorization', `Bearer ${token}`);
@@ -626,25 +630,28 @@ describe('Login → /me roundtrip', () => {
   });
 });
 
-// ── LICENSE_SECRET IIFE fallback (api/auth.js PR change) ──────────────────────
-// api/auth.js changed from a boot-time throw to an IIFE that:
-//   - returns the env var when set
-//   - returns a hardcoded dev fallback + console.warn when unset (ALL environments)
-// Unlike api/monetization.js, auth.js NEVER throws — it always falls back.
-describe('LICENSE_SECRET IIFE fallback (auth.js)', () => {
-  const AUTH_FALLBACK = 'vip-dev-fallback-secret-change-in-production-32chars';
-
-  // Replicates the IIFE logic from api/auth.js
-  function resolveLicenseSecret(envValue) {
+// ── LICENSE_SECRET IIFE — v24 random per-process secret (api/auth.js PR change) ─
+// v24 changed the fallback from a hardcoded string to a cryptographically-random
+// per-process secret (crypto.randomBytes(48).toString('base64url')).
+// Behaviour:
+//   - When LICENSE_JWT_SECRET is set: returns the env var (no warn, no throw)
+//   - When absent AND NODE_ENV === 'production': throws
+//   - When absent AND NODE_ENV !== 'production': returns a random secret + warns
+describe('LICENSE_SECRET IIFE — v24 random per-process secret (auth.js)', () => {
+  // Replicates the v24 IIFE logic from api/auth.js
+  function resolveLicenseSecret(envValue, nodeEnv = 'development') {
     const savedSecret  = process.env.LICENSE_JWT_SECRET;
+    const savedNodeEnv = process.env.NODE_ENV;
+
     if (envValue === undefined) {
       delete process.env.LICENSE_JWT_SECRET;
     } else {
       process.env.LICENSE_JWT_SECRET = envValue;
     }
+    process.env.NODE_ENV = nodeEnv;
 
-    let warnEmitted    = false;
-    let thrownError    = null;
+    let warnEmitted  = false;
+    let thrownError  = null;
     const originalWarn = console.warn;
     console.warn = (...args) => {
       if (String(args[0]).includes('LICENSE_JWT_SECRET')) warnEmitted = true;
@@ -652,15 +659,18 @@ describe('LICENSE_SECRET IIFE fallback (auth.js)', () => {
 
     let resolved;
     try {
-      // Mirrors the IIFE in api/auth.js exactly
+      // Mirrors the v24 IIFE in api/auth.js exactly
       resolved = (() => {
         if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
-        const fallback = AUTH_FALLBACK;
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('[api/auth] LICENSE_JWT_SECRET is required in production.');
+        }
+        const random = crypto.randomBytes(48).toString('base64url');
         console.warn(
-          '[Auth] WARNING: LICENSE_JWT_SECRET not set. Using insecure dev fallback.\n' +
-          '  → Set it in Vercel Dashboard → Settings → Environment Variables.'
+          '[api/auth] WARNING: LICENSE_JWT_SECRET not set. Using random per-process secret. ' +
+          'Tokens will not validate after restart. Set LICENSE_JWT_SECRET for stable tokens.'
         );
-        return fallback;
+        return random;
       })();
     } catch (e) {
       thrownError = e;
@@ -672,6 +682,7 @@ describe('LICENSE_SECRET IIFE fallback (auth.js)', () => {
     } else {
       process.env.LICENSE_JWT_SECRET = savedSecret;
     }
+    process.env.NODE_ENV = savedNodeEnv;
 
     return { resolved, warnEmitted, thrownError };
   }
@@ -684,28 +695,64 @@ describe('LICENSE_SECRET IIFE fallback (auth.js)', () => {
     expect(warnEmitted).toBe(false);
   });
 
-  test('returns the hardcoded dev fallback when LICENSE_JWT_SECRET is absent', () => {
-    const { resolved, thrownError } = resolveLicenseSecret(undefined);
+  test('returns a random string when LICENSE_JWT_SECRET is absent (dev)', () => {
+    const { resolved, thrownError } = resolveLicenseSecret(undefined, 'development');
     expect(thrownError).toBeNull();
-    expect(resolved).toBe(AUTH_FALLBACK);
+    expect(typeof resolved).toBe('string');
+    expect(resolved.length).toBeGreaterThan(0);
   });
 
-  test('emits console.warn when falling back to dev secret', () => {
-    const { warnEmitted } = resolveLicenseSecret(undefined);
+  test('random fallback is NOT the old hardcoded dev string', () => {
+    const OLD_HARDCODED = 'voiceisolate-dev-secret-change-in-production-32chars!';
+    const { resolved } = resolveLicenseSecret(undefined, 'development');
+    expect(resolved).not.toBe(OLD_HARDCODED);
+  });
+
+  test('each call produces a different random secret (crypto.randomBytes)', () => {
+    const { resolved: s1 } = resolveLicenseSecret(undefined, 'development');
+    const { resolved: s2 } = resolveLicenseSecret(undefined, 'development');
+    // Two independent calls should produce different values
+    expect(s1).not.toBe(s2);
+  });
+
+  test('random fallback is at least 64 characters (base64url of 48 bytes)', () => {
+    const { resolved } = resolveLicenseSecret(undefined, 'development');
+    expect(resolved.length).toBeGreaterThanOrEqual(64);
+  });
+
+  test('emits console.warn when falling back to random secret (dev)', () => {
+    const { warnEmitted } = resolveLicenseSecret(undefined, 'development');
     expect(warnEmitted).toBe(true);
   });
 
-  test('never throws — even when LICENSE_JWT_SECRET is absent', () => {
-    // The PR specifically removed the throw in favour of a graceful fallback
-    const { thrownError } = resolveLicenseSecret(undefined);
+  test('emits console.warn when falling back to random secret (test env)', () => {
+    const { warnEmitted } = resolveLicenseSecret(undefined, 'test');
+    expect(warnEmitted).toBe(true);
+  });
+
+  test('does NOT warn when LICENSE_JWT_SECRET env var is set', () => {
+    const { warnEmitted } = resolveLicenseSecret('valid-secret-key-at-least-32-chars-long', 'development');
+    expect(warnEmitted).toBe(false);
+  });
+
+  test('throws in production when LICENSE_JWT_SECRET is absent', () => {
+    const { thrownError } = resolveLicenseSecret(undefined, 'production');
+    expect(thrownError).not.toBeNull();
+    expect(thrownError.message).toContain('LICENSE_JWT_SECRET');
+  });
+
+  test('does NOT throw in development when LICENSE_JWT_SECRET is absent', () => {
+    const { thrownError } = resolveLicenseSecret(undefined, 'development');
     expect(thrownError).toBeNull();
   });
 
-  test('dev fallback is at least 32 characters (suitable HMAC key)', () => {
-    expect(AUTH_FALLBACK.length).toBeGreaterThanOrEqual(32);
+  test('does NOT throw in test env when LICENSE_JWT_SECRET is absent', () => {
+    const { thrownError } = resolveLicenseSecret(undefined, 'test');
+    expect(thrownError).toBeNull();
   });
 
-  test('tokens signed with the fallback secret validate correctly', () => {
+  test('tokens signed with the random fallback validate against the same secret', () => {
+    const { resolved: randomSecret } = resolveLicenseSecret(undefined, 'development');
     const header  = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const payload = Buffer.from(JSON.stringify({
       sub: 'u1', username: 'test', email: 'test@example.com',
@@ -714,15 +761,13 @@ describe('LICENSE_SECRET IIFE fallback (auth.js)', () => {
       exp: Math.floor(Date.now() / 1000) + 3600,
     })).toString('base64url');
     const sig = crypto
-      .createHmac('sha256', AUTH_FALLBACK)
+      .createHmac('sha256', randomSecret)
       .update(`${header}.${payload}`)
       .digest('base64url');
     const token = `${header}.${payload}.${sig}`;
-
-    // Validate using the same fallback
     const parts       = token.split('.');
     const expectedSig = crypto
-      .createHmac('sha256', AUTH_FALLBACK)
+      .createHmac('sha256', randomSecret)
       .update(`${parts[0]}.${parts[1]}`)
       .digest('base64url');
     const sigMatch = crypto.timingSafeEqual(
@@ -731,19 +776,205 @@ describe('LICENSE_SECRET IIFE fallback (auth.js)', () => {
     );
     expect(sigMatch).toBe(true);
   });
+});
 
-  test('route returns 200 using a token signed with fallback secret (dev env works)', () => {
-    // Build an app that explicitly uses the fallback secret
-    const fallbackApp = buildApp(AUTH_FALLBACK);
-    // Create a token with the fallback secret via createAuthToken (re-used helper above)
-    const user  = { id: 'usr_test_pro', username: 'test_pro', email: 'pro@test.voiceisolatepro.com', tier: 'PRO', role: 'user' };
-    const token = createAuthToken(user, AUTH_FALLBACK);
-    return request(fallbackApp.app)
-      .get('/me')
-      .set('Authorization', `Bearer ${token}`)
-      .then(res => {
-        expect(res.status).toBe(200);
-        expect(res.body.username).toBe('test_pro');
-      });
+// ── Admin provisioning via env vars (api/auth.js v24 change) ─────────────────
+// v24 removed the hardcoded admin account. Admins are now seeded only when
+// VIP_ADMIN_USERNAME + VIP_ADMIN_PASSWORD env vars are set.
+describe('Admin provisioning via VIP_ADMIN_USERNAME / VIP_ADMIN_PASSWORD', () => {
+  function buildAppWithAdminEnv(adminUsername, adminPassword, adminEmail) {
+    const savedUser  = process.env.VIP_ADMIN_USERNAME;
+    const savedPass  = process.env.VIP_ADMIN_PASSWORD;
+    const savedEmail = process.env.VIP_ADMIN_EMAIL;
+
+    if (adminUsername) process.env.VIP_ADMIN_USERNAME = adminUsername;
+    else delete process.env.VIP_ADMIN_USERNAME;
+    if (adminPassword) process.env.VIP_ADMIN_PASSWORD = adminPassword;
+    else delete process.env.VIP_ADMIN_PASSWORD;
+    if (adminEmail) process.env.VIP_ADMIN_EMAIL = adminEmail;
+    else delete process.env.VIP_ADMIN_EMAIL;
+
+    // Re-build seeded users mirroring api/auth.js logic
+    const USERS = {};
+    function seedUser(id, username, email, password, tier, role = 'user') {
+      const salt    = crypto.randomBytes(16).toString('hex');
+      const derived = crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 });
+      USERS[username.toLowerCase()] = {
+        id, username, email,
+        passwordHash: `${salt}:${derived.toString('hex')}`,
+        tier, role,
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    if (process.env.VIP_ADMIN_USERNAME && process.env.VIP_ADMIN_PASSWORD) {
+      seedUser(
+        'usr_admin_001',
+        process.env.VIP_ADMIN_USERNAME,
+        process.env.VIP_ADMIN_EMAIL || 'admin@voiceisolatepro.com',
+        process.env.VIP_ADMIN_PASSWORD,
+        'ENTERPRISE',
+        'admin'
+      );
+    }
+
+    // Restore env
+    if (savedUser === undefined)  delete process.env.VIP_ADMIN_USERNAME;
+    else process.env.VIP_ADMIN_USERNAME = savedUser;
+    if (savedPass === undefined)  delete process.env.VIP_ADMIN_PASSWORD;
+    else process.env.VIP_ADMIN_PASSWORD = savedPass;
+    if (savedEmail === undefined) delete process.env.VIP_ADMIN_EMAIL;
+    else process.env.VIP_ADMIN_EMAIL = savedEmail;
+
+    return USERS;
+  }
+
+  test('no admin is seeded when VIP_ADMIN_USERNAME is absent', () => {
+    const USERS = buildAppWithAdminEnv(undefined, 'SomePass123', undefined);
+    expect(Object.keys(USERS)).toHaveLength(0);
+  });
+
+  test('no admin is seeded when VIP_ADMIN_PASSWORD is absent', () => {
+    const USERS = buildAppWithAdminEnv('admin_user', undefined, undefined);
+    expect(Object.keys(USERS)).toHaveLength(0);
+  });
+
+  test('no admin is seeded when both env vars are absent', () => {
+    const USERS = buildAppWithAdminEnv(undefined, undefined, undefined);
+    expect(Object.keys(USERS)).toHaveLength(0);
+  });
+
+  test('admin is seeded when both VIP_ADMIN_USERNAME and VIP_ADMIN_PASSWORD are set', () => {
+    const USERS = buildAppWithAdminEnv('myadmin', 'MyAdminPass!1', undefined);
+    expect(Object.keys(USERS)).toHaveLength(1);
+    expect(USERS).toHaveProperty('myadmin');
+  });
+
+  test('seeded admin has ENTERPRISE tier and admin role', () => {
+    const USERS = buildAppWithAdminEnv('myadmin', 'MyAdminPass!1', undefined);
+    expect(USERS['myadmin'].tier).toBe('ENTERPRISE');
+    expect(USERS['myadmin'].role).toBe('admin');
+  });
+
+  test('seeded admin uses VIP_ADMIN_EMAIL when provided', () => {
+    const USERS = buildAppWithAdminEnv('myadmin', 'MyAdminPass!1', 'custom@example.com');
+    expect(USERS['myadmin'].email).toBe('custom@example.com');
+  });
+
+  test('seeded admin falls back to default email when VIP_ADMIN_EMAIL absent', () => {
+    const USERS = buildAppWithAdminEnv('myadmin', 'MyAdminPass!1', undefined);
+    expect(USERS['myadmin'].email).toBe('admin@voiceisolatepro.com');
+  });
+
+  test('admin username is stored lowercase (case-insensitive lookup)', () => {
+    const USERS = buildAppWithAdminEnv('MyAdmin', 'MyAdminPass!1', undefined);
+    expect(USERS).toHaveProperty('myadmin');
+    expect(USERS).not.toHaveProperty('MyAdmin');
+  });
+
+  test('old hardcoded admin "joker5514" is never seeded', () => {
+    const USERS = buildAppWithAdminEnv('joker5514', 'Admin8052', undefined);
+    // Even if joker5514 were provided via env, it's in the store under 'joker5514'
+    // but only because it was explicitly provided - not hardcoded. We verify the
+    // v24 source no longer hardcodes this credential.
+    const authSrc = require('fs').readFileSync(
+      require('path').join(__dirname, '../api/auth.js'), 'utf8'
+    );
+    expect(authSrc).not.toContain("'joker5514'");
+    expect(authSrc).not.toContain('"joker5514"');
+    expect(authSrc).not.toContain("'Admin8052'");
+    expect(authSrc).not.toContain('"Admin8052"');
+  });
+});
+
+// ── VIP_DISABLE_TEST_ACCOUNTS env var (api/auth.js v24 change) ───────────────
+// Test accounts are seeded only in non-production, unless VIP_DISABLE_TEST_ACCOUNTS=1.
+describe('VIP_DISABLE_TEST_ACCOUNTS — disables test account seeding', () => {
+  function buildTestAccountsStore(nodeEnv = 'development', disableFlag = undefined) {
+    const savedNodeEnv = process.env.NODE_ENV;
+    const savedDisable = process.env.VIP_DISABLE_TEST_ACCOUNTS;
+
+    process.env.NODE_ENV = nodeEnv;
+    if (disableFlag !== undefined) process.env.VIP_DISABLE_TEST_ACCOUNTS = disableFlag;
+    else delete process.env.VIP_DISABLE_TEST_ACCOUNTS;
+
+    const USERS = {};
+    function seedUser(id, username, email, password, tier, role = 'user') {
+      const salt    = crypto.randomBytes(16).toString('hex');
+      const derived = crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 });
+      USERS[username.toLowerCase()] = {
+        id, username, email,
+        passwordHash: `${salt}:${derived.toString('hex')}`,
+        tier, role,
+        createdAt: new Date().toISOString(),
+      };
+    }
+
+    const enableTestAccounts =
+      process.env.NODE_ENV !== 'production' &&
+      process.env.VIP_DISABLE_TEST_ACCOUNTS !== '1';
+
+    if (enableTestAccounts) {
+      seedUser('usr_test_free',       'test_free',        'free@test.voiceisolatepro.com',       'TestFree123',       'FREE');
+      seedUser('usr_test_pro',        'test_pro',         'pro@test.voiceisolatepro.com',        'TestPro123',        'PRO');
+      seedUser('usr_test_studio',     'test_studio',      'studio@test.voiceisolatepro.com',     'TestStudio123',     'STUDIO');
+      seedUser('usr_test_enterprise', 'test_enterprise',  'enterprise@test.voiceisolatepro.com', 'TestEnterprise123', 'ENTERPRISE');
+    }
+
+    // Restore
+    process.env.NODE_ENV = savedNodeEnv;
+    if (savedDisable === undefined) delete process.env.VIP_DISABLE_TEST_ACCOUNTS;
+    else process.env.VIP_DISABLE_TEST_ACCOUNTS = savedDisable;
+
+    return USERS;
+  }
+
+  test('test accounts are seeded in development by default', () => {
+    const USERS = buildTestAccountsStore('development', undefined);
+    expect(Object.keys(USERS)).toHaveLength(4);
+    expect(USERS).toHaveProperty('test_free');
+    expect(USERS).toHaveProperty('test_pro');
+    expect(USERS).toHaveProperty('test_studio');
+    expect(USERS).toHaveProperty('test_enterprise');
+  });
+
+  test('test accounts are seeded in test env by default', () => {
+    const USERS = buildTestAccountsStore('test', undefined);
+    expect(Object.keys(USERS)).toHaveLength(4);
+  });
+
+  test('test accounts are NOT seeded in production', () => {
+    const USERS = buildTestAccountsStore('production', undefined);
+    expect(Object.keys(USERS)).toHaveLength(0);
+  });
+
+  test('VIP_DISABLE_TEST_ACCOUNTS=1 suppresses seeding in development', () => {
+    const USERS = buildTestAccountsStore('development', '1');
+    expect(Object.keys(USERS)).toHaveLength(0);
+  });
+
+  test('VIP_DISABLE_TEST_ACCOUNTS=0 (not "1") still seeds test accounts', () => {
+    const USERS = buildTestAccountsStore('development', '0');
+    expect(Object.keys(USERS)).toHaveLength(4);
+  });
+
+  test('VIP_DISABLE_TEST_ACCOUNTS=true (not "1") still seeds test accounts', () => {
+    const USERS = buildTestAccountsStore('development', 'true');
+    expect(Object.keys(USERS)).toHaveLength(4);
+  });
+
+  test('seeded test accounts have correct tiers', () => {
+    const USERS = buildTestAccountsStore('development', undefined);
+    expect(USERS['test_free'].tier).toBe('FREE');
+    expect(USERS['test_pro'].tier).toBe('PRO');
+    expect(USERS['test_studio'].tier).toBe('STUDIO');
+    expect(USERS['test_enterprise'].tier).toBe('ENTERPRISE');
+  });
+
+  test('all seeded test accounts have role=user', () => {
+    const USERS = buildTestAccountsStore('development', undefined);
+    for (const key of ['test_free', 'test_pro', 'test_studio', 'test_enterprise']) {
+      expect(USERS[key].role).toBe('user');
+    }
   });
 });

@@ -43,7 +43,9 @@
     "ios:build": "npm run build && npx cap sync ios && npx cap open ios",
     "ios:pods": "cd ios/App && pod install",
     "mobile:dev": "npm run build && npx cap sync && echo 'Synced to both platforms'",
-    "mobile:version": "echo 'Android: 24.0.0 (24000) | iOS: 24.0.0 (24000)'"
+    "mobile:sync-version": "node scripts/sync-mobile-version.js",
+    "mobile:version": "node scripts/sync-mobile-version.js",
+    "postversion": "node scripts/sync-mobile-version.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
@@ -85,6 +87,7 @@
     "@capacitor/ios": "^7.2.0",
     "@vercel/analytics": "^2.0.1",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.3.2",
     "jsdom": "^29.0.1",
     "onnxruntime-web": "1.20.1"
   },

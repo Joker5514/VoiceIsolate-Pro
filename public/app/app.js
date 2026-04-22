@@ -8,13 +8,17 @@
 
 function structuredLog(level, msg, data = {}) {
   const entry = { ts: new Date().toISOString(), level, msg, ...data };
+  // Errors/warns always surface. Info/debug only when window.VIP_DEBUG is truthy.
+  const debugEnabled = (typeof window !== 'undefined') && !!window.VIP_DEBUG;
   if (level === 'error') console.error('[VIP]', msg, data);
   else if (level === 'warn') console.warn('[VIP]', msg, data);
-  else console.log('[VIP]', msg, data);
+  else if (debugEnabled) console.log('[VIP]', msg, data);
   // Store last 200 entries for forensic export
-  if (!window._vipLogs) window._vipLogs = [];
-  if (window._vipLogs.length >= 200) window._vipLogs.shift();
-  window._vipLogs.push(entry);
+  if (typeof window !== 'undefined') {
+    if (!window._vipLogs) window._vipLogs = [];
+    if (window._vipLogs.length >= 200) window._vipLogs.shift();
+    window._vipLogs.push(entry);
+  }
 }
 
 // ---- SLIDER DEFINITIONS (52 total) ----
@@ -255,6 +259,29 @@ const PRESETS = {
 // Aliases kept for backward-compat with any custom presets saved before v23
 const PRESET_PARAM_ALIASES = {};
 
+// Flat lookup: sliderId → { min, max, step, ... } for clamping preset values
+// and guarding against out-of-range user input.
+const SLIDER_BY_ID = Object.freeze(
+  Object.values(SLIDERS).flat().reduce((acc, s) => { acc[s.id] = s; return acc; }, {})
+);
+function clampToSlider(id, value) {
+  const s = SLIDER_BY_ID[id];
+  const v = Number(value);
+  if (!Number.isFinite(v)) return s ? s.val : 0;
+  if (!s) return v;
+  if (v < s.min) return s.min;
+  if (v > s.max) return s.max;
+  return v;
+}
+// Parses the value of a numeric <input>, returning `fallback` for non-finite
+// or missing values. Used by event handlers that forward sliders to AudioParams.
+function numFromInput(el, fallback = 0) {
+  if (!el) return fallback;
+  const v = parseFloat(el.value);
+  return Number.isFinite(v) ? v : fallback;
+}
+if (typeof window !== 'undefined') window.numFromInput = numFromInput;
+
 const STAGES = [
   'S01: Input Decode',                    // 0
   'S02: Buffer Allocation',               // 1
@@ -420,8 +447,13 @@ class VoiceIsolatePro {
   // SPECTRAL_FRAME messages. Safe to call multiple times.
   attachDspWorkletToVisuals(workletNode) {
     if (!this._visEngine || !workletNode || !workletNode.port) return;
-    // Rebind: remove any previous listener, add a new one
     try {
+      // Detach from the previous worklet port (if any) before binding a new one
+      // so stale listeners don't accumulate across AudioContext recreations.
+      const prev = this._visEngine.workletNode;
+      if (prev && prev.port && prev !== workletNode) {
+        try { prev.port.removeEventListener('message', this._visEngine._onWorkletMessage); } catch {}
+      }
       workletNode.port.addEventListener('message',
         this._visEngine._onWorkletMessage);
       try { workletNode.port.start(); } catch (e) { console.warn(e); }
@@ -814,7 +846,18 @@ class VoiceIsolatePro {
   saveCustomPreset() {
     const nameInput = document.getElementById('customPresetName');
     const name = nameInput ? nameInput.value.trim() : '';
-    if (!name) return alert('Please enter a preset name');
+    if (!name) {
+      if (nameInput) {
+        nameInput.classList.add('input-error');
+        nameInput.setAttribute('aria-invalid', 'true');
+        nameInput.placeholder = 'Please enter a preset name';
+        nameInput.focus();
+        setTimeout(() => nameInput.classList.remove('input-error'), 1500);
+      }
+      if (this._showToast) this._showToast('Please enter a preset name', 'warn');
+      else console.warn('[VIP] saveCustomPreset: empty name');
+      return;
+    }
     const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
     this.customPresets[id] = { ...this.params };
     PRESETS[id] = this.customPresets[id];
@@ -845,12 +888,15 @@ class VoiceIsolatePro {
   applyPreset(name) {
     const p = PRESETS[name]; if (!p) return;
     window.VIP_PARAMS = window.VIP_PARAMS || {};
-    for (const [key, value] of Object.entries(p)) {
+    for (const [key, rawValue] of Object.entries(p)) {
       if (key === 'description') {
-        window.VIP_PARAMS[key] = value;
+        window.VIP_PARAMS[key] = rawValue;
         continue;
       }
       const sliderId = PRESET_PARAM_ALIASES[key] || key;
+      const value = SLIDER_BY_ID[sliderId]
+        ? clampToSlider(sliderId, rawValue)
+        : rawValue;
       this.params[key] = value;
       window.VIP_PARAMS[key] = value;
       if (sliderId !== key) {
@@ -998,7 +1044,9 @@ class VoiceIsolatePro {
   }
 
   onAudioLoaded(name) {
-    if (this.inputBuffer) this._triggerDiarization(this.inputBuffer).catch(() => {});
+    if (this.inputBuffer) this._triggerDiarization(this.inputBuffer).catch((err) => {
+      structuredLog('warn', 'Diarization kickoff failed', { error: err?.message || String(err) });
+    });
     const buf = this.inputBuffer;
     const dur = this.fmtDur(buf.duration);
     this.dom.fileInfo.textContent = (name || 'Recording') + ' (' + dur + ')';
@@ -1426,9 +1474,12 @@ class VoiceIsolatePro {
         // S13: Voice-band spectral emphasis
         await this.pip(13, total);
         if (p.voiceIso > 0 || p.bgSuppress > 0) {
-          const voiceLoBin = Math.round(p.voiceFocusLo / (sr / fftSize));
-          const voiceHiBin = Math.round(p.voiceFocusHi / (sr / fftSize));
           const halfN = mag[0].length;
+          const binHz = sr / fftSize;
+          const rawLo = Math.round(p.voiceFocusLo / binHz);
+          const rawHi = Math.round(p.voiceFocusHi / binHz);
+          const voiceLoBin = Math.max(0, Math.min(halfN - 1, rawLo));
+          const voiceHiBin = Math.max(voiceLoBin, Math.min(halfN - 1, rawHi));
           const suppressGain = 1 - (p.bgSuppress / 100) * 0.95;
           const boostGain = 1 + (p.voiceIso / 100) * 0.5;
           for (let f = 0; f < mag.length; f++) {
@@ -1567,7 +1618,20 @@ class VoiceIsolatePro {
       src.start(0);
 
       await this.pip(25, total);
-      const rendered = await ofl.startRendering();
+      let rendered;
+      try {
+        rendered = await ofl.startRendering();
+      } finally {
+        // Release the offline graph regardless of success so we don't leak
+        // AudioNodes across batches. disconnect() on an already-disconnected
+        // node throws in some browsers, so each call is guarded.
+        for (const node of chain) {
+          try { node.disconnect(); } catch { /* noop */ }
+        }
+        if (typeof ofl.close === 'function') {
+          try { await ofl.close(); } catch { /* noop */ }
+        }
+      }
       if (this.abortFlag) throw 'abort';
 
       // ═══ PASS 9: MASTERING ═══
@@ -1958,16 +2022,32 @@ class VoiceIsolatePro {
   _mlCall(payload, transfer = []) {
     return new Promise((resolve, reject) => {
       const id = ++this._mlCallId;
+      const worker = this.mlWorker;
+      let errorHandler;
       // SEC-03: Dedicated Worker — origin checks don't apply (same-origin by design).
       // RPC safety is enforced by matching e.data.id to the outbound call id.
+      const cleanup = () => {
+        worker.removeEventListener('message', handler);
+        if (errorHandler) worker.removeEventListener('error', errorHandler);
+      };
       const handler = (e) => {
         if (e.data.id !== id) return; // RPC id guard
-        this.mlWorker.removeEventListener('message', handler);
+        cleanup();
         if (e.data.error) reject(new Error(e.data.error));
         else resolve(e.data.result);
       };
-      this.mlWorker.addEventListener('message', handler);
-      this.mlWorker.postMessage({ ...payload, id }, transfer);
+      errorHandler = (e) => {
+        cleanup();
+        reject(new Error(e.message || 'ML worker error'));
+      };
+      worker.addEventListener('message', handler);
+      worker.addEventListener('error', errorHandler);
+      try {
+        worker.postMessage({ ...payload, id }, transfer);
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
     });
   }
 

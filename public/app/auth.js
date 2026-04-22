@@ -6,16 +6,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── 1. User Credential Store ─────────────────────────────────────────────────
+// No admin account is hardcoded. Provision one via a serverless seed at
+// deploy time if you need admin access, and authenticate through the API.
 const USERS = [
-  {
-    username:     'joker5514',
-    displayName:  'Randy Jordan',
-    passHash:     'fc157fd1df28bbac5e71f6c38d64c6ecae40f45318a866989947196aba244c03',
-    tier:         'ENTERPRISE',
-    role:         'admin',
-    filesUsed:    0,
-    filesAllowed: Infinity,
-  },
   {
     username:     'test_free',
     displayName:  'Free Test User',
@@ -238,9 +231,8 @@ function renderLoginModal() {
       <button id="vip-auth-submit">Sign In → Enterprise</button>
       <div id="vip-auth-error"></div>
       <div class="vip-auth-tier-hint">
-        <strong style="color:#f3f3f5">Quick access:</strong><br/>
-        joker5514 / Admin8052 &nbsp;·&nbsp; demo / hello<br/>
-        test_enterprise / TestEnterprise123
+        <strong style="color:#f3f3f5">Dev mode:</strong>
+        use any seeded test account from <code>api/auth.js</code>.
       </div>
     </div>
   `;

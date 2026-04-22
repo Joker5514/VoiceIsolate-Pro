@@ -716,3 +716,486 @@ describe('Webhook handler behaviour after db/email removal', () => {
     expect(res.body.received).toBe(true);
   });
 });
+
+// ── safeRedirectUrl (api/monetization.js v24 new function) ───────────────────
+// safeRedirectUrl validates user-supplied redirect URLs against the request
+// origin. Same-origin relative paths (starting with "/") and absolute URLs
+// whose origin matches the request origin are accepted. All else returns null.
+describe('safeRedirectUrl()', () => {
+  // Re-implement the function exactly as in api/monetization.js
+  function safeRedirectUrl(candidate, originHeader) {
+    if (!candidate || typeof candidate !== 'string') return null;
+    try {
+      if (candidate.startsWith('/') && !candidate.startsWith('//')) {
+        return originHeader ? new URL(candidate, originHeader).toString() : null;
+      }
+      const url = new URL(candidate);
+      if (!originHeader) return null;
+      const origin = new URL(originHeader);
+      if (url.origin !== origin.origin) return null;
+      return url.toString();
+    } catch {
+      return null;
+    }
+  }
+
+  test('returns null for null candidate', () => {
+    expect(safeRedirectUrl(null, 'https://example.com')).toBeNull();
+  });
+
+  test('returns null for undefined candidate', () => {
+    expect(safeRedirectUrl(undefined, 'https://example.com')).toBeNull();
+  });
+
+  test('returns null for non-string candidate', () => {
+    expect(safeRedirectUrl(123, 'https://example.com')).toBeNull();
+    expect(safeRedirectUrl({}, 'https://example.com')).toBeNull();
+  });
+
+  test('returns null for empty string', () => {
+    expect(safeRedirectUrl('', 'https://example.com')).toBeNull();
+  });
+
+  test('accepts a same-origin relative path (starting with /)', () => {
+    const result = safeRedirectUrl('/app/?payment=success', 'https://example.com');
+    expect(result).not.toBeNull();
+    expect(result).toContain('example.com');
+    expect(result).toContain('/app/?payment=success');
+  });
+
+  test('rejects a protocol-relative URL starting with //', () => {
+    const result = safeRedirectUrl('//evil.com/steal', 'https://example.com');
+    expect(result).toBeNull();
+  });
+
+  test('accepts an absolute URL whose origin matches the origin header', () => {
+    const result = safeRedirectUrl(
+      'https://example.com/app/?payment=success',
+      'https://example.com'
+    );
+    expect(result).not.toBeNull();
+    expect(result).toContain('example.com');
+  });
+
+  test('rejects an absolute URL whose origin differs from the origin header', () => {
+    const result = safeRedirectUrl(
+      'https://evil.com/steal',
+      'https://example.com'
+    );
+    expect(result).toBeNull();
+  });
+
+  test('rejects an absolute URL when originHeader is null', () => {
+    const result = safeRedirectUrl('https://example.com/app/', null);
+    expect(result).toBeNull();
+  });
+
+  test('returns null for relative path when originHeader is null/undefined', () => {
+    expect(safeRedirectUrl('/app/success', null)).toBeNull();
+    expect(safeRedirectUrl('/app/success', undefined)).toBeNull();
+  });
+
+  test('returns null for a completely invalid URL', () => {
+    expect(safeRedirectUrl('not-a-url', 'https://example.com')).toBeNull();
+  });
+
+  test('subdomain is treated as a different origin', () => {
+    const result = safeRedirectUrl(
+      'https://sub.example.com/page',
+      'https://example.com'
+    );
+    expect(result).toBeNull();
+  });
+
+  test('http vs https is treated as a different origin', () => {
+    const result = safeRedirectUrl(
+      'http://example.com/page',
+      'https://example.com'
+    );
+    expect(result).toBeNull();
+  });
+
+  test('same origin with path query and hash is accepted', () => {
+    const result = safeRedirectUrl(
+      'https://example.com/app/?session_id=abc&payment=success#top',
+      'https://example.com'
+    );
+    expect(result).not.toBeNull();
+  });
+
+  // Boundary / regression: javascript: URI must be rejected
+  test('rejects javascript: URI', () => {
+    const result = safeRedirectUrl('javascript:alert(1)', 'https://example.com');
+    expect(result).toBeNull();
+  });
+});
+
+// ── Webhook idempotency (api/monetization.js v24 new functions) ──────────────
+// hasProcessedEvent / markEventProcessed provide in-memory deduplication for
+// Stripe webhook events. The same event ID delivered twice should be short-
+// circuited; stale entries past the 24h TTL should be evicted.
+describe('Webhook idempotency — hasProcessedEvent / markEventProcessed', () => {
+  // Re-implement the functions from api/monetization.js
+  const WEBHOOK_DEDUP_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+  function makeIdempotencyCache() {
+    const _map = new Map(); // eventId → expiresAt ms
+
+    function hasProcessedEvent(eventId) {
+      if (!eventId) return false;
+      const exp = _map.get(eventId);
+      if (!exp) return false;
+      if (exp < Date.now()) { _map.delete(eventId); return false; }
+      return true;
+    }
+
+    function markEventProcessed(eventId) {
+      if (!eventId) return;
+      _map.set(eventId, Date.now() + WEBHOOK_DEDUP_TTL_MS);
+      if (_map.size > 10000) {
+        const now = Date.now();
+        for (const [id, exp] of _map) {
+          if (exp < now) _map.delete(id);
+        }
+      }
+    }
+
+    return { hasProcessedEvent, markEventProcessed, _map };
+  }
+
+  test('hasProcessedEvent returns false for an unknown event ID', () => {
+    const { hasProcessedEvent } = makeIdempotencyCache();
+    expect(hasProcessedEvent('evt_unknown')).toBe(false);
+  });
+
+  test('hasProcessedEvent returns false for null/undefined event ID', () => {
+    const { hasProcessedEvent } = makeIdempotencyCache();
+    expect(hasProcessedEvent(null)).toBe(false);
+    expect(hasProcessedEvent(undefined)).toBe(false);
+    expect(hasProcessedEvent('')).toBe(false);
+  });
+
+  test('markEventProcessed followed by hasProcessedEvent returns true', () => {
+    const { hasProcessedEvent, markEventProcessed } = makeIdempotencyCache();
+    markEventProcessed('evt_abc123');
+    expect(hasProcessedEvent('evt_abc123')).toBe(true);
+  });
+
+  test('different event IDs are tracked independently', () => {
+    const { hasProcessedEvent, markEventProcessed } = makeIdempotencyCache();
+    markEventProcessed('evt_001');
+    expect(hasProcessedEvent('evt_001')).toBe(true);
+    expect(hasProcessedEvent('evt_002')).toBe(false);
+  });
+
+  test('markEventProcessed with null/undefined does nothing', () => {
+    const { hasProcessedEvent, markEventProcessed, _map } = makeIdempotencyCache();
+    markEventProcessed(null);
+    markEventProcessed(undefined);
+    expect(_map.size).toBe(0);
+  });
+
+  test('hasProcessedEvent returns false for an expired entry', () => {
+    const { hasProcessedEvent, markEventProcessed, _map } = makeIdempotencyCache();
+    // Manually insert an already-expired entry
+    _map.set('evt_expired', Date.now() - 1000);
+    expect(hasProcessedEvent('evt_expired')).toBe(false);
+    // Entry should be evicted after the check
+    expect(_map.has('evt_expired')).toBe(false);
+  });
+
+  test('marking an event twice is idempotent (no crash, remains processed)', () => {
+    const { hasProcessedEvent, markEventProcessed } = makeIdempotencyCache();
+    markEventProcessed('evt_dup');
+    markEventProcessed('evt_dup');
+    expect(hasProcessedEvent('evt_dup')).toBe(true);
+  });
+
+  test('fresh event is marked with a future expiry', () => {
+    const { markEventProcessed, _map } = makeIdempotencyCache();
+    const before = Date.now();
+    markEventProcessed('evt_fresh');
+    const expiry = _map.get('evt_fresh');
+    expect(expiry).toBeGreaterThan(before);
+    expect(expiry).toBeCloseTo(before + WEBHOOK_DEDUP_TTL_MS, -3); // within 1 second
+  });
+
+  // Integration: webhook endpoint returns duplicate:true for replayed event
+  test('webhook endpoint returns { received: true, duplicate: true } for a replayed event', async () => {
+    function buildWebhookAppWithIdempotency(mockStripe) {
+      const app = express();
+      const cache = makeIdempotencyCache();
+
+      app.post('/webhook/stripe', express.raw({ type: 'application/json' }), (req, res) => {
+        let event;
+        try {
+          event = mockStripe.webhooks.constructEvent(req.body, req.headers['stripe-signature']);
+        } catch (err) {
+          return res.status(400).json({ error: 'Invalid signature' });
+        }
+        if (cache.hasProcessedEvent(event.id)) {
+          return res.json({ received: true, duplicate: true });
+        }
+        cache.markEventProcessed(event.id);
+        res.json({ received: true });
+      });
+
+      return app;
+    }
+
+    let callCount = 0;
+    const mockStripe = {
+      webhooks: {
+        constructEvent: (_body, sig) => {
+          if (sig === 'bad-sig') throw new Error('bad sig');
+          callCount++;
+          return { id: 'evt_replay_001', type: 'checkout.session.completed', data: { object: {} } };
+        },
+      },
+    };
+
+    const webhookApp = buildWebhookAppWithIdempotency(mockStripe);
+
+    // First delivery: should succeed normally
+    const first = await request(webhookApp)
+      .post('/webhook/stripe')
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', 'valid-sig')
+      .send(Buffer.from('{}'));
+    expect(first.status).toBe(200);
+    expect(first.body.received).toBe(true);
+    expect(first.body.duplicate).toBeUndefined();
+
+    // Second delivery (replay): should be short-circuited
+    const second = await request(webhookApp)
+      .post('/webhook/stripe')
+      .set('Content-Type', 'application/json')
+      .set('stripe-signature', 'valid-sig')
+      .send(Buffer.from('{}'));
+    expect(second.status).toBe(200);
+    expect(second.body.received).toBe(true);
+    expect(second.body.duplicate).toBe(true);
+  });
+});
+
+// ── Checkout endpoint prefers Bearer auth, but supports legacy clients ───────
+// If Bearer auth is present and valid, token email wins. Without Authorization,
+// request-body email may be used for backwards compatibility.
+describe('POST /checkout — auth optional compatibility mode (v24)', () => {
+  function buildCheckoutApp() {
+    const app = express();
+    app.use(express.json());
+
+    // Mirrors the new checkout auth guard from api/monetization.js v24
+    app.post('/checkout', (req, res) => {
+      const authHeader = req.headers.authorization;
+      let payload = null;
+      if (authHeader) {
+        if (!authHeader.startsWith('Bearer ')) {
+          return res.status(401).json({ error: 'Authentication required' });
+        }
+        const token = authHeader.slice(7);
+        payload = validateLicenseToken(token);
+        if (!payload || !payload.email) {
+          return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+      }
+
+      const { tier, cycle = 'monthly', successUrl, cancelUrl, email } = req.body;
+      if (!tier || !['PRO', 'STUDIO', 'ENTERPRISE'].includes(tier.toUpperCase())) {
+        return res.status(400).json({ error: 'Invalid tier' });
+      }
+
+      // Use authenticated user's email when available, else request email
+      res.json({
+        ok: true,
+        userEmail: payload?.email || email || null,
+        tier: tier.toUpperCase(),
+        cycle,
+      });
+    });
+
+    return app;
+  }
+
+  const checkoutApp = buildCheckoutApp();
+
+  test('allows checkout when no Authorization header is sent', async () => {
+    const res = await request(checkoutApp)
+      .post('/checkout')
+      .send({ tier: 'PRO', cycle: 'monthly', email: 'guest@example.com' });
+    expect(res.status).toBe(200);
+    expect(res.body.userEmail).toBe('guest@example.com');
+  });
+
+  test('returns 401 when Authorization header is missing Bearer prefix', async () => {
+    const token = createLicenseToken('u1', 'a@b.com', 'PRO');
+    const res = await request(checkoutApp)
+      .post('/checkout')
+      .set('Authorization', token)  // no "Bearer " prefix
+      .send({ tier: 'PRO', cycle: 'monthly' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Authentication required');
+  });
+
+  test('returns 401 for an invalid Bearer token', async () => {
+    const res = await request(checkoutApp)
+      .post('/checkout')
+      .set('Authorization', 'Bearer invalid.token.here')
+      .send({ tier: 'PRO', cycle: 'monthly' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Invalid or expired token');
+  });
+
+  test('returns 401 for an expired Bearer token', async () => {
+    const header  = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      sub: 'u1', email: 'a@b.com', tier: 'pro', source: 'stripe',
+      iat: 0, exp: 1,
+    })).toString('base64url');
+    const sig = crypto.createHmac('sha256', TEST_SECRET).update(`${header}.${payload}`).digest('base64url');
+    const expiredToken = `${header}.${payload}.${sig}`;
+    const res = await request(checkoutApp)
+      .post('/checkout')
+      .set('Authorization', `Bearer ${expiredToken}`)
+      .send({ tier: 'PRO', cycle: 'monthly' });
+    expect(res.status).toBe(401);
+  });
+
+  test('accepts valid Bearer token and returns 200', async () => {
+    const token = createLicenseToken('u1', 'user@example.com', 'PRO');
+    const res = await request(checkoutApp)
+      .post('/checkout')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tier: 'PRO', cycle: 'monthly' });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  test('uses the token email, not the request body email', async () => {
+    const token = createLicenseToken('u1', 'real@example.com', 'PRO');
+    const res = await request(checkoutApp)
+      .post('/checkout')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tier: 'PRO', cycle: 'monthly', email: 'spoofed@evil.com' });
+    expect(res.body.userEmail).toBe('real@example.com');
+    expect(res.body.userEmail).not.toBe('spoofed@evil.com');
+  });
+
+  test('returns 400 for an invalid tier even with a valid token', async () => {
+    const token = createLicenseToken('u1', 'user@example.com', 'PRO');
+    const res = await request(checkoutApp)
+      .post('/checkout')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tier: 'INVALID_TIER' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid tier');
+  });
+
+  test('FREE tier is rejected by the checkout endpoint', async () => {
+    const token = createLicenseToken('u1', 'user@example.com', 'FREE');
+    const res = await request(checkoutApp)
+      .post('/checkout')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tier: 'FREE' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Invalid tier');
+  });
+
+  test('tier matching is case-insensitive for valid tiers', async () => {
+    const token = createLicenseToken('u1', 'user@example.com', 'PRO');
+    const res = await request(checkoutApp)
+      .post('/checkout')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tier: 'pro' });
+    expect(res.status).toBe(200);
+  });
+});
+
+// ── LICENSE_SECRET v24 — random per-process secret (monetization.js) ─────────
+// v24 changed the non-production fallback from a hardcoded string to a random
+// per-process secret (crypto.randomBytes(48).toString('base64url')).
+describe('LICENSE_SECRET v24 — random per-process fallback (monetization.js)', () => {
+  function resolveMonetizationSecret(envValue, nodeEnv = 'development') {
+    const savedSecret  = process.env.LICENSE_JWT_SECRET;
+    const savedNodeEnv = process.env.NODE_ENV;
+
+    if (envValue === undefined) delete process.env.LICENSE_JWT_SECRET;
+    else process.env.LICENSE_JWT_SECRET = envValue;
+    process.env.NODE_ENV = nodeEnv;
+
+    let resolved    = null;
+    let thrownError = null;
+    let warnEmitted = false;
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+      if (String(args[0]).includes('LICENSE_JWT_SECRET')) warnEmitted = true;
+    };
+
+    try {
+      resolved = (() => {
+        if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
+        if (process.env.NODE_ENV === 'production') {
+          throw new Error('[monetization] LICENSE_JWT_SECRET is required in production.');
+        }
+        const random = crypto.randomBytes(48).toString('base64url');
+        console.warn(
+          '[monetization] WARNING: LICENSE_JWT_SECRET not set. Using random per-process secret. ' +
+          'License tokens will not validate after restart. Set LICENSE_JWT_SECRET for stability.'
+        );
+        return random;
+      })();
+    } catch (e) {
+      thrownError = e;
+    }
+
+    console.warn = originalWarn;
+    if (savedSecret === undefined) delete process.env.LICENSE_JWT_SECRET;
+    else process.env.LICENSE_JWT_SECRET = savedSecret;
+    process.env.NODE_ENV = savedNodeEnv;
+
+    return { resolved, thrownError, warnEmitted };
+  }
+
+  test('returns the env var when LICENSE_JWT_SECRET is set', () => {
+    const mySecret = 'my-production-secret-at-least-32-chars!';
+    const { resolved, warnEmitted } = resolveMonetizationSecret(mySecret);
+    expect(resolved).toBe(mySecret);
+    expect(warnEmitted).toBe(false);
+  });
+
+  test('returns a random string in development when env var is absent', () => {
+    const { resolved, thrownError } = resolveMonetizationSecret(undefined, 'development');
+    expect(thrownError).toBeNull();
+    expect(typeof resolved).toBe('string');
+    expect(resolved.length).toBeGreaterThan(0);
+  });
+
+  test('random fallback is NOT the old hardcoded dev string', () => {
+    const OLD_DEV_FALLBACK = 'voiceisolate-dev-secret-change-in-production-32chars!';
+    const { resolved } = resolveMonetizationSecret(undefined, 'development');
+    expect(resolved).not.toBe(OLD_DEV_FALLBACK);
+  });
+
+  test('two calls in development produce different random secrets', () => {
+    const { resolved: s1 } = resolveMonetizationSecret(undefined, 'development');
+    const { resolved: s2 } = resolveMonetizationSecret(undefined, 'development');
+    expect(s1).not.toBe(s2);
+  });
+
+  test('throws in production when env var is absent', () => {
+    const { thrownError } = resolveMonetizationSecret(undefined, 'production');
+    expect(thrownError).not.toBeNull();
+    expect(thrownError.message).toContain('LICENSE_JWT_SECRET');
+  });
+
+  test('does NOT throw in development when env var is absent', () => {
+    const { thrownError } = resolveMonetizationSecret(undefined, 'development');
+    expect(thrownError).toBeNull();
+  });
+
+  test('emits console.warn in development when env var is absent', () => {
+    const { warnEmitted } = resolveMonetizationSecret(undefined, 'development');
+    expect(warnEmitted).toBe(true);
+  });
+});

@@ -748,3 +748,169 @@ describe('DSPCore.calcRMS and calcPeak', () => {
     expect(DSPCore.calcPeak(data)).toBeCloseTo(10 * Math.log10(0.9 * 0.9), 2);
   });
 });
+
+// ── forwardSTFT / inverseSTFT — fftSize validation (v24 PR change) ────────────
+// v24 added input validation to both forwardSTFT and inverseSTFT:
+//   throws RangeError when fftSize is not an integer power of two >= 2.
+describe('DSPCore.forwardSTFT — fftSize validation (v24)', () => {
+  test('throws RangeError for fftSize = 0', () => {
+    const data = new Float32Array(4096);
+    expect(() => DSPCore.forwardSTFT(data, 0, 512)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for fftSize = 1', () => {
+    const data = new Float32Array(4096);
+    expect(() => DSPCore.forwardSTFT(data, 1, 1)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for fftSize = 3 (non-power-of-two)', () => {
+    const data = new Float32Array(4096);
+    expect(() => DSPCore.forwardSTFT(data, 3, 1)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for fftSize = 1000 (non-power-of-two)', () => {
+    const data = new Float32Array(4096);
+    expect(() => DSPCore.forwardSTFT(data, 1000, 256)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for negative fftSize', () => {
+    const data = new Float32Array(4096);
+    expect(() => DSPCore.forwardSTFT(data, -512, 256)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for non-integer fftSize (e.g. 512.5)', () => {
+    const data = new Float32Array(4096);
+    expect(() => DSPCore.forwardSTFT(data, 512.5, 128)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for fftSize = NaN', () => {
+    const data = new Float32Array(4096);
+    expect(() => DSPCore.forwardSTFT(data, NaN, 1024)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for fftSize = Infinity', () => {
+    const data = new Float32Array(4096);
+    expect(() => DSPCore.forwardSTFT(data, Infinity, 1024)).toThrow(RangeError);
+  });
+
+  test('error message includes the invalid fftSize value', () => {
+    const data = new Float32Array(4096);
+    let msg = '';
+    try { DSPCore.forwardSTFT(data, 3, 1); } catch (e) { msg = e.message; }
+    expect(msg).toContain('3');
+  });
+
+  test('accepts fftSize = 2 (smallest valid power of two)', () => {
+    const data = new Float32Array(2);
+    expect(() => DSPCore.forwardSTFT(data, 2, 1)).not.toThrow();
+  });
+
+  test('accepts fftSize = 512', () => {
+    const data = new Float32Array(512);
+    expect(() => DSPCore.forwardSTFT(data, 512, 128)).not.toThrow();
+  });
+
+  test('accepts fftSize = 1024', () => {
+    const data = new Float32Array(1024);
+    expect(() => DSPCore.forwardSTFT(data, 1024, 256)).not.toThrow();
+  });
+
+  test('accepts fftSize = 4096 (default)', () => {
+    const data = new Float32Array(4096);
+    expect(() => DSPCore.forwardSTFT(data, 4096, 1024)).not.toThrow();
+  });
+
+  test('accepts fftSize = 8192', () => {
+    const data = new Float32Array(8192);
+    expect(() => DSPCore.forwardSTFT(data, 8192, 2048)).not.toThrow();
+  });
+});
+
+describe('DSPCore.inverseSTFT — fftSize validation (v24)', () => {
+  // Helper: produce a valid mag/phase pair for a given fftSize
+  function makeMagPhase(fftSize, frameCount = 2) {
+    const halfN = fftSize / 2 + 1;
+    const mag   = Array.from({ length: frameCount }, () => new Float32Array(halfN).fill(0.1));
+    const phase = Array.from({ length: frameCount }, () => new Float32Array(halfN));
+    return { mag, phase };
+  }
+
+  test('throws RangeError for fftSize = 0', () => {
+    const { mag, phase } = makeMagPhase(4);
+    expect(() => DSPCore.inverseSTFT(mag, phase, 0, 1, 8)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for fftSize = 1', () => {
+    const { mag, phase } = makeMagPhase(4);
+    expect(() => DSPCore.inverseSTFT(mag, phase, 1, 1, 4)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for fftSize = 3 (non-power-of-two)', () => {
+    const { mag, phase } = makeMagPhase(4);
+    expect(() => DSPCore.inverseSTFT(mag, phase, 3, 1, 6)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for fftSize = 600', () => {
+    const { mag, phase } = makeMagPhase(4);
+    expect(() => DSPCore.inverseSTFT(mag, phase, 600, 150, 1200)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for negative fftSize', () => {
+    const { mag, phase } = makeMagPhase(4);
+    expect(() => DSPCore.inverseSTFT(mag, phase, -1024, 256, 2048)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for non-integer fftSize', () => {
+    const { mag, phase } = makeMagPhase(4);
+    expect(() => DSPCore.inverseSTFT(mag, phase, 1024.1, 256, 2048)).toThrow(RangeError);
+  });
+
+  test('throws RangeError for fftSize = NaN', () => {
+    const { mag, phase } = makeMagPhase(4);
+    expect(() => DSPCore.inverseSTFT(mag, phase, NaN, 1024, 4096)).toThrow(RangeError);
+  });
+
+  test('error message mentions the invalid fftSize', () => {
+    const { mag, phase } = makeMagPhase(4);
+    let msg = '';
+    try { DSPCore.inverseSTFT(mag, phase, 3, 1, 6); } catch (e) { msg = e.message; }
+    expect(msg).toContain('3');
+  });
+
+  test('accepts fftSize = 2 (minimum valid)', () => {
+    const { mag, phase } = makeMagPhase(2);
+    expect(() => DSPCore.inverseSTFT(mag, phase, 2, 1, 4)).not.toThrow();
+  });
+
+  test('accepts fftSize = 512', () => {
+    const halfN = 512 / 2 + 1;
+    const mag   = [new Float32Array(halfN).fill(0.1)];
+    const phase = [new Float32Array(halfN)];
+    expect(() => DSPCore.inverseSTFT(mag, phase, 512, 128, 512)).not.toThrow();
+  });
+
+  test('accepts fftSize = 4096 (default)', () => {
+    const halfN = 4096 / 2 + 1;
+    const mag   = [new Float32Array(halfN).fill(0.1)];
+    const phase = [new Float32Array(halfN)];
+    expect(() => DSPCore.inverseSTFT(mag, phase, 4096, 1024, 4096)).not.toThrow();
+  });
+
+  test('STFT / iSTFT roundtrip still works with explicit fftSize=2048', () => {
+    const fftSize = 2048;
+    const hopSize = 512;
+    const sr = 48000;
+    const data = new Float32Array(sr);
+    for (let i = 0; i < sr; i++) data[i] = 0.3 * Math.sin(2 * Math.PI * 440 * i / sr);
+    const { mag, phase, frameCount } = DSPCore.forwardSTFT(data, fftSize, hopSize);
+    expect(frameCount).toBeGreaterThan(0);
+    const out = DSPCore.inverseSTFT(mag, phase, fftSize, hopSize, sr);
+    // Central region should round-trip accurately
+    let maxErr = 0;
+    for (let i = fftSize; i < sr - fftSize; i++) {
+      const e = Math.abs(out[i] - data[i]);
+      if (e > maxErr) maxErr = e;
+    }
+    expect(maxErr).toBeLessThan(0.02);
+  });
+});
