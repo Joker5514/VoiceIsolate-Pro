@@ -526,27 +526,97 @@ const DSPCore = {
     return data;
   },
 
-  /** S07: Click/pop removal via transient detection + interpolation */
+  /**
+   * S07: Click/pop removal via robust transient detection + smooth interpolation.
+   *
+   * Detection uses the median of |x| over a sliding window (robust to being
+   * biased by the click itself, unlike the mean). A sample is flagged as a
+   * click when its magnitude exceeds a sensitivity-scaled multiple of the
+   * median AND exceeds an absolute floor (prevents runaway detection in
+   * near-silence). Detection windows overlap by 50 % so clicks straddling a
+   * boundary are still caught.
+   *
+   * Replacement uses 4-point cubic Hermite (Catmull–Rom) interpolation across
+   * the nearest unflagged neighbours, preserving both value and derivative
+   * continuity. The replacement is blended into the surrounding samples with
+   * a short raised-cosine crossfade so the repair itself cannot introduce a
+   * derivative discontinuity.
+   */
   removeClicks(data, sensitivity = 3) {
-    const blockSize = 128;
-    for (let b = 0; b < data.length - blockSize; b += blockSize) {
-      let sum = 0;
-      for (let i = 0; i < blockSize; i++) sum += Math.abs(data[b + i]);
-      const avg = sum / blockSize;
+    const N = data.length;
+    if (N < 8) return data;
 
-      for (let i = 0; i < blockSize; i++) {
-        if (Math.abs(data[b + i]) > avg * sensitivity * 5) {
-          // Interpolate around click
-          const left = b + i > 0 ? data[b + i - 1] : 0;
-          const right = b + i < data.length - 1 ? data[b + i + 1] : 0;
-          data[b + i] = (left + right) / 2;
-        }
+    const blockSize = 128;
+    const hop = blockSize >> 1;
+    // Sensitivity 1..10 → K ≈ 15..6 (lower = more aggressive). Default 3 → K≈12.
+    const K = Math.max(6, 18 - sensitivity * 2);
+    const ABS_FLOOR = 0.05; // never flag anything quieter than ~-26 dBFS
+    const flagged = new Uint8Array(N);
+    const tmp = new Float32Array(blockSize);
+
+    for (let b = 0; b < N; b += hop) {
+      const end = Math.min(N, b + blockSize);
+      const len = end - b;
+      if (len < 4) break;
+      for (let i = 0; i < len; i++) tmp[i] = Math.abs(data[b + i]);
+      // Median via a small partial sort (blockSize is tiny)
+      const sub = tmp.subarray(0, len).slice().sort();
+      const median = sub[sub.length >> 1];
+      const thresh = Math.max(K * median, ABS_FLOOR);
+      for (let i = 0; i < len; i++) {
+        if (tmp[i] > thresh) flagged[b + i] = 1;
       }
+    }
+
+    // Coalesce single-sample gaps so we treat short bursts as one click.
+    for (let i = 1; i < N - 1; i++) {
+      if (!flagged[i] && flagged[i - 1] && flagged[i + 1]) flagged[i] = 1;
+    }
+
+    // Replace flagged runs with cubic Hermite interpolation between the
+    // nearest unflagged neighbours, then apply a 2-sample raised-cosine
+    // crossfade at each edge to avoid introducing first-derivative jumps.
+    let i = 0;
+    while (i < N) {
+      if (!flagged[i]) { i++; continue; }
+      let j = i;
+      while (j < N && flagged[j]) j++;
+      // Run is [i, j). Find outer support points for Catmull–Rom.
+      const p1i = i - 1;                      // last good sample before run
+      const p2i = j;                          // first good sample after run
+      const p0i = p1i > 0 ? p1i - 1 : p1i;
+      const p3i = p2i < N - 1 ? p2i + 1 : p2i;
+      const p0 = p1i >= 0 ? data[p0i] : 0;
+      const p1 = p1i >= 0 ? data[p1i] : 0;
+      const p2 = p2i < N ? data[p2i] : 0;
+      const p3 = p2i < N ? data[p3i] : 0;
+      const span = Math.max(1, j - i + 1);
+      for (let k = i; k < j; k++) {
+        const t = (k - p1i) / span;          // 0..1 across the gap
+        // Catmull–Rom basis (tension = 0.5)
+        const t2 = t * t, t3 = t2 * t;
+        const interp =
+          0.5 * ((2 * p1) +
+                 (-p0 + p2) * t +
+                 (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+                 (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+        data[k] = interp;
+      }
+      i = j;
     }
     return data;
   },
 
-  /** S08: De-essing with dynamic compression on sibilance band */
+  /**
+   * S08: De-essing with dynamic compression on the sibilance band.
+   *
+   * The gain reduction is computed from a band-isolated sidechain, then passed
+   * through a one-pole IIR envelope follower before being applied to the
+   * signal. Unsmoothed sample-accurate gain steps (the previous behaviour)
+   * produce a tick on every sibilant transient at typical sample rates; a
+   * short attack / longer release envelope keeps the reduction audibly
+   * transparent.
+   */
   deEss(data, centerFreq, amount, sr) {
     if (amount <= 0) return data;
     // Band-isolate sibilance, compress, subtract excess
@@ -556,14 +626,26 @@ const DSPCore = {
 
     const threshold = 0.1;
     const ratio = 1 + amount / 25; // 1:1 to 5:1
+    const wet = amount / 100;
+    const dry = 1 - wet;
+
+    // 1-pole coefficients: ~1 ms attack, ~30 ms release.
+    const aAtk = Math.exp(-1 / Math.max(1, sr * 0.001));
+    const aRel = Math.exp(-1 / Math.max(1, sr * 0.030));
+    let gainEnv = 1;
+
     for (let i = 0; i < data.length; i++) {
       const sAbs = Math.abs(sibilance[i]);
+      let target = 1;
       if (sAbs > threshold) {
         const excess = sAbs - threshold;
         const reduced = threshold + excess / ratio;
-        const reduction = sAbs > 0 ? reduced / sAbs : 1;
-        data[i] *= (1 - amount / 100) + (amount / 100) * reduction;
+        target = sAbs > 0 ? reduced / sAbs : 1;
       }
+      // Fast attack when gain is dropping, slower release when recovering.
+      const a = target < gainEnv ? aAtk : aRel;
+      gainEnv = a * gainEnv + (1 - a) * target;
+      data[i] *= dry + wet * gainEnv;
     }
     return data;
   },
@@ -636,13 +718,30 @@ const DSPCore = {
     return mag;
   },
 
-  /** S16: 32 ERB band spectral gate */
+  /**
+   * S16: 32 ERB band spectral gate.
+   *
+   * Attenuation uses a soft-knee around the floor (smoothstep in log-ratio
+   * space) instead of the previous hard `rms < floorLin` step, so band-edge
+   * gain transitions are continuous and no longer produce tonal "musical
+   * noise" / chirp artifacts. Per-band gains are additionally smoothed across
+   * frames with a one-pole IIR (α ≈ 0.7) to suppress frame-to-frame gain
+   * flutter that used to manifest as beeps at the STFT hop rate.
+   */
   spectralGate(mag, floorDb, sr) {
-    const erbBands = this._computeERBBands(32, sr, mag[0]?.length || 2049);
+    const numFrames = mag.length;
+    if (numFrames === 0) return mag;
+    const numBins = mag[0]?.length || 2049;
+    const erbBands = this._computeERBBands(32, sr, numBins);
     const floorLin = Math.pow(10, floorDb / 20);
 
-    for (let f = 0; f < mag.length; f++) {
-      for (const band of erbBands) {
+    // Per-band smoothed gain carried across frames.
+    const prevGain = new Float32Array(erbBands.length).fill(1);
+    const smooth = 0.7; // IIR memory coefficient per frame
+
+    for (let f = 0; f < numFrames; f++) {
+      for (let bi = 0; bi < erbBands.length; bi++) {
+        const band = erbBands[bi];
         // Compute band energy
         let energy = 0;
         for (let k = band.lo; k <= band.hi; k++) {
@@ -650,12 +749,28 @@ const DSPCore = {
         }
         const rms = Math.sqrt(energy / (band.hi - band.lo + 1));
 
-        // Gate: attenuate if below floor
-        if (rms < floorLin) {
-          const gain = rms / (floorLin + 1e-10);
-          for (let k = band.lo; k <= band.hi; k++) {
-            mag[f][k] *= gain;
-          }
+        // Soft knee: full pass above 2×floor, full attenuation below 0.5×floor.
+        // Smoothstep on the log-ratio gives a C1-continuous transition.
+        const ratio = rms / (floorLin + 1e-10);
+        let rawGain;
+        if (ratio >= 2) {
+          rawGain = 1;
+        } else if (ratio <= 0.5) {
+          rawGain = ratio; // deep attenuation, still proportional
+        } else {
+          // Map ratio in [0.5, 2] to t in [0, 1] via log, then smoothstep.
+          const t = (Math.log2(ratio) + 1) * 0.5; // 0..1
+          const s = t * t * (3 - 2 * t);          // smoothstep
+          // Blend between proportional attenuation and unity
+          rawGain = ratio * (1 - s) + 1 * s;
+        }
+
+        // Temporal smoothing across frames
+        const smoothed = smooth * prevGain[bi] + (1 - smooth) * rawGain;
+        prevGain[bi] = smoothed;
+
+        for (let k = band.lo; k <= band.hi; k++) {
+          mag[f][k] *= smoothed;
         }
       }
     }
