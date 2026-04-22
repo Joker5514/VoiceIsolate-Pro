@@ -7,7 +7,7 @@ android {
         applicationId "com.voiceisolatepro.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 24000
+        versionCode 240000
         versionName "24.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

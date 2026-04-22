@@ -9,11 +9,10 @@
  * versionCode / CFBundleVersion are derived as major * 10000 + minor * 100 + patch.
  * Run manually, or wire into `postversion` to update automatically on bump.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+const { readFileSync, writeFileSync } = require('node:fs');
+const { join } = require('node:path');
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = join(__dirname, '..');
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const version = pkg.version;
 const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
@@ -22,7 +21,7 @@ if (!match) {
   process.exit(1);
 }
 const [, major, minor, patch] = match.map(Number);
-const buildNumber = major * 1000 + minor * 100 + patch;
+const buildNumber = major * 10000 + minor * 100 + patch;
 
 
 // ── Android build.gradle ─────────────────────────────────────────────────────
