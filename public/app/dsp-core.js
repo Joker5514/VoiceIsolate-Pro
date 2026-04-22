@@ -532,15 +532,15 @@ const DSPCore = {
    * Detection uses the median of |x| over a sliding window (robust to being
    * biased by the click itself, unlike the mean). A sample is flagged as a
    * click when its magnitude exceeds a sensitivity-scaled multiple of the
-   * median AND exceeds an absolute floor (prevents runaway detection in
-   * near-silence). Detection windows overlap by 50 % so clicks straddling a
-   * boundary are still caught.
+   * median AND exceeds an absolute floor. The floor scales with the signal's
+   * global median, so quiet material can still have clicks detected while
+   * true silence stays safe from spurious flags. Detection windows overlap
+   * by 50 % so clicks straddling a boundary are still caught.
    *
    * Replacement uses 4-point cubic Hermite (Catmull–Rom) interpolation across
-   * the nearest unflagged neighbours, preserving both value and derivative
-   * continuity. The replacement is blended into the surrounding samples with
-   * a short raised-cosine crossfade so the repair itself cannot introduce a
-   * derivative discontinuity.
+   * the nearest unflagged neighbours — this preserves both value and
+   * first-derivative continuity across the gap, so the repair itself cannot
+   * introduce a click.
    */
   removeClicks(data, sensitivity = 3) {
     const N = data.length;
@@ -550,18 +550,29 @@ const DSPCore = {
     const hop = blockSize >> 1;
     // Sensitivity 1..10 → K ≈ 15..6 (lower = more aggressive). Default 3 → K≈12.
     const K = Math.max(6, 18 - sensitivity * 2);
-    const ABS_FLOOR = 0.05; // never flag anything quieter than ~-26 dBFS
+
+    // Content-scaled absolute floor: use a cheap O(N) estimate of the global
+    // |x| level (mean of |x|) as a proxy for signal strength, then anchor the
+    // floor to that. Hard lower bound keeps true silence from false-flagging.
+    let absSum = 0;
+    for (let i = 0; i < N; i++) absSum += Math.abs(data[i]);
+    const globalLevel = absSum / N;
+    const ABS_FLOOR = Math.max(0.005, K * globalLevel);
+
     const flagged = new Uint8Array(N);
     const tmp = new Float32Array(blockSize);
+    const sortBuf = new Float32Array(blockSize);
 
     for (let b = 0; b < N; b += hop) {
       const end = Math.min(N, b + blockSize);
       const len = end - b;
       if (len < 4) break;
       for (let i = 0; i < len; i++) tmp[i] = Math.abs(data[b + i]);
-      // Median via a small partial sort (blockSize is tiny)
-      const sub = tmp.subarray(0, len).slice().sort();
-      const median = sub[sub.length >> 1];
+      // Median via a small partial sort (blockSize is tiny). Reuse sortBuf to
+      // avoid per-block allocation in the hot loop.
+      sortBuf.set(tmp.subarray(0, len));
+      const sub = sortBuf.subarray(0, len).sort();
+      const median = sub[len >> 1];
       const thresh = Math.max(K * median, ABS_FLOOR);
       for (let i = 0; i < len; i++) {
         if (tmp[i] > thresh) flagged[b + i] = 1;
@@ -573,9 +584,10 @@ const DSPCore = {
       if (!flagged[i] && flagged[i - 1] && flagged[i + 1]) flagged[i] = 1;
     }
 
-    // Replace flagged runs with cubic Hermite interpolation between the
-    // nearest unflagged neighbours, then apply a 2-sample raised-cosine
-    // crossfade at each edge to avoid introducing first-derivative jumps.
+    // Replace flagged runs with Catmull–Rom cubic Hermite interpolation
+    // between the nearest unflagged neighbours. Catmull–Rom is C¹-continuous
+    // at the endpoints by construction, so no additional crossfade is needed
+    // to avoid first-derivative jumps at the repair boundary.
     let i = 0;
     while (i < N) {
       if (!flagged[i]) { i++; continue; }
@@ -725,10 +737,14 @@ const DSPCore = {
    * space) instead of the previous hard `rms < floorLin` step, so band-edge
    * gain transitions are continuous and no longer produce tonal "musical
    * noise" / chirp artifacts. Per-band gains are additionally smoothed across
-   * frames with a one-pole IIR (α ≈ 0.7) to suppress frame-to-frame gain
-   * flutter that used to manifest as beeps at the STFT hop rate.
+   * frames with a one-pole IIR whose time constant is fixed at ~60 ms, so
+   * behaviour is consistent across sample rates and hop sizes (the raw α is
+   * derived from the effective frame rate rather than being hardcoded).
+   *
+   * @param {number} [hopSize=1024] STFT hop size, used to derive the per-frame
+   *   IIR coefficient. Defaults to 1024 (matches the offline pipeline).
    */
-  spectralGate(mag, floorDb, sr) {
+  spectralGate(mag, floorDb, sr, hopSize = 1024) {
     const numFrames = mag.length;
     if (numFrames === 0) return mag;
     const numBins = mag[0]?.length || 2049;
@@ -737,7 +753,12 @@ const DSPCore = {
 
     // Per-band smoothed gain carried across frames.
     const prevGain = new Float32Array(erbBands.length).fill(1);
-    const smooth = 0.7; // IIR memory coefficient per frame
+    // Translate a 60 ms gain-smoothing time constant into the per-frame IIR
+    // memory coefficient: α = exp(-hopSeconds / tau). At sr=48k, hop=1024
+    // this is ≈ 0.71, matching the previous hand-tuned value.
+    const tauSec = 0.06;
+    const framesPerSec = sr / Math.max(1, hopSize);
+    const smooth = Math.exp(-1 / (framesPerSec * tauSec));
 
     for (let f = 0; f < numFrames; f++) {
       for (let bi = 0; bi < erbBands.length; bi++) {
