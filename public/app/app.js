@@ -317,6 +317,19 @@ const STAGES = [
   'S32: Final Export Ready'              // 31
 ];
 
+// Sound categories for background suppression. Each entry targets specific
+// frequency ranges that characterise that sound type. Suppression is applied
+// in the spectral domain (between STFT and iSTFT) respecting the VAD mask so
+// voice frames lose minimal energy while noise-only frames are fully cleaned.
+const SOUND_CATEGORIES = [
+  { id:'appliance', emoji:'🏠', label:'Appliances', ranges:[{lo:20, hi:500}] },
+  { id:'music',     emoji:'🎵', label:'Music',      ranges:[{lo:80, hi:300},{lo:1000,hi:8000}] },
+  { id:'dog',       emoji:'🐕', label:'Dog/Animal', ranges:[{lo:300,hi:1200},{lo:1200,hi:3000}] },
+  { id:'bird',      emoji:'🐦', label:'Birds',      ranges:[{lo:2000,hi:5000},{lo:5000,hi:10000}] },
+  { id:'traffic',   emoji:'🚗', label:'Traffic',    ranges:[{lo:20,hi:150},{lo:150,hi:600}] },
+  { id:'crowd',     emoji:'👥', label:'Crowd',      ranges:[{lo:120,hi:300},{lo:300,hi:800},{lo:800,hi:2000}] },
+];
+
 const ACCEPTED_AUDIO_UPLOAD_TYPES = [
   'audio/wav', 'audio/x-wav', 'audio/mp3', 'audio/mpeg', 'audio/flac', 'audio/x-flac', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/opus', 'audio/x-aiff', 'audio/aiff', 'audio/aif', 'audio/x-ms-wma'
 ];
@@ -357,6 +370,7 @@ class VoiceIsolatePro {
     this.playOffset = 0;
     this.isPlaying = false;
     this.mutedBands = new Set();
+    this.soundMutes = {}; // { catId: boolean } — toggled by sound mute buttons
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.params.spectralFloor = this._mapSpectralFloor(this.params.nrFloor);
@@ -822,6 +836,24 @@ class VoiceIsolatePro {
     if (this.dom.uiScaleDn) this.dom.uiScaleDn.addEventListener('click', () => this._uiScaleApply(this._uiScale - this._uiScaleStep));
     if (this.dom.uiScaleUp) this.dom.uiScaleUp.addEventListener('click', () => this._uiScaleApply(this._uiScale + this._uiScaleStep));
     if (this.dom.uiScaleSave) this.dom.uiScaleSave.addEventListener('click', () => this._uiScaleSave());
+
+    // ── Isolation card: file drag-and-drop ──────────────────────────────
+    const ic = document.getElementById('isolationCard');
+    if (ic) {
+      ic.addEventListener('dragover', e => { e.preventDefault(); ic.classList.add('iso-drop-active'); });
+      ic.addEventListener('dragleave', e => { if (!ic.contains(e.relatedTarget)) ic.classList.remove('iso-drop-active'); });
+      ic.addEventListener('drop', e => {
+        e.preventDefault();
+        ic.classList.remove('iso-drop-active');
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) this.handleFile(f);
+      });
+    }
+
+    // ── Sound category mute buttons ─────────────────────────────────────
+    document.querySelectorAll('.sound-mute-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.toggleSoundCategory(btn.dataset.cat));
+    });
   }
 
   onSlider(el) {
@@ -1721,6 +1753,35 @@ class VoiceIsolatePro {
             }
           }
         }
+        // Sound category suppression — applied within S13 after voice isolation.
+        // Each active category's frequency ranges are heavily attenuated.
+        // VAD weight softens the suppression on voice-active frames to preserve speech.
+        {
+          const activeCats = SOUND_CATEGORIES.filter(c => this.soundMutes[c.id]);
+          if (activeCats.length > 0) {
+            const halfN = mag[0].length;
+            const binHz = sr / fftSize;
+            const mask = new Float32Array(halfN).fill(1.0);
+            for (const cat of activeCats) {
+              for (const range of cat.ranges) {
+                const lo = Math.max(0, Math.round(range.lo / binHz));
+                const hi = Math.min(halfN - 1, Math.round(range.hi / binHz));
+                for (let k = lo; k <= hi; k++) mask[k] = Math.min(mask[k], 0.04); // ~-28 dBFS
+              }
+            }
+            for (let f = 0; f < mag.length; f++) {
+              const vad = Math.min(1, Math.max(0, vadConf[Math.min(f, vadConf.length - 1)]));
+              for (let k = 0; k < halfN; k++) {
+                if (mask[k] < 1.0) {
+                  // Full suppression in noise frames; preserve voice frames (VAD=1 → no suppression)
+                  const factor = mask[k] + vad * (1 - mask[k]) * 0.85;
+                  mag[f][k] *= factor;
+                }
+              }
+            }
+          }
+        }
+
         if (this.abortFlag) throw 'abort';
 
         // S14: Crosstalk cancellation (voice-band SNR enhancement)
@@ -2448,6 +2509,26 @@ class VoiceIsolatePro {
 
   sColor(val,fi,total){const v=val/255;const f=fi/total;if(f<0.05)return 'rgb('+Math.floor(v*40)+','+Math.floor(v*80)+','+Math.floor(60+v*195)+')';if(f<0.2)return 'rgb('+Math.floor(60+v*195)+','+Math.floor(v*30)+','+Math.floor(v*20)+')';if(f<0.5)return 'rgb('+Math.floor(80+v*175)+','+Math.floor(v*60)+','+Math.floor(v*10)+')';if(f<0.75)return 'rgb('+Math.floor(v*30)+','+Math.floor(50+v*180)+','+Math.floor(v*30)+')';return 'rgb('+Math.floor(60+v*195)+','+Math.floor(50+v*160)+','+Math.floor(v*20)+')';}
   isBandMuted(fi,total,sr){const freq=(fi/total)*(sr/2);for(const b of this.mutedBands)if(freq>=b.lo&&freq<b.hi)return true;return false;}
+
+  toggleSoundCategory(catId) {
+    this.soundMutes[catId] = !this.soundMutes[catId];
+    // Update button appearance
+    const btn = document.querySelector(`.sound-mute-btn[data-cat="${catId}"]`);
+    if (btn) btn.classList.toggle('active', !!this.soundMutes[catId]);
+    // Update status text
+    const activeCats = SOUND_CATEGORIES.filter(c => this.soundMutes[c.id]);
+    const statusEl = document.getElementById('soundMuteStatus');
+    if (statusEl) {
+      if (activeCats.length === 0) {
+        statusEl.textContent = 'No sounds muted — all background is processed normally';
+        statusEl.classList.remove('has-mutes');
+      } else {
+        statusEl.textContent = 'Muting: ' + activeCats.map(c => c.emoji + ' ' + c.label).join(' · ') + ' — re-process to apply';
+        statusEl.classList.add('has-mutes');
+      }
+    }
+  }
+
   onSpectroClick(e){const r=this.dom.spectro3DCanvas.getBoundingClientRect();const y=1-((e.clientY-r.top)/r.height);const sr=this.ctx?this.ctx.sampleRate:44100;const freq=y*(sr/2);const bw=sr/20;const lo=Math.max(0,freq-bw/2);const hi=freq+bw/2;const key=Math.round(lo)+'-'+Math.round(hi);let found=false;for(const b of this.mutedBands){if(b.key===key){this.mutedBands.delete(b);found=true;break;}}if(!found)this.mutedBands.add({lo,hi,key});}
 
   startFreq(ana){
@@ -2457,13 +2538,15 @@ class VoiceIsolatePro {
   }
 
   // ---- 3D Spectrogram ----
-  init3D(){
+  init3D(retried){
     const ct=this.dom.spectro3DContainer;if(!ct)return;const w=ct.clientWidth;const h=ct.clientHeight;
-    if(w===0||h===0)return;
+    if(w===0||h===0){if(!retried)requestAnimationFrame(()=>this.init3D(true));return;}
+    if(this.three.ren)return; // already initialized
     const scene=new THREE.Scene();scene.background=new THREE.Color(0x030306);
     const cam=new THREE.PerspectiveCamera(45,w/h,0.1,1000);cam.position.set(0,40,60);cam.lookAt(0,0,0);
     const ren=new THREE.WebGLRenderer({canvas:this.dom.spectro3DCanvas,antialias:true});
-    ren.setSize(w,h);ren.setPixelRatio(Math.min(window.devicePixelRatio,2));
+    // Pass false so Three.js doesn't write inline px styles that fight CSS width:100%
+    ren.setSize(w,h,false);ren.setPixelRatio(Math.min(window.devicePixelRatio,2));
     const gW=64;const gD=128;
     const geo=new THREE.PlaneGeometry(80,40,gW-1,gD-1);geo.rotateX(-Math.PI*0.4);
     const cols=new Float32Array(geo.attributes.position.count*3);
@@ -2477,6 +2560,17 @@ class VoiceIsolatePro {
     window.addEventListener('mouseup',()=>drag=false);
     window.addEventListener('mousemove',e=>{if(!drag)return;cam.position.x-=(e.clientX-pX)*0.15;cam.position.y+=(e.clientY-pY)*0.15;cam.lookAt(0,0,0);pX=e.clientX;pY=e.clientY;});
     cv.addEventListener('wheel',e=>{e.preventDefault();cam.position.z+=e.deltaY*0.05;cam.position.z=Math.max(20,Math.min(120,cam.position.z));},{passive:false});
+    // ResizeObserver keeps the buffer in sync when the grid reflows (not just window resize)
+    const _ro3d = new ResizeObserver(() => {
+      const rw=ct.clientWidth, rh=ct.clientHeight;
+      if(rw>0&&rh>0&&this.three.ren){
+        this.three.ren.setSize(rw,rh,false);
+        this.three.cam.aspect=rw/rh;
+        this.three.cam.updateProjectionMatrix();
+      }
+    });
+    _ro3d.observe(ct);
+    this.three._ro3d = _ro3d;
     this.render3D();
   }
   reset3DView(){
@@ -2488,7 +2582,7 @@ class VoiceIsolatePro {
       if(ct){
         const w = ct.clientWidth, h = ct.clientHeight;
         if(w>0 && h>0){
-          this.three.ren.setSize(w,h);
+          this.three.ren.setSize(w,h,false);
           this.three.cam.aspect = w/h;
           this.three.cam.updateProjectionMatrix();
         }
@@ -2974,7 +3068,7 @@ class VoiceIsolatePro {
     if (this.inputBuffer && this.outputBuffer) this.drawComparison(this.inputBuffer, this.outputBuffer);
     const ct = this.dom.spectro3DContainer;
     if (this.three.ren && ct) {
-      this.three.ren.setSize(ct.clientWidth, ct.clientHeight);
+      this.three.ren.setSize(ct.clientWidth, ct.clientHeight, false);
       this.three.cam.aspect = ct.clientWidth / ct.clientHeight;
       this.three.cam.updateProjectionMatrix();
     }

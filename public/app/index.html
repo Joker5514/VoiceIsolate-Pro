@@ -399,46 +399,92 @@
       </div>
 
       <!-- Speaker Isolation Controls -->
-      <div class="card" id="isolationCard">
+      <div class="card iso-card" id="isolationCard">
         <div class="viz-hdr">
           <span>Speaker Isolation</span>
           <span class="viz-badge">Hybrid ML+DSP</span>
+          <span class="viz-badge iso-drop-hint" id="isoDropHint" style="margin-left:auto;opacity:0.55;font-size:0.55rem;">Drop audio here to load</span>
         </div>
-        <div class="isolation-globals">
-          <div class="sr-row" data-desc="Selects the isolation algorithm. Hybrid combines ML neural separation with classical DSP filters for best quality. ML Only uses BSRNN neural network exclusively. Classical DSP uses traditional spectral gating and filtering.">
-            <label class="sr-label" for="isolationMethodSelect">Method</label>
-            <select id="isolationMethodSelect" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:3px 8px;font-size:12px;">
-              <option value="hybrid" selected>Hybrid (ML+DSP)</option>
-              <option value="ml">ML Only (BSRNN)</option>
-              <option value="classical">Classical DSP</option>
-            </select>
-          </div>
-          <div class="sr-row" data-desc="Minimum confidence threshold for speaker detection. Higher values require stronger voice signatures — fewer false positives but may miss quieter speech. Lower values catch more speech but risk including noise.">
-            <label class="sr-label" for="isolationConfidenceSlider">Confidence</label>
-            <input type="range" id="isolationConfidenceSlider" min="40" max="95" value="65" step="1" />
-            <span id="isolationConfidenceReadout" class="sr-val">65%</span>
-          </div>
-          <div class="sr-row" data-desc="Controls how much background audio (non-voice) remains in the output. 0% = fully suppressed background (clean voice only). 100% = full background level preserved alongside the isolated voice.">
-            <label class="sr-label" for="isolationBgVolumeSlider">Bg Level</label>
-            <input type="range" id="isolationBgVolumeSlider" min="0" max="100" value="0" step="1" />
-            <span id="isolationBgReadout" class="sr-val">0%</span>
-          </div>
-          <div class="sr-row" data-desc="Applies post-processing refinement to the spectral separation mask. Smooths edges between voice and noise regions, reducing artifacts like musical noise and spectral tearing. Disable for raw unprocessed masks.">
-            <label class="sr-label" for="isolationMaskRefine">Mask Refine</label>
-            <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
-              <input type="checkbox" id="isolationMaskRefine" checked />
-              <span style="font-size:11px;color:#9ca3af;">Enabled</span>
-            </label>
+
+        <!-- Step 1: Isolation Settings -->
+        <div class="iso-section">
+          <div class="iso-section-hdr">1 · Isolation Settings</div>
+          <div class="isolation-globals">
+            <div class="sr-row" data-desc="Selects the isolation algorithm. Hybrid combines ML neural separation with classical DSP filters for best quality. ML Only uses BSRNN neural network exclusively. Classical DSP uses traditional spectral gating and filtering.">
+              <label class="sr-label" for="isolationMethodSelect">Method</label>
+              <select id="isolationMethodSelect" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:3px 8px;font-size:12px;">
+                <option value="hybrid" selected>Hybrid (ML+DSP)</option>
+                <option value="ml">ML Only (BSRNN)</option>
+                <option value="classical">Classical DSP</option>
+              </select>
+            </div>
+            <div class="sr-row" data-desc="Minimum confidence threshold for speaker detection. Higher values require stronger voice signatures — fewer false positives but may miss quieter speech. Lower values catch more speech but risk including noise.">
+              <label class="sr-label" for="isolationConfidenceSlider">Confidence</label>
+              <input type="range" id="isolationConfidenceSlider" min="40" max="95" value="65" step="1" />
+              <span id="isolationConfidenceReadout" class="sr-val">65%</span>
+            </div>
+            <div class="sr-row" data-desc="Controls how much background audio (non-voice) remains in the output. 0% = fully suppressed background (clean voice only). 100% = full background level preserved alongside the isolated voice.">
+              <label class="sr-label" for="isolationBgVolumeSlider">Bg Level</label>
+              <input type="range" id="isolationBgVolumeSlider" min="0" max="100" value="0" step="1" />
+              <span id="isolationBgReadout" class="sr-val">0%</span>
+            </div>
+            <div class="sr-row" data-desc="Applies post-processing refinement to the spectral separation mask. Smooths edges between voice and noise regions, reducing artifacts like musical noise and spectral tearing. Disable for raw unprocessed masks.">
+              <label class="sr-label" for="isolationMaskRefine">Mask Refine</label>
+              <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="isolationMaskRefine" checked />
+                <span style="font-size:11px;color:#9ca3af;">Enabled</span>
+              </label>
+            </div>
           </div>
         </div>
-        <div id="speakerCardsGrid">
-          <span style="color:#4b5563;font-size:12px;">Process audio to detect speakers</span>
+
+        <!-- Step 2: Background Sound Suppression -->
+        <div class="iso-section">
+          <div class="iso-section-hdr">2 · Mute Background Sounds
+            <span style="font-size:0.55rem;font-weight:400;color:#64748b;margin-left:6px;">Applied during Process</span>
+          </div>
+          <p class="iso-hint">Toggle sounds you want suppressed from the output. Works alongside noise reduction.</p>
+          <div class="sound-mute-grid" id="soundMuteGrid">
+            <button class="sound-mute-btn" data-cat="appliance" title="Washing machine, AC, fan, dryer — low-frequency mechanical hum (20–500 Hz)">
+              <span class="smb-icon">🏠</span><span class="smb-label">Appliances</span>
+            </button>
+            <button class="sound-mute-btn" data-cat="music" title="Background music — tonal and harmonic content across mid frequencies">
+              <span class="smb-icon">🎵</span><span class="smb-label">Music</span>
+            </button>
+            <button class="sound-mute-btn" data-cat="dog" title="Dog barking, animal sounds — impulsive bursts 300–3,000 Hz">
+              <span class="smb-icon">🐕</span><span class="smb-label">Dog/Animal</span>
+            </button>
+            <button class="sound-mute-btn" data-cat="bird" title="Bird chirps and tweets — high-frequency transients 2–10 kHz">
+              <span class="smb-icon">🐦</span><span class="smb-label">Birds</span>
+            </button>
+            <button class="sound-mute-btn" data-cat="traffic" title="Traffic, engine noise, outdoor ambience — low-mid broadband noise">
+              <span class="smb-icon">🚗</span><span class="smb-label">Traffic</span>
+            </button>
+            <button class="sound-mute-btn" data-cat="crowd" title="Crowd chatter, multiple voices, restaurant noise — competing speech band">
+              <span class="smb-icon">👥</span><span class="smb-label">Crowd</span>
+            </button>
+          </div>
+          <div id="soundMuteStatus" class="sound-mute-status">No sounds muted — all background is processed normally</div>
         </div>
-        <div style="border-top:1px solid #1e293b;padding-top:10px;margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-          <span class="sr-label">Voiceprint</span>
-          <span id="voiceprintStatus" style="font-size:11px;color:#9ca3af;">Not enrolled</span>
-          <button id="enrollVoiceprintBtn" class="btn btn-xs">Record 5s</button>
-          <button id="clearVoiceprintBtn"  class="btn btn-xs">Clear</button>
+
+        <!-- Step 3: Detected Speakers -->
+        <div class="iso-section">
+          <div class="iso-section-hdr">3 · Detected Speakers
+            <span style="font-size:0.55rem;font-weight:400;color:#64748b;margin-left:6px;">Auto-detected after processing</span>
+          </div>
+          <div id="speakerCardsGrid">
+            <span class="iso-empty-msg">Process audio to detect and isolate individual speakers</span>
+          </div>
+        </div>
+
+        <!-- Voiceprint enroll -->
+        <div class="iso-section" style="border-top:1px solid #1e293b;padding-top:10px;margin-top:0;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span class="sr-label">Voiceprint</span>
+            <span id="voiceprintStatus" style="font-size:11px;color:#9ca3af;">Not enrolled</span>
+            <button id="enrollVoiceprintBtn" class="btn btn-xs">Record 5s</button>
+            <button id="clearVoiceprintBtn"  class="btn btn-xs">Clear</button>
+          </div>
         </div>
       </div>
 

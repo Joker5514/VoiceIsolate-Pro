@@ -44,7 +44,7 @@ canvas{
   will-change:transform;
   transform:translateZ(0);
   backface-visibility:hidden;
-  contain:strict;
+  contain:layout style paint;
   display:block;
 }
 .spectrogram-container,.spectrum-container,.visualizer-container,
@@ -598,4 +598,101 @@ input[type="range"]:focus-visible::-moz-range-thumb{
 @media (max-width: 600px) {
   .isolation-globals { grid-template-columns: 1fr; }
   .speaker-card      { max-width: 100%; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ISOLATION CARD — improved UX sections
+   ══════════════════════════════════════════════════════════════════ */
+
+.iso-card { padding: 10px 12px; }
+
+.iso-section {
+  margin-bottom: 12px;
+}
+
+.iso-section-hdr {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  border-left: 2px solid var(--cyan);
+  padding-left: 6px;
+  margin-bottom: 8px;
+}
+
+.iso-hint {
+  font-size: 0.62rem;
+  color: var(--dim);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.iso-empty-msg {
+  color: #4b5563;
+  font-size: 12px;
+  display: block;
+  padding: 8px 0;
+}
+
+/* DnD highlight when file is dragged over isolation card */
+.iso-card.iso-drop-active {
+  border-color: var(--cyan);
+  background: rgba(34,211,238,0.03);
+}
+.iso-card.iso-drop-active .iso-drop-hint {
+  opacity: 1 !important;
+  color: var(--cyan);
+}
+
+/* ── Sound mute grid ────────────────────────────────────────────── */
+.sound-mute-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.sound-mute-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 4px 6px;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #94a3b8;
+  cursor: pointer;
+  font-family: var(--ff);
+  transition: background .12s, border-color .12s, color .12s;
+  user-select: none;
+}
+.sound-mute-btn:hover {
+  background: #1e293b;
+  border-color: #3b82f6;
+  color: #e2e8f0;
+}
+.sound-mute-btn.active {
+  background: rgba(239,68,68,0.15);
+  border-color: #ef4444;
+  color: #fca5a5;
+  box-shadow: 0 0 6px rgba(239,68,68,0.2);
+}
+.smb-icon  { font-size: 1.2rem; line-height: 1; }
+.smb-label { font-size: 0.58rem; font-weight: 600; letter-spacing: 0.03em; }
+
+.sound-mute-status {
+  font-size: 0.6rem;
+  color: var(--dim);
+  font-family: var(--fm);
+  min-height: 14px;
+  transition: color .2s;
+}
+.sound-mute-status.has-mutes {
+  color: #fca5a5;
+}
+
+@media (max-width: 480px) {
+  .sound-mute-grid { grid-template-columns: repeat(2, 1fr); }
 }
