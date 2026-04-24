@@ -46,6 +46,9 @@ export function UploadZone({ file, onFile, busy }: Props) {
   return (
     <div>
       <div
+        role="button"
+        tabIndex={busy ? -1 : 0}
+        aria-label="Upload audio or video file"
         onDragOver={(e) => {
           e.preventDefault();
           if (!busy) setHover(true);
@@ -53,8 +56,14 @@ export function UploadZone({ file, onFile, busy }: Props) {
         onDragLeave={() => setHover(false)}
         onDrop={onDrop}
         onClick={() => !busy && inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (!busy && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
         className={[
-          'group relative cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all duration-300',
+          'group relative cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           hover
             ? 'border-indigo-400 bg-indigo-500/10 scale-[1.01]'
             : 'border-white/10 bg-indigo-500/5 hover:border-indigo-400 hover:bg-indigo-500/10',
