@@ -322,12 +322,12 @@ const STAGES = [
 // in the spectral domain (between STFT and iSTFT) respecting the VAD mask so
 // voice frames lose minimal energy while noise-only frames are fully cleaned.
 const SOUND_CATEGORIES = [
-  { id:'appliance', emoji:'🏠', label:'Appliances', ranges:[{lo:20, hi:500}] },
-  { id:'music',     emoji:'🎵', label:'Music',      ranges:[{lo:80, hi:300},{lo:1000,hi:8000}] },
-  { id:'dog',       emoji:'🐕', label:'Dog/Animal', ranges:[{lo:300,hi:1200},{lo:1200,hi:3000}] },
-  { id:'bird',      emoji:'🐦', label:'Birds',      ranges:[{lo:2000,hi:5000},{lo:5000,hi:10000}] },
-  { id:'traffic',   emoji:'🚗', label:'Traffic',    ranges:[{lo:20,hi:150},{lo:150,hi:600}] },
-  { id:'crowd',     emoji:'👥', label:'Crowd',      ranges:[{lo:120,hi:300},{lo:300,hi:800},{lo:800,hi:2000}] },
+  { id:'appliance', ranges:[{lo:20, hi:500}] },
+  { id:'music',     ranges:[{lo:80, hi:300},{lo:1000,hi:8000}] },
+  { id:'dog',       ranges:[{lo:300,hi:1200},{lo:1200,hi:3000}] },
+  { id:'bird',      ranges:[{lo:2000,hi:5000},{lo:5000,hi:10000}] },
+  { id:'traffic',   ranges:[{lo:20,hi:150},{lo:150,hi:600}] },
+  { id:'crowd',     ranges:[{lo:120,hi:300},{lo:300,hi:800},{lo:800,hi:2000}] },
 ];
 
 const ACCEPTED_AUDIO_UPLOAD_TYPES = [
@@ -371,6 +371,11 @@ class VoiceIsolatePro {
     this.isPlaying = false;
     this.mutedBands = new Set();
     this.soundMutes = {}; // { catId: boolean } — toggled by sound mute buttons
+    // Restore persisted soundMutes from previous session
+    try {
+      const savedMutes = JSON.parse(localStorage.getItem('vip_soundmutes') || 'null');
+      if (savedMutes && typeof savedMutes === 'object') this.soundMutes = savedMutes;
+    } catch { /* storage sandboxed */ }
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
     this.params.spectralFloor = this._mapSpectralFloor(this.params.nrFloor);
@@ -429,6 +434,12 @@ class VoiceIsolatePro {
     this.cacheDom();
     this._uiScaleInit();
     this.bindEvents();
+    // Restore sound-mute button visual states from persisted soundMutes
+    document.querySelectorAll('.sound-mute-btn').forEach(btn => {
+      const active = !!this.soundMutes[btn.dataset.cat];
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    });
     this.initCanvases();
     this.init3D();
     this._initVisualEngine();
@@ -840,10 +851,13 @@ class VoiceIsolatePro {
     // ── Isolation card: file drag-and-drop ──────────────────────────────
     const ic = document.getElementById('isolationCard');
     if (ic) {
-      ic.addEventListener('dragover', e => { e.preventDefault(); ic.classList.add('iso-drop-active'); });
-      ic.addEventListener('dragleave', e => { if (!ic.contains(e.relatedTarget)) ic.classList.remove('iso-drop-active'); });
-      ic.addEventListener('drop', e => {
-        e.preventDefault();
+      let icDragCounter = 0;
+      bind('isoCard', ic, 'dragenter', e => { e.preventDefault(); e.stopPropagation(); icDragCounter++; ic.classList.add('iso-drop-active'); });
+      bind('isoCard', ic, 'dragover',  e => { e.preventDefault(); e.stopPropagation(); });
+      bind('isoCard', ic, 'dragleave', e => { e.preventDefault(); e.stopPropagation(); icDragCounter--; if (icDragCounter <= 0) { icDragCounter = 0; ic.classList.remove('iso-drop-active'); } });
+      bind('isoCard', ic, 'drop', e => {
+        e.preventDefault(); e.stopPropagation();
+        icDragCounter = 0;
         ic.classList.remove('iso-drop-active');
         const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
         if (f) this.handleFile(f);
@@ -953,7 +967,8 @@ class VoiceIsolatePro {
     const paramStr = JSON.stringify(
       Object.keys(this.params).sort().reduce((o, k) => { o[k] = this.params[k]; return o; }, {})
     );
-    return `${file.name}:${file.size}:${file.lastModified || 0}:${paramStr}`;
+    const mutesStr = JSON.stringify(this.soundMutes);
+    return `${file.name}:${file.size}:${file.lastModified || 0}:${paramStr}:${mutesStr}`;
   }
 
   _bufToRaw(buf) {
@@ -1713,8 +1728,7 @@ class VoiceIsolatePro {
           const noiseProfile = new Float32Array(mag[0].length);
           let noiseFrames = 0;
           for (let f = 0; f < mag.length; f++) {
-            const vi = Math.min(f, vadConf.length - 1);
-            if (vadConf[vi] < 0.2) {
+            if (vadConf.length > 0 && vadConf[Math.min(f, vadConf.length - 1)] < 0.2) {
               for (let k = 0; k < mag[f].length; k++) noiseProfile[k] += mag[f][k];
               noiseFrames++;
             }
@@ -1758,7 +1772,7 @@ class VoiceIsolatePro {
         // VAD weight softens the suppression on voice-active frames to preserve speech.
         {
           const activeCats = SOUND_CATEGORIES.filter(c => this.soundMutes[c.id]);
-          if (activeCats.length > 0) {
+          if (activeCats.length > 0 && mag.length > 0) {
             const halfN = mag[0].length;
             const binHz = sr / fftSize;
             const mask = new Float32Array(halfN).fill(1.0);
@@ -1770,11 +1784,13 @@ class VoiceIsolatePro {
               }
             }
             for (let f = 0; f < mag.length; f++) {
-              const vad = Math.min(1, Math.max(0, vadConf[Math.min(f, vadConf.length - 1)]));
+              // Guard against empty vadConf (VAD not loaded): treat as no voice activity
+              const vadVal = vadConf.length > 0 ? vadConf[Math.min(f, vadConf.length - 1)] : 0;
+              const vadW = Math.min(1, Math.max(0, vadVal));
               for (let k = 0; k < halfN; k++) {
                 if (mask[k] < 1.0) {
-                  // Full suppression in noise frames; preserve voice frames (VAD=1 → no suppression)
-                  const factor = mask[k] + vad * (1 - mask[k]) * 0.85;
+                  // Full suppression in noise frames; VAD=1 → factor=1.0 (full voice preservation)
+                  const factor = mask[k] + vadW * (1 - mask[k]);
                   mag[f][k] *= factor;
                 }
               }
@@ -1790,8 +1806,7 @@ class VoiceIsolatePro {
         if (p.crosstalkCancel > 0) {
           const cancelAmt = p.crosstalkCancel / 100;
           for (let f = 0; f < mag.length; f++) {
-            const vi = Math.min(f, vadConf.length - 1);
-            if (vadConf[vi] < 0.3) {
+            if (vadConf.length > 0 && vadConf[Math.min(f, vadConf.length - 1)] < 0.3) {
               for (let k = 0; k < mag[f].length; k++) {
                 mag[f][k] *= (1 - cancelAmt * 0.8);
               }
@@ -2512,10 +2527,14 @@ class VoiceIsolatePro {
 
   toggleSoundCategory(catId) {
     this.soundMutes[catId] = !this.soundMutes[catId];
-    // Update button appearance
+    const isActive = !!this.soundMutes[catId];
     const btn = document.querySelector(`.sound-mute-btn[data-cat="${catId}"]`);
-    if (btn) btn.classList.toggle('active', !!this.soundMutes[catId]);
-    // Update status text
+    if (btn) {
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-pressed', String(isActive));
+    }
+    try { localStorage.setItem('vip_soundmutes', JSON.stringify(this.soundMutes)); } catch { /* sandboxed */ }
+    // Build status label from DOM so SOUND_CATEGORIES stays DSP-only
     const activeCats = SOUND_CATEGORIES.filter(c => this.soundMutes[c.id]);
     const statusEl = document.getElementById('soundMuteStatus');
     if (statusEl) {
@@ -2523,7 +2542,13 @@ class VoiceIsolatePro {
         statusEl.textContent = 'No sounds muted — all background is processed normally';
         statusEl.classList.remove('has-mutes');
       } else {
-        statusEl.textContent = 'Muting: ' + activeCats.map(c => c.emoji + ' ' + c.label).join(' · ') + ' — re-process to apply';
+        const labels = activeCats.map(c => {
+          const b = document.querySelector(`.sound-mute-btn[data-cat="${c.id}"]`);
+          const icon = b?.querySelector('.smb-icon')?.textContent || '';
+          const lbl  = b?.querySelector('.smb-label')?.textContent || c.id;
+          return icon + ' ' + lbl;
+        });
+        statusEl.textContent = 'Muting: ' + labels.join(' · ') + ' — re-process to apply';
         statusEl.classList.add('has-mutes');
       }
     }
@@ -2561,16 +2586,18 @@ class VoiceIsolatePro {
     window.addEventListener('mousemove',e=>{if(!drag)return;cam.position.x-=(e.clientX-pX)*0.15;cam.position.y+=(e.clientY-pY)*0.15;cam.lookAt(0,0,0);pX=e.clientX;pY=e.clientY;});
     cv.addEventListener('wheel',e=>{e.preventDefault();cam.position.z+=e.deltaY*0.05;cam.position.z=Math.max(20,Math.min(120,cam.position.z));},{passive:false});
     // ResizeObserver keeps the buffer in sync when the grid reflows (not just window resize)
-    const _ro3d = new ResizeObserver(() => {
-      const rw=ct.clientWidth, rh=ct.clientHeight;
-      if(rw>0&&rh>0&&this.three.ren){
-        this.three.ren.setSize(rw,rh,false);
-        this.three.cam.aspect=rw/rh;
-        this.three.cam.updateProjectionMatrix();
-      }
-    });
-    _ro3d.observe(ct);
-    this.three._ro3d = _ro3d;
+    if (typeof ResizeObserver !== 'undefined') {
+      const _ro3d = new ResizeObserver(() => {
+        const rw=ct.clientWidth, rh=ct.clientHeight;
+        if(rw>0&&rh>0&&this.three.ren){
+          this.three.ren.setSize(rw,rh,false);
+          this.three.cam.aspect=rw/rh;
+          this.three.cam.updateProjectionMatrix();
+        }
+      });
+      _ro3d.observe(ct);
+      this.three._ro3d = _ro3d;
+    }
     this.render3D();
   }
   reset3DView(){

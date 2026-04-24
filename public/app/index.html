@@ -445,22 +445,22 @@
           </div>
           <p class="iso-hint">Toggle sounds you want suppressed from the output. Works alongside noise reduction.</p>
           <div class="sound-mute-grid" id="soundMuteGrid">
-            <button class="sound-mute-btn" data-cat="appliance" title="Washing machine, AC, fan, dryer — low-frequency mechanical hum (20–500 Hz)">
+            <button type="button" class="sound-mute-btn" data-cat="appliance" aria-pressed="false" aria-label="Mute appliances" title="Washing machine, AC, fan, dryer — low-frequency mechanical hum (20–500 Hz)">
               <span class="smb-icon">🏠</span><span class="smb-label">Appliances</span>
             </button>
-            <button class="sound-mute-btn" data-cat="music" title="Background music — tonal and harmonic content across mid frequencies">
+            <button type="button" class="sound-mute-btn" data-cat="music" aria-pressed="false" aria-label="Mute music" title="Background music — tonal and harmonic content across mid frequencies">
               <span class="smb-icon">🎵</span><span class="smb-label">Music</span>
             </button>
-            <button class="sound-mute-btn" data-cat="dog" title="Dog barking, animal sounds — impulsive bursts 300–3,000 Hz">
+            <button type="button" class="sound-mute-btn" data-cat="dog" aria-pressed="false" aria-label="Mute dog and animal sounds" title="Dog barking, animal sounds — impulsive bursts 300–3,000 Hz">
               <span class="smb-icon">🐕</span><span class="smb-label">Dog/Animal</span>
             </button>
-            <button class="sound-mute-btn" data-cat="bird" title="Bird chirps and tweets — high-frequency transients 2–10 kHz">
+            <button type="button" class="sound-mute-btn" data-cat="bird" aria-pressed="false" aria-label="Mute bird sounds" title="Bird chirps and tweets — high-frequency transients 2–10 kHz">
               <span class="smb-icon">🐦</span><span class="smb-label">Birds</span>
             </button>
-            <button class="sound-mute-btn" data-cat="traffic" title="Traffic, engine noise, outdoor ambience — low-mid broadband noise">
+            <button type="button" class="sound-mute-btn" data-cat="traffic" aria-pressed="false" aria-label="Mute traffic noise" title="Traffic, engine noise, outdoor ambience — low-mid broadband noise">
               <span class="smb-icon">🚗</span><span class="smb-label">Traffic</span>
             </button>
-            <button class="sound-mute-btn" data-cat="crowd" title="Crowd chatter, multiple voices, restaurant noise — competing speech band">
+            <button type="button" class="sound-mute-btn" data-cat="crowd" aria-pressed="false" aria-label="Mute crowd noise" title="Crowd chatter, multiple voices, restaurant noise — competing speech band">
               <span class="smb-icon">👥</span><span class="smb-label">Crowd</span>
             </button>
           </div>
@@ -482,8 +482,8 @@
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span class="sr-label">Voiceprint</span>
             <span id="voiceprintStatus" style="font-size:11px;color:#9ca3af;">Not enrolled</span>
-            <button id="enrollVoiceprintBtn" class="btn btn-xs">Record 5s</button>
-            <button id="clearVoiceprintBtn"  class="btn btn-xs">Clear</button>
+            <button type="button" id="enrollVoiceprintBtn" class="btn btn-xs">Record 5s</button>
+            <button type="button" id="clearVoiceprintBtn"  class="btn btn-xs">Clear</button>
           </div>
         </div>
       </div>

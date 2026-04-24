@@ -192,9 +192,14 @@ Blueprint sections:
 - **PIPELINE**: 32-stage Deca-Pass (10 passes), enforced by `scripts/validate.js`
 - **NEW**: HiFi-GAN v2 neural vocoder for speech resynthesis
 - **NEW**: Comprehensive v24 blueprint (target architecture, pseudocode, diagrams)
+- **NEW**: Sound category muting — suppress appliances, music, dogs, birds, traffic, or crowd noise at the spectral layer (VAD-weighted to preserve voice frames); state persisted across sessions
+- **NEW**: Isolation card redesigned with 3-step UX (load → mute → speakers), full drag-and-drop with flicker-free `dragCounter` pattern
+- **NEW**: 3D spectrogram stretch fix — `setSize(w,h,false)` + guarded ResizeObserver prevents Three.js inline style conflicts with CSS
 - **IMPROVED**: 3-model ensemble fusion (Demucs + BS-RoFormer + BSRNN) with learned per-band weights
 - **IMPROVED**: Stronger default NR + voice-isolation parameters so background noise is actually removed
 - **IMPROVED**: Hardened playback controls + controls diagnostic script
+- **FIXED**: VAD confidence empty-array guard prevents NaN propagation when Silero VAD model is not yet loaded
+- **FIXED**: Result cache now keyed on `soundMutes` state so stale audio is not returned after mute changes
 - **VERIFIED**: Single-pass STFT architecture enforced across all three processing paths (main thread, DSP worker, AudioWorklet)
 
 ### v23.0 (Previous)
