@@ -2560,17 +2560,23 @@ class VoiceIsolatePro {
     window.addEventListener('mouseup',()=>drag=false);
     window.addEventListener('mousemove',e=>{if(!drag)return;cam.position.x-=(e.clientX-pX)*0.15;cam.position.y+=(e.clientY-pY)*0.15;cam.lookAt(0,0,0);pX=e.clientX;pY=e.clientY;});
     cv.addEventListener('wheel',e=>{e.preventDefault();cam.position.z+=e.deltaY*0.05;cam.position.z=Math.max(20,Math.min(120,cam.position.z));},{passive:false});
-    // ResizeObserver keeps the buffer in sync when the grid reflows (not just window resize)
-    const _ro3d = new ResizeObserver(() => {
+    const handle3DResize=()=>{
       const rw=ct.clientWidth, rh=ct.clientHeight;
       if(rw>0&&rh>0&&this.three.ren){
         this.three.ren.setSize(rw,rh,false);
         this.three.cam.aspect=rw/rh;
         this.three.cam.updateProjectionMatrix();
       }
-    });
-    _ro3d.observe(ct);
-    this.three._ro3d = _ro3d;
+    };
+    // ResizeObserver keeps the buffer in sync when the grid reflows (not just window resize)
+    if(typeof ResizeObserver!=='undefined'){
+      const _ro3d = new ResizeObserver(handle3DResize);
+      _ro3d.observe(ct);
+      this.three._ro3d = _ro3d;
+    }else if(typeof window!=='undefined'){
+      window.addEventListener('resize',handle3DResize);
+      this.three._resize3DHandler = handle3DResize;
+    }
     this.render3D();
   }
   reset3DView(){
