@@ -1758,7 +1758,7 @@ class VoiceIsolatePro {
         // VAD weight softens the suppression on voice-active frames to preserve speech.
         {
           const activeCats = SOUND_CATEGORIES.filter(c => this.soundMutes[c.id]);
-          if (activeCats.length > 0) {
+          if (activeCats.length > 0 && mag.length > 0) {
             const halfN = mag[0].length;
             const binHz = sr / fftSize;
             const mask = new Float32Array(halfN).fill(1.0);
