@@ -1,9 +1,0 @@
-PLACEHOLDER: Replace this file with the real rnnoise_suppressor.onnx (approx 180 KB).
-
-To obtain:
-  1. Clone https://github.com/xiph/rnnoise and build
-  2. python scripts/export_rnnoise_onnx.py --output public/app/models/rnnoise_suppressor.onnx
-     OR find a pre-built ONNX in the community exports.
-
-IMPORTANT: Delete this .placeholder file after placing the real .onnx.
-For this small model, direct commit is fine (< 100 MB limit).
