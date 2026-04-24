@@ -170,7 +170,7 @@ async function denoiseChannel(
   // Scale to preserve peak roughly.
   const result = new Float32Array(len);
   for (let i = 0; i < len; i++) {
-    result[i] = output[i] * (2 / 3); // compensate for Hann^2 sum
+    result[i] = output[i] * (4 / 3); // compensate for Hann^2 sum (0.75 average at 50% overlap)
   }
   return result;
 }
