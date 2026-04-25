@@ -100,7 +100,7 @@ function initialize() {
 // Stubbed state: populated by message handlers below; will be consumed once
 // ECAPA-TDNN cosine-sim clustering replaces the energy-based stub.
 let _currentIsolateSpeakerId = null; // eslint-disable-line no-unused-vars
-let _speakerVolumeMap        = {};   // eslint-disable-line no-unused-vars
+let _speakerVolumeMap        = {};
 let _voiceprintEmbedding     = null; // eslint-disable-line no-unused-vars
 
 /**
@@ -524,6 +524,22 @@ async function handleMultiSeparate(streams) {
     self.postMessage({ type: 'multi_done', streams: [] });
     return;
   }
+
+  // Apply per-speaker volume from the current speakerVolumeMap.
+  // A volume of 0 silences the stream (muted, or not the solo/isolated speaker).
+  // _speakerVolumeMap keys may be strings or numbers; check both.
+  streams.forEach(s => {
+    if (!s || !s.data) return;
+    const id = s.speakerId;
+    const vol = id in _speakerVolumeMap ? _speakerVolumeMap[id]
+              : String(id) in _speakerVolumeMap ? _speakerVolumeMap[String(id)]
+              : 1;
+    if (vol === 0) {
+      s.data.fill(0);
+    } else if (vol !== 1) {
+      for (let i = 0; i < s.data.length; i++) s.data[i] *= vol;
+    }
+  });
 
   // Null-guard: filter out invalid stream entries before extracting buffers
   const transferables = streams
