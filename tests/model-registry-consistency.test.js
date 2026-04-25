@@ -123,9 +123,9 @@ describe('model registry consistency', () => {
     const missingFromFetchCache = diff(new Set([...manifest, ...mlWorker]),   fetchCache);
 
     const drift =
-      onlyInManifest.length    > 0 ||
-      onlyInMlWorker.length    > 0 ||
-      onlyInFetchCache.length  > 0;
+      missingFromManifest.length   > 0 ||
+      missingFromMlWorker.length   > 0 ||
+      missingFromFetchCache.length > 0;
 
     if (drift) {
       const lines = [
