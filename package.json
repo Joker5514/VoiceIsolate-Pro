@@ -19,7 +19,7 @@
   "author": "Randy Jordan <randyejjordan7827@gmail.com>",
   "license": "UNLICENSED",
   "scripts": {
-    "postinstall": "node scripts/setup-ort.js || true",
+    "postinstall": "node scripts/setup-ort.js",
     "setup:ort": "node scripts/setup-ort.js",
     "start": "node server.js",
     "dev": "node server.js",
