@@ -29,9 +29,50 @@
   --fm: 'JetBrains Mono', monospace;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{font-size:14px;scroll-behavior:smooth}
-body{font-family:var(--ff);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+html{font-size:14px;scroll-behavior:smooth;height:100%;overflow-y:scroll}
+body{font-family:var(--ff);background:var(--bg);color:var(--text);min-height:100%;min-height:100dvh;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 body::before{content:'';position:fixed;inset:0;background:linear-gradient(rgba(220,38,38,0.008) 1px,transparent 1px),linear-gradient(90deg,rgba(220,38,38,0.008) 1px,transparent 1px);background-size:32px 32px;pointer-events:none;z-index:0}
+
+/* === SCROLL FIX: force GPU layer on root === */
+.app-container,#app,.main-wrapper,.workspace,.app-layout,.main-layout,.page-wrapper{
+  min-height:100vh;
+  min-height:100dvh;
+  height:auto !important;
+  overflow:visible;
+}
+canvas{
+  will-change:transform;
+  transform:translateZ(0);
+  backface-visibility:hidden;
+  contain:layout style paint;
+  display:block;
+}
+.spectrogram-container,.spectrum-container,.visualizer-container,
+.waveform-container,#spectrogram-canvas,#waveform-canvas,
+.canvas-wrapper,.viz-wrapper,.spectro3d-container{
+  contain:layout style paint;
+  will-change:transform;
+  transform:translateZ(0);
+  isolation:isolate;
+  position:relative;
+  overflow:hidden;
+}
+.header,.toolbar,.top-bar,nav,.nav,.sidebar,.side-panel,.hdr{
+  will-change:transform;
+  transform:translateZ(0);
+  backface-visibility:hidden;
+}
+#spectrogram-3d,.spectrogram-3d,[id*='spectrogram'],[class*='spectrogram']{
+  position:absolute !important;
+  top:0;left:0;
+  width:100% !important;
+  height:100% !important;
+  contain:strict;
+}
+input[type='range']{
+  contain:layout;
+  will-change:auto;
+}
 
 /* ---- HEADER ---- */
 .hdr{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(6,6,9,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border2);gap:12px;flex-wrap:wrap}
@@ -264,7 +305,7 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 .ftr{max-width:1520px;margin:0 auto;padding:0 10px 8px;display:flex;justify-content:space-between;font-size:0.58rem;color:var(--dim);opacity:0.6}
 
 /* ---- TOOLTIP ---- */
-.slider-tooltip{position:fixed;z-index:9999;background:var(--s4);color:var(--text);border:1px solid var(--border2);border-radius:var(--rs);padding:6px 10px;font-size:0.65rem;max-width:240px;line-height:1.4;pointer-events:none;opacity:0;transition:opacity 0.15s;box-shadow:0 8px 24px rgba(0,0,0,0.5)}
+.slider-tooltip{position:fixed;z-index:9999;background:var(--s4);color:var(--text);border:1px solid var(--border2);border-radius:var(--rs);padding:8px 14px;font-size:0.72rem;width:max-content;max-width:min(400px, calc(100vw - 20px));box-sizing:border-box;line-height:1.5;pointer-events:none;opacity:0;transition:opacity 0.15s;box-shadow:0 8px 24px rgba(0,0,0,0.5);text-align:center}
 .slider-tooltip.visible{opacity:1}
 
 /* ---- MOBILE ELEMENTS (hidden on desktop by default) ---- */
@@ -459,4 +500,199 @@ input[type="range"]:focus-visible::-moz-range-thumb{
 }
 .speaker-dot.is-active{
   animation:vip-speaker-pulse 1.2s ease-in-out infinite;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════
+   DIARIZATION TIMELINE + SPEAKER ISOLATION — VoiceIsolate Pro v22
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── Diarization card ──────────────────────────────────────────── */
+#diarCard          { grid-column: 1 / -1; }
+#diarCanvas        { display:block; width:100%; min-height:80px;
+                     background:#0f172a; border-radius:4px; cursor:crosshair; }
+#diarPlayhead      { pointer-events:none; z-index:10; }
+
+/* ── Isolation card ────────────────────────────────────────────── */
+#isolationCard     { grid-column: 1 / -1; }
+
+.isolation-globals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+/* ── Speaker cards grid ────────────────────────────────────────── */
+#speakerCardsGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+/* ── Individual speaker card ───────────────────────────────────── */
+.speaker-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 175px;
+  flex: 1 1 175px;
+  max-width: 260px;
+  transition: border-color .15s, opacity .15s;
+}
+.speaker-card--active {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,.25);
+}
+.speaker-card--muted { opacity: .42; }
+
+.speaker-card__header {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 8px;
+}
+.speaker-card__swatch {
+  display: inline-block; width: 10px; height: 10px;
+  border-radius: 50%; flex-shrink: 0;
+}
+.speaker-card__label {
+  font-size: 12px; font-weight: 600; color: #e2e8f0;
+  flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.speaker-card__id {
+  font-size: 10px; color: #64748b; font-family: monospace;
+}
+
+.speaker-card__vol-row {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+}
+.speaker-card__vol-lbl { font-size:10px; color:#9ca3af; width:22px; flex-shrink:0; }
+.speaker-card__vol     { flex:1; height:4px; accent-color:#3b82f6; }
+.speaker-card__vol-val { font-size:10px; color:#9ca3af; font-family:monospace;
+                         width:30px; text-align:right; }
+
+.speaker-card__actions { display:flex; gap:5px; flex-wrap:wrap; }
+.speaker-card__actions button {
+  flex:1; padding:3px 6px; font-size:11px; border-radius:4px;
+  border:1px solid #334155; background:#0f172a; color:#e2e8f0;
+  cursor:pointer; transition:background .12s, border-color .12s;
+}
+.speaker-card__actions button:hover {
+  background:#1e3a5f; border-color:#3b82f6;
+}
+.speaker-card__actions button.active {
+  background:#1d4ed8; border-color:#3b82f6; color:#fff;
+}
+
+/* ── Voiceprint status ─────────────────────────────────────────── */
+.vp-idle      { color: #64748b; }
+.vp-recording { color: #f59e0b; animation: vip-blink .8s infinite; }
+.vp-ready     { color: #10b981; }
+.vp-error     { color: #ef4444; }
+
+@keyframes vip-blink {
+  0%,100% { opacity:1; } 50% { opacity:.3; }
+}
+
+/* ── Responsive ────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .isolation-globals { grid-template-columns: 1fr; }
+  .speaker-card      { max-width: 100%; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   ISOLATION CARD — improved UX sections
+   ══════════════════════════════════════════════════════════════════ */
+
+.iso-card { padding: 10px 12px; }
+
+.iso-section {
+  margin-bottom: 12px;
+}
+
+.iso-section-hdr {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  border-left: 2px solid var(--cyan);
+  padding-left: 6px;
+  margin-bottom: 8px;
+}
+
+.iso-hint {
+  font-size: 0.62rem;
+  color: var(--dim);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.iso-empty-msg {
+  color: #4b5563;
+  font-size: 12px;
+  display: block;
+  padding: 8px 0;
+}
+
+/* DnD highlight when file is dragged over isolation card */
+.iso-card.iso-drop-active {
+  border-color: var(--cyan);
+  background: rgba(34,211,238,0.03);
+}
+.iso-card.iso-drop-active .iso-drop-hint {
+  opacity: 1 !important;
+  color: var(--cyan);
+}
+
+/* ── Sound mute grid ────────────────────────────────────────────── */
+.sound-mute-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.sound-mute-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 4px 6px;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #94a3b8;
+  cursor: pointer;
+  font-family: var(--ff);
+  transition: background .12s, border-color .12s, color .12s;
+  user-select: none;
+}
+.sound-mute-btn:hover {
+  background: #1e293b;
+  border-color: #3b82f6;
+  color: #e2e8f0;
+}
+.sound-mute-btn.active {
+  background: rgba(239,68,68,0.15);
+  border-color: #ef4444;
+  color: #fca5a5;
+  box-shadow: 0 0 6px rgba(239,68,68,0.2);
+}
+.smb-icon  { font-size: 1.2rem; line-height: 1; }
+.smb-label { font-size: 0.58rem; font-weight: 600; letter-spacing: 0.03em; }
+
+.sound-mute-status {
+  font-size: 0.6rem;
+  color: var(--dim);
+  font-family: var(--fm);
+  min-height: 14px;
+  transition: color .2s;
+}
+.sound-mute-status.has-mutes {
+  color: #fca5a5;
+}
+
+@media (max-width: 480px) {
+  .sound-mute-grid { grid-template-columns: repeat(2, 1fr); }
 }

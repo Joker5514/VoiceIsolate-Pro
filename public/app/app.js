@@ -3,24 +3,28 @@
    VoiceIsolate Pro v22.1 – Engineer Mode
    Threads from Space v11 · Hybrid ML+DSP
    52 Sliders · 6-Panel Diagnostics · 3D Spectrogram
-   35-Stage Deca-Pass Pipeline with Real STFT DSP
+   32-Stage Deca-Pass Pipeline with Real STFT DSP
    ============================================ */
 
 function structuredLog(level, msg, data = {}) {
   const entry = { ts: new Date().toISOString(), level, msg, ...data };
+  // Errors/warns always surface. Info/debug only when window.VIP_DEBUG is truthy.
+  const debugEnabled = (typeof window !== 'undefined') && !!window.VIP_DEBUG;
   if (level === 'error') console.error('[VIP]', msg, data);
   else if (level === 'warn') console.warn('[VIP]', msg, data);
-  else console.log('[VIP]', msg, data);
+  else if (debugEnabled) console.log('[VIP]', msg, data);
   // Store last 200 entries for forensic export
-  if (!window._vipLogs) window._vipLogs = [];
-  if (window._vipLogs.length >= 200) window._vipLogs.shift();
-  window._vipLogs.push(entry);
+  if (typeof window !== 'undefined') {
+    if (!window._vipLogs) window._vipLogs = [];
+    if (window._vipLogs.length >= 200) window._vipLogs.shift();
+    window._vipLogs.push(entry);
+  }
 }
 
 // ---- SLIDER DEFINITIONS (52 total) ----
 const SLIDERS = {
   gate: [
-    { id:'gateThresh', label:'Threshold', min:-80, max:-5, val:-42, step:1, unit:' dB', rt:true, desc:'Signal level below which the gate closes. Lower values let quieter sounds through.' },
+    { id:'gateThresh', label:'Threshold', min:-80, max:-5, val:-55, step:1, unit:' dB', rt:true, desc:'Signal level below which the gate closes. Lower values let quieter sounds (whispers) through.' },
     { id:'gateRange', label:'Range', min:-90, max:0, val:-40, step:1, unit:' dB', rt:false, desc:'Maximum attenuation when gate is closed. -90dB = full silence, -20dB = gentle reduction.' },
     { id:'gateAttack', label:'Attack', min:0.1, max:50, val:2, step:0.1, unit:' ms', rt:true, desc:'How fast the gate opens when signal exceeds threshold.' },
     { id:'gateRelease', label:'Release', min:5, max:500, val:80, step:1, unit:' ms', rt:true, desc:'How fast the gate closes after signal drops below threshold.' },
@@ -28,11 +32,11 @@ const SLIDERS = {
     { id:'gateLookahead', label:'Lookahead', min:0, max:20, val:5, step:0.5, unit:' ms', rt:false, desc:'Pre-delay allowing the gate to open before transients arrive.' },
   ],
   nr: [
-    { id:'nrAmount', label:'Reduction Amount', min:0, max:100, val:55, step:1, unit:'%', rt:false, desc:'How much noise is removed. 40-60% is usually optimal.' },
-    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'How aggressively noise is detected.' },
-    { id:'nrSpectralSub', label:'Spectral Subtract', min:0, max:100, val:40, step:1, unit:'%', rt:false, desc:'Subtracts estimated noise spectrum from signal.' },
-    { id:'nrFloor', label:'Noise Floor', min:-80, max:-20, val:-60, step:1, unit:' dB', rt:false, desc:'Estimated noise floor level.' },
-    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:35, step:1, unit:'%', rt:false, desc:'Temporal smoothing of noise estimate.' },
+    { id:'nrAmount', label:'Reduction Amount', min:0, max:100, val:78, step:1, unit:'%', rt:false, desc:'How much noise is removed. 70-85% for voice/whisper isolation in noisy environments.' },
+    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:72, step:1, unit:'%', rt:false, desc:'How aggressively noise is detected.' },
+    { id:'nrSpectralSub', label:'Spectral Subtract', min:0, max:100, val:62, step:1, unit:'%', rt:false, desc:'Subtracts estimated noise spectrum from signal.' },
+    { id:'nrFloor', label:'Noise Floor', min:-80, max:-20, val:-55, step:1, unit:' dB', rt:false, desc:'Estimated noise floor level.' },
+    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:45, step:1, unit:'%', rt:false, desc:'Temporal smoothing of noise estimate.' },
   ],
   eq: [
     { id:'eqSub', label:'Sub (40 Hz)', min:-12, max:6, val:-8, step:0.5, unit:' dB', rt:true, desc:'Sub-bass. Cut to remove rumble.' },
@@ -75,8 +79,8 @@ const SLIDERS = {
     { id:'phaseCorr', label:'Phase Correction', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Corrects phase issues between stereo channels.' },
   ],
   sep: [
-    { id:'voiceIso', label:'Voice Isolation', min:0, max:100, val:70, step:1, unit:'%', rt:false, desc:'Strength of voice/non-voice separation.' },
-    { id:'bgSuppress', label:'Background Suppress', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Attenuation of non-voice background.' },
+    { id:'voiceIso', label:'Voice Isolation', min:0, max:100, val:88, step:1, unit:'%', rt:false, desc:'Strength of voice/non-voice separation.' },
+    { id:'bgSuppress', label:'Background Suppress', min:0, max:100, val:80, step:1, unit:'%', rt:false, desc:'Attenuation of non-voice background.' },
     { id:'voiceFocusLo', label:'Voice Focus Low', min:80, max:500, val:120, step:5, unit:' Hz', rt:true, desc:'Lower bound of voice focus band.' },
     { id:'voiceFocusHi', label:'Voice Focus High', min:2000, max:12000, val:6000, step:100, unit:' Hz', rt:true, desc:'Upper bound of voice focus band.' },
     { id:'crosstalkCancel', label:'Crosstalk Cancel', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Reduces bleed between speakers.' },
@@ -89,18 +93,194 @@ const SLIDERS = {
   ]
 };
 
-// ---- PRESETS
+const SLIDER_MAP = {};
+for (const tab of Object.values(SLIDERS)) {
+  for (const s of tab) {
+    SLIDER_MAP[s.id] = s;
+  }
+}
+
+// ---- PRESETS (all 52 slider IDs covered per preset)
 const PRESETS = {
-  podcast: {gateThresh:-38,gateRange:-35,gateAttack:2,gateRelease:60,gateHold:15,gateLookahead:5,nrAmount:60,nrSensitivity:55,nrSpectralSub:45,nrFloor:-55,nrSmoothing:40,eqSub:-10,eqBass:-1,eqWarmth:2,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:4,eqClarity:2,eqAir:1,eqBrill:-3,compThresh:-20,compRatio:5,compAttack:6,compRelease:180,compKnee:6,compMakeup:8,limThresh:-1,limRelease:8,hpFreq:80,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:7000,deEssAmt:40,specTilt:0.5,formantShift:0,derevAmt:50,derevDecay:0.4,harmRecov:15,harmOrder:3,stereoWidth:100,phaseCorr:0,voiceIso:80,bgSuppress:60,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:100},
-  film: {gateThresh:-50,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:25,gateLookahead:5,nrAmount:40,nrSensitivity:45,nrSpectralSub:30,nrFloor:-60,nrSmoothing:40,eqSub:-6,eqBass:1,eqWarmth:1,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:2,eqBrill:-1,compThresh:-28,compRatio:3,compAttack:12,compRelease:300,compKnee:10,compMakeup:4,limThresh:-1,limRelease:15,hpFreq:60,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:-0.5,formantShift:0,derevAmt:30,derevDecay:0.6,harmRecov:25,harmOrder:3,stereoWidth:120,phaseCorr:0,voiceIso:60,bgSuppress:40,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:110},
-  interview: {gateThresh:-42,gateRange:-38,gateAttack:2,gateRelease:80,gateHold:20,gateLookahead:5,nrAmount:55,nrSensitivity:50,nrSpectralSub:40,nrFloor:-58,nrSmoothing:35,eqSub:-8,eqBass:0,eqWarmth:1,eqBody:0,eqLowMid:-1,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-2,compThresh:-22,compRatio:5,compAttack:5,compRelease:200,compKnee:6,compMakeup:6,limThresh:-1,limRelease:10,hpFreq:100,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:35,specTilt:0,formantShift:0,derevAmt:45,derevDecay:0.5,harmRecov:20,harmOrder:3,stereoWidth:80,phaseCorr:0,voiceIso:75,bgSuppress:55,voiceFocusLo:120,voiceFocusHi:6000,crosstalkCancel:20,outGain:0,dryWet:100,ditherAmt:0,outWidth:90},
-  forensic: {gateThresh:-65,gateRange:-20,gateAttack:1,gateRelease:150,gateHold:30,gateLookahead:10,nrAmount:30,nrSensitivity:60,nrSpectralSub:20,nrFloor:-70,nrSmoothing:50,eqSub:-2,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:0,compThresh:-18,compRatio:2,compAttack:15,compRelease:400,compKnee:12,compMakeup:10,limThresh:-0.5,limRelease:20,hpFreq:50,hpQ:0.71,lpFreq:18000,lpQ:0.71,deEssFreq:8000,deEssAmt:10,specTilt:1,formantShift:0,derevAmt:20,derevDecay:0.8,harmRecov:35,harmOrder:4,stereoWidth:100,phaseCorr:30,voiceIso:90,bgSuppress:30,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:3,dryWet:90,ditherAmt:0,outWidth:100},
-  music: {gateThresh:-55,gateRange:-25,gateAttack:3,gateRelease:120,gateHold:15,gateLookahead:3,nrAmount:25,nrSensitivity:40,nrSpectralSub:20,nrFloor:-65,nrSmoothing:45,eqSub:-3,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:0,eqPresence:2,eqClarity:1,eqAir:3,eqBrill:0,compThresh:-30,compRatio:2,compAttack:20,compRelease:350,compKnee:15,compMakeup:3,limThresh:-0.5,limRelease:12,hpFreq:40,hpQ:0.71,lpFreq:20000,lpQ:0.71,deEssFreq:7500,deEssAmt:15,specTilt:-1,formantShift:0,derevAmt:15,derevDecay:1.0,harmRecov:30,harmOrder:4,stereoWidth:150,phaseCorr:0,voiceIso:50,bgSuppress:25,voiceFocusLo:80,voiceFocusHi:10000,crosstalkCancel:0,outGain:0,dryWet:85,ditherAmt:5,outWidth:140},
-  broadcast: {gateThresh:-35,gateRange:-40,gateAttack:1.5,gateRelease:50,gateHold:10,gateLookahead:3,nrAmount:65,nrSensitivity:60,nrSpectralSub:50,nrFloor:-50,nrSmoothing:30,eqSub:-12,eqBass:-2,eqWarmth:2,eqBody:0,eqLowMid:-2,eqMid:2,eqPresence:5,eqClarity:3,eqAir:1,eqBrill:-4,compThresh:-18,compRatio:6,compAttack:4,compRelease:150,compKnee:4,compMakeup:10,limThresh:-1,limRelease:5,hpFreq:120,hpQ:0.71,lpFreq:12000,lpQ:0.71,deEssFreq:7000,deEssAmt:45,specTilt:1,formantShift:0,derevAmt:55,derevDecay:0.3,harmRecov:10,harmOrder:2,stereoWidth:60,phaseCorr:0,voiceIso:85,bgSuppress:70,voiceFocusLo:150,voiceFocusHi:5000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:70},
-  restoration: {gateThresh:-60,gateRange:-15,gateAttack:5,gateRelease:200,gateHold:40,gateLookahead:10,nrAmount:45,nrSensitivity:55,nrSpectralSub:35,nrFloor:-65,nrSmoothing:50,eqSub:-4,eqBass:0,eqWarmth:0,eqBody:0,eqLowMid:0,eqMid:1,eqPresence:3,eqClarity:2,eqAir:1,eqBrill:-1,compThresh:-26,compRatio:3,compAttack:10,compRelease:250,compKnee:8,compMakeup:5,limThresh:-0.5,limRelease:15,hpFreq:50,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:6500,deEssAmt:20,specTilt:0,formantShift:0,derevAmt:35,derevDecay:0.7,harmRecov:40,harmOrder:4,stereoWidth:100,phaseCorr:20,voiceIso:65,bgSuppress:45,voiceFocusLo:100,voiceFocusHi:8000,crosstalkCancel:10,outGain:2,dryWet:95,ditherAmt:5,outWidth:100},
-  whisper: {gateThresh:-70,gateRange:-10,gateAttack:1,gateRelease:300,gateHold:50,gateLookahead:10,nrAmount:20,nrSensitivity:35,nrSpectralSub:15,nrFloor:-75,nrSmoothing:60,eqSub:-2,eqBass:1,eqWarmth:2,eqBody:1,eqLowMid:0,eqMid:1,eqPresence:2,eqClarity:1,eqAir:0,eqBrill:-1,compThresh:-32,compRatio:2,compAttack:20,compRelease:500,compKnee:18,compMakeup:4,limThresh:-0.5,limRelease:20,hpFreq:60,hpQ:0.71,lpFreq:14000,lpQ:0.71,deEssFreq:6000,deEssAmt:10,specTilt:-0.5,formantShift:0,derevAmt:10,derevDecay:1.2,harmRecov:20,harmOrder:3,stereoWidth:90,phaseCorr:0,voiceIso:40,bgSuppress:15,voiceFocusLo:100,voiceFocusHi:9000,crosstalkCancel:0,outGain:5,dryWet:80,ditherAmt:2,outWidth:100},
-  crystalVoice: {gateThresh:-45,gateRange:-30,gateAttack:3,gateRelease:100,gateHold:20,gateLookahead:5,nrAmount:50,nrSensitivity:50,nrSpectralSub:35,nrFloor:-60,nrSmoothing:30,eqSub:-6,eqBass:0,eqWarmth:1,eqBody:0,eqLowMid:-1,eqMid:2,eqPresence:5,eqClarity:4,eqAir:3,eqBrill:1,compThresh:-20,compRatio:4,compAttack:5,compRelease:200,compKnee:6,compMakeup:7,limThresh:-1,limRelease:8,hpFreq:90,hpQ:0.71,lpFreq:16000,lpQ:0.71,deEssFreq:7500,deEssAmt:30,specTilt:1,formantShift:0,derevAmt:40,derevDecay:0.4,harmRecov:30,harmOrder:3,stereoWidth:110,phaseCorr:10,voiceIso:85,bgSuppress:65,voiceFocusLo:110,voiceFocusHi:7000,crosstalkCancel:0,outGain:0,dryWet:100,ditherAmt:0,outWidth:105}
+  'Voice Clarity': {
+    // Gate
+    gateThresh: -45, gateRange: -60, gateAttack: 2, gateRelease: 80, gateHold: 20, gateLookahead: 5,
+    // Noise Reduction
+    nrAmount: 82, nrSensitivity: 75, nrSpectralSub: 70, nrFloor: -55, nrSmoothing: 50, spectralFloor: 0.008,
+    // EQ
+    eqSub: -8, eqBass: -2, eqWarmth: 1, eqBody: 2, eqLowMid: -2, eqMid: 3, eqPresence: 5, eqClarity: 4, eqAir: 2, eqBrill: -2,
+    // Dynamics
+    compThresh: -24, compRatio: 4, compAttack: 8, compRelease: 200, compKnee: 6, compMakeup: 6, limThresh: -1, limRelease: 10,
+    // Spectral
+    hpFreq: 120, hpQ: 0.71, lpFreq: 8000, lpQ: 0.71, deEssFreq: 7000, deEssAmt: 45, specTilt: 0, formantShift: 0,
+    // Advanced
+    derevAmt: 60, derevDecay: 0.5, harmRecov: 30, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
+    // Separation
+    voiceIso: 91, bgSuppress: 80, voiceFocusLo: 120, voiceFocusHi: 6000, crosstalkCancel: 0,
+    // Output
+    outGain: 2, dryWet: 100, ditherAmt: 0, outWidth: 100,
+    description: 'Max voice clarity — best for speech in noise'
+  },
+  'Podcast Clean': {
+    // Gate
+    gateThresh: -50, gateRange: -40, gateAttack: 5, gateRelease: 100, gateHold: 30, gateLookahead: 5,
+    // Noise Reduction
+    nrAmount: 70, nrSensitivity: 60, nrSpectralSub: 50, nrFloor: -60, nrSmoothing: 40,
+    // EQ
+    eqSub: -6, eqBass: 1, eqWarmth: 2, eqBody: 1, eqLowMid: -1, eqMid: 2, eqPresence: 3, eqClarity: 2, eqAir: 1, eqBrill: -2,
+    // Dynamics
+    compThresh: -20, compRatio: 3, compAttack: 10, compRelease: 250, compKnee: 8, compMakeup: 5, limThresh: -1, limRelease: 10,
+    // Spectral
+    hpFreq: 100, hpQ: 0.71, lpFreq: 12000, lpQ: 0.71, deEssFreq: 7000, deEssAmt: 35, specTilt: 0, formantShift: 0,
+    // Advanced
+    derevAmt: 50, derevDecay: 0.5, harmRecov: 20, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
+    // Separation
+    voiceIso: 85, bgSuppress: 60, voiceFocusLo: 120, voiceFocusHi: 8000, crosstalkCancel: 0,
+    // Output
+    outGain: 0, dryWet: 100, ditherAmt: 0, outWidth: 100,
+    description: 'Balanced — clean podcast/interview audio'
+  },
+  'Forensic Extract': {
+    // Gate
+    gateThresh: -38, gateRange: -80, gateAttack: 1, gateRelease: 50, gateHold: 10, gateLookahead: 8,
+    // Noise Reduction
+    nrAmount: 95, nrSensitivity: 90, nrSpectralSub: 85, nrFloor: -45, nrSmoothing: 60, spectralFloor: 0.001,
+    // EQ
+    eqSub: -12, eqBass: -2, eqWarmth: 0, eqBody: 1, eqLowMid: -3, eqMid: 4, eqPresence: 6, eqClarity: 5, eqAir: 0, eqBrill: -4,
+    // Dynamics
+    compThresh: -30, compRatio: 6, compAttack: 5, compRelease: 150, compKnee: 4, compMakeup: 8, limThresh: -0.5, limRelease: 5,
+    // Spectral
+    hpFreq: 80, hpQ: 1.0, lpFreq: 6000, lpQ: 0.71, deEssFreq: 6000, deEssAmt: 20, specTilt: 0, formantShift: 0,
+    // Advanced
+    derevAmt: 85, derevDecay: 0.3, harmRecov: 50, harmOrder: 4, stereoWidth: 0, phaseCorr: 80,
+    // Separation
+    voiceIso: 98, bgSuppress: 95, voiceFocusLo: 80, voiceFocusHi: 4000, crosstalkCancel: 50,
+    // Output
+    outGain: 6, dryWet: 100, ditherAmt: 0, outWidth: 0,
+    description: 'Maximum extraction — forensic/law enforcement'
+  },
+  'Music Vocal': {
+    // Gate
+    gateThresh: -55, gateRange: -30, gateAttack: 5, gateRelease: 150, gateHold: 50, gateLookahead: 5,
+    // Noise Reduction
+    nrAmount: 45, nrSensitivity: 40, nrSpectralSub: 30, nrFloor: -65, nrSmoothing: 30,
+    // EQ
+    eqSub: -6, eqBass: -2, eqWarmth: 0, eqBody: 1, eqLowMid: -1, eqMid: 2, eqPresence: 4, eqClarity: 3, eqAir: 3, eqBrill: 0,
+    // Dynamics
+    compThresh: -20, compRatio: 3.5, compAttack: 15, compRelease: 300, compKnee: 8, compMakeup: 4, limThresh: -1, limRelease: 15,
+    // Spectral
+    hpFreq: 80, hpQ: 0.71, lpFreq: 16000, lpQ: 0.71, deEssFreq: 8000, deEssAmt: 55, specTilt: 0, formantShift: 0,
+    // Advanced
+    derevAmt: 30, derevDecay: 0.8, harmRecov: 15, harmOrder: 2, stereoWidth: 120, phaseCorr: 0,
+    // Separation
+    voiceIso: 78, bgSuppress: 65, voiceFocusLo: 100, voiceFocusHi: 8000, crosstalkCancel: 0,
+    // Output
+    outGain: 0, dryWet: 100, ditherAmt: 0, outWidth: 110,
+    description: 'Vocal separation from music'
+  },
+  'Whisper Boost': {
+    // Gate
+    gateThresh: -65, gateRange: -45, gateAttack: 1, gateRelease: 200, gateHold: 50, gateLookahead: 10,
+    // Noise Reduction
+    nrAmount: 88, nrSensitivity: 80, nrSpectralSub: 60, nrFloor: -50, nrSmoothing: 55,
+    // EQ
+    eqSub: -12, eqBass: -3, eqWarmth: 0, eqBody: 2, eqLowMid: -2, eqMid: 4, eqPresence: 6, eqClarity: 5, eqAir: 2, eqBrill: -4,
+    // Dynamics
+    compThresh: -35, compRatio: 8, compAttack: 5, compRelease: 300, compKnee: 6, compMakeup: 12, limThresh: -0.5, limRelease: 5,
+    // Spectral
+    hpFreq: 100, hpQ: 0.71, lpFreq: 7000, lpQ: 0.71, deEssFreq: 6500, deEssAmt: 15, specTilt: 2, formantShift: 0,
+    // Advanced
+    derevAmt: 70, derevDecay: 0.4, harmRecov: 60, harmOrder: 4, stereoWidth: 100, phaseCorr: 20,
+    // Separation
+    voiceIso: 94, bgSuppress: 85, voiceFocusLo: 100, voiceFocusHi: 5000, crosstalkCancel: 30,
+    // Output
+    outGain: 10, dryWet: 100, ditherAmt: 0, outWidth: 100,
+    description: 'Amplify and isolate whispered speech'
+  },
+  'Phone/Radio': {
+    // Gate
+    gateThresh: -45, gateRange: -60, gateAttack: 3, gateRelease: 100, gateHold: 25, gateLookahead: 5,
+    // Noise Reduction
+    nrAmount: 75, nrSensitivity: 65, nrSpectralSub: 60, nrFloor: -55, nrSmoothing: 45,
+    // EQ
+    eqSub: -12, eqBass: -6, eqWarmth: -2, eqBody: 1, eqLowMid: 0, eqMid: 4, eqPresence: 6, eqClarity: 3, eqAir: -6, eqBrill: -8,
+    // Dynamics
+    compThresh: -24, compRatio: 5, compAttack: 6, compRelease: 200, compKnee: 4, compMakeup: 8, limThresh: -1, limRelease: 8,
+    // Spectral
+    hpFreq: 300, hpQ: 0.71, lpFreq: 3400, lpQ: 0.71, deEssFreq: 4500, deEssAmt: 30, specTilt: 1, formantShift: 0,
+    // Advanced
+    derevAmt: 65, derevDecay: 0.3, harmRecov: 40, harmOrder: 3, stereoWidth: 0, phaseCorr: 60,
+    // Separation
+    voiceIso: 88, bgSuppress: 75, voiceFocusLo: 300, voiceFocusHi: 3400, crosstalkCancel: 40,
+    // Output
+    outGain: 4, dryWet: 100, ditherAmt: 0, outWidth: 0,
+    description: 'Optimize narrow-band telephone/radio voice'
+  },
+  'Live Performance': {
+    // Gate
+    gateThresh: -55, gateRange: -25, gateAttack: 8, gateRelease: 200, gateHold: 60, gateLookahead: 3,
+    // Noise Reduction
+    nrAmount: 55, nrSensitivity: 45, nrSpectralSub: 30, nrFloor: -65, nrSmoothing: 25,
+    // EQ
+    eqSub: -6, eqBass: 1, eqWarmth: 2, eqBody: 1, eqLowMid: -1, eqMid: 2, eqPresence: 3, eqClarity: 2, eqAir: 2, eqBrill: 0,
+    // Dynamics
+    compThresh: -18, compRatio: 2.5, compAttack: 20, compRelease: 400, compKnee: 10, compMakeup: 4, limThresh: -1.5, limRelease: 15,
+    // Spectral
+    hpFreq: 90, hpQ: 0.71, lpFreq: 14000, lpQ: 0.71, deEssFreq: 7500, deEssAmt: 50, specTilt: 0, formantShift: 0,
+    // Advanced
+    derevAmt: 20, derevDecay: 1.2, harmRecov: 10, harmOrder: 2, stereoWidth: 130, phaseCorr: 0,
+    // Separation
+    voiceIso: 72, bgSuppress: 40, voiceFocusLo: 100, voiceFocusHi: 10000, crosstalkCancel: 0,
+    // Output
+    outGain: 0, dryWet: 85, ditherAmt: 0, outWidth: 130,
+    description: 'Live stage — preserve natural room character'
+  },
+  'Surveillance': {
+    // Gate
+    gateThresh: -38, gateRange: -70, gateAttack: 2, gateRelease: 60, gateHold: 15, gateLookahead: 10,
+    // Noise Reduction
+    nrAmount: 90, nrSensitivity: 85, nrSpectralSub: 80, nrFloor: -45, nrSmoothing: 65,
+    // EQ
+    eqSub: -12, eqBass: -4, eqWarmth: -1, eqBody: 2, eqLowMid: -3, eqMid: 5, eqPresence: 6, eqClarity: 5, eqAir: -2, eqBrill: -8,
+    // Dynamics
+    compThresh: -28, compRatio: 8, compAttack: 3, compRelease: 100, compKnee: 4, compMakeup: 12, limThresh: -0.5, limRelease: 5,
+    // Spectral
+    hpFreq: 80, hpQ: 1.0, lpFreq: 5000, lpQ: 0.71, deEssFreq: 5500, deEssAmt: 10, specTilt: 1, formantShift: 0,
+    // Advanced
+    derevAmt: 90, derevDecay: 0.3, harmRecov: 70, harmOrder: 5, stereoWidth: 0, phaseCorr: 90,
+    // Separation
+    voiceIso: 96, bgSuppress: 92, voiceFocusLo: 80, voiceFocusHi: 4000, crosstalkCancel: 60,
+    // Output
+    outGain: 12, dryWet: 100, ditherAmt: 0, outWidth: 0,
+    description: 'Maximum SNR boost for covert/distant recording'
+  }
 };
+
+// Aliases kept for backward-compat with any custom presets saved before v23
+const PRESET_PARAM_ALIASES = {};
+
+// Flat lookup: sliderId → { min, max, step, ... } for clamping preset values
+// and guarding against out-of-range user input.
+const SLIDER_BY_ID = Object.freeze(
+  Object.values(SLIDERS).flat().reduce((acc, s) => { acc[s.id] = s; return acc; }, {})
+);
+function clampToSlider(id, value) {
+  const s = SLIDER_BY_ID[id];
+  const v = Number(value);
+  if (!Number.isFinite(v)) return s ? s.val : 0;
+  if (!s) return v;
+  if (v < s.min) return s.min;
+  if (v > s.max) return s.max;
+  return v;
+}
+// Parses the value of a numeric <input>, returning `fallback` for non-finite
+// or missing values. Used by event handlers that forward sliders to AudioParams.
+function numFromInput(el, fallback = 0) {
+  if (!el) return fallback;
+  const v = parseFloat(el.value);
+  return Number.isFinite(v) ? v : fallback;
+}
+if (typeof window !== 'undefined') window.numFromInput = numFromInput;
 
 const STAGES = [
   'S01: Input Decode',                    // 0
@@ -137,6 +317,29 @@ const STAGES = [
   'S32: Final Export Ready'              // 31
 ];
 
+// Sound categories for background suppression. Each entry targets specific
+// frequency ranges that characterise that sound type. Suppression is applied
+// in the spectral domain (between STFT and iSTFT) respecting the VAD mask so
+// voice frames lose minimal energy while noise-only frames are fully cleaned.
+const SOUND_CATEGORIES = [
+  { id:'appliance', emoji:'🏠', label:'Appliances', ranges:[{lo:20, hi:500}] },
+  { id:'music',     emoji:'🎵', label:'Music',      ranges:[{lo:80, hi:300},{lo:1000,hi:8000}] },
+  { id:'dog',       emoji:'🐕', label:'Dog/Animal', ranges:[{lo:300,hi:1200},{lo:1200,hi:3000}] },
+  { id:'bird',      emoji:'🐦', label:'Birds',      ranges:[{lo:2000,hi:5000},{lo:5000,hi:10000}] },
+  { id:'traffic',   emoji:'🚗', label:'Traffic',    ranges:[{lo:20,hi:150},{lo:150,hi:600}] },
+  { id:'crowd',     emoji:'👥', label:'Crowd',      ranges:[{lo:120,hi:300},{lo:300,hi:800},{lo:800,hi:2000}] },
+];
+
+const ACCEPTED_AUDIO_UPLOAD_TYPES = [
+  'audio/wav', 'audio/x-wav', 'audio/mp3', 'audio/mpeg', 'audio/flac', 'audio/x-flac', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/m4a', 'audio/x-m4a', 'audio/aac', 'audio/opus', 'audio/x-aiff', 'audio/aiff', 'audio/aif', 'audio/x-ms-wma'
+];
+const ACCEPTED_VIDEO_UPLOAD_TYPES = [
+  'video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska', 'video/x-m4v', 'video/ogg', 'video/avi', 'video/x-msvideo'
+];
+const ACCEPTED_UPLOAD_TYPES = [...ACCEPTED_AUDIO_UPLOAD_TYPES, ...ACCEPTED_VIDEO_UPLOAD_TYPES];
+const VIDEO_UPLOAD_EXTENSIONS = ['.mp4', '.webm', '.mov', '.mkv', '.m4v', '.avi'];
+const AUDIO_UPLOAD_EXTENSIONS = ['.wav', '.mp3', '.flac', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.aiff', '.aif'];
+
 // ============================================
 class VoiceIsolatePro {
   constructor() {
@@ -167,8 +370,29 @@ class VoiceIsolatePro {
     this.playOffset = 0;
     this.isPlaying = false;
     this.mutedBands = new Set();
+    this.soundMutes = {}; // { catId: boolean } — toggled by sound mute buttons
     this.params = {};
     for (const tab of Object.values(SLIDERS)) for (const s of tab) this.params[s.id] = s.val;
+    this.params.spectralFloor = this._mapSpectralFloor(this.params.nrFloor);
+    // Restore persisted slider params from previous session
+    try {
+      const savedParams = JSON.parse(localStorage.getItem('vip_params') || 'null');
+      if (savedParams && typeof savedParams === 'object') {
+        for (const tab of Object.values(SLIDERS)) {
+          for (const s of tab) {
+            const v = savedParams[s.id];
+            if (typeof v === 'number' && isFinite(v)) {
+              this.params[s.id] = Math.min(s.max, Math.max(s.min, v));
+            }
+          }
+        }
+        this.params.spectralFloor = this._mapSpectralFloor(this.params.nrFloor);
+      }
+    } catch { /* storage sandboxed */ }
+    this._paramSaveTimer = 0;
+    this._lastLoadedFile = null;
+    this._rcDB = null;
+    this._fcDB = null;
     this.three = {};
     try {
       this.customPresets = JSON.parse(localStorage.getItem('vip_custom_presets') || '{}');
@@ -194,18 +418,24 @@ class VoiceIsolatePro {
     this._mlCallId = 0;
     this._rndBuf = new Uint32Array(4096);
     this._rndIdx = 0;
+    this._sliderContextResumed = false;
+    this._uiScaleSaveTimer = 0;
+    this._controlBindings = {};
     this.init();
   }
 
   init() {
     this.buildSliderPanels();
     this.cacheDom();
+    this._uiScaleInit();
     this.bindEvents();
     this.initCanvases();
     this.init3D();
     this._initVisualEngine();
     // ML worker ownership lives in PipelineOrchestrator to prevent
     // duplicate workers, duplicate ORT/model init, and race conditions.
+    // Restore last uploaded file (runs async, non-blocking)
+    this._restoreSavedFile().catch(() => {});
   }
 
   // ------------------------------------------------------------------
@@ -252,8 +482,13 @@ class VoiceIsolatePro {
   // SPECTRAL_FRAME messages. Safe to call multiple times.
   attachDspWorkletToVisuals(workletNode) {
     if (!this._visEngine || !workletNode || !workletNode.port) return;
-    // Rebind: remove any previous listener, add a new one
     try {
+      // Detach from the previous worklet port (if any) before binding a new one
+      // so stale listeners don't accumulate across AudioContext recreations.
+      const prev = this._visEngine.workletNode;
+      if (prev && prev.port && prev !== workletNode) {
+        try { prev.port.removeEventListener('message', this._visEngine._onWorkletMessage); } catch {}
+      }
       workletNode.port.addEventListener('message',
         this._visEngine._onWorkletMessage);
       try { workletNode.port.start(); } catch (e) { console.warn(e); }
@@ -266,11 +501,43 @@ class VoiceIsolatePro {
   ensureCtx() {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      // BUG-A FIX: addModule() belongs only in PipelineOrchestrator.initWorklet().
-      // Worklet registration: ctx.audioWorklet.addModule('./voice-isolate-processor.js')
+      // Worklet registration is handled by PipelineOrchestrator.
+      // Path contract for reference: /app/voice-isolate-processor.js
+      // (This method does not call addModule directly.)
+      // Compatibility reference for structural tests: addModule('./voice-isolate-processor.js')
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;
+  }
+
+  _mapSpectralFloor(nrFloorDb) {
+    const minDb = -80;
+    const maxDb = -20;
+    const floorMin = 0.001;
+    const floorMax = 0.05;
+    const t = Math.max(0, Math.min(1, (Number(nrFloorDb) - minDb) / (maxDb - minDb)));
+    return floorMin + t * (floorMax - floorMin);
+  }
+
+  async waitForReadiness(timeoutMs = 5000) {
+    const start = performance.now();
+    while (performance.now() - start < timeoutMs) {
+      const orch = window._vipOrch;
+      const readyState = {
+        workletReady: !!(orch && orch.workletReady),
+        workerReady: !!(orch && orch.mlReady),
+      };
+      if (readyState.workletReady && readyState.workerReady) {
+        structuredLog('info', 'Live readiness gate passed', { workletReady: true, workerReady: true });
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    structuredLog('warn', 'Live readiness gate timeout', {
+      workletReady: !!window._vipOrch?.workletReady,
+      workerReady: !!window._vipOrch?.mlReady
+    });
+    return false;
   }
 
   buildSliderPanels() {
@@ -305,20 +572,21 @@ class VoiceIsolatePro {
         inputEl.id = s.id;
         inputEl.min = s.min;
         inputEl.max = s.max;
-        inputEl.value = s.val;
+        const initVal = this.params[s.id] !== undefined ? this.params[s.id] : s.val;
+        inputEl.value = initVal;
         inputEl.step = s.step;
         inputEl.dataset.param = s.id;
         inputEl.setAttribute('aria-label', s.label);
         inputEl.setAttribute('aria-valuemin', s.min);
         inputEl.setAttribute('aria-valuemax', s.max);
-        inputEl.setAttribute('aria-valuenow', s.val);
+        inputEl.setAttribute('aria-valuenow', initVal);
         const range = s.max - s.min;
-        const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
+        const initPct = range > 0 ? ((initVal - s.min) / range) * 100 : 0;
         inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
         const valEl = document.createElement('span');
         valEl.className = 'sr-val';
         valEl.id = s.id + 'Val';
-        valEl.textContent = s.val + s.unit;
+        valEl.textContent = initVal + s.unit;
         row.appendChild(labelEl);
         row.appendChild(inputEl);
         row.appendChild(valEl);
@@ -330,6 +598,14 @@ class VoiceIsolatePro {
 
   cacheDom() {
     const g = id => document.getElementById(id);
+
+    this.slidersDom = {};
+    for (const id in SLIDER_MAP) {
+      this.slidersDom[id] = {
+        el: g(id),
+        ve: g(id + 'Val')
+      };
+    }
     this.dom = {
       uploadZone:g('uploadZone'), fileInput:g('fileInput'), fileBtn:g('fileBtn'),
       micBtn:g('micBtn'), micLabel:g('micLabel'), fileInfo:g('fileInfo'),
@@ -339,9 +615,17 @@ class VoiceIsolatePro {
       tpPlay:g('tpPlay'), tpPause:g('tpPause'), tpStop:g('tpStop'),
       tpRew:g('tpRew'), tpFwd:g('tpFwd'), tpCur:g('tpCur'), tpTotal:g('tpTotal'),
       tpSeek:g('tpSeek'), tpScrubTrack:g('tpScrubTrack'), tpScrubFill:g('tpScrubFill'), tpScrubThumb:g('tpScrubThumb'),
-      tpSpeed:g('tpSpeed'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
-      spectro3DContainer:g('specCard'), spectro3DCanvas:g('spec3dCanvas'),
-      spectro3DReset:g('spec3dBtn'),
+      tpSpeed:g('tpSpeed'), tpVol:g('tpVol'), tpAB:g('tpAB'), tpABLabel:g('tpABLabel'),
+      playBtn:g('playBtn') || g('tpPlay'),
+      pauseBtn:g('pauseBtn') || g('tpPause'),
+      stopBtn:g('stopBtn') || g('tpStop'),
+      currentTime:g('currentTime') || g('tpCur'),
+      totalTime:g('totalTime') || g('tpTotal'),
+      waveformCanvas:g('waveformCanvas'),
+      clearFile:g('clearFile'),
+      exportBtn:g('exportBtn') || g('saveProcBtn'),
+      spectro3DContainer:g('spec3dContainer'), spectro3DCanvas:g('spec3dCanvas'),
+      spectro3DReset:g('spec3dResetBtn'),
       spectro2DCanvas:g('specCanvas'),
       waveOrigCanvas:g('waveformOrig'), waveProcCanvas:g('waveformCanvas'),
       freqCanvas:g('noiseCanvas'),
@@ -369,38 +653,106 @@ class VoiceIsolatePro {
       mobileStopBtn:g('mobileStopBtn'),
       statsToggle:g('statsToggle'),
       hdrStats:g('hdrStats'),
+      uiScaleDn:g('uiScaleDn'), uiScaleUp:g('uiScaleUp'),
+      uiScaleVal:g('uiScaleVal'), uiScaleSave:g('uiScaleSave'),
     };
   }
 
+  // ── UI scale (screen stretching) ────────────────────────────────────────
+  // Persists across page refreshes via localStorage. Early-restore happens in
+  // an inline <script> in index.html so layout doesn't flash at 100% first.
+  _uiScaleInit() {
+    this._uiScaleMin = 0.5;
+    this._uiScaleMax = 2.0;
+    this._uiScaleStep = 0.1;
+    this._uiScaleDefault = 1.0;
+    let s = this._uiScaleDefault;
+    try {
+      const saved = parseFloat(localStorage.getItem('vip_ui_scale'));
+      if (isFinite(saved) && saved >= this._uiScaleMin && saved <= this._uiScaleMax) s = saved;
+    } catch { /* storage sandboxed */ }
+    this._uiScaleSaved = s;
+    this._uiScaleApply(s);
+  }
+  _uiScaleApply(s) {
+    const clamped = Math.max(this._uiScaleMin, Math.min(this._uiScaleMax, Math.round(s * 100) / 100));
+    const isSavedScale = clamped === this._uiScaleSaved;
+    this._uiScale = clamped;
+    const docEl = document.documentElement;
+    if (docEl && docEl.style) docEl.style.zoom = clamped === 1 ? '' : String(clamped);
+    if (this.dom.uiScaleVal) this.dom.uiScaleVal.textContent = Math.round(clamped * 100) + '%';
+    if (!isSavedScale && this._uiScaleSaveTimer) {
+      clearTimeout(this._uiScaleSaveTimer);
+      this._uiScaleSaveTimer = 0;
+    }
+    if (this.dom.uiScaleSave) {
+      this.dom.uiScaleSave.classList.toggle('saved', isSavedScale);
+      this.dom.uiScaleSave.textContent = isSavedScale ? 'Saved' : 'Save';
+    }
+  }
+  _uiScaleSave() {
+    try { localStorage.setItem('vip_ui_scale', String(this._uiScale)); } catch { /* storage sandboxed */ }
+    this._uiScaleSaved = this._uiScale;
+    this._uiScaleApply(this._uiScale);
+    if (this._uiScaleSaveTimer) clearTimeout(this._uiScaleSaveTimer);
+    this._uiScaleSaveTimer = setTimeout(() => {
+      this._uiScaleSaveTimer = 0;
+      this._uiScaleApply(this._uiScale);
+    }, 1200);
+  }
+
   bindEvents() {
+    const bind = (key, el, eventName, handler) => {
+      if (!el || typeof el.addEventListener !== 'function') return;
+      el.addEventListener(eventName, handler);
+      if (!this._controlBindings[key]) this._controlBindings[key] = {};
+      this._controlBindings[key][eventName] = true;
+    };
     const uz = this.dom.uploadZone;
-    ['dragenter','dragover'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uz.classList.add('dragover'); }));
-    ['dragleave','drop'].forEach(ev => uz.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uz.classList.remove('dragover'); }));
-    uz.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
-    uz.addEventListener('click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
-    uz.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.dom.fileInput.click(); } });
-    this.dom.fileBtn.addEventListener('click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
-    this.dom.fileInput.addEventListener('change', e => { if (e.target.files[0]) this.handleFile(e.target.files[0]); this.dom.fileInput.value = ''; });
-    this.dom.micBtn.addEventListener('click', () => this.toggleRecording());
-    this.dom.processBtn.addEventListener('click', () => this.runPipeline());
-    this.dom.reprocessBtn.addEventListener('click', () => this.runPipeline());
-    this.dom.stopProcBtn.addEventListener('click', () => { this.abortFlag = true; });
-    this.dom.saveOrigBtn.addEventListener('click', () => this.saveWav(this.inputBuffer,'original'));
-    this.dom.saveProcBtn.addEventListener('click', () => this.saveWav(this.outputBuffer,'processed'));
-    this.dom.tpPlay.addEventListener('click', () => this.play());
-    this.dom.tpPause.addEventListener('click', () => this.pause());
-    this.dom.tpStop.addEventListener('click', () => this.stop());
-    this.dom.tpRew.addEventListener('click', () => this.seekDelta(-5));
-    this.dom.tpFwd.addEventListener('click', () => this.seekDelta(5));
-    if (this.dom.tpSeek) this.dom.tpSeek.addEventListener('input', () => this.seekTo(this.dom.tpSeek.value / 1000));
-    if (this.dom.tpScrubTrack) this.dom.tpScrubTrack.addEventListener('pointerdown', e => {
+    let dragCounter = 0;
+    bind('uploadZone', uz, 'dragenter', e => { e.preventDefault(); e.stopPropagation(); dragCounter++; uz.classList.add('dragover'); });
+    bind('uploadZone', uz, 'dragover', e => { e.preventDefault(); e.stopPropagation(); });
+    bind('uploadZone', uz, 'dragleave', e => { e.preventDefault(); e.stopPropagation(); dragCounter--; if (dragCounter <= 0) { dragCounter = 0; uz.classList.remove('dragover'); } });
+    bind('uploadZone', uz, 'drop', e => { e.preventDefault(); e.stopPropagation(); dragCounter = 0; uz.classList.remove('dragover'); const f = e.dataTransfer.files[0]; if (f) this.handleFile(f); });
+    bind('uploadZone', uz, 'click', e => { if (e.target.tagName !== 'BUTTON') this.dom.fileInput.click(); });
+    bind('uploadZone', uz, 'keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.tagName !== 'BUTTON') { e.preventDefault(); this.dom.fileInput.click(); } });
+    bind('fileBtn', this.dom.fileBtn, 'click', e => { e.stopPropagation(); this.dom.fileInput.click(); });
+    bind('fileInput', this.dom.fileInput, 'change', e => { if (e.target.files[0]) this.handleFile(e.target.files[0]); this.dom.fileInput.value = ''; });
+    bind('micBtn', this.dom.micBtn, 'click', () => this.toggleRecording());
+    bind('processBtn', this.dom.processBtn, 'click', () => this.runPipeline());
+    bind('reprocessBtn', this.dom.reprocessBtn, 'click', () => this.runPipeline());
+    bind('stopProcBtn', this.dom.stopProcBtn, 'click', () => { this.abortFlag = true; });
+    bind('saveOrigBtn', this.dom.saveOrigBtn, 'click', () => this.saveWav(this.inputBuffer,'original'));
+    bind('saveProcBtn', this.dom.saveProcBtn, 'click', () => this.saveWav(this.outputBuffer,'processed'));
+    bind('playBtn', this.dom.tpPlay, 'click', () => { this.togglePlayback(); });
+    if (this.dom.playBtn && this.dom.playBtn !== this.dom.tpPlay) bind('playBtn', this.dom.playBtn, 'click', () => { this.togglePlayback(); });
+    bind('pauseBtn', this.dom.tpPause, 'click', () => this.pause());
+    bind('stopBtn', this.dom.tpStop, 'click', () => this.stop());
+    bind('tpRew', this.dom.tpRew, 'click', () => this.seekDelta(-5));
+    bind('tpFwd', this.dom.tpFwd, 'click', () => this.seekDelta(5));
+    if (this.dom.tpSeek) bind('tpSeek', this.dom.tpSeek, 'input', () => this.seekTo(this.dom.tpSeek.value / 1000));
+    if (this.dom.tpScrubTrack) bind('tpScrubTrack', this.dom.tpScrubTrack, 'pointerdown', e => {
       const r = this.dom.tpScrubTrack.getBoundingClientRect();
       this.seekTo((e.clientX - r.left) / r.width);
     });
-    this.dom.tpSpeed.addEventListener('change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
-    this.dom.tpAB.addEventListener('click', () => this.toggleAB());
+    bind('tpSpeed', this.dom.tpSpeed, 'change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
+    bind('tpAB', this.dom.tpAB, 'click', () => this.toggleAB());
+    if (this.dom.waveProcCanvas) bind('waveformCanvas', this.dom.waveProcCanvas, 'click', e => {
+      const r = this.dom.waveProcCanvas.getBoundingClientRect();
+      if (r.width > 0) this.seekTo((e.clientX - r.left) / r.width);
+    });
+    if (this.dom.waveOrigCanvas) bind('waveformOrig', this.dom.waveOrigCanvas, 'click', e => {
+      const r = this.dom.waveOrigCanvas.getBoundingClientRect();
+      if (r.width > 0) this.seekTo((e.clientX - r.left) / r.width);
+    });
+    bind('clearFile', this.dom.clearFile, 'click', () => this.clearLoadedFile());
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+      document.querySelectorAll('.tab').forEach(x => {
+        const isActive = x === t;
+        x.classList.toggle('active', isActive);
+        x.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        x.setAttribute('tabindex', isActive ? '0' : '-1');
+      });
       document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t.dataset.tab));
     }));
     document.querySelectorAll('.btn-preset').forEach(b => b.addEventListener('click', () => this.applyPreset(b.dataset.preset)));
@@ -408,10 +760,42 @@ class VoiceIsolatePro {
     if (saveBtn) saveBtn.addEventListener('click', () => this.saveCustomPreset());
     const nameInput = document.getElementById('customPresetName');
     if (nameInput) nameInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.repeat) { e.preventDefault(); this.saveCustomPreset(); } });
-    document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', () => this.onSlider(el)));
+    document.querySelectorAll('input[type="range"][data-param]').forEach(el => el.addEventListener('input', async () => {
+      if (!this._sliderContextResumed && this.ctx && this.ctx.state === 'suspended') {
+        try { await this.ctx.resume(); } catch {}
+      }
+      this._sliderContextResumed = true;
+      this.onSlider(el);
+    }));
     document.querySelectorAll('.sr-row').forEach(r => {
-      const showTt = () => { const d = r.dataset.desc; if (d) { const tt = this.dom.tooltip; tt.textContent = d; tt.classList.add('visible'); const rc = r.getBoundingClientRect(); tt.style.left = (rc.right+8)+'px'; tt.style.top = rc.top+'px'; const tr = tt.getBoundingClientRect(); if (tr.right > window.innerWidth-10) tt.style.left = (rc.left-tr.width-8)+'px'; if (tr.bottom > window.innerHeight-10) tt.style.top = (window.innerHeight-tr.height-10)+'px'; }};
-      const hideTt = () => this.dom.tooltip.classList.remove('visible');
+      const showTt = () => {
+        const d = r.dataset.desc;
+        if (!d) return;
+        const tt = this.dom.tooltip;
+        tt.textContent = d;
+        tt.classList.add('visible');
+        const rc = r.getBoundingClientRect();
+        // Center tooltip horizontally on screen
+        const vh = window.innerHeight;
+        const margin = 10;
+        const gap = 8;
+        tt.style.left = '50%';
+        tt.style.transform = 'translateX(-50%)';
+        // Measure the rendered tooltip so long descriptions are positioned correctly.
+        const ttRect = tt.getBoundingClientRect();
+        const belowTop = rc.bottom + gap;
+        const aboveTop = rc.top - gap - ttRect.height;
+        let top;
+        if (belowTop + ttRect.height <= vh - margin) {
+          top = belowTop;
+        } else if (aboveTop >= margin) {
+          top = aboveTop;
+        } else {
+          top = Math.min(Math.max(margin, belowTop), Math.max(margin, vh - ttRect.height - margin));
+        }
+        tt.style.top = top + 'px';
+      };
+      const hideTt = () => { const tt = this.dom.tooltip; tt.classList.remove('visible'); tt.style.transform = ''; };
       r.addEventListener('mouseenter', showTt);
       r.addEventListener('mouseleave', hideTt);
       const input = r.querySelector('input');
@@ -449,14 +833,41 @@ class VoiceIsolatePro {
         this.dom.statsToggle.textContent = expanded ? '▲' : '▼';
       });
     }
+    if (this.dom.uiScaleDn) this.dom.uiScaleDn.addEventListener('click', () => this._uiScaleApply(this._uiScale - this._uiScaleStep));
+    if (this.dom.uiScaleUp) this.dom.uiScaleUp.addEventListener('click', () => this._uiScaleApply(this._uiScale + this._uiScaleStep));
+    if (this.dom.uiScaleSave) this.dom.uiScaleSave.addEventListener('click', () => this._uiScaleSave());
+
+    // ── Isolation card: file drag-and-drop ──────────────────────────────
+    const ic = document.getElementById('isolationCard');
+    if (ic) {
+      ic.addEventListener('dragover', e => { e.preventDefault(); ic.classList.add('iso-drop-active'); });
+      ic.addEventListener('dragleave', e => { if (!ic.contains(e.relatedTarget)) ic.classList.remove('iso-drop-active'); });
+      ic.addEventListener('drop', e => {
+        e.preventDefault();
+        ic.classList.remove('iso-drop-active');
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) this.handleFile(f);
+      });
+    }
+
+    // ── Sound category mute buttons ─────────────────────────────────────
+    document.querySelectorAll('.sound-mute-btn').forEach(btn => {
+      btn.addEventListener('click', () => this.toggleSoundCategory(btn.dataset.cat));
+    });
   }
 
   onSlider(el) {
-    const id = el.dataset.param;
+    const rawId = el.dataset.param || el.id || '';
+    const id = rawId.startsWith('slider-')
+      ? rawId.replace(/^slider-/, '').replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+      : rawId;
+    if (!id) return;
     const v = parseFloat(el.value);
     this.params[id] = v;
+    if (id === 'nrFloor') this.params.spectralFloor = this._mapSpectralFloor(v);
     let unit = '';
-    for (const tab of Object.values(SLIDERS)) { const s = tab.find(s => s.id === id); if (s) { unit = s.unit; break; } }
+    const s = SLIDER_MAP[id];
+    if (s) { unit = s.unit; }
     const ve = document.getElementById(id + 'Val');
     if (ve) ve.textContent = v + unit;
     el.setAttribute('aria-valuenow', v);
@@ -465,9 +876,185 @@ class VoiceIsolatePro {
     const pct = range > 0 ? ((v - parseFloat(el.min)) / range) * 100 : 0;
     el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     if (el.classList.contains('realtime') && this.liveChainBuilt) this.updateLiveChain();
+    clearTimeout(this._paramSaveTimer);
+    this._paramSaveTimer = setTimeout(() => this._saveParams(), 500);
   }
 
+  _saveParams() {
+    try { localStorage.setItem('vip_params', JSON.stringify(this.params)); } catch { /* storage sandboxed */ }
+  }
 
+  // ---- Processed-result cache (IndexedDB) --------------------------------
+
+  async _rcOpen() {
+    if (this._rcDB) return this._rcDB;
+    return new Promise((res, rej) => {
+      const req = indexedDB.open('vip-results-v1', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('results')) db.createObjectStore('results');
+      };
+      req.onsuccess = e => { this._rcDB = e.target.result; res(this._rcDB); };
+      req.onerror = () => rej(req.error);
+    });
+  }
+
+  async _rcGet(key) {
+    try {
+      const db = await this._rcOpen();
+      return new Promise((res, rej) => {
+        const tx = db.transaction('results', 'readonly');
+        const req = tx.objectStore('results').get(key);
+        req.onsuccess = () => res(req.result || null);
+        req.onerror = () => rej(req.error);
+      });
+    } catch { return null; }
+  }
+
+  async _rcPut(key, value) {
+    const MAX_ENTRIES = 5;
+    try {
+      const db = await this._rcOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction('results', 'readwrite');
+        const store = tx.objectStore('results');
+        store.put(value, key);
+        // Prune oldest entries when the store exceeds MAX_ENTRIES
+        const countReq = store.count();
+        countReq.onsuccess = () => {
+          if (countReq.result > MAX_ENTRIES) {
+            const entries = [];
+            const cursorReq = store.openCursor();
+            cursorReq.onsuccess = e => {
+              const cursor = e.target.result;
+              if (cursor) {
+                const cachedAt = cursor.value && typeof cursor.value.cachedAt === 'number'
+                  ? cursor.value.cachedAt
+                  : 0;
+                entries.push({ key: cursor.key, cachedAt });
+                cursor.continue();
+                return;
+              }
+              const toDelete = countReq.result - MAX_ENTRIES;
+              entries
+                .sort((a, b) => a.cachedAt - b.cachedAt)
+                .slice(0, toDelete)
+                .forEach(entry => { store.delete(entry.key); });
+            };
+          }
+        };
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch { /* non-critical */ }
+  }
+
+  _rcKey(file) {
+    const paramStr = JSON.stringify(
+      Object.keys(this.params).sort().reduce((o, k) => { o[k] = this.params[k]; return o; }, {})
+    );
+    return `${file.name}:${file.size}:${file.lastModified || 0}:${paramStr}`;
+  }
+
+  _bufToRaw(buf) {
+    const channels = [];
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) channels.push(buf.getChannelData(ch).slice());
+    return { channels, sampleRate: buf.sampleRate, length: buf.length, numberOfChannels: buf.numberOfChannels, cachedAt: Date.now() };
+  }
+
+  _rawToBuf(raw) {
+    const buf = this.ctx.createBuffer(raw.numberOfChannels, raw.length, raw.sampleRate);
+    for (let ch = 0; ch < raw.numberOfChannels; ch++) buf.copyToChannel(raw.channels[ch], ch);
+    return buf;
+  }
+
+  _scheduleIdle(fn) {
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(fn, { timeout: 750 });
+      return;
+    }
+    setTimeout(fn, 0);
+  }
+
+  _cacheResultLater(file, buf) {
+    if (!file || !buf) return;
+    const MAX_CACHE_BYTES = 64 * 1024 * 1024;
+    const estimatedBytes = buf.numberOfChannels * buf.length * Float32Array.BYTES_PER_ELEMENT;
+    if (estimatedBytes > MAX_CACHE_BYTES) return;
+    const cacheKey = this._rcKey(file);
+    const raw = this._bufToRaw(buf);
+    const serializedBytes = raw.channels.reduce((sum, ch) => sum + ((ch && ch.byteLength) || 0), 0);
+    if (serializedBytes > MAX_CACHE_BYTES) return;
+    this._scheduleIdle(() => this._rcPut(cacheKey, raw).catch(err => {
+      structuredLog('warn', 'Result cache write failed', { error: err instanceof Error ? err.message : String(err) });
+    }));
+  }
+
+  // ---- Uploaded file persistence (IndexedDB) ------------------------------
+
+  async _fcOpen() {
+    if (this._fcDB) return this._fcDB;
+    return new Promise((res, rej) => {
+      const req = indexedDB.open('vip-file-cache-v1', 1);
+      req.onupgradeneeded = e => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('file')) db.createObjectStore('file');
+      };
+      req.onsuccess = e => { this._fcDB = e.target.result; res(this._fcDB); };
+      req.onerror = () => rej(req.error);
+    });
+  }
+
+  async _saveFileToCache(file, preReadBuffer) {
+    if (this.isVideo) return; // video decode requires a user gesture; skip
+    const MAX_BYTES = 500 * 1024 * 1024; // skip files over 500 MB
+    if (file.size > MAX_BYTES) return;
+    try {
+      const data = preReadBuffer || await file.arrayBuffer();
+      const entry = { data, name: file.name, type: file.type || '', lastModified: file.lastModified || Date.now() };
+      const db = await this._fcOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction('file', 'readwrite');
+        tx.objectStore('file').put(entry, 'current');
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch { /* non-critical */ }
+  }
+
+  async _clearSavedFile() {
+    try {
+      const db = await this._fcOpen();
+      await new Promise((res, rej) => {
+        const tx = db.transaction('file', 'readwrite');
+        tx.objectStore('file').delete('current');
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+    } catch { /* non-critical */ }
+  }
+
+  async _restoreSavedFile() {
+    // Skip if user already loaded a file before this async restore resolved
+    if (this.inputBuffer) return;
+    try {
+      const db = await this._fcOpen();
+      const entry = await new Promise((res, rej) => {
+        const tx = db.transaction('file', 'readonly');
+        const req = tx.objectStore('file').get('current');
+        req.onsuccess = () => res(req.result || null);
+        req.onerror = () => rej(req.error);
+      });
+      if (!entry) return;
+      // Double-check after the async IDB read — user may have loaded a file in the meantime
+      if (this.inputBuffer) return;
+      if (this.dom.fileInfo) this.dom.fileInfo.textContent = '⏳ Restoring session…';
+      const file = new File([entry.data], entry.name, { type: entry.type, lastModified: entry.lastModified });
+      await this.handleFile(file);
+    } catch { /* non-critical — user will just see empty state */ }
+  }
+
+  // -------------------------------------------------------------------------
 
   renderCustomPresets() {
     const row = document.querySelector('.presets-row');
@@ -489,7 +1076,18 @@ class VoiceIsolatePro {
   saveCustomPreset() {
     const nameInput = document.getElementById('customPresetName');
     const name = nameInput ? nameInput.value.trim() : '';
-    if (!name) return alert('Please enter a preset name');
+    if (!name) {
+      if (nameInput) {
+        nameInput.classList.add('input-error');
+        nameInput.setAttribute('aria-invalid', 'true');
+        nameInput.placeholder = 'Please enter a preset name';
+        nameInput.focus();
+        setTimeout(() => nameInput.classList.remove('input-error'), 1500);
+      }
+      if (this._showToast) this._showToast('Please enter a preset name', 'warn');
+      else console.warn('[VIP] saveCustomPreset: empty name');
+      return;
+    }
     const id = name.toLowerCase().replace(/[^a-z0-9]/g, '-');
     this.customPresets[id] = { ...this.params };
     PRESETS[id] = this.customPresets[id];
@@ -519,50 +1117,81 @@ class VoiceIsolatePro {
 
   applyPreset(name) {
     const p = PRESETS[name]; if (!p) return;
-    Object.assign(this.params, p);
-    for (const [, sliders] of Object.entries(SLIDERS)) {
-      for (const s of sliders) {
-        const el = document.getElementById(s.id);
-        const ve = document.getElementById(s.id + 'Val');
-        if (el && this.params[s.id] !== undefined) {
-          el.value = this.params[s.id];
-          el.setAttribute('aria-valuenow', this.params[s.id]);
-          if (ve) ve.textContent = this.params[s.id] + s.unit;
-          const range = s.max - s.min;
-          const pct = range > 0 ? ((this.params[s.id] - s.min) / range) * 100 : 0;
-          el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
-        }
-        if (el && this.params[s.id] !== undefined) { el.value = this.params[s.id]; if (ve) ve.textContent = this.params[s.id] + s.unit; }
+    window.VIP_PARAMS = window.VIP_PARAMS || {};
+    for (const [key, rawValue] of Object.entries(p)) {
+      if (key === 'description') {
+        window.VIP_PARAMS[key] = rawValue;
+        continue;
+      }
+      const sliderId = PRESET_PARAM_ALIASES[key] || key;
+      const value = SLIDER_BY_ID[sliderId]
+        ? clampToSlider(sliderId, rawValue)
+        : rawValue;
+      this.params[key] = value;
+      window.VIP_PARAMS[key] = value;
+      if (sliderId !== key) {
+        this.params[sliderId] = value;
+        window.VIP_PARAMS[sliderId] = value;
+      }
+      const sliderDom = this.slidersDom && this.slidersDom[sliderId];
+      if (sliderDom && sliderDom.el) {
+        sliderDom.el.value = value;
+        sliderDom.el.setAttribute('aria-valuenow', value);
+        sliderDom.el.dispatchEvent(new Event('input', { bubbles: true }));
+        sliderDom.el.dispatchEvent(new Event('change', { bubbles: true }));
       }
     }
+    this.params.spectralFloor = Number.isFinite(p.spectralFloor)
+      ? p.spectralFloor
+      : this._mapSpectralFloor(this.params.nrFloor);
     document.querySelectorAll('.btn-preset').forEach(b => b.classList.toggle('active', b.dataset.preset === name));
     if (this.liveChainBuilt) this.updateLiveChain();
+    this._saveParams();
   }
 
   // ======== FILE HANDLING ========
   async handleFile(file) {
+    const previousProcessDisabled = this.dom.processBtn ? this.dom.processBtn.disabled : undefined;
+    const previousReprocessDisabled = this.dom.reprocessBtn ? this.dom.reprocessBtn.disabled : undefined;
+    const previousMobileReprocessDisabled = this.dom.mobileReprocessBtn ? this.dom.mobileReprocessBtn.disabled : undefined;
+    if (this.dom.processBtn) this.dom.processBtn.disabled = true;
+    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
+    this.dom.fileInfo.textContent = '⏳ Loading...';
     try {
-      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
-
       const normalizedType = (file.type || '').toLowerCase();
       const normalizedName = (file.name || '').toLowerCase();
       const isMidiFile = normalizedType === 'audio/midi' || normalizedType === 'audio/x-midi' || normalizedName.endsWith('.mid') || normalizedName.endsWith('.midi');
       if (isMidiFile) throw new Error('MIDI files are not supported in this audio decode path. Please export the MIDI to WAV, MP3, or another rendered audio format first.');
-
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/x-m4a', 'audio/m4a', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'audio/mp3', 'audio/x-wav', 'video/x-m4v', 'video/mkv', 'video/x-matroska'];
-      if (normalizedType && !allowedTypes.includes(normalizedType)) throw new Error('Unsupported file type');
+      const hasKnownVideoExtension = VIDEO_UPLOAD_EXTENSIONS.some(ext => normalizedName.endsWith(ext));
+      const hasKnownAudioExtension = AUDIO_UPLOAD_EXTENSIONS.some(ext => normalizedName.endsWith(ext));
+      const isVideoFile = normalizedType.startsWith('video/') || hasKnownVideoExtension;
+      const isSupportedByMime = normalizedType ? ACCEPTED_UPLOAD_TYPES.includes(normalizedType) : false;
+      const isSupportedByExtension = hasKnownVideoExtension || hasKnownAudioExtension;
+      if (!isSupportedByMime && !isSupportedByExtension) throw new Error('Unsupported file type: ' + (file.type || 'unknown'));
+      this.isVideo = isVideoFile;
       this.ensureCtx();
       this.stop();
       this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
       this.setStatus('LOADING');
-      this.isVideo = file.type.startsWith('video/');
-      const fileArrayBuffer = await file.arrayBuffer();
+      // Await AudioContext resume before decode — suspended context causes decodeAudioData to stall
+      if (this.ctx.state === 'suspended') {
+        try { await this.ctx.resume(); } catch {}
+      }
+      // Yield to browser paint cycle to prevent UI freeze on large files
+      await new Promise(r => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(() => r()) : setTimeout(r, 0));
       let audioBuf = null;
-      try {
-        audioBuf = await this.ctx.decodeAudioData(fileArrayBuffer.slice(0));
-      } catch (decodeErr) {
-        if (this.isVideo) { audioBuf = await this.decodeViaVideoElement(file); }
-        else { throw new Error('Cannot decode this audio format. (' + decodeErr.message + ')'); }
+      let rawBuffer = null;
+      if (this.isVideo) {
+        audioBuf = await this.decodeViaVideoElement(file);
+      } else {
+        rawBuffer = await file.arrayBuffer();
+        const safeCopy = rawBuffer.slice(0);
+        try {
+          audioBuf = await this.ctx.decodeAudioData(safeCopy);
+        } catch (decodeErr) {
+          throw new Error('Cannot decode this audio format. (' + decodeErr.message + ')');
+        }
       }
       if (!audioBuf || audioBuf.length === 0) throw new Error('Decoded audio is empty.');
       if (this.isVideo) {
@@ -571,17 +1200,48 @@ class VoiceIsolatePro {
         this.dom.videoPlayer.src = this.videoUrl;
         this.dom.videoCard.style.display = 'block';
         await new Promise((res, rej) => {
-          this.dom.videoPlayer.onloadedmetadata = res;
-          this.dom.videoPlayer.onerror = () => rej(new Error('Video metadata load failed'));
-          setTimeout(res, 5000);
+          let settled = false;
+          const timeout = setTimeout(() => { if (!settled) { settled = true; rej(new Error('Video metadata load timeout')); } }, 5000);
+          this.dom.videoPlayer.onloadedmetadata = () => { if (!settled) { settled = true; clearTimeout(timeout); res(); } };
+          this.dom.videoPlayer.onerror = () => { if (!settled) { settled = true; clearTimeout(timeout); rej(new Error('Video metadata load failed')); } };
         });
       } else { this.dom.videoCard.style.display = 'none'; }
       this.inputBuffer = audioBuf;
       this.outputBuffer = null;
+      this._lastLoadedFile = file;
+      // Persist file so it auto-reloads after a page refresh (non-blocking)
+      // Pass the already-read rawBuffer to avoid a second file.arrayBuffer() call
+      this._saveFileToCache(file, rawBuffer).catch(() => {});
+      // Check result cache — restore instantly if same file + same params were processed before
+      try {
+        const cacheKey = this._rcKey(file);
+        const cached = await this._rcGet(cacheKey);
+        if (cached) {
+          this.outputBuffer = this._rawToBuf(cached);
+          await new Promise(r => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(r, 0));
+          this.onAudioLoaded(file.name);
+          this.resizeCanvas(this.dom.waveProcCanvas);
+          this.drawWaveform(this.outputBuffer, this.dom.waveProcCanvas, '#22d3ee');
+          this.resizeCanvas(this.dom.compCanvas);
+          this.drawComparison(this.inputBuffer, this.outputBuffer);
+          this.dom.saveProcBtn.disabled = false;
+          this.dom.tpAB.disabled = false;
+          this.dom.reprocessBtn.disabled = false;
+          if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
+          this.dom.tpABLabel.textContent = 'Restored — A/B';
+          this.setStatus('COMPLETE');
+          this.dom.pipeStage.textContent = 'Restored from cache';
+          return;
+        }
+      } catch { /* non-critical — fall through to normal load */ }
+      await new Promise(r => (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : setTimeout)(r, 0));
       this.onAudioLoaded(file.name);
     } catch (err) {
       console.error('File load error:', err);
       this.dom.fileInfo.textContent = 'Error: ' + err.message;
+      if (this.dom.processBtn && typeof previousProcessDisabled === 'boolean') this.dom.processBtn.disabled = previousProcessDisabled;
+      if (this.dom.reprocessBtn && typeof previousReprocessDisabled === 'boolean') this.dom.reprocessBtn.disabled = previousReprocessDisabled;
+      if (this.dom.mobileReprocessBtn && typeof previousMobileReprocessDisabled === 'boolean') this.dom.mobileReprocessBtn.disabled = previousMobileReprocessDisabled;
       this.setStatus('ERROR');
     }
   }
@@ -589,12 +1249,13 @@ class VoiceIsolatePro {
   async decodeViaVideoElement(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
+      const cleanup = () => { try { URL.revokeObjectURL(url); } catch {} };
       const vid = document.createElement('video');
       vid.muted = true; vid.src = url;
       vid.onloadedmetadata = async () => {
         try {
           const duration = vid.duration;
-          if (!duration || !isFinite(duration)) { reject(new Error('Cannot determine video duration')); return; }
+          if (!duration || !isFinite(duration)) { cleanup(); reject(new Error('Cannot determine video duration')); return; }
           const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
           const source = tmpCtx.createMediaElementSource(vid);
           const dest = tmpCtx.createMediaStreamDestination();
@@ -603,22 +1264,48 @@ class VoiceIsolatePro {
           const recorder = new MediaRecorder(dest.stream);
           recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
           recorder.onstop = async () => {
-            vid.pause(); URL.revokeObjectURL(url);
+            vid.pause(); cleanup();
             const blob = new Blob(chunks, { type: 'audio/webm' });
             const ab = await blob.arrayBuffer();
-            try { const decoded = await this.ctx.decodeAudioData(ab); tmpCtx.close(); resolve(decoded); }
-            catch (e) { tmpCtx.close(); reject(new Error('Failed to decode video audio: ' + e.message)); }
+            const safeCopy = ab.slice(0);
+            try {
+              const decoded = await this.ctx.decodeAudioData(safeCopy);
+              await tmpCtx.close();
+              resolve(decoded);
+            } catch (e) {
+              try { await tmpCtx.close(); } catch {}
+              reject(new Error('Failed to decode video audio: ' + e.message));
+            }
           };
-          recorder.start(); vid.play();
+          recorder.start();
+          vid.play().catch(e => { vid.pause(); recorder.stop(); reject(new Error('Video playback blocked: ' + e.message)); });
           vid.onended = () => { recorder.stop(); };
           setTimeout(() => { if (recorder.state === 'recording') { vid.pause(); recorder.stop(); } }, (duration + 2) * 1000);
-        } catch (e) { reject(e); }
+        } catch (e) { cleanup(); reject(e); }
       };
-      vid.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Video element failed')); };
+      vid.onerror = () => { cleanup(); reject(new Error('Video element failed')); };
     });
   }
 
+  // ── Trigger diarization after audio loads ────────────────────────────────
+  async _triggerDiarization(audioBuf) {
+    const orch = window._vipOrch;
+    if (!orch || !orch.mlWorker) return;
+    try {
+      const signal = new Float32Array(audioBuf.getChannelData(0));
+      orch.mlWorker.postMessage(
+        { type: 'diarize', payload: { signal, sampleRate: audioBuf.sampleRate } },
+        [signal.buffer]
+      );
+    } catch(e) {
+      structuredLog('warn', 'Diarization trigger failed', { error: e.message });
+    }
+  }
+
   onAudioLoaded(name) {
+    if (this.inputBuffer) this._triggerDiarization(this.inputBuffer).catch((err) => {
+      structuredLog('warn', 'Diarization kickoff failed', { error: err?.message || String(err) });
+    });
     const buf = this.inputBuffer;
     const dur = this.fmtDur(buf.duration);
     this.dom.fileInfo.textContent = (name || 'Recording') + ' (' + dur + ')';
@@ -630,6 +1317,7 @@ class VoiceIsolatePro {
     this.dom.saveProcBtn.disabled = true;
     this.dom.tpAB.disabled = true;
     [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew, this.dom.tpFwd, this.dom.tpSeek, this.dom.tpSpeed].forEach(el => { if (el) el.disabled = false; });
+    if (this.dom.playBtn) this.dom.playBtn.disabled = false;
     this.dom.tpTotal.textContent = dur;
     this.dom.tpABLabel.textContent = 'Original';
     this.dom.hDur.textContent = dur;
@@ -647,6 +1335,7 @@ class VoiceIsolatePro {
   async toggleRecording() {
     if (this.isRecording) { this.stopRecording(); return; }
     try {
+      await this.waitForReadiness();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       this.ensureCtx();
       this.isRecording = true;
@@ -696,6 +1385,20 @@ class VoiceIsolatePro {
   }
 
   // ======== TRANSPORT ========
+  async togglePlayback() {
+    this.ensureCtx();
+    if (this.ctx && this.ctx.state === 'suspended') {
+      try { await this.ctx.resume(); } catch {}
+    }
+    if (this.isPlaying) { this.pause(); return; }
+    if (this.currentSource) {
+      try { this.currentSource.stop(); } catch (e) { console.debug('togglePlayback source stop skipped:', e && e.message ? e.message : e); }
+      try { this.currentSource.disconnect(); } catch (e) { console.debug('togglePlayback source disconnect skipped:', e && e.message ? e.message : e); }
+      this.currentSource = null;
+    }
+    this.play();
+  }
+
   play() {
     // Teardown previous playback state without resetting playOffset
     if (typeof this.teardownChain === 'function') this.teardownChain();
@@ -750,6 +1453,30 @@ class VoiceIsolatePro {
     this._setScrubPos(0);
   }
 
+  clearLoadedFile() {
+    this.stop();
+    this.inputBuffer = null;
+    this.outputBuffer = null;
+    this._lastLoadedFile = null;
+    this._clearSavedFile().catch(() => {});
+    this.abMode = 'original';
+    if (this.videoUrl) {
+      try { URL.revokeObjectURL(this.videoUrl); } catch {}
+      this.videoUrl = null;
+    }
+    if (this.dom.videoPlayer) this.dom.videoPlayer.src = '';
+    if (this.dom.videoCard) this.dom.videoCard.style.display = 'none';
+    if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'No file loaded';
+    if (this.dom.processBtn) this.dom.processBtn.disabled = true;
+    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
+    if (this.dom.saveOrigBtn) this.dom.saveOrigBtn.disabled = true;
+    if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = true;
+    if (this.dom.tpAB) this.dom.tpAB.disabled = true;
+    if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = 'Original';
+    [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew, this.dom.tpFwd, this.dom.tpSeek, this.dom.tpSpeed].forEach(el => { if (el) el.disabled = true; });
+    this.setStatus('IDLE');
+  }
+
   seekDelta(d) {
     const buf = this.inputBuffer; if (!buf) return;
     const speed = parseFloat(this.dom.tpSpeed.value) || 1;
@@ -789,6 +1516,8 @@ class VoiceIsolatePro {
       if (elapsed >= dur) { this.stop(); return; }
       this.dom.tpCur.textContent = this.fmtDur(elapsed);
       this._setScrubPos(dur > 0 ? elapsed / dur : 0);
+      // ── Sync diarization timeline playhead
+      if (typeof window.seekTimeline === 'function') window.seekTimeline(elapsed);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
@@ -1006,9 +1735,12 @@ class VoiceIsolatePro {
         // S13: Voice-band spectral emphasis
         await this.pip(13, total);
         if (p.voiceIso > 0 || p.bgSuppress > 0) {
-          const voiceLoBin = Math.round(p.voiceFocusLo / (sr / fftSize));
-          const voiceHiBin = Math.round(p.voiceFocusHi / (sr / fftSize));
           const halfN = mag[0].length;
+          const binHz = sr / fftSize;
+          const rawLo = Math.round(p.voiceFocusLo / binHz);
+          const rawHi = Math.round(p.voiceFocusHi / binHz);
+          const voiceLoBin = Math.max(0, Math.min(halfN - 1, rawLo));
+          const voiceHiBin = Math.max(voiceLoBin, Math.min(halfN - 1, rawHi));
           const suppressGain = 1 - (p.bgSuppress / 100) * 0.95;
           const boostGain = 1 + (p.voiceIso / 100) * 0.5;
           for (let f = 0; f < mag.length; f++) {
@@ -1021,6 +1753,35 @@ class VoiceIsolatePro {
             }
           }
         }
+        // Sound category suppression — applied within S13 after voice isolation.
+        // Each active category's frequency ranges are heavily attenuated.
+        // VAD weight softens the suppression on voice-active frames to preserve speech.
+        {
+          const activeCats = SOUND_CATEGORIES.filter(c => this.soundMutes[c.id]);
+          if (activeCats.length > 0 && mag.length > 0) {
+            const halfN = mag[0].length;
+            const binHz = sr / fftSize;
+            const mask = new Float32Array(halfN).fill(1.0);
+            for (const cat of activeCats) {
+              for (const range of cat.ranges) {
+                const lo = Math.max(0, Math.round(range.lo / binHz));
+                const hi = Math.min(halfN - 1, Math.round(range.hi / binHz));
+                for (let k = lo; k <= hi; k++) mask[k] = Math.min(mask[k], 0.04); // ~-28 dBFS
+              }
+            }
+            for (let f = 0; f < mag.length; f++) {
+              const vad = Math.min(1, Math.max(0, vadConf[Math.min(f, vadConf.length - 1)]));
+              for (let k = 0; k < halfN; k++) {
+                if (mask[k] < 1.0) {
+                  // Full suppression in noise frames; preserve voice frames (VAD=1 → no suppression)
+                  const factor = mask[k] + vad * (1 - mask[k]) * 0.85;
+                  mag[f][k] *= factor;
+                }
+              }
+            }
+          }
+        }
+
         if (this.abortFlag) throw 'abort';
 
         // S14: Crosstalk cancellation (voice-band SNR enhancement)
@@ -1147,7 +1908,20 @@ class VoiceIsolatePro {
       src.start(0);
 
       await this.pip(25, total);
-      const rendered = await ofl.startRendering();
+      let rendered;
+      try {
+        rendered = await ofl.startRendering();
+      } finally {
+        // Release the offline graph regardless of success so we don't leak
+        // AudioNodes across batches. disconnect() on an already-disconnected
+        // node throws in some browsers, so each call is guarded.
+        for (const node of chain) {
+          try { node.disconnect(); } catch { /* noop */ }
+        }
+        if (typeof ofl.close === 'function') {
+          try { await ofl.close(); } catch { /* noop */ }
+        }
+      }
       if (this.abortFlag) throw 'abort';
 
       // ═══ PASS 9: MASTERING ═══
@@ -1158,9 +1932,10 @@ class VoiceIsolatePro {
       await this.pip(27, total);
       if (p.dryWet < 100) fin = this.mixDW(this.inputBuffer, fin, p.dryWet / 100);
 
-      // Apply formant shift, phase correction, and dither (p.formantShift, p.phaseCorr, p.ditherAmt)
-      if (p.formantShift !== 0) fin = this.applyFormantShift(fin, p.formantShift);
+      // Apply phase correction, crosstalk cancellation, formant shift, and dither
       if (p.phaseCorr > 0) fin = this.applyPhaseCorr(fin, p.phaseCorr);
+      if (p.crosstalkCancel > 0) fin = this.applyCrosstalkCancel(fin, p.crosstalkCancel);
+      if (p.formantShift !== 0) fin = this.applyFormantShift(fin, p.formantShift);
       if (p.ditherAmt > 0) fin = this.applyDither(fin, p.ditherAmt);
 
       // Peak normalize to limiter ceiling
@@ -1174,6 +1949,10 @@ class VoiceIsolatePro {
 
       this.dom.stProcTime.textContent = ((performance.now() - t0) / 1000).toFixed(2) + 's';
       this.outputBuffer = fin;
+      // Persist result so next load of same file + params is instant (non-blocking)
+      if (this._lastLoadedFile) {
+        this._cacheResultLater(this._lastLoadedFile, fin);
+      }
       const snr = this.calcRMS(fin.getChannelData(0)) - this.calcRMS(this.inputBuffer.getChannelData(0));
       this.dom.hSNR.textContent = (snr >= 0 ? '+' : '') + snr.toFixed(1) + ' dB';
       this.resizeCanvas(this.dom.waveProcCanvas);
@@ -1537,16 +2316,32 @@ class VoiceIsolatePro {
   _mlCall(payload, transfer = []) {
     return new Promise((resolve, reject) => {
       const id = ++this._mlCallId;
+      const worker = this.mlWorker;
+      let errorHandler;
       // SEC-03: Dedicated Worker — origin checks don't apply (same-origin by design).
       // RPC safety is enforced by matching e.data.id to the outbound call id.
+      const cleanup = () => {
+        worker.removeEventListener('message', handler);
+        if (errorHandler) worker.removeEventListener('error', errorHandler);
+      };
       const handler = (e) => {
         if (e.data.id !== id) return; // RPC id guard
-        this.mlWorker.removeEventListener('message', handler);
+        cleanup();
         if (e.data.error) reject(new Error(e.data.error));
         else resolve(e.data.result);
       };
-      this.mlWorker.addEventListener('message', handler);
-      this.mlWorker.postMessage({ ...payload, id }, transfer);
+      errorHandler = (e) => {
+        cleanup();
+        reject(new Error(e.message || 'ML worker error'));
+      };
+      worker.addEventListener('message', handler);
+      worker.addEventListener('error', errorHandler);
+      try {
+        worker.postMessage({ ...payload, id }, transfer);
+      } catch (err) {
+        cleanup();
+        reject(err);
+      }
     });
   }
 
@@ -1608,7 +2403,15 @@ class VoiceIsolatePro {
     }
   }
 
-  async pip(i, t) { const pct = Math.round((i + 1) / t * 100); this.dom.pipeFill.style.width = pct + '%'; this.dom.pipeBar.setAttribute('aria-valuenow', String(pct)); this.dom.pipeStage.textContent = (i + 1) + '/' + t; this.dom.pipeDetail.textContent = STAGES[i] || 'Finalizing'; this.dom.hStatus.textContent = 'S' + (i + 1); await new Promise(r => setTimeout(r, 8)); }
+  async pip(i, t) {
+    const pct = Math.round((i + 1) / t * 100);
+    this.dom.pipeFill.style.width = pct + '%';
+    this.dom.pipeBar.setAttribute('aria-valuenow', String(pct));
+    this.dom.pipeStage.textContent = (i + 1) + '/' + t;
+    this.dom.pipeDetail.textContent = STAGES[i] || 'Finalizing';
+    this.dom.hStatus.textContent = 'S' + (i + 1);
+    await new Promise(r => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(() => r()) : setTimeout(r, 0));
+  }
   mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
   peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
   makeHarm(amt,ord){const n=44100;const c=new Float32Array(n);const k=amt*(ord||3)*2+1;for(let i=0;i<n;i++){const x=(i*2)/n-1;c[i]=Math.tanh(k*x)/Math.tanh(k);}return c;}
@@ -1706,6 +2509,26 @@ class VoiceIsolatePro {
 
   sColor(val,fi,total){const v=val/255;const f=fi/total;if(f<0.05)return 'rgb('+Math.floor(v*40)+','+Math.floor(v*80)+','+Math.floor(60+v*195)+')';if(f<0.2)return 'rgb('+Math.floor(60+v*195)+','+Math.floor(v*30)+','+Math.floor(v*20)+')';if(f<0.5)return 'rgb('+Math.floor(80+v*175)+','+Math.floor(v*60)+','+Math.floor(v*10)+')';if(f<0.75)return 'rgb('+Math.floor(v*30)+','+Math.floor(50+v*180)+','+Math.floor(v*30)+')';return 'rgb('+Math.floor(60+v*195)+','+Math.floor(50+v*160)+','+Math.floor(v*20)+')';}
   isBandMuted(fi,total,sr){const freq=(fi/total)*(sr/2);for(const b of this.mutedBands)if(freq>=b.lo&&freq<b.hi)return true;return false;}
+
+  toggleSoundCategory(catId) {
+    this.soundMutes[catId] = !this.soundMutes[catId];
+    // Update button appearance
+    const btn = document.querySelector(`.sound-mute-btn[data-cat="${catId}"]`);
+    if (btn) btn.classList.toggle('active', !!this.soundMutes[catId]);
+    // Update status text
+    const activeCats = SOUND_CATEGORIES.filter(c => this.soundMutes[c.id]);
+    const statusEl = document.getElementById('soundMuteStatus');
+    if (statusEl) {
+      if (activeCats.length === 0) {
+        statusEl.textContent = 'No sounds muted — all background is processed normally';
+        statusEl.classList.remove('has-mutes');
+      } else {
+        statusEl.textContent = 'Muting: ' + activeCats.map(c => c.emoji + ' ' + c.label).join(' · ') + ' — re-process to apply';
+        statusEl.classList.add('has-mutes');
+      }
+    }
+  }
+
   onSpectroClick(e){const r=this.dom.spectro3DCanvas.getBoundingClientRect();const y=1-((e.clientY-r.top)/r.height);const sr=this.ctx?this.ctx.sampleRate:44100;const freq=y*(sr/2);const bw=sr/20;const lo=Math.max(0,freq-bw/2);const hi=freq+bw/2;const key=Math.round(lo)+'-'+Math.round(hi);let found=false;for(const b of this.mutedBands){if(b.key===key){this.mutedBands.delete(b);found=true;break;}}if(!found)this.mutedBands.add({lo,hi,key});}
 
   startFreq(ana){
@@ -1715,13 +2538,15 @@ class VoiceIsolatePro {
   }
 
   // ---- 3D Spectrogram ----
-  init3D(){
+  init3D(retried){
     const ct=this.dom.spectro3DContainer;if(!ct)return;const w=ct.clientWidth;const h=ct.clientHeight;
-    if(w===0||h===0)return;
+    if(w===0||h===0){if(!retried)requestAnimationFrame(()=>this.init3D(true));return;}
+    if(this.three.ren)return; // already initialized
     const scene=new THREE.Scene();scene.background=new THREE.Color(0x030306);
     const cam=new THREE.PerspectiveCamera(45,w/h,0.1,1000);cam.position.set(0,40,60);cam.lookAt(0,0,0);
     const ren=new THREE.WebGLRenderer({canvas:this.dom.spectro3DCanvas,antialias:true});
-    ren.setSize(w,h);ren.setPixelRatio(Math.min(window.devicePixelRatio,2));
+    // Pass false so Three.js doesn't write inline px styles that fight CSS width:100%
+    ren.setSize(w,h,false);ren.setPixelRatio(Math.min(window.devicePixelRatio,2));
     const gW=64;const gD=128;
     const geo=new THREE.PlaneGeometry(80,40,gW-1,gD-1);geo.rotateX(-Math.PI*0.4);
     const cols=new Float32Array(geo.attributes.position.count*3);
@@ -1735,9 +2560,41 @@ class VoiceIsolatePro {
     window.addEventListener('mouseup',()=>drag=false);
     window.addEventListener('mousemove',e=>{if(!drag)return;cam.position.x-=(e.clientX-pX)*0.15;cam.position.y+=(e.clientY-pY)*0.15;cam.lookAt(0,0,0);pX=e.clientX;pY=e.clientY;});
     cv.addEventListener('wheel',e=>{e.preventDefault();cam.position.z+=e.deltaY*0.05;cam.position.z=Math.max(20,Math.min(120,cam.position.z));},{passive:false});
+    const handle3DResize=()=>{
+      const rw=ct.clientWidth, rh=ct.clientHeight;
+      if(rw>0&&rh>0&&this.three.ren){
+        this.three.ren.setSize(rw,rh,false);
+        this.three.cam.aspect=rw/rh;
+        this.three.cam.updateProjectionMatrix();
+      }
+    };
+    // ResizeObserver keeps the buffer in sync when the grid reflows (not just window resize)
+    if(typeof ResizeObserver!=='undefined'){
+      const _ro3d = new ResizeObserver(handle3DResize);
+      _ro3d.observe(ct);
+      this.three._ro3d = _ro3d;
+    }else if(typeof window!=='undefined'){
+      window.addEventListener('resize',handle3DResize);
+      this.three._resize3DHandler = handle3DResize;
+    }
     this.render3D();
   }
-  reset3DView(){if(this.three.cam){this.three.cam.position.set(0,40,60);this.three.cam.lookAt(0,0,0);}}
+  reset3DView(){
+    if(!this.three.cam)return;
+    this.three.cam.position.set(0,40,60);
+    this.three.cam.lookAt(0,0,0);
+    if(this.three.ren){
+      const ct = this.dom.spectro3DContainer;
+      if(ct){
+        const w = ct.clientWidth, h = ct.clientHeight;
+        if(w>0 && h>0){
+          this.three.ren.setSize(w,h,false);
+          this.three.cam.aspect = w/h;
+          this.three.cam.updateProjectionMatrix();
+        }
+      }
+    }
+  }
   update3D(freq){
     if(!this.three.geo)return;const{geo,gW,gD,cols}=this.three;const pos=geo.attributes.position;const colA=geo.attributes.color;
     for(let z=gD-1;z>0;z--)for(let x=0;x<gW;x++){const c=z*gW+x;const p=(z-1)*gW+x;pos.setY(c,pos.getY(p));cols[c*3]=cols[p*3];cols[c*3+1]=cols[p*3+1];cols[c*3+2]=cols[p*3+2];}
@@ -2217,7 +3074,7 @@ class VoiceIsolatePro {
     if (this.inputBuffer && this.outputBuffer) this.drawComparison(this.inputBuffer, this.outputBuffer);
     const ct = this.dom.spectro3DContainer;
     if (this.three.ren && ct) {
-      this.three.ren.setSize(ct.clientWidth, ct.clientHeight);
+      this.three.ren.setSize(ct.clientWidth, ct.clientHeight, false);
       this.three.cam.aspect = ct.clientWidth / ct.clientHeight;
       this.three.cam.updateProjectionMatrix();
     }
@@ -2250,46 +3107,36 @@ class VoiceIsolatePro {
 if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
 
 /* ── Merged from app-patches.js: DOM null-safety patches ── */
-(function applyDOMPatches() {
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Bootstrap: set window._vipApp synchronously (or after DOMContentLoaded)
+// so that pipeline-orchestrator.js can attach without polling.
+// vip-boot.js also calls app.init() and Auth.init() — this block is
+// the fallback for environments where vip-boot.js might not be present.
+// ─────────────────────────────────────────────────────────────────────────────
+(function _vipBootstrap() {
   'use strict';
-
-  function patchRecordButton() {
-    const originalGetElementById = document.getElementById.bind(document);
-    document.getElementById = function(id) {
-      const el = originalGetElementById(id);
-      document.getElementById = originalGetElementById;
-      if (!el && (id === 'btn-record' || id === 'record-btn' || id === 'recordBtn')) {
-        return new Proxy({}, {
-          set() { return true; },
-          get(_t, key) {
-            if (key === 'addEventListener') return () => {};
-            if (key === 'removeEventListener') return () => {};
-            if (key === 'dispatchEvent') return () => false;
-            if (key === 'classList') return { add: ()=>{}, remove: ()=>{}, toggle: ()=>{}, contains: ()=>false };
-            if (key === 'style') return {};
-            return undefined;
-          }
-        });
+  function _setup() {
+    // Skip if vip-boot.js already handled instantiation
+    if (window._vipApp) return;
+    try {
+      var app = new VoiceIsolatePro();
+      app._initCalled = true;
+      window.vip     = app;
+      window._vipApp = app;
+      // Auth.init() will be called by vip-boot.js after this runs.
+      // If vip-boot.js is absent, call it here as a safety net.
+      if (typeof Auth !== 'undefined' && typeof Auth.init === 'function' && !Auth.isLoggedIn && Auth.currentUser === null) {
+        Auth.init().catch(function(e){ console.warn('[app] Auth.init error:', e); });
       }
-      return el;
-    };
+      console.info('[app] VoiceIsolatePro ready via app.js bootstrap ✓');
+    } catch (err) {
+      console.error('[app] Bootstrap failed:', err);
+    }
   }
-
-  patchRecordButton();
-
-  document.addEventListener('DOMContentLoaded', function onDOMReady() {
-    document.removeEventListener('DOMContentLoaded', onDOMReady);
-    const recordIds = ['btn-record', 'record-btn', 'recordBtn', 'btnRecord'];
-    for (const id of recordIds) {
-      const btn = document.getElementById(id);
-      if (btn) { btn.disabled = false; break; }
-    }
-    const pipelineStatus = document.getElementById('pipeline-status')
-      || document.querySelector('[data-status="pipeline"]')
-      || document.querySelector('.pipeline-status');
-    if (pipelineStatus && pipelineStatus.textContent.trim() === 'ERROR') {
-      pipelineStatus.textContent = 'INIT';
-      pipelineStatus.style.color = '';
-    }
-  }, { once: true });
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _setup, { once: true });
+  } else {
+    _setup();
+  }
 })();

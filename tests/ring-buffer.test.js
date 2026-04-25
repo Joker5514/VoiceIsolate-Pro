@@ -7,23 +7,9 @@
 
 'use strict';
 
-const fs   = require('fs');
-const path = require('path');
-
-// ring-buffer.js exports via module.exports; load via eval to bypass ESM detection
-const rbSrc = fs.readFileSync(
-  path.join(__dirname, '../public/app/ring-buffer.js'),
-  'utf8'
-);
-const SharedRingBuffer = (() => {
-  const exports = {};
-  const module  = { exports };
-  /* eslint-disable no-unused-vars */
-  const window = undefined; // no browser window in this context
-  /* eslint-enable no-unused-vars */
-  eval(rbSrc); // eslint-disable-line no-eval
-  return module.exports;
-})();
+// Loaded via require() so Jest coverage instrumentation sees ring-buffer.js.
+// The module's `if (typeof window !== 'undefined')` guard makes it Node-safe.
+const SharedRingBuffer = require('../public/app/ring-buffer.js');
 
 describe('SharedRingBuffer — constructor', () => {
   test('stores frameSize and frameCount', () => {
@@ -163,6 +149,38 @@ describe('SharedRingBuffer — wraparound', () => {
       expect(out[i]).toBeCloseTo(i + 1, 5);
     }
   });
+
+  test('maintains FIFO order after writing an aggregate 1.5x capacity across wrap-around', () => {
+    const rb = new SharedRingBuffer(8, 8); // capacity = 64, usable = 63
+    const capacity = rb.capacity;
+
+    const totalToWrite = Math.floor(capacity * 1.5);
+    let nextValue = 0;
+    const readBack = [];
+
+    while (nextValue < totalToWrite) {
+      const chunkLen = Math.min(17, totalToWrite - nextValue);
+      while (rb.space() < chunkLen) {
+        const pullLen = Math.min(9, rb.available());
+        const partial = rb.pull(pullLen);
+        expect(partial).not.toBeNull();
+        for (let i = 0; i < partial.length; i++) readBack.push(partial[i]);
+      }
+      const chunk = new Float32Array(chunkLen);
+      for (let i = 0; i < chunkLen; i++) chunk[i] = nextValue + i;
+      expect(rb.push(chunk)).toBe(true);
+      nextValue += chunkLen;
+    }
+
+    const remaining = rb.pull(rb.available());
+    expect(remaining).not.toBeNull();
+    for (let i = 0; i < remaining.length; i++) readBack.push(remaining[i]);
+
+    expect(readBack.length).toBe(totalToWrite);
+    for (let i = 0; i < totalToWrite; i++) {
+      expect(readBack[i]).toBeCloseTo(i, 5);
+    }
+  });
 });
 
 describe('SharedRingBuffer — peek', () => {
@@ -258,5 +276,54 @@ describe('SharedRingBuffer — getBuffer', () => {
     expect(rb2.available()).toBe(3);
     const out = rb2.pull(3);
     expect(out[0]).toBeCloseTo(1.0, 5);
+  });
+});
+
+// ── Wrap-around stress (added with the test-coverage refactor) ────────────────
+describe('SharedRingBuffer — wrap-around correctness', () => {
+  test('value identity preserved across the buffer-end wrap point', () => {
+    const frameSize  = 8;
+    const frameCount = 4;
+    const cap = frameSize * frameCount; // 32
+    const rb  = new SharedRingBuffer(frameSize, frameCount);
+
+    // Fill, then drain, then push a sequence that crosses the physical end.
+    rb.push(new Float32Array(cap).fill(0));
+    rb.pull(cap);
+    expect(rb.available()).toBe(0);
+
+    // After the drain, the read/write pointers sit near the end. Pushing
+    // 24 items (3 frames) must wrap back to index 0 transparently.
+    const seq = new Float32Array(24);
+    for (let i = 0; i < 24; i++) seq[i] = i + 1; // 1..24
+    rb.push(seq);
+    const out = rb.pull(24);
+    for (let i = 0; i < 24; i++) expect(out[i]).toBeCloseTo(i + 1, 5);
+  });
+
+  test('repeated push/pull cycles never lose ordering across many wraps', () => {
+    const rb = new SharedRingBuffer(4, 4); // capacity 16
+    let counter = 0;
+    for (let cycle = 0; cycle < 200; cycle++) {
+      const chunk = new Float32Array(8);
+      for (let i = 0; i < 8; i++) chunk[i] = ++counter;
+      rb.push(chunk);
+      const out = rb.pull(8);
+      for (let i = 0; i < 8; i++) expect(out[i]).toBeCloseTo(counter - 7 + i, 5);
+    }
+  });
+
+  test('overflow is recorded when push exceeds capacity', () => {
+    const rb = new SharedRingBuffer(8, 4); // cap 32
+    const before = rb.overflows();
+    rb.push(new Float32Array(40)); // 8 over
+    expect(rb.overflows()).toBeGreaterThan(before);
+  });
+
+  test('available() reports 0 after pulling exactly the pushed amount', () => {
+    const rb = new SharedRingBuffer(16, 8);
+    rb.push(new Float32Array(48).fill(7));
+    rb.pull(48);
+    expect(rb.available()).toBe(0);
   });
 });

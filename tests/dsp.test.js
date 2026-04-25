@@ -54,7 +54,7 @@ const VoiceIsolatePro = (() => {
 // Load DSPCore for the new advanced DSP classes
 // dsp-core.js lives in the ESM root, so we eval it to extract the CommonJS export
 // (same pattern as how app.js is loaded below)
-const dspCoreJs = fs.readFileSync(path.join(__dirname, '../dsp-core.js'), 'utf8');
+const dspCoreJs = fs.readFileSync(path.join(__dirname, '../public/app/dsp-core.js'), 'utf8');
 const DSPCore = (() => {
   const exports = {};
   const module = { exports };

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Read app.js and evaluate to get VoiceIsolatePro without importing ES Module in Jest Node context
-const appJsPath = path.join(__dirname, '../app.js');
+const appJsPath = path.join(__dirname, '../public/app/app.js');
 const appJs = fs.readFileSync(appJsPath, 'utf8');
 
 // Use new Function to create a local scope and evaluate the code, bypassing the DOMContentLoaded listener and module system
@@ -37,8 +37,14 @@ describe('Transport Methods', () => {
       },
       play: jest.fn(),
       fmtDur: jest.fn(() => '0:00'),
+      _setScrubPos: function(frac) {
+        if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+      },
       stopDiagnostics: jest.fn(),
-      startDiagnostics: jest.fn()
+      startDiagnostics: jest.fn(),
+      _setScrubPos: jest.fn(function(frac) {
+        if (this.dom && this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+      })
     };
   });
 
@@ -389,6 +395,54 @@ describe('Transport Methods', () => {
       }).not.toThrow();
 
       expect(mockContext.dom.videoPlayer.play).toHaveBeenCalled();
+    });
+  });
+
+  describe('togglePlayback', () => {
+    beforeEach(() => {
+      mockContext.ensureCtx = jest.fn(function() { return this.ctx; });
+      mockContext.play = jest.fn();
+      mockContext.pause = jest.fn();
+      mockContext.currentSource = null;
+      mockContext.ctx = {
+        state: 'running',
+        resume: jest.fn().mockResolvedValue(undefined)
+      };
+    });
+
+    it('resumes suspended audio context and plays on user gesture path', async () => {
+      mockContext.isPlaying = false;
+      mockContext.ctx.state = 'suspended';
+
+      await VoiceIsolatePro.prototype.togglePlayback.call(mockContext);
+
+      expect(mockContext.ensureCtx).toHaveBeenCalled();
+      expect(mockContext.ctx.resume).toHaveBeenCalled();
+      expect(mockContext.play).toHaveBeenCalled();
+      expect(mockContext.pause).not.toHaveBeenCalled();
+    });
+
+    it('pauses instead of replaying when already playing', async () => {
+      mockContext.isPlaying = true;
+
+      await VoiceIsolatePro.prototype.togglePlayback.call(mockContext);
+
+      expect(mockContext.pause).toHaveBeenCalled();
+      expect(mockContext.play).not.toHaveBeenCalled();
+    });
+
+    it('stops/disconnects stale source before replay', async () => {
+      const stop = jest.fn();
+      const disconnect = jest.fn();
+      mockContext.currentSource = { stop, disconnect };
+      mockContext.isPlaying = false;
+
+      await VoiceIsolatePro.prototype.togglePlayback.call(mockContext);
+
+      expect(stop).toHaveBeenCalled();
+      expect(disconnect).toHaveBeenCalled();
+      expect(mockContext.currentSource).toBeNull();
+      expect(mockContext.play).toHaveBeenCalled();
     });
   });
 

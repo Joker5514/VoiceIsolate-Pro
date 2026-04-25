@@ -174,6 +174,7 @@ const BatchProcessor = (() => {
   // ─── Audio Utilities ──────────────────────────────────────────────────────────
   function _readFile(file, signal) {
     return new Promise((resolve, reject) => {
+      if (signal.aborted) { reject(new Error('Cancelled')); return; }
       const reader = new FileReader();
       reader.onload = e => resolve(e.target.result);
       reader.onerror = () => reject(new Error('File read error'));
@@ -183,7 +184,12 @@ const BatchProcessor = (() => {
   }
 
   function _normalize(data, targetPeak = -1.0) {
-    const peak = data.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    // Single-pass peak search avoids reduce() overhead and a second array pass.
+    let peak = 0;
+    for (let i = 0; i < data.length; i++) {
+      const a = Math.abs(data[i]);
+      if (a > peak) peak = a;
+    }
     if (peak === 0) return data;
     const targetLinear = Math.pow(10, targetPeak / 20);
     const gain = targetLinear / peak;
@@ -193,12 +199,17 @@ const BatchProcessor = (() => {
   }
 
   function _applyWatermark(data, sampleRate) {
-    // Subtle inaudible watermark: encode a 19kHz tone at -40dB
+    // Subtle inaudible watermark: encode a 19kHz tone at -40dB.
+    // Use incremental phase stepping to avoid per-sample 2π·freq·i/sr multiplication.
     const out = new Float32Array(data.length);
-    const freq = 19000;
     const amp = 0.01; // -40dB
+    const phaseStep = (2 * Math.PI * 19000) / sampleRate;
+    let phase = 0;
     for (let i = 0; i < data.length; i++) {
-      out[i] = data[i] + amp * Math.sin(2 * Math.PI * freq * i / sampleRate);
+      out[i] = data[i] + amp * Math.sin(phase);
+      phase += phaseStep;
+      // Wrap phase to [-π, π] to prevent float precision drift over long files.
+      if (phase > Math.PI) phase -= 2 * Math.PI;
     }
     return out;
   }

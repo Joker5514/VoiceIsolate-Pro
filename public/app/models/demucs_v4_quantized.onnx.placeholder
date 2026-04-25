@@ -1,0 +1,12 @@
+PLACEHOLDER: Replace this file with the real demucs_v4_quantized.onnx (approx 83 MB).
+
+To obtain:
+  1. pip install torch torchaudio demucs
+  2. python scripts/export_demucs_onnx.py --output public/app/models/demucs_v4_quantized.onnx
+     OR download a pre-exported ONNX from HuggingFace:
+     https://huggingface.co/facebook/demucs
+
+IMPORTANT: Delete this .placeholder file after placing the real .onnx.
+Do NOT commit large binary .onnx files directly — use Git LFS:
+  git lfs track '*.onnx'
+  git add .gitattributes

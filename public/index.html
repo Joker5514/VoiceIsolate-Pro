@@ -170,11 +170,11 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
   <div class="hero-logo">VoiceIsolate.Pro</div>
 
   <h1>VoiceIsolate <em>Pro</em></h1>
-  <p class="hero-sub">Studio-grade voice isolation. 35-Stage Deca-Pass DSP pipeline. Hybrid ML + classical spectral processing. 100% local — zero data egress.</p>
+  <p class="hero-sub">Studio-grade voice isolation. 36-Stage Deca-Pass DSP pipeline. Hybrid ML + classical spectral processing. 100% local — zero data egress.</p>
 
   <!-- Animated stat counters -->
   <div class="hero-stats">
-    <div class="stat"><span class="stat-num" data-target="35" data-suffix="">0</span><span class="stat-lbl">Pipeline Stages</span></div>
+    <div class="stat"><span class="stat-num" data-target="36" data-suffix="">0</span><span class="stat-lbl">Pipeline Stages</span></div>
     <div class="stat"><span class="stat-num" data-target="52" data-suffix="">0</span><span class="stat-lbl">Real-Time Controls</span></div>
     <div class="stat"><span class="stat-num" data-target="0" data-suffix="">0</span><span class="stat-lbl">Servers Used</span></div>
     <div class="stat"><span class="stat-num" data-target="100" data-suffix="%">0%</span><span class="stat-lbl">Local Processing</span></div>
@@ -216,10 +216,10 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
         <div class="step-icon" aria-hidden="true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         </div>
-        <h3>35-Stage Pipeline</h3>
-        <p>Runs entirely inside your browser. Noise gate → Wiener NR → ERB spectral gate → harmonic reconstruction → dereverberation → ML VAD → dynamics chain.</p>
+        <h3>36-Stage Deca-Pass Pipeline</h3>
+        <p>Runs entirely inside your browser. 10-pass architecture: input conditioning → STFT → spectral gating → Wiener NR → ML separation (Silero VAD, BSRNN, Demucs) → EQ + dereverb → harmonic exciter → iSTFT → output limiting → forensic audit.</p>
         <div class="step-formats">
-          <span>Wiener NR</span><span>ERB Gate</span><span>VAD</span><span>Dereverb</span><span>De-ess</span><span>52 sliders</span>
+          <span>Wiener NR</span><span>Silero VAD</span><span>BSRNN</span><span>Demucs</span><span>Dereverb</span><span>De-ess</span><span>52 sliders</span>
         </div>
       </div>
 
@@ -267,7 +267,7 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
         </div>
         <div class="feat-body">
           <h4>100% Private &amp; Local</h4>
-          <p>Zero server uploads. All 35 stages run inside <code>OfflineAudioContext</code> in your browser tab — your audio never leaves your device.</p>
+          <p>Zero server uploads. All 36 stages run inside <code>OfflineAudioContext</code> in your browser tab — your audio never leaves your device.</p>
           <code>0 bytes transmitted</code>
         </div>
       </div>
@@ -328,11 +328,11 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
     <a href="/app/" class="launch-card">
       <div class="launch-inner">
         <div class="launch-text">
-          <span class="launch-tag">Engineer Mode v22.0</span>
+          <span class="launch-tag">Engineer Mode v24.0</span>
           <h2>Launch the App</h2>
-          <p>52 sliders. 6-panel diagnostic dashboard. A/B comparison. 3D spectrogram. 35-stage pipeline. Drop audio or video and get studio-clean output in seconds.</p>
+          <p>52 sliders. 6-panel diagnostic dashboard. A/B comparison. 3D spectrogram. 36-stage pipeline. Drop audio or video and get studio-clean output in seconds.</p>
           <div class="launch-pills">
-            <span>35-Stage DSP</span><span>ML VAD</span><span>52 Sliders</span><span>A/B Compare</span>
+            <span>36-Stage DSP</span><span>ML VAD</span><span>52 Sliders</span><span>A/B Compare</span>
             <span>3D Spectrogram</span><span>32-bit WAV</span><span>100% Local</span><span>Zero Upload</span>
           </div>
         </div>
@@ -349,7 +349,7 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
      FOOTER
 ══════════════════════════════════ -->
 <footer>
-  VoiceIsolate Pro v22.0 &nbsp;·&nbsp; Threads from Space v11 &nbsp;·&nbsp; Hybrid ML+DSP &nbsp;·&nbsp; Privacy-First &nbsp;·&nbsp; April 2026
+  VoiceIsolate Pro v24.0 &nbsp;·&nbsp; Threads from Space v12 &nbsp;·&nbsp; Hybrid ML+DSP &nbsp;·&nbsp; Privacy-First &nbsp;·&nbsp; April 2026
 </footer>
 
 <!-- Stat counter animation -->

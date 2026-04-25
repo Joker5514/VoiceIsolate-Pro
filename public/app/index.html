@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>VoiceIsolate Pro v22.1 – Engineer Mode</title>
+  <title>VoiceIsolate Pro v24.0 – Engineer Mode</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -13,17 +13,91 @@
   <link rel="stylesheet" href="style.css" />
   <!-- Diagnostics log panel styles -->
   <link rel="stylesheet" href="style-diag-log.css" />
+  <!-- Auth overlay styles -->
+  <style>
+    #authOverlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(6,6,9,0.96);backdrop-filter:blur(12px)}
+    .auth-modal{width:340px;padding:32px 28px;background:var(--s2);border:1px solid var(--border2);border-radius:var(--r);text-align:center}
+    .auth-icon{width:48px;height:48px;margin:0 auto 12px;border-radius:10px;background:linear-gradient(135deg,var(--red),var(--red3));display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 20px var(--red-glow)}
+    .auth-title{font-size:1.2rem;font-weight:700;margin-bottom:2px}
+    .auth-subtitle{font-size:0.75rem;color:var(--dim);margin-bottom:20px}
+    .auth-field{text-align:left;margin-bottom:12px}
+    .auth-field label{display:block;font-size:0.65rem;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px}
+    .auth-field input{width:100%;padding:8px 10px;background:var(--s1);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font-family:var(--fm);font-size:0.85rem;outline:none;transition:border-color 0.2s}
+    .auth-field input:focus{border-color:var(--red)}
+    .auth-error{font-size:0.72rem;color:var(--red2);min-height:18px;margin-bottom:4px}
+    .auth-btn{width:100%;padding:10px;background:linear-gradient(135deg,var(--red),var(--red3));color:#fff;font-family:var(--ff);font-size:0.85rem;font-weight:600;border:none;border-radius:var(--rs);cursor:pointer;transition:opacity 0.2s}
+    .auth-btn:hover{opacity:0.9}
+    .auth-btn:disabled{opacity:0.5;cursor:not-allowed}
+    .auth-badge{display:flex;align-items:center;gap:6px;padding:3px 8px;background:var(--s3);border:1px solid var(--border);border-radius:var(--rs);font-size:0.7rem;margin-right:8px}
+    .auth-badge-user{color:var(--text);font-weight:600;font-family:var(--fm)}
+    .auth-badge-tier{padding:1px 5px;border-radius:3px;font-size:0.55rem;font-weight:700;letter-spacing:0.08em}
+    .auth-tier-free{color:var(--dim);background:rgba(107,114,128,0.15)}
+    .auth-tier-pro{color:var(--cyan);background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.2)}
+    .auth-tier-studio{color:var(--purple);background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.2)}
+    .auth-tier-enterprise{color:var(--yellow);background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.2)}
+    .auth-badge-admin{padding:1px 5px;border-radius:3px;font-size:0.5rem;font-weight:700;letter-spacing:0.1em;color:var(--red2);background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.2)}
+    .auth-logout-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:0.8rem;padding:0 2px;line-height:1;transition:color 0.2s}
+    .auth-logout-btn:hover{color:var(--red2)}
+    /* UI scale (screen stretching) control */
+    .hdr-scale{display:inline-flex;align-items:center;gap:4px;margin-left:8px}
+    .hdr-scale .btn-xs{padding:3px 7px;font-size:0.7rem;line-height:1;background:var(--s3);color:var(--text2);border:1px solid var(--border);border-radius:var(--rs);cursor:pointer;font-family:var(--ff);font-weight:600}
+    .hdr-scale .btn-xs:hover:not(:disabled){border-color:var(--red);color:var(--text)}
+    .hdr-scale #uiScaleVal{font-family:var(--fm);font-size:0.7rem;color:var(--text2);min-width:40px;text-align:center}
+    .hdr-scale #uiScaleSave.saved{background:rgba(34,197,94,0.12);color:var(--green);border-color:rgba(34,197,94,0.3)}
+  </style>
+  <!-- Restore saved UI scale before paint to avoid flash. Must stay in sync with uiScaleApply() in app.js. -->
+  <script data-role="ui-scale-restore">
+    (function(){
+      try {
+        var s = parseFloat(localStorage.getItem('vip_ui_scale'));
+        if (isFinite(s) && s >= 0.5 && s <= 2) {
+          var rootStyle = document.documentElement.style;
+          var supportsZoom = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('zoom', '1');
+          if (supportsZoom) {
+            rootStyle.zoom = String(s);
+            rootStyle.transform = '';
+            rootStyle.transformOrigin = '';
+            rootStyle.width = '';
+          } else {
+            rootStyle.zoom = '';
+            rootStyle.transform = 'scale(' + s + ')';
+            rootStyle.transformOrigin = 'top left';
+            rootStyle.width = (100 / s) + '%';
+          }
+        }
+      } catch(e) {}
+    })();
+  </script>
 </head>
 <body>
+  <!-- ── Startup diagnostic banner (shown only if server/model errors detected) ── -->
+  <div id="vip-startup-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;
+       background:#1a1a24;border-bottom:2px solid #dc2626;padding:9px 16px;font-size:13px;
+       color:#f0f0f2;font-family:'Segoe UI',system-ui,sans-serif;align-items:center;gap:10px;
+       box-shadow:0 2px 12px rgba(220,38,38,.25);" role="alert" aria-live="assertive">
+    <span style="font-size:16px">⚠️</span>
+    <span id="vip-startup-msg" style="flex:1"></span>
+    <button onclick="this.parentElement.style.display='none'" aria-label="Dismiss"
+            style="background:transparent;border:none;color:#666;cursor:pointer;font-size:18px;
+                   line-height:1;padding:0 4px;transition:color .15s"
+            onmouseover="this.style.color='#dc2626'" onmouseout="this.style.color='#666'">✕</button>
+  </div>
+
   <!-- HEADER -->
   <header class="hdr">
     <div class="hdr-left">
       <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
       <div>
-        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v22.1</span></h1>
+        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v24.0</span></h1>
         <span class="hdr-badge">ENGINEER MODE</span>
         <span class="hdr-badge diag-badge">6-PANEL DIAGNOSTICS</span>
       </div>
+    </div>
+    <div class="hdr-scale" role="group" aria-label="UI scale">
+      <button id="uiScaleDn" type="button" class="btn-xs" title="Decrease UI scale" aria-label="Decrease UI scale">&minus;</button>
+      <span id="uiScaleVal" aria-live="polite">100%</span>
+      <button id="uiScaleUp" type="button" class="btn-xs" title="Increase UI scale" aria-label="Increase UI scale">+</button>
+      <button id="uiScaleSave" type="button" class="btn-xs" title="Save UI scale so it persists after refresh" aria-label="Save UI scale">Save</button>
     </div>
     <button id="statsToggle" class="hdr-stats-toggle" aria-label="Toggle stats" aria-expanded="false">&#9660;</button>
     <div class="hdr-stats" id="hdrStats">
@@ -43,58 +117,83 @@
     <div class="col-left">
       <!-- Upload -->
       <div class="card upload-card">
+        <!--
+          FIX: fileInput is placed OUTSIDE uploadZone and rendered off-screen.
+          This avoids nested click handling inside uploadZone from re-triggering
+          or interfering with the file picker when the zone or Browse button
+          dispatches fileInput.click(). The input stays visually hidden off-screen
+          instead of using display:none/disabled so file selection remains
+          compatible with browser file-picker activation behavior.
+        -->
+        <input
+          type="file"
+          id="fileInput"
+          accept="audio/*,video/mp4,video/webm,video/quicktime,video/x-matroska,video/x-m4v,video/avi,video/x-msvideo,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.wma,.aiff,.aif,.mp4,.webm,.mov,.mkv,.m4v,.avi"
+          style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;overflow:hidden;"
+          tabindex="-1"
+          aria-hidden="true"
+        />
         <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop Audio or Video file (formats: MP3, WAV, FLAC, OGG, M4A, MP4, MOV, WEBM, no limit), or press Enter to browse files">
           <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <p class="upload-title">Drop Audio or Video</p>
           <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · AAC · MP4 · MOV · WEBM · MKV · AVI — No limit</p>
-          <input type="file" id="fileInput" accept="audio/*,video/*,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.wma,.aiff,.aif,.mp4,.mov,.webm,.mkv,.avi,.m4v" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;" tabindex="-1" />
-          <button id="fileBtn" class="btn btn-outline">Browse Files</button>
+          <!--
+            FIX: fileBtn has explicit position:relative and z-index:10 so no
+            canvas, overlay, or sibling element can sit on top of it and steal
+            pointer events. cursor:pointer makes it clearly clickable.
+          -->
+          <button
+            id="fileBtn"
+            class="btn btn-outline"
+            type="button"
+            style="position:relative;z-index:10;cursor:pointer;"
+          >Browse Files</button>
         </div>
         <div class="upload-row">
           <button id="micBtn" class="btn btn-mic">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
             <span id="micLabel">Record</span>
           </button>
+          <button id="clearFile" class="btn btn-outline" type="button" aria-label="Clear loaded file">Clear</button>
           <span id="fileInfo" class="file-info">No file loaded</span>
         </div>
       </div>
 
       <!-- Tabs -->
-      <div class="tabs" id="tabBar">
-        <button class="tab active" data-tab="gate">Gate</button>
-        <button class="tab" data-tab="nr">Noise</button>
-        <button class="tab" data-tab="eq">EQ</button>
-        <button class="tab" data-tab="dyn">Dynamics</button>
-        <button class="tab" data-tab="spec">Spectral</button>
-        <button class="tab" data-tab="adv">Advanced</button>
-        <button class="tab" data-tab="sep">Separation</button>
-        <button class="tab" data-tab="out">Output</button>
+      <div class="tabs" id="tabBar" role="tablist" aria-label="Processing stages">
+        <button class="tab active" data-tab="gate" id="tab-btn-gate" role="tab" aria-controls="tab-gate" aria-selected="true" tabindex="0">Gate</button>
+        <button class="tab" data-tab="nr" id="tab-btn-nr" role="tab" aria-controls="tab-nr" aria-selected="false" tabindex="-1">Noise</button>
+        <button class="tab" data-tab="eq" id="tab-btn-eq" role="tab" aria-controls="tab-eq" aria-selected="false" tabindex="-1">EQ</button>
+        <button class="tab" data-tab="dyn" id="tab-btn-dyn" role="tab" aria-controls="tab-dyn" aria-selected="false" tabindex="-1">Dynamics</button>
+        <button class="tab" data-tab="spec" id="tab-btn-spec" role="tab" aria-controls="tab-spec" aria-selected="false" tabindex="-1">Spectral</button>
+        <button class="tab" data-tab="adv" id="tab-btn-adv" role="tab" aria-controls="tab-adv" aria-selected="false" tabindex="-1">Advanced</button>
+        <button class="tab" data-tab="sep" id="tab-btn-sep" role="tab" aria-controls="tab-sep" aria-selected="false" tabindex="-1">Separation</button>
+        <button class="tab" data-tab="out" id="tab-btn-out" role="tab" aria-controls="tab-out" aria-selected="false" tabindex="-1">Output</button>
       </div>
 
       <!-- Slider Panels -->
       <div class="panels">
-        <div class="panel active" id="tab-gate"></div>
-        <div class="panel" id="tab-nr"></div>
-        <div class="panel" id="tab-eq"></div>
-        <div class="panel" id="tab-dyn"></div>
-        <div class="panel" id="tab-spec"></div>
-        <div class="panel" id="tab-adv"></div>
-        <div class="panel" id="tab-sep"></div>
-        <div class="panel" id="tab-out"></div>
+        <div class="panel active" id="tab-gate" role="tabpanel" aria-labelledby="tab-btn-gate"></div>
+        <div class="panel" id="tab-nr" role="tabpanel" aria-labelledby="tab-btn-nr"></div>
+        <div class="panel" id="tab-eq" role="tabpanel" aria-labelledby="tab-btn-eq"></div>
+        <div class="panel" id="tab-dyn" role="tabpanel" aria-labelledby="tab-btn-dyn"></div>
+        <div class="panel" id="tab-spec" role="tabpanel" aria-labelledby="tab-btn-spec"></div>
+        <div class="panel" id="tab-adv" role="tabpanel" aria-labelledby="tab-btn-adv"></div>
+        <div class="panel" id="tab-sep" role="tabpanel" aria-labelledby="tab-btn-sep"></div>
+        <div class="panel" id="tab-out" role="tabpanel" aria-labelledby="tab-btn-out"></div>
       </div>
 
       <!-- Presets -->
       <div class="presets-row">
         <span class="presets-label">PRESETS</span>
-        <button class="btn btn-preset" data-preset="podcast">Podcast</button>
-        <button class="btn btn-preset" data-preset="film">Film</button>
-        <button class="btn btn-preset" data-preset="interview">Interview</button>
-        <button class="btn btn-preset" data-preset="forensic">Forensic</button>
-        <button class="btn btn-preset" data-preset="music">Music</button>
-        <button class="btn btn-preset" data-preset="broadcast">Broadcast</button>
-        <button class="btn btn-preset" data-preset="restoration">Restoration</button>
-        <button class="btn btn-preset" data-preset="whisper">Whisper</button>
-        <button class="btn btn-preset" data-preset="crystalVoice">Crystal Voice</button>
+        <button class="btn btn-preset" data-preset="Voice Clarity">Voice Clarity</button>
+        <button class="btn btn-preset" data-preset="Podcast Clean">Podcast Clean</button>
+        <button class="btn btn-preset" data-preset="Forensic Extract">Forensic Extract</button>
+        <button class="btn btn-preset" data-preset="Music Vocal">Music Vocal</button>
+        <button class="btn btn-preset" data-preset="Whisper Boost">Whisper Boost</button>
+        <button class="btn btn-preset" data-preset="Phone/Radio">Phone/Radio</button>
+        <button class="btn btn-preset" data-preset="Live Performance">Live Performance</button>
+        <button class="btn btn-preset" data-preset="Surveillance">Surveillance</button>
         <div class="custom-preset-actions" style="display:inline-flex; gap: 8px; margin-left: auto;">
           <input type="text" aria-label="Custom preset name" id="customPresetName" placeholder="Preset name" class="slider-val" style="width: 100px; font-size:11px; padding: 2px 4px;">
           <button id="saveCustomPresetBtn" class="btn">Save Custom</button>
@@ -103,14 +202,14 @@
 
       <!-- Actions -->
       <div class="actions-row">
-        <button id="processBtn" class="btn btn-primary" disabled>
+        <button id="processBtn" class="btn btn-primary" disabled title="Load an audio file to process">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
-          Process (35-Stage)
+          Process (32-Stage)
         </button>
-        <button id="reprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
+        <button id="reprocessBtn" class="btn btn-reprocess" disabled title="Process an audio file first">Re-Process</button>
         <button id="stopProcBtn" class="btn btn-danger" style="display:none">Abort</button>
         <button id="forensicToggle" class="btn btn-xs">Forensic</button>
-        <button id="auditLogBtn" class="btn btn-xs" disabled>Audit Log</button>
+        <button id="auditLogBtn" class="btn btn-xs" disabled title="Process an audio file to view the audit log">Audit Log</button>
       </div>
 
       <!-- Pipeline -->
@@ -122,11 +221,11 @@
 
       <!-- Save -->
       <div class="save-row">
-        <button id="saveOrigBtn" class="btn btn-save" disabled>
+        <button id="saveOrigBtn" class="btn btn-save" disabled title="Load an audio file to save">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Save Original WAV
         </button>
-        <button id="saveProcBtn" class="btn btn-save-proc" disabled>
+        <button id="saveProcBtn" class="btn btn-save-proc" disabled title="Process an audio file to save the result">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Save Processed WAV
         </button>
@@ -178,20 +277,27 @@
       </div>
 
       <!-- Waveform -->
-      <!-- NOTE: canvas IDs unified to match app.js cacheDom() lookups -->
       <div class="card viz-card" id="waveCard">
         <div class="viz-hdr"><span>Waveform</span><span class="viz-badge">RMS + Peak</span></div>
         <canvas id="waveformCanvas" class="viz-canvas" aria-label="Processed audio waveform"></canvas>
         <canvas id="waveformOrig" class="viz-canvas" style="opacity:0.45" aria-label="Original audio waveform"></canvas>
       </div>
 
-      <!-- Spectrogram -->
+      <!-- Spectrogram (2D) -->
       <div class="card viz-card" id="specCard">
-        <div class="viz-hdr"><span>Spectrogram</span><span class="viz-badge">FFT 2048</span><span class="viz-badge" id="specModeBadge">2D</span>
-          <button id="spec3dBtn" class="btn btn-xs" style="margin-left:auto">Toggle 3D</button>
-        </div>
+        <div class="viz-hdr"><span>Spectrogram</span><span class="viz-badge">FFT 2048</span><span class="viz-badge">2D</span></div>
         <canvas id="specCanvas" class="viz-canvas" aria-label="Spectrogram visualization"></canvas>
-        <canvas id="spec3dCanvas" class="viz-canvas" style="display:none" aria-label="3D spectrogram visualization"></canvas>
+      </div>
+
+      <!-- 3D Spectrogram (dedicated space) -->
+      <div class="card viz-card" id="spec3dCard">
+        <div class="viz-hdr">
+          <span>3D Spectrogram</span><span class="viz-badge">Three.js</span>
+          <button id="spec3dResetBtn" class="btn btn-xs" style="margin-left:auto" title="Reset camera view">Reset View</button>
+        </div>
+        <div id="spec3dContainer" class="spectro3d-container">
+          <canvas id="spec3dCanvas" aria-label="3D spectrogram visualization"></canvas>
+        </div>
       </div>
 
       <!-- Comparison -->
@@ -208,7 +314,6 @@
 
       <!-- Pipeline Diagnostics — 6-Panel Dashboard -->
       <div class="card viz-card" id="diagCard">
-        <!-- Dashboard header -->
         <div class="diag-header">
           <span class="diag-title">Pipeline Diagnostics · 6-Panel</span>
           <span class="diag-fps" id="diagFps">-- fps</span>
@@ -219,8 +324,6 @@
             <span class="dl-dot" style="background:#22d3ee"></span>Spec
           </div>
         </div>
-
-        <!-- Row 1: A/B Waveform (full width) -->
         <div class="diag-section diag-ab">
           <div class="viz-hdr" style="margin-bottom:3px">
             <span>A/B Waveform</span>
@@ -228,34 +331,29 @@
           </div>
           <canvas id="abWaveCanvas" class="viz-canvas diag-ab-cv" aria-label="A/B waveform comparison"></canvas>
         </div>
-
-        <!-- Row 2: Oscilloscope | Spectrogram Overlay | LUFS -->
         <div class="diag-row3">
-          <!-- Oscilloscope -->
           <div>
             <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem">
               <span>Oscilloscope</span>
               <div style="display:flex;gap:2px">
-                <button class="btn btn-xs osc-mode active" data-mode="wave">W</button>
-                <button class="btn btn-xs osc-mode" data-mode="mirror">M</button>
-                <button class="btn btn-xs osc-mode" data-mode="lissajous">XY</button>
+                <button class="btn btn-xs osc-mode active" data-mode="wave" aria-label="Oscilloscope mode: Wave" aria-pressed="true">W</button>
+                <button class="btn btn-xs osc-mode" data-mode="mirror" aria-label="Oscilloscope mode: Mirror" aria-pressed="false">M</button>
+                <button class="btn btn-xs osc-mode" data-mode="lissajous" aria-label="Oscilloscope mode: Lissajous (XY)" aria-pressed="false">XY</button>
               </div>
             </div>
             <canvas id="oscCanvas" class="viz-canvas diag-osc-cv" aria-label="Oscilloscope"></canvas>
           </div>
-          <!-- Spectrogram Overlay -->
           <div>
             <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem">
               <span>Spec Overlay</span>
               <div style="display:flex;gap:2px">
-                <button class="btn btn-xs overlay-toggle active" data-overlay="noise">Noise</button>
-                <button class="btn btn-xs overlay-toggle active" data-overlay="erb">ERB</button>
-                <button class="btn btn-xs overlay-toggle" data-overlay="ml">ML</button>
+                <button class="btn btn-xs overlay-toggle active" data-overlay="noise" aria-label="Toggle noise overlay" aria-pressed="true">Noise</button>
+                <button class="btn btn-xs overlay-toggle active" data-overlay="erb" aria-label="Toggle ERB overlay" aria-pressed="true">ERB</button>
+                <button class="btn btn-xs overlay-toggle" data-overlay="ml" aria-label="Toggle ML overlay" aria-pressed="false">ML</button>
               </div>
             </div>
             <canvas id="specOverlayCanvas" class="viz-canvas diag-spec-cv" aria-label="Spectrogram overlays"></canvas>
           </div>
-          <!-- LUFS Meter -->
           <div>
             <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem"><span>LUFS Meter</span></div>
             <canvas id="lufsCanvas" class="viz-canvas diag-lufs-cv" aria-label="LUFS meter"></canvas>
@@ -267,8 +365,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Row 3: ML Saliency | Speaker Cluster -->
         <div class="diag-row2">
           <div>
             <div class="viz-hdr" style="margin-bottom:3px;font-size:0.58rem"><span>ML Saliency</span><span class="viz-badge">Hot</span></div>
@@ -279,26 +375,122 @@
             <canvas id="clusterCanvas" class="viz-canvas diag-cluster-cv" aria-label="Speaker cluster analysis"></canvas>
           </div>
         </div>
-
-        <!-- Structured log panel -->
         <div id="diagLog" class="diag-log"></div>
       </div>
 
-      <!-- Diarization Timeline + Per-Speaker VU Meters
-           Powered by VisualizationEngine in visuals.js. These are additive —
-           they do not duplicate the 6-panel diagnostic dashboard above. -->
+      <!-- Diarization Timeline + Per-Speaker VU Meters -->
       <div class="card viz-card" id="diarCard">
         <div class="viz-hdr">
-          <span>Diarization Timeline</span>
+          <span>Speaker Timeline</span>
+          <span class="viz-badge" id="diarSpeakerCount">Waiting…</span>
           <span class="viz-badge" id="vuMeterPanelLabel">Per-Speaker</span>
+          <div style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+            <span id="diarTimeLabel" style="font-size:11px;color:#9ca3af;font-family:monospace;">00:00.0</span>
+            <button id="diarZoomIn"  class="btn btn-xs" title="Zoom in" aria-label="Zoom in">＋</button>
+            <button id="diarZoomOut" class="btn btn-xs" title="Zoom out" aria-label="Zoom out">－</button>
+            <button id="diarZoomFit" class="btn btn-xs" title="Fit all" aria-label="Fit all">⤢</button>
+          </div>
         </div>
-        <canvas id="diarCanvas" class="viz-canvas" aria-label="Diarization timeline"></canvas>
+        <div style="position:relative;overflow:hidden;">
+          <canvas id="diarCanvas" class="viz-canvas" aria-label="Speaker diarization timeline" style="min-height:80px;width:100%;background:#0f172a;"></canvas>
+          <div id="diarPlayhead" style="position:absolute;top:0;bottom:0;width:2px;background:#ef4444;pointer-events:none;left:0;display:none;"></div>
+        </div>
         <div class="vu-meter-container" id="vuMeterPanel" role="group" aria-labelledby="vuMeterPanelLabel"></div>
+      </div>
+
+      <!-- Speaker Isolation Controls -->
+      <div class="card iso-card" id="isolationCard">
+        <div class="viz-hdr">
+          <span>Speaker Isolation</span>
+          <span class="viz-badge">Hybrid ML+DSP</span>
+          <span class="viz-badge iso-drop-hint" id="isoDropHint" style="margin-left:auto;opacity:0.55;font-size:0.55rem;">Drop audio here to load</span>
+        </div>
+
+        <!-- Step 1: Isolation Settings -->
+        <div class="iso-section">
+          <div class="iso-section-hdr">1 · Isolation Settings</div>
+          <div class="isolation-globals">
+            <div class="sr-row" data-desc="Selects the isolation algorithm. Hybrid combines ML neural separation with classical DSP filters for best quality. ML Only uses BSRNN neural network exclusively. Classical DSP uses traditional spectral gating and filtering.">
+              <label class="sr-label" for="isolationMethodSelect">Method</label>
+              <select id="isolationMethodSelect" style="background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:4px;padding:3px 8px;font-size:12px;">
+                <option value="hybrid" selected>Hybrid (ML+DSP)</option>
+                <option value="ml">ML Only (BSRNN)</option>
+                <option value="classical">Classical DSP</option>
+              </select>
+            </div>
+            <div class="sr-row" data-desc="Minimum confidence threshold for speaker detection. Higher values require stronger voice signatures — fewer false positives but may miss quieter speech. Lower values catch more speech but risk including noise.">
+              <label class="sr-label" for="isolationConfidenceSlider">Confidence</label>
+              <input type="range" id="isolationConfidenceSlider" min="40" max="95" value="65" step="1" />
+              <span id="isolationConfidenceReadout" class="sr-val">65%</span>
+            </div>
+            <div class="sr-row" data-desc="Controls how much background audio (non-voice) remains in the output. 0% = fully suppressed background (clean voice only). 100% = full background level preserved alongside the isolated voice.">
+              <label class="sr-label" for="isolationBgVolumeSlider">Bg Level</label>
+              <input type="range" id="isolationBgVolumeSlider" min="0" max="100" value="0" step="1" />
+              <span id="isolationBgReadout" class="sr-val">0%</span>
+            </div>
+            <div class="sr-row" data-desc="Applies post-processing refinement to the spectral separation mask. Smooths edges between voice and noise regions, reducing artifacts like musical noise and spectral tearing. Disable for raw unprocessed masks.">
+              <label class="sr-label" for="isolationMaskRefine">Mask Refine</label>
+              <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+                <input type="checkbox" id="isolationMaskRefine" checked />
+                <span style="font-size:11px;color:#9ca3af;">Enabled</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Background Sound Suppression -->
+        <div class="iso-section">
+          <div class="iso-section-hdr">2 · Mute Background Sounds
+            <span style="font-size:0.55rem;font-weight:400;color:#64748b;margin-left:6px;">Applied during Process</span>
+          </div>
+          <p class="iso-hint">Toggle sounds you want suppressed from the output. Works alongside noise reduction.</p>
+          <div class="sound-mute-grid" id="soundMuteGrid">
+            <button class="sound-mute-btn" data-cat="appliance" title="Washing machine, AC, fan, dryer — low-frequency mechanical hum (20–500 Hz)">
+              <span class="smb-icon">🏠</span><span class="smb-label">Appliances</span>
+            </button>
+            <button class="sound-mute-btn" data-cat="music" title="Background music — tonal and harmonic content across mid frequencies">
+              <span class="smb-icon">🎵</span><span class="smb-label">Music</span>
+            </button>
+            <button class="sound-mute-btn" data-cat="dog" title="Dog barking, animal sounds — impulsive bursts 300–3,000 Hz">
+              <span class="smb-icon">🐕</span><span class="smb-label">Dog/Animal</span>
+            </button>
+            <button class="sound-mute-btn" data-cat="bird" title="Bird chirps and tweets — high-frequency transients 2–10 kHz">
+              <span class="smb-icon">🐦</span><span class="smb-label">Birds</span>
+            </button>
+            <button class="sound-mute-btn" data-cat="traffic" title="Traffic, engine noise, outdoor ambience — low-mid broadband noise">
+              <span class="smb-icon">🚗</span><span class="smb-label">Traffic</span>
+            </button>
+            <button class="sound-mute-btn" data-cat="crowd" title="Crowd chatter, multiple voices, restaurant noise — competing speech band">
+              <span class="smb-icon">👥</span><span class="smb-label">Crowd</span>
+            </button>
+          </div>
+          <div id="soundMuteStatus" class="sound-mute-status">No sounds muted — all background is processed normally</div>
+        </div>
+
+        <!-- Step 3: Detected Speakers -->
+        <div class="iso-section">
+          <div class="iso-section-hdr">3 · Detected Speakers
+            <span style="font-size:0.55rem;font-weight:400;color:#64748b;margin-left:6px;">Auto-detected after processing</span>
+          </div>
+          <div id="speakerCardsGrid">
+            <span class="iso-empty-msg">Process audio to detect and isolate individual speakers</span>
+          </div>
+        </div>
+
+        <!-- Voiceprint enroll -->
+        <div class="iso-section" style="border-top:1px solid #1e293b;padding-top:10px;margin-top:0;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span class="sr-label">Voiceprint</span>
+            <span id="voiceprintStatus" style="font-size:11px;color:#9ca3af;">Not enrolled</span>
+            <button id="enrollVoiceprintBtn" class="btn btn-xs">Record 5s</button>
+            <button id="clearVoiceprintBtn"  class="btn btn-xs">Clear</button>
+          </div>
+        </div>
       </div>
 
       <!-- Forensic Report -->
       <div class="card forensic-card" id="forensicCard" style="display:none">
-        <div class="viz-hdr"><span>Forensic Analysis Report</span><span class="viz-badge">v22.1</span></div>
+        <div class="viz-hdr"><span>Forensic Analysis Report</span><span class="viz-badge">v24.0</span></div>
         <div id="forensicReport" class="forensic-report"></div>
       </div>
 
@@ -310,7 +502,7 @@
         </div>
         <div id="batchList" class="batch-list"></div>
         <div class="batch-actions">
-          <button id="batchProcessBtn" class="btn btn-primary" disabled>Process All</button>
+          <button id="batchProcessBtn" class="btn btn-primary" disabled title="Add files to the batch list to process">Process All</button>
           <button id="batchClearBtn" class="btn">Clear</button>
           <span id="batchProgress" class="batch-progress"></span>
         </div>
@@ -331,7 +523,7 @@
   </div>
 
   <footer class="ftr">
-    <span>VoiceIsolate Pro v22.1 · Threads from Space v11 · Hybrid ML+DSP · 35-Stage Deca-Pass</span>
+    <span>VoiceIsolate Pro v24.0 · Threads from Space v12 · Hybrid ML+DSP · 32-Stage Deca-Pass</span>
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
 
@@ -343,28 +535,9 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
       Process
     </button>
-    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Re-Process</button>
-    <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Stop</button>
+    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled title="Process an audio file first" aria-label="Re-process audio">Re-Process</button>
+    <button id="mobileStopBtn" class="btn btn-danger" style="display:none" aria-label="Stop processing">Stop</button>
   </div>
-
-  <!--
-    Script load order (MUST NOT CHANGE):
-     1. ring-buffer              — SAB ring helpers
-     2. pipeline-state           — shared state store
-     3. dsp-core                 — offline DSP engine
-     4. batch-orchestrator       — batch queue
-     5. analytics                — telemetry stub
-     6. license-manager          — paywall gate
-     7. app.js                   — defines VoiceIsolatePro class (includes merged patches)
-     8. ai-engine-v2.js          — AI reasoning engine
-     9. ai-intelligence.js       — AI analysis helpers
-    10. ml-worker-models-patch.js— ML model manifest + graceful degradation
-    11. ml-worker-fetch-cache.js — IndexedDB model cache + chunked download
-    12. pipeline-orchestrator.js — PipelineOrchestrator + bootstrap IIFE
-    13. vip-boot.js              — instantiates app, sets window._vipApp — MUST BE LAST
-  -->
-  <!-- Libs (local only, no CDN) -->
-  <!-- /lib/three.min.js already loaded in <head> -->
 
   <!-- Core modules -->
   <script src="./dsp-core.js"></script>
@@ -374,22 +547,91 @@
   <script src="./batch-orchestrator.js"></script>
   <script src="./analytics.js"></script>
   <script src="./license-manager.js"></script>
+  <script src="./auth.js"></script>
   <script src="./ai-engine-v2.js"></script>
   <script src="./ai-intelligence.js"></script>
   <script src="./ml-worker-models-patch.js"></script>
   <script src="./ml-worker-fetch-cache.js"></script>
   <script src="./pipeline-orchestrator.js"></script>
-
   <script src="./batch-processor.js"></script>
-
-  <!-- Visualization Engine (VU meters, diarization timeline, Inferno LUT,
-       speaker color palette). Must be loaded BEFORE app.js so that
-       `VisualizationEngine` and `VIP_SPEAKER_COLORS` are available when the
-       app constructs its engine instance during init(). -->
   <script src="./visuals.js"></script>
-
-  <!-- Main app — must be before vip-boot -->
+  <script src="./session-persist.js"></script>
   <script src="./app.js"></script>
+  <script src="./controls-test.js"></script>
   <script src="./vip-boot.js"></script>
+
+  <script>
+    (function _vipSafetyNet() {
+      function run() {
+        if (!window._vipApp && typeof VoiceIsolatePro === 'function') {
+          try {
+            var app = new VoiceIsolatePro();
+            if (typeof app.init === 'function' && !app._initCalled) { app.init(); }
+            app._initCalled = true;
+            window.vip     = app;
+            window._vipApp = app;
+            console.info('[safety-net] VoiceIsolatePro instantiated ✓');
+          } catch(e){ console.warn('[safety-net] instantiation failed:', e); }
+        }
+        if (typeof Auth !== 'undefined' && typeof Auth.init === 'function') {
+          if (!Auth.isLoggedIn && Auth.currentUser === null) {
+            Auth.init().catch(function(e){ console.warn('[safety-net] Auth.init:', e); });
+          }
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', run, { once: true });
+      } else { run(); }
+    })();
+  </script>
+
+  <script type="module">
+    import * as DT from './diarization-timeline.js';
+    import * as IC from './isolation-controls.js';
+    window.onDiarizationResult = DT.onDiarizationResult;
+    window.seekTimeline        = DT.seekTimeline;
+    window.setSpeakerVolume    = DT.setSpeakerVolume;
+    window.setSpeakerMute      = DT.setSpeakerMute;
+    window.setSpeakerSolo      = DT.setSpeakerSolo;
+    window._diarZoom           = DT.zoomTimeline;
+    window._diarZoomFit        = DT.fitTimeline;
+    window.updateSpeakerCards  = IC.updateSpeakerCards;
+    window.setActiveSpeakerCard= IC.setActiveSpeakerCard;
+    function _boot() {
+      const orch = window._vipOrch;
+      if (!orch) return;
+      DT.initDiarizationTimeline({
+        canvasId:        'diarCanvas',
+        playheadId:      'diarPlayhead',
+        timeLabelId:     'diarTimeLabel',
+        speakerCountId:  'diarSpeakerCount',
+        onSpeakerClick: (id) => {
+          if (window._vipApp?.diarizationState)
+            window._vipApp.diarizationState.activeSpeaker = id;
+          if (orch.mlWorker)
+            orch.mlWorker.postMessage({ type: 'isolateSpeaker', payload: { speakerId: id } });
+        },
+      });
+      IC.initIsolationControls({
+        gridId:        'speakerCardsGrid',
+        mlWorker:      orch.mlWorker,
+        audioContext:  orch.ctx,
+        onSolo:   (id, volumes) => orch.mlWorker?.postMessage({ type: 'speakerVolumes', payload: volumes }),
+        onMute:   (id, volumes) => orch.mlWorker?.postMessage({ type: 'speakerVolumes', payload: volumes }),
+        onVolume: (id, volumes) => orch.mlWorker?.postMessage({ type: 'speakerVolumes', payload: volumes }),
+        onEnrollFromSeg: (id) => orch.mlWorker?.postMessage({ type: 'enrollFromDiarization', payload: { speakerId: id } }),
+      });
+      // Re-trigger diarization if audio was loaded before the UI was ready
+      const app = window._vipApp;
+      if (app?.inputBuffer && orch.mlWorker) {
+        app._triggerDiarization(app.inputBuffer).catch(() => {});
+      }
+    }
+    const t = setInterval(() => {
+      if (window._vipOrch?.initialized) { clearInterval(t); _boot(); }
+    }, 100);
+    setTimeout(() => { clearInterval(t); _boot(); }, 8000);
+  </script>
+
 </body>
 </html>

@@ -20,6 +20,7 @@ export default [
         PipelineState: 'readonly',        // loaded via separate script tag
         PipelineOrchestrator: 'readonly', // loaded via separate script tag
         SpeakerRegistry: 'readonly',      // loaded via separate script tag
+        Auth: 'readonly',                 // optional global from auth.js / vip-boot.js
       },
     },
     rules: {
@@ -63,7 +64,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
@@ -77,6 +78,21 @@ export default [
       globals: {
         ...globals.worker,
         importScripts: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  {
+    files: ['api/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
       },
     },
     rules: {

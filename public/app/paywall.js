@@ -387,7 +387,7 @@ const Paywall = (() => {
           const currentTier = LM ? LM.getTier() : 'FREE';
           _setHTML(grid, Object.entries(tiers).map(([tier, def]) =>
             _renderPricingCard(tier, def, tier === currentTier)
-          ).join(''); // SEC-02
+          ).join('')); // SEC-02
         }
         // Update toggle buttons
         _modalEl.querySelectorAll('.vip-toggle-btn').forEach(btn => {
@@ -429,9 +429,13 @@ const Paywall = (() => {
 
       // Production: call backend — price resolution happens server-side via env vars
       try {
+        const headers = { 'Content-Type': 'application/json' };
+        const authTokenRaw = window.Auth?.currentUser?.token || null;
+        const authToken = typeof authTokenRaw === 'string' ? authTokenRaw.trim() : '';
+        if (authToken) headers.Authorization = `Bearer ${authToken}`;
         const res = await fetch('/api/checkout', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ tier, cycle }),
         });
         const data = await res.json();

@@ -18,10 +18,10 @@ git clone https://github.com/Joker5514/VoiceIsolate-Pro.git
 cd VoiceIsolate-Pro
 
 # Install dependencies
-npm install
+pnpm install
 
 # Start the dev server
-npm run dev
+pnpm dev
 ```
 
 The app will be available at `http://localhost:3000/app/`.
@@ -30,12 +30,12 @@ The app will be available at `http://localhost:3000/app/`.
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start local development server |
-| `npm run lint` | Run ESLint on source files |
-| `npm run lint:fix` | Run ESLint with auto-fix |
-| `npm run test` | Run Jest unit tests |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run validate` | Run structural validation checks |
+| `pnpm dev` | Start local development server |
+| `pnpm lint` | Run ESLint on source files |
+| `pnpm lint:fix` | Run ESLint with auto-fix |
+| `pnpm test` | Run Jest unit tests |
+| `pnpm test:watch` | Run tests in watch mode |
+| `pnpm validate` | Run structural validation checks |
 
 ## Architecture Overview
 
@@ -91,7 +91,7 @@ Each slider definition includes:
 1. Add definition to appropriate group in `SLIDERS` constant
 2. Add default value to all 7 presets in `PRESETS`
 3. Wire it to DSP code in the processing pipeline
-4. Run `npm run validate` to verify structural integrity
+4. Run `pnpm validate` to verify structural integrity
 
 ### ML Models
 
@@ -117,7 +117,7 @@ See `public/app/models/README.md` for download instructions.
 Tests are in `tests/` using Jest:
 
 ```bash
-npm run test
+pnpm test
 ```
 
 Current test coverage:
@@ -140,9 +140,9 @@ Always test with actual audio files:
 1. **Branch naming**: `feature/description` or `fix/description`
 2. **Run checks before PR**:
    ```bash
-   npm run lint
-   npm run test
-   npm run validate
+   pnpm lint
+   pnpm test
+   pnpm validate
    ```
 3. **Keep PRs focused**: One feature or fix per PR
 4. **Update tests**: Add tests for new functionality

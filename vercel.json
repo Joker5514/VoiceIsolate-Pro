@@ -1,14 +1,37 @@
 {
+  "framework": null,
   "outputDirectory": "public",
-  "buildCommand": "bash scripts/bootstrap-libs.sh",
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "node scripts/setup-ort.js || true",
+  "env": {
+    "PUPPETEER_SKIP_DOWNLOAD": "true",
+    "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": "true",
+    "NODE_ENV": "production"
+  },
+  "github": {
+    "autoJobCancelation": false
+  },
   "rewrites": [
-    { "source": "/app/:path*", "destination": "/app/:path*" },
-    { "source": "/lib/:path*", "destination": "/lib/:path*" },
-    { "source": "/", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/handler"
+    },
+    {
+      "source": "/app/(.*)",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/app",
+      "destination": "/app/index.html"
+    },
+    {
+      "source": "/((?!api/|lib/|assets/|app/|manifest\\.json|icon\\.jpg|favicon\\..*).*)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "headers": [
         { "key": "Cross-Origin-Opener-Policy",   "value": "same-origin" },
         { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
@@ -20,8 +43,26 @@
         { "key": "Referrer-Policy",              "value": "strict-origin-when-cross-origin" },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com /_vercel/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; worker-src 'self' blob:"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' /_vercel/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' blob: https://va.vercel-scripts.com; worker-src 'self' blob:; frame-ancestors 'none'"
         }
+      ]
+    },
+    {
+      "source": "/app/voice-isolate-processor.js",
+      "headers": [
+        { "key": "Cross-Origin-Opener-Policy",   "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
+        { "key": "Content-Type",  "value": "application/javascript" },
+        { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
+      "source": "/app/dsp-processor.js",
+      "headers": [
+        { "key": "Cross-Origin-Opener-Policy",   "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
+        { "key": "Content-Type",  "value": "application/javascript" },
+        { "key": "Cache-Control", "value": "no-cache" }
       ]
     },
     {
@@ -46,20 +87,6 @@
         { "key": "Content-Type",                 "value": "application/javascript" },
         { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
         { "key": "Cache-Control",                "value": "public, max-age=86400" }
-      ]
-    },
-    {
-      "source": "/app/models/(.*)",
-      "headers": [
-        { "key": "Cross-Origin-Resource-Policy", "value": "same-site" },
-        { "key": "Cache-Control", "value": "public, max-age=86400, immutable" }
-      ]
-    },
-    {
-      "source": "/app/dsp-processor.js",
-      "headers": [
-        { "key": "Content-Type", "value": "application/javascript" },
-        { "key": "Cache-Control", "value": "no-cache" }
       ]
     }
   ]
