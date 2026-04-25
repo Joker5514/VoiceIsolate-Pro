@@ -1,0 +1,94 @@
+export interface DSPParams {
+  highPassFreq: number;
+  lowPassFreq: number;
+  compThreshold: number;
+  compRatio: number;
+  gateThreshold: number;
+  denoiseMix: number;
+  spectralGateDB: number;
+  outputGain: number;
+  clarityBoost: number;
+  dryWetMix: number;
+  // Advanced DSP — new in this PR (0 = stage disabled)
+  vadSensitivity: number;         // 0 = off, 0.1–1.0 = VAD sensitivity
+  adaptiveNoiseFloor: number;     // 0 = off, >0 = per-frame smoothing rate
+  multibandWienerStrength: number; // 0 = off, 0–1 = Wiener filter strength
+  harmonicEnhanceAmt: number;     // 0 = off, 1–100 = harmonic enhancement amount
+  gainNormTarget: number;         // 0 = normalization disabled; negative = LUFS target (e.g. -23 for broadcast, -16 for streaming)
+}
+
+export type PresetId = 'podcast-clean' | 'voice-stream' | 'aggressive-isolation';
+
+export interface VoiceIsolatePreset {
+  id: PresetId;
+  name: string;
+  params: DSPParams;
+}
+
+export const PRESETS: Record<PresetId, VoiceIsolatePreset> = {
+  'podcast-clean': {
+    id: 'podcast-clean',
+    name: 'Podcast Clean',
+    params: {
+      highPassFreq: 80,
+      lowPassFreq: 16000,
+      compThreshold: -24,
+      compRatio: 3.5,
+      gateThreshold: -48,
+      denoiseMix: 0.35,
+      spectralGateDB: 8,
+      outputGain: 1.5,
+      clarityBoost: 2,
+      dryWetMix: 0.95,
+      vadSensitivity: 0.5,
+      adaptiveNoiseFloor: 0.05,
+      multibandWienerStrength: 0.6,
+      harmonicEnhanceAmt: 15,
+      gainNormTarget: -23
+    }
+  },
+  'voice-stream': {
+    id: 'voice-stream',
+    name: 'Voice Stream',
+    params: {
+      highPassFreq: 100,
+      lowPassFreq: 14000,
+      compThreshold: -20,
+      compRatio: 3,
+      gateThreshold: -44,
+      denoiseMix: 0.3,
+      spectralGateDB: 6,
+      outputGain: 1,
+      clarityBoost: 1.5,
+      dryWetMix: 0.9,
+      vadSensitivity: 0.4,
+      adaptiveNoiseFloor: 0.05,
+      multibandWienerStrength: 0.4,
+      harmonicEnhanceAmt: 10,
+      gainNormTarget: -23
+    }
+  },
+  'aggressive-isolation': {
+    id: 'aggressive-isolation',
+    name: 'Aggressive Isolation',
+    params: {
+      highPassFreq: 120,
+      lowPassFreq: 12000,
+      compThreshold: -18,
+      compRatio: 5,
+      gateThreshold: -38,
+      denoiseMix: 0.85,
+      spectralGateDB: 14,
+      outputGain: 2,
+      clarityBoost: 3,
+      dryWetMix: 1.0,
+      vadSensitivity: 0.8,
+      adaptiveNoiseFloor: 0.1,
+      multibandWienerStrength: 0.9,
+      harmonicEnhanceAmt: 25,
+      gainNormTarget: -16
+    }
+  }
+};
+
+export const DEFAULT_PRESET_ID: PresetId = 'podcast-clean';

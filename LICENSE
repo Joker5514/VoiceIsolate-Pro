@@ -1,25 +1,94 @@
-Copyright © 2026 Randy Jordan - All Rights Reserved - Proprietary License
+Copyright (c) 2024–2026 VoiceIsolate Pro. All Rights Reserved.
 
-All rights reserved.
+PROPRIETARY SOFTWARE LICENSE
 
-This software, including all source code, design, documentation, binaries,
-associated assets (collectively, the “Software”), is the proprietary and
-confidential property of Randy Jordan (the “Author”).
+This software, including all source code, algorithms, models, documentation,
+design specifications, and associated files (collectively, the "Software"), is
+the exclusive proprietary property of VoiceIsolate Pro and is protected by
+copyright law, trade secret law, and international treaty provisions.
 
-No part of the Software may be reproduced, distributed, transmitted, modified,
-published, adapted, translated, publicly performed, publicly displayed, sold,
-sub-licensed, or otherwise exploited in any form or by any means — electronic,
-mechanical, photographic, or otherwise — without the express, prior, written
-permission of the Author.
+GRANT OF LICENSE
 
-Unauthorised copying, use, or distribution of the Software, via any medium,
-is strictly prohibited.
+No license, express or implied, by estoppel or otherwise, to any intellectual
+property rights is granted by this document. The Software is provided solely
+for personal, non-commercial evaluation purposes unless a separate written
+agreement has been executed between you and VoiceIsolate Pro.
 
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+RESTRICTIONS
+
+You may NOT, without prior written permission from VoiceIsolate Pro:
+
+  1. Copy, reproduce, distribute, publish, transmit, or sublicense the Software
+     or any portion thereof, in source or binary form.
+
+  2. Modify, adapt, translate, reverse-engineer, decompile, disassemble, or
+     create derivative works based on the Software.
+
+  3. Remove, alter, or obscure any proprietary notices, labels, or marks on or
+     in the Software.
+
+  4. Use the Software, or any component thereof, to train, fine-tune, or
+     evaluate any machine learning model or artificial intelligence system.
+
+  5. Use the Software for commercial purposes, including offering it as a
+     service, incorporating it into commercial products, or using it to generate
+     revenue, without a separate commercial license agreement.
+
+  6. Transfer, assign, or sublicense your rights under this License to any
+     third party.
+
+INTELLECTUAL PROPERTY
+
+All title to and intellectual property rights in and to the Software (including
+but not limited to images, text, DSP algorithms, ML model architectures,
+pipeline designs, and accompanying documentation) are owned by VoiceIsolate Pro.
+The Software is licensed, not sold.
+
+THIRD-PARTY COMPONENTS
+
+The Software may incorporate third-party open-source components that are
+governed by their own respective licenses. Such components are used in
+accordance with their applicable license terms, which are not superseded by
+this License. A list of third-party components and their licenses is available
+in the project documentation.
+
+DISCLAIMER OF WARRANTIES
+
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
-THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN
-AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT. THE ENTIRE RISK
+AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH YOU.
 
-For licensing inquiries, please contact the Author.
+LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL VOICEISOLATE PRO OR ITS SUPPLIERS BE LIABLE FOR ANY INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, LOSS OF DATA, LOSS OF PROFITS, BUSINESS INTERRUPTION, OR
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES), HOWEVER CAUSED AND ON ANY THEORY
+OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE), ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+INABILITY TO USE THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+DAMAGE.
+
+TERMINATION
+
+This License is effective until terminated. Your rights under this License will
+terminate automatically without notice if you fail to comply with any of its
+terms. Upon termination you must destroy all copies of the Software in your
+possession or control.
+
+GOVERNING LAW
+
+This License shall be governed by and construed in accordance with applicable
+law. Any disputes arising under or in connection with this License shall be
+subject to the exclusive jurisdiction of the competent courts.
+
+CONTACT
+
+For licensing inquiries, commercial use, or permissions:
+  VoiceIsolate Pro
+  https://github.com/Joker5514/VoiceIsolate-Pro
+
+---
+
+VoiceIsolate Pro v19.0.0 · Copyright © 2024–2026 · All Rights Reserved

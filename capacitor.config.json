@@ -1,0 +1,41 @@
+{
+  "appId": "com.voiceisolatepro.app",
+  "appName": "VoiceIsolate Pro",
+  "webDir": "build",
+  "server": {
+    "androidScheme": "https",
+    "iosScheme": "capacitor",
+    "hostname": "voiceisolatepro.app"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false,
+    "captureInput": true,
+    "appendUserAgent": "VoiceIsolatePro/22.1",
+    "backgroundColor": "#0a0a0f"
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "allowsLinkPreview": false,
+    "scrollEnabled": true,
+    "appendUserAgent": "VoiceIsolatePro/22.1",
+    "backgroundColor": "#0a0a0f",
+    "preferredContentMode": "mobile",
+    "webContentsDebuggingEnabled": false,
+    "limitsNavigationsToAppBoundDomains": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "backgroundColor": "#0a0a0f",
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP"
+    },
+    "StatusBar": {
+      "backgroundColor": "#0a0a0f",
+      "style": "DARK",
+      "overlaysWebView": false
+    }
+  }
+}
