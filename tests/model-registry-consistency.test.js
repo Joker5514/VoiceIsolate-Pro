@@ -127,6 +127,11 @@ describe('model registry consistency', () => {
       missingFromMlWorker.length   > 0 ||
       missingFromFetchCache.length > 0;
 
+    // Strict mode: set VIP_STRICT_REGISTRY_CHECK=1 to hard-fail CI on drift.
+    // By default the assertion is a non-blocking diagnostic (console.warn) so
+    // CI stays green until a follow-up PR reconciles the three registries.
+    const strictMode = process.env.VIP_STRICT_REGISTRY_CHECK === '1';
+
     if (drift) {
       const lines = [
         'Model registry drift detected. Each canonical .onnx filename must appear in all three registries.',
@@ -144,18 +149,16 @@ describe('model registry consistency', () => {
         `missing from fetch-cache:     ${missingFromFetchCache.join(', ') || '(none)'}`,
       ];
       const message = lines.join('\n');
-      // Strict mode: set VIP_STRICT_REGISTRY_CHECK=1 to hard-fail CI on drift.
-      // By default the assertion is a non-blocking diagnostic (console.warn) so
-      // CI stays green until a follow-up PR reconciles the three registries.
-      if (process.env.VIP_STRICT_REGISTRY_CHECK === '1') {
+      if (strictMode) {
         throw new Error(message);
       } else {
         console.warn('[model-registry-consistency] ' + message);
       }
     }
 
-    if (process.env.VIP_STRICT_REGISTRY_CHECK === '1') {
+    if (strictMode) {
       expect(drift).toBe(false);
     }
+    // In non-strict mode the test always passes; drift is surfaced via console.warn above.
   });
 });
