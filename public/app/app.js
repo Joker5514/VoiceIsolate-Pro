@@ -854,6 +854,37 @@ class VoiceIsolatePro {
     document.querySelectorAll('.sound-mute-btn').forEach(btn => {
       btn.addEventListener('click', () => this.toggleSoundCategory(btn.dataset.cat));
     });
+
+    // ── Global keyboard shortcuts ───────────────────────────────────────
+    // Space / K → play-pause toggle, Esc → stop / abort, X → A/B compare.
+    // Shortcuts are suppressed when typing in inputs, when modifier keys are
+    // held (so browser shortcuts like Ctrl+R / Cmd+S still work), or while a
+    // dialog/modal is open.
+    window.addEventListener('keydown', (e) => this._handleGlobalKeydown(e));
+  }
+
+  _handleGlobalKeydown(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    if (t && t.nodeType === 1) {
+      const tag = t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return;
+    }
+    const auth = (typeof document !== 'undefined') ? document.getElementById('authOverlay') : null;
+    if (auth && auth.offsetParent !== null) return;
+    const k = e.key;
+    if (k === ' ' || k === 'Spacebar' || k === 'k' || k === 'K') {
+      if (!this.inputBuffer) return;
+      e.preventDefault();
+      this.togglePlayback();
+    } else if (k === 'Escape') {
+      if (this.isProcessing) { this.abortFlag = true; e.preventDefault(); return; }
+      if (this.isPlaying) { e.preventDefault(); this.stop(); }
+    } else if (k === 'x' || k === 'X') {
+      if (!this.outputBuffer || !this.dom.tpAB || this.dom.tpAB.disabled) return;
+      e.preventDefault();
+      this.toggleAB();
+    }
   }
 
   onSlider(el) {
@@ -1239,6 +1270,7 @@ class VoiceIsolatePro {
     } catch (err) {
       console.error('File load error:', err);
       this.dom.fileInfo.textContent = 'Error: ' + err.message;
+      this.showNotification('Could not load file: ' + err.message, 'error', 6000);
       if (this.dom.processBtn && typeof previousProcessDisabled === 'boolean') this.dom.processBtn.disabled = previousProcessDisabled;
       if (this.dom.reprocessBtn && typeof previousReprocessDisabled === 'boolean') this.dom.reprocessBtn.disabled = previousReprocessDisabled;
       if (this.dom.mobileReprocessBtn && typeof previousMobileReprocessDisabled === 'boolean') this.dom.mobileReprocessBtn.disabled = previousMobileReprocessDisabled;
@@ -1965,8 +1997,14 @@ class VoiceIsolatePro {
       this.dom.tpABLabel.textContent = 'Ready — A/B';
       this.setStatus('COMPLETE');
     } catch(e) {
-      if (e==='abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent='Aborted'; }
-      else { structuredLog('error', 'Pipeline error', { error: e instanceof Error ? e.message : String(e) }); this.setStatus('ERROR'); this.dom.pipeDetail.textContent=e instanceof Error ? e.message : String(e); }
+      if (e==='abort') { this.setStatus('ABORTED'); this.dom.pipeStage.textContent='Aborted'; this.showNotification('Processing aborted', 'warn'); }
+      else {
+        const msg = e instanceof Error ? e.message : String(e);
+        structuredLog('error', 'Pipeline error', { error: msg });
+        this.setStatus('ERROR');
+        this.dom.pipeDetail.textContent = msg;
+        this.showNotification('Processing failed: ' + msg, 'error', 6000);
+      }
     } finally {
       this.isProcessing=false; this.dom.processBtn.style.display='inline-flex'; this.dom.stopProcBtn.style.display='none';
       if (this.dom.mobileProcessBtn)   { this.dom.mobileProcessBtn.style.display='inline-flex'; }
@@ -3082,12 +3120,48 @@ class VoiceIsolatePro {
 
   showNotification(message, type = 'info', duration = 3500) {
     structuredLog(type === 'error' ? 'error' : 'info', '[notify] ' + message);
-    const toast = document.getElementById('toastMsg') || document.getElementById('notification');
-    if (!toast) return;
-    toast.textContent = message;
-    toast.className = 'toast toast-' + type + ' show';
-    clearTimeout(this._toastTimer);
-    this._toastTimer = setTimeout(() => { toast.classList.remove('show'); }, duration);
+    if (typeof document === 'undefined' || !document.body) return;
+    let region = document.getElementById('toastRegion');
+    if (!region) {
+      region = document.createElement('div');
+      region.id = 'toastRegion';
+      region.className = 'toast-region';
+      region.setAttribute('role', 'status');
+      region.setAttribute('aria-live', 'polite');
+      region.setAttribute('aria-atomic', 'true');
+      document.body.appendChild(region);
+    }
+    // Cap stack at 4 to avoid runaway accumulation if many errors fire at once.
+    while (region.children.length >= 4) region.removeChild(region.firstChild);
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-' + type;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    const text = document.createElement('span');
+    text.className = 'toast-msg';
+    text.textContent = String(message);
+    toast.appendChild(text);
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'toast-close';
+    close.setAttribute('aria-label', 'Dismiss notification');
+    close.textContent = '×';
+    let removed = false;
+    const dismiss = () => {
+      if (removed) return;
+      removed = true;
+      toast.classList.remove('show');
+      setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 220);
+    };
+    close.addEventListener('click', dismiss);
+    toast.appendChild(close);
+    region.appendChild(toast);
+    // Trigger CSS transition on next frame.
+    requestAnimationFrame(() => toast.classList.add('show'));
+    if (duration > 0) setTimeout(dismiss, duration);
+    return dismiss;
+  }
+  _showToast(message, type = 'info', duration = 3500) {
+    return this.showNotification(message, type, duration);
   }
 
   // ---- UTILITY ----
