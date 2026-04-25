@@ -83,7 +83,7 @@ function readFetchCacheFilenames() {
   let m;
   while ((m = pathRe.exec(body)) !== null) {
     const p = m[1];
-    const filename = p.includes('/') ? p.slice(p.lastIndexOf('/') + 1) : p;
+    const filename = path.basename(p);
     names.add(filename);
   }
   if (names.size === 0) {
