@@ -81,10 +81,13 @@ class AdaptiveNoiseFloor {
 
   /**
    * Return the current per-bin minimum noise floor estimate.
+   * @param {Float32Array} [out] - Optional pre-allocated output buffer (length >= numBins).
+   *   Pass a reusable buffer to avoid per-call allocation in hot loops.
    * @returns {Float32Array}
    */
-  getFloor() {
-    const floor = new Float32Array(this.numBins).fill(Infinity);
+  getFloor(out = null) {
+    const floor = out || new Float32Array(this.numBins);
+    floor.fill(Infinity);
     for (const w of this._minStore) {
       for (let k = 0; k < this.numBins; k++) {
         if (w[k] < floor[k]) floor[k] = w[k];
@@ -106,6 +109,42 @@ class AdaptiveNoiseFloor {
     this._subWinIdx = 0;
     this._initialized = false;
   }
+}
+
+// Wiener suppression gain in [beta, 1]. Pure attenuation — never amplifies.
+// Frequency-dependent boosting belongs in a separate post-stage (see voice mask),
+// not baked into the Wiener gain, where >1 multipliers re-introduce noise and clip.
+function wienerFilter(noiseMag, signalMag, params = {}) {
+  const alphaRaw = Number.isFinite(params.noiseOverSubtract) ? params.noiseOverSubtract : 1.5; // moderate over-subtraction — balances audible NR vs. hollow voice
+  const betaRaw = Number.isFinite(params.spectralFloor) ? params.spectralFloor : 0.008;        // -42 dB floor — suppresses residual noise without musical artifacts
+  const alpha = Math.max(1e-6, alphaRaw);
+  const beta = Math.min(1.0, Math.max(0.0, betaRaw));
+
+  const noisePow = noiseMag * noiseMag;
+  const sigPow = signalMag * signalMag;
+  const snr = sigPow / (alpha * noisePow + 1e-10);
+
+  // Wiener-style suppression curve, single-power (not squared). Squaring produced
+  // double the attenuation in dB and created spectral holes / chirping artifacts.
+  const gain = snr / (snr + 1.0);
+  return Math.max(beta, Math.min(1.0, gain));
+}
+
+// Voice frequency mask — gentle bandpass weighting.
+// Brick-wall cuts (0.0 sub-bass, 0.05 high-band) made output sound like a
+// telephone line. Use a smooth weighting that preserves naturalness while
+// favouring the 200 Hz–5 kHz speech intelligibility range.
+function getVoiceMaskGain(binIndex, sampleRate, fftSize) {
+  const freq = binIndex * sampleRate / fftSize;
+
+  if (freq < 40)   return 0.30;        // very low: rumble — attenuate, don't kill
+  if (freq < 80)   return 0.60;        // bass / male fundamentals
+  if (freq < 200)  return 0.90;        // voice fundamentals: keep nearly full
+  if (freq <= 4000) return 1.0;        // CORE VOICE BAND
+  if (freq <= 6000) return 0.90;       // sibilants / presence — keep
+  if (freq <= 9000) return 0.75;       // upper presence / breath — preserve naturalness
+  if (freq <= 12000) return 0.55;      // air band
+  return 0.40;                         // ultra-high: gently attenuate (no near-kill)
 }
 
 /**
@@ -130,12 +169,17 @@ const DSPCore = {
 
   // ===== WINDOWING =====
 
+  // Cache for hannWindow — keyed by N so identical sizes are only computed once.
+  _hannCache: new Map(),
+
   /** Generate periodic Hann window of given length (required for COLA at 75% overlap) */
   hannWindow(N) {
+    if (this._hannCache.has(N)) return this._hannCache.get(N);
     const w = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / N));
     }
+    this._hannCache.set(N, w);
     return w;
   },
 
@@ -150,17 +194,27 @@ const DSPCore = {
    * @returns {{ mag: Float32Array[], phase: Float32Array[], frameCount: number }}
    */
   forwardSTFT(data, fftSize = 4096, hopSize = 1024) {
+    if (!Number.isInteger(fftSize) || fftSize < 2 || (fftSize & (fftSize - 1)) !== 0) {
+      throw new RangeError(`forwardSTFT: fftSize must be a power of two >= 2 (got ${fftSize})`);
+    }
     const window = this.hannWindow(fftSize);
     const halfN = fftSize / 2 + 1;
-    const frameCount = Math.floor((data.length - fftSize) / hopSize) + 1;
+    // Guard: clips in shorter than one FFT window produce 0 frames rather
+    // than a negative frameCount (which would have overflowed downstream).
+    const frameCount = data.length >= fftSize
+      ? Math.floor((data.length - fftSize) / hopSize) + 1
+      : 0;
     const mag = [];
     const phase = [];
 
+    // Reuse buffers across frames to reduce GC pressure.
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
     for (let f = 0; f < frameCount; f++) {
       const offset = f * hopSize;
-      // Windowed frame → real/imag
-      const real = new Float32Array(fftSize);
-      const imag = new Float32Array(fftSize);
+      // Windowed frame → real/imag (imag is always 0 for real input)
+      imag.fill(0);
       for (let i = 0; i < fftSize; i++) {
         real[i] = (offset + i < data.length) ? data[offset + i] * window[i] : 0;
       }
@@ -187,22 +241,34 @@ const DSPCore = {
    * Single exit point after all spectral operations.
    */
   inverseSTFT(mag, phase, fftSize = 4096, hopSize = 1024, outputLength = 0) {
+    if (!Number.isInteger(fftSize) || fftSize < 2 || (fftSize & (fftSize - 1)) !== 0) {
+      throw new RangeError(`inverseSTFT: fftSize must be a power of two >= 2 (got ${fftSize})`);
+    }
     const window = this.hannWindow(fftSize);
+    const windowSq = this._hannSqCache(fftSize, window);
     const frameCount = mag.length;
     const halfN = fftSize / 2 + 1;
     const len = outputLength || (frameCount - 1) * hopSize + fftSize;
     const output = new Float32Array(len);
     const windowSum = new Float32Array(len);
 
+    // Reuse buffers across frames to avoid per-frame Float32Array allocation.
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
     for (let f = 0; f < frameCount; f++) {
       const offset = f * hopSize;
-      const real = new Float32Array(fftSize);
-      const imag = new Float32Array(fftSize);
+      const magF = mag[f];
+      const phaseF = phase[f];
 
-      // Reconstruct complex spectrum
+      // Reconstruct complex spectrum (clear only used region)
       for (let k = 0; k < halfN; k++) {
-        real[k] = mag[f][k] * Math.cos(phase[f][k]);
-        imag[k] = mag[f][k] * Math.sin(phase[f][k]);
+        // Guard NaN/Inf/negative magnitudes — any corrupt bin becomes silence for that bin
+        const rawM = magF[k];
+        const m = (rawM >= 0 && rawM < Infinity) ? rawM : 0;
+        const ph = phaseF[k];
+        real[k] = m * Math.cos(ph);
+        imag[k] = m * Math.sin(ph);
       }
       // Mirror for negative frequencies
       for (let k = halfN; k < fftSize; k++) {
@@ -213,12 +279,12 @@ const DSPCore = {
       // Inverse FFT
       this._fft(real, imag, true);
 
-      // Overlap-add with synthesis window
-      for (let i = 0; i < fftSize; i++) {
-        if (offset + i < len) {
-          output[offset + i] += real[i] * window[i];
-          windowSum[offset + i] += window[i] * window[i];
-        }
+      // Overlap-add with synthesis window — iterate only over the in-range slice
+      // so the per-sample bounds check inside the inner loop can be removed.
+      const nMax = Math.min(fftSize, len - offset);
+      for (let i = 0; i < nMax; i++) {
+        output[offset + i] += real[i] * window[i];
+        windowSum[offset + i] += windowSq[i];
       }
     }
 
@@ -230,45 +296,81 @@ const DSPCore = {
     return output;
   },
 
-  /** Cooley-Tukey radix-2 FFT (in-place) */
+  // Cache for window² arrays (used by iSTFT overlap-add normalisation).
+  _hannSqCacheMap: new Map(),
+  _hannSqCache(N, window) {
+    let sq = this._hannSqCacheMap.get(N);
+    if (sq) return sq;
+    sq = new Float32Array(N);
+    for (let i = 0; i < N; i++) sq[i] = window[i] * window[i];
+    this._hannSqCacheMap.set(N, sq);
+    return sq;
+  },
+
+  // Twiddle-factor cache keyed by signed size: +N for forward, -N for inverse.
+  // Each entry stores precomputed cos/sin for the full half-table (N/2 bins),
+  // allowing smaller butterfly stages to index via stride without recomputing trig.
+  _twiddleCache: new Map(),
+
+  _getTwiddles(N, inverse) {
+    const key = inverse ? -N : N;
+    let t = this._twiddleCache.get(key);
+    if (t) return t;
+    const half = N >> 1;
+    const cosT = new Float32Array(half);
+    const sinT = new Float32Array(half);
+    const dir = inverse ? 1 : -1;
+    const k0 = dir * 2 * Math.PI / N;
+    for (let k = 0; k < half; k++) {
+      const a = k0 * k;
+      cosT[k] = Math.cos(a);
+      sinT[k] = Math.sin(a);
+    }
+    t = { cosT, sinT };
+    this._twiddleCache.set(key, t);
+    return t;
+  },
+
+  /** Cooley-Tukey radix-2 FFT (in-place, cached twiddle tables) */
   _fft(real, imag, inverse) {
     const N = real.length;
-    // Bit-reversal permutation
+    // Bit-reversal permutation (temp-swap avoids array-destructure allocation)
     for (let i = 1, j = 0; i < N; i++) {
       let bit = N >> 1;
       for (; j & bit; bit >>= 1) j ^= bit;
       j ^= bit;
       if (i < j) {
-        [real[i], real[j]] = [real[j], real[i]];
-        [imag[i], imag[j]] = [imag[j], imag[i]];
+        const tr = real[i]; real[i] = real[j]; real[j] = tr;
+        const ti = imag[i]; imag[i] = imag[j]; imag[j] = ti;
       }
     }
 
-    // Butterfly stages
+    const { cosT, sinT } = this._getTwiddles(N, inverse);
+
+    // Butterfly stages — table lookup replaces per-inner-iter rotation accumulator
     for (let len = 2; len <= N; len <<= 1) {
       const halfLen = len >> 1;
-      const angle = (inverse ? 2 : -2) * Math.PI / len;
-      const wR = Math.cos(angle);
-      const wI = Math.sin(angle);
-
+      const stride = N / len;
       for (let i = 0; i < N; i += len) {
-        let curR = 1, curI = 0;
         for (let j = 0; j < halfLen; j++) {
-          const tR = curR * real[i + j + halfLen] - curI * imag[i + j + halfLen];
-          const tI = curR * imag[i + j + halfLen] + curI * real[i + j + halfLen];
+          const ti = j * stride;
+          const wR = cosT[ti];
+          const wI = sinT[ti];
+          const ar = real[i + j + halfLen];
+          const ai = imag[i + j + halfLen];
+          const tR = wR * ar - wI * ai;
+          const tI = wR * ai + wI * ar;
           real[i + j + halfLen] = real[i + j] - tR;
           imag[i + j + halfLen] = imag[i + j] - tI;
           real[i + j] += tR;
           imag[i + j] += tI;
-          const newCurR = curR * wR - curI * wI;
-          curI = curR * wI + curI * wR;
-          curR = newCurR;
         }
       }
     }
 
     if (inverse) {
-      for (let i = 0; i < N; i++) { real[i] /= N; imag[i] /= N; }
+      const inv = 1 / N;
+      for (let i = 0; i < N; i++) { real[i] *= inv; imag[i] *= inv; }
     }
   },
 
@@ -424,27 +526,109 @@ const DSPCore = {
     return data;
   },
 
-  /** S07: Click/pop removal via transient detection + interpolation */
+  /**
+   * S07: Click/pop removal via robust transient detection + smooth interpolation.
+   *
+   * Detection uses the median of |x| over a sliding window (robust to being
+   * biased by the click itself, unlike the mean). A sample is flagged as a
+   * click when its magnitude exceeds a sensitivity-scaled multiple of the
+   * median AND exceeds an absolute floor. The floor scales with the signal's
+   * global median, so quiet material can still have clicks detected while
+   * true silence stays safe from spurious flags. Detection windows overlap
+   * by 50 % so clicks straddling a boundary are still caught.
+   *
+   * Replacement uses 4-point cubic Hermite (Catmull–Rom) interpolation across
+   * the nearest unflagged neighbours — this preserves both value and
+   * first-derivative continuity across the gap, so the repair itself cannot
+   * introduce a click.
+   */
   removeClicks(data, sensitivity = 3) {
-    const blockSize = 128;
-    for (let b = 0; b < data.length - blockSize; b += blockSize) {
-      let sum = 0;
-      for (let i = 0; i < blockSize; i++) sum += Math.abs(data[b + i]);
-      const avg = sum / blockSize;
+    const N = data.length;
+    if (N < 8) return data;
 
-      for (let i = 0; i < blockSize; i++) {
-        if (Math.abs(data[b + i]) > avg * sensitivity * 5) {
-          // Interpolate around click
-          const left = b + i > 0 ? data[b + i - 1] : 0;
-          const right = b + i < data.length - 1 ? data[b + i + 1] : 0;
-          data[b + i] = (left + right) / 2;
-        }
+    const blockSize = 128;
+    const hop = blockSize >> 1;
+    // Sensitivity 1..10 → K ≈ 15..6 (lower = more aggressive). Default 3 → K≈12.
+    const K = Math.max(6, 18 - sensitivity * 2);
+
+    // Content-scaled absolute floor: use a cheap O(N) estimate of the global
+    // |x| level (mean of |x|) as a proxy for signal strength, then anchor the
+    // floor to that. Hard lower bound keeps true silence from false-flagging.
+    let absSum = 0;
+    for (let i = 0; i < N; i++) absSum += Math.abs(data[i]);
+    const globalLevel = absSum / N;
+    const ABS_FLOOR = Math.max(0.005, globalLevel * 0.5);
+
+    const flagged = new Uint8Array(N);
+    const tmp = new Float32Array(blockSize);
+    const sortBuf = new Float32Array(blockSize);
+
+    for (let b = 0; b < N; b += hop) {
+      const end = Math.min(N, b + blockSize);
+      const len = end - b;
+      if (len < 4) break;
+      for (let i = 0; i < len; i++) tmp[i] = Math.abs(data[b + i]);
+      // Median via a small partial sort (blockSize is tiny). Reuse sortBuf to
+      // avoid per-block allocation in the hot loop.
+      sortBuf.set(tmp.subarray(0, len));
+      const sub = sortBuf.subarray(0, len).sort();
+      const median = sub[len >> 1];
+      const thresh = Math.max(K * median, ABS_FLOOR);
+      for (let i = 0; i < len; i++) {
+        if (tmp[i] > thresh) flagged[b + i] = 1;
       }
+    }
+
+    // Coalesce single-sample gaps so we treat short bursts as one click.
+    for (let i = 1; i < N - 1; i++) {
+      if (!flagged[i] && flagged[i - 1] && flagged[i + 1]) flagged[i] = 1;
+    }
+
+    // Replace flagged runs with Catmull–Rom cubic Hermite interpolation
+    // between the nearest unflagged neighbours. Catmull–Rom is C¹-continuous
+    // at the endpoints by construction, so no additional crossfade is needed
+    // to avoid first-derivative jumps at the repair boundary.
+    let i = 0;
+    while (i < N) {
+      if (!flagged[i]) { i++; continue; }
+      let j = i;
+      while (j < N && flagged[j]) j++;
+      // Run is [i, j). Find outer support points for Catmull–Rom.
+      const p1i = i - 1;                      // last good sample before run
+      const p2i = j;                          // first good sample after run
+      const p0i = p1i > 0 ? p1i - 1 : p1i;
+      const p3i = p2i < N - 1 ? p2i + 1 : p2i;
+      const p0 = p1i >= 0 ? data[p0i] : 0;
+      const p1 = p1i >= 0 ? data[p1i] : 0;
+      const p2 = p2i < N ? data[p2i] : 0;
+      const p3 = p2i < N ? data[p3i] : 0;
+      const span = Math.max(1, j - i + 1);
+      for (let k = i; k < j; k++) {
+        const t = (k - p1i) / span;          // 0..1 across the gap
+        // Catmull–Rom basis (tension = 0.5)
+        const t2 = t * t, t3 = t2 * t;
+        const interp =
+          0.5 * ((2 * p1) +
+                 (-p0 + p2) * t +
+                 (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+                 (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+        data[k] = interp;
+      }
+      i = j;
     }
     return data;
   },
 
-  /** S08: De-essing with dynamic compression on sibilance band */
+  /**
+   * S08: De-essing with dynamic compression on the sibilance band.
+   *
+   * The gain reduction is computed from a band-isolated sidechain, then passed
+   * through a one-pole IIR envelope follower before being applied to the
+   * signal. Unsmoothed sample-accurate gain steps (the previous behaviour)
+   * produce a tick on every sibilant transient at typical sample rates; a
+   * short attack / longer release envelope keeps the reduction audibly
+   * transparent.
+   */
   deEss(data, centerFreq, amount, sr) {
     if (amount <= 0) return data;
     // Band-isolate sibilance, compress, subtract excess
@@ -454,19 +638,39 @@ const DSPCore = {
 
     const threshold = 0.1;
     const ratio = 1 + amount / 25; // 1:1 to 5:1
+    const wet = amount / 100;
+    const dry = 1 - wet;
+
+    // 1-pole coefficients: ~1 ms attack, ~30 ms release.
+    const aAtk = Math.exp(-1 / Math.max(1, sr * 0.001));
+    const aRel = Math.exp(-1 / Math.max(1, sr * 0.030));
+    let gainEnv = 1;
+
     for (let i = 0; i < data.length; i++) {
       const sAbs = Math.abs(sibilance[i]);
+      let target = 1;
       if (sAbs > threshold) {
         const excess = sAbs - threshold;
         const reduced = threshold + excess / ratio;
-        const reduction = sAbs > 0 ? reduced / sAbs : 1;
-        data[i] *= (1 - amount / 100) + (amount / 100) * reduction;
+        target = sAbs > 0 ? reduced / sAbs : 1;
       }
+      // Fast attack when gain is dropping, slower release when recovering.
+      const a = target < gainEnv ? aAtk : aRel;
+      gainEnv = a * gainEnv + (1 - a) * target;
+      data[i] *= dry + wet * gainEnv;
     }
     return data;
   },
 
   // ===== PASS 5: SPECTRAL OPERATIONS (IN-PLACE) =====
+
+  wienerFilter(noiseMag, signalMag, params = {}) {
+    return wienerFilter(noiseMag, signalMag, params);
+  },
+
+  getVoiceMaskGain(binIndex, sampleRate, fftSize) {
+    return getVoiceMaskGain(binIndex, sampleRate, fftSize);
+  },
 
   /** S15: Wiener-MMSE spectral noise subtraction */
   wienerMMSE(mag, noiseProfile, amount) {
@@ -500,6 +704,8 @@ const DSPCore = {
    */
   applyAdaptiveWiener(mag, vadConf, tracker, { overSubtraction = 1.2, spectralFloor = 0.001 } = {}) {
     const vadLen = vadConf ? vadConf.length : 0;
+    // Single reusable buffer for getFloor() — avoids one allocation per frame.
+    const floorBuf = new Float32Array(tracker.numBins);
     for (let f = 0; f < mag.length; f++) {
       const conf = vadLen > 0 ? (vadConf[Math.min(f, vadLen - 1)] || 0) : 0;
       const isSilence = conf < 0.3;
@@ -508,7 +714,7 @@ const DSPCore = {
         tracker.update(mag[f]);
       }
 
-      const floor = tracker.getFloor();
+      const floor = tracker.getFloor(floorBuf);
       // Speech Presence Probability: higher VAD conf → trust signal more → less suppression
       const spp = Math.min(1, conf);
 
@@ -524,13 +730,39 @@ const DSPCore = {
     return mag;
   },
 
-  /** S16: 32 ERB band spectral gate */
-  spectralGate(mag, floorDb, sr) {
-    const erbBands = this._computeERBBands(32, sr, mag[0]?.length || 2049);
+  /**
+   * S16: 32 ERB band spectral gate.
+   *
+   * Attenuation uses a soft-knee around the floor (smoothstep in log-ratio
+   * space) instead of the previous hard `rms < floorLin` step, so band-edge
+   * gain transitions are continuous and no longer produce tonal "musical
+   * noise" / chirp artifacts. Per-band gains are additionally smoothed across
+   * frames with a one-pole IIR whose time constant is fixed at ~60 ms, so
+   * behaviour is consistent across sample rates and hop sizes (the raw α is
+   * derived from the effective frame rate rather than being hardcoded).
+   *
+   * @param {number} [hopSize=1024] STFT hop size, used to derive the per-frame
+   *   IIR coefficient. Defaults to 1024 (matches the offline pipeline).
+   */
+  spectralGate(mag, floorDb, sr, hopSize = 1024) {
+    const numFrames = mag.length;
+    if (numFrames === 0) return mag;
+    const numBins = mag[0]?.length || 2049;
+    const erbBands = this._computeERBBands(32, sr, numBins);
     const floorLin = Math.pow(10, floorDb / 20);
 
-    for (let f = 0; f < mag.length; f++) {
-      for (const band of erbBands) {
+    // Per-band smoothed gain carried across frames.
+    const prevGain = new Float32Array(erbBands.length).fill(1);
+    // Translate a 60 ms gain-smoothing time constant into the per-frame IIR
+    // memory coefficient: α = exp(-hopSeconds / tau). At sr=48k, hop=1024
+    // this is ≈ 0.71, matching the previous hand-tuned value.
+    const tauSec = 0.06;
+    const framesPerSec = sr / Math.max(1, hopSize);
+    const smooth = Math.exp(-1 / (framesPerSec * tauSec));
+
+    for (let f = 0; f < numFrames; f++) {
+      for (let bi = 0; bi < erbBands.length; bi++) {
+        const band = erbBands[bi];
         // Compute band energy
         let energy = 0;
         for (let k = band.lo; k <= band.hi; k++) {
@@ -538,12 +770,28 @@ const DSPCore = {
         }
         const rms = Math.sqrt(energy / (band.hi - band.lo + 1));
 
-        // Gate: attenuate if below floor
-        if (rms < floorLin) {
-          const gain = rms / (floorLin + 1e-10);
-          for (let k = band.lo; k <= band.hi; k++) {
-            mag[f][k] *= gain;
-          }
+        // Soft knee: full pass above 2×floor, full attenuation below 0.5×floor.
+        // Smoothstep on the log-ratio gives a C1-continuous transition.
+        const ratio = rms / (floorLin + 1e-10);
+        let rawGain;
+        if (ratio >= 2) {
+          rawGain = 1;
+        } else if (ratio <= 0.5) {
+          rawGain = ratio; // deep attenuation, still proportional
+        } else {
+          // Map ratio in [0.5, 2] to t in [0, 1] via log, then smoothstep.
+          const t = (Math.log2(ratio) + 1) * 0.5; // 0..1
+          const s = t * t * (3 - 2 * t);          // smoothstep
+          // Blend between proportional attenuation and unity
+          rawGain = ratio * (1 - s) + 1 * s;
+        }
+
+        // Temporal smoothing across frames
+        const smoothed = smooth * prevGain[bi] + (1 - smooth) * rawGain;
+        prevGain[bi] = smoothed;
+
+        for (let k = band.lo; k <= band.hi; k++) {
+          mag[f][k] *= smoothed;
         }
       }
     }
@@ -675,6 +923,11 @@ const DSPCore = {
             m[k] = Math.max(m[k], m[srcBin] * decay * (amount / 100));
           }
         }
+      }
+
+      // Guard NaN/Inf/negative values that any of the above operations may have introduced
+      for (let k = 0; k < halfN; k++) {
+        if (!isFinite(m[k]) || m[k] < 0) m[k] = 0;
       }
     }
     return mag;
@@ -843,16 +1096,21 @@ const DSPCore = {
     return { left: out_l, right: out_r };
   },
 
-  /** S32: True peak limiter with 4x oversampling */
+  /** S32: Soft-knee peak limiter. Output is strictly bounded by `ceiling`.
+   *  The knee starts ~3 dB below the ceiling so peaks compress smoothly
+   *  rather than slamming into a hard threshold (which created derivative
+   *  discontinuities and clicks on transients). */
   truePeakLimit(data, ceilingDb) {
     const ceiling = Math.pow(10, ceilingDb / 20);
-    // Simplified: hard clip with soft-knee
+    const knee = ceiling * 0.7079;             // -3 dB below ceiling
+    const range = ceiling - knee;
     for (let i = 0; i < data.length; i++) {
-      if (data[i] > ceiling) {
-        data[i] = ceiling * Math.tanh(data[i] / ceiling);
-      } else if (data[i] < -ceiling) {
-        data[i] = -ceiling * Math.tanh(data[i] / -ceiling);
-      }
+      const x = data[i];
+      const a = Math.abs(x);
+      if (a <= knee) continue;                 // linear region
+      const over = (a - knee) / range;         // ≥ 0
+      const compressed = knee + range * Math.tanh(over);
+      data[i] = (x < 0 ? -compressed : compressed);
     }
     return data;
   },
@@ -879,6 +1137,10 @@ const DSPCore = {
 
     const framesPerVad = Math.floor(fftSize / 512); // VAD window ratio
 
+    // Reuse real/imag buffers across frames to avoid per-frame GC pressure.
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
     for (let f = 0; ; f++) {
       const offset = f * hopSize;
       if (offset + fftSize > data.length) break;
@@ -888,8 +1150,7 @@ const DSPCore = {
       const confidence = vadConfidence ? vadConfidence[Math.floor(vadIdx)] : 0.5;
       if (confidence > 0.3) continue; // skip voiced frames
 
-      const real = new Float32Array(fftSize);
-      const imag = new Float32Array(fftSize);
+      imag.fill(0);
       for (let i = 0; i < fftSize; i++) {
         real[i] = data[offset + i] * window[i];
       }
@@ -1324,8 +1585,13 @@ const DSPCore = {
 
   // ===== HELPERS =====
 
+  // Cache for _computeERBBands — keyed by "numBands_sr_numBins".
+  _erbCache: new Map(),
+
   /** Compute 32 ERB (Equivalent Rectangular Bandwidth) bands */
   _computeERBBands(numBands, sr, numBins) {
+    const key = `${numBands}_${sr}_${numBins}`;
+    if (this._erbCache.has(key)) return this._erbCache.get(key);
     const nyquist = sr / 2;
     const bands = [];
 
@@ -1344,6 +1610,7 @@ const DSPCore = {
       const binHi = Math.min(numBins - 1, Math.ceil(fHi / nyquist * (numBins - 1)));
       bands.push({ lo: binLo, hi: binHi, fLo, fHi });
     }
+    this._erbCache.set(key, bands);
     return bands;
   },
 

@@ -1,5 +1,5 @@
 /**
- * Tests for iOS/Capacitor configuration (v22.1.0 mobile support)
+ * Tests for iOS/Capacitor configuration (v24.0.0 mobile support)
  * Covers: Info.plist, Podfile, AppDelegate.swift, entitlements,
  *         asset catalogs, capacitor.config.json iOS settings,
  *         and cross-platform consistency.
@@ -64,22 +64,24 @@ describe('Info.plist — iOS app configuration', () => {
     expect(plist).toContain('<string>VoiceIsolate Pro</string>');
   });
 
-  test('CFBundleShortVersionString is 22.1.0', () => {
+  test('CFBundleShortVersionString is 24.0.0', () => {
     expect(plist).toContain('<key>CFBundleShortVersionString</key>');
     const versionMatch = plist.match(
       /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/
     );
     expect(versionMatch).not.toBeNull();
-    expect(versionMatch[1]).toBe('22.1.0');
+    expect(versionMatch[1]).toBe('24.0.0');
   });
 
-  test('CFBundleVersion is 22100', () => {
+  test('CFBundleVersion matches the major*10000 + minor*100 + patch formula', () => {
     expect(plist).toContain('<key>CFBundleVersion</key>');
     const buildMatch = plist.match(
       /<key>CFBundleVersion<\/key>\s*<string>([^<]+)<\/string>/
     );
     expect(buildMatch).not.toBeNull();
-    expect(buildMatch[1]).toBe('22100');
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    const [maj, min, pat] = pkg.version.split('.').map(Number);
+    expect(buildMatch[1]).toBe(String(maj * 10000 + min * 100 + pat));
   });
 
   test('NSMicrophoneUsageDescription is present (App Store requirement)', () => {

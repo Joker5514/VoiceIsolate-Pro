@@ -8,13 +8,15 @@
 'use strict';
 
 import express from 'express';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import apiRouter from './api/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 const PORT       = process.env.PORT || 3000;
-const APP_VERSION = '22.1.0'; // FIX 9: updated from 21.0.0
+const APP_VERSION = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')).version;
 const app        = express();
 
 // ── Cross-Origin Isolation (required for SharedArrayBuffer) ──────────────
@@ -46,6 +48,9 @@ app.use((_req, res, next) => {
   next();
 });
 
+// ── API Routes ──────────────────────────────────────────────────────────
+app.use('/api', apiRouter);
+
 // ── WASM MIME type & caching ─────────────────────────────────────────────
 app.use('/wasm', express.static(join(__dirname, 'wasm'), {
   setHeaders: (res) => {
@@ -65,46 +70,7 @@ app.use('/app/models', express.static(join(__dirname, 'public', 'app', 'models')
   }
 }));
 
-// ── FIX 6: Serve only allowlisted root-level runtime files ─────────────────
-// Root-level files must be served BEFORE /public to avoid 404s
-const ROOT_STATIC_ALLOWLIST = new Set([
-  'app.js',
-  'dsp-worker.js',
-  'ml-worker.js',
-]);
-
-function setRootAssetHeaders(res, filePath) {
-  if (filePath.endsWith('worker.js') || filePath.includes('processor.js')) {
-    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  }
-  if (filePath.endsWith('.wasm')) {
-    res.setHeader('Content-Type', 'application/wasm');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  }
-}
-
-app.use((req, res, next) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD') return next();
-
-  const requestedPath = req.path.replace(/^\/+/, '');
-
-  // Only allow single-segment root files; never expose directories or arbitrary repo files.
-  if (!requestedPath || requestedPath.includes('/')) return next();
-
-  const isAllowedRootRuntimeAsset =
-    ROOT_STATIC_ALLOWLIST.has(requestedPath) ||
-    requestedPath.endsWith('worker.js') ||
-    requestedPath.includes('processor.js');
-
-  if (!isAllowedRootRuntimeAsset) return next();
-
-  const filePath = join(__dirname, requestedPath);
-  setRootAssetHeaders(res, filePath);
-  res.sendFile(filePath, (err) => {
-    if (err) next();
-  });
-});
-// ── Serve /public as fallback ────────────────────────────────────────────
+// ── Serve /public ────────────────────────────────────────────────────────
 app.use(express.static(join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
     if (filePath.endsWith('.js') && filePath.includes('worker')) {
@@ -122,13 +88,12 @@ app.get('/health', (_req, res) => {
     crossOriginIsolated: true,
     sharedArrayBuffer: true,
     features: {
-      // FIX 9: Updated from stale '32-stage Octa-Pass' / v21 values
-      dsp: '35-stage Deca-Pass',
-      ml: 'ONNX Runtime Web v1.18.0 (WebGPU/WASM)',
+      dsp: '32-stage Deca-Pass',
+      ml: 'ONNX Runtime Web v1.20.1 (WebGPU/WASM)',
       vad: 'Silero VAD v5',
       separation: 'Demucs v4 + BSRNN ensemble',
       mobile: 'Capacitor Android/iOS',
-      architecture: 'Threads from Space v11',
+      architecture: 'Threads from Space v12',
     },
     timestamp: new Date().toISOString(),
   });
@@ -140,6 +105,9 @@ app.get('/api/version', (_req, res) => {
 });
 
 // ── Start ────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`VoiceIsolate Pro Dev Server running on port ${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`VoiceIsolate Pro Dev Server running on port ${PORT}`);
+  });
+}
+export { app };

@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — PipelineState
-   Threads from Space v10 · State Management
+   VoiceIsolate Pro v24.0 — PipelineState
+   Threads from Space v12 · State Management
    52-Param Pub/Sub · Undo/Redo · Wildcard
    ============================================ */
 
@@ -98,20 +98,22 @@ class PipelineState {
     const changes = new Map(this._batchChanges);
     this._batchChanges.clear();
 
-    for (const [key, { prev, value }] of changes) {
-      this._notify(key, value, prev, source);
+    // Collect rt params for a single bulk worklet message BEFORE notifying
+    // listeners. Per-key _notify() calls below preserve the original source
+    // but pass skipWorklet=true, so the bulk message replaces individual posts.
+    const bulk = {};
+    for (const [key, { value }] of changes) {
+      const p = this._params.get(key);
+      if (p && p.rt) bulk[key] = value;
     }
 
-    // Bulk worklet broadcast
-    if (this._workletPort) {
-      const bulk = {};
-      for (const [key, { value }] of changes) {
-        const p = this._params.get(key);
-        if (p && p.rt) bulk[key] = value;
-      }
-      if (Object.keys(bulk).length > 0) {
-        this._workletPort.postMessage({ type: 'paramBulk', params: bulk });
-      }
+    for (const [key, { prev, value }] of changes) {
+      this._notify(key, value, prev, source, /* skipWorklet */ true);
+    }
+
+    // Send a single bulk message to the worklet instead of N individual messages.
+    if (this._workletPort && Object.keys(bulk).length > 0) {
+      this._workletPort.postMessage({ type: 'paramBulk', params: bulk });
     }
   }
 
@@ -188,7 +190,7 @@ class PipelineState {
 
   // ---- Internal ----
 
-  _notify(key, value, prev, source) {
+  _notify(key, value, prev, source, skipWorklet = false) {
     const detail = { key, value, prev, source };
 
     // Per-key listeners
@@ -198,9 +200,9 @@ class PipelineState {
     // Wildcard listeners
     for (const fn of this._wildcards) fn(detail);
 
-    // Real-time params → worklet
+    // Real-time params → worklet (suppressed during batch commits; bulk message sent instead)
     const p = this._params.get(key);
-    if (p && p.rt && this._workletPort && source !== 'worklet') {
+    if (p && p.rt && this._workletPort && source !== 'worklet' && !skipWorklet) {
       this._workletPort.postMessage({ type: 'param', key, value });
     }
   }

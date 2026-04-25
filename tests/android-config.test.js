@@ -66,8 +66,8 @@ describe('capacitor.config.json — structure and values', () => {
     expect(cfg.android.captureInput).toBe(true);
   });
 
-  test('android.appendUserAgent includes VoiceIsolatePro/22.1', () => {
-    expect(cfg.android.appendUserAgent).toBe('VoiceIsolatePro/22.1');
+  test('android.appendUserAgent includes VoiceIsolatePro/24.0', () => {
+    expect(cfg.android.appendUserAgent).toBe('VoiceIsolatePro/24.0');
   });
 
   test('ios section is defined', () => {
@@ -446,12 +446,17 @@ describe('build.gradle — app namespace and applicationId', () => {
     expect(nsMatch[1]).toBe(idMatch[1]);
   });
 
-  test('versionCode is 22100 (matching v22.1.0)', () => {
-    expect(buildGradle).toContain('versionCode 22100');
+  test('versionCode matches the major*10000 + minor*100 + patch formula', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    const [maj, min, pat] = pkg.version.split('.').map(Number);
+    const expected = maj * 10000 + min * 100 + pat;
+    const m = buildGradle.match(/versionCode\s+(\d+)/);
+    expect(m).not.toBeNull();
+    expect(Number(m[1])).toBe(expected);
   });
 
-  test('versionName is 22.1.0', () => {
-    expect(buildGradle).toContain('versionName "22.1.0"');
+  test('versionName is 24.0.0', () => {
+    expect(buildGradle).toContain('versionName "24.0.0"');
   });
 
   test('testInstrumentationRunner is AndroidJUnitRunner', () => {

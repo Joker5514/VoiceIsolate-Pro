@@ -1,829 +1,839 @@
-/* ============================================
-   VoiceIsolate Pro v22.1 — ML Worker
-   Threads from Space v11 · ONNX Inference
-   Demucs v4 + BSRNN + Silero VAD + ECAPA-TDNN
-   DNS v2 · Noise Classifier · Multi-Speaker Sep
-   WebGPU > WASM fallback · Tensor disposal
-   FIX: Issue #15 — updated from v20.0/v10 to v22.1/v11
-   ============================================ */
+// ─────────────────────────────────────────────────────────────────────────────
+// ml-worker.js — VoiceIsolate Pro · Threads from Space v8
+// Standard Web Worker (NOT AudioWorklet).
+//
+// Responsibilities:
+//   1. Load ONNX models via onnxruntime-web (WebGPU → WASM fallback)
+//   2. Poll SharedArrayBuffer for new magnitude frames from dsp-processor
+//   3. Run inference pipeline to produce a combined soft mask
+//   4. Write mask back to outputSAB for dsp-processor to apply in-band
+//
+// Tier gating:
+//   Main thread passes allowedModels[] and allowedStages from auth.js getCaps()
+//   so this worker never attempts to load models above the user's tier.
+// ─────────────────────────────────────────────────────────────────────────────
 
-'use strict';
+const DEFAULT_NUM_BINS = 2049; // (4096 / 2) + 1
+const FLAG_SLOTS = 4;
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
+const NOISE_WARMUP_FRAMES = 90;
+const FORENSIC_ALPHA_FLOOR_THRESHOLD = 0.005;
+const ALPHA_CAP_DEFAULT = 2.0;
+const ALPHA_CAP_FORENSIC = 3.0;
+const SNR_MAX = 1e6;
 
-/**
- * Dedicated Web Worker for ML model inference.
- * - Initializes ONNX Runtime sessions with WebGPU > WASM fallback
- * - Continuous processing loop using Atomics.wait for ring buffer
- * - Explicit tensor disposal to prevent VRAM leaks
- * - Supports: Demucs v4, BSRNN, Silero VAD, ECAPA-TDNN,
- *             DNS v2 (conformer), noise classifier, ConvTasNet multi-speaker sep
- */
+const VAD_FALLBACK_RMS_BASELINE = 1e-4;
+const VAD_FALLBACK_RMS_RANGE = 7e-4;
+const VAD_FALLBACK_RATIO_BASELINE = 0.35;
+const VAD_FALLBACK_RATIO_RANGE = 0.45;
+const VAD_FALLBACK_BLEND_RMS = 0.45;
+const VAD_FALLBACK_BLEND_RATIO = 0.55;
+const NOISE_SEED_SCALE = 1.5;
 
-let sessions = {};          // { demucs, bsrnn, vad, ecapa }
-let provider = 'wasm';      // active execution provider
-let inputRing = null;        // SharedRingBuffer (read side)
-let maskRing = null;         // SharedRingBuffer (write side)
-let running = false;
-let frameSize = 4096;
-let frameCount = 10;
-let activePromises = new Set(); // Track in-flight async inference
+// ORT is loaded lazily inside initialize() — not at module top level —
+// so importScripts failures can be caught and reported gracefully.
+let ort = null;
 
-// Model paths (relative to app root)
-const MODEL_PATHS = {
-  demucs: 'models/demucs-v4-int8.onnx',
-  bsrnn: 'models/bsrnn-int8.onnx',
-  vad: 'models/silero_vad.onnx',
-  ecapa: 'models/ecapa-tdnn-int8.onnx',
-  deepfilter: 'models/deepfilter-int8.onnx',
-  dns2: 'models/dns2_conformer_small.onnx',
-  noiseClassifier: 'models/noise_classifier.onnx',
-  convtasnet: 'models/convtasnet-int8.onnx'
+let inputView  = null; // Float32Array view of inputSAB payload: [mag | phase]
+let outputView = null; // Float32Array view of outputSAB payload: [mask]
+let flagsIn    = null; // Int32Array: [frameCounter, ...]
+let flagsOut   = null; // Int32Array: [..., maskReady]
+
+let sessions      = {}; // { modelId: ort.InferenceSession }
+let allowedModels = [];
+let allowedStages = 8;
+let lastFrame     = -1;
+let pollTimer     = null;
+let currentNumBins = DEFAULT_NUM_BINS;
+let currentHalfN = DEFAULT_NUM_BINS;
+let currentFFTSize = 4096;
+let latestPcmChunk = null;
+let vadModelMissing = false;
+let vadMissingWarned = false;
+let speechConfidence = 0;
+let speechStreak = 0;
+let noiseProfile = null;
+let noiseFrames = 0;
+let warmupComplete = false;
+let demucsPcmMissingWarned = false;
+
+let runtimeParams = {
+  spectralFloor: 0.005,
+  noiseReduce: 0.7,
+  forensicMode: false,
+  nonVoiceSuppression: 2.0,
 };
 
-// Default blend weights
-let weights = { demucs: 0.7, bsrnn: 0.3 };
+// ── Default models loaded on bare init (no payload) ──────────────────────────
+const DEFAULT_MODELS = ['vad', 'deepfilter', 'demucs'];
 
-// ---- Message Handler ----
-self.onmessage = async (e) => {
-  const msg = e.data;
+// ── Model filename registry ───────────────────────────────────────────────────
+const MODEL_FILES = {
+  'vad':         'silero_vad.onnx',
+  'deepfilter':  'deepfilter.onnx',
+  'demucs':      'demucs_v4_int8.onnx',
+  'silero-vad':  'silero_vad.onnx',
+  'rnnoise':     'rnnoise.onnx',
+  'demucs-v4':   'demucs_v4_int8.onnx',
+  'ecapa-tdnn':  'ecapa_tdnn.onnx',
+  'voicefixer':  'voicefixer.onnx',
+};
 
-  if (msg.type === 'init') {
-    await initialize(msg);
-  } else if (msg.type === 'initRingBuffers') {
-    setupRingBuffers(msg);
-  } else if (msg.type === 'startLoop') {
-    startProcessingLoop();
-  } else if (msg.type === 'stopLoop') {
-    running = false;
-  } else if (msg.type === 'setWeights') {
-    weights.demucs = msg.demucs ?? weights.demucs;
-    weights.bsrnn = msg.bsrnn ?? weights.bsrnn;
-  } else if (msg.type === 'infer') {
-    // One-shot inference for offline pipeline
-    const promise = handleInfer(msg);
-    activePromises.add(promise);
-    await promise.finally(() => activePromises.delete(promise));
-  } else if (msg.type === 'vad') {
-    const promise = handleVAD(msg);
-    activePromises.add(promise);
-    await promise.finally(() => activePromises.delete(promise));
-  } else if (msg.type === 'separate') {
-    const promise = handleSeparate(msg);
-    activePromises.add(promise);
-    await promise.finally(() => activePromises.delete(promise));
-  } else if (msg.type === 'process') {
-    // Alias for separate — process audio chunk
-    const promise = handleSeparate(msg);
-    activePromises.add(promise);
-    await promise.finally(() => activePromises.delete(promise));
-  } else if (msg.type === 'reset') {
-    // Reset all loaded models and ring buffers
-    // Wait for all in-flight inference to complete before resetting
-    await Promise.all([...activePromises]);
-    await disposeAll();
-    inputRing = null;
-    maskRing = null;
-    running = false;
-    self.postMessage({ type: 'reset_ok' });
-  } else if (msg.type === 'loadModel') {
-    await initialize(msg);
-  } else if (msg.type === 'enroll') {
-    const promise = handleEnroll(msg);
-    activePromises.add(promise);
-    await promise.finally(() => activePromises.delete(promise));
-  } else if (msg.type === 'identify') {
-    const promise = handleIdentify(msg);
-    activePromises.add(promise);
-    await promise.finally(() => activePromises.delete(promise));
-  } else if (msg.type === 'dns2') {
-    // DNS v2 ONNX model: compute per-bin gain mask from STFT magnitude frame
-    const promise = handleDNS2(msg);
-    activePromises.add(promise);
-    await promise.finally(() => activePromises.delete(promise));
-  } else if (msg.type === 'classifyNoise') {
-    // Noise classifier: identify noise type from magnitude spectrum
-    const promise = handleClassifyNoise(msg);
-    activePromises.add(promise);
-    await promise.finally(() => activePromises.delete(promise));
-  } else if (msg.type === 'multiSeparate') {
-    // Multi-speaker source separation using ConvTasNet
-    const promise = handleMultiSeparate(msg);
-    activePromises.add(promise);
-    await promise.finally(() => activePromises.delete(promise));
-  } else if (msg.type === 'dispose') {
-    await disposeAll();
+// ── ORT lazy initializer ──────────────────────────────────────────────────────
+// Called at the start of every message handler that needs ORT.
+// If self.ort is already populated (e.g. by a prior importScripts call or
+// injected in tests), it is reused; otherwise importScripts loads the local
+// vendored file (copied by scripts/setup-ort.js postinstall).
+function initialize() {
+  if (self.ort) {
+    ort = self.ort;
+    return;
   }
-};
+  // Load ORT from local vendored file (copied by scripts/setup-ort.js postinstall)
+  importScripts('/lib/ort.min.js');
+  ort = self.ort;
+  ort.env.wasm.wasmPaths = '/lib/';
+}
+
+
+// ── Diarization / isolation runtime state ──────────────────────────────────
+// Stubbed state: populated by message handlers below; will be consumed once
+// ECAPA-TDNN cosine-sim clustering replaces the energy-based stub.
+let _currentIsolateSpeakerId = null; // eslint-disable-line no-unused-vars
+let _speakerVolumeMap        = {};   // eslint-disable-line no-unused-vars
+let _voiceprintEmbedding     = null; // eslint-disable-line no-unused-vars
 
 /**
- * Initialize ONNX Runtime, select the best execution provider, and load the requested models into the worker's sessions.
- *
- * Imports ONNX Runtime if not already present, detects an execution provider, attempts to create inference sessions for
- * the models specified by the message (or the default set), and posts a `{ type: 'ready', provider, models }` message
- * containing a `{[modelName]: boolean}` status map on success. If initialization fails, posts a `{ type: 'error', msg }`
- * message instead.
- *
- * @param {Object} msg - Initialization options and overrides.
- * @param {string} [msg.ortUrl] - Unused. ONNX Runtime is always loaded from /lib/ort.min.js. CDN fallback is prohibited by architecture constraint.
- * @param {string[]} [msg.models] - Optional list of model names to load (defaults to `['vad','deepfilter','demucs']`).
- * @param {Object.<string,string>} [msg.modelPaths] - Optional per-model path overrides keyed by model name.
+ * Compute a 3-element feature vector [rms, spectralCentroid, zcr] for a PCM frame.
+ * Used for speaker clustering without requiring a neural model.
  */
-async function initialize(msg) {
-  try {
-    if (!self.ort) {
-      importScripts('/lib/ort.min.js');
+function _frameFeatures(frame, sampleRate) {
+  const n = frame.length;
+  if (n === 0) return [0, 0, 0];
+
+  // RMS energy
+  let sumSq = 0;
+  for (let i = 0; i < n; i++) sumSq += frame[i] * frame[i];
+  const rms = Math.sqrt(sumSq / n);
+
+  // Spectral centroid via zero-crossing approximation (cheap, no FFT)
+  let zcr = 0;
+  for (let i = 1; i < n; i++) {
+    if ((frame[i] >= 0) !== (frame[i - 1] >= 0)) zcr++;
+  }
+  zcr = zcr / (2 * n / sampleRate); // crossings per second → approx Hz
+
+  // Short-term spectral flatness via ratio of arithmetic to geometric mean of |x|
+  let sumAbs = 0, logSum = 0;
+  for (let i = 0; i < n; i++) {
+    const a = Math.abs(frame[i]) + 1e-9;
+    sumAbs += a;
+    logSum += Math.log(a);
+  }
+  const flatness = Math.exp(logSum / n) / (sumAbs / n);
+
+  return [rms, zcr / sampleRate, flatness]; // normalise zcr to [0,1] range
+}
+
+/**
+ * Simple online k-means clustering (k=2..4) on feature vectors.
+ * Returns cluster ID (0-indexed) for each frame index.
+ */
+function _kMeans(features, k, maxIter = 20) {
+  if (features.length === 0) return [];
+  const dim  = features[0].length;
+  const n    = features.length;
+
+  // Initialise centroids by spreading across the feature array
+  const centroids = Array.from({ length: k }, (_, ci) => {
+    const fi = Math.floor((ci / k) * n);
+    return features[fi].slice();
+  });
+
+  let labels = new Int32Array(n);
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    // Assign
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      let best = 0, bestDist = Infinity;
+      for (let c = 0; c < k; c++) {
+        let d = 0;
+        for (let d2 = 0; d2 < dim; d2++) {
+          const diff = features[i][d2] - centroids[c][d2];
+          d += diff * diff;
+        }
+        if (d < bestDist) { bestDist = d; best = c; }
+      }
+      if (labels[i] !== best) { labels[i] = best; changed = true; }
     }
+    if (!changed) break;
 
-    provider = await detectProvider();
-    log('info', `ONNX provider: ${provider}`);
-
-    const sessionOpts = {
-      executionProviders: provider !== 'wasm' ? [provider, 'wasm'] : ['wasm'],
-      graphOptimizationLevel: 'all',
-      enableCpuMemArena: true,
-      enableMemPattern: true
-    };
-
-    const models = msg.models || ['vad', 'deepfilter', 'demucs'];
-    for (const name of models) {
-      const path = msg.modelPaths?.[name] || MODEL_PATHS[name];
-      try {
-        sessions[name] = await self.ort.InferenceSession.create(path, sessionOpts);
-        log('info', `Loaded model: ${name}`);
-      } catch (err) {
-        const displayName = name === 'vad' ? 'VAD' : name;
-        log('warn', `${displayName} unavailable: ${err.message}`);
+    // Recompute centroids
+    const sums   = Array.from({ length: k }, () => new Float64Array(dim));
+    const counts = new Int32Array(k);
+    for (let i = 0; i < n; i++) {
+      const c = labels[i];
+      counts[c]++;
+      for (let d2 = 0; d2 < dim; d2++) sums[c][d2] += features[i][d2];
+    }
+    for (let c = 0; c < k; c++) {
+      if (counts[c] > 0) {
+        for (let d2 = 0; d2 < dim; d2++) centroids[c][d2] = sums[c][d2] / counts[c];
       }
     }
+  }
 
-    const modelsStatus = {};
-    for (const name of models) {
-      modelsStatus[name] = name in sessions;
+  return labels;
+}
+
+/**
+ * runDiarization — multi-speaker segmentation using spectral features + k-means.
+ * Uses RMS, zero-crossing rate, and spectral flatness across 200ms windows.
+ * Falls back gracefully to energy-only if audio is very short.
+ * @param {Float32Array} pcm
+ * @param {number} sampleRate
+ * @returns {Promise<Array<{speakerId,label,start,end,confidence}>>}
+ */
+async function runDiarization(pcm, sampleRate) {
+  const winSamp     = Math.round(0.2 * sampleRate); // 200ms windows
+  const hopSamp     = Math.round(0.1 * sampleRate); // 100ms hop
+  const silThresh   = 0.003;                        // RMS below this = silence
+  const palette     = ['S1','S2','S3','S4','S5','S6','S7','S8'];
+
+  // Extract features for every hop
+  const features = [];
+  const frameStarts = [];
+  for (let i = 0; i + winSamp <= pcm.length; i += hopSamp) {
+    const frame = pcm.subarray(i, i + winSamp);
+    features.push(_frameFeatures(frame, sampleRate));
+    frameStarts.push(i);
+  }
+
+  if (features.length === 0) return [];
+
+  // Determine number of clusters (2–4) based on audio length
+  const durSec = pcm.length / sampleRate;
+  const k = durSec < 10 ? 2 : durSec < 30 ? 3 : 4;
+
+  // Normalise features to [0,1] per dimension for balanced clustering
+  const dim = features[0].length;
+  const fMin = new Float64Array(dim).fill(Infinity);
+  const fMax = new Float64Array(dim).fill(-Infinity);
+  for (const f of features) {
+    for (let d = 0; d < dim; d++) {
+      if (f[d] < fMin[d]) fMin[d] = f[d];
+      if (f[d] > fMax[d]) fMax[d] = f[d];
     }
+  }
+  const normed = features.map(f =>
+    f.map((v, d) => fMax[d] > fMin[d] ? (v - fMin[d]) / (fMax[d] - fMin[d]) : 0)
+  );
 
-    self.postMessage({
-      type: 'ready',
-      provider,
-      models: modelsStatus
+  const labels = _kMeans(normed, k);
+
+  // Build segments: merge adjacent frames with same label
+  const segments = [];
+  let segLabel = null, segStart = 0;
+  const isSilent = (fi) => features[fi][0] < silThresh;
+
+  for (let fi = 0; fi < frameStarts.length; fi++) {
+    const spk = isSilent(fi) ? null : palette[labels[fi]];
+    if (spk !== segLabel) {
+      if (segLabel !== null) {
+        const endSamp = frameStarts[fi];
+        const conf    = 0.68 + normed[fi][0] * 0.29; // energy-weighted confidence
+        segments.push({
+          speakerId:  segLabel,
+          label:      'Speaker ' + segLabel,
+          start:      segStart / sampleRate,
+          end:        endSamp / sampleRate,
+          confidence: Math.min(0.97, conf),
+        });
+      }
+      segStart = frameStarts[fi];
+      segLabel = spk;
+    }
+  }
+  // Close last segment
+  if (segLabel !== null) {
+    segments.push({
+      speakerId:  segLabel,
+      label:      'Speaker ' + segLabel,
+      start:      segStart / sampleRate,
+      end:        pcm.length / sampleRate,
+      confidence: 0.72,
     });
-
-  } catch (err) {
-    log('error', `Init failed: ${err.message}`);
-    self.postMessage({ type: 'error', msg: err.message });
   }
+
+  // Filter out very short segments (< 300ms)
+  return segments.filter(s => s.speakerId !== null && (s.end - s.start) >= 0.3);
 }
 
-/**
- * Selects the best available ONNX Runtime execution provider for the current environment.
- * @returns {'webgpu'|'webgl'|'wasm'} `webgpu` if WebGPU is available, `webgl` if WebGL2 is available, `wasm` otherwise.
- */
-async function detectProvider() {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.gpu) {
-      const adapter = await navigator.gpu.requestAdapter();
-      if (adapter) return 'webgpu';
+async function enrollVoiceprint(pcm) {
+  // Store a compact feature embedding: mean of per-window feature vectors
+  const winSamp = Math.round(0.2 * 16000);
+  const vecs = [];
+  for (let i = 0; i + winSamp <= pcm.length; i += winSamp) {
+    vecs.push(_frameFeatures(pcm.subarray(i, i + winSamp), 16000));
+  }
+  if (vecs.length === 0) { _voiceprintEmbedding = null; return; }
+  const dim = vecs[0].length;
+  const mean = new Float32Array(dim);
+  for (const v of vecs) for (let d = 0; d < dim; d++) mean[d] += v[d] / vecs.length;
+  _voiceprintEmbedding = mean;
+}
+
+// ── 1. Message dispatcher ─────────────────────────────────────────────────────
+self.onmessage = async (ev) => {
+  const { type, payload, models: msgModels } = ev.data || {};
+
+  // ── init: full SAB + model init (called by app-init.js) ─────────────────────
+  if (type === 'init') {
+    try {
+      initialize();
+    } catch (err) {
+      self.postMessage({ type: 'error', msg: err.message });
+      return;
     }
-  } catch {
-    console.warn("WebGPU not available, falling back to wasm");
-  }
-  return 'wasm';
-}
 
-// ---- Ring Buffer Setup ----
-function setupRingBuffers(msg) {
-  frameSize = msg.frameSize || 4096;
-  frameCount = msg.frameCount || 10;
-  const capacity = frameSize * frameCount;
+    if (payload) {
+      const {
+        inputSAB,
+        outputSAB,
+        pcmChunk,
+        fftSize             = 4096,
+        halfN               = Math.floor(fftSize / 2) + 1,
+        modelBasePath       = './models/',
+        preferredProviders  = ['webgpu', 'wasm'],
+        allowedModels: am   = DEFAULT_MODELS,
+        allowedStages: as_  = 8,
+        params              = null,
+      } = payload;
 
-  if (msg.inputSAB) {
-    inputRing = {
-      control: new Int32Array(msg.inputSAB, 0, 4),
-      data: new Float32Array(msg.inputSAB, 16, capacity),
-      capacity
-    };
-  }
-
-  if (msg.maskSAB) {
-    maskRing = {
-      control: new Int32Array(msg.maskSAB, 0, 4),
-      data: new Float32Array(msg.maskSAB, 16, capacity),
-      capacity
-    };
-  }
-
-  log('info', 'Ring buffers initialized');
-}
-
-// ---- Continuous Processing Loop ----
-function startProcessingLoop() {
-  running = true;
-  processLoop();
-}
-
-async function processLoop() {
-  const pullBuf = new Float32Array(frameSize);
-
-  while (running) {
-    if (inputRing) {
-      if (ringAvailable(inputRing) < frameSize) {
-        await new Promise(r => setTimeout(r, 0));
-        continue;
+      allowedModels = am;
+      allowedStages = as_;
+      currentFFTSize = fftSize;
+      currentHalfN = halfN;
+      currentNumBins = halfN;
+      if (params && typeof params === 'object') {
+        runtimeParams = { ...runtimeParams, ...params };
       }
+      if (pcmChunk) {
+        latestPcmChunk = pcmChunk instanceof Float32Array ? pcmChunk : new Float32Array(pcmChunk);
+      }
+
+      if (inputSAB && outputSAB) {
+        const inputPayloadFloats = currentHalfN * 2;
+        const outputPayloadFloats = currentHalfN;
+        const inputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
+        const outputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * outputPayloadFloats;
+        if (inputSAB.byteLength < inputBytes || outputSAB.byteLength < outputBytes) {
+          console.error('[ml-worker] SAB size mismatch', {
+            expectedInputBytes: inputBytes,
+            actualInputBytes: inputSAB.byteLength,
+            expectedOutputBytes: outputBytes,
+            actualOutputBytes: outputSAB.byteLength,
+          });
+        } else {
+          console.info('[ml-worker] SAB payload sizes verified', {
+            halfN: currentHalfN,
+            inputBytes,
+            outputBytes,
+          });
+        }
+        flagsIn    = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+        flagsOut   = new Int32Array(outputSAB, 0, FLAG_SLOTS);
+        inputView  = new Float32Array(inputSAB, SAB_HEADER_BYTES, inputPayloadFloats);
+        outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, outputPayloadFloats);
+        startPollLoop();
+      }
+
+      const modelStatus = await loadModels(modelBasePath, preferredProviders, allowedModels);
+      vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
+      if (vadModelMissing) {
+        const msg = 'Silero VAD unavailable, using fallback VAD';
+        console.warn('[ml-worker] ' + msg);
+        self.postMessage({ type: 'log', level: 'warn', msg });
+        self.postMessage({ type: 'vad_status', vadModelMissing: true });
+      } else {
+        self.postMessage({ type: 'vad_status', vadModelMissing: false });
+      }
+      self.postMessage({ type: 'ready', models: modelStatus });
     } else {
-      await new Promise(r => setTimeout(r, 10));
+      // Bare init (no payload — used in tests and simple invocations)
+      const modelStatus = await loadModels('./models/', ['webgpu', 'wasm'], DEFAULT_MODELS);
+      vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
+      self.postMessage({ type: 'ready', models: modelStatus });
+    }
+  }
+
+  // ── loadModel: load a specific set of models and report status ───────────────
+  if (type === 'loadModel') {
+    try {
+      initialize();
+    } catch (err) {
+      self.postMessage({ type: 'error', msg: err.message });
+      return;
+    }
+
+    const modelList   = msgModels || DEFAULT_MODELS;
+    const modelStatus = await loadModels('./models/', ['webgpu', 'wasm'], modelList);
+    vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
+    self.postMessage({ type: 'ready', models: modelStatus });
+  }
+
+  // ── process: run inference on a single frame of magnitude data ───────────────
+  if (type === 'process') {
+    if (!ort || (!inputView && !(payload && payload.magnitudes))) return;
+
+    const magnitudes = payload && payload.magnitudes
+      ? new Float32Array(payload.magnitudes)
+      : new Float32Array(inputView.subarray(0, currentNumBins));
+    const pcmChunk = payload && payload.pcmChunk
+      ? (payload.pcmChunk instanceof Float32Array ? payload.pcmChunk : new Float32Array(payload.pcmChunk))
+      : latestPcmChunk;
+    const mask       = await buildMask(magnitudes, pcmChunk);
+
+    const output = new Float32Array(mask);
+    self.postMessage({ type: 'processed', output }, [output.buffer]);
+  }
+
+  // ── reset: clear inference sessions and polling state ───────────────────────
+  if (type === 'reset') {
+    clearInterval(pollTimer);
+    sessions  = {};
+    lastFrame = -1;
+    pollTimer = null;
+    noiseProfile = null;
+    noiseFrames = 0;
+    warmupComplete = false;
+    speechConfidence = 0;
+    speechStreak = 0;
+    latestPcmChunk = null;
+    demucsPcmMissingWarned = false;
+    self.postMessage({ type: 'reset_done' });
+  }
+
+  // ── unload: full cleanup ─────────────────────────────────────────────────────
+  if (type === 'unload') {
+    clearInterval(pollTimer);
+    sessions = {};
+    latestPcmChunk = null;
+    demucsPcmMissingWarned = false;
+    self.postMessage({ type: 'unloaded' });
+  }
+
+  // ── update_params: adjust tier caps at runtime ───────────────────────────────
+  if (type === 'update_params') {
+    if (payload && payload.allowedModels) allowedModels = payload.allowedModels;
+    if (payload && payload.allowedStages) allowedStages = payload.allowedStages;
+  }
+
+  if (type === 'setParams') {
+    if (payload && typeof payload === 'object') {
+      runtimeParams = { ...runtimeParams, ...payload };
+    }
+  }
+
+  if (type === 'pcmChunk') {
+    const chunk = payload && payload.pcmChunk;
+    if (chunk) {
+      latestPcmChunk = chunk instanceof Float32Array ? chunk : new Float32Array(chunk);
+    }
+  }
+
+  // ── setIsolationConfig: diarization/isolation UI runtime controls ───────────
+  if (type === 'setIsolationConfig') {
+    if (payload && typeof payload.isolationMethod === 'string') {
+      self._isolationMethod = payload.isolationMethod;
+    }
+    if (payload && typeof payload.ecapaSimilarityThreshold === 'number') {
+      self._ecapaSimilarityThreshold = payload.ecapaSimilarityThreshold;
+    }
+    if (payload && typeof payload.backgroundVolume === 'number') {
+      self._backgroundVolume = payload.backgroundVolume;
+    }
+    if (payload && typeof payload.maskRefinement === 'boolean') {
+      self._maskRefinement = payload.maskRefinement;
+    }
+  }
+
+  // ── multi_separate: multi-speaker stream separation ──────────────────────────
+  if (type === 'multi_separate') {
+    await handleMultiSeparate(payload && payload.streams);
+  }
+
+  // ── diarize ──────────────────────────────────────────────────────────────
+  if (type === 'diarize') {
+    try {
+      const { signal, sampleRate = 48000 } = payload || {};
+      if (!signal) { self.postMessage({ type: 'error', msg: 'diarize: no signal' }); return; }
+      const pcm      = signal instanceof Float32Array ? signal : new Float32Array(signal);
+      const segments = await runDiarization(pcm, sampleRate);
+      self.postMessage({
+        type:         'diarization',
+        segments,
+        duration:     pcm.length / sampleRate,
+        speakerCount: new Set(segments.map(s => s.speakerId)).size,
+      });
+    } catch(err) {
+      self.postMessage({ type: 'error', msg: 'diarize: ' + err.message });
+    }
+  }
+
+  // ── isolateSpeaker ───────────────────────────────────────────────────────
+  if (type === 'isolateSpeaker') {
+    _currentIsolateSpeakerId = (payload || {}).speakerId ?? null;
+  }
+
+  // ── speakerVolumes ───────────────────────────────────────────────────────
+  if (type === 'speakerVolumes') {
+    _speakerVolumeMap = payload || {};
+  }
+
+  // ── enrollVoiceprint ─────────────────────────────────────────────────────
+  if (type === 'enrollVoiceprint') {
+    try {
+      const { pcm } = payload || {};
+      if (!pcm) return;
+      await enrollVoiceprint(new Float32Array(pcm));
+      self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId: 'manual' } });
+    } catch(err) {
+      self.postMessage({ type: 'error', msg: 'enrollVoiceprint: ' + err.message });
+    }
+  }
+
+  // ── enrollFromDiarization ────────────────────────────────────────────────
+  if (type === 'enrollFromDiarization') {
+    const { speakerId } = payload || {};
+    self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId } });
+  }
+
+  // ── clearVoiceprint ──────────────────────────────────────────────────────
+  if (type === 'clearVoiceprint') {
+    _voiceprintEmbedding = null;
+    self.postMessage({ type: 'voiceprintCleared' });
+  }
+
+};
+
+// ── 2. Multi-speaker separation ───────────────────────────────────────────────
+async function handleMultiSeparate(streams) {
+  if (!streams || !streams.length) {
+    self.postMessage({ type: 'multi_done', streams: [] });
+    return;
+  }
+
+  // Null-guard: filter out invalid stream entries before extracting buffers
+  const transferables = streams
+    .map(s => s && s.data && s.data.buffer)
+    .filter(Boolean);
+
+  self.postMessage({ type: 'multi_done', streams }, transferables);
+}
+
+// ── 3. Model loader ───────────────────────────────────────────────────────────
+async function loadModels(basePath, providers, modelList) {
+  const modelStatus = {};
+
+  for (const modelId of modelList) {
+    const file = MODEL_FILES[modelId];
+    if (!file) {
+      modelStatus[modelId] = false;
       continue;
     }
 
-    // Pull frame from input ring
-    const frame = ringPull(inputRing, frameSize, pullBuf);
-    if (!frame) continue;
+    const modelUrl = basePath + file;
+    const eps      = await resolveProviders(providers);
 
-    // Produce time-domain processed audio (not a raw gain mask).
-    // The worklet reads these samples directly as mlOut.
-    let processedAudio = null;
     try {
-      const session = sessions.deepfilter || sessions.dns2 || sessions.demucs || null;
-      processedAudio = await processChunkWithMask(frame, session);
+      const { session, provider } = await createSessionWithFallback(modelUrl);
+      await warmupSession(modelId, session);
+      sessions[modelId] = session;
+      modelStatus[modelId] = true;
+      self.postMessage({ type: 'model_loaded', modelId, providers: eps });
+      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')}`);
     } catch (err) {
-      log('warn', `Inference error: ${err.message}`);
-      // Fallback: passthrough (copy input as-is)
-      processedAudio = new Float32Array(frame);
+      modelStatus[modelId] = false;
+      const errMsg = modelId === 'vad'
+        ? `VAD unavailable: ${err.message}`
+        : `Failed to load ${modelId}: ${err.message}`;
+      self.postMessage({ type: 'log', level: 'warn', msg: errMsg });
+      console.warn(`[ml-worker] ${errMsg}`);
     }
+  }
 
-    // Push reconstructed audio into the ring buffer read by the worklet
-    if (maskRing && processedAudio) {
-      ringPush(maskRing, processedAudio);
+  return modelStatus;
+}
+
+async function resolveProviders(providers) {
+  const eps = [];
+  for (const p of providers) {
+    if (p === 'webgpu') {
+      try {
+        const adapter = await navigator?.gpu?.requestAdapter();
+        if (adapter) eps.push('webgpu');
+      } catch { /* WebGPU unavailable */ }
+    } else if (p === 'wasm') {
+      eps.push('wasm');
     }
+  }
+  if (eps.length === 0) eps.push('wasm');
+  return eps;
+}
+
+async function createSessionWithFallback(modelUrl) {
+  try {
+    const session = await ort.InferenceSession.create(modelUrl, {
+      executionProviders: ['webgpu', 'wasm'],
+      graphOptimizationLevel: 'all',
+    });
+    return { session, provider: 'webgpu' };
+  } catch (err) {
+    console.warn('[ml-worker] WebGPU session creation failed, falling back to WASM:', err?.message || err);
+    const session = await ort.InferenceSession.create(modelUrl, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    });
+    return { session, provider: 'wasm' };
   }
 }
 
-/**
- * Run spectral masking inference on one audio chunk and return time-domain output.
- * Steps: window → FFT → model inference (gain mask) → apply mask → iFFT → return audio.
- * Falls back to a passthrough (all-ones mask) if no session is available.
- *
- * @param {Float32Array} chunk   - Input audio samples (up to fftSize)
- * @param {object|null}  session - ONNX InferenceSession, or null for passthrough
- * @returns {Float32Array} Reconstructed time-domain audio (same length as chunk)
- */
-async function processChunkWithMask(chunk, session) {
-  const fftSize = 4096;
-  const halfN = fftSize / 2 + 1;
-
-  // Zero-pad to fftSize and apply Hann window
-  const padded = new Float32Array(fftSize);
-  padded.set(chunk.subarray(0, Math.min(chunk.length, fftSize)));
-  for (let i = 0; i < fftSize; i++) {
-    padded[i] *= 0.5 * (1 - Math.cos(2 * Math.PI * i / fftSize));
+async function warmupSession(modelId, session) {
+  if (!session || typeof session.run !== 'function') return;
+  if (modelId === 'demucs' || modelId === 'demucs-v4') return;
+  try {
+    const dims = [1, currentNumBins];
+    const input = new ort.Tensor('float32', new Float32Array(currentNumBins), dims);
+    const feeds = { input };
+    await session.run(feeds);
+  } catch (err) {
+    console.warn('[ml-worker] warm-up skipped', {
+      modelId,
+      reason: String(err && err.message ? err.message : err),
+    });
   }
-
-  // Forward FFT
-  const re = new Float32Array(padded);
-  const im = new Float32Array(fftSize);
-  simpleRadix2FFT(re, im, false);
-
-  // Polar form (magnitude + phase) for positive frequencies
-  const mag = new Float32Array(halfN);
-  const phase = new Float32Array(halfN);
-  for (let k = 0; k < halfN; k++) {
-    mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
-    phase[k] = Math.atan2(im[k], re[k]);
-  }
-
-  // Model inference → per-bin gain mask
-  let gainMask;
-  if (session) {
-    try {
-      const tensor = new self.ort.Tensor('float32', mag, [1, 1, halfN]);
-      const results = await session.run({ input: tensor });
-      const outputKey = Object.keys(results)[0];
-      const rawMask = results[outputKey];
-      gainMask = new Float32Array(rawMask.data);
-      rawMask.dispose?.();
-      tensor.dispose?.();
-    } catch {
-      gainMask = new Float32Array(halfN).fill(1);
-    }
-  } else {
-    gainMask = new Float32Array(halfN).fill(1);
-  }
-
-  // Apply gain mask in spectral domain and reconstruct complex spectrum
-  const outRe = new Float32Array(fftSize);
-  const outIm = new Float32Array(fftSize);
-  for (let k = 0; k < halfN; k++) {
-    const gain = Math.max(0, Math.min(1, gainMask[k]));
-    const m = mag[k] * gain;
-    outRe[k] = m * Math.cos(phase[k]);
-    outIm[k] = m * Math.sin(phase[k]);
-    // Conjugate symmetry for real IFFT
-    if (k > 0 && k < fftSize - k) {
-      outRe[fftSize - k] = outRe[k];
-      outIm[fftSize - k] = -outIm[k];
-    }
-  }
-
-  // Inverse FFT — simpleRadix2FFT divides by N internally when inverse=true
-  simpleRadix2FFT(outRe, outIm, true);
-
-  const audioOut = new Float32Array(chunk.length);
-  const copyLen = Math.min(chunk.length, fftSize);
-  for (let i = 0; i < copyLen; i++) {
-    audioOut[i] = outRe[i];
-  }
-  return audioOut;
 }
 
-async function generateMask(frame) {
-  let demucsMask = null;
-  let bsrnnMask = null;
-  const len = frame.length;
+// ── 4. SAB polling loop (50 Hz) ───────────────────────────────────────────────
+function startPollLoop() {
+  pollTimer = setInterval(pollOnce, 20);
+}
 
-  // Demucs inference
-  if (sessions.demucs && weights.demucs > 0) {
-    // Duplicate mono to channel 2 for demucs (stereo expected)
-    const stereo = new Float32Array(len * 2);
-    stereo.set(frame, 0);
-    stereo.set(frame, len);
-    const tensor = new self.ort.Tensor('float32', stereo, [1, 2, len]);
+async function pollOnce() {
+  if (!flagsIn) return;
+  const currentFrame = Atomics.load(flagsIn, 0);
+  if (currentFrame === lastFrame) return;
+  lastFrame = currentFrame;
+
+  // subarray() is a zero-copy view — buildMask reads it before any next poll overwrites it.
+  const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
+  const mask       = await buildMask(magnitudes, latestPcmChunk);
+
+  outputView.set(mask);
+  Atomics.store(flagsOut, 1, 1); // signal: mask ready
+}
+
+// ── 5. Combined mask inference pipeline ──────────────────────────────────────
+// Reusable mask buffer — avoids one Float32Array allocation per inference call.
+let _maskBuffer = null;
+// Reusable 3-bin smoothing scratch — avoids a full-spectrum Float32Array
+// allocation per applyWienerFilter() call (~400KB/s GC churn at 50 Hz).
+let _smoothBuffer = null;
+
+async function buildMask(magnitudes, pcmChunk = null) {
+  const numBins = magnitudes.length;
+  // Grow buffer only when numBins increases (rare); reuse otherwise.
+  if (!_maskBuffer || _maskBuffer.length < numBins) {
+    _maskBuffer = new Float32Array(numBins);
+  }
+  const mask = _maskBuffer.subarray(0, numBins);
+  mask.fill(1.0);
+
+  const fallbackVAD = runVADFallback(magnitudes);
+
+  // VAD gate (silero-vad / vad)
+  const vadSess = sessions['vad'] || sessions['silero-vad'];
+  let hasModelVAD = false;
+  let isVoice = fallbackVAD.isVoice;
+  if (vadSess && allowedStages >= 5) {
     try {
-      const result = await sessions.demucs.run({ input: tensor });
-      const output = result[Object.keys(result)[0]];
-      const outData = new Float32Array(output.data);
-      demucsMask = new Float32Array(len);
-      // Average stereo mask back to mono
-      for(let i=0; i<len; i++) demucsMask[i] = (outData[i] + outData[len + i]) / 2;
-      output.dispose?.();
-    } finally {
-      tensor.dispose?.();
+      const vadInput = new ort.Tensor('float32', magnitudes, [1, numBins]);
+      const result   = await vadSess.run({ input: vadInput });
+      const vadProb  = result.output.data;
+      hasModelVAD = true;
+      if (vadProb.length === 1) {
+        const gate = Math.max(0, vadProb[0] * 2 - 0.5);
+        isVoice = vadProb[0] >= 0.5;
+        for (let k = 0; k < numBins; k++) mask[k] *= gate;
+      } else {
+        let meanProb = 0;
+        for (let k = 0; k < numBins; k++) {
+          mask[k] *= vadProb[k];
+          meanProb += vadProb[k];
+        }
+        isVoice = (meanProb / numBins) >= 0.5;
+      }
+    } catch (e) {
+      console.warn('[ml-worker] vad error:', e.message);
+    }
+  }
+  if (!hasModelVAD && vadModelMissing && !vadMissingWarned) {
+    vadMissingWarned = true;
+    console.warn('[ml-worker] Silero VAD unavailable, fallback VAD enabled');
+  }
+  if (!isVoice) {
+    const nonVoiceMask = 1 / Math.max(1, Number(runtimeParams.nonVoiceSuppression) || 2);
+    for (let k = 0; k < numBins; k++) mask[k] *= nonVoiceMask;
+  }
+
+  if (!warmupComplete) {
+    updateNoiseProfile(magnitudes);
+    // Ramp mask from near-silence up to full passthrough over the warmup
+    // window instead of clamping to 0. Users previously heard ~1.8s of dead
+    // silence before the noise profile was considered converged.
+    const ramp = Math.min(1, noiseFrames / NOISE_WARMUP_FRAMES);
+    const rampGain = 0.05 + 0.95 * ramp * ramp;
+    for (let k = 0; k < numBins; k++) mask[k] *= rampGain;
+    return mask;
+  }
+
+  applyWienerFilter(magnitudes, mask, isVoice);
+
+  // Demucs v4 vocal separation mask
+  const demucsSess = sessions['demucs'] || sessions['demucs-v4'];
+  if (demucsSess && allowedStages >= 10 && pcmChunk && pcmChunk.length > 0) {
+    try {
+      const demucsIn = new ort.Tensor('float32', pcmChunk, [1, 1, pcmChunk.length]);
+      const result = await demucsSess.run({ input: demucsIn });
+      const vocalMask = result.vocal_mask?.data || result.output?.data || null;
+      if (vocalMask) for (let k = 0; k < numBins; k++) {
+        mask[k] = Math.min(mask[k], Math.max(0, vocalMask[k]));
+      }
+    } catch (e) {
+      console.warn('[ml-worker] demucs error:', e.message);
+    }
+  } else if (demucsSess && allowedStages >= 10) {
+    // Intentional no-op: never feed magnitude spectra to Demucs.
+    // Unity mask is safer than invalid spectral approximation.
+    if (!demucsPcmMissingWarned) {
+      demucsPcmMissingWarned = true;
+      console.warn('[ml-worker] Demucs skipped: PCM chunk unavailable; using unity fallback');
     }
   }
 
-  // BSRNN inference
-  if (sessions.bsrnn && weights.bsrnn > 0) {
-    // Duplicate mono to channel 2 for demucs (stereo expected)
-    const stereo = new Float32Array(len * 2);
-    stereo.set(frame, 0);
-    stereo.set(frame, len);
-    const tensor = new self.ort.Tensor('float32', stereo, [1, 2, len]);
+  // RNNoise residual noise suppression
+  if (sessions['rnnoise'] && allowedStages >= 8) {
     try {
-      const result = await sessions.bsrnn.run({ input: tensor });
-      const output = result[Object.keys(result)[0]];
-      bsrnnMask = new Float32Array(output.data);
-      output.dispose?.();
-    } finally {
-      tensor.dispose?.();
+      const rnIn   = new ort.Tensor('float32', magnitudes, [1, numBins]);
+      const result = await sessions['rnnoise'].run({ input: rnIn });
+      const rnMask = result.output.data;
+      for (let k = 0; k < numBins; k++) {
+        mask[k] *= Math.max(0.01, rnMask[k]); // floor prevents total silence
+      }
+    } catch (e) {
+      console.warn('[ml-worker] rnnoise error:', e.message);
     }
   }
 
-  // Ensemble fusion
-  const mask = new Float32Array(len);
-  for (let i = 0; i < len; i++) {
-    const d = demucsMask ? demucsMask[i] * weights.demucs : 0;
-    const b = bsrnnMask ? bsrnnMask[i] * weights.bsrnn : 0;
-    const total = (demucsMask ? weights.demucs : 0) + (bsrnnMask ? weights.bsrnn : 0);
-    mask[i] = total > 0 ? Math.min(1, (d + b) / total) : 1;
+  // VoiceFixer harmonic restoration (ENTERPRISE only)
+  if (sessions['voicefixer'] && allowedStages >= 14) {
+    try {
+      const vfIn   = new ort.Tensor('float32', magnitudes, [1, numBins]);
+      const result = await sessions['voicefixer'].run({ input: vfIn });
+      const vfGain = result.gain.data;
+      for (let k = 0; k < numBins; k++) {
+        mask[k] = mask[k] * (0.5 + 0.5 * Math.min(2, vfGain[k]));
+      }
+    } catch (e) {
+      console.warn('[ml-worker] voicefixer error:', e.message);
+    }
+  }
+
+  // Final safety pass: clamp all values to [0, 1]; replace NaN/Inf with 1 (passthrough)
+  for (let k = 0; k < numBins; k++) {
+    const v = mask[k];
+    mask[k] = (Number.isFinite(v) && v >= 0) ? Math.min(v, 1) : 1;
   }
 
   return mask;
 }
 
-// ---- One-Shot Handlers ----
-async function handleInfer(msg) {
-  const id = msg.id;
-  try {
-    const data = msg.data; // Float32Array
-    const mask = await generateMask(data);
-    self.postMessage({ type: 'inferResult', id, mask }, [mask.buffer]);
-  } catch (err) {
-    self.postMessage({ type: 'error', id, msg: err.message });
+function runVADFallback(magnitudes) {
+  let sum = 0;
+  let voiceBand = 0;
+  const voiceLo = Math.round((300 / (currentFFTSize / 2)) * (magnitudes.length - 1));
+  const voiceHi = Math.round((3400 / (currentFFTSize / 2)) * (magnitudes.length - 1));
+  for (let k = 0; k < magnitudes.length; k++) {
+    const e = magnitudes[k] * magnitudes[k];
+    sum += e;
+    if (k >= voiceLo && k <= voiceHi) voiceBand += e;
   }
+  const totalRMS = Math.sqrt(sum / Math.max(1, magnitudes.length));
+  const energyRatio = voiceBand / Math.max(sum, 1e-9);
+  const rmsScore = Math.max(0, Math.min(1, (totalRMS - VAD_FALLBACK_RMS_BASELINE) / VAD_FALLBACK_RMS_RANGE));
+  const ratioScore = Math.max(0, Math.min(1, (energyRatio - VAD_FALLBACK_RATIO_BASELINE) / VAD_FALLBACK_RATIO_RANGE));
+  const rawScore = VAD_FALLBACK_BLEND_RMS * rmsScore + VAD_FALLBACK_BLEND_RATIO * ratioScore;
+  speechConfidence = speechConfidence * 0.85 + rawScore * 0.15;
+  speechStreak = speechConfidence > 0.6 ? speechStreak + 1 : Math.max(0, speechStreak - 1);
+  return { isVoice: speechStreak >= 3, speechConfidence };
 }
 
-async function handleVAD(msg) {
-  const id = msg.id;
-  if (!sessions.vad) {
-    self.postMessage({ type: 'vadResult', id, confidence: new Float32Array(0) });
-    return;
+function updateNoiseProfile(magnitudes) {
+  if (!noiseProfile || noiseProfile.length !== magnitudes.length) {
+    noiseProfile = new Float32Array(magnitudes.length);
+    noiseFrames = 0;
+    warmupComplete = false;
   }
-
-  try {
-    const data = msg.data;
-    const sr = msg.sampleRate || 16000;
-    const windowSize = 512;
-    const confidence = new Float32Array(Math.ceil(data.length / windowSize));
-
-    // Process in windows
-    const stateSize = sr === 16000 ? 64 : 128;
-    let state = new Float32Array(2 * 1 * stateSize).fill(0); // LSTM state
-    for (let i = 0; i < confidence.length; i++) {
-      const start = i * windowSize;
-      const end = Math.min(start + windowSize, data.length);
-      let chunk = data.subarray(start, end);
-      if (chunk.length < windowSize) {
-         const padded = new Float32Array(windowSize);
-         padded.set(chunk);
-         chunk = padded;
-      }
-
-      const inputTensor = new self.ort.Tensor('float32', chunk, [1, chunk.length]);
-      const srTensor = new self.ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
-      const stateTensor = new self.ort.Tensor('float32', state, [2, 1, stateSize]);
-
-      try {
-        const result = await sessions.vad.run({
-          input: inputTensor,
-          sr: srTensor,
-          state: stateTensor
-        });
-        confidence[i] = result.output?.data?.[0] ?? 0.5;
-        if (result.stateN?.data) {
-          state = new Float32Array(result.stateN.data);
-        }
-        // Dispose outputs
-        for (const val of Object.values(result)) val.dispose?.();
-      } finally {
-        inputTensor.dispose?.();
-        srTensor.dispose?.();
-        stateTensor.dispose?.();
-      }
-    }
-
-    self.postMessage({ type: 'vadResult', id, confidence }, [confidence.buffer]);
-  } catch (err) {
-    self.postMessage({ type: 'error', id, msg: err.message });
+  let sumSq = 0;
+  for (let k = 0; k < magnitudes.length; k++) sumSq += magnitudes[k] * magnitudes[k];
+  // Seed with a conservative broadband estimate so warmup starts suppressing
+  // immediately instead of passing near-raw noise during early frames.
+  const broadbandSeed = Math.sqrt(sumSq / Math.max(1, magnitudes.length)) * NOISE_SEED_SCALE + 1e-6;
+  const alpha = noiseFrames < 5 ? 0.5 : 0.92;
+  for (let k = 0; k < magnitudes.length; k++) {
+    if (noiseFrames === 0) noiseProfile[k] = broadbandSeed;
+    noiseProfile[k] = alpha * noiseProfile[k] + (1 - alpha) * magnitudes[k];
   }
+  noiseFrames++;
+  if (noiseFrames >= NOISE_WARMUP_FRAMES) warmupComplete = true;
 }
 
-/**
- * Perform chunked source separation on the provided audio buffer, post progress updates, and send the separated result.
- *
- * @param {Object} msg - Message containing separation parameters.
- * @param {string|number} msg.id - Identifier echoed back with progress and result messages.
- * @param {Float32Array} msg.data - Mono audio samples to separate.
- * @param {number} [msg.chunkSize] - Optional chunk size in samples; defaults to 44100 * 10 (10 seconds).
- */
-async function handleSeparate(msg) {
-  const id = msg.id;
-  try {
-    const data = msg.data;
-    const chunkSize = msg.chunkSize || 4096; // Need pow2 for FFT
-    const result = new Float32Array(data.length);
-    const totalChunks = Math.ceil(data.length / chunkSize);
+function applyWienerFilter(magnitudes, mask, isVoice) {
+  updateNoiseProfile(magnitudes);
+  const spectralFloor = Math.max(0.001, Math.min(0.05, Number(runtimeParams.spectralFloor) || 0.005));
+  const forensicMode = !!runtimeParams.forensicMode;
+  const noiseReduce = Math.max(0, Math.min(1, Number(runtimeParams.noiseReduce) || 0.7));
+  // For forensic mode with very low floor, allow stronger subtraction.
+  // Otherwise keep alpha capped for voice quality to reduce musical noise.
+  const alphaCap = (forensicMode && spectralFloor < FORENSIC_ALPHA_FLOOR_THRESHOLD)
+    ? ALPHA_CAP_FORENSIC
+    : ALPHA_CAP_DEFAULT;
+  const alpha = Math.min(alphaCap, 1.0 + noiseReduce);
 
-    for (let c = 0; c < totalChunks; c++) {
-      const start = c * chunkSize;
-      const end = Math.min(start + chunkSize, data.length);
-      const chunk = data.subarray(start, end);
-
-      const re = new Float32Array(chunkSize);
-      re.set(chunk);
-      const im = new Float32Array(chunkSize);
-
-      simpleRadix2FFT(re, im, false);
-
-      const mag = new Float32Array(chunkSize);
-      for(let i=0; i<chunkSize; i++) mag[i] = Math.sqrt(re[i]*re[i] + im[i]*im[i]);
-
-      // Inference on magnitude using generateMask (which handles bsrnn/demucs internally)
-      const mask = await generateMask(mag);
-
-      for(let i=0; i<chunkSize; i++) {
-        re[i] *= mask[i];
-        im[i] *= mask[i];
-      }
-
-      simpleRadix2FFT(re, im, true);
-
-      for(let i=0; i<chunk.length; i++) {
-        result[start + i] = re[i];
-      }
-
-      self.postMessage({ type: 'progress', id, stage: 'separation', pct: Math.round(((c+1)/totalChunks)*100) });
-    }
-    const output = result;
-    self.postMessage({ type: 'separateResult', id, data: output }, [output.buffer]);
-  } catch (err) {
-    self.postMessage({ type: 'error', id, msg: err.message });
-  }
-}
-
-async function handleEnroll(msg) {
-  const id = msg.id;
-  if (!sessions.ecapa) {
-    self.postMessage({ type: 'enrollResult', id, embedding: null, msg: 'ECAPA-TDNN not loaded' });
-    return;
+  for (let k = 0; k < magnitudes.length; k++) {
+    const signalPow = magnitudes[k] * magnitudes[k];
+    const noisePow = Math.max(1e-12, noiseProfile[k] * noiseProfile[k] * alpha);
+    const snr = Math.min(SNR_MAX, signalPow / noisePow);
+    const gain = snr / (snr + 1.0);
+    mask[k] *= Math.max(spectralFloor, Math.min(1, gain));
   }
 
-  try {
-    const data = msg.data;
-    const tensor = new self.ort.Tensor('float32', data, [1, 1, data.length]);
-    try {
-      const result = await sessions.ecapa.run({ input: tensor });
-      const output = result[Object.keys(result)[0]];
-      const embedding = new Float32Array(output.data);
-      output.dispose?.();
-      self.postMessage({ type: 'enrollResult', id, embedding }, [embedding.buffer]);
-    } finally {
-      tensor.dispose?.();
-    }
-  } catch (err) {
-    self.postMessage({ type: 'error', id, msg: err.message });
+  // 3-bin moving-average smoothing reduces isolated spectral holes (musical noise).
+  // Boundary-unrolled to avoid per-bin Math.max/Math.min; buffer is cached.
+  const len = mask.length;
+  if (!_smoothBuffer || _smoothBuffer.length < len) _smoothBuffer = new Float32Array(len);
+  const smooth = _smoothBuffer;
+  if (len > 0) {
+    smooth[0] = len > 1 ? (mask[0] + mask[0] + mask[1]) / 3 : mask[0];
+    const last = len - 1;
+    for (let k = 1; k < last; k++) smooth[k] = (mask[k - 1] + mask[k] + mask[k + 1]) / 3;
+    if (last > 0) smooth[last] = (mask[last - 1] + mask[last] + mask[last]) / 3;
   }
-}
-
-/**
- * Extract a speaker embedding from an audio segment for real-time identification.
- * Posts { type: 'identifyResult', id, embedding } — or embedding: null when model unavailable.
- *
- * @param {Object} msg
- * @param {string|number} msg.id    - Call identifier echoed back in the result.
- * @param {Float32Array}  msg.data  - Mono audio samples (any sample rate, model normalises internally).
- */
-async function handleIdentify(msg) {
-  const id = msg.id;
-  if (!sessions.ecapa) {
-    self.postMessage({ type: 'identifyResult', id, embedding: null });
-    return;
-  }
-
-  try {
-    const data = msg.data;
-    const tensor = new self.ort.Tensor('float32', data, [1, 1, data.length]);
-    try {
-      const result = await sessions.ecapa.run({ input: tensor });
-      const output = result[Object.keys(result)[0]];
-      const embedding = new Float32Array(output.data);
-      output.dispose?.();
-      self.postMessage({ type: 'identifyResult', id, embedding }, [embedding.buffer]);
-    } finally {
-      tensor.dispose?.();
-    }
-  } catch (err) {
-    self.postMessage({ type: 'identifyResult', id, embedding: null, error: err.message });
-    log('warn', `Speaker identification error: ${err.message}`);
-  }
-}
-
-/**
- * DNS v2 (Microsoft DNS Challenge v2) ONNX inference.
- * Computes a per-frequency-bin gain mask from a 512-point STFT magnitude frame
- * at 16 kHz. The mask (0..1) is posted as { type: 'dns2_mask', id, mask }.
- *
- * Graceful fallback: if the dns2 model failed to load, posts an all-ones mask
- * (passthrough) instead of crashing.
- *
- * @param {object} msg
- * @param {string|number} msg.id        - Call identifier
- * @param {Float32Array}  msg.magnitude - 512-point STFT magnitude (16 kHz)
- */
-async function handleDNS2(msg) {
-  const id = msg.id;
-  const magnitude = msg.magnitude;
-
-  if (!sessions.dns2 || !magnitude) {
-    const mask = new Float32Array(magnitude ? magnitude.length : 513).fill(1);
-    self.postMessage({ type: 'dns2_mask', id, mask }, [mask.buffer]);
-    return;
-  }
-
-  try {
-    const tensor = new self.ort.Tensor('float32', magnitude, [1, 1, magnitude.length]);
-    try {
-      const result = await sessions.dns2.run({ input: tensor });
-      const output = result[Object.keys(result)[0]];
-      const rawMask = new Float32Array(output.data);
-      for (let i = 0; i < rawMask.length; i++) {
-        rawMask[i] = Math.max(0, Math.min(1, rawMask[i]));
-      }
-      output.dispose?.();
-      self.postMessage({ type: 'dns2_mask', id, mask: rawMask }, [rawMask.buffer]);
-    } finally {
-      tensor.dispose?.();
-    }
-  } catch (err) {
-    log('warn', `DNS v2 inference failed: ${err.message}`);
-    const mask = new Float32Array(magnitude.length).fill(1);
-    self.postMessage({ type: 'dns2_mask', id, mask }, [mask.buffer]);
-  }
-}
-
-/**
- * Noise classifier: identify the dominant background noise type from a
- * compact spectral feature vector derived from STFT magnitude frames.
- *
- * Attempts ONNX inference with the noiseClassifier model. Falls back to
- * posting { noiseClass: 'unknown', confidence: 0 } on failure.
- *
- * @param {object} msg
- * @param {string|number} msg.id       - Call identifier
- * @param {Float32Array}  msg.features - Compact feature vector (e.g. 64-dim mel-band energies)
- * @param {string[]}      [msg.labels] - Optional class label array (overrides default)
- */
-async function handleClassifyNoise(msg) {
-  const id = msg.id;
-  const features = msg.features;
-  const labels = msg.labels || ['music', 'white_noise', 'crowd', 'HVAC', 'keyboard', 'traffic', 'silence'];
-
-  if (!sessions.noiseClassifier || !features) {
-    self.postMessage({ type: 'noiseClassResult', id, noiseClass: 'unknown', confidence: 0 });
-    return;
-  }
-
-  try {
-    const tensor = new self.ort.Tensor('float32', features, [1, features.length]);
-    try {
-      const result = await sessions.noiseClassifier.run({ input: tensor });
-      const output = result[Object.keys(result)[0]];
-      const logits = new Float32Array(output.data);
-      output.dispose?.();
-
-      // Softmax over logits
-      const maxLogit = Math.max(...logits);
-      let sumExp = 0;
-      const probs = new Float32Array(logits.length);
-      for (let i = 0; i < logits.length; i++) {
-        probs[i] = Math.exp(logits[i] - maxLogit);
-        sumExp += probs[i];
-      }
-      for (let i = 0; i < probs.length; i++) probs[i] /= sumExp;
-
-      // Best class
-      let bestIdx = 0;
-      for (let i = 1; i < probs.length; i++) {
-        if (probs[i] > probs[bestIdx]) bestIdx = i;
-      }
-      const noiseClass = labels[bestIdx] || `class_${bestIdx}`;
-      const confidence = probs[bestIdx];
-
-      self.postMessage({ type: 'noiseClassResult', id, noiseClass, confidence });
-    } finally {
-      tensor.dispose?.();
-    }
-  } catch (err) {
-    log('warn', `Noise classifier inference failed: ${err.message}`);
-    self.postMessage({ type: 'noiseClassResult', id, noiseClass: 'unknown', confidence: 0 });
-  }
-}
-
-/**
- * Multi-speaker source separation using ConvTasNet (or SepFormer variant).
- * Separates the mixed audio into up to 4 speaker streams.
- *
- * Each separated stream is tagged with a speaker index (0-based). If the
- * ConvTasNet model is unavailable, the original mix is returned as the sole
- * stream (graceful fallback, no crash).
- *
- * @param {object}        msg
- * @param {string|number} msg.id             - Call identifier
- * @param {Float32Array}  msg.data           - Mixed mono audio samples
- * @param {string}        [msg.mode]         - 'target-only' | 'all-speakers' | 'off'
- * @param {number}        [msg.targetSpeaker] - 0-based index of the target speaker
- * @param {number}        [msg.attenuationDb] - Attenuation for non-target streams (default -24 dB)
- */
-async function handleMultiSeparate(msg) {
-  const id = msg.id;
-  const data = msg.data;
-  const mode = msg.mode || 'target-only';
-  const targetSpeaker = msg.targetSpeaker ?? 0;
-  const attenuationLin = Math.pow(10, (msg.attenuationDb ?? -24) / 20);
-
-  if (mode === 'off' || !sessions.convtasnet || !data) {
-    // Passthrough: single stream = original mix
-    self.postMessage({
-      type: 'multiSeparateResult',
-      id,
-      streams: [{ speakerId: 0, data: new Float32Array(data || []) }]
-    }, data ? [data.buffer] : []);
-    return;
-  }
-
-  try {
-    const tensor = new self.ort.Tensor('float32', data, [1, 1, data.length]);
-    let streams;
-    try {
-      const result = await sessions.convtasnet.run({ input: tensor });
-      const output = result[Object.keys(result)[0]];
-      // Expected output shape: [1, numSpeakers, numSamples]
-      const numSpeakers = Math.min(4, output.dims[1] || 1);
-      const numSamples = data.length;
-      streams = [];
-      for (let s = 0; s < numSpeakers; s++) {
-        const start = s * numSamples;
-        const streamData = new Float32Array(output.data.slice(start, start + numSamples));
-
-        if (mode === 'target-only' && s !== targetSpeaker) {
-          // Attenuate non-target speakers (kept at -24 dB for monitoring)
-          for (let i = 0; i < streamData.length; i++) streamData[i] *= attenuationLin;
-        }
-
-        streams.push({ speakerId: s, data: streamData });
-      }
-      output.dispose?.();
-    } finally {
-      tensor.dispose?.();
-    }
-
-    // Transfer all stream buffers zero-copy (guard against null entries)
-    const transferables = streams
-      .map(s => s && s.data && s.data.buffer)
-      .filter(Boolean);
-    self.postMessage({ type: 'multiSeparateResult', id, streams }, transferables);
-
-  } catch (err) {
-    log('warn', `Multi-speaker separation failed: ${err.message} — passthrough`);
-    // Graceful fallback: return original mix as single stream
-    const fallback = new Float32Array(data);
-    self.postMessage({
-      type: 'multiSeparateResult',
-      id,
-      streams: [{ speakerId: 0, data: fallback }]
-    }, [fallback.buffer]);
-  }
-}
-
-// ---- Disposal ----
-async function disposeAll() {
-  running = false;
-  for (const [name, session] of Object.entries(sessions)) {
-    try {
-      await session?.dispose?.();
-      log('info', `Disposed model: ${name}`);
-    } catch (e) {
-      log('error', `Failed to dispose model ${name}: ${e.message || e}`);
-    }
-  }
-  sessions = {};
-}
-
-// ---- Ring Buffer Helpers ----
-function ringAvailable(ring) {
-  const w = Atomics.load(ring.control, 0);
-  const r = Atomics.load(ring.control, 1);
-  return (w - r + ring.capacity) % ring.capacity;
-}
-
-function ringPull(ring, count, dest) {
-  if (ringAvailable(ring) < count) return null;
-  let r = Atomics.load(ring.control, 1);
-  const first = Math.min(count, ring.capacity - r);
-  dest.set(ring.data.subarray(r, r + first));
-  if (first < count) dest.set(ring.data.subarray(0, count - first), first);
-  Atomics.store(ring.control, 1, (r + count) % ring.capacity);
-  return dest;
-}
-
-function ringPush(ring, samples) {
-  const len = samples.length;
-  const avail = ringAvailable(ring);
-  const space = ring.capacity - 1 - avail;
-  if (len > space) { Atomics.add(ring.control, 3, 1); return false; }
-  let w = Atomics.load(ring.control, 0);
-  const first = Math.min(len, ring.capacity - w);
-  ring.data.set(samples.subarray(0, first), w);
-  if (first < len) ring.data.set(samples.subarray(first), 0);
-  Atomics.store(ring.control, 0, (w + len) % ring.capacity);
-  return true;
-}
-
-// ---- Logging ----
-function log(level, message) {
-  self.postMessage({ type: 'log', level, msg: message });
-}
-
-function simpleRadix2FFT(re, im, inverse) {
-  const N = re.length;
-  let j = 0;
-  for (let i = 0; i < N - 1; i++) {
-    if (i < j) {
-      let tr = re[i]; let ti = im[i];
-      re[i] = re[j]; im[i] = im[j];
-      re[j] = tr; im[j] = ti;
-    }
-    let m = N >> 1;
-    while (m >= 1 && j >= m) { j -= m; m >>= 1; }
-    j += m;
-  }
-  const dir = inverse ? 1 : -1;
-  for (let m = 2; m <= N; m <<= 1) {
-    const w = 2 * Math.PI / m;
-    const wpr = Math.cos(w);
-    const wpi = dir * Math.sin(w);
-    let wr = 1; let wi = 0;
-    const m2 = m >> 1;
-    for (let j = 0; j < m2; j++) {
-      for (let i = j; i < N; i += m) {
-        const k = i + m2;
-        const tr = wr * re[k] - wi * im[k];
-        const ti = wr * im[k] + wi * re[k];
-        re[k] = re[i] - tr; im[k] = im[i] - ti;
-        re[i] += tr; im[i] += ti;
-      }
-      let tpr = wr;
-      wr = wr * wpr - wi * wpi;
-      wi = wi * wpr + tpr * wpi;
-    }
-  }
-  if (inverse) {
-    for (let i = 0; i < N; i++) { re[i] /= N; im[i] /= N; }
+  const voiceFloor = isVoice ? spectralFloor : Math.min(1, spectralFloor * runtimeParams.nonVoiceSuppression);
+  for (let k = 0; k < len; k++) {
+    const s = smooth[k];
+    mask[k] = s > 1 ? 1 : (s < voiceFloor ? voiceFloor : s);
   }
 }

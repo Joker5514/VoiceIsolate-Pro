@@ -8,7 +8,7 @@ const path = require('path');
 
 // Dynamically load the app.js source to bypass Jest's ES module strictness
 // since app.js is in a `"type": "module"` package but conditionally exports via CommonJS.
-const appJsCode = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
+const appJsCode = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
 
 // Provide mocked module and browser globals to capture the export and prevent ReferenceErrors
 const mockModule = { exports: {} };

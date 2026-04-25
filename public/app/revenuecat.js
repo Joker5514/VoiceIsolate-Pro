@@ -82,7 +82,6 @@ const RevenueCatManager = (() => {
         _currentOffering = current;
 
         _initialized = true;
-        console.log(`[RevenueCat] Initialized on ${platform}`);
 
         // Check existing entitlements
         await _syncEntitlements();
@@ -95,7 +94,6 @@ const RevenueCatManager = (() => {
     } else {
       // Web: use Stripe via Paywall
       _initialized = true;
-      console.log('[RevenueCat] Web mode — using Stripe checkout');
     }
   }
 

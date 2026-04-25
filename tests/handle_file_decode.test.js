@@ -25,7 +25,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       revokeObjectURL: jest.fn()
     };
 
-    const appJsPath = path.join(__dirname, '../app.js');
+    const appJsPath = path.join(__dirname, '../public/app/app.js');
     const appJs = fs.readFileSync(appJsPath, 'utf8');
 
     const sandbox = {
@@ -57,7 +57,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
     jest.clearAllTimers();
   });
 
-  it('handles decodeAudioData failure and falls back to decodeViaVideoElement for video files', async () => {
+  it('uses decodeViaVideoElement directly for video files', async () => {
     const handleFile = VoiceIsolatePro.prototype.handleFile;
 
     const mockVip = {
@@ -72,7 +72,6 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
         videoCard: { style: {} }
       },
       ctx: {
-        // Mock decodeAudioData to reject
         decodeAudioData: jest.fn().mockRejectedValue(new Error('Decode failed'))
       }
     };
@@ -96,10 +95,9 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
 
     clearTimeout(timeoutId);
 
-    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalled();
+    expect(mockVip.ctx.decodeAudioData).not.toHaveBeenCalled();
     expect(mockVip.decodeViaVideoElement).toHaveBeenCalledWith(mockFile);
     expect(mockVip.inputBuffer).toEqual([1, 2, 3]);
-    // removed expect
   });
 
   it('throws an error when decodeAudioData fails and file is not a video', async () => {

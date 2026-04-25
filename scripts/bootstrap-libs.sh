@@ -4,11 +4,14 @@
 # into public/lib/ for local-first, no-CDN-at-runtime operation.
 #
 # Usage:  bash scripts/bootstrap-libs.sh
-# CI:     Add as a build step BEFORE vercel deploy / npm run build
+# NOTE:   This script is for LOCAL development only.
+#         Vercel uses scripts/setup-ort.js (copies from node_modules)
+#         which avoids relying on outbound curl at build time.
 # =============================================================
 set -euo pipefail
 
-ORT_VERSION="1.18.0"
+# Version MUST match onnxruntime-web in package.json
+ORT_VERSION="1.17.0"
 ORT_CDN="https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist"
 THREE_VERSION="0.128.0"
 THREE_CDN="https://cdn.jsdelivr.net/npm/three@${THREE_VERSION}/build"

@@ -1,3 +1,4 @@
+/* global process, console, Buffer */
 /**
  * VoiceIsolate Pro — Cloud Sync API v22
  *
@@ -23,10 +24,21 @@ router.use(express.json({ limit: '1mb' }));
 const _store = new Map(); // userId → { presets, noiseProfiles, history, updatedAt }
 
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
-if (!process.env.LICENSE_JWT_SECRET) {
-  throw new Error('LICENSE_JWT_SECRET environment variable is required');
-}
-const LICENSE_SECRET = process.env.LICENSE_JWT_SECRET;
+// Production: env var required. Non-production: use a random per-process
+// secret so tokens never reuse a hardcoded value, and preview deploys still
+// boot. Tokens won't validate across restarts, which is the intended trade-off.
+const LICENSE_SECRET = (() => {
+  if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('[sync] LICENSE_JWT_SECRET is required in production.');
+  }
+  const random = crypto.randomBytes(48).toString('base64url');
+  console.warn(
+    '[sync] WARNING: LICENSE_JWT_SECRET not set. Using random per-process secret. ' +
+    'Sync tokens will not validate after restart.'
+  );
+  return random;
+})();
 
 /**
  * Validate and decode a license token, returning its payload when valid.
@@ -127,7 +139,7 @@ function requireRateLimit(req, res, next) {
 }
 
 // ─── Input Validation ─────────────────────────────────────────────────────────
-const ID_RE = /^[a-zA-Z0-9_\-]{1,128}$/;
+const ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 const MAX_PRESET_PARAMS_BYTES   = 64 * 1024;  //  64 KB
 const MAX_NOISE_PROFILE_BYTES   = 256 * 1024; // 256 KB
 const MAX_HISTORY_ENTRY_BYTES   = 16 * 1024;  //  16 KB
@@ -139,6 +151,32 @@ const MAX_HISTORY_ENTRY_BYTES   = 16 * 1024;  //  16 KB
  */
 function _validateId(id) {
   return typeof id === 'string' && ID_RE.test(id);
+}
+
+/**
+ * Check if an object exceeds a maximum depth using an iterative approach.
+ * This prevents stack overflow errors during recursive operations like JSON.stringify.
+ * @param {any} obj - The object to check.
+ * @param {number} maxDepth - Maximum allowed nesting depth.
+ * @returns {boolean} True if the object is too deep.
+ */
+function _isDeep(obj, maxDepth = 10) {
+  if (!obj || typeof obj !== 'object') return false;
+  const visited = new WeakSet();
+  const stack = [[obj, 0]];
+  while (stack.length > 0) {
+    const [curr, depth] = stack.pop();
+    if (depth > maxDepth) return true;
+    if (curr && typeof curr === 'object') {
+      if (visited.has(curr)) return true;
+      visited.add(curr);
+      const keys = Object.keys(curr);
+      for (let i = 0; i < keys.length; i++) {
+        stack.push([curr[keys[i]], depth + 1]);
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -166,9 +204,19 @@ function _validatePreset(p) {
 function _sanitizePreset(p) {
   // Only keep known fields to prevent arbitrary data injection
   const rawParams = p.params && typeof p.params === 'object' ? p.params : {};
-  // Cap params payload to prevent oversized objects
-  const paramsStr = JSON.stringify(rawParams);
-  const params = paramsStr.length <= MAX_PRESET_PARAMS_BYTES ? rawParams : {};
+
+  let params = {};
+  if (!_isDeep(rawParams)) {
+    try {
+      // Cap params payload to prevent oversized objects
+      const paramsStr = JSON.stringify(rawParams);
+      if (Buffer.byteLength(paramsStr) <= MAX_PRESET_PARAMS_BYTES) {
+        params = rawParams;
+      }
+    } catch {
+      params = {};
+    }
+  }
 
   const result = {
     id:     String(p.id).slice(0, 128),
@@ -206,9 +254,19 @@ function _validateNoiseProfile(p) {
  */
 function _sanitizeNoiseProfile(p) {
   const rawData = p.data && typeof p.data === 'object' ? p.data : {};
-  // Cap data payload (noise profiles can be larger than presets)
-  const dataStr = JSON.stringify(rawData);
-  const data = dataStr.length <= MAX_NOISE_PROFILE_BYTES ? rawData : {};
+
+  let data = {};
+  if (!_isDeep(rawData)) {
+    try {
+      // Cap data payload (noise profiles can be larger than presets)
+      const dataStr = JSON.stringify(rawData);
+      if (Buffer.byteLength(dataStr) <= MAX_NOISE_PROFILE_BYTES) {
+        data = rawData;
+      }
+    } catch {
+      data = {};
+    }
+  }
 
   const result = {
     name: String(p.name).slice(0, 256),
@@ -276,12 +334,21 @@ router.post('/push', requireAuth, requireRateLimit, (req, res) => {
       }
       case 'history:add': {
         if (change.data && typeof change.data === 'object') {
-          // Cap each history entry to prevent injection of oversized objects
-          const entryStr = JSON.stringify(change.data);
-          if (entryStr.length <= MAX_HISTORY_ENTRY_BYTES) {
-            data.history = [...(data.history || []), change.data].slice(-100);
+          if (_isDeep(change.data)) {
+            errors.push('history:add entry is too deep');
           } else {
-            errors.push('history:add entry exceeds maximum size (16 KB)');
+            try {
+              // Cap each history entry to prevent injection of oversized objects
+              const entryStr = JSON.stringify(change.data);
+              if (Buffer.byteLength(entryStr) <= MAX_HISTORY_ENTRY_BYTES) {
+                data.history.push(change.data);
+                if (data.history.length > 100) data.history.shift();
+              } else {
+                errors.push('history:add entry exceeds maximum size (16 KB)');
+              }
+            } catch {
+              errors.push('history:add entry is invalid');
+            }
           }
         }
         break;
