@@ -81,6 +81,7 @@ function makeMockVip() {
     stop:        jest.fn(),
     setStatus:   jest.fn(),
     onAudioLoaded: jest.fn(),
+    showNotification: jest.fn(),
     decodeViaVideoElement: jest.fn().mockResolvedValue({ length: 100 }),
     dom: {
       fileInfo:   { textContent: '' },

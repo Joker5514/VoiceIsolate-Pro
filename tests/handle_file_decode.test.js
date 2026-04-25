@@ -65,6 +65,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       stop: jest.fn(),
       setStatus: jest.fn(),
       onAudioLoaded: jest.fn(),
+      showNotification: jest.fn(),
       decodeViaVideoElement: jest.fn().mockResolvedValue([1, 2, 3]), // Mock successful fallback decode
       dom: {
         fileInfo: {},
@@ -108,6 +109,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       stop: jest.fn(),
       setStatus: jest.fn(),
       onAudioLoaded: jest.fn(),
+      showNotification: jest.fn(),
       decodeViaVideoElement: jest.fn(),
       dom: {
         fileInfo: {},
@@ -143,6 +145,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       stop: jest.fn(),
       setStatus: jest.fn(),
       onAudioLoaded: jest.fn(),
+      showNotification: jest.fn(),
       decodeViaVideoElement: jest.fn(),
       dom: {
         fileInfo: {},
