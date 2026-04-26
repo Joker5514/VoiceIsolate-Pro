@@ -701,9 +701,6 @@ async function pollOnce() {
   try {
     const mask = await buildMask(magnitudes, latestPcmChunk);
     outputView.set(mask.subarray(0, currentNumBins));
-  try {
-    const mask = await buildMask(magnitudes, latestPcmChunk);
-    outputView.set(mask.subarray(0, currentNumBins));
     Atomics.store(flagsOut, 1, 1); // signal: mask ready (slot 1)
   } catch (err) {
     // Don't poison the poll loop — log and let worklet fall back to bypass mag.

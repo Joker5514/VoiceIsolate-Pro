@@ -1705,10 +1705,10 @@ class VoiceIsolatePro {
         await this.pip(6, total);
         data = DSP.removeClicks(data, 3);
 
-        // S08: Hum removal (50/60 Hz + harmonics)
+        // S08: Hum removal (60 Hz + harmonics)
         await this.pip(7, total);
         const humFreqs = [60, 120, 180, 240, 300, 360];
-        DSP.cascadedNotch(data, humFreqs, 35, sr);
+        DSP.cascadedNotch(data, humFreqs, 5, sr);
 
         // S09: De-essing (time-domain)
         await this.pip(8, total);
