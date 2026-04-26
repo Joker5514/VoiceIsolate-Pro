@@ -73,7 +73,13 @@ global.Worker              = MockWorker;
 global.SharedArrayBuffer   = SharedArrayBuffer; // Node.js native
 global.Int32Array          = Int32Array;
 global.Float32Array        = Float32Array;
-global.document            = { querySelectorAll: () => [], querySelector: () => null, addEventListener: () => {} };
+global.document            = {
+  readyState:        'complete',
+  querySelectorAll:  () => [],
+  querySelector:     () => null,
+  getElementById:    () => null,
+  addEventListener:  () => {},
+};
 
 // ── Load PipelineOrchestrator ─────────────────────────────────────────────────
 // Append an export statement so that the class is accessible after eval.
@@ -289,6 +295,106 @@ describe('PipelineOrchestrator — updateIsolationParams()', () => {
       ecapaSimilarityThreshold: 0.78,
       backgroundVolume: 0.25,
       maskRefinement: false,
+    });
+  });
+
+  test('updates _isolationParams in place even when the worker has not started', () => {
+    const orch = new PipelineOrchestrator();
+    expect(orch.mlWorker).toBeNull();
+    orch.updateIsolationParams({ backgroundVolume: 0.7 });
+    expect(orch._isolationParams.backgroundVolume).toBe(0.7);
+    // Speaker Isolation defaults survive a partial update
+    expect(orch._isolationParams.maskRefinement).toBe(true);
+    expect(orch._isolationParams.isolationMethod).toBe('hybrid');
+  });
+
+  test('ignores non-object payloads', () => {
+    const orch = new PipelineOrchestrator();
+    const before = { ...orch._isolationParams };
+    orch.updateIsolationParams(null);
+    orch.updateIsolationParams(42);
+    expect(orch._isolationParams).toEqual(before);
+  });
+});
+
+describe('PipelineOrchestrator — getIsolationParams()', () => {
+  test('returns a defensive copy of the current params', () => {
+    const orch = new PipelineOrchestrator();
+    orch.updateIsolationParams({ backgroundVolume: 0.5 });
+    const snap = orch.getIsolationParams();
+    expect(snap.backgroundVolume).toBe(0.5);
+    snap.backgroundVolume = 0.99;
+    // Internal state must not be mutated by the caller
+    expect(orch._isolationParams.backgroundVolume).toBe(0.5);
+  });
+});
+
+describe('PipelineOrchestrator — updateSoundMutes()', () => {
+  test('posts setSoundMutes to the ML worker', () => {
+    const orch = new PipelineOrchestrator();
+    orch.mlWorker = new MockWorker();
+    orch.updateSoundMutes({ appliance: true, music: false });
+    const msg = orch.mlWorker._messages.find(m => m.type === 'setSoundMutes');
+    expect(msg).toBeDefined();
+    expect(msg.payload).toEqual({ appliance: true, music: false });
+  });
+
+  test('does not throw when worker is absent', () => {
+    const orch = new PipelineOrchestrator();
+    expect(() => orch.updateSoundMutes({ appliance: true })).not.toThrow();
+  });
+
+  test('coerces missing payload to {}', () => {
+    const orch = new PipelineOrchestrator();
+    orch.mlWorker = new MockWorker();
+    orch.updateSoundMutes(null);
+    const msg = orch.mlWorker._messages.find(m => m.type === 'setSoundMutes');
+    expect(msg.payload).toEqual({});
+  });
+});
+
+describe('PipelineOrchestrator — _bindIsolationControls() idempotency', () => {
+  test('repeated calls do not stack listeners', () => {
+    const orch = new PipelineOrchestrator();
+    const calls = { add: 0 };
+    const stubEl = {
+      value: '50',
+      checked: true,
+      style: { setProperty: () => {} },
+      addEventListener: () => { calls.add++; },
+      min: '0',
+      max: '100',
+    };
+    const prevGet = global.document.getElementById;
+    global.document.getElementById = () => stubEl;
+    try {
+      orch._bindIsolationControls();
+      const firstCount = calls.add;
+      orch._bindIsolationControls();
+      orch._bindIsolationControls();
+      // No additional listener attachment after the first call
+      expect(calls.add).toBe(firstCount);
+    } finally {
+      global.document.getElementById = prevGet;
+    }
+  });
+});
+
+describe('PipelineOrchestrator — ML worker ready handshake re-sends isolation state', () => {
+  test('on ready, isolation config and sound mutes are forwarded to the worker', () => {
+    const orch = new PipelineOrchestrator();
+    global.window._vipApp = { soundMutes: { traffic: true } };
+    orch.updateIsolationParams({ backgroundVolume: 0.4 });
+    const p = orch._initMLWorker();
+    expect(orch.mlWorker).toBeInstanceOf(MockWorker);
+    return p.then(() => {
+      const cfg = orch.mlWorker._messages.find(m => m.type === 'setIsolationConfig');
+      expect(cfg).toBeDefined();
+      expect(cfg.payload.backgroundVolume).toBe(0.4);
+      const mutes = orch.mlWorker._messages.find(m => m.type === 'setSoundMutes');
+      expect(mutes).toBeDefined();
+      expect(mutes.payload).toEqual({ traffic: true });
+      global.window._vipApp = null;
     });
   });
 });

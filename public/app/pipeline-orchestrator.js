@@ -88,6 +88,9 @@ class PipelineOrchestrator {
       await this._initMLWorker();
       this._bindSliders();
       this.initialized = true;
+      // Isolation controls are also bound eagerly in the bootstrap (so they
+      // work even if AudioContext / worklet init fails). Calling here is
+      // idempotent — duplicate listeners are guarded by _isolationBindingsAttached.
       this._bindIsolationControls();
       console.info('[Orchestrator] Fully initialised ✓');
     } catch (err) {
@@ -325,6 +328,24 @@ class PipelineOrchestrator {
           );
           // Share with app instance
           if (window._vipApp) window._vipApp.mlWorker = this.mlWorker;
+          // Re-send any isolation config and sound mutes that the user may
+          // have changed before the worker became ready.
+          try {
+            this.mlWorker.postMessage({
+              type: 'setIsolationConfig',
+              payload: this._isolationParams,
+            });
+            const sm = window._vipApp && window._vipApp.soundMutes;
+            if (sm && Object.keys(sm).length) {
+              this.mlWorker.postMessage({ type: 'setSoundMutes', payload: sm });
+            }
+            // Attach the worker to the isolation-controls module so any
+            // speaker cards bound before the worker came online now route
+            // mute/solo/isolate/enroll messages through.
+            if (typeof window._attachMLWorkerToIsolation === 'function') {
+              window._attachMLWorkerToIsolation(this.mlWorker);
+            }
+          } catch (_) { /* best-effort */ }
           resolve();
         } else if (type === 'log') {
           const lvl = e.data.level;
@@ -498,6 +519,22 @@ class PipelineOrchestrator {
     }
   }
 
+  // Public getter — used by app.js's offline pipeline so the Speaker
+  // Isolation card's Bg Level / Mask Refine / Method controls actually
+  // affect output even when the live worklet isn't running.
+  getIsolationParams() {
+    return { ...this._isolationParams };
+  }
+
+  // Forward sound mute state to the ML worker so it can apply identical
+  // suppression in the live (worklet) path. Idempotent and safe to call
+  // before the worker is ready (re-sent on 'ready').
+  updateSoundMutes(soundMutes) {
+    if (this.mlWorker) {
+      this.mlWorker.postMessage({ type: 'setSoundMutes', payload: soundMutes || {} });
+    }
+  }
+
   // ── Bind all 52 sliders ──────────────────────────────────────────────────
   /**
    * Iterates every <input data-param> and attaches an 'input' listener that
@@ -520,7 +557,11 @@ class PipelineOrchestrator {
   }
 
   // ── Bind diarization timeline + isolation control events ─────────────────
+  // Idempotent: safe to call before AudioContext/MLWorker exist, and safe
+  // to call multiple times (subsequent calls early-return).
   _bindIsolationControls() {
+    if (this._isolationBindingsAttached) return;
+    this._isolationBindingsAttached = true;
     const _set = (payload) => this.updateIsolationParams(payload);
 
     // Method select
@@ -664,6 +705,19 @@ class PipelineOrchestrator {
     orch._initMLWorker().catch(e =>
       console.warn('[Orchestrator] ML worker prewarm error:', e)
     );
+
+    // ── Bind Speaker Isolation card controls eagerly ──────────────────
+    // These controls (Method dropdown, Confidence/Bg Level sliders, Mask
+    // Refine, Voiceprint, sound mute toggles) only touch DOM and post
+    // messages — they don't need the AudioContext or AudioWorklet. Wiring
+    // them at bootstrap means user interaction works immediately, and is
+    // resilient to AudioContext init failures (e.g. autoplay-blocked).
+    const bindIso = () => orch._bindIsolationControls();
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bindIso, { once: true });
+    } else {
+      bindIso();
+    }
 
     // ── Pre-warm AudioWorklet modules ─────────────────────────────────
     // A suspended AudioContext can be created without a user gesture;

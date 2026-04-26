@@ -1658,6 +1658,13 @@ class VoiceIsolatePro {
     const fftSize = 4096;
     const hopSize = 1024;
 
+    // Read live values from the Speaker Isolation card so Confidence /
+    // Bg Level / Mask Refine actually affect the offline pipeline. Falls
+    // back to defaults when the orchestrator hasn't initialised yet.
+    const iso = (this.orch && this.orch._isolationParams) || {};
+    const bgLevel = Math.max(0, Math.min(1, Number(iso.backgroundVolume) || 0));
+    const maskRefine = iso.maskRefinement !== false; // default true
+
     try {
       const DSP = window.DSPCore;
       if (!DSP) throw new Error('DSPCore not loaded — ensure dsp-core.js is included');
@@ -1773,7 +1780,10 @@ class VoiceIsolatePro {
           const rawHi = Math.round(p.voiceFocusHi / binHz);
           const voiceLoBin = Math.max(0, Math.min(halfN - 1, rawLo));
           const voiceHiBin = Math.max(voiceLoBin, Math.min(halfN - 1, rawHi));
-          const suppressGain = 1 - (p.bgSuppress / 100) * 0.95;
+          const rawSuppress = 1 - (p.bgSuppress / 100) * 0.95;
+          // Bg Level slider blends suppression toward unity gain — at 0%
+          // we keep the user's full suppression, at 100% no suppression.
+          const suppressGain = rawSuppress + bgLevel * (1 - rawSuppress);
           const boostGain = 1 + (p.voiceIso / 100) * 0.5;
           for (let f = 0; f < mag.length; f++) {
             for (let k = 0; k < halfN; k++) {
@@ -1794,11 +1804,14 @@ class VoiceIsolatePro {
             const halfN = mag[0].length;
             const binHz = sr / fftSize;
             const mask = new Float32Array(halfN).fill(1.0);
+            // Bg Level blends the suppression floor toward unity gain so
+            // the user can audition with more or less of the muted sounds.
+            const floorGain = 0.04 + bgLevel * (1 - 0.04);
             for (const cat of activeCats) {
               for (const range of cat.ranges) {
                 const lo = Math.max(0, Math.round(range.lo / binHz));
                 const hi = Math.min(halfN - 1, Math.round(range.hi / binHz));
-                for (let k = lo; k <= hi; k++) mask[k] = Math.min(mask[k], 0.04); // ~-28 dBFS
+                for (let k = lo; k <= hi; k++) mask[k] = Math.min(mask[k], floorGain);
               }
             }
             for (let f = 0; f < mag.length; f++) {
@@ -1832,9 +1845,13 @@ class VoiceIsolatePro {
         }
 
         // ═══ PASS 5: SPECTRAL REFINEMENT (Anti-Garble) ═══
-        // S15: Temporal smoothing to kill musical noise / garbled artifacts
+        // S15: Temporal smoothing to kill musical noise / garbled artifacts.
+        // Skipped when the user disables the "Mask Refine" checkbox so they
+        // can hear the raw separation mask (useful for forensic A/B).
         await this.pip(15, total);
-        DSP.temporalSmooth(mag, Math.max(p.nrSmoothing, 20));
+        if (maskRefine) {
+          DSP.temporalSmooth(mag, Math.max(p.nrSmoothing, 20));
+        }
         if (this.abortFlag) throw 'abort';
 
         // S16: Spectral tilt compensation
@@ -2564,6 +2581,10 @@ class VoiceIsolatePro {
         statusEl.textContent = 'Muting: ' + activeCats.map(c => c.emoji + ' ' + c.label).join(' · ') + ' — re-process to apply';
         statusEl.classList.add('has-mutes');
       }
+    }
+    // Forward to ML worker so live (worklet) path can apply the same mutes
+    if (this.orch && typeof this.orch.updateSoundMutes === 'function') {
+      this.orch.updateSoundMutes(this.soundMutes);
     }
   }
 

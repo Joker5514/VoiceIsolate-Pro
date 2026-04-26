@@ -224,6 +224,69 @@ describe('ml-worker.js', () => {
 });
 
 // ============================================================
+// Speaker Isolation card config + sound mute persistence
+// ============================================================
+describe('ml-worker — isolation config + sound mute handlers', () => {
+  let workerGlobal;
+  let postedMessages;
+
+  beforeEach(() => {
+    postedMessages = [];
+    workerGlobal = {
+      importScripts: jest.fn(),
+      self: {
+        postMessage: jest.fn((msg) => postedMessages.push(msg)),
+        onmessage: null,
+        ort: {
+          env: { wasm: {}, logLevel: 'warning' },
+          InferenceSession: { create: jest.fn() },
+          Tensor: class { constructor(t, d, s) { this.type = t; this.data = d; this.dims = s; } },
+        },
+      },
+      navigator: {},
+      Float32Array: Float32Array,
+      Promise: Promise,
+      console: console,
+    };
+    const argNames = Object.keys(workerGlobal);
+    const argValues = argNames.map((n) => workerGlobal[n]);
+    new Function(...argNames, workerCode)(...argValues);
+  });
+
+  it('stores isolation config fields on self (background volume, mask refine, method, threshold)', async () => {
+    await workerGlobal.self.onmessage({
+      data: {
+        type: 'setIsolationConfig',
+        payload: {
+          isolationMethod: 'classical',
+          ecapaSimilarityThreshold: 0.82,
+          backgroundVolume: 0.33,
+          maskRefinement: false,
+        },
+      },
+    });
+    expect(workerGlobal.self._isolationMethod).toBe('classical');
+    expect(workerGlobal.self._ecapaSimilarityThreshold).toBe(0.82);
+    expect(workerGlobal.self._backgroundVolume).toBe(0.33);
+    expect(workerGlobal.self._maskRefinement).toBe(false);
+  });
+
+  it('handles setSoundMutes by storing the toggled categories on self._soundMutes', async () => {
+    await workerGlobal.self.onmessage({
+      data: { type: 'setSoundMutes', payload: { traffic: true, music: false } },
+    });
+    expect(workerGlobal.self._soundMutes).toEqual({ traffic: true, music: false });
+  });
+
+  it('coerces invalid setSoundMutes payloads to {}', async () => {
+    await workerGlobal.self.onmessage({
+      data: { type: 'setSoundMutes', payload: null },
+    });
+    expect(workerGlobal.self._soundMutes).toEqual({});
+  });
+});
+
+// ============================================================
 // handleMultiSeparate — transferable null-guard (ml-worker.js PR fix)
 // ============================================================
 // The PR changed:

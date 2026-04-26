@@ -40,6 +40,20 @@ export function initIsolationControls(opts = {}) {
   console.info('[IsolationControls] initialised');
 }
 
+// Public: attach ML worker after init. Allows the UI to bind eagerly
+// (no orchestrator/worker needed yet) and have the worker plumb in once
+// it's ready, so messages from solo/isolate/enroll always reach a worker.
+export function attachMLWorker(worker) {
+  _mlWorker = worker || null;
+}
+
+// Lazy resolver: prefer the explicit ref, fall back to the global
+// orchestrator's worker so messages aren't dropped if init ran before
+// the worker was attached.
+function _getMLWorker() {
+  return _mlWorker || (typeof window !== 'undefined' ? window._vipOrch?.mlWorker : null) || null;
+}
+
 // ── Public: update speaker cards from diarization result ─────────────────────
 export function updateSpeakerCards(speakerMap) {
   // Rebuild from the latest diarization result while preserving user state
@@ -161,8 +175,9 @@ function _buildCard(id) {
     });
     _dispatchVolumes('solo', id);
     // Tell ML worker which speaker to isolate
-    if (_mlWorker) {
-      _mlWorker.postMessage({ type: 'isolateSpeaker', payload: { speakerId: _activeSoloId } });
+    const w = _getMLWorker();
+    if (w) {
+      w.postMessage({ type: 'isolateSpeaker', payload: { speakerId: _activeSoloId } });
     }
   });
 
@@ -173,13 +188,15 @@ function _buildCard(id) {
     });
     _rebuildGrid();
     _dispatchVolumes('volume', id);
-    if (_mlWorker) _mlWorker.postMessage({ type: 'isolateSpeaker', payload: { speakerId: id } });
+    const w = _getMLWorker();
+    if (w) w.postMessage({ type: 'isolateSpeaker', payload: { speakerId: id } });
   });
 
   // Enroll voiceprint from this speaker's segments
   card.querySelector('.enroll-btn').addEventListener('click', () => {
     if (_onEnrollFromSeg) _onEnrollFromSeg(id);
-    if (_mlWorker) _mlWorker.postMessage({ type: 'enrollFromDiarization', payload: { speakerId: id } });
+    const w = _getMLWorker();
+    if (w) w.postMessage({ type: 'enrollFromDiarization', payload: { speakerId: id } });
   });
 
   return card;
@@ -193,7 +210,8 @@ function _dispatchVolumes(eventType, changedId) {
     else if (_activeSoloId && _activeSoloId !== id) volumes[id] = 0;
     else volumes[id] = s.volume;
   });
-  if (_mlWorker) _mlWorker.postMessage({ type: 'speakerVolumes', payload: volumes });
+  const w = _getMLWorker();
+  if (w) w.postMessage({ type: 'speakerVolumes', payload: volumes });
   if (eventType === 'solo'   && _onSolo)   _onSolo(changedId, volumes);
   if (eventType === 'mute'   && _onMute)   _onMute(changedId, volumes);
   if (eventType === 'volume' && _onVolume) _onVolume(changedId, volumes);
