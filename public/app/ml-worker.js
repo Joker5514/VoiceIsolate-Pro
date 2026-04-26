@@ -701,13 +701,13 @@ async function pollOnce() {
   try {
     const mask = await buildMask(magnitudes, latestPcmChunk);
     outputView.set(mask.subarray(0, currentNumBins));
+  try {
+    const mask = await buildMask(magnitudes, latestPcmChunk);
+    outputView.set(mask.subarray(0, currentNumBins));
     Atomics.store(flagsOut, 1, 1); // signal: mask ready (slot 1)
   } catch (err) {
-    // Don't poison the poll loop — publish an explicit unity mask so the
-    // worklet refreshes _mlMask for this hop instead of reusing a stale mask.
-    outputView.fill(1.0, 0, currentNumBins);
-    Atomics.store(flagsOut, 1, 1); // signal: fallback mask ready (slot 1)
-    console.warn('[ml-worker] pollOnce buildMask failed; published unity mask fallback:', err && err.message ? err.message : err);
+    // Don't poison the poll loop — log and let worklet fall back to bypass mag.
+    console.warn('[ml-worker] pollOnce buildMask failed:', err?.message || err);
   }
 }
 
