@@ -141,18 +141,15 @@ describe('ML Worker wiring', () => {
   });
 
   test('ml-worker handles init message', () => {
-    // ml-worker uses if/else if statements for message routing
-    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]init['"]/);
+    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]init['"]|case\s+['"]init['"]/);
   });
 
   test('ml-worker handles process message', () => {
-    // ml-worker uses 'process' message type for audio processing
-    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]process['"]/);
+    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]process['"]|case\s+['"]process['"]/);
   });
 
   test('ml-worker handles reset message', () => {
-    // ml-worker uses 'reset' message type to clear state
-    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]reset['"]/);
+    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]reset['"]|case\s+['"]reset['"]/);
   });
 
   test('ml-worker handles loadModel message', () => {

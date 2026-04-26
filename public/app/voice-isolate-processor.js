@@ -183,7 +183,27 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     };
 
     this.harmonicEnhancer = new HarmonicEnhancer(0);
+
+    // Cached gate coefficients — recomputed only when relevant params change.
+    this._attackCoeff = 0;
+    this._relCoeff    = 0;
+    this._holdSamps   = 0;
+    this._threshLin   = 0;
+    this._rangeLin    = 0;
+    this._outGainLin  = 1;
+    this._recomputeGateCoeffs();
+
     this.port.onmessage = ({ data }) => this._onMessage(data);
+  }
+
+  _recomputeGateCoeffs() {
+    const p = this.params;
+    this._attackCoeff = Math.exp(-1 / (p.gateAttack  * 0.001 * sampleRate));
+    this._relCoeff    = Math.exp(-1 / (p.gateRelease * 0.001 * sampleRate));
+    this._holdSamps   = Math.floor(p.gateHold * 0.001 * sampleRate);
+    this._threshLin   = Math.pow(10, p.gateThresh / 20);
+    this._rangeLin    = Math.pow(10, p.gateRange  / 20);
+    this._outGainLin  = Math.pow(10, p.outGain / 20);
   }
 
   // ─── Message Handler ───────────────────────────────────────────────────
@@ -244,6 +264,11 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
         if (msg.key in this.params) {
           this.params[msg.key] = msg.value;
           if (msg.key === 'harmonicEnhance') this.harmonicEnhancer.setAmount(msg.value);
+          if (msg.key === 'gateAttack' || msg.key === 'gateRelease' ||
+              msg.key === 'gateHold'   || msg.key === 'outGain'    ||
+              msg.key === 'gateThresh' || msg.key === 'gateRange') {
+            this._recomputeGateCoeffs();
+          }
         }
         break;
 
@@ -254,6 +279,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
             if (k === 'harmonicEnhance') this.harmonicEnhancer.setAmount(v);
           }
         }
+        this._recomputeGateCoeffs();
         break;
 
       case 'bypass':
@@ -410,14 +436,14 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
       this.inputProcessed += this.HOP_SIZE;
     }
 
-    // ── 3. Gate + dynamics params (precomputed once per render quantum) ───
+    // ── 3. Gate + dynamics params ─────────────────────────────────────────
     const p = this.params;
-    const threshLin   = Math.pow(10, p.gateThresh  / 20);
-    const rangeLin    = Math.pow(10, p.gateRange   / 20);
-    const attackCoeff = Math.exp(-1 / (p.gateAttack  * 0.001 * sampleRate));
-    const relCoeff    = Math.exp(-1 / (p.gateRelease * 0.001 * sampleRate));
-    const holdSamps   = Math.floor(p.gateHold * 0.001 * sampleRate);
-    const outGainLin  = Math.pow(10, p.outGain / 20);
+    const threshLin   = this._threshLin;
+    const rangeLin    = this._rangeLin;
+    const attackCoeff = this._attackCoeff;
+    const relCoeff    = this._relCoeff;
+    const holdSamps   = this._holdSamps;
+    const outGainLin  = this._outGainLin;
     const wet = p.dryWet / 100;
     const dry = 1 - wet;
 
