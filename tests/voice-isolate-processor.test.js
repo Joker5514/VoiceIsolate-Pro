@@ -185,6 +185,8 @@ describe('VoiceIsolateProcessor._onMessage', () => {
     proc.inputHead = 512;
     proc.drainHead = 256;
 
+    proc._onMessage({ type: 'initRingBuffers', fftSize: 4096, hopSize: 1024 });
+
     expect(proc.inputHead).toBe(0);
     expect(proc.drainHead).toBe(0);
     expect(proc.inputProcessed).toBe(0);
