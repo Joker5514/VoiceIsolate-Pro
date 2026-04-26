@@ -17,7 +17,7 @@
       "destination": "/api/handler"
     },
     {
-      "source": "/app/(.*)",
+      "source": "/app/((?!.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/app/index.html"
     },
     {

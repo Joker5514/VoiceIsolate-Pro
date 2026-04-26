@@ -683,20 +683,29 @@ function startPollLoop() {
 }
 
 async function pollOnce() {
-  if (!flagsIn) return;
-  // Use frame-counter protocol matching dsp-processor.js:
+  if (!flagsIn || !flagsOut) return;
+  // Frame-counter protocol matching dsp-processor.js (the production worklet):
   //   flagsIn[0]  = frame counter (worklet increments via Atomics.add on every hop)
   //   flagsOut[1] = mask-ready flag (ml-worker sets to 1; worklet reads and clears)
+  // Note: voice-isolate-processor.js (registered but not currently instantiated)
+  // uses a different layout (header-first, slot 2 for both flags). If that
+  // worklet is brought into the audio graph, this poll loop will need to be
+  // generalised to detect protocol via the init path used.
   const currentFrame = Atomics.load(flagsIn, 0);
   if (currentFrame === _lastPollFrame) return; // no new frame
   _lastPollFrame = currentFrame;
 
-  // subarray() is a zero-copy view — buildMask reads it before any next poll overwrites it.
+  // subarray() is a zero-copy view — copy out before any await.
   const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
-  const mask       = await buildMask(magnitudes, latestPcmChunk);
 
-  outputView.set(mask);
-  Atomics.store(flagsOut, 1, 1); // signal: mask ready (slot 1, matches dsp-processor.js)
+  try {
+    const mask = await buildMask(magnitudes, latestPcmChunk);
+    outputView.set(mask.subarray(0, currentNumBins));
+    Atomics.store(flagsOut, 1, 1); // signal: mask ready (slot 1)
+  } catch (err) {
+    // Don't poison the poll loop — log and let worklet fall back to bypass mag.
+    console.warn('[ml-worker] pollOnce buildMask failed:', err && err.message ? err.message : err);
+  }
 }
 
 // ── 5. Combined mask inference pipeline ──────────────────────────────────────
