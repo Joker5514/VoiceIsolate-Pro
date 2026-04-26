@@ -42,7 +42,6 @@ let flagsOut   = null; // Int32Array: [..., maskReady]
 let sessions      = {}; // { modelId: ort.InferenceSession }
 let allowedModels = [];
 let allowedStages = 8;
-let lastFrame     = -1;
 let pollTimer     = null;
 let currentNumBins = DEFAULT_NUM_BINS;
 let currentHalfN = DEFAULT_NUM_BINS;
@@ -288,232 +287,253 @@ async function enrollVoiceprint(pcm) {
 self.onmessage = async (ev) => {
   const { type, payload, models: msgModels } = ev.data || {};
 
-  // ── init: full SAB + model init (called by app-init.js) ─────────────────────
-  if (type === 'init') {
-    try {
-      initialize();
-    } catch (err) {
-      self.postMessage({ type: 'error', msg: err.message });
-      return;
-    }
+  switch (type) {
 
-    if (payload) {
-      const {
-        inputSAB,
-        outputSAB,
-        pcmChunk,
-        fftSize             = 4096,
-        halfN               = Math.floor(fftSize / 2) + 1,
-        modelBasePath       = './models/',
-        preferredProviders  = ['webgpu', 'wasm'],
-        allowedModels: am   = DEFAULT_MODELS,
-        allowedStages: as_  = 8,
-        params              = null,
-      } = payload;
-
-      allowedModels = am;
-      allowedStages = as_;
-      currentFFTSize = fftSize;
-      currentHalfN = halfN;
-      currentNumBins = halfN;
-      if (params && typeof params === 'object') {
-        runtimeParams = { ...runtimeParams, ...params };
-      }
-      if (pcmChunk) {
-        latestPcmChunk = pcmChunk instanceof Float32Array ? pcmChunk : new Float32Array(pcmChunk);
+    // ── init: full SAB + model init (called by app-init.js) ───────────────────
+    case 'init': {
+      try {
+        initialize();
+      } catch (err) {
+        self.postMessage({ type: 'error', msg: err.message });
+        return;
       }
 
-      if (inputSAB && outputSAB) {
-        const inputPayloadFloats = currentHalfN * 2;
-        const outputPayloadFloats = currentHalfN;
-        const inputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
-        const outputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * outputPayloadFloats;
-        if (inputSAB.byteLength < inputBytes || outputSAB.byteLength < outputBytes) {
-          console.error('[ml-worker] SAB size mismatch', {
-            expectedInputBytes: inputBytes,
-            actualInputBytes: inputSAB.byteLength,
-            expectedOutputBytes: outputBytes,
-            actualOutputBytes: outputSAB.byteLength,
-          });
-        } else {
-          console.info('[ml-worker] SAB payload sizes verified', {
-            halfN: currentHalfN,
-            inputBytes,
-            outputBytes,
-          });
+      if (payload) {
+        const {
+          inputSAB,
+          outputSAB,
+          pcmChunk,
+          fftSize             = 4096,
+          halfN               = Math.floor(fftSize / 2) + 1,
+          modelBasePath       = './models/',
+          preferredProviders  = ['webgpu', 'wasm'],
+          allowedModels: am   = DEFAULT_MODELS,
+          allowedStages: as_  = 8,
+          params              = null,
+        } = payload;
+
+        allowedModels = am;
+        allowedStages = as_;
+        currentFFTSize = fftSize;
+        currentHalfN = halfN;
+        currentNumBins = halfN;
+        if (params && typeof params === 'object') {
+          runtimeParams = { ...runtimeParams, ...params };
         }
-        flagsIn    = new Int32Array(inputSAB, 0, FLAG_SLOTS);
-        flagsOut   = new Int32Array(outputSAB, 0, FLAG_SLOTS);
-        inputView  = new Float32Array(inputSAB, SAB_HEADER_BYTES, inputPayloadFloats);
-        outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, outputPayloadFloats);
-        startPollLoop();
-      }
+        if (pcmChunk) {
+          latestPcmChunk = pcmChunk instanceof Float32Array ? pcmChunk : new Float32Array(pcmChunk);
+        }
 
-      const modelStatus = await loadModels(modelBasePath, preferredProviders, allowedModels);
-      vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
-      if (vadModelMissing) {
-        const msg = 'Silero VAD unavailable, using fallback VAD';
-        console.warn('[ml-worker] ' + msg);
-        self.postMessage({ type: 'log', level: 'warn', msg });
-        self.postMessage({ type: 'vad_status', vadModelMissing: true });
+        if (inputSAB && outputSAB) {
+          const inputPayloadFloats = currentHalfN * 2;
+          const outputPayloadFloats = currentHalfN;
+          const inputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
+          const outputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * outputPayloadFloats;
+          if (inputSAB.byteLength < inputBytes || outputSAB.byteLength < outputBytes) {
+            console.error('[ml-worker] SAB size mismatch', {
+              expectedInputBytes: inputBytes,
+              actualInputBytes: inputSAB.byteLength,
+              expectedOutputBytes: outputBytes,
+              actualOutputBytes: outputSAB.byteLength,
+            });
+          } else {
+            console.info('[ml-worker] SAB payload sizes verified', {
+              halfN: currentHalfN,
+              inputBytes,
+              outputBytes,
+            });
+          }
+          flagsIn    = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+          flagsOut   = new Int32Array(outputSAB, 0, FLAG_SLOTS);
+          inputView  = new Float32Array(inputSAB, SAB_HEADER_BYTES, inputPayloadFloats);
+          outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, outputPayloadFloats);
+          startPollLoop();
+        }
+
+        const modelStatus = await loadModels(modelBasePath, preferredProviders, allowedModels);
+        vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
+        if (vadModelMissing) {
+          const msg = 'Silero VAD unavailable, using fallback VAD';
+          console.warn('[ml-worker] ' + msg);
+          self.postMessage({ type: 'log', level: 'warn', msg });
+          self.postMessage({ type: 'vad_status', vadModelMissing: true });
+        } else {
+          self.postMessage({ type: 'vad_status', vadModelMissing: false });
+        }
+        self.postMessage({ type: 'ready', models: modelStatus });
       } else {
-        self.postMessage({ type: 'vad_status', vadModelMissing: false });
+        // Bare init (no payload — used in tests and simple invocations)
+        const modelStatus = await loadModels('./models/', ['webgpu', 'wasm'], DEFAULT_MODELS);
+        vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
+        self.postMessage({ type: 'ready', models: modelStatus });
       }
-      self.postMessage({ type: 'ready', models: modelStatus });
-    } else {
-      // Bare init (no payload — used in tests and simple invocations)
-      const modelStatus = await loadModels('./models/', ['webgpu', 'wasm'], DEFAULT_MODELS);
+      break;
+    }
+
+    // ── loadModel: load a specific set of models and report status ─────────────
+    case 'loadModel': {
+      try {
+        initialize();
+      } catch (err) {
+        self.postMessage({ type: 'error', msg: err.message });
+        return;
+      }
+
+      const modelList   = msgModels || DEFAULT_MODELS;
+      const modelStatus = await loadModels('./models/', ['webgpu', 'wasm'], modelList);
       vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
       self.postMessage({ type: 'ready', models: modelStatus });
-    }
-  }
-
-  // ── loadModel: load a specific set of models and report status ───────────────
-  if (type === 'loadModel') {
-    try {
-      initialize();
-    } catch (err) {
-      self.postMessage({ type: 'error', msg: err.message });
-      return;
+      break;
     }
 
-    const modelList   = msgModels || DEFAULT_MODELS;
-    const modelStatus = await loadModels('./models/', ['webgpu', 'wasm'], modelList);
-    vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
-    self.postMessage({ type: 'ready', models: modelStatus });
-  }
+    // ── process: run inference on a single frame of magnitude data ─────────────
+    case 'process': {
+      if (!ort || (!inputView && !(payload && payload.magnitudes))) return;
 
-  // ── process: run inference on a single frame of magnitude data ───────────────
-  if (type === 'process') {
-    if (!ort || (!inputView && !(payload && payload.magnitudes))) return;
+      const magnitudes = payload && payload.magnitudes
+        ? new Float32Array(payload.magnitudes)
+        : new Float32Array(inputView.subarray(0, currentNumBins));
+      const pcmChunk = payload && payload.pcmChunk
+        ? (payload.pcmChunk instanceof Float32Array ? payload.pcmChunk : new Float32Array(payload.pcmChunk))
+        : latestPcmChunk;
+      const mask       = await buildMask(magnitudes, pcmChunk);
 
-    const magnitudes = payload && payload.magnitudes
-      ? new Float32Array(payload.magnitudes)
-      : new Float32Array(inputView.subarray(0, currentNumBins));
-    const pcmChunk = payload && payload.pcmChunk
-      ? (payload.pcmChunk instanceof Float32Array ? payload.pcmChunk : new Float32Array(payload.pcmChunk))
-      : latestPcmChunk;
-    const mask       = await buildMask(magnitudes, pcmChunk);
-
-    const output = new Float32Array(mask);
-    self.postMessage({ type: 'processed', output }, [output.buffer]);
-  }
-
-  // ── reset: clear inference sessions and polling state ───────────────────────
-  if (type === 'reset') {
-    clearInterval(pollTimer);
-    sessions  = {};
-    lastFrame = -1;
-    pollTimer = null;
-    noiseProfile = null;
-    noiseFrames = 0;
-    warmupComplete = false;
-    speechConfidence = 0;
-    speechStreak = 0;
-    latestPcmChunk = null;
-    demucsPcmMissingWarned = false;
-    self.postMessage({ type: 'reset_done' });
-  }
-
-  // ── unload: full cleanup ─────────────────────────────────────────────────────
-  if (type === 'unload') {
-    clearInterval(pollTimer);
-    sessions = {};
-    latestPcmChunk = null;
-    demucsPcmMissingWarned = false;
-    self.postMessage({ type: 'unloaded' });
-  }
-
-  // ── update_params: adjust tier caps at runtime ───────────────────────────────
-  if (type === 'update_params') {
-    if (payload && payload.allowedModels) allowedModels = payload.allowedModels;
-    if (payload && payload.allowedStages) allowedStages = payload.allowedStages;
-  }
-
-  if (type === 'setParams') {
-    if (payload && typeof payload === 'object') {
-      runtimeParams = { ...runtimeParams, ...payload };
+      const output = new Float32Array(mask);
+      self.postMessage({ type: 'processed', output }, [output.buffer]);
+      break;
     }
-  }
 
-  if (type === 'pcmChunk') {
-    const chunk = payload && payload.pcmChunk;
-    if (chunk) {
-      latestPcmChunk = chunk instanceof Float32Array ? chunk : new Float32Array(chunk);
+    // ── reset: clear inference sessions and polling state ─────────────────────
+    case 'reset': {
+      clearInterval(pollTimer);
+      sessions  = {};
+      pollTimer = null;
+      noiseProfile = null;
+      noiseFrames = 0;
+      warmupComplete = false;
+      speechConfidence = 0;
+      speechStreak = 0;
+      latestPcmChunk = null;
+      demucsPcmMissingWarned = false;
+      self.postMessage({ type: 'reset_done' });
+      break;
     }
-  }
 
-  // ── setIsolationConfig: diarization/isolation UI runtime controls ───────────
-  if (type === 'setIsolationConfig') {
-    if (payload && typeof payload.isolationMethod === 'string') {
-      self._isolationMethod = payload.isolationMethod;
+    // ── unload: full cleanup ───────────────────────────────────────────────────
+    case 'unload': {
+      clearInterval(pollTimer);
+      sessions = {};
+      latestPcmChunk = null;
+      demucsPcmMissingWarned = false;
+      self.postMessage({ type: 'unloaded' });
+      break;
     }
-    if (payload && typeof payload.ecapaSimilarityThreshold === 'number') {
-      self._ecapaSimilarityThreshold = payload.ecapaSimilarityThreshold;
+
+    // ── update_params: adjust tier caps at runtime ─────────────────────────────
+    case 'update_params': {
+      if (payload && payload.allowedModels) allowedModels = payload.allowedModels;
+      if (payload && payload.allowedStages) allowedStages = payload.allowedStages;
+      break;
     }
-    if (payload && typeof payload.backgroundVolume === 'number') {
-      self._backgroundVolume = payload.backgroundVolume;
+
+    case 'setParams': {
+      if (payload && typeof payload === 'object') {
+        runtimeParams = { ...runtimeParams, ...payload };
+      }
+      break;
     }
-    if (payload && typeof payload.maskRefinement === 'boolean') {
-      self._maskRefinement = payload.maskRefinement;
+
+    case 'pcmChunk': {
+      const chunk = payload && payload.pcmChunk;
+      if (chunk) {
+        latestPcmChunk = chunk instanceof Float32Array ? chunk : new Float32Array(chunk);
+      }
+      break;
     }
-  }
 
-  // ── multi_separate: multi-speaker stream separation ──────────────────────────
-  if (type === 'multi_separate') {
-    await handleMultiSeparate(payload && payload.streams);
-  }
-
-  // ── diarize ──────────────────────────────────────────────────────────────
-  if (type === 'diarize') {
-    try {
-      const { signal, sampleRate = 48000 } = payload || {};
-      if (!signal) { self.postMessage({ type: 'error', msg: 'diarize: no signal' }); return; }
-      const pcm      = signal instanceof Float32Array ? signal : new Float32Array(signal);
-      const segments = await runDiarization(pcm, sampleRate);
-      self.postMessage({
-        type:         'diarization',
-        segments,
-        duration:     pcm.length / sampleRate,
-        speakerCount: new Set(segments.map(s => s.speakerId)).size,
-      });
-    } catch(err) {
-      self.postMessage({ type: 'error', msg: 'diarize: ' + err.message });
+    // ── setIsolationConfig: diarization/isolation UI runtime controls ──────────
+    case 'setIsolationConfig': {
+      if (payload && typeof payload.isolationMethod === 'string') {
+        self._isolationMethod = payload.isolationMethod;
+      }
+      if (payload && typeof payload.ecapaSimilarityThreshold === 'number') {
+        self._ecapaSimilarityThreshold = payload.ecapaSimilarityThreshold;
+      }
+      if (payload && typeof payload.backgroundVolume === 'number') {
+        self._backgroundVolume = payload.backgroundVolume;
+      }
+      if (payload && typeof payload.maskRefinement === 'boolean') {
+        self._maskRefinement = payload.maskRefinement;
+      }
+      break;
     }
-  }
 
-  // ── isolateSpeaker ───────────────────────────────────────────────────────
-  if (type === 'isolateSpeaker') {
-    _currentIsolateSpeakerId = (payload || {}).speakerId ?? null;
-  }
-
-  // ── speakerVolumes ───────────────────────────────────────────────────────
-  if (type === 'speakerVolumes') {
-    _speakerVolumeMap = payload || {};
-  }
-
-  // ── enrollVoiceprint ─────────────────────────────────────────────────────
-  if (type === 'enrollVoiceprint') {
-    try {
-      const { pcm } = payload || {};
-      if (!pcm) return;
-      await enrollVoiceprint(new Float32Array(pcm));
-      self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId: 'manual' } });
-    } catch(err) {
-      self.postMessage({ type: 'error', msg: 'enrollVoiceprint: ' + err.message });
+    // ── multi_separate: multi-speaker stream separation ────────────────────────
+    case 'multi_separate': {
+      await handleMultiSeparate(payload && payload.streams);
+      break;
     }
-  }
 
-  // ── enrollFromDiarization ────────────────────────────────────────────────
-  if (type === 'enrollFromDiarization') {
-    const { speakerId } = payload || {};
-    self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId } });
-  }
+    // ── diarize ────────────────────────────────────────────────────────────────
+    case 'diarize': {
+      try {
+        const { signal, sampleRate = 48000 } = payload || {};
+        if (!signal) { self.postMessage({ type: 'error', msg: 'diarize: no signal' }); return; }
+        const pcm      = signal instanceof Float32Array ? signal : new Float32Array(signal);
+        const segments = await runDiarization(pcm, sampleRate);
+        self.postMessage({
+          type:         'diarization',
+          segments,
+          duration:     pcm.length / sampleRate,
+          speakerCount: new Set(segments.map(s => s.speakerId)).size,
+        });
+      } catch(err) {
+        self.postMessage({ type: 'error', msg: 'diarize: ' + err.message });
+      }
+      break;
+    }
 
-  // ── clearVoiceprint ──────────────────────────────────────────────────────
-  if (type === 'clearVoiceprint') {
-    _voiceprintEmbedding = null;
-    self.postMessage({ type: 'voiceprintCleared' });
+    // ── isolateSpeaker ─────────────────────────────────────────────────────────
+    case 'isolateSpeaker': {
+      _currentIsolateSpeakerId = (payload || {}).speakerId ?? null;
+      break;
+    }
+
+    // ── speakerVolumes ─────────────────────────────────────────────────────────
+    case 'speakerVolumes': {
+      _speakerVolumeMap = payload || {};
+      break;
+    }
+
+    // ── enrollVoiceprint ───────────────────────────────────────────────────────
+    case 'enrollVoiceprint': {
+      try {
+        const { pcm } = payload || {};
+        if (!pcm) return;
+        await enrollVoiceprint(new Float32Array(pcm));
+        self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId: 'manual' } });
+      } catch(err) {
+        self.postMessage({ type: 'error', msg: 'enrollVoiceprint: ' + err.message });
+      }
+      break;
+    }
+
+    // ── enrollFromDiarization ──────────────────────────────────────────────────
+    case 'enrollFromDiarization': {
+      const { speakerId } = payload || {};
+      self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId } });
+      break;
+    }
+
+    // ── clearVoiceprint ────────────────────────────────────────────────────────
+    case 'clearVoiceprint': {
+      _voiceprintEmbedding = null;
+      self.postMessage({ type: 'voiceprintCleared' });
+      break;
+    }
+
+    default:
+      console.warn('[ml-worker] unknown message type:', type);
   }
 
 };
@@ -620,10 +640,14 @@ async function warmupSession(modelId, session) {
   if (!session || typeof session.run !== 'function') return;
   if (modelId === 'demucs' || modelId === 'demucs-v4') return;
   try {
-    const dims = [1, currentNumBins];
-    const input = new ort.Tensor('float32', new Float32Array(currentNumBins), dims);
-    const feeds = { input };
-    await session.run(feeds);
+    let dims, size;
+    if (modelId === 'vad' || modelId === 'silero-vad') {
+      size = 512; dims = [1, 512]; // Silero VAD fixed input
+    } else {
+      size = currentNumBins; dims = [1, currentNumBins];
+    }
+    const input = new ort.Tensor('float32', new Float32Array(size), dims);
+    await session.run({ input });
   } catch (err) {
     console.warn('[ml-worker] warm-up skipped', {
       modelId,
@@ -639,16 +663,16 @@ function startPollLoop() {
 
 async function pollOnce() {
   if (!flagsIn) return;
-  const currentFrame = Atomics.load(flagsIn, 0);
-  if (currentFrame === lastFrame) return;
-  lastFrame = currentFrame;
+  const frameReady = Atomics.load(flagsIn, 2);
+  if (frameReady === 0) return;
+  Atomics.store(flagsIn, 2, 0); // consume flag
 
   // subarray() is a zero-copy view — buildMask reads it before any next poll overwrites it.
   const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
   const mask       = await buildMask(magnitudes, latestPcmChunk);
 
   outputView.set(mask);
-  Atomics.store(flagsOut, 1, 1); // signal: mask ready
+  Atomics.store(flagsOut, 2, 1); // signal: mask ready
 }
 
 // ── 5. Combined mask inference pipeline ──────────────────────────────────────
