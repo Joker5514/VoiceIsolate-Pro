@@ -640,12 +640,8 @@ async function warmupSession(modelId, session) {
   if (!session || typeof session.run !== 'function') return;
   if (modelId === 'demucs' || modelId === 'demucs-v4') return;
   try {
-    let dims, size;
-    if (modelId === 'vad' || modelId === 'silero-vad') {
-      size = 512; dims = [1, 512]; // Silero VAD fixed input
-    } else {
-      size = currentNumBins; dims = [1, currentNumBins];
-    }
+    const size = currentNumBins;
+    const dims = [1, currentNumBins];
     const input = new ort.Tensor('float32', new Float32Array(size), dims);
     await session.run({ input });
   } catch (err) {
