@@ -532,6 +532,29 @@ self.onmessage = async (ev) => {
       break;
     }
 
+    // ── initRingBuffers: wire up SAB views posted by PipelineOrchestrator ────────
+    case 'initRingBuffers': {
+      const { inputRing, maskRing, halfN: h, ringCapacity, quantumSize } = ev.data || {};
+      if (!inputRing || !maskRing) {
+        console.warn('[ml-worker] initRingBuffers: missing inputRing or maskRing');
+        break;
+      }
+      if (h) {
+        currentHalfN   = h;
+        currentNumBins = h;
+      }
+      const inputPayloadFloats = currentHalfN * 2;
+      flagsIn    = new Int32Array(inputRing, 0, FLAG_SLOTS);
+      flagsOut   = new Int32Array(maskRing,  0, FLAG_SLOTS);
+      inputView  = new Float32Array(inputRing, SAB_HEADER_BYTES, inputPayloadFloats);
+      outputView = new Float32Array(maskRing,  SAB_HEADER_BYTES, currentHalfN);
+      if (!pollTimer) startPollLoop();
+      console.info('[ml-worker] initRingBuffers: SAB views wired', {
+        halfN: currentHalfN, ringCapacity, quantumSize,
+      });
+      break;
+    }
+
     default:
       console.warn('[ml-worker] unknown message type:', type);
   }
