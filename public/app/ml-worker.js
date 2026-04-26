@@ -36,8 +36,9 @@ let ort = null;
 
 let inputView  = null; // Float32Array view of inputSAB payload: [mag | phase]
 let outputView = null; // Float32Array view of outputSAB payload: [mask]
-let flagsIn    = null; // Int32Array: [frameCounter, ...]
-let flagsOut   = null; // Int32Array: [..., maskReady]
+let flagsIn    = null; // Int32Array: flagsIn[0]=frameCounter (incremented by worklet)
+let flagsOut   = null; // Int32Array: flagsOut[1]=maskReady (written by ml-worker)
+let _lastPollFrame = 0; // last frame counter value seen in pollOnce()
 
 let sessions      = {}; // { modelId: ort.InferenceSession }
 let allowedModels = [];
@@ -415,6 +416,7 @@ self.onmessage = async (ev) => {
       speechStreak = 0;
       latestPcmChunk = null;
       demucsPcmMissingWarned = false;
+      _lastPollFrame = 0;
       self.postMessage({ type: 'reset_done' });
       break;
     }
@@ -682,16 +684,19 @@ function startPollLoop() {
 
 async function pollOnce() {
   if (!flagsIn) return;
-  const frameReady = Atomics.load(flagsIn, 2);
-  if (frameReady === 0) return;
-  Atomics.store(flagsIn, 2, 0); // consume flag
+  // Use frame-counter protocol matching dsp-processor.js:
+  //   flagsIn[0]  = frame counter (worklet increments via Atomics.add on every hop)
+  //   flagsOut[1] = mask-ready flag (ml-worker sets to 1; worklet reads and clears)
+  const currentFrame = Atomics.load(flagsIn, 0);
+  if (currentFrame === _lastPollFrame) return; // no new frame
+  _lastPollFrame = currentFrame;
 
   // subarray() is a zero-copy view — buildMask reads it before any next poll overwrites it.
   const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
   const mask       = await buildMask(magnitudes, latestPcmChunk);
 
   outputView.set(mask);
-  Atomics.store(flagsOut, 2, 1); // signal: mask ready
+  Atomics.store(flagsOut, 1, 1); // signal: mask ready (slot 1, matches dsp-processor.js)
 }
 
 // ── 5. Combined mask inference pipeline ──────────────────────────────────────
