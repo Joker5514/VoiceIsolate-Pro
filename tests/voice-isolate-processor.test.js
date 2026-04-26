@@ -166,10 +166,25 @@ describe('VoiceIsolateProcessor._onMessage', () => {
     expect(proc.params.bypass).toBe(false);
   });
 
+  test('param gateAttack: _attackCoeff updates when gateAttack changes', () => {
+    const before = proc._attackCoeff;
+    proc._onMessage({ type: 'param', key: 'gateAttack', value: 50 });
+    expect(proc._attackCoeff).not.toBe(before);
+    const expected = Math.exp(-1 / (50 * 0.001 * global.sampleRate));
+    expect(proc._attackCoeff).toBeCloseTo(expected, 10);
+  });
+
+  test('paramBulk: _threshLin, _rangeLin, _outGainLin match linear conversions', () => {
+    proc._onMessage({ type: 'paramBulk', params: { gateThresh: -20, gateRange: -30, outGain: 6 } });
+    expect(proc._threshLin).toBeCloseTo(Math.pow(10, -20 / 20), 10);
+    expect(proc._rangeLin).toBeCloseTo(Math.pow(10, -30 / 20), 10);
+    expect(proc._outGainLin).toBeCloseTo(Math.pow(10, 6 / 20), 10);
+  });
+
   test('initRingBuffers: resets all pointers to zero', () => {
     proc.inputHead = 512;
     proc.drainHead = 256;
-    proc._onMessage({ type: 'initRingBuffers', fftSize: 4096, hopSize: 1024 });
+
     expect(proc.inputHead).toBe(0);
     expect(proc.drainHead).toBe(0);
     expect(proc.inputProcessed).toBe(0);
