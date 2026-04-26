@@ -111,6 +111,7 @@ const Analytics = (() => {
   // ─── Public API ───────────────────────────────────────────────────────────────
   const AN = {
     init() {
+      if (_session) return this;
       _events = _loadEvents();
       _session = _startSession();
 
