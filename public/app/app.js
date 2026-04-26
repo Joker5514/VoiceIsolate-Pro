@@ -1661,7 +1661,7 @@ class VoiceIsolatePro {
     // Read live values from the Speaker Isolation card so Confidence /
     // Bg Level / Mask Refine actually affect the offline pipeline. Falls
     // back to defaults when the orchestrator hasn't initialised yet.
-    const iso = (this.orch && this.orch._isolationParams) || {};
+    const iso = (this.orch && typeof this.orch.getIsolationParams === 'function') ? this.orch.getIsolationParams() : {};
     const bgLevel = Math.max(0, Math.min(1, Number(iso.backgroundVolume) || 0));
     const maskRefine = iso.maskRefinement !== false; // default true
 
