@@ -483,6 +483,12 @@ self.onmessage = async (ev) => {
       break;
     }
 
+    // ── setSoundMutes: background sound categories the user wants suppressed ──
+    case 'setSoundMutes': {
+      self._soundMutes = (payload && typeof payload === 'object') ? payload : {};
+      break;
+    }
+
     // ── enrollVoiceprint ───────────────────────────────────────────────────────
     case 'enrollVoiceprint': {
       try {

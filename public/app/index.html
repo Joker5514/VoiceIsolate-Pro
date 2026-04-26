@@ -600,9 +600,21 @@
     window._diarZoomFit        = DT.fitTimeline;
     window.updateSpeakerCards  = IC.updateSpeakerCards;
     window.setActiveSpeakerCard= IC.setActiveSpeakerCard;
+    window._attachMLWorkerToIsolation = IC.attachMLWorker;
+    // Boot the diarization timeline + speaker isolation controls. These
+    // bind purely to DOM/worker — no AudioContext required — so we run as
+    // soon as the orchestrator instance exists rather than gating on
+    // orch.initialized (which is only set after the user's first gesture).
+    let _booted = false;
     function _boot() {
+      if (_booted) return;
       const orch = window._vipOrch;
       if (!orch) return;
+      _booted = true;
+      // Lazy mlWorker lookup — the worker is set on the orch ~immediately
+      // (web worker prewarm doesn't need a user gesture), but UI bindings
+      // run before that, so always read orch.mlWorker at dispatch time.
+      const mlSend = (msg) => { try { orch.mlWorker?.postMessage(msg); } catch (_) {} };
       DT.initDiarizationTimeline({
         canvasId:        'diarCanvas',
         playheadId:      'diarPlayhead',
@@ -611,18 +623,17 @@
         onSpeakerClick: (id) => {
           if (window._vipApp?.diarizationState)
             window._vipApp.diarizationState.activeSpeaker = id;
-          if (orch.mlWorker)
-            orch.mlWorker.postMessage({ type: 'isolateSpeaker', payload: { speakerId: id } });
+          mlSend({ type: 'isolateSpeaker', payload: { speakerId: id } });
         },
       });
       IC.initIsolationControls({
         gridId:        'speakerCardsGrid',
         mlWorker:      orch.mlWorker,
         audioContext:  orch.ctx,
-        onSolo:   (id, volumes) => orch.mlWorker?.postMessage({ type: 'speakerVolumes', payload: volumes }),
-        onMute:   (id, volumes) => orch.mlWorker?.postMessage({ type: 'speakerVolumes', payload: volumes }),
-        onVolume: (id, volumes) => orch.mlWorker?.postMessage({ type: 'speakerVolumes', payload: volumes }),
-        onEnrollFromSeg: (id) => orch.mlWorker?.postMessage({ type: 'enrollFromDiarization', payload: { speakerId: id } }),
+        onSolo:   (id, volumes) => mlSend({ type: 'speakerVolumes', payload: volumes }),
+        onMute:   (id, volumes) => mlSend({ type: 'speakerVolumes', payload: volumes }),
+        onVolume: (id, volumes) => mlSend({ type: 'speakerVolumes', payload: volumes }),
+        onEnrollFromSeg: (id) => mlSend({ type: 'enrollFromDiarization', payload: { speakerId: id } }),
       });
       // Re-trigger diarization if audio was loaded before the UI was ready
       const app = window._vipApp;
@@ -630,10 +641,18 @@
         app._triggerDiarization(app.inputBuffer).catch(() => {});
       }
     }
-    const t = setInterval(() => {
-      if (window._vipOrch?.initialized) { clearInterval(t); _boot(); }
-    }, 100);
-    setTimeout(() => { clearInterval(t); _boot(); }, 8000);
+    function _waitForOrch() {
+      if (window._vipOrch) { _boot(); return; }
+      const t = setInterval(() => {
+        if (window._vipOrch) { clearInterval(t); _boot(); }
+      }, 50);
+      setTimeout(() => { clearInterval(t); _boot(); }, 5000);
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', _waitForOrch, { once: true });
+    } else {
+      _waitForOrch();
+    }
   </script>
 
 </body>
