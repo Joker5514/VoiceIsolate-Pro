@@ -265,7 +265,8 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
           this.params[msg.key] = msg.value;
           if (msg.key === 'harmonicEnhance') this.harmonicEnhancer.setAmount(msg.value);
           if (msg.key === 'gateAttack' || msg.key === 'gateRelease' ||
-              msg.key === 'gateHold'   || msg.key === 'outGain') {
+              msg.key === 'gateHold'   || msg.key === 'outGain'    ||
+              msg.key === 'gateThresh' || msg.key === 'gateRange') {
             this._recomputeGateCoeffs();
           }
         }
