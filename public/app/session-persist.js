@@ -60,7 +60,7 @@ const SessionPersist = {
 // Initialize window.VIP_PARAMS as the loaded store.
 // Existing code that reads window.VIP_PARAMS[key] keeps working.
 if (typeof window !== 'undefined') {
-  if (!window.VIP_PARAMS) window.VIP_PARAMS = SessionPersist.loadAll();
+  window.VIP_PARAMS = Object.assign(SessionPersist.loadAll(), window.VIP_PARAMS || {});
   window.SessionPersist = SessionPersist;
 }
 
