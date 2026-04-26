@@ -17,7 +17,7 @@
       "destination": "/api/handler"
     },
     {
-      "source": "/app/((?!.*\\.(js|css|onnx|wasm|json|map|png|ico)$).*)",
+      "source": "/app/(.*)",
       "destination": "/app/index.html"
     },
     {
