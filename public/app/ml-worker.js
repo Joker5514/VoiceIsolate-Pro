@@ -97,11 +97,7 @@ function initialize() {
 
 
 // ── Diarization / isolation runtime state ──────────────────────────────────
-// Stubbed state: populated by message handlers below; will be consumed once
-// ECAPA-TDNN cosine-sim clustering replaces the energy-based stub.
-let _currentIsolateSpeakerId = null; // eslint-disable-line no-unused-vars
-let _speakerVolumeMap        = {};
-let _voiceprintEmbedding     = null; // eslint-disable-line no-unused-vars
+let _speakerVolumeMap = {};
 
 /**
  * Compute a 3-element feature vector [rms, spectralCentroid, zcr] for a PCM frame.
@@ -268,20 +264,6 @@ async function runDiarization(pcm, sampleRate) {
 
   // Filter out very short segments (< 300ms)
   return segments.filter(s => s.speakerId !== null && (s.end - s.start) >= 0.3);
-}
-
-async function enrollVoiceprint(pcm) {
-  // Store a compact feature embedding: mean of per-window feature vectors
-  const winSamp = Math.round(0.2 * 16000);
-  const vecs = [];
-  for (let i = 0; i + winSamp <= pcm.length; i += winSamp) {
-    vecs.push(_frameFeatures(pcm.subarray(i, i + winSamp), 16000));
-  }
-  if (vecs.length === 0) { _voiceprintEmbedding = null; return; }
-  const dim = vecs[0].length;
-  const mean = new Float32Array(dim);
-  for (const v of vecs) for (let d = 0; d < dim; d++) mean[d] += v[d] / vecs.length;
-  _voiceprintEmbedding = mean;
 }
 
 // ── 1. Message dispatcher ─────────────────────────────────────────────────────
@@ -495,12 +477,6 @@ self.onmessage = async (ev) => {
       break;
     }
 
-    // ── isolateSpeaker ─────────────────────────────────────────────────────────
-    case 'isolateSpeaker': {
-      _currentIsolateSpeakerId = (payload || {}).speakerId ?? null;
-      break;
-    }
-
     // ── speakerVolumes ─────────────────────────────────────────────────────────
     case 'speakerVolumes': {
       _speakerVolumeMap = payload || {};
@@ -509,14 +485,7 @@ self.onmessage = async (ev) => {
 
     // ── enrollVoiceprint ───────────────────────────────────────────────────────
     case 'enrollVoiceprint': {
-      try {
-        const { pcm } = payload || {};
-        if (!pcm) return;
-        await enrollVoiceprint(new Float32Array(pcm));
-        self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId: 'manual' } });
-      } catch(err) {
-        self.postMessage({ type: 'error', msg: 'enrollVoiceprint: ' + err.message });
-      }
+      self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId: 'manual' } });
       break;
     }
 
@@ -529,7 +498,6 @@ self.onmessage = async (ev) => {
 
     // ── clearVoiceprint ────────────────────────────────────────────────────────
     case 'clearVoiceprint': {
-      _voiceprintEmbedding = null;
       self.postMessage({ type: 'voiceprintCleared' });
       break;
     }

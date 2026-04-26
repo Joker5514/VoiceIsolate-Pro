@@ -1,6 +1,6 @@
 /**
  * VoiceIsolate Pro — Analytics v22
- * Privacy-first local analytics + optional server reporting.
+ * Privacy-first local analytics. All data stays on-device.
  *
  * Tracks:
  *   - Feature usage (which features are used most)
@@ -8,8 +8,6 @@
  *   - Session data (time in app, files processed)
  *   - Conversion events (free → trial → paid)
  *   - Error rates per feature
- *
- * Data stays local by default. Server reporting only if user opts in.
  */
 
 const Analytics = (() => {
@@ -21,8 +19,6 @@ const Analytics = (() => {
 
   let _events = [];
   let _session = null;
-  let _serverEndpoint = null; // BUG-F: server reporting disabled in v22.1
-  let _serverEnabled = false; // BUG-F: forced false, no server calls
   let _flushTimer = null;
 
   // ─── Session Management ───────────────────────────────────────────────────────
@@ -82,12 +78,7 @@ const Analytics = (() => {
     if (_session && properties.feature) {
       _session.featuresUsed.add(properties.feature);
     }
-
-    // FIX: Issue #4 — Server flush removed; _flushToServer() no longer exists.
   }
-
-  // FIX: Issue #4 — Removed _flushToServer() entirely. VoiceIsolate Pro is 100% local;
-  //   all analytics remain in localStorage / in-memory only. No external fetch permitted.
 
   // ─── Aggregation ──────────────────────────────────────────────────────────────
   function _aggregate(events) {
@@ -119,11 +110,9 @@ const Analytics = (() => {
 
   // ─── Public API ───────────────────────────────────────────────────────────────
   const AN = {
-    init(options = {}) {
+    init() {
       _events = _loadEvents();
       _session = _startSession();
-      _serverEndpoint = options.endpoint || null;
-      _serverEnabled = false; // BUG-F: ignore caller option — no server calls ever
 
       // Track app open
       _track('app:open', { version: '22.0.0' });
@@ -199,7 +188,6 @@ const Analytics = (() => {
         totalMinutes: _session.totalMinutesProcessed,
         featuresUsed: Array.from(_session.featuresUsed),
       });
-      // FIX: Issue #4 — _flushToServer() removed; session end is local-only.
     },
 
     // ── Analytics Dashboard ─────────────────────────────────────────────────────
@@ -230,16 +218,6 @@ const Analytics = (() => {
       try { localStorage.removeItem(STORAGE_KEY); } catch { /* ok */ }
     },
 
-    // FIX: Issue #4 — enableServerReporting() stubbed out; server reporting is permanently disabled.
-    enableServerReporting(endpoint) { // eslint-disable-line no-unused-vars
-      // Intentionally disabled — VoiceIsolate Pro is 100% local
-      throw new Error('Server reporting is disabled. All analytics are local-only.');
-    },
-
-    disableServerReporting() {
-      _serverEnabled = false;
-    },
-
     exportData() {
       const data = JSON.stringify({ events: _events, session: AN.getSessionInfo(), stats: AN.getStats() }, null, 2);
       const blob = new Blob([data], { type: 'application/json' });
@@ -255,8 +233,6 @@ const Analytics = (() => {
   // Auto-track session end on page unload
   if (typeof window !== 'undefined') {
     window.addEventListener('beforeunload', () => AN.trackSessionEnd());
-    // BUG-F FIX: Auto-init removed. Call Analytics.init() explicitly after user consent.
-    // window.addEventListener('DOMContentLoaded', () => AN.init());
     window.Analytics = AN;
   }
 
