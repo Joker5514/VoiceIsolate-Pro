@@ -11,6 +11,9 @@
              future refactors from breaking fwdPhase/fallbackMag.
    - Bug 3: Replaced broken drain read index with dedicated
              `drainHead` pointer advanced 128 samples per render.
+   - Bug 3b: initRingBuffers now fully resets overlap-add ring state
+             including gateEnv and holdCounter to prevent stale gate
+             dynamics accumulating across reinit.
    - Bug 5: hopsSinceInit guard now advances drainHead during
              the muted latency window so the ring never stalls.
    ============================================ */
@@ -224,12 +227,14 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
         this.inputAccum      = new Float32Array(this.FFT_SIZE * 4);
         this.outputAccum     = new Float32Array(this.FFT_SIZE * 4);
         this.outputWindowSum = new Float32Array(this.FFT_SIZE * 4);
-        // Reset all pointers on reinit
+        // Reset all pointers and gate state on reinit
         this.inputHead = 0;
         this.inputProcessed = 0;
         this.outputHead = 0;
         this.drainHead = 0;
         this.hopsSinceInit = 0;
+        this.gateEnv = 0;
+        this.holdCounter = 0;
 
         if (msg.inputSAB) {
           const inputBytes = Int32Array.BYTES_PER_ELEMENT * 4
