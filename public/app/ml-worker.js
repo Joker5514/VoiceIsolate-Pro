@@ -485,7 +485,36 @@ self.onmessage = async (ev) => {
 
     // ── enrollVoiceprint ───────────────────────────────────────────────────────
     case 'enrollVoiceprint': {
-      self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId: 'manual' } });
+      try {
+        const { signal, pcm: rawPcm, speakerId = 'manual' } = payload || {};
+        const source = signal || rawPcm;
+        if (!source) {
+          self.postMessage({ type: 'error', msg: 'enrollVoiceprint: no signal' });
+          break;
+        }
+
+        const pcm = source instanceof Float32Array ? source : new Float32Array(source);
+        if (!pcm.length) {
+          self.postMessage({ type: 'error', msg: 'enrollVoiceprint: empty signal' });
+          break;
+        }
+
+        let hasFiniteSample = false;
+        for (let i = 0; i < pcm.length; i++) {
+          if (Number.isFinite(pcm[i])) {
+            hasFiniteSample = true;
+            break;
+          }
+        }
+        if (!hasFiniteSample) {
+          self.postMessage({ type: 'error', msg: 'enrollVoiceprint: invalid signal' });
+          break;
+        }
+
+        self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId } });
+      } catch (err) {
+        self.postMessage({ type: 'error', msg: 'enrollVoiceprint: ' + err.message });
+      }
       break;
     }
 
