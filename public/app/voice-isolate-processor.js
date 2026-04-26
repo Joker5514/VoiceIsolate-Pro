@@ -201,6 +201,8 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     this._attackCoeff = Math.exp(-1 / (p.gateAttack  * 0.001 * sampleRate));
     this._relCoeff    = Math.exp(-1 / (p.gateRelease * 0.001 * sampleRate));
     this._holdSamps   = Math.floor(p.gateHold * 0.001 * sampleRate);
+    this._threshLin   = Math.pow(10, p.gateThresh / 20);
+    this._rangeLin    = Math.pow(10, p.gateRange  / 20);
     this._outGainLin  = Math.pow(10, p.outGain / 20);
   }
 
