@@ -1,7 +1,9 @@
 'use strict';
 // session-persist.js — VoiceIsolate Pro
-// Persists DSP parameter state across page refreshes using sessionStorage.
-// Also exposes window.VIP_PARAMS as a live store backed by sessionStorage.
+// Persistence helper for DSP parameter state across page refreshes (sessionStorage).
+// Exposes window.SessionPersist with set/get/saveAll/loadAll/clear methods.
+// window.VIP_PARAMS is populated from the persisted store at startup; callers must
+// invoke SessionPersist.set() or SessionPersist.saveAll() to write changes back.
 
 const SESSION_KEY = 'vip_params_v1';
 

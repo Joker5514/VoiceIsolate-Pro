@@ -87,6 +87,25 @@ export default [
     },
   },
   {
+    // session-persist.js — browser script with optional CommonJS export guard
+    files: ['public/app/session-persist.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        module: 'readonly', // CommonJS export guard (typeof module !== 'undefined')
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'semi': ['warn', 'always'],
+      'quotes': ['warn', 'single', { avoidEscape: true }],
+    },
+  },
+  {
     files: ['api/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
