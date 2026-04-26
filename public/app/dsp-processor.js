@@ -311,9 +311,9 @@ class DSPProcessor extends AudioWorkletProcessor {
   _rebuildFilters(sr) {
     // Hum notch
     for (let ch = 0; ch < 2; ch++) {
-      setBiquadNotch(this._notch60[ch],   60, 30, sr);
-      setBiquadNotch(this._notch120[ch], 120, 30, sr);
-      setBiquadNotch(this._notch180[ch], 180, 30, sr);
+      setBiquadNotch(this._notch60[ch],   60, 5, sr);
+      setBiquadNotch(this._notch120[ch], 120, 5, sr);
+      setBiquadNotch(this._notch180[ch], 180, 5, sr);
     }
     // De-ess sidechain: narrow peak at deEssFreq with gain = -deEssAmt*0.15 dB
     const deEssGainDb = -(this._params.deEssAmt / 100) * 15;
