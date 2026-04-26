@@ -438,8 +438,8 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
 
     // ── 3. Gate + dynamics params ─────────────────────────────────────────
     const p = this.params;
-    const threshLin   = Math.pow(10, p.gateThresh / 20);
-    const rangeLin    = Math.pow(10, p.gateRange  / 20);
+    const threshLin   = this._threshLin;
+    const rangeLin    = this._rangeLin;
     const attackCoeff = this._attackCoeff;
     const relCoeff    = this._relCoeff;
     const holdSamps   = this._holdSamps;
