@@ -13,7 +13,7 @@
     }
 
     // Play / transport controls
-    check('playBtn exists', document.getElementById('playBtn'));
+    check('processBtn exists', document.getElementById('processBtn'));
     check('tpPlay exists', document.getElementById('tpPlay'));
     check('clearFile exists', document.getElementById('clearFile'));
     check('fileInput exists', document.getElementById('fileInput'));
