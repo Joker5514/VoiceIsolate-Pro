@@ -79,11 +79,11 @@ const SLIDERS = {
     { id:'phaseCorr', label:'Phase Correction', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Corrects phase issues between stereo channels.' },
   ],
   sep: [
-    { id:'voiceIso', label:'Voice Isolation', min:0, max:100, val:88, step:1, unit:'%', rt:false, desc:'Strength of voice/non-voice separation.' },
-    { id:'bgSuppress', label:'Background Suppress', min:0, max:100, val:80, step:1, unit:'%', rt:false, desc:'Attenuation of non-voice background.' },
-    { id:'voiceFocusLo', label:'Voice Focus Low', min:80, max:500, val:120, step:5, unit:' Hz', rt:true, desc:'Lower bound of voice focus band.' },
-    { id:'voiceFocusHi', label:'Voice Focus High', min:2000, max:12000, val:6000, step:100, unit:' Hz', rt:true, desc:'Upper bound of voice focus band.' },
-    { id:'crosstalkCancel', label:'Crosstalk Cancel', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Reduces bleed between speakers.' },
+    { id:'voiceIso', label:'Voice Isolation', min:0, max:100, val:88, step:1, unit:'%', rt:false, desc:'Spectral boost applied to frequencies inside the Voice Focus band (up to +50% gain at 100%). Works in tandem with Background Suppress — raise both for maximum voice lift.' },
+    { id:'bgSuppress', label:'Background Suppress', min:0, max:100, val:80, step:1, unit:'%', rt:false, desc:'Spectral attenuation of all frequencies outside the Voice Focus band (up to −95% at 100%). At default 80% the background is cut by ~76%. Raise carefully — too high can muffle room tone.' },
+    { id:'voiceFocusLo', label:'Voice Focus Low', min:80, max:500, val:120, step:5, unit:' Hz', rt:true, desc:'Lower edge of the protected voice band used by Voice Isolation and Background Suppress. 120 Hz (default) sits just below typical male fundamental. Raise to 200–300 Hz to cut low-end rumble; lower toward 80 Hz to keep chest resonance.' },
+    { id:'voiceFocusHi', label:'Voice Focus High', min:2000, max:12000, val:6000, step:100, unit:' Hz', rt:true, desc:'Upper edge of the protected voice band. 6 kHz (default) covers vowels, consonants, and sibilance. Lower to ~3.4 kHz for telephone/radio narrowband; raise to 10–12 kHz to preserve full vocal brilliance.' },
+    { id:'crosstalkCancel', label:'Crosstalk Cancel', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Two-stage bleed removal. In the spectral domain, non-voice frames (VAD < 0.3) are attenuated by up to 80% × amount. In the time domain, an L/R cross-cancellation matrix subtracts a scaled copy of each channel from the other (L − g×R, R − g×L, g = amount × 0.5) to cancel physical mic bleed. Leave at 0 for mono sources; 30–50% suits multi-mic interviews; 60–100% for forensic speaker extraction.' },
   ],
   out: [
     { id:'outGain', label:'Output Gain', min:-18, max:18, val:0, step:0.5, unit:' dB', rt:true, desc:'Final output level adjustment.' },
