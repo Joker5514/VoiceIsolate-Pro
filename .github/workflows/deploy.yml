@@ -46,6 +46,28 @@ jobs:
         run: pnpm run validate
 
 
+  smoke-test:
+    name: Live Browser Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install chromium --with-deps
+      - name: Run live browser smoke test
+        run: pnpm test:live
+
+
   validate:
     name: Validate Structure
     runs-on: ubuntu-latest
@@ -80,7 +102,7 @@ jobs:
 
   deploy-preview:
     name: Deploy Preview
-    needs: [lint-test, validate]
+    needs: [lint-test, validate, smoke-test]
     if: github.event_name == 'pull_request' && secrets.VERCEL_TOKEN != ''
     runs-on: ubuntu-latest
     env:
@@ -106,7 +128,7 @@ jobs:
 
   deploy-production:
     name: Deploy Production
-    needs: [lint-test, validate]
+    needs: [lint-test, validate, smoke-test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.VERCEL_TOKEN != ''
     runs-on: ubuntu-latest
     env:
