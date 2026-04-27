@@ -499,11 +499,10 @@
     <button id="mobileStopBtn" class="btn btn-danger" style="display:none" aria-label="Stop processing">Stop</button>
   </div>
 
-  <!-- Core modules -->
+  <!-- Core modules (cloud-sync.js removed — violated 100% local constraint) -->
   <script src="./dsp-core.js"></script>
   <script src="./ring-buffer.js"></script>
   <script src="./pipeline-state.js"></script>
-  <script src="./cloud-sync.js"></script>
   <script src="./batch-orchestrator.js"></script>
   <script src="./analytics.js"></script>
   <script src="./license-manager.js"></script>
@@ -523,7 +522,7 @@
   <!-- ═══════════════════════════════════════════════════════════
        PREMIUM PROCESSING OVERLAY — DNA helix spinner
        Must load AFTER app.js so the patch can wrap runPipeline()
-  ════════════════════════════════════════════════════════════ -->
+  ═══════════════════════════════════════════════════════════ -->
   <script src="/app/processing-overlay.js"></script>
   <script src="/app/processing-overlay-patch.js"></script>
 
