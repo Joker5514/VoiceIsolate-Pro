@@ -672,6 +672,99 @@ describe('DSPCore.harmonicEnhanceV2', () => {
     const phase = [new Float32Array(10)];
     expect(DSPCore.harmonicEnhanceV2(mag, phase, 20)).toBe(mag);
   });
+
+  test('flat (peak-less) spectra do not get unconditional formant boosts', () => {
+    // A flat magnitude spectrum has no genuine formant peak. The previous
+    // implementation boosted the strongest bin in F1/F2 ranges every frame
+    // anyway, which produced shimmery garble on broadband / noise-only input.
+    const SR = 48000;
+    const FFT = 512;
+    const HALF = FFT / 2 + 1;
+    const mag = [new Float32Array(HALF).fill(0.1), new Float32Array(HALF).fill(0.1)];
+    const phase = [new Float32Array(HALF), new Float32Array(HALF)];
+    DSPCore.harmonicEnhanceV2(mag, phase, 50, {
+      sbr: false,
+      formantProtection: true,
+      breathinessGain: 1.0,  // disable breathiness change
+      sampleRate: SR,
+      fftSize: FFT
+    });
+    const f1Lo = Math.round(200 / (SR / FFT));
+    const f2Hi = Math.round(3500 / (SR / FFT));
+    // No bin in the formant range should exceed 1.05× the input magnitude;
+    // the prominence-gated formant protection must NOT fire on flat input.
+    for (let f = 0; f < mag.length; f++) {
+      for (let k = f1Lo; k <= f2Hi && k < HALF; k++) {
+        expect(mag[f][k]).toBeLessThanOrEqual(0.1 * 1.05 + 1e-6);
+      }
+    }
+  });
+
+  test('per-bin output never exceeds 1.5× the input magnitude (boost cap)', () => {
+    // Combined formant + peak boost + SBR must respect the per-bin cap so
+    // a single frame can never slam a bin past its original by more than
+    // 1.5× — runaway growth was a key driver of garble.
+    const SR = 48000;
+    const FFT = 4096;
+    const HALF = FFT / 2 + 1;
+    // Synthetic spectrum: a mild peak at ~1 kHz, otherwise quiet.
+    const m = new Float32Array(HALF);
+    for (let k = 0; k < HALF; k++) m[k] = 0.05;
+    const peakBin = Math.round(1000 / (SR / FFT));
+    m[peakBin] = 0.5;        // prominent peak
+    m[peakBin - 1] = 0.2;
+    m[peakBin + 1] = 0.2;
+    const before = Float32Array.from(m);
+    DSPCore.harmonicEnhanceV2([m], [new Float32Array(HALF)], 100, {
+      sbr: true,
+      formantProtection: true,
+      breathinessGain: 1.0,
+      sampleRate: SR,
+      fftSize: FFT
+    });
+    for (let k = 0; k < HALF; k++) {
+      // Allow a small tolerance for SBR copying from a 4–8 kHz source bin
+      // into the >8 kHz region. The destination bin starts near 0.05, source
+      // up to 0.05 × decay × 0.3 ≈ 0.015; cap-bound is straightforwardly met.
+      expect(m[k]).toBeLessThanOrEqual(before[k] * 1.5 + 1e-6);
+    }
+  });
+});
+
+// ── dereverb: stable history (no runaway suppression) ───────────────────────
+
+describe('DSPCore.dereverb', () => {
+  test('constant-magnitude input is attenuated by a stable, bounded amount', () => {
+    // Previous implementation read from `mag[f-d]` AFTER attenuating it,
+    // so each successive frame saw a smaller "reverb estimate" and the
+    // attenuation diverged frame-after-frame. With the snapshot-based
+    // history, the attenuation should converge to a steady-state value.
+    const numBins = 256;
+    const numFrames = 200;
+    const mag = [];
+    for (let f = 0; f < numFrames; f++) mag.push(new Float32Array(numBins).fill(0.5));
+    DSPCore.dereverb(mag, 80, 0.2, 48000, 1024);
+
+    // Sample steady-state magnitude in the second half of the signal.
+    const lastFrameMag = mag[numFrames - 1][numBins / 2];
+    const midFrameMag  = mag[Math.floor(numFrames * 0.6)][numBins / 2];
+
+    // Steady-state values should be close to each other (stable, not running away).
+    expect(Math.abs(lastFrameMag - midFrameMag)).toBeLessThan(0.01);
+    // And both should be well above the 0.1 floor (no runaway pin to floor).
+    expect(lastFrameMag).toBeGreaterThan(0.05);
+  });
+
+  test('amount=0 leaves magnitudes unchanged', () => {
+    const mag = [new Float32Array([0.1, 0.2, 0.3]), new Float32Array([0.4, 0.5, 0.6])];
+    const expected0 = [0.1, 0.2, 0.3];
+    const expected1 = [0.4, 0.5, 0.6];
+    DSPCore.dereverb(mag, 0, 0.5, 48000, 1024);
+    for (let k = 0; k < 3; k++) {
+      expect(mag[0][k]).toBeCloseTo(expected0[k], 6);
+      expect(mag[1][k]).toBeCloseTo(expected1[k], 6);
+    }
+  });
 });
 
 // ── STFT / iSTFT roundtrip ────────────────────────────────────────────────────

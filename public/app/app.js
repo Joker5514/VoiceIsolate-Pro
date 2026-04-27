@@ -1745,9 +1745,12 @@ class VoiceIsolatePro {
         }
         if (this.abortFlag) throw 'abort';
 
-        // S11: Secondary Wiener pass for residual noise
+        // S11: Secondary Wiener pass for residual noise. Only runs at higher
+        // NR settings, with a much smaller subtraction amount than the
+        // adaptive Wiener — stacking two heavy passes back-to-back was the
+        // dominant source of "musical noise" / metallic garble.
         await this.pip(11, total);
-        if (p.nrAmount > 30) {
+        if (p.nrAmount > 60) {
           // Build noise profile from quietest frames
           const noiseProfile = new Float32Array(mag[0].length);
           let noiseFrames = 0;
@@ -1760,7 +1763,7 @@ class VoiceIsolatePro {
           }
           if (noiseFrames > 0) {
             for (let k = 0; k < noiseProfile.length; k++) noiseProfile[k] /= noiseFrames;
-            DSP.wienerMMSE(mag, noiseProfile, p.nrAmount * 0.6);
+            DSP.wienerMMSE(mag, noiseProfile, p.nrAmount * 0.25);
           }
         }
         if (this.abortFlag) throw 'abort';
@@ -1771,47 +1774,72 @@ class VoiceIsolatePro {
         if (this.abortFlag) throw 'abort';
 
         // ═══ PASS 4: VOICE ISOLATION (spectral domain) ═══
-        // S13: Voice-band spectral emphasis
+        // S13: Voice-band spectral emphasis with raised-cosine transition zones.
+        // A hard band-edge step in the spectrum produces ringing in the time
+        // domain ("garbled" voice). The transition zones smear the edge over
+        // ~half an octave so reconstruction stays clean.
         await this.pip(13, total);
         if (p.voiceIso > 0 || p.bgSuppress > 0) {
           const halfN = mag[0].length;
           const binHz = sr / fftSize;
-          const rawLo = Math.round(p.voiceFocusLo / binHz);
-          const rawHi = Math.round(p.voiceFocusHi / binHz);
+          const rawLo = p.voiceFocusLo / binHz;
+          const rawHi = p.voiceFocusHi / binHz;
           const voiceLoBin = Math.max(0, Math.min(halfN - 1, rawLo));
           const voiceHiBin = Math.max(voiceLoBin, Math.min(halfN - 1, rawHi));
+          // Transition width: 1/3 of an octave at each edge, but at least 4 bins.
+          const transLo = Math.max(4, Math.round(voiceLoBin * 0.26));
+          const transHi = Math.max(4, Math.round(voiceHiBin * 0.26));
           const rawSuppress = 1 - (p.bgSuppress / 100) * 0.95;
-          // Bg Level slider blends suppression toward unity gain — at 0%
-          // we keep the user's full suppression, at 100% no suppression.
           const suppressGain = rawSuppress + bgLevel * (1 - rawSuppress);
           const boostGain = 1 + (p.voiceIso / 100) * 0.5;
+          // Per-bin gain mask, computed once and reused across all frames.
+          const bandMask = new Float32Array(halfN);
+          for (let k = 0; k < halfN; k++) {
+            let t;
+            if (k <= voiceLoBin - transLo) t = 0;        // fully out-of-band
+            else if (k < voiceLoBin)        t = 0.5 - 0.5 * Math.cos(Math.PI * (k - (voiceLoBin - transLo)) / transLo);
+            else if (k <= voiceHiBin)       t = 1;        // fully in-band
+            else if (k < voiceHiBin + transHi) t = 0.5 + 0.5 * Math.cos(Math.PI * (k - voiceHiBin) / transHi);
+            else                            t = 0;
+            bandMask[k] = suppressGain + (boostGain - suppressGain) * t;
+          }
           for (let f = 0; f < mag.length; f++) {
-            for (let k = 0; k < halfN; k++) {
-              if (k >= voiceLoBin && k <= voiceHiBin) {
-                mag[f][k] *= boostGain;
-              } else {
-                mag[f][k] *= suppressGain;
-              }
-            }
+            const m = mag[f];
+            for (let k = 0; k < halfN; k++) m[k] *= bandMask[k];
           }
         }
         // Sound category suppression — applied within S13 after voice isolation.
-        // Each active category's frequency ranges are heavily attenuated.
-        // VAD weight softens the suppression on voice-active frames to preserve speech.
+        // Smooth-edged masks (1/3 octave raised-cosine) replace the previous
+        // brick-wall mask so cut bands no longer ring in the time domain.
         {
           const activeCats = SOUND_CATEGORIES.filter(c => this.soundMutes[c.id]);
           if (activeCats.length > 0 && mag.length > 0) {
             const halfN = mag[0].length;
             const binHz = sr / fftSize;
             const mask = new Float32Array(halfN).fill(1.0);
-            // Bg Level blends the suppression floor toward unity gain so
-            // the user can audition with more or less of the muted sounds.
             const floorGain = 0.04 + bgLevel * (1 - 0.04);
+            // Raised-cosine band notch: reaches `floorGain` only across the
+            // notch interior, easing back to unity through the transition zone.
+            const applyBandNotch = (loBin, hiBin) => {
+              const trans = Math.max(4, Math.round(((hiBin - loBin) || 4) * 0.26));
+              const n0 = Math.max(0, loBin - trans);
+              const n1 = Math.min(halfN - 1, hiBin + trans);
+              for (let k = n0; k <= n1; k++) {
+                let t;
+                if (k <= loBin - trans) t = 0;
+                else if (k < loBin)      t = 0.5 - 0.5 * Math.cos(Math.PI * (k - (loBin - trans)) / trans);
+                else if (k <= hiBin)     t = 1;
+                else if (k < hiBin + trans) t = 0.5 + 0.5 * Math.cos(Math.PI * (k - hiBin) / trans);
+                else                     t = 0;
+                const g = 1 + (floorGain - 1) * t;
+                if (g < mask[k]) mask[k] = g;
+              }
+            };
             for (const cat of activeCats) {
               for (const range of cat.ranges) {
                 const lo = Math.max(0, Math.round(range.lo / binHz));
                 const hi = Math.min(halfN - 1, Math.round(range.hi / binHz));
-                for (let k = lo; k <= hi; k++) mask[k] = Math.min(mask[k], floorGain);
+                applyBandNotch(lo, hi);
               }
             }
             for (let f = 0; f < mag.length; f++) {
@@ -1829,17 +1857,21 @@ class VoiceIsolatePro {
 
         if (this.abortFlag) throw 'abort';
 
-        // S14: Crosstalk cancellation (voice-band SNR enhancement)
+        // S14: Crosstalk cancellation (voice-band SNR enhancement).
+        // Spectral attenuation is weighted smoothly by (1 - VAD confidence)
+        // so the gain transitions continuously across speech onsets/offsets
+        // — the previous hard `vadConf < 0.3` threshold produced an audible
+        // click on every word boundary.
         await this.pip(14, total);
-        // Placeholder for ML separation - uses spectral masking approximation
         if (p.crosstalkCancel > 0) {
           const cancelAmt = p.crosstalkCancel / 100;
           for (let f = 0; f < mag.length; f++) {
             const vi = Math.min(f, vadConf.length - 1);
-            if (vadConf[vi] < 0.3) {
-              for (let k = 0; k < mag[f].length; k++) {
-                mag[f][k] *= (1 - cancelAmt * 0.8);
-              }
+            const conf = Math.min(1, Math.max(0, vadConf[vi] || 0));
+            const gain = 1 - cancelAmt * 0.8 * (1 - conf);
+            if (gain < 1) {
+              const m = mag[f];
+              for (let k = 0; k < m.length; k++) m[k] *= gain;
             }
           }
         }
