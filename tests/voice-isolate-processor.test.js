@@ -193,6 +193,27 @@ describe('VoiceIsolateProcessor._onMessage', () => {
     expect(proc.hopsSinceInit).toBe(0);
   });
 
+  test('initRingBuffers: resets outputHead, gateEnv, and holdCounter to 0', () => {
+    proc.inputHead = 1024;
+    proc.inputProcessed = 512;
+    proc.outputHead = 256;
+    proc.drainHead = 384;
+    proc.hopsSinceInit = 5;
+    proc.gateEnv = 0.8;
+    proc.holdCounter = 10;
+
+    proc._onMessage({ type: 'initRingBuffers', fftSize: 4096, hopSize: 1024 });
+
+    expect(proc.outputHead).toBe(0);
+    expect(proc.gateEnv).toBe(0);
+    expect(proc.holdCounter).toBe(0);
+    // confirm all other pointers also reset
+    expect(proc.inputHead).toBe(0);
+    expect(proc.inputProcessed).toBe(0);
+    expect(proc.drainHead).toBe(0);
+    expect(proc.hopsSinceInit).toBe(0);
+  });
+
   test('initRingBuffers: posts ready message', () => {
     proc._onMessage({ type: 'initRingBuffers', fftSize: 4096, hopSize: 1024 });
     expect(proc.port.postMessage).toHaveBeenCalledWith(
@@ -264,6 +285,41 @@ describe('VoiceIsolateProcessor.process()', () => {
     // 8 × 128 = 1024 = HOP_SIZE
     for (let i = 0; i < 8; i++) proc.process(inputs, outputs);
     expect(proc.inputProcessed).toBeGreaterThanOrEqual(proc.HOP_SIZE);
+  });
+
+  test('inputProcessed equals N * HOP_SIZE after exactly N hops', () => {
+    const proc = new VoiceIsolateProcessor({});
+    const inBuf = new Float32Array(128).fill(0.1);
+    const outBuf = new Float32Array(128);
+    // 16 × 128 = 2048 = 2 × HOP_SIZE → expect exactly 2 hops processed
+    for (let i = 0; i < 16; i++) proc.process([[inBuf]], [[outBuf]]);
+    expect(proc.inputProcessed).toBe(2 * proc.HOP_SIZE);
+  });
+
+  test('drainHead advances by 128 (RENDER quantum) each call to process()', () => {
+    const proc = new VoiceIsolateProcessor({});
+    const inBuf = new Float32Array(128).fill(0.1);
+    const outBuf = new Float32Array(128);
+    expect(proc.drainHead).toBe(0);
+    proc.process([[inBuf]], [[outBuf]]);
+    expect(proc.drainHead).toBe(128);
+    proc.process([[inBuf]], [[outBuf]]);
+    expect(proc.drainHead).toBe(256);
+    proc.process([[inBuf]], [[outBuf]]);
+    expect(proc.drainHead).toBe(384);
+  });
+
+  test('hopsSinceInit guard advances drainHead during muted latency window', () => {
+    const proc = new VoiceIsolateProcessor({});
+    const inBuf = new Float32Array(128).fill(0.5);
+    const outBuf = new Float32Array(128);
+    // hopsSinceInit starts at 0, latency window is 4 hops (FFT_SIZE/HOP_SIZE)
+    expect(proc.hopsSinceInit).toBe(0);
+    proc.process([[inBuf]], [[outBuf]]);
+    // drainHead MUST advance by RENDER=128 even during the muted init window
+    expect(proc.drainHead).toBe(128);
+    // output must still be silent during latency window
+    expect(outBuf.every(v => v === 0)).toBe(true);
   });
 
   test('output is finite after enough renders to exit latency window', () => {
