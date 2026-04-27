@@ -13,6 +13,8 @@
   <link rel="stylesheet" href="style.css" />
   <!-- Diagnostics log panel styles -->
   <link rel="stylesheet" href="style-diag-log.css" />
+  <!-- Processing overlay styles (early load prevents FOUC on first Process click) -->
+  <link id="vip-overlay-css" rel="stylesheet" href="/app/processing-overlay.css" />
   <!-- Auth overlay styles -->
   <style>
     #authOverlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(6,6,9,0.96);backdrop-filter:blur(12px)}
@@ -117,14 +119,6 @@
     <div class="col-left">
       <!-- Upload -->
       <div class="card upload-card">
-        <!--
-          FIX: fileInput is placed OUTSIDE uploadZone and rendered off-screen.
-          This avoids nested click handling inside uploadZone from re-triggering
-          or interfering with the file picker when the zone or Browse button
-          dispatches fileInput.click(). The input stays visually hidden off-screen
-          instead of using display:none/disabled so file selection remains
-          compatible with browser file-picker activation behavior.
-        -->
         <input
           type="file"
           id="fileInput"
@@ -137,17 +131,7 @@
           <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <p class="upload-title">Drop Audio or Video</p>
           <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · AAC · MP4 · MOV · WEBM · MKV · AVI — No limit</p>
-          <!--
-            FIX: fileBtn has explicit position:relative and z-index:10 so no
-            canvas, overlay, or sibling element can sit on top of it and steal
-            pointer events. cursor:pointer makes it clearly clickable.
-          -->
-          <button
-            id="fileBtn"
-            class="btn btn-outline"
-            type="button"
-            style="position:relative;z-index:10;cursor:pointer;"
-          >Browse Files</button>
+          <button id="fileBtn" class="btn btn-outline" type="button" style="position:relative;z-index:10;cursor:pointer;">Browse Files</button>
         </div>
         <div class="upload-row">
           <button id="micBtn" class="btn btn-mic">
@@ -271,7 +255,6 @@
             <div id="tpScrubFill" class="tp-scrub-fill"></div>
             <div id="tpScrubThumb" class="tp-scrub-thumb"></div>
           </div>
-          <!-- Hidden range input for app.js seek logic compatibility -->
           <input type="range" id="tpSeek" min="0" max="1000" value="0" step="1" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;pointer-events:none;" tabindex="-1" aria-hidden="true" />
         </div>
       </div>
@@ -289,7 +272,7 @@
         <canvas id="specCanvas" class="viz-canvas" aria-label="Spectrogram visualization"></canvas>
       </div>
 
-      <!-- 3D Spectrogram (dedicated space) -->
+      <!-- 3D Spectrogram -->
       <div class="card viz-card" id="spec3dCard">
         <div class="viz-hdr">
           <span>3D Spectrogram</span><span class="viz-badge">Three.js</span>
@@ -405,8 +388,6 @@
           <span class="viz-badge">Hybrid ML+DSP</span>
           <span class="viz-badge iso-drop-hint" id="isoDropHint" style="margin-left:auto;opacity:0.55;font-size:0.55rem;">Drop audio here to load</span>
         </div>
-
-        <!-- Step 1: Isolation Settings -->
         <div class="iso-section">
           <div class="iso-section-hdr">1 · Isolation Settings</div>
           <div class="isolation-globals">
@@ -418,17 +399,17 @@
                 <option value="classical">Classical DSP</option>
               </select>
             </div>
-            <div class="sr-row" data-desc="Minimum confidence threshold for speaker detection. Higher values require stronger voice signatures — fewer false positives but may miss quieter speech. Lower values catch more speech but risk including noise.">
+            <div class="sr-row" data-desc="Minimum confidence threshold for speaker detection.">
               <label class="sr-label" for="isolationConfidenceSlider">Confidence</label>
               <input type="range" id="isolationConfidenceSlider" min="40" max="95" value="65" step="1" />
               <span id="isolationConfidenceReadout" class="sr-val">65%</span>
             </div>
-            <div class="sr-row" data-desc="Controls how much background audio (non-voice) remains in the output. 0% = fully suppressed background (clean voice only). 100% = full background level preserved alongside the isolated voice.">
+            <div class="sr-row" data-desc="Controls how much background audio remains in the output.">
               <label class="sr-label" for="isolationBgVolumeSlider">Bg Level</label>
               <input type="range" id="isolationBgVolumeSlider" min="0" max="100" value="0" step="1" />
               <span id="isolationBgReadout" class="sr-val">0%</span>
             </div>
-            <div class="sr-row" data-desc="Applies post-processing refinement to the spectral separation mask. Smooths edges between voice and noise regions, reducing artifacts like musical noise and spectral tearing. Disable for raw unprocessed masks.">
+            <div class="sr-row" data-desc="Applies post-processing refinement to the spectral separation mask.">
               <label class="sr-label" for="isolationMaskRefine">Mask Refine</label>
               <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
                 <input type="checkbox" id="isolationMaskRefine" checked />
@@ -437,47 +418,27 @@
             </div>
           </div>
         </div>
-
-        <!-- Step 2: Background Sound Suppression -->
         <div class="iso-section">
           <div class="iso-section-hdr">2 · Mute Background Sounds
             <span style="font-size:0.55rem;font-weight:400;color:#64748b;margin-left:6px;">Applied during Process</span>
           </div>
-          <p class="iso-hint">Toggle sounds you want suppressed from the output. Works alongside noise reduction.</p>
+          <p class="iso-hint">Toggle sounds you want suppressed from the output.</p>
           <div class="sound-mute-grid" id="soundMuteGrid">
-            <button class="sound-mute-btn" data-cat="appliance" title="Washing machine, AC, fan, dryer — low-frequency mechanical hum (20–500 Hz)">
-              <span class="smb-icon">🏠</span><span class="smb-label">Appliances</span>
-            </button>
-            <button class="sound-mute-btn" data-cat="music" title="Background music — tonal and harmonic content across mid frequencies">
-              <span class="smb-icon">🎵</span><span class="smb-label">Music</span>
-            </button>
-            <button class="sound-mute-btn" data-cat="dog" title="Dog barking, animal sounds — impulsive bursts 300–3,000 Hz">
-              <span class="smb-icon">🐕</span><span class="smb-label">Dog/Animal</span>
-            </button>
-            <button class="sound-mute-btn" data-cat="bird" title="Bird chirps and tweets — high-frequency transients 2–10 kHz">
-              <span class="smb-icon">🐦</span><span class="smb-label">Birds</span>
-            </button>
-            <button class="sound-mute-btn" data-cat="traffic" title="Traffic, engine noise, outdoor ambience — low-mid broadband noise">
-              <span class="smb-icon">🚗</span><span class="smb-label">Traffic</span>
-            </button>
-            <button class="sound-mute-btn" data-cat="crowd" title="Crowd chatter, multiple voices, restaurant noise — competing speech band">
-              <span class="smb-icon">👥</span><span class="smb-label">Crowd</span>
-            </button>
+            <button class="sound-mute-btn" data-cat="appliance" title="Washing machine, AC, fan"><span class="smb-icon">🏠</span><span class="smb-label">Appliances</span></button>
+            <button class="sound-mute-btn" data-cat="music" title="Background music"><span class="smb-icon">🎵</span><span class="smb-label">Music</span></button>
+            <button class="sound-mute-btn" data-cat="dog" title="Dog barking"><span class="smb-icon">🐕</span><span class="smb-label">Dog/Animal</span></button>
+            <button class="sound-mute-btn" data-cat="bird" title="Bird chirps"><span class="smb-icon">🐦</span><span class="smb-label">Birds</span></button>
+            <button class="sound-mute-btn" data-cat="traffic" title="Traffic noise"><span class="smb-icon">🚗</span><span class="smb-label">Traffic</span></button>
+            <button class="sound-mute-btn" data-cat="crowd" title="Crowd chatter"><span class="smb-icon">👥</span><span class="smb-label">Crowd</span></button>
           </div>
-          <div id="soundMuteStatus" class="sound-mute-status">No sounds muted — all background is processed normally</div>
+          <div id="soundMuteStatus" class="sound-mute-status">No sounds muted</div>
         </div>
-
-        <!-- Step 3: Detected Speakers -->
         <div class="iso-section">
           <div class="iso-section-hdr">3 · Detected Speakers
             <span style="font-size:0.55rem;font-weight:400;color:#64748b;margin-left:6px;">Auto-detected after processing</span>
           </div>
-          <div id="speakerCardsGrid">
-            <span class="iso-empty-msg">Process audio to detect and isolate individual speakers</span>
-          </div>
+          <div id="speakerCardsGrid"><span class="iso-empty-msg">Process audio to detect and isolate individual speakers</span></div>
         </div>
-
-        <!-- Voiceprint enroll -->
         <div class="iso-section" style="border-top:1px solid #1e293b;padding-top:10px;margin-top:0;">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span class="sr-label">Voiceprint</span>
@@ -497,12 +458,10 @@
       <!-- Batch Processing -->
       <div class="card" id="batchCard" style="display:none">
         <div class="viz-hdr"><span>Batch Processing</span><span id="batchCount" class="viz-badge">0 files</span></div>
-        <div class="batch-drop" id="batchDrop" role="button" tabindex="0" aria-label="Drop multiple audio files for batch processing">
-          Drop multiple files here
-        </div>
+        <div class="batch-drop" id="batchDrop" role="button" tabindex="0" aria-label="Drop multiple audio files for batch processing">Drop multiple files here</div>
         <div id="batchList" class="batch-list"></div>
         <div class="batch-actions">
-          <button id="batchProcessBtn" class="btn btn-primary" disabled title="Add files to the batch list to process">Process All</button>
+          <button id="batchProcessBtn" class="btn btn-primary" disabled>Process All</button>
           <button id="batchClearBtn" class="btn">Clear</button>
           <span id="batchProgress" class="batch-progress"></span>
         </div>
@@ -527,9 +486,7 @@
     <span>100% Local Processing · Zero Data Transmission · Privacy First</span>
   </footer>
 
-  <!-- Toast notification region for transient messages (errors, warnings, info) -->
   <div id="toastRegion" class="toast-region" role="status" aria-live="polite" aria-atomic="true"></div>
-
   <div id="tooltip" class="slider-tooltip"></div>
 
   <!-- Mobile sticky action bar -->
@@ -538,7 +495,7 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
       Process
     </button>
-    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled title="Process an audio file first" aria-label="Re-process audio">Re-Process</button>
+    <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled aria-label="Re-process audio">Re-Process</button>
     <button id="mobileStopBtn" class="btn btn-danger" style="display:none" aria-label="Stop processing">Stop</button>
   </div>
 
@@ -562,6 +519,13 @@
   <script src="./app.js"></script>
   <script src="./vip-boot.js"></script>
   <script src="./controls-test.js"></script>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       PREMIUM PROCESSING OVERLAY — DNA helix spinner
+       Must load AFTER app.js so the patch can wrap runPipeline()
+  ════════════════════════════════════════════════════════════ -->
+  <script src="/app/processing-overlay.js"></script>
+  <script src="/app/processing-overlay-patch.js"></script>
 
   <script>
     (function _vipSafetyNet() {
@@ -601,19 +565,12 @@
     window.updateSpeakerCards  = IC.updateSpeakerCards;
     window.setActiveSpeakerCard= IC.setActiveSpeakerCard;
     window._attachMLWorkerToIsolation = IC.attachMLWorker;
-    // Boot the diarization timeline + speaker isolation controls. These
-    // bind purely to DOM/worker — no AudioContext required — so we run as
-    // soon as the orchestrator instance exists rather than gating on
-    // orch.initialized (which is only set after the user's first gesture).
     let _booted = false;
     function _boot() {
       if (_booted) return;
       const orch = window._vipOrch;
       if (!orch) return;
       _booted = true;
-      // Lazy mlWorker lookup — the worker is set on the orch ~immediately
-      // (web worker prewarm doesn't need a user gesture), but UI bindings
-      // run before that, so always read orch.mlWorker at dispatch time.
       const mlSend = (msg) => { try { orch.mlWorker?.postMessage(msg); } catch (_) {} };
       DT.initDiarizationTimeline({
         canvasId:        'diarCanvas',
@@ -635,7 +592,6 @@
         onVolume: (id, volumes) => mlSend({ type: 'speakerVolumes', payload: volumes }),
         onEnrollFromSeg: (id) => mlSend({ type: 'enrollFromDiarization', payload: { speakerId: id } }),
       });
-      // Re-trigger diarization if audio was loaded before the UI was ready
       const app = window._vipApp;
       if (app?.inputBuffer && orch.mlWorker) {
         app._triggerDiarization(app.inputBuffer).catch(() => {});
