@@ -341,6 +341,12 @@ const VIDEO_UPLOAD_EXTENSIONS = ['.mp4', '.webm', '.mov', '.mkv', '.m4v', '.avi'
 const AUDIO_UPLOAD_EXTENSIONS = ['.wav', '.mp3', '.flac', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.aiff', '.aif'];
 
 // ============================================
+
+const CONSTANTS = {
+  SAMPLE_RATE_44100: 44100,
+  MS_IN_SECOND: 1000
+};
+
 class VoiceIsolatePro {
   constructor() {
     this.ctx = null;
@@ -730,7 +736,7 @@ class VoiceIsolatePro {
     bind('stopBtn', this.dom.tpStop, 'click', () => this.stop());
     bind('tpRew', this.dom.tpRew, 'click', () => this.seekDelta(-5));
     bind('tpFwd', this.dom.tpFwd, 'click', () => this.seekDelta(5));
-    if (this.dom.tpSeek) bind('tpSeek', this.dom.tpSeek, 'input', () => this.seekTo(this.dom.tpSeek.value / 1000));
+    if (this.dom.tpSeek) bind('tpSeek', this.dom.tpSeek, 'input', () => this.seekTo(this.dom.tpSeek.value / CONSTANTS.MS_IN_SECOND));
     if (this.dom.tpScrubTrack) bind('tpScrubTrack', this.dom.tpScrubTrack, 'pointerdown', e => {
       const r = this.dom.tpScrubTrack.getBoundingClientRect();
       this.seekTo((e.clientX - r.left) / r.width);
@@ -1937,14 +1943,14 @@ class VoiceIsolatePro {
       await this.pip(23, total);
       const cmp = ofl.createDynamicsCompressor();
       cmp.threshold.value = p.compThresh; cmp.ratio.value = p.compRatio;
-      cmp.attack.value = p.compAttack / 1000; cmp.release.value = p.compRelease / 1000; cmp.knee.value = p.compKnee;
+      cmp.attack.value = p.compAttack / CONSTANTS.MS_IN_SECOND; cmp.release.value = p.compRelease / CONSTANTS.MS_IN_SECOND; cmp.knee.value = p.compKnee;
       const mkG = ofl.createGain(); mkG.gain.value = Math.pow(10, p.compMakeup / 20);
 
       // Limiter
       await this.pip(24, total);
       const lim = ofl.createDynamicsCompressor();
       lim.threshold.value = p.limThresh; lim.knee.value = 0; lim.ratio.value = 20;
-      lim.attack.value = 0.001; lim.release.value = p.limRelease / 1000;
+      lim.attack.value = 0.001; lim.release.value = p.limRelease / CONSTANTS.MS_IN_SECOND;
 
       // Output gain
       const oG = ofl.createGain(); oG.gain.value = Math.pow(10, p.outGain / 20);
@@ -1996,7 +2002,7 @@ class VoiceIsolatePro {
       await this.pip(30, total);
       await this.pip(31, total);
 
-      this.dom.stProcTime.textContent = ((performance.now() - t0) / 1000).toFixed(2) + 's';
+      this.dom.stProcTime.textContent = ((performance.now() - t0) / CONSTANTS.MS_IN_SECOND).toFixed(2) + 's';
       this.outputBuffer = fin;
       // Persist result so next load of same file + params is instant (non-blocking)
       if (this._lastLoadedFile) {
@@ -2467,14 +2473,116 @@ class VoiceIsolatePro {
     this.dom.hStatus.textContent = 'S' + (i + 1);
     await new Promise(r => typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(() => r()) : setTimeout(r, 0));
   }
-  mixDW(dry,wet,wAmt){const c=this.ctx;const nCh=Math.min(dry.numberOfChannels,wet.numberOfChannels);const len=Math.min(dry.length,wet.length);const out=c.createBuffer(nCh,len,dry.sampleRate);for(let ch=0;ch<nCh;ch++){const d=dry.getChannelData(ch);const w=wet.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=d[i]*(1-wAmt)+w[i]*wAmt;}return out;}
-  peakNorm(buf,tDb){const c=this.ctx;const nCh=buf.numberOfChannels;const len=buf.length;const out=c.createBuffer(nCh,len,buf.sampleRate);let pk=0;for(let ch=0;ch<nCh;ch++){const d=buf.getChannelData(ch);for(let i=0;i<len;i++){const a=Math.abs(d[i]);if(a>pk)pk=a;}}if(pk===0)return buf;const g=Math.pow(10,tDb/20)/pk;for(let ch=0;ch<nCh;ch++){const inp=buf.getChannelData(ch);const o=out.getChannelData(ch);for(let i=0;i<len;i++)o[i]=Math.max(-1,Math.min(1,inp[i]*g));}return out;}
-  makeHarm(amt,ord){const n=44100;const c=new Float32Array(n);const k=amt*(ord||3)*2+1;for(let i=0;i<n;i++){const x=(i*2)/n-1;c[i]=Math.tanh(k*x)/Math.tanh(k);}return c;}
-  estVoices(buf){const d=buf.getChannelData(0);const sr=buf.sampleRate;const bs=Math.floor(sr*0.5);let act=0;for(let i=0;i<d.length;i+=bs){let r=0;const e=Math.min(i+bs,d.length);for(let j=i;j<e;j++)r+=d[j]*d[j];r=Math.sqrt(r/(e-i));if(r>0.01)act++;}return act<3?'0-1':act<10?'1':'1-2+';}
+  mixDW(dry, wet, wAmt) {
+    const c = this.ctx;
+    const nCh = Math.min(dry.numberOfChannels, wet.numberOfChannels);
+    const len = Math.min(dry.length, wet.length);
+    const out = c.createBuffer(nCh, len, dry.sampleRate);
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = dry.getChannelData(ch);
+      const w = wet.getChannelData(ch);
+      const o = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        o[i] = d[i] * (1 - wAmt) + w[i] * wAmt;
+      }
+    }
+    return out;
+  }
+  peakNorm(buf, tDb) {
+    const c = this.ctx;
+    const nCh = buf.numberOfChannels;
+    const len = buf.length;
+    const out = c.createBuffer(nCh, len, buf.sampleRate);
+    let pk = 0;
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        const a = Math.abs(d[i]);
+        if (a > pk) pk = a;
+      }
+    }
+    if (pk === 0) return buf;
+    const g = Math.pow(10, tDb / 20) / pk;
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const o = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        o[i] = Math.max(-1, Math.min(1, inp[i] * g));
+      }
+    }
+    return out;
+  }
+  makeHarm(amt, ord) {
+    const n = CONSTANTS.SAMPLE_RATE_44100;
+    const c = new Float32Array(n);
+    const k = amt * (ord || 3) * 2 + 1;
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      c[i] = Math.tanh(k * x) / Math.tanh(k);
+    }
+    return c;
+  }
+  estVoices(buf) {
+    const d = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    const bs = Math.floor(sr * 0.5);
+    let act = 0;
+    for (let i = 0; i < d.length; i += bs) {
+      let r = 0;
+      const e = Math.min(i + bs, d.length);
+      for (let j = i; j < e; j++) r += d[j] * d[j];
+      r = Math.sqrt(r / (e - i));
+      if (r > 0.01) act++;
+    }
+    return act < 3 ? '0-1' : act < 10 ? '1' : '1-2+';
+  }
 
   // ---- SAVE ----
-  saveWav(buf,label){if(!buf)return;const w=this.encWav(buf);const b=new Blob([w],{type:'audio/wav'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='voiceisolate_v22_'+label+'_'+Date.now()+'.wav';document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(a.href);}
-  encWav(buf){const nCh=buf.numberOfChannels;const sr=buf.sampleRate;const dL=buf.length*nCh*2;const a=new ArrayBuffer(44+dL);const v=new DataView(a);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+dL,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nCh,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nCh*2,true);v.setUint16(32,nCh*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,dL,true);let off=44;for(let i=0;i<buf.length;i++)for(let ch=0;ch<nCh;ch++){let s=buf.getChannelData(ch)[i];s=Math.max(-1,Math.min(1,s));v.setInt16(off,s<0?s*0x8000:s*0x7FFF,true);off+=2;}return a;}
+  saveWav(buf, label) {
+    if (!buf) return;
+    const w = this.encWav(buf);
+    const b = new Blob([w], { type: 'audio/wav' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = 'voiceisolate_v22_' + label + '_' + Date.now() + '.wav';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }
+  encWav(buf) {
+    const nCh = buf.numberOfChannels;
+    const sr = buf.sampleRate;
+    const dL = buf.length * nCh * 2;
+    const a = new ArrayBuffer(44 + dL);
+    const v = new DataView(a);
+    const ws = (o, s) => {
+      for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
+    };
+    ws(0, 'RIFF');
+    v.setUint32(4, 36 + dL, true);
+    ws(8, 'WAVE');
+    ws(12, 'fmt ');
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, nCh, true);
+    v.setUint32(24, sr, true);
+    v.setUint32(28, sr * nCh * 2, true);
+    v.setUint16(32, nCh * 2, true);
+    v.setUint16(34, 16, true);
+    ws(36, 'data');
+    v.setUint32(40, dL, true);
+    let off = 44;
+    for (let i = 0; i < buf.length; i++) {
+      for (let ch = 0; ch < nCh; ch++) {
+        let s = buf.getChannelData(ch)[i];
+        s = Math.max(-1, Math.min(1, s));
+        v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        off += 2;
+      }
+    }
+    return a;
+  }
 
   // ======== VISUALIZATIONS (existing) ========
   initCanvases(){
@@ -2554,7 +2662,7 @@ class VoiceIsolatePro {
       ana.getByteFrequencyData(arr);
       const w=c.width;const h=c.height;const sw=2;
       if(this.spectroX+sw>=w){const img=x.getImageData(sw,0,w-sw,h);x.putImageData(img,0,0);x.fillStyle='#030306';x.fillRect(w-sw,0,sw,h);this.spectroX=w-sw;}
-      for(let y=0;y<h;y++){const fi=Math.floor((y/h)*bLen);const val=arr[bLen-1-fi];const muted=this.isBandMuted(fi,bLen,ana.context?ana.context.sampleRate:44100);x.fillStyle=muted?'rgba(30,30,30,0.8)':this.sColor(val,fi,bLen);x.fillRect(this.spectroX,y,sw,1);}
+      for(let y=0;y<h;y++){const fi=Math.floor((y/h)*bLen);const val=arr[bLen-1-fi];const muted=this.isBandMuted(fi,bLen,ana.context?ana.context.sampleRate:CONSTANTS.SAMPLE_RATE_44100);x.fillStyle=muted?'rgba(30,30,30,0.8)':this.sColor(val,fi,bLen);x.fillRect(this.spectroX,y,sw,1);}
       this.spectroX+=sw;
       this.update3D(arr);
     };
@@ -2588,7 +2696,25 @@ class VoiceIsolatePro {
     }
   }
 
-  onSpectroClick(e){const r=this.dom.spectro3DCanvas.getBoundingClientRect();const y=1-((e.clientY-r.top)/r.height);const sr=this.ctx?this.ctx.sampleRate:44100;const freq=y*(sr/2);const bw=sr/20;const lo=Math.max(0,freq-bw/2);const hi=freq+bw/2;const key=Math.round(lo)+'-'+Math.round(hi);let found=false;for(const b of this.mutedBands){if(b.key===key){this.mutedBands.delete(b);found=true;break;}}if(!found)this.mutedBands.add({lo,hi,key});}
+  onSpectroClick(e) {
+    const r = this.dom.spectro3DCanvas.getBoundingClientRect();
+    const y = 1 - ((e.clientY - r.top) / r.height);
+    const sr = this.ctx ? this.ctx.sampleRate : 44100;
+    const freq = y * (sr / 2);
+    const bw = sr / 20;
+    const lo = Math.max(0, freq - bw / 2);
+    const hi = freq + bw / 2;
+    const key = Math.round(lo) + '-' + Math.round(hi);
+    let found = false;
+    for (const b of this.mutedBands) {
+      if (b.key === key) {
+        this.mutedBands.delete(b);
+        found = true;
+        break;
+      }
+    }
+    if (!found) this.mutedBands.add({ lo, hi, key });
+  }
 
   startFreq(ana){
     const c=this.dom.freqCanvas;if(!c)return;this.resizeCanvas(c);const x=c.getContext('2d');const bLen=ana.frequencyBinCount;const arr=new Uint8Array(bLen);
