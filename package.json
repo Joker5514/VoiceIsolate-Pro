@@ -32,6 +32,7 @@
     "lint:fix": "eslint public/app/app.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js --fix",
     "validate": "node scripts/validate.js",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --coverage",
+    "test:live": "node scripts/live-smoke.cjs",
     "build:mobile": "npm run build && npx cap sync",
     "cap:sync": "npx cap sync",
     "cap:open:android": "npx cap open android",
