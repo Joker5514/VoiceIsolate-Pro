@@ -848,37 +848,67 @@ const DSPCore = {
 
     // Bin index corresponding to 8 kHz
     const bin8k = Math.round(8000 / (sampleRate / fftSize));
-    // Formant search range: F1 typically 200–1000 Hz, F2 1000–3500 Hz
+    // Formant search range: F1 typically 200–1000 Hz, F2 1000–3500 Hz.
+    // Make the two ranges disjoint so the bin at the boundary isn't picked
+    // twice (which used to compound the formant boost on a single bin).
     const f1Lo = Math.round(200 / (sampleRate / fftSize));
     const f1Hi = Math.round(1000 / (sampleRate / fftSize));
-    const f2Lo = Math.round(1000 / (sampleRate / fftSize));
+    const f2Lo = f1Hi + 1;
     const f2Hi = Math.round(3500 / (sampleRate / fftSize));
+
+    // Absolute per-bin boost cap relative to the frame's *original*
+    // magnitudes. Without an absolute cap, repeated formant + peak + SBR
+    // passes within a single frame could compound into >2× swings, which
+    // is what produced the shimmery "garble" on broadband material.
+    const perBinCap = 1.5;
+    // Reusable per-frame snapshot of the original magnitudes (allocated once,
+    // re-filled on each frame). We use this both for prominence checks
+    // (so detection isn't biased by earlier in-frame edits) and as the
+    // anchor for the absolute cap below.
+    const orig = new Float32Array(halfN);
 
     for (let f = 0; f < mag.length; f++) {
       const m = mag[f];
+      // Snapshot original magnitudes for this frame.
+      for (let k = 0; k < halfN; k++) orig[k] = m[k];
+      // Per-bin cap upper bound (= original × perBinCap).
+      const capOf = (k) => orig[k] * perBinCap;
 
       // ---- Formant preservation ----
+      // Only protect a formant when the picked peak is genuinely prominent
+      // (≥ 1.5× the band mean of the *original* spectrum). Boosting the
+      // strongest bin in every frame unconditionally produced a moving
+      // "shimmer" — the picked bin hops ±1–2 bins as the spectrum wiggles
+      // and a 1.15× gain only on those moving bins is exactly what humans
+      // hear as garbled tonal noise on the formant.
       if (formantProtection && f1Lo < f1Hi && f2Lo < f2Hi) {
-        // Detect F1 peak
-        let f1Bin = f1Lo;
-        let f1Max = 0;
-        for (let k = f1Lo; k <= Math.min(f1Hi, halfN - 1); k++) {
-          if (m[k] > f1Max) { f1Max = m[k]; f1Bin = k; }
-        }
-        // Detect F2 peak
-        let f2Bin = f2Lo;
-        let f2Max = 0;
-        for (let k = f2Lo; k <= Math.min(f2Hi, halfN - 1); k++) {
-          if (m[k] > f2Max) { f2Max = m[k]; f2Bin = k; }
-        }
-        // Protect ±2 bins around each formant from attenuation
+        const meanInBand = (lo, hi) => {
+          let sum = 0; let cnt = 0;
+          const top = Math.min(hi, halfN - 1);
+          for (let k = lo; k <= top; k++) { sum += orig[k]; cnt++; }
+          return cnt > 0 ? sum / cnt : 0;
+        };
+        const findPeak = (lo, hi) => {
+          let bin = lo, max = 0;
+          const top = Math.min(hi, halfN - 1);
+          for (let k = lo; k <= top; k++) if (orig[k] > max) { max = orig[k]; bin = k; }
+          return { bin, max };
+        };
         const protect = (center) => {
           const lo = Math.max(0, center - 2);
           const hi = Math.min(halfN - 1, center + 2);
-          for (let k = lo; k <= hi; k++) m[k] *= 1.15; // slight boost to protect
+          for (let k = lo; k <= hi; k++) {
+            const out = m[k] * 1.10;
+            const cap = capOf(k);
+            m[k] = out < cap ? out : cap;
+          }
         };
-        if (f1Max > 0) protect(f1Bin);
-        if (f2Max > 0) protect(f2Bin);
+        const f1Mean = meanInBand(f1Lo, f1Hi);
+        const f1 = findPeak(f1Lo, f1Hi);
+        if (f1.max > 1.5 * f1Mean && f1.max > 0) protect(f1.bin);
+        const f2Mean = meanInBand(f2Lo, f2Hi);
+        const f2 = findPeak(f2Lo, f2Hi);
+        if (f2.max > 1.5 * f2Mean && f2.max > 0) protect(f2.bin);
       }
 
       // ---- Breathiness control ----
@@ -901,26 +931,44 @@ const DSPCore = {
         }
       }
 
-      // ---- Harmonic peak boost (original v1 logic, preserved) ----
+      // ---- Harmonic peak boost ----
+      // Boost only peaks that are genuinely prominent in the *original*
+      // spectrum (≥ 1.3× neighbours); the previous "any local max" rule
+      // fired on noisy spectra and drove garbling because the picked bin
+      // set is unstable across frames.
+      const peakBoost = 1 + (amount / 200); // half the previous gain
       for (let k = 2; k < Math.min(bin8k, halfN - 2); k++) {
-        if (m[k] > m[k-1] && m[k] > m[k+1] &&
-            m[k] > m[k-2] && m[k] > m[k+2]) {
-          m[k] *= boost;
+        const o = orig[k];
+        if (o > orig[k-1] * 1.3 && o > orig[k+1] * 1.3 &&
+            o > orig[k-2] * 1.3 && o > orig[k+2] * 1.3) {
+          const out = m[k] * peakBoost;
+          const cap = capOf(k);
+          m[k] = out < cap ? out : cap;
         }
       }
 
       // ---- Spectral Band Replication (SBR) above 8 kHz ----
+      // SBR copies magnitudes from the 4–8 kHz region into bins above 8 kHz.
+      // Because phase is preserved, those upper bins keep their original
+      // (often noise-like) phase — boosting the magnitude with mismatched
+      // phase produces incoherent high-frequency noise. Mitigations:
+      //  - lower replication strength (×0.3 of `amount`)
+      //  - the candidate is bounded by the *source* bin × decay × strength,
+      //    so the upper-band magnitude can never exceed the source level.
+      //    The per-frame `capOf` (relative to original destination) is NOT
+      //    applied here, so SBR can still fill bins that started at zero
+      //    (its primary purpose).
       if (sbr && bin8k > 4 && bin8k < halfN - 1) {
-        // Map lower-band bins (4k-8k Hz reflected) into the 8k+ region
         const srcLo = Math.round(4000 / (sampleRate / fftSize));
         const srcRange = bin8k - srcLo;
+        const sbrStrength = (amount / 100) * 0.3;
         for (let k = bin8k; k < halfN; k++) {
           const dist = k - bin8k;
           const srcBin = bin8k - 1 - (dist % Math.max(1, srcRange));
           if (srcBin >= srcLo && srcBin < bin8k) {
-            // Attenuate with distance; use original phase
             const decay = Math.exp(-dist / Math.max(1, srcRange));
-            m[k] = Math.max(m[k], m[srcBin] * decay * (amount / 100));
+            const candidate = orig[srcBin] * decay * sbrStrength;
+            if (candidate > m[k]) m[k] = candidate;
           }
         }
       }
@@ -945,25 +993,67 @@ const DSPCore = {
     return mag;
   },
 
-  /** S19: Late reverb tail estimation and spectral subtraction */
+  /**
+   * S19: Late reverb tail estimation and spectral subtraction.
+   *
+   * The reverb estimate must be built from the **original** (un-attenuated)
+   * magnitudes of past frames; reading from `mag[f-d]` after we've already
+   * mutated those frames in earlier iterations causes runaway suppression at
+   * voice onsets (each successive frame sees a smaller "past" → bigger
+   * apparent gap → more attenuation). We therefore snapshot the rolling
+   * window of past magnitudes before applying the gain.
+   */
   dereverb(mag, amount, decaySec, sr, hopSize) {
     if (amount <= 0) return mag;
     const framesPerSec = sr / (hopSize || 1024);
     const decayFrames = Math.max(1, Math.floor(decaySec * framesPerSec));
     const alpha = amount / 100;
+    if (mag.length === 0) return mag;
+    const numBins = mag[0].length;
 
-    for (let f = decayFrames; f < mag.length; f++) {
-      for (let k = 0; k < mag[f].length; k++) {
-        // Estimate reverb from past frames
-        let reverbEst = 0;
-        for (let d = 1; d <= decayFrames && f - d >= 0; d++) {
-          reverbEst += mag[f - d][k] * Math.exp(-3 * d / decayFrames);
+    // Precompute exponential decay weights once.
+    const weights = new Float32Array(decayFrames);
+    let weightSum = 0;
+    for (let d = 1; d <= decayFrames; d++) {
+      weights[d - 1] = Math.exp(-3 * d / decayFrames);
+      weightSum += weights[d - 1];
+    }
+    if (weightSum <= 0) return mag;
+
+    // Rolling buffer of the last `decayFrames` *original* magnitude frames.
+    const history = new Array(decayFrames);
+    for (let i = 0; i < decayFrames; i++) history[i] = new Float32Array(numBins);
+    let histPos = 0;
+    let histFilled = 0;
+
+    for (let f = 0; f < mag.length; f++) {
+      const cur = mag[f];
+
+      // Snapshot the ORIGINAL magnitudes for this frame *before* any gain is
+      // applied. This is what later frames will see as "past" when they
+      // estimate the reverb tail — using post-attenuation values caused the
+      // estimate to shrink frame-after-frame, producing runaway suppression.
+      const slot = history[histPos];
+      for (let k = 0; k < numBins; k++) slot[k] = cur[k];
+      histPos = (histPos + 1) % decayFrames;
+      if (histFilled < decayFrames) histFilled++;
+
+      // Now apply the dereverb gain using the snapshotted history (which
+      // does NOT include the slot we just wrote — it walks from newest past
+      // backwards, skipping the current frame).
+      if (histFilled > decayFrames - 1) {
+        for (let k = 0; k < numBins; k++) {
+          let reverbEst = 0;
+          for (let d = 0; d < decayFrames; d++) {
+            // Walk newest→oldest, but skip the slot we just wrote (the
+            // current frame) by starting at (histPos - 2).
+            const idx = ((histPos - 2 - d) % decayFrames + decayFrames) % decayFrames;
+            reverbEst += history[idx][k] * weights[d];
+          }
+          reverbEst /= weightSum;
+          const gain = Math.max(0.1, 1 - alpha * reverbEst / (cur[k] + 1e-10));
+          cur[k] *= gain;
         }
-        reverbEst /= decayFrames;
-
-        // Subtract reverb estimate
-        const gain = Math.max(0.05, 1 - alpha * reverbEst / (mag[f][k] + 1e-10));
-        mag[f][k] *= gain;
       }
     }
     return mag;
