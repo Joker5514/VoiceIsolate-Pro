@@ -62,6 +62,9 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Validate ONNX model CDN URLs
+        run: node --input-type=module scripts/validate-onnx-models.js
+        continue-on-error: true  # warn but don't block smoke test (models may not be uploaded yet in PR context)
       - name: Install Playwright Chromium
         run: pnpm exec playwright install chromium --with-deps
       - name: Run live browser smoke test
@@ -100,9 +103,22 @@ jobs:
           [ "$APP_SIZE" -gt 1000 ] && echo "✓ app.js has content" || (echo "✗ app.js too small" && exit 1)
 
 
+  validate-models:
+    name: Validate ONNX Model CDN URLs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Check ONNX models are real binaries on HuggingFace CDN
+        run: node --input-type=module scripts/validate-onnx-models.js
+
+
   deploy-preview:
     name: Deploy Preview
-    needs: [lint-test, validate, smoke-test]
+    needs: [lint-test, validate, smoke-test, validate-models]
     if: github.event_name == 'pull_request' && secrets.VERCEL_TOKEN != ''
     runs-on: ubuntu-latest
     env:
@@ -128,7 +144,7 @@ jobs:
 
   deploy-production:
     name: Deploy Production
-    needs: [lint-test, validate, smoke-test]
+    needs: [lint-test, validate, smoke-test, validate-models]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.VERCEL_TOKEN != ''
     runs-on: ubuntu-latest
     env:
