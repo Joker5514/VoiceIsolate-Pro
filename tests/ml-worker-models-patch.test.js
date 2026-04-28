@@ -1,15 +1,14 @@
 /**
- * VoiceIsolate Pro — ml-worker-models-patch.js source-inspection tests.
+ * VoiceIsolate Pro — ml-worker model-absence graceful degradation tests.
  *
- * The patch file wires absent-model fallbacks: it stamps the pipeline UI with
- * model status, surfaces a banner when models are missing, and intercepts ML
- * worker messages to keep stages running in DSP-only mode. It uses DOM and
- * window globals at top level, so we cover its contract via source-level
- * assertions until a jsdom integration suite exists.
+ * The patch code (merged into pipeline-orchestrator.js) wires absent-model
+ * fallbacks: it stamps the pipeline UI with model status, surfaces a banner
+ * when models are missing, and intercepts ML worker messages to keep stages
+ * running in DSP-only mode. Covered via source-level assertions.
  *
- * Key invariant under test: the manifest in this file MUST stay key-consistent
- * with MODEL_REGISTRY in ml-worker-fetch-cache.js — drift causes silent
- * pass-through where the user expects ML inference.
+ * Key invariant under test: the manifest in pipeline-orchestrator.js MUST stay
+ * key-consistent with MODEL_REGISTRY in ml-worker-fetch-cache.js — drift causes
+ * silent pass-through where the user expects ML inference.
  */
 
 'use strict';
@@ -18,7 +17,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const PATCH_SRC = fs.readFileSync(
-  path.join(__dirname, '../public/app/ml-worker-models-patch.js'),
+  path.join(__dirname, '../public/app/pipeline-orchestrator.js'),
   'utf8'
 );
 const FETCH_SRC = fs.readFileSync(
@@ -34,7 +33,7 @@ function extractKeys(src, blockRegex) {
   return [...m[1].matchAll(/^\s{2,}([a-z][\w_]*)\s*:\s*\{/gm)].map((x) => x[1]);
 }
 
-describe('ml-worker-models-patch.js — manifest', () => {
+describe('pipeline-orchestrator.js — MODEL_MANIFEST', () => {
   test('declares MODEL_MANIFEST', () => {
     expect(PATCH_SRC).toMatch(/const\s+MODEL_MANIFEST\s*=\s*\{/);
   });
@@ -71,7 +70,7 @@ describe('ml-worker-models-patch.js — manifest', () => {
   });
 });
 
-describe('ml-worker-models-patch.js — _normalizeKey alias map', () => {
+describe('pipeline-orchestrator.js — _normalizeKey alias map', () => {
   test('maps all known short aliases to canonical manifest keys', () => {
     const aliasBlock = PATCH_SRC.match(/function\s+_normalizeKey[\s\S]*?\{([\s\S]*?)return\s+map/);
     expect(aliasBlock).not.toBeNull();
@@ -91,7 +90,7 @@ describe('ml-worker-models-patch.js — _normalizeKey alias map', () => {
   });
 });
 
-describe('ml-worker-models-patch.js — public API surface', () => {
+describe('pipeline-orchestrator.js — public API surface (model patch)', () => {
   test.each([
     'window._stampPipelineStages',
     'window._checkModelFiles',
@@ -106,7 +105,7 @@ describe('ml-worker-models-patch.js — public API surface', () => {
   });
 });
 
-describe('ml-worker-models-patch.js — privacy', () => {
+describe('pipeline-orchestrator.js — model patch privacy', () => {
   test('does not load any external script or fetch a remote URL', () => {
     // sourceUrl strings (citations to upstream model repos) are static text,
     // not fetched. Confirm nothing actually fetches() http(s) URLs.

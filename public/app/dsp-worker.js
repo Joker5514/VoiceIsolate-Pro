@@ -1,8 +1,34 @@
 /* ============================================
    VoiceIsolate Pro v22.1 — DSP Worker
-   Threads from Space v11 · ML Inference Thread
+   Threads from Space v11 · Classical DSP + Offline ONNX Inference Thread
    Runs in a dedicated Worker. Owns all ONNX sessions.
    ============================================ */
+
+/**
+ * @file dsp-worker.js
+ *
+ * Classical DSP Worker — distinct from ml-worker.js.
+ *
+ * Responsibilities:
+ *   1. Classical DSP processing on audio chunks via dsp-core.js
+ *      (forward STFT → in-place spectral ops → inverse STFT)
+ *   2. Optional ONNX inference on chunked audio (request-response pattern)
+ *      using onnxruntime-web with WebGPU → WASM fallback
+ *
+ * Contrast with ml-worker.js:
+ *   - ml-worker.js: Real-time SAB ring-buffer polling for live AudioWorklet mode
+ *   - dsp-worker.js: Batch/offline request-response for OfflineAudioContext path
+ *
+ * Message protocol (all messages include { type, id, payload }):
+ *   → 'init'       { sampleRate }                       → { status, sampleRate }
+ *   → 'loadModel'  { modelName, modelPath, ortEnvConfig}→ { status, modelName, inputNames, outputNames }
+ *   → 'process'    { audioData, sampleRate, params, enabledModels } → { processedData, metrics }
+ *   → 'getMetrics' {}                                   → metrics object
+ *   → 'reset'      {}                                   → { status }
+ *
+ * SharedArrayBuffer transfer: processedData is transferred (not structured-cloned)
+ * to avoid PCM copy overhead on every processed block.
+ */
 
 'use strict';
 

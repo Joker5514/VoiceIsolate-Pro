@@ -10,6 +10,282 @@
 
 const WORKLET_READY_FALLBACK_MS = 250;
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  ML Worker: Model Absence Graceful Degradation
+//  (merged from ml-worker-models-patch.js — Patch v2.1)
+//
+//  Intercepts ml-worker.js 'modelMissing' messages, stamps ⚠ DSP badges on
+//  pipeline stage UI elements, and shows a dismissible banner listing absent
+//  model files.  DSP passthrough continues — pipeline produces output on all
+//  stages even when .onnx files are absent.
+//
+//  ✅ 100% local — no fetch to external URLs
+//  ✅ Non-destructive — does NOT modify ml-worker.js prototype
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MODEL_MANIFEST = {
+  noise_classifier:    { stageId: 'S04', stageName: 'S04 Noise Classification',     filename: 'noise_classifier.onnx',    sizeLabel: '~2.5 MB', sourceUrl: 'https://github.com/karolpiczak/ESC-50' },
+  silero_vad:          { stageId: 'S05', stageName: 'S05 Voice Activity Detection',  filename: 'silero_vad.onnx',          sizeLabel: '~1.7 MB', sourceUrl: 'https://github.com/snakers4/silero-vad/tree/master/files' },
+  deepfilter:          { stageId: 'S08', stageName: 'S08 Deep Spectral Filter',      filename: 'deepfilter-int8.onnx',     sizeLabel: '~9 MB',   sourceUrl: 'https://github.com/Rikorose/DeepFilterNet/releases' },
+  dns2_conformer_small:{ stageId: 'S10', stageName: 'S10 DNS2 Noise Suppression',   filename: 'dns2_conformer_small.onnx',sizeLabel: '~14 MB',  sourceUrl: 'https://github.com/microsoft/DNS-Challenge' },
+  bsrnn:               { stageId: 'S11', stageName: 'S11 BSRNN Source Separation',  filename: 'bsrnn-int8.onnx',          sizeLabel: '~37 MB',  sourceUrl: 'https://github.com/bytedance/music_source_separation' },
+  demucs:              { stageId: 'S13', stageName: 'S13 Demucs v4 Voice Isolation', filename: 'demucs-v4-int8.onnx',      sizeLabel: '~82 MB',  sourceUrl: 'https://github.com/facebookresearch/demucs' },
+  ecapa_tdnn:          { stageId: 'S17', stageName: 'S17 ECAPA-TDNN Speaker ID',     filename: 'ecapa-tdnn-int8.onnx',    sizeLabel: '~20 MB',  sourceUrl: 'https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb' },
+  convtasnet:          { stageId: 'S22', stageName: 'S22 ConvTasNet Speaker Sep.',   filename: 'convtasnet-int8.onnx',    sizeLabel: '~18 MB',  sourceUrl: 'https://github.com/asteroid-team/asteroid' }
+};
+
+function _normalizeKey(key) {
+  const map = {
+    vad:       'silero_vad',
+    silero:    'silero_vad',
+    df:        'deepfilter',
+    dns:       'dns2_conformer_small',
+    dns2:      'dns2_conformer_small',
+    ecapa:     'ecapa_tdnn',
+    noise:     'noise_classifier',
+    classifier:'noise_classifier'
+  };
+  return map[key] || key;
+}
+
+function _ensureBanner(absentModels) {
+  if (typeof document === 'undefined' || !document.body) return;
+  const BANNER_ID = 'vip-missing-models-banner';
+  let banner = document.getElementById(BANNER_ID);
+  if (banner) banner.remove();
+  if (absentModels.length === 0) return;
+
+  banner = document.createElement('div');
+  banner.id = BANNER_ID;
+  banner.setAttribute('role', 'alert');
+  banner.setAttribute('aria-live', 'polite');
+  banner.style.cssText = [
+    'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:99999',
+    'background:#1c1a14', 'border-bottom:1px solid #f59e0b',
+    'color:#fde68a', 'font:500 12px/1.4 "Courier New",monospace',
+    'padding:8px 12px', 'display:flex', 'align-items:flex-start',
+    'gap:12px', 'max-height:160px', 'overflow-y:auto'
+  ].join(';');
+
+  const icon = document.createElement('span');
+  icon.textContent = '⚠';
+  icon.style.cssText = 'color:#f59e0b;font-size:16px;flex-shrink:0;margin-top:1px;';
+
+  const body = document.createElement('div');
+  body.style.cssText = 'flex:1;min-width:0;';
+
+  const title = document.createElement('strong');
+  title.textContent = `VoiceIsolate Pro — ${absentModels.length} ML model(s) absent. Running DSP passthrough on affected stages.`;
+  title.style.display = 'block';
+  title.style.marginBottom = '4px';
+
+  const list = document.createElement('ul');
+  list.style.cssText = 'margin:0;padding-left:16px;list-style:disc;';
+  absentModels.forEach(key => {
+    const meta = MODEL_MANIFEST[key];
+    if (!meta) return;
+    const li   = document.createElement('li');
+    li.style.marginBottom = '2px';
+    li.innerHTML =
+      `<b>${meta.stageId}</b> — <code>${meta.filename}</code> (${meta.sizeLabel}) ` +
+      `<a href="${meta.sourceUrl}" target="_blank" rel="noopener noreferrer" ` +
+      `style="color:#7dd3fc;text-decoration:underline;">source ↗</a>`;
+    list.appendChild(li);
+  });
+
+  const hint = document.createElement('p');
+  hint.style.cssText = 'margin:4px 0 0;color:#a3a19a;font-size:11px;';
+  hint.textContent = 'Place .onnx files in public/app/models/ — see models/README.md for conversion scripts.';
+
+  body.appendChild(title);
+  body.appendChild(list);
+  body.appendChild(hint);
+
+  const close = document.createElement('button');
+  close.textContent = '✕';
+  close.setAttribute('aria-label', 'Dismiss model warning');
+  close.style.cssText = [
+    'background:none', 'border:none', 'color:#a3a19a', 'cursor:pointer',
+    'font-size:14px', 'padding:0', 'flex-shrink:0', 'align-self:flex-start',
+    'line-height:1'
+  ].join(';');
+  close.onclick = () => banner.remove();
+
+  banner.appendChild(icon);
+  banner.appendChild(body);
+  banner.appendChild(close);
+  document.body.appendChild(banner);
+}
+
+/**
+ * Stamp all pipeline stage badges based on manifest status.
+ * @param {Record<string, 'present'|'absent'>} manifest  key → status
+ */
+window._stampPipelineStages = function stampPipelineStages(manifest) {
+  if (typeof document === 'undefined') return;
+  const unmapped = Object.keys(MODEL_MANIFEST).filter(k => {
+    const normK = _normalizeKey(k);
+    return !(normK in manifest) && !(k in manifest);
+  });
+  if (unmapped.length) {
+    console.warn('[VIP] Manifest keys not returned by worker:', unmapped);
+  }
+
+  Object.entries(MODEL_MANIFEST).forEach(([modelKey, meta]) => {
+    const status   = manifest[modelKey] || manifest[_normalizeKey(modelKey)] || 'absent';
+    const isAbsent = status === 'absent';
+
+    const selectors = [
+      `[data-stage-id="${meta.stageId}"]`,
+      `[data-stage="${meta.stageId}"]`,
+      `[data-stage-id="${meta.stageId.toLowerCase()}"]`
+    ];
+    let el = null;
+    for (const sel of selectors) {
+      el = document.querySelector(sel);
+      if (el) break;
+    }
+    if (!el) return;
+
+    const existing = el.querySelector('.vip-stage-ml-status');
+    if (existing) existing.remove();
+
+    const badge = document.createElement('span');
+    badge.className    = 'vip-stage-ml-status';
+    badge.style.cssText =
+      `color:${isAbsent ? '#f59e0b' : '#34d399'};` +
+      'font-size:10px;font-weight:700;margin-left:4px;' +
+      'cursor:help;vertical-align:middle;';
+    badge.textContent  = isAbsent ? '⚠ DSP' : '● ML';
+    badge.title = isAbsent
+      ? `${meta.stageName}: model absent (${meta.filename})\nDSP passthrough active.`
+      : `${meta.stageName}: ML inference active (${meta.filename})`;
+
+    const label =
+      el.querySelector('.stage-name,.stage-label,.stage-title,h4,h3,span') || el;
+    label.appendChild(badge);
+  });
+};
+
+/**
+ * HEAD-check all model files. Returns map of key → 'present'|'absent'.
+ * @returns {Promise<Record<string, 'present'|'absent'>>}
+ */
+window._checkModelFiles = async function checkModelFiles() {
+  if (typeof fetch === 'undefined') return {};
+  const results = {};
+  await Promise.allSettled(
+    Object.entries(MODEL_MANIFEST).map(async ([key, meta]) => {
+      try {
+        const r = await fetch(`models/${meta.filename}`, { method: 'HEAD' });
+        results[key] = r.ok ? 'present' : 'absent';
+      } catch {
+        results[key] = 'absent';
+      }
+    })
+  );
+  return results;
+};
+
+/**
+ * Apply graceful-degradation patch to an ML Worker instance.
+ * Intercepts worker messages and wires onWarning / onManifest callbacks.
+ *
+ * @param {Worker} worker          The ml-worker.js Worker instance
+ * @param {object} [opts]
+ * @param {boolean} [opts.logToConsole=true]
+ * @param {function} [opts.onWarning]   (stageId, modelKey, meta) => void
+ * @param {function} [opts.onManifest]  (manifest) => void
+ */
+window._mlWorkerPatch = function mlWorkerPatch(worker, opts = {}) {
+  const { logToConsole = true, onWarning, onManifest } = opts;
+
+  const absentKeys   = new Set();
+  const manifestSeen = {};
+
+  const _prevOnMessage = worker.onmessage;
+
+  worker.onmessage = function patchedOnMessage(e) {
+    const { type } = e.data || {};
+
+    if (type === 'modelMissing') {
+      const rawKey  = e.data.model || e.data.key || '';
+      const normKey = _normalizeKey(rawKey);
+      const meta    = MODEL_MANIFEST[normKey] || MODEL_MANIFEST[rawKey] || {};
+
+      absentKeys.add(normKey);
+      manifestSeen[normKey] = 'absent';
+
+      if (logToConsole) {
+        console.warn(
+          `[VIP] ML stage missing model: "${rawKey}" (stage ${meta.stageId || '?'}) — DSP passthrough active`
+        );
+      }
+      if (typeof onWarning === 'function') {
+        onWarning(meta.stageId || rawKey, normKey, meta);
+      }
+    }
+
+    if (type === 'modelLoaded') {
+      const rawKey  = e.data.model || e.data.key || '';
+      const normKey = _normalizeKey(rawKey);
+      manifestSeen[normKey] = 'present';
+      if (logToConsole) {
+        const meta = MODEL_MANIFEST[normKey] || {};
+        console.info(`[VIP] ML model loaded: "${rawKey}" (${meta.stageName || normKey})`);
+      }
+    }
+
+    if (type === 'ready') {
+      if (e.data.models && Array.isArray(e.data.models)) {
+        e.data.models.forEach(k => {
+          const normK = _normalizeKey(k);
+          if (!(normK in manifestSeen)) manifestSeen[normK] = 'present';
+        });
+      }
+      Object.keys(MODEL_MANIFEST).forEach(k => {
+        if (!(k in manifestSeen)) manifestSeen[k] = 'absent';
+      });
+
+      if (typeof onManifest === 'function') {
+        onManifest({ ...manifestSeen });
+      }
+      if (typeof window._stampPipelineStages === 'function') {
+        window._stampPipelineStages({ ...manifestSeen });
+      }
+      const absent = Object.entries(manifestSeen)
+        .filter(([, v]) => v === 'absent')
+        .map(([k]) => k);
+      _ensureBanner(absent);
+    }
+
+    if (typeof _prevOnMessage === 'function') {
+      _prevOnMessage.call(worker, e);
+    }
+  };
+
+  window._checkModelFiles().then((presence) => {
+    Object.assign(manifestSeen, presence);
+
+    const earlyAbsent = Object.entries(presence)
+      .filter(([, v]) => v === 'absent')
+      .map(([k]) => k);
+
+    if (earlyAbsent.length > 0) {
+      _ensureBanner(earlyAbsent);
+      if (typeof window._stampPipelineStages === 'function') {
+        window._stampPipelineStages(presence);
+      }
+      if (logToConsole) {
+        console.warn(
+          '[VIP] Absent model files detected:',
+          earlyAbsent.map(k => MODEL_MANIFEST[k]?.filename || k)
+        );
+      }
+    }
+  });
+};
+
 /**
  * PipelineOrchestrator
  * ─────────────────────
@@ -137,9 +413,8 @@ class PipelineOrchestrator {
     if (!this._workletModulesLoaded) {
       try {
         await this.ctx.audioWorklet.addModule('/app/dsp-processor.js');
-        await this.ctx.audioWorklet.addModule('/app/voice-isolate-processor.js');
         console.info('[Orchestrator] AudioWorklet modules loaded', {
-          processorPath: '/app/voice-isolate-processor.js'
+          processorPath: '/app/dsp-processor.js'
         });
       } catch (err) {
         console.error('[Orchestrator] Failed to load AudioWorklet module:', err);
@@ -251,43 +526,37 @@ class PipelineOrchestrator {
       // ── Construct the ML Worker ──────────────────────────────────────────
       this.mlWorker = new Worker('./ml-worker.js');
 
-      // ── Apply graceful-degradation patch (ml-worker-models-patch.js) ────
+      // ── Apply graceful-degradation patch (inlined from ml-worker-models-patch.js) ─
       // Stamps ⚠ DSP badges on pipeline stage UI elements for any missing
       // .onnx files. Non-destructive — worker still functions without models.
-      if (typeof window._mlWorkerPatch === 'function') {
-        window._mlWorkerPatch(this.mlWorker, {
-          logToConsole: true,
-          onWarning: (stageId, modelKey, meta) => {
-            // Stamp individual stage badge
-            const el = document.querySelector(
-              `[data-stage-id="${stageId}"], [data-stage="${stageId}"]`
-            );
-            if (!el) return;
-            const existing = el.querySelector('.vip-stage-ml-status');
-            if (existing) existing.remove();
-            const badge = document.createElement('span');
-            badge.className    = 'vip-stage-ml-status';
-            badge.textContent  = '⚠ DSP';
-            badge.style.cssText =
-              'color:#f59e0b;font-size:10px;font-weight:700;' +
-              'margin-left:4px;cursor:help;vertical-align:middle;';
-            badge.title =
-              `${meta.stageName || modelKey}: model file absent
-` +
-              `Expected: models/${meta.filename || modelKey + '.onnx'}
-` +
-              `Stage running in DSP passthrough mode.`;
-            const label =
-              el.querySelector('.stage-name,.stage-label,h4,h3,span') || el;
-            label.appendChild(badge);
-          },
-          onManifest: (manifest) => {
-            if (typeof window._stampPipelineStages === 'function') {
-              window._stampPipelineStages(manifest);
-            }
-          }
-        });
-      }
+      window._mlWorkerPatch(this.mlWorker, {
+        logToConsole: true,
+        onWarning: (stageId, modelKey, meta) => {
+          // Stamp individual stage badge
+          const el = document.querySelector(
+            `[data-stage-id="${stageId}"], [data-stage="${stageId}"]`
+          );
+          if (!el) return;
+          const existing = el.querySelector('.vip-stage-ml-status');
+          if (existing) existing.remove();
+          const badge = document.createElement('span');
+          badge.className    = 'vip-stage-ml-status';
+          badge.textContent  = '⚠ DSP';
+          badge.style.cssText =
+            'color:#f59e0b;font-size:10px;font-weight:700;' +
+            'margin-left:4px;cursor:help;vertical-align:middle;';
+          badge.title =
+            `${meta.stageName || modelKey}: model file absent\n` +
+            `Expected: models/${meta.filename || modelKey + '.onnx'}\n` +
+            `Stage running in DSP passthrough mode.`;
+          const label =
+            el.querySelector('.stage-name,.stage-label,h4,h3,span') || el;
+          label.appendChild(badge);
+        },
+        onManifest: (manifest) => {
+          window._stampPipelineStages(manifest);
+        }
+      });
 
       // ── Apply IndexedDB model cache patch (ml-worker-fetch-cache.js) ────
       // If models are cached in IDB, pass Object URLs so the worker skips
@@ -727,7 +996,6 @@ class PipelineOrchestrator {
       try {
         const suspCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
         await suspCtx.audioWorklet.addModule('/app/dsp-processor.js');
-        await suspCtx.audioWorklet.addModule('/app/voice-isolate-processor.js');
         orch._preWarmedCtx = suspCtx;
         console.info('[Orchestrator] AudioWorklet pre-warmed');
       } catch (e) {

@@ -70,9 +70,9 @@ wiredSliders.forEach(fn => check(appJs.includes(fn), `${fn} implemented`));
 
 // Phase 3: AudioWorklet
 console.log('\nAudioWorklet (Phase 3):');
-const awJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/voice-isolate-processor.js'))
-  ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/voice-isolate-processor.js'), 'utf8') : '';
-check(awJs.includes("registerProcessor('voice-isolate-processor'"), 'AudioWorklet registerProcessor present');
+const awJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/dsp-processor.js'))
+  ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/dsp-processor.js'), 'utf8') : '';
+check(awJs.includes("registerProcessor('dsp-processor'"), 'AudioWorklet registerProcessor present');
 check(awJs.includes('process(inputs, outputs'), 'AudioWorklet process() method present');
 
 // Phase 4: ONNX Runtime + ML Worker
@@ -84,7 +84,7 @@ const mlWorkerJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/ml-wo
 const orchPath = path.resolve(__dirname, '..', 'public/app/pipeline-orchestrator.js');
 const orchJs = fs.existsSync(orchPath) ? fs.readFileSync(orchPath, 'utf8') : '';
 // AudioWorklet ownership: must be in pipeline-orchestrator.js, never in app.js
-check(orchJs.includes('addModule') && orchJs.includes('voice-isolate-processor'), 'AudioWorklet addModule() owned by pipeline-orchestrator.js');
+check(orchJs.includes('addModule') && orchJs.includes('dsp-processor'), 'AudioWorklet addModule() owned by pipeline-orchestrator.js');
 check(!appJs.includes('audioWorklet.addModule'), 'app.js does not call audioWorklet.addModule() (ownership violation guard)');
 check(html.includes('pipeline-orchestrator.js'), 'Pipeline Orchestrator script tag in index.html');
 check(appJs.includes('async loadModels()'), 'loadModels() method present');

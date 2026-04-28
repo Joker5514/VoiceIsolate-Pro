@@ -106,8 +106,12 @@ describe('STFT engine', () => {
 });
 
 describe('AudioWorklet registration', () => {
-  test('voice-isolate-processor.js should be referenced in ensureCtx', () => {
-    expect(appJs).toContain("addModule('./voice-isolate-processor.js')");
+  test('dsp-processor.js is the canonical AudioWorklet module (addModule in pipeline-orchestrator.js)', () => {
+    const orchJs = fs.readFileSync(
+      path.join(__dirname, '../public/app/pipeline-orchestrator.js'), 'utf8'
+    );
+    expect(orchJs).toContain("addModule('/app/dsp-processor.js')");
+    expect(orchJs).not.toContain("addModule('/app/voice-isolate-processor.js')");
   });
 });
 

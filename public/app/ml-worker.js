@@ -68,6 +68,11 @@ let runtimeParams = {
 const DEFAULT_MODELS = ['vad', 'deepfilter', 'demucs'];
 
 // ── Model filename registry ───────────────────────────────────────────────────
+// Models are resolved relative to this worker's origin+path.
+// Since this worker is served at /app/ml-worker.js, './models/' resolves to
+// '/app/models/' at runtime, which maps to public/app/models/ on disk.
+// The root /models/ directory is documentation-only and NOT served by Vercel.
+// Place .onnx files in public/app/models/ — see public/app/models/README.md.
 const MODEL_FILES = {
   'vad':         'silero_vad.onnx',
   'deepfilter':  'deepfilter.onnx',

@@ -62,7 +62,7 @@ describe('vercel.json — Content-Security-Policy header', () => {
 
   beforeAll(() => {
     const cfg = JSON.parse(readFile('vercel.json'));
-    const globalHeaders = cfg.headers.find(h => h.source === '/((?!api/).*)');
+    const globalHeaders = cfg.headers.find(h => h.source === '/(.*)');
     expect(globalHeaders).toBeDefined();
     const cspEntry = globalHeaders.headers.find(h => h.key === 'Content-Security-Policy');
     expect(cspEntry).toBeDefined();
@@ -182,7 +182,7 @@ describe('vercel.json — other security headers still present', () => {
 
   beforeAll(() => {
     const cfg = JSON.parse(readFile('vercel.json'));
-    const section = cfg.headers.find(h => h.source === '/((?!api/).*)');
+    const section = cfg.headers.find(h => h.source === '/(.*)');
     expect(section).toBeDefined();
     globalHeaders = section.headers;
   });
@@ -224,8 +224,8 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
     cfg = JSON.parse(readFile('vercel.json'));
   });
 
-  test('global non-api headers include both COOP and COEP', () => {
-    const globalHeaders = cfg.headers.find((h) => h.source === '/((?!api/).*)');
+  test('global headers cover all routes and include both COOP and COEP', () => {
+    const globalHeaders = cfg.headers.find((h) => h.source === '/(.*)');
     expect(globalHeaders).toBeDefined();
     const keys = globalHeaders.headers.map((h) => h.key);
     expect(keys).toContain('Cross-Origin-Opener-Policy');
@@ -233,7 +233,7 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
   });
 
   test('worklet script routes explicitly include both COOP and COEP', () => {
-    const workletRoutes = ['/app/voice-isolate-processor.js', '/app/dsp-processor.js'];
+    const workletRoutes = ['/app/dsp-processor.js'];
     for (const route of workletRoutes) {
       const routeHeaders = cfg.headers.find((h) => h.source === route);
       expect(routeHeaders).toBeDefined();
@@ -455,7 +455,7 @@ describe('Cross-platform CSP consistency — vercel.json vs render.yaml', () => 
 
   beforeAll(() => {
     const vercelCfg = JSON.parse(readFile('vercel.json'));
-    const globalHeaders = vercelCfg.headers.find(h => h.source === '/((?!api/).*)');
+    const globalHeaders = vercelCfg.headers.find(h => h.source === '/(.*)');
     const vercelEntry = globalHeaders.headers.find(h => h.key === 'Content-Security-Policy');
     vercelCSP = vercelEntry.value;
     vercelDirectives = parseCSP(vercelCSP);

@@ -508,7 +508,6 @@
   <script src="./auth.js"></script>
   <script src="./ai-engine-v2.js"></script>
   <script src="./ai-intelligence.js"></script>
-  <script src="./ml-worker-models-patch.js"></script>
   <script src="./ml-worker-fetch-cache.js"></script>
   <script src="./pipeline-orchestrator.js"></script>
   <script src="./batch-processor.js"></script>
@@ -516,14 +515,13 @@
   <script src="./session-persist.js"></script>
   <script src="./app.js"></script>
   <script src="./vip-boot.js"></script>
-  <script src="./controls-test.js"></script>
 
   <!-- ═══════════════════════════════════════════════════════════
        PREMIUM PROCESSING OVERLAY — DNA helix spinner
-       Must load AFTER app.js so the patch can wrap runPipeline()
+       Overlay + patch are merged; must load AFTER app.js so the
+       patch can wrap runPipeline().
   ═══════════════════════════════════════════════════════════ -->
   <script src="/app/processing-overlay.js"></script>
-  <script src="/app/processing-overlay-patch.js"></script>
 
   <script>
     (function _vipSafetyNet() {

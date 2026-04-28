@@ -1,7 +1,11 @@
 /**
+ * @file ai-engine-v2.js
+ *
  * VoiceIsolate Pro — AI Engine v2 (v22)
  *
- * Upgrades over ai-intelligence.js v1:
+ * Advanced AI analysis layer, complementary to ai-intelligence.js.
+ * This module provides the *enhanced inference* pipeline:
+ *
  *   1. Voice Fingerprinting — speaker embedding via MFCC + delta features
  *   2. Advanced Auto-Tune — per-band parameter optimization using gradient descent
  *   3. Noise Profile Library — save/load/match noise profiles
@@ -9,6 +13,17 @@
  *   5. Perceptual Quality Estimator — PESQ-inspired MOS estimation
  *   6. Real-time Feature Streaming — rolling window analysis for live mode
  *   7. Multi-speaker Detection — detect number of speakers in audio
+ *
+ * Distinction from ai-intelligence.js:
+ *   - ai-intelligence.js (AIIntelligence): lightweight, run-anywhere analysis —
+ *     noise floor estimation (MCRA), preset recommendation, scene classification,
+ *     SNR tracking, auto-tuning. No heavy FFT; operates on pre-computed frames.
+ *   - ai-engine-v2.js (AIEngineV2): heavier feature extraction — raw FFT, MFCC,
+ *     delta features, fingerprint database, gradient-descent optimizer. Used for
+ *     offline quality analysis and speaker enrollment workflows.
+ *
+ * This file is NOT dead code. Both modules are loaded by index.html and expose
+ * window-level singletons (AIEngineV2, AIIntelligence) consumed by app.js.
  */
 
 const AIEngineV2 = (() => {

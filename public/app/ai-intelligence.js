@@ -7,15 +7,29 @@
 'use strict';
 
 /**
+ * @file ai-intelligence.js
+ *
  * AI Intelligence Module — v21.0
  *
- * Provides smart analysis capabilities on top of the core DSP pipeline:
- * - Adaptive noise floor estimation (MCRA algorithm)
+ * Lightweight smart-analysis layer that operates on top of the core DSP pipeline.
+ * Designed to run on the main thread without heavy FFT computation.
+ *
+ * Provides:
+ * - Adaptive noise floor estimation (MCRA algorithm — Cohen & Berdugo 2002)
  * - Automatic preset recommendation based on audio content
  * - Voice activity confidence scoring
  * - Audio scene classification (podcast, interview, music, etc.)
  * - Real-time SNR tracking and quality metrics
  * - Intelligent parameter auto-tuning
+ *
+ * Distinction from ai-engine-v2.js:
+ *   - ai-intelligence.js (AIIntelligence): lightweight, run-anywhere analysis.
+ *     No heavy FFT; operates on pre-computed STFT magnitude frames passed in.
+ *   - ai-engine-v2.js (AIEngineV2): heavier feature extraction — raw FFT,
+ *     MFCC, delta features, fingerprint database, gradient-descent optimizer.
+ *
+ * This file is NOT dead code. Both modules are loaded by index.html and expose
+ * window-level singletons (AIIntelligence, AIEngineV2) consumed by app.js.
  */
 const AIIntelligence = {
 
