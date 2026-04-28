@@ -119,7 +119,7 @@ describe('app.js integration', () => {
     expect(appSrc).not.toMatch(/^const STAGES\s*=/m);
   });
 
-  test('slider-map.js has no inline STAGES definition in app.js', () => {
+  test('app.js contains no duplicate STAGES definition', () => {
     // The only `const STAGES` should be in slider-map.js, not app.js
     const inApp = (appSrc.match(/const STAGES\s*=/g) || []).length;
     expect(inApp).toBe(0);

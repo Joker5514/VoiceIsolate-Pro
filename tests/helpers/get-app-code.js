@@ -28,7 +28,7 @@ function getAppCode() {
 
   const appJsRaw = fs.readFileSync(path.join(APP_DIR, 'app.js'), 'utf8');
   const appJsCode = appJsRaw.replace(
-    /^import\s+\{[^}]+\}\s+from\s+'\.\/slider-map\.js'\s*;?\s*\n?/m,
+    /^import\s+\{[^}]+\}\s+from\s+'\.\/slider-map\.js'[^;\n]*;?\s*\n?/gm,
     ''
   );
 
