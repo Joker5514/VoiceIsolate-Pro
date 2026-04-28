@@ -1,13 +1,13 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// model-loader.js — VoiceIsolate Pro · Threads from Space v8
+// ────────────────────────────────────────────────────────────────────────────
+// model-loader.js – VoiceIsolate Pro · Threads from Space v8
 //
 // First-run model delivery via Cache API.
-// 100% local after first download — no cloud inference ever.
+// 100% local after first download – no cloud inference ever.
 //
 // Architecture:
 //   1. On first visit, fetch each .onnx from its canonical CDN source.
 //   2. Store the response in a versioned Cache (CACHE_NAME).
-//   3. On every subsequent visit, serve from cache — zero network.
+//   3. On every subsequent visit, serve from cache – zero network.
 //   4. ml-worker.js reads models from /app/models/*.onnx.
 //      The service worker (sw.js) intercepts those fetches and returns the
 //      cached binary, so ml-worker sees a local URL but gets the real model.
@@ -15,21 +15,21 @@
 //      real download bar instead of a spinner.
 //
 // Model tiers loaded at different times:
-//   EAGER   — silero_vad (2.2 MB), rnnoise (0.18 MB)  — loaded at app boot
-//   LAZY    — demucs_v4 (83 MB), bsrnn (45 MB)         — loaded after user uploads audio
-// ─────────────────────────────────────────────────────────────────────────────
+//   EAGER   – silero_vad (2.2 MB), rnnoise (0.18 MB)  – loaded at app boot
+//   LAZY    – demucs_v4 (83 MB), bsrnn (45 MB)         – loaded after user uploads audio
+// ────────────────────────────────────────────────────────────────────────────
 
 export const CACHE_NAME       = 'vip-models-v1';
 export const BROADCAST_CH     = 'vip-model-progress';
 const MODEL_BASE_PATH         = '/app/models/';
 
-// Canonical source URLs — fetched ONCE, then served from Cache forever.
+// Canonical source URLs – fetched ONCE, then served from Cache forever.
 // Hugging Face CDN supports CORS and Range requests with no auth.
 const MODEL_REGISTRY = [
   {
     id:       'silero_vad',
     filename: 'silero_vad.onnx',
-    // Already committed in repo (2.2 MB) — served locally, no CDN fetch needed.
+    // Already committed in repo (2.2 MB) – served locally, no CDN fetch needed.
     localOnly: true,
     priority: 'eager',
     sizeMB:   2.2,
@@ -37,22 +37,22 @@ const MODEL_REGISTRY = [
   {
     id:       'rnnoise',
     filename: 'rnnoise_suppressor.onnx',
-    // Tiny model — pre-exported and hosted on HF.
-    src:      'https://huggingface.co/datasets/voiceisolate/models/resolve/main/rnnoise_suppressor.onnx',
+    // Tiny model – pre-exported and hosted on HF.
+    src:      'https://huggingface.co/datasets/Joker5514/models/resolve/main/rnnoise_suppressor.onnx',
     priority: 'eager',
     sizeMB:   0.18,
   },
   {
     id:       'demucs_v4',
     filename: 'demucs_v4_quantized.onnx',
-    src:      'https://huggingface.co/datasets/voiceisolate/models/resolve/main/demucs_v4_quantized.onnx',
+    src:      'https://huggingface.co/datasets/Joker5514/models/resolve/main/demucs_v4_quantized.onnx',
     priority: 'lazy',
     sizeMB:   83,
   },
   {
     id:       'bsrnn_vocals',
     filename: 'bsrnn_vocals.onnx',
-    src:      'https://huggingface.co/datasets/voiceisolate/models/resolve/main/bsrnn_vocals.onnx',
+    src:      'https://huggingface.co/datasets/Joker5514/models/resolve/main/bsrnn_vocals.onnx',
     priority: 'lazy',
     sizeMB:   45,
   },
@@ -73,7 +73,7 @@ function _broadcast(detail) {
  * Returns the ArrayBuffer of the model.
  *
  * @param {Cache}    cache
- * @param {object}   model  — entry from MODEL_REGISTRY
+ * @param {object}   model  – entry from MODEL_REGISTRY
  * @returns {Promise<void>}
  */
 async function _fetchAndCache(cache, model) {
@@ -100,7 +100,7 @@ async function _fetchAndCache(cache, model) {
     chunks.push(value);
     received += value.byteLength;
     _broadcast({
-      type:    'progress',
+      type:     'progress',
       id,
       filename,
       loaded:  received,
@@ -114,10 +114,10 @@ async function _fetchAndCache(cache, model) {
   const cachedResp   = new Response(blob, {
     status:  200,
     headers: {
-      'Content-Type':                 'application/octet-stream',
-      'Content-Length':               String(blob.size),
+      'Content-Type':                   'application/octet-stream',
+      'Content-Length':                  String(blob.size),
       'Cross-Origin-Resource-Policy': 'same-origin',
-      'Cache-Control':                'public, max-age=86400, immutable',
+      'Cache-Control':                   'public, max-age=86400, immutable',
     },
   });
   await cache.put(cacheKey, cachedResp);
@@ -151,7 +151,7 @@ export async function loadEagerModels() {
     cache = await caches.open(CACHE_NAME);
   } catch (err) {
     console.warn('[model-loader] Cache API unavailable:', err.message);
-    // Gracefully degrade — ml-worker will hit 404s and fall back to classical DSP.
+    // Gracefully degrade – ml-worker will hit 404s and fall back to classical DSP.
     return result;
   }
 
@@ -159,7 +159,7 @@ export async function loadEagerModels() {
 
   for (const model of eagerModels) {
     if (model.localOnly) {
-      // Already served from the repo — nothing to fetch.
+      // Already served from the repo – nothing to fetch.
       result.skipped.push(model.id);
       continue;
     }
