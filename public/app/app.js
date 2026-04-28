@@ -508,9 +508,6 @@ class VoiceIsolatePro {
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
       // Worklet registration is handled by PipelineOrchestrator.
-      // Path contract for reference: /app/voice-isolate-processor.js
-      // (This method does not call addModule directly.)
-      // Compatibility reference for structural tests: addModule('./voice-isolate-processor.js')
     }
     if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     return this.ctx;

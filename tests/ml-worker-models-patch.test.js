@@ -1,13 +1,12 @@
 /**
- * VoiceIsolate Pro — ml-worker-models-patch.js source-inspection tests.
+ * VoiceIsolate Pro — ml-worker graceful-degradation patch source-inspection tests.
  *
- * The patch file wires absent-model fallbacks: it stamps the pipeline UI with
- * model status, surfaces a banner when models are missing, and intercepts ML
- * worker messages to keep stages running in DSP-only mode. It uses DOM and
- * window globals at top level, so we cover its contract via source-level
- * assertions until a jsdom integration suite exists.
+ * The patch logic (formerly ml-worker-models-patch.js) is now merged into
+ * ml-worker-fetch-cache.js. It wires absent-model fallbacks: stamps the pipeline
+ * UI with model status, surfaces a banner when models are missing, and intercepts
+ * ML worker messages to keep stages running in DSP-only mode.
  *
- * Key invariant under test: the manifest in this file MUST stay key-consistent
+ * Key invariant under test: the MODEL_MANIFEST MUST stay key-consistent
  * with MODEL_REGISTRY in ml-worker-fetch-cache.js — drift causes silent
  * pass-through where the user expects ML inference.
  */
@@ -18,13 +17,10 @@ const fs   = require('fs');
 const path = require('path');
 
 const PATCH_SRC = fs.readFileSync(
-  path.join(__dirname, '../public/app/ml-worker-models-patch.js'),
-  'utf8'
-);
-const FETCH_SRC = fs.readFileSync(
   path.join(__dirname, '../public/app/ml-worker-fetch-cache.js'),
   'utf8'
 );
+const FETCH_SRC = PATCH_SRC;
 
 function extractKeys(src, blockRegex) {
   const m = src.match(blockRegex);

@@ -191,15 +191,15 @@ describe('index.html', () => {
 
 describe('dsp-worker.js', () => {
   const workerPath = path.join(__dirname, '../public/app/dsp-worker.js');
-  const processorPath = path.join(__dirname, '../public/app/voice-isolate-processor.js');
+  const processorPath = path.join(__dirname, '../public/app/dsp-processor.js');
 
   test('dsp-worker.js file should exist', () => {
     expect(fs.existsSync(workerPath)).toBe(true);
   });
 
-  test('Should register VoiceIsolateProcessor', () => {
+  test('dsp-processor.js is the canonical AudioWorklet processor', () => {
     const processor = fs.readFileSync(processorPath, 'utf8');
-    expect(processor).toContain("registerProcessor('voice-isolate-processor'");
+    expect(processor).toContain("registerProcessor('dsp-processor'");
   });
 
   test('Should implement process() method', () => {

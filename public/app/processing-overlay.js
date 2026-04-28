@@ -229,4 +229,68 @@
     boot();
   }
 
+  // ── App overlay integration patch ────────────────────────────
+  // Monkey-patches VoiceIsolatePro instance to wire VIPOverlay
+  // into runPipeline() and pip() once the app is instantiated.
+  // (formerly processing-overlay-patch.js)
+
+  function applyOverlayPatches(vip) {
+    // Idempotency guard — prevents double-wrapping on hot-reload or duplicate script load
+    if (vip._overlayPatched) return;
+    vip._overlayPatched = true;
+
+    // ── showProcessingOverlay ──────────────────────────────────
+    vip.showProcessingOverlay = function (stageName, pct) {
+      if (global.VIPOverlay) global.VIPOverlay.show(stageName, pct);
+    };
+
+    // ── hideProcessingOverlay ──────────────────────────────────
+    vip.hideProcessingOverlay = function () {
+      if (global.VIPOverlay) global.VIPOverlay.hide();
+    };
+
+    // ── updateProcessingOverlay ───────────────────────────────
+    vip.updateProcessingOverlay = function (stageName, pct, stageIndex) {
+      if (global.VIPOverlay) global.VIPOverlay.update(stageName, pct, stageIndex);
+    };
+
+    // ── Patch pip() to call updateProcessingOverlay ───────────
+    const origPip = vip.pip ? vip.pip.bind(vip) : null;
+    if (origPip) {
+      vip.pip = async function (i, t) {
+        const pct = Math.round((i + 1) / t * 100);
+        // STAGES lives in app.js closure scope, not as a global. Read it via the app instance.
+        const stages = global._vipApp && global._vipApp.STAGES;
+        const stageName = (stages && stages[i]) ? stages[i] : ('Stage ' + (i + 1));
+        this.updateProcessingOverlay(stageName, pct, i);
+        return origPip(i, t);
+      };
+    }
+
+    // ── Patch runPipeline() to show/hide overlay ──────────────
+    const origRun = vip.runPipeline.bind(vip);
+    vip.runPipeline = async function () {
+      this.showProcessingOverlay('Preparing pipeline…', 0);
+      try {
+        return await origRun();
+      } finally {
+        this.hideProcessingOverlay();
+      }
+    };
+
+    console.info('[VIPOverlay] Overlay patch applied.');
+  }
+
+  function patchOverlayWhenReady(attempts) {
+    attempts = attempts || 0;
+    const vip = global.vip || global._vipApp;
+    if (!vip || typeof vip.runPipeline !== 'function') {
+      if (attempts < 80) setTimeout(() => patchOverlayWhenReady(attempts + 1), 100);
+      return;
+    }
+    applyOverlayPatches(vip);
+  }
+
+  patchOverlayWhenReady();
+
 }(typeof globalThis !== 'undefined' ? globalThis : window));
