@@ -12,14 +12,14 @@
 const fs   = require('fs');
 const path = require('path');
 const vm   = require('vm');
+const getAppCode = require('./helpers/get-app-code');
 
 // ── Shared fixture: load VoiceIsolatePro.prototype.handleFile ─────────────────
 
 let handleFile;
 
 beforeAll(() => {
-  const appJsPath = path.join(__dirname, '../public/app/app.js');
-  const appJs     = fs.readFileSync(appJsPath, 'utf8');
+  const appJs = getAppCode();
 
   const sandbox = {
     document: {

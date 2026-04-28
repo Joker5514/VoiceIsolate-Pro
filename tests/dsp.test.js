@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const getAppCode = require('./helpers/get-app-code');
 
 // Minimal AudioContext stub for jsdom environment
 class MockAudioBuffer {
@@ -24,8 +25,7 @@ global.AudioContext = class {
 };
 
 // Import actual VoiceIsolatePro from app.js using a scoped eval to avoid syntax errors and DOM initialization crashes
-const appJsPath = path.join(__dirname, '../public/app/app.js');
-const appJs = fs.readFileSync(appJsPath, 'utf8');
+const appJs = getAppCode();
 
 // We evaluate the file content inside a function scope to isolate 'const', 'let', and 'class' declarations.
 // We also mock 'document' and 'window' just enough to pass the DOMContentLoaded listener setup at the bottom.
@@ -43,7 +43,7 @@ const VoiceIsolatePro = (() => {
     createElement:     () => ({ addEventListener: () => {}, style: {}, classList: { add: () => {}, remove: () => {} } }),
   };
 
-  eval(appJs);
+  eval(appJs); // eslint-disable-line no-eval
 
   return module.exports;
 })();

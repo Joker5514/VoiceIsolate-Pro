@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const getAppCode = require('./helpers/get-app-code');
 
 // We load app.js inside a vm sandbox so the `document` and `window` references
 // inside the source resolve to mocks we control per-test. Mirrors the loader
@@ -69,7 +70,7 @@ describe('showNotification / _showToast', () => {
       requestAnimationFrame: (cb) => { cb(); return 1; },
     };
     vm.createContext(sandbox);
-    const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
+    const appJs = getAppCode();
     vm.runInContext(appJs, sandbox);
     VoiceIsolatePro = sandbox.module.exports;
   });

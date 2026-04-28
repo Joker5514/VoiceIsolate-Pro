@@ -50,8 +50,10 @@ const sliderMatches = slidersBlock ? slidersBlock[1].match(/\{\s*id\s*:\s*'/g) :
 const sliderCount = sliderMatches ? sliderMatches.length : 0;
 check(sliderCount === 52, `Slider count: ${sliderCount} (must be 52)`);
 
-// Count STAGES
-const stagesMatch = appJs.match(/const STAGES = \[([\s\S]*?)\];/);
+// Count STAGES — now defined in slider-map.js
+const sliderMapPath = path.resolve(__dirname, '..', 'public/app/slider-map.js');
+const sliderMapJs = fs.existsSync(sliderMapPath) ? fs.readFileSync(sliderMapPath, 'utf8') : '';
+const stagesMatch = sliderMapJs.match(/export const STAGES = \[([\s\S]*?)\];/);
 const stageItems = stagesMatch ? (stagesMatch[1].match(/'[^']+'/g) || []) : [];
 check(stageItems.length === 32, `STAGES count: ${stageItems.length} (must be 32)`);
 

@@ -5,12 +5,11 @@
 
 const fs = require('fs');
 const path = require('path');
+const getAppCode = require('./helpers/get-app-code');
 
-// Read the app.js code as a string to extract the real implementation.
-// This guarantees we are testing the actual code without dealing with
-// Jest ESM/CJS module loading conflicts for a browser script.
-const appJsPath = path.resolve(__dirname, '../public/app/app.js');
-const appJsCode = fs.readFileSync(appJsPath, 'utf8');
+// Read the app.js code (with slider-map.js imports resolved) as a string
+// to extract the real implementation.
+const appJsCode = getAppCode();
 
 // Use new Function to create the class from the source string.
 // We pass in an empty module object to simulate the environment.

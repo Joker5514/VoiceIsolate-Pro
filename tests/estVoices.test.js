@@ -5,10 +5,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const getAppCode = require('./helpers/get-app-code');
 
-// Dynamically load the app.js source to bypass Jest's ES module strictness
-// since app.js is in a `"type": "module"` package but conditionally exports via CommonJS.
-const appJsCode = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
+// Dynamically load the app.js source (with slider-map.js imports resolved)
+// to bypass Jest's ES module strictness since app.js conditionally exports
+// via CommonJS.
+const appJsCode = getAppCode();
 
 // Provide mocked module and browser globals to capture the export and prevent ReferenceErrors
 const mockModule = { exports: {} };

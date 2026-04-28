@@ -11,16 +11,33 @@ export default [
     files: ['public/app/app.js'],
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: 'script',
+      sourceType: 'module',
       globals: {
         ...globals.browser,
         ort: 'readonly',                  // ONNX Runtime Web
         THREE: 'readonly',                // Three.js
-        module: 'readonly',               // CommonJS export check for testing
+        module: 'readonly',               // CommonJS export check for testing (typeof module !== 'undefined')
         PipelineState: 'readonly',        // loaded via separate script tag
         PipelineOrchestrator: 'readonly', // loaded via separate script tag
         SpeakerRegistry: 'readonly',      // loaded via separate script tag
         Auth: 'readonly',                 // optional global from auth.js / vip-boot.js
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', varsIgnorePattern: '^SLIDER_REGISTRY$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'semi': ['warn', 'always'],
+      'quotes': ['warn', 'single', { avoidEscape: true }],
+    },
+  },
+  {
+    files: ['public/app/slider-map.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        ...globals.browser,
       },
     },
     rules: {

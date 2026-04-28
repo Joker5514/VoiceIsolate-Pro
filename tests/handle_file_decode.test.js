@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const getAppCode = require('./helpers/get-app-code');
 
 describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
   let VoiceIsolatePro;
@@ -25,8 +26,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       revokeObjectURL: jest.fn()
     };
 
-    const appJsPath = path.join(__dirname, '../public/app/app.js');
-    const appJs = fs.readFileSync(appJsPath, 'utf8');
+    const appJs = getAppCode();
 
     const sandbox = {
       document: global.document,

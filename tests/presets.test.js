@@ -154,7 +154,8 @@ describe('Preset value-range validation', () => {
 
 describe('STAGES array', () => {
   test('Should define exactly 32 stages', () => {
-    const stagesMatch = appJs.match(/const STAGES = \[([\s\S]*?)\];/);
+    const sliderMapJs = fs.readFileSync(path.join(__dirname, '../public/app/slider-map.js'), 'utf8');
+    const stagesMatch = sliderMapJs.match(/export const STAGES = \[([\s\S]*?)\];/);
     expect(stagesMatch).not.toBeNull();
     const stageItems = stagesMatch[1].match(/'[^']+'/g) || [];
     expect(stageItems.length).toBe(32);

@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const getAppCode = require('./helpers/get-app-code');
 
-// Read app.js and evaluate to get VoiceIsolatePro without importing ES Module in Jest Node context
-const appJsPath = path.join(__dirname, '../public/app/app.js');
-const appJs = fs.readFileSync(appJsPath, 'utf8');
+// Read app.js (with slider-map.js imports resolved for eval compatibility)
+const appJs = getAppCode();
 
 // Use new Function to create a local scope and evaluate the code, bypassing the DOMContentLoaded listener and module system
 let VoiceIsolatePro;
