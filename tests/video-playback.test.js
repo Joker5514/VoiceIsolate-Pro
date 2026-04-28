@@ -7,6 +7,7 @@
 // because it's configured as commonjs via module.exports
 const fs = require('fs');
 const path = require('path');
+const getAppCode = require('./helpers/get-app-code');
 
 describe('Video Playback Error Handling', () => {
   let VoiceIsolatePro;
@@ -147,7 +148,8 @@ describe('Video Playback Error Handling', () => {
     window.HTMLMediaElement.prototype.pause = () => {};
 
     // Load code dynamically using eval
-    const appJsCode = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
+    // slider-map.js ES module imports are resolved by getAppCode() helper.
+    const appJsCode = getAppCode();
     const exportsObj = {};
     const moduleObj = { exports: exportsObj };
 

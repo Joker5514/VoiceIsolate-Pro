@@ -60,7 +60,8 @@ describe('ESLint Configuration Validation', () => {
     const appConfig = config.find(c => c.files && c.files.includes('public/app/app.js'));
     expect(appConfig).toBeDefined();
     expect(appConfig.languageOptions.ecmaVersion).toBe(2022);
-    expect(appConfig.languageOptions.sourceType).toBe('script');
+    // app.js uses ES module import syntax (imports from slider-map.js)
+    expect(appConfig.languageOptions.sourceType).toBe('module');
 
     // Check for critical globals that app.js depends on
     const g = appConfig.languageOptions.globals;

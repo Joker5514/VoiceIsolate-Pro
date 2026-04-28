@@ -5,6 +5,7 @@
    52 Sliders · 6-Panel Diagnostics · 3D Spectrogram
    32-Stage Deca-Pass Pipeline with Real STFT DSP
    ============================================ */
+import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 
 function structuredLog(level, msg, data = {}) {
   const entry = { ts: new Date().toISOString(), level, msg, ...data };
@@ -281,41 +282,6 @@ function numFromInput(el, fallback = 0) {
   return Number.isFinite(v) ? v : fallback;
 }
 if (typeof window !== 'undefined') window.numFromInput = numFromInput;
-
-const STAGES = [
-  'S01: Input Decode',                    // 0
-  'S02: Buffer Allocation',               // 1
-  'S03: DC Offset Removal',               // 2
-  'S04: Peak Normalization',              // 3
-  'S05: Voice Activity Detection',        // 4
-  'S06: Noise Gate (Time-Domain)',        // 5
-  'S07: Click/Pop Removal',              // 6
-  'S08: Hum Removal (60Hz + Harmonics)', // 7
-  'S09: De-Essing',                       // 8
-  'S10: Forward STFT',                    // 9
-  'S11: Adaptive Wiener NR',             // 10
-  'S12: Residual Wiener Pass',           // 11
-  'S13: ERB Spectral Gate (32-band)',    // 12
-  'S14: Voice-Band Spectral Emphasis',   // 13
-  'S15: Crosstalk Cancellation',         // 14
-  'S16: Temporal Smoothing (Anti-Garble)', // 15
-  'S17: Spectral Tilt Compensation',     // 16
-  'S18: Dereverberation',                // 17
-  'S19: Harmonic Reconstruction v2',     // 18
-  'S20: Inverse STFT',                   // 19
-  'S21: OfflineAudioContext Setup',      // 20
-  'S22: High-Pass / Low-Pass Filters',  // 21
-  'S23: 10-Band Parametric EQ',          // 22
-  'S24: Dynamics Compression',           // 23
-  'S25: Brickwall Limiter',              // 24
-  'S26: Rendering OfflineAudioContext',  // 25
-  'S27: Post-Render Cleanup',           // 26
-  'S28: Dry/Wet Mix',                    // 27
-  'S29: Peak Normalization',             // 28
-  'S30: Quality Metrics',                // 29
-  'S31: Waveform Update',               // 30
-  'S32: Final Export Ready'              // 31
-];
 
 // Sound categories for background suppression. Each entry targets specific
 // frequency ranges that characterise that sound type. Suppression is applied

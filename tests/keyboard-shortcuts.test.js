@@ -1,8 +1,8 @@
 const fs = require('fs');
 const path = require('path');
+const getAppCode = require('./helpers/get-app-code');
 
-const appJsPath = path.join(__dirname, '../public/app/app.js');
-const appJs = fs.readFileSync(appJsPath, 'utf8');
+const appJs = getAppCode();
 
 // Same lightweight loader as tests/transport.test.js — the keyboard handler
 // is a plain method on the prototype, so we don't need a full DOM.

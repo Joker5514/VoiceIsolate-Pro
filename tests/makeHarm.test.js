@@ -1,13 +1,13 @@
 const fs = require('fs');
 const path = require('path');
+const getAppCode = require('./helpers/get-app-code');
 
 describe('VoiceIsolatePro.prototype.makeHarm', () => {
   let makeHarm;
 
   beforeAll(() => {
-    // Read app.js
-    const appJsPath = path.join(__dirname, '../public/app/app.js');
-    const appJsCode = fs.readFileSync(appJsPath, 'utf8');
+    // Read app.js (with slider-map.js imports resolved for eval compatibility)
+    const appJsCode = getAppCode();
 
     // Setup global environment to safely evaluate the file
     // Mock the document object so DOMContentLoaded listener doesn't throw

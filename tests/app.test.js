@@ -22,6 +22,11 @@ const appSrc = fs.readFileSync(
   'utf8'
 );
 
+const sliderMapSrc = fs.readFileSync(
+  path.join(__dirname, '../public/app/slider-map.js'),
+  'utf8'
+);
+
 // Extract the SLIDERS object literal from source
 // (used in structural tests without requiring the module)
 function extractSlidersFromSrc() {
@@ -161,30 +166,34 @@ describe('PRESETS constant', () => {
 
 // ── STAGES array ──────────────────────────────────────────────────────────────
 describe('STAGES array', () => {
-  test('source defines a STAGES array', () => {
-    expect(appSrc).toContain('const STAGES');
+  test('slider-map.js defines the STAGES array', () => {
+    expect(sliderMapSrc).toContain('export const STAGES');
+  });
+
+  test('app.js imports STAGES from slider-map.js', () => {
+    expect(appSrc).toContain("from './slider-map.js'");
   });
 
   test('contains exactly 32 stage entries (v22 32-Stage pipeline)', () => {
     // Count entries like 'S01: ...' through 'S32: ...'
-    const stageMatches = [...appSrc.matchAll(/'S\d{2}:/g)];
+    const stageMatches = [...sliderMapSrc.matchAll(/'S\d{2}:/g)];
     expect(stageMatches).toHaveLength(32);
   });
 
   test('first stage is S01: Input Decode', () => {
-    expect(appSrc).toContain('S01: Input Decode');
+    expect(sliderMapSrc).toContain('S01: Input Decode');
   });
 
   test('last stage is S32: Final Export Ready', () => {
-    expect(appSrc).toContain('S32: Final Export Ready');
+    expect(sliderMapSrc).toContain('S32: Final Export Ready');
   });
 
   test('includes the STFT stage (S10)', () => {
-    expect(appSrc).toContain('S10: Forward STFT');
+    expect(sliderMapSrc).toContain('S10: Forward STFT');
   });
 
   test('includes the Inverse STFT stage (S20)', () => {
-    expect(appSrc).toContain('S20: Inverse STFT');
+    expect(sliderMapSrc).toContain('S20: Inverse STFT');
   });
 });
 
@@ -394,8 +403,8 @@ describe('VoiceIsolatePro class structure', () => {
   });
 
   test('pipeline has 32 stages to match STAGES array', () => {
-    // The STAGES array defines 32 stages
-    const stageMatches = [...appSrc.matchAll(/'S\d{2}:/g)];
+    // The STAGES array is defined in slider-map.js with 32 stages
+    const stageMatches = [...sliderMapSrc.matchAll(/'S\d{2}:/g)];
     expect(stageMatches).toHaveLength(32);
   });
 });
