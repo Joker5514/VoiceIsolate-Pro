@@ -58,7 +58,7 @@ const db = {
 async function sendEmail(to, subject, token) {
   console.log(`[Email] Sending to ${to}...`);
   console.log(`[Email] Subject: ${subject}`);
-  console.log(`[Email] Token: ${token}`);
+  // Token intentionally omitted from logs — contains full license grant
   return true;
 }
 
@@ -174,7 +174,10 @@ function validateLicenseToken(token) {
       .createHmac('sha256', LICENSE_SECRET)
       .update(`${parts[0]}.${parts[1]}`)
       .digest('base64url');
-    if (!crypto.timingSafeEqual(Buffer.from(expectedSig, 'base64url'), Buffer.from(parts[2], 'base64url'))) return null;
+    const expected = Buffer.from(expectedSig, 'base64url');
+    const got = Buffer.from(parts[2], 'base64url');
+    if (expected.length !== got.length) return null;
+    if (!crypto.timingSafeEqual(expected, got)) return null;
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
     if (Date.now() / 1000 > payload.exp) return null;
     return payload;

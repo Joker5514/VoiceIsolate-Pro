@@ -210,6 +210,7 @@ function renderLoginModal() {
 
   // Pre-fill last used username from localStorage
   const lastUser = (() => { try { return localStorage.getItem('vip_last_user') || ''; } catch { return ''; } })();
+  const safeLastUser = lastUser.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   const overlay = document.createElement('div');
   overlay.id = 'vip-auth-overlay';
@@ -221,7 +222,7 @@ function renderLoginModal() {
       <div class="vip-auth-field">
         <label for="vip-username">Username</label>
         <input id="vip-username" type="text" autocomplete="username"
-               placeholder="your username" spellcheck="false" value="${lastUser}" />
+               placeholder="your username" spellcheck="false" value="${safeLastUser}" />
       </div>
       <div class="vip-auth-field">
         <label for="vip-password">Password</label>

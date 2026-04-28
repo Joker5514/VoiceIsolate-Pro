@@ -182,7 +182,9 @@
     },
 
     _stopMessages: function () {
-      if (this._msgTimer) { clearInterval(this._msgTimer); this._msgTimer = null; }
+      if (this._msgTimer)    { clearInterval(this._msgTimer);  this._msgTimer    = null; }
+      if (this._fadeTimer1)  { clearTimeout(this._fadeTimer1); this._fadeTimer1  = null; }
+      if (this._fadeTimer2)  { clearTimeout(this._fadeTimer2); this._fadeTimer2  = null; }
     },
 
     _cycleMessage: function () {
@@ -192,13 +194,17 @@
       const text = pool[this._msgIdx % pool.length];
       this._msgIdx++;
 
-      // Crossfade
+      // Crossfade — store handles so _stopMessages can cancel in-flight transitions
       msgEl.classList.add('fade-out');
-      setTimeout(() => {
+      this._fadeTimer1 = setTimeout(() => {
+        this._fadeTimer1 = null;
         msgEl.textContent = text;
         msgEl.classList.remove('fade-out');
         msgEl.classList.add('fade-in');
-        setTimeout(() => msgEl.classList.remove('fade-in'), 350);
+        this._fadeTimer2 = setTimeout(() => {
+          this._fadeTimer2 = null;
+          msgEl.classList.remove('fade-in');
+        }, 350);
       }, 350);
     },
   };
@@ -218,7 +224,7 @@
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
   } else {
     boot();
   }

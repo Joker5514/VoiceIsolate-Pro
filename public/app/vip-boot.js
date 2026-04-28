@@ -64,9 +64,10 @@
     }
 
     if (missing.length > 0) {
+      function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
       showBanner(
         '📦 <b>Missing model file' + (missing.length > 1 ? 's' : '') + ':</b> ' +
-        missing.map(function(m){ return '<code style="background:#111;padding:1px 4px;border-radius:3px">' + m + '</code>'; }).join(', ') +
+        missing.map(function(m){ return '<code style="background:#111;padding:1px 4px;border-radius:3px">' + escHtml(m) + '</code>'; }).join(', ') +
         ' — place in <code style="background:#111;padding:1px 4px;border-radius:3px">public/app/models/</code> and reload. ' +
         '<a href="https://github.com/Joker5514/VoiceIsolate-Pro#models" target="_blank" ' +
         'rel="noopener" style="color:#ef4444">Download guide ↗</a>'
@@ -127,8 +128,21 @@
     }
   }
 
+  // ── Dismiss button for startup banner (replaces inline onclick) ─────────
+  function wireDismissBtn() {
+    const btn = document.getElementById('vip-startup-close');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var banner = document.getElementById('vip-startup-banner');
+      if (banner) banner.style.display = 'none';
+    });
+    btn.addEventListener('mouseover', function () { btn.style.color = '#dc2626'; });
+    btn.addEventListener('mouseout',  function () { btn.style.color = '#666'; });
+  }
+
   // ── Boot sequence ───────────────────────────────────────────────────────
   function boot() {
+    wireDismissBtn();
     runDiagnostics();   // async, non-blocking — banner shows if something's wrong
     aliasOrCreate();
   }

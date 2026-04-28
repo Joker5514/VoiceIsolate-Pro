@@ -288,12 +288,17 @@ self.onmessage = async (ev) => {
           pcmChunk,
           fftSize             = 4096,
           halfN               = Math.floor(fftSize / 2) + 1,
-          modelBasePath       = './models/',
+          modelBasePath: _rawBasePath = './models/',
           preferredProviders  = ['webgpu', 'wasm'],
           allowedModels: am   = DEFAULT_MODELS,
           allowedStages: as_  = 8,
           params              = null,
         } = payload;
+
+        // Reject caller-supplied base paths that could redirect model fetches to external URLs.
+        const _safePath = (p) => typeof p === 'string' && !p.includes('..') &&
+          (p.startsWith('./models/') || p.startsWith('/app/models/') || p.startsWith('/models/'));
+        const modelBasePath = _safePath(_rawBasePath) ? _rawBasePath : './models/';
 
         allowedModels = am;
         allowedStages = as_;
