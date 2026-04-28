@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
-  "generated": "2026-04-15",
-  "description": "VoiceIsolate Pro ONNX model registry — all models execute locally via onnxruntime-web (WebGPU → WASM fallback). NO cloud inference.",
+  "version": "1.1.0",
+  "generated": "2026-04-28",
+  "description": "VoiceIsolate Pro ONNX model registry — all models execute locally via onnxruntime-web (WebGPU → WASM fallback). NO cloud inference. Models are fetched once on first run and stored in the browser Cache API by model-loader.js.",
   "models": [
     {
       "id": "silero_vad",
@@ -13,9 +13,27 @@
       "sample_rate": 16000,
       "execution_provider_preference": ["wasm"],
       "load_priority": "eager",
+      "delivery": "repo_committed",
       "status": "committed",
       "sha256": "auto",
       "source": "https://github.com/snakers4/silero-vad"
+    },
+    {
+      "id": "rnnoise",
+      "filename": "rnnoise_suppressor.onnx",
+      "path": "./models/rnnoise_suppressor.onnx",
+      "purpose": "RNNoise — lightweight broadband noise suppressor, always-on stage 1",
+      "size_mb": 0.18,
+      "input_shape": [1, 480],
+      "sample_rate": 48000,
+      "execution_provider_preference": ["wasm"],
+      "load_priority": "eager",
+      "delivery": "first_run_cache",
+      "status": "fetched at first run via model-loader.js → Cache API",
+      "cdn_src": "https://huggingface.co/datasets/voiceisolate/models/resolve/main/rnnoise_suppressor.onnx",
+      "sha256": "",
+      "source": "https://github.com/xiph/rnnoise",
+      "export_script": "scripts/export_rnnoise_onnx.py"
     },
     {
       "id": "demucs_v4",
@@ -27,7 +45,9 @@
       "sample_rate": 44100,
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
-      "status": "placeholder — download manually, see README.md",
+      "delivery": "first_run_cache",
+      "status": "fetched on first audio upload via loadLazyModels() → Cache API",
+      "cdn_src": "https://huggingface.co/datasets/voiceisolate/models/resolve/main/demucs_v4_quantized.onnx",
       "sha256": "",
       "source": "https://huggingface.co/facebook/demucs",
       "export_script": "scripts/export_demucs_onnx.py"
@@ -42,31 +62,21 @@
       "sample_rate": 44100,
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
-      "status": "placeholder — download manually, see README.md",
+      "delivery": "first_run_cache",
+      "status": "fetched on first audio upload via loadLazyModels() → Cache API",
+      "cdn_src": "https://huggingface.co/datasets/voiceisolate/models/resolve/main/bsrnn_vocals.onnx",
       "sha256": "",
       "source": "https://github.com/amanteur/BandSplitRNN-Pytorch",
       "export_script": "scripts/export_bsrnn_onnx.py"
-    },
-    {
-      "id": "rnnoise",
-      "filename": "rnnoise_suppressor.onnx",
-      "path": "./models/rnnoise_suppressor.onnx",
-      "purpose": "RNNoise — lightweight broadband noise suppressor, always-on stage 1",
-      "size_mb": 0.18,
-      "input_shape": [1, 480],
-      "sample_rate": 48000,
-      "execution_provider_preference": ["wasm"],
-      "load_priority": "eager",
-      "status": "placeholder — download manually, see README.md",
-      "sha256": "",
-      "source": "https://github.com/xiph/rnnoise",
-      "export_script": "scripts/export_rnnoise_onnx.py"
     }
   ],
-  "notes": [
-    "Large models (demucs_v4, bsrnn_vocals) must be obtained separately due to GitHub 100 MB file limit.",
-    "Use Git LFS or place binary files manually in public/app/models/ before deployment.",
-    "ml-worker.js reads this manifest at startup to decide which models to load eagerly vs lazily.",
-    "Placeholder stub .onnx files (1-byte) prevent 404 crashes during development — real models override them."
+  "delivery_notes": [
+    "silero_vad.onnx is committed to the repo and served directly.",
+    "rnnoise_suppressor.onnx (0.18 MB) is fetched on first app boot via model-loader.js and stored in the browser Cache API (vip-models-v1).",
+    "demucs_v4_quantized.onnx (83 MB) and bsrnn_vocals.onnx (45 MB) are fetched lazily when the user first uploads audio, via loadLazyModels().",
+    "After first run all models are served from Cache API — zero network on repeat visits.",
+    "The service worker (sw.js) intercepts /app/models/*.onnx fetches and returns the cached binary to ml-worker.js.",
+    "CDN source: HuggingFace datasets hub (CORS-enabled, no auth required for public datasets).",
+    "To host your own models: update cdn_src fields to your own HF repo or any CORS-enabled URL."
   ]
 }
