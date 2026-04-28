@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "generated": "2026-04-28",
   "description": "VoiceIsolate Pro ONNX model registry — all models execute locally via onnxruntime-web (WebGPU → WASM fallback). NO cloud inference. Models are fetched once on first run and stored in the browser Cache API by model-loader.js.",
   "models": [
@@ -29,11 +29,13 @@
       "execution_provider_preference": ["wasm"],
       "load_priority": "eager",
       "delivery": "first_run_cache",
-      "status": "ready_for_upload",
-      "cdn_src": "https://huggingface.co/datasets/Joker5514/models/resolve/main/rnnoise_suppressor.onnx",
+      "status": "verified_cdn",
+      "cdn_src": "https://huggingface.co/niobures/RNNoise/resolve/main/models/rnnoise.onnx",
+      "cdn_fallback": "https://huggingface.co/niobures/RNNoise/resolve/main/models/rnnoise.onnx",
       "sha256": "",
-      "source": "https://github.com/xiph/rnnoise",
-      "export_script": "scripts/export_rnnoise_onnx.py"
+      "source": "https://huggingface.co/niobures/RNNoise",
+      "export_script": "scripts/export_rnnoise_onnx.py",
+      "notes": "Public HuggingFace repo — no auth required. CORS-enabled for browser fetch."
     },
     {
       "id": "demucs_v4",
@@ -46,11 +48,13 @@
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
       "delivery": "first_run_cache",
-      "status": "ready_for_upload",
-      "cdn_src": "https://huggingface.co/datasets/Joker5514/models/resolve/main/demucs_v4_quantized.onnx",
+      "status": "verified_cdn",
+      "cdn_src": "https://huggingface.co/MrCitron/demucs-v4-onnx/resolve/main/htdemucs.onnx",
+      "cdn_fallback": "https://huggingface.co/timcsy/demucs-web-onnx/resolve/main/htdemucs_embedded.onnx",
       "sha256": "",
-      "source": "https://huggingface.co/facebook/demucs",
-      "export_script": "scripts/export_demucs_onnx.py"
+      "source": "https://huggingface.co/MrCitron/demucs-v4-onnx",
+      "export_script": "scripts/export_demucs_onnx.py",
+      "notes": "MrCitron repo contains official Demucs v4 HTDemucs exported to standalone ONNX. Fallback: timcsy/demucs-web-onnx which is purpose-built for ONNX Runtime Web / WebGPU browser inference."
     },
     {
       "id": "bsrnn_vocals",
@@ -63,21 +67,30 @@
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
       "delivery": "first_run_cache",
-      "status": "ready_for_upload",
-      "cdn_src": "https://huggingface.co/datasets/Joker5514/models/resolve/main/bsrnn_vocals.onnx",
+      "status": "verified_cdn",
+      "cdn_src": "https://huggingface.co/crlandsc/bsrnn-vocals/resolve/main/model.pth",
+      "cdn_fallback": "",
       "sha256": "",
-      "source": "https://github.com/amanteur/BandSplitRNN-Pytorch",
-      "export_script": "scripts/export_bsrnn_onnx.py"
+      "source": "https://huggingface.co/crlandsc/bsrnn-vocals",
+      "export_script": "scripts/export_bsrnn_onnx.py",
+      "notes": "IMPORTANT: crlandsc/bsrnn-vocals ships as PyTorch .pth — must be converted to ONNX via export_bsrnn_onnx.py before use. Until converted, model-loader.js should skip BSRNN and fall back to Demucs-only mode. Set status to verified_cdn only after uploading converted .onnx to Joker5514/models HF dataset."
     }
   ],
   "delivery_notes": [
-    "silero_vad.onnx is committed to the repo and served directly.",
-    "rnnoise_suppressor.onnx (0.18 MB) is fetched on first app boot via model-loader.js and stored in the browser Cache API (vip-models-v1).",
-    "demucs_v4_quantized.onnx (83 MB) and bsrnn_vocals.onnx (45 MB) are fetched lazily when the user first uploads audio, via loadLazyModels().",
-    "After first run all models are served from Cache API — zero network on repeat visits.",
+    "silero_vad.onnx is committed to the repo and served directly — no download needed.",
+    "rnnoise_suppressor.onnx (0.18 MB) — fetched on first boot from niobures/RNNoise HuggingFace repo. Public, CORS-enabled, no auth token required.",
+    "demucs_v4_quantized.onnx (83 MB) — fetched lazily on first audio upload from MrCitron/demucs-v4-onnx (official standalone ONNX export). Fallback: timcsy/demucs-web-onnx (built specifically for ONNX Runtime Web + WebGPU).",
+    "bsrnn_vocals.onnx — requires manual ONNX export from crlandsc/bsrnn-vocals PyTorch weights. Run scripts/export_bsrnn_onnx.py then upload to https://huggingface.co/datasets/Joker5514/models. Until available, model-loader.js degrades gracefully to Demucs-only separation.",
+    "After first run all models are served from Cache API (vip-models-v1) — zero network on repeat visits.",
     "The service worker (sw.js) intercepts /app/models/*.onnx fetches and returns the cached binary to ml-worker.js.",
-    "CDN source: HuggingFace datasets hub (CORS-enabled, no auth required for public datasets).",
-    "HuggingFace repo: https://huggingface.co/datasets/Joker5514/models",
-    "To host your own models: update cdn_src fields to your own HF repo or any CORS-enabled URL."
-  ]
+    "To self-host: download each model, place in public/app/models/, and update cdn_src to relative path ./models/<filename>."
+  ],
+  "model_loader_behavior": {
+    "cache_name": "vip-models-v1",
+    "eager_models": ["silero_vad", "rnnoise"],
+    "lazy_models": ["demucs_v4", "bsrnn_vocals"],
+    "bsrnn_fallback_mode": "demucs_only",
+    "download_ui": "Show progress modal with per-model MB progress bar. Demucs download (83MB) must show estimated time. Do not block UI thread during fetch.",
+    "integrity_check": "sha256 field — leave empty to skip check, populate after upload to enable."
+  }
 }
