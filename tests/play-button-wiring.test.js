@@ -4,7 +4,7 @@ const path = require('path');
 describe('play button and controls diagnostics wiring', () => {
   const appJsPath = path.join(__dirname, '../public/app/app.js');
   const indexHtmlPath = path.join(__dirname, '../public/app/index.html');
-  const controlsTestPath = path.join(__dirname, '../public/app/controls-test.js');
+  const controlsTestPath = path.join(__dirname, 'controls-test.js');
 
   test('bindEvents wires tpPlay to togglePlayback()', () => {
     const appJs = fs.readFileSync(appJsPath, 'utf8');
@@ -16,10 +16,9 @@ describe('play button and controls diagnostics wiring', () => {
     expect(appJs).toContain('if (this.dom.playBtn) this.dom.playBtn.disabled = false;');
   });
 
-  test('index.html includes clear file control and controls diagnostic script', () => {
+  test('index.html includes clear file control', () => {
     const html = fs.readFileSync(indexHtmlPath, 'utf8');
     expect(html).toContain('id="clearFile"');
-    expect(html).toContain('<script src="./controls-test.js"></script>');
   });
 
   test('controls-test.js exports runControlsDiagnostic entrypoint', () => {

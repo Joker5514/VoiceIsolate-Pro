@@ -48,10 +48,12 @@ describe('CLAUDE.md §1 — single STFT + iSTFT per processing path', () => {
     expect(invCalls.length).toBe(1);
   });
 
-  test('voice-isolate-processor.js (real-time path) defines its own _forwardSTFTFrame / _inverseSTFTFrame', () => {
-    const src = read('public/app/voice-isolate-processor.js');
-    expect(src).toMatch(/_forwardSTFTFrame\s*\(/);
-    expect(src).toMatch(/_inverseSTFTFrame\s*\(/);
+  test('dsp-processor.js (real-time path) defines its own forward and inverse FFT operations', () => {
+    const src = read('public/app/dsp-processor.js');
+    // Forward STFT: fft called with inverse=false
+    expect(src).toMatch(/fft\s*\([^)]*false\s*\)/);
+    // Inverse STFT: fft called with inverse=true
+    expect(src).toMatch(/fft\s*\([^)]*true\s*\)/);
   });
 });
 

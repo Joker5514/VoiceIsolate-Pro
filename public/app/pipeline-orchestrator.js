@@ -137,10 +137,7 @@ class PipelineOrchestrator {
     if (!this._workletModulesLoaded) {
       try {
         await this.ctx.audioWorklet.addModule('/app/dsp-processor.js');
-        await this.ctx.audioWorklet.addModule('/app/voice-isolate-processor.js');
-        console.info('[Orchestrator] AudioWorklet modules loaded', {
-          processorPath: '/app/voice-isolate-processor.js'
-        });
+        console.info('[Orchestrator] AudioWorklet modules loaded');
       } catch (err) {
         console.error('[Orchestrator] Failed to load AudioWorklet module:', err);
         throw err;
