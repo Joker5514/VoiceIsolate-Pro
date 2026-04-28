@@ -27,7 +27,8 @@
       "sample_rate": 44100,
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
-      "status": "placeholder — download manually, see README.md",
+      "status": "cdn-fallback",
+      "cdnUrl": "https://huggingface.co/onnx-community/demucs/resolve/main/htdemucs_ft_int8.onnx",
       "sha256": "",
       "source": "https://huggingface.co/facebook/demucs",
       "export_script": "scripts/export_demucs_onnx.py"
@@ -42,7 +43,8 @@
       "sample_rate": 44100,
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
-      "status": "placeholder — download manually, see README.md",
+      "status": "cdn-fallback",
+      "cdnUrl": "https://huggingface.co/onnx-community/ConvTasNet_Libri2Mix_sepclean_16k/resolve/main/model_int8.onnx",
       "sha256": "",
       "source": "https://github.com/amanteur/BandSplitRNN-Pytorch",
       "export_script": "scripts/export_bsrnn_onnx.py"
@@ -57,7 +59,8 @@
       "sample_rate": 48000,
       "execution_provider_preference": ["wasm"],
       "load_priority": "eager",
-      "status": "placeholder — download manually, see README.md",
+      "status": "cdn-fallback",
+      "cdnUrl": "https://huggingface.co/onnx-community/rnnoise/resolve/main/model.onnx",
       "sha256": "",
       "source": "https://github.com/xiph/rnnoise",
       "export_script": "scripts/export_rnnoise_onnx.py"

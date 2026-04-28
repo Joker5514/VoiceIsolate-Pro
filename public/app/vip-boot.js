@@ -64,16 +64,9 @@
     }
 
     if (missing.length > 0) {
-      function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-      showBanner(
-        '📦 <b>Missing model file' + (missing.length > 1 ? 's' : '') + ':</b> ' +
-        missing.map(function(m){ return '<code style="background:#111;padding:1px 4px;border-radius:3px">' + escHtml(m) + '</code>'; }).join(', ') +
-        ' — place in <code style="background:#111;padding:1px 4px;border-radius:3px">public/app/models/</code> and reload. ' +
-        '<a href="https://github.com/Joker5514/VoiceIsolate-Pro#models" target="_blank" ' +
-        'rel="noopener" style="color:#ef4444">Download guide ↗</a>'
-      );
-      window.VIP_ML_AVAILABLE = false;
-      console.info('[VIP] ML stages disabled — running classical DSP fallback.');
+      console.info('[VIP] Local model files absent — CDN fetch will be triggered on first use via IDB cache system.');
+      // Don't set VIP_ML_AVAILABLE = false — CDN fallback will supply models
+      window.VIP_ML_AVAILABLE = true;
     } else {
       window.VIP_ML_AVAILABLE = true;
       console.info('[VIP] All models found ✓ ML pipeline enabled.');

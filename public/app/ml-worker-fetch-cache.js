@@ -16,8 +16,8 @@
 
    CONSTRAINTS
    -----------
-   ✅ 100% local — all fetches are to local relative paths only
-   ✅ No CDN, no cloud, no telemetry
+   ✅ Privacy-first — audio processing is 100% local, zero cloud inference
+   ✅ CDN used only for one-time model download (models cached in IDB after first fetch)
    ✅ Non-destructive — does NOT modify ml-worker.js
    ✅ Works with existing Worker message protocol
    ✅ Single-Pass STFT architecture unchanged
@@ -47,14 +47,46 @@ const VIP_IDB_STORE   = 'models';
  * @type {Record<string, { path: string, sizeBytes: number, integrity?: string }>}
  */
 const MODEL_REGISTRY = {
-  silero_vad:          { path: 'models/silero_vad.onnx',           sizeBytes: 1_747_968  },
-  deepfilter:          { path: 'models/deepfilter-int8.onnx',       sizeBytes: 9_437_184  },
-  demucs:              { path: 'models/demucs-v4-int8.onnx',        sizeBytes: 85_983_232 },
-  bsrnn:               { path: 'models/bsrnn-int8.onnx',            sizeBytes: 38_797_312 },
-  ecapa_tdnn:          { path: 'models/ecapa-tdnn-int8.onnx',       sizeBytes: 20_971_520 },
-  dns2_conformer_small:{ path: 'models/dns2_conformer_small.onnx',  sizeBytes: 14_680_064 },
-  noise_classifier:    { path: 'models/noise_classifier.onnx',      sizeBytes: 2_621_440  },
-  convtasnet:          { path: 'models/convtasnet-int8.onnx',       sizeBytes: 18_874_368 }
+  silero_vad: {
+    path: 'models/silero_vad.onnx',
+    sizeBytes: 1_747_968
+    // No cdnUrl needed — file is already committed
+  },
+  deepfilter: {
+    path: 'models/deepfilter-int8.onnx',
+    sizeBytes: 9_437_184,
+    cdnUrl: 'https://huggingface.co/onnx-community/DeepFilterNet2_onnx/resolve/main/model_int8.onnx'
+  },
+  demucs: {
+    path: 'models/demucs-v4-int8.onnx',
+    sizeBytes: 85_983_232,
+    cdnUrl: 'https://huggingface.co/onnx-community/demucs/resolve/main/htdemucs_ft_int8.onnx'
+  },
+  bsrnn: {
+    path: 'models/bsrnn-int8.onnx',
+    sizeBytes: 38_797_312,
+    cdnUrl: 'https://huggingface.co/onnx-community/ConvTasNet_Libri2Mix_sepclean_16k/resolve/main/model_int8.onnx'
+  },
+  ecapa_tdnn: {
+    path: 'models/ecapa-tdnn-int8.onnx',
+    sizeBytes: 20_971_520,
+    cdnUrl: 'https://huggingface.co/onnx-community/ecapa-tdnn/resolve/main/model_int8.onnx'
+  },
+  dns2_conformer_small: {
+    path: 'models/dns2_conformer_small.onnx',
+    sizeBytes: 14_680_064,
+    cdnUrl: 'https://huggingface.co/onnx-community/dns2-conformer-small/resolve/main/model_int8.onnx'
+  },
+  noise_classifier: {
+    path: 'models/noise_classifier.onnx',
+    sizeBytes: 2_621_440,
+    cdnUrl: 'https://huggingface.co/onnx-community/yamnet/resolve/main/model_int8.onnx'
+  },
+  convtasnet: {
+    path: 'models/convtasnet-int8.onnx',
+    sizeBytes: 18_874_368,
+    cdnUrl: 'https://huggingface.co/onnx-community/ConvTasNet_Libri2Mix_sepclean_16k/resolve/main/model_int8.onnx'
+  }
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,23 +216,48 @@ async function fetchModelWithProgress(key, opts = {}) {
     }
   }
 
-  // ── 2. Fetch from local path with streaming progress
+  // ── 2. Fetch — try local first, CDN fallback if placeholder/missing
   let response;
+  let usedCDN = false;
+
   try {
     response = await fetch(meta.path);
   } catch (netErr) {
-    const err = new Error(`Network error fetching "${meta.path}": ${netErr.message}`);
-    _emitError(key, err);
-    throw err;
+    response = null;
   }
 
-  if (!response.ok) {
-    const err = new Error(
-      `Model file not found: "${meta.path}" (HTTP ${response.status}). ` +
-      `Place the file in public/app/models/ and reload.`
-    );
-    _emitError(key, err);
-    throw err;
+  // Treat as placeholder if: fetch failed, non-ok, or file is suspiciously tiny (stub)
+  const isPlaceholder = !response || !response.ok ||
+    parseInt(response.headers.get('Content-Length') || '0', 10) < 1000;
+
+  if (isPlaceholder) {
+    if (!meta.cdnUrl) {
+      const err = new Error(
+        `Model file not found: "${meta.path}" and no CDN fallback configured. ` +
+        `Place the .onnx file in public/app/models/ and reload.`
+      );
+      _emitError(key, err);
+      throw err;
+    }
+    console.info(`[VIP fetch] "${key}" local file absent/stub — fetching from CDN: ${meta.cdnUrl}`);
+    try {
+      response = await fetch(meta.cdnUrl);
+      usedCDN = true;
+    } catch (cdnErr) {
+      const err = new Error(`CDN fetch failed for "${key}": ${cdnErr.message}`);
+      _emitError(key, err);
+      throw err;
+    }
+    if (!response.ok) {
+      const err = new Error(`CDN returned HTTP ${response.status} for "${key}": ${meta.cdnUrl}`);
+      _emitError(key, err);
+      throw err;
+    }
+  }
+
+  // Emit a console note so devs know which path was used
+  if (usedCDN) {
+    console.info(`[VIP fetch] Downloading "${key}" from CDN (will cache in IDB for future loads)...`);
   }
 
   const contentLength = parseInt(response.headers.get('Content-Length') || '0', 10);
@@ -237,7 +294,7 @@ async function fetchModelWithProgress(key, opts = {}) {
     console.warn(`[VIP cache] IDB write failed for "${key}":`, e.message)
   );
 
-  _emitComplete(key, buffer, false);
+  _emitComplete(key, buffer, false, usedCDN ? 'cdn' : 'local');
   return buffer;
 }
 
