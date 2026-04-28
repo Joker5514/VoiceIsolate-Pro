@@ -122,7 +122,7 @@ function _ensureBanner(absentModels) {
  * @param {Record<string, 'present'|'absent'>} manifest  key → status
  */
 window._stampPipelineStages = function stampPipelineStages(manifest) {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || !document.body) return;
   const unmapped = Object.keys(MODEL_MANIFEST).filter(k => {
     const normK = _normalizeKey(k);
     return !(normK in manifest) && !(k in manifest);

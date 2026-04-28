@@ -233,14 +233,13 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
   });
 
   test('worklet script routes explicitly include both COOP and COEP', () => {
-    const workletRoutes = ['/app/dsp-processor.js'];
-    for (const route of workletRoutes) {
-      const routeHeaders = cfg.headers.find((h) => h.source === route);
-      expect(routeHeaders).toBeDefined();
-      const keys = routeHeaders.headers.map((h) => h.key);
-      expect(keys).toContain('Cross-Origin-Opener-Policy');
-      expect(keys).toContain('Cross-Origin-Embedder-Policy');
-    }
+    // dsp-processor.js is the canonical AudioWorklet processor (voice-isolate-processor.js removed)
+    const route = '/app/dsp-processor.js';
+    const routeHeaders = cfg.headers.find((h) => h.source === route);
+    expect(routeHeaders).toBeDefined();
+    const keys = routeHeaders.headers.map((h) => h.key);
+    expect(keys).toContain('Cross-Origin-Opener-Policy');
+    expect(keys).toContain('Cross-Origin-Embedder-Policy');
   });
 
   test('/app/models ONNX route sets Cross-Origin-Resource-Policy to same-origin', () => {

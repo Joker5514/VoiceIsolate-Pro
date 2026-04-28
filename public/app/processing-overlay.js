@@ -243,7 +243,8 @@
 (function () {
   'use strict';
 
-  // Wait until the app class is instantiated on window.vip
+  // Wait until the app class is instantiated on window.vip or window._vipApp
+  // (VoiceIsolatePro exposes itself as both names for compatibility)
   function patchWhenReady(attempts) {
     attempts = attempts || 0;
     const vip = window.vip || window._vipApp;
