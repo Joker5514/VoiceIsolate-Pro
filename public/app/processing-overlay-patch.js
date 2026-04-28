@@ -24,6 +24,10 @@
   }
 
   function applyPatches (vip) {
+    // Idempotency guard — prevents double-wrapping on hot-reload or duplicate script load
+    if (vip._overlayPatched) return;
+    vip._overlayPatched = true;
+
     // ── showProcessingOverlay ──────────────────────────────────
     vip.showProcessingOverlay = function (stageName, pct) {
       if (window.VIPOverlay) window.VIPOverlay.show(stageName, pct);
@@ -44,7 +48,9 @@
     if (origPip) {
       vip.pip = async function (i, t) {
         const pct = Math.round((i + 1) / t * 100);
-        const stageName = (typeof STAGES !== 'undefined' && STAGES[i]) ? STAGES[i] : ('Stage ' + (i + 1));
+        // STAGES lives in app.js closure scope, not as a global. Read it via the app instance.
+        const stages = window._vipApp && window._vipApp.STAGES;
+        const stageName = (stages && stages[i]) ? stages[i] : ('Stage ' + (i + 1));
         this.updateProcessingOverlay(stageName, pct, i);
         return origPip(i, t);
       };
@@ -61,9 +67,7 @@
       }
     };
 
-    if (typeof structuredLog === 'function') {
-      structuredLog('info', 'Processing overlay patch applied');
-    }
+    console.info('[VIPOverlay] Overlay patch applied.');
   }
 
   patchWhenReady();

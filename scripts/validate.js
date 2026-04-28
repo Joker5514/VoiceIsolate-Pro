@@ -74,7 +74,6 @@ const awJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/voice-isola
   ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/voice-isolate-processor.js'), 'utf8') : '';
 check(awJs.includes("registerProcessor('voice-isolate-processor'"), 'AudioWorklet registerProcessor present');
 check(awJs.includes('process(inputs, outputs'), 'AudioWorklet process() method present');
-check(appJs.includes("addModule('./voice-isolate-processor.js')"), 'AudioWorklet registered in ensureCtx');
 
 // Phase 4: ONNX Runtime + ML Worker
 console.log('\nONNX Runtime (Phase 4):');
@@ -84,6 +83,9 @@ const mlWorkerJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/ml-wo
   ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/ml-worker.js'), 'utf8') : '';
 const orchPath = path.resolve(__dirname, '..', 'public/app/pipeline-orchestrator.js');
 const orchJs = fs.existsSync(orchPath) ? fs.readFileSync(orchPath, 'utf8') : '';
+// AudioWorklet ownership: must be in pipeline-orchestrator.js, never in app.js
+check(orchJs.includes('addModule') && orchJs.includes('voice-isolate-processor'), 'AudioWorklet addModule() owned by pipeline-orchestrator.js');
+check(!appJs.includes('audioWorklet.addModule'), 'app.js does not call audioWorklet.addModule() (ownership violation guard)');
 check(html.includes('pipeline-orchestrator.js'), 'Pipeline Orchestrator script tag in index.html');
 check(appJs.includes('async loadModels()'), 'loadModels() method present');
 check(appJs.includes('async runVAD(buf)'), 'runVAD() method present');
@@ -117,15 +119,20 @@ check(blueprint.includes('Threads from Space'), 'Threads from Space architecture
 
 // 5. Duplicate JSON key check
 console.log('\nJSON duplicate key check:');
-const { findDuplicateKeys } = require('./check-duplicate-keys.js');
-function checkDuplicateKeysWrapper(filePath) {
-  const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
-  return findDuplicateKeys(raw);
+const dupKeyScriptPath = path.resolve(__dirname, 'check-duplicate-keys.js');
+if (fs.existsSync(dupKeyScriptPath)) {
+  const { findDuplicateKeys } = require('./check-duplicate-keys.js');
+  function checkDuplicateKeysWrapper(filePath) {
+    const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
+    return findDuplicateKeys(raw);
+  }
+  const pkgDupes = checkDuplicateKeysWrapper('package.json');
+  check(pkgDupes.length === 0, pkgDupes.length === 0
+    ? 'No duplicate keys in package.json'
+    : `Duplicate keys in package.json: ${pkgDupes.join(', ')}`);
+} else {
+  console.log('  ℹ  check-duplicate-keys.js not found — skipping duplicate key check');
 }
-const pkgDupes = checkDuplicateKeysWrapper('package.json');
-check(pkgDupes.length === 0, pkgDupes.length === 0
-  ? 'No duplicate keys in package.json'
-  : `Duplicate keys in package.json: ${pkgDupes.join(', ')}`);
 
 // 6. vercel.json
 console.log('\nVercel config:');

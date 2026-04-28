@@ -54,20 +54,7 @@
     return;
   }
 
-  // --- Attempt 2: CDN fallback (dev only, violates production CSP) ---
-  console.warn(
-    '[ort-loader] ⚠️  LOCAL ort.min.js NOT FOUND at ' + LOCAL_PATH + '.\n' +
-    '  ML inference will fail under production CSP (connect-src \'self\' blob:).\n' +
-    '  Run: curl -L ' + CDN_URL + ' -o public/lib/ort.min.js\n' +
-    '  Then commit the file to fix this permanently.'
-  );
-
-  if (tryImport(CDN_URL)) {
-    console.warn('[ort-loader] Loaded ort from CDN — FOR DEVELOPMENT ONLY.');
-    return;
-  }
-
-  // --- Total failure ---
+  // --- Total failure: no CDN fallback — would bypass CSP and supply-chain trust ---
   const msg =
     '[ort-loader] FATAL: Cannot load ONNX Runtime Web from local path or CDN.\n' +
     'ML pipeline (Demucs, BSRNN, Silero VAD) will be unavailable.\n' +

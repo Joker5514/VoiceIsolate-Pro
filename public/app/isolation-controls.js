@@ -107,7 +107,7 @@ function _buildCard(id) {
 
   card.innerHTML = `
     <div class="speaker-card__header">
-      <span class="speaker-card__swatch" style="background:${spk.color};"></span>
+      <span class="speaker-card__swatch" style="background:${_escColor(spk.color)};"></span>
       <span class="speaker-card__label">${_esc(spk.label)}</span>
       <span class="speaker-card__id">${_esc(id)}</span>
     </div>
@@ -220,5 +220,16 @@ function _dispatchVolumes(eventType, changedId) {
 function _esc(str) {
   return String(str)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+    .replace(/'/g,'&#x27;');
+}
+
+// Validate CSS color values before injecting into style attributes.
+// Accepts #hex, rgb(...), rgba(...), hsl(...), or named colors.
+function _escColor(color) {
+  const s = String(color).trim();
+  if (/^#[0-9a-fA-F]{3,8}$/.test(s)) return s;
+  if (/^(rgb|rgba|hsl|hsla)\s*\([\d\s,%.]+\)$/.test(s)) return s;
+  if (/^[a-zA-Z]{2,30}$/.test(s)) return s;
+  return 'transparent';
 }
