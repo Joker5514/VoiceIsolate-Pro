@@ -29,8 +29,8 @@
       "execution_provider_preference": ["wasm"],
       "load_priority": "eager",
       "delivery": "first_run_cache",
-      "status": "fetched at first run via model-loader.js → Cache API",
-      "cdn_src": "https://huggingface.co/datasets/voiceisolate/models/resolve/main/rnnoise_suppressor.onnx",
+      "status": "ready_for_upload",
+      "cdn_src": "https://huggingface.co/datasets/Joker5514/models/resolve/main/rnnoise_suppressor.onnx",
       "sha256": "",
       "source": "https://github.com/xiph/rnnoise",
       "export_script": "scripts/export_rnnoise_onnx.py"
@@ -46,8 +46,8 @@
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
       "delivery": "first_run_cache",
-      "status": "fetched on first audio upload via loadLazyModels() → Cache API",
-      "cdn_src": "https://huggingface.co/datasets/voiceisolate/models/resolve/main/demucs_v4_quantized.onnx",
+      "status": "ready_for_upload",
+      "cdn_src": "https://huggingface.co/datasets/Joker5514/models/resolve/main/demucs_v4_quantized.onnx",
       "sha256": "",
       "source": "https://huggingface.co/facebook/demucs",
       "export_script": "scripts/export_demucs_onnx.py"
@@ -63,8 +63,8 @@
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
       "delivery": "first_run_cache",
-      "status": "fetched on first audio upload via loadLazyModels() → Cache API",
-      "cdn_src": "https://huggingface.co/datasets/voiceisolate/models/resolve/main/bsrnn_vocals.onnx",
+      "status": "ready_for_upload",
+      "cdn_src": "https://huggingface.co/datasets/Joker5514/models/resolve/main/bsrnn_vocals.onnx",
       "sha256": "",
       "source": "https://github.com/amanteur/BandSplitRNN-Pytorch",
       "export_script": "scripts/export_bsrnn_onnx.py"
@@ -77,6 +77,7 @@
     "After first run all models are served from Cache API — zero network on repeat visits.",
     "The service worker (sw.js) intercepts /app/models/*.onnx fetches and returns the cached binary to ml-worker.js.",
     "CDN source: HuggingFace datasets hub (CORS-enabled, no auth required for public datasets).",
+    "HuggingFace repo: https://huggingface.co/datasets/Joker5514/models",
     "To host your own models: update cdn_src fields to your own HF repo or any CORS-enabled URL."
   ]
 }
