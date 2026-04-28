@@ -596,9 +596,9 @@ function _emitProgress(key, loaded, total, pct) {
   }));
 }
 
-function _emitComplete(key, buffer, fromCache) {
+function _emitComplete(key, buffer, fromCache, source) {
   window.dispatchEvent(new CustomEvent('vip:modelDownloadComplete', {
-    detail: { key, buffer, fromCache }
+    detail: { key, buffer, fromCache, source: source || (fromCache ? 'idb' : 'local') }
   }));
 }
 
