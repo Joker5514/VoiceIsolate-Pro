@@ -11,11 +11,34 @@
   "github": {
     "autoJobCancelation": false
   },
+
   "rewrites": [
     {
       "source": "/api/(.*)",
       "destination": "/api/handler"
     },
+
+    {
+      "_comment": "MODEL DELIVERY — ARCHITECTURE INVARIANT — READ MODELS.md BEFORE CHANGING",
+      "_explanation": "These rewrites proxy /app/models/*.onnx to Vercel Blob storage. The browser always fetches a same-origin URL (/app/models/...) so COEP (require-corp) is satisfied and SharedArrayBuffer stays alive in the AudioWorklet. NEVER point these at an external CDN (huggingface.co, etc.) — doing so will break COEP and kill real-time audio processing. To add a new model: (1) run scripts/upload_models_to_vercel_blob.py, (2) add a new source/destination pair below using the returned Blob URL, (3) add the model entry to model-loader.js MODEL_REGISTRY with NO src field."
+    },
+    {
+      "source": "/app/models/silero_vad.onnx",
+      "destination": "https://REPLACE_WITH_VERCEL_BLOB_URL/silero_vad.onnx"
+    },
+    {
+      "source": "/app/models/rnnoise_suppressor.onnx",
+      "destination": "https://REPLACE_WITH_VERCEL_BLOB_URL/rnnoise_suppressor.onnx"
+    },
+    {
+      "source": "/app/models/demucs_v4_quantized.onnx",
+      "destination": "https://REPLACE_WITH_VERCEL_BLOB_URL/demucs_v4_quantized.onnx"
+    },
+    {
+      "source": "/app/models/bsrnn_vocals.onnx",
+      "destination": "https://REPLACE_WITH_VERCEL_BLOB_URL/bsrnn_vocals.onnx"
+    },
+
     {
       "source": "/app/((?!sw\\.js).*)",
       "destination": "/app/index.html"
@@ -29,6 +52,7 @@
       "destination": "/index.html"
     }
   ],
+
   "headers": [
     {
       "source": "/((?!api/).*)",
@@ -43,16 +67,16 @@
         { "key": "Referrer-Policy",              "value": "strict-origin-when-cross-origin" },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' /_vercel/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' blob: https://va.vercel-scripts.com https://huggingface.co https://huggingface.co/datasets; worker-src 'self' blob:; frame-ancestors 'none'"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' /_vercel/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' blob: https://va.vercel-scripts.com; worker-src 'self' blob:; frame-ancestors 'none'"
         }
       ]
     },
     {
       "source": "/sw.js",
       "headers": [
-        { "key": "Content-Type",  "value": "application/javascript" },
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
-        { "key": "Service-Worker-Allowed", "value": "/" }
+        { "key": "Content-Type",          "value": "application/javascript" },
+        { "key": "Cache-Control",         "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Service-Worker-Allowed","value": "/" }
       ]
     },
     {
@@ -68,7 +92,7 @@
       "headers": [
         { "key": "Cross-Origin-Opener-Policy",   "value": "same-origin" },
         { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
-        { "key": "Cross-Origin-Resource-Policy", "value": "cross-origin" }
+        { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" }
       ]
     },
     {
@@ -84,7 +108,7 @@
       "source": "/app/models/(.*\\.onnx)",
       "headers": [
         { "key": "Content-Type",                 "value": "application/octet-stream" },
-        { "key": "Cross-Origin-Resource-Policy", "value": "cross-origin" },
+        { "key": "Cross-Origin-Resource-Policy", "value": "same-origin" },
         { "key": "Cache-Control",                "value": "public, max-age=86400, immutable" }
       ]
     },

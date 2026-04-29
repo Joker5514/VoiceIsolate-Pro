@@ -1,58 +1,66 @@
 // ────────────────────────────────────────────────────────────────────────────
 // model-loader.js – VoiceIsolate Pro · Threads from Space v8
 //
-// First-run model delivery via Cache API.
-// 100% local after first download – no cloud inference ever.
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  ARCHITECTURE INVARIANT – DO NOT CHANGE WITHOUT READING MODELS.md      ║
+// ║                                                                          ║
+// ║  All .onnx models are served from /app/models/*.onnx on the SAME origin.║
+// ║  Vercel rewrites that path to Vercel Blob storage (see vercel.json).    ║
+// ║  From the browser's perspective it is a same-origin fetch – this is     ║
+// ║  what keeps COEP (require-corp) satisfied and SharedArrayBuffer alive.  ║
+// ║                                                                          ║
+// ║  NEVER add an external src URL (huggingface.co, cdn.*, etc.) to         ║
+// ║  MODEL_REGISTRY. Doing so will break COEP and kill the AudioWorklet.    ║
+// ║  See MODELS.md for the full upload → rewrite → cache flow.             ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
 //
-// Architecture:
-//   1. On first visit, fetch each .onnx from its canonical CDN source.
-//   2. Store the response in a versioned Cache (CACHE_NAME).
-//   3. On every subsequent visit, serve from cache – zero network.
-//   4. ml-worker.js reads models from /app/models/*.onnx.
-//      The service worker (sw.js) intercepts those fetches and returns the
-//      cached binary, so ml-worker sees a local URL but gets the real model.
-//   5. Progress is broadcast via a BroadcastChannel so the UI can show a
-//      real download bar instead of a spinner.
+// Model delivery flow (first run):
+//   1. loadEagerModels() / loadLazyModels() fetch from /app/models/*.onnx
+//   2. Vercel edge rewrite transparently proxies that path to Vercel Blob.
+//   3. The response is stored in the Cache API under /app/models/*.onnx.
+//   4. sw.js intercepts all future requests to /app/models/* and returns
+//      the cached response → ZERO network after first visit.
 //
-// Model tiers loaded at different times:
-//   EAGER   – silero_vad (2.2 MB), rnnoise (0.18 MB)  – loaded at app boot
-//   LAZY    – demucs_v4 (83 MB), bsrnn (45 MB)         – loaded after user uploads audio
+// Model tiers:
+//   EAGER  – silero_vad (2.2 MB), rnnoise (0.18 MB)  – loaded at boot
+//   LAZY   – demucs_v4 (83 MB),  bsrnn (45 MB)        – loaded on file drop
 // ────────────────────────────────────────────────────────────────────────────
 
-export const CACHE_NAME       = 'vip-models-v1';
-export const BROADCAST_CH     = 'vip-model-progress';
-const MODEL_BASE_PATH         = '/app/models/';
+export const CACHE_NAME   = 'vip-models-v1';
+export const BROADCAST_CH = 'vip-model-progress';
 
-// Canonical source URLs – fetched ONCE, then served from Cache forever.
-// Hugging Face CDN supports CORS and Range requests with no auth.
+// All paths are same-origin.  Vercel rewrites /app/models/* → Blob URL.
+const MODEL_BASE_PATH = '/app/models/';
+
+// ── Model registry ────────────────────────────────────────────────────────────
+// `src` is intentionally absent from every entry.
+// The fetch target is always MODEL_BASE_PATH + filename (same origin).
+// To add a new model:
+//   1. Run scripts/upload_models_to_vercel_blob.py to push the .onnx file.
+//   2. Add the Blob URL returned to vercel.json rewrites (see MODELS.md).
+//   3. Add an entry here with NO src field.
 const MODEL_REGISTRY = [
   {
     id:       'silero_vad',
     filename: 'silero_vad.onnx',
-    // Already committed in repo (2.2 MB) – served locally, no CDN fetch needed.
-    localOnly: true,
     priority: 'eager',
     sizeMB:   2.2,
   },
   {
     id:       'rnnoise',
     filename: 'rnnoise_suppressor.onnx',
-    // Tiny model – pre-exported and hosted on HF.
-    src:      'https://huggingface.co/datasets/Joker5514/models/resolve/main/rnnoise_suppressor.onnx',
     priority: 'eager',
     sizeMB:   0.18,
   },
   {
     id:       'demucs_v4',
     filename: 'demucs_v4_quantized.onnx',
-    src:      'https://huggingface.co/datasets/Joker5514/models/resolve/main/demucs_v4_quantized.onnx',
     priority: 'lazy',
     sizeMB:   83,
   },
   {
     id:       'bsrnn_vocals',
     filename: 'bsrnn_vocals.onnx',
-    src:      'https://huggingface.co/datasets/Joker5514/models/resolve/main/bsrnn_vocals.onnx',
     priority: 'lazy',
     sizeMB:   45,
   },
@@ -69,26 +77,28 @@ function _broadcast(detail) {
 }
 
 /**
- * Fetch a URL with streaming progress, storing the full response into cache.
- * Returns the ArrayBuffer of the model.
+ * Fetch a model from its same-origin /app/models/* path with streaming
+ * progress tracking, then store the response in the Cache API.
  *
- * @param {Cache}    cache
- * @param {object}   model  – entry from MODEL_REGISTRY
+ * The actual bytes come from Vercel Blob storage via a Vercel edge rewrite –
+ * the browser never sees a cross-origin URL.
+ *
+ * @param {Cache}  cache
+ * @param {object} model  – entry from MODEL_REGISTRY
  * @returns {Promise<void>}
  */
 async function _fetchAndCache(cache, model) {
-  const { id, filename, src, sizeMB } = model;
-  const cacheKey = MODEL_BASE_PATH + filename;
+  const { id, filename, sizeMB } = model;
+  const url = MODEL_BASE_PATH + filename; // same-origin always
 
   _broadcast({ type: 'start', id, filename, sizeMB });
 
-  // Fetch from CDN source with CORS mode.
-  const response = await fetch(src, { mode: 'cors', cache: 'no-store' });
+  // same-origin fetch – no 'cors' mode needed, COEP is satisfied automatically
+  const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) {
-    throw new Error(`[model-loader] HTTP ${response.status} fetching ${src}`);
+    throw new Error(`[model-loader] HTTP ${response.status} fetching ${url}`);
   }
 
-  // Stream-read to track download progress.
   const contentLength = Number(response.headers.get('content-length')) || sizeMB * 1024 * 1024;
   const reader = response.body.getReader();
   const chunks = [];
@@ -100,7 +110,7 @@ async function _fetchAndCache(cache, model) {
     chunks.push(value);
     received += value.byteLength;
     _broadcast({
-      type:     'progress',
+      type:    'progress',
       id,
       filename,
       loaded:  received,
@@ -109,95 +119,70 @@ async function _fetchAndCache(cache, model) {
     });
   }
 
-  // Assemble and store in Cache API so sw.js can intercept /app/models/*.onnx.
-  const blob         = new Blob(chunks, { type: 'application/octet-stream' });
-  const cachedResp   = new Response(blob, {
+  const blob = new Blob(chunks, { type: 'application/octet-stream' });
+  const cachedResp = new Response(blob, {
     status:  200,
     headers: {
-      'Content-Type':                   'application/octet-stream',
-      'Content-Length':                  String(blob.size),
+      'Content-Type':                'application/octet-stream',
+      'Content-Length':              String(blob.size),
       'Cross-Origin-Resource-Policy': 'same-origin',
-      'Cache-Control':                   'public, max-age=86400, immutable',
+      'Cache-Control':               'public, max-age=86400, immutable',
     },
   });
-  await cache.put(cacheKey, cachedResp);
+  await cache.put(url, cachedResp);
 
   _broadcast({ type: 'done', id, filename, bytes: blob.size });
-  console.info(`[model-loader] ✓ ${filename} (${(blob.size / 1024 / 1024).toFixed(1)} MB) cached as ${cacheKey}`);
+  console.info(`[model-loader] ✓ ${filename} (${(blob.size / 1024 / 1024).toFixed(1)} MB) cached`);
 }
 
-/**
- * Returns true if model is already present in Cache API.
- */
 async function _isCached(cache, filename) {
-  const match = await cache.match(MODEL_BASE_PATH + filename);
-  return !!match;
+  return !!(await cache.match(MODEL_BASE_PATH + filename));
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
  * loadEagerModels()
- * Call this at app boot (before ml-worker.js init).
- * Downloads silero_vad and rnnoise on first run; no-op on subsequent runs.
- *
- * @returns {Promise<{ loaded: string[], skipped: string[], failed: string[] }>}
+ * Call at app boot. Downloads silero_vad + rnnoise on first run; no-op
+ * on subsequent visits (served from Cache API by sw.js).
  */
 export async function loadEagerModels() {
   const result = { loaded: [], skipped: [], failed: [] };
-
   let cache;
-  try {
-    cache = await caches.open(CACHE_NAME);
-  } catch (err) {
+  try { cache = await caches.open(CACHE_NAME); }
+  catch (err) {
     console.warn('[model-loader] Cache API unavailable:', err.message);
-    // Gracefully degrade – ml-worker will hit 404s and fall back to classical DSP.
     return result;
   }
 
-  const eagerModels = MODEL_REGISTRY.filter(m => m.priority === 'eager');
-
-  for (const model of eagerModels) {
-    if (model.localOnly) {
-      // Already served from the repo – nothing to fetch.
-      result.skipped.push(model.id);
-      continue;
-    }
-
-    const alreadyCached = await _isCached(cache, model.filename);
-    if (alreadyCached) {
+  for (const model of MODEL_REGISTRY.filter(m => m.priority === 'eager')) {
+    if (await _isCached(cache, model.filename)) {
       result.skipped.push(model.id);
       _broadcast({ type: 'cached', id: model.id, filename: model.filename });
-      console.info(`[model-loader] ${model.filename} already cached, skipping download`);
       continue;
     }
-
     try {
       await _fetchAndCache(cache, model);
       result.loaded.push(model.id);
     } catch (err) {
       result.failed.push(model.id);
-      console.error(`[model-loader] Failed to fetch ${model.filename}:`, err.message);
+      console.error(`[model-loader] ✗ ${model.filename}:`, err.message);
       _broadcast({ type: 'error', id: model.id, filename: model.filename, error: err.message });
     }
   }
-
   return result;
 }
 
 /**
  * loadLazyModels()
- * Call this when the user drops an audio file (before Creator/Forensic processing starts).
- * Downloads demucs_v4 and bsrnn_vocals in parallel with a combined progress bar.
- * No-op if already cached.
+ * Call when the user drops an audio file. Downloads demucs_v4 + bsrnn
+ * in parallel. No-op if already cached.
  *
  * @param {{ onProgress?: (detail: object) => void }} [opts]
- * @returns {Promise<{ loaded: string[], skipped: string[], failed: string[] }>}
  */
 export async function loadLazyModels({ onProgress } = {}) {
   const result = { loaded: [], skipped: [], failed: [] };
 
-  // Wire optional caller progress callback into the BroadcastChannel.
   let localBc = null;
   if (typeof onProgress === 'function') {
     try {
@@ -207,20 +192,16 @@ export async function loadLazyModels({ onProgress } = {}) {
   }
 
   let cache;
-  try {
-    cache = await caches.open(CACHE_NAME);
-  } catch (err) {
+  try { cache = await caches.open(CACHE_NAME); }
+  catch (err) {
     console.warn('[model-loader] Cache API unavailable:', err.message);
     localBc?.close();
     return result;
   }
 
-  const lazyModels = MODEL_REGISTRY.filter(m => m.priority === 'lazy');
-
   await Promise.allSettled(
-    lazyModels.map(async (model) => {
-      const alreadyCached = await _isCached(cache, model.filename);
-      if (alreadyCached) {
+    MODEL_REGISTRY.filter(m => m.priority === 'lazy').map(async (model) => {
+      if (await _isCached(cache, model.filename)) {
         result.skipped.push(model.id);
         _broadcast({ type: 'cached', id: model.id, filename: model.filename });
         return;
@@ -230,7 +211,7 @@ export async function loadLazyModels({ onProgress } = {}) {
         result.loaded.push(model.id);
       } catch (err) {
         result.failed.push(model.id);
-        console.error(`[model-loader] Failed to fetch ${model.filename}:`, err.message);
+        console.error(`[model-loader] ✗ ${model.filename}:`, err.message);
         _broadcast({ type: 'error', id: model.id, filename: model.filename, error: err.message });
       }
     })
@@ -240,31 +221,22 @@ export async function loadLazyModels({ onProgress } = {}) {
   return result;
 }
 
-/**
- * getModelStatus()
- * Returns cache status for all models. Useful for the diagnostic panel.
- *
- * @returns {Promise<Array<{ id, filename, priority, sizeMB, cached: boolean }>>}
- */
+/** Returns cache status for all models. Useful for the diagnostic panel. */
 export async function getModelStatus() {
   let cache = null;
   try { cache = await caches.open(CACHE_NAME); } catch { /* ignore */ }
-
   return Promise.all(
     MODEL_REGISTRY.map(async (m) => ({
       id:       m.id,
       filename: m.filename,
       priority: m.priority,
       sizeMB:   m.sizeMB,
-      cached:   m.localOnly ? true : (cache ? await _isCached(cache, m.filename) : false),
+      cached:   cache ? await _isCached(cache, m.filename) : false,
     }))
   );
 }
 
-/**
- * clearModelCache()
- * Wipes the entire model cache. Use in settings/diagnostics panel.
- */
+/** Wipes the entire model cache. Use in the settings/diagnostics panel. */
 export async function clearModelCache() {
   const deleted = await caches.delete(CACHE_NAME);
   console.info('[model-loader] Model cache cleared:', deleted);
