@@ -506,12 +506,8 @@
   <script src="./analytics.js"></script>
   <script src="./license-manager.js"></script>
   <script src="./auth.js"></script>
-  <!-- TODO: ai-engine-v2.js and ai-intelligence.js are both loaded here but neither
-       is imported by pipeline-orchestrator.js. These two scripts are redundant;
-       ai-engine-v2.js is the successor to ai-intelligence.js v1. Consolidate to
-       a single file in a future cleanup pass. -->
+  <!-- ai-engine-v2.js: active AI entry point (ai-intelligence.js v1 removed as dead code) -->
   <script src="./ai-engine-v2.js"></script>
-  <script src="./ai-intelligence.js"></script>
   <script src="./ml-worker-fetch-cache.js"></script>
   <script src="./pipeline-orchestrator.js"></script>
   <script src="./batch-processor.js"></script>
