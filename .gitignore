@@ -18,7 +18,8 @@ public/app/models/deepfilter/
 
 # AI agent workspace dirs — not tracked in git
 .Jules/
-.jules/
+.jules/*
+!.jules/sentinel.md
 .qodo/
 
 # ORT runtime assets — vendored directly into public/lib (committed to repo)

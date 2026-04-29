@@ -1,22 +1,43 @@
 // tests/analytics.test.js — VoiceIsolate Pro
-// Vitest test suite for analytics.js
+// Jest test suite for analytics.js
 // CRITICAL: Proves zero external network calls are ever made.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  track,
-  trackProcessing,
-  getEvents,
-  clearEvents,
-  getSummary,
-} from '../public/app/analytics.js';
+'use strict';
+
+const fs   = require('fs');
+const path = require('path');
+
+// ── Browser globals required by analytics.js ─────────────────────────────────
+const _store = {};
+global.localStorage = {
+  getItem:    (k) => (Object.prototype.hasOwnProperty.call(_store, k) ? _store[k] : null),
+  setItem:    (k, v) => { _store[k] = String(v); },
+  removeItem: (k) => { delete _store[k]; },
+  clear:      () => { Object.keys(_store).forEach(k => delete _store[k]); },
+};
+// Provide fetch + navigator.sendBeacon as controllable mocks for spy tests.
+if (typeof globalThis.fetch !== 'function') globalThis.fetch = jest.fn();
+if (typeof global.navigator === 'undefined') global.navigator = {};
+if (typeof global.navigator.sendBeacon !== 'function') {
+  global.navigator.sendBeacon = jest.fn();
+}
+
+// ── Load analytics.js — strip ESM export keywords, run in Node scope ─────────
+const _src = fs.readFileSync(
+  path.join(__dirname, '../public/app/analytics.js'),
+  'utf8'
+).replace(/^export\s+/gm, '');
+
+const { track, trackProcessing, getEvents, clearEvents, getSummary } =
+  // eslint-disable-next-line no-new-func
+  new Function(_src + '\nreturn { track, trackProcessing, getEvents, clearEvents, getSummary };')();
 
 beforeEach(() => {
   localStorage.clear();
-  vi.restoreAllMocks();
+  jest.restoreAllMocks();
 });
 
-// ── Basic functionality ───────────────────────────────────────────────────
+// ── Basic functionality ───────────────────────────────────────────────────────
 
 describe('track()', () => {
   it('stores an event in localStorage with correct shape', () => {
@@ -86,7 +107,7 @@ describe('getSummary()', () => {
   });
 });
 
-// ── Ring-buffer eviction ──────────────────────────────────────────────────
+// ── Ring-buffer eviction ──────────────────────────────────────────────────────
 
 describe('track() ring-buffer eviction at 500 events', () => {
   it('evicts the oldest event when cap is exceeded', () => {
@@ -97,35 +118,35 @@ describe('track() ring-buffer eviction at 500 events', () => {
     track('overflow', { i: 500 });
     const events = getEvents();
     expect(events).toHaveLength(500);
-    expect(events[0].payload.i).toBe(1);       // oldest evicted
-    expect(events[499].event).toBe('overflow'); // newest at tail
+    expect(events[0].payload.i).toBe(1);
+    expect(events[499].event).toBe('overflow');
   });
 });
 
-// ── CRITICAL: Zero network call assertions ────────────────────────────────
+// ── CRITICAL: Zero network call assertions ────────────────────────────────────
 
 describe('ZERO_EXTERNAL_CALLS — fetch spy', () => {
   it('track() never calls fetch()', () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({});
+    const spy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({});
     track('spy-test', { x: 1 });
     expect(spy).not.toHaveBeenCalled();
   });
 
   it('trackProcessing() never calls fetch()', () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({});
+    const spy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({});
     trackProcessing({ durationMs: 99, stageName: 'gate', tier: 'STUDIO', hadError: false });
     expect(spy).not.toHaveBeenCalled();
   });
 
   it('getEvents() never calls fetch()', () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({});
+    const spy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({});
     track('pre-get');
     getEvents();
     expect(spy).not.toHaveBeenCalled();
   });
 
   it('getSummary() never calls fetch()', () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({});
+    const spy = jest.spyOn(globalThis, 'fetch').mockResolvedValue({});
     getSummary();
     expect(spy).not.toHaveBeenCalled();
   });
@@ -133,19 +154,19 @@ describe('ZERO_EXTERNAL_CALLS — fetch spy', () => {
 
 describe('ZERO_EXTERNAL_CALLS — sendBeacon spy', () => {
   it('track() never calls navigator.sendBeacon()', () => {
-    const spy = vi.spyOn(navigator, 'sendBeacon').mockReturnValue(true);
+    const spy = jest.spyOn(navigator, 'sendBeacon').mockReturnValue(true);
     track('beacon-test');
     expect(spy).not.toHaveBeenCalled();
   });
 
   it('trackProcessing() never calls navigator.sendBeacon()', () => {
-    const spy = vi.spyOn(navigator, 'sendBeacon').mockReturnValue(true);
+    const spy = jest.spyOn(navigator, 'sendBeacon').mockReturnValue(true);
     trackProcessing({ durationMs: 10, stageName: 'iSTFT', tier: 'ENTERPRISE', hadError: false });
     expect(spy).not.toHaveBeenCalled();
   });
 });
 
-// ── trackProcessing field validation ─────────────────────────────────────
+// ── trackProcessing field validation ─────────────────────────────────────────
 
 describe('trackProcessing()', () => {
   it('stores tier and stageName correctly', () => {
