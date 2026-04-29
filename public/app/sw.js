@@ -17,6 +17,7 @@ const CACHE_VERSION  = 'vip-app-v1';
 const MODEL_CACHE    = 'vip-models-v1';
 
 // Static app-shell assets to pre-cache on install.
+// Only files that actually exist in the repo are listed here.
 const APP_SHELL = [
   '/app/',
   '/app/index.html',
@@ -29,9 +30,7 @@ const APP_SHELL = [
   '/app/pipeline-state.js',
   '/app/ml-worker.js',
   '/app/ml-worker-fetch-cache.js',
-  '/app/ml-worker-models-patch.js',
   '/app/ring-buffer.js',
-  '/app/voice-isolate-processor.js',
   '/app/batch-orchestrator.js',
   '/app/batch-processor.js',
   '/app/visuals.js',
