@@ -1,71 +1,84 @@
-'use strict';
 // session-persist.js — VoiceIsolate Pro
-// Persistence helper for DSP parameter state across page refreshes (sessionStorage).
-// Exposes window.SessionPersist with set/get/saveAll/loadAll/clear methods.
-// window.VIP_PARAMS is populated from the persisted store at startup; callers must
-// invoke SessionPersist.set() or SessionPersist.saveAll() to write changes back.
+// Persists 52-slider state, preset name, active tab, bypass state,
+// and processing mode across reloads via localStorage + sessionStorage.
+// ZERO_EXTERNAL_CALLS: this file makes no network requests.
 
-const SESSION_KEY = 'vip_params_v1';
+const SESSION_KEY      = 'vip-session-v2';
+const SESSION_TEMP_KEY = 'vip-session-temp-v2';
 
-const SessionPersist = {
-  set(key, value) {
-    try {
-      const store = this._load();
-      store[key] = value;
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(store));
-    } catch (e) {
-      console.warn('[session-persist] set failed:', e.message);
-    }
-  },
-
-  get(key, defaultValue = null) {
-    try {
-      const store = this._load();
-      return key in store ? store[key] : defaultValue;
-    } catch {
-      return defaultValue;
-    }
-  },
-
-  saveAll(params) {
-    try {
-      const current = this._load();
-      const merged = { ...current, ...params };
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(merged));
-    } catch (e) {
-      console.warn('[session-persist] saveAll failed:', e.message);
-    }
-  },
-
-  loadAll() {
-    return this._load();
-  },
-
-  clear() {
-    try {
-      sessionStorage.removeItem(SESSION_KEY);
-    } catch (e) {
-      console.warn('[session-persist] clear failed:', e.message);
-    }
-  },
-
-  _load() {
-    try {
-      const raw = sessionStorage.getItem(SESSION_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
+/**
+ * Persist full session state to localStorage.
+ * @param {Object} params  - All 52 slider keys + values
+ * @param {Object} meta    - { activeTab, presetName, bypassState, mode }
+ */
+export function saveSession(params, meta) {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      params:  { ...params },
+      meta:    { ...meta   },
+      savedAt: Date.now(),
+    }));
+  } catch (err) {
+    console.warn('[session-persist] saveSession failed:', err);
   }
-};
-
-// Initialize window.VIP_PARAMS as the loaded store.
-// Existing code that reads window.VIP_PARAMS[key] keeps working.
-if (typeof window !== 'undefined') {
-  window.VIP_PARAMS = Object.assign(SessionPersist.loadAll(), window.VIP_PARAMS || {});
-  window.SessionPersist = SessionPersist;
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = SessionPersist;
+/**
+ * Load persisted session from localStorage.
+ * @returns {{ params: Object, meta: Object } | null}
+ */
+export function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.params !== 'object') return null;
+    return { params: parsed.params, meta: parsed.meta ?? {} };
+  } catch (err) {
+    console.warn('[session-persist] loadSession parse error:', err);
+    return null;
+  }
+}
+
+/**
+ * Delete the persisted session from localStorage.
+ */
+export function clearSession() {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch (err) {
+    console.warn('[session-persist] clearSession failed:', err);
+  }
+}
+
+/**
+ * Write tab-scoped state to sessionStorage.
+ * Automatically cleared when the browser tab closes.
+ * @param {Object} data - Any JSON-serializable object
+ */
+export function saveSessionTemp(data) {
+  try {
+    sessionStorage.setItem(SESSION_TEMP_KEY, JSON.stringify({
+      data,
+      savedAt: Date.now(),
+    }));
+  } catch (err) {
+    console.warn('[session-persist] saveSessionTemp failed:', err);
+  }
+}
+
+/**
+ * Read tab-scoped state from sessionStorage.
+ * @returns {Object | null}
+ */
+export function loadSessionTemp() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_TEMP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.data ?? null;
+  } catch (err) {
+    console.warn('[session-persist] loadSessionTemp parse error:', err);
+    return null;
+  }
 }

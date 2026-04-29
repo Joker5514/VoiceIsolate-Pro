@@ -1,36 +1,110 @@
-/*
- * style-diag-log.css — VoiceIsolate Pro v22.1
- * Styles for the #diagLog panel added by app-missing-methods.js.
- * Appended to style.css scope; safe to load as a separate <link> if needed.
- * The diagLog div lives inside #diagCard .viz-card.
- */
+/* ====================================================================
+   style-diag-log.css  —  VoiceIsolate Pro  Diagnostic Log Panel
+   Dark theme: bg #0a0a0f | text #c9d1d9 | accent #00d4ff
+   ==================================================================== */
 
-.diag-log {
-  max-height: 130px;
-  overflow-y: auto;
-  font-size: 10px;
-  font-family: 'JetBrains Mono', 'Courier New', monospace;
-  padding: 4px 6px;
-  background: #07080d;
-  color: #6b7a8d;
-  border-top: 1px solid #1a1f2e;
-  border-radius: 0 0 6px 6px;
-  line-height: 1.5;
-  word-break: break-all;
+/* ── Panel Container ─────────────────────────────────────────────────── */
+#diag-log {
+  position:          fixed;
+  bottom:            20px;
+  right:             20px;
+  width:             320px;
+  max-height:        240px;
+  display:           flex;
+  flex-direction:    column;
+  z-index:           9999;
+  background:        rgba(10, 10, 15, 0.93);
+  border:            1px solid rgba(0, 212, 255, 0.18);
+  border-radius:     8px;
+  backdrop-filter:   blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow:        0 4px 32px rgba(0,0,0,0.65),
+                     0 0 14px rgba(0,212,255,0.06);
+  font-family:       'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size:         11px;
+  color:             #c9d1d9;
+  overflow:          hidden;
 }
 
-.diag-log .diag-line {
-  display: block;
-  padding: 1px 0;
-  white-space: pre-wrap;
+#diag-log.diag-hidden { display: none; }
+
+/* ── Header / Title Bar ──────────────────────────────────────────────── */
+.diag-header {
+  display:         flex;
+  align-items:     center;
+  justify-content: space-between;
+  flex-shrink:     0;
+  padding:         6px 10px;
+  background:      rgba(0, 212, 255, 0.07);
+  border-bottom:   1px solid rgba(0, 212, 255, 0.14);
+  border-radius:   8px 8px 0 0;
+  cursor:          grab;
+  user-select:     none;
 }
 
-.diag-log .diag-info  { color: #6b7a8d; }
-.diag-log .diag-warn  { color: #f0a500; }
-.diag-log .diag-error { color: #ff4757; }
-.diag-log .diag-debug { color: #3d8eb9; }
+.diag-header:active { cursor: grabbing; }
 
-/* Subtle scrollbar for dark theme */
-.diag-log::-webkit-scrollbar       { width: 4px; }
-.diag-log::-webkit-scrollbar-track { background: #0a0a0f; }
-.diag-log::-webkit-scrollbar-thumb { background: #2a2f3e; border-radius: 2px; }
+.diag-header-title {
+  color:          #00d4ff;
+  font-weight:    700;
+  font-size:      10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.diag-close-btn {
+  background:  none;
+  border:      none;
+  color:       #555;
+  font-size:   15px;
+  line-height: 1;
+  padding:     0 2px;
+  cursor:      pointer;
+  transition:  color 0.15s ease;
+}
+
+.diag-close-btn:hover { color: #ef4444; }
+
+/* ── Scrollable Entry List ───────────────────────────────────────────── */
+.diag-entries {
+  flex:                 1;
+  overflow-y:           auto;
+  padding:              4px 0;
+  scrollbar-width:      thin;
+  scrollbar-color:      rgba(0,212,255,0.30) transparent;
+}
+
+.diag-entries::-webkit-scrollbar        { width: 4px; }
+.diag-entries::-webkit-scrollbar-track  { background: rgba(255,255,255,0.03); border-radius: 2px; }
+.diag-entries::-webkit-scrollbar-thumb  { background: rgba(0,212,255,0.28); border-radius: 2px; }
+.diag-entries::-webkit-scrollbar-thumb:hover { background: rgba(0,212,255,0.55); }
+
+/* ── Individual Log Entry ────────────────────────────────────────────── */
+.diag-entry {
+  padding:      3px 10px 3px 10px;
+  border-left:  2px solid transparent;
+  line-height:  1.55;
+  white-space:  pre-wrap;
+  word-break:   break-all;
+  animation:    diagFadeIn 0.18s ease-out forwards;
+  opacity:      0;
+}
+
+/* Severity color-coding */
+.diag-entry.info  { border-left-color: #00d4ff; color: #c9d1d9; }
+.diag-entry.pass  { border-left-color: #10b981; color: #6ee7b7; }
+.diag-entry.warn  { border-left-color: #f59e0b; color: #fcd34d; }
+.diag-entry.error { border-left-color: #ef4444; color: #fca5a5; }
+
+/* Timestamp prefix — dimmed */
+.diag-entry .diag-ts {
+  color:        #3d444d;
+  margin-right: 6px;
+  font-size:    10px;
+}
+
+/* ── Fade-in Keyframe ────────────────────────────────────────────────── */
+@keyframes diagFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
