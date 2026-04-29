@@ -63,7 +63,6 @@
 | `public/app/dsp-worker.js` | Worker thread · ML inference + CPU-heavy DSP |
 | `public/app/ml-worker.js` | ML worker · ONNX Runtime Web · model management |
 | `public/app/batch-orchestrator.js` | Batch processing orchestration · multi-file handling |
-| `VoiceIsolate_Pro_v24_Blueprint.docx` | **Complete v24 technical specification (TfS v13)** |
 
 ---
 
@@ -164,7 +163,7 @@ pnpm test
 
 ## Documentation
 
-**Complete Technical Blueprint**: See `VoiceIsolate_Pro_v24_Blueprint.docx` for the long-form design doc. Note that the blueprint describes a target architecture; the shipped code currently implements the 32-stage Deca-Pass variant above. `CLAUDE.md` is the authoritative contributor reference — read it before editing.
+**Complete Technical Blueprint**: The long-form v24 design document is available on the [GitHub Releases page](https://github.com/Joker5514/VoiceIsolate-Pro/releases) as a release asset. `CLAUDE.md` is the authoritative contributor reference — read it before editing.
 
 Blueprint sections:
 1. Executive Summary & Version Evolution

@@ -17,8 +17,8 @@ export async function registerSW() {
   }
 
   try {
-    const reg = await navigator.serviceWorker.register('/sw.js', {
-      scope: '/',
+    const reg = await navigator.serviceWorker.register('/app/sw.js', {
+      scope: '/app/',
       // Update the SW in the background without breaking the current session.
       updateViaCache: 'none',
     });

@@ -63,6 +63,9 @@
     "testMatch": [
       "**/tests/**/*.test.js"
     ],
+    "transform": {
+      "^.+/public/app/.+\\.js$": "<rootDir>/scripts/jest-cjs-transform.cjs"
+    },
     "collectCoverageFrom": [
       "public/app/dsp-core.js",
       "public/app/pipeline-state.js",

@@ -1,4 +1,0 @@
-{
-  "//": "Tells Node to treat .js files in public/app/ as CommonJS by default. Required so Jest can require() the CJS-style modules (dsp-core.js, ring-buffer.js, pipeline-state.js, license-manager.js, etc.) without `Must use import to load ES Module` errors. Browsers ignore this file; ESM-style files (auth.js, diarization-timeline.js, isolation-controls.js) are still loaded via <script type=\"module\"> in index.html.",
-  "type": "commonjs"
-}
