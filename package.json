@@ -46,7 +46,9 @@
     "mobile:dev": "pnpm run build && npx cap sync && echo 'Synced to both platforms'",
     "mobile:sync-version": "node scripts/sync-mobile-version.js",
     "mobile:version": "node scripts/sync-mobile-version.js",
-    "postversion": "node scripts/sync-mobile-version.js"
+    "postversion": "node scripts/sync-mobile-version.js",
+    "prebuild": "bash scripts/download-models.sh",
+    "models:download": "bash scripts/download-models.sh"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
