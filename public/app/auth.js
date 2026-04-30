@@ -6,7 +6,7 @@
 
 // ── 1. User Credential Store ─────────────────────────────────────────────────
 // DEV/TEST accounts only. In production, replace with server-side auth that
-// returns the user's actual purchased tier from the database.
+// returns the user's actual purchased tier from the database (api/auth.js).
 const USERS = [
   {
     username:     'test_free',
@@ -198,35 +198,64 @@ function renderLoginModal() {
   `;
   document.head.appendChild(style);
 
-  // Pre-fill last used username from localStorage
+  // Pre-fill last used username from localStorage (assigned via .value, never innerHTML)
   const lastUser = (() => { try { return localStorage.getItem('vip_last_user') || ''; } catch { return ''; } })();
-  const safeLastUser = lastUser.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   const overlay = document.createElement('div');
   overlay.id = 'vip-auth-overlay';
-  overlay.innerHTML = `
-    <div id="vip-auth-box">
-      <h2>🎙 VoiceIsolate Pro v24.0</h2>
-      <p>Threads from Space v12 · Sign in to continue</p>
-      <div class="vip-auth-field">
-        <label for="vip-username">Username</label>
-        <input id="vip-username" type="text" autocomplete="username"
-               placeholder="your username" spellcheck="false" value="${safeLastUser}" />
-      </div>
-      <div class="vip-auth-field">
-        <label for="vip-password">Password</label>
-        <input id="vip-password" type="password" autocomplete="current-password"
-               placeholder="••••••••" />
-      </div>
-      <button id="vip-auth-submit">Sign In</button>
-      <div id="vip-auth-error"></div>
-      <div class="vip-auth-tier-hint">
-        <strong style="color:#f3f3f5">Dev accounts:</strong>
-        test_free / test_pro / test_studio / test_enterprise / demo
-        (seeded from <code>api/auth.js</code>)
-      </div>
-    </div>
-  `;
+
+  // Build the login box entirely with DOM APIs to avoid any innerHTML injection risk.
+  const box = document.createElement('div');
+  box.id = 'vip-auth-box';
+
+  const heading = document.createElement('h2');
+  heading.textContent = '🎙 VoiceIsolate Pro v24.0';
+
+  const subheading = document.createElement('p');
+  subheading.textContent = 'Sign in to continue';
+
+  const userField = document.createElement('div');
+  userField.className = 'vip-auth-field';
+  const userLabel = document.createElement('label');
+  userLabel.setAttribute('for', 'vip-username');
+  userLabel.textContent = 'Username';
+  const userInput = document.createElement('input');
+  userInput.id = 'vip-username';
+  userInput.type = 'text';
+  userInput.autocomplete = 'username';
+  userInput.placeholder = 'your username';
+  userInput.spellcheck = false;
+  userInput.value = lastUser; // safe direct property assignment
+  userField.appendChild(userLabel);
+  userField.appendChild(userInput);
+
+  const passField = document.createElement('div');
+  passField.className = 'vip-auth-field';
+  const passLabel = document.createElement('label');
+  passLabel.setAttribute('for', 'vip-password');
+  passLabel.textContent = 'Password';
+  const passInput = document.createElement('input');
+  passInput.id = 'vip-password';
+  passInput.type = 'password';
+  passInput.autocomplete = 'current-password';
+  passInput.placeholder = '••••••••';
+  passField.appendChild(passLabel);
+  passField.appendChild(passInput);
+
+  const submitBtn = document.createElement('button');
+  submitBtn.id = 'vip-auth-submit';
+  submitBtn.textContent = 'Sign In';
+
+  const errDiv = document.createElement('div');
+  errDiv.id = 'vip-auth-error';
+
+  box.appendChild(heading);
+  box.appendChild(subheading);
+  box.appendChild(userField);
+  box.appendChild(passField);
+  box.appendChild(submitBtn);
+  box.appendChild(errDiv);
+  overlay.appendChild(box);
   document.body.appendChild(overlay);
   return overlay;
 }
