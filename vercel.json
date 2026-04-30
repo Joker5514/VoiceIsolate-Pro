@@ -18,9 +18,6 @@
       "destination": "/api/handler"
     },
 
-    {
-      "_comment": "MODEL DELIVERY — ARCHITECTURE INVARIANT — READ MODELS.md BEFORE CHANGING",
-      "_explanation": "These rewrites proxy /app/models/*.onnx to Vercel Blob storage. The browser always fetches a same-origin URL (/app/models/...) so COEP (require-corp) is satisfied and SharedArrayBuffer stays alive in the AudioWorklet. NEVER point these at an external CDN (huggingface.co, etc.) — doing so will break COEP and kill real-time audio processing. To add a new model: (1) run scripts/upload_models_to_vercel_blob.py, (2) add a new source/destination pair below using the returned Blob URL, (3) add the model entry to model-loader.js MODEL_REGISTRY with NO src field."
     },
     {
       "source": "/app/models/silero_vad.onnx",
