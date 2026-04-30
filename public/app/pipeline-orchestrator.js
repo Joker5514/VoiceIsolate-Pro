@@ -724,7 +724,6 @@ class PipelineOrchestrator {
       try {
         const suspCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
         await suspCtx.audioWorklet.addModule('/app/dsp-processor.js');
-        await suspCtx.audioWorklet.addModule('/app/voice-isolate-processor.js');
         orch._preWarmedCtx = suspCtx;
         console.info('[Orchestrator] AudioWorklet pre-warmed');
       } catch (e) {
