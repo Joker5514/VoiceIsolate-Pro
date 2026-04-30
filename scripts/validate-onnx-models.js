@@ -30,28 +30,32 @@ const R = (s) => `\x1b[31m${s}\x1b[0m`;
 const B = (s) => `\x1b[36m${s}\x1b[0m`;
 
 // ── Fallback model list (used when no manifest found) ──────────────────────
+// Models are served same-origin via vercel.json rewrites that proxy to
+// Vercel Blob storage. Override BLOB_BASE_URL when running this validator
+// against the raw Blob origin (skipping the rewrite layer).
+const BLOB_BASE_URL = process.env.BLOB_BASE_URL || '';
 const FALLBACK_MODELS = [
   {
-    name: 'silerovad.onnx',
-    cdn_src: 'https://huggingface.co/datasets/Joker5514/models/resolve/main/silerovad.onnx',
+    name: 'silero_vad.onnx',
+    cdn_src: BLOB_BASE_URL ? `${BLOB_BASE_URL.replace(/\/$/, '')}/silero_vad.onnx` : '',
     min_bytes: 100_000,   // ~2.2 MB real
   },
   {
-    name: 'rnnoisesuppressor.onnx',
-    cdn_src: 'https://huggingface.co/datasets/Joker5514/models/resolve/main/rnnoisesuppressor.onnx',
+    name: 'rnnoise_suppressor.onnx',
+    cdn_src: BLOB_BASE_URL ? `${BLOB_BASE_URL.replace(/\/$/, '')}/rnnoise_suppressor.onnx` : '',
     min_bytes: 100_000,   // ~180 KB real
   },
   {
-    name: 'demucsv4quantized.onnx',
-    cdn_src: 'https://huggingface.co/datasets/Joker5514/models/resolve/main/demucsv4quantized.onnx',
+    name: 'demucs_v4_quantized.onnx',
+    cdn_src: BLOB_BASE_URL ? `${BLOB_BASE_URL.replace(/\/$/, '')}/demucs_v4_quantized.onnx` : '',
     min_bytes: 10_000_000, // ~83 MB real
   },
   {
-    name: 'bsrnnvocals.onnx',
-    cdn_src: 'https://huggingface.co/datasets/Joker5514/models/resolve/main/bsrnnvocals.onnx',
+    name: 'bsrnn_vocals.onnx',
+    cdn_src: BLOB_BASE_URL ? `${BLOB_BASE_URL.replace(/\/$/, '')}/bsrnn_vocals.onnx` : '',
     min_bytes: 10_000_000, // ~45 MB real
   },
-];
+].filter((m) => m.cdn_src);
 
 // ── Parse CLI args ─────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -144,8 +148,8 @@ for (const r of results) {
     console.log(Y(`⚠️   ${label}  STUB (${humanBytes(r.contentLength)} < ${humanBytes(r.min_bytes)})  →  ${r.cdn_src}`));
     failures++;
   } else if (r.contentLength === 0) {
-    // HuggingFace sometimes omits Content-Length on large LFS files; treat as soft warning
-    console.log(Y(`⚠️   ${label}  HTTP 200 but Content-Length missing (LFS redirect?) — verify manually  →  ${r.cdn_src}`));
+    // Some CDNs omit Content-Length on large files; treat as soft warning
+    console.log(Y(`⚠️   ${label}  HTTP 200 but Content-Length missing — verify manually  →  ${r.cdn_src}`));
   } else {
     console.log(G(`✅  ${label}  ${humanBytes(r.contentLength)}  →  ${r.cdn_src}`));
   }
@@ -159,6 +163,6 @@ if (failures === 0) {
   console.log(Y('   → python scripts/export_demucs_onnx.py'));
   console.log(Y('   → python scripts/export_bsrnn_onnx.py'));
   console.log(Y('   → python scripts/export_rnnoise_onnx.py'));
-  console.log(Y('   → python scripts/upload_models_to_huggingface.py'));
+  console.log(Y('   → VERCEL_TOKEN=xxx python scripts/upload_models_to_vercel_blob.py --file <path> --name <name>'));
   process.exit(1);
 }

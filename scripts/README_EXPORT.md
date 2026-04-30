@@ -1,6 +1,10 @@
 # VoiceIsolate Pro — Model Export Scripts
 
-Scripts to export and upload the three ONNX models used by the browser app.
+Scripts to export and upload the ONNX models used by the browser app.
+
+> **Hosting:** all model binaries live in **Vercel Blob storage** and are
+> served same-origin via `vercel.json` rewrites. See `MODELS.md` for the
+> full architecture.
 
 ---
 
@@ -29,7 +33,22 @@ Run in this exact sequence. Each script saves to `./models_output/`.
 python scripts/export_rnnoise_onnx.py
 python scripts/export_demucs_onnx.py
 python scripts/export_bsrnn_onnx.py
-HF_TOKEN=your_token_here python scripts/upload_models_to_huggingface.py
+
+# Upload each .onnx file to Vercel Blob.
+# Generate a token at https://vercel.com/account/tokens
+export VERCEL_TOKEN=your_token_here
+
+python scripts/upload_models_to_vercel_blob.py \
+    --file ./models_output/rnnoise_suppressor.onnx \
+    --name rnnoise_suppressor.onnx
+
+python scripts/upload_models_to_vercel_blob.py \
+    --file ./models_output/demucs_v4_quantized.onnx \
+    --name demucs_v4_quantized.onnx
+
+python scripts/upload_models_to_vercel_blob.py \
+    --file ./models_output/bsrnn_vocals.onnx \
+    --name bsrnn_vocals.onnx
 ```
 
 ---
@@ -43,17 +62,22 @@ After each script, check `./models_output/`:
 | export_rnnoise_onnx.py | rnnoise_suppressor.onnx | <= 0.5 MB |
 | export_demucs_onnx.py | demucs_v4_quantized.onnx | <= 90 MB |
 | export_bsrnn_onnx.py | bsrnn_vocals.onnx | <= 50 MB |
-| upload_models_to_huggingface.py | manifest_sha256_patch.json | - |
+
+The upload script prints the public Blob URL and the exact `vercel.json`
+rewrite snippet to add — copy the snippet into `vercel.json` and commit.
 
 ---
 
 ## After Upload
 
-1. Open `./models_output/manifest_sha256_patch.json`
-2. Copy each `sha256` value into `public/app/models/models-manifest.json` under the matching key (`rnnoise`, `demucs_v4`, `bsrnn_vocals`)
-3. Commit and deploy
+1. Add each printed `{ "source": "/app/models/<name>", "destination": "<blob-url>" }`
+   block to the `rewrites` array in `vercel.json`, **before** the
+   `/app/((?!sw\.js).*)` catch-all.
+2. (Optional) Update `sha256` values in `public/app/models/models-manifest.json`
+   to enable runtime integrity checks.
+3. Commit and deploy.
 
-The upload script prints this reminder automatically on completion.
+See `MODELS.md` for the canonical workflow.
 
 ---
 
@@ -68,9 +92,9 @@ of `export_demucs_onnx.py` for details.
 The 352800-sample dummy input is large. If GPU OOM occurs, the scripts run on CPU
 automatically (CUDA is not required). Set `CUDA_VISIBLE_DEVICES=""` to force CPU.
 
-**HF rate limits on upload**
-The upload script retries 3 times with 2/4/8 second backoff. If rate limits persist,
-wait 60 seconds and rerun. The `create_repo` call is idempotent (`exist_ok=True`).
+**Vercel Blob upload errors**
+Confirm the token has Blob write scope. Re-generate at
+https://vercel.com/account/tokens. For team projects also set `VERCEL_TEAM_ID`.
 
 **BSRNN import errors**
 The vendor repo (`amanteur/BandSplitRNN-Pytorch`) may have API changes. If the import
@@ -78,6 +102,6 @@ fails, the script falls back to a pure-PyTorch BSRNN approximation automatically
 Output will carry random weights until a trained checkpoint is placed at
 `./checkpoints/bsrnn.pth`.
 
-**HF_TOKEN not set**
-`upload_models_to_huggingface.py` raises `EnvironmentError` immediately if `HF_TOKEN`
-is missing. Generate a write token at https://huggingface.co/settings/tokens.
+**VERCEL_TOKEN not set**
+`upload_models_to_vercel_blob.py` exits immediately if `VERCEL_TOKEN` is missing.
+Generate a token at https://vercel.com/account/tokens.

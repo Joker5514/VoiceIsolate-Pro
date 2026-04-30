@@ -2,11 +2,12 @@ PLACEHOLDER: Replace this file with the real demucs_v4_quantized.onnx (approx 83
 
 To obtain:
   1. pip install torch torchaudio demucs
-  2. python scripts/export_demucs_onnx.py --output public/app/models/demucs_v4_quantized.onnx
-     OR download a pre-exported ONNX from HuggingFace:
-     https://huggingface.co/facebook/demucs
+  2. python scripts/export_demucs_onnx.py --output ./demucs_v4_quantized.onnx
+  3. Upload to Vercel Blob and add a vercel.json rewrite (see MODELS.md):
+     VERCEL_TOKEN=xxx python scripts/upload_models_to_vercel_blob.py \
+         --file ./demucs_v4_quantized.onnx \
+         --name demucs_v4_quantized.onnx
 
-IMPORTANT: Delete this .placeholder file after placing the real .onnx.
-Do NOT commit large binary .onnx files directly — use Git LFS:
-  git lfs track '*.onnx'
-  git add .gitattributes
+IMPORTANT: Delete this .placeholder file after placing the real .onnx,
+or rely on the Vercel Blob rewrite path declared in vercel.json. Do NOT
+commit large binary .onnx files directly to git.
