@@ -7,15 +7,19 @@
  * validates tokens against /api/license/validate and enforces tier limits.
  */
 
-// Fail fast if this stub is accidentally loaded in production.
-if (typeof window !== 'undefined' && window.location && window.location.hostname) {
-  const _h = window.location.hostname;
-  if (_h !== 'localhost' && _h !== '127.0.0.1' && !_h.endsWith('.local')) {
-    console.error(
-      '[LicenseManager] SECURITY: Dev stub loaded in non-local environment (' +
-      _h + '). Replace with production license-manager.js.'
-    );
-  }
+// Block execution in non-local environments — this file must never reach production.
+const _LM_IS_PROD = (() => {
+  if (typeof window === 'undefined' || !window.location) return false;
+  const h = window.location.hostname;
+  return h !== 'localhost' && h !== '127.0.0.1' && !h.endsWith('.local') && h !== '';
+})();
+
+if (_LM_IS_PROD) {
+  console.error(
+    '[LicenseManager] SECURITY: Dev stub detected in production (' +
+    window.location.hostname + '). All features restricted to FREE tier. ' +
+    'Deploy the production license-manager.js.'
+  );
 }
 
 const LicenseManager = (() => {
@@ -54,7 +58,9 @@ const LicenseManager = (() => {
   };
 
   const STORAGE_KEYS = { LICENSE: 'vip_license_v22', USAGE: 'vip_usage_v22', TRIAL: 'vip_trial_v22' };
-  let _currentLicense = { tier: 'ENTERPRISE', token: null, email: null, source: 'dev-override' };
+  let _currentLicense = _LM_IS_PROD
+    ? { tier: 'FREE', token: null, email: null, source: 'prod-stub-fallback' }
+    : { tier: 'ENTERPRISE', token: null, email: null, source: 'dev-override' };
   let _usageCounters  = { date: new Date().toDateString(), exportsToday: 0, totalExports: 0, totalMinutesProcessed: 0, apiCallsThisMonth: 0, monthKey: new Date().toISOString().slice(0,7) };
   let _listeners = [];
 
@@ -62,28 +68,45 @@ const LicenseManager = (() => {
 
   const LM = {
     init() {
-      // Always ENTERPRISE — ignore any stored license
-      _currentLicense = { tier: 'ENTERPRISE', token: null, email: null, source: 'dev-override' };
-      console.log('[LicenseManager] DEV MODE — Tier forced to ENTERPRISE, all limits disabled.');
+      if (_LM_IS_PROD) {
+        _currentLicense = { tier: 'FREE', token: null, email: null, source: 'prod-stub-fallback' };
+        console.error('[LicenseManager] Production environment detected — restricting to FREE tier. Replace this stub.');
+      } else {
+        _currentLicense = { tier: 'ENTERPRISE', token: null, email: null, source: 'dev-override' };
+        console.log('[LicenseManager] DEV MODE — Tier forced to ENTERPRISE, all limits disabled.');
+      }
       return this;
     },
 
-    activate(token, email = null) { return { success: true, tier: 'ENTERPRISE' }; },
-    activateTrial(tier) { return { success: true, tier: 'ENTERPRISE' }; },
+    activate(token, email = null) {
+      return _LM_IS_PROD ? { success: false, tier: 'FREE', error: 'stub' } : { success: true, tier: 'ENTERPRISE' };
+    },
+    activateTrial(tier) {
+      return _LM_IS_PROD ? { success: false, tier: 'FREE', error: 'stub' } : { success: true, tier: 'ENTERPRISE' };
+    },
     deactivate() { /* no-op in dev mode */ },
 
-    getTier()    { return 'ENTERPRISE'; },
-    getTierDef() { return TIERS['ENTERPRISE']; },
+    getTier()    { return _currentLicense.tier; },
+    getTierDef() { return TIERS[_currentLicense.tier] || TIERS['FREE']; },
 
-    can(feature) { return true; },           // every feature unlocked
-    canUsePreset(presetName) { return true; }, // every preset unlocked
+    can(feature) {
+      if (_LM_IS_PROD) return false;
+      return true;
+    },
+    canUsePreset(presetName) {
+      if (_LM_IS_PROD) return false;
+      return true;
+    },
 
-    // Always returns allowed — no file or duration blocking
     checkFileLimit(fileSizeMB, durationMinutes) {
+      if (_LM_IS_PROD) return { allowed: false, reason: 'License validation unavailable' };
       return { allowed: true, reason: null };
     },
 
-    checkExportLimit() { return { allowed: true }; },
+    checkExportLimit() {
+      if (_LM_IS_PROD) return { allowed: false };
+      return { allowed: true };
+    },
 
     recordExport(durationMinutes = 0) {
       _usageCounters.exportsToday++;
@@ -105,17 +128,17 @@ const LicenseManager = (() => {
     getAllTiers()     { return TIERS; },
     getLicenseInfo() {
       return {
-        tier:     'ENTERPRISE',
-        tierDef:  TIERS['ENTERPRISE'],
-        email:    null,
+        tier:      _currentLicense.tier,
+        tierDef:   TIERS[_currentLicense.tier] || TIERS['FREE'],
+        email:     _currentLicense.email,
         expiresAt: null,
-        source:   'dev-override',
-        isActive: true,
+        source:    _currentLicense.source,
+        isActive:  !_LM_IS_PROD,
       };
     },
 
-    shouldWatermark() { return false; }, // no watermark
-    _getUpgradeTier() { return null; },   // already at top
+    shouldWatermark() { return _LM_IS_PROD; },
+    _getUpgradeTier() { return _LM_IS_PROD ? 'PRO' : null; },
 
     on(event, callback) {
       _listeners.push({ event, callback });
