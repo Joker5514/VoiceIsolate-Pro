@@ -50,7 +50,7 @@ export default [
   },
   {
     // AudioWorklet processors — run in AudioWorkletGlobalScope
-    files: ['public/app/dsp-processor.js', 'public/app/voice-isolate-processor.js'],
+    files: ['public/app/dsp-processor.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'script',

@@ -59,7 +59,7 @@
 | `public/app/app.js` | Main-thread orchestration · UI ↔ pipeline bridge |
 | `public/app/dsp-core.js` | All DSP math (STFT, iSTFT, gates, EQ, dynamics, filters) |
 | `public/app/pipeline-orchestrator.js` | 32-stage pipeline runner · ONNX model init |
-| `public/app/voice-isolate-processor.js` | AudioWorkletProcessor · real-time live mode |
+| `public/app/dsp-processor.js` | AudioWorkletProcessor · real-time live mode (canonical) |
 | `public/app/dsp-worker.js` | Worker thread · ML inference + CPU-heavy DSP |
 | `public/app/ml-worker.js` | ML worker · ONNX Runtime Web · model management |
 | `public/app/batch-orchestrator.js` | Batch processing orchestration · multi-file handling |

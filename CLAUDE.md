@@ -80,7 +80,7 @@ VoiceIsolate-Pro/
 │   │   ├── ml-worker-models-patch.js # Model compatibility layer
 │   │   ├── batch-orchestrator.js  # Multi-file batch processing queue
 │   │   ├── batch-processor.js     # Concurrent dispatch logic
-│   │   ├── voice-isolate-processor.js  # AudioWorklet registration
+│   │   ├── dsp-processor.js            # AudioWorklet processor (canonical)
 │   │   ├── ring-buffer.js    # SharedArrayBuffer ring buffer (main ↔ worklet)
 │   │   ├── analytics.js      # Local-only event log (no server)
 │   │   ├── license-manager.js # JWT license validation
@@ -144,7 +144,7 @@ There are three independent processing paths, each honoring this rule:
 |------|-----------|------------|
 | Offline main thread | `app.js` → `DSP.forwardSTFT` | `app.js` → `DSP.inverseSTFT` |
 | Offline worker pool | `dsp-worker.js` → `dspCore.forwardSTFT` | `dsp-worker.js` → `dspCore.inverseSTFT` |
-| Real-time AudioWorklet | `voice-isolate-processor.js` → `_forwardSTFTFrame` | `voice-isolate-processor.js` → `_inverseSTFTFrame` |
+| Real-time AudioWorklet | `dsp-processor.js` → `_forwardSTFTFrame` | `dsp-processor.js` → `_inverseSTFTFrame` |
 
 Both implementations live in `public/app/dsp-core.js` (`forwardSTFT`/`inverseSTFT`) — do not fork additional copies.
 
@@ -428,7 +428,7 @@ Sizes are approximate; authoritative counts come from `wc -c`.
 | `public/app/pipeline-state.js` | ~19KB | Centralized state, event bus |
 | `public/app/ml-worker.js` | ~32KB | ONNX inference worker (Demucs, BSRNN, VAD) |
 | `public/app/ml-worker-fetch-cache.js` | ~24KB | Model caching via IndexedDB |
-| `public/app/voice-isolate-processor.js` | ~19KB | AudioWorklet real-time processor |
+| `public/app/dsp-processor.js` | ~29KB | AudioWorklet real-time processor (canonical — only registered worklet) |
 | `public/app/batch-processor.js` | ~14KB | Multi-file batch queue |
 | `public/app/visuals.js` | ~19KB | Three.js 3D spectrogram |
 | `server.js` | — | Express dev server with required COOP/COEP headers |
