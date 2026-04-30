@@ -81,27 +81,7 @@ app.use(express.static(join(__dirname, 'public'), {
 
 // ── Health check endpoint ────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    app: 'VoiceIsolate Pro',
-    version: APP_VERSION,
-    crossOriginIsolated: true,
-    sharedArrayBuffer: true,
-    features: {
-      dsp: '32-stage Deca-Pass',
-      ml: 'ONNX Runtime Web v1.20.1 (WebGPU/WASM)',
-      vad: 'Silero VAD v5',
-      separation: 'Demucs v4 + BSRNN ensemble',
-      mobile: 'Capacitor Android/iOS',
-      architecture: 'Threads from Space v12',
-    },
-    timestamp: new Date().toISOString(),
-  });
-});
-
-// ── API: version info ────────────────────────────────────────────────────
-app.get('/api/version', (_req, res) => {
-  res.json({ version: APP_VERSION, name: 'VoiceIsolate Pro' });
+  res.json({ status: 'ok' });
 });
 
 // ── Start ────────────────────────────────────────────────────────────────

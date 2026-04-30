@@ -186,6 +186,34 @@ function validateLicenseToken(token) {
   }
 }
 
+// ─── Simple in-memory rate limiter ────────────────────────────────────────────
+function makeRateLimiter(maxReqs, windowMs) {
+  const _map = new Map(); // ip → { count, windowStart }
+  return function rateLimiter(req, res, next) {
+    const key = req.ip || 'unknown';
+    const now = Date.now();
+    const entry = _map.get(key) || { count: 0, windowStart: now };
+    if (now - entry.windowStart > windowMs) {
+      entry.count = 0;
+      entry.windowStart = now;
+    }
+    entry.count++;
+    _map.set(key, entry);
+    if (_map.size > 5000) {
+      for (const [k, v] of _map) {
+        if (now - v.windowStart > windowMs * 2) _map.delete(k);
+      }
+    }
+    if (entry.count > maxReqs) {
+      return res.status(429).json({ error: 'Too many requests. Please wait before trying again.' });
+    }
+    next();
+  };
+}
+
+const activateLimiter    = makeRateLimiter(5,  60_000); // 5 activations per minute per IP
+const usageRecordLimiter = makeRateLimiter(30, 60_000); // 30 usage records per minute per IP
+
 // ─── Tier → Price ID Mapping ──────────────────────────────────────────────────
 const PRICE_TO_TIER = {
   [process.env.STRIPE_PRICE_PRO_MONTHLY]:    'PRO',
@@ -358,7 +386,7 @@ router.post('/license/validate', (req, res) => {
 });
 
 // ─── POST /api/license/activate ───────────────────────────────────────────────
-router.post('/license/activate', (req, res) => {
+router.post('/license/activate', activateLimiter, (req, res) => {
   const { token, email } = req.body;
   if (!token) return res.status(400).json({ success: false, error: 'Token required' });
 
@@ -393,7 +421,7 @@ router.get('/license/status', (req, res) => {
 });
 
 // ─── POST /api/usage/record ───────────────────────────────────────────────────
-router.post('/usage/record', async (req, res) => {
+router.post('/usage/record', usageRecordLimiter, async (req, res) => {
   const { event: usageEvent, units = 1 } = req.body;
   const authHeader = req.headers.authorization;
 

@@ -2,27 +2,26 @@
 //  auth.js  —  VoiceIsolate Pro v24.0 / Threads from Space v12
 //  100% local, tab-scoped session. No network calls. No cookies.
 //  SHA-256 password hashing via SubtleCrypto (built into every modern browser).
-//  DEV/TEST MODE: All sessions forced to ENTERPRISE tier — no limits.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── 1. User Credential Store ─────────────────────────────────────────────────
-// No admin account is hardcoded. Provision one via a serverless seed at
-// deploy time if you need admin access, and authenticate through the API.
+// DEV/TEST accounts only. In production, replace with server-side auth that
+// returns the user's actual purchased tier from the database.
 const USERS = [
   {
     username:     'test_free',
     displayName:  'Free Test User',
     passHash:     '7d2d9e1ce9bf847d900f72ab5da00972d584b41fec53854d05488acc979ea27a',
-    tier:         'ENTERPRISE', // forced up for testing
+    tier:         'FREE',
     role:         'user',
     filesUsed:    0,
-    filesAllowed: Infinity,
+    filesAllowed: 3,
   },
   {
     username:     'test_pro',
     displayName:  'Pro Test User',
     passHash:     '7461f3545d99833b86bd16c4ccdeaa8c413158cd66befb95296be110307ef950',
-    tier:         'ENTERPRISE', // forced up for testing
+    tier:         'PRO',
     role:         'user',
     filesUsed:    0,
     filesAllowed: Infinity,
@@ -31,7 +30,7 @@ const USERS = [
     username:     'test_studio',
     displayName:  'Studio Test User',
     passHash:     '30f8dc347b710b75c826f3f4a157ec2c3fcdfb3d2b7b1bb098ba2e65c7f5290f',
-    tier:         'ENTERPRISE', // forced up for testing
+    tier:         'STUDIO',
     role:         'user',
     filesUsed:    0,
     filesAllowed: Infinity,
@@ -49,44 +48,44 @@ const USERS = [
     username:     'demo',
     displayName:  'Demo User',
     passHash:     '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
-    tier:         'ENTERPRISE', // forced up for testing
+    tier:         'FREE',
     role:         'user',
     filesUsed:    0,
-    filesAllowed: Infinity,
+    filesAllowed: 3,
   },
 ];
 
 // ── 2. Tier Capability Map ───────────────────────────────────────────────────
 const TIER_CAPS = {
   FREE: {
-    maxFileSizeMB:   Infinity,
-    filesPerMonth:   Infinity,
-    maxStages:       32,
-    mlModels:        ['silero-vad', 'rnnoise', 'demucs-v4', 'ecapa-tdnn', 'voicefixer'],
-    exportFormats:   ['wav', 'flac', 'opus', 'mp3', 'mov'],
-    batchMax:        1000,
-    liveMode:        true,
-    engineerPanel:   true,
-    forensicMode:    true,
+    maxFileSizeMB:   100,
+    filesPerMonth:   3,
+    maxStages:       16,
+    mlModels:        ['silero-vad', 'rnnoise'],
+    exportFormats:   ['wav', 'mp3'],
+    batchMax:        1,
+    liveMode:        false,
+    engineerPanel:   false,
+    forensicMode:    false,
   },
   PRO: {
-    maxFileSizeMB:   Infinity,
-    filesPerMonth:   Infinity,
-    maxStages:       32,
-    mlModels:        ['silero-vad', 'rnnoise', 'demucs-v4', 'ecapa-tdnn', 'voicefixer'],
-    exportFormats:   ['wav', 'flac', 'opus', 'mp3', 'mov'],
-    batchMax:        1000,
+    maxFileSizeMB:   500,
+    filesPerMonth:   50,
+    maxStages:       24,
+    mlModels:        ['silero-vad', 'rnnoise', 'demucs-v4'],
+    exportFormats:   ['wav', 'flac', 'mp3'],
+    batchMax:        10,
     liveMode:        true,
     engineerPanel:   true,
-    forensicMode:    true,
+    forensicMode:    false,
   },
   STUDIO: {
-    maxFileSizeMB:   Infinity,
-    filesPerMonth:   Infinity,
+    maxFileSizeMB:   2048,
+    filesPerMonth:   500,
     maxStages:       32,
     mlModels:        ['silero-vad', 'rnnoise', 'demucs-v4', 'ecapa-tdnn', 'voicefixer'],
-    exportFormats:   ['wav', 'flac', 'opus', 'mp3', 'mov'],
-    batchMax:        1000,
+    exportFormats:   ['wav', 'flac', 'opus', 'mp3'],
+    batchMax:        100,
     liveMode:        true,
     engineerPanel:   true,
     forensicMode:    true,
@@ -116,14 +115,14 @@ async function sha256(str) {
 
 function saveSession(user) {
   const sess = {
-    username:    user.username,
-    displayName: user.displayName,
-    tier:        'ENTERPRISE', // ALWAYS force ENTERPRISE during testing
-    role:        user.role,
-    filesUsed:   0,
-    loginTime:   Date.now(),
+    username:     user.username,
+    displayName:  user.displayName,
+    tier:         user.tier,
+    role:         user.role,
+    filesUsed:    user.filesUsed || 0,
+    filesAllowed: user.filesAllowed,
+    loginTime:    Date.now(),
   };
-  // Save to BOTH sessionStorage and localStorage so login persists across refreshes
   try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess)); } catch {}
   try { localStorage.setItem(SESSION_KEY, JSON.stringify(sess)); } catch {}
   return sess;
@@ -131,14 +130,11 @@ function saveSession(user) {
 
 function loadSession() {
   try {
-    // Try sessionStorage first, fall back to localStorage (survives page refresh)
     const raw = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const sess = JSON.parse(raw);
-    // Always force ENTERPRISE tier — never let a stale session downgrade
-    sess.tier = 'ENTERPRISE';
-    // Sync back so it's always current
-    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess)); } catch {}
+    // Validate tier is a known value to prevent tampering via localStorage
+    if (!TIER_ORDER.includes(sess.tier)) sess.tier = 'FREE';
     return sess;
   } catch {
     return null;
@@ -194,12 +190,6 @@ function renderLoginModal() {
       border: 1px solid rgba(220,38,38,0.2);
       border-radius: 8px; font-size: 0.76rem; color: #8a8aa0;
     }
-    .vip-dev-badge {
-      display: inline-block; margin-bottom: 12px;
-      padding: 3px 10px; border-radius: 20px;
-      background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4);
-      color: #f59e0b; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
-    }
     @keyframes auth-shake {
       0%,100%{transform:translateX(0)}
       20%,60%{transform:translateX(-8px)}
@@ -216,7 +206,6 @@ function renderLoginModal() {
   overlay.id = 'vip-auth-overlay';
   overlay.innerHTML = `
     <div id="vip-auth-box">
-      <div class="vip-dev-badge">⚡ DEV MODE · ALL LIMITS DISABLED · ENTERPRISE</div>
       <h2>🎙 VoiceIsolate Pro v24.0</h2>
       <p>Threads from Space v12 · Sign in to continue</p>
       <div class="vip-auth-field">
@@ -229,11 +218,12 @@ function renderLoginModal() {
         <input id="vip-password" type="password" autocomplete="current-password"
                placeholder="••••••••" />
       </div>
-      <button id="vip-auth-submit">Sign In → Enterprise</button>
+      <button id="vip-auth-submit">Sign In</button>
       <div id="vip-auth-error"></div>
       <div class="vip-auth-tier-hint">
-        <strong style="color:#f3f3f5">Dev mode:</strong>
-        use any seeded test account from <code>api/auth.js</code>.
+        <strong style="color:#f3f3f5">Dev accounts:</strong>
+        test_free / test_pro / test_studio / test_enterprise / demo
+        (seeded from <code>api/auth.js</code>)
       </div>
     </div>
   `;
@@ -273,7 +263,6 @@ export async function requireAuth() {
         return;
       }
 
-      // Remember username for next time
       try { localStorage.setItem('vip_last_user', username); } catch {}
 
       const sess = saveSession(user);
@@ -291,7 +280,6 @@ export async function requireAuth() {
       if (e.key === 'Enter') document.getElementById('vip-password').focus();
     });
 
-    // Auto-focus password if username already filled
     setTimeout(() => {
       const uEl = document.getElementById('vip-username');
       if (uEl && uEl.value) document.getElementById('vip-password')?.focus();
@@ -308,74 +296,94 @@ export function logout() {
 
 // ── 7. Capability Accessors ──────────────────────────────────────────────────
 export function getCaps(tier) {
-  // Always return ENTERPRISE caps regardless of tier argument
-  return TIER_CAPS['ENTERPRISE'];
+  return TIER_CAPS[tier] || TIER_CAPS['FREE'];
 }
 
 export function canUseModel(modelId) {
-  return true; // all models unlocked
+  const sess = loadSession();
+  const caps = getCaps(sess?.tier || 'FREE');
+  return caps.mlModels.includes(modelId);
 }
 
 export function getAllowedStages() {
-  return 32; // max stages always
+  const sess = loadSession();
+  return getCaps(sess?.tier || 'FREE').maxStages;
 }
 
 export function checkFileSizeLimit(sizeMB) {
-  return true; // no file size limit
+  const sess = loadSession();
+  const caps = getCaps(sess?.tier || 'FREE');
+  return caps.maxFileSizeMB === Infinity || sizeMB <= caps.maxFileSizeMB;
 }
 
 export function checkFilesRemaining() {
-  return true; // unlimited files
+  const sess = loadSession();
+  if (!sess) return false;
+  const caps = getCaps(sess.tier);
+  if (caps.filesPerMonth === Infinity) return true;
+  return (sess.filesUsed || 0) < caps.filesPerMonth;
 }
 
 export function incrementFileUsage() {
-  // no-op during testing — don't count against any quota
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const sess = JSON.parse(raw);
+    sess.filesUsed = (sess.filesUsed || 0) + 1;
+    try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess)); } catch {}
+    try { localStorage.setItem(SESSION_KEY, JSON.stringify(sess)); } catch {}
+  } catch {}
 }
 
 // ── 8. DOM Tier Enforcement ───────────────────────────────────────────────────
 export function applyTierToDOM(tier, role) {
-  // Always enforce ENTERPRISE visually regardless of passed tier
-  const forcedTier = 'ENTERPRISE';
-  const forcedRole = role || 'admin';
+  const validTier = TIER_ORDER.includes(tier) ? tier : 'FREE';
+  const caps = getCaps(validTier);
 
-  // Update tier badge
+  const TIER_COLORS = { FREE: '#6b7280', PRO: '#3b82f6', STUDIO: '#8b5cf6', ENTERPRISE: '#f59e0b' };
   const badge = document.getElementById('tier-badge');
   if (badge) {
-    badge.textContent = '⚡ ENTERPRISE';
-    badge.style.background = '#f59e0b';
-    badge.style.color = '#111';
+    badge.textContent = `${validTier}`;
+    badge.style.background = TIER_COLORS[validTier] || '#6b7280';
+    badge.style.color = validTier === 'FREE' ? '#fff' : '#111';
   }
 
-  // Update user display
   const sess = loadSession();
   const userDisplay = document.getElementById('user-display');
   if (userDisplay && sess) {
-    userDisplay.textContent = `${sess.displayName} · ENTERPRISE`;
+    userDisplay.textContent = `${sess.displayName} · ${validTier}`;
   }
 
-  // Unlock ALL tier-gated elements
+  // Gate elements by tier requirement
   document.querySelectorAll('[data-requires-tier]').forEach(el => {
-    el.classList.remove('tier-locked');
-    el.removeAttribute('disabled');
-    el.title = '';
+    const required = el.getAttribute('data-requires-tier');
+    const requiredIdx = TIER_ORDER.indexOf(required);
+    const userIdx = TIER_ORDER.indexOf(validTier);
+    if (userIdx >= requiredIdx) {
+      el.classList.remove('tier-locked');
+      el.removeAttribute('disabled');
+      el.title = '';
+    } else {
+      el.classList.add('tier-locked');
+      el.setAttribute('disabled', 'disabled');
+      el.title = `Requires ${required} tier`;
+    }
   });
 
-  // Show all panels
   const engPanel = document.getElementById('engineer-panel');
-  if (engPanel) engPanel.style.display = 'block';
+  if (engPanel) engPanel.style.display = caps.engineerPanel ? 'block' : 'none';
 
   const forensicBtn = document.getElementById('btn-forensic-mode');
-  if (forensicBtn) forensicBtn.style.display = 'inline-flex';
+  if (forensicBtn) forensicBtn.style.display = caps.forensicMode ? 'inline-flex' : 'none';
 
   const adminPanel = document.getElementById('admin-panel');
-  if (adminPanel) adminPanel.style.display = forcedRole === 'admin' ? 'block' : 'none';
+  if (adminPanel) adminPanel.style.display = role === 'admin' ? 'block' : 'none';
 
   const mlTab = document.querySelector('[data-tab="ml"]');
-  if (mlTab) mlTab.style.display = 'inline-flex';
+  if (mlTab) mlTab.style.display = caps.mlModels.length > 0 ? 'inline-flex' : 'none';
 }
 
 // ── 9. Auth object (non-module compat shim) ───────────────────────────────────
-// Allows classic <script> files to call Auth.init(), Auth.isLoggedIn, etc.
 const Auth = {
   currentUser: null,
   isLoggedIn: false,
@@ -388,7 +396,6 @@ const Auth = {
       applyTierToDOM(sess.tier, sess.role);
       return sess;
     }
-    // No session — show login
     const result = await requireAuth();
     this.currentUser = result;
     this.isLoggedIn = true;
@@ -396,11 +403,11 @@ const Auth = {
   },
 
   logout() { logout(); },
-  getCaps() { return getCaps(); },
-  canUseModel(m) { return true; },
-  checkFileSizeLimit() { return true; },
-  checkFilesRemaining() { return true; },
-  incrementFileUsage() {},
+  getCaps(tier) { return getCaps(tier || this.currentUser?.tier || 'FREE'); },
+  canUseModel(m) { return canUseModel(m); },
+  checkFileSizeLimit(mb) { return checkFileSizeLimit(mb); },
+  checkFilesRemaining() { return checkFilesRemaining(); },
+  incrementFileUsage() { incrementFileUsage(); },
 };
 
 if (typeof window !== 'undefined') {

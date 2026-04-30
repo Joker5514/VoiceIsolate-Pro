@@ -52,23 +52,14 @@ describe('Server.js Integration Tests', () => {
   });
 
   describe('API Endpoints', () => {
-    test('GET /health returns health status', async () => {
+    test('GET /health returns minimal health status (no version/feature disclosure)', async () => {
       const res = await request(app).get('/health');
       expect(res.statusCode).toBe(200);
       expect(res.body).toHaveProperty('status', 'ok');
-      expect(res.body).toHaveProperty('app', 'VoiceIsolate Pro');
-      expect(res.body).toHaveProperty('version');
-      expect(res.body).toHaveProperty('crossOriginIsolated', true);
-      expect(res.body).toHaveProperty('sharedArrayBuffer', true);
-      expect(res.body).toHaveProperty('features');
-      expect(res.body).toHaveProperty('timestamp');
-    });
-
-    test('GET /api/version returns version info', async () => {
-      const res = await request(app).get('/api/version');
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toHaveProperty('name', 'VoiceIsolate Pro');
-      expect(res.body).toHaveProperty('version');
+      // Version and feature details must not be exposed on the public health endpoint
+      expect(res.body).not.toHaveProperty('version');
+      expect(res.body).not.toHaveProperty('app');
+      expect(res.body).not.toHaveProperty('features');
     });
   });
 

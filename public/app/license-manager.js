@@ -1,7 +1,22 @@
 /**
  * VoiceIsolate Pro — License Manager v22
- * DEV/TEST MODE: All tiers return ENTERPRISE-level caps. No limits enforced.
+ * DEV/TEST STUB: All tiers return ENTERPRISE-level caps. No limits enforced.
+ *
+ * WARNING: This file is a development stub. It must NOT be deployed to
+ * production. In production, replace with a real license manager that
+ * validates tokens against /api/license/validate and enforces tier limits.
  */
+
+// Fail fast if this stub is accidentally loaded in production.
+if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+  const _h = window.location.hostname;
+  if (_h !== 'localhost' && _h !== '127.0.0.1' && !_h.endsWith('.local')) {
+    console.error(
+      '[LicenseManager] SECURITY: Dev stub loaded in non-local environment (' +
+      _h + '). Replace with production license-manager.js.'
+    );
+  }
+}
 
 const LicenseManager = (() => {
 
