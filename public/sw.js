@@ -11,15 +11,16 @@
 //   3. On activate, take immediate control (skipWaiting + clients.claim) so
 //      the first page load after registration already benefits from caching.
 //
-// Security note: this SW only caches from the same origin plus the allow-listed
-// HuggingFace CDN host. It never caches API responses.
+// Security note: this SW only caches from the same origin. ONNX models are
+// served via /app/models/* on the same origin (Vercel may rewrite the path
+// to Vercel Blob server-side, but the browser sees a same-origin URL).
+// It never caches API responses.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CACHE_NAME    = 'vip-models-v1';
 const MODEL_ROUTE   = /^\/app\/models\/.+\.onnx(\?.*)?$/;
 const ALLOWED_HOSTS = [
   self.location.hostname,
-  'huggingface.co',
 ];
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

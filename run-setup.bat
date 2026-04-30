@@ -23,8 +23,8 @@ echo [1/5] Pulling latest from GitHub...
 git pull
 
 echo.
-echo [2/5] Installing huggingface_hub...
-C:\Python314\python.exe -m pip install huggingface_hub -q
+echo [2/5] Installing Python dependencies...
+C:\Python314\python.exe -m pip install -q -r scripts\requirements_export.txt
 
 echo.
 echo [3/5] Exporting ONNX models (this takes ~10 min)...
@@ -33,11 +33,20 @@ C:\Python314\python.exe scripts\export_demucs_onnx.py
 C:\Python314\python.exe scripts\export_bsrnn_onnx.py
 
 echo.
-echo [4/5] Uploading to HuggingFace...
-C:\Python314\python.exe scripts\upload_models_to_huggingface.py
+if "%VERCEL_TOKEN%"=="" (
+    echo [4/5] Skipping upload - VERCEL_TOKEN is not set.
+    echo       Generate one at https://vercel.com/account/tokens then run:
+    echo         set VERCEL_TOKEN=xxx
+    echo         python scripts\upload_models_to_vercel_blob.py --file ^<path^> --name ^<name^>
+) else (
+    echo [4/5] Uploading to Vercel Blob...
+    C:\Python314\python.exe scripts\upload_models_to_vercel_blob.py --file .\models_output\rnnoise_suppressor.onnx --name rnnoise_suppressor.onnx
+    C:\Python314\python.exe scripts\upload_models_to_vercel_blob.py --file .\models_output\demucs_v4_quantized.onnx --name demucs_v4_quantized.onnx
+    C:\Python314\python.exe scripts\upload_models_to_vercel_blob.py --file .\models_output\bsrnn_vocals.onnx --name bsrnn_vocals.onnx
+)
 
 echo.
-echo [5/5] Validating CDN URLs...
+echo [5/5] Validating model URLs...
 node scripts\validate-onnx-models.js
 
 echo.

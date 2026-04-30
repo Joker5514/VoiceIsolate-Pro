@@ -633,7 +633,7 @@ const MODEL_MANIFEST = {
   dns2_conformer_small:{ stageId: 'S10', stageName: 'S10 DNS2 Noise Suppression',   filename: 'dns2_conformer_small.onnx',sizeLabel: '~14 MB',  sourceUrl: 'https://github.com/microsoft/DNS-Challenge' },
   bsrnn:               { stageId: 'S11', stageName: 'S11 BSRNN Source Separation',  filename: 'bsrnn-int8.onnx',          sizeLabel: '~37 MB',  sourceUrl: 'https://github.com/bytedance/music_source_separation' },
   demucs:              { stageId: 'S13', stageName: 'S13 Demucs v4 Voice Isolation', filename: 'demucs-v4-int8.onnx',      sizeLabel: '~82 MB',  sourceUrl: 'https://github.com/facebookresearch/demucs' },
-  ecapa_tdnn:          { stageId: 'S17', stageName: 'S17 ECAPA-TDNN Speaker ID',     filename: 'ecapa-tdnn-int8.onnx',    sizeLabel: '~20 MB',  sourceUrl: 'https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb' },
+  ecapa_tdnn:          { stageId: 'S17', stageName: 'S17 ECAPA-TDNN Speaker ID',     filename: 'ecapa-tdnn-int8.onnx',    sizeLabel: '~20 MB',  sourceUrl: 'https://github.com/speechbrain/speechbrain' },
   convtasnet:          { stageId: 'S22', stageName: 'S22 ConvTasNet Speaker Sep.',   filename: 'convtasnet-int8.onnx',    sizeLabel: '~18 MB',  sourceUrl: 'https://github.com/asteroid-team/asteroid' }
 };
 

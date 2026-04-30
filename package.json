@@ -47,8 +47,8 @@
     "mobile:sync-version": "node scripts/sync-mobile-version.js",
     "mobile:version": "node scripts/sync-mobile-version.js",
     "postversion": "node scripts/sync-mobile-version.js",
-    "prebuild": "bash scripts/download-models.sh",
-    "models:download": "bash scripts/download-models.sh"
+    "models:download": "bash scripts/download-models.sh",
+    "models:upload": "python scripts/upload_models_to_vercel_blob.py"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",

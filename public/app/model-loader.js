@@ -1,35 +1,50 @@
 // ────────────────────────────────────────────────────────────────────────────
 // model-loader.js – VoiceIsolate Pro · Threads from Space v8
 //
-// First-run model delivery via Cache API.
-// 100% local after first download – no cloud inference ever.
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  ARCHITECTURE INVARIANT — DO NOT REINTRODUCE EXTERNAL CDNs               ║
+// ║                                                                          ║
+// ║  All .onnx models are served from /app/models/*.onnx on the SAME origin. ║
+// ║  Vercel either serves the file directly from public/app/models/ or       ║
+// ║  rewrites the path to a Vercel Blob URL configured in vercel.json.       ║
+// ║  From the browser the fetch is always same-origin — this is what keeps   ║
+// ║  COEP (require-corp) satisfied and SharedArrayBuffer alive.              ║
+// ║                                                                          ║
+// ║  NEVER add an external src URL (huggingface.co, cdn.*, etc.) to          ║
+// ║  MODEL_REGISTRY. Doing so will break COEP and kill the AudioWorklet.     ║
+// ║  See MODELS.md for the upload → rewrite → cache flow.                    ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
 //
-// Architecture:
-//   1. On first visit, fetch each .onnx from its canonical CDN source.
-//   2. Store the response in a versioned Cache (CACHE_NAME).
-//   3. On every subsequent visit, serve from cache – zero network.
-//   4. ml-worker.js reads models from /app/models/*.onnx.
-//      The service worker (sw.js) intercepts those fetches and returns the
-//      cached binary, so ml-worker sees a local URL but gets the real model.
+// First-run model delivery:
+//   1. fetch('/app/models/<filename>.onnx')           ← same-origin URL
+//   2. Vercel either serves the bundled file or rewrites to Vercel Blob.
+//   3. Response is stored in the Cache API (CACHE_NAME).
+//   4. On every subsequent visit sw.js intercepts the fetch and returns the
+//      cached binary — ZERO network thereafter.
 //   5. Progress is broadcast via a BroadcastChannel so the UI can show a
 //      real download bar instead of a spinner.
 //
 // Model tiers loaded at different times:
-//   EAGER   – silero_vad (2.2 MB), rnnoise (0.18 MB)  – loaded at app boot
-//   LAZY    – demucs_v4 (83 MB), bsrnn (45 MB)         – loaded after user uploads audio
+//   EAGER  – silero_vad (2.2 MB), rnnoise (0.18 MB)  – loaded at app boot
+//   LAZY   – demucs_v4 (83 MB),  bsrnn (45 MB)        – loaded after upload
 // ────────────────────────────────────────────────────────────────────────────
 
 export const CACHE_NAME       = 'vip-models-v1';
 export const BROADCAST_CH     = 'vip-model-progress';
 const MODEL_BASE_PATH         = '/app/models/';
 
-// Canonical source URLs – fetched ONCE, then served from Cache forever.
-// Hugging Face CDN supports CORS and Range requests with no auth.
+// All entries fetch from MODEL_BASE_PATH + filename.  No external `src` field.
+// To add a new model:
+//   1. Run scripts/upload_models_to_vercel_blob.py to push the .onnx file to
+//      Vercel Blob storage and capture the returned public Blob URL.
+//   2. Add a `/app/models/<filename>` rewrite to vercel.json pointing at that
+//      Blob URL (see MODELS.md).
+//   3. Add an entry below — no `src` field needed; the path is implicit.
 const MODEL_REGISTRY = [
   {
     id:       'silero_vad',
     filename: 'silero_vad.onnx',
-    // Already committed in repo (2.2 MB) – served locally, no CDN fetch needed.
+    // Committed in repo (2.2 MB) — served directly by Vercel from public/app/models/.
     localOnly: true,
     priority: 'eager',
     sizeMB:   2.2,
@@ -37,22 +52,18 @@ const MODEL_REGISTRY = [
   {
     id:       'rnnoise',
     filename: 'rnnoise_suppressor.onnx',
-    // Tiny model – pre-exported and hosted on HF.
-    src:      'https://huggingface.co/datasets/Joker5514/models/resolve/main/rnnoise_suppressor.onnx',
     priority: 'eager',
     sizeMB:   0.18,
   },
   {
     id:       'demucs_v4',
     filename: 'demucs_v4_quantized.onnx',
-    src:      'https://huggingface.co/datasets/Joker5514/models/resolve/main/demucs_v4_quantized.onnx',
     priority: 'lazy',
     sizeMB:   83,
   },
   {
     id:       'bsrnn_vocals',
     filename: 'bsrnn_vocals.onnx',
-    src:      'https://huggingface.co/datasets/Joker5514/models/resolve/main/bsrnn_vocals.onnx',
     priority: 'lazy',
     sizeMB:   45,
   },
@@ -69,23 +80,27 @@ function _broadcast(detail) {
 }
 
 /**
- * Fetch a URL with streaming progress, storing the full response into cache.
- * Returns the ArrayBuffer of the model.
+ * Fetch a model from its same-origin /app/models/* path with streaming
+ * progress, then store the response in the Cache API.
  *
- * @param {Cache}    cache
- * @param {object}   model  – entry from MODEL_REGISTRY
+ * The actual bytes come either directly from the Vercel deployment or are
+ * proxied via a vercel.json rewrite to Vercel Blob storage. The browser
+ * never sees a cross-origin URL.
+ *
+ * @param {Cache}  cache
+ * @param {object} model  – entry from MODEL_REGISTRY
  * @returns {Promise<void>}
  */
 async function _fetchAndCache(cache, model) {
-  const { id, filename, src, sizeMB } = model;
-  const cacheKey = MODEL_BASE_PATH + filename;
+  const { id, filename, sizeMB } = model;
+  const url = MODEL_BASE_PATH + filename; // same-origin always
 
   _broadcast({ type: 'start', id, filename, sizeMB });
 
-  // Fetch from CDN source with CORS mode.
-  const response = await fetch(src, { mode: 'cors', cache: 'no-store' });
+  // same-origin fetch — no `cors` mode needed; COEP is satisfied automatically.
+  const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) {
-    throw new Error(`[model-loader] HTTP ${response.status} fetching ${src}`);
+    throw new Error(`[model-loader] HTTP ${response.status} fetching ${url}`);
   }
 
   // Stream-read to track download progress.
@@ -100,7 +115,7 @@ async function _fetchAndCache(cache, model) {
     chunks.push(value);
     received += value.byteLength;
     _broadcast({
-      type:     'progress',
+      type:    'progress',
       id,
       filename,
       loaded:  received,
@@ -110,20 +125,20 @@ async function _fetchAndCache(cache, model) {
   }
 
   // Assemble and store in Cache API so sw.js can intercept /app/models/*.onnx.
-  const blob         = new Blob(chunks, { type: 'application/octet-stream' });
-  const cachedResp   = new Response(blob, {
+  const blob       = new Blob(chunks, { type: 'application/octet-stream' });
+  const cachedResp = new Response(blob, {
     status:  200,
     headers: {
-      'Content-Type':                   'application/octet-stream',
-      'Content-Length':                  String(blob.size),
+      'Content-Type':                 'application/octet-stream',
+      'Content-Length':               String(blob.size),
       'Cross-Origin-Resource-Policy': 'same-origin',
-      'Cache-Control':                   'public, max-age=86400, immutable',
+      'Cache-Control':                'public, max-age=86400, immutable',
     },
   });
-  await cache.put(cacheKey, cachedResp);
+  await cache.put(url, cachedResp);
 
   _broadcast({ type: 'done', id, filename, bytes: blob.size });
-  console.info(`[model-loader] ✓ ${filename} (${(blob.size / 1024 / 1024).toFixed(1)} MB) cached as ${cacheKey}`);
+  console.info(`[model-loader] ✓ ${filename} (${(blob.size / 1024 / 1024).toFixed(1)} MB) cached as ${url}`);
 }
 
 /**
