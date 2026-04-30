@@ -138,6 +138,17 @@ function requireRateLimit(req, res, next) {
   next();
 }
 
+// ─── Per-User Storage Quota ───────────────────────────────────────────────────
+const MAX_USER_STORAGE_BYTES = 10 * 1024 * 1024; // 10 MB total per user
+
+function _getUserStorageBytes(data) {
+  let total = 0;
+  try { total += Buffer.byteLength(JSON.stringify(data.presets || [])); } catch {}
+  try { total += Buffer.byteLength(JSON.stringify(data.noiseProfiles || [])); } catch {}
+  try { total += Buffer.byteLength(JSON.stringify(data.history || [])); } catch {}
+  return total;
+}
+
 // ─── Input Validation ─────────────────────────────────────────────────────────
 const ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 const MAX_PRESET_PARAMS_BYTES   = 64 * 1024;  //  64 KB
@@ -354,6 +365,16 @@ router.post('/push', requireAuth, requireRateLimit, (req, res) => {
         break;
       }
     }
+  }
+
+  // Enforce per-user total storage quota before committing changes
+  const storageUsed = _getUserStorageBytes(data);
+  if (storageUsed > MAX_USER_STORAGE_BYTES) {
+    return res.status(413).json({
+      error: `Storage quota exceeded. Max ${MAX_USER_STORAGE_BYTES / (1024 * 1024)} MB per account.`,
+      storageUsedBytes: storageUsed,
+      quotaBytes: MAX_USER_STORAGE_BYTES,
+    });
   }
 
   data.updatedAt = Date.now();
