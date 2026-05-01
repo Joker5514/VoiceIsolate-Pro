@@ -140,7 +140,7 @@ const RevenueCatManager = (() => {
 
   // ─── Entitlement Sync ─────────────────────────────────────────────────────
   async function _syncEntitlements() {
-    if (!_isNative || !_purchases) return;
+    if (!_isNative || !_purchases) return { tier: 'FREE', entitlements: {} };
 
     try {
       const { customerInfo } = await _purchases.getCustomerInfo();
