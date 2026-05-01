@@ -88,6 +88,13 @@ class DemucsVocalsWrapper(nn.Module):
     def __init__(self, base_model: nn.Module):
         super().__init__()
         self.model = base_model
+        n_sources = len(base_model.sources)
+        if VOCALS_INDEX >= n_sources:
+            raise ValueError(
+                f"VOCALS_INDEX={VOCALS_INDEX} is out of range for model with "
+                f"{n_sources} sources: {base_model.sources}"
+            )
+        log.info("Vocals stem index %d / %s", VOCALS_INDEX, list(base_model.sources))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -97,8 +104,8 @@ class DemucsVocalsWrapper(nn.Module):
             vocals: [batch, 1, time] float32
         """
         # Run all stems, then slice vocals
-        all_stems = self.model(x)  # [batch, n_stems, 1, time] for mono
-        # mdx_extra returns [batch, stems, channels, time]; collapse channels dim
+        all_stems = self.model(x)  # [batch, n_stems, channels, time]
+        # mdx_extra: sources = [drums, bass, other, vocals]; collapse channels dim
         vocals = all_stems[:, VOCALS_INDEX : VOCALS_INDEX + 1, 0, :]
         return vocals
 

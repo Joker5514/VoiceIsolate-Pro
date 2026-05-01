@@ -165,22 +165,20 @@ def export_to_onnx(model: nn.Module, out_path: Path) -> None:
     log.info("ONNX graph check passed.")
 
 
-def quantize_model(fp32_path: Path) -> Path:
-    """Apply INT8 dynamic quantization. Returns path to quantized file."""
+def quantize_model(fp32_path: Path, final_path: Path) -> None:
+    """Apply INT8 dynamic quantization; write result to final_path, delete fp32_path."""
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
-    q_path = fp32_path.with_suffix(".q8.onnx")
-    log.info("Quantizing to INT8: %s -> %s", fp32_path, q_path)
+    q_tmp = fp32_path.with_suffix('.q8.onnx')
+    log.info("Quantizing to INT8: %s -> %s", fp32_path, final_path)
     quantize_dynamic(
         model_input=str(fp32_path),
-        model_output=str(q_path),
+        model_output=str(q_tmp),
         weight_type=QuantType.QInt8,
     )
-
-    # Replace fp32 file with quantized version (final artifact)
-    q_path.replace(fp32_path)
-    log.info("Quantized model saved to: %s", fp32_path)
-    return fp32_path
+    q_tmp.replace(final_path)
+    fp32_path.unlink(missing_ok=True)
+    log.info("Quantized model saved to: %s", final_path)
 
 
 def validate_onnx(model_path: Path) -> None:
@@ -214,13 +212,9 @@ def main() -> None:
 
     model = build_model()
 
-    # Export fp32 first, then quantize in-place
     fp32_tmp = OUTPUT_DIR / "_rnnoise_fp32.onnx"
     export_to_onnx(model, fp32_tmp)
-
-    # Quantize overwrites fp32_tmp -> MODEL_PATH
-    fp32_tmp_q = quantize_model(fp32_tmp)
-    fp32_tmp_q.rename(MODEL_PATH)
+    quantize_model(fp32_tmp, MODEL_PATH)
 
     validate_onnx(MODEL_PATH)
 

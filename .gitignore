@@ -16,6 +16,11 @@ public/app/models/*.bin
 build/
 public/app/models/deepfilter/
 
+# ONNX export pipeline — local working directories (export_and_upload.py)
+models_output/
+vendor/
+checkpoints/
+
 # AI agent workspace dirs — not tracked in git
 .Jules/
 .jules/*
