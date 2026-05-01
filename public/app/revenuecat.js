@@ -167,7 +167,7 @@ const RevenueCatManager = (() => {
     async getPackages() {
       if (!_isNative || !_purchases) return null;
       try {
-        const { current } = await _purchases.getOfferings();
+        const current = _currentOffering || (await _purchases.getOfferings()).current;
         if (!current) return null;
         return current.availablePackages.map(pkg => ({
           id:          pkg.identifier,
