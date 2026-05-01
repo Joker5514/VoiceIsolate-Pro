@@ -50,9 +50,15 @@ const RevenueCatManager = (() => {
 
   // ─── Runtime Config Fetch ─────────────────────────────────────────────────
   // Reads RC API keys from the server (process.env) — never hardcoded here.
+  // In native Capacitor builds the WebView origin may be a custom scheme
+  // (e.g. capacitor:// on iOS). Set window.RC_API_BASE_URL to the production
+  // HTTPS backend URL in that case so the fetch reaches the real server.
   async function _fetchConfig() {
     try {
-      const res = await fetch('/api/client-config');
+      const base = (typeof window !== 'undefined' && window.RC_API_BASE_URL)
+        ? String(window.RC_API_BASE_URL).replace(/\/$/, '')
+        : '';
+      const res = await fetch(`${base}/api/client-config`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       _apiKeys.android = data.rcApiKeyAndroid || '';
@@ -206,7 +212,7 @@ const RevenueCatManager = (() => {
         await _syncEntitlements();
 
         const tier = PRODUCT_TO_TIER[productId] || 'PRO';
-        if (window.Analytics) window.Analytics.track('subscription_activated', { tier, source: 'revenuecat' });
+        if (window.Analytics?.track) window.Analytics.track('subscription_activated', { tier, source: 'revenuecat' });
         if (window.Paywall)   window.Paywall.showSuccessToast(`${tier} activated! Welcome.`);
 
         return { success: true, tier, customerInfo };

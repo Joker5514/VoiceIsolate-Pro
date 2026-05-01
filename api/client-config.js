@@ -13,6 +13,9 @@ export default function clientConfigHandler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  // Prevent caches from holding stale keys after an environment update.
+  res.set('Cache-Control', 'no-store');
+
   res.json({
     rcApiKeyAndroid: process.env.RC_API_KEY_ANDROID || '',
     rcApiKeyIos:     process.env.RC_API_KEY_IOS     || '',

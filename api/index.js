@@ -6,6 +6,7 @@
  * Then: app.use('/api', apiRouter)
  *
  * Routes:
+ *   /api/client-config     → Browser-safe runtime config (RC public SDK keys)
  *   /api/checkout          → Stripe Checkout session creation
  *   /api/webhook/stripe    → Stripe webhook handler
  *   /api/license/*         → License validation and activation
@@ -20,6 +21,7 @@ import express from 'express';
 import monetizationRouter from './monetization.js';
 import syncRouter from './sync.js';
 import authRouter from './auth.js';
+import clientConfigHandler from './client-config.js';
 
 const router = express.Router();
 
@@ -48,6 +50,9 @@ try {
 } catch {
   console.warn('[api] express-rate-limit not installed; rate limiting disabled.');
 }
+
+// ─── Runtime Client Config ────────────────────────────────────────────────────
+router.get('/client-config', clientConfigHandler);
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 router.get('/health', (req, res) => {
