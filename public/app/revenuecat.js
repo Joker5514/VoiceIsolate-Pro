@@ -233,7 +233,7 @@ const RevenueCatManager = (() => {
         } else {
           alert('No active purchases found to restore.');
         }
-        return { success: true, tier };
+        return { success: true, tier, customerInfo: result?.entitlements };
       } catch (err) {
         console.error('[RevenueCat] Restore failed:', err.message);
         return { success: false, error: err.message };
