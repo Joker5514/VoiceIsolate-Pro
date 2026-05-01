@@ -433,6 +433,13 @@ def main() -> None:
     # ── Step 1: Install deps ────────────────────────────────────────────────
     if not skip_export:
         install_requirements()
+    elif not skip_upload:
+        # Ensure requests is available for upload even if skipping heavy ML exports
+        try:
+            import requests
+        except ImportError:
+            log.info("Installing 'requests' for upload...")
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'requests', '--quiet'])
 
     # ── Step 2: Export ─────────────────────────────────────────────────────
     if not skip_export:
