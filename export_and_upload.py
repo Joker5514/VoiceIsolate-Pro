@@ -417,7 +417,10 @@ def main() -> None:
     log.info('skip_export=%s  skip_upload=%s', skip_export, skip_upload)
 
     # ── Pre-flight ─────────────────────────────────────────────────────────
-    token, team_id = check_env()
+    token: Optional[str] = None
+    team_id: Optional[str] = None
+    if not skip_upload:
+        token, team_id = check_env()
 
     models = list(MODELS)
     if args.only:
