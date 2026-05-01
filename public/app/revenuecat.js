@@ -207,7 +207,9 @@ const RevenueCatManager = (() => {
         if (window.Paywall) window.Paywall.checkout(tier, cycle);
         return { success: false, reason: 'redirected_to_stripe' };
       }
-
+        if (window.Paywall && typeof window.Paywall.showSuccessToast === 'function') {
+          window.Paywall.showSuccessToast(`${tier} activated! Welcome.`);
+        }
       try {
         const packages = await RC.getPackages();
         const pkg = packages?.find(p => p.productId === productId);
