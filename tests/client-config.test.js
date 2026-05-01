@@ -67,10 +67,9 @@ describe('GET /api/client-config', () => {
     test('body contains only the expected keys (no secret leakage)', async () => {
       const res = await request(app).get('/api/client-config');
       const keys = Object.keys(res.body);
+      // Exactly these two keys — no extras (guards against accidental secret exposure)
+      expect(keys).toHaveLength(2);
       expect(keys).toEqual(expect.arrayContaining(['rcApiKeyAndroid', 'rcApiKeyIos']));
-      // Stripe keys and JWT secret must never appear
-      expect(keys).not.toContain('stripeSecretKey');
-      expect(keys).not.toContain('licenseJwtSecret');
     });
   });
 

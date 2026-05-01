@@ -53,11 +53,19 @@ const RevenueCatManager = (() => {
   // In native Capacitor builds the WebView origin may be a custom scheme
   // (e.g. capacitor:// on iOS). Set window.RC_API_BASE_URL to the production
   // HTTPS backend URL in that case so the fetch reaches the real server.
+  // The value is validated to be an HTTPS URL before use.
   async function _fetchConfig() {
     try {
-      const base = (typeof window !== 'undefined' && window.RC_API_BASE_URL)
-        ? String(window.RC_API_BASE_URL).replace(/\/$/, '')
-        : '';
+      let base = '';
+      if (typeof window !== 'undefined' && window.RC_API_BASE_URL) {
+        const raw = String(window.RC_API_BASE_URL).trim();
+        // Only accept HTTPS to prevent MitM on native builds
+        if (/^https:\/\/.+/i.test(raw)) {
+          base = raw.replace(/\/$/, '');
+        } else {
+          console.warn('[RevenueCat] RC_API_BASE_URL must be an HTTPS URL; ignoring.');
+        }
+      }
       const res = await fetch(`${base}/api/client-config`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
