@@ -1,7 +1,7 @@
 /* global VisualizationEngine */
 /* ============================================
-   VoiceIsolate Pro v22.1 – Engineer Mode
-   Threads from Space v11 · Hybrid ML+DSP
+   VoiceIsolate Pro v24.0 – Engineer Mode
+   Threads from Space v13 · Hybrid ML+DSP
    52 Sliders · 6-Panel Diagnostics · 3D Spectrogram
    32-Stage Deca-Pass Pipeline with Real STFT DSP
    ============================================ */

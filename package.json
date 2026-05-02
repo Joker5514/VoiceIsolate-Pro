@@ -16,7 +16,7 @@
     "ios",
     "capacitor"
   ],
-  "author": "Randy Jordan <randyejjordan7827@gmail.com>",
+  "author": "Randy Jordan <joker5514@users.noreply.github.com>",
   "license": "UNLICENSED",
   "scripts": {
     "postinstall": "node scripts/setup-ort.js",

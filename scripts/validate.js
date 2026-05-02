@@ -115,7 +115,7 @@ check(openBraces === closeBraces, `Braces: ${openBraces} open / ${closeBraces} c
 // 4. Blueprint check
 console.log('\nBlueprint:');
 const blueprint = fs.readFileSync(path.resolve(__dirname, '..', 'public/blueprint/index.html'), 'utf8');
-check(blueprint.includes('Octa-Pass'), 'Contains Octa-Pass pipeline reference');
+check(blueprint.includes('Deca-Pass'), 'Contains Deca-Pass pipeline reference');
 check(blueprint.includes('32'), 'References 32 stages');
 check(blueprint.includes('Threads from Space'), 'Threads from Space architecture');
 
