@@ -1,7 +1,12 @@
 # VoiceIsolate Pro · v24.0
 
-> **Browser-based, 100% local, 32-stage audio processing platform.**
-> Zero cloud. Zero telemetry. Privacy-first.
+> **Browser-based, 100% local audio processing platform (after first model download).**
+> Zero cloud audio processing. Zero telemetry. Privacy-first.
+>
+> **Note on first-run CDN use**: ML models (2 MB – 150 MB) are downloaded once
+> from HuggingFace CDN on first use and cached permanently in your browser.
+> After that initial download, all processing is 100% local — no audio data
+> ever leaves your browser.
 
 [![Deploy](https://img.shields.io/badge/Vercel-live-brightgreen?logo=vercel)](https://voice-isolate-pro.vercel.app)
 [![Version](https://img.shields.io/badge/version-v24.0-blue)](#changelog)

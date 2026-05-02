@@ -319,9 +319,9 @@ class VoiceIsolatePro {
     this.inputBuffer = null;
     this.outputBuffer = null;
     this.currentSource = null;
-    this.analyserNode = null;     // post-chain (for existing viz)
-    this.analyserOrig = null;     // pre-chain (for A/B comparison)
-    this.analyserProc = null;     // post-chain (for diagnostics)
+    this.analyserNode = null;     // shared analyser node (all three refs point to same instance)
+    this.analyserOrig = null;     // same as analyserNode — kept for API compatibility
+    this.analyserProc = null;     // same as analyserNode — kept for API compatibility
     this.isProcessing = false;
     this.isRecording = false;
     this.mediaRecorder = null;
@@ -408,6 +408,30 @@ class VoiceIsolatePro {
     // duplicate workers, duplicate ORT/model init, and race conditions.
     // Restore last uploaded file (runs async, non-blocking)
     this._restoreSavedFile().catch(() => {});
+    this._showFirstRunCdnNotice();
+  }
+
+  // ── First-run CDN disclosure ────────────────────────────────────────────
+  // ML models are large files (2 MB – 150 MB). On first load they are fetched
+  // once from HuggingFace CDN and cached in the browser Cache API (sw.js).
+  // All subsequent runs — and ALL audio processing — happen 100% locally.
+  // This notice is shown exactly once per browser profile.
+  _showFirstRunCdnNotice() {
+    try {
+      const key = 'vip_cdn_notice_shown';
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, '1');
+      // Defer slightly so the UI is fully rendered before showing the toast.
+      setTimeout(() => {
+        this.showNotification(
+          '🔒 Privacy notice: ML models are downloaded once from HuggingFace CDN on ' +
+          'first use and then cached locally. All audio processing is 100% local — ' +
+          'no audio data ever leaves your browser.',
+          'info',
+          12000
+        );
+      }, 1500);
+    } catch { /* localStorage sandboxed — skip notice */ }
   }
 
   // ------------------------------------------------------------------
@@ -830,6 +854,20 @@ class VoiceIsolatePro {
     // held (so browser shortcuts like Ctrl+R / Cmd+S still work), or while a
     // dialog/modal is open.
     window.addEventListener('keydown', (e) => this._handleGlobalKeydown(e));
+
+    // ── SharedArrayBuffer availability notification ─────────────────────────
+    // The pipeline orchestrator emits 'sabUnavailable' when COOP/COEP headers
+    // are missing or SharedArrayBuffer is not defined. Notify the user and
+    // fall back to Creator mode guidance.
+    globalThis.addEventListener('sabUnavailable', () => {
+      if (this._sabNoticeShown) return;
+      this._sabNoticeShown = true;
+      this.showNotification(
+        'Live mode: SharedArrayBuffer unavailable — ML masking disabled. Use Creator mode for full quality.',
+        'warn',
+        7000
+      );
+    });
   }
 
   _handleGlobalKeydown(e) {
@@ -1526,6 +1564,18 @@ class VoiceIsolatePro {
 
   // ======== LIVE AUDIO CHAIN (with dual analysers) ========
   buildLiveChain(buf) {
+    // Guard: SharedArrayBuffer is required for live ML masking (ring buffers).
+    // Notify the user once per page load if SAB is unavailable so they know
+    // to use Creator mode for full ML processing.
+    if (typeof SharedArrayBuffer === 'undefined' && !this._sabNoticeShown) {
+      this._sabNoticeShown = true;
+      this.showNotification(
+        'Live ML masking requires SharedArrayBuffer (COOP/COEP headers). ' +
+        'Use Creator mode for full processing.',
+        'warn',
+        7000
+      );
+    }
     this.teardownChain();
     const ctx = this.ensureCtx();
     const p = this.params;
@@ -1534,8 +1584,9 @@ class VoiceIsolatePro {
     src.playbackRate.value = parseFloat(this.dom.tpSpeed.value) || 1;
     src.onended = () => { if (this.isPlaying) this.stop(); };
 
-    // Pre-chain analyser (original signal)
-    const anaOrig = ctx.createAnalyser(); anaOrig.fftSize = 4096; anaOrig.smoothingTimeConstant = 0.75;
+    // Shared analyser (single node for all three references — saves CPU vs dual nodes).
+    // Placed post-chain to measure the processed output.
+    const ana = ctx.createAnalyser(); ana.fftSize = 4096; ana.smoothingTimeConstant = 0.75;
 
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = p.hpFreq; hp.Q.value = p.hpQ;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = p.lpFreq; lp.Q.value = p.lpQ;
@@ -1561,20 +1612,18 @@ class VoiceIsolatePro {
     const outG = ctx.createGain(); outG.gain.value = Math.pow(10, p.outGain/20);
     const wG = ctx.createGain(); wG.gain.value = p.outWidth/100;
 
-    // Post-chain analyser (processed signal)
-    const anaProc = ctx.createAnalyser(); anaProc.fftSize = 4096; anaProc.smoothingTimeConstant = 0.75;
-
-    // Wire: src -> anaOrig -> hp -> ... -> wG -> anaProc -> destination
-    src.connect(anaOrig);
-    const chain = [anaOrig, hp, lp, ...eqs.map(e=>e.node), deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, anaProc];
+    // Wire: src -> hp -> ... -> wG -> ana -> destination
+    src.connect(hp);
+    const chain = [hp, lp, ...eqs.map(e=>e.node), deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, ana];
     for (let i = 0; i < chain.length-1; i++) chain[i].connect(chain[i+1]);
-    anaProc.connect(ctx.destination);
+    ana.connect(ctx.destination);
 
     src.start(0, this.playOffset);
     this.currentSource = src;
-    this.analyserNode = anaProc;
-    this.analyserOrig = anaOrig;
-    this.analyserProc = anaProc;
+    // Single shared analyser node — all three references point to the same instance.
+    this.analyserNode = ana;
+    this.analyserOrig = ana;
+    this.analyserProc = ana;
     this.liveNodes = { hp, lp, eqs, deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, chain: [src, ...chain] };
     this.liveChainBuilt = true;
   }

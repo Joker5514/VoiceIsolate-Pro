@@ -84,7 +84,10 @@ class PipelineOrchestrator {
     try {
       await this._createAudioContext();
       await this._loadWorklet();
-      this._allocateRings();
+      const sabOk = this._allocateRings();
+      if (!sabOk) {
+        console.warn('[Orchestrator] Live ML masking unavailable — SAB not supported; falling back to Creator mode');
+      }
       await this._initMLWorker();
       this._bindSliders();
       this.initialized = true;
@@ -171,20 +174,29 @@ class PipelineOrchestrator {
   }
 
   // ── SharedArrayBuffer ring allocation ───────────────────────────────────
+  // Uses SharedRingBuffer (ring-buffer.js) for consistent 4-slot Int32 header
+  // layout that is compatible with the ML worker's SAB_HEADER_BYTES = 16.
   _allocateRings() {
+    // Guard: SharedArrayBuffer requires COOP+COEP headers — check before
+    // attempting allocation so we get a clean boolean return rather than
+    // relying solely on the catch branch.
+    if (typeof SharedArrayBuffer === 'undefined' ||
+        typeof SharedRingBuffer === 'undefined' ||
+        !SharedRingBuffer.isSupported()) {
+      console.warn('[Orchestrator] SharedArrayBuffer unavailable — live ML masking disabled');
+      this._inputRingSAB = null;
+      this._maskRingSAB  = null;
+      this._emitSabUnavailable('SharedArrayBuffer is not defined');
+      return false;
+    }
     try {
-      const inputBytes =
-        Int32Array.BYTES_PER_ELEMENT * 2 +
-        this._ringCapacity * this._quantumSize * Float32Array.BYTES_PER_ELEMENT;
-      this._inputRingSAB = new SharedArrayBuffer(inputBytes);
+      // Use SharedRingBuffer for consistent layout (4×Int32 header + Float32 data).
+      // frameSize = samples per quantum/bin, frameCount = ring capacity slots.
+      const inputRing = new SharedRingBuffer(this._quantumSize, this._ringCapacity);
+      const maskRing  = new SharedRingBuffer(this._halfN,        this._ringCapacity);
 
-      const maskBytes =
-        Int32Array.BYTES_PER_ELEMENT * 2 +
-        this._ringCapacity * this._halfN * Float32Array.BYTES_PER_ELEMENT;
-      this._maskRingSAB = new SharedArrayBuffer(maskBytes);
-
-      new Int32Array(this._inputRingSAB).fill(0);
-      new Int32Array(this._maskRingSAB ).fill(0);
+      this._inputRingSAB = inputRing.getBuffer();
+      this._maskRingSAB  = maskRing.getBuffer();
 
       this.workletNode.port.postMessage({
         type:      'initRings',
@@ -210,19 +222,26 @@ class PipelineOrchestrator {
           this.workletReady = true;
         }
       }, WORKLET_READY_FALLBACK_MS);
+      return true;
     } catch (err) {
       // SharedArrayBuffer blocked (missing COOP/COEP) — graceful degradation
       console.warn('[Orchestrator] SharedArrayBuffer unavailable; live ML masking disabled:', err.message);
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
-      try {
-        if (typeof globalThis !== 'undefined' && typeof globalThis.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
-          globalThis.dispatchEvent(new CustomEvent('ringAllocationFailed', {
-            detail: { reason: err?.message || String(err) }
-          }));
-        }
-      } catch (_) { /* event dispatch is best-effort */ }
+      this._emitSabUnavailable(err?.message || String(err));
+      return false;
     }
+  }
+
+  // ── Emit sabUnavailable event (best-effort) ──────────────────────────────
+  _emitSabUnavailable(reason) {
+    try {
+      if (typeof globalThis !== 'undefined' && typeof globalThis.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+        globalThis.dispatchEvent(new CustomEvent('sabUnavailable', {
+          detail: { reason }
+        }));
+      }
+    } catch (_) { /* event dispatch is best-effort */ }
   }
 
   async waitForReadiness(timeoutMs = 5000) {

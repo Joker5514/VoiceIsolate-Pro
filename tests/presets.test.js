@@ -228,7 +228,7 @@ describe('ml-worker.js', () => {
     expect(ml).toContain('self.onmessage');
   });
 
-  test('v19-demo should include ml-worker.js', () => {
-    expect(fs.existsSync(path.join(__dirname, '../v19-demo/ml-worker.js'))).toBe(true);
+  test('v19-demo should NOT exist (removed as dead code)', () => {
+    expect(fs.existsSync(path.join(__dirname, '../v19-demo'))).toBe(false);
   });
 });

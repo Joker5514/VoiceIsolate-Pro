@@ -79,6 +79,21 @@ const MODEL_FILES = {
   'voicefixer':  'voicefixer.onnx',
 };
 
+// ── SHA-256 expected hashes per model file ────────────────────────────────────
+// Populated by scripts/setup-models.sh after each model is downloaded.
+// Leave as empty string '' to skip integrity check for that model.
+const MODEL_SHA256 = {
+  'silero_vad.onnx':             '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
+  'deepfilter.onnx':             '',
+  'demucs_v4_int8.onnx':         '',
+  'rnnoise.onnx':                '',
+  'ecapa_tdnn.onnx':             '',
+  'voicefixer.onnx':             '',
+  'rnnoise_suppressor.onnx':     '',
+  'demucs_v4_quantized.onnx':   '',
+  'bsrnn_vocals.onnx':           '',
+};
+
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
 // Called at the start of every message handler that needs ORT.
 // If self.ort is already populated (e.g. by a prior importScripts call or
@@ -615,9 +630,10 @@ async function loadModels(basePath, providers, modelList) {
 
     const modelUrl = basePath + file;
     const eps      = await resolveProviders(providers);
+    const expectedSha256 = MODEL_SHA256[file] || '';
 
     try {
-      const { session, provider } = await createSessionWithFallback(modelUrl);
+      const { session, provider } = await createSessionWithFallback(modelUrl, expectedSha256);
       await warmupSession(modelId, session);
       sessions[modelId] = session;
       modelStatus[modelId] = true;
@@ -652,16 +668,58 @@ async function resolveProviders(providers) {
   return eps;
 }
 
-async function createSessionWithFallback(modelUrl) {
+async function createSessionWithFallback(modelUrl, expectedSha256) {
+  // ── SHA-256 integrity check ─────────────────────────────────────────────
+  // If an expected hash is provided and fetch/SubtleCrypto are available,
+  // fetch the model, verify its SHA-256, then create the ONNX session from
+  // the verified ArrayBuffer. This prevents loading tampered or corrupt model
+  // files. The check is skipped when expectedSha256 is empty/undefined or
+  // when fetch/crypto.subtle are unavailable.
+  // Infrastructure errors (network, URL parsing) are non-fatal: we fall back
+  // to URL-based loading. Only a confirmed hash mismatch is a hard failure.
+  let modelData = null;
+  if (
+    expectedSha256 &&
+    typeof fetch !== 'undefined' &&
+    typeof crypto !== 'undefined' &&
+    typeof crypto.subtle !== 'undefined'
+  ) {
+    try {
+      const resp = await fetch(modelUrl);
+      if (resp.ok) {
+        const buffer = await resp.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        const actual = Array.from(new Uint8Array(hashBuffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+        if (actual !== expectedSha256.toLowerCase()) {
+          throw new Error(
+            `SHA-256 mismatch for ${modelUrl}: expected ${expectedSha256}, got ${actual}`
+          );
+        }
+        modelData = buffer;
+        console.info(`[ml-worker] SHA-256 verified for ${modelUrl}`);
+      } else {
+        console.warn(`[ml-worker] SHA-256 check: HTTP ${resp.status} for ${modelUrl} — skipping integrity check`);
+      }
+    } catch (err) {
+      // Re-throw confirmed integrity failures; absorb infrastructure errors
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('SHA-256 mismatch')) throw err;
+      console.warn(`[ml-worker] SHA-256 check skipped (${errMsg}) — loading from URL`);
+    }
+  }
+
+  const source = modelData !== null ? modelData : modelUrl;
   try {
-    const session = await ort.InferenceSession.create(modelUrl, {
+    const session = await ort.InferenceSession.create(source, {
       executionProviders: ['webgpu', 'wasm'],
       graphOptimizationLevel: 'all',
     });
     return { session, provider: 'webgpu' };
   } catch (err) {
     console.warn('[ml-worker] WebGPU session creation failed, falling back to WASM:', err?.message || err);
-    const session = await ort.InferenceSession.create(modelUrl, {
+    const session = await ort.InferenceSession.create(source, {
       executionProviders: ['wasm'],
       graphOptimizationLevel: 'all',
     });
