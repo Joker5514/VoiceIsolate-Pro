@@ -172,6 +172,21 @@ class PipelineOrchestrator {
 
   // ── SharedArrayBuffer ring allocation ───────────────────────────────────
   _allocateRings() {
+    // Check SharedArrayBuffer availability upfront
+    if (typeof SharedArrayBuffer === 'undefined') {
+      console.warn('[Orchestrator] SharedArrayBuffer not available (missing COOP/COEP headers or unsupported browser); live ML masking disabled. Falling back to Creator mode.');
+      this._inputRingSAB = null;
+      this._maskRingSAB  = null;
+      try {
+        if (typeof globalThis !== 'undefined' && typeof globalThis.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+          globalThis.dispatchEvent(new CustomEvent('sabUnavailable', {
+            detail: { reason: 'SharedArrayBuffer not available' }
+          }));
+        }
+      } catch (_) { /* event dispatch is best-effort */ }
+      return false;
+    }
+
     try {
       const inputBytes =
         Int32Array.BYTES_PER_ELEMENT * 2 +
@@ -210,18 +225,20 @@ class PipelineOrchestrator {
           this.workletReady = true;
         }
       }, WORKLET_READY_FALLBACK_MS);
+      return true;
     } catch (err) {
-      // SharedArrayBuffer blocked (missing COOP/COEP) — graceful degradation
-      console.warn('[Orchestrator] SharedArrayBuffer unavailable; live ML masking disabled:', err.message);
+      // SharedArrayBuffer blocked (COOP/COEP misconfigured or SAB construction failed) — graceful degradation
+      console.warn('[Orchestrator] SharedArrayBuffer allocation failed; live ML masking disabled:', err.message);
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
       try {
         if (typeof globalThis !== 'undefined' && typeof globalThis.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
-          globalThis.dispatchEvent(new CustomEvent('ringAllocationFailed', {
+          globalThis.dispatchEvent(new CustomEvent('sabUnavailable', {
             detail: { reason: err?.message || String(err) }
           }));
         }
       } catch (_) { /* event dispatch is best-effort */ }
+      return false;
     }
   }
 
