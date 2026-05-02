@@ -114,7 +114,6 @@ VoiceIsolate-Pro/
 │   └── bootstrap-libs.sh     # Vercel build script
 ├── android/                   # Capacitor 7 Android project
 ├── ios/                       # Capacitor 7 iOS project
-├── src/                       # Legacy TypeScript/source (deprecated)
 ├── server.js                  # Local Express dev server (COOP/COEP headers)
 ├── eslint.config.js           # ESLint Flat Config (browser + worker globals)
 ├── vercel.json                # Vercel deployment config (headers, routes, cache)
