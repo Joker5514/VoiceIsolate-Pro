@@ -1,7 +1,7 @@
 {
-  "version": "1.5.0",
-  "generated": "2026-04-30",
-  "description": "VoiceIsolate Pro ONNX model registry — all models execute locally via onnxruntime-web (WebGPU → WASM fallback). NO cloud inference. Models are fetched once on first run from same-origin /app/models/* paths (served by Vercel directly or proxied to Vercel Blob via vercel.json rewrites) and stored in the browser Cache API by model-loader.js. See MODELS.md for the upload → rewrite flow.",
+  "version": "1.5.1",
+  "generated": "2026-05-01",
+  "description": "VoiceIsolate Pro ONNX model registry — all models execute locally via onnxruntime-web (WebGPU → WASM fallback). NO cloud inference. Models are fetched once on first run from HuggingFace CDN and stored in the browser Cache API by model-loader.js.",
   "models": [
     {
       "id": "silero_vad",
@@ -30,13 +30,11 @@
       "sample_rate": 48000,
       "execution_provider_preference": ["wasm"],
       "load_priority": "eager",
-      "delivery": "first_run_cache",
-      "status": "vercel_blob_pending",
-      "cdn_src": "/app/models/rnnoise_suppressor.onnx",
+      "delivery": "cdn_huggingface",
+      "status": "committed",
+      "cdn_src": "https://huggingface.co/datasets/Joker5514/models/resolve/main/rnnoise_suppressor.onnx",
       "sha256": "",
-      "source": "https://github.com/xiph/rnnoise",
-      "export_script": "scripts/export_rnnoise_onnx.py",
-      "notes": "Same-origin path. Vercel either serves a committed file or rewrites to Vercel Blob (configure rewrite in vercel.json after running scripts/upload_models_to_vercel_blob.py)."
+      "source": "https://github.com/xiph/rnnoise"
     },
     {
       "id": "demucs_v4",
@@ -49,13 +47,11 @@
       "sample_rate": 44100,
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
-      "delivery": "first_run_cache",
-      "status": "vercel_blob_pending",
-      "cdn_src": "/app/models/demucs_v4_quantized.onnx",
+      "delivery": "cdn_huggingface",
+      "status": "committed",
+      "cdn_src": "https://huggingface.co/datasets/Joker5514/models/resolve/main/demucs_v4_quantized.onnx",
       "sha256": "",
-      "source": "https://github.com/facebookresearch/demucs",
-      "export_script": "scripts/export_demucs_onnx.py",
-      "notes": "Same-origin path. Run scripts/upload_models_to_vercel_blob.py to push the file to Vercel Blob, then add a /app/models/demucs_v4_quantized.onnx rewrite in vercel.json pointing at the returned Blob URL."
+      "source": "https://github.com/facebookresearch/demucs"
     },
     {
       "id": "bsrnn_vocals",
@@ -68,22 +64,19 @@
       "sample_rate": 44100,
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
-      "delivery": "first_run_cache",
-      "status": "vercel_blob_pending",
-      "cdn_src": "/app/models/bsrnn_vocals.onnx",
+      "delivery": "cdn_huggingface",
+      "status": "committed",
+      "cdn_src": "https://huggingface.co/datasets/Joker5514/models/resolve/main/bsrnn_vocals.onnx",
       "sha256": "",
-      "source": "https://github.com/crlandsc/bsrnn",
-      "export_script": "scripts/export_bsrnn_onnx.py",
-      "notes": "Same-origin path. Export to ONNX via the export script then upload to Vercel Blob using scripts/upload_models_to_vercel_blob.py. Until then, model-loader.js degrades gracefully to Demucs-only separation."
+      "source": "https://github.com/crlandsc/bsrnn"
     }
   ],
   "delivery_notes": [
     "silero_vad.onnx is committed to the repo and served directly by Vercel from public/app/models/.",
-    "rnnoise_suppressor.onnx, demucs_v4_quantized.onnx, and bsrnn_vocals.onnx are fetched on first run from the same-origin path /app/models/<filename>. Vercel either serves a committed file (if present in public/app/models/) or — for files too large for git — rewrites the path to a Vercel Blob URL declared in vercel.json.",
-    "Upload procedure: run scripts/upload_models_to_vercel_blob.py for each .onnx file, then add the returned Blob URL to vercel.json rewrites. See MODELS.md.",
+    "rnnoise_suppressor.onnx, demucs_v4_quantized.onnx, and bsrnn_vocals.onnx are fetched on first run from HuggingFace CDN (Joker5514/models dataset) and cached in the browser Cache API.",
     "After first run all models are served from Cache API (vip-models-v1) — zero network on repeat visits.",
     "The service worker (sw.js) intercepts /app/models/*.onnx fetches and returns the cached binary to ml-worker.js.",
-    "100% local processing guarantee preserved — no audio data or model weights leave the browser; all fetches are same-origin."
+    "100% local processing guarantee preserved — no audio data leaves the browser."
   ],
   "model_loader_behavior": {
     "cache_name": "vip-models-v1",
