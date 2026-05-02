@@ -30,6 +30,18 @@ const VAD_FALLBACK_BLEND_RMS = 0.45;
 const VAD_FALLBACK_BLEND_RATIO = 0.55;
 const NOISE_SEED_SCALE = 1.5;
 
+// Model SHA-256 hashes for integrity verification (from models-manifest.json)
+const MODEL_HASHES = {
+  'vad': '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
+  'silero_vad': '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
+  // CDN models — hashes to be populated after upload to HuggingFace
+  'rnnoise': '',
+  'demucs': '',
+  'demucs-v4': '',
+  'bsrnn': '',
+  'bsrnn_vocals': ''
+};
+
 // ORT is loaded lazily inside initialize() — not at module top level —
 // so importScripts failures can be caught and reported gracefully.
 let ort = null;
@@ -617,7 +629,7 @@ async function loadModels(basePath, providers, modelList) {
     const eps      = await resolveProviders(providers);
 
     try {
-      const { session, provider } = await createSessionWithFallback(modelUrl);
+      const { session, provider } = await createSessionWithFallback(modelUrl, modelId);
       await warmupSession(modelId, session);
       sessions[modelId] = session;
       modelStatus[modelId] = true;
@@ -652,16 +664,77 @@ async function resolveProviders(providers) {
   return eps;
 }
 
-async function createSessionWithFallback(modelUrl) {
+/**
+ * Verify model file SHA-256 integrity before loading.
+ * Fetches the model, computes its hash, and compares against expected hash.
+ * If hash is empty or verification fails, logs a warning but allows loading
+ * (graceful degradation — integrity check is advisory, not mandatory).
+ * @param {string} modelUrl - URL to the model file
+ * @param {string} modelId - Model identifier (for hash lookup)
+ * @returns {Promise<{valid: boolean, buffer: ArrayBuffer|null}>}
+ */
+async function verifyModelIntegrity(modelUrl, modelId) {
+  const expectedHash = MODEL_HASHES[modelId];
+
+  // Skip verification if no hash is defined (CDN models pending upload)
+  if (!expectedHash || expectedHash === '') {
+    console.info(`[ml-worker] SHA-256 verification skipped for ${modelId} (hash not defined)`);
+    return { valid: true, buffer: null };
+  }
+
   try {
-    const session = await ort.InferenceSession.create(modelUrl, {
+    // Fetch the model file
+    const response = await fetch(modelUrl);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    }
+    const buffer = await response.arrayBuffer();
+
+    // Compute SHA-256 hash using Web Crypto API (available in Workers)
+    if (typeof crypto === 'undefined' || !crypto.subtle) {
+      console.warn(`[ml-worker] Web Crypto API unavailable; skipping SHA-256 verification for ${modelId}`);
+      return { valid: true, buffer };
+    }
+
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const actualHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    if (actualHash !== expectedHash) {
+      console.error(`[ml-worker] SHA-256 mismatch for ${modelId}! Expected: ${expectedHash}, Got: ${actualHash}`);
+      console.error(`[ml-worker] Model integrity compromised — refusing to load ${modelId}`);
+      return { valid: false, buffer: null };
+    }
+
+    console.info(`[ml-worker] SHA-256 verified for ${modelId} ✓`);
+    return { valid: true, buffer };
+  } catch (err) {
+    console.warn(`[ml-worker] SHA-256 verification failed for ${modelId}:`, err.message);
+    // On verification error, allow fallback to direct URL loading (graceful degradation)
+    return { valid: true, buffer: null };
+  }
+}
+
+async function createSessionWithFallback(modelUrl, modelId) {
+  // Perform SHA-256 integrity check before loading
+  const { valid, buffer } = await verifyModelIntegrity(modelUrl, modelId);
+
+  if (!valid) {
+    throw new Error(`Model integrity check failed for ${modelId} — refusing to load`);
+  }
+
+  // Use the verified buffer if available, otherwise fall back to URL
+  const modelSource = buffer || modelUrl;
+
+  try {
+    const session = await ort.InferenceSession.create(modelSource, {
       executionProviders: ['webgpu', 'wasm'],
       graphOptimizationLevel: 'all',
     });
     return { session, provider: 'webgpu' };
   } catch (err) {
     console.warn('[ml-worker] WebGPU session creation failed, falling back to WASM:', err?.message || err);
-    const session = await ort.InferenceSession.create(modelUrl, {
+    const session = await ort.InferenceSession.create(modelSource, {
       executionProviders: ['wasm'],
       graphOptimizationLevel: 'all',
     });

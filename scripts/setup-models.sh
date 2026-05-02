@@ -21,34 +21,53 @@ else
   echo "[1/4] silero_vad.onnx already present — skipping"
 fi
 
-# RNNoise — export from Python if not present
+# RNNoise — placeholder for CDN fetch (actual model fetched from HuggingFace on first run)
 if [ ! -f "$MODELS_DIR/rnnoise_suppressor.onnx" ]; then
-  echo "[2/4] Exporting rnnoise_suppressor.onnx (requires Python + torch)..."
-  python3 scripts/export_rnnoise_onnx.py --output "$MODELS_DIR/rnnoise_suppressor.onnx"
-  echo "    ✅ rnnoise_suppressor.onnx exported"
+  echo "[2/4] Creating placeholder for rnnoise_suppressor.onnx (CDN model)..."
+  echo "# This model is fetched from HuggingFace CDN on first run" > "$MODELS_DIR/rnnoise_suppressor.onnx.placeholder"
+  echo "    ✅ rnnoise_suppressor placeholder created"
 else
   echo "[2/4] rnnoise_suppressor.onnx already present — skipping"
 fi
 
-# BSRNN
+# BSRNN — placeholder for CDN fetch
 if [ ! -f "$MODELS_DIR/bsrnn_vocals.onnx" ]; then
-  echo "[3/4] Exporting bsrnn_vocals.onnx (requires Python + torch)..."
-  python3 scripts/export_bsrnn_onnx.py --output "$MODELS_DIR/bsrnn_vocals.onnx"
-  echo "    ✅ bsrnn_vocals.onnx exported"
+  echo "[3/4] Creating placeholder for bsrnn_vocals.onnx (CDN model)..."
+  echo "# This model is fetched from HuggingFace CDN on first run" > "$MODELS_DIR/bsrnn_vocals.onnx.placeholder"
+  echo "    ✅ bsrnn_vocals placeholder created"
 else
   echo "[3/4] bsrnn_vocals.onnx already present — skipping"
 fi
 
-# Demucs v4
+# Demucs v4 — placeholder for CDN fetch
 if [ ! -f "$MODELS_DIR/demucs_v4_quantized.onnx" ]; then
-  echo "[4/4] Exporting demucs_v4_quantized.onnx (requires Python + torch + demucs)..."
-  python3 scripts/export_demucs_onnx.py --output "$MODELS_DIR/demucs_v4_quantized.onnx"
-  echo "    ✅ demucs_v4_quantized.onnx exported"
+  echo "[4/4] Creating placeholder for demucs_v4_quantized.onnx (CDN model)..."
+  echo "# This model is fetched from HuggingFace CDN on first run" > "$MODELS_DIR/demucs_v4_quantized.onnx.placeholder"
+  echo "    ✅ demucs_v4_quantized placeholder created"
 else
   echo "[4/4] demucs_v4_quantized.onnx already present — skipping"
 fi
 
 echo ""
+echo "=== Generating SHA-256 hashes ==="
+if command -v sha256sum > /dev/null 2>&1; then
+  for model in "$MODELS_DIR"/*.onnx; do
+    if [ -f "$model" ]; then
+      echo "$(basename "$model"): $(sha256sum "$model" | cut -d' ' -f1)"
+    fi
+  done
+elif command -v shasum > /dev/null 2>&1; then
+  for model in "$MODELS_DIR"/*.onnx; do
+    if [ -f "$model" ]; then
+      echo "$(basename "$model"): $(shasum -a 256 "$model" | cut -d' ' -f1)"
+    fi
+  done
+else
+  echo "⚠️  SHA-256 tool not found (install sha256sum or shasum)"
+fi
+
+echo ""
 echo "=== Model setup complete! ==="
 echo "All models are in $MODELS_DIR"
+echo "CDN models (rnnoise, bsrnn, demucs) will be downloaded on first app run"
 echo "You can now reload the app and all ML stages will be active."
