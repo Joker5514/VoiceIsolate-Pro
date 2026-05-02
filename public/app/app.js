@@ -408,6 +408,8 @@ class VoiceIsolatePro {
     // duplicate workers, duplicate ORT/model init, and race conditions.
     // Restore last uploaded file (runs async, non-blocking)
     this._restoreSavedFile().catch(() => {});
+    // Show first-run CDN disclosure notice
+    this._showFirstRunNotice();
   }
 
   // ------------------------------------------------------------------
@@ -3304,6 +3306,26 @@ class VoiceIsolatePro {
   }
   _showToast(message, type = 'info', duration = 3500) {
     return this.showNotification(message, type, duration);
+  }
+
+  /**
+   * Show first-run CDN disclosure notice (once per browser).
+   * Informs users that ML models are downloaded from HuggingFace CDN
+   * on first run and cached locally thereafter.
+   */
+  _showFirstRunNotice() {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const key = 'vip_cdn_notice_shown';
+      if (localStorage.getItem(key)) return; // Already shown
+
+      const message = 'First-run notice: ML models (rnnoise, demucs, bsrnn) are downloaded once from HuggingFace CDN and cached locally. 100% local processing after initial download. No audio data leaves your device.';
+      this.showNotification(message, 'info', 8000);
+      localStorage.setItem(key, '1');
+    } catch (err) {
+      // localStorage might be blocked or unavailable — non-fatal
+      console.warn('[app] First-run notice failed:', err.message);
+    }
   }
 
   // ---- UTILITY ----
