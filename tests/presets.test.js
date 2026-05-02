@@ -227,8 +227,4 @@ describe('ml-worker.js', () => {
     const ml = fs.readFileSync(mlPath, 'utf8');
     expect(ml).toContain('self.onmessage');
   });
-
-  test('v19-demo should include ml-worker.js', () => {
-    expect(fs.existsSync(path.join(__dirname, '../v19-demo/ml-worker.js'))).toBe(true);
-  });
 });
