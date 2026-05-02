@@ -8,6 +8,7 @@ coverage/
 dist/
 build/
 .cache/
+package-lock.json
 
 # ML model files — too large for git, download separately (see public/app/models/README.md)
 public/app/models/*.onnx
