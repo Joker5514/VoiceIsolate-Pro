@@ -471,6 +471,12 @@
   <!-- Status Bar -->
   <div class="status-bar" id="statusBar">
     <span id="statusMsg" class="st-msg">Ready</span>
+    <div class="engine-pills" id="enginePills" role="status" aria-live="polite" aria-label="DSP engine status">
+      <span class="engine-pill" id="engCtxPill"     data-state="pending" title="AudioContext">CTX</span>
+      <span class="engine-pill" id="engWorkletPill" data-state="pending" title="DSP AudioWorklet (real-time path)">Worklet</span>
+      <span class="engine-pill" id="engMlPill"      data-state="pending" title="ML Worker (ONNX Runtime)">ML</span>
+      <span class="engine-pill" id="engSabPill"     data-state="pending" title="SharedArrayBuffer ring buffer">SAB</span>
+    </div>
     <div class="st-right">
       <div class="stat-box"><span class="st-lbl">Sample Rate</span><span class="st-val" id="stSR">--</span></div>
       <div class="stat-box"><span class="st-lbl">Bit Depth</span><span class="st-val">32-bit float</span></div>

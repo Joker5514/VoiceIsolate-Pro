@@ -140,6 +140,7 @@ class PipelineOrchestrator {
     if (!this._workletModulesLoaded) {
       try {
         await this.ctx.audioWorklet.addModule('/app/dsp-processor.js');
+        this._workletModulesLoaded = true;
         console.info('[Orchestrator] AudioWorklet modules loaded');
       } catch (err) {
         console.error('[Orchestrator] Failed to load AudioWorklet module:', err);

@@ -381,6 +381,17 @@ input[type="range"]:focus-visible::-moz-range-thumb{
 .st-lbl{display:block;font-size:0.5rem;color:var(--dim);text-transform:uppercase;letter-spacing:0.04em}
 .st-val{font-family:var(--fm);font-size:0.68rem;font-weight:600;color:var(--text2)}
 
+/* ---- ENGINE STATUS INDICATOR ---- */
+.engine-pills{display:flex;gap:4px;align-items:center}
+.engine-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;font-family:var(--fm);font-size:0.55rem;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;background:var(--s2);border:1px solid var(--border);color:var(--dim);transition:all 0.2s ease}
+.engine-pill::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 4px currentColor}
+.engine-pill[data-state="pending"]{color:var(--dim)}
+.engine-pill[data-state="loading"]{color:var(--yellow);border-color:rgba(234,179,8,0.3);animation:engPulse 1.2s ease-in-out infinite}
+.engine-pill[data-state="ready"]{color:var(--green);border-color:rgba(34,197,94,0.3);background:rgba(34,197,94,0.05)}
+.engine-pill[data-state="error"]{color:#ef4444;border-color:rgba(239,68,68,0.4);background:rgba(239,68,68,0.05)}
+.engine-pill[data-state="unavailable"]{color:var(--yellow);border-color:rgba(234,179,8,0.25)}
+@keyframes engPulse{0%,100%{opacity:1}50%{opacity:0.5}}
+
 /* ---- FORENSIC CARD ---- */
 .forensic-card{margin-bottom:8px}
 .forensic-report{font-family:var(--fm);font-size:0.65rem;color:var(--text2);line-height:1.6;max-height:300px;overflow-y:auto;padding:4px 2px;white-space:pre-wrap;word-break:break-all}

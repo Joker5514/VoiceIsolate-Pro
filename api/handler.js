@@ -35,4 +35,11 @@ app.use(express.json());
 // the sub-routers match their relative paths (/auth/login, /sync/pull, etc.)
 app.use('/api', apiRouter);
 
-export default app;
+// Wrap in an explicit (req, res) function. Vercel's @vercel/node runtime
+// auto-detects request handlers; passing the bare Express app instance works
+// in most cases but has caused FUNCTION_INVOCATION_FAILED on Express 5
+// bundles. Wrapping makes the export shape deterministic across Express
+// majors and Vercel bundler versions.
+export default function handler(req, res) {
+  return app(req, res);
+}

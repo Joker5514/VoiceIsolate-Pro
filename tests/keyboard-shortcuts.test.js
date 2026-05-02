@@ -8,7 +8,7 @@ const appJs = getAppCode();
 // is a plain method on the prototype, so we don't need a full DOM.
 let VoiceIsolatePro;
 try {
-  const safeCode = appJs.replace(/document\.addEventListener\('DOMContentLoaded'[\s\S]*\}\);/, '');
+  const safeCode = appJs.replace(/document\.addEventListener\('DOMContentLoaded'[\s\S]*?\}\);/, '');
   VoiceIsolatePro = new Function(
     'window', 'document',
     safeCode + '; return VoiceIsolatePro;'

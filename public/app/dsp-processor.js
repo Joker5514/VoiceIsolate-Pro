@@ -288,6 +288,21 @@ class DSPProcessor extends AudioWorkletProcessor {
     this.port.addEventListener('close', () => this._resetSharedState());
 
     this._initLookahead();
+
+    // Tell the orchestrator we're alive. This lets the main thread flip
+    // workletReady = true immediately on successful construction instead of
+    // waiting on the WORKLET_READY_FALLBACK_MS timeout, and surfaces an
+    // explicit signal that the worklet's constructor did not throw.
+    try {
+      this.port.postMessage({
+        type: 'ready',
+        sampleRate: this._sampleRate,
+        fftSize: FFT_SIZE,
+        hopSize: HOP_SIZE
+      });
+    } catch (_) {
+      // postMessage at construction time is best-effort
+    }
   }
 
   _resetSharedState() {

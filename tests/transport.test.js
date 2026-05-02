@@ -9,7 +9,7 @@ const appJs = getAppCode();
 let VoiceIsolatePro;
 try {
   // Strip out the event listener at the end so it doesn't crash on document not defined
-  const safeCode = appJs.replace(/document\.addEventListener\('DOMContentLoaded'[\s\S]*\}\);/, '');
+  const safeCode = appJs.replace(/document\.addEventListener\('DOMContentLoaded'[\s\S]*?\}\);/, '');
   VoiceIsolatePro = new Function('window', 'document', safeCode + '; return VoiceIsolatePro;')({}, {});
 } catch (e) {
   console.error("Failed to load VoiceIsolatePro from app.js", e);

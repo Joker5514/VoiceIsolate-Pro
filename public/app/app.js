@@ -3405,3 +3405,110 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
     _setup();
   }
 })();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Engine status indicator — surfaces real-time worklet/worker/SAB readiness
+// in the status bar. Independent of any other bootstrap path.
+//
+// States per pill:
+//   pending     — module not requested yet
+//   loading     — request in-flight (animated pulse)
+//   ready       — confirmed alive
+//   error       — load/init threw
+//   unavailable — feature not supported (e.g. SAB without COOP/COEP)
+//
+// Sources of truth (no new flags introduced):
+//   CTX     : window._vipOrch.ctx?.state
+//   Worklet : window._vipOrch.workletReady (set on worklet 'ready' postMessage)
+//   ML      : window._vipOrch.mlReady      (set on ml-worker 'ready' postMessage)
+//   SAB     : presence of orch._inputRingSAB OR sabUnavailable event
+// ─────────────────────────────────────────────────────────────────────────────
+(function _vipEngineIndicator() {
+  'use strict';
+  var POLL_MS = 500;
+  var sabExplicitlyUnavailable = false;
+
+  function $(id) {
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return null;
+    return document.getElementById(id);
+  }
+  function setPill(el, state, label) {
+    if (!el || !el.dataset) return;
+    if (el.dataset.state !== state) el.dataset.state = state;
+    if (label && el.textContent !== label) el.textContent = label;
+  }
+
+  function tick() {
+    var orch = (typeof window !== 'undefined') && window._vipOrch;
+    var ctxPill = $('engCtxPill');
+    var wlPill  = $('engWorkletPill');
+    var mlPill  = $('engMlPill');
+    var sabPill = $('engSabPill');
+    if (!ctxPill && !wlPill && !mlPill && !sabPill) return;
+
+    // CTX
+    if (!orch || !orch.ctx) {
+      setPill(ctxPill, 'pending', 'CTX');
+    } else if (orch.ctx.state === 'running') {
+      setPill(ctxPill, 'ready', 'CTX ' + (orch.ctx.sampleRate / 1000) + 'k');
+    } else if (orch.ctx.state === 'suspended') {
+      setPill(ctxPill, 'loading', 'CTX·' + orch.ctx.state);
+    } else {
+      setPill(ctxPill, 'error', 'CTX·' + orch.ctx.state);
+    }
+
+    // Worklet
+    if (!orch) {
+      setPill(wlPill, 'pending', 'Worklet');
+    } else if (orch.workletReady) {
+      setPill(wlPill, 'ready', 'Worklet');
+    } else if (orch._workletModulesLoaded) {
+      setPill(wlPill, 'loading', 'Worklet');
+    } else if (orch.ctx) {
+      setPill(wlPill, 'loading', 'Worklet');
+    } else {
+      setPill(wlPill, 'pending', 'Worklet');
+    }
+
+    // ML
+    if (!orch) {
+      setPill(mlPill, 'pending', 'ML');
+    } else if (orch.mlReady) {
+      setPill(mlPill, 'ready', 'ML');
+    } else if (orch.mlWorker) {
+      setPill(mlPill, 'loading', 'ML');
+    } else {
+      setPill(mlPill, 'pending', 'ML');
+    }
+
+    // SAB
+    if (sabExplicitlyUnavailable) {
+      setPill(sabPill, 'unavailable', 'SAB·off');
+    } else if (orch && orch._inputRingSAB) {
+      setPill(sabPill, 'ready', 'SAB');
+    } else if (orch && orch.workletReady) {
+      // Worklet is up but no ring buffer means SAB silently failed
+      setPill(sabPill, 'unavailable', 'SAB·off');
+    } else {
+      setPill(sabPill, 'pending', 'SAB');
+    }
+  }
+
+  if (typeof globalThis !== 'undefined' && typeof globalThis.addEventListener === 'function') {
+    globalThis.addEventListener('sabUnavailable', function () {
+      sabExplicitlyUnavailable = true;
+      tick();
+    });
+  }
+
+  function start() {
+    tick();
+    if (typeof setInterval === 'function') setInterval(tick, POLL_MS);
+  }
+  // Note: no DOMContentLoaded gate — start() is safe before DOM is ready
+  // because tick() returns early when no pill elements are found, and the
+  // setInterval keeps polling until they exist. This also avoids tripping
+  // tests/keyboard-shortcuts.test.js + tests/transport.test.js, which strip
+  // the bootstrap's DOMContentLoaded handler with a greedy regex.
+  start();
+})();
