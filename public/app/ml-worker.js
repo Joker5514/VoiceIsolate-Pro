@@ -704,8 +704,9 @@ async function createSessionWithFallback(modelUrl, expectedSha256) {
       }
     } catch (err) {
       // Re-throw confirmed integrity failures; absorb infrastructure errors
-      if (err.message && err.message.includes('SHA-256 mismatch')) throw err;
-      console.warn(`[ml-worker] SHA-256 check skipped (${err.message}) — loading from URL`);
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('SHA-256 mismatch')) throw err;
+      console.warn(`[ml-worker] SHA-256 check skipped (${errMsg}) — loading from URL`);
     }
   }
 

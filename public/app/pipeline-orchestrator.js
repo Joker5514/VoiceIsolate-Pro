@@ -180,7 +180,9 @@ class PipelineOrchestrator {
     // Guard: SharedArrayBuffer requires COOP+COEP headers — check before
     // attempting allocation so we get a clean boolean return rather than
     // relying solely on the catch branch.
-    if (typeof SharedArrayBuffer === 'undefined' || !SharedRingBuffer.isSupported()) {
+    if (typeof SharedArrayBuffer === 'undefined' ||
+        typeof SharedRingBuffer === 'undefined' ||
+        !SharedRingBuffer.isSupported()) {
       console.warn('[Orchestrator] SharedArrayBuffer unavailable — live ML masking disabled');
       this._inputRingSAB = null;
       this._maskRingSAB  = null;

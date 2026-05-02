@@ -35,10 +35,9 @@ update_sha256() {
   echo "    SHA-256: $hash"
 
   # Update MODEL_SHA256 entry in ml-worker.js (in-place sed)
-  # Matches: '<filename>': '<old_hash_or_empty>'
+  # Pattern: '<filename>': 'any_existing_value'
   if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' "s|'${filename}':.*'\(.*\)'|'${filename}': '${hash}'|g" "$ML_WORKER"
-    sed -i '' "s|'${filename}': ''|'${filename}': '${hash}'|g" "$ML_WORKER"
+    sed -i '' "s|'${filename}': '.*'|'${filename}': '${hash}'|g" "$ML_WORKER"
   else
     sed -i "s|'${filename}': '.*'|'${filename}': '${hash}'|g" "$ML_WORKER"
   fi
