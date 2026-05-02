@@ -724,10 +724,21 @@ class VoiceIsolatePro {
     bind('tpRew', this.dom.tpRew, 'click', () => this.seekDelta(-5));
     bind('tpFwd', this.dom.tpFwd, 'click', () => this.seekDelta(5));
     if (this.dom.tpSeek) bind('tpSeek', this.dom.tpSeek, 'input', () => this.seekTo(this.dom.tpSeek.value / CONSTANTS.MS_IN_SECOND));
-    if (this.dom.tpScrubTrack) bind('tpScrubTrack', this.dom.tpScrubTrack, 'pointerdown', e => {
-      const r = this.dom.tpScrubTrack.getBoundingClientRect();
-      this.seekTo((e.clientX - r.left) / r.width);
-    });
+    if (this.dom.tpScrubTrack) {
+      bind('tpScrubTrack', this.dom.tpScrubTrack, 'pointerdown', e => {
+        const r = this.dom.tpScrubTrack.getBoundingClientRect();
+        this.seekTo((e.clientX - r.left) / r.width);
+      });
+      bind('tpScrubTrackKey', this.dom.tpScrubTrack, 'keydown', e => {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          this.seekDelta(-5);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          this.seekDelta(5);
+        }
+      });
+    }
     bind('tpSpeed', this.dom.tpSpeed, 'change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
     bind('tpAB', this.dom.tpAB, 'click', () => this.toggleAB());
     if (this.dom.waveProcCanvas) bind('waveformCanvas', this.dom.waveProcCanvas, 'click', e => {
@@ -875,7 +886,9 @@ class VoiceIsolatePro {
     const t = e.target;
     if (t && t.nodeType === 1) {
       const tag = t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || t.isContentEditable) return;
+      const role = typeof t.getAttribute === 'function' ? t.getAttribute('role') : null;
+      if (role === 'button' || role === 'tab' || role === 'slider') return;
     }
     const auth = (typeof document !== 'undefined') ? document.getElementById('authOverlay') : null;
     if (auth && auth.offsetParent !== null) return;
