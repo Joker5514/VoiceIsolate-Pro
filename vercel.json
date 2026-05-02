@@ -2,7 +2,7 @@
   "framework": null,
   "outputDirectory": "public",
   "installCommand": "pnpm install --no-frozen-lockfile",
-  "buildCommand": "node scripts/setup-ort.js",
+  "buildCommand": "node scripts/setup-ort.js && node scripts/stamp-sw-version.js",
   "env": {
     "PUPPETEER_SKIP_DOWNLOAD": "true",
     "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": "true",

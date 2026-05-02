@@ -95,7 +95,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^8.3.2",
     "jsdom": "^29.0.1",
-    "onnxruntime-web": "1.20.1"
+    "onnxruntime-web": "1.25.1"
   },
   "pnpm": {
     "overrides": {

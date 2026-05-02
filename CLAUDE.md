@@ -115,7 +115,6 @@ VoiceIsolate-Pro/
 ├── android/                   # Capacitor 7 Android project
 ├── ios/                       # Capacitor 7 iOS project
 ├── src/                       # Legacy TypeScript/source (deprecated)
-├── demos/                     # Demo HTML files (not production)
 ├── server.js                  # Local Express dev server (COOP/COEP headers)
 ├── eslint.config.js           # ESLint Flat Config (browser + worker globals)
 ├── vercel.json                # Vercel deployment config (headers, routes, cache)

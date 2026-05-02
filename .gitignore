@@ -34,6 +34,4 @@ checkpoints/
 !public/lib/ort.min.js.map
 !public/lib/ort.js
 !public/lib/ort.js.map
-!public/lib/ort-wasm.wasm
-!public/lib/ort-wasm-simd.wasm
-!public/lib/ort-wasm-threaded.wasm
+!public/lib/ort-wasm*.wasm

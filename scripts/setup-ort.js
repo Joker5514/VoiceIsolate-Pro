@@ -10,7 +10,7 @@
  * Safe to re-run: existing files are overwritten.
  */
 
-const { existsSync, mkdirSync, copyFileSync, readdirSync } = require('fs');
+const { existsSync, mkdirSync, copyFileSync, readdirSync, unlinkSync } = require('fs');
 const { join } = require('path');
 
 const ROOT     = join(__dirname, '..');
@@ -18,6 +18,18 @@ const SRC_DIR  = join(ROOT, 'node_modules', 'onnxruntime-web', 'dist');
 const DEST_DIR = join(ROOT, 'public', 'lib');
 
 const SOFT = process.env.VIP_ORT_SETUP_SOFT === '1';
+
+// Files this script owns in DEST_DIR. Anything matching these patterns is
+// removed before copying so that wasm/JS files dropped between ORT releases
+// don't accumulate as stale 30 MB artifacts. Non-ORT files (ort-loader.js,
+// three.min.js, README.md, .gitkeep) do not match and are preserved.
+const OWNED_PATTERNS = [
+  /^ort-wasm[^/]*\.wasm$/,
+  /^ort\.js$/,
+  /^ort\.js\.map$/,
+  /^ort\.min\.js$/,
+  /^ort\.min\.js\.map$/,
+];
 
 // Guard: onnxruntime-web must be installed
 if (!existsSync(SRC_DIR)) {
@@ -38,6 +50,16 @@ if (!existsSync(DEST_DIR)) {
   mkdirSync(DEST_DIR, { recursive: true });
   console.info('[setup-ort] Created directory:', DEST_DIR);
 }
+
+// Pre-clean owned ORT artifacts so removed-between-releases files don't linger
+let removed = 0;
+for (const f of readdirSync(DEST_DIR)) {
+  if (OWNED_PATTERNS.some((re) => re.test(f))) {
+    unlinkSync(join(DEST_DIR, f));
+    removed++;
+  }
+}
+if (removed > 0) console.info(`[setup-ort] Removed ${removed} stale ORT artifact(s) before copy.`);
 
 const files  = readdirSync(SRC_DIR);
 let copied   = 0;
