@@ -74,7 +74,9 @@ describe('Server.js Integration Tests', () => {
       const res = await request(app).get('/app/app.js');
       expect(res.statusCode).not.toBe(404);
       if (res.statusCode === 200) {
-        expect(res.headers['content-type']).toContain('application/javascript');
+        // Accept both: application/javascript (Express 4 default) and
+        // text/javascript (Express 5 / serve-static@2 default per RFC 9239)
+        expect(res.headers['content-type']).toMatch(/(application|text)\/javascript/);
         expect(res.headers['cross-origin-resource-policy']).toBe('same-origin');
       }
     });

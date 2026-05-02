@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /* ============================================
-   VoiceIsolate Pro v21.0 — Local Dev Server
-   Express + COOP/COEP for SharedArrayBuffer
-   Threads from Space v10 · server.js
+   VoiceIsolate Pro v24.0 — Local Dev Server
+   Express 5 + COOP/COEP for SharedArrayBuffer
+   Threads from Space v13 · server.js
    Mobile-ready: Capacitor Android/iOS support
    ============================================ */
 'use strict';
@@ -50,15 +50,6 @@ app.use((_req, res, next) => {
 
 // ── API Routes ──────────────────────────────────────────────────────────
 app.use('/api', apiRouter);
-
-// ── WASM MIME type & caching ─────────────────────────────────────────────
-app.use('/wasm', express.static(join(__dirname, 'wasm'), {
-  setHeaders: (res) => {
-    res.setHeader('Content-Type', 'application/wasm');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  }
-}));
 
 // ── Model files caching ──────────────────────────────────────────────────
 app.use('/app/models', express.static(join(__dirname, 'public', 'app', 'models'), {
