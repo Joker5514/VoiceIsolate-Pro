@@ -319,9 +319,8 @@ class VoiceIsolatePro {
     this.inputBuffer = null;
     this.outputBuffer = null;
     this.currentSource = null;
-    this.analyserNode = null;     // post-chain (for existing viz)
     this.analyserOrig = null;     // pre-chain (for A/B comparison)
-    this.analyserProc = null;     // post-chain (for diagnostics)
+    this.analyserProc = null;     // post-chain (for diagnostics and visualization)
     this.isProcessing = false;
     this.isRecording = false;
     this.mediaRecorder = null;
@@ -1349,7 +1348,6 @@ class VoiceIsolatePro {
       const src = this.ctx.createMediaStreamSource(stream);
       const ana = this.ctx.createAnalyser(); ana.fftSize = 4096;
       src.connect(ana);
-      this.analyserNode = ana;
       this.analyserOrig = ana;
       this.analyserProc = ana;
       this.startSpectro(ana);
@@ -1428,8 +1426,8 @@ class VoiceIsolatePro {
       this.dom.videoPlayer.muted = true;
       this.dom.videoPlayer.play().catch(() => {});
     }
-    this.startSpectro(this.analyserNode);
-    this.startFreq(this.analyserNode);
+    this.startSpectro(this.analyserProc);
+    this.startFreq(this.analyserProc);
     this.startDiagnostics();
     this.tickTime();
   }
@@ -1574,7 +1572,6 @@ class VoiceIsolatePro {
 
     src.start(0, this.playOffset);
     this.currentSource = src;
-    this.analyserNode = anaProc;
     this.analyserOrig = anaOrig;
     this.analyserProc = anaProc;
     this.liveNodes = { hp, lp, eqs, deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, chain: [src, ...chain] };
