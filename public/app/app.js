@@ -830,6 +830,20 @@ class VoiceIsolatePro {
     // held (so browser shortcuts like Ctrl+R / Cmd+S still work), or while a
     // dialog/modal is open.
     window.addEventListener('keydown', (e) => this._handleGlobalKeydown(e));
+
+    // ── SharedArrayBuffer availability notification ─────────────────────────
+    // The pipeline orchestrator emits 'sabUnavailable' when COOP/COEP headers
+    // are missing or SharedArrayBuffer is not defined. Notify the user and
+    // fall back to Creator mode guidance.
+    globalThis.addEventListener('sabUnavailable', () => {
+      if (this._sabNoticeShown) return;
+      this._sabNoticeShown = true;
+      this.showNotification(
+        'Live mode: SharedArrayBuffer unavailable — ML masking disabled. Use Creator mode for full quality.',
+        'warn',
+        7000
+      );
+    });
   }
 
   _handleGlobalKeydown(e) {
@@ -1526,6 +1540,18 @@ class VoiceIsolatePro {
 
   // ======== LIVE AUDIO CHAIN (with dual analysers) ========
   buildLiveChain(buf) {
+    // Guard: SharedArrayBuffer is required for live ML masking (ring buffers).
+    // Notify the user once per page load if SAB is unavailable so they know
+    // to use Creator mode for full ML processing.
+    if (typeof SharedArrayBuffer === 'undefined' && !this._sabNoticeShown) {
+      this._sabNoticeShown = true;
+      this.showNotification(
+        'Live ML masking requires SharedArrayBuffer (COOP/COEP headers). ' +
+        'Use Creator mode for full processing.',
+        'warn',
+        7000
+      );
+    }
     this.teardownChain();
     const ctx = this.ensureCtx();
     const p = this.params;

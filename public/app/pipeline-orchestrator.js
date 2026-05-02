@@ -84,7 +84,10 @@ class PipelineOrchestrator {
     try {
       await this._createAudioContext();
       await this._loadWorklet();
-      this._allocateRings();
+      const sabOk = this._allocateRings();
+      if (!sabOk) {
+        console.warn('[Orchestrator] Live ML masking unavailable — SAB not supported; falling back to Creator mode');
+      }
       await this._initMLWorker();
       this._bindSliders();
       this.initialized = true;
@@ -172,6 +175,16 @@ class PipelineOrchestrator {
 
   // ── SharedArrayBuffer ring allocation ───────────────────────────────────
   _allocateRings() {
+    // Guard: SharedArrayBuffer requires COOP+COEP headers — check before
+    // attempting allocation so we get a clean boolean return rather than
+    // relying solely on the catch branch.
+    if (typeof SharedArrayBuffer === 'undefined') {
+      console.warn('[Orchestrator] SharedArrayBuffer unavailable — live ML masking disabled');
+      this._inputRingSAB = null;
+      this._maskRingSAB  = null;
+      this._emitSabUnavailable('SharedArrayBuffer is not defined');
+      return false;
+    }
     try {
       const inputBytes =
         Int32Array.BYTES_PER_ELEMENT * 2 +
@@ -210,19 +223,26 @@ class PipelineOrchestrator {
           this.workletReady = true;
         }
       }, WORKLET_READY_FALLBACK_MS);
+      return true;
     } catch (err) {
       // SharedArrayBuffer blocked (missing COOP/COEP) — graceful degradation
       console.warn('[Orchestrator] SharedArrayBuffer unavailable; live ML masking disabled:', err.message);
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
-      try {
-        if (typeof globalThis !== 'undefined' && typeof globalThis.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
-          globalThis.dispatchEvent(new CustomEvent('ringAllocationFailed', {
-            detail: { reason: err?.message || String(err) }
-          }));
-        }
-      } catch (_) { /* event dispatch is best-effort */ }
+      this._emitSabUnavailable(err?.message || String(err));
+      return false;
     }
+  }
+
+  // ── Emit sabUnavailable event (best-effort) ──────────────────────────────
+  _emitSabUnavailable(reason) {
+    try {
+      if (typeof globalThis !== 'undefined' && typeof globalThis.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+        globalThis.dispatchEvent(new CustomEvent('sabUnavailable', {
+          detail: { reason }
+        }));
+      }
+    } catch (_) { /* event dispatch is best-effort */ }
   }
 
   async waitForReadiness(timeoutMs = 5000) {
