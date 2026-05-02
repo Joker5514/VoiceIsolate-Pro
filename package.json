@@ -73,7 +73,6 @@
       "public/app/pipeline-state.js",
       "public/app/pipeline-orchestrator.js",
       "public/app/license-manager.js",
-      "public/app/ring-buffer.js",
       "public/app/ml-worker.js",
       "public/app/batch-processor.js",
       "public/app/analytics.js",
