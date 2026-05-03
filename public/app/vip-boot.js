@@ -56,7 +56,13 @@
     }
 
     // C. ONNX model file probe
-    var required = ["demucs_v4.onnx", "bsrnn.onnx", "silero_vad.onnx", "ecapa_tdnn.onnx"];
+    // NOTE: filenames must match actual files in public/app/models/
+    var required = [
+      'demucs_v4_quantized.onnx',  // was incorrectly 'demucs_v4.onnx'
+      'bsrnn_vocals.onnx',          // was incorrectly 'bsrnn.onnx'
+      'silero_vad.onnx',
+      'ecapa_tdnn.onnx'
+    ];
     var missing = [];
     for (var i = 0; i < required.length; i++) {
       var found = await probeModel(required[i]);
@@ -141,9 +147,13 @@
   }
 
   // ── Boot sequence ───────────────────────────────────────────────────────
-  function boot() {
+  // runDiagnostics() is awaited before aliasOrCreate() so that
+  // window._vipApp is guaranteed to be set AFTER diagnostics complete.
+  // This prevents the pipeline-orchestrator pre-warm from racing against
+  // _vipApp being null when it polls window._vipApp.ctx.
+  async function boot() {
     wireDismissBtn();
-    runDiagnostics();   // async, non-blocking — banner shows if something's wrong
+    await runDiagnostics();  // now awaited — _vipApp race resolved
     aliasOrCreate();
   }
 

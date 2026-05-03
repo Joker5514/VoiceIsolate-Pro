@@ -17,7 +17,7 @@
       "destination": "/api/handler"
     },
     {
-      "source": "/app/((?!sw\\.js).*)",
+      "source": "/app/((?!sw\\.js|dsp-processor\\.js|ml-worker\\.js|dsp-worker\\.js|ring-buffer\\.js|dsp-core\\.js|pipeline-orchestrator\\.js|pipeline-state\\.js).*)",
       "destination": "/app/index.html"
     },
     {
