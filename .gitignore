@@ -1,37 +1,47 @@
+# Dependencies
 node_modules/
-coverage/
-.vercel/
+.pnp/
+.pnp.js
+
+# Build outputs
+build/
+dist/
+.next/
+.nuxt/
+
+# Environment variables
 .env
 .env.local
-.DS_Store
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
 *.log
-dist/
-build/
-.cache/
-package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# ML model files — too large for git, download separately (see public/app/models/README.md)
-public/app/models/*.onnx
-public/app/models/*.tar.gz
-public/app/models/*.bin
-build/
-public/app/models/deepfilter/
+# OS files
+.DS_Store
+Thumbs.db
 
-# ONNX export pipeline — local working directories (export_and_upload.py)
-models_output/
-vendor/
-checkpoints/
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
 
-# AI agent workspace dirs — not tracked in git
-.Jules/
-.jules/*
-!.jules/sentinel.md
-.qodo/
+# Vercel
+.vercel/
 
-# ORT runtime assets — vendored directly into public/lib (committed to repo)
-# Un-ignored so git tracks the local bundle
-!public/lib/ort.min.js
-!public/lib/ort.min.js.map
-!public/lib/ort.js
-!public/lib/ort.js.map
-!public/lib/ort-wasm*.wasm
+# Testing
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
