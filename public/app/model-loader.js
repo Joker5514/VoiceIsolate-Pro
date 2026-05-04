@@ -33,6 +33,9 @@ export const CACHE_NAME       = 'vip-models-v1';
 export const BROADCAST_CH     = 'vip-model-progress';
 const MODEL_BASE_PATH         = '/app/models/';
 
+// Fallback CDN URLs for when Vercel Blob fails
+const HUGGINGFACE_BASE = 'https://huggingface.co/datasets/Joker5514/models/resolve/main/';
+
 // All entries fetch from MODEL_BASE_PATH + filename.  No external `src` field.
 // To add a new model:
 //   1. Run scripts/upload_models_to_vercel_blob.py to push the .onnx file to
@@ -54,18 +57,21 @@ const MODEL_REGISTRY = [
     filename: 'rnnoise_suppressor.onnx',
     priority: 'eager',
     sizeMB:   0.18,
+    fallbackUrl: HUGGINGFACE_BASE + 'rnnoise_suppressor.onnx',
   },
   {
     id:       'demucs_v4',
     filename: 'demucs_v4_quantized.onnx',
     priority: 'lazy',
     sizeMB:   83,
+    fallbackUrl: HUGGINGFACE_BASE + 'demucs_v4_quantized.onnx',
   },
   {
     id:       'bsrnn_vocals',
     filename: 'bsrnn_vocals.onnx',
     priority: 'lazy',
     sizeMB:   45,
+    fallbackUrl: HUGGINGFACE_BASE + 'bsrnn_vocals.onnx',
   },
 ];
 
@@ -83,27 +89,65 @@ function _broadcast(detail) {
  * Fetch a model from its same-origin /app/models/* path with streaming
  * progress, then store the response in the Cache API.
  *
- * The actual bytes come either directly from the Vercel deployment or are
- * proxied via a vercel.json rewrite to Vercel Blob storage. The browser
- * never sees a cross-origin URL.
+ * Fallback strategy:
+ *   1. Try Vercel Blob (via same-origin /app/models/* rewrite)
+ *   2. If that fails, try HuggingFace CDN (cross-origin, requires CORS)
+ *   3. If both fail, notify user with actionable error
  *
  * @param {Cache}  cache
  * @param {object} model  – entry from MODEL_REGISTRY
  * @returns {Promise<void>}
  */
 async function _fetchAndCache(cache, model) {
-  const { id, filename, sizeMB } = model;
-  const url = MODEL_BASE_PATH + filename; // same-origin always
+  const { id, filename, sizeMB, fallbackUrl } = model;
+  const primaryUrl = MODEL_BASE_PATH + filename; // same-origin (Vercel Blob)
 
-  _broadcast({ type: 'start', id, filename, sizeMB });
+  _broadcast({ type: 'start', id, filename, sizeMB, source: 'vercel' });
 
-  // same-origin fetch — no `cors` mode needed; COEP is satisfied automatically.
-  const response = await fetch(url, { cache: 'no-store' });
-  if (!response.ok) {
-    throw new Error(`[model-loader] HTTP ${response.status} fetching ${url}`);
+  let response = null;
+  let source = 'vercel';
+
+  // Try primary source (Vercel Blob via same-origin rewrite)
+  try {
+    response = await fetch(primaryUrl, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  } catch (primaryErr) {
+    console.warn(`[model-loader] Vercel Blob failed for ${filename}: ${primaryErr.message}`);
+    
+    // Try fallback (HuggingFace CDN)
+    if (fallbackUrl) {
+      _broadcast({ type: 'fallback', id, filename, source: 'huggingface' });
+      try {
+        response = await fetch(fallbackUrl, {
+          cache: 'no-store',
+          mode: 'cors',
+          credentials: 'omit'
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        source = 'huggingface';
+        console.info(`[model-loader] Using HuggingFace fallback for ${filename}`);
+      } catch (fallbackErr) {
+        // Both sources failed - notify user
+        const errorMsg = `Failed to download ${filename} from both Vercel and HuggingFace. Please check your internet connection and try again.`;
+        _broadcast({
+          type: 'fatal_error',
+          id,
+          filename,
+          error: errorMsg,
+          primaryError: primaryErr.message,
+          fallbackError: fallbackErr.message
+        });
+        throw new Error(errorMsg);
+      }
+    } else {
+      // No fallback available
+      const errorMsg = `Failed to download ${filename} from Vercel. No fallback source configured.`;
+      _broadcast({ type: 'fatal_error', id, filename, error: errorMsg });
+      throw new Error(errorMsg);
+    }
   }
 
-  // Stream-read to track download progress.
+  // Stream-read to track download progress
   const contentLength = Number(response.headers.get('content-length')) || sizeMB * 1024 * 1024;
   const reader = response.body.getReader();
   const chunks = [];
@@ -121,10 +165,11 @@ async function _fetchAndCache(cache, model) {
       loaded:  received,
       total:   contentLength,
       percent: Math.round((received / contentLength) * 100),
+      source,
     });
   }
 
-  // Assemble and store in Cache API so sw.js can intercept /app/models/*.onnx.
+  // Assemble and store in Cache API so sw.js can intercept /app/models/*.onnx
   const blob       = new Blob(chunks, { type: 'application/octet-stream' });
   const cachedResp = new Response(blob, {
     status:  200,
@@ -135,10 +180,10 @@ async function _fetchAndCache(cache, model) {
       'Cache-Control':                'public, max-age=86400, immutable',
     },
   });
-  await cache.put(url, cachedResp);
+  await cache.put(primaryUrl, cachedResp);
 
-  _broadcast({ type: 'done', id, filename, bytes: blob.size });
-  console.info(`[model-loader] ✓ ${filename} (${(blob.size / 1024 / 1024).toFixed(1)} MB) cached as ${url}`);
+  _broadcast({ type: 'done', id, filename, bytes: blob.size, source });
+  console.info(`[model-loader] ✓ ${filename} (${(blob.size / 1024 / 1024).toFixed(1)} MB) cached from ${source}`);
 }
 
 /**

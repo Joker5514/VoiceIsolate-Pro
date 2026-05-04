@@ -14,6 +14,8 @@
   <!-- Diagnostics log panel styles -->
   <link rel="stylesheet" href="style-diag-log.css" />
   <!-- Processing overlay styles (early load prevents FOUC on first Process click) -->
+  <!-- Model status UI styles -->
+  <link rel="stylesheet" href="model-status-ui.css" />
   <link id="vip-overlay-css" rel="stylesheet" href="/app/processing-overlay.css" />
   <!-- Auth overlay styles -->
   <style>
@@ -610,6 +612,16 @@
     } else {
       _waitForOrch();
     }
+  <!-- Model Status UI Container -->
+  <div id="model-status-container"></div>
+
+  <!-- Model Status UI Script -->
+  <script type="module">
+    import { ModelStatusUI } from './model-status-ui.js';
+    window.modelStatusUI = new ModelStatusUI();
+    window.modelStatusUI.refreshStatus();
+  </script>
+
   </script>
 
 </body>
