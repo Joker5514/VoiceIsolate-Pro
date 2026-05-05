@@ -507,6 +507,26 @@
   </div>
 
   <!-- Core modules (cloud-sync.js removed — violated 100% local constraint) -->
+  <!-- ════════════════════════════════════════════════════════════════════════
+       Service Worker + Vercel-Blob model loader bootstrap (v24).
+       MUST run before app.js / pipeline-orchestrator init the ML worker so
+       /app/models/*.onnx fetches are intercepted by sw.js and served from
+       the vip-models-v1 Cache (which model-loader.js populates from the
+       Vercel Blob rewrite). See MODELS.md.
+       ════════════════════════════════════════════════════════════════════════ -->
+  <script type="module">
+    import { registerSW, initModelLoader } from './sw-register.js';
+    (async () => {
+      try {
+        await registerSW();          // wait for SW to control the page
+        await initModelLoader();     // download eager models on first run
+        // Lazy models (Demucs, BSRNN) are downloaded on first file drop —
+        // pipeline-orchestrator triggers loadLazyModels() then.
+      } catch (e) {
+        console.warn('[index] SW/model bootstrap failed (non-fatal):', e.message);
+      }
+    })();
+  </script>
   <script src="./dsp-core.js"></script>
   <script src="./ring-buffer.js"></script>
   <script src="./pipeline-state.js"></script>

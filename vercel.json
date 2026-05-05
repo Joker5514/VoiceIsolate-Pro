@@ -14,6 +14,18 @@
       "destination": "/api/handler"
     },
     {
+      "source": "/app/models/rnnoise_suppressor.onnx",
+      "destination": "<BLOB_RNNOISE_URL>"
+    },
+    {
+      "source": "/app/models/demucs_v4_quantized.onnx",
+      "destination": "<BLOB_DEMUCS_URL>"
+    },
+    {
+      "source": "/app/models/bsrnn_vocals.onnx",
+      "destination": "<BLOB_BSRNN_URL>"
+    },
+    {
       "source": "/app/((?!sw\\.js|dsp-processor\\.js|ml-worker\\.js|dsp-worker\\.js|ring-buffer\\.js|dsp-core\\.js|pipeline-orchestrator\\.js|pipeline-state\\.js).*)",
       "destination": "/app/index.html"
     },

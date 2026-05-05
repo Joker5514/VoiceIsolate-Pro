@@ -311,11 +311,11 @@ class PipelineOrchestrator {
       // re-fetching them from disk. Falls back gracefully if cache is empty.
       if (typeof window._vipPreloadModels === 'function') {
         // Fire-and-forget preload — models load while audio context inits.
-        // The 'vip:modelsPreloaded' event (fired by fetch-cache.js) notifies
-        // the worker to swap in the cached sessions once they're ready.
+        // Only the canonical four models (matching model-loader.js +
+        // models-manifest.json) are preloaded. Any others would diverge from
+        // the SW Cache and double-download under different filenames.
         window._vipPreloadModels(
-          ['silero_vad', 'noise_classifier', 'deepfilter',
-           'dns2_conformer_small', 'ecapa_tdnn', 'convtasnet', 'bsrnn', 'demucs'],
+          ['silero_vad', 'rnnoise', 'demucs_v4', 'bsrnn_vocals'],
           { forceRefresh: false }
         ).then((modelPaths) => {
           // Forward any resolved Object URLs to the already-running worker
@@ -422,9 +422,9 @@ class PipelineOrchestrator {
         type:      'init',
         ortUrl:    '/lib/ort.min.js',
         providers: ['webgpu', 'wasm'],
-        models:    ['vad', 'deepfilter', 'dns2_conformer_small',
-                    'ecapa_tdnn', 'convtasnet', 'bsrnn', 'demucs',
-                    'noise_classifier']
+        // Canonical four — matches model-loader.js + models-manifest.json.
+        // ml-worker.js MODEL_FILES maps these aliases to .onnx filenames.
+        models:    ['vad', 'rnnoise', 'demucs', 'bsrnn']
       };
 
       this.mlWorker.postMessage(msg);

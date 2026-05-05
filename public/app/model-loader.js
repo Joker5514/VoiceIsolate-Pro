@@ -1,81 +1,76 @@
 // ────────────────────────────────────────────────────────────────────────────
-// model-loader.js – VoiceIsolate Pro · Threads from Space v8
+// model-loader.js — VoiceIsolate Pro · Threads from Space v24
 //
 // ╔══════════════════════════════════════════════════════════════════════════╗
-// ║  ARCHITECTURE INVARIANT — DO NOT REINTRODUCE EXTERNAL CDNs               ║
+// ║  ARCHITECTURE INVARIANT — VERCEL BLOB IS THE SOLE MODEL SOURCE           ║
 // ║                                                                          ║
-// ║  All .onnx models are served from /app/models/*.onnx on the SAME origin. ║
-// ║  Vercel either serves the file directly from public/app/models/ or       ║
-// ║  rewrites the path to a Vercel Blob URL configured in vercel.json.       ║
-// ║  From the browser the fetch is always same-origin — this is what keeps   ║
-// ║  COEP (require-corp) satisfied and SharedArrayBuffer alive.              ║
+// ║  All .onnx models are fetched at the SAME-ORIGIN path /app/models/*.onnx.║
+// ║  vercel.json rewrites transparently proxy those paths to public Vercel   ║
+// ║  Blob URLs (placeholders <BLOB_*_URL> — replace before deploy).          ║
 // ║                                                                          ║
-// ║  NEVER add an external src URL (huggingface.co, cdn.*, etc.) to          ║
-// ║  MODEL_REGISTRY. Doing so will break COEP and kill the AudioWorklet.     ║
+// ║  From the browser the fetch is always same-origin, so COEP               ║
+// ║  (require-corp) is satisfied and crossOriginIsolated stays true,         ║
+// ║  which is required for SharedArrayBuffer between the AudioWorklet and    ║
+// ║  the ML worker. NEVER add cross-origin model URLs (huggingface.co, any   ║
+// ║  CDN). Doing so will break SAB and silently kill the AudioWorklet path.  ║
 // ║  See MODELS.md for the upload → rewrite → cache flow.                    ║
 // ╚══════════════════════════════════════════════════════════════════════════╝
 //
-// First-run model delivery:
-//   1. fetch('/app/models/<filename>.onnx')           ← same-origin URL
-//   2. Vercel either serves the bundled file or rewrites to Vercel Blob.
-//   3. Response is stored in the Cache API (CACHE_NAME).
-//   4. On every subsequent visit sw.js intercepts the fetch and returns the
-//      cached binary — ZERO network thereafter.
-//   5. Progress is broadcast via a BroadcastChannel so the UI can show a
-//      real download bar instead of a spinner.
-//
-// Model tiers loaded at different times:
-//   EAGER  – silero_vad (2.2 MB), rnnoise (0.18 MB)  – loaded at app boot
-//   LAZY   – demucs_v4 (83 MB),  bsrnn (45 MB)        – loaded after upload
+// Network footprint (only allowed traffic):
+//   GET /app/models/<filename>.onnx   → resolved by vercel.json rewrite to
+//                                       Vercel Blob; cached in Cache API.
+// No audio, features, masks, or telemetry ever leave this origin.
 // ────────────────────────────────────────────────────────────────────────────
 
 export const CACHE_NAME       = 'vip-models-v1';
 export const BROADCAST_CH     = 'vip-model-progress';
-const MODEL_BASE_PATH         = '/app/models/';
+export const MODEL_BASE_PATH  = '/app/models/';
 
-// Fallback CDN URLs for when Vercel Blob fails
-const HUGGINGFACE_BASE = 'https://huggingface.co/datasets/Joker5514/models/resolve/main/';
+// Minimum bytes for a .onnx response to be treated as real (not a placeholder
+// stub). Demucs/BSRNN are tens of MB; RNNoise is ~180 KB. Anything < 50 KB is
+// almost certainly a 404 HTML body or a placeholder file accidentally checked in.
+const PLACEHOLDER_GUARD_BYTES = 50 * 1024;
 
-// All entries fetch from MODEL_BASE_PATH + filename.  No external `src` field.
-// To add a new model:
-//   1. Run scripts/upload_models_to_vercel_blob.py to push the .onnx file to
-//      Vercel Blob storage and capture the returned public Blob URL.
-//   2. Add a `/app/models/<filename>` rewrite to vercel.json pointing at that
-//      Blob URL (see MODELS.md).
-//   3. Add an entry below — no `src` field needed; the path is implicit.
+// Single source of truth for model identity, filename, and lifecycle priority.
+// Filenames here MUST match models-manifest.json and ml-worker.js MODEL_FILES.
+// To add a model:
+//   1. python scripts/upload_models_to_vercel_blob.py --file ./<file>.onnx
+//   2. Add a rewrite to vercel.json: /app/models/<file>.onnx → <BLOB_URL>
+//   3. Append an entry below.
 const MODEL_REGISTRY = [
   {
-    id:       'silero_vad',
-    filename: 'silero_vad.onnx',
-    // Committed in repo (2.2 MB) — served directly by Vercel from public/app/models/.
-    localOnly: true,
-    priority: 'eager',
-    sizeMB:   2.2,
+    id:         'silero_vad',
+    filename:   'silero_vad.onnx',
+    priority:   'eager',
+    sizeMB:     2.2,
+    // Committed in repo and served directly from public/app/models/.
+    // No vercel.json rewrite needed.
+    localOnly:  true,
   },
   {
-    id:       'rnnoise',
-    filename: 'rnnoise_suppressor.onnx',
-    priority: 'eager',
-    sizeMB:   0.18,
-    fallbackUrl: HUGGINGFACE_BASE + 'rnnoise_suppressor.onnx',
+    id:         'rnnoise',
+    filename:   'rnnoise_suppressor.onnx',
+    priority:   'eager',
+    sizeMB:     0.18,
+    // Resolved by vercel.json → <BLOB_RNNOISE_URL>
   },
   {
-    id:       'demucs_v4',
-    filename: 'demucs_v4_quantized.onnx',
-    priority: 'lazy',
-    sizeMB:   83,
-    fallbackUrl: HUGGINGFACE_BASE + 'demucs_v4_quantized.onnx',
+    id:         'demucs_v4',
+    filename:   'demucs_v4_quantized.onnx',
+    priority:   'lazy',
+    sizeMB:     83,
+    // Resolved by vercel.json → <BLOB_DEMUCS_URL>
   },
   {
-    id:       'bsrnn_vocals',
-    filename: 'bsrnn_vocals.onnx',
-    priority: 'lazy',
-    sizeMB:   45,
-    fallbackUrl: HUGGINGFACE_BASE + 'bsrnn_vocals.onnx',
+    id:         'bsrnn_vocals',
+    filename:   'bsrnn_vocals.onnx',
+    priority:   'lazy',
+    sizeMB:     45,
+    // Resolved by vercel.json → <BLOB_BSRNN_URL>
   },
 ];
 
-// ── Internal helpers ──────────────────────────────────────────────────────────
+// ── Internal helpers ────────────────────────────────────────────────────────
 
 let _bc = null;
 function _broadcast(detail) {
@@ -86,68 +81,30 @@ function _broadcast(detail) {
 }
 
 /**
- * Fetch a model from its same-origin /app/models/* path with streaming
- * progress, then store the response in the Cache API.
- *
- * Fallback strategy:
- *   1. Try Vercel Blob (via same-origin /app/models/* rewrite)
- *   2. If that fails, try HuggingFace CDN (cross-origin, requires CORS)
- *   3. If both fail, notify user with actionable error
+ * Stream a model from /app/models/<filename>, push progress events,
+ * verify size against the placeholder guard, and store in Cache API
+ * (vip-models-v1) so sw.js can serve it on subsequent visits.
  *
  * @param {Cache}  cache
  * @param {object} model  – entry from MODEL_REGISTRY
  * @returns {Promise<void>}
+ * @throws if the response is missing, an HTML/error body, or smaller
+ *         than PLACEHOLDER_GUARD_BYTES (likely a stub).
  */
 async function _fetchAndCache(cache, model) {
-  const { id, filename, sizeMB, fallbackUrl } = model;
-  const primaryUrl = MODEL_BASE_PATH + filename; // same-origin (Vercel Blob)
+  const { id, filename, sizeMB } = model;
+  // Same-origin only. vercel.json rewrites resolve this to Vercel Blob.
+  const url = MODEL_BASE_PATH + filename;
 
-  _broadcast({ type: 'start', id, filename, sizeMB, source: 'vercel' });
+  _broadcast({ type: 'start', id, filename, sizeMB });
 
-  let response = null;
-  let source = 'vercel';
-
-  // Try primary source (Vercel Blob via same-origin rewrite)
-  try {
-    response = await fetch(primaryUrl, { cache: 'no-store' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  } catch (primaryErr) {
-    console.warn(`[model-loader] Vercel Blob failed for ${filename}: ${primaryErr.message}`);
-    
-    // Try fallback (HuggingFace CDN)
-    if (fallbackUrl) {
-      _broadcast({ type: 'fallback', id, filename, source: 'huggingface' });
-      try {
-        response = await fetch(fallbackUrl, {
-          cache: 'no-store',
-          mode: 'cors',
-          credentials: 'omit'
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        source = 'huggingface';
-        console.info(`[model-loader] Using HuggingFace fallback for ${filename}`);
-      } catch (fallbackErr) {
-        // Both sources failed - notify user
-        const errorMsg = `Failed to download ${filename} from both Vercel and HuggingFace. Please check your internet connection and try again.`;
-        _broadcast({
-          type: 'fatal_error',
-          id,
-          filename,
-          error: errorMsg,
-          primaryError: primaryErr.message,
-          fallbackError: fallbackErr.message
-        });
-        throw new Error(errorMsg);
-      }
-    } else {
-      // No fallback available
-      const errorMsg = `Failed to download ${filename} from Vercel. No fallback source configured.`;
-      _broadcast({ type: 'fatal_error', id, filename, error: errorMsg });
-      throw new Error(errorMsg);
-    }
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) {
+    const err = `HTTP ${response.status} fetching ${filename}`;
+    _broadcast({ type: 'error', id, filename, error: err });
+    throw new Error(err);
   }
 
-  // Stream-read to track download progress
   const contentLength = Number(response.headers.get('content-length')) || sizeMB * 1024 * 1024;
   const reader = response.body.getReader();
   const chunks = [];
@@ -165,11 +122,21 @@ async function _fetchAndCache(cache, model) {
       loaded:  received,
       total:   contentLength,
       percent: Math.round((received / contentLength) * 100),
-      source,
     });
   }
 
-  // Assemble and store in Cache API so sw.js can intercept /app/models/*.onnx
+  // Placeholder guard: any response materially smaller than expected is
+  // almost certainly a stub or HTML 404 body. Surface a hard error so we
+  // never cache and silently ship a broken model.
+  if (received < PLACEHOLDER_GUARD_BYTES) {
+    const err =
+      `Refusing to cache ${filename}: response is ${received} bytes ` +
+      `(< ${PLACEHOLDER_GUARD_BYTES}-byte placeholder threshold). ` +
+      `Verify vercel.json rewrite for /app/models/${filename} points at a real Vercel Blob URL.`;
+    _broadcast({ type: 'error', id, filename, error: err });
+    throw new Error(err);
+  }
+
   const blob       = new Blob(chunks, { type: 'application/octet-stream' });
   const cachedResp = new Response(blob, {
     status:  200,
@@ -180,26 +147,23 @@ async function _fetchAndCache(cache, model) {
       'Cache-Control':                'public, max-age=86400, immutable',
     },
   });
-  await cache.put(primaryUrl, cachedResp);
+  await cache.put(url, cachedResp);
 
-  _broadcast({ type: 'done', id, filename, bytes: blob.size, source });
-  console.info(`[model-loader] ✓ ${filename} (${(blob.size / 1024 / 1024).toFixed(1)} MB) cached from ${source}`);
+  _broadcast({ type: 'done', id, filename, bytes: blob.size });
+  console.info(`[model-loader] ✓ ${filename} (${(blob.size / 1024 / 1024).toFixed(2)} MB) cached`);
 }
 
-/**
- * Returns true if model is already present in Cache API.
- */
 async function _isCached(cache, filename) {
   const match = await cache.match(MODEL_BASE_PATH + filename);
   return !!match;
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+// ── Public API ──────────────────────────────────────────────────────────────
 
 /**
  * loadEagerModels()
- * Call this at app boot (before ml-worker.js init).
- * Downloads silero_vad and rnnoise on first run; no-op on subsequent runs.
+ * Call once at app boot, AFTER the service worker is controlling the page.
+ * Downloads silero_vad (local) and rnnoise (Blob) on first run; no-op after.
  *
  * @returns {Promise<{ loaded: string[], skipped: string[], failed: string[] }>}
  */
@@ -211,34 +175,26 @@ export async function loadEagerModels() {
     cache = await caches.open(CACHE_NAME);
   } catch (err) {
     console.warn('[model-loader] Cache API unavailable:', err.message);
-    // Gracefully degrade – ml-worker will hit 404s and fall back to classical DSP.
-    return result;
+    return result; // graceful degrade — ml-worker will surface 404s if needed
   }
 
-  const eagerModels = MODEL_REGISTRY.filter(m => m.priority === 'eager');
-
-  for (const model of eagerModels) {
+  for (const model of MODEL_REGISTRY.filter(m => m.priority === 'eager')) {
     if (model.localOnly) {
-      // Already served from the repo – nothing to fetch.
       result.skipped.push(model.id);
       continue;
     }
-
-    const alreadyCached = await _isCached(cache, model.filename);
-    if (alreadyCached) {
+    if (await _isCached(cache, model.filename)) {
       result.skipped.push(model.id);
       _broadcast({ type: 'cached', id: model.id, filename: model.filename });
-      console.info(`[model-loader] ${model.filename} already cached, skipping download`);
+      console.info(`[model-loader] ${model.filename} already cached`);
       continue;
     }
-
     try {
       await _fetchAndCache(cache, model);
       result.loaded.push(model.id);
     } catch (err) {
       result.failed.push(model.id);
-      console.error(`[model-loader] Failed to fetch ${model.filename}:`, err.message);
-      _broadcast({ type: 'error', id: model.id, filename: model.filename, error: err.message });
+      console.error(`[model-loader] ${model.filename} failed:`, err.message);
     }
   }
 
@@ -247,9 +203,9 @@ export async function loadEagerModels() {
 
 /**
  * loadLazyModels()
- * Call this when the user drops an audio file (before Creator/Forensic processing starts).
- * Downloads demucs_v4 and bsrnn_vocals in parallel with a combined progress bar.
- * No-op if already cached.
+ * Call when the user drops a file or selects a Studio/Forensic preset.
+ * Demucs and BSRNN are downloaded in parallel; combined progress comes
+ * through the BROADCAST_CH BroadcastChannel.
  *
  * @param {{ onProgress?: (detail: object) => void }} [opts]
  * @returns {Promise<{ loaded: string[], skipped: string[], failed: string[] }>}
@@ -257,7 +213,6 @@ export async function loadEagerModels() {
 export async function loadLazyModels({ onProgress } = {}) {
   const result = { loaded: [], skipped: [], failed: [] };
 
-  // Wire optional caller progress callback into the BroadcastChannel.
   let localBc = null;
   if (typeof onProgress === 'function') {
     try {
@@ -275,12 +230,9 @@ export async function loadLazyModels({ onProgress } = {}) {
     return result;
   }
 
-  const lazyModels = MODEL_REGISTRY.filter(m => m.priority === 'lazy');
-
   await Promise.allSettled(
-    lazyModels.map(async (model) => {
-      const alreadyCached = await _isCached(cache, model.filename);
-      if (alreadyCached) {
+    MODEL_REGISTRY.filter(m => m.priority === 'lazy').map(async (model) => {
+      if (await _isCached(cache, model.filename)) {
         result.skipped.push(model.id);
         _broadcast({ type: 'cached', id: model.id, filename: model.filename });
         return;
@@ -290,8 +242,7 @@ export async function loadLazyModels({ onProgress } = {}) {
         result.loaded.push(model.id);
       } catch (err) {
         result.failed.push(model.id);
-        console.error(`[model-loader] Failed to fetch ${model.filename}:`, err.message);
-        _broadcast({ type: 'error', id: model.id, filename: model.filename, error: err.message });
+        console.error(`[model-loader] ${model.filename} failed:`, err.message);
       }
     })
   );
@@ -302,7 +253,7 @@ export async function loadLazyModels({ onProgress } = {}) {
 
 /**
  * getModelStatus()
- * Returns cache status for all models. Useful for the diagnostic panel.
+ * Returns cache status for all models. Used by the diagnostic / Engineer panel.
  *
  * @returns {Promise<Array<{ id, filename, priority, sizeMB, cached: boolean }>>}
  */
@@ -330,3 +281,7 @@ export async function clearModelCache() {
   console.info('[model-loader] Model cache cleared:', deleted);
   return deleted;
 }
+
+// Exported for the model-registry-consistency test and any UI panel that
+// needs a static read of the registry without round-tripping the cache.
+export { MODEL_REGISTRY };

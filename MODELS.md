@@ -139,9 +139,9 @@ all subsequent visits.
 | ID            | Filename                       | Priority | Size      | Storage             | Purpose                       |
 |---------------|--------------------------------|----------|-----------|---------------------|-------------------------------|
 | `silero_vad`  | `silero_vad.onnx`              | eager    | 2.2 MB    | Repo (committed)    | Voice activity detection      |
-| `rnnoise`     | `rnnoise_suppressor.onnx`      | eager    | 0.18 MB   | Vercel Blob (TBD)   | Noise suppression             |
-| `demucs_v4`   | `demucs_v4_quantized.onnx`     | lazy     | ~83 MB    | Vercel Blob (TBD)   | Stem separation               |
-| `bsrnn_vocals`| `bsrnn_vocals.onnx`            | lazy     | ~45 MB    | Vercel Blob (TBD)   | Vocal band separation         |
+| `rnnoise`     | `rnnoise_suppressor.onnx`      | eager    | 0.18 MB   | Vercel Blob         | Noise suppression             |
+| `demucs_v4`   | `demucs_v4_quantized.onnx`     | lazy     | ~83 MB    | Vercel Blob         | Stem separation               |
+| `bsrnn_vocals`| `bsrnn_vocals.onnx`            | lazy     | ~45 MB    | Vercel Blob         | Vocal band separation         |
 
 ---
 

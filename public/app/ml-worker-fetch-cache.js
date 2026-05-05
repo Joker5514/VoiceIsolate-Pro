@@ -46,15 +46,20 @@ const VIP_IDB_STORE   = 'models';
  * Sizes used for progress calculation when Content-Length header is absent.
  * @type {Record<string, { path: string, sizeBytes: number, integrity?: string }>}
  */
+// Filenames here MUST match public/app/model-loader.js MODEL_REGISTRY and
+// public/app/models/models-manifest.json. Drift causes the SW Cache (keyed
+// on /app/models/<filename>) and this IDB cache to diverge — i.e. two
+// downloads of the same model under two different names. Keep this aligned.
+//
+// Paths are relative-from-page (resolved by the browser to /app/models/<file>),
+// which means the same fetch hits the SW interceptor and gets served from the
+// vip-models-v1 Cache API entry that model-loader.js populated. Both caches
+// converge.
 const MODEL_REGISTRY = {
-  silero_vad:          { path: 'models/silero_vad.onnx',           sizeBytes: 1_747_968  },
-  deepfilter:          { path: 'models/deepfilter-int8.onnx',       sizeBytes: 9_437_184  },
-  demucs:              { path: 'models/demucs-v4-int8.onnx',        sizeBytes: 85_983_232 },
-  bsrnn:               { path: 'models/bsrnn-int8.onnx',            sizeBytes: 38_797_312 },
-  ecapa_tdnn:          { path: 'models/ecapa-tdnn-int8.onnx',       sizeBytes: 20_971_520 },
-  dns2_conformer_small:{ path: 'models/dns2_conformer_small.onnx',  sizeBytes: 14_680_064 },
-  noise_classifier:    { path: 'models/noise_classifier.onnx',      sizeBytes: 2_621_440  },
-  convtasnet:          { path: 'models/convtasnet-int8.onnx',       sizeBytes: 18_874_368 }
+  silero_vad:    { path: 'models/silero_vad.onnx',            sizeBytes:  2_306_048 },
+  rnnoise:       { path: 'models/rnnoise_suppressor.onnx',    sizeBytes:    188_416 },
+  demucs_v4:     { path: 'models/demucs_v4_quantized.onnx',   sizeBytes: 87_031_808 },
+  bsrnn_vocals:  { path: 'models/bsrnn_vocals.onnx',          sizeBytes: 47_185_920 },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -624,30 +629,27 @@ console.debug('[VIP] ml-worker-fetch-cache.js loaded — IDB cache + chunked dow
 //    ✅ Works with or without model files present
 // ─────────────────────────────────────────────────────────────────────────────
 
-// MODEL MANIFEST — single source of truth for stage↔model mapping.
-// Keys MUST match MODEL_REGISTRY keys above.
+// MODEL MANIFEST — single source of truth for stage↔model mapping for the
+// graceful-degradation badging UI. Keys MUST match MODEL_REGISTRY keys above
+// and filenames MUST match model-loader.js / models-manifest.json.
 const MODEL_MANIFEST = {
-  noise_classifier:    { stageId: 'S04', stageName: 'S04 Noise Classification',     filename: 'noise_classifier.onnx',    sizeLabel: '~2.5 MB', sourceUrl: 'https://github.com/karolpiczak/ESC-50' },
-  silero_vad:          { stageId: 'S05', stageName: 'S05 Voice Activity Detection',  filename: 'silero_vad.onnx',          sizeLabel: '~1.7 MB', sourceUrl: 'https://github.com/snakers4/silero-vad/tree/master/files' },
-  deepfilter:          { stageId: 'S08', stageName: 'S08 Deep Spectral Filter',      filename: 'deepfilter-int8.onnx',     sizeLabel: '~9 MB',   sourceUrl: 'https://github.com/Rikorose/DeepFilterNet/releases' },
-  dns2_conformer_small:{ stageId: 'S10', stageName: 'S10 DNS2 Noise Suppression',   filename: 'dns2_conformer_small.onnx',sizeLabel: '~14 MB',  sourceUrl: 'https://github.com/microsoft/DNS-Challenge' },
-  bsrnn:               { stageId: 'S11', stageName: 'S11 BSRNN Source Separation',  filename: 'bsrnn-int8.onnx',          sizeLabel: '~37 MB',  sourceUrl: 'https://github.com/bytedance/music_source_separation' },
-  demucs:              { stageId: 'S13', stageName: 'S13 Demucs v4 Voice Isolation', filename: 'demucs-v4-int8.onnx',      sizeLabel: '~82 MB',  sourceUrl: 'https://github.com/facebookresearch/demucs' },
-  ecapa_tdnn:          { stageId: 'S17', stageName: 'S17 ECAPA-TDNN Speaker ID',     filename: 'ecapa-tdnn-int8.onnx',    sizeLabel: '~20 MB',  sourceUrl: 'https://github.com/speechbrain/speechbrain' },
-  convtasnet:          { stageId: 'S22', stageName: 'S22 ConvTasNet Speaker Sep.',   filename: 'convtasnet-int8.onnx',    sizeLabel: '~18 MB',  sourceUrl: 'https://github.com/asteroid-team/asteroid' }
+  silero_vad:    { stageId: 'S05', stageName: 'S05 Voice Activity Detection',  filename: 'silero_vad.onnx',          sizeLabel: '~2.2 MB',  sourceUrl: 'https://github.com/snakers4/silero-vad' },
+  rnnoise:       { stageId: 'S08', stageName: 'S08 RNNoise Suppression',       filename: 'rnnoise_suppressor.onnx',  sizeLabel: '~0.2 MB',  sourceUrl: 'https://github.com/xiph/rnnoise' },
+  bsrnn_vocals:  { stageId: 'S11', stageName: 'S11 BSRNN Vocal Separation',    filename: 'bsrnn_vocals.onnx',        sizeLabel: '~45 MB',   sourceUrl: 'https://github.com/crlandsc/bsrnn' },
+  demucs_v4:     { stageId: 'S13', stageName: 'S13 Demucs v4 Voice Isolation', filename: 'demucs_v4_quantized.onnx', sizeLabel: '~83 MB',   sourceUrl: 'https://github.com/facebookresearch/demucs' },
 };
 
-// Normalise worker model keys → manifest keys (worker may use shorter aliases)
+// Normalise worker model keys → manifest keys. ml-worker.js uses short
+// aliases (e.g. 'vad', 'demucs', 'bsrnn') that map onto the canonical four
+// keys in MODEL_REGISTRY / MODEL_MANIFEST.
 function _normalizeKey(key) {
   const map = {
-    vad:       'silero_vad',
-    silero:    'silero_vad',
-    df:        'deepfilter',
-    dns:       'dns2_conformer_small',
-    dns2:      'dns2_conformer_small',
-    ecapa:     'ecapa_tdnn',
-    noise:     'noise_classifier',
-    classifier:'noise_classifier'
+    vad:          'silero_vad',
+    silero:       'silero_vad',
+    'silero-vad': 'silero_vad',
+    demucs:       'demucs_v4',
+    'demucs-v4':  'demucs_v4',
+    bsrnn:        'bsrnn_vocals',
   };
   return map[key] || key;
 }

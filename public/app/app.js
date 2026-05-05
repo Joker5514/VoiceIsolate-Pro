@@ -411,11 +411,11 @@ class VoiceIsolatePro {
     this._showFirstRunCdnNotice();
   }
 
-  // ── First-run CDN disclosure ────────────────────────────────────────────
+  // ── First-run model-download disclosure ────────────────────────────────
   // ML models are large files (2 MB – 150 MB). On first load they are fetched
-  // once from HuggingFace CDN and cached in the browser Cache API (sw.js).
-  // All subsequent runs — and ALL audio processing — happen 100% locally.
-  // This notice is shown exactly once per browser profile.
+  // once from Vercel Blob via same-origin /app/models/*.onnx rewrites and
+  // cached in the browser Cache API (sw.js). All subsequent runs — and ALL
+  // audio processing — happen 100% locally. Shown exactly once per profile.
   _showFirstRunCdnNotice() {
     try {
       const key = 'vip_cdn_notice_shown';
@@ -424,7 +424,7 @@ class VoiceIsolatePro {
       // Defer slightly so the UI is fully rendered before showing the toast.
       setTimeout(() => {
         this.showNotification(
-          '🔒 Privacy notice: ML models are downloaded once from HuggingFace CDN on ' +
+          '🔒 Privacy notice: ML models are downloaded once from Vercel Blob on ' +
           'first use and then cached locally. All audio processing is 100% local — ' +
           'no audio data ever leaves your browser.',
           'info',

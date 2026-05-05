@@ -68,30 +68,40 @@ let runtimeParams = {
 const DEFAULT_MODELS = ['vad', 'deepfilter', 'demucs'];
 
 // ── Model filename registry ───────────────────────────────────────────────────
+// Aliases → canonical .onnx filenames. MUST match public/app/model-loader.js
+// MODEL_REGISTRY and public/app/models/models-manifest.json. Drift breaks
+// the SW Cache lookup because the worker fetches a filename that was never
+// populated by model-loader.js.
 const MODEL_FILES = {
-  'vad':         'silero_vad.onnx',
-  'deepfilter':  'deepfilter.onnx',
-  'demucs':      'demucs_v4_int8.onnx',
-  'silero-vad':  'silero_vad.onnx',
-  'rnnoise':     'rnnoise.onnx',
-  'demucs-v4':   'demucs_v4_int8.onnx',
-  'ecapa-tdnn':  'ecapa_tdnn.onnx',
-  'voicefixer':  'voicefixer.onnx',
+  // canonical aliases used by pipeline-orchestrator init
+  'vad':           'silero_vad.onnx',
+  'rnnoise':       'rnnoise_suppressor.onnx',
+  'demucs':        'demucs_v4_quantized.onnx',
+  'bsrnn':         'bsrnn_vocals.onnx',
+  // long-form aliases (kept for back-compat with auth/tier code)
+  'silero-vad':    'silero_vad.onnx',
+  'silero_vad':    'silero_vad.onnx',
+  'demucs-v4':     'demucs_v4_quantized.onnx',
+  'demucs_v4':     'demucs_v4_quantized.onnx',
+  'bsrnn_vocals':  'bsrnn_vocals.onnx',
 };
 
+// Optional Object-URL overrides keyed by canonical alias. Set by the
+// 'cacheModelPaths' message from pipeline-orchestrator.js when the IDB
+// fetch-cache (ml-worker-fetch-cache.js) has already streamed the .onnx
+// into memory. When set, takes precedence over the same-origin URL — the
+// session loads directly from the in-memory ArrayBuffer / Blob URL with
+// zero additional network or SW round-trip.
+const MODEL_URL_OVERRIDES = {};
+
 // ── SHA-256 expected hashes per model file ────────────────────────────────────
-// Populated by scripts/setup-models.sh after each model is downloaded.
+// Populated by scripts/upload_models_to_vercel_blob.py after each upload.
 // Leave as empty string '' to skip integrity check for that model.
 const MODEL_SHA256 = {
-  'silero_vad.onnx':             '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
-  'deepfilter.onnx':             '',
-  'demucs_v4_int8.onnx':         '',
-  'rnnoise.onnx':                '',
-  'ecapa_tdnn.onnx':             '',
-  'voicefixer.onnx':             '',
-  'rnnoise_suppressor.onnx':     '',
+  'silero_vad.onnx':            '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
+  'rnnoise_suppressor.onnx':    '',
   'demucs_v4_quantized.onnx':   '',
-  'bsrnn_vocals.onnx':           '',
+  'bsrnn_vocals.onnx':          '',
 };
 
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
@@ -303,17 +313,21 @@ self.onmessage = async (ev) => {
           pcmChunk,
           fftSize             = 4096,
           halfN               = Math.floor(fftSize / 2) + 1,
-          modelBasePath: _rawBasePath = './models/',
+          // Default to the absolute /app/models/ path so the SW intercepts
+          // the fetch and serves from the vip-models-v1 Cache populated by
+          // model-loader.js (which itself fetched via the Vercel Blob rewrite).
+          modelBasePath: _rawBasePath = '/app/models/',
           preferredProviders  = ['webgpu', 'wasm'],
           allowedModels: am   = DEFAULT_MODELS,
           allowedStages: as_  = 8,
           params              = null,
         } = payload;
 
-        // Reject caller-supplied base paths that could redirect model fetches to external URLs.
+        // Reject caller-supplied base paths that could redirect model fetches
+        // off-origin. Only same-origin model paths are accepted.
         const _safePath = (p) => typeof p === 'string' && !p.includes('..') &&
           (p.startsWith('./models/') || p.startsWith('/app/models/') || p.startsWith('/models/'));
-        const modelBasePath = _safePath(_rawBasePath) ? _rawBasePath : './models/';
+        const modelBasePath = _safePath(_rawBasePath) ? _rawBasePath : '/app/models/';
 
         allowedModels = am;
         allowedStages = as_;
@@ -366,7 +380,7 @@ self.onmessage = async (ev) => {
         self.postMessage({ type: 'ready', models: modelStatus });
       } else {
         // Bare init (no payload — used in tests and simple invocations)
-        const modelStatus = await loadModels('./models/', ['webgpu', 'wasm'], DEFAULT_MODELS);
+        const modelStatus = await loadModels('/app/models/', ['webgpu', 'wasm'], DEFAULT_MODELS);
         vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
         self.postMessage({ type: 'ready', models: modelStatus });
       }
@@ -383,7 +397,7 @@ self.onmessage = async (ev) => {
       }
 
       const modelList   = msgModels || DEFAULT_MODELS;
-      const modelStatus = await loadModels('./models/', ['webgpu', 'wasm'], modelList);
+      const modelStatus = await loadModels('/app/models/', ['webgpu', 'wasm'], modelList);
       vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
       self.postMessage({ type: 'ready', models: modelStatus });
       break;
@@ -557,6 +571,33 @@ self.onmessage = async (ev) => {
       break;
     }
 
+    // ── cacheModelPaths: accept Object-URL overrides from fetch-cache ─────────
+    // Pipeline-orchestrator forwards URLs of models that ml-worker-fetch-cache.js
+    // has already streamed into IndexedDB and converted to blob: Object URLs.
+    // When a subsequent loadModels() call resolves a canonical alias to one of
+    // these overrides, ort.InferenceSession.create() loads from the in-memory
+    // ArrayBuffer with zero additional network or SW round-trip.
+    //
+    // Security: we only accept blob: URLs (created from in-memory ArrayBuffers
+    // via URL.createObjectURL) — never absolute http(s):// URLs that could
+    // redirect inference off-origin.
+    case 'cacheModelPaths': {
+      const paths = ev.data && ev.data.modelPaths;
+      if (!paths || typeof paths !== 'object') break;
+      let accepted = 0;
+      for (const k of Object.keys(paths)) {
+        const v = paths[k];
+        if (typeof v === 'string' && v.startsWith('blob:')) {
+          MODEL_URL_OVERRIDES[k] = v;
+          accepted++;
+        }
+      }
+      if (accepted > 0) {
+        console.info(`[ml-worker] cacheModelPaths accepted ${accepted} blob URL override(s)`);
+      }
+      break;
+    }
+
     // ── initRingBuffers: wire up SAB views posted by PipelineOrchestrator ────────
     case 'initRingBuffers': {
       const { inputRing, maskRing, halfN: h, ringCapacity, quantumSize } = ev.data || {};
@@ -628,8 +669,12 @@ async function loadModels(basePath, providers, modelList) {
       continue;
     }
 
-    const modelUrl = basePath + file;
-    const eps      = await resolveProviders(providers);
+    // Prefer in-memory blob: URL from fetch-cache when available — this
+    // skips both network and SW Cache and loads from the IDB ArrayBuffer
+    // directly. Falls back to same-origin /app/models/<file> otherwise.
+    const overrideUrl = MODEL_URL_OVERRIDES[modelId] || MODEL_URL_OVERRIDES[file];
+    const modelUrl    = overrideUrl || (basePath + file);
+    const eps         = await resolveProviders(providers);
     const expectedSha256 = MODEL_SHA256[file] || '';
 
     try {
@@ -638,7 +683,7 @@ async function loadModels(basePath, providers, modelList) {
       sessions[modelId] = session;
       modelStatus[modelId] = true;
       self.postMessage({ type: 'model_loaded', modelId, providers: eps });
-      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')}`);
+      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')} (${overrideUrl ? 'blob' : 'same-origin'})`);
     } catch (err) {
       modelStatus[modelId] = false;
       const errMsg = modelId === 'vad'

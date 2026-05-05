@@ -1,9 +1,9 @@
 /**
  * model-status-ui.js – VoiceIsolate Pro
- * 
+ *
  * UI component for displaying ML model download status with:
  * - Real-time progress bars
- * - Source indicator (Vercel Blob / HuggingFace)
+ * - Source indicator (Vercel Blob via same-origin / Browser Cache)
  * - Error notifications with retry options
  * - Cached model status display
  */
@@ -39,8 +39,8 @@ export class ModelStatusUI {
   }
 
   _handleModelEvent(data) {
-    const { type, id, filename, percent, source, error, primaryError, fallbackError } = data;
-    
+    const { type, id, filename, percent, source, error } = data;
+
     switch (type) {
       case 'start':
         this.models.set(id, {
@@ -56,14 +56,6 @@ export class ModelStatusUI {
       case 'progress':
         if (this.models.has(id)) {
           this.models.get(id).progress = percent || 0;
-          this.models.get(id).source = source || 'vercel';
-        }
-        break;
-
-      case 'fallback':
-        if (this.models.has(id)) {
-          this.models.get(id).source = source || 'huggingface';
-          this.models.get(id).status = 'fallback';
         }
         break;
 
@@ -71,9 +63,8 @@ export class ModelStatusUI {
         if (this.models.has(id)) {
           this.models.get(id).status = 'complete';
           this.models.get(id).progress = 100;
-          this.models.get(id).source = source || 'vercel';
         }
-        // Auto-hide after 3 seconds if all models are complete
+        // Auto-hide after a brief delay if all models are complete
         setTimeout(() => this._checkAutoHide(), 3000);
         break;
 
@@ -88,20 +79,17 @@ export class ModelStatusUI {
         break;
 
       case 'error':
-      case 'fatal_error':
         this.models.set(id, {
           filename,
           status: 'error',
           progress: 0,
-          source: source || 'unknown',
+          source: source || 'vercel',
           error: error || 'Download failed',
-          primaryError,
-          fallbackError,
         });
         this.show();
         break;
     }
-    
+
     this._render();
   }
 
@@ -174,24 +162,23 @@ export class ModelStatusUI {
   }
 
   _renderModel(id, model) {
-    const { filename, status, progress, source, error, primaryError, fallbackError } = model;
-    
+    const { filename, status, progress, source, error } = model;
+
     const statusIcon = {
       downloading: '⬇️',
-      fallback: '🔄',
-      complete: '✅',
-      cached: '💾',
-      error: '❌',
+      complete:    '✅',
+      cached:      '💾',
+      error:       '❌',
     }[status] || '⏳';
 
     const sourceLabel = {
       vercel: 'Vercel Blob',
-      huggingface: 'HuggingFace CDN',
-      cache: 'Browser Cache',
-      unknown: 'Unknown',
+      cache:  'Browser Cache',
     }[source] || source;
 
-    const statusClass = status === 'error' ? 'error' : status === 'downloading' || status === 'fallback' ? 'active' : 'complete';
+    const statusClass = status === 'error' ? 'error'
+                      : status === 'downloading' ? 'active'
+                      : 'complete';
 
     return `
       <div class="model-item ${statusClass}">
@@ -200,7 +187,7 @@ export class ModelStatusUI {
           <span class="model-name">${filename}</span>
           <span class="model-source">${sourceLabel}</span>
         </div>
-        ${status === 'downloading' || status === 'fallback' ? `
+        ${status === 'downloading' ? `
           <div class="model-progress">
             <div class="progress-bar">
               <div class="progress-fill" style="width: ${progress}%"></div>
@@ -211,13 +198,8 @@ export class ModelStatusUI {
         ${status === 'error' ? `
           <div class="model-error">
             <p class="error-message">${error}</p>
-            ${primaryError ? `<p class="error-detail">Vercel: ${primaryError}</p>` : ''}
-            ${fallbackError ? `<p class="error-detail">HuggingFace: ${fallbackError}</p>` : ''}
             <button onclick="window.location.reload()">Retry</button>
           </div>
-        ` : ''}
-        ${status === 'fallback' ? `
-          <p class="fallback-notice">⚠️ Primary source failed, using fallback CDN</p>
         ` : ''}
       </div>
     `;

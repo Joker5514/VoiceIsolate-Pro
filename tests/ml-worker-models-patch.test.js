@@ -57,7 +57,9 @@ describe('ml-worker-models-patch.js — manifest', () => {
     expect(m).not.toBeNull();
     const entries = m[1].match(/\{[^{}]*?stageId[^{}]*?stageName[^{}]*?filename[^{}]*?\}/g) || [];
     // Each row in the manifest must have all three fields. Allow optional sourceUrl/sizeLabel.
-    expect(entries.length).toBeGreaterThanOrEqual(5);
+    // The canonical registry is the four ONNX models actually shipped via Vercel Blob /
+    // repo (silero_vad, rnnoise, demucs_v4, bsrnn_vocals). See model-loader.js.
+    expect(entries.length).toBeGreaterThanOrEqual(4);
   });
 
   test('stageIds are uppercase S## format', () => {
