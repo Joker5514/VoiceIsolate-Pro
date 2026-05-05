@@ -1,7 +1,7 @@
 /* =============================================================================
    VoiceIsolate Pro — ML Worker: Model Fetch + IndexedDB Cache
    File: public/app/ml-worker-fetch-cache.js
-   Threads from Space v11 | Cache v1.0
+   Threads from Space v13 | Cache v1.0
    ─────────────────────────────────────────────────────────────────────────────
    PURPOSE
    -------
@@ -27,7 +27,7 @@
    1. Add to index.html AFTER app.js, BEFORE pipeline-orchestrator.js:
         <script src="ml-worker-fetch-cache.js"></script>
    2. In vip-boot.js or app.js, after worker construction:
-        await window._vipPreloadModels(['silero_vad', 'deepfilter', 'demucs']);
+        await window._vipPreloadModels(['silero_vad', 'rnnoise', 'demucs']);
         // Then init worker — it will use Object URLs for already-cached models.
    ============================================================================= */
 

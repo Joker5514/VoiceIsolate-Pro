@@ -1,6 +1,6 @@
 /**
  * isolation-controls.js
- * VoiceIsolate Pro v22 — Threads from Space v11
+ * VoiceIsolate Pro v24 — Threads from Space v13
  *
  * Dynamically renders per-speaker control cards inside #speakerCardsGrid.
  * Cards include: volume slider, mute, solo, "Enroll Voiceprint" buttons.

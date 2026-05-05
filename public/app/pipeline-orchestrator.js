@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v22.1 — Pipeline Orchestrator
-   Threads from Space v11
+   VoiceIsolate Pro v24.0 — Pipeline Orchestrator
+   Threads from Space v13
    ONNX Runtime Web init · AudioWorklet setup
    52-slider → AudioWorkletNode param mapping
    WebGPU > WASM fallback · SharedArrayBuffer rings

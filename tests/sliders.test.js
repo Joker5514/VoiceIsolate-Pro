@@ -161,7 +161,7 @@ describe('ML Worker wiring', () => {
   });
 
   test('ml-worker supports implemented model types', () => {
-    // Current implementation supports: vad, deepfilter, demucs
+    // Current implementation supports: vad, rnnoise, demucs
     ['vad', 'demucs'].forEach(m => {
       expect(mlWorkerJs).toContain(`${m}`);
     });

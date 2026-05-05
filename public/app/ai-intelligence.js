@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v21.0 — AI Intelligence Module
-   Threads from Space v10 · Smart Audio Analysis
+   VoiceIsolate Pro v24.0 — AI Intelligence Module
+   Threads from Space v13 · Smart Audio Analysis
    Adaptive noise floor · Auto-preset selection
    Voice activity confidence · Scene detection
    ============================================ */

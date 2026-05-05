@@ -1,5 +1,5 @@
 /**
- * VoiceIsolate Pro — RevenueCat Integration v23
+ * VoiceIsolate Pro — RevenueCat Integration v24
  *
  * Handles in-app purchases for Android and iOS via RevenueCat SDK.
  * Falls back to Stripe web checkout when running in browser.

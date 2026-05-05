@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v22.1 — SharedRingBuffer
-   Threads from Space v11 · Zero-Copy Transfer
+   VoiceIsolate Pro v24.0 — SharedRingBuffer
+   Threads from Space v13 · Zero-Copy Transfer
    Lock-Free · SharedArrayBuffer + Atomics
    ============================================ */
 

@@ -101,13 +101,17 @@ class DemucsVocalsWrapper(nn.Module):
         Args:
             x: [batch, 1, time] float32 mono waveform
         Returns:
-            vocals: [batch, 1, time] float32
+            vocals: [batch, 1, time] float32 mono
         """
-        # Run all stems, then slice vocals
-        all_stems = self.model(x)  # [batch, n_stems, channels, time]
-        # mdx_extra: sources = [drums, bass, other, vocals]; collapse channels dim
-        vocals = all_stems[:, VOCALS_INDEX : VOCALS_INDEX + 1, 0, :]
-        return vocals
+        # HDemucs expects stereo input [batch, 2, time]. Duplicate mono → stereo.
+        if x.shape[1] == 1:
+            x = x.repeat(1, 2, 1)
+        # Run all stems: [batch, n_stems, channels, time]
+        all_stems = self.model(x)
+        # Slice vocals stem, then collapse stereo channels to mono by averaging.
+        vocals_stereo = all_stems[:, VOCALS_INDEX, :, :]  # [batch, 2, time]
+        vocals_mono = vocals_stereo.mean(dim=1, keepdim=True)  # [batch, 1, time]
+        return vocals_mono
 
 
 # ---------------------------------------------------------------------------
@@ -115,17 +119,31 @@ class DemucsVocalsWrapper(nn.Module):
 # ---------------------------------------------------------------------------
 
 def load_demucs_model() -> nn.Module:
-    """Load and return the pretrained mdx_extra model in eval mode."""
+    """Load and return the pretrained mdx_extra model in eval mode.
+
+    mdx_extra is shipped as a BagOfModels (ensemble of 4 sub-models).
+    BagOfModels.forward raises NotImplementedError because inference normally
+    flows through demucs.apply.apply_model which adds windowing + overlap-add
+    that is not ONNX-traceable. For browser deployment we unwrap the bag and
+    export the first sub-model only. This loses ensemble averaging but yields
+    a single traceable HDemucs / mdx model that ONNX Runtime Web can run.
+    """
     from demucs.pretrained import get_model
 
     log.info("Loading pretrained model: %s (this may download ~300 MB)", MODEL_NAME)
-    model = get_model(MODEL_NAME)
-    model.eval()
+    bag = get_model(MODEL_NAME)
+    bag.eval()
+    log.info("Model sources: %s", bag.sources)
 
-    # Switch to mono if needed — mdx_extra is stereo by default;
-    # we reshape the wrapper to produce mono output
-    log.info("Model sources: %s", model.sources)
-    return model
+    if hasattr(bag, "models") and len(bag.models) > 0:
+        log.info("Unwrapping BagOfModels: using sub-model 0 of %d", len(bag.models))
+        model = bag.models[0]
+        model.eval()
+        # Carry sources through so VOCALS_INDEX validation in the wrapper works.
+        if not hasattr(model, "sources"):
+            model.sources = bag.sources
+        return model
+    return bag
 
 
 def export_to_onnx(wrapper: nn.Module, out_path: Path) -> None:

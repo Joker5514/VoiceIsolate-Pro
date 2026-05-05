@@ -85,16 +85,24 @@ def clone_vendor_repo() -> None:
 
 
 def install_vendor_requirements() -> None:
-    """Install requirements.txt from the cloned repo."""
-    req = VENDOR_DIR / "requirements.txt"
-    if not req.exists():
-        log.warning("No requirements.txt found in vendor repo; skipping.")
-        return
-    log.info("Installing vendor requirements ...")
-    subprocess.check_call(
-        [sys.executable, "-m", "pip", "install", "-r", str(req)],
-        stdout=subprocess.DEVNULL,
-    )
+    """Install requirements.txt from the cloned repo.
+
+    NOTE: The upstream vendor repo pins torch==1.13.1, which is
+    incompatible with our installed torch>=2.x and frequently the
+    pin is unavailable on PyPI for current Python versions. We rely
+    on the host's torch + torchaudio install and only ensure that
+    light, version-agnostic deps (omegaconf, hydra-core) are present.
+    """
+    light_deps = ["omegaconf>=2.3", "hydra-core>=1.3", "soundfile"]
+    log.info("Installing minimal vendor deps: %s", light_deps)
+    try:
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--quiet",
+             "--break-system-packages", *light_deps],
+            stdout=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as e:
+        log.warning("pip install warning (continuing): %s", e)
 
 
 def add_vendor_to_path() -> None:

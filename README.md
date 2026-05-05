@@ -30,10 +30,9 @@
 │   AudioWorklet      │   │   DSP Worker Pool (DSP Workers)  │
 │   voice-isolate-    │   │   · dsp-core.js  (all DSP math)  │
 │   processor.js      │   │   · onnxruntime-web (WebGPU→WASM)│
-│   <10ms latency     │   │   · Demucs v4.1 · BS-RoFormer    │
-│  SharedArrayBuffer  │◄─►│   · ECAPA-TDNN · Silero VAD      │
-└─────────────────────┘   │   · HiFi-GAN · Conformer-S       │
-            │              │   · SharedArrayBuffer ring buffer│
+│   <10ms latency     │   │   · Silero VAD · RNNoise         │
+│  SharedArrayBuffer  │◄─►│   · Demucs · BSRNN (pending)     │
+└─────────────────────┘   │   · SharedArrayBuffer ring buffer│
             │              └───────────────────────────────────┘
             ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -79,9 +78,10 @@
 - **32-Stage Deca-Pass Pipeline**: 10 processing passes, enforced by `scripts/validate.js`
 - **Single-Pass STFT**: One forward STFT (S10) + one iSTFT (S20) per processing path, all spectral ops in-place
 - **Forensic Certification**: SHA-256 chain-of-custody with timestamped audit chain
-- **HiFi-GAN v2 Vocoder**: Neural speech resynthesis with natural breathiness
-- **Ensemble Fusion**: Demucs v4.1 + BS-RoFormer + BSRNN with learned per-band weights
+- **RNNoise broadband suppressor** shipped as repo-committed ONNX (76 KB, eager-loaded)
 - **Stronger NR defaults** (v24 point releases): tuned noise-reduction and voice-isolation defaults to actually strip background noise in Engineer Mode
+
+> **Note**: Demucs v4 and BSRNN are wired through the manifest and Vercel Blob rewrite path but ship as `pending_export` until ONNX export blockers are resolved (see manifest `export_notes`). HiFi-GAN and Conformer-S remain on the Phase 3 roadmap.
 
 ### Core Capabilities
 - **Studio-Grade Voice Isolation**: low noise floor, 32 ERB bands, forensic-grade
@@ -109,17 +109,21 @@
 
 ## ML Model Stack
 
-| Model | Role | Size (ONNX INT8) |
-|---|---|---|
-| Demucs v4.1 | Primary source separator | ~21MB |
-| BS-RoFormer | Secondary separator (harmonic) | ~12MB |
-| BSRNN | Tertiary separator (temporal) | ~8MB |
-| ECAPA-TDNN | Speaker embedding (192-dim) | 2.5MB |
-| Silero VAD v5 | Voice activity detection | 350KB |
-| HiFi-GAN v2 | Neural vocoder | ~4MB |
-| Conformer-S | Spectral refiner | ~2MB |
+The runtime is wired for a multi-model stack with mixed shipping status. The manifest at `public/app/models/models-manifest.json` is the source of truth; ml-worker skips entries whose `status` is in `skip_statuses` (currently `pending_export`, `blocked_export`).
 
-Execution: WebGPU → WebGL2 → WASM SIMD → JS fallback cascade.
+| Model | Role | Status | Size | Notes |
+|---|---|---|---|---|
+| Silero VAD v5 | Voice activity detection | committed | 2.3 MB | Repo-committed, trained weights |
+| RNNoise (PyTorch GRU port) | Broadband noise suppressor | committed_approximation | 76 KB | Architecturally equivalent, untrained weights |
+| Band-Split RNN | Secondary vocals extractor | committed_stub | 628 KB | Random weights; structurally valid for inference smoke tests |
+| Demucs v4 (mdx_extra) | Primary source separator | pending_export | n/a | Blocked: HDemucs internal `torch.stft` on complex tensors not exportable at ONNX opset 17 |
+| ECAPA-TDNN | Speaker embedding (192-dim) | not in manifest | n/a | Voiceprint gating stubs exist in code; model not registered |
+| HiFi-GAN v2 | Neural vocoder | not started | n/a | Phase 3 roadmap |
+| Conformer-S | Spectral refiner | not started | n/a | Phase 3 roadmap |
+
+Cache API key: `vip-models-v1`. After first load each model is served from cache; repeat visits make zero network calls. Demucs ships via Vercel Blob rewrite when unblocked; populate URLs with `scripts/wire-blob-models.py`.
+
+Execution provider cascade: WebGPU → WASM SIMD threaded → WASM (single-threaded fallback).
 
 ---
 

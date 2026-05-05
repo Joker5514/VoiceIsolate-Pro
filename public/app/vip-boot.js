@@ -1,5 +1,5 @@
 /**
- * vip-boot.js — VoiceIsolate Pro v22.1 bootstrap shim
+ * vip-boot.js — VoiceIsolate Pro v24.0 bootstrap shim
  * Startup diagnostics (server check + model probe) + VoiceIsolatePro alias.
  */
 (function () {
@@ -147,14 +147,16 @@
   }
 
   // ── Boot sequence ───────────────────────────────────────────────────────
-  // runDiagnostics() is awaited before aliasOrCreate() so that
-  // window._vipApp is guaranteed to be set AFTER diagnostics complete.
-  // This prevents the pipeline-orchestrator pre-warm from racing against
-  // _vipApp being null when it polls window._vipApp.ctx.
-  async function boot() {
+  // aliasOrCreate() runs synchronously first so window._vipApp is populated
+  // before pipeline-orchestrator.js polls it. runDiagnostics() runs fire-and-
+  // forget afterwards: it only sets window.VIP_ML_AVAILABLE for the ML stages
+  // and does not touch _vipApp, so awaiting it would only delay app readiness.
+  function boot() {
     wireDismissBtn();
-    await runDiagnostics();  // now awaited — _vipApp race resolved
     aliasOrCreate();
+    runDiagnostics().catch(function (e) {
+      console.warn('[vip-boot] runDiagnostics error:', e);
+    });
   }
 
   if (document.readyState === 'loading') {

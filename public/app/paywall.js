@@ -1,5 +1,5 @@
 /**
- * VoiceIsolate Pro — Paywall UI v22
+ * VoiceIsolate Pro — Paywall UI v24
  * Renders pricing cards, upgrade modals, feature gates, and trial banners.
  * Integrates with LicenseManager and Stripe Checkout (via backend redirect).
  */

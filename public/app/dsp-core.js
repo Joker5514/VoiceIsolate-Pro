@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — DSPCore
-   Threads from Space v10 · Pure DSP Math
+   VoiceIsolate Pro v24.0 — DSPCore
+   Threads from Space v13 · Pure DSP Math
    STFT/iSTFT · Biquad · Spectral · ERB
    Adaptive Wiener · Harmonic v2 · Noise Class
    ============================================ */

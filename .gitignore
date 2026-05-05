@@ -45,3 +45,11 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 venv/
+
+# Model export workdirs (do not commit; export scripts produce these)
+/models_output/
+/vendor/
+/checkpoints/
+
+# Lockfile not used (memory note: project uses pnpm)
+package-lock.json

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// ml-worker.js — VoiceIsolate Pro · Threads from Space v8
+// ml-worker.js — VoiceIsolate Pro · Threads from Space v13
 // Standard Web Worker (NOT AudioWorklet).
 //
 // Responsibilities:
@@ -65,7 +65,7 @@ let runtimeParams = {
 };
 
 // ── Default models loaded on bare init (no payload) ──────────────────────────
-const DEFAULT_MODELS = ['vad', 'deepfilter', 'demucs'];
+const DEFAULT_MODELS = ['vad', 'rnnoise', 'demucs'];
 
 // ── Model filename registry ───────────────────────────────────────────────────
 // Aliases → canonical .onnx filenames. MUST match public/app/model-loader.js
@@ -99,9 +99,9 @@ const MODEL_URL_OVERRIDES = {};
 // Leave as empty string '' to skip integrity check for that model.
 const MODEL_SHA256 = {
   'silero_vad.onnx':            '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
-  'rnnoise_suppressor.onnx':    '',
+  'rnnoise_suppressor.onnx':    '514922973ac2f45b2c1e5ca6af83ed9ba16f963f0a77eed3c277bfff13366a16',
   'demucs_v4_quantized.onnx':   '',
-  'bsrnn_vocals.onnx':          '',
+  'bsrnn_vocals.onnx':          'd9e7c160a3a6fb8aae8efcc9ba16be4f3a994eb0c9e3d21b214ac1ba83e12c6b',
 };
 
 // ── ORT lazy initializer ──────────────────────────────────────────────────────

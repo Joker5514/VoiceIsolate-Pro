@@ -24,17 +24,17 @@
       "filename": "rnnoise_suppressor.onnx",
       "path": "/app/models/rnnoise_suppressor.onnx",
       "purpose": "RNNoise — lightweight broadband noise suppressor, always-on stage 1",
-      "size_mb": 0.18,
+      "size_mb": 0.08,
       "min_bytes": 50000,
       "input_shape": [1, 480],
       "sample_rate": 48000,
       "execution_provider_preference": ["wasm"],
       "load_priority": "eager",
-      "delivery": "vercel_blob",
-      "status": "committed",
-      "blob_rewrite_placeholder": "<BLOB_RNNOISE_URL>",
-      "sha256": "",
-      "source": "https://github.com/xiph/rnnoise"
+      "delivery": "repo_committed",
+      "status": "committed_approximation",
+      "sha256": "514922973ac2f45b2c1e5ca6af83ed9ba16f963f0a77eed3c277bfff13366a16",
+      "source": "https://github.com/xiph/rnnoise",
+      "export_notes": "PyTorch GRU approximation (3 layers, hidden=24) at random init. Architecturally equivalent to RNNoise but weights are not trained. ml-worker passes magnitudes (length numBins=1025) which mismatches the model's expected input shape [1, 480]; the runtime catch handles this and the stage is a graceful no-op until weights and bin-binding are wired."
     },
     {
       "id": "demucs_v4",
@@ -48,46 +48,46 @@
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
       "delivery": "vercel_blob",
-      "status": "committed",
-      "blob_rewrite_placeholder": "<BLOB_DEMUCS_URL>",
+      "status": "pending_export",
       "sha256": "",
-      "source": "https://github.com/facebookresearch/demucs"
+      "source": "https://github.com/facebookresearch/demucs",
+      "export_notes": "Blocked: HDemucs uses internal torch.stft on complex tensors. torch.onnx.export at opset 17 fails with SymbolicValueError ('STFT does not currently support complex types'); opset 20 succeeds tracing but OOMs at graph emit on 5GB-disk hosts. mdx_extra is shipped as a BagOfModels (4 sub-models): unwrap to bag.models[0] for traceability. Demucs v4 has no pure-waveform variant in 4.x. Until shipped, ml-worker.js falls back to BSRNN-only or DSP-only path."
     },
     {
       "id": "bsrnn_vocals",
       "filename": "bsrnn_vocals.onnx",
       "path": "/app/models/bsrnn_vocals.onnx",
       "purpose": "Band-Split RNN — secondary vocals extractor used in Studio/Forensic mode",
-      "size_mb": 45,
-      "min_bytes": 10000000,
+      "size_mb": 0.6,
+      "min_bytes": 500000,
       "input_shape": [1, 2, "dynamic"],
       "sample_rate": 44100,
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
-      "delivery": "vercel_blob",
-      "status": "committed",
-      "blob_rewrite_placeholder": "<BLOB_BSRNN_URL>",
-      "sha256": "",
-      "source": "https://github.com/crlandsc/bsrnn"
+      "delivery": "repo_committed",
+      "status": "committed_stub",
+      "sha256": "d9e7c160a3a6fb8aae8efcc9ba16be4f3a994eb0c9e3d21b214ac1ba83e12c6b",
+      "source": "https://github.com/crlandsc/bsrnn",
+      "export_notes": "Pure-PyTorch BSRNN architecture (vendor BandSplitRNN-Pytorch unusable: pins torch==1.13.1 not on Python 3.12, and pytorch_lightning import fails). Exported with random weights via scripts/export_bsrnn_onnx.py — output is noise until a trained MUSDB18 checkpoint is dropped at ./checkpoints/bsrnn.pth and re-exported. ml-worker.js does not currently call this session, so shipping the stub is safe and unblocks integrity checks."
     }
   ],
   "delivery_notes": [
-    "silero_vad.onnx is committed to the repo and served directly by Vercel from public/app/models/.",
-    "rnnoise_suppressor.onnx, demucs_v4_quantized.onnx, and bsrnn_vocals.onnx are hosted on Vercel Blob and reached via vercel.json rewrites mapping /app/models/<filename>.onnx -> <BLOB_*_URL>.",
-    "From the browser the fetch is always same-origin, so COEP (require-corp) is satisfied and SharedArrayBuffer stays alive.",
-    "After first run all models are served from Cache API (vip-models-v1) - zero network on repeat visits.",
+    "silero_vad.onnx, rnnoise_suppressor.onnx, and bsrnn_vocals.onnx are committed to the repo and served directly by Vercel from public/app/models/ at same-origin /app/models/<name>.onnx.",
+    "demucs_v4_quantized.onnx is not yet exportable (see entry export_notes); a .placeholder file holds the slot. ml-worker.js detects a missing or under-sized file and disables the Demucs stage cleanly.",
+    "Same-origin fetch keeps COEP (require-corp) satisfied so SharedArrayBuffer stays alive.",
+    "After first run all models are served from Cache API (vip-models-v1) — zero network on repeat visits.",
     "The service worker (sw.js) intercepts /app/models/*.onnx fetches and returns the cached binary to ml-worker.js.",
-    "100% local processing guarantee preserved - no audio data leaves the browser."
+    "100% local processing guarantee preserved — no audio data leaves the browser."
   ],
   "model_loader_behavior": {
     "cache_name": "vip-models-v1",
     "eager_models": ["silero_vad", "rnnoise"],
     "lazy_models": ["demucs_v4", "bsrnn_vocals"],
-    "pending_models": [],
+    "pending_models": ["demucs_v4"],
     "bsrnn_fallback_mode": "demucs_only",
-    "skip_statuses": ["pending_export"],
+    "skip_statuses": ["pending_export", "blocked_export"],
     "placeholder_guard_bytes": 51200,
-    "download_ui": "Show progress modal with per-model MB progress bar. Demucs download (83MB) must show estimated time. Do not block UI thread during fetch.",
-    "integrity_check": "sha256 field - leave empty to skip check, populate after upload to enable."
+    "download_ui": "Show progress modal with per-model MB progress bar. Demucs (when shipped) must show estimated time. Do not block UI thread during fetch.",
+    "integrity_check": "sha256 field — leave empty to skip check, populate after upload to enable."
   }
 }

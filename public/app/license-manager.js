@@ -1,5 +1,5 @@
 /**
- * VoiceIsolate Pro — License Manager v22
+ * VoiceIsolate Pro — License Manager v24
  * DEV/TEST STUB: All tiers return ENTERPRISE-level caps. No limits enforced.
  *
  * WARNING: This file is a development stub. It must NOT be deployed to

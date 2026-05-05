@@ -2601,7 +2601,7 @@ class VoiceIsolatePro {
     const b = new Blob([w], { type: 'audio/wav' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(b);
-    a.download = 'voiceisolate_v22_' + label + '_' + Date.now() + '.wav';
+    a.download = 'voiceisolate_v24_' + label + '_' + Date.now() + '.wav';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

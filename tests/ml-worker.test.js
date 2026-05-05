@@ -112,7 +112,7 @@ describe('ml-worker.js', () => {
     const readyMsg = postedMessages.find(m => m.type === 'ready');
     expect(readyMsg).toBeDefined();
     expect(readyMsg.models.vad).toBe(false);
-    expect(readyMsg.models.deepfilter).toBe(true); // Assuming others succeed
+    expect(readyMsg.models.rnnoise).toBe(true); // Assuming others succeed
     expect(readyMsg.models.demucs).toBe(true); // Assuming others succeed
   });
 

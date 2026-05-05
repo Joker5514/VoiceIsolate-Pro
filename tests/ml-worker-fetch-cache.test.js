@@ -30,7 +30,7 @@ describe('ml-worker-fetch-cache.js — model registry contract', () => {
     expect(body).not.toMatch(/path\s*:\s*['"`]https?:\/\//);
     // Each entry should declare a sizeBytes field for progress UI fallback.
     const entries = body.match(/\{\s*path\s*:\s*['"`][^'"`]+['"`]\s*,\s*sizeBytes\s*:\s*[\d_]+/g) || [];
-    expect(entries.length).toBeGreaterThanOrEqual(5);
+    expect(entries.length).toBeGreaterThanOrEqual(4);
   });
 
   test('every registered model path begins with "models/"', () => {

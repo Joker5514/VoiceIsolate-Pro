@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v22.1 — DSP Worker
-   Threads from Space v11 · ML Inference Thread
+   VoiceIsolate Pro v24.0 — DSP Worker
+   Threads from Space v13 · ML Inference Thread
    Runs in a dedicated Worker. Owns all ONNX sessions.
    ============================================ */
 

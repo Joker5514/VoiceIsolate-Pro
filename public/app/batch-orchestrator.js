@@ -1,6 +1,6 @@
 /* ============================================
-   VoiceIsolate Pro v20.0 — BatchOrchestrator
-   Threads from Space v10 · Job Queue
+   VoiceIsolate Pro v24.0 — BatchOrchestrator
+   Threads from Space v13 · Job Queue
    1000+ Files · Priority Queue · FFmpeg Mux
    ============================================ */
 

@@ -1,5 +1,5 @@
 /**
- * VoiceIsolate Pro — AI Engine v2 (v22)
+ * VoiceIsolate Pro — AI Engine v2 (v24)
  *
  * Upgrades over ai-intelligence.js v1:
  *   1. Voice Fingerprinting — speaker embedding via MFCC + delta features

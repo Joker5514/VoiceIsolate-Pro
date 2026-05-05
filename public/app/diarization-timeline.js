@@ -1,6 +1,6 @@
 /**
  * diarization-timeline.js
- * VoiceIsolate Pro v22 — Threads from Space v11
+ * VoiceIsolate Pro v24 — Threads from Space v13
  *
  * Renders a scrollable/zoomable speaker-diarization timeline onto
  * a <canvas> element. Driven entirely by data pushed from ml-worker.js

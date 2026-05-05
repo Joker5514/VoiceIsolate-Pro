@@ -1,7 +1,7 @@
 /* ============================================================
    VoiceIsolate Pro — Processing Overlay Controller
    Premium rotating messages + DNA helix spinner
-   v1.0  ·  Threads from Space v12
+   v1.0  ·  Threads from Space v13
    ============================================================ */
 
 (function (global) {

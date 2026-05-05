@@ -1,5 +1,5 @@
 /**
- * VoiceIsolate Pro — Batch Processor v22
+ * VoiceIsolate Pro — Batch Processor v24
  * Studio/Enterprise tier feature: process multiple files concurrently.
  *
  * Features:

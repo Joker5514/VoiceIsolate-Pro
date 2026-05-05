@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  dsp-processor.js  —  VoiceIsolate Pro · Threads from Space v8
+//  dsp-processor.js  —  VoiceIsolate Pro · Threads from Space v13
 //  AudioWorkletProcessor — runs in the isolated high-priority audio thread.
 //
 //  Architecture contract:
@@ -300,7 +300,7 @@ class DSPProcessor extends AudioWorkletProcessor {
         fftSize: FFT_SIZE,
         hopSize: HOP_SIZE
       });
-    } catch (_) {
+    } catch {
       // postMessage at construction time is best-effort
     }
   }

@@ -1,5 +1,5 @@
 // ────────────────────────────────────────────────────────────────────────────
-// model-loader.js — VoiceIsolate Pro · Threads from Space v24
+// model-loader.js — VoiceIsolate Pro · Threads from Space v13
 //
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  ARCHITECTURE INVARIANT — VERCEL BLOB IS THE SOLE MODEL SOURCE           ║
