@@ -18,6 +18,7 @@ const __dirname  = dirname(__filename);
 const PORT       = process.env.PORT || 3000;
 const APP_VERSION = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')).version;
 const app        = express();
+app.disable('x-powered-by');
 
 // ── Cross-Origin Isolation (required for SharedArrayBuffer) ──────────────
 app.use((_req, res, next) => {

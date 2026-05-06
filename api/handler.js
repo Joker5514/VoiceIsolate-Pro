@@ -24,6 +24,7 @@ import express    from 'express';
 import apiRouter  from './index.js';
 
 const app = express();
+app.disable('x-powered-by');
 
 // Raw body for Stripe webhook signature verification (must come before json())
 app.use('/api/webhook/stripe', express.raw({ type: 'application/json' }));

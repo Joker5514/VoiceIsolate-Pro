@@ -180,6 +180,8 @@ function validateLicenseToken(token) {
     if (!crypto.timingSafeEqual(expected, got)) return null;
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
     if (Date.now() / 1000 > payload.exp) return null;
+    // Only accept tokens issued by the Stripe/license flow, not auth tokens
+    if (payload.source !== 'stripe') return null;
     return payload;
   } catch {
     return null;
@@ -213,6 +215,8 @@ function makeRateLimiter(maxReqs, windowMs) {
 
 const activateLimiter    = makeRateLimiter(5,  60_000); // 5 activations per minute per IP
 const usageRecordLimiter = makeRateLimiter(30, 60_000); // 30 usage records per minute per IP
+const validateLimiter    = makeRateLimiter(20, 60_000); // 20 validations per minute per IP
+const statusLimiter      = makeRateLimiter(20, 60_000); // 20 status checks per minute per IP
 
 // ─── Tier → Price ID Mapping ──────────────────────────────────────────────────
 const PRICE_TO_TIER = {
@@ -369,7 +373,7 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
 });
 
 // ─── POST /api/license/validate ───────────────────────────────────────────────
-router.post('/license/validate', (req, res) => {
+router.post('/license/validate', validateLimiter, (req, res) => {
   const { token } = req.body;
   if (!token) return res.status(400).json({ valid: false, error: 'Token required' });
 
@@ -402,7 +406,7 @@ router.post('/license/activate', activateLimiter, (req, res) => {
 });
 
 // ─── GET /api/license/status ──────────────────────────────────────────────────
-router.get('/license/status', (req, res) => {
+router.get('/license/status', statusLimiter, (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return res.json({ tier: 'FREE', active: false });
@@ -433,9 +437,18 @@ router.post('/usage/record', usageRecordLimiter, async (req, res) => {
   const payload = validateLicenseToken(token);
   if (!payload) return res.status(401).json({ error: 'Invalid token' });
 
-  const entry = await db.usage.record({ email: payload.email, event: usageEvent, units });
+  if (typeof usageEvent !== 'string' || usageEvent.length === 0 || usageEvent.length > 128 ||
+      !/^[a-zA-Z0-9._:-]{1,128}$/.test(usageEvent)) {
+    return res.status(400).json({ error: 'Invalid event name' });
+  }
+  const safeUnits = Number(units);
+  if (!Number.isInteger(safeUnits) || safeUnits < 1 || safeUnits > 100_000) {
+    return res.status(400).json({ error: 'units must be a positive integer (max 100000)' });
+  }
+
+  const entry = await db.usage.record({ email: payload.email, event: usageEvent, units: safeUnits });
   console.log(`[Usage] ${entry.email} — ${entry.event} × ${entry.units}`);
-  res.json({ recorded: true, event: usageEvent, units });
+  res.json({ recorded: true, event: usageEvent, units: safeUnits });
 });
 
 // ─── GET /api/pricing ─────────────────────────────────────────────────────────
