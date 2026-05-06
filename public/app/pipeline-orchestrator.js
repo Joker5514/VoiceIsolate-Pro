@@ -399,13 +399,36 @@ class PipelineOrchestrator {
           ['silero_vad', 'rnnoise', 'demucs_v4', 'bsrnn_vocals'],
           { forceRefresh: false }
         ).then((modelPaths) => {
-          // Forward any resolved Object URLs to the already-running worker
+          // Forward any resolved Object URLs to the already-running worker.
+          // The preload cache uses fetch-cache keys, but ml-worker resolves
+          // overrides by canonical model IDs (e.g. "vad") or filenames
+          // (e.g. "silero_vad.onnx"). Preserve original keys and add the
+          // worker-compatible aliases so cached blob URLs are actually used.
+          const cacheKeyAliases = {
+            silero_vad: ['vad', 'silero_vad.onnx'],
+            rnnoise: ['rnnoise', 'rnnoise.onnx'],
+            demucs_v4: ['demucs', 'demucs_v4.onnx'],
+            bsrnn_vocals: ['bsrnn', 'bsrnn_vocals.onnx']
+          };
           const cached = Object.keys(modelPaths);
           if (cached.length > 0) {
-            this.mlWorker.postMessage({ type: 'cacheModelPaths', modelPaths });
+            const normalizedModelPaths = {};
+            for (const cacheKey of cached) {
+              const modelUrl = modelPaths[cacheKey];
+              if (!modelUrl) continue;
+              normalizedModelPaths[cacheKey] = modelUrl;
+              const aliases = cacheKeyAliases[cacheKey] || [];
+              for (const alias of aliases) {
+                normalizedModelPaths[alias] = modelUrl;
+              }
+            }
+            this.mlWorker.postMessage({
+              type: 'cacheModelPaths',
+              modelPaths: normalizedModelPaths
+            });
             console.info(
               `[Orchestrator] Forwarded ${cached.length} cached model URL(s) to ML worker:`,
-              cached
+              Object.keys(normalizedModelPaths)
             );
           }
         }).catch((err) => {
