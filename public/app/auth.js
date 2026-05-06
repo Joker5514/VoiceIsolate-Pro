@@ -128,6 +128,8 @@ function saveSession(user) {
   return sess;
 }
 
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
 function loadSession() {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
@@ -135,6 +137,11 @@ function loadSession() {
     const sess = JSON.parse(raw);
     // Validate tier is a known value to prevent tampering via localStorage
     if (!TIER_ORDER.includes(sess.tier)) sess.tier = 'FREE';
+    // Expire sessions older than SESSION_MAX_AGE_MS
+    if (!sess.loginTime || Date.now() - sess.loginTime > SESSION_MAX_AGE_MS) {
+      clearSession();
+      return null;
+    }
     return sess;
   } catch {
     return null;

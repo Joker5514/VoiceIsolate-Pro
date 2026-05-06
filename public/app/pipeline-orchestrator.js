@@ -268,72 +268,8 @@ class PipelineOrchestrator {
       // ── Construct the ML Worker ──────────────────────────────────────────
       this.mlWorker = new Worker('./ml-worker.js');
 
-      // ── Apply graceful-degradation patch (ml-worker-models-patch.js) ────
-      // Stamps ⚠ DSP badges on pipeline stage UI elements for any missing
-      // .onnx files. Non-destructive — worker still functions without models.
-      if (typeof window._mlWorkerPatch === 'function') {
-        window._mlWorkerPatch(this.mlWorker, {
-          logToConsole: true,
-          onWarning: (stageId, modelKey, meta) => {
-            // Stamp individual stage badge
-            const el = document.querySelector(
-              `[data-stage-id="${stageId}"], [data-stage="${stageId}"]`
-            );
-            if (!el) return;
-            const existing = el.querySelector('.vip-stage-ml-status');
-            if (existing) existing.remove();
-            const badge = document.createElement('span');
-            badge.className    = 'vip-stage-ml-status';
-            badge.textContent  = '⚠ DSP';
-            badge.style.cssText =
-              'color:#f59e0b;font-size:10px;font-weight:700;' +
-              'margin-left:4px;cursor:help;vertical-align:middle;';
-            badge.title =
-              `${meta.stageName || modelKey}: model file absent
-` +
-              `Expected: models/${meta.filename || modelKey + '.onnx'}
-` +
-              `Stage running in DSP passthrough mode.`;
-            const label =
-              el.querySelector('.stage-name,.stage-label,h4,h3,span') || el;
-            label.appendChild(badge);
-          },
-          onManifest: (manifest) => {
-            if (typeof window._stampPipelineStages === 'function') {
-              window._stampPipelineStages(manifest);
-            }
-          }
-        });
-      }
-
-      // ── Apply IndexedDB model cache patch (ml-worker-fetch-cache.js) ────
-      // If models are cached in IDB, pass Object URLs so the worker skips
-      // re-fetching them from disk. Falls back gracefully if cache is empty.
-      if (typeof window._vipPreloadModels === 'function') {
-        // Fire-and-forget preload — models load while audio context inits.
-        // Only the canonical four models (matching model-loader.js +
-        // models-manifest.json) are preloaded. Any others would diverge from
-        // the SW Cache and double-download under different filenames.
-        window._vipPreloadModels(
-          ['silero_vad', 'rnnoise', 'demucs_v4', 'bsrnn_vocals'],
-          { forceRefresh: false }
-        ).then((modelPaths) => {
-          // Forward any resolved Object URLs to the already-running worker
-          const cached = Object.keys(modelPaths);
-          if (cached.length > 0) {
-            this.mlWorker.postMessage({ type: 'cacheModelPaths', modelPaths });
-            console.info(
-              `[Orchestrator] Forwarded ${cached.length} cached model URL(s) to ML worker:`,
-              cached
-            );
-          }
-        }).catch((err) => {
-          // Preload failure is fully non-fatal — DSP passthrough continues
-          console.warn('[Orchestrator] Model preload warning:', err.message);
-        });
-      }
-
-      // ── Standard message handler ─────────────────────────────────────────
+      // ── Standard message handler (must be set BEFORE _mlWorkerPatch so the
+      //    patch wraps this handler and can forward messages to it) ──────────
       this.mlWorker.onmessage = (e) => {
         const { type } = e.data;
         if (type === 'ready') {
@@ -414,20 +350,110 @@ class PipelineOrchestrator {
         resolve(); // non-fatal — DSP passthrough still runs
       };
 
+      // ── Apply graceful-degradation patch (ml-worker-models-patch.js) ────
+      // Must come AFTER onmessage is set so the patch wraps the real handler.
+      // Stamps ⚠ DSP badges on pipeline stage UI elements for any missing
+      // .onnx files. Non-destructive — worker still functions without models.
+      if (typeof window._mlWorkerPatch === 'function') {
+        window._mlWorkerPatch(this.mlWorker, {
+          logToConsole: true,
+          onWarning: (stageId, modelKey, meta) => {
+            // Stamp individual stage badge
+            const el = document.querySelector(
+              `[data-stage-id="${stageId}"], [data-stage="${stageId}"]`
+            );
+            if (!el) return;
+            const existing = el.querySelector('.vip-stage-ml-status');
+            if (existing) existing.remove();
+            const badge = document.createElement('span');
+            badge.className    = 'vip-stage-ml-status';
+            badge.textContent  = '⚠ DSP';
+            badge.style.cssText =
+              'color:#f59e0b;font-size:10px;font-weight:700;' +
+              'margin-left:4px;cursor:help;vertical-align:middle;';
+            badge.title =
+              `${meta.stageName || modelKey}: model file absent\n` +
+              `Expected: models/${meta.filename || modelKey + '.onnx'}\n` +
+              `Stage running in DSP passthrough mode.`;
+            const label =
+              el.querySelector('.stage-name,.stage-label,h4,h3,span') || el;
+            label.appendChild(badge);
+          },
+          onManifest: (manifest) => {
+            if (typeof window._stampPipelineStages === 'function') {
+              window._stampPipelineStages(manifest);
+            }
+          }
+        });
+      }
+
+      // ── Apply IndexedDB model cache patch (ml-worker-fetch-cache.js) ────
+      // If models are cached in IDB, pass Object URLs so the worker skips
+      // re-fetching them from disk. Falls back gracefully if cache is empty.
+      if (typeof window._vipPreloadModels === 'function') {
+        // Fire-and-forget preload — models load while audio context inits.
+        // Only the canonical four models (matching model-loader.js +
+        // models-manifest.json) are preloaded. Any others would diverge from
+        // the SW Cache and double-download under different filenames.
+        window._vipPreloadModels(
+          ['silero_vad', 'rnnoise', 'demucs_v4', 'bsrnn_vocals'],
+          { forceRefresh: false }
+        ).then((modelPaths) => {
+          // Forward any resolved Object URLs to the already-running worker.
+          // The preload cache uses fetch-cache keys, but ml-worker resolves
+          // overrides by canonical model IDs (e.g. "vad") or filenames
+          // (e.g. "silero_vad.onnx"). Preserve original keys and add the
+          // worker-compatible aliases so cached blob URLs are actually used.
+          const cacheKeyAliases = {
+            silero_vad: ['vad', 'silero_vad.onnx'],
+            rnnoise: ['rnnoise', 'rnnoise.onnx'],
+            demucs_v4: ['demucs', 'demucs_v4.onnx'],
+            bsrnn_vocals: ['bsrnn', 'bsrnn_vocals.onnx']
+          };
+          const cached = Object.keys(modelPaths);
+          if (cached.length > 0) {
+            const normalizedModelPaths = {};
+            for (const cacheKey of cached) {
+              const modelUrl = modelPaths[cacheKey];
+              if (!modelUrl) continue;
+              normalizedModelPaths[cacheKey] = modelUrl;
+              const aliases = cacheKeyAliases[cacheKey] || [];
+              for (const alias of aliases) {
+                normalizedModelPaths[alias] = modelUrl;
+              }
+            }
+            this.mlWorker.postMessage({
+              type: 'cacheModelPaths',
+              modelPaths: normalizedModelPaths
+            });
+            console.info(
+              `[Orchestrator] Forwarded ${cached.length} cached model URL(s) to ML worker:`,
+              Object.keys(normalizedModelPaths)
+            );
+          }
+        }).catch((err) => {
+          // Preload failure is fully non-fatal — DSP passthrough continues
+          console.warn('[Orchestrator] Model preload warning:', err.message);
+        });
+      }
+
       // ── Init message ─────────────────────────────────────────────────────
       // SABs are NOT included here — they may not be allocated yet when the
       // worker is pre-warmed before the first gesture. They are forwarded
       // separately via 'initRingBuffers' inside _allocateRings() once ready.
-      const msg = {
-        type:      'init',
-        ortUrl:    '/lib/ort.min.js',
-        providers: ['webgpu', 'wasm'],
-        // Canonical four — matches model-loader.js + models-manifest.json.
-        // ml-worker.js MODEL_FILES maps these aliases to .onnx filenames.
-        models:    ['vad', 'rnnoise', 'demucs', 'bsrnn']
-      };
-
-      this.mlWorker.postMessage(msg);
+      // payload wrapper is required: the worker's 'init' handler destructures
+      // allowedModels / preferredProviders from ev.data.payload, not top-level.
+      this.mlWorker.postMessage({
+        type:    'init',
+        payload: {
+          modelBasePath:      '/app/models/',
+          preferredProviders: ['webgpu', 'wasm'],
+          // Canonical four — matches model-loader.js + models-manifest.json.
+          // ml-worker.js MODEL_FILES maps these aliases to .onnx filenames.
+          allowedModels:      window.Auth ? window.Auth.getCaps().mlModels : ['vad', 'rnnoise'],
+          allowedStages:      window.Auth ? window.Auth.getAllowedStages() : 8,
+        },
+      });
     });
   }
 
