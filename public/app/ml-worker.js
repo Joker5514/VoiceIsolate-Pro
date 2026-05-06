@@ -914,7 +914,7 @@ async function buildMask(magnitudes, pcmChunk = null) {
       const bsrnnIn = new ort.Tensor('float32', magnitudes, [1, numBins]);
       const result = await bsrnnSess.run({ input: bsrnnIn });
       const vocalMask = result.vocal_mask?.data || result.output?.data || null;
-      if (vocalMask) {
+      if (vocalMask && vocalMask.length >= numBins) {
         for (let k = 0; k < numBins; k++) {
           mask[k] = Math.min(mask[k], Math.max(0, vocalMask[k]));
         }
