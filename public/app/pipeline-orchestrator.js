@@ -427,8 +427,8 @@ class PipelineOrchestrator {
           preferredProviders: ['webgpu', 'wasm'],
           // Canonical four — matches model-loader.js + models-manifest.json.
           // ml-worker.js MODEL_FILES maps these aliases to .onnx filenames.
-          allowedModels:      ['vad', 'rnnoise', 'demucs', 'bsrnn'],
-          allowedStages:      32,
+          allowedModels:      window.Auth ? window.Auth.getCaps().mlModels : ['vad', 'rnnoise'],
+          allowedStages:      window.Auth ? window.Auth.getAllowedStages() : 8,
         },
       });
     });
