@@ -65,7 +65,7 @@ let runtimeParams = {
 };
 
 // ── Default models loaded on bare init (no payload) ──────────────────────────
-const DEFAULT_MODELS = ['vad', 'rnnoise', 'demucs'];
+const DEFAULT_MODELS = ['vad', 'rnnoise', 'demucs', 'bsrnn'];
 
 // ── Model filename registry ───────────────────────────────────────────────────
 // Aliases → canonical .onnx filenames. MUST match public/app/model-loader.js
@@ -904,6 +904,23 @@ async function buildMask(magnitudes, pcmChunk = null) {
     if (!demucsPcmMissingWarned) {
       demucsPcmMissingWarned = true;
       console.warn('[ml-worker] Demucs skipped: PCM chunk unavailable; using unity fallback');
+    }
+  }
+
+  // BSRNN band-split vocal separation mask
+  const bsrnnSess = sessions['bsrnn'] || sessions['bsrnn_vocals'];
+  if (bsrnnSess && allowedStages >= 10) {
+    try {
+      const bsrnnIn = new ort.Tensor('float32', magnitudes, [1, numBins]);
+      const result = await bsrnnSess.run({ input: bsrnnIn });
+      const vocalMask = result.vocal_mask?.data || result.output?.data || null;
+      if (vocalMask) {
+        for (let k = 0; k < numBins; k++) {
+          mask[k] = Math.min(mask[k], Math.max(0, vocalMask[k]));
+        }
+      }
+    } catch (e) {
+      console.warn('[ml-worker] bsrnn error:', e.message);
     }
   }
 
