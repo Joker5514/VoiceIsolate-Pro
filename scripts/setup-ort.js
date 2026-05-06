@@ -8,6 +8,11 @@
  *
  * Run automatically via package.json "postinstall" hook.
  * Safe to re-run: existing files are overwritten.
+ *
+ * SOFT MODE: If VIP_ORT_SETUP_SOFT=1 OR all expected files already exist
+ * in public/lib/ (i.e. they are committed to the repo), the script exits 0
+ * without attempting to copy from node_modules. This is the production path
+ * on Vercel where the WASM files are committed directly to the repository.
  */
 
 const { existsSync, mkdirSync, copyFileSync, readdirSync, unlinkSync } = require('fs');
@@ -17,7 +22,28 @@ const ROOT     = join(__dirname, '..');
 const SRC_DIR  = join(ROOT, 'node_modules', 'onnxruntime-web', 'dist');
 const DEST_DIR = join(ROOT, 'public', 'lib');
 
-const SOFT = process.env.VIP_ORT_SETUP_SOFT === '1';
+// The set of files we expect when ORT WASM is committed to the repo.
+// If ALL of these exist in public/lib/, we skip the copy entirely.
+const EXPECTED_COMMITTED = [
+  'ort.min.js',
+  'ort-wasm-simd-threaded.wasm',
+  'ort-wasm-simd-threaded.jsep.wasm',
+  'ort-wasm-simd-threaded.asyncify.wasm',
+];
+
+const SOFT_ENV = process.env.VIP_ORT_SETUP_SOFT === '1';
+
+// Auto-detect soft mode: if all committed WASM files already exist, skip copy.
+const allCommitted = EXPECTED_COMMITTED.every((f) => existsSync(join(DEST_DIR, f)));
+
+if (SOFT_ENV || allCommitted) {
+  const reason = SOFT_ENV ? 'VIP_ORT_SETUP_SOFT=1' : 'all ORT files already present in public/lib/';
+  console.info(`[setup-ort] Skipping copy — ${reason}`);
+  EXPECTED_COMMITTED.forEach((f) =>
+    console.info(`[setup-ort]   ✓ ${f} (${existsSync(join(DEST_DIR, f)) ? 'present' : 'MISSING'})`);
+  );
+  process.exit(0);
+}
 
 // Files this script owns in DEST_DIR. Anything matching these patterns is
 // removed before copying so that wasm/JS files dropped between ORT releases
@@ -33,15 +59,11 @@ const OWNED_PATTERNS = [
 
 // Guard: onnxruntime-web must be installed
 if (!existsSync(SRC_DIR)) {
-  const msg =
+  console.error(
     '[setup-ort] node_modules/onnxruntime-web/dist not found.\n' +
-    '            Run `pnpm install` (or `npm install`) first, then re-run this script.';
-  if (SOFT) {
-    console.warn(msg + '\n[setup-ort] VIP_ORT_SETUP_SOFT=1 set — exiting 0 without copying.');
-    process.exit(0);
-  }
-  console.error(msg);
-  console.error('[setup-ort] FATAL: cannot copy ONNX Runtime assets. Set VIP_ORT_SETUP_SOFT=1 to bypass.');
+    '            Run `pnpm install` (or `npm install`) first, then re-run this script.\n' +
+    '[setup-ort] FATAL: cannot copy ONNX Runtime assets.'
+  );
   process.exit(1);
 }
 
@@ -86,14 +108,10 @@ console.info(`[setup-ort] Done. ${copied} file(s) copied, ${skipped} skipped.`);
 
 const ortMinPath = join(DEST_DIR, 'ort.min.js');
 if (!existsSync(ortMinPath)) {
-  const msg =
+  console.error(
     '[setup-ort] ort.min.js was NOT written to public/lib/.\n' +
-    '            Check that onnxruntime-web is installed and dist/ contains ort.min.js / *.wasm files.';
-  if (SOFT) {
-    console.warn(msg + '\n[setup-ort] VIP_ORT_SETUP_SOFT=1 set — exiting 0 anyway.');
-    process.exit(0);
-  }
-  console.error(msg);
-  console.error('[setup-ort] FATAL: ort.min.js missing after copy. Set VIP_ORT_SETUP_SOFT=1 to bypass.');
+    '            Check that onnxruntime-web is installed and dist/ contains ort.min.js / *.wasm files.\n' +
+    '[setup-ort] FATAL: ort.min.js missing after copy.'
+  );
   process.exit(1);
 }
