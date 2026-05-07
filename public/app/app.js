@@ -404,6 +404,15 @@ class VoiceIsolatePro {
     this.initCanvases();
     this.init3D();
     this._initVisualEngine();
+
+    // Initialize NIM dynamically
+    const videoEl = document.getElementById('nim-video');
+    const overlayEl = document.getElementById('nim-overlay');
+    if (videoEl && overlayEl) {
+        import('./nim-integration.js').then((module) => {
+            this.nim = new module.NimIntegration(videoEl, overlayEl);
+        }).catch(err => console.error('Failed to load NIM Integration module:', err));
+    }
     // ML worker ownership lives in PipelineOrchestrator to prevent
     // duplicate workers, duplicate ORT/model init, and race conditions.
     // Restore last uploaded file (runs async, non-blocking)
@@ -1385,12 +1394,84 @@ class VoiceIsolatePro {
 
   // ======== RECORDING ========
   async toggleRecording() {
+    if (!this.nimConsentHandled && !this.isRecording) {
+        const modal = document.getElementById('nim-consent-modal');
+        if (modal) modal.style.display = 'block';
+
+        const consentBtn = document.getElementById('nim-consent-btn');
+        if (consentBtn) consentBtn.onclick = () => {
+            this.nimConsentHandled = true;
+            this.nimConsentGiven = true;
+            document.getElementById('nim-consent-modal').style.display = 'none';
+            document.getElementById('nim-container').style.display = 'block';
+            this.toggleRecording();
+        };
+
+        const declineBtn = document.getElementById('nim-decline-btn');
+        if (declineBtn) declineBtn.onclick = () => {
+            this.nimConsentHandled = true;
+            this.nimConsentGiven = false;
+            document.getElementById('nim-consent-modal').style.display = 'none';
+            this.toggleRecording();
+        };
+        return;
+    }
+    if (!this.nimConsentHandled && !this.isRecording) {
+        const modal = document.getElementById('nim-consent-modal');
+        if (modal) modal.style.display = 'block';
+
+        const consentBtn = document.getElementById('nim-consent-btn');
+        if (consentBtn) consentBtn.onclick = () => {
+            this.nimConsentHandled = true;
+            this.nimConsentGiven = true;
+            document.getElementById('nim-consent-modal').style.display = 'none';
+            document.getElementById('nim-container').style.display = 'block';
+            this.toggleRecording();
+        };
+
+        const declineBtn = document.getElementById('nim-decline-btn');
+        if (declineBtn) declineBtn.onclick = () => {
+            this.nimConsentHandled = true;
+            this.nimConsentGiven = false;
+            document.getElementById('nim-consent-modal').style.display = 'none';
+            this.toggleRecording();
+        };
+        return;
+    }
+    if (!this.nimConsentHandled && !this.isRecording) {
+        const modal = document.getElementById('nim-consent-modal');
+        if (modal) modal.style.display = 'block';
+
+        const consentBtn = document.getElementById('nim-consent-btn');
+        if (consentBtn) consentBtn.onclick = () => {
+            this.nimConsentHandled = true;
+            this.nimConsentGiven = true;
+            document.getElementById('nim-consent-modal').style.display = 'none';
+            document.getElementById('nim-container').style.display = 'block';
+            this.toggleRecording();
+        };
+
+        const declineBtn = document.getElementById('nim-decline-btn');
+        if (declineBtn) declineBtn.onclick = () => {
+            this.nimConsentHandled = true;
+            this.nimConsentGiven = false;
+            document.getElementById('nim-consent-modal').style.display = 'none';
+            this.toggleRecording();
+        };
+        return;
+    }
     if (this.isRecording) { this.stopRecording(); return; }
     try {
       await this.waitForReadiness();
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: this.nimConsentGiven
+      });
       this.ensureCtx();
       this.isRecording = true;
+      if (this.nim) this.nim.start(stream);
+      if (this.nim) this.nim.start(stream);
+      if (this.nim) this.nim.start(stream);
       this.recordedChunks = [];
       this.dom.micBtn.classList.add('recording');
       this.dom.micLabel.textContent = 'Stop';
