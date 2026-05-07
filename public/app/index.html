@@ -9,7 +9,9 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <!-- onnxruntime-web loaded locally in ml-worker.js via /lib/ort.min.js (no CDN) -->
   <!-- 32-Stage Deca-Pass DSP pipeline: single STFT→32 in-place spectral ops→single iSTFT -->
-  <script src="/lib/three.min.js"></script>
+  <!-- Three.js 0.184.0 — loaded as ES module via importmap; inline script sets globalThis.THREE -->
+  <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
+  <script type="module">import * as THREE from 'three'; globalThis.THREE = THREE;</script>
   <link rel="stylesheet" href="style.css" />
   <!-- Diagnostics log panel styles -->
   <link rel="stylesheet" href="style-diag-log.css" />
@@ -632,6 +634,8 @@
     } else {
       _waitForOrch();
     }
+  </script>
+
   <!-- Model Status UI Container -->
   <div id="model-status-container"></div>
 
@@ -640,8 +644,6 @@
     import { ModelStatusUI } from './model-status-ui.js';
     window.modelStatusUI = new ModelStatusUI();
     window.modelStatusUI.refreshStatus();
-  </script>
-
   </script>
 
 </body>

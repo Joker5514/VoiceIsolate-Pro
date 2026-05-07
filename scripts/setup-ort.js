@@ -54,7 +54,8 @@ if (SOFT_ENV) {
 // Files this script owns in DEST_DIR. Anything matching these patterns is
 // removed before copying so that wasm/JS files dropped between ORT releases
 // don't accumulate as stale 30 MB artifacts. Non-ORT files (ort-loader.js,
-// three.min.js, README.md, .gitkeep) do not match and are preserved.
+// three.module.min.js, README.md, .gitkeep) do not match and are preserved.
+// three.module.min.js (Three.js 0.184.0 ESM build) is managed by setup-three.js.
 const OWNED_PATTERNS = [
   /^ort-wasm[^/]*\.wasm$/,
   /^ort\.js$/,

@@ -19,8 +19,9 @@
   "author": "Randy Jordan <joker5514@users.noreply.github.com>",
   "license": "UNLICENSED",
   "scripts": {
-    "postinstall": "node scripts/setup-ort.js",
+    "postinstall": "node scripts/setup-ort.js && node scripts/setup-three.js",
     "setup:ort": "node scripts/setup-ort.js",
+    "setup:three": "node scripts/setup-three.js",
     "start": "node server.js",
     "dev": "node server.js",
     "serve": "npx serve public -l 3000 --cors",
@@ -95,7 +96,8 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.2",
     "jsdom": "^26.1.0",
-    "onnxruntime-web": "1.25.1"
+    "onnxruntime-web": "1.25.1",
+    "three": "0.184.0"
   },
   "pnpm": {
     "overrides": {
