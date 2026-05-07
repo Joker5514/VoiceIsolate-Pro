@@ -47,11 +47,13 @@ let pollTimer     = null;
 let currentNumBins = DEFAULT_NUM_BINS;
 let currentHalfN = DEFAULT_NUM_BINS;
 let currentFFTSize = 4096;
+let currentSampleRate = 48000;
 let latestPcmChunk = null;
 let vadModelMissing = false;
 let vadMissingWarned = false;
 let speechConfidence = 0;
 let speechStreak = 0;
+let _vadState = null; // silero VAD recurrent state [2, 1, 128]
 let noiseProfile = null;
 let noiseFrames = 0;
 let warmupComplete = false;
@@ -74,16 +76,18 @@ const DEFAULT_MODELS = ['vad', 'rnnoise', 'demucs', 'bsrnn'];
 // populated by model-loader.js.
 const MODEL_FILES = {
   // canonical aliases used by pipeline-orchestrator init
-  'vad':           'silero_vad.onnx',
-  'rnnoise':       'rnnoise_suppressor.onnx',
-  'demucs':        'demucs_v4_quantized.onnx',
-  'bsrnn':         'bsrnn_vocals.onnx',
+  'vad':              'silero_vad.onnx',
+  'vad_int8':         'silero_vad_int8.onnx',
+  'rnnoise':          'rnnoise_suppressor.onnx',
+  'demucs':           'demucs_v4_quantized.onnx',
+  'bsrnn':            'bsrnn_vocals.onnx',
   // long-form aliases (kept for back-compat with auth/tier code)
-  'silero-vad':    'silero_vad.onnx',
-  'silero_vad':    'silero_vad.onnx',
-  'demucs-v4':     'demucs_v4_quantized.onnx',
-  'demucs_v4':     'demucs_v4_quantized.onnx',
-  'bsrnn_vocals':  'bsrnn_vocals.onnx',
+  'silero-vad':       'silero_vad.onnx',
+  'silero_vad':       'silero_vad.onnx',
+  'silero_vad_int8':  'silero_vad_int8.onnx',
+  'demucs-v4':        'demucs_v4_quantized.onnx',
+  'demucs_v4':        'demucs_v4_quantized.onnx',
+  'bsrnn_vocals':     'bsrnn_vocals.onnx',
 };
 
 // Optional Object-URL overrides keyed by canonical alias. Set by the
@@ -99,9 +103,10 @@ const MODEL_URL_OVERRIDES = {};
 // Leave as empty string '' to skip integrity check for that model.
 const MODEL_SHA256 = {
   'silero_vad.onnx':            '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
-  'rnnoise_suppressor.onnx':    '514922973ac2f45b2c1e5ca6af83ed9ba16f963f0a77eed3c277bfff13366a16',
+  'silero_vad_int8.onnx':       '16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05',
+  'rnnoise_suppressor.onnx':    'c33459bf9a151cac0be5a76a936dc4d1940b2889282fb71ca5ac83ff3d5d6a2e',
   'demucs_v4_quantized.onnx':   '',
-  'bsrnn_vocals.onnx':          'd9e7c160a3a6fb8aae8efcc9ba16be4f3a994eb0c9e3d21b214ac1ba83e12c6b',
+  'bsrnn_vocals.onnx':          'c34b40563e9715b8b2e30bbd41cbeaf1f0d9a58a9d26abae3e91169adaed63a4',
 };
 
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
@@ -313,6 +318,7 @@ self.onmessage = async (ev) => {
           pcmChunk,
           fftSize             = 4096,
           halfN               = Math.floor(fftSize / 2) + 1,
+          sampleRate          = 48000,
           // Default to the absolute /app/models/ path so the SW intercepts
           // the fetch and serves from the vip-models-v1 Cache populated by
           // model-loader.js (which itself fetched via the Vercel Blob rewrite).
@@ -334,6 +340,7 @@ self.onmessage = async (ev) => {
         currentFFTSize = fftSize;
         currentHalfN = halfN;
         currentNumBins = halfN;
+        currentSampleRate = sampleRate;
         if (params && typeof params === 'object') {
           runtimeParams = { ...runtimeParams, ...params };
         }
@@ -431,6 +438,7 @@ self.onmessage = async (ev) => {
       speechConfidence = 0;
       speechStreak = 0;
       latestPcmChunk = null;
+      _vadState = null;
       demucsPcmMissingWarned = false;
       _lastPollFrame = 0;
       self.postMessage({ type: 'reset_done' });
@@ -826,6 +834,36 @@ let _maskBuffer = null;
 // allocation per applyWienerFilter() call (~400KB/s GC churn at 50 Hz).
 let _smoothBuffer = null;
 
+const SILERO_SR    = 16000;
+const SILERO_CHUNK = 512;
+
+// Run silero_vad.onnx with correct inputs: raw PCM + recurrent state + sr.
+// Silero VAD expects float32 PCM samples (not magnitudes). We downsample from
+// the Web Audio context rate (typically 48 kHz) to 16 kHz via simple decimation,
+// then pass a 512-sample window with the stateful h/c tensors from the previous call.
+async function runSileroVAD(vadSess, pcmChunk, audioSrHz) {
+  const step = Math.max(1, Math.round((audioSrHz || SILERO_SR) / SILERO_SR));
+  const samples = new Float32Array(SILERO_CHUNK);
+  if (pcmChunk && pcmChunk.length > 0) {
+    const take = Math.min(SILERO_CHUNK, Math.floor(pcmChunk.length / step));
+    for (let i = 0; i < take; i++) samples[i] = pcmChunk[i * step];
+  }
+  if (!_vadState) _vadState = new Float32Array(2 * 1 * 128); // zero-init h,c
+  const inputTensor = new ort.Tensor('float32', samples, [1, SILERO_CHUNK]);
+  const stateTensor = new ort.Tensor('float32', _vadState, [2, 1, 128]);
+  // BigInt64Array for the sr scalar — required by silero_vad.onnx opset
+  const srData   = typeof BigInt64Array !== 'undefined'
+    ? BigInt64Array.from([BigInt(SILERO_SR)])
+    : new Int32Array([SILERO_SR]);
+  const srTensor = new ort.Tensor(typeof BigInt64Array !== 'undefined' ? 'int64' : 'int32', srData, []);
+  const result = await vadSess.run({ input: inputTensor, state: stateTensor, sr: srTensor });
+  // Keep state only when the model returns it (stubs / mocks may omit stateN)
+  if (result.stateN && result.stateN.data) {
+    _vadState = new Float32Array(result.stateN.data);
+  }
+  return Number(result.output.data[0]);
+}
+
 async function buildMask(magnitudes, pcmChunk = null) {
   const numBins = magnitudes.length;
   // Grow buffer only when numBins increases (rare); reuse otherwise.
@@ -837,28 +875,18 @@ async function buildMask(magnitudes, pcmChunk = null) {
 
   const fallbackVAD = runVADFallback(magnitudes);
 
-  // VAD gate (silero-vad / vad)
-  const vadSess = sessions['vad'] || sessions['silero-vad'];
+  // VAD gate — silero_vad.onnx requires PCM samples + recurrent state + sr.
+  // runSileroVAD() handles downsampling from the context rate to 16 kHz.
+  const vadSess = sessions['vad'] || sessions['silero-vad'] || sessions['vad_int8'];
   let hasModelVAD = false;
   let isVoice = fallbackVAD.isVoice;
   if (vadSess && allowedStages >= 5) {
     try {
-      const vadInput = new ort.Tensor('float32', magnitudes, [1, numBins]);
-      const result   = await vadSess.run({ input: vadInput });
-      const vadProb  = result.output.data;
+      const prob = await runSileroVAD(vadSess, pcmChunk, currentSampleRate);
       hasModelVAD = true;
-      if (vadProb.length === 1) {
-        const gate = Math.max(0, vadProb[0] * 2 - 0.5);
-        isVoice = vadProb[0] >= 0.5;
-        for (let k = 0; k < numBins; k++) mask[k] *= gate;
-      } else {
-        let meanProb = 0;
-        for (let k = 0; k < numBins; k++) {
-          mask[k] *= vadProb[k];
-          meanProb += vadProb[k];
-        }
-        isVoice = (meanProb / numBins) >= 0.5;
-      }
+      isVoice = prob >= 0.5;
+      const gate = Math.max(0, prob * 2 - 0.5);
+      for (let k = 0; k < numBins; k++) mask[k] *= gate;
     } catch (e) {
       console.warn('[ml-worker] vad error:', e.message);
     }
