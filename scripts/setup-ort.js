@@ -36,13 +36,19 @@ const SOFT_ENV = process.env.VIP_ORT_SETUP_SOFT === '1';
 // Auto-detect soft mode: if all committed WASM files already exist, skip copy.
 const allCommitted = EXPECTED_COMMITTED.every((f) => existsSync(join(DEST_DIR, f)));
 
-if (SOFT_ENV || allCommitted) {
-  const reason = SOFT_ENV ? 'VIP_ORT_SETUP_SOFT=1' : 'all ORT files already present in public/lib/';
-  console.info(`[setup-ort] Skipping copy — ${reason}`);
+if (allCommitted) {
+  console.info('[setup-ort] Skipping copy — all ORT files already present in public/lib/');
   EXPECTED_COMMITTED.forEach((f) =>
-    console.info(`[setup-ort]   ✓ ${f} (${existsSync(join(DEST_DIR, f)) ? 'present' : 'MISSING'})`);
+    console.info(`[setup-ort]   ✓ ${f} (${existsSync(join(DEST_DIR, f)) ? 'present' : 'MISSING'})`)
   );
   process.exit(0);
+}
+
+if (SOFT_ENV) {
+  console.info('[setup-ort] VIP_ORT_SETUP_SOFT=1 set, but committed ORT file set is incomplete; attempting copy from node_modules.');
+  EXPECTED_COMMITTED.forEach((f) =>
+    console.info(`[setup-ort]   ✓ ${f} (${existsSync(join(DEST_DIR, f)) ? 'present' : 'MISSING'})`)
+  );
 }
 
 // Files this script owns in DEST_DIR. Anything matching these patterns is
