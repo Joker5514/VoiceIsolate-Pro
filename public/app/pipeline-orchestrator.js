@@ -444,10 +444,14 @@ class PipelineOrchestrator {
       // payload wrapper is required: the worker's 'init' handler destructures
       // allowedModels / preferredProviders from ev.data.payload, not top-level.
       this.mlWorker.postMessage({
-        type:    'init',
+        type:      'init',
+        ortUrl:    '/lib/ort.min.js',
+        providers: ['webgpu', 'wasm'],
         payload: {
           modelBasePath:      '/app/models/',
+          ortUrl:             '/lib/ort.min.js',
           preferredProviders: ['webgpu', 'wasm'],
+          sampleRate:         this.audioContext ? this.audioContext.sampleRate : 48000,
           // Canonical four — matches model-loader.js + models-manifest.json.
           // ml-worker.js MODEL_FILES maps these aliases to .onnx filenames.
           allowedModels:      window.Auth ? window.Auth.getCaps().mlModels : ['vad', 'rnnoise'],
