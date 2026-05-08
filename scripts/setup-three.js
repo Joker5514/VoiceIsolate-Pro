@@ -9,8 +9,8 @@
  * Safe to re-run: skipped silently if the file is already committed to the repo.
  */
 
-const { existsSync, copyFileSync } = require('fs');
-const { join } = require('path');
+const { existsSync, copyFileSync, mkdirSync } = require('fs');
+const { join, dirname } = require('path');
 
 const ROOT = join(__dirname, '..');
 const SRC  = join(ROOT, 'node_modules', 'three', 'build', 'three.module.min.js');
