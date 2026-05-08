@@ -29,7 +29,7 @@ describe('Worklet Integration Verification', () => {
     // Wait for worklet to be loaded and marked as ready
     const isWorkletReady = await page.waitForFunction(() => {
       return window._vipOrch && window._vipOrch.workletReady === true;
-    }, { timeout: 15000 }).catch(() => false);
+    }, { timeout: 15000 });
 
     expect(isWorkletReady).toBeTruthy();
 
