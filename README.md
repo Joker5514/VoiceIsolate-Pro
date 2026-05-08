@@ -154,6 +154,7 @@ git clone https://github.com/Joker5514/VoiceIsolate-Pro.git
 cd VoiceIsolate-Pro
 
 # Install dependencies
+# (postinstall auto-copies ORT + Three.js to public/lib/ if not already committed)
 pnpm install
 
 # Development server
@@ -165,7 +166,7 @@ pnpm build
 # Validate (syntax, pipeline audit)
 pnpm validate
 
-# Test
+# Test (54 suites)
 pnpm test
 ```
 
@@ -195,6 +196,12 @@ Blueprint sections:
 ---
 
 ## Changelog
+
+### v24.0.1 (2026-05) — Worklet Audit + Three.js Upgrade
+- **FIXED**: Critical `SyntaxError` in `index.html` — missing `</script>` before `#model-status-container` caused the diarization/speaker-isolation init module to fail silently and left the model-status UI out of the DOM
+- **UPGRADED**: Three.js r128 (2021) → **0.184.0** (latest). Loaded as ESM via `<script type="importmap">` from locally-committed `/lib/three.module.min.js`; no CDN, CSP-safe. New `scripts/setup-three.js` handles fresh installs.
+- **AUDITED**: All AudioWorklet, ring-buffer, and ML-worker code reviewed — no external fetch calls, correct COOP/COEP headers, SharedArrayBuffer handshake verified
+- **CONFIRMED**: ONNX Runtime Web at latest (1.25.1)
 
 ### v24.0 (2026) — Threads from Space v13
 - **ARCHITECTURE**: Threads from Space v13 — adaptive ML routing, plugin bus
