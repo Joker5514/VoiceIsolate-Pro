@@ -2,36 +2,58 @@
 /**
  * scripts/setup-three.js
  * ----------------------
- * Copies three.module.min.js from node_modules/three/build/ into public/lib/
- * so index.html can load Three.js 0.184.0 via importmap without a CDN.
+ * Copies Three.js 0.184.0 build artifacts from node_modules/three/build/ into
+ * public/lib/ so index.html can load Three.js via importmap without a CDN.
+ *
+ * three.module.min.js (ESM entry) imports ./three.core.min.js at runtime, so
+ * both sidecar files must be present in public/lib/ together.
  *
  * Run automatically via package.json "postinstall" hook.
- * Safe to re-run: skipped silently if the file is already committed to the repo.
+ * Safe to re-run: skipped silently if all files are already committed to the repo.
  */
 
 const { existsSync, copyFileSync, mkdirSync } = require('fs');
-const { join, dirname } = require('path');
+const { join } = require('path');
 
-const ROOT = join(__dirname, '..');
-const SRC  = join(ROOT, 'node_modules', 'three', 'build', 'three.module.min.js');
-const DEST = join(ROOT, 'public', 'lib', 'three.module.min.js');
+const ROOT   = join(__dirname, '..');
+const SRC_DIR = join(ROOT, 'node_modules', 'three', 'build');
+const LIB_DIR = join(ROOT, 'public', 'lib');
 
-if (existsSync(DEST)) {
-  console.info('[setup-three] three.module.min.js already present in public/lib/ — skipping copy');
+// Files required by the importmap ESM approach:
+// three.module.min.js is the ESM entry; three.core.min.js is its sidecar.
+const FILES = ['three.module.min.js', 'three.core.min.js'];
+
+if (FILES.every(f => existsSync(join(LIB_DIR, f)))) {
+  console.info('[setup-three] Three.js files already present in public/lib/ — skipping copy');
   process.exit(0);
 }
 
-if (!existsSync(SRC)) {
+if (!existsSync(SRC_DIR)) {
   console.error(
-    '[setup-three] node_modules/three/build/three.module.min.js not found.\n' +
-    '              Run `pnpm install` first or commit public/lib/three.module.min.js to the repo.'
+    '[setup-three] node_modules/three/build/ not found.\n' +
+    '              Run `pnpm install` first or commit the public/lib/three*.min.js files to the repo.'
   );
-  process.exit(1); // fatal: runtime currently depends on Three.js being available
+  process.exit(1); // fatal: runtime hard-depends on Three.js for init3D
 }
 
-if (!existsSync(dirname(DEST))) {
-  mkdirSync(dirname(DEST), { recursive: true });
-}
+mkdirSync(LIB_DIR, { recursive: true });
 
-copyFileSync(SRC, DEST);
-console.info('[setup-three] Copied three.module.min.js (three@0.184.0) → public/lib/');
+for (const file of FILES) {
+  const src  = join(SRC_DIR, file);
+  const dest = join(LIB_DIR, file);
+  if (existsSync(dest)) {
+    console.info(`[setup-three] ${file} already present — skipping`);
+    continue;
+  }
+  if (!existsSync(src)) {
+    console.error(`[setup-three] Required file not found in node_modules: ${src}`);
+    process.exit(1);
+  }
+  try {
+    copyFileSync(src, dest);
+    console.info(`[setup-three] Copied ${file} (three@0.184.0) → public/lib/`);
+  } catch (err) {
+    console.error(`[setup-three] Failed to copy ${file}: ${err.message}`);
+    process.exit(1);
+  }
+}

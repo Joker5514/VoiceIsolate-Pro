@@ -9,9 +9,14 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <!-- onnxruntime-web loaded locally in ml-worker.js via /lib/ort.min.js (no CDN) -->
   <!-- 32-Stage Deca-Pass DSP pipeline: single STFT→32 in-place spectral ops→single iSTFT -->
-  <!-- Three.js r128 — loaded as ES module via CDN importmap; inline script sets globalThis.THREE -->
-  <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js" } }</script>
-  <script type="module">import * as THREE from 'three'; globalThis.THREE = THREE;</script>
+  <!-- Three.js 0.184.0 — loaded locally as ESM via importmap (no CDN); sets globalThis.THREE -->
+  <!-- three.core.min.js is a required sidecar for three.module.min.js; both live in /lib/ -->
+  <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
+  <script type="module">
+    import('three').then(m => { globalThis.THREE = m; }).catch(err => {
+      console.warn('[VoiceIsolate] Three.js failed to load — 3D spectrogram disabled.', err);
+    });
+  </script>
   <link rel="stylesheet" href="style.css" />
   <!-- Diagnostics log panel styles -->
   <link rel="stylesheet" href="style-diag-log.css" />
