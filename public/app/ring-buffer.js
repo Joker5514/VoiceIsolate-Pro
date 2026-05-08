@@ -125,3 +125,97 @@ class SharedRingBuffer {
 
 if (typeof window !== 'undefined') window.SharedRingBuffer = SharedRingBuffer;
 if (typeof module !== 'undefined' && module.exports) module.exports = SharedRingBuffer;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RingBuffer — simple lock-free FIFO backed by SharedArrayBuffer.
+//
+// Memory layout (Int32Array control header):
+//   [0] head  — next read position  (Atomics)
+//   [1] tail  — next write position (Atomics)
+//   [2] capacity — immutable after construction
+//
+// Float32 data starts at byte offset 12 (3 × 4 bytes).
+//
+// constructor(sab, capacity)
+//   sab      — SharedArrayBuffer, must be >= 12 + capacity*4 bytes
+//   capacity — number of float32 samples the buffer can hold
+// ─────────────────────────────────────────────────────────────────────────────
+class RingBuffer {
+  constructor(sab, capacity) {
+    if (!(sab instanceof SharedArrayBuffer)) {
+      throw new TypeError('RingBuffer: sab must be a SharedArrayBuffer');
+    }
+    this._capacity = capacity;
+    const headerBytes = Int32Array.BYTES_PER_ELEMENT * 3; // 12 bytes
+    this._ctrl = new Int32Array(sab, 0, 3);
+    this._data = new Float32Array(sab, headerBytes, capacity);
+
+    // Initialise control block only when called as primary constructor
+    // (detect by checking if capacity slot is already set)
+    if (Atomics.load(this._ctrl, 2) !== capacity) {
+      Atomics.store(this._ctrl, 0, 0);          // head
+      Atomics.store(this._ctrl, 1, 0);          // tail
+      Atomics.store(this._ctrl, 2, capacity);   // capacity (immutable)
+    }
+  }
+
+  /** Number of samples waiting to be read. */
+  get available() {
+    const head = Atomics.load(this._ctrl, 0);
+    const tail = Atomics.load(this._ctrl, 1);
+    return (tail - head + this._capacity) % this._capacity;
+  }
+
+  /** Number of samples that can still be written before overflow. */
+  get free() {
+    return this._capacity - 1 - this.available;
+  }
+
+  /**
+   * Non-blocking write. Returns false (and discards) if not enough space.
+   * @param {Float32Array} float32Array
+   * @returns {boolean}
+   */
+  write(float32Array) {
+    const len = float32Array.length;
+    if (len > this.free) return false;
+
+    let tail = Atomics.load(this._ctrl, 1) % this._capacity;
+    const firstPart = Math.min(len, this._capacity - tail);
+    this._data.set(float32Array.subarray(0, firstPart), tail);
+    if (firstPart < len) {
+      this._data.set(float32Array.subarray(firstPart), 0);
+    }
+    Atomics.store(this._ctrl, 1, (Atomics.load(this._ctrl, 1) + len) % this._capacity);
+    return true;
+  }
+
+  /**
+   * Non-blocking read into dest. Returns false if not enough data available.
+   * @param {Float32Array} dest — will be filled with read samples
+   * @returns {boolean}
+   */
+  read(dest) {
+    const len = dest.length;
+    if (len > this.available) return false;
+
+    let head = Atomics.load(this._ctrl, 0) % this._capacity;
+    const firstPart = Math.min(len, this._capacity - head);
+    dest.set(this._data.subarray(head, head + firstPart));
+    if (firstPart < len) {
+      dest.set(this._data.subarray(0, len - firstPart), firstPart);
+    }
+    Atomics.store(this._ctrl, 0, (Atomics.load(this._ctrl, 0) + len) % this._capacity);
+    return true;
+  }
+
+  /** Minimum SharedArrayBuffer size in bytes for given capacity. */
+  static byteLength(capacity) {
+    return Int32Array.BYTES_PER_ELEMENT * 3 + Float32Array.BYTES_PER_ELEMENT * capacity;
+  }
+}
+
+if (typeof window !== 'undefined') window.RingBuffer = RingBuffer;
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports.RingBuffer = RingBuffer;
+}
