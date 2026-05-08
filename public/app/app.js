@@ -1470,8 +1470,6 @@ class VoiceIsolatePro {
       this.ensureCtx();
       this.isRecording = true;
       if (this.nim) this.nim.start(stream);
-      if (this.nim) this.nim.start(stream);
-      if (this.nim) this.nim.start(stream);
       this.recordedChunks = [];
       this.dom.micBtn.classList.add('recording');
       this.dom.micLabel.textContent = 'Stop';
