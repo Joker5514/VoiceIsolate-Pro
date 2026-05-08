@@ -236,7 +236,7 @@ class RingBuffer {
       this.read(tmp);
       return tmp[0];
     }
-    if (count <= 0 || count > this.available) return null;
+    if (count < 0 || count > this.available) return null;
     const out = new Float32Array(count);
     return this.read(out) ? out : null;
   }
