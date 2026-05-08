@@ -216,9 +216,15 @@ class RingBuffer {
    */
   push(samples) {
     if (typeof samples === 'number') {
-      const tmp = new Float32Array(1);
-      tmp[0] = samples;
-      return this.write(tmp);
+      if (this.availableWrite < 1) {
+        Atomics.add(this._ctrl, 2, 1);
+        return false;
+      }
+
+      const tail = Atomics.load(this._ctrl, 1) % this._capacity;
+      this._data[tail] = samples;
+      Atomics.store(this._ctrl, 1, (Atomics.load(this._ctrl, 1) + 1) % this._capacity);
+      return true;
     }
     return this.write(samples);
   }
