@@ -209,9 +209,67 @@ class RingBuffer {
     return true;
   }
 
+  /**
+   * push() — alias of write(). Accepts a Float32Array (or single number for
+   * convenience). Returns true on success, false on overflow. Provided so the
+   * RingBuffer surface matches the spec used by AudioWorklet ↔ ML-worker glue.
+   */
+  push(samples) {
+    if (typeof samples === 'number') {
+      if (this.availableWrite < 1) {
+        Atomics.add(this._ctrl, 2, 1);
+        return false;
+      }
+
+      const tail = Atomics.load(this._ctrl, 1) % this._capacity;
+      this._data[tail] = samples;
+      Atomics.store(this._ctrl, 1, (Atomics.load(this._ctrl, 1) + 1) % this._capacity);
+      return true;
+    }
+    return this.write(samples);
+  }
+
+  /**
+   * pop(count?) — reads `count` samples (default 1) and returns them as a new
+   * Float32Array. Returns null if not enough samples are available. When count
+   * is omitted and only one sample is wanted, returns a scalar number for
+   * convenience.
+   */
+  pop(count) {
+    if (count === undefined) {
+      if (this.available < 1) return null;
+      const tmp = new Float32Array(1);
+      this.read(tmp);
+      return tmp[0];
+    }
+    if (count < 0 || count > this.available) return null;
+    const out = new Float32Array(count);
+    return this.read(out) ? out : null;
+  }
+
+  /** Number of samples that fit in the buffer (immutable). */
+  get capacity() { return this._capacity; }
+
+  /**
+   * SharedArrayBuffer accessor — the same SAB can be transferred to an
+   * AudioWorklet or Worker, where another RingBuffer can be reattached to it.
+   */
+  get sab() { return this._ctrl.buffer; }
+
+  /** Reset head/tail pointers. */
+  reset() {
+    Atomics.store(this._ctrl, 0, 0);
+    Atomics.store(this._ctrl, 1, 0);
+  }
+
   /** Minimum SharedArrayBuffer size in bytes for given capacity. */
   static byteLength(capacity) {
     return Int32Array.BYTES_PER_ELEMENT * 3 + Float32Array.BYTES_PER_ELEMENT * capacity;
+  }
+
+  /** Capability probe — true when SharedArrayBuffer and Atomics are available. */
+  static isSupported() {
+    return typeof SharedArrayBuffer !== 'undefined' && typeof Atomics !== 'undefined';
   }
 }
 
