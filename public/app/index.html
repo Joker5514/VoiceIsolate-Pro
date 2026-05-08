@@ -13,7 +13,10 @@
   <!-- three.core.min.js is a required sidecar for three.module.min.js; both live in /lib/ -->
   <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
   <script type="module">
-    import('three').then(m => { globalThis.THREE = m; }).catch(err => {
+    import('three').then(m => {
+      globalThis.THREE = m;
+      document.dispatchEvent(new Event('three-loaded'));
+    }).catch(err => {
       console.warn('[VoiceIsolate] Three.js failed to load — 3D spectrogram disabled.', err);
     });
   </script>

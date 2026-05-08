@@ -2781,7 +2781,12 @@ class VoiceIsolatePro {
 
   // ---- 3D Spectrogram ----
   init3D(retried){
-    if(typeof THREE==='undefined'){console.warn('[VoiceIsolate] THREE not loaded — 3D spectrogram disabled');return;}
+    if(typeof THREE==='undefined'){
+      // Dynamic import may still be in-flight; defer until it resolves.
+      if(!retried)document.addEventListener('three-loaded',()=>this.init3D(true),{once:true});
+      else console.warn('[VoiceIsolate] THREE unavailable — 3D spectrogram disabled');
+      return;
+    }
     const ct=this.dom.spectro3DContainer;if(!ct)return;const w=ct.clientWidth;const h=ct.clientHeight;
     if(w===0||h===0){if(!retried)requestAnimationFrame(()=>this.init3D(true));return;}
     if(this.three.ren)return; // already initialized
