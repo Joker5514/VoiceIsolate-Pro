@@ -29,5 +29,9 @@ if (!existsSync(SRC)) {
   process.exit(0); // non-fatal: app degrades gracefully when THREE is unavailable (3D spectrogram hidden)
 }
 
+if (!existsSync(dirname(DEST))) {
+  mkdirSync(dirname(DEST), { recursive: true });
+}
+
 copyFileSync(SRC, DEST);
 console.info('[setup-three] Copied three.module.min.js (three@0.184.0) → public/lib/');
