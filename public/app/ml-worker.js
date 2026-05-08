@@ -629,6 +629,84 @@ self.onmessage = async (ev) => {
       break;
     }
 
+    // ── infer: single-frame inference via explicit postMessage protocol ──────────
+    // IN:  { type: 'infer', model: 'demucs'|'bsrnn', mag: Float32Array }
+    // OUT: { type: 'mask',  model: 'demucs'|'bsrnn', mask: Float32Array }
+    // OUT: { type: 'error', message: string }
+    // This is a simpler, worker-native alternative to the SAB polling path.
+    case 'infer': {
+      const modelKey  = ev.data && ev.data.model;
+      const magRaw    = ev.data && ev.data.mag;
+      if (!modelKey || !magRaw) {
+        self.postMessage({ type: 'error', message: 'infer: missing model or mag' });
+        break;
+      }
+      const mag = magRaw instanceof Float32Array ? magRaw : new Float32Array(magRaw);
+
+      try {
+        initialize();
+      } catch (err) {
+        self.postMessage({ type: 'error', message: err.message });
+        break;
+      }
+
+      // Resolve session — support both short ('demucs','bsrnn') and long aliases
+      const sess = sessions[modelKey] || sessions[modelKey + '-v4'] || sessions[modelKey + '_vocals'];
+      if (!sess) {
+        // Model not yet loaded: attempt load then re-infer
+        try {
+          const statusMap = await loadModels('/app/models/', ['webgpu', 'wasm'], [modelKey]);
+          if (!statusMap[modelKey]) throw new Error(`Model '${modelKey}' could not be loaded`);
+        } catch (loadErr) {
+          self.postMessage({ type: 'error', message: loadErr.message });
+          break;
+        }
+      }
+
+      try {
+        const session = sessions[modelKey] || sessions[modelKey + '-v4'] || sessions[modelKey + '_vocals'];
+        const numBins = mag.length;
+
+        let maskData;
+        if (modelKey === 'demucs' || modelKey.startsWith('demucs')) {
+          // Demucs operates on PCM; fall back to magnitude-based proxy mask
+          const tensor = new ort.Tensor('float32', mag, [1, 1, numBins]);
+          const result = await session.run({ input: tensor });
+          maskData = result.vocal_mask?.data || result.output?.data || null;
+        } else {
+          // BSRNN and others accept [1, numBins] magnitude input
+          const tensor = new ort.Tensor('float32', mag, [1, numBins]);
+          const result = await session.run({ input: tensor });
+          maskData = result.vocal_mask?.data || result.output?.data || null;
+        }
+
+        if (!maskData || maskData.length < numBins) {
+          // Unity mask fallback — audio passes through unmodified
+          maskData = new Float32Array(numBins).fill(1.0);
+        }
+
+        // Apply Demucs/BSRNN blend weights from runtimeParams
+        const demucsW = modelKey === 'demucs'
+          ? Math.max(0, Math.min(1, (runtimeParams.demucsWeight ?? 50) / 100))
+          : 0;
+        const bsrnnW = modelKey === 'bsrnn'
+          ? Math.max(0, Math.min(1, (runtimeParams.bsrnnWeight ?? 50) / 100))
+          : 0;
+        const blendW = demucsW || bsrnnW || 1.0;
+
+        const outMask = new Float32Array(numBins);
+        for (let i = 0; i < numBins; i++) {
+          const v = Number(maskData[i]);
+          outMask[i] = Math.max(0, Math.min(1, Number.isFinite(v) ? v * blendW : 1));
+        }
+
+        self.postMessage({ type: 'mask', model: modelKey, mask: outMask }, [outMask.buffer]);
+      } catch (inferErr) {
+        self.postMessage({ type: 'error', message: `infer(${modelKey}): ${inferErr.message}` });
+      }
+      break;
+    }
+
     default:
       console.warn('[ml-worker] unknown message type:', type);
   }

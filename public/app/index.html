@@ -96,6 +96,9 @@
                    line-height:1;padding:0 4px;transition:color .15s">✕</button>
   </div>
 
+  <!-- Status message target for app.js updateStatus() -->
+  <div id="status-message" class="status-bar" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;opacity:0;" aria-live="polite" aria-atomic="true"></div>
+
   <!-- HEADER -->
   <header class="hdr">
     <div class="hdr-left">
@@ -291,6 +294,8 @@
         </div>
         <div id="spec3dContainer" class="spectro3d-container">
           <canvas id="spec3dCanvas" aria-label="3D spectrogram visualization"></canvas>
+          <!-- spectrogram-canvas alias required by visuals.js -->
+          <canvas id="spectrogram-canvas" style="position:absolute;width:1px;height:1px;top:-9999px;left:-9999px;opacity:0;overflow:hidden;" aria-hidden="true"></canvas>
         </div>
       </div>
 
@@ -646,6 +651,76 @@
 
   <!-- Model Status UI Container -->
   <div id="model-status-container"></div>
+
+  <!--
+    Hidden range inputs for all 54 SLIDER_MAP IDs.
+    These exist so app.js initSliders() can bind events without silent failures.
+    Visible sliders in the tab panels are generated dynamically by the larger
+    app orchestrator; these serve as DOM anchors when that path is unavailable.
+  -->
+  <div aria-hidden="true" style="position:absolute;width:1px;height:1px;top:-9999px;left:-9999px;overflow:hidden;">
+    <!-- Gate / Noise Reduction (8) -->
+    <input type="range" id="slider-noise-reduction"   min="0"   max="100" value="50" step="1" tabindex="-1" />
+    <input type="range" id="slider-noise-gate"        min="-80" max="0"   value="-40" step="1" tabindex="-1" />
+    <input type="range" id="slider-reverb-reduction"  min="0"   max="100" value="30" step="1" tabindex="-1" />
+    <input type="range" id="slider-room-sim"          min="0"   max="100" value="0"  step="1" tabindex="-1" />
+    <input type="range" id="slider-click-removal"     min="0"   max="100" value="50" step="1" tabindex="-1" />
+    <input type="range" id="slider-hum-removal"       min="0"   max="100" value="50" step="1" tabindex="-1" />
+    <input type="range" id="slider-wind-removal"      min="0"   max="100" value="30" step="1" tabindex="-1" />
+    <input type="range" id="slider-broadband-denoise" min="0"   max="100" value="40" step="1" tabindex="-1" />
+    <!-- EQ (8) -->
+    <input type="range" id="slider-low-cut"           min="20"  max="500"  value="80"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-high-cut"          min="4000" max="20000" value="16000" step="100" tabindex="-1" />
+    <input type="range" id="slider-presence"          min="-12" max="12"   value="2"    step="0.5" tabindex="-1" />
+    <input type="range" id="slider-warmth"            min="-12" max="12"   value="0"    step="0.5" tabindex="-1" />
+    <input type="range" id="slider-air"               min="-12" max="12"   value="0"    step="0.5" tabindex="-1" />
+    <input type="range" id="slider-voice-boost"       min="-12" max="12"   value="0"    step="0.5" tabindex="-1" />
+    <input type="range" id="slider-body"              min="-12" max="12"   value="0"    step="0.5" tabindex="-1" />
+    <input type="range" id="slider-de-ess"            min="0"   max="100"  value="30"   step="1"   tabindex="-1" />
+    <!-- Dynamics (8) -->
+    <input type="range" id="slider-compressor-thresh"  min="-60" max="0"   value="-24" step="1"   tabindex="-1" />
+    <input type="range" id="slider-compressor-ratio"   min="1"   max="20"  value="4"   step="0.5" tabindex="-1" />
+    <input type="range" id="slider-compressor-attack"  min="1"   max="200" value="10"  step="1"   tabindex="-1" />
+    <input type="range" id="slider-compressor-release" min="10"  max="1000" value="100" step="10" tabindex="-1" />
+    <input type="range" id="slider-limiter-ceiling"    min="-12" max="0"   value="-1"  step="0.5" tabindex="-1" />
+    <input type="range" id="slider-expander-thresh"    min="-80" max="0"   value="-50" step="1"   tabindex="-1" />
+    <input type="range" id="slider-expander-ratio"     min="1"   max="10"  value="2"   step="0.5" tabindex="-1" />
+    <input type="range" id="slider-transient-attack"   min="0"   max="100" value="50"  step="1"   tabindex="-1" />
+    <!-- Spectral (8) -->
+    <input type="range" id="slider-spectral-floor"    min="0"   max="50"  value="5"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-spectral-ceiling"  min="50"  max="100" value="100" step="1"   tabindex="-1" />
+    <input type="range" id="slider-harmonic-enhance"  min="0"   max="100" value="20"  step="1"   tabindex="-1" />
+    <input type="range" id="slider-spectral-tilt"     min="-6"  max="6"   value="0"   step="0.5" tabindex="-1" />
+    <input type="range" id="slider-comb-filter"       min="0"   max="100" value="0"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-formant-shift"     min="-12" max="12"  value="0"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-pitch-correction"  min="0"   max="100" value="0"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-sub-harmonic"      min="0"   max="100" value="0"   step="1"   tabindex="-1" />
+    <!-- FX / Saturation / Modulation (10) -->
+    <input type="range" id="slider-stereo-width"   min="0"   max="200" value="100" step="1"   tabindex="-1" />
+    <input type="range" id="slider-exciter"        min="0"   max="100" value="0"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-tape-sat"       min="0"   max="100" value="0"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-vinyl-warmth"   min="0"   max="100" value="0"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-chorus-depth"   min="0"   max="100" value="0"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-chorus-rate"    min="0"   max="10"  value="1"   step="0.1" tabindex="-1" />
+    <input type="range" id="slider-delay-time"     min="0"   max="1000" value="0"  step="10"  tabindex="-1" />
+    <input type="range" id="slider-delay-feedback" min="0"   max="95"  value="30"  step="1"   tabindex="-1" />
+    <input type="range" id="slider-reverb-wet"     min="0"   max="100" value="20"  step="1"   tabindex="-1" />
+    <input type="range" id="slider-reverb-size"    min="0"   max="100" value="40"  step="1"   tabindex="-1" />
+    <!-- ML Model weights (4) -->
+    <input type="range" id="slider-demucs-weight"    min="0" max="100" value="50" step="1" tabindex="-1" />
+    <input type="range" id="slider-bsrnn-weight"     min="0" max="100" value="50" step="1" tabindex="-1" />
+    <input type="range" id="slider-blend-classical"  min="0" max="100" value="30" step="1" tabindex="-1" />
+    <input type="range" id="slider-blend-ml"         min="0" max="100" value="70" step="1" tabindex="-1" />
+    <!-- Output (8) -->
+    <input type="range" id="slider-output-gain"      min="-24" max="24"  value="0"   step="0.5" tabindex="-1" />
+    <input type="range" id="slider-dry-wet"          min="0"   max="100" value="100" step="1"   tabindex="-1" />
+    <input type="range" id="slider-latency-comp"     min="0"   max="500" value="0"   step="10"  tabindex="-1" />
+    <input type="range" id="slider-oversample"       min="1"   max="4"   value="1"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-dither"           min="0"   max="100" value="0"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-bit-depth"        min="16"  max="32"  value="32"  step="8"   tabindex="-1" />
+    <input type="range" id="slider-sample-rate-conv" min="0"   max="100" value="0"   step="1"   tabindex="-1" />
+    <input type="range" id="slider-master-volume"    min="0"   max="100" value="80"  step="1"   tabindex="-1" />
+  </div>
 
   <!-- Model Status UI Script -->
   <script type="module">
