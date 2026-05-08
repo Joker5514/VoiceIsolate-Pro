@@ -22,11 +22,11 @@ if (existsSync(DEST)) {
 }
 
 if (!existsSync(SRC)) {
-  console.warn(
+  console.error(
     '[setup-three] node_modules/three/build/three.module.min.js not found.\n' +
     '              Run `pnpm install` first or commit public/lib/three.module.min.js to the repo.'
   );
-  process.exit(0); // non-fatal: app degrades gracefully when THREE is unavailable (3D spectrogram hidden)
+  process.exit(1); // fatal: runtime currently depends on Three.js being available
 }
 
 if (!existsSync(dirname(DEST))) {
