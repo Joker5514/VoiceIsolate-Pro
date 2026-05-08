@@ -23,7 +23,7 @@ const LIB_DIR = join(ROOT, 'public', 'lib');
 // three.module.min.js is the ESM entry; three.core.min.js is its sidecar.
 const FILES = ['three.module.min.js', 'three.core.min.js'];
 
-if (FILES.every(f => existsSync(join(LIB_DIR, f)))) {
+if (FILES.every(file => existsSync(join(LIB_DIR, file)))) {
   console.info('[setup-three] Three.js files already present in public/lib/ — skipping copy');
   process.exit(0);
 }
