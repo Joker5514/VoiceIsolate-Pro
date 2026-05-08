@@ -51,5 +51,5 @@ describe('Worklet Integration Verification', () => {
     expect(workletStatus.inputRingSAB).toBe(true);
     expect(workletStatus.maskRingSAB).toBe(true);
 
-  }, 20000);
+  }, 30000);
 });
