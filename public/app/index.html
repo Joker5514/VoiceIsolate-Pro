@@ -9,8 +9,8 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <!-- onnxruntime-web loaded locally in ml-worker.js via /lib/ort.min.js (no CDN) -->
   <!-- 32-Stage Deca-Pass DSP pipeline: single STFT→32 in-place spectral ops→single iSTFT -->
-  <!-- Three.js 0.184.0 — loaded as ES module via importmap; inline script sets globalThis.THREE -->
-  <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
+  <!-- Three.js r128 — loaded as ES module via CDN importmap; inline script sets globalThis.THREE -->
+  <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.module.js" } }</script>
   <script type="module">import * as THREE from 'three'; globalThis.THREE = THREE;</script>
   <link rel="stylesheet" href="style.css" />
   <!-- Diagnostics log panel styles -->
