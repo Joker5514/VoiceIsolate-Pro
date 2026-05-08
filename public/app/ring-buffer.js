@@ -261,7 +261,7 @@ class RingBuffer {
     return Int32Array.BYTES_PER_ELEMENT * 3 + Float32Array.BYTES_PER_ELEMENT * capacity;
   }
 
-  /** Capability probe — true when SAB + Atomics + cross-origin isolated. */
+  /** Capability probe — true when SharedArrayBuffer and Atomics are available. */
   static isSupported() {
     return typeof SharedArrayBuffer !== 'undefined' && typeof Atomics !== 'undefined';
   }
