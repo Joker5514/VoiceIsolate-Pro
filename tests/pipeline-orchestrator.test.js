@@ -227,7 +227,7 @@ describe('PipelineOrchestrator — _initMLWorker() idempotency', () => {
     const initMsg = orch.mlWorker._messages.find(m => m.type === 'init');
     expect(initMsg).toBeDefined();
     expect(initMsg.ortUrl).toBe('/lib/ort.min.js');
-    expect(Array.isArray(initMsg.providers)).toBe(true);
+    expect(Array.isArray(initMsg.payload.preferredProviders)).toBe(true);
   });
 });
 

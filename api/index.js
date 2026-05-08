@@ -21,6 +21,7 @@ import express from 'express';
 import monetizationRouter from './monetization.js';
 import syncRouter from './sync.js';
 import authRouter from './auth.js';
+import nimRouter from './nim/index.js';
 import clientConfigHandler from './client-config.js';
 
 const router = express.Router();
@@ -84,6 +85,9 @@ router.use('/', monetizationRouter);
 
 // ─── Authentication Routes ───────────────────────────────────────────────────
 router.use('/auth', authRouter);
+
+// ─── NIM Integration ────────────────────────────────────────────────────────
+router.use('/nim', nimRouter);
 
 // ─── Cloud Sync Routes ────────────────────────────────────────────────────────
 router.use('/sync', syncRouter);
