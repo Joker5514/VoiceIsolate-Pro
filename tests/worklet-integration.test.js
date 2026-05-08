@@ -40,8 +40,8 @@ describe('Worklet Integration Verification', () => {
         hasWorkletNode: !!orch.workletNode,
         hasPort: !!(orch.workletNode && orch.workletNode.port),
         hasMlWorker: !!orch.mlWorker,
-        inputRingSAB: !!orch._inputRingSAB,
-        maskRingSAB: !!orch._maskRingSAB
+        inputRingSAB: typeof SharedArrayBuffer !== 'undefined' && orch._inputRingSAB instanceof SharedArrayBuffer,
+        maskRingSAB: typeof SharedArrayBuffer !== 'undefined' && orch._maskRingSAB instanceof SharedArrayBuffer
       };
     });
 
