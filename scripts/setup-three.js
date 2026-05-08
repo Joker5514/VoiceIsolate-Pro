@@ -33,7 +33,7 @@ if (!existsSync(SRC_DIR)) {
     '[setup-three] node_modules/three/build/ not found.\n' +
     '              Run `pnpm install` first or commit the public/lib/three*.min.js files to the repo.'
   );
-  process.exit(1); // fatal: runtime hard-depends on Three.js for init3D
+  process.exit(1); // fatal at install time: ensures public/lib/ is fully provisioned before deploy
 }
 
 mkdirSync(LIB_DIR, { recursive: true });
