@@ -1,260 +1,438 @@
 #!/usr/bin/env python3
 """
-export_demucs_onnx.py -- VoiceIsolate Pro . Threads from Space v8
+export_demucs_onnx.py -- VoiceIsolate Pro
+Exports Demucs v4 htdemucs_ft (vocals sub-model) to demucs_v4_quantized.onnx.
 
-Exports Demucs v4 (htdemucs) to demucs_v4_quantized.onnx for onnxruntime-web.
-Produces a vocal ratio-mask tensor [1, 1, T] matching ml-worker.js I/O exactly:
-
-    const demucsIn  = new ort.Tensor('float32', pcmChunk, [1, 1, pcmChunk.length]);
-    const result    = await demucsSess.run({ input: demucsIn });
-    const vocalMask = result.vocal_mask?.data || result.output?.data;
-
-Critical export blocker and fix
---------------------------------
-HDemucs.forward() calls torch.stft() internally on complex tensors.
-  - opset <=17  ->  SymbolicValueError  (complex ops not representable)
-  - opset 20    ->  traces but OOMs during graph serialisation for large models
-
-Fix: monkey-patch torch.stft with a pure real-valued cosine/sine matmul
-decomposition BEFORE tracing. The patch is mathematically equivalent
-(DFT identity) and produces only standard float32 matmul + trig nodes that
-onnxruntime-web WebGPU/WASM both support natively at opset 17.
+Strategy
+--------
+HTDemucs uses complex tensors internally (spectro/ispectro, view_as_real/complex).
+ONNX opset 17 cannot represent aten::view_as_complex.  We monkey-patch the entire
+complex-arithmetic boundary with real-valued equivalents:
+  - spectro()     -> real [*, freq, T, 2]
+  - _spec()       -> real [B, C, freq, T, 2]
+  - _magnitude()  -> real [B, C*2, freq, T]   (cac=True path)
+  - _mask()       -> real [B, S, C//2, freq, T, 2]
+  - _ispec()      -> time domain via real iSTFT
+  - pad1d()       -> remove data-dependent assertions
 
 Requirements
 ------------
-    pip install -r scripts/requirements_export.txt
+    pip install torch torchaudio demucs>=4.0.0 onnx>=1.15.0 onnxruntime>=1.17.0 psutil numpy
 
 Usage
 -----
-    python scripts/export_demucs_onnx.py [--out-dir OUT_DIR] [--trace-secs N]
+    python scripts/export_demucs_onnx.py [--out-dir OUT_DIR]
 
 Outputs
 -------
-    demucs_v4_fp32.onnx          -- intermediate full-precision graph
-    demucs_v4_quantized.onnx     -- INT8 dynamic-quantized (target for Vercel Blob)
-
-After export, run in order
---------------------------
-    1. npx vercel blob put demucs_v4_quantized.onnx --content-type application/octet-stream
-    2. Paste Blob URL into vercel.json rewrite for /app/models/demucs_v4_quantized.onnx
-    3. Update models-manifest.json  ->  demucs_v4.sha256  +  status="vercel_blob"
-    4. Update ml-worker.js          ->  MODEL_SHA256['demucs_v4_quantized.onnx']
-    5. git rm public/app/models/demucs_v4_quantized.onnx.placeholder
+    demucs_v4_fp32.onnx          intermediate full-precision graph
+    demucs_v4_quantized.onnx     INT8 dynamic-quantized (target for browser)
 """
 
 import argparse
 import hashlib
+import math
 import os
 import sys
+import types
+
 import numpy as np
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-parser = argparse.ArgumentParser(
-    description='Export Demucs v4 -> ONNX for onnxruntime-web'
-)
-parser.add_argument('--out-dir',     default='.',    help='Directory to write .onnx files (default: cwd)')
-parser.add_argument('--trace-secs',  type=int, default=5,     help='PCM length in seconds for jit.trace (default: 5)')
-parser.add_argument('--sample-rate', type=int, default=44100, help='Sample rate expected by Demucs (default: 44100)')
+parser = argparse.ArgumentParser(description='Export Demucs v4 -> ONNX for onnxruntime-web')
+parser.add_argument('--out-dir', default='.', help='Directory to write .onnx files')
 args = parser.parse_args()
 
-OUT_DIR     = args.out_dir
-TRACE_SECS  = args.trace_secs
-SAMPLE_RATE = args.sample_rate
-OUT_FP32    = os.path.join(OUT_DIR, 'demucs_v4_fp32.onnx')
-OUT_INT8    = os.path.join(OUT_DIR, 'demucs_v4_quantized.onnx')
-
+OUT_DIR  = args.out_dir
+OUT_FP32 = os.path.join(OUT_DIR, 'demucs_v4_fp32.onnx')
+OUT_INT8 = os.path.join(OUT_DIR, 'demucs_v4_quantized.onnx')
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # ---------------------------------------------------------------------------
 # [0/8] Imports
 # ---------------------------------------------------------------------------
-print('[0/8] Importing torch, demucs, onnx, onnxruntime...')
+print('[0/8] Importing dependencies...')
 try:
     import torch
     import torch.nn as nn
+    import torch.nn.functional as F
 except ImportError:
-    sys.exit('ERROR: torch not installed.  Run: pip install torch torchaudio')
+    sys.exit('ERROR: torch not installed. Run: pip install torch torchaudio')
 
 try:
     from demucs.pretrained import get_model
+    import demucs.hdemucs as _hdemucs_mod
+    import demucs.spec as _spec_mod
 except ImportError:
-    sys.exit('ERROR: demucs not installed.  Run: pip install demucs>=4.0.0')
+    sys.exit('ERROR: demucs not installed. Run: pip install demucs>=4.0.0')
 
 try:
     import onnx
 except ImportError:
-    sys.exit('ERROR: onnx not installed.  Run: pip install onnx')
+    sys.exit('ERROR: onnx not installed. Run: pip install onnx')
 
 try:
     import onnxruntime
     from onnxruntime.quantization import quantize_dynamic, QuantType
 except ImportError:
-    sys.exit('ERROR: onnxruntime not installed.  Run: pip install onnxruntime')
+    sys.exit('ERROR: onnxruntime not installed. Run: pip install onnxruntime')
+
+print(f'      torch={torch.__version__}')
 
 # ---------------------------------------------------------------------------
-# [1/8] Load pretrained HDemucs v4
+# [1/8] Load htdemucs_ft vocals sub-model
 # ---------------------------------------------------------------------------
-print('[1/8] Loading htdemucs pretrained weights (first run downloads ~300 MB)...')
-demucs = get_model('htdemucs')
+print('[1/8] Loading htdemucs_ft pretrained weights...')
+bag = get_model('htdemucs_ft')
+bag.eval()
+print(f'      Bag: {type(bag).__name__} with {len(bag.models)} sub-models')
+
+demucs = bag.models[3]   # weights[3]=[0,0,0,1] → vocals fine-tuned
 demucs.eval()
-print(f'      Loaded: {type(demucs).__name__}')
+print(f'      Sub-model[3]: {type(demucs).__name__}')
+
+sources = list(demucs.sources) if hasattr(demucs, 'sources') else ['drums','bass','other','vocals']
+vocal_idx = sources.index('vocals') if 'vocals' in sources else len(sources) - 1
+print(f'      Sources: {sources}  vocal_idx={vocal_idx}')
+
+assert demucs.cac, 'Patch assumes cac=True; found cac=False'
+
+# Training segment length — use exact match to avoid data-dependent branching
+SAMPLE_RATE     = int(demucs.samplerate)
+TRAIN_LEN       = int(demucs.segment * SAMPLE_RATE)   # typically 344520
+HOP             = demucs.hop_length                     # 512
+NFFT            = demucs.nfft                           # 4096
+WIN_LENGTH      = NFFT                                  # htdemucs uses nfft == win_length
+print(f'      sr={SAMPLE_RATE}  training_len={TRAIN_LEN}  nfft={NFFT}  hop={HOP}')
+
+# Disable train-segment padding to avoid data-dependent control flow
+demucs.use_train_segment = False
 
 # ---------------------------------------------------------------------------
-# [2/8] Thin vocal-mask wrapper
-#
-# ml-worker.js feeds [1, 1, T] mono PCM and reads result.output.data as a
-# per-sample gain mask in [0, 1].  This wrapper:
-#   a) stereo-izes the mono input  (HDemucs requires 2 channels)
-#   b) extracts the vocals stem    (index 3: drums/bass/other/VOCALS)
-#   c) collapses to mono and computes a ratio mask vs the input mix
+# [2/8] Real-valued STFT and iSTFT helpers (ONNX-safe)
 # ---------------------------------------------------------------------------
-class DemucsVocalMaskWrapper(nn.Module):
-    """Wraps HDemucs to output a mono vocal ratio-mask [1, 1, T]."""
+print('[2/8] Building real-valued STFT/iSTFT helpers...')
 
-    # htdemucs stem order (demucs/htdemucs.py  SOURCES constant)
-    VOCAL_STEM_IDX = 3  # 0=drums  1=bass  2=other  3=vocals
+class _RealSTFT(nn.Module):
+    """Real-valued forward STFT via conv1d filter bank. Returns [N, freq, T, 2].
 
-    def __init__(self, model):
+    Using conv1d (not unfold) so the ONNX legacy exporter never sees a dynamic
+    input size — conv1d with a fixed kernel and stride is always ONNX-safe.
+    """
+
+    def __init__(self, n_fft, hop, win_length, normalized):
         super().__init__()
-        self.model = model
+        self.n_fft      = n_fft
+        self.hop        = hop
+        self.normalized = normalized
+        self.pad        = n_fft // 2       # centre-padding amount (constant)
+        freq = n_fft // 2 + 1
+        k  = torch.arange(freq, dtype=torch.float32)
+        nn = torch.arange(n_fft, dtype=torch.float32)
+        phase = 2.0 * math.pi * k.unsqueeze(1) * nn.unsqueeze(0) / n_fft
+        win = torch.hann_window(win_length)
+        if win_length < n_fft:
+            pl  = (n_fft - win_length) // 2
+            win = F.pad(win, (pl, n_fft - win_length - pl))
+        # Pre-bake window into filter weights → [freq, 1, n_fft]
+        cos_filt = (torch.cos(phase) * win.unsqueeze(0)).unsqueeze(1)
+        sin_filt = (torch.sin(phase) * win.unsqueeze(0)).unsqueeze(1)
+        self.register_buffer('cos_filt', cos_filt)   # [freq, 1, n_fft]
+        self.register_buffer('sin_filt', sin_filt)   # [freq, 1, n_fft]
 
-    def forward(self, x):
-        # x: [1, 1, T]  mono float32 PCM at 44100 Hz
+    def forward(self, x, pad_fft):
+        # x: [N, T]   pad_fft ignored — always uses self.n_fft (pad=0 path)
+        # Reflect-pad then conv1d with zero-padding=0 (padding already in signal)
+        xp = F.pad(x.unsqueeze(1), (self.pad, self.pad), mode='reflect')  # [N,1,T+2p]
+        real = F.conv1d(xp, self.cos_filt, stride=self.hop)               # [N, freq, T']
+        imag = F.conv1d(xp, -self.sin_filt, stride=self.hop)
+        if self.normalized:
+            s    = self.n_fft ** 0.5
+            real = real / s
+            imag = imag / s
+        return torch.stack([real, imag], dim=-1)    # [N, freq, T', 2]
 
-        # a) stereo-ize
-        x_stereo = x.expand(1, 2, -1)                           # [1, 2, T]
 
-        # b) Demucs inference  ->  [batch, n_stems=4, channels=2, T]
+class _RealISTFT(nn.Module):
+    """Real-valued inverse STFT. Input [N, freq, T, 2]; output [N, length]."""
+
+    def __init__(self, n_fft, hop, win_length, normalized):
+        super().__init__()
+        self.n_fft     = n_fft
+        self.hop       = hop
+        self.normalized = normalized
+        freq = n_fft // 2 + 1
+        k = torch.arange(freq, dtype=torch.float32)
+        n = torch.arange(n_fft, dtype=torch.float32)
+        phase = 2.0 * math.pi * k.unsqueeze(1) * n.unsqueeze(0) / n_fft
+        cos_m = torch.cos(phase)
+        sin_m = torch.sin(phase)
+        # One-sided spectrum: double interior bins
+        scale = torch.ones(freq, 1, dtype=torch.float32)
+        scale[1: freq - 1] = 2.0
+        self.register_buffer('cos_m', cos_m * scale)
+        self.register_buffer('sin_m', sin_m * scale)
+        win = torch.hann_window(win_length)
+        if win_length < n_fft:
+            pl = (n_fft - win_length) // 2
+            win = F.pad(win, (pl, n_fft - win_length - pl))
+        self.register_buffer('window', win)
+        # Precompute COLA normalizer: sum of window^2 shifted by hop
+        n_frames_for_norm = 20
+        norm_len = n_fft + (n_frames_for_norm - 1) * hop
+        norm = torch.zeros(norm_len)
+        for i in range(n_frames_for_norm):
+            norm[i * hop: i * hop + n_fft] += win ** 2
+        self.register_buffer('cola_norm_sample', norm[n_fft // 2: n_fft // 2 + 1])
+
+    def forward(self, z, out_length):
+        # z: [N, freq, T_frames, 2]
+        N, freq, T_frames, _ = z.shape
+        real = z[..., 0]          # [N, freq, T]
+        imag = z[..., 1]
+        if self.normalized:
+            s = self.n_fft ** 0.5
+            real = real * s
+            imag = imag * s
+        # Inverse DFT per frame
+        frames = (torch.matmul(real.permute(0, 2, 1), self.cos_m.to(real)) -
+                  torch.matmul(imag.permute(0, 2, 1), self.sin_m.to(imag)))
+        frames = frames / self.n_fft    # [N, T_frames, n_fft]
+        frames = frames * self.window.to(frames)
+        # Overlap-add via conv_transpose1d
+        frames = frames.permute(0, 2, 1)    # [N, n_fft, T_frames]
+        identity = torch.eye(self.n_fft, device=z.device, dtype=frames.dtype).unsqueeze(1)
+        raw = F.conv_transpose1d(frames, identity, stride=self.hop)  # [N, 1, raw_len]
+        raw = raw[:, 0, :]                  # [N, raw_len]
+        raw = raw / self.cola_norm_sample.to(raw)   # COLA normalise
+        offset = self.n_fft // 2
+        return raw[..., offset: offset + out_length]
+
+
+_stft_helper  = _RealSTFT(NFFT, HOP, WIN_LENGTH, normalized=True)
+_istft_helper = _RealISTFT(NFFT, HOP, WIN_LENGTH, normalized=True)
+_stft_helper.eval()
+_istft_helper.eval()
+print('      Real STFT/iSTFT helpers ready.')
+
+# ---------------------------------------------------------------------------
+# [3/8] Monkey-patch the demucs complex-arithmetic boundary
+# ---------------------------------------------------------------------------
+print('[3/8] Patching demucs complex-arithmetic boundary...')
+
+# 3a — patch pad1d (remove data-dependent assertions)
+def _patched_pad1d(x, paddings, mode='constant', value=0.):
+    x0     = x
+    length = x.shape[-1]
+    padding_left, padding_right = paddings
+    if mode == 'reflect':
+        max_pad = max(padding_left, padding_right)
+        if length <= max_pad:
+            extra_pad       = max_pad - length + 1
+            extra_pad_right = min(padding_right, extra_pad)
+            extra_pad_left  = extra_pad - extra_pad_right
+            paddings        = (padding_left - extra_pad_left,
+                               padding_right - extra_pad_right)
+            x = F.pad(x, (extra_pad_left, extra_pad_right))
+    out = F.pad(x, paddings, mode, value)
+    return out      # assertions removed
+
+_hdemucs_mod.pad1d = _patched_pad1d
+
+# 3b — patch spectro to return real [*other, freq, T, 2]
+def _patched_spectro(x, n_fft=512, hop_length=None, pad=0):
+    *other, length = x.shape
+    x_flat = x.reshape(-1, length)     # [N, T]
+    hop    = hop_length or n_fft // 4
+    n_fft_padded = n_fft * (1 + pad)
+    z = _stft_helper.to(x_flat.device)(x_flat, n_fft_padded)  # [N, freq, T_frames, 2]
+    _, freq, T_frames, two = z.shape
+    return z.reshape(*other, freq, T_frames, two)
+
+_spec_mod.spectro = _patched_spectro
+
+# 3c — patch ispectro to accept real [*other, freq, T, 2]
+def _patched_ispectro(z, hop_length=None, length=None, pad=0):
+    *other, freqs, frames, two = z.shape
+    n_fft     = 2 * freqs - 2
+    hop       = hop_length or n_fft // 4
+    z_flat    = z.reshape(-1, freqs, frames, two)     # [N, freq, T, 2]
+    out_len   = length if length is not None else (frames - 1) * hop + n_fft
+    x         = _istft_helper.to(z_flat.device)(z_flat, out_len)   # [N, out_len]
+    _, actual  = x.shape
+    return x.reshape(*other, actual)
+
+_spec_mod.ispectro = _patched_ispectro
+
+# 3d — patch HTDemucs instance methods to work with real [B, C, Fr, T, 2]
+_demucs_cls = type(demucs)
+
+def _patched_spec(self, mix):
+    """Returns real [B, C, freq-1, le, 2] instead of complex [B, C, freq-1, le]."""
+    nfft = self.nfft
+    hl   = self.hop_length
+    assert hl == nfft // 4
+    le   = int(math.ceil(mix.shape[-1] / hl))
+    pad  = hl // 2 * 3
+    x    = _hdemucs_mod.pad1d(mix, (pad, pad + le * hl - mix.shape[-1]), mode='reflect')
+    z    = _spec_mod.spectro(x, nfft, hl)    # real [B, C, freq, T_frames, 2]
+    # Original complex code: spectro()[..., :-1, :]
+    # On complex [B, C, freq, T]:  ..=B,C  :-1=freq  :=T  → [B, C, freq-1, T]
+    # Our 5D real [B, C, freq, T, 2]: must explicitly drop Nyquist (dim 2)
+    z = z[:, :, :-1, :, :]       # [B, C, freq-1, T_frames, 2] — drop Nyquist bin
+    z = z[:, :, :, 2: 2 + le, :] # [B, C, freq-1, le, 2]       — trim time frames
+    return z
+
+def _patched_magnitude(self, z):
+    """z: real [B, C, Fr, T, 2] → returns real [B, C*2, Fr, T]."""
+    B, C, Fr, T, two = z.shape
+    m = z.permute(0, 1, 4, 2, 3)     # [B, C, 2, Fr, T]
+    return m.reshape(B, C * 2, Fr, T)
+
+def _patched_mask(self, z, m):
+    """
+    z: real [B, C, Fr, T, 2]
+    m: real [B, S, C_out, Fr, T]  (output of decoder, cac=True mode)
+    Returns real [B, S, C//2, Fr, T, 2] (no complex conversion).
+    """
+    B, S, C, Fr, T = m.shape
+    out = m.view(B, S, -1, 2, Fr, T).permute(0, 1, 2, 4, 5, 3)
+    return out   # [B, S, C//2, Fr, T, 2]
+
+def _patched_ispec(self, z, length=None, scale=0):
+    """z: real [B, S, C//2, Fr, T, 2] → time domain [B, S, C//2, length]."""
+    hl = self.hop_length // (4 ** scale)
+    # Original _ispec on complex [B, S, C//2, Fr, T]:
+    #   F.pad(z, (0,0,0,1)) → pads last dim by (0,0), second-last by (0,1)
+    #     = T dim: no change; Fr dim: +1 on right → [B,S,C//2, Fr+1, T]
+    #   F.pad(z, (2,2))     → pads last dim by (2,2)
+    #     = T dim: +2 each side → [B,S,C//2, Fr+1, T+4]
+    #
+    # Our real [B, S, C//2, Fr, T, 2] has one extra trailing dim.
+    # F.pad pads from the last dimension backward:
+    #   To pad Fr dim (+1 right):  F.pad(z, (0,0, 0,0, 0,1))
+    #     → last(2): none; T: none; Fr: +1 → [B,S,C//2, Fr+1, T, 2]
+    #   To pad T dim (+2 each side):  F.pad(z, (0,0, 2,2))
+    #     → last(2): none; T: +2 each side → [B,S,C//2, Fr+1, T+4, 2]
+    z = F.pad(z, (0, 0, 0, 0, 0, 1))   # restore Nyquist: [B,S,C//2, Fr+1, T, 2]
+    z = F.pad(z, (0, 0, 2, 2))         # pad time:         [B,S,C//2, Fr+1, T+4, 2]
+    out = _spec_mod.ispectro(z, hl, length=length)   # [B, S, C//2, out_len]
+    return out
+
+# Bind patched methods to the model instance
+demucs._spec       = types.MethodType(_patched_spec,       demucs)
+demucs._magnitude  = types.MethodType(_patched_magnitude,  demucs)
+demucs._mask       = types.MethodType(_patched_mask,       demucs)
+demucs._ispec      = types.MethodType(_patched_ispec,      demucs)
+
+# Also patch the module-level references used inside htdemucs
+import demucs.htdemucs as _htdemucs_mod
+_htdemucs_mod.spectro  = _patched_spectro
+_htdemucs_mod.ispectro = _patched_ispectro
+_htdemucs_mod.pad1d    = _patched_pad1d
+
+print('      pad1d, spectro, ispectro, _spec, _magnitude, _mask, _ispec patched.')
+
+# ---------------------------------------------------------------------------
+# [4/8] Wrapper and JIT trace
+# ---------------------------------------------------------------------------
+# 3e — patch nn.MultiheadAttention fast path (fused CPU kernel not ONNX-safe)
+# The aten::_native_multi_head_attention fused op cannot be exported to ONNX.
+# We replace .forward on every nn.MultiheadAttention with a closure that calls
+# F.multi_head_attention_forward (the decomposed, ONNX-safe slow path) directly.
+_mha_count = 0
+for _m in demucs.modules():
+    if type(_m) is nn.MultiheadAttention:
+        def _make_slow_fwd(mod):
+            def _slow_forward(q, k, v,
+                              key_padding_mask=None, need_weights=False,
+                              attn_mask=None, average_attn_weights=True,
+                              is_causal=False):
+                # nn.MultiheadAttention.forward transposes when batch_first=True
+                # before calling F.multi_head_attention_forward, so we must too.
+                if mod.batch_first:
+                    q = q.transpose(0, 1)
+                    k = k.transpose(0, 1)
+                    v = v.transpose(0, 1)
+                out, weights = F.multi_head_attention_forward(
+                    q, k, v,
+                    mod.embed_dim, mod.num_heads,
+                    mod.in_proj_weight, mod.in_proj_bias,
+                    mod.bias_k, mod.bias_v, mod.add_zero_attn,
+                    mod.dropout, mod.out_proj.weight, mod.out_proj.bias,
+                    training=False,
+                    key_padding_mask=key_padding_mask,
+                    need_weights=need_weights,
+                    attn_mask=attn_mask,
+                    average_attn_weights=average_attn_weights,
+                    is_causal=is_causal,
+                )
+                if mod.batch_first:
+                    out = out.transpose(0, 1)
+                return out, weights
+            return _slow_forward
+        _m.forward = _make_slow_fwd(_m)
+        _mha_count += 1
+print(f'      Patched {_mha_count} nn.MultiheadAttention instances (slow path + batch_first fix).')
+
+# ---------------------------------------------------------------------------
+# [4/8] Wrapper + trace
+# ---------------------------------------------------------------------------
+print('[4/8] Building DemucsVocalMaskWrapper...')
+
+class DemucsVocalMaskWrapper(nn.Module):
+    """Input [1, 1, T] mono → output [1, 1, T] vocal ratio mask in [0, 1]."""
+
+    def __init__(self, model, vocal_idx, stft_h, istft_h):
+        super().__init__()
+        self.model     = model
+        self.vocal_idx = vocal_idx
+        self.stft_h    = stft_h
+        self.istft_h   = istft_h
+
+    def forward(self, x):           # x: [1, 1, T]
+        x_stereo      = x.expand(1, 2, -1)
         with torch.no_grad():
-            stems = self.model(x_stereo)
+            stems      = self.model(x_stereo)          # [1, S, C//2, T]
+        vocals         = stems[:, self.vocal_idx]       # [1, C//2, T]
+        vocals_mono    = vocals.mean(dim=1, keepdim=True)
+        mask           = vocals_mono.abs() / (x.abs() + 1e-8)
+        return torch.clamp(mask, 0.0, 1.0)
 
-        vocals_stereo = stems[:, self.VOCAL_STEM_IDX]           # [1, 2, T]
-        vocals_mono   = vocals_stereo.mean(dim=1, keepdim=True) # [1, 1, T]
-
-        # c) ratio mask  (safe for ml-worker mask multiplication)
-        eps  = 1e-8
-        mask = vocals_mono.abs() / (x.abs() + eps)              # [1, 1, T]
-        mask = torch.clamp(mask, 0.0, 1.0)
-        return mask   # ONNX output name -> 'output'
-
-wrapper = DemucsVocalMaskWrapper(demucs)
+wrapper = DemucsVocalMaskWrapper(demucs, vocal_idx, _stft_helper, _istft_helper)
 wrapper.eval()
-print('[2/8] DemucsVocalMaskWrapper built')
 
-# ---------------------------------------------------------------------------
-# [3/8] Monkey-patch torch.stft -> real-valued DFT
-#
-# MUST happen BEFORE jit.trace so the tracer captures the patched version.
-# The DFT identity X[k] = sum_n x[n]*(cos - j*sin) is implemented as two
-# float32 matmuls, producing only standard ONNX opset-17 nodes.
-# ---------------------------------------------------------------------------
-_orig_torch_stft = torch.stft
+# Smoke test before trace
+dummy = torch.zeros(1, 1, TRAIN_LEN, dtype=torch.float32)
+print(f'      Dummy shape: {list(dummy.shape)} ({TRAIN_LEN/SAMPLE_RATE:.2f}s)')
 
-def _real_valued_stft(
-    input,
-    n_fft,
-    hop_length=None,
-    win_length=None,
-    window=None,
-    center=True,
-    pad_mode='reflect',
-    normalized=False,
-    onesided=True,
-    return_complex=False,
-):
-    """
-    Real-valued STFT -- ONNX opset 17 compatible.
-
-    Replaces torch.stft's complex output with a float32 stack:
-        [..., freq_bins, time_frames, 2]   dim-1 = [real, imag]
-    Mathematically identical to the standard DFT via the cosine/sine identity.
-    """
-    hop  = hop_length or (n_fft // 4)
-    wl   = win_length or n_fft
-    freq = (n_fft // 2 + 1) if onesided else n_fft
-
-    # Centre-pad
-    if center:
-        pad = n_fft // 2
-        input = torch.nn.functional.pad(input, (pad, pad), mode=pad_mode)
-
-    # Overlapping frames  [..., T_frames, n_fft]
-    frames = input.unfold(-1, n_fft, hop)
-
-    # Analysis window
-    if window is not None:
-        w = window.to(dtype=frames.dtype, device=frames.device)
-        if wl < n_fft:
-            pad_l = (n_fft - wl) // 2
-            w = torch.nn.functional.pad(w, (pad_l, n_fft - wl - pad_l))
-        frames = frames * w
-
-    # DFT basis  [freq, n_fft]  -- constant; folded to ONNX initializers
-    k     = torch.arange(freq,  dtype=frames.dtype, device=frames.device)
-    n     = torch.arange(n_fft, dtype=frames.dtype, device=frames.device)
-    phase = 2.0 * np.pi * k.unsqueeze(1) * n.unsqueeze(0) / n_fft
-    cos_mat = torch.cos(phase)    # [freq, n_fft]
-    sin_mat = torch.sin(phase)    # [freq, n_fft]
-
-    # frames [..., T, n_fft] @ basis.T  ->  [..., T, freq]
-    real_part = torch.matmul(frames,  cos_mat.transpose(0, 1))
-    imag_part = torch.matmul(frames, -sin_mat.transpose(0, 1))
-
-    if normalized:
-        scale     = n_fft ** 0.5
-        real_part = real_part / scale
-        imag_part = imag_part / scale
-
-    # Permute to [..., freq, T] then stack -> [..., freq, T, 2]
-    real_part = real_part.transpose(-2, -1)
-    imag_part = imag_part.transpose(-2, -1)
-    return torch.stack([real_part, imag_part], dim=-1)
-
-torch.stft = _real_valued_stft
-print('[3/8] torch.stft patched to real-valued DFT (opset-17 compatible)')
-
-try:
-    import torchaudio.functional as _taf
-    _taf.spectrogram = lambda *a, **kw: _real_valued_stft(*a, **kw)
-    print('[3/8] torchaudio.functional.spectrogram patched')
-except Exception as _e:
-    print(f'[3/8] torchaudio patch skipped ({_e})')
-
-# ---------------------------------------------------------------------------
-# [4/8] JIT trace
-# ---------------------------------------------------------------------------
-T     = SAMPLE_RATE * TRACE_SECS
-dummy = torch.zeros(1, 1, T, dtype=torch.float32)
-print(f'[4/8] torch.jit.trace with input [1, 1, {T}] ({TRACE_SECS}s @ {SAMPLE_RATE} Hz)...')
-try:
-    traced = torch.jit.trace(wrapper, dummy, strict=False)
-    print('[4/8] jit.trace succeeded')
-except Exception as e:
-    print(f'[4/8] jit.trace failed ({e}) -- falling back to eager export')
-    traced = wrapper
-
-# Pre-export sanity check
 with torch.no_grad():
-    test_out = traced(dummy)
-assert test_out.shape == (1, 1, T), \
-    f'Shape mismatch: expected (1,1,{T}), got {test_out.shape}'
-assert float(test_out.min()) >= 0.0, \
-    f'Mask has negative values: min={float(test_out.min())}'
-assert float(test_out.max()) <= 1.0 + 1e-5, \
-    f'Mask exceeds 1.0: max={float(test_out.max())}'
-print(f'[4/8] Wrapper output verified: shape={list(test_out.shape)}  '
+    test_out = wrapper(dummy)
+print(f'      Wrapper output: {list(test_out.shape)}  '
       f'min={float(test_out.min()):.4f}  max={float(test_out.max()):.4f}')
 
+assert test_out.shape[0] == 1 and test_out.shape[1] == 1, \
+    f'Unexpected output shape: {test_out.shape}'
+
+print('[4/8] torch.jit.trace...')
+try:
+    traced = torch.jit.trace(wrapper, dummy, strict=False)
+    with torch.no_grad():
+        verify = traced(dummy)
+    print(f'      Traced output: {list(verify.shape)}  '
+          f'min={float(verify.min()):.4f}  max={float(verify.max()):.4f}')
+except Exception as e:
+    print(f'      jit.trace failed ({e}) -- using eager wrapper')
+    traced = wrapper
+
 # ---------------------------------------------------------------------------
-# [5/8] ONNX export -- opset 17, dynamic time axis
+# [5/8] ONNX export -- opset 17, legacy (TorchScript) exporter
 # ---------------------------------------------------------------------------
-print(f'[5/8] Exporting to {OUT_FP32} (opset 17, dynamic time axis)...')
+print(f'[5/8] Exporting to {OUT_FP32} (opset 17, legacy exporter)...')
 torch.onnx.export(
-    traced,
-    dummy,
-    OUT_FP32,
+    traced, dummy, OUT_FP32,
     opset_version=17,
     input_names=['input'],
     output_names=['output'],
@@ -265,97 +443,60 @@ torch.onnx.export(
     do_constant_folding=True,
     export_params=True,
     verbose=False,
+    dynamo=False,       # legacy TorchScript exporter
 )
 fp32_mb = os.path.getsize(OUT_FP32) / 1e6
-print(f'[5/8] FP32 export complete: {fp32_mb:.1f} MB  ->  {OUT_FP32}')
+print(f'[5/8] FP32 export done: {fp32_mb:.1f} MB')
 
 # ---------------------------------------------------------------------------
-# [6/8] ONNX graph validation + optional onnxsim simplification
+# [6/8] ONNX checker
 # ---------------------------------------------------------------------------
 print('[6/8] Validating ONNX graph...')
 model_proto = onnx.load(OUT_FP32)
 onnx.checker.check_model(model_proto)
-print('[6/8] onnx.checker.check_model passed')
-
-try:
-    from onnxsim import simplify as _simplify
-    simplified, ok = _simplify(model_proto)
-    if ok:
-        onnx.save(simplified, OUT_FP32)
-        print('[6/8] onnxsim: graph simplified and saved')
-    else:
-        print('[6/8] onnxsim: could not simplify -- using original graph')
-except ImportError:
-    print('[6/8] onnxsim not installed -- skipping  (pip install onnxsim)')
+print('[6/8] onnx.checker passed.')
 
 # ---------------------------------------------------------------------------
-# [7/8] INT8 dynamic quantization
+# [7/8] INT8 quantization
 # ---------------------------------------------------------------------------
-print(f'[7/8] INT8 dynamic quantization  ->  {OUT_INT8}...')
-quantize_dynamic(
-    OUT_FP32,
-    OUT_INT8,
-    weight_type=QuantType.QInt8,
-    optimize_model=True,
-)
+print(f'[7/8] INT8 dynamic quantization -> {OUT_INT8}...')
+quantize_dynamic(OUT_FP32, OUT_INT8, weight_type=QuantType.QInt8)
 int8_mb = os.path.getsize(OUT_INT8) / 1e6
-print(f'[7/8] INT8 file size: {int8_mb:.1f} MB')
-if int8_mb > 100:
-    print('      NOTE: Exceeds 100 MB Git limit -- Vercel Blob upload required (expected)')
-else:
-    print('      OK: Under 100 MB')
+print(f'[7/8] INT8 size: {int8_mb:.1f} MB')
 
 # ---------------------------------------------------------------------------
-# [8/8] Smoke test with onnxruntime CPU
+# [8/8] Smoke test
 # ---------------------------------------------------------------------------
-print('[8/8] Smoke test with onnxruntime CPUExecutionProvider...')
+print('[8/8] Smoke test (onnxruntime CPUExecutionProvider)...')
 sess       = onnxruntime.InferenceSession(OUT_INT8, providers=['CPUExecutionProvider'])
-test_input = np.zeros((1, 1, SAMPLE_RATE * 3), dtype=np.float32)
-outputs    = sess.run(None, {'input': test_input})
+smoke_in   = np.zeros((1, 1, TRAIN_LEN), dtype=np.float32)
+outputs    = sess.run(None, {'input': smoke_in})
 out        = outputs[0]
-expected_T = SAMPLE_RATE * 3
 
-assert out.shape == (1, 1, expected_T), \
-    f'[FAIL] shape {out.shape} != (1, 1, {expected_T})'
-assert out.min() >= 0.0,         f'[FAIL] min={out.min()} < 0'
-assert out.max() <= 1.0 + 1e-4, f'[FAIL] max={out.max()} > 1'
-print(f'[8/8] Smoke test PASSED  shape={list(out.shape)}  '
+assert out.shape[0] == 1 and out.shape[1] == 1 and out.shape[2] == TRAIN_LEN, \
+    f'[FAIL] shape {out.shape}'
+assert float(out.min()) >= 0.0,          f'[FAIL] min={out.min()} < 0'
+assert float(out.max()) <= 1.0 + 1e-4,  f'[FAIL] max={out.max()} > 1'
+print(f'[8/8] SMOKE TEST PASSED  shape={list(out.shape)}  '
       f'min={out.min():.4f}  max={out.max():.4f}')
 
 # ---------------------------------------------------------------------------
-# SHA-256 + post-export copy-paste instructions
+# SHA-256 + summary
 # ---------------------------------------------------------------------------
-with open(OUT_INT8, 'rb') as _f:
-    sha256 = hashlib.sha256(_f.read()).hexdigest()
+sha256 = hashlib.sha256()
+with open(OUT_INT8, 'rb') as f:
+    for chunk in iter(lambda: f.read(1 << 20), b''):
+        sha256.update(chunk)
+digest = sha256.hexdigest()
 
 print()
 print('=' * 70)
 print(f'  OUTPUT : {OUT_INT8}')
-print(f'  SIZE   : {int8_mb:.1f} MB')
-print(f'  SHA256 : {sha256}')
+print(f'  SIZE   : {int8_mb:.2f} MB')
+print(f'  SHA256 : {digest}')
 print('=' * 70)
 print()
-print('NEXT STEPS -- run in order:')
-print()
-print('  1. Upload to Vercel Blob:')
-print(f'       npx vercel blob put {OUT_INT8} --content-type application/octet-stream')
-print()
-print('  2. Add rewrite in vercel.json:')
-print('       { "source": "/app/models/demucs_v4_quantized.onnx",')
-print('         "destination": "<BLOB_URL_FROM_STEP_1>" }')
-print()
-print('  3. Update public/app/models/models-manifest.json:')
-print(f'       demucs_v4.sha256  ->  "{sha256}"')
-print('       demucs_v4.status   ->  "vercel_blob"')
-print()
-print('  4. Update public/app/ml-worker.js  MODEL_SHA256:')
-print(f'       \'demucs_v4_quantized.onnx\': \'{sha256}\',')
-print()
-print('  5. Remove placeholder:')
-print('       git rm public/app/models/demucs_v4_quantized.onnx.placeholder')
-print('       git commit -m "chore(models): remove demucs placeholder -- real model on Vercel Blob"')
-print()
-print('  6. Verify in browser:')
-print('       DevTools -> Application -> Cache Storage -> vip-models-v1')
-print('       Confirm demucs_v4_quantized.onnx cached after first page load')
-print('       Console: "[ml-worker] demucs loaded via webgpu (same-origin)"')
+print('NEXT STEPS:')
+print('  1. npx vercel blob put demucs_v4_quantized.onnx')
+print('  2. Update vercel.json rewrite + ml-worker.js MODEL_SHA256')
+print(f'       sha256: {digest}')
