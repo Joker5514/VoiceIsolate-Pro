@@ -51,5 +51,9 @@ venv/
 /vendor/
 /checkpoints/
 
+# Generated ONNX files (too large for git; upload to Vercel Blob instead)
+demucs_v4_fp32.onnx
+demucs_v4_quantized.onnx
+
 # Lockfile not used (memory note: project uses pnpm)
 package-lock.json
