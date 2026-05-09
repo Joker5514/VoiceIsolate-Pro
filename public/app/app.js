@@ -27,12 +27,11 @@ let inputFlags  = null;
 let outputFlags = null;
 let inputView   = null;
 let outputView  = null;
-let mlWorker    = null;   // Web Worker running ml-worker.js
-let mlReady     = false;  // true once worker sends { type: 'ready' }
-let neonAnalyser = null;  // AnalyserNode tapped from worklet output for neon visualizer
-let neonVizHandle = null; // Handle for the neon visualizer RAF loop
+let mlWorker    = null;
+let mlReady     = false;
+let neonAnalyser = null;
+let neonVizHandle = null;
 
-// Pending SAB magnitude frames queued before ml-worker is ready
 const _pendingFrames = [];
 const FFT_SIZE = 4096;
 const HOP_SIZE = 1024;
@@ -43,9 +42,8 @@ const INPUT_SAB_BYTES = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF
 const OUTPUT_SAB_BYTES = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS;
 
 // ---------------------------------------------------------------------------
-// 1. ML Worker — SAB magnitude forwarding helpers
+// 1. ML Worker helpers
 // ---------------------------------------------------------------------------
-
 function _forwardSabToWorker() {
   if (!mlWorker || !mlReady || !inputSAB || !outputSAB) return;
   mlWorker.postMessage({
@@ -60,10 +58,7 @@ function _forwardSabToWorker() {
 
 function _forwardFrameToWorker(mag) {
   if (!mlWorker) return;
-  if (!mlReady) {
-    _pendingFrames.push(mag);
-    return;
-  }
+  if (!mlReady) { _pendingFrames.push(mag); return; }
   mlWorker.postMessage({ type: 'infer', model: 'bsrnn', mag });
 }
 
@@ -72,27 +67,9 @@ function updateStatus(msg) {
   if (el) el.textContent = msg;
 }
 
-function initSliders() {
-  for (const entry of SLIDER_REGISTRY) {
-    const slider = document.getElementById(`sl_${entry.id}`);
-    if (!slider || slider.dataset.vipBound === '1') continue;
-    slider.dataset.vipBound = '1';
-    const dispatch = () => {
-      const raw = Number(slider.value);
-      if (!Number.isFinite(raw)) return;
-      const mapped = typeof entry.transform === 'function' ? entry.transform(raw) : raw;
-      const payload = { [entry.key]: mapped };
-      if ((entry.target === 'worklet' || entry.target === 'both') && workletNode) {
-        workletNode.port.postMessage({ type: 'params', payload });
-      }
-      if ((entry.target === 'worker' || entry.target === 'both') && mlWorker) {
-        mlWorker.postMessage({ type: 'setParams', payload });
-      }
-    };
-    slider.addEventListener('input', dispatch);
-    slider.addEventListener('change', dispatch);
-  }
-}
+// ---------------------------------------------------------------------------
+// SLIDER definitions
+// ---------------------------------------------------------------------------
 const SLIDERS = {
   gate: [
     { id:'gateThresh', label: 'Threshold', min: -80, max: -5, val: -42, step: 1, unit: ' dB', rt: true, desc: 'Signal level below which audio is gated' },
@@ -163,6 +140,93 @@ const SLIDERS = {
     { id:'outWidth', label: 'Out Width', min: 0, max: 200, val: 100, step: 1, unit: '%', rt: true, desc: 'Output stereo width' },
   ],
 };
+
+const TAB_PANEL_MAP = {
+  gate: 'tab-gate',
+  nr:   'tab-nr',
+  eq:   'tab-eq',
+  dyn:  'tab-dyn',
+  spec: 'tab-spec',
+  adv:  'tab-adv',
+  sep:  'tab-sep',
+  out:  'tab-out',
+};
+
+// ---------------------------------------------------------------------------
+// buildPanels — injects slider rows into the empty panel divs
+// MUST run before initPct() or initSliders()
+// ---------------------------------------------------------------------------
+function buildPanels() {
+  for (const [tabKey, sliders] of Object.entries(SLIDERS)) {
+    const panelId = TAB_PANEL_MAP[tabKey];
+    const panel = document.getElementById(panelId);
+    if (!panel) continue;
+    if (panel.querySelector('.slider-row')) continue; // already built
+
+    const frag = document.createDocumentFragment();
+    for (const s of sliders) {
+      const range = s.max - s.min;
+      const initPct = range > 0 ? ((s.val - s.min) / range) * 100 : 0;
+
+      // Row wrapper
+      const row = document.createElement('div');
+      row.className = 'slider-row';
+
+      // Label container
+      const labelWrap = document.createElement('div');
+      labelWrap.className = 'slider-label-wrap';
+      labelWrap.id = 'lbl_' + s.id;
+
+      const labelEl = document.createElement('label');
+      labelEl.htmlFor = 'sl_' + s.id;
+      labelEl.className = 'slider-label';
+      labelEl.textContent = s.label;
+      labelWrap.appendChild(labelEl);
+
+      // Value readout
+      const valEl = document.createElement('span');
+      valEl.className = 'slider-val';
+      valEl.id = 'val_' + s.id;
+      valEl.textContent = s.val + (s.unit || '');
+
+      // Range input
+      const input = document.createElement('input');
+      input.type = 'range';
+      input.className = 'slider';
+      input.id = 'sl_' + s.id;
+      input.min = s.min;
+      input.max = s.max;
+      input.step = s.step;
+      input.value = s.val;
+      input.style.setProperty('--pct', initPct.toFixed(1) + '%');
+      input.setAttribute('aria-label', s.label);
+      input.setAttribute('aria-valuenow', s.val);
+      input.setAttribute('aria-valuemin', s.min);
+      input.setAttribute('aria-valuemax', s.max);
+      input.title = s.desc;
+
+      // Live value readout on drag
+      input.addEventListener('input', () => {
+        const v = parseFloat(input.value);
+        const pct = range > 0 ? ((v - s.min) / range) * 100 : 0;
+        input.style.setProperty('--pct', pct.toFixed(1) + '%');
+        input.setAttribute('aria-valuenow', v);
+        valEl.textContent = v + (s.unit || '');
+        if (typeof window !== 'undefined') {
+          window.VIP_PARAMS = window.VIP_PARAMS || {};
+          window.VIP_PARAMS[s.id] = v;
+        }
+      });
+
+      row.appendChild(labelWrap);
+      row.appendChild(input);
+      row.appendChild(valEl);
+      frag.appendChild(row);
+    }
+    panel.appendChild(frag);
+  }
+}
+
 const SLIDER_MAP = Object.fromEntries(
   Object.entries(SLIDERS).flatMap(([tab, sliders]) =>
     sliders.map(s => [s.id, { ...s, tab }])
@@ -189,26 +253,40 @@ if (typeof window !== 'undefined') {
   window.numFromInput = numFromInput;
 }
 
+function initSliders() {
+  for (const entry of SLIDER_REGISTRY) {
+    const slider = document.getElementById(`sl_${entry.id}`);
+    if (!slider || slider.dataset.vipBound === '1') continue;
+    slider.dataset.vipBound = '1';
+    const dispatch = () => {
+      const raw = Number(slider.value);
+      if (!Number.isFinite(raw)) return;
+      const mapped = typeof entry.transform === 'function' ? entry.transform(raw) : raw;
+      const payload = { [entry.key]: mapped };
+      if ((entry.target === 'worklet' || entry.target === 'both') && workletNode) {
+        workletNode.port.postMessage({ type: 'params', payload });
+      }
+      if ((entry.target === 'worker' || entry.target === 'both') && mlWorker) {
+        mlWorker.postMessage({ type: 'setParams', payload });
+      }
+    };
+    slider.addEventListener('input', dispatch);
+    slider.addEventListener('change', dispatch);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 2. AudioContext + AudioWorklet setup
 // ---------------------------------------------------------------------------
 async function initAudio() {
   audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
 
-  // Allocate SABs for the worklet <-> ml-worker bridge.
   inputSAB = new SharedArrayBuffer(INPUT_SAB_BYTES);
   outputSAB = new SharedArrayBuffer(OUTPUT_SAB_BYTES);
   inputFlags = new Int32Array(inputSAB, 0, FLAG_SLOTS);
   outputFlags = new Int32Array(outputSAB, 0, FLAG_SLOTS);
   inputView = new Float32Array(inputSAB, SAB_HEADER_BYTES, HALF_BINS * 2);
   outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, HALF_BINS);
-
-  // WorkletNode is created by pipeline-orchestrator.js; kept here as a reference
-  // configuration (processorOptions must match what the orchestrator sends):
-  // new AudioWorkletNode(audioCtx, 'dsp-processor', {
-  //   numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
-  //   processorOptions: { sharedArrayBuffer: { inputSAB, outputSAB } }
-  // });
 
   if (workletNode) {
     _forwardSabToWorker();
@@ -326,7 +404,6 @@ const PRESETS = {
     outGain: 6, dryWet: 100, ditherAmt: 0, outWidth: 100,
   },
 };
-// Aliases
 const PRESET_NAMES = Object.keys(PRESETS);
 
 function bind(name, el, event, fn) {
@@ -355,6 +432,7 @@ class VoiceIsolatePro {
     Object.values(SLIDERS).flat().forEach(s => { this.params[s.id] = s.val; });
 
     this.dom = {};
+    try { buildPanels(); } catch (e) { console.error('[VIP] buildPanels failed:', e); }
     try { this.cacheDom(); } catch (_) {}
     try { this.initPct(); } catch (_) {}
     try { this.bindEvents(); } catch (_) {}
@@ -413,6 +491,7 @@ class VoiceIsolatePro {
     const allSliders = Object.values(SLIDERS).flat();
     allSliders.forEach(s => {
       const inputEl = document.getElementById('sl_' + s.id);
+      if (!inputEl) return; // guard: skip if panel not built yet
 
       const labelEl = document.getElementById('lbl_' + s.id) || inputEl.parentElement;
       if (labelEl && s.rt) {
@@ -514,6 +593,171 @@ class VoiceIsolatePro {
         this.dom.statsToggle.textContent = expanded ? '▲' : '▼';
       });
     }
+
+    // Preset buttons
+    document.querySelectorAll('.btn-preset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const name = btn.dataset.preset;
+        if (name) this.applyPreset(name);
+      });
+    });
+
+    // Save custom preset
+    const saveCustomBtn = document.getElementById('saveCustomPresetBtn');
+    if (saveCustomBtn) {
+      saveCustomBtn.addEventListener('click', () => {
+        const nameEl = document.getElementById('customPresetName');
+        const name = nameEl && nameEl.value.trim();
+        if (!name) return;
+        PRESETS[name] = { ...this.params };
+        this.showNotification('Preset "' + name + '" saved', 'success');
+      });
+    }
+
+    // Rewind / forward transport buttons
+    const tpRew = document.getElementById('tpRew');
+    const tpFwd = document.getElementById('tpFwd');
+    if (tpRew) tpRew.addEventListener('click', () => this.seekDelta(-5));
+    if (tpFwd) tpFwd.addEventListener('click', () => this.seekDelta(5));
+
+    // Upload zone click → file input
+    const uploadZone = document.getElementById('uploadZone');
+    const fileBtn = document.getElementById('fileBtn');
+    const fileInput = document.getElementById('fileInput');
+    if (uploadZone && fileInput) {
+      uploadZone.addEventListener('click', (e) => {
+        if (e.target === fileBtn || fileBtn && fileBtn.contains(e.target)) return;
+        fileInput.click();
+      });
+      uploadZone.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') fileInput.click();
+      });
+    }
+    if (fileBtn && fileInput) {
+      fileBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fileInput.click();
+      });
+    }
+
+    // Mic button
+    const micBtn = document.getElementById('micBtn');
+    if (micBtn) {
+      micBtn.addEventListener('click', () => this._toggleMic(micBtn));
+    }
+
+    // Save buttons
+    const saveOrigBtn = document.getElementById('saveOrigBtn');
+    const saveProcBtn = document.getElementById('saveProcBtn');
+    if (saveOrigBtn) saveOrigBtn.addEventListener('click', () => this._saveWav('original'));
+    if (saveProcBtn) saveProcBtn.addEventListener('click', () => this._saveWav('processed'));
+
+    // Audit log
+    const auditLogBtn = document.getElementById('auditLogBtn');
+    if (auditLogBtn) auditLogBtn.addEventListener('click', () => this.downloadAuditLog());
+
+    // Forensic toggle
+    const forensicToggle = document.getElementById('forensicToggle');
+    if (forensicToggle) {
+      forensicToggle.addEventListener('click', () => {
+        forensicToggle.classList.toggle('active');
+      });
+    }
+
+    // Tab bar
+    const tabBar = document.getElementById('tabBar');
+    if (tabBar) {
+      tabBar.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-tab]');
+        if (!btn) return;
+        const tab = btn.dataset.tab;
+        tabBar.querySelectorAll('[data-tab]').forEach(b => {
+          b.classList.toggle('active', b === btn);
+          b.setAttribute('aria-selected', String(b === btn));
+          b.tabIndex = b === btn ? 0 : -1;
+        });
+        document.querySelectorAll('.panel').forEach(p => {
+          p.classList.toggle('active', p.id === 'tab-' + tab);
+        });
+      });
+    }
+
+    // UI scale controls
+    const uiScaleDn = document.getElementById('uiScaleDn');
+    const uiScaleUp = document.getElementById('uiScaleUp');
+    const uiScaleSave = document.getElementById('uiScaleSave');
+    const uiScaleVal = document.getElementById('uiScaleVal');
+    const uiScaleApply = (s) => {
+      s = Math.max(0.5, Math.min(2, s));
+      const supportsZoom = typeof CSS !== 'undefined' && CSS.supports && CSS.supports('zoom', '1');
+      const rs = document.documentElement.style;
+      if (supportsZoom) {
+        rs.zoom = String(s);
+        rs.transform = '';
+        rs.transformOrigin = '';
+        rs.width = '';
+      } else {
+        rs.zoom = '';
+        rs.transform = 'scale(' + s + ')';
+        rs.transformOrigin = 'top left';
+        rs.width = (100 / s) + '%';
+      }
+      if (uiScaleVal) uiScaleVal.textContent = Math.round(s * 100) + '%';
+      return s;
+    };
+    let currentScale = parseFloat(localStorage.getItem('vip_ui_scale')) || 1;
+    uiScaleApply(currentScale);
+    if (uiScaleDn) uiScaleDn.addEventListener('click', () => { currentScale = uiScaleApply(currentScale - 0.1); });
+    if (uiScaleUp) uiScaleUp.addEventListener('click', () => { currentScale = uiScaleApply(currentScale + 0.1); });
+    if (uiScaleSave) uiScaleSave.addEventListener('click', () => {
+      localStorage.setItem('vip_ui_scale', currentScale);
+      uiScaleSave.classList.add('saved');
+      setTimeout(() => uiScaleSave.classList.remove('saved'), 1500);
+    });
+  }
+
+  _saveWav(mode) {
+    const buf = mode === 'processed' ? this.outputBuffer : this.inputBuffer;
+    if (!buf) return;
+    const wav = this.encWav(buf);
+    const blob = new Blob([wav], { type: 'audio/wav' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = mode === 'processed' ? 'processed.wav' : 'original.wav';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  _toggleMic(btn) {
+    if (this._micStream) {
+      this._micStream.getTracks().forEach(t => t.stop());
+      this._micStream = null;
+      if (btn) { const lbl = btn.querySelector('#micLabel'); if (lbl) lbl.textContent = 'Record'; }
+      btn && btn.classList.remove('active');
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      this._micStream = stream;
+      if (btn) { const lbl = btn.querySelector('#micLabel'); if (lbl) lbl.textContent = 'Stop'; }
+      btn && btn.classList.add('active');
+      this.ensureCtx();
+      const recorder = new MediaRecorder(stream);
+      const chunks = [];
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        const ab = await blob.arrayBuffer();
+        const decoded = await this.ctx.decodeAudioData(ab);
+        this.inputBuffer = decoded;
+        this.onAudioLoaded('mic-recording.webm');
+      };
+      recorder.start();
+      this._micRecorder = recorder;
+      stream.getAudioTracks()[0].onended = () => this._toggleMic(btn);
+    }).catch(e => {
+      this.showNotification('Microphone access denied', 'error');
+    });
   }
 
   ensureCtx() {
@@ -561,11 +805,9 @@ class VoiceIsolatePro {
       this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     }
     this.playOffset = Math.max(0, Math.min(dur, this.playOffset + dt));
-    this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+    if (this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
     this._setScrubPos(this.playOffset / dur);
-    if (this.isPlaying) {
-      this.play();
-    }
+    if (this.isPlaying) { this.play(); }
   }
 
   seekTo(frac) {
@@ -579,8 +821,8 @@ class VoiceIsolatePro {
     if (this.isPlaying) {
       this.play();
     } else {
-      this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
-      this.dom.tpSeek.value = frac * 1000;
+      if (this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+      if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
       this._setScrubPos(frac);
     }
   }
@@ -593,11 +835,9 @@ class VoiceIsolatePro {
     }
     this.abMode = this.abMode === 'original' ? 'processed' : 'original';
     const isProcessed = this.abMode === 'processed';
-    this.dom.tpAB.classList.toggle('active', isProcessed);
-    this.dom.tpABLabel.textContent = isProcessed ? 'Processed' : 'Original';
-    if (this.isPlaying) {
-      this.play();
-    }
+    if (this.dom.tpAB) this.dom.tpAB.classList.toggle('active', isProcessed);
+    if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = isProcessed ? 'Processed' : 'Original';
+    if (this.isPlaying) { this.play(); }
   }
 
   play() {
@@ -608,7 +848,7 @@ class VoiceIsolatePro {
     this.buildLiveChain(buf);
     this.isPlaying = true;
     this.playStartTime = this.ctx.currentTime;
-    this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
+    if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
 
     if (this.isVideo && this.dom.videoPlayer) {
       this.dom.videoPlayer.currentTime = this.playOffset;
@@ -705,7 +945,7 @@ class VoiceIsolatePro {
 
     if (mime.includes('midi') || ext === 'mid' || ext === 'midi') {
       this.setStatus('ERROR');
-      this.dom.fileInfo.textContent = 'MIDI files are not supported — please use audio/video files';
+      if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'MIDI files are not supported — please use audio/video files';
       return;
     }
 
@@ -714,7 +954,7 @@ class VoiceIsolatePro {
 
     if (!isAudio && !isVideo) {
       this.setStatus('ERROR');
-      this.dom.fileInfo.textContent = 'Unsupported file format — please use an audio or video file';
+      if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'Unsupported file format — please use an audio or video file';
       return;
     }
 
@@ -761,12 +1001,16 @@ class VoiceIsolatePro {
     if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
     if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
     if (this.dom.playBtn) this.dom.playBtn.disabled = false;
+    if (this.dom.tpPlay) this.dom.tpPlay.disabled = false;
+    if (this.dom.tpStop) this.dom.tpStop.disabled = false;
+    if (this.dom.tpPause) this.dom.tpPause.disabled = false;
+    if (this.dom.tpRew) this.dom.tpRew.disabled = false;
+    if (this.dom.tpFwd) this.dom.tpFwd.disabled = false;
     if (this.dom.processBtn) this.dom.processBtn.disabled = false;
     if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
+    if (this.dom.saveOrigBtn) document.getElementById('saveOrigBtn') && (document.getElementById('saveOrigBtn').disabled = false);
 
-    if (this.dom.hDur && this.inputBuffer) {
-      this.dom.hDur.textContent = this.fmtDur(this.inputBuffer.duration);
-    }
+    if (this.dom.hDur && this.inputBuffer) this.dom.hDur.textContent = this.fmtDur(this.inputBuffer.duration);
     if (this.dom.hFile) this.dom.hFile.textContent = name || '—';
     if (this.dom.hSR && this.inputBuffer) this.dom.hSR.textContent = this.inputBuffer.sampleRate + ' Hz';
     if (this.dom.hCh && this.inputBuffer) this.dom.hCh.textContent = this.inputBuffer.numberOfChannels;
@@ -798,7 +1042,7 @@ class VoiceIsolatePro {
       const signal = channels[0];
 
       const fftSize = 2048;
-      const spectrum = DSP.forwardSTFT(signal, fftSize);
+      const spectrum = DSP.forwardSTFT ? DSP.forwardSTFT(signal, fftSize) : null;
 
       if (spectrum && this.params.nrAmount > 0) {
         const alpha = this.params.nrAmount / 100;
@@ -807,14 +1051,15 @@ class VoiceIsolatePro {
         }
       }
 
-    if (neonVizHandle) neonVizHandle.stop();
-    if (typeof window !== 'undefined' && typeof window.VIP_initNeonVisualizer === 'function') {
-      neonVizHandle = window.VIP_initNeonVisualizer(neonAnalyser);
-    }
+      if (neonVizHandle) neonVizHandle.stop();
+      if (typeof window !== 'undefined' && typeof window.VIP_initNeonVisualizer === 'function') {
+        neonVizHandle = window.VIP_initNeonVisualizer(neonAnalyser);
+      }
 
-    updateStatus('Binding UI sliders…');
-    initSliders();
-      const processed = DSP.inverseSTFT(spectrum, fftSize);
+      updateStatus('Binding UI sliders…');
+      initSliders();
+
+      const processed = (DSP.inverseSTFT && spectrum) ? DSP.inverseSTFT(spectrum, fftSize) : null;
 
       if (processed && processed.length > 0) {
         const peak = this.calcPeak(processed);
@@ -842,6 +1087,10 @@ class VoiceIsolatePro {
       if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = false;
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
       if (this.dom.tpAB) this.dom.tpAB.disabled = false;
+      const saveProcBtn = document.getElementById('saveProcBtn');
+      if (saveProcBtn) saveProcBtn.disabled = false;
+      const auditLogBtn = document.getElementById('auditLogBtn');
+      if (auditLogBtn) auditLogBtn.disabled = false;
       this.setStatus('DONE');
       structuredLog('info', 'Pipeline complete');
 
@@ -858,6 +1107,7 @@ class VoiceIsolatePro {
 
   applyPreset(name) {
     const preset = PRESETS[name];
+    if (!preset) return;
     if (typeof window !== 'undefined') {
       window.VIP_PARAMS = window.VIP_PARAMS || {};
     }
@@ -865,17 +1115,19 @@ class VoiceIsolatePro {
       if (sliderId === 'description') continue;
       if (!SLIDER_BY_ID[sliderId]) continue;
       const value = clampToSlider(sliderId, rawValue);
-      const key = sliderId;
       this.params[sliderId] = value;
-      if (typeof window !== 'undefined') {
-        window.VIP_PARAMS[key] = value;
+      if (typeof window !== 'undefined') window.VIP_PARAMS[sliderId] = value;
+      const sliderEl = document.getElementById('sl_' + sliderId);
+      if (sliderEl) {
+        sliderEl.value = value;
+        sliderEl.setAttribute('aria-valuenow', value);
+        sliderEl.dispatchEvent(new Event('input', { bubbles: true }));
+        sliderEl.dispatchEvent(new Event('change', { bubbles: true }));
       }
-      const sliderDom = { el: document.getElementById('sl_' + sliderId) };
-      if (sliderDom.el) {
-        sliderDom.el.value = value;
-        sliderDom.el.setAttribute('aria-valuenow', value);
-        sliderDom.el.dispatchEvent(new Event('input', { bubbles: true }));
-        sliderDom.el.dispatchEvent(new Event('change', { bubbles: true }));
+      const valEl = document.getElementById('val_' + sliderId);
+      if (valEl) {
+        const s = SLIDER_BY_ID[sliderId];
+        valEl.textContent = value + (s.unit || '');
       }
     }
     if (this.liveChainBuilt) {
@@ -1037,11 +1289,7 @@ class VoiceIsolatePro {
   applyBgSuppress(spectrum, p) {
     if (!spectrum) return spectrum;
     const amt = (p.bgSuppress || 0) / 100;
-    const lo = p.voiceFocusLo || 120;
-    const hi = p.voiceFocusHi || 3400;
-    for (let i = 0; i < spectrum.length; i++) {
-      spectrum[i] *= (1 - amt * 0.5);
-    }
+    for (let i = 0; i < spectrum.length; i++) { spectrum[i] *= (1 - amt * 0.5); }
     return spectrum;
   }
 
@@ -1049,29 +1297,13 @@ class VoiceIsolatePro {
     if (!spectrum) return spectrum;
     const amt = (p.derevAmt || 0) / 100;
     const decay = (p.derevDecay || 50) / 100;
-    for (let i = 0; i < spectrum.length; i++) {
-      spectrum[i] *= Math.max(0, 1 - amt * decay);
-    }
+    for (let i = 0; i < spectrum.length; i++) { spectrum[i] *= Math.max(0, 1 - amt * decay); }
     return spectrum;
   }
 
-  applyFormantShift(spectrum, p) {
-    if (!spectrum) return spectrum;
-    const shift = p.formantShift || 0;
-    return spectrum;
-  }
-
-  applyPhaseCorr(spectrum, p) {
-    if (!spectrum) return spectrum;
-    const corr = (p.phaseCorr || 0) / 100;
-    return spectrum;
-  }
-
-  applyCrosstalkCancel(spectrum, p) {
-    if (!spectrum) return spectrum;
-    const amt = (p.crosstalkCancel || 0) / 100;
-    return spectrum;
-  }
+  applyFormantShift(spectrum, p) { return spectrum; }
+  applyPhaseCorr(spectrum, p) { return spectrum; }
+  applyCrosstalkCancel(spectrum, p) { return spectrum; }
 
   applyDither(signal, p) {
     if (!signal) return signal;
@@ -1084,13 +1316,8 @@ class VoiceIsolatePro {
     return signal;
   }
 
-  async loadModels() {
-    structuredLog('info', 'loadModels called');
-  }
-
-  async runVAD(buf) {
-    return null;
-  }
+  async loadModels() { structuredLog('info', 'loadModels called'); }
+  async runVAD(buf) { return null; }
 
   _mlCall(payload, transfer = []) {
     const id = ++this._mlCallId;
@@ -1107,9 +1334,7 @@ class VoiceIsolatePro {
     });
   }
 
-  async runSeparation(buf, model = 'demucs') {
-    return null;
-  }
+  async runSeparation(buf, model = 'demucs') { return null; }
 
   async addAuditEntry(buf, stageName) {
     if (!buf) return;
