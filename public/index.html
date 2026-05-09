@@ -6,11 +6,12 @@
 <title>VoiceIsolate Pro — Studio-Grade Voice Isolation</title>
 <meta name="description" content="32-stage Deca-Pass hybrid ML+DSP voice isolation. 100% local processing. Zero uploads. Studio-grade WAV output in seconds.">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
 <style>
 :root{
-  --bg:#07080a;--card:#0d0f14;--card2:#0f1118;--border:#1a1e2a;--border2:rgba(0,212,255,0.12);
+  --bg:#060609;--card:#0d0f14;--card2:#0f1118;--border:#1a1e2a;--border2:rgba(34,211,238,0.12);
   --text:#e8eaf0;--dim:#4a5268;--dim2:#6b7280;
-  --cyan:#00d4ff;--red:#dc2626;--violet:#8b5cf6;--green:#10b981;--orange:#f97316;--gold:#f59e0b;
+  --cyan:#22d3ee;--red:#dc2626;--violet:#8b5cf6;--green:#10b981;--orange:#f97316;--gold:#f59e0b;
   --mono:'JetBrains Mono',monospace;--sans:'DM Sans',system-ui,sans-serif;--serif:'Instrument Serif',Georgia,serif;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -38,14 +39,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
   text-align:center;padding:4rem 1.5rem 3rem;position:relative;overflow:hidden}
 
-.hero-wave{position:absolute;inset:0;pointer-events:none;opacity:0.12}
-.hero-wave path{fill:none;stroke:var(--cyan);stroke-width:1.5}
-.wave-anim-1{animation:waveDrift 8s ease-in-out infinite}
-.wave-anim-2{animation:waveDrift 10s ease-in-out infinite reverse;stroke:var(--violet)!important;opacity:0.6}
-.wave-anim-3{animation:waveDrift 6s ease-in-out infinite 2s;stroke:var(--green)!important;opacity:0.4}
-@keyframes waveDrift{
-  0%,100%{d:path("M0,80 C160,60 320,100 480,80 C640,60 800,100 960,80 L960,160 L0,160Z")}
-  50%{d:path("M0,100 C160,80 320,60 480,100 C640,130 800,70 960,100 L960,160 L0,160Z")}}
+#heroCanvas{position:absolute;inset:0;pointer-events:none;opacity:0.5}
+.hero-upload-zone{margin:0 auto 1rem;border:1px dashed rgba(34,211,238,0.35);border-radius:8px;padding:0.8rem 1rem;max-width:440px;color:var(--dim);font-family:var(--mono);font-size:0.7rem;background:rgba(34,211,238,0.03)}
+.hero-upload-zone.dragover{border-color:var(--red);background:rgba(220,38,38,0.06);color:var(--text)}
+.proof-audio{margin:1rem 0 0;padding:1rem;border:1px solid var(--border);border-radius:10px;background:var(--card)}
+.proof-audio-row{display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:0.6rem}
+.proof-audio-row button{font-family:var(--mono);font-size:0.65rem;border:1px solid var(--border2);background:rgba(34,211,238,0.08);color:var(--cyan);padding:0.45rem 0.75rem;border-radius:5px;cursor:pointer}
+.proof-audio-row button:hover{background:rgba(220,38,38,0.08);color:var(--red)}
 
 .hero-icon{width:80px;height:80px;border-radius:18px;margin-bottom:1.25rem;
   box-shadow:0 8px 32px rgba(0,212,255,0.2);position:relative;z-index:1}
@@ -239,11 +239,7 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
      HERO
 ══════════════════════════════════ -->
 <section class="hero">
-  <svg class="hero-wave" viewBox="0 0 960 160" preserveAspectRatio="none" aria-hidden="true">
-    <path class="wave-anim-1" d="M0,80 C160,60 320,100 480,80 C640,60 800,100 960,80 L960,160 L0,160Z"/>
-    <path class="wave-anim-2" d="M0,100 C160,120 320,70 480,100 C640,130 800,60 960,100 L960,160 L0,160Z"/>
-    <path class="wave-anim-3" d="M0,60 C160,80 320,50 480,70 C640,90 800,50 960,65 L960,160 L0,160Z"/>
-  </svg>
+  <canvas id="heroCanvas" aria-hidden="true"></canvas>
 
   <img src="/icon.jpg" alt="VoiceIsolate Pro" class="hero-icon">
 
@@ -255,6 +251,7 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
 
   <h1>VoiceIsolate <em>Pro</em></h1>
   <p class="hero-sub">Studio-grade voice isolation. 32-Stage Deca-Pass DSP pipeline. Hybrid ML + classical spectral processing. Drop audio, get studio-clean output in seconds.</p>
+  <div id="heroUploadZone" class="hero-upload-zone" role="button" tabindex="0">Drag &amp; drop audio/video here to launch Engineer Mode</div>
 
   <div class="hero-stats">
     <div class="stat"><span class="stat-num" data-target="32" data-suffix="">0</span><span class="stat-lbl">Pipeline Stages</span></div>
@@ -268,7 +265,7 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
       <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
       Launch Engineer Mode
     </a>
-    <a href="#proof" class="hero-cta hero-cta-ghost">
+    <a href="/app/" class="hero-cta hero-cta-ghost">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       See Before / After
     </a>
@@ -283,6 +280,15 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
     <div class="section-tag">Real Results</div>
     <h2 class="section-title">Hear the difference</h2>
     <p class="section-sub">These are real-world scenarios run through the 32-stage pipeline. No cherry-picking — same settings, same presets available to you right now.</p>
+    <div class="proof-audio">
+      <div class="proof-scenario">Interactive A/B Preview</div>
+      <div class="proof-desc">Web Audio API demo: compare noisy input and cleaned output in real time.</div>
+      <div class="proof-audio-row">
+        <button id="playBeforeBtn" type="button">Play Before</button>
+        <button id="playAfterBtn" type="button">Play After</button>
+        <button id="stopPreviewBtn" type="button">Stop</button>
+      </div>
+    </div>
 
     <div class="proof-grid">
 
@@ -541,7 +547,9 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
   VoiceIsolate Pro v24.0 &nbsp;·&nbsp; Threads from Space v13 &nbsp;·&nbsp; Hybrid ML+DSP &nbsp;·&nbsp; Privacy-First &nbsp;·&nbsp; May 2026
 </footer>
 
-<script>
+<script type="module">
+import * as THREE from 'three';
+
 /* ── Stat counter animation ── */
 (function(){
   function animateCounter(el){
@@ -567,6 +575,96 @@ footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
   } else {
     counters.forEach(animateCounter);
   }
+})();
+
+/* ── Hero Three.js animated spectrogram ── */
+(function(){
+  const canvas = document.getElementById('heroCanvas');
+  if (!canvas || !THREE) return;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  const cols = 64;
+  const rows = 24;
+  const positions = new Float32Array(cols * rows * 3);
+  let i = 0;
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    positions[i++] = (x / cols - 0.5) * 16;
+    positions[i++] = (y / rows - 0.5) * 5;
+    positions[i++] = 0;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const material = new THREE.PointsMaterial({ size: 0.07, color: 0x22d3ee });
+  const points = new THREE.Points(geometry, material);
+  scene.add(points);
+  camera.position.set(0, 0, 8);
+  function resize() {
+    const w = canvas.clientWidth || window.innerWidth;
+    const h = canvas.clientHeight || window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  window.addEventListener('resize', resize);
+  function tick(t) {
+    const p = geometry.attributes.position.array;
+    for (let n = 0; n < p.length; n += 3) {
+      const x = p[n];
+      const y = p[n + 1];
+      p[n + 2] = Math.sin((x * 1.5) + (t * 0.0018)) * 0.25 + Math.cos((y * 2.3) + (t * 0.0013)) * 0.18;
+    }
+    geometry.attributes.position.needsUpdate = true;
+    points.rotation.z = Math.sin(t * 0.0002) * 0.1;
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+})();
+
+/* ── Hero drag/drop to app ── */
+(function(){
+  const zone = document.getElementById('heroUploadZone');
+  if (!zone) return;
+  const go = () => { window.location.href = '/app/'; };
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('dragover'); if (e.dataTransfer?.files?.length) go(); });
+  zone.addEventListener('click', go);
+  zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+})();
+
+/* ── Before/After audio preview (Web Audio API) ── */
+(function(){
+  const beforeBtn = document.getElementById('playBeforeBtn');
+  const afterBtn = document.getElementById('playAfterBtn');
+  const stopBtn = document.getElementById('stopPreviewBtn');
+  let ctx = null;
+  let source = null;
+  function stop() { if (source) { try { source.stop(); } catch (_) {} source = null; } }
+  function play(clean) {
+    ctx = ctx || new AudioContext();
+    stop();
+    const dur = 2.5;
+    const len = Math.floor(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const out = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) {
+      const t = i / ctx.sampleRate;
+      const voice = Math.sin(2 * Math.PI * 180 * t) * 0.24 + Math.sin(2 * Math.PI * 320 * t) * 0.12;
+      const noise = (Math.random() * 2 - 1) * (clean ? 0.02 : 0.12);
+      const hum = Math.sin(2 * Math.PI * 60 * t) * (clean ? 0.01 : 0.09);
+      out[i] = voice + noise + hum;
+    }
+    source = ctx.createBufferSource();
+    source.buffer = buf;
+    source.connect(ctx.destination);
+    source.start();
+  }
+  beforeBtn?.addEventListener('click', () => play(false));
+  afterBtn?.addEventListener('click', () => play(true));
+  stopBtn?.addEventListener('click', stop);
 })();
 </script>
 

@@ -513,6 +513,33 @@ input[type="range"]:focus-visible::-moz-range-thumb{
   animation:vip-speaker-pulse 1.2s ease-in-out infinite;
 }
 
+.slider-val,.tp-time,.vu-val,.lufs-val { font-family:'JetBrains Mono',monospace; }
+input[type="range"].realtime {
+  background: linear-gradient(to right, var(--cyan) 0%, var(--cyan) var(--pct,50%), #2a2a3a var(--pct,50%), #2a2a3a 100%);
+}
+input[type="range"]:not(.realtime) {
+  background: linear-gradient(to right, var(--red) 0%, var(--red) var(--pct,50%), #2a2a3a var(--pct,50%), #2a2a3a 100%);
+}
+.slider-group { border:1px solid var(--border); border-radius:var(--rs); margin-bottom:8px; }
+.slider-group-header { width:100%; padding:8px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; background:var(--s2); color:var(--text); border:0; }
+.slider-group-content { display:none; padding:8px; }
+.slider-group.active .slider-group-content { display:block; }
+.tabs { display:flex; gap:2px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+.tab-btn { padding:8px 16px; background:var(--s2); border:1px solid var(--border); border-bottom:none; cursor:pointer; font-size:12px; color:var(--text2); }
+.tab-btn.active { background:var(--s1); color:var(--cyan); }
+.panel { display:none; padding:8px; }
+.panel.active { display:block; }
+.modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9999; align-items:center; justify-content:center; }
+.modal.open { display:flex; }
+.modal-content { background:var(--s2); border:1px solid var(--border); border-radius:var(--rs); padding:24px; min-width:300px; display:flex; flex-direction:column; gap:12px; }
+#spectro3d-container.fullscreen{position:fixed;inset:12px;z-index:9998;background:#000;border:1px solid var(--border)}
+
+@media (max-width:960px) {
+  .main-grid { grid-template-columns:1fr; }
+  .col-left,.col-right { grid-column:1; }
+  button,input,select,.slider-group-header{min-height:44px}
+}
+
 
 /* ══════════════════════════════════════════════════════════════════
    DIARIZATION TIMELINE + SPEAKER ISOLATION — VoiceIsolate Pro v22
