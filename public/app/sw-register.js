@@ -1,35 +1,29 @@
 // sw-register.js — VoiceIsolate Pro
-// Registers the Service Worker and orchestrates model loading.
+// Initializes the 3-tier redundant model loader (window.ModelCDNLoader).
+// All canonical CDN URLs live in models-manifest.json — no hardcoded URLs here.
 
-import { loadEagerModels, BROADCAST_CH } from './model-loader.js';
-
-const CACHE_NAME = 'vip-models-v1';
-const EAGER_KEYS = ['rnnoise', 'nsnet2', 'silero_vad'];
-const LAZY_KEYS  = ['demucs', 'bsrnn'];
-
-async function fetchAndCacheModel(key, url, statusUI) {
-  if (!url) return;
+/**
+ * registerSW — registers /sw.js and waits for it to control this page.
+ * Returns the active ServiceWorkerRegistration, or null if SW is unavailable.
+ */
+export async function registerSW() {
+  if (!('serviceWorker' in navigator)) return null;
   try {
-    statusUI?.setStatus(key, 'loading');
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const cache = await caches.open(CACHE_NAME);
-    await cache.put(`/app/models/${key}.onnx`, response.clone());
-    statusUI?.setStatus(key, 'cached');
+    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    if (navigator.serviceWorker.controller) return reg;
+    await new Promise((resolve) => {
+      const onCtrl = () => {
+        navigator.serviceWorker.removeEventListener('controllerchange', onCtrl);
+        resolve();
+      };
+      navigator.serviceWorker.addEventListener('controllerchange', onCtrl);
+      // safety timeout — don't block boot if SW takes too long
+      setTimeout(resolve, 3000);
+    });
+    return reg;
   } catch (err) {
-    console.error(`[sw-register] Failed to cache model ${key}:`, err);
-    statusUI?.setStatus(key, 'error');
-  }
-}
-
-async function loadManifest() {
-  try {
-    const res = await fetch('/app/models-manifest.json', { cache: 'no-cache' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } catch (err) {
-    console.warn('[sw-register] Could not load models-manifest.json:', err);
-    return {};
+    console.warn('[sw-register] SW registration failed:', err.message);
+    return null;
   }
 }
 
@@ -39,51 +33,92 @@ export async function initModelLoader({
   onProgress = null,
   statusUI = null,
 } = {}) {
-  // Listen to BroadcastChannel for progress events from model-loader.
-  let bc = null;
-  try {
-    bc = new BroadcastChannel(BROADCAST_CH);
-    bc.onmessage = (ev) => {
-      const { type, model, progress } = ev.data || {};
-      if (type === 'progress' && onProgress) onProgress(model, progress);
-      if (type === 'start')    statusUI?.setStatus(model, 'loading');
-      if (type === 'done')     statusUI?.setStatus(model, 'cached');
-      if (type === 'cached')   statusUI?.setStatus(model, 'cached');
-      if (type === 'error')    statusUI?.setStatus(model, 'error');
-    };
-  } catch { /* BroadcastChannel unavailable */ }
+  if (!window.ModelCDNLoader) {
+    console.error('[sw-register] window.ModelCDNLoader is not available — make sure model-cdn-loader.js is loaded before sw-register.js');
+    if (statusEl) statusEl.textContent = 'Model loader unavailable';
+    return { loaded: [], failed: [] };
+  }
 
-  // Load the blob manifest to get canonical URLs.
-  const manifest = await loadManifest();
+  let manifest;
+  try {
+    manifest = await window.ModelCDNLoader.getManifest();
+  } catch (err) {
+    console.error('[sw-register] Failed to load models manifest:', err);
+    if (statusEl) statusEl.textContent = 'Manifest load failed';
+    return { loaded: [], failed: [] };
+  }
+
+  const allKeys = Object.keys(manifest.models || {});
+  const eagerKeys = allKeys.filter(k => manifest.models[k].eager);
+  const lazyKeys  = allKeys.filter(k => !manifest.models[k].eager);
 
   // Mark lazy models as pending immediately.
-  for (const key of LAZY_KEYS) {
+  for (const key of lazyKeys) {
     statusUI?.setStatus(key, 'pending');
   }
 
+  // Mark eager models as loading (will flip to cached on success / error on failure).
+  for (const key of eagerKeys) {
+    statusUI?.setStatus(key, 'loading');
+  }
+
   // Expose lazy loader for pipeline-orchestrator to call on first file drop.
-  window._vipLoadLazyModels = async () => {
-    window._vipLoadLazyModels = null; // only run once
-    for (const key of LAZY_KEYS) {
-      const modelUrl = `/app/models/${key === 'demucs' ? 'demucs_v4_quantized' : 'bsrnn_quantized'}.onnx`;
-      await fetchAndCacheModel(key, modelUrl, statusUI);
+  // Accepts a single modelKey + optional progress callback. Each invocation is idempotent
+  // (the SW cache short-circuits subsequent calls).
+  window._vipLoadLazyModels = async (modelKey, progressCb) => {
+    if (!modelKey) {
+      // Backwards-compat: load all lazy models if no key given
+      const results = await Promise.allSettled(lazyKeys.map(async (k) => {
+        statusUI?.setStatus(k, 'loading');
+        try {
+          await window.ModelCDNLoader.loadModel(k, (frac) => {
+            statusUI?.setStatus(k, 'loading', frac * 100);
+          });
+          const provider = window.ModelCDNLoader.getModelProvider(k);
+          statusUI?.setStatus(k, 'cached', undefined, provider);
+          return { id: k, ok: true };
+        } catch (err) {
+          statusUI?.setStatus(k, 'error');
+          return { id: k, ok: false, error: err.message };
+        }
+      }));
+      return results.map(r => r.status === 'fulfilled' ? r.value : { ok: false });
+    }
+    statusUI?.setStatus(modelKey, 'loading');
+    try {
+      const ab = await window.ModelCDNLoader.loadModel(modelKey, (frac) => {
+        if (progressCb) progressCb(frac);
+        statusUI?.setStatus(modelKey, 'loading', frac * 100);
+      });
+      const provider = window.ModelCDNLoader.getModelProvider(modelKey);
+      statusUI?.setStatus(modelKey, 'cached', undefined, provider);
+      return ab;
+    } catch (err) {
+      statusUI?.setStatus(modelKey, 'error');
+      throw err;
     }
   };
 
-  // Eagerly fetch + cache the small models.
-  const eagerPromises = EAGER_KEYS.map(key => {
-    const fileMap = { rnnoise: 'rnnoise', nsnet2: 'nsnet2', silero_vad: 'silero_vad' };
-    const modelUrl = `/app/models/${fileMap[key]}.onnx`;
-    return fetchAndCacheModel(key, modelUrl, statusUI);
+  // Eagerly fetch + cache the small models via the CDN waterfall.
+  const loaded = [];
+  const failed = [];
+  await window.ModelCDNLoader.preloadEagerModels((key, status, provider) => {
+    if (status === 'ok') {
+      loaded.push(key);
+      statusUI?.setStatus(key, 'cached', undefined, provider);
+    } else {
+      failed.push(key);
+      statusUI?.setStatus(key, 'error');
+    }
+    if (onProgress) onProgress(key, status === 'ok' ? 100 : 0);
   });
-  await Promise.allSettled(eagerPromises);
 
-  // Also run the legacy loadEagerModels for backward compat.
-  const result = await loadEagerModels();
   if (progressBar) progressBar.style.display = 'none';
-  if (statusEl && result.failed.length === 0) {
+  if (statusEl && failed.length === 0) {
     statusEl.textContent = 'Models ready';
+  } else if (statusEl) {
+    statusEl.textContent = `Models ready (${failed.length} failed)`;
   }
-  bc?.close();
-  return result;
+
+  return { loaded, failed };
 }

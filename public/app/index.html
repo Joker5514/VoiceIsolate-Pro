@@ -523,12 +523,17 @@
 
   <!-- Core modules (cloud-sync.js removed — violated 100% local constraint) -->
   <!-- ════════════════════════════════════════════════════════════════════════
-       Service Worker + Vercel-Blob model loader bootstrap (v24).
+       Service Worker + 3-tier redundant model loader bootstrap (v24).
        MUST run before app.js / pipeline-orchestrator init the ML worker so
        /app/models/*.onnx fetches are intercepted by sw.js and served from
-       the vip-models-v1 Cache (which model-loader.js populates from the
-       Vercel Blob rewrite). See MODELS.md.
+       the vip-models-v1 Cache. CDN waterfall (Vercel Blob → Cloudflare R2 →
+       HuggingFace) is implemented in model-cdn-loader.js. See MODELS.md.
        ════════════════════════════════════════════════════════════════════════ -->
+  <!-- model-cdn-loader.js MUST load before sw-register.js so window.ModelCDNLoader
+       is available when initModelLoader() runs. Classic <script> (not module) so
+       it executes synchronously and exposes window.ModelCDNLoader before the
+       module below imports sw-register.js. -->
+  <script src="/app/model-cdn-loader.js"></script>
   <script type="module">
     import { registerSW, initModelLoader } from './sw-register.js';
     (async () => {
