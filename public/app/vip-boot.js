@@ -212,35 +212,61 @@
   }
 
   // -- Network connectivity monitor ----------------------------------------
+  function getInitialNetworkState() {
+    return (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean')
+      ? navigator.onLine
+      : true;
+  }
+
+  function updateNetPill(online) {
+    setEnginePill('engNetPill', online ? 'ready' : 'error');
+  }
+
+  function resetProviderHealth() {
+    if (typeof window === 'undefined' || !window.ModelCDNLoader || !window.ModelCDNLoader.providerHealth) {
+      return false;
+    }
+    Object.keys(window.ModelCDNLoader.providerHealth).forEach(function (k) {
+      window.ModelCDNLoader.providerHealth[k] = true;
+    });
+    return true;
+  }
+
+  function applyNetworkState(online) {
+    updateNetPill(online);
+    if (online) {
+      console.info('[vip-boot] Network connected.');
+      // Reset any degraded CDN providers so the waterfall retries from the top
+      if (resetProviderHealth()) {
+        console.info('[vip-boot] CDN provider health reset after reconnect.');
+      }
+    } else {
+      console.warn('[vip-boot] Network disconnected.');
+    }
+  }
+
   function startNetworkMonitor() {
     if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
 
-    function updateNetPill(online) {
-      setEnginePill('engNetPill', online ? 'ready' : 'error');
-    }
-
     // Set initial state immediately
-    var isOnline = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean')
-      ? navigator.onLine
-      : true;
-    updateNetPill(isOnline);
+    applyNetworkState(getInitialNetworkState());
 
     window.addEventListener('online', function () {
-      updateNetPill(true);
-      console.info('[vip-boot] Network connected.');
-      // Reset any degraded CDN providers so the waterfall retries from the top
-      if (window.ModelCDNLoader && window.ModelCDNLoader.providerHealth) {
-        Object.keys(window.ModelCDNLoader.providerHealth).forEach(function (k) {
-          window.ModelCDNLoader.providerHealth[k] = true;
-        });
-        console.info('[vip-boot] CDN provider health reset after reconnect.');
-      }
+      applyNetworkState(true);
     });
 
     window.addEventListener('offline', function () {
-      updateNetPill(false);
-      console.warn('[vip-boot] Network disconnected.');
+      applyNetworkState(false);
     });
+  }
+
+  if (typeof window !== 'undefined') {
+    window._vipBootTestHooks = window._vipBootTestHooks || {};
+    window._vipBootTestHooks.getInitialNetworkState = getInitialNetworkState;
+    window._vipBootTestHooks.updateNetPill = updateNetPill;
+    window._vipBootTestHooks.resetProviderHealth = resetProviderHealth;
+    window._vipBootTestHooks.applyNetworkState = applyNetworkState;
+    window._vipBootTestHooks.startNetworkMonitor = startNetworkMonitor;
   }
 
   // -- Boot sequence -------------------------------------------------------
