@@ -10,10 +10,6 @@
     "VIP_ORT_SETUP_SOFT": "1"
   },
   "rewrites": [
-    {
-      "source": "/app/models/:model",
-      "destination": "https://YOUR_BLOB_STORE.public.blob.vercel-storage.com/models/:model"
-    },
     { "source": "/api/(.*)", "destination": "/api/handler" },
     { "source": "/app/((?!sw\\.js|dsp-processor\\.js|ml-worker\\.js|dsp-worker\\.js|ring-buffer\\.js|dsp-core\\.js|pipeline-orchestrator\\.js|pipeline-state\\.js).*)", "destination": "/app/index.html" },
     { "source": "/app", "destination": "/app/index.html" },

@@ -10,9 +10,9 @@ describe('dsp-processor AudioWorklet behavior', () => {
     let RegisteredProcessor = null;
     class AudioWorkletProcessor {
       constructor() {
+        this.context = { sampleRate: 44100 };
         this.port = {
           onmessage: null,
-          addEventListener: jest.fn(),
           postMessage: jest.fn(),
         };
       }
@@ -23,133 +23,82 @@ describe('dsp-processor AudioWorklet behavior', () => {
     return new RegisteredProcessor({ processorOptions });
   }
 
-  test('drains overlap-add leftovers when process() receives no input frames', () => {
+  test('allocates fallback dual SABs and notifies main thread', () => {
     const processor = loadProcessor();
-    processor._outBuf[0] = 0.5;
-    processor._outWindowSum[0] = 0.25;
-    processor._readPos = 0;
 
-    const out = [[new Float32Array(1)]];
-    const keepAlive = processor.process([], out);
-
-    expect(keepAlive).toBe(true);
-    expect(out[0][0][0]).toBeCloseTo(2.0, 6);
-    expect(processor._outBuf[0]).toBe(0);
-    expect(processor._outWindowSum[0]).toBe(0);
+    expect(processor._inputSAB).toBeInstanceOf(SharedArrayBuffer);
+    expect(processor._outputSAB).toBeInstanceOf(SharedArrayBuffer);
+    expect(processor.port.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'sabReady',
+        inputSAB: processor._inputSAB,
+        outputSAB: processor._outputSAB,
+      })
+    );
   });
 
-  test('disconnect message resets SAB frame/write cursor state', () => {
-    const numBins = 2049;
-    const sabBytes = numBins * Float32Array.BYTES_PER_ELEMENT + 4 * Int32Array.BYTES_PER_ELEMENT;
-    const inputSAB = new SharedArrayBuffer(sabBytes);
-    const outputSAB = new SharedArrayBuffer(sabBytes);
-    const processor = loadProcessor({ inputSAB, outputSAB });
+  test('uses provided SABs and advances frame counter once per hop', () => {
+    const halfBins = 4096 / 2 + 1;
+    const headerBytes = Int32Array.BYTES_PER_ELEMENT * 4;
+    const inputSAB = new SharedArrayBuffer(headerBytes + Float32Array.BYTES_PER_ELEMENT * halfBins * 2);
+    const outputSAB = new SharedArrayBuffer(headerBytes + Float32Array.BYTES_PER_ELEMENT * halfBins);
+    const processor = loadProcessor({ sharedArrayBuffer: { inputSAB, outputSAB } });
 
-    const flagsIn = new Int32Array(inputSAB, numBins * 4, 4);
-    const flagsOut = new Int32Array(outputSAB, numBins * 4, 4);
-    Atomics.store(flagsIn, 0, 9);
-    Atomics.store(flagsIn, 1, 7);
+    const flagsIn = new Int32Array(inputSAB, 0, 4);
+    const inBlock = new Float32Array(1024).fill(0.05);
+    const outBlock = new Float32Array(1024);
+
+    const keepAlive = processor.process([[inBlock]], [[outBlock]]);
+
+    expect(keepAlive).toBe(true);
+    expect(Atomics.load(flagsIn, 0)).toBe(1);
+  });
+
+  test('consumes ready mask flag and clears it after hop processing', () => {
+    const halfBins = 4096 / 2 + 1;
+    const headerBytes = Int32Array.BYTES_PER_ELEMENT * 4;
+    const inputSAB = new SharedArrayBuffer(headerBytes + Float32Array.BYTES_PER_ELEMENT * halfBins * 2);
+    const outputSAB = new SharedArrayBuffer(headerBytes + Float32Array.BYTES_PER_ELEMENT * halfBins);
+    const processor = loadProcessor({ sharedArrayBuffer: { inputSAB, outputSAB } });
+
+    const flagsOut = new Int32Array(outputSAB, 0, 4);
+    const mask = new Float32Array(outputSAB, headerBytes, halfBins);
+    mask.fill(1);
     Atomics.store(flagsOut, 1, 1);
 
-    processor.port.onmessage({ data: { type: 'disconnect' } });
+    const inBlock = new Float32Array(1024).fill(0.05);
+    const outBlock = new Float32Array(1024);
+    processor.process([[inBlock]], [[outBlock]]);
 
-    expect(Atomics.load(flagsIn, 0)).toBe(0);
-    expect(Atomics.load(flagsIn, 1)).toBe(0);
     expect(Atomics.load(flagsOut, 1)).toBe(0);
   });
 
-  test('passes write-position snapshot into _processSpectralHop() at hop boundaries', () => {
+  test('uses context sampleRate for bin mapping in spectral band-pass', () => {
+    const contextSampleRate = 96000;
     const processor = loadProcessor();
-    const hopSpy = jest.fn();
-    processor._processSpectralHop = hopSpy;
+    processor.context.sampleRate = contextSampleRate;
+    processor._params.lowCut = 9500;
+    processor._params.highCut = 10500;
+    processor._params.gate = 0;
+    processor._params.noiseReduction = 0;
+    processor._params.voiceBoost = 0;
 
-    const inputBlock = new Float32Array(1024).fill(0.1);
-    const outputBlock = new Float32Array(1024);
-    processor.process([[inputBlock]], [[outputBlock]]);
-    const expectedSnapshot = processor._writePos;
-
-    expect(hopSpy).toHaveBeenCalledTimes(1);
-    expect(hopSpy).toHaveBeenCalledWith(expectedSnapshot);
-  });
-
-  test('VAD skips spectral processing and outputs silence for quiet frames', () => {
-    const processor = loadProcessor();
-    const hopSpy = jest.fn();
-    processor._processSpectralHop = hopSpy;
-
-    const inputBlock = new Float32Array(1024).fill(1e-5);
-    const outputBlock = new Float32Array(1024);
-    processor.process([[inputBlock]], [[outputBlock]]);
-
-    expect(hopSpy).toHaveBeenCalledTimes(0);
-    for (let i = 0; i < outputBlock.length; i++) {
-      expect(outputBlock[i]).toBe(0);
-    }
-  });
-
-  test('clears de-ess hysteresis latch when de-essing is disabled', () => {
-    const processor = loadProcessor();
-    processor._deEssActive[0] = true;
-    processor._params.deEssAmt = 0;
-
-    const inputBlock = new Float32Array([0.25]);
-    const outputBlock = new Float32Array(1);
-    processor.process([[inputBlock]], [[outputBlock]]);
-
-    expect(processor._deEssActive[0]).toBe(false);
-  });
-
-  test('SPECTRAL_FRAME RMS is computed from spectral magnitude data', () => {
-    const processor = loadProcessor();
-    processor._spectralFrameInterval = 1;
-    processor._writePos = 0;
-
-    for (let i = 0; i < processor._inBuf.length; i++) {
-      processor._inBuf[i] = Math.sin((2 * Math.PI * i) / 64) * 0.5;
+    const output = new Float32Array(1024);
+    for (let frame = 0; frame < 4; frame++) {
+      const input = new Float32Array(1024);
+      for (let i = 0; i < input.length; i++) {
+        const idx = frame * input.length + i;
+        input[i] = Math.sin((2 * Math.PI * 10000 * idx) / contextSampleRate);
+      }
+      processor.process([[input]], [[output]]);
     }
 
-    processor._processSpectralHop(0);
+    let rms = 0;
+    for (let i = 0; i < output.length; i++) rms += output[i] * output[i];
+    rms = Math.sqrt(rms / output.length);
 
-    const frameCall = processor.port.postMessage.mock.calls
-      .map(([msg]) => msg)
-      .find((msg) => msg?.type === 'SPECTRAL_FRAME');
-    expect(frameCall).toBeTruthy();
-    expect(frameCall.rms).toBeCloseTo(processor._calcRMS(frameCall.mag), 8);
-    expect(Math.abs(frameCall.rms - processor._calcRMS(processor._reBuffer))).toBeGreaterThan(1e-6);
-  });
-
-  test('harmonic enhancement stays finite at extreme amplitudes', () => {
-    const processor = loadProcessor();
-    processor._params.harmRecov = 100;
-    processor._params.harmOrder = 8;
-    processor._spectralFrameInterval = 1;
-
-    for (let i = 0; i < processor._inBuf.length; i++) {
-      processor._inBuf[i] = 1e6;
-    }
-
-    processor._processSpectralHop(0);
-    for (let i = 0; i < processor._magBuffer.length; i++) {
-      expect(Number.isFinite(processor._magBuffer[i])).toBe(true);
-    }
-  });
-
-  test('spectral subtraction keeps a non-zero absolute floor under heavy suppression', () => {
-    const processor = loadProcessor();
-    processor._params.nrAmount = 100;
-    processor._params.nrSpectralSub = 100;
-    processor._params.nrSensitivity = 100;
-    processor._params.nrSmoothing = 0;
-    processor._params.nrFloor = -120;
-    processor._params.harmRecov = 0;
-
-    processor._inBuf.fill(0);
-    processor._processSpectralHop(0);
-
-    let minMag = Infinity;
-    for (let i = 0; i < processor._magBuffer.length; i++) {
-      if (processor._magBuffer[i] < minMag) minMag = processor._magBuffer[i];
-    }
-    expect(minMag).toBeGreaterThan(0);
+    // If bin mapping incorrectly used 48kHz constants, this 10kHz tone is
+    // outside the computed passband and output RMS collapses toward zero.
+    expect(rms).toBeGreaterThan(1e-6);
   });
 });

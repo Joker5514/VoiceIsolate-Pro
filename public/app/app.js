@@ -1,4 +1,5 @@
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
+const DSP = globalThis.DSP || {};
 
 // ── Structured logging ───────────────────────────────────────────────────────
 function structuredLog(level, msg, data = {}) {
@@ -20,8 +21,12 @@ function structuredLog(level, msg, data = {}) {
 // ---------------------------------------------------------------------------
 let audioCtx    = null;
 let workletNode = null;
-let sabFloat32  = null;   // Float32 view into SharedArrayBuffer
-let sabInt32    = null;   // Int32  view (control word)
+let inputSAB    = null;
+let outputSAB   = null;
+let inputFlags  = null;
+let outputFlags = null;
+let inputView   = null;
+let outputView  = null;
 let mlWorker    = null;   // Web Worker running ml-worker.js
 let mlReady     = false;  // true once worker sends { type: 'ready' }
 let neonAnalyser = null;  // AnalyserNode tapped from worklet output for neon visualizer
@@ -29,6 +34,13 @@ let neonVizHandle = null; // Handle for the neon visualizer RAF loop
 
 // Pending SAB magnitude frames queued before ml-worker is ready
 const _pendingFrames = [];
+const FFT_SIZE = 4096;
+const HOP_SIZE = 1024;
+const HALF_BINS = FFT_SIZE / 2 + 1;
+const FLAG_SLOTS = 4;
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
+const INPUT_SAB_BYTES = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS * 2;
+const OUTPUT_SAB_BYTES = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS;
 
 // ---------------------------------------------------------------------------
 // 1. ML Worker — spawn ml-worker.js and wire SAB magnitude forwarding
@@ -49,32 +61,67 @@ function spawnMlWorker() {
       for (const frame of _pendingFrames) _forwardFrameToWorker(frame);
       _pendingFrames.length = 0;
 
-      // Hand the worker the SAB so it can poll directly (optional fast-path)
-      if (sabFloat32 && sabInt32) {
-        mlWorker.postMessage({
-          type: 'init',
-          payload: {
-            inputSAB:  sabFloat32.buffer,
-            outputSAB: sabFloat32.buffer,
-            fftSize:   FFT_SIZE,
-            halfN:     HALF_BINS,
-            sampleRate: audioCtx ? audioCtx.sampleRate : 48000,
-            allowedModels: ['demucs', 'bsrnn', 'rnnoise', 'vad'],
-            allowedStages: 14,
-          },
-        });
-      }
+      _forwardSabToWorker();
     } else if (type === 'mask') {
       // Write returned mask into SAB so the AudioWorklet can apply it
       const { mask } = ev.data;
-      if (mask && sabFloat32) {
-        sabFloat32.set(mask.subarray(0, HALF_BINS), 1 + HALF_BINS);
-        Atomics.store(sabInt32, 0, 2); // signal worklet: mask ready
+      if (mask && outputView && outputFlags) {
+        outputView.set(mask.subarray(0, HALF_BINS));
+        Atomics.store(outputFlags, 1, 1);
       }
     } else if (type === 'error') {
       console.warn('[ML Worker]', ev.data.message || ev.data.msg);
     }
   };
+}
+
+function _forwardSabToWorker() {
+  if (!mlWorker || !mlReady || !inputSAB || !outputSAB) return;
+  mlWorker.postMessage({
+    type: 'initRingBuffers',
+    inputRing: inputSAB,
+    maskRing: outputSAB,
+    halfN: HALF_BINS,
+    ringCapacity: 16,
+    quantumSize: 128,
+  });
+}
+
+function _forwardFrameToWorker(mag) {
+  if (!mlWorker) return;
+  if (!mlReady) {
+    _pendingFrames.push(mag);
+    return;
+  }
+  mlWorker.postMessage({ type: 'infer', model: 'bsrnn', mag });
+}
+
+function updateStatus(msg) {
+  const el = typeof document !== 'undefined' ? document.getElementById('hStatus') : null;
+  if (el) el.textContent = msg;
+}
+
+function initSliders() {
+  for (const entry of SLIDER_REGISTRY) {
+    const slider = document.getElementById(`sl_${entry.id}`);
+    if (!slider || slider.dataset.vipBound === '1') continue;
+    slider.dataset.vipBound = '1';
+    const dispatch = () => {
+      const raw = Number(slider.value);
+      if (!Number.isFinite(raw)) return;
+      const mapped = typeof entry.transform === 'function' ? entry.transform(raw) : raw;
+      const payload = { [entry.key]: mapped };
+      if ((entry.target === 'worklet' || entry.target === 'both') && workletNode) {
+        workletNode.port.postMessage({ type: 'params', payload });
+      }
+      if ((entry.target === 'worker' || entry.target === 'both') && mlWorker) {
+        mlWorker.postMessage({ type: 'setParams', payload });
+      }
+    };
+    slider.addEventListener('input', dispatch);
+    slider.addEventListener('change', dispatch);
+  }
+}
 const SLIDERS = {
   gate: [
     { id: 'gateThresh', label: 'Threshold', min: -80, max: -5, val: -42, step: 1, unit: ' dB', rt: true, desc: 'Signal level below which audio is gated' },
@@ -177,10 +224,13 @@ if (typeof window !== 'undefined') {
 async function initAudio() {
   audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
 
-  // Allocate SharedArrayBuffer for SAB bridge
-  const sab  = new SharedArrayBuffer(SAB_FLOATS * Float32Array.BYTES_PER_ELEMENT);
-  sabFloat32 = new Float32Array(sab);
-  sabInt32   = new Int32Array(sab);
+  // Allocate SABs for the worklet <-> ml-worker bridge.
+  inputSAB = new SharedArrayBuffer(INPUT_SAB_BYTES);
+  outputSAB = new SharedArrayBuffer(OUTPUT_SAB_BYTES);
+  inputFlags = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+  outputFlags = new Int32Array(outputSAB, 0, FLAG_SLOTS);
+  inputView = new Float32Array(inputSAB, SAB_HEADER_BYTES, HALF_BINS * 2);
+  outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, HALF_BINS);
 
   // Load the AudioWorklet module (only pipeline-orchestrator.js may also do this
   // if the full pipeline is active — this path is used for direct mic/file mode)
@@ -190,11 +240,23 @@ async function initAudio() {
     numberOfInputs:  1,
     numberOfOutputs: 1,
     outputChannelCount: [1],
-    processorOptions: { sharedArrayBuffer: sab },
+    processorOptions: { sharedArrayBuffer: { inputSAB, outputSAB } },
   });
+
+  _forwardSabToWorker();
 
   // Relay magnitude frames from the worklet to the ML worker
   workletNode.port.onmessage = (ev) => {
+    if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {
+      inputSAB = ev.data.inputSAB;
+      outputSAB = ev.data.outputSAB;
+      inputFlags = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+      outputFlags = new Int32Array(outputSAB, 0, FLAG_SLOTS);
+      inputView = new Float32Array(inputSAB, SAB_HEADER_BYTES, HALF_BINS * 2);
+      outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, HALF_BINS);
+      _forwardSabToWorker();
+      return;
+    }
     if (ev.data && ev.data.type === 'magnitude' && ev.data.mag) {
       _forwardFrameToWorker(ev.data.mag);
     }
@@ -210,6 +272,8 @@ async function initAudio() {
   neonAnalyser.connect(audioCtx.destination);
 
   console.info('[AudioWorklet] dsp-processor loaded and connected.');
+}
+
 const PRESETS = {
   'Voice Clarity': {
     description: 'Crystal-clear voice isolation optimised for dialogue and interviews',
@@ -682,6 +746,7 @@ class VoiceIsolatePro {
     const isAudio = mime.startsWith('audio/') || ['wav','mp3','ogg','flac','aac','m4a','opus','weba','webm'].includes(ext);
     const isVideo = mime.startsWith('video/') || ['mp4','mov','avi','mkv','webm'].includes(ext);
 
+    if (!isAudio && !isVideo) {
       this.setStatus('ERROR');
       this.dom.fileInfo.textContent = 'Unsupported file format — please use an audio or video file';
       return;
@@ -893,7 +958,6 @@ class VoiceIsolatePro {
     } else if (e.key === 'x' || e.key === 'X') {
         this.toggleAB();
       }
-    }
   }
 
   calcRMS(d) {
@@ -985,5 +1049,14 @@ if (typeof window !== 'undefined') { window.VoiceIsolatePro = VoiceIsolatePro; }
 if (typeof module !== 'undefined') { module.exports = VoiceIsolatePro; }
 
 document.addEventListener('DOMContentLoaded', () => {
-  // boot handled by _vipBootstrap above
+  try {
+    if (typeof Worker !== 'undefined') spawnMlWorker();
+    if (typeof AudioContext !== 'undefined') {
+      initAudio().catch((err) => {
+        structuredLog('warn', 'Audio init skipped', { err: String(err && err.message ? err.message : err) });
+      });
+    }
+  } catch (err) {
+    structuredLog('warn', 'Boot hook skipped', { err: String(err && err.message ? err.message : err) });
+  }
 });
