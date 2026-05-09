@@ -299,4 +299,107 @@
   background: rgba(255, 255, 255, 0.15);
 }
 
+/* Provider badges (rendered next to each model pill by ModelStatusUI) */
+.vip-pill-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 4px 4px 0;
+}
+
+.vip-provider {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+}
+
+.vip-provider--hidden { display: none; }
+
+.vip-provider--green {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.10);
+  border-color: rgba(22, 163, 74, 0.25);
+}
+
+.vip-provider--blue {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.10);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
+.vip-provider--yellow {
+  color: #ca8a04;
+  background: rgba(202, 138, 4, 0.10);
+  border-color: rgba(202, 138, 4, 0.25);
+}
+
+.vip-provider--red {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.10);
+  border-color: rgba(220, 38, 38, 0.25);
+}
+
+.vip-provider--grey {
+  color: var(--dim, #4a5268);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* CDN Health panel (rendered in Engineer Mode diagnostics) */
+.vip-cdn-health-title {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2, #c0c4d0);
+  margin-bottom: 6px;
+}
+
+.vip-cdn-health-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  background: var(--card2, #0f1118);
+  border: 1px solid var(--border, #1a1e2a);
+  border-radius: 6px;
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 0.72rem;
+}
+
+.vip-cdn-health-label {
+  color: var(--text, #e8eaf0);
+}
+
+.vip-cdn-health-status {
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+
+.vip-cdn-health-status--healthy {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.12);
+}
+
+.vip-cdn-health-status--degraded {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.vip-cdn-health-status--unknown {
+  color: var(--dim, #4a5268);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 /* Made with Bob */

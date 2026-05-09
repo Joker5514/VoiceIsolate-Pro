@@ -127,6 +127,95 @@ Execution provider cascade: WebGPU → WASM SIMD threaded → WASM (single-threa
 
 ---
 
+## Model CDN Setup
+
+Models are delivered via a 3-tier redundant CDN waterfall implemented in
+`public/app/model-cdn-loader.js`. The loader tries each source in order and
+fails over automatically:
+
+1. **Vercel Blob** (primary) — proxied through `/app/models/<filename>` so the
+   browser sees a same-origin URL that satisfies CSP `connect-src 'self'`. The
+   `vercel.json` rewrite maps the proxy to the actual blob CDN host.
+2. **Cloudflare R2** (secondary) — `https://models.voiceisolatepro.com/models/...`
+   (or `https://<bucket>.r2.dev/models/...` if no custom domain yet).
+3. **HuggingFace Hub** (tertiary fallback) — `https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/<filename>`.
+
+Per-source URLs live in `public/app/models-manifest.json` (schemaVersion 2).
+After a successful fetch the buffer is cached in the SW Cache (`vip-models-v1`)
+under `/vip-model-cache/<modelKey>` with the active provider stamped in the
+`X-VIP-Provider` response header.
+
+### Upload order (run locally before deploying)
+
+```bash
+# 1. Vercel Blob (primary) — manifest source[0].url stays as the /app/models/ proxy path
+BLOB_READ_WRITE_TOKEN=vercel_blob_rw_3Jq9Akm8vl1TuB82_... \
+  node scripts/upload-to-vercel-blob.mjs
+
+# 2. Cloudflare R2 (secondary) — uses @aws-sdk/client-s3 against the R2 S3-compatible endpoint
+R2_ACCOUNT_ID=... \
+R2_ACCESS_KEY_ID=... \
+R2_SECRET_ACCESS_KEY=... \
+R2_BUCKET_NAME=voice-isolate-models \
+R2_PUBLIC_URL=https://models.voiceisolatepro.com \
+  node scripts/upload-to-r2.mjs
+
+# 3. HuggingFace Hub (tertiary) — auto-creates the public model repo if missing
+HF_TOKEN=hf_... python scripts/upload-to-huggingface.py
+```
+
+Each script writes its provider's source URLs back into
+`public/app/models-manifest.json`. Commit the resulting manifest before deploying.
+
+### Required Vercel project env vars
+
+- `BLOB_READ_WRITE_TOKEN` — Vercel Blob RW token (already set — added May 4)
+- `R2_ACCOUNT_ID` — Cloudflare account ID
+- `R2_ACCESS_KEY_ID` — R2 API token Access Key
+- `R2_SECRET_ACCESS_KEY` — R2 API token Secret
+- `R2_BUCKET_NAME` — e.g. `voice-isolate-models`
+- `R2_PUBLIC_URL` — public base URL (e.g. `https://models.voiceisolatepro.com`)
+- `HF_TOKEN` — HuggingFace user access token with write scope on `Joker5514/voice-isolate-models`
+
+Only `BLOB_READ_WRITE_TOKEN` is required at runtime/build time. The R2 and HF
+vars are only needed for the upload scripts during local model rollouts —
+the browser-side waterfall fetches public CDN URLs directly.
+
+### vercel.json rewrite
+
+The rewrite that maps the `/app/models/:model` proxy to your Vercel Blob store:
+
+```json
+{ "source": "/app/models/:model", "destination": "https://<store>.public.blob.vercel-storage.com/models/:model" }
+```
+
+Replace `<store>` (e.g. `store_3Jq9Akm8vl1TuB82` becomes
+`<store-hostname>.public.blob.vercel-storage.com`) after running
+`scripts/upload-to-vercel-blob.mjs`.
+
+### CSP
+
+`vercel.json` Content-Security-Policy `connect-src` includes:
+
+```
+'self' blob:
+https://blob.vercel-storage.com https://*.public.blob.vercel-storage.com
+https://*.r2.cloudflarestorage.com https://*.r2.dev https://models.voiceisolatepro.com
+https://huggingface.co https://*.xethub.hf.co https://cas-bridge.xethub.hf.co
+```
+
+The `xethub` hosts are required because HuggingFace redirects large
+files through their Xet CDN layer.
+
+### Diagnostics
+
+`window.ModelCDNLoader.getProviderHealthReport()` returns per-provider health
+for the current session, e.g. `{ 'vercel-blob': true, 'r2': true, 'huggingface': true }`.
+The Engineer Mode "CDN Health" panel renders this report and updates as the
+waterfall fails over.
+
+---
+
 ## Deployment
 
 **Platform**: Vercel (serverless, CDN-backed global deployment)

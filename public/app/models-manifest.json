@@ -1,7 +1,55 @@
 {
-  "demucs": "",
-  "bsrnn": "",
-  "rnnoise": "",
-  "nsnet2": "",
-  "silero_vad": ""
+  "schemaVersion": 2,
+  "models": {
+    "demucs": {
+      "filename": "demucs_v4_quantized.onnx",
+      "sizeBytes": 388100096,
+      "eager": false,
+      "sources": [
+        { "provider": "vercel-blob", "url": "/app/models/demucs_v4_quantized.onnx" },
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/demucs_v4_quantized.onnx" },
+        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/demucs_v4_quantized.onnx" }
+      ]
+    },
+    "bsrnn": {
+      "filename": "bsrnn_quantized.onnx",
+      "sizeBytes": 155189248,
+      "eager": false,
+      "sources": [
+        { "provider": "vercel-blob", "url": "/app/models/bsrnn_quantized.onnx" },
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/bsrnn_quantized.onnx" },
+        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/bsrnn_quantized.onnx" }
+      ]
+    },
+    "rnnoise": {
+      "filename": "rnnoise.onnx",
+      "sizeBytes": 2097152,
+      "eager": true,
+      "sources": [
+        { "provider": "vercel-blob", "url": "/app/models/rnnoise.onnx" },
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/rnnoise.onnx" },
+        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/rnnoise.onnx" }
+      ]
+    },
+    "nsnet2": {
+      "filename": "nsnet2.onnx",
+      "sizeBytes": 2097152,
+      "eager": true,
+      "sources": [
+        { "provider": "vercel-blob", "url": "/app/models/nsnet2.onnx" },
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/nsnet2.onnx" },
+        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/nsnet2.onnx" }
+      ]
+    },
+    "silero_vad": {
+      "filename": "silero_vad.onnx",
+      "sizeBytes": 1048576,
+      "eager": true,
+      "sources": [
+        { "provider": "vercel-blob", "url": "/app/models/silero_vad.onnx" },
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/silero_vad.onnx" },
+        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/silero_vad.onnx" }
+      ]
+    }
+  }
 }
