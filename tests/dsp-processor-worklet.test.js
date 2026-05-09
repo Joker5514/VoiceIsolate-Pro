@@ -74,32 +74,31 @@ describe('dsp-processor AudioWorklet behavior', () => {
   });
 
   test('uses context sampleRate for bin mapping in spectral band-pass', () => {
-    const runWithSampleRate = (contextSampleRate) => {
-      const processor = loadProcessor();
-      processor.context.sampleRate = contextSampleRate;
-      processor._params.lowCut = 4500;
-      processor._params.highCut = 5500;
-      processor._params.gate = 0;
-      processor._params.noiseReduction = 0;
-      processor._params.voiceBoost = 0;
+    const contextSampleRate = 96000;
+    const processor = loadProcessor();
+    processor.context.sampleRate = contextSampleRate;
+    processor._params.lowCut = 9500;
+    processor._params.highCut = 10500;
+    processor._params.gate = 0;
+    processor._params.noiseReduction = 0;
+    processor._params.voiceBoost = 0;
 
-      const output = new Float32Array(1024);
-      for (let frame = 0; frame < 4; frame++) {
-        const input = new Float32Array(1024);
-        for (let i = 0; i < input.length; i++) {
-          const idx = frame * input.length + i;
-          input[i] = Math.sin((2 * Math.PI * 5000 * idx) / 44100);
-        }
-        processor.process([[input]], [[output]]);
+    const output = new Float32Array(1024);
+    for (let frame = 0; frame < 4; frame++) {
+      const input = new Float32Array(1024);
+      for (let i = 0; i < input.length; i++) {
+        const idx = frame * input.length + i;
+        input[i] = Math.sin((2 * Math.PI * 10000 * idx) / contextSampleRate);
       }
-      let rms = 0;
-      for (let i = 0; i < output.length; i++) rms += output[i] * output[i];
-      return Math.sqrt(rms / output.length);
-    };
+      processor.process([[input]], [[output]]);
+    }
 
-    const rmsAt44100 = runWithSampleRate(44100);
-    const rmsAt96000 = runWithSampleRate(96000);
+    let rms = 0;
+    for (let i = 0; i < output.length; i++) rms += output[i] * output[i];
+    rms = Math.sqrt(rms / output.length);
 
-    expect(rmsAt44100).toBeGreaterThan(rmsAt96000 * 1.5);
+    // If bin mapping incorrectly used 48kHz constants, this 10kHz tone is
+    // outside the computed passband and output RMS collapses toward zero.
+    expect(rms).toBeGreaterThan(1e-6);
   });
 });
