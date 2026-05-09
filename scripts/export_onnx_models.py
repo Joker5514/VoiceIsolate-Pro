@@ -355,8 +355,8 @@ def main() -> int:
           flush=True)
     rnnoise = RNNoiseSpectral()
     n_params_rn = sum(p.numel() for p in rnnoise.parameters())
-    print(f'  arch: chunk(2049→76×27) → Linear(27→96) → BiGRU(96, 2 layers) '
-          f'→ Linear(192→27) → reassemble → Sigmoid', flush=True)
+    print(f'  arch: chunk(2049→76×27) → Linear(27→128) → BiGRU(128, 2 layers) '
+          f'→ Linear(256→27) → reassemble → Sigmoid', flush=True)
     print(f'  params: {n_params_rn:,}  (~{n_params_rn * 4 / 1024 / 1024:.2f} MB)', flush=True)
     train_model(rnnoise, make_denoising_batch,
                 steps=600, batch_size=24, lr=1.5e-3, label='rnnoise')
