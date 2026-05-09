@@ -768,8 +768,9 @@ class VoiceIsolatePro {
         }
       }
 
+    if (neonVizHandle) neonVizHandle.stop();
     if (typeof window !== 'undefined' && typeof window.VIP_initNeonVisualizer === 'function') {
-      window.VIP_initNeonVisualizer(neonAnalyser);
+      neonVizHandle = window.VIP_initNeonVisualizer(neonAnalyser);
     }
 
     updateStatus('Binding UI sliders…');
