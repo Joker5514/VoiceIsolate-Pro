@@ -211,11 +211,44 @@
     btn.addEventListener('mouseout',  function () { btn.style.color = '#666'; });
   }
 
+  // -- Network connectivity monitor ----------------------------------------
+  function startNetworkMonitor() {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+
+    function updateNetPill(online) {
+      setEnginePill('engNetPill', online ? 'ready' : 'error');
+    }
+
+    // Set initial state immediately
+    var isOnline = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean')
+      ? navigator.onLine
+      : true;
+    updateNetPill(isOnline);
+
+    window.addEventListener('online', function () {
+      updateNetPill(true);
+      console.info('[vip-boot] Network connected.');
+      // Reset any degraded CDN providers so the waterfall retries from the top
+      if (window.ModelCDNLoader && window.ModelCDNLoader.providerHealth) {
+        Object.keys(window.ModelCDNLoader.providerHealth).forEach(function (k) {
+          window.ModelCDNLoader.providerHealth[k] = true;
+        });
+        console.info('[vip-boot] CDN provider health reset after reconnect.');
+      }
+    });
+
+    window.addEventListener('offline', function () {
+      updateNetPill(false);
+      console.warn('[vip-boot] Network disconnected.');
+    });
+  }
+
   // -- Boot sequence -------------------------------------------------------
   function boot() {
     wireDismissBtn();
     aliasOrCreate();
     startPillDriver();
+    startNetworkMonitor();
     // 2-second grace period for capability checks
     setTimeout(function () {
       try { runDiagnostics(); }
