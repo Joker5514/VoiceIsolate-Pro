@@ -282,9 +282,31 @@
     }, 2000);
   }
 
+  /**
+   * Wait for VoiceIsolatePro to become available.
+   * app.js is loaded as type="module" which defers execution after regular scripts.
+   * We poll briefly to give the module time to register the class.
+   */
+  function waitForVIPAndBoot() {
+    var maxWait = 5000; // 5 seconds max
+    var interval = 50;
+    var elapsed = 0;
+
+    function tryBoot() {
+      if (typeof VoiceIsolatePro !== 'undefined' || elapsed >= maxWait) {
+        boot();
+        return;
+      }
+      elapsed += interval;
+      setTimeout(tryBoot, interval);
+    }
+
+    tryBoot();
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot, { once: true });
+    document.addEventListener('DOMContentLoaded', waitForVIPAndBoot, { once: true });
   } else {
-    boot();
+    waitForVIPAndBoot();
   }
 })();
