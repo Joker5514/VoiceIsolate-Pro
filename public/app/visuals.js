@@ -491,6 +491,8 @@
     if (!canvas || !analyser) return { stop: function () {} };
 
     var ctx2d = canvas.getContext('2d');
+    if (!ctx2d) return { stop: function () {} };
+
     var bufferLength = analyser.frequencyBinCount;
     var dataArray = new Uint8Array(bufferLength);
     var rafId = 0;
