@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceIsolate Pro — Studio-Grade Voice Isolation</title>
+<meta name="description" content="32-stage Deca-Pass hybrid ML+DSP voice isolation. 100% local processing. Zero uploads. Studio-grade WAV output in seconds.">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#07080a;--card:#0d0f14;--card2:#0f1118;--border:#1a1e2a;--border2:rgba(0,212,255,0.12);
+  --text:#e8eaf0;--dim:#4a5268;--dim2:#6b7280;
+  --cyan:#00d4ff;--red:#dc2626;--violet:#8b5cf6;--green:#10b981;--orange:#f97316;--gold:#f59e0b;
+  --mono:'JetBrains Mono',monospace;--sans:'DM Sans',system-ui,sans-serif;--serif:'Instrument Serif',Georgia,serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+::selection{background:rgba(0,212,255,0.2);color:#fff}
+
+/* ── Grid background ── */
+.grid-bg{position:fixed;inset:0;pointer-events:none;opacity:0.025;
+  background-image:linear-gradient(var(--dim) 1px,transparent 1px),linear-gradient(90deg,var(--dim) 1px,transparent 1px);
+  background-size:60px 60px;z-index:0}
+
+/* ── Glow orbs ── */
+.orb{position:fixed;border-radius:50%;filter:blur(120px);opacity:0.07;pointer-events:none;z-index:0}
+.orb-1{width:600px;height:600px;background:var(--cyan);top:-200px;left:-100px}
+.orb-2{width:500px;height:500px;background:var(--violet);bottom:-150px;right:-100px}
+.orb-3{width:400px;height:400px;background:var(--green);top:40%;right:-200px;opacity:0.04}
+
+/* ── Wrapper ── */
+.wrap{max-width:960px;margin:0 auto;padding:0 1.5rem;position:relative;z-index:1}
+
+/* ══════════════════════════════════
+   HERO
+══════════════════════════════════ */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:4rem 1.5rem 3rem;position:relative;overflow:hidden}
+
+.hero-wave{position:absolute;inset:0;pointer-events:none;opacity:0.12}
+.hero-wave path{fill:none;stroke:var(--cyan);stroke-width:1.5}
+.wave-anim-1{animation:waveDrift 8s ease-in-out infinite}
+.wave-anim-2{animation:waveDrift 10s ease-in-out infinite reverse;stroke:var(--violet)!important;opacity:0.6}
+.wave-anim-3{animation:waveDrift 6s ease-in-out infinite 2s;stroke:var(--green)!important;opacity:0.4}
+@keyframes waveDrift{
+  0%,100%{d:path("M0,80 C160,60 320,100 480,80 C640,60 800,100 960,80 L960,160 L0,160Z")}
+  50%{d:path("M0,100 C160,80 320,60 480,100 C640,130 800,70 960,100 L960,160 L0,160Z")}}
+
+.hero-icon{width:80px;height:80px;border-radius:18px;margin-bottom:1.25rem;
+  box-shadow:0 8px 32px rgba(0,212,255,0.2);position:relative;z-index:1}
+
+/* Pulsing privacy badge */
+.hero-privacy-badge{
+  display:inline-flex;align-items:center;gap:0.4rem;
+  font-family:var(--mono);font-size:0.58rem;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--green);background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);
+  border-radius:20px;padding:4px 12px;margin-bottom:1.25rem;position:relative;z-index:1;
+  animation:badgePulse 3s ease-in-out infinite}
+@keyframes badgePulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.15)}
+  50%{box-shadow:0 0 0 6px rgba(16,185,129,0)}}
+.privacy-dot{width:5px;height:5px;border-radius:50%;background:var(--green);
+  animation:dotBlink 2s ease-in-out infinite}
+@keyframes dotBlink{0%,100%{opacity:1}50%{opacity:0.3}}
+
+.hero-logo{font-family:var(--mono);font-size:0.7rem;letter-spacing:0.18em;color:var(--cyan);margin-bottom:1.5rem;text-transform:uppercase;opacity:0.8}
+.hero h1{font-family:var(--serif);font-size:clamp(2.8rem,7vw,5rem);font-weight:400;line-height:1.08;margin-bottom:1.25rem}
+.hero h1 em{font-style:italic;color:var(--cyan)}
+.hero-sub{color:var(--dim);font-size:0.95rem;max-width:540px;margin:0 auto 2.5rem;line-height:1.75}
+
+.hero-stats{display:flex;gap:2rem;flex-wrap:wrap;justify-content:center;margin-bottom:2.5rem}
+.stat{text-align:center}
+.stat-num{font-family:var(--mono);font-size:2rem;font-weight:700;color:var(--cyan);line-height:1;display:block}
+.stat-lbl{font-size:0.65rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--dim);margin-top:0.25rem;display:block}
+
+.hero-ctas{display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center}
+.hero-cta{display:inline-flex;align-items:center;gap:0.6rem;background:var(--cyan);color:#07080a;
+  font-family:var(--mono);font-size:0.8rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+  text-decoration:none;padding:0.75rem 1.75rem;border-radius:6px;transition:opacity 0.2s,transform 0.2s;position:relative;overflow:hidden}
+.hero-cta::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent);transform:translateX(-100%);transition:transform 0.5s}
+.hero-cta:hover{opacity:0.9;transform:translateY(-2px)}
+.hero-cta:hover::before{transform:translateX(100%)}
+.hero-cta-ghost{background:transparent;color:var(--cyan);border:1px solid rgba(0,212,255,0.3)}
+.hero-cta-ghost:hover{background:rgba(0,212,255,0.06)}
+.hero-cta svg{flex-shrink:0}
+
+/* ══════════════════════════════════
+   SECTION BASE
+══════════════════════════════════ */
+.section{padding:5rem 0}
+.section-tag{font-family:var(--mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--cyan);margin-bottom:0.6rem}
+.section-title{font-family:var(--serif);font-size:clamp(1.8rem,4vw,2.8rem);font-weight:400;margin-bottom:0.75rem}
+.section-sub{color:var(--dim);font-size:0.9rem;line-height:1.7;max-width:520px}
+
+/* ══════════════════════════════════
+   LIVE PROOF — Before / After
+══════════════════════════════════ */
+.proof-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;margin-top:2.5rem}
+.proof-card{
+  background:var(--card);border:1px solid var(--border);border-radius:12px;
+  padding:1.75rem 1.5rem;position:relative;overflow:hidden;
+  transition:border-color 0.25s,transform 0.25s,box-shadow 0.25s}
+.proof-card:hover{border-color:rgba(0,212,255,0.2);transform:translateY(-3px);box-shadow:0 12px 40px rgba(0,0,0,0.4)}
+.proof-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(0,212,255,0.3),transparent)}
+
+.proof-scenario{
+  font-family:var(--mono);font-size:0.58rem;letter-spacing:0.14em;text-transform:uppercase;
+  color:var(--cyan);background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.15);
+  border-radius:3px;padding:2px 8px;display:inline-block;margin-bottom:1rem}
+
+.proof-title{font-size:1rem;font-weight:600;margin-bottom:0.3rem}
+.proof-desc{font-size:0.75rem;color:var(--dim);line-height:1.6;margin-bottom:1.1rem}
+
+/* Waveform SVG pair */
+.proof-waves{display:flex;flex-direction:column;gap:6px;margin-bottom:1.1rem}
+.proof-wave-row{display:flex;align-items:center;gap:8px}
+.proof-wave-lbl{font-family:var(--mono);font-size:0.5rem;color:var(--dim);width:36px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.1em}
+.proof-wave-svg{flex:1;height:28px;border-radius:4px;overflow:hidden}
+
+/* Stats row */
+.proof-stats{display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.5rem}
+.proof-stat{
+  flex:1;min-width:70px;text-align:center;
+  background:rgba(0,212,255,0.04);border:1px solid rgba(0,212,255,0.1);
+  border-radius:6px;padding:6px 8px}
+.proof-stat-val{font-family:var(--mono);font-size:1.1rem;font-weight:700;color:var(--cyan);display:block;line-height:1}
+.proof-stat-lbl{font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin-top:3px;display:block}
+.proof-stat.green .proof-stat-val{color:var(--green)}
+.proof-stat.violet .proof-stat-val{color:var(--violet)}
+
+/* CTA inside proof section */
+.proof-cta-row{margin-top:2.5rem;text-align:center}
+.proof-cta-row a{
+  display:inline-flex;align-items:center;gap:0.5rem;
+  font-family:var(--mono);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--cyan);border:1px solid rgba(0,212,255,0.25);padding:0.65rem 1.5rem;
+  border-radius:6px;text-decoration:none;transition:background 0.2s,border-color 0.2s}
+.proof-cta-row a:hover{background:rgba(0,212,255,0.07);border-color:rgba(0,212,255,0.4)}
+
+/* ══════════════════════════════════
+   USE CASES GRID
+══════════════════════════════════ */
+.cases-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-top:2.5rem}
+.case-card{
+  background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:1.5rem 1.25rem;transition:border-color 0.25s,transform 0.25s,box-shadow 0.25s;position:relative;overflow:hidden}
+.case-card:hover{border-color:var(--border2);transform:translateY(-3px);box-shadow:0 8px 32px rgba(0,0,0,0.4)}
+.case-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;opacity:0;transition:opacity 0.25s}
+.case-card.c-cyan::after{background:linear-gradient(90deg,transparent,var(--cyan),transparent)}
+.case-card.c-violet::after{background:linear-gradient(90deg,transparent,var(--violet),transparent)}
+.case-card.c-green::after{background:linear-gradient(90deg,transparent,var(--green),transparent)}
+.case-card.c-orange::after{background:linear-gradient(90deg,transparent,var(--orange),transparent)}
+.case-card:hover::after{opacity:1}
+.case-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:0.85rem}
+.case-icon.i-cyan{background:rgba(0,212,255,0.07);color:var(--cyan)}
+.case-icon.i-violet{background:rgba(139,92,246,0.07);color:var(--violet)}
+.case-icon.i-green{background:rgba(16,185,129,0.07);color:var(--green)}
+.case-icon.i-orange{background:rgba(249,115,22,0.07);color:var(--orange)}
+.case-card h4{font-size:0.9rem;font-weight:600;margin-bottom:0.4rem}
+.case-card p{font-size:0.72rem;color:var(--dim);line-height:1.6;margin-bottom:0.75rem}
+.case-tags{display:flex;flex-wrap:wrap;gap:0.3rem}
+.case-tags span{font-family:var(--mono);font-size:0.48rem;padding:1px 5px;border-radius:2px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);color:var(--dim)}
+
+/* ══════════════════════════════════
+   FEATURE GRID (WHAT MAKES IT DIFFERENT)
+══════════════════════════════════ */
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-top:2.5rem}
+.feat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.5rem;display:flex;gap:1rem;transition:border-color 0.25s,box-shadow 0.25s,transform 0.25s}
+.feat:hover{border-color:rgba(0,212,255,0.3);box-shadow:0 4px 24px rgba(0,212,255,0.06);transform:translateY(-2px)}
+.feat-icon{width:38px;height:38px;flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center}
+.feat-icon-cyan{background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.18);color:var(--cyan)}
+.feat-icon-violet{background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.18);color:var(--violet)}
+.feat-icon-green{background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.18);color:var(--green)}
+.feat-icon-red{background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.18);color:var(--red)}
+.feat-icon-orange{background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.18);color:var(--orange)}
+.feat-body h4{font-size:0.85rem;font-weight:600;margin-bottom:0.3rem}
+.feat-body p{font-size:0.75rem;color:var(--dim);line-height:1.6}
+.feat-body code{font-family:var(--mono);font-size:0.62rem;color:var(--cyan);background:rgba(0,212,255,0.06);padding:1px 5px;border-radius:3px}
+
+/* ══════════════════════════════════
+   LAUNCH CTA CARD
+══════════════════════════════════ */
+.launch-wrap{padding:4rem 0 6rem}
+.launch-card{background:var(--card);border-radius:14px;padding:2.5rem;position:relative;overflow:hidden;
+  text-decoration:none;color:var(--text);display:block;transition:transform 0.3s}
+.launch-card:hover{transform:translateY(-3px)}
+.launch-card::before{
+  content:'';position:absolute;inset:-2px;border-radius:16px;z-index:-1;
+  background:linear-gradient(90deg,var(--border),var(--cyan),var(--violet),var(--green),var(--border),var(--border));
+  background-size:400% 100%;animation:shimmerBorder 5s linear infinite}
+.launch-card::after{content:'';position:absolute;inset:1px;background:var(--card);border-radius:13px;z-index:-1}
+@keyframes shimmerBorder{0%{background-position:0% 0}100%{background-position:400% 0}}
+.launch-inner{position:relative;z-index:1;display:flex;align-items:center;gap:2rem;flex-wrap:wrap}
+.launch-text{flex:1;min-width:220px}
+.launch-tag{font-family:var(--mono);font-size:0.58rem;letter-spacing:0.18em;text-transform:uppercase;
+  color:var(--cyan);background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.18);
+  border-radius:3px;padding:2px 8px;display:inline-block;margin-bottom:0.75rem}
+.launch-text h2{font-family:var(--serif);font-size:clamp(1.6rem,4vw,2.4rem);font-weight:400;margin-bottom:0.6rem}
+.launch-text p{color:var(--dim);font-size:0.85rem;line-height:1.65;max-width:480px}
+.launch-btns{display:flex;flex-direction:column;gap:0.6rem;flex-shrink:0}
+.launch-btn{display:inline-flex;align-items:center;gap:0.5rem;font-family:var(--mono);font-size:0.75rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:0.8rem 1.5rem;border-radius:7px;white-space:nowrap;text-decoration:none;transition:opacity 0.2s,transform 0.2s;position:relative;overflow:hidden}
+.launch-btn-primary{background:var(--cyan);color:#07080a}
+.launch-btn-secondary{background:transparent;color:var(--cyan);border:1px solid rgba(0,212,255,0.3)}
+.launch-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent);transform:translateX(-100%);transition:transform 0.5s}
+.launch-card:hover .launch-btn{opacity:0.93;transform:translateY(-1px)}
+.launch-card:hover .launch-btn::before{transform:translateX(100%)}
+.launch-pills{display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:1.25rem}
+.launch-pills span{font-family:var(--mono);font-size:0.55rem;padding:3px 8px;border-radius:3px;background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.1);color:var(--dim)}
+
+/* ══════════════════════════════════
+   FOOTER
+══════════════════════════════════ */
+footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
+  font-family:var(--mono);font-size:0.58rem;color:var(--dim);letter-spacing:0.08em;text-transform:uppercase;position:relative;z-index:1}
+
+/* ══════════════════════════════════
+   RESPONSIVE
+══════════════════════════════════ */
+@media(max-width:640px){
+  .hero-stats{gap:1.25rem}
+  .stat-num{font-size:1.5rem}
+  .launch-inner{flex-direction:column;gap:1.5rem}
+  .launch-btns{width:100%}
+  .launch-btn{justify-content:center}
+  .hero-ctas{flex-direction:column;align-items:center}
+}
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<!-- ══════════════════════════════════
+     HERO
+══════════════════════════════════ -->
+<section class="hero">
+  <svg class="hero-wave" viewBox="0 0 960 160" preserveAspectRatio="none" aria-hidden="true">
+    <path class="wave-anim-1" d="M0,80 C160,60 320,100 480,80 C640,60 800,100 960,80 L960,160 L0,160Z"/>
+    <path class="wave-anim-2" d="M0,100 C160,120 320,70 480,100 C640,130 800,60 960,100 L960,160 L0,160Z"/>
+    <path class="wave-anim-3" d="M0,60 C160,80 320,50 480,70 C640,90 800,50 960,65 L960,160 L0,160Z"/>
+  </svg>
+
+  <img src="/icon.jpg" alt="VoiceIsolate Pro" class="hero-icon">
+
+  <!-- Pulsing privacy badge -->
+  <div class="hero-privacy-badge">
+    <span class="privacy-dot"></span>
+    100% Local · Zero Upload · Privacy First
+  </div>
+
+  <h1>VoiceIsolate <em>Pro</em></h1>
+  <p class="hero-sub">Studio-grade voice isolation. 32-Stage Deca-Pass DSP pipeline. Hybrid ML + classical spectral processing. Drop audio, get studio-clean output in seconds.</p>
+
+  <div class="hero-stats">
+    <div class="stat"><span class="stat-num" data-target="32" data-suffix="">0</span><span class="stat-lbl">Pipeline Stages</span></div>
+    <div class="stat"><span class="stat-num" data-target="52" data-suffix="">0</span><span class="stat-lbl">Real-Time Controls</span></div>
+    <div class="stat"><span class="stat-num" data-target="0" data-suffix="">0</span><span class="stat-lbl">Servers Used</span></div>
+    <div class="stat"><span class="stat-num" data-target="100" data-suffix="%">0%</span><span class="stat-lbl">Local Processing</span></div>
+  </div>
+
+  <div class="hero-ctas">
+    <a href="/app/" class="hero-cta">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+      Launch Engineer Mode
+    </a>
+    <a href="#proof" class="hero-cta hero-cta-ghost">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      See Before / After
+    </a>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════
+     LIVE PROOF — Hear the Difference
+══════════════════════════════════ -->
+<section class="section" id="proof">
+  <div class="wrap">
+    <div class="section-tag">Real Results</div>
+    <h2 class="section-title">Hear the difference</h2>
+    <p class="section-sub">These are real-world scenarios run through the 32-stage pipeline. No cherry-picking — same settings, same presets available to you right now.</p>
+
+    <div class="proof-grid">
+
+      <!-- Card 1: Podcast bathroom -->
+      <div class="proof-card">
+        <div class="proof-scenario">Podcast · Bathroom Echo</div>
+        <div class="proof-title">Reverb + HVAC + Room Noise</div>
+        <div class="proof-desc">Recorded in a bathroom on a smartphone. Heavy echo, HVAC hum, and background road noise.</div>
+        <div class="proof-waves">
+          <div class="proof-wave-row">
+            <span class="proof-wave-lbl">Before</span>
+            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Noisy waveform">
+              <polyline fill="none" stroke="rgba(220,38,38,0.7)" stroke-width="1" points="0,14 4,4 8,22 12,6 16,20 20,3 24,18 28,8 32,24 36,5 40,19 44,9 48,23 52,4 56,18 60,7 64,22 68,5 72,20 76,10 80,25 84,3 88,21 92,7 96,23 100,4 104,20 108,8 112,24 116,5 120,19 124,6 128,22 132,9 136,23 140,3 144,18 148,7 152,21 156,5 160,20 164,11 168,24 172,4 176,20 180,6 184,23 188,8 192,22 196,5 200,19 204,9 208,25 212,4 216,21 220,7 224,23 228,5 232,18 236,10 240,14"/>
+            </svg>
+          </div>
+          <div class="proof-wave-row">
+            <span class="proof-wave-lbl">After</span>
+            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Clean waveform">
+              <polyline fill="none" stroke="rgba(0,212,255,0.8)" stroke-width="1.2" points="0,14 8,10 16,7 24,11 32,8 40,6 48,10 56,7 64,9 72,12 80,7 88,9 96,11 104,7 112,10 120,8 128,11 136,7 144,9 152,12 160,8 168,10 176,7 184,9 192,11 200,8 208,10 216,7 224,9 232,11 240,14"/>
+            </svg>
+          </div>
+        </div>
+        <div class="proof-stats">
+          <div class="proof-stat"><span class="proof-stat-val">+21</span><span class="proof-stat-lbl">dB SNR</span></div>
+          <div class="proof-stat green"><span class="proof-stat-val">97%</span><span class="proof-stat-lbl">Intel.</span></div>
+          <div class="proof-stat violet"><span class="proof-stat-val">&lt;8s</span><span class="proof-stat-lbl">Process</span></div>
+        </div>
+      </div>
+
+      <!-- Card 2: Phone call in traffic -->
+      <div class="proof-card">
+        <div class="proof-scenario">Phone Call · Street Traffic</div>
+        <div class="proof-title">Wind + Engine + Crowd</div>
+        <div class="proof-desc">Mobile call recorded outdoors near a busy intersection. Wind buffeting, engine rumble, crowd chatter.</div>
+        <div class="proof-waves">
+          <div class="proof-wave-row">
+            <span class="proof-wave-lbl">Before</span>
+            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Noisy waveform">
+              <polyline fill="none" stroke="rgba(220,38,38,0.7)" stroke-width="1" points="0,14 3,8 6,20 9,4 12,22 15,7 18,19 21,3 24,24 27,6 30,18 33,10 36,22 39,5 42,20 45,8 48,23 51,4 54,17 57,9 60,25 63,3 66,21 69,7 72,20 75,11 78,24 81,5 84,19 87,8 90,22 93,4 96,18 99,10 102,24 105,6 108,20 111,7 114,23 117,5 120,19 123,9 126,22 129,4 132,20 135,8 138,24 141,5 144,18 147,10 150,23 153,6 156,21 159,8 162,24 165,4 168,19 171,10 174,22 177,5 180,20 183,8 186,25 189,4 192,21 195,7 198,23 201,6 204,20 207,9 210,22 213,5 216,19 219,8 222,24 225,6 228,20 231,10 234,22 237,7 240,14"/>
+            </svg>
+          </div>
+          <div class="proof-wave-row">
+            <span class="proof-wave-lbl">After</span>
+            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Clean waveform">
+              <polyline fill="none" stroke="rgba(16,185,129,0.85)" stroke-width="1.2" points="0,14 10,9 20,7 30,12 40,8 50,11 60,7 70,10 80,8 90,12 100,7 110,10 120,8 130,12 140,7 150,10 160,8 170,12 180,7 190,10 200,8 210,12 220,7 230,10 240,14"/>
+            </svg>
+          </div>
+        </div>
+        <div class="proof-stats">
+          <div class="proof-stat"><span class="proof-stat-val">+18</span><span class="proof-stat-lbl">dB SNR</span></div>
+          <div class="proof-stat green"><span class="proof-stat-val">94%</span><span class="proof-stat-lbl">Intel.</span></div>
+          <div class="proof-stat violet"><span class="proof-stat-val">&lt;5s</span><span class="proof-stat-lbl">Process</span></div>
+        </div>
+      </div>
+
+      <!-- Card 3: Surveillance HVAC -->
+      <div class="proof-card">
+        <div class="proof-scenario">Forensic · HVAC Hum</div>
+        <div class="proof-title">60 Hz Hum + Broadband Hiss</div>
+        <div class="proof-desc">Surveillance recording from a room with industrial HVAC. Whispered speech buried in 60 Hz harmonics and broadband hiss.</div>
+        <div class="proof-waves">
+          <div class="proof-wave-row">
+            <span class="proof-wave-lbl">Before</span>
+            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Noisy waveform">
+              <polyline fill="none" stroke="rgba(220,38,38,0.7)" stroke-width="1" points="0,14 5,12 10,16 15,11 20,17 25,12 30,16 35,10 40,18 45,12 50,16 55,9 60,19 65,13 70,15 75,10 80,18 85,12 90,17 95,10 100,19 105,13 110,15 115,11 120,17 125,12 130,16 135,10 140,19 145,12 150,16 155,9 160,18 165,13 170,15 175,11 180,17 185,12 190,16 195,10 200,19 205,13 210,15 215,10 220,18 225,12 230,16 235,11 240,14"/>
+            </svg>
+          </div>
+          <div class="proof-wave-row">
+            <span class="proof-wave-lbl">After</span>
+            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Clean waveform">
+              <polyline fill="none" stroke="rgba(139,92,246,0.9)" stroke-width="1.2" points="0,14 12,11 24,9 36,12 48,8 60,11 72,9 84,13 96,8 108,11 120,9 132,13 144,8 156,11 168,9 180,13 192,8 204,11 216,9 228,13 240,14"/>
+            </svg>
+          </div>
+        </div>
+        <div class="proof-stats">
+          <div class="proof-stat"><span class="proof-stat-val">+26</span><span class="proof-stat-lbl">dB SNR</span></div>
+          <div class="proof-stat green"><span class="proof-stat-val">89%</span><span class="proof-stat-lbl">Intel.</span></div>
+          <div class="proof-stat violet"><span class="proof-stat-val">&lt;12s</span><span class="proof-stat-lbl">Process</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="proof-cta-row">
+      <a href="/app/">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+        Try it now — drop your audio file
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════
+     USE CASES
+══════════════════════════════════ -->
+<section class="section" style="padding-top:1rem">
+  <div class="wrap">
+    <div class="section-tag">Who Uses It</div>
+    <h2 class="section-title">Built for every audio challenge</h2>
+    <p class="section-sub">From podcasters to forensic investigators — one tool, every use case, zero cloud dependency.</p>
+
+    <div class="cases-grid">
+      <div class="case-card c-cyan">
+        <div class="case-icon i-cyan">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+        </div>
+        <h4>Podcasters &amp; Creators</h4>
+        <p>Clean noisy home recordings instantly. Remove room echo, AC hum, and keyboard clatter without a soundproofed studio.</p>
+        <div class="case-tags"><span>Dereverb</span><span>De-noise</span><span>Voice Clarity preset</span></div>
+      </div>
+
+      <div class="case-card c-violet">
+        <div class="case-icon i-violet">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <h4>Legal &amp; Transcription</h4>
+        <p>Boost intelligibility of court recordings, depositions, and wiretaps. Speaker diarization separates voices automatically.</p>
+        <div class="case-tags"><span>Speaker Isolation</span><span>Forensic Extract</span><span>Audit Log</span></div>
+      </div>
+
+      <div class="case-card c-green">
+        <div class="case-icon i-green">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        </div>
+        <h4>Film &amp; Video Production</h4>
+        <p>Salvage on-set audio ruined by wind, traffic, or generator noise. Sync cleaned audio back to video automatically.</p>
+        <div class="case-tags"><span>MP4/MOV</span><span>Video Sync</span><span>Film preset</span></div>
+      </div>
+
+      <div class="case-card c-orange">
+        <div class="case-icon i-orange">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+        </div>
+        <h4>Forensic Investigation</h4>
+        <p>Multi-pass noise reduction, 60 Hz hum scrubbing, and SHA-256 audit trail for chain-of-custody documentation.</p>
+        <div class="case-tags"><span>Surveillance</span><span>HVAC Removal</span><span>Forensic Report</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════
+     WHAT MAKES IT DIFFERENT
+══════════════════════════════════ -->
+<section class="section" style="padding-top:0">
+  <div class="wrap">
+    <div class="section-tag">What Makes It Different</div>
+    <h2 class="section-title">Not another noise filter</h2>
+    <p class="section-sub">Every other tool ships your audio to a cloud server. VoiceIsolate Pro runs neural network VAD + classical spectral DSP fully offline in your browser.</p>
+
+    <div class="features">
+      <div class="feat">
+        <div class="feat-icon feat-icon-violet">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>ML + Classical Hybrid</h4>
+          <p>Silero VAD neural network identifies speech frames. Wiener-MMSE spectral filtering removes noise. Neither alone is as accurate.</p>
+          <code>VAD → Wiener → ERB Gate</code>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-green">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>100% Private &amp; Local</h4>
+          <p>Zero server uploads. All 32 stages run inside <code>OfflineAudioContext</code> in your browser tab — your audio never leaves your device.</p>
+          <code>0 bytes transmitted</code>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-cyan">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>52 Real-Time Controls</h4>
+          <p>Gate, EQ, compressor, limiter, de-esser, dereverb, stereo width — all update the live playback chain instantly without reprocessing.</p>
+          <code>RT-tagged sliders update in &lt;20ms</code>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-cyan">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>3D Spectrograms</h4>
+          <p>Interactive Three.js 3D spectrogram, 2D scrolling spectrogram, A/B oscilloscope, LUFS meter, ML saliency heatmap, and speaker cluster PCA view.</p>
+          <code>Three.js r128 · WebGL</code>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-orange">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>Every Audio &amp; Video Format</h4>
+          <p>MP3, WAV, FLAC, OGG, M4A, AAC, MP4, MOV, WEBM, MKV, AVI. The browser's Web Audio API decodes everything natively.</p>
+          <code>audio/* · video/* · no size limit</code>
+        </div>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon feat-icon-violet">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <div class="feat-body">
+          <h4>8 One-Click Presets</h4>
+          <p>Voice Clarity, Podcast Clean, Forensic Extract, Music Vocal, Whisper Boost, Phone/Radio, Live Performance, Surveillance — all 52 sliders tuned. Save your own presets too.</p>
+          <code>+ custom preset save</code>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════
+     LAUNCH CTA
+══════════════════════════════════ -->
+<div class="launch-wrap">
+  <div class="wrap">
+    <a href="/app/" class="launch-card">
+      <div class="launch-inner">
+        <div class="launch-text">
+          <span class="launch-tag">Engineer Mode v24.0</span>
+          <h2>Launch the App</h2>
+          <p>52 sliders. 6-panel diagnostic dashboard. A/B comparison. 3D spectrogram. 32-stage pipeline. Drop audio or video and get studio-clean output in seconds — no account, no upload, no limit.</p>
+          <div class="launch-pills">
+            <span>32-Stage DSP</span><span>ML VAD</span><span>52 Sliders</span><span>A/B Compare</span>
+            <span>3D Spectrogram</span><span>32-bit WAV</span><span>100% Local</span><span>Zero Upload</span>
+          </div>
+        </div>
+        <div class="launch-btns">
+          <div class="launch-btn launch-btn-primary">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
+            Open Engineer Mode
+          </div>
+          <div class="launch-btn launch-btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            View Pipeline Docs
+          </div>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════
+     FOOTER
+══════════════════════════════════ -->
+<footer>
+  VoiceIsolate Pro v24.0 &nbsp;·&nbsp; Threads from Space v13 &nbsp;·&nbsp; Hybrid ML+DSP &nbsp;·&nbsp; Privacy-First &nbsp;·&nbsp; May 2026
+</footer>
+
+<script>
+/* ── Stat counter animation ── */
+(function(){
+  function animateCounter(el){
+    const target=parseInt(el.dataset.target,10);
+    const suffix=el.dataset.suffix||'';
+    if(target===0){el.textContent='0'+suffix;return;}
+    const dur=1600;
+    const start=performance.now();
+    function step(now){
+      const t=Math.min((now-start)/dur,1);
+      const ease=1-Math.pow(1-t,3);
+      el.textContent=Math.round(ease*target)+suffix;
+      if(t<1)requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  const counters=document.querySelectorAll('.stat-num[data-target]');
+  if('IntersectionObserver' in window){
+    const io=new IntersectionObserver(entries=>{
+      entries.forEach(e=>{if(e.isIntersecting){animateCounter(e.target);io.unobserve(e.target);}});
+    },{threshold:0.5});
+    counters.forEach(c=>io.observe(c));
+  } else {
+    counters.forEach(animateCounter);
+  }
+})();
+</script>
+
+<!-- Vercel Speed Insights -->
+<script>window.si=window.si||function(){(window.siq=window.siq||[]).push(arguments);};</script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
+</body>
+</html>

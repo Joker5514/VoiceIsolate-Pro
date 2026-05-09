@@ -1,0 +1,27 @@
+PLACEHOLDER: demucs_v4_quantized.onnx is currently NOT exportable.
+
+Status: blocked_export
+
+Why:
+  HDemucs (the architecture behind every demucs v4 variant including
+  htdemucs, mdx, mdx_extra, mdx_q) uses an internal torch.stft on
+  complex tensors. PyTorch's torch.onnx.export at opset 17 fails with
+  SymbolicValueError("STFT does not currently support complex types").
+  Opset 20 traces the graph but emits an OOM during graph emission on
+  hosts with <8 GB free disk, and even on completion the resulting ONNX
+  is >300 MB after quantization. There is no pure-waveform demucs
+  variant in the 4.x line. mdx_extra is shipped as a BagOfModels
+  ensemble (4 sub-models); the export wrapper unwraps to bag.models[0]
+  for traceability, but this still does not bypass the STFT blocker.
+
+How to unblock:
+  1. Wait for torch.onnx.dynamo_export to support complex-tensor STFT,
+     OR
+  2. Patch demucs/hdemucs.py to replace torch.stft with a custom layer
+     that splits real and imaginary parts before the FFT op,
+     OR
+  3. Fine-tune a published waveform-only separator (e.g. Wave-U-Net,
+     Spleeter-2-stem) and ship that under this filename.
+
+Until then ml-worker.js detects the missing file and runs the DSP-only
+path. Audio still processes at full quality minus the Demucs stem.

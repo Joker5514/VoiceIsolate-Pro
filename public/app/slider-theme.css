@@ -1,0 +1,266 @@
+/*
+  VoiceIsolate Pro — Slider Theme v2.0
+  ==============================================
+  Unified dark-neon CSS for every range input
+  (.slider) in the Engineer Mode 52-slider UI.
+  Uses --pct custom property set by app.js so
+  the filled track always matches the thumb.
+*/
+
+/* ── Design tokens ──────────────────────────────────────────────────────── */
+:root {
+  --vip-accent:       #e03c3c;     /* primary red  */
+  --vip-accent-glow:  #ff5f5f;     /* lighter glow */
+  --vip-accent-dark:  #9b1a1a;     /* deep red      */
+  --vip-track-bg:     #1e1e2e;     /* empty portion */
+  --vip-track-h:      5px;
+  --vip-thumb-size:   16px;
+  --vip-thumb-shadow: 0 0 8px var(--vip-accent-glow);
+  --vip-rt-color:     #ff9040;     /* orange for RT badges */
+  --vip-text-dim:     #8888aa;
+  --vip-text:         #d4d4e8;
+  --vip-row-bg:       rgba(255,255,255,0.025);
+  --vip-row-bg-hover: rgba(255,255,255,0.05);
+  --vip-border:       rgba(255,255,255,0.07);
+}
+
+/* ── Slider row layout ───────────────────────────────────────────────────── */
+.slider-row {
+  display:         grid;
+  grid-template-columns: 140px 1fr 64px;
+  align-items:     center;
+  gap:             8px;
+  padding:         6px 10px;
+  border-radius:   6px;
+  background:      var(--vip-row-bg);
+  border:          1px solid var(--vip-border);
+  transition:      background 0.15s;
+}
+.slider-row:hover {
+  background: var(--vip-row-bg-hover);
+}
+
+/* ── Label wrap ─────────────────────────────────────────────────────────── */
+.slider-label-wrap {
+  display:      flex;
+  align-items:  center;
+  gap:          4px;
+  overflow:     hidden;
+}
+.slider-label {
+  font-size:    0.78rem;
+  font-weight:  600;
+  color:        var(--vip-text);
+  white-space:  nowrap;
+  overflow:     hidden;
+  text-overflow:ellipsis;
+  letter-spacing: 0.02em;
+  cursor:       default;
+}
+
+/* ── Real-time badge ────────────────────────────────────────────────────── */
+.rt-badge {
+  font-size:     0.58rem;
+  font-weight:   700;
+  color:         var(--vip-rt-color);
+  border:        1px solid var(--vip-rt-color);
+  border-radius: 3px;
+  padding:       1px 3px;
+  line-height:   1;
+  flex-shrink:   0;
+  opacity:       0.85;
+}
+
+/* ── Info icon ───────────────────────────────────────────────────────────── */
+.sr-info {
+  font-size:    0.68rem;
+  color:        var(--vip-text-dim);
+  cursor:       help;
+  flex-shrink:  0;
+  user-select:  none;
+  opacity:      0.6;
+  transition:   opacity 0.15s;
+}
+.sr-info:hover { opacity: 1; }
+
+/* ── Value readout ──────────────────────────────────────────────────────── */
+.slider-val {
+  font-size:    0.72rem;
+  font-variant-numeric: tabular-nums;
+  color:        var(--vip-accent-glow);
+  text-align:   right;
+  white-space:  nowrap;
+  min-width:    52px;
+  font-weight:  600;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE RANGE INPUT
+   Webkit, Moz, and MS all need separate thumb/track pseudo-elements.
+   We use a CSS gradient on the track to show the filled portion via --pct.
+   ═══════════════════════════════════════════════════════════════════════════ */
+input[type="range"].slider {
+  -webkit-appearance: none;
+  appearance:   none;
+  width:        100%;
+  height:       var(--vip-track-h);
+  background:   linear-gradient(
+    to right,
+    var(--vip-accent)       0%,
+    var(--vip-accent)       var(--pct, 50%),
+    var(--vip-track-bg)     var(--pct, 50%),
+    var(--vip-track-bg)     100%
+  );
+  border-radius: 3px;
+  outline:      none;
+  cursor:       pointer;
+  transition:   background 0.06s;
+}
+
+/* Webkit thumb */
+input[type="range"].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width:         var(--vip-thumb-size);
+  height:        var(--vip-thumb-size);
+  border-radius: 50%;
+  background:    radial-gradient(circle at 40% 35%,
+                   var(--vip-accent-glow) 0%,
+                   var(--vip-accent)      60%,
+                   var(--vip-accent-dark) 100%);
+  box-shadow:    var(--vip-thumb-shadow);
+  border:        2px solid rgba(255,255,255,0.15);
+  cursor:        grab;
+  transition:    box-shadow 0.15s, transform 0.1s;
+}
+input[type="range"].slider::-webkit-slider-thumb:active {
+  cursor:     grabbing;
+  transform:  scale(1.18);
+  box-shadow: 0 0 14px var(--vip-accent-glow);
+}
+input[type="range"].slider:focus-visible::-webkit-slider-thumb {
+  outline:    2px solid var(--vip-accent-glow);
+  outline-offset: 2px;
+}
+
+/* Firefox thumb */
+input[type="range"].slider::-moz-range-thumb {
+  width:         var(--vip-thumb-size);
+  height:        var(--vip-thumb-size);
+  border-radius: 50%;
+  background:    radial-gradient(circle at 40% 35%,
+                   var(--vip-accent-glow) 0%,
+                   var(--vip-accent)      60%,
+                   var(--vip-accent-dark) 100%);
+  box-shadow:    var(--vip-thumb-shadow);
+  border:        2px solid rgba(255,255,255,0.15);
+  cursor:        grab;
+  transition:    box-shadow 0.15s, transform 0.1s;
+}
+input[type="range"].slider::-moz-range-thumb:active {
+  cursor:     grabbing;
+  transform:  scale(1.18);
+  box-shadow: 0 0 14px var(--vip-accent-glow);
+}
+
+/* Firefox track (lower portion coloured via gradient on the input itself) */
+input[type="range"].slider::-moz-range-track {
+  height:       var(--vip-track-h);
+  border-radius: 3px;
+  background:   transparent;
+}
+input[type="range"].slider::-moz-range-progress {
+  height:        var(--vip-track-h);
+  border-radius: 3px 0 0 3px;
+  background:    var(--vip-accent);
+}
+
+/* Focus ring */
+input[type="range"].slider:focus-visible {
+  outline: 2px solid var(--vip-accent-glow);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+/* Disabled state */
+input[type="range"].slider:disabled {
+  opacity:  0.35;
+  cursor:   not-allowed;
+  filter:   grayscale(0.6);
+}
+input[type="range"].slider:disabled::-webkit-slider-thumb {
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ── Toast notifications ─────────────────────────────────────────────────── */
+#toastRegion {
+  position:   fixed;
+  bottom:     24px;
+  right:      24px;
+  z-index:    9999;
+  display:    flex;
+  flex-direction: column;
+  gap:        8px;
+  pointer-events: none;
+}
+.toast {
+  padding:      10px 18px;
+  border-radius: 8px;
+  font-size:    0.82rem;
+  font-weight:  600;
+  color:        #fff;
+  background:   #222236;
+  border:       1px solid rgba(255,255,255,0.1);
+  box-shadow:   0 4px 24px rgba(0,0,0,0.5);
+  animation:    toastIn 0.2s ease-out;
+  pointer-events: auto;
+}
+.toast-success { border-color: #2ecc71; color: #2ecc71; }
+.toast-error   { border-color: var(--vip-accent); color: var(--vip-accent); }
+.toast-warn    { border-color: var(--vip-rt-color); color: var(--vip-rt-color); }
+@keyframes toastIn {
+  from { opacity:0; transform: translateY(10px); }
+  to   { opacity:1; transform: translateY(0); }
+}
+
+/* ── Panel / Tab ────────────────────────────────────────────────────────── */
+.panel {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+}
+.panel.active { display: flex; }
+
+/* Tab bar active tab accent */
+#tabBar [data-tab].active {
+  color:         var(--vip-accent-glow);
+  border-bottom: 2px solid var(--vip-accent);
+}
+
+/* ── Preset button ──────────────────────────────────────────────────────── */
+.btn-preset {
+  background:    transparent;
+  border:        1px solid var(--vip-accent-dark);
+  color:         var(--vip-text);
+  border-radius: 5px;
+  padding:       4px 10px;
+  font-size:     0.75rem;
+  cursor:        pointer;
+  transition:    background 0.15s, border-color 0.15s;
+}
+.btn-preset:hover {
+  background:    var(--vip-accent-dark);
+  border-color:  var(--vip-accent);
+  color:         #fff;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .slider-row {
+    grid-template-columns: 110px 1fr 52px;
+    padding: 5px 8px;
+  }
+  .slider-label { font-size: 0.72rem; }
+  .slider-val   { font-size: 0.68rem; min-width: 42px; }
+}

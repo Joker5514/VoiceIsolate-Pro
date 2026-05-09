@@ -1,0 +1,19 @@
+# VoiceIsolate Pro -- Python model export requirements
+# Run: pip install -r scripts/requirements_export.txt
+
+# Core ML
+torch>=2.1.0
+torchaudio>=2.1.0
+demucs>=4.0.0
+
+# ONNX export + validation
+onnx>=1.15.0
+onnxruntime>=1.17.0
+
+# INT8 quantization is included in onnxruntime -- no separate package needed
+
+# Optional: graph simplification (~30% node reduction, highly recommended)
+onnxsim>=0.4.33
+
+# Numpy (usually installed with torch, pinned for reproducibility)
+numpy>=1.24.0

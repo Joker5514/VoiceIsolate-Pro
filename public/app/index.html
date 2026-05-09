@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>VoiceIsolate Pro v24.0 – Engineer Mode</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- onnxruntime-web loaded locally in ml-worker.js via /lib/ort.min.js (no CDN) -->
+  <!-- 32-Stage Deca-Pass DSP pipeline: single STFT→32 in-place spectral ops→single iSTFT -->
+  <!-- Three.js 0.184.0 — loaded locally as ESM via importmap (no CDN); sets globalThis.THREE -->
+  <!-- three.core.min.js is a required sidecar for three.module.min.js; both live in /lib/ -->
+  <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
+  <script type="module">
+    import('three').then(m => {
+      globalThis.THREE = m;
+      document.dispatchEvent(new Event('three-loaded'));
+    }).catch(err => {
+      console.warn('[VoiceIsolate] Three.js failed to load — 3D spectrogram disabled.', err);
+    });
+  </script>
+  <!-- Core theme -->
+  <link rel="stylesheet" href="style.css" />
+  <!-- Slider theme: fills --pct gradient, RT badge, row hover -->
+  <link rel="stylesheet" href="slider-theme.css" />
+  <!-- Diagnostics log panel styles -->
+  <link rel="stylesheet" href="style-diag-log.css" />
+  <!-- Model status UI styles -->
+  <link rel="stylesheet" href="model-status-ui.css" />
+  <link id="vip-overlay-css" rel="stylesheet" href="/app/processing-overlay.css" />
+  <!-- Auth overlay styles -->
+  <style>
+    #authOverlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:rgba(6,6,9,0.96);backdrop-filter:blur(12px)}
+    .auth-modal{width:340px;padding:32px 28px;background:var(--s2);border:1px solid var(--border2);border-radius:var(--r);text-align:center}
+    .auth-icon{width:48px;height:48px;margin:0 auto 12px;border-radius:10px;background:linear-gradient(135deg,var(--red),var(--red3));display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 20px var(--red-glow)}
+    .auth-title{font-size:1.2rem;font-weight:700;margin-bottom:2px}
+    .auth-subtitle{font-size:0.75rem;color:var(--dim);margin-bottom:20px}
+    .auth-field{text-align:left;margin-bottom:12px}
+    .auth-field label{display:block;font-size:0.65rem;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px}
+    .auth-field input{width:100%;padding:8px 10px;background:var(--s1);border:1px solid var(--border);border-radius:var(--rs);color:var(--text);font-family:var(--fm);font-size:0.85rem;outline:none;transition:border-color 0.2s}
+    .auth-field input:focus{border-color:var(--red)}
+    .auth-error{font-size:0.72rem;color:var(--red2);min-height:18px;margin-bottom:4px}
+    .auth-btn{width:100%;padding:10px;background:linear-gradient(135deg,var(--red),var(--red3));color:#fff;font-family:var(--ff);font-size:0.85rem;font-weight:600;border:none;border-radius:var(--rs);cursor:pointer;transition:opacity 0.2s}
+    .auth-btn:hover{opacity:0.9}
+    .auth-btn:disabled{opacity:0.5;cursor:not-allowed}
+    .auth-badge{display:flex;align-items:center;gap:6px;padding:3px 8px;background:var(--s3);border:1px solid var(--border);border-radius:var(--rs);font-size:0.7rem;margin-right:8px}
+    .auth-badge-user{color:var(--text);font-weight:600;font-family:var(--fm)}
+    .auth-badge-tier{padding:1px 5px;border-radius:3px;font-size:0.55rem;font-weight:700;letter-spacing:0.08em}
+    .auth-tier-free{color:var(--dim);background:rgba(107,114,128,0.15)}
+    .auth-tier-pro{color:var(--cyan);background:rgba(34,211,238,0.1);border:1px solid rgba(34,211,238,0.2)}
+    .auth-tier-studio{color:var(--purple);background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.2)}
+    .auth-tier-enterprise{color:var(--yellow);background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.2)}
+    .auth-badge-admin{padding:1px 5px;border-radius:3px;font-size:0.5rem;font-weight:700;letter-spacing:0.1em;color:var(--red2);background:rgba(220,38,38,0.1);border:1px solid rgba(220,38,38,0.2)}
+    .auth-logout-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:0.8rem;padding:0 2px;line-height:1;transition:color 0.2s}
+    .auth-logout-btn:hover{color:var(--red2)}
+    .hdr-scale{display:inline-flex;align-items:center;gap:4px;margin-left:8px}
+    .hdr-scale .btn-xs{padding:3px 7px;font-size:0.7rem;line-height:1;background:var(--s3);color:var(--text2);border:1px solid var(--border);border-radius:var(--rs);cursor:pointer;font-family:var(--ff);font-weight:600}
+    .hdr-scale .btn-xs:hover:not(:disabled){border-color:var(--red);color:var(--text)}
+    .hdr-scale #uiScaleVal{font-family:var(--fm);font-size:0.7rem;color:var(--text2);min-width:40px;text-align:center}
+    .hdr-scale #uiScaleSave.saved{background:rgba(34,197,94,0.12);color:var(--green);border-color:rgba(34,197,94,0.3)}
+  </style>
+  <script data-role="ui-scale-restore">
+    (function(){
+      try {
+        var s = parseFloat(localStorage.getItem('vip_ui_scale'));
+        if (isFinite(s) && s >= 0.5 && s <= 2) {
+          var rootStyle = document.documentElement.style;
+          var supportsZoom = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('zoom', '1');
+          if (supportsZoom) {
+            rootStyle.zoom = String(s);
+          } else {
+            rootStyle.transform = 'scale(' + s + ')';
+            rootStyle.transformOrigin = 'top left';
+            rootStyle.width = (100 / s) + '%';
+          }
+        }
+      } catch(e) {}
+    })();
+  </script>
+</head>
+<body>
+  <div id="vip-startup-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;
+       background:#1a1a24;border-bottom:2px solid #dc2626;padding:9px 16px;font-size:13px;
+       color:#f0f0f2;font-family:'Segoe UI',system-ui,sans-serif;align-items:center;gap:10px;
+       box-shadow:0 2px 12px rgba(220,38,38,.25);" role="alert" aria-live="assertive">
+    <span style="font-size:16px">⚠️</span>
+    <span id="vip-startup-msg" style="flex:1"></span>
+    <button id="vip-startup-close" aria-label="Dismiss"
+            style="background:transparent;border:none;color:#666;cursor:pointer;font-size:18px;line-height:1;padding:0 4px">✕</button>
+  </div>
+
+  <div id="status-message" class="status-bar" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;opacity:0;" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- HEADER -->
+  <header class="hdr">
+    <div class="hdr-left">
+      <div class="hdr-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
+      <div>
+        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">v24.0</span></h1>
+        <span class="hdr-badge">ENGINEER MODE</span>
+        <span class="hdr-badge diag-badge">6-PANEL DIAGNOSTICS</span>
+      </div>
+    </div>
+    <div class="hdr-scale" role="group" aria-label="UI scale">
+      <button id="uiScaleDn" type="button" class="btn-xs" title="Decrease UI scale" aria-label="Decrease UI scale">&minus;</button>
+      <span id="uiScaleVal" aria-live="polite">100%</span>
+      <button id="uiScaleUp" type="button" class="btn-xs" title="Increase UI scale" aria-label="Increase UI scale">+</button>
+      <button id="uiScaleSave" type="button" class="btn-xs" title="Save UI scale" aria-label="Save UI scale">Save</button>
+    </div>
+    <button id="statsToggle" class="hdr-stats-toggle" aria-label="Toggle stats" aria-expanded="false">&#9660;</button>
+    <div class="hdr-stats" id="hdrStats">
+      <div class="hdr-stat"><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR Gain</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hCh">--</span><span class="hs-lbl">Channels</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hRMS">--</span><span class="hs-lbl">RMS</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hPeak">--</span><span class="hs-lbl">Peak</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hLUFS">--</span><span class="hs-lbl">LUFS</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hStatus">IDLE</span><span class="hs-lbl">Pipeline</span></div>
+    </div>
+  </header>
+
+  <main class="main-grid">
+    <!-- LEFT: Controls -->
+    <div class="col-left">
+      <!-- Upload -->
+      <div class="card upload-card">
+        <input type="file" id="fileInput"
+          accept="audio/*,video/mp4,video/webm,video/quicktime,video/x-matroska,video/x-m4v,video/avi,video/x-msvideo,.mp3,.wav,.flac,.ogg,.m4a,.aac,.opus,.wma,.aiff,.aif,.mp4,.webm,.mov,.mkv,.m4v,.avi"
+          style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;overflow:hidden;"
+          tabindex="-1" aria-hidden="true" />
+        <div id="uploadZone" class="upload-zone" role="button" tabindex="0"
+          aria-label="Drop Audio or Video file, or press Enter to browse">
+          <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p class="upload-title">Drop Audio or Video</p>
+          <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · AAC · MP4 · MOV · WEBM · MKV · AVI — No limit</p>
+          <button id="fileBtn" class="btn btn-outline" type="button" style="position:relative;z-index:10;cursor:pointer;">Browse Files</button>
+        </div>
+        <div class="upload-row">
+          <button id="micBtn" class="btn btn-mic">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14

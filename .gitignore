@@ -1,20 +1,59 @@
-**/node_modules
-.next
-.cache
-.build
-*.nfs*
-**/.yarn/
-!**/.yarn/patches
-!**/.yarn/plugins
-!**/.yarn/releases
-!**/.yarn/sdks
-!**/.yarn/versions
-!**/.yarn/cache
-**/.yarn/build-state.yml
-**/.yarn/install-state.gz
-dist
-target
-out
-.deploy
-.logs
-*.tsbuildinfo
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build outputs
+build/
+dist/
+.next/
+.nuxt/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Vercel
+.vercel/
+
+# Testing
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+
+# Model export workdirs (do not commit; export scripts produce these)
+/models_output/
+/vendor/
+/checkpoints/
+
+# Generated ONNX files (too large for git; upload to Vercel Blob instead)
+demucs_v4_fp32.onnx
+demucs_v4_quantized.onnx
+
+# Lockfile not used (memory note: project uses pnpm)
+package-lock.json

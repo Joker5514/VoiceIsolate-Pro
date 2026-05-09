@@ -1,0 +1,405 @@
+/**
+ * model-status-ui.css – VoiceIsolate Pro
+ * Styles for ML model download status panel
+ */
+
+.model-status-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 400px;
+  max-width: calc(100vw - 40px);
+  max-height: 500px;
+  background: var(--card, #0d0f14);
+  border: 1px solid var(--border, #1a1e2a);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  z-index: 10000;
+  opacity: 0;
+  transform: translateY(20px);
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.model-status-panel.visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: all;
+}
+
+.model-status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border, #1a1e2a);
+  background: var(--card2, #0f1118);
+}
+
+.model-status-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text, #e8eaf0);
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.model-status-header .close-btn {
+  background: none;
+  border: none;
+  color: var(--dim, #4a5268);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s ease;
+}
+
+.model-status-header .close-btn:hover {
+  color: var(--text, #e8eaf0);
+}
+
+.model-status-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.model-status-empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--dim, #4a5268);
+}
+
+.model-status-empty p {
+  margin: 0 0 16px 0;
+  font-size: 0.9rem;
+}
+
+.model-status-empty button {
+  background: var(--cyan, #00d4ff);
+  color: var(--bg, #07080a);
+  border: none;
+  padding: 8px 20px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.model-status-empty button:hover {
+  opacity: 0.9;
+}
+
+.model-item {
+  background: var(--card2, #0f1118);
+  border: 1px solid var(--border, #1a1e2a);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  transition: border-color 0.2s ease;
+}
+
+.model-item.active {
+  border-color: var(--cyan, #00d4ff);
+  background: rgba(0, 212, 255, 0.03);
+}
+
+.model-item.error {
+  border-color: var(--red, #dc2626);
+  background: rgba(220, 38, 38, 0.03);
+}
+
+.model-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.model-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.model-name {
+  flex: 1;
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 0.8rem;
+  color: var(--text, #e8eaf0);
+  font-weight: 500;
+}
+
+.model-source {
+  font-size: 0.7rem;
+  color: var(--dim, #4a5268);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  letter-spacing: 0.05em;
+}
+
+.model-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan, #00d4ff), var(--violet, #8b5cf6));
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.progress-text {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 0.75rem;
+  color: var(--cyan, #00d4ff);
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+}
+
+.model-error {
+  margin-top: 8px;
+  padding: 10px;
+  background: rgba(220, 38, 38, 0.1);
+  border-radius: 6px;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.error-message {
+  margin: 0 0 8px 0;
+  font-size: 0.8rem;
+  color: var(--red, #dc2626);
+  font-weight: 500;
+}
+
+.error-detail {
+  margin: 4px 0;
+  font-size: 0.7rem;
+  color: var(--dim2, #6b7280);
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+}
+
+.model-error button {
+  margin-top: 8px;
+  background: var(--red, #dc2626);
+  color: white;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.model-error button:hover {
+  opacity: 0.9;
+}
+
+.fallback-notice {
+  margin: 8px 0 0 0;
+  font-size: 0.75rem;
+  color: var(--orange, #f97316);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-status-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border, #1a1e2a);
+  background: var(--card2, #0f1118);
+}
+
+.model-status-footer button {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text, #e8eaf0);
+  border: 1px solid var(--border, #1a1e2a);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.model-status-footer button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--cyan, #00d4ff);
+}
+
+/* Mobile responsive */
+@media (max-width: 640px) {
+  .model-status-panel {
+    bottom: 10px;
+    right: 10px;
+    left: 10px;
+    width: auto;
+    max-width: none;
+  }
+
+  .model-name {
+    font-size: 0.75rem;
+  }
+
+  .model-source {
+    font-size: 0.65rem;
+  }
+}
+
+/* Scrollbar styling */
+.model-status-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.model-status-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.model-status-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.model-status-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Provider badges (rendered next to each model pill by ModelStatusUI) */
+.vip-pill-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 4px 4px 0;
+}
+
+.vip-provider {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+}
+
+.vip-provider--hidden { display: none; }
+
+.vip-provider--green {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.10);
+  border-color: rgba(22, 163, 74, 0.25);
+}
+
+.vip-provider--blue {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.10);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
+.vip-provider--yellow {
+  color: #ca8a04;
+  background: rgba(202, 138, 4, 0.10);
+  border-color: rgba(202, 138, 4, 0.25);
+}
+
+.vip-provider--red {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.10);
+  border-color: rgba(220, 38, 38, 0.25);
+}
+
+.vip-provider--grey {
+  color: var(--dim, #4a5268);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* CDN Health panel (rendered in Engineer Mode diagnostics) */
+.vip-cdn-health-title {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text2, #c0c4d0);
+  margin-bottom: 6px;
+}
+
+.vip-cdn-health-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  background: var(--card2, #0f1118);
+  border: 1px solid var(--border, #1a1e2a);
+  border-radius: 6px;
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 0.72rem;
+}
+
+.vip-cdn-health-label {
+  color: var(--text, #e8eaf0);
+}
+
+.vip-cdn-health-status {
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+
+.vip-cdn-health-status--healthy {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.12);
+}
+
+.vip-cdn-health-status--degraded {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.vip-cdn-health-status--unknown {
+  color: var(--dim, #4a5268);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Made with Bob */

@@ -1,0 +1,140 @@
+{
+  "name": "voiceisolate-pro",
+  "version": "24.0.0",
+  "type": "module",
+  "description": "Studio-grade voice isolation platform. 32-stage Deca-Pass DSP pipeline with hybrid ML + classical spectral processing. Mobile-ready via Capacitor for Android & iOS.",
+  "private": true,
+  "keywords": [
+    "audio",
+    "dsp",
+    "voice-isolation",
+    "noise-reduction",
+    "web-audio",
+    "machine-learning",
+    "mobile",
+    "android",
+    "ios",
+    "capacitor"
+  ],
+  "author": "Randy Jordan <joker5514@users.noreply.github.com>",
+  "license": "UNLICENSED",
+  "scripts": {
+    "postinstall": "node scripts/setup-ort.js && node scripts/setup-three.js",
+    "setup:ort": "node scripts/setup-ort.js",
+    "setup:three": "node scripts/setup-three.js",
+    "start": "node server.js",
+    "dev": "node server.js",
+    "serve": "npx serve public -l 3000 --cors",
+    "build": "mkdir -p build && cp -r public/* build/",
+    "lint": "eslint public/app/app.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node",
+    "test:ci": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --watch",
+    "lint:fix": "eslint public/app/app.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js --fix",
+    "validate": "node scripts/validate.js",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --coverage",
+    "test:live": "node scripts/live-smoke.cjs",
+    "build:mobile": "pnpm run build && npx cap sync",
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios",
+    "android:build": "pnpm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
+    "android:release": "pnpm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
+    "android:bundle": "pnpm run build && npx cap sync android && cd android && ./gradlew bundleRelease",
+    "ios:sync": "pnpm run build && npx cap sync ios",
+    "ios:build": "pnpm run build && npx cap sync ios && npx cap open ios",
+    "ios:pods": "cd ios/App && pod install",
+    "mobile:dev": "pnpm run build && npx cap sync && echo 'Synced to both platforms'",
+    "mobile:sync-version": "node scripts/sync-mobile-version.js",
+    "mobile:version": "node scripts/sync-mobile-version.js",
+    "postversion": "node scripts/sync-mobile-version.js",
+    "models:download": "bash scripts/download-models.sh",
+    "models:upload": "python scripts/upload_models_to_vercel_blob.py"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^16.0.0",
+    "jest": "^30.3.0",
+    "jest-environment-jsdom": "^30.3.0",
+    "playwright": "^1.58.2",
+    "puppeteer": "^24.40.0",
+    "supertest": "^7.2.2"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "transform": {
+      "^.+/public/app/.+\\.js$": "<rootDir>/scripts/jest-cjs-transform.cjs"
+    },
+    "collectCoverageFrom": [
+      "public/app/dsp-core.js",
+      "public/app/pipeline-state.js",
+      "public/app/pipeline-orchestrator.js",
+      "public/app/license-manager.js",
+      "public/app/ring-buffer.js",
+      "public/app/ml-worker.js",
+      "public/app/batch-processor.js",
+      "public/app/analytics.js",
+      "api/monetization.js",
+      "api/sync.js"
+    ]
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": "24.x",
+    "pnpm": ">=9.0.0"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/ios": "^8.3.1",
+    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/proto-loader": "^0.8.0",
+    "@vercel/analytics": "^2.0.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.2",
+    "jsdom": "^26.1.0",
+    "onnxruntime-web": "1.25.1",
+    "three": "0.184.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "protobufjs": ">=7.5.5",
+      "@xmldom/xmldom": ">=0.9.10",
+      "basic-ftp": ">=5.3.0",
+      "@tootallnate/once": ">=3.0.1",
+      "picomatch@<2.3.2": "2.3.2",
+      "picomatch@>=4.0.0 <4.0.4": "4.0.4",
+      "flatted": ">=3.4.2",
+      "brace-expansion": ">=1.1.13",
+      "tar": ">=6.2.1",
+      "ws": ">=8.17.1",
+      "tough-cookie": ">=4.1.4",
+      "semver": ">=7.5.4",
+      "word-wrap": ">=1.2.4",
+      "ip": ">=2.0.1",
+      "undici": ">=5.28.4",
+      "got": ">=14.4.2",
+      "cross-spawn": ">=7.0.5",
+      "micromatch": ">=4.0.8",
+      "esbuild": ">=0.25.0"
+    }
+  },
+  "overrides": {
+    "tar": ">=6.2.1",
+    "ws": ">=8.17.1",
+    "tough-cookie": ">=4.1.4",
+    "semver": ">=7.5.4",
+    "word-wrap": ">=1.2.4",
+    "ip": ">=2.0.1",
+    "undici": ">=5.28.4",
+    "cross-spawn": ">=7.0.5",
+    "micromatch": ">=4.0.8",
+    "brace-expansion": ">=1.1.13",
+    "flatted": ">=3.4.2"
+  }
+}

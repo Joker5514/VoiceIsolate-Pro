@@ -1,0 +1,271 @@
+/* ============================================================
+   VoiceIsolate Pro — Premium Processing Overlay + DNA Spinner
+   v1.0  ·  Threads from Space v12
+   ============================================================ */
+
+/* ── Overlay shell ─────────────────────────────────────────── */
+.processing-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 10, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  z-index: 14000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.28s cubic-bezier(.4,0,.2,1),
+              visibility 0.28s cubic-bezier(.4,0,.2,1);
+}
+.processing-overlay.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+body.vip-processing-lock { overflow: hidden; }
+
+/* ── Card ───────────────────────────────────────────────────── */
+.processing-card {
+  width: min(420px, calc(100vw - 2rem));
+  padding: 2.25rem 2rem 2rem;
+  border-radius: 20px;
+  background: linear-gradient(160deg, rgba(13,15,20,0.97), rgba(7,9,14,0.97));
+  border: 1px solid rgba(0,212,255,0.14);
+  box-shadow:
+    0 24px 80px rgba(0,0,0,0.6),
+    0 0 0 1px rgba(0,212,255,0.06) inset,
+    0 0 60px rgba(0,212,255,0.04);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+/* ambient glow pulse behind card */
+.processing-card::before {
+  content: '';
+  position: absolute;
+  inset: -30%;
+  background: radial-gradient(ellipse at 50% 50%,
+    rgba(0,212,255,0.06) 0%,
+    transparent 65%);
+  animation: vip-ambientPulse 3s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes vip-ambientPulse {
+  0%,100% { opacity: 0.5; transform: scale(0.94); }
+  50%      { opacity: 1;   transform: scale(1.06); }
+}
+
+/* ── DNA Helix Spinner ──────────────────────────────────────── */
+.proc-helix-wrap {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 1.5rem;
+}
+
+/* Outer orbit ring */
+.proc-ring-outer {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: #00d4ff;
+  border-right-color: rgba(0,212,255,0.25);
+  animation: vip-orbitOuter 1.1s linear infinite;
+  box-shadow: 0 0 12px rgba(0,212,255,0.3);
+}
+/* Mid orbit ring */
+.proc-ring-mid {
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-bottom-color: #8b5cf6;
+  border-left-color: rgba(139,92,246,0.3);
+  animation: vip-orbitMid 0.85s linear infinite reverse;
+  box-shadow: 0 0 10px rgba(139,92,246,0.25);
+}
+/* Inner orbit ring */
+.proc-ring-inner {
+  position: absolute;
+  inset: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: #10b981;
+  border-right-color: rgba(16,185,129,0.2);
+  animation: vip-orbitInner 0.65s linear infinite;
+  box-shadow: 0 0 8px rgba(16,185,129,0.2);
+}
+/* Core glow dot */
+.proc-core {
+  position: absolute;
+  inset: 36px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,212,255,0.9) 0%, rgba(0,212,255,0.1) 70%);
+  animation: vip-corePulse 1.6s ease-in-out infinite;
+}
+/* Helix DNA nodes — 6 dots orbiting in a figure-8 projection */
+.proc-node {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  margin: -3px 0 0 -3px;
+}
+.proc-node:nth-child(1) {
+  background: #00d4ff;
+  box-shadow: 0 0 8px #00d4ff;
+  animation: vip-node1 1.4s ease-in-out infinite;
+}
+.proc-node:nth-child(2) {
+  background: #8b5cf6;
+  box-shadow: 0 0 8px #8b5cf6;
+  animation: vip-node2 1.4s ease-in-out infinite 0.23s;
+}
+.proc-node:nth-child(3) {
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: vip-node3 1.4s ease-in-out infinite 0.46s;
+}
+.proc-node:nth-child(4) {
+  background: #00d4ff;
+  box-shadow: 0 0 6px #00d4ff;
+  animation: vip-node4 1.4s ease-in-out infinite 0.7s;
+}
+.proc-node:nth-child(5) {
+  background: #f97316;
+  box-shadow: 0 0 6px #f97316;
+  animation: vip-node5 1.4s ease-in-out infinite 0.93s;
+}
+.proc-node:nth-child(6) {
+  background: #8b5cf6;
+  box-shadow: 0 0 6px #8b5cf6;
+  animation: vip-node6 1.4s ease-in-out infinite 1.16s;
+}
+
+@keyframes vip-orbitOuter  { to { transform: rotate(360deg); } }
+@keyframes vip-orbitMid    { to { transform: rotate(360deg); } }
+@keyframes vip-orbitInner  { to { transform: rotate(360deg); } }
+@keyframes vip-corePulse {
+  0%,100% { opacity: 0.7; transform: scale(0.85); }
+  50%     { opacity: 1;   transform: scale(1.15); }
+}
+@keyframes vip-node1 {
+  0%   { transform: translate(-34px, 0)   scale(1.2); opacity:1; }
+  25%  { transform: translate(0, -34px)   scale(0.7); opacity:0.6; }
+  50%  { transform: translate(34px, 0)    scale(1.2); opacity:1; }
+  75%  { transform: translate(0, 34px)    scale(0.7); opacity:0.6; }
+  100% { transform: translate(-34px, 0)   scale(1.2); opacity:1; }
+}
+@keyframes vip-node2 {
+  0%   { transform: translate(28px, -20px)  scale(1); opacity:0.9; }
+  33%  { transform: translate(-28px, 20px)  scale(0.6); opacity:0.5; }
+  66%  { transform: translate(14px, 32px)   scale(1.1); opacity:0.9; }
+  100% { transform: translate(28px, -20px)  scale(1); opacity:0.9; }
+}
+@keyframes vip-node3 {
+  0%   { transform: translate(-20px, 28px) scale(0.9); opacity:0.8; }
+  50%  { transform: translate(20px, -28px) scale(1.2); opacity:1; }
+  100% { transform: translate(-20px, 28px) scale(0.9); opacity:0.8; }
+}
+@keyframes vip-node4 {
+  0%   { transform: translate(34px, 14px)  scale(0.7); opacity:0.6; }
+  50%  { transform: translate(-34px,-14px) scale(1.3); opacity:1; }
+  100% { transform: translate(34px, 14px)  scale(0.7); opacity:0.6; }
+}
+@keyframes vip-node5 {
+  0%   { transform: translate(-16px,-32px) scale(1.1); opacity:0.9; }
+  40%  { transform: translate(30px, 22px)  scale(0.65); opacity:0.5; }
+  80%  { transform: translate(-22px, 18px) scale(1);   opacity:0.8; }
+  100% { transform: translate(-16px,-32px) scale(1.1); opacity:0.9; }
+}
+@keyframes vip-node6 {
+  0%   { transform: translate(22px, -30px) scale(0.8); opacity:0.7; }
+  50%  { transform: translate(-22px, 30px) scale(1.1); opacity:1; }
+  100% { transform: translate(22px, -30px) scale(0.8); opacity:0.7; }
+}
+
+/* ── Typography ─────────────────────────────────────────────── */
+.proc-title {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e8eaf0;
+  letter-spacing: 0.015em;
+  margin-bottom: 0.35rem;
+  position: relative;
+  z-index: 1;
+}
+.proc-stage-name {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: #00d4ff;
+  margin-bottom: 0.2rem;
+  min-height: 1.1em;
+  transition: opacity 0.2s;
+  position: relative;
+  z-index: 1;
+}
+.proc-pct {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.7rem;
+  color: rgba(0,212,255,0.55);
+  margin-bottom: 1.1rem;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Progress bar ───────────────────────────────────────────── */
+.proc-bar-wrap {
+  height: 3px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 1.1rem;
+  position: relative;
+  z-index: 1;
+}
+.proc-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #00d4ff, #8b5cf6);
+  width: 0%;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px rgba(0,212,255,0.6);
+}
+
+/* ── Rotating message ───────────────────────────────────────── */
+.proc-message {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.65rem;
+  color: rgba(74,82,104,0.9);
+  letter-spacing: 0.04em;
+  min-height: 1.2em;
+  transition: opacity 0.35s ease;
+  position: relative;
+  z-index: 1;
+}
+.proc-message.fade-out { opacity: 0; }
+.proc-message.fade-in  { opacity: 1; }
+
+/* ── Cancel hint ────────────────────────────────────────────── */
+.proc-cancel-hint {
+  margin-top: 1rem;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.55rem;
+  color: rgba(74,82,104,0.55);
+  letter-spacing: 0.06em;
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .processing-card { padding: 1.75rem 1.25rem 1.5rem; }
+  .proc-helix-wrap { width: 80px; height: 80px; }
+}
