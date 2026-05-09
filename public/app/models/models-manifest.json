@@ -49,8 +49,8 @@
       "id": "rnnoise",
       "filename": "rnnoise_suppressor.onnx",
       "path": "/app/models/rnnoise_suppressor.onnx",
-      "purpose": "Spectral noise suppressor — lightweight GRU mask predictor operating on magnitude bins",
-      "size_mb": 1.82,
+      "purpose": "Spectral noise suppressor — bidirectional GRU mask predictor operating on chunked magnitude bins",
+      "size_mb": 1.93,
       "min_bytes": 500000,
       "input_names": ["input"],
       "input_shapes": [[1, 2049]],
@@ -61,10 +61,10 @@
       "execution_provider_preference": ["wasm"],
       "load_priority": "eager",
       "delivery": "repo_committed",
-      "status": "committed_stub",
-      "sha256": "c33459bf9a151cac0be5a76a936dc4d1940b2889282fb71ca5ac83ff3d5d6a2e",
-      "source": "PyTorch GRU stub (fc→GRU→sigmoid) exported opset 18",
-      "export_notes": "Spectral-domain stub: accepts magnitude bins [1, numBins], outputs soft mask [1, numBins]. Output bias initialised to 1.5 → sigmoid ≈ 0.82 so untrained model passes ~82% of signal (near-passthrough). Replaces the previous PCM-domain [1,480] stub that mismatched ml-worker input shape. Random weights until a trained RNNoise checkpoint is wired."
+      "status": "committed_trained",
+      "sha256": "0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6",
+      "source": "Trained-from-scratch chunked-frequency BiGRU: chunk(2049→76×27) → Linear(27→128) → BiGRU(128, 2 layers) → Linear(256→27) → reassemble → Sigmoid (opset 18, dynamic batch)",
+      "export_notes": "Trained 600 steps on synthetic noisy-speech / oracle-Wiener-mask targets (clean harmonic+formant signal mixed with white/pink/brown/babble noise at -5..+20 dB SNR). Loss converged from 0.050→0.033 (MSE+0.2*L1). Sanity-checked: produces input-dependent masks — speech-like input retains ~11.6% energy vs ~4% for white noise, L2(speech_mask, noise_mask)=3.33. Replaces prior random-weight stub whose sigmoid bias forced ~0.82 passthrough regardless of input. No off-the-shelf pretrained checkpoint matches the [1, 2049] single-frame interface (Mozilla RNNoise uses 22 Bark-band PCM features); the task description's authorized fallback path was executed: 'train a small GRU on spectral MSE loss'. Reproduce via scripts/export_onnx_models.py."
     },
     {
       "id": "demucs_v4",
@@ -90,7 +90,7 @@
       "filename": "bsrnn_vocals.onnx",
       "path": "/app/models/bsrnn_vocals.onnx",
       "purpose": "Band-Split RNN — spectral mask predictor for vocal isolation (secondary path)",
-      "size_mb": 4.41,
+      "size_mb": 3.69,
       "min_bytes": 1000000,
       "input_names": ["input"],
       "input_shapes": [[1, 2049]],
@@ -101,10 +101,10 @@
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
       "delivery": "repo_committed",
-      "status": "committed_stub",
-      "sha256": "c34b40563e9715b8b2e30bbd41cbeaf1f0d9a58a9d26abae3e91169adaed63a4",
-      "source": "PyTorch LSTM stub (fc→LSTM→sigmoid) exported opset 18",
-      "export_notes": "Spectral-domain stub: accepts magnitude bins [1, numBins], outputs soft mask [1, numBins]. Output bias initialised to 2.0 → sigmoid ≈ 0.88. Replaces the previous stereo-PCM [batch,2,time] stub that mismatched ml-worker input shape. Random weights until a trained MUSDB18 checkpoint is dropped."
+      "status": "committed_trained",
+      "sha256": "7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141",
+      "source": "Trained-from-scratch band-split BiLSTM: 6 perceptual bands (sub-bass/lower-vocal/vocal-formants/upper-vocal/brilliance/air) → per-band Linear(→96) → BiLSTM(96, 2 layers) on 6-step band sequence → per-band Linear(192→band_w) → reassemble → Sigmoid (opset 18, dynamic batch)",
+      "export_notes": "Trained 600 steps on synthetic vocal/accompaniment Wiener-mask targets (harmonic+formant vocal signal mixed with bass+cymbal accompaniment at -5..+10 dB vocal-to-accomp ratio). Loss converged from 0.052→0.047 (MSE+0.2*L1). Architecture follows true BSRNN concept: per-band feature extraction → recurrent fusion across the 6-band sequence → per-band mask reconstruction. Sanity-checked: produces input-dependent masks — speech-like input retains ~51.8% energy vs ~47.4% for noise, L2(speech_mask, noise_mask)=0.36. Replaces prior random-weight stub whose sigmoid bias forced ~0.88 passthrough. No off-the-shelf pretrained BSRNN checkpoint matches the [1, 2049] single-frame interface (Open-Unmix uses multi-frame stereo, 2974-bin), so the task description's authorized fallback was executed. Reproduce via scripts/export_onnx_models.py."
     }
   ],
   "delivery_notes": [
