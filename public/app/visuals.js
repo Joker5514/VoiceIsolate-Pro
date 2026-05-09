@@ -480,11 +480,71 @@
   };
 
   /* ------------------------------------------------------------------ */
-  /* 5. Global exports                                                   */
+  /* 5. Neon Frequency Visualizer                                        */
+  /* ------------------------------------------------------------------ */
+  // Accepts an AnalyserNode already wired into the Web Audio graph (tapped
+  // from the workletNode output in app.js). Renders a cyberpunk-style
+  // frequency bar chart on #neonVisualizer using its own RAF loop.
+  // Returns a { stop() } handle so callers can tear it down cleanly.
+  function initNeonVisualizer(analyser) {
+    var canvas = document.getElementById('neonVisualizer');
+    if (!canvas || !analyser) return { stop: function () {} };
+
+    var ctx2d = canvas.getContext('2d');
+    var bufferLength = analyser.frequencyBinCount;
+    var dataArray = new Uint8Array(bufferLength);
+    var rafId = 0;
+    var running = true;
+
+    function draw() {
+      if (!running) return;
+      rafId = requestAnimationFrame(draw);
+
+      analyser.getByteFrequencyData(dataArray);
+
+      // Trail / motion-blur effect
+      ctx2d.fillStyle = 'rgba(3, 3, 6, 0.25)';
+      ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+
+      var barWidth = (canvas.width / bufferLength) * 2.5;
+      var x = 0;
+
+      for (var i = 0; i < bufferLength; i++) {
+        var barHeight = dataArray[i];
+        ctx2d.shadowBlur = 20;
+
+        // Electric blue (lows) → neon green (highs)
+        if (i < bufferLength / 2) {
+          ctx2d.shadowColor = '#00ffff';
+          ctx2d.fillStyle = '#00ffff';
+        } else {
+          ctx2d.shadowColor = '#39ff14';
+          ctx2d.fillStyle = '#39ff14';
+        }
+
+        var y = (canvas.height / 2) - (barHeight / 2);
+        ctx2d.fillRect(x, y, barWidth - 1, barHeight);
+        x += barWidth;
+      }
+    }
+
+    draw();
+
+    return {
+      stop: function () {
+        running = false;
+        if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+      }
+    };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 6. Global exports                                                   */
   /* ------------------------------------------------------------------ */
   global.VIP_SPEAKER_COLORS = SPEAKER_COLORS;
   global.VIP_INFERNO_LUT    = INFERNO_LUT;
   global.VIP_buildInfernoLUT = buildInfernoLUT;
   global.VIP_inferno        = inferno;
   global.VisualizationEngine = VisualizationEngine;
+  global.VIP_initNeonVisualizer = initNeonVisualizer;
 })(typeof window !== 'undefined' ? window : this);

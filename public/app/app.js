@@ -93,6 +93,7 @@ let sabFloat32  = null;   // Float32 view into SharedArrayBuffer
 let sabInt32    = null;   // Int32  view (control word)
 let mlWorker    = null;   // Web Worker running ml-worker.js
 let mlReady     = false;  // true once worker sends { type: 'ready' }
+let neonAnalyser = null;  // AnalyserNode tapped from worklet output for neon visualizer
 
 // Pending SAB magnitude frames queued before ml-worker is ready
 const _pendingFrames = [];
@@ -186,6 +187,12 @@ async function initAudio() {
   };
 
   workletNode.connect(audioCtx.destination);
+
+  neonAnalyser = audioCtx.createAnalyser();
+  neonAnalyser.fftSize = 512;
+  neonAnalyser.smoothingTimeConstant = 0.85;
+  workletNode.connect(neonAnalyser);
+
   console.info('[AudioWorklet] dsp-processor loaded and connected.');
 }
 
@@ -364,6 +371,10 @@ export async function bootstrap() {
 
     updateStatus('Setting up AudioWorklet…');
     await initAudio();
+
+    if (typeof window !== 'undefined' && typeof window.VIP_initNeonVisualizer === 'function') {
+      window.VIP_initNeonVisualizer(neonAnalyser);
+    }
 
     updateStatus('Binding UI sliders…');
     initSliders();
