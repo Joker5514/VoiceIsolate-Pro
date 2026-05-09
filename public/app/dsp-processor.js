@@ -51,7 +51,7 @@ function ifft(re, im) {
   const N = re.length;
   // Conjugate
   for (let i = 0; i < N; i++) im[i] = -im[i];
-  fft(re, im);
+  fft(re, im, true);
   // Conjugate + scale
   for (let i = 0; i < N; i++) {
     re[i] /= N;
@@ -198,7 +198,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     }
 
     // ---- 2. ONE Forward STFT ----
-    fft(this._re, this._im);
+    fft(this._re, this._im, false);
 
     // ---- 3a. Compute magnitude spectrum → write to SAB for ONNX ----
     const mag = this._inputView.subarray(0, HALF_BINS);

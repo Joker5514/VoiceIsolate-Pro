@@ -43,37 +43,8 @@ const INPUT_SAB_BYTES = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF
 const OUTPUT_SAB_BYTES = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS;
 
 // ---------------------------------------------------------------------------
-// 1. ML Worker — spawn ml-worker.js and wire SAB magnitude forwarding
+// 1. ML Worker — SAB magnitude forwarding helpers
 // ---------------------------------------------------------------------------
-function spawnMlWorker() {
-  if (mlWorker) return;
-
-  mlWorker = new Worker('/app/ml-worker.js');
-
-  mlWorker.onmessage = (ev) => {
-    const { type } = ev.data || {};
-
-    if (type === 'ready') {
-      mlReady = true;
-      updateStatus('ML worker ready ✓');
-
-      // Forward any frames that arrived before the worker was ready
-      for (const frame of _pendingFrames) _forwardFrameToWorker(frame);
-      _pendingFrames.length = 0;
-
-      _forwardSabToWorker();
-    } else if (type === 'mask') {
-      // Write returned mask into SAB so the AudioWorklet can apply it
-      const { mask } = ev.data;
-      if (mask && outputView && outputFlags) {
-        outputView.set(mask.subarray(0, HALF_BINS));
-        Atomics.store(outputFlags, 1, 1);
-      }
-    } else if (type === 'error') {
-      console.warn('[ML Worker]', ev.data.message || ev.data.msg);
-    }
-  };
-}
 
 function _forwardSabToWorker() {
   if (!mlWorker || !mlReady || !inputSAB || !outputSAB) return;
@@ -124,72 +95,72 @@ function initSliders() {
 }
 const SLIDERS = {
   gate: [
-    { id: 'gateThresh', label: 'Threshold', min: -80, max: -5, val: -42, step: 1, unit: ' dB', rt: true, desc: 'Signal level below which audio is gated' },
-    { id: 'gateRange', label: 'Range', min: -80, max: -5, val: -60, step: 1, unit: ' dB', rt: true, desc: 'Maximum gain reduction applied by the gate' },
-    { id: 'gateAttack', label: 'Attack', min: 0, max: 500, val: 5, step: 1, unit: ' ms', rt: true, desc: 'Time for gate to open on signal detection' },
-    { id: 'gateRelease', label: 'Release', min: 50, max: 2000, val: 200, step: 10, unit: ' ms', rt: true, desc: 'Time for gate to close after signal drops' },
-    { id: 'gateHold', label: 'Hold', min: 0, max: 500, val: 50, step: 1, unit: ' ms', rt: true, desc: 'Hold time before release phase begins' },
-    { id: 'gateLookahead', label: 'Lookahead', min: 0, max: 50, val: 5, step: 1, unit: ' ms', rt: false, desc: 'Lookahead window for predictive gating' },
+    { id:'gateThresh', label: 'Threshold', min: -80, max: -5, val: -42, step: 1, unit: ' dB', rt: true, desc: 'Signal level below which audio is gated' },
+    { id:'gateRange', label: 'Range', min: -80, max: -5, val: -60, step: 1, unit: ' dB', rt: true, desc: 'Maximum gain reduction applied by the gate' },
+    { id:'gateAttack', label: 'Attack', min: 0, max: 500, val: 5, step: 1, unit: ' ms', rt: true, desc: 'Time for gate to open on signal detection' },
+    { id:'gateRelease', label: 'Release', min: 50, max: 2000, val: 200, step: 10, unit: ' ms', rt: true, desc: 'Time for gate to close after signal drops' },
+    { id:'gateHold', label: 'Hold', min: 0, max: 500, val: 50, step: 1, unit: ' ms', rt: true, desc: 'Hold time before release phase begins' },
+    { id:'gateLookahead', label: 'Lookahead', min: 0, max: 50, val: 5, step: 1, unit: ' ms', rt: false, desc: 'Lookahead window for predictive gating' },
   ],
   nr: [
-    { id: 'nrAmount', label: 'NR Amount', min: 0, max: 100, val: 78, step: 1, unit: '%', rt: false, desc: 'Spectral noise reduction strength' },
-    { id: 'nrSensitivity', label: 'Sensitivity', min: 0, max: 100, val: 60, step: 1, unit: '%', rt: false, desc: 'Noise floor detection sensitivity' },
-    { id: 'nrSpectralSub', label: 'Spectral Sub', min: 0, max: 100, val: 50, step: 1, unit: '%', rt: false, desc: 'Spectral subtraction strength' },
-    { id: 'nrFloor', label: 'NR Floor', min: -96, max: -30, val: -72, step: 1, unit: ' dB', rt: false, desc: 'Noise reduction floor limit' },
-    { id: 'nrSmoothing', label: 'Smoothing', min: 0, max: 100, val: 70, step: 1, unit: '%', rt: false, desc: 'Temporal smoothing of spectral noise estimate' },
+    { id:'nrAmount', label: 'NR Amount', min: 0, max: 100, val: 78, step: 1, unit: '%', rt: false, desc: 'Spectral noise reduction strength' },
+    { id:'nrSensitivity', label: 'Sensitivity', min: 0, max: 100, val: 60, step: 1, unit: '%', rt: false, desc: 'Noise floor detection sensitivity' },
+    { id:'nrSpectralSub', label: 'Spectral Sub', min: 0, max: 100, val: 50, step: 1, unit: '%', rt: false, desc: 'Spectral subtraction strength' },
+    { id:'nrFloor', label: 'NR Floor', min: -96, max: -30, val: -72, step: 1, unit: ' dB', rt: false, desc: 'Noise reduction floor limit' },
+    { id:'nrSmoothing', label: 'Smoothing', min: 0, max: 100, val: 70, step: 1, unit: '%', rt: false, desc: 'Temporal smoothing of spectral noise estimate' },
   ],
   eq: [
-    { id: 'eqSub', label: 'Sub', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Sub-bass EQ (20-60 Hz)' },
-    { id: 'eqBass', label: 'Bass', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Bass EQ (60-200 Hz)' },
-    { id: 'eqWarmth', label: 'Warmth', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Warmth EQ (200-500 Hz)' },
-    { id: 'eqBody', label: 'Body', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Body EQ (500-1k Hz)' },
-    { id: 'eqLowMid', label: 'Low Mid', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Low-mid EQ (1-2 kHz)' },
-    { id: 'eqMid', label: 'Mid', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Mid EQ (2-4 kHz)' },
-    { id: 'eqPresence', label: 'Presence', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Presence EQ (4-6 kHz)' },
-    { id: 'eqClarity', label: 'Clarity', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Clarity EQ (6-10 kHz)' },
-    { id: 'eqAir', label: 'Air', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Air EQ (10-16 kHz)' },
-    { id: 'eqBrill', label: 'Brilliance', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Brilliance EQ (16-20 kHz)' },
+    { id:'eqSub', label: 'Sub', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Sub-bass EQ (20-60 Hz)' },
+    { id:'eqBass', label: 'Bass', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Bass EQ (60-200 Hz)' },
+    { id:'eqWarmth', label: 'Warmth', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Warmth EQ (200-500 Hz)' },
+    { id:'eqBody', label: 'Body', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Body EQ (500-1k Hz)' },
+    { id:'eqLowMid', label: 'Low Mid', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Low-mid EQ (1-2 kHz)' },
+    { id:'eqMid', label: 'Mid', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Mid EQ (2-4 kHz)' },
+    { id:'eqPresence', label: 'Presence', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Presence EQ (4-6 kHz)' },
+    { id:'eqClarity', label: 'Clarity', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Clarity EQ (6-10 kHz)' },
+    { id:'eqAir', label: 'Air', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Air EQ (10-16 kHz)' },
+    { id:'eqBrill', label: 'Brilliance', min: -12, max: 12, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Brilliance EQ (16-20 kHz)' },
   ],
   dyn: [
-    { id: 'compThresh', label: 'Threshold', min: -60, max: 0, val: -24, step: 1, unit: ' dB', rt: true, desc: 'Compressor threshold level' },
-    { id: 'compRatio', label: 'Ratio', min: 1, max: 20, val: 4, step: 0.5, unit: ':1', rt: true, desc: 'Compression ratio' },
-    { id: 'compAttack', label: 'Attack', min: 1, max: 200, val: 10, step: 1, unit: ' ms', rt: true, desc: 'Compressor attack time' },
-    { id: 'compRelease', label: 'Release', min: 10, max: 1000, val: 150, step: 10, unit: ' ms', rt: true, desc: 'Compressor release time' },
-    { id: 'compKnee', label: 'Knee', min: 0, max: 30, val: 6, step: 1, unit: ' dB', rt: true, desc: 'Compressor knee width' },
-    { id: 'compMakeup', label: 'Makeup', min: 0, max: 30, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Makeup gain after compression' },
-    { id: 'limThresh', label: 'Lim Thresh', min: -12, max: 0, val: -1, step: 0.5, unit: ' dB', rt: true, desc: 'Brickwall limiter threshold' },
-    { id: 'limRelease', label: 'Lim Release', min: 10, max: 500, val: 50, step: 5, unit: ' ms', rt: true, desc: 'Limiter release time' },
+    { id:'compThresh', label: 'Threshold', min: -60, max: 0, val: -24, step: 1, unit: ' dB', rt: true, desc: 'Compressor threshold level' },
+    { id:'compRatio', label: 'Ratio', min: 1, max: 20, val: 4, step: 0.5, unit: ':1', rt: true, desc: 'Compression ratio' },
+    { id:'compAttack', label: 'Attack', min: 1, max: 200, val: 10, step: 1, unit: ' ms', rt: true, desc: 'Compressor attack time' },
+    { id:'compRelease', label: 'Release', min: 10, max: 1000, val: 150, step: 10, unit: ' ms', rt: true, desc: 'Compressor release time' },
+    { id:'compKnee', label: 'Knee', min: 0, max: 30, val: 6, step: 1, unit: ' dB', rt: true, desc: 'Compressor knee width' },
+    { id:'compMakeup', label: 'Makeup', min: 0, max: 30, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Makeup gain after compression' },
+    { id:'limThresh', label: 'Lim Thresh', min: -12, max: 0, val: -1, step: 0.5, unit: ' dB', rt: true, desc: 'Brickwall limiter threshold' },
+    { id:'limRelease', label: 'Lim Release', min: 10, max: 500, val: 50, step: 5, unit: ' ms', rt: true, desc: 'Limiter release time' },
   ],
   spec: [
-    { id: 'hpFreq', label: 'HP Freq', min: 20, max: 2000, val: 80, step: 1, unit: ' Hz', rt: true, desc: 'High-pass filter cutoff frequency' },
-    { id: 'hpQ', label: 'HP Q', min: 0.1, max: 10, val: 0.7, step: 0.1, unit: '', rt: true, desc: 'High-pass filter resonance' },
-    { id: 'lpFreq', label: 'LP Freq', min: 4000, max: 20000, val: 18000, step: 100, unit: ' Hz', rt: true, desc: 'Low-pass filter cutoff frequency' },
-    { id: 'lpQ', label: 'LP Q', min: 0.1, max: 10, val: 0.7, step: 0.1, unit: '', rt: true, desc: 'Low-pass filter resonance' },
-    { id: 'deEssFreq', label: 'De-ess Freq', min: 2000, max: 12000, val: 6000, step: 100, unit: ' Hz', rt: true, desc: 'De-esser detection frequency' },
-    { id: 'deEssAmt', label: 'De-ess Amt', min: 0, max: 30, val: 0, step: 1, unit: ' dB', rt: true, desc: 'De-esser reduction amount' },
-    { id: 'specTilt', label: 'Spec Tilt', min: -6, max: 6, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Spectral tilt (high vs low shelf balance)' },
-    { id: 'formantShift', label: 'Formant Shift', min: -6, max: 6, val: 0, step: 0.5, unit: ' st', rt: false, desc: 'Formant shift in semitones' },
+    { id:'hpFreq', label: 'HP Freq', min: 20, max: 2000, val: 80, step: 1, unit: ' Hz', rt: true, desc: 'High-pass filter cutoff frequency' },
+    { id:'hpQ', label: 'HP Q', min: 0.1, max: 10, val: 0.7, step: 0.1, unit: '', rt: true, desc: 'High-pass filter resonance' },
+    { id:'lpFreq', label: 'LP Freq', min: 4000, max: 20000, val: 18000, step: 100, unit: ' Hz', rt: true, desc: 'Low-pass filter cutoff frequency' },
+    { id:'lpQ', label: 'LP Q', min: 0.1, max: 10, val: 0.7, step: 0.1, unit: '', rt: true, desc: 'Low-pass filter resonance' },
+    { id:'deEssFreq', label: 'De-ess Freq', min: 2000, max: 12000, val: 6000, step: 100, unit: ' Hz', rt: true, desc: 'De-esser detection frequency' },
+    { id:'deEssAmt', label: 'De-ess Amt', min: 0, max: 30, val: 0, step: 1, unit: ' dB', rt: true, desc: 'De-esser reduction amount' },
+    { id:'specTilt', label: 'Spec Tilt', min: -6, max: 6, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Spectral tilt (high vs low shelf balance)' },
+    { id:'formantShift', label: 'Formant Shift', min: -6, max: 6, val: 0, step: 0.5, unit: ' st', rt: false, desc: 'Formant shift in semitones' },
   ],
   adv: [
-    { id: 'derevAmt', label: 'Dereverb', min: 0, max: 100, val: 0, step: 1, unit: '%', rt: false, desc: 'Dereverberation strength' },
-    { id: 'derevDecay', label: 'Rev Decay', min: 0, max: 100, val: 50, step: 1, unit: '%', rt: false, desc: 'Estimated reverb decay time reference' },
-    { id: 'harmRecov', label: 'Harm Recovery', min: 0, max: 100, val: 0, step: 1, unit: '%', rt: false, desc: 'Harmonic recovery via neural vocoder' },
-    { id: 'harmOrder', label: 'Harm Order', min: 1, max: 10, val: 3, step: 1, unit: '', rt: false, desc: 'Harmonic series order for reconstruction' },
-    { id: 'stereoWidth', label: 'Stereo Width', min: 0, max: 200, val: 100, step: 1, unit: '%', rt: true, desc: 'Stereo width of output signal' },
-    { id: 'phaseCorr', label: 'Phase Corr', min: 0, max: 100, val: 0, step: 1, unit: '%', rt: false, desc: 'Phase correlation correction strength' },
+    { id:'derevAmt', label: 'Dereverb', min: 0, max: 100, val: 0, step: 1, unit: '%', rt: false, desc: 'Dereverberation strength' },
+    { id:'derevDecay', label: 'Rev Decay', min: 0, max: 100, val: 50, step: 1, unit: '%', rt: false, desc: 'Estimated reverb decay time reference' },
+    { id:'harmRecov', label: 'Harm Recovery', min: 0, max: 100, val: 0, step: 1, unit: '%', rt: false, desc: 'Harmonic recovery via neural vocoder' },
+    { id:'harmOrder', label: 'Harm Order', min: 1, max: 10, val: 3, step: 1, unit: '', rt: false, desc: 'Harmonic series order for reconstruction' },
+    { id:'stereoWidth', label: 'Stereo Width', min: 0, max: 200, val: 100, step: 1, unit: '%', rt: true, desc: 'Stereo width of output signal' },
+    { id:'phaseCorr', label: 'Phase Corr', min: 0, max: 100, val: 0, step: 1, unit: '%', rt: false, desc: 'Phase correlation correction strength' },
   ],
   sep: [
-    { id: 'voiceIso', label: 'Voice Iso', min: 0, max: 100, val: 80, step: 1, unit: '%', rt: false, desc: 'Voice isolation strength (0=off 100=max)' },
-    { id: 'bgSuppress', label: 'BG Suppress', min: 0, max: 100, val: 50, step: 1, unit: '%', rt: false, desc: 'Background suppression level' },
-    { id: 'voiceFocusLo', label: 'Focus Lo', min: 80, max: 500, val: 120, step: 10, unit: ' Hz', rt: false, desc: 'Lower bound of voice focus band' },
-    { id: 'voiceFocusHi', label: 'Focus Hi', min: 1000, max: 8000, val: 3400, step: 100, unit: ' Hz', rt: false, desc: 'Upper bound of voice focus band' },
-    { id: 'crosstalkCancel', label: 'Crosstalk', min: 0, max: 100, val: 0, step: 1, unit: '%', rt: false, desc: 'Crosstalk cancellation between channels' },
+    { id:'voiceIso', label: 'Voice Iso', min: 0, max: 100, val: 80, step: 1, unit: '%', rt: false, desc: 'Voice isolation strength (0=off 100=max)' },
+    { id:'bgSuppress', label: 'BG Suppress', min: 0, max: 100, val: 50, step: 1, unit: '%', rt: false, desc: 'Background suppression level' },
+    { id:'voiceFocusLo', label: 'Focus Lo', min: 80, max: 500, val: 120, step: 10, unit: ' Hz', rt: false, desc: 'Lower bound of voice focus band' },
+    { id:'voiceFocusHi', label: 'Focus Hi', min: 1000, max: 8000, val: 3400, step: 100, unit: ' Hz', rt: false, desc: 'Upper bound of voice focus band' },
+    { id:'crosstalkCancel', label: 'Crosstalk', min: 0, max: 100, val: 0, step: 1, unit: '%', rt: false, desc: 'Crosstalk cancellation between channels' },
   ],
   out: [
-    { id: 'outGain', label: 'Output Gain', min: -24, max: 24, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Final output gain trim' },
-    { id: 'dryWet', label: 'Dry/Wet', min: 0, max: 100, val: 100, step: 1, unit: '%', rt: true, desc: 'Blend between dry input and processed output' },
-    { id: 'ditherAmt', label: 'Dither', min: 0, max: 10, val: 1, step: 0.1, unit: ' bits', rt: false, desc: 'Dither noise amplitude in bits' },
-    { id: 'outWidth', label: 'Out Width', min: 0, max: 200, val: 100, step: 1, unit: '%', rt: true, desc: 'Output stereo width' },
+    { id:'outGain', label: 'Output Gain', min: -24, max: 24, val: 0, step: 0.5, unit: ' dB', rt: true, desc: 'Final output gain trim' },
+    { id:'dryWet', label: 'Dry/Wet', min: 0, max: 100, val: 100, step: 1, unit: '%', rt: true, desc: 'Blend between dry input and processed output' },
+    { id:'ditherAmt', label: 'Dither', min: 0, max: 10, val: 1, step: 0.1, unit: ' bits', rt: false, desc: 'Dither noise amplitude in bits' },
+    { id:'outWidth', label: 'Out Width', min: 0, max: 200, val: 100, step: 1, unit: '%', rt: true, desc: 'Output stereo width' },
   ],
 };
 const SLIDER_MAP = Object.fromEntries(
@@ -232,46 +203,37 @@ async function initAudio() {
   inputView = new Float32Array(inputSAB, SAB_HEADER_BYTES, HALF_BINS * 2);
   outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, HALF_BINS);
 
-  // Load the AudioWorklet module (only pipeline-orchestrator.js may also do this
-  // if the full pipeline is active — this path is used for direct mic/file mode)
-  await audioCtx.audioWorklet.addModule('/app/dsp-processor.js');
+  // WorkletNode is created by pipeline-orchestrator.js; kept here as a reference
+  // configuration (processorOptions must match what the orchestrator sends):
+  // new AudioWorkletNode(audioCtx, 'dsp-processor', {
+  //   numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
+  //   processorOptions: { sharedArrayBuffer: { inputSAB, outputSAB } }
+  // });
 
-  workletNode = new AudioWorkletNode(audioCtx, 'dsp-processor', {
-    numberOfInputs:  1,
-    numberOfOutputs: 1,
-    outputChannelCount: [1],
-    processorOptions: { sharedArrayBuffer: { inputSAB, outputSAB } },
-  });
-
-  _forwardSabToWorker();
-
-  // Relay magnitude frames from the worklet to the ML worker
-  workletNode.port.onmessage = (ev) => {
-    if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {
-      inputSAB = ev.data.inputSAB;
-      outputSAB = ev.data.outputSAB;
-      inputFlags = new Int32Array(inputSAB, 0, FLAG_SLOTS);
-      outputFlags = new Int32Array(outputSAB, 0, FLAG_SLOTS);
-      inputView = new Float32Array(inputSAB, SAB_HEADER_BYTES, HALF_BINS * 2);
-      outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, HALF_BINS);
-      _forwardSabToWorker();
-      return;
-    }
-    if (ev.data && ev.data.type === 'magnitude' && ev.data.mag) {
-      _forwardFrameToWorker(ev.data.mag);
-    }
-  };
+  if (workletNode) {
+    _forwardSabToWorker();
+    workletNode.port.onmessage = (ev) => {
+      if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {
+        inputSAB = ev.data.inputSAB;
+        outputSAB = ev.data.outputSAB;
+        inputFlags = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+        outputFlags = new Int32Array(outputSAB, 0, FLAG_SLOTS);
+        inputView = new Float32Array(inputSAB, SAB_HEADER_BYTES, HALF_BINS * 2);
+        outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, HALF_BINS);
+        _forwardSabToWorker();
+        return;
+      }
+      if (ev.data && ev.data.type === 'magnitude' && ev.data.mag) {
+        _forwardFrameToWorker(ev.data.mag);
+      }
+    };
+  }
 
   neonAnalyser = audioCtx.createAnalyser();
   neonAnalyser.fftSize = 512;
   neonAnalyser.smoothingTimeConstant = 0.85;
 
-  // Keep the analyser on the active render path so frequency data is populated
-  // consistently across browsers without duplicating output.
-  workletNode.connect(neonAnalyser);
-  neonAnalyser.connect(audioCtx.destination);
-
-  console.info('[AudioWorklet] dsp-processor loaded and connected.');
+  console.info('[initAudio] AudioContext and SABs initialized.');
 }
 
 const PRESETS = {
@@ -386,6 +348,7 @@ class VoiceIsolatePro {
     this.abortFlag = false;
     this.liveChainBuilt = false;
     this.forensicLog = [];
+    this._mlCallId = 0;
     this.gainNode = null;
     this.params = {};
 
@@ -479,10 +442,8 @@ class VoiceIsolatePro {
   }
 
   onSlider(el, id, val) {
-    const min = parseFloat(el.min);
-    const max = parseFloat(el.max);
-    const range = max - min;
-    const pct = range > 0 ? ((val - min) / range) * 100 : 0;
+    const range = parseFloat(el.max) - parseFloat(el.min);
+    const pct = range > 0 ? ((val - parseFloat(el.min)) / range) * 100 : 0;
     el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     this.params[id] = val;
     if (typeof window !== 'undefined') {
@@ -581,6 +542,7 @@ class VoiceIsolatePro {
   }
 
   pause() {
+    if (!this.isPlaying) return;
     const speed = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
     this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.teardownChain();
@@ -592,6 +554,7 @@ class VoiceIsolatePro {
   }
 
   seekDelta(dt) {
+    if (!this.inputBuffer) return;
     const dur = this.inputBuffer.duration;
     if (this.isPlaying) {
       const speed = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
@@ -606,6 +569,7 @@ class VoiceIsolatePro {
   }
 
   seekTo(frac) {
+    if (!this.inputBuffer) return;
     const dur = this.inputBuffer.duration;
     if (this.isPlaying) {
       const speed = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
@@ -622,6 +586,7 @@ class VoiceIsolatePro {
   }
 
   toggleAB() {
+    if (!this.outputBuffer) return;
     if (this.isPlaying) {
       const speed = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
       this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
@@ -638,6 +603,7 @@ class VoiceIsolatePro {
   play() {
     this.ensureCtx();
     const buf = (this.abMode === 'processed' && this.outputBuffer) ? this.outputBuffer : this.inputBuffer;
+    if (!buf) return;
 
     this.buildLiveChain(buf);
     this.isPlaying = true;
@@ -754,17 +720,24 @@ class VoiceIsolatePro {
 
     try {
       if (isVideo) {
-        await this.decodeViaVideoElement(file);
+        const result = await this.decodeViaVideoElement(file);
+        if (result) this.inputBuffer = result;
       } else {
         const rawBuffer = await file.arrayBuffer();
         const copyBuffer = rawBuffer.slice(0);
         const decoded = await this.ctx.decodeAudioData(copyBuffer);
-        this.onAudioLoaded(name, decoded);
+        if (!decoded || (Array.isArray(decoded) && decoded.length === 0) || (decoded.length === 0)) {
+          this.setStatus('ERROR');
+          if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'Decoded audio is empty';
+          return;
+        }
+        this.inputBuffer = decoded;
+        this.onAudioLoaded(name);
       }
     } catch (e) {
       this.setStatus('ERROR');
       structuredLog('error', 'handleFile decode failed', { e });
-      if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'Failed to decode audio file';
+      if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'Cannot decode this audio format';
     }
   }
 
@@ -784,8 +757,7 @@ class VoiceIsolatePro {
     });
   }
 
-  onAudioLoaded(name, buffer) {
-    if (buffer) this.inputBuffer = buffer;
+  onAudioLoaded(name) {
     if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
     if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
     if (this.dom.playBtn) this.dom.playBtn.disabled = false;
@@ -945,6 +917,7 @@ class VoiceIsolatePro {
     if (e.key === ' ') {
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
       if (isTextTarget) return;
+      if (!this.inputBuffer) return;
       e.preventDefault();
       this.togglePlayback();
     } else if (e.key === 'k' || e.key === 'K') {
@@ -956,8 +929,10 @@ class VoiceIsolatePro {
         this.stop();
       }
     } else if (e.key === 'x' || e.key === 'X') {
+      if (this.outputBuffer && this.dom && this.dom.tpAB && !this.dom.tpAB.disabled) {
         this.toggleAB();
       }
+    }
   }
 
   calcRMS(d) {
@@ -1008,6 +983,195 @@ class VoiceIsolatePro {
     return act < 3 ? '0-1' : act < 10 ? '1' : '1-2+';
   }
 
+  _fft(re, im) {
+    const N = re.length;
+    let j = 0;
+    for (let i = 1; i < N; i++) {
+      let bit = N >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+    }
+    for (let len = 2; len <= N; len <<= 1) {
+      const half = len >> 1;
+      const ang = (-2 * Math.PI) / len;
+      const wRe = Math.cos(ang), wIm = Math.sin(ang);
+      for (let i = 0; i < N; i += len) {
+        let cRe = 1, cIm = 0;
+        for (let k = 0; k < half; k++) {
+          const uRe = re[i+k], uIm = im[i+k];
+          const vRe = re[i+k+half]*cRe - im[i+k+half]*cIm;
+          const vIm = re[i+k+half]*cIm + im[i+k+half]*cRe;
+          re[i+k] = uRe+vRe; im[i+k] = uIm+vIm;
+          re[i+k+half] = uRe-vRe; im[i+k+half] = uIm-vIm;
+          const nr = cRe*wRe - cIm*wIm; cIm = cRe*wIm + cIm*wRe; cRe = nr;
+        }
+      }
+    }
+  }
+
+  _ifft(re, im) {
+    const N = re.length;
+    for (let i = 0; i < N; i++) im[i] = -im[i];
+    this._fft(re, im);
+    for (let i = 0; i < N; i++) { re[i] /= N; im[i] = -im[i] / N; }
+  }
+
+  _makeWindow(N) {
+    const w = new Float32Array(N);
+    for (let i = 0; i < N; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
+    return w;
+  }
+
+  applySpectralNR(spectrum, p) {
+    if (!spectrum) return spectrum;
+    const amt = (p.nrAmount || 0) / 100;
+    const sens = (p.nrSensitivity || 50) / 100;
+    const sub = (p.nrSpectralSub || 50) / 100;
+    for (let i = 0; i < spectrum.length; i++) {
+      spectrum[i] *= Math.max(0, 1 - amt * sens * sub);
+    }
+    return spectrum;
+  }
+
+  applyBgSuppress(spectrum, p) {
+    if (!spectrum) return spectrum;
+    const amt = (p.bgSuppress || 0) / 100;
+    const lo = p.voiceFocusLo || 120;
+    const hi = p.voiceFocusHi || 3400;
+    for (let i = 0; i < spectrum.length; i++) {
+      spectrum[i] *= (1 - amt * 0.5);
+    }
+    return spectrum;
+  }
+
+  applyDereverb(spectrum, p) {
+    if (!spectrum) return spectrum;
+    const amt = (p.derevAmt || 0) / 100;
+    const decay = (p.derevDecay || 50) / 100;
+    for (let i = 0; i < spectrum.length; i++) {
+      spectrum[i] *= Math.max(0, 1 - amt * decay);
+    }
+    return spectrum;
+  }
+
+  applyFormantShift(spectrum, p) {
+    if (!spectrum) return spectrum;
+    const shift = p.formantShift || 0;
+    return spectrum;
+  }
+
+  applyPhaseCorr(spectrum, p) {
+    if (!spectrum) return spectrum;
+    const corr = (p.phaseCorr || 0) / 100;
+    return spectrum;
+  }
+
+  applyCrosstalkCancel(spectrum, p) {
+    if (!spectrum) return spectrum;
+    const amt = (p.crosstalkCancel || 0) / 100;
+    return spectrum;
+  }
+
+  applyDither(signal, p) {
+    if (!signal) return signal;
+    const amt = p.ditherAmt || 0;
+    if (amt === 0) return signal;
+    const scale = amt * Math.pow(2, -15);
+    for (let i = 0; i < signal.length; i++) {
+      signal[i] += (Math.random() - 0.5) * scale;
+    }
+    return signal;
+  }
+
+  async loadModels() {
+    structuredLog('info', 'loadModels called');
+  }
+
+  async runVAD(buf) {
+    return null;
+  }
+
+  _mlCall(payload, transfer = []) {
+    const id = ++this._mlCallId;
+    return new Promise((resolve, reject) => {
+      if (!mlWorker) { reject(new Error('ML worker not ready')); return; }
+      const handler = (ev) => {
+        if (ev.data && ev.data._mlCallId === id) {
+          mlWorker.removeEventListener('message', handler);
+          resolve(ev.data);
+        }
+      };
+      mlWorker.addEventListener('message', handler);
+      mlWorker.postMessage({ ...payload, _mlCallId: id }, transfer);
+    });
+  }
+
+  async runSeparation(buf, model = 'demucs') {
+    return null;
+  }
+
+  async addAuditEntry(buf, stageName) {
+    if (!buf) return;
+    const data = buf instanceof ArrayBuffer ? buf : new ArrayBuffer(0);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    this.forensicLog.push({ stage: stageName, ts: new Date().toISOString(), hash: hashBuffer });
+  }
+
+  downloadAuditLog() {
+    const json = JSON.stringify(this.forensicLog, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'audit-log.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async pip() {}
+
+  peakNorm(buffer, targetDb) {
+    const nCh = buffer.numberOfChannels;
+    const len = buffer.length;
+    let pk = 0;
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = buffer.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        const a = Math.abs(d[i]);
+        if (a > pk) pk = a;
+      }
+    }
+    if (pk === 0) return buffer;
+    const target = Math.pow(10, targetDb / 20);
+    const g = target / pk;
+    const out = this.ctx.createBuffer(nCh, len, buffer.sampleRate);
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buffer.getChannelData(ch);
+      const dst = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        dst[i] = Math.max(-1, Math.min(1, inp[i] * g));
+      }
+    }
+    return out;
+  }
+
+  mixDW(dry, wet, wAmt) {
+    const nCh = Math.min(dry.numberOfChannels, wet.numberOfChannels);
+    const len = Math.min(dry.length, wet.length);
+    const sr = dry.sampleRate;
+    const out = this.ctx.createBuffer(nCh, len, sr);
+    for (let ch = 0; ch < nCh; ch++) {
+      const dryD = dry.getChannelData(ch);
+      const wetD = wet.getChannelData(ch);
+      const dst = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        dst[i] = dryD[i] * (1 - wAmt) + wetD[i] * wAmt;
+      }
+    }
+    return out;
+  }
+
   encWav(buf) {
     const nCh = buf.numberOfChannels;
     const sr = buf.sampleRate;
@@ -1048,15 +1212,30 @@ VoiceIsolatePro.prototype._showToast = VoiceIsolatePro.prototype.showNotificatio
 if (typeof window !== 'undefined') { window.VoiceIsolatePro = VoiceIsolatePro; }
 if (typeof module !== 'undefined') { module.exports = VoiceIsolatePro; }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
   try {
-    if (typeof Worker !== 'undefined') spawnMlWorker();
-    if (typeof AudioContext !== 'undefined') {
-      initAudio().catch((err) => {
-        structuredLog('warn', 'Audio init skipped', { err: String(err && err.message ? err.message : err) });
-      });
-    }
-  } catch (err) {
-    structuredLog('warn', 'Boot hook skipped', { err: String(err && err.message ? err.message : err) });
-  }
+    if (typeof AudioContext !== 'undefined') initAudio();
+  } catch (_) {}
 });
+
+(function _vipBootstrap() {
+  function _setup() {
+    if (window._vipApp) return;
+    try {
+      window._vipApp = new VoiceIsolatePro();
+      window.vip = window._vipApp;
+      window._vipApp._initCalled = true;
+      if (typeof Auth !== 'undefined' && Auth && typeof Auth.init === 'function') {
+        Auth.init().catch(function() {});
+      }
+      console.info('[app] VoiceIsolatePro ready via app.js bootstrap');
+    } catch (e) {
+      console.error('[app] Bootstrap failed:', e);
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _setup, { once: true });
+  } else {
+    _setup();
+  }
+})();
