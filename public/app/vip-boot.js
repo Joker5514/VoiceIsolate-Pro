@@ -211,11 +211,70 @@
     btn.addEventListener('mouseout',  function () { btn.style.color = '#666'; });
   }
 
+  // -- Network connectivity monitor ----------------------------------------
+  function getInitialNetworkState() {
+    return (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean')
+      ? navigator.onLine
+      : true;
+  }
+
+  function updateNetPill(online) {
+    setEnginePill('engNetPill', online ? 'ready' : 'error');
+  }
+
+  function resetProviderHealth() {
+    if (typeof window === 'undefined' || !window.ModelCDNLoader || !window.ModelCDNLoader.providerHealth) {
+      return false;
+    }
+    Object.keys(window.ModelCDNLoader.providerHealth).forEach(function (k) {
+      window.ModelCDNLoader.providerHealth[k] = true;
+    });
+    return true;
+  }
+
+  function applyNetworkState(online) {
+    updateNetPill(online);
+    if (online) {
+      console.info('[vip-boot] Network connected.');
+      // Reset any degraded CDN providers so the waterfall retries from the top
+      if (resetProviderHealth()) {
+        console.info('[vip-boot] CDN provider health reset after reconnect.');
+      }
+    } else {
+      console.warn('[vip-boot] Network disconnected.');
+    }
+  }
+
+  function startNetworkMonitor() {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+
+    // Set initial state immediately
+    applyNetworkState(getInitialNetworkState());
+
+    window.addEventListener('online', function () {
+      applyNetworkState(true);
+    });
+
+    window.addEventListener('offline', function () {
+      applyNetworkState(false);
+    });
+  }
+
+  if (typeof window !== 'undefined') {
+    window._vipBootTestHooks = window._vipBootTestHooks || {};
+    window._vipBootTestHooks.getInitialNetworkState = getInitialNetworkState;
+    window._vipBootTestHooks.updateNetPill = updateNetPill;
+    window._vipBootTestHooks.resetProviderHealth = resetProviderHealth;
+    window._vipBootTestHooks.applyNetworkState = applyNetworkState;
+    window._vipBootTestHooks.startNetworkMonitor = startNetworkMonitor;
+  }
+
   // -- Boot sequence -------------------------------------------------------
   function boot() {
     wireDismissBtn();
     aliasOrCreate();
     startPillDriver();
+    startNetworkMonitor();
     // 2-second grace period for capability checks
     setTimeout(function () {
       try { runDiagnostics(); }
