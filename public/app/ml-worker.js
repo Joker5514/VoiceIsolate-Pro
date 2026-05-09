@@ -104,9 +104,9 @@ const MODEL_URL_OVERRIDES = {};
 const MODEL_SHA256 = {
   'silero_vad.onnx':            '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
   'silero_vad_int8.onnx':       '16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05',
-  'rnnoise_suppressor.onnx':    'c33459bf9a151cac0be5a76a936dc4d1940b2889282fb71ca5ac83ff3d5d6a2e',
+  'rnnoise_suppressor.onnx':    '0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6',
   'demucs_v4_quantized.onnx':   '',
-  'bsrnn_vocals.onnx':          'c34b40563e9715b8b2e30bbd41cbeaf1f0d9a58a9d26abae3e91169adaed63a4',
+  'bsrnn_vocals.onnx':          '7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
 };
 
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
