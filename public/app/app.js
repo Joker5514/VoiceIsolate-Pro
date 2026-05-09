@@ -94,6 +94,7 @@ let sabInt32    = null;   // Int32  view (control word)
 let mlWorker    = null;   // Web Worker running ml-worker.js
 let mlReady     = false;  // true once worker sends { type: 'ready' }
 let neonAnalyser = null;  // AnalyserNode tapped from worklet output for neon visualizer
+let neonVizHandle = null; // Handle for the neon visualizer RAF loop
 
 // Pending SAB magnitude frames queued before ml-worker is ready
 const _pendingFrames = [];
