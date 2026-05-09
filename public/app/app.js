@@ -15,6 +15,66 @@ function structuredLog(level, msg, data = {}) {
   return entry;
 }
 
+// ---------------------------------------------------------------------------
+// Global state
+// ---------------------------------------------------------------------------
+let audioCtx    = null;
+let workletNode = null;
+let sabFloat32  = null;   // Float32 view into SharedArrayBuffer
+let sabInt32    = null;   // Int32  view (control word)
+let mlWorker    = null;   // Web Worker running ml-worker.js
+let mlReady     = false;  // true once worker sends { type: 'ready' }
+let neonAnalyser = null;  // AnalyserNode tapped from worklet output for neon visualizer
+let neonVizHandle = null; // Handle for the neon visualizer RAF loop
+
+// Pending SAB magnitude frames queued before ml-worker is ready
+const _pendingFrames = [];
+
+// ---------------------------------------------------------------------------
+// 1. ML Worker — spawn ml-worker.js and wire SAB magnitude forwarding
+// ---------------------------------------------------------------------------
+function spawnMlWorker() {
+  if (mlWorker) return;
+
+  mlWorker = new Worker('/app/ml-worker.js');
+
+  mlWorker.onmessage = (ev) => {
+    const { type } = ev.data || {};
+
+    if (type === 'ready') {
+      mlReady = true;
+      updateStatus('ML worker ready ✓');
+
+      // Forward any frames that arrived before the worker was ready
+      for (const frame of _pendingFrames) _forwardFrameToWorker(frame);
+      _pendingFrames.length = 0;
+
+      // Hand the worker the SAB so it can poll directly (optional fast-path)
+      if (sabFloat32 && sabInt32) {
+        mlWorker.postMessage({
+          type: 'init',
+          payload: {
+            inputSAB:  sabFloat32.buffer,
+            outputSAB: sabFloat32.buffer,
+            fftSize:   FFT_SIZE,
+            halfN:     HALF_BINS,
+            sampleRate: audioCtx ? audioCtx.sampleRate : 48000,
+            allowedModels: ['demucs', 'bsrnn', 'rnnoise', 'vad'],
+            allowedStages: 14,
+          },
+        });
+      }
+    } else if (type === 'mask') {
+      // Write returned mask into SAB so the AudioWorklet can apply it
+      const { mask } = ev.data;
+      if (mask && sabFloat32) {
+        sabFloat32.set(mask.subarray(0, HALF_BINS), 1 + HALF_BINS);
+        Atomics.store(sabInt32, 0, 2); // signal worklet: mask ready
+      }
+    } else if (type === 'error') {
+      console.warn('[ML Worker]', ev.data.message || ev.data.msg);
+    }
+  };
 const SLIDERS = {
   gate: [
     { id: 'gateThresh', label: 'Threshold', min: -80, max: -5, val: -42, step: 1, unit: ' dB', rt: true, desc: 'Signal level below which audio is gated' },
@@ -111,6 +171,45 @@ if (typeof window !== 'undefined') {
   window.numFromInput = numFromInput;
 }
 
+// ---------------------------------------------------------------------------
+// 2. AudioContext + AudioWorklet setup
+// ---------------------------------------------------------------------------
+async function initAudio() {
+  audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+
+  // Allocate SharedArrayBuffer for SAB bridge
+  const sab  = new SharedArrayBuffer(SAB_FLOATS * Float32Array.BYTES_PER_ELEMENT);
+  sabFloat32 = new Float32Array(sab);
+  sabInt32   = new Int32Array(sab);
+
+  // Load the AudioWorklet module (only pipeline-orchestrator.js may also do this
+  // if the full pipeline is active — this path is used for direct mic/file mode)
+  await audioCtx.audioWorklet.addModule('/app/dsp-processor.js');
+
+  workletNode = new AudioWorkletNode(audioCtx, 'dsp-processor', {
+    numberOfInputs:  1,
+    numberOfOutputs: 1,
+    outputChannelCount: [1],
+    processorOptions: { sharedArrayBuffer: sab },
+  });
+
+  // Relay magnitude frames from the worklet to the ML worker
+  workletNode.port.onmessage = (ev) => {
+    if (ev.data && ev.data.type === 'magnitude' && ev.data.mag) {
+      _forwardFrameToWorker(ev.data.mag);
+    }
+  };
+
+  neonAnalyser = audioCtx.createAnalyser();
+  neonAnalyser.fftSize = 512;
+  neonAnalyser.smoothingTimeConstant = 0.85;
+
+  // Keep the analyser on the active render path so frequency data is populated
+  // consistently across browsers without duplicating output.
+  workletNode.connect(neonAnalyser);
+  neonAnalyser.connect(audioCtx.destination);
+
+  console.info('[AudioWorklet] dsp-processor loaded and connected.');
 const PRESETS = {
   'Voice Clarity': {
     description: 'Crystal-clear voice isolation optimised for dialogue and interviews',
@@ -671,6 +770,13 @@ class VoiceIsolatePro {
         }
       }
 
+    if (neonVizHandle) neonVizHandle.stop();
+    if (typeof window !== 'undefined' && typeof window.VIP_initNeonVisualizer === 'function') {
+      neonVizHandle = window.VIP_initNeonVisualizer(neonAnalyser);
+    }
+
+    updateStatus('Binding UI sliders…');
+    initSliders();
       const processed = DSP.inverseSTFT(spectrum, fftSize);
 
       if (processed && processed.length > 0) {
