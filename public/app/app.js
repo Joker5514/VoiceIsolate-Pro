@@ -200,12 +200,14 @@ async function initAudio() {
     }
   };
 
-  workletNode.connect(audioCtx.destination);
-
   neonAnalyser = audioCtx.createAnalyser();
   neonAnalyser.fftSize = 512;
   neonAnalyser.smoothingTimeConstant = 0.85;
+
+  // Keep the analyser on the active render path so frequency data is populated
+  // consistently across browsers without duplicating output.
   workletNode.connect(neonAnalyser);
+  neonAnalyser.connect(audioCtx.destination);
 
   console.info('[AudioWorklet] dsp-processor loaded and connected.');
 const PRESETS = {
