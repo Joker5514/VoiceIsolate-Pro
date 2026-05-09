@@ -1050,7 +1050,11 @@ class VoiceIsolatePro {
           recorder.onerror = () => fail(new Error('MediaRecorder failed'));
           recorder.onstop = async () => {
             try {
-              source.disconnect();
+              try { source.disconnect(); } catch (_) {}
+              if (!chunks.length) {
+                fail(new Error('No audio extracted from video'));
+                return;
+              }
               const blob = new Blob(chunks, { type: chunks[0]?.type || 'audio/webm' });
               const raw = await blob.arrayBuffer();
               const decoded = await this.ctx.decodeAudioData(raw.slice(0));
@@ -1062,8 +1066,11 @@ class VoiceIsolatePro {
           };
           recorder.start();
           videoEl.currentTime = 0;
+          videoEl.onended = () => {
+            try { if (recorder.state !== 'inactive') recorder.stop(); } catch (_) {}
+          };
           await videoEl.play().catch(() => {});
-          const durationMs = Math.max(250, Math.ceil((videoEl.duration || 0) * 1000));
+          const durationMs = Math.max(1000, Math.ceil((videoEl.duration || 0) * 1000) + 250);
           setTimeout(() => {
             try {
               videoEl.pause();
@@ -1249,7 +1256,7 @@ class VoiceIsolatePro {
 
   _handleGlobalKeydown(e) {
     const tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
     if (e.code === 'Space') { e.preventDefault(); this.togglePlayback(); }
     if (e.code === 'ArrowRight') { e.preventDefault(); this.seekDelta(5); }
     if (e.code === 'ArrowLeft') { e.preventDefault(); this.seekDelta(-5); }
