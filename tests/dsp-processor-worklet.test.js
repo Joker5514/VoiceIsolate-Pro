@@ -72,4 +72,34 @@ describe('dsp-processor AudioWorklet behavior', () => {
 
     expect(Atomics.load(flagsOut, 1)).toBe(0);
   });
+
+  test('uses context sampleRate for bin mapping in spectral band-pass', () => {
+    const runWithSampleRate = (contextSampleRate) => {
+      const processor = loadProcessor();
+      processor.context.sampleRate = contextSampleRate;
+      processor._params.lowCut = 4500;
+      processor._params.highCut = 5500;
+      processor._params.gate = 0;
+      processor._params.noiseReduction = 0;
+      processor._params.voiceBoost = 0;
+
+      const output = new Float32Array(1024);
+      for (let frame = 0; frame < 4; frame++) {
+        const input = new Float32Array(1024);
+        for (let i = 0; i < input.length; i++) {
+          const idx = frame * input.length + i;
+          input[i] = Math.sin((2 * Math.PI * 5000 * idx) / 44100);
+        }
+        processor.process([[input]], [[output]]);
+      }
+      let rms = 0;
+      for (let i = 0; i < output.length; i++) rms += output[i] * output[i];
+      return Math.sqrt(rms / output.length);
+    };
+
+    const rmsAt44100 = runWithSampleRate(44100);
+    const rmsAt96000 = runWithSampleRate(96000);
+
+    expect(rmsAt44100).toBeGreaterThan(rmsAt96000 * 1.5);
+  });
 });
