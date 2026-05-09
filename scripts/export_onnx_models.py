@@ -374,8 +374,8 @@ def main() -> int:
           flush=True)
     bsrnn = BSRNNSpectral()
     n_params_bs = sum(p.numel() for p in bsrnn.parameters())
-    print(f'  arch: 6-band split → per-band Linear(→64) → BiLSTM(64, 2 layers) '
-          f'→ per-band Linear(128→band_w) → reassemble → Sigmoid', flush=True)
+    print(f'  arch: 6-band split → per-band Linear(→96) → BiLSTM(96, 2 layers) '
+          f'→ per-band Linear(192→band_w) → reassemble → Sigmoid', flush=True)
     print(f'  params: {n_params_bs:,}  (~{n_params_bs * 4 / 1024 / 1024:.2f} MB)', flush=True)
     train_model(bsrnn, make_vocal_separation_batch,
                 steps=600, batch_size=24, lr=1.5e-3, label='bsrnn')
