@@ -193,6 +193,7 @@ function buildPanels() {
       const input = document.createElement('input');
       input.type = 'range';
       input.className = 'slider';
+      if (s.rt) input.classList.add('realtime');
       input.id = 'sl_' + s.id;
       input.min = s.min;
       input.max = s.max;
@@ -436,6 +437,19 @@ class VoiceIsolatePro {
     try { this.cacheDom(); } catch (_) {}
     try { this.initPct(); } catch (_) {}
     try { this.bindEvents(); } catch (_) {}
+    const searchEl = document.getElementById('sliderSearch');
+    if (searchEl) {
+      searchEl.addEventListener('input', () => {
+        const q = searchEl.value.toLowerCase();
+        document.querySelectorAll('.slider-row').forEach(row => {
+          const label = row.querySelector('.slider-label');
+          row.style.display = (!q || (label && label.textContent.toLowerCase().includes(q))) ? '' : 'none';
+        });
+      });
+    }
+    document.querySelectorAll('.slider-group-header').forEach(header => {
+      header.addEventListener('click', () => header.closest('.slider-group').classList.toggle('active'));
+    });
     try {
       document.addEventListener('keydown', e => this._handleGlobalKeydown(e));
     } catch (_) {}
@@ -457,6 +471,8 @@ class VoiceIsolatePro {
       tpPlay: g('tpPlay'),
       tpStop: g('tpStop'),
       tpPause: g('tpPause'),
+      tpRew: g('tpRew'),
+      tpFwd: g('tpFwd'),
       tpAB: g('tpAB'),
       tpABLabel: g('tpABLabel'),
       tpCur: g('tpCur'),
@@ -604,15 +620,38 @@ class VoiceIsolatePro {
 
     // Save custom preset
     const saveCustomBtn = document.getElementById('saveCustomPresetBtn');
+    const openPresetModalBtn = document.getElementById('openPresetModalBtn');
+    const customPresetModal = document.getElementById('customPresetModal');
+    const closePresetModal = document.getElementById('closePresetModal');
+    if (openPresetModalBtn && customPresetModal) openPresetModalBtn.addEventListener('click', () => customPresetModal.classList.add('open'));
+    if (closePresetModal && customPresetModal) closePresetModal.addEventListener('click', () => customPresetModal.classList.remove('open'));
     if (saveCustomBtn) {
       saveCustomBtn.addEventListener('click', () => {
         const nameEl = document.getElementById('customPresetName');
         const name = nameEl && nameEl.value.trim();
         if (!name) return;
         PRESETS[name] = { ...this.params };
+        if (customPresetModal) customPresetModal.classList.remove('open');
         this.showNotification('Preset "' + name + '" saved', 'success');
       });
     }
+
+    const fullscreenBtn = document.getElementById('fullscreenSpectroBtn');
+    if (fullscreenBtn) {
+      fullscreenBtn.addEventListener('click', () => {
+        const container = document.getElementById('spectro3d-container') || document.getElementById('spectroCanvas')?.parentElement;
+        if (container) container.classList.toggle('fullscreen');
+      });
+    }
+    const applySpectroFallback = () => {
+      const spectro3d = document.getElementById('spectro3d-container');
+      const spectro2d = document.getElementById('spectro2DCanvas');
+      const use2d = window.innerWidth < 768;
+      if (spectro3d) spectro3d.style.display = use2d ? 'none' : '';
+      if (spectro2d) spectro2d.style.display = use2d ? 'block' : 'none';
+    };
+    applySpectroFallback();
+    window.addEventListener('resize', applySpectroFallback);
 
     // Rewind / forward transport buttons
     const tpRew = document.getElementById('tpRew');
@@ -961,7 +1000,10 @@ class VoiceIsolatePro {
     try {
       if (isVideo) {
         const result = await this.decodeViaVideoElement(file);
-        if (result) this.inputBuffer = result;
+        if (result) {
+          this.inputBuffer = result;
+          this.onAudioLoaded(name);
+        }
       } else {
         const rawBuffer = await file.arrayBuffer();
         const copyBuffer = rawBuffer.slice(0);
@@ -983,17 +1025,58 @@ class VoiceIsolatePro {
 
   async decodeViaVideoElement(file) {
     const url = URL.createObjectURL(file);
-    if (this.dom.videoPlayer) {
-      this.dom.videoPlayer.src = url;
-    }
+    if (this.dom.videoPlayer) this.dom.videoPlayer.src = url;
+    const videoEl = document.createElement('video');
+    videoEl.preload = 'auto';
+    videoEl.muted = true;
+    videoEl.src = url;
     return new Promise((resolve, reject) => {
-      const onMeta = () => { resolve(this.inputBuffer); };
-      if (this.dom.videoPlayer) {
-        this.dom.videoPlayer.onloadedmetadata = onMeta;
-        this.dom.videoPlayer.onerror = reject;
-      } else {
-        resolve(null);
-      }
+      const cleanup = () => {
+        try { URL.revokeObjectURL(url); } catch (_) {}
+      };
+      const fail = (err) => {
+        cleanup();
+        reject(err || new Error('Video decode failed'));
+      };
+
+      videoEl.onloadedmetadata = async () => {
+        try {
+          const source = this.ctx.createMediaElementSource(videoEl);
+          const dest = this.ctx.createMediaStreamDestination();
+          source.connect(dest);
+          const recorder = new MediaRecorder(dest.stream);
+          const chunks = [];
+          recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+          recorder.onerror = () => fail(new Error('MediaRecorder failed'));
+          recorder.onstop = async () => {
+            try {
+              source.disconnect();
+              const blob = new Blob(chunks, { type: chunks[0]?.type || 'audio/webm' });
+              const raw = await blob.arrayBuffer();
+              const decoded = await this.ctx.decodeAudioData(raw.slice(0));
+              cleanup();
+              resolve(decoded);
+            } catch (e) {
+              fail(e);
+            }
+          };
+          recorder.start();
+          videoEl.currentTime = 0;
+          await videoEl.play().catch(() => {});
+          const durationMs = Math.max(250, Math.ceil((videoEl.duration || 0) * 1000));
+          setTimeout(() => {
+            try {
+              videoEl.pause();
+              if (recorder.state !== 'inactive') recorder.stop();
+            } catch (e) {
+              fail(e);
+            }
+          }, durationMs);
+        } catch (e) {
+          fail(e);
+        }
+      };
+      videoEl.onerror = () => fail(new Error('Video element error'));
     });
   }
 
@@ -1118,11 +1201,12 @@ class VoiceIsolatePro {
       this.params[sliderId] = value;
       if (typeof window !== 'undefined') window.VIP_PARAMS[sliderId] = value;
       const sliderEl = document.getElementById('sl_' + sliderId);
-      if (sliderEl) {
-        sliderEl.value = value;
-        sliderEl.setAttribute('aria-valuenow', value);
-        sliderEl.dispatchEvent(new Event('input', { bubbles: true }));
-        sliderEl.dispatchEvent(new Event('change', { bubbles: true }));
+      const sliderDom = { el: sliderEl };
+      if (sliderDom.el) {
+        sliderDom.el.value = value;
+        sliderDom.el.setAttribute('aria-valuenow', value);
+        sliderDom.el.dispatchEvent(new Event('input', { bubbles: true }));
+        sliderDom.el.dispatchEvent(new Event('change', { bubbles: true }));
       }
       const valEl = document.getElementById('val_' + sliderId);
       if (valEl) {
@@ -1130,6 +1214,8 @@ class VoiceIsolatePro {
         valEl.textContent = value + (s.unit || '');
       }
     }
+    if (workletNode) workletNode.port.postMessage({ type: 'params', payload: { ...this.params } });
+    if (mlWorker) mlWorker.postMessage({ type: 'setParams', payload: { ...this.params } });
     if (this.liveChainBuilt) {
       structuredLog('info', 'Preset applied to live chain', { name });
     }
@@ -1163,28 +1249,12 @@ class VoiceIsolatePro {
 
   _handleGlobalKeydown(e) {
     const tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
-    const isTextTarget = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag) ||
-      (e.target && e.target.isContentEditable);
-
-    if (e.key === ' ') {
-      if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      if (isTextTarget) return;
-      if (!this.inputBuffer) return;
-      e.preventDefault();
-      this.togglePlayback();
-    } else if (e.key === 'k' || e.key === 'K') {
-      this.togglePlayback();
-    } else if (e.key === 'Escape') {
-      if (this.isProcessing) {
-        this.abortFlag = true;
-      } else if (this.isPlaying) {
-        this.stop();
-      }
-    } else if (e.key === 'x' || e.key === 'X') {
-      if (this.outputBuffer && this.dom && this.dom.tpAB && !this.dom.tpAB.disabled) {
-        this.toggleAB();
-      }
-    }
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.code === 'Space') { e.preventDefault(); this.togglePlayback(); }
+    if (e.code === 'ArrowRight') { e.preventDefault(); this.seekDelta(5); }
+    if (e.code === 'ArrowLeft') { e.preventDefault(); this.seekDelta(-5); }
+    if (e.code === 'ArrowUp') { e.preventDefault(); if (this.gainNode) this.gainNode.gain.value = Math.min(this.gainNode.gain.value * 1.122, 3.16); }
+    if (e.code === 'ArrowDown') { e.preventDefault(); if (this.gainNode) this.gainNode.gain.value = Math.max(this.gainNode.gain.value / 1.122, 0); }
   }
 
   calcRMS(d) {
