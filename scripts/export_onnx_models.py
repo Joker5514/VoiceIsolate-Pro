@@ -345,7 +345,6 @@ def validate_onnx(out_path: Path, label: str) -> dict:
 # ──────────────────────────── Main ───────────────────────────────────────────
 
 def main() -> int:
-    here = Path(__file__).resolve().parent.parent  # repo root
     cwd_outdir = Path.cwd()
     print(f'[export] CWD = {cwd_outdir}', flush=True)
     print(f'[export] torch={torch.__version__}  device=cpu  opset={OPSET}', flush=True)
