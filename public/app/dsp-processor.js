@@ -71,16 +71,19 @@ function makeHannWindow(size) {
 }
 
 // ---------------------------------------------------------------------------
-// SharedArrayBuffer layout (Float32, frames × bins)
-// Offsets (in float32 elements):
-//   [0]            : control word  (0=idle, 1=ready for ONNX, 2=ONNX done)
-//   [1 .. BINS]    : magnitude spectrum (input to ONNX on main thread)
-//   [BINS+1 .. 2*BINS] : mask returned by ONNX (main thread writes here)
+// SharedArrayBuffer layout (header-first protocol for ml-worker.js):
+// inputSAB:  [4 x Int32 flags][Float32 magnitudes + phases]
+// outputSAB: [4 x Int32 flags][Float32 mask]
 // ---------------------------------------------------------------------------
-const FFT_SIZE   = 2048;   // must be power-of-2
-const HOP_SIZE   = 512;    // 75% overlap
+const FFT_SIZE   = 4096;   // must be power-of-2
+const HOP_SIZE   = 1024;   // 75% overlap
 const HALF_BINS  = FFT_SIZE / 2 + 1;
-const SAB_FLOATS = 1 + HALF_BINS * 2; // control + mag + mask
+const FLAG_SLOTS = 4;
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
+const INPUT_PAYLOAD_FLOATS = HALF_BINS * 2; // [mag(half) | phase(half)]
+const OUTPUT_PAYLOAD_FLOATS = HALF_BINS;    // [mask(half)]
+const INPUT_SAB_BYTES = SAB_HEADER_BYTES + INPUT_PAYLOAD_FLOATS * Float32Array.BYTES_PER_ELEMENT;
+const OUTPUT_SAB_BYTES = SAB_HEADER_BYTES + OUTPUT_PAYLOAD_FLOATS * Float32Array.BYTES_PER_ELEMENT;
 
 class DSPProcessor extends AudioWorkletProcessor {
   constructor(options) {
@@ -100,18 +103,32 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._im = new Float32Array(FFT_SIZE);
 
     // ---- SharedArrayBuffer bridge ----
-    // Expect main thread to pass sab via options.processorOptions
-    const sab = options?.processorOptions?.sharedArrayBuffer;
-    if (sab) {
-      this._sab     = new Float32Array(sab);
-      this._sabCtrl = new Int32Array(sab);  // control word as int
+    // Expect main thread to pass:
+    // options.processorOptions.sharedArrayBuffer = { inputSAB, outputSAB }
+    const sabOptions = options?.processorOptions?.sharedArrayBuffer;
+    const inputSAB = sabOptions?.inputSAB;
+    const outputSAB = sabOptions?.outputSAB;
+    if (inputSAB && outputSAB) {
+      this._inputSAB = inputSAB;
+      this._outputSAB = outputSAB;
     } else {
-      // Fallback: allocate local (no ONNX cooperation, bypass mode)
-      const localSab = new SharedArrayBuffer(SAB_FLOATS * Float32Array.BYTES_PER_ELEMENT);
-      this._sab     = new Float32Array(localSab);
-      this._sabCtrl = new Int32Array(localSab);
-      console.warn('[DSPProcessor] No SharedArrayBuffer received — running bypass mode');
+      // Fallback: allocate local SABs; notify main thread for forwarding.
+      this._inputSAB = new SharedArrayBuffer(INPUT_SAB_BYTES);
+      this._outputSAB = new SharedArrayBuffer(OUTPUT_SAB_BYTES);
+      console.warn('[DSPProcessor] No SAB pair received — allocated fallback SABs');
     }
+
+    this._flagsIn = new Int32Array(this._inputSAB, 0, FLAG_SLOTS);
+    this._flagsOut = new Int32Array(this._outputSAB, 0, FLAG_SLOTS);
+    this._inputView = new Float32Array(this._inputSAB, SAB_HEADER_BYTES, INPUT_PAYLOAD_FLOATS);
+    this._outputView = new Float32Array(this._outputSAB, SAB_HEADER_BYTES, OUTPUT_PAYLOAD_FLOATS);
+    this._maskScratch = new Float32Array(HALF_BINS);
+
+    this.port.postMessage({
+      type: 'sabReady',
+      inputSAB: this._inputSAB,
+      outputSAB: this._outputSAB,
+    });
 
     // ---- DSP parameter state (updated via port.postMessage) ----
     this._params = {
@@ -184,27 +201,25 @@ class DSPProcessor extends AudioWorkletProcessor {
     fft(this._re, this._im);
 
     // ---- 3a. Compute magnitude spectrum → write to SAB for ONNX ----
-    const mag = new Float32Array(HALF_BINS);
+    const mag = this._inputView.subarray(0, HALF_BINS);
+    const phase = this._inputView.subarray(HALF_BINS, HALF_BINS * 2);
     for (let k = 0; k < HALF_BINS; k++) {
       mag[k] = Math.sqrt(this._re[k] ** 2 + this._im[k] ** 2);
+      phase[k] = Math.atan2(this._im[k], this._re[k]);
     }
 
-    // Signal ONNX worker with magnitude (non-blocking best-effort)
-    // ctrl=0 means idle; we only push if idle to avoid stale data
-    if (Atomics.compareExchange(this._sabCtrl, 0, 0, 1) === 0) {
-      this._sab.set(mag, 1);          // write mag starting at offset 1
-      Atomics.store(this._sabCtrl, 0, 1); // mark ready for ONNX
-    }
+    // Signal ONNX worker with frame counter increment on each hop.
+    Atomics.add(this._flagsIn, 0, 1);
 
     // ---- 3b. Read mask from SAB (if ONNX has completed) ----
     let mask;
-    if (Atomics.load(this._sabCtrl, 0) === 2) {
-      // ONNX done — read mask
-      mask = this._sab.slice(1 + HALF_BINS, 1 + HALF_BINS * 2);
-      Atomics.store(this._sabCtrl, 0, 0); // reset to idle
+    if (Atomics.load(this._flagsOut, 1) === 1) {
+      mask = this._outputView;
+      Atomics.store(this._flagsOut, 1, 0);
     } else {
       // ONNX not ready yet — use spectral gate as fallback
-      mask = new Float32Array(HALF_BINS).fill(1);
+      mask = this._maskScratch;
+      mask.fill(1);
       const threshold = this._params.gate * (mag.reduce((a, b) => a + b, 0) / HALF_BINS);
       for (let k = 0; k < HALF_BINS; k++) {
         mask[k] = mag[k] > threshold ? 1 : 0;
@@ -212,7 +227,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     }
 
     // ---- 3c. In-place spectral operations (apply mask + classical DSP) ----
-    const sampleRate = 48000;
+    const sampleRate = this.context.sampleRate;
     const lowBin  = Math.floor(this._params.lowCut  / (sampleRate / FFT_SIZE));
     const highBin = Math.ceil(this._params.highCut  / (sampleRate / FFT_SIZE));
     const nrGain  = 1 - this._params.noiseReduction; // attenuate noise components
@@ -243,8 +258,8 @@ class DSPProcessor extends AudioWorkletProcessor {
     ifft(this._re, this._im);
 
     // ---- 5. Overlap-add into output ring ----
-    // Scale to compensate for OLA window gain (Hann 75% overlap → 1.5)
-    const olaScale = HOP_SIZE / (FFT_SIZE * 0.5);
+    // Hann 75% overlap normalization.
+    const olaScale = 2 * HOP_SIZE / FFT_SIZE;
     for (let i = 0; i < FFT_SIZE; i++) {
       const idx = (this._ringHead + i) % FFT_SIZE;
       this._outputRing[idx] += this._re[i] * this._window[i] * olaScale;
