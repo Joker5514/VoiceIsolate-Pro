@@ -518,19 +518,20 @@ describe('LICENSE_JWT_SECRET dev-default fallback logic', () => {
   });
 });
 
-// ── Webhook handler behavior (PR change: removed db/email calls) ──────────────
-// The PR removed the simulated database (Map-backed db object) and sendEmail()
-// helper from api/monetization.js. The webhook event handlers now only log and
-// contain TODO comments — no side-effect calls.
-// These tests verify the updated route logic in isolation using a minimal
-// Express app that mirrors the changed handler behaviour.
-describe('Webhook handler behaviour after db/email removal', () => {
-  // Build a minimal app that replicates the changed webhook logic (no db, no email)
-  function buildWebhookApp(mockStripe) {
+// ── Webhook handler behavior ──────────────────────────────────────────────────
+// The webhook event handlers in api/monetization.js use a simulated database
+// and email helper to process subscription events.
+// These tests verify the route logic in isolation using a minimal Express app
+// that mirrors the actual handler behaviour.
+describe('Webhook handler behaviour', () => {
+  // Build a minimal app that replicates the webhook logic
+  function buildWebhookApp(mockStripe, spies = {}) {
     const app = express();
+    const sendEmail = spies.sendEmail || (() => Promise.resolve(true));
+    const db = spies.db || { licenses: { upsert: () => Promise.resolve() } };
 
     // Raw body needed for Stripe signature verification (mirrored from monetization.js)
-    app.post('/webhook/stripe', express.raw({ type: 'application/json' }), (req, res) => {
+    app.post('/webhook/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
       // Signature verification is mocked by calling mockStripe.webhooks.constructEvent
       let event;
       try {
@@ -543,25 +544,39 @@ describe('Webhook handler behaviour after db/email removal', () => {
         switch (event.type) {
           case 'checkout.session.completed': {
             const session = event.data.object;
-            const tier    = session.metadata?.tier || 'PRO';
-            const email   = session.customer_email;
-            const customerId     = session.customer;
-            // createLicenseToken is still called; db.upsert and sendEmail are NOT
+            const tier = session.metadata?.tier || 'PRO';
+            const email = session.customer_email;
+            const customerId = session.customer;
+            const subscriptionId = session.subscription;
+
             const token = createLicenseToken(customerId, email, tier, 400);
-            // No db.upsert, no sendEmail — just log (mirrored from PR state)
-            // console.log(`[Webhook] New subscription: ${email} → ${tier}`);
+            await db.licenses.upsert({ customerId, email, tier, token, subscriptionId });
+            await sendEmail(email, 'Your VoiceIsolate Pro License', token);
             break;
           }
           case 'customer.subscription.updated': {
-            // No db.upsert — only a TODO comment remains
+            const sub = event.data.object;
+            const priceId = sub.items?.data[0]?.price?.id;
+            const tier = PRICE_TO_TIER[priceId] || 'PRO';
+            const customerId = sub.customer;
+            await db.licenses.upsert({ customerId, tier });
             break;
           }
           case 'customer.subscription.deleted': {
-            // No db.upsert — only a TODO comment remains
+            const sub = event.data.object;
+            await db.licenses.upsert({ customerId: sub.customer, tier: 'FREE' });
             break;
           }
           case 'invoice.payment_failed': {
-            // No dunning email — only a TODO comment remains
+            const invoice = event.data.object;
+            const email = invoice.customer_email;
+            if (email) {
+              await sendEmail(
+                email,
+                'Action Required: Payment for VoiceIsolate Pro Failed',
+                'Your recent payment for VoiceIsolate Pro has failed. Please update your payment method to avoid service interruption.'
+              );
+            }
             break;
           }
         }
@@ -638,19 +653,36 @@ describe('Webhook handler behaviour after db/email removal', () => {
     expect(res.body.received).toBe(true);
   });
 
-  test('returns { received: true } for invoice.payment_failed', async () => {
+  test('returns { received: true } for invoice.payment_failed and sends dunning email', async () => {
+    let emailSent = false;
+    let sentTo = '';
+    let sentSubject = '';
+
+    const spies = {
+      sendEmail: (to, subject) => {
+        emailSent = true;
+        sentTo = to;
+        sentSubject = subject;
+        return Promise.resolve(true);
+      }
+    };
+
     const event = {
       type: 'invoice.payment_failed',
       data: { object: { customer_email: 'fail@example.com', customer: 'cus_789' } },
     };
     const stripe = makeMockStripe(event);
-    const res = await request(buildWebhookApp(stripe))
+    const res = await request(buildWebhookApp(stripe, spies))
       .post('/webhook/stripe')
       .set('Content-Type', 'application/json')
       .set('stripe-signature', 'valid-sig')
       .send(Buffer.from(JSON.stringify(event)));
+
     expect(res.status).toBe(200);
     expect(res.body.received).toBe(true);
+    expect(emailSent).toBe(true);
+    expect(sentTo).toBe('fail@example.com');
+    expect(sentSubject).toContain('Payment for VoiceIsolate Pro Failed');
   });
 
   test('returns 400 when Stripe signature verification fails', async () => {
@@ -664,11 +696,28 @@ describe('Webhook handler behaviour after db/email removal', () => {
     expect(res.body.error).toBe('Invalid signature');
   });
 
-  test('checkout.session.completed does NOT invoke any database write', async () => {
-    // Confirm that after the PR change there is no db call by checking that
-    // a spy on a hypothetical db object is never triggered — we verify this by
-    // ensuring no external side-effect object is referenced in the handler scope.
+  test('checkout.session.completed invokes database write and sends email', async () => {
     let dbCalled = false;
+    let emailSent = false;
+    const spies = {
+      db: {
+        licenses: {
+          upsert: (data) => {
+            dbCalled = true;
+            expect(data.email).toBe('new@test.com');
+            expect(data.tier).toBe('STUDIO');
+            return Promise.resolve();
+          }
+        }
+      },
+      sendEmail: (to, subject, token) => {
+        emailSent = true;
+        expect(to).toBe('new@test.com');
+        expect(token).toBeDefined();
+        return Promise.resolve(true);
+      }
+    };
+
     const event = {
       type: 'checkout.session.completed',
       data: {
@@ -681,16 +730,16 @@ describe('Webhook handler behaviour after db/email removal', () => {
       },
     };
 
-    // Build a fresh app — if db.upsert were called it would throw because
-    // there is no db in scope; the fact that no error occurs confirms removal.
     const stripe = makeMockStripe(event);
-    const res = await request(buildWebhookApp(stripe))
+    const res = await request(buildWebhookApp(stripe, spies))
       .post('/webhook/stripe')
       .set('Content-Type', 'application/json')
       .set('stripe-signature', 'valid-sig')
       .send(Buffer.from(JSON.stringify(event)));
+
     expect(res.status).toBe(200);
-    expect(dbCalled).toBe(false);
+    expect(dbCalled).toBe(true);
+    expect(emailSent).toBe(true);
   });
 
   test('checkout.session.completed still generates a valid license token internally', () => {

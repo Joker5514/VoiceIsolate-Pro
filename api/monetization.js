@@ -358,8 +358,15 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object;
-        console.log(`[Webhook] Payment failed: ${invoice.customer_email}`);
-        // TODO: Send dunning email
+        const email = invoice.customer_email;
+        console.log(`[Webhook] Payment failed: ${email}`);
+        if (email) {
+          await sendEmail(
+            email,
+            'Action Required: Payment for VoiceIsolate Pro Failed',
+            'Your recent payment for VoiceIsolate Pro has failed. Please update your payment method to avoid service interruption.'
+          );
+        }
         break;
       }
     }
