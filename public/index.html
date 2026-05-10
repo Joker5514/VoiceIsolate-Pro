@@ -1,675 +1,518 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VoiceIsolate Pro — Studio-Grade Voice Isolation</title>
-<meta name="description" content="32-stage Deca-Pass hybrid ML+DSP voice isolation. 100% local processing. Zero uploads. Studio-grade WAV output in seconds.">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
-<style>
-:root{
-  --bg:#060609;--card:#0d0f14;--card2:#0f1118;--border:#1a1e2a;--border2:rgba(34,211,238,0.12);
-  --text:#e8eaf0;--dim:#4a5268;--dim2:#6b7280;
-  --cyan:#22d3ee;--red:#dc2626;--violet:#8b5cf6;--green:#10b981;--orange:#f97316;--gold:#f59e0b;
-  --mono:'JetBrains Mono',monospace;--sans:'DM Sans',system-ui,sans-serif;--serif:'Instrument Serif',Georgia,serif;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
-body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
-::selection{background:rgba(0,212,255,0.2);color:#fff}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Isolator Pro</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --panel-bg: #1e1e1e;
+            --border: #333;
+            --text: #e0e0e0;
+            --text-dim: #888;
+            --accent: #00ffcc;
+            --accent-hover: #00cca3;
+            --danger: #ff4444;
+            --meter-bg: #000;
+            --meter-low: #00ff00;
+            --meter-mid: #ffff00;
+            --meter-high: #ff0000;
+        }
 
-/* ── Grid background ── */
-.grid-bg{position:fixed;inset:0;pointer-events:none;opacity:0.025;
-  background-image:linear-gradient(var(--dim) 1px,transparent 1px),linear-gradient(90deg,var(--dim) 1px,transparent 1px);
-  background-size:60px 60px;z-index:0}
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
 
-/* ── Glow orbs ── */
-.orb{position:fixed;border-radius:50%;filter:blur(120px);opacity:0.07;pointer-events:none;z-index:0}
-.orb-1{width:600px;height:600px;background:var(--cyan);top:-200px;left:-100px}
-.orb-2{width:500px;height:500px;background:var(--violet);bottom:-150px;right:-100px}
-.orb-3{width:400px;height:400px;background:var(--green);top:40%;right:-200px;opacity:0.04}
+        body {
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
 
-/* ── Wrapper ── */
-.wrap{max-width:960px;margin:0 auto;padding:0 1.5rem;position:relative;z-index:1}
+        /* TITLE BAR */
+        .titlebar {
+            height: 40px;
+            background: #181818;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 10px;
+            -webkit-app-region: drag;
+        }
+        .titlebar-left { display: flex; align-items: center; gap: 10px; }
+        .logo-icon {
+            width: 20px; height: 20px;
+            background: linear-gradient(135deg, var(--accent), #0088ff);
+            border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; color: #000; font-size: 12px;
+        }
+        .app-title { font-size: 13px; font-weight: 600; letter-spacing: 1px; }
+        .titlebar-center { display: flex; gap: 20px; }
+        .tab-btn {
+            background: none; border: none; color: var(--text-dim);
+            font-size: 12px; cursor: pointer;
+            -webkit-app-region: no-drag;
+            padding: 5px 10px; border-radius: 4px;
+            display: flex; align-items: center; gap: 5px;
+        }
+        .tab-btn.active { color: var(--text); background: rgba(255,255,255,0.1); }
+        .tab-btn:hover:not(.active) { color: var(--text); }
+        .titlebar-right { display: flex; align-items: center; gap: 10px; -webkit-app-region: no-drag; }
+        .icon-btn {
+            background: none; border: none; color: var(--text-dim); cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: 4px;
+        }
+        .icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.1); }
+        .win-btns { display: flex; gap: 5px; }
+        .win-btn { width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer; }
+        .win-btn.close { background: #ff5f56; }
+        .win-btn.min   { background: #ffbd2e; }
+        .win-btn.max   { background: #27c93f; }
 
-/* ══════════════════════════════════
-   HERO
-══════════════════════════════════ */
-.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  text-align:center;padding:4rem 1.5rem 3rem;position:relative;overflow:hidden}
+        /* MAIN AREA */
+        .main-area { flex: 1; display: flex; padding: 10px; gap: 10px; overflow: hidden; }
 
-#heroCanvas{position:absolute;inset:0;pointer-events:none;opacity:0.5}
-.hero-upload-zone{margin:0 auto 1rem;border:1px dashed rgba(34,211,238,0.35);border-radius:8px;padding:0.8rem 1rem;max-width:440px;color:var(--dim);font-family:var(--mono);font-size:0.7rem;background:rgba(34,211,238,0.03)}
-.hero-upload-zone.dragover{border-color:var(--red);background:rgba(220,38,38,0.06);color:var(--text)}
-.proof-audio{margin:1rem 0 0;padding:1rem;border:1px solid var(--border);border-radius:10px;background:var(--card)}
-.proof-audio-row{display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:0.6rem}
-.proof-audio-row button{font-family:var(--mono);font-size:0.65rem;border:1px solid var(--border2);background:rgba(34,211,238,0.08);color:var(--cyan);padding:0.45rem 0.75rem;border-radius:5px;cursor:pointer}
-.proof-audio-row button:hover{background:rgba(220,38,38,0.08);color:var(--red)}
+        /* PANELS */
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+        }
+        .left-panel  { width: 300px; min-width: 300px; padding: 15px; gap: 20px; overflow-y: auto; }
+        .center-panel { flex: 1; position: relative; overflow: hidden; }
+        .right-panel { width: 250px; min-width: 250px; padding: 15px; gap: 15px; }
 
-.hero-icon{width:80px;height:80px;border-radius:18px;margin-bottom:1.25rem;
-  box-shadow:0 8px 32px rgba(0,212,255,0.2);position:relative;z-index:1}
+        /* SECTION LABELS */
+        .section-label {
+            font-size: 11px; text-transform: uppercase;
+            color: var(--text-dim); letter-spacing: 1px;
+            margin-bottom: 8px; font-weight: 600;
+        }
+        .panel-section { display: flex; flex-direction: column; }
 
-/* Pulsing privacy badge */
-.hero-privacy-badge{
-  display:inline-flex;align-items:center;gap:0.4rem;
-  font-family:var(--mono);font-size:0.58rem;letter-spacing:0.14em;text-transform:uppercase;
-  color:var(--green);background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);
-  border-radius:20px;padding:4px 12px;margin-bottom:1.25rem;position:relative;z-index:1;
-  animation:badgePulse 3s ease-in-out infinite}
-@keyframes badgePulse{
-  0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.15)}
-  50%{box-shadow:0 0 0 6px rgba(16,185,129,0)}}
-.privacy-dot{width:5px;height:5px;border-radius:50%;background:var(--green);
-  animation:dotBlink 2s ease-in-out infinite}
-@keyframes dotBlink{0%,100%{opacity:1}50%{opacity:0.3}}
+        /* CONTROLS */
+        .device-select, .model-select {
+            width: 100%; background: #121212;
+            border: 1px solid var(--border); color: var(--text);
+            padding: 8px 10px; border-radius: 4px; font-size: 13px; cursor: pointer;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .device-select:hover, .model-select:hover { border-color: #555; }
 
-.hero-logo{font-family:var(--mono);font-size:0.7rem;letter-spacing:0.18em;color:var(--cyan);margin-bottom:1.5rem;text-transform:uppercase;opacity:0.8}
-.hero h1{font-family:var(--serif);font-size:clamp(2.8rem,7vw,5rem);font-weight:400;line-height:1.08;margin-bottom:1.25rem}
-.hero h1 em{font-style:italic;color:var(--cyan)}
-.hero-sub{color:var(--dim);font-size:0.95rem;max-width:540px;margin:0 auto 2.5rem;line-height:1.75}
+        .level-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; }
+        .level-label { color: var(--text-dim); }
+        .level-val   { color: var(--text); }
 
-.hero-stats{display:flex;gap:2rem;flex-wrap:wrap;justify-content:center;margin-bottom:2.5rem}
-.stat{text-align:center}
-.stat-num{font-family:var(--mono);font-size:2rem;font-weight:700;color:var(--cyan);line-height:1;display:block}
-.stat-lbl{font-size:0.65rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--dim);margin-top:0.25rem;display:block}
+        .meter-container {
+            background: var(--meter-bg); height: 8px; border-radius: 4px;
+            overflow: hidden; margin-top: 5px; position: relative;
+        }
+        .meter-bar {
+            height: 100%; width: 0%;
+            background: linear-gradient(90deg, var(--meter-low) 60%, var(--meter-mid) 85%, var(--meter-high) 100%);
+            transition: width 0.1s ease;
+        }
+        .level-ticks {
+            display: flex; justify-content: space-between;
+            font-size: 9px; color: var(--text-dim); margin-top: 2px;
+        }
 
-.hero-ctas{display:flex;gap:0.75rem;flex-wrap:wrap;justify-content:center}
-.hero-cta{display:inline-flex;align-items:center;gap:0.6rem;background:var(--cyan);color:#07080a;
-  font-family:var(--mono);font-size:0.8rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
-  text-decoration:none;padding:0.75rem 1.75rem;border-radius:6px;transition:opacity 0.2s,transform 0.2s;position:relative;overflow:hidden}
-.hero-cta::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent);transform:translateX(-100%);transition:transform 0.5s}
-.hero-cta:hover{opacity:0.9;transform:translateY(-2px)}
-.hero-cta:hover::before{transform:translateX(100%)}
-.hero-cta-ghost{background:transparent;color:var(--cyan);border:1px solid rgba(0,212,255,0.3)}
-.hero-cta-ghost:hover{background:rgba(0,212,255,0.06)}
-.hero-cta svg{flex-shrink:0}
+        .mode-btns {
+            display: flex; background: #121212;
+            border-radius: 4px; overflow: hidden; border: 1px solid var(--border);
+        }
+        .mode-btn {
+            flex: 1; background: none; border: none;
+            color: var(--text-dim); padding: 8px 0; font-size: 12px; cursor: pointer; font-weight: 600;
+        }
+        .mode-btn.active { background: rgba(0,255,204,0.1); color: var(--accent); }
+        .mode-btn:hover:not(.active) { color: var(--text); }
 
-/* ══════════════════════════════════
-   SECTION BASE
-══════════════════════════════════ */
-.section{padding:5rem 0}
-.section-tag{font-family:var(--mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--cyan);margin-bottom:0.6rem}
-.section-title{font-family:var(--serif);font-size:clamp(1.8rem,4vw,2.8rem);font-weight:400;margin-bottom:0.75rem}
-.section-sub{color:var(--dim);font-size:0.9rem;line-height:1.7;max-width:520px}
+        /* KNOBS / SLIDERS */
+        .knob-row { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
+        .knob {
+            width: 40px; height: 40px; border-radius: 50%;
+            border: 2px solid var(--accent); position: relative;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; background: #121212; flex-shrink: 0;
+        }
+        .knob::after {
+            content: ''; position: absolute; top: 4px;
+            width: 2px; height: 8px; background: var(--accent);
+            transform-origin: 50% 14px; transform: rotate(45deg);
+        }
+        .slider-container { flex: 1; }
+        .slider-val { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; }
+        .val-num { color: var(--accent); font-weight: bold; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 14px; width: 14px;
+            border-radius: 50%; background: var(--accent); cursor: pointer; margin-top: -5px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; cursor: pointer;
+            background: var(--border); border-radius: 2px;
+        }
 
-/* ══════════════════════════════════
-   LIVE PROOF — Before / After
-══════════════════════════════════ */
-.proof-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;margin-top:2.5rem}
-.proof-card{
-  background:var(--card);border:1px solid var(--border);border-radius:12px;
-  padding:1.75rem 1.5rem;position:relative;overflow:hidden;
-  transition:border-color 0.25s,transform 0.25s,box-shadow 0.25s}
-.proof-card:hover{border-color:rgba(0,212,255,0.2);transform:translateY(-3px);box-shadow:0 12px 40px rgba(0,0,0,0.4)}
-.proof-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(0,212,255,0.3),transparent)}
+        /* CENTER VISUALIZER */
+        .vis-header {
+            position: absolute; top: 15px; left: 15px; right: 15px;
+            display: flex; justify-content: space-between; align-items: center; z-index: 10;
+        }
+        .vis-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+        .live-badge {
+            background: rgba(255,68,68,0.2); color: var(--danger);
+            padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;
+            border: 1px solid var(--danger); animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
 
-.proof-scenario{
-  font-family:var(--mono);font-size:0.58rem;letter-spacing:0.14em;text-transform:uppercase;
-  color:var(--cyan);background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.15);
-  border-radius:3px;padding:2px 8px;display:inline-block;margin-bottom:1rem}
+        #specCanvas {
+            width: 100%; height: 100%; position: absolute; top: 0; left: 0; background: #0a0a0a;
+        }
 
-.proof-title{font-size:1rem;font-weight:600;margin-bottom:0.3rem}
-.proof-desc{font-size:0.75rem;color:var(--dim);line-height:1.6;margin-bottom:1.1rem}
+        /* RIGHT PANEL */
+        .output-section { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+        .switch-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+        .switch { position: relative; display: inline-block; width: 34px; height: 20px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .sw-track {
+            position: absolute; cursor: pointer; top:0; left:0; right:0; bottom:0;
+            background-color: #333; transition: .4s; border-radius: 34px;
+        }
+        .sw-track:before {
+            position: absolute; content: ""; height: 14px; width: 14px;
+            left: 3px; bottom: 3px; background-color: white;
+            transition: .4s; border-radius: 50%;
+        }
+        input:checked + .sw-track { background-color: var(--accent); }
+        input:checked + .sw-track:before { transform: translateX(14px); }
 
-/* Waveform SVG pair */
-.proof-waves{display:flex;flex-direction:column;gap:6px;margin-bottom:1.1rem}
-.proof-wave-row{display:flex;align-items:center;gap:8px}
-.proof-wave-lbl{font-family:var(--mono);font-size:0.5rem;color:var(--dim);width:36px;flex-shrink:0;text-transform:uppercase;letter-spacing:0.1em}
-.proof-wave-svg{flex:1;height:28px;border-radius:4px;overflow:hidden}
+        .big-btn {
+            background: var(--accent); color: #000; border: none;
+            padding: 12px; border-radius: 6px; font-weight: bold; font-size: 14px;
+            cursor: pointer; display: flex; justify-content: center; align-items: center;
+            gap: 8px; margin-top: auto; transition: background 0.2s;
+        }
+        .big-btn:hover { background: var(--accent-hover); }
+        .big-btn.recording { background: var(--danger); color: white; }
 
-/* Stats row */
-.proof-stats{display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.5rem}
-.proof-stat{
-  flex:1;min-width:70px;text-align:center;
-  background:rgba(0,212,255,0.04);border:1px solid rgba(0,212,255,0.1);
-  border-radius:6px;padding:6px 8px}
-.proof-stat-val{font-family:var(--mono);font-size:1.1rem;font-weight:700;color:var(--cyan);display:block;line-height:1}
-.proof-stat-lbl{font-size:0.5rem;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin-top:3px;display:block}
-.proof-stat.green .proof-stat-val{color:var(--green)}
-.proof-stat.violet .proof-stat-val{color:var(--violet)}
+        .stats-box {
+            background: #121212; border: 1px solid var(--border);
+            border-radius: 6px; padding: 10px;
+        }
+        .stat-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; }
+        .stat-row:last-child { margin-bottom: 0; }
+        .stat-label { color: var(--text-dim); }
+        .stat-val   { color: var(--text); font-family: monospace; }
 
-/* CTA inside proof section */
-.proof-cta-row{margin-top:2.5rem;text-align:center}
-.proof-cta-row a{
-  display:inline-flex;align-items:center;gap:0.5rem;
-  font-family:var(--mono);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
-  color:var(--cyan);border:1px solid rgba(0,212,255,0.25);padding:0.65rem 1.5rem;
-  border-radius:6px;text-decoration:none;transition:background 0.2s,border-color 0.2s}
-.proof-cta-row a:hover{background:rgba(0,212,255,0.07);border-color:rgba(0,212,255,0.4)}
-
-/* ══════════════════════════════════
-   USE CASES GRID
-══════════════════════════════════ */
-.cases-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-top:2.5rem}
-.case-card{
-  background:var(--card);border:1px solid var(--border);border-radius:10px;
-  padding:1.5rem 1.25rem;transition:border-color 0.25s,transform 0.25s,box-shadow 0.25s;position:relative;overflow:hidden}
-.case-card:hover{border-color:var(--border2);transform:translateY(-3px);box-shadow:0 8px 32px rgba(0,0,0,0.4)}
-.case-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;opacity:0;transition:opacity 0.25s}
-.case-card.c-cyan::after{background:linear-gradient(90deg,transparent,var(--cyan),transparent)}
-.case-card.c-violet::after{background:linear-gradient(90deg,transparent,var(--violet),transparent)}
-.case-card.c-green::after{background:linear-gradient(90deg,transparent,var(--green),transparent)}
-.case-card.c-orange::after{background:linear-gradient(90deg,transparent,var(--orange),transparent)}
-.case-card:hover::after{opacity:1}
-.case-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:0.85rem}
-.case-icon.i-cyan{background:rgba(0,212,255,0.07);color:var(--cyan)}
-.case-icon.i-violet{background:rgba(139,92,246,0.07);color:var(--violet)}
-.case-icon.i-green{background:rgba(16,185,129,0.07);color:var(--green)}
-.case-icon.i-orange{background:rgba(249,115,22,0.07);color:var(--orange)}
-.case-card h4{font-size:0.9rem;font-weight:600;margin-bottom:0.4rem}
-.case-card p{font-size:0.72rem;color:var(--dim);line-height:1.6;margin-bottom:0.75rem}
-.case-tags{display:flex;flex-wrap:wrap;gap:0.3rem}
-.case-tags span{font-family:var(--mono);font-size:0.48rem;padding:1px 5px;border-radius:2px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);color:var(--dim)}
-
-/* ══════════════════════════════════
-   FEATURE GRID (WHAT MAKES IT DIFFERENT)
-══════════════════════════════════ */
-.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-top:2.5rem}
-.feat{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.5rem;display:flex;gap:1rem;transition:border-color 0.25s,box-shadow 0.25s,transform 0.25s}
-.feat:hover{border-color:rgba(0,212,255,0.3);box-shadow:0 4px 24px rgba(0,212,255,0.06);transform:translateY(-2px)}
-.feat-icon{width:38px;height:38px;flex-shrink:0;border-radius:8px;display:flex;align-items:center;justify-content:center}
-.feat-icon-cyan{background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.18);color:var(--cyan)}
-.feat-icon-violet{background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.18);color:var(--violet)}
-.feat-icon-green{background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.18);color:var(--green)}
-.feat-icon-red{background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.18);color:var(--red)}
-.feat-icon-orange{background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.18);color:var(--orange)}
-.feat-body h4{font-size:0.85rem;font-weight:600;margin-bottom:0.3rem}
-.feat-body p{font-size:0.75rem;color:var(--dim);line-height:1.6}
-.feat-body code{font-family:var(--mono);font-size:0.62rem;color:var(--cyan);background:rgba(0,212,255,0.06);padding:1px 5px;border-radius:3px}
-
-/* ══════════════════════════════════
-   LAUNCH CTA CARD
-══════════════════════════════════ */
-.launch-wrap{padding:4rem 0 6rem}
-.launch-card{background:var(--card);border-radius:14px;padding:2.5rem;position:relative;overflow:hidden;
-  text-decoration:none;color:var(--text);display:block;transition:transform 0.3s}
-.launch-card:hover{transform:translateY(-3px)}
-.launch-card::before{
-  content:'';position:absolute;inset:-2px;border-radius:16px;z-index:-1;
-  background:linear-gradient(90deg,var(--border),var(--cyan),var(--violet),var(--green),var(--border),var(--border));
-  background-size:400% 100%;animation:shimmerBorder 5s linear infinite}
-.launch-card::after{content:'';position:absolute;inset:1px;background:var(--card);border-radius:13px;z-index:-1}
-@keyframes shimmerBorder{0%{background-position:0% 0}100%{background-position:400% 0}}
-.launch-inner{position:relative;z-index:1;display:flex;align-items:center;gap:2rem;flex-wrap:wrap}
-.launch-text{flex:1;min-width:220px}
-.launch-tag{font-family:var(--mono);font-size:0.58rem;letter-spacing:0.18em;text-transform:uppercase;
-  color:var(--cyan);background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.18);
-  border-radius:3px;padding:2px 8px;display:inline-block;margin-bottom:0.75rem}
-.launch-text h2{font-family:var(--serif);font-size:clamp(1.6rem,4vw,2.4rem);font-weight:400;margin-bottom:0.6rem}
-.launch-text p{color:var(--dim);font-size:0.85rem;line-height:1.65;max-width:480px}
-.launch-btns{display:flex;flex-direction:column;gap:0.6rem;flex-shrink:0}
-.launch-btn{display:inline-flex;align-items:center;gap:0.5rem;font-family:var(--mono);font-size:0.75rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:0.8rem 1.5rem;border-radius:7px;white-space:nowrap;text-decoration:none;transition:opacity 0.2s,transform 0.2s;position:relative;overflow:hidden}
-.launch-btn-primary{background:var(--cyan);color:#07080a}
-.launch-btn-secondary{background:transparent;color:var(--cyan);border:1px solid rgba(0,212,255,0.3)}
-.launch-btn::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent);transform:translateX(-100%);transition:transform 0.5s}
-.launch-card:hover .launch-btn{opacity:0.93;transform:translateY(-1px)}
-.launch-card:hover .launch-btn::before{transform:translateX(100%)}
-.launch-pills{display:flex;flex-wrap:wrap;gap:0.4rem;margin-top:1.25rem}
-.launch-pills span{font-family:var(--mono);font-size:0.55rem;padding:3px 8px;border-radius:3px;background:rgba(0,212,255,0.05);border:1px solid rgba(0,212,255,0.1);color:var(--dim)}
-
-/* ══════════════════════════════════
-   FOOTER
-══════════════════════════════════ */
-footer{border-top:1px solid var(--border);padding:2rem 1.5rem;text-align:center;
-  font-family:var(--mono);font-size:0.58rem;color:var(--dim);letter-spacing:0.08em;text-transform:uppercase;position:relative;z-index:1}
-
-/* ══════════════════════════════════
-   RESPONSIVE
-══════════════════════════════════ */
-@media(max-width:640px){
-  .hero-stats{gap:1.25rem}
-  .stat-num{font-size:1.5rem}
-  .launch-inner{flex-direction:column;gap:1.5rem}
-  .launch-btns{width:100%}
-  .launch-btn{justify-content:center}
-  .hero-ctas{flex-direction:column;align-items:center}
-}
-</style>
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    </style>
 </head>
 <body>
 
-<div class="grid-bg"></div>
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-<div class="orb orb-3"></div>
-
-<!-- ══════════════════════════════════
-     HERO
-══════════════════════════════════ -->
-<section class="hero">
-  <canvas id="heroCanvas" aria-hidden="true"></canvas>
-
-  <img src="/icon.jpg" alt="VoiceIsolate Pro" class="hero-icon">
-
-  <!-- Pulsing privacy badge -->
-  <div class="hero-privacy-badge">
-    <span class="privacy-dot"></span>
-    100% Local · Zero Upload · Privacy First
-  </div>
-
-  <h1>VoiceIsolate <em>Pro</em></h1>
-  <p class="hero-sub">Studio-grade voice isolation. 32-Stage Deca-Pass DSP pipeline. Hybrid ML + classical spectral processing. Drop audio, get studio-clean output in seconds.</p>
-  <div id="heroUploadZone" class="hero-upload-zone" role="button" tabindex="0">Drag &amp; drop audio/video here to launch Engineer Mode</div>
-
-  <div class="hero-stats">
-    <div class="stat"><span class="stat-num" data-target="32" data-suffix="">0</span><span class="stat-lbl">Pipeline Stages</span></div>
-    <div class="stat"><span class="stat-num" data-target="52" data-suffix="">0</span><span class="stat-lbl">Real-Time Controls</span></div>
-    <div class="stat"><span class="stat-num" data-target="0" data-suffix="">0</span><span class="stat-lbl">Servers Used</span></div>
-    <div class="stat"><span class="stat-num" data-target="100" data-suffix="%">0%</span><span class="stat-lbl">Local Processing</span></div>
-  </div>
-
-  <div class="hero-ctas">
-    <a href="/app/" class="hero-cta">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
-      Launch Engineer Mode
-    </a>
-    <a href="/app/" class="hero-cta hero-cta-ghost">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-      See Before / After
-    </a>
-  </div>
-</section>
-
-<!-- ══════════════════════════════════
-     LIVE PROOF — Hear the Difference
-══════════════════════════════════ -->
-<section class="section" id="proof">
-  <div class="wrap">
-    <div class="section-tag">Real Results</div>
-    <h2 class="section-title">Hear the difference</h2>
-    <p class="section-sub">These are real-world scenarios run through the 32-stage pipeline. No cherry-picking — same settings, same presets available to you right now.</p>
-    <div class="proof-audio">
-      <div class="proof-scenario">Interactive A/B Preview</div>
-      <div class="proof-desc">Web Audio API demo: compare noisy input and cleaned output in real time.</div>
-      <div class="proof-audio-row">
-        <button id="playBeforeBtn" type="button">Play Before</button>
-        <button id="playAfterBtn" type="button">Play After</button>
-        <button id="stopPreviewBtn" type="button">Stop</button>
-      </div>
+    <!-- TITLE BAR -->
+    <div class="titlebar">
+        <div class="titlebar-left">
+            <div class="logo-icon">VI</div>
+            <div class="app-title">Voice Isolator Pro</div>
+        </div>
+        <div class="titlebar-center">
+            <button class="tab-btn active" onclick="switchTab(this)">
+                <svg width="8" height="8" viewBox="0 0 8 8"><rect x="1" y="1" width="6" height="6" fill="white"/></svg>
+                LIVE &nbsp;<span style="opacity:.6;font-size:10px">Real-time</span>
+            </button>
+            <button class="tab-btn" onclick="switchTab(this)">
+                <svg width="8" height="8" viewBox="0 0 8 8"><rect x="0.5" y="0.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+                PROCESS &nbsp;<span style="opacity:.6;font-size:10px">File Processing</span>
+            </button>
+        </div>
+        <div class="titlebar-right">
+            <button class="icon-btn" title="Theme">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M4.22 4.22l2.12 2.12m11.32 11.32l2.12 2.12M2 12h3m14 0h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+            </button>
+            <button class="icon-btn" style="width:auto;padding:0 8px;gap:4px;font-size:11px">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M4.22 4.22l2.12 2.12m11.32 11.32l2.12 2.12M2 12h3m14 0h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                SETTINGS
+            </button>
+            <div class="win-btns">
+                <button class="win-btn min"></button>
+                <button class="win-btn max"></button>
+                <button class="win-btn close"></button>
+            </div>
+        </div>
     </div>
 
-    <div class="proof-grid">
+    <!-- MAIN AREA -->
+    <div class="main-area">
 
-      <!-- Card 1: Podcast bathroom -->
-      <div class="proof-card">
-        <div class="proof-scenario">Podcast · Bathroom Echo</div>
-        <div class="proof-title">Reverb + HVAC + Room Noise</div>
-        <div class="proof-desc">Recorded in a bathroom on a smartphone. Heavy echo, HVAC hum, and background road noise.</div>
-        <div class="proof-waves">
-          <div class="proof-wave-row">
-            <span class="proof-wave-lbl">Before</span>
-            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Noisy waveform">
-              <polyline fill="none" stroke="rgba(220,38,38,0.7)" stroke-width="1" points="0,14 4,4 8,22 12,6 16,20 20,3 24,18 28,8 32,24 36,5 40,19 44,9 48,23 52,4 56,18 60,7 64,22 68,5 72,20 76,10 80,25 84,3 88,21 92,7 96,23 100,4 104,20 108,8 112,24 116,5 120,19 124,6 128,22 132,9 136,23 140,3 144,18 148,7 152,21 156,5 160,20 164,11 168,24 172,4 176,20 180,6 184,23 188,8 192,22 196,5 200,19 204,9 208,25 212,4 216,21 220,7 224,23 228,5 232,18 236,10 240,14"/>
-            </svg>
-          </div>
-          <div class="proof-wave-row">
-            <span class="proof-wave-lbl">After</span>
-            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Clean waveform">
-              <polyline fill="none" stroke="rgba(0,212,255,0.8)" stroke-width="1.2" points="0,14 8,10 16,7 24,11 32,8 40,6 48,10 56,7 64,9 72,12 80,7 88,9 96,11 104,7 112,10 120,8 128,11 136,7 144,9 152,12 160,8 168,10 176,7 184,9 192,11 200,8 208,10 216,7 224,9 232,11 240,14"/>
-            </svg>
-          </div>
-        </div>
-        <div class="proof-stats">
-          <div class="proof-stat"><span class="proof-stat-val">+21</span><span class="proof-stat-lbl">dB SNR</span></div>
-          <div class="proof-stat green"><span class="proof-stat-val">97%</span><span class="proof-stat-lbl">Intel.</span></div>
-          <div class="proof-stat violet"><span class="proof-stat-val">&lt;8s</span><span class="proof-stat-lbl">Process</span></div>
-        </div>
-      </div>
+        <!-- LEFT PANEL -->
+        <div class="panel left-panel">
 
-      <!-- Card 2: Phone call in traffic -->
-      <div class="proof-card">
-        <div class="proof-scenario">Phone Call · Street Traffic</div>
-        <div class="proof-title">Wind + Engine + Crowd</div>
-        <div class="proof-desc">Mobile call recorded outdoors near a busy intersection. Wind buffeting, engine rumble, crowd chatter.</div>
-        <div class="proof-waves">
-          <div class="proof-wave-row">
-            <span class="proof-wave-lbl">Before</span>
-            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Noisy waveform">
-              <polyline fill="none" stroke="rgba(220,38,38,0.7)" stroke-width="1" points="0,14 3,8 6,20 9,4 12,22 15,7 18,19 21,3 24,24 27,6 30,18 33,10 36,22 39,5 42,20 45,8 48,23 51,4 54,17 57,9 60,25 63,3 66,21 69,7 72,20 75,11 78,24 81,5 84,19 87,8 90,22 93,4 96,18 99,10 102,24 105,6 108,20 111,7 114,23 117,5 120,19 123,9 126,22 129,4 132,20 135,8 138,24 141,5 144,18 147,10 150,23 153,6 156,21 159,8 162,24 165,4 168,19 171,10 174,22 177,5 180,20 183,8 186,25 189,4 192,21 195,7 198,23 201,6 204,20 207,9 210,22 213,5 216,19 219,8 222,24 225,6 228,20 231,10 234,22 237,7 240,14"/>
-            </svg>
-          </div>
-          <div class="proof-wave-row">
-            <span class="proof-wave-lbl">After</span>
-            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Clean waveform">
-              <polyline fill="none" stroke="rgba(16,185,129,0.85)" stroke-width="1.2" points="0,14 10,9 20,7 30,12 40,8 50,11 60,7 70,10 80,8 90,12 100,7 110,10 120,8 130,12 140,7 150,10 160,8 170,12 180,7 190,10 200,8 210,12 220,7 230,10 240,14"/>
-            </svg>
-          </div>
-        </div>
-        <div class="proof-stats">
-          <div class="proof-stat"><span class="proof-stat-val">+18</span><span class="proof-stat-lbl">dB SNR</span></div>
-          <div class="proof-stat green"><span class="proof-stat-val">94%</span><span class="proof-stat-lbl">Intel.</span></div>
-          <div class="proof-stat violet"><span class="proof-stat-val">&lt;5s</span><span class="proof-stat-lbl">Process</span></div>
-        </div>
-      </div>
+            <div class="panel-section">
+                <div class="section-label">Input</div>
+                <div class="device-select">
+                    <span style="display:flex;align-items:center;gap:5px">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                        Microphone (Scarlett 2i2)
+                    </span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <div class="level-row" style="margin-top:10px">
+                    <span class="level-label">Input Level</span>
+                    <span class="level-val" id="inputLevelVal">-- dB</span>
+                </div>
+                <div class="meter-container"><div class="meter-bar" id="inputMeter"></div></div>
+                <div class="level-ticks"><span>-60</span><span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0</span></div>
+            </div>
 
-      <!-- Card 3: Surveillance HVAC -->
-      <div class="proof-card">
-        <div class="proof-scenario">Forensic · HVAC Hum</div>
-        <div class="proof-title">60 Hz Hum + Broadband Hiss</div>
-        <div class="proof-desc">Surveillance recording from a room with industrial HVAC. Whispered speech buried in 60 Hz harmonics and broadband hiss.</div>
-        <div class="proof-waves">
-          <div class="proof-wave-row">
-            <span class="proof-wave-lbl">Before</span>
-            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Noisy waveform">
-              <polyline fill="none" stroke="rgba(220,38,38,0.7)" stroke-width="1" points="0,14 5,12 10,16 15,11 20,17 25,12 30,16 35,10 40,18 45,12 50,16 55,9 60,19 65,13 70,15 75,10 80,18 85,12 90,17 95,10 100,19 105,13 110,15 115,11 120,17 125,12 130,16 135,10 140,19 145,12 150,16 155,9 160,18 165,13 170,15 175,11 180,17 185,12 190,16 195,10 200,19 205,13 210,15 215,10 220,18 225,12 230,16 235,11 240,14"/>
-            </svg>
-          </div>
-          <div class="proof-wave-row">
-            <span class="proof-wave-lbl">After</span>
-            <svg class="proof-wave-svg" viewBox="0 0 240 28" preserveAspectRatio="none" aria-label="Clean waveform">
-              <polyline fill="none" stroke="rgba(139,92,246,0.9)" stroke-width="1.2" points="0,14 12,11 24,9 36,12 48,8 60,11 72,9 84,13 96,8 108,11 120,9 132,13 144,8 156,11 168,9 180,13 192,8 204,11 216,9 228,13 240,14"/>
-            </svg>
-          </div>
+            <div class="panel-section">
+                <div class="section-label">Mode</div>
+                <div class="mode-btns">
+                    <button class="mode-btn active" onclick="setMode(this)">VOICE ISOLATE</button>
+                    <button class="mode-btn" onclick="setMode(this)">VOICE REMOVE</button>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="section-label">AI Model</div>
+                <div class="model-select">
+                    <span>v2.2 &ndash; Best Quality</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+            </div>
+
+            <div class="panel-section" style="flex:1">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
+                    <div class="section-label" style="margin:0">Isolation Controls</div>
+                    <button class="icon-btn" style="width:auto;height:auto;font-size:10px;color:var(--accent)" onclick="resetControls()">RESET</button>
+                </div>
+
+                <div class="knob-row">
+                    <div class="knob" id="strengthKnob">85%</div>
+                    <div class="slider-container">
+                        <div class="slider-val"><span>Strength</span><span class="val-num" id="strengthVal">85%</span></div>
+                        <input type="range" min="0" max="100" value="85" oninput="updateKnob('strength',this.value,'%')">
+                    </div>
+                </div>
+
+                <div class="knob-row">
+                    <div class="knob" id="lookaheadKnob" style="border-color:#555">0ms</div>
+                    <div class="slider-container">
+                        <div class="slider-val"><span>Lookahead (Latency)</span><span class="val-num" id="lookaheadVal" style="color:var(--text)">0ms</span></div>
+                        <input type="range" min="0" max="100" value="0" oninput="updateKnob('lookahead',this.value,'ms')">
+                    </div>
+                </div>
+
+                <div class="knob-row" style="margin-bottom:0">
+                    <div class="knob" id="gateKnob" style="border-color:#555">-45dB</div>
+                    <div class="slider-container">
+                        <div class="slider-val"><span>Gate Threshold</span><span class="val-num" id="gateVal" style="color:var(--text)">-45dB</span></div>
+                        <input type="range" min="-80" max="0" value="-45" oninput="updateKnob('gate',this.value,'dB')">
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="proof-stats">
-          <div class="proof-stat"><span class="proof-stat-val">+26</span><span class="proof-stat-lbl">dB SNR</span></div>
-          <div class="proof-stat green"><span class="proof-stat-val">89%</span><span class="proof-stat-lbl">Intel.</span></div>
-          <div class="proof-stat violet"><span class="proof-stat-val">&lt;12s</span><span class="proof-stat-lbl">Process</span></div>
+
+        <!-- CENTER PANEL -->
+        <div class="panel center-panel">
+            <div class="vis-header">
+                <div class="vis-title">
+                    Spectrum Analyzer
+                    <span class="live-badge">LIVE</span>
+                </div>
+                <div style="display:flex;gap:10px">
+                    <span style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px">
+                        <div style="width:8px;height:8px;background:#444;border-radius:50%"></div> Noise
+                    </span>
+                    <span style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px">
+                        <div style="width:8px;height:8px;background:var(--accent);border-radius:50%"></div> Voice
+                    </span>
+                </div>
+            </div>
+            <canvas id="specCanvas"></canvas>
         </div>
-      </div>
+
+        <!-- RIGHT PANEL -->
+        <div class="panel right-panel">
+            <div class="output-section">
+                <div class="section-label">Output</div>
+
+                <div class="device-select">
+                    <span style="display:flex;align-items:center;gap:5px">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                        Virtual Cable A
+                    </span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+
+                <div class="switch-row">
+                    <span>Monitor Output</span>
+                    <label class="switch"><input type="checkbox" id="monitorToggle"><span class="sw-track"></span></label>
+                </div>
+                <div class="switch-row">
+                    <span>Bypass Processing</span>
+                    <label class="switch"><input type="checkbox" id="bypassToggle"><span class="sw-track"></span></label>
+                </div>
+
+                <div class="level-row" style="margin-top:15px">
+                    <span class="level-label">Output Level</span>
+                    <span class="level-val" id="outputLevelVal" style="color:var(--accent)">-- dB</span>
+                </div>
+                <div class="meter-container"><div class="meter-bar" id="outputMeter"></div></div>
+                <div class="level-ticks"><span>-60</span><span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0</span></div>
+
+                <div style="flex:1"></div>
+
+                <div class="stats-box">
+                    <div class="stat-row"><span class="stat-label">CPU Usage</span><span class="stat-val" id="cpuStat">12%</span></div>
+                    <div class="stat-row"><span class="stat-label">Latency</span><span class="stat-val" id="latStat">4.2ms</span></div>
+                    <div class="stat-row"><span class="stat-label">Model RAM</span><span class="stat-val">450MB</span></div>
+                </div>
+
+                <button class="big-btn" id="recordBtn" onclick="toggleRecord()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                    <span id="recordBtnText">START RECORDING</span>
+                </button>
+            </div>
+        </div>
 
     </div>
 
-    <div class="proof-cta-row">
-      <a href="/app/">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
-        Try it now — drop your audio file
-      </a>
-    </div>
-  </div>
-</section>
+    <script>
+        /* Tab switcher */
+        function switchTab(btn) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
 
-<!-- ══════════════════════════════════
-     USE CASES
-══════════════════════════════════ -->
-<section class="section" style="padding-top:1rem">
-  <div class="wrap">
-    <div class="section-tag">Who Uses It</div>
-    <h2 class="section-title">Built for every audio challenge</h2>
-    <p class="section-sub">From podcasters to forensic investigators — one tool, every use case, zero cloud dependency.</p>
+        /* Mode toggle */
+        function setMode(btn) {
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+        }
 
-    <div class="cases-grid">
-      <div class="case-card c-cyan">
-        <div class="case-icon i-cyan">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
-        </div>
-        <h4>Podcasters &amp; Creators</h4>
-        <p>Clean noisy home recordings instantly. Remove room echo, AC hum, and keyboard clatter without a soundproofed studio.</p>
-        <div class="case-tags"><span>Dereverb</span><span>De-noise</span><span>Voice Clarity preset</span></div>
-      </div>
+        /* Knob + value sync */
+        function updateKnob(name, val, suffix) {
+            const display = val + suffix;
+            document.getElementById(name + 'Knob').textContent = display;
+            document.getElementById(name + 'Val').textContent = display;
+        }
 
-      <div class="case-card c-violet">
-        <div class="case-icon i-violet">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-        </div>
-        <h4>Legal &amp; Transcription</h4>
-        <p>Boost intelligibility of court recordings, depositions, and wiretaps. Speaker diarization separates voices automatically.</p>
-        <div class="case-tags"><span>Speaker Isolation</span><span>Forensic Extract</span><span>Audit Log</span></div>
-      </div>
+        /* Reset controls */
+        function resetControls() {
+            document.querySelectorAll('.left-panel input[type=range]').forEach(r => {
+                r.value = r.defaultValue;
+                r.dispatchEvent(new Event('input'));
+            });
+        }
 
-      <div class="case-card c-green">
-        <div class="case-icon i-green">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-        </div>
-        <h4>Film &amp; Video Production</h4>
-        <p>Salvage on-set audio ruined by wind, traffic, or generator noise. Sync cleaned audio back to video automatically.</p>
-        <div class="case-tags"><span>MP4/MOV</span><span>Video Sync</span><span>Film preset</span></div>
-      </div>
+        /* Record button */
+        let recording = false;
+        function toggleRecord() {
+            recording = !recording;
+            document.getElementById('recordBtn').classList.toggle('recording', recording);
+            document.getElementById('recordBtnText').textContent = recording ? 'STOP RECORDING' : 'START RECORDING';
+        }
 
-      <div class="case-card c-orange">
-        <div class="case-icon i-orange">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-        </div>
-        <h4>Forensic Investigation</h4>
-        <p>Multi-pass noise reduction, 60 Hz hum scrubbing, and SHA-256 audit trail for chain-of-custody documentation.</p>
-        <div class="case-tags"><span>Surveillance</span><span>HVAC Removal</span><span>Forensic Report</span></div>
-      </div>
-    </div>
-  </div>
-</section>
+        /* Live spectrum analyzer canvas */
+        const canvas = document.getElementById('specCanvas');
+        const ctx2d = canvas.getContext('2d');
+        const BAR_COUNT = 64;
+        const bars = Array.from({length: BAR_COUNT}, (_, i) => ({
+            voice: 0.1 + Math.random() * 0.3,
+            noise: 0.04 + Math.random() * 0.1,
+            vTarget: 0, nTarget: 0
+        }));
 
-<!-- ══════════════════════════════════
-     WHAT MAKES IT DIFFERENT
-══════════════════════════════════ -->
-<section class="section" style="padding-top:0">
-  <div class="wrap">
-    <div class="section-tag">What Makes It Different</div>
-    <h2 class="section-title">Not another noise filter</h2>
-    <p class="section-sub">Every other tool ships your audio to a cloud server. VoiceIsolate Pro runs neural network VAD + classical spectral DSP fully offline in your browser.</p>
+        function resizeCanvas() {
+            canvas.width  = canvas.clientWidth  * window.devicePixelRatio;
+            canvas.height = canvas.clientHeight * window.devicePixelRatio;
+            ctx2d.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+        window.addEventListener('resize', () => { resizeCanvas(); });
+        resizeCanvas();
 
-    <div class="features">
-      <div class="feat">
-        <div class="feat-icon feat-icon-violet">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
-        </div>
-        <div class="feat-body">
-          <h4>ML + Classical Hybrid</h4>
-          <p>Silero VAD neural network identifies speech frames. Wiener-MMSE spectral filtering removes noise. Neither alone is as accurate.</p>
-          <code>VAD → Wiener → ERB Gate</code>
-        </div>
-      </div>
+        let frame = 0;
+        function drawSpectrum() {
+            const W = canvas.clientWidth;
+            const H = canvas.clientHeight;
+            ctx2d.clearRect(0, 0, W, H);
 
-      <div class="feat">
-        <div class="feat-icon feat-icon-green">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        </div>
-        <div class="feat-body">
-          <h4>100% Private &amp; Local</h4>
-          <p>Zero server uploads. All 32 stages run inside <code>OfflineAudioContext</code> in your browser tab — your audio never leaves your device.</p>
-          <code>0 bytes transmitted</code>
-        </div>
-      </div>
+            /* grid lines */
+            ctx2d.strokeStyle = 'rgba(51,51,51,0.7)';
+            ctx2d.lineWidth = 0.5;
+            ctx2d.setLineDash([4, 4]);
+            [0.25, 0.5, 0.75].forEach(y => {
+                ctx2d.beginPath();
+                ctx2d.moveTo(0, H * y);
+                ctx2d.lineTo(W, H * y);
+                ctx2d.stroke();
+            });
+            ctx2d.setLineDash([]);
 
-      <div class="feat">
-        <div class="feat-icon feat-icon-cyan">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-        </div>
-        <div class="feat-body">
-          <h4>52 Real-Time Controls</h4>
-          <p>Gate, EQ, compressor, limiter, de-esser, dereverb, stereo width — all update the live playback chain instantly without reprocessing.</p>
-          <code>RT-tagged sliders update in &lt;20ms</code>
-        </div>
-      </div>
+            const gap = 1;
+            const bw = (W / BAR_COUNT) - gap;
+            frame++;
+            const t = frame * 0.02;
 
-      <div class="feat">
-        <div class="feat-icon feat-icon-cyan">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
-        </div>
-        <div class="feat-body">
-          <h4>3D Spectrograms</h4>
-          <p>Interactive Three.js 3D spectrogram, 2D scrolling spectrogram, A/B oscilloscope, LUFS meter, ML saliency heatmap, and speaker cluster PCA view.</p>
-          <code>Three.js r128 · WebGL</code>
-        </div>
-      </div>
+            bars.forEach((b, i) => {
+                b.vTarget = 0.12 + Math.abs(Math.sin(i * 0.25 + t)) * 0.35 + Math.abs(Math.sin(i * 0.6 - t * 1.2)) * 0.18;
+                b.nTarget = 0.03 + Math.abs(Math.cos(i * 0.4 + t * 0.7)) * 0.09;
+                b.voice += (b.vTarget - b.voice) * 0.1;
+                b.noise += (b.nTarget - b.noise) * 0.1;
 
-      <div class="feat">
-        <div class="feat-icon feat-icon-orange">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        </div>
-        <div class="feat-body">
-          <h4>Every Audio &amp; Video Format</h4>
-          <p>MP3, WAV, FLAC, OGG, M4A, AAC, MP4, MOV, WEBM, MKV, AVI. The browser's Web Audio API decodes everything natively.</p>
-          <code>audio/* · video/* · no size limit</code>
-        </div>
-      </div>
+                const x  = i * (bw + gap);
+                const vh = Math.max(2, b.voice * H * 0.75);
+                const nh = Math.max(2, b.noise * H * 0.28);
 
-      <div class="feat">
-        <div class="feat-icon feat-icon-violet">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
-        </div>
-        <div class="feat-body">
-          <h4>8 One-Click Presets</h4>
-          <p>Voice Clarity, Podcast Clean, Forensic Extract, Music Vocal, Whisper Boost, Phone/Radio, Live Performance, Surveillance — all 52 sliders tuned. Save your own presets too.</p>
-          <code>+ custom preset save</code>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
+                /* noise */
+                ctx2d.fillStyle = 'rgba(90,90,90,0.45)';
+                ctx2d.fillRect(x, H - nh, bw, nh);
 
-<!-- ══════════════════════════════════
-     LAUNCH CTA
-══════════════════════════════════ -->
-<div class="launch-wrap">
-  <div class="wrap">
-    <a href="/app/" class="launch-card">
-      <div class="launch-inner">
-        <div class="launch-text">
-          <span class="launch-tag">Engineer Mode v24.0</span>
-          <h2>Launch the App</h2>
-          <p>52 sliders. 6-panel diagnostic dashboard. A/B comparison. 3D spectrogram. 32-stage pipeline. Drop audio or video and get studio-clean output in seconds — no account, no upload, no limit.</p>
-          <div class="launch-pills">
-            <span>32-Stage DSP</span><span>ML VAD</span><span>52 Sliders</span><span>A/B Compare</span>
-            <span>3D Spectrogram</span><span>32-bit WAV</span><span>100% Local</span><span>Zero Upload</span>
-          </div>
-        </div>
-        <div class="launch-btns">
-          <div class="launch-btn launch-btn-primary">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"/></svg>
-            Open Engineer Mode
-          </div>
-          <div class="launch-btn launch-btn-secondary">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-            View Pipeline Docs
-          </div>
-        </div>
-      </div>
-    </a>
-  </div>
-</div>
+                /* voice gradient */
+                const grad = ctx2d.createLinearGradient(0, H - vh, 0, H);
+                grad.addColorStop(0, 'rgba(0,255,204,0.9)');
+                grad.addColorStop(0.6, 'rgba(0,255,204,0.3)');
+                grad.addColorStop(1, 'rgba(0,255,204,0.05)');
+                ctx2d.fillStyle = grad;
+                ctx2d.fillRect(x, H - vh, bw, vh);
+            });
 
-<!-- ══════════════════════════════════
-     FOOTER
-══════════════════════════════════ -->
-<footer>
-  VoiceIsolate Pro v24.0 &nbsp;·&nbsp; Threads from Space v13 &nbsp;·&nbsp; Hybrid ML+DSP &nbsp;·&nbsp; Privacy-First &nbsp;·&nbsp; May 2026
-</footer>
+            requestAnimationFrame(drawSpectrum);
+        }
+        drawSpectrum();
 
-<script type="module">
-import * as THREE from 'three';
+        /* Animated level meters */
+        (function animateMeters() {
+            let t = 0;
+            function tick() {
+                t += 0.035;
+                const iw = Math.min(98, Math.max(5, 55 + Math.sin(t) * 22 + Math.sin(t * 3.1) * 8));
+                const ow = Math.min(98, Math.max(5, 72 + Math.sin(t * 0.85) * 14 + Math.sin(t * 2.5) * 6));
+                document.getElementById('inputMeter').style.width  = iw.toFixed(1) + '%';
+                document.getElementById('outputMeter').style.width = ow.toFixed(1) + '%';
+                document.getElementById('inputLevelVal').textContent  = (-60 + iw * 0.61).toFixed(1) + ' dB';
+                document.getElementById('outputLevelVal').textContent = (-60 + ow * 0.61).toFixed(1) + ' dB';
+                requestAnimationFrame(tick);
+            }
+            tick();
+        })();
+    </script>
 
-/* ── Stat counter animation ── */
-(function(){
-  function animateCounter(el){
-    const target=parseInt(el.dataset.target,10);
-    const suffix=el.dataset.suffix||'';
-    if(target===0){el.textContent='0'+suffix;return;}
-    const dur=1600;
-    const start=performance.now();
-    function step(now){
-      const t=Math.min((now-start)/dur,1);
-      const ease=1-Math.pow(1-t,3);
-      el.textContent=Math.round(ease*target)+suffix;
-      if(t<1)requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-  }
-  const counters=document.querySelectorAll('.stat-num[data-target]');
-  if('IntersectionObserver' in window){
-    const io=new IntersectionObserver(entries=>{
-      entries.forEach(e=>{if(e.isIntersecting){animateCounter(e.target);io.unobserve(e.target);}});
-    },{threshold:0.5});
-    counters.forEach(c=>io.observe(c));
-  } else {
-    counters.forEach(animateCounter);
-  }
-})();
-
-/* ── Hero Three.js animated spectrogram ── */
-(function(){
-  const canvas = document.getElementById('heroCanvas');
-  if (!canvas || !THREE) return;
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-  const cols = 64;
-  const rows = 24;
-  const positions = new Float32Array(cols * rows * 3);
-  let i = 0;
-  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
-    positions[i++] = (x / cols - 0.5) * 16;
-    positions[i++] = (y / rows - 0.5) * 5;
-    positions[i++] = 0;
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  const material = new THREE.PointsMaterial({ size: 0.07, color: 0x22d3ee });
-  const points = new THREE.Points(geometry, material);
-  scene.add(points);
-  camera.position.set(0, 0, 8);
-  function resize() {
-    const w = canvas.clientWidth || window.innerWidth;
-    const h = canvas.clientHeight || window.innerHeight;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-  }
-  resize();
-  window.addEventListener('resize', resize);
-  function tick(t) {
-    const p = geometry.attributes.position.array;
-    for (let n = 0; n < p.length; n += 3) {
-      const x = p[n];
-      const y = p[n + 1];
-      p[n + 2] = Math.sin((x * 1.5) + (t * 0.0018)) * 0.25 + Math.cos((y * 2.3) + (t * 0.0013)) * 0.18;
-    }
-    geometry.attributes.position.needsUpdate = true;
-    points.rotation.z = Math.sin(t * 0.0002) * 0.1;
-    renderer.render(scene, camera);
-    requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-})();
-
-/* ── Hero drag/drop to app ── */
-(function(){
-  const zone = document.getElementById('heroUploadZone');
-  if (!zone) return;
-  const go = () => { window.location.href = '/app/'; };
-  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
-  zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('dragover'); if (e.dataTransfer?.files?.length) go(); });
-  zone.addEventListener('click', go);
-  zone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
-})();
-
-/* ── Before/After audio preview (Web Audio API) ── */
-(function(){
-  const beforeBtn = document.getElementById('playBeforeBtn');
-  const afterBtn = document.getElementById('playAfterBtn');
-  const stopBtn = document.getElementById('stopPreviewBtn');
-  let ctx = null;
-  let source = null;
-  function stop() { if (source) { try { source.stop(); } catch (_) {} source = null; } }
-  function play(clean) {
-    ctx = ctx || new AudioContext();
-    stop();
-    const dur = 2.5;
-    const len = Math.floor(ctx.sampleRate * dur);
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const out = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) {
-      const t = i / ctx.sampleRate;
-      const voice = Math.sin(2 * Math.PI * 180 * t) * 0.24 + Math.sin(2 * Math.PI * 320 * t) * 0.12;
-      const noise = (Math.random() * 2 - 1) * (clean ? 0.02 : 0.12);
-      const hum = Math.sin(2 * Math.PI * 60 * t) * (clean ? 0.01 : 0.09);
-      out[i] = voice + noise + hum;
-    }
-    source = ctx.createBufferSource();
-    source.buffer = buf;
-    source.connect(ctx.destination);
-    source.start();
-  }
-  beforeBtn?.addEventListener('click', () => play(false));
-  afterBtn?.addEventListener('click', () => play(true));
-  stopBtn?.addEventListener('click', stop);
-})();
-</script>
-
-<!-- Vercel Speed Insights -->
-<script>window.si=window.si||function(){(window.siq=window.siq||[]).push(arguments);};</script>
-<script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>
