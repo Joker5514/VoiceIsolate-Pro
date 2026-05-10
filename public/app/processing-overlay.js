@@ -201,7 +201,7 @@
     _msg() { return document.getElementById('procMessage'); },
     _focus() { return document.getElementById('procFocusVal'); },
     _mode() { return document.getElementById('procModeVal'); },
-    _phasePills() { return Array.from(document.querySelectorAll('.proc-phase-pill')); },
+    _phasePills() { if (!this._pills) { this._pills = Array.from(document.querySelectorAll('.proc-phase-pill')); } return this._pills; },
 
     show(stageName, pct) {
       const el = this._el();
