@@ -1,0 +1,37 @@
+<!--
+  NeonPulse Visualizer Card — Standalone HTML embed
+  Drop this fragment anywhere inside your dashboard layout.
+  Or reference via fetch/include.
+
+  REQUIRED:
+    <link rel="stylesheet" href="./neon-pulse-visualizer.css">
+    <script src="./neon-pulse-visualizer.js"></script>
+
+  WIRE-UP in app.js:
+    // After AudioContext is running:
+    NeonPulseViz.mount('#np-viz-mount');
+    NeonPulseViz.init(appState.analyserInput, appState.analyserOutput);
+    // Or demo mode (no analyser needed):
+    NeonPulseViz.startDemo();
+
+    // Sync stats from pipeline state every 500ms:
+    setInterval(() => {
+      NeonPulseViz.updateStats({
+        voice: pipelineState.voicePercent,
+        noise: pipelineState.noisePercent,
+        snr:   pipelineState.snrDb,
+        cpu:   pipelineState.cpuPercent
+      });
+    }, 500);
+-->
+
+<!-- Mount point — place inside .right-panel or .main-content -->
+<div id="np-viz-mount"
+     class="visualizer-container"
+     style="background:#0a0a0a;padding:20px;border-radius:12px;margin-top:15px;">
+  <!-- NeonPulseViz.mount('#np-viz-mount') injects the card here at runtime -->
+</div>
+
+<!-- Load scripts (already in index.html head, shown here for reference) -->
+<!-- <link rel="stylesheet" href="./neon-pulse-visualizer.css"> -->
+<!-- <script src="./neon-pulse-visualizer.js"></script> -->

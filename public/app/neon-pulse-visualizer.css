@@ -1,0 +1,263 @@
+/* ============================================================
+   NeonPulse Visualizer Card — VoiceIsolate Pro
+   Mobile-first responsive card component
+   Compatible with Engineer Mode v19 dark theme
+   ============================================================ */
+
+:root {
+  --np-bg:          #0a0a0a;
+  --np-card-bg:     #0f0f14;
+  --np-border:      rgba(255,0,80,0.25);
+  --np-accent-red:  #ff0050;
+  --np-accent-cyan: #00e5ff;
+  --np-accent-purp: #bf00ff;
+  --np-accent-gold: #ffd600;
+  --np-accent-grn:  #00ff88;
+  --np-text-dim:    rgba(255,255,255,0.45);
+  --np-text-bright: rgba(255,255,255,0.92);
+  --np-radius:      14px;
+  --np-glow-red:    0 0 18px rgba(255,0,80,0.55);
+  --np-glow-cyan:   0 0 18px rgba(0,229,255,0.45);
+  --np-transition:  0.22s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ── Card Shell ─────────────────────────────────────────── */
+.np-card {
+  position: relative;
+  background: var(--np-card-bg);
+  border: 1px solid var(--np-border);
+  border-radius: var(--np-radius);
+  padding: 16px;
+  margin-top: 15px;
+  box-shadow: 0 4px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.04);
+  overflow: hidden;
+  contain: layout style;
+}
+
+.np-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 40% at 50% -10%, rgba(255,0,80,0.08), transparent);
+  pointer-events: none;
+}
+
+/* ── Card Header ────────────────────────────────────────── */
+.np-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.np-card-title {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--np-accent-red);
+  text-shadow: var(--np-glow-red);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.np-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--np-accent-grn);
+  border: 1px solid rgba(0,255,136,0.35);
+  border-radius: 20px;
+  padding: 2px 7px;
+  background: rgba(0,255,136,0.07);
+}
+
+.np-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--np-accent-grn);
+  animation: np-pulse-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes np-pulse-dot {
+  0%,100% { opacity: 1; box-shadow: 0 0 6px var(--np-accent-grn); }
+  50%      { opacity: 0.3; box-shadow: none; }
+}
+
+/* ── Mode Tab Bar ───────────────────────────────────────── */
+.np-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 8px;
+  padding: 3px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.np-tabs::-webkit-scrollbar { display: none; }
+
+.np-tab {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--np-text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: var(--np-transition);
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.np-tab:hover   { color: var(--np-text-bright); background: rgba(255,255,255,0.06); }
+.np-tab.active  {
+  color: #fff;
+  background: var(--np-accent-red);
+  box-shadow: var(--np-glow-red);
+}
+
+/* ── Canvas Container ───────────────────────────────────── */
+.np-canvas-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #060608;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.np-canvas {
+  display: block;
+  width: 100%;
+  height: 200px;          /* mobile default */
+  image-rendering: pixelated;
+}
+
+/* ── Stats Row ──────────────────────────────────────────── */
+.np-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.np-stat {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 6px 4px;
+  text-align: center;
+}
+
+.np-stat-val {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--np-accent-cyan);
+  text-shadow: var(--np-glow-cyan);
+  line-height: 1;
+}
+
+.np-stat-label {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--np-text-dim);
+  margin-top: 3px;
+}
+
+/* ── Floating channel legend ────────────────────────────── */
+.np-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.np-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--np-text-dim);
+}
+
+.np-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Scan-line overlay animation ────────────────────────── */
+.np-scanline {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.12) 2px,
+    rgba(0,0,0,0.12) 4px
+  );
+  pointer-events: none;
+  animation: np-scanmove 8s linear infinite;
+  opacity: 0.4;
+}
+
+@keyframes np-scanmove {
+  0%   { background-position: 0 0; }
+  100% { background-position: 0 200px; }
+}
+
+/* ── Responsive upscale ─────────────────────────────────── */
+@media (min-width: 480px) {
+  .np-canvas { height: 240px; }
+  .np-card   { padding: 20px; }
+}
+
+@media (min-width: 768px) {
+  .np-canvas        { height: 280px; }
+  .np-stat-val      { font-size: 15px; }
+  .np-card-title    { font-size: 12px; }
+}
+
+@media (min-width: 1024px) {
+  .np-canvas  { height: 320px; }
+  .np-stats   { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ── Entrance animation ─────────────────────────────────── */
+.np-card {
+  animation: np-card-in 0.45s ease both;
+}
+
+@keyframes np-card-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Peak ring on canvas wrap ───────────────────────────── */
+.np-canvas-wrap.np-peak-flash {
+  animation: np-peak-ring 0.25s ease;
+}
+
+@keyframes np-peak-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(255,0,80,0.7); }
+  50%  { box-shadow: 0 0 0 6px rgba(255,0,80,0.3); }
+  100% { box-shadow: 0 0 0 0 rgba(255,0,80,0); }
+}
