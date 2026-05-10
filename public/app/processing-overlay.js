@@ -89,7 +89,7 @@
 
   function groupForStage(stageIndex) {
     if (!Number.isFinite(stageIndex)) return STAGE_GROUPS[0];
-    return STAGE_GROUPS.find(g => stageIndex >= g.start && stageIndex <= g.end) || STAGE_GROUPS[0];
+    return STAGE_GROUPS.find(g => stageIndex >= g.start && stageIndex <= g.end) || STAGE_GROUPS[STAGE_GROUPS.length - 1];
   }
 
   function buildOverlayDOM() {
