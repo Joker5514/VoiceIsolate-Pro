@@ -177,7 +177,7 @@
           </div>
         </div>
 
-        <div class="proc-cancel-hint">Press ESC to cancel</div>
+        <div class="proc-cancel-hint">Processing will finish automatically</div>
       </div>
     `;
 
