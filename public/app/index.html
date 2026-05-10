@@ -7,8 +7,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <!-- onnxruntime-web loaded locally in ml-worker.js via /lib/ort.min.js (no CDN) -->
-  <!-- 32-Stage Deca-Pass DSP pipeline: single STFT→in-place spectral ops→single iSTFT -->
   <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
   <script type="module">
     import('three').then((m) => { globalThis.THREE = m; }).catch(() => {});
@@ -17,9 +15,53 @@
   <link rel="stylesheet" href="slider-theme.css" />
   <link rel="stylesheet" href="style-diag-log.css" />
   <link rel="stylesheet" href="model-status-ui.css" />
-  <link id="vip-overlay-css" rel="stylesheet" href="/app/processing-overlay.css" />
+  <!-- FIXED: was /app/processing-overlay.css (absolute, breaks on static hosts) -->
+  <link id="vip-overlay-css" rel="stylesheet" href="processing-overlay.css" />
+
+  <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
+  <style>
+    #vip-boot-error {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 99999;
+      background: #1a0a0a;
+      border-bottom: 2px solid #ff3b3b;
+      color: #ff9090;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      padding: 10px 16px;
+      white-space: pre-wrap;
+      max-height: 40vh;
+      overflow: auto;
+    }
+    #vip-boot-error b { color: #ff3b3b; }
+  </style>
+  <script>
+    window._vipModuleErrors = [];
+    window._vipReportError = function(src, err) {
+      window._vipModuleErrors.push({ src: src, err: err });
+      var banner = document.getElementById('vip-boot-error');
+      if (!banner) return;
+      banner.style.display = 'block';
+      banner.innerHTML = '<b>\u26a0 VoiceIsolate Pro \u2014 Module Load Error</b>\n' +
+        window._vipModuleErrors.map(function(e) {
+          return '  [' + e.src + ']  ' + (e.err && e.err.message ? e.err.message : String(e.err));
+        }).join('\n') +
+        '\n\n<small>Open DevTools \u2192 Console for full stack trace.</small>';
+    };
+    window.addEventListener('error', function(e) {
+      if (e.filename) window._vipReportError(e.filename.split('/').pop(), e.error || e.message);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      window._vipReportError('unhandledRejection', e.reason);
+    });
+  </script>
 </head>
 <body>
+  <!-- Error banner: hidden until a module fails -->
+  <div id="vip-boot-error"></div>
+
   <div id="status-message" class="status-bar" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;opacity:0;" aria-live="polite" aria-atomic="true"></div>
 
   <header class="hdr">
@@ -125,7 +167,6 @@
         <button id="saveProcBtn" class="btn btn-save-proc" disabled>Save Processed WAV</button>
       </div>
 
-      <!-- Mobile sticky action bar -->
       <div class="mobile-action-bar" id="mobileActionBar">
         <button id="mobileProcessBtn" class="btn btn-primary" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"></polygon></svg>Process</button>
         <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Reprocess</button>
@@ -136,11 +177,11 @@
     <section class="col-right">
       <div class="card transport-card">
         <div class="transport-row">
-          <button id="tpPlay" class="btn btn-tp" type="button" disabled>▶</button>
-          <button id="tpPause" class="btn btn-tp" type="button" disabled>⏸</button>
-          <button id="tpStop" class="btn btn-tp" type="button" disabled>⏹</button>
-          <button id="tpRew" class="btn btn-tp" type="button" disabled>◀◀</button>
-          <button id="tpFwd" class="btn btn-tp" type="button" disabled>▶▶</button>
+          <button id="tpPlay" class="btn btn-tp" type="button" disabled>&#9654;</button>
+          <button id="tpPause" class="btn btn-tp" type="button" disabled>&#9208;</button>
+          <button id="tpStop" class="btn btn-tp" type="button" disabled>&#9209;</button>
+          <button id="tpRew" class="btn btn-tp" type="button" disabled>&#9664;&#9664;</button>
+          <button id="tpFwd" class="btn btn-tp" type="button" disabled>&#9654;&#9654;</button>
           <span class="tp-time" id="tpCur">0:00</span>
           <span class="tp-time">/</span>
           <span class="tp-time" id="tpDur">0:00</span>
@@ -196,10 +237,26 @@
 
   <div id="toastRegion" aria-live="polite"></div>
 
-  <script type="module" src="./pipeline-orchestrator.js"></script>
-  <script type="module" src="./session-persist.js"></script>
-  <script type="module" src="./vip-boot.js"></script>
-  <script type="module" src="./app.js"></script>
+  <!--
+    Each module loaded via dynamic import() + .catch() so one broken file
+    cannot silence the rest or produce a blank page.
+  -->
+  <script type="module">
+    const _mods = [
+      './pipeline-orchestrator.js',
+      './session-persist.js',
+      './vip-boot.js',
+      './app.js',
+    ];
+    for (const src of _mods) {
+      import(src).catch(err => {
+        console.error('[VIP] Failed to load module:', src, err);
+        if (typeof window._vipReportError === 'function') {
+          window._vipReportError(src, err);
+        }
+      });
+    }
+  </script>
 
   <script>
     (function _vipSafetyNet() {
@@ -218,7 +275,6 @@
           console.warn('[safety-net] instantiation failed:', e);
         }
       }
-
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', boot, { once: true });
       } else {
