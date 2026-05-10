@@ -193,26 +193,26 @@
       </div>
 
       <div class="card viz-card">
-        <div class="viz-hdr"><span>Visualizations</span><button id="fullscreenSpectroBtn" class="btn btn-xs" type="button">&#9974;</button></div>
+        <div class="viz-hdr"><span>Visualizations</span><button id="fullscreenSpectroBtn" class="btn btn-xs" type="button" aria-label="Toggle Fullscreen" title="Toggle Fullscreen"><span aria-hidden="true">⛶</span></button></div>
         <div id="tabBar" class="tabs" role="tablist" aria-label="Visualization tabs">
-          <button class="tab-btn active" type="button" data-tab="spectrogram" aria-selected="true">Spectrogram</button>
-          <button class="tab-btn" type="button" data-tab="waveform" aria-selected="false">Waveform</button>
-          <button class="tab-btn" type="button" data-tab="abcompare" aria-selected="false">A/B Compare</button>
-          <button class="tab-btn" type="button" data-tab="lufs" aria-selected="false">LUFS Meter</button>
-          <button class="tab-btn" type="button" data-tab="saliency" aria-selected="false">Saliency Map</button>
-          <button class="tab-btn" type="button" data-tab="clusters" aria-selected="false">Speaker Clusters</button>
+          <button id="btn-spectrogram" class="tab-btn active" type="button" role="tab" aria-controls="tab-spectrogram" data-tab="spectrogram" aria-selected="true" tabindex="0">Spectrogram</button>
+          <button id="btn-waveform" class="tab-btn" type="button" role="tab" aria-controls="tab-waveform" data-tab="waveform" aria-selected="false" tabindex="-1">Waveform</button>
+          <button id="btn-abcompare" class="tab-btn" type="button" role="tab" aria-controls="tab-abcompare" data-tab="abcompare" aria-selected="false" tabindex="-1">A/B Compare</button>
+          <button id="btn-lufs" class="tab-btn" type="button" role="tab" aria-controls="tab-lufs" data-tab="lufs" aria-selected="false" tabindex="-1">LUFS Meter</button>
+          <button id="btn-saliency" class="tab-btn" type="button" role="tab" aria-controls="tab-saliency" data-tab="saliency" aria-selected="false" tabindex="-1">Saliency Map</button>
+          <button id="btn-clusters" class="tab-btn" type="button" role="tab" aria-controls="tab-clusters" data-tab="clusters" aria-selected="false" tabindex="-1">Speaker Clusters</button>
         </div>
 
-        <div id="tab-spectrogram" class="panel active">
+        <div id="tab-spectrogram" role="tabpanel" aria-labelledby="btn-spectrogram" class="panel active" tabindex="0">
           <div id="spectro3d-container" class="spectro3d-container"><canvas id="spectroCanvas" class="viz-canvas"></canvas></div>
           <canvas id="spectro2DCanvas" class="viz-canvas spectro2d" style="display:none"></canvas>
           <canvas id="freqCanvas" class="viz-canvas freq-cv"></canvas>
         </div>
-        <div id="tab-waveform" class="panel"><canvas id="waveCanvas" class="viz-canvas wave-cv"></canvas></div>
-        <div id="tab-abcompare" class="panel"><div class="wave-row"><canvas id="waveOrigCanvas" class="viz-canvas wave-cv"></canvas><canvas id="waveProcCanvas" class="viz-canvas wave-cv"></canvas></div></div>
-        <div id="tab-lufs" class="panel"><div class="lufs-readouts"><div class="lufs-rd"><span class="lufs-val" id="lufsI">-23.0</span><span class="lufs-lbl">Integrated</span></div><div class="lufs-rd"><span class="lufs-val" id="lufsS">-20.0</span><span class="lufs-lbl">Short</span></div></div></div>
-        <div id="tab-saliency" class="panel"><canvas id="fsCanvas" class="viz-canvas diag-saliency-cv"></canvas></div>
-        <div id="tab-clusters" class="panel">
+        <div id="tab-waveform" role="tabpanel" aria-labelledby="btn-waveform" class="panel"><canvas id="waveCanvas" class="viz-canvas wave-cv"></canvas></div>
+        <div id="tab-abcompare" role="tabpanel" aria-labelledby="btn-abcompare" class="panel"><div class="wave-row"><canvas id="waveOrigCanvas" class="viz-canvas wave-cv"></canvas><canvas id="waveProcCanvas" class="viz-canvas wave-cv"></canvas></div></div>
+        <div id="tab-lufs" role="tabpanel" aria-labelledby="btn-lufs" class="panel"><div class="lufs-readouts"><div class="lufs-rd"><span class="lufs-val" id="lufsI">-23.0</span><span class="lufs-lbl">Integrated</span></div><div class="lufs-rd"><span class="lufs-val" id="lufsS">-20.0</span><span class="lufs-lbl">Short</span></div></div></div>
+        <div id="tab-saliency" role="tabpanel" aria-labelledby="btn-saliency" class="panel"><canvas id="fsCanvas" class="viz-canvas diag-saliency-cv"></canvas></div>
+        <div id="tab-clusters" role="tabpanel" aria-labelledby="btn-clusters" class="panel">
           <canvas id="diarCanvas" class="viz-canvas"></canvas>
           <div class="vu-meter-container">
             <div class="vu-meter" style="--vu-level:42%"><div class="vu-meter-fill"></div><div class="vu-meter-peak" style="--peak-top:58%"></div><span class="vu-meter-label">IN</span></div>
