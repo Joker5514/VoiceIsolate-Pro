@@ -6,513 +6,521 @@
     <title>Voice Isolator Pro</title>
     <style>
         :root {
-            --bg: #121212;
-            --panel-bg: #1e1e1e;
-            --border: #333;
-            --text: #e0e0e0;
-            --text-dim: #888;
-            --accent: #00ffcc;
-            --accent-hover: #00cca3;
-            --danger: #ff4444;
-            --meter-bg: #000;
-            --meter-low: #00ff00;
-            --meter-mid: #ffff00;
-            --meter-high: #ff0000;
+            --bg: #121212; --panel-bg: #1e1e1e; --border: #333;
+            --text: #e0e0e0; --text-dim: #888;
+            --accent: #00ffcc; --accent-hover: #00cca3;
+            --danger: #ff4444; --warn: #ffaa00;
         }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-
-        body {
-            background: var(--bg);
-            color: var(--text);
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        /* TITLE BAR */
-        .titlebar {
-            height: 40px;
-            background: #181818;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 10px;
-            -webkit-app-region: drag;
-        }
+        .titlebar { height: 40px; background: #181818; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
         .titlebar-left { display: flex; align-items: center; gap: 10px; }
-        .logo-icon {
-            width: 20px; height: 20px;
-            background: linear-gradient(135deg, var(--accent), #0088ff);
-            border-radius: 4px;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: bold; color: #000; font-size: 12px;
-        }
-        .app-title { font-size: 13px; font-weight: 600; letter-spacing: 1px; }
-        .titlebar-center { display: flex; gap: 20px; }
-        .tab-btn {
-            background: none; border: none; color: var(--text-dim);
-            font-size: 12px; cursor: pointer;
-            -webkit-app-region: no-drag;
-            padding: 5px 10px; border-radius: 4px;
-            display: flex; align-items: center; gap: 5px;
-        }
-        .tab-btn.active { color: var(--text); background: rgba(255,255,255,0.1); }
+        .titlebar-center { display: flex; gap: 4px; }
+        .titlebar-right { display: flex; align-items: center; gap: 8px; }
+        .logo-icon { width: 22px; height: 22px; border-radius: 5px; background: linear-gradient(135deg, var(--accent), #0088ff); display: flex; align-items: center; justify-content: center; font-weight: 900; color: #000; font-size: 11px; }
+        .app-title { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; }
+        .tab-btn { background: none; border: none; color: var(--text-dim); font-size: 11px; cursor: pointer; padding: 6px 12px; border-radius: 4px; font-weight: 600; }
+        .tab-btn.active { color: var(--text); background: rgba(255,255,255,0.08); }
         .tab-btn:hover:not(.active) { color: var(--text); }
-        .titlebar-right { display: flex; align-items: center; gap: 10px; -webkit-app-region: no-drag; }
-        .icon-btn {
-            background: none; border: none; color: var(--text-dim); cursor: pointer;
-            display: flex; align-items: center; justify-content: center;
-            width: 28px; height: 28px; border-radius: 4px;
-        }
-        .icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.1); }
-        .win-btns { display: flex; gap: 5px; }
+        .icon-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 5px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        .icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+        .win-btns { display: flex; gap: 6px; }
         .win-btn { width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer; }
-        .win-btn.close { background: #ff5f56; }
-        .win-btn.min   { background: #ffbd2e; }
-        .win-btn.max   { background: #27c93f; }
+        .win-btn.close { background: #ff5f56; } .win-btn.min { background: #ffbd2e; } .win-btn.max { background: #27c93f; }
 
-        /* MAIN AREA */
-        .main-area { flex: 1; display: flex; padding: 10px; gap: 10px; overflow: hidden; }
+        #statusBar { height: 26px; background: #0f0f0f; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 14px; gap: 14px; font-size: 10px; }
+        .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #444; flex-shrink: 0; }
+        .status-dot.active { background: var(--accent); animation: blink 1.8s infinite; }
+        .status-dot.warn { background: var(--warn); }
+        .status-dot.error { background: var(--danger); }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+        #statusText { color: var(--text-dim); }
 
-        /* PANELS */
-        .panel {
-            background: var(--panel-bg);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-        }
-        .left-panel  { width: 300px; min-width: 300px; padding: 15px; gap: 20px; overflow-y: auto; }
+        .main-area { flex: 1; display: flex; padding: 8px; gap: 8px; overflow: hidden; }
+        .panel { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; }
+        .left-panel { width: 290px; min-width: 290px; padding: 14px; gap: 14px; overflow-y: auto; }
         .center-panel { flex: 1; position: relative; overflow: hidden; }
-        .right-panel { width: 250px; min-width: 250px; padding: 15px; gap: 15px; }
+        .right-panel { width: 240px; min-width: 240px; padding: 14px; gap: 12px; }
 
-        /* SECTION LABELS */
-        .section-label {
-            font-size: 11px; text-transform: uppercase;
-            color: var(--text-dim); letter-spacing: 1px;
-            margin-bottom: 8px; font-weight: 600;
-        }
+        .section-label { font-size: 10px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 1.2px; margin-bottom: 7px; font-weight: 700; }
         .panel-section { display: flex; flex-direction: column; }
 
-        /* CONTROLS */
-        .device-select, .model-select {
-            width: 100%; background: #121212;
-            border: 1px solid var(--border); color: var(--text);
-            padding: 8px 10px; border-radius: 4px; font-size: 13px; cursor: pointer;
-            display: flex; justify-content: space-between; align-items: center;
-        }
-        .device-select:hover, .model-select:hover { border-color: #555; }
+        select { width: 100%; background: #111; border: 1px solid var(--border); color: var(--text); padding: 7px 10px; border-radius: 5px; font-size: 12px; cursor: pointer; outline: none; appearance: none; }
+        select:focus { border-color: var(--accent); }
 
-        .level-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; }
+        .level-row { display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px; }
         .level-label { color: var(--text-dim); }
-        .level-val   { color: var(--text); }
+        .level-val { color: var(--text); font-family: monospace; }
+        .meter-wrap { background: #0a0a0a; height: 7px; border-radius: 4px; overflow: hidden; }
+        .meter-fill { height: 100%; width: 0%; border-radius: 4px; background: linear-gradient(90deg,#00cc66 55%,#ffcc00 80%,#ff3333 100%); transition: width 60ms linear; }
+        .level-ticks { display: flex; justify-content: space-between; font-size: 8px; color: #444; margin-top: 2px; }
 
-        .meter-container {
-            background: var(--meter-bg); height: 8px; border-radius: 4px;
-            overflow: hidden; margin-top: 5px; position: relative;
-        }
-        .meter-bar {
-            height: 100%; width: 0%;
-            background: linear-gradient(90deg, var(--meter-low) 60%, var(--meter-mid) 85%, var(--meter-high) 100%);
-            transition: width 0.1s ease;
-        }
-        .level-ticks {
-            display: flex; justify-content: space-between;
-            font-size: 9px; color: var(--text-dim); margin-top: 2px;
-        }
-
-        .mode-btns {
-            display: flex; background: #121212;
-            border-radius: 4px; overflow: hidden; border: 1px solid var(--border);
-        }
-        .mode-btn {
-            flex: 1; background: none; border: none;
-            color: var(--text-dim); padding: 8px 0; font-size: 12px; cursor: pointer; font-weight: 600;
-        }
-        .mode-btn.active { background: rgba(0,255,204,0.1); color: var(--accent); }
+        .mode-btns { display: flex; background: #111; border-radius: 5px; overflow: hidden; border: 1px solid var(--border); }
+        .mode-btn { flex: 1; background: none; border: none; color: var(--text-dim); padding: 7px 0; font-size: 11px; cursor: pointer; font-weight: 700; }
+        .mode-btn.active { background: rgba(0,255,204,.1); color: var(--accent); }
         .mode-btn:hover:not(.active) { color: var(--text); }
 
-        /* KNOBS / SLIDERS */
-        .knob-row { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
-        .knob {
-            width: 40px; height: 40px; border-radius: 50%;
-            border: 2px solid var(--accent); position: relative;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 11px; background: #121212; flex-shrink: 0;
-        }
-        .knob::after {
-            content: ''; position: absolute; top: 4px;
-            width: 2px; height: 8px; background: var(--accent);
-            transform-origin: 50% 14px; transform: rotate(45deg);
-        }
-        .slider-container { flex: 1; }
-        .slider-val { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; }
-        .val-num { color: var(--accent); font-weight: bold; }
-        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none; height: 14px; width: 14px;
-            border-radius: 50%; background: var(--accent); cursor: pointer; margin-top: -5px;
-        }
-        input[type=range]::-webkit-slider-runnable-track {
-            width: 100%; height: 4px; cursor: pointer;
-            background: var(--border); border-radius: 2px;
-        }
+        .ctrl-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .knob { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--accent); background: #111; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; flex-shrink: 0; color: var(--accent); font-family: monospace; }
+        .knob.dim { border-color: #444; color: #555; }
+        .slider-wrap { flex: 1; }
+        .slider-header { display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px; }
+        .slider-val { color: var(--accent); font-weight: 700; font-family: monospace; }
+        .slider-val.dim { color: var(--text-dim); }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; cursor: pointer; }
+        input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--border); border-radius: 2px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); margin-top: -5px; box-shadow: 0 0 6px rgba(0,255,204,.4); }
 
-        /* CENTER VISUALIZER */
-        .vis-header {
-            position: absolute; top: 15px; left: 15px; right: 15px;
-            display: flex; justify-content: space-between; align-items: center; z-index: 10;
-        }
-        .vis-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
-        .live-badge {
-            background: rgba(255,68,68,0.2); color: var(--danger);
-            padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold;
-            border: 1px solid var(--danger); animation: pulse 2s infinite;
-        }
-        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+        #specCanvas { width: 100%; height: 100%; position: absolute; top: 0; left: 0; background: #0a0a0a; display: block; }
+        .vis-overlay { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: center; z-index: 5; pointer-events: none; }
+        .vis-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+        .live-badge { background: rgba(255,68,68,.18); color: var(--danger); padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 800; border: 1px solid var(--danger); letter-spacing: 1px; animation: blink 1.8s infinite; }
+        .vis-legend { display: flex; gap: 12px; }
+        .legend-item { font-size: 10px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; }
+        .legend-dot { width: 7px; height: 7px; border-radius: 50%; }
 
-        #specCanvas {
-            width: 100%; height: 100%; position: absolute; top: 0; left: 0; background: #0a0a0a;
-        }
+        .switch-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+        .sw { position: relative; display: inline-block; width: 32px; height: 18px; }
+        .sw input { opacity: 0; width: 0; height: 0; }
+        .sw-track { position: absolute; cursor: pointer; inset: 0; background: #333; border-radius: 18px; transition: .3s; }
+        .sw-track::before { content: ''; position: absolute; height: 12px; width: 12px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .3s; }
+        input:checked + .sw-track { background: var(--accent); }
+        input:checked + .sw-track::before { transform: translateX(14px); }
 
-        /* RIGHT PANEL */
-        .output-section { display: flex; flex-direction: column; gap: 10px; flex: 1; }
-        .switch-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
-        .switch { position: relative; display: inline-block; width: 34px; height: 20px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .sw-track {
-            position: absolute; cursor: pointer; top:0; left:0; right:0; bottom:0;
-            background-color: #333; transition: .4s; border-radius: 34px;
-        }
-        .sw-track:before {
-            position: absolute; content: ""; height: 14px; width: 14px;
-            left: 3px; bottom: 3px; background-color: white;
-            transition: .4s; border-radius: 50%;
-        }
-        input:checked + .sw-track { background-color: var(--accent); }
-        input:checked + .sw-track:before { transform: translateX(14px); }
+        .stats-box { background: #111; border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
+        .stat-row { display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px; }
+        .stat-row:last-child { margin: 0; }
+        .stat-lbl { color: var(--text-dim); }
+        .stat-val { color: var(--text); font-family: monospace; font-weight: 600; }
+        .stat-val.good { color: var(--accent); }
 
-        .big-btn {
-            background: var(--accent); color: #000; border: none;
-            padding: 12px; border-radius: 6px; font-weight: bold; font-size: 14px;
-            cursor: pointer; display: flex; justify-content: center; align-items: center;
-            gap: 8px; margin-top: auto; transition: background 0.2s;
-        }
+        .big-btn { background: var(--accent); color: #000; border: none; padding: 11px; border-radius: 6px; font-weight: 800; font-size: 13px; cursor: pointer; letter-spacing: 0.5px; display: flex; justify-content: center; align-items: center; gap: 7px; transition: background .2s; margin-top: auto; }
         .big-btn:hover { background: var(--accent-hover); }
-        .big-btn.recording { background: var(--danger); color: white; }
+        .big-btn.rec { background: var(--danger); color: #fff; }
+        .big-btn:disabled { background: #2a2a2a; color: #555; cursor: not-allowed; }
 
-        .stats-box {
-            background: #121212; border: 1px solid var(--border);
-            border-radius: 6px; padding: 10px;
-        }
-        .stat-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; }
-        .stat-row:last-child { margin-bottom: 0; }
-        .stat-label { color: var(--text-dim); }
-        .stat-val   { color: var(--text); font-family: monospace; }
+        #micBtn { width: 100%; background: rgba(0,255,204,.08); border: 1px solid var(--accent); color: var(--accent); padding: 9px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: 0.5px; transition: background .2s; }
+        #micBtn:hover { background: rgba(0,255,204,.16); }
+        #micBtn.granted { background: rgba(0,255,204,.04); color: var(--text-dim); border-color: #444; }
 
-        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar { width: 3px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
     </style>
 </head>
 <body>
 
-    <!-- TITLE BAR -->
-    <div class="titlebar">
-        <div class="titlebar-left">
-            <div class="logo-icon">VI</div>
-            <div class="app-title">Voice Isolator Pro</div>
+<div class="titlebar">
+    <div class="titlebar-left">
+        <div class="logo-icon">VI</div>
+        <span class="app-title">Voice Isolator Pro</span>
+    </div>
+    <div class="titlebar-center">
+        <button class="tab-btn active" onclick="switchTab(this)">&#9646; LIVE</button>
+        <button class="tab-btn" onclick="switchTab(this)">&#9647; PROCESS</button>
+    </div>
+    <div class="titlebar-right">
+        <button class="icon-btn" onclick="resetControls()">&#8635; RESET</button>
+        <div class="win-btns">
+            <div class="win-btn min"></div><div class="win-btn max"></div><div class="win-btn close"></div>
         </div>
-        <div class="titlebar-center">
-            <button class="tab-btn active" onclick="switchTab(this)">
-                <svg width="8" height="8" viewBox="0 0 8 8"><rect x="1" y="1" width="6" height="6" fill="white"/></svg>
-                LIVE &nbsp;<span style="opacity:.6;font-size:10px">Real-time</span>
-            </button>
-            <button class="tab-btn" onclick="switchTab(this)">
-                <svg width="8" height="8" viewBox="0 0 8 8"><rect x="0.5" y="0.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/></svg>
-                PROCESS &nbsp;<span style="opacity:.6;font-size:10px">File Processing</span>
-            </button>
+    </div>
+</div>
+
+<div id="statusBar">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">Idle — click Grant Microphone to start</span>
+    <span style="margin-left:auto;color:#444;font-family:monospace;font-size:9px" id="srDisplay"></span>
+</div>
+
+<div class="main-area">
+
+    <!-- LEFT -->
+    <div class="panel left-panel">
+        <div class="panel-section">
+            <button id="micBtn" onclick="toggleMic()">🎤 Grant Microphone Access</button>
         </div>
-        <div class="titlebar-right">
-            <button class="icon-btn" title="Theme">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M4.22 4.22l2.12 2.12m11.32 11.32l2.12 2.12M2 12h3m14 0h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
-            </button>
-            <button class="icon-btn" style="width:auto;padding:0 8px;gap:4px;font-size:11px">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M4.22 4.22l2.12 2.12m11.32 11.32l2.12 2.12M2 12h3m14 0h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
-                SETTINGS
-            </button>
-            <div class="win-btns">
-                <button class="win-btn min"></button>
-                <button class="win-btn max"></button>
-                <button class="win-btn close"></button>
+        <div class="panel-section">
+            <div class="section-label">Input Device</div>
+            <select id="inputDeviceSel" onchange="changeDevice()"></select>
+        </div>
+        <div class="panel-section">
+            <div class="level-row"><span class="level-label">Input Level</span><span class="level-val" id="inLevelVal">-- dB</span></div>
+            <div class="meter-wrap"><div class="meter-fill" id="inMeter"></div></div>
+            <div class="level-ticks"><span>-60</span><span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>0</span></div>
+        </div>
+        <div class="panel-section">
+            <div class="section-label">Mode</div>
+            <div class="mode-btns">
+                <button class="mode-btn active" onclick="setMode(this,'isolate')">VOICE ISOLATE</button>
+                <button class="mode-btn" onclick="setMode(this,'remove')">VOICE REMOVE</button>
+            </div>
+        </div>
+        <div class="panel-section" style="flex:1">
+            <div class="section-label">DSP Controls</div>
+            <div class="ctrl-row">
+                <div class="knob" id="knob_gain">85%</div>
+                <div class="slider-wrap">
+                    <div class="slider-header"><span>Output Gain</span><span class="slider-val" id="val_gain">85%</span></div>
+                    <input type="range" id="sl_gain" min="0" max="100" value="85" oninput="onSlider('gain',+this.value)">
+                </div>
+            </div>
+            <div class="ctrl-row">
+                <div class="knob dim" id="knob_hp">80Hz</div>
+                <div class="slider-wrap">
+                    <div class="slider-header"><span>High-Pass Cutoff</span><span class="slider-val dim" id="val_hp">80Hz</span></div>
+                    <input type="range" id="sl_hp" min="20" max="500" value="80" oninput="onSlider('hp',+this.value)">
+                </div>
+            </div>
+            <div class="ctrl-row">
+                <div class="knob dim" id="knob_lp">8kHz</div>
+                <div class="slider-wrap">
+                    <div class="slider-header"><span>Low-Pass Cutoff</span><span class="slider-val dim" id="val_lp">8kHz</span></div>
+                    <input type="range" id="sl_lp" min="1000" max="20000" value="8000" oninput="onSlider('lp',+this.value)">
+                </div>
+            </div>
+            <div class="ctrl-row">
+                <div class="knob dim" id="knob_comp">-24dB</div>
+                <div class="slider-wrap">
+                    <div class="slider-header"><span>Compressor Threshold</span><span class="slider-val dim" id="val_comp">-24dB</span></div>
+                    <input type="range" id="sl_comp" min="-60" max="0" value="-24" oninput="onSlider('comp',+this.value)">
+                </div>
+            </div>
+            <div class="ctrl-row" style="margin-bottom:0">
+                <div class="knob dim" id="knob_gate">-45dB</div>
+                <div class="slider-wrap">
+                    <div class="slider-header"><span>Noise Gate</span><span class="slider-val dim" id="val_gate">-45dB</span></div>
+                    <input type="range" id="sl_gate" min="-80" max="0" value="-45" oninput="onSlider('gate',+this.value)">
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- MAIN AREA -->
-    <div class="main-area">
-
-        <!-- LEFT PANEL -->
-        <div class="panel left-panel">
-
-            <div class="panel-section">
-                <div class="section-label">Input</div>
-                <div class="device-select">
-                    <span style="display:flex;align-items:center;gap:5px">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-                        Microphone (Scarlett 2i2)
-                    </span>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-                <div class="level-row" style="margin-top:10px">
-                    <span class="level-label">Input Level</span>
-                    <span class="level-val" id="inputLevelVal">-- dB</span>
-                </div>
-                <div class="meter-container"><div class="meter-bar" id="inputMeter"></div></div>
-                <div class="level-ticks"><span>-60</span><span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0</span></div>
-            </div>
-
-            <div class="panel-section">
-                <div class="section-label">Mode</div>
-                <div class="mode-btns">
-                    <button class="mode-btn active" onclick="setMode(this)">VOICE ISOLATE</button>
-                    <button class="mode-btn" onclick="setMode(this)">VOICE REMOVE</button>
-                </div>
-            </div>
-
-            <div class="panel-section">
-                <div class="section-label">AI Model</div>
-                <div class="model-select">
-                    <span>v2.2 &ndash; Best Quality</span>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-            </div>
-
-            <div class="panel-section" style="flex:1">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
-                    <div class="section-label" style="margin:0">Isolation Controls</div>
-                    <button class="icon-btn" style="width:auto;height:auto;font-size:10px;color:var(--accent)" onclick="resetControls()">RESET</button>
-                </div>
-
-                <div class="knob-row">
-                    <div class="knob" id="strengthKnob">85%</div>
-                    <div class="slider-container">
-                        <div class="slider-val"><span>Strength</span><span class="val-num" id="strengthVal">85%</span></div>
-                        <input type="range" min="0" max="100" value="85" oninput="updateKnob('strength',this.value,'%')">
-                    </div>
-                </div>
-
-                <div class="knob-row">
-                    <div class="knob" id="lookaheadKnob" style="border-color:#555">0ms</div>
-                    <div class="slider-container">
-                        <div class="slider-val"><span>Lookahead (Latency)</span><span class="val-num" id="lookaheadVal" style="color:var(--text)">0ms</span></div>
-                        <input type="range" min="0" max="100" value="0" oninput="updateKnob('lookahead',this.value,'ms')">
-                    </div>
-                </div>
-
-                <div class="knob-row" style="margin-bottom:0">
-                    <div class="knob" id="gateKnob" style="border-color:#555">-45dB</div>
-                    <div class="slider-container">
-                        <div class="slider-val"><span>Gate Threshold</span><span class="val-num" id="gateVal" style="color:var(--text)">-45dB</span></div>
-                        <input type="range" min="-80" max="0" value="-45" oninput="updateKnob('gate',this.value,'dB')">
-                    </div>
-                </div>
+    <!-- CENTER -->
+    <div class="panel center-panel">
+        <canvas id="specCanvas"></canvas>
+        <div class="vis-overlay">
+            <div class="vis-title">Spectrum Analyzer <span class="live-badge" id="liveBadge">IDLE</span></div>
+            <div class="vis-legend">
+                <div class="legend-item"><div class="legend-dot" style="background:#555"></div>Raw</div>
+                <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>Processed</div>
             </div>
         </div>
-
-        <!-- CENTER PANEL -->
-        <div class="panel center-panel">
-            <div class="vis-header">
-                <div class="vis-title">
-                    Spectrum Analyzer
-                    <span class="live-badge">LIVE</span>
-                </div>
-                <div style="display:flex;gap:10px">
-                    <span style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px">
-                        <div style="width:8px;height:8px;background:#444;border-radius:50%"></div> Noise
-                    </span>
-                    <span style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px">
-                        <div style="width:8px;height:8px;background:var(--accent);border-radius:50%"></div> Voice
-                    </span>
-                </div>
-            </div>
-            <canvas id="specCanvas"></canvas>
-        </div>
-
-        <!-- RIGHT PANEL -->
-        <div class="panel right-panel">
-            <div class="output-section">
-                <div class="section-label">Output</div>
-
-                <div class="device-select">
-                    <span style="display:flex;align-items:center;gap:5px">
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                        Virtual Cable A
-                    </span>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-
-                <div class="switch-row">
-                    <span>Monitor Output</span>
-                    <label class="switch"><input type="checkbox" id="monitorToggle"><span class="sw-track"></span></label>
-                </div>
-                <div class="switch-row">
-                    <span>Bypass Processing</span>
-                    <label class="switch"><input type="checkbox" id="bypassToggle"><span class="sw-track"></span></label>
-                </div>
-
-                <div class="level-row" style="margin-top:15px">
-                    <span class="level-label">Output Level</span>
-                    <span class="level-val" id="outputLevelVal" style="color:var(--accent)">-- dB</span>
-                </div>
-                <div class="meter-container"><div class="meter-bar" id="outputMeter"></div></div>
-                <div class="level-ticks"><span>-60</span><span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0</span></div>
-
-                <div style="flex:1"></div>
-
-                <div class="stats-box">
-                    <div class="stat-row"><span class="stat-label">CPU Usage</span><span class="stat-val" id="cpuStat">12%</span></div>
-                    <div class="stat-row"><span class="stat-label">Latency</span><span class="stat-val" id="latStat">4.2ms</span></div>
-                    <div class="stat-row"><span class="stat-label">Model RAM</span><span class="stat-val">450MB</span></div>
-                </div>
-
-                <button class="big-btn" id="recordBtn" onclick="toggleRecord()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
-                    <span id="recordBtnText">START RECORDING</span>
-                </button>
-            </div>
-        </div>
-
     </div>
 
-    <script>
-        /* Tab switcher */
-        function switchTab(btn) {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+    <!-- RIGHT -->
+    <div class="panel right-panel">
+        <div style="display:flex;flex-direction:column;gap:11px;flex:1">
+            <div class="section-label" style="margin:0">Output</div>
+            <select id="outputDeviceSel"></select>
+            <div class="switch-row"><span>Monitor Mic</span><label class="sw"><input type="checkbox" id="monitorTgl" onchange="toggleMonitor()"><span class="sw-track"></span></label></div>
+            <div class="switch-row"><span>Bypass DSP</span><label class="sw"><input type="checkbox" id="bypassTgl" onchange="toggleBypass()"><span class="sw-track"></span></label></div>
+            <div class="panel-section">
+                <div class="level-row"><span class="level-label">Output Level</span><span class="level-val" id="outLevelVal" style="color:var(--accent)">-- dB</span></div>
+                <div class="meter-wrap"><div class="meter-fill" id="outMeter"></div></div>
+                <div class="level-ticks"><span>-60</span><span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>0</span></div>
+            </div>
+            <div class="stats-box">
+                <div class="stat-row"><span class="stat-lbl">Sample Rate</span><span class="stat-val" id="st_sr">--</span></div>
+                <div class="stat-row"><span class="stat-lbl">Base Latency</span><span class="stat-val" id="st_lat">--</span></div>
+                <div class="stat-row"><span class="stat-lbl">FFT Bins</span><span class="stat-val good">2048</span></div>
+                <div class="stat-row"><span class="stat-lbl">Mode</span><span class="stat-val" id="st_mode">ISOLATE</span></div>
+                <div class="stat-row"><span class="stat-lbl">Compressor GR</span><span class="stat-val" id="st_gr">--</span></div>
+            </div>
+            <div style="flex:1"></div>
+            <button class="big-btn" id="recBtn" onclick="toggleRecord()" disabled>&#11044; <span id="recTxt">START RECORDING</span></button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+'use strict';
+
+/* ===============================================
+   AUDIO ENGINE
+=============================================== */
+const AE = {
+    ctx:null, stream:null, src:null,
+    hp:null, lp:null, comp:null, gain:null,
+    anlIn:null, anlOut:null, destGain:null,
+    mr:null, chunks:[],
+    active:false, bypass:false, monitor:false,
+
+    async start(deviceId) {
+        if (this.active) await this.stop();
+        this.stream = await navigator.mediaDevices.getUserMedia({
+            audio:{ deviceId: deviceId||undefined, echoCancellation:false, noiseSuppression:false, autoGainControl:false, sampleRate:48000 },
+            video:false
+        });
+        this.ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
+        if (this.ctx.state==='suspended') await this.ctx.resume();
+
+        this.src      = this.ctx.createMediaStreamSource(this.stream);
+        this.anlIn    = this.ctx.createAnalyser(); this.anlIn.fftSize=2048; this.anlIn.smoothingTimeConstant=0.8;
+        this.hp       = this.ctx.createBiquadFilter(); this.hp.type='highpass'; this.hp.frequency.value=+document.getElementById('sl_hp').value; this.hp.Q.value=0.7;
+        this.lp       = this.ctx.createBiquadFilter(); this.lp.type='lowpass';  this.lp.frequency.value=+document.getElementById('sl_lp').value; this.lp.Q.value=0.7;
+        this.comp     = this.ctx.createDynamicsCompressor(); this.comp.threshold.value=+document.getElementById('sl_comp').value; this.comp.knee.value=6; this.comp.ratio.value=4; this.comp.attack.value=0.003; this.comp.release.value=0.25;
+        this.gain     = this.ctx.createGain(); this.gain.gain.value=+document.getElementById('sl_gain').value/100;
+        this.anlOut   = this.ctx.createAnalyser(); this.anlOut.fftSize=2048; this.anlOut.smoothingTimeConstant=0.8;
+        this.destGain = this.ctx.createGain(); this.destGain.gain.value = this.monitor ? 1 : 0;
+
+        this._wire();
+        this.active = true;
+        updateUI(true);
+    },
+
+    _wire() {
+        if (this.bypass) {
+            this.src.connect(this.anlIn);
+            this.anlIn.connect(this.anlOut);
+        } else {
+            this.src.connect(this.anlIn);
+            this.anlIn.connect(this.hp);
+            this.hp.connect(this.lp);
+            this.lp.connect(this.comp);
+            this.comp.connect(this.gain);
+            this.gain.connect(this.anlOut);
         }
+        this.anlOut.connect(this.destGain);
+        this.destGain.connect(this.ctx.destination);
+    },
 
-        /* Mode toggle */
-        function setMode(btn) {
-            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+    _unwire() {
+        [this.src,this.anlIn,this.hp,this.lp,this.comp,this.gain,this.anlOut,this.destGain].forEach(n=>{ try{n&&n.disconnect();}catch(_){} });
+    },
+
+    async stop() {
+        if (this.mr && this.mr.state!=='inactive') this.mr.stop();
+        if (this.ctx) { await this.ctx.close(); this.ctx=null; }
+        if (this.stream) { this.stream.getTracks().forEach(t=>t.stop()); this.stream=null; }
+        this.active=false; updateUI(false);
+    },
+
+    setGain(v)  { if(this.gain)  this.gain.gain.value = v/100; },
+    setHP(hz)   { if(this.hp)    this.hp.frequency.value = hz; },
+    setLP(hz)   { if(this.lp)    this.lp.frequency.value = hz; },
+    setComp(db) { if(this.comp)  this.comp.threshold.value = db; },
+
+    setMonitor(on) { this.monitor=on; if(this.destGain) this.destGain.gain.value = on?1:0; },
+
+    setBypass(on) {
+        this.bypass=on;
+        if (!this.active) return;
+        this._unwire(); this._wire();
+    }
+};
+
+/* ===============================================
+   CANVAS
+=============================================== */
+const canvas = document.getElementById('specCanvas');
+const c2 = canvas.getContext('2d');
+let fftIn, fftOut;
+
+function resize() {
+    const dpr=window.devicePixelRatio||1, w=canvas.clientWidth, h=canvas.clientHeight;
+    canvas.width=w*dpr; canvas.height=h*dpr; c2.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize', resize); resize();
+
+let demoT=0;
+const DB=[...Array(64)].map((_,i)=>({v:.08+Math.random()*.2,n:.03+Math.random()*.07,vt:0,nt:0}));
+
+function grid(W,H) {
+    c2.strokeStyle='rgba(50,50,50,.8)'; c2.lineWidth=.5; c2.setLineDash([3,5]);
+    [.25,.5,.75].forEach(y=>{c2.beginPath();c2.moveTo(0,H*y);c2.lineTo(W,H*y);c2.stroke();});
+    c2.setLineDash([]);
+}
+
+function drawDemo() {
+    const W=canvas.clientWidth,H=canvas.clientHeight;
+    c2.clearRect(0,0,W,H); grid(W,H);
+    const bw=(W/64)-1; demoT+=.022;
+    DB.forEach((b,i)=>{
+        b.vt=.07+Math.abs(Math.sin(i*.22+demoT))*.2+Math.abs(Math.sin(i*.5-demoT*1.1))*.1;
+        b.nt=.02+Math.abs(Math.cos(i*.35+demoT*.8))*.06;
+        b.v+=(b.vt-b.v)*.1; b.n+=(b.nt-b.n)*.1;
+        const x=i*(bw+1), vh=Math.max(2,b.v*H*.7), nh=Math.max(2,b.n*H*.25);
+        c2.fillStyle='rgba(80,80,80,.35)'; c2.fillRect(x,H-nh,bw,nh);
+        const g=c2.createLinearGradient(0,H-vh,0,H);
+        g.addColorStop(0,'rgba(0,255,204,.65)'); g.addColorStop(1,'rgba(0,255,204,.04)');
+        c2.fillStyle=g; c2.fillRect(x,H-vh,bw,vh);
+    });
+    if (!AE.active) requestAnimationFrame(drawDemo);
+}
+drawDemo();
+
+function drawLive() {
+    if (!AE.active) { drawDemo(); return; }
+    const W=canvas.clientWidth, H=canvas.clientHeight;
+    c2.clearRect(0,0,W,H); grid(W,H);
+    const bins=AE.anlIn.frequencyBinCount;
+    if (!fftIn  || fftIn.length !==bins) fftIn =new Uint8Array(bins);
+    if (!fftOut || fftOut.length!==bins) fftOut=new Uint8Array(bins);
+    AE.anlIn.getByteFrequencyData(fftIn);
+    AE.anlOut.getByteFrequencyData(fftOut);
+    const N=128, step=Math.floor(bins/N), bw=(W/N)-1;
+    for (let i=0;i<N;i++) {
+        let si=0,so=0;
+        for(let k=0;k<step;k++){si+=fftIn[i*step+k];so+=fftOut[i*step+k];}
+        const ai=si/step, ao=so/step;
+        const x=i*(bw+1), hi=Math.max(2,(ai/255)*H*.75), ho=Math.max(2,(ao/255)*H*.88);
+        c2.fillStyle='rgba(100,100,100,.3)'; c2.fillRect(x,H-hi,bw,hi);
+        const g=c2.createLinearGradient(0,H-ho,0,H);
+        g.addColorStop(0,'rgba(0,255,204,.92)'); g.addColorStop(.55,'rgba(0,255,204,.3)'); g.addColorStop(1,'rgba(0,255,204,.04)');
+        c2.fillStyle=g; c2.fillRect(x,H-ho,bw,ho);
+    }
+    requestAnimationFrame(drawLive);
+}
+
+/* ===============================================
+   METERS — real RMS from AnalyserNode
+=============================================== */
+const rmsArr = new Float32Array(2048);
+function rmsDB(anl) {
+    if (!anl) return -Infinity;
+    anl.getFloatTimeDomainData(rmsArr);
+    let s=0; for(let i=0;i<rmsArr.length;i++) s+=rmsArr[i]*rmsArr[i];
+    const rms=Math.sqrt(s/rmsArr.length);
+    return rms>1e-7 ? 20*Math.log10(rms) : -Infinity;
+}
+function pct(db) { return Math.max(0,Math.min(100,((db+60)/60)*100)); }
+
+(function meterLoop(){
+    if (AE.active) {
+        const di=rmsDB(AE.anlIn), do_=rmsDB(AE.anlOut);
+        document.getElementById('inMeter').style.width  = pct(di).toFixed(1)+'%';
+        document.getElementById('outMeter').style.width = pct(do_).toFixed(1)+'%';
+        document.getElementById('inLevelVal').textContent  = isFinite(di)  ? di.toFixed(1)+' dB'  : '-- dB';
+        document.getElementById('outLevelVal').textContent = isFinite(do_) ? do_.toFixed(1)+' dB' : '-- dB';
+        if (AE.comp) document.getElementById('st_gr').textContent = AE.comp.reduction.toFixed(1)+' dB';
+    }
+    requestAnimationFrame(meterLoop);
+}());
+
+/* ===============================================
+   UI HANDLERS
+=============================================== */
+function updateUI(on) {
+    const dot=document.getElementById('statusDot');
+    dot.className='status-dot'+(on?' active':'');
+    document.getElementById('statusText').textContent = on ? 'Live — microphone active' : 'Idle — click Grant Microphone to start';
+    document.getElementById('liveBadge').textContent  = on ? 'LIVE' : 'IDLE';
+    document.getElementById('recBtn').disabled        = !on;
+    document.getElementById('srDisplay').textContent  = on ? AE.ctx.sampleRate+' Hz' : '';
+    document.getElementById('st_sr').textContent      = on ? AE.ctx.sampleRate+' Hz' : '--';
+    document.getElementById('st_lat').textContent     = on ? ((AE.ctx.baseLatency||0)*1000).toFixed(1)+'ms' : '--';
+    if (on) drawLive();
+}
+
+async function toggleMic() {
+    if (AE.active) {
+        await AE.stop();
+        const b=document.getElementById('micBtn');
+        b.textContent='🎤 Grant Microphone Access'; b.classList.remove('granted');
+    } else {
+        setStatus('Requesting microphone...','warn');
+        try {
+            await populateDevices();
+            await AE.start(document.getElementById('inputDeviceSel').value||undefined);
+            const b=document.getElementById('micBtn');
+            b.textContent='✅ Mic Active — click to stop'; b.classList.add('granted');
+        } catch(e) {
+            setStatus('Mic denied: '+e.message,'error');
         }
+    }
+}
 
-        /* Knob + value sync */
-        function updateKnob(name, val, suffix) {
-            const display = val + suffix;
-            document.getElementById(name + 'Knob').textContent = display;
-            document.getElementById(name + 'Val').textContent = display;
-        }
+async function changeDevice() {
+    if (!AE.active) return;
+    await AE.start(document.getElementById('inputDeviceSel').value||undefined);
+}
 
-        /* Reset controls */
-        function resetControls() {
-            document.querySelectorAll('.left-panel input[type=range]').forEach(r => {
-                r.value = r.defaultValue;
-                r.dispatchEvent(new Event('input'));
-            });
-        }
+function setStatus(msg,cls) {
+    document.getElementById('statusText').textContent=msg;
+    document.getElementById('statusDot').className='status-dot'+(cls?' '+cls:'');
+}
 
-        /* Record button */
-        let recording = false;
-        function toggleRecord() {
-            recording = !recording;
-            document.getElementById('recordBtn').classList.toggle('recording', recording);
-            document.getElementById('recordBtnText').textContent = recording ? 'STOP RECORDING' : 'START RECORDING';
-        }
+function switchTab(btn) {
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+}
+function setMode(btn,mode) {
+    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+    document.getElementById('st_mode').textContent=mode.toUpperCase();
+}
+function toggleMonitor() { AE.setMonitor(document.getElementById('monitorTgl').checked); }
+function toggleBypass()  { AE.setBypass(document.getElementById('bypassTgl').checked); }
 
-        /* Live spectrum analyzer canvas */
-        const canvas = document.getElementById('specCanvas');
-        const ctx2d = canvas.getContext('2d');
-        const BAR_COUNT = 64;
-        const bars = Array.from({length: BAR_COUNT}, (_, i) => ({
-            voice: 0.1 + Math.random() * 0.3,
-            noise: 0.04 + Math.random() * 0.1,
-            vTarget: 0, nTarget: 0
-        }));
+function fmt(v,suffix) {
+    if (suffix==='Hz' && v>=1000) return (v/1000).toFixed(v>=10000?0:1)+'kHz';
+    return v+suffix;
+}
 
-        function resizeCanvas() {
-            canvas.width  = canvas.clientWidth  * window.devicePixelRatio;
-            canvas.height = canvas.clientHeight * window.devicePixelRatio;
-            ctx2d.scale(window.devicePixelRatio, window.devicePixelRatio);
-        }
-        window.addEventListener('resize', () => { resizeCanvas(); });
-        resizeCanvas();
+const SLIDER_MAP = {
+    gain:  { suffix:'%',  fn:v=>AE.setGain(v) },
+    hp:    { suffix:'Hz', fn:v=>AE.setHP(v)   },
+    lp:    { suffix:'Hz', fn:v=>AE.setLP(v)   },
+    comp:  { suffix:'dB', fn:v=>AE.setComp(v) },
+    gate:  { suffix:'dB', fn:()=>{}            }
+};
 
-        let frame = 0;
-        function drawSpectrum() {
-            const W = canvas.clientWidth;
-            const H = canvas.clientHeight;
-            ctx2d.clearRect(0, 0, W, H);
+function onSlider(name,v) {
+    const m=SLIDER_MAP[name]; if(!m) return;
+    const d=fmt(v,m.suffix);
+    document.getElementById('knob_'+name).textContent=d;
+    document.getElementById('val_'+name).textContent=d;
+    m.fn(v);
+}
 
-            /* grid lines */
-            ctx2d.strokeStyle = 'rgba(51,51,51,0.7)';
-            ctx2d.lineWidth = 0.5;
-            ctx2d.setLineDash([4, 4]);
-            [0.25, 0.5, 0.75].forEach(y => {
-                ctx2d.beginPath();
-                ctx2d.moveTo(0, H * y);
-                ctx2d.lineTo(W, H * y);
-                ctx2d.stroke();
-            });
-            ctx2d.setLineDash([]);
+function resetControls() {
+    const defs={sl_gain:85,sl_hp:80,sl_lp:8000,sl_comp:-24,sl_gate:-45};
+    Object.entries(defs).forEach(([id,val])=>{
+        const el=document.getElementById(id); el.value=val; el.dispatchEvent(new Event('input'));
+    });
+}
 
-            const gap = 1;
-            const bw = (W / BAR_COUNT) - gap;
-            frame++;
-            const t = frame * 0.02;
+/* Recording — captures processed stream to .webm */
+let recording=false;
+function toggleRecord() {
+    if (!AE.active) return;
+    if (recording) {
+        AE.mr.stop(); recording=false;
+        document.getElementById('recBtn').classList.remove('rec');
+        document.getElementById('recTxt').textContent='START RECORDING';
+    } else {
+        AE.chunks=[];
+        const dest=AE.ctx.createMediaStreamDestination();
+        AE.anlOut.connect(dest);
+        AE.mr=new MediaRecorder(dest.stream,{mimeType:'audio/webm;codecs=opus'});
+        AE.mr.ondataavailable=e=>{if(e.data.size>0) AE.chunks.push(e.data);};
+        AE.mr.onstop=()=>{
+            const blob=new Blob(AE.chunks,{type:'audio/webm'});
+            const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+            a.download='vi-pro-'+Date.now()+'.webm'; a.click();
+        };
+        AE.mr.start(100); recording=true;
+        document.getElementById('recBtn').classList.add('rec');
+        document.getElementById('recTxt').textContent='STOP RECORDING';
+    }
+}
 
-            bars.forEach((b, i) => {
-                b.vTarget = 0.12 + Math.abs(Math.sin(i * 0.25 + t)) * 0.35 + Math.abs(Math.sin(i * 0.6 - t * 1.2)) * 0.18;
-                b.nTarget = 0.03 + Math.abs(Math.cos(i * 0.4 + t * 0.7)) * 0.09;
-                b.voice += (b.vTarget - b.voice) * 0.1;
-                b.noise += (b.nTarget - b.noise) * 0.1;
+async function populateDevices() {
+    try {
+        const devs=await navigator.mediaDevices.enumerateDevices();
+        const isel=document.getElementById('inputDeviceSel'); isel.innerHTML='';
+        devs.filter(d=>d.kind==='audioinput').forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||'Mic '+(isel.children.length+1); isel.appendChild(o); });
+        const osel=document.getElementById('outputDeviceSel'); osel.innerHTML='';
+        devs.filter(d=>d.kind==='audiooutput').forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||'Speaker '+(osel.children.length+1); osel.appendChild(o); });
+    } catch(e){console.warn(e);}
+}
 
-                const x  = i * (bw + gap);
-                const vh = Math.max(2, b.voice * H * 0.75);
-                const nh = Math.max(2, b.noise * H * 0.28);
+populateDevices();
+if (navigator.mediaDevices) navigator.mediaDevices.addEventListener('devicechange', populateDevices);
+</script>
 
-                /* noise */
-                ctx2d.fillStyle = 'rgba(90,90,90,0.45)';
-                ctx2d.fillRect(x, H - nh, bw, nh);
-
-                /* voice gradient */
-                const grad = ctx2d.createLinearGradient(0, H - vh, 0, H);
-                grad.addColorStop(0, 'rgba(0,255,204,0.9)');
-                grad.addColorStop(0.6, 'rgba(0,255,204,0.3)');
-                grad.addColorStop(1, 'rgba(0,255,204,0.05)');
-                ctx2d.fillStyle = grad;
-                ctx2d.fillRect(x, H - vh, bw, vh);
-            });
-
-            requestAnimationFrame(drawSpectrum);
-        }
-        drawSpectrum();
-
-        /* Animated level meters */
-        (function animateMeters() {
-            let t = 0;
-            function tick() {
-                t += 0.035;
-                const iw = Math.min(98, Math.max(5, 55 + Math.sin(t) * 22 + Math.sin(t * 3.1) * 8));
-                const ow = Math.min(98, Math.max(5, 72 + Math.sin(t * 0.85) * 14 + Math.sin(t * 2.5) * 6));
-                document.getElementById('inputMeter').style.width  = iw.toFixed(1) + '%';
-                document.getElementById('outputMeter').style.width = ow.toFixed(1) + '%';
-                document.getElementById('inputLevelVal').textContent  = (-60 + iw * 0.61).toFixed(1) + ' dB';
-                document.getElementById('outputLevelVal').textContent = (-60 + ow * 0.61).toFixed(1) + ' dB';
-                requestAnimationFrame(tick);
-            }
-            tick();
-        })();
-    </script>
-
+<script>window.si=window.si||function(){(window.siq=window.siq||[]).push(arguments);};</script>
+<script defer src="/_vercel/speed-insights/script.js"></script>
 </body>
 </html>
