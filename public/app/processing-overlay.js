@@ -1,73 +1,97 @@
 /* ============================================================
    VoiceIsolate Pro — Processing Overlay Controller
-   Premium rotating messages + DNA helix spinner
-   v1.0  ·  Threads from Space v13
+   Unique orbital helix + stage telemetry overlay
+   v2.0  ·  Threads from Space v14
    ============================================================ */
 
 (function (global) {
   'use strict';
 
-  // ── Premium message queues (per pipeline phase) ──────────────
-  const MSG_POOLS = [
-    // Input / prep phase (S01–S05)
-    [
-      'Decoding audio container…',
-      'Allocating ring buffer…',
-      'Removing DC offset…',
-      'Normalizing peak levels…',
-      'Running Voice Activity Detection…',
-    ],
-    // Time-domain phase (S06–S09)
-    [
-      'Closing noise gate…',
-      'Detecting transient clicks…',
-      'Scrubbing 60 Hz hum harmonics…',
-      'Mapping sibilance frequencies…',
-      'Sculpting pre-spectral dynamics…',
-    ],
-    // Spectral phase (S10–S19)
-    [
-      'Running Forward STFT…',
-      'Building adaptive Wiener mask…',
-      'Second-pass Wiener residual sweep…',
-      'Gating 32-band ERB spectrum…',
-      'Boosting voice-band spectral emphasis…',
-      'Cancelling L/R crosstalk…',
-      'Applying temporal anti-garble smoothing…',
-      'Compensating spectral tilt…',
-      'Estimating room impulse response…',
-      'Reconstructing lost harmonics v2…',
-      'Running Inverse STFT…',
-    ],
-    // Post-spectral phase (S20–S26)
-    [
-      'Initialising OfflineAudioContext…',
-      'Applying 10-band parametric EQ…',
-      'Shaping dynamics with multi-stage compressor…',
-      'Engaging brickwall limiter ceiling…',
-      'Rendering final audio frame…',
-    ],
-    // Output / forensic phase (S27–S32)
-    [
-      'Blending dry/wet mix…',
-      'Computing LUFS integrated loudness…',
-      'Updating waveform display…',
-      'Writing SHA-256 forensic audit log…',
-      'Preparing 32-bit float WAV export…',
-      'Pipeline complete — verifying output…',
-    ],
+  const STAGE_GROUPS = [
+    {
+      label: 'Input Decode',
+      icon: '◉',
+      start: 0,
+      end: 4,
+      color: 'cyan',
+      messages: [
+        'Decoding audio container…',
+        'Allocating ring buffer…',
+        'Removing DC offset…',
+        'Normalizing peak levels…',
+        'Running Voice Activity Detection…'
+      ]
+    },
+    {
+      label: 'Time-Domain Cleanup',
+      icon: '≈',
+      start: 5,
+      end: 8,
+      color: 'violet',
+      messages: [
+        'Closing noise gate…',
+        'Detecting transient clicks…',
+        'Scrubbing hum harmonics…',
+        'Mapping sibilance frequencies…',
+        'Sculpting pre-spectral dynamics…'
+      ]
+    },
+    {
+      label: 'Spectral Isolation',
+      icon: '◌',
+      start: 9,
+      end: 19,
+      color: 'pink',
+      messages: [
+        'Running Forward STFT…',
+        'Building adaptive Wiener mask…',
+        'Sweeping residual noise floor…',
+        'Applying ERB spectral gate…',
+        'Boosting speech-band harmonics…',
+        'Cancelling stereo crosstalk…',
+        'Smoothing temporal artifacts…',
+        'Compensating spectral tilt…',
+        'Estimating room decay profile…',
+        'Reconstructing harmonic detail…',
+        'Running Inverse STFT…'
+      ]
+    },
+    {
+      label: 'Post Processing',
+      icon: '▣',
+      start: 20,
+      end: 25,
+      color: 'amber',
+      messages: [
+        'Initializing OfflineAudioContext…',
+        'Applying parametric EQ…',
+        'Shaping multi-stage dynamics…',
+        'Engaging brickwall limiter…',
+        'Rendering final audio frame…'
+      ]
+    },
+    {
+      label: 'Export + Visuals',
+      icon: '✦',
+      start: 26,
+      end: 31,
+      color: 'cyan',
+      messages: [
+        'Blending dry/wet output…',
+        'Computing integrated loudness…',
+        'Updating waveform display…',
+        'Writing forensic audit log…',
+        'Preparing 32-bit float export…',
+        'Verifying final signal integrity…'
+      ]
+    }
   ];
 
-  // Map stage index (0–31) → message pool index
-  function poolForStage(i) {
-    if (i <= 4)  return 0;
-    if (i <= 8)  return 1;
-    if (i <= 19) return 2;
-    if (i <= 25) return 3;
-    return 4;
+  function groupForStage(stageIndex) {
+    if (!Number.isFinite(stageIndex)) return STAGE_GROUPS[0];
+    return STAGE_GROUPS.find(g => stageIndex >= g.start && stageIndex <= g.end) || STAGE_GROUPS[STAGE_GROUPS.length - 1];
   }
 
-  // ── DOM build ────────────────────────────────────────────────
   function buildOverlayDOM() {
     if (document.getElementById('processingOverlay')) return;
 
@@ -77,74 +101,119 @@
     overlay.setAttribute('role', 'status');
     overlay.setAttribute('aria-live', 'polite');
     overlay.setAttribute('aria-hidden', 'true');
-    overlay.setAttribute('aria-label', 'Processing audio');
+    overlay.setAttribute('aria-label', 'Processing audio in VoiceIsolate Pro');
 
     overlay.innerHTML = `
-      <div class="processing-card">
-        <!-- DNA helix spinner -->
-        <div class="proc-helix-wrap" aria-hidden="true">
-          <div class="proc-ring-outer"></div>
-          <div class="proc-ring-mid"></div>
-          <div class="proc-ring-inner"></div>
-          <div class="proc-core"></div>
-          <div class="proc-node"></div>
-          <div class="proc-node"></div>
-          <div class="proc-node"></div>
-          <div class="proc-node"></div>
-          <div class="proc-node"></div>
-          <div class="proc-node"></div>
+      <div class="processing-backdrop-grid" aria-hidden="true"></div>
+      <div class="processing-card vip-enter">
+        <div class="proc-orbit-loader" aria-hidden="true">
+          <div class="proc-orbit proc-orbit--outer"></div>
+          <div class="proc-orbit proc-orbit--mid"></div>
+          <div class="proc-orbit proc-orbit--inner"></div>
+          <div class="proc-helix-column proc-helix-column--left">
+            <span class="proc-helix-dot"></span>
+            <span class="proc-helix-dot"></span>
+            <span class="proc-helix-dot"></span>
+            <span class="proc-helix-dot"></span>
+            <span class="proc-helix-dot"></span>
+          </div>
+          <div class="proc-helix-column proc-helix-column--right">
+            <span class="proc-helix-dot"></span>
+            <span class="proc-helix-dot"></span>
+            <span class="proc-helix-dot"></span>
+            <span class="proc-helix-dot"></span>
+            <span class="proc-helix-dot"></span>
+          </div>
+          <div class="proc-core-mark">VIP</div>
+          <div class="proc-scan-ring"></div>
         </div>
 
-        <!-- Title -->
-        <div class="proc-title">Processing Audio</div>
+        <div class="proc-title-wrap">
+          <div class="proc-badge">PROCESSING</div>
+          <div class="proc-title">VoiceIsolate Pro Engine</div>
+          <div class="proc-subtitle">32-stage hybrid DSP + ML chain</div>
+        </div>
 
-        <!-- Live stage name -->
-        <div class="proc-stage-name" id="procStageName">Initialising pipeline…</div>
+        <div class="proc-stage-cluster">
+          <div class="proc-stage-chip" id="procStageChip">◉ Input Decode</div>
+          <div class="proc-stage-name" id="procStageName">Preparing pipeline…</div>
+          <div class="proc-stage-meta">
+            <span class="proc-stage-index" id="procStageIndex">Stage 1 / 32</span>
+            <span class="proc-pct" id="procPct">0%</span>
+          </div>
+        </div>
 
-        <!-- Percent -->
-        <div class="proc-pct" id="procPct">0%</div>
-
-        <!-- Gradient progress bar -->
-        <div class="proc-bar-wrap">
+        <div class="proc-bar-wrap" aria-hidden="true">
           <div class="proc-bar-fill" id="procBarFill"></div>
+          <div class="proc-bar-shine"></div>
         </div>
 
-        <!-- Rotating premium message -->
-        <div class="proc-message" id="procMessage">Loading models…</div>
+        <div class="proc-phase-track" id="procPhaseTrack">
+          ${STAGE_GROUPS.map((group, idx) => `
+            <div class="proc-phase-pill proc-phase-pill--${group.color}" data-phase-index="${idx}">
+              <span class="proc-phase-icon">${group.icon}</span>
+              <span class="proc-phase-label">${group.label}</span>
+            </div>
+          `).join('')}
+        </div>
 
-        <!-- Cancel hint -->
-        <div class="proc-cancel-hint">Press ESC to cancel</div>
+        <div class="proc-message-wrap">
+          <div class="proc-message-label">Current operation</div>
+          <div class="proc-message" id="procMessage">Loading models…</div>
+        </div>
+
+        <div class="proc-status-grid">
+          <div class="proc-status-cell">
+            <span class="proc-status-k">Engine</span>
+            <span class="proc-status-v">Threads from Space</span>
+          </div>
+          <div class="proc-status-cell">
+            <span class="proc-status-k">Mode</span>
+            <span class="proc-status-v" id="procModeVal">Creator / Forensic</span>
+          </div>
+          <div class="proc-status-cell">
+            <span class="proc-status-k">Focus</span>
+            <span class="proc-status-v" id="procFocusVal">Spectral isolation</span>
+          </div>
+        </div>
+
+        <div class="proc-cancel-hint">Processing will finish automatically</div>
       </div>
     `;
 
     document.body.appendChild(overlay);
   }
 
-  // ── Overlay controller ───────────────────────────────────────
   const Overlay = {
     _msgTimer: null,
-    _currentPool: 0,
+    _fadeTimer1: null,
+    _fadeTimer2: null,
+    _currentGroupIndex: 0,
     _msgIdx: 0,
+    _lastStageIndex: 0,
 
-    _el: function () { return document.getElementById('processingOverlay'); },
-    _stageName: function () { return document.getElementById('procStageName'); },
-    _pct: function () { return document.getElementById('procPct'); },
-    _bar: function () { return document.getElementById('procBarFill'); },
-    _msg: function () { return document.getElementById('procMessage'); },
+    _el() { return document.getElementById('processingOverlay'); },
+    _stageChip() { return document.getElementById('procStageChip'); },
+    _stageName() { return document.getElementById('procStageName'); },
+    _stageIndex() { return document.getElementById('procStageIndex'); },
+    _pct() { return document.getElementById('procPct'); },
+    _bar() { return document.getElementById('procBarFill'); },
+    _msg() { return document.getElementById('procMessage'); },
+    _focus() { return document.getElementById('procFocusVal'); },
+    _mode() { return document.getElementById('procModeVal'); },
+    _phasePills() { if (!this._pills) { this._pills = Array.from(document.querySelectorAll('.proc-phase-pill')); } return this._pills; },
 
-    // Show overlay and start rotating messages
-    show: function (stageName, pct) {
+    show(stageName, pct) {
       const el = this._el();
       if (!el) return;
-      this.update(stageName || 'Preparing pipeline…', pct || 0);
+      this.update(stageName || 'Preparing pipeline…', pct || 0, 0);
       el.classList.add('active');
       el.setAttribute('aria-hidden', 'false');
       document.body.classList.add('vip-processing-lock');
-      this._startMessages(poolForStage(0));
+      this._startMessages(0);
     },
 
-    // Hide overlay and stop messages
-    hide: function () {
+    hide() {
       const el = this._el();
       if (!el) return;
       el.classList.remove('active');
@@ -153,48 +222,56 @@
       this._stopMessages();
     },
 
-    // Update stage text + percent + bar
-    update: function (stageName, pct, stageIndex) {
-      const nameEl = this._stageName();
-      const pctEl  = this._pct();
-      const barEl  = this._bar();
-      if (nameEl && stageName) nameEl.textContent = stageName;
-      if (pctEl  && Number.isFinite(pct)) pctEl.textContent = pct + '%';
-      if (barEl  && Number.isFinite(pct)) barEl.style.width  = pct + '%';
-      // Switch message pool when the phase changes
-      if (Number.isFinite(stageIndex)) {
-        const pool = poolForStage(stageIndex);
-        if (pool !== this._currentPool) {
-          this._currentPool = pool;
-          this._msgIdx = 0;
-          this._cycleMessage();
-        }
+    update(stageName, pct, stageIndex) {
+      const group = groupForStage(stageIndex);
+      const groupIndex = STAGE_GROUPS.indexOf(group);
+      this._lastStageIndex = Number.isFinite(stageIndex) ? stageIndex : this._lastStageIndex;
+
+      if (this._stageName() && stageName) this._stageName().textContent = stageName;
+      if (this._pct() && Number.isFinite(pct)) this._pct().textContent = `${pct}%`;
+      if (this._bar() && Number.isFinite(pct)) this._bar().style.width = `${pct}%`;
+      if (this._stageIndex()) this._stageIndex().textContent = `Stage ${Math.min(32, this._lastStageIndex + 1)} / 32`;
+      if (this._focus()) this._focus().textContent = group.label;
+      if (this._mode()) this._mode().textContent = /offline|creator|forensic/i.test(stageName || '') ? 'Creator / Forensic' : 'Live / Hybrid';
+
+      if (this._stageChip()) {
+        this._stageChip().textContent = `${group.icon} ${group.label}`;
+        this._stageChip().className = `proc-stage-chip proc-stage-chip--${group.color}`;
+      }
+
+      this._phasePills().forEach((pill, idx) => {
+        pill.classList.toggle('active', idx === groupIndex);
+        pill.classList.toggle('complete', idx < groupIndex || (idx === groupIndex && pct >= 99));
+      });
+
+      if (groupIndex !== this._currentGroupIndex) {
+        this._currentGroupIndex = groupIndex;
+        this._msgIdx = 0;
+        this._cycleMessage();
       }
     },
 
-    // Rotate messages every 1.8 s
-    _startMessages: function (pool) {
-      this._currentPool = pool || 0;
+    _startMessages(groupIndex) {
+      this._currentGroupIndex = groupIndex || 0;
       this._msgIdx = 0;
       this._stopMessages();
       this._cycleMessage();
-      this._msgTimer = setInterval(() => this._cycleMessage(), 1800);
+      this._msgTimer = setInterval(() => this._cycleMessage(), 1500);
     },
 
-    _stopMessages: function () {
-      if (this._msgTimer)    { clearInterval(this._msgTimer);  this._msgTimer    = null; }
-      if (this._fadeTimer1)  { clearTimeout(this._fadeTimer1); this._fadeTimer1  = null; }
-      if (this._fadeTimer2)  { clearTimeout(this._fadeTimer2); this._fadeTimer2  = null; }
+    _stopMessages() {
+      if (this._msgTimer) { clearInterval(this._msgTimer); this._msgTimer = null; }
+      if (this._fadeTimer1) { clearTimeout(this._fadeTimer1); this._fadeTimer1 = null; }
+      if (this._fadeTimer2) { clearTimeout(this._fadeTimer2); this._fadeTimer2 = null; }
     },
 
-    _cycleMessage: function () {
+    _cycleMessage() {
       const msgEl = this._msg();
       if (!msgEl) return;
-      const pool = MSG_POOLS[this._currentPool] || MSG_POOLS[0];
-      const text = pool[this._msgIdx % pool.length];
-      this._msgIdx++;
+      const group = STAGE_GROUPS[this._currentGroupIndex] || STAGE_GROUPS[0];
+      const text = group.messages[this._msgIdx % group.messages.length];
+      this._msgIdx += 1;
 
-      // Crossfade — store handles so _stopMessages can cancel in-flight transitions
       msgEl.classList.add('fade-out');
       this._fadeTimer1 = setTimeout(() => {
         this._fadeTimer1 = null;
@@ -204,18 +281,16 @@
         this._fadeTimer2 = setTimeout(() => {
           this._fadeTimer2 = null;
           msgEl.classList.remove('fade-in');
-        }, 350);
-      }, 350);
-    },
+        }, 260);
+      }, 260);
+    }
   };
 
-  // ── Bootstrap ────────────────────────────────────────────────
   function boot() {
-    // Inject CSS link if not already present
     if (!document.getElementById('vip-overlay-css')) {
       const link = document.createElement('link');
-      link.id   = 'vip-overlay-css';
-      link.rel  = 'stylesheet';
+      link.id = 'vip-overlay-css';
+      link.rel = 'stylesheet';
       link.href = '/app/processing-overlay.css';
       document.head.appendChild(link);
     }
@@ -229,37 +304,26 @@
     boot();
   }
 
-  // ── App overlay integration patch ────────────────────────────
-  // Monkey-patches VoiceIsolatePro instance to wire VIPOverlay
-  // into runPipeline() and pip() once the app is instantiated.
-  // (formerly processing-overlay-patch.js)
-
   function applyOverlayPatches(vip) {
-    // Idempotency guard — prevents double-wrapping on hot-reload or duplicate script load
     if (vip._overlayPatched) return;
     vip._overlayPatched = true;
 
-    // ── showProcessingOverlay ──────────────────────────────────
     vip.showProcessingOverlay = function (stageName, pct) {
       if (global.VIPOverlay) global.VIPOverlay.show(stageName, pct);
     };
 
-    // ── hideProcessingOverlay ──────────────────────────────────
     vip.hideProcessingOverlay = function () {
       if (global.VIPOverlay) global.VIPOverlay.hide();
     };
 
-    // ── updateProcessingOverlay ───────────────────────────────
     vip.updateProcessingOverlay = function (stageName, pct, stageIndex) {
       if (global.VIPOverlay) global.VIPOverlay.update(stageName, pct, stageIndex);
     };
 
-    // ── Patch pip() to call updateProcessingOverlay ───────────
     const origPip = vip.pip ? vip.pip.bind(vip) : null;
     if (origPip) {
       vip.pip = async function (i, t) {
-        const pct = Math.round((i + 1) / t * 100);
-        // STAGES lives in app.js closure scope, not as a global. Read it via the app instance.
+        const pct = Math.round(((i + 1) / t) * 100);
         const stages = global._vipApp && global._vipApp.STAGES;
         const stageName = (stages && stages[i]) ? stages[i] : ('Stage ' + (i + 1));
         this.updateProcessingOverlay(stageName, pct, i);
@@ -267,7 +331,6 @@
       };
     }
 
-    // ── Patch runPipeline() to show/hide overlay ──────────────
     const origRun = vip.runPipeline.bind(vip);
     vip.runPipeline = async function () {
       this.showProcessingOverlay('Preparing pipeline…', 0);
@@ -278,7 +341,7 @@
       }
     };
 
-    console.info('[VIPOverlay] Overlay patch applied.');
+    console.info('[VIPOverlay] v2 overlay patch applied.');
   }
 
   function patchOverlayWhenReady(attempts) {
