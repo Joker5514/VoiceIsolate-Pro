@@ -177,17 +177,17 @@
     <section class="col-right">
       <div class="card transport-card">
         <div class="transport-row">
-          <button id="tpPlay" class="btn btn-tp" type="button" disabled>&#9654;</button>
-          <button id="tpPause" class="btn btn-tp" type="button" disabled>&#9208;</button>
-          <button id="tpStop" class="btn btn-tp" type="button" disabled>&#9209;</button>
-          <button id="tpRew" class="btn btn-tp" type="button" disabled>&#9664;&#9664;</button>
-          <button id="tpFwd" class="btn btn-tp" type="button" disabled>&#9654;&#9654;</button>
+          <button id="tpPlay" class="btn btn-tp" type="button" aria-label="Play" title="Play" disabled>&#9654;</button>
+          <button id="tpPause" class="btn btn-tp" type="button" aria-label="Pause" title="Pause" disabled>&#9208;</button>
+          <button id="tpStop" class="btn btn-tp" type="button" aria-label="Stop" title="Stop" disabled>&#9209;</button>
+          <button id="tpRew" class="btn btn-tp" type="button" aria-label="Rewind" title="Rewind" disabled>&#9664;&#9664;</button>
+          <button id="tpFwd" class="btn btn-tp" type="button" aria-label="Fast Forward" title="Fast Forward" disabled>&#9654;&#9654;</button>
           <span class="tp-time" id="tpCur">0:00</span>
           <span class="tp-time">/</span>
           <span class="tp-time" id="tpDur">0:00</span>
           <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" />
           <div class="tp-speed"><label for="tpSpeed">Speed</label><select id="tpSpeed"><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="1.5">1.5x</option><option value="2">2x</option></select></div>
-          <button id="tpAB" class="btn btn-ab" type="button" disabled>A/B</button>
+          <button id="tpAB" class="btn btn-ab" type="button" aria-label="Toggle A/B Comparison" title="Toggle A/B Comparison" disabled>A/B</button>
           <span id="tpABLabel" class="tp-ab-label">Original</span>
         </div>
       </div>
