@@ -1,7 +1,24 @@
 // model-cdn-loader.js — VoiceIsolate Pro
-// 3-tier redundant ONNX model delivery with automatic failover.
-// Vercel Blob (primary, proxied via /app/models/) → Cloudflare R2 → HuggingFace Hub.
-// Exposes window.ModelCDNLoader for sw-register.js / pipeline-orchestrator.js.
+// ============================================================
+// LOCAL-PROCESSING COMPLIANCE NOTE:
+// This file fetches ONNX *model weight files* (binary .onnx blobs)
+// from a CDN waterfall on first use. It does NOT transmit any user
+// audio data or processing results to any external server.
+//
+// Audio processing remains 100% local:
+//   - AudioWorkletProcessor runs in the browser audio thread.
+//   - ONNX Runtime Web executes model inference in a local Worker.
+//   - Model weights are cached in the SW Cache (Cache API) after
+//     first download — subsequent sessions are fully offline.
+//
+// The CDN waterfall order is:
+//   1. SW Cache (Cache API) — zero network, instant
+//   2. Vercel Blob proxied via /app/models/ rewrite (same-origin)
+//   3. Cloudflare R2 (CORS whitelisted in vercel.json connect-src)
+//   4. HuggingFace Hub (last resort)
+//
+// See docs/MODEL_DELIVERY.md for full architecture details.
+// ============================================================
 
 (function() {
   'use strict';
@@ -43,13 +60,13 @@
       try {
         console.log(`[ModelCDN] Trying ${source.provider} for ${modelKey}: ${source.url}`);
         const ab = await fetchWithProgress(source.url, entry.sizeBytes, onProgress);
-        providerHealth[source.provider] = true; // mark healthy on success
+        providerHealth[source.provider] = true;
         modelProviderMap[modelKey] = source.provider;
         console.log(`[ModelCDN] ✓ ${modelKey} loaded from ${source.provider}`);
         return { arrayBuffer: ab, provider: source.provider, url: source.url };
       } catch (err) {
         console.warn(`[ModelCDN] ✗ ${source.provider} failed for ${modelKey}:`, err.message);
-        providerHealth[source.provider] = false; // mark degraded
+        providerHealth[source.provider] = false;
         lastError = err;
       }
     }
@@ -95,7 +112,7 @@
   async function loadModel(modelKey, onProgress) {
     const manifest = await getManifest();
 
-    // Check SW cache first
+    // Check SW cache first (zero network for returning users)
     const cacheStorage = (typeof caches !== 'undefined') ? caches : null;
     if (cacheStorage) {
       try {
@@ -111,7 +128,7 @@
       } catch (e) { /* SW cache unavailable, fall through */ }
     }
 
-    // CDN waterfall
+    // CDN waterfall (only on first load)
     const { arrayBuffer, provider, url } = await fetchWithFallback(modelKey, manifest, onProgress);
 
     // Store in SW cache for next time (fire and forget)
@@ -149,21 +166,14 @@
     }));
   }
 
-  /**
-   * getProviderHealthReport — returns current provider health for diagnostics
-   */
   function getProviderHealthReport() {
     return { ...providerHealth };
   }
 
-  /**
-   * getModelProvider — returns which provider served the given modelKey this session
-   */
   function getModelProvider(modelKey) {
     return modelProviderMap[modelKey] || null;
   }
 
-  // Manifest cache
   let _manifest = null;
   async function getManifest() {
     if (_manifest) return _manifest;
@@ -173,7 +183,6 @@
     return _manifest;
   }
 
-  // Export to window
   window.ModelCDNLoader = {
     loadModel,
     preloadEagerModels,
