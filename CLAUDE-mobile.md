@@ -150,7 +150,7 @@ Registry: `public/app/models/models-manifest.json`
 - Tests: CommonJS (`require`). Frontend: ESM (`import`). Don't mix.
 - `public/lib/` IS committed — don't gitignore it
 - `build/` is gitignored — don't commit it
-- Node.js 24.x required (enforced by `.npmrc`)
+- Node.js 24.x required (per `package.json#engines` and CI)
 - Use `pnpm` only — npm/yarn not supported
 
 ---
