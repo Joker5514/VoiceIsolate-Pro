@@ -1,36 +1,33 @@
 /**
- * VoiceIsolate Pro — AudioWorkletProcessor
- * Adaptive noise floor soft-gate with per-sample voice suppression.
- * Registered as 'voice-isolator' — load via AudioContext.audioWorklet.addModule().
+ * voice-isolator-worklet.js
+ *
+ * Canonical shim worklet for legacy registrations.
+ * The real implementation lives in /app/dsp-processor.js under the processor
+ * name `dsp-processor`. This legacy worklet exists so older code paths do not
+ * fail when requesting /worklets/voice-isolator-worklet.js.
+ *
+ * It performs transparent pass-through only, and posts a deprecation notice.
  */
-class VoiceIsolatorProcessor extends AudioWorkletProcessor {
-    static get parameterDescriptors() {
-        return [
-            { name: 'strength',   defaultValue: 0.85, minValue: 0, maxValue: 1 },
-            { name: 'gateFloor', defaultValue: 0.01, minValue: 0, maxValue: 1 }
-        ];
+
+class VoiceIsolatorLegacyShim extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.port.postMessage({
+      type: 'deprecated-worklet',
+      message: 'voice-isolator-worklet.js is a legacy shim. Use /app/dsp-processor.js (processor name: dsp-processor).'
+    });
+  }
+
+  process(inputs, outputs) {
+    const input = inputs[0];
+    const output = outputs[0];
+    if (!input || !output) return true;
+    const channels = Math.min(input.length, output.length);
+    for (let ch = 0; ch < channels; ch++) {
+      output[ch].set(input[ch]);
     }
-    constructor() {
-        super();
-        this._floor = 0.0;
-        this._alpha = 0.995;
-    }
-    process(inputs, outputs, params) {
-        const inp = inputs[0]?.[0];
-        const out = outputs[0]?.[0];
-        if (!inp || !out) return true;
-        const strength  = params.strength[0]  ?? 0.85;
-        const gateFloor = params.gateFloor[0] ?? 0.01;
-        let rms = 0;
-        for (let i = 0; i < inp.length; i++) rms += inp[i] * inp[i];
-        this._floor = this._alpha * this._floor + (1 - this._alpha) * Math.sqrt(rms / inp.length);
-        const thresh = Math.max(gateFloor, this._floor * 1.5);
-        for (let i = 0; i < inp.length; i++) {
-            const s = inp[i];
-            const gate = Math.abs(s) > thresh ? 1.0 : Math.abs(s) / thresh;
-            out[i] = s * gate * strength;
-        }
-        return true;
-    }
+    return true;
+  }
 }
-registerProcessor('voice-isolator', VoiceIsolatorProcessor);
+
+registerProcessor('voice-isolator-worklet', VoiceIsolatorLegacyShim);
