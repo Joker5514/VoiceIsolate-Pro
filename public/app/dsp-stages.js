@@ -336,10 +336,11 @@ export function stageSpectralCompressor(mag, pha, params) {
     let out;
     if (m < threshold / knee) {
       out = m;  // below knee — unity
-    } else if (m < threshold * knee) {
+    } else if (m < threshold * knee && knee > 1) {
       // Soft knee transition
-      const db = 20 * Math.log10(m / threshold);
-      const dbReduced = db + (1 / ratio - 1) * (db + 20 * Math.log10(knee)) ** 2 / (2 * (2 * 20 * Math.log10(knee)));
+      const kneeDb = params.compKnee ?? 6;
+      const db = 20 * Math.log10(Math.max(1e-9, m / threshold));
+      const dbReduced = db + (1 / ratio - 1) * (db + kneeDb) ** 2 / (4 * kneeDb);
       out = threshold * Math.pow(10, dbReduced / 20);
     } else {
       // Above knee — full compression
