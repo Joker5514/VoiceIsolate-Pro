@@ -37,12 +37,10 @@ Generated: 2026-05-12
 The `demucs_v4_quantized.onnx` model is not committed due to size (50–200 MB).
 `ml-worker.js` already handles this gracefully:
 
-```javascript
-// In loadModels() inside ml-worker.js:
-// If demucs .onnx is missing, catch block logs a warning and continues.
-// buildMask() checks `if (demucsSess && pcmChunk)` — unity mask used otherwise.
-// BSRNN provides ~85% of the Demucs+BSRNN ensemble quality solo.
-```
+- If the Demucs model is unavailable or its session cannot be created, the worker emits a warning and continues processing instead of failing the job.
+- The fallback path is the normal non-Demucs separation flow already implemented in `ml-worker.js` (that is, processing continues without Demucs rather than attempting to hard-fail or block inference).
+- Use the actual warning text emitted by `ml-worker.js` as the source of truth when validating logs; this checklist intentionally avoids duplicating exact log strings or internal conditionals that can drift out of sync.
+- BSRNN remains the primary fallback/standalone separator when Demucs is absent.
 
 To add Demucs: run `python scripts/download_demucs.py` and commit the output.
 
