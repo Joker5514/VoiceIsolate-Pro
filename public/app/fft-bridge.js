@@ -25,8 +25,8 @@
  * Constraint: Only ONE Forward STFT and ONE iSTFT per processing chain.
  * Never call computeSTFT() twice on the same buffer or chain.
  *
- * COLA requirement: reconstructISTFT requires hopSize = fftSize / 4 (75% overlap)
- * to ensure correct Hann window Constant Overlap-Add normalisation.
+ * Note: reconstructISTFT uses per-sample OLA normalisation, so any hopSize
+ * producing complete frame coverage is supported.
  */
 
 // ─── Cooley-Tukey FFT (identical to dsp-processor.js) ────────────────────────
@@ -135,9 +135,6 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   const phases     = [];
   const times      = [];
 
-  // Iterate over all frames starting positions within the signal.
-  // Zero-padding handles the tail so at least one frame is produced.
-  for (let pos = 0; pos < pcm.length; pos += hopSize) {
   // Zero-pad so we always emit at least one frame (even for empty/short clips)
   const totalSamples = Math.max(1, pcm.length) + fftSize - hopSize;
   const numFrames = Math.max(1, Math.ceil(totalSamples / hopSize));
@@ -176,8 +173,6 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
  * (Constant Overlap-Add) reconstruction.
  *
  * ⚠ SINGLE-PASS CONTRACT: Call this function exactly ONCE per processing chain.
- * ⚠ COLA CONTRACT: hopSize must equal fftSize / 4 (75% overlap) for correct
- *   Hann window COLA normalisation.
  *
  * @param {Float32Array[]} magnitudes - Modified magnitude frames from computeSTFT()
  * @param {Float32Array[]} phases     - Phase frames from computeSTFT() (unmodified)
@@ -187,11 +182,6 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
  */
 export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1024) {
   if (!magnitudes.length) return new Float32Array(0);
-  if (hopSize !== (fftSize >> 2)) {
-    throw new RangeError(
-      'fft-bridge: reconstructISTFT requires hopSize = fftSize/4 for Hann COLA normalisation'
-    );
-  }
 
   const halfBins   = (fftSize >> 1) + 1;
   const numFrames  = magnitudes.length;
@@ -224,14 +214,6 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
     // Overlap-add with synthesis window
     const frameStart = f * hopSize;
     for (let i = 0; i < fftSize; i++) {
-      output[frameStart + i] += re[i] * win[i];
-    }
-  }
-
-  // COLA normalisation factor for Hann + 75% overlap (hopSize = fftSize/4)
-  const overlap = fftSize / hopSize;
-  const colaNorm = overlap / 2;
-  for (let i = 0; i < outputLen; i++) output[i] /= colaNorm;
       const idx = frameStart + i;
       const w = win[i];
       output[idx] += re[i] * w;
@@ -239,7 +221,7 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
     }
   }
 
-  // Per-sample OLA normalisation (matches offline processor behavior)
+  // Per-sample OLA normalisation (compatible with any hopSize)
   for (let i = 0; i < outputLen; i++) {
     if (norm[i] > 1e-12) output[i] /= norm[i];
   }

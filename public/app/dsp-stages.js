@@ -117,9 +117,6 @@ export function stageNoiseGate(mag, pha, params) {
  */
 export function stageSpectralSubtraction(mag, pha, params) {
   const alpha = Math.max(0, Math.min(2, (params.nrAmount ?? 78) / 50));
- */
-export function stageSpectralSubtraction(mag, pha, params) {
-  const alpha = Math.max(0, Math.min(2, params.nrAmount ?? 0.78));
   const floor = 0.001;
   for (let k = 0; k < mag.length; k++) {
     mag[k] = Math.max(floor, mag[k] * Math.max(0, 1 - alpha * 0.4));
@@ -143,19 +140,6 @@ export function stageDither(mag, pha, params) {
     // Map Uint32 [0, 2^32) uniformly to [-1, 1) and scale by dither amplitude
     const r = (randBuf[k] / 4294967296) * 2 - 1;
     mag[k] += ditherLin * r;
- * Adds low-level white noise (~-100 dBFS) to prevent quantisation artifacts
- * during subsequent 16-bit export. Operates on magnitude directly.
- */
-export function stageDither(mag, pha, params) {
-  const ditherAmt = Math.pow(10, (params.ditherLevel ?? -100) / 20);
-  const seedBase = ((params.ditherSeed ?? 0x9E3779B9) >>> 0);
-  for (let k = 0; k < mag.length; k++) {
-    let x = (seedBase ^ (k * 0x45d9f3b)) >>> 0;
-    x ^= x << 13;
-    x ^= x >>> 17;
-    x ^= x << 5;
-    const centered = (x / 0xFFFFFFFF) * 2 - 1;
-    mag[k] += ditherAmt * centered;
     if (mag[k] < 0) mag[k] = 0;
   }
 }
@@ -253,7 +237,6 @@ export function stageNormalise(mag, pha, params) {
   const target = Math.pow(10, (params.normTarget ?? 0) / 20);
   let peak = 0;
   for (let k = 0; k < mag.length; k++) if (mag[k] > peak) peak = mag[k];
-if (peak > 0) {
   if (peak > 0 && peak !== target) {
     const gain = target / peak;
     for (let k = 0; k < mag.length; k++) mag[k] *= gain;
@@ -305,9 +288,6 @@ export function stagePresenceBoost(mag, pha, params, sampleRate = 44100) {
  */
 export function stageDeEsser(mag, pha, params, sampleRate = 44100) {
   const reduction = Math.max(0, Math.min(1, (params.deEssAmt ?? 9) / 30));
- */
-export function stageDeEsser(mag, pha, params, sampleRate = 44100) {
-  const reduction = Math.max(0, Math.min(1, params.deEsser ?? 0.3));
   const fftSize   = (mag.length - 1) * 2;
   const lo = hzToBin(5000,  fftSize, sampleRate);
   const hi = hzToBin(10000, fftSize, sampleRate);
@@ -367,7 +347,6 @@ export function stageWarmth(mag, pha, params, sampleRate = 44100) {
  * Not applicable for mono; reserved for stereo interleaved buffers.
  * No-op for now — placeholder maintains stage count.
  */
-export function stageStereoWidth() {
 export function stageStereoWidth(mag, pha, params) {
   void mag;
   void pha;
@@ -382,10 +361,6 @@ export function stageStereoWidth(mag, pha, params) {
  */
 export function stageDeReverb(mag, pha, params) {
   const strength = Math.max(0, Math.min(1, (params.derevAmt ?? 0) / 100));
- * Estimate and subtract reverb tail by subtracting global spectral mean.
- */
-export function stageDeReverb(mag, pha, params) {
-  const strength = Math.max(0, Math.min(1, params.deReverb ?? 0.25));
   // Simple spectral mean subtraction as a lightweight de-reverb approximation.
   let sum = 0;
   for (let k = 0; k < mag.length; k++) sum += mag[k];
@@ -407,8 +382,6 @@ export function stageDeReverb(mag, pha, params) {
 export function stageSpectralCompressor(mag, pha, params) {
   const threshold  = Math.pow(10, (params.compThresh  ?? -24) / 20);
   const ratio      = Math.max(1, params.compRatio     ?? 4);
-  const kneeDb     = Math.max(0.01, params.compKnee   ?? 6);  // guard against zero
-  const knee       = Math.pow(10, kneeDb / 20);
   const kneeDb     = Math.max(0, params.compKnee ?? 6);
   const hasSoftKnee = kneeDb > 1e-6;
   const knee       = hasSoftKnee ? Math.pow(10, kneeDb / 20) : 1;
@@ -417,7 +390,6 @@ export function stageSpectralCompressor(mag, pha, params) {
   for (let k = 0; k < mag.length; k++) {
     const m = mag[k];
     let out;
-    if (m < threshold / knee) {
     if (!hasSoftKnee) {
       if (m <= threshold) {
         out = m;
@@ -475,9 +447,6 @@ export function stageSaturation(mag, pha, params) {
  */
 export function stageWetDry(mag, pha, originalMag, params) {
   const wet = Math.max(0, Math.min(1, (params.dryWet ?? 100) / 100));
- */
-export function stageWetDry(mag, pha, originalMag, params) {
-  const wet = Math.max(0, Math.min(1, params.dryWet ?? 1.0));
   const dry = 1 - wet;
   for (let k = 0; k < mag.length; k++) {
     mag[k] = wet * mag[k] + dry * (originalMag ? originalMag[k] : mag[k]);
@@ -509,7 +478,6 @@ export function stageLimiter(mag, pha, params) {
  * Zero out any bins below the absolute noise floor (~-140 dBFS)
  * to prevent float denormal performance issues.
  */
-export function stageSilenceTrim(mag) {
 export function stageSilenceTrim(mag, pha) {
   void pha;
   const floor = 1e-7; // ~-140 dBFS
@@ -542,8 +510,6 @@ const STAGE_MAP = {
   'spectral-subtraction':stageSpectralSubtraction,
   'dither':              stageDither,
   'input-gain':          stageInputGain,
-  'apply-mask':          (mag, pha, p) => p.mask && stageApplyMask(mag, pha, p.mask),
-  'spectral-floor':      stageSpectralFloor,
   'vad-mask':            stageVADMask,
   'demucs-mask':         stageDemucsMask,
   'bsrnn-mask':          stageBSRNNMask,
@@ -616,8 +582,6 @@ export function runFullPipeline(mag, pha, originalMag, params = {}, stageFlags =
   const stages = [
     'dc-removal', 'high-pass', 'low-pass', 'pre-emphasis',
     'noise-gate', 'spectral-subtraction', 'dither', 'input-gain',
-    // Pass 2 mask stages are applied externally after ONNX inference
-    'spectral-floor', 'normalise',
     'vad-mask', 'demucs-mask', 'bsrnn-mask', 'rnnoise-mask',
     'mask-blend', 'spectral-floor', 'harmonic-restore', 'normalise',
     'formant-enhance', 'presence-boost', 'de-esser', 'vocal-eq',
