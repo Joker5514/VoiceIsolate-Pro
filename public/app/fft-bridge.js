@@ -123,7 +123,7 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   // Zero-pad the last frame so we process the tail of the signal
   const totalSamples = pcm.length + fftSize - hopSize;
 
-  for (let pos = 0; pos + fftSize <= totalSamples; pos += hopSize) {
+  for (let pos = 0; pos < pcm.length; pos += hopSize) {
     // Fill windowed frame (zero-pad beyond signal end)
     for (let i = 0; i < fftSize; i++) {
       const srcIdx = pos + i;
