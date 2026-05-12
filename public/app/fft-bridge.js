@@ -126,7 +126,9 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   const phases     = [];
   const times      = [];
 
-  // Zero-pad so we always emit at least one frame (even for empty/short clips)
+  // Zero-pad to ensure at least one frame even for very short clips.
+  // totalSamples = signal length + one full window minus one hop, so Math.ceil
+  // produces the exact number of hops needed to cover all samples with zero-padding.
   const totalSamples = Math.max(1, pcm.length) + fftSize - hopSize;
   const numFrames = Math.max(1, Math.ceil(totalSamples / hopSize));
 

@@ -344,10 +344,7 @@ export function stageWarmth(mag, pha, params, sampleRate = 44100) {
  * Not applicable for mono; reserved for stereo interleaved buffers.
  * No-op for now — placeholder maintains stage count.
  */
-export function stageStereoWidth(mag, pha, params) {
-  void mag;
-  void pha;
-  void params;
+export function stageStereoWidth(_mag, _pha, _params) {
   // Mono path: no-op. Stereo implementation routes mid/side channels separately.
 }
 
@@ -475,8 +472,7 @@ export function stageLimiter(mag, pha, params) {
  * Zero out any bins below the absolute noise floor (~-140 dBFS)
  * to prevent float denormal performance issues.
  */
-export function stageSilenceTrim(mag, pha) {
-  void pha;
+export function stageSilenceTrim(mag, _pha) {
   const floor = 1e-7; // ~-140 dBFS
   for (let k = 0; k < mag.length; k++) {
     if (mag[k] < floor) { mag[k] = 0; }
