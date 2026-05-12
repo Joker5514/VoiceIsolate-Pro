@@ -10,7 +10,7 @@
  *   computeSTFT()      → 1× Forward STFT  (magnitude + phase arrays)
  *   reconstructISTFT() → 1× Inverse STFT  (overlap-add → PCM Float32Array)
  *
- * Usage (offline-processor.js / batch-orchestrator.js):
+ * Intended usage (import from any offline processing module):
  *
  *   import { computeSTFT, reconstructISTFT, makeHannWindow } from './fft-bridge.js';
  *
