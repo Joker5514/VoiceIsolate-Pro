@@ -93,7 +93,7 @@ No second STFT/iSTFT pair anywhere.
 | `sep` | 5 | Voice isolation, background suppress |
 | `out` | 4 | Output gain, dry/wet, dither |
 
-**Adding a slider:** update `SLIDERS` in `app.js` + `SLIDER_REGISTRY` in `slider-map.js` + every preset in `PRESETS`.
+**Adding a slider:** update `SLIDERS` in `app.js` + `SLIDER_REGISTRY` in `slider-map.js` + every preset in `PRESETS` + update relevant tests.
 
 ---
 
