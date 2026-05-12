@@ -132,10 +132,10 @@ export function stageDither(mag, pha, params) {
   // 1 bit dither at 16-bit depth: amplitude ≈ 2^-(17 - bits)
   const ditherLin = Math.pow(2, -(17 - Math.max(0, Math.min(10, bits))));
   const randBuf = new Uint32Array(mag.length);
-  (globalThis.crypto ?? crypto).getRandomValues(randBuf);
+  globalThis.crypto.getRandomValues(randBuf);
   for (let k = 0; k < mag.length; k++) {
-    // Map Uint32 [0, 2^32) to [-1, 1] and scale by dither amplitude
-    const r = randBuf[k] / 2147483648 - 1;
+    // Map Uint32 [0, 2^32) uniformly to [-1, 1) and scale by dither amplitude
+    const r = (randBuf[k] / 4294967296) * 2 - 1;
     mag[k] += ditherLin * r;
     if (mag[k] < 0) mag[k] = 0;
   }
