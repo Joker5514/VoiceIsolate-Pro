@@ -12,6 +12,7 @@
   --red: #dc2626;
   --red2: #ef4444;
   --red3: #b91c1c;
+  --red4: #7f1d1d;
   --red-glow: rgba(220,38,38,0.25);
   --cyan: #22d3ee;
   --green: #22c55e;
@@ -30,7 +31,7 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{font-size:14px;scroll-behavior:smooth;height:100%;overflow-y:scroll}
-body{font-family:var(--ff);background:var(--bg);color:var(--text);min-height:100%;min-height:100dvh;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+body{font-family:var(--ff);background:radial-gradient(circle at top,rgba(220,38,38,.14),transparent 22%),radial-gradient(circle at bottom right,rgba(127,29,29,.18),transparent 28%),var(--bg);color:var(--text);min-height:100%;min-height:100dvh;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 body::before{content:'';position:fixed;inset:0;background:linear-gradient(rgba(220,38,38,0.008) 1px,transparent 1px),linear-gradient(90deg,rgba(220,38,38,0.008) 1px,transparent 1px);background-size:32px 32px;pointer-events:none;z-index:0}
 
 /* === SCROLL FIX: force GPU layer on root === */
@@ -75,7 +76,7 @@ input[type='range']{
 }
 
 /* ---- HEADER ---- */
-.hdr{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:rgba(6,6,9,0.95);backdrop-filter:blur(20px);border-bottom:1px solid var(--border2);gap:12px;flex-wrap:wrap}
+.hdr{position:sticky;top:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:linear-gradient(180deg,rgba(20,8,10,.96),rgba(6,6,9,.95));backdrop-filter:blur(20px);border-bottom:1px solid rgba(239,68,68,.16);box-shadow:0 14px 40px rgba(0,0,0,.28);gap:12px;flex-wrap:wrap}
 .hdr-left{display:flex;align-items:center;gap:10px}
 .hdr-icon{width:36px;height:36px;border-radius:8px;background:linear-gradient(135deg,var(--red),var(--red3));display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 16px var(--red-glow)}
 .hdr-title{font-size:1.1rem;font-weight:700;letter-spacing:-0.02em;line-height:1.2}
@@ -91,7 +92,7 @@ input[type='range']{
 .main-grid{position:relative;z-index:1;max-width:1520px;margin:8px auto;padding:0 10px 10px;display:grid;grid-template-columns:380px 1fr;gap:10px}
 
 /* ---- CARDS ---- */
-.card{background:var(--s1);border-radius:var(--r);padding:10px;border:1px solid var(--border)}
+.card{background:linear-gradient(180deg,rgba(18,10,12,.96),rgba(12,12,18,.98));border-radius:var(--r);padding:10px;border:1px solid rgba(255,88,88,.08);box-shadow:0 18px 60px rgba(0,0,0,.24)}
 
 /* ---- UPLOAD ---- */
 .upload-zone{border:1.5px dashed rgba(255,255,255,0.1);border-radius:var(--r);padding:16px 12px;text-align:center;cursor:pointer;background:var(--s2);transition:all 0.2s}
@@ -113,6 +114,7 @@ input[type='range']{
 @keyframes pulse-r{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,0.3)}50%{box-shadow:0 0 0 5px transparent}}
 .btn-primary{background:linear-gradient(135deg,var(--red),var(--red3));color:#fff;font-weight:700;box-shadow:0 2px 10px var(--red-glow)}
 .btn-primary:hover:not(:disabled){box-shadow:0 4px 18px rgba(220,38,38,0.4);transform:translateY(-1px)}
+.btn-outline:hover:not(:disabled),.btn-reprocess:hover:not(:disabled),.btn-tp:hover:not(:disabled),.btn-xs:hover:not(:disabled){box-shadow:0 0 0 1px rgba(239,68,68,.14),0 0 18px rgba(220,38,38,.12)}
 .btn-reprocess{background:rgba(220,38,38,0.08);color:var(--red2);border:1px solid rgba(220,38,38,0.2)}
 .btn-danger{background:rgba(220,38,38,0.12);color:var(--red);border:1px solid rgba(220,38,38,0.25)}
 .btn-save,.btn-save-proc{background:var(--s3);color:var(--text2);border:1px solid var(--border)}
@@ -538,6 +540,38 @@ input[type="range"]:not(.realtime) {
   .main-grid { grid-template-columns:1fr; }
   .col-left,.col-right { grid-column:1; }
   button,input,select,.slider-group-header{min-height:44px}
+}
+
+.hdr-actions{display:flex;align-items:center;gap:8px}
+.hdr-link{text-decoration:none}
+.engine-cockpit{max-width:1520px;margin:10px auto 0;padding:0 10px}
+.cockpit-card{display:grid;gap:12px}
+.cockpit-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.cockpit-row--stack{align-items:stretch}
+.cockpit-copy,.cockpit-models{display:grid;gap:6px}
+.cockpit-label{font:700 10px/1 'JetBrains Mono',monospace;letter-spacing:.14em;text-transform:uppercase;color:#fca5a5}
+.cockpit-title{font-size:.95rem;color:#fff}
+.cockpit-health{min-width:260px}
+.control-search-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:8px}
+.viz-legend{margin-bottom:8px;font:600 11px/1.4 'JetBrains Mono',monospace;letter-spacing:.04em;color:rgba(255,215,215,.66)}
+
+.startup-banner{position:sticky;top:58px;z-index:110;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 16px;background:rgba(66,12,16,.92);border-bottom:1px solid rgba(255,122,122,.18);box-shadow:0 12px 36px rgba(0,0,0,.22)}
+.startup-banner code{font-family:var(--fm)}
+
+.boot-splash{position:fixed;inset:0;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at center,rgba(239,68,68,.18),transparent 28%),rgba(4,4,6,.92);backdrop-filter:blur(24px);z-index:120;transition:opacity .45s ease,visibility .45s ease}
+.boot-splash.is-complete{opacity:0;visibility:hidden;pointer-events:none}
+.boot-splash-card{width:min(100%,640px);padding:28px;border-radius:24px;border:1px solid rgba(255,110,110,.18);background:linear-gradient(180deg,rgba(28,8,12,.96),rgba(10,10,16,.98));box-shadow:0 28px 100px rgba(0,0,0,.4),0 0 80px rgba(220,38,38,.12);text-align:center}
+.boot-mark{width:84px;height:84px;margin:0 auto 14px;border-radius:999px;display:grid;place-items:center;background:radial-gradient(circle at 35% 35%,#fff,rgba(239,68,68,.86));color:#2a090c;font:800 22px/1 'JetBrains Mono',monospace;letter-spacing:.14em;box-shadow:0 0 22px rgba(239,68,68,.3)}
+.boot-kicker{font:700 11px/1 'JetBrains Mono',monospace;letter-spacing:.2em;color:#fca5a5;text-transform:uppercase}
+.boot-title{margin:14px 0 10px;font-size:clamp(1.9rem,4vw,2.8rem);line-height:1.04}
+.boot-text{margin:0 auto 16px;max-width:52ch;color:rgba(255,228,228,.78);line-height:1.7}
+.boot-progress{height:10px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+.boot-progress-fill{width:0;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--red4),var(--red),#fca5a5);box-shadow:0 0 22px rgba(239,68,68,.22);transition:width .35s ease}
+
+@media(max-width:960px){
+  .engine-cockpit{padding:0 10px}
+  .control-search-row{grid-template-columns:1fr}
+  .startup-banner{top:74px;align-items:flex-start}
 }
 
 
