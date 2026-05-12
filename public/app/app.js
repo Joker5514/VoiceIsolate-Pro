@@ -260,18 +260,15 @@ function initSliders() {
       if (!Number.isFinite(raw)) return;
       const mapped = typeof entry.transform === 'function' ? entry.transform(raw) : raw;
       const payload = { [entry.key]: mapped };
-      if ((entry.target === 'worklet' || entry.target === 'both') && workletNode) {
-        workletNode.port.postMessage({ type: 'params', payload });
-      }
       const orch = typeof window !== 'undefined' ? window._vipOrch : null;
-      if ((entry.target === 'worklet' || entry.target === 'both') && orch?.workletNode) {
-        orch.workletNode.port.postMessage({ type: 'setParams', params: { ...window.VIP_PARAMS, [entry.id]: raw } });
+      const snapshot = { ...(window.VIP_PARAMS || {}), [entry.id]: raw };
+      if (entry.target === 'worklet' || entry.target === 'both') {
+        if (orch?.workletNode) orch.updateParams?.(snapshot);
+        else if (workletNode) workletNode.port.postMessage({ type: 'params', payload });
       }
-      if ((entry.target === 'worker' || entry.target === 'both') && mlWorker) {
-        mlWorker.postMessage({ type: 'setParams', payload });
-      }
-      if ((entry.target === 'worker' || entry.target === 'both') && orch?.mlWorker) {
-        orch.mlWorker.postMessage({ type: 'setParams', payload });
+      if (entry.target === 'worker' || entry.target === 'both') {
+        if (orch?.mlWorker) orch.mlWorker.postMessage({ type: 'setParams', payload });
+        else if (mlWorker) mlWorker.postMessage({ type: 'setParams', payload });
       }
     };
     slider.addEventListener('input', dispatch);
@@ -806,12 +803,12 @@ class VoiceIsolatePro {
     const payload = entry ? { [entry.key]: mapped } : { [id]: rawValue };
 
     if (entry && (entry.target === 'worklet' || entry.target === 'both')) {
-      if (workletNode) workletNode.port.postMessage({ type: 'params', payload });
       if (orch?.workletNode) orch.updateParams?.({ ...this.params });
+      else if (workletNode) workletNode.port.postMessage({ type: 'params', payload });
     }
     if (entry && (entry.target === 'worker' || entry.target === 'both')) {
-      if (mlWorker) mlWorker.postMessage({ type: 'setParams', payload });
       if (orch?.mlWorker) orch.mlWorker.postMessage({ type: 'setParams', payload });
+      else if (mlWorker) mlWorker.postMessage({ type: 'setParams', payload });
     }
   }
 
@@ -1662,9 +1659,10 @@ class VoiceIsolatePro {
         : null;
       if (outBuf) {
         for (let ch = 0; ch < numCh; ch++) {
-          const src = ch === 0 && processed ? processed : channels[ch];
+          const src = processed || channels[ch];
           const dst = outBuf.getChannelData(ch);
-          dst.set(src.subarray(0, dst.length));
+          dst.fill(0);
+          dst.set(src.subarray(0, Math.min(src.length, dst.length)));
         }
         this.outputBuffer = outBuf;
       }
