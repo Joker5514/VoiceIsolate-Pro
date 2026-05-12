@@ -1,17 +1,14 @@
 /**
  * dsp-stages.js — VoiceIsolate Pro · Threads from Space v8
  * ==========================================================
- * Implements the named DSP stages of the spectral processing path as
- * pure spectral operators (magnitude/phase arrays in-place).
- * Implements the 32 named DSP stages of the Octa-Pass pipeline as
- * pure, side-effect-free spectral operators.
+ * Implements the 32 named DSP stages of the Deca-Pass pipeline as
+ * pure, side-effect-free spectral operators (magnitude/phase arrays in-place).
  *
  * All functions operate on Float32Array magnitude and/or phase arrays
  * in-place to maintain the Single-Pass STFT architecture:
  *   computeSTFT() → [these stage functions] → reconstructISTFT()
  *
- * Stages are grouped into 4 passes:
- * Stages are grouped into 4 octa-passes of 8 stages each:
+ * Stages are grouped into 4 passes of 8 stages each:
  *   Pass 1 (1–8)   : Pre-processing & gating
  *   Pass 2 (9–16)  : Spectral ML masking
  *   Pass 3 (17–24) : Voice EQ & formant shaping
@@ -360,8 +357,8 @@ export function stageStereoWidth(mag, pha, params) {
  * params.derevAmt is 0..100 (percent slider); converted to 0..1 strength.
  */
 export function stageDeReverb(mag, pha, params) {
-  const strength = Math.max(0, Math.min(1, (params.derevAmt ?? 0) / 100));
   // Simple spectral mean subtraction as a lightweight de-reverb approximation.
+  const strength = Math.max(0, Math.min(1, (params.derevAmt ?? 0) / 100));
   let sum = 0;
   for (let k = 0; k < mag.length; k++) sum += mag[k];
   const mean = sum / mag.length;
@@ -549,7 +546,6 @@ const STAGE_MAP = {
 export function applyStage(stageName, mag, pha, params = {}, sampleRate = 44100) {
   const fn = STAGE_MAP[stageName];
   if (!fn) {
-    globalThis.console?.warn(`[dsp-stages] Unknown stage: '${stageName}'`);
     globalThis.console?.warn?.(`[dsp-stages] Unknown stage: '${stageName}'`);
     return;
   }
@@ -557,24 +553,19 @@ export function applyStage(stageName, mag, pha, params = {}, sampleRate = 44100)
 }
 
 /**
- * Apply spectral DSP stages in order given a stage-enable map.
+ * Apply all 32 spectral DSP stages in order given a stage-enable map.
  * pipeline-orchestrator.js can call this for the classical spectral pass.
- * Note: STFT/iSTFT and time-domain stages (S01–S09, S20–S32) are handled
- * by pipeline-orchestrator.js; this function covers spectral-domain stages only.
  *
  * Param units: stage functions read slider-map.js raw units (percent 0..100,
  * dB, Hz). Each stage converts internally to its required scale (e.g. nrAmount
  * 0..100 → 0..2, dryWet 0..100 → 0..1, deEssAmt 0..30 dB → 0..1 reduction).
  * The optional presenceBoost and formantEnhance keys are internal strengths (0..2)
  * not exposed as sliders; they default to 1.0 when absent.
- * Apply all 32 stages in order given a stage-enable map.
- * pipeline-orchestrator.js can call this for the classical spectral pass.
  *
  * @param {Float32Array} mag        - Magnitude spectrum
  * @param {Float32Array} pha        - Phase spectrum
  * @param {Float32Array} originalMag- Unprocessed magnitude for wet/dry mix
- * @param {object}       params     - Raw DSP params from slider-map.js (0..100 percents, dB, Hz)
- * @param {object}       params     - Full DSP params from slider-map.js
+ * @param {object}       params     - DSP params from slider-map.js (percent/dB/Hz; each stage normalises internally)
  * @param {object}       stageFlags - { [stageName]: boolean } enable/disable per stage
  * @param {number}       sampleRate
  */

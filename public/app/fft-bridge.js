@@ -11,10 +11,6 @@
  *   reconstructISTFT() → 1× Inverse STFT  (overlap-add → PCM Float32Array)
  *
  * Intended usage (import from any offline processing module):
- *   computeSTFT()   → 1× Forward STFT  (magnitude + phase arrays)
- *   reconstructISTFT() → 1× Inverse STFT (overlap-add → PCM Float32Array)
- *
- * Usage:
  *
  *   import { computeSTFT, reconstructISTFT, makeHannWindow } from './fft-bridge.js';
  *
@@ -97,11 +93,6 @@ export function makeHannWindow(N) {
  * ⚠ SINGLE-PASS CONTRACT: Call this function exactly ONCE per processing chain.
  *
  * @param {Float32Array} pcm        - Mono PCM samples (any length >= 1)
- * @param {number}       fftSize    - FFT window size (power-of-two; default 4096)
- * @param {number}       hopSize    - Hop between windows (default 1024 = 75% overlap)
- * @param {number}       sampleRate - Sample rate for populating times[] (default 44100)
- * @returns {{\
- * @param {Float32Array} pcm        - Mono PCM samples (any length)
  * @param {number}       fftSize    - FFT window size (power-of-two; default 4096)
  * @param {number}       hopSize    - Hop between windows (default 1024 = 75% overlap)
  * @param {number}       sampleRate - Sample rate for populating times[] (default 44100)

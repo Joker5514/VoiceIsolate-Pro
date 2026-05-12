@@ -29,7 +29,6 @@ Generated: 2026-05-12
 | File | Status | Notes |
 |------|--------|-------|
 | `public/app/fft-bridge.js` | ✅ NEW | Offline STFT/iSTFT utility + WAV encoder for Creator/Forensic modes. Exports `computeSTFT`, `reconstructISTFT`, `encodeWAV`, `fftInPlace`, `makeHannWindow` |
-| `public/app/dsp-stages.js` | ✅ NEW | Named spectral DSP stage functions as pure operators — `runFullPipeline()` dispatcher included |
 | `public/app/dsp-stages.js` | ✅ NEW | All 32 named DSP stage functions as pure spectral operators — `runFullPipeline()` dispatcher included |
 | `public/app/models/demucs_v4_quantized.onnx.placeholder` | ✅ UPDATED | Clear instructions for obtaining/converting the model; runtime fallback behaviour documented |
 
@@ -38,20 +37,12 @@ Generated: 2026-05-12
 The `demucs_v4_quantized.onnx` model is not committed due to size (50–200 MB).
 `ml-worker.js` already handles this gracefully:
 
-```javascript
-// In loadModels() inside ml-worker.js:
-// If demucs .onnx is missing, catch block logs a warning and continues.
-// buildMask() checks `if (demucsSess && pcmChunk)` — unity mask used otherwise.
-// BSRNN provides ~85% of the Demucs+BSRNN ensemble quality solo.
-```
-
-To add Demucs: run `bash scripts/download-models.sh` and commit the output.
 - If the Demucs model is unavailable or its session cannot be created, the worker emits a warning and continues processing instead of failing the job.
-- The fallback path is the normal non-Demucs separation flow already implemented in `ml-worker.js` (that is, processing continues without Demucs rather than attempting to hard-fail or block inference).
-- Use the actual warning text emitted by `ml-worker.js` as the source of truth when validating logs; this checklist intentionally avoids duplicating exact log strings or internal conditionals that can drift out of sync.
+- The fallback path is the normal non-Demucs separation flow already implemented in `ml-worker.js` (processing continues without Demucs rather than failing the job).
+- Use the actual warning text emitted by `ml-worker.js` as the source of truth when validating logs; this checklist intentionally avoids duplicating exact log strings that can drift out of sync.
 - BSRNN remains the primary fallback/standalone separator when Demucs is absent.
 
-To add Demucs: run `python scripts/export_demucs_onnx.py --out-dir public/app/models` and commit the output.
+To add Demucs: run `bash scripts/download-models.sh` and commit the output.
 
 ## Architecture Invariants (Verified)
 
@@ -66,9 +57,6 @@ To add Demucs: run `python scripts/export_demucs_onnx.py --out-dir public/app/mo
 - [ ] Run `pnpm install`
 - [ ] Copy ORT WASM files: `node scripts/setup-ort.js`
 - [ ] (Optional) Download Demucs: `bash scripts/download-models.sh`
-- [ ] Run `pnpm install` (or `npm install`)
-- [ ] Copy ORT WASM files: `node scripts/setup-ort.js`
-- [ ] (Optional) Export Demucs ONNX: `python scripts/export_demucs_onnx.py --out-dir public/app/models`
 - [ ] Deploy to Vercel: `vercel --prod`
 - [ ] Verify SharedArrayBuffer is available: open console, check `typeof SharedArrayBuffer !== 'undefined'`
 - [ ] Test Live mode: click 🎙️, confirm <10ms latency
