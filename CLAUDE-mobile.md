@@ -117,7 +117,10 @@ Every preset must define all 52 slider IDs — `tests/presets.test.js` enforces 
 | VoiceFixer | — | Vercel Blob (first-use) |
 | HiFi-GAN | — | Vercel Blob (first-use) |
 
-Registry: `public/app/models/models-manifest.json`
+Reference manifest in repo: `public/app/models/models-manifest.json`
+Runtime manifest fetched by `model-cdn-loader.js`: `/app/models-manifest.json`
+
+Contributor note: the quick reference file above is for documentation/source tracking; the app loads the root-served `/app/models-manifest.json` at runtime. Do not update only the reference copy if you intend to change runtime model resolution.
 
 ---
 
