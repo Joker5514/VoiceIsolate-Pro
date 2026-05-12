@@ -71,6 +71,7 @@
         input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; cursor: pointer; }
         input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--border); border-radius: 2px; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); margin-top: -5px; box-shadow: 0 0 6px rgba(0,255,204,.4); }
+        input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
 
         #specCanvas { width: 100%; height: 100%; position: absolute; top: 0; left: 0; background: #0a0a0a; display: block; }
         .vis-overlay { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: center; z-index: 5; pointer-events: none; }
@@ -87,6 +88,7 @@
         .sw-track::before { content: ''; position: absolute; height: 12px; width: 12px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .3s; }
         input:checked + .sw-track { background: var(--accent); }
         input:checked + .sw-track::before { transform: translateX(14px); }
+        input:focus-visible + .sw-track { outline: 2px solid var(--accent); outline-offset: 2px; }
 
         .stats-box { background: #111; border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
         .stat-row { display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px; }
@@ -130,7 +132,7 @@
 
 <div id="statusBar">
     <div class="status-dot" id="statusDot"></div>
-    <span id="statusText">Idle — click Grant Microphone to start</span>
+    <span id="statusText" aria-live="polite">Idle — click Grant Microphone to start</span>
     <span style="margin-left:auto;color:#444;font-family:monospace;font-size:9px" id="srDisplay"></span>
 </div>
 
@@ -143,7 +145,7 @@
         </div>
         <div class="panel-section">
             <div class="section-label">Input Device</div>
-            <select id="inputDeviceSel" onchange="changeDevice()"></select>
+            <select id="inputDeviceSel" onchange="changeDevice()" aria-label="Input Device"></select>
         </div>
         <div class="panel-section">
             <div class="level-row"><span class="level-label">Input Level</span><span class="level-val" id="inLevelVal">-- dB</span></div>
@@ -212,10 +214,10 @@
     <!-- RIGHT -->
     <div class="panel right-panel">
         <div style="display:flex;flex-direction:column;gap:11px;flex:1">
-            <div class="section-label" style="margin:0">Output</div>
-            <select id="outputDeviceSel"></select>
-            <div class="switch-row"><span>Monitor Mic</span><label class="sw"><input type="checkbox" id="monitorTgl" onchange="toggleMonitor()"><span class="sw-track"></span></label></div>
-            <div class="switch-row"><span>Bypass DSP</span><label class="sw"><input type="checkbox" id="bypassTgl" onchange="toggleBypass()"><span class="sw-track"></span></label></div>
+            <div class="section-label" style="margin:0">Output Device</div>
+            <select id="outputDeviceSel" aria-label="Output Device"></select>
+            <div class="switch-row"><span>Monitor Mic</span><label class="sw"><input type="checkbox" id="monitorTgl" onchange="toggleMonitor()" aria-label="Monitor Mic"><span class="sw-track"></span></label></div>
+            <div class="switch-row"><span>Bypass DSP</span><label class="sw"><input type="checkbox" id="bypassTgl" onchange="toggleBypass()" aria-label="Bypass DSP"><span class="sw-track"></span></label></div>
             <div class="panel-section">
                 <div class="level-row"><span class="level-label">Output Level</span><span class="level-val" id="outLevelVal" style="color:var(--accent)">-- dB</span></div>
                 <div class="meter-wrap"><div class="meter-fill" id="outMeter"></div></div>
