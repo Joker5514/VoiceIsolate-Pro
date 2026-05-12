@@ -161,6 +161,9 @@ export class ModelStatusUI {
       try { manifest = await window.ModelCDNLoader.getManifest(); }
       catch { /* ignore */ }
     }
+    const manifestModels = Array.isArray(manifest?.models)
+      ? Object.fromEntries(manifest.models.map((entry) => [entry.id, entry]))
+      : (manifest?.models || null);
 
     let hasLoading = false;
     for (const key of this._keys) {
@@ -170,8 +173,8 @@ export class ModelStatusUI {
         if (match) {
           const provider = match.headers.get('X-VIP-Provider') || 'cache';
           this.setStatus(key, 'cached', undefined, provider);
-        } else if (manifest && manifest.models && manifest.models[key]) {
-          if (manifest.models[key].eager) {
+        } else if (manifestModels && manifestModels[key]) {
+          if (manifestModels[key].eager || manifestModels[key].load_priority === 'eager') {
             this.setStatus(key, 'loading');
             hasLoading = true;
           } else {

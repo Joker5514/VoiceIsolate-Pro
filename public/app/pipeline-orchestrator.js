@@ -722,27 +722,33 @@ class PipelineOrchestrator {
     window._vipOrch = orch;
 
     // ── Patch onSlider ─────────────────────────────────────────────────
-    const _origOnSlider = app.onSlider.bind(app);
-    app.onSlider = function (el) {
-      _origOnSlider(el);
-      orch.updateParams(app.params);
-    };
+    if (typeof app.onSlider === 'function') {
+      const _origOnSlider = app.onSlider.bind(app);
+      app.onSlider = function (...args) {
+        _origOnSlider(...args);
+        orch.updateParams(app.params);
+      };
+    }
 
     // ── Patch applyPreset ──────────────────────────────────────────────
-    const _origApply = app.applyPreset.bind(app);
-    app.applyPreset = function (name) {
-      _origApply(name);
-      orch.updateParams(app.params);
-    };
+    if (typeof app.applyPreset === 'function') {
+      const _origApply = app.applyPreset.bind(app);
+      app.applyPreset = function (name) {
+        _origApply(name);
+        orch.updateParams(app.params);
+      };
+    }
 
     // ── Patch toggleRecording to ensure worklet is ready first ─────────
-    const _origToggle = app.toggleRecording.bind(app);
-    app.toggleRecording = async function () {
-      if (!orch.initialized) {
-        try { await orch.init(); } catch (e) { console.warn('[Orchestrator] init during toggleRecording failed:', e); }
-      }
-      return _origToggle();
-    };
+    if (typeof app.toggleRecording === 'function') {
+      const _origToggle = app.toggleRecording.bind(app);
+      app.toggleRecording = async function () {
+        if (!orch.initialized) {
+          try { await orch.init(); } catch (e) { console.warn('[Orchestrator] init during toggleRecording failed:', e); }
+        }
+        return _origToggle();
+      };
+    }
 
     // ── Pre-warm ML Worker immediately ────────────────────────────────
     // Web Workers don't require a user gesture. Starting the ML Worker

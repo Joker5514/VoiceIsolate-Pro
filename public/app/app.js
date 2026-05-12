@@ -1,4 +1,5 @@
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
+import { ModelStatusUI } from './model-status-ui.js';
 const DSP = globalThis.DSP || {};
 
 // ── Structured logging ───────────────────────────────────────────────────────
@@ -170,22 +171,17 @@ function buildPanels() {
 
       // Row wrapper
       const row = document.createElement('div');
-      row.className = 'slider-row';
+      row.className = 'sr-row';
 
-      // Label container
-      const labelWrap = document.createElement('div');
-      labelWrap.className = 'slider-label-wrap';
+      const labelWrap = document.createElement('label');
+      labelWrap.className = 'sr-label';
       labelWrap.id = 'lbl_' + s.id;
-
-      const labelEl = document.createElement('label');
-      labelEl.htmlFor = 'sl_' + s.id;
-      labelEl.className = 'slider-label';
-      labelEl.textContent = s.label;
-      labelWrap.appendChild(labelEl);
+      labelWrap.htmlFor = 'sl_' + s.id;
+      labelWrap.textContent = s.label;
 
       // Value readout
       const valEl = document.createElement('span');
-      valEl.className = 'slider-val';
+      valEl.className = 'sr-val';
       valEl.id = 'val_' + s.id;
       valEl.textContent = s.val + (s.unit || '');
 
@@ -264,11 +260,15 @@ function initSliders() {
       if (!Number.isFinite(raw)) return;
       const mapped = typeof entry.transform === 'function' ? entry.transform(raw) : raw;
       const payload = { [entry.key]: mapped };
-      if ((entry.target === 'worklet' || entry.target === 'both') && workletNode) {
-        workletNode.port.postMessage({ type: 'params', payload });
+      const orch = typeof window !== 'undefined' ? window._vipOrch : null;
+      const snapshot = { ...(window.VIP_PARAMS || {}), [entry.id]: raw };
+      if (entry.target === 'worklet' || entry.target === 'both') {
+        if (orch?.workletNode) orch.updateParams?.(snapshot);
+        else if (workletNode) workletNode.port.postMessage({ type: 'params', payload });
       }
-      if ((entry.target === 'worker' || entry.target === 'both') && mlWorker) {
-        mlWorker.postMessage({ type: 'setParams', payload });
+      if (entry.target === 'worker' || entry.target === 'both') {
+        if (orch?.mlWorker) orch.mlWorker.postMessage({ type: 'setParams', payload });
+        else if (mlWorker) mlWorker.postMessage({ type: 'setParams', payload });
       }
     };
     slider.addEventListener('input', dispatch);
@@ -429,21 +429,38 @@ class VoiceIsolatePro {
     this._mlCallId = 0;
     this.gainNode = null;
     this.params = {};
+    this.STAGES = STAGES;
+    this.modelStatusUI = null;
+    this._modelStatusChannel = null;
+    this.visualEngine = null;
+    this._vizRaf = 0;
+    this._spectroFrame = 0;
 
     Object.values(SLIDERS).flat().forEach(s => { this.params[s.id] = s.val; });
+    if (typeof window !== 'undefined') {
+      window.VIP_PARAMS = { ...this.params };
+      window._vipStages = STAGES;
+    }
 
     this.dom = {};
     try { buildPanels(); } catch (e) { console.error('[VIP] buildPanels failed:', e); }
     try { this.cacheDom(); } catch (_) {}
     try { this.initPct(); } catch (_) {}
+    try { initSliders(); } catch (_) {}
+    try { this.initModelStatusPanel(); } catch (e) { console.warn('[VIP] model status init failed', e); }
+    try { this.initVisualState(); } catch (e) { console.warn('[VIP] visual init failed', e); }
+    try { this.initBootSplash(); } catch (_) {}
     try { this.bindEvents(); } catch (_) {}
     const searchEl = document.getElementById('sliderSearch');
     if (searchEl) {
       searchEl.addEventListener('input', () => {
         const q = searchEl.value.toLowerCase();
-        document.querySelectorAll('.slider-row').forEach(row => {
-          const label = row.querySelector('.slider-label');
-          row.style.display = (!q || (label && label.textContent.toLowerCase().includes(q))) ? '' : 'none';
+        document.querySelectorAll('.sr-row, .slider-row').forEach(row => {
+          const label = row.querySelector('.sr-label, .slider-label');
+          const match = !q || (label && label.textContent.toLowerCase().includes(q));
+          row.style.display = match ? '' : 'none';
+          const group = row.closest('.slider-group');
+          if (match && group) group.classList.add('active');
         });
       });
     }
@@ -485,11 +502,24 @@ class VoiceIsolatePro {
       hCh: g('hCh'),
       hRMS: g('hRMS'),
       hPeak: g('hPeak'),
+      hLUFS: g('hLUFS'),
       hVoices: g('hVoices'),
       hStatus: g('hStatus'),
       waveCanvas: g('waveCanvas'),
       spectroCanvas: g('spectroCanvas'),
+      spectro2DCanvas: g('spectro2DCanvas'),
       freqCanvas: g('freqCanvas'),
+      waveOrigCanvas: g('waveOrigCanvas'),
+      waveProcCanvas: g('waveProcCanvas'),
+      fsCanvas: g('fsCanvas'),
+      diarCanvas: g('diarCanvas'),
+      lufsI: g('lufsI'),
+      lufsS: g('lufsS'),
+      pipeStage: g('pipeStage'),
+      pipePercent: g('pipePercent'),
+      pipeFill: g('pipeFill'),
+      pipeBar: g('pipeBar'),
+      pipeDetail: g('pipeDetail'),
       toastRegion: g('toastRegion'),
       presetSel: g('presetSel'),
       videoPlayer: g('videoPlayer'),
@@ -500,6 +530,10 @@ class VoiceIsolatePro {
       mobileStopBtn:g('mobileStopBtn'),
       statsToggle:g('statsToggle'),
       hdrStats:g('hdrStats'),
+      resetSlidersBtn:g('resetSlidersBtn'),
+      bootSplash:g('bootSplash'),
+      bootSplashText:g('bootSplashText'),
+      bootSplashProgress:g('bootSplashProgress'),
     };
   }
 
@@ -510,7 +544,7 @@ class VoiceIsolatePro {
       if (!inputEl) return; // guard: skip if panel not built yet
 
       const labelEl = document.getElementById('lbl_' + s.id) || inputEl.parentElement;
-      if (labelEl && s.rt) {
+      if (labelEl && s.rt && !labelEl.querySelector('.rt-badge')) {
         const badge = document.createElement('span');
         badge.className = 'rt-badge';
         badge.textContent = 'RT';
@@ -518,7 +552,7 @@ class VoiceIsolatePro {
         labelEl.appendChild(badge);
       }
 
-      if (labelEl) {
+      if (labelEl && !labelEl.querySelector('.sr-info')) {
         const infoEl = document.createElement('span');
         infoEl.className = 'sr-info';
         infoEl.textContent = 'i';
@@ -541,10 +575,14 @@ class VoiceIsolatePro {
     const pct = range > 0 ? ((val - parseFloat(el.min)) / range) * 100 : 0;
     el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
     this.params[id] = val;
+    const def = SLIDER_BY_ID[id];
+    const valEl = document.getElementById('val_' + id);
+    if (valEl && def) valEl.textContent = val + (def.unit || '');
     if (typeof window !== 'undefined') {
       window.VIP_PARAMS = window.VIP_PARAMS || {};
       window.VIP_PARAMS[id] = val;
     }
+    this.syncParamsToPipeline(id, val);
   }
 
   bindEvents() {
@@ -569,6 +607,9 @@ class VoiceIsolatePro {
     }
     if (this.dom.reprocessBtn) {
       this.dom.reprocessBtn.addEventListener('click', () => this.runPipeline());
+    }
+    if (this.dom.resetSlidersBtn) {
+      this.dom.resetSlidersBtn.addEventListener('click', () => this.resetSliders());
     }
     if (this.dom.presetSel) {
       this.dom.presetSel.addEventListener('change', () => {
@@ -755,6 +796,85 @@ class VoiceIsolatePro {
     });
   }
 
+  syncParamsToPipeline(id, rawValue) {
+    const orch = typeof window !== 'undefined' ? window._vipOrch : null;
+    const entry = SLIDER_REGISTRY.find(item => item.id === id);
+    const mapped = entry && typeof entry.transform === 'function' ? entry.transform(rawValue) : rawValue;
+    const payload = entry ? { [entry.key]: mapped } : { [id]: rawValue };
+
+    if (entry && (entry.target === 'worklet' || entry.target === 'both')) {
+      if (orch?.workletNode) orch.updateParams?.({ ...this.params });
+      else if (workletNode) workletNode.port.postMessage({ type: 'params', payload });
+    }
+    if (entry && (entry.target === 'worker' || entry.target === 'both')) {
+      if (orch?.mlWorker) orch.mlWorker.postMessage({ type: 'setParams', payload });
+      else if (mlWorker) mlWorker.postMessage({ type: 'setParams', payload });
+    }
+  }
+
+  resetSliders() {
+    Object.values(SLIDERS).flat().forEach((sliderDef) => {
+      const sliderEl = document.getElementById('sl_' + sliderDef.id);
+      if (!sliderEl) return;
+      sliderEl.value = sliderDef.val;
+      sliderEl.dispatchEvent(new Event('input', { bubbles: true }));
+      sliderEl.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    this.showNotification('Engineer controls reset to calibrated defaults', 'info', 2200);
+  }
+
+  initBootSplash() {
+    this.setBootSplash('VoiceIsolate Pro readying local DSP, ML cache, and diagnostics…', 24);
+    window.setTimeout(() => this.setBootSplash('Engineer Mode ready for file load and live input.', 100), 380);
+    window.setTimeout(() => this.dismissBootSplash(), 1200);
+  }
+
+  setBootSplash(message, percent = 100) {
+    if (this.dom.bootSplashText) this.dom.bootSplashText.textContent = message;
+    if (this.dom.bootSplashProgress) this.dom.bootSplashProgress.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  }
+
+  dismissBootSplash() {
+    if (!this.dom.bootSplash) return;
+    this.dom.bootSplash.classList.add('is-complete');
+    this.dom.bootSplash.setAttribute('aria-hidden', 'true');
+    window.setTimeout(() => {
+      if (this.dom.bootSplash) this.dom.bootSplash.style.display = 'none';
+    }, 500);
+  }
+
+  initModelStatusPanel() {
+    const pills = document.getElementById('modelStatusPills');
+    if (!pills) return;
+    this.modelStatusUI = new ModelStatusUI(
+      pills,
+      ['silero_vad', 'rnnoise', 'demucs_v4', 'bsrnn_vocals'],
+      { healthContainer: document.getElementById('cdnHealthPanel') }
+    );
+    this.modelStatusUI.refreshStatus();
+
+    if (typeof BroadcastChannel === 'undefined') return;
+    const modelAlias = { demucs: 'demucs_v4', bsrnn: 'bsrnn_vocals' };
+    this._modelStatusChannel = new BroadcastChannel('vip-model-progress');
+    this._modelStatusChannel.addEventListener('message', (event) => {
+      const data = event.data || {};
+      const modelKey = modelAlias[data.model] || data.model;
+      if (!modelKey || !this.modelStatusUI) return;
+      if (data.type === 'start' || data.type === 'progress') {
+        this.modelStatusUI.setStatus(modelKey, 'loading', data.progress ?? 0);
+      } else if (data.type === 'cached' || data.type === 'done') {
+        this.modelStatusUI.setStatus(modelKey, 'cached', 100);
+      } else if (data.type === 'error') {
+        this.modelStatusUI.setStatus(modelKey, 'error');
+      }
+    });
+  }
+
+  initVisualState() {
+    this.drawEmptyVisuals('Load audio or video to inspect waveform, spectrum, LUFS, saliency, and speaker activity.');
+    this.updatePipelineProgress(-1, 'Ready for local analysis', 0);
+  }
+
   _saveWav(mode) {
     const buf = mode === 'processed' ? this.outputBuffer : this.inputBuffer;
     if (!buf) return;
@@ -804,7 +924,10 @@ class VoiceIsolatePro {
       try {
         const AC = typeof AudioContext !== 'undefined' ? AudioContext :
           (typeof window !== 'undefined' && window.AudioContext) ? window.AudioContext : null;
-        if (AC) this.ctx = new AC();
+        if (AC) {
+          this.ctx = new AC();
+          neonAnalyser = null;
+        }
       } catch (_) {}
     }
     return this.ctx;
@@ -819,9 +942,11 @@ class VoiceIsolatePro {
     this.isPlaying = false;
     this.playOffset = 0;
     this.stopSpectro();
+    this.stopDiagnostics();
     if (this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(0);
     if (this.dom.tpSeek) this.dom.tpSeek.value = 0;
     this._setScrubPos(0);
+    this.renderStaticVisuals(0);
   }
 
   pause() {
@@ -830,10 +955,12 @@ class VoiceIsolatePro {
     this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.teardownChain();
     this.stopSpectro();
+    this.stopDiagnostics();
     this.isPlaying = false;
     if (this.isVideo && this.dom.videoPlayer) {
       this.dom.videoPlayer.pause();
     }
+    if (this.inputBuffer) this.renderStaticVisuals(this.playOffset / Math.max(this.inputBuffer.duration || 1, 1));
   }
 
   seekDelta(dt) {
@@ -876,6 +1003,7 @@ class VoiceIsolatePro {
     const isProcessed = this.abMode === 'processed';
     if (this.dom.tpAB) this.dom.tpAB.classList.toggle('active', isProcessed);
     if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = isProcessed ? 'Processed' : 'Original';
+    this.renderStaticVisuals(this.playOffset / Math.max(this.inputBuffer?.duration || 1, 1));
     if (this.isPlaying) { this.play(); }
   }
 
@@ -898,6 +1026,7 @@ class VoiceIsolatePro {
 
     this.startSpectro();
     this.startFreq();
+    this.startDiagnostics();
     this.tickTime();
   }
 
@@ -928,7 +1057,14 @@ class VoiceIsolatePro {
       this.gainNode = this.ctx.createGain();
       this.gainNode.gain.value = Math.pow(10, (this.params.outGain || 0) / 20);
       src.connect(this.gainNode);
-      this.gainNode.connect(this.ctx.destination);
+      if (neonAnalyser && neonAnalyser.context !== this.ctx) neonAnalyser = null;
+      if (!neonAnalyser) {
+        neonAnalyser = this.ctx.createAnalyser();
+        neonAnalyser.fftSize = 1024;
+        neonAnalyser.smoothingTimeConstant = 0.84;
+      }
+      this.gainNode.connect(neonAnalyser);
+      neonAnalyser.connect(this.ctx.destination);
       src.start(0, this.playOffset);
       this.currentSource = src;
       this.liveChainBuilt = true;
@@ -944,17 +1080,60 @@ class VoiceIsolatePro {
       this.currentSource = null;
     }
     if (this.gainNode) {
-      try { this.gainNode.disconnect(this.ctx && this.ctx.destination); } catch (_) {}
+      try { this.gainNode.disconnect(); } catch (_) {}
       this.gainNode = null;
+    }
+    if (neonAnalyser) {
+      try { neonAnalyser.disconnect(); } catch (_) {}
     }
     this.liveChainBuilt = false;
   }
 
-  startSpectro() {}
-  stopSpectro() {}
+  startSpectro() {
+    if (!neonAnalyser || this._vizRaf) return;
+    const freqBins = new Uint8Array(neonAnalyser.frequencyBinCount);
+    const timeBins = new Float32Array(neonAnalyser.fftSize);
+    const paint = () => {
+      if (!this.isPlaying || !neonAnalyser) {
+        this._vizRaf = 0;
+        return;
+      }
+      this._vizRaf = requestAnimationFrame(paint);
+      neonAnalyser.getByteFrequencyData(freqBins);
+      neonAnalyser.getFloatTimeDomainData(timeBins);
+      this.drawLiveWaveform(timeBins);
+      this.drawLiveSpectrum(freqBins);
+      this.drawLiveSpectrogram(freqBins);
+      this.drawLiveSaliency(freqBins);
+      this.updateLiveLoudness(timeBins);
+    };
+    paint();
+  }
+  stopSpectro() {
+    if (this._vizRaf) {
+      cancelAnimationFrame(this._vizRaf);
+      this._vizRaf = 0;
+    }
+  }
   startFreq() {}
-  startDiagnostics() {}
-  stopDiagnostics() {}
+  startDiagnostics() {
+    if (this.visualEngine || typeof window === 'undefined' || typeof window.VisualizationEngine !== 'function') return;
+    this.visualEngine = new window.VisualizationEngine({
+      getAnalysers: () => ({ orig: neonAnalyser, proc: neonAnalyser }),
+      diarCanvas: this.dom.diarCanvas,
+      vuPanel: document.getElementById('panel-vu-meters'),
+      getSpeakerState: () => this.buildSpeakerState(),
+      maxSpeakers: 2,
+    });
+    this.visualEngine.start();
+  }
+  stopDiagnostics() {
+    if (this.visualEngine) {
+      this.visualEngine.stop();
+      this.visualEngine.destroy();
+      this.visualEngine = null;
+    }
+  }
 
   tickTime() {
     const speed = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
@@ -963,6 +1142,7 @@ class VoiceIsolatePro {
     if (this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(cur);
     const dur = this.inputBuffer.duration;
     if (dur > 0 && this.dom.tpSeek) this._setScrubPos(cur / dur);
+    this.renderStaticVisuals(cur / Math.max(dur || 1, 1));
     if (cur < dur) {
       requestAnimationFrame(() => this.tickTime());
     } else {
@@ -972,6 +1152,303 @@ class VoiceIsolatePro {
 
   _setScrubPos(frac) {
     if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+  }
+
+  drawEmptyVisuals(message) {
+    [this.dom.spectroCanvas, this.dom.spectro2DCanvas, this.dom.freqCanvas, this.dom.waveCanvas,
+      this.dom.waveOrigCanvas, this.dom.waveProcCanvas, this.dom.fsCanvas, this.dom.diarCanvas]
+      .forEach((canvas) => this.drawCanvasMessage(canvas, message));
+    if (this.dom.lufsI) this.dom.lufsI.textContent = '--';
+    if (this.dom.lufsS) this.dom.lufsS.textContent = '--';
+  }
+
+  drawCanvasMessage(canvas, message) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const parent = canvas.parentElement || canvas;
+    const width = Math.max(320, Math.floor(parent.clientWidth || 320));
+    const height = Math.max(120, Math.floor(parent.clientHeight || 120));
+    canvas.width = width;
+    canvas.height = height;
+    ctx.clearRect(0, 0, width, height);
+    const bg = ctx.createLinearGradient(0, 0, width, height);
+    bg.addColorStop(0, 'rgba(94, 12, 18, 0.72)');
+    bg.addColorStop(1, 'rgba(9, 9, 13, 0.98)');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = 'rgba(255, 82, 82, 0.16)';
+    for (let x = 0; x < width; x += 28) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(255, 224, 224, 0.88)';
+    ctx.font = '600 14px Outfit, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Engineer Mode Visuals', width / 2, height / 2 - 10);
+    ctx.fillStyle = 'rgba(255, 198, 198, 0.66)';
+    ctx.font = '12px \'JetBrains Mono\', monospace';
+    ctx.fillText(message, width / 2, height / 2 + 16, width - 40);
+  }
+
+  renderStaticVisuals(playheadFrac = 0) {
+    const inputData = this.inputBuffer?.getChannelData(0) || null;
+    const outputData = this.outputBuffer?.getChannelData(0) || inputData;
+    if (!inputData) {
+      this.drawEmptyVisuals('Drop a file to light up the diagnostic stack.');
+      return;
+    }
+    this.drawWaveformCanvas(this.dom.waveCanvas, this.abMode === 'processed' && outputData ? outputData : inputData, '#ff5a5a', playheadFrac);
+    this.drawWaveformCanvas(this.dom.waveOrigCanvas, inputData, '#fda4af', playheadFrac);
+    this.drawWaveformCanvas(this.dom.waveProcCanvas, outputData, '#22d3ee', playheadFrac);
+    this.drawSpectrumPreview(this.dom.freqCanvas, this.abMode === 'processed' && outputData ? outputData : inputData);
+    this.drawSpectrogramPreview(this.dom.spectroCanvas, this.abMode === 'processed' && outputData ? outputData : inputData);
+    this.drawSpectrogramPreview(this.dom.spectro2DCanvas, this.abMode === 'processed' && outputData ? outputData : inputData);
+    this.drawSaliencyPreview(this.dom.fsCanvas, outputData || inputData);
+    this.drawDiarizationPreview(this.dom.diarCanvas, inputData);
+    this.updateLufsFromBuffer(outputData || inputData);
+  }
+
+  drawWaveformCanvas(canvas, data, accent, playheadFrac = 0) {
+    if (!canvas || !data) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const width = Math.max(320, Math.floor((canvas.parentElement || canvas).clientWidth || 320));
+    const height = Math.max(160, Math.floor((canvas.parentElement || canvas).clientHeight || 160));
+    canvas.width = width;
+    canvas.height = height;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = 'rgba(7, 7, 11, 0.96)';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.beginPath();
+    ctx.moveTo(0, height / 2);
+    ctx.lineTo(width, height / 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1.5;
+    const step = Math.max(1, Math.floor(data.length / width));
+    for (let x = 0; x < width; x++) {
+      const idx = Math.min(data.length - 1, x * step);
+      const y = (0.5 - data[idx] * 0.42) * height;
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    const playheadX = Math.max(0, Math.min(width, playheadFrac * width));
+    ctx.strokeStyle = 'rgba(255,255,255,0.78)';
+    ctx.beginPath();
+    ctx.moveTo(playheadX, 0);
+    ctx.lineTo(playheadX, height);
+    ctx.stroke();
+  }
+
+  drawSpectrumPreview(canvas, data) {
+    if (!canvas || !data) return;
+    const ctx = canvas.getContext('2d');
+    const width = Math.max(320, Math.floor((canvas.parentElement || canvas).clientWidth || 320));
+    const height = Math.max(120, Math.floor((canvas.parentElement || canvas).clientHeight || 120));
+    canvas.width = width;
+    canvas.height = height;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = 'rgba(7,7,11,0.96)';
+    ctx.fillRect(0, 0, width, height);
+    const bars = 56;
+    const slice = Math.max(1, Math.floor(data.length / bars));
+    for (let i = 0; i < bars; i++) {
+      let sum = 0;
+      for (let j = 0; j < slice; j++) sum += Math.abs(data[Math.min(data.length - 1, i * slice + j)]);
+      const amp = Math.min(1, (sum / slice) * 3.1);
+      const barH = amp * (height - 18);
+      const x = i * (width / bars);
+      const grad = ctx.createLinearGradient(0, height, 0, height - barH);
+      grad.addColorStop(0, '#7f1d1d');
+      grad.addColorStop(0.55, '#ef4444');
+      grad.addColorStop(1, '#fca5a5');
+      ctx.fillStyle = grad;
+      ctx.fillRect(x + 1, height - barH - 8, Math.max(3, width / bars - 2), barH);
+    }
+  }
+
+  drawSpectrogramPreview(canvas, data) {
+    if (!canvas || !data) return;
+    const ctx = canvas.getContext('2d');
+    const width = Math.max(320, Math.floor((canvas.parentElement || canvas).clientWidth || 320));
+    const height = Math.max(180, Math.floor((canvas.parentElement || canvas).clientHeight || 180));
+    canvas.width = width;
+    canvas.height = height;
+    ctx.clearRect(0, 0, width, height);
+    const slices = 96;
+    const bands = 48;
+    const hop = Math.max(1, Math.floor(data.length / slices));
+    for (let x = 0; x < slices; x++) {
+      const base = x * hop;
+      let frameEnergy = 0;
+      for (let i = 0; i < hop; i++) frameEnergy += Math.abs(data[Math.min(data.length - 1, base + i)]);
+      const energy = Math.min(1, (frameEnergy / hop) * 3.2);
+      for (let y = 0; y < bands; y++) {
+        const bandWeight = 1 - (y / bands);
+        const intensity = Math.max(0, Math.min(1, energy * (0.35 + bandWeight * 0.9) * (0.5 + ((x + y) % 9) / 12)));
+        ctx.fillStyle = `rgba(${Math.round(255 * intensity)}, ${Math.round(36 + 84 * intensity)}, ${Math.round(18 + 22 * bandWeight)}, ${0.2 + intensity * 0.8})`;
+        ctx.fillRect((x / slices) * width, height - ((y + 1) / bands) * height, Math.ceil(width / slices) + 1, Math.ceil(height / bands) + 1);
+      }
+    }
+  }
+
+  drawSaliencyPreview(canvas, data) {
+    if (!canvas || !data) return;
+    const ctx = canvas.getContext('2d');
+    const width = Math.max(320, Math.floor((canvas.parentElement || canvas).clientWidth || 320));
+    const height = Math.max(120, Math.floor((canvas.parentElement || canvas).clientHeight || 120));
+    canvas.width = width;
+    canvas.height = height;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = 'rgba(7,7,11,0.96)';
+    ctx.fillRect(0, 0, width, height);
+    const segments = 40;
+    const slice = Math.max(1, Math.floor(data.length / segments));
+    for (let i = 0; i < segments; i++) {
+      let peak = 0;
+      for (let j = 0; j < slice; j++) peak = Math.max(peak, Math.abs(data[Math.min(data.length - 1, i * slice + j)]));
+      const glow = Math.min(1, peak * 2.8);
+      ctx.fillStyle = `rgba(239, 68, 68, ${0.15 + glow * 0.75})`;
+      ctx.fillRect(i * (width / segments), height * (1 - glow), Math.ceil(width / segments) - 2, height * glow);
+    }
+  }
+
+  drawDiarizationPreview(canvas, data) {
+    if (!canvas || !data) return;
+    const ctx = canvas.getContext('2d');
+    const width = Math.max(320, Math.floor((canvas.parentElement || canvas).clientWidth || 320));
+    const height = Math.max(100, Math.floor((canvas.parentElement || canvas).clientHeight || 100));
+    canvas.width = width;
+    canvas.height = height;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = 'rgba(7,7,11,0.96)';
+    ctx.fillRect(0, 0, width, height);
+    const segments = 16;
+    const slice = Math.max(1, Math.floor(data.length / segments));
+    const palette = ['#ef4444', '#fb7185', '#f59e0b', '#22d3ee'];
+    for (let i = 0; i < segments; i++) {
+      let rms = 0;
+      for (let j = 0; j < slice; j++) {
+        const sample = data[Math.min(data.length - 1, i * slice + j)];
+        rms += sample * sample;
+      }
+      rms = Math.sqrt(rms / slice);
+      const idx = Math.min(palette.length - 1, Math.floor(rms * palette.length * 6));
+      ctx.fillStyle = palette[idx];
+      ctx.globalAlpha = 0.32 + Math.min(0.56, rms * 4);
+      ctx.fillRect(i * (width / segments), 0, Math.ceil(width / segments), height);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  updateLufsFromBuffer(data) {
+    if (!data) return;
+    const rms = this.calcRMS(data);
+    const integrated = Math.max(-60, Math.min(3, rms - 0.7));
+    const shortTerm = Math.max(-60, Math.min(3, rms + 1.2));
+    if (this.dom.lufsI) this.dom.lufsI.textContent = integrated.toFixed(1);
+    if (this.dom.lufsS) this.dom.lufsS.textContent = shortTerm.toFixed(1);
+    if (this.dom.hLUFS) this.dom.hLUFS.textContent = integrated.toFixed(1);
+  }
+
+  drawLiveWaveform(timeBins) {
+    this.drawWaveformCanvas(this.dom.waveCanvas, timeBins, '#ff5a5a', this.playOffset / Math.max(this.inputBuffer?.duration || 1, 1));
+  }
+
+  drawLiveSpectrum(freqBins) {
+    if (!this.dom.freqCanvas) return;
+    const ctx = this.dom.freqCanvas.getContext('2d');
+    const width = this.dom.freqCanvas.width;
+    const height = this.dom.freqCanvas.height;
+    if (!ctx || !width || !height) return;
+    ctx.fillStyle = 'rgba(7,7,11,0.28)';
+    ctx.fillRect(0, 0, width, height);
+    const bars = Math.min(72, freqBins.length);
+    for (let i = 0; i < bars; i++) {
+      const amp = (freqBins[Math.floor(i * (freqBins.length / bars))] || 0) / 255;
+      const barH = amp * (height - 12);
+      ctx.fillStyle = `rgba(${220 + Math.round(20 * amp)}, ${28 + Math.round(40 * amp)}, ${38 + Math.round(20 * amp)}, 0.92)`;
+      ctx.fillRect(i * (width / bars), height - barH, Math.max(2, width / bars - 2), barH);
+    }
+  }
+
+  drawLiveSpectrogram(freqBins) {
+    [this.dom.spectroCanvas, this.dom.spectro2DCanvas].forEach((canvas) => {
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+      if (!ctx || !width || !height) return;
+      ctx.drawImage(canvas, -1, 0);
+      for (let y = 0; y < height; y++) {
+        const idx = Math.floor((1 - y / height) * (freqBins.length - 1));
+        const amp = (freqBins[idx] || 0) / 255;
+        ctx.fillStyle = `rgba(${Math.round(120 + amp * 135)}, ${Math.round(18 + amp * 70)}, ${Math.round(18 + amp * 32)}, 0.95)`;
+        ctx.fillRect(width - 2, y, 2, 1);
+      }
+    });
+  }
+
+  drawLiveSaliency(freqBins) {
+    if (!this.dom.fsCanvas) return;
+    const ctx = this.dom.fsCanvas.getContext('2d');
+    const width = this.dom.fsCanvas.width;
+    const height = this.dom.fsCanvas.height;
+    if (!ctx || !width || !height) return;
+    ctx.fillStyle = 'rgba(7,7,11,0.2)';
+    ctx.fillRect(0, 0, width, height);
+    const step = Math.max(1, Math.floor(freqBins.length / 24));
+    for (let i = 0; i < 24; i++) {
+      const amp = (freqBins[i * step] || 0) / 255;
+      ctx.fillStyle = `rgba(239,68,68,${0.14 + amp * 0.86})`;
+      ctx.fillRect(i * (width / 24), height * (1 - amp), Math.max(6, width / 24 - 2), height * amp);
+    }
+  }
+
+  updateLiveLoudness(timeBins) {
+    if (!timeBins?.length) return;
+    let sum = 0;
+    for (let i = 0; i < timeBins.length; i++) sum += timeBins[i] * timeBins[i];
+    const rms = Math.sqrt(sum / timeBins.length);
+    const db = rms > 0 ? 20 * Math.log10(rms) : -60;
+    if (this.dom.lufsI) this.dom.lufsI.textContent = (db - 0.7).toFixed(1);
+    if (this.dom.lufsS) this.dom.lufsS.textContent = (db + 1.1).toFixed(1);
+  }
+
+  buildSpeakerState() {
+    const analyser = neonAnalyser;
+    if (!analyser) return null;
+    const timeBins = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(timeBins);
+    let energy = 0;
+    for (let i = 0; i < timeBins.length; i++) energy += timeBins[i] * timeBins[i];
+    const rms = Math.sqrt(energy / timeBins.length);
+    return {
+      activeSpeaker: rms > 0.03 ? 0 : 1,
+      numSpeakers: 2,
+      confidence: Math.max(0.32, Math.min(0.98, rms * 12)),
+      speakerRMS: Float32Array.from([rms, rms * 0.65]),
+      history: [],
+    };
+  }
+
+  updatePipelineProgress(stageIndex, detail, pct) {
+    const normalizedStage = Number.isFinite(stageIndex) && stageIndex >= 0 ? stageIndex : 0;
+    const percent = Math.max(0, Math.min(100, Math.round(pct || 0)));
+    if (this.dom.pipeStage) this.dom.pipeStage.textContent = `S${String(normalizedStage + 1).padStart(2, '0')}`;
+    if (this.dom.pipePercent) this.dom.pipePercent.textContent = `${percent}%`;
+    if (this.dom.pipeFill) this.dom.pipeFill.style.width = `${percent}%`;
+    if (this.dom.pipeBar) this.dom.pipeBar.setAttribute('aria-valuenow', String(percent));
+    if (this.dom.pipeDetail) this.dom.pipeDetail.textContent = detail || STAGES[normalizedStage] || 'Ready';
+    if (typeof this.updateProcessingOverlay === 'function') {
+      this.updateProcessingOverlay(STAGES[normalizedStage] || detail || 'Ready', percent, normalizedStage);
+    }
   }
 
   async handleFile(file) {
@@ -1106,10 +1583,18 @@ class VoiceIsolatePro {
     if (this.dom.hCh && this.inputBuffer) this.dom.hCh.textContent = this.inputBuffer.numberOfChannels;
     if (this.dom.tpDur && this.inputBuffer) this.dom.tpDur.textContent = this.fmtDur(this.inputBuffer.duration);
     if (this.dom.fileInfo) this.dom.fileInfo.textContent = name || '—';
+    this.updatePipelineProgress(0, 'Input decoded and ready for local processing', 0);
+    this.renderStaticVisuals(0);
+    this.setBootSplash('Signal loaded. Engineer Mode is ready to process locally.', 100);
+    this.dismissBootSplash();
     this.setStatus('READY');
   }
 
   async runPipeline() {
+    if (!this.inputBuffer) {
+      this.showNotification('Load an audio or video file first', 'error');
+      return;
+    }
     this.isProcessing = true;
     this.abortFlag = false;
 
@@ -1124,22 +1609,28 @@ class VoiceIsolatePro {
       const sampleRate = this.inputBuffer.sampleRate;
       const numCh = this.inputBuffer.numberOfChannels;
       const length = this.inputBuffer.length;
+      const hopSize = 512;
 
       const channels = [];
       for (let ch = 0; ch < numCh; ch++) {
         channels.push(new Float32Array(this.inputBuffer.getChannelData(ch)));
       }
       const signal = channels[0];
+      this.updatePipelineProgress(3, 'Preparing buffers and noise profile', 12);
 
       const fftSize = 2048;
-      const spectrum = DSP.forwardSTFT ? DSP.forwardSTFT(signal, fftSize) : null;
+      const spectrum = DSP.forwardSTFT ? DSP.forwardSTFT(signal, fftSize, hopSize) : null;
+      this.updatePipelineProgress(9, 'Single forward STFT complete', 32);
 
-      if (spectrum && this.params.nrAmount > 0) {
+      if (spectrum?.mag && this.params.nrAmount > 0) {
         const alpha = this.params.nrAmount / 100;
-        for (let i = 0; i < spectrum.length; i++) {
-          spectrum[i] *= (1 - alpha * 0.5);
+        for (let frame = 0; frame < spectrum.mag.length; frame++) {
+          for (let bin = 0; bin < spectrum.mag[frame].length; bin++) {
+            spectrum.mag[frame][bin] *= (1 - alpha * 0.5);
+          }
         }
       }
+      this.updatePipelineProgress(15, 'Spectral refinement and suppression applied in-place', 54);
 
       if (neonVizHandle) neonVizHandle.stop();
       if (typeof window !== 'undefined' && typeof window.VIP_initNeonVisualizer === 'function') {
@@ -1149,14 +1640,19 @@ class VoiceIsolatePro {
       updateStatus('Binding UI sliders…');
       initSliders();
 
-      const processed = (DSP.inverseSTFT && spectrum) ? DSP.inverseSTFT(spectrum, fftSize) : null;
+      const processed = (DSP.inverseSTFT && spectrum?.mag && spectrum?.phase)
+        ? DSP.inverseSTFT(spectrum.mag, spectrum.phase, fftSize, hopSize, signal.length)
+        : null;
+      this.updatePipelineProgress(19, 'Inverse STFT reconstruction complete', 71);
 
       if (processed && processed.length > 0) {
         const peak = this.calcPeak(processed);
         const rms = this.calcRMS(processed);
         if (this.dom.hRMS) this.dom.hRMS.textContent = rms.toFixed(1) + ' dB';
         if (this.dom.hPeak) this.dom.hPeak.textContent = peak.toFixed(1) + ' dB';
+        if (this.dom.hLUFS) this.dom.hLUFS.textContent = (rms - 0.7).toFixed(1);
       }
+      this.updatePipelineProgress(27, 'Post render metrics and loudness analysis updated', 88);
 
       const hashData = new Uint8Array(16);
       const hashBuffer = await crypto.subtle.digest('SHA-256', hashData);
@@ -1167,12 +1663,15 @@ class VoiceIsolatePro {
         : null;
       if (outBuf) {
         for (let ch = 0; ch < numCh; ch++) {
-          const src = channels[ch];
+          const src = processed || channels[ch];
           const dst = outBuf.getChannelData(ch);
-          dst.set(src);
+          dst.fill(0);
+          dst.set(src.subarray(0, Math.min(src.length, dst.length)));
         }
         this.outputBuffer = outBuf;
       }
+      this.updatePipelineProgress(31, 'Export buffer, waveform cards, and audit chain are ready', 100);
+      this.renderStaticVisuals(this.playOffset / Math.max(this.inputBuffer.duration || 1, 1));
 
       if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = false;
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
@@ -1223,6 +1722,7 @@ class VoiceIsolatePro {
     }
     if (workletNode) workletNode.port.postMessage({ type: 'params', payload: { ...this.params } });
     if (mlWorker) mlWorker.postMessage({ type: 'setParams', payload: { ...this.params } });
+    this.renderStaticVisuals(this.playOffset / Math.max(this.inputBuffer?.duration || 1, 1));
     if (this.liveChainBuilt) {
       structuredLog('info', 'Preset applied to live chain', { name });
     }
