@@ -509,9 +509,9 @@ export function runFullPipeline(mag, pha, originalMag, params = {}, stageFlags =
     'output-gain', 'limiter', 'silence-trim', 'safety-clamp',
   ];
 
+  const stageParams = { ...params, originalMag };
   for (const name of stages) {
     if (stageFlags[name] === false) continue; // explicitly disabled
-    const stageParams = { ...params, originalMag };
     applyStage(name, mag, pha, stageParams, sampleRate);
   }
 }
