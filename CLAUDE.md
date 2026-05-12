@@ -396,9 +396,9 @@ Model manifests are split by runtime purpose: `public/app/models-manifest.json` 
 
 Service-worker files are currently split:
 
-1. `public/app/sw-register.js` currently registers **`/sw.js`** (root stub) with scope `/`
+1. `public/app/sw-register.js` currently registers **`/sw.js`** (root stub) with scope `/` (**this is the active registration target today**)
 2. `public/sw.js` is a minimal transition stub (`skipWaiting` + `clients.claim`) to avoid 404s during migration
-3. `public/app/sw.js` contains the full COOP/COEP header + cache strategies intended for app-shell/model handling
+3. `public/app/sw.js` contains the full COOP/COEP header + cache strategies intended for app-shell/model handling, but it is **not** the currently registered worker in this flow
 
 `scripts/stamp-sw-version.js` injects a cache-bust version string into `public/app/sw.js` at Vercel build time.
 
