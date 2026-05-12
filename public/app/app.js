@@ -1898,7 +1898,7 @@ class VoiceIsolatePro {
     if (!spectrum) return spectrum;
     const amt = (p.crosstalkCancel || 0) / 100;
     if (amt === 0) return spectrum;
-    for (let i = 0; i < spectrum.length; i++) { spectrum[i] *= (1 - amt * 0.3); }
+const data = spectrum.mag || spectrum; for (let i = 0; i < data.length; i++) { data[i] *= (1 - amt * 0.3); }
     return spectrum;
   }
 
