@@ -66,7 +66,7 @@ pnpm ios:sync             # Sync web build to iOS
 pnpm ios:build            # Sync + open Xcode
 ```
 
-**Requirements**: Node.js `24.x` · pnpm `>= 9.0.0` (enforced via `.npmrc` engine-strict)
+**Requirements**: Node.js `24.x` · pnpm `>= 9.0.0` (declared in `package.json#engines` and enforced by CI/validation checks)
 
 ---
 
