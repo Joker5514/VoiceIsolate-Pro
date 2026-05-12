@@ -54,7 +54,7 @@ pnpm lint:fix             # Auto-fix lint issues
 pnpm test                 # Run all 59 Jest suites
 pnpm test:watch           # Watch mode
 pnpm test:coverage        # Coverage report
-pnpm test:live            # Live browser smoke test (Playwright Chromium)
+pnpm test:live            # Live browser smoke test (Playwright/Chromium)
 pnpm validate             # Structural integrity checks
 
 # ── MOBILE ─────────────────────────────────────────────────
@@ -123,7 +123,6 @@ VoiceIsolate-Pro/
 │   │   ├── diarization-timeline.js ~11KB  Speaker diarization timeline UI
 │   │   ├── isolation-controls.js   ~9KB   Per-speaker mute/solo/isolate card UI
 │   │   ├── processing-overlay.js   ~11KB  Processing progress overlay UI
-│   │   ├── model-status-ui.js      ~8KB   Download progress + model status overlay
 │   │   │
 │   │   ├── ── AUTH / PAYMENTS ─────────────────────────────────────
 │   │   ├── auth.js                 ~17KB  Authentication (login/session management)
@@ -155,7 +154,7 @@ VoiceIsolate-Pro/
 │   │       ├── rnnoise_suppressor.onnx    1.8MB — Spectral noise suppressor (GRU mask)
 │   │       ├── bsrnn_vocals.onnx          4.3MB — Band-split RNN vocal separator
 │   │       ├── demucs_v4_quantized.onnx.placeholder   placeholder (too large to commit)
-│   │       ├── models-manifest.json       Model registry (authoritative copy)
+│   │       ├── models-manifest.json       Model metadata/inventory manifest (array schema)
 │   │       └── README.md
 │   │
 │   ├── lib/                        Third-party libraries (committed vendor assets)
@@ -182,7 +181,7 @@ VoiceIsolate-Pro/
 │       ├── index.js                NIM API entry point
 │       └── grpc-client.js          gRPC client for NIM inference service
 │
-├── tests/                          Jest unit tests (62 suites)
+├── tests/                          Jest unit tests (59 suites)
 │   └── helpers/                    Test helpers (get-app-code.js)
 │
 ├── scripts/                        Build & validation scripts
@@ -191,8 +190,8 @@ VoiceIsolate-Pro/
 │   ├── setup-three.js              Copy Three.js 0.184.0 from node_modules
 │   ├── stamp-sw-version.js         Inject cache-bust version into sw.js at build
 │   ├── sync-mobile-version.js      Sync package.json version → Android/iOS manifests
-│   ├── validate-onnx-models.js     Verify committed ONNX files meet min-byte thresholds
-│   ├── live-smoke.cjs              Playwright/Puppeteer live browser smoke test
+│   ├── validate-onnx-models.js     Validate model CDN/blob URLs via HEAD + Content-Length thresholds
+│   ├── live-smoke.cjs              Playwright live browser smoke test
 │   ├── bootstrap-libs.sh           Vercel build entrypoint
 │   └── download-models.sh          Download large ONNX models (Demucs, etc.)
 │
@@ -389,21 +388,19 @@ Large models are fetched from Vercel Blob storage (`/app/models/*` rewrites in `
 | VoiceFixer | (Vercel Blob) | first-use download | Voice quality restoration |
 | HiFi-GAN | (Vercel Blob) | first-use download | Neural vocoder |
 
-Model registry: `public/app/models/models-manifest.json` (authoritative) — also mirrored at `public/app/models-manifest.json`. `scripts/validate-onnx-models.js` validates the manifest's remote model URLs/binaries by checking their reported size against `min_bytes` thresholds.
+Model manifests are split by runtime purpose: `public/app/models-manifest.json` is the runtime CDN/source manifest fetched by `model-cdn-loader.js` (`/app/models-manifest.json`), while `public/app/models/models-manifest.json` is metadata/inventory (array schema). `scripts/validate-onnx-models.js` validates model URLs using HEAD requests and `Content-Length` thresholds from the selected manifest, rather than checking local committed file sizes.
 
 ---
 
 ## ▐ SERVICE WORKER ▌
 
-`sw.js` (registered by `sw-register.js`) handles:
+Service-worker files are currently split:
 
-1. **COOP/COEP header injection** → `crossOriginIsolated === true` for SharedArrayBuffer
-2. **App-shell pre-caching** on install (all static JS/CSS/HTML assets)
-3. **Cache-first** strategy for ONNX model files (`vip-models-v1` cache)
-4. **Network-first** strategy for `index.html` (always fresh)
-5. **Zero-downtime updates** via `skipWaiting` + `clients.claim` on activate
+1. `public/app/sw-register.js` currently registers **`/sw.js`** (root stub) with scope `/`
+2. `public/sw.js` is a minimal transition stub (`skipWaiting` + `clients.claim`) to avoid 404s during migration
+3. `public/app/sw.js` contains the full COOP/COEP header + cache strategies intended for app-shell/model handling
 
-`scripts/stamp-sw-version.js` injects a cache-bust version string into `sw.js` at Vercel build time.
+`scripts/stamp-sw-version.js` injects a cache-bust version string into `public/app/sw.js` at Vercel build time.
 
 ---
 
@@ -448,10 +445,10 @@ Rules: `semi: warn` · `quotes: ['warn', 'single']` · `no-unused-vars: warn` (i
 
 ## ▐ TESTING ▌
 
-**62 Jest suites** covering all major subsystems. Jest environment: `node` (not `jsdom`) — DOM tests use `jsdom` library directly.
+**59 Jest suites** covering all major subsystems. Jest environment: `node` (not `jsdom`) — DOM tests use `jsdom` library directly.
 
 ```bash
-pnpm test                          # Run all 62 suites
+pnpm test                          # Run all 59 suites
 pnpm test -- tests/dsp.test.js     # Run single suite
 pnpm test:coverage                 # Generate coverage report
 pnpm test:live                     # Live browser smoke test
@@ -589,12 +586,12 @@ App ID: `com.voiceisolatepro.app` · Version: `24.0.0` · Fastlane config: `fast
 
 **`deploy.yml`** jobs:
 
-1. **lint-test** — ESLint + Jest (all 62 suites) + `pnpm validate`
-2. **smoke-test** — Live browser test via Playwright/Puppeteer
+1. **lint-test** — ESLint + Jest (all 59 suites) + `pnpm validate`
+2. **smoke-test** — Live browser test via Playwright
 3. **deploy-preview** — Vercel preview URL (PRs only)
 4. **deploy-production** — Vercel production deploy (merge to `main` only)
 
-Node `24` + pnpm `9.0.0` on `ubuntu-latest`. All actions use pinned commit SHAs for supply-chain security.
+Workflow runtime/tooling is mixed: `deploy.yml` uses Node `24` + pnpm `9.0.0` with pinned action SHAs, while `ci.yml` currently uses Node `20` + `npm install` and version-tagged actions.
 
 ---
 
@@ -647,13 +644,13 @@ Node `24` + pnpm `9.0.0` on `ubuntu-latest`. All actions use pinned commit SHAs 
 5. **Don't remove COOP/COEP headers.** SharedArrayBuffer breaks without them (`server.js`, `vercel.json`, `sw.js`).
 6. **Don't add presets without covering all 52 slider IDs.** `tests/presets.test.js` will fail.
 7. **Don't add sliders without updating every preset AND `SLIDER_REGISTRY`.** Both `tests/presets.test.js` and `tests/slider-map.test.js` validate completeness.
-8. **Use `pnpm`, not `npm` or `yarn`.** Enforced by `.npmrc` engine-strict.
+8. **Use `pnpm`, not `npm` or `yarn`.** Required by `package.json#packageManager` and CI workflows.
 9. **Tests use CommonJS** (`require`); frontend uses ESM (`import`). Don't mix them.
 10. **`public/lib/` files ARE committed.** ORT WASM, `ort.min.js`, and `three.module.min.js` are all tracked by git. Do not add `public/lib/` to `.gitignore`.
 11. **`build/` is gitignored** — generated by `pnpm build`. Never commit build output.
 12. **`<script type="importmap">` in `index.html` must appear before any `<script type="module">`.** Reordering breaks Three.js / 3D spectrogram.
 13. **`STAGES` and `SLIDER_REGISTRY` live in `slider-map.js`, not `app.js`.** Import, don't redefine.
 14. **Some ONNX models are committed; some are Blob-hosted.** Silero VAD, RNNoise, BSRNN are committed. Demucs v4 uses `.placeholder` — fetched from Vercel Blob on first use.
-15. **Node.js 24.x is required.** CI and `.npmrc` enforce this. Don't test with Node 20 or earlier.
-16. **`vip-slider-patch.js` loads LAST** — it patches slider state after `app.js` initializes. Load order in `index.html` is critical; do not move it earlier.
+15. **Node.js 24.x is the project requirement.** Declared in `package.json#engines` and used by deploy workflows (note: `ci.yml` still runs Node 20 today).
+16. **`vip-slider-patch.js` is not currently loaded by `public/app/index.html`** (boot uses dynamic module imports). If re-enabled, document and preserve explicit load order relative to `app.js`.
 17. **`debug-audit.js` is console-only** — call `window.VIP_runAudit()` from DevTools. Do not wire it into the normal app boot path.

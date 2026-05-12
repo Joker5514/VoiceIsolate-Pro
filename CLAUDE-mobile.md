@@ -16,7 +16,7 @@ Browser-based, 100% local audio processing. Zero cloud. All DSP runs on-device v
 | Pipeline stages | 32 (Deca-Pass, 10 passes) |
 | Sliders | 52 across 8 tabs |
 | Presets | 8 named presets |
-| Test suites | 62 Jest suites |
+| Test suites | 59 Jest suites |
 | CI workflows | 6 |
 | App version | 24.0.0 |
 
@@ -27,7 +27,7 @@ Browser-based, 100% local audio processing. Zero cloud. All DSP runs on-device v
 ```bash
 pnpm install        # Setup
 pnpm dev            # http://localhost:3000
-pnpm test           # All 62 suites
+pnpm test           # All 59 suites
 pnpm lint           # ESLint
 pnpm validate       # Structural checks
 pnpm build          # public/ → build/
@@ -137,7 +137,7 @@ Contributor note: the quick reference file above is for documentation/source tra
 | `public/app/ml-worker.js` | ONNX inference |
 | `public/app/fft-bridge.js` | Offline STFT utility |
 | `public/app/sw.js` | Service worker (COOP/COEP + cache) |
-| `public/app/vip-slider-patch.js` | Slider patch (loads LAST) |
+| `public/app/vip-slider-patch.js` | Slider patch module (not currently loaded by `public/app/index.html`) |
 | `public/app/debug-audit.js` | `window.VIP_runAudit()` in DevTools |
 | `server.js` | Local dev server |
 
@@ -148,12 +148,12 @@ Contributor note: the quick reference file above is for documentation/source tra
 - No CDN for ORT or Three.js — local files only
 - No second STFT/iSTFT in any processing path
 - ML worker and AudioWorklet owned by `pipeline-orchestrator.js` only
-- `vip-slider-patch.js` loads **last** in `index.html`
+- `public/app/index.html` currently boots via dynamic `import()` list; `vip-slider-patch.js` is not in that list
 - `importmap` script tag must come before any `type="module"` tag
 - Tests: CommonJS (`require`). Frontend: ESM (`import`). Don't mix.
 - `public/lib/` IS committed — don't gitignore it
 - `build/` is gitignored — don't commit it
-- Node.js 24.x required (per `package.json#engines` and CI)
+- Node.js 24.x required (`package.json#engines`; deploy workflows use Node 24)
 - Use `pnpm` only — npm/yarn not supported
 
 ---
