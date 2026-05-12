@@ -51,7 +51,7 @@ pnpm build                # Copies public/ → build/
 # ── QUALITY ────────────────────────────────────────────────
 pnpm lint                 # ESLint Flat Config (app.js + worker files)
 pnpm lint:fix             # Auto-fix lint issues
-pnpm test                 # Run all 62 Jest suites
+pnpm test                 # Run all 59 Jest suites
 pnpm test:watch           # Watch mode
 pnpm test:coverage        # Coverage report
 pnpm test:live            # Live browser smoke test (Playwright/Puppeteer)
