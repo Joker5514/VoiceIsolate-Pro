@@ -54,7 +54,7 @@ pnpm lint:fix             # Auto-fix lint issues
 pnpm test                 # Run all 59 Jest suites
 pnpm test:watch           # Watch mode
 pnpm test:coverage        # Coverage report
-pnpm test:live            # Live browser smoke test (Playwright/Puppeteer)
+pnpm test:live            # Live browser smoke test (Playwright Chromium)
 pnpm validate             # Structural integrity checks
 
 # ── MOBILE ─────────────────────────────────────────────────
