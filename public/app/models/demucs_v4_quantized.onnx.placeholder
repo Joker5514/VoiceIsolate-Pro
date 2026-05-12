@@ -9,6 +9,10 @@ has not been committed to the repository due to its large size (~50–200 MB).
 ```bash
 bash scripts/download-models.sh
 # Outputs: public/app/models/demucs_v4_quantized.onnx
+### Option A — Download from Hugging Face (recommended)
+```bash
+python scripts/export_demucs_onnx.py --out-dir public/app/models
+# Outputs: public/app/models/demucs_v4_quantized.onnx (when export succeeds)
 ```
 
 ### Option B — Convert from PyTorch
@@ -22,6 +26,15 @@ python scripts/export_demucs_onnx.py --quantize --output public/app/models/
 - All other models (BSRNN, RNNoise, Silero VAD) load and function normally
 - Processing quality is ~85% of full Demucs+BSRNN ensemble
 - All audio processing remains 100% local — no external API calls are made
+### Option C — Runtime same-origin model delivery
+Demucs can also be served through the existing `/app/models/*` same-origin path
+(including Vercel rewrite targets configured in `vercel.json`).
+
+## Runtime behaviour without this file
+- `ml-worker.js` emits warnings and continues processing (no hard failure)
+- One current warning string is: `[ml-worker] Demucs skipped: PCM chunk unavailable; using unity fallback`
+- All other models (BSRNN, RNNoise, Silero VAD) load and function normally
+- Processing quality is ~85% of full Demucs+BSRNN ensemble
 
 ## Expected model spec
 - Input:  `input` — float32[1, 2, samples] (stereo PCM at 44100 Hz)

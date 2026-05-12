@@ -11,6 +11,10 @@
  *   reconstructISTFT() → 1× Inverse STFT  (overlap-add → PCM Float32Array)
  *
  * Intended usage (import from any offline processing module):
+ *   computeSTFT()   → 1× Forward STFT  (magnitude + phase arrays)
+ *   reconstructISTFT() → 1× Inverse STFT (overlap-add → PCM Float32Array)
+ *
+ * Usage:
  *
  *   import { computeSTFT, reconstructISTFT, makeHannWindow } from './fft-bridge.js';
  *
@@ -97,6 +101,11 @@ export function makeHannWindow(N) {
  * @param {number}       hopSize    - Hop between windows (default 1024 = 75% overlap)
  * @param {number}       sampleRate - Sample rate for populating times[] (default 44100)
  * @returns {{\
+ * @param {Float32Array} pcm        - Mono PCM samples (any length)
+ * @param {number}       fftSize    - FFT window size (power-of-two; default 4096)
+ * @param {number}       hopSize    - Hop between windows (default 1024 = 75% overlap)
+ * @param {number}       sampleRate - Sample rate for populating times[] (default 44100)
+ * @returns {{
  *   magnitudes: Float32Array[],  // one Float32Array(halfBins) per frame
  *   phases:     Float32Array[],  // one Float32Array(halfBins) per frame
  *   times:      number[],        // center time of each frame in seconds
@@ -129,6 +138,12 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   // Iterate over all frames starting positions within the signal.
   // Zero-padding handles the tail so at least one frame is produced.
   for (let pos = 0; pos < pcm.length; pos += hopSize) {
+  // Zero-pad so we always emit at least one frame (even for empty/short clips)
+  const totalSamples = Math.max(1, pcm.length) + fftSize - hopSize;
+  const numFrames = Math.max(1, Math.ceil(totalSamples / hopSize));
+
+  for (let frame = 0; frame < numFrames; frame++) {
+    const pos = frame * hopSize;
     // Fill windowed frame (zero-pad beyond signal end)
     for (let i = 0; i < fftSize; i++) {
       const srcIdx = pos + i;
@@ -182,6 +197,7 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
   const numFrames  = magnitudes.length;
   const outputLen  = (numFrames - 1) * hopSize + fftSize;
   const output     = new Float32Array(outputLen);
+  const norm       = new Float32Array(outputLen);
   const win        = makeHannWindow(fftSize);
   const re         = new Float32Array(fftSize);
   const im         = new Float32Array(fftSize);
@@ -216,6 +232,17 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
   const overlap = fftSize / hopSize;
   const colaNorm = overlap / 2;
   for (let i = 0; i < outputLen; i++) output[i] /= colaNorm;
+      const idx = frameStart + i;
+      const w = win[i];
+      output[idx] += re[i] * w;
+      norm[idx] += w * w;
+    }
+  }
+
+  // Per-sample OLA normalisation (matches offline processor behavior)
+  for (let i = 0; i < outputLen; i++) {
+    if (norm[i] > 1e-12) output[i] /= norm[i];
+  }
 
   return output;
 }
