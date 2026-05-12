@@ -56,10 +56,12 @@ describe('SLIDER_REGISTRY', () => {
     expect(entry.target).toBe('worklet');
   });
 
-  test('includes expected worker slider: nrAmount', () => {
+  test('includes expected both-target slider: nrAmount (worklet needs 0..1 normalized value)', () => {
     const entry = entries.find(e => e.id === 'nrAmount');
     expect(entry).toBeDefined();
-    expect(entry.target).toBe('worker');
+    expect(entry.target).toBe('both');
+    // Verify the source contains a normalizing transform (v / 100) for nrAmount
+    expect(sliderMapSrc).toMatch(/id\s*:\s*'nrAmount'.*transform\s*:\s*v\s*=>\s*v\s*\/\s*100/s);
   });
 
   test('all 52 slider IDs match the SLIDERS definition in app.js', () => {

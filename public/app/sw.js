@@ -13,7 +13,7 @@
 // Privacy: 100% local processing — no fetch() calls to external APIs.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION  = 'vip-app-17b34e7';
+const CACHE_VERSION  = 'vip-app-33d5dd7';
 const MODEL_CACHE    = 'vip-models-v1';
 
 // Static app-shell assets to pre-cache on install.

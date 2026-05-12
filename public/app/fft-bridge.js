@@ -7,10 +7,10 @@
  * guarantee bit-for-bit consistent spectral representation between Live and
  * Creator/Forensic paths. Single-pass architecture is preserved:
  *
- *   computeSTFT()   → 1× Forward STFT  (magnitude + phase arrays)
- *   reconstructISTFT() → 1× Inverse STFT (overlap-add → PCM Float32Array)
+ *   computeSTFT()      → 1× Forward STFT  (magnitude + phase arrays)
+ *   reconstructISTFT() → 1× Inverse STFT  (overlap-add → PCM Float32Array)
  *
- * Usage:
+ * Intended usage (import from any offline processing module):
  *
  *   import { computeSTFT, reconstructISTFT, makeHannWindow } from './fft-bridge.js';
  *
@@ -20,6 +20,9 @@
  *
  * Constraint: Only ONE Forward STFT and ONE iSTFT per processing chain.
  * Never call computeSTFT() twice on the same buffer or chain.
+ *
+ * Note: reconstructISTFT uses per-sample OLA normalisation, so any hopSize
+ * producing complete frame coverage is supported.
  */
 
 // ─── Cooley-Tukey FFT (identical to dsp-processor.js) ────────────────────────
@@ -89,7 +92,7 @@ export function makeHannWindow(N) {
  *
  * ⚠ SINGLE-PASS CONTRACT: Call this function exactly ONCE per processing chain.
  *
- * @param {Float32Array} pcm        - Mono PCM samples (any length)
+ * @param {Float32Array} pcm        - Mono PCM samples (any length >= 1)
  * @param {number}       fftSize    - FFT window size (power-of-two; default 4096)
  * @param {number}       hopSize    - Hop between windows (default 1024 = 75% overlap)
  * @param {number}       sampleRate - Sample rate for populating times[] (default 44100)
@@ -110,6 +113,9 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   if ((fftSize & (fftSize - 1)) !== 0) {
     throw new RangeError('fft-bridge: fftSize must be a power of two');
   }
+  if (!Number.isInteger(hopSize) || hopSize <= 0 || hopSize > fftSize) {
+    throw new RangeError('fft-bridge: hopSize must be an integer in [1, fftSize]');
+  }
 
   const halfBins = (fftSize >> 1) + 1;
   const win      = makeHannWindow(fftSize);
@@ -120,7 +126,9 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   const phases     = [];
   const times      = [];
 
-  // Zero-pad so we always emit at least one frame (even for empty/short clips)
+  // Zero-pad to ensure at least one frame even for very short clips.
+  // totalSamples = signal length + one full window minus one hop, so Math.ceil
+  // produces the exact number of hops needed to cover all samples with zero-padding.
   const totalSamples = Math.max(1, pcm.length) + fftSize - hopSize;
   const numFrames = Math.max(1, Math.ceil(totalSamples / hopSize));
 
@@ -206,7 +214,7 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
     }
   }
 
-  // Per-sample OLA normalisation (matches offline processor behavior)
+  // Per-sample OLA normalisation (compatible with any hopSize)
   for (let i = 0; i < outputLen; i++) {
     if (norm[i] > 1e-12) output[i] /= norm[i];
   }

@@ -65,6 +65,7 @@ function fftInPlace(re, im, inverse = false) {
     for (let i = 0; i < N; i++) { re[i] /= N; im[i] /= N; }
   }
 }
+const fft = fftInPlace;
 
 function makeHannWindow(N) {
   const w = new Float32Array(N);
@@ -209,7 +210,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     }
 
     // ── SINGLE FORWARD STFT ─────────────────────────────────────────────
-    fftInPlace(this._re, this._im, false);
+    fft(this._re, this._im, false);
 
     // Compute magnitude spectrum
     const mag = new Float32Array(HALF_BINS);
@@ -269,7 +270,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     }
 
     // ── SINGLE INVERSE STFT ─────────────────────────────────────────────
-    fftInPlace(this._re, this._im, true);
+    fft(this._re, this._im, true);
 
     // Overlap-add into output ring with Hann window
     for (let i = 0; i < FFT_SIZE; i++) {

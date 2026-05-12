@@ -1,14 +1,14 @@
 /**
  * dsp-stages.js — VoiceIsolate Pro · Threads from Space v8
  * ==========================================================
- * Implements the 32 named DSP stages of the Octa-Pass pipeline as
- * pure, side-effect-free spectral operators.
+ * Implements the 32 named DSP stages of the Deca-Pass pipeline as
+ * pure, side-effect-free spectral operators (magnitude/phase arrays in-place).
  *
  * All functions operate on Float32Array magnitude and/or phase arrays
  * in-place to maintain the Single-Pass STFT architecture:
  *   computeSTFT() → [these stage functions] → reconstructISTFT()
  *
- * Stages are grouped into 4 octa-passes of 8 stages each:
+ * Stages are grouped into 4 passes of 8 stages each:
  *   Pass 1 (1–8)   : Pre-processing & gating
  *   Pass 2 (9–16)  : Spectral ML masking
  *   Pass 3 (17–24) : Voice EQ & formant shaping
@@ -18,6 +18,8 @@
  *   import { applyStage } from './dsp-stages.js';
  *   applyStage(stageName, mag, pha, params, sampleRate);
  */
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 /**
  * Convert a frequency in Hz to the nearest FFT bin index.
@@ -108,9 +110,10 @@ export function stageNoiseGate(mag, pha, params) {
 /**
  * Stage 6 — Spectral Subtraction (classical NR warm-up fallback)
  * Used when ML models are not yet warm. Reduces magnitude by nrAmount.
+ * params.nrAmount is 0..100 (percent) from the slider; converted to 0..2 internally.
  */
 export function stageSpectralSubtraction(mag, pha, params) {
-  const alpha = Math.max(0, Math.min(2, params.nrAmount ?? 0.78));
+  const alpha = Math.max(0, Math.min(2, (params.nrAmount ?? 78) / 50));
   const floor = 0.001;
   for (let k = 0; k < mag.length; k++) {
     mag[k] = Math.max(floor, mag[k] * Math.max(0, 1 - alpha * 0.4));
@@ -119,19 +122,21 @@ export function stageSpectralSubtraction(mag, pha, params) {
 
 /**
  * Stage 7 — Dithering (noise shaping)
- * Adds low-level white noise (~-100 dBFS) to prevent quantisation artifacts
- * during subsequent 16-bit export. Operates on magnitude directly.
+ * Adds low-level white noise to prevent quantisation artifacts during
+ * subsequent 16-bit export. params.ditherAmt is in bits (0..10 slider range);
+ * 1 bit ≈ -96 dBFS for 16-bit export. Uses crypto.getRandomValues() for
+ * cryptographically uniform noise (not Math.random()).
  */
 export function stageDither(mag, pha, params) {
-  const ditherAmt = Math.pow(10, (params.ditherLevel ?? -100) / 20);
-  const seedBase = ((params.ditherSeed ?? 0x9E3779B9) >>> 0);
+  const bits = params.ditherAmt ?? 1;
+  // 1 bit dither at 16-bit depth: amplitude ≈ 2^-(17 - bits)
+  const ditherLin = Math.pow(2, -(17 - Math.max(0, Math.min(10, bits))));
+  const randBuf = new Uint32Array(mag.length);
+  globalThis.crypto.getRandomValues(randBuf);
   for (let k = 0; k < mag.length; k++) {
-    let x = (seedBase ^ (k * 0x45d9f3b)) >>> 0;
-    x ^= x << 13;
-    x ^= x >>> 17;
-    x ^= x << 5;
-    const centered = (x / 0xFFFFFFFF) * 2 - 1;
-    mag[k] += ditherAmt * centered;
+    // Map Uint32 [0, 2^32) uniformly to [-1, 1) and scale by dither amplitude
+    const r = (randBuf[k] / 4294967296) * 2 - 1;
+    mag[k] += ditherLin * r;
     if (mag[k] < 0) mag[k] = 0;
   }
 }
@@ -276,9 +281,10 @@ export function stagePresenceBoost(mag, pha, params, sampleRate = 44100) {
 /**
  * Stage 19 — De-Esser
  * Attenuate sibilant frequencies (5–10 kHz) to reduce harsh 'S'/'T' sounds.
+ * params.deEssAmt is 0..30 dB (slider range); converted to 0..1 reduction factor.
  */
 export function stageDeEsser(mag, pha, params, sampleRate = 44100) {
-  const reduction = Math.max(0, Math.min(1, params.deEsser ?? 0.3));
+  const reduction = Math.max(0, Math.min(1, (params.deEssAmt ?? 9) / 30));
   const fftSize   = (mag.length - 1) * 2;
   const lo = hzToBin(5000,  fftSize, sampleRate);
   const hi = hzToBin(10000, fftSize, sampleRate);
@@ -338,20 +344,18 @@ export function stageWarmth(mag, pha, params, sampleRate = 44100) {
  * Not applicable for mono; reserved for stereo interleaved buffers.
  * No-op for now — placeholder maintains stage count.
  */
-export function stageStereoWidth(mag, pha, params) {
-  void mag;
-  void pha;
-  void params;
+export function stageStereoWidth(_mag, _pha, _params) {
   // Mono path: no-op. Stereo implementation routes mid/side channels separately.
 }
 
 /**
  * Stage 24 — De-Reverb (spectral mean subtraction)
- * Estimate and subtract reverb tail by subtracting global spectral mean.
+ * Estimate and subtract reverb tail by subtracting a running spectral mean.
+ * params.derevAmt is 0..100 (percent slider); converted to 0..1 strength.
  */
 export function stageDeReverb(mag, pha, params) {
-  const strength = Math.max(0, Math.min(1, params.deReverb ?? 0.25));
   // Simple spectral mean subtraction as a lightweight de-reverb approximation.
+  const strength = Math.max(0, Math.min(1, (params.derevAmt ?? 0) / 100));
   let sum = 0;
   for (let k = 0; k < mag.length; k++) sum += mag[k];
   const mean = sum / mag.length;
@@ -433,9 +437,10 @@ export function stageSaturation(mag, pha, params) {
  * Stage 28 — Wet/Dry Mix (return path)
  * Blend processed magnitude with original unprocessed magnitude.
  * originalMag must be preserved before the pipeline starts.
+ * params.dryWet is 0..100 (percent slider); converted to 0..1 fraction internally.
  */
 export function stageWetDry(mag, pha, originalMag, params) {
-  const wet = Math.max(0, Math.min(1, params.dryWet ?? 1.0));
+  const wet = Math.max(0, Math.min(1, (params.dryWet ?? 100) / 100));
   const dry = 1 - wet;
   for (let k = 0; k < mag.length; k++) {
     mag[k] = wet * mag[k] + dry * (originalMag ? originalMag[k] : mag[k]);
@@ -467,8 +472,7 @@ export function stageLimiter(mag, pha, params) {
  * Zero out any bins below the absolute noise floor (~-140 dBFS)
  * to prevent float denormal performance issues.
  */
-export function stageSilenceTrim(mag, pha) {
-  void pha;
+export function stageSilenceTrim(mag, _pha) {
   const floor = 1e-7; // ~-140 dBFS
   for (let k = 0; k < mag.length; k++) {
     if (mag[k] < floor) { mag[k] = 0; }
@@ -545,13 +549,19 @@ export function applyStage(stageName, mag, pha, params = {}, sampleRate = 44100)
 }
 
 /**
- * Apply all 32 stages in order given a stage-enable map.
+ * Apply all 32 spectral DSP stages in order given a stage-enable map.
  * pipeline-orchestrator.js can call this for the classical spectral pass.
+ *
+ * Param units: stage functions read slider-map.js raw units (percent 0..100,
+ * dB, Hz). Each stage converts internally to its required scale (e.g. nrAmount
+ * 0..100 → 0..2, dryWet 0..100 → 0..1, deEssAmt 0..30 dB → 0..1 reduction).
+ * The optional presenceBoost and formantEnhance keys are internal strengths (0..2)
+ * not exposed as sliders; they default to 1.0 when absent.
  *
  * @param {Float32Array} mag        - Magnitude spectrum
  * @param {Float32Array} pha        - Phase spectrum
  * @param {Float32Array} originalMag- Unprocessed magnitude for wet/dry mix
- * @param {object}       params     - Full DSP params from slider-map.js
+ * @param {object}       params     - DSP params from slider-map.js (percent/dB/Hz; each stage normalises internally)
  * @param {object}       stageFlags - { [stageName]: boolean } enable/disable per stage
  * @param {number}       sampleRate
  */
