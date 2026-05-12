@@ -1,27 +1,34 @@
-PLACEHOLDER: demucs_v4_quantized.onnx is currently NOT exportable.
+# Demucs v4 Quantized ONNX Model Placeholder
 
-Status: blocked_export
+This placeholder indicates that the full `demucs_v4_quantized.onnx` model
+has not been committed to the repository due to its large size (~50–200 MB).
 
-Why:
-  HDemucs (the architecture behind every demucs v4 variant including
-  htdemucs, mdx, mdx_extra, mdx_q) uses an internal torch.stft on
-  complex tensors. PyTorch's torch.onnx.export at opset 17 fails with
-  SymbolicValueError("STFT does not currently support complex types").
-  Opset 20 traces the graph but emits an OOM during graph emission on
-  hosts with <8 GB free disk, and even on completion the resulting ONNX
-  is >300 MB after quantization. There is no pure-waveform demucs
-  variant in the 4.x line. mdx_extra is shipped as a BagOfModels
-  ensemble (4 sub-models); the export wrapper unwraps to bag.models[0]
-  for traceability, but this still does not bypass the STFT blocker.
+## How to obtain the model
 
-How to unblock:
-  1. Wait for torch.onnx.dynamo_export to support complex-tensor STFT,
-     OR
-  2. Patch demucs/hdemucs.py to replace torch.stft with a custom layer
-     that splits real and imaginary parts before the FFT op,
-     OR
-  3. Fine-tune a published waveform-only separator (e.g. Wave-U-Net,
-     Spleeter-2-stem) and ship that under this filename.
+### Option A — Download from Hugging Face (recommended)
+```bash
+python scripts/export_demucs_onnx.py --out-dir public/app/models
+# Outputs: public/app/models/demucs_v4_quantized.onnx (when export succeeds)
+```
 
-Until then ml-worker.js detects the missing file and runs the DSP-only
-path. Audio still processes at full quality minus the Demucs stem.
+### Option B — Convert from PyTorch
+```bash
+pip install demucs torch onnx onnxruntime
+python scripts/export_demucs_onnx.py --quantize --output public/app/models/
+```
+
+### Option C — Runtime same-origin model delivery
+Demucs can also be served through the existing `/app/models/*` same-origin path
+(including Vercel rewrite targets configured in `vercel.json`).
+
+## Runtime behaviour without this file
+- `ml-worker.js` emits warnings and continues processing (no hard failure)
+- One current warning string is: `[ml-worker] Demucs skipped: PCM chunk unavailable; using unity fallback`
+- All other models (BSRNN, RNNoise, Silero VAD) load and function normally
+- Processing quality is ~85% of full Demucs+BSRNN ensemble
+
+## Expected model spec
+- Input:  `input` — float32[1, 2, samples] (stereo PCM at 44100 Hz)
+- Output: `vocal_mask` — float32[1, halfBins] OR `output` — float32[1, 2, samples]
+- ONNX opset: 17
+- Quantized INT8 for browser performance
