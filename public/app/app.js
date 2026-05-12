@@ -924,7 +924,10 @@ class VoiceIsolatePro {
       try {
         const AC = typeof AudioContext !== 'undefined' ? AudioContext :
           (typeof window !== 'undefined' && window.AudioContext) ? window.AudioContext : null;
-        if (AC) this.ctx = new AC();
+        if (AC) {
+          this.ctx = new AC();
+          neonAnalyser = null;
+        }
       } catch (_) {}
     }
     return this.ctx;
@@ -1054,6 +1057,7 @@ class VoiceIsolatePro {
       this.gainNode = this.ctx.createGain();
       this.gainNode.gain.value = Math.pow(10, (this.params.outGain || 0) / 20);
       src.connect(this.gainNode);
+      if (neonAnalyser && neonAnalyser.context !== this.ctx) neonAnalyser = null;
       if (!neonAnalyser) {
         neonAnalyser = this.ctx.createAnalyser();
         neonAnalyser.fftSize = 1024;
