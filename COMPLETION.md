@@ -42,7 +42,7 @@ The `demucs_v4_quantized.onnx` model is not committed due to size (50–200 MB).
 - Use the actual warning text emitted by `ml-worker.js` as the source of truth when validating logs; this checklist intentionally avoids duplicating exact log strings or internal conditionals that can drift out of sync.
 - BSRNN remains the primary fallback/standalone separator when Demucs is absent.
 
-To add Demucs: run `python scripts/download_demucs.py` and commit the output.
+To add Demucs: run `python scripts/export_demucs_onnx.py --out-dir public/app/models` and commit the output.
 
 ## Architecture Invariants (Verified)
 
@@ -56,7 +56,7 @@ To add Demucs: run `python scripts/download_demucs.py` and commit the output.
 
 - [ ] Run `pnpm install` (or `npm install`)
 - [ ] Copy ORT WASM files: `node scripts/setup-ort.js`
-- [ ] (Optional) Download Demucs: `python scripts/download_demucs.py`
+- [ ] (Optional) Export Demucs ONNX: `python scripts/export_demucs_onnx.py --out-dir public/app/models`
 - [ ] Deploy to Vercel: `vercel --prod`
 - [ ] Verify SharedArrayBuffer is available: open console, check `typeof SharedArrayBuffer !== 'undefined'`
 - [ ] Test Live mode: click 🎙️, confirm <10ms latency

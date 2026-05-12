@@ -10,7 +10,7 @@
  *   computeSTFT()   → 1× Forward STFT  (magnitude + phase arrays)
  *   reconstructISTFT() → 1× Inverse STFT (overlap-add → PCM Float32Array)
  *
- * Usage (offline-processor.js / batch-orchestrator.js):
+ * Usage:
  *
  *   import { computeSTFT, reconstructISTFT, makeHannWindow } from './fft-bridge.js';
  *
@@ -120,10 +120,12 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   const phases     = [];
   const times      = [];
 
-  // Zero-pad the last frame so we process the tail of the signal
-  const totalSamples = pcm.length + fftSize - hopSize;
+  // Zero-pad so we always emit at least one frame (even for empty/short clips)
+  const totalSamples = Math.max(1, pcm.length) + fftSize - hopSize;
+  const numFrames = Math.max(1, Math.ceil(totalSamples / hopSize));
 
-  for (let pos = 0; pos < pcm.length; pos += hopSize) {
+  for (let frame = 0; frame < numFrames; frame++) {
+    const pos = frame * hopSize;
     // Fill windowed frame (zero-pad beyond signal end)
     for (let i = 0; i < fftSize; i++) {
       const srcIdx = pos + i;
@@ -170,6 +172,7 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
   const numFrames  = magnitudes.length;
   const outputLen  = (numFrames - 1) * hopSize + fftSize;
   const output     = new Float32Array(outputLen);
+  const norm       = new Float32Array(outputLen);
   const win        = makeHannWindow(fftSize);
   const re         = new Float32Array(fftSize);
   const im         = new Float32Array(fftSize);
@@ -196,14 +199,17 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
     // Overlap-add with synthesis window
     const frameStart = f * hopSize;
     for (let i = 0; i < fftSize; i++) {
-      output[frameStart + i] += re[i] * win[i];
+      const idx = frameStart + i;
+      const w = win[i];
+      output[idx] += re[i] * w;
+      norm[idx] += w * w;
     }
   }
 
-  // COLA normalisation factor for Hann + 75% overlap (hopSize = fftSize/4)
-  const overlap = fftSize / hopSize;
-  const colaNorm = overlap / 2;
-  for (let i = 0; i < outputLen; i++) output[i] /= colaNorm;
+  // Per-sample OLA normalisation (matches offline processor behavior)
+  for (let i = 0; i < outputLen; i++) {
+    if (norm[i] > 1e-12) output[i] /= norm[i];
+  }
 
   return output;
 }

@@ -19,9 +19,6 @@
  *   applyStage(stageName, mag, pha, params, sampleRate);
  */
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const TWO_PI = 2 * Math.PI;
-
 /**
  * Convert a frequency in Hz to the nearest FFT bin index.
  * @param {number} hz         - Frequency in Hz
@@ -127,8 +124,14 @@ export function stageSpectralSubtraction(mag, pha, params) {
  */
 export function stageDither(mag, pha, params) {
   const ditherAmt = Math.pow(10, (params.ditherLevel ?? -100) / 20);
+  const seedBase = ((params.ditherSeed ?? 0x9E3779B9) >>> 0);
   for (let k = 0; k < mag.length; k++) {
-    mag[k] += ditherAmt * (Math.random() * 2 - 1);
+    let x = (seedBase ^ (k * 0x45d9f3b)) >>> 0;
+    x ^= x << 13;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    const centered = (x / 0xFFFFFFFF) * 2 - 1;
+    mag[k] += ditherAmt * centered;
     if (mag[k] < 0) mag[k] = 0;
   }
 }
@@ -169,6 +172,33 @@ export function stageApplyMask(mag, pha, mask) {
   }
 }
 
+export function stageVADMask(mag, pha, params) {
+  if (params.vadMask instanceof Float32Array) stageApplyMask(mag, pha, params.vadMask);
+}
+
+export function stageDemucsMask(mag, pha, params) {
+  if (params.demucsMask instanceof Float32Array) stageApplyMask(mag, pha, params.demucsMask);
+}
+
+export function stageBSRNNMask(mag, pha, params) {
+  if (params.bsrnnMask instanceof Float32Array) stageApplyMask(mag, pha, params.bsrnnMask);
+}
+
+export function stageRNNoiseMask(mag, pha, params) {
+  if (params.rnnoiseMask instanceof Float32Array) stageApplyMask(mag, pha, params.rnnoiseMask);
+}
+
+export function stageMaskBlend(mag, pha, params) {
+  if (!(params.blendMask instanceof Float32Array)) return;
+  const blend = Math.max(0, Math.min(1, params.maskBlend ?? 1));
+  const len = Math.min(mag.length, params.blendMask.length);
+  for (let k = 0; k < len; k++) {
+    const m = Math.max(0, Math.min(1, params.blendMask[k]));
+    const blended = (1 - blend) + blend * m;
+    mag[k] *= blended;
+  }
+}
+
 /**
  * Stage 14 — Spectral floor enforcement.
  * Prevents complete spectral silence (preserves naturalness).
@@ -177,6 +207,17 @@ export function stageSpectralFloor(mag, pha, params) {
   const floor = Math.max(0, params.spectralFloor ?? 0.005);
   for (let k = 0; k < mag.length; k++) {
     if (mag[k] < floor) mag[k] = floor;
+  }
+}
+
+export function stageHarmonicRestore(mag, pha, params) {
+  const amount = Math.max(0, Math.min(1, params.harmonicRestore ?? 0));
+  if (amount === 0) return;
+  for (let k = 1; k < mag.length; k++) {
+    const prev = mag[k - 1];
+    const next = k + 1 < mag.length ? mag[k + 1] : mag[k];
+    const local = (prev + next) * 0.5;
+    mag[k] += (local - mag[k]) * amount * 0.15;
   }
 }
 
@@ -298,12 +339,15 @@ export function stageWarmth(mag, pha, params, sampleRate = 44100) {
  * No-op for now — placeholder maintains stage count.
  */
 export function stageStereoWidth(mag, pha, params) {
+  void mag;
+  void pha;
+  void params;
   // Mono path: no-op. Stereo implementation routes mid/side channels separately.
 }
 
 /**
- * Stage 24 — De-Reverb (spectral median subtraction)
- * Estimate and subtract reverb tail by subtracting a running spectral median.
+ * Stage 24 — De-Reverb (spectral mean subtraction)
+ * Estimate and subtract reverb tail by subtracting global spectral mean.
  */
 export function stageDeReverb(mag, pha, params) {
   const strength = Math.max(0, Math.min(1, params.deReverb ?? 0.25));
@@ -328,17 +372,24 @@ export function stageDeReverb(mag, pha, params) {
 export function stageSpectralCompressor(mag, pha, params) {
   const threshold  = Math.pow(10, (params.compThresh  ?? -24) / 20);
   const ratio      = Math.max(1, params.compRatio     ?? 4);
-  const knee       = Math.pow(10, (params.compKnee    ?? 6)  / 20);
+  const kneeDb     = Math.max(0, params.compKnee ?? 6);
+  const hasSoftKnee = kneeDb > 1e-6;
+  const knee       = hasSoftKnee ? Math.pow(10, kneeDb / 20) : 1;
   const makeupGain = Math.pow(10, (params.compMakeup  ?? 0)  / 20);
 
   for (let k = 0; k < mag.length; k++) {
     const m = mag[k];
     let out;
-    if (m < threshold / knee) {
+    if (!hasSoftKnee) {
+      if (m <= threshold) {
+        out = m;
+      } else {
+        out = threshold * Math.pow(m / threshold, 1 / ratio);
+      }
+    } else if (m < threshold / knee) {
       out = m;  // below knee — unity
-    } else if (m < threshold * knee && knee > 1) {
+    } else if (m < threshold * knee) {
       // Soft knee transition
-      const kneeDb = params.compKnee ?? 6;
       const db = 20 * Math.log10(Math.max(1e-9, m / threshold));
       const dbReduced = db + (1 / ratio - 1) * (db + kneeDb) ** 2 / (4 * kneeDb);
       out = threshold * Math.pow(10, dbReduced / 20);
@@ -417,6 +468,7 @@ export function stageLimiter(mag, pha, params) {
  * to prevent float denormal performance issues.
  */
 export function stageSilenceTrim(mag, pha) {
+  void pha;
   const floor = 1e-7; // ~-140 dBFS
   for (let k = 0; k < mag.length; k++) {
     if (mag[k] < floor) { mag[k] = 0; }
@@ -447,8 +499,14 @@ const STAGE_MAP = {
   'spectral-subtraction':stageSpectralSubtraction,
   'dither':              stageDither,
   'input-gain':          stageInputGain,
+  'vad-mask':            stageVADMask,
+  'demucs-mask':         stageDemucsMask,
+  'bsrnn-mask':          stageBSRNNMask,
+  'rnnoise-mask':        stageRNNoiseMask,
+  'mask-blend':          stageMaskBlend,
   'apply-mask':          (mag, pha, p) => p.mask && stageApplyMask(mag, pha, p.mask),
   'spectral-floor':      stageSpectralFloor,
+  'harmonic-restore':    stageHarmonicRestore,
   'normalise':           stageNormalise,
   'formant-enhance':     stageFormantEnhance,
   'presence-boost':      stagePresenceBoost,
@@ -480,7 +538,7 @@ const STAGE_MAP = {
 export function applyStage(stageName, mag, pha, params = {}, sampleRate = 44100) {
   const fn = STAGE_MAP[stageName];
   if (!fn) {
-    console.warn(`[dsp-stages] Unknown stage: '${stageName}'`);
+    globalThis.console?.warn?.(`[dsp-stages] Unknown stage: '${stageName}'`);
     return;
   }
   fn(mag, pha, params, sampleRate);
@@ -501,8 +559,8 @@ export function runFullPipeline(mag, pha, originalMag, params = {}, stageFlags =
   const stages = [
     'dc-removal', 'high-pass', 'low-pass', 'pre-emphasis',
     'noise-gate', 'spectral-subtraction', 'dither', 'input-gain',
-    // Pass 2 mask stages are applied externally after ONNX inference
-    'spectral-floor', 'normalise',
+    'vad-mask', 'demucs-mask', 'bsrnn-mask', 'rnnoise-mask',
+    'mask-blend', 'spectral-floor', 'harmonic-restore', 'normalise',
     'formant-enhance', 'presence-boost', 'de-esser', 'vocal-eq',
     'air-band', 'warmth', 'stereo-width', 'de-reverb',
     'spectral-compressor', 'transient-shaper', 'saturation', 'wet-dry',

@@ -7,8 +7,8 @@ has not been committed to the repository due to its large size (~50–200 MB).
 
 ### Option A — Download from Hugging Face (recommended)
 ```bash
-python scripts/download_demucs.py
-# Outputs: public/app/models/demucs_v4_quantized.onnx
+python scripts/export_demucs_onnx.py --out-dir public/app/models
+# Outputs: public/app/models/demucs_v4_quantized.onnx (when export succeeds)
 ```
 
 ### Option B — Convert from PyTorch
@@ -17,13 +17,13 @@ pip install demucs torch onnx onnxruntime
 python scripts/export_demucs_onnx.py --quantize --output public/app/models/
 ```
 
-### Option C — Runtime CDN fallback
-The app automatically falls back to BSRNN vocal isolation when Demucs is
-unavailable. Set `DEMUCS_CDN_URL` in `.env` to load from a private CDN at
-runtime (CDN must set `Cross-Origin-Resource-Policy: cross-origin`).
+### Option C — Runtime same-origin model delivery
+Demucs can also be served through the existing `/app/models/*` same-origin path
+(including Vercel rewrite targets configured in `vercel.json`).
 
 ## Runtime behaviour without this file
-- ml-worker.js logs: `[ml-worker] Demucs unavailable — using BSRNN fallback`
+- `ml-worker.js` emits warnings and continues processing (no hard failure)
+- One current warning string is: `[ml-worker] Demucs skipped: PCM chunk unavailable; using unity fallback`
 - All other models (BSRNN, RNNoise, Silero VAD) load and function normally
 - Processing quality is ~85% of full Demucs+BSRNN ensemble
 
