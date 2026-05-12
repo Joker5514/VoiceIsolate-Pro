@@ -187,7 +187,7 @@ export function stageNormalise(mag, pha, params) {
   const target = Math.pow(10, (params.normTarget ?? 0) / 20);
   let peak = 0;
   for (let k = 0; k < mag.length; k++) if (mag[k] > peak) peak = mag[k];
-  if (peak > 0 && peak !== target) {
+if (peak > 0) {
     const gain = target / peak;
     for (let k = 0; k < mag.length; k++) mag[k] *= gain;
   }
