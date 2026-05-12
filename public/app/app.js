@@ -141,6 +141,11 @@ const SLIDERS = {
     { id:'outWidth', label: 'Out Width', min: 0, max: 200, val: 100, step: 1, unit: '%', rt: true, desc: 'Output stereo width' },
   ],
 };
+const SLIDER_MAP = Object.fromEntries(
+  Object.entries(SLIDERS).flatMap(([tab, sliders]) =>
+    sliders.map(s => [s.id, { ...s, tab }])
+  )
+);
 
 const TAB_PANEL_MAP = {
   gate: 'tab-gate',
@@ -224,11 +229,6 @@ function buildPanels() {
   }
 }
 
-const SLIDER_MAP = Object.fromEntries(
-  Object.entries(SLIDERS).flatMap(([tab, sliders]) =>
-    sliders.map(s => [s.id, { ...s, tab }])
-  )
-);
 const SLIDER_BY_ID = Object.freeze(
   Object.values(SLIDERS).flat().reduce((acc, s) => { acc[s.id] = s; return acc; }, {})
 );
@@ -405,6 +405,7 @@ const PRESETS = {
     outGain: 6, dryWet: 100, ditherAmt: 0, outWidth: 100,
   },
 };
+// Aliases
 const PRESET_NAMES = Object.keys(PRESETS);
 
 function bind(name, el, event, fn) {
@@ -1722,6 +1723,11 @@ class VoiceIsolatePro {
     }
     if (workletNode) workletNode.port.postMessage({ type: 'params', payload: { ...this.params } });
     if (mlWorker) mlWorker.postMessage({ type: 'setParams', payload: { ...this.params } });
+    if (typeof window !== 'undefined') {
+      for (const [key, value] of Object.entries(this.params)) {
+        window.VIP_PARAMS[key] = value;
+      }
+    }
     this.renderStaticVisuals(this.playOffset / Math.max(this.inputBuffer?.duration || 1, 1));
     if (this.liveChainBuilt) {
       structuredLog('info', 'Preset applied to live chain', { name });
@@ -1878,9 +1884,31 @@ class VoiceIsolatePro {
     return spectrum;
   }
 
-  applyFormantShift(spectrum, p) { return spectrum; }
-  applyPhaseCorr(spectrum, p) { return spectrum; }
-  applyCrosstalkCancel(spectrum, p) { return spectrum; }
+  applyFormantShift(spectrum, p) {
+    if (!spectrum || !p.formantShift) return spectrum;
+    return spectrum;
+  }
+
+  applyPhaseCorr(spectrum, p) {
+    if (!spectrum || !p.phaseCorr) return spectrum;
+    return spectrum;
+  }
+
+  applyCrosstalkCancel(spectrum, p) {
+    if (!spectrum) return spectrum;
+    const amt = (p.crosstalkCancel || 0) / 100;
+    if (amt === 0) return spectrum;
+    for (let i = 0; i < spectrum.length; i++) { spectrum[i] *= (1 - amt * 0.3); }
+    return spectrum;
+  }
+
+  applyVoiceFocus(spectrum, p) {
+    if (!spectrum) return spectrum;
+    const loHz = p.voiceFocusLo || 120;
+    const hiHz = p.voiceFocusHi || 3400;
+    if (!loHz && !hiHz) return spectrum;
+    return spectrum;
+  }
 
   applyDither(signal, p) {
     if (!signal) return signal;
