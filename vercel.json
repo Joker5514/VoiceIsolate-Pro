@@ -1,5 +1,4 @@
 {
-  "framework": null,
   "outputDirectory": "public",
   "installCommand": "pnpm install --no-frozen-lockfile",
   "buildCommand": "node scripts/setup-ort.js && node scripts/setup-three.js && node scripts/stamp-sw-version.js",

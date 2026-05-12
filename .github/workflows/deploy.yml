@@ -63,7 +63,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Validate ONNX model CDN URLs
-        run: node --input-type=module scripts/validate-onnx-models.js
+        run: node scripts/validate-onnx-models.js
         continue-on-error: true  # warn but don't block smoke test (models may not be uploaded yet in PR context)
       - name: Install Playwright Chromium
         run: pnpm exec playwright install chromium --with-deps
@@ -113,7 +113,7 @@ jobs:
         with:
           node-version: '24'
       - name: Check ONNX models are real binaries on HuggingFace CDN
-        run: node --input-type=module scripts/validate-onnx-models.js
+        run: node scripts/validate-onnx-models.js
 
 
   deploy-preview:
