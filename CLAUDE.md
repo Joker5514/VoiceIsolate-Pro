@@ -105,7 +105,7 @@ VoiceIsolate-Pro/
 │   │   ├── ml-worker-models-patch.js       Model compatibility shims
 │   │   ├── model-cdn-loader.js     ~7KB   CDN/Blob URL model fetching with fallback
 │   │   ├── model-loader.js         ~4.5KB Model loader entry point (→ cdn-loader)
-│   │   ├── model-status-ui.js      ~8KB   Download progress + model status overlay
+│   │   ├── model-status-ui.js      ~8KB   Download progress + model status overlay (canonical entry; if referenced under UI / VISUALIZATION, treat it as a cross-reference only)
 │   │   ├── models-manifest.json           Model registry (SHA-256, shapes, delivery)
 │   │   │
 │   │   ├── ── AI LAYER ────────────────────────────────────────────
