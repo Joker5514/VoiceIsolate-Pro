@@ -389,7 +389,7 @@ Large models are fetched from Vercel Blob storage (`/app/models/*` rewrites in `
 | VoiceFixer | (Vercel Blob) | first-use download | Voice quality restoration |
 | HiFi-GAN | (Vercel Blob) | first-use download | Neural vocoder |
 
-Model registry: `public/app/models/models-manifest.json` (authoritative) — also mirrored at `public/app/models-manifest.json`. `scripts/validate-onnx-models.js` verifies committed files meet minimum byte thresholds.
+Model registry: `public/app/models/models-manifest.json` (authoritative) — also mirrored at `public/app/models-manifest.json`. `scripts/validate-onnx-models.js` validates the manifest's remote model URLs/binaries by checking their reported size against `min_bytes` thresholds.
 
 ---
 
