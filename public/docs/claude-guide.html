@@ -1,0 +1,1572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>VoiceIsolate Pro — AI Contributor Guide</title>
+<style>
+/* ── Design Tokens (match app style.css) ────────────────── */
+:root {
+  --bg:       #060609;
+  --s1:       #0c0c12;
+  --s2:       #111118;
+  --s3:       #181823;
+  --s4:       #1f1f2e;
+  --red:      #dc2626;
+  --red2:     #ef4444;
+  --red3:     #b91c1c;
+  --red4:     #7f1d1d;
+  --red-glow: rgba(220,38,38,0.25);
+  --cyan:     #22d3ee;
+  --green:    #22c55e;
+  --yellow:   #eab308;
+  --purple:   #a855f7;
+  --blue:     #3b82f6;
+  --text:     #eeeef2;
+  --text2:    #b0b0c4;
+  --dim:      #5e5e78;
+  --border:   rgba(255,255,255,0.05);
+  --border-r: rgba(220,38,38,0.14);
+  --r:        10px;
+  --rs:       6px;
+  --ff:       'Outfit', system-ui, sans-serif;
+  --fm:       'JetBrains Mono', 'Fira Code', monospace;
+  --safe-top:    env(safe-area-inset-top,    0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left,   0px);
+  --safe-right:  env(safe-area-inset-right,  0px);
+  --nav-w:    260px;
+  --hdr-h:    56px;
+}
+
+/* ── Reset ──────────────────────────────────────────────── */
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html {
+  font-size: 15px;
+  scroll-behavior: smooth;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  -webkit-text-size-adjust: 100%;
+}
+body {
+  font-family: var(--ff);
+  background:
+    radial-gradient(ellipse at top left,  rgba(220,38,38,.12) 0%, transparent 45%),
+    radial-gradient(ellipse at bottom right, rgba(127,29,29,.15) 0%, transparent 45%),
+    var(--bg);
+  color: var(--text);
+  min-height: 100%;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+/* subtle grid overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(rgba(220,38,38,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(220,38,38,0.025) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+.hdr {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--hdr-h);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  padding-top: var(--safe-top);
+  background: linear-gradient(180deg, rgba(16,6,8,.97), rgba(6,6,9,.95));
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(239,68,68,.16);
+  box-shadow: 0 8px 40px rgba(0,0,0,.4), 0 1px 0 rgba(220,38,38,.08);
+}
+.hdr-icon {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--red), var(--red3));
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 18px var(--red-glow);
+  font-size: 1rem;
+}
+.hdr-brand { display: flex; flex-direction: column; gap: 1px; }
+.hdr-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+  color: var(--text);
+}
+.hdr-title span {
+  color: var(--red2);
+  margin-left: 5px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  vertical-align: middle;
+  background: rgba(220,38,38,0.1);
+  border: 1px solid rgba(220,38,38,0.25);
+  border-radius: 3px;
+  padding: 0 5px 1px;
+}
+.hdr-sub {
+  font-family: var(--fm);
+  font-size: 0.58rem;
+  color: var(--dim);
+  letter-spacing: 0.05em;
+}
+.hdr-pills {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.pill {
+  font-family: var(--fm);
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 3px 9px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.pill-live  { color: var(--green); background: rgba(34,197,94,.08);  border-color: rgba(34,197,94,.2); }
+.pill-ver   { color: var(--cyan);  background: rgba(34,211,238,.07); border-color: rgba(34,211,238,.18); }
+.pill-stages{ color: var(--red2);  background: rgba(220,38,38,.08);  border-color: rgba(220,38,38,.2); }
+.menu-btn {
+  display: none;
+  background: none; border: none; cursor: pointer; color: var(--text2);
+  padding: 6px; border-radius: 6px; flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.menu-btn:hover { background: var(--s3); color: var(--text); }
+.menu-btn svg { display: block; }
+
+/* ── Layout ─────────────────────────────────────────────── */
+.layout {
+  display: flex;
+  position: relative;
+  z-index: 1;
+  padding-top: var(--hdr-h);
+  min-height: 100dvh;
+}
+
+/* ── Sidebar Nav ────────────────────────────────────────── */
+.nav {
+  position: fixed;
+  top: var(--hdr-h);
+  left: 0;
+  width: var(--nav-w);
+  bottom: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 0 24px;
+  background: linear-gradient(180deg, rgba(12,12,18,.98), rgba(6,6,9,.98));
+  border-right: 1px solid var(--border-r);
+  z-index: 100;
+  scrollbar-width: thin;
+  scrollbar-color: var(--red4) transparent;
+  transition: transform 0.28s cubic-bezier(.4,0,.2,1);
+}
+.nav::-webkit-scrollbar { width: 4px; }
+.nav::-webkit-scrollbar-track { background: transparent; }
+.nav::-webkit-scrollbar-thumb { background: var(--red4); border-radius: 2px; }
+.nav-section-label {
+  font-family: var(--fm);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 14px 18px 5px;
+}
+.nav a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text2);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: all 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.nav a:hover, .nav a.active {
+  color: var(--text);
+  background: rgba(220,38,38,.07);
+  border-left-color: var(--red2);
+}
+.nav a .dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--dim);
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+.nav a:hover .dot, .nav a.active .dot { background: var(--red2); }
+.nav-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  background: rgba(0,0,0,.6);
+  backdrop-filter: blur(2px);
+}
+
+/* ── Main Content ───────────────────────────────────────── */
+.main {
+  flex: 1;
+  margin-left: var(--nav-w);
+  min-width: 0;
+  padding: 32px 40px 80px;
+  max-width: 960px;
+}
+
+/* ── Section anchors ────────────────────────────────────── */
+.section {
+  margin-bottom: 48px;
+  scroll-margin-top: calc(var(--hdr-h) + 16px);
+}
+
+/* ── Section header ─────────────────────────────────────── */
+.sec-hdr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-r);
+}
+.sec-hdr-icon {
+  width: 32px; height: 32px;
+  border-radius: 7px;
+  background: rgba(220,38,38,.12);
+  border: 1px solid rgba(220,38,38,.2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+.sec-hdr h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.sec-hdr-badge {
+  font-family: var(--fm);
+  font-size: 0.58rem;
+  color: var(--red2);
+  background: rgba(220,38,38,.08);
+  border: 1px solid rgba(220,38,38,.18);
+  border-radius: 3px;
+  padding: 2px 7px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+/* ── Hero banner ────────────────────────────────────────── */
+.hero {
+  background: linear-gradient(135deg, rgba(127,29,29,.25), rgba(12,12,18,.9));
+  border: 1px solid rgba(220,38,38,.2);
+  border-radius: var(--r);
+  padding: 28px 28px 22px;
+  margin-bottom: 40px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 240px; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(220,38,38,.06));
+  pointer-events: none;
+}
+.hero-wave {
+  font-family: var(--fm);
+  font-size: 0.58rem;
+  letter-spacing: .02em;
+  color: var(--red3);
+  line-height: 1.1;
+  margin-bottom: 14px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.7;
+}
+.hero-title {
+  font-size: 1.7rem;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin-bottom: 4px;
+}
+.hero-title .pro-tag {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--red2);
+  background: rgba(220,38,38,.12);
+  border: 1px solid rgba(220,38,38,.25);
+  border-radius: 3px;
+  padding: 2px 7px;
+  vertical-align: middle;
+  margin-left: 8px;
+  position: relative; top: -3px;
+}
+.hero-sub {
+  font-size: 0.82rem;
+  color: var(--text2);
+  margin-bottom: 18px;
+  line-height: 1.5;
+}
+.hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.hero-stat {
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--border-r);
+  border-radius: var(--rs);
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 80px;
+}
+.hs-val {
+  font-family: var(--fm);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--red2);
+  line-height: 1;
+}
+.hs-lbl {
+  font-size: 0.58rem;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* ── Info cards ─────────────────────────────────────────── */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.info-card {
+  background: linear-gradient(135deg, rgba(18,10,12,.9), rgba(12,12,18,.95));
+  border: 1px solid var(--border-r);
+  border-radius: var(--r);
+  padding: 14px;
+}
+.info-card h4 {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  margin-bottom: 6px;
+}
+.info-card p {
+  font-size: 0.8rem;
+  color: var(--text2);
+  line-height: 1.45;
+}
+
+/* ── Code blocks ────────────────────────────────────────── */
+.code-wrap {
+  position: relative;
+  margin: 14px 0;
+}
+pre {
+  background: var(--s1);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: var(--r);
+  padding: 16px 18px;
+  font-family: var(--fm);
+  font-size: 0.78rem;
+  line-height: 1.65;
+  color: var(--text2);
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--red4) var(--s2);
+  white-space: pre;
+  max-width: 100%;
+}
+pre::-webkit-scrollbar { height: 5px; }
+pre::-webkit-scrollbar-track { background: var(--s2); border-radius: 2px; }
+pre::-webkit-scrollbar-thumb { background: var(--red4); border-radius: 2px; }
+code {
+  font-family: var(--fm);
+  font-size: 0.8em;
+  color: var(--cyan);
+  background: rgba(34,211,238,.07);
+  border: 1px solid rgba(34,211,238,.12);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+pre code {
+  background: none; border: none; padding: 0; font-size: inherit;
+  color: inherit;
+}
+/* comment lines */
+pre .c  { color: var(--dim); }
+/* command names */
+pre .k  { color: var(--red2); }
+/* strings */
+pre .s  { color: var(--green); }
+/* labels */
+pre .l  { color: var(--yellow); }
+/* copy button */
+.copy-btn {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: var(--s3);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 5px;
+  color: var(--dim);
+  font-family: var(--fm);
+  font-size: 0.6rem;
+  padding: 4px 9px;
+  cursor: pointer;
+  transition: all 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.copy-btn:hover { color: var(--text); border-color: var(--red); }
+.copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+/* ── Rule cards ─────────────────────────────────────────── */
+.rule-card {
+  background: linear-gradient(135deg, rgba(20,8,10,.95), rgba(12,12,18,.97));
+  border: 1px solid rgba(220,38,38,.18);
+  border-left: 3px solid var(--red);
+  border-radius: var(--r);
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+.rule-card.warn {
+  border-left-color: var(--yellow);
+  border-color: rgba(234,179,8,.18);
+}
+.rule-card.info {
+  border-left-color: var(--cyan);
+  border-color: rgba(34,211,238,.14);
+}
+.rule-num {
+  font-family: var(--fm);
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--red2);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.rule-card.warn .rule-num  { color: var(--yellow); }
+.rule-card.info .rule-num  { color: var(--cyan); }
+.rule-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.rule-body {
+  font-size: 0.78rem;
+  color: var(--text2);
+  line-height: 1.55;
+}
+.rule-body code { font-size: 0.85em; }
+
+/* ── Tables ─────────────────────────────────────────────── */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 14px 0;
+  border-radius: var(--r);
+  border: 1px solid var(--border-r);
+  scrollbar-width: thin;
+  scrollbar-color: var(--red4) var(--s2);
+}
+.table-wrap::-webkit-scrollbar { height: 5px; }
+.table-wrap::-webkit-scrollbar-track { background: var(--s2); }
+.table-wrap::-webkit-scrollbar-thumb { background: var(--red4); border-radius: 2px; }
+table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+thead th {
+  background: rgba(220,38,38,.08);
+  color: var(--text2);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-r);
+  white-space: nowrap;
+}
+tbody tr { border-bottom: 1px solid rgba(255,255,255,.03); transition: background 0.08s; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: rgba(220,38,38,.04); }
+tbody td {
+  padding: 9px 14px;
+  color: var(--text2);
+  vertical-align: top;
+  line-height: 1.45;
+}
+tbody td:first-child { color: var(--text); font-weight: 500; }
+tbody td code { font-size: 0.8em; white-space: nowrap; }
+
+/* ── Pipeline visualization ─────────────────────────────── */
+.pipeline-viz {
+  background: var(--s1);
+  border: 1px solid var(--border-r);
+  border-radius: var(--r);
+  padding: 18px 16px;
+  margin: 14px 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--red4) var(--s2);
+}
+.pipeline-viz::-webkit-scrollbar { height: 5px; }
+.pipeline-viz::-webkit-scrollbar-thumb { background: var(--red4); border-radius: 2px; }
+.pipeline-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: max-content;
+  flex-wrap: nowrap;
+}
+.pipeline-stage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 72px;
+}
+.ps-box {
+  background: var(--s3);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--fm);
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--text2);
+  text-align: center;
+  white-space: nowrap;
+}
+.ps-box.stft  { background: rgba(220,38,38,.16); border-color: rgba(220,38,38,.35); color: var(--red2); }
+.ps-box.istft { background: rgba(220,38,38,.16); border-color: rgba(220,38,38,.35); color: var(--red2); }
+.ps-box.spec  { background: rgba(34,211,238,.08); border-color: rgba(34,211,238,.2);  color: var(--cyan); }
+.ps-box.audio { background: rgba(34,197,94,.08);  border-color: rgba(34,197,94,.2);   color: var(--green); }
+.ps-box.out   { background: rgba(168,85,247,.08); border-color: rgba(168,85,247,.2);  color: var(--purple); }
+.ps-lbl {
+  font-size: 0.56rem;
+  color: var(--dim);
+  text-align: center;
+  max-width: 72px;
+  line-height: 1.2;
+}
+.ps-arrow {
+  color: var(--dim);
+  font-size: 0.9rem;
+  padding: 0 2px;
+  margin-top: -16px;
+  flex-shrink: 0;
+}
+
+/* ── Pitfall list ───────────────────────────────────────── */
+.pitfall-list { display: flex; flex-direction: column; gap: 8px; }
+.pitfall {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: rgba(220,38,38,.05);
+  border: 1px solid rgba(220,38,38,.12);
+  border-radius: var(--rs);
+  padding: 12px 14px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text2);
+  transition: background 0.1s;
+}
+.pitfall:hover { background: rgba(220,38,38,.09); }
+.pitfall-n {
+  font-family: var(--fm);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--red2);
+  min-width: 22px;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+.pitfall strong { color: var(--text); }
+
+/* ── Slider tab grid ────────────────────────────────────── */
+.tab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+.tab-card {
+  background: var(--s2);
+  border: 1px solid var(--border-r);
+  border-radius: var(--rs);
+  padding: 12px 14px;
+}
+.tab-name {
+  font-family: var(--fm);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--cyan);
+  margin-bottom: 4px;
+}
+.tab-count {
+  font-family: var(--fm);
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--red2);
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.tab-desc {
+  font-size: 0.68rem;
+  color: var(--dim);
+  line-height: 1.35;
+}
+
+/* ── Model cards ────────────────────────────────────────── */
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+.model-card {
+  background: var(--s2);
+  border: 1px solid var(--border-r);
+  border-radius: var(--rs);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.model-name { font-size: 0.82rem; font-weight: 700; color: var(--text); }
+.model-size {
+  font-family: var(--fm);
+  font-size: 0.68rem;
+  color: var(--red2);
+}
+.model-delivery {
+  font-size: 0.68rem;
+  color: var(--dim);
+}
+.model-desc { font-size: 0.72rem; color: var(--text2); line-height: 1.35; }
+.badge-committed { color: var(--green);  font-weight: 700; }
+.badge-blob      { color: var(--yellow); font-weight: 700; }
+
+/* ── File reference list ────────────────────────────────── */
+.file-list { display: flex; flex-direction: column; gap: 4px; margin: 14px 0; }
+.file-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--s2);
+  border: 1px solid rgba(255,255,255,.04);
+  border-radius: var(--rs);
+  font-size: 0.75rem;
+  transition: background 0.08s, border-color 0.08s;
+}
+.file-item:hover { background: var(--s3); border-color: var(--border-r); }
+.file-path {
+  font-family: var(--fm);
+  color: var(--cyan);
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  max-width: 55%;
+}
+.file-size {
+  font-family: var(--fm);
+  font-size: 0.65rem;
+  color: var(--red2);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.file-desc { color: var(--text2); flex: 1; min-width: 0; }
+
+/* ── Env var block ──────────────────────────────────────── */
+.env-block {
+  background: var(--s1);
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: var(--r);
+  padding: 16px 18px;
+  font-family: var(--fm);
+  font-size: 0.76rem;
+  line-height: 1.8;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--red4) var(--s2);
+}
+.env-block::-webkit-scrollbar { height: 5px; }
+.env-block::-webkit-scrollbar-thumb { background: var(--red4); border-radius: 2px; }
+.ev-comment { color: var(--dim); }
+.ev-key     { color: var(--red2); }
+.ev-eq      { color: var(--dim); }
+.ev-val     { color: var(--green); }
+
+/* ── Generic prose ──────────────────────────────────────── */
+p  { font-size: 0.82rem; color: var(--text2); line-height: 1.65; margin-bottom: 12px; }
+h3 { font-size: 0.9rem; font-weight: 700; color: var(--text); margin: 20px 0 10px; letter-spacing: 0.02em; }
+h4 { font-size: 0.78rem; font-weight: 700; color: var(--text2); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.08em; }
+ul, ol { padding-left: 18px; margin-bottom: 12px; }
+li { font-size: 0.78rem; color: var(--text2); line-height: 1.6; margin-bottom: 3px; }
+li::marker { color: var(--red3); }
+strong { color: var(--text); font-weight: 700; }
+a { color: var(--cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+blockquote {
+  border-left: 3px solid rgba(220,38,38,.4);
+  padding: 10px 16px;
+  background: rgba(220,38,38,.04);
+  border-radius: 0 var(--rs) var(--rs) 0;
+  margin: 12px 0;
+  font-size: 0.78rem;
+  color: var(--text2);
+  line-height: 1.55;
+}
+
+/* ── Scroll to top ──────────────────────────────────────── */
+#scrolltop {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  bottom: calc(24px + var(--safe-bottom));
+  right: calc(24px + var(--safe-right));
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--red), var(--red3));
+  border: none; cursor: pointer; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 20px var(--red-glow);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 300;
+  -webkit-tap-highlight-color: transparent;
+}
+#scrolltop.visible { opacity: 1; pointer-events: auto; }
+#scrolltop:hover   { transform: translateY(-2px); }
+
+/* ── Mobile / responsive ────────────────────────────────── */
+@media (max-width: 900px) {
+  .nav {
+    transform: translateX(-100%);
+    top: 0;
+    padding-top: calc(var(--hdr-h) + 12px);
+    box-shadow: 4px 0 40px rgba(0,0,0,.5);
+  }
+  .nav.open { transform: translateX(0); }
+  .nav-overlay.open { display: block; }
+  .menu-btn { display: flex; }
+  .main { margin-left: 0; padding: 24px 18px 80px; }
+  .hero { padding: 20px 18px 16px; }
+  .hero-title { font-size: 1.35rem; }
+  .hero-wave { display: none; }
+  .hdr-pills .pill-stages { display: none; }
+  .file-path { max-width: 48%; }
+}
+@media (max-width: 580px) {
+  :root { --hdr-h: 52px; }
+  .hdr { padding: 0 14px; gap: 8px; }
+  .hdr-icon { width: 30px; height: 30px; font-size: 0.85rem; }
+  .hdr-title { font-size: 0.82rem; letter-spacing: 0.04em; }
+  .hdr-sub { display: none; }
+  .hdr-pills { display: none; }
+  .main { padding: 18px 14px 80px; }
+  .hero { padding: 16px 14px 14px; }
+  .hero-title { font-size: 1.15rem; }
+  .hero-stats { gap: 6px; }
+  .hero-stat { padding: 6px 10px; min-width: 64px; }
+  .hs-val { font-size: 0.9rem; }
+  pre { font-size: 0.72rem; padding: 12px 14px; }
+  table { font-size: 0.72rem; }
+  thead th, tbody td { padding: 8px 10px; }
+  .tab-grid { grid-template-columns: repeat(2, 1fr); }
+  .model-grid { grid-template-columns: 1fr 1fr; }
+  .file-path { max-width: 44%; }
+  .rule-card { padding: 12px 14px; }
+  .info-grid { grid-template-columns: 1fr 1fr; }
+  .pitfall { padding: 10px 12px; }
+  .section { margin-bottom: 36px; }
+}
+@media (max-width: 380px) {
+  .tab-grid, .model-grid { grid-template-columns: 1fr; }
+  .info-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Print ──────────────────────────────────────────────── */
+@media print {
+  .hdr,.nav,.nav-overlay,#scrolltop,.menu-btn { display: none !important; }
+  .layout { padding-top: 0; }
+  .main { margin-left: 0; padding: 16px; }
+  body { background: #fff; color: #000; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────── -->
+<header class="hdr">
+  <button class="menu-btn" id="menuBtn" aria-label="Toggle navigation">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <line x1="3" y1="6"  x2="21" y2="6"/>
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
+  <div class="hdr-icon">🎙</div>
+  <div class="hdr-brand">
+    <div class="hdr-title">VoiceIsolate <span>PRO</span></div>
+    <div class="hdr-sub">AI CONTRIBUTOR GUIDE · v24.0.0</div>
+  </div>
+  <div class="hdr-pills">
+    <span class="pill pill-live">◉ LIVE</span>
+    <span class="pill pill-ver">▶ 32-STAGE</span>
+    <span class="pill pill-stages">52 SLIDERS</span>
+  </div>
+</header>
+
+<!-- ── Nav overlay ───────────────────────────────────── -->
+<div class="nav-overlay" id="navOverlay"></div>
+
+<!-- ── Layout ───────────────────────────────────────── -->
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────── -->
+  <nav class="nav" id="sideNav">
+    <div class="nav-section-label">Overview</div>
+    <a href="#overview">  <span class="dot"></span> System Overview</a>
+    <a href="#commands">  <span class="dot"></span> Dev Commands</a>
+    <a href="#structure"> <span class="dot"></span> Repo Structure</a>
+
+    <div class="nav-section-label">Architecture</div>
+    <a href="#rules">     <span class="dot"></span> Critical Rules</a>
+    <a href="#pipeline">  <span class="dot"></span> 32-Stage Pipeline</a>
+    <a href="#sliders">   <span class="dot"></span> 52-Slider System</a>
+    <a href="#presets">   <span class="dot"></span> Preset System</a>
+
+    <div class="nav-section-label">ML & Runtime</div>
+    <a href="#models">    <span class="dot"></span> ML Models</a>
+    <a href="#sw">        <span class="dot"></span> Service Worker</a>
+
+    <div class="nav-section-label">Engineering</div>
+    <a href="#conventions"><span class="dot"></span> Code Conventions</a>
+    <a href="#testing">   <span class="dot"></span> Testing (62 suites)</a>
+    <a href="#env">       <span class="dot"></span> Env Variables</a>
+    <a href="#deploy">    <span class="dot"></span> Deployment</a>
+    <a href="#ci">        <span class="dot"></span> CI/CD Pipeline</a>
+    <a href="#files">     <span class="dot"></span> Key Files</a>
+    <a href="#pitfalls">  <span class="dot"></span> Common Pitfalls</a>
+  </nav>
+
+  <!-- ── Main ─────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-wave">▁▂▃▄▅▆▇█▇▆▅▄▃▂▁  ░░▒▒▓▓██▓▓▒▒░░  ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁</div>
+      <h1 class="hero-title">VoiceIsolate <span class="pro-tag">PRO</span></h1>
+      <p class="hero-sub">Browser-based · 100% local audio processing · Zero cloud · Web Audio API + ONNX Runtime Web (WebGPU → WASM)</p>
+      <div class="hero-stats">
+        <div class="hero-stat"><span class="hs-val">32</span><span class="hs-lbl">Stages</span></div>
+        <div class="hero-stat"><span class="hs-val">10</span><span class="hs-lbl">Passes</span></div>
+        <div class="hero-stat"><span class="hs-val">52</span><span class="hs-lbl">Sliders</span></div>
+        <div class="hero-stat"><span class="hs-val">8</span><span class="hs-lbl">Presets</span></div>
+        <div class="hero-stat"><span class="hs-val">62</span><span class="hs-lbl">Tests</span></div>
+        <div class="hero-stat"><span class="hs-val">24.0</span><span class="hs-lbl">Version</span></div>
+      </div>
+    </div>
+
+    <!-- ── OVERVIEW ──────────────────────────────────── -->
+    <section class="section" id="overview">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">📡</div>
+        <h2>System Overview</h2>
+        <span class="sec-hdr-badge">PRIVACY-FIRST</span>
+      </div>
+      <div class="info-grid">
+        <div class="info-card">
+          <h4>Zero Cloud</h4>
+          <p>All audio is processed on-device. No audio ever leaves the browser.</p>
+        </div>
+        <div class="info-card">
+          <h4>Runtime</h4>
+          <p>Web Audio API + ONNX Runtime Web. WebGPU acceleration with WASM fallback.</p>
+        </div>
+        <div class="info-card">
+          <h4>Cross-Platform</h4>
+          <p>Web via Vercel + native Android (API 23+) and iOS (14.1+) via Capacitor 8.</p>
+        </div>
+        <div class="info-card">
+          <h4>Engineer Mode</h4>
+          <p>52 sliders across 8 tabs, 6-panel diagnostics, 3D spectrogram visualization.</p>
+        </div>
+      </div>
+      <blockquote>Canonical version lives in <code>package.json#version</code>. When bumping: update <code>package.json</code>, <code>README.md</code>, <code>CLAUDE.md</code>, <code>capacitor.config.json</code>, then run <code>pnpm mobile:sync-version</code>.</blockquote>
+    </section>
+
+    <!-- ── COMMANDS ──────────────────────────────────── -->
+    <section class="section" id="commands">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">⚡</div>
+        <h2>Development Commands</h2>
+        <span class="sec-hdr-badge">Node 24 · pnpm ≥9</span>
+      </div>
+
+      <h3>Setup</h3>
+      <div class="code-wrap">
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        <pre>pnpm install              <span class="c"># Install + auto-copy ORT &amp; Three.js to public/lib/</span>
+pnpm setup:ort            <span class="c"># Copy ONNX Runtime → public/lib/</span>
+pnpm setup:three          <span class="c"># Copy Three.js 0.184.0 ESM → public/lib/</span>
+pnpm models:download      <span class="c"># Download large ONNX models (Demucs, etc.)</span></pre>
+      </div>
+
+      <h3>Dev / Build</h3>
+      <div class="code-wrap">
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        <pre>pnpm dev                  <span class="c"># Local dev server → http://localhost:3000</span>
+pnpm build                <span class="c"># Copies public/ → build/</span></pre>
+      </div>
+
+      <h3>Quality</h3>
+      <div class="code-wrap">
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        <pre>pnpm lint                 <span class="c"># ESLint Flat Config (app.js + worker files)</span>
+pnpm lint:fix             <span class="c"># Auto-fix lint issues</span>
+pnpm test                 <span class="c"># Run all 62 Jest suites</span>
+pnpm test:watch           <span class="c"># Watch mode</span>
+pnpm test:coverage        <span class="c"># Coverage report</span>
+pnpm test:live            <span class="c"># Live browser smoke test (Playwright/Puppeteer)</span>
+pnpm validate             <span class="c"># Structural integrity checks</span></pre>
+      </div>
+
+      <h3>Mobile</h3>
+      <div class="code-wrap">
+        <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        <pre>pnpm mobile:sync-version  <span class="c"># Sync version → Android &amp; iOS manifests</span>
+pnpm android:build        <span class="c"># Debug APK</span>
+pnpm android:release      <span class="c"># Release APK</span>
+pnpm android:bundle       <span class="c"># AAB for Google Play</span>
+pnpm ios:sync             <span class="c"># Sync web build to iOS</span>
+pnpm ios:build            <span class="c"># Sync + open Xcode</span></pre>
+      </div>
+    </section>
+
+    <!-- ── STRUCTURE ─────────────────────────────────── -->
+    <section class="section" id="structure">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">📁</div>
+        <h2>Repository Structure</h2>
+      </div>
+      <div class="code-wrap">
+        <pre>VoiceIsolate-Pro/
+├── public/
+│   ├── index.html                  Landing page / router entry point
+│   ├── app/
+│   │   ├── index.html              UI shell (52 sliders, 6-panel diagnostics)
+│   │   ├── voice-isolator.html     Standalone voice isolator UI
+│   │   ├── how-it-works.html       Technical explainer page
+│   │   ├── neon-pulse-card.html    Neon pulse visualizer card page
+│   │   ├── app.js          ~38KB   Main orchestrator, presets, UI transport
+│   │   ├── slider-map.js   ~9KB    STAGES(32) + SLIDER_REGISTRY(52); pure data
+│   │   ├── pipeline-orchestrator.js ~36KB  32-stage Deca-Pass pipeline runner
+│   │   ├── pipeline-state.js ~20KB Centralized state management + event bus
+│   │   ├── vip-boot.js     ~11KB   VIP bootstrap / feature gate entry point
+│   │   ├── vip-slider-patch.js ~37KB  Slider patch (loaded LAST after app.js)
+│   │   ├── dsp-core.js     ~65KB   Pure DSP math (STFT, filters, spectral ops)
+│   │   ├── dsp-stages.js   ~23KB   32 named DSP stages as pure spectral operators
+│   │   ├── dsp-processor.js ~9KB   AudioWorklet processor (real-time; canonical)
+│   │   ├── dsp-worker.js   ~6.5KB  Web Worker for heavy offline DSP
+│   │   ├── offline-processor.js ~20KB  Self-contained offline processor
+│   │   ├── fft-bridge.js   ~10KB   Offline STFT/iSTFT utility
+│   │   ├── ring-buffer.js  ~10KB   SharedArrayBuffer ring buffer
+│   │   ├── ml-worker.js    ~48KB   ML inference worker (ONNX Runtime)
+│   │   ├── ml-worker-fetch-cache.js ~37KB  Model caching
+│   │   ├── ai-engine-v2.js ~23KB   AI engine v2 (enhanced inference pipeline)
+│   │   ├── ai-intelligence.js ~16KB AI intelligence layer
+│   │   ├── visuals.js      ~20KB   Canvas 2D visualization
+│   │   ├── neon-pulse-visualizer.js ~20KB  Neon pulse audio visualizer
+│   │   ├── neon-pulse-card.js ~24KB Neon pulse visualizer card component
+│   │   ├── debug-audit.js  ~13KB   Self-test (window.VIP_runAudit())
+│   │   ├── paywall.js      ~27KB   Subscription UI
+│   │   ├── auth.js         ~17KB   Authentication
+│   │   ├── sw.js           ~8KB    Service worker (COOP/COEP + cache)
+│   │   └── models/
+│   │       ├── silero_vad.onnx          2.2MB — VAD (fp32)
+│   │       ├── silero_vad_int8.onnx     2.3MB — VAD (int8)
+│   │       ├── rnnoise_suppressor.onnx  1.8MB — Noise suppressor
+│   │       ├── bsrnn_vocals.onnx        4.3MB — Vocal separator
+│   │       └── demucs_v4_*.placeholder  → Vercel Blob (first-use)
+│   └── lib/
+│       ├── ort.min.js              ONNX Runtime Web  ← NEVER CDN
+│       └── three.module.min.js    Three.js 0.184.0  ← NEVER CDN
+├── api/                            Node.js/Express + Vercel serverless
+├── tests/                          62 Jest suites
+├── scripts/                        Build &amp; validation scripts
+├── android/ ios/                   Capacitor 8 projects
+└── server.js                       Local Express dev server</pre>
+      </div>
+    </section>
+
+    <!-- ── RULES ─────────────────────────────────────── -->
+    <section class="section" id="rules">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">⚠</div>
+        <h2>Critical Architectural Rules</h2>
+        <span class="sec-hdr-badge">CI ENFORCED</span>
+      </div>
+      <blockquote>These rules are enforced by <code>scripts/validate.js</code> and the CI pipeline. Violating any of them <strong>breaks the build</strong>.</blockquote>
+
+      <div class="rule-card">
+        <div class="rule-num">Rule 1</div>
+        <div class="rule-title">Single-Pass Spectral Architecture</div>
+        <div class="rule-body">
+          Within any single processing path there is <strong>exactly one</strong> forward STFT and <strong>one</strong> iSTFT. All spectral operations occur <strong>in-place</strong> between them. Never add a second STFT/iSTFT pair.
+          <div class="pipeline-viz" style="margin-top:12px">
+            <div class="pipeline-row">
+              <div class="pipeline-stage"><div class="ps-box audio">Time In</div><div class="ps-lbl">input</div></div>
+              <div class="ps-arrow">→</div>
+              <div class="pipeline-stage"><div class="ps-box stft">STFT S10</div><div class="ps-lbl">forward</div></div>
+              <div class="ps-arrow">→</div>
+              <div class="pipeline-stage"><div class="ps-box spec">Spectral Ops S11–S19</div><div class="ps-lbl">in-place</div></div>
+              <div class="ps-arrow">→</div>
+              <div class="pipeline-stage"><div class="ps-box istft">iSTFT S20</div><div class="ps-lbl">inverse</div></div>
+              <div class="ps-arrow">→</div>
+              <div class="pipeline-stage"><div class="ps-box out">Time Out</div><div class="ps-lbl">output</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rule-card">
+        <div class="rule-num">Rule 2</div>
+        <div class="rule-title">AudioWorklet Ownership</div>
+        <div class="rule-body">Only <code>pipeline-orchestrator.js</code> calls <code>audioContext.audioWorklet.addModule()</code>. Never register AudioWorklet modules from <code>app.js</code>, <code>dsp-worker.js</code>, or any other file.</div>
+      </div>
+
+      <div class="rule-card">
+        <div class="rule-num">Rule 3</div>
+        <div class="rule-title">ML Worker Ownership</div>
+        <div class="rule-body">Only <code>pipeline-orchestrator.js</code> spawns the ML worker. Never create it from <code>app.js</code> or other orchestration files.</div>
+      </div>
+
+      <div class="rule-card warn">
+        <div class="rule-num">Rule 4</div>
+        <div class="rule-title">Third-Party Libraries: Local Only</div>
+        <div class="rule-body">
+          ONNX Runtime → always <code>/lib/ort.min.js</code> — <strong>NEVER a CDN URL</strong><br>
+          Three.js → always <code>/lib/three.module.min.js</code> via importmap — <strong>NEVER a CDN URL</strong><br>
+          CSP in <code>vercel.json</code> enforces this.
+        </div>
+      </div>
+
+      <div class="rule-card info">
+        <div class="rule-num">Rule 5</div>
+        <div class="rule-title">Privacy: No External Audio Calls</div>
+        <div class="rule-body">Audio data must never leave the browser. No server-side audio processing endpoints. <code>analytics.js</code> logs locally only.</div>
+      </div>
+
+      <div class="rule-card warn">
+        <div class="rule-num">Rule 6</div>
+        <div class="rule-title">SharedArrayBuffer Headers</div>
+        <div class="rule-body">COOP + COEP headers required for <code>crossOriginIsolated === true</code>. Must be present in <code>server.js</code> (dev), <code>vercel.json</code> (prod), and <code>sw.js</code> (fallback). <strong>Never remove them.</strong></div>
+      </div>
+
+      <div class="rule-card info">
+        <div class="rule-num">Rule 7</div>
+        <div class="rule-title">STAGES &amp; SLIDER_REGISTRY Location</div>
+        <div class="rule-body">Both data structures live in <code>slider-map.js</code> only. <code>app.js</code> imports them: <code>import &#123; SLIDER_REGISTRY, STAGES &#125; from './slider-map.js';</code>. <code>slider-map.js</code> is a <strong>pure data module</strong> — no Web Audio API, no SharedArrayBuffer, no side effects.</div>
+      </div>
+    </section>
+
+    <!-- ── PIPELINE ───────────────────────────────────── -->
+    <section class="section" id="pipeline">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">🔊</div>
+        <h2>32-Stage Deca-Pass Pipeline</h2>
+      </div>
+      <div class="pipeline-viz">
+        <div class="pipeline-row">
+          <div class="pipeline-stage"><div class="ps-box audio">INPUT</div></div>
+          <div class="ps-arrow">→</div>
+          <div class="pipeline-stage"><div class="ps-box">S01–S04</div><div class="ps-lbl">Pass 1 Decode</div></div>
+          <div class="ps-arrow">→</div>
+          <div class="pipeline-stage"><div class="ps-box">S05–S09</div><div class="ps-lbl">Pass 2 Gate/VAD</div></div>
+          <div class="ps-arrow">→</div>
+          <div class="pipeline-stage"><div class="ps-box stft">S10 STFT</div><div class="ps-lbl">Pass 3</div></div>
+          <div class="ps-arrow">→</div>
+          <div class="pipeline-stage"><div class="ps-box spec">S11–S19</div><div class="ps-lbl">Pass 4+5 Spectral</div></div>
+          <div class="ps-arrow">→</div>
+          <div class="pipeline-stage"><div class="ps-box istft">S20 iSTFT</div><div class="ps-lbl">Pass 6</div></div>
+          <div class="ps-arrow">→</div>
+          <div class="pipeline-stage"><div class="ps-box">S21–S25</div><div class="ps-lbl">Pass 7 EQ/Comp</div></div>
+          <div class="ps-arrow">→</div>
+          <div class="pipeline-stage"><div class="ps-box">S26–S28</div><div class="ps-lbl">Pass 8 Render</div></div>
+          <div class="ps-arrow">→</div>
+          <div class="pipeline-stage"><div class="ps-box">S29–S31</div><div class="ps-lbl">Pass 9 Normalize</div></div>
+          <div class="ps-arrow">→</div>
+          <div class="pipeline-stage"><div class="ps-box out">S32</div><div class="ps-lbl">Pass 10 Export</div></div>
+          <div class="ps-arrow">→</div>
+          <div class="pipeline-stage"><div class="ps-box out">OUTPUT</div></div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Pass</th><th>Stages</th><th>Purpose</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Pass 1</td><td><code>S01–S04</code></td><td>Input decode, buffer allocation, DC offset removal, peak normalization</td></tr>
+            <tr><td>Pass 2</td><td><code>S05–S09</code></td><td>VAD, time-domain noise gate, click/pop removal, hum removal, de-essing</td></tr>
+            <tr><td>Pass 3</td><td><code>S10</code></td><td><strong>Forward STFT</strong> (Blackman-Harris window)</td></tr>
+            <tr><td>Pass 4</td><td><code>S11–S12</code></td><td>Adaptive Wiener NR + residual Wiener pass</td></tr>
+            <tr><td>Pass 5</td><td><code>S13–S19</code></td><td>ERB spectral gate, voice-band emphasis, crosstalk cancel, temporal smoothing, spectral tilt, dereverb, harmonic reconstruction</td></tr>
+            <tr><td>Pass 6</td><td><code>S20</code></td><td><strong>Inverse STFT</strong></td></tr>
+            <tr><td>Pass 7</td><td><code>S21–S25</code></td><td>OfflineAudioContext setup, HP/LP filters, 10-band EQ, compression, limiter</td></tr>
+            <tr><td>Pass 8</td><td><code>S26–S28</code></td><td>Render, post-render cleanup, dry/wet mix</td></tr>
+            <tr><td>Pass 9</td><td><code>S29–S31</code></td><td>Peak normalization, quality metrics, waveform update</td></tr>
+            <tr><td>Pass 10</td><td><code>S32</code></td><td>Final export ready (SHA-256 forensic hash → <code>_forensicLog</code>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── SLIDERS ────────────────────────────────────── -->
+    <section class="section" id="sliders">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">🎛</div>
+        <h2>52-Slider System</h2>
+        <span class="sec-hdr-badge">8 TABS</span>
+      </div>
+      <p>Sliders are defined in <code>app.js</code> as <code>SLIDERS</code>. <code>SLIDER_REGISTRY</code> in <code>slider-map.js</code> maps each to its DSP dispatch key and target.</p>
+      <div class="tab-grid">
+        <div class="tab-card"><div class="tab-name">gate</div><div class="tab-count">6</div><div class="tab-desc">Threshold, range, attack/release/hold, lookahead</div></div>
+        <div class="tab-card"><div class="tab-name">nr</div><div class="tab-count">5</div><div class="tab-desc">Spectral NR amount/sensitivity/floor/smoothing</div></div>
+        <div class="tab-card"><div class="tab-name">eq</div><div class="tab-count">10</div><div class="tab-desc">10-band parametric EQ (Sub → Brilliance)</div></div>
+        <div class="tab-card"><div class="tab-name">dyn</div><div class="tab-count">8</div><div class="tab-desc">Compressor + brickwall limiter</div></div>
+        <div class="tab-card"><div class="tab-name">spec</div><div class="tab-count">8</div><div class="tab-desc">HP/LP filters, de-esser, spectral tilt, formant shift</div></div>
+        <div class="tab-card"><div class="tab-name">adv</div><div class="tab-count">6</div><div class="tab-desc">Dereverb, harmonic recovery, stereo width, phase correction</div></div>
+        <div class="tab-card"><div class="tab-name">sep</div><div class="tab-count">5</div><div class="tab-desc">Voice isolation, background suppress, focus band, crosstalk</div></div>
+        <div class="tab-card"><div class="tab-name">out</div><div class="tab-count">4</div><div class="tab-desc">Output gain, dry/wet, dither, output width</div></div>
+      </div>
+      <blockquote>Total: 6+5+10+8+8+6+5+4 = <strong>52</strong> — enforced by <code>scripts/validate.js</code> + <code>tests/sliders.test.js</code></blockquote>
+
+      <h3>Adding a Slider — Checklist</h3>
+      <ol>
+        <li>Add the object to <code>SLIDERS</code> in <code>app.js</code></li>
+        <li>Add a corresponding entry to <code>SLIDER_REGISTRY</code> in <code>slider-map.js</code></li>
+        <li>Add the ID with a default value to <strong>every</strong> preset in <code>PRESETS</code></li>
+        <li>Update <code>tests/sliders.test.js</code> if count or tab changes</li>
+        <li>Update <code>tests/presets.test.js</code> if preset completeness check fails</li>
+      </ol>
+    </section>
+
+    <!-- ── PRESETS ────────────────────────────────────── -->
+    <section class="section" id="presets">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">💾</div>
+        <h2>Preset System</h2>
+        <span class="sec-hdr-badge">8 PRESETS</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Preset</th><th>Use Case</th></tr></thead>
+          <tbody>
+            <tr><td>Voice Clarity</td><td>Clean speech enhancement for calls and recordings</td></tr>
+            <tr><td>Podcast Clean</td><td>Broadcast-quality noise removal for podcasts</td></tr>
+            <tr><td>Forensic Extract</td><td>Maximum noise suppression for evidence-grade audio</td></tr>
+            <tr><td>Music Vocal</td><td>Vocal isolation from music tracks</td></tr>
+            <tr><td>Whisper Boost</td><td>Amplify and clean very quiet speech</td></tr>
+            <tr><td>Phone/Radio</td><td>Restore bandwidth-limited telephone audio</td></tr>
+            <tr><td>Live Performance</td><td>Real-time stage monitoring with low latency</td></tr>
+            <tr><td>Surveillance</td><td>Long-range / covert audio extraction</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <blockquote>Every preset must define a value for <strong>all 52 slider IDs</strong>. <code>tests/presets.test.js</code> validates completeness. Applied via <code>applyPreset(presetName)</code>.</blockquote>
+    </section>
+
+    <!-- ── MODELS ─────────────────────────────────────── -->
+    <section class="section" id="models">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">🤖</div>
+        <h2>ML Models</h2>
+      </div>
+      <div class="model-grid">
+        <div class="model-card">
+          <div class="model-name">Silero VAD (fp32)</div>
+          <div class="model-size">2.2 MB</div>
+          <div class="model-delivery"><span class="badge-committed">● committed</span></div>
+          <div class="model-desc">Voice activity detection</div>
+        </div>
+        <div class="model-card">
+          <div class="model-name">Silero VAD (int8)</div>
+          <div class="model-size">2.3 MB</div>
+          <div class="model-delivery"><span class="badge-committed">● committed</span></div>
+          <div class="model-desc">VAD — quantized variant</div>
+        </div>
+        <div class="model-card">
+          <div class="model-name">RNNoise</div>
+          <div class="model-size">1.8 MB</div>
+          <div class="model-delivery"><span class="badge-committed">● committed</span></div>
+          <div class="model-desc">Spectral noise suppressor (GRU mask)</div>
+        </div>
+        <div class="model-card">
+          <div class="model-name">BSRNN Vocals</div>
+          <div class="model-size">4.3 MB</div>
+          <div class="model-delivery"><span class="badge-committed">● committed</span></div>
+          <div class="model-desc">Band-split RNN vocal separator</div>
+        </div>
+        <div class="model-card">
+          <div class="model-name">Demucs v4</div>
+          <div class="model-size">large</div>
+          <div class="model-delivery"><span class="badge-blob">⬇ Vercel Blob</span></div>
+          <div class="model-desc">Vocal/music source separation (first-use download)</div>
+        </div>
+        <div class="model-card">
+          <div class="model-name">VoiceFixer</div>
+          <div class="model-size">—</div>
+          <div class="model-delivery"><span class="badge-blob">⬇ Vercel Blob</span></div>
+          <div class="model-desc">Voice quality restoration</div>
+        </div>
+        <div class="model-card">
+          <div class="model-name">HiFi-GAN</div>
+          <div class="model-size">—</div>
+          <div class="model-delivery"><span class="badge-blob">⬇ Vercel Blob</span></div>
+          <div class="model-desc">Neural vocoder</div>
+        </div>
+      </div>
+      <blockquote>Registry: <code>public/app/models/models-manifest.json</code> (authoritative) — also mirrored at <code>public/app/models-manifest.json</code></blockquote>
+    </section>
+
+    <!-- ── SERVICE WORKER ─────────────────────────────── -->
+    <section class="section" id="sw">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">⚙</div>
+        <h2>Service Worker</h2>
+      </div>
+      <p><code>sw.js</code> is registered by <code>sw-register.js</code> and handles:</p>
+      <ol>
+        <li><strong>COOP/COEP header injection</strong> → <code>crossOriginIsolated === true</code> for SharedArrayBuffer</li>
+        <li><strong>App-shell pre-caching</strong> on install (all static JS/CSS/HTML assets)</li>
+        <li><strong>Cache-first strategy</strong> for ONNX model files (<code>vip-models-v1</code> cache)</li>
+        <li><strong>Network-first strategy</strong> for <code>index.html</code> (always fresh)</li>
+        <li><strong>Zero-downtime updates</strong> via <code>skipWaiting</code> + <code>clients.claim</code> on activate</li>
+      </ol>
+      <blockquote><code>scripts/stamp-sw-version.js</code> injects a cache-bust version string into <code>sw.js</code> at Vercel build time.</blockquote>
+    </section>
+
+    <!-- ── CONVENTIONS ───────────────────────────────── -->
+    <section class="section" id="conventions">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">📐</div>
+        <h2>Code Conventions</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Rule</th><th>Pattern</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td>Quotes</td><td>Single quotes</td><td><code>'string'</code></td></tr>
+            <tr><td>Semicolons</td><td>Always required</td><td><code>const x = 1;</code></td></tr>
+            <tr><td>Variables</td><td>camelCase</td><td><code>gateThresh, applySpectralNR</code></td></tr>
+            <tr><td>Constants</td><td>UPPERCASE</td><td><code>STAGES, SLIDERS, PRESETS</code></td></tr>
+            <tr><td>Classes</td><td>PascalCase</td><td><code>PipelineState, AdaptiveNoiseFloor</code></td></tr>
+            <tr><td>Callbacks</td><td>Arrow functions</td><td><code>const fn = () =&gt; {}</code></td></tr>
+            <tr><td>Methods</td><td>Named functions</td><td><code>function processFrame() {}</code></td></tr>
+            <tr><td>Frontend</td><td>ESM</td><td><code>import { X } from './y.js'</code></td></tr>
+            <tr><td>Tests</td><td>CommonJS</td><td><code>const { X } = require('./y')</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Audio Buffer Rules</h3>
+      <ul>
+        <li>Always use <code>Float32Array</code> for audio data in hot paths</li>
+        <li>Use <code>setTargetAtTime()</code> for smooth AudioParam transitions (not <code>setValueAtTime()</code>)</li>
+        <li>In-place spectral operations — never copy the entire spectrum array</li>
+        <li>Ring buffer pattern (<code>ring-buffer.js</code>) for main thread ↔ AudioWorklet shared memory</li>
+      </ul>
+    </section>
+
+    <!-- ── TESTING ────────────────────────────────────── -->
+    <section class="section" id="testing">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">🧪</div>
+        <h2>Testing</h2>
+        <span class="sec-hdr-badge">62 SUITES</span>
+      </div>
+      <div class="code-wrap">
+        <pre>pnpm test                          <span class="c"># Run all 62 suites</span>
+pnpm test -- tests/dsp.test.js     <span class="c"># Run single suite</span>
+pnpm test:coverage                 <span class="c"># Generate coverage report</span>
+pnpm test:live                     <span class="c"># Live browser smoke test</span></pre>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Test File</th><th>Validates</th></tr></thead>
+          <tbody>
+            <tr><td><code>dsp.test.js</code></td><td>STFT/iSTFT roundtrip, FFT math, Wiener NR</td></tr>
+            <tr><td><code>dsp-core.test.js</code></td><td>DSP core math functions</td></tr>
+            <tr><td><code>dsp-stages.test.js</code></td><td>32 named stage operators</td></tr>
+            <tr><td><code>stft-roundtrip-sine.test.js</code></td><td>STFT reconstruction accuracy</td></tr>
+            <tr><td><code>fft-bridge.test.js</code></td><td>Offline STFT/iSTFT bridge utility</td></tr>
+            <tr><td><code>sliders.test.js</code></td><td>52 slider definitions, unique IDs, tab counts</td></tr>
+            <tr><td><code>slider-map.test.js</code></td><td>SLIDER_REGISTRY and STAGES in slider-map.js</td></tr>
+            <tr><td><code>presets.test.js</code></td><td>All presets cover all 52 slider IDs</td></tr>
+            <tr><td><code>pipeline-state.test.js</code></td><td>State management, event bus</td></tr>
+            <tr><td><code>pipeline-orchestrator.test.js</code></td><td>Pipeline runner, AudioWorklet init</td></tr>
+            <tr><td><code>ml-worker.test.js</code></td><td>ONNX model loading, inference</td></tr>
+            <tr><td><code>ml-worker-fetch-cache.test.js</code></td><td>Model caching (Cache API + IndexedDB)</td></tr>
+            <tr><td><code>model-registry-consistency.test.js</code></td><td>models-manifest.json consistency</td></tr>
+            <tr><td><code>html.test.js</code></td><td>DOM structure, all required &lt;script&gt; tags</td></tr>
+            <tr><td><code>server.test.js</code></td><td>Express endpoints, COOP/COEP headers</td></tr>
+            <tr><td><code>deployment-config.test.js</code></td><td>vercel.json headers and routes</td></tr>
+            <tr><td><code>android-config.test.js</code></td><td>Capacitor Android configuration</td></tr>
+            <tr><td><code>ios-config.test.js</code></td><td>Capacitor iOS configuration</td></tr>
+            <tr><td><code>mobile-ui.test.js</code></td><td>Mobile UI overrides</td></tr>
+            <tr><td><code>architectural-invariants.test.js</code></td><td>Single-pass STFT, worker ownership rules</td></tr>
+            <tr><td><code>auth.test.js</code></td><td>Authentication API</td></tr>
+            <tr><td><code>monetization.test.js</code></td><td>Stripe/license flow</td></tr>
+            <tr><td><code>batch-processor.test.js</code></td><td>Multi-file batch queue</td></tr>
+            <tr><td><code>ring-buffer.test.js</code></td><td>SharedArrayBuffer ring buffer</td></tr>
+            <tr><td><code>vip-boot.test.js</code></td><td>VIP bootstrap / feature gate</td></tr>
+            <tr><td><code>worklet-integration.test.js</code></td><td>AudioWorklet integration</td></tr>
+            <tr><td><code>sab-protocol-fixes.test.js</code></td><td>SharedArrayBuffer protocol</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Structural Validation</h3>
+      <p><code>pnpm validate</code> → <code>scripts/validate.js</code> checks: critical files exist, <code>app.js</code> &gt; 10KB, exactly 52 slider definitions, at least 32 STAGES entries, forward + inverse FFT functions present, AudioWorklet registered only in <code>pipeline-orchestrator.js</code>, ML worker spawned only from <code>pipeline-orchestrator.js</code>, SHA-256 forensic audit hash in pipeline.</p>
+    </section>
+
+    <!-- ── ENV ───────────────────────────────────────── -->
+    <section class="section" id="env">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">🔑</div>
+        <h2>Environment Variables</h2>
+      </div>
+      <blockquote>Copy <code>.env.example</code> → <code>.env</code>. Only needed for subscription/payment features. Basic audio processing works without any <code>.env</code>.</blockquote>
+      <div class="env-block">
+        <div><span class="ev-comment"># Stripe (paywall features only)</span></div>
+        <div><span class="ev-key">STRIPE_SECRET_KEY</span><span class="ev-eq">=</span><span class="ev-val">sk_test_...</span></div>
+        <div><span class="ev-key">STRIPE_WEBHOOK_SECRET</span><span class="ev-eq">=</span><span class="ev-val">whsec_...</span></div>
+        <div><span class="ev-key">STRIPE_PRICE_PRO_MONTHLY</span><span class="ev-eq">=</span><span class="ev-val">price_...</span></div>
+        <div><span class="ev-key">STRIPE_PRICE_PRO_ANNUAL</span><span class="ev-eq">=</span><span class="ev-val">price_...</span></div>
+        <div>&nbsp;</div>
+        <div><span class="ev-comment"># License JWT (min 32 chars)</span></div>
+        <div><span class="ev-key">LICENSE_JWT_SECRET</span><span class="ev-eq">=</span><span class="ev-val">your-secret-min-32-chars</span></div>
+        <div>&nbsp;</div>
+        <div><span class="ev-comment"># Server</span></div>
+        <div><span class="ev-key">PORT</span><span class="ev-eq">=</span><span class="ev-val">3000</span></div>
+        <div><span class="ev-key">NODE_ENV</span><span class="ev-eq">=</span><span class="ev-val">development</span></div>
+        <div>&nbsp;</div>
+        <div><span class="ev-comment"># Database (production only)</span></div>
+        <div><span class="ev-key">DATABASE_URL</span><span class="ev-eq">=</span><span class="ev-val">postgresql://user:password@host:5432/voiceisolate</span></div>
+      </div>
+    </section>
+
+    <!-- ── DEPLOY ─────────────────────────────────────── -->
+    <section class="section" id="deploy">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">🚀</div>
+        <h2>Deployment</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Platform</th><th>How</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Vercel (primary)</td><td>Push to <code>main</code></td><td>COOP+COEP mandatory; CSP no-CDN; WASM immutable cache</td></tr>
+            <tr><td>Render.com</td><td>Static serve</td><td>No build step; serves from <code>public/</code></td></tr>
+            <tr><td>Docker</td><td><code>docker compose up</code></td><td><code>compose.debug.yaml</code> for debug mode</td></tr>
+            <tr><td>Android</td><td><code>pnpm android:bundle</code></td><td>AAB for Play Store; debug APK via <code>:build</code></td></tr>
+            <tr><td>iOS</td><td><code>pnpm ios:build</code></td><td>Opens Xcode; App ID: <code>com.voiceisolatepro.app</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <blockquote>Build command: <code>node scripts/setup-ort.js &amp;&amp; node scripts/setup-three.js &amp;&amp; node scripts/stamp-sw-version.js</code></blockquote>
+    </section>
+
+    <!-- ── CI ────────────────────────────────────────── -->
+    <section class="section" id="ci">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">🔄</div>
+        <h2>CI/CD Pipeline</h2>
+        <span class="sec-hdr-badge">6 WORKFLOWS</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Workflow</th><th>Trigger</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>ci.yml</code></td><td>push/PR</td><td>Core CI (lint, test, validate)</td></tr>
+            <tr><td><code>deploy.yml</code></td><td>push/PR to main</td><td>Full lint + test + validate + Vercel deploy</td></tr>
+            <tr><td><code>eslint.yml</code></td><td>push/PR</td><td>Standalone ESLint check</td></tr>
+            <tr><td><code>njsscan.yml</code></td><td>push/PR</td><td>Node.js security scanning (njsscan)</td></tr>
+            <tr><td><code>semgrep.yml</code></td><td>push/PR</td><td>Static analysis (Semgrep SAST)</td></tr>
+            <tr><td><code>delete-merged-branches.yml</code></td><td>PR merge</td><td>Auto-delete merged branches</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Node <code>24</code> + pnpm <code>9.0.0</code> on <code>ubuntu-latest</code>. All actions use pinned commit SHAs for supply-chain security.</p>
+    </section>
+
+    <!-- ── KEY FILES ──────────────────────────────────── -->
+    <section class="section" id="files">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">📄</div>
+        <h2>Key Files Quick Reference</h2>
+      </div>
+      <div class="file-list">
+        <div class="file-item"><span class="file-path">public/app/dsp-core.js</span>       <span class="file-size">~65KB</span><span class="file-desc">Pure DSP math: STFT, filters, spectral algorithms</span></div>
+        <div class="file-item"><span class="file-path">public/app/ml-worker.js</span>       <span class="file-size">~48KB</span><span class="file-desc">ONNX inference worker (Demucs, BSRNN, VAD)</span></div>
+        <div class="file-item"><span class="file-path">public/app/vip-slider-patch.js</span> <span class="file-size">~37KB</span><span class="file-desc">Slider patch — loads LAST after app.js</span></div>
+        <div class="file-item"><span class="file-path">public/app/ml-worker-fetch-cache.js</span> <span class="file-size">~37KB</span><span class="file-desc">Model caching via Cache API + IndexedDB</span></div>
+        <div class="file-item"><span class="file-path">public/app/pipeline-orchestrator.js</span> <span class="file-size">~36KB</span><span class="file-desc">32-stage runner · owns AudioWorklet + ML worker</span></div>
+        <div class="file-item"><span class="file-path">public/app/app.js</span>              <span class="file-size">~38KB</span><span class="file-desc">Main orchestrator: presets, UI transport, slider tab defs</span></div>
+        <div class="file-item"><span class="file-path">public/app/paywall.js</span>          <span class="file-size">~27KB</span><span class="file-desc">Subscription/paywall UI</span></div>
+        <div class="file-item"><span class="file-path">public/app/neon-pulse-card.js</span>  <span class="file-size">~24KB</span><span class="file-desc">Neon pulse visualizer card component</span></div>
+        <div class="file-item"><span class="file-path">public/app/dsp-stages.js</span>       <span class="file-size">~23KB</span><span class="file-desc">32 named DSP stage operators (pure spectral)</span></div>
+        <div class="file-item"><span class="file-path">public/app/ai-engine-v2.js</span>     <span class="file-size">~23KB</span><span class="file-desc">AI engine v2 (enhanced inference pipeline)</span></div>
+        <div class="file-item"><span class="file-path">public/app/offline-processor.js</span> <span class="file-size">~20KB</span><span class="file-desc">Self-contained offline audio processor</span></div>
+        <div class="file-item"><span class="file-path">public/app/neon-pulse-visualizer.js</span> <span class="file-size">~20KB</span><span class="file-desc">Neon pulse audio visualizer</span></div>
+        <div class="file-item"><span class="file-path">public/app/pipeline-state.js</span>   <span class="file-size">~20KB</span><span class="file-desc">Centralized state, event bus</span></div>
+        <div class="file-item"><span class="file-path">public/app/visuals.js</span>          <span class="file-size">~20KB</span><span class="file-desc">Canvas 2D visualization (VU meters, waveform)</span></div>
+        <div class="file-item"><span class="file-path">public/app/auth.js</span>             <span class="file-size">~17KB</span><span class="file-desc">Authentication (login/session management)</span></div>
+        <div class="file-item"><span class="file-path">public/app/ai-intelligence.js</span>  <span class="file-size">~16KB</span><span class="file-desc">AI intelligence layer (model coordination)</span></div>
+        <div class="file-item"><span class="file-path">public/app/debug-audit.js</span>      <span class="file-size">~13KB</span><span class="file-desc">window.VIP_runAudit() — DevTools only</span></div>
+        <div class="file-item"><span class="file-path">public/app/fft-bridge.js</span>       <span class="file-size">~10KB</span><span class="file-desc">Offline STFT/iSTFT bridge (Creator/Forensic modes)</span></div>
+        <div class="file-item"><span class="file-path">public/app/ring-buffer.js</span>      <span class="file-size">~10KB</span><span class="file-desc">SharedArrayBuffer ring buffer (main ↔ worklet)</span></div>
+        <div class="file-item"><span class="file-path">public/app/slider-map.js</span>       <span class="file-size">~9KB</span> <span class="file-desc">STAGES(32) + SLIDER_REGISTRY(52) — pure data module</span></div>
+        <div class="file-item"><span class="file-path">public/app/dsp-processor.js</span>    <span class="file-size">~9KB</span> <span class="file-desc">AudioWorklet real-time processor (only registered worklet)</span></div>
+        <div class="file-item"><span class="file-path">server.js</span>                      <span class="file-size">~4KB</span> <span class="file-desc">Express dev server with COOP/COEP headers</span></div>
+      </div>
+    </section>
+
+    <!-- ── PITFALLS ───────────────────────────────────── -->
+    <section class="section" id="pitfalls">
+      <div class="sec-hdr">
+        <div class="sec-hdr-icon">🚫</div>
+        <h2>Common Pitfalls</h2>
+        <span class="sec-hdr-badge">READ FIRST</span>
+      </div>
+      <div class="pitfall-list">
+        <div class="pitfall"><span class="pitfall-n">01</span><span><strong>Don't load ONNX Runtime from CDN.</strong> Always <code>/lib/ort.min.js</code>. Run <code>pnpm setup:ort</code> if missing.</span></div>
+        <div class="pitfall"><span class="pitfall-n">02</span><span><strong>Don't load Three.js from CDN.</strong> Always <code>/lib/three.module.min.js</code> via importmap. Run <code>pnpm setup:three</code> if missing.</span></div>
+        <div class="pitfall"><span class="pitfall-n">03</span><span><strong>Don't add a second STFT/iSTFT.</strong> All spectral work goes in stages 10–20. Applies to <code>offline-processor.js</code> and any new modules.</span></div>
+        <div class="pitfall"><span class="pitfall-n">04</span><span><strong>Don't spawn the ML worker from <code>app.js</code>.</strong> Only <code>pipeline-orchestrator.js</code> owns worker lifecycle.</span></div>
+        <div class="pitfall"><span class="pitfall-n">05</span><span><strong>Don't remove COOP/COEP headers.</strong> SharedArrayBuffer breaks without them (<code>server.js</code>, <code>vercel.json</code>, <code>sw.js</code>).</span></div>
+        <div class="pitfall"><span class="pitfall-n">06</span><span><strong>Don't add presets without covering all 52 slider IDs.</strong> <code>tests/presets.test.js</code> will fail.</span></div>
+        <div class="pitfall"><span class="pitfall-n">07</span><span><strong>Don't add sliders without updating every preset AND <code>SLIDER_REGISTRY</code>.</strong> Both <code>tests/presets.test.js</code> and <code>tests/slider-map.test.js</code> validate completeness.</span></div>
+        <div class="pitfall"><span class="pitfall-n">08</span><span><strong>Use <code>pnpm</code>, not <code>npm</code> or <code>yarn</code>.</strong> Enforced by <code>.npmrc</code> engine-strict.</span></div>
+        <div class="pitfall"><span class="pitfall-n">09</span><span><strong>Tests use CommonJS</strong> (<code>require</code>); frontend uses ESM (<code>import</code>). Don't mix them.</span></div>
+        <div class="pitfall"><span class="pitfall-n">10</span><span><strong><code>public/lib/</code> files ARE committed.</strong> ORT WASM, <code>ort.min.js</code>, and <code>three.module.min.js</code> are git-tracked. Do not add <code>public/lib/</code> to <code>.gitignore</code>.</span></div>
+        <div class="pitfall"><span class="pitfall-n">11</span><span><strong><code>build/</code> is gitignored</strong> — generated by <code>pnpm build</code>. Never commit build output.</span></div>
+        <div class="pitfall"><span class="pitfall-n">12</span><span><strong><code>&lt;script type="importmap"&gt;</code> must appear before any <code>&lt;script type="module"&gt;</code></strong> in <code>index.html</code>. Reordering breaks Three.js / 3D spectrogram.</span></div>
+        <div class="pitfall"><span class="pitfall-n">13</span><span><strong><code>STAGES</code> and <code>SLIDER_REGISTRY</code> live in <code>slider-map.js</code>, not <code>app.js</code>.</strong> Import, don't redefine.</span></div>
+        <div class="pitfall"><span class="pitfall-n">14</span><span><strong>Some ONNX models are committed; some are Blob-hosted.</strong> Silero VAD, RNNoise, BSRNN are committed. Demucs v4 uses <code>.placeholder</code> — fetched from Vercel Blob on first use.</span></div>
+        <div class="pitfall"><span class="pitfall-n">15</span><span><strong>Node.js 24.x is required.</strong> CI and <code>.npmrc</code> enforce this. Don't test with Node 20 or earlier.</span></div>
+        <div class="pitfall"><span class="pitfall-n">16</span><span><strong><code>vip-slider-patch.js</code> loads LAST</strong> — it patches slider state after <code>app.js</code> initializes. Load order in <code>index.html</code> is critical; do not move it earlier.</span></div>
+        <div class="pitfall"><span class="pitfall-n">17</span><span><strong><code>debug-audit.js</code> is console-only</strong> — call <code>window.VIP_runAudit()</code> from DevTools. Do not wire it into the normal app boot path.</span></div>
+      </div>
+    </section>
+
+  </main>
+</div><!-- /.layout -->
+
+<!-- Scroll to top -->
+<button id="scrolltop" aria-label="Scroll to top" onclick="window.scrollTo({top:0,behavior:'smooth'})">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="18 15 12 9 6 15"/>
+  </svg>
+</button>
+
+<script>
+// ── Menu toggle ──────────────────────────────────────────
+const menuBtn    = document.getElementById('menuBtn');
+const sideNav    = document.getElementById('sideNav');
+const navOverlay = document.getElementById('navOverlay');
+
+function openNav()  { sideNav.classList.add('open'); navOverlay.classList.add('open'); document.body.style.overflow='hidden'; }
+function closeNav() { sideNav.classList.remove('open'); navOverlay.classList.remove('open'); document.body.style.overflow=''; }
+
+menuBtn.addEventListener('click', () => sideNav.classList.contains('open') ? closeNav() : openNav());
+navOverlay.addEventListener('click', closeNav);
+
+// close nav on link tap (mobile)
+sideNav.querySelectorAll('a').forEach(a => a.addEventListener('click', () => {
+  if (window.innerWidth <= 900) closeNav();
+}));
+
+// ── Active nav highlight ──────────────────────────────────
+const sections = document.querySelectorAll('.section[id]');
+const navLinks  = document.querySelectorAll('.nav a');
+const observer  = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + e.target.id));
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+sections.forEach(s => observer.observe(s));
+
+// ── Scroll-to-top button ──────────────────────────────────
+const scrollBtn = document.getElementById('scrolltop');
+window.addEventListener('scroll', () => {
+  scrollBtn.classList.toggle('visible', window.scrollY > 400);
+}, { passive: true });
+
+// ── Copy code button ──────────────────────────────────────
+function copyCode(btn) {
+  const pre  = btn.nextElementSibling;
+  const text = pre.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 1800);
+  });
+}
+</script>
+</body>
+</html>
