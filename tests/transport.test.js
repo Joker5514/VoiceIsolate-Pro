@@ -42,6 +42,7 @@ describe('Transport Methods', () => {
       },
       stopDiagnostics: jest.fn(),
       startDiagnostics: jest.fn(),
+      renderStaticVisuals: jest.fn(),
       _setScrubPos: jest.fn(function(frac) {
         if (this.dom && this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
       })

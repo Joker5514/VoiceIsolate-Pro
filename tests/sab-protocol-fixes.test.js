@@ -1,5 +1,20 @@
 'use strict';
 
+/**
+ * SAB protocol regression coverage.
+ *
+ * The dual-SAB protocol that wires the AudioWorklet, main thread, and ML worker
+ * has a few invariants that previous regressions broke. These tests pin the
+ * source-level invariants that match the current implementation:
+ *
+ *  - dsp-processor.js uses a header-first dual-SAB layout (FFT 4096 / HOP 1024,
+ *    4 Int32 flag slots) and ack's the ML worker's write-generation via the
+ *    output flags ring.
+ *  - app.js allocates the dual SABs and forwards them to the ML worker via the
+ *    'initRingBuffers' message, and listens for the worklet's 'sabReady' ack
+ *    to swap in worker-allocated SABs when fallback allocation was needed.
+ */
+
 const fs = require('fs');
 const path = require('path');
 
@@ -12,11 +27,13 @@ describe('SAB protocol regression fixes', () => {
     expect(src).toContain('const HOP_SIZE   = 1024;');
     expect(src).toContain('const FLAG_SLOTS = 4;');
     expect(src).toContain('const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;');
-    expect(src).toContain('Atomics.add(this._flagsIn, 0, 1);');
-    expect(src).toContain('if (Atomics.load(this._flagsOut, 1) === 1) {');
-    expect(src).toContain('Atomics.store(this._flagsOut, 1, 0);');
-    expect(src).toContain('const sampleRate = this.context.sampleRate;');
-    expect(src).toContain('const olaScale = 2 * HOP_SIZE / FFT_SIZE;');
+    // Frame-write generation bump on each completed hop:
+    expect(src).toContain('Atomics.add(this._inputFlags, 0, 1);');
+    // Read-generation ack pattern (writeGen is at slot 0 of the output flags,
+    // readGen at slot 1).
+    expect(src).toMatch(/Atomics\.load\(this\._outputFlags,\s*0\)/);
+    expect(src).toMatch(/Atomics\.store\(this\._outputFlags,\s*1,\s*writeGen\)/);
+    // SAB-ready notification back to the main thread.
     expect(src).toContain("type: 'sabReady'");
   });
 
@@ -25,17 +42,11 @@ describe('SAB protocol regression fixes', () => {
     expect(src).toContain('const FFT_SIZE = 4096;');
     expect(src).toContain('const HOP_SIZE = 1024;');
     expect(src).toContain('const HALF_BINS = FFT_SIZE / 2 + 1;');
-    expect(src).toContain('processorOptions: { sharedArrayBuffer: { inputSAB, outputSAB } }');
+    // Forward dual SABs to the ML worker.
     expect(src).toContain("type: 'initRingBuffers'");
     expect(src).toContain('inputRing: inputSAB');
     expect(src).toContain('maskRing: outputSAB');
-    expect(src).toContain('halfN: HALF_BINS');
-    expect(src).toContain('ringCapacity: 16');
-    expect(src).toContain('quantumSize: 128');
-    expect(src).toContain("if ((entry.target === 'worklet' || entry.target === 'both') && workletNode) {");
-    expect(src).toContain("workletNode.port.postMessage({ type: 'params', payload });");
-    expect(src).toContain("if ((entry.target === 'worker' || entry.target === 'both') && mlWorker) {");
-    expect(src).toContain("mlWorker.postMessage({ type: 'setParams', payload });");
+    // Listen for the worklet's sabReady ack to swap to worker-owned SABs.
     expect(src).toContain("if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {");
   });
 

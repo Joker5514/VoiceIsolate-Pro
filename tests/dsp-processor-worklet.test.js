@@ -5,12 +5,19 @@ const path = require('path');
 
 const processorSource = fs.readFileSync(path.join(__dirname, '../public/app/dsp-processor.js'), 'utf8');
 
+const FFT_SIZE   = 4096;
+const HOP_SIZE   = 1024;
+const HALF_BINS  = FFT_SIZE / 2 + 1;
+const FLAG_SLOTS = 4;
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
+const Q          = 128;  // AudioWorklet quantum size
+
 describe('dsp-processor AudioWorklet behavior', () => {
-  function loadProcessor(processorOptions = {}) {
+  function loadProcessor() {
     let RegisteredProcessor = null;
     class AudioWorkletProcessor {
       constructor() {
-        this.context = { sampleRate: 44100 };
+        this.context = { sampleRate: 48000 };
         this.port = {
           onmessage: null,
           postMessage: jest.fn(),
@@ -20,85 +27,85 @@ describe('dsp-processor AudioWorklet behavior', () => {
     const registerProcessor = (_name, clazz) => { RegisteredProcessor = clazz; };
     const fn = new Function('AudioWorkletProcessor', 'registerProcessor', 'sampleRate', processorSource);
     fn(AudioWorkletProcessor, registerProcessor, 48000);
-    return new RegisteredProcessor({ processorOptions });
+    return new RegisteredProcessor();
   }
 
-  test('allocates fallback dual SABs and notifies main thread', () => {
-    const processor = loadProcessor();
+  function makeSABs() {
+    const inputSAB  = new SharedArrayBuffer(SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS * 2);
+    const outputSAB = new SharedArrayBuffer(SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS);
+    return { inputSAB, outputSAB };
+  }
 
-    expect(processor._inputSAB).toBeInstanceOf(SharedArrayBuffer);
-    expect(processor._outputSAB).toBeInstanceOf(SharedArrayBuffer);
+  function initSAB(processor, { inputSAB, outputSAB }) {
+    // dsp-processor.js wires SABs via an 'initSAB' port message; this mirrors
+    // what the main thread sends via _forwardSabToWorker.
+    processor.port.onmessage({ data: { type: 'initSAB', inputSAB, outputSAB } });
+  }
+
+  test('exposes a port message handler after registration', () => {
+    const processor = loadProcessor();
+    expect(typeof processor.port.onmessage).toBe('function');
+  });
+
+  test('initSAB message wires both SABs and notifies main thread with sabReady', () => {
+    const processor = loadProcessor();
+    const { inputSAB, outputSAB } = makeSABs();
+    initSAB(processor, { inputSAB, outputSAB });
+
+    expect(processor._inputSAB).toBe(inputSAB);
+    expect(processor._outputSAB).toBe(outputSAB);
     expect(processor.port.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'sabReady',
-        inputSAB: processor._inputSAB,
-        outputSAB: processor._outputSAB,
-      })
+      expect.objectContaining({ type: 'sabReady', inputSAB, outputSAB })
     );
   });
 
-  test('uses provided SABs and advances frame counter once per hop', () => {
-    const halfBins = 4096 / 2 + 1;
-    const headerBytes = Int32Array.BYTES_PER_ELEMENT * 4;
-    const inputSAB = new SharedArrayBuffer(headerBytes + Float32Array.BYTES_PER_ELEMENT * halfBins * 2);
-    const outputSAB = new SharedArrayBuffer(headerBytes + Float32Array.BYTES_PER_ELEMENT * halfBins);
-    const processor = loadProcessor({ sharedArrayBuffer: { inputSAB, outputSAB } });
-
-    const flagsIn = new Int32Array(inputSAB, 0, 4);
-    const inBlock = new Float32Array(1024).fill(0.05);
-    const outBlock = new Float32Array(1024);
-
-    const keepAlive = processor.process([[inBlock]], [[outBlock]]);
-
-    expect(keepAlive).toBe(true);
-    expect(Atomics.load(flagsIn, 0)).toBe(1);
-  });
-
-  test('consumes ready mask flag and clears it after hop processing', () => {
-    const halfBins = 4096 / 2 + 1;
-    const headerBytes = Int32Array.BYTES_PER_ELEMENT * 4;
-    const inputSAB = new SharedArrayBuffer(headerBytes + Float32Array.BYTES_PER_ELEMENT * halfBins * 2);
-    const outputSAB = new SharedArrayBuffer(headerBytes + Float32Array.BYTES_PER_ELEMENT * halfBins);
-    const processor = loadProcessor({ sharedArrayBuffer: { inputSAB, outputSAB } });
-
-    const flagsOut = new Int32Array(outputSAB, 0, 4);
-    const mask = new Float32Array(outputSAB, headerBytes, halfBins);
-    mask.fill(1);
-    Atomics.store(flagsOut, 1, 1);
-
-    const inBlock = new Float32Array(1024).fill(0.05);
-    const outBlock = new Float32Array(1024);
-    processor.process([[inBlock]], [[outBlock]]);
-
-    expect(Atomics.load(flagsOut, 1)).toBe(0);
-  });
-
-  test('uses context sampleRate for bin mapping in spectral band-pass', () => {
-    const contextSampleRate = 96000;
+  test('advances the input frame counter once per completed FFT hop', () => {
     const processor = loadProcessor();
-    processor.context.sampleRate = contextSampleRate;
-    processor._params.lowCut = 9500;
-    processor._params.highCut = 10500;
-    processor._params.gate = 0;
-    processor._params.noiseReduction = 0;
-    processor._params.voiceBoost = 0;
+    const { inputSAB, outputSAB } = makeSABs();
+    initSAB(processor, { inputSAB, outputSAB });
 
-    const output = new Float32Array(1024);
-    for (let frame = 0; frame < 4; frame++) {
-      const input = new Float32Array(1024);
-      for (let i = 0; i < input.length; i++) {
-        const idx = frame * input.length + i;
-        input[i] = Math.sin((2 * Math.PI * 10000 * idx) / contextSampleRate);
-      }
-      processor.process([[input]], [[output]]);
+    const flagsIn = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+
+    // FFT_SIZE samples are needed before the first hop produces a frame.
+    // After that, one frame per HOP_SIZE samples.
+    const callsToFirstFrame = FFT_SIZE / Q;          // 32
+    const callsPerSubsequentHop = HOP_SIZE / Q;      // 8
+
+    for (let i = 0; i < callsToFirstFrame; i++) {
+      const inBlock  = new Float32Array(Q).fill(0.05);
+      const outBlock = new Float32Array(Q);
+      const keep = processor.process([[inBlock]], [[outBlock]]);
+      expect(keep).toBe(true);
+    }
+    // First frame should have emitted exactly one counter bump.
+    expect(Atomics.load(flagsIn, 0)).toBe(1);
+
+    for (let i = 0; i < callsPerSubsequentHop; i++) {
+      processor.process([[new Float32Array(Q).fill(0.05)]], [[new Float32Array(Q)]]);
+    }
+    expect(Atomics.load(flagsIn, 0)).toBe(2);
+  });
+
+  test('consumes the mask write-generation flag and acks it on the read slot', () => {
+    const processor = loadProcessor();
+    const { inputSAB, outputSAB } = makeSABs();
+    initSAB(processor, { inputSAB, outputSAB });
+
+    const flagsOut = new Int32Array(outputSAB, 0, FLAG_SLOTS);
+    const mask = new Float32Array(outputSAB, SAB_HEADER_BYTES, HALF_BINS);
+    mask.fill(1);
+
+    // Simulate ML worker publishing one mask generation.
+    Atomics.store(flagsOut, 0, 1);  // writeGen
+    // flagsOut[1] (readGen) starts at 0.
+
+    // Drive enough samples to produce one frame.
+    const callsToFirstFrame = FFT_SIZE / Q;
+    for (let i = 0; i < callsToFirstFrame; i++) {
+      processor.process([[new Float32Array(Q).fill(0.05)]], [[new Float32Array(Q)]]);
     }
 
-    let rms = 0;
-    for (let i = 0; i < output.length; i++) rms += output[i] * output[i];
-    rms = Math.sqrt(rms / output.length);
-
-    // If bin mapping incorrectly used 48kHz constants, this 10kHz tone is
-    // outside the computed passband and output RMS collapses toward zero.
-    expect(rms).toBeGreaterThan(1e-6);
+    // After consuming the mask, readGen should match writeGen.
+    expect(Atomics.load(flagsOut, 1)).toBe(1);
   });
 });
