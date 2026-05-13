@@ -983,9 +983,16 @@ describe('index.html — safety-net script block structure', () => {
   });
 
   test('safety-net script appears after app.js <script> tag', () => {
-    const appJsPos      = indexHtmlSrc.indexOf('"./app.js"');
-    const safetyNetPos  = indexHtmlSrc.indexOf('_vipSafetyNet');
-    expect(appJsPos).toBeGreaterThan(-1);
+    // app.js is referenced via dynamic import('./app.js') (single quotes) in
+    // the module loader block — see public/app/index.html. Accept either quote
+    // style so this test stays robust against future quote changes.
+    const appJsPos     = Math.min(
+      ...['\'./app.js\'', '"./app.js"']
+        .map(s => indexHtmlSrc.indexOf(s))
+        .filter(i => i !== -1),
+    );
+    const safetyNetPos = indexHtmlSrc.indexOf('_vipSafetyNet');
+    expect(Number.isFinite(appJsPos)).toBe(true);
     expect(safetyNetPos).toBeGreaterThan(appJsPos);
   });
 

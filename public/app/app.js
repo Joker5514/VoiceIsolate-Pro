@@ -1763,11 +1763,33 @@ class VoiceIsolatePro {
   _handleGlobalKeydown(e) {
     const tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
     if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
-    if (e.code === 'Space') { e.preventDefault(); this.togglePlayback(); }
-    if (e.code === 'ArrowRight') { e.preventDefault(); this.seekDelta(5); }
-    if (e.code === 'ArrowLeft') { e.preventDefault(); this.seekDelta(-5); }
-    if (e.code === 'ArrowUp') { e.preventDefault(); if (this.gainNode) this.gainNode.gain.value = Math.min(this.gainNode.gain.value * 1.122, 3.16); }
-    if (e.code === 'ArrowDown') { e.preventDefault(); if (this.gainNode) this.gainNode.gain.value = Math.max(this.gainNode.gain.value / 1.122, 0); }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    const code = e.code || '';
+    const key  = (e.key || '').toLowerCase();
+    const isSpace  = code === 'Space' || key === ' ' || key === 'spacebar';
+    const isK      = code === 'KeyK'  || key === 'k';
+    const isX      = code === 'KeyX'  || key === 'x';
+    const isEscape = code === 'Escape' || key === 'escape';
+
+    if (isSpace || isK) {
+      if (this.inputBuffer) { e.preventDefault(); this.togglePlayback(); }
+      return;
+    }
+    if (isX) {
+      const abDisabled = this.dom && this.dom.tpAB && this.dom.tpAB.disabled;
+      if (this.outputBuffer && !abDisabled) { e.preventDefault(); this.toggleAB(); }
+      return;
+    }
+    if (isEscape) {
+      if (this.isProcessing) { this.abortFlag = true; }
+      else if (this.isPlaying) { this.stop(); }
+      return;
+    }
+    if (code === 'ArrowRight') { e.preventDefault(); this.seekDelta(5); }
+    else if (code === 'ArrowLeft') { e.preventDefault(); this.seekDelta(-5); }
+    else if (code === 'ArrowUp') { e.preventDefault(); if (this.gainNode) this.gainNode.gain.value = Math.min(this.gainNode.gain.value * 1.122, 3.16); }
+    else if (code === 'ArrowDown') { e.preventDefault(); if (this.gainNode) this.gainNode.gain.value = Math.max(this.gainNode.gain.value / 1.122, 0); }
   }
 
   calcRMS(d) {
@@ -2054,6 +2076,9 @@ document.addEventListener('DOMContentLoaded', function() {
     try {
       window._vipApp = new VoiceIsolatePro();
       window.vip = window._vipApp;
+      if (typeof window._vipApp.init === 'function') {
+        try { window._vipApp.init(); } catch (initErr) { console.warn('[app] app.init() error:', initErr); }
+      }
       window._vipApp._initCalled = true;
       if (typeof Auth !== 'undefined' && Auth && typeof Auth.init === 'function') {
         Auth.init().catch(function() {});

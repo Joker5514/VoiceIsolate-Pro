@@ -316,6 +316,9 @@
         try {
           if (!window._vipApp && typeof VoiceIsolatePro !== 'undefined') {
             const app = new VoiceIsolatePro();
+            if (typeof app.init === 'function') {
+              try { app.init(); } catch (initErr) { console.warn('[safety-net] app.init() error:', initErr); }
+            }
             app._initCalled = true;
             window.vip = app;
             window._vipApp = app;
