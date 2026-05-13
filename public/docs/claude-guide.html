@@ -1287,15 +1287,13 @@ pnpm ios:build            <span class="c"># Sync + open Xcode</span></pre>
         <div class="sec-hdr-icon">⚙</div>
         <h2>Service Worker</h2>
       </div>
-      <p><code>sw.js</code> is registered by <code>sw-register.js</code> and handles:</p>
+      <p>Service-worker files are currently split:</p>
       <ol>
-        <li><strong>COOP/COEP header injection</strong> → <code>crossOriginIsolated === true</code> for SharedArrayBuffer</li>
-        <li><strong>App-shell pre-caching</strong> on install (all static JS/CSS/HTML assets)</li>
-        <li><strong>Cache-first strategy</strong> for ONNX model files (<code>vip-models-v1</code> cache)</li>
-        <li><strong>Network-first strategy</strong> for <code>index.html</code> (always fresh)</li>
-        <li><strong>Zero-downtime updates</strong> via <code>skipWaiting</code> + <code>clients.claim</code> on activate</li>
+        <li><code>public/app/sw-register.js</code> currently registers <code>/sw.js</code> (root stub) with scope <code>/</code></li>
+        <li><code>public/sw.js</code> is a minimal transition stub (<code>skipWaiting</code> + <code>clients.claim</code>) and does not contain full cache/COOP logic</li>
+        <li><code>public/app/sw.js</code> contains the full COOP/COEP + app-shell/model caching strategies, but it is not the active registration target in this flow</li>
       </ol>
-      <blockquote><code>scripts/stamp-sw-version.js</code> injects a cache-bust version string into <code>sw.js</code> at Vercel build time.</blockquote>
+      <blockquote><code>scripts/stamp-sw-version.js</code> injects a cache-bust version string into <code>public/app/sw.js</code> at Vercel build time.</blockquote>
     </section>
 
     <!-- ── CONVENTIONS ───────────────────────────────── -->
