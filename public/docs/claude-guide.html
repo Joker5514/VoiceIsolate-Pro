@@ -1104,7 +1104,7 @@ pnpm ios:build            <span class="c"># Sync + open Xcode</span></pre>
       <div class="rule-card info">
         <div class="rule-num">Rule 5</div>
         <div class="rule-title">Privacy: No External Audio Calls</div>
-        <div class="rule-body">Audio data must never leave the browser. No server-side audio processing endpoints. <code>analytics.js</code> logs locally only.</div>
+<div class="rule-body">Audio data must never leave the browser. The default processing mode is entirely local — no audio is sent to any server. <code>analytics.js</code> logs locally only. The optional <code>api/nim/</code> module provides NVIDIA NIM cloud inference as an <strong>opt-in</strong> feature; it is disabled by default and requires explicit configuration to activate. No NIM endpoints are called unless the user intentionally enables cloud inference.</div>
       </div>
 
       <div class="rule-card warn">
