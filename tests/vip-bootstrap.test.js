@@ -572,6 +572,12 @@ function runVipBoot(overrides = {}) {
     document: makeDocument('complete'),
     location: { protocol: 'https:', origin: 'http://localhost' },
     fetch: jest.fn().mockResolvedValue({ ok: true, status: 200 }),
+    // Provide no-op timer mocks so boot()'s setInterval/setTimeout don't leak
+    // real Node handles across tests (startPillDriver + runDiagnostics grace period).
+    setTimeout: jest.fn(),
+    setInterval: jest.fn(),
+    clearInterval: jest.fn(),
+    clearTimeout: jest.fn(),
     console,
   };
   const scope = { ...defaults, ...overrides };

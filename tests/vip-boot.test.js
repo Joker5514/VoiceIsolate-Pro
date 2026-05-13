@@ -92,10 +92,15 @@ function runVipBoot({ readyState = 'complete', windowExtras = {}, VoiceIsolatePr
     'VoiceIsolatePro',
     'Auth',
     'console',
+    'setTimeout',
+    'setInterval',
+    'clearTimeout',
+    'clearInterval',
     vipBootSrc
   );
 
-  fn(win, doc, loc, fetchMock || defaultFetch, VoiceIsolatePro, Auth, con);
+  fn(win, doc, loc, fetchMock || defaultFetch, VoiceIsolatePro, Auth, con,
+    jest.fn(), jest.fn(), jest.fn(), jest.fn());
 
   return { win, doc, con };
 }
