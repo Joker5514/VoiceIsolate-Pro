@@ -8,9 +8,10 @@
         :root {
             --bg: #060609; --panel-bg: #0c0c12; --border: #222230;
             --text: #eeeef2; --text-dim: #5e5e78;
-            --accent: #ef4444; --accent-hover: #dc2626;
+            --accent-rgb: 239, 68, 68;
+            --accent: rgb(var(--accent-rgb)); --accent-hover: #dc2626;
             --danger: #ff4444; --warn: #ffaa00;
-            --accent-glow: rgba(239,68,68,0.25);
+            --accent-glow: rgba(var(--accent-rgb), 0.25);
         }
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden; }
