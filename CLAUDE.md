@@ -266,7 +266,7 @@ CSP in `vercel.json` enforces this. `pnpm postinstall` runs setup scripts; files
 
 ### RULE 5 — Privacy: No External Audio Calls
 
-Audio data must never leave the browser. No server-side audio processing endpoints exist. `analytics.js` logs locally only.
+Audio data must never leave the browser. The default processing mode is entirely local — no audio is sent to any server. `analytics.js` logs locally only. The optional `api/nim/` module provides NVIDIA NIM cloud inference as an **opt-in** feature; it is not used by the frontend unless cloud inference is explicitly enabled and configured. In normal local operation, no NIM endpoints are called.
 
 ### RULE 6 — SharedArrayBuffer Headers
 
