@@ -1,4 +1,5 @@
 # VOICEISOLATE PRO — Mobile Quick Reference
+
 > v24.0.0 · AI Contributor Guide (compact)
 
 ---
@@ -34,6 +35,7 @@ pnpm build          # public/ → build/
 ```
 
 **Mobile builds:**
+
 ```bash
 pnpm android:build  # Debug APK
 pnpm android:bundle # Google Play AAB
@@ -45,9 +47,11 @@ pnpm ios:sync       # Sync → Xcode
 ## Architecture Rules (Never Break These)
 
 **1. One STFT per path**
-```
+
+```text
 Time → STFT(S10) → Spectral Ops(S11-S19) → iSTFT(S20) → Time
 ```
+
 No second STFT/iSTFT pair anywhere.
 
 **2. AudioWorklet** — only `pipeline-orchestrator.js` calls `addModule()`

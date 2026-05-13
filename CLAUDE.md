@@ -123,7 +123,6 @@ VoiceIsolate-Pro/
 │   │   ├── diarization-timeline.js ~11KB  Speaker diarization timeline UI
 │   │   ├── isolation-controls.js   ~9KB   Per-speaker mute/solo/isolate card UI
 │   │   ├── processing-overlay.js   ~11KB  Processing progress overlay UI
-│   │   ├── model-status-ui.js      ~8KB   Download progress + model status overlay
 │   │   │
 │   │   ├── ── AUTH / PAYMENTS ─────────────────────────────────────
 │   │   ├── auth.js                 ~17KB  Authentication (login/session management)
@@ -267,7 +266,7 @@ CSP in `vercel.json` enforces this. `pnpm postinstall` runs setup scripts; files
 
 ### RULE 5 — Privacy: No External Audio Calls
 
-Audio data must never leave the browser. No server-side audio processing endpoints exist. `analytics.js` logs locally only.
+Audio data must never leave the browser. The default processing mode is entirely local — no audio is sent to any server. `analytics.js` logs locally only. The optional `api/nim/` module provides NVIDIA NIM cloud inference as an **opt-in** feature; it is disabled by default and requires explicit configuration to activate. No NIM endpoints are called unless the user intentionally enables cloud inference.
 
 ### RULE 6 — SharedArrayBuffer Headers
 
