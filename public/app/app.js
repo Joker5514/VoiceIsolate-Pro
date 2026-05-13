@@ -466,7 +466,11 @@ class VoiceIsolatePro {
       });
     }
     document.querySelectorAll('.slider-group-header').forEach(header => {
-      header.addEventListener('click', () => header.closest('.slider-group').classList.toggle('active'));
+      header.addEventListener('click', () => {
+        const group = header.closest('.slider-group');
+        const isActive = group.classList.toggle('active');
+        header.setAttribute('aria-expanded', isActive.toString());
+      });
     });
     try {
       document.addEventListener('keydown', e => this._handleGlobalKeydown(e));
