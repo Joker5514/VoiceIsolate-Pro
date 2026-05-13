@@ -1560,14 +1560,62 @@ window.addEventListener('scroll', () => {
 }, { passive: true });
 
 // ── Copy code button ──────────────────────────────────────
+function setCopyButtonState(btn, label, className) {
+  btn.textContent = label;
+  btn.classList.remove('copied', 'copy-failed');
+  if (className) btn.classList.add(className);
+  setTimeout(() => {
+    btn.textContent = 'copy';
+    btn.classList.remove('copied', 'copy-failed');
+  }, 1800);
+}
+
+function fallbackCopyText(text) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.top = '-9999px';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch (err) {
+    copied = false;
+  }
+
+  document.body.removeChild(textarea);
+  return copied;
+}
+
 function copyCode(btn) {
   const pre  = btn.nextElementSibling;
   const text = pre.innerText;
-  navigator.clipboard.writeText(text).then(() => {
-    btn.textContent = 'copied!';
-    btn.classList.add('copied');
-    setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 1800);
-  });
+
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        setCopyButtonState(btn, 'copied!', 'copied');
+      })
+      .catch(() => {
+        if (fallbackCopyText(text)) {
+          setCopyButtonState(btn, 'copied!', 'copied');
+        } else {
+          setCopyButtonState(btn, 'copy failed', 'copy-failed');
+        }
+      });
+    return;
+  }
+
+  if (fallbackCopyText(text)) {
+    setCopyButtonState(btn, 'copied!', 'copied');
+  } else {
+    setCopyButtonState(btn, 'copy failed', 'copy-failed');
+  }
 }
 </script>
 </body>
