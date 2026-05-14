@@ -152,7 +152,7 @@ describe('public/app/index.html — _vipSafetyNet script presence', () => {
 function extractSafetyNetSrc() {
   const html = fs.readFileSync(publicAppHtmlPath, 'utf8');
   // Grab everything inside the <script> tag that contains _vipSafetyNet
-  const match = html.match(/<script>\s*([\s\S]*?_vipSafetyNet[\s\S]*?)<\/script>/);
+  const match = html.match(/<script>\s*(\(function _vipSafetyNet[\s\S]*?)<\/script>/);
   if (!match) throw new Error('Could not extract _vipSafetyNet script from index.html');
   return match[1];
 }
