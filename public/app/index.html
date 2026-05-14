@@ -284,11 +284,76 @@
             tpABLabel: tag = A or B version letter, name = Original / Processed.
             data-version drives CSS accent color (red=A=Original, cyan=B=Processed).
             _setABLabel() in app.js keeps both child spans and aria-label in sync.
+            Defensive markup repair below keeps the pill structure intact if legacy
+            code paths temporarily assign tpABLabel.textContent.
           -->
           <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite">
             <span class="tp-ab-tag">A</span>
             <span class="tp-ab-name">Original</span>
           </span>
+          <script>
+            (function () {
+              var tpABLabelEl = document.getElementById('tpABLabel');
+              if (!tpABLabelEl) return;
+
+              var repairingABLabel = false;
+
+              function getABState(sourceText) {
+                var text = String(sourceText || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                if (text.indexOf('processed') !== -1 || /^b\b/.test(text) || text === 'b') {
+                  return { version: 'B', tag: 'B', name: 'Processed' };
+                }
+                return { version: 'A', tag: 'A', name: 'Original' };
+              }
+
+              function ensureABLabelMarkup() {
+                if (repairingABLabel) return;
+                repairingABLabel = true;
+
+                try {
+                  var state = getABState(
+                    tpABLabelEl.textContent ||
+                    tpABLabelEl.getAttribute('aria-label') ||
+                    tpABLabelEl.dataset.version
+                  );
+
+                  var tagEl = tpABLabelEl.querySelector('.tp-ab-tag');
+                  var nameEl = tpABLabelEl.querySelector('.tp-ab-name');
+                  var needsRebuild = !tagEl || !nameEl || tpABLabelEl.childElementCount !== 2;
+
+                  tpABLabelEl.dataset.version = state.version;
+                  tpABLabelEl.setAttribute('aria-label', state.tag + ' ' + state.name);
+
+                  if (needsRebuild) {
+                    tpABLabelEl.textContent = '';
+
+                    tagEl = document.createElement('span');
+                    tagEl.className = 'tp-ab-tag';
+                    tpABLabelEl.appendChild(tagEl);
+
+                    nameEl = document.createElement('span');
+                    nameEl.className = 'tp-ab-name';
+                    tpABLabelEl.appendChild(nameEl);
+                  }
+
+                  tagEl.textContent = state.tag;
+                  nameEl.textContent = state.name;
+                } finally {
+                  repairingABLabel = false;
+                }
+              }
+
+              ensureABLabelMarkup();
+
+              new MutationObserver(function () {
+                ensureABLabelMarkup();
+              }).observe(tpABLabelEl, {
+                childList: true,
+                characterData: true,
+                subtree: true
+              });
+            }());
+          </script>
         </div>
       </div>
 
