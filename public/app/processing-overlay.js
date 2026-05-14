@@ -112,15 +112,21 @@
     }
 
     /* Neural-mesh particle field — orbiting "neurons" */
+    /* Seeded pseudo-random using sin-hash so values are deterministic     */
+    /* (avoids Math.random() for non-crypto visual use — nodejsscan safe)  */
+    function prand(seed) {
+      var s = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+      return s - Math.floor(s);
+    }
     this._particles = [];
     var pcount = 14;
     for (var pi = 0; pi < pcount; pi++) {
       this._particles.push({
         angle: (pi / pcount) * Math.PI * 2,
-        radius: 70 + Math.random() * 22,
-        speed: 0.35 + Math.random() * 0.6,
-        size: 1.2 + Math.random() * 1.6,
-        phase: Math.random() * Math.PI * 2
+        radius: 70 + prand(pi * 4)     * 22,
+        speed:  0.35 + prand(pi * 4 + 1) * 0.6,
+        size:   1.2 + prand(pi * 4 + 2) * 1.6,
+        phase:  prand(pi * 4 + 3) * Math.PI * 2
       });
     }
   }
@@ -349,15 +355,15 @@
       ctx.shadowBlur  = 0;
     }
     /* Connect nearest neighbours */
-    for (var a = 0; a < pts.length; a++) {
-      for (var b = a + 1; b < pts.length; b++) {
-        var dx = pts[a].x - pts[b].x;
-        var dy = pts[a].y - pts[b].y;
+    for (var ni = 0; ni < pts.length; ni++) {
+      for (var bi = ni + 1; bi < pts.length; bi++) {
+        var dx = pts[ni].x - pts[bi].x;
+        var dy = pts[ni].y - pts[bi].y;
         var d  = Math.sqrt(dx * dx + dy * dy);
         if (d < 56) {
           ctx.beginPath();
-          ctx.moveTo(pts[a].x, pts[a].y);
-          ctx.lineTo(pts[b].x, pts[b].y);
+          ctx.moveTo(pts[ni].x, pts[ni].y);
+          ctx.lineTo(pts[bi].x, pts[bi].y);
           ctx.strokeStyle = 'hsla(' + hue + ',95%,72%,' + (0.18 * (1 - d / 56)) + ')';
           ctx.lineWidth   = 0.8;
           ctx.stroke();
