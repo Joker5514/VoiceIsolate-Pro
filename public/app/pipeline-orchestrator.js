@@ -7,8 +7,10 @@
    ============================================ */
 
 'use strict';
+/* global fetch, Blob, URL, console, self, crypto, TextEncoder */
 
 const WORKLET_READY_FALLBACK_MS = 250;
+const WORKLET_SOURCE_SHA256 = '9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48';
 
 // ─── AudioWorklet loader with CDN fallback ─────────────────────────────────
 // Primary path is same-origin /app/dsp-processor.js (COOP+COEP friendly).
@@ -26,9 +28,18 @@ async function _getWorkletManifest() {
     const json = await resp.json();
     _WORKLET_FALLBACK_CACHE.manifest = json;
     return json;
-  } catch (_) {
+  } catch {
     return null;
   }
+}
+function _digestToHex(digestBuffer) {
+  return Array.from(new Uint8Array(digestBuffer), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+async function _sha256Hex(text) {
+  if (!crypto || !crypto.subtle) throw new Error('crypto.subtle unavailable for worklet integrity check');
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return _digestToHex(digest);
 }
 async function loadDspProcessorWorklet(ctx) {
   if (!ctx || !ctx.audioWorklet) throw new Error('AudioContext.audioWorklet unavailable');
@@ -46,7 +57,7 @@ async function loadDspProcessorWorklet(ctx) {
     try {
       await ctx.audioWorklet.addModule(_WORKLET_FALLBACK_CACHE.blobUrl);
       return 'blob-cached';
-    } catch (_) {
+    } catch {
       URL.revokeObjectURL(_WORKLET_FALLBACK_CACHE.blobUrl);
       _WORKLET_FALLBACK_CACHE.blobUrl = null;
     }
@@ -57,9 +68,10 @@ async function loadDspProcessorWorklet(ctx) {
   const sources = manifest && manifest.worklets && manifest.worklets.dsp_processor
     ? manifest.worklets.dsp_processor.sources
     : [
-        { provider: 'vercel-blob', url: 'https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js' },
-        { provider: 'r2',          url: 'https://models.voiceisolatepro.com/worklets/dsp-processor.js' },
-        { provider: 'huggingface', url: 'https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js' },
+        { provider: 'same-origin', url: '/app/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
+        { provider: 'vercel-blob', url: 'https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
+        { provider: 'r2',          url: 'https://models.voiceisolatepro.com/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
+        { provider: 'huggingface', url: 'https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
       ];
 
   let lastErr;
@@ -73,6 +85,12 @@ async function loadDspProcessorWorklet(ctx) {
       if (!text.includes("registerProcessor('dsp-processor'") &&
           !text.includes('registerProcessor("dsp-processor"')) {
         throw new Error('mirror does not contain dsp-processor registration');
+      }
+      const expectedSha256 = src && typeof src.sha256 === 'string' ? src.sha256.toLowerCase() : '';
+      if (!expectedSha256) throw new Error('mirror missing required sha256 pin');
+      const actualSha256 = await _sha256Hex(text);
+      if (actualSha256 !== expectedSha256) {
+        throw new Error('worklet integrity mismatch: expected ' + expectedSha256 + ' got ' + actualSha256);
       }
       const blob = new Blob([text], { type: 'application/javascript' });
       const blobUrl = URL.createObjectURL(blob);
