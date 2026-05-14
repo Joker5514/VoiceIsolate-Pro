@@ -4,6 +4,10 @@ def releaseStoreFile = System.getenv('ANDROID_KEYSTORE_PATH') ?: project.findPro
 def releaseStorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD') ?: project.findProperty('ANDROID_KEYSTORE_PASSWORD')
 def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS') ?: project.findProperty('ANDROID_KEY_ALIAS')
 def releaseKeyPassword = System.getenv('ANDROID_KEY_PASSWORD') ?: project.findProperty('ANDROID_KEY_PASSWORD')
+def hasReleaseSigningConfig = releaseStoreFile != null &&
+    releaseStorePassword != null &&
+    releaseKeyAlias != null &&
+    releaseKeyPassword != null
 
 android {
     namespace "com.voiceisolatepro.app"
@@ -26,8 +30,7 @@ android {
     }
     signingConfigs {
         release {
-            if (releaseStoreFile != null && releaseStorePassword != null &&
-                releaseKeyAlias != null && releaseKeyPassword != null) {
+            if (hasReleaseSigningConfig) {
                 storeFile file(releaseStoreFile)
                 storePassword releaseStorePassword
                 keyAlias releaseKeyAlias
@@ -37,8 +40,7 @@ android {
     }
     buildTypes {
         release {
-            if (releaseStoreFile != null && releaseStorePassword != null &&
-                releaseKeyAlias != null && releaseKeyPassword != null) {
+            if (hasReleaseSigningConfig) {
                 signingConfig signingConfigs.release
             }
             minifyEnabled false

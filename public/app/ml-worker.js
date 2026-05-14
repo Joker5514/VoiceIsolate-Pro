@@ -118,13 +118,11 @@ const MODEL_SHA256 = {
 function initialize() {
   if (self.ort) {
     ort = self.ort;
-    _isAndroidWebView = detectAndroidWebView();
-    configureWasmRuntime();
-    return;
+  } else {
+    // Load ORT from local vendored file (copied by scripts/setup-ort.js postinstall)
+    importScripts('/lib/ort.min.js');
+    ort = self.ort;
   }
-  // Load ORT from local vendored file (copied by scripts/setup-ort.js postinstall)
-  importScripts('/lib/ort.min.js');
-  ort = self.ort;
   _isAndroidWebView = detectAndroidWebView();
   configureWasmRuntime();
 }

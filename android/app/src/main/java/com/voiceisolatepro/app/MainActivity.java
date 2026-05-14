@@ -26,6 +26,7 @@ import java.util.Map;
 
 public class MainActivity extends BridgeActivity {
     private static final int REQUEST_RECORD_AUDIO = 1001;
+    private static final String ASSET_PATH_PREFIX = "public";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -141,7 +142,7 @@ public class MainActivity extends BridgeActivity {
                 path = "/index.html";
             }
 
-            final String assetPath = "public" + path;
+            final String assetPath = ASSET_PATH_PREFIX + path;
             try {
                 InputStream is = getAssets().open(assetPath);
                 String mimeType = URLConnection.guessContentTypeFromName(assetPath);
