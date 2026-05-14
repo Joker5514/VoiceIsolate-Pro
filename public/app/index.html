@@ -19,6 +19,8 @@
   <!-- FIXED: was /app/processing-overlay.css (absolute, breaks on static hosts) -->
   <link id="vip-overlay-css" rel="stylesheet" href="processing-overlay.css" />
   <link rel="stylesheet" href="mobile.css" />
+  <!-- Enhancement styles: speed buttons, A/B label pill, helix spinner, proc badge -->
+  <link rel="stylesheet" href="vip-enhancements.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
   <style>
@@ -163,8 +165,9 @@
         <div class="upload-row">
           <button id="micBtn" class="btn btn-mic" aria-label="Toggle Microphone"><span id="micLabel">Record</span></button>
           <span id="fileInfo" class="file-info">No file loaded</span>
+          <!-- File-load indicator: uses new helix spinner (8 strands) -->
           <span id="fileLoadIndicator" class="file-load-indicator" role="status" aria-live="polite" hidden>
-            <span class="vip-eq-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="vip-helix-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
             <span class="file-load-text">Loading…</span>
           </span>
           <button id="clearFile" class="btn btn-outline" type="button">Clear</button>
@@ -217,6 +220,12 @@
       </div>
 
       <div class="card pipeline-box">
+        <!-- Processing status badge — state driven by vip-enhancements.js -->
+        <div id="vip-proc-badge" role="status" aria-live="polite" data-state="idle">
+          <span class="vip-pb-dot" aria-hidden="true"></span>
+          <span class="vip-pb-label">Ready — drop a file or record to begin</span>
+          <span class="vip-helix-spinner vip-pb-spinner" aria-hidden="true" style="display:none"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        </div>
         <div class="pipe-header"><span class="pipe-stage" id="pipeStage">S00</span><span id="pipePercent">0%</span></div>
         <div class="pipe-bar" id="pipeBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Processing progress">
           <div id="pipeFill" class="pipe-fill"></div>
@@ -251,6 +260,7 @@
           <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
           <div class="tp-speed">
             <label for="tpSpeed">Speed</label>
+            <!-- Speed down: steps through <select> options in reverse -->
             <button id="tpSpeedDown" class="btn btn-tp btn-speed" type="button" aria-label="Slow Down Playback" title="Slow Down (−)"><span aria-hidden="true">−</span></button>
             <select id="tpSpeed" aria-label="Playback speed">
               <option value="0.25">0.25x</option>
@@ -262,10 +272,23 @@
               <option value="1.75">1.75x</option>
               <option value="2">2x</option>
             </select>
+            <!-- Speed up: steps through <select> options forward -->
             <button id="tpSpeedUp" class="btn btn-tp btn-speed" type="button" aria-label="Speed Up Playback" title="Speed Up (+)"><span aria-hidden="true">+</span></button>
           </div>
-          <button id="tpAB" class="btn btn-ab" type="button" aria-label="Toggle A/B Comparison" aria-describedby="tpABLabel" title="Toggle A/B (currently playing Original)" disabled>A/B</button>
-          <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite"><span class="tp-ab-tag">A</span> <span class="tp-ab-name">Original</span></span>
+          <button id="tpAB" class="btn btn-ab" type="button"
+            aria-label="Toggle A/B Comparison"
+            aria-describedby="tpABLabel"
+            title="Toggle A/B — X key shortcut"
+            disabled>A/B</button>
+          <!--
+            tpABLabel: tag = A or B version letter, name = Original / Processed.
+            data-version drives CSS accent color (red=A=Original, cyan=B=Processed).
+            _setABLabel() in app.js keeps both child spans and aria-label in sync.
+          -->
+          <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite">
+            <span class="tp-ab-tag">A</span>
+            <span class="tp-ab-name">Original</span>
+          </span>
         </div>
       </div>
 
@@ -327,6 +350,7 @@
       './session-persist.js',
       './vip-boot.js',
       './app.js',
+      './vip-enhancements.js',
     ];
     for (const src of _mods) {
       import(src).catch(err => {
