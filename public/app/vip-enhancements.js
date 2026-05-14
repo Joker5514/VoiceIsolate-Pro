@@ -1,131 +1,90 @@
 /**
- * VoiceIsolate Pro — vip-enhancements.js  v1.0.0
+ * VoiceIsolate Pro — vip-enhancements.js  v1.1.0
  *
- * Thin enhancement shim wired on top of the existing app.js:
- *   1. Injects the #vip-proc-badge status element above the pipeline bar
- *   2. Swaps .vip-eq-spinner → .vip-helix-spinner (8 strands) in the
- *      file-load indicator and process button
- *   3. Adds a flash effect when speed is changed via the ± buttons
- *   4. Patches VIPOverlay.show/hide to drive the badge state so the
- *      badge and the full-screen neural overlay stay in sync
+ * Thin bridge shim wired on top of app.js:
+ *   1. Badge state driver (#vip-proc-badge already in index.html)
+ *   2. Speed +/− buttons dispatch synthetic 'change' so flash animation fires
+ *   3. Patches VIPOverlay.show/hide, app.setStatus, _showFileLoading,
+ *      _hideFileLoading to drive badge state
+ *   4. Patches _setABLabel to ensure .tp-ab-tag / .tp-ab-name spans
+ *      are never clobbered by textContent assignments in play()/toggleAB()
  *
- * Zero dependencies — drops in as an ES module imported last.
+ * Review fixes v1.1.0:
+ *   - P1: _hideFileLoading no longer overwrites error state
+ *   - P2: speed buttons dispatch synthetic change event for flash
+ *   - CSS id guard: link already has id; no duplicate injection
+ *   - Removed dead upgradeFileLoadSpinner() (index.html native helix)
+ *   - Removed redundant injectBadge() body (badge in HTML; guard only)
+ *   - Used rest params (...args) on all monkey-patched methods
  */
 
 (function vipEnhancements() {
   'use strict';
 
-  /* ── 1. Inject stylesheet ─────────────────────────────────── */
-  if (!document.getElementById('vip-enh-css')) {
-    const lnk = document.createElement('link');
-    lnk.id   = 'vip-enh-css';
-    lnk.rel  = 'stylesheet';
-    lnk.href = 'vip-enhancements.css';
-    document.head.appendChild(lnk);
-  }
-
-  /* ── 2. Helix spinner HTML template ──────────────────────── */
-  const HELIX_HTML = '<span class="vip-helix-spinner" aria-hidden="true">'
-    + '<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>';
-
-  /* ── 3. Inject #vip-proc-badge above pipeline bar ─────────── */
-  function injectBadge() {
-    if (document.getElementById('vip-proc-badge')) return;
-    const pipelineBox = document.querySelector('.pipeline-box');
-    if (!pipelineBox) return;
-    const badge = document.createElement('div');
-    badge.id = 'vip-proc-badge';
-    badge.setAttribute('role', 'status');
-    badge.setAttribute('aria-live', 'polite');
-    badge.setAttribute('data-state', 'idle');
-    badge.innerHTML = [
-      '<span class="vip-pb-dot" aria-hidden="true"></span>',
-      '<span class="vip-pb-label">Ready — drop a file or record to begin</span>',
-      HELIX_HTML.replace('vip-helix-spinner', 'vip-helix-spinner vip-pb-spinner'),
-    ].join('');
-    /* Insert before the pipe-header */
-    const pipeHeader = pipelineBox.querySelector('.pipe-header');
-    pipelineBox.insertBefore(badge, pipeHeader || pipelineBox.firstChild);
-  }
-
-  /* ── 4. Badge state helper ───────────────────────────────── */
+  /* ── Badge state helper ────────────────────────────────────── */
   function setBadge(state, text) {
     const badge = document.getElementById('vip-proc-badge');
     if (!badge) return;
     badge.setAttribute('data-state', state || 'idle');
     const lbl = badge.querySelector('.vip-pb-label');
     if (lbl && text) lbl.textContent = text;
-    /* Show/hide the helix spinner inside the badge */
     const sp = badge.querySelector('.vip-pb-spinner');
     if (sp) sp.style.display = (state === 'processing' || state === 'loading') ? '' : 'none';
   }
 
-  /* ── 5. Swap eq-spinner → helix-spinner in fileLoadIndicator */
-  function upgradeFileLoadSpinner() {
-    const indicator = document.getElementById('fileLoadIndicator');
-    if (!indicator) return;
-    const old = indicator.querySelector('.vip-eq-spinner');
-    if (old) {
-      const helix = document.createElement('span');
-      helix.innerHTML = HELIX_HTML;
-      old.parentNode.replaceChild(helix.firstChild, old);
-    }
-  }
-
-  /* ── 6. Speed button flash ───────────────────────────────── */
+  /* ── Speed button flash ──────────────────────────────────── */
+  /*
+   * P2 fix: _stepSpeed() sets sel.value programmatically but does NOT
+   * dispatch 'change'. We intercept the ± button clicks AFTER app.js
+   * has run _stepSpeed and fire a synthetic 'change' ourselves so the
+   * flash animation always runs when the buttons are used.
+   */
   function addSpeedFlash() {
-    const sel = document.getElementById('tpSpeed');
+    const sel       = document.getElementById('tpSpeed');
+    const btnDown   = document.getElementById('tpSpeedDown');
+    const btnUp     = document.getElementById('tpSpeedUp');
     if (!sel) return;
 
-    const flashSpeed = () => {
+    function flash() {
       sel.classList.remove('tp-speed-flash');
-      // Force reflow so animation restarts
-      void sel.offsetWidth;
+      void sel.offsetWidth; // force reflow so animation restarts
       sel.classList.add('tp-speed-flash');
       sel.addEventListener('animationend', () => sel.classList.remove('tp-speed-flash'), { once: true });
-    };
+    }
 
-    sel.addEventListener('change', flashSpeed);
+    /* Native select change (keyboard / direct pick) */
+    sel.addEventListener('change', flash);
 
-    const proto = (typeof HTMLSelectElement !== 'undefined' && HTMLSelectElement.prototype)
-      || Object.getPrototypeOf(sel);
-    const valueDesc = proto && Object.getOwnPropertyDescriptor(proto, 'value');
-    if (!valueDesc || typeof valueDesc.get !== 'function' || typeof valueDesc.set !== 'function') return;
-
-    Object.defineProperty(sel, 'value', {
-      configurable: true,
-      enumerable: valueDesc.enumerable,
-      get() {
-        return valueDesc.get.call(this);
-      },
-      set(nextValue) {
-        const prevValue = valueDesc.get.call(this);
-        valueDesc.set.call(this, nextValue);
-        if (prevValue !== valueDesc.get.call(this)) {
-          flashSpeed();
-        }
-      }
+    /* ± buttons: dispatch synthetic change AFTER app.js _stepSpeed runs */
+    if (btnDown) btnDown.addEventListener('click', () => {
+      /* yield to let _stepSpeed() update sel.value first */
+      Promise.resolve().then(() => {
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    });
+    if (btnUp) btnUp.addEventListener('click', () => {
+      Promise.resolve().then(() => {
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      });
     });
   }
 
-  /* ── 7. Patch VIPOverlay to also drive badge state ───────── */
+  /* ── Patch VIPOverlay to also drive badge state ────────────── */
   function patchOverlay() {
     const ensurePatch = () => {
       const ov = window.VIPOverlay;
       if (!ov || ov._vipEnh) return;
       const origShow = ov.show ? ov.show.bind(ov) : null;
       const origHide = ov.hide ? ov.hide.bind(ov) : null;
-      ov.show = function(msg, pct) {
-        setBadge('processing', msg || 'Processing…');
-        if (origShow) origShow(msg, pct);
+      ov.show = function(...args) {
+        setBadge('processing', args[0] || 'Processing…');
+        if (origShow) origShow(...args);
       };
-      ov.hide = function() {
-        /* Badge will be finalized by setStatus hook below */
-        if (origHide) origHide();
+      ov.hide = function(...args) {
+        if (origHide) origHide(...args);
       };
       ov._vipEnh = true;
     };
-    /* Try immediately, then wait for the overlay module to load */
     ensurePatch();
     const t = setInterval(() => {
       if (window.VIPOverlay) { ensurePatch(); clearInterval(t); }
@@ -133,14 +92,16 @@
     setTimeout(() => clearInterval(t), 8000);
   }
 
-  /* ── 8. Hook VoiceIsolatePro.setStatus to drive badge ──────── */
+  /* ── Hook VoiceIsolatePro methods to drive badge + fix A/B spans ── */
   function hookAppStatus() {
     const hookOn = (app) => {
       if (!app || app._vipEnhHooked) return;
-      const orig = app.setStatus ? app.setStatus.bind(app) : null;
-      app.setStatus = function(status) {
-        if (orig) orig(status);
-        const s = String(status).toUpperCase();
+
+      /* — setStatus hook — */
+      const origSetStatus = app.setStatus ? app.setStatus.bind(app) : null;
+      app.setStatus = function(...args) {
+        if (origSetStatus) origSetStatus(...args);
+        const s = String(args[0] || '').toUpperCase();
         if (s === 'PROCESSING') {
           setBadge('processing', 'Neural DSP pipeline running…');
         } else if (s === 'DONE') {
@@ -148,26 +109,79 @@
         } else if (s === 'READY') {
           setBadge('idle', 'Signal loaded · ready to process');
         } else if (s === 'ERROR') {
+          /* P1 fix: error state must NEVER be overwritten by the finally
+           * _hideFileLoading call. We keep error visible here. */
           setBadge('error', 'Pipeline error — check console');
         } else {
-          setBadge('idle', status || 'Ready');
+          setBadge('idle', args[0] || 'Ready');
         }
       };
-      /* Also hook _showFileLoading / _hideFileLoading */
-      const origShow = app._showFileLoading ? app._showFileLoading.bind(app) : null;
-      const origHide = app._hideFileLoading ? app._hideFileLoading.bind(app) : null;
-      app._showFileLoading = function(text) {
-        setBadge('loading', text || 'Loading file…');
-        if (origShow) origShow(text);
+
+      /* — _showFileLoading hook — */
+      const origShowFL = app._showFileLoading ? app._showFileLoading.bind(app) : null;
+      app._showFileLoading = function(...args) {
+        setBadge('loading', args[0] || 'Loading file…');
+        if (origShowFL) origShowFL(...args);
       };
-      app._hideFileLoading = function() {
-        setBadge('idle', 'File loaded');
-        if (origHide) origHide();
+
+      /* — _hideFileLoading hook (P1 fix) —
+       *
+       * handleFile() calls _hideFileLoading() in a finally block AFTER
+       * setStatus('ERROR') in the catch block. Without this guard the
+       * badge would flash error and immediately reset to idle/success,
+       * misleading the user. We only reset to idle if we are NOT in an
+       * error state (the badge wasn't just set to error). */
+      const origHideFL = app._hideFileLoading ? app._hideFileLoading.bind(app) : null;
+      app._hideFileLoading = function(...args) {
+        if (origHideFL) origHideFL(...args);
+        const badge = document.getElementById('vip-proc-badge');
+        const currentState = badge ? badge.getAttribute('data-state') : '';
+        if (currentState !== 'error' && currentState !== 'processing') {
+          setBadge('idle', 'File loaded');
+        }
       };
+
+      /* — _setABLabel patch (fixes textContent clobber) —
+       *
+       * app.js play() and toggleAB() both set tpABLabel.textContent
+       * (a legacy string fallback) BEFORE calling _setABLabel(). That
+       * textContent assignment destroys the child spans. We override
+       * _setABLabel to always reconstruct the spans so they're never
+       * orphaned regardless of call order. */
+      const origSetABLabel = app._setABLabel ? app._setABLabel.bind(app) : null;
+      app._setABLabel = function() {
+        /* Run original logic (updates data-version, aria-label, etc.) */
+        if (origSetABLabel) origSetABLabel();
+        /* Guarantee child spans exist with correct content */
+        const lbl = app.dom && app.dom.tpABLabel;
+        if (!lbl) return;
+        const isProcessed = app.abMode === 'processed';
+        const version = isProcessed ? 'B' : 'A';
+        const name    = isProcessed ? 'Processed' : 'Original';
+        let tagEl  = lbl.querySelector('.tp-ab-tag');
+        let nameEl = lbl.querySelector('.tp-ab-name');
+        /* Rebuild spans if textContent clobbered them */
+        if (!tagEl || !nameEl) {
+          lbl.innerHTML = '';
+          tagEl  = document.createElement('span');
+          tagEl.className = 'tp-ab-tag';
+          nameEl = document.createElement('span');
+          nameEl.className = 'tp-ab-name';
+          lbl.appendChild(tagEl);
+          lbl.appendChild(document.createTextNode(' '));
+          lbl.appendChild(nameEl);
+        }
+        tagEl.textContent  = version;
+        nameEl.textContent = name;
+        lbl.setAttribute('data-version', version);
+        try {
+          lbl.classList.toggle('is-playing', !!app.isPlaying);
+        } catch (_) {}
+      };
+
       app._vipEnhHooked = true;
     };
 
-    /* Hook immediately if app is ready, otherwise poll */
     if (window._vipApp) { hookOn(window._vipApp); return; }
     const t = setInterval(() => {
       if (window._vipApp) { hookOn(window._vipApp); clearInterval(t); }
@@ -175,10 +189,8 @@
     setTimeout(() => clearInterval(t), 10000);
   }
 
-  /* ── 9. Init on DOMContentLoaded (or immediately if ready) ── */
+  /* ── Init ─────────────────────────────────────────────────── */
   function init() {
-    injectBadge();
-    upgradeFileLoadSpinner();
     addSpeedFlash();
     patchOverlay();
     hookAppStatus();

@@ -1,6 +1,6 @@
 /* =============================================================
    VoiceIsolate Pro — Playback Speed · A/B Label · Helix Spinner
-   · Processing Badge   v1.0.0
+   · Processing Badge   v1.1.0
    ============================================================= */
 
 /* ── Speed buttons ─────────────────────────────────────────── */
@@ -29,7 +29,7 @@
   cursor: default;
 }
 
-/* Flash the speed select when value changes */
+/* Flash ring on the speed select when value changes */
 @keyframes vip-speed-flash {
   0%   { box-shadow: 0 0 0 2px rgba(239,68,68,0.0); }
   35%  { box-shadow: 0 0 0 3px rgba(239,68,68,0.75); }
@@ -105,11 +105,6 @@
 }
 
 /* ── VIP DNA Helix Spinner ──────────────────────────────────── */
-/*
-  Uses 8 strands arranged like a double-helix cross-section.
-  Each strand animates with a phase offset, creating a coiling
-  double-helix optical illusion in pure CSS.
-*/
 .vip-helix-spinner {
   display: inline-flex;
   align-items: flex-end;
@@ -127,7 +122,7 @@
   transform-origin: center bottom;
 }
 
-/* 8 strands — alternating helix arcs */
+/* 8 strands with alternating red→pink→cyan gradient + phase offsets */
 .vip-helix-spinner i:nth-child(1)  { height: 8px;  animation-delay: 0.00s; background: #ef4444; }
 .vip-helix-spinner i:nth-child(2)  { height: 14px; animation-delay: 0.14s; background: #f87171; }
 .vip-helix-spinner i:nth-child(3)  { height: 18px; animation-delay: 0.28s; background: #fca5a5; }
@@ -142,12 +137,6 @@
   25%       { transform: scaleY(1.0)  scaleX(1.4); opacity: 1.0; }
   50%       { transform: scaleY(0.6)  scaleX(0.8); opacity: 0.7; }
   75%       { transform: scaleY(1.0)  scaleX(1.4); opacity: 1.0; }
-}
-
-/* Override the old vip-eq-spinner bars with helix in .file-load-indicator */
-.file-load-indicator .vip-eq-spinner {
-  /* Legacy bars hidden; helix inserted by vip-enhancements.js */
-  display: none !important;
 }
 
 /* ── Processing Status Badge ───────────────────────────────── */
@@ -227,4 +216,23 @@
 #vip-proc-badge[data-state="error"] .vip-pb-dot {
   background: #ef4444;
   animation: none;
+}
+
+/* ── prefers-reduced-motion: disable all new animations ──────────── */
+@media (prefers-reduced-motion: reduce) {
+  .vip-helix-spinner i {
+    animation: none;
+    opacity: 0.7;
+    transform: none;
+  }
+  #vip-proc-badge[data-state="processing"] .vip-pb-dot {
+    animation: none;
+    opacity: 1;
+  }
+  .tp-ab-label.is-playing {
+    animation: none;
+  }
+  .tp-speed-flash {
+    animation: none;
+  }
 }

@@ -20,6 +20,7 @@
   <link id="vip-overlay-css" rel="stylesheet" href="processing-overlay.css" />
   <link rel="stylesheet" href="mobile.css" />
   <!-- Enhancement styles: speed buttons, A/B label pill, helix spinner, proc badge -->
+  <!-- id="vip-enh-css" lets vip-enhancements.js detect it and skip duplicate injection -->
   <link id="vip-enh-css" rel="stylesheet" href="vip-enhancements.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
@@ -165,7 +166,7 @@
         <div class="upload-row">
           <button id="micBtn" class="btn btn-mic" aria-label="Toggle Microphone"><span id="micLabel">Record</span></button>
           <span id="fileInfo" class="file-info">No file loaded</span>
-          <!-- File-load indicator: uses new helix spinner (8 strands) -->
+          <!-- File-load indicator: uses DNA helix spinner (8 strands) -->
           <span id="fileLoadIndicator" class="file-load-indicator" role="status" aria-live="polite" hidden>
             <span class="vip-helix-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
             <span class="file-load-text">Loading…</span>
@@ -220,7 +221,11 @@
       </div>
 
       <div class="card pipeline-box">
-        <!-- Processing status badge — state driven by vip-enhancements.js -->
+        <!--
+          Processing status badge — 5 states (idle/loading/processing/done/error).
+          data-state attribute driven by vip-enhancements.js badge hooks.
+          vip-enhancements.css maps each state to a distinct color + animation.
+        -->
         <div id="vip-proc-badge" role="status" aria-live="polite" data-state="idle">
           <span class="vip-pb-dot" aria-hidden="true"></span>
           <span class="vip-pb-label">Ready — drop a file or record to begin</span>
@@ -260,7 +265,11 @@
           <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
           <div class="tp-speed">
             <label for="tpSpeed">Speed</label>
-            <!-- Speed down: steps through <select> options in reverse -->
+            <!--
+              tpSpeedDown/tpSpeedUp: step through <select> options via _stepSpeed(±1) in app.js.
+              vip-enhancements.js listens on these buttons and dispatches a synthetic
+              'change' event on tpSpeed after each click so the flash animation fires.
+            -->
             <button id="tpSpeedDown" class="btn btn-tp btn-speed" type="button" aria-label="Slow Down Playback" title="Slow Down (−)"><span aria-hidden="true">−</span></button>
             <select id="tpSpeed" aria-label="Playback speed">
               <option value="0.25">0.25x</option>
@@ -272,7 +281,6 @@
               <option value="1.75">1.75x</option>
               <option value="2">2x</option>
             </select>
-            <!-- Speed up: steps through <select> options forward -->
             <button id="tpSpeedUp" class="btn btn-tp btn-speed" type="button" aria-label="Speed Up Playback" title="Speed Up (+)"><span aria-hidden="true">+</span></button>
           </div>
           <button id="tpAB" class="btn btn-ab" type="button"
@@ -281,79 +289,16 @@
             title="Toggle A/B — X key shortcut"
             disabled>A/B</button>
           <!--
-            tpABLabel: tag = A or B version letter, name = Original / Processed.
-            data-version drives CSS accent color (red=A=Original, cyan=B=Processed).
-            _setABLabel() in app.js keeps both child spans and aria-label in sync.
-            Defensive markup repair below keeps the pill structure intact if legacy
-            code paths temporarily assign tpABLabel.textContent.
+            tpABLabel: .tp-ab-tag = A/B letter, .tp-ab-name = Original / Processed.
+            data-version drives CSS accent (A=red/Original, B=cyan/Processed).
+            _setABLabel() in app.js keeps both child spans + aria-label in sync.
+            vip-enhancements.js patches _setABLabel to rebuild spans if textContent
+            assignment in play()/toggleAB() ever clobbers them.
           -->
           <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite">
             <span class="tp-ab-tag">A</span>
             <span class="tp-ab-name">Original</span>
           </span>
-          <script>
-            (function () {
-              var tpABLabelEl = document.getElementById('tpABLabel');
-              if (!tpABLabelEl) return;
-
-              var repairingABLabel = false;
-
-              function getABState(sourceText) {
-                var text = String(sourceText || '').replace(/\s+/g, ' ').trim().toLowerCase();
-                if (text.indexOf('processed') !== -1 || /^b\b/.test(text) || text === 'b') {
-                  return { version: 'B', tag: 'B', name: 'Processed' };
-                }
-                return { version: 'A', tag: 'A', name: 'Original' };
-              }
-
-              function ensureABLabelMarkup() {
-                if (repairingABLabel) return;
-                repairingABLabel = true;
-
-                try {
-                  var state = getABState(
-                    tpABLabelEl.textContent ||
-                    tpABLabelEl.getAttribute('aria-label') ||
-                    tpABLabelEl.dataset.version
-                  );
-
-                  var tagEl = tpABLabelEl.querySelector('.tp-ab-tag');
-                  var nameEl = tpABLabelEl.querySelector('.tp-ab-name');
-                  var needsRebuild = !tagEl || !nameEl || tpABLabelEl.childElementCount !== 2;
-
-                  tpABLabelEl.dataset.version = state.version;
-                  tpABLabelEl.setAttribute('aria-label', state.tag + ' ' + state.name);
-
-                  if (needsRebuild) {
-                    tpABLabelEl.textContent = '';
-
-                    tagEl = document.createElement('span');
-                    tagEl.className = 'tp-ab-tag';
-                    tpABLabelEl.appendChild(tagEl);
-
-                    nameEl = document.createElement('span');
-                    nameEl.className = 'tp-ab-name';
-                    tpABLabelEl.appendChild(nameEl);
-                  }
-
-                  tagEl.textContent = state.tag;
-                  nameEl.textContent = state.name;
-                } finally {
-                  repairingABLabel = false;
-                }
-              }
-
-              ensureABLabelMarkup();
-
-              new MutationObserver(function () {
-                ensureABLabelMarkup();
-              }).observe(tpABLabelEl, {
-                childList: true,
-                characterData: true,
-                subtree: true
-              });
-            }());
-          </script>
         </div>
       </div>
 
@@ -403,10 +348,6 @@
 
   <div id="toastRegion" aria-live="polite"></div>
 
-  <!--
-    Each module loaded via dynamic import() + .catch() so one broken file
-    cannot silence the rest or produce a blank page.
-  -->
   <script type="module">
     const _mods = [
       './visuals.js',
