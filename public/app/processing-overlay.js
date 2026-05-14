@@ -119,8 +119,8 @@
       return s - Math.floor(s);
     }
     this._particles = [];
-    var pcount = 14;
-    for (var pi = 0; pi < pcount; pi++) {
+    const pcount = 14;
+    for (let pi = 0; pi < pcount; pi++) {
       this._particles.push({
         angle: (pi / pcount) * Math.PI * 2,
         radius: 70 + prand(pi * 4)     * 22,
