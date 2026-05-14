@@ -163,6 +163,10 @@
         <div class="upload-row">
           <button id="micBtn" class="btn btn-mic" aria-label="Toggle Microphone"><span id="micLabel">Record</span></button>
           <span id="fileInfo" class="file-info">No file loaded</span>
+          <span id="fileLoadIndicator" class="file-load-indicator" role="status" aria-live="polite" hidden>
+            <span class="vip-eq-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="file-load-text">Loading…</span>
+          </span>
           <button id="clearFile" class="btn btn-outline" type="button">Clear</button>
         </div>
       </div>
@@ -244,10 +248,24 @@
           <span class="tp-time" id="tpCur">0:00</span>
           <span class="tp-time">/</span>
           <span class="tp-time" id="tpDur">0:00</span>
-          <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" />
-          <div class="tp-speed"><label for="tpSpeed">Speed</label><select id="tpSpeed"><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="1.5">1.5x</option><option value="2">2x</option></select></div>
-          <button id="tpAB" class="btn btn-ab" type="button" aria-label="Toggle A/B Comparison" aria-describedby="tpABLabel" title="Toggle A/B Comparison" disabled>A/B</button>
-          <span id="tpABLabel" class="tp-ab-label">Original</span>
+          <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
+          <div class="tp-speed">
+            <label for="tpSpeed">Speed</label>
+            <button id="tpSpeedDown" class="btn btn-tp btn-speed" type="button" aria-label="Slow Down Playback" title="Slow Down (−)"><span aria-hidden="true">−</span></button>
+            <select id="tpSpeed" aria-label="Playback speed">
+              <option value="0.25">0.25x</option>
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="1.75">1.75x</option>
+              <option value="2">2x</option>
+            </select>
+            <button id="tpSpeedUp" class="btn btn-tp btn-speed" type="button" aria-label="Speed Up Playback" title="Speed Up (+)"><span aria-hidden="true">+</span></button>
+          </div>
+          <button id="tpAB" class="btn btn-ab" type="button" aria-label="Toggle A/B Comparison" aria-describedby="tpABLabel" title="Toggle A/B (currently playing Original)" disabled>A/B</button>
+          <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite"><span class="tp-ab-tag">A</span> <span class="tp-ab-name">Original</span></span>
         </div>
       </div>
 
