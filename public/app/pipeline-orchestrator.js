@@ -33,7 +33,10 @@ async function _getWorkletManifest() {
   }
 }
 function _digestToHex(digestBuffer) {
-  return Array.from(new Uint8Array(digestBuffer), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const bytes = new Uint8Array(digestBuffer);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i += 1) hex += bytes[i].toString(16).padStart(2, '0');
+  return hex;
 }
 async function _sha256Hex(text) {
   if (!crypto || !crypto.subtle) throw new Error('crypto.subtle unavailable for worklet integrity check');
