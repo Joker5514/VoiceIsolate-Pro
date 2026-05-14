@@ -1,26 +1,48 @@
 package com.voiceisolatepro.app;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.net.Uri;
 import android.webkit.ServiceWorkerClient;
 import android.webkit.ServiceWorkerController;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+import androidx.webkit.WebViewAssetLoader;
+
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 
+import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLConnection;
 import java.util.HashMap;
 import java.util.Map;
 
 public class MainActivity extends BridgeActivity {
+    private static final int REQUEST_RECORD_AUDIO = 1001;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        requestRecordAudioPermissionIfNeeded();
         setupCrossOriginIsolation();
+    }
+
+    private void requestRecordAudioPermissionIfNeeded() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[]{Manifest.permission.RECORD_AUDIO},
+                    REQUEST_RECORD_AUDIO
+            );
+        }
     }
 
     /**
@@ -37,12 +59,22 @@ public class MainActivity extends BridgeActivity {
      */
     private void setupCrossOriginIsolation() {
         WebView webView = getBridge().getWebView();
+        final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
+                .setDomain("voiceisolatepro.app")
+                .setHttpAllowed(false)
+                .addPathHandler("/", new PublicAssetPathHandler())
+                .build();
 
         // ── 1. Main-frame + subresource header injection ──────────────────────
         webView.setWebViewClient(new BridgeWebViewClient(getBridge()) {
             @Override
             public WebResourceResponse shouldInterceptRequest(
                     WebView view, WebResourceRequest request) {
+                WebResourceResponse assetResponse =
+                        assetLoader.shouldInterceptRequest(request.getUrl());
+                if (assetResponse != null) {
+                    return injectIsolationHeaders(assetResponse);
+                }
 
                 // Let Capacitor handle the actual resource fetch first
                 WebResourceResponse response =
@@ -99,5 +131,25 @@ public class MainActivity extends BridgeActivity {
                 headers,
                 original.getData()
         );
+    }
+
+    private final class PublicAssetPathHandler implements WebViewAssetLoader.PathHandler {
+        @Override
+        public WebResourceResponse handle(Uri url) {
+            String path = url.getPath();
+            if (path == null || path.isEmpty() || "/".equals(path)) {
+                path = "/index.html";
+            }
+
+            final String assetPath = "public" + path;
+            try {
+                InputStream is = getAssets().open(assetPath);
+                String mimeType = URLConnection.guessContentTypeFromName(assetPath);
+                if (mimeType == null) mimeType = "application/octet-stream";
+                return new WebResourceResponse(mimeType, "UTF-8", is);
+            } catch (IOException ignored) {
+                return null;
+            }
+        }
     }
 }

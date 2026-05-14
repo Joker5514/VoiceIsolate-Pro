@@ -58,6 +58,7 @@ let noiseProfile = null;
 let noiseFrames = 0;
 let warmupComplete = false;
 let demucsPcmMissingWarned = false;
+let _isAndroidWebView = false;
 
 let runtimeParams = {
   spectralFloor: 0.005,
@@ -117,12 +118,45 @@ const MODEL_SHA256 = {
 function initialize() {
   if (self.ort) {
     ort = self.ort;
+    _isAndroidWebView = detectAndroidWebView();
+    configureWasmRuntime();
     return;
   }
   // Load ORT from local vendored file (copied by scripts/setup-ort.js postinstall)
   importScripts('/lib/ort.min.js');
   ort = self.ort;
+  _isAndroidWebView = detectAndroidWebView();
+  configureWasmRuntime();
+}
+
+function detectAndroidWebView() {
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+  if (!/Android/i.test(ua)) return false;
+  return /\bwv\b|; wv\)|Version\/[\d.]+.*Chrome\//i.test(ua);
+}
+
+function detectWasmSimdSupport() {
+  if (typeof WebAssembly === 'undefined' || typeof WebAssembly.validate !== 'function') return false;
+  try {
+    // Minimal SIMD feature probe module.
+    return WebAssembly.validate(new Uint8Array([
+      0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+      0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
+      0x03, 0x02, 0x01, 0x00,
+      0x0a, 0x09, 0x01, 0x07, 0x00,
+      0xfd, 0x0f, 0x00, 0x0b
+    ]));
+  } catch {
+    return false;
+  }
+}
+
+function configureWasmRuntime() {
+  if (!ort || !ort.env || !ort.env.wasm) return;
   ort.env.wasm.wasmPaths = '/lib/';
+  ort.env.wasm.proxy = true;
+  ort.env.wasm.numThreads = 2;
+  ort.env.wasm.simd = detectWasmSimdSupport();
 }
 
 
@@ -764,7 +798,7 @@ async function loadModels(basePath, providers, modelList) {
     const expectedSha256 = MODEL_SHA256[file] || '';
 
     try {
-      const { session, provider } = await createSessionWithFallback(modelUrl, expectedSha256);
+      const { session, provider } = await createSessionWithFallback(modelUrl, expectedSha256, eps);
       await warmupSession(modelId, session);
       sessions[modelId] = session;
       modelStatus[modelId] = true;
@@ -784,6 +818,7 @@ async function loadModels(basePath, providers, modelList) {
 }
 
 async function resolveProviders(providers) {
+  if (_isAndroidWebView) return ['wasm'];
   const eps = [];
   for (const p of providers) {
     if (p === 'webgpu') {
@@ -799,7 +834,7 @@ async function resolveProviders(providers) {
   return eps;
 }
 
-async function createSessionWithFallback(modelUrl, expectedSha256) {
+async function createSessionWithFallback(modelUrl, expectedSha256, executionProviders = ['webgpu', 'wasm']) {
   // ── SHA-256 integrity check ─────────────────────────────────────────────
   // If an expected hash is provided and fetch/SubtleCrypto are available,
   // fetch the model, verify its SHA-256, then create the ONNX session from
@@ -842,14 +877,20 @@ async function createSessionWithFallback(modelUrl, expectedSha256) {
   }
 
   const source = modelData !== null ? modelData : modelUrl;
-  try {
-    const session = await ort.InferenceSession.create(source, {
-      executionProviders: ['webgpu', 'wasm'],
-      graphOptimizationLevel: 'all',
-    });
-    return { session, provider: 'webgpu' };
-  } catch (err) {
-    console.warn('[ml-worker] WebGPU session creation failed, falling back to WASM:', err?.message || err);
+  const canUseWebGpu = Array.isArray(executionProviders) && executionProviders.includes('webgpu');
+  if (canUseWebGpu) {
+    try {
+      const session = await ort.InferenceSession.create(source, {
+        executionProviders: ['webgpu', 'wasm'],
+        graphOptimizationLevel: 'all',
+      });
+      return { session, provider: 'webgpu' };
+    } catch (err) {
+      console.warn('[ml-worker] WebGPU session creation failed, falling back to WASM:', err?.message || err);
+    }
+  }
+
+  {
     const session = await ort.InferenceSession.create(source, {
       executionProviders: ['wasm'],
       graphOptimizationLevel: 'all',

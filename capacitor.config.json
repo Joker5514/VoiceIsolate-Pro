@@ -3,6 +3,7 @@
   "appName": "VoiceIsolate Pro",
   "webDir": "build",
   "server": {
+    "url": null,
     "androidScheme": "https",
     "iosScheme": "capacitor",
     "hostname": "voiceisolatepro.app"

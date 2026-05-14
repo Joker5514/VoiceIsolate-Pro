@@ -53,6 +53,12 @@ describe('capacitor.config.json — structure and values', () => {
     expect(cfg.server.androidScheme).toBe('https');
   });
 
+  test('server.url is explicitly null for bundled Android mode', () => {
+    expect(cfg.server).toBeDefined();
+    expect(Object.prototype.hasOwnProperty.call(cfg.server, 'url')).toBe(true);
+    expect(cfg.server.url).toBeNull();
+  });
+
   test('android.allowMixedContent is false (security: no mixed http/https)', () => {
     expect(cfg.android).toBeDefined();
     expect(cfg.android.allowMixedContent).toBe(false);
@@ -166,6 +172,15 @@ describe('AndroidManifest.xml — structure and security', () => {
 
   test('RECORD_AUDIO permission is declared (required for live audio capture)', () => {
     expect(manifest).toContain('android.permission.RECORD_AUDIO');
+  });
+
+  test('microphone hardware feature is declared as optional', () => {
+    expect(manifest).toContain('android.hardware.microphone');
+    expect(manifest).toContain('android:required="false"');
+  });
+
+  test('cleartext traffic is explicitly disabled', () => {
+    expect(manifest).toContain('android:usesCleartextTraffic="false"');
   });
 
   test('MODIFY_AUDIO_SETTINGS permission is declared', () => {
@@ -480,6 +495,41 @@ describe('build.gradle — app namespace and applicationId', () => {
     // Should ignore .git, .svn, etc. while preserving web assets
     expect(buildGradle).toContain('!.svn');
     expect(buildGradle).toContain('!.git');
+  });
+
+  test('release signing config is wired for CI secrets', () => {
+    expect(buildGradle).toContain('signingConfigs');
+    expect(buildGradle).toContain('ANDROID_KEYSTORE_PATH');
+    expect(buildGradle).toContain('ANDROID_KEYSTORE_PASSWORD');
+    expect(buildGradle).toContain('ANDROID_KEY_ALIAS');
+    expect(buildGradle).toContain('ANDROID_KEY_PASSWORD');
+    expect(buildGradle).toContain('signingConfig signingConfigs.release');
+  });
+});
+
+// ─── MainActivity.java — WebView isolation and runtime mic permission ───────
+
+describe('MainActivity.java — WebView isolation and mic permission flow', () => {
+  let mainActivity;
+
+  beforeAll(() => {
+    mainActivity = readFile('android/app/src/main/java/com/voiceisolatepro/app/MainActivity.java');
+  });
+
+  test('uses WebViewAssetLoader for local asset interception', () => {
+    expect(mainActivity).toContain('WebViewAssetLoader');
+    expect(mainActivity).toContain('assetLoader.shouldInterceptRequest');
+  });
+
+  test('injects COOP/COEP headers for crossOriginIsolated', () => {
+    expect(mainActivity).toContain('Cross-Origin-Opener-Policy');
+    expect(mainActivity).toContain('Cross-Origin-Embedder-Policy');
+  });
+
+  test('requests RECORD_AUDIO permission at runtime', () => {
+    expect(mainActivity).toContain('Manifest.permission.RECORD_AUDIO');
+    expect(mainActivity).toContain('requestPermissions');
+    expect(mainActivity).toContain('checkSelfPermission');
   });
 });
 
