@@ -51,5 +51,18 @@
         { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/silero_vad.onnx" }
       ]
     }
+  },
+  "worklets": {
+    "dsp_processor": {
+      "filename": "dsp-processor.js",
+      "processorName": "dsp-processor",
+      "contentType": "application/javascript",
+      "sources": [
+        { "provider": "same-origin", "url": "/app/dsp-processor.js" },
+        { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js" },
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/worklets/dsp-processor.js" },
+        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js" }
+      ]
+    }
   }
 }

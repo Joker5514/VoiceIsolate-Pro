@@ -10,6 +10,83 @@
 
 const WORKLET_READY_FALLBACK_MS = 250;
 
+// ─── AudioWorklet loader with CDN fallback ─────────────────────────────────
+// Primary path is same-origin /app/dsp-processor.js (COOP+COEP friendly).
+// If that fails (404, offline blob, etc.) we walk the manifest mirrors —
+// Vercel Blob → Cloudflare R2 → Hugging Face Hub — fetch the source text,
+// wrap it in a same-origin Blob URL, and pass that to addModule(). The Blob
+// URL is same-origin so it satisfies COEP require-corp without needing the
+// remote response to carry CORP headers.
+const _WORKLET_FALLBACK_CACHE = { manifest: null, blobUrl: null };
+async function _getWorkletManifest() {
+  if (_WORKLET_FALLBACK_CACHE.manifest) return _WORKLET_FALLBACK_CACHE.manifest;
+  try {
+    const resp = await fetch('/app/models-manifest.json', { credentials: 'omit' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const json = await resp.json();
+    _WORKLET_FALLBACK_CACHE.manifest = json;
+    return json;
+  } catch (_) {
+    return null;
+  }
+}
+async function loadDspProcessorWorklet(ctx) {
+  if (!ctx || !ctx.audioWorklet) throw new Error('AudioContext.audioWorklet unavailable');
+
+  // 1. Same-origin primary path
+  try {
+    await ctx.audioWorklet.addModule('/app/dsp-processor.js');
+    return 'same-origin';
+  } catch (primaryErr) {
+    console.warn('[Orchestrator] Same-origin worklet load failed, trying CDN mirrors:', primaryErr && primaryErr.message);
+  }
+
+  // 2. Re-use a previously built blob URL if one is cached this session
+  if (_WORKLET_FALLBACK_CACHE.blobUrl) {
+    try {
+      await ctx.audioWorklet.addModule(_WORKLET_FALLBACK_CACHE.blobUrl);
+      return 'blob-cached';
+    } catch (_) { /* fall through and rebuild */ }
+  }
+
+  // 3. Walk CDN mirrors from the manifest
+  const manifest = await _getWorkletManifest();
+  const sources = manifest && manifest.worklets && manifest.worklets.dsp_processor
+    ? manifest.worklets.dsp_processor.sources
+    : [
+        { provider: 'vercel-blob', url: 'https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js' },
+        { provider: 'r2',          url: 'https://models.voiceisolatepro.com/worklets/dsp-processor.js' },
+        { provider: 'huggingface', url: 'https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js' },
+      ];
+
+  let lastErr;
+  for (const src of sources) {
+    if (src.provider === 'same-origin') continue; // already tried in step 1
+    try {
+      const resp = await fetch(src.url, { mode: 'cors', credentials: 'omit' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const text = await resp.text();
+      // Basic sanity guard — must register the canonical processor name
+      if (!text.includes("registerProcessor('dsp-processor'") &&
+          !text.includes('registerProcessor("dsp-processor"')) {
+        throw new Error('mirror does not contain dsp-processor registration');
+      }
+      const blob = new Blob([text], { type: 'application/javascript' });
+      const blobUrl = URL.createObjectURL(blob);
+      await ctx.audioWorklet.addModule(blobUrl);
+      _WORKLET_FALLBACK_CACHE.blobUrl = blobUrl;
+      console.info('[Orchestrator] AudioWorklet loaded from CDN mirror:', src.provider);
+      return src.provider;
+    } catch (err) {
+      lastErr = err;
+      console.warn('[Orchestrator] Worklet mirror', src.provider, 'failed:', err && err.message);
+    }
+  }
+  throw new Error('All worklet sources failed' + (lastErr ? ': ' + lastErr.message : ''));
+}
+// Expose for tests + diagnostics; keeps the helper available without polluting globals further.
+if (typeof self !== 'undefined') self.loadDspProcessorWorklet = loadDspProcessorWorklet;
+
 /**
  * PipelineOrchestrator
  * ─────────────────────
@@ -139,7 +216,7 @@ class PipelineOrchestrator {
     if (!this.ctx) throw new Error('AudioContext not initialised');
     if (!this._workletModulesLoaded) {
       try {
-        await this.ctx.audioWorklet.addModule('/app/dsp-processor.js');
+        await loadDspProcessorWorklet(this.ctx);
         this._workletModulesLoaded = true;
         console.info('[Orchestrator] AudioWorklet modules loaded');
       } catch (err) {
@@ -779,7 +856,7 @@ class PipelineOrchestrator {
     orch._preWarmWorklet = (async () => {
       try {
         const suspCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-        await suspCtx.audioWorklet.addModule('/app/dsp-processor.js');
+        await loadDspProcessorWorklet(suspCtx);
         orch._preWarmedCtx = suspCtx;
         console.info('[Orchestrator] AudioWorklet pre-warmed');
       } catch (e) {

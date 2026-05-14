@@ -107,11 +107,30 @@
       "export_notes": "Trained 600 steps on synthetic vocal/accompaniment Wiener-mask targets (harmonic+formant vocal signal mixed with bass+cymbal accompaniment at -5..+10 dB vocal-to-accomp ratio). Loss converged from 0.052→0.047 (MSE+0.2*L1). Architecture follows true BSRNN concept: per-band feature extraction → recurrent fusion across the 6-band sequence → per-band mask reconstruction. Sanity-checked: produces input-dependent masks — speech-like input retains ~51.8% energy vs ~47.4% for noise, L2(speech_mask, noise_mask)=0.36. Replaces prior random-weight stub whose sigmoid bias forced ~0.88 passthrough. No off-the-shelf pretrained BSRNN checkpoint matches the [1, 2049] single-frame interface (Open-Unmix uses multi-frame stereo, 2974-bin), so the task description's authorized fallback was executed. Reproduce via scripts/export_onnx_models.py."
     }
   ],
+  "worklets": [
+    {
+      "id": "dsp_processor",
+      "filename": "dsp-processor.js",
+      "path": "/app/dsp-processor.js",
+      "processor_name": "dsp-processor",
+      "purpose": "AudioWorkletProcessor — real-time single-pass STFT/iSTFT + spectral mask apply (canonical worklet, only one registered by pipeline-orchestrator.js)",
+      "content_type": "application/javascript",
+      "delivery": "repo_committed",
+      "status": "committed",
+      "cdn_mirrors": [
+        { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js" },
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/worklets/dsp-processor.js" },
+        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js" }
+      ],
+      "usage_notes": "Primary load path: same-origin /app/dsp-processor.js (COOP+COEP headers from vercel.json). Fallback path: fetch from CDN mirror, wrap in a same-origin Blob URL, and pass that to AudioWorklet.addModule(). Blob URLs bypass COEP since they are same-origin. The HF Hub and R2 mirrors keep the real-time DSP path alive even when the static site is temporarily unavailable; audio data still never leaves the browser."
+    }
+  ],
   "delivery_notes": [
     "silero_vad.onnx, silero_vad_int8.onnx, rnnoise_suppressor.onnx, and bsrnn_vocals.onnx are committed to the repo and served by Vercel from public/app/models/.",
     "demucs_v4_quantized.onnx is not yet exportable; a .placeholder file holds the slot. ml-worker.js disables the Demucs stage cleanly when the file is absent or undersized.",
     "Same-origin fetch keeps COEP (require-corp) satisfied so SharedArrayBuffer stays alive.",
     "After first run all models are cached in Cache API (vip-models-v1) — zero network on repeat visits.",
+    "The dsp-processor.js AudioWorklet is also mirrored to Vercel Blob, Cloudflare R2, and Hugging Face Hub. pipeline-orchestrator.js falls back to those mirrors via a same-origin Blob URL if the primary same-origin load fails. The worklet code itself contains no user audio — only DSP math — so mirroring it preserves the 100% local processing guarantee.",
     "100% local processing guarantee preserved — no audio data leaves the browser."
   ],
   "model_loader_behavior": {
