@@ -1188,20 +1188,22 @@ body::after {
 .slider-group.active .slider-group-header { color: #ffd9dc; }
 .slider-group-content {
   /* Override display:none from the base rule — use max-height/opacity for transition */
-  display: block !important;
+  display: block;
   overflow: hidden;
   max-height: 0;
   opacity: 0;
-  transform: translateY(-2px);
   visibility: hidden;
-  transition: max-height .35s ease, opacity .25s ease, transform .25s ease, padding .25s ease, visibility 0s .35s;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: max-height .35s ease, opacity .25s ease, transform .25s ease, padding .25s ease, visibility 0s linear .35s;
 }
 .slider-group.active .slider-group-content {
   max-height: 9999px;
   opacity: 1;
-  transform: translateY(0);
   visibility: visible;
-  transition: max-height .35s ease, opacity .25s ease, transform .25s ease, padding .25s ease, visibility 0s;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition-delay: 0s, 0s, 0s, 0s, 0s;
 }
 .slider-group-header .chevron {
   display: inline-block;

@@ -296,17 +296,22 @@ input[type="range"].slider:active {
     0 0 22px rgba(255,42,61,.18);
 }
 
-/* Realtime variant — cyan→violet gradient across fill, then transparent for unfilled */
+/* Realtime variant — full-track cyan→violet fill with hard split at --pct */
 input[type="range"].slider.realtime,
 .sr-row > input[type="range"].realtime {
-  background: linear-gradient(
-    to right,
-    var(--vip-rt-color)        0%,
-    rgba(167,107,255,.95)      calc(var(--pct, 50%) * 0.9),
-    rgba(167,107,255,.95)      var(--pct, 50%),
-    rgba(255,255,255,.05)      var(--pct, 50%),
-    rgba(255,255,255,.05)      100%
-  );
+  background:
+    linear-gradient(
+      to right,
+      transparent              0%,
+      transparent              var(--pct, 50%),
+      rgba(255,255,255,.05)    var(--pct, 50%),
+      rgba(255,255,255,.05)    100%
+    ),
+    linear-gradient(
+      to right,
+      var(--vip-rt-color)      0%,
+      rgba(167,107,255,.95)    100%
+    );
 }
 
 /* Webkit thumb — slick chrome ball */
