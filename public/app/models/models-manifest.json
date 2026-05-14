@@ -117,12 +117,18 @@
       "content_type": "application/javascript",
       "delivery": "repo_committed",
       "status": "committed",
+      "sources": {
+        "primary": "/app/dsp-processor.js",
+        "vercel_blob": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js",
+        "r2": "https://models.voiceisolatepro.com/worklets/dsp-processor.js",
+        "huggingface": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js"
+      },
       "cdn_mirrors": [
         { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js" },
         { "provider": "r2",          "url": "https://models.voiceisolatepro.com/worklets/dsp-processor.js" },
         { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js" }
       ],
-      "usage_notes": "Primary load path: same-origin /app/dsp-processor.js (COOP+COEP headers from vercel.json). Fallback path: fetch from CDN mirror, wrap in a same-origin Blob URL, and pass that to AudioWorklet.addModule(). Blob URLs bypass COEP since they are same-origin. The HF Hub and R2 mirrors keep the real-time DSP path alive even when the static site is temporarily unavailable; audio data still never leaves the browser."
+      "usage_notes": "Primary load path: same-origin /app/dsp-processor.js (COOP+COEP headers from vercel.json). Canonical mirror map for this manifest is `sources`; `cdn_mirrors` is retained as a backward-compatible alias of the same fallback URLs. Fallback path: fetch from a mirror, wrap in a same-origin Blob URL, and pass that to AudioWorklet.addModule(). Blob URLs bypass COEP since they are same-origin. The HF Hub and R2 mirrors keep the real-time DSP path alive even when the static site is temporarily unavailable; audio data still never leaves the browser."
     }
   ],
   "delivery_notes": [
