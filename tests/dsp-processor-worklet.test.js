@@ -66,21 +66,20 @@ describe('dsp-processor AudioWorklet behavior', () => {
 
     const flagsIn = new Int32Array(inputSAB, 0, FLAG_SLOTS);
 
-    // FFT_SIZE samples are needed before the first hop produces a frame.
-    // After that, one frame per HOP_SIZE samples.
-    const callsToFirstFrame = FFT_SIZE / Q;          // 32
-    const callsPerSubsequentHop = HOP_SIZE / Q;      // 8
+    // With HOP_SIZE-based triggering (FIX [2]), one frame per HOP_SIZE samples.
+    // First frame emits after HOP_SIZE / Q quanta.
+    const callsPerHop = HOP_SIZE / Q;      // 8
 
-    for (let i = 0; i < callsToFirstFrame; i++) {
+    for (let i = 0; i < callsPerHop; i++) {
       const inBlock  = new Float32Array(Q).fill(0.05);
       const outBlock = new Float32Array(Q);
       const keep = processor.process([[inBlock]], [[outBlock]]);
       expect(keep).toBe(true);
     }
-    // First frame should have emitted exactly one counter bump.
+    // First hop should have emitted exactly one counter bump.
     expect(Atomics.load(flagsIn, 0)).toBe(1);
 
-    for (let i = 0; i < callsPerSubsequentHop; i++) {
+    for (let i = 0; i < callsPerHop; i++) {
       processor.process([[new Float32Array(Q).fill(0.05)]], [[new Float32Array(Q)]]);
     }
     expect(Atomics.load(flagsIn, 0)).toBe(2);

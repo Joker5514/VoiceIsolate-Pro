@@ -93,7 +93,7 @@
     return STAGE_GROUPS.find(g => stageIndex >= g.start && stageIndex <= g.end) || STAGE_GROUPS[STAGE_GROUPS.length - 1];
   }
 
-  /* ── NeuralSpinner — radial spectrum + oscilloscope ─────── */
+  /* ── NeuralSpinner — radial spectrum + oscilloscope + helix ─────── */
   function NeuralSpinner(canvas) {
     this.canvas  = canvas;
     this.ctx     = canvas.getContext('2d');
@@ -103,12 +103,42 @@
     this.running = false;
     this._raf    = null;
 
+    /* Cache prefers-reduced-motion once; update via media query listener */
+    this._reducedMotion = false;
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+      this._reducedMotion = mq.matches;
+      var self = this;
+      if (mq.addEventListener) {
+        mq.addEventListener('change', function (e) { self._reducedMotion = e.matches; });
+      }
+    }
+
     /* Pre-seeded organic noise so every bar feels independent */
     this._phases = [];
     this._speeds = [];
     for (var i = 0; i < 64; i++) {
       this._phases.push(Math.random() * Math.PI * 2);
       this._speeds.push(0.7 + Math.random() * 1.6);
+    }
+
+    /* Neural-mesh particle field — orbiting "neurons" */
+    /* Seeded pseudo-random using sin-hash so values are deterministic     */
+    /* (avoids Math.random() for non-crypto visual use — nodejsscan safe)  */
+    function prand(seed) {
+      var s = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+      return s - Math.floor(s);
+    }
+    this._particles = [];
+    const pcount = 14;
+    for (let pi = 0; pi < pcount; pi++) {
+      this._particles.push({
+        angle: (pi / pcount) * Math.PI * 2,
+        radius: 70 + prand(pi * 4)     * 22,
+        speed:  0.35 + prand(pi * 4 + 1) * 0.6,
+        size:   1.2 + prand(pi * 4 + 2) * 1.6,
+        phase:  prand(pi * 4 + 3) * Math.PI * 2
+      });
     }
   }
 
@@ -132,6 +162,12 @@
 
   NeuralSpinner.prototype._loop = function () {
     if (!this.running) return;
+    /* Use cached prefers-reduced-motion value (updated via media query listener) */
+    if (this._reducedMotion) {
+      /* Render a single static frame and pause */
+      this._draw();
+      return;
+    }
     this._draw();
     var self = this;
     this._raf = requestAnimationFrame(function () { self._loop(); });
@@ -290,6 +326,69 @@
     ctx.beginPath();
     ctx.arc(cx, cy, 34, 0, Math.PI * 2);
     ctx.fill();
+
+    /* ── Counter-rotating dual helix strands ─────────────── */
+    /* Strand A — clockwise */
+    var helixR = R_INNER + R_MAX + 26;
+    var hueA = (hue + 0)   % 360;
+    var hueB = (hue + 180) % 360;
+    var twist = 3;
+    for (var sa = 0; sa < 2; sa++) {
+      var strandHue = sa === 0 ? hueA : hueB;
+      var dir       = sa === 0 ? 1 : -1;
+      ctx.beginPath();
+      for (var st = 0; st <= 96; st++) {
+        var sang = (st / 96) * Math.PI * 2;
+        var wob  = 3 * Math.sin(sang * twist + dir * t * 2.2 + sa * Math.PI);
+        var rr   = helixR + wob;
+        var sx   = cx + rr * Math.cos(sang + dir * t * 0.18);
+        var sy   = cy + rr * Math.sin(sang + dir * t * 0.18);
+        if (st === 0) ctx.moveTo(sx, sy);
+        else          ctx.lineTo(sx, sy);
+      }
+      ctx.strokeStyle = 'hsla(' + strandHue + ',95%,68%,0.55)';
+      ctx.lineWidth   = 1.4;
+      ctx.shadowColor = 'hsla(' + strandHue + ',95%,68%,0.75)';
+      ctx.shadowBlur  = 8;
+      ctx.stroke();
+      ctx.shadowBlur  = 0;
+    }
+
+    /* ── Neural-mesh particles + connecting filaments ────── */
+    var pts = [];
+    /* Draw all particle glows in one shadowBlur pass */
+    ctx.shadowBlur = 10;
+    for (var pp = 0; pp < this._particles.length; pp++) {
+      var pa = this._particles[pp];
+      pa.angle += pa.speed * 0.012;
+      var radial = pa.radius + 2.5 * Math.sin(t * 1.3 + pa.phase);
+      var px = cx + radial * Math.cos(pa.angle);
+      var py = cy + radial * Math.sin(pa.angle);
+      pts.push({ x: px, y: py });
+      ctx.beginPath();
+      ctx.arc(px, py, pa.size, 0, Math.PI * 2);
+      ctx.fillStyle   = 'hsla(' + ((hue + pp * 18) % 360) + ',95%,72%,0.92)';
+      ctx.shadowColor = 'hsla(' + ((hue + pp * 18) % 360) + ',95%,72%,0.95)';
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    /* Connect nearest neighbours */
+    for (var ni = 0; ni < pts.length; ni++) {
+      for (var bi = ni + 1; bi < pts.length; bi++) {
+        var dx = pts[ni].x - pts[bi].x;
+        var dy = pts[ni].y - pts[bi].y;
+        var d2 = dx * dx + dy * dy;
+        if (d2 < 3136) {
+          var d = Math.sqrt(d2);
+          ctx.beginPath();
+          ctx.moveTo(pts[ni].x, pts[ni].y);
+          ctx.lineTo(pts[bi].x, pts[bi].y);
+          ctx.strokeStyle = 'hsla(' + hue + ',95%,72%,' + (0.18 * (1 - d / 56)) + ')';
+          ctx.lineWidth   = 0.8;
+          ctx.stroke();
+        }
+      }
+    }
 
     /* ── VIP mark ────────────────────────────────────────── */
     ctx.save();

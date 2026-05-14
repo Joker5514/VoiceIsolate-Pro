@@ -135,21 +135,22 @@ describe('DSPProcessor — registerProcessor', () => {
 
 // ══════════════════════════════════════════════════════════════════════════════
 describe('FIX [5] — Periodic Hann window', () => {
-  // Extract makeHannWindow by re-evaluating a snippet (it's a module-level fn)
-  // We verify the OLA energy constraint: sum of squared windows = FFT_SIZE/(2*HOP_SIZE)
-  test('sum of squared periodic Hann windows at 75% overlap equals 2.0', () => {
+  // We verify the COLA (Constant Overlap-Add) property:
+  // sum of (unsquared) periodic Hann windows at 75% overlap = 2.0.
+  // Steady-state region where all 4 hops contribute starts at 3*H.
+  test('sum of periodic Hann windows at 75% overlap equals 2.0', () => {
     const N = FFT_SIZE;
     const H = HOP_SIZE;
     const w = new Float32Array(N);
     for (let i = 0; i < N; i++) w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / N));
 
-    // Compute overlap-add of w^2 for 4 hops (enough to see steady state)
+    // Compute overlap-add of w (unsquared) for 4 hops
     const ola = new Float32Array(N * 2);
     for (let hop = 0; hop < 4; hop++) {
-      for (let i = 0; i < N; i++) ola[hop * H + i] += w[i] * w[i];
+      for (let i = 0; i < N; i++) ola[hop * H + i] += w[i];
     }
-    // Check steady-state region (one full FFT_SIZE in the middle)
-    const start = H * 2;  // skip ramp-up
+    // Check steady-state region [3*H, 4*H) where all 4 hops contribute
+    const start = H * 3;
     for (let i = start; i < start + H; i++) {
       expect(ola[i]).toBeCloseTo(2.0, 3);
     }
@@ -163,13 +164,13 @@ describe('FIX [5] — Periodic Hann window', () => {
 
     const ola = new Float32Array(N * 2);
     for (let hop = 0; hop < 4; hop++) {
-      for (let i = 0; i < N; i++) ola[hop * H + i] += w[i] * w[i];
+      for (let i = 0; i < N; i++) ola[hop * H + i] += w[i];
     }
-    const start = H * 2;
-    // Should NOT be exactly 2.0 — verify at least one sample deviates
+    const start = H * 3;
+    // Should NOT be exactly 2.0 — verify at least one sample deviates (threshold 1e-4)
     let deviates = false;
     for (let i = start; i < start + H; i++) {
-      if (Math.abs(ola[i] - 2.0) > 1e-3) { deviates = true; break; }
+      if (Math.abs(ola[i] - 2.0) > 1e-4) { deviates = true; break; }
     }
     expect(deviates).toBe(true);
   });
@@ -429,11 +430,11 @@ describe('Gate + silence handling', () => {
     }
   });
 
-  test('output is silence before pipeline warmup (< FFT_SIZE samples fed)', () => {
+  test('output is silence before pipeline warmup (< HOP_SIZE samples fed)', () => {
     const { proc } = makeProcessor();
-    // Feed only 8 quanta (1024 samples — less than FFT_SIZE=4096)
+    // Feed only 7 quanta (896 samples — less than HOP_SIZE=1024, so no frame triggers)
     let allZero = true;
-    for (let q = 0; q < 8; q++) {
+    for (let q = 0; q < 7; q++) {
       const inCh  = new Float32Array(128).fill(0.5);
       const outCh = new Float32Array(128);
       proc.process([[inCh]], [[outCh]]);

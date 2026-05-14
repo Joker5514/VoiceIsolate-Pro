@@ -50,10 +50,10 @@ describe('CLAUDE.md §1 — single STFT + iSTFT per processing path', () => {
 
   test('dsp-processor.js (real-time path) defines its own forward and inverse FFT operations', () => {
     const src = read('public/app/dsp-processor.js');
-    // Forward STFT: fft called with inverse=false
-    expect(src).toMatch(/fft\s*\([^)]*false\s*\)/);
-    // Inverse STFT: fft called with inverse=true
-    expect(src).toMatch(/fft\s*\([^)]*true\s*\)/);
+    // Forward STFT: fftInPlace called with inverse=false
+    expect(src).toMatch(/fftInPlace\s*\([^)]*false\s*\)/);
+    // Inverse STFT: fftInPlace called with inverse=true
+    expect(src).toMatch(/fftInPlace\s*\([^)]*true\s*\)/);
   });
 });
 
