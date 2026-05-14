@@ -716,6 +716,7 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
 .vip-slider-tooltip {
   position:         absolute;
   z-index:          8500;
+  box-sizing:       border-box;
   width:            264px;
   background:       rgba(7, 7, 16, 0.97);
   border:           1px solid rgba(255, 255, 255, 0.11);

@@ -161,6 +161,15 @@ const TAB_PANEL_MAP = {
 // ---------------------------------------------------------------------------
 // _ensureSliderTooltip — singleton tooltip element for slider help popovers
 // ---------------------------------------------------------------------------
+function _escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ---------------------------------------------------------------------------
 function _ensureSliderTooltip() {
   if (window._vipSliderTooltip) return window._vipSliderTooltip;
   const tip = document.createElement('div');
@@ -182,7 +191,7 @@ function buildPanels() {
   if (!window.VIP_LOCKED_SLIDERS) window.VIP_LOCKED_SLIDERS = new Set();
   try {
     const stored = sessionStorage.getItem('vip_locked_sliders');
-    if (stored) JSON.parse(stored).forEach(id => window.VIP_LOCKED_SLIDERS.add(id));
+    if (stored) { const ids = JSON.parse(stored); if (Array.isArray(ids)) ids.forEach(id => window.VIP_LOCKED_SLIDERS.add(id)); }
   } catch (_) {}
 
   _ensureSliderTooltip();
@@ -286,11 +295,13 @@ function buildPanels() {
         } catch (_) {}
       });
 
-      // Info tooltip on label hover
+      // Info tooltip on label hover — HTML escaped, viewport-aware positioning
+      const TIP_W = 264; // matches CSS width
+      const TIP_H_EST = 160; // estimated height for flip calculation
       const tipHTML = [
-        '<strong>' + s.label + '</strong>',
-        '<span class="vip-tip-desc">' + (s.desc || '') + '</span>',
-        '<span class="vip-tip-range">Range: ' + s.min + (s.unit || '') + ' &rarr; ' + s.max + (s.unit || '') + ' &nbsp;|&nbsp; step ' + s.step + ' &nbsp;|&nbsp; default ' + s.val + (s.unit || '') + '</span>',
+        '<strong>' + _escHtml(s.label) + '</strong>',
+        '<span class="vip-tip-desc">' + _escHtml(s.desc || '') + '</span>',
+        '<span class="vip-tip-range">Range: ' + _escHtml(s.min + (s.unit || '')) + ' &rarr; ' + _escHtml(s.max + (s.unit || '')) + ' &nbsp;|&nbsp; step ' + _escHtml(s.step) + ' &nbsp;|&nbsp; default ' + _escHtml(s.val + (s.unit || '')) + '</span>',
         s.rt
           ? '<span class="vip-tip-mode vip-tip-rt">&#9889; Real-time (AudioWorklet) — takes effect during live playback</span>'
           : '<span class="vip-tip-mode">Offline param — applied when processing starts</span>',
@@ -304,9 +315,13 @@ function buildPanels() {
         tip.classList.add('is-visible');
         tip.setAttribute('aria-hidden', 'false');
         const rect = labelWrap.getBoundingClientRect();
-        const left = Math.min(rect.left + window.scrollX, window.innerWidth - 274);
-        tip.style.top = (rect.bottom + window.scrollY + 8) + 'px';
-        tip.style.left = Math.max(8, left) + 'px';
+        const pageLeft = rect.left + window.scrollX;
+        const maxLeft = window.scrollX + window.innerWidth - TIP_W - 8;
+        const fitsBelow = rect.bottom + TIP_H_EST + 8 < window.innerHeight;
+        tip.style.left = Math.max(window.scrollX + 8, Math.min(pageLeft, maxLeft)) + 'px';
+        tip.style.top = fitsBelow
+          ? (rect.bottom + window.scrollY + 8) + 'px'
+          : (rect.top + window.scrollY - TIP_H_EST - 8) + 'px';
       });
       labelWrap.addEventListener('mouseleave', () => {
         const tip = window._vipSliderTooltip;
@@ -770,12 +785,13 @@ class VoiceIsolatePro {
     document.querySelectorAll('.btn-preset').forEach(btn => {
       btn.addEventListener('click', () => {
         const name = btn.dataset.preset;
-        if (name) this.applyPreset(name);
+        if (!name) return;
+        this.applyPreset(name);
+        // Sync dropdown so mouseleave restores the correct (just-applied) description
+        if (this.dom.presetSel) this.dom.presetSel.value = name;
       });
       btn.addEventListener('mouseenter', () => _showPresetDesc(btn.dataset.preset));
-      btn.addEventListener('mouseleave', () => {
-        if (this.dom.presetSel) _showPresetDesc(this.dom.presetSel.value);
-      });
+      btn.addEventListener('mouseleave', () => _showPresetDesc(this.dom.presetSel?.value));
     });
 
     // Save custom preset
