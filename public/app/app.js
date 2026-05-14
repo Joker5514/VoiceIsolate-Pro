@@ -1608,6 +1608,7 @@ class VoiceIsolatePro {
       this.dom.processBtn.innerHTML = '<span class="vip-eq-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>Processing…';
       this.dom.processBtn.classList.add('is-processing');
     }
+    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
     if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.style.display = 'none';
     if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display = 'none';
     if (this.dom.mobileStopBtn) this.dom.mobileStopBtn.style.display = 'inline-flex';
