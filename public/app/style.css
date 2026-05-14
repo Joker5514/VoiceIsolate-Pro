@@ -235,7 +235,19 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 .tp-speed label{font-size:0.6rem;color:var(--dim)}
 .tp-speed select{background:var(--s3);color:var(--text2);border:1px solid var(--border);border-radius:4px;font-family:var(--fm);font-size:0.65rem;padding:2px 4px}
 .tp-ab{display:flex;align-items:center;gap:4px}
-.tp-ab-label{font-family:var(--fm);font-size:0.62rem;color:var(--yellow)}
+.tp-ab-label{display:inline-flex;align-items:center;gap:5px;font-family:var(--fm);font-size:0.62rem;color:var(--yellow);transition:color .2s ease,filter .2s ease}
+.tp-ab-label .tp-ab-tag{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-weight:800;font-size:0.66rem;letter-spacing:.5px;background:rgba(234,179,8,.16);border:1px solid rgba(234,179,8,.4);color:var(--yellow);box-shadow:0 0 8px rgba(234,179,8,.2) inset}
+.tp-ab-label[data-version="B"]{color:var(--cyan)}
+.tp-ab-label[data-version="B"] .tp-ab-tag{background:rgba(34,211,238,.16);border-color:rgba(34,211,238,.45);color:var(--cyan);box-shadow:0 0 8px rgba(34,211,238,.22) inset}
+.tp-ab-label.is-playing .tp-ab-tag{animation:tp-ab-pulse 1.4s ease-in-out infinite}
+@keyframes tp-ab-pulse{0%,100%{box-shadow:0 0 8px rgba(234,179,8,.2) inset,0 0 0 0 rgba(234,179,8,.55)}50%{box-shadow:0 0 12px rgba(234,179,8,.4) inset,0 0 0 4px rgba(234,179,8,0)}}
+.tp-ab-label[data-version="B"].is-playing .tp-ab-tag{animation-name:tp-ab-pulse-b}
+@keyframes tp-ab-pulse-b{0%,100%{box-shadow:0 0 8px rgba(34,211,238,.22) inset,0 0 0 0 rgba(34,211,238,.55)}50%{box-shadow:0 0 14px rgba(34,211,238,.45) inset,0 0 0 4px rgba(34,211,238,0)}}
+.btn-speed{padding:2px 7px;font-weight:700;font-size:0.78rem;line-height:1}
+.tp-speed select{min-width:62px}
+.file-load-indicator{display:inline-flex;align-items:center;gap:6px;font-family:var(--fm);font-size:0.66rem;color:var(--cyan)}
+.file-load-indicator[hidden]{display:none}
+.file-load-text{color:var(--text2)}
 
 /* ═══════════════════════════════════════════
    DIAGNOSTIC DASHBOARD (6-Panel)

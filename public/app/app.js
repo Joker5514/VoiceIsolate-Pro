@@ -612,6 +612,9 @@ class VoiceIsolatePro {
       tpDur: g('tpDur'),
       tpSeek: g('tpSeek'),
       tpSpeed: g('tpSpeed'),
+      tpSpeedUp: g('tpSpeedUp'),
+      tpSpeedDown: g('tpSpeedDown'),
+      fileLoadIndicator: g('fileLoadIndicator'),
       hDur: g('hDur'),
       hFile: g('hFile'),
       hSR: g('hSR'),
@@ -714,9 +717,37 @@ class VoiceIsolatePro {
       this.dom.tpAB.addEventListener('click', () => this.toggleAB());
     }
     if (this.dom.tpSeek) {
-      this.dom.tpSeek.addEventListener('input', () => {
-        this.seekTo(parseFloat(this.dom.tpSeek.value) / 1000);
+      const seek = this.dom.tpSeek;
+      const beginSeek = () => { this._isSeeking = true; };
+      const endSeek = () => {
+        this._isSeeking = false;
+        this.seekTo(parseFloat(seek.value) / 1000);
+      };
+      seek.addEventListener('pointerdown', beginSeek);
+      seek.addEventListener('mousedown', beginSeek);
+      seek.addEventListener('touchstart', beginSeek, { passive: true });
+      seek.addEventListener('keydown', beginSeek);
+      seek.addEventListener('pointerup', endSeek);
+      seek.addEventListener('mouseup', endSeek);
+      seek.addEventListener('touchend', endSeek);
+      seek.addEventListener('keyup', endSeek);
+      seek.addEventListener('change', endSeek);
+      seek.addEventListener('input', () => {
+        this._isSeeking = true;
+        const frac = parseFloat(seek.value) / 1000;
+        if (this.inputBuffer && this.dom.tpCur) {
+          this.dom.tpCur.textContent = this.fmtDur(frac * this.inputBuffer.duration);
+        }
       });
+    }
+    if (this.dom.tpSpeed) {
+      this.dom.tpSpeed.addEventListener('change', () => this._applyPlaybackRate());
+    }
+    if (this.dom.tpSpeedUp) {
+      this.dom.tpSpeedUp.addEventListener('click', () => this._stepSpeed(1));
+    }
+    if (this.dom.tpSpeedDown) {
+      this.dom.tpSpeedDown.addEventListener('click', () => this._stepSpeed(-1));
     }
     if (this.dom.processBtn) {
       this.dom.processBtn.addEventListener('click', () => this.runPipeline());
@@ -1088,11 +1119,14 @@ class VoiceIsolatePro {
     if (this.dom.tpSeek) this.dom.tpSeek.value = 0;
     this._setScrubPos(0);
     this.renderStaticVisuals(0);
+    if (this.dom.tpABLabel && this.dom.tpABLabel.classList && this.dom.tpABLabel.classList.remove) {
+      this.dom.tpABLabel.classList.remove('is-playing');
+    }
   }
 
   pause() {
     if (!this.isPlaying) return;
-    const speed = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
+    const speed = this._activeSpeed || parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
     this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.teardownChain();
     this.stopSpectro();
@@ -1102,6 +1136,9 @@ class VoiceIsolatePro {
       this.dom.videoPlayer.pause();
     }
     if (this.inputBuffer) this.renderStaticVisuals(this.playOffset / Math.max(this.inputBuffer.duration || 1, 1));
+    if (this.dom.tpABLabel && this.dom.tpABLabel.classList && this.dom.tpABLabel.classList.remove) {
+      this.dom.tpABLabel.classList.remove('is-playing');
+    }
   }
 
   seekDelta(dt) {
@@ -1137,13 +1174,14 @@ class VoiceIsolatePro {
   toggleAB() {
     if (!this.outputBuffer) return;
     if (this.isPlaying) {
-      const speed = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
+      const speed = this._activeSpeed || parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
       this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     }
     this.abMode = this.abMode === 'original' ? 'processed' : 'original';
     const isProcessed = this.abMode === 'processed';
     if (this.dom.tpAB) this.dom.tpAB.classList.toggle('active', isProcessed);
     if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = isProcessed ? 'Processed' : 'Original';
+    if (typeof this._setABLabel === 'function') this._setABLabel();
     this.renderStaticVisuals(this.playOffset / Math.max(this.inputBuffer?.duration || 1, 1));
     if (this.isPlaying) { this.play(); }
   }
@@ -1156,7 +1194,9 @@ class VoiceIsolatePro {
     this.buildLiveChain(buf);
     this.isPlaying = true;
     this.playStartTime = this.ctx.currentTime;
+    this._activeSpeed = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
     if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
+    if (typeof this._setABLabel === 'function') this._setABLabel();
 
     if (this.isVideo && this.dom.videoPlayer) {
       this.dom.videoPlayer.currentTime = this.playOffset;
@@ -1277,10 +1317,11 @@ class VoiceIsolatePro {
   }
 
   tickTime() {
-    const speed = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
+    if (!this.isPlaying || !this.ctx || !this.inputBuffer) return;
+    const speed = this._activeSpeed || parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
     const elapsed = (this.ctx.currentTime - this.playStartTime) * speed;
     const cur = this.playOffset + elapsed;
-    if (this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(cur);
+    if (this.dom.tpCur && !this._isSeeking) this.dom.tpCur.textContent = this.fmtDur(cur);
     const dur = this.inputBuffer.duration;
     if (dur > 0 && this.dom.tpSeek) this._setScrubPos(cur / dur);
     this.renderStaticVisuals(cur / Math.max(dur || 1, 1));
@@ -1292,7 +1333,78 @@ class VoiceIsolatePro {
   }
 
   _setScrubPos(frac) {
+    if (this._isSeeking) return;
     if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+  }
+
+  _setABLabel() {
+    const isProcessed = this.abMode === 'processed';
+    const version = isProcessed ? 'B' : 'A';
+    const name = isProcessed ? 'Processed' : 'Original';
+    const lbl = this.dom.tpABLabel;
+    if (lbl) {
+      try { if (lbl.setAttribute) lbl.setAttribute('data-version', version); } catch (_) {}
+      try { if (lbl.classList && lbl.classList.toggle) lbl.classList.toggle('is-playing', !!this.isPlaying); } catch (_) {}
+      const tagEl = (lbl.querySelector && lbl.querySelector('.tp-ab-tag')) || null;
+      const nameEl = (lbl.querySelector && lbl.querySelector('.tp-ab-name')) || null;
+      if (tagEl && nameEl) {
+        tagEl.textContent = version;
+        nameEl.textContent = name;
+      } else {
+        lbl.textContent = name;
+      }
+    }
+    const ab = this.dom.tpAB;
+    if (ab) {
+      try { if (ab.setAttribute) ab.setAttribute('aria-label', 'Toggle A/B (currently playing ' + version + ' · ' + name + ')'); } catch (_) {}
+      try { ab.title = 'Toggle A/B (currently ' + version + ' · ' + name + ')'; } catch (_) {}
+    }
+  }
+
+  _stepSpeed(direction) {
+    const sel = this.dom.tpSpeed;
+    if (!sel) return;
+    const opts = Array.from(sel.options || []).map(o => parseFloat(o.value)).filter(v => !isNaN(v)).sort((a, b) => a - b);
+    if (!opts.length) return;
+    const cur = parseFloat(sel.value) || 1;
+    let idx = opts.findIndex(v => Math.abs(v - cur) < 1e-6);
+    if (idx < 0) idx = opts.findIndex(v => v >= cur);
+    if (idx < 0) idx = opts.length - 1;
+    const next = Math.max(0, Math.min(opts.length - 1, idx + direction));
+    sel.value = String(opts[next]);
+    this._applyPlaybackRate();
+  }
+
+  _applyPlaybackRate() {
+    const rate = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
+    if (this.isPlaying) {
+      const prevSpeed = this._activeSpeed || 1;
+      if (this.ctx) {
+        this.playOffset += (this.ctx.currentTime - this.playStartTime) * prevSpeed;
+        this.playStartTime = this.ctx.currentTime;
+      }
+      if (this.currentSource && this.currentSource.playbackRate) {
+        try { this.currentSource.playbackRate.value = rate; } catch (_) {}
+      }
+      if (this.isVideo && this.dom.videoPlayer) {
+        try { this.dom.videoPlayer.playbackRate = rate; } catch (_) {}
+      }
+    }
+    this._activeSpeed = rate;
+  }
+
+  _showFileLoading(text) {
+    const el = this.dom.fileLoadIndicator;
+    if (!el) return;
+    const t = el.querySelector('.file-load-text');
+    if (t && text) t.textContent = text;
+    el.hidden = false;
+  }
+
+  _hideFileLoading() {
+    const el = this.dom.fileLoadIndicator;
+    if (!el) return;
+    el.hidden = true;
   }
 
   drawEmptyVisuals(message) {
@@ -1589,6 +1701,8 @@ class VoiceIsolatePro {
     if (this.dom.pipeDetail) this.dom.pipeDetail.textContent = detail || STAGES[normalizedStage] || 'Ready';
     if (typeof this.updateProcessingOverlay === 'function') {
       this.updateProcessingOverlay(STAGES[normalizedStage] || detail || 'Ready', percent, normalizedStage);
+    } else if (typeof window !== 'undefined' && window.VIPOverlay && typeof window.VIPOverlay.update === 'function') {
+      try { window.VIPOverlay.update(STAGES[normalizedStage] || detail || 'Ready', percent, normalizedStage); } catch (_) {}
     }
   }
 
@@ -1615,6 +1729,11 @@ class VoiceIsolatePro {
       return;
     }
 
+    if (typeof this._showFileLoading === 'function') {
+      this._showFileLoading(isVideo ? 'Extracting audio from video…' : 'Decoding audio…');
+    }
+    if (this.dom.fileInfo) this.dom.fileInfo.textContent = (name ? name + ' — ' : '') + 'loading…';
+
     try {
       if (isVideo) {
         const result = await this.decodeViaVideoElement(file);
@@ -1638,6 +1757,8 @@ class VoiceIsolatePro {
       this.setStatus('ERROR');
       structuredLog('error', 'handleFile decode failed', { e });
       if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'Cannot decode this audio format';
+    } finally {
+      if (typeof this._hideFileLoading === 'function') this._hideFileLoading();
     }
   }
 
@@ -1749,6 +1870,10 @@ class VoiceIsolatePro {
     if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display = 'none';
     if (this.dom.mobileStopBtn) this.dom.mobileStopBtn.style.display = 'inline-flex';
 
+    if (typeof window !== 'undefined' && window.VIPOverlay && typeof window.VIPOverlay.show === 'function') {
+      try { window.VIPOverlay.show('Preparing pipeline…', 0); } catch (_) {}
+    }
+
     try {
       this.setStatus('PROCESSING');
       structuredLog('info', 'Pipeline start', { stages: 32 });
@@ -1844,6 +1969,9 @@ class VoiceIsolatePro {
       if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.style.display='inline-flex';
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display='inline-flex';
       if (this.dom.mobileStopBtn) this.dom.mobileStopBtn.style.display='none';
+      if (typeof window !== 'undefined' && window.VIPOverlay && typeof window.VIPOverlay.hide === 'function') {
+        try { window.VIPOverlay.hide(); } catch (_) {}
+      }
     }
   }
 
