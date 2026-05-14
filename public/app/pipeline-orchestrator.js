@@ -46,7 +46,10 @@ async function loadDspProcessorWorklet(ctx) {
     try {
       await ctx.audioWorklet.addModule(_WORKLET_FALLBACK_CACHE.blobUrl);
       return 'blob-cached';
-    } catch (_) { /* fall through and rebuild */ }
+    } catch (_) {
+      URL.revokeObjectURL(_WORKLET_FALLBACK_CACHE.blobUrl);
+      _WORKLET_FALLBACK_CACHE.blobUrl = null;
+    }
   }
 
   // 3. Walk CDN mirrors from the manifest
