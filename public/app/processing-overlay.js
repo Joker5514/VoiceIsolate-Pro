@@ -93,7 +93,7 @@
     return STAGE_GROUPS.find(g => stageIndex >= g.start && stageIndex <= g.end) || STAGE_GROUPS[STAGE_GROUPS.length - 1];
   }
 
-  /* ── NeuralSpinner — radial spectrum + oscilloscope ─────── */
+  /* ── NeuralSpinner — radial spectrum + oscilloscope + helix ─────── */
   function NeuralSpinner(canvas) {
     this.canvas  = canvas;
     this.ctx     = canvas.getContext('2d');
@@ -109,6 +109,19 @@
     for (var i = 0; i < 64; i++) {
       this._phases.push(Math.random() * Math.PI * 2);
       this._speeds.push(0.7 + Math.random() * 1.6);
+    }
+
+    /* Neural-mesh particle field — orbiting "neurons" */
+    this._particles = [];
+    var pcount = 14;
+    for (var pi = 0; pi < pcount; pi++) {
+      this._particles.push({
+        angle: (pi / pcount) * Math.PI * 2,
+        radius: 70 + Math.random() * 22,
+        speed: 0.35 + Math.random() * 0.6,
+        size: 1.2 + Math.random() * 1.6,
+        phase: Math.random() * Math.PI * 2
+      });
     }
   }
 
@@ -290,6 +303,67 @@
     ctx.beginPath();
     ctx.arc(cx, cy, 34, 0, Math.PI * 2);
     ctx.fill();
+
+    /* ── Counter-rotating dual helix strands ─────────────── */
+    /* Strand A — clockwise */
+    var helixR = R_INNER + R_MAX + 26;
+    var hueA = (hue + 0)   % 360;
+    var hueB = (hue + 180) % 360;
+    var twist = 3;
+    for (var sa = 0; sa < 2; sa++) {
+      var strandHue = sa === 0 ? hueA : hueB;
+      var dir       = sa === 0 ? 1 : -1;
+      ctx.beginPath();
+      for (var st = 0; st <= 96; st++) {
+        var sang = (st / 96) * Math.PI * 2;
+        var wob  = 3 * Math.sin(sang * twist + dir * t * 2.2 + sa * Math.PI);
+        var rr   = helixR + wob;
+        var sx   = cx + rr * Math.cos(sang + dir * t * 0.18);
+        var sy   = cy + rr * Math.sin(sang + dir * t * 0.18);
+        if (st === 0) ctx.moveTo(sx, sy);
+        else          ctx.lineTo(sx, sy);
+      }
+      ctx.strokeStyle = 'hsla(' + strandHue + ',95%,68%,0.55)';
+      ctx.lineWidth   = 1.4;
+      ctx.shadowColor = 'hsla(' + strandHue + ',95%,68%,0.75)';
+      ctx.shadowBlur  = 8;
+      ctx.stroke();
+      ctx.shadowBlur  = 0;
+    }
+
+    /* ── Neural-mesh particles + connecting filaments ────── */
+    var pts = [];
+    for (var pp = 0; pp < this._particles.length; pp++) {
+      var pa = this._particles[pp];
+      pa.angle += pa.speed * 0.012;
+      var radial = pa.radius + 2.5 * Math.sin(t * 1.3 + pa.phase);
+      var px = cx + radial * Math.cos(pa.angle);
+      var py = cy + radial * Math.sin(pa.angle);
+      pts.push({ x: px, y: py });
+      ctx.beginPath();
+      ctx.arc(px, py, pa.size, 0, Math.PI * 2);
+      ctx.fillStyle   = 'hsla(' + ((hue + pp * 18) % 360) + ',95%,72%,0.92)';
+      ctx.shadowColor = 'hsla(' + ((hue + pp * 18) % 360) + ',95%,72%,0.95)';
+      ctx.shadowBlur  = 10;
+      ctx.fill();
+      ctx.shadowBlur  = 0;
+    }
+    /* Connect nearest neighbours */
+    for (var a = 0; a < pts.length; a++) {
+      for (var b = a + 1; b < pts.length; b++) {
+        var dx = pts[a].x - pts[b].x;
+        var dy = pts[a].y - pts[b].y;
+        var d  = Math.sqrt(dx * dx + dy * dy);
+        if (d < 56) {
+          ctx.beginPath();
+          ctx.moveTo(pts[a].x, pts[a].y);
+          ctx.lineTo(pts[b].x, pts[b].y);
+          ctx.strokeStyle = 'hsla(' + hue + ',95%,72%,' + (0.18 * (1 - d / 56)) + ')';
+          ctx.lineWidth   = 0.8;
+          ctx.stroke();
+        }
+      }
+    }
 
     /* ── VIP mark ────────────────────────────────────────── */
     ctx.save();

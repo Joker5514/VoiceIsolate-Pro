@@ -9,16 +9,17 @@
 
 /* ── Design tokens ──────────────────────────────────────────────────────── */
 :root {
-  --vip-accent:       #e03c3c;     /* primary red  */
-  --vip-accent-glow:  #ff5f5f;     /* lighter glow */
-  --vip-accent-dark:  #9b1a1a;     /* deep red      */
-  --vip-track-bg:     #1e1e2e;     /* empty portion */
-  --vip-track-h:      5px;
-  --vip-thumb-size:   16px;
-  --vip-thumb-shadow: 0 0 8px var(--vip-accent-glow);
-  --vip-rt-color:     #ff9040;     /* orange for RT badges */
-  --vip-text-dim:     #8888aa;
-  --vip-text:         #d4d4e8;
+  --vip-accent:       #ff2a3d;     /* vibrant red (was #e03c3c) */
+  --vip-accent-glow:  #ff7a86;     /* lighter glow */
+  --vip-accent-dark:  #b00d1c;     /* deep red */
+  --vip-accent-2:     #ff3cac;     /* pink for active gradients */
+  --vip-track-bg:     #1a1a26;     /* empty portion */
+  --vip-track-h:      6px;
+  --vip-thumb-size:   18px;
+  --vip-thumb-shadow: 0 0 12px rgba(255,42,61,.55), 0 0 22px rgba(255,42,61,.18);
+  --vip-rt-color:     #00ffe7;     /* cyan for RT (matches engine pill cyan) */
+  --vip-text-dim:     #8a8aa6;
+  --vip-text:         #e6e6f0;
   --vip-row-bg:       rgba(255,255,255,0.025);
   --vip-row-bg-hover: rgba(255,255,255,0.05);
   --vip-border:       rgba(255,255,255,0.07);
@@ -263,4 +264,155 @@ input[type="range"].slider:disabled::-webkit-slider-thumb {
   }
   .slider-label { font-size: 0.72rem; }
   .slider-val   { font-size: 0.68rem; min-width: 42px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   VIBRANT SLIDER POLISH — v26
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Sleeker .slider input — used as the base class */
+input[type="range"].slider {
+  height: var(--vip-track-h);
+  background: linear-gradient(
+    to right,
+    var(--vip-accent)   0%,
+    var(--vip-accent-2) var(--pct, 50%),
+    rgba(255,255,255,.05) var(--pct, 50%),
+    rgba(255,255,255,.05) 100%
+  );
+  border-radius: 999px;
+  box-shadow:
+    inset 0 1px 3px rgba(0,0,0,.55),
+    inset 0 -1px 0 rgba(255,255,255,.03),
+    0 0 0 1px rgba(255,255,255,.02);
+  transition: height .12s ease, box-shadow .18s ease, background .1s ease;
+}
+input[type="range"].slider:hover { height: 7px; }
+input[type="range"].slider:active {
+  height: 8px;
+  box-shadow:
+    inset 0 1px 4px rgba(0,0,0,.65),
+    0 0 0 1px rgba(255,42,61,.25),
+    0 0 22px rgba(255,42,61,.18);
+}
+
+/* Realtime variant — cyan→violet gradient */
+input[type="range"].slider.realtime,
+.sr-row > input[type="range"].realtime {
+  background: linear-gradient(
+    to right,
+    var(--vip-rt-color)        0%,
+    rgba(167,107,255,.95)      var(--pct, 50%),
+    rgba(255,255,255,.05)      var(--pct, 50%),
+    rgba(255,255,255,.05)      100%
+  );
+}
+
+/* Webkit thumb — slick chrome ball */
+input[type="range"].slider::-webkit-slider-thumb {
+  width:  var(--vip-thumb-size);
+  height: var(--vip-thumb-size);
+  background:
+    radial-gradient(circle at 35% 28%,
+      #ffffff 0%,
+      #ffd9dc 35%,
+      var(--vip-accent) 65%,
+      var(--vip-accent-dark) 100%);
+  border: 2px solid rgba(255,255,255,.85);
+  box-shadow:
+    0 1px 2px rgba(0,0,0,.65),
+    0 0 0 0 rgba(255,42,61,0),
+    var(--vip-thumb-shadow);
+  transition:
+    transform .14s cubic-bezier(.22,.7,0,1.05),
+    box-shadow .18s ease,
+    border-color .15s ease;
+}
+input[type="range"].slider:hover::-webkit-slider-thumb {
+  transform: scale(1.18);
+  box-shadow:
+    0 1px 4px rgba(0,0,0,.65),
+    0 0 0 5px rgba(255,42,61,.18),
+    0 0 18px rgba(255,42,61,.55);
+}
+input[type="range"].slider:active::-webkit-slider-thumb {
+  transform: scale(1.32);
+  cursor: grabbing;
+  box-shadow:
+    0 1px 4px rgba(0,0,0,.7),
+    0 0 0 8px rgba(255,42,61,.18),
+    0 0 28px rgba(255,42,61,.7);
+}
+
+/* Realtime thumb — cyan */
+input[type="range"].slider.realtime::-webkit-slider-thumb,
+.sr-row > input[type="range"].realtime::-webkit-slider-thumb {
+  background:
+    radial-gradient(circle at 35% 28%,
+      #ffffff 0%,
+      #b8fff5 35%,
+      var(--vip-rt-color) 65%,
+      #007a6e 100%);
+  box-shadow:
+    0 1px 2px rgba(0,0,0,.65),
+    0 0 12px rgba(0,255,231,.55);
+}
+input[type="range"].slider.realtime:hover::-webkit-slider-thumb,
+.sr-row > input[type="range"].realtime:hover::-webkit-slider-thumb {
+  box-shadow:
+    0 1px 4px rgba(0,0,0,.65),
+    0 0 0 5px rgba(0,255,231,.22),
+    0 0 18px rgba(0,255,231,.65);
+}
+
+/* Firefox thumb */
+input[type="range"].slider::-moz-range-thumb {
+  width:  var(--vip-thumb-size);
+  height: var(--vip-thumb-size);
+  background:
+    radial-gradient(circle at 35% 28%,
+      #ffffff 0%, #ffd9dc 35%,
+      var(--vip-accent) 65%, var(--vip-accent-dark) 100%);
+  border: 2px solid rgba(255,255,255,.85);
+  box-shadow: var(--vip-thumb-shadow);
+  transition: transform .14s ease, box-shadow .18s ease;
+}
+input[type="range"].slider:hover::-moz-range-thumb {
+  transform: scale(1.18);
+  box-shadow: 0 0 0 5px rgba(255,42,61,.18), 0 0 18px rgba(255,42,61,.55);
+}
+input[type="range"].slider::-moz-range-progress {
+  background: linear-gradient(90deg, var(--vip-accent), var(--vip-accent-2));
+  border-radius: 999px;
+}
+
+/* RT badge — animated, cyan vibe */
+.rt-badge {
+  color: var(--vip-rt-color);
+  border-color: rgba(0,255,231,.4);
+  background: rgba(0,255,231,.06);
+  text-shadow: 0 0 6px rgba(0,255,231,.4);
+  animation: vip-rt-blink 2.4s ease-in-out infinite;
+}
+@keyframes vip-rt-blink {
+  0%,100% { opacity: .85; box-shadow: 0 0 0 0 rgba(0,255,231,0); }
+  50%     { opacity: 1;   box-shadow: 0 0 8px rgba(0,255,231,.35); }
+}
+
+/* Value readout chip — vibrant */
+.slider-val, .sr-val {
+  font-variant-numeric: tabular-nums;
+  transition: color .15s ease, background .15s ease, border-color .15s ease, box-shadow .2s ease, transform .12s ease;
+}
+
+/* Disabled state */
+input[type="range"].slider:disabled {
+  filter: grayscale(0.6) brightness(.7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  input[type="range"].slider,
+  input[type="range"].slider::-webkit-slider-thumb,
+  input[type="range"].slider::-moz-range-thumb,
+  .rt-badge { animation: none !important; transition: none !important; }
 }
