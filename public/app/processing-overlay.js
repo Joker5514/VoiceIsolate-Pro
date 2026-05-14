@@ -103,6 +103,17 @@
     this.running = false;
     this._raf    = null;
 
+    /* Cache prefers-reduced-motion once; update via media query listener */
+    this._reducedMotion = false;
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      var mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+      this._reducedMotion = mq.matches;
+      var self = this;
+      if (mq.addEventListener) {
+        mq.addEventListener('change', function (e) { self._reducedMotion = e.matches; });
+      }
+    }
+
     /* Pre-seeded organic noise so every bar feels independent */
     this._phases = [];
     this._speeds = [];
@@ -151,10 +162,8 @@
 
   NeuralSpinner.prototype._loop = function () {
     if (!this.running) return;
-    /* Skip animation frames when user prefers reduced motion */
-    if (typeof window !== 'undefined' &&
-        window.matchMedia &&
-        window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    /* Use cached prefers-reduced-motion value (updated via media query listener) */
+    if (this._reducedMotion) {
       /* Render a single static frame and pause */
       this._draw();
       return;

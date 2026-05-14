@@ -296,7 +296,9 @@ input[type="range"].slider:active {
     0 0 22px rgba(255,42,61,.18);
 }
 
-/* Realtime variant — full-track cyan→violet fill with hard split at --pct */
+/* Realtime variant — full-track cyan→violet fill with hard split at --pct.
+   Two-layer technique: top layer is transparent up to --pct then grey (unfilled
+   track), revealing the static cyan→violet gradient on the bottom layer below. */
 input[type="range"].slider.realtime,
 .sr-row > input[type="range"].realtime {
   background:
