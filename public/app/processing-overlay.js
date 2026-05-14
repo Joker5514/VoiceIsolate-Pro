@@ -359,8 +359,9 @@
       for (var bi = ni + 1; bi < pts.length; bi++) {
         var dx = pts[ni].x - pts[bi].x;
         var dy = pts[ni].y - pts[bi].y;
-        var d  = Math.sqrt(dx * dx + dy * dy);
-        if (d < 56) {
+        var d2 = dx * dx + dy * dy;
+        if (d2 < 3136) {
+          var d = Math.sqrt(d2);
           ctx.beginPath();
           ctx.moveTo(pts[ni].x, pts[ni].y);
           ctx.lineTo(pts[bi].x, pts[bi].y);
