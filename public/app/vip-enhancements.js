@@ -76,12 +76,35 @@
   function addSpeedFlash() {
     const sel = document.getElementById('tpSpeed');
     if (!sel) return;
-    sel.addEventListener('change', () => {
+
+    const flashSpeed = () => {
       sel.classList.remove('tp-speed-flash');
       // Force reflow so animation restarts
       void sel.offsetWidth; // eslint-disable-line no-void
       sel.classList.add('tp-speed-flash');
       sel.addEventListener('animationend', () => sel.classList.remove('tp-speed-flash'), { once: true });
+    };
+
+    sel.addEventListener('change', flashSpeed);
+
+    const proto = (typeof HTMLSelectElement !== 'undefined' && HTMLSelectElement.prototype)
+      || Object.getPrototypeOf(sel);
+    const valueDesc = proto && Object.getOwnPropertyDescriptor(proto, 'value');
+    if (!valueDesc || typeof valueDesc.get !== 'function' || typeof valueDesc.set !== 'function') return;
+
+    Object.defineProperty(sel, 'value', {
+      configurable: true,
+      enumerable: valueDesc.enumerable,
+      get() {
+        return valueDesc.get.call(this);
+      },
+      set(nextValue) {
+        const prevValue = valueDesc.get.call(this);
+        valueDesc.set.call(this, nextValue);
+        if (prevValue !== valueDesc.get.call(this)) {
+          flashSpeed();
+        }
+      }
     });
   }
 
