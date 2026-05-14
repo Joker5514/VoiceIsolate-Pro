@@ -1704,6 +1704,7 @@ class VoiceIsolatePro {
         this.dom.processBtn.textContent = 'Process';
         this.dom.processBtn.classList.remove('is-processing');
       }
+      if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = false;
       if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.style.display='inline-flex';
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display='inline-flex';
       if (this.dom.mobileStopBtn) this.dom.mobileStopBtn.style.display='none';
