@@ -1183,17 +1183,22 @@ body::after {
 .slider-group-header:hover { background: linear-gradient(180deg, rgba(255,42,61,.10), rgba(255,255,255,.02)); color: #fff; letter-spacing: .04em; }
 .slider-group.active .slider-group-header { color: #ffd9dc; }
 .slider-group-content {
+  display: block;
   overflow: hidden;
   max-height: 0;
   opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
   transform: translateY(-2px);
-  transition: max-height .35s ease, opacity .25s ease, transform .25s ease, padding .25s ease;
+  transition: max-height .35s ease, opacity .25s ease, transform .25s ease, padding .25s ease, visibility 0s linear .25s;
 }
 .slider-group.active .slider-group-content {
-  display: block;
   max-height: 2400px;
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
   transform: translateY(0);
+  transition-delay: 0s, 0s, 0s, 0s, 0s;
 }
 .slider-group-header .chevron {
   display: inline-block;
