@@ -152,14 +152,20 @@ input[type='range']{
 .sr-val{font-family:var(--fm);font-size:0.62rem;font-weight:600;color:var(--red2);text-align:right;background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.1);border-radius:4px;padding:2px 5px;white-space:nowrap;min-width:0;transition:border-color 0.15s,color 0.15s}
 .sr-row:hover .sr-val{border-color:rgba(220,38,38,0.26)}
 
-/* Track & thumb — scoped to parameter rows; #tpSeek and vol use global fallback */
+/* Track & thumb — scoped to parameter rows; #tpSeek and vol use global fallback.
+   Gradient lives on the runnable-track (not the input) so padding-based touch
+   expansion on mobile never bloats the visual fill area. */
 .sr-row > input[type="range"]{
   -webkit-appearance:none;appearance:none;
-  width:100%;height:4px;border-radius:99px;
+  width:100%;height:20px;
+  background:transparent;
+  outline:none;cursor:pointer}
+.sr-row > input[type="range"]::-webkit-slider-runnable-track{
+  height:4px;border-radius:99px;
   background:linear-gradient(to right,var(--red) 0%,var(--red) var(--pct,50%),rgba(255,255,255,0.07) var(--pct,50%),rgba(255,255,255,0.07) 100%);
-  outline:none;cursor:pointer;transition:height 0.12s ease;box-shadow:inset 0 1px 2px rgba(0,0,0,0.4)}
-.sr-row:hover > input[type="range"]{height:5px}
-.sr-row > input[type="range"]::-webkit-slider-runnable-track{height:4px;border-radius:99px}
+  box-shadow:inset 0 1px 2px rgba(0,0,0,0.4);
+  transition:height .12s ease}
+.sr-row:hover > input[type="range"]::-webkit-slider-runnable-track{height:5px}
 .sr-row > input[type="range"]::-webkit-slider-thumb{
   -webkit-appearance:none;width:14px;height:14px;border-radius:50%;
   background:#0d0d15;border:2px solid var(--red);
@@ -181,8 +187,8 @@ input[type='range']{
 .sr-row > input[type="range"]:focus-visible::-webkit-slider-thumb{
   box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--red),0 1px 4px rgba(0,0,0,0.5)}
 
-/* Realtime sliders — cyan accent */
-.sr-row > input[type="range"].realtime{
+/* Realtime sliders — cyan accent; gradient also on runnable-track */
+.sr-row > input[type="range"].realtime::-webkit-slider-runnable-track{
   background:linear-gradient(to right,var(--cyan) 0%,var(--cyan) var(--pct,50%),rgba(255,255,255,0.07) var(--pct,50%),rgba(255,255,255,0.07) 100%)}
 .sr-row > input[type="range"].realtime::-webkit-slider-thumb{border-color:var(--cyan)}
 .sr-row > input[type="range"].realtime::-webkit-slider-thumb:hover{
@@ -540,7 +546,7 @@ input[type="range"]:not(.realtime) {
 @media (max-width:960px) {
   .main-grid { grid-template-columns:1fr; }
   .col-left,.col-right { grid-column:1; }
-  button,input,select,.slider-group-header{min-height:44px}
+  button,input:not([type="range"]),select,.slider-group-header{min-height:44px}
 }
 
 .hdr-actions{display:flex;align-items:center;gap:8px}

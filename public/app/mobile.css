@@ -156,15 +156,16 @@ html {
   }
 
   /* ── Slider rows: 2-row layout on mobile ──
-     Top row: label + value
-     Bottom row: full-width track              */
+     Row 1: label (left) + value badge (right)
+     Row 2: full-width track                    */
   .sr-row {
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-rows: auto auto;
     gap: 4px 8px;
-    padding: 9px 8px;
+    padding: 8px 10px 8px 12px;
     border-radius: 8px;
+    border-left-width: 2px;
   }
   .sr-label {
     grid-column: 1;
@@ -177,34 +178,7 @@ html {
     text-overflow: unset;
     line-height: 1.3;
   }
-  /* Hide the info icon on mobile — tooltip not useful on touch */
   .sr-info { display: none; }
-
-  /* ── Slider rows: 2-row layout on mobile ──
-     Top row: label + value
-     Bottom row: full-width track              */
-  .sr-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto;
-    gap: 4px 8px;
-    padding: 9px 8px;
-    border-radius: 8px;
-  }
-  .sr-label {
-    grid-column: 1;
-    grid-row: 1;
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--text);
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    line-height: 1.3;
-  }
-  /* Hide the info icon on mobile — tooltip not useful on touch */
-  .sr-info { display: none; }
-
   .sr-val {
     grid-column: 2;
     grid-row: 1;
@@ -214,51 +188,20 @@ html {
     min-width: 52px;
     text-align: center;
   }
+  /* Track spans full width on row 2; background stays transparent (set by style.css) */
   .sr-row > input[type="range"] {
     grid-column: 1 / -1;
     grid-row: 2;
-    height: var(--mob-slider-track);
-    border-radius: calc(var(--mob-slider-track) / 2);
-    /* track gradient shape still driven by --pct */
+    height: 28px;        /* touch-friendly hit area */
+    border-radius: 0;    /* handled by runnable-track */
+    background: transparent;
   }
   .sr-row > input[type="range"]::-webkit-slider-runnable-track {
-    height: var(--mob-slider-track);
-  }
-  .sr-row > input[type="range"]::-webkit-slider-thumb {
-    width: var(--mob-slider-thumb);
-    height: var(--mob-slider-thumb);
-    margin-top: calc((var(--mob-slider-thumb) / -2) + (var(--mob-slider-track) / 2));
-    border-width: 3px;
-  }
-  .sr-row > input[type="range"]::-moz-range-thumb {
-    width: var(--mob-slider-thumb);
-    height: var(--mob-slider-thumb);
-    border-width: 3px;
-  }
-
-  /* RT badge sizing */
-  .rt-badge { font-size: 0.5rem; padding: 1px 5px; }
-
-  .sr-val {
-    grid-column: 2;
-    grid-row: 1;
-    font-size: 0.7rem;
-    padding: 3px 7px;
-    align-self: center;
-    min-width: 52px;
-    text-align: center;
-  }
-  .sr-row > input[type="range"] {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    height: var(--mob-slider-track);
+    height: var(--mob-slider-track);   /* 6px visual track */
     border-radius: calc(var(--mob-slider-track) / 2);
   }
-  .sr-row > input[type="range"]::-webkit-slider-runnable-track {
-    height: var(--mob-slider-track);
-  }
   .sr-row > input[type="range"]::-webkit-slider-thumb {
-    width: var(--mob-slider-thumb);
+    width: var(--mob-slider-thumb);    /* 24px */
     height: var(--mob-slider-thumb);
     margin-top: calc((var(--mob-slider-thumb) / -2) + (var(--mob-slider-track) / 2));
     border-width: 3px;
@@ -441,10 +384,9 @@ html {
     min-width: var(--mob-touch-min);
   }
 
-  /* Slider hit-area — invisible expansion */
+  /* Slider hit-area — touch-friendly height set via .sr-row rule above */
   input[type="range"] {
     cursor: pointer;
-    padding: 14px 0; /* expands tap area without changing visual height */
   }
 
   /* Haptic visual cue on active */
