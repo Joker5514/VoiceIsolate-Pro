@@ -58,11 +58,12 @@
 
 /* ══════════════════════════════════════════════════════════════
    ROW LAYOUT  (canonical .sr-row + legacy .slider-row)
+   4 columns: label | slider | value | lock-btn
    ══════════════════════════════════════════════════════════════ */
 .sr-row,
 .slider-row {
   display:               grid;
-  grid-template-columns: 132px 1fr 56px;
+  grid-template-columns: 132px 1fr 56px 24px;
   align-items:           center;
   gap:                   10px;
   padding:               var(--vip-row-pad-y) var(--vip-row-pad-x);
@@ -597,6 +598,210 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
 }
 
 /* ══════════════════════════════════════════════════════════════
+   LOCK BUTTON  — protects a slider from preset / reset changes
+   ══════════════════════════════════════════════════════════════ */
+
+/* Amber palette for lock state */
+:root {
+  --vip-lock:      #ffcc44;
+  --vip-lock-soft: rgba(255, 204, 68, 0.13);
+  --vip-lock-glow: rgba(255, 204, 68, 0.40);
+}
+
+.sr-lock-btn {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  width:           22px;
+  height:          22px;
+  padding:         0;
+  border:          1px solid rgba(255, 255, 255, 0.07);
+  border-radius:   5px;
+  background:      transparent;
+  color:           var(--vip-text-dim);
+  cursor:          pointer;
+  opacity:         0.28;
+  flex-shrink:     0;
+  transition:      opacity      0.15s ease,
+                   color        0.15s ease,
+                   background   0.15s ease,
+                   border-color 0.15s ease,
+                   box-shadow   0.18s ease;
+}
+
+.sr-row:hover .sr-lock-btn,
+.slider-row:hover .sr-lock-btn {
+  opacity: 0.60;
+}
+
+.sr-lock-btn:hover {
+  opacity:      1 !important;
+  color:        var(--vip-lock);
+  background:   var(--vip-lock-soft);
+  border-color: rgba(255, 204, 68, 0.40);
+  box-shadow:   0 0 8px var(--vip-lock-glow);
+}
+
+.sr-lock-btn:focus-visible {
+  outline:      2px solid var(--vip-lock);
+  outline-offset: 2px;
+}
+
+/* Locked state — amber, always visible */
+.sr-lock-btn[aria-pressed="true"] {
+  opacity:      1;
+  color:        var(--vip-lock);
+  background:   var(--vip-lock-soft);
+  border-color: rgba(255, 204, 68, 0.52);
+  box-shadow:   0 0 10px var(--vip-lock-glow);
+}
+
+/* Locked row — amber left bar + warm tint */
+.sr-row.is-locked,
+.slider-row.is-locked {
+  box-shadow:  inset 3px 0 0 var(--vip-lock),
+               inset 0 0 28px rgba(255, 204, 68, 0.04);
+  background:  linear-gradient(
+                 to right,
+                 rgba(255, 204, 68, 0.05) 0%,
+                 rgba(255, 255, 255, 0.012) 60%,
+                 transparent 100%
+               );
+}
+
+/* Value chip turns amber when row is locked */
+.sr-row.is-locked .sr-val,
+.slider-row.is-locked .slider-val {
+  color:        var(--vip-lock);
+  background:   rgba(255, 204, 68, 0.09);
+  border-color: rgba(255, 204, 68, 0.32);
+}
+
+.sr-row.is-locked:hover .sr-val,
+.slider-row.is-locked:hover .slider-val {
+  background:   rgba(255, 204, 68, 0.18);
+  border-color: rgba(255, 204, 68, 0.60);
+  box-shadow:   0 0 14px rgba(255, 204, 68, 0.28),
+                inset 0 0 8px rgba(255, 204, 68, 0.10);
+  color:        #ffe07a;
+}
+
+/* Override default hover left-bar for locked rows */
+.sr-row.is-locked:hover,
+.slider-row.is-locked:hover {
+  box-shadow:  inset 3px 0 0 var(--vip-lock),
+               inset 0 0 28px rgba(255, 204, 68, 0.06);
+  background:  linear-gradient(
+                 to right,
+                 rgba(255, 204, 68, 0.08) 0%,
+                 rgba(255, 255, 255, 0.02) 60%,
+                 transparent 100%
+               );
+}
+
+/* Label turns slightly amber when row is locked */
+.sr-row.is-locked .sr-label,
+.slider-row.is-locked .slider-label,
+.slider-row.is-locked .sr-label {
+  color: rgba(255, 220, 100, 0.80);
+}
+.sr-row.is-locked:hover .sr-label,
+.slider-row.is-locked:hover .slider-label {
+  color: var(--vip-lock);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SLIDER HELP TOOLTIP  — shown on label hover
+   ══════════════════════════════════════════════════════════════ */
+.vip-slider-tooltip {
+  position:         absolute;
+  z-index:          8500;
+  width:            264px;
+  background:       rgba(7, 7, 16, 0.97);
+  border:           1px solid rgba(255, 255, 255, 0.11);
+  border-radius:    10px;
+  padding:          13px 15px;
+  display:          none;
+  pointer-events:   none;
+  backdrop-filter:  blur(14px);
+  box-shadow:       0 10px 36px rgba(0, 0, 0, 0.72),
+                    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  line-height:      1.55;
+  font-size:        0.72rem;
+  color:            var(--vip-text);
+}
+
+.vip-slider-tooltip.is-visible {
+  display: block;
+  animation: tip-in 0.12s ease-out;
+}
+
+@keyframes tip-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.vip-slider-tooltip strong {
+  display:       block;
+  font-size:     0.80rem;
+  font-weight:   700;
+  color:         #ffffff;
+  margin-bottom: 5px;
+  letter-spacing: 0.01em;
+}
+
+.vip-tip-desc {
+  display:       block;
+  color:         var(--vip-text);
+  margin-bottom: 8px;
+}
+
+.vip-tip-range {
+  display:       block;
+  font-family:   'JetBrains Mono', monospace;
+  font-size:     0.60rem;
+  color:         var(--vip-text-dim);
+  margin-bottom: 5px;
+  letter-spacing: 0.02em;
+}
+
+.vip-tip-mode {
+  display:       block;
+  font-size:     0.60rem;
+  color:         var(--vip-text-dim);
+  border-top:    1px solid rgba(255, 255, 255, 0.07);
+  padding-top:   5px;
+  margin-top:    4px;
+}
+
+.vip-tip-rt {
+  color: var(--vip-rt);
+}
+
+.vip-tip-lock {
+  display:       block;
+  font-size:     0.60rem;
+  color:         rgba(255, 204, 68, 0.65);
+  margin-top:    4px;
+  font-style:    italic;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PRESET DESCRIPTION PANEL
+   ══════════════════════════════════════════════════════════════ */
+.preset-desc-panel {
+  font-size:    0.72rem;
+  color:        var(--vip-text-dim);
+  line-height:  1.5;
+  padding:      6px 10px 4px;
+  margin-top:   2px;
+  border-left:  2px solid rgba(255, 42, 61, 0.38);
+  font-style:   italic;
+  letter-spacing: 0.01em;
+  transition:   opacity 0.2s ease;
+}
+
+/* ══════════════════════════════════════════════════════════════
    REDUCED MOTION
    ══════════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
@@ -608,7 +813,9 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
   .sr-val,
   .slider-val,
   .btn-preset,
-  .rt-badge {
+  .rt-badge,
+  .sr-lock-btn,
+  .vip-slider-tooltip {
     animation:  none !important;
     transition: none !important;
   }

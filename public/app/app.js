@@ -159,15 +159,39 @@ const TAB_PANEL_MAP = {
 };
 
 // ---------------------------------------------------------------------------
+// _ensureSliderTooltip — singleton tooltip element for slider help popovers
+// ---------------------------------------------------------------------------
+function _ensureSliderTooltip() {
+  if (window._vipSliderTooltip) return window._vipSliderTooltip;
+  const tip = document.createElement('div');
+  tip.id = 'vip-slider-tooltip';
+  tip.className = 'vip-slider-tooltip';
+  tip.setAttribute('role', 'tooltip');
+  tip.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(tip);
+  window._vipSliderTooltip = tip;
+  return tip;
+}
+
+// ---------------------------------------------------------------------------
 // buildPanels — injects slider rows into the empty panel divs
 // MUST run before initPct() or initSliders()
 // ---------------------------------------------------------------------------
 function buildPanels() {
+  // Restore locked slider IDs from session storage
+  if (!window.VIP_LOCKED_SLIDERS) window.VIP_LOCKED_SLIDERS = new Set();
+  try {
+    const stored = sessionStorage.getItem('vip_locked_sliders');
+    if (stored) JSON.parse(stored).forEach(id => window.VIP_LOCKED_SLIDERS.add(id));
+  } catch (_) {}
+
+  _ensureSliderTooltip();
+
   for (const [tabKey, sliders] of Object.entries(SLIDERS)) {
     const panelId = TAB_PANEL_MAP[tabKey];
     const panel = document.getElementById(panelId);
     if (!panel) continue;
-    if (panel.querySelector('.slider-row')) continue; // already built
+    if (panel.querySelector('.slider-row, .sr-row')) continue; // already built
 
     const frag = document.createDocumentFragment();
     for (const s of sliders) {
@@ -177,12 +201,22 @@ function buildPanels() {
       // Row wrapper
       const row = document.createElement('div');
       row.className = 'sr-row';
+      row.dataset.sliderId = s.id;
+      if (window.VIP_LOCKED_SLIDERS.has(s.id)) row.classList.add('is-locked');
 
+      // Label with RT badge
       const labelWrap = document.createElement('label');
       labelWrap.className = 'sr-label';
       labelWrap.id = 'lbl_' + s.id;
       labelWrap.htmlFor = 'sl_' + s.id;
       labelWrap.textContent = s.label;
+      if (s.rt) {
+        const badge = document.createElement('span');
+        badge.className = 'rt-badge';
+        badge.textContent = 'RT';
+        badge.title = 'Real-time: value is wired directly to the AudioWorklet and takes effect immediately during playback';
+        labelWrap.appendChild(badge);
+      }
 
       // Value readout
       const valEl = document.createElement('span');
@@ -220,9 +254,71 @@ function buildPanels() {
         }
       });
 
+      // Lock button — protects this slider from preset and reset overrides
+      const isInitLocked = window.VIP_LOCKED_SLIDERS.has(s.id);
+      const lockBtn = document.createElement('button');
+      lockBtn.type = 'button';
+      lockBtn.className = 'sr-lock-btn';
+      lockBtn.setAttribute('aria-label', (isInitLocked ? 'Unlock ' : 'Lock ') + s.label);
+      lockBtn.setAttribute('aria-pressed', String(isInitLocked));
+      lockBtn.title = isInitLocked
+        ? 'Locked — preset and reset changes will not touch this slider'
+        : 'Unlocked — click to protect this slider from preset and reset overrides';
+      lockBtn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path class="lock-shackle" d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+
+      lockBtn.addEventListener('click', () => {
+        const locked = window.VIP_LOCKED_SLIDERS.has(s.id);
+        if (locked) {
+          window.VIP_LOCKED_SLIDERS.delete(s.id);
+          row.classList.remove('is-locked');
+          lockBtn.setAttribute('aria-pressed', 'false');
+          lockBtn.setAttribute('aria-label', 'Lock ' + s.label);
+          lockBtn.title = 'Unlocked — click to protect this slider from preset and reset overrides';
+        } else {
+          window.VIP_LOCKED_SLIDERS.add(s.id);
+          row.classList.add('is-locked');
+          lockBtn.setAttribute('aria-pressed', 'true');
+          lockBtn.setAttribute('aria-label', 'Unlock ' + s.label);
+          lockBtn.title = 'Locked — preset and reset changes will not touch this slider';
+        }
+        try {
+          sessionStorage.setItem('vip_locked_sliders', JSON.stringify([...window.VIP_LOCKED_SLIDERS]));
+        } catch (_) {}
+      });
+
+      // Info tooltip on label hover
+      const tipHTML = [
+        '<strong>' + s.label + '</strong>',
+        '<span class="vip-tip-desc">' + (s.desc || '') + '</span>',
+        '<span class="vip-tip-range">Range: ' + s.min + (s.unit || '') + ' &rarr; ' + s.max + (s.unit || '') + ' &nbsp;|&nbsp; step ' + s.step + ' &nbsp;|&nbsp; default ' + s.val + (s.unit || '') + '</span>',
+        s.rt
+          ? '<span class="vip-tip-mode vip-tip-rt">&#9889; Real-time (AudioWorklet) — takes effect during live playback</span>'
+          : '<span class="vip-tip-mode">Offline param — applied when processing starts</span>',
+        '<span class="vip-tip-lock">&#128274; Lock this slider to preserve its value across preset changes</span>',
+      ].join('');
+
+      labelWrap.addEventListener('mouseenter', () => {
+        const tip = window._vipSliderTooltip;
+        if (!tip) return;
+        tip.innerHTML = tipHTML;
+        tip.classList.add('is-visible');
+        tip.setAttribute('aria-hidden', 'false');
+        const rect = labelWrap.getBoundingClientRect();
+        const left = Math.min(rect.left + window.scrollX, window.innerWidth - 274);
+        tip.style.top = (rect.bottom + window.scrollY + 8) + 'px';
+        tip.style.left = Math.max(8, left) + 'px';
+      });
+      labelWrap.addEventListener('mouseleave', () => {
+        const tip = window._vipSliderTooltip;
+        if (!tip) return;
+        tip.classList.remove('is-visible');
+        tip.setAttribute('aria-hidden', 'true');
+      });
+
       row.appendChild(labelWrap);
       row.appendChild(input);
       row.appendChild(valEl);
+      row.appendChild(lockBtn);
       frag.appendChild(row);
     }
     panel.appendChild(frag);
@@ -656,11 +752,29 @@ class VoiceIsolatePro {
       });
     }
 
-    // Preset buttons
+    // Preset buttons + description panel
+    const presetDescPanel = document.getElementById('preset-desc-panel');
+    const _showPresetDesc = (name) => {
+      if (!presetDescPanel) return;
+      const p = PRESETS[name];
+      if (p && p.description) {
+        presetDescPanel.textContent = p.description;
+        presetDescPanel.style.display = '';
+      } else {
+        presetDescPanel.style.display = 'none';
+      }
+    };
+    // Show description for the initially-selected preset
+    if (this.dom.presetSel) _showPresetDesc(this.dom.presetSel.value);
+
     document.querySelectorAll('.btn-preset').forEach(btn => {
       btn.addEventListener('click', () => {
         const name = btn.dataset.preset;
         if (name) this.applyPreset(name);
+      });
+      btn.addEventListener('mouseenter', () => _showPresetDesc(btn.dataset.preset));
+      btn.addEventListener('mouseleave', () => {
+        if (this.dom.presetSel) _showPresetDesc(this.dom.presetSel.value);
       });
     });
 
@@ -818,14 +932,20 @@ class VoiceIsolatePro {
   }
 
   resetSliders() {
+    const locked = window.VIP_LOCKED_SLIDERS || new Set();
+    let skippedCount = 0;
     Object.values(SLIDERS).flat().forEach((sliderDef) => {
+      if (locked.has(sliderDef.id)) { skippedCount++; return; }
       const sliderEl = document.getElementById('sl_' + sliderDef.id);
       if (!sliderEl) return;
       sliderEl.value = sliderDef.val;
       sliderEl.dispatchEvent(new Event('input', { bubbles: true }));
       sliderEl.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    this.showNotification('Engineer controls reset to calibrated defaults', 'info', 2200);
+    const note = skippedCount > 0
+      ? `Controls reset · ${skippedCount} locked slider${skippedCount > 1 ? 's' : ''} preserved`
+      : 'Engineer controls reset to calibrated defaults';
+    this.showNotification(note, 'info', 2200);
   }
 
   initBootSplash() {
@@ -1717,14 +1837,16 @@ class VoiceIsolatePro {
     if (typeof window !== 'undefined') {
       window.VIP_PARAMS = window.VIP_PARAMS || {};
     }
+    const locked = window.VIP_LOCKED_SLIDERS || new Set();
+    let skippedCount = 0;
     for (const [sliderId, rawValue] of Object.entries(preset)) {
       if (sliderId === 'description') continue;
       if (!SLIDER_BY_ID[sliderId]) continue;
+      if (locked.has(sliderId)) { skippedCount++; continue; }
       const value = clampToSlider(sliderId, rawValue);
       this.params[sliderId] = value;
       if (typeof window !== 'undefined') window.VIP_PARAMS[sliderId] = value;
-      const sliderEl = document.getElementById('sl_' + sliderId);
-      const sliderDom = { el: sliderEl };
+      const sliderDom = { el: document.getElementById('sl_' + sliderId) };
       if (sliderDom.el) {
         sliderDom.el.value = value;
         sliderDom.el.setAttribute('aria-valuenow', value);
@@ -1744,9 +1866,23 @@ class VoiceIsolatePro {
         window.VIP_PARAMS[key] = value;
       }
     }
+
+    // Update preset description panel if present
+    const descPanel = document.getElementById('preset-desc-panel');
+    if (descPanel) {
+      descPanel.textContent = preset.description || '';
+      descPanel.style.display = preset.description ? '' : 'none';
+    }
+
+    if (skippedCount > 0) {
+      this.showNotification(
+        `"${name}" applied · ${skippedCount} locked slider${skippedCount > 1 ? 's' : ''} preserved`,
+        'warn', 3200
+      );
+    }
     this.renderStaticVisuals(this.playOffset / Math.max(this.inputBuffer?.duration || 1, 1));
     if (this.liveChainBuilt) {
-      structuredLog('info', 'Preset applied to live chain', { name });
+      structuredLog('info', 'Preset applied to live chain', { name, skippedLocked: skippedCount });
     }
   }
 
