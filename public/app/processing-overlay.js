@@ -151,6 +151,14 @@
 
   NeuralSpinner.prototype._loop = function () {
     if (!this.running) return;
+    /* Skip animation frames when user prefers reduced motion */
+    if (typeof window !== 'undefined' &&
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      /* Render a single static frame and pause */
+      this._draw();
+      return;
+    }
     this._draw();
     var self = this;
     this._raf = requestAnimationFrame(function () { self._loop(); });
@@ -339,6 +347,8 @@
 
     /* ── Neural-mesh particles + connecting filaments ────── */
     var pts = [];
+    /* Draw all particle glows in one shadowBlur pass */
+    ctx.shadowBlur = 10;
     for (var pp = 0; pp < this._particles.length; pp++) {
       var pa = this._particles[pp];
       pa.angle += pa.speed * 0.012;
@@ -350,10 +360,9 @@
       ctx.arc(px, py, pa.size, 0, Math.PI * 2);
       ctx.fillStyle   = 'hsla(' + ((hue + pp * 18) % 360) + ',95%,72%,0.92)';
       ctx.shadowColor = 'hsla(' + ((hue + pp * 18) % 360) + ',95%,72%,0.95)';
-      ctx.shadowBlur  = 10;
       ctx.fill();
-      ctx.shadowBlur  = 0;
     }
+    ctx.shadowBlur = 0;
     /* Connect nearest neighbours */
     for (var ni = 0; ni < pts.length; ni++) {
       for (var bi = ni + 1; bi < pts.length; bi++) {

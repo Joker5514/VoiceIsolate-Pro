@@ -37,14 +37,14 @@
  *     [16..+HALF_BINS*4]         mask (Float32 x HALF_BINS, values 0..1)
  */
 
-const FFT_SIZE        = 4096;
-const HOP_SIZE        = 1024;           // 75% overlap
-const HALF_BINS       = FFT_SIZE / 2 + 1;
-const FLAG_SLOTS      = 4;
+const FFT_SIZE   = 4096;
+const HOP_SIZE   = 1024;           // 75% overlap
+const HALF_BINS  = FFT_SIZE / 2 + 1;
+const FLAG_SLOTS = 4;
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
 
 // ─── OLA normalisation scalar for periodic Hann at 75% overlap ───────────────
-// sum of squared Hann windows spaced HOP apart = FFT_SIZE / (2 * HOP_SIZE) = 2.0
+// sum of (unsquared) Hann windows spaced HOP apart = FFT_SIZE / (2 * HOP_SIZE) = 2.0
 // So we divide by 2 during synthesis to normalise energy
 const OLA_NORM = 1.0 / (FFT_SIZE / (2.0 * HOP_SIZE)); // = 0.5
 
@@ -170,7 +170,7 @@ class DSPProcessor extends AudioWorkletProcessor {
         // mag stored at [0..HALF_BINS), pha at [HALF_BINS..HALF_BINS*2)
         this._inputView   = new Float32Array(this._inputSAB,  SAB_HEADER_BYTES, HALF_BINS * 2);
         this._outputView  = new Float32Array(this._outputSAB, SAB_HEADER_BYTES, HALF_BINS);
-        this.port.postMessage({ type: 'sabReady' });
+        this.port.postMessage({ type: 'sabReady', inputSAB: this._inputSAB, outputSAB: this._outputSAB });
         break;
       }
       case 'params': {

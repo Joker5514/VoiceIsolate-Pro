@@ -296,12 +296,13 @@ input[type="range"].slider:active {
     0 0 22px rgba(255,42,61,.18);
 }
 
-/* Realtime variant — cyan→violet gradient */
+/* Realtime variant — cyan→violet gradient across fill, then transparent for unfilled */
 input[type="range"].slider.realtime,
 .sr-row > input[type="range"].realtime {
   background: linear-gradient(
     to right,
     var(--vip-rt-color)        0%,
+    rgba(167,107,255,.95)      calc(var(--pct, 50%) * 0.9),
     rgba(167,107,255,.95)      var(--pct, 50%),
     rgba(255,255,255,.05)      var(--pct, 50%),
     rgba(255,255,255,.05)      100%
@@ -386,12 +387,16 @@ input[type="range"].slider::-moz-range-progress {
   border-radius: 999px;
 }
 
-/* RT badge — animated, cyan vibe */
+/* RT badge — cyan vibe, blink on hover/focus only to avoid constant repaint */
 .rt-badge {
   color: var(--vip-rt-color);
   border-color: rgba(0,255,231,.4);
   background: rgba(0,255,231,.06);
   text-shadow: 0 0 6px rgba(0,255,231,.4);
+}
+.rt-badge:hover,
+.slider-row:hover .rt-badge,
+.sr-row:hover .rt-badge {
   animation: vip-rt-blink 2.4s ease-in-out infinite;
 }
 @keyframes vip-rt-blink {

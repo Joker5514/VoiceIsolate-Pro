@@ -891,7 +891,7 @@ body::after {
   position: fixed;
   inset: -20%;
   pointer-events: none;
-  z-index: 0;
+  z-index: -1;
   background:
     radial-gradient(circle at 30% 30%, rgba(255,42,61,.05), transparent 18%),
     radial-gradient(circle at 70% 70%, rgba(0,255,231,.05), transparent 18%);
@@ -987,6 +987,10 @@ body::after {
   pointer-events: none;
   transition: opacity .25s ease;
   animation: vip-card-border 12s ease infinite;
+  animation-play-state: paused;
+}
+.card:hover::before {
+  animation-play-state: running;
 }
 .card:hover {
   transform: translateY(-1px);
@@ -1183,17 +1187,21 @@ body::after {
 .slider-group-header:hover { background: linear-gradient(180deg, rgba(255,42,61,.10), rgba(255,255,255,.02)); color: #fff; letter-spacing: .04em; }
 .slider-group.active .slider-group-header { color: #ffd9dc; }
 .slider-group-content {
+  /* Override display:none from the base rule — use max-height/opacity for transition */
+  display: block !important;
   overflow: hidden;
   max-height: 0;
   opacity: 0;
   transform: translateY(-2px);
-  transition: max-height .35s ease, opacity .25s ease, transform .25s ease, padding .25s ease;
+  visibility: hidden;
+  transition: max-height .35s ease, opacity .25s ease, transform .25s ease, padding .25s ease, visibility 0s .35s;
 }
 .slider-group.active .slider-group-content {
-  display: block;
-  max-height: 2400px;
+  max-height: 9999px;
   opacity: 1;
   transform: translateY(0);
+  visibility: visible;
+  transition: max-height .35s ease, opacity .25s ease, transform .25s ease, padding .25s ease, visibility 0s;
 }
 .slider-group-header .chevron {
   display: inline-block;
@@ -1237,7 +1245,7 @@ body::after {
   box-shadow: 0 0 14px rgba(255,42,61,.18);
   transform: scale(1.03);
 }
-.sr-row:hover > input[type="range"].realtime ~ .sr-val {
+.sr-row:hover:has(input[type="range"].realtime) .sr-val {
   color: #c9fff8;
   border-color: rgba(0,255,231,.45);
   background: rgba(0,255,231,.10);
@@ -1348,8 +1356,11 @@ body::after {
   .card::before,
   .upload-zone::after,
   .btn::after,
-  .engine-pill[data-state="ready"]::before {
+  .engine-pill[data-state="ready"]::before,
+  .btn-primary.is-processing,
+  .btn-mic.recording {
     animation: none !important;
   }
-  .card, .btn, .sr-row, .tab-btn, .slider-group, .slider-group-content { transition: none !important; }
+  .card, .btn, .sr-row, .tab-btn, .slider-group, .slider-group-content,
+  .spectro3d-container { transition: none !important; }
 }
