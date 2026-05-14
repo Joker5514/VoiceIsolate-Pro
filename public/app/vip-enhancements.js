@@ -80,7 +80,7 @@
     const flashSpeed = () => {
       sel.classList.remove('tp-speed-flash');
       // Force reflow so animation restarts
-      void sel.offsetWidth; // eslint-disable-line no-void
+      void sel.offsetWidth;
       sel.classList.add('tp-speed-flash');
       sel.addEventListener('animationend', () => sel.classList.remove('tp-speed-flash'), { once: true });
     };

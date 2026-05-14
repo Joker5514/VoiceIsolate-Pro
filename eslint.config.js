@@ -49,6 +49,23 @@ export default [
     },
   },
   {
+    files: ['public/app/vip-enhancements.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        ...globals.browser,
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'semi': ['warn', 'always'],
+      'quotes': ['warn', 'single', { avoidEscape: true }],
+    },
+  },
+  {
     // AudioWorklet processors — run in AudioWorkletGlobalScope
     files: ['public/app/dsp-processor.js'],
     languageOptions: {
