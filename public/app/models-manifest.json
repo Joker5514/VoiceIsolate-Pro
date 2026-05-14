@@ -51,5 +51,18 @@
         { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/silero_vad.onnx" }
       ]
     }
+  },
+  "worklets": {
+    "dsp_processor": {
+      "filename": "dsp-processor.js",
+      "processorName": "dsp-processor",
+      "contentType": "application/javascript",
+      "sources": [
+        { "provider": "same-origin", "url": "/app/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" },
+        { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" },
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" },
+        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" }
+      ]
+    }
   }
 }

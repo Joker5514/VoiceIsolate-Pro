@@ -7,8 +7,117 @@
    ============================================ */
 
 'use strict';
+/* global fetch, Blob, URL, console, self, crypto, TextEncoder */
 
 const WORKLET_READY_FALLBACK_MS = 250;
+const WORKLET_SOURCE_SHA256 = '9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48';
+
+// ─── AudioWorklet loader with CDN fallback ─────────────────────────────────
+// Primary path is same-origin /app/dsp-processor.js (COOP+COEP friendly).
+// If that fails (404, offline blob, etc.) we walk the manifest mirrors —
+// Vercel Blob → Cloudflare R2 → Hugging Face Hub — fetch the source text,
+// wrap it in a same-origin Blob URL, and pass that to addModule(). The Blob
+// URL is same-origin so it satisfies COEP require-corp without needing the
+// remote response to carry CORP headers.
+const _WORKLET_FALLBACK_CACHE = { manifest: null, sourceText: null };
+async function _getWorkletManifest() {
+  if (_WORKLET_FALLBACK_CACHE.manifest) return _WORKLET_FALLBACK_CACHE.manifest;
+  try {
+    const resp = await fetch('/app/models-manifest.json', { credentials: 'omit' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const json = await resp.json();
+    _WORKLET_FALLBACK_CACHE.manifest = json;
+    return json;
+  } catch {
+    return null;
+  }
+}
+function _digestToHex(digestBuffer) {
+  const bytes = new Uint8Array(digestBuffer);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i += 1) hex += bytes[i].toString(16).padStart(2, '0');
+  return hex;
+}
+async function _sha256Hex(text) {
+  if (!crypto || !crypto.subtle) throw new Error('crypto.subtle unavailable for worklet integrity check');
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return _digestToHex(digest);
+}
+async function loadDspProcessorWorklet(ctx) {
+  if (!ctx || !ctx.audioWorklet) throw new Error('AudioContext.audioWorklet unavailable');
+
+  // 1. Same-origin primary path
+  try {
+    await ctx.audioWorklet.addModule('/app/dsp-processor.js');
+    return 'same-origin';
+  } catch (primaryErr) {
+    console.warn('[Orchestrator] Same-origin worklet load failed, trying CDN mirrors:', primaryErr && primaryErr.message);
+  }
+
+  // 2. Re-use a previously verified source body if one is cached this session
+  if (_WORKLET_FALLBACK_CACHE.sourceText) {
+    const cachedBlobUrl = URL.createObjectURL(
+      new Blob([_WORKLET_FALLBACK_CACHE.sourceText], { type: 'application/javascript' })
+    );
+    try {
+      await ctx.audioWorklet.addModule(cachedBlobUrl);
+      return 'blob-cached';
+    } catch {
+      _WORKLET_FALLBACK_CACHE.sourceText = null;
+    } finally {
+      URL.revokeObjectURL(cachedBlobUrl);
+    }
+  }
+
+  // 3. Walk CDN mirrors from the manifest
+  const manifest = await _getWorkletManifest();
+  const sources = manifest && manifest.worklets && manifest.worklets.dsp_processor
+    ? manifest.worklets.dsp_processor.sources
+    : [
+        { provider: 'same-origin', url: '/app/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
+        { provider: 'vercel-blob', url: 'https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
+        { provider: 'r2',          url: 'https://models.voiceisolatepro.com/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
+        { provider: 'huggingface', url: 'https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
+      ];
+
+  let lastErr;
+  for (const src of sources) {
+    if (src.provider === 'same-origin') continue; // already tried in step 1
+    try {
+      const resp = await fetch(src.url, { mode: 'cors', credentials: 'omit' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const text = await resp.text();
+      // Basic sanity guard — must register the canonical processor name
+      if (!text.includes("registerProcessor('dsp-processor'") &&
+          !text.includes('registerProcessor("dsp-processor"')) {
+        throw new Error('mirror does not contain dsp-processor registration');
+      }
+      const expectedSha256 = src && typeof src.sha256 === 'string' ? src.sha256.toLowerCase() : '';
+      if (!expectedSha256) throw new Error('mirror missing required sha256 pin');
+      const actualSha256 = await _sha256Hex(text);
+      if (actualSha256 !== expectedSha256) {
+        throw new Error('worklet integrity mismatch: expected ' + expectedSha256 + ' got ' + actualSha256);
+      }
+      const blob = new Blob([text], { type: 'application/javascript' });
+      const blobUrl = URL.createObjectURL(blob);
+      try {
+        await ctx.audioWorklet.addModule(blobUrl);
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+      _WORKLET_FALLBACK_CACHE.sourceText = text;
+      console.info('[Orchestrator] AudioWorklet loaded from CDN mirror:', src.provider);
+      return src.provider;
+    } catch (err) {
+      lastErr = err;
+      console.warn('[Orchestrator] Worklet mirror', src.provider, 'failed:', err && err.message);
+    }
+  }
+  throw new Error('All worklet sources failed' + (lastErr ? ': ' + lastErr.message : ''));
+}
+// Expose for tests + diagnostics; keeps the helper available without polluting globals further.
+if (typeof self !== 'undefined') self.loadDspProcessorWorklet = loadDspProcessorWorklet;
 
 /**
  * PipelineOrchestrator
@@ -139,7 +248,7 @@ class PipelineOrchestrator {
     if (!this.ctx) throw new Error('AudioContext not initialised');
     if (!this._workletModulesLoaded) {
       try {
-        await this.ctx.audioWorklet.addModule('/app/dsp-processor.js');
+        await loadDspProcessorWorklet(this.ctx);
         this._workletModulesLoaded = true;
         console.info('[Orchestrator] AudioWorklet modules loaded');
       } catch (err) {
@@ -779,7 +888,7 @@ class PipelineOrchestrator {
     orch._preWarmWorklet = (async () => {
       try {
         const suspCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-        await suspCtx.audioWorklet.addModule('/app/dsp-processor.js');
+        await loadDspProcessorWorklet(suspCtx);
         orch._preWarmedCtx = suspCtx;
         console.info('[Orchestrator] AudioWorklet pre-warmed');
       } catch (e) {

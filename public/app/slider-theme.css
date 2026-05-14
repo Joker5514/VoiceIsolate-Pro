@@ -1,430 +1,508 @@
 /*
-  VoiceIsolate Pro — Slider Theme v2.0
+  VoiceIsolate Pro — Slider Theme v3.0 (Sleek)
   ==============================================
-  Unified dark-neon CSS for every range input
-  (.slider) in the Engineer Mode 52-slider UI.
-  Uses --pct custom property set by app.js so
-  the filled track always matches the thumb.
+  Cleaner, more refined dark-neon styling for every range
+  input in the Engineer Mode 52-slider UI. Targets both
+  the canonical `.sr-row` rows built by app.js and the
+  legacy `.slider-row` layout.
+
+  Design principles:
+    - Thinner, crisper capsule track (3px → 5px on hover)
+    - Glossy 14px puck thumb with subtle inset highlight
+    - Cyan accent for real-time params, red for offline
+    - Reduced visual noise (no gradients on idle rows)
+    - Hairline left accent on hover instead of full bg fill
+    - Tabular numerals for value readout, fixed-width chip
+    - Single source of truth — no per-pseudo duplication
+
+  Track-fill is driven by --pct (set by app.js / slider-map.js)
+  so the filled segment always matches the thumb position.
 */
 
-/* ── Design tokens ──────────────────────────────────────────────────────── */
+/* ── Design tokens ─────────────────────────────────────────── */
 :root {
-  --vip-accent:       #ff2a3d;     /* vibrant red (was #e03c3c) */
-  --vip-accent-glow:  #ff7a86;     /* lighter glow */
-  --vip-accent-dark:  #b00d1c;     /* deep red */
-  --vip-accent-2:     #ff3cac;     /* pink for active gradients */
-  --vip-track-bg:     #1a1a26;     /* empty portion */
-  --vip-track-h:      6px;
-  --vip-thumb-size:   18px;
-  --vip-thumb-shadow: 0 0 12px rgba(255,42,61,.55), 0 0 22px rgba(255,42,61,.18);
-  --vip-rt-color:     #00ffe7;     /* cyan for RT (matches engine pill cyan) */
+  --vip-accent:       #ff2a3d;
+  --vip-accent-soft:  rgba(255, 42, 61, 0.18);
+  --vip-accent-glow:  rgba(255, 42, 61, 0.55);
+  --vip-rt:           #00ffe7;
+  --vip-rt-soft:      rgba(0, 255, 231, 0.18);
+  --vip-rt-glow:      rgba(0, 255, 231, 0.5);
+
+  --vip-track-empty:  rgba(255, 255, 255, 0.06);
+  --vip-track-h:      3px;
+  --vip-track-h-hov:  5px;
+  --vip-thumb-size:   14px;
+  --vip-thumb-size-hov: 16px;
+
+  --vip-text:         #e9e9f3;
   --vip-text-dim:     #8a8aa6;
-  --vip-text:         #e6e6f0;
-  --vip-row-bg:       rgba(255,255,255,0.025);
-  --vip-row-bg-hover: rgba(255,255,255,0.05);
-  --vip-border:       rgba(255,255,255,0.07);
+  --vip-row-pad-y:    6px;
+  --vip-row-pad-x:    10px;
+  --vip-row-radius:   6px;
 }
 
-/* ── Slider row layout ───────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════
+   ROW LAYOUT  (canonical .sr-row + legacy .slider-row)
+   ══════════════════════════════════════════════════════════════ */
+.sr-row,
 .slider-row {
-  display:         grid;
-  grid-template-columns: 140px 1fr 64px;
-  align-items:     center;
-  gap:             8px;
-  padding:         6px 10px;
-  border-radius:   6px;
-  background:      var(--vip-row-bg);
-  border:          1px solid var(--vip-border);
-  transition:      background 0.15s;
+  display:               grid;
+  grid-template-columns: 132px 1fr 56px;
+  align-items:           center;
+  gap:                   10px;
+  padding:               var(--vip-row-pad-y) var(--vip-row-pad-x);
+  border-radius:         var(--vip-row-radius);
+  position:              relative;
+  background:            transparent;
+  border-left:           1px solid transparent;
+  transition:            background 0.16s ease,
+                         border-left-color 0.16s ease,
+                         transform 0.16s ease;
 }
+.sr-row:hover,
 .slider-row:hover {
-  background: var(--vip-row-bg-hover);
+  background:            rgba(255, 255, 255, 0.025);
+  border-left-color:     var(--vip-accent);
+}
+.sr-row:has(input.realtime):hover,
+.slider-row:has(input.realtime):hover {
+  border-left-color:     var(--vip-rt);
 }
 
-/* ── Label wrap ─────────────────────────────────────────────────────────── */
-.slider-label-wrap {
-  display:      flex;
-  align-items:  center;
-  gap:          4px;
-  overflow:     hidden;
-}
+/* Label */
+.sr-label,
 .slider-label {
-  font-size:    0.78rem;
-  font-weight:  600;
-  color:        var(--vip-text);
-  white-space:  nowrap;
-  overflow:     hidden;
-  text-overflow:ellipsis;
-  letter-spacing: 0.02em;
-  cursor:       default;
+  font-size:             0.72rem;
+  font-weight:           500;
+  color:                 var(--vip-text);
+  letter-spacing:        0.015em;
+  white-space:           nowrap;
+  overflow:              hidden;
+  text-overflow:         ellipsis;
+  display:               flex;
+  align-items:           center;
+  gap:                   5px;
+  cursor:                default;
+  min-width:             0;
+  transition:            color 0.16s ease;
+}
+.sr-row:hover .sr-label,
+.slider-row:hover .slider-label,
+.slider-row:hover .sr-label {
+  color:                 #ffffff;
 }
 
-/* ── Real-time badge ────────────────────────────────────────────────────── */
-.rt-badge {
-  font-size:     0.58rem;
-  font-weight:   700;
-  color:         var(--vip-rt-color);
-  border:        1px solid var(--vip-rt-color);
-  border-radius: 3px;
-  padding:       1px 3px;
-  line-height:   1;
-  flex-shrink:   0;
-  opacity:       0.85;
-}
-
-/* ── Info icon ───────────────────────────────────────────────────────────── */
-.sr-info {
-  font-size:    0.68rem;
-  color:        var(--vip-text-dim);
-  cursor:       help;
-  flex-shrink:  0;
-  user-select:  none;
-  opacity:      0.6;
-  transition:   opacity 0.15s;
-}
-.sr-info:hover { opacity: 1; }
-
-/* ── Value readout ──────────────────────────────────────────────────────── */
+/* Value readout chip */
+.sr-val,
 .slider-val {
-  font-size:    0.72rem;
-  font-variant-numeric: tabular-nums;
-  color:        var(--vip-accent-glow);
-  text-align:   right;
-  white-space:  nowrap;
-  min-width:    52px;
-  font-weight:  600;
+  font-variant-numeric:  tabular-nums;
+  font-size:             0.66rem;
+  font-weight:           600;
+  text-align:            right;
+  white-space:           nowrap;
+  min-width:             52px;
+  padding:               2px 6px;
+  border-radius:         4px;
+  color:                 var(--vip-accent);
+  background:            rgba(255, 42, 61, 0.06);
+  border:                1px solid rgba(255, 42, 61, 0.14);
+  transition:            color 0.15s ease,
+                         background 0.15s ease,
+                         border-color 0.15s ease,
+                         box-shadow 0.2s ease;
+}
+.sr-row:hover .sr-val,
+.slider-row:hover .slider-val {
+  background:            rgba(255, 42, 61, 0.11);
+  border-color:          rgba(255, 42, 61, 0.4);
+  box-shadow:            0 0 10px rgba(255, 42, 61, 0.15);
+}
+/* RT-row readout: cyan tone */
+.sr-row:has(input.realtime) .sr-val,
+.slider-row:has(input.realtime) .slider-val {
+  color:                 var(--vip-rt);
+  background:            rgba(0, 255, 231, 0.06);
+  border-color:          rgba(0, 255, 231, 0.14);
+}
+.sr-row:has(input.realtime):hover .sr-val,
+.slider-row:has(input.realtime):hover .slider-val {
+  background:            rgba(0, 255, 231, 0.12);
+  border-color:          rgba(0, 255, 231, 0.42);
+  box-shadow:            0 0 10px rgba(0, 255, 231, 0.18);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   THE RANGE INPUT
-   Webkit, Moz, and MS all need separate thumb/track pseudo-elements.
-   We use a CSS gradient on the track to show the filled portion via --pct.
-   ═══════════════════════════════════════════════════════════════════════════ */
-input[type="range"].slider {
-  -webkit-appearance: none;
-  appearance:   none;
-  width:        100%;
-  height:       var(--vip-track-h);
-  background:   linear-gradient(
-    to right,
-    var(--vip-accent)       0%,
-    var(--vip-accent)       var(--pct, 50%),
-    var(--vip-track-bg)     var(--pct, 50%),
-    var(--vip-track-bg)     100%
-  );
-  border-radius: 3px;
-  outline:      none;
-  cursor:       pointer;
-  transition:   background 0.06s;
+/* RT badge — small cyan pill next to RT slider labels */
+.rt-badge {
+  display:               inline-flex;
+  align-items:           center;
+  justify-content:       center;
+  font-size:             0.5rem;
+  font-weight:           700;
+  letter-spacing:        0.08em;
+  color:                 var(--vip-rt);
+  background:            rgba(0, 255, 231, 0.08);
+  border:                1px solid rgba(0, 255, 231, 0.32);
+  border-radius:         3px;
+  padding:               1px 4px;
+  line-height:           1;
+  flex-shrink:           0;
 }
 
-/* Webkit thumb */
-input[type="range"].slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width:         var(--vip-thumb-size);
-  height:        var(--vip-thumb-size);
-  border-radius: 50%;
-  background:    radial-gradient(circle at 40% 35%,
-                   var(--vip-accent-glow) 0%,
-                   var(--vip-accent)      60%,
-                   var(--vip-accent-dark) 100%);
-  box-shadow:    var(--vip-thumb-shadow);
-  border:        2px solid rgba(255,255,255,0.15);
-  cursor:        grab;
-  transition:    box-shadow 0.15s, transform 0.1s;
+/* Inline help icon */
+.sr-info {
+  font-size:             0.6rem;
+  font-style:            normal;
+  color:                 var(--vip-text-dim);
+  cursor:                help;
+  flex-shrink:           0;
+  opacity:               0.55;
+  transition:            opacity 0.15s ease, color 0.15s ease;
 }
-input[type="range"].slider::-webkit-slider-thumb:active {
-  cursor:     grabbing;
-  transform:  scale(1.18);
-  box-shadow: 0 0 14px var(--vip-accent-glow);
-}
-input[type="range"].slider:focus-visible::-webkit-slider-thumb {
-  outline:    2px solid var(--vip-accent-glow);
-  outline-offset: 2px;
+.sr-info:hover {
+  opacity:               1;
+  color:                 var(--vip-text);
 }
 
-/* Firefox thumb */
-input[type="range"].slider::-moz-range-thumb {
-  width:         var(--vip-thumb-size);
-  height:        var(--vip-thumb-size);
-  border-radius: 50%;
-  background:    radial-gradient(circle at 40% 35%,
-                   var(--vip-accent-glow) 0%,
-                   var(--vip-accent)      60%,
-                   var(--vip-accent-dark) 100%);
-  box-shadow:    var(--vip-thumb-shadow);
-  border:        2px solid rgba(255,255,255,0.15);
-  cursor:        grab;
-  transition:    box-shadow 0.15s, transform 0.1s;
+/* ══════════════════════════════════════════════════════════════
+   RANGE INPUT — the slider itself
+   ══════════════════════════════════════════════════════════════ */
+input[type="range"].slider,
+.sr-row > input[type="range"],
+.slider-row > input[type="range"] {
+  -webkit-appearance:    none;
+  appearance:            none;
+  width:                 100%;
+  height:                var(--vip-track-h);
+  border-radius:         999px;
+  outline:               none;
+  cursor:                pointer;
+  background:            linear-gradient(
+                           to right,
+                           var(--vip-accent) 0%,
+                           var(--vip-accent) var(--pct, 50%),
+                           var(--vip-track-empty) var(--pct, 50%),
+                           var(--vip-track-empty) 100%
+                         );
+  box-shadow:            inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  transition:            height 0.14s ease,
+                         box-shadow 0.18s ease;
 }
-input[type="range"].slider::-moz-range-thumb:active {
-  cursor:     grabbing;
-  transform:  scale(1.18);
-  box-shadow: 0 0 14px var(--vip-accent-glow);
+input[type="range"].slider:hover,
+.sr-row:hover > input[type="range"],
+.slider-row:hover > input[type="range"] {
+  height:                var(--vip-track-h-hov);
 }
-
-/* Firefox track (lower portion coloured via gradient on the input itself) */
-input[type="range"].slider::-moz-range-track {
-  height:       var(--vip-track-h);
-  border-radius: 3px;
-  background:   transparent;
-}
-input[type="range"].slider::-moz-range-progress {
-  height:        var(--vip-track-h);
-  border-radius: 3px 0 0 3px;
-  background:    var(--vip-accent);
-}
-
-/* Focus ring */
-input[type="range"].slider:focus-visible {
-  outline: 2px solid var(--vip-accent-glow);
-  outline-offset: 4px;
-  border-radius: 4px;
+input[type="range"].slider:active,
+.sr-row > input[type="range"]:active,
+.slider-row > input[type="range"]:active {
+  height:                var(--vip-track-h-hov);
+  box-shadow:            inset 0 1px 3px rgba(0, 0, 0, 0.7),
+                         0 0 0 1px var(--vip-accent-soft);
 }
 
-/* Disabled state */
-input[type="range"].slider:disabled {
-  opacity:  0.35;
-  cursor:   not-allowed;
-  filter:   grayscale(0.6);
+/* Real-time variant — cyan accent fill */
+input[type="range"].slider.realtime,
+.sr-row > input[type="range"].realtime,
+.slider-row > input[type="range"].realtime {
+  background:            linear-gradient(
+                           to right,
+                           var(--vip-rt) 0%,
+                           var(--vip-rt) var(--pct, 50%),
+                           var(--vip-track-empty) var(--pct, 50%),
+                           var(--vip-track-empty) 100%
+                         );
 }
-input[type="range"].slider:disabled::-webkit-slider-thumb {
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-/* ── Toast notifications ─────────────────────────────────────────────────── */
-#toastRegion {
-  position:   fixed;
-  bottom:     24px;
-  right:      24px;
-  z-index:    9999;
-  display:    flex;
-  flex-direction: column;
-  gap:        8px;
-  pointer-events: none;
-}
-.toast {
-  padding:      10px 18px;
-  border-radius: 8px;
-  font-size:    0.82rem;
-  font-weight:  600;
-  color:        #fff;
-  background:   #222236;
-  border:       1px solid rgba(255,255,255,0.1);
-  box-shadow:   0 4px 24px rgba(0,0,0,0.5);
-  animation:    toastIn 0.2s ease-out;
-  pointer-events: auto;
-}
-.toast-success { border-color: #2ecc71; color: #2ecc71; }
-.toast-error   { border-color: var(--vip-accent); color: var(--vip-accent); }
-.toast-warn    { border-color: var(--vip-rt-color); color: var(--vip-rt-color); }
-@keyframes toastIn {
-  from { opacity:0; transform: translateY(10px); }
-  to   { opacity:1; transform: translateY(0); }
+input[type="range"].slider.realtime:active,
+.sr-row > input[type="range"].realtime:active,
+.slider-row > input[type="range"].realtime:active {
+  box-shadow:            inset 0 1px 3px rgba(0, 0, 0, 0.7),
+                         0 0 0 1px var(--vip-rt-soft);
 }
 
-/* ── Panel / Tab ────────────────────────────────────────────────────────── */
+/* ── Webkit / Blink thumb ─────────────────────────────────── */
+input[type="range"].slider::-webkit-slider-thumb,
+.sr-row > input[type="range"]::-webkit-slider-thumb,
+.slider-row > input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance:    none;
+  width:                 var(--vip-thumb-size);
+  height:                var(--vip-thumb-size);
+  border-radius:         50%;
+  border:                2px solid rgba(255, 255, 255, 0.92);
+  background:            radial-gradient(
+                           circle at 35% 30%,
+                           #ffffff 0%,
+                           #ff8a96 45%,
+                           var(--vip-accent) 100%
+                         );
+  box-shadow:            0 1px 3px rgba(0, 0, 0, 0.6),
+                         0 0 8px var(--vip-accent-soft);
+  cursor:                grab;
+  transition:            transform 0.14s cubic-bezier(.22, .7, 0, 1.05),
+                         box-shadow 0.18s ease,
+                         width 0.14s ease,
+                         height 0.14s ease;
+}
+input[type="range"].slider:hover::-webkit-slider-thumb,
+.sr-row:hover > input[type="range"]::-webkit-slider-thumb,
+.slider-row:hover > input[type="range"]::-webkit-slider-thumb {
+  width:                 var(--vip-thumb-size-hov);
+  height:                var(--vip-thumb-size-hov);
+  box-shadow:            0 1px 4px rgba(0, 0, 0, 0.65),
+                         0 0 0 4px var(--vip-accent-soft),
+                         0 0 14px var(--vip-accent-glow);
+}
+input[type="range"].slider:active::-webkit-slider-thumb,
+.sr-row > input[type="range"]:active::-webkit-slider-thumb,
+.slider-row > input[type="range"]:active::-webkit-slider-thumb {
+  cursor:                grabbing;
+  transform:             scale(1.12);
+  box-shadow:            0 1px 4px rgba(0, 0, 0, 0.7),
+                         0 0 0 6px var(--vip-accent-soft),
+                         0 0 20px var(--vip-accent-glow);
+}
+
+/* Realtime thumb — cyan core */
+input[type="range"].slider.realtime::-webkit-slider-thumb,
+.sr-row > input[type="range"].realtime::-webkit-slider-thumb,
+.slider-row > input[type="range"].realtime::-webkit-slider-thumb {
+  background:            radial-gradient(
+                           circle at 35% 30%,
+                           #ffffff 0%,
+                           #7cfff1 45%,
+                           var(--vip-rt) 100%
+                         );
+  box-shadow:            0 1px 3px rgba(0, 0, 0, 0.6),
+                         0 0 8px var(--vip-rt-soft);
+}
+input[type="range"].slider.realtime:hover::-webkit-slider-thumb,
+.sr-row:hover > input[type="range"].realtime::-webkit-slider-thumb,
+.slider-row:hover > input[type="range"].realtime::-webkit-slider-thumb {
+  box-shadow:            0 1px 4px rgba(0, 0, 0, 0.65),
+                         0 0 0 4px var(--vip-rt-soft),
+                         0 0 14px var(--vip-rt-glow);
+}
+input[type="range"].slider.realtime:active::-webkit-slider-thumb,
+.sr-row > input[type="range"].realtime:active::-webkit-slider-thumb,
+.slider-row > input[type="range"].realtime:active::-webkit-slider-thumb {
+  box-shadow:            0 1px 4px rgba(0, 0, 0, 0.7),
+                         0 0 0 6px var(--vip-rt-soft),
+                         0 0 20px var(--vip-rt-glow);
+}
+
+/* ── Firefox track + thumb ────────────────────────────────── */
+input[type="range"].slider::-moz-range-track,
+.sr-row > input[type="range"]::-moz-range-track,
+.slider-row > input[type="range"]::-moz-range-track {
+  height:                var(--vip-track-h);
+  border-radius:         999px;
+  background:            var(--vip-track-empty);
+  border:                none;
+}
+input[type="range"].slider::-moz-range-progress,
+.sr-row > input[type="range"]::-moz-range-progress,
+.slider-row > input[type="range"]::-moz-range-progress {
+  height:                var(--vip-track-h);
+  border-radius:         999px;
+  background:            var(--vip-accent);
+}
+input[type="range"].slider.realtime::-moz-range-progress,
+.sr-row > input[type="range"].realtime::-moz-range-progress,
+.slider-row > input[type="range"].realtime::-moz-range-progress {
+  background:            var(--vip-rt);
+}
+input[type="range"].slider::-moz-range-thumb,
+.sr-row > input[type="range"]::-moz-range-thumb,
+.slider-row > input[type="range"]::-moz-range-thumb {
+  width:                 var(--vip-thumb-size);
+  height:                var(--vip-thumb-size);
+  border-radius:         50%;
+  border:                2px solid rgba(255, 255, 255, 0.92);
+  background:            radial-gradient(
+                           circle at 35% 30%,
+                           #ffffff 0%,
+                           #ff8a96 45%,
+                           var(--vip-accent) 100%
+                         );
+  box-shadow:            0 1px 3px rgba(0, 0, 0, 0.6),
+                         0 0 8px var(--vip-accent-soft);
+  cursor:                grab;
+  transition:            transform 0.14s ease, box-shadow 0.18s ease;
+}
+input[type="range"].slider.realtime::-moz-range-thumb,
+.sr-row > input[type="range"].realtime::-moz-range-thumb,
+.slider-row > input[type="range"].realtime::-moz-range-thumb {
+  background:            radial-gradient(
+                           circle at 35% 30%,
+                           #ffffff 0%,
+                           #7cfff1 45%,
+                           var(--vip-rt) 100%
+                         );
+  box-shadow:            0 1px 3px rgba(0, 0, 0, 0.6),
+                         0 0 8px var(--vip-rt-soft);
+}
+input[type="range"].slider:hover::-moz-range-thumb,
+.sr-row:hover > input[type="range"]::-moz-range-thumb,
+.slider-row:hover > input[type="range"]::-moz-range-thumb {
+  box-shadow:            0 1px 4px rgba(0, 0, 0, 0.65),
+                         0 0 0 4px var(--vip-accent-soft),
+                         0 0 14px var(--vip-accent-glow);
+}
+input[type="range"].slider.realtime:hover::-moz-range-thumb,
+.sr-row:hover > input[type="range"].realtime::-moz-range-thumb,
+.slider-row:hover > input[type="range"].realtime::-moz-range-thumb {
+  box-shadow:            0 1px 4px rgba(0, 0, 0, 0.65),
+                         0 0 0 4px var(--vip-rt-soft),
+                         0 0 14px var(--vip-rt-glow);
+}
+
+/* ── Focus ring (keyboard nav) ────────────────────────────── */
+input[type="range"].slider:focus-visible,
+.sr-row > input[type="range"]:focus-visible,
+.slider-row > input[type="range"]:focus-visible {
+  outline:               none;
+}
+input[type="range"].slider:focus-visible::-webkit-slider-thumb,
+.sr-row > input[type="range"]:focus-visible::-webkit-slider-thumb,
+.slider-row > input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow:            0 0 0 3px #050510,
+                         0 0 0 5px var(--vip-accent),
+                         0 1px 4px rgba(0, 0, 0, 0.6);
+}
+input[type="range"].slider.realtime:focus-visible::-webkit-slider-thumb,
+.sr-row > input[type="range"].realtime:focus-visible::-webkit-slider-thumb,
+.slider-row > input[type="range"].realtime:focus-visible::-webkit-slider-thumb {
+  box-shadow:            0 0 0 3px #050510,
+                         0 0 0 5px var(--vip-rt),
+                         0 1px 4px rgba(0, 0, 0, 0.6);
+}
+input[type="range"].slider:focus-visible::-moz-range-thumb,
+.sr-row > input[type="range"]:focus-visible::-moz-range-thumb,
+.slider-row > input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow:            0 0 0 3px #050510,
+                         0 0 0 5px var(--vip-accent);
+}
+input[type="range"].slider.realtime:focus-visible::-moz-range-thumb,
+.sr-row > input[type="range"].realtime:focus-visible::-moz-range-thumb,
+.slider-row > input[type="range"].realtime:focus-visible::-moz-range-thumb {
+  box-shadow:            0 0 0 3px #050510,
+                         0 0 0 5px var(--vip-rt);
+}
+
+/* ── Disabled state ───────────────────────────────────────── */
+input[type="range"].slider:disabled,
+.sr-row > input[type="range"]:disabled,
+.slider-row > input[type="range"]:disabled {
+  opacity:               0.35;
+  cursor:                not-allowed;
+  filter:                grayscale(0.7);
+}
+input[type="range"].slider:disabled::-webkit-slider-thumb,
+.sr-row > input[type="range"]:disabled::-webkit-slider-thumb,
+.slider-row > input[type="range"]:disabled::-webkit-slider-thumb {
+  cursor:                not-allowed;
+  box-shadow:            none;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   GROUP / PANEL TWEAKS
+   ══════════════════════════════════════════════════════════════ */
 .panel {
-  display: none;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 0;
+  display:               none;
+  flex-direction:        column;
+  gap:                   1px;
+  padding:               6px 0;
 }
 .panel.active { display: flex; }
 
-/* Tab bar active tab accent */
 #tabBar [data-tab].active {
-  color:         var(--vip-accent-glow);
-  border-bottom: 2px solid var(--vip-accent);
+  color:                 #fff;
+  border-bottom:         2px solid var(--vip-accent);
 }
 
-/* ── Preset button ──────────────────────────────────────────────────────── */
+/* Preset / action buttons keep their look but receive a sleeker hover */
 .btn-preset {
-  background:    transparent;
-  border:        1px solid var(--vip-accent-dark);
-  color:         var(--vip-text);
-  border-radius: 5px;
-  padding:       4px 10px;
-  font-size:     0.75rem;
-  cursor:        pointer;
-  transition:    background 0.15s, border-color 0.15s;
+  background:            transparent;
+  border:                1px solid rgba(255, 42, 61, 0.45);
+  color:                 var(--vip-text);
+  border-radius:         5px;
+  padding:               4px 10px;
+  font-size:             0.72rem;
+  cursor:                pointer;
+  transition:            background 0.15s ease,
+                         border-color 0.15s ease,
+                         color 0.15s ease,
+                         box-shadow 0.18s ease;
 }
 .btn-preset:hover {
-  background:    var(--vip-accent-dark);
-  border-color:  var(--vip-accent);
-  color:         #fff;
+  background:            rgba(255, 42, 61, 0.08);
+  border-color:          var(--vip-accent);
+  color:                 #fff;
+  box-shadow:            0 0 10px rgba(255, 42, 61, 0.2);
 }
 
-/* ── Responsive ─────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════
+   TOAST (kept for compatibility)
+   ══════════════════════════════════════════════════════════════ */
+#toastRegion {
+  position:              fixed;
+  bottom:                24px;
+  right:                 24px;
+  z-index:               9999;
+  display:               flex;
+  flex-direction:        column;
+  gap:                   8px;
+  pointer-events:        none;
+}
+.toast {
+  padding:               10px 18px;
+  border-radius:         8px;
+  font-size:             0.82rem;
+  font-weight:           600;
+  color:                 #fff;
+  background:            #1a1a26;
+  border:                1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:            0 4px 24px rgba(0, 0, 0, 0.55);
+  animation:             toastIn 0.18s ease-out;
+  pointer-events:        auto;
+}
+.toast-success { border-color: #2ecc71; color: #2ecc71; }
+.toast-error   { border-color: var(--vip-accent); color: var(--vip-accent); }
+.toast-warn    { border-color: var(--vip-rt); color: var(--vip-rt); }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ══════════════════════════════════════════════════════════════ */
 @media (max-width: 600px) {
+  .sr-row,
   .slider-row {
-    grid-template-columns: 110px 1fr 52px;
-    padding: 5px 8px;
+    grid-template-columns: 110px 1fr 48px;
+    padding:             5px 8px;
+    gap:                 8px;
   }
-  .slider-label { font-size: 0.72rem; }
-  .slider-val   { font-size: 0.68rem; min-width: 42px; }
+  .sr-label,
+  .slider-label   { font-size: 0.7rem; }
+  .sr-val,
+  .slider-val     { font-size: 0.62rem; min-width: 44px; padding: 2px 5px; }
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   VIBRANT SLIDER POLISH — v26
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* Sleeker .slider input — used as the base class */
-input[type="range"].slider {
-  height: var(--vip-track-h);
-  background: linear-gradient(
-    to right,
-    var(--vip-accent)   0%,
-    var(--vip-accent-2) var(--pct, 50%),
-    rgba(255,255,255,.05) var(--pct, 50%),
-    rgba(255,255,255,.05) 100%
-  );
-  border-radius: 999px;
-  box-shadow:
-    inset 0 1px 3px rgba(0,0,0,.55),
-    inset 0 -1px 0 rgba(255,255,255,.03),
-    0 0 0 1px rgba(255,255,255,.02);
-  transition: height .12s ease, box-shadow .18s ease, background .1s ease;
-}
-input[type="range"].slider:hover { height: 7px; }
-input[type="range"].slider:active {
-  height: 8px;
-  box-shadow:
-    inset 0 1px 4px rgba(0,0,0,.65),
-    0 0 0 1px rgba(255,42,61,.25),
-    0 0 22px rgba(255,42,61,.18);
-}
-
-/* Realtime variant — full-track cyan→violet fill with hard split at --pct.
-   Two-layer technique: top layer is transparent up to --pct then grey (unfilled
-   track), revealing the static cyan→violet gradient on the bottom layer below. */
-input[type="range"].slider.realtime,
-.sr-row > input[type="range"].realtime {
-  background:
-    linear-gradient(
-      to right,
-      transparent              0%,
-      transparent              var(--pct, 50%),
-      rgba(255,255,255,.05)    var(--pct, 50%),
-      rgba(255,255,255,.05)    100%
-    ),
-    linear-gradient(
-      to right,
-      var(--vip-rt-color)      0%,
-      rgba(167,107,255,.95)    100%
-    );
-}
-
-/* Webkit thumb — slick chrome ball */
-input[type="range"].slider::-webkit-slider-thumb {
-  width:  var(--vip-thumb-size);
-  height: var(--vip-thumb-size);
-  background:
-    radial-gradient(circle at 35% 28%,
-      #ffffff 0%,
-      #ffd9dc 35%,
-      var(--vip-accent) 65%,
-      var(--vip-accent-dark) 100%);
-  border: 2px solid rgba(255,255,255,.85);
-  box-shadow:
-    0 1px 2px rgba(0,0,0,.65),
-    0 0 0 0 rgba(255,42,61,0),
-    var(--vip-thumb-shadow);
-  transition:
-    transform .14s cubic-bezier(.22,.7,0,1.05),
-    box-shadow .18s ease,
-    border-color .15s ease;
-}
-input[type="range"].slider:hover::-webkit-slider-thumb {
-  transform: scale(1.18);
-  box-shadow:
-    0 1px 4px rgba(0,0,0,.65),
-    0 0 0 5px rgba(255,42,61,.18),
-    0 0 18px rgba(255,42,61,.55);
-}
-input[type="range"].slider:active::-webkit-slider-thumb {
-  transform: scale(1.32);
-  cursor: grabbing;
-  box-shadow:
-    0 1px 4px rgba(0,0,0,.7),
-    0 0 0 8px rgba(255,42,61,.18),
-    0 0 28px rgba(255,42,61,.7);
-}
-
-/* Realtime thumb — cyan */
-input[type="range"].slider.realtime::-webkit-slider-thumb,
-.sr-row > input[type="range"].realtime::-webkit-slider-thumb {
-  background:
-    radial-gradient(circle at 35% 28%,
-      #ffffff 0%,
-      #b8fff5 35%,
-      var(--vip-rt-color) 65%,
-      #007a6e 100%);
-  box-shadow:
-    0 1px 2px rgba(0,0,0,.65),
-    0 0 12px rgba(0,255,231,.55);
-}
-input[type="range"].slider.realtime:hover::-webkit-slider-thumb,
-.sr-row > input[type="range"].realtime:hover::-webkit-slider-thumb {
-  box-shadow:
-    0 1px 4px rgba(0,0,0,.65),
-    0 0 0 5px rgba(0,255,231,.22),
-    0 0 18px rgba(0,255,231,.65);
-}
-
-/* Firefox thumb */
-input[type="range"].slider::-moz-range-thumb {
-  width:  var(--vip-thumb-size);
-  height: var(--vip-thumb-size);
-  background:
-    radial-gradient(circle at 35% 28%,
-      #ffffff 0%, #ffd9dc 35%,
-      var(--vip-accent) 65%, var(--vip-accent-dark) 100%);
-  border: 2px solid rgba(255,255,255,.85);
-  box-shadow: var(--vip-thumb-shadow);
-  transition: transform .14s ease, box-shadow .18s ease;
-}
-input[type="range"].slider:hover::-moz-range-thumb {
-  transform: scale(1.18);
-  box-shadow: 0 0 0 5px rgba(255,42,61,.18), 0 0 18px rgba(255,42,61,.55);
-}
-input[type="range"].slider::-moz-range-progress {
-  background: linear-gradient(90deg, var(--vip-accent), var(--vip-accent-2));
-  border-radius: 999px;
-}
-
-/* RT badge — cyan vibe, blink on hover/focus only to avoid constant repaint */
-.rt-badge {
-  color: var(--vip-rt-color);
-  border-color: rgba(0,255,231,.4);
-  background: rgba(0,255,231,.06);
-  text-shadow: 0 0 6px rgba(0,255,231,.4);
-}
-.rt-badge:hover,
-.slider-row:hover .rt-badge,
-.sr-row:hover .rt-badge {
-  animation: vip-rt-blink 2.4s ease-in-out infinite;
-}
-@keyframes vip-rt-blink {
-  0%,100% { opacity: .85; box-shadow: 0 0 0 0 rgba(0,255,231,0); }
-  50%     { opacity: 1;   box-shadow: 0 0 8px rgba(0,255,231,.35); }
-}
-
-/* Value readout chip — vibrant */
-.slider-val, .sr-val {
-  font-variant-numeric: tabular-nums;
-  transition: color .15s ease, background .15s ease, border-color .15s ease, box-shadow .2s ease, transform .12s ease;
-}
-
-/* Disabled state */
-input[type="range"].slider:disabled {
-  filter: grayscale(0.6) brightness(.7);
-}
-
+/* ══════════════════════════════════════════════════════════════
+   REDUCED MOTION
+   ══════════════════════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
   input[type="range"].slider,
   input[type="range"].slider::-webkit-slider-thumb,
   input[type="range"].slider::-moz-range-thumb,
-  .rt-badge { animation: none !important; transition: none !important; }
+  .sr-row,
+  .slider-row,
+  .sr-val,
+  .slider-val,
+  .btn-preset,
+  .rt-badge {
+    animation:           none !important;
+    transition:          none !important;
+  }
 }
