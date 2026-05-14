@@ -10,7 +10,7 @@
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/handler" },
-    { "source": "/app/((?!sw\\.js|dsp-processor\\.js|ml-worker\\.js|dsp-worker\\.js|ring-buffer\\.js|dsp-core\\.js|pipeline-orchestrator\\.js|pipeline-state\\.js).*)", "destination": "/app/index.html" },
+    { "source": "/app/((?!sw\\.js|dsp-processor\\.js|voice-isolate-processor\\.js|ml-worker\\.js|dsp-worker\\.js|ring-buffer\\.js|dsp-core\\.js|pipeline-orchestrator\\.js|pipeline-state\\.js).*)", "destination": "/app/index.html" },
     { "source": "/app", "destination": "/app/index.html" },
     { "source": "/((?!api/|lib/|assets/|app/|sw\\.js|manifest\\.json|icon\\.jpg|favicon\\..*).*)","destination": "/index.html" }
   ],
@@ -42,7 +42,17 @@
       "headers": [
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
         { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
-        { "key": "Content-Type", "value": "application/javascript" }
+        { "key": "Content-Type", "value": "application/javascript" },
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/app/voice-isolate-processor.js",
+      "headers": [
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
+        { "key": "Content-Type", "value": "application/javascript" },
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
       ]
     },
     {
