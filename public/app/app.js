@@ -1603,6 +1603,11 @@ class VoiceIsolatePro {
     this.isProcessing = true;
     this.abortFlag = false;
 
+    if (this.dom.processBtn) {
+      this.dom.processBtn.disabled = true;
+      this.dom.processBtn.innerHTML = '<span class="vip-eq-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>Processing…';
+      this.dom.processBtn.classList.add('is-processing');
+    }
     if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.style.display = 'none';
     if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display = 'none';
     if (this.dom.mobileStopBtn) this.dom.mobileStopBtn.style.display = 'inline-flex';
@@ -1693,6 +1698,11 @@ class VoiceIsolatePro {
       this.setStatus('ERROR');
     } finally {
       this.isProcessing = false;
+      if (this.dom.processBtn) {
+        this.dom.processBtn.disabled = false;
+        this.dom.processBtn.textContent = 'Process';
+        this.dom.processBtn.classList.remove('is-processing');
+      }
       if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.style.display='inline-flex';
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.style.display='inline-flex';
       if (this.dom.mobileStopBtn) this.dom.mobileStopBtn.style.display='none';
