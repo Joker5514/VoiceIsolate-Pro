@@ -3,34 +3,55 @@
  * AudioWorkletProcessor: Threads from Space v8
  * ==========================================================
  * Architecture:
- *   1. Accumulate 128-sample quanta into a 4096-pt ring buffer
- *   2. When ring is full: apply Hann window + in-place FFT (single forward STFT)
- *   3. Post magnitude frame via SharedArrayBuffer to main thread
- *      (main thread routes it to ml-worker.js for ONNX inference)
- *   4. Read mask back from output SAB (written by ml-worker)
- *   5. Apply mask to magnitude in-place, reconstruct phase
- *   6. Single inverse FFT (iSTFT) → overlap-add to output ring
- *   7. Drain 128 samples per quantum to AudioWorklet output
+ *   1. Accumulate 128-sample quanta into a 4096-pt ring buffer (mono mix)
+ *   2. Every HOP_SIZE (1024) new samples: apply periodic Hann window + single
+ *      forward FFT (one STFT per hop — strict single-pass constraint)
+ *   3. Post mag+phase frame to main thread via SharedArrayBuffer
+ *      (main thread routes to ml-worker.js for ONNX inference)
+ *   4. Read ML mask back from output SAB (written by ml-worker) non-blocking
+ *   5. Reconstruct complex spectrum via polar form: re=mag*cos(pha), im=mag*sin(pha)
+ *      Restore conjugate symmetry for DC, positive bins, and Nyquist
+ *   6. Single inverse FFT (iSTFT) → synthesis Hann window → overlap-add
+ *      Output ring write pointer advances by HOP_SIZE only
+ *   7. Drain 128 samples per quantum from output ring with brickwall limiter
+ *
+ * FIXES applied (2026-05-14):
+ *   [1] OLA write pointer: was += FFT_SIZE, now += HOP_SIZE  (destroyed overlap)
+ *   [2] Frame trigger: was `if (_filled >= FFT_SIZE)`, now `while` loop
+ *       + dedicated _inRd cursor advancing by HOP_SIZE  (non-overlapping blocks)
+ *   [3] Phase reconstruction: was scalar multiply on re/im, now polar re-synthesis
+ *       (mag*cos(pha), mag*sin(pha)) — preserves phase fidelity
+ *   [4] Buffer transfer bug: mag.buffer was transferred (detached) before use,
+ *       now cloned via slice() for postMessage fallback
+ *   [5] Periodic Hann window: denominator was N-1 (asymmetric), now N (periodic)
+ *       required for energy-preserving OLA at 75% overlap
+ *   [6] DC/Nyquist bins: excluded from conjugate symmetry loop, handled explicitly
  *
  * SharedArrayBuffer layout (Int32 header + Float32 payload):
- *   [0] writeIdx   — producer increments after each write
- *   [1] readIdx    — consumer increments after each read
- *   [2] capacity   — ring slots (set at init)
- *   [3] halfN      — FFT bins (FFT_SIZE/2+1)
- *   [SAB_HEADER_BYTES .. +halfN*2*4] — interleaved re/im per frame (input SAB)
- *   [SAB_HEADER_BYTES .. +halfN*4]   — mask magnitudes (output SAB)
+ *   inputSAB:
+ *     [0..3]  Int32 flags: [writeGen, readGen, capacity, halfN]
+ *     [16..+HALF_BINS*4]         mag  (Float32 x HALF_BINS)
+ *     [16+HALF_BINS*4..+HALF_BINS*4] pha (Float32 x HALF_BINS)
+ *   outputSAB:
+ *     [0..3]  Int32 flags: [writeGen, readGen, capacity, halfN]
+ *     [16..+HALF_BINS*4]         mask (Float32 x HALF_BINS, values 0..1)
  */
 
-const FFT_SIZE   = 4096;
-const HOP_SIZE   = 1024;
-const HALF_BINS  = FFT_SIZE / 2 + 1;
-const FLAG_SLOTS = 4;
+const FFT_SIZE        = 4096;
+const HOP_SIZE        = 1024;           // 75% overlap
+const HALF_BINS       = FFT_SIZE / 2 + 1;
+const FLAG_SLOTS      = 4;
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
 
-// ─── Tiny in-place Cooley-Tukey FFT (no import needed in worklet) ────────────
+// ─── OLA normalisation scalar for periodic Hann at 75% overlap ───────────────
+// sum of squared Hann windows spaced HOP apart = FFT_SIZE / (2 * HOP_SIZE) = 2.0
+// So we divide by 2 during synthesis to normalise energy
+const OLA_NORM = 1.0 / (FFT_SIZE / (2.0 * HOP_SIZE)); // = 0.5
+
+// ─── In-place Cooley-Tukey radix-2 FFT (worklet-safe, no imports) ─────────────
 function fftInPlace(re, im, inverse = false) {
   const N = re.length;
-  // bit-reversal
+  // Bit-reversal permutation
   let j = 0;
   for (let i = 1; i < N; i++) {
     let bit = N >> 1;
@@ -41,7 +62,7 @@ function fftInPlace(re, im, inverse = false) {
       [im[i], im[j]] = [im[j], im[i]];
     }
   }
-  // butterfly
+  // Butterfly stages
   for (let len = 2; len <= N; len <<= 1) {
     const half = len >> 1;
     const ang  = (inverse ? 2 : -2) * Math.PI / len;
@@ -50,11 +71,11 @@ function fftInPlace(re, im, inverse = false) {
     for (let i = 0; i < N; i += len) {
       let cRe = 1, cIm = 0;
       for (let k = 0; k < half; k++) {
-        const uRe = re[i+k],          uIm = im[i+k];
+        const uRe = re[i+k],                       uIm = im[i+k];
         const vRe = re[i+k+half]*cRe - im[i+k+half]*cIm;
         const vIm = re[i+k+half]*cIm + im[i+k+half]*cRe;
-        re[i+k]        = uRe + vRe;  im[i+k]        = uIm + vIm;
-        re[i+k+half]   = uRe - vRe;  im[i+k+half]   = uIm - vIm;
+        re[i+k]      = uRe + vRe;  im[i+k]      = uIm + vIm;
+        re[i+k+half] = uRe - vRe;  im[i+k+half] = uIm - vIm;
         const nr = cRe*wRe - cIm*wIm;
         cIm      = cRe*wIm + cIm*wRe;
         cRe      = nr;
@@ -65,12 +86,16 @@ function fftInPlace(re, im, inverse = false) {
     for (let i = 0; i < N; i++) { re[i] /= N; im[i] /= N; }
   }
 }
-const fft = fftInPlace;
 
+/**
+ * FIX [5]: Periodic (DFT-even) Hann window — denominator N, not N-1.
+ * With 75% overlap the sum of squared windows = FFT_SIZE / (2*HOP_SIZE) = 2.
+ * Using N-1 (symmetric window) breaks this identity and causes amplitude ripple.
+ */
 function makeHannWindow(N) {
   const w = new Float32Array(N);
   for (let i = 0; i < N; i++) {
-    w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
+    w[i] = 0.5 * (1.0 - Math.cos((2.0 * Math.PI * i) / N)); // periodic form
   }
   return w;
 }
@@ -83,46 +108,57 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._im  = new Float32Array(FFT_SIZE);
     this._win = makeHannWindow(FFT_SIZE);
 
-    // Ring buffers (audio domain, not SAB)
-    this._inRing  = new Float32Array(FFT_SIZE * 2);
-    this._outRing = new Float32Array(FFT_SIZE * 4);
-    this._inWr  = 0;
-    this._outRd = 0;
-    this._outWr = 0;
-    this._filled = 0; // samples in input ring
+    // Input ring: large enough for FFT_SIZE look-back + one full write burst
+    this._inRing = new Float32Array(FFT_SIZE * 4);
+    this._inWr   = 0;  // write head — advances every sample
+    this._inRd   = 0;  // FIX [2]: read/frame-start cursor — advances by HOP_SIZE
 
-    // SABs — set via port message
-    this._inputSAB  = null;
-    this._outputSAB = null;
+    // Output ring: large enough for several overlapping frames in flight
+    this._outRing = new Float32Array(FFT_SIZE * 8);
+    this._outRd   = 0;
+    this._outWr   = 0;
+
+    // How many new samples have arrived since last frame trigger
+    this._newSamples = 0; // FIX [2]: counts NEW samples since last hop, not total
+
+    // SABs — injected via port 'initSAB' message
+    this._inputSAB    = null;
+    this._outputSAB   = null;
     this._inputFlags  = null;
     this._outputFlags = null;
-    this._inputView   = null; // Float32 re+im
-    this._outputView  = null; // Float32 mask
+    this._inputView   = null;  // Float32[HALF_BINS*2]: mag then pha
+    this._outputView  = null;  // Float32[HALF_BINS]:   mask values 0..1
 
-    // DSP params (updated via port)
+    // DSP params — updated live via port 'params' message
     this._params = {
-      outGain:      1.0,
-      dryWet:       1.0,
-      nrAmount:     0.78,
-      gateThresh:   -42,
-      gateRange:    -60,
-      hpFreq:       80,
-      lpFreq:       18000,
-      compThresh:   -24,
-      compRatio:    4,
-      compAttack:   10,
-      compRelease:  150,
-      compMakeup:   0,
-      limThresh:    -1,
+      outGain:     0.0,   // dB
+      dryWet:      1.0,   // 0=dry, 1=wet
+      nrAmount:    0.78,
+      gateThresh:  -42,   // dBFS
+      gateRange:   -60,   // dB attenuation below gate
+      hpFreq:      80,    // Hz
+      lpFreq:      18000, // Hz
+      compThresh:  -24,   // dBFS
+      compRatio:   4,
+      compAttack:  10,    // ms
+      compRelease: 150,   // ms
+      compMakeup:  0,     // dB
+      limThresh:   -1,    // dBFS
     };
 
-    // Compressor state
-    this._envDb = -96;
+    // Gate hold state: prevents clicking on rapid gate transitions
+    this._gateHoldSamples = 0;
+    const GATE_HOLD_MS    = 20;
+    this._GATE_HOLD_LEN   = Math.round((GATE_HOLD_MS / 1000) * sampleRate);
+
+    // Compressor envelope state
+    this._envDb  = -96;
     this._gainDb = 0;
 
     this.port.onmessage = (ev) => this._onMessage(ev.data);
   }
 
+  // ── Message handler ────────────────────────────────────────────────────────
   _onMessage(msg) {
     if (!msg) return;
     switch (msg.type) {
@@ -131,10 +167,10 @@ class DSPProcessor extends AudioWorkletProcessor {
         this._outputSAB   = msg.outputSAB;
         this._inputFlags  = new Int32Array(this._inputSAB,  0, FLAG_SLOTS);
         this._outputFlags = new Int32Array(this._outputSAB, 0, FLAG_SLOTS);
+        // mag stored at [0..HALF_BINS), pha at [HALF_BINS..HALF_BINS*2)
         this._inputView   = new Float32Array(this._inputSAB,  SAB_HEADER_BYTES, HALF_BINS * 2);
         this._outputView  = new Float32Array(this._outputSAB, SAB_HEADER_BYTES, HALF_BINS);
-        // signal main thread that SABs are live
-        this.port.postMessage({ type: 'sabReady', inputSAB: this._inputSAB, outputSAB: this._outputSAB });
+        this.port.postMessage({ type: 'sabReady' });
         break;
       }
       case 'params': {
@@ -148,71 +184,103 @@ class DSPProcessor extends AudioWorkletProcessor {
     }
   }
 
+  // ── Main audio callback (called every 128 samples by the Web Audio engine) ──
   process(inputs, outputs) {
     const input  = inputs[0];
     const output = outputs[0];
     if (!input || !input[0]) return true;
 
-    const inCh  = input[0];
     const outCh = output[0];
-    const Q = inCh.length; // 128
+    const Q     = outCh.length; // always 128
 
-    // Gate check — skip processing if below threshold
+    // Mix to mono: average all available input channels
+    const numCh = input.length;
+    const mono   = new Float32Array(Q);
+    for (let c = 0; c < numCh; c++) {
+      const ch = input[c];
+      for (let i = 0; i < Q; i++) mono[i] += ch[i];
+    }
+    if (numCh > 1) {
+      for (let i = 0; i < Q; i++) mono[i] /= numCh;
+    }
+
+    // Noise gate with hold to prevent clicks
     let rms = 0;
-    for (let i = 0; i < Q; i++) rms += inCh[i] * inCh[i];
+    for (let i = 0; i < Q; i++) rms += mono[i] * mono[i];
     rms = Math.sqrt(rms / Q);
-    const rmsDb = rms > 0 ? 20 * Math.log10(rms) : -160;
-    const gated = rmsDb < this._params.gateThresh;
+    const rmsDb = rms > 0 ? 20.0 * Math.log10(rms) : -160.0;
+    const belowGate = rmsDb < this._params.gateThresh;
 
-    // Accumulate into input ring
+    if (!belowGate) {
+      this._gateHoldSamples = this._GATE_HOLD_LEN;
+    } else if (this._gateHoldSamples > 0) {
+      this._gateHoldSamples -= Q;
+    }
+    const gated = belowGate && this._gateHoldSamples <= 0;
+
+    // Write mono (or silence) into input ring
+    const inLen = this._inRing.length;
     for (let i = 0; i < Q; i++) {
-      this._inRing[this._inWr] = gated ? 0 : inCh[i];
-      this._inWr = (this._inWr + 1) % this._inRing.length;
+      this._inRing[this._inWr] = gated ? 0.0 : mono[i];
+      this._inWr = (this._inWr + 1) % inLen;
     }
-    this._filled += Q;
+    this._newSamples += Q;
 
-    // Process when we have a full FFT frame
-    if (this._filled >= FFT_SIZE) {
+    // FIX [2]: trigger a new frame for every HOP_SIZE new samples accumulated
+    while (this._newSamples >= HOP_SIZE) {
       this._processFrame();
-      this._filled -= HOP_SIZE;
+      this._newSamples -= HOP_SIZE;
     }
 
-    // Drain output ring → output channel
-    const avail = (this._outWr - this._outRd + this._outRing.length) % this._outRing.length;
-    const outGain = Math.pow(10, (this._params.outGain || 0) / 20);
+    // Drain output ring into output channel(s)
+    const outLen  = this._outRing.length;
+    const avail   = (this._outWr - this._outRd + outLen) % outLen;
+    const outGain = Math.pow(10.0, (this._params.outGain || 0.0) / 20.0);
+    const lim     = Math.pow(10.0, (this._params.limThresh || -1.0) / 20.0);
+
     if (avail >= Q) {
       for (let i = 0; i < Q; i++) {
         let s = this._outRing[this._outRd] * outGain;
+        // Zero the slot as we read it (ring reuse)
+        this._outRing[this._outRd] = 0.0;
+        this._outRd = (this._outRd + 1) % outLen;
         // Brickwall limiter
-        const lim = Math.pow(10, (this._params.limThresh || -1) / 20);
         if (s >  lim) s =  lim;
         if (s < -lim) s = -lim;
-        outCh[i]  = s;
-        this._outRd = (this._outRd + 1) % this._outRing.length;
+        outCh[i] = s;
       }
     } else {
-      // Not enough data yet — output silence
-      for (let i = 0; i < Q; i++) outCh[i] = 0;
+      // Pipeline latency — not enough processed samples yet
+      outCh.fill(0.0);
+    }
+
+    // Copy mono output to all output channels (worklet may have stereo outputs)
+    for (let c = 1; c < output.length; c++) {
+      output[c].set(outCh);
     }
 
     return true;
   }
 
+  // ── Spectral processing frame (one hop) ────────────────────────────────────
   _processFrame() {
-    // Copy FFT_SIZE samples from input ring into re/im
-    const ringLen = this._inRing.length;
-    const start   = (this._inWr - this._filled + ringLen) % ringLen;
+    const inLen = this._inRing.length;
 
+    // FIX [2]: read FFT_SIZE samples starting from _inRd (the frame start cursor)
+    // _inRd points to the oldest sample of this frame window
+    const frameStart = this._inRd;
     for (let i = 0; i < FFT_SIZE; i++) {
-      const idx = (start + i) % ringLen;
-      this._re[i] = this._inRing[idx] * this._win[i];
-      this._im[i] = 0;
+      const idx = (frameStart + i) % inLen;
+      this._re[i] = this._inRing[idx] * this._win[i]; // analysis window
+      this._im[i] = 0.0;
     }
+    // Advance read cursor by one hop so next frame is offset by HOP_SIZE
+    this._inRd = (this._inRd + HOP_SIZE) % inLen;
 
-    // ── SINGLE FORWARD STFT ─────────────────────────────────────────────
-    fft(this._re, this._im, false);
+    // ── SINGLE FORWARD STFT ────────────────────────────────────────────────
+    fftInPlace(this._re, this._im, false);
 
-    // Compute magnitude spectrum
+    // Convert to polar: magnitude + phase for all positive bins + DC + Nyquist
     const mag = new Float32Array(HALF_BINS);
     const pha = new Float32Array(HALF_BINS);
     for (let k = 0; k < HALF_BINS; k++) {
@@ -220,65 +288,85 @@ class DSPProcessor extends AudioWorkletProcessor {
       pha[k] = Math.atan2(this._im[k], this._re[k]);
     }
 
-    // Try to read ML mask from output SAB (non-blocking)
+    // Non-blocking read of ML mask from output SAB
     let mask = null;
-    if (this._outputView) {
-      const readGen  = Atomics.load(this._outputFlags, 1);
+    if (this._outputView && this._outputFlags) {
       const writeGen = Atomics.load(this._outputFlags, 0);
-      if (writeGen > readGen) {
+      const readGen  = Atomics.load(this._outputFlags, 1);
+      if (writeGen !== readGen) {
         mask = new Float32Array(HALF_BINS);
-        mask.set(this._outputView.slice(0, HALF_BINS));
-        Atomics.store(this._outputFlags, 1, writeGen);
+        mask.set(this._outputView.subarray(0, HALF_BINS));
+        Atomics.store(this._outputFlags, 1, writeGen); // acknowledge
       }
     }
 
-    // Post magnitude to main thread via SAB for ML inference
+    // Write mag+pha to input SAB for main thread → ml-worker inference
     if (this._inputView && this._inputFlags) {
-      for (let k = 0; k < HALF_BINS; k++) {
-        this._inputView[k]            = mag[k]; // re (mag)
-        this._inputView[k + HALF_BINS] = pha[k]; // im (phase)
+      this._inputView.set(mag, 0);            // mag at offset 0
+      this._inputView.set(pha, HALF_BINS);    // pha at offset HALF_BINS
+      Atomics.add(this._inputFlags, 0, 1);    // bump write generation
+
+      // FIX [4]: fallback postMessage for pre-SAB frames — clone buffer, do NOT transfer
+      if (Atomics.load(this._inputFlags, 0) <= 2) {
+        this.port.postMessage({ type: 'magnitude', mag: mag.slice().buffer });
       }
-      Atomics.add(this._inputFlags, 0, 1); // bump write generation
-      // Also post via port for initial frames before SAB is warm
-      this.port.postMessage({ type: 'magnitude', mag: mag.buffer }, [mag.buffer]);
     }
 
-    // Apply mask (fall back to soft NR if no ML mask yet)
+    // Build masked magnitude spectrum
+    const maskedMag = new Float32Array(HALF_BINS);
     if (mask) {
+      // ML mask path: clamp mask to [0,1] and scale magnitude
       for (let k = 0; k < HALF_BINS; k++) {
-        const m = Math.max(0, Math.min(1, mask[k]));
-        this._re[k] *= m;
-        this._im[k] *= m;
-        // conjugate symmetry
-        if (k > 0 && k < HALF_BINS - 1) {
-          this._re[FFT_SIZE - k] *= m;
-          this._im[FFT_SIZE - k] *= m;
-        }
+        maskedMag[k] = mag[k] * Math.max(0.0, Math.min(1.0, mask[k]));
       }
     } else {
-      // Classical NR fallback: spectral subtraction
-      const alpha = (this._params.nrAmount || 0);
+      // Classical fallback: Wiener-style spectral subtraction
+      const alpha = this._params.nrAmount || 0.0;
+      const factor = Math.max(0.0, 1.0 - alpha * 0.5);
       for (let k = 0; k < HALF_BINS; k++) {
-        const factor = Math.max(0, 1 - alpha * 0.5);
-        this._re[k] *= factor;
-        this._im[k] *= factor;
-        if (k > 0 && k < HALF_BINS - 1) {
-          this._re[FFT_SIZE - k] *= factor;
-          this._im[FFT_SIZE - k] *= factor;
-        }
+        maskedMag[k] = mag[k] * factor;
       }
     }
 
-    // ── SINGLE INVERSE STFT ─────────────────────────────────────────────
-    fft(this._re, this._im, true);
+    // FIX [3] + FIX [6]: Reconstruct complex spectrum using polar form.
+    // DC (k=0) and Nyquist (k=HALF_BINS-1) are real-only in a real-valued FFT.
+    // All other positive bins get conjugate-symmetric mirror.
 
-    // Overlap-add into output ring with Hann window
+    // DC bin — purely real, no imaginary component
+    this._re[0] = maskedMag[0] * Math.cos(pha[0]);
+    this._im[0] = 0.0;
+
+    // Positive bins 1 .. HALF_BINS-2 with conjugate mirror
+    for (let k = 1; k < HALF_BINS - 1; k++) {
+      const r = maskedMag[k];
+      const p = pha[k];
+      const re =  r * Math.cos(p);
+      const im =  r * Math.sin(p);
+      this._re[k]           =  re;
+      this._im[k]           =  im;
+      this._re[FFT_SIZE - k] =  re;  // conjugate: same real
+      this._im[FFT_SIZE - k] = -im;  // conjugate: negated imaginary
+    }
+
+    // Nyquist bin — purely real (FFT_SIZE/2), no imaginary component
+    const nyq = HALF_BINS - 1;
+    this._re[nyq] = maskedMag[nyq] * Math.cos(pha[nyq]);
+    this._im[nyq] = 0.0;
+
+    // ── SINGLE INVERSE STFT ────────────────────────────────────────────────
+    fftInPlace(this._re, this._im, true);
+
+    // Synthesis Hann window + overlap-add normalised by OLA_NORM (= 0.5 at 75%)
+    const outLen = this._outRing.length;
     for (let i = 0; i < FFT_SIZE; i++) {
-      const sample = this._re[i] * this._win[i];
-      const idx = (this._outWr + i) % this._outRing.length;
+      const sample = this._re[i] * this._win[i] * OLA_NORM;
+      const idx    = (this._outWr + i) % outLen;
       this._outRing[idx] += sample;
     }
-    this._outWr = (this._outWr + FFT_SIZE) % this._outRing.length;
+
+    // FIX [1]: advance write pointer by HOP_SIZE, NOT FFT_SIZE
+    // This ensures successive frames overlap correctly (75% overlap = 3/4 of FFT_SIZE)
+    this._outWr = (this._outWr + HOP_SIZE) % outLen;
   }
 }
 
