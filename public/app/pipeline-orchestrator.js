@@ -19,7 +19,7 @@ const WORKLET_SOURCE_SHA256 = '9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c
 // wrap it in a same-origin Blob URL, and pass that to addModule(). The Blob
 // URL is same-origin so it satisfies COEP require-corp without needing the
 // remote response to carry CORP headers.
-const _WORKLET_FALLBACK_CACHE = { manifest: null, blobUrl: null };
+const _WORKLET_FALLBACK_CACHE = { manifest: null, sourceText: null };
 async function _getWorkletManifest() {
   if (_WORKLET_FALLBACK_CACHE.manifest) return _WORKLET_FALLBACK_CACHE.manifest;
   try {
@@ -55,14 +55,18 @@ async function loadDspProcessorWorklet(ctx) {
     console.warn('[Orchestrator] Same-origin worklet load failed, trying CDN mirrors:', primaryErr && primaryErr.message);
   }
 
-  // 2. Re-use a previously built blob URL if one is cached this session
-  if (_WORKLET_FALLBACK_CACHE.blobUrl) {
+  // 2. Re-use a previously verified source body if one is cached this session
+  if (_WORKLET_FALLBACK_CACHE.sourceText) {
+    const cachedBlobUrl = URL.createObjectURL(
+      new Blob([_WORKLET_FALLBACK_CACHE.sourceText], { type: 'application/javascript' })
+    );
     try {
-      await ctx.audioWorklet.addModule(_WORKLET_FALLBACK_CACHE.blobUrl);
+      await ctx.audioWorklet.addModule(cachedBlobUrl);
       return 'blob-cached';
     } catch {
-      URL.revokeObjectURL(_WORKLET_FALLBACK_CACHE.blobUrl);
-      _WORKLET_FALLBACK_CACHE.blobUrl = null;
+      _WORKLET_FALLBACK_CACHE.sourceText = null;
+    } finally {
+      URL.revokeObjectURL(cachedBlobUrl);
     }
   }
 
@@ -97,8 +101,12 @@ async function loadDspProcessorWorklet(ctx) {
       }
       const blob = new Blob([text], { type: 'application/javascript' });
       const blobUrl = URL.createObjectURL(blob);
-      await ctx.audioWorklet.addModule(blobUrl);
-      _WORKLET_FALLBACK_CACHE.blobUrl = blobUrl;
+      try {
+        await ctx.audioWorklet.addModule(blobUrl);
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+      _WORKLET_FALLBACK_CACHE.sourceText = text;
       console.info('[Orchestrator] AudioWorklet loaded from CDN mirror:', src.provider);
       return src.provider;
     } catch (err) {
