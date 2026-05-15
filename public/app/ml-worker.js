@@ -109,6 +109,13 @@ const MODEL_SHA256 = {
   'bsrnn_vocals.onnx':          '7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
 };
 
+// ── Android WebView detection ─────────────────────────────────────────────────
+// WebGPU is not supported in Android System WebView. Detect via UA so we can
+// skip the WebGPU probe and apply mobile-safe WASM threading settings.
+function _isAndroidWebView() {
+  return typeof navigator !== 'undefined' && /Android/.test(navigator.userAgent);
+}
+
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
 // Called at the start of every message handler that needs ORT.
 // If self.ort is already populated (e.g. by a prior importScripts call or
@@ -117,12 +124,23 @@ const MODEL_SHA256 = {
 function initialize() {
   if (self.ort) {
     ort = self.ort;
+    _configureWasmForEnvironment();
     return;
   }
   // Load ORT from local vendored file (copied by scripts/setup-ort.js postinstall)
   importScripts('/lib/ort.min.js');
   ort = self.ort;
   ort.env.wasm.wasmPaths = '/lib/';
+  _configureWasmForEnvironment();
+}
+
+function _configureWasmForEnvironment() {
+  if (_isAndroidWebView()) {
+    // Android WebView: use the WASM proxy thread model and cap threads to 2
+    // to avoid crashing older ARMv7/ARMv8 devices with limited thread counts.
+    ort.env.wasm.proxy = true;
+    ort.env.wasm.numThreads = 2;
+  }
 }
 
 
@@ -785,8 +803,10 @@ async function loadModels(basePath, providers, modelList) {
 
 async function resolveProviders(providers) {
   const eps = [];
+  const skipWebGpu = _isAndroidWebView();
   for (const p of providers) {
     if (p === 'webgpu') {
+      if (skipWebGpu) continue; // WebGPU unsupported on Android System WebView
       try {
         const adapter = await navigator?.gpu?.requestAdapter();
         if (adapter) eps.push('webgpu');
@@ -842,6 +862,16 @@ async function createSessionWithFallback(modelUrl, expectedSha256) {
   }
 
   const source = modelData !== null ? modelData : modelUrl;
+
+  // Android System WebView has no WebGPU support — go straight to WASM.
+  if (_isAndroidWebView()) {
+    const session = await ort.InferenceSession.create(source, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    });
+    return { session, provider: 'wasm' };
+  }
+
   try {
     const session = await ort.InferenceSession.create(source, {
       executionProviders: ['webgpu', 'wasm'],

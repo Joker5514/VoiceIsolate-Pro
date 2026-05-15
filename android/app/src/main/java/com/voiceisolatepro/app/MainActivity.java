@@ -1,5 +1,7 @@
 package com.voiceisolatepro.app;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.webkit.ServiceWorkerClient;
@@ -8,19 +10,35 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 
-import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 
 public class MainActivity extends BridgeActivity {
 
+    private static final int REQUEST_CODE_RECORD_AUDIO = 1001;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        requestMicPermissionIfNeeded();
         setupCrossOriginIsolation();
+    }
+
+    private void requestMicPermissionIfNeeded() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[]{Manifest.permission.RECORD_AUDIO},
+                    REQUEST_CODE_RECORD_AUDIO
+            );
+        }
     }
 
     /**
