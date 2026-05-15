@@ -113,7 +113,25 @@ const MODEL_SHA256 = {
 // WebGPU is not supported in Android System WebView. Detect via UA so we can
 // skip the WebGPU probe and apply mobile-safe WASM threading settings.
 function _isAndroidWebView() {
-  return typeof navigator !== 'undefined' && /Android/.test(navigator.userAgent);
+  if (typeof navigator === 'undefined' || typeof navigator.userAgent !== 'string') {
+    return false;
+  }
+
+  const ua = navigator.userAgent;
+  if (!/Android/i.test(ua)) {
+    return false;
+  }
+
+  // Modern Android System WebView commonly exposes a dedicated "wv" token.
+  if (/(?:;\s*wv\)|\swv\b)/i.test(ua)) {
+    return true;
+  }
+
+  // Legacy/embedded Android WebViews often include "Version/x.y" and
+  // "Mobile Safari" without presenting themselves as the full Chrome browser.
+  return /Version\/[\d.]+/i.test(ua) &&
+         /Mobile Safari\/[\d.]+/i.test(ua) &&
+         !/\bChrome\/[\d.]+\b/i.test(ua);
 }
 
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
