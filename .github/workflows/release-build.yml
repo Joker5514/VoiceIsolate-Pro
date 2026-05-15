@@ -1,10 +1,16 @@
 name: Android Release Build
 
 on:
-  workflow_dispatch:
   push:
+    tags:
+      - 'v*'
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g. v24.0.0)'
+        required: false
 
 jobs:
   bundle-release:
@@ -20,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
