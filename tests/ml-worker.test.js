@@ -118,6 +118,16 @@ describe('ml-worker.js', () => {
 
   it('falls back to WASM provider when WebGPU session creation fails', async () => {
     const runMock = jest.fn().mockResolvedValue({ output: { data: new Float32Array([1]) } });
+    workerGlobal.navigator = {
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+      gpu: { requestAdapter: jest.fn().mockResolvedValue({}) }
+    };
+
+    const argNames = Object.keys(workerGlobal);
+    const argValues = argNames.map(name => workerGlobal[name]);
+    const fn = new Function(...argNames, workerCode);
+    fn(...argValues);
+
     workerGlobal.self.ort.InferenceSession.create.mockImplementation((_modelPath, options) => {
       if (options.executionProviders[0] === 'webgpu') {
         return Promise.reject(new Error('webgpu unavailable'));
@@ -136,6 +146,40 @@ describe('ml-worker.js', () => {
     const readyMsg = postedMessages.find(m => m.type === 'ready');
     expect(readyMsg).toBeDefined();
     expect(readyMsg.models.vad).toBe(true);
+  });
+
+  it('skips WebGPU provider probing on Android WebView and uses WASM-only session creation', async () => {
+    const requestAdapter = jest.fn().mockResolvedValue({});
+    workerGlobal.navigator = {
+      userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/124.0.0.0 Mobile Safari/537.36 wv',
+      gpu: { requestAdapter }
+    };
+
+    const argNames = Object.keys(workerGlobal);
+    const argValues = argNames.map((name) => workerGlobal[name]);
+    const fn = new Function(...argNames, workerCode);
+    fn(...argValues);
+
+    workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({ run: jest.fn().mockResolvedValue({}) });
+
+    await workerGlobal.self.onmessage({
+      data: { type: 'loadModel', models: ['vad'] }
+    });
+
+    expect(requestAdapter).not.toHaveBeenCalled();
+    expect(workerGlobal.self.ort.InferenceSession.create).toHaveBeenCalledTimes(1);
+    expect(workerGlobal.self.ort.InferenceSession.create.mock.calls[0][1].executionProviders).toEqual(['wasm']);
+  });
+
+  it('configures mobile-safe ORT WASM flags during initialization', async () => {
+    workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({ run: jest.fn().mockResolvedValue({}) });
+
+    await workerGlobal.self.onmessage({ data: { type: 'loadModel', models: ['vad'] } });
+
+    expect(workerGlobal.self.ort.env.wasm.wasmPaths).toBe('/lib/');
+    expect(workerGlobal.self.ort.env.wasm.proxy).toBe(true);
+    expect(workerGlobal.self.ort.env.wasm.numThreads).toBe(2);
+    expect(typeof workerGlobal.self.ort.env.wasm.simd).toBe('boolean');
   });
 
   it('uses PCM chunks for demucs input and never spectral mag_input', async () => {

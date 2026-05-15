@@ -1,0 +1,72 @@
+name: Android Release Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  bundle-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/release-keystore.jks
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.0.0 --activate
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build web assets
+        run: pnpm build
+
+      - name: Sync Capacitor Android assets
+        run: pnpm exec cap sync android
+
+      - name: Decode Android keystore
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 secret is required" >&2
+            exit 1
+          fi
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "${ANDROID_KEYSTORE_PATH}"
+
+      - name: Verify ONNX model assets copied for bundled mode
+        run: |
+          test -f android/app/src/main/assets/public/app/models/silero_vad.onnx
+          test -f android/app/src/main/assets/public/app/models/rnnoise_suppressor.onnx
+          test -f android/app/src/main/assets/public/app/models/bsrnn_vocals.onnx
+
+      - name: Build signed release AAB
+        working-directory: android
+        run: ./gradlew --no-daemon bundleRelease
+
+      - name: Upload release bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: voiceisolate-pro-release-aab
+          path: android/app/build/outputs/bundle/release/*.aab
