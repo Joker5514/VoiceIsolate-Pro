@@ -110,31 +110,6 @@ const MODEL_SHA256 = {
   'bsrnn_vocals.onnx':          '7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
 };
 
-// ── Android WebView detection ─────────────────────────────────────────────────
-// WebGPU is not supported in Android System WebView. Detect via UA so we can
-// skip the WebGPU probe and apply mobile-safe WASM threading settings.
-function _isAndroidWebView() {
-  if (typeof navigator === 'undefined' || typeof navigator.userAgent !== 'string') {
-    return false;
-  }
-
-  const ua = navigator.userAgent;
-  if (!/Android/i.test(ua)) {
-    return false;
-  }
-
-  // Modern Android System WebView commonly exposes a dedicated "wv" token.
-  if (/(?:;\s*wv\)|\swv\b)/i.test(ua)) {
-    return true;
-  }
-
-  // Legacy/embedded Android WebViews often include "Version/x.y" and
-  // "Mobile Safari" without presenting themselves as the full Chrome browser.
-  return /Version\/[\d.]+/i.test(ua) &&
-         /Mobile Safari\/[\d.]+/i.test(ua) &&
-         !/\bChrome\/[\d.]+\b/i.test(ua);
-}
-
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
 // Called at the start of every message handler that needs ORT.
 // If self.ort is already populated (e.g. by a prior importScripts call or
@@ -843,10 +818,8 @@ async function loadModels(basePath, providers, modelList) {
 async function resolveProviders(providers) {
   if (_isAndroidWebView) return ['wasm'];
   const eps = [];
-  const skipWebGpu = _isAndroidWebView();
   for (const p of providers) {
     if (p === 'webgpu') {
-      if (skipWebGpu) continue; // WebGPU unsupported on Android System WebView
       try {
         const adapter = await navigator?.gpu?.requestAdapter();
         if (adapter) eps.push('webgpu');
