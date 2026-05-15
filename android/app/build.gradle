@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+def releaseStoreFile = System.getenv('ANDROID_KEYSTORE_PATH') ?: project.findProperty('ANDROID_KEYSTORE_PATH')
+def releaseStorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD') ?: project.findProperty('ANDROID_KEYSTORE_PASSWORD')
+def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS') ?: project.findProperty('ANDROID_KEY_ALIAS')
+def releaseKeyPassword = System.getenv('ANDROID_KEY_PASSWORD') ?: project.findProperty('ANDROID_KEY_PASSWORD')
+def hasReleaseSigningConfig = releaseStoreFile != null &&
+    releaseStorePassword != null &&
+    releaseKeyAlias != null &&
+    releaseKeyPassword != null
+
 android {
     namespace "com.voiceisolatepro.app"
     compileSdkVersion rootProject.ext.compileSdkVersion
@@ -21,15 +30,19 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file(System.getenv('KEYSTORE_PATH') ?: 'release.keystore')
-            storePassword System.getenv('KEYSTORE_PASSWORD') ?: ''
-            keyAlias System.getenv('KEY_ALIAS') ?: 'voiceisolatepro'
-            keyPassword System.getenv('KEY_PASSWORD') ?: ''
+            if (hasReleaseSigningConfig) {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
         }
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (hasReleaseSigningConfig) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

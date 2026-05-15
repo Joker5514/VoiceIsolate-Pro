@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       tag:
@@ -11,9 +13,15 @@ on:
         required: false
 
 jobs:
-  build-release:
-    name: Build & sign release AAB
+  bundle-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/release-keystore.jks
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -21,48 +29,52 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 9
-
-      - name: Set up Node.js 24
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
-          cache: 'pnpm'
+          node-version: 24
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.0.0 --activate
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
 
       - name: Install dependencies
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build web assets
         run: pnpm build
 
-      - name: Sync Capacitor assets to Android
-        run: npx cap sync android
+      - name: Sync Capacitor Android assets
+        run: pnpm exec cap sync android
 
-      - name: Decode keystore from secret
+      - name: Decode Android keystore
+        shell: bash
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+          if [ -z "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 secret is required" >&2
+            exit 1
+          fi
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > "${ANDROID_KEYSTORE_PATH}"
 
-      - name: Build release AAB
+      - name: Verify ONNX model assets copied for bundled mode
+        run: |
+          test -f android/app/src/main/assets/public/app/models/silero_vad.onnx
+          test -f android/app/src/main/assets/public/app/models/rnnoise_suppressor.onnx
+          test -f android/app/src/main/assets/public/app/models/bsrnn_vocals.onnx
+
+      - name: Build signed release AAB
         working-directory: android
-        run: ./gradlew bundleRelease
-        env:
-          KEYSTORE_PATH: release.keystore
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew --no-daemon bundleRelease
 
-      - name: Upload AAB artifact
+      - name: Upload release bundle artifact
         uses: actions/upload-artifact@v4
         with:
-          name: voiceisolate-pro-release-${{ github.ref_name }}
-          path: android/app/build/outputs/bundle/release/app-release.aab
-          retention-days: 30
+          name: voiceisolate-pro-release-aab
+          path: android/app/build/outputs/bundle/release/*.aab
