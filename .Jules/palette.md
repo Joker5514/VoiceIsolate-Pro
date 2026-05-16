@@ -8,3 +8,7 @@
 ## 2026-05-13 - [Accordion Accessibility & Visual Feedback]
 **Learning:** Custom UI accordions (like the slider groups) require semantic ARIA attributes (`aria-expanded`, `aria-controls`) to communicate their state to screen readers, and benefit from visual cues (like an animated chevron arrow) to clarify interactive behavior. Changing DOM classes is not sufficient for accessibility without syncing the corresponding ARIA state.
 **Action:** When building or maintaining collapsible panels, always use explicit IDs to link toggles and content with `aria-controls`, synchronize the `aria-expanded` attribute dynamically via JS, and ensure expansion state is visually conveyed (e.g., via CSS transitions on an icon).
+
+## 2026-05-16 - [Custom Modal Accessibility & Keyboard Flow]
+**Learning:** Custom modals require explicit ARIA attributes (`role="dialog"`, `aria-modal="true"`, `aria-labelledby`) and dynamic synchronization of `aria-hidden` with their visual state. Furthermore, managing focus when a modal opens (e.g., auto-focusing the first input) and providing keyboard shortcuts (like `Enter` to save and `Escape` to close) are essential for a complete and accessible keyboard flow.
+**Action:** Always ensure custom modals implement proper dialog roles, sync `aria-hidden` when toggled, and manage focus and keyboard interactions (Enter/Escape) for full accessibility.

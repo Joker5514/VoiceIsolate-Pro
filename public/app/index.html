@@ -392,10 +392,10 @@
     </section>
   </main>
 
-  <div id="customPresetModal" class="modal" aria-hidden="true">
+  <div id="customPresetModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="customPresetTitle" aria-hidden="true">
     <div class="modal-content">
-      <h3>Save Custom Preset</h3>
-      <input type="text" id="customPresetName" placeholder="Preset Name" />
+      <h3 id="customPresetTitle">Save Custom Preset</h3>
+      <input type="text" id="customPresetName" placeholder="Preset Name" aria-label="Preset Name" />
       <button id="saveCustomPresetBtn" class="btn btn-primary" type="button">Save</button>
       <button id="closePresetModal" class="btn btn-outline" type="button">Cancel</button>
     </div>

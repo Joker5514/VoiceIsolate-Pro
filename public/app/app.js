@@ -830,16 +830,45 @@ class VoiceIsolatePro {
     const openPresetModalBtn = document.getElementById('openPresetModalBtn');
     const customPresetModal = document.getElementById('customPresetModal');
     const closePresetModal = document.getElementById('closePresetModal');
-    if (openPresetModalBtn && customPresetModal) openPresetModalBtn.addEventListener('click', () => customPresetModal.classList.add('open'));
-    if (closePresetModal && customPresetModal) closePresetModal.addEventListener('click', () => customPresetModal.classList.remove('open'));
+    const customPresetName = document.getElementById('customPresetName');
+
+    const openPresetModal = () => {
+      if (!customPresetModal) return;
+      customPresetModal.classList.add('open');
+      customPresetModal.setAttribute('aria-hidden', 'false');
+      if (customPresetName) customPresetName.focus();
+    };
+
+    const closePresetModalFunc = () => {
+      if (!customPresetModal) return;
+      customPresetModal.classList.remove('open');
+      customPresetModal.setAttribute('aria-hidden', 'true');
+      if (openPresetModalBtn) openPresetModalBtn.focus();
+    };
+
+    const saveCustomPreset = () => {
+      const name = customPresetName && customPresetName.value.trim();
+      if (!name) {
+        if (customPresetName) customPresetName.focus();
+        return;
+      }
+      PRESETS[name] = { ...this.params };
+      closePresetModalFunc();
+      this.showNotification('Preset "' + name + '" saved', 'success');
+    };
+
+    if (openPresetModalBtn && customPresetModal) openPresetModalBtn.addEventListener('click', openPresetModal);
+    if (closePresetModal && customPresetModal) closePresetModal.addEventListener('click', closePresetModalFunc);
     if (saveCustomBtn) {
-      saveCustomBtn.addEventListener('click', () => {
-        const nameEl = document.getElementById('customPresetName');
-        const name = nameEl && nameEl.value.trim();
-        if (!name) return;
-        PRESETS[name] = { ...this.params };
-        if (customPresetModal) customPresetModal.classList.remove('open');
-        this.showNotification('Preset "' + name + '" saved', 'success');
+      saveCustomBtn.addEventListener('click', saveCustomPreset);
+    }
+    if (customPresetModal) {
+      customPresetModal.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closePresetModalFunc();
+        } else if (e.key === 'Enter') {
+          saveCustomPreset();
+        }
       });
     }
 
