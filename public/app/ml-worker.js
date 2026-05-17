@@ -923,7 +923,8 @@ async function pollOnce() {
   // SAB protocol (shared by dsp-processor.js and voice-isolate-processor.js):
   //   flagsIn[0]  = frame counter — worklet increments via Atomics.add on every hop
   //   flagsOut[1] = mask-ready flag — ml-worker sets to 1; worklet reads then
-  //                 resets to flagsOut[0] (always 0), giving a simple edge trigger
+  //                 resets to flagsOut[0] (writeGen/baseline slot; currently 0 in
+  //                 this worker flow), giving a simple edge trigger
   const currentFrame = Atomics.load(flagsIn, 0);
   if (currentFrame === _lastPollFrame) return; // no new frame
   _lastPollFrame = currentFrame;
