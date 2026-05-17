@@ -920,13 +920,11 @@ function startPollLoop() {
 
 async function pollOnce() {
   if (!flagsIn || !flagsOut) return;
-  // Frame-counter protocol matching dsp-processor.js (the production worklet):
-  //   flagsIn[0]  = frame counter (worklet increments via Atomics.add on every hop)
-  //   flagsOut[1] = mask-ready flag (ml-worker sets to 1; worklet reads and clears)
-  // Note: voice-isolate-processor.js (registered but not currently instantiated)
-  // uses a different layout (header-first, slot 2 for both flags). If that
-  // worklet is brought into the audio graph, this poll loop will need to be
-  // generalised to detect protocol via the init path used.
+  // SAB protocol (shared by dsp-processor.js and voice-isolate-processor.js):
+  //   flagsIn[0]  = frame counter — worklet increments via Atomics.add on every hop
+  //   flagsOut[1] = mask-ready flag — ml-worker sets to 1; worklet reads then
+  //                 resets to flagsOut[0] (writeGen/baseline slot; currently 0 in
+  //                 this worker flow), giving a simple edge trigger
   const currentFrame = Atomics.load(flagsIn, 0);
   if (currentFrame === _lastPollFrame) return; // no new frame
   _lastPollFrame = currentFrame;
