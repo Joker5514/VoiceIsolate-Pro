@@ -875,6 +875,7 @@ class VoiceIsolatePro {
         if (e.key === 'Escape') {
           closePresetModalFunc();
         } else if (e.key === 'Enter') {
+          e.preventDefault();
           savePreset();
         }
       });
