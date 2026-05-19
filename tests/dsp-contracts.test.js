@@ -24,25 +24,11 @@ if (typeof Atomics === 'undefined') {
   };
 }
 
-const { RingBuffer, SharedRingBuffer } =
-  (() => {
-    // Load inline since we cannot import from browser module in Node without
-    // a bundler. Re-declare the classes with require() path resolution.
-    const src = require('fs').readFileSync(
-      require('path').resolve(__dirname, '../public/app/ring-buffer.js'), 'utf8'
-    );
-    const mod = {};
-    // Strip browser export stubs and evaluate
-    const stripped = src
-      .replace(/if \(typeof window[^}]+}/g, '')
-      .replace(/if \(typeof module[^}]+}/g, '');
-    // eslint-disable-next-line no-new-func
-    new Function('module', 'exports', stripped)(mod, mod);
-    return {
-      RingBuffer: global.RingBuffer || mod.RingBuffer,
-      SharedRingBuffer: global.SharedRingBuffer || mod.SharedRingBuffer,
-    };
-  })();
+// ring-buffer.js supports CommonJS via module.exports — require() directly.
+// module.exports = SharedRingBuffer (primary), .RingBuffer added as property.
+const _rbExports = require('../public/app/ring-buffer.js');
+const SharedRingBuffer = _rbExports;
+const RingBuffer = _rbExports.RingBuffer;
 
 // ─── 1. RingBuffer scalar push — overflow must NOT corrupt capacity ────────────
 describe('RingBuffer — scalar push overflow safety', () => {
