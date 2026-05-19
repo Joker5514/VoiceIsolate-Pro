@@ -94,7 +94,7 @@ describe('dispatchParam — pending queue before worklet ready', () => {
     // logic inline as a smoke-test contract.
     const _pending = [];
     function dispatchParam(id, rawVal, app) {
-      const resolved = app || window._vipApp || window.vip || window._vipOrch;
+      const resolved = app || global.window._vipApp || global.window.vip || global.window._vipOrch;
       const worklet = resolved?.workletNode;
       const worker  = resolved?.mlWorker;
       const TARGETS = { gateThresh: 'worklet', nrAmount: 'both' };
