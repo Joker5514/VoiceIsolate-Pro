@@ -22,6 +22,10 @@ const AIEngineV2 = (() => {
   const FINGERPRINT_DIM = 64;
 
   // ─── Utility: FFT (Cooley-Tukey, power-of-2 only) ────────────────────────────
+  // ⚠️ UTILITY FFT (NOT part of audio processing pipeline) ─────────────────────
+  // Used for spectral fingerprinting and feature extraction only.
+  // Does NOT violate single-pass STFT invariant because it never reconstructs
+  // audio via iFFT. This is analysis-only, not part of the synthesis path.
   function fft(re, im) {
     const n = re.length;
     if (n <= 1) return;

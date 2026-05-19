@@ -2174,6 +2174,9 @@ class VoiceIsolatePro {
     return act < 3 ? '0-1' : act < 10 ? '1' : '1-2+';
   }
 
+  // ─── Utility FFT (NOT part of audio processing pipeline) ────────────────────
+  // Used for diagnostics and spectral analysis only. Does NOT violate single-pass
+  // STFT invariant because it never reconstructs audio via iFFT.
   _fft(re, im) {
     const N = re.length;
     let j = 0;

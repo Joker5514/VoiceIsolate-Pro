@@ -88,6 +88,17 @@ Models are downloaded once on first use and cached permanently in the browser Ca
 
 ---
 
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| **Web (Desktop)** | ✅ Production Ready | Chrome, Edge, Firefox, Safari (macOS) |
+| **Web (Mobile)** | ✅ Production Ready | Chrome, Safari (iOS 15+) |
+| **Android Native** | ⚠️ Not Ready | SharedArrayBuffer in WebView requires COOP/COEP header injection via AndroidManifest. Release signing, bundled model routing, `RECORD_AUDIO` permission, and WASM-only mobile fallback are unresolved. |
+| **iOS Native** | ⚠️ Not Ready | iOS 15 AudioWorklet constraints may limit live mode. |
+
+---
+
 ## Processing Modes
 
 | Mode | Engine | Latency | Use case |
