@@ -111,12 +111,21 @@ const MODEL_SHA256 = {
   'silero_vad.onnx':            '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
   'silero_vad_int8.onnx':       '16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05',
   'rnnoise_suppressor.onnx':    '0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6',
-  'demucs_v4_quantized.onnx':   '',
+  'demucs_v4_quantized.onnx':   '19be0f2c8e617e5ee2da0c2861f2f96e1a7f656ebf4b696b485e16f64b3bdac2',
   'bsrnn_vocals.onnx':          '7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
   // bsrnn_vocals_complex.onnx is produced by scripts/export_bsrnn_onnx.py
   // and is not committed to the repo — leave empty to skip integrity check
   // until an authoritative SHA is recorded post-upload.
   'bsrnn_vocals_complex.onnx':  '',
+};
+
+// ── Vercel Blob URLs for model CDN delivery ───────────────────────────────────
+// model-loader.js reads these at startup and calls cacheModelPaths so the
+// worker fetches from Blob storage instead of the same-origin /app/models/ path.
+const MODEL_BLOB_URLS = {
+  'demucs_v4_quantized.onnx':   'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/demucs_v4_quantized.onnx',
+  'rnnoise_suppressor.onnx':    'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/rnnoise_suppressor-5JrJWV0K8oz1Q0sKuq4N8rmrAiQIJ6.onnx',
+  'bsrnn_vocals.onnx':          'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/bsrnn_vocals-yRolIm3LNLR5tCzdAig4HaaxCxArUC.onnx',
 };
 
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
@@ -854,9 +863,11 @@ async function loadModels(basePath, providers, modelList) {
 
     // Prefer in-memory blob: URL from fetch-cache when available — this
     // skips both network and SW Cache and loads from the IDB ArrayBuffer
-    // directly. Falls back to same-origin /app/models/<file> otherwise.
+    // directly. Falls back to Vercel Blob CDN URL when available, then
+    // same-origin /app/models/<file> as last resort.
     const overrideUrl = MODEL_URL_OVERRIDES[modelId] || MODEL_URL_OVERRIDES[file];
-    const modelUrl    = overrideUrl || (basePath + file);
+    const blobCdnUrl  = MODEL_BLOB_URLS[file];
+    const modelUrl    = overrideUrl || blobCdnUrl || (basePath + file);
     const eps         = await resolveProviders(providers);
     const expectedSha256 = MODEL_SHA256[file] || '';
 
@@ -866,7 +877,7 @@ async function loadModels(basePath, providers, modelList) {
       sessions[modelId] = session;
       modelStatus[modelId] = true;
       self.postMessage({ type: 'model_loaded', modelId, providers: eps });
-      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')} (${overrideUrl ? 'blob' : 'same-origin'})`);
+      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')} (${overrideUrl ? 'blob' : blobCdnUrl ? 'vercel-blob' : 'same-origin'})`);
     } catch (err) {
       modelStatus[modelId] = false;
       const errMsg = modelId === 'vad'
