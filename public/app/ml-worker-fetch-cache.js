@@ -56,10 +56,11 @@ const VIP_IDB_STORE   = 'models';
 // vip-models-v1 Cache API entry that model-loader.js populated. Both caches
 // converge.
 const MODEL_REGISTRY = {
-  silero_vad:    { path: 'models/silero_vad.onnx',            sizeBytes:  2_306_048 },
-  rnnoise:       { path: 'models/rnnoise_suppressor.onnx',    sizeBytes:    188_416 },
-  demucs_v4:     { path: 'models/demucs_v4_quantized.onnx',   sizeBytes: 87_031_808 },
-  bsrnn_vocals:  { path: 'models/bsrnn_vocals.onnx',          sizeBytes: 47_185_920 },
+  silero_vad:      { path: 'models/silero_vad.onnx',            sizeBytes:  2_327_524 },
+  silero_vad_int8: { path: 'models/silero_vad_int8.onnx',       sizeBytes:  2_376_297 },
+  rnnoise:         { path: 'models/rnnoise_suppressor.onnx',     sizeBytes:  2_027_576 },
+  demucs_v4:       { path: 'models/demucs_v4_quantized.onnx',    sizeBytes: 87_031_808 },
+  bsrnn_vocals:    { path: 'models/bsrnn_vocals.onnx',           sizeBytes:  3_870_554 },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

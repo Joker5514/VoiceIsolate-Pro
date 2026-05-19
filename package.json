@@ -80,7 +80,9 @@
       "public/app/analytics.js",
       "api/monetization.js",
       "api/sync.js"
-    ]
+    ],
+    "forceExit": true,
+    "openHandlesTimeout": 1000
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {

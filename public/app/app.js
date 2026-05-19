@@ -2278,7 +2278,7 @@ const data = spectrum.mag || spectrum; for (let i = 0; i < data.length; i++) { d
   }
 
   async loadModels() { structuredLog('info', 'loadModels called'); }
-  async runVAD(buf) { return null; }
+  async runVAD(_buf) { return null; }
 
   _mlCall(payload, transfer = []) {
     const id = ++this._mlCallId;
@@ -2295,7 +2295,7 @@ const data = spectrum.mag || spectrum; for (let i = 0; i < data.length; i++) { d
     });
   }
 
-  async runSeparation(buf, model = 'demucs') { return null; }
+  async runSeparation(_buf, _model = 'demucs') { return null; }
 
   async addAuditEntry(buf, stageName) {
     if (!buf) return;

@@ -117,7 +117,7 @@
 
     var startedAt = Date.now();
     var POLL_MS   = 250;
-    var TIMEOUT   = 30000;
+    var TIMEOUT   = (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') ? 500 : 30000;
 
     var ctxResolved = false;
     var mlResolved  = false;
@@ -154,6 +154,8 @@
         clearInterval(iv);
       }
     }, POLL_MS);
+    // Expose handle so test teardown can clear it without waiting for timeout
+    if (typeof window !== 'undefined') window._vipPillDriverIv = iv;
   }
 
   // -- VoiceIsolatePro alias (original boot logic) -------------------------
