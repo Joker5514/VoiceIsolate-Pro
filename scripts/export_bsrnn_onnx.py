@@ -186,10 +186,9 @@ def validate_onnx(path: Path) -> None:
     ).astype(np.float32)
     iname = sess.get_inputs()[0].name
     out = sess.run(None, {iname: dummy})
+    out = sess.run(None, {iname: dummy})
     expected_shape = (1, NUM_CHANNELS_COMPLEX, FREQ_BINS, TIME_FRAMES)
-    assert out[0].shape == expected_shape, (
-        f"Shape mismatch: {out[0].shape} != {expected_shape}"
-    )
+    assert out[0].shape == expected_shape, f"Shape mismatch: {out[0].shape} != {expected_shape}"
     log.info("Validation passed. Output shape: %s", out[0].shape)
 
 
