@@ -82,6 +82,11 @@ const MODEL_FILES = {
   'rnnoise':          'rnnoise_suppressor.onnx',
   'demucs':           'demucs_v4_quantized.onnx',
   'bsrnn':            'bsrnn_vocals.onnx',
+  // 4D complex-spectrogram BSRNN (pretrained crlandsc/bsrnn-vocals).
+  // Offline-only: consumed by offline-processor.js. NOT loaded by the
+  // real-time worklet path. See scripts/export_bsrnn_onnx.py.
+  'bsrnn_complex':         'bsrnn_vocals_complex.onnx',
+  'bsrnn_vocals_complex':  'bsrnn_vocals_complex.onnx',
   // long-form aliases (kept for back-compat with auth/tier code)
   'silero-vad':       'silero_vad.onnx',
   'silero_vad':       'silero_vad.onnx',
@@ -108,6 +113,10 @@ const MODEL_SHA256 = {
   'rnnoise_suppressor.onnx':    '0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6',
   'demucs_v4_quantized.onnx':   '',
   'bsrnn_vocals.onnx':          '7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
+  // bsrnn_vocals_complex.onnx is produced by scripts/export_bsrnn_onnx.py
+  // and is not committed to the repo — leave empty to skip integrity check
+  // until an authoritative SHA is recorded post-upload.
+  'bsrnn_vocals_complex.onnx':  '',
 };
 
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
@@ -456,6 +465,62 @@ self.onmessage = async (ev) => {
 
       const output = new Float32Array(mask);
       self.postMessage({ type: 'processed', output }, [output.buffer]);
+      break;
+    }
+
+    // ── bsrnnComplex: offline 4D complex-spectrogram BSRNN inference ──────────
+    // Input  payload:
+    //   {
+    //     id:        string,                // correlation id
+    //     halfBins:  number,                 // freq bins (must be 1025 for the
+    //                                        // pretrained crlandsc model)
+    //     timeFrames:number,                 // T  (dynamic axis)
+    //     channels:  Float32Array,           // packed real/imag, length
+    //                                        // = 4 * halfBins * timeFrames
+    //                                        // layout per the model:
+    //                                        //   [ch0_re, ch0_im, ch1_re, ch1_im]
+    //                                        // each plane is [freq][time] row-major.
+    //   }
+    //
+    // Output payload:
+    //   { type: 'bsrnnComplexResult', id, separated: Float32Array, halfBins, timeFrames }
+    //   `separated` mirrors the input layout but contains the separated
+    //   vocals only. On failure: { type: 'bsrnnComplexResult', id, error }.
+    case 'bsrnnComplex': {
+      const reqId = payload && payload.id;
+      const fail = (msg) => self.postMessage({
+        type: 'bsrnnComplexResult', id: reqId, error: msg,
+      });
+      try {
+        initialize();
+      } catch (err) { fail(err.message); break; }
+      const session = sessions['bsrnn_complex'] || sessions['bsrnn_vocals_complex'];
+      if (!session) { fail('bsrnn_complex model not loaded'); break; }
+      const halfBins = payload && payload.halfBins | 0;
+      const timeFrames = payload && payload.timeFrames | 0;
+      const flat = payload && payload.channels;
+      const expected = 4 * halfBins * timeFrames;
+      if (!flat || flat.length !== expected) {
+        fail(`bsrnnComplex: payload size ${flat?.length} != expected ${expected}`);
+        break;
+      }
+      try {
+        const tensor = new ort.Tensor('float32', flat, [1, 4, halfBins, timeFrames]);
+        const result = await session.run({ input: tensor });
+        const out = result.output?.data || result[Object.keys(result)[0]]?.data;
+        if (!out || out.length !== expected) {
+          fail(`bsrnnComplex: output size ${out?.length} != expected ${expected}`);
+          break;
+        }
+        // Copy into a fresh Float32Array so we can transfer the underlying buffer.
+        const separated = new Float32Array(out);
+        self.postMessage(
+          { type: 'bsrnnComplexResult', id: reqId, separated, halfBins, timeFrames },
+          [separated.buffer],
+        );
+      } catch (err) {
+        fail(`bsrnnComplex: ${err.message}`);
+      }
       break;
     }
 

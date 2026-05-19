@@ -6,6 +6,14 @@ torch>=2.1.0
 torchaudio>=2.1.0
 demucs>=4.0.0
 
+# BSRNN export deps (vendor repo uses Lightning + Hydra/OmegaConf configs;
+# pretrained checkpoint is pulled from HuggingFace via huggingface_hub)
+pytorch-lightning>=2.1.0
+omegaconf>=2.3.0
+hydra-core>=1.3.0
+huggingface_hub>=0.20.0
+soundfile>=0.12.1
+
 # ONNX export + validation
 onnx>=1.15.0
 onnxruntime>=1.17.0
