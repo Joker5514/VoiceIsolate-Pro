@@ -216,8 +216,7 @@ class RingBuffer {
    */
   push(samples) {
     if (typeof samples === 'number') {
-      if (this.availableWrite < 1) {
-        Atomics.add(this._ctrl, 2, 1);
+      if (this.free < 1) {
         return false;
       }
 
