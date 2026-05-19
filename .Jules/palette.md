@@ -12,3 +12,7 @@
 ## 2026-05-18 - [Custom Modal Keyboard Accessibility & ARIA States]
 **Learning:** Custom UI modals must implement complete keyboard and accessibility flows, including `role="dialog"`, `aria-modal="true"`, `aria-labelledby`, dynamic `aria-hidden` synchronization, auto-focusing the primary input on open, returning focus to the trigger on close, and keydown listeners for Escape (to close) and Enter (to submit).
 **Action:** When creating or modifying custom modals, ensure the entire lifecycle of the modal is accessible by syncing the `aria-hidden` state, managing focus effectively on open and close, and supporting keyboard interactions.
+
+## 2026-05-18 - [Toggle Switch Keyboard Accessibility]
+**Learning:** Hidden inputs in custom toggle switches using `opacity: 0` lose default browser focus outlines. This renders them invisible to keyboard-only users who navigate via Tab.
+**Action:** When hiding inputs to style them, always add explicit `:focus-visible` rules (e.g., `input:focus-visible + .slider`) to draw a custom focus ring, ensuring the element is visible during keyboard navigation.
