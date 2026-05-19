@@ -4,13 +4,13 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.net.Uri;
 import android.webkit.ServiceWorkerClient;
 import android.webkit.ServiceWorkerController;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 
+import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.webkit.WebViewAssetLoader;
@@ -54,9 +54,6 @@ public class MainActivity extends BridgeActivity {
      * Capacitor's WebViewClient does NOT inject these headers when serving
      * local assets, so SAB is permanently disabled unless we intercept every
      * response and inject them ourselves.
-     *
-     * We also hook the ServiceWorkerController so that sw.js — which controls
-     * the page scope — also runs in a cross-origin isolated context.
      */
     private void setupCrossOriginIsolation() {
         WebView webView = getBridge().getWebView();
@@ -96,10 +93,6 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public WebResourceResponse shouldInterceptRequest(
                         WebResourceRequest request) {
-                    // Null = let the SW fetch proceed normally;
-                    // we can't inject headers here directly, but registering
-                    // this client causes the SW to inherit the page's COEP
-                    // context which is sufficient for SAB availability.
                     return null;
                 }
             });
@@ -108,21 +101,15 @@ public class MainActivity extends BridgeActivity {
 
     /**
      * Returns a new WebResourceResponse with COOP + COEP headers merged in.
-     * Preserves all existing headers from the original response.
      */
     private WebResourceResponse injectIsolationHeaders(WebResourceResponse original) {
-        // Build merged header map: start with whatever Capacitor already set
         Map<String, String> headers = new HashMap<>();
         if (original.getResponseHeaders() != null) {
             headers.putAll(original.getResponseHeaders());
         }
-
-        // These two headers together create the cross-origin isolated context
-        // that enables SharedArrayBuffer + Atomics on Android WebView.
-        headers.put("Cross-Origin-Opener-Policy",   "same-origin");
-        headers.put("Cross-Origin-Embedder-Policy",  "require-corp");
-        // CORP on all same-origin resources so they're embeddable under COEP
-        headers.put("Cross-Origin-Resource-Policy",  "same-origin");
+        headers.put("Cross-Origin-Opener-Policy",  "same-origin");
+        headers.put("Cross-Origin-Embedder-Policy", "require-corp");
+        headers.put("Cross-Origin-Resource-Policy", "same-origin");
 
         return new WebResourceResponse(
                 original.getMimeType(),
@@ -134,10 +121,11 @@ public class MainActivity extends BridgeActivity {
         );
     }
 
+    // webkit 1.8+ PathHandler uses handle(String path) not handle(Uri)
     private final class PublicAssetPathHandler implements WebViewAssetLoader.PathHandler {
         @Override
-        public WebResourceResponse handle(Uri url) {
-            String path = url.getPath();
+        @Nullable
+        public WebResourceResponse handle(String path) {
             if (path == null || path.isEmpty() || "/".equals(path)) {
                 path = "/index.html";
             }
