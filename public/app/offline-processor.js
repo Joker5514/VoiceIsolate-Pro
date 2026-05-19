@@ -269,7 +269,7 @@ function applyMagnitudeMaskFromSeparated(channelFrames, separated, halfBins, tim
 
 function runBsrnnComplexViaWorker(mlWorker, packed, halfBins, timeFrames) {
   return new Promise((resolve, reject) => {
-    const id = 'bsrnn-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+    const id = 'bsrnn-' + (globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36));
     const onMessage = (ev) => {
       const d = ev.data;
       if (!d || d.type !== 'bsrnnComplexResult' || d.id !== id) return;
