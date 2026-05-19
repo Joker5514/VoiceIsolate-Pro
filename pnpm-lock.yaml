@@ -67,13 +67,13 @@ importers:
         version: 0.184.0
     devDependencies:
       '@eslint/js':
-        specifier: ^9.39.4
+        specifier: ^9.0.0
         version: 9.39.4
       eslint:
-        specifier: ^9.39.4
+        specifier: ^9.0.0
         version: 9.39.4
       globals:
-        specifier: ^16.5.0
+        specifier: ^16.0.0
         version: 16.5.0
       jest:
         specifier: ^30.3.0
