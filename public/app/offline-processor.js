@@ -200,6 +200,93 @@ function applyWienerNR(frames, noiseFloor, noiseReduce, spectralFloor) {
 }
 
 // ---------------------------------------------------------------------------
+// Offline BSRNN (complex-spectrogram) adapter
+// ---------------------------------------------------------------------------
+// Repacks the offline-processor's per-frame interleaved real/imag spectra
+// into the 4D tensor layout expected by `bsrnn_vocals_complex.onnx`
+// (pretrained crlandsc/bsrnn-vocals): [1, 4, halfBins, timeFrames] with
+// channel-planes ordered [ch0_re, ch0_im, ch1_re, ch1_im], each plane
+// row-major as [freq][time]. Mono input is fake-stereo'd by duplication.
+//
+// Returns a Float32Array of identical layout containing the separated
+// vocals spectrogram. Callers convert that into a per-bin magnitude mask
+// and apply it to the original frames so the rest of the offline pipeline
+// (Wiener NR, tilt, EQ, etc.) continues to operate on the same single-pass
+// STFT result.
+
+function packComplexFrames(channelFrames, halfBins, timeFrames) {
+  const numCh = channelFrames.length;
+  const out   = new Float32Array(4 * halfBins * timeFrames);
+
+  // For each model-channel plane (real_L, imag_L, real_R, imag_R)
+  for (let mc = 0; mc < 4; mc++) {
+    const srcCh   = numCh === 1 ? 0 : (mc < 2 ? 0 : 1);
+    const reOrIm  = mc & 1; // 0=real, 1=imag
+    const frames  = channelFrames[srcCh].frames;
+    const planeBase = mc * halfBins * timeFrames;
+
+    for (let k = 0; k < halfBins; k++) {
+      const rowBase = planeBase + k * timeFrames;
+      for (let t = 0; t < timeFrames; t++) {
+        out[rowBase + t] = frames[t][2 * k + reOrIm];
+      }
+    }
+  }
+  return out;
+}
+
+function applyMagnitudeMaskFromSeparated(channelFrames, separated, halfBins, timeFrames) {
+  const numCh = channelFrames.length;
+  const EPS   = 1e-8;
+
+  for (let ch = 0; ch < numCh; ch++) {
+    // Pick the corresponding stereo plane pair from the separated tensor.
+    // For mono runtime channel, use the left pair of the model output.
+    const reBase = (ch === 0 ? 0 : 2) * halfBins * timeFrames;
+    const imBase = (ch === 0 ? 1 : 3) * halfBins * timeFrames;
+    const frames = channelFrames[ch].frames;
+
+    for (let t = 0; t < timeFrames; t++) {
+      const frame = frames[t];
+      for (let k = 0; k < halfBins; k++) {
+        const mixRe = frame[2 * k];
+        const mixIm = frame[2 * k + 1];
+        const mixMag = Math.sqrt(mixRe * mixRe + mixIm * mixIm);
+
+        const sepRe = separated[reBase + k * timeFrames + t];
+        const sepIm = separated[imBase + k * timeFrames + t];
+        const sepMag = Math.sqrt(sepRe * sepRe + sepIm * sepIm);
+
+        const m = sepMag / Math.max(mixMag, EPS);
+        const mask = m > 1 ? 1 : (m < 0 ? 0 : m);
+
+        frame[2 * k]     = mixRe * mask;
+        frame[2 * k + 1] = mixIm * mask;
+      }
+    }
+  }
+}
+
+function runBsrnnComplexViaWorker(mlWorker, packed, halfBins, timeFrames) {
+  return new Promise((resolve, reject) => {
+    const id = 'bsrnn-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+    const onMessage = (ev) => {
+      const d = ev.data;
+      if (!d || d.type !== 'bsrnnComplexResult' || d.id !== id) return;
+      mlWorker.removeEventListener('message', onMessage);
+      if (d.error) reject(new Error(d.error));
+      else resolve(d.separated);
+    };
+    mlWorker.addEventListener('message', onMessage);
+    // packed is owned by main thread after this call (transferred).
+    mlWorker.postMessage(
+      { type: 'bsrnnComplex', payload: { id, halfBins, timeFrames, channels: packed } },
+      [packed.buffer],
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Main export: processFile
 // ---------------------------------------------------------------------------
 
@@ -208,10 +295,16 @@ function applyWienerNR(frames, noiseFloor, noiseReduce, spectralFloor) {
  *
  * @param {ArrayBuffer} arrayBuffer     — raw audio file bytes
  * @param {Object}      params          — slider parameter values
+ *                                        Notable optional flags:
+ *                                          - useBSRNN: when truthy AND `mlWorker`
+ *                                            is provided, runs the pretrained
+ *                                            4D complex BSRNN as a pre-Wiener
+ *                                            voice-separation step.
  * @param {Function}    progressCallback — (percent: 0–100) called per stage
+ * @param {Worker}      [mlWorker]       — optional ml-worker handle for BSRNN
  * @returns {Promise<AudioBuffer>}
  */
-export async function processFile(arrayBuffer, params = {}, progressCallback = () => {}) {
+export async function processFile(arrayBuffer, params = {}, progressCallback = () => {}, mlWorker = null) {
   const p = { ...params };
   const stageStep = 100 / STAGES;
 
@@ -309,6 +402,22 @@ export async function processFile(arrayBuffer, params = {}, progressCallback = (
     const pcm    = preRendered.getChannelData(ch);
     const result = forwardSTFT(pcm); // ← ONE forward STFT per channel
     channelFrames.push(result);
+  }
+
+  // ── BSRNN voice-separation (opt-in, between S10 and S11) ─────────────
+  // Single-pass STFT contract preserved: BSRNN consumes the same frames
+  // produced by forwardSTFT() and contributes a per-bin magnitude mask
+  // applied in-place to those frames. No nested STFT/iSTFT pair.
+  if (mlWorker && p.useBSRNN) {
+    try {
+      const timeFrames = channelFrames[0].frames.length;
+      const packed     = packComplexFrames(channelFrames, HALF_BINS, timeFrames);
+      const separated  = await runBsrnnComplexViaWorker(mlWorker, packed, HALF_BINS, timeFrames);
+      applyMagnitudeMaskFromSeparated(channelFrames, separated, HALF_BINS, timeFrames);
+    } catch (err) {
+      // Non-fatal: fall back to classical spectral chain if BSRNN unavailable.
+      console.warn('[offline-processor] BSRNN skipped:', err.message);
+    }
   }
 
   // ── S11–S19 All spectral operations (in-place on frames) ──────────────

@@ -50,7 +50,12 @@ log = logging.getLogger(__name__)
 # Configuration
 # ----------------------------------------------------------------------------
 OUTPUT_DIR = Path("./models_output")
-MODEL_PATH = OUTPUT_DIR / "bsrnn_vocals.onnx"
+# Output filename intentionally differs from the existing per-frame
+# `bsrnn_vocals.onnx` so the two contracts coexist in the model registry:
+#   bsrnn_vocals.onnx          -> legacy [1, numBins] magnitude path (real-time)
+#   bsrnn_vocals_complex.onnx  -> pretrained [1, 4, 1025, T] complex path
+#                                  (offline-only; consumed by offline-processor)
+MODEL_PATH = OUTPUT_DIR / "bsrnn_vocals_complex.onnx"
 VENDOR_DIR = Path("./vendor/Music-Demixing-with-Band-Split-RNN")
 
 BSRNN_REPO_URL = "https://github.com/crlandsc/Music-Demixing-with-Band-Split-RNN"
