@@ -1774,6 +1774,14 @@ class VoiceIsolatePro {
 
     try {
       if (isVideo) {
+        if (this.dom.videoPlayer && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+          const nextVideoUrl = URL.createObjectURL(file);
+          if (this._videoPreviewUrl && this._videoPreviewUrl !== nextVideoUrl && typeof URL.revokeObjectURL === 'function') {
+            try { URL.revokeObjectURL(this._videoPreviewUrl); } catch (_) {}
+          }
+          this._videoPreviewUrl = nextVideoUrl;
+          this.dom.videoPlayer.src = nextVideoUrl;
+        }
         // Fast path: decodeAudioData handles MP4/WebM containers directly in modern browsers.
         // This avoids real-time MediaRecorder playback (which hangs when AudioContext is
         // suspended or when muted=true silences the Web Audio pipeline on mobile).
@@ -1817,7 +1825,6 @@ class VoiceIsolatePro {
 
   async decodeViaVideoElement(file) {
     const url = URL.createObjectURL(file);
-    if (this.dom.videoPlayer) this.dom.videoPlayer.src = url;
     const videoEl = document.createElement('video');
     videoEl.preload = 'auto';
     // Do NOT set muted=true — it silences the Web Audio pipeline on mobile,
