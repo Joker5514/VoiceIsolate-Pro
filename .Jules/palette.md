@@ -12,3 +12,6 @@
 ## 2026-05-18 - [Custom Modal Keyboard Accessibility & ARIA States]
 **Learning:** Custom UI modals must implement complete keyboard and accessibility flows, including `role="dialog"`, `aria-modal="true"`, `aria-labelledby`, dynamic `aria-hidden` synchronization, auto-focusing the primary input on open, returning focus to the trigger on close, and keydown listeners for Escape (to close) and Enter (to submit).
 **Action:** When creating or modifying custom modals, ensure the entire lifecycle of the modal is accessible by syncing the `aria-hidden` state, managing focus effectively on open and close, and supporting keyboard interactions.
+## 2026-05-19 - [Custom Tabs Keyboard Accessibility]
+**Learning:** Custom tab implementations (like `#tabBar`) often lack keyboard navigation support (arrow keys to switch tabs). While `tabindex` management allows focusing them with Tab, users expect to use Arrow keys to switch between tabs in a tablist.
+**Action:** When implementing a custom `role="tablist"`, add a `keydown` event listener to handle ArrowRight/ArrowDown (next tab) and ArrowLeft/ArrowUp (previous tab) to shift focus and activate the newly focused tab, mimicking native behavior.

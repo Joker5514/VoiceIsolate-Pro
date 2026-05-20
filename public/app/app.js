@@ -965,6 +965,25 @@ class VoiceIsolatePro {
           p.classList.toggle('active', p.id === 'tab-' + tab);
         });
       });
+
+      tabBar.addEventListener('keydown', (e) => {
+        const tabs = Array.from(tabBar.querySelectorAll('[data-tab]'));
+        const currentIndex = tabs.findIndex(t => t === document.activeElement);
+        if (currentIndex === -1) return;
+
+        let nextIndex = null;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          nextIndex = (currentIndex + 1) % tabs.length;
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+        }
+
+        if (nextIndex !== null) {
+          e.preventDefault();
+          tabs[nextIndex].focus();
+          tabs[nextIndex].click();
+        }
+      });
     }
 
     // UI scale controls
