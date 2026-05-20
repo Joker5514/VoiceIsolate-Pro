@@ -124,9 +124,10 @@ function humanBytes(n) {
       if (Array.isArray(raw)) {
         rawList = raw;
       } else if (raw.models && !Array.isArray(raw.models)) {
-        // v2 object map — convert to flat array using the first vercel-blob or fallback source
+        // v2 object map — pick the first source with an absolute HTTP URL (proxy paths
+        // like /app/models/... are same-origin rewrites; new URL() can't parse them)
         rawList = Object.values(raw.models).map((entry) => {
-          const src = (entry.sources || []).find((s) => s.provider !== 'same-origin') || entry.sources && entry.sources[0];
+          const src = (entry.sources || []).find((s) => s.url && s.url.startsWith('http'));
           return {
             name: entry.filename,
             cdn_src: src ? src.url : null,
@@ -144,7 +145,7 @@ function humanBytes(n) {
         name: m.name || m.filename || path.basename(m.cdn_src || m.url || m.path || ''),
         cdn_src: m.cdn_src || m.url || m.path,
         min_bytes: m.min_bytes || m.sizeBytes || 100_000,
-      })).filter((m) => m.cdn_src);
+      })).filter((m) => m.cdn_src && m.cdn_src.startsWith('http'));
 
       if (parsed.length > 0) {
         models = parsed;
