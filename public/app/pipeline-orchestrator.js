@@ -500,12 +500,14 @@ class PipelineOrchestrator {
       // If models are cached in IDB, pass Object URLs so the worker skips
       // re-fetching them from disk. Falls back gracefully if cache is empty.
       if (typeof window._vipPreloadModels === 'function') {
-        // Fire-and-forget preload — models load while audio context inits.
-        // Only the canonical four models (matching model-loader.js +
-        // models-manifest.json) are preloaded. Any others would diverge from
-        // the SW Cache and double-download under different filenames.
+        // Fire-and-forget preload of eager models only — silero_vad (~2.3 MB)
+        // and rnnoise (~2 MB) are marked eager:true in models-manifest.json.
+        // demucs_v4 (~87 MB) and bsrnn_vocals (~3.9 MB) are lazy: preloading
+        // them at page init exhausts mobile memory and causes "Aw, Snap!" OOM
+        // crashes before the user has done anything. They are fetched on-demand
+        // when the pipeline actually needs them.
         window._vipPreloadModels(
-          ['silero_vad', 'rnnoise', 'demucs_v4', 'bsrnn_vocals'],
+          ['silero_vad', 'rnnoise'],
           { forceRefresh: false }
         ).then((modelPaths) => {
           // Forward any resolved Object URLs to the already-running worker.

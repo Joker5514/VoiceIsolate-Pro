@@ -389,81 +389,118 @@ window._vipCacheStatus = async function cacheStatus() {
  * @param {string[]} keys - Array of model keys to display as individual progress rows.
  */
 
+const MODEL_DISPLAY_NAMES = {
+  silero_vad:      'Voice Activity Detector',
+  silero_vad_int8: 'Voice Activity Detector (fast)',
+  rnnoise:         'Noise Suppressor',
+  demucs_v4:       'Demucs Voice Separator',
+  bsrnn_vocals:    'Band-Split RNN Vocals',
+};
+
 function _ensureProgressPanel(keys) {
+  // Create backdrop if not present
+  let backdrop = document.getElementById('vip-model-load-backdrop');
+  if (!backdrop) {
+    backdrop = document.createElement('div');
+    backdrop.id = 'vip-model-load-backdrop';
+    document.body.appendChild(backdrop);
+  }
+
   let panel = document.getElementById('vip-model-load-panel');
   if (panel) { panel.innerHTML = ''; } else {
     panel = document.createElement('div');
     panel.id = 'vip-model-load-panel';
     panel.setAttribute('role', 'status');
     panel.setAttribute('aria-live', 'polite');
-    panel.setAttribute('aria-label', 'Model loading progress');
+    panel.setAttribute('aria-label', 'Initialising AI models');
 
     const style = document.createElement('style');
     style.textContent = `
+      #vip-model-load-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.65);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        z-index: 9999;
+      }
       #vip-model-load-panel {
         position: fixed;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        background: #0e0e0e;
-        border: 1px solid #333;
-        border-radius: 8px;
-        padding: 20px 24px;
-        min-width: 340px;
+        background: #111;
+        border: 1px solid #2a2a2a;
+        border-radius: 12px;
+        padding: 24px 28px;
+        min-width: 320px;
         max-width: 90vw;
         z-index: 10000;
-        box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+        box-shadow: 0 16px 60px rgba(0,0,0,0.85);
         font-family: 'JetBrains Mono', 'Fira Mono', monospace;
         font-size: 12px;
         color: #ccc;
       }
-      #vip-model-load-panel h4 {
-        font-size: 13px;
+      #vip-model-load-panel .vip-mlp-heading {
+        font-size: 14px;
         font-weight: 700;
         color: #fff;
-        margin-bottom: 12px;
-        letter-spacing: 0.05em;
+        margin: 0 0 4px;
+        letter-spacing: 0.04em;
+      }
+      #vip-model-load-panel .vip-mlp-sub {
+        font-size: 11px;
+        color: #555;
+        margin: 0 0 16px;
       }
       .vip-mlp-row {
         display: grid;
-        grid-template-columns: 120px 1fr 60px;
+        grid-template-columns: 1fr auto 56px;
         align-items: center;
         gap: 8px;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
       }
       .vip-mlp-label { color: #aaa; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .vip-mlp-track {
-        height: 4px;
-        background: #2a2a2a;
+        height: 3px;
+        background: #1e1e1e;
         border-radius: 99px;
         overflow: hidden;
+        min-width: 80px;
       }
       .vip-mlp-fill {
         height: 100%;
         width: 0%;
-        background: #22c55e;
+        background: linear-gradient(90deg, #00ffe7, #9d4dff);
         border-radius: 99px;
-        transition: width 0.2s ease;
+        transition: width 0.25s ease;
       }
       .vip-mlp-fill.absent { background: #f59e0b; width: 100%; }
-      .vip-mlp-status { font-size: 10px; color: #666; text-align: right; }
-      .vip-mlp-status.ready { color: #22c55e; }
+      .vip-mlp-status { font-size: 10px; color: #555; text-align: right; white-space: nowrap; }
+      .vip-mlp-status.ready  { color: #00ffe7; }
       .vip-mlp-status.absent { color: #f59e0b; }
       .vip-mlp-footer {
-        margin-top: 12px;
+        margin-top: 14px;
         padding-top: 10px;
-        border-top: 1px solid #222;
-        color: #555;
+        border-top: 1px solid #1e1e1e;
+        color: #444;
         font-size: 10px;
+        text-align: center;
       }
     `;
     document.head.appendChild(style);
     document.body.appendChild(panel);
   }
 
-  const title = document.createElement('h4');
-  title.textContent = '⚡ VoiceIsolate Pro — Loading ML Models';
-  panel.appendChild(title);
+  const heading = document.createElement('p');
+  heading.className = 'vip-mlp-heading';
+  heading.textContent = 'Initialising AI Models';
+  panel.appendChild(heading);
+
+  const sub = document.createElement('p');
+  sub.className = 'vip-mlp-sub';
+  sub.textContent = 'Models are cached locally after first load';
+  panel.appendChild(sub);
 
   for (const key of keys) {
     const row = document.createElement('div');
@@ -472,8 +509,8 @@ function _ensureProgressPanel(keys) {
 
     const label = document.createElement('span');
     label.className = 'vip-mlp-label';
-    label.title = key;
-    label.textContent = key;
+    label.title = MODEL_DISPLAY_NAMES[key] || key;
+    label.textContent = MODEL_DISPLAY_NAMES[key] || key;
 
     const track = document.createElement('div');
     track.className = 'vip-mlp-track';
@@ -495,7 +532,7 @@ function _ensureProgressPanel(keys) {
 
   const footer = document.createElement('div');
   footer.className = 'vip-mlp-footer';
-  footer.textContent = 'Missing files → place .onnx in public/app/models/, reload.';
+  footer.textContent = 'All processing runs on-device · no audio is uploaded';
   panel.appendChild(footer);
 }
 
@@ -518,11 +555,13 @@ function _updateProgressRow(key, pct, statusText) {
 }
 
 function _finalizeProgressPanel(results) {
-  // Auto-dismiss after 1.5s if all loaded, 4s if any failed
-  const delay = results.failed.length > 0 ? 4000 : 1500;
+  // Auto-dismiss after 1.2s if all loaded, 3.5s if any failed
+  const delay = results.failed.length > 0 ? 3500 : 1200;
   setTimeout(() => {
-    const panel = document.getElementById('vip-model-load-panel');
-    if (panel) panel.remove();
+    const panel    = document.getElementById('vip-model-load-panel');
+    const backdrop = document.getElementById('vip-model-load-backdrop');
+    if (panel)    panel.remove();
+    if (backdrop) backdrop.remove();
   }, delay);
 }
 
@@ -533,6 +572,21 @@ function _finalizeProgressPanel(results) {
 window.addEventListener('vip:modelDownloadProgress', (e) => {
   const { key, pct } = e.detail;
   _updateProgressRow(key, pct, pct >= 0 ? `${pct}%` : 'Streaming...');
+
+  // If the panel was dismissed (post-startup on-demand download), re-surface
+  // progress in the processing overlay so the user isn't staring at a frozen
+  // screen while a large model (e.g. demucs ~87 MB) downloads mid-pipeline.
+  if (!document.getElementById('vip-model-load-panel') && window.VIPOverlay && typeof window.VIPOverlay.update === 'function') {
+    const displayName = MODEL_DISPLAY_NAMES[key] || key;
+    const pctLabel    = pct >= 0 ? `${pct}%` : '…';
+    try {
+      window.VIPOverlay.update(
+        `Downloading ${displayName} (${pctLabel})`,
+        typeof pct === 'number' && pct >= 0 ? Math.round(pct * 0.4) : 0,
+        0
+      );
+    } catch (_) {}
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
