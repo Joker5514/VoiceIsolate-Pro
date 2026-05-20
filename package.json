@@ -49,13 +49,17 @@
     "mobile:version": "node scripts/sync-mobile-version.js",
     "postversion": "node scripts/sync-mobile-version.js",
     "models:download": "bash scripts/download-models.sh",
-    "models:upload": "python scripts/upload_models_to_vercel_blob.py"
+    "models:upload": "python scripts/upload_models_to_vercel_blob.py",
+    "models:upload:blob": "node scripts/upload-to-vercel-blob.mjs",
+    "models:validate": "node scripts/validate-onnx-models.js",
+    "models:wire": "python3 scripts/wire-blob-models.py"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "@capacitor/android": "^8.3.1",
     "@capacitor/cli": "^8.3.1",
     "@capacitor/ios": "^8.3.1",
+    "@vercel/blob": "^0.27.0",
     "eslint": "^9.0.0",
     "globals": "^16.0.0",
     "jest": "^30.3.0",

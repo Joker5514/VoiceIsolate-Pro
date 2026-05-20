@@ -115,14 +115,42 @@ function humanBytes(n) {
   if (manifestPath && fs.existsSync(manifestPath)) {
     try {
       const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-      const list = Array.isArray(raw) ? raw : (raw.models || raw.files || FALLBACK_MODELS);
-      if (list.length > 0) {
-        models = list.map((m) => ({
-          name: m.name || m.filename || path.basename(m.cdn_src || m.url || ''),
-          cdn_src: m.cdn_src || m.url,
-          min_bytes: m.min_bytes || 100_000,
-        })).filter((m) => m.cdn_src);
+
+      // Normalise the three known manifest shapes into a flat array of model entries.
+      // Shape A: array of {name, cdn_src, ...}  (legacy)
+      // Shape B: v2 object map  raw.models = { key: {filename, sources:[{provider, url}], ...} }
+      // Shape C: inventory array  raw.models = [{id, filename, path, ...}]
+      let rawList;
+      if (Array.isArray(raw)) {
+        rawList = raw;
+      } else if (raw.models && !Array.isArray(raw.models)) {
+        // v2 object map — convert to flat array using the first vercel-blob or fallback source
+        rawList = Object.values(raw.models).map((entry) => {
+          const src = (entry.sources || []).find((s) => s.provider !== 'same-origin') || entry.sources && entry.sources[0];
+          return {
+            name: entry.filename,
+            cdn_src: src ? src.url : null,
+            min_bytes: entry.sizeBytes || 100_000,
+          };
+        });
+      } else if (Array.isArray(raw.models)) {
+        // inventory array (public/app/models/models-manifest.json)
+        rawList = raw.models;
+      } else {
+        rawList = raw.files || [];
+      }
+
+      const parsed = rawList.map((m) => ({
+        name: m.name || m.filename || path.basename(m.cdn_src || m.url || m.path || ''),
+        cdn_src: m.cdn_src || m.url || m.path,
+        min_bytes: m.min_bytes || m.sizeBytes || 100_000,
+      })).filter((m) => m.cdn_src);
+
+      if (parsed.length > 0) {
+        models = parsed;
         console.log(B(`📄 Using manifest: ${manifestPath} (${models.length} models)\n`));
+      } else {
+        console.warn(Y('⚠️  Manifest parsed but contained no usable model entries — using fallback list.\n'));
       }
     } catch (e) {
       console.warn(Y(`⚠️  Could not parse manifest (${e.message}), using fallback list.\n`));
