@@ -56,6 +56,7 @@ const VIP_IDB_STORE   = 'models';
 // vip-models-v1 Cache API entry that model-loader.js populated. Both caches
 // converge.
 const MODEL_REGISTRY = {
+  bsrnn_complex:   { path: 'models/bsrnn_vocals_complex.onnx',    sizeBytes:  3_870_554 , cdnUrls: [] },
   silero_vad:      { path: 'models/silero_vad.onnx',            sizeBytes:  2_327_524 , cdnUrls: ['https://huggingface.co/onnx-community/silero-vad/resolve/main/onnx/model.onnx'] },
   silero_vad_int8: { path: 'models/silero_vad_int8.onnx',       sizeBytes:  2_376_297 },
   rnnoise:         { path: 'models/rnnoise_suppressor.onnx',     sizeBytes:  2_027_576 , cdnUrls: ['https://huggingface.co/hubert-siuzdak/rnnoise-ort/resolve/main/rnnoise.onnx'] },

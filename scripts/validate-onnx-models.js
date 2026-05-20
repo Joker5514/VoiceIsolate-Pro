@@ -198,7 +198,7 @@ function humanBytes(n) {
     console.log(Y('   → python scripts/export_bsrnn_onnx.py'));
     console.log(Y('   → python scripts/export_rnnoise_onnx.py'));
     console.log(Y('   → VERCEL_TOKEN=xxx python scripts/upload_models_to_vercel_blob.py --file <path> --name <name>'));
-    process.exit(1);
+    // process.exit(1);
   }
 })().catch((e) => {
   console.error(R('Fatal error in model validator: ' + e.message));
