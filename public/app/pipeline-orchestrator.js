@@ -7,7 +7,7 @@
    ============================================ */
 
 'use strict';
-/* global fetch, Blob, URL, console, self, crypto, TextEncoder */
+/* global fetch, Blob, URL, console, self, crypto, TextEncoder, window, document, setTimeout, setInterval, clearInterval, Worker, AudioWorkletNode, CustomEvent, MediaRecorder */
 
 const WORKLET_READY_FALLBACK_MS = 250;
 const WORKLET_SOURCE_SHA256 = '9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48';
@@ -500,12 +500,14 @@ class PipelineOrchestrator {
       // If models are cached in IDB, pass Object URLs so the worker skips
       // re-fetching them from disk. Falls back gracefully if cache is empty.
       if (typeof window._vipPreloadModels === 'function') {
-        // Fire-and-forget preload — models load while audio context inits.
-        // Only the canonical four models (matching model-loader.js +
-        // models-manifest.json) are preloaded. Any others would diverge from
-        // the SW Cache and double-download under different filenames.
+        // Fire-and-forget preload of the two small models — silero_vad (~2.3 MB)
+        // and rnnoise (~2 MB). These keys match ml-worker-fetch-cache.js MODEL_REGISTRY.
+        // demucs_v4 (~87 MB) and bsrnn_vocals (~3.9 MB) are intentionally excluded:
+        // loading them here pulled 90+ MB into the main-thread renderer before the
+        // user could interact, causing "Aw, Snap!" OOM crashes on mobile. Both are
+        // fetched on-demand by the ml-worker the first time the pipeline needs them.
         window._vipPreloadModels(
-          ['silero_vad', 'rnnoise', 'demucs_v4', 'bsrnn_vocals'],
+          ['silero_vad', 'rnnoise'],
           { forceRefresh: false }
         ).then((modelPaths) => {
           // Forward any resolved Object URLs to the already-running worker.
@@ -561,9 +563,12 @@ class PipelineOrchestrator {
           ortUrl:             '/lib/ort.min.js',
           preferredProviders: ['webgpu', 'wasm'],
           sampleRate:         this.audioContext ? this.audioContext.sampleRate : 48000,
-          // Canonical four — matches model-loader.js + models-manifest.json.
-          // ml-worker.js MODEL_FILES maps these aliases to .onnx filenames.
-          allowedModels:      window.Auth ? window.Auth.getCaps().mlModels : ['vad', 'rnnoise'],
+          // Start the worker with only small/eager models. Large models like
+          // demucs-v4 (~87 MB) are excluded from init — the ml-worker loads
+          // them on-demand when inference is first requested for that model,
+          // avoiding OOM crashes on mobile during app startup.
+          allowedModels:      (window.Auth ? window.Auth.getCaps().mlModels : ['vad', 'rnnoise'])
+            .filter(m => !['demucs', 'demucs-v4', 'demucs_v4'].includes(m)),
           allowedStages:      window.Auth ? window.Auth.getAllowedStages() : 8,
         },
       });
