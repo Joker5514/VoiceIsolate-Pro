@@ -183,8 +183,8 @@ describe('ml-worker.js', () => {
 
     expect(workerGlobal.self.ort.env.wasm.wasmPaths).toBe('/lib/');
     expect(workerGlobal.self.ort.env.wasm.proxy).toBe(true);
-    expect(workerGlobal.self.ort.env.wasm.numThreads).toBe(2);
-    expect(typeof workerGlobal.self.ort.env.wasm.simd).toBe('boolean');
+    expect(workerGlobal.self.ort.env.wasm.numThreads).toBe(navigator.hardwareConcurrency ?? 4);
+    expect(workerGlobal.self.ort.env.wasm.simd).toBe(true);
   });
 
   it('uses PCM chunks for demucs input and never spectral mag_input', async () => {
