@@ -32,6 +32,7 @@
    ============================================================================= */
 
 'use strict';
+/* global window, document, indexedDB, fetch, Blob, URL, console, setTimeout, clearTimeout, CustomEvent */
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  CONFIGURATION

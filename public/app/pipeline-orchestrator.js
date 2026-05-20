@@ -7,7 +7,7 @@
    ============================================ */
 
 'use strict';
-/* global fetch, Blob, URL, console, self, crypto, TextEncoder, window, document, setTimeout, clearTimeout, Worker, AudioContext, OfflineAudioContext, AudioWorkletNode, SharedArrayBuffer, BroadcastChannel, CustomEvent */
+/* global fetch, Blob, URL, console, self, crypto, TextEncoder, window, document, setTimeout, setInterval, clearInterval, Worker, AudioWorkletNode, CustomEvent, MediaRecorder */
 
 const WORKLET_READY_FALLBACK_MS = 250;
 const WORKLET_SOURCE_SHA256 = '9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48';
