@@ -15,7 +15,6 @@
 //   1. SW Cache (Cache API) — zero network, instant
 //   2. Vercel Blob proxied via /app/models/ rewrite (same-origin)
 //   3. Cloudflare R2 (CORS whitelisted in vercel.json connect-src)
-//   4. HuggingFace Hub (last resort)
 //
 // See docs/MODEL_DELIVERY.md for full architecture details.
 // ============================================================
@@ -24,12 +23,11 @@
   'use strict';
 
   // Provider priority order. vercel-blob first (proxied via /app/models/ rewrite —
-  // satisfies CSP connect-src 'self'). r2 second. huggingface last (Xet redirect
-  // layer can cause CORS issues on large files).
-  const PROVIDER_PRIORITY = ['vercel-blob', 'r2', 'huggingface'];
+  // satisfies CSP connect-src 'self'). r2 second.
+  const PROVIDER_PRIORITY = ['vercel-blob', 'r2'];
 
   // In-memory registry of which providers are known-healthy this session
-  const providerHealth = { 'vercel-blob': true, 'r2': true, 'huggingface': true };
+  const providerHealth = { 'vercel-blob': true, 'r2': true };
 
   // Track which provider served each model in this session (for diagnostics)
   const modelProviderMap = {};

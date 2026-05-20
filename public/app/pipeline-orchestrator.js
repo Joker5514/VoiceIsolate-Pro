@@ -15,10 +15,10 @@ const WORKLET_SOURCE_SHA256 = '9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c
 // ─── AudioWorklet loader with CDN fallback ─────────────────────────────────
 // Primary path is same-origin /app/dsp-processor.js (COOP+COEP friendly).
 // If that fails (404, offline blob, etc.) we walk the manifest mirrors —
-// Vercel Blob → Cloudflare R2 → Hugging Face Hub — fetch the source text,
-// wrap it in a same-origin Blob URL, and pass that to addModule(). The Blob
-// URL is same-origin so it satisfies COEP require-corp without needing the
-// remote response to carry CORP headers.
+// Vercel Blob → Cloudflare R2 — fetch the source text, wrap it in a
+// same-origin Blob URL, and pass that to addModule(). The Blob URL is
+// same-origin so it satisfies COEP require-corp without needing the remote
+// response to carry CORP headers.
 const _WORKLET_FALLBACK_CACHE = { manifest: null, sourceText: null };
 async function _getWorkletManifest() {
   if (_WORKLET_FALLBACK_CACHE.manifest) return _WORKLET_FALLBACK_CACHE.manifest;
@@ -78,7 +78,6 @@ async function loadDspProcessorWorklet(ctx) {
         { provider: 'same-origin', url: '/app/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
         { provider: 'vercel-blob', url: 'https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
         { provider: 'r2',          url: 'https://models.voiceisolatepro.com/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
-        { provider: 'huggingface', url: 'https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
       ];
 
   let lastErr;
