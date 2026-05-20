@@ -1774,10 +1774,25 @@ class VoiceIsolatePro {
 
     try {
       if (isVideo) {
-        const result = await this.decodeViaVideoElement(file);
-        if (result) {
-          this.inputBuffer = result;
+        // Fast path: decodeAudioData handles MP4/WebM containers directly in modern browsers.
+        // This avoids real-time MediaRecorder playback (which hangs when AudioContext is
+        // suspended or when muted=true silences the Web Audio pipeline on mobile).
+        let decoded = null;
+        try {
+          const rawBuffer = await file.arrayBuffer();
+          decoded = await this.ctx.decodeAudioData(rawBuffer.slice(0));
+        } catch (_) {
+          // Container not decodable directly — fall through to MediaRecorder extraction.
+        }
+        if (decoded && decoded.length > 0) {
+          this.inputBuffer = decoded;
           this.onAudioLoaded(name);
+        } else {
+          const result = await this.decodeViaVideoElement(file);
+          if (result) {
+            this.inputBuffer = result;
+            this.onAudioLoaded(name);
+          }
         }
       } else {
         const rawBuffer = await file.arrayBuffer();
@@ -1805,7 +1820,8 @@ class VoiceIsolatePro {
     if (this.dom.videoPlayer) this.dom.videoPlayer.src = url;
     const videoEl = document.createElement('video');
     videoEl.preload = 'auto';
-    videoEl.muted = true;
+    // Do NOT set muted=true — it silences the Web Audio pipeline on mobile,
+    // causing MediaRecorder to capture empty chunks.
     videoEl.src = url;
     return new Promise((resolve, reject) => {
       const cleanup = () => {
@@ -1818,6 +1834,8 @@ class VoiceIsolatePro {
 
       videoEl.onloadedmetadata = async () => {
         try {
+          // Resume the AudioContext — it may be suspended on mobile after page load.
+          if (this.ctx.state === 'suspended') await this.ctx.resume().catch(() => {});
           const source = this.ctx.createMediaElementSource(videoEl);
           const dest = this.ctx.createMediaStreamDestination();
           source.connect(dest);
