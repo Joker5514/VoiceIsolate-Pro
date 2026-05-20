@@ -1780,7 +1780,7 @@ class VoiceIsolatePro {
         let decoded = null;
         try {
           const rawBuffer = await file.arrayBuffer();
-          decoded = await this.ctx.decodeAudioData(rawBuffer.slice(0));
+          decoded = await this.ctx.decodeAudioData(rawBuffer);
         } catch (_) {
           // Container not decodable directly — fall through to MediaRecorder extraction.
         }
