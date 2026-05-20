@@ -29,18 +29,9 @@ importers:
 
   .:
     dependencies:
-      '@capacitor/android':
-        specifier: ^8.3.1
-        version: 8.3.1(@capacitor/core@8.3.1)
-      '@capacitor/cli':
-        specifier: ^8.3.1
-        version: 8.3.1
       '@capacitor/core':
         specifier: ^8.3.1
         version: 8.3.1
-      '@capacitor/ios':
-        specifier: ^8.3.1
-        version: 8.3.1(@capacitor/core@8.3.1)
       '@grpc/grpc-js':
         specifier: ^1.14.3
         version: 1.14.3
@@ -56,9 +47,6 @@ importers:
       express-rate-limit:
         specifier: ^8.3.2
         version: 8.3.2(express@5.2.1)
-      jsdom:
-        specifier: ^26.1.0
-        version: 26.1.0
       onnxruntime-web:
         specifier: 1.25.1
         version: 1.25.1
@@ -66,6 +54,15 @@ importers:
         specifier: 0.184.0
         version: 0.184.0
     devDependencies:
+      '@capacitor/android':
+        specifier: ^8.3.1
+        version: 8.3.1(@capacitor/core@8.3.1)
+      '@capacitor/cli':
+        specifier: ^8.3.1
+        version: 8.3.1
+      '@capacitor/ios':
+        specifier: ^8.3.1
+        version: 8.3.1(@capacitor/core@8.3.1)
       '@eslint/js':
         specifier: ^9.0.0
         version: 9.39.4
@@ -81,6 +78,9 @@ importers:
       jest-environment-jsdom:
         specifier: ^30.3.0
         version: 30.3.0
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0
       playwright:
         specifier: ^1.58.2
         version: 1.58.2

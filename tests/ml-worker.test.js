@@ -39,6 +39,11 @@ describe('ml-worker.js', () => {
       Float32Array: Float32Array,
       Promise: Promise,
       console: console,
+      // Shadow the Node.js 22.x global fetch so the SHA-256 integrity check
+      // in createSessionWithFallback fails fast (non-mismatch error) instead of
+      // attempting real network requests to external Vercel Blob URLs, which
+      // would exceed the 5 s Jest timeout.
+      fetch: jest.fn(() => Promise.reject(new Error('network unavailable in test env'))),
     };
 
     // Evaluate the worker code in the mock global context
