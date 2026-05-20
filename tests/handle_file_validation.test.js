@@ -233,8 +233,9 @@ describe('handleFile() — file type validation', () => {
     expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
   });
 
-  test('accepts video/mp4 files via video decode path', async () => {
+  test('accepts video/mp4 files by trying decodeAudioData first then video fallback', async () => {
     const mockVip = makeMockVip();
+    mockVip.ctx.decodeAudioData.mockRejectedValue(new Error('Decode failed'));
     const videoPlayer = { src: '', _onloadedmetadata: null, _onerror: null };
     Object.defineProperty(videoPlayer, 'onloadedmetadata', {
       get() { return this._onloadedmetadata; },
@@ -252,8 +253,9 @@ describe('handleFile() — file type validation', () => {
 
     await handleFile.call(mockVip, mockFile);
 
+    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
     expect(mockVip.decodeViaVideoElement).toHaveBeenCalledWith(mockFile);
-    expect(mockVip.ctx.decodeAudioData).not.toHaveBeenCalled();
+    expect(mockVip.dom.videoPlayer.src).toBe('blob:test');
     expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
   });
 

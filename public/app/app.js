@@ -547,6 +547,7 @@ class VoiceIsolatePro {
     this.visualEngine = null;
     this._vizRaf = 0;
     this._spectroFrame = 0;
+    this._videoPreviewUrl = null;
 
     Object.values(SLIDERS).flat().forEach(s => { this.params[s.id] = s.val; });
     if (typeof window !== 'undefined') {
@@ -1774,10 +1775,33 @@ class VoiceIsolatePro {
 
     try {
       if (isVideo) {
-        const result = await this.decodeViaVideoElement(file);
-        if (result) {
-          this.inputBuffer = result;
+        if (this.dom.videoPlayer && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+          const nextVideoUrl = URL.createObjectURL(file);
+          if (this._videoPreviewUrl && this._videoPreviewUrl !== nextVideoUrl && typeof URL.revokeObjectURL === 'function') {
+            try { URL.revokeObjectURL(this._videoPreviewUrl); } catch (_) {}
+          }
+          this._videoPreviewUrl = nextVideoUrl;
+          this.dom.videoPlayer.src = nextVideoUrl;
+        }
+        // Fast path: decodeAudioData handles MP4/WebM containers directly in modern browsers.
+        // This avoids real-time MediaRecorder playback (which hangs when AudioContext is
+        // suspended or when muted=true silences the Web Audio pipeline on mobile).
+        let decoded = null;
+        try {
+          const rawBuffer = await file.arrayBuffer();
+          decoded = await this.ctx.decodeAudioData(rawBuffer);
+        } catch (_) {
+          // Container not decodable directly — fall through to MediaRecorder extraction.
+        }
+        if (decoded && decoded.length > 0) {
+          this.inputBuffer = decoded;
           this.onAudioLoaded(name);
+        } else {
+          const result = await this.decodeViaVideoElement(file);
+          if (result) {
+            this.inputBuffer = result;
+            this.onAudioLoaded(name);
+          }
         }
       } else {
         const rawBuffer = await file.arrayBuffer();
@@ -1802,10 +1826,11 @@ class VoiceIsolatePro {
 
   async decodeViaVideoElement(file) {
     const url = URL.createObjectURL(file);
-    if (this.dom.videoPlayer) this.dom.videoPlayer.src = url;
     const videoEl = document.createElement('video');
     videoEl.preload = 'auto';
-    videoEl.muted = true;
+    videoEl.playsInline = true;
+    // Do NOT set muted=true — it silences the Web Audio pipeline on mobile,
+    // causing MediaRecorder to capture empty chunks.
     videoEl.src = url;
     return new Promise((resolve, reject) => {
       const cleanup = () => {
@@ -1818,6 +1843,8 @@ class VoiceIsolatePro {
 
       videoEl.onloadedmetadata = async () => {
         try {
+          // Resume the AudioContext — it may be suspended on mobile after page load.
+          if (this.ctx.state === 'suspended') await this.ctx.resume().catch(() => {});
           const source = this.ctx.createMediaElementSource(videoEl);
           const dest = this.ctx.createMediaStreamDestination();
           source.connect(dest);
@@ -1846,7 +1873,26 @@ class VoiceIsolatePro {
           videoEl.onended = () => {
             try { if (recorder.state !== 'inactive') recorder.stop(); } catch (_) {}
           };
-          await videoEl.play().catch(() => {});
+          let started = false;
+          try {
+            videoEl.muted = false;
+            await videoEl.play();
+            started = true;
+          } catch (_) {
+            try {
+              videoEl.muted = true;
+              await videoEl.play();
+              videoEl.muted = false;
+              started = true;
+            } catch (playErr) {
+              fail(playErr);
+              return;
+            }
+          }
+          if (!started) {
+            fail(new Error('Video playback blocked by autoplay policy'));
+            return;
+          }
           const durationMs = Math.max(1000, Math.ceil((videoEl.duration || 0) * 1000) + 250);
           setTimeout(() => {
             try {
