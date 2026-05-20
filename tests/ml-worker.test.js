@@ -183,7 +183,7 @@ describe('ml-worker.js', () => {
 
     expect(workerGlobal.self.ort.env.wasm.wasmPaths).toBe('/lib/');
     expect(workerGlobal.self.ort.env.wasm.proxy).toBe(true);
-    expect(workerGlobal.self.ort.env.wasm.numThreads).toBe(navigator.hardwareConcurrency ?? 4);
+    expect(workerGlobal.self.ort.env.wasm.numThreads).toBe(workerGlobal.navigator.hardwareConcurrency ?? 4);
     expect(workerGlobal.self.ort.env.wasm.simd).toBe(true);
   });
 
