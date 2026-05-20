@@ -76,4 +76,4 @@ Audio data (PCM samples, spectral frames, model inputs/outputs) is **never sent 
 
 - Firebase credentials are injected at runtime via `window.FIREBASE_*` variables (set by the Vercel environment or the service worker) — never hardcoded in source
 - `firebase-config.js` exports `auth`, `db`, and helper functions — callers must guard against Firebase being unavailable in non-authenticated sessions
-- The `connect-src` CSP directive in `vercel.json` includes `https://identitytoolkit.googleapis.com` implicitly via `'self'` only if the domain is served from Vercel; ensure CSP is updated if Firebase endpoints change
+- The CSP in `vercel.json` must explicitly allow Firebase network endpoints in `connect-src` (for example `https://identitytoolkit.googleapis.com`, `https://securetoken.googleapis.com`, and `https://firestore.googleapis.com` as used by Auth and Firestore); `'self'` does **not** cover these third-party origins. If the Firebase SDK is loaded from the `gstatic.com` CDN, `script-src` must also allow `https://www.gstatic.com`.
