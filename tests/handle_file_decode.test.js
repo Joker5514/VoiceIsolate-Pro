@@ -57,7 +57,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
     jest.clearAllTimers();
   });
 
-  it('uses decodeViaVideoElement directly for video files', async () => {
+  it('tries decodeAudioData first, then falls back to decodeViaVideoElement for video files', async () => {
     const handleFile = VoiceIsolatePro.prototype.handleFile;
 
     const mockVip = {
@@ -96,7 +96,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
 
     clearTimeout(timeoutId);
 
-    expect(mockVip.ctx.decodeAudioData).not.toHaveBeenCalled();
+    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalled();
     expect(mockVip.decodeViaVideoElement).toHaveBeenCalledWith(mockFile);
     expect(mockVip.inputBuffer).toEqual([1, 2, 3]);
   });
