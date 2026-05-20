@@ -253,8 +253,9 @@ describe('handleFile() — file type validation', () => {
 
     await handleFile.call(mockVip, mockFile);
 
-    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalled();
+    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
     expect(mockVip.decodeViaVideoElement).toHaveBeenCalledWith(mockFile);
+    expect(mockVip.dom.videoPlayer.src).toBe('blob:test');
     expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
   });
 

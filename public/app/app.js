@@ -547,6 +547,7 @@ class VoiceIsolatePro {
     this.visualEngine = null;
     this._vizRaf = 0;
     this._spectroFrame = 0;
+    this._videoPreviewUrl = null;
 
     Object.values(SLIDERS).flat().forEach(s => { this.params[s.id] = s.val; });
     if (typeof window !== 'undefined') {
@@ -1827,6 +1828,7 @@ class VoiceIsolatePro {
     const url = URL.createObjectURL(file);
     const videoEl = document.createElement('video');
     videoEl.preload = 'auto';
+    videoEl.playsInline = true;
     // Do NOT set muted=true — it silences the Web Audio pipeline on mobile,
     // causing MediaRecorder to capture empty chunks.
     videoEl.src = url;
@@ -1871,7 +1873,26 @@ class VoiceIsolatePro {
           videoEl.onended = () => {
             try { if (recorder.state !== 'inactive') recorder.stop(); } catch (_) {}
           };
-          await videoEl.play().catch(() => {});
+          let started = false;
+          try {
+            videoEl.muted = false;
+            await videoEl.play();
+            started = true;
+          } catch (_) {
+            try {
+              videoEl.muted = true;
+              await videoEl.play();
+              videoEl.muted = false;
+              started = true;
+            } catch (playErr) {
+              fail(playErr);
+              return;
+            }
+          }
+          if (!started) {
+            fail(new Error('Video playback blocked by autoplay policy'));
+            return;
+          }
           const durationMs = Math.max(1000, Math.ceil((videoEl.duration || 0) * 1000) + 250);
           setTimeout(() => {
             try {
