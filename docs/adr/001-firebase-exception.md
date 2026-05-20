@@ -48,7 +48,7 @@ Audio data (PCM samples, spectral frames, model inputs/outputs) is **never sent 
 
 **Negative:**
 - Introduces a runtime dependency on Google infrastructure for auth flows
-- Users without Google accounts cannot use social sign-in (mitigated: email/password auth also available)
+- Users without Google accounts cannot sign in, because Google Sign-In is the only authentication method currently supported
 - Firebase SDK is loaded from `gstatic.com` CDN — an exception to the local-library rule (acceptable because it is UI-layer only, not audio-processing layer)
 
 ---
