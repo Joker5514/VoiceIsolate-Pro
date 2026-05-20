@@ -1,4 +1,5 @@
 {
+  "_note": "HuggingFace removed from runtime sources per architecture constraint. Use scripts/upload-models-to-blob.mjs to seed Vercel Blob and R2 only.",
   "schemaVersion": 2,
   "models": {
     "demucs": {
@@ -7,8 +8,7 @@
       "eager": false,
       "sources": [
         { "provider": "vercel-blob", "url": "/app/models/demucs_v4_quantized.onnx" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/demucs_v4_quantized.onnx" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/demucs_v4_quantized.onnx" }
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/demucs_v4_quantized.onnx" }
       ]
     },
     "bsrnn": {
@@ -17,8 +17,7 @@
       "eager": false,
       "sources": [
         { "provider": "vercel-blob", "url": "/app/models/bsrnn_vocals.onnx" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/bsrnn_vocals.onnx" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/bsrnn_vocals.onnx" }
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/bsrnn_vocals.onnx" }
       ]
     },
     "rnnoise": {
@@ -27,8 +26,7 @@
       "eager": true,
       "sources": [
         { "provider": "vercel-blob", "url": "/app/models/rnnoise_suppressor.onnx" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/rnnoise_suppressor.onnx" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/rnnoise_suppressor.onnx" }
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/rnnoise_suppressor.onnx" }
       ]
     },
     "silero_vad": {
@@ -37,11 +35,11 @@
       "eager": true,
       "sources": [
         { "provider": "vercel-blob", "url": "/app/models/silero_vad.onnx" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/silero_vad.onnx" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/silero_vad.onnx" }
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/silero_vad.onnx" }
       ]
     }
   },
+  "_sha256_note": "SHA256 last updated: 2026-05-20. Regenerate with: node scripts/hash-worklets.js",
   "worklets": {
     "dsp_processor": {
       "filename": "dsp-processor.js",
@@ -50,8 +48,7 @@
       "sources": [
         { "provider": "same-origin", "url": "/app/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" },
         { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" }
+        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" }
       ]
     }
   }
