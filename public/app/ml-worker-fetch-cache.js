@@ -389,6 +389,8 @@ window._vipCacheStatus = async function cacheStatus() {
  * @param {string[]} keys - Array of model keys to display as individual progress rows.
  */
 
+let _progressPanelDismissTimer = null;
+
 const MODEL_DISPLAY_NAMES = {
   silero_vad:      'Voice Activity Detector',
   silero_vad_int8: 'Voice Activity Detector (fast)',
@@ -398,6 +400,13 @@ const MODEL_DISPLAY_NAMES = {
 };
 
 function _ensureProgressPanel(keys) {
+  // Cancel any pending auto-dismiss so a fresh preload run isn't dismissed
+  // by a stale timer from a previous (already-complete) preload cycle.
+  if (_progressPanelDismissTimer) {
+    clearTimeout(_progressPanelDismissTimer);
+    _progressPanelDismissTimer = null;
+  }
+
   // Create backdrop if not present
   let backdrop = document.getElementById('vip-model-load-backdrop');
   if (!backdrop) {
@@ -414,9 +423,11 @@ function _ensureProgressPanel(keys) {
     panel.setAttribute('aria-live', 'polite');
     panel.setAttribute('aria-label', 'Initialising AI models');
 
-    const style = document.createElement('style');
-    style.textContent = `
-      #vip-model-load-backdrop {
+    if (!document.getElementById('vip-mlp-style')) {
+      const style = document.createElement('style');
+      style.id = 'vip-mlp-style';
+      style.textContent = `
+        #vip-model-load-backdrop {
         position: fixed;
         inset: 0;
         background: rgba(0,0,0,0.65);
@@ -487,8 +498,9 @@ function _ensureProgressPanel(keys) {
         font-size: 10px;
         text-align: center;
       }
-    `;
-    document.head.appendChild(style);
+      `;
+      document.head.appendChild(style);
+    }
     document.body.appendChild(panel);
   }
 
@@ -557,11 +569,12 @@ function _updateProgressRow(key, pct, statusText) {
 function _finalizeProgressPanel(results) {
   // Auto-dismiss after 1.2s if all loaded, 3.5s if any failed
   const delay = results.failed.length > 0 ? 3500 : 1200;
-  setTimeout(() => {
+  _progressPanelDismissTimer = setTimeout(() => {
     const panel    = document.getElementById('vip-model-load-panel');
     const backdrop = document.getElementById('vip-model-load-backdrop');
     if (panel)    panel.remove();
     if (backdrop) backdrop.remove();
+    _progressPanelDismissTimer = null;
   }, delay);
 }
 
@@ -576,16 +589,20 @@ window.addEventListener('vip:modelDownloadProgress', (e) => {
   // If the panel was dismissed (post-startup on-demand download), re-surface
   // progress in the processing overlay so the user isn't staring at a frozen
   // screen while a large model (e.g. demucs ~87 MB) downloads mid-pipeline.
-  if (!document.getElementById('vip-model-load-panel') && window.VIPOverlay && typeof window.VIPOverlay.update === 'function') {
+  if (!document.getElementById('vip-model-load-panel') && globalThis.VIPOverlay && typeof globalThis.VIPOverlay.update === 'function') {
     const displayName = MODEL_DISPLAY_NAMES[key] || key;
     const pctLabel    = pct >= 0 ? `${pct}%` : '…';
     try {
-      window.VIPOverlay.update(
+      // Pass pct as-is (0-100) so bar and text agree. Omit stageIndex so
+      // VIPOverlay preserves the current pipeline stage instead of
+      // resetting the display to "Stage 1 / 32".
+      globalThis.VIPOverlay.update(
         `Downloading ${displayName} (${pctLabel})`,
-        typeof pct === 'number' && pct >= 0 ? Math.round(pct * 0.4) : 0,
-        0
+        typeof pct === 'number' && pct >= 0 ? pct : 0
       );
-    } catch (_) {}
+    } catch (err) {
+      console.warn('[VIP] Overlay update during model download failed:', err && err.message || err);
+    }
   }
 });
 
