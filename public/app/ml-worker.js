@@ -171,7 +171,7 @@ function configureWasmRuntime() {
   if (!ort || !ort.env || !ort.env.wasm) return;
   ort.env.wasm.wasmPaths = '/lib/';
   ort.env.wasm.proxy = true;
-  ort.env.wasm.numThreads = navigator.hardwareConcurrency ?? 4;
+  ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency ?? 4, 4);
   ort.env.wasm.simd = true;
 }
 
