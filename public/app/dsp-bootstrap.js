@@ -4,15 +4,16 @@
  * Wires three previously disconnected pieces:
  *   1. globalThis.DSP  — exposes forwardSTFT / inverseSTFT so runPipeline()
  *                        produces real audio instead of a silent copy.
- *   2. initAudio()     — patches the existing stub to actually call
- *                        audioCtx.audioWorklet.addModule() and new Worker().
+ *   2. initAudio()     — patches the existing stub to set up the audio graph.
+ *                        Worklet registration and ML worker lifecycle are owned
+ *                        exclusively by pipeline-orchestrator.js (CLAUDE.md §2/§3).
  *   3. _vipOrch        — initialises the PipelineOrchestrator and stores it
  *                        on window so slider dispatches route correctly.
  *
  * CONSTRAINTS MAINTAINED:
  *   • Exactly ONE forward STFT, in-place spectral ops, ONE iSTFT.
  *   • Zero fetch() to external servers.
- *   • All ML inference stays in ml-worker.js via Worker().
+ *   • All ML inference stays in the ml-worker via the orchestrator.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -189,59 +190,12 @@
       analyser.smoothingTimeConstant = 0.85;
       window._vipAnalyser = analyser;
 
-      /* ── AudioWorklet ── */
-      let workletNode = null;
-      try {
-        await audioCtx.audioWorklet.addModule('/app/dsp-processor.js');
-        workletNode = new AudioWorkletNode(audioCtx, 'dsp-processor', {
-          numberOfInputs:    1,
-          numberOfOutputs:   1,
-          outputChannelCount:[2],
-        });
-        workletNode.port.postMessage({
-          type:     'init',
-          inputSAB,
-          outputSAB,
-          fftSize:  FFT_SIZE,
-          hopSize:  HOP_SIZE,
-        });
-        workletNode.port.onmessage = (ev) => {
-          if (ev.data?.type === 'magnitude' && ev.data.mag)
-            window._vipMlWorker?.postMessage({ type: 'infer', model: 'bsrnn', mag: ev.data.mag });
-        };
-        window._vipWorkletNode = workletNode;
-        console.info('[DSP-Bootstrap] AudioWorklet (dsp-processor) loaded.');
-      } catch (e) {
-        console.warn('[DSP-Bootstrap] AudioWorklet unavailable — offline mode only.', e);
-      }
-
-      /* ── ML Worker ── */
-      const pending = [];
-      let mlReady   = false;
-      try {
-        const mlWorker = new Worker('/app/ml-worker.js', { type: 'module' });
-        mlWorker.onmessage = (ev) => {
-          if (ev.data?.type === 'ready') {
-            mlReady = true;
-            pending.forEach(m => mlWorker.postMessage({ type: 'infer', model: 'bsrnn', mag: m }));
-            pending.length = 0;
-            console.info('[DSP-Bootstrap] ML worker ready.');
-          }
-        };
-        mlWorker.onerror = (e) => console.error('[DSP-Bootstrap] ML worker error:', e);
-        /* Forward SABs to ML worker for ring-buffer inference */
-        mlWorker.postMessage({
-          type:         'initRingBuffers',
-          inputRing:    inputSAB,
-          maskRing:     outputSAB,
-          halfN:        HALF_BINS,
-          ringCapacity: 16,
-          quantumSize:  128,
-        });
-        window._vipMlWorker = mlWorker;
-      } catch (e) {
-        console.warn('[DSP-Bootstrap] ML worker failed to start:', e);
-      }
+      /* ── AudioWorklet + ML Worker ── */
+      // Worklet registration and worker spawning belong exclusively to
+      // pipeline-orchestrator.js (CLAUDE.md §2 + §3).
+      // dsp-bootstrap wires the audio graph but defers lifecycle to the orchestrator.
+      let workletNode = window._vipWorkletNode || null;
+      const mlWorker  = window._vipMlWorker   || null;
 
       /* ── Expose on app instance once it's ready ── */
       const patch = () => {

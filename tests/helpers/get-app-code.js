@@ -30,6 +30,31 @@ const INLINED_MODULES = [
   { file: 'model-status-ui.js',  exports: ['ModelStatusUI'] },
 ];
 
+// dsp-core.js is loaded as a classic <script> in the browser before app.js,
+// so globalThis.DSPCore is live when app.js evaluates. In test evals/new Function
+// that context is absent — prepend dsp-core inline and set globalThis.DSPCore
+// so resolveDSPOrFail() in app.js succeeds without modification.
+function buildDspCorePreamble() {
+  const src = fs.readFileSync(path.join(APP_DIR, 'dsp-core.js'), 'utf8');
+  // Wrap in an IIFE so its internal vars don't bleed into the test scope,
+  // then assign the result onto globalThis so resolveDSPOrFail() can find it.
+  return `
+(function _injectDSPCore() {
+  const _dspModule = { exports: {} };
+  const _dspWindow = {};
+  const _dspSelf   = {};
+  (function(module, window, self) {
+${src}
+  })(_dspModule, _dspWindow, _dspSelf);
+  const _DSPCoreResult = _dspModule.exports || _dspWindow.DSPCore || _dspSelf.DSPCore;
+  if (typeof globalThis !== 'undefined') {
+    globalThis.DSPCore = _DSPCoreResult;
+    globalThis.DSP     = _DSPCoreResult;
+  }
+})();
+`;
+}
+
 function inlineAsIIFE({ file, exports: names }) {
   const src = fs.readFileSync(path.join(APP_DIR, file), 'utf8')
     // Strip `export ` prefixes so declarations become plain locals inside the IIFE.
@@ -50,10 +75,11 @@ function stripRelativeImports(src) {
 }
 
 function getAppCode() {
-  const inlined = INLINED_MODULES.map(inlineAsIIFE).join('\n');
+  const preamble = buildDspCorePreamble();
+  const inlined  = INLINED_MODULES.map(inlineAsIIFE).join('\n');
   const appJsRaw = fs.readFileSync(path.join(APP_DIR, 'app.js'), 'utf8');
   const appJsCode = stripRelativeImports(appJsRaw);
-  return inlined + '\n' + appJsCode;
+  return preamble + '\n' + inlined + '\n' + appJsCode;
 }
 
 module.exports = getAppCode;
