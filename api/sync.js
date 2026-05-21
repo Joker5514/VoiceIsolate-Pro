@@ -143,9 +143,15 @@ const MAX_USER_STORAGE_BYTES = 10 * 1024 * 1024; // 10 MB total per user
 
 function _getUserStorageBytes(data) {
   let total = 0;
-  try { total += Buffer.byteLength(JSON.stringify(data.presets || [])); } catch {}
-  try { total += Buffer.byteLength(JSON.stringify(data.noiseProfiles || [])); } catch {}
-  try { total += Buffer.byteLength(JSON.stringify(data.history || [])); } catch {}
+  for (const val of [data.presets || [], data.noiseProfiles || [], data.history || []]) {
+    try {
+      total += Buffer.byteLength(JSON.stringify(val));
+    } catch {
+      // Non-serializable data bypassed sanitizers — force a strictly over-limit
+      // result so quota enforcement using `>` still fails safe.
+      total += MAX_USER_STORAGE_BYTES + 1;
+    }
+  }
   return total;
 }
 

@@ -58,6 +58,12 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(derived, expected);
 }
 
+// ─── Login rate limiting ──────────────────────────────────────────────────────
+// `/auth/login` is rate-limited centrally in `api/index.js`. Keep this local
+// middleware as a pass-through so existing route wiring remains unchanged while
+// avoiding duplicate enforcement and inconsistent 429 responses.
+const loginLimiter = (_req, _res, next) => next();
+
 // ─── JWT Utilities ────────────────────────────────────────────────────────────
 function createAuthToken(user) {
   const header  = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -87,10 +93,9 @@ function validateAuthToken(token) {
       .createHmac('sha256', LICENSE_SECRET)
       .update(`${parts[0]}.${parts[1]}`)
       .digest('base64url');
-    if (!crypto.timingSafeEqual(
-      Buffer.from(expectedSig, 'base64url'),
-      Buffer.from(parts[2],    'base64url')
-    )) return null;
+    const expectedBuf = Buffer.from(expectedSig, 'base64url');
+    const providedBuf = Buffer.from(parts[2],    'base64url');
+    if (expectedBuf.length !== providedBuf.length || !crypto.timingSafeEqual(expectedBuf, providedBuf)) return null;
     const p = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
     if (Date.now() / 1000 > p.exp) return null;
     return p;
@@ -138,9 +143,10 @@ if (enableTestAccounts) {
 }
 
 // ─── POST /api/auth/login ────────────────────────────────────────────────────
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const { username, password } = req.body || {};
-  if (!username || !password) {
+  if (typeof username !== 'string' || !username || username.length > 256 ||
+      typeof password !== 'string' || !password || password.length > 1024) {
     return res.status(400).json({ error: 'Username and password are required.' });
   }
   const user = USERS[username.toLowerCase()];
