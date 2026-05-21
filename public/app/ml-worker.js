@@ -152,17 +152,30 @@ function detectAndroidWebView() {
 }
 
 function detectWasmSimdSupport() {
-  if (typeof WebAssembly === 'undefined' || typeof WebAssembly.validate !== 'function') return false;
+  // Probe for WebAssembly SIMD (v128) support by validating a minimal module
+  // that uses the v128.const opcode. WebAssembly.validate() returns false
+  // (without throwing) when the engine lacks SIMD, so this is a safe,
+  // synchronous probe that correctly handles older Android WebViews where
+  // WebAssembly is available but SIMD is not.
   try {
-    // Minimal SIMD feature probe module.
-    return WebAssembly.validate(new Uint8Array([
-      0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-      0x01, 0x04, 0x01, 0x60, 0x00, 0x00,
-      0x03, 0x02, 0x01, 0x00,
-      0x0a, 0x09, 0x01, 0x07, 0x00,
-      0xfd, 0x0f, 0x00, 0x0b
-    ]));
-  } catch {
+    return typeof WebAssembly !== 'undefined' &&
+      typeof WebAssembly.validate === 'function' &&
+      WebAssembly.validate(new Uint8Array([
+        0x00, 0x61, 0x73, 0x6d, // magic: \0asm
+        0x01, 0x00, 0x00, 0x00, // version: 1
+        0x01, 0x05, 0x01,       // type section: 1 entry
+        0x60, 0x00, 0x01, 0x7b, // func type: () -> v128
+        0x03, 0x02, 0x01, 0x00, // function section: func[0] = type[0]
+        0x0a, 0x16, 0x01,       // code section: 1 body
+        0x14, 0x00,             // body: 20 bytes, 0 locals
+        0xfd, 0x0c,             // v128.const opcode
+        0x00, 0x00, 0x00, 0x00, // 16-byte immediate (zero vector)
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x0b                    // end
+      ]));
+  } catch (_) {
     return false;
   }
 }
