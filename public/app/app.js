@@ -1,6 +1,10 @@
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { ModelStatusUI } from './model-status-ui.js';
-const DSP = globalThis.DSP || {};
+// DSP math (forwardSTFT / inverseSTFT) lives on globalThis.DSPCore, exposed by
+// the classic <script src="./dsp-core.js"> tag in index.html — loaded before
+// this module so the binding is live at evaluation time. `DSP` retained as a
+// shorter alias; legacy globalThis.DSP kept as a fallback.
+const DSP = globalThis.DSPCore || globalThis.DSP || {};
 
 // ── Structured logging ───────────────────────────────────────────────────────
 function structuredLog(level, msg, data = {}) {

@@ -12,6 +12,10 @@
   <script type="module">
     import('three').then((m) => { globalThis.THREE = m; }).catch(() => {});
   </script>
+  <!-- DSP math (STFT/iSTFT, filters, Wiener NR) on window.DSPCore. Loaded as a
+       classic blocking script so the binding is live before any module imports
+       evaluate — app.js captures DSP = globalThis.DSPCore at module init. -->
+  <script src="./dsp-core.js"></script>
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="slider-theme.css" />
   <link rel="stylesheet" href="style-diag-log.css" />
