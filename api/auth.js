@@ -58,32 +58,11 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(derived, expected);
 }
 
-// ─── Rate Limiter (per-IP, in-memory; replace with Redis in production) ───────
-function makeRateLimiter(maxReqs, windowMs) {
-  const _map = new Map(); // ip → { count, windowStart }
-  return function rateLimiter(req, res, next) {
-    const key = req.ip || 'unknown';
-    const now = Date.now();
-    const entry = _map.get(key) || { count: 0, windowStart: now };
-    if (now - entry.windowStart > windowMs) {
-      entry.count = 0;
-      entry.windowStart = now;
-    }
-    entry.count++;
-    _map.set(key, entry);
-    if (_map.size > 5000) {
-      for (const [k, v] of _map) {
-        if (now - v.windowStart > windowMs * 2) _map.delete(k);
-      }
-    }
-    if (entry.count > maxReqs) {
-      return res.status(429).json({ error: 'Too many requests. Please wait before trying again.' });
-    }
-    next();
-  };
-}
-
-const loginLimiter = makeRateLimiter(10, 60_000); // 10 attempts per minute per IP
+// ─── Login rate limiting ──────────────────────────────────────────────────────
+// `/auth/login` is rate-limited centrally in `api/index.js`. Keep this local
+// middleware as a pass-through so existing route wiring remains unchanged while
+// avoiding duplicate enforcement and inconsistent 429 responses.
+const loginLimiter = (_req, _res, next) => next();
 
 // ─── JWT Utilities ────────────────────────────────────────────────────────────
 function createAuthToken(user) {
