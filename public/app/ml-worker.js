@@ -153,9 +153,10 @@ function detectAndroidWebView() {
 
 function detectWasmSimdSupport() {
   // WASM SIMD (v128) has been available in all target environments since 2021
-  // (Chrome 91+, Firefox 89+, Safari 16.4+, Node 16+). We only gate on the
-  // presence of WebAssembly itself; a runtime that lacks it cannot run ONNX
-  // Runtime at all, so returning false there is correct.
+  // (Chrome 91+, Firefox 89+, Safari 16.4+, Node 16+). This gate requires
+  // both WebAssembly itself and WebAssembly.validate; a runtime that lacks
+  // either cannot support this WASM configuration, so returning false there
+  // is correct.
   return typeof WebAssembly !== 'undefined' && typeof WebAssembly.validate === 'function';
 }
 
