@@ -195,7 +195,6 @@
       // pipeline-orchestrator.js (CLAUDE.md §2 + §3).
       // dsp-bootstrap wires the audio graph but defers lifecycle to the orchestrator.
       let workletNode = window._vipWorkletNode || null;
-      const mlWorker  = window._vipMlWorker   || null;
 
       /* ── Expose on app instance once it's ready ── */
       const patch = () => {
