@@ -147,8 +147,9 @@ function _getUserStorageBytes(data) {
     try {
       total += Buffer.byteLength(JSON.stringify(val));
     } catch {
-      // Non-serializable data bypassed sanitizers — treat as over-limit to fail safe.
-      total += MAX_USER_STORAGE_BYTES;
+      // Non-serializable data bypassed sanitizers — force a strictly over-limit
+      // result so quota enforcement using `>` still fails safe.
+      total += MAX_USER_STORAGE_BYTES + 1;
     }
   }
   return total;
