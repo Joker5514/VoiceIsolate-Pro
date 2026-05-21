@@ -194,8 +194,8 @@
       // Worklet registration and worker spawning belong exclusively to
       // pipeline-orchestrator.js (CLAUDE.md §2 + §3).
       // dsp-bootstrap wires the audio graph but defers lifecycle to the orchestrator.
-      let workletNode = window._vipWorkletNode || null;
-      const mlWorker  = window._vipMlWorker   || null;
+      // Read orchestrator-owned handles lazily so patch() never overwrites
+      // newer instances created after initAudioFull starts.
 
       /* ── Expose on app instance once it's ready ── */
       const patch = () => {
@@ -211,8 +211,12 @@
           // direct property injection for the methods that check window.
           if (window._vipOrch) {
             window._vipOrch.audioCtx    = audioCtx;
-            window._vipOrch.workletNode = workletNode;
-            window._vipOrch.mlWorker    = window._vipMlWorker;
+            if (window._vipWorkletNode) {
+              window._vipOrch.workletNode = window._vipWorkletNode;
+            }
+            if (window._vipMlWorker) {
+              window._vipOrch.mlWorker = window._vipMlWorker;
+            }
             window._vipOrch.analyser    = analyser;
           }
         } catch (_) {}
