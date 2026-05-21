@@ -58,6 +58,33 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(derived, expected);
 }
 
+// ─── Rate Limiter (per-IP, in-memory; replace with Redis in production) ───────
+function makeRateLimiter(maxReqs, windowMs) {
+  const _map = new Map(); // ip → { count, windowStart }
+  return function rateLimiter(req, res, next) {
+    const key = req.ip || 'unknown';
+    const now = Date.now();
+    const entry = _map.get(key) || { count: 0, windowStart: now };
+    if (now - entry.windowStart > windowMs) {
+      entry.count = 0;
+      entry.windowStart = now;
+    }
+    entry.count++;
+    _map.set(key, entry);
+    if (_map.size > 5000) {
+      for (const [k, v] of _map) {
+        if (now - v.windowStart > windowMs * 2) _map.delete(k);
+      }
+    }
+    if (entry.count > maxReqs) {
+      return res.status(429).json({ error: 'Too many requests. Please wait before trying again.' });
+    }
+    next();
+  };
+}
+
+const loginLimiter = makeRateLimiter(10, 60_000); // 10 attempts per minute per IP
+
 // ─── JWT Utilities ────────────────────────────────────────────────────────────
 function createAuthToken(user) {
   const header  = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -87,10 +114,9 @@ function validateAuthToken(token) {
       .createHmac('sha256', LICENSE_SECRET)
       .update(`${parts[0]}.${parts[1]}`)
       .digest('base64url');
-    if (!crypto.timingSafeEqual(
-      Buffer.from(expectedSig, 'base64url'),
-      Buffer.from(parts[2],    'base64url')
-    )) return null;
+    const expectedBuf = Buffer.from(expectedSig, 'base64url');
+    const providedBuf = Buffer.from(parts[2],    'base64url');
+    if (expectedBuf.length !== providedBuf.length || !crypto.timingSafeEqual(expectedBuf, providedBuf)) return null;
     const p = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
     if (Date.now() / 1000 > p.exp) return null;
     return p;
@@ -138,9 +164,10 @@ if (enableTestAccounts) {
 }
 
 // ─── POST /api/auth/login ────────────────────────────────────────────────────
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const { username, password } = req.body || {};
-  if (!username || !password) {
+  if (typeof username !== 'string' || !username || username.length > 256 ||
+      typeof password !== 'string' || !password || password.length > 1024) {
     return res.status(400).json({ error: 'Username and password are required.' });
   }
   const user = USERS[username.toLowerCase()];
