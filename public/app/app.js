@@ -1996,6 +1996,9 @@ class VoiceIsolatePro {
       updateStatus('Binding UI sliders…');
       initSliders();
 
+      // AUDIT-SAFE: single pipeline iSTFT (S20). inverseSTFT() only READS mag/phase
+      // (creates a new Float32Array for output; never mutates the input arrays).
+      // The shared spectral buffer is safe here — no deep copy needed.
       const processed = (DSP.inverseSTFT && spectrum?.mag && spectrum?.phase)
         ? DSP.inverseSTFT(spectrum.mag, spectrum.phase, fftSize, hopSize, signal.length)
         : null;

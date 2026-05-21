@@ -171,7 +171,7 @@ function configureWasmRuntime() {
   if (!ort || !ort.env || !ort.env.wasm) return;
   ort.env.wasm.wasmPaths = '/lib/';
   ort.env.wasm.proxy = true;
-  ort.env.wasm.numThreads = 2;
+  ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency ?? 4, 4);
   ort.env.wasm.simd = detectWasmSimdSupport();
 }
 
@@ -954,6 +954,7 @@ async function createSessionWithFallback(modelUrl, expectedSha256, executionProv
   const canUseWebGpu = Array.isArray(executionProviders) && executionProviders.includes('webgpu');
   if (canUseWebGpu) {
     try {
+      // EP: WebGPU primary, WASM fallback — local inference only, no cloud.
       const session = await ort.InferenceSession.create(source, {
         executionProviders: ['webgpu', 'wasm'],
         graphOptimizationLevel: 'all',
@@ -965,6 +966,7 @@ async function createSessionWithFallback(modelUrl, expectedSha256, executionProv
   }
 
   {
+    // EP: WebGPU primary, WASM fallback — local inference only, no cloud.
     const session = await ort.InferenceSession.create(source, {
       executionProviders: ['wasm'],
       graphOptimizationLevel: 'all',

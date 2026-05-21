@@ -10,7 +10,7 @@
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/handler" },
-    { "source": "/app/models/demucs_v4_quantized.onnx", "destination": "/app/models/demucs_v4_quantized.onnx" },
+    { "source": "/app/models/demucs_v4_quantized.onnx", "destination": "$BLOB_DEMUCS_URL" },
     { "source": "/app/((?!sw\\.js|dsp-processor\\.js|voice-isolate-processor\\.js|ml-worker\\.js|dsp-worker\\.js|ring-buffer\\.js|dsp-core\\.js|pipeline-orchestrator\\.js|pipeline-state\\.js|models\\/).*)", "destination": "/app/index.html" },
     { "source": "/app", "destination": "/app/index.html" },
     { "source": "/((?!api/|lib/|assets/|app/|sw\\.js|manifest\\.json|icon\\.jpg|favicon\\..*).*)","destination": "/index.html" }
@@ -27,7 +27,7 @@
         { "key": "Strict-Transport-Security", "value": "max-age=31536000; includeSubDomains; preload" },
         { "key": "Permissions-Policy", "value": "microphone=(self), camera=(), geolocation=(), payment=(), usb=()" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' /_vercel/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' blob: https://va.vercel-scripts.com https://blob.vercel-storage.com https://*.public.blob.vercel-storage.com https://*.r2.cloudflarestorage.com https://*.r2.dev https://models.voiceisolatepro.com https://huggingface.co https://*.xethub.hf.co https://cas-bridge.xethub.hf.co; worker-src 'self' blob:; frame-ancestors 'none'" }
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' /_vercel/ https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' blob: https://va.vercel-scripts.com https://blob.vercel-storage.com https://*.public.blob.vercel-storage.com https://*.r2.cloudflarestorage.com https://*.r2.dev https://models.voiceisolatepro.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com; worker-src 'self' blob:; frame-ancestors 'none'" }
       ]
     },
     {

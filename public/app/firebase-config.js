@@ -2,6 +2,21 @@
 // Replace the placeholder values below with your actual Firebase project credentials
 // from the Firebase Console: https://console.firebase.google.com
 
+/**
+ * ARCHITECTURE EXCEPTION — INTENTIONAL CLOUD SERVICE
+ * =====================================================
+ * Firebase (Auth + Firestore) is the ONLY intentional cloud dependency
+ * in VoiceIsolate Pro. It is used exclusively for:
+ *   - User authentication (Google sign-in)
+ *   - Preset cloud sync (optional, user-initiated)
+ *   - Session logging for billing/tier enforcement
+ *
+ * ALL AUDIO PROCESSING is 100% local and never touches Firebase.
+ * Firebase is never called from AudioWorklet, ml-worker, or dsp-* files.
+ *
+ * This exception is documented in ADR-001 (docs/adr/001-firebase-exception.md).
+ */
+
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, orderBy, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
