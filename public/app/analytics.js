@@ -1,3 +1,4 @@
+// LOCAL METRICS ONLY — NO EXTERNAL CALLS
 // analytics.js — VoiceIsolate Pro
 // 100% LOCAL event analytics. All data stored in localStorage.
 //

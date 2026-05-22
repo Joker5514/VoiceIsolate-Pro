@@ -29,19 +29,20 @@
  *
  * SharedArrayBuffer layout (Int32 header + Float32 payload):
  *   inputSAB:
- *     [0..3]  Int32 flags: [writeGen, readGen, capacity, halfN]
- *     [16..+HALF_BINS*4]         mag  (Float32 x HALF_BINS)
- *     [16+HALF_BINS*4..+HALF_BINS*4] pha (Float32 x HALF_BINS)
+ *     [  0 ..  19]  Int32 flags (5 slots × 4 bytes): [writeGen, readGen, capacity, halfN, reserved]
+ *     [ 20 ..  20+HALF_BINS*4)           mag (Float32 × HALF_BINS)
+ *     [ 20+HALF_BINS*4 ..  20+HALF_BINS*8)  pha (Float32 × HALF_BINS)
+ *     [ 20+HALF_BINS*8 ..  20+HALF_BINS*8+HOP_SIZE*4)  pcm (Float32 × HOP_SIZE — newest mono hop)
  *   outputSAB:
- *     [0..3]  Int32 flags: [writeGen, readGen, capacity, halfN]
- *     [16..+HALF_BINS*4]         mask (Float32 x HALF_BINS, values 0..1)
+ *     [  0 ..  19]  Int32 flags (5 slots × 4 bytes): [writeGen, readGen, capacity, halfN, reserved]
+ *     [ 20 ..  20+HALF_BINS*4)  mask (Float32 × HALF_BINS, values 0..1)
  */
 
 const FFT_SIZE   = 4096;
 const HOP_SIZE   = 1024;           // 75% overlap
 const HALF_BINS  = FFT_SIZE / 2 + 1;
-const FLAG_SLOTS = 4;
-const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
+const FLAG_SLOTS = 5;                                                   // Bug #2 fix: 5 slots = 20 bytes, matches SharedRingBuffer header
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;     // 20
 
 // ─── OLA normalisation scalar for periodic Hann at 75% overlap ───────────────
 // sum of (unsquared) Hann windows spaced HOP apart = FFT_SIZE / (2 * HOP_SIZE) = 2.0
@@ -128,6 +129,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._outputFlags = null;
     this._inputView   = null;  // Float32[HALF_BINS*2]: mag then pha
     this._outputView  = null;  // Float32[HALF_BINS]:   mask values 0..1
+    this._pcmView     = null;  // Float32[HOP_SIZE]:    raw PCM region (Bug #3)
 
     // DSP params — updated live via port 'params' message
     this._params = {
@@ -170,6 +172,11 @@ class DSPProcessor extends AudioWorkletProcessor {
         // mag stored at [0..HALF_BINS), pha at [HALF_BINS..HALF_BINS*2)
         this._inputView   = new Float32Array(this._inputSAB,  SAB_HEADER_BYTES, HALF_BINS * 2);
         this._outputView  = new Float32Array(this._outputSAB, SAB_HEADER_BYTES, HALF_BINS);
+        // Bug #3: PCM region immediately after mag+pha payload
+        const pcmByteOffset = SAB_HEADER_BYTES + HALF_BINS * 2 * Float32Array.BYTES_PER_ELEMENT;
+        if (this._inputSAB.byteLength >= pcmByteOffset + HOP_SIZE * Float32Array.BYTES_PER_ELEMENT) {
+          this._pcmView = new Float32Array(this._inputSAB, pcmByteOffset, HOP_SIZE);
+        }
         this.port.postMessage({ type: 'sabReady', inputSAB: this._inputSAB, outputSAB: this._outputSAB });
         break;
       }
@@ -300,10 +307,23 @@ class DSPProcessor extends AudioWorkletProcessor {
       }
     }
 
-    // Write mag+pha to input SAB for main thread → ml-worker inference
+    // Write mag+pha+pcm to input SAB for main thread → ml-worker inference
     if (this._inputView && this._inputFlags) {
       this._inputView.set(mag, 0);            // mag at offset 0
       this._inputView.set(pha, HALF_BINS);    // pha at offset HALF_BINS
+      // Bug #3: copy the NEWEST HOP_SIZE raw samples (end of the analysis window)
+      // into the PCM region so ml-worker delivers temporally-aligned PCM to Demucs.
+      // Two-slice copy avoids per-sample modulo in the AudioWorklet hot path.
+      if (this._pcmView) {
+        const pcmStart = (frameStart + FFT_SIZE - HOP_SIZE) % inLen;
+        const toEnd = inLen - pcmStart;
+        if (toEnd >= HOP_SIZE) {
+          this._pcmView.set(this._inRing.subarray(pcmStart, pcmStart + HOP_SIZE));
+        } else {
+          this._pcmView.set(this._inRing.subarray(pcmStart, pcmStart + toEnd));
+          this._pcmView.set(this._inRing.subarray(0, HOP_SIZE - toEnd), toEnd);
+        }
+      }
       Atomics.add(this._inputFlags, 0, 1);    // bump write generation
 
       // FIX [4]: fallback postMessage for pre-SAB frames — clone buffer, do NOT transfer

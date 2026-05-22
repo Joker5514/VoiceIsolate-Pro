@@ -8,7 +8,7 @@ const processorSource = fs.readFileSync(path.join(__dirname, '../public/app/dsp-
 const FFT_SIZE   = 4096;
 const HOP_SIZE   = 1024;
 const HALF_BINS  = FFT_SIZE / 2 + 1;
-const FLAG_SLOTS = 4;
+const FLAG_SLOTS = 5;
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
 const Q          = 128;  // AudioWorklet quantum size
 
@@ -31,7 +31,8 @@ describe('dsp-processor AudioWorklet behavior', () => {
   }
 
   function makeSABs() {
-    const inputSAB  = new SharedArrayBuffer(SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS * 2);
+    // inputSAB includes mag + pha + PCM region to match the full protocol layout
+    const inputSAB  = new SharedArrayBuffer(SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * (HALF_BINS * 2 + HOP_SIZE));
     const outputSAB = new SharedArrayBuffer(SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS);
     return { inputSAB, outputSAB };
   }
