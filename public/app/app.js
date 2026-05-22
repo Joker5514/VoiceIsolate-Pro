@@ -1189,7 +1189,7 @@ class VoiceIsolatePro {
     }
     // Resume on user gesture (iOS/Safari + autoplay-blocked Chrome start suspended).
     if (this.ctx && this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
-      try { this.ctx.resume().catch(() => {}); } catch (_) {}
+      this.ctx.resume().catch(() => {});
     }
     return this.ctx;
   }
