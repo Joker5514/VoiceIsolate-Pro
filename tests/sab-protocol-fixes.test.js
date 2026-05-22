@@ -25,7 +25,7 @@ describe('SAB protocol regression fixes', () => {
     const src = read('public/app/dsp-processor.js');
     expect(src).toContain('const FFT_SIZE   = 4096;');
     expect(src).toContain('const HOP_SIZE   = 1024;');
-    expect(src).toContain('const FLAG_SLOTS = 4;');
+    expect(src).toContain('const FLAG_SLOTS = 5;');
     expect(src).toContain('const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;');
     // Frame-write generation bump on each completed hop:
     expect(src).toContain('Atomics.add(this._inputFlags, 0, 1);');

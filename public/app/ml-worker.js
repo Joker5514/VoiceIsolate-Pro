@@ -14,8 +14,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEFAULT_NUM_BINS = 2049; // (4096 / 2) + 1
-const FLAG_SLOTS = 4;
-const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
+const FLAG_SLOTS = 5;                                                // Bug #2 fix: 5 slots = 20 bytes, matches SharedRingBuffer header
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS; // 20
 const NOISE_WARMUP_FRAMES = 90;
 const FORENSIC_ALPHA_FLOOR_THRESHOLD = 0.005;
 const ALPHA_CAP_DEFAULT = 2.0;
@@ -36,8 +36,9 @@ let ort = null;
 
 let inputView  = null; // Float32Array view of inputSAB payload: [mag | phase]
 let outputView = null; // Float32Array view of outputSAB payload: [mask]
+let pcmView    = null; // Float32Array view of inputSAB PCM region: [HOP_SIZE samples] (Bug #3)
 let flagsIn    = null; // Int32Array: flagsIn[0]=frameCounter (incremented by worklet)
-let flagsOut   = null; // Int32Array: flagsOut[1]=maskReady (written by ml-worker)
+let flagsOut   = null; // Int32Array: flagsOut[0]=writeGen (incremented by ml-worker; Bug #1 fix)
 let _lastPollFrame = 0; // last frame counter value seen in pollOnce()
 
 let sessions      = {}; // { modelId: ort.InferenceSession }
@@ -414,7 +415,8 @@ self.onmessage = async (ev) => {
         if (inputSAB && outputSAB) {
           const inputPayloadFloats = currentHalfN * 2;
           const outputPayloadFloats = currentHalfN;
-          const inputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
+          const pcmFloats = 1024; // HOP_SIZE
+          const inputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * (inputPayloadFloats + pcmFloats);
           const outputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * outputPayloadFloats;
           if (inputSAB.byteLength < inputBytes || outputSAB.byteLength < outputBytes) {
             console.error('[ml-worker] SAB size mismatch', {
@@ -434,6 +436,11 @@ self.onmessage = async (ev) => {
           flagsOut   = new Int32Array(outputSAB, 0, FLAG_SLOTS);
           inputView  = new Float32Array(inputSAB, SAB_HEADER_BYTES, inputPayloadFloats);
           outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, outputPayloadFloats);
+          // Bug #3: PCM region immediately after mag+pha payload
+          const pcmByteOffset = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
+          pcmView = inputSAB.byteLength >= pcmByteOffset + pcmFloats * Float32Array.BYTES_PER_ELEMENT
+            ? new Float32Array(inputSAB, pcmByteOffset, pcmFloats)
+            : null;
           startPollLoop();
         }
 
@@ -737,10 +744,16 @@ self.onmessage = async (ev) => {
         currentNumBins = h;
       }
       const inputPayloadFloats = currentHalfN * 2;
+      const pcmFloats = 1024; // HOP_SIZE
+      const pcmByteOffset = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
       flagsIn    = new Int32Array(inputRing, 0, FLAG_SLOTS);
       flagsOut   = new Int32Array(maskRing,  0, FLAG_SLOTS);
       inputView  = new Float32Array(inputRing, SAB_HEADER_BYTES, inputPayloadFloats);
       outputView = new Float32Array(maskRing,  SAB_HEADER_BYTES, currentHalfN);
+      // Bug #3: PCM region after mag+pha payload
+      pcmView = inputRing.byteLength >= pcmByteOffset + pcmFloats * Float32Array.BYTES_PER_ELEMENT
+        ? new Float32Array(inputRing, pcmByteOffset, pcmFloats)
+        : null;
       if (!pollTimer) startPollLoop();
       console.info('[ml-worker] initRingBuffers: SAB views wired', {
         halfN: currentHalfN, ringCapacity, quantumSize,
@@ -991,6 +1004,23 @@ async function createSessionWithFallback(modelUrl, expectedSha256, executionProv
 async function warmupSession(modelId, session) {
   if (!session || typeof session.run !== 'function') return;
   if (modelId === 'demucs' || modelId === 'demucs-v4') return;
+
+  // Bug #7 fix: bsrnn_complex expects [1, 4, halfBins, timeFrames] — generic [1, numBins] throws
+  if (modelId === 'bsrnn_complex' || modelId === 'bsrnn_vocals_complex') {
+    const halfBins   = currentHalfN;
+    const timeFrames = 32;
+    const dummyInput = new ort.Tensor('float32',
+      new Float32Array(4 * halfBins * timeFrames),
+      [1, 4, halfBins, timeFrames]
+    );
+    try {
+      await session.run({ input: dummyInput });
+    } catch (e) {
+      console.warn('[ml-worker] bsrnn_complex warmup failed:', e.message);
+    }
+    return;
+  }
+
   try {
     const size = currentNumBins;
     const dims = [1, currentNumBins];
@@ -1011,22 +1041,22 @@ function startPollLoop() {
 
 async function pollOnce() {
   if (!flagsIn || !flagsOut) return;
-  // SAB protocol (shared by dsp-processor.js and voice-isolate-processor.js):
-  //   flagsIn[0]  = frame counter — worklet increments via Atomics.add on every hop
-  //   flagsOut[1] = mask-ready flag — ml-worker sets to 1; worklet reads then
-  //                 resets to flagsOut[0] (writeGen/baseline slot; currently 0 in
-  //                 this worker flow), giving a simple edge trigger
+  // SAB protocol: flagsIn[0] = frame counter incremented by worklet via Atomics.add.
+  // Worklet checks flagsOut[0] (writeGen) != flagsOut[1] (readGen) to detect a new mask.
   const currentFrame = Atomics.load(flagsIn, 0);
   if (currentFrame === _lastPollFrame) return; // no new frame
   _lastPollFrame = currentFrame;
 
   // subarray() is a zero-copy view — copy out before any await.
   const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
+  // Bug #3: prefer live SAB PCM region written by worklet; fall back to last postMessage chunk
+  const pcmChunk = pcmView ? new Float32Array(pcmView) : latestPcmChunk;
 
   try {
-    const mask = await buildMask(magnitudes, latestPcmChunk);
+    const mask = await buildMask(magnitudes, pcmChunk);
     outputView.set(mask.subarray(0, currentNumBins));
-    Atomics.store(flagsOut, 1, 1); // signal: mask ready (slot 1)
+    // Bug #1 fix: increment writeGen (slot[0]) — worklet detects mask by slot[0] != slot[1]
+    Atomics.add(flagsOut, 0, 1);
   } catch (err) {
     // Don't poison the poll loop — log and let worklet fall back to bypass mag.
     console.warn('[ml-worker] pollOnce buildMask failed:', err?.message || err);
@@ -1051,8 +1081,15 @@ async function runSileroVAD(vadSess, pcmChunk, audioSrHz) {
   const step = Math.max(1, Math.round((audioSrHz || SILERO_SR) / SILERO_SR));
   const samples = new Float32Array(SILERO_CHUNK);
   if (pcmChunk && pcmChunk.length > 0) {
+    // Bug #4 fix: 3-tap FIR low-pass [0.25, 0.5, 0.25] before decimation to prevent
+    // aliasing of 5.3-8kHz content into the 1.7-2.7kHz formant region
     const take = Math.min(SILERO_CHUNK, Math.floor(pcmChunk.length / step));
-    for (let i = 0; i < take; i++) samples[i] = pcmChunk[i * step];
+    for (let i = 0; i < take; i++) {
+      const j = i * step;
+      const prev = j > 0 ? pcmChunk[j - 1] : pcmChunk[j];
+      const next = j < pcmChunk.length - 1 ? pcmChunk[j + 1] : pcmChunk[j];
+      samples[i] = 0.25 * prev + 0.5 * pcmChunk[j] + 0.25 * next;
+    }
   }
   if (!_vadState) _vadState = new Float32Array(2 * 1 * 128); // zero-init h,c
   const inputTensor = new ort.Tensor('float32', samples, [1, SILERO_CHUNK]);

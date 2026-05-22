@@ -8,7 +8,7 @@ const processorSource = fs.readFileSync(path.join(__dirname, '../public/app/dsp-
 const FFT_SIZE   = 4096;
 const HOP_SIZE   = 1024;
 const HALF_BINS  = FFT_SIZE / 2 + 1;
-const FLAG_SLOTS = 4;
+const FLAG_SLOTS = 5;
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
 const Q          = 128;  // AudioWorklet quantum size
 
