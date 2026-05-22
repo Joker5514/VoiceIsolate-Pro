@@ -126,7 +126,7 @@
       // CTX pill -- ready as soon as app instance owns an AudioContext
       if (!ctxResolved) {
         var app = window._vipApp;
-        if (app && app.audioCtx && typeof app.audioCtx.state === 'string') {
+        if (app && app.ctx && typeof app.ctx.state === 'string') {
           setEnginePill('engCtxPill', 'ready');
           ctxResolved = true;
         } else if (hasAudioContext()) {

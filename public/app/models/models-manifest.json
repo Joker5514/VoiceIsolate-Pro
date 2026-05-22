@@ -119,14 +119,12 @@
       "status": "committed",
       "sources": {
         "primary": "/app/dsp-processor.js",
-        "vercel_blob": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js",
-        "r2": "https://models.voiceisolatepro.com/worklets/dsp-processor.js"
+        "vercel_blob": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js"
       },
       "cdn_mirrors": [
-        { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" }
+        { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" }
       ],
-      "usage_notes": "Primary load path: same-origin /app/dsp-processor.js (COOP+COEP headers from vercel.json). Canonical mirror map for this manifest is `sources`; `cdn_mirrors` is retained as a backward-compatible alias of the same fallback URLs. Each mirror is SHA-256 pinned to guard against tampered CDN payloads before creating any Blob URL fallback. Fallback path: fetch from a mirror, wrap in a same-origin Blob URL, and pass that to AudioWorklet.addModule(). Blob URLs bypass COEP since they are same-origin. The R2 mirror keeps the real-time DSP path alive even when the static site is temporarily unavailable; audio data still never leaves the browser."
+      "usage_notes": "Primary load path: same-origin /app/dsp-processor.js (COOP+COEP headers from vercel.json). Canonical mirror map for this manifest is `sources`; `cdn_mirrors` is retained as a backward-compatible alias of the same fallback URLs. Each mirror is SHA-256 pinned to guard against tampered CDN payloads before creating any Blob URL fallback. Fallback path: fetch from a mirror, wrap in a same-origin Blob URL, and pass that to AudioWorklet.addModule(). Blob URLs bypass COEP since they are same-origin. Audio data never leaves the browser."
     }
   ],
   "delivery_notes": [
@@ -134,7 +132,7 @@
     "demucs_v4_quantized.onnx is not yet exportable; a .placeholder file holds the slot. ml-worker.js disables the Demucs stage cleanly when the file is absent or undersized.",
     "Same-origin fetch keeps COEP (require-corp) satisfied so SharedArrayBuffer stays alive.",
     "After first run all models are cached in Cache API (vip-models-v1) — zero network on repeat visits.",
-    "The dsp-processor.js AudioWorklet is also mirrored to Vercel Blob and Cloudflare R2. pipeline-orchestrator.js falls back to those mirrors via a same-origin Blob URL if the primary same-origin load fails. The worklet code itself contains no user audio — only DSP math — so mirroring it preserves the 100% local processing guarantee.",
+    "The dsp-processor.js AudioWorklet is also mirrored to Vercel Blob. pipeline-orchestrator.js falls back to that mirror via a same-origin Blob URL if the primary same-origin load fails. The worklet code itself contains no user audio — only DSP math — so mirroring it preserves the 100% local processing guarantee.",
     "100% local processing guarantee preserved — no audio data leaves the browser."
   ],
   "model_loader_behavior": {
