@@ -412,23 +412,32 @@
     cannot silence the rest or produce a blank page.
   -->
   <script type="module">
-    const _mods = [
+    // app.js must resolve before vip-boot.js so VoiceIsolatePro is defined.
+    // Load parallel-safe modules first, then app.js, then boot/enhancements.
+    const _parallel = [
       './visuals.js',
       './processing-overlay.js',
       './pipeline-orchestrator.js',
       './session-persist.js',
-      './vip-boot.js',
-      './app.js',
-      './vip-enhancements.js',
     ];
-    for (const src of _mods) {
+    await Promise.allSettled(_parallel.map(src =>
       import(src).catch(err => {
         console.error('[VIP] Failed to load module:', src, err);
-        if (typeof window._vipReportError === 'function') {
-          window._vipReportError(src, err);
-        }
-      });
-    }
+        if (typeof window._vipReportError === 'function') window._vipReportError(src, err);
+      })
+    ));
+    await import('./app.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./app.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./app.js', err);
+    });
+    await import('./vip-boot.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./vip-boot.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./vip-boot.js', err);
+    });
+    import('./vip-enhancements.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./vip-enhancements.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./vip-enhancements.js', err);
+    });
   </script>
 
   <script>

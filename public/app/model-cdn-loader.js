@@ -13,21 +13,22 @@
 //
 // The CDN waterfall order is:
 //   1. SW Cache (Cache API) — zero network, instant
-//   2. Vercel Blob proxied via /app/models/ rewrite (same-origin)
-//   3. Cloudflare R2 (CORS whitelisted in vercel.json connect-src)
+//   2. Same-origin /app/models/ (committed files + Vercel Blob rewrite for demucs)
+//   3. Vercel Blob public URLs (for demucs only, via vercel.json $BLOB_DEMUCS_URL)
 //
+// Cloudflare R2 removed. All models now served via Vercel Blob or same-origin.
 // See docs/MODEL_DELIVERY.md for full architecture details.
 // ============================================================
 
 (function() {
   'use strict';
 
-  // Provider priority order. vercel-blob first (proxied via /app/models/ rewrite —
-  // satisfies CSP connect-src 'self'). r2 second.
-  const PROVIDER_PRIORITY = ['vercel-blob', 'r2'];
+  // Provider priority order. same-origin first (committed files served directly).
+  // vercel-blob second (demucs routed via vercel.json rewrite to Vercel Blob).
+  const PROVIDER_PRIORITY = ['same-origin', 'vercel-blob'];
 
   // In-memory registry of which providers are known-healthy this session
-  const providerHealth = { 'vercel-blob': true, 'r2': true };
+  const providerHealth = { 'same-origin': true, 'vercel-blob': true };
 
   // Track which provider served each model in this session (for diagnostics)
   const modelProviderMap = {};
