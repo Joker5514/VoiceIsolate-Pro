@@ -31,7 +31,8 @@ describe('dsp-processor AudioWorklet behavior', () => {
   }
 
   function makeSABs() {
-    const inputSAB  = new SharedArrayBuffer(SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS * 2);
+    // inputSAB includes mag + pha + PCM region to match the full protocol layout
+    const inputSAB  = new SharedArrayBuffer(SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * (HALF_BINS * 2 + HOP_SIZE));
     const outputSAB = new SharedArrayBuffer(SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS);
     return { inputSAB, outputSAB };
   }

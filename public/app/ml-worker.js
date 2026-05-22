@@ -39,7 +39,8 @@ let outputView = null; // Float32Array view of outputSAB payload: [mask]
 let pcmView    = null; // Float32Array view of inputSAB PCM region: [HOP_SIZE samples] (Bug #3)
 let flagsIn    = null; // Int32Array: flagsIn[0]=frameCounter (incremented by worklet)
 let flagsOut   = null; // Int32Array: flagsOut[0]=writeGen (incremented by ml-worker; Bug #1 fix)
-let _lastPollFrame = 0; // last frame counter value seen in pollOnce()
+let _lastPollFrame = 0;    // last frame counter value seen in pollOnce()
+let _pollInFlight  = false; // in-flight guard — prevents overlapping async inference calls
 
 let sessions      = {}; // { modelId: ort.InferenceSession }
 let allowedModels = [];
@@ -419,7 +420,9 @@ self.onmessage = async (ev) => {
           const inputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * (inputPayloadFloats + pcmFloats);
           const outputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * outputPayloadFloats;
           if (inputSAB.byteLength < inputBytes || outputSAB.byteLength < outputBytes) {
-            console.error('[ml-worker] SAB size mismatch', {
+            // Guard: do not create typed-array views on an undersized SAB — the views
+            // would throw RangeError or silently alias into adjacent memory.
+            console.error('[ml-worker] SAB size mismatch — SAB views not created', {
               expectedInputBytes: inputBytes,
               actualInputBytes: inputSAB.byteLength,
               expectedOutputBytes: outputBytes,
@@ -431,17 +434,17 @@ self.onmessage = async (ev) => {
               inputBytes,
               outputBytes,
             });
+            flagsIn    = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+            flagsOut   = new Int32Array(outputSAB, 0, FLAG_SLOTS);
+            inputView  = new Float32Array(inputSAB, SAB_HEADER_BYTES, inputPayloadFloats);
+            outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, outputPayloadFloats);
+            // PCM region immediately after mag+pha payload
+            const pcmByteOffset = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
+            pcmView = inputSAB.byteLength >= pcmByteOffset + pcmFloats * Float32Array.BYTES_PER_ELEMENT
+              ? new Float32Array(inputSAB, pcmByteOffset, pcmFloats)
+              : null;
+            startPollLoop();
           }
-          flagsIn    = new Int32Array(inputSAB, 0, FLAG_SLOTS);
-          flagsOut   = new Int32Array(outputSAB, 0, FLAG_SLOTS);
-          inputView  = new Float32Array(inputSAB, SAB_HEADER_BYTES, inputPayloadFloats);
-          outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, outputPayloadFloats);
-          // Bug #3: PCM region immediately after mag+pha payload
-          const pcmByteOffset = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
-          pcmView = inputSAB.byteLength >= pcmByteOffset + pcmFloats * Float32Array.BYTES_PER_ELEMENT
-            ? new Float32Array(inputSAB, pcmByteOffset, pcmFloats)
-            : null;
-          startPollLoop();
         }
 
         const modelStatus = await loadModels(modelBasePath, preferredProviders, allowedModels);
@@ -567,6 +570,7 @@ self.onmessage = async (ev) => {
       _vadState = null;
       demucsPcmMissingWarned = false;
       _lastPollFrame = 0;
+      _pollInFlight  = false;
       self.postMessage({ type: 'reset_done' });
       break;
     }
@@ -1041,6 +1045,11 @@ function startPollLoop() {
 
 async function pollOnce() {
   if (!flagsIn || !flagsOut) return;
+  // In-flight guard: setInterval does not await async callbacks, so multiple
+  // pollOnce() calls can overlap when ONNX inference takes >20 ms. Without this
+  // guard, a slow inference round could overwrite a newer mask with a stale one.
+  if (_pollInFlight) return;
+
   // SAB protocol: flagsIn[0] = frame counter incremented by worklet via Atomics.add.
   // Worklet checks flagsOut[0] (writeGen) != flagsOut[1] (readGen) to detect a new mask.
   const currentFrame = Atomics.load(flagsIn, 0);
@@ -1049,9 +1058,10 @@ async function pollOnce() {
 
   // subarray() is a zero-copy view — copy out before any await.
   const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
-  // Bug #3: prefer live SAB PCM region written by worklet; fall back to last postMessage chunk
+  // Prefer live SAB PCM region written by worklet; fall back to last postMessage chunk
   const pcmChunk = pcmView ? new Float32Array(pcmView) : latestPcmChunk;
 
+  _pollInFlight = true;
   try {
     const mask = await buildMask(magnitudes, pcmChunk);
     outputView.set(mask.subarray(0, currentNumBins));
@@ -1060,6 +1070,8 @@ async function pollOnce() {
   } catch (err) {
     // Don't poison the poll loop — log and let worklet fall back to bypass mag.
     console.warn('[ml-worker] pollOnce buildMask failed:', err?.message || err);
+  } finally {
+    _pollInFlight = false;
   }
 }
 
@@ -1081,14 +1093,19 @@ async function runSileroVAD(vadSess, pcmChunk, audioSrHz) {
   const step = Math.max(1, Math.round((audioSrHz || SILERO_SR) / SILERO_SR));
   const samples = new Float32Array(SILERO_CHUNK);
   if (pcmChunk && pcmChunk.length > 0) {
-    // Bug #4 fix: 3-tap FIR low-pass [0.25, 0.5, 0.25] before decimation to prevent
-    // aliasing of 5.3-8kHz content into the 1.7-2.7kHz formant region
+    // Bug #4 fix: 3-tap FIR low-pass [0.25, 0.5, 0.25] before decimation to attenuate
+    // content above the new Nyquist (srcRate/2/step) that would alias into the baseband.
+    // Skipped when step=1 (source already at 16 kHz) to avoid unnecessary smoothing.
     const take = Math.min(SILERO_CHUNK, Math.floor(pcmChunk.length / step));
     for (let i = 0; i < take; i++) {
       const j = i * step;
-      const prev = j > 0 ? pcmChunk[j - 1] : pcmChunk[j];
-      const next = j < pcmChunk.length - 1 ? pcmChunk[j + 1] : pcmChunk[j];
-      samples[i] = 0.25 * prev + 0.5 * pcmChunk[j] + 0.25 * next;
+      if (step > 1) {
+        const prev = j > 0 ? pcmChunk[j - 1] : pcmChunk[j];
+        const next = j < pcmChunk.length - 1 ? pcmChunk[j + 1] : pcmChunk[j];
+        samples[i] = 0.25 * prev + 0.5 * pcmChunk[j] + 0.25 * next;
+      } else {
+        samples[i] = pcmChunk[j];
+      }
     }
   }
   if (!_vadState) _vadState = new Float32Array(2 * 1 * 128); // zero-init h,c

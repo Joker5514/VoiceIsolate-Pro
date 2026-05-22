@@ -23,8 +23,12 @@ class VoiceIsolatorLegacyShim extends AudioWorkletProcessor {
     });
   }
 
-  process(inputs, outputs) {
-    this.port.postMessage({ type: 'error', code: 'LEGACY_WORKLET_STOPPED' });
+  process() {
+    this.port.postMessage({
+      type: 'error',
+      code: 'LEGACY_WORKLET_STOPPED',
+      message: 'Load /app/dsp-processor.js and register processor "dsp-processor" instead.'
+    });
     return false; // disconnect and stop — do NOT silently pass audio through unprocessed
   }
 }

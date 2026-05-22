@@ -29,13 +29,13 @@
  *
  * SharedArrayBuffer layout (Int32 header + Float32 payload):
  *   inputSAB:
- *     [0..4]  Int32 flags (5 slots × 4 = 20 bytes): [writeGen, readGen, capacity, halfN, reserved]
- *     [20..+HALF_BINS*4]              mag  (Float32 x HALF_BINS)
- *     [20+HALF_BINS*4..+HALF_BINS*4]  pha  (Float32 x HALF_BINS)
- *     [20+HALF_BINS*8..+HOP_SIZE*4]   pcm  (Float32 x HOP_SIZE — mono analysis window)
+ *     [  0 ..  19]  Int32 flags (5 slots × 4 bytes): [writeGen, readGen, capacity, halfN, reserved]
+ *     [ 20 ..  20+HALF_BINS*4)           mag (Float32 × HALF_BINS)
+ *     [ 20+HALF_BINS*4 ..  20+HALF_BINS*8)  pha (Float32 × HALF_BINS)
+ *     [ 20+HALF_BINS*8 ..  20+HALF_BINS*8+HOP_SIZE*4)  pcm (Float32 × HOP_SIZE — newest mono hop)
  *   outputSAB:
- *     [0..4]  Int32 flags (5 slots × 4 = 20 bytes): [writeGen, readGen, capacity, halfN, reserved]
- *     [20..+HALF_BINS*4]         mask (Float32 x HALF_BINS, values 0..1)
+ *     [  0 ..  19]  Int32 flags (5 slots × 4 bytes): [writeGen, readGen, capacity, halfN, reserved]
+ *     [ 20 ..  20+HALF_BINS*4)  mask (Float32 × HALF_BINS, values 0..1)
  */
 
 const FFT_SIZE   = 4096;
@@ -311,11 +311,17 @@ class DSPProcessor extends AudioWorkletProcessor {
     if (this._inputView && this._inputFlags) {
       this._inputView.set(mag, 0);            // mag at offset 0
       this._inputView.set(pha, HALF_BINS);    // pha at offset HALF_BINS
-      // Bug #3: copy raw (pre-window) HOP_SIZE samples into PCM region so
-      // ml-worker can pass live PCM to Demucs on the real-time path
+      // Bug #3: copy the NEWEST HOP_SIZE raw samples (end of the analysis window)
+      // into the PCM region so ml-worker delivers temporally-aligned PCM to Demucs.
+      // Two-slice copy avoids per-sample modulo in the AudioWorklet hot path.
       if (this._pcmView) {
-        for (let i = 0; i < HOP_SIZE; i++) {
-          this._pcmView[i] = this._inRing[(frameStart + i) % inLen];
+        const pcmStart = (frameStart + FFT_SIZE - HOP_SIZE) % inLen;
+        const toEnd = inLen - pcmStart;
+        if (toEnd >= HOP_SIZE) {
+          this._pcmView.set(this._inRing.subarray(pcmStart, pcmStart + HOP_SIZE));
+        } else {
+          this._pcmView.set(this._inRing.subarray(pcmStart, pcmStart + toEnd));
+          this._pcmView.set(this._inRing.subarray(0, HOP_SIZE - toEnd), toEnd);
         }
       }
       Atomics.add(this._inputFlags, 0, 1);    // bump write generation

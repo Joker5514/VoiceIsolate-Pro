@@ -195,7 +195,7 @@ describe('ml-worker.js', () => {
     workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({ run: demucsRun });
 
     const chunkSize = 333;
-    const inputBytes = Int32Array.BYTES_PER_ELEMENT * 5 + Float32Array.BYTES_PER_ELEMENT * chunkSize * 2;
+    const inputBytes = Int32Array.BYTES_PER_ELEMENT * 5 + Float32Array.BYTES_PER_ELEMENT * (chunkSize * 2 + 1024);
     const outputBytes = Int32Array.BYTES_PER_ELEMENT * 5 + Float32Array.BYTES_PER_ELEMENT * chunkSize;
     const inputSAB = new SharedArrayBuffer(inputBytes);
     const outputSAB = new SharedArrayBuffer(outputBytes);
