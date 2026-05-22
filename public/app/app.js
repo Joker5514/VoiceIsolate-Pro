@@ -800,19 +800,31 @@ class VoiceIsolatePro {
     }
     if (this.dom.fileInput) {
       this.dom.fileInput.addEventListener('change', e => {
-        if (e.target.files && e.target.files[0]) this.handleFile(e.target.files[0]);
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        // Reset value so re-selecting the same file fires `change` again.
+        try { e.target.value = ''; } catch (_) {}
+        this.handleFile(f);
       });
     }
     if (this.dom.dropZone) {
-      this.dom.dropZone.addEventListener('dragover', e => e.preventDefault());
+      const uploadZoneEl = document.getElementById('uploadZone') || this.dom.dropZone;
+      this.dom.dropZone.addEventListener('dragover', e => {
+        e.preventDefault();
+        uploadZoneEl.classList.add('dragover');
+      });
+      this.dom.dropZone.addEventListener('dragleave', () => {
+        uploadZoneEl.classList.remove('dragover');
+      });
       this.dom.dropZone.addEventListener('drop', e => {
         e.preventDefault();
+        uploadZoneEl.classList.remove('dragover');
         const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
         if (f) this.handleFile(f);
       });
     }
     if (this.dom.clearFile) {
-      this.dom.clearFile.addEventListener('click', () => this.stop());
+      this.dom.clearFile.addEventListener('click', () => this.clearLoadedFile());
     }
 
     if (this.dom.mobileProcessBtn) {
@@ -1175,6 +1187,10 @@ class VoiceIsolatePro {
         }
       } catch (_) {}
     }
+    // Resume on user gesture (iOS/Safari + autoplay-blocked Chrome start suspended).
+    if (this.ctx && this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
+      try { this.ctx.resume().catch(() => {}); } catch (_) {}
+    }
     return this.ctx;
   }
 
@@ -1464,6 +1480,37 @@ class VoiceIsolatePro {
       }
     }
     this._activeSpeed = rate;
+  }
+
+  clearLoadedFile() {
+    this.stop();
+    this.inputBuffer = null;
+    this.outputBuffer = null;
+    if (this.dom.fileInput) { try { this.dom.fileInput.value = ''; } catch (_) {} }
+    if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'No file loaded';
+    if (this.dom.hFile) this.dom.hFile.textContent = '—';
+    if (this.dom.hDur) this.dom.hDur.textContent = '0:00';
+    if (this.dom.tpDur) this.dom.tpDur.textContent = '0:00';
+    if (this.dom.hSR) this.dom.hSR.textContent = '—';
+    if (this.dom.hCh) this.dom.hCh.textContent = '—';
+    if (this.dom.processBtn) this.dom.processBtn.disabled = true;
+    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = true;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
+    if (this.dom.tpPlay) this.dom.tpPlay.disabled = true;
+    if (this.dom.tpPause) this.dom.tpPause.disabled = true;
+    if (this.dom.tpStop) this.dom.tpStop.disabled = true;
+    if (this.dom.tpRew) this.dom.tpRew.disabled = true;
+    if (this.dom.tpFwd) this.dom.tpFwd.disabled = true;
+    const saveOrigBtn = document.getElementById('saveOrigBtn');
+    const saveProcBtn = document.getElementById('saveProcBtn');
+    const auditLogBtn = document.getElementById('auditLogBtn');
+    if (saveOrigBtn) saveOrigBtn.disabled = true;
+    if (saveProcBtn) saveProcBtn.disabled = true;
+    if (auditLogBtn) auditLogBtn.disabled = true;
+    this.updatePipelineProgress(0, 'Ready — drop a file or record to begin', 0);
+    if (typeof this._hideFileLoading === 'function') this._hideFileLoading();
+    this.setStatus('READY');
   }
 
   _showFileLoading(text) {
@@ -1781,6 +1828,9 @@ class VoiceIsolatePro {
 
   async handleFile(file) {
     this.ensureCtx();
+    if (this.ctx && this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
+      try { await this.ctx.resume(); } catch (_) {}
+    }
     this.stop();
 
     const name = file.name || '';
@@ -1996,21 +2046,31 @@ class VoiceIsolatePro {
       this.setStatus('PROCESSING');
       structuredLog('info', 'Pipeline start', { stages: 32 });
 
+      // Resume context if suspended (autoplay policy / mobile).
+      if (this.ctx && this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
+        try { await this.ctx.resume(); } catch (_) {}
+      }
+
       const sampleRate = this.inputBuffer.sampleRate;
       const numCh = this.inputBuffer.numberOfChannels;
       const length = this.inputBuffer.length;
       const hopSize = 512;
 
+      this.updatePipelineProgress(1, 'Decoding input and validating channels', 4);
       const channels = [];
       for (let ch = 0; ch < numCh; ch++) {
         channels.push(new Float32Array(this.inputBuffer.getChannelData(ch)));
       }
       const signal = channels[0];
       this.updatePipelineProgress(3, 'Preparing buffers and noise profile', 12);
+      // Yield so the overlay can paint before the heavy STFT pass.
+      await new Promise(r => setTimeout(r, 0));
 
       const fftSize = 2048;
+      this.updatePipelineProgress(6, 'Running forward STFT…', 22);
       const spectrum = DSP.forwardSTFT ? DSP.forwardSTFT(signal, fftSize, hopSize) : null;
       this.updatePipelineProgress(9, 'Single forward STFT complete', 32);
+      await new Promise(r => setTimeout(r, 0));
 
       if (spectrum?.mag && this.params.nrAmount > 0) {
         const alpha = this.params.nrAmount / 100;
@@ -2021,22 +2081,22 @@ class VoiceIsolatePro {
         }
       }
       this.updatePipelineProgress(15, 'Spectral refinement and suppression applied in-place', 54);
+      await new Promise(r => setTimeout(r, 0));
 
       if (neonVizHandle) neonVizHandle.stop();
       if (typeof window !== 'undefined' && typeof window.VIP_initNeonVisualizer === 'function') {
         neonVizHandle = window.VIP_initNeonVisualizer(neonAnalyser);
       }
 
-      updateStatus('Binding UI sliders…');
-      initSliders();
-
       // AUDIT-SAFE: single pipeline iSTFT (S20). inverseSTFT() only READS mag/phase
       // (creates a new Float32Array for output; never mutates the input arrays).
       // The shared spectral buffer is safe here — no deep copy needed.
+      this.updatePipelineProgress(17, 'Running inverse STFT…', 64);
       const processed = (DSP.inverseSTFT && spectrum?.mag && spectrum?.phase)
         ? DSP.inverseSTFT(spectrum.mag, spectrum.phase, fftSize, hopSize, signal.length)
         : null;
       this.updatePipelineProgress(19, 'Inverse STFT reconstruction complete', 71);
+      await new Promise(r => setTimeout(r, 0));
 
       if (processed && processed.length > 0) {
         const peak = this.calcPeak(processed);
