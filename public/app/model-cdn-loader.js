@@ -13,10 +13,14 @@
 //
 // The CDN waterfall order is:
 //   1. SW Cache (Cache API) — zero network, instant
-//   2. Same-origin /app/models/ (committed files + Vercel Blob rewrite for demucs)
-//   3. Vercel Blob public URLs (for demucs only, via vercel.json $BLOB_DEMUCS_URL)
+//   2. Same-origin /app/models/ URLs (committed files served directly, plus demucs
+//      fetched via the same-origin /app/models/demucs_v4_quantized.onnx route when
+//      that path is rewritten server-side to Vercel Blob)
+//   3. Direct Vercel Blob public URLs when explicitly present in the manifest as a
+//      fallback source
 //
-// Cloudflare R2 removed. All models now served via Vercel Blob or same-origin.
+// Cloudflare R2 removed. Models are now fetched via same-origin routes and, when
+// configured as fallback sources, direct Vercel Blob public URLs.
 // See docs/MODEL_DELIVERY.md for full architecture details.
 // ============================================================
 
