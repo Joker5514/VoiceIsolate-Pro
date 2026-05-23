@@ -271,7 +271,7 @@ describe('Wiener NR — speech-frame gain (applySpectralNR fix)', () => {
     expect(gainSpeech).toBeGreaterThanOrEqual(gainNonSpeech);
   });
 
-  test('During speech, high nEst still yields gain ≤ 1 (regression: was amplifying)', () => {
+  test('wienerGain uses correct values instead of nEst as gain floor', () => {
     // Before fix: effectiveAlpha = Math.max(nEst * 0.3, beta) used nEst as gain floor.
     // With nEst=375, effectiveAlpha=112.5 — multiplied signal by 112.5.
     const beta = 0.05;
@@ -281,10 +281,55 @@ describe('Wiener NR — speech-frame gain (applySpectralNR fix)', () => {
     expect(gain).toBeLessThanOrEqual(1.0);
     expect(gain).toBeGreaterThan(0);
   });
+
+  test('wienerGain exact value: nEst=375, sigPSD=150, isSpeech=true yields gain=0.5 (regression pin)', () => {
+    // nEstFrame = 375 * 0.3 = 112.5
+    // sqrt(max(150 - 112.5, 0) / 150) = sqrt(37.5 / 150) = sqrt(0.25) = 0.5
+    // max(0.5, beta=0.05) = 0.5
+    // Before the fix the old formula returned max(nEst*0.3, beta) = 112.5 as the gain itself.
+    const gain = wienerGain(150, 375, 0.05, true);
+    expect(gain).toBeCloseTo(0.5, 10);
+  });
+
+  test('wienerGain: old buggy formula would have returned > 1 for the same inputs', () => {
+    // Documents the pre-fix behaviour so regressions are immediately visible.
+    // The bug: return Math.max(nEst * 0.3, beta) instead of the Wiener formula.
+    function wienerGainBuggy(sigPSD, nEst, beta, isSpeech) {
+      const effectiveAlpha = isSpeech ? Math.max(nEst * 0.3, beta) : beta;
+      // Bug: effectiveAlpha was used as the gain value, not as a noise estimate.
+      return effectiveAlpha;
+    }
+    const buggyGain = wienerGainBuggy(150, 375, 0.05, true);
+    // Fixed gain must be ≤ 1; the buggy gain was 112.5 (massively > 1).
+    expect(buggyGain).toBeGreaterThan(1.0);
+    // Confirm fixed implementation produces a completely different (bounded) result.
+    const fixedGain = wienerGain(150, 375, 0.05, true);
+    expect(fixedGain).toBeLessThanOrEqual(1.0);
+    expect(fixedGain).not.toBeCloseTo(buggyGain, 1);
+  });
+
+  test('wienerGain: non-speech frame with nEst > sigPSD clamps to beta (no amplification)', () => {
+    // Non-speech: nEstFrame = nEst (no 0.3 factor), so nEst=375 >> sigPSD=150.
+    // sigPSD - nEstFrame = 150 - 375 = -225 → clamped to 0 → sqrt(0/150) = 0 → max(0, beta) = beta.
+    const beta = 0.05;
+    const gain = wienerGain(150, 375, beta, /* isSpeech */ false);
+    expect(gain).toBeCloseTo(beta, 10);
+    expect(gain).toBeLessThanOrEqual(1.0);
+  });
+
+  test('wienerGain: speech frame where nEst*0.3 exactly equals sigPSD yields beta (boundary)', () => {
+    // nEstFrame = nEst * 0.3 = sigPSD → sigPSD - nEstFrame = 0 → sqrt(0) = 0 → beta.
+    const beta = 0.05;
+    const sigPSD = 100;
+    const nEst = sigPSD / 0.3; // ≈ 333.33... → nEst*0.3 == sigPSD
+    const gain = wienerGain(sigPSD, nEst, beta, /* isSpeech */ true);
+    expect(gain).toBeCloseTo(beta, 5);
+    expect(gain).toBeLessThanOrEqual(1.0);
+  });
 });
 
 describe('Frequency bin mapping (applyBgSuppress fix)', () => {
-  // Standard formula: freq_k = k * sr / N
+
   // Buggy formula:    freq_k = (k / halfN) * (sr / 2) = k * sr / (N + 2)
   function binFreqCorrect(k, N, sr) { return k * sr / N; }
   function binFreqBuggy(k, N, sr) { const halfN = N / 2 + 1; return (k / halfN) * (sr / 2); }
