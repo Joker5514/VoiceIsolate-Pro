@@ -271,7 +271,7 @@ describe('Wiener NR — speech-frame gain (applySpectralNR fix)', () => {
     expect(gainSpeech).toBeGreaterThanOrEqual(gainNonSpeech);
   });
 
-  test('During speech, high nEst still yields gain ≤ 1 (regression: was amplifying)', () => {
+  test('wienerGain uses correct values instead of nEst as gain floor', () => {
     // Before fix: effectiveAlpha = Math.max(nEst * 0.3, beta) used nEst as gain floor.
     // With nEst=375, effectiveAlpha=112.5 — multiplied signal by 112.5.
     const beta = 0.05;
