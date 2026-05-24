@@ -44,6 +44,12 @@
       overflow: auto;
     }
     #vip-boot-error b { color: #ff3b3b; }
+    /* A/B no-output flash */
+    .tp-ab-no-output { animation: vip-ab-flash 0.6s ease; }
+    @keyframes vip-ab-flash {
+      0%,100% { opacity:1; }
+      50%      { opacity:0.25; color:#ff3b3b; }
+    }
   </style>
   <script data-vip-guard="true">
     window._vipModuleErrors = [];
@@ -264,7 +270,6 @@
           <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
           <div class="tp-speed">
             <label for="tpSpeed">Speed</label>
-            <!-- Speed down: steps through <select> options in reverse -->
             <button id="tpSpeedDown" class="btn btn-tp btn-speed" type="button" aria-label="Slow Down Playback" title="Slow Down (−)"><span aria-hidden="true">−</span></button>
             <select id="tpSpeed" aria-label="Playback speed">
               <option value="0.25">0.25x</option>
@@ -276,7 +281,6 @@
               <option value="1.75">1.75x</option>
               <option value="2">2x</option>
             </select>
-            <!-- Speed up: steps through <select> options forward -->
             <button id="tpSpeedUp" class="btn btn-tp btn-speed" type="button" aria-label="Speed Up Playback" title="Speed Up (+)"><span aria-hidden="true">+</span></button>
           </div>
           <button id="tpAB" class="btn btn-ab" type="button"
@@ -284,80 +288,11 @@
             aria-describedby="tpABLabel"
             title="Toggle A/B — X key shortcut"
             disabled>A/B</button>
-          <!--
-            tpABLabel: tag = A or B version letter, name = Original / Processed.
-            data-version drives CSS accent color (red=A=Original, cyan=B=Processed).
-            _setABLabel() in app.js keeps both child spans and aria-label in sync.
-            Defensive markup repair below keeps the pill structure intact if legacy
-            code paths temporarily assign tpABLabel.textContent.
-          -->
           <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite">
             <span class="tp-ab-tag">A</span>
             <span class="tp-ab-name">Original</span>
           </span>
-          <script>
-            (function () {
-              var tpABLabelEl = document.getElementById('tpABLabel');
-              if (!tpABLabelEl) return;
-
-              var repairingABLabel = false;
-
-              function getABState(sourceText) {
-                var text = String(sourceText || '').replace(/\s+/g, ' ').trim().toLowerCase();
-                if (text.indexOf('processed') !== -1 || /^b\b/.test(text) || text === 'b') {
-                  return { version: 'B', tag: 'B', name: 'Processed' };
-                }
-                return { version: 'A', tag: 'A', name: 'Original' };
-              }
-
-              function ensureABLabelMarkup() {
-                if (repairingABLabel) return;
-                repairingABLabel = true;
-
-                try {
-                  var state = getABState(
-                    tpABLabelEl.textContent ||
-                    tpABLabelEl.getAttribute('aria-label') ||
-                    tpABLabelEl.dataset.version
-                  );
-
-                  var tagEl = tpABLabelEl.querySelector('.tp-ab-tag');
-                  var nameEl = tpABLabelEl.querySelector('.tp-ab-name');
-                  var needsRebuild = !tagEl || !nameEl || tpABLabelEl.childElementCount !== 2;
-
-                  tpABLabelEl.dataset.version = state.version;
-                  tpABLabelEl.setAttribute('aria-label', state.tag + ' ' + state.name);
-
-                  if (needsRebuild) {
-                    tpABLabelEl.textContent = '';
-
-                    tagEl = document.createElement('span');
-                    tagEl.className = 'tp-ab-tag';
-                    tpABLabelEl.appendChild(tagEl);
-
-                    nameEl = document.createElement('span');
-                    nameEl.className = 'tp-ab-name';
-                    tpABLabelEl.appendChild(nameEl);
-                  }
-
-                  tagEl.textContent = state.tag;
-                  nameEl.textContent = state.name;
-                } finally {
-                  repairingABLabel = false;
-                }
-              }
-
-              ensureABLabelMarkup();
-
-              new MutationObserver(function () {
-                ensureABLabelMarkup();
-              }).observe(tpABLabelEl, {
-                childList: true,
-                characterData: true,
-                subtree: true
-              });
-            }());
-          </script>
+          <!-- Inline repair script removed — vip-fixes.js handles label integrity -->
         </div>
       </div>
 
@@ -407,13 +342,7 @@
 
   <div id="toastRegion" aria-live="polite"></div>
 
-  <!--
-    Each module loaded via dynamic import() + .catch() so one broken file
-    cannot silence the rest or produce a blank page.
-  -->
   <script type="module">
-    // app.js must resolve before vip-boot.js so VoiceIsolatePro is defined.
-    // Load parallel-safe modules first, then app.js, then boot/enhancements.
     const _parallel = [
       './visuals.js',
       './processing-overlay.js',
@@ -437,6 +366,11 @@
     import('./vip-enhancements.js').catch(err => {
       console.error('[VIP] Failed to load module: ./vip-enhancements.js', err);
       if (typeof window._vipReportError === 'function') window._vipReportError('./vip-enhancements.js', err);
+    });
+    /* vip-fixes.js — transport, A/B, slider search, speed buttons, accordions */
+    import('./vip-fixes.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./vip-fixes.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./vip-fixes.js', err);
     });
   </script>
 
