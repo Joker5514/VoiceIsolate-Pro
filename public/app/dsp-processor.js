@@ -146,6 +146,45 @@ class DSPProcessor extends AudioWorkletProcessor {
       compRelease: 150,   // ms
       compMakeup:  0,     // dB
       limThresh:   -1,    // dBFS
+      specTilt:    0.0,   // dB/oct
+      eqSub:       0.0,
+      eqBass:      0.0,
+      eqWarmth:    0.0,
+      eqBody:      0.0,
+      eqLowMid:    0.0,
+      eqMid:       0.0,
+      eqPresence:  0.0,
+      eqClarity:   0.0,
+      eqAir:       0.0,
+      eqBrill:     0.0
+    };
+
+    // Define reasonable safety bounds for DSP stability
+    this._bounds = {
+      outGain:     [-60, 24],
+      dryWet:      [0, 1],
+      nrAmount:    [0, 1],
+      gateThresh:  [-120, 0],
+      gateRange:   [-120, 0],
+      hpFreq:      [10, 20000],
+      lpFreq:      [10, 20000],
+      compThresh:  [-120, 0],
+      compRatio:   [1, 100],
+      compAttack:  [0.1, 1000],
+      compRelease: [1, 5000],
+      compMakeup:  [-24, 24],
+      limThresh:   [-60, 0],
+      specTilt:    [-12, 12],
+      eqSub:       [-24, 24],
+      eqBass:      [-24, 24],
+      eqWarmth:    [-24, 24],
+      eqBody:      [-24, 24],
+      eqLowMid:    [-24, 24],
+      eqMid:       [-24, 24],
+      eqPresence:  [-24, 24],
+      eqClarity:   [-24, 24],
+      eqAir:       [-24, 24],
+      eqBrill:     [-24, 24]
     };
 
     // Gate hold state: prevents clicking on rapid gate transitions
@@ -183,7 +222,12 @@ class DSPProcessor extends AudioWorkletProcessor {
       case 'params': {
         if (msg.payload) {
           for (const [k, v] of Object.entries(msg.payload)) {
-            if (k in this._params) this._params[k] = Number(v);
+            if (k in this._params && k in this._bounds) {
+              const val = Number(v);
+              if (Number.isFinite(val)) {
+                this._params[k] = Math.max(this._bounds[k][0], Math.min(this._bounds[k][1], val));
+              }
+            }
           }
         }
         break;

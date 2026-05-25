@@ -62,6 +62,7 @@ const MODEL_REGISTRY = {
   rnnoise:         { path: 'models/rnnoise_suppressor.onnx',     sizeBytes:  2_027_576 },
   demucs_v4:       { path: 'models/demucs_v4_quantized.onnx',    sizeBytes: 87_031_808 },
   bsrnn_vocals:    { path: 'models/bsrnn_vocals.onnx',           sizeBytes:  3_870_554 },
+  bsrnn_vocals_complex: { path: 'models/bsrnn_vocals_complex.onnx', sizeBytes: 3_870_554 },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

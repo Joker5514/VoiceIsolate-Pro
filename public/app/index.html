@@ -244,6 +244,7 @@
         <button id="saveProcBtn" class="btn btn-save-proc" disabled>Save Processed WAV</button>
       </div>
 
+      <!-- Mobile sticky action bar -->
       <div class="mobile-action-bar" id="mobileActionBar">
         <button id="mobileProcessBtn" class="btn btn-primary" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"></polygon></svg>Process</button>
         <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Reprocess</button>
@@ -295,10 +296,13 @@
         <div id="tabBar" class="tabs" role="tablist" aria-label="Visualization tabs">
           <button id="btn-spectrogram" class="tab-btn active" type="button" role="tab" aria-controls="tab-spectrogram" data-tab="spectrogram" aria-selected="true" tabindex="0">Spectrogram</button>
           <button id="btn-waveform" class="tab-btn" type="button" role="tab" aria-controls="tab-waveform" data-tab="waveform" aria-selected="false" tabindex="-1">Waveform</button>
-          <button id="btn-abcompare" class="tab-btn" type="button" role="tab" aria-controls="tab-abcompare" data-tab="abcompare" aria-selected="false" tabindex="-1">A/B Compare</button>
-          <button id="btn-lufs" class="tab-btn" type="button" role="tab" aria-controls="tab-lufs" data-tab="lufs" aria-selected="false" tabindex="-1">LUFS Meter</button>
-          <button id="btn-saliency" class="tab-btn" type="button" role="tab" aria-controls="tab-saliency" data-tab="saliency" aria-selected="false" tabindex="-1">Saliency Map</button>
-          <button id="btn-clusters" class="tab-btn" type="button" role="tab" aria-controls="tab-clusters" data-tab="clusters" aria-selected="false" tabindex="-1">Speaker Clusters</button>
+          <button id="btn-abcompare" class="tab-btn" type="button" role="tab" aria-controls="tab-abcompare" data-tab="abcompare" aria-selected="false" tabindex="-1">A/B</button>
+          <button id="btn-lufs" class="tab-btn" type="button" role="tab" aria-controls="tab-lufs" data-tab="lufs" aria-selected="false" tabindex="-1">LUFS</button>
+          <button id="btn-clusters" class="tab-btn" type="button" role="tab" aria-controls="tab-clusters" data-tab="clusters" aria-selected="false" tabindex="-1">Clusters</button>
+          <button id="btn-aura" class="tab-btn" type="button" role="tab" aria-controls="tab-aura" data-tab="aura" aria-selected="false" tabindex="-1">Aura</button>
+          <button id="btn-topo" class="tab-btn" type="button" role="tab" aria-controls="tab-topo" data-tab="topo" aria-selected="false" tabindex="-1">3D Topo</button>
+          <button id="btn-swarm" class="tab-btn" type="button" role="tab" aria-controls="tab-swarm" data-tab="swarm" aria-selected="false" tabindex="-1">Swarm</button>
+          <button id="btn-liquid" class="tab-btn" type="button" role="tab" aria-controls="tab-liquid" data-tab="liquid" aria-selected="false" tabindex="-1">Liquid</button>
         </div>
           <div id="tab-spectrogram" role="tabpanel" aria-labelledby="btn-spectrogram" class="panel active" tabindex="0">
             <div class="viz-legend">Live spectrum rail · scrolling spectrogram · local-only render</div>
@@ -318,6 +322,10 @@
             </div>
             <div class="lufs-readouts"><span class="vu-val">Input -12.4 dB</span><span class="vu-val">Output -10.9 dB</span></div>
           </div>
+          <div id="tab-aura" role="tabpanel" aria-labelledby="btn-aura" class="panel"><canvas id="auraCanvas" class="viz-canvas"></canvas></div>
+          <div id="tab-topo" role="tabpanel" aria-labelledby="btn-topo" class="panel"><div id="topoContainer" class="spectro3d-container"></div></div>
+          <div id="tab-swarm" role="tabpanel" aria-labelledby="btn-swarm" class="panel"><div id="swarmContainer" class="spectro3d-container"></div></div>
+          <div id="tab-liquid" role="tabpanel" aria-labelledby="btn-liquid" class="panel"><canvas id="liquidCanvas" class="viz-canvas"></canvas></div>
       </div>
 
       <div id="videoCard" class="card video-card"><video id="videoPlayer" class="video-el" controls></video></div>
