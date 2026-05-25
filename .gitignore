@@ -57,3 +57,5 @@ demucs_v4_quantized.onnx
 
 # Lockfile not used (memory note: project uses pnpm)
 package-lock.json
+.vercel
+.env*.local

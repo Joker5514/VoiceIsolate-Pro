@@ -10,7 +10,7 @@
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/handler" },
-    { "source": "/app/models/demucs_v4_quantized.onnx", "destination": "https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/demucs_v4_quantized.onnx" },
+    { "source": "/app/models/:model(.*\\.onnx)", "destination": "https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/:model" },
     { "source": "/app/((?!sw\\.js|dsp-processor\\.js|voice-isolate-processor\\.js|ml-worker\\.js|dsp-worker\\.js|ring-buffer\\.js|dsp-core\\.js|pipeline-orchestrator\\.js|pipeline-state\\.js|models\\/).*)", "destination": "/app/index.html" },
     { "source": "/app", "destination": "/app/index.html" },
     { "source": "/((?!api/|lib/|assets/|app/|sw\\.js|manifest\\.json|icon\\.jpg|favicon\\..*).*)","destination": "/index.html" }

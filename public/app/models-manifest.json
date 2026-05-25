@@ -15,7 +15,7 @@
       "sizeBytes": 3870554,
       "eager": false,
       "sources": [
-        { "provider": "same-origin", "url": "/app/models/bsrnn_vocals.onnx" }
+        { "provider": "vercel-blob", "url": "/app/models/bsrnn_vocals.onnx" }
       ]
     },
     "rnnoise": {
@@ -23,7 +23,7 @@
       "sizeBytes": 2027576,
       "eager": true,
       "sources": [
-        { "provider": "same-origin", "url": "/app/models/rnnoise_suppressor.onnx" }
+        { "provider": "vercel-blob", "url": "/app/models/rnnoise_suppressor.onnx" }
       ]
     },
     "silero_vad": {
@@ -31,7 +31,7 @@
       "sizeBytes": 2327524,
       "eager": true,
       "sources": [
-        { "provider": "same-origin", "url": "/app/models/silero_vad.onnx" }
+        { "provider": "vercel-blob", "url": "/app/models/silero_vad.onnx" }
       ]
     }
   },

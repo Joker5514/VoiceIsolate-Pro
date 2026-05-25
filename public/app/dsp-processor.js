@@ -245,12 +245,34 @@ class DSPProcessor extends AudioWorkletProcessor {
     const outGain = Math.pow(10.0, (this._params.outGain || 0.0) / 20.0);
     const lim     = Math.pow(10.0, (this._params.limThresh || -1.0) / 20.0);
 
+    // Compressor parameters
+    const ct = this._params.compThresh || -24;
+    const cr = this._params.compRatio || 4;
+    const sr = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
+    const cAtk = Math.exp(-1 / ((this._params.compAttack || 10) * sr / 1000));
+    const cRel = Math.exp(-1 / ((this._params.compRelease || 150) * sr / 1000));
+    const cMakeup = Math.pow(10.0, (this._params.compMakeup || 0) / 20.0);
+
     if (avail >= Q) {
       for (let i = 0; i < Q; i++) {
-        let s = this._outRing[this._outRd] * outGain;
+        let s = this._outRing[this._outRd];
         // Zero the slot as we read it (ring reuse)
         this._outRing[this._outRd] = 0.0;
         this._outRd = (this._outRd + 1) % outLen;
+
+        // Compressor logic
+        const sDb = 20 * Math.log10(Math.abs(s) + 1e-9);
+        let gainReduction = 0;
+        if (sDb > ct && cr > 1) {
+           gainReduction = (sDb - ct) * (1 - 1/cr);
+        }
+        if (gainReduction > this._envDb) {
+           this._envDb = cAtk * this._envDb + (1 - cAtk) * gainReduction;
+        } else {
+           this._envDb = cRel * this._envDb + (1 - cRel) * gainReduction;
+        }
+        s *= Math.pow(10.0, -this._envDb / 20.0) * cMakeup * outGain;
+
         // Brickwall limiter
         if (s >  lim) s =  lim;
         if (s < -lim) s = -lim;
@@ -346,6 +368,56 @@ class DSPProcessor extends AudioWorkletProcessor {
       for (let k = 0; k < HALF_BINS; k++) {
         maskedMag[k] = mag[k] * factor;
       }
+    }
+
+    // ── Spectral EQ & Filters ──
+    const sRate = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
+    const binHz = sRate / FFT_SIZE;
+
+    const eq = [
+      Math.pow(10, (this._params.eqSub || 0)/20),
+      Math.pow(10, (this._params.eqBass || 0)/20),
+      Math.pow(10, (this._params.eqWarmth || 0)/20),
+      Math.pow(10, (this._params.eqBody || 0)/20),
+      Math.pow(10, (this._params.eqLowMid || 0)/20),
+      Math.pow(10, (this._params.eqMid || 0)/20),
+      Math.pow(10, (this._params.eqPresence || 0)/20),
+      Math.pow(10, (this._params.eqClarity || 0)/20),
+      Math.pow(10, (this._params.eqAir || 0)/20),
+      Math.pow(10, (this._params.eqBrill || 0)/20)
+    ];
+
+    const hpFreq = this._params.hpFreq || 80;
+    const lpFreq = this._params.lpFreq || 18000;
+    const tilt = this._params.specTilt || 0; 
+
+    for (let k = 0; k < HALF_BINS; k++) {
+      const hz = k * binHz;
+      let gain = 1.0;
+
+      // Graphic EQ
+      if      (hz < 60) gain *= eq[0];
+      else if (hz < 200) gain *= eq[1];
+      else if (hz < 500) gain *= eq[2];
+      else if (hz < 1000) gain *= eq[3];
+      else if (hz < 2000) gain *= eq[4];
+      else if (hz < 4000) gain *= eq[5];
+      else if (hz < 6000) gain *= eq[6];
+      else if (hz < 10000) gain *= eq[7];
+      else if (hz < 16000) gain *= eq[8];
+      else gain *= eq[9];
+
+      // HP/LP filters
+      if (hz < hpFreq) gain *= Math.pow(hz / (hpFreq + 1e-9), 2);
+      if (hz > lpFreq) gain *= Math.pow(lpFreq / hz, 4);
+
+      // Tilt
+      if (tilt !== 0 && hz > 100) {
+         const octavesFrom1k = Math.log2(hz / 1000);
+         gain *= Math.pow(10, (tilt * octavesFrom1k) / 20);
+      }
+
+      maskedMag[k] *= gain;
     }
 
     // FIX [3] + FIX [6]: Reconstruct complex spectrum using polar form.

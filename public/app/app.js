@@ -66,6 +66,10 @@ let mlWorker    = null;
 let mlReady     = false;
 let neonAnalyser = null;
 let neonVizHandle = null;
+let pulsingAuraHandle = null;
+let topo3DHandle = null;
+let swarmHandle = null;
+let liquidWavesHandle = null;
 
 const _pendingFrames = [];
 const FFT_SIZE = 4096;
@@ -1338,6 +1342,19 @@ class VoiceIsolatePro {
       src.start(0, this.playOffset);
       this.currentSource = src;
       this.liveChainBuilt = true;
+
+      // Start premium visualizers
+      if (typeof window !== 'undefined') {
+        if (pulsingAuraHandle) pulsingAuraHandle.stop();
+        if (topo3DHandle) topo3DHandle.stop();
+        if (swarmHandle) swarmHandle.stop();
+        if (liquidWavesHandle) liquidWavesHandle.stop();
+
+        if (window.VIP_initPulsingAura) pulsingAuraHandle = window.VIP_initPulsingAura(neonAnalyser, document.getElementById('freqCanvas'));
+        if (window.VIP_initTopographic3D) topo3DHandle = window.VIP_initTopographic3D(neonAnalyser, document.getElementById('spectro3d-container') || document.body); // Fallback if no container
+        if (window.VIP_initParticleSwarm) swarmHandle = window.VIP_initParticleSwarm(neonAnalyser, document.getElementById('spectroCanvas'));
+        if (window.VIP_initLiquidWaves) liquidWavesHandle = window.VIP_initLiquidWaves(neonAnalyser, document.getElementById('waveCanvas'));
+      }
     } catch (e) {
       structuredLog('error', 'buildLiveChain failed', { e });
     }
@@ -2084,8 +2101,18 @@ class VoiceIsolatePro {
       await new Promise(r => setTimeout(r, 0));
 
       if (neonVizHandle) neonVizHandle.stop();
-      if (typeof window !== 'undefined' && typeof window.VIP_initNeonVisualizer === 'function') {
-        neonVizHandle = window.VIP_initNeonVisualizer(neonAnalyser);
+      if (typeof window !== 'undefined') {
+        if (window.VIP_initNeonVisualizer) neonVizHandle = window.VIP_initNeonVisualizer(neonAnalyser);
+        
+        if (pulsingAuraHandle) pulsingAuraHandle.stop();
+        if (topo3DHandle) topo3DHandle.stop();
+        if (swarmHandle) swarmHandle.stop();
+        if (liquidWavesHandle) liquidWavesHandle.stop();
+
+        if (window.VIP_initPulsingAura) pulsingAuraHandle = window.VIP_initPulsingAura(neonAnalyser, document.getElementById('freqCanvas'));
+        if (window.VIP_initTopographic3D) topo3DHandle = window.VIP_initTopographic3D(neonAnalyser, document.getElementById('spectro3d-container') || document.body);
+        if (window.VIP_initParticleSwarm) swarmHandle = window.VIP_initParticleSwarm(neonAnalyser, document.getElementById('spectroCanvas'));
+        if (window.VIP_initLiquidWaves) liquidWavesHandle = window.VIP_initLiquidWaves(neonAnalyser, document.getElementById('waveCanvas'));
       }
 
       // AUDIT-SAFE: single pipeline iSTFT (S20). inverseSTFT() only READS mag/phase
