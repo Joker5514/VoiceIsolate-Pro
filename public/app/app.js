@@ -813,14 +813,16 @@ class VoiceIsolatePro {
     }
     if (this.dom.dropZone) {
       const uploadZoneEl = document.getElementById('uploadZone') || this.dom.dropZone;
-      this.dom.dropZone.addEventListener('dragover', e => {
+      window.addEventListener('dragover', e => {
         e.preventDefault();
         uploadZoneEl.classList.add('dragover');
       });
-      this.dom.dropZone.addEventListener('dragleave', () => {
-        uploadZoneEl.classList.remove('dragover');
+      window.addEventListener('dragleave', e => {
+        if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
+          uploadZoneEl.classList.remove('dragover');
+        }
       });
-      this.dom.dropZone.addEventListener('drop', e => {
+      window.addEventListener('drop', e => {
         e.preventDefault();
         uploadZoneEl.classList.remove('dragover');
         const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
