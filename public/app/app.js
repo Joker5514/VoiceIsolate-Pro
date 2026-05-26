@@ -1187,15 +1187,24 @@ class VoiceIsolatePro {
   }
 
   ensureCtx() {
+    // Prefer the orchestrator's AudioContext so the AudioWorkletNode (DSP pipeline)
+    // lives in the same context as the playback chain.  Without this, slider
+    // parameters are sent to a worklet that never receives audio input.
     if (!this.ctx) {
-      try {
-        const AC = typeof AudioContext !== 'undefined' ? AudioContext :
-          (typeof window !== 'undefined' && window.AudioContext) ? window.AudioContext : null;
-        if (AC) {
-          this.ctx = new AC();
-          neonAnalyser = null;
-        }
-      } catch (_) {}
+      const orch = typeof window !== 'undefined' ? window._vipOrch : null;
+      if (orch && orch.ctx && orch.ctx.state !== 'closed') {
+        this.ctx = orch.ctx;
+        neonAnalyser = null;
+      } else {
+        try {
+          const AC = typeof AudioContext !== 'undefined' ? AudioContext :
+            (typeof window !== 'undefined' && window.AudioContext) ? window.AudioContext : null;
+          if (AC) {
+            this.ctx = new AC();
+            neonAnalyser = null;
+          }
+        } catch (_) {}
+      }
     }
     // Resume on user gesture (iOS/Safari + autoplay-blocked Chrome start suspended).
     if (this.ctx && this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
@@ -1335,16 +1344,40 @@ class VoiceIsolatePro {
       src.playbackRate.value = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
       src.loop = false;
       this.gainNode = this.ctx.createGain();
-      this.gainNode.gain.value = Math.pow(10, (this.params.outGain || 0) / 20);
-      src.connect(this.gainNode);
+      this.gainNode.gain.value = 1.0; // worklet handles outGain internally
       if (neonAnalyser && neonAnalyser.context !== this.ctx) neonAnalyser = null;
       if (!neonAnalyser) {
         neonAnalyser = this.ctx.createAnalyser();
         neonAnalyser.fftSize = 1024;
         neonAnalyser.smoothingTimeConstant = 0.84;
       }
+
+      // Route audio through the DSP worklet when available so that all
+      // real-time slider parameters (EQ, compression, gate, HP/LP filters,
+      // noise reduction, dry/wet, output gain, limiter) actually affect
+      // the audible output.  Chain: Source → WorkletNode → GainNode → Analyser → Destination
+      const orch = typeof window !== 'undefined' ? window._vipOrch : null;
+      const wn   = orch && orch.workletNode;
+      if (wn) {
+        src.connect(wn);
+        // Disconnect worklet's previous destination and re-wire through the
+        // gain + analyser chain so visualizers keep working.
+        try { wn.disconnect(); } catch (_) {}
+        wn.connect(this.gainNode);
+      } else {
+        // Fallback: no worklet available — direct passthrough
+        src.connect(this.gainNode);
+      }
+
       this.gainNode.connect(neonAnalyser);
       neonAnalyser.connect(this.ctx.destination);
+
+      // Push current slider snapshot to the worklet so any parameters
+      // the user changed before pressing play take effect immediately.
+      if (orch && typeof orch.updateParams === 'function') {
+        orch.updateParams(this.params);
+      }
+
       src.start(0, this.playOffset);
       this.currentSource = src;
       this.liveChainBuilt = true;
@@ -1371,6 +1404,11 @@ class VoiceIsolatePro {
       try { this.currentSource.stop(); } catch (_) {}
       try { this.currentSource.disconnect(); } catch (_) {}
       this.currentSource = null;
+    }
+    // Disconnect the worklet from the playback chain (but don't destroy it)
+    const orch = typeof window !== 'undefined' ? window._vipOrch : null;
+    if (orch && orch.workletNode) {
+      try { orch.workletNode.disconnect(); } catch (_) {}
     }
     if (this.gainNode) {
       try { this.gainNode.disconnect(); } catch (_) {}
