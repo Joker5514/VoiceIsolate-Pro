@@ -15,8 +15,14 @@ Dockerfile
 render.yaml
 docker-compose*.yml
 
-# Build/export scripts — only needed at build time, not served as assets
-scripts/
+# NOTE: scripts/ is intentionally NOT excluded here.
+# scripts/setup-ort.js, scripts/setup-three.js, and scripts/stamp-sw-version.js
+# are required by the package.json build command and must be present during
+# Vercel's build phase. Excluding them causes MODULE_NOT_FOUND build failures.
+# Only exclude individual scripts that are purely dev/CI tools and NOT
+# referenced in the build command.
+scripts/cleanup-branches.sh
+scripts/bootstrap-libs.sh
 
 # Local dev / CI artifacts
 coverage/
