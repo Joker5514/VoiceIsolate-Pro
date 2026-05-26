@@ -1,6 +1,6 @@
 /**
  * VoiceIsolate Pro — voice-isolate-processor.js
- * Live AudioWorkletProcessor — primary real-time engine (v25)
+ * Live AudioWorkletProcessor — primary real-time engine (v26)
  * ==========================================================
  *
  * Pipeline:
@@ -11,11 +11,15 @@
  *          b. SINGLE forward FFT
  *          c. Apply mask from ML output SAB (or classical fallback)
  *          d. SINGLE inverse FFT (in-place)
- *          e. Synthesis-window + overlap-add into outputAccum (advance outputHead by HOP_SIZE)
+ *          e. Synthesis-window + overlap-add into outputAccum
+ *             AND accumulate w*w into outputWindowSum (PATCH 2)
+ *             advance outputHead by HOP_SIZE
  *          f. inputProcessed += HOP_SIZE
  *          g. hopsSinceInit += 1
  *     3. If startup hasn't accumulated FFT_SIZE samples of analysis, output silence
- *     4. Drain RENDER samples from outputAccum starting at drainHead, then drainHead += RENDER
+ *     4. Drain RENDER samples from outputAccum starting at drainHead,
+ *        normalise per-sample by outputWindowSum (correct OLA denominator)
+ *        then drainHead += RENDER
  *
  * Single-pass invariant: exactly one forward FFT and one inverse FFT per frame.
  *
@@ -26,14 +30,23 @@
  *     → fixes a 896-sample misalignment from `outputTail - RENDER` indexing.
  *   - hopsSinceInit gates drain during the muted warmup window.
  *
- * SAB protocol — matches dsp-processor.js exactly so the orchestrator can pair
- * either worklet with the existing ml-worker bridge:
+ * SAB protocol — FLAG_SLOTS=5 matches dsp-processor.js and ml-worker.js exactly:
  *   inputSAB:
- *     [0..15] Int32 flags: [writeGen, readGen, capacity, halfN]
- *     [16..]  Float32 mag (HALF_BINS) then pha (HALF_BINS)
+ *     [0..19]  Int32 flags (5 slots × 4 bytes): [writeGen, readGen, capacity, halfN, reserved]
+ *     [20..]   Float32 mag (HALF_BINS) then pha (HALF_BINS)
  *   outputSAB:
- *     [0..15] Int32 flags: [writeGen, readGen, capacity, halfN]
- *     [16..]  Float32 mask (HALF_BINS, 0..1)
+ *     [0..19]  Int32 flags (5 slots × 4 bytes): [writeGen, readGen, capacity, halfN, reserved]
+ *     [20..]   Float32 mask (HALF_BINS, 0..1)
+ *
+ * PATCHES applied (2026-05-26):
+ *   [P1] FLAG_SLOTS: 4 → 5 (SAB_HEADER_BYTES: 16 → 20)
+ *        Without this, _inputView/outputView were offset 4 bytes into the
+ *        payload, silently reading junk mag/mask data on every frame.
+ *   [P2] outputWindowSum now accumulated in _processFrame (w*w per sample).
+ *        Previously _processFrame wrote outputAccum but never wrote
+ *        outputWindowSum, so the drain loop always fell back to the fixed
+ *        OLA_NORM scalar. Now it uses the per-sample window-sum denominator
+ *        for correct energy-preserving OLA at 75% overlap.
  */
 
 const FFT_SIZE  = 4096;
@@ -43,10 +56,11 @@ const HALF_BINS = FFT_SIZE / 2 + 1;
 
 const RING_LEN = FFT_SIZE * 4;
 
-const FLAG_SLOTS = 4;
-const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
+// PATCH 1: FLAG_SLOTS 4 → 5 to match dsp-processor.js + ml-worker.js
+const FLAG_SLOTS = 5;                                                  // was 4 (16 bytes) — now 5 (20 bytes)
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;    // 20
 
-const OLA_NORM = 1.0 / (FFT_SIZE / (2.0 * HOP_SIZE));
+const OLA_NORM = 1.0 / (FFT_SIZE / (2.0 * HOP_SIZE));  // fallback scalar only
 
 function fftInPlace(re, im, inverse) {
   const N = re.length;
@@ -134,7 +148,7 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
   initRingBuffers() {
     this.inputAccum      = new Float32Array(RING_LEN);
     this.outputAccum     = new Float32Array(RING_LEN);
-    this.outputWindowSum = new Float32Array(RING_LEN);
+    this.outputWindowSum = new Float32Array(RING_LEN);  // PATCH 2: populated in _processFrame
     this.inputHead       = 0;
     this.inputProcessed  = 0;
     this.outputHead      = 0;
@@ -157,10 +171,16 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'sabReady', inputSAB: this._inputSAB, outputSAB: this._outputSAB });
         break;
       }
+      case 'setParams':
       case 'params': {
-        if (msg.payload) {
-          for (const [k, v] of Object.entries(msg.payload)) {
-            if (k in this._params) this._params[k] = Number(v);
+        // Accept both 'params' and 'setParams' to match dsp-processor.js protocol
+        const payload = msg.payload || msg.params;
+        if (payload) {
+          for (const [k, v] of Object.entries(payload)) {
+            if (k in this._params) {
+              const val = Number(v);
+              if (Number.isFinite(val)) this._params[k] = val;
+            }
           }
         }
         break;
@@ -217,9 +237,11 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     const lim     = Math.pow(10, (this._params.limThresh || -1) / 20);
 
     for (let i = 0; i < Q; i++) {
-      const idx = (this.drainHead + i) % RING_LEN;
+      const idx  = (this.drainHead + i) % RING_LEN;
       const wSum = this.outputWindowSum[idx];
-      const norm = wSum > 1e-8 ? (1 / wSum) : OLA_NORM;
+      // PATCH 2: use accumulated window-sum denominator; fall back to scalar only
+      // if outputWindowSum is empty (should not happen after warmup).
+      const norm = wSum > 1e-8 ? (1.0 / wSum) : OLA_NORM;
       let s = this.outputAccum[idx] * norm * outGain;
       this.outputAccum[idx]     = 0;
       this.outputWindowSum[idx] = 0;
@@ -308,11 +330,14 @@ class VoiceIsolateProcessor extends AudioWorkletProcessor {
     // ── SINGLE INVERSE STFT ─────────────────────────────────────────────────
     fftInPlace(this._re, this._im, true);
 
+    // PATCH 2: accumulate both the time-domain sample AND the squared window
+    // value into outputWindowSum so the drain loop can apply the per-sample
+    // WOLA denominator instead of the fixed scalar.
     for (let i = 0; i < FFT_SIZE; i++) {
       const idx = (this.outputHead + i) % RING_LEN;
       const w   = this._win[i];
       this.outputAccum[idx]     += this._re[i] * w;
-      this.outputWindowSum[idx] += w * w;
+      this.outputWindowSum[idx] += w * w;           // ← was missing before PATCH 2
     }
     this.outputHead = (this.outputHead + HOP_SIZE) % RING_LEN;
   }
