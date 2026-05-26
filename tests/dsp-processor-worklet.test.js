@@ -48,6 +48,13 @@ describe('dsp-processor AudioWorklet behavior', () => {
     expect(typeof processor.port.onmessage).toBe('function');
   });
 
+  test('starts compressor envelope at 0 dB and pre-fills ring pointers for deterministic startup', () => {
+    const processor = loadProcessor();
+    expect(processor._envDb).toBe(0);
+    expect(processor._inRd).toBe(0);
+    expect(processor._inWr).toBe(FFT_SIZE);
+  });
+
   test('initSAB message wires both SABs and notifies main thread with sabReady', () => {
     const processor = loadProcessor();
     const { inputSAB, outputSAB } = makeSABs();
@@ -58,6 +65,27 @@ describe('dsp-processor AudioWorklet behavior', () => {
     expect(processor.port.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'sabReady', inputSAB, outputSAB })
     );
+  });
+
+  test('compKnee is accepted via params and clamped to [0,24]', () => {
+    const processor = loadProcessor();
+    processor.port.onmessage({ data: { type: 'params', payload: { compKnee: 40 } } });
+    expect(processor._params.compKnee).toBe(24);
+    processor.port.onmessage({ data: { type: 'params', payload: { compKnee: -4 } } });
+    expect(processor._params.compKnee).toBe(0);
+  });
+
+  test('emits first FFT frame on the first process quantum after startup prefill', () => {
+    const processor = loadProcessor();
+    const { inputSAB, outputSAB } = makeSABs();
+    initSAB(processor, { inputSAB, outputSAB });
+    const flagsIn = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+
+    const inBlock = new Float32Array(Q).fill(0.05);
+    const outBlock = new Float32Array(Q);
+    processor.process([[inBlock]], [[outBlock]]);
+
+    expect(Atomics.load(flagsIn, 0)).toBe(1);
   });
 
   test('advances the input frame counter once per completed FFT hop', () => {

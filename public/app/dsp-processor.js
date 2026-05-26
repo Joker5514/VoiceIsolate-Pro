@@ -41,6 +41,7 @@
 const FFT_SIZE   = 4096;
 const HOP_SIZE   = 1024;           // 75% overlap
 const HALF_BINS  = FFT_SIZE / 2 + 1;
+const RENDER_QUANTUM = 128;
 const FLAG_SLOTS = 5;                                                   // Bug #2 fix: 5 slots = 20 bytes, matches SharedRingBuffer header
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;     // 20
 
@@ -111,8 +112,9 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     // Input ring: large enough for FFT_SIZE look-back + one full write burst
     this._inRing = new Float32Array(FFT_SIZE * 4);
-    this._inWr   = 0;  // write head — advances every sample
-    this._inRd   = 0;  // FIX [2]: read/frame-start cursor — advances by HOP_SIZE
+    this._inRing.fill(0, 0, FFT_SIZE);
+    this._inRd   = 0;        // FIX [2]: read/frame-start cursor — advances by HOP_SIZE
+    this._inWr   = FFT_SIZE; // Pre-filled with FFT_SIZE zeros for deterministic startup latency
 
     // Output ring: large enough for several overlapping frames in flight
     this._outRing = new Float32Array(FFT_SIZE * 8);
@@ -120,7 +122,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._outWr   = 0;
 
     // How many new samples have arrived since last frame trigger
-    this._newSamples = 0; // FIX [2]: counts NEW samples since last hop, not total
+    this._newSamples = HOP_SIZE - RENDER_QUANTUM; // startup prime so first quantum can issue a frame
 
     // SABs — injected via port 'initSAB' message
     this._inputSAB    = null;
@@ -144,6 +146,7 @@ class DSPProcessor extends AudioWorkletProcessor {
       compRatio:   4,
       compAttack:  10,    // ms
       compRelease: 150,   // ms
+      compKnee:    6,     // dB
       compMakeup:  0,     // dB
       limThresh:   -1,    // dBFS
       specTilt:    0.0,   // dB/oct
@@ -172,6 +175,7 @@ class DSPProcessor extends AudioWorkletProcessor {
       compRatio:   [1, 100],
       compAttack:  [0.1, 1000],
       compRelease: [1, 5000],
+      compKnee:    [0, 24],
       compMakeup:  [-24, 24],
       limThresh:   [-60, 0],
       specTilt:    [-12, 12],
@@ -193,7 +197,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._GATE_HOLD_LEN   = Math.round((GATE_HOLD_MS / 1000) * sampleRate);
 
     // Compressor envelope state
-    this._envDb  = -96;
+    this._envDb  = 0;
     this._gainDb = 0;
 
     this.port.onmessage = (ev) => this._onMessage(ev.data);
@@ -292,6 +296,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     // Compressor parameters
     const ct = this._params.compThresh || -24;
     const cr = this._params.compRatio || 4;
+    const ck = Math.max(0, this._params.compKnee || 0);
     const sr = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
     const cAtk = Math.exp(-1 / ((this._params.compAttack || 10) * sr / 1000));
     const cRel = Math.exp(-1 / ((this._params.compRelease || 150) * sr / 1000));
@@ -307,8 +312,14 @@ class DSPProcessor extends AudioWorkletProcessor {
         // Compressor logic
         const sDb = 20 * Math.log10(Math.abs(s) + 1e-9);
         let gainReduction = 0;
-        if (sDb > ct && cr > 1) {
-           gainReduction = (sDb - ct) * (1 - 1/cr);
+        if (cr > 1) {
+          const halfKnee = ck * 0.5;
+          if (ck > 0 && Math.abs(sDb - ct) < halfKnee) {
+            const over = sDb - ct + halfKnee;
+            gainReduction = (1 - 1 / cr) * (over * over) / (2 * ck);
+          } else if (sDb > ct + halfKnee) {
+            gainReduction = (sDb - ct) * (1 - 1 / cr);
+          }
         }
         if (gainReduction > this._envDb) {
            this._envDb = cAtk * this._envDb + (1 - cAtk) * gainReduction;

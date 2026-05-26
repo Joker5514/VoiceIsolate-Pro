@@ -268,3 +268,37 @@ export function buildPanels(root = document, onChange) {
     if (!(spec.id in window.VIP_PARAMS)) window.VIP_PARAMS[spec.id] = spec.val;
   }
 }
+
+export function onAppReady(init) {
+  if (typeof init !== 'function') return;
+  if (typeof window === 'undefined') {
+    init();
+    return;
+  }
+  window.addEventListener('app:ready', () => { init(); }, { once: true });
+}
+
+export function runAudit(root = document) {
+  const sliders = root.querySelectorAll('.sr-row input[type="range"]');
+  const missingPanels = Object.values(TAB_PANEL_MAP).filter((id) => !root.getElementById(id));
+  const missingPct = Array.from(sliders).filter((el) => !el.style.getPropertyValue('--pct')).length;
+  const result = {
+    pass: 0,
+    fail: 0,
+    checks: {
+      sliderCount: sliders.length,
+      missingPanels,
+      missingPct,
+      registryCount: window.VIP_SLIDER_REGISTRY?.length || 0,
+    },
+  };
+  if (sliders.length >= 52) result.pass++; else result.fail++;
+  if (missingPanels.length === 0) result.pass++; else result.fail++;
+  if (missingPct === 0) result.pass++; else result.fail++;
+  if ((window.VIP_SLIDER_REGISTRY?.length || 0) >= 52) result.pass++; else result.fail++;
+  if (typeof window !== 'undefined') {
+    window.VIP_AUDIT_RESULTS = result;
+    window.VIP_runAudit = () => result;
+  }
+  return result;
+}
