@@ -1,5 +1,6 @@
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { ModelStatusUI } from './model-status-ui.js';
+import { runFullPipeline } from './dsp-stages.js';
 // DSP math (forwardSTFT / inverseSTFT) lives on globalThis.DSPCore, exposed by
 // the classic <script src="./dsp-core.js"> tag in index.html — loaded before
 // this module so the binding is live at evaluation time. `DSP` retained as a
@@ -2133,13 +2134,9 @@ class VoiceIsolatePro {
       this.updatePipelineProgress(9, 'Single forward STFT complete', 32);
       await new Promise(r => setTimeout(r, 0));
 
-      if (spectrum?.mag && this.params.nrAmount > 0) {
-        const alpha = this.params.nrAmount / 100;
-        for (let frame = 0; frame < spectrum.mag.length; frame++) {
-          for (let bin = 0; bin < spectrum.mag[frame].length; bin++) {
-            spectrum.mag[frame][bin] *= (1 - alpha * 0.5);
-          }
-        }
+      if (spectrum?.mag && spectrum?.phase) {
+        const originalMag = spectrum.mag.map(frame => frame.slice());
+        runFullPipeline(spectrum.mag, spectrum.phase, originalMag, this.params, {}, sampleRate);
       }
       this.updatePipelineProgress(15, 'Spectral refinement and suppression applied in-place', 54);
       await new Promise(r => setTimeout(r, 0));
