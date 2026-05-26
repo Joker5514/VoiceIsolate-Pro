@@ -184,7 +184,7 @@ export const SLIDER_REGISTRY = [
   { id: 'outWidth',        key: 'outWidth',        transform: v => v, target: 'worklet' },
 ];
 
-export function dispatchParam(id, rawVal, app = window._vipApp || window.vip || window._vipOrch) {
+export function dispatchParam(id, rawVal, app = window._vipOrch || window._vipApp || window.vip) {
   const target = SLIDER_TARGETS[id] || 'local';
   const payload = { [id]: rawVal };
   const worklet = app?.workletNode;

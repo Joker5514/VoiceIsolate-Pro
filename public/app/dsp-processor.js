@@ -226,9 +226,11 @@ class DSPProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ type: 'sabReady', inputSAB: this._inputSAB, outputSAB: this._outputSAB });
         break;
       }
+      case 'setParams':
       case 'params': {
-        if (msg.payload) {
-          for (const [k, v] of Object.entries(msg.payload)) {
+        const payload = msg.payload || msg.params;
+        if (payload) {
+          for (const [k, v] of Object.entries(payload)) {
             if (k in this._params && k in this._bounds) {
               const val = Number(v);
               if (Number.isFinite(val)) {

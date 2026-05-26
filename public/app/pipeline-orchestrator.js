@@ -631,46 +631,30 @@ class PipelineOrchestrator {
     if (!this.workletNode) return;
     this.workletNode.port.postMessage({
       type: 'setParams',
-      params: {
-        // Noise Gate
-        gateThresh:    params.gateThresh,
-        gateRange:     params.gateRange,
-        gateAttack:    params.gateAttack,
-        gateRelease:   params.gateRelease,
-        gateHold:      params.gateHold,
-        gateLookahead: params.gateLookahead,
-        // Spectral NR
-        nrAmount:      params.nrAmount,
-        nrSensitivity: params.nrSensitivity,
-        nrSpectralSub: params.nrSpectralSub,
-        nrFloor:       params.nrFloor,
-        nrSmoothing:   params.nrSmoothing,
-        // Voice Isolation
-        voiceIso:      params.voiceIso,
-        bgSuppress:    params.bgSuppress,
-        voiceFocusLo:  params.voiceFocusLo,
-        voiceFocusHi:  params.voiceFocusHi,
-        // Output
-        outGain:       params.outGain,
-        dryWet:        params.dryWet
-      }
+      params: params
     });
 
-    // Forward blend weights to ML worker
+    // Forward blend weights to ML worker safely
     if (this.mlWorker) {
-      this.mlWorker.postMessage({
-        type:   'setWeights',
-        demucs: params.voiceIso / 100,
-        bsrnn:  1 - params.voiceIso / 100
-      });
-      this.mlWorker.postMessage({
-        type: 'setParams',
-        payload: {
-          spectralFloor: Number.isFinite(params.spectralFloor) ? params.spectralFloor : 0.005,
-          noiseReduce: Math.max(0, Math.min(1, (params.nrAmount || 0) / 100)),
-          forensicMode: !!window._vipApp?.forensicMode
-        }
-      });
+      if (params.voiceIso !== undefined && !Number.isNaN(params.voiceIso)) {
+        this.mlWorker.postMessage({
+          type:   'setWeights',
+          demucs: params.voiceIso / 100,
+          bsrnn:  1 - params.voiceIso / 100
+        });
+      }
+      const payload = {};
+      if (params.spectralFloor !== undefined) payload.spectralFloor = params.spectralFloor;
+      if (params.nrAmount !== undefined) payload.noiseReduce = Math.max(0, Math.min(1, params.nrAmount / 100));
+      if (window._vipApp && window._vipApp.forensicMode !== undefined) {
+        payload.forensicMode = !!window._vipApp.forensicMode;
+      }
+      if (Object.keys(payload).length > 0) {
+        this.mlWorker.postMessage({
+          type: 'setParams',
+          payload
+        });
+      }
     }
   }
 
