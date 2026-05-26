@@ -1021,6 +1021,29 @@ class VoiceIsolatePro {
           p.classList.toggle('active', p.id === 'tab-' + tab);
         });
       });
+      tabBar.addEventListener('keydown', (e) => {
+        const tabs = Array.from(tabBar.querySelectorAll('[role="tab"]'));
+        if (!tabs.length) return;
+        const currentIdx = tabs.findIndex(t => t === document.activeElement);
+        if (currentIdx < 0) return;
+
+        let nextIdx = currentIdx;
+        if (e.key === 'ArrowRight') {
+          nextIdx = (currentIdx + 1) % tabs.length;
+        } else if (e.key === 'ArrowLeft') {
+          nextIdx = (currentIdx - 1 + tabs.length) % tabs.length;
+        } else if (e.key === 'Home') {
+          nextIdx = 0;
+        } else if (e.key === 'End') {
+          nextIdx = tabs.length - 1;
+        } else {
+          return;
+        }
+
+        e.preventDefault();
+        tabs[nextIdx].click();
+        tabs[nextIdx].focus();
+      });
     }
 
     // UI scale controls
@@ -2310,7 +2333,8 @@ class VoiceIsolatePro {
 
   _handleGlobalKeydown(e) {
     const tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || (e.target && e.target.isContentEditable)) return;
+    if (e.target && e.target.closest && e.target.closest('[role="tablist"]')) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
     const code = e.code || '';

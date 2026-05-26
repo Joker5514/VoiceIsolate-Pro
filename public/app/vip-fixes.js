@@ -257,7 +257,8 @@
     /* Space = play/pause keyboard shortcut */
     document.addEventListener('keydown', (e) => {
       const tag = (e.target?.tagName || '').toUpperCase();
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
+      if (e.target && e.target.closest && e.target.closest('[role="tablist"]')) return;
       if (e.code === 'Space') { e.preventDefault(); if (_isPlaying) _pause(); else _play(); }
     });
 
@@ -343,7 +344,8 @@
     /* X key shortcut */
     document.addEventListener('keydown', (e) => {
       const tag = (e.target?.tagName || '').toUpperCase();
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
+      if (e.target && e.target.closest && e.target.closest('[role="tablist"]')) return;
       if (e.code === 'KeyX') _toggleAB();
     });
 
