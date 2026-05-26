@@ -180,8 +180,8 @@ describe('Content-Security-Policy keeps script-src on self only', () => {
 
     // Isolate the script-src directive and strip the documented allowlist,
     // then assert no other external script hosts remain (notably none for ORT).
-    const scriptSrc = (csp.value.match(/script-src([^;]*)/) || [, ''])[1];
-    let remaining = scriptSrc;
+    const scriptSrcMatch = csp.value.match(/script-src([^;]*)/);
+    let remaining = scriptSrcMatch ? scriptSrcMatch[1] : '';
     for (const origin of ALLOWED_SCRIPT_ORIGINS) {
       remaining = remaining.split(origin).join('');
     }
