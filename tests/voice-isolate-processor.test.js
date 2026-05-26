@@ -27,7 +27,7 @@ const HOP_SIZE   = 1024;
 const RENDER     = 128;
 const RING_LEN   = FFT_SIZE * 4;
 const HALF_BINS  = FFT_SIZE / 2 + 1;
-const FLAG_SLOTS = 4;
+const FLAG_SLOTS = 5;
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
 
 describe('voice-isolate-processor PR #428 ring-buffer fixes', () => {

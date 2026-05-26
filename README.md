@@ -142,7 +142,7 @@ pnpm dev        # localhost:3000
 # Build
 pnpm build
 
-# Test (1,834 unit tests across 52 suites)
+# Test (1,903 unit tests across 64 suites)
 pnpm test
 
 # Browser smoke test (Playwright)

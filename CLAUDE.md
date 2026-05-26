@@ -51,7 +51,7 @@ pnpm build                # Copies public/ → build/
 # ── QUALITY ────────────────────────────────────────────────
 pnpm lint                 # ESLint Flat Config (app.js + worker files)
 pnpm lint:fix             # Auto-fix lint issues
-pnpm test                 # Run all 59 Jest suites
+pnpm test                 # Run all 64 Jest suites
 pnpm test:watch           # Watch mode
 pnpm test:coverage        # Coverage report
 pnpm test:live            # Live browser smoke test (Playwright/Chromium)
@@ -181,7 +181,7 @@ VoiceIsolate-Pro/
 │       ├── index.js                NIM API entry point
 │       └── grpc-client.js          gRPC client for NIM inference service
 │
-├── tests/                          Jest unit tests (59 suites)
+├── tests/                          Jest unit tests (64 suites)
 │   └── helpers/                    Test helpers (get-app-code.js)
 │
 ├── scripts/                        Build & validation scripts
@@ -445,10 +445,10 @@ Rules: `semi: warn` · `quotes: ['warn', 'single']` · `no-unused-vars: warn` (i
 
 ## ▐ TESTING ▌
 
-**59 Jest suites** covering all major subsystems. Jest environment: `node` (not `jsdom`) — DOM tests use `jsdom` library directly.
+**64 Jest suites** covering all major subsystems. Jest environment: `node` (not `jsdom`) — DOM tests use `jsdom` library directly.
 
 ```bash
-pnpm test                          # Run all 59 suites
+pnpm test                          # Run all 64 suites
 pnpm test -- tests/dsp.test.js     # Run single suite
 pnpm test:coverage                 # Generate coverage report
 pnpm test:live                     # Live browser smoke test
@@ -586,7 +586,7 @@ App ID: `com.voiceisolatepro.app` · Version: `24.0.0` · Fastlane config: `fast
 
 **`deploy.yml`** jobs:
 
-1. **lint-test** — ESLint + Jest (all 59 suites) + `pnpm validate`
+1. **lint-test** — ESLint + Jest (all 64 suites) + `pnpm validate`
 2. **smoke-test** — Live browser test via Playwright
 3. **deploy-preview** — Vercel preview URL (PRs only)
 4. **deploy-production** — Vercel production deploy (merge to `main` only)
