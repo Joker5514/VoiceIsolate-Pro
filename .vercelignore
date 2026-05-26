@@ -1,29 +1,38 @@
-# Development & Docker files
-Dockerfile
-docker-compose*.yml
-render.yaml
+# .vercelignore — files excluded from Vercel build output
+# These are development / infrastructure files that should never
+# be served as static assets or included in the Vercel deployment.
 
-# Test files
-tests/
+# Dev scratch files (audit fix #18)
+scratch/
+*.scratch.js
+*.scratch.ts
+*.bak
+design-test.html
+*.tmp
+
+# Alternate deploy targets — Vercel is the canonical target
+Dockerfile
+render.yaml
+docker-compose*.yml
+
+# Build/export scripts — only needed at build time, not served as assets
+scripts/
+
+# Local dev / CI artifacts
+coverage/
+.nyc_output/
 *.test.js
 *.spec.js
+__tests__/
 
-# Build/export scripts NOT needed at runtime but scripts/ is needed for buildCommand
-export_and_upload.py
-fix-and-setup.bat
-run-setup.bat
-run-setup.sh
-
-# Documentation & metadata
-DIARIZATION_WIRING.md
-FIXES_APPLIED.md
-MODELS.md
-patch.cjs
-
-# Dev tooling
-.qodo/
+# OS / editor noise
+.DS_Store
+Thumbs.db
 .vscode/
-eslint.config.js
+.idea/
 
-# Git
-.git/
+# Python model export artifacts
+models_output/
+checkpoints/
+venv/
+__pycache__/

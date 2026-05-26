@@ -59,3 +59,11 @@ demucs_v4_quantized.onnx
 package-lock.json
 .vercel
 .env*.local
+
+# Dev scratch / prototype files — never deploy these
+scratch/
+*.scratch.js
+*.scratch.ts
+*.bak
+design-test.html
+*.tmp
