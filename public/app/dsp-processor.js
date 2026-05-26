@@ -42,6 +42,7 @@ const FFT_SIZE   = 4096;
 const HOP_SIZE   = 1024;           // 75% overlap
 const HALF_BINS  = FFT_SIZE / 2 + 1;
 const RENDER_QUANTUM = 128;
+const STARTUP_PRIME_SAMPLES = HOP_SIZE - RENDER_QUANTUM;
 const FLAG_SLOTS = 5;                                                   // Bug #2 fix: 5 slots = 20 bytes, matches SharedRingBuffer header
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;     // 20
 
@@ -112,9 +113,11 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     // Input ring: large enough for FFT_SIZE look-back + one full write burst
     this._inRing = new Float32Array(FFT_SIZE * 4);
+    // Startup primer: synthesize one FFT window of silence so first frame timing is deterministic.
     this._inRing.fill(0, 0, FFT_SIZE);
     this._inRd   = 0;        // FIX [2]: read/frame-start cursor — advances by HOP_SIZE
     this._inWr   = FFT_SIZE; // Pre-filled with FFT_SIZE zeros for deterministic startup latency
+                               // _inWr=FFT_SIZE means FFT_SIZE primer samples are treated as already written.
 
     // Output ring: large enough for several overlapping frames in flight
     this._outRing = new Float32Array(FFT_SIZE * 8);
@@ -122,7 +125,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._outWr   = 0;
 
     // How many new samples have arrived since last frame trigger
-    this._newSamples = HOP_SIZE - RENDER_QUANTUM; // startup prime so first quantum can issue a frame
+    this._newSamples = STARTUP_PRIME_SAMPLES; // primes hop counter so the first render quantum can emit a frame
 
     // SABs — injected via port 'initSAB' message
     this._inputSAB    = null;

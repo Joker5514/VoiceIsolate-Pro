@@ -275,12 +275,16 @@ export function onAppReady(init) {
     init();
     return;
   }
+  if (window.__vipAppReady) {
+    init();
+    return;
+  }
   window.addEventListener('app:ready', () => { init(); }, { once: true });
 }
 
 export function runAudit(root = document) {
   const sliders = root.querySelectorAll('.sr-row input[type="range"]');
-  const missingPanels = Object.values(TAB_PANEL_MAP).filter((id) => !root.getElementById(id));
+  const missingPanels = Object.values(TAB_PANEL_MAP).filter((id) => !root.querySelector(`#${id}`));
   const missingPct = Array.from(sliders).filter((el) => !el.style.getPropertyValue('--pct')).length;
   const result = {
     pass: 0,
