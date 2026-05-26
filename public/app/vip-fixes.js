@@ -459,18 +459,23 @@
   function patchAccordions() {
     document.querySelectorAll('.slider-group-header').forEach(btn => {
       if (btn.dataset.vipFixAcc === '1') return;
-      btn.dataset.vipFixAcc = '1';
-      btn.addEventListener('click', () => {
-        const group   = btn.closest('.slider-group');
-        const content = $(btn.getAttribute('aria-controls'));
+
+      // Clone the button to remove the original listener registered in app.js
+      const newBtn = btn.cloneNode(true);
+      newBtn.dataset.vipFixAcc = '1';
+      btn.parentNode.replaceChild(newBtn, btn);
+
+      newBtn.addEventListener('click', () => {
+        const group   = newBtn.closest('.slider-group');
+        const content = $(newBtn.getAttribute('aria-controls'));
         if (!group || !content) return;
         const open = group.classList.toggle('active');
-        btn.setAttribute('aria-expanded', String(open));
+        newBtn.setAttribute('aria-expanded', String(open));
         content.style.display = open ? '' : 'none';
       });
       /* Sync initial display state with class */
-      const isActive = btn.closest('.slider-group')?.classList.contains('active');
-      const content  = $(btn.getAttribute('aria-controls'));
+      const isActive = newBtn.closest('.slider-group')?.classList.contains('active');
+      const content  = $(newBtn.getAttribute('aria-controls'));
       if (content) content.style.display = isActive ? '' : 'none';
     });
     log('Accordions patch OK');
