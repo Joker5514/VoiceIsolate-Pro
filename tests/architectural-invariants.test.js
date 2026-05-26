@@ -164,15 +164,27 @@ describe('CLAUDE.md §6 — COOP/COEP set to the exact values SharedArrayBuffer 
   });
 });
 
-// ── Bonus: CSP locks ONNX to same-origin ──────────────────────────────────────
+// ── Bonus: CSP locks ONNX/Three.js to same-origin ─────────────────────────────
 describe('Content-Security-Policy keeps script-src on self only', () => {
-  test('vercel.json CSP includes script-src \'self\' (no http(s) sources)', () => {
+  // The sole permitted external script origin is the Firebase SDK on
+  // gstatic.com — a documented, accepted exception (docs/adr/001-firebase-exception.md).
+  // It is UI/auth-layer only and never touches the audio pipeline.
+  const ALLOWED_SCRIPT_ORIGINS = ['https://www.gstatic.com'];
+
+  test('vercel.json CSP includes script-src \'self\' (no unapproved http(s) sources)', () => {
     const vercel = JSON.parse(read('vercel.json'));
     const allHeaders = (vercel.headers || []).flatMap((h) => h.headers);
     const csp = allHeaders.find((h) => h.key === 'Content-Security-Policy');
     if (!csp) return; // Some deployments use middleware instead — soft-skip.
     expect(csp.value).toMatch(/script-src\s+[^;]*'self'/);
-    // Must not whitelist external script hosts for ORT.
-    expect(csp.value).not.toMatch(/script-src[^;]*https?:\/\//);
+
+    // Isolate the script-src directive and strip the documented allowlist,
+    // then assert no other external script hosts remain (notably none for ORT).
+    const scriptSrc = (csp.value.match(/script-src([^;]*)/) || [, ''])[1];
+    let remaining = scriptSrc;
+    for (const origin of ALLOWED_SCRIPT_ORIGINS) {
+      remaining = remaining.split(origin).join('');
+    }
+    expect(remaining).not.toMatch(/https?:\/\//);
   });
 });
