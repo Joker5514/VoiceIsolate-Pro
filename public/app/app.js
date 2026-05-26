@@ -1,4 +1,4 @@
-import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
+import { SLIDER_REGISTRY, STAGES, dispatchParam } from './slider-map.js';
 import { ModelStatusUI } from './model-status-ui.js';
 // DSP math (forwardSTFT / inverseSTFT) lives on globalThis.DSPCore, exposed by
 // the classic <script src="./dsp-core.js"> tag in index.html — loaded before
@@ -299,6 +299,8 @@ function buildPanels() {
           window.VIP_PARAMS = window.VIP_PARAMS || {};
           window.VIP_PARAMS[s.id] = v;
         }
+        // Dispatch parameter to worklet/worker for real-time audio processing
+        dispatchParam(s.id, v);
       });
 
       // Lock button — protects this slider from preset and reset overrides

@@ -186,7 +186,12 @@ export const SLIDER_REGISTRY = [
 
 export function dispatchParam(id, rawVal, app = window._vipOrch || window._vipApp || window.vip) {
   const target = SLIDER_TARGETS[id] || 'local';
-  const payload = { [id]: rawVal };
+  // Find the registry entry to apply transforms (e.g., nrAmount/dryWet need 0-100 → 0-1)
+  const regEntry = SLIDER_REGISTRY.find(r => r.id === id);
+  const transformedVal = regEntry && typeof regEntry.transform === 'function'
+    ? regEntry.transform(rawVal)
+    : rawVal;
+  const payload = { [id]: transformedVal };
   const worklet = app?.workletNode;
   const worker = app?.mlWorker;
   if ((target === 'worklet' || target === 'both') && worklet) {

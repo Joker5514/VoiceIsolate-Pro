@@ -398,10 +398,17 @@
         window.VIP_PARAMS = window.VIP_PARAMS || {};
         window.VIP_PARAMS[id] = v;
         if (app.params) app.params[id] = v;
+        
+        // Apply transforms for specific parameters (nrAmount, dryWet need 0-100 → 0-1)
+        let transformedVal = v;
+        if (id === 'nrAmount' || id === 'dryWet') {
+          transformedVal = v / 100;
+        }
+        
         const orch = window._vipOrch;
-        if (orch?.updateParams) { orch.updateParams({ [id]: v }); return; }
+        if (orch?.updateParams) { orch.updateParams({ [id]: transformedVal }); return; }
         if (app.workletNode) {
-          try { app.workletNode.port.postMessage({ type: 'params', payload: { [id]: v } }); } catch (_) {}
+          try { app.workletNode.port.postMessage({ type: 'params', payload: { [id]: transformedVal } }); } catch (_) {}
         }
       });
     }
@@ -419,7 +426,7 @@
     log('Sliders patch OK');
   }
 
-  /* ═══════════════════════════════════════════════════════════════
+  /* ═════════════════════════���═════════════════════════════════════
    * 4. SLIDER SEARCH — fix .include typo → .includes()
    * ═══════════════════════════════════════════════════════════════ */
   function patchSliderSearch() {
