@@ -52,6 +52,7 @@ const HOP_SIZE    = 1024;
 const HALF_BINS   = FFT_SIZE / 2 + 1;
 const FLAG_SLOTS  = 5;
 const SAB_HEADER  = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
+const processorSrc = require('fs').readFileSync(require('path').join(__dirname, '../public/app/dsp-processor.js'), 'utf8');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -130,6 +131,12 @@ describe('DSPProcessor — registerProcessor', () => {
   test('class was registered successfully', () => {
     expect(DSPProcessorClass).not.toBeNull();
     expect(typeof DSPProcessorClass).toBe('function');
+  });
+
+  test('compressor uses soft-knee branch and quadratic knee formula', () => {
+    expect(processorSrc).toMatch(/Math\.abs\(sDb - ct\)\s*<\s*halfKnee/);
+    expect(processorSrc).toMatch(/gainReduction\s*=\s*\(1 - 1 \/ cr\)\s*\*\s*\(over \* over\)\s*\/\s*\(2 \* ck\)/);
+    expect(processorSrc).toMatch(/else if \(sDb > ct \+ halfKnee\)/);
   });
 });
 

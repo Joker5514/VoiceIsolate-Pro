@@ -18,7 +18,6 @@ const DSP_FILES = [
   'public/app/offline-processor.js',
   'public/app/pipeline-orchestrator.js',
   'public/app/pipeline-state.js',
-  'public/worklets/voice-isolator-worklet.js',
 ];
 
 const FORBIDDEN = [

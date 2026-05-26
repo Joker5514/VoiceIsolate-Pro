@@ -625,6 +625,10 @@ class VoiceIsolatePro {
     try {
       document.addEventListener('keydown', e => this._handleGlobalKeydown(e));
     } catch (_) {}
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.__vipAppReady = true;
+      window.dispatchEvent(new CustomEvent('app:ready'));
+    }
   }
 
   init() {

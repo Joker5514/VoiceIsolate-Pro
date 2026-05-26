@@ -233,7 +233,7 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
   });
 
   test('worklet script routes explicitly include both COOP and COEP', () => {
-    const workletRoutes = ['/app/dsp-processor.js'];
+    const workletRoutes = ['/app/dsp-processor.js', '/app/voice-isolate-processor.js'];
     for (const route of workletRoutes) {
       const routeHeaders = cfg.headers.find((h) => h.source === route);
       expect(routeHeaders).toBeDefined();
@@ -241,6 +241,11 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
       expect(keys).toContain('Cross-Origin-Opener-Policy');
       expect(keys).toContain('Cross-Origin-Embedder-Policy');
     }
+  });
+
+  test('does not include stale root-level /voice-isolate-processor.js header rule', () => {
+    const stale = cfg.headers.find((h) => h.source === '/voice-isolate-processor.js');
+    expect(stale).toBeUndefined();
   });
 
   test('/app/models ONNX route sets Cross-Origin-Resource-Policy to cross-origin', () => {

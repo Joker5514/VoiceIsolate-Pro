@@ -268,3 +268,42 @@ export function buildPanels(root = document, onChange) {
     if (!(spec.id in window.VIP_PARAMS)) window.VIP_PARAMS[spec.id] = spec.val;
   }
 }
+
+export function onAppReady(init) {
+  if (typeof init !== 'function') return;
+  if (typeof window === 'undefined') {
+    init();
+    return;
+  }
+  if (window.__vipAppReady) {
+    init();
+    return;
+  }
+  window.addEventListener('app:ready', () => { init(); }, { once: true });
+}
+
+export function runAudit(root = document) {
+  const win = typeof window !== 'undefined' ? window : null;
+  const sliders = root.querySelectorAll('.sr-row input[type="range"]');
+  const missingPanels = Object.values(TAB_PANEL_MAP).filter((id) => !root.querySelector(`#${id}`));
+  const missingPct = Array.from(sliders).filter((el) => !el.style.getPropertyValue('--pct')).length;
+  const result = {
+    pass: 0,
+    fail: 0,
+    checks: {
+      sliderCount: sliders.length,
+      missingPanels,
+      missingPct,
+      registryCount: win?.VIP_SLIDER_REGISTRY?.length || 0,
+    },
+  };
+  if (sliders.length >= 52) result.pass++; else result.fail++;
+  if (missingPanels.length === 0) result.pass++; else result.fail++;
+  if (missingPct === 0) result.pass++; else result.fail++;
+  if ((win?.VIP_SLIDER_REGISTRY?.length || 0) >= 52) result.pass++; else result.fail++;
+  if (win) {
+    win.VIP_AUDIT_RESULTS = result;
+    win.VIP_runAudit = () => result;
+  }
+  return result;
+}
