@@ -267,8 +267,10 @@ class PipelineOrchestrator {
       }
     });
 
-    // Route: workletNode → destination
-    this.workletNode.connect(this.ctx.destination);
+    // NOTE: Do NOT connect workletNode → destination here.
+    // buildLiveChain() in app.js owns the full routing chain:
+    //   Source → WorkletNode → GainNode → Analyser → Destination
+    // Connecting here would cause double-routing.
 
     // Listen for 'ready' ack from processor
     this.workletNode.port.onmessage = (e) => {
@@ -619,30 +621,38 @@ class PipelineOrchestrator {
     try { sourceNode.disconnect(this.workletNode); } catch (_) {}
   }
 
+  // ── Normalize raw UI params to worklet-ready values ──────────────────────
+  // Mirrors the transforms defined in slider-map.js SLIDER_REGISTRY.
+  // Only nrAmount (0-100% → 0-1) and dryWet (0-100% → 0-1) need scaling;
+  // all other params have identity transforms and pass through unchanged.
+  _normalizeRawParams(raw) {
+    const p = { ...raw };
+    if (typeof p.nrAmount === 'number') p.nrAmount = p.nrAmount / 100;
+    if (typeof p.dryWet  === 'number') p.dryWet  = p.dryWet  / 100;
+    return p;
+  }
+
   // ── Slider → Worklet parameter forwarding ───────────────────────────────
   /**
-   * Called by the patched onSlider() and applyPreset() in app.js.
-   * Forwards the full params snapshot to the AudioWorkletProcessor
-   * via the message port.
+   * Forwards a ALREADY-TRANSFORMED params snapshot to the
+   * AudioWorkletProcessor via the message port.
    *
-   * @param {Object} params  Full params snapshot from VoiceIsolatePro
+   * Callers MUST pass worklet-ready values (use _normalizeRawParams()
+   * or SLIDER_REGISTRY transforms before calling).  No /100 scaling
+   * is performed here to avoid double-normalisation.
+   *
+   * @param {Object} params  Transformed params snapshot
    */
   updateParams(params) {
     if (!this.workletNode) return;
-    const workletParams = { ...params };
-    if (workletParams.nrAmount !== undefined) {
-      workletParams.nrAmount = workletParams.nrAmount / 100;
-    }
-    if (workletParams.dryWet !== undefined) {
-      workletParams.dryWet = workletParams.dryWet / 100;
-    }
     this.workletNode.port.postMessage({
       type: 'setParams',
-      params: workletParams
+      params: params
     });
 
     // Forward blend weights to ML worker safely
     if (this.mlWorker) {
+      // voiceIso has identity transform in SLIDER_REGISTRY → still raw 0-100
       if (params.voiceIso !== undefined && !Number.isNaN(params.voiceIso)) {
         this.mlWorker.postMessage({
           type:   'setWeights',
@@ -652,7 +662,8 @@ class PipelineOrchestrator {
       }
       const payload = {};
       if (params.spectralFloor !== undefined) payload.spectralFloor = params.spectralFloor;
-      if (params.nrAmount !== undefined) payload.noiseReduce = Math.max(0, Math.min(1, params.nrAmount / 100));
+      // nrAmount arrives already normalised to 0-1 by the caller
+      if (params.nrAmount !== undefined) payload.noiseReduce = Math.max(0, Math.min(1, params.nrAmount));
       if (window._vipApp && window._vipApp.forensicMode !== undefined) {
         payload.forensicMode = !!window._vipApp.forensicMode;
       }
@@ -697,21 +708,25 @@ class PipelineOrchestrator {
 
   // ── Bind all 52 sliders ──────────────────────────────────────────────────
   /**
-   * Iterates every <input data-param> and attaches an 'input' listener that
-   * calls updateParams() with a full DOM snapshot.
+   * Finds every slider built by buildPanels() (id="sl_<paramId>") and
+   * attaches an 'input' listener that applies SLIDER_REGISTRY transforms
+   * and forwards the full snapshot to the worklet via updateParams().
    * Safe to call before workletNode is created — updateParams() guards itself.
    */
   _bindSliders() {
-    // Build the snapshot once up-front, then mutate the single changed field
-    // on each 'input' event. Re-querying all 52 sliders per-event was O(N)
-    // DOM work on every interaction; this drops it to O(1).
-    const sliders = document.querySelectorAll('input[type="range"][data-param]');
+    // DOM sliders use id="sl_gateThresh", id="sl_eqBass", etc.
+    const sliders = document.querySelectorAll('input[type="range"][id^="sl_"]');
     const snapshot = {};
-    sliders.forEach((s) => { snapshot[s.dataset.param] = parseFloat(s.value); });
+    sliders.forEach((s) => {
+      const paramId = s.id.slice(3); // strip 'sl_' prefix
+      snapshot[paramId] = parseFloat(s.value);
+    });
     sliders.forEach((el) => {
       el.addEventListener('input', () => {
-        snapshot[el.dataset.param] = parseFloat(el.value);
-        this.updateParams(snapshot);
+        const paramId = el.id.slice(3);
+        snapshot[paramId] = parseFloat(el.value);
+        // Apply transforms (nrAmount, dryWet → 0-1) then forward
+        this.updateParams(this._normalizeRawParams(snapshot));
       });
     });
   }
@@ -839,7 +854,7 @@ class PipelineOrchestrator {
       const _origOnSlider = app.onSlider.bind(app);
       app.onSlider = function (...args) {
         _origOnSlider(...args);
-        orch.updateParams(app.params);
+        orch.updateParams(orch._normalizeRawParams(app.params));
       };
     }
 
@@ -848,7 +863,7 @@ class PipelineOrchestrator {
       const _origApply = app.applyPreset.bind(app);
       app.applyPreset = function (name) {
         _origApply(name);
-        orch.updateParams(app.params);
+        orch.updateParams(orch._normalizeRawParams(app.params));
       };
     }
 
