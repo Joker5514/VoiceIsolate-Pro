@@ -629,9 +629,16 @@ class PipelineOrchestrator {
    */
   updateParams(params) {
     if (!this.workletNode) return;
+    const workletParams = { ...params };
+    if (workletParams.nrAmount !== undefined) {
+      workletParams.nrAmount = workletParams.nrAmount / 100;
+    }
+    if (workletParams.dryWet !== undefined) {
+      workletParams.dryWet = workletParams.dryWet / 100;
+    }
     this.workletNode.port.postMessage({
       type: 'setParams',
-      params: params
+      params: workletParams
     });
 
     // Forward blend weights to ML worker safely

@@ -179,7 +179,7 @@ export const SLIDER_REGISTRY = [
   { id: 'voiceFocusHi',    key: 'voiceFocusHi',    transform: v => v, target: 'worker' },
   { id: 'crosstalkCancel', key: 'crosstalkCancel', transform: v => v, target: 'worker' },
   { id: 'outGain',         key: 'outGain',         transform: v => v, target: 'worklet' },
-  { id: 'dryWet',          key: 'dryWet',          transform: v => v, target: 'worklet' },
+  { id: 'dryWet',          key: 'dryWet',          transform: v => v / 100, target: 'worklet' },
   { id: 'ditherAmt',       key: 'ditherAmt',       transform: v => v, target: 'worklet' },
   { id: 'outWidth',        key: 'outWidth',        transform: v => v, target: 'worklet' },
 ];

@@ -336,11 +336,18 @@ class DSPProcessor extends AudioWorkletProcessor {
         // Brickwall limiter
         if (s >  lim) s =  lim;
         if (s < -lim) s = -lim;
-        outCh[i] = s;
+        
+        // Dry/Wet mixing
+        const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
+        outCh[i] = mono[i] * (1.0 - dryWet) + s * dryWet;
       }
     } else {
-      // Pipeline latency — not enough processed samples yet
-      outCh.fill(0.0);
+      // Pipeline latency — not enough processed samples yet.
+      // Output scaled dry signal only.
+      const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
+      for (let i = 0; i < Q; i++) {
+        outCh[i] = mono[i] * (1.0 - dryWet);
+      }
     }
 
     // Copy mono output to all output channels (worklet may have stereo outputs)
