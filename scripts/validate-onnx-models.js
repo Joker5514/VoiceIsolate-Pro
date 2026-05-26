@@ -31,29 +31,45 @@ const R = (s) => `\x1b[31m${s}\x1b[0m`;
 const B = (s) => `\x1b[36m${s}\x1b[0m`;
 
 // ── Fallback model list (used when no manifest found) ──────────────────────
-const BLOB_BASE_URL = process.env.BLOB_BASE_URL || '';
+let BLOB_BASE_URL = process.env.BLOB_BASE_URL || '';
+if (!BLOB_BASE_URL) {
+  try {
+    const vercelJsonPath = path.resolve(__dirname, '../vercel.json');
+    if (fs.existsSync(vercelJsonPath)) {
+      const vj = JSON.parse(fs.readFileSync(vercelJsonPath, 'utf8'));
+      const rw = (vj.rewrites || []).find((r) => r.source === '/app/models/:model(.*\\.onnx)');
+      if (rw && rw.destination) {
+        BLOB_BASE_URL = rw.destination.replace('/:model', '');
+      }
+    }
+  } catch (_) {}
+}
+if (!BLOB_BASE_URL) {
+  BLOB_BASE_URL = 'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/';
+}
+
 const FALLBACK_MODELS = [
   {
     name: 'silero_vad.onnx',
-    cdn_src: BLOB_BASE_URL ? `${BLOB_BASE_URL.replace(/\/$/, '')}/silero_vad.onnx` : '',
+    cdn_src: `${BLOB_BASE_URL.replace(/\/$/, '')}/silero_vad.onnx`,
     min_bytes: 100_000,
   },
   {
     name: 'rnnoise_suppressor.onnx',
-    cdn_src: BLOB_BASE_URL ? `${BLOB_BASE_URL.replace(/\/$/, '')}/rnnoise_suppressor.onnx` : '',
+    cdn_src: `${BLOB_BASE_URL.replace(/\/$/, '')}/rnnoise_suppressor.onnx`,
     min_bytes: 100_000,
   },
   {
     name: 'demucs_v4_quantized.onnx',
-    cdn_src: BLOB_BASE_URL ? `${BLOB_BASE_URL.replace(/\/$/, '')}/demucs_v4_quantized.onnx` : '',
+    cdn_src: `${BLOB_BASE_URL.replace(/\/$/, '')}/demucs_v4_quantized.onnx`,
     min_bytes: 10_000_000,
   },
   {
     name: 'bsrnn_vocals.onnx',
-    cdn_src: BLOB_BASE_URL ? `${BLOB_BASE_URL.replace(/\/$/, '')}/bsrnn_vocals.onnx` : '',
+    cdn_src: `${BLOB_BASE_URL.replace(/\/$/, '')}/bsrnn_vocals.onnx`,
     min_bytes: 10_000_000,
   },
-].filter((m) => m.cdn_src);
+];
 
 // ── Parse CLI args ─────────────────────────────────────────────────────────
 const args = process.argv.slice(2);
@@ -124,10 +140,9 @@ function humanBytes(n) {
       if (Array.isArray(raw)) {
         rawList = raw;
       } else if (raw.models && !Array.isArray(raw.models)) {
-        // v2 object map — pick the first source with an absolute HTTP URL (proxy paths
-        // like /app/models/... are same-origin rewrites; new URL() can't parse them)
+        // v2 object map
         rawList = Object.values(raw.models).map((entry) => {
-          const src = (entry.sources || []).find((s) => s.url && s.url.startsWith('http'));
+          const src = (entry.sources || []).find((s) => s.url);
           return {
             name: entry.filename,
             cdn_src: src ? src.url : null,
@@ -141,11 +156,22 @@ function humanBytes(n) {
         rawList = raw.files || [];
       }
 
-      const parsed = rawList.map((m) => ({
-        name: m.name || m.filename || path.basename(m.cdn_src || m.url || m.path || ''),
-        cdn_src: m.cdn_src || m.url || m.path,
-        min_bytes: m.min_bytes || m.sizeBytes || 100_000,
-      })).filter((m) => m.cdn_src && m.cdn_src.startsWith('http'));
+      const parsed = rawList.map((m) => {
+        let src = m.cdn_src || m.url || m.path || '';
+        // Demucs is hosted on Vercel Blob and rewritten. The other three models
+        // are committed in-repo and served same-origin.
+        if (src.startsWith('/app/models/')) {
+          const name = m.name || m.filename || path.basename(src);
+          if (name === 'demucs_v4_quantized.onnx') {
+            src = src.replace('/app/models/', BLOB_BASE_URL.replace(/\/$/, '') + '/');
+          }
+        }
+        return {
+          name: m.name || m.filename || path.basename(src),
+          cdn_src: src,
+          min_bytes: m.min_bytes || m.sizeBytes || 100_000,
+        };
+      }).filter((m) => m.cdn_src);
 
       if (parsed.length > 0) {
         models = parsed;
@@ -165,27 +191,42 @@ function humanBytes(n) {
 
   const results = await Promise.all(
     models.map(async (m) => {
-      const { status, contentLength, error } = await headRequest(m.cdn_src);
-      return { ...m, status, contentLength, error };
+      if (m.cdn_src.startsWith('http') || m.cdn_src.startsWith('https')) {
+        const { status, contentLength, error } = await headRequest(m.cdn_src);
+        return { ...m, status, contentLength, error, isLocal: false };
+      } else {
+        // Local file validation
+        const localPath = path.resolve(__dirname, '..', 'public', m.cdn_src.replace(/^\//, ''));
+        const exists = fs.existsSync(localPath);
+        const stats = exists ? fs.statSync(localPath) : null;
+        return {
+          ...m,
+          status: exists ? 200 : 404,
+          contentLength: stats ? stats.size : 0,
+          isLocal: true,
+          localPath
+        };
+      }
     })
   );
 
   let failures = 0;
   for (const r of results) {
     const label = r.name.padEnd(30);
+    const typeLabel = r.isLocal ? 'LOCAL' : 'CDN  ';
     if (r.error || r.status === 0) {
-      console.log(R(`❌  ${label}  ERROR: ${r.error || 'no response'}  →  ${r.cdn_src}`));
+      console.log(R(`❌  ${label}  (${typeLabel}) ERROR: ${r.error || 'no response'}  →  ${r.cdn_src}`));
       failures++;
     } else if (r.status !== 200) {
-      console.log(R(`❌  ${label}  HTTP ${r.status}  →  ${r.cdn_src}`));
+      console.log(R(`❌  ${label}  (${typeLabel}) Missing/404  →  ${r.cdn_src}`));
       failures++;
     } else if (r.contentLength > 0 && r.contentLength < (r.min_bytes || 100_000)) {
-      console.log(Y(`⚠️   ${label}  STUB (${humanBytes(r.contentLength)} < ${humanBytes(r.min_bytes)})  →  ${r.cdn_src}`));
+      console.log(Y(`⚠️   ${label}  (${typeLabel}) STUB (${humanBytes(r.contentLength)} < ${humanBytes(r.min_bytes)})  →  ${r.cdn_src}`));
       failures++;
     } else if (r.contentLength === 0) {
-      console.log(Y(`⚠️   ${label}  HTTP 200 but Content-Length missing — verify manually  →  ${r.cdn_src}`));
+      console.log(Y(`⚠️   ${label}  (${typeLabel}) HTTP 200 but Content-Length missing — verify manually  →  ${r.cdn_src}`));
     } else {
-      console.log(G(`✅  ${label}  ${humanBytes(r.contentLength)}  →  ${r.cdn_src}`));
+      console.log(G(`✅  ${label}  (${typeLabel}) ${humanBytes(r.contentLength)}  →  ${r.cdn_src}`));
     }
   }
 

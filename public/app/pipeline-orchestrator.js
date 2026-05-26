@@ -295,6 +295,11 @@ class PipelineOrchestrator {
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
       this._emitSabUnavailable('SharedArrayBuffer is not defined');
+      setTimeout(() => {
+        if (!this.workletReady) {
+          this.workletReady = true;
+        }
+      }, WORKLET_READY_FALLBACK_MS);
       return false;
     }
     try {
@@ -337,6 +342,11 @@ class PipelineOrchestrator {
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
       this._emitSabUnavailable(err?.message || String(err));
+      setTimeout(() => {
+        if (!this.workletReady) {
+          this.workletReady = true;
+        }
+      }, WORKLET_READY_FALLBACK_MS);
       return false;
     }
   }
