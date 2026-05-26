@@ -3,6 +3,15 @@
  * ==========================================================
  * Offline STFT / iSTFT utility for Creator and Forensic processing modes.
  *
+ * AUDIT-FIX #15 (2026-05-26): makeHannWindow() now uses the PERIODIC form
+ * (denominator N, not N-1). The symmetric form (N-1) breaks the Constant
+ * Overlap-Add (COLA) identity at 75% overlap and causes amplitude ripple
+ * between frames. Both dsp-processor.js and voice-isolate-processor.js
+ * already use the periodic form — this fix makes fft-bridge consistent.
+ *
+ * Before fix:  w[i] = 0.5 * (1 - cos(2πi / (N-1)))  ← symmetric, breaks COLA
+ * After fix:   w[i] = 0.5 * (1 - cos(2πi / N))       ← periodic, preserves COLA
+ *
  * Reuses the IDENTICAL Cooley-Tukey FFT kernel from dsp-processor.js to
  * guarantee bit-for-bit consistent spectral representation between Live and
  * Creator/Forensic paths. Single-pass architecture is preserved:
@@ -73,15 +82,17 @@ export function fftInPlace(re, im, inverse = false) {
 }
 
 /**
- * Generate a periodic Hann window of length N.
- * Identical to dsp-processor.js makeHannWindow().
+ * AUDIT-FIX #15: Generate a PERIODIC Hann window of length N.
+ * Periodic form (denominator N) is required for COLA at 75% overlap.
+ * Symmetric form (denominator N-1) was incorrect and caused amplitude ripple.
  * @param {number} N
  * @returns {Float32Array}
  */
 export function makeHannWindow(N) {
   const w = new Float32Array(N);
   for (let i = 0; i < N; i++) {
-    w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
+    // PERIODIC form: denominator is N (not N-1)
+    w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / N));
   }
   return w;
 }
@@ -118,7 +129,7 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   }
 
   const halfBins = (fftSize >> 1) + 1;
-  const win      = makeHannWindow(fftSize);
+  const win      = makeHannWindow(fftSize); // AUDIT-FIX #15: now periodic
   const re       = new Float32Array(fftSize);
   const im       = new Float32Array(fftSize);
 
@@ -126,15 +137,11 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   const phases     = [];
   const times      = [];
 
-  // Zero-pad to ensure at least one frame even for very short clips.
-  // totalSamples = signal length + one full window minus one hop, so Math.ceil
-  // produces the exact number of hops needed to cover all samples with zero-padding.
   const totalSamples = Math.max(1, pcm.length) + fftSize - hopSize;
   const numFrames = Math.max(1, Math.ceil(totalSamples / hopSize));
 
   for (let frame = 0; frame < numFrames; frame++) {
     const pos = frame * hopSize;
-    // Fill windowed frame (zero-pad beyond signal end)
     for (let i = 0; i < fftSize; i++) {
       const srcIdx = pos + i;
       re[i] = srcIdx < pcm.length ? pcm[srcIdx] * win[i] : 0;
@@ -144,7 +151,6 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
     // ── SINGLE FORWARD STFT ──────────────────────────────────────────────────
     fftInPlace(re, im, false);
 
-    // Extract magnitude and phase for positive frequencies only
     const mag = new Float32Array(halfBins);
     const pha = new Float32Array(halfBins);
     for (let k = 0; k < halfBins; k++) {
@@ -154,7 +160,7 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
 
     magnitudes.push(mag);
     phases.push(pha);
-    times.push((pos + fftSize / 2) / sampleRate); // center of window
+    times.push((pos + fftSize / 2) / sampleRate);
   }
 
   return { magnitudes, phases, times, fftSize, hopSize, halfBins, sampleRate };
@@ -162,8 +168,7 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
 
 /**
  * Reconstruct PCM from magnitude and phase frames via overlap-add iSTFT.
- * Applies the same Hann window as the analysis stage to satisfy COLA
- * (Constant Overlap-Add) reconstruction.
+ * Applies the same Hann window as the analysis stage to satisfy COLA.
  *
  * ⚠ SINGLE-PASS CONTRACT: Call this function exactly ONCE per processing chain.
  *
@@ -181,7 +186,7 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
   const outputLen  = (numFrames - 1) * hopSize + fftSize;
   const output     = new Float32Array(outputLen);
   const norm       = new Float32Array(outputLen);
-  const win        = makeHannWindow(fftSize);
+  const win        = makeHannWindow(fftSize); // AUDIT-FIX #15: now periodic
   const re         = new Float32Array(fftSize);
   const im         = new Float32Array(fftSize);
 
@@ -189,12 +194,10 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
     const mag = magnitudes[f];
     const pha = phases[f];
 
-    // Rebuild full-spectrum from magnitude + phase
     for (let k = 0; k < halfBins; k++) {
       re[k] = mag[k] * Math.cos(pha[k]);
       im[k] = mag[k] * Math.sin(pha[k]);
     }
-    // Conjugate symmetry for k = N/2+1 .. N-1
     for (let k = halfBins; k < fftSize; k++) {
       const mirrorK = fftSize - k;
       re[k] =  re[mirrorK];
@@ -204,7 +207,6 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
     // ── SINGLE INVERSE STFT ──────────────────────────────────────────────────
     fftInPlace(re, im, true);
 
-    // Overlap-add with synthesis window
     const frameStart = f * hopSize;
     for (let i = 0; i < fftSize; i++) {
       const idx = frameStart + i;
@@ -214,7 +216,6 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
     }
   }
 
-  // Per-sample OLA normalisation (compatible with any hopSize)
   for (let i = 0; i < outputLen; i++) {
     if (norm[i] > 1e-12) output[i] /= norm[i];
   }
@@ -223,17 +224,14 @@ export function reconstructISTFT(magnitudes, phases, fftSize = 4096, hopSize = 1
 }
 
 /**
- * Convenience: encode a mono Float32Array to a WAV ArrayBuffer
- * with a standard 44-byte RIFF/PCM header (16-bit, little-endian).
- * Used by offline-processor.js for the WAV export button.
- *
+ * Convenience: encode a mono Float32Array to a WAV ArrayBuffer.
  * @param {Float32Array} pcm        - Mono PCM samples normalised to [-1, 1]
  * @param {number}       sampleRate - Output sample rate (default 44100)
  * @returns {ArrayBuffer}
  */
 export function encodeWAV(pcm, sampleRate = 44100) {
   const numSamples = pcm.length;
-  const byteRate   = sampleRate * 2;    // 16-bit mono
+  const byteRate   = sampleRate * 2;
   const blockAlign = 2;
   const dataBytes  = numSamples * 2;
   const buf        = new ArrayBuffer(44 + dataBytes);
@@ -244,20 +242,19 @@ export function encodeWAV(pcm, sampleRate = 44100) {
   };
 
   writeStr(0, 'RIFF');
-  view.setUint32(4,  36 + dataBytes,       true); // ChunkSize
+  view.setUint32(4,  36 + dataBytes,       true);
   writeStr(8, 'WAVE');
   writeStr(12, 'fmt ');
-  view.setUint32(16, 16,          true);  // Subchunk1Size (PCM)
-  view.setUint16(20, 1,           true);  // AudioFormat = PCM
-  view.setUint16(22, 1,           true);  // NumChannels = 1
+  view.setUint32(16, 16,          true);
+  view.setUint16(20, 1,           true);
+  view.setUint16(22, 1,           true);
   view.setUint32(24, sampleRate,  true);
   view.setUint32(28, byteRate,    true);
   view.setUint16(32, blockAlign,  true);
-  view.setUint16(34, 16,          true);  // BitsPerSample
+  view.setUint16(34, 16,          true);
   writeStr(36, 'data');
   view.setUint32(40, dataBytes,   true);
 
-  // Convert Float32 → Int16 with clipping
   const int16Offset = 44;
   for (let i = 0; i < numSamples; i++) {
     const s = Math.max(-1, Math.min(1, pcm[i]));

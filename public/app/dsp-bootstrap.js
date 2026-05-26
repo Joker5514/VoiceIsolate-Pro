@@ -14,6 +14,10 @@
  *   • Exactly ONE forward STFT, in-place spectral ops, ONE iSTFT.
  *   • Zero fetch() to external servers.
  *   • All ML inference stays in the ml-worker via the orchestrator.
+ *
+ * AUDIT-FIX #12 (2026-05-26): _hannWindow() now uses PERIODIC form (N not N-1).
+ *   Symmetric window (N-1) broke COLA at 75% overlap causing amplitude ripple.
+ *   forwardSTFT and inverseSTFT updated to match dsp-processor.js + fft-bridge.js.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -22,17 +26,19 @@
 
   /* ── 1. Standalone Hann-windowed STFT / iSTFT on globalThis.DSP ────────── */
 
+  // AUDIT-FIX #12: Periodic Hann window (denominator N, not N-1).
+  // With 75% overlap the COLA sum of squared periodic-Hann windows = 2.0.
+  // Symmetric window (N-1) violates this and introduces inter-frame amplitude ripple.
   function _hannWindow(N) {
     const w = new Float32Array(N);
     for (let i = 0; i < N; i++)
-      w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (N - 1)));
+      w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / N)); // periodic: N not N-1
     return w;
   }
 
   /** Cooley–Tukey radix-2 DIT FFT — in-place, float32 */
   function _fftInPlace(re, im) {
     const N = re.length;
-    // Bit-reversal permutation
     let j = 0;
     for (let i = 1; i < N; i++) {
       let bit = N >> 1;
@@ -43,7 +49,6 @@
         [im[i], im[j]] = [im[j], im[i]];
       }
     }
-    // Butterfly stages
     for (let len = 2; len <= N; len <<= 1) {
       const half = len >> 1;
       const ang  = (-2 * Math.PI) / len;
@@ -77,12 +82,8 @@
   if (!globalThis.DSP || typeof globalThis.DSP.forwardSTFT !== 'function') {
     globalThis.DSP = globalThis.DSP || {};
 
-    /**
-     * Single-pass forward STFT.
-     * Returns { mag: Float32Array[], phase: Float32Array[], fftSize, hopSize }
-     */
     globalThis.DSP.forwardSTFT = function forwardSTFT(signal, fftSize, hopSize) {
-      const win      = _hannWindow(fftSize);
+      const win      = _hannWindow(fftSize); // AUDIT-FIX #12: periodic Hann
       const halfBins = fftSize / 2 + 1;
       const numFrames = Math.max(1, Math.floor((signal.length - fftSize) / hopSize) + 1);
       const mag   = new Array(numFrames);
@@ -107,21 +108,16 @@
       return { mag, phase, fftSize, hopSize };
     };
 
-    /**
-     * Single-pass inverse STFT with OLA normalisation.
-     * Accepts the { mag, phase } object returned by forwardSTFT.
-     */
     globalThis.DSP.inverseSTFT = function inverseSTFT(mag, phase, fftSize, hopSize, outputLength) {
-      const win = _hannWindow(fftSize);
+      const win = _hannWindow(fftSize); // AUDIT-FIX #12: periodic Hann
       const out = new Float32Array(outputLength);
-      const env = new Float32Array(outputLength); // OLA normalisation envelope
+      const env = new Float32Array(outputLength);
       const halfBins = fftSize / 2 + 1;
 
       for (let f = 0; f < mag.length; f++) {
         const re   = new Float32Array(fftSize);
         const im   = new Float32Array(fftSize);
 
-        // Reconstruct positive & mirror negative frequencies
         for (let b = 0; b < halfBins; b++) {
           const m = mag[f][b];
           const p = phase[f][b];
@@ -144,26 +140,18 @@
         }
       }
 
-      // OLA normalise — avoids gain ripple at window boundaries
       for (let i = 0; i < outputLength; i++)
         if (env[i] > 1e-8) out[i] /= env[i];
 
       return out;
     };
 
-    console.info('[DSP-Bootstrap] globalThis.DSP STFT/iSTFT registered.');
+    console.info('[DSP-Bootstrap] globalThis.DSP STFT/iSTFT registered (periodic Hann).');
   }
 
 
   /* ── 2. Patch initAudio() to boot AudioWorklet + ML Worker ─────────────── */
 
-  /**
-   * We wait until DOMContentLoaded (same event app.js uses) then
-   * re-run initAudio with the full implementation. Because this script
-   * is loaded BEFORE app.js in index.html (see patch below), the
-   * window.initAudio override will be in place before app.js's
-   * DOMContentLoaded listener fires.
-   */
   const FLAG_SLOTS        = 4;
   const FFT_SIZE          = 4096;
   const HOP_SIZE          = 1024;
@@ -174,41 +162,25 @@
 
   window._vipInitAudioFull = async function initAudioFull() {
     try {
-      /* AudioContext */
       const audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
       window._vipAudioCtx = audioCtx;
 
-      /* SharedArrayBuffers */
       const inputSAB  = new SharedArrayBuffer(INPUT_SAB_BYTES);
       const outputSAB = new SharedArrayBuffer(OUTPUT_SAB_BYTES);
       window._vipInputSAB  = inputSAB;
       window._vipOutputSAB = outputSAB;
 
-      /* Analyser — used by visuals */
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.85;
       window._vipAnalyser = analyser;
 
-      /* ── AudioWorklet + ML Worker ── */
-      // Worklet registration and worker spawning belong exclusively to
-      // pipeline-orchestrator.js (CLAUDE.md §2 + §3).
-      // dsp-bootstrap wires the audio graph but defers lifecycle to the orchestrator.
-      // Read orchestrator-owned handles lazily so patch() never overwrites
-      // newer instances created after initAudioFull starts.
-
-      /* ── Expose on app instance once it's ready ── */
       const patch = () => {
         const app = window._vipApp || window.vip;
         if (!app) return;
-        /* Forward shared state into app instance */
         app.ctx          = audioCtx;
         if (!window.neonAnalyser) window.neonAnalyser = analyser;
-        /* Legacy module-level vars referenced inside app.js closures */
         try {
-          // These are module-scoped in app.js; we patch via the orchestrator
-          // if PipelineOrchestrator is already alive, otherwise fall back to
-          // direct property injection for the methods that check window.
           if (window._vipOrch) {
             window._vipOrch.audioCtx    = audioCtx;
             if (window._vipWorkletNode) {
@@ -223,7 +195,6 @@
         console.info('[DSP-Bootstrap] Audio context patched onto app instance.');
       };
 
-      /* Try immediately and also on a short delay for race safety */
       patch();
       setTimeout(patch, 400);
       setTimeout(patch, 1200);
@@ -243,7 +214,6 @@
         console.error('[DSP-Bootstrap] initAudioFull error:', e)
       );
     }
-    /* Also boot the PipelineOrchestrator if it exists and hasn't been started */
     setTimeout(() => {
       try {
         if (

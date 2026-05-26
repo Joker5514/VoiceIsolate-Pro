@@ -11,9 +11,18 @@
 //   5. On activate: skipWaiting + clients.claim for zero-downtime updates.
 //
 // Privacy: 100% local processing — no fetch() calls to external APIs.
+//
+// FIX (audit 2026-05-26): Cache version string is now stamped at build time via
+// scripts/stamp-sw-version.js (already in buildCommand). If manual edits are
+// needed, increment the suffix below and redeploy. Stale caches from any
+// prior version are purged in the activate handler.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION  = 'vip-app-33d5dd7';
+// AUDIT-FIX #14: Cache version MUST be bumped on every deploy to prevent stale
+// JS (app.js, dsp-processor.js, ml-worker.js) from being served from cache
+// after a hotfix push. scripts/stamp-sw-version.js rewrites this line
+// automatically. Manual bump: change the suffix (e.g. 33d5dd7 → new git sha).
+const CACHE_VERSION  = 'vip-app-20260526-a';
 const MODEL_CACHE    = 'vip-models-v1';
 
 // Static app-shell assets to pre-cache on install.
@@ -25,6 +34,7 @@ const APP_SHELL = [
   '/app/style.css',
   '/app/dsp-core.js',
   '/app/dsp-processor.js',
+  '/app/voice-isolate-processor.js',
   '/app/dsp-worker.js',
   '/app/pipeline-orchestrator.js',
   '/app/pipeline-state.js',
