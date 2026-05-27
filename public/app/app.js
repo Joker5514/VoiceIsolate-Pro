@@ -348,6 +348,12 @@ class VoiceIsolatePro {
     // Slider index map (1-indexed: slot 0 = bypass flag)
     this._sliderIndexById = new Map(SLIDER_REGISTRY.map((s, i) => [s.id, i + 1]));
 
+    // Flat params snapshot — mirrors window.VIP_PARAMS, kept in sync by
+    // _renderSliders() and applyPreset() so the orchestrator patches work.
+    this.params = Object.fromEntries(
+      Object.values(SLIDERS).flat().map(s => [s.id, s.val])
+    );
+
     // Model status UI
     this._modelStatusUI = null;
 
@@ -634,6 +640,7 @@ class VoiceIsolatePro {
         valEl.textContent = v + (s.unit || '');
         window.VIP_PARAMS = window.VIP_PARAMS || {};
         window.VIP_PARAMS[s.id] = v;
+        this.params[s.id] = v;
         if (this.sharedParams) {
           const idx = this._sliderIndexById.get(s.id);
           if (idx !== undefined) this.sharedParams[idx] = v;
@@ -889,6 +896,7 @@ class VoiceIsolatePro {
       const value = SLIDER_BY_ID[sliderId] ? clampToSlider(sliderId, rawValue) : rawValue;
       window.VIP_PARAMS = window.VIP_PARAMS || {};
       window.VIP_PARAMS[key] = value;
+      this.params[key] = value;
       const sliderDom = { el: document.getElementById('sl_' + key) };
       if (!sliderDom.el) return;
       sliderDom.el.value = value;

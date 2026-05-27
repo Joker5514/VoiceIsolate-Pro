@@ -683,6 +683,124 @@ class PipelineOrchestrator {
     }
   }
 
+  // ── syncParams — alias used by applyPreset during live mode ────────────────
+  syncParams(params) {
+    if (!params || typeof params !== 'object') return;
+    this.updateParams(this._normalizeRawParams(params));
+  }
+
+  // ── run — offline DSP pipeline (called by app.js runPipeline) ───────────────
+  /**
+   * Process an already-decoded AudioBuffer through the DSP chain.
+   * Applies: HP/LP filters, 10-band EQ, de-esser, compressor, limiter,
+   * output gain, and dry/wet mix — driven entirely by VIP_PARAMS keys.
+   *
+   * @param {AudioBuffer} audioBuffer  Decoded input audio
+   * @param {Object}      params       Raw slider values (window.VIP_PARAMS format)
+   * @returns {Promise<AudioBuffer>}   Processed audio
+   */
+  async run(audioBuffer, params = {}) {
+    if (!audioBuffer) return null;
+    const p = params;
+    const sr  = audioBuffer.sampleRate;
+    const nCh = audioBuffer.numberOfChannels;
+    const len = audioBuffer.length;
+
+    const offline = new OfflineAudioContext(nCh, len, sr);
+    const src = offline.createBufferSource();
+    src.buffer = audioBuffer;
+    let chain = src;
+
+    // HP filter
+    const hp = offline.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = Math.max(20, Math.min(sr / 2 - 1, p.hpFreq ?? 80));
+    hp.Q.value = Math.max(0.1, p.hpQ ?? 0.7);
+    chain.connect(hp); chain = hp;
+
+    // LP filter
+    const lp = offline.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = Math.max(20, Math.min(sr / 2 - 1, p.lpFreq ?? 18000));
+    lp.Q.value = Math.max(0.1, p.lpQ ?? 0.7);
+    chain.connect(lp); chain = lp;
+
+    // 10-band EQ
+    const eqFreqs = [40, 120, 350, 700, 1500, 3000, 5000, 8000, 12000, 18000];
+    const eqKeys  = ['eqSub','eqBass','eqWarmth','eqBody','eqLowMid',
+                     'eqMid','eqPresence','eqClarity','eqAir','eqBrill'];
+    for (let i = 0; i < 10; i++) {
+      const gain = p[eqKeys[i]] ?? 0;
+      if (Math.abs(gain) < 0.01) continue;
+      const eq = offline.createBiquadFilter();
+      eq.type = 'peaking';
+      eq.frequency.value = Math.min(eqFreqs[i], sr / 2 - 100);
+      eq.gain.value = Math.max(-12, Math.min(12, gain));
+      eq.Q.value = 1.4;
+      chain.connect(eq); chain = eq;
+    }
+
+    // De-esser
+    const deEssAmt = p.deEssAmt ?? 0;
+    if (deEssAmt > 0) {
+      const de = offline.createBiquadFilter();
+      de.type = 'peaking';
+      de.frequency.value = Math.min(p.deEssFreq ?? 6000, sr / 2 - 100);
+      de.gain.value = -deEssAmt;
+      de.Q.value = 2.0;
+      chain.connect(de); chain = de;
+    }
+
+    // Compressor
+    const comp = offline.createDynamicsCompressor();
+    comp.threshold.value = p.compThresh ?? -24;
+    comp.ratio.value     = Math.max(1, p.compRatio ?? 4);
+    comp.attack.value    = Math.max(0.001, (p.compAttack  ?? 10)  / 1000);
+    comp.release.value   = Math.max(0.01,  (p.compRelease ?? 150) / 1000);
+    comp.knee.value      = Math.max(0, p.compKnee ?? 6);
+    chain.connect(comp); chain = comp;
+
+    // Makeup gain
+    const makeup = offline.createGain();
+    makeup.gain.value = Math.pow(10, (p.compMakeup ?? 0) / 20);
+    chain.connect(makeup); chain = makeup;
+
+    // Limiter
+    const lim = offline.createDynamicsCompressor();
+    lim.threshold.value = p.limThresh ?? -1;
+    lim.ratio.value     = 20;
+    lim.attack.value    = 0.001;
+    lim.release.value   = Math.max(0.01, (p.limRelease ?? 50) / 1000);
+    lim.knee.value      = 0;
+    chain.connect(lim); chain = lim;
+
+    // Output gain
+    const outGainNode = offline.createGain();
+    outGainNode.gain.value = Math.pow(10, (p.outGain ?? 0) / 20);
+    chain.connect(outGainNode);
+    outGainNode.connect(offline.destination);
+
+    src.start(0);
+    const wetBuffer = await offline.startRendering();
+
+    // Dry/wet mix (dryWet is 0-100 in VIP_PARAMS)
+    const dryWet = Math.max(0, Math.min(1, (p.dryWet ?? 100) / 100));
+    if (dryWet >= 1) return wetBuffer;
+
+    // Build mixed buffer without a second render
+    const mixCtx = new OfflineAudioContext(nCh, len, sr);
+    const result = mixCtx.createBuffer(nCh, len, sr);
+    for (let ch = 0; ch < nCh; ch++) {
+      const dry = audioBuffer.getChannelData(ch);
+      const wet = wetBuffer.getChannelData(ch);
+      const out = result.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        out[i] = dry[i] * (1 - dryWet) + wet[i] * dryWet;
+      }
+    }
+    return result;
+  }
+
   updateIsolationParams(nextParams) {
     if (!nextParams || typeof nextParams !== 'object') return;
     this._isolationParams = {
@@ -866,7 +984,8 @@ class PipelineOrchestrator {
       const _origOnSlider = app.onSlider.bind(app);
       app.onSlider = function (...args) {
         _origOnSlider(...args);
-        orch.updateParams(orch._normalizeRawParams(app.params));
+        const raw = app.params || window.VIP_PARAMS;
+        if (raw) orch.updateParams(orch._normalizeRawParams(raw));
       };
     }
 
@@ -875,7 +994,8 @@ class PipelineOrchestrator {
       const _origApply = app.applyPreset.bind(app);
       app.applyPreset = function (name) {
         _origApply(name);
-        orch.updateParams(orch._normalizeRawParams(app.params));
+        const raw = app.params || window.VIP_PARAMS;
+        if (raw) orch.updateParams(orch._normalizeRawParams(raw));
       };
     }
 
