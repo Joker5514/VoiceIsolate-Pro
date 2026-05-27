@@ -566,8 +566,9 @@ describe('vip-boot.js — aliasOrCreate(): fresh instantiation', () => {
     expect(scope.window.vip).toBe(scope.window._vipApp);
   });
 
-  test('sets _initCalled = true before calling app.init()', () => {
-    // Verify _initCalled is set synchronously (init() reads it in the impl)
+  test('does not set _initCalled before calling app.init()', () => {
+    // init() itself is responsible for setting _initCalled; the bootstrap
+    // must not set it before the call (that would cause init() to skip itself).
     let initCalledAtCallTime = undefined;
     function TrackVIP() {
       this._initCalled = false;
@@ -577,7 +578,7 @@ describe('vip-boot.js — aliasOrCreate(): fresh instantiation', () => {
       window: { _vipApp: null, vip: null },
       VoiceIsolatePro: TrackVIP,
     });
-    expect(initCalledAtCallTime).toBe(true);
+    expect(initCalledAtCallTime).toBe(false);
   });
 
   test('calls app.init() on the new instance', () => {
