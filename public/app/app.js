@@ -111,6 +111,7 @@ class VoiceIsolatePro {
     this._workletSliderListenersBound = false;
     this._pendingCtxInit = null;
     this._onnxSession = null;
+    this._sliderIndexById = new Map(SLIDER_REGISTRY.map((s, i) => [s.id, i + 1]));
 
     // SharedArrayBuffer param lane (slot 0 = bypass, slots 1-52 = slider values)
     this.sharedParams = null;
@@ -235,8 +236,8 @@ class VoiceIsolatePro {
   }
 
   // ── ML Worker ────────────────────────────────────────────────────────────
-  _initMlWorker() {
-    if (!this._onnxSession) {
+  _initMlWorker(session = this._onnxSession) {
+    if (!session) {
       this.mlReady = false;
       this._updateProcessButtonsState();
       return;
@@ -249,7 +250,7 @@ class VoiceIsolatePro {
       for (const s of SLIDER_REGISTRY) initPayload[s.key] = window.VIP_PARAMS?.[s.id] ?? 0;
       const initMsg = {
         type: 'init',
-        session: this._onnxSession,
+        session,
         payload: {
           params: initPayload,
           preferredProviders: ['webgpu', 'wasm'],
@@ -294,8 +295,8 @@ class VoiceIsolatePro {
     buildPanels(document, (spec, rawVal) => {
       // Sync real-time sliders into SAB immediately
       if (this.sharedParams && spec.rt) {
-        const idx = SLIDER_REGISTRY.findIndex(s => s.id === spec.id);
-        if (idx >= 0) this.sharedParams[idx + 1] = rawVal;
+        const idx = this._sliderIndexById.get(spec.id);
+        if (idx !== undefined) this.sharedParams[idx] = rawVal;
       }
     });
 
@@ -357,14 +358,15 @@ class VoiceIsolatePro {
 
     try {
       ort.env.wasm.wasmPaths = './';
+      const modelPath = './models/demucs_v4.onnx';
       let session;
       try {
-        session = await ort.InferenceSession.create('./models/demucs_v4.onnx', {
+        session = await ort.InferenceSession.create(modelPath, {
           executionProviders: ['webgpu', 'wasm'],
         });
       } catch (gpuErr) {
         console.warn('[VIP] ONNX WebGPU init failed, falling back to WASM:', gpuErr);
-        session = await ort.InferenceSession.create('./models/demucs_v4.onnx', {
+        session = await ort.InferenceSession.create(modelPath, {
           executionProviders: ['wasm'],
         });
       }
@@ -421,8 +423,8 @@ class VoiceIsolatePro {
           this.workletNode.port.postMessage({ type: 'param', id: sliderId, value });
         }
         if (this.sharedParams) {
-          const idx = SLIDER_REGISTRY.findIndex(s => s.id === sliderId);
-          if (idx >= 0) this.sharedParams[idx + 1] = value;
+          const idx = this._sliderIndexById.get(sliderId);
+          if (idx !== undefined) this.sharedParams[idx] = value;
         }
       });
     }

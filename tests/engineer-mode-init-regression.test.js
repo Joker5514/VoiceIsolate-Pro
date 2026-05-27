@@ -34,7 +34,7 @@ describe('ONNX init sequencing and fallback', () => {
 
   test('app posts init to ml-worker after session setup path', () => {
     expect(appSrc).toContain("type: 'init'");
-    expect(appSrc).toContain('session: this._onnxSession');
+    expect(appSrc).toContain('session,');
   });
 });
 
