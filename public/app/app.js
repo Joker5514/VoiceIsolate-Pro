@@ -17,7 +17,13 @@
  * 100 % local — no cloud APIs, no external fetch except /app/models/*.onnx.
  */
 
-import { buildPanels, runAudit, SLIDER_REGISTRY } from './slider-map.js';
+import { buildPanels, runAudit, SLIDER_REGISTRY, SLIDERS } from './slider-map.js';
+
+const SLIDER_MAP = Object.fromEntries(
+  Object.values(SLIDERS)
+    .flat()
+    .map((spec) => [spec.id, { ...spec, default: spec.val }]),
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -99,6 +105,12 @@ class VoiceIsolatePro {
     this._initCalled = false;
     this._ctxReady = false;
     this.mlReady = false;
+    this._workletReady = false;
+    this._onnxReady = false;
+    this._dspOnlyMode = false;
+    this._workletSliderListenersBound = false;
+    this._pendingCtxInit = null;
+    this._onnxSession = null;
 
     // SharedArrayBuffer param lane (slot 0 = bypass, slots 1-52 = slider values)
     this.sharedParams = null;
@@ -122,6 +134,7 @@ class VoiceIsolatePro {
 
     this._bindDOM();
     this._initSliders();
+    this._updateProcessButtonsState();
     this._dismissBootSplash();
 
     // Lazy AudioContext — browser requires user gesture first
@@ -160,44 +173,59 @@ class VoiceIsolatePro {
       if (this.ctx?.state === 'suspended') await this.ctx.resume();
       return;
     }
-    try {
-      this.ctx = new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
-      pill('engCtxPill', 'loading');
+    if (this._pendingCtxInit) return this._pendingCtxInit;
 
-      // SharedArrayBuffer (requires COOP/COEP — already set in vercel.json)
-      if (typeof SharedArrayBuffer !== 'undefined') {
-        const sab = new SharedArrayBuffer(256 * Float32Array.BYTES_PER_ELEMENT);
-        this.sharedParams = new Float32Array(sab);
-        // Populate initial slider values into SAB
-        SLIDER_REGISTRY.forEach((s, i) => {
-          this.sharedParams[i + 1] = window.VIP_PARAMS?.[s.id] ?? s.val ?? 0;
+    this._pendingCtxInit = (async () => {
+      try {
+        this.ctx = this.ctx || new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
+        pill('engCtxPill', 'loading');
+
+        // SharedArrayBuffer (requires COOP/COEP — already set in vercel.json)
+        if (typeof SharedArrayBuffer !== 'undefined') {
+          const sab = new SharedArrayBuffer(256 * Float32Array.BYTES_PER_ELEMENT);
+          this.sharedParams = new Float32Array(sab);
+          // Populate initial slider values into SAB
+          SLIDER_REGISTRY.forEach((s, i) => {
+            this.sharedParams[i + 1] = window.VIP_PARAMS?.[s.id] ?? s.val ?? 0;
+          });
+        }
+
+        await this.ctx.audioWorklet.addModule('./dsp-processor.js');
+
+        this.workletNode = new AudioWorkletNode(this.ctx, 'dsp-processor', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [2],
+          processorOptions: {
+            sampleRate: this.ctx.sampleRate,
+            sharedParamsBuffer: this.sharedParams?.buffer ?? null,
+          },
         });
+
+        this.workletNode.port.onmessage = (e) => this._onWorkletMsg(e.data);
+        this._ctxReady = true;
+        this._workletReady = true;
+        pill('engCtxPill', 'ready');
+        pill('engWorkletPill', 'ready');
+
+        this._attachWorkletSliderListeners();
+        this._syncAllSliderParamsToWorklet();
+
+        const session = await this._initOnnxSession();
+        this._initMlWorker(session);
+        this._updateProcessButtonsState();
+        console.info('[VIP] AudioContext + AudioWorklet ready.');
+      } catch (err) {
+        console.error('[VIP] AudioContext init failed:', err);
+        this._workletReady = false;
+        pill('engCtxPill', 'error');
+        pill('engWorkletPill', 'error');
+      } finally {
+        this._pendingCtxInit = null;
       }
+    })();
 
-      await this.ctx.audioWorklet.addModule('/app/dsp-processor.js');
-
-      this.workletNode = new AudioWorkletNode(this.ctx, 'dsp-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [2],
-        processorOptions: {
-          sampleRate: this.ctx.sampleRate,
-          sharedParamsBuffer: this.sharedParams?.buffer ?? null,
-        },
-      });
-
-      this.workletNode.port.onmessage = (e) => this._onWorkletMsg(e.data);
-      pill('engCtxPill', 'ready');
-      pill('engWorkletPill', 'ready');
-      this._ctxReady = true;
-
-      this._initMlWorker();
-      console.info('[VIP] AudioContext + AudioWorklet ready.');
-    } catch (err) {
-      console.error('[VIP] AudioContext init failed:', err);
-      pill('engCtxPill', 'error');
-      pill('engWorkletPill', 'error');
-    }
+    return this._pendingCtxInit;
   }
 
   _onWorkletMsg(data) {
@@ -208,25 +236,54 @@ class VoiceIsolatePro {
 
   // ── ML Worker ────────────────────────────────────────────────────────────
   _initMlWorker() {
+    if (!this._onnxSession) {
+      this.mlReady = false;
+      this._updateProcessButtonsState();
+      return;
+    }
     try {
       this.mlWorker = new Worker('/app/ml-worker.js', { type: 'module' });
       this.mlWorker.onmessage = (e) => this._onWorkerMsg(e.data);
       this.mlWorker.onerror = (e) => console.error('[VIP] ml-worker error:', e);
       const initPayload = {};
       for (const s of SLIDER_REGISTRY) initPayload[s.key] = window.VIP_PARAMS?.[s.id] ?? 0;
-      this.mlWorker.postMessage({ type: 'init', params: initPayload });
-      this.mlReady = true;
-      pill('engMlPill', 'ready');
+      const initMsg = {
+        type: 'init',
+        session: this._onnxSession,
+        payload: {
+          params: initPayload,
+          preferredProviders: ['webgpu', 'wasm'],
+          modelBasePath: './models/',
+        },
+      };
+      try {
+        this.mlWorker.postMessage(initMsg);
+      } catch (err) {
+        console.warn('[VIP] Worker init session transfer failed, retrying without session:', err);
+        this.mlWorker.postMessage({
+          type: 'init',
+          payload: initMsg.payload,
+        });
+      }
+      this.mlReady = false;
+      pill('engMlPill', 'loading');
     } catch (err) {
       console.warn('[VIP] ml-worker unavailable (classical DSP only):', err);
       window.VIP_ML_AVAILABLE = false;
+      this.mlReady = false;
       pill('engMlPill', 'unavailable');
     }
+    this._updateProcessButtonsState();
   }
 
   _onWorkerMsg(data) {
     if (!data) return;
     if (data.type === 'progress') this._setPipeProgress(data.pct, data.label);
+    if (data.type === 'ready') {
+      this.mlReady = true;
+      pill('engMlPill', 'ready');
+      this._updateProcessButtonsState();
+    }
     if (data.type === 'result' && this.workletNode) {
       this.workletNode.port.postMessage({ type: 'ml_result', buffer: data.buffer }, [data.buffer]);
     }
@@ -241,6 +298,8 @@ class VoiceIsolatePro {
         if (idx >= 0) this.sharedParams[idx + 1] = rawVal;
       }
     });
+
+    this._initializeSliderDefaults();
 
     const audit = runAudit(document);
     if (audit.fail > 0) {
@@ -285,6 +344,110 @@ class VoiceIsolatePro {
     });
   }
 
+  async _initOnnxSession() {
+    const ort = window.ort;
+    if (!ort?.InferenceSession?.create) {
+      this._onnxReady = false;
+      this._dspOnlyMode = true;
+      window.VIP_ML_AVAILABLE = false;
+      pill('engMlPill', 'unavailable');
+      this._updateProcessButtonsState();
+      return null;
+    }
+
+    try {
+      ort.env.wasm.wasmPaths = './';
+      let session;
+      try {
+        session = await ort.InferenceSession.create('./models/demucs_v4.onnx', {
+          executionProviders: ['webgpu', 'wasm'],
+        });
+      } catch (gpuErr) {
+        console.warn('[VIP] ONNX WebGPU init failed, falling back to WASM:', gpuErr);
+        session = await ort.InferenceSession.create('./models/demucs_v4.onnx', {
+          executionProviders: ['wasm'],
+        });
+      }
+      this._onnxSession = session;
+      this._onnxReady = true;
+      this._dspOnlyMode = false;
+      window.VIP_ML_AVAILABLE = true;
+      return session;
+    } catch (err) {
+      console.warn('[VIP] ONNX unavailable — running DSP-only mode:', err);
+      this._onnxSession = null;
+      this._onnxReady = false;
+      this._dspOnlyMode = true;
+      window.VIP_ML_AVAILABLE = false;
+      pill('engMlPill', 'unavailable');
+      return null;
+    } finally {
+      this._updateProcessButtonsState();
+    }
+  }
+
+  _initializeSliderDefaults() {
+    for (const [sliderId, spec] of Object.entries(SLIDER_MAP)) {
+      const input = document.getElementById('sl_' + sliderId);
+      if (!input) continue;
+      const v = Number(spec.default);
+      if (Number.isFinite(v)) {
+        input.value = String(v);
+        this._updateSliderValueDisplay(sliderId, v);
+        window.VIP_PARAMS = window.VIP_PARAMS || {};
+        window.VIP_PARAMS[sliderId] = v;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+  }
+
+  _updateSliderValueDisplay(sliderId, value) {
+    const valEl = document.getElementById('val_' + sliderId);
+    if (!valEl) return;
+    const unit = SLIDER_MAP[sliderId]?.unit ?? '';
+    valEl.textContent = `${value}${unit}`;
+  }
+
+  _attachWorkletSliderListeners() {
+    if (this._workletSliderListenersBound) return;
+    for (const sliderId of Object.keys(SLIDER_MAP)) {
+      const input = document.getElementById('sl_' + sliderId);
+      if (!input) continue;
+      input.addEventListener('input', () => {
+        const value = Number.parseFloat(input.value);
+        if (!Number.isFinite(value)) return;
+        this._updateSliderValueDisplay(sliderId, value);
+        if (this.workletNode?.port) {
+          this.workletNode.port.postMessage({ type: 'param', id: sliderId, value });
+        }
+        if (this.sharedParams) {
+          const idx = SLIDER_REGISTRY.findIndex(s => s.id === sliderId);
+          if (idx >= 0) this.sharedParams[idx + 1] = value;
+        }
+      });
+    }
+    this._workletSliderListenersBound = true;
+  }
+
+  _syncAllSliderParamsToWorklet() {
+    if (!this.workletNode?.port) return;
+    for (const sliderId of Object.keys(SLIDER_MAP)) {
+      const input = document.getElementById('sl_' + sliderId);
+      if (!input) continue;
+      const value = Number.parseFloat(input.value);
+      if (!Number.isFinite(value)) continue;
+      this._updateSliderValueDisplay(sliderId, value);
+      this.workletNode.port.postMessage({ type: 'param', id: sliderId, value });
+    }
+  }
+
+  _updateProcessButtonsState() {
+    const canProcess = Boolean(this.origBuffer) && this._workletReady && (this._onnxReady || this._dspOnlyMode);
+    [$('processBtn'), $('mobileProcessBtn')].forEach((b) => {
+      if (b) b.disabled = !canProcess;
+    });
+  }
+
   // ── File handling ─────────────────────────────────────────────────────────
   async loadFile(file) {
     if (!file) return;
@@ -304,8 +467,8 @@ class VoiceIsolatePro {
       this._setHeaderStat('hCh', this.origBuffer.numberOfChannels === 1 ? 'Mono' : 'Stereo');
       this._setHeaderStat('hFile', file.name.slice(0, 20));
 
-      // Enable process buttons
-      [$('processBtn'), $('mobileProcessBtn')].forEach(b => { if (b) b.disabled = false; });
+      // Enable process buttons only when processing pipeline is ready
+      this._updateProcessButtonsState();
 
       // Draw waveform if visuals available
       if (typeof window.drawWaveform === 'function') window.drawWaveform(this.origBuffer);

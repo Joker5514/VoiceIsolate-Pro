@@ -241,6 +241,16 @@ class DSPProcessor extends AudioWorkletProcessor {
         }
         break;
       }
+      case 'param': {
+        const { id, value } = msg;
+        if (typeof id === 'string' && id in this._params && id in this._bounds) {
+          const val = Number(value);
+          if (Number.isFinite(val)) {
+            this._params[id] = Math.max(this._bounds[id][0], Math.min(this._bounds[id][1], val));
+          }
+        }
+        break;
+      }
     }
   }
 
