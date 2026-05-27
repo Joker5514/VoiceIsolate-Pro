@@ -373,7 +373,7 @@ class VoiceIsolatePro {
     this.initModelStatusPanel();
 
     // Lazy AudioContext — requires user gesture
-    if (typeof document.addEventListener === 'function') {
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
       document.addEventListener('click', () => this.ensureCtx(), { once: true });
       document.addEventListener('keydown', () => this.ensureCtx(), { once: true });
     }
