@@ -761,7 +761,7 @@ class VoiceIsolatePro {
 
     // A/B toggle
     bind('tpAB', d.tpAB, 'click', () => this.toggleAB());
-    if (typeof document.addEventListener === 'function') {
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
       document.addEventListener('keydown', e => this._handleGlobalKeydown(e));
     }
 
