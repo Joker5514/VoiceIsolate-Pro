@@ -245,21 +245,21 @@ describe('GET /health — version 24.0.0', () => {
 describe('Rate limiting middleware structure', () => {
   test('api/index.js source attaches loginLimiter to /auth/login', () => {
     const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../api/index.js'), 'utf8'
+      require('path').join(__dirname, '../api-routes/index.js'), 'utf8'
     );
     expect(src).toContain("router.use('/auth/login', loginLimiter)");
   });
 
   test('api/index.js source attaches checkoutLimiter to /checkout', () => {
     const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../api/index.js'), 'utf8'
+      require('path').join(__dirname, '../api-routes/index.js'), 'utf8'
     );
     expect(src).toContain("router.use('/checkout', checkoutLimiter)");
   });
 
   test('rate limiters are attached before the route handlers', () => {
     const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../api/index.js'), 'utf8'
+      require('path').join(__dirname, '../api-routes/index.js'), 'utf8'
     );
     const limiterPos  = src.indexOf("router.use('/checkout', checkoutLimiter)");
     const monetizationPos = src.indexOf("router.use('/', monetizationRouter)");
@@ -278,21 +278,21 @@ describe('Rate limiting middleware structure', () => {
 
   test('loginLimiter window is 15 minutes (900000 ms)', () => {
     const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../api/index.js'), 'utf8'
+      require('path').join(__dirname, '../api-routes/index.js'), 'utf8'
     );
     expect(src).toContain('windowMs: 15 * 60 * 1000');
   });
 
   test('checkoutLimiter window is 60 seconds (60000 ms)', () => {
     const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../api/index.js'), 'utf8'
+      require('path').join(__dirname, '../api-routes/index.js'), 'utf8'
     );
     expect(src).toContain('windowMs: 60 * 1000');
   });
 
   test('loginLimiter max is 20 requests', () => {
     const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../api/index.js'), 'utf8'
+      require('path').join(__dirname, '../api-routes/index.js'), 'utf8'
     );
     // The rate limit block order: loginLimiter has max: 20
     const loginBlock = src.slice(src.indexOf('loginLimiter = rateLimit'));
@@ -301,7 +301,7 @@ describe('Rate limiting middleware structure', () => {
 
   test('checkoutLimiter max is 10 requests', () => {
     const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../api/index.js'), 'utf8'
+      require('path').join(__dirname, '../api-routes/index.js'), 'utf8'
     );
     const checkoutBlock = src.slice(src.indexOf('checkoutLimiter = rateLimit'));
     expect(checkoutBlock.slice(0, checkoutBlock.indexOf('});'))).toContain('max: 10');

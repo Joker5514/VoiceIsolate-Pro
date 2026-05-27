@@ -11,7 +11,7 @@ import express from 'express';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import apiRouter from './api/index.js';
+import apiRouter from './api-routes/index.js';
 import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);

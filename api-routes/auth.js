@@ -21,6 +21,7 @@
 
 import express from 'express';
 import crypto  from 'crypto';
+import rateLimit from 'express-rate-limit';
 
 const router = express.Router();
 
@@ -59,10 +60,17 @@ function verifyPassword(password, stored) {
 }
 
 // ─── Login rate limiting ──────────────────────────────────────────────────────
-// `/auth/login` is rate-limited centrally in `api/index.js`. Keep this local
+// `/auth/login` is rate-limited centrally in the parent API router. Keep this local
 // middleware as a pass-through so existing route wiring remains unchanged while
 // avoiding duplicate enforcement and inconsistent 429 responses.
 const loginLimiter = (_req, _res, next) => next();
+const meLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Try again later.' },
+});
 
 // ─── JWT Utilities ────────────────────────────────────────────────────────────
 function createAuthToken(user) {
@@ -162,7 +170,7 @@ router.post('/login', loginLimiter, (req, res) => {
 });
 
 // ─── GET /api/auth/me ────────────────────────────────────────────────────────
-router.get('/me', (req, res) => {
+router.get('/me', meLimiter, (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Not authenticated.' });

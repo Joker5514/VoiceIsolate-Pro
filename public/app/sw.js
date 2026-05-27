@@ -23,7 +23,7 @@
 // after a hotfix push. scripts/stamp-sw-version.js rewrites this line
 // automatically. Manual bump: change the suffix (e.g. -a → -b → -c).
 // Bumped from -a → -b on 2026-05-26 post-audit CSP+config fixes deploy.
-const CACHE_VERSION  = 'vip-app-20260526-b';
+const CACHE_VERSION    = 'vip-app-3b315dc';
 const MODEL_CACHE    = 'vip-models-v1';
 
 // Static app-shell assets to pre-cache on install.
