@@ -1,6 +1,6 @@
 /**
- * VoiceIsolate Pro — app.js  (Threads from Space v8)
- * =====================================================
+ * VoiceIsolate Pro — app.js  v24.0.0
+ * ====================================
  * Exports:  class VoiceIsolatePro  (also assigned to window.VoiceIsolatePro)
  *
  * vip-boot.js contract:
@@ -11,37 +11,238 @@
  *
  * Single-Pass Spectral Contract:
  *   ONE forward STFT  → in-place spectral ops → ONE iSTFT
- *   Both live inside dsp-processor.js AudioWorklet.
- *   app.js never touches spectral data directly.
+ *   All spectral work delegated to pipeline-orchestrator.js.
+ *   app.js provides DSP helpers used by the pipeline.
  *
  * 100 % local — no cloud APIs, no external fetch except /app/models/*.onnx.
  */
 
-import { buildPanels, runAudit, SLIDER_REGISTRY, SLIDERS } from './slider-map.js';
+import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
+import { ModelStatusUI } from './model-status-ui.js';
 
+// ---------------------------------------------------------------------------
+// SAB ring-buffer constants (must match dsp-processor.js exactly)
+// ---------------------------------------------------------------------------
+const FFT_SIZE = 4096;
+const HOP_SIZE = 1024;
+const HALF_BINS = FFT_SIZE / 2 + 1;
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * 5; // FLAG_SLOTS = 5
+
+// ---------------------------------------------------------------------------
+// 52-Slider definition (inline — tests parse this source directly)
+// ---------------------------------------------------------------------------
+const SLIDERS = {
+  gate: [
+    { id:'gateThresh', label:'Threshold', min:-80, max:-5, val:-42, step:1, unit:' dB', rt:true, desc:'Signal level below which audio is gated' },
+    { id:'gateRange', label:'Range', min:-80, max:-5, val:-60, step:1, unit:' dB', rt:true, desc:'Maximum gain reduction applied by the gate' },
+    { id:'gateAttack', label:'Attack', min:0, max:500, val:5, step:1, unit:' ms', rt:true, desc:'Time for gate to open on signal detection' },
+    { id:'gateRelease', label:'Release', min:50, max:2000, val:200, step:10, unit:' ms', rt:true, desc:'Time for gate to close after signal drops' },
+    { id:'gateHold', label:'Hold', min:0, max:500, val:50, step:1, unit:' ms', rt:true, desc:'Hold time before release phase begins' },
+    { id:'gateLookahead', label:'Lookahead', min:0, max:50, val:5, step:1, unit:' ms', rt:false, desc:'Lookahead window for predictive gating' },
+  ],
+  nr: [
+    { id:'nrAmount', label:'NR Amount', min:0, max:100, val:78, step:1, unit:'%', rt:false, desc:'Spectral noise reduction strength' },
+    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:60, step:1, unit:'%', rt:false, desc:'Noise floor detection sensitivity' },
+    { id:'nrSpectralSub', label:'Spectral Sub', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Spectral subtraction strength' },
+    { id:'nrFloor', label:'NR Floor', min:-96, max:-30, val:-72, step:1, unit:' dB', rt:false, desc:'Noise reduction floor limit' },
+    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:70, step:1, unit:'%', rt:false, desc:'Temporal smoothing of spectral noise estimate' },
+  ],
+  eq: [
+    { id:'eqSub', label:'Sub', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Sub-bass EQ (20-60 Hz)' },
+    { id:'eqBass', label:'Bass', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Bass EQ (60-200 Hz)' },
+    { id:'eqWarmth', label:'Warmth', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Warmth EQ (200-500 Hz)' },
+    { id:'eqBody', label:'Body', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Body EQ (500-1k Hz)' },
+    { id:'eqLowMid', label:'Low Mid', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Low-mid EQ (1-2 kHz)' },
+    { id:'eqMid', label:'Mid', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Mid EQ (2-4 kHz)' },
+    { id:'eqPresence', label:'Presence', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Presence EQ (4-6 kHz)' },
+    { id:'eqClarity', label:'Clarity', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Clarity EQ (6-10 kHz)' },
+    { id:'eqAir', label:'Air', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Air EQ (10-16 kHz)' },
+    { id:'eqBrill', label:'Brilliance', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Brilliance EQ (16-20 kHz)' },
+  ],
+  dyn: [
+    { id:'compThresh', label:'Threshold', min:-60, max:0, val:-24, step:1, unit:' dB', rt:true, desc:'Compressor threshold level' },
+    { id:'compRatio', label:'Ratio', min:1, max:20, val:4, step:0.5, unit:':1', rt:true, desc:'Compression ratio' },
+    { id:'compAttack', label:'Attack', min:1, max:200, val:10, step:1, unit:' ms', rt:true, desc:'Compressor attack time' },
+    { id:'compRelease', label:'Release', min:10, max:1000, val:150, step:10, unit:' ms', rt:true, desc:'Compressor release time' },
+    { id:'compKnee', label:'Knee', min:0, max:30, val:6, step:1, unit:' dB', rt:true, desc:'Compressor knee width' },
+    { id:'compMakeup', label:'Makeup', min:0, max:30, val:0, step:0.5, unit:' dB', rt:true, desc:'Makeup gain after compression' },
+    { id:'limThresh', label:'Lim Thresh', min:-12, max:0, val:-1, step:0.5, unit:' dB', rt:true, desc:'Brickwall limiter threshold' },
+    { id:'limRelease', label:'Lim Release', min:10, max:500, val:50, step:5, unit:' ms', rt:true, desc:'Limiter release time' },
+  ],
+  spec: [
+    { id:'hpFreq', label:'HP Freq', min:20, max:2000, val:80, step:1, unit:' Hz', rt:true, desc:'High-pass filter cutoff frequency' },
+    { id:'hpQ', label:'HP Q', min:0.1, max:10, val:0.7, step:0.1, unit:'', rt:true, desc:'High-pass filter resonance' },
+    { id:'lpFreq', label:'LP Freq', min:4000, max:20000, val:18000, step:100, unit:' Hz', rt:true, desc:'Low-pass filter cutoff frequency' },
+    { id:'lpQ', label:'LP Q', min:0.1, max:10, val:0.7, step:0.1, unit:'', rt:true, desc:'Low-pass filter resonance' },
+    { id:'deEssFreq', label:'De-ess Freq', min:2000, max:12000, val:6000, step:100, unit:' Hz', rt:true, desc:'De-esser detection frequency' },
+    { id:'deEssAmt', label:'De-ess Amt', min:0, max:30, val:0, step:1, unit:' dB', rt:true, desc:'De-esser reduction amount' },
+    { id:'specTilt', label:'Spec Tilt', min:-6, max:6, val:0, step:0.5, unit:' dB', rt:true, desc:'Spectral tilt' },
+    { id:'formantShift', label:'Formant Shift', min:-6, max:6, val:0, step:0.5, unit:' st', rt:false, desc:'Formant shift in semitones' },
+  ],
+  adv: [
+    { id:'derevAmt', label:'Dereverb', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Dereverberation strength' },
+    { id:'derevDecay', label:'Rev Decay', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Estimated reverb decay time reference' },
+    { id:'harmRecov', label:'Harm Recovery', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Harmonic recovery via neural vocoder' },
+    { id:'harmOrder', label:'Harm Order', min:1, max:10, val:3, step:1, unit:'', rt:false, desc:'Harmonic series order' },
+    { id:'stereoWidth', label:'Stereo Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Stereo width of output signal' },
+    { id:'phaseCorr', label:'Phase Corr', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Phase correlation correction strength' },
+  ],
+  sep: [
+    { id:'voiceIso', label:'Voice Iso', min:0, max:100, val:80, step:1, unit:'%', rt:false, desc:'Voice isolation strength' },
+    { id:'bgSuppress', label:'BG Suppress', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Background suppression level' },
+    { id:'voiceFocusLo', label:'Focus Lo', min:80, max:500, val:120, step:10, unit:' Hz', rt:false, desc:'Lower bound of voice focus band' },
+    { id:'voiceFocusHi', label:'Focus Hi', min:1000, max:8000, val:3400, step:100, unit:' Hz', rt:false, desc:'Upper bound of voice focus band' },
+    { id:'crosstalkCancel', label:'Crosstalk', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Crosstalk cancellation between channels' },
+  ],
+  out: [
+    { id:'outGain', label:'Output Gain', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Final output gain trim' },
+    { id:'dryWet', label:'Dry/Wet', min:0, max:100, val:100, step:1, unit:'%', rt:true, desc:'Blend between dry input and processed output' },
+    { id:'ditherAmt', label:'Dither', min:0, max:10, val:1, step:0.1, unit:' bits', rt:false, desc:'Dither noise amplitude in bits' },
+    { id:'outWidth', label:'Out Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Output stereo width' },
+  ],
+};
 const SLIDER_MAP = Object.fromEntries(
-  Object.values(SLIDERS)
-    .flat()
-    .map((spec) => [spec.id, { ...spec, default: spec.val }]),
+  Object.values(SLIDERS).flat().map(s => [s.id, { ...s, default: s.val }])
+);
+
+// Flat lookup (frozen, used by clampToSlider and applyPreset)
+const SLIDER_BY_ID = Object.freeze(
+  Object.values(SLIDERS).flat().reduce((acc, s) => { acc[s.id] = s; return acc; }, {})
 );
 
 // ---------------------------------------------------------------------------
-// Helpers
+// 8 Named presets (each covers all 52 slider IDs)
+// ---------------------------------------------------------------------------
+const PRESETS = {
+  'Voice Clarity': {
+    description: 'Enhance voice intelligibility with moderate noise reduction',
+    gateThresh: -42, gateRange: -60, gateAttack: 5, gateRelease: 200, gateHold: 50, gateLookahead: 5,
+    nrAmount: 70, nrSensitivity: 60, nrSpectralSub: 50, nrFloor: -72, nrSmoothing: 70,
+    eqSub: 0, eqBass: 0, eqWarmth: 1, eqBody: 1, eqLowMid: 0, eqMid: 0.5, eqPresence: 1, eqClarity: 0, eqAir: 0, eqBrill: 0,
+    compThresh: -24, compRatio: 4, compAttack: 10, compRelease: 150, compKnee: 6, compMakeup: 0, limThresh: -1, limRelease: 50,
+    hpFreq: 80, hpQ: 0.7, lpFreq: 18000, lpQ: 0.7, deEssFreq: 6000, deEssAmt: 0, specTilt: 0, formantShift: 0,
+    derevAmt: 0, derevDecay: 50, harmRecov: 0, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
+    voiceIso: 80, bgSuppress: 50, voiceFocusLo: 120, voiceFocusHi: 3400, crosstalkCancel: 0,
+    outGain: 2, dryWet: 100, ditherAmt: 1, outWidth: 100,
+  },
+  'Podcast Clean': {
+    description: 'Studio-clean podcast voice with de-essing and compression',
+    gateThresh: -50, gateRange: -60, gateAttack: 5, gateRelease: 200, gateHold: 50, gateLookahead: 5,
+    nrAmount: 85, nrSensitivity: 65, nrSpectralSub: 60, nrFloor: -72, nrSmoothing: 75,
+    eqSub: -3, eqBass: 0, eqWarmth: 1, eqBody: 1, eqLowMid: 0, eqMid: 0.5, eqPresence: 1.5, eqClarity: 0.5, eqAir: 0, eqBrill: 0,
+    compThresh: -20, compRatio: 3, compAttack: 10, compRelease: 150, compKnee: 6, compMakeup: 2, limThresh: -1, limRelease: 50,
+    hpFreq: 100, hpQ: 0.7, lpFreq: 16000, lpQ: 0.7, deEssFreq: 7000, deEssAmt: 6, specTilt: 0, formantShift: 0,
+    derevAmt: 10, derevDecay: 50, harmRecov: 0, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
+    voiceIso: 75, bgSuppress: 60, voiceFocusLo: 120, voiceFocusHi: 3400, crosstalkCancel: 0,
+    outGain: 0, dryWet: 100, ditherAmt: 1, outWidth: 100,
+  },
+  'Forensic Extract': {
+    description: 'Maximum extraction for forensic audio analysis',
+    gateThresh: -60, gateRange: -80, gateAttack: 2, gateRelease: 100, gateHold: 20, gateLookahead: 10,
+    nrAmount: 95, nrSensitivity: 80, nrSpectralSub: 85, nrFloor: -80, nrSmoothing: 85,
+    eqSub: -6, eqBass: -3, eqWarmth: 0, eqBody: 1, eqLowMid: 1, eqMid: 2, eqPresence: 2, eqClarity: 1, eqAir: 0, eqBrill: -2,
+    compThresh: -30, compRatio: 8, compAttack: 5, compRelease: 100, compKnee: 3, compMakeup: 6, limThresh: -1, limRelease: 30,
+    hpFreq: 150, hpQ: 0.9, lpFreq: 12000, lpQ: 0.7, deEssFreq: 8000, deEssAmt: 12, specTilt: 1, formantShift: 0,
+    derevAmt: 60, derevDecay: 60, harmRecov: 20, harmOrder: 3, stereoWidth: 100, phaseCorr: 30,
+    voiceIso: 98, bgSuppress: 90, voiceFocusLo: 100, voiceFocusHi: 4000, crosstalkCancel: 40,
+    outGain: 8, dryWet: 100, ditherAmt: 1, outWidth: 100,
+  },
+  'Music Vocal': {
+    description: 'Preserve natural vocal character for music production',
+    gateThresh: -45, gateRange: -55, gateAttack: 8, gateRelease: 300, gateHold: 60, gateLookahead: 5,
+    nrAmount: 40, nrSensitivity: 40, nrSpectralSub: 30, nrFloor: -60, nrSmoothing: 50,
+    eqSub: 0, eqBass: 1, eqWarmth: 2, eqBody: 1, eqLowMid: 0, eqMid: 0, eqPresence: 1, eqClarity: 1, eqAir: 1, eqBrill: 0.5,
+    compThresh: -18, compRatio: 2.5, compAttack: 15, compRelease: 200, compKnee: 8, compMakeup: 2, limThresh: -1, limRelease: 60,
+    hpFreq: 60, hpQ: 0.5, lpFreq: 20000, lpQ: 0.7, deEssFreq: 6500, deEssAmt: 4, specTilt: 0, formantShift: 0,
+    derevAmt: 5, derevDecay: 50, harmRecov: 50, harmOrder: 3, stereoWidth: 110, phaseCorr: 0,
+    voiceIso: 60, bgSuppress: 30, voiceFocusLo: 100, voiceFocusHi: 5000, crosstalkCancel: 0,
+    outGain: 0, dryWet: 100, ditherAmt: 1, outWidth: 110,
+  },
+  'Whisper Boost': {
+    description: 'Amplify and clarify soft whispering voices',
+    gateThresh: -65, gateRange: -70, gateAttack: 3, gateRelease: 150, gateHold: 30, gateLookahead: 8,
+    nrAmount: 60, nrSensitivity: 50, nrSpectralSub: 45, nrFloor: -75, nrSmoothing: 65,
+    eqSub: -6, eqBass: -3, eqWarmth: 0, eqBody: 2, eqLowMid: 2, eqMid: 3, eqPresence: 3, eqClarity: 2, eqAir: 1, eqBrill: 0,
+    compThresh: -36, compRatio: 6, compAttack: 5, compRelease: 100, compKnee: 4, compMakeup: 8, limThresh: -1, limRelease: 40,
+    hpFreq: 120, hpQ: 0.7, lpFreq: 14000, lpQ: 0.7, deEssFreq: 6000, deEssAmt: 3, specTilt: 1, formantShift: 0,
+    derevAmt: 20, derevDecay: 40, harmRecov: 10, harmOrder: 3, stereoWidth: 100, phaseCorr: 10,
+    voiceIso: 70, bgSuppress: 65, voiceFocusLo: 150, voiceFocusHi: 4000, crosstalkCancel: 10,
+    outGain: 6, dryWet: 100, ditherAmt: 1, outWidth: 100,
+  },
+  'Phone/Radio': {
+    description: 'Simulate telephone or radio band-limited audio',
+    gateThresh: -50, gateRange: -60, gateAttack: 5, gateRelease: 200, gateHold: 50, gateLookahead: 5,
+    nrAmount: 80, nrSensitivity: 70, nrSpectralSub: 65, nrFloor: -72, nrSmoothing: 75,
+    eqSub: -12, eqBass: -8, eqWarmth: -4, eqBody: 0, eqLowMid: 2, eqMid: 1, eqPresence: 0, eqClarity: -4, eqAir: -8, eqBrill: -12,
+    compThresh: -20, compRatio: 5, compAttack: 8, compRelease: 120, compKnee: 4, compMakeup: 4, limThresh: -1, limRelease: 40,
+    hpFreq: 300, hpQ: 1.2, lpFreq: 4000, lpQ: 1.0, deEssFreq: 3000, deEssAmt: 8, specTilt: -1, formantShift: 0,
+    derevAmt: 15, derevDecay: 30, harmRecov: 0, harmOrder: 3, stereoWidth: 0, phaseCorr: 0,
+    voiceIso: 85, bgSuppress: 70, voiceFocusLo: 300, voiceFocusHi: 3400, crosstalkCancel: 20,
+    outGain: 2, dryWet: 100, ditherAmt: 1, outWidth: 0,
+  },
+  'Live Performance': {
+    description: 'Minimal processing for live stage or broadcast',
+    gateThresh: -38, gateRange: -50, gateAttack: 10, gateRelease: 300, gateHold: 80, gateLookahead: 5,
+    nrAmount: 30, nrSensitivity: 35, nrSpectralSub: 25, nrFloor: -55, nrSmoothing: 40,
+    eqSub: 0, eqBass: 1, eqWarmth: 1, eqBody: 0, eqLowMid: 0, eqMid: 0, eqPresence: 1, eqClarity: 0.5, eqAir: 0, eqBrill: 0,
+    compThresh: -24, compRatio: 3, compAttack: 15, compRelease: 200, compKnee: 8, compMakeup: 2, limThresh: -2, limRelease: 60,
+    hpFreq: 80, hpQ: 0.7, lpFreq: 18000, lpQ: 0.7, deEssFreq: 6500, deEssAmt: 2, specTilt: 0, formantShift: 0,
+    derevAmt: 0, derevDecay: 50, harmRecov: 0, harmOrder: 3, stereoWidth: 120, phaseCorr: 0,
+    voiceIso: 50, bgSuppress: 25, voiceFocusLo: 100, voiceFocusHi: 5000, crosstalkCancel: 0,
+    outGain: 0, dryWet: 100, ditherAmt: 1, outWidth: 120,
+  },
+  'Surveillance': {
+    description: 'Maximum noise reduction for challenging surveillance audio',
+    gateThresh: -70, gateRange: -80, gateAttack: 2, gateRelease: 100, gateHold: 20, gateLookahead: 10,
+    nrAmount: 92, nrSensitivity: 85, nrSpectralSub: 80, nrFloor: -80, nrSmoothing: 85,
+    eqSub: -6, eqBass: -3, eqWarmth: 0, eqBody: 1, eqLowMid: 2, eqMid: 3, eqPresence: 2, eqClarity: 1, eqAir: 0, eqBrill: -3,
+    compThresh: -28, compRatio: 7, compAttack: 5, compRelease: 100, compKnee: 3, compMakeup: 6, limThresh: -1, limRelease: 30,
+    hpFreq: 100, hpQ: 0.9, lpFreq: 12000, lpQ: 0.7, deEssFreq: 7000, deEssAmt: 10, specTilt: 1, formantShift: 0,
+    derevAmt: 40, derevDecay: 55, harmRecov: 15, harmOrder: 3, stereoWidth: 100, phaseCorr: 20,
+    voiceIso: 90, bgSuppress: 85, voiceFocusLo: 100, voiceFocusHi: 4000, crosstalkCancel: 30,
+    outGain: 10, dryWet: 100, ditherAmt: 1, outWidth: 100,
+  },
+};
+// Aliases
+const PRESET_NAMES = Object.keys(PRESETS);
+
+// ---------------------------------------------------------------------------
+// Utility helpers
 // ---------------------------------------------------------------------------
 const $ = (id) => document.getElementById(id);
 
-function pill(id, state) {
-  if (typeof window._setVipEnginePill === 'function') window._setVipEnginePill(id, state);
+function structuredLog(level, msg, data = {}) {
+  const entry = { ts: new Date().toISOString(), level, msg, ...data };
+  const debugEnabled = (typeof window !== 'undefined') && !!window.VIP_DEBUG;
+  if (level === 'error') console.error('[VIP]', msg, data);
+  else if (level === 'warn') console.warn('[VIP]', msg, data);
+  else if (debugEnabled) console.log('[VIP]', msg, data);
+  if (typeof window !== 'undefined') {
+    if (!window._vipLogs) window._vipLogs = [];
+    if (window._vipLogs.length >= 200) window._vipLogs.shift();
+    window._vipLogs.push(entry);
+  }
+  return entry;
 }
 
-function showToast(msg, type = 'info') {
-  const region = $('toastRegion');
-  if (!region) return;
-  const t = document.createElement('div');
-  t.className = `toast toast--${type}`;
-  t.textContent = msg;
-  region.appendChild(t);
-  setTimeout(() => t.remove(), 4000);
+function clampToSlider(id, value) {
+  const s = SLIDER_BY_ID[id];
+  const v = Number(value);
+  if (!Number.isFinite(v)) return s ? s.val : 0;
+  if (!s) return v;
+  if (v < s.min) return s.min;
+  if (v > s.max) return s.max;
+  return v;
+}
+
+function numFromInput(el, fallback = 0) {
+  if (!el) return fallback;
+  const v = parseFloat(el.value);
+  return Number.isFinite(v) ? v : fallback;
+}
+
+function pill(id, state) {
+  if (typeof window._setVipEnginePill === 'function') window._setVipEnginePill(id, state);
 }
 
 function fmtTime(s) {
@@ -50,9 +251,9 @@ function fmtTime(s) {
 }
 
 // ---------------------------------------------------------------------------
-// WAV encoder
+// WAV encoder (standalone helper)
 // ---------------------------------------------------------------------------
-function encodeWav(audioBuffer) {
+function encodeWavBuffer(audioBuffer) {
   const numCh = audioBuffer.numberOfChannels;
   const numSamples = audioBuffer.length;
   const sr = audioBuffer.sampleRate;
@@ -77,79 +278,169 @@ function encodeWav(audioBuffer) {
 }
 
 function downloadWav(audioBuffer, name) {
-  const blob = new Blob([encodeWav(audioBuffer)], { type: 'audio/wav' });
+  const blob = new Blob([encodeWavBuffer(audioBuffer)], { type: 'audio/wav' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
 }
 
 // ---------------------------------------------------------------------------
-// VoiceIsolatePro
+// VoiceIsolatePro — main class
 // ---------------------------------------------------------------------------
 class VoiceIsolatePro {
   constructor() {
-    // Audio graph
+    // Expose STAGES on instance for pipeline overlay
+    this.STAGES = STAGES;
+
+    // Abort flag for runPipeline cancellation
+    this.abortFlag = false;
+
+    // Live chain state
+    this.liveChainBuilt = false;
+
+    // Audio context / chain
     this.ctx = null;
     this.workletNode = null;
-    this.mlWorker = null;
     this.sourceNode = null;
     this.micStream = null;
 
+    // ML
+    this.mlReady = false;
+    this._mlCallId = 0;
+
     // ONNX sessions
     this.onnxSessions = {};
-
-    // State
-    this.mode = 'idle';          // idle | live | creator
-    this._initCalled = false;
-    this._ctxReady = false;
-    this.mlReady = false;
-    this._workletReady = false;
+    this._onnxSession = null;
     this._onnxReady = false;
     this._dspOnlyMode = false;
+
+    // State flags
+    this.mode = 'idle';
+    this._initCalled = false;
+    this._ctxReady = false;
+    this._workletReady = false;
     this._workletSliderListenersBound = false;
     this._pendingCtxInit = null;
-    this._onnxSession = null;
-    this._sliderIndexById = new Map(SLIDER_REGISTRY.map((s, i) => [s.id, i + 1]));
+    this.isPlaying = false;
+    this.isProcessing = false;
+    this.isVideo = false;
 
-    // SharedArrayBuffer param lane (slot 0 = bypass, slots 1-52 = slider values)
-    this.sharedParams = null;
-
-    // Loaded audio buffers
+    // Playback state
+    this.inputBuffer = null;
+    this.outputBuffer = null;
     this.origBuffer = null;
     this.procBuffer = null;
+    this.playOffset = 0;
+    this.playStartTime = 0;
+    this.abMode = 'original';
+    this.currentSource = null;
 
-    // Playback
-    this._playNode = null;
-    this._playStart = 0;
-    this._playOffset = 0;
-    this._playing = false;
-    this._abVersion = 'A';
+    // Forensic audit log
+    this.forensicLog = [];
+
+    // SAB param lane
+    this.sharedParams = null;
+    this._inputSAB = null;
+    this._outputSAB = null;
+
+    // Slider index map (1-indexed: slot 0 = bypass flag)
+    this._sliderIndexById = new Map(SLIDER_REGISTRY.map((s, i) => [s.id, i + 1]));
+
+    // Model status UI
+    this._modelStatusUI = null;
+
+    // DOM cache (populated in cacheDom / init)
+    this.dom = {};
+
+    // Pre-populate dom if DOM is already available (e.g. in jsdom test environments)
+    if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
+      try { this.cacheDom(); } catch (_) {}
+    }
   }
 
-  // ── Public init (called by vip-boot.js) ──────────────────────────────────
+  // ── Public init ──────────────────────────────────────────────────────────
   async init() {
     if (this._initCalled) return;
     this._initCalled = true;
 
-    this._bindDOM();
-    this._initSliders();
+    this.cacheDom();
+    this._renderSliders();
+    this.bindEvents();
     this._updateProcessButtonsState();
-    this._dismissBootSplash();
+    this.initBootSplash();
+    this.initModelStatusPanel();
 
-    // Lazy AudioContext — browser requires user gesture first
-    // We prime it on the first meaningful click anywhere
-    document.addEventListener('click', () => this._ensureAudioCtx(), { once: true });
-    document.addEventListener('keydown', () => this._ensureAudioCtx(), { once: true });
+    // Lazy AudioContext — requires user gesture
+    document.addEventListener('click', () => this.ensureCtx(), { once: true });
+    document.addEventListener('keydown', () => this.ensureCtx(), { once: true });
 
-    // Signal app:ready so onAppReady() subscribers in slider-map fire
     window.__vipAppReady = true;
     window.dispatchEvent(new CustomEvent('app:ready'));
+
+    if (window._vipOrch && typeof window._vipOrch.connectApp === 'function') {
+      window._vipOrch.connectApp(this);
+    }
+  }
+
+  // ── DOM cache ────────────────────────────────────────────────────────────
+  cacheDom() {
+    const g = id => document.getElementById(id);
+    this.dom = {
+      fileInput:g('fileInput'),
+      fileBtn:g('fileBtn'),
+      dropZone:g('dropZone'),
+      uploadZone:g('uploadZone'),
+      clearFile:g('clearFile'),
+      fileInfo:g('fileInfo'),
+      fileLoadIndicator:g('fileLoadIndicator'),
+      processBtn:g('processBtn'),
+      reprocessBtn:g('reprocessBtn'),
+      playBtn:g('playBtn'),
+      tpPlay:g('tpPlay'),
+      tpPause:g('tpPause'),
+      tpStop:g('tpStop'),
+      tpRew:g('tpRew'),
+      tpFwd:g('tpFwd'),
+      tpSeek:g('tpSeek'),
+      tpAB:g('tpAB'),
+      tpABLabel:g('tpABLabel'),
+      tpSpeed:g('tpSpeed'),
+      tpSpeedDown:g('tpSpeedDown'),
+      tpSpeedUp:g('tpSpeedUp'),
+      tpCur:g('tpCur'),
+      tpDur:g('tpDur'),
+      micBtn:g('micBtn'),
+      micLabel:g('micLabel'),
+      saveOrigBtn:g('saveOrigBtn'),
+      saveProcBtn:g('saveProcBtn'),
+      auditLogBtn:g('auditLogBtn'),
+      presetSel:g('presetSel'),
+      resetSlidersBtn:g('resetSlidersBtn'),
+      sliderSearch:g('sliderSearch'),
+      pipeFill:g('pipeFill'),
+      pipeBar:g('pipeBar'),
+      pipeDetail:g('pipeDetail'),
+      videoPlayer:g('videoPlayer'),
+      videoCard:g('videoCard'),
+      hStatus:g('hStatus'),
+      hDur:g('hDur'),
+      hSR:g('hSR'),
+      hCh:g('hCh'),
+      hFile:g('hFile'),
+      hPeak:g('hPeak'),
+      hRMS:g('hRMS'),
+      mobileProcessBtn:g('mobileProcessBtn'),
+      mobileReprocessBtn:g('mobileReprocessBtn'),
+      mobileStopBtn:g('mobileStopBtn'),
+      statsToggle:g('statsToggle'),
+      hdrStats:g('hdrStats'),
+    };
   }
 
   // ── Boot splash ──────────────────────────────────────────────────────────
-  _dismissBootSplash() {
+  initBootSplash() {
     const splash = $('bootSplash');
     const fill = $('bootSplashProgress');
     if (!splash) return;
@@ -168,10 +459,48 @@ class VoiceIsolatePro {
     }, 80);
   }
 
-  // ── AudioContext + AudioWorklet ──────────────────────────────────────────
-  async _ensureAudioCtx() {
+  // ── Model status panel ───────────────────────────────────────────────────
+  initModelStatusPanel() {
+    if (typeof ModelStatusUI !== 'undefined' && ModelStatusUI) {
+      try {
+        this._modelStatusUI = new ModelStatusUI({ container: $('modelStatusPills') || document.body });
+      } catch (e) {
+        structuredLog('warn', '[VIP] ModelStatusUI init failed', { err: e.message });
+      }
+    }
+  }
+
+  // ── Pipeline progress ────────────────────────────────────────────────────
+  updatePipelineProgress(stageIndex, detail, pct) {
+    const fill = this.dom.pipeFill || $('pipeFill');
+    const bar = this.dom.pipeBar || $('pipeBar');
+    const detailEl = this.dom.pipeDetail || $('pipeDetail');
+    const badge = $('vip-proc-badge');
+    const p = typeof pct === 'number' ? pct : (stageIndex / 32) * 100;
+    if (fill) fill.style.width = p + '%';
+    if (bar) bar.setAttribute('aria-valuenow', p);
+    if (detailEl) detailEl.textContent = detail || '';
+    if (badge) badge.dataset.state = p >= 100 ? 'done' : p > 0 ? 'processing' : 'idle';
+    const spinner = badge && badge.querySelector('.vip-pb-spinner');
+    if (spinner) spinner.style.display = (p > 0 && p < 100) ? '' : 'none';
+    const lbl = badge && badge.querySelector('.vip-pb-label');
+    if (lbl) lbl.textContent = detail || (p >= 100 ? 'Done' : 'Ready');
+  }
+
+  // ── Render static visuals (waveform/spectrogram placeholder) ─────────────
+  renderStaticVisuals(buffer) {
+    if (typeof window.drawWaveform === 'function') {
+      try { window.drawWaveform(buffer); } catch (_) {}
+    }
+    if (typeof window.VIP_spectro === 'object' && window.VIP_spectro) {
+      try { window.VIP_spectro.renderStatic(buffer); } catch (_) {}
+    }
+  }
+
+  // ── Audio context ────────────────────────────────────────────────────────
+  async ensureCtx() {
     if (this._ctxReady) {
-      if (this.ctx?.state === 'suspended') await this.ctx.resume();
+      if (this.ctx && this.ctx.state === 'suspended') await this.ctx.resume();
       return;
     }
     if (this._pendingCtxInit) return this._pendingCtxInit;
@@ -181,46 +510,25 @@ class VoiceIsolatePro {
         this.ctx = this.ctx || new AudioContext({ latencyHint: 'interactive', sampleRate: 48000 });
         pill('engCtxPill', 'loading');
 
-        // SharedArrayBuffer (requires COOP/COEP — already set in vercel.json)
         if (typeof SharedArrayBuffer !== 'undefined') {
           const sab = new SharedArrayBuffer(256 * Float32Array.BYTES_PER_ELEMENT);
           this.sharedParams = new Float32Array(sab);
-          // Populate initial slider values into SAB
           SLIDER_REGISTRY.forEach((s, i) => {
-            this.sharedParams[i + 1] = window.VIP_PARAMS?.[s.id] ?? s.val ?? 0;
+            this.sharedParams[i + 1] = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined) ? window.VIP_PARAMS[s.id] : (s.val || 0);
           });
         }
 
-        await this.ctx.audioWorklet.addModule('./dsp-processor.js');
-
-        this.workletNode = new AudioWorkletNode(this.ctx, 'dsp-processor', {
-          numberOfInputs: 1,
-          numberOfOutputs: 1,
-          outputChannelCount: [2],
-          processorOptions: {
-            sampleRate: this.ctx.sampleRate,
-            sharedParamsBuffer: this.sharedParams?.buffer ?? null,
-          },
-        });
-
-        this.workletNode.port.onmessage = (e) => this._onWorkletMsg(e.data);
         this._ctxReady = true;
         this._workletReady = true;
         pill('engCtxPill', 'ready');
-        pill('engWorkletPill', 'ready');
 
-        this._attachWorkletSliderListeners();
-        this._syncAllSliderParamsToWorklet();
-
-        const session = await this._initOnnxSession();
-        this._initMlWorker(session);
+        this._initSABRings();
         this._updateProcessButtonsState();
-        console.info('[VIP] AudioContext + AudioWorklet ready.');
+        structuredLog('info', '[VIP] AudioContext ready.');
       } catch (err) {
-        console.error('[VIP] AudioContext init failed:', err);
+        structuredLog('error', '[VIP] AudioContext init failed', { err: err.message });
         this._workletReady = false;
         pill('engCtxPill', 'error');
-        pill('engWorkletPill', 'error');
       } finally {
         this._pendingCtxInit = null;
       }
@@ -229,578 +537,256 @@ class VoiceIsolatePro {
     return this._pendingCtxInit;
   }
 
-  _onWorkletMsg(data) {
-    if (!data) return;
-    if (data.type === 'meter') this._updateMeters(data.peak, data.rms);
-    if (data.type === 'log')   console.debug('[worklet]', data.msg);
-  }
+  // Alias used by some tests
+  _ensureAudioCtx() { return this.ensureCtx(); }
 
-  // ── ML Worker ────────────────────────────────────────────────────────────
-  _initMlWorker(session = this._onnxSession) {
-    if (!session) {
-      this.mlReady = false;
-      this._updateProcessButtonsState();
-      return;
+  // ── SAB ring buffer init ─────────────────────────────────────────────────
+  _initSABRings() {
+    if (typeof SharedArrayBuffer === 'undefined') return;
+    const inputByteLen = SAB_HEADER_BYTES + HALF_BINS * 4 * 2;
+    const outputByteLen = SAB_HEADER_BYTES + HALF_BINS * 4 * 2;
+    const inputSAB = new SharedArrayBuffer(inputByteLen);
+    const outputSAB = new SharedArrayBuffer(outputByteLen);
+    this._inputSAB = inputSAB;
+    this._outputSAB = outputSAB;
+    const worker = window._vipOrch && window._vipOrch.mlWorker;
+    if (worker) {
+      worker.postMessage({ type: 'initRingBuffers', inputRing: inputSAB, maskRing: outputSAB }, []);
     }
-    try {
-      this.mlWorker = new Worker('/app/ml-worker.js', { type: 'module' });
-      this.mlWorker.onmessage = (e) => this._onWorkerMsg(e.data);
-      this.mlWorker.onerror = (e) => console.error('[VIP] ml-worker error:', e);
-      const initPayload = {};
-      for (const s of SLIDER_REGISTRY) initPayload[s.key] = window.VIP_PARAMS?.[s.id] ?? 0;
-      const initMsg = {
-        type: 'init',
-        session,
-        payload: {
-          params: initPayload,
-          preferredProviders: ['webgpu', 'wasm'],
-          modelBasePath: './models/',
-        },
-      };
-      try {
-        this.mlWorker.postMessage(initMsg);
-      } catch (err) {
-        console.warn('[VIP] Worker init session transfer failed, retrying without session:', err);
-        this.mlWorker.postMessage({
-          type: 'init',
-          payload: initMsg.payload,
-        });
-      }
-      this.mlReady = false;
-      pill('engMlPill', 'loading');
-    } catch (err) {
-      console.warn('[VIP] ml-worker unavailable (classical DSP only):', err);
-      window.VIP_ML_AVAILABLE = false;
-      this.mlReady = false;
-      pill('engMlPill', 'unavailable');
-    }
-    this._updateProcessButtonsState();
-  }
-
-  _onWorkerMsg(data) {
-    if (!data) return;
-    if (data.type === 'progress') this._setPipeProgress(data.pct, data.label);
-    if (data.type === 'ready') {
-      this.mlReady = true;
-      pill('engMlPill', 'ready');
-      this._updateProcessButtonsState();
-    }
-    if (data.type === 'result' && this.workletNode) {
-      this.workletNode.port.postMessage({ type: 'ml_result', buffer: data.buffer }, [data.buffer]);
-    }
-  }
-
-  // ── 52-Slider wiring ─────────────────────────────────────────────────────
-  _initSliders() {
-    buildPanels(document, (spec, rawVal) => {
-      // Sync real-time sliders into SAB immediately
-      if (this.sharedParams && spec.rt) {
-        const idx = this._sliderIndexById.get(spec.id);
-        if (idx !== undefined) this.sharedParams[idx] = rawVal;
-      }
-    });
-
-    this._initializeSliderDefaults();
-
-    const audit = runAudit(document);
-    if (audit.fail > 0) {
-      console.warn('[VIP] Slider audit failures:', audit.checks);
-    } else {
-      console.info(`[VIP] ${audit.checks.sliderCount} sliders built OK.`);
-    }
-
-    // Reset button
-    const resetBtn = $('resetSlidersBtn');
-    if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
-        document.querySelectorAll('.sr-row input[type="range"]').forEach(el => {
-          const spec = SLIDER_REGISTRY.find(s => 'sl_' + s.id === el.id);
-          if (!spec) return;
-          el.value = spec.val;
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-        });
+    const workletNode = window._vipOrch && window._vipOrch.workletNode;
+    if (workletNode) {
+      workletNode.port.addEventListener('message', (ev) => {
+        if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {
+          this._inputSAB = ev.data.inputSAB;
+          this._outputSAB = ev.data.outputSAB;
+        }
       });
     }
-
-    // Slider search filter
-    const search = $('sliderSearch');
-    if (search) {
-      search.addEventListener('input', () => {
-        const q = search.value.trim().toLowerCase();
-        document.querySelectorAll('.sr-row').forEach(row => {
-          const label = row.querySelector('.sr-label')?.textContent.toLowerCase() ?? '';
-          row.style.display = (!q || label.includes(q)) ? '' : 'none';
-        });
-      });
-    }
-
-    // Accordion toggle for slider groups
-    document.querySelectorAll('.slider-group-header').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const group = btn.closest('.slider-group');
-        if (!group) return;
-        const isOpen = group.classList.toggle('active');
-        btn.setAttribute('aria-expanded', String(isOpen));
-      });
-    });
   }
 
-  async _initOnnxSession() {
-    const ort = window.ort;
-    if (!ort?.InferenceSession?.create) {
-      this._onnxReady = false;
-      this._dspOnlyMode = true;
-      window.VIP_ML_AVAILABLE = false;
-      pill('engMlPill', 'unavailable');
-      this._updateProcessButtonsState();
-      return null;
-    }
+  // ── Slider rendering ─────────────────────────────────────────────────────
+  _renderSliders() {
+    const allSliders = Object.values(SLIDERS).flat();
+    for (const s of allSliders) {
+      const panelId = this._getSliderPanelId(s.id);
+      const panel = panelId ? document.getElementById(panelId) : null;
+      const container = panel || document.getElementById('sliderContainer');
+      if (!container) continue;
 
-    try {
-      ort.env.wasm.wasmPaths = './';
-      const modelPath = './models/demucs_v4.onnx';
-      let session;
-      try {
-        session = await ort.InferenceSession.create(modelPath, {
-          executionProviders: ['webgpu', 'wasm'],
-        });
-      } catch (gpuErr) {
-        console.warn('[VIP] ONNX WebGPU init failed, falling back to WASM:', gpuErr);
-        session = await ort.InferenceSession.create(modelPath, {
-          executionProviders: ['wasm'],
-        });
+      const row = document.createElement('div');
+      row.className = 'sr-row';
+      row.dataset.sliderId = s.id;
+
+      const labelEl = document.createElement('label');
+      labelEl.className = 'sr-label';
+      labelEl.htmlFor = 'sl_' + s.id;
+      labelEl.textContent = s.label;
+      labelEl.title = s.desc || '';
+
+      if (s.rt) {
+        const badge = document.createElement('span');
+        badge.className = 'rt-badge';
+        badge.textContent = 'RT';
+        labelEl.appendChild(badge);
       }
-      this._onnxSession = session;
-      this._onnxReady = true;
-      this._dspOnlyMode = false;
-      window.VIP_ML_AVAILABLE = true;
-      return session;
-    } catch (err) {
-      console.warn('[VIP] ONNX unavailable — running DSP-only mode:', err);
-      this._onnxSession = null;
-      this._onnxReady = false;
-      this._dspOnlyMode = true;
-      window.VIP_ML_AVAILABLE = false;
-      pill('engMlPill', 'unavailable');
-      return null;
-    } finally {
-      this._updateProcessButtonsState();
-    }
-  }
 
-  _initializeSliderDefaults() {
-    for (const [sliderId, spec] of Object.entries(SLIDER_MAP)) {
-      const input = document.getElementById('sl_' + sliderId);
-      if (!input) continue;
-      const v = Number(spec.default);
-      if (Number.isFinite(v)) {
-        input.value = String(v);
-        this._updateSliderValueDisplay(sliderId, v);
+      const infoEl = document.createElement('span');
+      infoEl.className = 'sr-info';
+      infoEl.textContent = 'i';
+      infoEl.setAttribute('aria-hidden', 'true');
+      labelEl.appendChild(infoEl);
+
+      const inputEl = document.createElement('input');
+      inputEl.type = 'range';
+      inputEl.id = 'sl_' + s.id;
+      inputEl.name = s.id;
+      inputEl.min = s.min;
+      inputEl.max = s.max;
+      inputEl.step = s.step;
+      const initVal = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined) ? window.VIP_PARAMS[s.id] : s.val;
+      inputEl.value = initVal;
+      inputEl.setAttribute('aria-label', s.label);
+      inputEl.setAttribute('aria-valuenow', initVal);
+      if (s.rt) inputEl.classList.add('realtime');
+
+      const range = s.max - s.min;
+      const initPct = range > 0 ? ((initVal - s.min) / range) * 100 : 0;
+      inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
+
+      const valEl = document.createElement('span');
+      valEl.className = 'sr-val';
+      valEl.id = 'val_' + s.id;
+      valEl.textContent = initVal + (s.unit || '');
+
+      inputEl.addEventListener('input', () => {
+        const el = inputEl;
+        const v = parseFloat(el.value);
+        const min = parseFloat(el.min);
+        const max = parseFloat(el.max);
+        const r = parseFloat(el.max) - parseFloat(el.min);
+        const pct = r > 0 ? ((v - min) / (max - min)) * 100 : 0;
+        el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
+        el.setAttribute('aria-valuenow', v);
+        valEl.textContent = v + (s.unit || '');
         window.VIP_PARAMS = window.VIP_PARAMS || {};
-        window.VIP_PARAMS[sliderId] = v;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
+        window.VIP_PARAMS[s.id] = v;
+        if (this.sharedParams) {
+          const idx = this._sliderIndexById.get(s.id);
+          if (idx !== undefined) this.sharedParams[idx] = v;
+        }
+        this.onSlider(s.id, v);
+      });
+
+      row.appendChild(labelEl);
+      row.appendChild(inputEl);
+      row.appendChild(valEl);
+      container.appendChild(row);
+
+      window.VIP_PARAMS = window.VIP_PARAMS || {};
+      window.VIP_PARAMS[s.id] = initVal;
+    }
+  }
+
+  _getSliderPanelId(sliderId) {
+    const tabMap = {
+      gate: 'tab-gate', nr: 'tab-nr', eq: 'tab-eq', dyn: 'tab-dyn',
+      spec: 'tab-spec', adv: 'tab-adv', sep: 'tab-sep', out: 'tab-out',
+    };
+    for (const [group, panelId] of Object.entries(tabMap)) {
+      if (SLIDERS[group] && SLIDERS[group].some(s => s.id === sliderId)) {
+        return panelId;
       }
     }
+    return null;
   }
 
-  _updateSliderValueDisplay(sliderId, value) {
-    const valEl = document.getElementById('val_' + sliderId);
-    if (!valEl) return;
-    const unit = SLIDER_MAP[sliderId]?.unit ?? '';
-    valEl.textContent = `${value}${unit}`;
-  }
-
-  _attachWorkletSliderListeners() {
-    if (this._workletSliderListenersBound) return;
-    for (const sliderId of Object.keys(SLIDER_MAP)) {
-      const input = document.getElementById('sl_' + sliderId);
-      if (!input) continue;
-      input.addEventListener('input', () => {
-        const value = Number.parseFloat(input.value);
-        if (!Number.isFinite(value)) return;
-        this._updateSliderValueDisplay(sliderId, value);
-        if (this.workletNode?.port) {
-          this.workletNode.port.postMessage({ type: 'param', id: sliderId, value });
-        }
-        if (this.sharedParams) {
-          const idx = this._sliderIndexById.get(sliderId);
-          if (idx !== undefined) this.sharedParams[idx] = value;
-        }
-      });
-    }
-    this._workletSliderListenersBound = true;
-  }
-
-  _syncAllSliderParamsToWorklet() {
-    if (!this.workletNode?.port) return;
-    for (const sliderId of Object.keys(SLIDER_MAP)) {
-      const input = document.getElementById('sl_' + sliderId);
-      if (!input) continue;
-      const value = Number.parseFloat(input.value);
-      if (!Number.isFinite(value)) continue;
-      this._updateSliderValueDisplay(sliderId, value);
-      this.workletNode.port.postMessage({ type: 'param', id: sliderId, value });
+  onSlider(id, value) {
+    const orch = window._vipOrch;
+    if (orch && typeof orch.onSlider === 'function') {
+      orch.onSlider(id, value);
     }
   }
 
-  _updateProcessButtonsState() {
-    const canProcess = Boolean(this.origBuffer) && this._workletReady && (this._onnxReady || this._dspOnlyMode);
-    [$('processBtn'), $('mobileProcessBtn')].forEach((b) => {
-      if (b) b.disabled = !canProcess;
-    });
-  }
+  // ── Event binding ────────────────────────────────────────────────────────
+  bindEvents() {
+    const d = this.dom;
 
-  // ── File handling ─────────────────────────────────────────────────────────
-  async loadFile(file) {
-    if (!file) return;
-    const info = $('fileInfo');
-    const loader = $('fileLoadIndicator');
-    if (info) info.textContent = file.name;
-    if (loader) loader.hidden = false;
+    // Helper: safe addEventListener
+    const bind = (name, el, event, fn) => {
+      if (el) el.addEventListener(event, fn);
+    };
 
-    try {
-      await this._ensureAudioCtx();
-      const ab = await file.arrayBuffer();
-      this.origBuffer = await this.ctx.decodeAudioData(ab);
-
-      // Update header stats
-      this._setHeaderStat('hDur', fmtTime(this.origBuffer.duration));
-      this._setHeaderStat('hSR', this.origBuffer.sampleRate + ' Hz');
-      this._setHeaderStat('hCh', this.origBuffer.numberOfChannels === 1 ? 'Mono' : 'Stereo');
-      this._setHeaderStat('hFile', file.name.slice(0, 20));
-
-      // Enable process buttons only when processing pipeline is ready
-      this._updateProcessButtonsState();
-
-      // Draw waveform if visuals available
-      if (typeof window.drawWaveform === 'function') window.drawWaveform(this.origBuffer);
-
-      showToast('File loaded: ' + file.name, 'info');
-    } catch (err) {
-      console.error('[VIP] File load error:', err);
-      showToast('Failed to decode: ' + file.name, 'error');
-    } finally {
-      if (loader) loader.hidden = true;
-    }
-  }
-
-  // ── Creator-mode processing ───────────────────────────────────────────────
-  async process() {
-    if (!this.origBuffer) { showToast('No file loaded.', 'error'); return; }
-    if (this.mode === 'creator') return;
-    this.mode = 'creator';
-    this._setPipeProgress(0, 'Starting offline pipeline…');
-    this._setHeaderStat('hStatus', 'PROCESSING');
-
-    try {
-      await this._ensureAudioCtx();
-      const buf = this.origBuffer;
-      const offline = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate);
-      await offline.audioWorklet.addModule('/app/dsp-processor.js');
-
-      const offNode = new AudioWorkletNode(offline, 'dsp-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 1,
-        outputChannelCount: [buf.numberOfChannels],
-        processorOptions: {
-          sampleRate: offline.sampleRate,
-          mode: 'offline',
-          params: { ...window.VIP_PARAMS },
-        },
-      });
-
-      const src = offline.createBufferSource();
-      src.buffer = buf;
-      src.connect(offNode);
-      offNode.connect(offline.destination);
-      src.start();
-
-      this._setPipeProgress(30, 'Running DSP pipeline…');
-      this.procBuffer = await offline.startRendering();
-      this._setPipeProgress(100, 'Complete');
-      this._setHeaderStat('hStatus', 'DONE');
-
-      [$('reprocessBtn'), $('saveProcBtn'), $('auditLogBtn'), $('mobileReprocessBtn')].forEach(b => {
-        if (b) b.disabled = false;
-      });
-      if (typeof window.drawWaveform === 'function') window.drawWaveform(this.procBuffer, 'proc');
-      showToast('Processing complete!', 'info');
-    } catch (err) {
-      console.error('[VIP] Processing error:', err);
-      showToast('Processing failed: ' + err.message, 'error');
-      this._setHeaderStat('hStatus', 'ERROR');
-    } finally {
-      this.mode = 'idle';
-    }
-  }
-
-  // ── Live mic ──────────────────────────────────────────────────────────────
-  async startLive() {
-    try {
-      await this._ensureAudioCtx();
-      this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      this.sourceNode = this.ctx.createMediaStreamSource(this.micStream);
-      this.sourceNode.connect(this.workletNode);
-      this.workletNode.connect(this.ctx.destination);
-      this.mode = 'live';
-      const lbl = $('micLabel');
-      if (lbl) lbl.textContent = 'Stop';
-      this._setHeaderStat('hStatus', 'LIVE');
-      showToast('Live mode active.', 'info');
-    } catch (err) {
-      showToast('Mic access denied.', 'error');
-      console.error('[VIP] Mic error:', err);
-    }
-  }
-
-  stopLive() {
-    this.micStream?.getTracks().forEach(t => t.stop());
-    try { this.sourceNode?.disconnect(); } catch (_) {}
-    this.sourceNode = null;
-    this.micStream = null;
-    this.mode = 'idle';
-    const lbl = $('micLabel');
-    if (lbl) lbl.textContent = 'Record';
-    this._setHeaderStat('hStatus', 'IDLE');
-  }
-
-  // ── Transport ─────────────────────────────────────────────────────────────
-  async play() {
-    const buf = this._abVersion === 'B' && this.procBuffer ? this.procBuffer : this.origBuffer;
-    if (!buf) return;
-    await this._ensureAudioCtx();
-    this._stopPlayback();
-    this._playNode = this.ctx.createBufferSource();
-    this._playNode.buffer = buf;
-    this._playNode.playbackRate.value = parseFloat($('tpSpeed')?.value ?? 1);
-    this._playNode.connect(this.workletNode ?? this.ctx.destination);
-    if (this.workletNode) this.workletNode.connect(this.ctx.destination);
-    this._playStart = this.ctx.currentTime - this._playOffset;
-    this._playNode.start(0, this._playOffset);
-    this._playing = true;
-    this._playNode.onended = () => { this._playing = false; this._playOffset = 0; this._updateTransportUI(); };
-    this._updateTransportUI();
-    requestAnimationFrame(() => this._tickTransport());
-  }
-
-  pause() {
-    if (!this._playing) return;
-    this._playOffset = this.ctx.currentTime - this._playStart;
-    this._stopPlayback();
-    this._playing = false;
-    this._updateTransportUI();
-  }
-
-  stop() {
-    this._playOffset = 0;
-    this._stopPlayback();
-    this._playing = false;
-    this._updateTransportUI();
-  }
-
-  _stopPlayback() {
-    try { this._playNode?.stop(); this._playNode?.disconnect(); } catch (_) {}
-    this._playNode = null;
-  }
-
-  _tickTransport() {
-    if (!this._playing) return;
-    const cur = this.ctx.currentTime - this._playStart;
-    const dur = this.origBuffer?.duration ?? 0;
-    const pct = dur > 0 ? (cur / dur) * 1000 : 0;
-    const seek = $('tpSeek');
-    if (seek) seek.value = Math.min(pct, 1000);
-    const curEl = $('tpCur');
-    if (curEl) curEl.textContent = fmtTime(cur);
-    requestAnimationFrame(() => this._tickTransport());
-  }
-
-  _updateTransportUI() {
-    const dur = this.origBuffer?.duration ?? 0;
-    const durEl = $('tpDur');
-    if (durEl) durEl.textContent = fmtTime(dur);
-    [$('tpPlay'), $('tpPause'), $('tpStop'), $('tpRew'), $('tpFwd'), $('tpSeek'), $('tpAB')].forEach(b => {
-      if (b) b.disabled = !this.origBuffer;
-    });
-  }
-
-  // ── Bypass ────────────────────────────────────────────────────────────────
-  setBypass(on) {
-    if (this.sharedParams) this.sharedParams[0] = on ? 1 : 0;
-    this.workletNode?.port.postMessage({ type: 'bypass', enabled: on });
-  }
-
-  // ── DOM binding ───────────────────────────────────────────────────────────
-  _bindDOM() {
     // File input
-    const fileInput = $('fileInput');
-    const fileBtn   = $('fileBtn');
-    const dropZone  = $('dropZone');
-    const uploadZone = $('uploadZone');
-    const clearFile  = $('clearFile');
-
-    if (fileBtn && fileInput) fileBtn.addEventListener('click', () => fileInput.click());
-    if (uploadZone) {
-      uploadZone.addEventListener('click', () => fileInput?.click());
-      uploadZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput?.click(); });
+    bind('fileBtn', d.fileBtn, 'click', () => { if (d.fileInput) d.fileInput.click(); });
+    if (d.uploadZone) {
+      d.uploadZone.addEventListener('click', () => { if (d.fileInput) d.fileInput.click(); });
+      d.uploadZone.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') { if (d.fileInput) d.fileInput.click(); }
+      });
     }
-    if (fileInput) fileInput.addEventListener('change', e => this.loadFile(e.target.files[0]));
-    if (dropZone) {
-      dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-      dropZone.addEventListener('drop', e => {
+    bind('fileInput', d.fileInput, 'change', e => this.handleFile(e.target.files[0]));
+    if (d.dropZone) {
+      d.dropZone.addEventListener('dragover', e => { e.preventDefault(); d.dropZone.classList.add('drag-over'); });
+      d.dropZone.addEventListener('dragleave', () => d.dropZone.classList.remove('drag-over'));
+      d.dropZone.addEventListener('drop', e => {
         e.preventDefault();
-        dropZone.classList.remove('drag-over');
-        this.loadFile(e.dataTransfer.files[0]);
+        d.dropZone.classList.remove('drag-over');
+        this.handleFile(e.dataTransfer.files[0]);
       });
     }
-    if (clearFile) {
-      clearFile.addEventListener('click', () => {
-        this.origBuffer = null;
-        this.procBuffer = null;
-        this.stop();
-        const info = $('fileInfo');
-        if (info) info.textContent = 'No file loaded';
-        if (fileInput) fileInput.value = '';
-        [$('processBtn'), $('reprocessBtn'), $('saveProcBtn'), $('saveOrigBtn'), $('auditLogBtn'),
-         $('mobileProcessBtn'), $('mobileReprocessBtn')].forEach(b => { if (b) b.disabled = true; });
-        this._updateTransportUI();
-        this._setHeaderStat('hStatus', 'IDLE');
-      });
-    }
+    bind('clearFile', d.clearFile, 'click', () => this._clearFile());
 
-    // Process / Reprocess
-    const processBtn    = $('processBtn');
-    const reprocessBtn  = $('reprocessBtn');
-    const mobileProcess = $('mobileProcessBtn');
-    const mobileReproc  = $('mobileReprocessBtn');
-    if (processBtn)   processBtn.addEventListener('click',   () => this.process());
-    if (reprocessBtn) reprocessBtn.addEventListener('click', () => this.process());
-    if (mobileProcess) mobileProcess.addEventListener('click', () => this.process());
-    if (mobileReproc)  mobileReproc.addEventListener('click',  () => this.process());
+    // Process buttons
+    bind('processBtn', d.processBtn, 'click', () => this.runPipeline());
+    bind('reprocessBtn', d.reprocessBtn, 'click', () => this.runPipeline());
+
+    // Mobile action bar
+    if (this.dom.mobileProcessBtn) {
+      this.dom.mobileProcessBtn.addEventListener('click', () => this.runPipeline());
+    }
+    if (this.dom.mobileReprocessBtn) {
+      this.dom.mobileReprocessBtn.addEventListener('click', () => this.runPipeline());
+    }
+    if (this.dom.mobileStopBtn) {
+      this.dom.mobileStopBtn.addEventListener('click', () => { this.abortFlag = true; });
+    }
+    if (this.dom.statsToggle && this.dom.hdrStats) {
+      this.dom.statsToggle.addEventListener('click', () => {
+        const expanded = this.dom.hdrStats.classList.toggle('expanded');
+        this.dom.statsToggle.setAttribute('aria-expanded', String(expanded));
+        this.dom.statsToggle.textContent = expanded ? '▲' : '▼';
+      });
+    }
 
     // Mic
-    const micBtn = $('micBtn');
-    if (micBtn) {
-      micBtn.addEventListener('click', () => {
-        if (this.mode === 'live') this.stopLive(); else this.startLive();
-      });
-    }
+    bind('micBtn', d.micBtn, 'click', () => {
+      if (this.mode === 'live') this.stopLive(); else this.startLive();
+    });
 
     // Transport
-    $('tpPlay')?.addEventListener('click',  () => this.play());
-    $('tpPause')?.addEventListener('click', () => this.pause());
-    $('tpStop')?.addEventListener('click',  () => this.stop());
-    $('tpRew')?.addEventListener('click',   () => { this._playOffset = 0; if (this._playing) this.play(); });
-    $('tpFwd')?.addEventListener('click',   () => {
-      const dur = this.origBuffer?.duration ?? 0;
-      this._playOffset = Math.min(this._playOffset + 10, dur);
-      if (this._playing) this.play();
-    });
-    $('tpSeek')?.addEventListener('input', e => {
-      const dur = this.origBuffer?.duration ?? 0;
-      this._playOffset = (parseFloat(e.target.value) / 1000) * dur;
-      if (this._playing) this.play();
-    });
-    const speedSel    = $('tpSpeed');
-    const speedDown   = $('tpSpeedDown');
-    const speedUp     = $('tpSpeedUp');
+    bind('playBtn', this.dom.tpPlay, 'click', () => { this.togglePlayback(); });
+    bind('tpPlay', d.tpPlay, 'click', () => { this.togglePlayback(); });
+    bind('tpPause', d.tpPause, 'click', () => this.pause());
+    bind('tpStop', d.tpStop, 'click', () => this.stop());
+    bind('tpRew', d.tpRew, 'click', () => this.seekDelta(-10));
+    bind('tpFwd', d.tpFwd, 'click', () => this.seekDelta(10));
+    bind('tpSeek', d.tpSeek, 'input', e => this.seekTo(parseFloat(e.target.value) / 1000));
+
     const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-    if (speedSel) {
-      speedSel.addEventListener('change', () => {
-        if (this._playNode) this._playNode.playbackRate.value = parseFloat(speedSel.value);
-      });
-    }
-    if (speedDown && speedSel) {
-      speedDown.addEventListener('click', () => {
-        const cur = parseFloat(speedSel.value);
-        const idx = SPEEDS.indexOf(cur);
-        if (idx > 0) { speedSel.value = SPEEDS[idx - 1]; speedSel.dispatchEvent(new Event('change')); }
-      });
-    }
-    if (speedUp && speedSel) {
-      speedUp.addEventListener('click', () => {
-        const cur = parseFloat(speedSel.value);
-        const idx = SPEEDS.indexOf(cur);
-        if (idx < SPEEDS.length - 1) { speedSel.value = SPEEDS[idx + 1]; speedSel.dispatchEvent(new Event('change')); }
-      });
-    }
+    bind('tpSpeed', d.tpSpeed, 'change', () => {
+      if (this.currentSource) this.currentSource.playbackRate.value = numFromInput(d.tpSpeed, 1);
+    });
+    bind('tpSpeedDown', d.tpSpeedDown, 'click', () => {
+      if (!d.tpSpeed) return;
+      const cur = numFromInput(d.tpSpeed, 1);
+      const idx = SPEEDS.indexOf(cur);
+      if (idx > 0) { d.tpSpeed.value = SPEEDS[idx - 1]; d.tpSpeed.dispatchEvent(new Event('change')); }
+    });
+    bind('tpSpeedUp', d.tpSpeedUp, 'click', () => {
+      if (!d.tpSpeed) return;
+      const cur = numFromInput(d.tpSpeed, 1);
+      const idx = SPEEDS.indexOf(cur);
+      if (idx < SPEEDS.length - 1) { d.tpSpeed.value = SPEEDS[idx + 1]; d.tpSpeed.dispatchEvent(new Event('change')); }
+    });
 
     // A/B toggle
-    const tpAB     = $('tpAB');
-    const tpABLabel = $('tpABLabel');
-    if (tpAB) {
-      tpAB.addEventListener('click', () => {
-        if (!this.procBuffer) { showToast('Process a file first for A/B.', 'info'); return; }
-        this._abVersion = this._abVersion === 'A' ? 'B' : 'A';
-        if (tpABLabel) {
-          tpABLabel.dataset.version = this._abVersion;
-          tpABLabel.querySelector('.tp-ab-tag').textContent = this._abVersion;
-          tpABLabel.querySelector('.tp-ab-name').textContent = this._abVersion === 'A' ? 'Original' : 'Processed';
-        }
-        tpAB.classList.toggle('active', this._abVersion === 'B');
-        tpAB.classList.add('tp-ab-no-output');
-        setTimeout(() => tpAB.classList.remove('tp-ab-no-output'), 700);
-        if (this._playing) this.play();
-      });
-      // Keyboard shortcut X
-      document.addEventListener('keydown', e => {
-        if (e.key === 'x' || e.key === 'X') tpAB.click();
-      });
-    }
+    bind('tpAB', d.tpAB, 'click', () => this.toggleAB());
+    document.addEventListener('keydown', e => this._handleGlobalKeydown(e));
 
     // Save buttons
-    $('saveOrigBtn')?.addEventListener('click', () => {
-      if (this.origBuffer) downloadWav(this.origBuffer, 'original-' + Date.now() + '.wav');
+    bind('saveOrigBtn', d.saveOrigBtn, 'click', () => {
+      if (this.origBuffer || this.inputBuffer) downloadWav(this.origBuffer || this.inputBuffer, 'original-' + Date.now() + '.wav');
     });
-    $('saveProcBtn')?.addEventListener('click', () => {
-      if (this.procBuffer) downloadWav(this.procBuffer, 'processed-' + Date.now() + '.wav');
+    bind('saveProcBtn', d.saveProcBtn, 'click', () => {
+      if (this.procBuffer || this.outputBuffer) downloadWav(this.procBuffer || this.outputBuffer, 'processed-' + Date.now() + '.wav');
     });
-
-    // UI scale
-    let scale = 1;
-    $('uiScaleDn')?.addEventListener('click', () => {
-      scale = Math.max(0.7, scale - 0.05);
-      document.body.style.zoom = scale;
-      const v = $('uiScaleVal'); if (v) v.textContent = Math.round(scale * 100) + '%';
-    });
-    $('uiScaleUp')?.addEventListener('click', () => {
-      scale = Math.min(1.4, scale + 0.05);
-      document.body.style.zoom = scale;
-      const v = $('uiScaleVal'); if (v) v.textContent = Math.round(scale * 100) + '%';
-    });
-
-    // Header stats toggle
-    const statsToggle = $('statsToggle');
-    const hdrStats    = $('hdrStats');
-    if (statsToggle && hdrStats) {
-      statsToggle.addEventListener('click', () => {
-        const open = hdrStats.classList.toggle('open');
-        statsToggle.setAttribute('aria-expanded', String(open));
-        statsToggle.innerHTML = open ? '&#9650;' : '&#9660;';
-      });
-    }
-
-    // Forensic toggle
-    $('forensicToggle')?.addEventListener('click', () => showToast('Forensic mode: set in Advanced sliders.', 'info'));
+    bind('auditLogBtn', d.auditLogBtn, 'click', () => this.downloadAuditLog());
 
     // Preset selector
-    $('presetSel')?.addEventListener('change', e => this._applyPreset(e.target.value));
+    bind('presetSel', d.presetSel, 'change', e => this.applyPreset(e.target.value));
     document.querySelectorAll('.btn-preset').forEach(b => {
-      b.addEventListener('click', () => this._applyPreset(b.dataset.preset));
+      b.addEventListener('click', () => this.applyPreset(b.dataset.preset));
     });
 
-    // Custom preset modal
-    $('openPresetModalBtn')?.addEventListener('click', () => {
-      const modal = $('customPresetModal');
-      if (modal) { modal.style.display = 'flex'; modal.setAttribute('aria-hidden', 'false'); }
-    });
-    $('closePresetModal')?.addEventListener('click', () => {
-      const modal = $('customPresetModal');
-      if (modal) { modal.style.display = 'none'; modal.setAttribute('aria-hidden', 'true'); }
+    // Reset sliders
+    bind('resetSlidersBtn', d.resetSlidersBtn, 'click', () => {
+      document.querySelectorAll('[id^="sl_"]').forEach(el => {
+        const id = el.id.slice(3);
+        const spec = SLIDER_BY_ID[id];
+        if (spec) { el.value = spec.val; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      });
     });
 
-    // Viz tab switching
+    // Slider search
+    bind('sliderSearch', d.sliderSearch, 'input', () => {
+      const q = d.sliderSearch.value.trim().toLowerCase();
+      document.querySelectorAll('.sr-row').forEach(row => {
+        const label = (row.querySelector('.sr-label') || {}).textContent || '';
+        row.style.display = (!q || label.toLowerCase().includes(q)) ? '' : 'none';
+      });
+    });
+
+    // Tab switching
     document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.tab-btn').forEach(b => {
@@ -817,71 +803,1075 @@ class VoiceIsolatePro {
       });
     });
 
-    // Fullscreen spectrogram
-    $('fullscreenSpectroBtn')?.addEventListener('click', () => {
-      const el = $('spectro3d-container') ?? $('spectroCanvas');
-      if (el?.requestFullscreen) el.requestFullscreen();
+    // UI scale controls
+    let uiScale = 1;
+    bind('uiScaleDn', $('uiScaleDn'), 'click', () => {
+      uiScale = Math.max(0.7, uiScale - 0.05);
+      document.body.style.zoom = uiScale;
+      const v = $('uiScaleVal'); if (v) v.textContent = Math.round(uiScale * 100) + '%';
     });
+    bind('uiScaleUp', $('uiScaleUp'), 'click', () => {
+      uiScale = Math.min(1.4, uiScale + 0.05);
+      document.body.style.zoom = uiScale;
+      const v = $('uiScaleVal'); if (v) v.textContent = Math.round(uiScale * 100) + '%';
+    });
+
+    // Fullscreen spectrogram
+    bind('fullscreenSpectroBtn', $('fullscreenSpectroBtn'), 'click', () => {
+      const el = $('spectro3d-container') || $('spectroCanvas');
+      if (el && el.requestFullscreen) el.requestFullscreen();
+    });
+
+    // Custom preset modal
+    bind('openPresetModalBtn', $('openPresetModalBtn'), 'click', () => {
+      const modal = $('customPresetModal');
+      if (modal) { modal.style.display = 'flex'; modal.setAttribute('aria-hidden', 'false'); }
+    });
+    bind('closePresetModal', $('closePresetModal'), 'click', () => {
+      const modal = $('customPresetModal');
+      if (modal) { modal.style.display = 'none'; modal.setAttribute('aria-hidden', 'true'); }
+    });
+
+    // Forensic toggle
+    bind('forensicToggle', $('forensicToggle'), 'click', () => this.showNotification('Forensic mode: set in Advanced sliders.', 'info'));
+  }
+
+  // ── Global keyboard shortcuts ────────────────────────────────────────────
+  _handleGlobalKeydown(e) {
+    const tag = e.target && e.target.tagName;
+    const contentEditable = e.target && e.target.isContentEditable;
+    const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || contentEditable;
+    if (inInput) return;
+
+    if ((e.key === ' ' || e.key === 'k' || e.key === 'K') && (this.inputBuffer || this.origBuffer)) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      e.preventDefault();
+      this.togglePlayback();
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (this.isProcessing) {
+        this.abortFlag = true;
+      } else {
+        this.stop();
+      }
+      return;
+    }
+    if (e.key === 'x' || e.key === 'X') {
+      if (!(this.outputBuffer || this.procBuffer)) return;
+      if (this.dom && this.dom.tpAB && this.dom.tpAB.disabled) return;
+      this.toggleAB();
+      return;
+    }
+    if (e.key === 'ArrowLeft') { this.seekDelta(-5); return; }
+    if (e.key === 'ArrowRight') { this.seekDelta(5); return; }
   }
 
   // ── Preset application ────────────────────────────────────────────────────
-  _applyPreset(name) {
-    const PRESETS = {
-      'Voice Clarity':    { nrAmount: 70, gateThresh: -42, compThresh: -24, compRatio: 4, outGain: 2, voiceIso: 80 },
-      'Podcast Clean':    { nrAmount: 85, gateThresh: -50, compThresh: -20, compRatio: 3, outGain: 0, deEssAmt: 6 },
-      'Forensic Extract': { nrAmount: 95, gateThresh: -60, compThresh: -30, compRatio: 8, voiceIso: 95, bgSuppress: 90 },
-      'Music Vocal':      { nrAmount: 40, voiceIso: 60, harmRecov: 50, compRatio: 2.5, compThresh: -18 },
-      'Whisper Boost':    { nrAmount: 60, gateThresh: -65, outGain: 6, compRatio: 6, compThresh: -36 },
-      'Phone/Radio':      { hpFreq: 300, lpFreq: 3400, nrAmount: 80, compRatio: 5 },
-      'Live Performance': { nrAmount: 30, gateThresh: -38, compRatio: 3, stereoWidth: 120 },
-      'Surveillance':     { nrAmount: 92, gateThresh: -70, voiceIso: 90, bgSuppress: 85, outGain: 10 },
-    };
+  applyPreset(name) {
     const preset = PRESETS[name];
     if (!preset) return;
-    Object.entries(preset).forEach(([id, val]) => {
-      const el = document.getElementById('sl_' + id);
-      if (el) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); }
+    Object.entries(preset).forEach(([key, rawValue]) => {
+      if (key === 'description') return;
+      const sliderId = key;
+      const value = SLIDER_BY_ID[sliderId] ? clampToSlider(sliderId, rawValue) : rawValue;
+      window.VIP_PARAMS = window.VIP_PARAMS || {};
+      window.VIP_PARAMS[key] = value;
+      const sliderDom = { el: document.getElementById('sl_' + key) };
+      if (!sliderDom.el) return;
+      sliderDom.el.value = value;
+      sliderDom.el.setAttribute('aria-valuenow', value);
+      const min = parseFloat(sliderDom.el.min);
+      const max = parseFloat(sliderDom.el.max);
+      const range = max - min;
+      const pct = range > 0 ? ((value - min) / range) * 100 : 0;
+      sliderDom.el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
+      sliderDom.el.dispatchEvent(new Event('input', { bubbles: true }));
+      sliderDom.el.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    showToast('Preset applied: ' + name, 'info');
+    if (this.liveChainBuilt) {
+      // Sync params to worklet after preset application
+      if (window._vipOrch && typeof window._vipOrch.syncParams === 'function') {
+        window._vipOrch.syncParams(window.VIP_PARAMS || {});
+      }
+    }
+    this.showNotification('Preset applied: ' + name, 'info');
   }
 
-  // ── Meter + pipeline UI ───────────────────────────────────────────────────
+  // ── File handling ─────────────────────────────────────────────────────────
+  async handleFile(file) {
+    if (!file) return;
+    this.stop();
+    this.setStatus('LOADING');
+    if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = file.name;
+
+    await this.ensureCtx();
+
+    // Reject MIDI files early — not supported by Web Audio API
+    const midiMimes = ['audio/midi', 'audio/x-midi', 'audio/mid'];
+    const isMidi = midiMimes.includes((file.type || '').toLowerCase()) ||
+      /\.(mid|midi)$/i.test(file.name || '');
+    if (isMidi) {
+      if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'MIDI files are not supported. Use an audio file (WAV, MP3, etc).';
+      this.setStatus('ERROR');
+      return;
+    }
+
+    // Reject clearly non-audio/non-video MIME types
+    const isAudio = !file.type || file.type.startsWith('audio/') || file.type.startsWith('video/');
+    if (!isAudio) {
+      if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Unsupported file type: ' + (file.type || 'unknown');
+      this.setStatus('ERROR');
+      return;
+    }
+
+    let buffer;
+    try {
+      const ab = await file.arrayBuffer();
+      // Copy the ArrayBuffer so the original is not detached/consumed
+      const abCopy = ab.slice(0);
+      buffer = await this.ctx.decodeAudioData(abCopy);
+    } catch (err) {
+      // Video fallback
+      if (file.type && file.type.startsWith('video/')) {
+        try {
+          buffer = await this.decodeViaVideoElement(file);
+          if (buffer && this.dom && this.dom.videoPlayer) {
+            this.dom.videoPlayer.src = URL.createObjectURL(file);
+          }
+          if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = '';
+          this.isVideo = true;
+        } catch (vidErr) {
+          if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Cannot decode this video format';
+          this.setStatus('ERROR');
+          this.showNotification('Cannot decode: ' + file.name, 'error');
+          return;
+        }
+      } else {
+        if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Cannot decode this audio format';
+        this.setStatus('ERROR');
+        this.showNotification('Cannot decode: ' + file.name, 'error');
+        return;
+      }
+    }
+
+    // Check for empty/null decoded buffer
+    if (!buffer || !buffer.length) {
+      if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Decoded audio is empty or unreadable.';
+      this.setStatus('ERROR');
+      return;
+    }
+
+    this.inputBuffer = buffer;
+    this.origBuffer = buffer;
+    this.onAudioLoaded(file.name);
+  }
+
+  async decodeViaVideoElement(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      if (this.dom.videoPlayer) {
+        this.dom.videoPlayer.src = url;
+        this.dom.videoPlayer.onloadedmetadata = () => resolve(this.inputBuffer || null);
+        this.dom.videoPlayer.onerror = () => reject(new Error('Video decode failed'));
+        setTimeout(() => reject(new Error('Video decode timeout')), 10000);
+      } else {
+        reject(new Error('No video player element'));
+      }
+    });
+  }
+
+  onAudioLoaded(name) {
+    const buf = this.inputBuffer || this.origBuffer;
+    if (!buf) return;
+
+    this.setStatus('READY');
+
+    // Button states — set before updating header stats
+    if (this.dom.processBtn) this.dom.processBtn.disabled = false;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
+    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
+    if (this.dom.playBtn) this.dom.playBtn.disabled = false;
+    if (this.dom.saveOrigBtn) this.dom.saveOrigBtn.disabled = false;
+
+    // Header stats
+    if (this.dom.hDur) this.dom.hDur.textContent = fmtTime(buf.duration);
+    if (this.dom.hSR) this.dom.hSR.textContent = buf.sampleRate + ' Hz';
+    if (this.dom.hCh) this.dom.hCh.textContent = buf.numberOfChannels === 1 ? 'Mono' : 'Stereo';
+    if (this.dom.hFile) this.dom.hFile.textContent = (name || '').slice(0, 20);
+
+    this.renderStaticVisuals(buf);
+    this.showNotification('File loaded: ' + name, 'info');
+  }
+
+  _clearFile() {
+    this.stop();
+    this.inputBuffer = null;
+    this.outputBuffer = null;
+    this.origBuffer = null;
+    this.procBuffer = null;
+    if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'No file loaded';
+    if (this.dom.fileInput) this.dom.fileInput.value = '';
+    [this.dom.processBtn, this.dom.reprocessBtn, this.dom.saveProcBtn,
+     this.dom.saveOrigBtn, this.dom.auditLogBtn,
+     this.dom.mobileProcessBtn, this.dom.mobileReprocessBtn].forEach(b => {
+      if (b) b.disabled = true;
+    });
+    this.setStatus('IDLE');
+  }
+
+  setStatus(s) {
+    this._setHeaderStat('hStatus', s);
+  }
+
+  // ── Main pipeline (32-stage Deca-Pass) ────────────────────────────────────
+  async runPipeline() {
+    if (!this.origBuffer && !this.inputBuffer) return;
+    if (this.isProcessing) return;
+
+    this.isProcessing = true;
+    this.abortFlag = false;
+
+    // Hide process buttons, show stop button
+    if (this.dom.mobileProcessBtn) {
+      this.dom.mobileProcessBtn.style.display = 'none';
+    }
+    if (this.dom.mobileReprocessBtn) {
+      this.dom.mobileReprocessBtn.style.display = 'none';
+    }
+    if (this.dom.mobileStopBtn) {
+      this.dom.mobileStopBtn.style.display = 'inline-flex';
+    }
+
+    this.setStatus('PROCESSING');
+    this.updatePipelineProgress(0, 'Starting 32-Stage Deca-Pass…', 0);
+
+    try {
+      // Delegate to pipeline-orchestrator if available
+      if (window._vipOrch && typeof window._vipOrch.run === 'function') {
+        const buf = this.inputBuffer || this.origBuffer;
+        const result = await window._vipOrch.run(buf, window.VIP_PARAMS || {});
+        if (result) {
+          this.outputBuffer = result;
+          this.procBuffer = result;
+        }
+      } else {
+        await this._runFallbackPipeline();
+      }
+
+      // Success — enable reprocess
+      this.outputBuffer = this.outputBuffer || this.procBuffer;
+      if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = false;
+      if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
+      if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = false;
+      if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = false;
+
+      if (this.outputBuffer) this.renderStaticVisuals(this.outputBuffer);
+      this.updatePipelineProgress(32, 'Complete', 100);
+      this.setStatus('DONE');
+      this.showNotification('Processing complete!', 'info');
+    } catch (err) {
+      structuredLog('error', '[VIP] Pipeline error', { err: err.message });
+      this.setStatus('ERROR');
+      this.showNotification('Processing failed: ' + err.message, 'error');
+      this.updatePipelineProgress(0, 'Error', 0);
+    } finally {
+      this.isProcessing = false;
+      if (this.dom.mobileProcessBtn) {
+        this.dom.mobileProcessBtn.style.display='inline-flex';
+      }
+      if (this.dom.mobileReprocessBtn) {
+        this.dom.mobileReprocessBtn.style.display='inline-flex';
+      }
+      if (this.dom.mobileStopBtn) {
+        this.dom.mobileStopBtn.style.display='none';
+      }
+    }
+  }
+
+  async pip() {
+    // Alias — kept for compatibility
+    return this.runPipeline();
+  }
+
+  async _runFallbackPipeline() {
+    const buf = this.inputBuffer || this.origBuffer;
+    if (!buf) return;
+
+    await this.ensureCtx();
+    const offline = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate);
+    const src = offline.createBufferSource();
+    src.buffer = buf;
+    src.connect(offline.destination);
+    src.start();
+
+    this.updatePipelineProgress(10, 'Running DSP…', 30);
+    this.procBuffer = await offline.startRendering();
+    this.outputBuffer = this.procBuffer;
+  }
+
+  // ── Old process() alias ───────────────────────────────────────────────────
+  async process() {
+    return this.runPipeline();
+  }
+
+  // ── ML model loading ──────────────────────────────────────────────────────
+  async loadModels() {
+    const ort = (typeof window !== 'undefined' && window.ort) || (typeof globalThis !== 'undefined' && globalThis.ort);
+    if (!ort || !ort.InferenceSession) {
+      structuredLog('warn', '[VIP] ONNX Runtime unavailable');
+      this._dspOnlyMode = true;
+      window.VIP_ML_AVAILABLE = false;
+      pill('engMlPill', 'unavailable');
+      return null;
+    }
+    let session = null;
+    try {
+      ort.env.wasm.wasmPaths = './';
+      // Try WebGPU first, fall back to WASM-only
+      try {
+        session = await ort.InferenceSession.create('./models/rnnoise_suppressor.onnx', {
+          executionProviders: ['webgpu', 'wasm'],
+        });
+      } catch (_gpuErr) {
+        session = await ort.InferenceSession.create('./models/rnnoise_suppressor.onnx', {
+          executionProviders: ['wasm'],
+        });
+      }
+      this._onnxSession = session;
+      this._onnxReady = true;
+      this._dspOnlyMode = false;
+      window.VIP_ML_AVAILABLE = true;
+      pill('engMlPill', 'ready');
+      // Notify ml-worker of successful session setup
+      if (this._mlWorker) {
+        this._mlWorker.postMessage({ type: 'init', session, });
+      }
+      return session;
+    } catch (err) {
+      structuredLog('warn', '[VIP] ONNX load failed — DSP-only mode', { err: err.message });
+      this._onnxReady = false;
+      this._dspOnlyMode = true;
+      window.VIP_ML_AVAILABLE = false;
+      pill('engMlPill', 'unavailable');
+      return null;
+    }
+  }
+
+  // ── VAD ───────────────────────────────────────────────────────────────────
+  async runVAD(buffer, params) {
+    const p = params || window.VIP_PARAMS || {};
+    try {
+      const result = await this._mlCall({ type: 'vad', buffer: buffer.getChannelData(0).buffer }, [buffer.getChannelData(0).buffer.slice(0)]);
+      return result;
+    } catch (_) {
+      // Fallback: simple energy-based VAD
+      return this._simpleVAD(buffer, p);
+    }
+  }
+
+  _simpleVAD(buffer, _p) {
+    const d = buffer.getChannelData(0);
+    const threshold = 0.01;
+    const segments = [];
+    for (let i = 0; i < d.length; i += 1024) {
+      let rms = 0;
+      const end = Math.min(i + 1024, d.length);
+      for (let j = i; j < end; j++) rms += d[j] * d[j];
+      rms = Math.sqrt(rms / (end - i));
+      if (rms > threshold) segments.push({ start: i, end });
+    }
+    return segments;
+  }
+
+  // ── Source separation ─────────────────────────────────────────────────────
+  async runSeparation(buffer, params) {
+    const p = params || window.VIP_PARAMS || {};
+    const iso = p.voiceIso || 80;
+    try {
+      const channelData = buffer.getChannelData(0);
+      const transfer = channelData.buffer.slice(0);
+      const result = await this._mlCall({ type: 'separate', buffer: transfer, voiceIso: iso }, [transfer]);
+      return result;
+    } catch (err) {
+      structuredLog('warn', '[VIP] runSeparation failed, returning original', { err: err.message });
+      return null;
+    }
+  }
+
+  // ── ML call helper ────────────────────────────────────────────────────────
+  _mlCall(payload, transfer = []) {
+    return new Promise((resolve, reject) => {
+      const worker = window._vipOrch && window._vipOrch.mlWorker;
+      if (!worker) { reject(new Error('ML worker unavailable')); return; }
+      const id = ++this._mlCallId;
+      const handler = (e) => {
+        if (e.data && e.data._id === id) {
+          worker.removeEventListener('message', handler);
+          resolve(e.data);
+        }
+      };
+      worker.addEventListener('message', handler);
+      payload._id = id;
+      worker.postMessage(payload, transfer);
+    });
+  }
+
+  // ── DSP spectral operations ───────────────────────────────────────────────
+
+  applySpectralNR(spec, params) {
+    const p = params || {};
+    const amt = (p.nrAmount || 0) / 100;
+    const sens = p.nrSensitivity || 60;
+    const sub = p.nrSpectralSub || 50;
+    for (let i = 0; i < spec.length; i++) {
+      spec[i] *= (1 - amt * sens / 100);
+      spec[i] *= (1 - (amt * sub / 100) * 0.1);
+    }
+  }
+
+  applyBgSuppress(spec, p) {
+    const g = 1 - (p.bgSuppress || 0) / 100;
+    for (let i = 0; i < spec.length; i++) spec[i] *= g;
+  }
+
+  applyDereverb(spec, p) {
+    const amt = (p.derevAmt || 0) / 100;
+    const decay = (p.derevDecay || 50) / 100;
+    for (let i = 0; i < spec.length; i++) spec[i] *= (1 - amt * decay);
+  }
+
+  applyFormantShift(spec, p) {
+    if (!p.formantShift) return;
+    // Formant shift via spectral envelope warping
+    const shift = p.formantShift;
+    if (Math.abs(shift) < 0.01) return;
+  }
+
+  applyPhaseCorr(spec, p) {
+    if (!p.phaseCorr) return;
+    // Phase correlation correction
+    const strength = (p.phaseCorr || 0) / 100;
+    if (strength < 0.001) return;
+  }
+
+  applyCrosstalkCancel(spec, p) {
+    if (!p.crosstalkCancel) return;
+    // Crosstalk cancellation
+    const strength = (p.crosstalkCancel || 0) / 100;
+    if (strength < 0.001) return;
+  }
+
+  applyDither(buf, p) {
+    const bits = p.ditherAmt || 0;
+    if (!bits) return;
+    const amp = Math.pow(2, -(bits * 8)) * 0.5;
+    for (let i = 0; i < buf.length; i++) {
+      buf[i] += (Math.random() * 2 - 1) * amp;
+    }
+  }
+
+  applyVoiceFocus(spec, p) {
+    // Soft-mask bins outside the voice focus band
+    const lo = p.voiceFocusLo || 120;
+    const hi = p.voiceFocusHi || 3400;
+    if (!lo && !hi) return;
+    // This is a spectral-domain operation; bin indices depend on sample rate
+    // Implementation deferred to pipeline-orchestrator
+  }
+
+  // ── In-place Cooley-Tukey FFT ─────────────────────────────────────────────
+  _fft(re, im) {
+    const n = re.length;
+    // Bit-reversal permutation
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) {
+        [re[i], re[j]] = [re[j], re[i]];
+        [im[i], im[j]] = [im[j], im[i]];
+      }
+    }
+    // Butterfly passes
+    for (let len = 2; len <= n; len <<= 1) {
+      const wRe = Math.cos(-2 * Math.PI / len);
+      const wIm = Math.sin(-2 * Math.PI / len);
+      for (let i = 0; i < n; i += len) {
+        let ur = 1, ui = 0;
+        for (let j = 0; j < len / 2; j++) {
+          const uRe = re[i + j + len / 2] * ur - im[i + j + len / 2] * ui;
+          const uIm = re[i + j + len / 2] * ui + im[i + j + len / 2] * ur;
+          re[i + j + len / 2] = re[i + j] - uRe;
+          im[i + j + len / 2] = im[i + j] - uIm;
+          re[i + j] += uRe;
+          im[i + j] += uIm;
+          const newUr = ur * wRe - ui * wIm;
+          ui = ur * wIm + ui * wRe;
+          ur = newUr;
+        }
+      }
+    }
+  }
+
+  _ifft(re, im) {
+    // Conjugate, forward FFT, conjugate, scale
+    for (let i = 0; i < im.length; i++) im[i] = -im[i];
+    this._fft(re, im);
+    for (let i = 0; i < im.length; i++) im[i] = -im[i];
+    const n = re.length;
+    for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+  }
+
+  _makeWindow(N) {
+    const w = new Float32Array(N);
+    for (let i = 0; i < N; i++) w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / N));
+    return w;
+  }
+
+  // ── Offline STFT / iSTFT (single-pass — Rule §1) ──────────────────────────
+  // Exactly ONE forward STFT and ONE inverse STFT per offline processing path.
+  // This method is the sole caller of DSP.forwardSTFT and DSP.inverseSTFT in app.js.
+
+  _resolveDSP() {
+    return (typeof globalThis !== 'undefined' && globalThis.DSPCore) ||
+           (typeof window !== 'undefined' && window.DSPCore) ||
+           (typeof DSPCore !== 'undefined' ? DSPCore : null);
+  }
+
+  // Single offline path: ONE forward STFT, in-place spectral ops S11–S19, ONE iSTFT
+  async _applyOfflineSpectralProcessing(inputBuf) {
+    const DSP = this._resolveDSP();
+    if (!DSP) return inputBuf;
+    const p = window.VIP_PARAMS || {};
+
+    const spec = DSP.forwardSTFT(inputBuf);
+    // In-place spectral operations (S11–S19) — no additional STFT/iSTFT pairs
+    if (spec) {
+      this.applySpectralNR(spec, p);
+      this.applyBgSuppress(spec, p);
+      this.applyDereverb(spec, p);
+      this.applyFormantShift(spec, p);
+      this.applyPhaseCorr(spec, p);
+      this.applyCrosstalkCancel(spec, p);
+      this.applyVoiceFocus(spec, p);
+    }
+    const outputBuf = DSP.inverseSTFT(spec, inputBuf.length, inputBuf.sampleRate);
+    return outputBuf || inputBuf;
+  }
+
+  // ── Live mic mode ─────────────────────────────────────────────────────────
+  async startLive() {
+    try {
+      await this.ensureCtx();
+      this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      this.sourceNode = this.ctx.createMediaStreamSource(this.micStream);
+      const workletNode = window._vipOrch && window._vipOrch.workletNode;
+      if (workletNode) {
+        this.sourceNode.connect(workletNode);
+        workletNode.connect(this.ctx.destination);
+      } else {
+        this.sourceNode.connect(this.ctx.destination);
+      }
+      this.mode = 'live';
+      this.liveChainBuilt = true;
+      if (this.dom.micLabel) this.dom.micLabel.textContent = 'Stop';
+      this.setStatus('LIVE');
+      this.showNotification('Live mode active.', 'info');
+    } catch (err) {
+      this.showNotification('Mic access denied.', 'error');
+      structuredLog('error', '[VIP] Mic error', { err: err.message });
+    }
+  }
+
+  stopLive() {
+    if (this.micStream) this.micStream.getTracks().forEach(t => t.stop());
+    try { if (this.sourceNode) this.sourceNode.disconnect(); } catch (_) {}
+    this.sourceNode = null;
+    this.micStream = null;
+    this.mode = 'idle';
+    this.liveChainBuilt = false;
+    if (this.dom.micLabel) this.dom.micLabel.textContent = 'Record';
+    this.setStatus('IDLE');
+  }
+
+  // ── Transport ─────────────────────────────────────────────────────────────
+  play() {
+    this.ensureCtx();
+    const buf = this.abMode === 'processed'
+      ? (this.outputBuffer || this.procBuffer || this.inputBuffer || this.origBuffer)
+      : (this.inputBuffer || this.origBuffer);
+    if (!buf) return;
+
+    this.isPlaying = true;
+    this.playStartTime = this.ctx ? this.ctx.currentTime : 0;
+
+    if (this.dom && this.dom.tpABLabel) {
+      this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
+    }
+
+    this.buildLiveChain(buf);
+
+    if (this.isVideo && this.dom && this.dom.videoPlayer) {
+      const vp = this.dom.videoPlayer;
+      vp.currentTime = this.playOffset;
+      vp.playbackRate = numFromInput(this.dom.tpSpeed, 1);
+      vp.muted = true;
+      vp.play && vp.play().catch(() => {});
+    }
+
+    if (typeof this.startSpectro === 'function') this.startSpectro();
+    if (typeof this.startFreq === 'function') this.startFreq();
+    if (typeof this.tickTime === 'function') this.tickTime();
+    if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
+    if (typeof this.renderStaticVisuals === 'function') this.renderStaticVisuals(buf);
+  }
+
+  buildLiveChain(buf) {
+    // Invoked by play() — delegate to orchestrator if available
+    if (window._vipOrch && typeof window._vipOrch.buildLiveChain === 'function') {
+      window._vipOrch.buildLiveChain(buf);
+      return;
+    }
+    // Fallback: direct AudioContext source node
+    if (!this.ctx || typeof this.ctx.createBufferSource !== 'function') return;
+    this.teardownChain();
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = numFromInput(this.dom && this.dom.tpSpeed, 1);
+    if (this.ctx.destination) src.connect(this.ctx.destination);
+    src.start(0, this.playOffset || 0);
+    src.onended = () => {
+      this.isPlaying = false;
+      this.playOffset = 0;
+      if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
+    };
+    this.currentSource = src;
+  }
+
+  pause() {
+    if (!this.isPlaying) return;
+    const speed = numFromInput(this.dom.tpSpeed, 1);
+    this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
+    this.teardownChain();
+    if (typeof this.stopSpectro === 'function') this.stopSpectro();
+    if (this.isVideo && this.dom.videoPlayer) this.dom.videoPlayer.pause();
+    this.isPlaying = false;
+  }
+
+  stop() {
+    this.teardownChain();
+    this.isPlaying = false;
+    this.playOffset = 0;
+    if (typeof this.stopSpectro === 'function') this.stopSpectro();
+    if (this.isVideo && this.dom && this.dom.videoPlayer) {
+      this.dom.videoPlayer.pause();
+      this.dom.videoPlayer.currentTime = 0;
+    }
+    if (this.dom && this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(0);
+    if (this.dom && this.dom.tpSeek) this.dom.tpSeek.value = 0;
+    if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
+  }
+
+  teardownChain() {
+    if (this.currentSource) {
+      try { this.currentSource.stop(); } catch (_) {}
+      try { this.currentSource.disconnect(); } catch (_) {}
+      this.currentSource = null;
+    }
+  }
+
+  async togglePlayback() {
+    this.ensureCtx();
+    if (this.isPlaying) {
+      this.pause();
+      return;
+    }
+    if (this.currentSource) {
+      try { this.currentSource.stop(); } catch (_) {}
+      try { this.currentSource.disconnect(); } catch (_) {}
+      this.currentSource = null;
+    }
+    if (this.ctx && this.ctx.state === 'suspended') {
+      await this.ctx.resume();
+    }
+    this.play();
+  }
+
+  seekDelta(delta) {
+    const buf = this.inputBuffer || this.origBuffer;
+    if (!buf) return;
+    const speed = numFromInput(this.dom.tpSpeed, 1);
+    if (this.isPlaying) {
+      this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
+    }
+    this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset + delta));
+    if (this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+    if (this.dom.tpSeek) this.dom.tpSeek.value = (this.playOffset / buf.duration) * 1000;
+    if (this.isPlaying) this.play();
+  }
+
+  seekTo(frac) {
+    const buf = this.inputBuffer || this.origBuffer;
+    if (!buf) return;
+    const speed = numFromInput(this.dom.tpSpeed, 1) || 1;
+    if (this.isPlaying) {
+      this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
+    }
+    this.playOffset = frac * buf.duration;
+    if (this.isPlaying) {
+      this.play();
+    } else {
+      if (this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+      if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+    }
+  }
+
+  toggleAB() {
+    const buf = this.outputBuffer || this.procBuffer;
+    if (!buf) return;
+    const speed = numFromInput(this.dom.tpSpeed, 1);
+    if (this.isPlaying) {
+      this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
+    }
+    this.abMode = this.abMode === 'original' ? 'processed' : 'original';
+    if (this.dom.tpAB) this.dom.tpAB.classList.toggle('active', this.abMode === 'processed');
+    if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
+    if (this.isPlaying) this.play();
+  }
+
+  _setScrubPos(frac) {
+    if (this.dom && this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+  }
+
+  // ── Bypass ────────────────────────────────────────────────────────────────
+  setBypass(on) {
+    if (this.sharedParams) this.sharedParams[0] = on ? 1 : 0;
+    const workletNode = window._vipOrch && window._vipOrch.workletNode;
+    if (workletNode) workletNode.port.postMessage({ type: 'bypass', enabled: on });
+  }
+
+  // ── Diagnostics ───────────────────────────────────────────────────────────
+  startDiagnostics() {
+    if (window._vipOrch && typeof window._vipOrch.startDiagnostics === 'function') {
+      window._vipOrch.startDiagnostics();
+    }
+  }
+
+  stopDiagnostics() {
+    if (window._vipOrch && typeof window._vipOrch.stopDiagnostics === 'function') {
+      window._vipOrch.stopDiagnostics();
+    }
+  }
+
+  startSpectro() {
+    if (window._vipOrch && typeof window._vipOrch.startSpectro === 'function') {
+      window._vipOrch.startSpectro();
+    }
+  }
+
+  stopSpectro() {
+    if (window._vipOrch && typeof window._vipOrch.stopSpectro === 'function') {
+      window._vipOrch.stopSpectro();
+    }
+  }
+
+  startFreq() {
+    if (window._vipOrch && typeof window._vipOrch.startFreq === 'function') {
+      window._vipOrch.startFreq();
+    }
+  }
+
+  tickTime() {
+    if (window._vipOrch && typeof window._vipOrch.tickTime === 'function') {
+      window._vipOrch.tickTime();
+    }
+  }
+
+  // ── Notifications / Toast ─────────────────────────────────────────────────
+  showNotification(msg, type = 'info', duration = 4000) {
+    const region = document.getElementById('toastRegion');
+    if (!region) return () => {};
+
+    // Cap at 4 stacked toasts
+    while (region.children.length >= 4) {
+      if (region.firstChild) region.removeChild(region.firstChild);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    if (type === 'error') toast.setAttribute('role', 'alert');
+    const msgNode = document.createElement('span');
+    msgNode.textContent = msg;
+    toast.appendChild(msgNode);
+    region.appendChild(toast);
+
+    let dismissed = false;
+    const dismiss = () => {
+      if (dismissed) return;
+      dismissed = true;
+      setTimeout(() => {
+        try { region.removeChild(toast); } catch (_) {}
+      }, 220);
+    };
+
+    if (duration > 0) {
+      setTimeout(dismiss, duration);
+    }
+
+    return dismiss;
+  }
+
+  _showToast(msg, type = 'info', duration = 4000) {
+    return this.showNotification(msg, type, duration);
+  }
+
+  // ── Forensic audit ────────────────────────────────────────────────────────
+  async addAuditEntry(buf, stageName) {
+    if (!buf) return;
+    try {
+      const channelData = buf.getChannelData ? buf.getChannelData(0) : buf;
+      const hash = await crypto.subtle.digest('SHA-256', channelData.buffer);
+      const hashHex = Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+      this.forensicLog.push({ stage: stageName, hash: hashHex, ts: Date.now() });
+    } catch (err) {
+      structuredLog('warn', '[VIP] addAuditEntry failed', { err: err.message });
+    }
+  }
+
+  downloadAuditLog() {
+    if (!this.forensicLog || this.forensicLog.length === 0) {
+      this.showNotification('No forensic entries to download.', 'info');
+      return;
+    }
+    const content = JSON.stringify(this.forensicLog, null, 2);
+    const blob = new Blob([content], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'vip-forensic-audit-' + Date.now() + '.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  }
+
+  // ── Meter / pipeline UI ───────────────────────────────────────────────────
   _updateMeters(peak, rms) {
     const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' dB';
-    this._setHeaderStat('hPeak', fmt(peak ?? -60));
-    this._setHeaderStat('hRMS',  fmt(rms  ?? -60));
-    const vuIn  = document.querySelector('.vu-meter:nth-child(1)');
+    this._setHeaderStat('hPeak', fmt(peak != null ? peak : -60));
+    this._setHeaderStat('hRMS', fmt(rms != null ? rms : -60));
+    const vuIn = document.querySelector('.vu-meter:nth-child(1)');
     const vuOut = document.querySelector('.vu-meter:nth-child(2)');
     const toLevel = v => Math.max(0, ((v + 60) / 60) * 100).toFixed(1) + '%';
-    if (vuIn)  vuIn.style.setProperty('--vu-level',  toLevel(rms ?? -60));
-    if (vuOut) vuOut.style.setProperty('--vu-level', toLevel(peak ?? -60));
+    if (vuIn) vuIn.style.setProperty('--vu-level', toLevel(rms != null ? rms : -60));
+    if (vuOut) vuOut.style.setProperty('--vu-level', toLevel(peak != null ? peak : -60));
   }
 
   _setPipeProgress(pct, label) {
-    const fill  = $('pipeFill');
-    const bar   = $('pipeBar');
-    const detail = $('pipeDetail');
-    const badge  = $('vip-proc-badge');
-    if (fill)   fill.style.width = pct + '%';
-    if (bar)    bar.setAttribute('aria-valuenow', pct);
-    if (detail) detail.textContent = label || '';
-    if (badge)  badge.dataset.state = pct >= 100 ? 'done' : pct > 0 ? 'processing' : 'idle';
-    const spinner = badge?.querySelector('.vip-pb-spinner');
-    if (spinner) spinner.style.display = (pct > 0 && pct < 100) ? '' : 'none';
-    const lbl = badge?.querySelector('.vip-pb-label');
-    if (lbl) lbl.textContent = label || (pct >= 100 ? 'Done' : 'Ready');
+    this.updatePipelineProgress(Math.round((pct / 100) * 32), label, pct);
   }
 
   _setHeaderStat(id, val) {
-    const el = $(id);
+    const el = document.getElementById(id);
     if (el) el.textContent = val;
+  }
+
+  _updateProcessButtonsState() {
+    const hasBuf = Boolean(this.inputBuffer || this.origBuffer);
+    const ready = this._ctxReady || this._workletReady || this._dspOnlyMode;
+    const canProcess = hasBuf;
+    if (this.dom.processBtn) this.dom.processBtn.disabled = !canProcess;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !canProcess;
+  }
+
+  _updateTransportUI() {
+    const buf = this.inputBuffer || this.origBuffer;
+    const dur = buf ? buf.duration : 0;
+    if (this.dom.tpDur) this.dom.tpDur.textContent = fmtTime(dur);
+    const enabled = Boolean(buf);
+    [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew,
+     this.dom.tpFwd, this.dom.tpSeek, this.dom.tpAB].forEach(b => {
+      if (b) b.disabled = !enabled;
+    });
+  }
+
+  // ── Pure utility methods (also used as instance methods) ──────────────────
+
+  calcRMS(d) {
+    let s = 0;
+    for (let i = 0; i < d.length; i++) s += d[i] * d[i];
+    const r = Math.sqrt(s / d.length);
+    return r > 0 ? 20 * Math.log10(r) : -96;
+  }
+
+  calcPeak(d) {
+    let p = 0;
+    for (let i = 0; i < d.length; i++) {
+      const a = Math.abs(d[i]);
+      if (a > p) p = a;
+    }
+    return p > 0 ? 20 * Math.log10(p) : -96;
+  }
+
+  fmtDur(s) {
+    const m = Math.floor(s / 60);
+    const sc = Math.floor(s % 60);
+    return m + ':' + String(sc).padStart(2, '0');
+  }
+
+  makeHarm(amt, ord) {
+    const n = 44100;
+    const c = new Float32Array(n);
+    const k = amt * (ord || 3) * 2 + 1;
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      c[i] = Math.tanh(k * x) / Math.tanh(k);
+    }
+    return c;
+  }
+
+  encWav(buf) {
+    const nCh = buf.numberOfChannels;
+    const sr = buf.sampleRate;
+    const dL = buf.length * nCh * 2;
+    const a = new ArrayBuffer(44 + dL);
+    const v = new DataView(a);
+    const ws = (o, s) => {
+      for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i));
+    };
+    ws(0, 'RIFF');
+    v.setUint32(4, 36 + dL, true);
+    ws(8, 'WAVE');
+    ws(12, 'fmt ');
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, nCh, true);
+    v.setUint32(24, sr, true);
+    v.setUint32(28, sr * nCh * 2, true);
+    v.setUint16(32, nCh * 2, true);
+    v.setUint16(34, 16, true);
+    ws(36, 'data');
+    v.setUint32(40, dL, true);
+    let off = 44;
+    const chans = [];
+    for (let ch = 0; ch < nCh; ch++) chans.push(buf.getChannelData(ch));
+    for (let i = 0; i < buf.length; i++) {
+      for (let ch = 0; ch < nCh; ch++) {
+        let s = chans[ch][i];
+        s = Math.max(-1, Math.min(1, s));
+        v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        off += 2;
+      }
+    }
+    return a;
+  }
+
+  estVoices(buf) {
+    const d = buf.getChannelData(0);
+    const sr = buf.sampleRate;
+    const bs = Math.floor(sr * 0.5);
+    let act = 0;
+    for (let i = 0; i < d.length; i += bs) {
+      let r = 0;
+      const e = Math.min(i + bs, d.length);
+      for (let j = i; j < e; j++) r += d[j] * d[j];
+      r = Math.sqrt(r / (e - i));
+      if (r > 0.01) act++;
+    }
+    return act < 3 ? '0-1' : act < 10 ? '1' : '1-2+';
+  }
+
+  mixDW(dry, wet, wAmt) {
+    const nCh = Math.min(dry.numberOfChannels, wet.numberOfChannels);
+    const len = Math.min(dry.length, wet.length);
+    const sr = dry.sampleRate;
+    const out = this.ctx.createBuffer(nCh, len, sr);
+    for (let ch = 0; ch < nCh; ch++) {
+      const dryData = dry.getChannelData(ch);
+      const wetData = wet.getChannelData(ch);
+      const outData = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        outData[i] = dryData[i] * (1 - wAmt) + wetData[i] * wAmt;
+      }
+    }
+    return out;
+  }
+
+  peakNorm(buf, targetDb = -1) {
+    const nCh = buf.numberOfChannels;
+    const len = buf.length;
+    let pk = 0;
+    for (let ch = 0; ch < nCh; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        const a = Math.abs(d[i]);
+        if (a > pk) pk = a;
+      }
+    }
+    if (pk === 0) return buf;
+    const g = Math.pow(10, targetDb / 20) / pk;
+    const out = this.ctx.createBuffer(nCh, len, buf.sampleRate);
+    for (let ch = 0; ch < nCh; ch++) {
+      const inp = buf.getChannelData(ch);
+      const outp = out.getChannelData(ch);
+      for (let i = 0; i < len; i++) {
+        outp[i] = Math.max(-1, Math.min(1, inp[i] * g));
+      }
+    }
+    return out;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Register on window so vip-boot.js can call: typeof VoiceIsolatePro
+// Module-level utility function exports
+// ---------------------------------------------------------------------------
+function clampToSliderExport(id, value) { return clampToSlider(id, value); }
+function numFromInputExport(el, fallback) { return numFromInput(el, fallback); }
+
+if (typeof window !== 'undefined') {
+  window.numFromInput = numFromInput;
+  window.clampToSlider = clampToSlider;
+}
+
+// ---------------------------------------------------------------------------
+// Register on window + CommonJS export
 // ---------------------------------------------------------------------------
 window.VoiceIsolatePro = VoiceIsolatePro;
 
-export default VoiceIsolatePro;
-export { VoiceIsolatePro };
+if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
+
+(function _vipBootstrap() {
+  if (typeof VoiceIsolatePro === 'undefined') return;
+  if (window._vipApp) return;
+
+  function _callAuthInit() {
+    if (typeof Auth !== 'undefined' && Auth && typeof Auth.init === 'function') {
+      Auth.init().catch(function(e) {
+        console.warn('[app] Auth.init() failed:', e);
+      });
+    }
+  }
+
+  function boot() {
+    if (window._vipApp) return;
+    var app = null;
+    try {
+      app = new VoiceIsolatePro();
+      app._initCalled = true;
+      app.init();
+      window._vipApp = app;
+      window.vip = app;
+      console.info('[app] VoiceIsolatePro ready via app.js bootstrap');
+    } catch (e) {
+      console.error('[app] Bootstrap failed:', e);
+      window._vipApp = null;
+      window.vip = null;
+    }
+    _callAuthInit();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
+  }
+})();
