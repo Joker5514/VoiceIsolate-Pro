@@ -683,6 +683,261 @@ class PipelineOrchestrator {
     }
   }
 
+  // ── syncParams — alias used by applyPreset during live mode ────────────────
+  syncParams(params) {
+    if (!params || typeof params !== 'object') return;
+    this.updateParams(this._normalizeRawParams(params));
+  }
+
+  // ── run — offline DSP pipeline (called by app.js runPipeline) ───────────────
+  /**
+   * Process an already-decoded AudioBuffer through the DSP chain.
+   * Applies: HP/LP filters, 10-band EQ, de-esser, compressor, limiter,
+   * output gain, and dry/wet mix — driven entirely by VIP_PARAMS keys.
+   *
+   * @param {AudioBuffer} audioBuffer  Decoded input audio
+   * @param {Object}      params       Raw slider values (window.VIP_PARAMS format)
+   * @returns {Promise<AudioBuffer>}   Processed audio
+   */
+  async run(audioBuffer, params = {}) {
+    if (!audioBuffer) return null;
+    const p   = params;
+    const sr  = audioBuffer.sampleRate;
+    const nCh = audioBuffer.numberOfChannels;
+    const len = audioBuffer.length;
+    const DSP = (typeof window !== 'undefined' && window.DSPCore) ||
+                (typeof globalThis !== 'undefined' && globalThis.DSPCore);
+
+    // ── Stage 1: noise gate + Web Audio chain ─────────────────────────────
+    const gateThreshDb   = p.gateThresh ?? -42;
+    const gateActive     = gateThreshDb > -79;
+    const gateThreshLin  = Math.pow(10, gateThreshDb / 20);
+    const gateRangeLin   = Math.pow(10, (p.gateRange ?? -60) / 20);
+    const gateAttCoef    = gateActive ? Math.exp(-1 / (Math.max(0.001, (p.gateAttack  ?? 5)   / 1000) * sr)) : 0;
+    const gateRelCoef    = gateActive ? Math.exp(-1 / (Math.max(0.01,  (p.gateRelease ?? 200) / 1000) * sr)) : 0;
+    const gateHoldSmp    = Math.round((p.gateHold ?? 50) / 1000 * sr);
+
+    const offline = new OfflineAudioContext(nCh, len, sr);
+
+    // Build gated input buffer (noise gate applied per-sample on raw audio)
+    const inputBuf = offline.createBuffer(nCh, len, sr);
+    for (let ch = 0; ch < nCh; ch++) {
+      const src = audioBuffer.getChannelData(ch);
+      const dst = inputBuf.getChannelData(ch);
+      if (gateActive) {
+        let env = 0, gGain = 1, hold = 0;
+        for (let i = 0; i < len; i++) {
+          const lvl = Math.abs(src[i]);
+          env = lvl > env
+            ? lvl + gateAttCoef * (env - lvl)
+            : lvl + gateRelCoef * (env - lvl);
+          if (env >= gateThreshLin) { gGain = 1; hold = gateHoldSmp; }
+          else if (hold > 0)        { hold--;     gGain = 1; }
+          else                       { gGain = gateRangeLin; }
+          dst[i] = src[i] * gGain;
+        }
+      } else {
+        dst.set(src);
+      }
+    }
+
+    const srcNode = offline.createBufferSource();
+    srcNode.buffer = inputBuf;
+    let chain = srcNode;
+
+    // HP filter
+    const hp = offline.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = Math.max(20, Math.min(sr / 2 - 1, p.hpFreq ?? 80));
+    hp.Q.value = Math.max(0.1, p.hpQ ?? 0.7);
+    chain.connect(hp); chain = hp;
+
+    // LP filter
+    const lp = offline.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = Math.max(20, Math.min(sr / 2 - 1, p.lpFreq ?? 18000));
+    lp.Q.value = Math.max(0.1, p.lpQ ?? 0.7);
+    chain.connect(lp); chain = lp;
+
+    // 10-band EQ
+    const eqFreqs = [40, 120, 350, 700, 1500, 3000, 5000, 8000, 12000, 18000];
+    const eqKeys  = ['eqSub','eqBass','eqWarmth','eqBody','eqLowMid',
+                     'eqMid','eqPresence','eqClarity','eqAir','eqBrill'];
+    for (let i = 0; i < 10; i++) {
+      const gain = p[eqKeys[i]] ?? 0;
+      if (Math.abs(gain) < 0.01) continue;
+      const eq = offline.createBiquadFilter();
+      eq.type = 'peaking';
+      eq.frequency.value = Math.min(eqFreqs[i], sr / 2 - 100);
+      eq.gain.value = Math.max(-12, Math.min(12, gain));
+      eq.Q.value = 1.4;
+      chain.connect(eq); chain = eq;
+    }
+
+    // De-esser
+    const deEssAmt = p.deEssAmt ?? 0;
+    if (deEssAmt > 0) {
+      const de = offline.createBiquadFilter();
+      de.type = 'peaking';
+      de.frequency.value = Math.min(p.deEssFreq ?? 6000, sr / 2 - 100);
+      de.gain.value = -deEssAmt;
+      de.Q.value = 2.0;
+      chain.connect(de); chain = de;
+    }
+
+    // Compressor
+    const comp = offline.createDynamicsCompressor();
+    comp.threshold.value = p.compThresh ?? -24;
+    comp.ratio.value     = Math.max(1, p.compRatio ?? 4);
+    comp.attack.value    = Math.max(0.001, (p.compAttack  ?? 10)  / 1000);
+    comp.release.value   = Math.max(0.01,  (p.compRelease ?? 150) / 1000);
+    comp.knee.value      = Math.max(0, p.compKnee ?? 6);
+    chain.connect(comp); chain = comp;
+
+    // Makeup gain
+    const makeup = offline.createGain();
+    makeup.gain.value = Math.pow(10, (p.compMakeup ?? 0) / 20);
+    chain.connect(makeup); chain = makeup;
+
+    // Limiter
+    const lim = offline.createDynamicsCompressor();
+    lim.threshold.value = p.limThresh ?? -1;
+    lim.ratio.value     = 20;
+    lim.attack.value    = 0.001;
+    lim.release.value   = Math.max(0.01, (p.limRelease ?? 50) / 1000);
+    lim.knee.value      = 0;
+    chain.connect(lim); chain = lim;
+
+    // Output gain
+    const outGainNode = offline.createGain();
+    outGainNode.gain.value = Math.pow(10, (p.outGain ?? 0) / 20);
+    chain.connect(outGainNode);
+    outGainNode.connect(offline.destination);
+
+    srcNode.start(0);
+    const webaudioBuf = await offline.startRendering();
+
+    // ── Stage 2: Spectral processing — single STFT pass per channel ────────
+    // All spectral ops (NR, voice isolation, spectral gate) run in-place
+    // between ONE forwardSTFT and ONE inverseSTFT (architecture rule).
+    const nrAmount   = p.nrAmount   ?? 0;   // 0-100
+    const voiceIso   = p.voiceIso   ?? 0;   // 0-100
+    const bgSuppress = p.bgSuppress ?? 0;   // 0-100
+    const needsSpec  = DSP && (nrAmount > 1 || voiceIso > 1 || bgSuppress > 1);
+
+    let procBuf = webaudioBuf;
+
+    if (needsSpec) {
+      const fftSize  = 4096;
+      const hopSize  = 1024;
+      const halfN    = fftSize / 2 + 1;
+      const binHz    = (sr / 2) / (halfN - 1);
+      const resultBuf = (new OfflineAudioContext(nCh, len, sr)).createBuffer(nCh, len, sr);
+
+      for (let ch = 0; ch < nCh; ch++) {
+        const chData = webaudioBuf.getChannelData(ch);
+
+        // ONE forward STFT
+        const { mag, phase, frameCount } = DSP.forwardSTFT(chData, fftSize, hopSize);
+        if (frameCount === 0) { resultBuf.copyToChannel(chData, ch); continue; }
+
+        // Spectral NR: Wiener MMSE using minimum-statistics noise estimate.
+        // Sorts frames by energy and averages the quietest 25% as the noise
+        // floor reference — no VAD required, works on any signal.
+        if (nrAmount > 1) {
+          const frameEnergies = mag.map(m => {
+            let e = 0;
+            for (let k = 0; k < m.length; k++) e += m[k] * m[k];
+            return e;
+          });
+          const sortedIdx = frameEnergies.map((_, i) => i)
+            .sort((a, b) => frameEnergies[a] - frameEnergies[b]);
+          const nNoise = Math.max(1, Math.floor(sortedIdx.length * 0.25));
+          const noiseProfile = new Float32Array(halfN);
+          for (let j = 0; j < nNoise; j++) {
+            const m = mag[sortedIdx[j]];
+            for (let k = 0; k < halfN; k++) noiseProfile[k] += m[k];
+          }
+          for (let k = 0; k < halfN; k++) noiseProfile[k] /= nNoise;
+          // Scale by over-subtraction factor (sensitivity 0-100 → 1.0-3.0×)
+          const overSub = 1.0 + ((p.nrSensitivity ?? 60) / 100) * 2.0;
+          for (let k = 0; k < halfN; k++) noiseProfile[k] *= overSub;
+          DSP.wienerMMSE(mag, noiseProfile, nrAmount);  // amount 0-100
+        }
+
+        // Voice isolation: attenuate out-of-band energy
+        if (voiceIso > 1 || bgSuppress > 1) {
+          const focusLo = Math.max(20, p.voiceFocusLo ?? 120);
+          const focusHi = Math.min(sr / 2 - 1, p.voiceFocusHi ?? 3400);
+          const lobin   = Math.max(0,       Math.floor(focusLo / binHz));
+          const hibin   = Math.min(halfN-1, Math.ceil(focusHi  / binHz));
+          const bgAtten = Math.max(0, 1 - (bgSuppress / 100) - (voiceIso / 200));
+          for (let f = 0; f < frameCount; f++) {
+            for (let k = 0; k < halfN; k++) {
+              if (k < lobin || k > hibin) mag[f][k] *= bgAtten;
+            }
+          }
+        }
+
+        // Spectral gate (NR floor) — only when NR is active
+        if (nrAmount > 1) {
+          DSP.spectralGate(mag, p.nrFloor ?? -72, sr, hopSize);
+        }
+
+        // ONE inverse STFT
+        const recon = DSP.inverseSTFT(mag, phase, fftSize, hopSize, len);
+        // At the first/last fftSize samples the Hann window tapers to zero,
+        // so windowSum is tiny and the OLA normalization amplifies any spectral
+        // modification into an artifact. Linear fade + safety clamp prevents
+        // audible clicks without changing interior audio.
+        const fadeLen = Math.min(fftSize, Math.floor(len / 4));
+        for (let i = 0; i < fadeLen; i++) {
+          const t = i / fadeLen;
+          recon[i] *= t;
+          if (len - 1 - i >= 0) recon[len - 1 - i] *= t;
+        }
+        const outCh = resultBuf.getChannelData(ch);
+        const copyN = Math.min(recon.length, len);
+        for (let i = 0; i < copyN; i++) {
+          // Safety clamp: values > ±2 are always artifacts (> +6 dBFS)
+          outCh[i] = Math.max(-2, Math.min(2, recon[i]));
+        }
+      }
+
+      procBuf = resultBuf;
+    }
+
+    // ── Stereo width (M/S, applied before dry/wet) ──────────────────────────
+    // stereoWidth: 0=mono, 100=original, 200=double-wide
+    if (nCh >= 2) {
+      const wPct = p.stereoWidth ?? 100;
+      if (Math.abs(wPct - 100) > 1) {
+        const sideMult = wPct / 100;
+        const L = procBuf.getChannelData(0);
+        const R = procBuf.getChannelData(1);
+        for (let i = 0; i < len; i++) {
+          const mid  = (L[i] + R[i]) * 0.5;
+          const side = (L[i] - R[i]) * 0.5 * sideMult;
+          L[i] = mid + side;
+          R[i] = mid - side;
+        }
+      }
+    }
+
+    // ── Dry/wet mix ─────────────────────────────────────────────────────────
+    const dryWet = Math.max(0, Math.min(1, (p.dryWet ?? 100) / 100));
+    if (dryWet >= 1) return procBuf;
+
+    const mixBuf = (new OfflineAudioContext(nCh, len, sr)).createBuffer(nCh, len, sr);
+    for (let ch = 0; ch < nCh; ch++) {
+      const dry = audioBuffer.getChannelData(ch);
+      const wet = procBuf.getChannelData(ch);
+      const out = mixBuf.getChannelData(ch);
+      for (let i = 0; i < len; i++) out[i] = dry[i] * (1 - dryWet) + wet[i] * dryWet;
+    }
+    return mixBuf;
+  }
+
   updateIsolationParams(nextParams) {
     if (!nextParams || typeof nextParams !== 'object') return;
     this._isolationParams = {
@@ -866,7 +1121,8 @@ class PipelineOrchestrator {
       const _origOnSlider = app.onSlider.bind(app);
       app.onSlider = function (...args) {
         _origOnSlider(...args);
-        orch.updateParams(orch._normalizeRawParams(app.params));
+        const raw = app.params || window.VIP_PARAMS;
+        if (raw) orch.updateParams(orch._normalizeRawParams(raw));
       };
     }
 
@@ -875,7 +1131,8 @@ class PipelineOrchestrator {
       const _origApply = app.applyPreset.bind(app);
       app.applyPreset = function (name) {
         _origApply(name);
-        orch.updateParams(orch._normalizeRawParams(app.params));
+        const raw = app.params || window.VIP_PARAMS;
+        if (raw) orch.updateParams(orch._normalizeRawParams(raw));
       };
     }
 
