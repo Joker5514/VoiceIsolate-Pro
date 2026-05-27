@@ -85,6 +85,7 @@
     },
     {
       "source": "/app/voice-isolate-processor.js",
+      "_note": "TODO: voice-isolate-processor.js is never instantiated via new AudioWorkletNode() in the codebase; this header entry (and the file) can be removed in a future cleanup pass.",
       "headers": [
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
         { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },

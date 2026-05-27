@@ -10,6 +10,9 @@
 /* global fetch, Blob, URL, console, self, crypto, TextEncoder, window, document, setTimeout, setInterval, clearInterval, Worker, AudioWorkletNode, CustomEvent, MediaRecorder */
 
 const WORKLET_READY_FALLBACK_MS = 250;
+// WARNING: Update this hash whenever dsp-processor.js is modified.
+// Run: node -e "const c=require('crypto'),f=require('fs');
+//   console.log(c.createHash('sha256').update(f.readFileSync('public/app/dsp-processor.js')).digest('hex'))"
 const WORKLET_SOURCE_SHA256 = '9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48';
 
 // ─── AudioWorklet loader with CDN fallback ─────────────────────────────────
@@ -116,6 +119,11 @@ async function loadDspProcessorWorklet(ctx) {
 }
 // Expose for tests + diagnostics; keeps the helper available without polluting globals further.
 if (typeof self !== 'undefined') self.loadDspProcessorWorklet = loadDspProcessorWorklet;
+
+// NOTE: voice-isolate-processor.js exists in public/app/ but is NEVER registered via
+// new AudioWorkletNode(ctx, 'voice-isolate-processor') anywhere in the codebase.
+// It is a dead file kept for historical reference only. It can be removed in a future
+// cleanup pass along with its header rule in vercel.json and its sw.js cache entry.
 
 /**
  * PipelineOrchestrator
@@ -290,7 +298,7 @@ class PipelineOrchestrator {
     // Guard: SharedArrayBuffer requires COOP+COEP headers — check before
     // attempting allocation so we get a clean boolean return rather than
     // relying solely on the catch branch.
-    if (typeof SharedArrayBuffer === 'undefined' ||
+    if (typeof SharedArrayBuffer === 'undefined' || !self.crossOriginIsolated ||
         typeof SharedRingBuffer === 'undefined' ||
         !SharedRingBuffer.isSupported()) {
       console.warn('[Orchestrator] SharedArrayBuffer unavailable — live ML masking disabled');
@@ -385,7 +393,7 @@ class PipelineOrchestrator {
   async _doInitMLWorker() {
     return new Promise((resolve) => {
       // ── Construct the ML Worker ──────────────────────────────────────────
-      this.mlWorker = new Worker('./ml-worker.js');
+      this.mlWorker = new Worker('/app/ml-worker.js');
 
       // ── Standard message handler (must be set BEFORE _mlWorkerPatch so the
       //    patch wraps this handler and can forward messages to it) ──────────

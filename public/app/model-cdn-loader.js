@@ -81,7 +81,8 @@
    * Falls back to plain fetch() if ReadableStream is unavailable.
    */
   async function fetchWithProgress(url, expectedBytes, onProgress) {
-    const resp = await fetch(url, { mode: 'cors', credentials: 'omit' });
+    const mode = (url.startsWith('/') || url.startsWith(location.origin)) ? 'same-origin' : 'cors';
+    const resp = await fetch(url, { mode, credentials: 'omit' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
 
     if (!resp.body || !onProgress) {
@@ -180,7 +181,7 @@
   let _manifest = null;
   async function getManifest() {
     if (_manifest) return _manifest;
-    const resp = await fetch('/app/models-manifest.json');
+    const resp = await fetch('/app/models/models-manifest.json');
     if (!resp.ok) throw new Error('Cannot load models-manifest.json');
     _manifest = await resp.json();
     return _manifest;
