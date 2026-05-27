@@ -12,3 +12,7 @@
 ## 2026-05-18 - [Custom Modal Keyboard Accessibility & ARIA States]
 **Learning:** Custom UI modals must implement complete keyboard and accessibility flows, including `role="dialog"`, `aria-modal="true"`, `aria-labelledby`, dynamic `aria-hidden` synchronization, auto-focusing the primary input on open, returning focus to the trigger on close, and keydown listeners for Escape (to close) and Enter (to submit).
 **Action:** When creating or modifying custom modals, ensure the entire lifecycle of the modal is accessible by syncing the `aria-hidden` state, managing focus effectively on open and close, and supporting keyboard interactions.
+
+## 2026-05-19 - [Custom Modals & Focus Management]
+**Learning:** For custom modals that contain inputs (like the "Save Custom Preset" modal), keyboard accessibility goes beyond just 'Escape' and 'Enter' handlers. Setting focus to the first input when the modal opens, and returning focus to the trigger button when it closes, provides a much smoother experience for keyboard and screen reader users.
+**Action:** When creating or maintaining modals with inputs, use `setTimeout` to focus the first input on open, and capture the trigger button element to restore focus on close.

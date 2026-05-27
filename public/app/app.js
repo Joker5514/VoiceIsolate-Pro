@@ -825,12 +825,38 @@ class VoiceIsolatePro {
     // Custom preset modal
     bind('openPresetModalBtn', $('openPresetModalBtn'), 'click', () => {
       const modal = $('customPresetModal');
-      if (modal) { modal.style.display = 'flex'; modal.setAttribute('aria-hidden', 'false'); }
+      if (modal) {
+        modal.style.display = 'flex';
+        modal.setAttribute('aria-hidden', 'false');
+        const input = $('customPresetName');
+        if (input) setTimeout(() => input.focus(), 50);
+      }
     });
-    bind('closePresetModal', $('closePresetModal'), 'click', () => {
+    const closePresetModal = () => {
       const modal = $('customPresetModal');
-      if (modal) { modal.style.display = 'none'; modal.setAttribute('aria-hidden', 'true'); }
-    });
+      if (modal) {
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        const btn = $('openPresetModalBtn');
+        if (btn) btn.focus();
+      }
+    };
+    bind('closePresetModal', $('closePresetModal'), 'click', closePresetModal);
+
+    // Keyboard accessibility for Custom Preset Modal
+    const modalEl = $('customPresetModal');
+    if (modalEl) {
+      modalEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closePresetModal();
+        } else if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+          e.preventDefault();
+          const saveBtn = $('saveCustomPresetBtn');
+          if (saveBtn) saveBtn.click();
+        }
+      });
+    }
 
     // Forensic toggle
     bind('forensicToggle', $('forensicToggle'), 'click', () => this.showNotification('Forensic mode: set in Advanced sliders.', 'info'));
@@ -1337,7 +1363,7 @@ class VoiceIsolatePro {
   _resolveDSP() {
     return (typeof globalThis !== 'undefined' && globalThis.DSPCore) ||
            (typeof window !== 'undefined' && window.DSPCore) ||
-           (typeof DSPCore !== 'undefined' ? DSPCore : null);
+           (typeof window !== 'undefined' && window.DSPCore ? window.DSPCore : null); // eslint-disable-line no-undef
   }
 
   // Single offline path: ONE forward STFT, in-place spectral ops S11–S19, ONE iSTFT
