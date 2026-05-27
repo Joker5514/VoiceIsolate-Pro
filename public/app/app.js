@@ -672,6 +672,21 @@ class VoiceIsolatePro {
   }
 
   onSlider(id, value) {
+    if (id === 'outGain' && this._outGainNode && this.ctx) {
+      const gain = Math.pow(10, value / 20);
+      this._outGainNode.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.01);
+    }
+    if (id === 'outWidth' && this.isPlaying) {
+      const speed = numFromInput(this.dom && this.dom.tpSpeed, 1) || 1;
+      if (this.ctx) {
+        this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
+      }
+      const buf = this.abMode === 'processed'
+        ? (this.outputBuffer || this.procBuffer || this.inputBuffer || this.origBuffer)
+        : (this.inputBuffer || this.origBuffer);
+      if (buf) this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset));
+      this.play();
+    }
     const orch = window._vipOrch;
     if (orch && typeof orch.onSlider === 'function') {
       orch.onSlider(id, value);
@@ -1120,15 +1135,67 @@ class VoiceIsolatePro {
     if (!buf) return;
 
     await this.ensureCtx();
-    const offline = new OfflineAudioContext(buf.numberOfChannels, buf.length, buf.sampleRate);
-    const src = offline.createBufferSource();
-    src.buffer = buf;
-    src.connect(offline.destination);
-    src.start();
+    const p = window.VIP_PARAMS || {};
+    const dryWetPct = Math.max(0, Math.min(100, p.dryWet ?? 100));
+    const outGainDb = p.outGain ?? 0;
+    const outWidth = p.outWidth ?? 100;
+    const ditherAmt = p.ditherAmt ?? 0;
 
     this.updatePipelineProgress(10, 'Running DSP…', 30);
-    this.procBuffer = await offline.startRendering();
-    this.outputBuffer = this.procBuffer;
+    let processed = await this._applyOfflineSpectralProcessing(buf);
+
+    const ensureWritableBuffer = () => {
+      if (!processed || !this.ctx || processed !== buf) return;
+      const copy = this.ctx.createBuffer(processed.numberOfChannels, processed.length, processed.sampleRate);
+      for (let ch = 0; ch < processed.numberOfChannels; ch++) {
+        copy.getChannelData(ch).set(processed.getChannelData(ch));
+      }
+      processed = copy;
+    };
+
+    if (dryWetPct < 100) {
+      this.updatePipelineProgress(26, 'Applying Dry/Wet…', 75);
+      processed = this.mixDW(buf, processed, dryWetPct / 100);
+    }
+
+    if (outGainDb !== 0) {
+      this.updatePipelineProgress(27, 'Applying Output Gain…', 80);
+      const gain = Math.pow(10, outGainDb / 20);
+      ensureWritableBuffer();
+      for (let ch = 0; ch < processed.numberOfChannels; ch++) {
+        const out = processed.getChannelData(ch);
+        for (let i = 0; i < out.length; i++) {
+          out[i] = Math.max(-1, Math.min(1, out[i] * gain));
+        }
+      }
+    }
+
+    if (outWidth !== 100 && processed.numberOfChannels >= 2) {
+      this.updatePipelineProgress(28, 'Applying Stereo Width…', 85);
+      ensureWritableBuffer();
+      const w = outWidth / 100;
+      const mGain = (1 + w) / 2;
+      const sGain = (1 - w) / 2;
+      const outL = processed.getChannelData(0);
+      const outR = processed.getChannelData(1);
+      for (let i = 0; i < processed.length; i++) {
+        const l = outL[i];
+        const r = outR[i];
+        outL[i] = l * mGain + r * sGain;
+        outR[i] = r * mGain + l * sGain;
+      }
+    }
+
+    if (ditherAmt > 0) {
+      this.updatePipelineProgress(29, 'Applying Dither…', 90);
+      ensureWritableBuffer();
+      for (let ch = 0; ch < processed.numberOfChannels; ch++) {
+        this.applyDither(processed.getChannelData(ch), p);
+      }
+    }
+
+    this.procBuffer = processed;
+    this.outputBuffer = processed;
   }
 
   // ── Old process() alias ───────────────────────────────────────────────────
@@ -1458,10 +1525,44 @@ class VoiceIsolatePro {
     // Fallback: direct AudioContext source node
     if (!this.ctx || typeof this.ctx.createBufferSource !== 'function') return;
     this.teardownChain();
+    const p = window.VIP_PARAMS || {};
+    const outGainDb = p.outGain ?? 0;
+    const widthLinear = (p.outWidth ?? 100) / 100;
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = numFromInput(this.dom && this.dom.tpSpeed, 1);
-    if (this.ctx.destination) src.connect(this.ctx.destination);
+    const outGainNode = this.ctx.createGain();
+    outGainNode.gain.value = Math.pow(10, outGainDb / 20);
+    this._outGainNode = outGainNode;
+    if (buf.numberOfChannels >= 2 && this.ctx.createChannelSplitter && this.ctx.createChannelMerger) {
+      const splitter = this.ctx.createChannelSplitter(2);
+      const merger = this.ctx.createChannelMerger(2);
+      const mGain = (1 + widthLinear) / 2;
+      const sGain = (1 - widthLinear) / 2;
+
+      const lMain = this.ctx.createGain();
+      const lCross = this.ctx.createGain();
+      const rMain = this.ctx.createGain();
+      const rCross = this.ctx.createGain();
+      lMain.gain.value = mGain;
+      lCross.gain.value = sGain;
+      rMain.gain.value = mGain;
+      rCross.gain.value = sGain;
+
+      src.connect(splitter);
+      splitter.connect(lMain, 0);
+      splitter.connect(lCross, 1);
+      splitter.connect(rMain, 1);
+      splitter.connect(rCross, 0);
+      lMain.connect(merger, 0, 0);
+      lCross.connect(merger, 0, 0);
+      rMain.connect(merger, 0, 1);
+      rCross.connect(merger, 0, 1);
+      merger.connect(outGainNode);
+    } else {
+      src.connect(outGainNode);
+    }
+    if (this.ctx.destination) outGainNode.connect(this.ctx.destination);
     src.start(0, this.playOffset || 0);
     src.onended = () => {
       this.isPlaying = false;
@@ -1501,6 +1602,7 @@ class VoiceIsolatePro {
       try { this.currentSource.disconnect(); } catch (_) {}
       this.currentSource = null;
     }
+    this._outGainNode = null;
   }
 
   async togglePlayback() {
