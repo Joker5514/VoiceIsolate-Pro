@@ -216,7 +216,8 @@ export function stageSpectralFloor(mag, pha, params) {
 }
 
 export function stageHarmonicRestore(mag, pha, params) {
-  const amount = Math.max(0, Math.min(1, params.harmonicRestore ?? 0));
+  const raw = params.harmRecov ?? params.harmonicRestore ?? 0;
+  const amount = Math.max(0, Math.min(1, raw / (raw > 1 ? 100 : 1)));
   if (amount === 0) return;
   for (let k = 1; k < mag.length; k++) {
     const prev = mag[k - 1];
@@ -250,7 +251,8 @@ export function stageNormalise(mag, pha, params) {
  * to increase vocal presence and intelligibility.
  */
 export function stageFormantEnhance(mag, pha, params, sampleRate = 44100) {
-  const strength = Math.max(0, Math.min(2, params.formantEnhance ?? 1.0));
+  const shift = params.formantShift ?? 0;
+  const strength = Math.max(0, Math.min(2, params.formantEnhance ?? (1.0 + shift / 6)));
   const fftSize  = (mag.length - 1) * 2;
   const f1Lo = hzToBin(500,  fftSize, sampleRate);
   const f1Hi = hzToBin(900,  fftSize, sampleRate);
@@ -285,9 +287,11 @@ export function stagePresenceBoost(mag, pha, params, sampleRate = 44100) {
  */
 export function stageDeEsser(mag, pha, params, sampleRate = 44100) {
   const reduction = Math.max(0, Math.min(1, (params.deEssAmt ?? 9) / 30));
+  if (reduction === 0) return;
   const fftSize   = (mag.length - 1) * 2;
-  const lo = hzToBin(5000,  fftSize, sampleRate);
-  const hi = hzToBin(10000, fftSize, sampleRate);
+  const center    = params.deEssFreq ?? 6000;
+  const lo = hzToBin(center * 0.7, fftSize, sampleRate);
+  const hi = hzToBin(center * 1.4, fftSize, sampleRate);
   for (let k = lo; k <= Math.min(hi, mag.length - 1); k++) {
     mag[k] *= 1 - reduction;
   }

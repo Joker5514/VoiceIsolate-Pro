@@ -143,8 +143,15 @@ class DSPProcessor extends AudioWorkletProcessor {
       nrAmount:    0.78,
       gateThresh:  -42,   // dBFS
       gateRange:   -60,   // dB attenuation below gate
+      gateAttack:  5,     // ms
+      gateRelease: 200,   // ms
+      gateHold:    50,    // ms
       hpFreq:      80,    // Hz
+      hpQ:         0.7,
       lpFreq:      18000, // Hz
+      lpQ:         0.7,
+      deEssFreq:   6000,  // Hz
+      deEssAmt:    0,     // dB
       compThresh:  -24,   // dBFS
       compRatio:   4,
       compAttack:  10,    // ms
@@ -152,7 +159,11 @@ class DSPProcessor extends AudioWorkletProcessor {
       compKnee:    6,     // dB
       compMakeup:  0,     // dB
       limThresh:   -1,    // dBFS
+      limRelease:  50,    // ms
       specTilt:    0.0,   // dB/oct
+      stereoWidth: 100,   // %
+      ditherAmt:   1,     // bits
+      outWidth:    100,   // %
       eqSub:       0.0,
       eqBass:      0.0,
       eqWarmth:    0.0,
@@ -172,8 +183,15 @@ class DSPProcessor extends AudioWorkletProcessor {
       nrAmount:    [0, 1],
       gateThresh:  [-120, 0],
       gateRange:   [-120, 0],
+      gateAttack:  [0, 500],
+      gateRelease: [50, 2000],
+      gateHold:    [0, 500],
       hpFreq:      [10, 20000],
+      hpQ:         [0.1, 10],
       lpFreq:      [10, 20000],
+      lpQ:         [0.1, 10],
+      deEssFreq:   [2000, 12000],
+      deEssAmt:    [0, 30],
       compThresh:  [-120, 0],
       compRatio:   [1, 100],
       compAttack:  [0.1, 1000],
@@ -181,7 +199,11 @@ class DSPProcessor extends AudioWorkletProcessor {
       compKnee:    [0, 24],
       compMakeup:  [-24, 24],
       limThresh:   [-60, 0],
+      limRelease:  [10, 500],
       specTilt:    [-12, 12],
+      stereoWidth: [0, 200],
+      ditherAmt:   [0, 10],
+      outWidth:    [0, 200],
       eqSub:       [-24, 24],
       eqBass:      [-24, 24],
       eqWarmth:    [-24, 24],
@@ -194,10 +216,9 @@ class DSPProcessor extends AudioWorkletProcessor {
       eqBrill:     [-24, 24]
     };
 
-    // Gate hold state: prevents clicking on rapid gate transitions
+    // Gate envelope state (smooth attack/release instead of hard gating)
+    this._gateGain = 1.0;
     this._gateHoldSamples = 0;
-    const GATE_HOLD_MS    = 20;
-    this._GATE_HOLD_LEN   = Math.round((GATE_HOLD_MS / 1000) * sampleRate);
 
     // Compressor envelope state
     this._envDb  = 0;
@@ -264,24 +285,32 @@ class DSPProcessor extends AudioWorkletProcessor {
       for (let i = 0; i < Q; i++) mono[i] /= numCh;
     }
 
-    // Noise gate with hold to prevent clicks
+    // Noise gate with smooth attack/release envelope
     let rms = 0;
     for (let i = 0; i < Q; i++) rms += mono[i] * mono[i];
     rms = Math.sqrt(rms / Q);
     const rmsDb = rms > 0 ? 20.0 * Math.log10(rms) : -160.0;
     const belowGate = rmsDb < this._params.gateThresh;
+    const sr = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
+    const gAtk = Math.exp(-1 / (Math.max(0.1, this._params.gateAttack  || 5)   * sr / 1000));
+    const gRel = Math.exp(-1 / (Math.max(0.1, this._params.gateRelease || 200) * sr / 1000));
+    const holdLen = Math.round((this._params.gateHold || 50) * sr / 1000);
+    const rangeGain = Math.pow(10, (this._params.gateRange || -60) / 20);
 
     if (!belowGate) {
-      this._gateHoldSamples = this._GATE_HOLD_LEN;
+      this._gateHoldSamples = holdLen;
+      this._gateGain = gAtk * this._gateGain + (1 - gAtk) * 1.0;
     } else if (this._gateHoldSamples > 0) {
       this._gateHoldSamples -= Q;
+      this._gateGain = gAtk * this._gateGain + (1 - gAtk) * 1.0;
+    } else {
+      this._gateGain = gRel * this._gateGain + (1 - gRel) * rangeGain;
     }
-    const gated = belowGate && this._gateHoldSamples <= 0;
 
-    // Write mono (or silence) into input ring
+    // Write gain-shaped mono into input ring
     const inLen = this._inRing.length;
     for (let i = 0; i < Q; i++) {
-      this._inRing[this._inWr] = gated ? 0.0 : mono[i];
+      this._inRing[this._inWr] = mono[i] * this._gateGain;
       this._inWr = (this._inWr + 1) % inLen;
     }
     this._newSamples += Q;
@@ -302,7 +331,6 @@ class DSPProcessor extends AudioWorkletProcessor {
     const ct = this._params.compThresh || -24;
     const cr = this._params.compRatio || 4;
     const ck = Math.max(0, this._params.compKnee || 0);
-    const sr = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
     const cAtk = Math.exp(-1 / ((this._params.compAttack || 10) * sr / 1000));
     const cRel = Math.exp(-1 / ((this._params.compRelease || 150) * sr / 1000));
     const cMakeup = Math.pow(10.0, (this._params.compMakeup || 0) / 20.0);

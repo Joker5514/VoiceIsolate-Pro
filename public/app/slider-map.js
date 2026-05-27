@@ -119,7 +119,7 @@ export const TAB_PANEL_MAP = {
 };
 
 export const SLIDER_TARGETS = {
-  gateThresh:'worklet', gateRange:'worklet', gateAttack:'worklet', gateRelease:'worklet', gateHold:'worklet', gateLookahead:'local',
+  gateThresh:'worklet', gateRange:'worklet', gateAttack:'worklet', gateRelease:'worklet', gateHold:'worklet', gateLookahead:'worker',
   nrAmount:'both', nrSensitivity:'worker', nrSpectralSub:'worker', nrFloor:'worker', nrSmoothing:'worker',
   eqSub:'worklet', eqBass:'worklet', eqWarmth:'worklet', eqBody:'worklet', eqLowMid:'worklet', eqMid:'worklet', eqPresence:'worklet', eqClarity:'worklet', eqAir:'worklet', eqBrill:'worklet',
   compThresh:'worklet', compRatio:'worklet', compAttack:'worklet', compRelease:'worklet', compKnee:'worklet', compMakeup:'worklet', limThresh:'worklet', limRelease:'worklet',
