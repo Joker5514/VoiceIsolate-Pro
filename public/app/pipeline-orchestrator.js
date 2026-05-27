@@ -7,7 +7,6 @@
    ============================================ */
 
 'use strict';
-/* global fetch, Blob, URL, console, self, crypto, TextEncoder, window, document, setTimeout, setInterval, clearInterval, Worker, AudioWorkletNode, CustomEvent, MediaRecorder */
 
 const WORKLET_READY_FALLBACK_MS = 250;
 // WARNING: Update this hash whenever dsp-processor.js is modified.

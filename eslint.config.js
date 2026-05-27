@@ -7,6 +7,31 @@ import globals from 'globals';
 
 export default [
   js.configs.recommended,
+
+  // ── Broad catch-all: ALL public/app browser scripts ───────────────────────────
+  // IMPORTANT: this must come BEFORE the worker-specific overrides below.
+  // In flat config the last matching rule wins for scalar options (sourceType).
+  // Workers override sourceType back to 'script' in their entries further down.
+  {
+    files: ['public/app/**/*.js', 'public/sw.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',   // safe default for ESM files; workers override below
+      globals: {
+        ...globals.browser,
+        ...globals.worker,
+        importScripts:    'readonly',
+        SharedRingBuffer: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+
+  // ── Specific file overrides (come after catch-all; later entries win) ─────────
   {
     files: ['public/app/app.js'],
     languageOptions: {
@@ -14,13 +39,13 @@ export default [
       sourceType: 'module',
       globals: {
         ...globals.browser,
-        ort: 'readonly',                  // ONNX Runtime Web
-        THREE: 'readonly',                // Three.js
-        module: 'readonly',               // CommonJS export check for testing (typeof module !== 'undefined')
-        PipelineState: 'readonly',        // loaded via separate script tag
-        PipelineOrchestrator: 'readonly', // loaded via separate script tag
-        SpeakerRegistry: 'readonly',      // loaded via separate script tag
-        Auth: 'readonly',                 // optional global from auth.js / vip-boot.js
+        ort: 'readonly',
+        THREE: 'readonly',
+        module: 'readonly',
+        PipelineState: 'readonly',
+        PipelineOrchestrator: 'readonly',
+        SpeakerRegistry: 'readonly',
+        Auth: 'readonly',
       },
     },
     rules: {
@@ -36,9 +61,7 @@ export default [
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
-      globals: {
-        ...globals.browser,
-      },
+      globals: { ...globals.browser },
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
@@ -53,9 +76,7 @@ export default [
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
-      globals: {
-        ...globals.browser,
-      },
+      globals: { ...globals.browser },
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
@@ -66,18 +87,18 @@ export default [
     },
   },
   {
-    // AudioWorklet processors — run in AudioWorkletGlobalScope
+    // AudioWorklet processors — run in AudioWorkletGlobalScope (no import/export)
     files: ['public/app/dsp-processor.js'],
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: 'script',
+      sourceType: 'script', // overrides catch-all's 'module'
       globals: {
         ...globals.browser,
         AudioWorkletProcessor: 'readonly',
-        registerProcessor: 'readonly',
-        currentFrame: 'readonly',
-        currentTime: 'readonly',
-        sampleRate: 'readonly',
+        registerProcessor:     'readonly',
+        currentFrame:          'readonly',
+        currentTime:           'readonly',
+        sampleRate:            'readonly',
       },
     },
     rules: {
@@ -87,11 +108,11 @@ export default [
     },
   },
   {
-    // Offline DSP Web Worker — uses importScripts
+    // Offline DSP Web Worker — uses importScripts (no import/export)
     files: ['public/app/dsp-worker.js'],
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: 'script',
+      sourceType: 'script', // overrides catch-all's 'module'
       globals: {
         ...globals.worker,
         importScripts: 'readonly',
@@ -108,7 +129,7 @@ export default [
     files: ['public/app/ml-worker.js'],
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: 'script',
+      sourceType: 'script', // overrides catch-all's 'module'
       globals: {
         ...globals.worker,
         importScripts: 'readonly',
@@ -125,10 +146,10 @@ export default [
     files: ['public/app/revenuecat.js'],
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: 'script',
+      sourceType: 'script', // overrides catch-all's 'module'
       globals: {
         ...globals.browser,
-        module: 'readonly', // CommonJS export guard (typeof module !== 'undefined')
+        module: 'readonly',
       },
     },
     rules: {
@@ -144,10 +165,10 @@ export default [
     files: ['public/app/session-persist.js'],
     languageOptions: {
       ecmaVersion: 2022,
-      sourceType: 'script',
+      sourceType: 'script', // overrides catch-all's 'module'
       globals: {
         ...globals.browser,
-        module: 'readonly', // CommonJS export guard (typeof module !== 'undefined')
+        module: 'readonly',
       },
     },
     rules: {
@@ -158,14 +179,15 @@ export default [
       'quotes': ['warn', 'single', { avoidEscape: true }],
     },
   },
+
+  // ── Backend / tooling ─────────────────────────────────────────────────────────
   {
-    files: ['api/**/*.js'],
+    // API handlers (api/ and api-routes/) — Node.js ESM
+    files: ['api/**/*.js', 'api-routes/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
-      globals: {
-        ...globals.node,
-      },
+      globals: { ...globals.node },
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
@@ -174,7 +196,22 @@ export default [
     },
   },
   {
-    files: ['scripts/**/*.js', 'tests/**/*.test.js'],
+    // Dev server — Node.js ESM
+    files: ['server.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  {
+    // Build/validation scripts (.js/.cjs) and Jest test files — CommonJS
+    files: ['scripts/**/*.js', 'scripts/**/*.cjs', 'tests/**/*.test.js', 'tests/**/*.js', 'tests/**/*.cjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'commonjs',
@@ -189,6 +226,29 @@ export default [
     },
   },
   {
-    ignores: ['node_modules/**', 'v19-demo/**'],
+    // ESM scripts (.mjs)
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.node },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-undef': 'error',
+    },
+  },
+
+  // ── Ignores ───────────────────────────────────────────────────────────────────
+  {
+    ignores: [
+      'node_modules/**',
+      'v19-demo/**',
+      'public/lib/**',   // third-party minified vendor files (ort, three.js)
+      'android/**',
+      'ios/**',
+      'build/**',
+      'fastlane/**',
+    ],
   },
 ];
