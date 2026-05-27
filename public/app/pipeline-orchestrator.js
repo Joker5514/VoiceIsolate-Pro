@@ -841,11 +841,27 @@ class PipelineOrchestrator {
         const { mag, phase, frameCount } = DSP.forwardSTFT(chData, fftSize, hopSize);
         if (frameCount === 0) { resultBuf.copyToChannel(chData, ch); continue; }
 
-        // Spectral NR: Wiener MMSE with adaptive noise estimate
+        // Spectral NR: Wiener MMSE using minimum-statistics noise estimate.
+        // Sorts frames by energy and averages the quietest 25% as the noise
+        // floor reference — no VAD required, works on any signal.
         if (nrAmount > 1) {
-          const noiseProfile = DSP.estimateNoiseProfile(chData, null, fftSize, hopSize);
-          const overSub = 1.0 + ((p.nrSensitivity ?? 60) / 100) * 2.0;  // 1.0–3.0
-          for (let k = 0; k < noiseProfile.length; k++) noiseProfile[k] *= overSub;
+          const frameEnergies = mag.map(m => {
+            let e = 0;
+            for (let k = 0; k < m.length; k++) e += m[k] * m[k];
+            return e;
+          });
+          const sortedIdx = frameEnergies.map((_, i) => i)
+            .sort((a, b) => frameEnergies[a] - frameEnergies[b]);
+          const nNoise = Math.max(1, Math.floor(sortedIdx.length * 0.25));
+          const noiseProfile = new Float32Array(halfN);
+          for (let j = 0; j < nNoise; j++) {
+            const m = mag[sortedIdx[j]];
+            for (let k = 0; k < halfN; k++) noiseProfile[k] += m[k];
+          }
+          for (let k = 0; k < halfN; k++) noiseProfile[k] /= nNoise;
+          // Scale by over-subtraction factor (sensitivity 0-100 → 1.0-3.0×)
+          const overSub = 1.0 + ((p.nrSensitivity ?? 60) / 100) * 2.0;
+          for (let k = 0; k < halfN; k++) noiseProfile[k] *= overSub;
           DSP.wienerMMSE(mag, noiseProfile, nrAmount);  // amount 0-100
         }
 
@@ -870,9 +886,22 @@ class PipelineOrchestrator {
 
         // ONE inverse STFT
         const recon = DSP.inverseSTFT(mag, phase, fftSize, hopSize, len);
+        // At the first/last fftSize samples the Hann window tapers to zero,
+        // so windowSum is tiny and the OLA normalization amplifies any spectral
+        // modification into an artifact. Linear fade + safety clamp prevents
+        // audible clicks without changing interior audio.
+        const fadeLen = Math.min(fftSize, Math.floor(len / 4));
+        for (let i = 0; i < fadeLen; i++) {
+          const t = i / fadeLen;
+          recon[i] *= t;
+          if (len - 1 - i >= 0) recon[len - 1 - i] *= t;
+        }
         const outCh = resultBuf.getChannelData(ch);
         const copyN = Math.min(recon.length, len);
-        for (let i = 0; i < copyN; i++) outCh[i] = recon[i];
+        for (let i = 0; i < copyN; i++) {
+          // Safety clamp: values > ±2 are always artifacts (> +6 dBFS)
+          outCh[i] = Math.max(-2, Math.min(2, recon[i]));
+        }
       }
 
       procBuf = resultBuf;
