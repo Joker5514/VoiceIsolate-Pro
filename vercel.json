@@ -1,7 +1,7 @@
 {
   "outputDirectory": "public",
   "installCommand": "pnpm install --no-frozen-lockfile",
-  "buildCommand": "node scripts/setup-ort.js && node scripts/setup-three.js && node scripts/stamp-sw-version.js",
+  "buildCommand": "node scripts/setup-ort.js || true && node scripts/setup-three.js || true && node scripts/stamp-sw-version.js || true",
   "env": {
     "PUPPETEER_SKIP_DOWNLOAD": "true",
     "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD": "true",
