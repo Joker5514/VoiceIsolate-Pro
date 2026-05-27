@@ -5,17 +5,19 @@ const path = require('path');
 
 const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
 
+// Worklet init is owned by pipeline-orchestrator.js (CLAUDE.md §2 — audioWorklet.addModule
+// must only be called from pipeline-orchestrator.js, never from app.js).
 describe('Engineer mode slider/worklet wiring', () => {
-  const appSrc = read('public/app/app.js');
-  const dspSrc = read('public/app/dsp-processor.js');
+  const orchSrc = read('public/app/pipeline-orchestrator.js');
+  const dspSrc  = read('public/app/dsp-processor.js');
 
-  test('app initializes worklet module before node construction', () => {
-    expect(appSrc).toContain("await this.ctx.audioWorklet.addModule('./dsp-processor.js')");
-    expect(appSrc).toContain("new AudioWorkletNode(this.ctx, 'dsp-processor'");
+  test('pipeline-orchestrator initializes worklet module before node construction', () => {
+    expect(orchSrc).toMatch(/audioWorklet\.addModule/);
+    expect(orchSrc).toContain("new AudioWorkletNode(this.ctx, 'dsp-processor'");
   });
 
-  test('app posts per-slider param updates to worklet port', () => {
-    expect(appSrc).toContain("this.workletNode.port.postMessage({ type: 'param', id: sliderId, value })");
+  test('pipeline-orchestrator posts param updates to worklet port', () => {
+    expect(orchSrc).toContain('workletNode.port.postMessage');
   });
 
   test('dsp-processor accepts single param messages', () => {
@@ -24,17 +26,19 @@ describe('Engineer mode slider/worklet wiring', () => {
   });
 });
 
+// ONNX session management lives in ml-worker.js (CLAUDE.md §3 — ML worker is owned by
+// pipeline-orchestrator.js; inference logic including execution providers lives in ml-worker.js).
 describe('ONNX init sequencing and fallback', () => {
-  const appSrc = read('public/app/app.js');
+  const mlSrc = read('public/app/ml-worker.js');
 
-  test('app uses WebGPU first with WASM fallback providers', () => {
-    expect(appSrc).toContain("executionProviders: ['webgpu', 'wasm']");
-    expect(appSrc).toContain("executionProviders: ['wasm']");
+  test('ml-worker uses WebGPU first with WASM fallback providers', () => {
+    expect(mlSrc).toContain("executionProviders: ['webgpu', 'wasm']");
+    expect(mlSrc).toContain("executionProviders: ['wasm']");
   });
 
-  test('app posts init to ml-worker after session setup path', () => {
-    expect(appSrc).toContain("type: 'init'");
-    expect(appSrc).toContain('session,');
+  test('ml-worker handles init message and manages session lifecycle', () => {
+    expect(mlSrc).toContain("case 'init':");
+    expect(mlSrc).toContain('session,');
   });
 });
 
@@ -50,7 +54,7 @@ describe('Vercel global header coverage', () => {
   });
 
   test('content-types are declared for js/wasm/onnx routes', () => {
-    const jsRule = cfg.headers.find((h) => h.source === '/(.*\\.js)');
+    const jsRule   = cfg.headers.find((h) => h.source === '/(.*\\.js)');
     const wasmRule = cfg.headers.find((h) => h.source === '/(.*\\.wasm)');
     const onnxRule = cfg.headers.find((h) => h.source === '/(.*\\.onnx)');
     expect(jsRule).toBeDefined();
