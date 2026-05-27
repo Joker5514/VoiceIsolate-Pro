@@ -300,6 +300,13 @@ function buildPanels() {
           window.VIP_PARAMS = window.VIP_PARAMS || {};
           window.VIP_PARAMS[s.id] = v;
         }
+        // Bug 1 Fix: Immediately dispatch updated params to orchestrator or workletNode
+        const orch = window._vipOrch;
+        if (orch && typeof orch.updateParams === 'function') {
+          orch.updateParams(orch._normalizeRawParams({ ...window.VIP_PARAMS }));
+        } else if (typeof workletNode !== 'undefined' && workletNode) {
+          workletNode.port.postMessage({ type: 'setParams', params: { ...window.VIP_PARAMS } });
+        }
       });
 
       // Lock button — protects this slider from preset and reset overrides
@@ -408,17 +415,10 @@ function initSliders() {
     const dispatch = () => {
       const raw = Number(slider.value);
       if (!Number.isFinite(raw)) return;
-      const mapped = typeof entry.transform === 'function' ? entry.transform(raw) : raw;
-      const payload = { [entry.key]: mapped };
-      const orch = typeof window !== 'undefined' ? window._vipOrch : null;
-      const snapshot = { ...(window.VIP_PARAMS || {}), [entry.id]: raw };
-      if (entry.target === 'worklet' || entry.target === 'both') {
-        if (orch?.workletNode) orch.updateParams?.(snapshot);
-        else if (workletNode) workletNode.port.postMessage({ type: 'params', payload });
-      }
-      if (entry.target === 'worker' || entry.target === 'both') {
-        if (orch?.mlWorker) orch.mlWorker.postMessage({ type: 'setParams', payload });
-        else if (mlWorker) mlWorker.postMessage({ type: 'setParams', payload });
+      // Bug 4 Fix: Cosmetic job only, only update window.VIP_PARAMS, remove duplicate postMessage dispatch.
+      if (typeof window !== 'undefined') {
+        window.VIP_PARAMS = window.VIP_PARAMS || {};
+        window.VIP_PARAMS[entry.id] = raw;
       }
     };
     slider.addEventListener('input', dispatch);
@@ -1376,7 +1376,7 @@ class VoiceIsolatePro {
       // Push current slider snapshot to the worklet so any parameters
       // the user changed before pressing play take effect immediately.
       if (orch && typeof orch.updateParams === 'function') {
-        orch.updateParams(this.params);
+        orch.updateParams(orch._normalizeRawParams({ ...window.VIP_PARAMS }));
       }
 
       src.start(0, this.playOffset);

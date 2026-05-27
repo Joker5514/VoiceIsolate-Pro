@@ -714,6 +714,8 @@ class PipelineOrchestrator {
    * Safe to call before workletNode is created — updateParams() guards itself.
    */
   _bindSliders() {
+    if (this._slidersBound) return;
+    this._slidersBound = true;
     // DOM sliders use id="sl_gateThresh", id="sl_eqBass", etc.
     const sliders = document.querySelectorAll('input[type="range"][id^="sl_"]');
     const snapshot = {};
@@ -725,6 +727,9 @@ class PipelineOrchestrator {
       el.addEventListener('input', () => {
         const paramId = el.id.slice(3);
         snapshot[paramId] = parseFloat(el.value);
+        if (window._vipApp && window._vipApp.params) {
+          window._vipApp.params[paramId] = parseFloat(el.value);
+        }
         // Apply transforms (nrAmount, dryWet → 0-1) then forward
         this.updateParams(this._normalizeRawParams(snapshot));
       });
@@ -894,10 +899,15 @@ class PipelineOrchestrator {
     // them at bootstrap means user interaction works immediately, and is
     // resilient to AudioContext init failures (e.g. autoplay-blocked).
     const bindIso = () => orch._bindIsolationControls();
+    const bindSliders = () => orch._bindSliders();
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', bindIso, { once: true });
+      document.addEventListener('DOMContentLoaded', () => {
+        bindIso();
+        bindSliders();
+      }, { once: true });
     } else {
       bindIso();
+      bindSliders();
     }
 
     // ── Pre-warm AudioWorklet modules ─────────────────────────────────
