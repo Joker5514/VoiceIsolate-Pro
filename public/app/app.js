@@ -2134,9 +2134,12 @@ class VoiceIsolatePro {
       this.updatePipelineProgress(9, 'Single forward STFT complete', 32);
       await new Promise(r => setTimeout(r, 0));
 
-      if (spectrum?.mag && spectrum?.phase) {
-        const originalMag = spectrum.mag.map(frame => frame.slice());
-        runFullPipeline(spectrum.mag, spectrum.phase, originalMag, this.params, {}, sampleRate);
+      if (!spectrum?.mag || !spectrum?.phase || !DSP.inverseSTFT) {
+        throw new Error('DSP spectral analysis or reconstruction engine is unavailable.');
+      }
+      const originalMag = spectrum.mag.map(frame => frame.slice());
+      for (let i = 0; i < spectrum.mag.length; i++) {
+        runFullPipeline(spectrum.mag[i], spectrum.phase[i], originalMag[i], this.params, {}, sampleRate);
       }
       this.updatePipelineProgress(15, 'Spectral refinement and suppression applied in-place', 54);
       await new Promise(r => setTimeout(r, 0));
