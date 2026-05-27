@@ -373,11 +373,15 @@ class VoiceIsolatePro {
     this.initModelStatusPanel();
 
     // Lazy AudioContext — requires user gesture
-    document.addEventListener('click', () => this.ensureCtx(), { once: true });
-    document.addEventListener('keydown', () => this.ensureCtx(), { once: true });
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('click', () => this.ensureCtx(), { once: true });
+      document.addEventListener('keydown', () => this.ensureCtx(), { once: true });
+    }
 
     window.__vipAppReady = true;
-    window.dispatchEvent(new CustomEvent('app:ready'));
+    if (typeof CustomEvent !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('app:ready'));
+    }
 
     if (window._vipOrch && typeof window._vipOrch.connectApp === 'function') {
       window._vipOrch.connectApp(this);
@@ -676,6 +680,12 @@ class VoiceIsolatePro {
       if (el) el.addEventListener(event, fn);
     };
 
+    // Safe querySelectorAll — returns empty array when document is a partial mock
+    const qsa = (sel) => {
+      if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') return document.querySelectorAll(sel);
+      return [];
+    };
+
     // File input
     bind('fileBtn', d.fileBtn, 'click', () => { if (d.fileInput) d.fileInput.click(); });
     if (d.uploadZone) {
@@ -751,7 +761,9 @@ class VoiceIsolatePro {
 
     // A/B toggle
     bind('tpAB', d.tpAB, 'click', () => this.toggleAB());
-    document.addEventListener('keydown', e => this._handleGlobalKeydown(e));
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('keydown', e => this._handleGlobalKeydown(e));
+    }
 
     // Save buttons
     bind('saveOrigBtn', d.saveOrigBtn, 'click', () => {
@@ -764,13 +776,13 @@ class VoiceIsolatePro {
 
     // Preset selector
     bind('presetSel', d.presetSel, 'change', e => this.applyPreset(e.target.value));
-    document.querySelectorAll('.btn-preset').forEach(b => {
+    qsa('.btn-preset').forEach(b => {
       b.addEventListener('click', () => this.applyPreset(b.dataset.preset));
     });
 
     // Reset sliders
     bind('resetSlidersBtn', d.resetSlidersBtn, 'click', () => {
-      document.querySelectorAll('[id^="sl_"]').forEach(el => {
+      qsa('[id^="sl_"]').forEach(el => {
         const id = el.id.slice(3);
         const spec = SLIDER_BY_ID[id];
         if (spec) { el.value = spec.val; el.dispatchEvent(new Event('input', { bubbles: true })); }
@@ -780,21 +792,21 @@ class VoiceIsolatePro {
     // Slider search
     bind('sliderSearch', d.sliderSearch, 'input', () => {
       const q = d.sliderSearch.value.trim().toLowerCase();
-      document.querySelectorAll('.sr-row').forEach(row => {
+      qsa('.sr-row').forEach(row => {
         const label = (row.querySelector('.sr-label') || {}).textContent || '';
         row.style.display = (!q || label.toLowerCase().includes(q)) ? '' : 'none';
       });
     });
 
     // Tab switching
-    document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+    qsa('.tab-btn[data-tab]').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => {
+        qsa('.tab-btn').forEach(b => {
           b.classList.remove('active');
           b.setAttribute('aria-selected', 'false');
           b.setAttribute('tabindex', '-1');
         });
-        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        qsa('.panel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         btn.setAttribute('aria-selected', 'true');
         btn.setAttribute('tabindex', '0');
@@ -807,12 +819,12 @@ class VoiceIsolatePro {
     let uiScale = 1;
     bind('uiScaleDn', $('uiScaleDn'), 'click', () => {
       uiScale = Math.max(0.7, uiScale - 0.05);
-      document.body.style.zoom = uiScale;
+      if (document.body) document.body.style.zoom = uiScale;
       const v = $('uiScaleVal'); if (v) v.textContent = Math.round(uiScale * 100) + '%';
     });
     bind('uiScaleUp', $('uiScaleUp'), 'click', () => {
       uiScale = Math.min(1.4, uiScale + 0.05);
-      document.body.style.zoom = uiScale;
+      if (document.body) document.body.style.zoom = uiScale;
       const v = $('uiScaleVal'); if (v) v.textContent = Math.round(uiScale * 100) + '%';
     });
 
@@ -1337,6 +1349,7 @@ class VoiceIsolatePro {
   _resolveDSP() {
     return (typeof globalThis !== 'undefined' && globalThis.DSPCore) ||
            (typeof window !== 'undefined' && window.DSPCore) ||
+           null;
            (typeof DSPCore !== 'undefined' ? globalThis.DSPCore : null);
   }
 
@@ -1842,6 +1855,9 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
 (function _vipBootstrap() {
   if (typeof VoiceIsolatePro === 'undefined') return;
   if (window._vipApp) return;
+  // Skip when running outside a real browser (test VMs, new Function sandboxes, CommonJS)
+  if (typeof document === 'undefined' || typeof document.readyState !== 'string') return;
+  if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') return;
 
   function _callAuthInit() {
     if (typeof Auth !== 'undefined' && Auth && typeof Auth.init === 'function') {
@@ -1856,8 +1872,8 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
     var app = null;
     try {
       app = new VoiceIsolatePro();
-      app._initCalled = true;
       app.init();
+      app._initCalled = true;
       window._vipApp = app;
       window.vip = app;
       console.info('[app] VoiceIsolatePro ready via app.js bootstrap');

@@ -172,19 +172,19 @@
     if (window.vip instanceof VoiceIsolatePro) {
       window._vipApp = window.vip;
       if (typeof window._vipApp.init === 'function' && !window._vipApp._initCalled) {
-        window._vipApp._initCalled = true;
         try { window._vipApp.init(); } catch(e){ console.warn('[vip-boot] app.init() error:', e); }
       }
+      window._vipApp._initCalled = true;
       console.info('[vip-boot] Aliased window.vip \u2192 window._vipApp \u2713');
       _callAuthInit();
       return;
     }
     try {
       var app = new VoiceIsolatePro();
-      app._initCalled = true;
       if (typeof app.init === 'function') {
         try { app.init(); } catch(e){ console.warn('[vip-boot] app.init() error:', e); }
       }
+      app._initCalled = true;
       window.vip     = app;
       window._vipApp = app;
       console.info('[vip-boot] VoiceIsolatePro instantiated + init() called \u2713');
