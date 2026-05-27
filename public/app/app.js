@@ -672,7 +672,8 @@ class VoiceIsolatePro {
   }
 
   onSlider(id, value) {
-    if (id === 'outGain' && this._outGainNode && this.ctx) {
+    const orch = window._vipOrch;
+    if (id === 'outGain' && this._outGainNode && this.currentSource && this.ctx) {
       const gain = Math.pow(10, value / 20);
       this._outGainNode.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.01);
     }
@@ -687,7 +688,6 @@ class VoiceIsolatePro {
       if (buf) this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset));
       this.play();
     }
-    const orch = window._vipOrch;
     if (orch && typeof orch.onSlider === 'function') {
       orch.onSlider(id, value);
     }
@@ -1145,12 +1145,12 @@ class VoiceIsolatePro {
     let processed = await this._applyOfflineSpectralProcessing(buf);
 
     const ensureWritableBuffer = () => {
-      if (!processed || !this.ctx || processed !== buf) return;
+      if (!processed || !this.ctx || processed !== buf) return processed;
       const copy = this.ctx.createBuffer(processed.numberOfChannels, processed.length, processed.sampleRate);
       for (let ch = 0; ch < processed.numberOfChannels; ch++) {
         copy.getChannelData(ch).set(processed.getChannelData(ch));
       }
-      processed = copy;
+      return copy;
     };
 
     if (dryWetPct < 100) {
@@ -1161,7 +1161,7 @@ class VoiceIsolatePro {
     if (outGainDb !== 0) {
       this.updatePipelineProgress(27, 'Applying Output Gain…', 80);
       const gain = Math.pow(10, outGainDb / 20);
-      ensureWritableBuffer();
+      processed = ensureWritableBuffer();
       for (let ch = 0; ch < processed.numberOfChannels; ch++) {
         const out = processed.getChannelData(ch);
         for (let i = 0; i < out.length; i++) {
@@ -1172,7 +1172,7 @@ class VoiceIsolatePro {
 
     if (outWidth !== 100 && processed.numberOfChannels >= 2) {
       this.updatePipelineProgress(28, 'Applying Stereo Width…', 85);
-      ensureWritableBuffer();
+      processed = ensureWritableBuffer();
       const w = outWidth / 100;
       const mGain = (1 + w) / 2;
       const sGain = (1 - w) / 2;
@@ -1188,7 +1188,7 @@ class VoiceIsolatePro {
 
     if (ditherAmt > 0) {
       this.updatePipelineProgress(29, 'Applying Dither…', 90);
-      ensureWritableBuffer();
+      processed = ensureWritableBuffer();
       for (let ch = 0; ch < processed.numberOfChannels; ch++) {
         this.applyDither(processed.getChannelData(ch), p);
       }
@@ -1601,6 +1601,9 @@ class VoiceIsolatePro {
       try { this.currentSource.stop(); } catch (_) {}
       try { this.currentSource.disconnect(); } catch (_) {}
       this.currentSource = null;
+    }
+    if (this._outGainNode) {
+      try { this._outGainNode.disconnect(); } catch (_) {}
     }
     this._outGainNode = null;
   }
