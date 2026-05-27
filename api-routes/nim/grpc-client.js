@@ -2,8 +2,9 @@ import grpc from '@grpc/grpc-js';
 import protoLoader from '@grpc/proto-loader';
 import path from 'path';
 
-// Note: In a real implementation we would load the specific proto files from NVIDIA
-// but since we don't have them, we mock the gRPC client structure for the NIM service.
+// Note: In a real implementation we would load the specific proto files from NVIDIA.
+// The placeholder path below is intentionally unused because this module currently
+// mocks the gRPC client structure for the NIM service.
 
 const PROTO_PATH = path.resolve(process.cwd(), 'api-routes/nim/active_speaker.proto');
 const NIM_HOST = process.env.NIM_HOST || '127.0.0.1:8001';
