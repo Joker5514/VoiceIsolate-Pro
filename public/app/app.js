@@ -1349,7 +1349,7 @@ class VoiceIsolatePro {
   _resolveDSP() {
     return (typeof globalThis !== 'undefined' && globalThis.DSPCore) ||
            (typeof window !== 'undefined' && window.DSPCore) ||
-           (typeof DSPCore !== 'undefined' ? DSPCore : null);
+           null;
   }
 
   // Single offline path: ONE forward STFT, in-place spectral ops S11–S19, ONE iSTFT
