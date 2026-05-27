@@ -2,7 +2,7 @@
  * VoiceIsolate Pro — API Router v22
  *
  * Mounts all API routes on the Express server.
- * Import this in server.js: import apiRouter from './api/index.js'
+ * Import this in server.js: import apiRouter from './api-routes/index.js'
  * Then: app.use('/api', apiRouter)
  *
  * Routes:
@@ -18,11 +18,11 @@
  */
 
 import express from 'express';
-import monetizationRouter from './_monetization.js';
-import syncRouter from './_sync.js';
-import authRouter from './_auth.js';
-import nimRouter from './_nim/index.js';
-import clientConfigHandler from './_client-config.js';
+import monetizationRouter from './monetization.js';
+import syncRouter from './sync.js';
+import authRouter from './auth.js';
+import nimRouter from './nim/index.js';
+import clientConfigHandler from './client-config.js';
 
 const router = express.Router();
 

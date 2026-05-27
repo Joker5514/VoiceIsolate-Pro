@@ -87,8 +87,8 @@
       "public/app/ml-worker.js",
       "public/app/batch-processor.js",
       "public/app/analytics.js",
-      "api/_monetization.js",
-      "api/_sync.js"
+      "api-routes/monetization.js",
+      "api-routes/sync.js"
     ],
     "forceExit": true,
     "openHandlesTimeout": 1000
