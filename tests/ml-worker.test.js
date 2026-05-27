@@ -39,6 +39,11 @@ describe('ml-worker.js', () => {
       Float32Array: Float32Array,
       Promise: Promise,
       console: console,
+      // Shadow the Node.js 22.x global fetch so the SHA-256 integrity check
+      // in createSessionWithFallback fails fast (non-mismatch error) instead of
+      // attempting real network requests to external Vercel Blob URLs, which
+      // would exceed the 5 s Jest timeout.
+      fetch: jest.fn(() => Promise.reject(new Error('network unavailable in test env'))),
     };
 
     // Evaluate the worker code in the mock global context
@@ -118,6 +123,16 @@ describe('ml-worker.js', () => {
 
   it('falls back to WASM provider when WebGPU session creation fails', async () => {
     const runMock = jest.fn().mockResolvedValue({ output: { data: new Float32Array([1]) } });
+    workerGlobal.navigator = {
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
+      gpu: { requestAdapter: jest.fn().mockResolvedValue({}) }
+    };
+
+    const argNames = Object.keys(workerGlobal);
+    const argValues = argNames.map(name => workerGlobal[name]);
+    const fn = new Function(...argNames, workerCode);
+    fn(...argValues);
+
     workerGlobal.self.ort.InferenceSession.create.mockImplementation((_modelPath, options) => {
       if (options.executionProviders[0] === 'webgpu') {
         return Promise.reject(new Error('webgpu unavailable'));
@@ -138,6 +153,40 @@ describe('ml-worker.js', () => {
     expect(readyMsg.models.vad).toBe(true);
   });
 
+  it('skips WebGPU provider probing on Android WebView and uses WASM-only session creation', async () => {
+    const requestAdapter = jest.fn().mockResolvedValue({});
+    workerGlobal.navigator = {
+      userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 Chrome/124.0.0.0 Mobile Safari/537.36 wv',
+      gpu: { requestAdapter }
+    };
+
+    const argNames = Object.keys(workerGlobal);
+    const argValues = argNames.map((name) => workerGlobal[name]);
+    const fn = new Function(...argNames, workerCode);
+    fn(...argValues);
+
+    workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({ run: jest.fn().mockResolvedValue({}) });
+
+    await workerGlobal.self.onmessage({
+      data: { type: 'loadModel', models: ['vad'] }
+    });
+
+    expect(requestAdapter).not.toHaveBeenCalled();
+    expect(workerGlobal.self.ort.InferenceSession.create).toHaveBeenCalledTimes(1);
+    expect(workerGlobal.self.ort.InferenceSession.create.mock.calls[0][1].executionProviders).toEqual(['wasm']);
+  });
+
+  it('configures mobile-safe ORT WASM flags during initialization', async () => {
+    workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({ run: jest.fn().mockResolvedValue({}) });
+
+    await workerGlobal.self.onmessage({ data: { type: 'loadModel', models: ['vad'] } });
+
+    expect(workerGlobal.self.ort.env.wasm.wasmPaths).toBe('/lib/');
+    expect(workerGlobal.self.ort.env.wasm.proxy).toBe(true);
+    expect(workerGlobal.self.ort.env.wasm.numThreads).toBe(workerGlobal.navigator.hardwareConcurrency ?? 4);
+    expect(workerGlobal.self.ort.env.wasm.simd).toBe(true);
+  });
+
   it('uses PCM chunks for demucs input and never spectral mag_input', async () => {
     const demucsRun = jest.fn().mockImplementation(async (feeds) => {
       const bins = feeds.input ? feeds.input.dims[2] : 0;
@@ -146,8 +195,8 @@ describe('ml-worker.js', () => {
     workerGlobal.self.ort.InferenceSession.create.mockResolvedValue({ run: demucsRun });
 
     const chunkSize = 333;
-    const inputBytes = Int32Array.BYTES_PER_ELEMENT * 4 + Float32Array.BYTES_PER_ELEMENT * chunkSize * 2;
-    const outputBytes = Int32Array.BYTES_PER_ELEMENT * 4 + Float32Array.BYTES_PER_ELEMENT * chunkSize;
+    const inputBytes = Int32Array.BYTES_PER_ELEMENT * 5 + Float32Array.BYTES_PER_ELEMENT * (chunkSize * 2 + 1024);
+    const outputBytes = Int32Array.BYTES_PER_ELEMENT * 5 + Float32Array.BYTES_PER_ELEMENT * chunkSize;
     const inputSAB = new SharedArrayBuffer(inputBytes);
     const outputSAB = new SharedArrayBuffer(outputBytes);
     const pcmChunk = new Float32Array(chunkSize).fill(0.1);

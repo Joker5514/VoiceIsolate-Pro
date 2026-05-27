@@ -1,57 +1,41 @@
 {
+  "_note": "Vercel Blob is the exclusive CDN provider. HuggingFace and Cloudflare R2 removed. Committed ONNX files (silero_vad, rnnoise, bsrnn) are served same-origin from /app/models/. Demucs is redirected to Vercel Blob via vercel.json rewrite ($BLOB_DEMUCS_URL).",
   "schemaVersion": 2,
   "models": {
     "demucs": {
       "filename": "demucs_v4_quantized.onnx",
-      "sizeBytes": 388100096,
+      "sizeBytes": 88080384,
       "eager": false,
       "sources": [
-        { "provider": "vercel-blob", "url": "/app/models/demucs_v4_quantized.onnx" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/demucs_v4_quantized.onnx" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/demucs_v4_quantized.onnx" }
+        { "provider": "vercel-blob", "url": "/app/models/demucs_v4_quantized.onnx" }
       ]
     },
     "bsrnn": {
-      "filename": "bsrnn_quantized.onnx",
-      "sizeBytes": 155189248,
+      "filename": "bsrnn_vocals.onnx",
+      "sizeBytes": 3870554,
       "eager": false,
       "sources": [
-        { "provider": "vercel-blob", "url": "/app/models/bsrnn_quantized.onnx" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/bsrnn_quantized.onnx" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/bsrnn_quantized.onnx" }
+        { "provider": "vercel-blob", "url": "/app/models/bsrnn_vocals.onnx" }
       ]
     },
     "rnnoise": {
-      "filename": "rnnoise.onnx",
-      "sizeBytes": 2097152,
+      "filename": "rnnoise_suppressor.onnx",
+      "sizeBytes": 2027576,
       "eager": true,
       "sources": [
-        { "provider": "vercel-blob", "url": "/app/models/rnnoise.onnx" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/rnnoise.onnx" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/rnnoise.onnx" }
-      ]
-    },
-    "nsnet2": {
-      "filename": "nsnet2.onnx",
-      "sizeBytes": 2097152,
-      "eager": true,
-      "sources": [
-        { "provider": "vercel-blob", "url": "/app/models/nsnet2.onnx" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/nsnet2.onnx" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/nsnet2.onnx" }
+        { "provider": "vercel-blob", "url": "/app/models/rnnoise_suppressor.onnx" }
       ]
     },
     "silero_vad": {
       "filename": "silero_vad.onnx",
-      "sizeBytes": 1048576,
+      "sizeBytes": 2327524,
       "eager": true,
       "sources": [
-        { "provider": "vercel-blob", "url": "/app/models/silero_vad.onnx" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/models/silero_vad.onnx" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/silero_vad.onnx" }
+        { "provider": "vercel-blob", "url": "/app/models/silero_vad.onnx" }
       ]
     }
   },
+  "_sha256_note": "SHA256 last updated: 2026-05-20. Regenerate with: node scripts/hash-worklets.js",
   "worklets": {
     "dsp_processor": {
       "filename": "dsp-processor.js",
@@ -59,9 +43,7 @@
       "contentType": "application/javascript",
       "sources": [
         { "provider": "same-origin", "url": "/app/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" },
-        { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" },
-        { "provider": "r2",          "url": "https://models.voiceisolatepro.com/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" },
-        { "provider": "huggingface", "url": "https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" }
+        { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js", "sha256": "9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48" }
       ]
     }
   }

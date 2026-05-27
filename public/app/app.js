@@ -1,7 +1,45 @@
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { ModelStatusUI } from './model-status-ui.js';
+<<<<<<< HEAD
 import { runFullPipeline } from './dsp-stages.js';
 const DSP = globalThis.DSPCore || globalThis.DSP || {};
+=======
+// DSP math (forwardSTFT / inverseSTFT) lives on globalThis.DSPCore, exposed by
+// the classic <script src="./dsp-core.js"> tag in index.html — loaded before
+// this module so the binding is live at evaluation time. `DSP` retained as a
+// shorter alias; legacy globalThis.DSP kept as a fallback.
+function resolveDSPOrFail() {
+  const dsp = globalThis.DSPCore || globalThis.DSP;
+  const hasForward = !!dsp && typeof dsp.forwardSTFT === 'function';
+  const hasInverse = !!dsp && typeof dsp.inverseSTFT === 'function';
+
+  if (hasForward && hasInverse) return dsp;
+
+  const error = new Error(
+    'DSPCore is required but was not initialized correctly. Missing DSP.forwardSTFT and/or DSP.inverseSTFT.'
+  );
+  const details = {
+    hasDSPCore: !!globalThis.DSPCore,
+    hasLegacyDSP: !!globalThis.DSP,
+    hasForwardSTFT: hasForward,
+    hasInverseSTFT: hasInverse,
+  };
+
+  console.error('[VIP] Failed to initialize DSP dependency', details);
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('vip:dsp-error', {
+      detail: {
+        message: error.message,
+        ...details,
+      },
+    }));
+  }
+
+  throw error;
+}
+
+const DSP = resolveDSPOrFail();
+>>>>>>> origin/main
 
 // ── Structured logging ───────────────────────────────────────────────────────
 function structuredLog(level, msg, data = {}) {
@@ -33,6 +71,10 @@ let mlWorker    = null;
 let mlReady     = false;
 let neonAnalyser = null;
 let neonVizHandle = null;
+let pulsingAuraHandle = null;
+let topo3DHandle = null;
+let swarmHandle = null;
+let liquidWavesHandle = null;
 
 const _pendingFrames = [];
 const FFT_SIZE = 4096;
@@ -548,6 +590,7 @@ class VoiceIsolatePro {
     this.visualEngine = null;
     this._vizRaf = 0;
     this._spectroFrame = 0;
+    this._videoPreviewUrl = null;
 
     Object.values(SLIDERS).flat().forEach(s => { this.params[s.id] = s.val; });
     if (typeof window !== 'undefined') {
@@ -587,6 +630,10 @@ class VoiceIsolatePro {
     try {
       document.addEventListener('keydown', e => this._handleGlobalKeydown(e));
     } catch (_) {}
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.__vipAppReady = true;
+      window.dispatchEvent(new CustomEvent('app:ready'));
+    }
   }
 
   init() {
@@ -766,19 +813,33 @@ class VoiceIsolatePro {
     }
     if (this.dom.fileInput) {
       this.dom.fileInput.addEventListener('change', e => {
-        if (e.target.files && e.target.files[0]) this.handleFile(e.target.files[0]);
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+        // Reset value so re-selecting the same file fires `change` again.
+        try { e.target.value = ''; } catch (_) {}
+        this.handleFile(f);
       });
     }
     if (this.dom.dropZone) {
-      this.dom.dropZone.addEventListener('dragover', e => e.preventDefault());
-      this.dom.dropZone.addEventListener('drop', e => {
+      const uploadZoneEl = document.getElementById('uploadZone') || this.dom.dropZone;
+      window.addEventListener('dragover', e => {
         e.preventDefault();
+        uploadZoneEl.classList.add('dragover');
+      });
+      window.addEventListener('dragleave', e => {
+        if (!e.relatedTarget || e.relatedTarget.nodeName === 'HTML') {
+          uploadZoneEl.classList.remove('dragover');
+        }
+      });
+      window.addEventListener('drop', e => {
+        e.preventDefault();
+        uploadZoneEl.classList.remove('dragover');
         const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
         if (f) this.handleFile(f);
       });
     }
     if (this.dom.clearFile) {
-      this.dom.clearFile.addEventListener('click', () => this.stop());
+      this.dom.clearFile.addEventListener('click', () => this.clearLoadedFile());
     }
 
     if (this.dom.mobileProcessBtn) {
@@ -831,16 +892,54 @@ class VoiceIsolatePro {
     const openPresetModalBtn = document.getElementById('openPresetModalBtn');
     const customPresetModal = document.getElementById('customPresetModal');
     const closePresetModal = document.getElementById('closePresetModal');
-    if (openPresetModalBtn && customPresetModal) openPresetModalBtn.addEventListener('click', () => customPresetModal.classList.add('open'));
-    if (closePresetModal && customPresetModal) closePresetModal.addEventListener('click', () => customPresetModal.classList.remove('open'));
+    const customPresetNameInput = document.getElementById('customPresetName');
+
+    const openPresetModal = () => {
+      if (!customPresetModal) return;
+      customPresetModal.classList.add('open');
+      customPresetModal.setAttribute('aria-hidden', 'false');
+      if (customPresetNameInput) {
+        customPresetNameInput.value = '';
+        customPresetNameInput.focus();
+      }
+    };
+
+    const closePresetModalFunc = () => {
+      if (!customPresetModal) return;
+      customPresetModal.classList.remove('open');
+      customPresetModal.setAttribute('aria-hidden', 'true');
+      if (openPresetModalBtn) openPresetModalBtn.focus();
+    };
+
+    const savePreset = () => {
+      const nameEl = document.getElementById('customPresetName');
+      const name = nameEl && nameEl.value.trim();
+      if (!name) return;
+      PRESETS[name] = { ...this.params };
+      closePresetModalFunc();
+      this.showNotification('Preset "' + name + '" saved', 'success');
+    };
+
+    if (openPresetModalBtn && customPresetModal) {
+      openPresetModalBtn.addEventListener('click', openPresetModal);
+    }
+
+    if (closePresetModal && customPresetModal) {
+      closePresetModal.addEventListener('click', closePresetModalFunc);
+    }
+
     if (saveCustomBtn) {
-      saveCustomBtn.addEventListener('click', () => {
-        const nameEl = document.getElementById('customPresetName');
-        const name = nameEl && nameEl.value.trim();
-        if (!name) return;
-        PRESETS[name] = { ...this.params };
-        if (customPresetModal) customPresetModal.classList.remove('open');
-        this.showNotification('Preset "' + name + '" saved', 'success');
+      saveCustomBtn.addEventListener('click', savePreset);
+    }
+
+    if (customPresetModal) {
+      customPresetModal.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closePresetModalFunc();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          savePreset();
+        }
       });
     }
 
@@ -1093,15 +1192,28 @@ class VoiceIsolatePro {
   }
 
   ensureCtx() {
+    // Prefer the orchestrator's AudioContext so the AudioWorkletNode (DSP pipeline)
+    // lives in the same context as the playback chain.  Without this, slider
+    // parameters are sent to a worklet that never receives audio input.
     if (!this.ctx) {
-      try {
-        const AC = typeof AudioContext !== 'undefined' ? AudioContext :
-          (typeof window !== 'undefined' && window.AudioContext) ? window.AudioContext : null;
-        if (AC) {
-          this.ctx = new AC();
-          neonAnalyser = null;
-        }
-      } catch (_) {}
+      const orch = typeof window !== 'undefined' ? window._vipOrch : null;
+      if (orch && orch.ctx && orch.ctx.state !== 'closed') {
+        this.ctx = orch.ctx;
+        neonAnalyser = null;
+      } else {
+        try {
+          const AC = typeof AudioContext !== 'undefined' ? AudioContext :
+            (typeof window !== 'undefined' && window.AudioContext) ? window.AudioContext : null;
+          if (AC) {
+            this.ctx = new AC();
+            neonAnalyser = null;
+          }
+        } catch (_) {}
+      }
+    }
+    // Resume on user gesture (iOS/Safari + autoplay-blocked Chrome start suspended).
+    if (this.ctx && this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
+      this.ctx.resume().catch(() => {});
     }
     return this.ctx;
   }
@@ -1237,19 +1349,56 @@ class VoiceIsolatePro {
       src.playbackRate.value = parseFloat(this.dom.tpSpeed && this.dom.tpSpeed.value) || 1;
       src.loop = false;
       this.gainNode = this.ctx.createGain();
-      this.gainNode.gain.value = Math.pow(10, (this.params.outGain || 0) / 20);
-      src.connect(this.gainNode);
+      this.gainNode.gain.value = 1.0; // worklet handles outGain internally
       if (neonAnalyser && neonAnalyser.context !== this.ctx) neonAnalyser = null;
       if (!neonAnalyser) {
         neonAnalyser = this.ctx.createAnalyser();
         neonAnalyser.fftSize = 1024;
         neonAnalyser.smoothingTimeConstant = 0.84;
       }
+
+      // Route audio through the DSP worklet when available so that all
+      // real-time slider parameters (EQ, compression, gate, HP/LP filters,
+      // noise reduction, dry/wet, output gain, limiter) actually affect
+      // the audible output.  Chain: Source → WorkletNode → GainNode → Analyser → Destination
+      const orch = typeof window !== 'undefined' ? window._vipOrch : null;
+      const wn   = orch && orch.workletNode;
+      if (wn) {
+        src.connect(wn);
+        // Disconnect worklet's previous destination and re-wire through the
+        // gain + analyser chain so visualizers keep working.
+        try { wn.disconnect(); } catch (_) {}
+        wn.connect(this.gainNode);
+      } else {
+        // Fallback: no worklet available — direct passthrough
+        src.connect(this.gainNode);
+      }
+
       this.gainNode.connect(neonAnalyser);
       neonAnalyser.connect(this.ctx.destination);
+
+      // Push current slider snapshot to the worklet so any parameters
+      // the user changed before pressing play take effect immediately.
+      if (orch && typeof orch.updateParams === 'function') {
+        orch.updateParams(this.params);
+      }
+
       src.start(0, this.playOffset);
       this.currentSource = src;
       this.liveChainBuilt = true;
+
+      // Start premium visualizers
+      if (typeof window !== 'undefined') {
+        if (pulsingAuraHandle) pulsingAuraHandle.stop();
+        if (topo3DHandle) topo3DHandle.stop();
+        if (swarmHandle) swarmHandle.stop();
+        if (liquidWavesHandle) liquidWavesHandle.stop();
+
+        if (window.VIP_initPulsingAura) pulsingAuraHandle = window.VIP_initPulsingAura(neonAnalyser, document.getElementById('auraCanvas'));
+        if (window.VIP_initTopographic3D) topo3DHandle = window.VIP_initTopographic3D(neonAnalyser, document.getElementById('topoContainer'));
+        if (window.VIP_initParticleSwarm) swarmHandle = window.VIP_initParticleSwarm(neonAnalyser, document.getElementById('swarmContainer'));
+        if (window.VIP_initLiquidWaves) liquidWavesHandle = window.VIP_initLiquidWaves(neonAnalyser, document.getElementById('liquidCanvas'));
+      }
     } catch (e) {
       structuredLog('error', 'buildLiveChain failed', { e });
     }
@@ -1260,6 +1409,11 @@ class VoiceIsolatePro {
       try { this.currentSource.stop(); } catch (_) {}
       try { this.currentSource.disconnect(); } catch (_) {}
       this.currentSource = null;
+    }
+    // Disconnect the worklet from the playback chain (but don't destroy it)
+    const orch = typeof window !== 'undefined' ? window._vipOrch : null;
+    if (orch && orch.workletNode) {
+      try { orch.workletNode.disconnect(); } catch (_) {}
     }
     if (this.gainNode) {
       try { this.gainNode.disconnect(); } catch (_) {}
@@ -1392,6 +1546,37 @@ class VoiceIsolatePro {
       }
     }
     this._activeSpeed = rate;
+  }
+
+  clearLoadedFile() {
+    this.stop();
+    this.inputBuffer = null;
+    this.outputBuffer = null;
+    if (this.dom.fileInput) { try { this.dom.fileInput.value = ''; } catch (_) {} }
+    if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'No file loaded';
+    if (this.dom.hFile) this.dom.hFile.textContent = '—';
+    if (this.dom.hDur) this.dom.hDur.textContent = '0:00';
+    if (this.dom.tpDur) this.dom.tpDur.textContent = '0:00';
+    if (this.dom.hSR) this.dom.hSR.textContent = '—';
+    if (this.dom.hCh) this.dom.hCh.textContent = '—';
+    if (this.dom.processBtn) this.dom.processBtn.disabled = true;
+    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = true;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
+    if (this.dom.tpPlay) this.dom.tpPlay.disabled = true;
+    if (this.dom.tpPause) this.dom.tpPause.disabled = true;
+    if (this.dom.tpStop) this.dom.tpStop.disabled = true;
+    if (this.dom.tpRew) this.dom.tpRew.disabled = true;
+    if (this.dom.tpFwd) this.dom.tpFwd.disabled = true;
+    const saveOrigBtn = document.getElementById('saveOrigBtn');
+    const saveProcBtn = document.getElementById('saveProcBtn');
+    const auditLogBtn = document.getElementById('auditLogBtn');
+    if (saveOrigBtn) saveOrigBtn.disabled = true;
+    if (saveProcBtn) saveProcBtn.disabled = true;
+    if (auditLogBtn) auditLogBtn.disabled = true;
+    this.updatePipelineProgress(0, 'Ready — drop a file or record to begin', 0);
+    if (typeof this._hideFileLoading === 'function') this._hideFileLoading();
+    this.setStatus('READY');
   }
 
   _showFileLoading(text) {
@@ -1709,6 +1894,9 @@ class VoiceIsolatePro {
 
   async handleFile(file) {
     this.ensureCtx();
+    if (this.ctx && this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
+      try { await this.ctx.resume(); } catch (_) {}
+    }
     this.stop();
 
     const name = file.name || '';
@@ -1737,10 +1925,33 @@ class VoiceIsolatePro {
 
     try {
       if (isVideo) {
-        const result = await this.decodeViaVideoElement(file);
-        if (result) {
-          this.inputBuffer = result;
+        if (this.dom.videoPlayer && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+          const nextVideoUrl = URL.createObjectURL(file);
+          if (this._videoPreviewUrl && this._videoPreviewUrl !== nextVideoUrl && typeof URL.revokeObjectURL === 'function') {
+            try { URL.revokeObjectURL(this._videoPreviewUrl); } catch (_) {}
+          }
+          this._videoPreviewUrl = nextVideoUrl;
+          this.dom.videoPlayer.src = nextVideoUrl;
+        }
+        // Fast path: decodeAudioData handles MP4/WebM containers directly in modern browsers.
+        // This avoids real-time MediaRecorder playback (which hangs when AudioContext is
+        // suspended or when muted=true silences the Web Audio pipeline on mobile).
+        let decoded = null;
+        try {
+          const rawBuffer = await file.arrayBuffer();
+          decoded = await this.ctx.decodeAudioData(rawBuffer);
+        } catch (_) {
+          // Container not decodable directly — fall through to MediaRecorder extraction.
+        }
+        if (decoded && decoded.length > 0) {
+          this.inputBuffer = decoded;
           this.onAudioLoaded(name);
+        } else {
+          const result = await this.decodeViaVideoElement(file);
+          if (result) {
+            this.inputBuffer = result;
+            this.onAudioLoaded(name);
+          }
         }
       } else {
         const rawBuffer = await file.arrayBuffer();
@@ -1765,10 +1976,11 @@ class VoiceIsolatePro {
 
   async decodeViaVideoElement(file) {
     const url = URL.createObjectURL(file);
-    if (this.dom.videoPlayer) this.dom.videoPlayer.src = url;
     const videoEl = document.createElement('video');
     videoEl.preload = 'auto';
-    videoEl.muted = true;
+    videoEl.playsInline = true;
+    // Do NOT set muted=true — it silences the Web Audio pipeline on mobile,
+    // causing MediaRecorder to capture empty chunks.
     videoEl.src = url;
     return new Promise((resolve, reject) => {
       const cleanup = () => {
@@ -1781,6 +1993,8 @@ class VoiceIsolatePro {
 
       videoEl.onloadedmetadata = async () => {
         try {
+          // Resume the AudioContext — it may be suspended on mobile after page load.
+          if (this.ctx.state === 'suspended') await this.ctx.resume().catch(() => {});
           const source = this.ctx.createMediaElementSource(videoEl);
           const dest = this.ctx.createMediaStreamDestination();
           source.connect(dest);
@@ -1809,7 +2023,26 @@ class VoiceIsolatePro {
           videoEl.onended = () => {
             try { if (recorder.state !== 'inactive') recorder.stop(); } catch (_) {}
           };
-          await videoEl.play().catch(() => {});
+          let started = false;
+          try {
+            videoEl.muted = false;
+            await videoEl.play();
+            started = true;
+          } catch (_) {
+            try {
+              videoEl.muted = true;
+              await videoEl.play();
+              videoEl.muted = false;
+              started = true;
+            } catch (playErr) {
+              fail(playErr);
+              return;
+            }
+          }
+          if (!started) {
+            fail(new Error('Video playback blocked by autoplay policy'));
+            return;
+          }
           const durationMs = Math.max(1000, Math.ceil((videoEl.duration || 0) * 1000) + 250);
           setTimeout(() => {
             try {
@@ -1879,21 +2112,31 @@ class VoiceIsolatePro {
       this.setStatus('PROCESSING');
       structuredLog('info', 'Pipeline start', { stages: 32 });
 
+      // Resume context if suspended (autoplay policy / mobile).
+      if (this.ctx && this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
+        try { await this.ctx.resume(); } catch (_) {}
+      }
+
       const sampleRate = this.inputBuffer.sampleRate;
       const numCh = this.inputBuffer.numberOfChannels;
       const length = this.inputBuffer.length;
       const hopSize = 512;
 
+      this.updatePipelineProgress(1, 'Decoding input and validating channels', 4);
       const channels = [];
       for (let ch = 0; ch < numCh; ch++) {
         channels.push(new Float32Array(this.inputBuffer.getChannelData(ch)));
       }
       const signal = channels[0];
       this.updatePipelineProgress(3, 'Preparing buffers and noise profile', 12);
+      // Yield so the overlay can paint before the heavy STFT pass.
+      await new Promise(r => setTimeout(r, 0));
 
       const fftSize = 2048;
+      this.updatePipelineProgress(6, 'Running forward STFT…', 22);
       const spectrum = DSP.forwardSTFT ? DSP.forwardSTFT(signal, fftSize, hopSize) : null;
       this.updatePipelineProgress(9, 'Single forward STFT complete', 32);
+      await new Promise(r => setTimeout(r, 0));
 
       if (!spectrum?.mag || !spectrum?.phase || !DSP.inverseSTFT) {
         throw new Error('DSP spectral analysis or reconstruction engine is unavailable.');
@@ -1901,19 +2144,32 @@ class VoiceIsolatePro {
       const originalMag = spectrum.mag.map(frame => frame.slice());
       runFullPipeline(spectrum.mag, spectrum.phase, originalMag, this.params, {}, sampleRate);
       this.updatePipelineProgress(15, 'Spectral refinement and suppression applied in-place', 54);
+      await new Promise(r => setTimeout(r, 0));
 
       if (neonVizHandle) neonVizHandle.stop();
-      if (typeof window !== 'undefined' && typeof window.VIP_initNeonVisualizer === 'function') {
-        neonVizHandle = window.VIP_initNeonVisualizer(neonAnalyser);
+      if (typeof window !== 'undefined') {
+        if (window.VIP_initNeonVisualizer) neonVizHandle = window.VIP_initNeonVisualizer(neonAnalyser);
+        
+        if (pulsingAuraHandle) pulsingAuraHandle.stop();
+        if (topo3DHandle) topo3DHandle.stop();
+        if (swarmHandle) swarmHandle.stop();
+        if (liquidWavesHandle) liquidWavesHandle.stop();
+
+        if (window.VIP_initPulsingAura) pulsingAuraHandle = window.VIP_initPulsingAura(neonAnalyser, document.getElementById('auraCanvas'));
+        if (window.VIP_initTopographic3D) topo3DHandle = window.VIP_initTopographic3D(neonAnalyser, document.getElementById('topoContainer'));
+        if (window.VIP_initParticleSwarm) swarmHandle = window.VIP_initParticleSwarm(neonAnalyser, document.getElementById('swarmContainer'));
+        if (window.VIP_initLiquidWaves) liquidWavesHandle = window.VIP_initLiquidWaves(neonAnalyser, document.getElementById('liquidCanvas'));
       }
 
-      updateStatus('Binding UI sliders…');
-      initSliders();
-
+      // AUDIT-SAFE: single pipeline iSTFT (S20). inverseSTFT() only READS mag/phase
+      // (creates a new Float32Array for output; never mutates the input arrays).
+      // The shared spectral buffer is safe here — no deep copy needed.
+      this.updatePipelineProgress(17, 'Running inverse STFT…', 64);
       const processed = (DSP.inverseSTFT && spectrum?.mag && spectrum?.phase)
         ? DSP.inverseSTFT(spectrum.mag, spectrum.phase, fftSize, hopSize, signal.length)
         : null;
       this.updatePipelineProgress(19, 'Inverse STFT reconstruction complete', 71);
+      await new Promise(r => setTimeout(r, 0));
 
       if (processed && processed.length > 0) {
         const peak = this.calcPeak(processed);
@@ -2134,6 +2390,9 @@ class VoiceIsolatePro {
     return act < 3 ? '0-1' : act < 10 ? '1' : '1-2+';
   }
 
+  // ─── Utility FFT (NOT part of audio processing pipeline) ────────────────────
+  // Used for diagnostics and spectral analysis only. Does NOT violate single-pass
+  // STFT invariant because it never reconstructs audio via iFFT.
   _fft(re, im) {
     const N = re.length;
     let j = 0;
@@ -2238,7 +2497,7 @@ const data = spectrum.mag || spectrum; for (let i = 0; i < data.length; i++) { d
   }
 
   async loadModels() { structuredLog('info', 'loadModels called'); }
-  async runVAD(buf) { return null; }
+  async runVAD(_buf) { return null; }
 
   _mlCall(payload, transfer = []) {
     const id = ++this._mlCallId;
@@ -2255,7 +2514,7 @@ const data = spectrum.mag || spectrum; for (let i = 0; i < data.length; i++) { d
     });
   }
 
-  async runSeparation(buf, model = 'demucs') { return null; }
+  async runSeparation(_buf, _model = 'demucs') { return null; }
 
   async addAuditEntry(buf, stageName) {
     if (!buf) return;

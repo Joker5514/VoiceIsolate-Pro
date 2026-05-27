@@ -1,3 +1,4 @@
+// LOCAL METRICS ONLY — NO EXTERNAL CALLS
 // analytics.js — VoiceIsolate Pro
 // 100% LOCAL event analytics. All data stored in localStorage.
 //
@@ -5,12 +6,34 @@
 // NO navigator.sendBeacon(), NO WebSocket, NO image pixels, NO EventSource.
 // Auditors: grep this file for 'fetch|XMLHttp|sendBeacon|WebSocket|new Image'
 // to confirm. You will find zero matches.
+//
+// AUDIT-FIX #9 / #5 (2026-05-26): localStorage access is now guarded by a
+// sandbox probe (_canStore). Sandboxed iframes throw SecurityError synchronously
+// before our try/catch runs. The probe at module load detects this once and
+// the module degrades gracefully — analytics silently no-ops rather than
+// throwing on every track() call.
 
 const ANALYTICS_KEY = 'vip-analytics-v1';
 const MAX_EVENTS    = 500;
 
+// ── Sandbox guard ─────────────────────────────────────────────────────────────
+const _canStore = (function _probeLS() {
+  try {
+    const k = '__vip_ana_probe_' + Date.now();
+    localStorage.setItem(k, '1');
+    localStorage.removeItem(k);
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+// In-memory ring buffer used when localStorage is unavailable.
+let _memEvents = [];
+
 /** @returns {Array} */
 function _load() {
+  if (!_canStore) return _memEvents.slice();
   try {
     const raw = localStorage.getItem(ANALYTICS_KEY);
     if (!raw) return [];
@@ -23,10 +46,14 @@ function _load() {
 
 /** @param {Array} events */
 function _save(events) {
+  if (!_canStore) {
+    // Maintain in-memory ring
+    _memEvents = events.slice(-MAX_EVENTS);
+    return;
+  }
   try {
     localStorage.setItem(ANALYTICS_KEY, JSON.stringify(events));
   } catch (err) {
-    // localStorage quota exceeded — fail silently, never throw
     console.warn('[analytics] localStorage write failed:', err);
   }
 }
@@ -51,8 +78,6 @@ export function track(eventName, payload = {}) {
 
 /**
  * Structured event for audio processing runs.
- * @param {{ durationMs: number, fileSize: number, stageName: string,
- *           tier: string, hadError: boolean }} stats
  */
 export function trackProcessing(stats) {
   track('processing', {
@@ -64,31 +89,24 @@ export function trackProcessing(stats) {
   });
 }
 
-/**
- * Return all stored events.
- * @returns {Array<{ event: string, payload: Object, timestamp: number }>}
- */
+/** Return all stored events. */
 export function getEvents() {
   return _load();
 }
 
-/**
- * Erase all stored analytics events.
- */
+/** Erase all stored analytics events. */
 export function clearEvents() {
-  try {
-    localStorage.removeItem(ANALYTICS_KEY);
-  } catch (err) {
-    console.warn('[analytics] clearEvents failed:', err);
+  if (_canStore) {
+    try {
+      localStorage.removeItem(ANALYTICS_KEY);
+    } catch (err) {
+      console.warn('[analytics] clearEvents failed:', err);
+    }
   }
+  _memEvents = [];
 }
 
-/**
- * Aggregate summary of stored events.
- * @returns {{ totalEvents: number, processingCount: number,
- *             avgDurationMs: number, errorRate: number,
- *             lastEventTime: number|null }}
- */
+/** Aggregate summary of stored events. */
 export function getSummary() {
   const events     = _load();
   const procEvents = events.filter(e => e.event === 'processing');

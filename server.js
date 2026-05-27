@@ -12,9 +12,23 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import apiRouter from './api/index.js';
+import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
+
+// ── Auto-upload models to Vercel Blob on first load ─────────────────────
+if (process.env.BLOB_READ_WRITE_TOKEN && process.env.NODE_ENV !== 'test') {
+  console.log('[setup-blob] BLOB_READ_WRITE_TOKEN detected. Checking and uploading models to Vercel Blob...');
+  const child = spawn('node', [join(__dirname, 'scripts', 'upload-to-vercel-blob.mjs')], {
+    stdio: 'inherit',
+    env: process.env
+  });
+  child.on('close', (code) => {
+    console.log(`[setup-blob] upload process exited with code ${code}`);
+  });
+}
+
 const PORT       = process.env.PORT || 3000;
 const APP_VERSION = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')).version;
 const app        = express();

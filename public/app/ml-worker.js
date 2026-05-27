@@ -14,8 +14,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEFAULT_NUM_BINS = 2049; // (4096 / 2) + 1
-const FLAG_SLOTS = 4;
-const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
+const FLAG_SLOTS = 5;                                                // Bug #2 fix: 5 slots = 20 bytes, matches SharedRingBuffer header
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS; // 20
 const NOISE_WARMUP_FRAMES = 90;
 const FORENSIC_ALPHA_FLOOR_THRESHOLD = 0.005;
 const ALPHA_CAP_DEFAULT = 2.0;
@@ -36,9 +36,11 @@ let ort = null;
 
 let inputView  = null; // Float32Array view of inputSAB payload: [mag | phase]
 let outputView = null; // Float32Array view of outputSAB payload: [mask]
+let pcmView    = null; // Float32Array view of inputSAB PCM region: [HOP_SIZE samples] (Bug #3)
 let flagsIn    = null; // Int32Array: flagsIn[0]=frameCounter (incremented by worklet)
-let flagsOut   = null; // Int32Array: flagsOut[1]=maskReady (written by ml-worker)
-let _lastPollFrame = 0; // last frame counter value seen in pollOnce()
+let flagsOut   = null; // Int32Array: flagsOut[0]=writeGen (incremented by ml-worker; Bug #1 fix)
+let _lastPollFrame = 0;    // last frame counter value seen in pollOnce()
+let _pollInFlight  = false; // in-flight guard — prevents overlapping async inference calls
 
 let sessions      = {}; // { modelId: ort.InferenceSession }
 let allowedModels = [];
@@ -58,6 +60,7 @@ let noiseProfile = null;
 let noiseFrames = 0;
 let warmupComplete = false;
 let demucsPcmMissingWarned = false;
+let _isAndroidWebView = false;
 
 let runtimeParams = {
   spectralFloor: 0.005,
@@ -81,6 +84,11 @@ const MODEL_FILES = {
   'rnnoise':          'rnnoise_suppressor.onnx',
   'demucs':           'demucs_v4_quantized.onnx',
   'bsrnn':            'bsrnn_vocals.onnx',
+  // 4D complex-spectrogram BSRNN (pretrained crlandsc/bsrnn-vocals).
+  // Offline-only: consumed by offline-processor.js. NOT loaded by the
+  // real-time worklet path. See scripts/export_bsrnn_onnx.py.
+  'bsrnn_complex':         'bsrnn_vocals_complex.onnx',
+  'bsrnn_vocals_complex':  'bsrnn_vocals_complex.onnx',
   // long-form aliases (kept for back-compat with auth/tier code)
   'silero-vad':       'silero_vad.onnx',
   'silero_vad':       'silero_vad.onnx',
@@ -105,8 +113,21 @@ const MODEL_SHA256 = {
   'silero_vad.onnx':            '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
   'silero_vad_int8.onnx':       '16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05',
   'rnnoise_suppressor.onnx':    '0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6',
-  'demucs_v4_quantized.onnx':   '',
+  'demucs_v4_quantized.onnx':   '19be0f2c8e617e5ee2da0c2861f2f96e1a7f656ebf4b696b485e16f64b3bdac2',
   'bsrnn_vocals.onnx':          '7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
+  // bsrnn_vocals_complex.onnx is produced by scripts/export_bsrnn_onnx.py
+  // and is not committed to the repo — leave empty to skip integrity check
+  // until an authoritative SHA is recorded post-upload.
+  'bsrnn_vocals_complex.onnx':  '',
+};
+
+// ── Vercel Blob URLs for model CDN delivery ───────────────────────────────────
+// model-loader.js reads these at startup and calls cacheModelPaths so the
+// worker fetches from Blob storage instead of the same-origin /app/models/ path.
+const MODEL_BLOB_URLS = {
+  'demucs_v4_quantized.onnx':   'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/demucs_v4_quantized.onnx',
+  'rnnoise_suppressor.onnx':    'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/rnnoise_suppressor-5JrJWV0K8oz1Q0sKuq4N8rmrAiQIJ6.onnx',
+  'bsrnn_vocals.onnx':          'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/bsrnn_vocals-yRolIm3LNLR5tCzdAig4HaaxCxArUC.onnx',
 };
 
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
@@ -117,12 +138,56 @@ const MODEL_SHA256 = {
 function initialize() {
   if (self.ort) {
     ort = self.ort;
-    return;
+  } else {
+    // Load ORT from local vendored file (copied by scripts/setup-ort.js postinstall)
+    importScripts('/lib/ort.min.js');
+    ort = self.ort;
   }
-  // Load ORT from local vendored file (copied by scripts/setup-ort.js postinstall)
-  importScripts('/lib/ort.min.js');
-  ort = self.ort;
+  _isAndroidWebView = detectAndroidWebView();
+  configureWasmRuntime();
+}
+
+function detectAndroidWebView() {
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+  if (!/Android/i.test(ua)) return false;
+  return /\bwv\b|; wv\)|Version\/[\d.]+.*Chrome\//i.test(ua);
+}
+
+function detectWasmSimdSupport() {
+  // Probe for WebAssembly SIMD (v128) support by validating a minimal module
+  // that uses the v128.const opcode. WebAssembly.validate() returns false
+  // (without throwing) when the engine lacks SIMD, so this is a safe,
+  // synchronous probe that correctly handles older Android WebViews where
+  // WebAssembly is available but SIMD is not.
+  try {
+    return typeof WebAssembly !== 'undefined' &&
+      typeof WebAssembly.validate === 'function' &&
+      WebAssembly.validate(new Uint8Array([
+        0x00, 0x61, 0x73, 0x6d, // magic: \0asm
+        0x01, 0x00, 0x00, 0x00, // version: 1
+        0x01, 0x05, 0x01,       // type section: 1 entry
+        0x60, 0x00, 0x01, 0x7b, // func type: () -> v128
+        0x03, 0x02, 0x01, 0x00, // function section: func[0] = type[0]
+        0x0a, 0x16, 0x01,       // code section: 1 body
+        0x14, 0x00,             // body: 20 bytes, 0 locals
+        0xfd, 0x0c,             // v128.const opcode
+        0x00, 0x00, 0x00, 0x00, // 16-byte immediate (zero vector)
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x0b                    // end
+      ]));
+  } catch (_) {
+    return false;
+  }
+}
+
+function configureWasmRuntime() {
+  if (!ort || !ort.env || !ort.env.wasm) return;
   ort.env.wasm.wasmPaths = '/lib/';
+  ort.env.wasm.proxy = true;
+  ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency ?? 4, 4);
+  ort.env.wasm.simd = detectWasmSimdSupport();
 }
 
 
@@ -351,10 +416,13 @@ self.onmessage = async (ev) => {
         if (inputSAB && outputSAB) {
           const inputPayloadFloats = currentHalfN * 2;
           const outputPayloadFloats = currentHalfN;
-          const inputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
+          const pcmFloats = 1024; // HOP_SIZE
+          const inputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * (inputPayloadFloats + pcmFloats);
           const outputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * outputPayloadFloats;
           if (inputSAB.byteLength < inputBytes || outputSAB.byteLength < outputBytes) {
-            console.error('[ml-worker] SAB size mismatch', {
+            // Guard: do not create typed-array views on an undersized SAB — the views
+            // would throw RangeError or silently alias into adjacent memory.
+            console.error('[ml-worker] SAB size mismatch — SAB views not created', {
               expectedInputBytes: inputBytes,
               actualInputBytes: inputSAB.byteLength,
               expectedOutputBytes: outputBytes,
@@ -366,12 +434,17 @@ self.onmessage = async (ev) => {
               inputBytes,
               outputBytes,
             });
+            flagsIn    = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+            flagsOut   = new Int32Array(outputSAB, 0, FLAG_SLOTS);
+            inputView  = new Float32Array(inputSAB, SAB_HEADER_BYTES, inputPayloadFloats);
+            outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, outputPayloadFloats);
+            // PCM region immediately after mag+pha payload
+            const pcmByteOffset = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
+            pcmView = inputSAB.byteLength >= pcmByteOffset + pcmFloats * Float32Array.BYTES_PER_ELEMENT
+              ? new Float32Array(inputSAB, pcmByteOffset, pcmFloats)
+              : null;
+            startPollLoop();
           }
-          flagsIn    = new Int32Array(inputSAB, 0, FLAG_SLOTS);
-          flagsOut   = new Int32Array(outputSAB, 0, FLAG_SLOTS);
-          inputView  = new Float32Array(inputSAB, SAB_HEADER_BYTES, inputPayloadFloats);
-          outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, outputPayloadFloats);
-          startPollLoop();
         }
 
         const modelStatus = await loadModels(modelBasePath, preferredProviders, allowedModels);
@@ -427,6 +500,62 @@ self.onmessage = async (ev) => {
       break;
     }
 
+    // ── bsrnnComplex: offline 4D complex-spectrogram BSRNN inference ──────────
+    // Input  payload:
+    //   {
+    //     id:        string,                // correlation id
+    //     halfBins:  number,                 // freq bins (must be 1025 for the
+    //                                        // pretrained crlandsc model)
+    //     timeFrames:number,                 // T  (dynamic axis)
+    //     channels:  Float32Array,           // packed real/imag, length
+    //                                        // = 4 * halfBins * timeFrames
+    //                                        // layout per the model:
+    //                                        //   [ch0_re, ch0_im, ch1_re, ch1_im]
+    //                                        // each plane is [freq][time] row-major.
+    //   }
+    //
+    // Output payload:
+    //   { type: 'bsrnnComplexResult', id, separated: Float32Array, halfBins, timeFrames }
+    //   `separated` mirrors the input layout but contains the separated
+    //   vocals only. On failure: { type: 'bsrnnComplexResult', id, error }.
+    case 'bsrnnComplex': {
+      const reqId = payload && payload.id;
+      const fail = (msg) => self.postMessage({
+        type: 'bsrnnComplexResult', id: reqId, error: msg,
+      });
+      try {
+        initialize();
+      } catch (err) { fail(err.message); break; }
+      const session = sessions['bsrnn_complex'] || sessions['bsrnn_vocals_complex'];
+      if (!session) { fail('bsrnn_complex model not loaded'); break; }
+      const halfBins = payload && payload.halfBins | 0;
+      const timeFrames = payload && payload.timeFrames | 0;
+      const flat = payload && payload.channels;
+      const expected = 4 * halfBins * timeFrames;
+      if (!flat || flat.length !== expected) {
+        fail(`bsrnnComplex: payload size ${flat?.length} != expected ${expected}`);
+        break;
+      }
+      try {
+        const tensor = new ort.Tensor('float32', flat, [1, 4, halfBins, timeFrames]);
+        const result = await session.run({ input: tensor });
+        const out = result.output?.data || result[Object.keys(result)[0]]?.data;
+        if (!out || out.length !== expected) {
+          fail(`bsrnnComplex: output size ${out?.length} != expected ${expected}`);
+          break;
+        }
+        // Copy into a fresh Float32Array so we can transfer the underlying buffer.
+        const separated = new Float32Array(out);
+        self.postMessage(
+          { type: 'bsrnnComplexResult', id: reqId, separated, halfBins, timeFrames },
+          [separated.buffer],
+        );
+      } catch (err) {
+        fail(`bsrnnComplex: ${err.message}`);
+      }
+      break;
+    }
+
     // ── reset: clear inference sessions and polling state ─────────────────────
     case 'reset': {
       clearInterval(pollTimer);
@@ -441,6 +570,7 @@ self.onmessage = async (ev) => {
       _vadState = null;
       demucsPcmMissingWarned = false;
       _lastPollFrame = 0;
+      _pollInFlight  = false;
       self.postMessage({ type: 'reset_done' });
       break;
     }
@@ -618,10 +748,16 @@ self.onmessage = async (ev) => {
         currentNumBins = h;
       }
       const inputPayloadFloats = currentHalfN * 2;
+      const pcmFloats = 1024; // HOP_SIZE
+      const pcmByteOffset = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
       flagsIn    = new Int32Array(inputRing, 0, FLAG_SLOTS);
       flagsOut   = new Int32Array(maskRing,  0, FLAG_SLOTS);
       inputView  = new Float32Array(inputRing, SAB_HEADER_BYTES, inputPayloadFloats);
       outputView = new Float32Array(maskRing,  SAB_HEADER_BYTES, currentHalfN);
+      // Bug #3: PCM region after mag+pha payload
+      pcmView = inputRing.byteLength >= pcmByteOffset + pcmFloats * Float32Array.BYTES_PER_ELEMENT
+        ? new Float32Array(inputRing, pcmByteOffset, pcmFloats)
+        : null;
       if (!pollTimer) startPollLoop();
       console.info('[ml-worker] initRingBuffers: SAB views wired', {
         halfN: currentHalfN, ringCapacity, quantumSize,
@@ -757,19 +893,21 @@ async function loadModels(basePath, providers, modelList) {
 
     // Prefer in-memory blob: URL from fetch-cache when available — this
     // skips both network and SW Cache and loads from the IDB ArrayBuffer
-    // directly. Falls back to same-origin /app/models/<file> otherwise.
+    // directly. Falls back to Vercel Blob CDN URL when available, then
+    // same-origin /app/models/<file> as last resort.
     const overrideUrl = MODEL_URL_OVERRIDES[modelId] || MODEL_URL_OVERRIDES[file];
-    const modelUrl    = overrideUrl || (basePath + file);
+    const blobCdnUrl  = MODEL_BLOB_URLS[file];
+    const modelUrl    = overrideUrl || blobCdnUrl || (basePath + file);
     const eps         = await resolveProviders(providers);
     const expectedSha256 = MODEL_SHA256[file] || '';
 
     try {
-      const { session, provider } = await createSessionWithFallback(modelUrl, expectedSha256);
+      const { session, provider } = await createSessionWithFallback(modelUrl, expectedSha256, eps);
       await warmupSession(modelId, session);
       sessions[modelId] = session;
       modelStatus[modelId] = true;
       self.postMessage({ type: 'model_loaded', modelId, providers: eps });
-      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')} (${overrideUrl ? 'blob' : 'same-origin'})`);
+      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')} (${overrideUrl ? 'blob' : blobCdnUrl ? 'vercel-blob' : 'same-origin'})`);
     } catch (err) {
       modelStatus[modelId] = false;
       const errMsg = modelId === 'vad'
@@ -784,6 +922,7 @@ async function loadModels(basePath, providers, modelList) {
 }
 
 async function resolveProviders(providers) {
+  if (_isAndroidWebView) return ['wasm'];
   const eps = [];
   for (const p of providers) {
     if (p === 'webgpu') {
@@ -799,7 +938,7 @@ async function resolveProviders(providers) {
   return eps;
 }
 
-async function createSessionWithFallback(modelUrl, expectedSha256) {
+async function createSessionWithFallback(modelUrl, expectedSha256, executionProviders = ['webgpu', 'wasm']) {
   // ── SHA-256 integrity check ─────────────────────────────────────────────
   // If an expected hash is provided and fetch/SubtleCrypto are available,
   // fetch the model, verify its SHA-256, then create the ONNX session from
@@ -842,14 +981,22 @@ async function createSessionWithFallback(modelUrl, expectedSha256) {
   }
 
   const source = modelData !== null ? modelData : modelUrl;
-  try {
-    const session = await ort.InferenceSession.create(source, {
-      executionProviders: ['webgpu', 'wasm'],
-      graphOptimizationLevel: 'all',
-    });
-    return { session, provider: 'webgpu' };
-  } catch (err) {
-    console.warn('[ml-worker] WebGPU session creation failed, falling back to WASM:', err?.message || err);
+  const canUseWebGpu = Array.isArray(executionProviders) && executionProviders.includes('webgpu');
+  if (canUseWebGpu) {
+    try {
+      // EP: WebGPU primary, WASM fallback — local inference only, no cloud.
+      const session = await ort.InferenceSession.create(source, {
+        executionProviders: ['webgpu', 'wasm'],
+        graphOptimizationLevel: 'all',
+      });
+      return { session, provider: 'webgpu' };
+    } catch (err) {
+      console.warn('[ml-worker] WebGPU session creation failed, falling back to WASM:', err?.message || err);
+    }
+  }
+
+  {
+    // EP: WebGPU primary, WASM fallback — local inference only, no cloud.
     const session = await ort.InferenceSession.create(source, {
       executionProviders: ['wasm'],
       graphOptimizationLevel: 'all',
@@ -861,6 +1008,23 @@ async function createSessionWithFallback(modelUrl, expectedSha256) {
 async function warmupSession(modelId, session) {
   if (!session || typeof session.run !== 'function') return;
   if (modelId === 'demucs' || modelId === 'demucs-v4') return;
+
+  // Bug #7 fix: bsrnn_complex expects [1, 4, halfBins, timeFrames] — generic [1, numBins] throws
+  if (modelId === 'bsrnn_complex' || modelId === 'bsrnn_vocals_complex') {
+    const halfBins   = currentHalfN;
+    const timeFrames = 32;
+    const dummyInput = new ort.Tensor('float32',
+      new Float32Array(4 * halfBins * timeFrames),
+      [1, 4, halfBins, timeFrames]
+    );
+    try {
+      await session.run({ input: dummyInput });
+    } catch (e) {
+      console.warn('[ml-worker] bsrnn_complex warmup failed:', e.message);
+    }
+    return;
+  }
+
   try {
     const size = currentNumBins;
     const dims = [1, currentNumBins];
@@ -881,27 +1045,33 @@ function startPollLoop() {
 
 async function pollOnce() {
   if (!flagsIn || !flagsOut) return;
-  // Frame-counter protocol matching dsp-processor.js (the production worklet):
-  //   flagsIn[0]  = frame counter (worklet increments via Atomics.add on every hop)
-  //   flagsOut[1] = mask-ready flag (ml-worker sets to 1; worklet reads and clears)
-  // Note: voice-isolate-processor.js (registered but not currently instantiated)
-  // uses a different layout (header-first, slot 2 for both flags). If that
-  // worklet is brought into the audio graph, this poll loop will need to be
-  // generalised to detect protocol via the init path used.
+  // In-flight guard: setInterval does not await async callbacks, so multiple
+  // pollOnce() calls can overlap when ONNX inference takes >20 ms. Without this
+  // guard, a slow inference round could overwrite a newer mask with a stale one.
+  if (_pollInFlight) return;
+
+  // SAB protocol: flagsIn[0] = frame counter incremented by worklet via Atomics.add.
+  // Worklet checks flagsOut[0] (writeGen) != flagsOut[1] (readGen) to detect a new mask.
   const currentFrame = Atomics.load(flagsIn, 0);
   if (currentFrame === _lastPollFrame) return; // no new frame
   _lastPollFrame = currentFrame;
 
   // subarray() is a zero-copy view — copy out before any await.
   const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
+  // Prefer live SAB PCM region written by worklet; fall back to last postMessage chunk
+  const pcmChunk = pcmView ? new Float32Array(pcmView) : latestPcmChunk;
 
+  _pollInFlight = true;
   try {
-    const mask = await buildMask(magnitudes, latestPcmChunk);
+    const mask = await buildMask(magnitudes, pcmChunk);
     outputView.set(mask.subarray(0, currentNumBins));
-    Atomics.store(flagsOut, 1, 1); // signal: mask ready (slot 1)
+    // Bug #1 fix: increment writeGen (slot[0]) — worklet detects mask by slot[0] != slot[1]
+    Atomics.add(flagsOut, 0, 1);
   } catch (err) {
     // Don't poison the poll loop — log and let worklet fall back to bypass mag.
     console.warn('[ml-worker] pollOnce buildMask failed:', err?.message || err);
+  } finally {
+    _pollInFlight = false;
   }
 }
 
@@ -923,8 +1093,20 @@ async function runSileroVAD(vadSess, pcmChunk, audioSrHz) {
   const step = Math.max(1, Math.round((audioSrHz || SILERO_SR) / SILERO_SR));
   const samples = new Float32Array(SILERO_CHUNK);
   if (pcmChunk && pcmChunk.length > 0) {
+    // Bug #4 fix: 3-tap FIR low-pass [0.25, 0.5, 0.25] before decimation to attenuate
+    // content above the new Nyquist (srcRate/2/step) that would alias into the baseband.
+    // Skipped when step=1 (source already at 16 kHz) to avoid unnecessary smoothing.
     const take = Math.min(SILERO_CHUNK, Math.floor(pcmChunk.length / step));
-    for (let i = 0; i < take; i++) samples[i] = pcmChunk[i * step];
+    for (let i = 0; i < take; i++) {
+      const j = i * step;
+      if (step > 1) {
+        const prev = j > 0 ? pcmChunk[j - 1] : pcmChunk[j];
+        const next = j < pcmChunk.length - 1 ? pcmChunk[j + 1] : pcmChunk[j];
+        samples[i] = 0.25 * prev + 0.5 * pcmChunk[j] + 0.25 * next;
+      } else {
+        samples[i] = pcmChunk[j];
+      }
+    }
   }
   if (!_vadState) _vadState = new Float32Array(2 * 1 * 128); // zero-init h,c
   const inputTensor = new ort.Tensor('float32', samples, [1, SILERO_CHUNK]);

@@ -25,6 +25,7 @@ describe('Video Playback Error Handling', () => {
       <div id="tab-sep"></div>
       <div id="tab-out"></div>
 
+      <div id="dropZone"></div>
       <div id="uploadZone"></div>
       <input type="file" id="fileInput" />
       <button id="fileBtn"></button>

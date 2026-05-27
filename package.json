@@ -32,6 +32,7 @@
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --watch",
     "lint:fix": "eslint public/app/app.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js public/app/vip-enhancements.js --fix",
     "validate": "node scripts/validate.js",
+    "worklets:hash": "node scripts/hash-worklets.js",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --coverage",
     "test:live": "node scripts/live-smoke.cjs",
     "build:mobile": "pnpm run build && npx cap sync",
@@ -49,14 +50,22 @@
     "mobile:version": "node scripts/sync-mobile-version.js",
     "postversion": "node scripts/sync-mobile-version.js",
     "models:download": "bash scripts/download-models.sh",
-    "models:upload": "python scripts/upload_models_to_vercel_blob.py"
+    "models:upload": "python scripts/upload_models_to_vercel_blob.py",
+    "models:upload:blob": "node scripts/upload-to-vercel-blob.mjs",
+    "models:validate": "node scripts/validate-onnx-models.js",
+    "models:wire": "python3 scripts/wire-blob-models.py"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/ios": "^8.3.1",
+    "@vercel/blob": "^0.27.0",
     "eslint": "^9.0.0",
     "globals": "^16.0.0",
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0",
+    "jsdom": "^26.1.0",
     "playwright": "^1.58.2",
     "puppeteer": "^24.40.0",
     "supertest": "^7.2.2"
@@ -80,24 +89,27 @@
       "public/app/analytics.js",
       "api/monetization.js",
       "api/sync.js"
-    ]
+    ],
+    "forceExit": true,
+    "openHandlesTimeout": 1000
   },
-  "packageManager": "pnpm@9.0.0",
+  "packageManager": "pnpm@10.0.0",
   "engines": {
+<<<<<<< HEAD
     "node": "22.x",
     "pnpm": ">=9.0.0"
+=======
+    "node": "24.x",
+    "pnpm": ">=10.0.0"
+>>>>>>> origin/main
   },
   "dependencies": {
-    "@capacitor/android": "^8.3.1",
-    "@capacitor/cli": "^8.3.1",
     "@capacitor/core": "^8.3.1",
-    "@capacitor/ios": "^8.3.1",
     "@grpc/grpc-js": "^1.14.3",
     "@grpc/proto-loader": "^0.8.0",
     "@vercel/analytics": "^2.0.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.2",
-    "jsdom": "^26.1.0",
     "onnxruntime-web": "1.25.1",
     "three": "0.184.0"
   },

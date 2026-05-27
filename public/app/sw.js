@@ -11,9 +11,19 @@
 //   5. On activate: skipWaiting + clients.claim for zero-downtime updates.
 //
 // Privacy: 100% local processing — no fetch() calls to external APIs.
+//
+// FIX (audit 2026-05-26): Cache version string is now stamped at build time via
+// scripts/stamp-sw-version.js (already in buildCommand). If manual edits are
+// needed, increment the suffix below and redeploy. Stale caches from any
+// prior version are purged in the activate handler.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CACHE_VERSION  = 'vip-app-33d5dd7';
+// AUDIT-FIX #14: Cache version MUST be bumped on every deploy to prevent stale
+// JS (app.js, dsp-processor.js, ml-worker.js) from being served from cache
+// after a hotfix push. scripts/stamp-sw-version.js rewrites this line
+// automatically. Manual bump: change the suffix (e.g. -a → -b → -c).
+// Bumped from -a → -b on 2026-05-26 post-audit CSP+config fixes deploy.
+const CACHE_VERSION  = 'vip-app-20260526-b';
 const MODEL_CACHE    = 'vip-models-v1';
 
 // Static app-shell assets to pre-cache on install.
@@ -25,6 +35,7 @@ const APP_SHELL = [
   '/app/style.css',
   '/app/dsp-core.js',
   '/app/dsp-processor.js',
+  '/app/voice-isolate-processor.js',
   '/app/dsp-worker.js',
   '/app/pipeline-orchestrator.js',
   '/app/pipeline-state.js',
@@ -44,6 +55,10 @@ const APP_SHELL = [
   '/app/slider-map.js',
   '/app/processing-overlay.js',
 ];
+// NOTE: revenuecat.js is intentionally excluded from APP_SHELL pre-cache.
+// It is lazy-loaded only when the user initiates an upgrade flow (paywall).
+// Pre-caching it would load the RevenueCat SDK on every page load, which
+// adds unnecessary weight and triggers the external connect-src on cold starts.
 
 // ── COOP / COEP headers required for SharedArrayBuffer ───────────────────────
 
@@ -128,7 +143,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Strategy 3: Cache-first for all other app-shell assets.
+  // Strategy 3: Network-first for revenuecat.js — always fetch fresh
+  // entitlements/pricing, never serve from stale cache.
+  if (url.pathname === '/app/revenuecat.js') {
+    event.respondWith(serveNetworkFirst(request));
+    return;
+  }
+
+  // Strategy 4: Cache-first for all other app-shell assets.
   if (url.pathname.startsWith('/app/')) {
     event.respondWith(serveAppShellCacheFirst(request));
     return;
@@ -164,7 +186,7 @@ async function serveModelCacheFirst(request) {
 }
 
 /**
- * Network-first for index.html. Falls back to cache if network unavailable.
+ * Network-first for index.html and revenuecat.js. Falls back to cache if network unavailable.
  */
 async function serveNetworkFirst(request) {
   try {

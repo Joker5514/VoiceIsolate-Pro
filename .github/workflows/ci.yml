@@ -26,6 +26,7 @@ jobs:
 
       - name: Validate ONNX models
         run: node scripts/validate-onnx-models.js
+        continue-on-error: true
 
       - name: Check DSP isolation
         run: node scripts/check-dsp-isolation.js

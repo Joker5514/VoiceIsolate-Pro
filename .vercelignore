@@ -1,29 +1,44 @@
-# Development & Docker files
-Dockerfile
-docker-compose*.yml
-render.yaml
+# .vercelignore — files excluded from Vercel build output
+# These are development / infrastructure files that should never
+# be served as static assets or included in the Vercel deployment.
 
-# Test files
-tests/
+# Dev scratch files (audit fix #18)
+scratch/
+*.scratch.js
+*.scratch.ts
+*.bak
+design-test.html
+*.tmp
+
+# Alternate deploy targets — Vercel is the canonical target
+Dockerfile
+render.yaml
+docker-compose*.yml
+
+# NOTE: scripts/ is intentionally NOT excluded here.
+# scripts/setup-ort.js, scripts/setup-three.js, and scripts/stamp-sw-version.js
+# are required by the package.json build command and must be present during
+# Vercel's build phase. Excluding them causes MODULE_NOT_FOUND build failures.
+# Only exclude individual scripts that are purely dev/CI tools and NOT
+# referenced in the build command.
+scripts/cleanup-branches.sh
+scripts/bootstrap-libs.sh
+
+# Local dev / CI artifacts
+coverage/
+.nyc_output/
 *.test.js
 *.spec.js
+__tests__/
 
-# Build/export scripts NOT needed at runtime but scripts/ is needed for buildCommand
-export_and_upload.py
-fix-and-setup.bat
-run-setup.bat
-run-setup.sh
-
-# Documentation & metadata
-DIARIZATION_WIRING.md
-FIXES_APPLIED.md
-MODELS.md
-patch.cjs
-
-# Dev tooling
-.qodo/
+# OS / editor noise
+.DS_Store
+Thumbs.db
 .vscode/
-eslint.config.js
+.idea/
 
-# Git
-.git/
+# Python model export artifacts
+models_output/
+checkpoints/
+venv/
+__pycache__/

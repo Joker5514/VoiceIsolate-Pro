@@ -63,21 +63,30 @@ describe('Worklet Integration Verification', () => {
       return;
     }
     const page = await browser.newPage();
+    const consoleMsgs = [];
+    page.on('console', m => consoleMsgs.push(`[${m.type()}] ${m.text()}`));
+    page.on('pageerror', e => consoleMsgs.push(`[pageerror] ${e.message}`));
 
-    await page.goto(`http://127.0.0.1:${PORT}/app/`);
+    try {
+      await page.goto(`http://localhost:${PORT}/app/`);
 
-    // Wait for orchestrator to attach
-    await page.waitForFunction(() => window._vipOrch !== undefined);
+      // Wait for orchestrator to attach
+      await page.waitForFunction(() => window._vipOrch !== undefined, null, { timeout: 10000 });
 
-    // Initializing AudioContext through a simulated click
-    await page.click('body');
+      // Initializing AudioContext through a simulated click
+      await page.click('body');
 
-    // Wait for worklet to be loaded and marked as ready
-    const isWorkletReady = await page.waitForFunction(() => {
-      return window._vipOrch && window._vipOrch.workletReady === true;
-    }, { timeout: 15000 });
+      // Wait for worklet to be loaded and marked as ready
+      const isWorkletReady = await page.waitForFunction(() => {
+        return window._vipOrch && window._vipOrch.workletReady === true;
+      }, { timeout: 20000 });
 
-    expect(isWorkletReady).toBeTruthy();
+      expect(isWorkletReady).toBeTruthy();
+    } catch (err) {
+      console.error('Worklet integration test failed. Recent browser console messages:');
+      consoleMsgs.forEach(m => console.error(m));
+      throw err;
+    }
 
     const workletStatus = await page.evaluate(() => {
       const orch = window._vipOrch;

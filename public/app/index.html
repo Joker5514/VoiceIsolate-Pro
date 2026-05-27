@@ -15,11 +15,15 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="slider-theme.css" />
   <link rel="stylesheet" href="style-diag-log.css" />
+  <!-- DSP math (STFT/iSTFT, filters, Wiener NR) on window.DSPCore. Loaded as a
+       classic blocking script so the binding is live before any module imports
+       evaluate — app.js captures DSP = globalThis.DSPCore at module init. -->
+  <script src="./dsp-core.js"></script>
+  <script src="./visuals.js"></script>
+  <script src="./premium-visuals.js"></script>
   <link rel="stylesheet" href="model-status-ui.css" />
-  <!-- FIXED: was /app/processing-overlay.css (absolute, breaks on static hosts) -->
   <link id="vip-overlay-css" rel="stylesheet" href="processing-overlay.css" />
   <link rel="stylesheet" href="mobile.css" />
-  <!-- Enhancement styles: speed buttons, A/B label pill, helix spinner, proc badge -->
   <link id="vip-enh-css" rel="stylesheet" href="vip-enhancements.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
@@ -40,6 +44,11 @@
       overflow: auto;
     }
     #vip-boot-error b { color: #ff3b3b; }
+    .tp-ab-no-output { animation: vip-ab-flash 0.6s ease; }
+    @keyframes vip-ab-flash {
+      0%,100% { opacity:1; }
+      50%      { opacity:0.25; color:#ff3b3b; }
+    }
   </style>
   <script data-vip-guard="true">
     window._vipModuleErrors = [];
@@ -63,7 +72,6 @@
   </script>
 </head>
 <body>
-  <!-- Error banner: hidden until a module fails -->
   <div id="vip-boot-error"></div>
 
   <div id="status-message" class="status-bar" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;opacity:0;" aria-live="polite" aria-atomic="true"></div>
@@ -142,7 +150,7 @@
       </div>
       <div class="cockpit-row cockpit-row--stack">
         <div class="cockpit-models">
-          <span class="cockpit-label">Model Cache & Providers</span>
+          <span class="cockpit-label">Model Cache &amp; Providers</span>
           <div id="modelStatusPills" class="engine-pills"></div>
         </div>
         <div id="cdnHealthPanel" class="cockpit-health"></div>
@@ -165,7 +173,6 @@
         <div class="upload-row">
           <button id="micBtn" class="btn btn-mic" aria-label="Toggle Microphone"><span id="micLabel">Record</span></button>
           <span id="fileInfo" class="file-info">No file loaded</span>
-          <!-- File-load indicator: uses new helix spinner (8 strands) -->
           <span id="fileLoadIndicator" class="file-load-indicator" role="status" aria-live="polite" hidden>
             <span class="vip-helix-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
             <span class="file-load-text">Loading…</span>
@@ -220,7 +227,6 @@
       </div>
 
       <div class="card pipeline-box">
-        <!-- Processing status badge — state driven by vip-enhancements.js -->
         <div id="vip-proc-badge" role="status" aria-live="polite" data-state="idle">
           <span class="vip-pb-dot" aria-hidden="true"></span>
           <span class="vip-pb-label">Ready — drop a file or record to begin</span>
@@ -260,7 +266,6 @@
           <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
           <div class="tp-speed">
             <label for="tpSpeed">Speed</label>
-            <!-- Speed down: steps through <select> options in reverse -->
             <button id="tpSpeedDown" class="btn btn-tp btn-speed" type="button" aria-label="Slow Down Playback" title="Slow Down (−)"><span aria-hidden="true">−</span></button>
             <select id="tpSpeed" aria-label="Playback speed">
               <option value="0.25">0.25x</option>
@@ -272,7 +277,6 @@
               <option value="1.75">1.75x</option>
               <option value="2">2x</option>
             </select>
-            <!-- Speed up: steps through <select> options forward -->
             <button id="tpSpeedUp" class="btn btn-tp btn-speed" type="button" aria-label="Speed Up Playback" title="Speed Up (+)"><span aria-hidden="true">+</span></button>
           </div>
           <button id="tpAB" class="btn btn-ab" type="button"
@@ -280,17 +284,11 @@
             aria-describedby="tpABLabel"
             title="Toggle A/B — X key shortcut"
             disabled>A/B</button>
-          <!--
-            tpABLabel: tag = A or B version letter, name = Original / Processed.
-            data-version drives CSS accent color (red=A=Original, cyan=B=Processed).
-            _setABLabel() in app.js keeps both child spans and aria-label in sync.
-            Defensive markup repair below keeps the pill structure intact if legacy
-            code paths temporarily assign tpABLabel.textContent.
-          -->
           <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite">
             <span class="tp-ab-tag">A</span>
             <span class="tp-ab-name">Original</span>
           </span>
+<<<<<<< HEAD
           <script data-vip-ab-repair="true">
             (function () {
               var tpABLabelEl = document.getElementById('tpABLabel');
@@ -354,6 +352,8 @@
               });
             }());
           </script>
+=======
+>>>>>>> origin/main
         </div>
       </div>
 
@@ -362,12 +362,14 @@
         <div id="tabBar" class="tabs" role="tablist" aria-label="Visualization tabs">
           <button id="btn-spectrogram" class="tab-btn active" type="button" role="tab" aria-controls="tab-spectrogram" data-tab="spectrogram" aria-selected="true" tabindex="0">Spectrogram</button>
           <button id="btn-waveform" class="tab-btn" type="button" role="tab" aria-controls="tab-waveform" data-tab="waveform" aria-selected="false" tabindex="-1">Waveform</button>
-          <button id="btn-abcompare" class="tab-btn" type="button" role="tab" aria-controls="tab-abcompare" data-tab="abcompare" aria-selected="false" tabindex="-1">A/B Compare</button>
-          <button id="btn-lufs" class="tab-btn" type="button" role="tab" aria-controls="tab-lufs" data-tab="lufs" aria-selected="false" tabindex="-1">LUFS Meter</button>
-          <button id="btn-saliency" class="tab-btn" type="button" role="tab" aria-controls="tab-saliency" data-tab="saliency" aria-selected="false" tabindex="-1">Saliency Map</button>
-          <button id="btn-clusters" class="tab-btn" type="button" role="tab" aria-controls="tab-clusters" data-tab="clusters" aria-selected="false" tabindex="-1">Speaker Clusters</button>
+          <button id="btn-abcompare" class="tab-btn" type="button" role="tab" aria-controls="tab-abcompare" data-tab="abcompare" aria-selected="false" tabindex="-1">A/B</button>
+          <button id="btn-lufs" class="tab-btn" type="button" role="tab" aria-controls="tab-lufs" data-tab="lufs" aria-selected="false" tabindex="-1">LUFS</button>
+          <button id="btn-clusters" class="tab-btn" type="button" role="tab" aria-controls="tab-clusters" data-tab="clusters" aria-selected="false" tabindex="-1">Clusters</button>
+          <button id="btn-aura" class="tab-btn" type="button" role="tab" aria-controls="tab-aura" data-tab="aura" aria-selected="false" tabindex="-1">Aura</button>
+          <button id="btn-topo" class="tab-btn" type="button" role="tab" aria-controls="tab-topo" data-tab="topo" aria-selected="false" tabindex="-1">3D Topo</button>
+          <button id="btn-swarm" class="tab-btn" type="button" role="tab" aria-controls="tab-swarm" data-tab="swarm" aria-selected="false" tabindex="-1">Swarm</button>
+          <button id="btn-liquid" class="tab-btn" type="button" role="tab" aria-controls="tab-liquid" data-tab="liquid" aria-selected="false" tabindex="-1">Liquid</button>
         </div>
-
           <div id="tab-spectrogram" role="tabpanel" aria-labelledby="btn-spectrogram" class="panel active" tabindex="0">
             <div class="viz-legend">Live spectrum rail · scrolling spectrogram · local-only render</div>
             <div id="spectro3d-container" class="spectro3d-container"><canvas id="spectroCanvas" class="viz-canvas"></canvas></div>
@@ -384,18 +386,22 @@
               <div class="vu-meter" style="--vu-level:42%"><div class="vu-meter-fill"></div><div class="vu-meter-peak" style="--peak-top:58%"></div><span class="vu-meter-label">IN</span></div>
               <div class="vu-meter" style="--vu-level:36%"><div class="vu-meter-fill"></div><div class="vu-meter-peak" style="--peak-top:64%"></div><span class="vu-meter-label">OUT</span></div>
             </div>
-          <div class="lufs-readouts"><span class="vu-val">Input -12.4 dB</span><span class="vu-val">Output -10.9 dB</span></div>
-        </div>
+            <div class="lufs-readouts"><span class="vu-val">Input -12.4 dB</span><span class="vu-val">Output -10.9 dB</span></div>
+          </div>
+          <div id="tab-aura" role="tabpanel" aria-labelledby="btn-aura" class="panel"><canvas id="auraCanvas" class="viz-canvas"></canvas></div>
+          <div id="tab-topo" role="tabpanel" aria-labelledby="btn-topo" class="panel"><div id="topoContainer" class="spectro3d-container"></div></div>
+          <div id="tab-swarm" role="tabpanel" aria-labelledby="btn-swarm" class="panel"><div id="swarmContainer" class="spectro3d-container"></div></div>
+          <div id="tab-liquid" role="tabpanel" aria-labelledby="btn-liquid" class="panel"><canvas id="liquidCanvas" class="viz-canvas"></canvas></div>
       </div>
 
       <div id="videoCard" class="card video-card"><video id="videoPlayer" class="video-el" controls></video></div>
     </section>
   </main>
 
-  <div id="customPresetModal" class="modal" aria-hidden="true">
+  <div id="customPresetModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="customPresetTitle" aria-hidden="true">
     <div class="modal-content">
-      <h3>Save Custom Preset</h3>
-      <input type="text" id="customPresetName" placeholder="Preset Name" />
+      <h3 id="customPresetTitle">Save Custom Preset</h3>
+      <input type="text" id="customPresetName" placeholder="Preset Name" aria-label="Preset Name" />
       <button id="saveCustomPresetBtn" class="btn btn-primary" type="button">Save</button>
       <button id="closePresetModal" class="btn btn-outline" type="button">Cancel</button>
     </div>
@@ -403,56 +409,54 @@
 
   <div id="toastRegion" aria-live="polite"></div>
 
-  <!--
-    Each module loaded via dynamic import() + .catch() so one broken file
-    cannot silence the rest or produce a blank page.
-  -->
   <script type="module">
-    const _mods = [
+    const _parallel = [
       './visuals.js',
       './processing-overlay.js',
       './pipeline-orchestrator.js',
       './session-persist.js',
-      './vip-boot.js',
-      './app.js',
-      './vip-enhancements.js',
     ];
-    for (const src of _mods) {
+    await Promise.allSettled(_parallel.map(src =>
       import(src).catch(err => {
         console.error('[VIP] Failed to load module:', src, err);
-        if (typeof window._vipReportError === 'function') {
-          window._vipReportError(src, err);
-        }
-      });
-    }
+        if (typeof window._vipReportError === 'function') window._vipReportError(src, err);
+      })
+    ));
+    await import('./app.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./app.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./app.js', err);
+    });
+    await import('./vip-boot.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./vip-boot.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./vip-boot.js', err);
+    });
+    import('./vip-enhancements.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./vip-enhancements.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./vip-enhancements.js', err);
+    });
+    /* vip-fixes.js — transport, A/B, slider search, speed buttons, accordions */
+    import('./vip-fixes.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./vip-fixes.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./vip-fixes.js', err);
+    });
   </script>
 
-  <script>
-    (function _vipSafetyNet() {
-      function boot() {
-        try {
-          if (!window._vipApp && typeof VoiceIsolatePro !== 'undefined') {
-            const app = new VoiceIsolatePro();
-            if (typeof app.init === 'function') {
-              try { app.init(); } catch (initErr) { console.warn('[safety-net] app.init() error:', initErr); }
-            }
-            app._initCalled = true;
-            window.vip = app;
-            window._vipApp = app;
-          }
-          if (typeof Auth !== 'undefined' && Auth && typeof Auth.init === 'function' && !Auth.isLoggedIn && Auth.currentUser === null) {
-            Auth.init().catch(function() {});
-          }
-        } catch (e) {
-          console.warn('[safety-net] instantiation failed:', e);
-        }
-      }
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', boot, { once: true });
-      } else {
-        boot();
-      }
-    })();
-  </script>
+  <!--
+    REMOVED: _vipSafetyNet <script> block (was here until this commit).
+
+    ROOT CAUSE of processBtn disappearing after file load:
+      The safety-net listened on DOMContentLoaded and called new VoiceIsolatePro()
+      if window._vipApp was falsy. Because ES module evaluation is async, the
+      safety-net's DOMContentLoaded callback often fired AFTER the module bootstrap
+      set window._vipApp — but in the critical race window it fired BEFORE, creating
+      a second VoiceIsolatePro() instance. That second constructor re-ran cacheDom()
+      and bindEvents(), which left processBtn.disabled = true (its HTML default),
+      overwriting the enabled state set by onAudioLoaded() on the first instance.
+
+    The module bootstrap chain (app.js → vip-boot.js) already has:
+      if (window._vipApp) return;
+    The safety-net was fully redundant. Do not re-add it.
+  -->
+
 </body>
 </html>

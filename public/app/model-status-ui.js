@@ -11,16 +11,14 @@ const STATUS_CONFIG = {
 };
 
 const PROVIDER_BADGE = {
+  'same-origin': { label: '✓ Local',          cls: 'vip-provider--green'  },
   'vercel-blob': { label: '✓ Vercel Blob',    cls: 'vip-provider--green'  },
-  'r2':          { label: '✓ Cloudflare R2',  cls: 'vip-provider--blue'   },
-  'huggingface': { label: '✓ HuggingFace',    cls: 'vip-provider--yellow' },
   'cache':       { label: '✓ SW Cache',       cls: 'vip-provider--grey'   },
 };
 
 const HEALTH_LABELS = {
+  'same-origin': 'Local (same-origin)',
   'vercel-blob': 'Vercel Blob',
-  'r2':          'Cloudflare R2',
-  'huggingface': 'HuggingFace',
 };
 
 export class ModelStatusUI {
@@ -105,7 +103,7 @@ export class ModelStatusUI {
    * @param {string} key      – model key
    * @param {'cached'|'loading'|'pending'|'error'} status
    * @param {number} [pct]    – progress percentage for 'loading' state
-   * @param {string} [provider] – which CDN served the model (vercel-blob | r2 | huggingface)
+   * @param {string} [provider] – which CDN served the model (same-origin | vercel-blob | cache)
    */
   setStatus(key, status, pct, provider) {
     const pill = this._pills[key];

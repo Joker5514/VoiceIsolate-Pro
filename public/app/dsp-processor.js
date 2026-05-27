@@ -29,19 +29,22 @@
  *
  * SharedArrayBuffer layout (Int32 header + Float32 payload):
  *   inputSAB:
- *     [0..3]  Int32 flags: [writeGen, readGen, capacity, halfN]
- *     [16..+HALF_BINS*4]         mag  (Float32 x HALF_BINS)
- *     [16+HALF_BINS*4..+HALF_BINS*4] pha (Float32 x HALF_BINS)
+ *     [  0 ..  19]  Int32 flags (5 slots × 4 bytes): [writeGen, readGen, capacity, halfN, reserved]
+ *     [ 20 ..  20+HALF_BINS*4)           mag (Float32 × HALF_BINS)
+ *     [ 20+HALF_BINS*4 ..  20+HALF_BINS*8)  pha (Float32 × HALF_BINS)
+ *     [ 20+HALF_BINS*8 ..  20+HALF_BINS*8+HOP_SIZE*4)  pcm (Float32 × HOP_SIZE — newest mono hop)
  *   outputSAB:
- *     [0..3]  Int32 flags: [writeGen, readGen, capacity, halfN]
- *     [16..+HALF_BINS*4]         mask (Float32 x HALF_BINS, values 0..1)
+ *     [  0 ..  19]  Int32 flags (5 slots × 4 bytes): [writeGen, readGen, capacity, halfN, reserved]
+ *     [ 20 ..  20+HALF_BINS*4)  mask (Float32 × HALF_BINS, values 0..1)
  */
 
 const FFT_SIZE   = 4096;
 const HOP_SIZE   = 1024;           // 75% overlap
 const HALF_BINS  = FFT_SIZE / 2 + 1;
-const FLAG_SLOTS = 4;
-const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
+const RENDER_QUANTUM = 128;
+const STARTUP_PRIME_SAMPLES = HOP_SIZE - RENDER_QUANTUM;
+const FLAG_SLOTS = 5;                                                   // Bug #2 fix: 5 slots = 20 bytes, matches SharedRingBuffer header
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;     // 20
 
 // ─── OLA normalisation scalar for periodic Hann at 75% overlap ───────────────
 // sum of (unsquared) Hann windows spaced HOP apart = FFT_SIZE / (2 * HOP_SIZE) = 2.0
@@ -110,8 +113,11 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     // Input ring: large enough for FFT_SIZE look-back + one full write burst
     this._inRing = new Float32Array(FFT_SIZE * 4);
-    this._inWr   = 0;  // write head — advances every sample
-    this._inRd   = 0;  // FIX [2]: read/frame-start cursor — advances by HOP_SIZE
+    // Startup primer: synthesize one FFT window of silence so first frame timing is deterministic.
+    this._inRing.fill(0, 0, FFT_SIZE);
+    this._inRd   = 0;        // FIX [2]: read/frame-start cursor — advances by HOP_SIZE
+    this._inWr   = FFT_SIZE; // Pre-filled with FFT_SIZE zeros for deterministic startup latency
+                               // _inWr=FFT_SIZE means FFT_SIZE primer samples are treated as already written.
 
     // Output ring: large enough for several overlapping frames in flight
     this._outRing = new Float32Array(FFT_SIZE * 8);
@@ -119,7 +125,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._outWr   = 0;
 
     // How many new samples have arrived since last frame trigger
-    this._newSamples = 0; // FIX [2]: counts NEW samples since last hop, not total
+    this._newSamples = STARTUP_PRIME_SAMPLES; // primes hop counter so the first render quantum can emit a frame
 
     // SABs — injected via port 'initSAB' message
     this._inputSAB    = null;
@@ -128,6 +134,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._outputFlags = null;
     this._inputView   = null;  // Float32[HALF_BINS*2]: mag then pha
     this._outputView  = null;  // Float32[HALF_BINS]:   mask values 0..1
+    this._pcmView     = null;  // Float32[HOP_SIZE]:    raw PCM region (Bug #3)
 
     // DSP params — updated live via port 'params' message
     this._params = {
@@ -142,8 +149,49 @@ class DSPProcessor extends AudioWorkletProcessor {
       compRatio:   4,
       compAttack:  10,    // ms
       compRelease: 150,   // ms
+      compKnee:    6,     // dB
       compMakeup:  0,     // dB
       limThresh:   -1,    // dBFS
+      specTilt:    0.0,   // dB/oct
+      eqSub:       0.0,
+      eqBass:      0.0,
+      eqWarmth:    0.0,
+      eqBody:      0.0,
+      eqLowMid:    0.0,
+      eqMid:       0.0,
+      eqPresence:  0.0,
+      eqClarity:   0.0,
+      eqAir:       0.0,
+      eqBrill:     0.0
+    };
+
+    // Define reasonable safety bounds for DSP stability
+    this._bounds = {
+      outGain:     [-60, 24],
+      dryWet:      [0, 1],
+      nrAmount:    [0, 1],
+      gateThresh:  [-120, 0],
+      gateRange:   [-120, 0],
+      hpFreq:      [10, 20000],
+      lpFreq:      [10, 20000],
+      compThresh:  [-120, 0],
+      compRatio:   [1, 100],
+      compAttack:  [0.1, 1000],
+      compRelease: [1, 5000],
+      compKnee:    [0, 24],
+      compMakeup:  [-24, 24],
+      limThresh:   [-60, 0],
+      specTilt:    [-12, 12],
+      eqSub:       [-24, 24],
+      eqBass:      [-24, 24],
+      eqWarmth:    [-24, 24],
+      eqBody:      [-24, 24],
+      eqLowMid:    [-24, 24],
+      eqMid:       [-24, 24],
+      eqPresence:  [-24, 24],
+      eqClarity:   [-24, 24],
+      eqAir:       [-24, 24],
+      eqBrill:     [-24, 24]
     };
 
     // Gate hold state: prevents clicking on rapid gate transitions
@@ -152,7 +200,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._GATE_HOLD_LEN   = Math.round((GATE_HOLD_MS / 1000) * sampleRate);
 
     // Compressor envelope state
-    this._envDb  = -96;
+    this._envDb  = 0;
     this._gainDb = 0;
 
     this.port.onmessage = (ev) => this._onMessage(ev.data);
@@ -170,13 +218,25 @@ class DSPProcessor extends AudioWorkletProcessor {
         // mag stored at [0..HALF_BINS), pha at [HALF_BINS..HALF_BINS*2)
         this._inputView   = new Float32Array(this._inputSAB,  SAB_HEADER_BYTES, HALF_BINS * 2);
         this._outputView  = new Float32Array(this._outputSAB, SAB_HEADER_BYTES, HALF_BINS);
+        // Bug #3: PCM region immediately after mag+pha payload
+        const pcmByteOffset = SAB_HEADER_BYTES + HALF_BINS * 2 * Float32Array.BYTES_PER_ELEMENT;
+        if (this._inputSAB.byteLength >= pcmByteOffset + HOP_SIZE * Float32Array.BYTES_PER_ELEMENT) {
+          this._pcmView = new Float32Array(this._inputSAB, pcmByteOffset, HOP_SIZE);
+        }
         this.port.postMessage({ type: 'sabReady', inputSAB: this._inputSAB, outputSAB: this._outputSAB });
         break;
       }
+      case 'setParams':
       case 'params': {
-        if (msg.payload) {
-          for (const [k, v] of Object.entries(msg.payload)) {
-            if (k in this._params) this._params[k] = Number(v);
+        const payload = msg.payload || msg.params;
+        if (payload) {
+          for (const [k, v] of Object.entries(payload)) {
+            if (k in this._params && k in this._bounds) {
+              const val = Number(v);
+              if (Number.isFinite(val)) {
+                this._params[k] = Math.max(this._bounds[k][0], Math.min(this._bounds[k][1], val));
+              }
+            }
           }
         }
         break;
@@ -238,20 +298,56 @@ class DSPProcessor extends AudioWorkletProcessor {
     const outGain = Math.pow(10.0, (this._params.outGain || 0.0) / 20.0);
     const lim     = Math.pow(10.0, (this._params.limThresh || -1.0) / 20.0);
 
+    // Compressor parameters
+    const ct = this._params.compThresh || -24;
+    const cr = this._params.compRatio || 4;
+    const ck = Math.max(0, this._params.compKnee || 0);
+    const sr = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
+    const cAtk = Math.exp(-1 / ((this._params.compAttack || 10) * sr / 1000));
+    const cRel = Math.exp(-1 / ((this._params.compRelease || 150) * sr / 1000));
+    const cMakeup = Math.pow(10.0, (this._params.compMakeup || 0) / 20.0);
+
     if (avail >= Q) {
       for (let i = 0; i < Q; i++) {
-        let s = this._outRing[this._outRd] * outGain;
+        let s = this._outRing[this._outRd];
         // Zero the slot as we read it (ring reuse)
         this._outRing[this._outRd] = 0.0;
         this._outRd = (this._outRd + 1) % outLen;
+
+        // Compressor logic
+        const sDb = 20 * Math.log10(Math.abs(s) + 1e-9);
+        let gainReduction = 0;
+        if (cr > 1) {
+          const halfKnee = ck * 0.5;
+          if (ck > 0 && Math.abs(sDb - ct) < halfKnee) {
+            const over = sDb - ct + halfKnee;
+            gainReduction = (1 - 1 / cr) * (over * over) / (2 * ck);
+          } else if (sDb > ct + halfKnee) {
+            gainReduction = (sDb - ct) * (1 - 1 / cr);
+          }
+        }
+        if (gainReduction > this._envDb) {
+           this._envDb = cAtk * this._envDb + (1 - cAtk) * gainReduction;
+        } else {
+           this._envDb = cRel * this._envDb + (1 - cRel) * gainReduction;
+        }
+        s *= Math.pow(10.0, -this._envDb / 20.0) * cMakeup * outGain;
+
         // Brickwall limiter
         if (s >  lim) s =  lim;
         if (s < -lim) s = -lim;
-        outCh[i] = s;
+        
+        // Dry/Wet mixing
+        const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
+        outCh[i] = mono[i] * (1.0 - dryWet) + s * dryWet;
       }
     } else {
-      // Pipeline latency — not enough processed samples yet
-      outCh.fill(0.0);
+      // Pipeline latency — not enough processed samples yet.
+      // Output scaled dry signal only.
+      const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
+      for (let i = 0; i < Q; i++) {
+        outCh[i] = mono[i] * (1.0 - dryWet);
+      }
     }
 
     // Copy mono output to all output channels (worklet may have stereo outputs)
@@ -300,10 +396,23 @@ class DSPProcessor extends AudioWorkletProcessor {
       }
     }
 
-    // Write mag+pha to input SAB for main thread → ml-worker inference
+    // Write mag+pha+pcm to input SAB for main thread → ml-worker inference
     if (this._inputView && this._inputFlags) {
       this._inputView.set(mag, 0);            // mag at offset 0
       this._inputView.set(pha, HALF_BINS);    // pha at offset HALF_BINS
+      // Bug #3: copy the NEWEST HOP_SIZE raw samples (end of the analysis window)
+      // into the PCM region so ml-worker delivers temporally-aligned PCM to Demucs.
+      // Two-slice copy avoids per-sample modulo in the AudioWorklet hot path.
+      if (this._pcmView) {
+        const pcmStart = (frameStart + FFT_SIZE - HOP_SIZE) % inLen;
+        const toEnd = inLen - pcmStart;
+        if (toEnd >= HOP_SIZE) {
+          this._pcmView.set(this._inRing.subarray(pcmStart, pcmStart + HOP_SIZE));
+        } else {
+          this._pcmView.set(this._inRing.subarray(pcmStart, pcmStart + toEnd));
+          this._pcmView.set(this._inRing.subarray(0, HOP_SIZE - toEnd), toEnd);
+        }
+      }
       Atomics.add(this._inputFlags, 0, 1);    // bump write generation
 
       // FIX [4]: fallback postMessage for pre-SAB frames — clone buffer, do NOT transfer
@@ -326,6 +435,56 @@ class DSPProcessor extends AudioWorkletProcessor {
       for (let k = 0; k < HALF_BINS; k++) {
         maskedMag[k] = mag[k] * factor;
       }
+    }
+
+    // ── Spectral EQ & Filters ──
+    const sRate = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
+    const binHz = sRate / FFT_SIZE;
+
+    const eq = [
+      Math.pow(10, (this._params.eqSub || 0)/20),
+      Math.pow(10, (this._params.eqBass || 0)/20),
+      Math.pow(10, (this._params.eqWarmth || 0)/20),
+      Math.pow(10, (this._params.eqBody || 0)/20),
+      Math.pow(10, (this._params.eqLowMid || 0)/20),
+      Math.pow(10, (this._params.eqMid || 0)/20),
+      Math.pow(10, (this._params.eqPresence || 0)/20),
+      Math.pow(10, (this._params.eqClarity || 0)/20),
+      Math.pow(10, (this._params.eqAir || 0)/20),
+      Math.pow(10, (this._params.eqBrill || 0)/20)
+    ];
+
+    const hpFreq = this._params.hpFreq || 80;
+    const lpFreq = this._params.lpFreq || 18000;
+    const tilt = this._params.specTilt || 0; 
+
+    for (let k = 0; k < HALF_BINS; k++) {
+      const hz = k * binHz;
+      let gain = 1.0;
+
+      // Graphic EQ
+      if      (hz < 60) gain *= eq[0];
+      else if (hz < 200) gain *= eq[1];
+      else if (hz < 500) gain *= eq[2];
+      else if (hz < 1000) gain *= eq[3];
+      else if (hz < 2000) gain *= eq[4];
+      else if (hz < 4000) gain *= eq[5];
+      else if (hz < 6000) gain *= eq[6];
+      else if (hz < 10000) gain *= eq[7];
+      else if (hz < 16000) gain *= eq[8];
+      else gain *= eq[9];
+
+      // HP/LP filters
+      if (hz < hpFreq) gain *= Math.pow(hz / (hpFreq + 1e-9), 2);
+      if (hz > lpFreq) gain *= Math.pow(lpFreq / hz, 4);
+
+      // Tilt
+      if (tilt !== 0 && hz > 100) {
+         const octavesFrom1k = Math.log2(hz / 1000);
+         gain *= Math.pow(10, (tilt * octavesFrom1k) / 20);
+      }
+
+      maskedMag[k] *= gain;
     }
 
     // FIX [3] + FIX [6]: Reconstruct complex spectrum using polar form.

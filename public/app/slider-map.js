@@ -179,12 +179,12 @@ export const SLIDER_REGISTRY = [
   { id: 'voiceFocusHi',    key: 'voiceFocusHi',    transform: v => v, target: 'worker' },
   { id: 'crosstalkCancel', key: 'crosstalkCancel', transform: v => v, target: 'worker' },
   { id: 'outGain',         key: 'outGain',         transform: v => v, target: 'worklet' },
-  { id: 'dryWet',          key: 'dryWet',          transform: v => v, target: 'worklet' },
+  { id: 'dryWet',          key: 'dryWet',          transform: v => v / 100, target: 'worklet' },
   { id: 'ditherAmt',       key: 'ditherAmt',       transform: v => v, target: 'worklet' },
   { id: 'outWidth',        key: 'outWidth',        transform: v => v, target: 'worklet' },
 ];
 
-export function dispatchParam(id, rawVal, app = window._vipApp || window.vip || window._vipOrch) {
+export function dispatchParam(id, rawVal, app = window._vipOrch || window._vipApp || window.vip) {
   const target = SLIDER_TARGETS[id] || 'local';
   const payload = { [id]: rawVal };
   const worklet = app?.workletNode;
@@ -267,4 +267,43 @@ export function buildPanels(root = document, onChange) {
   for (const spec of window.VIP_SLIDER_REGISTRY) {
     if (!(spec.id in window.VIP_PARAMS)) window.VIP_PARAMS[spec.id] = spec.val;
   }
+}
+
+export function onAppReady(init) {
+  if (typeof init !== 'function') return;
+  if (typeof window === 'undefined') {
+    init();
+    return;
+  }
+  if (window.__vipAppReady) {
+    init();
+    return;
+  }
+  window.addEventListener('app:ready', () => { init(); }, { once: true });
+}
+
+export function runAudit(root = document) {
+  const win = typeof window !== 'undefined' ? window : null;
+  const sliders = root.querySelectorAll('.sr-row input[type="range"]');
+  const missingPanels = Object.values(TAB_PANEL_MAP).filter((id) => !root.querySelector(`#${id}`));
+  const missingPct = Array.from(sliders).filter((el) => !el.style.getPropertyValue('--pct')).length;
+  const result = {
+    pass: 0,
+    fail: 0,
+    checks: {
+      sliderCount: sliders.length,
+      missingPanels,
+      missingPct,
+      registryCount: win?.VIP_SLIDER_REGISTRY?.length || 0,
+    },
+  };
+  if (sliders.length >= 52) result.pass++; else result.fail++;
+  if (missingPanels.length === 0) result.pass++; else result.fail++;
+  if (missingPct === 0) result.pass++; else result.fail++;
+  if ((win?.VIP_SLIDER_REGISTRY?.length || 0) >= 52) result.pass++; else result.fail++;
+  if (win) {
+    win.VIP_AUDIT_RESULTS = result;
+    win.VIP_runAudit = () => result;
+  }
+  return result;
 }

@@ -7,18 +7,18 @@
    ============================================ */
 
 'use strict';
-/* global fetch, Blob, URL, console, self, crypto, TextEncoder */
+/* global fetch, Blob, URL, console, self, crypto, TextEncoder, window, document, setTimeout, setInterval, clearInterval, Worker, AudioWorkletNode, CustomEvent, MediaRecorder */
 
 const WORKLET_READY_FALLBACK_MS = 250;
 const WORKLET_SOURCE_SHA256 = '9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48';
 
 // ─── AudioWorklet loader with CDN fallback ─────────────────────────────────
 // Primary path is same-origin /app/dsp-processor.js (COOP+COEP friendly).
-// If that fails (404, offline blob, etc.) we walk the manifest mirrors —
-// Vercel Blob → Cloudflare R2 → Hugging Face Hub — fetch the source text,
-// wrap it in a same-origin Blob URL, and pass that to addModule(). The Blob
-// URL is same-origin so it satisfies COEP require-corp without needing the
-// remote response to carry CORP headers.
+// If that fails (404, offline, etc.) we walk the manifest mirrors —
+// Vercel Blob only — fetch the source text, wrap it in a same-origin
+// Blob URL, and pass that to addModule(). The Blob URL is same-origin
+// so it satisfies COEP require-corp without needing the remote response
+// to carry CORP headers. Cloudflare R2 removed.
 const _WORKLET_FALLBACK_CACHE = { manifest: null, sourceText: null };
 async function _getWorkletManifest() {
   if (_WORKLET_FALLBACK_CACHE.manifest) return _WORKLET_FALLBACK_CACHE.manifest;
@@ -77,8 +77,6 @@ async function loadDspProcessorWorklet(ctx) {
     : [
         { provider: 'same-origin', url: '/app/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
         { provider: 'vercel-blob', url: 'https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
-        { provider: 'r2',          url: 'https://models.voiceisolatepro.com/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
-        { provider: 'huggingface', url: 'https://huggingface.co/Joker5514/voice-isolate-models/resolve/main/worklets/dsp-processor.js', sha256: WORKLET_SOURCE_SHA256 },
       ];
 
   let lastErr;
@@ -269,8 +267,10 @@ class PipelineOrchestrator {
       }
     });
 
-    // Route: workletNode → destination
-    this.workletNode.connect(this.ctx.destination);
+    // NOTE: Do NOT connect workletNode → destination here.
+    // buildLiveChain() in app.js owns the full routing chain:
+    //   Source → WorkletNode → GainNode → Analyser → Destination
+    // Connecting here would cause double-routing.
 
     // Listen for 'ready' ack from processor
     this.workletNode.port.onmessage = (e) => {
@@ -297,6 +297,11 @@ class PipelineOrchestrator {
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
       this._emitSabUnavailable('SharedArrayBuffer is not defined');
+      setTimeout(() => {
+        if (!this.workletReady) {
+          this.workletReady = true;
+        }
+      }, WORKLET_READY_FALLBACK_MS);
       return false;
     }
     try {
@@ -339,6 +344,11 @@ class PipelineOrchestrator {
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
       this._emitSabUnavailable(err?.message || String(err));
+      setTimeout(() => {
+        if (!this.workletReady) {
+          this.workletReady = true;
+        }
+      }, WORKLET_READY_FALLBACK_MS);
       return false;
     }
   }
@@ -500,12 +510,14 @@ class PipelineOrchestrator {
       // If models are cached in IDB, pass Object URLs so the worker skips
       // re-fetching them from disk. Falls back gracefully if cache is empty.
       if (typeof window._vipPreloadModels === 'function') {
-        // Fire-and-forget preload — models load while audio context inits.
-        // Only the canonical four models (matching model-loader.js +
-        // models-manifest.json) are preloaded. Any others would diverge from
-        // the SW Cache and double-download under different filenames.
+        // Fire-and-forget preload of the two small models — silero_vad (~2.3 MB)
+        // and rnnoise (~2 MB). These keys match ml-worker-fetch-cache.js MODEL_REGISTRY.
+        // demucs_v4 (~87 MB) and bsrnn_vocals (~3.9 MB) are intentionally excluded:
+        // loading them here pulled 90+ MB into the main-thread renderer before the
+        // user could interact, causing "Aw, Snap!" OOM crashes on mobile. Both are
+        // fetched on-demand by the ml-worker the first time the pipeline needs them.
         window._vipPreloadModels(
-          ['silero_vad', 'rnnoise', 'demucs_v4', 'bsrnn_vocals'],
+          ['silero_vad', 'rnnoise'],
           { forceRefresh: false }
         ).then((modelPaths) => {
           // Forward any resolved Object URLs to the already-running worker.
@@ -561,9 +573,12 @@ class PipelineOrchestrator {
           ortUrl:             '/lib/ort.min.js',
           preferredProviders: ['webgpu', 'wasm'],
           sampleRate:         this.audioContext ? this.audioContext.sampleRate : 48000,
-          // Canonical four — matches model-loader.js + models-manifest.json.
-          // ml-worker.js MODEL_FILES maps these aliases to .onnx filenames.
-          allowedModels:      window.Auth ? window.Auth.getCaps().mlModels : ['vad', 'rnnoise'],
+          // Start the worker with only small/eager models. Large models like
+          // demucs-v4 (~87 MB) are excluded from init — the ml-worker loads
+          // them on-demand when inference is first requested for that model,
+          // avoiding OOM crashes on mobile during app startup.
+          allowedModels:      (window.Auth ? window.Auth.getCaps().mlModels : ['vad', 'rnnoise'])
+            .filter(m => !['demucs', 'demucs-v4', 'demucs_v4'].includes(m)),
           allowedStages:      window.Auth ? window.Auth.getAllowedStages() : 8,
         },
       });
@@ -606,58 +621,58 @@ class PipelineOrchestrator {
     try { sourceNode.disconnect(this.workletNode); } catch (_) {}
   }
 
+  // ── Normalize raw UI params to worklet-ready values ──────────────────────
+  // Mirrors the transforms defined in slider-map.js SLIDER_REGISTRY.
+  // Only nrAmount (0-100% → 0-1) and dryWet (0-100% → 0-1) need scaling;
+  // all other params have identity transforms and pass through unchanged.
+  _normalizeRawParams(raw) {
+    const p = { ...raw };
+    if (typeof p.nrAmount === 'number') p.nrAmount = p.nrAmount / 100;
+    if (typeof p.dryWet  === 'number') p.dryWet  = p.dryWet  / 100;
+    return p;
+  }
+
   // ── Slider → Worklet parameter forwarding ───────────────────────────────
   /**
-   * Called by the patched onSlider() and applyPreset() in app.js.
-   * Forwards the full params snapshot to the AudioWorkletProcessor
-   * via the message port.
+   * Forwards a ALREADY-TRANSFORMED params snapshot to the
+   * AudioWorkletProcessor via the message port.
    *
-   * @param {Object} params  Full params snapshot from VoiceIsolatePro
+   * Callers MUST pass worklet-ready values (use _normalizeRawParams()
+   * or SLIDER_REGISTRY transforms before calling).  No /100 scaling
+   * is performed here to avoid double-normalisation.
+   *
+   * @param {Object} params  Transformed params snapshot
    */
   updateParams(params) {
     if (!this.workletNode) return;
     this.workletNode.port.postMessage({
       type: 'setParams',
-      params: {
-        // Noise Gate
-        gateThresh:    params.gateThresh,
-        gateRange:     params.gateRange,
-        gateAttack:    params.gateAttack,
-        gateRelease:   params.gateRelease,
-        gateHold:      params.gateHold,
-        gateLookahead: params.gateLookahead,
-        // Spectral NR
-        nrAmount:      params.nrAmount,
-        nrSensitivity: params.nrSensitivity,
-        nrSpectralSub: params.nrSpectralSub,
-        nrFloor:       params.nrFloor,
-        nrSmoothing:   params.nrSmoothing,
-        // Voice Isolation
-        voiceIso:      params.voiceIso,
-        bgSuppress:    params.bgSuppress,
-        voiceFocusLo:  params.voiceFocusLo,
-        voiceFocusHi:  params.voiceFocusHi,
-        // Output
-        outGain:       params.outGain,
-        dryWet:        params.dryWet
-      }
+      params: params
     });
 
-    // Forward blend weights to ML worker
+    // Forward blend weights to ML worker safely
     if (this.mlWorker) {
-      this.mlWorker.postMessage({
-        type:   'setWeights',
-        demucs: params.voiceIso / 100,
-        bsrnn:  1 - params.voiceIso / 100
-      });
-      this.mlWorker.postMessage({
-        type: 'setParams',
-        payload: {
-          spectralFloor: Number.isFinite(params.spectralFloor) ? params.spectralFloor : 0.005,
-          noiseReduce: Math.max(0, Math.min(1, (params.nrAmount || 0) / 100)),
-          forensicMode: !!window._vipApp?.forensicMode
-        }
-      });
+      // voiceIso has identity transform in SLIDER_REGISTRY → still raw 0-100
+      if (params.voiceIso !== undefined && !Number.isNaN(params.voiceIso)) {
+        this.mlWorker.postMessage({
+          type:   'setWeights',
+          demucs: params.voiceIso / 100,
+          bsrnn:  1 - params.voiceIso / 100
+        });
+      }
+      const payload = {};
+      if (params.spectralFloor !== undefined) payload.spectralFloor = params.spectralFloor;
+      // nrAmount arrives already normalised to 0-1 by the caller
+      if (params.nrAmount !== undefined) payload.noiseReduce = Math.max(0, Math.min(1, params.nrAmount));
+      if (window._vipApp && window._vipApp.forensicMode !== undefined) {
+        payload.forensicMode = !!window._vipApp.forensicMode;
+      }
+      if (Object.keys(payload).length > 0) {
+        this.mlWorker.postMessage({
+          type: 'setParams',
+          payload
+        });
+      }
     }
   }
 
@@ -693,21 +708,25 @@ class PipelineOrchestrator {
 
   // ── Bind all 52 sliders ──────────────────────────────────────────────────
   /**
-   * Iterates every <input data-param> and attaches an 'input' listener that
-   * calls updateParams() with a full DOM snapshot.
+   * Finds every slider built by buildPanels() (id="sl_<paramId>") and
+   * attaches an 'input' listener that applies SLIDER_REGISTRY transforms
+   * and forwards the full snapshot to the worklet via updateParams().
    * Safe to call before workletNode is created — updateParams() guards itself.
    */
   _bindSliders() {
-    // Build the snapshot once up-front, then mutate the single changed field
-    // on each 'input' event. Re-querying all 52 sliders per-event was O(N)
-    // DOM work on every interaction; this drops it to O(1).
-    const sliders = document.querySelectorAll('input[type="range"][data-param]');
+    // DOM sliders use id="sl_gateThresh", id="sl_eqBass", etc.
+    const sliders = document.querySelectorAll('input[type="range"][id^="sl_"]');
     const snapshot = {};
-    sliders.forEach((s) => { snapshot[s.dataset.param] = parseFloat(s.value); });
+    sliders.forEach((s) => {
+      const paramId = s.id.slice(3); // strip 'sl_' prefix
+      snapshot[paramId] = parseFloat(s.value);
+    });
     sliders.forEach((el) => {
       el.addEventListener('input', () => {
-        snapshot[el.dataset.param] = parseFloat(el.value);
-        this.updateParams(snapshot);
+        const paramId = el.id.slice(3);
+        snapshot[paramId] = parseFloat(el.value);
+        // Apply transforms (nrAmount, dryWet → 0-1) then forward
+        this.updateParams(this._normalizeRawParams(snapshot));
       });
     });
   }
@@ -835,7 +854,7 @@ class PipelineOrchestrator {
       const _origOnSlider = app.onSlider.bind(app);
       app.onSlider = function (...args) {
         _origOnSlider(...args);
-        orch.updateParams(app.params);
+        orch.updateParams(orch._normalizeRawParams(app.params));
       };
     }
 
@@ -844,7 +863,7 @@ class PipelineOrchestrator {
       const _origApply = app.applyPreset.bind(app);
       app.applyPreset = function (name) {
         _origApply(name);
-        orch.updateParams(app.params);
+        orch.updateParams(orch._normalizeRawParams(app.params));
       };
     }
 

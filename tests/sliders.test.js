@@ -120,7 +120,7 @@ describe('ONNX / VAD', () => {
   });
 
   test('runVAD method should be defined', () => {
-    expect(appJs).toContain('async runVAD(buf)');
+    expect(appJs).toContain('async runVAD(');
   });
 });
 
@@ -136,7 +136,7 @@ describe('ML Worker wiring', () => {
 
 
   test('app.js runSeparation delegates to ML Worker', () => {
-    expect(appJs).toContain('async runSeparation(buf, model');
+    expect(appJs).toContain('async runSeparation(');
   });
 
   test('ml-worker loads ORT via importScripts', () => {

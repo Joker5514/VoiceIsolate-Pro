@@ -98,17 +98,47 @@ function buildSeededUsers() {
   return USERS;
 }
 
+// ── Rate-limiter helper (mirrors makeRateLimiter in api/auth.js) ──────────────
+function makeRateLimiter(maxReqs, windowMs) {
+  const _map = new Map();
+  return function rateLimiter(req, res, next) {
+    const key = req.ip || 'unknown';
+    const now = Date.now();
+    const entry = _map.get(key) || { count: 0, windowStart: now };
+    if (now - entry.windowStart > windowMs) {
+      entry.count = 0;
+      entry.windowStart = now;
+    }
+    entry.count++;
+    _map.set(key, entry);
+    if (_map.size > 5000) {
+      for (const [k, v] of _map) {
+        if (now - v.windowStart > windowMs * 2) _map.delete(k);
+      }
+    }
+    if (entry.count > maxReqs) {
+      return res.status(429).json({ error: 'Too many requests. Please wait before trying again.' });
+    }
+    next();
+  };
+}
+
 // ── Minimal Express app that mirrors api/auth.js route logic ──────────────────
-function buildApp(secret = TEST_SECRET) {
+function buildApp(secret = TEST_SECRET, loginRateLimiter = null) {
   const app   = express();
   const USERS = buildSeededUsers();
 
   app.use(express.json());
 
-  // POST /login
-  app.post('/login', (req, res) => {
+  // POST /login — mirrors api/auth.js including rate limiter and length guards
+  const loginMiddleware = loginRateLimiter
+    ? [loginRateLimiter, handleLogin]
+    : [handleLogin];
+
+  function handleLogin(req, res) {
     const { username, password } = req.body || {};
-    if (!username || !password) {
+    if (typeof username !== 'string' || !username || username.length > 256 ||
+        typeof password !== 'string' || !password || password.length > 1024) {
       return res.status(400).json({ error: 'Username and password are required.' });
     }
     const user = USERS[username.toLowerCase()];
@@ -130,7 +160,9 @@ function buildApp(secret = TEST_SECRET) {
         role:     user.role,
       },
     });
-  });
+  }
+
+  app.post('/login', ...loginMiddleware);
 
   // GET /me
   app.get('/me', (req, res) => {
@@ -278,6 +310,16 @@ describe('validateAuthToken()', () => {
 
   test('returns null for a completely invalid string', () => {
     expect(validateAuthToken('not.a.jwt.at.all')).toBeNull();
+  });
+
+  test('returns null (not throws) when signature has a different byte-length than expected', () => {
+    // A 1-byte base64url signature will be a different buffer length than the 32-byte HMAC-SHA256.
+    // The length check in validateAuthToken must prevent timingSafeEqual from throwing a RangeError.
+    const token  = createAuthToken(user);
+    const parts  = token.split('.');
+    const shortSig = Buffer.from([0]).toString('base64url'); // 1 byte ≠ 32 bytes
+    expect(() => validateAuthToken(`${parts[0]}.${parts[1]}.${shortSig}`)).not.toThrow();
+    expect(validateAuthToken(`${parts[0]}.${parts[1]}.${shortSig}`)).toBeNull();
   });
 
   test('roundtrip preserves all fields', () => {
@@ -473,6 +515,94 @@ describe('POST /login', () => {
       .send({ username: 'test_pro', password: 'TestPro123' });
     const payload = JSON.parse(Buffer.from(res.body.token.split('.')[1], 'base64url').toString());
     expect(payload.source).toBe('auth');
+  });
+
+  test('returns 400 when username exceeds 256 characters', async () => {
+    const res = await request(app)
+      .post('/login')
+      .send({ username: 'a'.repeat(257), password: 'TestPro123' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Username and password are required.');
+  });
+
+  test('returns 400 when password exceeds 1024 characters', async () => {
+    const res = await request(app)
+      .post('/login')
+      .send({ username: 'test_pro', password: 'x'.repeat(1025) });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Username and password are required.');
+  });
+
+  test('returns 400 when username is a non-string type', async () => {
+    const res = await request(app)
+      .post('/login')
+      .send({ username: 12345, password: 'TestPro123' });
+    expect(res.status).toBe(400);
+  });
+
+  test('returns 400 when password is a non-string type', async () => {
+    const res = await request(app)
+      .post('/login')
+      .send({ username: 'test_pro', password: ['not', 'a', 'string'] });
+    expect(res.status).toBe(400);
+  });
+
+  test('allows username exactly at the 256-character limit', async () => {
+    const res = await request(app)
+      .post('/login')
+      .send({ username: 'a'.repeat(256), password: 'TestPro123' });
+    // No user by that name, but validation passes → 401 not 400
+    expect(res.status).toBe(401);
+  });
+
+  test('allows password exactly at the 1024-character limit', async () => {
+    const res = await request(app)
+      .post('/login')
+      .send({ username: 'test_pro', password: 'x'.repeat(1024) });
+    // Wrong password, but validation passes → 401 not 400
+    expect(res.status).toBe(401);
+  });
+});
+
+// ── POST /login — rate limiting ───────────────────────────────────────────────
+describe('POST /login — rate limiting', () => {
+  // Use a tight limit (2 per window) so tests are fast and don't call scrypt many times.
+  const { app } = buildApp(TEST_SECRET, makeRateLimiter(2, 60_000));
+
+  test('returns 200 within the rate limit', async () => {
+    const res = await request(app)
+      .post('/login')
+      .send({ username: 'test_pro', password: 'TestPro123' });
+    expect(res.status).toBe(200);
+  });
+
+  test('returns 429 after exceeding the per-IP request limit', async () => {
+    // Each buildApp gets a fresh rate-limiter, but requests share the test process IP.
+    // Build a dedicated app so the counter starts from zero.
+    const { app: limitedApp } = buildApp(TEST_SECRET, makeRateLimiter(2, 60_000));
+
+    // Two allowed requests
+    await request(limitedApp).post('/login').send({ username: 'nobody', password: 'x' });
+    await request(limitedApp).post('/login').send({ username: 'nobody', password: 'x' });
+
+    // Third request should be rate-limited
+    const res = await request(limitedApp)
+      .post('/login')
+      .send({ username: 'test_pro', password: 'TestPro123' });
+    expect(res.status).toBe(429);
+    expect(res.body.error).toMatch(/too many requests/i);
+  });
+
+  test('rate limit does not affect GET /me', async () => {
+    const { app: limitedApp } = buildApp(TEST_SECRET, makeRateLimiter(1, 60_000));
+
+    // Exhaust the login rate limit
+    await request(limitedApp).post('/login').send({ username: 'nobody', password: 'x' });
+    await request(limitedApp).post('/login').send({ username: 'nobody', password: 'x' });
+
+    // /me is not rate-limited via the login limiter
+    const res = await request(limitedApp).get('/me');
+    expect(res.status).toBe(401); // not 429
   });
 });
 

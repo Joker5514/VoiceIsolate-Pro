@@ -1,26 +1,42 @@
 """
-# ===== FILE: scripts/export_bsrnn_onnx.py =====
+scripts/export_bsrnn_onnx.py
 
-Export a Band-Split RNN (BSRNN) vocals model to ONNX.
+Export the pretrained Band-Split RNN (BSRNN) vocals model to ONNX.
 
-Sources from: https://github.com/amanteur/BandSplitRNN-Pytorch
+Sources:
+- Code:        https://github.com/crlandsc/Music-Demixing-with-Band-Split-RNN
+- Checkpoint:  https://huggingface.co/crlandsc/bsrnn-vocals  (vocals.ckpt)
 
-WARNING: No public pretrained MUSDB18 checkpoint is available in that repo.
-The script will instantiate the model with the standard architecture and
-# WARNING: random weights — the model structure is correct but inference
-output is noise until fine-tuned on MUSDB18. This is documented here and
-inline below. A trained checkpoint can be dropped in at ./checkpoints/bsrnn.pth
-and the script will load it automatically.
+The model takes a complex spectrogram laid out as a 4-channel real tensor:
+    input shape  = (batch, channels*2, n_fft//2+1, time_frames)
+                 = (1,    4,           1025,       263)   # tracing dummy
+                 # 2 audio channels x {real, imag} = 4 channels
+                 # n_fft = 2048 -> 1025 freq bins
+                 # 263 time frames ~ 6 s @ 44.1 kHz with hop=1024
+
+The 263 frame count is only the dummy used for ONNX tracing. The exported
+graph marks the time axis (dim 3) as dynamic, so the runtime can feed any
+number of frames.
+
+Both upstream artifacts (vendor git ref + HuggingFace checkpoint revision)
+are pinned via BSRNN_REPO_REF and HF_CKPT_REVISION below so reruns of this
+script produce a byte-identical ONNX.
+
+A pretrained checkpoint is downloaded from the HuggingFace repo
+`crlandsc/bsrnn-vocals`. If download or loading fails, the script aborts
+with a clear error rather than silently exporting random weights.
+
+Run:
+    pip install -r scripts/requirements_export.txt
+    python scripts/export_bsrnn_onnx.py
 """
 
 import hashlib
 import logging
-import os
 import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
@@ -30,36 +46,32 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
+# ----------------------------------------------------------------------------
+# Configuration
+# ----------------------------------------------------------------------------
 OUTPUT_DIR = Path("./models_output")
-MODEL_PATH = OUTPUT_DIR / "bsrnn_vocals.onnx"
-VENDOR_DIR = Path("./vendor/BandSplitRNN-Pytorch")
-CHECKPOINT_PATH = Path("./checkpoints/bsrnn.pth")
-OPSET = 17
-CHUNK_SAMPLES = 44100 * 8  # 352800 samples, 8s stereo @ 44.1kHz
+# Output filename intentionally differs from the existing per-frame
+# `bsrnn_vocals.onnx` so the two contracts coexist in the model registry:
+#   bsrnn_vocals.onnx          -> legacy [1, numBins] magnitude path (real-time)
+#   bsrnn_vocals_complex.onnx  -> pretrained [1, 4, 1025, T] complex path
+#                                  (offline-only; consumed by offline-processor)
+MODEL_PATH = OUTPUT_DIR / "bsrnn_vocals_complex.onnx"
+VENDOR_DIR = Path("./vendor/Music-Demixing-with-Band-Split-RNN")
 
-# Standard BSRNN architecture hyperparameters (from paper + repo defaults)
-BSRNN_CONFIG = {
-    "sr": 44100,
-    "n_fft": 2048,
-    "hop_length": 512,
-    "num_band_seq_module": 12,
-    "num_channels": 128,
-}
+BSRNN_REPO_URL = "https://github.com/crlandsc/Music-Demixing-with-Band-Split-RNN"
+# Pinned upstream artifact revisions for reproducible exports. Bump these
+# only when re-validating the resulting ONNX against the runtime contract.
+BSRNN_REPO_REF = "cbc85d64b253e1529d538615b72034fd55c5b9f3"
+HF_REPO_ID = "crlandsc/bsrnn-vocals"
+HF_CKPT_FILE = "vocals.ckpt"
+HF_CKPT_REVISION = "298d498567854810ea4989482e908fc3302e12e7"
 
-BSRNN_REPO_URL = "https://github.com/amanteur/BandSplitRNN-Pytorch"
-
-
-def ensure_package(package: str, import_name: Optional[str] = None) -> None:
-    check = (import_name or package).replace("-", "_")
-    try:
-        __import__(check)
-        log.info("Package available: %s", package)
-    except ImportError:
-        log.info("Installing: %s", package)
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", package],
-            stdout=subprocess.DEVNULL,
-        )
+# Spectrogram input dims (must match the checkpoint's training config).
+OPSET = 18
+N_FFT = 2048
+FREQ_BINS = N_FFT // 2 + 1   # 1025
+TIME_FRAMES = 263            # ~6 s @ 44.1 kHz, hop=1024
+NUM_CHANNELS_COMPLEX = 4     # 2 audio channels * 2 (real, imag)
 
 
 def sha256_file(path: Path) -> str:
@@ -71,222 +83,112 @@ def sha256_file(path: Path) -> str:
 
 
 def clone_vendor_repo() -> None:
-    """Clone BandSplitRNN-Pytorch into ./vendor/ if not already present."""
-    if VENDOR_DIR.exists() and (VENDOR_DIR / "src").exists():
+    if VENDOR_DIR.exists() and (VENDOR_DIR / ".git").exists():
         log.info("Vendor repo already cloned: %s", VENDOR_DIR)
-        return
-
-    VENDOR_DIR.parent.mkdir(parents=True, exist_ok=True)
-    log.info("Cloning %s -> %s", BSRNN_REPO_URL, VENDOR_DIR)
-    subprocess.check_call(
-        ["git", "clone", "--depth", "1", BSRNN_REPO_URL, str(VENDOR_DIR)]
-    )
-    log.info("Clone complete.")
-
-
-def install_vendor_requirements() -> None:
-    """Install requirements.txt from the cloned repo.
-
-    NOTE: The upstream vendor repo pins torch==1.13.1, which is
-    incompatible with our installed torch>=2.x and frequently the
-    pin is unavailable on PyPI for current Python versions. We rely
-    on the host's torch + torchaudio install and only ensure that
-    light, version-agnostic deps (omegaconf, hydra-core) are present.
-    """
-    light_deps = ["omegaconf>=2.3", "hydra-core>=1.3", "soundfile"]
-    log.info("Installing minimal vendor deps: %s", light_deps)
-    try:
+    else:
+        if VENDOR_DIR.exists():
+            raise RuntimeError(
+                f"{VENDOR_DIR} exists but is not a git checkout. "
+                "Remove it and re-run, or run this script from a clean tree."
+            )
+        VENDOR_DIR.parent.mkdir(parents=True, exist_ok=True)
+        log.info("Cloning %s -> %s", BSRNN_REPO_URL, VENDOR_DIR)
         subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--quiet",
-             "--break-system-packages", *light_deps],
-            stdout=subprocess.DEVNULL,
+            ["git", "clone", BSRNN_REPO_URL, str(VENDOR_DIR)]
         )
-    except subprocess.CalledProcessError as e:
-        log.warning("pip install warning (continuing): %s", e)
+
+    log.info("Pinning vendor repo to %s", BSRNN_REPO_REF)
+    subprocess.check_call(
+        ["git", "-C", str(VENDOR_DIR), "fetch", "--depth", "1", "origin", BSRNN_REPO_REF]
+    )
+    subprocess.check_call(
+        ["git", "-C", str(VENDOR_DIR), "checkout", "--detach", BSRNN_REPO_REF]
+    )
 
 
 def add_vendor_to_path() -> None:
-    """Add vendor src to sys.path so BSRNN modules can be imported."""
-    src_path = str(VENDOR_DIR / "src")
-    if src_path not in sys.path:
-        sys.path.insert(0, src_path)
-    # Also add root in case imports are relative to repo root
-    root_path = str(VENDOR_DIR)
-    if root_path not in sys.path:
-        sys.path.insert(0, root_path)
+    for sub in ("src", ""):
+        p = str((VENDOR_DIR / sub).resolve())
+        if p not in sys.path:
+            sys.path.insert(0, p)
 
 
-# ---------------------------------------------------------------------------
-# Fallback pure-PyTorch BSRNN approximation
-# ---------------------------------------------------------------------------
-# Used when the vendor repo cannot be imported due to missing dependencies
-# or API changes. This mirrors the band-split-rnn concept:
-# 1. STFT-based band splitting
-# 2. Per-band RNN (LSTM) sequence modelling
-# 3. Band merging and iSTFT reconstruction
-# All with the same I/O contract: stereo in, stereo out.
+def download_checkpoint() -> Path:
+    from huggingface_hub import hf_hub_download
 
-import torch
-import torch.nn as nn
-
-
-class BandSplitRNNFallback(nn.Module):
-    """
-    Minimal fallback BSRNN approximation for ONNX export.
-
-    This implements the conceptual structure of BSRNN without
-    the full spectral band-split logic, using grouped LSTMs.
-    # WARNING: random weights — output is not trained vocals separation.
-    Used only when the vendor model cannot be instantiated.
-    """
-
-    def __init__(self, channels: int = 64, num_layers: int = 6):
-        super().__init__()
-        # Encoder: compress stereo waveform into feature space
-        self.encoder = nn.Sequential(
-            nn.Conv1d(2, channels, kernel_size=16, stride=8, padding=4),
-            nn.ReLU(),
-        )
-        # Band sequence modelling via stacked LSTM
-        self.rnn = nn.LSTM(
-            input_size=channels,
-            hidden_size=channels,
-            num_layers=num_layers,
-            batch_first=True,
-            bidirectional=True,
-        )
-        # Mask estimation head
-        self.mask_head = nn.Sequential(
-            nn.Linear(channels * 2, channels),
-            nn.ReLU(),
-            nn.Linear(channels, channels),
-            nn.Sigmoid(),
-        )
-        # Decoder: reconstruct stereo waveform
-        self.decoder = nn.ConvTranspose1d(
-            channels, 2, kernel_size=16, stride=8, padding=4
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: [batch, 2, time] float32 stereo
-        Returns:
-            vocals: [batch, 2, time] float32
-        """
-        # Encode
-        enc = self.encoder(x)  # [batch, channels, time//8]
-        # RNN over time
-        rnn_in = enc.permute(0, 2, 1)  # [batch, time//8, channels]
-        rnn_out, _ = self.rnn(rnn_in)  # [batch, time//8, channels*2]
-        # Mask
-        mask = self.mask_head(rnn_out)  # [batch, time//8, channels]
-        masked = enc * mask.permute(0, 2, 1)
-        # Decode and match input length
-        dec = self.decoder(masked)  # [batch, 2, ~time]
-        # Trim or pad to original length
-        t = x.shape[2]
-        if dec.shape[2] >= t:
-            dec = dec[:, :, :t]
-        else:
-            pad = t - dec.shape[2]
-            dec = torch.nn.functional.pad(dec, (0, pad))
-        return dec
+    log.info("Downloading checkpoint %s/%s@%s from HuggingFace ...",
+             HF_REPO_ID, HF_CKPT_FILE, HF_CKPT_REVISION)
+    ckpt_path = hf_hub_download(
+        repo_id=HF_REPO_ID,
+        filename=HF_CKPT_FILE,
+        revision=HF_CKPT_REVISION,
+    )
+    log.info("Checkpoint at: %s", ckpt_path)
+    return Path(ckpt_path)
 
 
-def load_bsrnn_model() -> nn.Module:
-    """
-    Attempt to load the vendor BSRNN model.
-    Falls back to BandSplitRNNFallback if import fails.
-    """
-    add_vendor_to_path()
+def load_model(ckpt_path: Path):
+    from model.pl_model import PLModel  # type: ignore[import]
 
-    try:
-        # The repo uses a BandSplitRNN class in src/model.py or similar
-        from model import BandSplitRNN  # type: ignore[import]
-
-        log.info("Vendor BSRNN import succeeded.")
-        model = BandSplitRNN(**BSRNN_CONFIG)
-
-        # Load checkpoint if available
-        if CHECKPOINT_PATH.exists():
-            log.info("Loading checkpoint: %s", CHECKPOINT_PATH)
-            state = torch.load(str(CHECKPOINT_PATH), map_location="cpu")
-            model.load_state_dict(state.get("model_state_dict", state))
-            log.info("Checkpoint loaded.")
-        else:
-            # WARNING: random weights — no public pretrained checkpoint found
-            log.warning(
-                "WARNING: random weights — no pretrained checkpoint at %s. "
-                "Model structure is correct but outputs are noise.",
-                CHECKPOINT_PATH,
-            )
-
-        model.eval()
-        return model
-
-    except Exception as exc:
-        log.warning(
-            "Vendor BSRNN import failed (%s). Using fallback pure-PyTorch model.",
-            exc,
-        )
-        # WARNING: random weights fallback
-        model = BandSplitRNNFallback()
-        model.eval()
-        return model
+    log.info("Loading PLModel from checkpoint ...")
+    model = PLModel.load_from_checkpoint(
+        str(ckpt_path),
+        map_location="cpu",
+    )
+    model.eval()
+    # The inner torch.nn.Module is `model.model` -- that's what we export,
+    # because the Lightning wrapper has non-tensor attributes that confuse
+    # the ONNX tracer.
+    inner = model.model
+    inner.eval()
+    return inner
 
 
-def export_to_onnx(model: nn.Module, out_path: Path) -> None:
+def export_to_onnx(inner_model, out_path: Path) -> None:
     import onnx
+    import torch
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    dummy = torch.zeros(1, 2, CHUNK_SAMPLES, dtype=torch.float32)
+    dummy = torch.randn(
+        1, NUM_CHANNELS_COMPLEX, FREQ_BINS, TIME_FRAMES,
+        dtype=torch.float32,
+    )
 
-    log.info("Exporting BSRNN to ONNX ...")
+    log.info("Exporting BSRNN to ONNX (opset=%d) ...", OPSET)
     with torch.no_grad():
         torch.onnx.export(
-            model,
+            inner_model,
             dummy,
             str(out_path),
             opset_version=OPSET,
             input_names=["input"],
             output_names=["output"],
             dynamic_axes={
-                "input": {0: "batch", 2: "time"},
-                "output": {0: "batch", 2: "time"},
+                "input":  {0: "batch", 3: "time"},
+                "output": {0: "batch", 3: "time"},
             },
             do_constant_folding=True,
         )
 
-    log.info("Checking ONNX graph ...")
+    log.info("Running onnx.checker.check_model ...")
     proto = onnx.load(str(out_path))
     onnx.checker.check_model(proto)
     log.info("ONNX check passed.")
 
 
-def quantize_model(fp32_path: Path, final_path: Path) -> None:
-    from onnxruntime.quantization import QuantType, quantize_dynamic
-
-    log.info("Quantizing INT8: %s -> %s", fp32_path, final_path)
-    quantize_dynamic(
-        model_input=str(fp32_path),
-        model_output=str(final_path),
-        weight_type=QuantType.QInt8,
-    )
-    fp32_path.unlink(missing_ok=True)
-
-
 def validate_onnx(path: Path) -> None:
     import onnxruntime as ort
 
-    log.info("Validating ONNX model ...")
+    log.info("Validating with onnxruntime ...")
     sess = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
-    dummy = np.random.randn(1, 2, CHUNK_SAMPLES).astype(np.float32)
+    dummy = np.random.randn(
+        1, NUM_CHANNELS_COMPLEX, FREQ_BINS, TIME_FRAMES
+    ).astype(np.float32)
     iname = sess.get_inputs()[0].name
     out = sess.run(None, {iname: dummy})
-
-    expected = (1, 2, CHUNK_SAMPLES)
-    assert out[0].shape == expected, f"Shape mismatch: {out[0].shape} != {expected}"
+    out = sess.run(None, {iname: dummy})
+    expected_shape = (1, NUM_CHANNELS_COMPLEX, FREQ_BINS, TIME_FRAMES)
+    assert out[0].shape == expected_shape, f"Shape mismatch: {out[0].shape} != {expected_shape}"
     log.info("Validation passed. Output shape: %s", out[0].shape)
 
 
@@ -294,29 +196,28 @@ def main() -> None:
     start = time.time()
     log.info("=== export_bsrnn_onnx.py START ===")
 
-    for pkg in ["onnx", "onnxruntime", "tqdm"]:
-        ensure_package(pkg)
-
     clone_vendor_repo()
-    install_vendor_requirements()
+    add_vendor_to_path()
 
-    model = load_bsrnn_model()
+    try:
+        ckpt_path = download_checkpoint()
+        inner_model = load_model(ckpt_path)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to acquire/load BSRNN checkpoint "
+            f"({HF_REPO_ID}/{HF_CKPT_FILE}@{HF_CKPT_REVISION}). "
+            "Check network access, huggingface_hub auth, and that the "
+            "vendor repo at the pinned ref still exposes model.pl_model.PLModel."
+        ) from exc
 
-    fp32_tmp = OUTPUT_DIR / "_bsrnn_fp32.onnx"
-    export_to_onnx(model, fp32_tmp)
-    quantize_model(fp32_tmp, MODEL_PATH)
+    export_to_onnx(inner_model, MODEL_PATH)
     validate_onnx(MODEL_PATH)
 
     digest = sha256_file(MODEL_PATH)
     size_mb = MODEL_PATH.stat().st_size / (1024 * 1024)
-
-    print(f"\nSHA-256 : {digest}")
-    print(f"Size    : {size_mb:.1f} MB  (limit: 50 MB)")
-
-    if size_mb > 50:
-        log.warning("Model exceeds 50 MB target: %.1f MB", size_mb)
-    else:
-        log.info("Size check PASSED: %.1f MB <= 50 MB", size_mb)
+    print(f"\nOutput  : {MODEL_PATH}")
+    print(f"SHA-256 : {digest}")
+    print(f"Size    : {size_mb:.1f} MB")
 
     elapsed = time.time() - start
     log.info("=== export_bsrnn_onnx.py DONE in %.1fs ===", elapsed)

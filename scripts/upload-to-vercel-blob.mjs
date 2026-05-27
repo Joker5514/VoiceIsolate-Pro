@@ -19,7 +19,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MODELS_DIR = join(__dirname, '..', 'models');
+const MODELS_DIR = join(__dirname, '..', 'public', 'app', 'models');
 const MANIFEST_PATH = join(__dirname, '..', 'public', 'app', 'models-manifest.json');
 
 const TOKEN = process.env.BLOB_READ_WRITE_TOKEN;

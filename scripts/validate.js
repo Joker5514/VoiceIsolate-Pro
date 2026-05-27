@@ -90,7 +90,7 @@ check(orchJs.includes('addModule') && orchJs.includes('dsp-processor'), 'AudioWo
 check(!appJs.includes('audioWorklet.addModule'), 'app.js does not call audioWorklet.addModule() (ownership violation guard)');
 check(html.includes('pipeline-orchestrator.js'), 'Pipeline Orchestrator script tag in index.html');
 check(appJs.includes('async loadModels()'), 'loadModels() method present');
-check(appJs.includes('async runVAD(buf)'), 'runVAD() method present');
+check(appJs.includes('async runVAD('), 'runVAD() method present');
 // ML Worker ownership lives in PipelineOrchestrator (single source of truth)
 check(orchJs.includes('_initMLWorker'), 'ML Worker spawned by PipelineOrchestrator');
 check(orchJs.includes("new Worker('./ml-worker.js')"), 'ML Worker path correct in orchestrator');
