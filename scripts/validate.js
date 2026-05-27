@@ -93,7 +93,7 @@ check(appJs.includes('async loadModels()'), 'loadModels() method present');
 check(appJs.includes('async runVAD('), 'runVAD() method present');
 // ML Worker ownership lives in PipelineOrchestrator (single source of truth)
 check(orchJs.includes('_initMLWorker'), 'ML Worker spawned by PipelineOrchestrator');
-check(orchJs.includes("new Worker('./ml-worker.js')"), 'ML Worker path correct in orchestrator');
+check(orchJs.includes("new Worker('/app/ml-worker.js')"), 'ML Worker path correct in orchestrator');
 check(mlWorkerJs.includes("type === 'init'") || mlWorkerJs.includes("case 'init':") || mlWorkerJs.includes("case 'runVAD':"), 'ML Worker handles init/runVAD');
 check(mlWorkerJs.includes("type === 'process'") || mlWorkerJs.includes("case 'process':") || mlWorkerJs.includes("case 'runSeparation':"), 'ML Worker handles process/runSeparation');
 check(mlWorkerJs.includes("type === 'reset'") || mlWorkerJs.includes("case 'reset':") || mlWorkerJs.includes("case 'runVocoder':"), 'ML Worker handles reset/runVocoder');
