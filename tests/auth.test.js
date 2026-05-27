@@ -1008,7 +1008,7 @@ describe('Admin provisioning via VIP_ADMIN_USERNAME / VIP_ADMIN_PASSWORD', () =>
     // but only because it was explicitly provided - not hardcoded. We verify the
     // v24 source no longer hardcodes this credential.
     const authSrc = require('fs').readFileSync(
-      require('path').join(__dirname, '../api/auth.js'), 'utf8'
+      require('path').join(__dirname, '../api/_auth.js'), 'utf8'
     );
     expect(authSrc).not.toContain("'joker5514'");
     expect(authSrc).not.toContain('"joker5514"');

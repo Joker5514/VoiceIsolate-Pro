@@ -96,7 +96,7 @@ describe('GET /api/client-config', () => {
     const fs   = require('fs');
     const path = require('path');
     const src  = fs.readFileSync(
-      path.join(__dirname, '../api/client-config.js'), 'utf8'
+      path.join(__dirname, '../api/_client-config.js'), 'utf8'
     );
 
     test('api/client-config.js sets Cache-Control: no-store', () => {
@@ -113,16 +113,16 @@ describe('GET /api/client-config', () => {
 
     test('api/index.js mounts the /client-config route', () => {
       const indexSrc = fs.readFileSync(
-        path.join(__dirname, '../api/index.js'), 'utf8'
+        path.join(__dirname, '../api/_index.js'), 'utf8'
       );
       expect(indexSrc).toContain("router.get('/client-config', clientConfigHandler)");
     });
 
     test('api/index.js imports clientConfigHandler', () => {
       const indexSrc = fs.readFileSync(
-        path.join(__dirname, '../api/index.js'), 'utf8'
+        path.join(__dirname, '../api/_index.js'), 'utf8'
       );
-      expect(indexSrc).toContain("import clientConfigHandler from './client-config.js'");
+      expect(indexSrc).toContain("import clientConfigHandler from './_client-config.js'");
     });
   });
 });

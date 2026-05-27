@@ -18,11 +18,11 @@
  */
 
 import express from 'express';
-import monetizationRouter from './monetization.js';
-import syncRouter from './sync.js';
-import authRouter from './auth.js';
-import nimRouter from './nim/index.js';
-import clientConfigHandler from './client-config.js';
+import monetizationRouter from './_monetization.js';
+import syncRouter from './_sync.js';
+import authRouter from './_auth.js';
+import nimRouter from './_nim/index.js';
+import clientConfigHandler from './_client-config.js';
 
 const router = express.Router();
 

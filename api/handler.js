@@ -21,7 +21,7 @@
  */
 
 import express    from 'express';
-import apiRouter  from './index.js';
+import apiRouter  from './_index.js';
 
 const app = express();
 app.disable('x-powered-by');
