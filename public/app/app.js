@@ -1065,7 +1065,7 @@ class VoiceIsolatePro {
     const payload = entry ? { [entry.key]: mapped } : { [id]: rawValue };
 
     if (entry && (entry.target === 'worklet' || entry.target === 'both')) {
-      if (orch?.workletNode) orch.updateParams?.({ ...this.params });
+      if (orch?.workletNode) orch.updateParams?.(orch._normalizeRawParams({ ...this.params }));
       else if (workletNode) workletNode.port.postMessage({ type: 'params', payload });
     }
     if (entry && (entry.target === 'worker' || entry.target === 'both')) {

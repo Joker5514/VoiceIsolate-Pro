@@ -399,9 +399,10 @@
         window.VIP_PARAMS[id] = v;
         if (app.params) app.params[id] = v;
         const orch = window._vipOrch;
-        if (orch?.updateParams) { orch.updateParams({ [id]: v }); return; }
+        if (orch?.updateParams) { orch.updateParams(orch._normalizeRawParams({ [id]: v })); return; }
         if (app.workletNode) {
-          try { app.workletNode.port.postMessage({ type: 'params', payload: { [id]: v } }); } catch (_) {}
+          const valMapped = (id === 'nrAmount' || id === 'dryWet') ? v / 100 : v;
+          try { app.workletNode.port.postMessage({ type: 'params', payload: { [id]: valMapped } }); } catch (_) {}
         }
       });
     }
