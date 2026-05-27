@@ -682,7 +682,7 @@ class VoiceIsolatePro {
 
     // Safe querySelectorAll — returns empty array when document is a partial mock
     const qsa = (sel) => {
-      if (typeof document.querySelectorAll === 'function') return document.querySelectorAll(sel);
+      if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') return document.querySelectorAll(sel);
       return [];
     };
 
