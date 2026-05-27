@@ -319,6 +319,7 @@ class VoiceIsolatePro {
     // State flags
     this.mode = 'idle';
     this._initCalled = false;
+    this._initStarted = false;
     this._ctxReady = false;
     this._workletReady = false;
     this._workletSliderListenersBound = false;
@@ -362,8 +363,12 @@ class VoiceIsolatePro {
 
   // ── Public init ──────────────────────────────────────────────────────────
   async init() {
-    if (this._initCalled) return;
+    if (this._initStarted) return;
+    this._initStarted = true;
     this._initCalled = true;
+
+    if (typeof document === 'undefined' || typeof document.getElementById !== 'function' ||
+        typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
 
     this.cacheDom();
     this._renderSliders();
