@@ -383,7 +383,8 @@ class DSPProcessor extends AudioWorkletProcessor {
     // Advance read cursor by one hop so next frame is offset by HOP_SIZE
     this._inRd = (this._inRd + HOP_SIZE) % inLen;
 
-    // ── SINGLE FORWARD STFT ────────────────────────────────────────────────
+    // SINGLE-PASS STFT BOUNDARY
+    // Forward transform entry for the canonical live AudioWorklet path.
     fftInPlace(this._re, this._im, false);
 
     // Convert to polar: magnitude + phase for all positive bins + DC + Nyquist
@@ -522,7 +523,8 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._re[nyq] = maskedMag[nyq] * Math.cos(pha[nyq]);
     this._im[nyq] = 0.0;
 
-    // ── SINGLE INVERSE STFT ────────────────────────────────────────────────
+    // SINGLE-PASS STFT BOUNDARY
+    // Inverse transform exit for the canonical live AudioWorklet path.
     fftInPlace(this._re, this._im, true);
 
     // Synthesis Hann window + overlap-add normalised by OLA_NORM (= 0.5 at 75%)

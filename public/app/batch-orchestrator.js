@@ -8,6 +8,9 @@
 
 /**
  * Async batch processing orchestrator.
+ * Offline / creator queue owner only — live interactive routing remains in
+ * pipeline-orchestrator.js, while per-file DSP execution happens in
+ * batch-processor.js.
  * - Priority-sorted job queue (1–1000+ files)
  * - Configurable worker concurrency (default: navigator.hardwareConcurrency)
  * - FFmpeg integration for video muxing (copy video + AAC audio)

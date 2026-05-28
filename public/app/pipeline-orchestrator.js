@@ -12,7 +12,7 @@ const WORKLET_READY_FALLBACK_MS = 250;
 // WARNING: Update this hash whenever dsp-processor.js is modified.
 // Run: node -e "const c=require('crypto'),f=require('fs');
 //   console.log(c.createHash('sha256').update(f.readFileSync('public/app/dsp-processor.js')).digest('hex'))"
-const WORKLET_SOURCE_SHA256 = '9f0577b157461bff5e47cb1ba46ea538d902335fb1ead315c25a86e9d1812a48';
+const WORKLET_SOURCE_SHA256 = 'e8870cd5c8ee1490a7c1e74d2fceab391f1f6c59d085882157acb3328c2dbba1';
 
 // ─── AudioWorklet loader with CDN fallback ─────────────────────────────────
 // Primary path is same-origin /app/dsp-processor.js (COOP+COEP friendly).
@@ -119,14 +119,13 @@ async function loadDspProcessorWorklet(ctx) {
 // Expose for tests + diagnostics; keeps the helper available without polluting globals further.
 if (typeof self !== 'undefined') self.loadDspProcessorWorklet = loadDspProcessorWorklet;
 
-// NOTE: voice-isolate-processor.js exists in public/app/ but is NEVER registered via
-// new AudioWorkletNode(ctx, 'voice-isolate-processor') anywhere in the codebase.
-// It is a dead file kept for historical reference only. It can be removed in a future
-// cleanup pass along with its header rule in vercel.json and its sw.js cache entry.
-
 /**
  * PipelineOrchestrator
  * ─────────────────────
+ * Live mode owner only.
+ * Offline / Creator mode belongs to offline-processor.js and batch mode belongs
+ * to batch-orchestrator.js + batch-processor.js.
+ *
  * Owns:
  *  - The AudioContext and AudioWorkletNode (live path)
  *  - ONNX Runtime session initialisation (via ml-worker.js)
@@ -291,8 +290,8 @@ class PipelineOrchestrator {
   }
 
   // ── SharedArrayBuffer ring allocation ───────────────────────────────────
-  // Uses SharedRingBuffer (ring-buffer.js) for consistent 4-slot Int32 header
-  // layout that is compatible with the ML worker's SAB_HEADER_BYTES = 16.
+  // Uses SharedRingBuffer (ring-buffer.js) for the canonical 5-slot Int32 header
+  // layout that is compatible with the ML worker's SAB_HEADER_BYTES = 20.
   _allocateRings() {
     // Guard: SharedArrayBuffer requires COOP+COEP headers — check before
     // attempting allocation so we get a clean boolean return rather than
@@ -312,7 +311,7 @@ class PipelineOrchestrator {
       return false;
     }
     try {
-      // Use SharedRingBuffer for consistent layout (4×Int32 header + Float32 data).
+      // Use SharedRingBuffer for consistent layout (5×Int32 header + Float32 data).
       // frameSize = samples per quantum/bin, frameCount = ring capacity slots.
       const inputRing = new SharedRingBuffer(this._quantumSize, this._ringCapacity);
       const maskRing  = new SharedRingBuffer(this._halfN,        this._ringCapacity);

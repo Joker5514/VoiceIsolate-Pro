@@ -35,7 +35,6 @@ const APP_SHELL = [
   '/app/style.css',
   '/app/dsp-core.js',
   '/app/dsp-processor.js',
-  '/app/voice-isolate-processor.js',
   '/app/dsp-worker.js',
   '/app/pipeline-orchestrator.js',
   '/app/pipeline-state.js',

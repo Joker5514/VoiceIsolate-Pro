@@ -399,6 +399,7 @@ const Paywall = (() => {
     /**
      * Redirect to Stripe Checkout for the given tier and billing cycle.
      * In production, this calls your backend /api/checkout which creates a Stripe session.
+     * External payment traffic is deferred until this explicit user action.
      */
     async checkout(tier, cycle = 'monthly') {
       // In production: POST to /api/checkout → get Stripe session URL → redirect

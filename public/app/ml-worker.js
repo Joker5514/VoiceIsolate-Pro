@@ -121,15 +121,6 @@ const MODEL_SHA256 = {
   'bsrnn_vocals_complex.onnx':  '',
 };
 
-// ── Vercel Blob URLs for model CDN delivery ───────────────────────────────────
-// model-loader.js reads these at startup and calls cacheModelPaths so the
-// worker fetches from Blob storage instead of the same-origin /app/models/ path.
-const MODEL_BLOB_URLS = {
-  'demucs_v4_quantized.onnx':   'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/demucs_v4_quantized.onnx',
-  'rnnoise_suppressor.onnx':    'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/rnnoise_suppressor-5JrJWV0K8oz1Q0sKuq4N8rmrAiQIJ6.onnx',
-  'bsrnn_vocals.onnx':          'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/bsrnn_vocals-yRolIm3LNLR5tCzdAig4HaaxCxArUC.onnx',
-};
-
 // ── ORT lazy initializer ──────────────────────────────────────────────────────
 // Called at the start of every message handler that needs ORT.
 // If self.ort is already populated (e.g. by a prior importScripts call or
@@ -386,7 +377,7 @@ self.onmessage = async (ev) => {
           sampleRate          = 48000,
           // Default to the absolute /app/models/ path so the SW intercepts
           // the fetch and serves from the vip-models-v1 Cache populated by
-          // model-loader.js (which itself fetched via the Vercel Blob rewrite).
+          // the same-origin model loader.
           modelBasePath: _rawBasePath = '/app/models/',
           preferredProviders  = ['webgpu', 'wasm'],
           allowedModels: am   = DEFAULT_MODELS,
@@ -891,13 +882,11 @@ async function loadModels(basePath, providers, modelList) {
       continue;
     }
 
-    // Prefer in-memory blob: URL from fetch-cache when available — this
-    // skips both network and SW Cache and loads from the IDB ArrayBuffer
-    // directly. Falls back to Vercel Blob CDN URL when available, then
-    // same-origin /app/models/<file> as last resort.
+    // Prefer an in-memory blob: URL from the local fetch-cache when available —
+    // this skips both network and SW Cache. Otherwise load the same-origin
+    // /app/models/<file> URL only.
     const overrideUrl = MODEL_URL_OVERRIDES[modelId] || MODEL_URL_OVERRIDES[file];
-    const blobCdnUrl  = MODEL_BLOB_URLS[file];
-    const modelUrl    = overrideUrl || blobCdnUrl || (basePath + file);
+    const modelUrl    = overrideUrl || (basePath + file);
     const eps         = await resolveProviders(providers);
     const expectedSha256 = MODEL_SHA256[file] || '';
 
@@ -907,7 +896,7 @@ async function loadModels(basePath, providers, modelList) {
       sessions[modelId] = session;
       modelStatus[modelId] = true;
       self.postMessage({ type: 'model_loaded', modelId, providers: eps });
-      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')} (${overrideUrl ? 'blob' : blobCdnUrl ? 'vercel-blob' : 'same-origin'})`);
+      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')} (${overrideUrl ? 'blob-cache' : 'same-origin'})`);
     } catch (err) {
       modelStatus[modelId] = false;
       const errMsg = modelId === 'vad'

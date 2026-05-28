@@ -1,6 +1,6 @@
 // model-status-ui.js — VoiceIsolate Pro
 // Displays per-model cache/load status pills in the UI plus active-provider badges.
-// Also renders a "CDN Health" panel populated by window.ModelCDNLoader.getProviderHealthReport().
+// Also renders a "Local Model Health" panel populated by window.ModelCDNLoader.getProviderHealthReport().
 
 const STATUS_CONFIG = {
   cached:  { label: '✓ Cached',                    cls: 'vip-pill--green' },
@@ -12,13 +12,11 @@ const STATUS_CONFIG = {
 
 const PROVIDER_BADGE = {
   'same-origin': { label: '✓ Local',          cls: 'vip-provider--green'  },
-  'vercel-blob': { label: '✓ Vercel Blob',    cls: 'vip-provider--green'  },
   'cache':       { label: '✓ SW Cache',       cls: 'vip-provider--grey'   },
 };
 
 const HEALTH_LABELS = {
   'same-origin': 'Local (same-origin)',
-  'vercel-blob': 'Vercel Blob',
 };
 
 export class ModelStatusUI {
@@ -26,7 +24,7 @@ export class ModelStatusUI {
    * @param {HTMLElement} container  – element to render pills into
    * @param {string[]}    modelKeys  – e.g. ['demucs','bsrnn','rnnoise','nsnet2','silero_vad']
    * @param {object}      [opts]
-   * @param {HTMLElement} [opts.healthContainer] – element to render CDN health rows into
+   * @param {HTMLElement} [opts.healthContainer] – element to render local model health rows into
    */
   constructor(container, modelKeys = [], opts = {}) {
     this._container = container;
@@ -74,7 +72,7 @@ export class ModelStatusUI {
     this._healthContainer.innerHTML = '';
     const title = document.createElement('div');
     title.className = 'vip-cdn-health-title';
-    title.textContent = 'CDN Health';
+    title.textContent = 'Local Model Health';
     this._healthContainer.appendChild(title);
 
     for (const provider of Object.keys(HEALTH_LABELS)) {
@@ -103,7 +101,7 @@ export class ModelStatusUI {
    * @param {string} key      – model key
    * @param {'cached'|'loading'|'pending'|'error'} status
    * @param {number} [pct]    – progress percentage for 'loading' state
-   * @param {string} [provider] – which CDN served the model (same-origin | vercel-blob | cache)
+   * @param {string} [provider] – which local source served the model (same-origin | cache)
    */
   setStatus(key, status, pct, provider) {
     const pill = this._pills[key];

@@ -2,6 +2,9 @@
  * offline-processor.js — VoiceIsolate Pro · Creator & Forensic Mode
  *
  * Self-contained module for offline (non-real-time) audio processing.
+ * This file owns offline / creator mode only; live mode belongs to
+ * pipeline-orchestrator.js and bulk queue coordination belongs to
+ * batch-orchestrator.js + batch-processor.js.
  * Architecture constraints honoured:
  *   - 100% local — no external fetches, no cloud
  *   - Single-pass STFT: exactly one forwardFFT and one iFFT per channel
@@ -111,6 +114,8 @@ function forwardSTFT(pcm) {
       frame[2 * i] = (start + i < pcm.length ? pcm[start + i] : 0) * window[i];
       // imag = 0
     }
+    // SINGLE-PASS STFT BOUNDARY
+    // Forward transform entry for the offline Creator / Forensic path.
     fftInPlace(frame, FFT_SIZE, false);
     frames.push(frame);
   }
@@ -128,6 +133,8 @@ function inverseSTFT({ frames, hopCount, pcmLen }) {
 
   for (let h = 0; h < hopCount; h++) {
     const frame = frames[h].slice(); // copy before in-place IFFT
+    // SINGLE-PASS STFT BOUNDARY
+    // Inverse transform exit for the offline Creator / Forensic path.
     fftInPlace(frame, FFT_SIZE, true);
     const start = h * HOP_SIZE;
     for (let i = 0; i < FFT_SIZE; i++) {

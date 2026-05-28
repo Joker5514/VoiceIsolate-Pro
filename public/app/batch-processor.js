@@ -1,6 +1,8 @@
 /**
  * VoiceIsolate Pro — Batch Processor v24
  * Studio/Enterprise tier feature: process multiple files concurrently.
+ * Offline / creator worker only — live AudioContext routing remains in
+ * pipeline-orchestrator.js and queue coordination lives in batch-orchestrator.js.
  *
  * Features:
  *   - Queue-based processing with concurrency control

@@ -6,8 +6,8 @@
  * AUDIT-FIX #15 (2026-05-26): makeHannWindow() now uses the PERIODIC form
  * (denominator N, not N-1). The symmetric form (N-1) breaks the Constant
  * Overlap-Add (COLA) identity at 75% overlap and causes amplitude ripple
- * between frames. Both dsp-processor.js and voice-isolate-processor.js
- * already use the periodic form — this fix makes fft-bridge consistent.
+ * between frames. The canonical dsp-processor.js worklet already uses the
+ * periodic form — this fix makes fft-bridge consistent.
  *
  * Before fix:  w[i] = 0.5 * (1 - cos(2πi / (N-1)))  ← symmetric, breaks COLA
  * After fix:   w[i] = 0.5 * (1 - cos(2πi / N))       ← periodic, preserves COLA

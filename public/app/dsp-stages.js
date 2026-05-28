@@ -8,6 +8,9 @@
  * in-place to maintain the Single-Pass STFT architecture:
  *   computeSTFT() → [these stage functions] → reconstructISTFT()
  *
+ * No STFT/iSTFT calls live in this file; it operates strictly inside the
+ * SINGLE-PASS STFT BOUNDARY established by the caller.
+ *
  * Stages are grouped into 4 passes of 8 stages each:
  *   Pass 1 (1–8)   : Pre-processing & gating
  *   Pass 2 (9–16)  : Spectral ML masking

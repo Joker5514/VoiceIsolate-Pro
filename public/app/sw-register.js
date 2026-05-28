@@ -2,8 +2,8 @@
 // Registers the canonical Service Worker at /app/sw.js with scope '/'.
 // The root /sw.js shim also delegates to /app/sw.js via importScripts(),
 // so both registration paths converge on the same implementation.
-// Initializes the 3-tier redundant model loader (window.ModelCDNLoader).
-// All canonical CDN URLs live in models-manifest.json — no hardcoded URLs here.
+// Initializes the same-origin model loader (window.ModelCDNLoader).
+// All canonical model URLs must remain local /app/models/*.onnx paths.
 
 /**
  * registerSW — registers /app/sw.js (canonical) and waits for it to control
@@ -105,7 +105,7 @@ export async function initModelLoader({
     }
   };
 
-  // Eagerly fetch + cache the small models via the CDN waterfall.
+  // Eagerly fetch + cache the small models via same-origin model paths.
   const loaded = [];
   const failed = [];
   await window.ModelCDNLoader.preloadEagerModels((key, status, provider) => {

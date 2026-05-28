@@ -238,9 +238,9 @@
     updateNetPill(online);
     if (online) {
       console.info('[vip-boot] Network connected.');
-      // Reset any degraded CDN providers so the waterfall retries from the top
+      // Reset any degraded same-origin model sources so the loader retries from the top
       if (resetProviderHealth()) {
-        console.info('[vip-boot] CDN provider health reset after reconnect.');
+        console.info('[vip-boot] Local model source health reset after reconnect.');
       }
     } else {
       console.warn('[vip-boot] Network disconnected.');
