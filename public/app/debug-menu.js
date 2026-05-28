@@ -238,8 +238,8 @@ function refresh() {
   cls(document.getElementById('dbgWorklet'), aw ? 'ok' : 'err', badge(aw ? 'ok' : 'err', aw ? 'available' : 'missing'));
 
   // ONNX Runtime
-  const ort = typeof ort !== 'undefined' || typeof window.ort !== 'undefined';
-  cls(document.getElementById('dbgORT'), ort ? 'ok' : 'warn', badge(ort ? 'ok' : 'warn', ort ? 'loaded' : 'not yet'));
+  const ortLoaded = typeof ort !== 'undefined' || typeof window.ort !== 'undefined';
+  cls(document.getElementById('dbgORT'), ortLoaded ? 'ok' : 'warn', badge(ortLoaded ? 'ok' : 'warn', ortLoaded ? 'loaded' : 'not yet'));
 
   // Three.js
   const three = typeof THREE !== 'undefined' || typeof window.THREE !== 'undefined';
