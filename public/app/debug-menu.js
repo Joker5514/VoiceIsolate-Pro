@@ -17,6 +17,7 @@ function pushLog(level, args) {
   const ts = new Date().toISOString().slice(11, 19);
   const msg = args.map(a => {
     if (typeof a === 'string') return a;
+    if (a instanceof Error) return a.stack || a.message;
     try { return JSON.stringify(a); } catch { return String(a); }
   }).join(' ').slice(0, 200);
   _log.push({ ts, level, msg, id: ++_logSeq });
