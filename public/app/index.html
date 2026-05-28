@@ -28,6 +28,7 @@
   <link id="vip-overlay-css" rel="stylesheet" href="processing-overlay.css" />
   <link rel="stylesheet" href="mobile.css" />
   <link id="vip-enh-css" rel="stylesheet" href="vip-enhancements.css" />
+  <link rel="stylesheet" href="debug-menu.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
   <style>
@@ -378,6 +379,10 @@
     import('./vip-fixes.js').catch(err => {
       console.error('[VIP] Failed to load module: ./vip-fixes.js', err);
       if (typeof window._vipReportError === 'function') window._vipReportError('./vip-fixes.js', err);
+    });
+    /* debug-menu.js — live system debug panel (` key to toggle) */
+    import('./debug-menu.js').catch(err => {
+      console.warn('[VIP] debug-menu.js not loaded:', err);
     });
   </script>
 
