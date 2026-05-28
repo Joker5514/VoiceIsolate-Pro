@@ -30,6 +30,7 @@
     if (!entry) throw new Error(`Unknown model key: ${modelKey}`);
 
     const localSources = (Array.isArray(entry.sources) ? entry.sources : [])
+      .filter((source) => !source?.provider || source.provider === 'same-origin')
       .map((source) => ({
         provider: 'same-origin',
         url: typeof source?.url === 'string' ? source.url : '',
@@ -177,7 +178,8 @@
   let _manifest = null;
   async function getManifest() {
     if (_manifest) return _manifest;
-    const resp = await fetch('/app/models-manifest.json');
+    const MANIFEST_URL = '/app/models-manifest.json'; // canonical loader manifest; model binaries remain under /app/models/
+    const resp = await fetch(MANIFEST_URL);
     if (!resp.ok) throw new Error('Cannot load models-manifest.json');
     const json = await resp.json();
     if (Array.isArray(json?.models)) {
