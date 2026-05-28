@@ -58,8 +58,7 @@
 |---|---|
 | `public/app/index.html` | App shell · Engineer Mode v19 · 52-slider UI |
 | `public/app/app.js` | Main-thread orchestration · 52-slider wiring |
-| `public/app/voice-isolate-processor.js` | Live AudioWorkletProcessor · STFT · SAB bridge · ring buffer |
-| `public/app/dsp-processor.js` | Creator / Forensic offline processor |
+| `public/app/dsp-processor.js` | Canonical live AudioWorkletProcessor · single-pass STFT · SAB bridge |
 | `public/app/dsp-worker.js` | DSP worker thread |
 | `public/app/ml-worker.js` | ONNX inference worker (WebGPU → WASM fallback) |
 | `public/app/dsp-core.js` | Single-pass STFT spectral library |
@@ -192,7 +191,7 @@ See `vercel.json` for the full header config including the worklet route.
 ### v24.0.1 (2026-05) — Worklet Audit
 - **FIXED**: Critical `SyntaxError` in `index.html` causing silent diarization init failure
 - **UPGRADED**: Three.js r128 → 0.184.0 (ESM, locally committed, CSP-safe)
-- **FIXED**: Ring buffer bugs in `voice-isolate-processor.js` (PR #428 — `inputProcessed` pointer, `drainHead` pointer, `hopsSinceInit` guard, full state reset on `initRingBuffers`)
+- **FIXED**: Canonical worklet audit consolidated live processing on `dsp-processor.js` and removed the redundant `voice-isolate-processor.js`
 - **CI**: Playwright browser smoke test + deploy gates added (PR #429)
 
 ### v24.0 (2026) — Threads from Space v13

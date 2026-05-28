@@ -1,38 +1,18 @@
 // model-cdn-loader.js — VoiceIsolate Pro
 // ============================================================
 // LOCAL-PROCESSING COMPLIANCE NOTE:
-// This file fetches ONNX *model weight files* (binary .onnx blobs)
-// from a CDN waterfall on first use. It does NOT transmit any user
-// audio data or processing results to any external server.
-//
-// Audio processing remains 100% local:
-//   - AudioWorkletProcessor runs in the browser audio thread.
-//   - ONNX Runtime Web executes model inference in a local Worker.
-//   - Model weights are cached in the SW Cache (Cache API) after
-//     first download — subsequent sessions are fully offline.
-//
-// The CDN waterfall order is:
-//   1. SW Cache (Cache API) — zero network, instant
-//   2. Same-origin /app/models/ URLs (committed files served directly, plus demucs
-//      fetched via the same-origin /app/models/demucs_v4_quantized.onnx route when
-//      that path is rewritten server-side to Vercel Blob)
-//   3. Direct Vercel Blob public URLs when explicitly present in the manifest as a
-//      fallback source
-//
-// Cloudflare R2 removed. Models are now fetched via same-origin routes and, when
-// configured as fallback sources, direct Vercel Blob public URLs.
-// See docs/MODEL_DELIVERY.md for full architecture details.
+// This loader is now same-origin only. Models may be fetched exclusively from
+// /app/models/*.onnx (or served from the SW Cache keyed by that same-origin URL).
+// No direct external CDN / Blob / HuggingFace / jsDelivr / unpkg fetches are allowed.
 // ============================================================
 
 (function() {
   'use strict';
 
-  // Provider priority order. same-origin first (committed files served directly).
-  // vercel-blob second (demucs routed via vercel.json rewrite to Vercel Blob).
-  const PROVIDER_PRIORITY = ['same-origin', 'vercel-blob'];
+  const PROVIDER_PRIORITY = ['same-origin'];
 
   // In-memory registry of which providers are known-healthy this session
-  const providerHealth = { 'same-origin': true, 'vercel-blob': true };
+  const providerHealth = { 'same-origin': true };
 
   // Track which provider served each model in this session (for diagnostics)
   const modelProviderMap = {};
@@ -49,8 +29,23 @@
     const entry = manifest.models[modelKey];
     if (!entry) throw new Error(`Unknown model key: ${modelKey}`);
 
+    const localSources = (Array.isArray(entry.sources) ? entry.sources : [])
+      .filter((source) => !source?.provider || source.provider === 'same-origin')
+      .map((source) => ({
+        provider: 'same-origin',
+        url: typeof source?.url === 'string' ? source.url : '',
+      }))
+      .filter((source) => /^\/app\/models\/[^?#]+\.onnx$/i.test(source.url));
+
+    if (localSources.length === 0 && entry.filename) {
+      localSources.push({ provider: 'same-origin', url: `/app/models/${entry.filename}` });
+    }
+    if (localSources.length === 0) {
+      throw new Error(`No same-origin model sources available for ${modelKey}`);
+    }
+
     // Sort sources by PROVIDER_PRIORITY, healthy providers first
-    const sorted = [...entry.sources].sort((a, b) => {
+    const sorted = [...localSources].sort((a, b) => {
       const ai = PROVIDER_PRIORITY.indexOf(a.provider);
       const bi = PROVIDER_PRIORITY.indexOf(b.provider);
       const ahealthy = providerHealth[a.provider] ? 0 : 1;
@@ -73,7 +68,7 @@
         lastError = err;
       }
     }
-    throw new Error(`All CDN sources failed for ${modelKey}. Last error: ${lastError && lastError.message}`);
+    throw new Error(`All local model sources failed for ${modelKey}. Last error: ${lastError && lastError.message}`);
   }
 
   /**
@@ -81,8 +76,10 @@
    * Falls back to plain fetch() if ReadableStream is unavailable.
    */
   async function fetchWithProgress(url, expectedBytes, onProgress) {
-    const mode = (url.startsWith('/') || url.startsWith(location.origin)) ? 'same-origin' : 'cors';
-    const resp = await fetch(url, { mode, credentials: 'omit' });
+    if (!/^\/app\/models\/[^?#]+\.onnx$/i.test(url)) {
+      throw new Error(`Rejected non-local model URL: ${url}`);
+    }
+    const resp = await fetch(url, { credentials: 'omit' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status} from ${url}`);
 
     if (!resp.body || !onProgress) {
@@ -132,7 +129,7 @@
       } catch (e) { /* SW cache unavailable, fall through */ }
     }
 
-    // CDN waterfall (only on first load)
+    // Same-origin model path (only on first load)
     const { arrayBuffer, provider, url } = await fetchWithFallback(modelKey, manifest, onProgress);
 
     // Store in SW cache for next time (fire and forget)
@@ -181,9 +178,22 @@
   let _manifest = null;
   async function getManifest() {
     if (_manifest) return _manifest;
-    const resp = await fetch('/app/models/models-manifest.json');
+    const MANIFEST_URL = '/app/models-manifest.json'; // canonical loader manifest; model binaries remain under /app/models/
+    const resp = await fetch(MANIFEST_URL);
     if (!resp.ok) throw new Error('Cannot load models-manifest.json');
-    _manifest = await resp.json();
+    const json = await resp.json();
+    if (Array.isArray(json?.models)) {
+      _manifest = {
+        ...json,
+        models: Object.fromEntries(json.models.map((entry) => [entry.id, {
+          filename: entry.filename,
+          eager: entry.load_priority === 'eager' || entry.eager === true,
+          sources: [{ provider: 'same-origin', url: entry.path || `/app/models/${entry.filename}` }],
+        }])),
+      };
+    } else {
+      _manifest = json;
+    }
     return _manifest;
   }
 

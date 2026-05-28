@@ -11,7 +11,7 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/handler" },
     { "source": "/app/models/:model(demucs_v4_quantized\\.onnx)", "destination": "https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/:model" },
-    { "source": "/app/((?!sw\\.js|dsp-processor\\.js|voice-isolate-processor\\.js|ml-worker\\.js|dsp-worker\\.js|ring-buffer\\.js|dsp-core\\.js|pipeline-orchestrator\\.js|pipeline-state\\.js|models\\/).*)", "destination": "/app/index.html" },
+    { "source": "/app/((?!sw\\.js|dsp-processor\\.js|ml-worker\\.js|dsp-worker\\.js|ring-buffer\\.js|dsp-core\\.js|pipeline-orchestrator\\.js|pipeline-state\\.js|models\\/).*)", "destination": "/app/index.html" },
     { "source": "/app", "destination": "/app/index.html" },
     { "source": "/((?!api/|lib/|assets/|app/|sw\\.js|manifest\\.json|icon\\.jpg|favicon\\..*).*)", "destination": "/index.html" }
   ],
@@ -76,15 +76,6 @@
     },
     {
       "source": "/app/dsp-processor.js",
-      "headers": [
-        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
-        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
-        { "key": "Content-Type", "value": "application/javascript" },
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
-      ]
-    },
-    {
-      "source": "/app/voice-isolate-processor.js",
       "headers": [
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
         { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },

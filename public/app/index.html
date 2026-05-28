@@ -15,10 +15,13 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="slider-theme.css" />
   <link rel="stylesheet" href="style-diag-log.css" />
+  <!-- // LOAD ORDER VERIFIED: dsp-core.js is available before any downstream spectral stage/module code runs. -->
   <!-- DSP math (STFT/iSTFT, filters, Wiener NR) on window.DSPCore. Loaded as a
        classic blocking script so the binding is live before any module imports
        evaluate — app.js captures DSP = globalThis.DSPCore at module init. -->
   <script src="./dsp-core.js"></script>
+  <!-- // LOAD ORDER VERIFIED: ring-buffer.js is available before pipeline-orchestrator.js can allocate SAB rings or load the canonical worklet. -->
+  <script src="./ring-buffer.js"></script>
   <script src="./visuals.js"></script>
   <script src="./premium-visuals.js"></script>
   <link rel="stylesheet" href="model-status-ui.css" />
@@ -343,7 +346,10 @@
 
   <div id="toastRegion" aria-live="polite"></div>
 
+  <!-- // LOAD ORDER VERIFIED: pipeline-orchestrator.js settles before app.js imports, and app.js statically imports slider-map.js before evaluation. -->
   <script type="module">
+    // LOAD ORDER VERIFIED: pipeline-orchestrator.js resolves before app.js runs.
+    // LOAD ORDER VERIFIED: slider-map.js resolves as an app.js dependency before app.js evaluates.
     const _parallel = [
       './visuals.js',
       './processing-overlay.js',

@@ -219,7 +219,8 @@ const DSPCore = {
         real[i] = (offset + i < data.length) ? data[offset + i] * window[i] : 0;
       }
 
-      // In-place FFT (Cooley-Tukey radix-2)
+      // SINGLE-PASS STFT BOUNDARY
+      // Forward transform entry: all spectral stages operate in-place after this call.
       this._fft(real, imag, false);
 
       // Extract magnitude and phase for positive frequencies
@@ -276,7 +277,8 @@ const DSPCore = {
         imag[k] = -imag[fftSize - k];
       }
 
-      // Inverse FFT
+      // SINGLE-PASS STFT BOUNDARY
+      // Inverse transform exit: overlap-add reconstruction begins immediately after this call.
       this._fft(real, imag, true);
 
       // Overlap-add with synthesis window — iterate only over the in-range slice

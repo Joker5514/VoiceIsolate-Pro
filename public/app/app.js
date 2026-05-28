@@ -628,6 +628,7 @@ class VoiceIsolatePro {
       valEl.id = 'val_' + s.id;
       valEl.textContent = initVal + (s.unit || '');
 
+      // PATCHED BY vip-fixes.js — consider merging
       inputEl.addEventListener('input', () => {
         const el = inputEl;
         const v = parseFloat(el.value);
@@ -755,6 +756,7 @@ class VoiceIsolatePro {
       if (this.mode === 'live') this.stopLive(); else this.startLive();
     });
 
+    // PATCHED BY vip-fixes.js — consider merging
     // Transport
     bind('playBtn', this.dom.tpPlay, 'click', () => { this.togglePlayback(); });
     bind('tpPlay', d.tpPlay, 'click', () => { this.togglePlayback(); });
@@ -781,6 +783,7 @@ class VoiceIsolatePro {
       if (idx < SPEEDS.length - 1) { d.tpSpeed.value = SPEEDS[idx + 1]; d.tpSpeed.dispatchEvent(new Event('change')); }
     });
 
+    // PATCHED BY vip-fixes.js — consider merging
     // A/B toggle
     bind('tpAB', d.tpAB, 'click', () => this.toggleAB());
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
@@ -796,6 +799,7 @@ class VoiceIsolatePro {
     });
     bind('auditLogBtn', d.auditLogBtn, 'click', () => this.downloadAuditLog());
 
+    // PATCHED BY vip-fixes.js — consider merging
     // Preset selector
     bind('presetSel', d.presetSel, 'change', e => this.applyPreset(e.target.value));
     qsa('.btn-preset').forEach(b => {
@@ -811,6 +815,7 @@ class VoiceIsolatePro {
       });
     });
 
+    // PATCHED BY vip-fixes.js — consider merging
     // Slider search
     bind('sliderSearch', d.sliderSearch, 'input', () => {
       const q = d.sliderSearch.value.trim().toLowerCase();
@@ -1422,10 +1427,9 @@ class VoiceIsolatePro {
   // This method is the sole caller of DSP.forwardSTFT and DSP.inverseSTFT in app.js.
 
   _resolveDSP() {
-    return (typeof globalThis !== 'undefined' && globalThis.DSPCore) ||
-           (typeof window !== 'undefined' && window.DSPCore) ||
-           null;
-           (typeof DSPCore !== 'undefined' ? globalThis.DSPCore : null);
+    if (typeof globalThis !== 'undefined' && 'DSPCore' in globalThis) return globalThis.DSPCore || null;
+    if (typeof window !== 'undefined' && 'DSPCore' in window) return window.DSPCore || null;
+    return null;
   }
 
   // Single offline path: ONE forward STFT, in-place spectral ops S11–S19, ONE iSTFT
@@ -1434,6 +1438,7 @@ class VoiceIsolatePro {
     if (!DSP) return inputBuf;
     const p = window.VIP_PARAMS || {};
 
+    // SINGLE-PASS STFT BOUNDARY
     const spec = DSP.forwardSTFT(inputBuf);
     // In-place spectral operations (S11–S19) — no additional STFT/iSTFT pairs
     if (spec) {
@@ -1445,6 +1450,7 @@ class VoiceIsolatePro {
       this.applyCrosstalkCancel(spec, p);
       this.applyVoiceFocus(spec, p);
     }
+    // SINGLE-PASS STFT BOUNDARY
     const outputBuf = DSP.inverseSTFT(spec, inputBuf.length, inputBuf.sampleRate);
     return outputBuf || inputBuf;
   }
@@ -1495,6 +1501,7 @@ class VoiceIsolatePro {
     this.isPlaying = true;
     this.playStartTime = this.ctx ? this.ctx.currentTime : 0;
 
+    // PATCHED BY vip-fixes.js — consider merging
     if (this.dom && this.dom.tpABLabel) {
       this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
     }
@@ -1663,6 +1670,7 @@ class VoiceIsolatePro {
     }
     this.abMode = this.abMode === 'original' ? 'processed' : 'original';
     if (this.dom.tpAB) this.dom.tpAB.classList.toggle('active', this.abMode === 'processed');
+    // PATCHED BY vip-fixes.js — consider merging
     if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
     if (this.isPlaying) this.play();
   }

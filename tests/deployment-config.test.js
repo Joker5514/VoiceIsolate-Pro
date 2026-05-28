@@ -1,8 +1,8 @@
 /**
  * Tests for deployment configuration changes introduced in this PR:
- *   - vercel.json: removed 'wasm-unsafe-eval', added cdnjs.cloudflare.com to script-src
- *   - render.yaml: removed 'wasm-unsafe-eval' from script-src
- *   - .jules/sentinel.md: removed the "Harden CSP by removing unsafe-eval" entry
+ *   - vercel.json keeps SharedArrayBuffer headers and only exposes the canonical
+ *     dsp-processor worklet route
+ *   - render.yaml still carries the expected CSP/security posture
  */
 'use strict';
 
@@ -233,7 +233,7 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
   });
 
   test('worklet script routes explicitly include both COOP and COEP', () => {
-    const workletRoutes = ['/app/dsp-processor.js', '/app/voice-isolate-processor.js'];
+    const workletRoutes = ['/app/dsp-processor.js'];
     for (const route of workletRoutes) {
       const routeHeaders = cfg.headers.find((h) => h.source === route);
       expect(routeHeaders).toBeDefined();
@@ -243,9 +243,11 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
     }
   });
 
-  test('does not include stale root-level /voice-isolate-processor.js header rule', () => {
+  test('does not include stale voice-isolate-processor header rules', () => {
     const stale = cfg.headers.find((h) => h.source === '/voice-isolate-processor.js');
     expect(stale).toBeUndefined();
+    const appStale = cfg.headers.find((h) => h.source === '/app/voice-isolate-processor.js');
+    expect(appStale).toBeUndefined();
   });
 
   test('/app/models ONNX route sets Cross-Origin-Resource-Policy to cross-origin', () => {

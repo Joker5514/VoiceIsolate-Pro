@@ -55,6 +55,13 @@ describe('CLAUDE.md §1 — single STFT + iSTFT per processing path', () => {
     // Inverse STFT: fftInPlace called with inverse=true
     expect(src).toMatch(/fftInPlace\s*\([^)]*true\s*\)/);
   });
+
+  test('only the canonical dsp-processor worklet remains registered in public/app', () => {
+    const files = fs.readdirSync(APP_DIR).filter((f) => f.endsWith('.js'));
+    const registerFiles = files.filter((f) => /^\s*registerProcessor\s*\(/m.test(fs.readFileSync(path.join(APP_DIR, f), 'utf8')));
+    expect(registerFiles).toEqual(['dsp-processor.js']);
+    expect(fs.existsSync(path.join(APP_DIR, 'voice-isolate-processor.js'))).toBe(false);
+  });
 });
 
 // ── §2 AudioWorklet Ownership ─────────────────────────────────────────────────
@@ -121,6 +128,14 @@ describe('CLAUDE.md §4 — ONNX Runtime loaded locally, never from CDN', () => 
   test('ml-worker.js loads ORT via importScripts from the local /lib/ path', () => {
     const src = read('public/app/ml-worker.js');
     expect(src).toMatch(/importScripts\s*\(\s*['"`][^'"`]*\/lib\/ort[^'"`]*['"`]/);
+  });
+
+  test('model-cdn-loader.js and ml-worker.js do not hardcode external ONNX model URLs', () => {
+    const loaderSrc = read('public/app/model-cdn-loader.js');
+    const workerSrc = read('public/app/ml-worker.js');
+    const banned = /(https?:\/\/[^'"`\s]*(blob\.vercel-storage\.com|public\.blob\.vercel-storage\.com|huggingface\.co|cdn\.jsdelivr\.net|unpkg\.com)[^'"`\s]*\.onnx)/i;
+    expect(loaderSrc).not.toMatch(banned);
+    expect(workerSrc).not.toMatch(banned);
   });
 });
 
