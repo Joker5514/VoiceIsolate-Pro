@@ -375,7 +375,7 @@ function refresh() {
 
 /* ── Open / Close ──────────────────────────────────────────────────────── */
 function openPanel() {
-  if (!_panel) return;
+  if (!_panel || _open) return;
   _open = true;
   _panel.classList.remove('hidden');
   if (_btn) _btn.classList.add('active');
