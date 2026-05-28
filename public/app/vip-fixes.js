@@ -44,6 +44,9 @@
     let _seeking     = false;
     let _source      = null;
     let _gainNode    = null;
+    let _analyser    = null;  // FFT analyser tapped after worklet — drives visualizers
+    let _workletWired = false; // sticky flag: once we route through worklet, stay routed
+    let _chainBuilt  = false;  // downstream chain (gain → [worklet] → analyser → dest) wired once
 
     /* ── Helpers ── */
     function _fmt(sec) {
@@ -103,6 +106,7 @@
       const stop  = $('tpStop');
       if (pause) pause.disabled = true;
       if (stop)  stop.disabled  = true;
+      try { window.dispatchEvent(new CustomEvent('vip:playStopped')); } catch (_) {}
     }
 
     /* ── Core play ── */
@@ -130,8 +134,52 @@
       _source.playbackRate.value = parseFloat(spSel?.value || '1');
 
       if (!_gainNode) { _gainNode = ctx.createGain(); _gainNode.gain.value = 1; }
+
+      /* ── Analyser node — single shared FFT tap that drives every visualizer ── */
+      if (!_analyser) {
+        try {
+          _analyser = ctx.createAnalyser();
+          _analyser.fftSize = 2048;
+          _analyser.smoothingTimeConstant = 0.82;
+          window._vipPlayAnalyser = _analyser;
+        } catch (e) { warn('Analyser create failed', e); _analyser = null; }
+      }
+
+      /* ── Routing chain ──
+         Wired ONCE and reused across replays — each new source connects to
+         the persistent _gainNode and the downstream chain takes care of the
+         rest. Reconnecting downstream nodes per-play would tear down the
+         worklet's connections to the orchestrator's other consumers.
+
+         Chain layout (built on first play, kept until teardown):
+           Source → Gain → [Worklet] → Analyser → ctx.destination
+       */
       _source.connect(_gainNode);
-      _gainNode.connect(ctx.destination);
+      if (!_chainBuilt) {
+        const orchWorklet = window._vipOrch?.workletNode;
+        try {
+          if (orchWorklet) {
+            _gainNode.connect(orchWorklet);
+            if (_analyser) {
+              orchWorklet.connect(_analyser);
+              _analyser.connect(ctx.destination);
+            } else {
+              orchWorklet.connect(ctx.destination);
+            }
+            _workletWired = true;
+          } else if (_analyser) {
+            _gainNode.connect(_analyser);
+            _analyser.connect(ctx.destination);
+          } else {
+            _gainNode.connect(ctx.destination);
+          }
+          _chainBuilt = true;
+        } catch (e) {
+          warn('Chain build failed, falling back to direct gain → destination', e);
+          try { _gainNode.connect(ctx.destination); } catch (_) {}
+          _chainBuilt = true;
+        }
+      }
 
       const safeOffset = Math.min(Math.max(_pauseOffset, 0), Math.max(_duration - 0.01, 0));
       _pauseOffset = safeOffset;
@@ -158,7 +206,15 @@
 
       cancelAnimationFrame(_rafId);
       _updateUI();
-      log('play() started at offset', safeOffset);
+
+      /* Announce playback so visualizers can hook in */
+      try {
+        window.dispatchEvent(new CustomEvent('vip:playStarted', {
+          detail: { analyser: _analyser, workletRouted: _workletWired }
+        }));
+      } catch (_) {}
+
+      log('play() started at offset', safeOffset, _workletWired ? '(worklet-routed)' : '(direct)');
     }
 
     function _pause() {
@@ -261,11 +317,17 @@
       if (e.code === 'Space') { e.preventDefault(); if (_isPlaying) _pause(); else _play(); }
     });
 
-    /* Expose internal state for A/B patch */
+    /* Expose internal state for A/B patch + visualizer playhead */
     app._fixPlayState = {
       get isPlaying() { return _isPlaying; },
       resetOffset()   { _pauseOffset = 0; },
       restart()       { if (_isPlaying) { _stopSource(); _play(); } },
+      elapsed() {
+        const ctx = _getCtx();
+        if (!ctx) return _pauseOffset;
+        return _isPlaying ? (_pauseOffset + (ctx.currentTime - _startTime)) : _pauseOffset;
+      },
+      get analyser() { return _analyser; },
     };
 
     /* Enable play button when buffer lands */

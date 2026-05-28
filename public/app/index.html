@@ -24,6 +24,8 @@
   <script src="./ring-buffer.js"></script>
   <script src="./visuals.js"></script>
   <script src="./premium-visuals.js"></script>
+  <!-- // LOAD ORDER VERIFIED: visuals-bootstrap.js follows visuals.js + premium-visuals.js so VIP_INFERNO_LUT and premium init helpers are already defined when the driver wires its tab listener. -->
+  <script src="./visuals-bootstrap.js"></script>
   <link rel="stylesheet" href="model-status-ui.css" />
   <link id="vip-overlay-css" rel="stylesheet" href="processing-overlay.css" />
   <link rel="stylesheet" href="mobile.css" />

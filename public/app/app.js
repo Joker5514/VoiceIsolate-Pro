@@ -1042,6 +1042,7 @@ class VoiceIsolatePro {
     if (this.dom.hFile) this.dom.hFile.textContent = (name || '').slice(0, 20);
 
     this.renderStaticVisuals(buf);
+    try { window.dispatchEvent(new CustomEvent('vip:fileLoaded', { detail: { name } })); } catch (_) {}
     this.showNotification('File loaded: ' + name, 'info');
   }
 
@@ -1110,6 +1111,7 @@ class VoiceIsolatePro {
       if (this.outputBuffer) this.renderStaticVisuals(this.outputBuffer);
       this.updatePipelineProgress(32, 'Complete', 100);
       this.setStatus('DONE');
+      try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}
       this.showNotification('Processing complete!', 'info');
     } catch (err) {
       structuredLog('error', '[VIP] Pipeline error', { err: err.message });
