@@ -1,8 +1,8 @@
 /**
  * VoiceIsolate Pro — debug-menu.js
  * Live system debug panel. Toggle with the DBG button in header or press ` (backtick).
- * Auto-refreshes every 500 ms. Intercepts console for live event log.
- * Never imported in the normal boot path — loaded on-demand after app init.
+ * Auto-refreshes every 500 ms. Console hook installs on import to capture all boot events;
+ * the panel UI is only shown when toggled. Always loaded after app boot by index.html.
  */
 
 const DBG_VERSION = '1.0.0';
@@ -117,8 +117,10 @@ function buildHTML() {
     </div>
     <div class="dbg-section-body">
       <div class="dbg-row"><span class="dbg-label">ml-worker.js</span><span class="dbg-value" id="dbgWkML">—</span></div>
-      <div class="dbg-row"><span class="dbg-label">dsp-processor.js</span><span class="dbg-value" id="dbgWkDSP">—</span></div>
+      <div class="dbg-row"><span class="dbg-label">dsp-processor.js ★</span><span class="dbg-value" id="dbgWkDSP">—</span></div>
       <div class="dbg-row"><span class="dbg-label">dsp-worker.js</span><span class="dbg-value" id="dbgWkDSPW">—</span></div>
+      <div class="dbg-row"><span class="dbg-label">voice-isolate-proc</span><span class="dbg-value" id="dbgWkVIP">—</span></div>
+      <div class="dbg-row" style="padding-top:2px"><span class="dbg-label" style="font-size:9px;color:rgba(176,184,200,0.35)">★ = active AudioWorklet</span><span></span></div>
     </div>
   </div>
 
@@ -166,13 +168,13 @@ function buildHTML() {
 /* ── DOM references (populated after injection) ──────────────────────── */
 let _panel = null;
 let _btn   = null;
-let _raf   = null;
 let _timer = null;
+let _refreshCount = 0;
 let _open  = false;
 let _startTime = Date.now();
 let _perfHistory = Array(20).fill(0);
 let _lastLogId = 0;
-let _workerStatus = { ml: null, dsp: null, dspw: null };
+let _workerStatus = { ml: null, dsp: null, dspw: null, vip: null };
 
 /* ── Utility helpers ──────────────────────────────────────────────────── */
 function badge(state, text) {
@@ -182,6 +184,9 @@ function cls(el, state, text) {
   if (!el) return;
   el.className = `dbg-value ${state}`;
   el.innerHTML = text;
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function fmtBytes(b) {
   if (b < 1024) return b + ' B';
@@ -238,8 +243,8 @@ function refresh() {
   const aw = typeof AudioWorkletNode !== 'undefined';
   cls(document.getElementById('dbgWorklet'), aw ? 'ok' : 'err', badge(aw ? 'ok' : 'err', aw ? 'available' : 'missing'));
 
-  // ONNX Runtime
-  const ortLoaded = typeof ort !== 'undefined' || typeof window.ort !== 'undefined';
+  // ONNX Runtime (use window.ort to avoid TDZ shadow in strict ESM)
+  const ortLoaded = typeof window.ort !== 'undefined';
   cls(document.getElementById('dbgORT'), ortLoaded ? 'ok' : 'warn', badge(ortLoaded ? 'ok' : 'warn', ortLoaded ? 'loaded' : 'not yet'));
 
   // Three.js
@@ -291,8 +296,8 @@ function refresh() {
   const detail = detailEl ? detailEl.textContent : '—';
   const pipeStatus = badgeEl ? (badgeEl.dataset.state || 'idle') : 'unknown';
 
-  cls(document.getElementById('dbgPipeStatus'), pipeStatus === 'idle' ? 'dim' : pipeStatus === 'processing' ? 'ok' : 'warn',
-    badge(pipeStatus === 'idle' ? 'dim' : 'ok', pipeStatus));
+  const pipeStateCls = { idle: 'dim', processing: 'ok', done: 'ok', error: 'err' }[pipeStatus] || 'warn';
+  cls(document.getElementById('dbgPipeStatus'), pipeStateCls, badge(pipeStateCls, pipeStatus));
   cls(document.getElementById('dbgPipeStage'), 'ok', stage + ' · ' + detail.slice(0, 30));
   cls(document.getElementById('dbgPipePct'), 'ok', pct);
 
@@ -332,17 +337,24 @@ function refresh() {
   const wml  = _workerStatus.ml;
   const wdsp = _workerStatus.dsp;
   const wdspw= _workerStatus.dspw;
-  cls(document.getElementById('dbgWkML'),   wml  === 'ok' ? 'ok' : wml  === null ? 'dim' : 'err', badge(wml  === 'ok' ? 'ok' : wml  === null ? 'dim' : 'err', wml  || 'checking…'));
-  cls(document.getElementById('dbgWkDSP'),  wdsp === 'ok' ? 'ok' : wdsp === null ? 'dim' : 'err', badge(wdsp === 'ok' ? 'ok' : wdsp === null ? 'dim' : 'err', wdsp || 'checking…'));
-  cls(document.getElementById('dbgWkDSPW'), wdspw=== 'ok' ? 'ok' : wdspw=== null ? 'dim' : 'err', badge(wdspw=== 'ok' ? 'ok' : wdspw=== null ? 'dim' : 'err', wdspw|| 'checking…'));
+  const wvip = _workerStatus.vip;
+  const wSt  = (s) => s === 'ok' ? 'ok' : s === null ? 'dim' : 'err';
+  const wLbl = (s) => badge(wSt(s), s || 'checking…');
+  cls(document.getElementById('dbgWkML'),   wSt(wml),  wLbl(wml));
+  cls(document.getElementById('dbgWkDSP'),  wSt(wdsp), wLbl(wdsp));
+  cls(document.getElementById('dbgWkDSPW'), wSt(wdspw),wLbl(wdspw));
+  cls(document.getElementById('dbgWkVIP'),  wSt(wvip), wLbl(wvip));
 
   /* ── Performance ── */
+  _refreshCount++;
   const uptime = Math.floor((Date.now() - _startTime) / 1000);
   const hh = String(Math.floor(uptime / 3600)).padStart(2,'0');
   const mm = String(Math.floor((uptime % 3600) / 60)).padStart(2,'0');
   const ss = String(uptime % 60).padStart(2,'0');
   cls(document.getElementById('dbgUptime'), 'ok', `${hh}:${mm}:${ss}`);
-  cls(document.getElementById('dbgDomNodes'), 'ok', String(document.querySelectorAll('*').length));
+  if (_refreshCount % 10 === 1) {
+    cls(document.getElementById('dbgDomNodes'), 'ok', String(document.querySelectorAll('*').length));
+  }
   cls(document.getElementById('dbgSheets'), 'ok', String(document.styleSheets.length));
 
   // Sparkline
@@ -364,7 +376,7 @@ function refresh() {
       for (const e of newEntries) {
         const div = document.createElement('div');
         div.className = 'dbg-log-entry';
-        div.innerHTML = `<span class="dbg-log-ts">${e.ts}</span><span class="dbg-log-tag ${e.level}">${e.level.toUpperCase()}</span><span class="dbg-log-msg" title="${e.msg.replace(/"/g,'&quot;')}">${e.msg}</span>`;
+        div.innerHTML = `<span class="dbg-log-ts">${e.ts}</span><span class="dbg-log-tag ${e.level}">${e.level.toUpperCase()}</span><span class="dbg-log-msg" title="${escHtml(e.msg)}">${escHtml(e.msg)}</span>`;
         frag.appendChild(div);
       }
       logEl.appendChild(frag);
@@ -383,6 +395,7 @@ function openPanel() {
   checkWorker('./ml-worker.js', 'ml');
   checkWorker('./dsp-processor.js', 'dsp');
   checkWorker('./dsp-worker.js', 'dspw');
+  checkWorker('./voice-isolate-processor.js', 'vip');
   refresh();
   _timer = setInterval(refresh, REFRESH_MS);
 }
@@ -473,7 +486,11 @@ function initButtons() {
 
   document.getElementById('dbgCopyLog').addEventListener('click', () => {
     const text = _log.map(e => `[${e.ts}] ${e.level.toUpperCase()} ${e.msg}`).join('\n');
-    navigator.clipboard.writeText(text).then(() => showToast('Log copied!')).catch(() => showToast('Copy failed'));
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(text).then(() => showToast('Log copied!')).catch(() => showToast('Copy failed'));
+    } else {
+      showToast('Clipboard unavailable');
+    }
   });
 
   document.getElementById('dbgExport').addEventListener('click', () => {
@@ -499,7 +516,10 @@ function initButtons() {
         params:   window.VIP_PARAMS ? Object.keys(window.VIP_PARAMS).length : 0,
         forensic: app && Array.isArray(app.forensicLog) ? app.forensicLog.length : null,
       },
-      moduleErrors: window._vipModuleErrors || [],
+      moduleErrors: (Array.isArray(window._vipModuleErrors) ? window._vipModuleErrors : []).filter(Boolean).map(e => ({
+        src: e.src,
+        err: e.err instanceof Error ? { message: e.err.message, stack: e.err.stack } : String(e.err),
+      })),
       log: _log.slice(-100),
     };
     const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
@@ -544,14 +564,18 @@ function mount() {
     _btn.setAttribute('title', 'Live Debug Menu (` key)');
     _btn.innerHTML = '<span class="dbg-dot"></span>DBG';
     _btn.addEventListener('click', togglePanel);
-    hdrActions.insertBefore(_btn, hdrActions.firstChild);
+    hdrActions.prepend(_btn);
   }
 
   // Keyboard shortcut: backtick
   document.addEventListener('keydown', e => {
     if (e.key === '`' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const tag = document.activeElement ? document.activeElement.tagName : '';
-      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+      const active = document.activeElement;
+      const isEditable = active && (
+        active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' ||
+        active.tagName === 'SELECT' || active.isContentEditable
+      );
+      if (!isEditable) {
         togglePanel();
         e.preventDefault();
       }
