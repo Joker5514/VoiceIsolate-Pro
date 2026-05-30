@@ -340,6 +340,16 @@ class VoiceIsolatePro {
     // Forensic audit log
     this.forensicLog = [];
 
+    // Live slider params snapshot — the orchestrator reads this to forward
+    // the full 52-param set to the AudioWorklet on every slider change.
+    // Initialised with SLIDERS defaults so it is never undefined.
+    this.params = {};
+    for (const specs of Object.values(SLIDERS)) {
+      for (const s of specs) {
+        this.params[s.id] = s.val;
+      }
+    }
+
     // SAB param lane
     this.sharedParams = null;
     this._inputSAB = null;
@@ -630,6 +640,7 @@ class VoiceIsolatePro {
         valEl.textContent = v + (s.unit || '');
         window.VIP_PARAMS = window.VIP_PARAMS || {};
         window.VIP_PARAMS[s.id] = v;
+        this.params[s.id] = v;
         if (this.sharedParams) {
           const idx = this._sliderIndexById.get(s.id);
           if (idx !== undefined) this.sharedParams[idx] = v;
@@ -661,9 +672,13 @@ class VoiceIsolatePro {
   }
 
   onSlider(id, value) {
+    // Store the raw value on the app params object so the orchestrator's
+    // patched onSlider always has a complete snapshot to normalise + forward.
+    this.params[id] = value;
+    // Also forward to orchestrator's updateParams directly with full snapshot
     const orch = window._vipOrch;
-    if (orch && typeof orch.onSlider === 'function') {
-      orch.onSlider(id, value);
+    if (orch && orch.workletNode) {
+      orch.updateParams(orch._normalizeRawParams({ ...this.params }));
     }
   }
 
@@ -877,6 +892,7 @@ class VoiceIsolatePro {
       const value = SLIDER_BY_ID[sliderId] ? clampToSlider(sliderId, rawValue) : rawValue;
       window.VIP_PARAMS = window.VIP_PARAMS || {};
       window.VIP_PARAMS[key] = value;
+      this.params[key] = value;
       const sliderDom = { el: document.getElementById('sl_' + key) };
       if (!sliderDom.el) return;
       sliderDom.el.value = value;
@@ -889,11 +905,10 @@ class VoiceIsolatePro {
       sliderDom.el.dispatchEvent(new Event('input', { bubbles: true }));
       sliderDom.el.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    if (this.liveChainBuilt) {
-      // Sync params to worklet after preset application
-      if (window._vipOrch && typeof window._vipOrch.syncParams === 'function') {
-        window._vipOrch.syncParams(window.VIP_PARAMS || {});
-      }
+    // Sync params to worklet after preset application
+    const orch = window._vipOrch;
+    if (orch && orch.workletNode) {
+      orch.updateParams(orch._normalizeRawParams({ ...this.params }));
     }
     this.showNotification('Preset applied: ' + name, 'info');
   }

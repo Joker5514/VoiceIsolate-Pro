@@ -143,8 +143,15 @@ class DSPProcessor extends AudioWorkletProcessor {
       nrAmount:    0.78,
       gateThresh:  -42,   // dBFS
       gateRange:   -60,   // dB attenuation below gate
+      gateAttack:  5,     // ms
+      gateRelease: 200,   // ms
+      gateHold:    50,    // ms
       hpFreq:      80,    // Hz
+      hpQ:         0.7,   // resonance
       lpFreq:      18000, // Hz
+      lpQ:         0.7,   // resonance
+      deEssFreq:   6000,  // Hz
+      deEssAmt:    0,     // dB
       compThresh:  -24,   // dBFS
       compRatio:   4,
       compAttack:  10,    // ms
@@ -152,7 +159,11 @@ class DSPProcessor extends AudioWorkletProcessor {
       compKnee:    6,     // dB
       compMakeup:  0,     // dB
       limThresh:   -1,    // dBFS
+      limRelease:  50,    // ms
       specTilt:    0.0,   // dB/oct
+      stereoWidth: 100,   // %
+      ditherAmt:   1,     // bits
+      outWidth:    100,   // %
       eqSub:       0.0,
       eqBass:      0.0,
       eqWarmth:    0.0,
@@ -172,8 +183,15 @@ class DSPProcessor extends AudioWorkletProcessor {
       nrAmount:    [0, 1],
       gateThresh:  [-120, 0],
       gateRange:   [-120, 0],
+      gateAttack:  [0, 500],
+      gateRelease: [10, 5000],
+      gateHold:    [0, 1000],
       hpFreq:      [10, 20000],
+      hpQ:         [0.1, 10],
       lpFreq:      [10, 20000],
+      lpQ:         [0.1, 10],
+      deEssFreq:   [1000, 20000],
+      deEssAmt:    [0, 30],
       compThresh:  [-120, 0],
       compRatio:   [1, 100],
       compAttack:  [0.1, 1000],
@@ -181,7 +199,11 @@ class DSPProcessor extends AudioWorkletProcessor {
       compKnee:    [0, 24],
       compMakeup:  [-24, 24],
       limThresh:   [-60, 0],
+      limRelease:  [5, 1000],
       specTilt:    [-12, 12],
+      stereoWidth: [0, 200],
+      ditherAmt:   [0, 10],
+      outWidth:    [0, 200],
       eqSub:       [-24, 24],
       eqBass:      [-24, 24],
       eqWarmth:    [-24, 24],
@@ -194,10 +216,9 @@ class DSPProcessor extends AudioWorkletProcessor {
       eqBrill:     [-24, 24]
     };
 
-    // Gate hold state: prevents clicking on rapid gate transitions
+    // Gate smoothing state
     this._gateHoldSamples = 0;
-    const GATE_HOLD_MS    = 20;
-    this._GATE_HOLD_LEN   = Math.round((GATE_HOLD_MS / 1000) * sampleRate);
+    this._gateEnv = 0;   // gate envelope 0-1 (0=open, 1=gated)
 
     // Compressor envelope state
     this._envDb  = 0;
@@ -274,15 +295,17 @@ class DSPProcessor extends AudioWorkletProcessor {
       for (let i = 0; i < Q; i++) mono[i] /= numCh;
     }
 
-    // Noise gate with hold to prevent clicks
+    // Noise gate with configurable hold to prevent clicks
     let rms = 0;
     for (let i = 0; i < Q; i++) rms += mono[i] * mono[i];
     rms = Math.sqrt(rms / Q);
     const rmsDb = rms > 0 ? 20.0 * Math.log10(rms) : -160.0;
     const belowGate = rmsDb < this._params.gateThresh;
+    const _sr = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
+    const holdLen = Math.round((this._params.gateHold || 50) / 1000 * _sr);
 
     if (!belowGate) {
-      this._gateHoldSamples = this._GATE_HOLD_LEN;
+      this._gateHoldSamples = holdLen;
     } else if (this._gateHoldSamples > 0) {
       this._gateHoldSamples -= Q;
     }
@@ -492,6 +515,19 @@ class DSPProcessor extends AudioWorkletProcessor {
       if (tilt !== 0 && hz > 100) {
          const octavesFrom1k = Math.log2(hz / 1000);
          gain *= Math.pow(10, (tilt * octavesFrom1k) / 20);
+      }
+
+      // De-esser: attenuate bins near deEssFreq by deEssAmt dB
+      const deEssAmt = this._params.deEssAmt || 0;
+      if (deEssAmt > 0) {
+        const deEssFreq = this._params.deEssFreq || 6000;
+        const ratio = hz / deEssFreq;
+        // Bell shape: -3 dB bandwidth is ±1 octave
+        if (ratio > 0.5 && ratio < 2.0) {
+          const dist = Math.abs(Math.log2(ratio));
+          const envFactor = Math.max(0, 1.0 - dist);
+          gain *= Math.pow(10, -(deEssAmt * envFactor) / 20);
+        }
       }
 
       maskedMag[k] *= gain;

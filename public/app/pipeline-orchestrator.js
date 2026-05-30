@@ -314,9 +314,9 @@ class PipelineOrchestrator {
       this._maskRingSAB  = maskRing.getBuffer();
 
       this.workletNode.port.postMessage({
-        type:      'initRings',
-        inputRing: this._inputRingSAB,
-        maskRing:  this._maskRingSAB
+        type:      'initSAB',
+        inputSAB:  this._inputRingSAB,
+        outputSAB: this._maskRingSAB
       });
 
       // Forward SABs to ML worker if it was pre-warmed before the gesture
@@ -676,6 +676,17 @@ class PipelineOrchestrator {
     }
   }
 
+  /**
+   * Bulk-sync raw (UI) params to the worklet + ML worker.
+   * Called after preset application or programmatic bulk changes.
+   * Applies normalisation transforms before forwarding.
+   * @param {Object} rawParams  Raw UI-value params (0-100 for nrAmount, etc.)
+   */
+  syncParams(rawParams) {
+    if (!rawParams || typeof rawParams !== 'object') return;
+    this.updateParams(this._normalizeRawParams(rawParams));
+  }
+
   updateIsolationParams(nextParams) {
     if (!nextParams || typeof nextParams !== 'object') return;
     this._isolationParams = {
@@ -726,9 +737,11 @@ class PipelineOrchestrator {
     sliders.forEach((el) => {
       el.addEventListener('input', () => {
         const paramId = el.id.slice(3);
-        snapshot[paramId] = parseFloat(el.value);
+        const val = parseFloat(el.value);
+        snapshot[paramId] = val;
+        // Keep app.params in sync so all forwarding paths read consistent values
         if (window._vipApp && window._vipApp.params) {
-          window._vipApp.params[paramId] = parseFloat(el.value);
+          window._vipApp.params[paramId] = val;
         }
         // Apply transforms (nrAmount, dryWet → 0-1) then forward
         this.updateParams(this._normalizeRawParams(snapshot));
@@ -859,7 +872,10 @@ class PipelineOrchestrator {
       const _origOnSlider = app.onSlider.bind(app);
       app.onSlider = function (...args) {
         _origOnSlider(...args);
-        orch.updateParams(orch._normalizeRawParams(app.params));
+        // app.params is now always a valid object (initialized in constructor)
+        if (app.params && Object.keys(app.params).length > 0) {
+          orch.updateParams(orch._normalizeRawParams(app.params));
+        }
       };
     }
 

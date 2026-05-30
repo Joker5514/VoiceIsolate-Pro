@@ -365,23 +365,24 @@ class DSPConfig {
 
   /** Export config as a plain object (for passing to dsp-worker as params) */
   export() {
-    const obj = {};
-    for (const [key, p] of this._params.entries()) {
-      obj[key] = p.value;
-    }
-    // Also include noise properties manually just in case
-    obj.adaptiveWienerEnabled = this.adaptiveWienerEnabled;
-    obj.dns2Enabled = this.dns2Enabled;
-    obj.multiSpeakerEnabled = this.multiSpeakerEnabled;
-    obj.noiseClassifierEnabled = this.noiseClassifierEnabled;
-    obj.separationMode = this.separationMode;
-    obj.targetSpeaker = this.targetSpeaker;
-    obj.separationAttenuationDb = this.separationAttenuationDb;
-    obj.adaptiveWienerSmoothingMs = this.adaptiveWienerSmoothingMs;
-    obj.adaptiveWienerOverSubtraction = this.adaptiveWienerOverSubtraction;
-    obj.noiseClass = this.noiseClass;
-    obj.noiseClassConfidence = this.noiseClassConfidence;
-    return obj;
+    return {
+      adaptiveWienerEnabled: this.adaptiveWienerEnabled,
+      dns2Enabled: this.dns2Enabled,
+      multiSpeakerEnabled: this.multiSpeakerEnabled,
+      noiseClassifierEnabled: this.noiseClassifierEnabled,
+      harmonicV2Enabled: this.harmonicV2Enabled,
+      separationMode: this.separationMode,
+      targetSpeaker: this.targetSpeaker,
+      separationAttenuationDb: this.separationAttenuationDb,
+      adaptiveWienerSmoothingMs: this.adaptiveWienerSmoothingMs,
+      adaptiveWienerOverSubtraction: this.adaptiveWienerOverSubtraction,
+      harmonicV2SBR: this.harmonicV2SBR,
+      harmonicV2FormantProtection: this.harmonicV2FormantProtection,
+      harmonicV2BreathinessGain: this.harmonicV2BreathinessGain,
+      noiseClass: this.noiseClass,
+      noiseClassConfidence: this.noiseClassConfidence,
+      adaptiveNoiseFloorReady: this.adaptiveNoiseFloorReady,
+    };
   }
 
   _emit(event, detail) {

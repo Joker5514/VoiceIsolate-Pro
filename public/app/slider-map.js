@@ -119,7 +119,7 @@ export const TAB_PANEL_MAP = {
 };
 
 export const SLIDER_TARGETS = {
-  gateThresh:'worklet', gateRange:'worklet', gateAttack:'worklet', gateRelease:'worklet', gateHold:'worklet', gateLookahead:'local',
+  gateThresh:'worklet', gateRange:'worklet', gateAttack:'worklet', gateRelease:'worklet', gateHold:'worklet', gateLookahead:'worker',
   nrAmount:'both', nrSensitivity:'worker', nrSpectralSub:'worker', nrFloor:'worker', nrSmoothing:'worker',
   eqSub:'worklet', eqBass:'worklet', eqWarmth:'worklet', eqBody:'worklet', eqLowMid:'worklet', eqMid:'worklet', eqPresence:'worklet', eqClarity:'worklet', eqAir:'worklet', eqBrill:'worklet',
   compThresh:'worklet', compRatio:'worklet', compAttack:'worklet', compRelease:'worklet', compKnee:'worklet', compMakeup:'worklet', limThresh:'worklet', limRelease:'worklet',
@@ -186,7 +186,10 @@ export const SLIDER_REGISTRY = [
 
 export function dispatchParam(id, rawVal, app = window._vipOrch || window._vipApp || window.vip) {
   const target = SLIDER_TARGETS[id] || 'local';
-  const payload = { [id]: rawVal };
+  // Apply SLIDER_REGISTRY transform (e.g. nrAmount 0-100 → 0-1, dryWet 0-100 → 0-1)
+  const reg = SLIDER_REGISTRY.find(r => r.id === id);
+  const transformedVal = reg && typeof reg.transform === 'function' ? reg.transform(rawVal) : rawVal;
+  const payload = { [id]: transformedVal };
   const worklet = app?.workletNode;
   const worker = app?.mlWorker;
   if ((target === 'worklet' || target === 'both') && worklet) {

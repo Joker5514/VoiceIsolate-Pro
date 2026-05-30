@@ -69,6 +69,15 @@ let runtimeParams = {
   nonVoiceSuppression: 2.0,
 };
 
+let sliderParams = {
+  nrSensitivity: 60, nrSpectralSub: 50, nrFloor: -72, nrSmoothing: 70,
+  voiceIso: 80, bgSuppress: 50, voiceFocusLo: 120, voiceFocusHi: 3400, crosstalkCancel: 0,
+  derevAmt: 0, derevDecay: 50, harmRecov: 0, harmOrder: 3, phaseCorr: 0,
+  formantShift: 0, gateLookahead: 5,
+};
+
+const SLIDER_PARAMS_DEFAULTS = { ...sliderParams };
+
 // ── Default models loaded on bare init (no payload) ──────────────────────────
 const DEFAULT_MODELS = ['vad', 'rnnoise', 'demucs', 'bsrnn'];
 
@@ -571,6 +580,7 @@ self.onmessage = async (ev) => {
       demucsPcmMissingWarned = false;
       _lastPollFrame = 0;
       _pollInFlight  = false;
+      Object.assign(sliderParams, SLIDER_PARAMS_DEFAULTS);
       self.postMessage({ type: 'reset_done' });
       break;
     }
@@ -594,7 +604,10 @@ self.onmessage = async (ev) => {
 
     case 'setParams': {
       if (payload && typeof payload === 'object') {
-        runtimeParams = { ...runtimeParams, ...payload };
+        for (const [k, v] of Object.entries(payload)) {
+          if (k in sliderParams) sliderParams[k] = v;
+          else runtimeParams[k] = v;
+        }
       }
       break;
     }
@@ -1156,7 +1169,9 @@ async function buildMask(magnitudes, pcmChunk = null) {
     console.warn('[ml-worker] Silero VAD unavailable, fallback VAD enabled');
   }
   if (!isVoice) {
-    const nonVoiceMask = 1 / Math.max(1, Number(runtimeParams.nonVoiceSuppression) || 2);
+    // bgSuppress → nonVoiceSuppression: bgSuppress=0 → 1x, bgSuppress=100 → 5x
+    const nonVoiceSup = 1 + (sliderParams.bgSuppress / 100) * 4;
+    const nonVoiceMask = 1 / Math.max(1, nonVoiceSup);
     for (let k = 0; k < numBins; k++) mask[k] *= nonVoiceMask;
   }
 
@@ -1240,6 +1255,22 @@ async function buildMask(magnitudes, pcmChunk = null) {
     }
   }
 
+  // voiceFocusLo / voiceFocusHi (Hz): apply voice-band emphasis after Wiener filter
+  const focusLoBin = Math.round(sliderParams.voiceFocusLo / (currentSampleRate / currentFFTSize));
+  const focusHiBin = Math.round(sliderParams.voiceFocusHi / (currentSampleRate / currentFFTSize));
+  const suppressAmt = sliderParams.bgSuppress / 100;
+  for (let k = 0; k < numBins; k++) {
+    if (k < focusLoBin || k > focusHiBin) {
+      mask[k] *= Math.max(0.01, 1 - suppressAmt * 0.8);
+    }
+  }
+
+  // voiceIso (0-100): scale overall mask aggressiveness — higher = more binary separation
+  const voiceIsoBlend = sliderParams.voiceIso / 200;
+  for (let k = 0; k < numBins; k++) {
+    mask[k] = mask[k] * (1 - voiceIsoBlend) + mask[k] * mask[k] * voiceIsoBlend;
+  }
+
   // Final safety pass: clamp all values to [0, 1]; replace NaN/Inf with 1 (passthrough)
   for (let k = 0; k < numBins; k++) {
     const v = mask[k];
@@ -1261,8 +1292,12 @@ function runVADFallback(magnitudes) {
   }
   const totalRMS = Math.sqrt(sum / Math.max(1, magnitudes.length));
   const energyRatio = voiceBand / Math.max(sum, 1e-9);
-  const rmsScore = Math.max(0, Math.min(1, (totalRMS - VAD_FALLBACK_RMS_BASELINE) / VAD_FALLBACK_RMS_RANGE));
-  const ratioScore = Math.max(0, Math.min(1, (energyRatio - VAD_FALLBACK_RATIO_BASELINE) / VAD_FALLBACK_RATIO_RANGE));
+  // nrSensitivity (0-100): higher sensitivity = lower RMS threshold for voice detection
+  const sensitivityScale = (100 - sliderParams.nrSensitivity) / 100;
+  const adjustedRmsBaseline = VAD_FALLBACK_RMS_BASELINE * sensitivityScale;
+  const adjustedRatioBaseline = VAD_FALLBACK_RATIO_BASELINE * sensitivityScale;
+  const rmsScore = Math.max(0, Math.min(1, (totalRMS - adjustedRmsBaseline) / VAD_FALLBACK_RMS_RANGE));
+  const ratioScore = Math.max(0, Math.min(1, (energyRatio - adjustedRatioBaseline) / VAD_FALLBACK_RATIO_RANGE));
   const rawScore = VAD_FALLBACK_BLEND_RMS * rmsScore + VAD_FALLBACK_BLEND_RATIO * ratioScore;
   speechConfidence = speechConfidence * 0.85 + rawScore * 0.15;
   speechStreak = speechConfidence > 0.6 ? speechStreak + 1 : Math.max(0, speechStreak - 1);
@@ -1280,7 +1315,9 @@ function updateNoiseProfile(magnitudes) {
   // Seed with a conservative broadband estimate so warmup starts suppressing
   // immediately instead of passing near-raw noise during early frames.
   const broadbandSeed = Math.sqrt(sumSq / Math.max(1, magnitudes.length)) * NOISE_SEED_SCALE + 1e-6;
-  const alpha = noiseFrames < 5 ? 0.5 : 0.92;
+  // nrSmoothing (0-100): controls temporal smoothing alpha, mapped to 0.80–0.98
+  const smoothAlpha = 0.8 + (sliderParams.nrSmoothing / 100) * 0.18;
+  const alpha = noiseFrames < 5 ? 0.5 : smoothAlpha;
   for (let k = 0; k < magnitudes.length; k++) {
     if (noiseFrames === 0) noiseProfile[k] = broadbandSeed;
     noiseProfile[k] = alpha * noiseProfile[k] + (1 - alpha) * magnitudes[k];
@@ -1291,7 +1328,9 @@ function updateNoiseProfile(magnitudes) {
 
 function applyWienerFilter(magnitudes, mask, isVoice) {
   updateNoiseProfile(magnitudes);
-  const spectralFloor = Math.max(0.001, Math.min(0.05, Number(runtimeParams.spectralFloor) || 0.005));
+  // nrFloor (dBFS, negative): convert to linear and use as spectral floor
+  const computedFloor = Math.pow(10, sliderParams.nrFloor / 20);
+  const spectralFloor = Math.max(0.001, Math.min(0.05, computedFloor));
   const forensicMode = !!runtimeParams.forensicMode;
   const noiseReduce = Math.max(0, Math.min(1, Number(runtimeParams.noiseReduce) || 0.7));
   // For forensic mode with very low floor, allow stronger subtraction.
@@ -1299,7 +1338,9 @@ function applyWienerFilter(magnitudes, mask, isVoice) {
   const alphaCap = (forensicMode && spectralFloor < FORENSIC_ALPHA_FLOOR_THRESHOLD)
     ? ALPHA_CAP_FORENSIC
     : ALPHA_CAP_DEFAULT;
-  const alpha = Math.min(alphaCap, 1.0 + noiseReduce);
+  // nrSpectralSub (0-100): scale the over-subtraction alpha
+  const specSubScale = 1.0 + (sliderParams.nrSpectralSub / 100) * 1.5;
+  const alpha = Math.min(alphaCap, (1.0 + noiseReduce) * specSubScale);
 
   for (let k = 0; k < magnitudes.length; k++) {
     const signalPow = magnitudes[k] * magnitudes[k];
@@ -1320,7 +1361,9 @@ function applyWienerFilter(magnitudes, mask, isVoice) {
     for (let k = 1; k < last; k++) smooth[k] = (mask[k - 1] + mask[k] + mask[k + 1]) / 3;
     if (last > 0) smooth[last] = (mask[last - 1] + mask[last] + mask[last]) / 3;
   }
-  const voiceFloor = isVoice ? spectralFloor : Math.min(1, spectralFloor * runtimeParams.nonVoiceSuppression);
+  // bgSuppress → nonVoiceSuppression: bgSuppress=0 → 1x, bgSuppress=100 → 5x
+  const nonVoiceSup = 1 + (sliderParams.bgSuppress / 100) * 4;
+  const voiceFloor = isVoice ? spectralFloor : Math.min(1, spectralFloor * nonVoiceSup);
   for (let k = 0; k < len; k++) {
     const s = smooth[k];
     mask[k] = s > 1 ? 1 : (s < voiceFloor ? voiceFloor : s);
