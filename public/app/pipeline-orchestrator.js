@@ -119,6 +119,19 @@ async function loadDspProcessorWorklet(ctx) {
 // Expose for tests + diagnostics; keeps the helper available without polluting globals further.
 if (typeof self !== 'undefined') self.loadDspProcessorWorklet = loadDspProcessorWorklet;
 
+// Message types that mark a tracked request as complete.
+// Used by the ML worker watchdog to avoid false-positive stall warnings from
+// intermediate progress messages (e.g. model_loaded before ready, log lines, etc.)
+const _ML_TERMINAL_RESPONSES = new Set([
+  'ready',               // completes: init
+  'error',               // completes: any failed request
+  'mask',                // completes: infer
+  'bsrnnComplexResult',  // completes: bsrnnComplex
+  'diarization',         // completes: diarize
+  'voiceprintEnrolled',  // completes: enrollVoiceprint, enrollFromDiarization
+  'voiceprintCleared',   // completes: clearVoiceprint
+]);
+
 /**
  * PipelineOrchestrator
  * ─────────────────────
@@ -406,8 +419,9 @@ class PipelineOrchestrator {
       this.mlWorker.onmessage = (e) => {
         this._mlLastMessage = Date.now();
         const { type } = e.data;
-        // Decrement pending count for any response that isn't a passive log/status
-        if (type !== 'log' && type !== 'vad_status') {
+        // Only decrement on terminal responses — intermediate messages like
+        // model_loaded or progress updates must not prematurely clear the count
+        if (_ML_TERMINAL_RESPONSES.has(type)) {
           this._pendingMsgCount = Math.max(0, this._pendingMsgCount - 1);
         }
         if (type === 'ready') {
@@ -438,24 +452,6 @@ class PipelineOrchestrator {
             }
           } catch (_) { /* best-effort */ }
           this._mlLastMessage = Date.now();
-          // Wrap postMessage once to count requests that expect a response.
-          // SAB-based live inference does not go through postMessage, so the
-          // watchdog must only fire when a tracked request has gone unanswered.
-          if (!this._postMessageWrapped) {
-            this._postMessageWrapped = true;
-            const _EXPECTS_RESPONSE = new Set([
-              'init', 'loadModel', 'process', 'bsrnnComplex',
-              'diarize', 'multi_separate', 'enrollVoiceprint',
-              'enrollFromDiarization', 'clearVoiceprint', 'infer',
-            ]);
-            const _origPost = this.mlWorker.postMessage.bind(this.mlWorker);
-            this.mlWorker.postMessage = (msg, transfer) => {
-              if (msg && _EXPECTS_RESPONSE.has(msg.type)) {
-                this._pendingMsgCount++;
-              }
-              _origPost(msg, transfer);
-            };
-          }
           // Guard against duplicate intervals if 'ready' fires more than once
           if (!this._mlWatchdog) {
             this._mlWatchdog = setInterval(() => {
@@ -605,6 +601,26 @@ class PipelineOrchestrator {
           // Preload failure is fully non-fatal — DSP passthrough continues
           console.warn('[Orchestrator] Model preload warning:', err.message);
         });
+      }
+
+      // ── Wrap postMessage before sending the first tracked request ──────────
+      // Installed here (before 'init') so the init round-trip is covered.
+      // SAB-based live inference does not go through postMessage, so the
+      // watchdog only fires when a tracked message-based request goes unanswered.
+      if (!this._postMessageWrapped) {
+        this._postMessageWrapped = true;
+        const _EXPECTS_RESPONSE = new Set([
+          'init', 'loadModel', 'process', 'bsrnnComplex',
+          'diarize', 'multi_separate', 'enrollVoiceprint',
+          'enrollFromDiarization', 'clearVoiceprint', 'infer',
+        ]);
+        const _origPost = this.mlWorker.postMessage.bind(this.mlWorker);
+        this.mlWorker.postMessage = (msg, transfer) => {
+          if (msg && _EXPECTS_RESPONSE.has(msg.type)) {
+            this._pendingMsgCount++;
+          }
+          _origPost(msg, transfer);
+        };
       }
 
       // ── Init message ─────────────────────────────────────────────────────
@@ -1141,8 +1157,11 @@ class PipelineOrchestrator {
     if (this.mlWorker)   { this.mlWorker.terminate();  this.mlWorker   = null; }
     if (this.workletNode){ try { this.workletNode.disconnect(); } catch (_) {} this.workletNode = null; }
     if (this.ctx && this.ctx.state !== 'closed') { this.ctx.close(); this.ctx = null; }
-    this.mlReady = false;
-    this.initialized = false;
+    this.mlReady           = false;
+    this.initialized       = false;
+    this._mlLastMessage    = 0;
+    this._pendingMsgCount  = 0;
+    this._postMessageWrapped = false;
   }
 }
 
