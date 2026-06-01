@@ -355,12 +355,14 @@ async function runDiarization(pcm, sampleRate) {
 // ── Inference timeout helper — prevents a hung ONNX session from blocking the worker indefinitely ──
 const INFERENCE_TIMEOUT_MS = 30000;
 function _runWithTimeout(session, feeds) {
-  return Promise.race([
-    session.run(feeds),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Inference timed out after ' + INFERENCE_TIMEOUT_MS + 'ms')), INFERENCE_TIMEOUT_MS)
-    ),
-  ]);
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('Inference timed out after ' + INFERENCE_TIMEOUT_MS + 'ms')),
+      INFERENCE_TIMEOUT_MS
+    );
+  });
+  return Promise.race([session.run(feeds), timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
 // ── 1. Message dispatcher ─────────────────────────────────────────────────────
@@ -553,6 +555,10 @@ self.onmessage = async (ev) => {
           [separated.buffer],
         );
       } catch (err) {
+        if (err.message.startsWith('Inference timed out')) {
+          delete sessions['bsrnn_complex'];
+          delete sessions['bsrnn_vocals_complex'];
+        }
         fail(`bsrnnComplex: ${err.message}`);
       }
       break;
@@ -840,6 +846,11 @@ self.onmessage = async (ev) => {
 
         self.postMessage({ type: 'mask', model: modelKey, mask: outMask }, [outMask.buffer]);
       } catch (inferErr) {
+        if (inferErr.message.startsWith('Inference timed out')) {
+          delete sessions[modelKey];
+          delete sessions[modelKey + '-v4'];
+          delete sessions[modelKey + '_vocals'];
+        }
         self.postMessage({ type: 'error', message: `infer(${modelKey}): ${inferErr.message}` });
       }
       break;

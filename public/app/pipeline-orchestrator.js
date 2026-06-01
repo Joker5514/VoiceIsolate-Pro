@@ -147,13 +147,17 @@ class PipelineOrchestrator {
     /** @type {AudioWorkletNode|null} */
     this.workletNode  = null;
     /** @type {Worker|null} */
-    this.mlWorker       = null;
+    this.mlWorker             = null;
     /** @type {boolean} */
-    this.mlReady        = false;
+    this.mlReady              = false;
     /** @type {number} */
-    this._mlLastMessage = 0;
+    this._mlLastMessage       = 0;
     /** @type {number|null} */
-    this._mlWatchdog    = null;
+    this._mlWatchdog          = null;
+    /** @type {number} */
+    this._pendingMsgCount     = 0;
+    /** @type {boolean} */
+    this._postMessageWrapped  = false;
     /** @type {boolean} */
     this.workletReady = false;
     /** @type {string} */
@@ -402,6 +406,10 @@ class PipelineOrchestrator {
       this.mlWorker.onmessage = (e) => {
         this._mlLastMessage = Date.now();
         const { type } = e.data;
+        // Decrement pending count for any response that isn't a passive log/status
+        if (type !== 'log' && type !== 'vad_status') {
+          this._pendingMsgCount = Math.max(0, this._pendingMsgCount - 1);
+        }
         if (type === 'ready') {
           this.mlReady    = true;
           this.mlProvider = e.data.provider || 'wasm';
@@ -430,13 +438,35 @@ class PipelineOrchestrator {
             }
           } catch (_) { /* best-effort */ }
           this._mlLastMessage = Date.now();
-          this._mlWatchdog = setInterval(() => {
-            if (!this.mlReady || !this.mlWorker) return;
-            if (Date.now() - this._mlLastMessage > 10000) {
-              console.warn('[Orchestrator] ML worker appears stalled — no messages for >10s');
-              this._mlLastMessage = Date.now();
-            }
-          }, 2000);
+          // Wrap postMessage once to count requests that expect a response.
+          // SAB-based live inference does not go through postMessage, so the
+          // watchdog must only fire when a tracked request has gone unanswered.
+          if (!this._postMessageWrapped) {
+            this._postMessageWrapped = true;
+            const _EXPECTS_RESPONSE = new Set([
+              'init', 'loadModel', 'process', 'bsrnnComplex',
+              'diarize', 'multi_separate', 'enrollVoiceprint',
+              'enrollFromDiarization', 'clearVoiceprint', 'infer',
+            ]);
+            const _origPost = this.mlWorker.postMessage.bind(this.mlWorker);
+            this.mlWorker.postMessage = (msg, transfer) => {
+              if (msg && _EXPECTS_RESPONSE.has(msg.type)) {
+                this._pendingMsgCount++;
+              }
+              _origPost(msg, transfer);
+            };
+          }
+          // Guard against duplicate intervals if 'ready' fires more than once
+          if (!this._mlWatchdog) {
+            this._mlWatchdog = setInterval(() => {
+              if (!this.mlReady || !this.mlWorker) return;
+              if (this._pendingMsgCount > 0 && Date.now() - this._mlLastMessage > 10000) {
+                console.warn('[Orchestrator] ML worker appears stalled — pending request timed out');
+                this._mlLastMessage = Date.now();
+                this._pendingMsgCount = 0;
+              }
+            }, 2000);
+          }
           resolve();
         } else if (type === 'log') {
           const lvl = e.data.level;

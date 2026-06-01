@@ -619,9 +619,11 @@
     _refs:            null,
 
     _initRefs() {
-      if (this._refs) return;
+      if (this._refs && this._refs.el) return;
+      const el = document.getElementById('processingOverlay');
+      if (!el) return;
       this._refs = {
-        el:         document.getElementById('processingOverlay'),
+        el,
         stageChip:  document.getElementById('procStageChip'),
         stageName:  document.getElementById('procStageName'),
         stageIndex: document.getElementById('procStageIndex'),
@@ -634,18 +636,18 @@
       this._pills = Array.from(document.querySelectorAll('.proc-phase-pill'));
     },
 
-    _el()         { this._initRefs(); return this._refs.el; },
-    _stageChip()  { this._initRefs(); return this._refs.stageChip; },
-    _stageName()  { this._initRefs(); return this._refs.stageName; },
-    _stageIndex() { this._initRefs(); return this._refs.stageIndex; },
-    _pct()        { this._initRefs(); return this._refs.pct; },
-    _bar()        { this._initRefs(); return this._refs.bar; },
-    _msg()        { this._initRefs(); return this._refs.msg; },
-    _focus()      { this._initRefs(); return this._refs.focus; },
-    _mode()       { this._initRefs(); return this._refs.mode; },
+    _el()         { this._initRefs(); return this._refs && this._refs.el; },
+    _stageChip()  { this._initRefs(); return this._refs && this._refs.stageChip; },
+    _stageName()  { this._initRefs(); return this._refs && this._refs.stageName; },
+    _stageIndex() { this._initRefs(); return this._refs && this._refs.stageIndex; },
+    _pct()        { this._initRefs(); return this._refs && this._refs.pct; },
+    _bar()        { this._initRefs(); return this._refs && this._refs.bar; },
+    _msg()        { this._initRefs(); return this._refs && this._refs.msg; },
+    _focus()      { this._initRefs(); return this._refs && this._refs.focus; },
+    _mode()       { this._initRefs(); return this._refs && this._refs.mode; },
     _phasePills() {
       this._initRefs();
-      return this._pills;
+      return this._pills || [];
     },
 
     _initCanvases() {
