@@ -555,11 +555,12 @@ self.onmessage = async (ev) => {
           [separated.buffer],
         );
       } catch (err) {
-        if (err.message.startsWith('Inference timed out')) {
+        const errMsg = (err && err.message) ? err.message : String(err);
+        if (errMsg.startsWith('Inference timed out')) {
           delete sessions['bsrnn_complex'];
           delete sessions['bsrnn_vocals_complex'];
         }
-        fail(`bsrnnComplex: ${err.message}`);
+        fail(`bsrnnComplex: ${errMsg}`);
       }
       break;
     }
@@ -846,12 +847,13 @@ self.onmessage = async (ev) => {
 
         self.postMessage({ type: 'mask', model: modelKey, mask: outMask }, [outMask.buffer]);
       } catch (inferErr) {
-        if (inferErr.message.startsWith('Inference timed out')) {
+        const inferErrMsg = (inferErr && inferErr.message) ? inferErr.message : String(inferErr);
+        if (inferErrMsg.startsWith('Inference timed out')) {
           delete sessions[modelKey];
           delete sessions[modelKey + '-v4'];
           delete sessions[modelKey + '_vocals'];
         }
-        self.postMessage({ type: 'error', message: `infer(${modelKey}): ${inferErr.message}` });
+        self.postMessage({ type: 'error', message: `infer(${modelKey}): ${inferErrMsg}` });
       }
       break;
     }

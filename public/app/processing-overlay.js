@@ -619,7 +619,7 @@
     _refs:            null,
 
     _initRefs() {
-      if (this._refs && this._refs.el) return;
+      if (this._refs && this._refs.el && this._refs.el.isConnected) return;
       const el = document.getElementById('processingOverlay');
       if (!el) return;
       this._refs = {
