@@ -147,9 +147,13 @@ class PipelineOrchestrator {
     /** @type {AudioWorkletNode|null} */
     this.workletNode  = null;
     /** @type {Worker|null} */
-    this.mlWorker     = null;
+    this.mlWorker       = null;
     /** @type {boolean} */
-    this.mlReady      = false;
+    this.mlReady        = false;
+    /** @type {number} */
+    this._mlLastMessage = 0;
+    /** @type {number|null} */
+    this._mlWatchdog    = null;
     /** @type {boolean} */
     this.workletReady = false;
     /** @type {string} */
@@ -396,6 +400,7 @@ class PipelineOrchestrator {
       // ── Standard message handler (must be set BEFORE _mlWorkerPatch so the
       //    patch wraps this handler and can forward messages to it) ──────────
       this.mlWorker.onmessage = (e) => {
+        this._mlLastMessage = Date.now();
         const { type } = e.data;
         if (type === 'ready') {
           this.mlReady    = true;
@@ -424,6 +429,14 @@ class PipelineOrchestrator {
               window._attachMLWorkerToIsolation(this.mlWorker);
             }
           } catch (_) { /* best-effort */ }
+          this._mlLastMessage = Date.now();
+          this._mlWatchdog = setInterval(() => {
+            if (!this.mlReady || !this.mlWorker) return;
+            if (Date.now() - this._mlLastMessage > 10000) {
+              console.warn('[Orchestrator] ML worker appears stalled — no messages for >10s');
+              this._mlLastMessage = Date.now();
+            }
+          }, 2000);
           resolve();
         } else if (type === 'log') {
           const lvl = e.data.level;
@@ -1094,6 +1107,7 @@ class PipelineOrchestrator {
 
   // ── Teardown ──────────────────────────────────────────────────────────────
   destroy() {
+    if (this._mlWatchdog) { clearInterval(this._mlWatchdog); this._mlWatchdog = null; }
     if (this.mlWorker)   { this.mlWorker.terminate();  this.mlWorker   = null; }
     if (this.workletNode){ try { this.workletNode.disconnect(); } catch (_) {} this.workletNode = null; }
     if (this.ctx && this.ctx.state !== 'closed') { this.ctx.close(); this.ctx = null; }

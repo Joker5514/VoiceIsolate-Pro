@@ -756,9 +756,8 @@ class VoiceIsolatePro {
       if (this.mode === 'live') this.stopLive(); else this.startLive();
     });
 
-    // PATCHED BY vip-fixes.js — consider merging
     // Transport
-    bind('playBtn', this.dom.tpPlay, 'click', () => { this.togglePlayback(); });
+    bind('playBtn', this.dom.playBtn, 'click', () => { this.togglePlayback(); });
     bind('tpPlay', d.tpPlay, 'click', () => { this.togglePlayback(); });
     bind('tpPause', d.tpPause, 'click', () => this.pause());
     bind('tpStop', d.tpStop, 'click', () => this.stop());
@@ -1120,6 +1119,7 @@ class VoiceIsolatePro {
       this.updatePipelineProgress(0, 'Error', 0);
     } finally {
       this.isProcessing = false;
+      this._updateProcessButtonsState();
       if (this.dom.mobileProcessBtn) {
         this.dom.mobileProcessBtn.style.display='inline-flex';
       }

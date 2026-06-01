@@ -616,20 +616,35 @@
     _spinner:         null,
     _spectro:         null,
     _pills:           null,
+    _refs:            null,
 
-    _el()          { return document.getElementById('processingOverlay'); },
-    _stageChip()   { return document.getElementById('procStageChip'); },
-    _stageName()   { return document.getElementById('procStageName'); },
-    _stageIndex()  { return document.getElementById('procStageIndex'); },
-    _pct()         { return document.getElementById('procPct'); },
-    _bar()         { return document.getElementById('procBarFill'); },
-    _msg()         { return document.getElementById('procMessage'); },
-    _focus()       { return document.getElementById('procFocusVal'); },
-    _mode()        { return document.getElementById('procModeVal'); },
-    _phasePills()  {
-      if (!this._pills) {
-        this._pills = Array.from(document.querySelectorAll('.proc-phase-pill'));
-      }
+    _initRefs() {
+      if (this._refs) return;
+      this._refs = {
+        el:         document.getElementById('processingOverlay'),
+        stageChip:  document.getElementById('procStageChip'),
+        stageName:  document.getElementById('procStageName'),
+        stageIndex: document.getElementById('procStageIndex'),
+        pct:        document.getElementById('procPct'),
+        bar:        document.getElementById('procBarFill'),
+        msg:        document.getElementById('procMessage'),
+        focus:      document.getElementById('procFocusVal'),
+        mode:       document.getElementById('procModeVal'),
+      };
+      this._pills = Array.from(document.querySelectorAll('.proc-phase-pill'));
+    },
+
+    _el()         { this._initRefs(); return this._refs.el; },
+    _stageChip()  { this._initRefs(); return this._refs.stageChip; },
+    _stageName()  { this._initRefs(); return this._refs.stageName; },
+    _stageIndex() { this._initRefs(); return this._refs.stageIndex; },
+    _pct()        { this._initRefs(); return this._refs.pct; },
+    _bar()        { this._initRefs(); return this._refs.bar; },
+    _msg()        { this._initRefs(); return this._refs.msg; },
+    _focus()      { this._initRefs(); return this._refs.focus; },
+    _mode()       { this._initRefs(); return this._refs.mode; },
+    _phasePills() {
+      this._initRefs();
       return this._pills;
     },
 

@@ -352,6 +352,17 @@ async function runDiarization(pcm, sampleRate) {
   return segments.filter(s => s.speakerId !== null && (s.end - s.start) >= 0.3);
 }
 
+// ── Inference timeout helper — prevents a hung ONNX session from blocking the worker indefinitely ──
+const INFERENCE_TIMEOUT_MS = 30000;
+function _runWithTimeout(session, feeds) {
+  return Promise.race([
+    session.run(feeds),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Inference timed out after ' + INFERENCE_TIMEOUT_MS + 'ms')), INFERENCE_TIMEOUT_MS)
+    ),
+  ]);
+}
+
 // ── 1. Message dispatcher ─────────────────────────────────────────────────────
 self.onmessage = async (ev) => {
   const { type, payload, models: msgModels } = ev.data || {};
@@ -529,7 +540,7 @@ self.onmessage = async (ev) => {
       }
       try {
         const tensor = new ort.Tensor('float32', flat, [1, 4, halfBins, timeFrames]);
-        const result = await session.run({ input: tensor });
+        const result = await _runWithTimeout(session, { input: tensor });
         const out = result.output?.data || result[Object.keys(result)[0]]?.data;
         if (!out || out.length !== expected) {
           fail(`bsrnnComplex: output size ${out?.length} != expected ${expected}`);
@@ -798,12 +809,12 @@ self.onmessage = async (ev) => {
         if (modelKey === 'demucs' || modelKey.startsWith('demucs')) {
           // Demucs operates on PCM; fall back to magnitude-based proxy mask
           const tensor = new ort.Tensor('float32', mag, [1, 1, numBins]);
-          const result = await session.run({ input: tensor });
+          const result = await _runWithTimeout(session, { input: tensor });
           maskData = result.vocal_mask?.data || result.output?.data || null;
         } else {
           // BSRNN and others accept [1, numBins] magnitude input
           const tensor = new ort.Tensor('float32', mag, [1, numBins]);
-          const result = await session.run({ input: tensor });
+          const result = await _runWithTimeout(session, { input: tensor });
           maskData = result.vocal_mask?.data || result.output?.data || null;
         }
 
