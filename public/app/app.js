@@ -862,13 +862,64 @@ class VoiceIsolatePro {
     });
 
     // Custom preset modal
+    const _handlePresetModalKeydown = (e) => {
+      const modal = $('customPresetModal');
+      if (!modal || modal.style.display === 'none') return;
+
+      if (e.key === 'Escape') {
+        const closeBtn = $('closePresetModal');
+        if (closeBtn) closeBtn.click();
+      } else if (e.key === 'Enter') {
+        // Only trigger Enter if we are in the input, to avoid conflicting with button interactions
+        if (e.target && e.target.id === 'customPresetName') {
+          const saveBtn = $('saveCustomPresetBtn');
+          if (saveBtn) saveBtn.click();
+        }
+      }
+    };
+
     bind('openPresetModalBtn', $('openPresetModalBtn'), 'click', () => {
       const modal = $('customPresetModal');
-      if (modal) { modal.style.display = 'flex'; modal.setAttribute('aria-hidden', 'false'); }
+      if (modal) {
+        modal.style.display = 'flex';
+        modal.setAttribute('aria-hidden', 'false');
+
+        // Auto-focus input on open
+        const input = $('customPresetName');
+        if (input) {
+          // Delay focus slightly to ensure modal is visible
+          setTimeout(() => input.focus(), 10);
+        }
+
+        document.addEventListener('keydown', _handlePresetModalKeydown);
+      }
     });
+
     bind('closePresetModal', $('closePresetModal'), 'click', () => {
       const modal = $('customPresetModal');
-      if (modal) { modal.style.display = 'none'; modal.setAttribute('aria-hidden', 'true'); }
+      if (modal) {
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+
+        document.removeEventListener('keydown', _handlePresetModalKeydown);
+
+        // Return focus to trigger
+        const trigger = $('openPresetModalBtn');
+        if (trigger) trigger.focus();
+      }
+    });
+
+    // Also remove the keydown listener when save is clicked (assuming save handles its own close/hide logic if any, but since we are handling keydown, we should also intercept save button directly to remove listener)
+    bind('saveCustomPresetBtn', $('saveCustomPresetBtn'), 'click', () => {
+      document.removeEventListener('keydown', _handlePresetModalKeydown);
+      // Wait a tick then return focus to the trigger if modal is closed (in case save logic closes it)
+      setTimeout(() => {
+        const modal = $('customPresetModal');
+        if (modal && modal.style.display === 'none') {
+          const trigger = $('openPresetModalBtn');
+          if (trigger) trigger.focus();
+        }
+      }, 50);
     });
 
     // Forensic toggle

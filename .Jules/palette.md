@@ -12,3 +12,7 @@
 ## 2026-05-18 - [Custom Modal Keyboard Accessibility & ARIA States]
 **Learning:** Custom UI modals must implement complete keyboard and accessibility flows, including `role="dialog"`, `aria-modal="true"`, `aria-labelledby`, dynamic `aria-hidden` synchronization, auto-focusing the primary input on open, returning focus to the trigger on close, and keydown listeners for Escape (to close) and Enter (to submit).
 **Action:** When creating or modifying custom modals, ensure the entire lifecycle of the modal is accessible by syncing the `aria-hidden` state, managing focus effectively on open and close, and supporting keyboard interactions.
+
+## 2026-05-18 - [Custom Modal Keyboard Accessibility & ARIA States Update]
+**Learning:** When implementing 'Enter' to submit within custom UI modals, scope the keydown listener to the specific input field (e.g., verifying `e.target.id`) rather than the entire modal document/container to prevent intercepting and hijacking Enter key presses on other interactive elements like buttons.
+**Action:** When implementing modal keyboard accessibility, ensure `Enter` key events do not globally override native button click events by strictly limiting the event scope to text inputs.
