@@ -8,7 +8,12 @@ describe('play button and controls diagnostics wiring', () => {
 
   test('bindEvents wires tpPlay to togglePlayback()', () => {
     const appJs = fs.readFileSync(appJsPath, 'utf8');
-    expect(appJs).toContain("bind('playBtn', this.dom.tpPlay, 'click', () => { this.togglePlayback(); });");
+    expect(appJs).toContain("bind('tpPlay', d.tpPlay, 'click', () => { this.togglePlayback(); });");
+  });
+
+  test('bindEvents wires playBtn alias to its own DOM element (not tpPlay)', () => {
+    const appJs = fs.readFileSync(appJsPath, 'utf8');
+    expect(appJs).toContain("bind('playBtn', this.dom.playBtn, 'click', () => { this.togglePlayback(); });");
   });
 
   test('onAudioLoaded enables play button alias if present', () => {

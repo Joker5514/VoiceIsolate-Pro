@@ -119,6 +119,19 @@ async function loadDspProcessorWorklet(ctx) {
 // Expose for tests + diagnostics; keeps the helper available without polluting globals further.
 if (typeof self !== 'undefined') self.loadDspProcessorWorklet = loadDspProcessorWorklet;
 
+// Message types that mark a tracked request as complete.
+// Used by the ML worker watchdog to avoid false-positive stall warnings from
+// intermediate progress messages (e.g. model_loaded before ready, log lines, etc.)
+const _ML_TERMINAL_RESPONSES = new Set([
+  'ready',               // completes: init
+  'error',               // completes: any failed request
+  'mask',                // completes: infer
+  'bsrnnComplexResult',  // completes: bsrnnComplex
+  'diarization',         // completes: diarize
+  'voiceprintEnrolled',  // completes: enrollVoiceprint, enrollFromDiarization
+  'voiceprintCleared',   // completes: clearVoiceprint
+]);
+
 /**
  * PipelineOrchestrator
  * ─────────────────────
@@ -147,9 +160,17 @@ class PipelineOrchestrator {
     /** @type {AudioWorkletNode|null} */
     this.workletNode  = null;
     /** @type {Worker|null} */
-    this.mlWorker     = null;
+    this.mlWorker             = null;
     /** @type {boolean} */
-    this.mlReady      = false;
+    this.mlReady              = false;
+    /** @type {number} */
+    this._mlLastMessage       = 0;
+    /** @type {number|null} */
+    this._mlWatchdog          = null;
+    /** @type {number} */
+    this._pendingMsgCount     = 0;
+    /** @type {boolean} */
+    this._postMessageWrapped  = false;
     /** @type {boolean} */
     this.workletReady = false;
     /** @type {string} */
@@ -396,7 +417,13 @@ class PipelineOrchestrator {
       // ── Standard message handler (must be set BEFORE _mlWorkerPatch so the
       //    patch wraps this handler and can forward messages to it) ──────────
       this.mlWorker.onmessage = (e) => {
+        this._mlLastMessage = Date.now();
         const { type } = e.data;
+        // Only decrement on terminal responses — intermediate messages like
+        // model_loaded or progress updates must not prematurely clear the count
+        if (_ML_TERMINAL_RESPONSES.has(type)) {
+          this._pendingMsgCount = Math.max(0, this._pendingMsgCount - 1);
+        }
         if (type === 'ready') {
           this.mlReady    = true;
           this.mlProvider = e.data.provider || 'wasm';
@@ -424,6 +451,18 @@ class PipelineOrchestrator {
               window._attachMLWorkerToIsolation(this.mlWorker);
             }
           } catch (_) { /* best-effort */ }
+          this._mlLastMessage = Date.now();
+          // Guard against duplicate intervals if 'ready' fires more than once
+          if (!this._mlWatchdog) {
+            this._mlWatchdog = setInterval(() => {
+              if (!this.mlReady || !this.mlWorker) return;
+              if (this._pendingMsgCount > 0 && Date.now() - this._mlLastMessage > 10000) {
+                console.warn('[Orchestrator] ML worker appears stalled — pending request timed out');
+                this._mlLastMessage = Date.now();
+                this._pendingMsgCount = 0;
+              }
+            }, 2000);
+          }
           resolve();
         } else if (type === 'log') {
           const lvl = e.data.level;
@@ -562,6 +601,26 @@ class PipelineOrchestrator {
           // Preload failure is fully non-fatal — DSP passthrough continues
           console.warn('[Orchestrator] Model preload warning:', err.message);
         });
+      }
+
+      // ── Wrap postMessage before sending the first tracked request ──────────
+      // Installed here (before 'init') so the init round-trip is covered.
+      // SAB-based live inference does not go through postMessage, so the
+      // watchdog only fires when a tracked message-based request goes unanswered.
+      if (!this._postMessageWrapped) {
+        this._postMessageWrapped = true;
+        const _EXPECTS_RESPONSE = new Set([
+          'init', 'loadModel', 'process', 'bsrnnComplex',
+          'diarize', 'multi_separate', 'enrollVoiceprint',
+          'enrollFromDiarization', 'clearVoiceprint', 'infer',
+        ]);
+        const _origPost = this.mlWorker.postMessage.bind(this.mlWorker);
+        this.mlWorker.postMessage = (msg, transfer) => {
+          if (msg && _EXPECTS_RESPONSE.has(msg.type)) {
+            this._pendingMsgCount++;
+          }
+          _origPost(msg, transfer);
+        };
       }
 
       // ── Init message ─────────────────────────────────────────────────────
@@ -1094,11 +1153,15 @@ class PipelineOrchestrator {
 
   // ── Teardown ──────────────────────────────────────────────────────────────
   destroy() {
+    if (this._mlWatchdog) { clearInterval(this._mlWatchdog); this._mlWatchdog = null; }
     if (this.mlWorker)   { this.mlWorker.terminate();  this.mlWorker   = null; }
     if (this.workletNode){ try { this.workletNode.disconnect(); } catch (_) {} this.workletNode = null; }
     if (this.ctx && this.ctx.state !== 'closed') { this.ctx.close(); this.ctx = null; }
-    this.mlReady = false;
-    this.initialized = false;
+    this.mlReady           = false;
+    this.initialized       = false;
+    this._mlLastMessage    = 0;
+    this._pendingMsgCount  = 0;
+    this._postMessageWrapped = false;
   }
 }
 
