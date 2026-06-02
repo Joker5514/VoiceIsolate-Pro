@@ -5,7 +5,7 @@
       "source": "/(.*)",
       "headers": [
         { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
-        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "credentialless" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "X-XSS-Protection", "value": "1; mode=block" },
@@ -17,7 +17,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' /_vercel/ https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' blob: https://3jq9akm8vl1tub82.public.blob.vercel-storage.com https://blob.vercel-storage.com https://*.public.blob.vercel-storage.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://securetoken.googleapis.com https://api.revenuecat.com; worker-src 'self' blob:; frame-ancestors 'none'"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' /_vercel/insights/ https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self' blob: https://3jq9akm8vl1tub82.public.blob.vercel-storage.com https://blob.vercel-storage.com https://*.public.blob.vercel-storage.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://securetoken.googleapis.com https://api.revenuecat.com; worker-src 'self' blob: 'wasm-unsafe-eval'; frame-ancestors 'none'"
         }
       ]
     }
