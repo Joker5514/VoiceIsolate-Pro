@@ -3,7 +3,6 @@
   "buildCommand": "node scripts/validate.js",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
-  "nodeVersion": "24.x",
   "headers": [
     {
       "source": "/(.*)",
