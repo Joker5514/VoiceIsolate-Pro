@@ -3,6 +3,11 @@
   "buildCommand": "node scripts/validate.js",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
+  "functions": {
+    "api/handler.js": {
+      "runtime": "nodejs22.x"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
