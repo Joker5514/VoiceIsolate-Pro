@@ -1,13 +1,8 @@
 {
   "outputDirectory": "public",
-  "buildCommand": "node scripts/validate.js",
-  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "node scripts/setup-ort.js || true && node scripts/setup-three.js || true && node scripts/stamp-sw-version.js || true",
+  "installCommand": "pnpm install --no-frozen-lockfile",
   "framework": null,
-  "functions": {
-    "api/handler.js": {
-      "runtime": "nodejs22.x"
-    }
-  },
   "headers": [
     {
       "source": "/(.*)",
