@@ -1,5 +1,8 @@
 {
   "outputDirectory": "public",
+  "buildCommand": "node scripts/validate.js",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": null,
   "headers": [
     {
       "source": "/(.*)",
