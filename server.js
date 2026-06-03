@@ -56,7 +56,7 @@ app.use((_req, res, next) => {
     "img-src 'self' data: blob:",
     "media-src 'self' blob: mediastream:",
     "connect-src 'self' data: blob:",
-    "worker-src 'self' blob:",
+    "worker-src 'self' blob: 'wasm-unsafe-eval'",
     "wasm-src 'self'",
   ].join('; '));
 
