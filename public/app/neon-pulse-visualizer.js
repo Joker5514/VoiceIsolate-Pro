@@ -50,6 +50,7 @@
   let _lissHist  = [];     // trail for lissajous
   let _frame     = 0;
   let _stats     = { voice: 87, noise: 13, snr: 32, cpu: 15 };
+  let _visHandlerRegistered = false;
 
   // ── HTML Template ───────────────────────────────────────────────
   function buildCard() {
@@ -180,6 +181,13 @@
     ).join('');
   }
 
+  // ── Visibility handler: resume loop when tab regains focus ──────
+  function _handleVisibilityChange() {
+    if (!document.hidden && _analyserL && !_rafId) {
+      loop();
+    }
+  }
+
   // ── Init: receive AnalyserNodes from app.js ──────────────────────
   function init(analyserL, analyserR) {
     _analyserL = analyserL;
@@ -192,6 +200,11 @@
     _peakHold  = new Float32Array(_analyserL.frequencyBinCount);
     _peakDecay = new Float32Array(_analyserL.frequencyBinCount);
     if (_rafId) cancelAnimationFrame(_rafId);
+    // Register visibility handler once
+    if (typeof document !== 'undefined' && !_visHandlerRegistered) {
+      document.addEventListener('visibilitychange', _handleVisibilityChange);
+      _visHandlerRegistered = true;
+    }
     loop();
   }
 
@@ -210,6 +223,8 @@
 
   // ── Render loop ──────────────────────────────────────────────────
   function loop() {
+    // Suspend when tab is hidden — resume on visibilitychange
+    if (document.hidden) { _rafId = 0; return; }
     _rafId = requestAnimationFrame(loop);
     if (!_canvas || !_analyserL) return;
     _frame++;

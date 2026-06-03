@@ -470,13 +470,21 @@ const Paywall = (() => {
     showLicenseInput() {
       const footer = _modalEl?.querySelector('.vip-modal-footer');
       if (!footer) return;
-      footer.insertAdjacentHTML('beforeend', `
-        <div class="vip-license-input-group">
-          <input type="text" class="vip-license-input" id="vip-license-key-input"
-                 placeholder="Enter license key (e.g. eyJ...)" />
-          <button class="vip-license-submit" onclick="Paywall.submitLicenseKey()">Activate</button>
-        </div>
-      `); // SEC-02: insertAdjacentHTML avoids full re-parse
+      // Build with DOM APIs to avoid inline event handlers (CSP-safe)
+      const group = document.createElement('div');
+      group.className = 'vip-license-input-group';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'vip-license-input';
+      input.id = 'vip-license-key-input';
+      input.placeholder = 'Enter license key (e.g. eyJ...)';
+      const btn = document.createElement('button');
+      btn.className = 'vip-license-submit';
+      btn.textContent = 'Activate';
+      btn.addEventListener('click', () => Paywall.submitLicenseKey());
+      group.appendChild(input);
+      group.appendChild(btn);
+      footer.appendChild(group);
     },
 
     submitLicenseKey() {

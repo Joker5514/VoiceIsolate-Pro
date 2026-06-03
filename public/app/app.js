@@ -1027,7 +1027,9 @@ class VoiceIsolatePro {
         try {
           buffer = await this.decodeViaVideoElement(file);
           if (buffer && this.dom && this.dom.videoPlayer) {
-            this.dom.videoPlayer.src = URL.createObjectURL(file);
+            if (this._videoObjectURL) URL.revokeObjectURL(this._videoObjectURL);
+            this._videoObjectURL = URL.createObjectURL(file);
+            this.dom.videoPlayer.src = this._videoObjectURL;
           }
           if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = '';
           this.isVideo = true;
@@ -1060,12 +1062,24 @@ class VoiceIsolatePro {
   async decodeViaVideoElement(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
+      const cleanup = () => URL.revokeObjectURL(url);
       if (this.dom.videoPlayer) {
         this.dom.videoPlayer.src = url;
-        this.dom.videoPlayer.onloadedmetadata = () => resolve(this.inputBuffer || null);
-        this.dom.videoPlayer.onerror = () => reject(new Error('Video decode failed'));
-        setTimeout(() => reject(new Error('Video decode timeout')), 10000);
+        const timer = setTimeout(() => {
+          cleanup();
+          reject(new Error('Video decode timeout'));
+        }, 10000);
+        this.dom.videoPlayer.onloadedmetadata = () => {
+          clearTimeout(timer);
+          resolve(this.inputBuffer || null);
+        };
+        this.dom.videoPlayer.onerror = () => {
+          clearTimeout(timer);
+          cleanup();
+          reject(new Error('Video decode failed'));
+        };
       } else {
+        cleanup();
         reject(new Error('No video player element'));
       }
     });
@@ -1102,6 +1116,10 @@ class VoiceIsolatePro {
     this.outputBuffer = null;
     this.origBuffer = null;
     this.procBuffer = null;
+    if (this._videoObjectURL) {
+      URL.revokeObjectURL(this._videoObjectURL);
+      this._videoObjectURL = null;
+    }
     if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'No file loaded';
     if (this.dom.fileInput) this.dom.fileInput.value = '';
     [this.dom.processBtn, this.dom.reprocessBtn, this.dom.saveProcBtn,
@@ -1351,12 +1369,23 @@ class VoiceIsolatePro {
       const worker = window._vipOrch && window._vipOrch.mlWorker;
       if (!worker) { reject(new Error('ML worker unavailable')); return; }
       const id = ++this._mlCallId;
+      const timeoutMs = (payload && payload._timeoutMs) || 30000;
+      let settled = false;
       const handler = (e) => {
         if (e.data && e.data._id === id) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
           worker.removeEventListener('message', handler);
           resolve(e.data);
         }
       };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        worker.removeEventListener('message', handler);
+        reject(new Error(`_mlCall timeout after ${timeoutMs}ms (id=${id})`));
+      }, timeoutMs);
       worker.addEventListener('message', handler);
       payload._id = id;
       worker.postMessage(payload, transfer);

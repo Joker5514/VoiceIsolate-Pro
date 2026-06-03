@@ -268,8 +268,23 @@
     this._lastFrameTime = performance.now();
 
     var self = this;
+
+    // Pause rendering when the tab is hidden to save CPU/GPU
+    if (!self._visibilityHandler) {
+      self._visibilityHandler = function () {
+        if (document.hidden) {
+          if (self._rafId) { cancelAnimationFrame(self._rafId); self._rafId = 0; }
+        } else if (self._running) {
+          if (!self._rafId) self._rafId = requestAnimationFrame(loop);
+        }
+      };
+      document.addEventListener('visibilitychange', self._visibilityHandler);
+    }
+
     var loop = function (ts) {
       if (!self._running) return;
+      // Skip if tab just became hidden
+      if (document.hidden) { self._rafId = 0; return; }
       self._rafId = requestAnimationFrame(loop);
 
       // Skip a frame if analysers aren't ready yet (buildLiveChain hasn't
@@ -304,6 +319,10 @@
 
   VisualizationEngine.prototype.destroy = function () {
     this.stop();
+    if (this._visibilityHandler) {
+      document.removeEventListener('visibilitychange', this._visibilityHandler);
+      this._visibilityHandler = null;
+    }
     if (this.workletNode && this.workletNode.port) {
       try {
         this.workletNode.port.removeEventListener('message', this._onWorkletMessage);

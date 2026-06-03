@@ -413,6 +413,27 @@ class PipelineOrchestrator {
     return new Promise((resolve) => {
       // ── Construct the ML Worker ──────────────────────────────────────────
       this.mlWorker = new Worker('/app/ml-worker.js');
+      this._mlWorkerRestarts = this._mlWorkerRestarts || 0;
+
+      // ── Worker crash recovery ────────────────────────────────────────────
+      this.mlWorker.onerror = (err) => {
+        console.error('[Orchestrator] ML worker crashed:', err.message || err);
+        this.mlReady = false;
+        this._pendingMsgCount = 0;
+        if (window._vipApp) window._vipApp.mlReady = false;
+        const MAX_RESTARTS = 3;
+        if (this._mlWorkerRestarts < MAX_RESTARTS) {
+          this._mlWorkerRestarts++;
+          const delay = Math.min(1000 * Math.pow(2, this._mlWorkerRestarts - 1), 8000);
+          console.warn(`[Orchestrator] Restarting ML worker (attempt ${this._mlWorkerRestarts}/${MAX_RESTARTS}) in ${delay}ms`);
+          this._mlInitPromise = null;
+          this._postMessageWrapped = false;
+          setTimeout(() => this._initMLWorker(), delay);
+        } else {
+          console.error('[Orchestrator] ML worker exceeded restart limit — DSP passthrough only');
+          try { window.dispatchEvent(new CustomEvent('vip:mlWorkerFailed', { detail: { restarts: this._mlWorkerRestarts } })); } catch (_) {}
+        }
+      };
 
       // ── Standard message handler (must be set BEFORE _mlWorkerPatch so the
       //    patch wraps this handler and can forward messages to it) ──────────

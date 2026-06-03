@@ -764,12 +764,26 @@ function _ensureBanner(absentModels) {
   absentModels.forEach(key => {
     const meta = MODEL_MANIFEST[key];
     if (!meta) return;
-    const li   = document.createElement('li');
+    const li = document.createElement('li');
     li.style.marginBottom = '2px';
-    li.innerHTML =
-      `<b>${meta.stageId}</b> — <code>${meta.filename}</code> (${meta.sizeLabel}) ` +
-      `<a href="${meta.sourceUrl}" target="_blank" rel="noopener noreferrer" ` +
-      `style="color:#7dd3fc;text-decoration:underline;">source ↗</a>`;
+    // Build with DOM APIs to avoid innerHTML injection (meta fields from manifest)
+    const bold = document.createElement('b');
+    bold.textContent = meta.stageId;
+    const sep = document.createTextNode(' — ');
+    const code = document.createElement('code');
+    code.textContent = meta.filename;
+    const size = document.createTextNode(` (${meta.sizeLabel}) `);
+    const link = document.createElement('a');
+    link.href = meta.sourceUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.style.cssText = 'color:#7dd3fc;text-decoration:underline;';
+    link.textContent = 'source ↗';
+    li.appendChild(bold);
+    li.appendChild(sep);
+    li.appendChild(code);
+    li.appendChild(size);
+    li.appendChild(link);
     list.appendChild(li);
   });
 
