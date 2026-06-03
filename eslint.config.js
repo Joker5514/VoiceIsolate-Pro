@@ -239,6 +239,29 @@ export default [
     },
   },
 
+  {
+    // UMD modules — browser + CJS dual-mode (need module/define globals)
+    files: [
+      'public/app/health-monitor.js',
+      'public/app/shared-memory-schema.js',
+      'public/app/state-manager.js',
+    ],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        module: 'readonly',
+        define: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+
   // ── Ignores ───────────────────────────────────────────────────────────────────
   {
     ignores: [

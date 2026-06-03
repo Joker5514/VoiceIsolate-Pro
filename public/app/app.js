@@ -1027,8 +1027,7 @@ class VoiceIsolatePro {
         try {
           buffer = await this.decodeViaVideoElement(file);
           if (buffer && this.dom && this.dom.videoPlayer) {
-            if (this._videoObjectURL) URL.revokeObjectURL(this._videoObjectURL);
-            this._videoObjectURL = URL.createObjectURL(file);
+            if (!this._videoObjectURL) this._videoObjectURL = URL.createObjectURL(file);
             this.dom.videoPlayer.src = this._videoObjectURL;
           }
           if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = '';
@@ -1061,10 +1060,13 @@ class VoiceIsolatePro {
 
   async decodeViaVideoElement(file) {
     return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const cleanup = () => URL.revokeObjectURL(url);
+      if (this._videoObjectURL) URL.revokeObjectURL(this._videoObjectURL);
+      this._videoObjectURL = URL.createObjectURL(file);
+      const cleanup = () => {
+        if (this._videoObjectURL) { URL.revokeObjectURL(this._videoObjectURL); this._videoObjectURL = null; }
+      };
       if (this.dom.videoPlayer) {
-        this.dom.videoPlayer.src = url;
+        this.dom.videoPlayer.src = this._videoObjectURL;
         const timer = setTimeout(() => {
           cleanup();
           reject(new Error('Video decode timeout'));
@@ -1072,6 +1074,7 @@ class VoiceIsolatePro {
         this.dom.videoPlayer.onloadedmetadata = () => {
           clearTimeout(timer);
           resolve(this.inputBuffer || null);
+          // _videoObjectURL kept — videoPlayer.src still references it; revoked by _clearFile()
         };
         this.dom.videoPlayer.onerror = () => {
           clearTimeout(timer);

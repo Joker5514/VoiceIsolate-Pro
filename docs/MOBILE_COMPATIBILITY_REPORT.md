@@ -11,7 +11,7 @@
 | Feature | Chrome Android | Safari iOS | Firefox Android | Capacitor Android | Capacitor iOS |
 |---------|---------------|------------|-----------------|-------------------|---------------|
 | AudioContext | ✅ | ✅ | ✅ | ✅ | ✅ |
-| AudioWorklet | ✅ Chrome 67+ | ✅ Safari 14.1+ | ✅ Firefox 76+ | ✅ | ✅ |
+| AudioWorklet | ✅ Chrome 66+ | ✅ Safari 14.1+ | ✅ Firefox 76+ | ✅ | ✅ |
 | SharedArrayBuffer | ✅ COOP+COEP | ⚠️ Requires COOP+COEP | ✅ COOP+COEP | ⚠️ WKWebView | ⚠️ WKWebView |
 | Web Workers | ✅ | ✅ | ✅ | ✅ | ✅ |
 | ONNX Runtime WASM | ✅ | ✅ | ✅ | ✅ | ✅ |

@@ -31,7 +31,8 @@
 
   class StateManager {
     constructor(initial = {}) {
-      this._state = { ...initial };
+      this._state   = { ...initial };
+      this._initial = { ...initial };
       this._listeners = new Map();  // key → Set<fn>
       this._anyListeners = new Set();
     }
@@ -148,7 +149,7 @@
      * Reset state to initial values, clearing all listeners.
      */
     reset() {
-      this._state = {};
+      this._state = { ...this._initial };
       this._listeners.clear();
       this._anyListeners.clear();
     }

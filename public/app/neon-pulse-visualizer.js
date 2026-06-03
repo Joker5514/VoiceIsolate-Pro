@@ -548,12 +548,21 @@
     };
   }
 
+  function destroy() {
+    if (_rafId) { cancelAnimationFrame(_rafId); _rafId = 0; }
+    if (_visHandlerRegistered && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', _handleVisibilityChange);
+      _visHandlerRegistered = false;
+    }
+  }
+
   // ── Public API ───────────────────────────────────────────────────
   window.NeonPulseViz = {
     mount,
     init,
     updateStats,
     startDemo,
+    destroy,
     setMode: m => { _mode = m; _lissHist = []; _peakHold.fill(0); },
   };
 

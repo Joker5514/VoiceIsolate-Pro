@@ -470,6 +470,8 @@ const Paywall = (() => {
     showLicenseInput() {
       const footer = _modalEl?.querySelector('.vip-modal-footer');
       if (!footer) return;
+      const existing = document.getElementById('vip-license-key-input');
+      if (existing) { existing.focus(); return; }
       // Build with DOM APIs to avoid inline event handlers (CSP-safe)
       const group = document.createElement('div');
       group.className = 'vip-license-input-group';

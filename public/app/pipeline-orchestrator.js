@@ -418,6 +418,7 @@ class PipelineOrchestrator {
       // ── Worker crash recovery ────────────────────────────────────────────
       this.mlWorker.onerror = (err) => {
         console.error('[Orchestrator] ML worker crashed:', err.message || err);
+        try { this.mlWorker.terminate(); } catch { }
         this.mlReady = false;
         this._pendingMsgCount = 0;
         if (window._vipApp) window._vipApp.mlReady = false;
@@ -431,7 +432,7 @@ class PipelineOrchestrator {
           setTimeout(() => this._initMLWorker(), delay);
         } else {
           console.error('[Orchestrator] ML worker exceeded restart limit — DSP passthrough only');
-          try { window.dispatchEvent(new CustomEvent('vip:mlWorkerFailed', { detail: { restarts: this._mlWorkerRestarts } })); } catch (_) {}
+          try { window.dispatchEvent(new CustomEvent('vip:mlWorkerFailed', { detail: { restarts: this._mlWorkerRestarts } })); } catch { }
         }
       };
 

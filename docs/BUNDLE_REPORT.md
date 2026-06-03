@@ -21,7 +21,7 @@ The application is a **static site** served from `public/` — there is no bundl
 | `public/app/pipeline-orchestrator.js` | ~36 KB | Classic script | AudioWorklet + ML init |
 | `public/lib/ort.min.js` | ~730 KB | Deferred (importScripts) | ONNX Runtime |
 
-**Total critical path JS:** ~124 KB (excluding ORT)
+**Total critical path JS:** ~94 KB (excluding ORT)
 
 ### Deferred Assets
 

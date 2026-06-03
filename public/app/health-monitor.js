@@ -208,7 +208,7 @@
             limitMB: (m.jsHeapSizeLimit / 1048576).toFixed(1) + ' MB',
           };
         }
-      } catch (_) {}
+      } catch { }
       return null;
     }
   }

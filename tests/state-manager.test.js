@@ -169,14 +169,21 @@ describe('StateManager — dispatch', () => {
 });
 
 describe('StateManager — reset', () => {
-  test('reset clears all state and listeners', () => {
+  test('reset restores initial values and clears listeners', () => {
     const sm = new StateManager({ x: 5 });
-    const fn = jest.fn();
+    sm.set('x', 99);
+    const fn = jest.fn(); // subscribe AFTER set so fn has no prior call history
     sm.subscribe('x', fn);
     sm.reset();
-    expect(sm.get('x')).toBeUndefined();
-    sm.set('x', 100); // should not throw, and fn should not be called
+    expect(sm.get('x')).toBe(5); // restored to initial value
+    sm.set('x', 100); // listeners cleared, fn should not be called
     expect(fn).not.toHaveBeenCalled();
+  });
+
+  test('reset with no initial values yields empty state', () => {
+    const sm = new StateManager();
+    sm.reset();
+    expect(sm.get('anything')).toBeUndefined();
   });
 });
 
