@@ -554,6 +554,9 @@
       document.removeEventListener('visibilitychange', _handleVisibilityChange);
       _visHandlerRegistered = false;
     }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', resizeCanvas);
+    }
   }
 
   // ── Public API ───────────────────────────────────────────────────

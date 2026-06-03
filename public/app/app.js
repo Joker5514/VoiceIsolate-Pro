@@ -1372,7 +1372,7 @@ class VoiceIsolatePro {
       const worker = window._vipOrch && window._vipOrch.mlWorker;
       if (!worker) { reject(new Error('ML worker unavailable')); return; }
       const id = ++this._mlCallId;
-      const timeoutMs = (payload && payload._timeoutMs) || 30000;
+      const timeoutMs = Math.min(120000, Math.max(1000, Math.floor((payload && +payload._timeoutMs) || 30000)));
       let settled = false;
       const handler = (e) => {
         if (e.data && e.data._id === id) {
