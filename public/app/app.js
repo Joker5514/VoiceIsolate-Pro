@@ -825,9 +825,10 @@ class VoiceIsolatePro {
     });
 
     // Tab switching
-    qsa('.tab-btn[data-tab]').forEach(btn => {
+    const tabBtns = Array.from(qsa('.tab-btn[data-tab]'));
+    tabBtns.forEach((btn, index) => {
       btn.addEventListener('click', () => {
-        qsa('.tab-btn').forEach(b => {
+        tabBtns.forEach(b => {
           b.classList.remove('active');
           b.setAttribute('aria-selected', 'false');
           b.setAttribute('tabindex', '-1');
@@ -838,6 +839,21 @@ class VoiceIsolatePro {
         btn.setAttribute('tabindex', '0');
         const panel = document.getElementById('tab-' + btn.dataset.tab);
         if (panel) panel.classList.add('active');
+      });
+
+      btn.addEventListener('keydown', (e) => {
+        let nextIndex = index;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          nextIndex = (index + 1) % tabBtns.length;
+          e.preventDefault();
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          nextIndex = (index - 1 + tabBtns.length) % tabBtns.length;
+          e.preventDefault();
+        }
+        if (nextIndex !== index) {
+          tabBtns[nextIndex].focus();
+          tabBtns[nextIndex].click();
+        }
       });
     });
 
@@ -929,7 +945,8 @@ class VoiceIsolatePro {
   _handleGlobalKeydown(e) {
     const tag = e.target && e.target.tagName;
     const contentEditable = e.target && e.target.isContentEditable;
-    const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || contentEditable;
+    const isTab = e.target && typeof e.target.getAttribute === 'function' && e.target.getAttribute('role') === 'tab';
+    const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || contentEditable || isTab;
     if (inInput) return;
 
     if ((e.key === ' ' || e.key === 'k' || e.key === 'K') && (this.inputBuffer || this.origBuffer)) {
