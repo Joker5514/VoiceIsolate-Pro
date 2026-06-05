@@ -16,3 +16,7 @@
 ## 2026-05-18 - [Custom Modal Keyboard Accessibility & ARIA States Update]
 **Learning:** When implementing 'Enter' to submit within custom UI modals, scope the keydown listener to the specific input field (e.g., verifying `e.target.id`) rather than the entire modal document/container to prevent intercepting and hijacking Enter key presses on other interactive elements like buttons.
 **Action:** When implementing modal keyboard accessibility, ensure `Enter` key events do not globally override native button click events by strictly limiting the event scope to text inputs.
+
+## 2026-06-05 - [Arrow Key Navigation & Global Keyboard Shortcuts]
+**Learning:** When adding specific keyboard navigation (like Arrow keys for Tabs) to UI components, global keyboard shortcut handlers (e.g., Spacebar for play/pause or Arrow keys for seek) can unintentionally intercept those events if the handlers are attached to `document` or `window`.
+**Action:** Always ensure that global keyboard shortcut handlers explicitly check for and ignore events originating from interactive UI components (e.g., checking `e.target.tagName === 'BUTTON'` or `e.target.getAttribute('role') === 'tab'`) to prevent hijacking local component navigation.

@@ -314,6 +314,9 @@
     document.addEventListener('keydown', (e) => {
       const tag = (e.target?.tagName || '').toUpperCase();
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Prevent global shortcuts from overriding custom component interactions
+      if (tag === 'BUTTON' || (e.target && typeof e.target.getAttribute === 'function' && (e.target.getAttribute('role') === 'tab' || e.target.getAttribute('role') === 'tablist'))) return;
+
       if (e.code === 'Space') { e.preventDefault(); if (_isPlaying) _pause(); else _play(); }
     });
 

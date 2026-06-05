@@ -825,9 +825,10 @@ class VoiceIsolatePro {
     });
 
     // Tab switching
-    qsa('.tab-btn[data-tab]').forEach(btn => {
+    const tabBtns = qsa('.tab-btn[data-tab]');
+    tabBtns.forEach((btn, index) => {
       btn.addEventListener('click', () => {
-        qsa('.tab-btn').forEach(b => {
+        tabBtns.forEach(b => {
           b.classList.remove('active');
           b.setAttribute('aria-selected', 'false');
           b.setAttribute('tabindex', '-1');
@@ -838,6 +839,21 @@ class VoiceIsolatePro {
         btn.setAttribute('tabindex', '0');
         const panel = document.getElementById('tab-' + btn.dataset.tab);
         if (panel) panel.classList.add('active');
+      });
+
+      // Keyboard navigation (Arrow keys)
+      btn.addEventListener('keydown', (e) => {
+        let newIndex;
+        if (e.key === 'ArrowRight') {
+          newIndex = (index + 1) % tabBtns.length;
+        } else if (e.key === 'ArrowLeft') {
+          newIndex = (index - 1 + tabBtns.length) % tabBtns.length;
+        } else {
+          return;
+        }
+        e.preventDefault();
+        tabBtns[newIndex].focus();
+        tabBtns[newIndex].click();
       });
     });
 
@@ -931,6 +947,9 @@ class VoiceIsolatePro {
     const contentEditable = e.target && e.target.isContentEditable;
     const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || contentEditable;
     if (inInput) return;
+
+    // Prevent global shortcuts from overriding custom component interactions
+    if (tag === 'BUTTON' || (e.target && typeof e.target.getAttribute === 'function' && (e.target.getAttribute('role') === 'tab' || e.target.getAttribute('role') === 'tablist'))) return;
 
     if ((e.key === ' ' || e.key === 'k' || e.key === 'K') && (this.inputBuffer || this.origBuffer)) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
