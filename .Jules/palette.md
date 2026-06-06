@@ -16,3 +16,7 @@
 ## 2026-05-18 - [Custom Modal Keyboard Accessibility & ARIA States Update]
 **Learning:** When implementing 'Enter' to submit within custom UI modals, scope the keydown listener to the specific input field (e.g., verifying `e.target.id`) rather than the entire modal document/container to prevent intercepting and hijacking Enter key presses on other interactive elements like buttons.
 **Action:** When implementing modal keyboard accessibility, ensure `Enter` key events do not globally override native button click events by strictly limiting the event scope to text inputs.
+
+## 2026-05-19 - [Form Controls & Semantic Labels]
+**Learning:** Using generic `<span>` elements next to form controls (like `<select>`) misses out on critical accessibility benefits. Screen readers rely on semantic `<label for="...">` elements to announce the input's purpose, and `<label>` natively increases the hit target area, allowing users to click the text to focus the input.
+**Action:** Always link descriptive text to form controls using semantic `<label for="[id]">` tags rather than relying on visual proximity with `<span>` or `<div>`.
