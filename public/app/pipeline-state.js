@@ -173,11 +173,6 @@ class PipelineState {
     this._workletPort = port;
   }
 
-  /** Get all param keys */
-  keys() {
-    return [...this._params.keys()];
-  }
-
   /** Get params grouped by tab */
   grouped() {
     const groups = {};
@@ -366,10 +361,6 @@ class DSPConfig {
   /** Export config as a plain object (for passing to dsp-worker as params) */
   export() {
     const obj = {};
-    for (const [key, p] of this._params.entries()) {
-      obj[key] = p.value;
-    }
-    // Also include noise properties manually just in case
     obj.adaptiveWienerEnabled = this.adaptiveWienerEnabled;
     obj.dns2Enabled = this.dns2Enabled;
     obj.multiSpeakerEnabled = this.multiSpeakerEnabled;

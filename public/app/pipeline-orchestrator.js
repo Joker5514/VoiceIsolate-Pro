@@ -577,7 +577,7 @@ class PipelineOrchestrator {
             bsrnn_vocals: ['bsrnn', 'bsrnn_vocals.onnx']
           };
           const cached = Object.keys(modelPaths);
-          if (cached.length > 0) {
+          if (cached.length > 0 && this.mlWorker) {
             const normalizedModelPaths = {};
             for (const cacheKey of cached) {
               const modelUrl = modelPaths[cacheKey];
