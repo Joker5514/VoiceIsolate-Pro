@@ -583,28 +583,29 @@ class VoiceIsolatePro {
 
     const orch = (typeof window !== 'undefined') ? window._vipOrch : null;
 
-    // Wire the ML worker (reads mag/pha/pcm, writes mask) — exactly once.
+    // Wire the ML worker (reads mag/pha/pcm, writes mask) — once per worker
+    // instance. Tracking the instance (not a boolean) means a worker recreated
+    // by orchestrator destroy()/re-init is detected and re-wired correctly.
     const worker = orch && orch.mlWorker;
-    if (worker && !this._sabWorkerWired) {
+    if (worker && this._wiredWorker !== worker) {
       worker.postMessage({ type: 'initRingBuffers', inputRing: inputSAB, maskRing: outputSAB, halfN: HALF_BINS }, []);
-      this._sabWorkerWired = true;
+      this._wiredWorker = worker;
     }
 
-    // Wire the AudioWorklet (same dual SAB) — exactly once. It acks via 'sabReady'.
+    // Wire the AudioWorklet (same dual SAB) — once per worklet-node instance.
+    // It acks via 'sabReady'. Re-binding per instance ensures a recreated
+    // worklet gets both its listener and its SABs.
     const workletNode = orch && orch.workletNode;
-    if (workletNode && !this._sabWorkletWired) {
-      if (!this._sabReadyBound) {
-        workletNode.port.addEventListener('message', (ev) => {
-          if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {
-            this._inputSAB = ev.data.inputSAB;
-            this._outputSAB = ev.data.outputSAB;
-          }
-        });
-        try { if (typeof workletNode.port.start === 'function') workletNode.port.start(); } catch (_) {}
-        this._sabReadyBound = true;
-      }
+    if (workletNode && this._wiredWorklet !== workletNode) {
+      workletNode.port.addEventListener('message', (ev) => {
+        if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {
+          this._inputSAB = ev.data.inputSAB;
+          this._outputSAB = ev.data.outputSAB;
+        }
+      });
+      try { if (typeof workletNode.port.start === 'function') workletNode.port.start(); } catch { /* port already started */ }
       workletNode.port.postMessage({ type: 'initSAB', inputSAB, outputSAB });
-      this._sabWorkletWired = true;
+      this._wiredWorklet = workletNode;
     }
   }
 
