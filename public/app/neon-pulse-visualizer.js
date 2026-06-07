@@ -43,6 +43,7 @@
   let _mode      = 0;      // current viz mode
   let _canvas    = null;
   let _ctx       = null;
+  let _resizeBound = false;
   let _waterfallBuf = null;  // offscreen ImageData for waterfall
   let _waterfallOff = null;  // OffscreenCanvas or null
   let _peakHold  = new Float32Array(256);
@@ -131,7 +132,10 @@
     resizeCanvas();
     bindTabs(card);
     setLegend();
-    window.addEventListener('resize', resizeCanvas);
+    if (!_resizeBound) {
+      window.addEventListener('resize', resizeCanvas);
+      _resizeBound = true;
+    }
     return card;
   }
 

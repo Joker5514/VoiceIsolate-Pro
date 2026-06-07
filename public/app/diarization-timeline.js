@@ -37,6 +37,8 @@ let _isDragging  = false;
 let _dragStartX  = 0;
 let _dragViewStart = 0;
 let _rafId       = null;
+let _resizeObserver = null;
+let _listenersBound = false;
 
 const PALETTE = [
   '#3b82f6','#a855f7','#10b981','#f59e0b',
@@ -55,33 +57,47 @@ function _getSpeakerColor(id) {
 // ── Public: init ─────────────────────────────────────────────────────────────
 export function initDiarizationTimeline(opts = {}) {
   const canvasId = opts.canvasId || 'diarCanvas';
-  _canvas = document.getElementById(canvasId);
-  if (!_canvas) { console.warn('[DiarTimeline] canvas not found:', canvasId); return; }
+  const nextCanvas = document.getElementById(canvasId);
+  if (!nextCanvas) { console.warn('[DiarTimeline] canvas not found:', canvasId); return; }
+
+  // Re-init on the same canvas is a no-op for observer/listener wiring —
+  // disconnect the previous observer first if the target element changed.
+  if (_resizeObserver && _canvas !== nextCanvas) {
+    _resizeObserver.disconnect();
+    _resizeObserver = null;
+    _listenersBound = false;
+  }
+
+  _canvas       = nextCanvas;
   _ctx          = _canvas.getContext('2d');
   _playheadEl   = document.getElementById(opts.playheadId   || 'diarPlayhead');
   _timeLabelEl  = document.getElementById(opts.timeLabelId  || 'diarTimeLabel');
   _countEl      = document.getElementById(opts.speakerCountId || 'diarSpeakerCount');
   _onSpeakerClick = opts.onSpeakerClick || null;
 
-  // Resize observer
-  const ro = new ResizeObserver(() => _resize());
-  ro.observe(_canvas.parentElement || _canvas);
+  if (!_resizeObserver) {
+    _resizeObserver = new ResizeObserver(() => _resize());
+    _resizeObserver.observe(_canvas.parentElement || _canvas);
+  }
   _resize();
 
-  // Mouse / touch drag to pan
-  _canvas.addEventListener('mousedown',  _onMouseDown);
-  _canvas.addEventListener('mousemove',  _onMouseMove);
-  _canvas.addEventListener('mouseup',    _onMouseUp);
-  _canvas.addEventListener('mouseleave', _onMouseUp);
-  _canvas.addEventListener('click',      _onClick);
-  _canvas.addEventListener('wheel',      _onWheel, { passive: true });
+  if (!_listenersBound) {
+    // Mouse / touch drag to pan
+    _canvas.addEventListener('mousedown',  _onMouseDown);
+    _canvas.addEventListener('mousemove',  _onMouseMove);
+    _canvas.addEventListener('mouseup',    _onMouseUp);
+    _canvas.addEventListener('mouseleave', _onMouseUp);
+    _canvas.addEventListener('click',      _onClick);
+    _canvas.addEventListener('wheel',      _onWheel, { passive: true });
 
-  // Touch
-  _canvas.addEventListener('touchstart', e => _onMouseDown({ clientX: e.touches[0].clientX }), { passive: true });
-  _canvas.addEventListener('touchmove',  e => { e.preventDefault(); _onMouseMove({ clientX: e.touches[0].clientX }); }, { passive: false });
-  _canvas.addEventListener('touchend',   _onMouseUp, { passive: true });
+    // Touch
+    _canvas.addEventListener('touchstart', e => _onMouseDown({ clientX: e.touches[0].clientX }), { passive: true });
+    _canvas.addEventListener('touchmove',  e => { e.preventDefault(); _onMouseMove({ clientX: e.touches[0].clientX }); }, { passive: false });
+    _canvas.addEventListener('touchend',   _onMouseUp, { passive: true });
+    _listenersBound = true;
+  }
 
-  _startRAF();
+  if (!_rafId) _startRAF();
   console.info('[DiarTimeline] initialised on #' + canvasId);
 }
 
