@@ -62,10 +62,12 @@ function _validateToken(token) {
     const providedSigBuf = Buffer.from(parts[2], 'base64url');
     if (expectedSigBuf.length !== providedSigBuf.length || !crypto.timingSafeEqual(expectedSigBuf, providedSigBuf)) return null;
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-    if (Date.now() / 1000 > payload.exp) return null;
+    if (typeof payload.exp !== 'number' || Date.now() / 1000 > payload.exp) return null;
     return payload;
   } catch { return null; }
 }
+
+export { _validateToken };
 
 /**
  * Authenticate the request using a Bearer license JWT and enforce Studio/Enterprise tier for cloud sync.

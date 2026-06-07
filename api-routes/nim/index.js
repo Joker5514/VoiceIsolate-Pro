@@ -1,6 +1,6 @@
 import express from 'express';
-import crypto from 'crypto';
 import { NimGrpcClient } from './grpc-client.js';
+import { _validateToken } from '../sync.js';
 
 const router = express.Router();
 const nimClient = new NimGrpcClient();
@@ -10,31 +10,9 @@ router.use(express.json({ limit: '50mb' }));
 
 // NIM cloud inference is an opt-in, paid feature (Studio/Enterprise) — gate it
 // the same way api-routes/sync.js gates cloud sync, so it can't be hit anonymously.
-const LICENSE_SECRET = (() => {
-  if (process.env.LICENSE_JWT_SECRET) return process.env.LICENSE_JWT_SECRET;
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('[nim] LICENSE_JWT_SECRET is required in production.');
-  }
-  return crypto.randomBytes(48).toString('base64url');
-})();
-
-function _validateToken(token) {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const expectedSig = crypto
-      .createHmac('sha256', LICENSE_SECRET)
-      .update(`${parts[0]}.${parts[1]}`)
-      .digest('base64url');
-    const expectedSigBuf = Buffer.from(expectedSig, 'base64url');
-    const providedSigBuf = Buffer.from(parts[2], 'base64url');
-    if (expectedSigBuf.length !== providedSigBuf.length || !crypto.timingSafeEqual(expectedSigBuf, providedSigBuf)) return null;
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-    if (Date.now() / 1000 > payload.exp) return null;
-    return payload;
-  } catch { return null; }
-}
-
+// Reuses sync.js's token validator (and its LICENSE_SECRET) rather than deriving
+// its own — independent random dev-mode secrets would never agree across modules,
+// so a token minted/validated by one router would be rejected by the other.
 function requireCloudTier(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) {

@@ -87,11 +87,14 @@ router.use('/', monetizationRouter);
 router.use('/auth', authRouter);
 
 // ─── NIM Integration (lazy — gRPC modules loaded on first request only) ─────
+let _nimRouterPromise = null;
 router.use('/nim', async (req, res, next) => {
   try {
-    const { default: nimRouter } = await import('./nim/index.js');
+    if (!_nimRouterPromise) _nimRouterPromise = import('./nim/index.js');
+    const { default: nimRouter } = await _nimRouterPromise;
     nimRouter(req, res, next);
   } catch (err) {
+    _nimRouterPromise = null;
     next(err);
   }
 });

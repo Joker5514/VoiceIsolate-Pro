@@ -364,14 +364,19 @@ class DSPConfig {
     obj.adaptiveWienerEnabled = this.adaptiveWienerEnabled;
     obj.dns2Enabled = this.dns2Enabled;
     obj.multiSpeakerEnabled = this.multiSpeakerEnabled;
+    obj.harmonicV2Enabled = this.harmonicV2Enabled;
     obj.noiseClassifierEnabled = this.noiseClassifierEnabled;
     obj.separationMode = this.separationMode;
     obj.targetSpeaker = this.targetSpeaker;
     obj.separationAttenuationDb = this.separationAttenuationDb;
     obj.adaptiveWienerSmoothingMs = this.adaptiveWienerSmoothingMs;
     obj.adaptiveWienerOverSubtraction = this.adaptiveWienerOverSubtraction;
+    obj.harmonicV2SBR = this.harmonicV2SBR;
+    obj.harmonicV2FormantProtection = this.harmonicV2FormantProtection;
+    obj.harmonicV2BreathinessGain = this.harmonicV2BreathinessGain;
     obj.noiseClass = this.noiseClass;
     obj.noiseClassConfidence = this.noiseClassConfidence;
+    obj.adaptiveNoiseFloorReady = this.adaptiveNoiseFloorReady;
     return obj;
   }
 
