@@ -327,6 +327,7 @@ class PipelineOrchestrator {
     // so a non-isolated context degrades to Creator mode rather than throwing.
     const sabSupported =
       typeof SharedArrayBuffer !== 'undefined' &&
+      typeof Atomics !== 'undefined' &&
       (typeof self === 'undefined' || self.crossOriginIsolated !== false);
 
     if (!sabSupported) {

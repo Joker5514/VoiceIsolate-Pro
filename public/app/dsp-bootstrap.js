@@ -152,27 +152,17 @@
 
   /* ── 2. Patch initAudio() to boot AudioWorklet + ML Worker ─────────────── */
 
-  // Canonical header-first dual-SAB geometry — MUST match dsp-processor.js,
-  // ml-worker.js and app.js (_initSABRings, the single source of truth that
-  // actually allocates + wires these buffers). FLAG_SLOTS = 5 → 20-byte Int32
-  // header; the input buffer also carries a newest-hop PCM region after mag/pha.
-  const FLAG_SLOTS        = 5;
-  const FFT_SIZE          = 4096;
-  const HOP_SIZE          = 1024;
-  const HALF_BINS         = FFT_SIZE / 2 + 1;
-  const SAB_HEADER_BYTES  = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
-  const INPUT_SAB_BYTES   = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * (HALF_BINS * 2 + HOP_SIZE);
-  const OUTPUT_SAB_BYTES  = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS;
+  // NOTE: SharedArrayBuffer allocation + worklet/worker wiring is owned solely
+  // by app.js (_initSABRings) — the single source of truth for the canonical
+  // header-first dual-SAB ABI (mirrored verbatim in dsp-processor.js and
+  // ml-worker.js). This bootstrap intentionally does NOT allocate its own SABs;
+  // doing so previously created a second, competing ABI owner whose buffers the
+  // worklet and ML worker never touched.
 
   window._vipInitAudioFull = async function initAudioFull() {
     try {
       const audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
       window._vipAudioCtx = audioCtx;
-
-      const inputSAB  = new SharedArrayBuffer(INPUT_SAB_BYTES);
-      const outputSAB = new SharedArrayBuffer(OUTPUT_SAB_BYTES);
-      window._vipInputSAB  = inputSAB;
-      window._vipOutputSAB = outputSAB;
 
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 512;

@@ -568,6 +568,11 @@ class VoiceIsolatePro {
   // buffers regardless of init ordering — no fragile "first use" race.
   _initSABRings() {
     if (typeof SharedArrayBuffer === 'undefined') return;
+    // Require a cross-origin-isolated context before allocating: in a
+    // non-isolated page `new SharedArrayBuffer(...)` throws, which would break
+    // the graceful fallback to Creator/offline mode. (undefined → test/SSR
+    // context, allow; only an explicit `false` blocks the live SAB path.)
+    if (typeof globalThis !== 'undefined' && globalThis.crossOriginIsolated === false) return;
 
     // Allocate the canonical dual SABs exactly once.
     if (!this._inputSAB || !this._outputSAB) {
