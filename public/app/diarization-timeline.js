@@ -39,6 +39,8 @@ let _dragViewStart = 0;
 let _rafId       = null;
 let _resizeObserver = null;
 let _listenersBound = false;
+let _touchStartHandler = null;
+let _touchMoveHandler  = null;
 
 const PALETTE = [
   '#3b82f6','#a855f7','#10b981','#f59e0b',
@@ -61,10 +63,12 @@ export function initDiarizationTimeline(opts = {}) {
   if (!nextCanvas) { console.warn('[DiarTimeline] canvas not found:', canvasId); return; }
 
   // Re-init on the same canvas is a no-op for observer/listener wiring —
-  // disconnect the previous observer first if the target element changed.
-  if (_resizeObserver && _canvas !== nextCanvas) {
-    _resizeObserver.disconnect();
-    _resizeObserver = null;
+  // remove old listeners and disconnect the previous observer first if the
+  // target element changed (otherwise the old canvas keeps handlers that
+  // reference shared module state now pointing at the new canvas).
+  if (_canvas && _canvas !== nextCanvas) {
+    _unbindCanvasListeners(_canvas);
+    if (_resizeObserver) { _resizeObserver.disconnect(); _resizeObserver = null; }
     _listenersBound = false;
   }
 
@@ -82,6 +86,9 @@ export function initDiarizationTimeline(opts = {}) {
   _resize();
 
   if (!_listenersBound) {
+    _touchStartHandler = e => _onMouseDown({ clientX: e.touches[0].clientX });
+    _touchMoveHandler  = e => { e.preventDefault(); _onMouseMove({ clientX: e.touches[0].clientX }); };
+
     // Mouse / touch drag to pan
     _canvas.addEventListener('mousedown',  _onMouseDown);
     _canvas.addEventListener('mousemove',  _onMouseMove);
@@ -91,8 +98,8 @@ export function initDiarizationTimeline(opts = {}) {
     _canvas.addEventListener('wheel',      _onWheel, { passive: true });
 
     // Touch
-    _canvas.addEventListener('touchstart', e => _onMouseDown({ clientX: e.touches[0].clientX }), { passive: true });
-    _canvas.addEventListener('touchmove',  e => { e.preventDefault(); _onMouseMove({ clientX: e.touches[0].clientX }); }, { passive: false });
+    _canvas.addEventListener('touchstart', _touchStartHandler, { passive: true });
+    _canvas.addEventListener('touchmove',  _touchMoveHandler, { passive: false });
     _canvas.addEventListener('touchend',   _onMouseUp, { passive: true });
     _listenersBound = true;
   }
@@ -247,6 +254,19 @@ function _draw() {
 function _startRAF() {
   const loop = () => { _draw(); _rafId = requestAnimationFrame(loop); };
   _rafId = requestAnimationFrame(loop);
+}
+
+// ── Internal: cleanup ─────────────────────────────────────────────────────────
+function _unbindCanvasListeners(canvas) {
+  canvas.removeEventListener('mousedown',  _onMouseDown);
+  canvas.removeEventListener('mousemove',  _onMouseMove);
+  canvas.removeEventListener('mouseup',    _onMouseUp);
+  canvas.removeEventListener('mouseleave', _onMouseUp);
+  canvas.removeEventListener('click',      _onClick);
+  canvas.removeEventListener('wheel',      _onWheel);
+  if (_touchStartHandler) canvas.removeEventListener('touchstart', _touchStartHandler);
+  if (_touchMoveHandler)  canvas.removeEventListener('touchmove',  _touchMoveHandler);
+  canvas.removeEventListener('touchend',   _onMouseUp);
 }
 
 // ── Internal: interaction ─────────────────────────────────────────────────────
