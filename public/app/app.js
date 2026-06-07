@@ -551,26 +551,60 @@ class VoiceIsolatePro {
   _ensureAudioCtx() { return this.ensureCtx(); }
 
   // ── SAB ring buffer init ─────────────────────────────────────────────────
+  // Canonical header-first dual-SAB layout — the SINGLE source of truth for the
+  // worklet (dsp-processor.js) ↔ main thread ↔ ML worker (ml-worker.js) ABI.
+  // The same FFT_SIZE / HOP_SIZE / HALF_BINS / FLAG_SLOTS constants are mirrored
+  // in all three contexts; the buffers are laid out as:
+  //   inputSAB : Int32 header[FLAG_SLOTS] | Float32 mag[HALF_BINS] | pha[HALF_BINS] | pcm[HOP_SIZE]
+  //   outputSAB: Int32 header[FLAG_SLOTS] | Float32 mask[HALF_BINS]
+  // The worklet writes mag/pha/pcm + bumps the input write-generation; the ML
+  // worker reads them, writes the mask, and bumps the output write-generation;
+  // the worklet reads the mask back and acks via the output read-generation.
+  //
+  // Idempotent + re-entrant: the SABs are allocated exactly once, then we wire
+  // whichever of {AudioWorklet, ML worker} currently exists. The orchestrator
+  // (which owns worklet + worker lifecycle, CLAUDE.md §2/§3) re-invokes this
+  // once each is created, so both ends are wired exactly once with identical
+  // buffers regardless of init ordering — no fragile "first use" race.
   _initSABRings() {
     if (typeof SharedArrayBuffer === 'undefined') return;
-    const inputByteLen = SAB_HEADER_BYTES + HALF_BINS * 4 * 2;
-    const outputByteLen = SAB_HEADER_BYTES + HALF_BINS * 4 * 2;
-    const inputSAB = new SharedArrayBuffer(inputByteLen);
-    const outputSAB = new SharedArrayBuffer(outputByteLen);
-    this._inputSAB = inputSAB;
-    this._outputSAB = outputSAB;
-    const worker = window._vipOrch && window._vipOrch.mlWorker;
-    if (worker) {
-      worker.postMessage({ type: 'initRingBuffers', inputRing: inputSAB, maskRing: outputSAB }, []);
+
+    // Allocate the canonical dual SABs exactly once.
+    if (!this._inputSAB || !this._outputSAB) {
+      // input: header + mag + pha + newest-hop PCM region (for time-aligned ML)
+      const inputByteLen  = SAB_HEADER_BYTES + (HALF_BINS * 2 + HOP_SIZE) * Float32Array.BYTES_PER_ELEMENT;
+      // output: header + mask
+      const outputByteLen = SAB_HEADER_BYTES + HALF_BINS * Float32Array.BYTES_PER_ELEMENT;
+      this._inputSAB  = new SharedArrayBuffer(inputByteLen);
+      this._outputSAB = new SharedArrayBuffer(outputByteLen);
     }
-    const workletNode = window._vipOrch && window._vipOrch.workletNode;
-    if (workletNode) {
-      workletNode.port.addEventListener('message', (ev) => {
-        if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {
-          this._inputSAB = ev.data.inputSAB;
-          this._outputSAB = ev.data.outputSAB;
-        }
-      });
+    const inputSAB  = this._inputSAB;
+    const outputSAB = this._outputSAB;
+
+    const orch = (typeof window !== 'undefined') ? window._vipOrch : null;
+
+    // Wire the ML worker (reads mag/pha/pcm, writes mask) — exactly once.
+    const worker = orch && orch.mlWorker;
+    if (worker && !this._sabWorkerWired) {
+      worker.postMessage({ type: 'initRingBuffers', inputRing: inputSAB, maskRing: outputSAB, halfN: HALF_BINS }, []);
+      this._sabWorkerWired = true;
+    }
+
+    // Wire the AudioWorklet (same dual SAB) — exactly once. It acks via 'sabReady'.
+    const workletNode = orch && orch.workletNode;
+    if (workletNode && !this._sabWorkletWired) {
+      if (!this._sabReadyBound) {
+        workletNode.port.addEventListener('message', (ev) => {
+          if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {
+            this._inputSAB = ev.data.inputSAB;
+            this._outputSAB = ev.data.outputSAB;
+          }
+        });
+        try { if (typeof workletNode.port.start === 'function') workletNode.port.start(); } catch (_) {}
+        this._sabReadyBound = true;
+      }
+      workletNode.port.postMessage({ type: 'initSAB', inputSAB, outputSAB });
+      this._sabWorkletWired = true;
     }
   }
 

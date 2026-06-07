@@ -223,6 +223,9 @@ class PipelineOrchestrator {
         console.warn('[Orchestrator] Live ML masking unavailable — SAB not supported; falling back to Creator mode');
       }
       await this._initMLWorker();
+      // ML worker now exists — wire the canonical SABs to it (the earlier
+      // _allocateRings() call wired the worklet; this completes the worker side).
+      this._wireSharedBuffers();
       this._bindSliders();
       this.initialized = true;
       // Isolation controls are also bound eagerly in the bootstrap (so they
@@ -287,9 +290,10 @@ class PipelineOrchestrator {
       numberOfOutputs: 1,
       outputChannelCount: [2],
       processorOptions: {
-        frameSize:    4096,
-        fftSize:      2048,
-        hopSize:      512,
+        // Canonical single-pass STFT geometry — must match dsp-processor.js,
+        // app.js and ml-worker.js (FFT 4096 / HOP 1024, 75% overlap).
+        fftSize:      4096,
+        hopSize:      1024,
         ringCapacity: this._ringCapacity
       }
     });
@@ -311,19 +315,25 @@ class PipelineOrchestrator {
   }
 
   // ── SharedArrayBuffer ring allocation ───────────────────────────────────
-  // Uses SharedRingBuffer (ring-buffer.js) for the canonical 5-slot Int32 header
-  // layout that is compatible with the ML worker's SAB_HEADER_BYTES = 20.
+  // The orchestrator OWNS the worklet + ML-worker lifecycle (CLAUDE.md §2/§3)
+  // but does NOT own the buffer ABI: the canonical header-first dual-SAB layout
+  // lives in app.js (_initSABRings), shared verbatim with dsp-processor.js
+  // (worklet) and ml-worker.js. Delegating here keeps a SINGLE source of truth
+  // for FFT_SIZE / HOP_SIZE / HALF_BINS / FLAG_SLOTS and the mag/pha/pcm/mask
+  // offsets, eliminating the previous protocol drift (initRings vs initSAB and
+  // a 1025- vs 2049-bin half-spectrum) that left the worklet's SABs unwired.
   _allocateRings() {
-    // Guard: SharedArrayBuffer requires COOP+COEP headers — check before
-    // attempting allocation so we get a clean boolean return rather than
-    // relying solely on the catch branch.
-    if (typeof SharedArrayBuffer === 'undefined' || !self.crossOriginIsolated ||
-        typeof SharedRingBuffer === 'undefined' ||
-        !SharedRingBuffer.isSupported()) {
+    // SharedArrayBuffer requires COOP+COEP (crossOriginIsolated). Probe defensively
+    // so a non-isolated context degrades to Creator mode rather than throwing.
+    const sabSupported =
+      typeof SharedArrayBuffer !== 'undefined' &&
+      (typeof self === 'undefined' || self.crossOriginIsolated !== false);
+
+    if (!sabSupported) {
       console.warn('[Orchestrator] SharedArrayBuffer unavailable — live ML masking disabled');
       this._inputRingSAB = null;
       this._maskRingSAB  = null;
-      this._emitSabUnavailable('SharedArrayBuffer is not defined');
+      this._emitSabUnavailable('SharedArrayBuffer unavailable / not cross-origin isolated');
       setTimeout(() => {
         if (!this.workletReady) {
           this.workletReady = true;
@@ -331,52 +341,36 @@ class PipelineOrchestrator {
       }, WORKLET_READY_FALLBACK_MS);
       return false;
     }
-    try {
-      // Use SharedRingBuffer for consistent layout (5×Int32 header + Float32 data).
-      // frameSize = samples per quantum/bin, frameCount = ring capacity slots.
-      const inputRing = new SharedRingBuffer(this._quantumSize, this._ringCapacity);
-      const maskRing  = new SharedRingBuffer(this._halfN,        this._ringCapacity);
 
-      this._inputRingSAB = inputRing.getBuffer();
-      this._maskRingSAB  = maskRing.getBuffer();
+    // Wire the worklet now (it exists after _loadWorklet); the ML-worker side is
+    // completed by a second _wireSharedBuffers() call once the worker is created.
+    this._wireSharedBuffers();
 
-      this.workletNode.port.postMessage({
-        type:      'initRings',
-        inputRing: this._inputRingSAB,
-        maskRing:  this._maskRingSAB
-      });
-
-      // Forward SABs to ML worker if it was pre-warmed before the gesture
-      if (this.mlWorker) {
-        this.mlWorker.postMessage({
-          type:         'initRingBuffers',
-          inputRing:    this._inputRingSAB,
-          maskRing:     this._maskRingSAB,
-          ringCapacity: this._ringCapacity,
-          quantumSize:  this._quantumSize,
-          halfN:        this._halfN
-        });
+    // The worklet acks ring init via 'sabReady'. If no ack arrives, fall back
+    // after a short grace period so live mode is never blocked indefinitely.
+    setTimeout(() => {
+      if (!this.workletReady) {
+        this.workletReady = true;
       }
-      // Some worklets acknowledge ring init asynchronously. If no explicit
-      // ready message arrives, fall back after a short grace period.
-      setTimeout(() => {
-        if (!this.workletReady) {
-          this.workletReady = true;
-        }
-      }, WORKLET_READY_FALLBACK_MS);
-      return true;
+    }, WORKLET_READY_FALLBACK_MS);
+    return true;
+  }
+
+  // ── Delegate canonical SAB allocation + wiring to app.js ─────────────────
+  // Idempotent + re-entrant: app._initSABRings() allocates the dual SABs once
+  // and wires whichever of {worklet, ML worker} currently exists. Safe to call
+  // multiple times (e.g. after the worklet loads, then after the worker is ready).
+  _wireSharedBuffers() {
+    try {
+      const app = (typeof window !== 'undefined') ? window._vipApp : null;
+      if (app && typeof app._initSABRings === 'function') {
+        app._initSABRings();
+        // Mirror the canonical SABs for diagnostics / opt-in integration tests.
+        this._inputRingSAB = app._inputSAB || null;
+        this._maskRingSAB  = app._outputSAB || null;
+      }
     } catch (err) {
-      // SharedArrayBuffer blocked (missing COOP/COEP) — graceful degradation
-      console.warn('[Orchestrator] SharedArrayBuffer unavailable; live ML masking disabled:', err.message);
-      this._inputRingSAB = null;
-      this._maskRingSAB  = null;
-      this._emitSabUnavailable(err?.message || String(err));
-      setTimeout(() => {
-        if (!this.workletReady) {
-          this.workletReady = true;
-        }
-      }, WORKLET_READY_FALLBACK_MS);
-      return false;
+      console.warn('[Orchestrator] SAB wiring delegation failed:', err && err.message);
     }
   }
 
@@ -626,7 +620,8 @@ class PipelineOrchestrator {
       // ── Init message ─────────────────────────────────────────────────────
       // SABs are NOT included here — they may not be allocated yet when the
       // worker is pre-warmed before the first gesture. They are forwarded
-      // separately via 'initRingBuffers' inside _allocateRings() once ready.
+      // separately via the canonical 'initRingBuffers' message from app.js
+      // (_initSABRings), triggered by _wireSharedBuffers() once the worker exists.
       // payload wrapper is required: the worker's 'init' handler destructures
       // allowedModels / preferredProviders from ev.data.payload, not top-level.
       this.mlWorker.postMessage({
