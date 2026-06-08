@@ -15,6 +15,18 @@ Dockerfile
 render.yaml
 docker-compose*.yml
 
+# Serverless API + Express dev server.
+# This is a STATIC deployment (framework: null, outputDirectory: public, and
+# vercel.json has no /api rewrite). Vercel auto-builds any top-level api/*.js as
+# a Serverless Function — api/handler.js transitively dynamic-imports the
+# optional `stripe` module (not a dependency), so that function fails to bundle
+# and every deployment errored (type LAMBDAS). Excluding api/ + server.js keeps
+# the deploy purely static. To re-enable the backend later: add `stripe` to
+# dependencies, restore the `/api/(.*) -> /api/handler` rewrite in vercel.json,
+# and remove these two ignores.
+api/
+server.js
+
 # NOTE: scripts/ is intentionally NOT excluded here.
 # scripts/setup-ort.js, scripts/setup-three.js, and scripts/stamp-sw-version.js
 # are required by the package.json build command and must be present during
