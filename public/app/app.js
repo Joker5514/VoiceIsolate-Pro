@@ -825,9 +825,10 @@ class VoiceIsolatePro {
     });
 
     // Tab switching
-    qsa('.tab-btn[data-tab]').forEach(btn => {
+    const tabs = qsa('.tab-btn[data-tab]');
+    tabs.forEach((btn, index) => {
       btn.addEventListener('click', () => {
-        qsa('.tab-btn').forEach(b => {
+        tabs.forEach(b => {
           b.classList.remove('active');
           b.setAttribute('aria-selected', 'false');
           b.setAttribute('tabindex', '-1');
@@ -838,6 +839,28 @@ class VoiceIsolatePro {
         btn.setAttribute('tabindex', '0');
         const panel = document.getElementById('tab-' + btn.dataset.tab);
         if (panel) panel.classList.add('active');
+      });
+
+      btn.addEventListener('keydown', (e) => {
+        let newIndex = index;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          newIndex = (index + 1) % tabs.length;
+          e.preventDefault();
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          newIndex = (index - 1 + tabs.length) % tabs.length;
+          e.preventDefault();
+        } else if (e.key === 'Home') {
+          newIndex = 0;
+          e.preventDefault();
+        } else if (e.key === 'End') {
+          newIndex = tabs.length - 1;
+          e.preventDefault();
+        }
+
+        if (newIndex !== index) {
+          tabs[newIndex].focus();
+          tabs[newIndex].click();
+        }
       });
     });
 
@@ -927,10 +950,17 @@ class VoiceIsolatePro {
 
   // ── Global keyboard shortcuts ────────────────────────────────────────────
   _handleGlobalKeydown(e) {
-    const tag = e.target && e.target.tagName;
-    const contentEditable = e.target && e.target.isContentEditable;
+    const target = e.target;
+    if (!target) return;
+
+    const tag = target.tagName;
+    const contentEditable = target.isContentEditable;
     const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || contentEditable;
-    if (inInput) return;
+
+    // Do not intercept if interacting with a button or a tablist component
+    const inButtonOrTab = tag === 'BUTTON' || (typeof target.closest === 'function' && target.closest('[role="tablist"]'));
+
+    if (inInput || inButtonOrTab) return;
 
     if ((e.key === ' ' || e.key === 'k' || e.key === 'K') && (this.inputBuffer || this.origBuffer)) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;

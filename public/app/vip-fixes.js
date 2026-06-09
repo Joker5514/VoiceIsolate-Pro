@@ -312,8 +312,13 @@
 
     /* Space = play/pause keyboard shortcut */
     document.addEventListener('keydown', (e) => {
-      const tag = (e.target?.tagName || '').toUpperCase();
+      const target = e.target;
+      if (!target) return;
+      const tag = (target.tagName || '').toUpperCase();
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const inButtonOrTab = tag === 'BUTTON' || (typeof target.closest === 'function' && target.closest('[role="tablist"]'));
+      if (inButtonOrTab) return;
+
       if (e.code === 'Space') { e.preventDefault(); if (_isPlaying) _pause(); else _play(); }
     });
 
@@ -404,8 +409,13 @@
 
     /* X key shortcut */
     document.addEventListener('keydown', (e) => {
-      const tag = (e.target?.tagName || '').toUpperCase();
+      const target = e.target;
+      if (!target) return;
+      const tag = (target.tagName || '').toUpperCase();
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const inButtonOrTab = tag === 'BUTTON' || (typeof target.closest === 'function' && target.closest('[role="tablist"]'));
+      if (inButtonOrTab) return;
+
       if (e.code === 'KeyX') _toggleAB();
     });
 
