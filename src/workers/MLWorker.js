@@ -207,7 +207,7 @@ async function runOverlapAdd(entry, session, samples, onProgress) {
     if (avail <= 0) break;
     frame.set(samples.subarray(start, start + avail));
 
-    const input = new ort.Tensor('float32', frame.slice(), [1, N]);
+    const input = new ort.Tensor('float32', frame, [1, N]);
     const results = await session.run({ [entry.io.input]: input });
     const enhanced = results[entry.io.output]?.data;
     if (!enhanced || enhanced.length < avail) {
