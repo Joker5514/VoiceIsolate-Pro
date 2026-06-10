@@ -177,7 +177,6 @@
           </div>
         </div>
         <div class="upload-row">
-          <button id="micBtn" class="btn btn-mic" aria-label="Toggle Microphone"><span id="micLabel">Record</span></button>
           <span id="fileInfo" class="file-info">No file loaded</span>
           <span id="fileLoadIndicator" class="file-load-indicator" role="status" aria-live="polite" hidden>
             <span class="vip-helix-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
@@ -349,14 +348,14 @@
 
   <div id="toastRegion" aria-live="polite"></div>
 
-  <!-- // LOAD ORDER VERIFIED: pipeline-orchestrator.js settles before app.js imports, and app.js statically imports slider-map.js before evaluation. -->
   <script type="module">
-    // LOAD ORDER VERIFIED: pipeline-orchestrator.js resolves before app.js runs.
     // LOAD ORDER VERIFIED: slider-map.js resolves as an app.js dependency before app.js evaluates.
+    // pipeline-orchestrator.js was removed with the live real-time pipeline
+    // (Stem-Split & Live-Mix architecture — see CLAUDE.md). Offline processing
+    // runs through app.js _runFallbackPipeline.
     const _parallel = [
       './visuals.js',
       './processing-overlay.js',
-      './pipeline-orchestrator.js',
       './session-persist.js',
     ];
     await Promise.allSettled(_parallel.map(src =>

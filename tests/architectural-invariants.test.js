@@ -64,32 +64,65 @@ describe('CLAUDE.md §1 — single STFT + iSTFT per processing path', () => {
   });
 });
 
-// ── §2 AudioWorklet Ownership ─────────────────────────────────────────────────
-describe('CLAUDE.md §2 — AudioWorklet.addModule called only by pipeline-orchestrator.js', () => {
-  test('pipeline-orchestrator.js is the only file calling audioWorklet.addModule()', () => {
-    const files = fs.readdirSync(APP_DIR).filter((f) => f.endsWith('.js'));
+// ── §1.1 Live pipeline stays removed ─────────────────────────────────────────
+describe('CLAUDE.md §1.1 — live real-time pipeline stays removed', () => {
+  const SRC_DIR = path.join(ROOT, 'src');
+
+  const walkJs = (dir) => {
+    const out = [];
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...walkJs(full));
+      else if (entry.name.endsWith('.js')) out.push(full);
+    }
+    return out;
+  };
+
+  test('no file calls audioWorklet.addModule() (worklet pipeline removed)', () => {
     const offenders = [];
-    for (const f of files) {
-      const src = fs.readFileSync(path.join(APP_DIR, f), 'utf8');
-      // Allow string literal mentions ("audioWorklet.addModule" inside docs)
-      // but flag actual call expressions.
-      if (/audioWorklet\.addModule\s*\(/.test(src) && f !== 'pipeline-orchestrator.js') {
-        // app.js historically registers via ensureCtx — surface that as a violation.
-        offenders.push(f);
-      }
+    for (const f of [...walkJs(APP_DIR), ...walkJs(SRC_DIR)]) {
+      const src = fs.readFileSync(f, 'utf8');
+      if (/audioWorklet\.addModule\s*\(/.test(src)) offenders.push(path.relative(ROOT, f));
     }
     expect(offenders).toEqual([]);
   });
+
+  test('no file calls getUserMedia (live-mic ingestion is forbidden)', () => {
+    const candidates = [
+      ...walkJs(APP_DIR),
+      ...walkJs(SRC_DIR),
+      path.join(ROOT, 'public/index.html'),
+      path.join(ROOT, 'public/landing.js'),
+    ];
+    const offenders = [];
+    for (const f of candidates) {
+      if (!fs.existsSync(f)) continue;
+      const src = fs.readFileSync(f, 'utf8');
+      if (/getUserMedia\s*\(/.test(src)) offenders.push(path.relative(ROOT, f));
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test('deleted legacy monoliths stay deleted', () => {
+    for (const rel of [
+      'public/app/pipeline-orchestrator.js',
+      'public/app/auth.js',
+      'public/app/license-manager.js',
+      'api-routes/auth.js',
+    ]) {
+      expect(fs.existsSync(path.join(ROOT, rel))).toBe(false);
+    }
+  });
 });
 
-// ── §3 ML Worker Ownership ────────────────────────────────────────────────────
-describe('CLAUDE.md §3 — ML worker spawned only from pipeline-orchestrator.js', () => {
-  test('only pipeline-orchestrator.js constructs new Worker(\'./ml-worker.js\')', () => {
+// ── §3 ML Worker spawning ─────────────────────────────────────────────────────
+describe('CLAUDE.md §3 — legacy public/app code does not spawn the ML worker', () => {
+  test('no public/app file constructs new Worker(...ml-worker.js)', () => {
     const files = fs.readdirSync(APP_DIR).filter((f) => f.endsWith('.js'));
     const offenders = [];
     for (const f of files) {
       const src = fs.readFileSync(path.join(APP_DIR, f), 'utf8');
-      if (/new\s+Worker\s*\(\s*['"`][^'"`]*ml-worker\.js/.test(src) && f !== 'pipeline-orchestrator.js') {
+      if (/new\s+Worker\s*\(\s*['"`][^'"`]*ml-worker\.js/.test(src)) {
         offenders.push(f);
       }
     }
@@ -172,8 +205,9 @@ describe('CLAUDE.md §6 — COOP/COEP set to the exact values SharedArrayBuffer 
     }
   });
 
-  test('server.js dev server sets COOP=same-origin and COEP=require-corp', () => {
-    const src = read('server.js');
+  test('dev server sets COOP=same-origin and COEP=require-corp via securityHeaders middleware', () => {
+    expect(read('server.js')).toMatch(/securityHeaders\(\)/);
+    const src = read('server/securityHeaders.js');
     expect(src).toMatch(/Cross-Origin-Opener-Policy['"`]?\s*[,)]?\s*['"`]same-origin/);
     expect(src).toMatch(/Cross-Origin-Embedder-Policy['"`]?\s*[,)]?\s*['"`]require-corp/);
   });

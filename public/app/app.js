@@ -304,7 +304,6 @@ class VoiceIsolatePro {
     this.ctx = null;
     this.workletNode = null;
     this.sourceNode = null;
-    this.micStream = null;
 
     // ML
     this.mlReady = false;
@@ -421,8 +420,6 @@ class VoiceIsolatePro {
       tpSpeedUp:g('tpSpeedUp'),
       tpCur:g('tpCur'),
       tpDur:g('tpDur'),
-      micBtn:g('micBtn'),
-      micLabel:g('micLabel'),
       saveOrigBtn:g('saveOrigBtn'),
       saveProcBtn:g('saveProcBtn'),
       auditLogBtn:g('auditLogBtn'),
@@ -750,11 +747,6 @@ class VoiceIsolatePro {
         this.dom.statsToggle.textContent = expanded ? '▲' : '▼';
       });
     }
-
-    // Mic
-    bind('micBtn', d.micBtn, 'click', () => {
-      if (this.mode === 'live') this.stopLive(); else this.startLive();
-    });
 
     // Transport
     bind('playBtn', this.dom.playBtn, 'click', () => { this.togglePlayback(); });
@@ -1508,40 +1500,9 @@ class VoiceIsolatePro {
     return outputBuf || inputBuf;
   }
 
-  // ── Live mic mode ─────────────────────────────────────────────────────────
-  async startLive() {
-    try {
-      await this.ensureCtx();
-      this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      this.sourceNode = this.ctx.createMediaStreamSource(this.micStream);
-      const workletNode = window._vipOrch && window._vipOrch.workletNode;
-      if (workletNode) {
-        this.sourceNode.connect(workletNode);
-        workletNode.connect(this.ctx.destination);
-      } else {
-        this.sourceNode.connect(this.ctx.destination);
-      }
-      this.mode = 'live';
-      this.liveChainBuilt = true;
-      if (this.dom.micLabel) this.dom.micLabel.textContent = 'Stop';
-      this.setStatus('LIVE');
-      this.showNotification('Live mode active.', 'info');
-    } catch (err) {
-      this.showNotification('Mic access denied.', 'error');
-      structuredLog('error', '[VIP] Mic error', { err: err.message });
-    }
-  }
-
-  stopLive() {
-    if (this.micStream) this.micStream.getTracks().forEach(t => t.stop());
-    try { if (this.sourceNode) this.sourceNode.disconnect(); } catch (_) {}
-    this.sourceNode = null;
-    this.micStream = null;
-    this.mode = 'idle';
-    this.liveChainBuilt = false;
-    if (this.dom.micLabel) this.dom.micLabel.textContent = 'Record';
-    this.setStatus('IDLE');
-  }
+  // Live-microphone ingestion was REMOVED by design (CLAUDE.md §1.1).
+  // navigator.mediaDevices.getUserMedia is forbidden in this codebase; the
+  // Permissions-Policy header denies the microphone entirely.
 
   // ── Transport ─────────────────────────────────────────────────────────────
   play() {

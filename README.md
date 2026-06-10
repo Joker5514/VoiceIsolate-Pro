@@ -1,213 +1,100 @@
-# VoiceIsolate Pro · v25.0
+# VoiceIsolate Pro
 
-> **Browser-based, 100% local audio processing platform.**
-> Zero cloud audio processing. Zero telemetry. Privacy-first.
->
-> ML models are downloaded once from the same-origin model CDN and cached
-> permanently in your browser's Cache API. After that initial download,
-> all processing is 100% local — no audio data ever leaves your browser.
-
-[![Deploy](https://img.shields.io/badge/Vercel-live-brightgreen?logo=vercel)](https://voice-isolate-pro.vercel.app)
-[![Version](https://img.shields.io/badge/version-v25.0-blue)](#changelog)
-[![Pipeline](https://img.shields.io/badge/pipeline-32--stage-purple)](#pipeline)
-[![License](https://img.shields.io/badge/license-PROPRIETARY-red)](LICENSE)
+**Studio-grade voice isolation, 100% in your browser.**
+Upload a recording, let on-device AI split it into a clean-voice stem and a
+background-noise stem, then mix the result in real time with zero-latency
+sliders. No cloud processing. No uploads. Your audio never leaves the device.
 
 ---
 
-## Architecture — Threads from Space v13
+## How It Works — Stem-Split & Live-Mix
+
+VoiceIsolate Pro uses a two-phase architecture instead of fragile live-stream
+processing:
+
+### Phase 1 — Offline Batch Inference
+1. **Upload** any audio or video file.
+2. **Ingestion** decodes it and resamples to a canonical 48 000 Hz
+   (`src/pipeline/FileIngestion.js`).
+3. **AI separation** runs in a Web Worker using ONNX Runtime Web
+   (WebGPU when available, WASM fallback). Models like **MDX-Net** (vocal
+   separation) and **DeepFilterNet** (noise suppression) process the full file
+   once, using overlap-add reconstruction (`src/workers/MLWorker.js`).
+4. The output is a pair of stems: **Clean Voice** and **Background Noise**.
+
+### Phase 2 — Real-Time Playback Mixing
+The stems are loaded into Web Audio `AudioBufferSourceNode`s routed through
+independent `GainNode`s and EQ filters (`src/pipeline/PlaybackMixer.js`).
+Moving the **Noise Reduction**, **Volume**, or **EQ** sliders adjusts those
+nodes instantly during playback — the ML models are never re-run, so every
+control responds with zero latency and zero glitches.
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     Main Thread (UI)                         │
-│   app.js · pipeline-state.js · pipeline-orchestrator.js     │
-└───────────┬──────────────────────────┬───────────────────────┘
-            │ AudioWorklet port         │ Worker postMessage
-            ▼                          ▼
-┌─────────────────────┐   ┌────────────────────────────────────┐
-│   AudioWorklet      │   │   ML Worker (ml-worker.js)         │
-│   voice-isolate-    │   │   · onnxruntime-web (WebGPU→WASM)  │
-│   processor.js      │   │   · Demucs v4.1 · BS-RoFormer      │
-│   <10ms latency     │   │   · ECAPA-TDNN · Silero VAD        │
-│  SharedArrayBuffer  │◄─►│   · HiFi-GAN · Conformer-S        │
-└─────────────────────┘   └────────────────────────────────────┘
-            │
-            ▼
-┌──────────────────────────────────────────────────────────────┐
-│          DSP Core — Single-Pass STFT (dsp-core.js)           │
-│  ┌─ EXACTLY ONE Forward FFT (S10)                            │
-│  │  → all spectral ops in-place (S11–S19)                   │
-│  └─ EXACTLY ONE Inverse iFFT (S20) → Overlap-Add            │
-│                                                              │
-│  32 Stages total across 10 passes (Deca-Pass):              │
-│  S01–S04: Input & Normalization                              │
-│  S05–S09: Pre-Spectral Cleanup + VAD                        │
-│  S10:     Forward STFT                                       │
-│  S11–S19: In-Place Spectral Enhancement                      │
-│  S20:     Inverse STFT                                       │
-│  S21–S32: Post-Spectral Dynamics, ML, Output                │
-└──────────────────────────────────────────────────────────────┘
+Upload ─► Decode/Resample ─► ONNX Inference ─► Clean stem ─► CleanGain ─┐
+          (48 kHz)            (one pass)       Noise stem ─► NoiseGain ─┼─► EQ ─► Output
+                                                                        ┘
+                                       Sliders adjust gains/EQ live ▲
 ```
 
----
+## Features
 
-## Canonical Source Files
+- 🎙️ **AI voice isolation** — MDX-Net vocal separation + DeepFilterNet noise
+  suppression, executed entirely on-device
+- 🎚️ **Latency-free mixing** — noise reduction, volume, and EQ sliders act on
+  the Web Audio graph in real time during playback
+- 🔒 **Privacy-first** — zero cloud processing, zero audio upload, models are
+  SHA-256 integrity-checked and cached locally (IndexedDB)
+- 📦 **Batch-friendly** — process files offline, then audition and export
+- 🌐 **Cross-platform** — Web (Vercel), Android & iOS via Capacitor
 
-> All runtime code lives in `public/app/`. Do not edit root-level duplicates — they do not exist.
-
-| File | Role |
-|---|---|
-| `public/app/index.html` | App shell · Engineer Mode v19 · 52-slider UI |
-| `public/app/app.js` | Main-thread orchestration · 52-slider wiring |
-| `public/app/dsp-processor.js` | Canonical live AudioWorkletProcessor · single-pass STFT · SAB bridge |
-| `public/app/dsp-worker.js` | DSP worker thread |
-| `public/app/ml-worker.js` | ONNX inference worker (WebGPU → WASM fallback) |
-| `public/app/dsp-core.js` | Single-pass STFT spectral library |
-| `public/app/pipeline-orchestrator.js` | Pipeline orchestration |
-| `public/app/pipeline-state.js` | State management |
-| `public/app/ring-buffer.js` | Ring buffer utility |
-| `public/app/visuals.js` | 3D spectrogram + meters |
-| `public/app/style.css` | Dark theme |
-
----
-
-## ML Model Stack
-
-All models run locally via `onnxruntime-web`. WebGPU is the preferred execution provider; WASM is the fallback. No cloud inference.
-
-| Model | Role | Latency | Mode |
-|---|---|---|---|
-| Silero VAD | Voice activity detection | ~5 ms | Live + Offline |
-| Demucs v4.1 | Voice/music source separation | ~800 ms | Offline |
-| BS-RoFormer | Speech enhancement mask | ~300 ms | Offline |
-| ECAPA-TDNN | Speaker verification / voiceprint | ~50 ms | Offline |
-| HiFi-GAN | Waveform vocoder / reconstruction | ~200 ms | Offline |
-| Conformer-S | Noise-robust feature extraction | ~100 ms | Offline |
-
-Models are downloaded once on first use and cached permanently in the browser Cache API (`vip-models-v1`). Repeat visits make zero network calls for model data.
-
----
-
-## Platform Support
-
-| Platform | Status | Notes |
-|----------|--------|-------|
-| **Web (Desktop)** | ✅ Production Ready | Chrome, Edge, Firefox, Safari (macOS) |
-| **Web (Mobile)** | ✅ Production Ready | Chrome, Safari (iOS 15+) |
-| **Android Native** | ⚠️ Not Ready | SharedArrayBuffer in WebView requires COOP/COEP header injection via AndroidManifest. Release signing, bundled model routing, `RECORD_AUDIO` permission, and WASM-only mobile fallback are unresolved. |
-| **iOS Native** | ⚠️ Not Ready | iOS 15 AudioWorklet constraints may limit live mode. |
-
----
-
-## Processing Modes
-
-| Mode | Engine | Latency | Use case |
-|---|---|---|---|
-| **Live** | AudioWorklet + SharedArrayBuffer | <10 ms | Broadcast, video call, real-time monitoring |
-| **Creator / Offline** | Web Workers + OfflineAudioContext | ~50–100 ms / chunk | Podcast, film post, batch export |
-| **Forensic** | Full stack + audit log + SHA-256 chain | Higher quality | Legal, evidence, transcription |
-
----
-
-## Control Surface
-
-52 sliders across 8 tabs — all wired, preset-covered, and persisted to `localStorage`.
-
-| Tab | Sliders |
-|---|---|
-| Gate | Threshold, Range, Attack, Release, Hold, Lookahead |
-| Noise | Amount, Sensitivity, Spectral Sub, Floor, Smoothing |
-| EQ | Sub, Bass, Warmth, Body, Low Mid, Mid, Presence, Clarity, Air, Brilliance |
-| Dynamics | Compressor (6) + Limiter (2) |
-| Spectral | HPF, LPF, De-esser, Spectral Tilt, Formant Shift |
-| Advanced | Dereverb, Harmonic Recovery, Stereo Width, Phase Correction |
-| Separation | Voice Iso, BG Suppress, Voice Focus Lo/Hi, Crosstalk Cancel |
-| Output | Gain, Dry/Wet, Dither, Width |
-
----
-
-## Installation & Development
+## Quick Start
 
 ```bash
-# Clone
-git clone https://github.com/Joker5514/VoiceIsolate-Pro.git
-cd VoiceIsolate-Pro
-
-# Install dependencies
-pnpm install
-
-# Development server
-pnpm dev        # localhost:3000
-
-# Build
-pnpm build
-
-# Test (1,903 unit tests across 64 suites)
-pnpm test
-
-# Browser smoke test (Playwright)
-pnpm test:live
+pnpm install     # installs deps and vendors ONNX Runtime / Three.js locally
+pnpm dev         # http://localhost:3000
+pnpm test        # Jest suites
+pnpm lint        # ESLint
+pnpm validate    # structural integrity checks
 ```
 
----
+Requirements: **Node.js ≥ 22**, **pnpm ≥ 9**.
 
-## Deployment
+No `.env` is needed for local audio processing. Payment/licensing features
+require the variables documented in [`.env.example`](.env.example).
 
-Platform: **Vercel**. Output directory: `public/`. Auto-deploy on push to `main`.
+## Repository Layout
 
-CI gates: `smoke-test` job must pass before `deploy-preview` or `deploy-production` run.
+```
+src/                    New 4-layer architecture (all new work goes here)
+├── core/               Layer 1 — pure primitives (audio-config, BufferPool, ModelManifest)
+├── workers/            Layer 2 — MLWorker (ONNX inference, model cache + integrity)
+├── pipeline/           Layer 3 — FileIngestion, PlaybackMixer
+└── presentation/       Layer 4 — SliderUI (DOM bindings, rAF-coalesced)
 
-Critical headers (required for SharedArrayBuffer / live mode):
-```json
-"Cross-Origin-Opener-Policy": "same-origin"
-"Cross-Origin-Embedder-Policy": "require-corp"
+server/                 Express security middleware (securityHeaders.js)
+public/                 Static site + legacy Engineer Mode app (maintenance freeze)
+api-routes/             Serverless API (Stripe monetization, licensing, sync)
+tests/                  Jest suites
+scripts/                Build, validation, and model tooling
+android/ ios/           Capacitor mobile projects
 ```
 
-See `vercel.json` for the full header config including the worklet route.
+## Architecture Rules
 
----
+The full contributor contract — layer boundaries, security headers, model
+integrity, and the list of forbidden legacy patterns (live-microphone
+ingestion, client-side auth, CDN-loaded libraries) — lives in
+[`CLAUDE.md`](CLAUDE.md). Read it before contributing; CI and
+`scripts/validate.js` enforce it.
 
-## Documentation
+## Security
 
-| Document | Path |
-|---|---|
-| **Architecture Blueprint** (v25 canonical) | [`docs/v25/VoiceIsolate_Pro_v25_Production_Architecture_Blueprint.md`](docs/v25/VoiceIsolate_Pro_v25_Production_Architecture_Blueprint.md) |
-| **Product Specification** | [`docs/v25/VoiceIsolate_Pro_v25_Product_Specification.md`](docs/v25/VoiceIsolate_Pro_v25_Product_Specification.md) |
-| **Engineering Dossier** (implementation truth) | [`docs/v25/VoiceIsolate_Pro_v25_Engineering_Release_Dossier.md`](docs/v25/VoiceIsolate_Pro_v25_Engineering_Release_Dossier.md) |
-| **AI Agent Directive** | [`AGENTS.md`](AGENTS.md) |
-| **Claude Coding Agent Context** | [`CLAUDE.md`](CLAUDE.md) |
-
-> ⚠️ Do not source architecture decisions from older blueprint files (v5–v24). The `docs/v25/` documents are the only canonical versions.
-
----
-
-## Changelog
-
-### v25.0 (2026-05) — Repo Cleanup + Canonical Docs
-- **CLEANUP**: Removed 15 stale root-level files (old blueprints, one-off scripts, redundant docs)
-- **DOCS**: Added canonical `docs/v25/` blueprint, product spec, and engineering dossier
-- **DOCS**: Added `AGENTS.md` root-level AI source-of-truth directive
-- **README**: Updated to reflect v25 state, removed references to deleted files
-
-### v24.0.1 (2026-05) — Worklet Audit
-- **FIXED**: Critical `SyntaxError` in `index.html` causing silent diarization init failure
-- **UPGRADED**: Three.js r128 → 0.184.0 (ESM, locally committed, CSP-safe)
-- **FIXED**: Canonical worklet audit consolidated live processing on `dsp-processor.js` and removed the redundant `voice-isolate-processor.js`
-- **CI**: Playwright browser smoke test + deploy gates added (PR #429)
-
-### v24.0 (2026) — Threads from Space v13
-- 32-stage Deca-Pass pipeline enforced by `scripts/validate.js`
-- Single-pass STFT architecture locked across all processing paths
-- Forensic SHA-256 chain-of-custody
-- RNNoise ONNX committed (76 KB, eager-loaded)
-
----
+- Strict security headers (`COOP`/`COEP`, CSP, `nosniff`, `microphone=()`)
+  via `server/securityHeaders.js` in development and `vercel.json` in
+  production
+- All secrets via environment variables — see `.env.example`
+- ONNX models verified against pinned SHA-256 hashes before execution
 
 ## License
 
-Proprietary — all rights reserved by Conqueror Studios / Randy Jordan. See `LICENSE`.
-
-## Links
-
-- **Live App**: [voice-isolate-pro.vercel.app](https://voice-isolate-pro.vercel.app)
-- **GitHub**: [github.com/Joker5514/VoiceIsolate-Pro](https://github.com/Joker5514/VoiceIsolate-Pro)
-- **Author**: Randy Jordan ([@Joker5514](https://github.com/Joker5514)) · Conqueror Studios
+UNLICENSED — © Randy Jordan. All rights reserved.

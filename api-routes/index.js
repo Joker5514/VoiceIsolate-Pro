@@ -13,7 +13,6 @@
  *   /api/license/*         → License validation and activation
  *   /api/usage/*           → Usage recording for metered billing
  *   /api/pricing           → Public pricing info
- *   /api/auth/*            → Authentication (login, me, logout)
  *   /api/sync/*            → Cloud sync (Studio/Enterprise)
  *   /api/health            → Health check
  */
@@ -21,7 +20,6 @@
 import express from 'express';
 import monetizationRouter from './monetization.js';
 import syncRouter from './sync.js';
-import authRouter from './auth.js';
 import nimRouter from './nim/index.js';
 import clientConfigHandler from './client-config.js';
 
@@ -31,17 +29,9 @@ const router = express.Router();
 // Tight buckets on the abuse-prone endpoints (login, checkout). For serverless
 // or multi-instance deploys, back this with Redis/Upstash — the in-memory
 // limiter below only protects a single Node process.
-let loginLimiter = (_req, _res, next) => next();
 let checkoutLimiter = (_req, _res, next) => next();
 try {
   const { default: rateLimit } = await import('express-rate-limit');
-  loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 20,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many login attempts. Try again later.' },
-  });
   checkoutLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 10,
@@ -79,13 +69,12 @@ router.use(express.json());
 
 // Attach limiters to the abuse-prone paths before the routers mount
 router.use('/checkout', checkoutLimiter);
-router.use('/auth/login', loginLimiter);
 
 // ─── Monetization Routes ──────────────────────────────────────────────────────
 router.use('/', monetizationRouter);
 
-// ─── Authentication Routes ───────────────────────────────────────────────────
-router.use('/auth', authRouter);
+// NOTE: There is intentionally no /api/auth router. Username/password auth
+// with seeded users was removed by design — see CLAUDE.md §3. Do not re-add.
 
 // ─── NIM Integration ────────────────────────────────────────────────────────
 router.use('/nim', nimRouter);

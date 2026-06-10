@@ -16,8 +16,11 @@ const DSP_FILES = [
   'public/app/dsp-processor.js',
   'public/app/ml-worker.js',
   'public/app/offline-processor.js',
-  'public/app/pipeline-orchestrator.js',
   'public/app/pipeline-state.js',
+  'src/workers/MLWorker.js',
+  'src/pipeline/FileIngestion.js',
+  'src/pipeline/PlaybackMixer.js',
+  'src/core/BufferPool.js',
 ];
 
 const FORBIDDEN = [
