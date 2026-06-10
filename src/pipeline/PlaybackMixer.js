@@ -217,7 +217,8 @@ export class PlaybackMixer {
 
   currentTime() {
     if (!this._isPlaying) return this._offset;
-    return Math.min(this.ctx.currentTime - this._startedAt, this.duration());
+    const elapsed = this.ctx.currentTime - this._startedAt;
+    return Math.max(this._offset, Math.min(elapsed, this.duration()));
   }
 
   /** AnalyserNode for visualizers (post-EQ, post-master). */
