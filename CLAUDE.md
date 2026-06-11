@@ -115,26 +115,32 @@ Rules:
   `public/app/license-manager.js` were deliberately deleted. Do not recreate
   username/password endpoints with seeded users.
 - Model integrity: every model in `ModelManifest.js` carries an expected
-  SHA-256. `MLWorker.js` verifies the hash before creating an ONNX session and
-  refuses mismatches. When provisioning a real model file, fill in its hash —
-  `null` hashes log a loud warning and are only tolerated in development.
+  SHA-256, verified by `MLWorker.js` before creating an ONNX session;
+  mismatches are refused. Both shipped models are pinned. A `null` hash logs
+  a loud warning and is only tolerated in development — never ship one.
 
 ---
 
 ## 4. ML Models
 
-| Model | Task | Format | Approx. size |
-|---|---|---|---|
-| DeepFilterNet | Noise suppression | ONNX, INT8 | ~5 MB |
-| MDX-Net | Vocal separation | ONNX, INT8 | ~40 MB |
+| Model | Task | Format | Size | Status |
+|---|---|---|---|---|
+| BiGRU Noise Suppressor (`rnnoise_suppressor.onnx`) | Noise-suppression mask | ONNX, fp32 | ~2 MB | **Committed, trained, hash-pinned** |
+| Band-Split RNN Vocal Extractor (`bsrnn_vocals.onnx`) | Vocal-separation mask | ONNX, fp32 | ~3.7 MB | **Committed, trained, hash-pinned** |
 
-- Delivery: fetched from `/models/` (same-origin), cached in IndexedDB by
+Both are trained spectral-mask networks (provenance in
+`public/app/models/models-manifest.json`) sharing one inference contract:
+`float32 [batch, 2049]` STFT magnitudes in → sigmoid mask out
+(fft 4096, hop 1024, Hann, 48 kHz). Larger upgrades (DeepFilterNet INT8,
+MDX-Net INT8) are planned and must follow the same manifest + integrity flow.
+
+- Delivery: fetched from `/app/models/` (same-origin), cached in IndexedDB by
   `MLWorker.js`, integrity-checked via SHA-256 from `ModelManifest.js`.
 - Execution providers: WebGPU preferred, WASM (SIMD, threaded) fallback.
   ONNX Runtime is always loaded from `/lib/ort.min.js` — never a CDN.
-- Output contract: inference produces a **clean stem**; the **noise stem** is
-  the sample-wise residual (`input − clean`). Both are returned as
-  transferable `Float32Array`s.
+- Output contract: inference produces a **clean stem** (masked iSTFT); the
+  **noise stem** is the sample-wise residual (`input − clean`). Both are
+  returned as transferable `Float32Array`s.
 
 ---
 

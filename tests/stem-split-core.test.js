@@ -90,9 +90,9 @@ describe('BufferPool (Layer 1)', () => {
 
 // ── ModelManifest ─────────────────────────────────────────────────────────────
 describe('ModelManifest (Layer 1)', () => {
-  test('declares DeepFilterNet and MDX-Net with valid entries', () => {
+  test('declares the noise-suppression and vocal-separation models with valid entries', () => {
     expect(manifest.MODEL_IDS).toEqual(
-      expect.arrayContaining(['deepfilternet', 'mdx_net'])
+      expect.arrayContaining(['rnnoise', 'bsrnn_vocals'])
     );
     for (const id of manifest.MODEL_IDS) {
       expect(manifest.isValidEntry(manifest.MODEL_MANIFEST[id])).toBe(true);
@@ -107,21 +107,37 @@ describe('ModelManifest (Layer 1)', () => {
     }
   });
 
-  test('sha256 fields are null (unpinned) or 64-char lowercase hex', () => {
+  test('every shipped model has a pinned 64-char lowercase hex sha256', () => {
     for (const id of manifest.MODEL_IDS) {
       const { sha256 } = manifest.MODEL_MANIFEST[id];
-      expect(sha256 === null || /^[0-9a-f]{64}$/.test(sha256)).toBe(true);
+      expect(sha256).toMatch(/^[0-9a-f]{64}$/);
     }
   });
 
   test('getModel throws a descriptive error on unknown ids', () => {
     expect(() => manifest.getModel('nope')).toThrow(/Unknown model 'nope'/);
-    expect(manifest.getModel('mdx_net').task).toBe('vocal-separation');
+    expect(manifest.getModel('bsrnn_vocals').task).toBe('vocal-separation');
+    expect(manifest.getModel('rnnoise').task).toBe('noise-suppression');
   });
 
   test('manifest is frozen (no runtime mutation)', () => {
     expect(Object.isFrozen(manifest.MODEL_MANIFEST)).toBe(true);
-    expect(Object.isFrozen(manifest.MODEL_MANIFEST.mdx_net)).toBe(true);
+    expect(Object.isFrozen(manifest.MODEL_MANIFEST.bsrnn_vocals)).toBe(true);
+  });
+
+  test('committed model binaries match the manifest size and SHA-256 exactly', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const crypto = require('crypto');
+    for (const id of manifest.MODEL_IDS) {
+      const entry = manifest.MODEL_MANIFEST[id];
+      const file = path.join(__dirname, '../public', entry.url);
+      expect(fs.existsSync(file)).toBe(true);
+      const bytes = fs.readFileSync(file);
+      expect(bytes.length).toBe(entry.sizeBytes);
+      const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+      expect(digest).toBe(entry.sha256);
+    }
   });
 });
 

@@ -17,9 +17,10 @@ processing:
 2. **Ingestion** decodes it and resamples to a canonical 48 000 Hz
    (`src/pipeline/FileIngestion.js`).
 3. **AI separation** runs in a Web Worker using ONNX Runtime Web
-   (WebGPU when available, WASM fallback). Models like **MDX-Net** (vocal
-   separation) and **DeepFilterNet** (noise suppression) process the full file
-   once, using overlap-add reconstruction (`src/workers/MLWorker.js`).
+   (WebGPU when available, WASM fallback). Trained spectral-mask models — a
+   **Band-Split RNN vocal extractor** and a **BiGRU noise suppressor**,
+   committed to the repo and SHA-256 pinned — process the full file once via
+   STFT → mask → overlap-add reconstruction (`src/workers/MLWorker.js`).
 4. The output is a pair of stems: **Clean Voice** and **Background Noise**.
 
 ### Phase 2 — Real-Time Playback Mixing
@@ -38,7 +39,7 @@ Upload ─► Decode/Resample ─► ONNX Inference ─► Clean stem ─► Cle
 
 ## Features
 
-- 🎙️ **AI voice isolation** — MDX-Net vocal separation + DeepFilterNet noise
+- 🎙️ **AI voice isolation** — Band-Split RNN vocal separation + BiGRU noise
   suppression, executed entirely on-device
 - 🎚️ **Latency-free mixing** — noise reduction, volume, and EQ sliders act on
   the Web Audio graph in real time during playback

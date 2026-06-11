@@ -156,7 +156,7 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
   for (const btn of [ui.playBtn, ui.pauseBtn, ui.stopBtn]) btn.disabled = false;
   setStatus(
     passthrough
-      ? 'Model unavailable — passthrough stems loaded (original audio). Provision models in /public/models.'
+      ? 'Model unavailable — passthrough stems loaded (original audio). Check that /app/models is being served.'
       : 'Stems ready — press Play and mix in real time.',
     passthrough ? 'warn' : 'active'
   );

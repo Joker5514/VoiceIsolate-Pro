@@ -3,11 +3,12 @@
  *
  * Classic Web Worker that owns the entire offline-inference lifecycle:
  *
- *   1. Fetch the .onnx model named by the manifest entry (same-origin /models)
+ *   1. Fetch the .onnx model named by the manifest entry (same-origin
+ *      /app/models — committed, trained spectral-mask networks)
  *   2. Verify its SHA-256 against the pinned manifest hash
  *   3. Cache verified bytes in IndexedDB (re-verified on every load)
- *   4. Run offline ONNX Runtime inference over the full file using
- *      overlap-add / segment-crossfade reconstruction
+ *   4. Run offline ONNX Runtime inference over the full file: STFT →
+ *      batched magnitude-mask inference → masked iSTFT overlap-add
  *   5. Post back two stems as transferable Float32Arrays:
  *        clean  — the model's voice estimate
  *        noise  — the residual (input − clean)
@@ -168,7 +169,7 @@ async function getSession(entry) {
   return session;
 }
 
-// ─── DSP helpers (windowed reconstruction) ───────────────────────────────────
+// ─── DSP helpers (STFT / mask / iSTFT reconstruction) ────────────────────────
 
 /** Hann window of length n (cached per length). */
 const _hannCache = Object.create(null);
@@ -180,106 +181,151 @@ function hann(n) {
   return w;
 }
 
+/** Precomputed FFT tables (bit-reversal permutation + twiddles) per size. */
+const _fftCache = Object.create(null);
+function fftTables(n) {
+  if (_fftCache[n]) return _fftCache[n];
+  const rev = new Uint32Array(n);
+  const bits = Math.log2(n);
+  for (let i = 0; i < n; i++) {
+    let r = 0;
+    for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b);
+    rev[i] = r;
+  }
+  const cos = new Float32Array(n / 2);
+  const sin = new Float32Array(n / 2);
+  for (let i = 0; i < n / 2; i++) {
+    cos[i] = Math.cos((-2 * Math.PI * i) / n);
+    sin[i] = Math.sin((-2 * Math.PI * i) / n);
+  }
+  _fftCache[n] = { rev, cos, sin };
+  return _fftCache[n];
+}
+
 /**
- * Frame-based overlap-add enhancement (DeepFilterNet-style models).
- * Slides a frameSize window with hopSize stride, runs the model per frame,
- * and reconstructs via Hann-weighted overlap-add.
- *
- * @param {object} entry     manifest entry (frameSize, hopSize, io)
- * @param {object} session   ort.InferenceSession
- * @param {Float32Array} samples  one channel
- * @param {(p: number) => void} onProgress  0..1
- * @returns {Promise<Float32Array>} enhanced channel
+ * In-place iterative radix-2 complex FFT (power-of-two n).
+ * Forward uses e^{-i2πk/n}; inverse conjugates twiddles and scales by 1/n.
  */
-async function runOverlapAdd(entry, session, samples, onProgress) {
-  const N = entry.frameSize;
+function fftInPlace(re, im, inverse) {
+  const n = re.length;
+  const { rev, cos, sin } = fftTables(n);
+  for (let i = 0; i < n; i++) {
+    const r = rev[i];
+    if (r > i) {
+      let t = re[i]; re[i] = re[r]; re[r] = t;
+      t = im[i]; im[i] = im[r]; im[r] = t;
+    }
+  }
+  for (let size = 2; size <= n; size <<= 1) {
+    const half = size >> 1;
+    const step = n / size;
+    for (let i = 0; i < n; i += size) {
+      for (let j = 0, k = 0; j < half; j++, k += step) {
+        const wr = cos[k];
+        const wi = inverse ? -sin[k] : sin[k];
+        const a = i + j;
+        const b = a + half;
+        const tr = re[b] * wr - im[b] * wi;
+        const ti = re[b] * wi + im[b] * wr;
+        re[b] = re[a] - tr; im[b] = im[a] - ti;
+        re[a] += tr; im[a] += ti;
+      }
+    }
+  }
+  if (inverse) {
+    for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+  }
+}
+
+/**
+ * Spectral-mask inference: the contract shared by both shipped models
+ * (BiGRU noise suppressor, BSRNN vocal extractor).
+ *
+ *   1. STFT the channel (fftSize, hopSize, Hann)
+ *   2. Batch magnitude frames into [batch, bins] tensors
+ *   3. session.run → sigmoid mask per frame
+ *   4. Multiply mask into the complex spectrum, inverse STFT, overlap-add
+ *
+ * @param {object} entry     manifest entry (fftSize, hopSize, bins, io)
+ * @param {object} session   ort.InferenceSession
+ * @param {Float32Array} samples  one channel at 48 kHz
+ * @param {(p: number) => void} onProgress  0..1
+ * @returns {Promise<Float32Array>} masked (clean) channel
+ */
+async function runSpectralMask(entry, session, samples, onProgress) {
+  const N = entry.fftSize;
   const hop = entry.hopSize;
+  const bins = entry.bins || (N / 2 + 1);
+  const batchMax = entry.maxBatchFrames || 32;
   const win = hann(N);
+  // Cover every sample: full frames plus a zero-padded tail frame.
+  const totalFrames = Math.max(1, Math.ceil(Math.max(0, samples.length - N) / hop) + 1);
+
   const out = new Float32Array(samples.length);
   const norm = new Float32Array(samples.length);
-  const frame = new Float32Array(N);
-  const totalFrames = Math.max(1, Math.ceil((samples.length - N) / hop) + 1);
 
-  for (let f = 0; f < totalFrames; f++) {
-    const start = f * hop;
-    frame.fill(0);
-    const avail = Math.min(N, samples.length - start);
-    if (avail <= 0) break;
-    frame.set(samples.subarray(start, start + avail));
+  // Scratch buffers reused across the whole file — no per-frame allocation.
+  const re = new Float32Array(N);
+  const im = new Float32Array(N);
+  const batchMags = new Float32Array(batchMax * bins);
+  const batchRe = new Float32Array(batchMax * bins);
+  const batchIm = new Float32Array(batchMax * bins);
 
-    const input = new ort.Tensor('float32', frame, [1, N]);
+  for (let f0 = 0; f0 < totalFrames; f0 += batchMax) {
+    const count = Math.min(batchMax, totalFrames - f0);
+
+    // ── Forward STFT for this batch ─────────────────────────────────────
+    for (let b = 0; b < count; b++) {
+      const start = (f0 + b) * hop;
+      const avail = Math.max(0, Math.min(N, samples.length - start));
+      re.fill(0); im.fill(0);
+      for (let i = 0; i < avail; i++) re[i] = samples[start + i] * win[i];
+      fftInPlace(re, im, false);
+      const off = b * bins;
+      for (let k = 0; k < bins; k++) {
+        batchRe[off + k] = re[k];
+        batchIm[off + k] = im[k];
+        batchMags[off + k] = Math.hypot(re[k], im[k]);
+      }
+    }
+
+    // ── Mask inference (dynamic batch) ──────────────────────────────────
+    const input = new ort.Tensor('float32', batchMags.slice(0, count * bins), [count, bins]);
     const results = await session.run({ [entry.io.input]: input });
-    const enhanced = results[entry.io.output]?.data;
-    if (!enhanced || enhanced.length < avail) {
+    const mask = results[entry.io.output]?.data;
+    if (!mask || mask.length < count * bins) {
       throw new Error(`[VIP][MLWorker] '${entry.id}' returned a malformed output tensor.`);
     }
 
-    for (let i = 0; i < avail; i++) {
-      out[start + i] += enhanced[i] * win[i];
-      norm[start + i] += win[i] * win[i];
+    // ── Masked inverse STFT + overlap-add ───────────────────────────────
+    for (let b = 0; b < count; b++) {
+      const off = b * bins;
+      // Rebuild the full Hermitian spectrum from the masked half-spectrum.
+      for (let k = 0; k < bins; k++) {
+        const m = mask[off + k];
+        re[k] = batchRe[off + k] * m;
+        im[k] = batchIm[off + k] * m;
+      }
+      for (let k = bins; k < N; k++) {
+        re[k] = re[N - k];
+        im[k] = -im[N - k];
+      }
+      fftInPlace(re, im, true);
+
+      const start = (f0 + b) * hop;
+      const avail = Math.max(0, Math.min(N, samples.length - start));
+      for (let i = 0; i < avail; i++) {
+        out[start + i] += re[i] * win[i];
+        norm[start + i] += win[i] * win[i];
+      }
     }
-    if (f % 16 === 0) onProgress(f / totalFrames);
+    onProgress(Math.min(1, (f0 + count) / totalFrames));
   }
 
   for (let i = 0; i < out.length; i++) {
     if (norm[i] > 1e-8) out[i] /= norm[i];
   }
   onProgress(1);
-  return out;
-}
-
-/**
- * Segment-based waveform separation with linear cross-fades (MDX-Net-style).
- * Channels are processed jointly: tensor shape [1, channels, segmentSamples].
- *
- * @param {object} entry
- * @param {object} session
- * @param {Float32Array[]} channelData
- * @param {(p: number) => void} onProgress
- * @returns {Promise<Float32Array[]>} clean (vocal) channels
- */
-async function runSegmentCrossfade(entry, session, channelData, onProgress) {
-  const seg = entry.segmentSamples;
-  const overlap = entry.overlapSamples;
-  const stride = seg - overlap;
-  const channels = channelData.length;
-  const length = channelData[0].length;
-  const out = channelData.map(() => new Float32Array(length));
-  const totalSegs = Math.max(1, Math.ceil(Math.max(1, length - overlap) / stride));
-
-  for (let s = 0; s < totalSegs; s++) {
-    const start = s * stride;
-    if (start >= length) break;
-    const avail = Math.min(seg, length - start);
-
-    // Pack [1, channels, seg] (zero-padded tail).
-    const packed = new Float32Array(channels * seg);
-    for (let ch = 0; ch < channels; ch++) {
-      packed.set(channelData[ch].subarray(start, start + avail), ch * seg);
-    }
-    const input = new ort.Tensor('float32', packed, [1, channels, seg]);
-    const results = await session.run({ [entry.io.input]: input });
-    const vocals = results[entry.io.output]?.data;
-    if (!vocals || vocals.length < channels * avail) {
-      throw new Error(`[VIP][MLWorker] '${entry.id}' returned a malformed output tensor.`);
-    }
-
-    // Linear cross-fade against the previous segment in the overlap zone.
-    for (let ch = 0; ch < channels; ch++) {
-      const dst = out[ch];
-      for (let i = 0; i < avail; i++) {
-        const idx = start + i;
-        const v = vocals[ch * seg + i];
-        if (s > 0 && i < overlap) {
-          const fade = i / overlap;
-          dst[idx] = dst[idx] * (1 - fade) + v * fade;
-        } else {
-          dst[idx] = v;
-        }
-      }
-    }
-    onProgress((s + 1) / totalSegs);
-  }
   return out;
 }
 
@@ -308,16 +354,15 @@ async function processRequest({ requestId, modelId, channelData, sampleRate }) {
   let clean;
   let passthrough = false;
   try {
+    if (entry.strategy !== 'spectral-mask') {
+      throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
+    }
     const session = await getSession(entry);
-    if (entry.strategy === 'segment-crossfade') {
-      clean = await runSegmentCrossfade(entry, session, channelData, onProgress);
-    } else {
-      clean = [];
-      for (let ch = 0; ch < channelData.length; ch++) {
-        clean.push(await runOverlapAdd(entry, session, channelData[ch], (p) =>
-          onProgress((ch + p) / channelData.length)
-        ));
-      }
+    clean = [];
+    for (let ch = 0; ch < channelData.length; ch++) {
+      clean.push(await runSpectralMask(entry, session, channelData[ch], (p) =>
+        onProgress((ch + p) / channelData.length)
+      ));
     }
   } catch (err) {
     // Graceful degradation: the UI must keep working without a model.

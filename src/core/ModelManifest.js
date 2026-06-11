@@ -7,52 +7,68 @@
  * MLWorker.js receives entries from this manifest via its `init` message
  * (classic workers cannot import ES modules) — never duplicate this data.
  *
- * INTEGRITY: `sha256` is the lowercase hex digest of the .onnx file.
- * When provisioning a model binary, compute its hash:
- *   node -e "const c=require('crypto'),f=require('fs');console.log(c.createHash('sha256').update(f.readFileSync(process.argv[1])).digest('hex'))" public/models/<file>.onnx
- * and pin it here. A `null` hash disables verification, logs a loud warning,
- * and is tolerated ONLY in development (see CLAUDE.md §3).
+ * Both shipped models are trained spectral-mask networks committed to the
+ * repo under public/app/models/ (provenance and training notes live in
+ * public/app/models/models-manifest.json). They share one inference
+ * contract enforced by MLWorker's 'spectral-mask' strategy:
+ *
+ *   input  'input'  float32 [batch, 2049]  — STFT magnitude frames
+ *                                            (fft 4096, hop 1024, Hann, 48 kHz)
+ *   output 'output' float32 [batch, 2049]  — sigmoid mask in [0, 1],
+ *                                            multiplied into the complex
+ *                                            spectrum before the inverse STFT
+ *
+ * INTEGRITY: `sha256` is the lowercase hex digest of the .onnx file and is
+ * verified by MLWorker before a session is created. Recompute when swapping
+ * a binary:
+ *   node -e "const c=require('crypto'),f=require('fs');console.log(c.createHash('sha256').update(f.readFileSync(process.argv[1])).digest('hex'))" public/app/models/<file>.onnx
+ * A `null` hash disables verification, logs a loud warning, and is tolerated
+ * ONLY in development (see CLAUDE.md §3). Shipped entries must stay pinned.
  *
  * Pure data module: no DOM, no Web Audio, no I/O, no side effects.
  */
 'use strict';
 
 export const MODEL_MANIFEST = Object.freeze({
-  deepfilternet: Object.freeze({
-    id: 'deepfilternet',
-    name: 'DeepFilterNet3 (INT8)',
+  rnnoise: Object.freeze({
+    id: 'rnnoise',
+    name: 'BiGRU Noise Suppressor',
     task: 'noise-suppression',
-    url: '/models/deepfilternet3_int8.onnx',
-    sizeBytes: 5_242_880,            // ~5 MB
-    quantization: 'int8',
-    // TODO(provisioning): pin the real digest when the binary is committed.
-    sha256: null,
-    /** Inference strategy: frame-based, overlap-add reconstruction. */
-    strategy: 'overlap-add',
-    frameSize: 2048,
-    hopSize: 512,
+    url: '/app/models/rnnoise_suppressor.onnx',
+    sizeBytes: 2027576,
+    quantization: 'fp32',
+    sha256: '0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6',
+    /** Inference strategy: STFT magnitude → mask → masked iSTFT overlap-add. */
+    strategy: 'spectral-mask',
+    fftSize: 4096,
+    hopSize: 1024,
+    bins: 2049,
+    maxBatchFrames: 32,
+    sampleRate: 48000,
     io: Object.freeze({
-      input: 'input_frame',          // [1, frameSize] Float32
-      output: 'enhanced_frame',      // [1, frameSize] Float32
+      input: 'input',                // [batch, 2049] Float32 magnitudes
+      output: 'output',              // [batch, 2049] Float32 mask (sigmoid)
     }),
   }),
 
-  mdx_net: Object.freeze({
-    id: 'mdx_net',
-    name: 'MDX-Net Vocal Separator (INT8)',
+  bsrnn_vocals: Object.freeze({
+    id: 'bsrnn_vocals',
+    name: 'Band-Split RNN Vocal Extractor',
     task: 'vocal-separation',
-    url: '/models/mdx_net_vocals_int8.onnx',
-    sizeBytes: 41_943_040,           // ~40 MB
-    quantization: 'int8',
-    // TODO(provisioning): pin the real digest when the binary is committed.
-    sha256: null,
-    /** Inference strategy: fixed-length waveform segments, cross-faded. */
-    strategy: 'segment-crossfade',
-    segmentSamples: 48000 * 8,       // 8 s segments at the canonical rate
-    overlapSamples: 48000,           // 1 s cross-fade between segments
+    url: '/app/models/bsrnn_vocals.onnx',
+    sizeBytes: 3870554,
+    quantization: 'fp32',
+    sha256: '7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
+    /** Inference strategy: STFT magnitude → mask → masked iSTFT overlap-add. */
+    strategy: 'spectral-mask',
+    fftSize: 4096,
+    hopSize: 1024,
+    bins: 2049,
+    maxBatchFrames: 32,
+    sampleRate: 48000,
     io: Object.freeze({
-      input: 'mixture',              // [1, channels, segmentSamples] Float32
-      output: 'vocals',              // [1, channels, segmentSamples] Float32
+      input: 'input',                // [batch, 2049] Float32 magnitudes
+      output: 'output',              // [batch, 2049] Float32 vocal mask
     }),
   }),
 });
