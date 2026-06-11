@@ -1,4 +1,3 @@
-/* global process, console, Buffer */
 /**
  * VoiceIsolate Pro — Monetization API v22
  *

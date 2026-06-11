@@ -22,6 +22,7 @@ export default [
         ...globals.worker,
         importScripts:    'readonly',
         SharedRingBuffer: 'readonly',
+        module:           'readonly',   // UMD export guards in legacy files
       },
     },
     rules: {
@@ -170,6 +171,23 @@ export default [
         ...globals.browser,
         module: 'readonly',
       },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'semi': ['warn', 'always'],
+      'quotes': ['warn', 'single', { avoidEscape: true }],
+    },
+  },
+
+  // ── Top-level public pages (landing.js etc.) — browser ES modules ────────────
+  {
+    files: ['public/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.browser },
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],

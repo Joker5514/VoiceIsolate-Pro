@@ -137,7 +137,7 @@ describe('Terminal error middleware', () => {
       if (process.env.NODE_ENV !== 'production' && err?.message) {
         payload.message = err.message;
       }
-      try { console.error('[api] unhandled error', { msg: err?.message }); } catch {}
+      try { console.error('[api] unhandled error', { msg: err?.message }); } catch { /* logging must never throw */ }
       if (!res.headersSent) res.status(status).json(payload);
       // If headersSent, we must end the response gracefully
       else res.end();

@@ -18,6 +18,8 @@
  */
 'use strict';
 
+/* global document — used only inside page.evaluate (browser context) */
+
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');

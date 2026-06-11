@@ -204,7 +204,7 @@ describe('ML Worker wiring', () => {
 
   test('app.js _mlCall returns a Promise', () => {
     // _mlCall wraps responses in a Promise for async/await callers
-    const mlCallBlock = appJs.match(/_mlCall\(payload,[\s\S]*?\n  \}/)?.[0] || '';
+    const mlCallBlock = appJs.match(/_mlCall\(payload,[\s\S]*?\n {2}\}/)?.[0] || '';
     expect(mlCallBlock).toContain('Promise');
   });
 

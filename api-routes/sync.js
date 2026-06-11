@@ -1,4 +1,3 @@
-/* global process, console, Buffer */
 /**
  * VoiceIsolate Pro — Cloud Sync API v22
  *
