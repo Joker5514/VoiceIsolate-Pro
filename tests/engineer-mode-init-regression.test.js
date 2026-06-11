@@ -5,19 +5,18 @@ const path = require('path');
 
 const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
 
-// Worklet init is owned by pipeline-orchestrator.js (CLAUDE.md §2 — audioWorklet.addModule
-// must only be called from pipeline-orchestrator.js, never from app.js).
+// The real-time worklet pipeline was removed (Stem-Split & Live-Mix — CLAUDE.md §1).
+// dsp-processor.js remains as the legacy processor definition but nothing registers it.
 describe('Engineer mode slider/worklet wiring', () => {
-  const orchSrc = read('public/app/pipeline-orchestrator.js');
   const dspSrc  = read('public/app/dsp-processor.js');
 
-  test('pipeline-orchestrator initializes worklet module before node construction', () => {
-    expect(orchSrc).toMatch(/audioWorklet\.addModule/);
-    expect(orchSrc).toContain("new AudioWorkletNode(this.ctx, 'dsp-processor'");
-  });
-
-  test('pipeline-orchestrator posts param updates to worklet port', () => {
-    expect(orchSrc).toContain('workletNode.port.postMessage');
+  test('no module registers the worklet anymore (live pipeline removed)', () => {
+    const fs2 = require('fs');
+    const appDir = path.join(__dirname, '../public/app');
+    const offenders = fs2.readdirSync(appDir)
+      .filter((f) => f.endsWith('.js'))
+      .filter((f) => /audioWorklet\.addModule\s*\(/.test(read(`public/app/${f}`)));
+    expect(offenders).toEqual([]);
   });
 
   test('dsp-processor accepts single param messages', () => {
@@ -26,8 +25,7 @@ describe('Engineer mode slider/worklet wiring', () => {
   });
 });
 
-// ONNX session management lives in ml-worker.js (CLAUDE.md §3 — ML worker is owned by
-// pipeline-orchestrator.js; inference logic including execution providers lives in ml-worker.js).
+// ONNX session management lives in ml-worker.js (legacy) and src/workers/MLWorker.js (new).
 describe('ONNX init sequencing and fallback', () => {
   const mlSrc = read('public/app/ml-worker.js');
 

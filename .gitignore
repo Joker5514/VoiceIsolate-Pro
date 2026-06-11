@@ -67,3 +67,6 @@ scratch/
 *.bak
 design-test.html
 *.tmp
+
+# Build-time copy of src/ for static deploys (vercel buildCommand)
+public/src/

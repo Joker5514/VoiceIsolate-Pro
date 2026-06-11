@@ -32,7 +32,8 @@ describe('Server.js Integration Tests', () => {
       expect(res.headers['x-content-type-options']).toBe('nosniff');
       expect(res.headers['x-frame-options']).toBe('DENY');
       expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
-      expect(res.headers['permissions-policy']).toBe('microphone=(self), camera=(), geolocation=()');
+      // Microphone fully denied — live-mic ingestion is architecturally forbidden
+      expect(res.headers['permissions-policy']).toBe('microphone=(), camera=(), geolocation=()');
     });
 
     test('should return proper Content-Security-Policy', async () => {
@@ -44,10 +45,27 @@ describe('Server.js Integration Tests', () => {
       expect(csp).toContain("style-src 'self'");
       expect(csp).toContain("font-src 'self'");
       expect(csp).toContain("img-src 'self' data: blob:");
-      expect(csp).toContain("media-src 'self' blob: mediastream:");
+      expect(csp).toContain("media-src 'self' blob:");
+      expect(csp).not.toContain('mediastream:');
       expect(csp).toContain("connect-src 'self'");
       expect(csp).toContain("worker-src 'self' blob:");
-      expect(csp).toContain("wasm-src 'self'");
+      // 'wasm-src' is not a real CSP directive — wasm is governed by
+      // 'wasm-unsafe-eval' in script-src.
+      expect(csp).not.toContain('wasm-src');
+      expect(csp).toContain("'wasm-unsafe-eval'");
+    });
+
+    test('non-legacy paths get strict CSP without unsafe-inline scripts', async () => {
+      const res = await request(app).get('/health');
+      const csp = res.headers['content-security-policy'];
+      expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
+      expect(csp.match(/script-src[^;]*/)[0]).not.toContain('unsafe-inline');
+    });
+
+    test('legacy /app path keeps scoped inline-script exception during migration', async () => {
+      const res = await request(app).get('/app/index.html');
+      const csp = res.headers['content-security-policy'];
+      expect(csp.match(/script-src[^;]*/)[0]).toContain("'unsafe-inline'");
     });
   });
 

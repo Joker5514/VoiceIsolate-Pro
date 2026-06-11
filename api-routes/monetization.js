@@ -1,4 +1,3 @@
-/* global process, console, Buffer */
 /**
  * VoiceIsolate Pro — Monetization API v22
  *
@@ -179,7 +178,7 @@ function validateLicenseToken(token) {
     if (expected.length !== got.length) return null;
     if (!crypto.timingSafeEqual(expected, got)) return null;
     const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-    if (Date.now() / 1000 > payload.exp) return null;
+    if (typeof payload.exp !== 'number' || Date.now() / 1000 > payload.exp) return null;
     // Only accept tokens issued by the Stripe/license flow, not auth tokens
     if (payload.source !== 'stripe') return null;
     return payload;

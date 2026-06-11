@@ -106,11 +106,16 @@ describe('STFT engine', () => {
 });
 
 describe('AudioWorklet registration', () => {
-  test('dsp-processor.js is the canonical worklet loaded in pipeline-orchestrator.js', () => {
-    const orchJs = require('fs').readFileSync(
-      require('path').join(__dirname, '../public/app/pipeline-orchestrator.js'), 'utf8'
-    );
-    expect(orchJs).toContain("addModule('/app/dsp-processor.js')");
+  test('no file registers an AudioWorklet (live pipeline removed — CLAUDE.md §1.1)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const appDir = path.join(__dirname, '../public/app');
+    const offenders = fs.readdirSync(appDir)
+      .filter((f) => f.endsWith('.js'))
+      .filter((f) => /audioWorklet\.addModule\s*\(/.test(
+        fs.readFileSync(path.join(appDir, f), 'utf8')
+      ));
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -199,7 +204,7 @@ describe('ML Worker wiring', () => {
 
   test('app.js _mlCall returns a Promise', () => {
     // _mlCall wraps responses in a Promise for async/await callers
-    const mlCallBlock = appJs.match(/_mlCall\(payload,[\s\S]*?\n  \}/)?.[0] || '';
+    const mlCallBlock = appJs.match(/_mlCall\(payload,[\s\S]*?\n {2}\}/)?.[0] || '';
     expect(mlCallBlock).toContain('Promise');
   });
 

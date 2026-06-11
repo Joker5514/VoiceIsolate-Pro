@@ -304,7 +304,6 @@ class VoiceIsolatePro {
     this.ctx = null;
     this.workletNode = null;
     this.sourceNode = null;
-    this.micStream = null;
 
     // ML
     this.mlReady = false;
@@ -421,8 +420,6 @@ class VoiceIsolatePro {
       tpSpeedUp:g('tpSpeedUp'),
       tpCur:g('tpCur'),
       tpDur:g('tpDur'),
-      micBtn:g('micBtn'),
-      micLabel:g('micLabel'),
       saveOrigBtn:g('saveOrigBtn'),
       saveProcBtn:g('saveProcBtn'),
       auditLogBtn:g('auditLogBtn'),
@@ -751,11 +748,6 @@ class VoiceIsolatePro {
       });
     }
 
-    // Mic
-    bind('micBtn', d.micBtn, 'click', () => {
-      if (this.mode === 'live') this.stopLive(); else this.startLive();
-    });
-
     // Transport
     bind('playBtn', this.dom.playBtn, 'click', () => { this.togglePlayback(); });
     bind('tpPlay', d.tpPlay, 'click', () => { this.togglePlayback(); });
@@ -825,9 +817,10 @@ class VoiceIsolatePro {
     });
 
     // Tab switching
-    qsa('.tab-btn[data-tab]').forEach(btn => {
+    const tabs = qsa('.tab-btn[data-tab]');
+    tabs.forEach((btn, index) => {
       btn.addEventListener('click', () => {
-        qsa('.tab-btn').forEach(b => {
+        tabs.forEach(b => {
           b.classList.remove('active');
           b.setAttribute('aria-selected', 'false');
           b.setAttribute('tabindex', '-1');
@@ -838,6 +831,28 @@ class VoiceIsolatePro {
         btn.setAttribute('tabindex', '0');
         const panel = document.getElementById('tab-' + btn.dataset.tab);
         if (panel) panel.classList.add('active');
+      });
+
+      btn.addEventListener('keydown', (e) => {
+        let newIndex = index;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          newIndex = (index + 1) % tabs.length;
+          e.preventDefault();
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          newIndex = (index - 1 + tabs.length) % tabs.length;
+          e.preventDefault();
+        } else if (e.key === 'Home') {
+          newIndex = 0;
+          e.preventDefault();
+        } else if (e.key === 'End') {
+          newIndex = tabs.length - 1;
+          e.preventDefault();
+        }
+
+        if (newIndex !== index) {
+          tabs[newIndex].focus();
+          tabs[newIndex].click();
+        }
       });
     });
 
@@ -927,10 +942,17 @@ class VoiceIsolatePro {
 
   // ── Global keyboard shortcuts ────────────────────────────────────────────
   _handleGlobalKeydown(e) {
-    const tag = e.target && e.target.tagName;
-    const contentEditable = e.target && e.target.isContentEditable;
+    const target = e.target;
+    if (!target) return;
+
+    const tag = target.tagName;
+    const contentEditable = target.isContentEditable;
     const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || contentEditable;
-    if (inInput) return;
+
+    // Do not intercept if interacting with a button or a tablist component
+    const inButtonOrTab = tag === 'BUTTON' || (typeof target.closest === 'function' && target.closest('[role="tablist"]'));
+
+    if (inInput || inButtonOrTab) return;
 
     if ((e.key === ' ' || e.key === 'k' || e.key === 'K') && (this.inputBuffer || this.origBuffer)) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -1488,60 +1510,47 @@ class VoiceIsolatePro {
   // Single offline path: ONE forward STFT, in-place spectral ops S11–S19, ONE iSTFT
   async _applyOfflineSpectralProcessing(inputBuf) {
     const DSP = this._resolveDSP();
-    if (!DSP) return inputBuf;
+    if (!DSP || !inputBuf || typeof inputBuf.getChannelData !== 'function') return inputBuf;
     const p = window.VIP_PARAMS || {};
+    const FFT_SIZE = 4096;
+    const HOP_SIZE = 1024;
+    // Clips shorter than one analysis window have no spectral frames — passthrough.
+    if (inputBuf.length < FFT_SIZE) return inputBuf;
+    await this.ensureCtx();
+    if (!this.ctx || typeof this.ctx.createBuffer !== 'function') return inputBuf;
 
-    // SINGLE-PASS STFT BOUNDARY
-    const spec = DSP.forwardSTFT(inputBuf);
-    // In-place spectral operations (S11–S19) — no additional STFT/iSTFT pairs
-    if (spec) {
-      this.applySpectralNR(spec, p);
-      this.applyBgSuppress(spec, p);
-      this.applyDereverb(spec, p);
-      this.applyFormantShift(spec, p);
-      this.applyPhaseCorr(spec, p);
-      this.applyCrosstalkCancel(spec, p);
-      this.applyVoiceFocus(spec, p);
-    }
-    // SINGLE-PASS STFT BOUNDARY
-    const outputBuf = DSP.inverseSTFT(spec, inputBuf.length, inputBuf.sampleRate);
-    return outputBuf || inputBuf;
-  }
-
-  // ── Live mic mode ─────────────────────────────────────────────────────────
-  async startLive() {
-    try {
-      await this.ensureCtx();
-      this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      this.sourceNode = this.ctx.createMediaStreamSource(this.micStream);
-      const workletNode = window._vipOrch && window._vipOrch.workletNode;
-      if (workletNode) {
-        this.sourceNode.connect(workletNode);
-        workletNode.connect(this.ctx.destination);
-      } else {
-        this.sourceNode.connect(this.ctx.destination);
+    const outputBuf = this.ctx.createBuffer(inputBuf.numberOfChannels, inputBuf.length, inputBuf.sampleRate);
+    for (let ch = 0; ch < inputBuf.numberOfChannels; ch++) {
+      const samples = inputBuf.getChannelData(ch);
+      // SINGLE-PASS STFT BOUNDARY
+      const spec = DSP.forwardSTFT(samples, FFT_SIZE, HOP_SIZE);
+      // In-place spectral operations (S11–S19) on each magnitude frame —
+      // no additional STFT/iSTFT pairs
+      if (spec && Array.isArray(spec.mag)) {
+        for (const frameMag of spec.mag) {
+          this.applySpectralNR(frameMag, p);
+          this.applyBgSuppress(frameMag, p);
+          this.applyDereverb(frameMag, p);
+          this.applyFormantShift(frameMag, p);
+          this.applyPhaseCorr(frameMag, p);
+          this.applyCrosstalkCancel(frameMag, p);
+          this.applyVoiceFocus(frameMag, p);
+        }
       }
-      this.mode = 'live';
-      this.liveChainBuilt = true;
-      if (this.dom.micLabel) this.dom.micLabel.textContent = 'Stop';
-      this.setStatus('LIVE');
-      this.showNotification('Live mode active.', 'info');
-    } catch (err) {
-      this.showNotification('Mic access denied.', 'error');
-      structuredLog('error', '[VIP] Mic error', { err: err.message });
+      // SINGLE-PASS STFT BOUNDARY
+      const rendered = spec && Array.isArray(spec.mag)
+        ? DSP.inverseSTFT(spec.mag, spec.phase, FFT_SIZE, HOP_SIZE, samples.length)
+        : null;
+      outputBuf.getChannelData(ch).set(
+        rendered && rendered.length === samples.length ? rendered : samples
+      );
     }
+    return outputBuf;
   }
 
-  stopLive() {
-    if (this.micStream) this.micStream.getTracks().forEach(t => t.stop());
-    try { if (this.sourceNode) this.sourceNode.disconnect(); } catch (_) {}
-    this.sourceNode = null;
-    this.micStream = null;
-    this.mode = 'idle';
-    this.liveChainBuilt = false;
-    if (this.dom.micLabel) this.dom.micLabel.textContent = 'Record';
-    this.setStatus('IDLE');
-  }
+  // Live-microphone ingestion was REMOVED by design (CLAUDE.md §1.1).
+  // navigator.mediaDevices.getUserMedia is forbidden in this codebase; the
+  // Permissions-Policy header denies the microphone entirely.
 
   // ── Transport ─────────────────────────────────────────────────────────────
   play() {

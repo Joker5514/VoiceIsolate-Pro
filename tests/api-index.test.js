@@ -137,7 +137,7 @@ describe('Terminal error middleware', () => {
       if (process.env.NODE_ENV !== 'production' && err?.message) {
         payload.message = err.message;
       }
-      try { console.error('[api] unhandled error', { msg: err?.message }); } catch {}
+      try { console.error('[api] unhandled error', { msg: err?.message }); } catch { /* logging must never throw */ }
       if (!res.headersSent) res.status(status).json(payload);
       // If headersSent, we must end the response gracefully
       else res.end();
@@ -243,11 +243,12 @@ describe('GET /health — version 24.0.0', () => {
 // We verify the structural pattern: fallback no-op middleware is correctly typed
 // and rate-limiting is applied before routers.
 describe('Rate limiting middleware structure', () => {
-  test('api/index.js source attaches loginLimiter to /auth/login', () => {
+  test('api/index.js has no auth router (removed by design — CLAUDE.md §3)', () => {
     const src = require('fs').readFileSync(
       require('path').join(__dirname, '../api-routes/index.js'), 'utf8'
     );
-    expect(src).toContain("router.use('/auth/login', loginLimiter)");
+    expect(src).not.toContain("./auth.js");
+    expect(src).not.toContain("router.use('/auth'");
   });
 
   test('api/index.js source attaches checkoutLimiter to /checkout', () => {
@@ -276,12 +277,6 @@ describe('Rate limiting middleware structure', () => {
     expect(nextCalled).toBe(true);
   });
 
-  test('loginLimiter window is 15 minutes (900000 ms)', () => {
-    const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../api-routes/index.js'), 'utf8'
-    );
-    expect(src).toContain('windowMs: 15 * 60 * 1000');
-  });
 
   test('checkoutLimiter window is 60 seconds (60000 ms)', () => {
     const src = require('fs').readFileSync(
@@ -290,14 +285,6 @@ describe('Rate limiting middleware structure', () => {
     expect(src).toContain('windowMs: 60 * 1000');
   });
 
-  test('loginLimiter max is 20 requests', () => {
-    const src = require('fs').readFileSync(
-      require('path').join(__dirname, '../api-routes/index.js'), 'utf8'
-    );
-    // The rate limit block order: loginLimiter has max: 20
-    const loginBlock = src.slice(src.indexOf('loginLimiter = rateLimit'));
-    expect(loginBlock.slice(0, loginBlock.indexOf('});'))).toContain('max: 20');
-  });
 
   test('checkoutLimiter max is 10 requests', () => {
     const src = require('fs').readFileSync(

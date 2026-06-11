@@ -83,21 +83,59 @@ const htmlPath = path.resolve(__dirname, '..', 'public/app/index.html');
 const html = fs.existsSync(htmlPath) ? fs.readFileSync(htmlPath, 'utf8') : '';
 const mlWorkerJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/ml-worker.js'))
   ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/ml-worker.js'), 'utf8') : '';
-const orchPath = path.resolve(__dirname, '..', 'public/app/pipeline-orchestrator.js');
-const orchJs = fs.existsSync(orchPath) ? fs.readFileSync(orchPath, 'utf8') : '';
-// AudioWorklet ownership: must be in pipeline-orchestrator.js, never in app.js
-check(orchJs.includes('addModule') && orchJs.includes('dsp-processor'), 'AudioWorklet addModule() owned by pipeline-orchestrator.js');
-check(!appJs.includes('audioWorklet.addModule'), 'app.js does not call audioWorklet.addModule() (ownership violation guard)');
-check(html.includes('pipeline-orchestrator.js'), 'Pipeline Orchestrator script tag in index.html');
-check(appJs.includes('async loadModels()'), 'loadModels() method present');
-check(appJs.includes('async runVAD('), 'runVAD() method present');
-// ML Worker ownership lives in PipelineOrchestrator (single source of truth)
-check(orchJs.includes('_initMLWorker'), 'ML Worker spawned by PipelineOrchestrator');
-check(orchJs.includes("new Worker('/app/ml-worker.js')"), 'ML Worker path correct in orchestrator');
-check(mlWorkerJs.includes("type === 'init'") || mlWorkerJs.includes("case 'init':") || mlWorkerJs.includes("case 'runVAD':"), 'ML Worker handles init/runVAD');
-check(mlWorkerJs.includes("type === 'process'") || mlWorkerJs.includes("case 'process':") || mlWorkerJs.includes("case 'runSeparation':"), 'ML Worker handles process/runSeparation');
-check(mlWorkerJs.includes("type === 'reset'") || mlWorkerJs.includes("case 'reset':") || mlWorkerJs.includes("case 'runVocoder':"), 'ML Worker handles reset/runVocoder');
-check(mlWorkerJs.includes('importScripts'), 'ML Worker loads ORT via importScripts');
+check(mlWorkerJs.includes('importScripts'), 'Legacy ML Worker loads ORT via importScripts');
+
+// Stem-Split & Live-Mix architecture (CLAUDE.md §1–§2)
+console.log('\nStem-Split & Live-Mix (CLAUDE.md):');
+const srcFiles = [
+  'src/core/audio-config.js',
+  'src/core/BufferPool.js',
+  'src/core/ModelManifest.js',
+  'src/pipeline/FileIngestion.js',
+  'src/pipeline/PlaybackMixer.js',
+  'src/presentation/SliderUI.js',
+  'src/workers/MLWorker.js',
+  'server/securityHeaders.js',
+];
+srcFiles.forEach(f => check(fs.existsSync(path.resolve(__dirname, '..', f)), f));
+
+const newMlWorker = fs.readFileSync(path.resolve(__dirname, '..', 'src/workers/MLWorker.js'), 'utf8');
+check(newMlWorker.includes("importScripts('/lib/ort.min.js')"), 'MLWorker loads ORT locally (never CDN)');
+check(newMlWorker.includes('SHA-256'), 'MLWorker verifies model SHA-256 integrity');
+check(fs.readFileSync(path.resolve(__dirname, '..', 'src/core/audio-config.js'), 'utf8')
+  .includes('SAMPLE_RATE = 48000'), 'Canonical SAMPLE_RATE = 48000 in audio-config.js');
+
+// Hard prohibitions (CLAUDE.md §1.1) — the live-mic pipeline must stay dead.
+const appDir = path.resolve(__dirname, '..', 'public/app');
+const offenders = [];
+const scanDirs = [
+  ['public/app', appDir],
+  ['src', path.resolve(__dirname, '..', 'src')],
+];
+for (const [label, dir] of scanDirs) {
+  for (const f of walkJs(dir)) {
+    const src = fs.readFileSync(f, 'utf8');
+    if (/getUserMedia\s*\(/.test(src)) offenders.push(`${label}/${path.relative(dir, f)} (getUserMedia)`);
+    if (/audioWorklet\.addModule\s*\(/.test(src)) offenders.push(`${label}/${path.relative(dir, f)} (audioWorklet.addModule)`);
+  }
+}
+const landingHtml = fs.readFileSync(path.resolve(__dirname, '..', 'public/index.html'), 'utf8');
+if (/getUserMedia/.test(landingHtml)) offenders.push('public/index.html (getUserMedia)');
+check(offenders.length === 0, offenders.length === 0
+  ? 'No live-mic ingestion or worklet registration (live pipeline stays removed)'
+  : `Forbidden live-pipeline code found: ${offenders.join(', ')}`);
+check(!fs.existsSync(path.resolve(appDir, 'pipeline-orchestrator.js')), 'pipeline-orchestrator.js stays deleted');
+check(!fs.existsSync(path.resolve(__dirname, '..', 'api-routes/auth.js')), 'api-routes/auth.js stays deleted');
+
+function walkJs(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkJs(full));
+    else if (entry.name.endsWith('.js')) out.push(full);
+  }
+  return out;
+}
 
 // Phase 5: Forensic
 console.log('\nForensic Mode (Phase 5):');

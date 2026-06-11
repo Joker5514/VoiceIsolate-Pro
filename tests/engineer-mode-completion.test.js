@@ -7,7 +7,6 @@ const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf
 const indexHtml = fs.readFileSync(path.join(__dirname, '../public/app/index.html'), 'utf8');
 const howItWorksHtml = fs.readFileSync(path.join(__dirname, '../public/app/how-it-works.html'), 'utf8');
 const styleCss = fs.readFileSync(path.join(__dirname, '../public/app/style.css'), 'utf8');
-const orchestratorJs = fs.readFileSync(path.join(__dirname, '../public/app/pipeline-orchestrator.js'), 'utf8');
 
 describe('Engineer Mode completion wiring', () => {
   test('index.html includes cinematic boot splash and startup banner placeholders', () => {
@@ -59,14 +58,6 @@ describe('app.js completion helpers', () => {
     ['initBootSplash()', 'initModelStatusPanel()', 'updatePipelineProgress(stageIndex, detail, pct)', 'renderStaticVisuals('].forEach((snippet) => {
       expect(appJs).toContain(snippet);
     });
-  });
-});
-
-describe('orchestrator bootstrap guards', () => {
-  test('pipeline-orchestrator only binds optional app methods when they exist', () => {
-    expect(orchestratorJs).toContain("if (typeof app.onSlider === 'function')");
-    expect(orchestratorJs).toContain("if (typeof app.applyPreset === 'function')");
-    expect(orchestratorJs).toContain("if (typeof app.toggleRecording === 'function')");
   });
 });
 

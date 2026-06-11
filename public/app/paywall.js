@@ -37,6 +37,7 @@ const Paywall = (() => {
 
   let _modalEl = null;
   let _bannerEl = null;
+  let _modalKeyHandler = null;
   let _billingCycle = 'monthly'; // 'monthly' | 'annual'
 
   // ─── Pricing Card HTML ────────────────────────────────────────────────────────
@@ -366,13 +367,16 @@ const Paywall = (() => {
         if (e.target === e.currentTarget) PW.closeModal();
       });
 
-      // Keyboard close
-      const keyHandler = (e) => { if (e.key === 'Escape') { PW.closeModal(); document.removeEventListener('keydown', keyHandler); } };
-      document.addEventListener('keydown', keyHandler);
+      // Keyboard close — drop any handler from a previous modal first so
+      // repeated open/close cycles don't accumulate document listeners.
+      if (_modalKeyHandler) document.removeEventListener('keydown', _modalKeyHandler);
+      _modalKeyHandler = (e) => { if (e.key === 'Escape') PW.closeModal(); };
+      document.addEventListener('keydown', _modalKeyHandler);
     },
 
     closeModal() {
       if (_modalEl) { _modalEl.remove(); _modalEl = null; }
+      if (_modalKeyHandler) { document.removeEventListener('keydown', _modalKeyHandler); _modalKeyHandler = null; }
       document.body.style.overflow = '';
     },
 

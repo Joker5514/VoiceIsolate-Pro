@@ -1,551 +1,120 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Isolator Pro</title>
-    <style>
-        :root {
-            --bg: #060609; --panel-bg: #0c0c12; --border: #222230;
-            --text: #eeeef2; --text-dim: #5e5e78;
-            --accent-rgb: 239, 68, 68;
-            --accent: rgb(var(--accent-rgb)); --accent-hover: #dc2626;
-            --danger: #ff4444; --warn: #ffaa00;
-            --accent-glow: rgba(var(--accent-rgb), 0.25);
-        }
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; display: flex; flex-direction: column; overflow-x: hidden; }
-
-        .titlebar { height: 40px; background: #181818; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
-        .titlebar-left { display: flex; align-items: center; gap: 10px; }
-        .titlebar-center { display: flex; gap: 4px; }
-        .titlebar-right { display: flex; align-items: center; gap: 8px; }
-        .logo-icon { width: 22px; height: 22px; border-radius: 5px; background: linear-gradient(135deg, var(--accent), #b91c1c); display: flex; align-items: center; justify-content: center; font-weight: 900; color: #1f0a0a; font-size: 11px; box-shadow: 0 0 10px var(--accent-glow); }
-        .app-title { font-size: 13px; font-weight: 600; letter-spacing: 0.5px; }
-        .tab-btn { background: none; border: none; color: var(--text-dim); font-size: 11px; cursor: pointer; padding: 6px 12px; border-radius: 4px; font-weight: 600; }
-        .tab-btn.active { color: var(--text); background: rgba(255,255,255,0.08); }
-        .tab-btn:hover:not(.active) { color: var(--text); }
-        .icon-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 5px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
-        .icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.08); }
-        .win-btns { display: flex; gap: 6px; }
-        .win-btn { width: 12px; height: 12px; border-radius: 50%; border: none; cursor: pointer; }
-        .win-btn.close { background: #ff5f56; } .win-btn.min { background: #ffbd2e; } .win-btn.max { background: #27c93f; }
-
-        #statusBar { height: 26px; background: #0f0f0f; border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 14px; gap: 14px; font-size: 10px; }
-        .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #444; flex-shrink: 0; }
-        .status-dot.active { background: var(--accent); animation: blink 1.8s infinite; }
-        .status-dot.warn { background: var(--warn); }
-        .status-dot.error { background: var(--danger); }
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
-        #statusText { color: var(--text-dim); }
-
-        .main-area { flex: 1; display: flex; padding: 8px; gap: 8px; overflow: hidden; min-height: 0; }
-        .panel { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; }
-        .left-panel { width: 290px; min-width: 290px; padding: 14px; gap: 14px; overflow-y: auto; }
-        .center-panel { flex: 1; position: relative; overflow: hidden; min-height: 200px; }
-        .right-panel { width: 240px; min-width: 240px; padding: 14px; gap: 12px; overflow-y: auto; }
-
-        .section-label { font-size: 10px; text-transform: uppercase; color: var(--text-dim); letter-spacing: 1.2px; margin-bottom: 7px; font-weight: 700; }
-        .panel-section { display: flex; flex-direction: column; }
-
-        select { width: 100%; background: #111; border: 1px solid var(--border); color: var(--text); padding: 7px 10px; border-radius: 5px; font-size: 12px; cursor: pointer; outline: none; appearance: none; }
-        select:focus { border-color: var(--accent); }
-
-        .level-row { display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px; }
-        .level-label { color: var(--text-dim); }
-        .level-val { color: var(--text); font-family: monospace; }
-        .meter-wrap { background: #0a0a0a; height: 7px; border-radius: 4px; overflow: hidden; }
-        .meter-fill { height: 100%; width: 0%; border-radius: 4px; background: linear-gradient(90deg,#00cc66 55%,#ffcc00 80%,#ff3333 100%); transition: width 60ms linear; }
-        .level-ticks { display: flex; justify-content: space-between; font-size: 8px; color: #444; margin-top: 2px; }
-
-        .mode-btns { display: flex; background: #111; border-radius: 5px; overflow: hidden; border: 1px solid var(--border); }
-        .mode-btn { flex: 1; background: none; border: none; color: var(--text-dim); padding: 7px 0; font-size: 11px; cursor: pointer; font-weight: 700; }
-        .mode-btn.active { background: rgba(239,68,68,.12); color: var(--accent); }
-        .mode-btn:hover:not(.active) { color: var(--text); }
-
-        .ctrl-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-        .knob { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--accent); background: #111; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; flex-shrink: 0; color: var(--accent); font-family: monospace; }
-        .knob.dim { border-color: #444; color: #555; }
-        .slider-wrap { flex: 1; }
-        .slider-header { display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px; }
-        .slider-val { color: var(--accent); font-weight: 700; font-family: monospace; }
-        .slider-val.dim { color: var(--text-dim); }
-        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; cursor: pointer; }
-        input[type=range]::-webkit-slider-runnable-track { height: 4px; background: var(--border); border-radius: 2px; }
-        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); margin-top: -5px; box-shadow: 0 0 6px rgba(239,68,68,.4); }
-        input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
-        input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
-
-        #specCanvas { width: 100%; height: 100%; position: absolute; top: 0; left: 0; background: #0a0a0a; display: block; }
-        .vis-overlay { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; align-items: center; z-index: 5; pointer-events: none; }
-        .vis-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-        .live-badge { background: rgba(255,68,68,.18); color: var(--danger); padding: 2px 7px; border-radius: 4px; font-size: 9px; font-weight: 800; border: 1px solid var(--danger); letter-spacing: 1px; animation: blink 1.8s infinite; }
-        .vis-legend { display: flex; gap: 12px; }
-        .legend-item { font-size: 10px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; }
-        .legend-dot { width: 7px; height: 7px; border-radius: 50%; }
-
-        .switch-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
-        .sw { position: relative; display: inline-block; width: 32px; height: 18px; }
-        .sw input { opacity: 0; width: 0; height: 0; }
-        .sw-track { position: absolute; cursor: pointer; inset: 0; background: #333; border-radius: 18px; transition: .3s; }
-        .sw-track::before { content: ''; position: absolute; height: 12px; width: 12px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .3s; }
-        input:checked + .sw-track { background: var(--accent); }
-        input:checked + .sw-track::before { transform: translateX(14px); }
-        input:focus-visible + .sw-track { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-        .stats-box { background: #111; border: 1px solid var(--border); border-radius: 6px; padding: 10px; }
-        .stat-row { display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 4px; }
-        .stat-row:last-child { margin: 0; }
-        .stat-lbl { color: var(--text-dim); }
-        .stat-val { color: var(--text); font-family: monospace; font-weight: 600; }
-        .stat-val.good { color: var(--accent); }
-
-        .big-btn { background: var(--accent); color: #000; border: none; padding: 11px; border-radius: 6px; font-weight: 800; font-size: 13px; cursor: pointer; letter-spacing: 0.5px; display: flex; justify-content: center; align-items: center; gap: 7px; transition: background .2s; margin-top: auto; box-shadow: 0 2px 10px var(--accent-glow); }
-        .big-btn:hover { background: var(--accent-hover); }
-        .big-btn.rec { background: var(--danger); color: #fff; }
-        .big-btn:disabled { background: #2a2a2a; color: #555; cursor: not-allowed; }
-
-        #micBtn { width: 100%; background: rgba(239,68,68,.08); border: 1px solid var(--accent); color: var(--accent); padding: 9px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; letter-spacing: 0.5px; transition: background .2s; }
-        #micBtn:hover { background: rgba(239,68,68,.16); }
-        #micBtn.granted { background: rgba(239,68,68,.04); color: var(--text-dim); border-color: #444; }
-
-        ::-webkit-scrollbar { width: 3px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
-
-        .eng-mode-link { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); color: var(--accent); text-decoration: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; transition: background .2s; white-space: nowrap; }
-        .eng-mode-link:hover { background: rgba(239,68,68,.2); }
-
-        @media (max-width: 960px) {
-            body { height: auto; overflow-y: auto; }
-            .main-area { flex-direction: column; overflow: visible; height: auto; }
-            .left-panel { width: 100%; min-width: unset; }
-            .center-panel { min-height: 220px; height: 220px; }
-            .right-panel { width: 100%; min-width: unset; }
-            .win-btns { display: none; }
-        }
-        @media (max-width: 600px) {
-            .titlebar { padding: 0 10px; gap: 6px; }
-            .titlebar-center { display: none; }
-            .app-title { font-size: 12px; }
-            .main-area { padding: 6px; gap: 6px; }
-            .left-panel, .right-panel { padding: 10px; gap: 10px; }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="VoiceIsolate Pro — AI voice isolation, 100% in your browser. Upload, separate, and mix in real time. No cloud, no uploads.">
+  <title>VoiceIsolate Pro — Stem-Split &amp; Live-Mix</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icon.jpg">
+  <link rel="stylesheet" href="/landing.css">
+  <!--
+    ARCHITECTURE NOTE (CLAUDE.md): this page contains NO inline scripts so it
+    runs under the strict CSP (script-src 'self'). It is the reference
+    integration of the Stem-Split & Live-Mix pipeline:
+      FileIngestion → MLWorker (offline ONNX) → PlaybackMixer → SliderUI.
+    There is intentionally no microphone access anywhere on this page.
+  -->
 </head>
 <body>
-
-<div class="titlebar">
+  <header class="titlebar">
     <div class="titlebar-left">
-        <div class="logo-icon">VI</div>
-        <span class="app-title">Voice Isolator Pro</span>
-    </div>
-    <div class="titlebar-center">
-        <button class="tab-btn active" onclick="switchTab(this)">&#9646; LIVE</button>
-        <button class="tab-btn" onclick="switchTab(this)">&#9647; PROCESS</button>
+      <div class="logo-icon">VI</div>
+      <span class="app-title">VoiceIsolate Pro</span>
+      <span class="arch-badge">STEM-SPLIT &amp; LIVE-MIX</span>
     </div>
     <div class="titlebar-right">
-        <a href="/app/" class="eng-mode-link">&#9881; Engineer Mode</a>
-        <button class="icon-btn" onclick="resetControls()">&#8635; RESET</button>
-        <div class="win-btns">
-            <div class="win-btn min"></div><div class="win-btn max"></div><div class="win-btn close"></div>
-        </div>
+      <a href="/app/" class="eng-mode-link">&#9881; Engineer Mode</a>
     </div>
-</div>
+  </header>
 
-<div id="statusBar">
-    <div class="status-dot" id="statusDot"></div>
-    <span id="statusText" aria-live="polite">Idle — click Grant Microphone to start</span>
-    <span style="margin-left:auto;color:#444;font-family:monospace;font-size:9px" id="srDisplay"></span>
-</div>
+  <main class="main-area">
+    <!-- ── STEP 1: Upload ──────────────────────────────────────────────── -->
+    <section class="panel" aria-labelledby="uploadLabel">
+      <h2 id="uploadLabel" class="section-label">1 · Upload</h2>
+      <p class="hint">Audio or video. Decoded and resampled to 48&nbsp;kHz on your device — nothing is uploaded anywhere.</p>
+      <div class="upload-row">
+        <input type="file" id="fileInput" accept="audio/*,video/*" aria-label="Choose audio or video file">
+        <label for="modelSelect" class="inline-label">Model</label>
+        <select id="modelSelect" aria-label="Separation model">
+          <option value="rnnoise">Noise Suppression — BiGRU mask (~2 MB)</option>
+          <option value="bsrnn_vocals">Vocal Isolation — Band-Split RNN (~4 MB)</option>
+        </select>
+        <button id="processBtn" class="btn btn-primary" type="button" disabled>Separate Stems</button>
+      </div>
+      <div class="status-row">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText" role="status" aria-live="polite">Idle — choose a file to begin</span>
+        <progress id="inferenceProgress" max="100" value="0" hidden></progress>
+      </div>
+    </section>
 
-<div class="main-area">
+    <!-- ── STEP 2: Live-Mix playback ───────────────────────────────────── -->
+    <section class="panel" aria-labelledby="mixLabel">
+      <h2 id="mixLabel" class="section-label">2 · Live Mix</h2>
+      <p class="hint">Stems play through the Web Audio graph. Sliders act instantly on GainNodes — the AI never re-runs.</p>
 
-    <!-- LEFT -->
-    <div class="panel left-panel">
-        <div class="panel-section">
-            <button id="micBtn" onclick="toggleMic()">🎤 Grant Microphone Access</button>
+      <div class="transport-row">
+        <button id="playBtn" class="btn" type="button" disabled>&#9654; Play</button>
+        <button id="pauseBtn" class="btn" type="button" disabled>&#10074;&#10074; Pause</button>
+        <button id="stopBtn" class="btn" type="button" disabled>&#9632; Stop</button>
+        <label for="presetSelect" class="inline-label">Preset</label>
+        <select id="presetSelect" aria-label="Mix preset" disabled>
+          <option value="voice-clarity" selected>Voice Clarity</option>
+          <option value="balanced">Balanced</option>
+          <option value="podcast-warm">Podcast Warm</option>
+          <option value="residual-monitor">Residual Monitor (hear what was removed)</option>
+          <option value="original">Original (bypass)</option>
+        </select>
+        <span id="timeReadout" class="time-readout">0:00 / 0:00</span>
+      </div>
+
+      <div class="vis-block">
+        <div class="vis-label">Stem waveforms <span class="vis-hint">— voice in red, removed noise in gray · click to seek</span></div>
+        <canvas id="waveCanvas" class="vis-canvas" height="110" aria-label="Stem waveform overview"></canvas>
+        <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to every slider in real time</span></div>
+        <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>
+      </div>
+
+      <div class="slider-grid">
+        <div class="slider-row">
+          <label for="noiseReductionSlider">Noise Reduction</label>
+          <input type="range" id="noiseReductionSlider" min="0" max="100" value="100" step="1">
+          <span class="slider-val" id="noiseReductionVal">100%</span>
         </div>
-        <div class="panel-section">
-            <div class="section-label">Input Device</div>
-            <select id="inputDeviceSel" onchange="changeDevice()" aria-label="Input Device"></select>
+        <div class="slider-row">
+          <label for="voiceLevelSlider">Voice Level</label>
+          <input type="range" id="voiceLevelSlider" min="0" max="200" value="100" step="1">
+          <span class="slider-val" id="voiceLevelVal">100%</span>
         </div>
-        <div class="panel-section">
-            <div class="level-row"><span class="level-label">Input Level</span><span class="level-val" id="inLevelVal">-- dB</span></div>
-            <div class="meter-wrap"><div class="meter-fill" id="inMeter"></div></div>
-            <div class="level-ticks"><span>-60</span><span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>0</span></div>
+        <div class="slider-row">
+          <label for="volumeSlider">Output Volume</label>
+          <input type="range" id="volumeSlider" min="0" max="100" value="100" step="1">
+          <span class="slider-val" id="volumeVal">100%</span>
         </div>
-        <div class="panel-section">
-            <div class="section-label">Mode</div>
-            <div class="mode-btns">
-                <button class="mode-btn active" onclick="setMode(this,'isolate')">VOICE ISOLATE</button>
-                <button class="mode-btn" onclick="setMode(this,'remove')">VOICE REMOVE</button>
-            </div>
+        <div class="slider-row">
+          <label for="eqLowSlider">EQ Low Shelf</label>
+          <input type="range" id="eqLowSlider" min="-24" max="24" value="0" step="1">
+          <span class="slider-val" id="eqLowVal">0 dB</span>
         </div>
-        <div class="panel-section" style="flex:1">
-            <div class="section-label">DSP Controls</div>
-            <div class="ctrl-row">
-                <div class="knob" id="knob_gain">85%</div>
-                <div class="slider-wrap">
-                    <div class="slider-header"><span>Output Gain</span><span class="slider-val" id="val_gain">85%</span></div>
-                    <input type="range" id="sl_gain" min="0" max="100" value="85" oninput="onSlider('gain',+this.value)">
-                </div>
-            </div>
-            <div class="ctrl-row">
-                <div class="knob dim" id="knob_hp">80Hz</div>
-                <div class="slider-wrap">
-                    <div class="slider-header"><span>High-Pass Cutoff</span><span class="slider-val dim" id="val_hp">80Hz</span></div>
-                    <input type="range" id="sl_hp" min="20" max="500" value="80" oninput="onSlider('hp',+this.value)">
-                </div>
-            </div>
-            <div class="ctrl-row">
-                <div class="knob dim" id="knob_lp">8kHz</div>
-                <div class="slider-wrap">
-                    <div class="slider-header"><span>Low-Pass Cutoff</span><span class="slider-val dim" id="val_lp">8kHz</span></div>
-                    <input type="range" id="sl_lp" min="1000" max="20000" value="8000" oninput="onSlider('lp',+this.value)">
-                </div>
-            </div>
-            <div class="ctrl-row">
-                <div class="knob dim" id="knob_comp">-24dB</div>
-                <div class="slider-wrap">
-                    <div class="slider-header"><span>Compressor Threshold</span><span class="slider-val dim" id="val_comp">-24dB</span></div>
-                    <input type="range" id="sl_comp" min="-60" max="0" value="-24" oninput="onSlider('comp',+this.value)">
-                </div>
-            </div>
-            <div class="ctrl-row" style="margin-bottom:0">
-                <div class="knob dim" id="knob_gate">-45dB</div>
-                <div class="slider-wrap">
-                    <div class="slider-header"><span>Noise Gate</span><span class="slider-val dim" id="val_gate">-45dB</span></div>
-                    <input type="range" id="sl_gate" min="-80" max="0" value="-45" oninput="onSlider('gate',+this.value)">
-                </div>
-            </div>
+        <div class="slider-row">
+          <label for="eqHighSlider">EQ High Shelf</label>
+          <input type="range" id="eqHighSlider" min="-24" max="24" value="0" step="1">
+          <span class="slider-val" id="eqHighVal">0 dB</span>
         </div>
-    </div>
+      </div>
+    </section>
 
-    <!-- CENTER -->
-    <div class="panel center-panel">
-        <canvas id="specCanvas"></canvas>
-        <div class="vis-overlay">
-            <div class="vis-title">Spectrum Analyzer <span class="live-badge" id="liveBadge">IDLE</span></div>
-            <div class="vis-legend">
-                <div class="legend-item"><div class="legend-dot" style="background:#555"></div>Raw</div>
-                <div class="legend-item"><div class="legend-dot" style="background:var(--accent)"></div>Processed</div>
-            </div>
-        </div>
-    </div>
+    <section class="panel privacy-panel">
+      <h2 class="section-label">Privacy</h2>
+      <p class="hint">
+        100% local processing — ONNX models run in a Web Worker on your device
+        (WebGPU when available, WASM fallback). No microphone access, no audio
+        upload, no telemetry.
+      </p>
+    </section>
+  </main>
 
-    <!-- RIGHT -->
-    <div class="panel right-panel">
-        <div style="display:flex;flex-direction:column;gap:11px;flex:1">
-            <div class="section-label" style="margin:0">Output Device</div>
-            <select id="outputDeviceSel" aria-label="Output Device"></select>
-            <div class="switch-row"><span>Monitor Mic</span><label class="sw"><input type="checkbox" id="monitorTgl" onchange="toggleMonitor()" aria-label="Monitor Mic"><span class="sw-track"></span></label></div>
-            <div class="switch-row"><span>Bypass DSP</span><label class="sw"><input type="checkbox" id="bypassTgl" onchange="toggleBypass()" aria-label="Bypass DSP"><span class="sw-track"></span></label></div>
-            <div class="panel-section">
-                <div class="level-row"><span class="level-label">Output Level</span><span class="level-val" id="outLevelVal" style="color:var(--accent)">-- dB</span></div>
-                <div class="meter-wrap"><div class="meter-fill" id="outMeter"></div></div>
-                <div class="level-ticks"><span>-60</span><span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>0</span></div>
-            </div>
-            <div class="stats-box">
-                <div class="stat-row"><span class="stat-lbl">Sample Rate</span><span class="stat-val" id="st_sr">--</span></div>
-                <div class="stat-row"><span class="stat-lbl">Base Latency</span><span class="stat-val" id="st_lat">--</span></div>
-                <div class="stat-row"><span class="stat-lbl">FFT Bins</span><span class="stat-val good">2048</span></div>
-                <div class="stat-row"><span class="stat-lbl">Mode</span><span class="stat-val" id="st_mode">ISOLATE</span></div>
-                <div class="stat-row"><span class="stat-lbl">Compressor GR</span><span class="stat-val" id="st_gr">--</span></div>
-            </div>
-            <div style="flex:1"></div>
-            <button class="big-btn" id="recBtn" onclick="toggleRecord()" disabled>&#11044; <span id="recTxt">START RECORDING</span></button>
-        </div>
-    </div>
-
-</div>
-
-<script>
-'use strict';
-
-/* ===============================================
-   AUDIO ENGINE
-=============================================== */
-const AE = {
-    ctx:null, stream:null, src:null,
-    hp:null, lp:null, comp:null, gain:null,
-    anlIn:null, anlOut:null, destGain:null,
-    mr:null, chunks:[],
-    active:false, bypass:false, monitor:false,
-
-    async start(deviceId) {
-        if (this.active) await this.stop();
-        this.stream = await navigator.mediaDevices.getUserMedia({
-            audio:{ deviceId: deviceId||undefined, echoCancellation:false, noiseSuppression:false, autoGainControl:false, sampleRate:48000 },
-            video:false
-        });
-        this.ctx = new (window.AudioContext||window.webkitAudioContext)({latencyHint:'interactive'});
-        if (this.ctx.state==='suspended') await this.ctx.resume();
-
-        this.src      = this.ctx.createMediaStreamSource(this.stream);
-        this.anlIn    = this.ctx.createAnalyser(); this.anlIn.fftSize=2048; this.anlIn.smoothingTimeConstant=0.8;
-        this.hp       = this.ctx.createBiquadFilter(); this.hp.type='highpass'; this.hp.frequency.value=+document.getElementById('sl_hp').value; this.hp.Q.value=0.7;
-        this.lp       = this.ctx.createBiquadFilter(); this.lp.type='lowpass';  this.lp.frequency.value=+document.getElementById('sl_lp').value; this.lp.Q.value=0.7;
-        this.comp     = this.ctx.createDynamicsCompressor(); this.comp.threshold.value=+document.getElementById('sl_comp').value; this.comp.knee.value=6; this.comp.ratio.value=4; this.comp.attack.value=0.003; this.comp.release.value=0.25;
-        this.gain     = this.ctx.createGain(); this.gain.gain.value=+document.getElementById('sl_gain').value/100;
-        this.anlOut   = this.ctx.createAnalyser(); this.anlOut.fftSize=2048; this.anlOut.smoothingTimeConstant=0.8;
-        this.destGain = this.ctx.createGain(); this.destGain.gain.value = this.monitor ? 1 : 0;
-
-        this._wire();
-        this.active = true;
-        updateUI(true);
-    },
-
-    _wire() {
-        if (this.bypass) {
-            this.src.connect(this.anlIn);
-            this.anlIn.connect(this.anlOut);
-        } else {
-            this.src.connect(this.anlIn);
-            this.anlIn.connect(this.hp);
-            this.hp.connect(this.lp);
-            this.lp.connect(this.comp);
-            this.comp.connect(this.gain);
-            this.gain.connect(this.anlOut);
-        }
-        this.anlOut.connect(this.destGain);
-        this.destGain.connect(this.ctx.destination);
-    },
-
-    _unwire() {
-        [this.src,this.anlIn,this.hp,this.lp,this.comp,this.gain,this.anlOut,this.destGain].forEach(n=>{ try{n&&n.disconnect();}catch(_){} });
-    },
-
-    async stop() {
-        if (this.mr && this.mr.state!=='inactive') this.mr.stop();
-        if (this.ctx) { await this.ctx.close(); this.ctx=null; }
-        if (this.stream) { this.stream.getTracks().forEach(t=>t.stop()); this.stream=null; }
-        this.active=false; updateUI(false);
-    },
-
-    setGain(v)  { if(this.gain)  this.gain.gain.value = v/100; },
-    setHP(hz)   { if(this.hp)    this.hp.frequency.value = hz; },
-    setLP(hz)   { if(this.lp)    this.lp.frequency.value = hz; },
-    setComp(db) { if(this.comp)  this.comp.threshold.value = db; },
-
-    setMonitor(on) { this.monitor=on; if(this.destGain) this.destGain.gain.value = on?1:0; },
-
-    setBypass(on) {
-        this.bypass=on;
-        if (!this.active) return;
-        this._unwire(); this._wire();
-    }
-};
-
-/* ===============================================
-   CANVAS
-=============================================== */
-const canvas = document.getElementById('specCanvas');
-const c2 = canvas.getContext('2d');
-let fftIn, fftOut;
-
-function resize() {
-    const dpr=window.devicePixelRatio||1, w=canvas.clientWidth, h=canvas.clientHeight;
-    canvas.width=w*dpr; canvas.height=h*dpr; c2.setTransform(dpr,0,0,dpr,0,0);
-}
-window.addEventListener('resize', resize); resize();
-
-let demoT=0;
-const DB=[...Array(64)].map((_,i)=>({v:.08+Math.random()*.2,n:.03+Math.random()*.07,vt:0,nt:0}));
-
-function grid(W,H) {
-    c2.strokeStyle='rgba(50,50,50,.8)'; c2.lineWidth=.5; c2.setLineDash([3,5]);
-    [.25,.5,.75].forEach(y=>{c2.beginPath();c2.moveTo(0,H*y);c2.lineTo(W,H*y);c2.stroke();});
-    c2.setLineDash([]);
-}
-
-function drawDemo() {
-    const W=canvas.clientWidth,H=canvas.clientHeight;
-    c2.clearRect(0,0,W,H); grid(W,H);
-    const bw=(W/64)-1; demoT+=.022;
-    DB.forEach((b,i)=>{
-        b.vt=.07+Math.abs(Math.sin(i*.22+demoT))*.2+Math.abs(Math.sin(i*.5-demoT*1.1))*.1;
-        b.nt=.02+Math.abs(Math.cos(i*.35+demoT*.8))*.06;
-        b.v+=(b.vt-b.v)*.1; b.n+=(b.nt-b.n)*.1;
-        const x=i*(bw+1), vh=Math.max(2,b.v*H*.7), nh=Math.max(2,b.n*H*.25);
-        c2.fillStyle='rgba(80,80,80,.35)'; c2.fillRect(x,H-nh,bw,nh);
-        const g=c2.createLinearGradient(0,H-vh,0,H);
-        g.addColorStop(0,'rgba(239,68,68,.75)'); g.addColorStop(1,'rgba(239,68,68,.04)');
-        c2.fillStyle=g; c2.fillRect(x,H-vh,bw,vh);
-    });
-    if (!AE.active) requestAnimationFrame(drawDemo);
-}
-drawDemo();
-
-function drawLive() {
-    if (!AE.active) { drawDemo(); return; }
-    const W=canvas.clientWidth, H=canvas.clientHeight;
-    c2.clearRect(0,0,W,H); grid(W,H);
-    const bins=AE.anlIn.frequencyBinCount;
-    if (!fftIn  || fftIn.length !==bins) fftIn =new Uint8Array(bins);
-    if (!fftOut || fftOut.length!==bins) fftOut=new Uint8Array(bins);
-    AE.anlIn.getByteFrequencyData(fftIn);
-    AE.anlOut.getByteFrequencyData(fftOut);
-    const N=128, step=Math.floor(bins/N), bw=(W/N)-1;
-    for (let i=0;i<N;i++) {
-        let si=0,so=0;
-        for(let k=0;k<step;k++){si+=fftIn[i*step+k];so+=fftOut[i*step+k];}
-        const ai=si/step, ao=so/step;
-        const x=i*(bw+1), hi=Math.max(2,(ai/255)*H*.75), ho=Math.max(2,(ao/255)*H*.88);
-        c2.fillStyle='rgba(100,100,100,.3)'; c2.fillRect(x,H-hi,bw,hi);
-        const g=c2.createLinearGradient(0,H-ho,0,H);
-        g.addColorStop(0,'rgba(239,68,68,.92)'); g.addColorStop(.55,'rgba(239,68,68,.3)'); g.addColorStop(1,'rgba(239,68,68,.04)');
-        c2.fillStyle=g; c2.fillRect(x,H-ho,bw,ho);
-    }
-    requestAnimationFrame(drawLive);
-}
-
-/* ===============================================
-   METERS — real RMS from AnalyserNode
-=============================================== */
-const rmsArr = new Float32Array(2048);
-function rmsDB(anl) {
-    if (!anl) return -Infinity;
-    anl.getFloatTimeDomainData(rmsArr);
-    let s=0; for(let i=0;i<rmsArr.length;i++) s+=rmsArr[i]*rmsArr[i];
-    const rms=Math.sqrt(s/rmsArr.length);
-    return rms>1e-7 ? 20*Math.log10(rms) : -Infinity;
-}
-function pct(db) { return Math.max(0,Math.min(100,((db+60)/60)*100)); }
-
-(function meterLoop(){
-    if (AE.active) {
-        const di=rmsDB(AE.anlIn), do_=rmsDB(AE.anlOut);
-        document.getElementById('inMeter').style.width  = pct(di).toFixed(1)+'%';
-        document.getElementById('outMeter').style.width = pct(do_).toFixed(1)+'%';
-        document.getElementById('inLevelVal').textContent  = isFinite(di)  ? di.toFixed(1)+' dB'  : '-- dB';
-        document.getElementById('outLevelVal').textContent = isFinite(do_) ? do_.toFixed(1)+' dB' : '-- dB';
-        if (AE.comp) document.getElementById('st_gr').textContent = AE.comp.reduction.toFixed(1)+' dB';
-    }
-    requestAnimationFrame(meterLoop);
-}());
-
-/* ===============================================
-   UI HANDLERS
-=============================================== */
-function updateUI(on) {
-    const dot=document.getElementById('statusDot');
-    dot.className='status-dot'+(on?' active':'');
-    document.getElementById('statusText').textContent = on ? 'Live — microphone active' : 'Idle — click Grant Microphone to start';
-    document.getElementById('liveBadge').textContent  = on ? 'LIVE' : 'IDLE';
-    document.getElementById('recBtn').disabled        = !on;
-    document.getElementById('srDisplay').textContent  = on ? AE.ctx.sampleRate+' Hz' : '';
-    document.getElementById('st_sr').textContent      = on ? AE.ctx.sampleRate+' Hz' : '--';
-    document.getElementById('st_lat').textContent     = on ? ((AE.ctx.baseLatency||0)*1000).toFixed(1)+'ms' : '--';
-    if (on) drawLive();
-}
-
-async function toggleMic() {
-    if (AE.active) {
-        await AE.stop();
-        const b=document.getElementById('micBtn');
-        b.textContent='🎤 Grant Microphone Access'; b.classList.remove('granted');
-    } else {
-        setStatus('Requesting microphone...','warn');
-        try {
-            await populateDevices();
-            await AE.start(document.getElementById('inputDeviceSel').value||undefined);
-            const b=document.getElementById('micBtn');
-            b.textContent='✅ Mic Active — click to stop'; b.classList.add('granted');
-        } catch(e) {
-            setStatus('Mic denied: '+e.message,'error');
-        }
-    }
-}
-
-async function changeDevice() {
-    if (!AE.active) return;
-    await AE.start(document.getElementById('inputDeviceSel').value||undefined);
-}
-
-function setStatus(msg,cls) {
-    document.getElementById('statusText').textContent=msg;
-    document.getElementById('statusDot').className='status-dot'+(cls?' '+cls:'');
-}
-
-function switchTab(btn) {
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
-}
-function setMode(btn,mode) {
-    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
-    document.getElementById('st_mode').textContent=mode.toUpperCase();
-}
-function toggleMonitor() { AE.setMonitor(document.getElementById('monitorTgl').checked); }
-function toggleBypass()  { AE.setBypass(document.getElementById('bypassTgl').checked); }
-
-function fmt(v,suffix) {
-    if (suffix==='Hz' && v>=1000) return (v/1000).toFixed(v>=10000?0:1)+'kHz';
-    return v+suffix;
-}
-
-const SLIDER_MAP = {
-    gain:  { suffix:'%',  fn:v=>AE.setGain(v) },
-    hp:    { suffix:'Hz', fn:v=>AE.setHP(v)   },
-    lp:    { suffix:'Hz', fn:v=>AE.setLP(v)   },
-    comp:  { suffix:'dB', fn:v=>AE.setComp(v) },
-    gate:  { suffix:'dB', fn:()=>{}            }
-};
-
-function onSlider(name,v) {
-    const m=SLIDER_MAP[name]; if(!m) return;
-    const d=fmt(v,m.suffix);
-    document.getElementById('knob_'+name).textContent=d;
-    document.getElementById('val_'+name).textContent=d;
-    m.fn(v);
-}
-
-function resetControls() {
-    const defs={sl_gain:85,sl_hp:80,sl_lp:8000,sl_comp:-24,sl_gate:-45};
-    Object.entries(defs).forEach(([id,val])=>{
-        const el=document.getElementById(id); el.value=val; el.dispatchEvent(new Event('input'));
-    });
-}
-
-/* Recording — captures processed stream to .webm */
-let recording=false;
-function toggleRecord() {
-    if (!AE.active) return;
-    if (recording) {
-        AE.mr.stop(); recording=false;
-        document.getElementById('recBtn').classList.remove('rec');
-        document.getElementById('recTxt').textContent='START RECORDING';
-    } else {
-        AE.chunks=[];
-        const dest=AE.ctx.createMediaStreamDestination();
-        AE.anlOut.connect(dest);
-        AE.mr=new MediaRecorder(dest.stream,{mimeType:'audio/webm;codecs=opus'});
-        AE.mr.ondataavailable=e=>{if(e.data.size>0) AE.chunks.push(e.data);};
-        AE.mr.onstop=()=>{
-            const blob=new Blob(AE.chunks,{type:'audio/webm'});
-            const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-            a.download='vi-pro-'+Date.now()+'.webm'; a.click();
-        };
-        AE.mr.start(100); recording=true;
-        document.getElementById('recBtn').classList.add('rec');
-        document.getElementById('recTxt').textContent='STOP RECORDING';
-    }
-}
-
-async function populateDevices() {
-    try {
-        const devs=await navigator.mediaDevices.enumerateDevices();
-        const isel=document.getElementById('inputDeviceSel'); isel.innerHTML='';
-        devs.filter(d=>d.kind==='audioinput').forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||'Mic '+(isel.children.length+1); isel.appendChild(o); });
-        const osel=document.getElementById('outputDeviceSel'); osel.innerHTML='';
-        devs.filter(d=>d.kind==='audiooutput').forEach(d=>{ const o=document.createElement('option'); o.value=d.deviceId; o.textContent=d.label||'Speaker '+(osel.children.length+1); osel.appendChild(o); });
-    } catch(e){console.warn(e);}
-}
-
-populateDevices();
-if (navigator.mediaDevices) navigator.mediaDevices.addEventListener('devicechange', populateDevices);
-</script>
-
-<script>window.si=window.si||function(){(window.siq=window.siq||[]).push(arguments);};</script>
-<script defer src="/_vercel/speed-insights/script.js"></script>
+  <script type="module" src="/landing.js"></script>
 </body>
 </html>

@@ -29,6 +29,12 @@ const EXPECTED_COMMITTED = [
   'ort-wasm-simd-threaded.wasm',
   'ort-wasm-simd-threaded.jsep.wasm',
   'ort-wasm-simd-threaded.asyncify.wasm',
+  // Each .wasm has a paired ES-module loader that ORT fetches at runtime —
+  // without these the wasm backend fails with 'no available backend found'.
+  'ort-wasm-simd-threaded.mjs',
+  'ort-wasm-simd-threaded.jsep.mjs',
+  'ort-wasm-simd-threaded.jspi.mjs',
+  'ort-wasm-simd-threaded.asyncify.mjs',
 ];
 
 const SOFT_ENV = process.env.VIP_ORT_SETUP_SOFT === '1';

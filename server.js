@@ -12,6 +12,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import apiRouter from './api-routes/index.js';
+import { securityHeaders } from './server/securityHeaders.js';
 import { spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -34,34 +35,8 @@ const APP_VERSION = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'ut
 const app        = express();
 app.disable('x-powered-by');
 
-// ── Cross-Origin Isolation (required for SharedArrayBuffer) ──────────────
-app.use((_req, res, next) => {
-  // Core isolation headers — SharedArrayBuffer needs both
-  res.setHeader('Cross-Origin-Opener-Policy',   'same-origin');
-  res.setHeader('Cross-Origin-Embedder-Policy',  'require-corp');
-  res.setHeader('Cross-Origin-Resource-Policy',   'same-origin');
-
-  // Security hardening
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options',        'DENY');
-  res.setHeader('Referrer-Policy',         'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy',      'microphone=(self), camera=(), geolocation=()');
-
-  // FIX 3: CSP — local-only; no CDN, no telemetry (ONNX Runtime is vendored at /lib/ort.min.js)
-  res.setHeader('Content-Security-Policy', [
-    "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
-    "img-src 'self' data: blob:",
-    "media-src 'self' blob: mediastream:",
-    "connect-src 'self' data: blob:",
-    "worker-src 'self' blob:",
-    "wasm-src 'self'",
-  ].join('; '));
-
-  next();
-});
+// ── Security headers (Layer 0 — see server/securityHeaders.js) ──────────
+app.use(securityHeaders());
 
 // ── API Routes ──────────────────────────────────────────────────────────
 app.use('/api', apiRouter);
@@ -73,6 +48,13 @@ app.use('/app/models', express.static(join(__dirname, 'public', 'app', 'models')
       res.setHeader('Cache-Control', 'public, max-age=86400');
       res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     }
+  }
+}));
+
+// ── Serve /src (4-layer Stem-Split & Live-Mix modules — see CLAUDE.md) ──
+app.use('/src', express.static(join(__dirname, 'src'), {
+  setHeaders: (res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   }
 }));
 

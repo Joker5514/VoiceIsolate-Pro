@@ -22,6 +22,7 @@ export default [
         ...globals.worker,
         importScripts:    'readonly',
         SharedRingBuffer: 'readonly',
+        module:           'readonly',   // UMD export guards in legacy files
       },
     },
     rules: {
@@ -180,6 +181,61 @@ export default [
     },
   },
 
+  // ── Top-level public pages (landing.js etc.) — browser ES modules ────────────
+  {
+    files: ['public/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.browser },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'semi': ['warn', 'always'],
+      'quotes': ['warn', 'single', { avoidEscape: true }],
+    },
+  },
+
+  // ── Stem-Split & Live-Mix architecture (src/ — see CLAUDE.md §2) ─────────────
+  {
+    // Layers 1/3/4 — browser ES modules
+    files: ['src/core/**/*.js', 'src/pipeline/**/*.js', 'src/presentation/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.browser },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'semi': ['warn', 'always'],
+      'quotes': ['warn', 'single', { avoidEscape: true }],
+    },
+  },
+  {
+    // Layer 2 — classic Web Worker (importScripts, no import/export)
+    files: ['src/workers/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        ...globals.worker,
+        importScripts: 'readonly',
+        ort: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'semi': ['warn', 'always'],
+      'quotes': ['warn', 'single', { avoidEscape: true }],
+    },
+  },
+
   // ── Backend / tooling ─────────────────────────────────────────────────────────
   {
     // API handlers (api/ and api-routes/) — Node.js ESM
@@ -196,8 +252,8 @@ export default [
     },
   },
   {
-    // Dev server — Node.js ESM
-    files: ['server.js'],
+    // Dev server + security middleware — Node.js ESM
+    files: ['server.js', 'server/**/*.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',

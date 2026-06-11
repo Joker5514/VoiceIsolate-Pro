@@ -173,11 +173,6 @@ class PipelineState {
     this._workletPort = port;
   }
 
-  /** Get all param keys */
-  keys() {
-    return [...this._params.keys()];
-  }
-
   /** Get params grouped by tab */
   grouped() {
     const groups = {};
@@ -366,21 +361,22 @@ class DSPConfig {
   /** Export config as a plain object (for passing to dsp-worker as params) */
   export() {
     const obj = {};
-    for (const [key, p] of this._params.entries()) {
-      obj[key] = p.value;
-    }
-    // Also include noise properties manually just in case
     obj.adaptiveWienerEnabled = this.adaptiveWienerEnabled;
     obj.dns2Enabled = this.dns2Enabled;
     obj.multiSpeakerEnabled = this.multiSpeakerEnabled;
+    obj.harmonicV2Enabled = this.harmonicV2Enabled;
     obj.noiseClassifierEnabled = this.noiseClassifierEnabled;
     obj.separationMode = this.separationMode;
     obj.targetSpeaker = this.targetSpeaker;
     obj.separationAttenuationDb = this.separationAttenuationDb;
     obj.adaptiveWienerSmoothingMs = this.adaptiveWienerSmoothingMs;
     obj.adaptiveWienerOverSubtraction = this.adaptiveWienerOverSubtraction;
+    obj.harmonicV2SBR = this.harmonicV2SBR;
+    obj.harmonicV2FormantProtection = this.harmonicV2FormantProtection;
+    obj.harmonicV2BreathinessGain = this.harmonicV2BreathinessGain;
     obj.noiseClass = this.noiseClass;
     obj.noiseClassConfidence = this.noiseClassConfidence;
+    obj.adaptiveNoiseFloorReady = this.adaptiveNoiseFloorReady;
     return obj;
   }
 
