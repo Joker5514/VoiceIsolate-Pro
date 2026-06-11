@@ -143,7 +143,7 @@ describe('ModelManifest (Layer 1)', () => {
 
 // ── PlaybackMixer (mock AudioContext) ─────────────────────────────────────────
 function mockParam() {
-  return { value: 0, setTargetAtTime: jest.fn() };
+  return { value: 0, setTargetAtTime: jest.fn(), cancelScheduledValues: jest.fn() };
 }
 
 function mockNode(extra = {}) {
@@ -190,19 +190,33 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.noiseGain.gain.value).toBe(0);
   });
 
-  test('setNoiseReduction(75) smoothly drives NoiseGain toward 0.25', () => {
+  test('while playing, setNoiseReduction(75) smoothly drives NoiseGain toward 0.25', async () => {
+    mixer.loadStems(stems(), stems());
+    await mixer.play();
     mixer.setNoiseReduction(75);
     const call = mixer.noiseGain.gain.setTargetAtTime.mock.calls.at(-1);
     expect(call[0]).toBeCloseTo(0.25);
   });
 
-  test('control inputs are clamped and never use bare value jumps', () => {
+  test('while idle, controls snap exactly (no smoothing toward a frozen clock)', () => {
+    mixer.setNoiseReduction(75);
+    expect(mixer.noiseGain.gain.setTargetAtTime).not.toHaveBeenCalled();
+    expect(mixer.noiseGain.gain.cancelScheduledValues).toHaveBeenCalled();
+    expect(mixer.noiseGain.gain.value).toBeCloseTo(0.25);
+  });
+
+  test('control inputs are clamped on both paths', async () => {
     mixer.setNoiseReduction(250);
-    expect(mixer.noiseGain.gain.setTargetAtTime.mock.calls.at(-1)[0]).toBe(0);
+    expect(mixer.noiseGain.gain.value).toBe(0);
     mixer.setVolume(-50);
-    expect(mixer.masterGain.gain.setTargetAtTime.mock.calls.at(-1)[0]).toBe(0);
+    expect(mixer.masterGain.gain.value).toBe(0);
     mixer.setLowShelf(99);
-    expect(mixer.lowShelf.gain.setTargetAtTime.mock.calls.at(-1)[0]).toBe(24);
+    expect(mixer.lowShelf.gain.value).toBe(24);
+
+    mixer.loadStems(stems(), stems());
+    await mixer.play();
+    mixer.setVoiceLevel(900);
+    expect(mixer.cleanGain.gain.setTargetAtTime.mock.calls.at(-1)[0]).toBe(2);
   });
 
   test('loadStems builds sample-locked buffers; transport round-trips', async () => {

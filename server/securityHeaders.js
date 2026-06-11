@@ -44,7 +44,6 @@ function buildCsp({ allowLegacyInline }) {
     "media-src 'self' blob:",
     "connect-src 'self' data: blob:",
     "worker-src 'self' blob:",
-    "wasm-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

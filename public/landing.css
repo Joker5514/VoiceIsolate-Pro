@@ -151,3 +151,18 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
   .slider-row { grid-template-columns: 110px 1fr 52px; }
   .time-readout { margin-left: 0; }
 }
+
+.vis-block { margin-top: 16px; display: flex; flex-direction: column; gap: 6px; }
+
+.vis-label { font-size: 11px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); }
+
+.vis-hint { text-transform: none; letter-spacing: 0; }
+
+.vis-canvas {
+  width: 100%;
+  height: 110px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: crosshair;
+}

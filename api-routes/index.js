@@ -20,7 +20,6 @@
 import express from 'express';
 import monetizationRouter from './monetization.js';
 import syncRouter from './sync.js';
-import nimRouter from './nim/index.js';
 import clientConfigHandler from './client-config.js';
 
 const router = express.Router();
@@ -76,8 +75,18 @@ router.use('/', monetizationRouter);
 // NOTE: There is intentionally no /api/auth router. Username/password auth
 // with seeded users was removed by design — see CLAUDE.md §3. Do not re-add.
 
-// ─── NIM Integration ────────────────────────────────────────────────────────
-router.use('/nim', nimRouter);
+// ─── NIM Integration (lazy — gRPC modules loaded on first request only) ─────
+let _nimRouterPromise = null;
+router.use('/nim', async (req, res, next) => {
+  try {
+    if (!_nimRouterPromise) _nimRouterPromise = import('./nim/index.js');
+    const { default: nimRouter } = await _nimRouterPromise;
+    nimRouter(req, res, next);
+  } catch (err) {
+    _nimRouterPromise = null;
+    next(err);
+  }
+});
 
 // ─── Cloud Sync Routes ────────────────────────────────────────────────────────
 router.use('/sync', syncRouter);

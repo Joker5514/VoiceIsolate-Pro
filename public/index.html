@@ -58,7 +58,22 @@
         <button id="playBtn" class="btn" type="button" disabled>&#9654; Play</button>
         <button id="pauseBtn" class="btn" type="button" disabled>&#10074;&#10074; Pause</button>
         <button id="stopBtn" class="btn" type="button" disabled>&#9632; Stop</button>
+        <label for="presetSelect" class="inline-label">Preset</label>
+        <select id="presetSelect" aria-label="Mix preset" disabled>
+          <option value="voice-clarity" selected>Voice Clarity</option>
+          <option value="balanced">Balanced</option>
+          <option value="podcast-warm">Podcast Warm</option>
+          <option value="residual-monitor">Residual Monitor (hear what was removed)</option>
+          <option value="original">Original (bypass)</option>
+        </select>
         <span id="timeReadout" class="time-readout">0:00 / 0:00</span>
+      </div>
+
+      <div class="vis-block">
+        <div class="vis-label">Stem waveforms <span class="vis-hint">— voice in red, removed noise in gray · click to seek</span></div>
+        <canvas id="waveCanvas" class="vis-canvas" height="110" aria-label="Stem waveform overview"></canvas>
+        <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to every slider in real time</span></div>
+        <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>
       </div>
 
       <div class="slider-grid">

@@ -49,7 +49,10 @@ describe('Server.js Integration Tests', () => {
       expect(csp).not.toContain('mediastream:');
       expect(csp).toContain("connect-src 'self'");
       expect(csp).toContain("worker-src 'self' blob:");
-      expect(csp).toContain("wasm-src 'self'");
+      // 'wasm-src' is not a real CSP directive — wasm is governed by
+      // 'wasm-unsafe-eval' in script-src.
+      expect(csp).not.toContain('wasm-src');
+      expect(csp).toContain("'wasm-unsafe-eval'");
     });
 
     test('non-legacy paths get strict CSP without unsafe-inline scripts', async () => {

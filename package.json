@@ -35,6 +35,7 @@
     "worklets:hash": "node scripts/hash-worklets.js",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --coverage",
     "test:live": "node scripts/live-smoke.cjs",
+    "test:landing": "node scripts/landing-smoke.cjs",
     "build:mobile": "pnpm run build && npx cap sync",
     "cap:sync": "npx cap sync",
     "cap:open:android": "npx cap open android",

@@ -165,14 +165,33 @@ export class PlaybackMixer {
   // ─── Real-time controls (AudioParam only — never ML) ──────────────────
 
   /**
+   * While stems are audibly playing, approach the target with
+   * setTargetAtTime so transitions are click-free. When idle (paused/
+   * stopped/ended) nothing is rendering, so a click is impossible — snap
+   * exactly to the target so the next play starts from the precise value.
+   * (Smoothing-only also stalls on browsers that freeze the context clock
+   * when the graph has no active sources.)
+   * @param {AudioParam} param
+   * @param {number} target
+   */
+  _applyParam(param, target) {
+    const now = this.ctx.currentTime;
+    if (this._isPlaying) {
+      param.setTargetAtTime(target, now, PARAM_SMOOTHING);
+    } else {
+      param.cancelScheduledValues(now);
+      param.value = target;
+    }
+  }
+
+  /**
    * Noise reduction, 0–100. 100 = noise stem fully muted; 0 = original mix.
-   * Inversely drives NoiseGain with a smooth exponential approach.
+   * Inversely drives NoiseGain.
    * @param {number} percentage
    */
   setNoiseReduction(percentage) {
     const pct = clamp(percentage, 0, 100);
-    const gain = 1 - pct / 100;
-    this.noiseGain.gain.setTargetAtTime(gain, this.ctx.currentTime, PARAM_SMOOTHING);
+    this._applyParam(this.noiseGain.gain, 1 - pct / 100);
   }
 
   /**
@@ -180,8 +199,7 @@ export class PlaybackMixer {
    * @param {number} percentage
    */
   setVoiceLevel(percentage) {
-    const gain = clamp(percentage, 0, 200) / 100;
-    this.cleanGain.gain.setTargetAtTime(gain, this.ctx.currentTime, PARAM_SMOOTHING);
+    this._applyParam(this.cleanGain.gain, clamp(percentage, 0, 200) / 100);
   }
 
   /**
@@ -189,8 +207,7 @@ export class PlaybackMixer {
    * @param {number} percentage
    */
   setVolume(percentage) {
-    const gain = clamp(percentage, 0, 100) / 100;
-    this.masterGain.gain.setTargetAtTime(gain, this.ctx.currentTime, PARAM_SMOOTHING);
+    this._applyParam(this.masterGain.gain, clamp(percentage, 0, 100) / 100);
   }
 
   /**
@@ -198,7 +215,7 @@ export class PlaybackMixer {
    * @param {number} db
    */
   setLowShelf(db) {
-    this.lowShelf.gain.setTargetAtTime(clamp(db, -24, 24), this.ctx.currentTime, PARAM_SMOOTHING);
+    this._applyParam(this.lowShelf.gain, clamp(db, -24, 24));
   }
 
   /**
@@ -206,7 +223,7 @@ export class PlaybackMixer {
    * @param {number} db
    */
   setHighShelf(db) {
-    this.highShelf.gain.setTargetAtTime(clamp(db, -24, 24), this.ctx.currentTime, PARAM_SMOOTHING);
+    this._applyParam(this.highShelf.gain, clamp(db, -24, 24));
   }
 
   // ─── Introspection ─────────────────────────────────────────────────────

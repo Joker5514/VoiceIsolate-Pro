@@ -14,6 +14,7 @@
 import { ingestFile } from '/src/pipeline/FileIngestion.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
+import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
 import { MODEL_MANIFEST } from '/src/core/ModelManifest.js';
 
@@ -30,10 +31,14 @@ const ui = {
   statusText: $('statusText'),
   progress: $('inferenceProgress'),
   timeReadout: $('timeReadout'),
+  presetSelect: $('presetSelect'),
+  waveCanvas: $('waveCanvas'),
+  specCanvas: $('specCanvas'),
 };
 
 let mixer = null;
 let sliderUI = null;
+let visualizer = null;
 let worker = null;
 let ingested = null;
 let requestSeq = 0;
@@ -103,6 +108,28 @@ function wireReadouts() {
   }
 }
 
+// ─── Presets (preloaded mix calibrations) ────────────────────────────────────
+// Values are slider positions, applied by dispatching 'input' events so they
+// flow through SliderUI's rAF-coalesced path exactly like a manual drag.
+const PRESETS = {
+  'voice-clarity':    { noiseReductionSlider: 100, voiceLevelSlider: 115, volumeSlider: 100, eqLowSlider: -4, eqHighSlider: 3 },
+  'balanced':         { noiseReductionSlider: 70,  voiceLevelSlider: 100, volumeSlider: 100, eqLowSlider: 0,  eqHighSlider: 1 },
+  'podcast-warm':     { noiseReductionSlider: 90,  voiceLevelSlider: 110, volumeSlider: 95,  eqLowSlider: 3,  eqHighSlider: 1 },
+  'residual-monitor': { noiseReductionSlider: 0,   voiceLevelSlider: 0,   volumeSlider: 100, eqLowSlider: 0,  eqHighSlider: 0 },
+  'original':         { noiseReductionSlider: 0,   voiceLevelSlider: 100, volumeSlider: 100, eqLowSlider: 0,  eqHighSlider: 0 },
+};
+
+function applyPreset(name) {
+  const preset = PRESETS[name];
+  if (!preset) return;
+  for (const [sliderId, value] of Object.entries(preset)) {
+    const el = $(sliderId);
+    if (!el) continue;
+    el.value = String(value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+
 // ─── Pipeline glue ───────────────────────────────────────────────────────────
 
 async function onFileChosen() {
@@ -150,10 +177,14 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
     mixer = new PlaybackMixer();
     sliderUI = new SliderUI(mixer);
     sliderUI.bind();
+    visualizer = new LandingVisualizer(mixer, ui.waveCanvas, ui.specCanvas);
+    // Read-only diagnostics handle for smoke tests and the debug console.
+    globalThis.__vipDiagnostics = { mixer, sliderUI, visualizer };
   }
   mixer.loadStems(clean, noise, sampleRate);
+  visualizer.loadStems(clean, noise, mixer.duration());
 
-  for (const btn of [ui.playBtn, ui.pauseBtn, ui.stopBtn]) btn.disabled = false;
+  for (const btn of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.presetSelect]) btn.disabled = false;
   setStatus(
     passthrough
       ? 'Model unavailable — passthrough stems loaded (original audio). Check that /app/models is being served.'
@@ -179,6 +210,7 @@ function wireTransport() {
 
 ui.fileInput.addEventListener('change', onFileChosen);
 ui.processBtn.addEventListener('click', onProcess);
+ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.value));
 wireReadouts();
 wireTransport();
 setStatus('Idle — choose a file to begin', '');
