@@ -14,6 +14,12 @@ const check = (condition, msg) => {
 
 console.log('\n🔍 VoiceIsolate Pro — Validation\n');
 
+// Vercel runs this script as its buildCommand, but .vercelignore strips
+// dev-only files (tests/*.test.js, CI config) from the deploy context —
+// requiring them there fails every deployment. Dev-only checks run only
+// outside Vercel builds.
+const IS_VERCEL_BUILD = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
+
 // 1. Critical files
 console.log('Files:');
 const required = [
@@ -28,12 +34,19 @@ const required = [
   'vercel.json',
   'package.json',
   'README.md',
+];
+const devOnlyRequired = [
   '.github/copilot-instructions.md',
   'tests/dsp.test.js',                  // Phase 6: Tests
   'tests/sliders.test.js',
   'tests/presets.test.js',
 ];
 required.forEach(f => check(fs.existsSync(path.resolve(__dirname, '..', f)), f));
+if (IS_VERCEL_BUILD) {
+  console.log('  ℹ  Vercel build context — dev-only file checks skipped (.vercelignore strips them)');
+} else {
+  devOnlyRequired.forEach(f => check(fs.existsSync(path.resolve(__dirname, '..', f)), f));
+}
 
 // 2. app.js structural checks
 console.log('\napp.js structure:');
