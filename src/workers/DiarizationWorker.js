@@ -33,7 +33,11 @@ self.onmessage = (event) => {
         break;
       }
       default:
-        self.postMessage({ type: 'error', message: `Unknown message type '${msg.type}'` });
+        self.postMessage({
+          type: 'error',
+          requestId: msg.requestId,
+          message: `Unknown message type '${msg.type}'`,
+        });
     }
   } catch (err) {
     self.postMessage({
