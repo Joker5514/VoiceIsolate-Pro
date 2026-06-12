@@ -10,6 +10,8 @@
 
 'use strict';
 
+/* global document -- provided by the jsdom test environment */
+
 let SpeakerControls;
 
 beforeAll(async () => {
