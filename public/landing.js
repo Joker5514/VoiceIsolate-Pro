@@ -14,6 +14,7 @@
 import { ingestFile } from '/src/pipeline/FileIngestion.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
+import { SpeakerControls } from '/src/presentation/SpeakerControls.js';
 import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
 import { MODEL_MANIFEST } from '/src/core/ModelManifest.js';
@@ -27,6 +28,8 @@ const ui = {
   playBtn: $('playBtn'),
   pauseBtn: $('pauseBtn'),
   stopBtn: $('stopBtn'),
+  muteVoiceBtn: $('muteVoiceBtn'),
+  muteNoiseBtn: $('muteNoiseBtn'),
   statusDot: $('statusDot'),
   statusText: $('statusText'),
   progress: $('inferenceProgress'),
@@ -34,14 +37,22 @@ const ui = {
   presetSelect: $('presetSelect'),
   waveCanvas: $('waveCanvas'),
   specCanvas: $('specCanvas'),
+  speakersPanel: $('speakersPanel'),
+  speakerStatus: $('speakerStatus'),
+  speakerCardsGrid: $('speakerCardsGrid'),
 };
 
 let mixer = null;
 let sliderUI = null;
+let speakerControls = null;
 let visualizer = null;
 let worker = null;
+let diarWorker = null;
 let ingested = null;
 let requestSeq = 0;
+let diarSeq = 0;
+
+const DIARIZATION_TIMEOUT_MS = 60000;
 
 function setStatus(msg, cls = '') {
   ui.statusText.textContent = msg;
@@ -87,6 +98,71 @@ function getWorker() {
     ui.processBtn.disabled = false;
   });
   return worker;
+}
+
+// ─── Speaker diarization (module worker, one-shot per file) ──────────────────
+
+function getDiarWorker() {
+  if (diarWorker) return diarWorker;
+  diarWorker = new Worker('/src/workers/DiarizationWorker.js', { type: 'module' });
+  return diarWorker;
+}
+
+/**
+ * Diarize the clean stem off the main thread. Resolves with
+ * { segments, speakers }; rejects on worker error or stall (timeout).
+ */
+function diarize(cleanChannel, sampleRate) {
+  return new Promise((resolve, reject) => {
+    const w = getDiarWorker();
+    const requestId = ++diarSeq;
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Diarization stalled (> ${DIARIZATION_TIMEOUT_MS / 1000}s)`));
+    }, DIARIZATION_TIMEOUT_MS);
+    const onMessage = (event) => {
+      const msg = event.data || {};
+      if (msg.requestId !== requestId) return;
+      cleanup();
+      if (msg.type === 'segments') resolve(msg);
+      else reject(new Error(msg.message || 'Diarization failed'));
+    };
+    const onError = (err) => { cleanup(); reject(new Error(err.message || 'Diarization worker error')); };
+    const cleanup = () => {
+      clearTimeout(timer);
+      w.removeEventListener('message', onMessage);
+      w.removeEventListener('error', onError);
+    };
+    w.addEventListener('message', onMessage);
+    w.addEventListener('error', onError);
+    // Transfer a copy — the mixer already holds its own AudioBuffer copy.
+    const samples = new Float32Array(cleanChannel);
+    w.postMessage({ type: 'diarize', requestId, samples, sampleRate }, [samples.buffer]);
+  });
+}
+
+async function detectSpeakers(clean, sampleRate) {
+  ui.speakersPanel.hidden = false;
+  ui.speakerStatus.textContent = 'Detecting speakers…';
+  speakerControls.clear();
+  // Staleness guard (same contract as onStems): if another file is processed
+  // while diarization is in flight, its result must not touch the new mixer.
+  const seq = requestSeq;
+  try {
+    const { segments, speakers } = await diarize(clean[0], sampleRate);
+    if (seq !== requestSeq) return;
+    mixer.loadSpeakerSegments(segments);
+    const count = speakerControls.render(speakers);
+    ui.speakerStatus.textContent = count === 0
+      ? 'No distinct speakers detected.'
+      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments`;
+  } catch (err) {
+    if (seq !== requestSeq) return;
+    // Graceful degradation: stems + global mutes keep working without it.
+    console.error('[VIP][landing] diarization failed:', err);
+    mixer.loadSpeakerSegments([]);
+    ui.speakerStatus.textContent = `Speaker detection unavailable: ${err.message}`;
+  }
 }
 
 // ─── Slider value readouts ───────────────────────────────────────────────────
@@ -177,20 +253,59 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
     mixer = new PlaybackMixer();
     sliderUI = new SliderUI(mixer);
     sliderUI.bind();
+    speakerControls = new SpeakerControls(mixer, ui.speakerCardsGrid);
     visualizer = new LandingVisualizer(mixer, ui.waveCanvas, ui.specCanvas);
     // Read-only diagnostics handle for smoke tests and the debug console.
-    globalThis.__vipDiagnostics = { mixer, sliderUI, visualizer };
+    globalThis.__vipDiagnostics = { mixer, sliderUI, speakerControls, visualizer };
   }
   mixer.loadStems(clean, noise, sampleRate);
   visualizer.loadStems(clean, noise, mixer.duration());
+  syncMuteButtons();
 
-  for (const btn of [ui.playBtn, ui.pauseBtn, ui.stopBtn, ui.presetSelect]) btn.disabled = false;
+  for (const btn of [ui.playBtn, ui.pauseBtn, ui.stopBtn,
+    ui.muteVoiceBtn, ui.muteNoiseBtn, ui.presetSelect]) btn.disabled = false;
   setStatus(
     passthrough
       ? 'Model unavailable — passthrough stems loaded (original audio). Check that /app/models is being served.'
       : 'Stems ready — press Play and mix in real time.',
     passthrough ? 'warn' : 'active'
   );
+
+  // Per-speaker isolation runs on the clean stem; passthrough stems carry the
+  // raw mix, so speaker features would be meaningless noise — skip.
+  if (passthrough) {
+    ui.speakersPanel.hidden = false;
+    ui.speakerStatus.textContent = 'Speaker detection skipped — model unavailable (passthrough stems).';
+    speakerControls.clear();
+  } else {
+    detectSpeakers(clean, sampleRate);
+  }
+}
+
+// ─── Stem mute toggles ───────────────────────────────────────────────────────
+
+function syncMuteButtons() {
+  if (!mixer) return;
+  const paint = (btn, muted, label) => {
+    btn.textContent = muted ? `Unmute ${label}` : `Mute ${label}`;
+    btn.classList.toggle('active', muted);
+    btn.setAttribute('aria-pressed', String(muted));
+  };
+  paint(ui.muteVoiceBtn, mixer.isVoiceMuted(), 'Voice');
+  paint(ui.muteNoiseBtn, mixer.isNoiseMuted(), 'Background');
+}
+
+function wireMuteButtons() {
+  ui.muteVoiceBtn.addEventListener('click', () => {
+    if (!mixer) return;
+    mixer.setVoiceMuted(!mixer.isVoiceMuted());
+    syncMuteButtons();
+  });
+  ui.muteNoiseBtn.addEventListener('click', () => {
+    if (!mixer) return;
+    mixer.setNoiseMuted(!mixer.isNoiseMuted());
+    syncMuteButtons();
+  });
 }
 
 function wireTransport() {
@@ -213,4 +328,5 @@ ui.processBtn.addEventListener('click', onProcess);
 ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.value));
 wireReadouts();
 wireTransport();
+wireMuteButtons();
 setStatus('Idle — choose a file to begin', '');

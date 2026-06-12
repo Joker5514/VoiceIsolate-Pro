@@ -3,9 +3,14 @@
  *
  * Routes the offline-processed stems through a real-time Web Audio graph:
  *
- *   Clean stem ─► AudioBufferSourceNode ─► CleanGain ─┐
- *                                                     ├─► lowShelf ─► highShelf ─► Master ─► destination
- *   Noise stem ─► AudioBufferSourceNode ─► NoiseGain ─┘
+ *   Clean stem ─► Source ─► SpeakerGain ─► CleanGain ─► VoiceMute ─┐
+ *                                                                  ├─► lowShelf ─► highShelf ─► Master ─► destination
+ *   Noise stem ─► Source ───────────────► NoiseGain ─► NoiseMute ─┘
+ *
+ * SpeakerGain is a per-speaker automation lane: diarization segments
+ * (src/core/diarization.js) schedule gain ramps so individual speakers can
+ * be muted/soloed/attenuated during playback. VoiceMute/NoiseMute are
+ * dedicated mute lanes so toggling mute never disturbs slider state.
  *
  * Every control method only touches AudioParams (setTargetAtTime for
  * click-free transitions). ML inference is NEVER triggered from here —
@@ -34,8 +39,11 @@ export class PlaybackMixer {
     verifyContextSampleRate(this.ctx);
 
     // ── Persistent graph (built once) ────────────────────────────────────
+    this.speakerGain = this.ctx.createGain();
     this.cleanGain = this.ctx.createGain();
+    this.voiceMuteGain = this.ctx.createGain();
     this.noiseGain = this.ctx.createGain();
+    this.noiseMuteGain = this.ctx.createGain();
     this.lowShelf = this.ctx.createBiquadFilter();
     this.highShelf = this.ctx.createBiquadFilter();
     this.masterGain = this.ctx.createGain();
@@ -47,8 +55,11 @@ export class PlaybackMixer {
     this.highShelf.frequency.value = 4000;
     this.analyser.fftSize = 2048;
 
-    this.cleanGain.connect(this.lowShelf);
-    this.noiseGain.connect(this.lowShelf);
+    this.speakerGain.connect(this.cleanGain);
+    this.cleanGain.connect(this.voiceMuteGain);
+    this.voiceMuteGain.connect(this.lowShelf);
+    this.noiseGain.connect(this.noiseMuteGain);
+    this.noiseMuteGain.connect(this.lowShelf);
     this.lowShelf.connect(this.highShelf);
     this.highShelf.connect(this.masterGain);
     this.masterGain.connect(this.analyser);
@@ -58,6 +69,9 @@ export class PlaybackMixer {
     // to the product intent: full voice, noise fully suppressed.
     this.cleanGain.gain.value = 1;
     this.noiseGain.gain.value = 0;
+    this.speakerGain.gain.value = 1;
+    this.voiceMuteGain.gain.value = 1;
+    this.noiseMuteGain.gain.value = 1;
 
     // ── Transport state ──────────────────────────────────────────────────
     /** @type {AudioBuffer|null} */ this.cleanBuffer = null;
@@ -67,6 +81,16 @@ export class PlaybackMixer {
     this._isPlaying = false;
     this._startedAt = 0;    // ctx.currentTime when playback began
     this._offset = 0;       // seconds into the stems
+
+    // ── Mute + per-speaker state ─────────────────────────────────────────
+    this._voiceMuted = false;
+    this._noiseMuted = false;
+    /** @type {Array<{speakerId: string, start: number, end: number}>} */
+    this._segments = [];
+    /** @type {Map<string, {volume: number, muted: boolean}>} */
+    this._speakers = new Map();
+    /** @type {string|null} */
+    this._soloId = null;
   }
 
   // ─── Stem loading ──────────────────────────────────────────────────────
@@ -85,6 +109,8 @@ export class PlaybackMixer {
     this.cleanBuffer = this._toAudioBuffer(cleanChannels, sampleRate);
     this.noiseBuffer = this._toAudioBuffer(noiseChannels, sampleRate);
     this._offset = 0;
+    // New stems invalidate any previous diarization.
+    this.loadSpeakerSegments([]);
   }
 
   _toAudioBuffer(channels, sampleRate) {
@@ -106,7 +132,7 @@ export class PlaybackMixer {
     this._teardownSources();
     this._cleanSource = this.ctx.createBufferSource();
     this._cleanSource.buffer = this.cleanBuffer;
-    this._cleanSource.connect(this.cleanGain);
+    this._cleanSource.connect(this.speakerGain);
 
     this._noiseSource = this.ctx.createBufferSource();
     this._noiseSource.buffer = this.noiseBuffer;
@@ -118,6 +144,7 @@ export class PlaybackMixer {
     this._noiseSource.start(when, this._offset);
     this._startedAt = when - this._offset;
     this._isPlaying = true;
+    this._scheduleSpeakerAutomation();
 
     this._cleanSource.onended = () => {
       if (this._isPlaying && this.currentTime() >= this.duration()) {
@@ -133,6 +160,7 @@ export class PlaybackMixer {
     this._offset = this.currentTime();
     this._teardownSources();
     this._isPlaying = false;
+    this._scheduleSpeakerAutomation(); // clear stale ramps from the old timeline
   }
 
   /** Stop and rewind. */
@@ -140,6 +168,7 @@ export class PlaybackMixer {
     this._teardownSources();
     this._isPlaying = false;
     this._offset = 0;
+    this._scheduleSpeakerAutomation();
   }
 
   /** Seek to an absolute position (seconds); keeps play state. */
@@ -226,6 +255,165 @@ export class PlaybackMixer {
     this._applyParam(this.highShelf.gain, clamp(db, -24, 24));
   }
 
+  /**
+   * Hard-mute the voice stem without disturbing the Voice Level slider.
+   * @param {boolean} muted
+   */
+  setVoiceMuted(muted) {
+    this._voiceMuted = Boolean(muted);
+    this._applyParam(this.voiceMuteGain.gain, this._voiceMuted ? 0 : 1);
+  }
+
+  /**
+   * Hard-mute the background/noise stem without disturbing the
+   * Noise Reduction slider.
+   * @param {boolean} muted
+   */
+  setNoiseMuted(muted) {
+    this._noiseMuted = Boolean(muted);
+    this._applyParam(this.noiseMuteGain.gain, this._noiseMuted ? 0 : 1);
+  }
+
+  isVoiceMuted() { return this._voiceMuted; }
+
+  isNoiseMuted() { return this._noiseMuted; }
+
+  // ─── Per-speaker controls (diarization-driven gain automation) ─────────
+
+  /**
+   * Load diarization segments for the current stems. Segments must be
+   * time-ordered and non-overlapping (the diarizeChannel contract).
+   * Speaker state (volume/mute/solo) resets with each new segment set.
+   * @param {Array<{speakerId: string, start: number, end: number}>} segments
+   */
+  loadSpeakerSegments(segments) {
+    this._segments = (segments || [])
+      .filter((s) => s && typeof s.speakerId === 'string' &&
+        Number.isFinite(s.start) && Number.isFinite(s.end) && s.end > s.start)
+      .slice()
+      .sort((a, b) => a.start - b.start);
+    this._speakers = new Map();
+    for (const seg of this._segments) {
+      if (!this._speakers.has(seg.speakerId)) {
+        this._speakers.set(seg.speakerId, { volume: 1, muted: false });
+      }
+    }
+    this._soloId = null;
+    this._scheduleSpeakerAutomation();
+  }
+
+  /** Speaker ids present in the loaded segments, in first-appearance order. */
+  speakerIds() { return [...this._speakers.keys()]; }
+
+  /**
+   * Speaker state snapshot. `volume` is a 0–100 percentage, symmetric with
+   * setSpeakerVolume so state round-trips without rescaling.
+   * @returns {{volume: number, muted: boolean, solo: boolean}|null}
+   */
+  getSpeakerState(speakerId) {
+    const s = this._speakers.get(speakerId);
+    return s ? { volume: s.volume * 100, muted: s.muted, solo: this._soloId === speakerId } : null;
+  }
+
+  /** Segments currently driving the speaker lane (read-only copy). */
+  getSpeakerSegments() { return this._segments.slice(); }
+
+  /**
+   * Per-speaker volume, 0–100.
+   * @param {string} speakerId
+   * @param {number} percentage
+   */
+  setSpeakerVolume(speakerId, percentage) {
+    const s = this._speakers.get(speakerId);
+    if (!s) return;
+    s.volume = clamp(percentage, 0, 100) / 100;
+    this._scheduleSpeakerAutomation();
+  }
+
+  /**
+   * Mute/unmute one speaker. Volume is preserved across mute toggles.
+   * @param {string} speakerId
+   * @param {boolean} muted
+   */
+  setSpeakerMuted(speakerId, muted) {
+    const s = this._speakers.get(speakerId);
+    if (!s) return;
+    s.muted = Boolean(muted);
+    this._scheduleSpeakerAutomation();
+  }
+
+  /**
+   * Solo one speaker (all others silenced), or pass null to clear solo.
+   * @param {string|null} speakerId
+   */
+  setSpeakerSolo(speakerId) {
+    this._soloId = speakerId !== null && this._speakers.has(speakerId) ? speakerId : null;
+    this._scheduleSpeakerAutomation();
+  }
+
+  getSoloSpeaker() { return this._soloId; }
+
+  _effectiveSpeakerVolume(speakerId) {
+    const s = this._speakers.get(speakerId);
+    if (!s) return 1;
+    if (s.muted) return 0;
+    if (this._soloId && this._soloId !== speakerId) return 0;
+    return s.volume;
+  }
+
+  /**
+   * (Re)schedule the speaker lane's gain automation from the current
+   * playback position. Cheap enough to rebuild wholesale on every state
+   * change — it is AudioParam events only, never ML (CLAUDE.md §1).
+   */
+  _scheduleSpeakerAutomation() {
+    const g = this.speakerGain.gain;
+    const now = this.ctx.currentTime;
+    g.cancelScheduledValues(now);
+
+    if (!this._isPlaying) {
+      g.value = 1; // play() reschedules; idle lane stays transparent
+      return;
+    }
+    if (this._segments.length === 0) {
+      g.setTargetAtTime(1, now, PARAM_SMOOTHING);
+      return;
+    }
+
+    const offset = this.currentTime();
+    // ctx time at which stem position `pos` is audible (play() set _startedAt).
+    const timeAt = (pos) => this._startedAt + pos;
+
+    // Value at the current position, applied immediately…
+    let current = 1;
+    for (const seg of this._segments) {
+      if (offset >= seg.start && offset < seg.end) {
+        current = this._effectiveSpeakerVolume(seg.speakerId);
+        break;
+      }
+    }
+    g.setTargetAtTime(current, now, PARAM_SMOOTHING);
+
+    // …then boundary ramps for everything still ahead. Gaps between
+    // segments return to 1 (the clean stem is silent there anyway). When the
+    // next segment starts exactly at this one's end (the common case — the
+    // diarizer splits on frame boundaries), skip the restore ramp: two events
+    // at the same instant would collide on the AudioParam, and the next
+    // segment's own ramp governs the boundary.
+    for (let i = 0; i < this._segments.length; i++) {
+      const seg = this._segments[i];
+      if (seg.end <= offset) continue;
+      const vol = this._effectiveSpeakerVolume(seg.speakerId);
+      if (seg.start > offset) {
+        g.setTargetAtTime(vol, timeAt(seg.start), PARAM_SMOOTHING);
+      }
+      const next = this._segments[i + 1];
+      if (!next || next.start > seg.end) {
+        g.setTargetAtTime(1, timeAt(seg.end), PARAM_SMOOTHING);
+      }
+    }
+  }
+
   // ─── Introspection ─────────────────────────────────────────────────────
 
   isPlaying() { return this._isPlaying; }
@@ -244,7 +432,8 @@ export class PlaybackMixer {
   /** Release all audio resources. The instance is unusable afterwards. */
   async dispose() {
     this.stop();
-    for (const node of [this.cleanGain, this.noiseGain, this.lowShelf,
+    for (const node of [this.speakerGain, this.cleanGain, this.voiceMuteGain,
+      this.noiseGain, this.noiseMuteGain, this.lowShelf,
       this.highShelf, this.masterGain, this.analyser]) {
       try { node.disconnect(); } catch { /* already disconnected */ }
     }
