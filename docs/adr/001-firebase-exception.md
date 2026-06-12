@@ -24,7 +24,7 @@ The question was whether to satisfy these needs with a cloud service or a purely
 **Firebase (Auth + Firestore) is used as the sole cloud service** in VoiceIsolate Pro.
 
 It is used exclusively for:
-- **Authentication:** Google Sign-In via Firebase Auth (`firebase-config.js`)
+- **Authentication:** Firebase Auth with Google Sign-In and Email/Password (`firebase-config.js`)
 - **Preset sync:** Optional, user-initiated cloud save/load of presets (`savePreset`, `getUserPresets`)
 - **Session logging:** Billing/tier enforcement (`logSession`)
 
@@ -42,13 +42,13 @@ Audio data (PCM samples, spectral frames, model inputs/outputs) is **never sent 
 ## Consequences
 
 **Positive:**
-- Mature, well-maintained auth and realtime-database solution with Google Sign-In OAuth
+- Mature, well-maintained auth and realtime-database solution with multiple sign-in methods
+- Non-Google users can create accounts and sign in via email/password
 - Session logging enables accurate billing and tier enforcement
 - Cloud preset sync adds value for multi-device users
 
 **Negative:**
 - Introduces a runtime dependency on Google infrastructure for auth flows
-- Users without Google accounts cannot sign in, because Google Sign-In is the only authentication method currently supported
 - Firebase SDK is loaded from `gstatic.com` CDN — an exception to the local-library rule (acceptable because it is UI-layer only, not audio-processing layer)
 
 ---

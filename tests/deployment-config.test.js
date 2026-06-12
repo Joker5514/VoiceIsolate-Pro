@@ -138,6 +138,15 @@ describe('vercel.json — Content-Security-Policy header', () => {
     expect(directives).toHaveProperty('connect-src');
   });
 
+  test('connect-src includes Firebase Auth endpoints for all sign-in methods', () => {
+    expect(directives['connect-src']).toContain('https://identitytoolkit.googleapis.com');
+    expect(directives['connect-src']).toContain('https://securetoken.googleapis.com');
+  });
+
+  test('connect-src includes Firestore endpoint for tier/session data', () => {
+    expect(directives['connect-src']).toContain('https://firestore.googleapis.com');
+  });
+
   test('CSP contains worker-src directive', () => {
     expect(directives).toHaveProperty('worker-src');
   });
