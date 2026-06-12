@@ -35,10 +35,9 @@ export const MIN_SEGMENT_SEC = 0.3;
  * Per-window feature vector: [rms, normalised zcr, spectral flatness].
  * Cheap (no FFT) but discriminative enough to separate speaking voices.
  * @param {Float32Array} frame
- * @param {number} sampleRate
  * @returns {number[]}
  */
-export function frameFeatures(frame, sampleRate) {
+export function frameFeatures(frame) {
   const n = frame.length;
   if (n === 0) return [0, 0, 0];
 
@@ -51,7 +50,7 @@ export function frameFeatures(frame, sampleRate) {
   for (let i = 1; i < n; i++) {
     if ((frame[i] >= 0) !== (frame[i - 1] >= 0)) zc++;
   }
-  const zcr = zc / (2 * n / sampleRate) / sampleRate; // normalised to ~[0,1]
+  const zcr = zc / (2 * n); // fraction of sign flips per sample, ∈ [0, 0.5]
 
   // Spectral flatness via geometric/arithmetic mean ratio of |x|.
   let sumAbs = 0;
@@ -140,7 +139,7 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
   const features = [];
   const frameStarts = [];
   for (let i = 0; i + winSamp <= samples.length; i += hopSamp) {
-    features.push(frameFeatures(samples.subarray(i, i + winSamp), sampleRate));
+    features.push(frameFeatures(samples.subarray(i, i + winSamp)));
     frameStarts.push(i);
   }
   if (features.length === 0) return [];
@@ -181,25 +180,37 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
   const segments = [];
   let segCluster = null; // cluster index or null for silence
   let segStart = 0;
-  const flush = (endSamp, confidence) => {
+  let segEnergy = 0;     // Σ normalised RMS over the segment's own frames
+  let segFrames = 0;
+  const flush = (endSamp) => {
     if (segCluster === null) return;
+    // Confidence reflects the segment's own mean energy — never the frame
+    // that triggered the boundary, which is typically silence and would
+    // floor every confidence at the 0.68 baseline.
+    const meanEnergy = segFrames > 0 ? segEnergy / segFrames : 0;
     segments.push({
       cluster: segCluster,
       start: segStart / sampleRate,
       end: endSamp / sampleRate,
-      confidence,
+      confidence: Math.min(0.97, 0.68 + meanEnergy * 0.29),
     });
   };
 
   for (let fi = 0; fi < frameStarts.length; fi++) {
     const cluster = labelByFrame.has(fi) ? labelByFrame.get(fi) : null;
     if (cluster !== segCluster) {
-      flush(frameStarts[fi], Math.min(0.97, 0.68 + norm(fi)[0] * 0.29));
+      flush(frameStarts[fi]);
       segStart = frameStarts[fi];
       segCluster = cluster;
+      segEnergy = 0;
+      segFrames = 0;
+    }
+    if (cluster !== null) {
+      segEnergy += norm(fi)[0];
+      segFrames++;
     }
   }
-  flush(samples.length, 0.72);
+  flush(samples.length);
 
   // Drop jitter, then relabel clusters compactly (S1, S2, …) in order of
   // first appearance so absent clusters never produce phantom speakers.

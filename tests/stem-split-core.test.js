@@ -336,6 +336,25 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.getSpeakerState('S1').volume).toBe(1);
   });
 
+  test('contiguous segments share one boundary ramp (no AudioParam collision)', async () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments([
+      { speakerId: 'S1', start: 0.2, end: 0.5 },
+      { speakerId: 'S2', start: 0.5, end: 0.9 }, // starts exactly at S1's end
+    ]);
+    await mixer.play();
+    mixer.speakerGain.gain.setTargetAtTime.mockClear();
+
+    mixer.setSpeakerMuted('S2', true);
+    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    // S2's mute ramp owns the shared boundary (0.5 → ctx time 0.51)…
+    expect(calls.some(([v, t]) => v === 0 && Math.abs(t - 0.51) < 1e-6)).toBe(true);
+    // …with no competing restore-to-1 event at the same instant.
+    expect(calls.some(([v, t]) => v === 1 && Math.abs(t - 0.51) < 1e-6)).toBe(false);
+    // The restore lands only after the contiguous run ends.
+    expect(calls.some(([v, t]) => v === 1 && Math.abs(t - 0.91) < 1e-6)).toBe(true);
+  });
+
   test('loading new stems clears stale diarization state', () => {
     mixer.loadSpeakerSegments(SEGMENTS);
     expect(mixer.speakerIds()).toHaveLength(2);

@@ -391,14 +391,22 @@ export class PlaybackMixer {
     g.setTargetAtTime(current, now, PARAM_SMOOTHING);
 
     // …then boundary ramps for everything still ahead. Gaps between
-    // segments return to 1 (the clean stem is silent there anyway).
-    for (const seg of this._segments) {
+    // segments return to 1 (the clean stem is silent there anyway). When the
+    // next segment starts exactly at this one's end (the common case — the
+    // diarizer splits on frame boundaries), skip the restore ramp: two events
+    // at the same instant would collide on the AudioParam, and the next
+    // segment's own ramp governs the boundary.
+    for (let i = 0; i < this._segments.length; i++) {
+      const seg = this._segments[i];
       if (seg.end <= offset) continue;
       const vol = this._effectiveSpeakerVolume(seg.speakerId);
       if (seg.start > offset) {
         g.setTargetAtTime(vol, timeAt(seg.start), PARAM_SMOOTHING);
       }
-      g.setTargetAtTime(1, timeAt(seg.end), PARAM_SMOOTHING);
+      const next = this._segments[i + 1];
+      if (!next || next.start > seg.end) {
+        g.setTargetAtTime(1, timeAt(seg.end), PARAM_SMOOTHING);
+      }
     }
   }
 

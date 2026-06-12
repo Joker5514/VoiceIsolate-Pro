@@ -42,19 +42,19 @@ function makeTwoSpeakerSignal() {
 
 describe('frameFeatures', () => {
   test('returns [rms, zcr, flatness]; silence is near-zero energy', () => {
-    const silent = diar.frameFeatures(new Float32Array(9600), SR);
+    const silent = diar.frameFeatures(new Float32Array(9600));
     expect(silent[0]).toBe(0);
 
     const tone = new Float32Array(9600);
     for (let i = 0; i < tone.length; i++) tone[i] = Math.sin((2 * Math.PI * 220 * i) / SR);
-    const f = diar.frameFeatures(tone, SR);
+    const f = diar.frameFeatures(tone);
     expect(f[0]).toBeCloseTo(Math.SQRT1_2, 1); // sine RMS ≈ 0.707
     expect(f[1]).toBeGreaterThan(0);
     expect(f[2]).toBeGreaterThan(0);
   });
 
   test('empty frame yields zeros', () => {
-    expect(diar.frameFeatures(new Float32Array(0), SR)).toEqual([0, 0, 0]);
+    expect(diar.frameFeatures(new Float32Array(0))).toEqual([0, 0, 0]);
   });
 });
 
@@ -105,6 +105,14 @@ describe('diarizeChannel', () => {
 
     // The silent gap must stay unattributed.
     expect(at(3.5)).toBeUndefined();
+  });
+
+  test('confidence reflects the segment own energy, not the boundary frame', () => {
+    const segments = diar.diarizeChannel(makeTwoSpeakerSignal(), SR);
+    const at = (t) => segments.find((s) => t >= s.start && t < s.end);
+    // The loud tone flushes on a silent boundary frame; its confidence must
+    // come from its own (maximal) energy, not get floored at the 0.68 base.
+    expect(at(1.5).confidence).toBeGreaterThan(0.9);
   });
 
   test('summarizeSpeakers aggregates talk time per speaker', () => {
