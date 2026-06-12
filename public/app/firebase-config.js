@@ -7,7 +7,7 @@
  * =====================================================
  * Firebase (Auth + Firestore) is the ONLY intentional cloud dependency
  * in VoiceIsolate Pro. It is used exclusively for:
- *   - User authentication (Google sign-in)
+ *   - User authentication (Google sign-in + email/password)
  *   - Preset cloud sync (optional, user-initiated)
  *   - Session logging for billing/tier enforcement
  *
