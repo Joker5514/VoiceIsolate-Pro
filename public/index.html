@@ -58,6 +58,8 @@
         <button id="playBtn" class="btn" type="button" disabled>&#9654; Play</button>
         <button id="pauseBtn" class="btn" type="button" disabled>&#10074;&#10074; Pause</button>
         <button id="stopBtn" class="btn" type="button" disabled>&#9632; Stop</button>
+        <button id="muteVoiceBtn" class="btn btn-toggle" type="button" disabled aria-pressed="false">Mute Voice</button>
+        <button id="muteNoiseBtn" class="btn btn-toggle" type="button" disabled aria-pressed="false">Mute Background</button>
         <label for="presetSelect" class="inline-label">Preset</label>
         <select id="presetSelect" aria-label="Mix preset" disabled>
           <option value="voice-clarity" selected>Voice Clarity</option>
@@ -103,6 +105,20 @@
           <span class="slider-val" id="eqHighVal">0 dB</span>
         </div>
       </div>
+    </section>
+
+    <!-- ── STEP 3: Per-speaker isolation ───────────────────────────────── -->
+    <section class="panel" id="speakersPanel" aria-labelledby="speakersLabel" hidden>
+      <h2 id="speakersLabel" class="section-label">3 · Speakers</h2>
+      <p class="hint">
+        Speakers detected on the isolated voice stem — entirely on your device.
+        Mute, solo, or rebalance each voice; changes are instant gain
+        automation, the AI never re-runs.
+      </p>
+      <div class="status-row">
+        <span id="speakerStatus" role="status" aria-live="polite"></span>
+      </div>
+      <div id="speakerCardsGrid" class="speaker-grid" aria-label="Per-speaker controls"></div>
     </section>
 
     <section class="panel privacy-panel">

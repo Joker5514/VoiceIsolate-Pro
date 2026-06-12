@@ -235,6 +235,23 @@ export default [
       'quotes': ['warn', 'single', { avoidEscape: true }],
     },
   },
+  {
+    // Layer 2 — module workers (spawned with { type: 'module' }); they import
+    // src/core/ directly, so sourceType flips back to 'module'.
+    files: ['src/workers/DiarizationWorker.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.worker },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'semi': ['warn', 'always'],
+      'quotes': ['warn', 'single', { avoidEscape: true }],
+    },
+  },
 
   // ── Backend / tooling ─────────────────────────────────────────────────────────
   {

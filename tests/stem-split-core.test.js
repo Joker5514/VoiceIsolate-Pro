@@ -235,4 +235,120 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
   test('play() without stems rejects loudly', async () => {
     await expect(mixer.play()).rejects.toThrow(/No stems loaded/);
   });
+
+  // ── Stem mute lanes ────────────────────────────────────────────────────────
+
+  test('voice/noise mute lanes default open and toggle without touching sliders', () => {
+    expect(mixer.voiceMuteGain.gain.value).toBe(1);
+    expect(mixer.noiseMuteGain.gain.value).toBe(1);
+    expect(mixer.isVoiceMuted()).toBe(false);
+
+    mixer.setVoiceLevel(80); // slider state that mute must preserve
+    mixer.setVoiceMuted(true);
+    expect(mixer.isVoiceMuted()).toBe(true);
+    expect(mixer.voiceMuteGain.gain.value).toBe(0);
+    expect(mixer.cleanGain.gain.value).toBeCloseTo(0.8); // untouched
+
+    mixer.setVoiceMuted(false);
+    expect(mixer.voiceMuteGain.gain.value).toBe(1);
+    expect(mixer.cleanGain.gain.value).toBeCloseTo(0.8);
+  });
+
+  test('while playing, mute toggles smooth via setTargetAtTime', async () => {
+    mixer.loadStems(stems(), stems());
+    await mixer.play();
+    mixer.setNoiseMuted(true);
+    expect(mixer.isNoiseMuted()).toBe(true);
+    expect(mixer.noiseMuteGain.gain.setTargetAtTime.mock.calls.at(-1)[0]).toBe(0);
+  });
+
+  // ── Per-speaker lane ───────────────────────────────────────────────────────
+
+  const SEGMENTS = [
+    { speakerId: 'S1', label: 'Speaker S1', start: 0.2, end: 0.5, confidence: 0.9 },
+    { speakerId: 'S2', label: 'Speaker S2', start: 0.6, end: 0.9, confidence: 0.9 },
+  ];
+
+  test('loadSpeakerSegments registers speakers with default state', () => {
+    mixer.loadSpeakerSegments(SEGMENTS);
+    expect(mixer.speakerIds()).toEqual(['S1', 'S2']);
+    expect(mixer.getSpeakerState('S1')).toEqual({ volume: 1, muted: false, solo: false });
+    expect(mixer.getSpeakerState('nope')).toBeNull();
+    expect(mixer.getSpeakerSegments()).toHaveLength(2);
+  });
+
+  test('malformed segments are dropped, valid ones sorted by start', () => {
+    mixer.loadSpeakerSegments([
+      { speakerId: 'S2', start: 0.6, end: 0.9 },
+      { speakerId: 'S1', start: 0.2, end: 0.5 },
+      { speakerId: 'bad', start: 0.5, end: 0.5 },   // zero-length
+      { speakerId: 42, start: 0, end: 1 },          // non-string id
+      null,
+    ]);
+    expect(mixer.getSpeakerSegments().map((s) => s.speakerId)).toEqual(['S1', 'S2']);
+  });
+
+  test('muting a speaker while playing schedules a zero-gain ramp over its segments', async () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments(SEGMENTS);
+    await mixer.play();
+
+    mixer.setSpeakerMuted('S1', true);
+    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    // _startedAt = (currentTime + 0.01) − offset 0 → segment times shift by 0.01.
+    const mutedRamp = calls.find(([v, t]) => v === 0 && Math.abs(t - 0.21) < 1e-6);
+    const restore = calls.find(([v, t]) => v === 1 && Math.abs(t - 0.51) < 1e-6);
+    expect(mutedRamp).toBeDefined();
+    expect(restore).toBeDefined();
+    expect(mixer.speakerGain.gain.cancelScheduledValues).toHaveBeenCalled();
+    expect(mixer.getSpeakerState('S1').muted).toBe(true);
+  });
+
+  test('solo silences every other speaker; clearing solo restores them', async () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments(SEGMENTS);
+    await mixer.play();
+
+    mixer.setSpeakerSolo('S2');
+    expect(mixer.getSoloSpeaker()).toBe('S2');
+    expect(mixer.getSpeakerState('S1').solo).toBe(false);
+    expect(mixer.getSpeakerState('S2').solo).toBe(true);
+    let calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    // S1's segment (0.2–0.5 → 0.21) must ramp to 0, S2's (0.6 → 0.61) stays 1.
+    expect(calls.some(([v, t]) => v === 0 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
+    expect(calls.some(([v, t]) => v === 1 && Math.abs(t - 0.61) < 1e-6)).toBe(true);
+
+    mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.setSpeakerSolo(null);
+    expect(mixer.getSoloSpeaker()).toBeNull();
+    calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    expect(calls.some(([v, t]) => v === 1 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
+  });
+
+  test('per-speaker volume scales its segments and is clamped', async () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments(SEGMENTS);
+    await mixer.play();
+    mixer.setSpeakerVolume('S1', 40);
+    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    expect(calls.some(([v, t]) => Math.abs(v - 0.4) < 1e-9 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
+    mixer.setSpeakerVolume('S1', 900);
+    expect(mixer.getSpeakerState('S1').volume).toBe(1);
+  });
+
+  test('loading new stems clears stale diarization state', () => {
+    mixer.loadSpeakerSegments(SEGMENTS);
+    expect(mixer.speakerIds()).toHaveLength(2);
+    mixer.loadStems(stems(), stems());
+    expect(mixer.speakerIds()).toEqual([]);
+    expect(mixer.getSpeakerSegments()).toEqual([]);
+  });
+
+  test('idle speaker lane stays transparent (gain pinned to 1)', () => {
+    mixer.loadSpeakerSegments(SEGMENTS);
+    mixer.setSpeakerMuted('S1', true);
+    // Not playing → no smoothing toward a frozen clock, just a clean value.
+    expect(mixer.speakerGain.gain.value).toBe(1);
+    expect(mixer.speakerGain.gain.setTargetAtTime).not.toHaveBeenCalled();
+  });
 });

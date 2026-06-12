@@ -94,7 +94,8 @@ async function main() {
     await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
     check(await page.title() === 'VoiceIsolate Pro — Stem-Split & Live-Mix', 'title correct');
     for (const id of ['noiseReductionSlider', 'voiceLevelSlider', 'volumeSlider',
-      'eqLowSlider', 'eqHighSlider', 'presetSelect', 'waveCanvas', 'specCanvas']) {
+      'eqLowSlider', 'eqHighSlider', 'presetSelect', 'waveCanvas', 'specCanvas',
+      'muteVoiceBtn', 'muteNoiseBtn', 'speakersPanel', 'speakerCardsGrid']) {
       check(await page.locator(`#${id}`).count() === 1, `#${id} present`);
     }
 
@@ -207,6 +208,70 @@ async function main() {
       const p = await params();
       check(near(p.noise, expectNoise) && near(p.clean, expectClean),
         `preset '${name}' → noise ${p.noise.toFixed(2)} / voice ${p.clean.toFixed(2)}`);
+    }
+
+    // ── Stem mute toggles ───────────────────────────────────────────────────
+    console.log('\nStem mute toggles:');
+    const cleanBeforeMute = await page.evaluate(
+      () => globalThis.__vipDiagnostics.mixer.cleanGain.gain.value);
+    await page.click('#muteVoiceBtn');
+    await page.waitForTimeout(350);
+    let mute = await page.evaluate(() => {
+      const m = globalThis.__vipDiagnostics.mixer;
+      return { v: m.voiceMuteGain.gain.value, n: m.noiseMuteGain.gain.value,
+        vm: m.isVoiceMuted(), clean: m.cleanGain.gain.value };
+    });
+    check(mute.vm && near(mute.v, 0), `Mute Voice → voice lane ${mute.v.toFixed(3)} (expect 0)`);
+    check(near(mute.clean, cleanBeforeMute),
+      `Voice Level slider untouched by mute (${mute.clean.toFixed(2)} = pre-mute ${cleanBeforeMute.toFixed(2)})`);
+    check(near(mute.n, 1.0), 'noise lane unaffected');
+    check((await page.textContent('#muteVoiceBtn')).includes('Unmute'), 'button label flips to Unmute');
+
+    await page.click('#muteVoiceBtn');
+    await page.click('#muteNoiseBtn');
+    await page.waitForTimeout(350);
+    mute = await page.evaluate(() => {
+      const m = globalThis.__vipDiagnostics.mixer;
+      return { v: m.voiceMuteGain.gain.value, n: m.noiseMuteGain.gain.value, nm: m.isNoiseMuted() };
+    });
+    check(near(mute.v, 1.0), 'unmute restores voice lane to 1');
+    check(mute.nm && near(mute.n, 0), `Mute Background → noise lane ${mute.n.toFixed(3)} (expect 0)`);
+    await page.click('#muteNoiseBtn');
+    await page.waitForTimeout(200);
+
+    // ── Per-speaker isolation ───────────────────────────────────────────────
+    console.log('\nPer-speaker isolation:');
+    await page.waitForFunction(
+      () => /detected|unavailable|skipped/i.test(document.getElementById('speakerStatus').textContent),
+      null, { timeout: 90000 }
+    );
+    const speakerStatus = await page.textContent('#speakerStatus');
+    check(!(await page.evaluate(() => document.getElementById('speakersPanel').hidden)),
+      'speakers panel revealed after processing');
+    check(!/unavailable|skipped/i.test(speakerStatus), `diarization completed (“${speakerStatus}”)`);
+
+    const spk = await page.evaluate(() => {
+      const m = globalThis.__vipDiagnostics.mixer;
+      return { ids: m.speakerIds(), segments: m.getSpeakerSegments().length,
+        cards: document.querySelectorAll('.speaker-card').length };
+    });
+    check(spk.ids.length >= 1, `speakers detected (${spk.ids.join(', ') || 'none'})`);
+    check(spk.segments >= 1, `segments loaded into mixer (${spk.segments})`);
+    check(spk.cards === spk.ids.length, `one card per speaker (${spk.cards})`);
+
+    if (spk.ids.length >= 1) {
+      await page.click('.speaker-card .speaker-mute-btn');
+      const muted = await page.evaluate(() => {
+        const m = globalThis.__vipDiagnostics.mixer;
+        return m.getSpeakerState(m.speakerIds()[0]).muted;
+      });
+      check(muted, 'speaker mute button drives mixer state');
+      await page.click('.speaker-card .speaker-mute-btn'); // restore
+
+      await page.click('.speaker-card .speaker-solo-btn');
+      const solo = await page.evaluate(() => globalThis.__vipDiagnostics.mixer.getSoloSpeaker());
+      check(solo === spk.ids[0], `solo button sets exclusive solo (${solo})`);
+      await page.click('.speaker-card .speaker-solo-btn'); // clear
     }
 
     // ── Transport round-trip ────────────────────────────────────────────────
