@@ -135,6 +135,13 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
 
   const winSamp = Math.round(WINDOW_SEC * sampleRate);
   const hopSamp = Math.round(HOP_SEC * sampleRate);
+  // A rate this low rounds the hop to zero samples — the analysis loop could
+  // never advance. Reject it loudly rather than hang or guess.
+  if (hopSamp < 1 || winSamp < 1) {
+    throw new RangeError(
+      `[VIP][diarization] sampleRate ${sampleRate} is too low for the ${WINDOW_SEC}s analysis window.`
+    );
+  }
 
   const features = [];
   const frameStarts = [];

@@ -142,5 +142,8 @@ describe('diarizeChannel', () => {
 
   test('invalid sample rate throws a descriptive RangeError', () => {
     expect(() => diar.diarizeChannel(new Float32Array(SR), 0)).toThrow(RangeError);
+    // Rates that round the analysis hop to zero samples must fail fast,
+    // not spin the feature loop forever.
+    expect(() => diar.diarizeChannel(new Float32Array(100), 3)).toThrow(RangeError);
   });
 });
