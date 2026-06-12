@@ -145,14 +145,19 @@ async function detectSpeakers(clean, sampleRate) {
   ui.speakersPanel.hidden = false;
   ui.speakerStatus.textContent = 'Detecting speakers…';
   speakerControls.clear();
+  // Staleness guard (same contract as onStems): if another file is processed
+  // while diarization is in flight, its result must not touch the new mixer.
+  const seq = requestSeq;
   try {
     const { segments, speakers } = await diarize(clean[0], sampleRate);
+    if (seq !== requestSeq) return;
     mixer.loadSpeakerSegments(segments);
     const count = speakerControls.render(speakers);
     ui.speakerStatus.textContent = count === 0
       ? 'No distinct speakers detected.'
       : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments`;
   } catch (err) {
+    if (seq !== requestSeq) return;
     // Graceful degradation: stems + global mutes keep working without it.
     console.error('[VIP][landing] diarization failed:', err);
     mixer.loadSpeakerSegments([]);
