@@ -305,10 +305,14 @@ export class PlaybackMixer {
   /** Speaker ids present in the loaded segments, in first-appearance order. */
   speakerIds() { return [...this._speakers.keys()]; }
 
-  /** @returns {{volume: number, muted: boolean, solo: boolean}|null} */
+  /**
+   * Speaker state snapshot. `volume` is a 0–100 percentage, symmetric with
+   * setSpeakerVolume so state round-trips without rescaling.
+   * @returns {{volume: number, muted: boolean, solo: boolean}|null}
+   */
   getSpeakerState(speakerId) {
     const s = this._speakers.get(speakerId);
-    return s ? { volume: s.volume, muted: s.muted, solo: this._soloId === speakerId } : null;
+    return s ? { volume: s.volume * 100, muted: s.muted, solo: this._soloId === speakerId } : null;
   }
 
   /** Segments currently driving the speaker lane (read-only copy). */

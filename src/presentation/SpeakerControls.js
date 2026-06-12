@@ -58,7 +58,7 @@ export class SpeakerControls {
   }
 
   _buildCard(id, summary) {
-    const state = this.mixer.getSpeakerState(id) || { volume: 1, muted: false, solo: false };
+    const state = this.mixer.getSpeakerState(id) || { volume: 100, muted: false, solo: false };
     const card = this.doc.createElement('div');
     card.className = 'speaker-card';
     card.dataset.speakerId = id;
@@ -85,7 +85,7 @@ export class SpeakerControls {
     vol.min = '0';
     vol.max = '100';
     vol.step = '1';
-    vol.value = String(Math.round(state.volume * 100));
+    vol.value = String(Math.round(state.volume));
     vol.setAttribute('aria-label', `Volume for ${label.textContent}`);
     const volVal = this.doc.createElement('span');
     volVal.className = 'slider-val';

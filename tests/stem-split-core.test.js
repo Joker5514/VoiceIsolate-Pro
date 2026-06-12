@@ -272,7 +272,8 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
   test('loadSpeakerSegments registers speakers with default state', () => {
     mixer.loadSpeakerSegments(SEGMENTS);
     expect(mixer.speakerIds()).toEqual(['S1', 'S2']);
-    expect(mixer.getSpeakerState('S1')).toEqual({ volume: 1, muted: false, solo: false });
+    // volume reads back as the 0–100 percentage setSpeakerVolume accepts.
+    expect(mixer.getSpeakerState('S1')).toEqual({ volume: 100, muted: false, solo: false });
     expect(mixer.getSpeakerState('nope')).toBeNull();
     expect(mixer.getSpeakerSegments()).toHaveLength(2);
   });
@@ -332,8 +333,10 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     mixer.setSpeakerVolume('S1', 40);
     const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
     expect(calls.some(([v, t]) => Math.abs(v - 0.4) < 1e-9 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
+    // Round-trip: the getter returns the same scale the setter accepts.
+    expect(mixer.getSpeakerState('S1').volume).toBe(40);
     mixer.setSpeakerVolume('S1', 900);
-    expect(mixer.getSpeakerState('S1').volume).toBe(1);
+    expect(mixer.getSpeakerState('S1').volume).toBe(100);
   });
 
   test('contiguous segments share one boundary ramp (no AudioParam collision)', async () => {

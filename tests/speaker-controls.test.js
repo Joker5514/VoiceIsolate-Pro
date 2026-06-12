@@ -18,9 +18,10 @@ beforeAll(async () => {
   ({ SpeakerControls } = await import('../src/presentation/SpeakerControls.js'));
 });
 
-/** Minimal mixer double exposing only the per-speaker surface. */
+/** Minimal mixer double exposing only the per-speaker surface.
+ *  volume is a 0–100 percentage on both getter and setter (mixer contract). */
 function mockMixer(ids = ['S1', 'S2']) {
-  const state = new Map(ids.map((id) => [id, { volume: 1, muted: false }]));
+  const state = new Map(ids.map((id) => [id, { volume: 100, muted: false }]));
   let solo = null;
   return {
     speakerIds: jest.fn(() => [...state.keys()]),
@@ -28,7 +29,7 @@ function mockMixer(ids = ['S1', 'S2']) {
       const s = state.get(id);
       return s ? { ...s, solo: solo === id } : null;
     }),
-    setSpeakerVolume: jest.fn((id, pct) => { state.get(id).volume = pct / 100; }),
+    setSpeakerVolume: jest.fn((id, pct) => { state.get(id).volume = pct; }),
     setSpeakerMuted: jest.fn((id, muted) => { state.get(id).muted = muted; }),
     setSpeakerSolo: jest.fn((id) => { solo = id; }),
   };
