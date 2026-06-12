@@ -48,7 +48,7 @@ Audio data (PCM samples, spectral frames, model inputs/outputs) is **never sent 
 - Cloud preset sync adds value for multi-device users
 
 **Negative:**
-- Introduces a runtime dependency on Google infrastructure for auth flows
+- Introduces a runtime dependency on Firebase/Google infrastructure for auth and cloud sync flows (independent of whether users choose Google OAuth or email/password sign-in)
 - Firebase SDK is loaded from `gstatic.com` CDN — an exception to the local-library rule (acceptable because it is UI-layer only, not audio-processing layer)
 
 ---
