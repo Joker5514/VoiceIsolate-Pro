@@ -30,6 +30,12 @@ const ui = {
   stopBtn: $('stopBtn'),
   muteVoiceBtn: $('muteVoiceBtn'),
   muteNoiseBtn: $('muteNoiseBtn'),
+  // Live-Mix sliders: disabled in markup until stems exist, then enabled in
+  // onStems() so they are never clickable-but-inert (no audio to mix yet).
+  mixSliders: [
+    $('noiseReductionSlider'), $('voiceLevelSlider'), $('volumeSlider'),
+    $('eqLowSlider'), $('eqHighSlider'),
+  ],
   statusDot: $('statusDot'),
   statusText: $('statusText'),
   progress: $('inferenceProgress'),
@@ -262,8 +268,11 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
   visualizer.loadStems(clean, noise, mixer.duration());
   syncMuteButtons();
 
-  for (const btn of [ui.playBtn, ui.pauseBtn, ui.stopBtn,
-    ui.muteVoiceBtn, ui.muteNoiseBtn, ui.presetSelect]) btn.disabled = false;
+  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn,
+    ui.muteVoiceBtn, ui.muteNoiseBtn, ui.presetSelect,
+    ...ui.mixSliders]) {
+    if (el) el.disabled = false;
+  }
   setStatus(
     passthrough
       ? 'Model unavailable — passthrough stems loaded (original audio). Check that /app/models is being served.'

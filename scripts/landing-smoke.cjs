@@ -98,6 +98,13 @@ async function main() {
       'muteVoiceBtn', 'muteNoiseBtn', 'speakersPanel', 'speakerCardsGrid']) {
       check(await page.locator(`#${id}`).count() === 1, `#${id} present`);
     }
+    // Live-Mix sliders start disabled (no stems to mix yet) so they are never
+    // clickable-but-inert before processing.
+    const mixSliderIds = ['noiseReductionSlider', 'voiceLevelSlider', 'volumeSlider', 'eqLowSlider', 'eqHighSlider'];
+    check(
+      await page.evaluate((ids) => ids.every((id) => document.getElementById(id).disabled), mixSliderIds),
+      'Live-Mix sliders disabled before processing'
+    );
 
     // ── Ingest + true inference ─────────────────────────────────────────────
     console.log('\nIngestion & inference (real model, no passthrough):');
@@ -117,6 +124,10 @@ async function main() {
     check(!statusAfter.includes('passthrough') && !statusAfter.includes('unavailable'),
       'REAL inference produced stems (not passthrough)');
     check(await page.evaluate(() => Boolean(globalThis.__vipDiagnostics?.mixer)), 'mixer + diagnostics exposed');
+    check(
+      await page.evaluate((ids) => ids.every((id) => !document.getElementById(id).disabled), mixSliderIds),
+      'Live-Mix sliders enabled once stems are ready'
+    );
 
     // Stems must differ from each other and be non-silent (real separation).
     const stemStats = await page.evaluate(() => {
