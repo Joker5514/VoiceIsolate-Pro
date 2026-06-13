@@ -212,16 +212,17 @@
         <div class="slider-group active">
           <button id="btn-noise-reduction" class="slider-group-header" type="button" aria-expanded="true" aria-controls="group-noise-reduction"><span>Noise Reduction</span><span class="chevron" aria-hidden="true">▾</span></button>
           <div id="group-noise-reduction" class="slider-group-content" role="region" aria-labelledby="btn-noise-reduction">
+            <p class="group-desc">Removes unwanted background sound. The <strong>gate</strong> silences the gaps between words, while <strong>spectral NR</strong> learns the steady noise (hiss, hum, fans) and subtracts it. <em>Example:</em> clean up a phone interview recorded next to an air conditioner — set NR Amount ~70% and a Gate Threshold around −40 dB.</p>
             <div id="tab-gate" class="slider-panel"></div>
             <div id="tab-nr" class="slider-panel"></div>
           </div>
         </div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-eq"><span>EQ (10 bands)</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-eq" class="slider-group-content"><div id="tab-eq" class="slider-panel"></div></div></div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-dynamics"><span>Dynamics</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-dynamics" class="slider-group-content"><div id="tab-dyn" class="slider-panel"></div></div></div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-spectral"><span>Spectral</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-spectral" class="slider-group-content"><div id="tab-spec" class="slider-panel"></div></div></div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-advanced"><span>Advanced</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-advanced" class="slider-group-content"><div id="tab-adv" class="slider-panel"></div></div></div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-output"><span>Output</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-output" class="slider-group-content"><div id="tab-out" class="slider-panel"></div></div></div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-separation"><span>Separation</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-separation" class="slider-group-content"><div id="tab-sep" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-eq"><span>EQ (10 bands)</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-eq" class="slider-group-content"><p class="group-desc">Ten tone controls from deep bass to bright "air". Boost a band to bring it forward, cut it to push it back. <em>Example:</em> for a thin laptop-mic voice, add ~+2 dB Body and +1.5 dB Presence; for a boomy close mic, cut ~−4 dB Bass.</p><div id="tab-eq" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-dynamics"><span>Dynamics</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-dynamics" class="slider-group-content"><p class="group-desc">Evens out volume. The <strong>compressor</strong> brings loud and soft words closer together; the <strong>limiter</strong> sets a hard ceiling so nothing clips. <em>Example:</em> a guest who keeps drifting from the mic — Threshold ~−24 dB, Ratio 4:1, Makeup +3 dB for a steady, broadcast-level voice.</p><div id="tab-dyn" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-spectral"><span>Spectral</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-spectral" class="slider-group-content"><p class="group-desc">Surgical frequency tools: high-/low-pass filters to trim the extremes, a de-esser to tame harsh "s" sounds, tilt for quick brighter/darker, and formant shift for vocal character. <em>Example:</em> a sharp, sibilant narrator — De-ess Amount ~6 dB at 7 kHz, HP Freq 90 Hz to drop rumble.</p><div id="tab-spec" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-advanced"><span>Advanced</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-advanced" class="slider-group-content"><p class="group-desc">Restoration and stereo tools: <strong>dereverb</strong> pulls a voice out of an echoey room, <strong>harmonic recovery</strong> rebuilds detail lost to noise reduction, and width/phase shape the stereo image. <em>Example:</em> speech recorded in an empty hall — Dereverb ~50% with Rev Decay raised toward 70% for the long tail.</p><div id="tab-adv" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-output"><span>Output</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-output" class="slider-group-content"><p class="group-desc">Final mastering: overall volume trim, the dry/wet blend between original and processed, output stereo width, and export dither. <em>Example:</em> if cleanup sounds too aggressive, pull Dry/Wet to ~75% to mix a little of the natural original back in.</p><div id="tab-out" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-separation"><span>Separation</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-separation" class="slider-group-content"><p class="group-desc">Isolates the voice from everything else. Focus on the speech frequency band and push down whatever sits outside it, plus cancel stereo bleed between two mics. <em>Example:</em> lift a speaker out of background music — Voice Iso ~85% with BG Suppress ~60%.</p><div id="tab-sep" class="slider-panel"></div></div></div>
 
         <div class="actions-row" style="margin-top:8px;">
           <button id="processBtn" class="btn btn-primary" type="button" disabled>Process</button>
@@ -235,7 +236,7 @@
         <div id="vip-proc-badge" role="status" aria-live="polite" data-state="idle">
           <span class="vip-pb-dot" aria-hidden="true"></span>
           <span class="vip-pb-label">Ready — drop a file or record to begin</span>
-          <span class="vip-helix-spinner vip-pb-spinner" aria-hidden="true" style="display:none"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+          <span class="vip-sonar-spinner vip-pb-spinner" aria-hidden="true" style="display:none"><i></i><i></i><i></i><b></b></span>
         </div>
         <div class="pipe-header"><span class="pipe-stage" id="pipeStage">S00</span><span id="pipePercent">0%</span></div>
         <div class="pipe-bar" id="pipeBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Processing progress">
@@ -333,7 +334,11 @@
           <div id="tab-liquid" role="tabpanel" aria-labelledby="btn-liquid" class="panel"><canvas id="liquidCanvas" class="viz-canvas"></canvas></div>
       </div>
 
-      <div id="videoCard" class="card video-card"><video id="videoPlayer" class="video-el" controls></video></div>
+      <div id="videoCard" class="card video-card" style="display:none">
+        <div class="video-hdr"><span>Video preview</span><span class="video-tag">picture + processed audio</span></div>
+        <video id="videoPlayer" class="video-el" playsinline muted></video>
+        <p class="video-note">The video plays muted in sync with the transport above — what you hear is the processed (or A/B original) audio, not the file's own track.</p>
+      </div>
     </section>
   </main>
 
