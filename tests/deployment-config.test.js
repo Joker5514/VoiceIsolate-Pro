@@ -415,6 +415,16 @@ describe('render.yaml — other security headers still present', () => {
     expect(yaml).toContain('Referrer-Policy');
     expect(yaml).toContain('strict-origin-when-cross-origin');
   });
+
+  test('Permissions-Policy denies the microphone (live-mic ingestion is forbidden — CLAUDE.md §1.1)', () => {
+    const ppMatch = yaml.match(/name:\s*Permissions-Policy[\s\S]*?value:\s*"([^"]+)"/);
+    expect(ppMatch).not.toBeNull();
+    const permissionsPolicy = ppMatch[1];
+    // Must deny the microphone outright — never microphone=(self) / =* / =(...).
+    expect(permissionsPolicy).toContain('microphone=()');
+    expect(permissionsPolicy).not.toMatch(/microphone=\((?!\))/);
+    expect(permissionsPolicy).not.toMatch(/microphone=\*/);
+  });
 });
 
 // ─── .jules/sentinel.md ──────────────────────────────────────────────────────
