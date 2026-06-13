@@ -88,7 +88,7 @@
         }
         if (playing) { const pr = v.play && v.play(); if (pr && typeof pr.catch === 'function') pr.catch(() => {}); }
         else if (v.pause) v.pause();
-      } catch (_) {}
+      } catch { /* ignore */ }
     }
 
     function _setPlayIcon(playing) {
@@ -292,12 +292,18 @@
     if (stop)  { stop.addEventListener('click',  () => _stop());  stop.disabled  = true; }
 
     if (rew) rew.addEventListener('click', () => {
+      // Fold elapsed playback time into the offset first, so rewinding while
+      // playing steps back from the *current* position, not the segment start.
+      const ctx = _getCtx();
+      if (_isPlaying && ctx) _pauseOffset += ctx.currentTime - _startTime;
       _pauseOffset = Math.max(0, _pauseOffset - 5);
       if (_isPlaying) { _stopSource(); _play(); }
       else { const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset); _syncVideo(_pauseOffset, false); }
     });
 
     if (fwd) fwd.addEventListener('click', () => {
+      const ctx = _getCtx();
+      if (_isPlaying && ctx) _pauseOffset += ctx.currentTime - _startTime;
       _pauseOffset = Math.min((_duration || 0) - 0.1, _pauseOffset + 5);
       if (_isPlaying) { _stopSource(); _play(); }
       else { const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset); _syncVideo(_pauseOffset, false); }
@@ -342,7 +348,7 @@
       spSel.addEventListener('change', () => {
         if (_source) _source.playbackRate.value = parseFloat(spSel.value);
         const v = _getVideoEl();
-        if (v) { try { v.playbackRate = parseFloat(spSel.value); } catch (_) {} }
+        if (v) { try { v.playbackRate = parseFloat(spSel.value); } catch { /* ignore */ } }
       });
     }
 

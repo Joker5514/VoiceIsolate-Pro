@@ -1078,6 +1078,17 @@ class VoiceIsolatePro {
     const isVideoFile = (file.type && file.type.startsWith('video/')) ||
       /\.(mp4|m4v|mov|webm|mkv|avi|ogv|3gp)$/i.test(file.name || '');
 
+    // Release any previously-loaded video source first, so reloading a new clip
+    // neither leaks the old object URL nor leaves the old picture on screen.
+    if (this.dom && this.dom.videoPlayer && this.dom.videoPlayer.src) {
+      const prev = this.dom.videoPlayer;
+      try { URL.revokeObjectURL(prev.src); } catch { /* ignore */ }
+      try {
+        if (typeof prev.removeAttribute === 'function') prev.removeAttribute('src');
+        else prev.src = '';
+      } catch { /* ignore */ }
+    }
+
     let buffer;
     try {
       const ab = await file.arrayBuffer();
@@ -1124,7 +1135,7 @@ class VoiceIsolatePro {
         if (!this.dom.videoPlayer.src) {
           this.dom.videoPlayer.src = URL.createObjectURL(file);
         }
-      } catch (_) {}
+      } catch { /* ignore */ }
       this.dom.videoPlayer.muted = true;
       if (this.dom.videoCard) this.dom.videoCard.style.display = '';
     } else {
@@ -1132,10 +1143,10 @@ class VoiceIsolatePro {
       if (this.dom && this.dom.videoPlayer) {
         const vp = this.dom.videoPlayer;
         try {
-          if (vp.src) { try { URL.revokeObjectURL(vp.src); } catch (_) {} }
+          if (vp.src) { try { URL.revokeObjectURL(vp.src); } catch { /* ignore */ } }
           if (typeof vp.removeAttribute === 'function') vp.removeAttribute('src');
           else vp.src = '';
-        } catch (_) {}
+        } catch { /* ignore */ }
       }
       if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = 'none';
     }
@@ -1195,10 +1206,10 @@ class VoiceIsolatePro {
       const vp = this.dom.videoPlayer;
       try {
         if (typeof vp.pause === 'function') vp.pause();
-        if (vp.src) { try { URL.revokeObjectURL(vp.src); } catch (_) {} }
+        if (vp.src) { try { URL.revokeObjectURL(vp.src); } catch { /* ignore */ } }
         if (typeof vp.removeAttribute === 'function') vp.removeAttribute('src');
         else vp.src = '';
-      } catch (_) {}
+      } catch { /* ignore */ }
     }
     if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = 'none';
     if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'No file loaded';
@@ -1312,9 +1323,9 @@ class VoiceIsolatePro {
       return;
     }
 
-    // Writable copy of every channel.
+    // Writable copy of every channel (.slice() is a fast typed-array memcpy).
     const channels = [];
-    for (let ch = 0; ch < nCh; ch++) channels.push(Float32Array.from(buf.getChannelData(ch)));
+    for (let ch = 0; ch < nCh; ch++) channels.push(buf.getChannelData(ch).slice());
 
     // ── Pass 1–2: input conditioning + time-domain cleanup (per channel) ──
     this.updatePipelineProgress(3, 'Conditioning input…', 8);
@@ -1770,7 +1781,7 @@ class VoiceIsolatePro {
     const L = channels[0], R = channels[1];
     const n = Math.min(L.length, R.length);
     const k = Math.max(0, Math.min(1, amount)) * 0.5;
-    const Lc = Float32Array.from(L), Rc = Float32Array.from(R);
+    const Lc = L.slice(), Rc = R.slice();
     for (let i = 0; i < n; i++) {
       L[i] = Lc[i] - k * Rc[i];
       R[i] = Rc[i] - k * Lc[i];
