@@ -64,6 +64,33 @@
       return app.inputBuffer || app.outputBuffer || null;
     }
 
+    /* ── Video element sync ──
+       For video files the <video> supplies the picture while the Web Audio
+       graph above plays the *processed* (or A/B original) audio. The video is
+       always muted; we just steer its currentTime / playbackRate to stay locked
+       to the audio transport. */
+    function _getVideoEl() {
+      if (!app || !app.isVideo) return null;
+      return (app.dom && app.dom.videoPlayer) || document.getElementById('videoPlayer') || null;
+    }
+
+    function _syncVideo(offsetSec, playing) {
+      const v = _getVideoEl();
+      if (!v) return;
+      try {
+        v.muted = true;
+        const sp = $('tpSpeed');
+        const rate = parseFloat(sp && sp.value ? sp.value : '1');
+        if (Number.isFinite(rate) && rate > 0) v.playbackRate = rate;
+        if (typeof offsetSec === 'number' && Number.isFinite(offsetSec)) {
+          // Only hard-seek when drift exceeds ~250 ms to avoid visible stutter.
+          if (Math.abs((v.currentTime || 0) - offsetSec) > 0.25) v.currentTime = offsetSec;
+        }
+        if (playing) { const pr = v.play && v.play(); if (pr && typeof pr.catch === 'function') pr.catch(() => {}); }
+        else if (v.pause) v.pause();
+      } catch { /* ignore */ }
+    }
+
     function _setPlayIcon(playing) {
       const btn = $('tpPlay');
       if (!btn) return;
@@ -188,10 +215,14 @@
       _startTime = ctx.currentTime;
       _isPlaying = true;
 
+      /* Roll the muted video in sync with the audio transport. */
+      _syncVideo(safeOffset, true);
+
       _source.onended = () => {
         if (!_isPlaying) return;
         _pauseOffset = 0;
         _teardown(false);
+        _syncVideo(0, false);
         const seek2 = $('tpSeek');
         const cur2  = $('tpCur');
         if (seek2) seek2.value = '0';
@@ -222,12 +253,14 @@
       const ctx = _getCtx();
       if (ctx) _pauseOffset += ctx.currentTime - _startTime;
       _teardown(false);
+      _syncVideo(undefined, false);
       log('pause() at', _pauseOffset);
     }
 
     function _stop() {
       _pauseOffset = 0;
       _teardown(true);
+      _syncVideo(0, false);
       const seek = $('tpSeek');
       const cur  = $('tpCur');
       if (seek) seek.value = '0';
@@ -259,15 +292,21 @@
     if (stop)  { stop.addEventListener('click',  () => _stop());  stop.disabled  = true; }
 
     if (rew) rew.addEventListener('click', () => {
+      // Fold elapsed playback time into the offset first, so rewinding while
+      // playing steps back from the *current* position, not the segment start.
+      const ctx = _getCtx();
+      if (_isPlaying && ctx) _pauseOffset += ctx.currentTime - _startTime;
       _pauseOffset = Math.max(0, _pauseOffset - 5);
       if (_isPlaying) { _stopSource(); _play(); }
-      else { const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset); }
+      else { const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset); _syncVideo(_pauseOffset, false); }
     });
 
     if (fwd) fwd.addEventListener('click', () => {
+      const ctx = _getCtx();
+      if (_isPlaying && ctx) _pauseOffset += ctx.currentTime - _startTime;
       _pauseOffset = Math.min((_duration || 0) - 0.1, _pauseOffset + 5);
       if (_isPlaying) { _stopSource(); _play(); }
-      else { const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset); }
+      else { const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset); _syncVideo(_pauseOffset, false); }
     });
 
     /* Seek scrubber */
@@ -277,6 +316,7 @@
       seek.addEventListener('input', () => {
         _pauseOffset = (parseFloat(seek.value) / 1000) * (_duration || 0);
         const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset);
+        if (!_isPlaying) _syncVideo(_pauseOffset, false);
       });
       seek.addEventListener('change', () => {
         _seeking = false;
@@ -307,6 +347,8 @@
     if (spSel) {
       spSel.addEventListener('change', () => {
         if (_source) _source.playbackRate.value = parseFloat(spSel.value);
+        const v = _getVideoEl();
+        if (v) { try { v.playbackRate = parseFloat(spSel.value); } catch { /* ignore */ } }
       });
     }
 

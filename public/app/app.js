@@ -33,72 +33,72 @@ const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * 5; // FLAG_SLOTS = 5
 // ---------------------------------------------------------------------------
 const SLIDERS = {
   gate: [
-    { id:'gateThresh', label:'Threshold', min:-80, max:-5, val:-42, step:1, unit:' dB', rt:true, desc:'Signal level below which audio is gated' },
-    { id:'gateRange', label:'Range', min:-80, max:-5, val:-60, step:1, unit:' dB', rt:true, desc:'Maximum gain reduction applied by the gate' },
-    { id:'gateAttack', label:'Attack', min:0, max:500, val:5, step:1, unit:' ms', rt:true, desc:'Time for gate to open on signal detection' },
-    { id:'gateRelease', label:'Release', min:50, max:2000, val:200, step:10, unit:' ms', rt:true, desc:'Time for gate to close after signal drops' },
-    { id:'gateHold', label:'Hold', min:0, max:500, val:50, step:1, unit:' ms', rt:true, desc:'Hold time before release phase begins' },
-    { id:'gateLookahead', label:'Lookahead', min:0, max:50, val:5, step:1, unit:' ms', rt:false, desc:'Lookahead window for predictive gating' },
+    { id:'gateThresh', label:'Threshold', min:-80, max:-5, val:-42, step:1, unit:' dB', rt:true, desc:'Audio quieter than this level is treated as silence and turned down.', example:'Raise toward -30 dB to mute the room tone between sentences in a voice memo; lower toward -60 dB so soft speech is never cut off.' },
+    { id:'gateRange', label:'Range', min:-80, max:-5, val:-60, step:1, unit:' dB', rt:true, desc:'How far the gated (silent) sections are turned down.', example:'-60 dB fully silences gaps; set -12 dB to just soften background hiss instead of killing it, keeping a natural ambience.' },
+    { id:'gateAttack', label:'Attack', min:0, max:500, val:5, step:1, unit:' ms', rt:true, desc:'How fast the gate opens when speech starts.', example:'Keep at ~5 ms so the start of each word ("Hello") is not clipped; longer values soften hard consonants.' },
+    { id:'gateRelease', label:'Release', min:50, max:2000, val:200, step:10, unit:' ms', rt:true, desc:'How fast the gate closes after sound stops.', example:'~200 ms feels natural for speech; raise to 800 ms so the tail of a sung note or reverb is not chopped off abruptly.' },
+    { id:'gateHold', label:'Hold', min:0, max:500, val:50, step:1, unit:' ms', rt:true, desc:'Minimum time the gate stays open after a sound.', example:'Set ~80 ms to stop the gate "chattering" open and shut during a stuttered or breathy phrase.' },
+    { id:'gateLookahead', label:'Lookahead', min:0, max:50, val:5, step:1, unit:' ms', rt:false, desc:'Lets the gate peek ahead so it opens just before a sound arrives.', example:'5–10 ms preserves the sharp attack of a clapper or plosive that a zero-lookahead gate would shave off.' },
   ],
   nr: [
-    { id:'nrAmount', label:'NR Amount', min:0, max:100, val:78, step:1, unit:'%', rt:false, desc:'Spectral noise reduction strength' },
-    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:60, step:1, unit:'%', rt:false, desc:'Noise floor detection sensitivity' },
-    { id:'nrSpectralSub', label:'Spectral Sub', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Spectral subtraction strength' },
-    { id:'nrFloor', label:'NR Floor', min:-96, max:-30, val:-72, step:1, unit:' dB', rt:false, desc:'Noise reduction floor limit' },
-    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:70, step:1, unit:'%', rt:false, desc:'Temporal smoothing of spectral noise estimate' },
+    { id:'nrAmount', label:'NR Amount', min:0, max:100, val:78, step:1, unit:'%', rt:false, desc:'Overall strength of the spectral noise removal.', example:'~70% cleans steady air-conditioner hiss from an interview; push past 90% only for heavy noise, as it can make the voice sound underwater.' },
+    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:60, step:1, unit:'%', rt:false, desc:'How aggressively the noise floor is detected and learned.', example:'Raise to ~80% when noise is loud and constant (traffic); lower to ~40% to avoid mistaking quiet speech for noise.' },
+    { id:'nrSpectralSub', label:'Spectral Sub', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Extra subtraction of the learned noise spectrum.', example:'Bump to ~70% to scrub tonal hum/whine; high values can add a "musical noise" warble, so back off if you hear bubbling.' },
+    { id:'nrFloor', label:'NR Floor', min:-96, max:-30, val:-72, step:1, unit:' dB', rt:false, desc:'How deep the quietest residual noise is allowed to drop.', example:'-72 dB is transparent; set -40 dB to leave a faint natural noise bed so dialogue does not sound unnaturally dead.' },
+    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:70, step:1, unit:'%', rt:false, desc:'Averages noise estimates over time to reduce artifacts.', example:'~70% smooths out flutter on steady noise; lower to ~30% for fast-changing scenes so reduction can react quickly.' },
   ],
   eq: [
-    { id:'eqSub', label:'Sub', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Sub-bass EQ (20-60 Hz)' },
-    { id:'eqBass', label:'Bass', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Bass EQ (60-200 Hz)' },
-    { id:'eqWarmth', label:'Warmth', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Warmth EQ (200-500 Hz)' },
-    { id:'eqBody', label:'Body', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Body EQ (500-1k Hz)' },
-    { id:'eqLowMid', label:'Low Mid', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Low-mid EQ (1-2 kHz)' },
-    { id:'eqMid', label:'Mid', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Mid EQ (2-4 kHz)' },
-    { id:'eqPresence', label:'Presence', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Presence EQ (4-6 kHz)' },
-    { id:'eqClarity', label:'Clarity', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Clarity EQ (6-10 kHz)' },
-    { id:'eqAir', label:'Air', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Air EQ (10-16 kHz)' },
-    { id:'eqBrill', label:'Brilliance', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Brilliance EQ (16-20 kHz)' },
+    { id:'eqSub', label:'Sub', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Lowest rumble band (20–60 Hz).', example:'Cut -6 dB to remove desk thumps and AC rumble from a podcast; rarely boosted for voice.' },
+    { id:'eqBass', label:'Bass', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Bass weight band (60–200 Hz).', example:'Boost +2 dB for a fuller, radio-style male voice; cut -4 dB if speech sounds boomy or muddy.' },
+    { id:'eqWarmth', label:'Warmth', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Lower-midrange warmth (200–500 Hz).', example:'A small +1.5 dB adds chest/warmth; cut -3 dB to clear "boxy" muddiness on a close-mic recording.' },
+    { id:'eqBody', label:'Body', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Core body of the voice (500 Hz–1 kHz).', example:'Boost +1 dB for a thicker voice; cut to reduce a hollow, telephone-like tone.' },
+    { id:'eqLowMid', label:'Low Mid', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Low-mid definition (1–2 kHz).', example:'Nudge +1 dB to help vowels cut through music; cut if the voice sounds nasal or honky.' },
+    { id:'eqMid', label:'Mid', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Intelligibility band (2–4 kHz).', example:'Boost +2 dB so dialogue is easier to understand over background noise; too much sounds harsh.' },
+    { id:'eqPresence', label:'Presence', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Presence and forwardness (4–6 kHz).', example:'+1.5 dB makes a voice sound closer and more "in the room"; cut to tame an aggressive announcer.' },
+    { id:'eqClarity', label:'Clarity', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Detail and consonants (6–10 kHz).', example:'Boost +1 dB for crisp "s" and "t" sounds; cut if sibilance is harsh (pair with the de-esser).' },
+    { id:'eqAir', label:'Air', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Open "air" band (10–16 kHz).', example:'+1 dB adds an expensive, airy sheen to vocals; cut on noisy phone recordings to hide hiss.' },
+    { id:'eqBrill', label:'Brilliance', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Top-end sparkle (16–20 kHz).', example:'A gentle +0.5 dB adds shimmer to music vocals; usually left flat or cut for spoken word.' },
   ],
   dyn: [
-    { id:'compThresh', label:'Threshold', min:-60, max:0, val:-24, step:1, unit:' dB', rt:true, desc:'Compressor threshold level' },
-    { id:'compRatio', label:'Ratio', min:1, max:20, val:4, step:0.5, unit:':1', rt:true, desc:'Compression ratio' },
-    { id:'compAttack', label:'Attack', min:1, max:200, val:10, step:1, unit:' ms', rt:true, desc:'Compressor attack time' },
-    { id:'compRelease', label:'Release', min:10, max:1000, val:150, step:10, unit:' ms', rt:true, desc:'Compressor release time' },
-    { id:'compKnee', label:'Knee', min:0, max:30, val:6, step:1, unit:' dB', rt:true, desc:'Compressor knee width' },
-    { id:'compMakeup', label:'Makeup', min:0, max:30, val:0, step:0.5, unit:' dB', rt:true, desc:'Makeup gain after compression' },
-    { id:'limThresh', label:'Lim Thresh', min:-12, max:0, val:-1, step:0.5, unit:' dB', rt:true, desc:'Brickwall limiter threshold' },
-    { id:'limRelease', label:'Lim Release', min:10, max:500, val:50, step:5, unit:' ms', rt:true, desc:'Limiter release time' },
+    { id:'compThresh', label:'Threshold', min:-60, max:0, val:-24, step:1, unit:' dB', rt:true, desc:'Level where the compressor starts evening out volume.', example:'Set ~-24 dB so loud and soft words sit closer together; lower it to compress more of the performance.' },
+    { id:'compRatio', label:'Ratio', min:1, max:20, val:4, step:0.5, unit:':1', rt:true, desc:'How hard volume above the threshold is reduced.', example:'4:1 is a natural podcast setting; 10:1+ acts almost like a limiter for very uneven phone audio.' },
+    { id:'compAttack', label:'Attack', min:1, max:200, val:10, step:1, unit:' ms', rt:true, desc:'How quickly compression clamps down on a loud peak.', example:'~10 ms keeps speech punchy; very fast (1 ms) squashes transients for a denser, controlled sound.' },
+    { id:'compRelease', label:'Release', min:10, max:1000, val:150, step:10, unit:' ms', rt:true, desc:'How quickly compression lets go after a peak.', example:'~150 ms breathes naturally with speech; too short can cause an audible pumping on sustained notes.' },
+    { id:'compKnee', label:'Knee', min:0, max:30, val:6, step:1, unit:' dB', rt:true, desc:'How gradually compression eases in around the threshold.', example:'A soft 6 dB knee is gentle and transparent for voice; 0 dB (hard knee) is more obvious and aggressive.' },
+    { id:'compMakeup', label:'Makeup', min:0, max:30, val:0, step:0.5, unit:' dB', rt:true, desc:'Volume added back after compression lowers the level.', example:'Add +3 dB so the compressed voice is as loud as before but more consistent and present.' },
+    { id:'limThresh', label:'Lim Thresh', min:-12, max:0, val:-1, step:0.5, unit:' dB', rt:true, desc:'Hard ceiling that output peaks can never exceed.', example:'-1 dB prevents clipping/distortion on export; lower to -3 dB for extra safety headroom before encoding.' },
+    { id:'limRelease', label:'Lim Release', min:10, max:500, val:50, step:5, unit:' ms', rt:true, desc:'How fast the limiter recovers after catching a peak.', example:'~50 ms is clean for speech; longer values sound smoother on music but can dull transients.' },
   ],
   spec: [
-    { id:'hpFreq', label:'HP Freq', min:20, max:2000, val:80, step:1, unit:' Hz', rt:true, desc:'High-pass filter cutoff frequency' },
-    { id:'hpQ', label:'HP Q', min:0.1, max:10, val:0.7, step:0.1, unit:'', rt:true, desc:'High-pass filter resonance' },
-    { id:'lpFreq', label:'LP Freq', min:4000, max:20000, val:18000, step:100, unit:' Hz', rt:true, desc:'Low-pass filter cutoff frequency' },
-    { id:'lpQ', label:'LP Q', min:0.1, max:10, val:0.7, step:0.1, unit:'', rt:true, desc:'Low-pass filter resonance' },
-    { id:'deEssFreq', label:'De-ess Freq', min:2000, max:12000, val:6000, step:100, unit:' Hz', rt:true, desc:'De-esser detection frequency' },
-    { id:'deEssAmt', label:'De-ess Amt', min:0, max:30, val:0, step:1, unit:' dB', rt:true, desc:'De-esser reduction amount' },
-    { id:'specTilt', label:'Spec Tilt', min:-6, max:6, val:0, step:0.5, unit:' dB', rt:true, desc:'Spectral tilt' },
-    { id:'formantShift', label:'Formant Shift', min:-6, max:6, val:0, step:0.5, unit:' st', rt:false, desc:'Formant shift in semitones' },
+    { id:'hpFreq', label:'HP Freq', min:20, max:2000, val:80, step:1, unit:' Hz', rt:true, desc:'Removes everything below this frequency (a high-pass filter).', example:'80 Hz strips rumble from speech; raise to 300 Hz for a thin telephone/walkie-talkie effect.' },
+    { id:'hpQ', label:'HP Q', min:0.1, max:10, val:0.7, step:0.1, unit:'', rt:true, desc:'Sharpness of the high-pass cutoff.', example:'0.7 is a smooth, natural roll-off; higher Q makes the cut steeper with a slight bump at the corner.' },
+    { id:'lpFreq', label:'LP Freq', min:4000, max:20000, val:18000, step:100, unit:' Hz', rt:true, desc:'Removes everything above this frequency (a low-pass filter).', example:'18 kHz keeps it natural; drop to 4 kHz to hide hiss or fake an old-radio sound.' },
+    { id:'lpQ', label:'LP Q', min:0.1, max:10, val:0.7, step:0.1, unit:'', rt:true, desc:'Sharpness of the low-pass cutoff.', example:'0.7 is gentle; higher Q steepens the cut and adds a resonant edge near the corner frequency.' },
+    { id:'deEssFreq', label:'De-ess Freq', min:2000, max:12000, val:6000, step:100, unit:' Hz', rt:true, desc:'Center of the harsh "ess/sh" sibilance the de-esser targets.', example:'~6 kHz for most voices; sweep to 7–8 kHz for a bright/sharp speaker whose "s" sounds pierce.' },
+    { id:'deEssAmt', label:'De-ess Amt', min:0, max:30, val:0, step:1, unit:' dB', rt:true, desc:'How much the harsh "s" and "sh" sounds are tamed.', example:'Set 6 dB to soften sharp sibilance on a podcast; 0 leaves it untouched.' },
+    { id:'specTilt', label:'Spec Tilt', min:-6, max:6, val:0, step:0.5, unit:' dB', rt:true, desc:'Tilts overall tone darker (−) or brighter (+) in one move.', example:'+2 dB brightens a dull recording; -2 dB warms a harsh one without touching individual EQ bands.' },
+    { id:'formantShift', label:'Formant Shift', min:-6, max:6, val:0, step:0.5, unit:' st', rt:false, desc:'Shifts vocal character without changing pitch (semitones).', example:'-2 st makes a voice sound larger/deeper; +2 st sounds smaller/younger — useful for light disguise or tone.' },
   ],
   adv: [
-    { id:'derevAmt', label:'Dereverb', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Dereverberation strength' },
-    { id:'derevDecay', label:'Rev Decay', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Estimated reverb decay time reference' },
-    { id:'harmRecov', label:'Harm Recovery', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Harmonic recovery via neural vocoder' },
-    { id:'harmOrder', label:'Harm Order', min:1, max:10, val:3, step:1, unit:'', rt:false, desc:'Harmonic series order' },
-    { id:'stereoWidth', label:'Stereo Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Stereo width of output signal' },
-    { id:'phaseCorr', label:'Phase Corr', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Phase correlation correction strength' },
+    { id:'derevAmt', label:'Dereverb', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Reduces echo/room reverb so a voice sounds drier and closer.', example:'Set ~50% to pull a voice out of an echoey hall recording; too high can sound thin and gated.' },
+    { id:'derevDecay', label:'Rev Decay', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Tells dereverb how long the room\'s echo tail lasts.', example:'Raise toward 80% for a big, slow church/stairwell echo; lower for a small, fast bathroom slap.' },
+    { id:'harmRecov', label:'Harm Recovery', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Rebuilds harmonics lost to heavy noise reduction or low bitrate.', example:'Add ~40% to restore richness to a muffled phone-call or over-denoised voice.' },
+    { id:'harmOrder', label:'Harm Order', min:1, max:10, val:3, step:1, unit:'', rt:false, desc:'How many harmonic overtones are reconstructed.', example:'3 is natural for speech; higher orders add more brightness/edge to the recovered tone.' },
+    { id:'stereoWidth', label:'Stereo Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Widens or narrows the stereo image (mid/side).', example:'120% makes music vocals feel wider; 0% collapses to mono for a focused, centered voice.' },
+    { id:'phaseCorr', label:'Phase Corr', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Fixes out-of-phase stereo so it stays solid in mono.', example:'Raise to ~40% when a stereo clip goes hollow/thin on a phone speaker that sums to mono.' },
   ],
   sep: [
-    { id:'voiceIso', label:'Voice Iso', min:0, max:100, val:80, step:1, unit:'%', rt:false, desc:'Voice isolation strength' },
-    { id:'bgSuppress', label:'BG Suppress', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Background suppression level' },
-    { id:'voiceFocusLo', label:'Focus Lo', min:80, max:500, val:120, step:10, unit:' Hz', rt:false, desc:'Lower bound of voice focus band' },
-    { id:'voiceFocusHi', label:'Focus Hi', min:1000, max:8000, val:3400, step:100, unit:' Hz', rt:false, desc:'Upper bound of voice focus band' },
-    { id:'crosstalkCancel', label:'Crosstalk', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Crosstalk cancellation between channels' },
+    { id:'voiceIso', label:'Voice Iso', min:0, max:100, val:80, step:1, unit:'%', rt:false, desc:'Emphasises the human voice over everything else.', example:'~80% lifts a speaker out of background music; near 100% is forensic-grade but can sound processed.' },
+    { id:'bgSuppress', label:'BG Suppress', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Lowers sound that sits outside the voice focus band.', example:'Set ~60% to push down street noise and crowd chatter while keeping the dialogue forward.' },
+    { id:'voiceFocusLo', label:'Focus Lo', min:80, max:500, val:120, step:10, unit:' Hz', rt:false, desc:'Bottom edge of the band kept as "voice".', example:'~120 Hz suits most voices; raise to 200 Hz to ignore deep rumble, lower for very deep male voices.' },
+    { id:'voiceFocusHi', label:'Focus Hi', min:1000, max:8000, val:3400, step:100, unit:' Hz', rt:false, desc:'Top edge of the band kept as "voice".', example:'3400 Hz mimics telephone clarity; raise to 5000 Hz to keep crisp consonants and a more natural top.' },
+    { id:'crosstalkCancel', label:'Crosstalk', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Removes bleed of one stereo channel into the other.', example:'Use ~40% on a two-mic interview where each voice leaks into the opposite channel.' },
   ],
   out: [
-    { id:'outGain', label:'Output Gain', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Final output gain trim' },
-    { id:'dryWet', label:'Dry/Wet', min:0, max:100, val:100, step:1, unit:'%', rt:true, desc:'Blend between dry input and processed output' },
-    { id:'ditherAmt', label:'Dither', min:0, max:10, val:1, step:0.1, unit:' bits', rt:false, desc:'Dither noise amplitude in bits' },
-    { id:'outWidth', label:'Out Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Output stereo width' },
+    { id:'outGain', label:'Output Gain', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Final overall volume trim on the processed output.', example:'Add +3 dB if the cleaned voice is too quiet; the limiter still prevents clipping above its ceiling.' },
+    { id:'dryWet', label:'Dry/Wet', min:0, max:100, val:100, step:1, unit:'%', rt:true, desc:'Blends the original (dry) with the processed (wet) signal.', example:'100% is fully processed; drop to 70% to keep a touch of the natural original and soften aggressive cleanup.' },
+    { id:'ditherAmt', label:'Dither', min:0, max:10, val:1, step:0.1, unit:' bits', rt:false, desc:'Adds tiny noise that smooths quiet detail when exporting.', example:'Leave at ~1 for clean fades to silence; set 0 if you will keep full 32-bit float quality.' },
+    { id:'outWidth', label:'Out Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Final stereo width applied at the very end of the chain.', example:'100% leaves width unchanged; 0% guarantees a centered mono output for phone playback.' },
   ],
 };
 const SLIDER_MAP = Object.fromEntries(
@@ -602,6 +602,8 @@ class VoiceIsolatePro {
       infoEl.textContent = 'i';
       infoEl.setAttribute('aria-hidden', 'true');
       labelEl.appendChild(infoEl);
+      // Full hover/tap tooltip with a concrete example for every control.
+      infoEl.title = (s.desc || '') + (s.example ? ' — Example: ' + s.example : '');
 
       const inputEl = document.createElement('input');
       inputEl.type = 'range';
@@ -646,9 +648,40 @@ class VoiceIsolatePro {
         this.onSlider(s.id, v);
       });
 
+      // Per-control explanation (what it does + a concrete example). Collapsed
+      // by default; tapping the "i" reveals it. Linked via aria-describedby so
+      // screen readers announce it when the slider is focused.
+      const descEl = document.createElement('div');
+      descEl.className = 'sr-desc';
+      descEl.id = 'desc_' + s.id;
+      const descWhat = document.createElement('span');
+      descWhat.className = 'sr-desc-what';
+      descWhat.textContent = s.desc || '';
+      descEl.appendChild(descWhat);
+      if (s.example) {
+        const exEl = document.createElement('span');
+        exEl.className = 'sr-desc-ex';
+        exEl.innerHTML = '';
+        const exLabel = document.createElement('strong');
+        exLabel.textContent = 'Example: ';
+        exEl.appendChild(exLabel);
+        exEl.appendChild(document.createTextNode(s.example));
+        descEl.appendChild(exEl);
+      }
+      inputEl.setAttribute('aria-describedby', 'desc_' + s.id);
+
+      infoEl.setAttribute('aria-expanded', 'false');
+      const toggleDesc = (e) => {
+        if (e) { e.preventDefault(); e.stopPropagation(); }
+        const open = row.classList.toggle('info-open');
+        infoEl.setAttribute('aria-expanded', String(open));
+      };
+      infoEl.addEventListener('click', toggleDesc);
+
       row.appendChild(labelEl);
       row.appendChild(inputEl);
       row.appendChild(valEl);
+      row.appendChild(descEl);
       container.appendChild(row);
 
       window.VIP_PARAMS = window.VIP_PARAMS || {};
@@ -1037,6 +1070,25 @@ class VoiceIsolatePro {
       return;
     }
 
+    // Detect video by MIME type or container extension. The <video> element is
+    // then shown and kept in sync with the Web Audio transport so the picture
+    // plays alongside the *processed* audio (video stays muted; sound comes
+    // from the processed/original AudioBuffer). decodeAudioData demuxes the
+    // audio track from most MP4/WEBM/MOV containers directly.
+    const isVideoFile = (file.type && file.type.startsWith('video/')) ||
+      /\.(mp4|m4v|mov|webm|mkv|avi|ogv|3gp)$/i.test(file.name || '');
+
+    // Release any previously-loaded video source first, so reloading a new clip
+    // neither leaks the old object URL nor leaves the old picture on screen.
+    if (this.dom && this.dom.videoPlayer && this.dom.videoPlayer.src) {
+      const prev = this.dom.videoPlayer;
+      try { URL.revokeObjectURL(prev.src); } catch { /* ignore */ }
+      try {
+        if (typeof prev.removeAttribute === 'function') prev.removeAttribute('src');
+        else prev.src = '';
+      } catch { /* ignore */ }
+    }
+
     let buffer;
     try {
       const ab = await file.arrayBuffer();
@@ -1045,7 +1097,7 @@ class VoiceIsolatePro {
       buffer = await this.ctx.decodeAudioData(abCopy);
     } catch (err) {
       // Video fallback
-      if (file.type && file.type.startsWith('video/')) {
+      if (isVideoFile) {
         try {
           buffer = await this.decodeViaVideoElement(file);
           if (buffer && this.dom && this.dom.videoPlayer) {
@@ -1072,6 +1124,31 @@ class VoiceIsolatePro {
       if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Decoded audio is empty or unreadable.';
       this.setStatus('ERROR');
       return;
+    }
+
+    // Show & wire the <video> element for video files (covers the common path
+    // where decodeAudioData succeeded). The transport plays the processed audio
+    // through Web Audio while the muted video supplies the picture in sync.
+    if (isVideoFile && this.dom && this.dom.videoPlayer) {
+      this.isVideo = true;
+      try {
+        if (!this.dom.videoPlayer.src) {
+          this.dom.videoPlayer.src = URL.createObjectURL(file);
+        }
+      } catch { /* ignore */ }
+      this.dom.videoPlayer.muted = true;
+      if (this.dom.videoCard) this.dom.videoCard.style.display = '';
+    } else {
+      this.isVideo = false;
+      if (this.dom && this.dom.videoPlayer) {
+        const vp = this.dom.videoPlayer;
+        try {
+          if (vp.src) { try { URL.revokeObjectURL(vp.src); } catch { /* ignore */ } }
+          if (typeof vp.removeAttribute === 'function') vp.removeAttribute('src');
+          else vp.src = '';
+        } catch { /* ignore */ }
+      }
+      if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = 'none';
     }
 
     this.inputBuffer = buffer;
@@ -1124,6 +1201,17 @@ class VoiceIsolatePro {
     this.outputBuffer = null;
     this.origBuffer = null;
     this.procBuffer = null;
+    this.isVideo = false;
+    if (this.dom && this.dom.videoPlayer) {
+      const vp = this.dom.videoPlayer;
+      try {
+        if (typeof vp.pause === 'function') vp.pause();
+        if (vp.src) { try { URL.revokeObjectURL(vp.src); } catch { /* ignore */ } }
+        if (typeof vp.removeAttribute === 'function') vp.removeAttribute('src');
+        else vp.src = '';
+      } catch { /* ignore */ }
+    }
+    if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = 'none';
     if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'No file loaded';
     if (this.dom.fileInput) this.dom.fileInput.value = '';
     [this.dom.processBtn, this.dom.reprocessBtn, this.dom.saveProcBtn,
@@ -1210,72 +1298,126 @@ class VoiceIsolatePro {
     return this.runPipeline();
   }
 
+  // Full offline DSP chain (32-stage Deca-Pass). Every capability is wired to
+  // its slider in window.VIP_PARAMS and runs through the tested DSPCore
+  // primitives:
+  //   S03 DC offset · S05/06 noise gate · S09 de-ess · S10–S20 spectral
+  //   isolation (single STFT/iSTFT) · S15 crosstalk · S22 HP/LP · S23 10-band
+  //   EQ · S24 compressor · S25 limiter · S31 phase/width · S28 dry-wet ·
+  //   output trim · safety limiter · dither.
   async _runFallbackPipeline() {
     const buf = this.inputBuffer || this.origBuffer;
     if (!buf) return;
 
     await this.ensureCtx();
+    const DSP = this._resolveDSP();
     const p = window.VIP_PARAMS || {};
-    const dryWetPct = Math.max(0, Math.min(100, p.dryWet ?? 100));
-    const outGainDb = p.outGain ?? 0;
-    const outWidth = p.outWidth ?? 100;
-    const ditherAmt = p.ditherAmt ?? 0;
+    const sr = buf.sampleRate;
+    const nCh = buf.numberOfChannels;
+    const len = buf.length;
 
-    this.updatePipelineProgress(10, 'Running DSP…', 30);
-    let processed = await this._applyOfflineSpectralProcessing(buf);
-
-    const ensureWritableBuffer = () => {
-      if (!processed || !this.ctx || processed !== buf) return processed;
-      const copy = this.ctx.createBuffer(processed.numberOfChannels, processed.length, processed.sampleRate);
-      for (let ch = 0; ch < processed.numberOfChannels; ch++) {
-        copy.getChannelData(ch).set(processed.getChannelData(ch));
-      }
-      return copy;
-    };
-
-    if (dryWetPct < 100) {
-      this.updatePipelineProgress(26, 'Applying Dry/Wet…', 75);
-      processed = this.mixDW(buf, processed, dryWetPct / 100);
+    if (!DSP || !this.ctx || typeof this.ctx.createBuffer !== 'function') {
+      // No DSP runtime — passthrough so playback still works.
+      this.procBuffer = buf;
+      this.outputBuffer = buf;
+      return;
     }
 
+    // Writable copy of every channel (.slice() is a fast typed-array memcpy).
+    const channels = [];
+    for (let ch = 0; ch < nCh; ch++) channels.push(buf.getChannelData(ch).slice());
+
+    // ── Pass 1–2: input conditioning + time-domain cleanup (per channel) ──
+    this.updatePipelineProgress(3, 'Conditioning input…', 8);
+    for (let ch = 0; ch < nCh; ch++) {
+      let data = channels[ch];
+      // S03 DC-offset removal — always (harmless, kills sub-sonic rumble).
+      DSP.removeDCOffset(data, sr);
+      // S05/S06 noise gate.
+      const gateThresh = p.gateThresh ?? -42;
+      if (gateThresh > -80) {
+        data = DSP.noiseGate(data, {
+          threshold: gateThresh,
+          range: p.gateRange ?? -60,
+          attack: p.gateAttack ?? 5,
+          release: p.gateRelease ?? 200,
+          hold: p.gateHold ?? 50,
+          lookahead: p.gateLookahead ?? 5,
+        }, sr);
+      }
+      // S09 de-esser (pre-spectral).
+      if ((p.deEssAmt ?? 0) > 0) DSP.deEss(data, p.deEssFreq ?? 6000, p.deEssAmt ?? 0, sr);
+      channels[ch] = data;
+    }
+    await this._yield();
+
+    // ── Pass 3–5: spectral isolation — ONE STFT/iSTFT per channel ──
+    this.updatePipelineProgress(10, 'Spectral isolation…', 32);
+    for (let ch = 0; ch < nCh; ch++) {
+      channels[ch] = this._spectralStage(channels[ch], sr, p) || channels[ch];
+      await this._yield();
+    }
+
+    // S15 crosstalk cancellation (needs both channels).
+    if (nCh >= 2 && (p.crosstalkCancel ?? 0) > 0) {
+      this._applyStereoCrosstalk(channels, (p.crosstalkCancel ?? 0) / 100);
+    }
+
+    // ── Pass 7–8: filters, EQ, dynamics (per channel) ──
+    this.updatePipelineProgress(21, 'EQ + dynamics…', 62);
+    for (let ch = 0; ch < nCh; ch++) {
+      this._eqDynamicsStage(channels[ch], sr, p);
+      await this._yield();
+    }
+
+    // ── Pass 9: stereo image (phase correlation + width) ──
+    if (nCh >= 2) {
+      if ((p.phaseCorr ?? 0) > 0) this._applyPhaseCorrection(channels, (p.phaseCorr ?? 0) / 100);
+      const widthPct = ((p.stereoWidth ?? 100) / 100) * ((p.outWidth ?? 100) / 100) * 100;
+      if (Math.abs(widthPct - 100) > 0.5) {
+        const w = DSP.stereoWiden(channels[0], channels[1], widthPct);
+        channels[0] = w.left; channels[1] = w.right;
+      }
+    }
+
+    // Assemble the processed AudioBuffer.
+    this.updatePipelineProgress(28, 'Rendering output…', 88);
+    let processed = this.ctx.createBuffer(nCh, len, sr);
+    for (let ch = 0; ch < nCh; ch++) {
+      const src = channels[ch];
+      processed.getChannelData(ch).set(src.length === len ? src : src.subarray(0, len));
+    }
+
+    // S28 dry/wet blend with the untouched original.
+    const dryWetPct = Math.max(0, Math.min(100, p.dryWet ?? 100));
+    if (dryWetPct < 100) processed = this.mixDW(buf, processed, dryWetPct / 100);
+
+    // Output gain trim.
+    const outGainDb = p.outGain ?? 0;
     if (outGainDb !== 0) {
-      this.updatePipelineProgress(27, 'Applying Output Gain…', 80);
       const gain = Math.pow(10, outGainDb / 20);
-      processed = ensureWritableBuffer();
       for (let ch = 0; ch < processed.numberOfChannels; ch++) {
         const out = processed.getChannelData(ch);
-        for (let i = 0; i < out.length; i++) {
-          out[i] = Math.max(-1, Math.min(1, out[i] * gain));
-        }
+        for (let i = 0; i < out.length; i++) out[i] *= gain;
       }
     }
 
-    if (outWidth !== 100 && processed.numberOfChannels >= 2) {
-      this.updatePipelineProgress(28, 'Applying Stereo Width…', 85);
-      processed = ensureWritableBuffer();
-      const w = outWidth / 100;
-      const mGain = (1 + w) / 2;
-      const sGain = (1 - w) / 2;
-      const outL = processed.getChannelData(0);
-      const outR = processed.getChannelData(1);
-      for (let i = 0; i < processed.length; i++) {
-        const l = outL[i];
-        const r = outR[i];
-        outL[i] = l * mGain + r * sGain;
-        outR[i] = r * mGain + l * sGain;
-      }
-    }
-
-    if (ditherAmt > 0) {
-      this.updatePipelineProgress(29, 'Applying Dither…', 90);
-      processed = ensureWritableBuffer();
-      for (let ch = 0; ch < processed.numberOfChannels; ch++) {
-        this.applyDither(processed.getChannelData(ch), p);
-      }
+    // Final brickwall safety limit + optional dither.
+    const ceil = Math.min(p.limThresh ?? -1, -0.1);
+    for (let ch = 0; ch < processed.numberOfChannels; ch++) {
+      const out = processed.getChannelData(ch);
+      DSP.truePeakLimit(out, ceil);
+      if ((p.ditherAmt ?? 0) > 0) this.applyDither(out, p);
     }
 
     this.procBuffer = processed;
     this.outputBuffer = processed;
+  }
+
+  // Yield to the event loop between heavy passes so the processing overlay /
+  // spinner keeps animating and the page stays responsive.
+  _yield() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
   }
 
   // ── Old process() alias ───────────────────────────────────────────────────
@@ -1507,45 +1649,195 @@ class VoiceIsolatePro {
     return null;
   }
 
-  // Single offline path: ONE forward STFT, in-place spectral ops S11–S19, ONE iSTFT
-  async _applyOfflineSpectralProcessing(inputBuf) {
+  // S10–S20: spectral isolation on a single channel. Exactly ONE forward STFT
+  // and ONE inverse STFT — the single-pass spectral contract (CLAUDE.md §1).
+  // All in-between stages mutate the magnitude frames in place.
+  _spectralStage(data, sr, p) {
     const DSP = this._resolveDSP();
-    if (!DSP || !inputBuf || typeof inputBuf.getChannelData !== 'function') return inputBuf;
-    const p = window.VIP_PARAMS || {};
-    const FFT_SIZE = 4096;
-    const HOP_SIZE = 1024;
-    // Clips shorter than one analysis window have no spectral frames — passthrough.
-    if (inputBuf.length < FFT_SIZE) return inputBuf;
-    await this.ensureCtx();
-    if (!this.ctx || typeof this.ctx.createBuffer !== 'function') return inputBuf;
+    const FFT = 4096;
+    const HOP = 1024;
+    // Clips shorter than one analysis window have no spectral frames.
+    if (!DSP || !data || data.length < FFT) return data;
 
-    const outputBuf = this.ctx.createBuffer(inputBuf.numberOfChannels, inputBuf.length, inputBuf.sampleRate);
-    for (let ch = 0; ch < inputBuf.numberOfChannels; ch++) {
-      const samples = inputBuf.getChannelData(ch);
-      // SINGLE-PASS STFT BOUNDARY
-      const spec = DSP.forwardSTFT(samples, FFT_SIZE, HOP_SIZE);
-      // In-place spectral operations (S11–S19) on each magnitude frame —
-      // no additional STFT/iSTFT pairs
-      if (spec && Array.isArray(spec.mag)) {
-        for (const frameMag of spec.mag) {
-          this.applySpectralNR(frameMag, p);
-          this.applyBgSuppress(frameMag, p);
-          this.applyDereverb(frameMag, p);
-          this.applyFormantShift(frameMag, p);
-          this.applyPhaseCorr(frameMag, p);
-          this.applyCrosstalkCancel(frameMag, p);
-          this.applyVoiceFocus(frameMag, p);
-        }
-      }
-      // SINGLE-PASS STFT BOUNDARY
-      const rendered = spec && Array.isArray(spec.mag)
-        ? DSP.inverseSTFT(spec.mag, spec.phase, FFT_SIZE, HOP_SIZE, samples.length)
-        : null;
-      outputBuf.getChannelData(ch).set(
-        rendered && rendered.length === samples.length ? rendered : samples
-      );
+    // SINGLE-PASS STFT BOUNDARY — the only forward transform on this path.
+    const spec = DSP.forwardSTFT(data, FFT, HOP);
+    if (!spec || !Array.isArray(spec.mag) || spec.mag.length === 0) return data;
+    const mag = spec.mag;
+    const phase = spec.phase;
+    const halfN = mag[0].length;
+
+    // S11 adaptive Wiener noise reduction (nrAmount, shaped by sensitivity/sub).
+    const nrAmount = p.nrAmount ?? 0;
+    if (nrAmount > 0) {
+      const noise = this._estimateNoiseFloor(mag);
+      const scale = 1 + (p.nrSensitivity ?? 60) / 100 * 0.6 + (p.nrSpectralSub ?? 50) / 100 * 0.6;
+      for (let k = 0; k < noise.length; k++) noise[k] *= scale;
+      DSP.wienerMMSE(mag, noise, nrAmount);
     }
-    return outputBuf;
+
+    // S13 ERB-band spectral gate down to the NR floor.
+    if ((p.nrFloor ?? -96) > -96) DSP.spectralGate(mag, p.nrFloor ?? -72, sr, HOP);
+
+    // S14 voice focus / isolation + background suppression.
+    this._applyVoiceFocus(mag, sr, p, halfN, FFT);
+
+    // S16 temporal smoothing (suppress musical noise).
+    if ((p.nrSmoothing ?? 0) > 0) DSP.temporalSmooth(mag, p.nrSmoothing);
+
+    // S17 spectral tilt.
+    if (Math.abs(p.specTilt ?? 0) > 0.01) this._applySpectralTilt(mag, sr, p.specTilt, halfN, FFT);
+
+    // Formant shift (envelope warp; pitch unchanged because phase is kept).
+    if (Math.abs(p.formantShift ?? 0) > 0.01) this._applyFormantShiftSpec(mag, p.formantShift, halfN);
+
+    // S18 dereverb.
+    if ((p.derevAmt ?? 0) > 0) {
+      const decaySec = 0.12 + (p.derevDecay ?? 50) / 100 * 0.68; // ~0.12–0.8 s
+      DSP.dereverb(mag, p.derevAmt, decaySec, sr, HOP);
+    }
+
+    // S19 harmonic reconstruction.
+    if ((p.harmRecov ?? 0) > 0) DSP.harmonicEnhance(mag, phase, p.harmRecov);
+
+    // SINGLE-PASS STFT BOUNDARY — the only inverse transform on this path.
+    const rendered = DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);
+    return (rendered && rendered.length === data.length) ? rendered : data;
+  }
+
+  // Per-bin stationary-noise estimate via minimum statistics across frames.
+  _estimateNoiseFloor(mag) {
+    const halfN = mag[0].length;
+    const floor = new Float32Array(halfN).fill(Infinity);
+    for (let f = 0; f < mag.length; f++) {
+      const frame = mag[f];
+      for (let k = 0; k < halfN; k++) if (frame[k] < floor[k]) floor[k] = frame[k];
+    }
+    for (let k = 0; k < halfN; k++) floor[k] = Number.isFinite(floor[k]) ? floor[k] * 1.6 : 0;
+    return floor;
+  }
+
+  // S14: keep the voice band (voiceFocusLo..Hi) plus the speech-shaped mask;
+  // attenuate everything else by bgSuppress, weighted by voiceIso.
+  _applyVoiceFocus(mag, sr, p, halfN, fftSize) {
+    const DSP = this._resolveDSP();
+    const iso = (p.voiceIso ?? 0) / 100;
+    const bg = (p.bgSuppress ?? 0) / 100;
+    if (iso <= 0 && bg <= 0) return;
+    const lo = p.voiceFocusLo ?? 120;
+    const hi = p.voiceFocusHi ?? 3400;
+    const gains = new Float32Array(halfN);
+    for (let k = 0; k < halfN; k++) {
+      const freq = k * sr / fftSize;
+      let g = 1;
+      if (freq < lo || freq > hi) g *= (1 - bg * 0.92);
+      if (iso > 0 && DSP && typeof DSP.getVoiceMaskGain === 'function') {
+        const vm = DSP.getVoiceMaskGain(k, sr, fftSize);
+        g *= (1 - iso) + iso * vm;
+      }
+      gains[k] = g;
+    }
+    for (let f = 0; f < mag.length; f++) {
+      const frame = mag[f];
+      for (let k = 0; k < halfN; k++) frame[k] *= gains[k];
+    }
+  }
+
+  // S17: linear spectral tilt; +dB brightens (boost highs, cut lows), −dB darkens.
+  _applySpectralTilt(mag, sr, tiltDb, halfN, fftSize) {
+    const nyq = sr / 2;
+    const gains = new Float32Array(halfN);
+    for (let k = 0; k < halfN; k++) {
+      const frac = (k * sr / fftSize) / nyq; // 0..1
+      gains[k] = Math.pow(10, (tiltDb * (frac - 0.5)) / 20);
+    }
+    for (let f = 0; f < mag.length; f++) {
+      const frame = mag[f];
+      for (let k = 0; k < halfN; k++) frame[k] *= gains[k];
+    }
+  }
+
+  // Formant shift: resample the magnitude envelope by 2^(st/12). Phase frames
+  // are untouched so pitch is preserved while vocal character moves.
+  _applyFormantShiftSpec(mag, semitones, halfN) {
+    const factor = Math.pow(2, semitones / 12);
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    const out = new Float32Array(halfN);
+    for (let f = 0; f < mag.length; f++) {
+      const src = mag[f];
+      for (let k = 0; k < halfN; k++) {
+        const pos = k / factor;
+        const i0 = Math.floor(pos);
+        if (i0 < 0 || i0 >= halfN) { out[k] = 0; continue; }
+        const i1 = Math.min(i0 + 1, halfN - 1);
+        const t = pos - i0;
+        out[k] = src[i0] * (1 - t) + src[i1] * t;
+      }
+      src.set(out);
+    }
+  }
+
+  // S15: cancel the bleed of each stereo channel into the other.
+  _applyStereoCrosstalk(channels, amount) {
+    const L = channels[0], R = channels[1];
+    const n = Math.min(L.length, R.length);
+    const k = Math.max(0, Math.min(1, amount)) * 0.5;
+    const Lc = L.slice(), Rc = R.slice();
+    for (let i = 0; i < n; i++) {
+      L[i] = Lc[i] - k * Rc[i];
+      R[i] = Rc[i] - k * Lc[i];
+    }
+  }
+
+  // Phase-correlation correction — pull out-of-phase stereo content toward the
+  // mono centre so the mix stays solid when summed to mono.
+  _applyPhaseCorrection(channels, amount) {
+    const L = channels[0], R = channels[1];
+    const n = Math.min(L.length, R.length);
+    const a = Math.max(0, Math.min(1, amount));
+    for (let i = 0; i < n; i++) {
+      const mid = (L[i] + R[i]) * 0.5;
+      L[i] = L[i] * (1 - a) + mid * a;
+      R[i] = R[i] * (1 - a) + mid * a;
+    }
+  }
+
+  // S22–S25: HP/LP filters, 10-band parametric EQ, compressor, limiter.
+  _eqDynamicsStage(data, sr, p) {
+    const DSP = this._resolveDSP();
+    if (!DSP) return data;
+
+    // S22 high-pass / low-pass.
+    const hpFreq = p.hpFreq ?? 20;
+    if (hpFreq > 20) DSP.biquadProcess(data, DSP.biquadCoeffs('highpass', hpFreq, p.hpQ ?? 0.7, 0, sr));
+    const lpFreq = p.lpFreq ?? 20000;
+    if (lpFreq < 20000) DSP.biquadProcess(data, DSP.biquadCoeffs('lowpass', lpFreq, p.lpQ ?? 0.7, 0, sr));
+
+    // S23 10-band parametric EQ.
+    const eqBands = [
+      ['eqSub', 40], ['eqBass', 120], ['eqWarmth', 300], ['eqBody', 700], ['eqLowMid', 1500],
+      ['eqMid', 3000], ['eqPresence', 5000], ['eqClarity', 8000], ['eqAir', 13000], ['eqBrill', 18000],
+    ].map(([id, freq]) => ({ freq, gain: p[id] ?? 0, Q: 1.0, type: 'peaking' }))
+      .filter((b) => b.freq < sr / 2);
+    DSP.parametricEQ(data, eqBands, sr);
+
+    // S24 compressor (+ makeup gain).
+    if ((p.compRatio ?? 1) > 1.01) {
+      DSP.compress(data, {
+        threshold: p.compThresh ?? -24,
+        ratio: p.compRatio ?? 4,
+        attack: p.compAttack ?? 10,
+        release: p.compRelease ?? 150,
+        knee: Math.max(0.5, p.compKnee ?? 6),
+        makeup: p.compMakeup ?? 0,
+      }, sr);
+    } else if ((p.compMakeup ?? 0) > 0) {
+      const g = Math.pow(10, (p.compMakeup ?? 0) / 20);
+      for (let i = 0; i < data.length; i++) data[i] *= g;
+    }
+
+    // S25 limiter.
+    DSP.truePeakLimit(data, p.limThresh ?? -1);
+    return data;
   }
 
   // Live-microphone ingestion was REMOVED by design (CLAUDE.md §1.1).

@@ -151,9 +151,24 @@ input[type='range']{
 .sr-row:hover{background:rgba(255,255,255,0.03);border-left-color:rgba(220,38,38,0.4)}
 .sr-row:last-child{border-bottom:none}
 .sr-label{font-size:0.67rem;font-weight:500;color:var(--text2);cursor:help;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px;min-width:0}
-.sr-info{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;font-size:0.48rem;font-weight:700;color:var(--dim);border:1px solid rgba(255,255,255,0.08);flex-shrink:0;line-height:1;font-style:normal;pointer-events:none;margin-left:auto}
+.sr-info{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;font-size:0.5rem;font-weight:700;color:var(--dim);border:1px solid rgba(255,255,255,0.12);flex-shrink:0;line-height:1;font-style:normal;pointer-events:auto;cursor:pointer;margin-left:auto;transition:color 0.15s,border-color 0.15s,background 0.15s}
+.sr-info:hover{color:#00f5ff;border-color:rgba(0,245,255,0.5);background:rgba(0,245,255,0.08)}
+.sr-row.info-open .sr-info{color:#00f5ff;border-color:rgba(0,245,255,0.6);background:rgba(0,245,255,0.12)}
 .sr-val{font-family:var(--fm);font-size:0.62rem;font-weight:600;color:var(--red2);text-align:right;background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.1);border-radius:4px;padding:2px 5px;white-space:nowrap;min-width:0;transition:border-color 0.15s,color 0.15s}
 .sr-row:hover .sr-val{border-color:rgba(220,38,38,0.26)}
+
+/* ---- Per-control explanation (revealed by tapping the “i”) ---- */
+.sr-desc{grid-column:1 / -1;display:none;margin-top:5px;padding:7px 9px;border-radius:6px;background:rgba(0,245,255,0.05);border:1px solid rgba(0,245,255,0.14);font-size:0.64rem;line-height:1.45;color:var(--text2)}
+.sr-row.info-open .sr-desc{display:block;animation:vip-desc-in 0.18s ease}
+.sr-desc-what{display:block;color:var(--text)}
+.sr-desc-ex{display:block;margin-top:3px;color:var(--text2)}
+.sr-desc-ex strong{color:#00f5ff;font-weight:700}
+@keyframes vip-desc-in{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:none}}
+
+/* ---- Capability (slider-group) explanation ---- */
+.group-desc{margin:0 4px 8px;padding:8px 10px;border-radius:7px;background:linear-gradient(160deg,rgba(157,77,255,0.07),rgba(0,245,255,0.04));border:1px solid rgba(157,77,255,0.16);font-size:0.66rem;line-height:1.5;color:var(--text2)}
+.group-desc strong{color:var(--text);font-weight:700}
+.group-desc em{color:#00f5ff;font-style:normal;font-weight:700}
 
 /* Track & thumb — scoped to parameter rows; #tpSeek and vol use global fallback */
 .sr-row > input[type="range"]{
@@ -227,7 +242,10 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 
 /* ---- VIDEO ---- */
 .video-card{margin-bottom:8px}
-.video-el{width:100%;max-height:280px;border-radius:var(--rs);background:#000;display:block}
+.video-hdr{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;font-size:0.72rem;font-weight:600;color:var(--text2)}
+.video-tag{font-family:var(--fm);font-size:0.55rem;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:#00f5ff;background:rgba(0,245,255,0.08);border:1px solid rgba(0,245,255,0.2);border-radius:99px;padding:2px 8px}
+.video-el{width:100%;max-height:280px;border-radius:var(--rs);background:#000;display:block;object-fit:contain}
+.video-note{margin:6px 0 0;font-size:0.62rem;line-height:1.45;color:var(--dim)}
 
 /* ---- TRANSPORT ---- */
 .transport-card{margin-bottom:8px;padding:8px 10px}
