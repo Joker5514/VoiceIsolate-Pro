@@ -98,6 +98,18 @@ Rules:
   It receives the model manifest via its `init` message — it does not import
   `ModelManifest.js` directly. `ModelManifest.js` remains the single source of
   truth; the pipeline layer forwards it.
+- **Deliberate capabilities — do not "revert" as regressions:**
+  - `MLWorker` `process` accepts an optional `modelIds: string[]` chain that
+    runs models in series for **Maximum Isolation** (e.g. vocals → denoise);
+    each stage's clean output feeds the next, and the noise stem is still the
+    residual against the original input. Single `modelId` remains the one-pass
+    case. This is still one inference pass *per file* — not re-triggered by sliders.
+  - `diarization.js` builds a per-window **log-mel timbral fingerprint**
+    (loudness-invariant; see `melBands`) alongside RMS/ZCR/flatness, so speakers
+    are clustered by voice timbre rather than loudness, and whispers (low RMS)
+    are still detected (`SILENCE_RMS` is intentionally low).
+  - `PlaybackMixer.setSpeakerVolume` accepts **0–200** (>100 = up to +6 dB
+    ENHANCE) so a faint/whispered speaker can be boosted. Still AudioParam-only.
 
 ---
 

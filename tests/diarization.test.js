@@ -58,6 +58,46 @@ describe('frameFeatures', () => {
   });
 });
 
+describe('melBands (timbral fingerprint)', () => {
+  test('degenerate input yields an all-zero band vector', () => {
+    const z = diar.melBands(new Float32Array(0), SR);
+    expect(z).toHaveLength(diar.MEL_BANDS);
+    expect([...z].every((v) => v === 0)).toBe(true);
+    expect([...diar.melBands(new Float32Array(4096), SR)].every((v) => v === 0)).toBe(true);
+  });
+
+  test('returns a loudness-invariant shape (sums to 1) concentrated by pitch', () => {
+    const low = new Float32Array(9600);
+    const high = new Float32Array(9600);
+    for (let i = 0; i < low.length; i++) {
+      low[i] = 0.5 * Math.sin((2 * Math.PI * 200 * i) / SR);
+      high[i] = 0.5 * Math.sin((2 * Math.PI * 6000 * i) / SR);
+    }
+    const lowBands = diar.melBands(low, SR);
+    const highBands = diar.melBands(high, SR);
+    // Each fingerprint normalises to a distribution (sum ≈ 1).
+    const sum = (a) => [...a].reduce((s, v) => s + v, 0);
+    expect(sum(lowBands)).toBeCloseTo(1, 5);
+    expect(sum(highBands)).toBeCloseTo(1, 5);
+    // The low tone's mass sits in lower bands than the high tone's.
+    const centroid = (a) => [...a].reduce((s, v, i) => s + v * i, 0);
+    expect(centroid(lowBands)).toBeLessThan(centroid(highBands));
+  });
+
+  test('fingerprint is invariant to amplitude (same voice, different volume)', () => {
+    const quiet = new Float32Array(9600);
+    const loud = new Float32Array(9600);
+    for (let i = 0; i < quiet.length; i++) {
+      const s = Math.sin((2 * Math.PI * 440 * i) / SR);
+      quiet[i] = 0.02 * s; // a near-whisper amplitude
+      loud[i] = 0.8 * s;
+    }
+    const a = diar.melBands(quiet, SR);
+    const b = diar.melBands(loud, SR);
+    for (let i = 0; i < a.length; i++) expect(a[i]).toBeCloseTo(b[i], 4);
+  });
+});
+
 describe('kMeans', () => {
   test('separates two obvious clusters deterministically', () => {
     const features = [
@@ -105,6 +145,39 @@ describe('diarizeChannel', () => {
 
     // The silent gap must stay unattributed.
     expect(at(3.5)).toBeUndefined();
+  });
+
+  test('separates two EQUAL-loudness speakers by timbre alone (fingerprint)', () => {
+    // Both "speakers" are 0.5-amplitude harmonic tones — identical RMS — so
+    // they can only be told apart by their spectral fingerprint, not energy.
+    const samples = new Float32Array(8 * SR);
+    const harmonic = (i, f) =>
+      0.5 * (Math.sin((2 * Math.PI * f * i) / SR) +
+             0.4 * Math.sin((2 * Math.PI * 2 * f * i) / SR) +
+             0.2 * Math.sin((2 * Math.PI * 3 * f * i) / SR)) / 1.6;
+    for (let i = 0; i < 3.5 * SR; i++) samples[i] = harmonic(i, 180); // low-pitched voice
+    // 3.5–4 s silence
+    for (let i = 4 * SR; i < 8 * SR; i++) samples[i] = harmonic(i, 320); // higher-pitched voice
+
+    const segments = diar.diarizeChannel(samples, SR);
+    const at = (t) => segments.find((s) => t >= s.start && t < s.end);
+    const first = at(1.5);
+    const second = at(6);
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    expect(first.speakerId).not.toBe(second.speakerId);
+  });
+
+  test('captures whisper-level speech instead of gating it as silence', () => {
+    // A very quiet (≈ −40 dBFS) voiced tone must still register as a speaker.
+    const samples = new Float32Array(2 * SR);
+    for (let i = 0; i < samples.length; i++) {
+      samples[i] = 0.01 * Math.sin((2 * Math.PI * 300 * i) / SR);
+    }
+    const segments = diar.diarizeChannel(samples, SR);
+    expect(segments.length).toBeGreaterThanOrEqual(1);
+    const talk = diar.summarizeSpeakers(segments).reduce((s, sp) => s + sp.talkTime, 0);
+    expect(talk).toBeGreaterThan(1); // most of the 2 s is captured
   });
 
   test('confidence reflects the segment own energy, not the boundary frame', () => {

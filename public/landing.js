@@ -57,6 +57,7 @@ let diarWorker = null;
 let ingested = null;
 let requestSeq = 0;
 let diarSeq = 0;
+let currentJobLabel = 'Separating stems…';
 
 const DIARIZATION_TIMEOUT_MS = 60000;
 
@@ -85,7 +86,7 @@ function getWorker() {
       case 'progress':
         ui.progress.hidden = false;
         ui.progress.value = msg.percent;
-        setStatus(`Separating stems… ${msg.percent}%`, 'warn');
+        setStatus(`${currentJobLabel} ${msg.percent}%`, 'warn');
         break;
       case 'stems':
         onStems(msg);
@@ -234,20 +235,29 @@ async function onFileChosen() {
   }
 }
 
+// UI-level model chains: run several models in series for maximum isolation.
+// Keys are <select> values that are NOT single manifest entries; the worker
+// receives the resolved `modelIds` array (see MLWorker chain support).
+const MODEL_CHAINS = Object.freeze({
+  max_isolation: ['bsrnn_vocals', 'rnnoise'], // extract voice, then strip residual noise
+});
+
 function onProcess() {
   if (!ingested) return;
-  const modelId = getModel(ui.modelSelect.value).id;
+  const selection = ui.modelSelect.value;
+  const chain = MODEL_CHAINS[selection];
   ui.processBtn.disabled = true;
   ui.progress.hidden = false;
   ui.progress.value = 0;
-  setStatus('Separating stems… 0%', 'warn');
+  currentJobLabel = chain ? 'Maximum isolation (2 passes)…' : 'Separating stems…';
+  setStatus(`${currentJobLabel} 0%`, 'warn');
 
   // Channel copies are transferred — keep our reference for re-processing.
   const channelData = ingested.channelData.map((c) => new Float32Array(c));
-  getWorker().postMessage(
-    { type: 'process', requestId: ++requestSeq, modelId, channelData, sampleRate: ingested.sampleRate },
-    channelData.map((c) => c.buffer)
-  );
+  const msg = { type: 'process', requestId: ++requestSeq, channelData, sampleRate: ingested.sampleRate };
+  if (chain) msg.modelIds = chain;
+  else msg.modelId = getModel(selection).id;
+  getWorker().postMessage(msg, channelData.map((c) => c.buffer));
 }
 
 function onStems({ requestId, clean, noise, sampleRate, passthrough }) {

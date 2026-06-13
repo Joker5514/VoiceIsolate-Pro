@@ -335,8 +335,21 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(calls.some(([v, t]) => Math.abs(v - 0.4) < 1e-9 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
     // Round-trip: the getter returns the same scale the setter accepts.
     expect(mixer.getSpeakerState('S1').volume).toBe(40);
+    // Clamp ceiling is now 200 (per-speaker ENHANCE / boost).
     mixer.setSpeakerVolume('S1', 900);
-    expect(mixer.getSpeakerState('S1').volume).toBe(100);
+    expect(mixer.getSpeakerState('S1').volume).toBe(200);
+  });
+
+  test('a speaker can be ENHANCED above unity to lift a faint/whisper voice', async () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments(SEGMENTS);
+    await mixer.play();
+    mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.setSpeakerVolume('S1', 175); // +~4.9 dB boost
+    expect(mixer.getSpeakerState('S1').volume).toBe(175);
+    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    // S1's segment (0.2–0.5 → ctx 0.21) ramps to the boosted gain 1.75.
+    expect(calls.some(([v, t]) => Math.abs(v - 1.75) < 1e-9 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
   });
 
   test('contiguous segments share one boundary ramp (no AudioParam collision)', async () => {

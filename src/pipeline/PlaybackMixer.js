@@ -319,14 +319,17 @@ export class PlaybackMixer {
   getSpeakerSegments() { return this._segments.slice(); }
 
   /**
-   * Per-speaker volume, 0–100.
+   * Per-speaker volume, 0–200. 100 = unity; values above 100 ENHANCE the
+   * speaker (up to +6 dB at 200), so a faint or whispered voice can be lifted
+   * above the rest without re-running inference. Drives the shared speaker
+   * automation lane over that speaker's diarization segments only.
    * @param {string} speakerId
    * @param {number} percentage
    */
   setSpeakerVolume(speakerId, percentage) {
     const s = this._speakers.get(speakerId);
     if (!s) return;
-    s.volume = clamp(percentage, 0, 100) / 100;
+    s.volume = clamp(percentage, 0, 200) / 100;
     this._scheduleSpeakerAutomation();
   }
 

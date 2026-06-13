@@ -37,8 +37,9 @@
         <input type="file" id="fileInput" accept="audio/*,video/*" aria-label="Choose audio or video file">
         <label for="modelSelect" class="inline-label">Model</label>
         <select id="modelSelect" aria-label="Separation model">
-          <option value="rnnoise">Noise Suppression — BiGRU mask (~2 MB)</option>
+          <option value="max_isolation">Maximum Isolation — Vocals → Denoise (chained)</option>
           <option value="bsrnn_vocals">Vocal Isolation — Band-Split RNN (~4 MB)</option>
+          <option value="rnnoise">Noise Suppression — BiGRU mask (~2 MB)</option>
         </select>
         <button id="processBtn" class="btn btn-primary" type="button" disabled>Separate Stems</button>
       </div>
