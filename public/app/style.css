@@ -344,7 +344,7 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 
 /* ---- RESPONSIVE ---- */
 @media(max-width:960px){
-  .main-grid{grid-template-columns:1fr}
+  .main-grid{grid-template-columns:minmax(0,1fr)}
   .col-left{order:2}.col-right{order:1}
   .hdr{flex-direction:column;text-align:center}
   .hdr-stats{justify-content:center}
@@ -571,7 +571,7 @@ input[type="range"]:not(.realtime) {
 #spectro3d-container.fullscreen{position:fixed;inset:12px;z-index:9998;background:#000;border:1px solid var(--border)}
 
 @media (max-width:960px) {
-  .main-grid { grid-template-columns:1fr; }
+  .main-grid { grid-template-columns:minmax(0,1fr); }
   .col-left,.col-right { grid-column:1; }
   button,input,select,.slider-group-header{min-height:44px}
 }

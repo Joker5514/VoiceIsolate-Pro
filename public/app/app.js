@@ -20,6 +20,10 @@
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { ModelStatusUI } from './model-status-ui.js';
 
+// Model keys served by /app/models-manifest.json (ModelCDNLoader.getManifest()) —
+// drives the "Model Cache & Providers" pills + Local Model Health panel.
+const MODEL_STATUS_KEYS = ['demucs', 'bsrnn', 'rnnoise', 'silero_vad'];
+
 // ---------------------------------------------------------------------------
 // SAB ring-buffer constants (must match dsp-processor.js exactly)
 // ---------------------------------------------------------------------------
@@ -377,6 +381,11 @@ class VoiceIsolatePro {
     this.initBootSplash();
     this.initModelStatusPanel();
 
+    // Resolve the ML engine pill (CTX/WORKLET/SAB/ML/NET cockpit) — without this,
+    // engMlPill stays stuck on "loading" forever since no orchestrator sets
+    // window._vipOrch.mlReady or window.VIP_ML_AVAILABLE in this build.
+    this.loadModels().catch((e) => structuredLog('warn', '[VIP] loadModels failed', { err: e.message }));
+
     // Lazy AudioContext — requires user gesture
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
       document.addEventListener('click', () => this.ensureCtx(), { once: true });
@@ -470,7 +479,11 @@ class VoiceIsolatePro {
   initModelStatusPanel() {
     if (typeof ModelStatusUI !== 'undefined' && ModelStatusUI) {
       try {
-        this._modelStatusUI = new ModelStatusUI({ container: $('modelStatusPills') || document.body });
+        this._modelStatusUI = new ModelStatusUI(
+          $('modelStatusPills') || document.body,
+          MODEL_STATUS_KEYS,
+          { healthContainer: $('cdnHealthPanel') }
+        );
       } catch (e) {
         structuredLog('warn', '[VIP] ModelStatusUI init failed', { err: e.message });
       }
