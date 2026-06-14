@@ -169,9 +169,10 @@ function hasVideo() { return Boolean(videoUrl) && !ui.videoCard.hidden; }
  * in sync without the video ever driving audio.
  */
 function syncVideo() {
+function syncVideo() {
   if (!hasVideo() || !mixer) return;
   const v = ui.videoPlayer;
-  if (v.readyState < 1) return; // metadata not loaded — currentTime/play not safe yet
+  if (v.readyState < 1) return; // Ensure metadata is loaded before syncing
   const target = mixer.currentTime();
   if (mixer.isPlaying()) {
     if (Math.abs(v.currentTime - target) > 0.3) v.currentTime = target;
