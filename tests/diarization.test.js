@@ -58,6 +58,17 @@ describe('frameFeatures', () => {
   });
 });
 
+describe('exported constants (PR-added)', () => {
+  test('SILENCE_RMS is the deliberate low floor (0.0015 ≈ −56 dBFS)', () => {
+    // Intentionally low to capture whispered/soft speech on the CLEAN stem.
+    expect(diar.SILENCE_RMS).toBe(0.0015);
+  });
+
+  test('MEL_BANDS is 20', () => {
+    expect(diar.MEL_BANDS).toBe(20);
+  });
+});
+
 describe('melBands (timbral fingerprint)', () => {
   test('degenerate input yields an all-zero band vector', () => {
     const z = diar.melBands(new Float32Array(0), SR);
@@ -95,6 +106,49 @@ describe('melBands (timbral fingerprint)', () => {
     const a = diar.melBands(quiet, SR);
     const b = diar.melBands(loud, SR);
     for (let i = 0; i < a.length; i++) expect(a[i]).toBeCloseTo(b[i], 4);
+  });
+
+  test('returns Float32Array of length MEL_BANDS for valid input', () => {
+    const frame = new Float32Array(9600);
+    for (let i = 0; i < frame.length; i++) frame[i] = Math.sin((2 * Math.PI * 440 * i) / SR);
+    const result = diar.melBands(frame, SR);
+    expect(result).toBeInstanceOf(Float32Array);
+    expect(result).toHaveLength(diar.MEL_BANDS);
+  });
+
+  test('invalid sampleRate values yield all-zero band vector', () => {
+    const frame = new Float32Array(9600);
+    for (let i = 0; i < frame.length; i++) frame[i] = Math.sin((2 * Math.PI * 440 * i) / SR);
+    expect([...diar.melBands(frame, 0)].every((v) => v === 0)).toBe(true);
+    expect([...diar.melBands(frame, -1)].every((v) => v === 0)).toBe(true);
+    expect([...diar.melBands(frame, NaN)].every((v) => v === 0)).toBe(true);
+    expect([...diar.melBands(frame, Infinity)].every((v) => v === 0)).toBe(true);
+  });
+
+  test('non-Float32Array input (wrong type) yields all-zero band vector', () => {
+    // Regular Array is not Float32Array — must be rejected gracefully.
+    const asArray = Array.from({ length: 9600 }, (_, i) => Math.sin((2 * Math.PI * 440 * i) / SR));
+    const result = diar.melBands(asArray, SR);
+    expect(result).toBeInstanceOf(Float32Array);
+    expect([...result].every((v) => v === 0)).toBe(true);
+  });
+
+  test('single-sample frame (length 1) yields all-zero band vector', () => {
+    // frame.length <= 1 is the boundary — exactly 1 sample is degenerate.
+    const single = new Float32Array([0.5]);
+    expect([...diar.melBands(single, SR)].every((v) => v === 0)).toBe(true);
+  });
+
+  test('custom bands parameter produces the requested output length', () => {
+    const frame = new Float32Array(9600);
+    for (let i = 0; i < frame.length; i++) frame[i] = Math.sin((2 * Math.PI * 440 * i) / SR);
+    const result10 = diar.melBands(frame, SR, 10);
+    expect(result10).toHaveLength(10);
+    const sum10 = [...result10].reduce((s, v) => s + v, 0);
+    expect(sum10).toBeCloseTo(1, 4);
+
+    const result40 = diar.melBands(frame, SR, 40);
+    expect(result40).toHaveLength(40);
   });
 });
 
@@ -218,5 +272,36 @@ describe('diarizeChannel', () => {
     // Rates that round the analysis hop to zero samples must fail fast,
     // not spin the feature loop forever.
     expect(() => diar.diarizeChannel(new Float32Array(100), 3)).toThrow(RangeError);
+  });
+
+  test('SILENCE_RMS boundary: signal just below threshold produces no segments', () => {
+    // RMS well below SILENCE_RMS (0.0015) — must be gated out entirely.
+    // A 1-sample-per-window constant at amplitude 0.001 gives RMS = 0.001 < 0.0015.
+    const amplitude = 0.001; // < SILENCE_RMS
+    const samples = new Float32Array(2 * SR);
+    for (let i = 0; i < samples.length; i++) {
+      samples[i] = amplitude * Math.sin((2 * Math.PI * 300 * i) / SR);
+    }
+    // RMS of a sine ≈ amplitude / √2 ≈ 0.000707, which is below SILENCE_RMS.
+    expect(diar.diarizeChannel(samples, SR)).toEqual([]);
+  });
+
+  test('SILENCE_RMS boundary: signal at and above threshold is captured', () => {
+    // RMS > 0.0015 must register as voiced. Use amplitude 0.01 (RMS ≈ 0.00707).
+    const amplitude = 0.01; // sine RMS ≈ 0.00707 >> SILENCE_RMS
+    const samples = new Float32Array(2 * SR);
+    for (let i = 0; i < samples.length; i++) {
+      samples[i] = amplitude * Math.sin((2 * Math.PI * 300 * i) / SR);
+    }
+    const segments = diar.diarizeChannel(samples, SR);
+    expect(segments.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('maxSpeakers option caps cluster count', () => {
+    // With maxSpeakers: 1 the diarizer should never produce more than 1 speaker id.
+    const samples = makeTwoSpeakerSignal();
+    const segments = diar.diarizeChannel(samples, SR, { maxSpeakers: 1 });
+    const ids = new Set(segments.map((s) => s.speakerId));
+    expect(ids.size).toBeLessThanOrEqual(1);
   });
 });
