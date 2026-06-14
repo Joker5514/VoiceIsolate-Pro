@@ -197,7 +197,6 @@ export function melBands(frame, sampleRate, bands = MEL_BANDS) {
       !Number.isFinite(sampleRate) || sampleRate <= 0) {
     return out;
   }
-  }
 
   const usable = Math.min(frame.length, FINGERPRINT_FFT);
   const fftSize = nextPow2(usable);

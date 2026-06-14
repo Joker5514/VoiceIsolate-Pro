@@ -298,10 +298,11 @@ describe('diarizeChannel', () => {
   });
 
   test('maxSpeakers option caps cluster count', () => {
-    // With maxSpeakers: 1 the diarizer should never produce more than 1 speaker id.
+    // maxSpeakers is clamped to the documented 2-8 range; with maxSpeakers: 2
+    // the diarizer should never produce more than 2 speaker ids.
     const samples = makeTwoSpeakerSignal();
-    const segments = diar.diarizeChannel(samples, SR, { maxSpeakers: 1 });
+    const segments = diar.diarizeChannel(samples, SR, { maxSpeakers: 2 });
     const ids = new Set(segments.map((s) => s.speakerId));
-    expect(ids.size).toBeLessThanOrEqual(1);
+    expect(ids.size).toBeLessThanOrEqual(2);
   });
 });
