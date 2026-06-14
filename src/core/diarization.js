@@ -193,9 +193,10 @@ function hann(n) {
  */
 export function melBands(frame, sampleRate, bands = MEL_BANDS) {
   const out = new Float32Array(bands);
-  if (!(frame instanceof Float32Array) || frame.length === 0 ||
+  if (!(frame instanceof Float32Array) || frame.length <= 1 ||
       !Number.isFinite(sampleRate) || sampleRate <= 0) {
     return out;
+  }
   }
 
   const usable = Math.min(frame.length, FINGERPRINT_FFT);
