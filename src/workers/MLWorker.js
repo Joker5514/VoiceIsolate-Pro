@@ -17,6 +17,9 @@
  *   → { type: 'init', manifest: ManifestEntry[] }
  *   ← { type: 'ready', backend: 'webgpu'|'wasm' }
  *   → { type: 'process', requestId, modelId, channelData: Float32Array[], sampleRate }
+ *   → { type: 'process', requestId, modelIds: string[], channelData, sampleRate }
+ *        (chain — runs models in series, e.g. vocals → denoise, for maximum
+ *         isolation; each stage's clean output feeds the next)
  *   ← { type: 'progress', requestId, percent }
  *   ← { type: 'stems', requestId, clean: Float32Array[], noise: Float32Array[],
  *       sampleRate, passthrough: boolean }
@@ -341,10 +344,21 @@ function residual(channelData, cleanChannels) {
   });
 }
 
-async function processRequest({ requestId, modelId, channelData, sampleRate }) {
-  const entry = MANIFEST[modelId];
-  if (!entry) {
-    throw new Error(`[VIP][MLWorker] Unknown model '${modelId}'. Did 'init' run?`);
+async function processRequest({ requestId, modelId, modelIds, channelData, sampleRate }) {
+  // A chain (`modelIds`) runs models in series for maximum isolation —
+  // e.g. ['bsrnn_vocals', 'rnnoise'] extracts the voice, then strips any
+  // residual background. A single `modelId` is the one-pass case. Each stage
+  // feeds its clean output into the next; the noise stem is always the
+  // sample-wise residual against the ORIGINAL input (input − final clean).
+  const chain = (Array.isArray(modelIds) && modelIds.length ? modelIds : [modelId])
+    .filter((id) => typeof id === 'string' && id);
+  if (chain.length === 0) {
+    throw new Error("[VIP][MLWorker] No model specified. Did 'init' run?");
+  }
+  for (const id of chain) {
+    if (!MANIFEST[id]) {
+      throw new Error(`[VIP][MLWorker] Unknown model '${id}'. Did 'init' run?`);
+    }
   }
 
   const onProgress = (p) => {
@@ -354,20 +368,30 @@ async function processRequest({ requestId, modelId, channelData, sampleRate }) {
   let clean;
   let passthrough = false;
   try {
-    if (entry.strategy !== 'spectral-mask') {
-      throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
+    const totalSteps = chain.length * channelData.length;
+    let stepBase = 0;
+    let current = channelData;
+    for (const id of chain) {
+      const entry = MANIFEST[id];
+      if (entry.strategy !== 'spectral-mask') {
+        throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
+      }
+      const session = await getSession(entry);
+      const next = [];
+      for (let ch = 0; ch < current.length; ch++) {
+        const step = stepBase + ch;
+        next.push(await runSpectralMask(entry, session, current[ch], (p) =>
+          onProgress((step + p) / totalSteps)
+        ));
+      }
+      current = next;
+      stepBase += channelData.length;
     }
-    const session = await getSession(entry);
-    clean = [];
-    for (let ch = 0; ch < channelData.length; ch++) {
-      clean.push(await runSpectralMask(entry, session, channelData[ch], (p) =>
-        onProgress((ch + p) / channelData.length)
-      ));
-    }
+    clean = current;
   } catch (err) {
     // Graceful degradation: the UI must keep working without a model.
     // Passthrough stems: clean = input, noise = silence.
-    console.error(`[VIP][MLWorker] Inference failed for '${modelId}'; emitting passthrough stems.`, err);
+    console.error(`[VIP][MLWorker] Inference failed for [${chain.join(' → ')}]; emitting passthrough stems.`, err);
     clean = channelData.map((c) => new Float32Array(c));
     passthrough = true;
   }

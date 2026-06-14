@@ -83,10 +83,13 @@ export class SpeakerControls {
     const vol = this.doc.createElement('input');
     vol.type = 'range';
     vol.min = '0';
-    vol.max = '100';
+    // 0–200: values above 100 ENHANCE (boost) the speaker, up to +6 dB, so a
+    // whispered/faint voice can be lifted above the others (PlaybackMixer
+    // clamps to the same range).
+    vol.max = '200';
     vol.step = '1';
     vol.value = String(Math.round(state.volume));
-    vol.setAttribute('aria-label', `Volume for ${label.textContent}`);
+    vol.setAttribute('aria-label', `Volume for ${label.textContent} (above 100% boosts)`);
     const volVal = this.doc.createElement('span');
     volVal.className = 'slider-val';
     volVal.textContent = `${vol.value}%`;
