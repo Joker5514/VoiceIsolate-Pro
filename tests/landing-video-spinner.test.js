@@ -27,7 +27,9 @@ describe('Landing page — video preview plays in sync with processed audio', ()
   });
 
   test('the video stays muted — sound always comes from the Web Audio mixer', () => {
-    expect(js).toContain('ui.videoPlayer.muted = true');
+    // muted enforced in markup AND in JS (alias-agnostic: `v.muted` or `ui.videoPlayer.muted`).
+    expect(html).toMatch(/id="videoPlayer"[^>]*\bmuted\b/);
+    expect(js).toMatch(/\.muted\s*=\s*true/);
   });
 
   test('the mixer is the single clock; the muted video only follows it', () => {

@@ -98,6 +98,7 @@ function showSpinner(stage, { indeterminate = false } = {}) {
   if (indeterminate) {
     ui.procSpinner.classList.add('indeterminate');
     ui.procPct.textContent = '';
+    ui.procRingFill.style.opacity = '1';
     ui.procRingFill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * 0.75);
     ui.procProgressbar.removeAttribute('aria-valuenow');
   } else {
@@ -112,6 +113,9 @@ function setProgress(percent, stage) {
   ui.procSpinner.classList.remove('indeterminate');
   ui.procPct.textContent = `${pct}%`;
   if (stage) ui.procStage.textContent = stage;
+  // At 0% the dash is fully offset; the round linecap would still draw a dot on
+  // the track, so hide the fill entirely until there is real progress.
+  ui.procRingFill.style.opacity = pct === 0 ? '0' : '1';
   ui.procRingFill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - pct / 100));
   ui.procProgressbar.setAttribute('aria-valuenow', String(pct));
 }
@@ -132,16 +136,26 @@ function isVideoFile(file) {
 function loadVideo(file) {
   clearVideo();
   videoUrl = URL.createObjectURL(file);
-  ui.videoPlayer.src = videoUrl;
-  ui.videoPlayer.muted = true; // audio always comes from the Web Audio mixer
-  ui.videoCard.hidden = false;
+  const v = ui.videoPlayer;
+  v.muted = true; // audio always comes from the Web Audio mixer
+  // Reveal only once the element can actually paint a frame, so we never flash
+  // an empty black box; drop the preview if the container's video track can't
+  // be displayed (audio-only processing still works).
+  v.onloadedmetadata = () => { ui.videoCard.hidden = false; };
+  v.onerror = () => clearVideo();
+  v.src = videoUrl;
 }
 
 function clearVideo() {
   if (!videoUrl && ui.videoCard.hidden) return; // nothing loaded — avoid empty-src churn
-  try { ui.videoPlayer.pause(); } catch { /* not playing */ }
-  ui.videoPlayer.removeAttribute('src');
-  try { ui.videoPlayer.load(); } catch { /* reset is best-effort */ }
+  const v = ui.videoPlayer;
+  // Detach handlers first: removeAttribute('src') + load() fires a spurious
+  // 'error' during teardown, which would otherwise re-enter clearVideo.
+  v.onloadedmetadata = null;
+  v.onerror = null;
+  try { v.pause(); } catch { /* not playing */ }
+  v.removeAttribute('src');
+  try { v.load(); } catch { /* reset is best-effort */ }
   ui.videoCard.hidden = true;
   if (videoUrl) { URL.revokeObjectURL(videoUrl); videoUrl = null; }
 }
@@ -157,6 +171,7 @@ function hasVideo() { return Boolean(videoUrl) && !ui.videoCard.hidden; }
 function syncVideo() {
   if (!hasVideo() || !mixer) return;
   const v = ui.videoPlayer;
+  if (v.readyState < 1) return; // metadata not loaded — currentTime/play not safe yet
   const target = mixer.currentTime();
   if (mixer.isPlaying()) {
     if (Math.abs(v.currentTime - target) > 0.3) v.currentTime = target;
@@ -340,6 +355,7 @@ async function onFileChosen() {
     ui.processBtn.disabled = false;
   } catch (err) {
     hideSpinner();
+    clearVideo(); // nothing to play — don't leave a dangling preview/object URL
     console.error('[VIP][landing] ingestion failed:', err);
     setStatus(err.message, 'error');
     ingested = null;
