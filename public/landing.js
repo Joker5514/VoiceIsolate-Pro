@@ -38,11 +38,20 @@ const ui = {
   ],
   statusDot: $('statusDot'),
   statusText: $('statusText'),
-  progress: $('inferenceProgress'),
+  // Realtime processing spinner (indeterminate while decoding/resampling,
+  // determinate during ONNX inference).
+  procSpinner: $('procSpinner'),
+  procRingFill: $('procRingFill'),
+  procPct: $('procPct'),
+  procStage: $('procStage'),
+  procProgressbar: $('procProgressbar'),
   timeReadout: $('timeReadout'),
   presetSelect: $('presetSelect'),
   waveCanvas: $('waveCanvas'),
   specCanvas: $('specCanvas'),
+  // Video preview (shown only for video uploads; muted, mixer drives the clock).
+  videoCard: $('videoCard'),
+  videoPlayer: $('videoPlayer'),
   speakersPanel: $('speakersPanel'),
   speakerStatus: $('speakerStatus'),
   speakerCardsGrid: $('speakerCardsGrid'),
@@ -58,8 +67,14 @@ let ingested = null;
 let requestSeq = 0;
 let diarSeq = 0;
 let currentJobLabel = 'Separating stems…';
+/** Object URL backing the <video> preview; revoked when a new file loads. */
+let videoUrl = null;
 
 const DIARIZATION_TIMEOUT_MS = 60000;
+
+// SVG ring circumference for r=22 (2π·22). Must match the stroke-dasharray in
+// index.html — the determinate ring fills by shrinking stroke-dashoffset.
+const RING_CIRCUMFERENCE = 138.23;
 
 function setStatus(msg, cls = '') {
   ui.statusText.textContent = msg;
@@ -69,6 +84,104 @@ function setStatus(msg, cls = '') {
 function fmtTime(s) {
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
+
+// ─── Processing spinner (realtime progress) ──────────────────────────────────
+
+/**
+ * Show the spinner. `indeterminate` spins a fixed arc for stages without a
+ * percentage (decode/resample); determinate stages call setProgress().
+ */
+function showSpinner(stage, { indeterminate = false } = {}) {
+  ui.procSpinner.hidden = false;
+  ui.procStage.textContent = stage;
+  if (indeterminate) {
+    ui.procSpinner.classList.add('indeterminate');
+    ui.procPct.textContent = '';
+    ui.procRingFill.style.opacity = '1';
+    ui.procRingFill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * 0.75);
+    ui.procProgressbar.removeAttribute('aria-valuenow');
+  } else {
+    setProgress(0, stage);
+  }
+}
+
+/** Drive the determinate ring + numeric readout from a 0–100 percentage. */
+function setProgress(percent, stage) {
+  const pct = Math.max(0, Math.min(100, Math.round(percent)));
+  ui.procSpinner.hidden = false;
+  ui.procSpinner.classList.remove('indeterminate');
+  ui.procPct.textContent = `${pct}%`;
+  if (stage) ui.procStage.textContent = stage;
+  // At 0% the dash is fully offset; the round linecap would still draw a dot on
+  // the track, so hide the fill entirely until there is real progress.
+  ui.procRingFill.style.opacity = pct === 0 ? '0' : '1';
+  ui.procRingFill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - pct / 100));
+  ui.procProgressbar.setAttribute('aria-valuenow', String(pct));
+}
+
+function hideSpinner() {
+  ui.procSpinner.hidden = true;
+  ui.procSpinner.classList.remove('indeterminate');
+}
+
+// ─── Video preview (picture in sync with processed audio) ────────────────────
+
+/** Treat as video by MIME type, or by container extension when MIME is absent. */
+function isVideoFile(file) {
+  if (file.type && file.type.startsWith('video/')) return true;
+  return /\.(mp4|webm|mov|m4v|ogv|mkv|avi)$/i.test(file.name || '');
+}
+
+function loadVideo(file) {
+  clearVideo();
+  videoUrl = URL.createObjectURL(file);
+  const v = ui.videoPlayer;
+  v.muted = true; // audio always comes from the Web Audio mixer
+  // Reveal only once the element can actually paint a frame, so we never flash
+  // an empty black box; drop the preview if the container's video track can't
+  // be displayed (audio-only processing still works).
+  v.onloadedmetadata = () => { ui.videoCard.hidden = false; };
+  v.onerror = () => clearVideo();
+  v.src = videoUrl;
+}
+
+function clearVideo() {
+  if (!videoUrl && ui.videoCard.hidden) return; // nothing loaded — avoid empty-src churn
+  const v = ui.videoPlayer;
+  // Detach handlers first: removeAttribute('src') + load() fires a spurious
+  // 'error' during teardown, which would otherwise re-enter clearVideo.
+  v.onloadedmetadata = null;
+  v.onerror = null;
+  try { v.pause(); } catch { /* not playing */ }
+  v.removeAttribute('src');
+  try { v.load(); } catch { /* reset is best-effort */ }
+  ui.videoCard.hidden = true;
+  if (videoUrl) { URL.revokeObjectURL(videoUrl); videoUrl = null; }
+}
+
+function hasVideo() { return Boolean(videoUrl) && !ui.videoCard.hidden; }
+
+/**
+ * Reconcile the muted <video> to the mixer, which is the single playback clock.
+ * Called after every transport action and on a periodic tick so seeks from the
+ * waveform (which go straight to mixer.seek) and natural end-of-stream all stay
+ * in sync without the video ever driving audio.
+ */
+function syncVideo() {
+function syncVideo() {
+  if (!hasVideo() || !mixer) return;
+  const v = ui.videoPlayer;
+  if (v.readyState < 1) return; // Ensure metadata is loaded before syncing
+  const target = mixer.currentTime();
+  if (mixer.isPlaying()) {
+    if (Math.abs(v.currentTime - target) > 0.3) v.currentTime = target;
+    // Muted playback is allowed to start without a user gesture.
+    if (v.paused) v.play().catch(() => {});
+  } else {
+    if (!v.paused) v.pause();
+    if (Math.abs(v.currentTime - target) > 0.05) v.currentTime = target;
+  }
 }
 
 // ─── Worker lifecycle ────────────────────────────────────────────────────────
@@ -84,16 +197,17 @@ function getWorker() {
         console.log(`[VIP][landing] MLWorker ready (backend: ${msg.backend})`);
         break;
       case 'progress':
-        ui.progress.hidden = false;
-        ui.progress.value = msg.percent;
-        setStatus(`${currentJobLabel} ${msg.percent}%`, 'warn');
+        // Live inference progress: ring + numeric %. The status line keeps the
+        // stage label only (set once in onProcess) so the polite aria-live
+        // region isn't re-announced on every frame.
+        setProgress(msg.percent, currentJobLabel);
         break;
       case 'stems':
         onStems(msg);
         break;
       case 'error':
         setStatus(`Processing failed: ${msg.message}`, 'error');
-        ui.progress.hidden = true;
+        hideSpinner();
         ui.processBtn.disabled = false;
         ui.fileInput.disabled = false;
         ui.modelSelect.disabled = false;
@@ -104,6 +218,7 @@ function getWorker() {
   });
   worker.addEventListener('error', (err) => {
     setStatus(`Worker error: ${err.message || 'unknown'}`, 'error');
+    hideSpinner();
     ui.processBtn.disabled = false;
     ui.fileInput.disabled = false;
     ui.modelSelect.disabled = false;
@@ -223,16 +338,25 @@ async function onFileChosen() {
   const file = ui.fileInput.files && ui.fileInput.files[0];
   if (!file) return;
   ui.processBtn.disabled = true;
+  // Show the picture immediately for videos; hide the player for audio files.
+  if (isVideoFile(file)) loadVideo(file); else clearVideo();
   try {
+    showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
     ingested = await ingestFile(file, {
       onProgress: (stage) => {
-        if (stage === 'resampling') setStatus('Resampling to 48 kHz…', 'warn');
+        if (stage === 'resampling') {
+          showSpinner('Resampling to 48 kHz…', { indeterminate: true });
+          setStatus('Resampling to 48 kHz…', 'warn');
+        }
       },
     });
+    hideSpinner();
     setStatus(`Ready: ${ingested.sourceName} · ${fmtTime(ingested.duration)} · ${ingested.numberOfChannels} ch`, '');
     ui.processBtn.disabled = false;
   } catch (err) {
+    hideSpinner();
+    clearVideo(); // nothing to play — don't leave a dangling preview/object URL
     console.error('[VIP][landing] ingestion failed:', err);
     setStatus(err.message, 'error');
     ingested = null;
@@ -253,10 +377,9 @@ function onProcess() {
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
   ui.modelSelect.disabled = true;
-  ui.progress.hidden = false;
-  ui.progress.value = 0;
   currentJobLabel = chain ? 'Maximum isolation (2 passes)…' : 'Separating stems…';
-  setStatus(`${currentJobLabel} 0%`, 'warn');
+  setProgress(0, currentJobLabel);
+  setStatus(currentJobLabel, 'warn');
 
   // Channel copies are transferred — keep our reference for re-processing.
   const channelData = ingested.channelData.map((c) => new Float32Array(c));
@@ -268,7 +391,7 @@ function onProcess() {
 
 function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
   if (requestId !== requestSeq) return; // stale response
-  ui.progress.hidden = true;
+  hideSpinner();
   ui.processBtn.disabled = false;
   ui.fileInput.disabled = false;
   ui.modelSelect.disabled = false;
@@ -337,15 +460,18 @@ function wireMuteButtons() {
 
 function wireTransport() {
   ui.playBtn.addEventListener('click', async () => {
-    try { await mixer.play(); } catch (err) { setStatus(err.message, 'error'); }
+    try { await mixer.play(); syncVideo(); } catch (err) { setStatus(err.message, 'error'); }
   });
-  ui.pauseBtn.addEventListener('click', () => mixer && mixer.pause());
-  ui.stopBtn.addEventListener('click', () => mixer && mixer.stop());
+  ui.pauseBtn.addEventListener('click', () => { if (mixer) { mixer.pause(); syncVideo(); } });
+  ui.stopBtn.addEventListener('click', () => { if (mixer) { mixer.stop(); syncVideo(); } });
 
+  // One ticker drives the time readout and keeps the muted video aligned with
+  // the mixer clock (covers waveform click-to-seek and natural end-of-stream).
   setInterval(() => {
     if (!mixer) return;
     ui.timeReadout.textContent = `${fmtTime(mixer.currentTime())} / ${fmtTime(mixer.duration())}`;
-  }, 250);
+    syncVideo();
+  }, 200);
 }
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
