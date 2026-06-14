@@ -385,6 +385,7 @@
             height: 20px;
         }
         .switch input { opacity: 0; width: 0; height: 0; }
+        .switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
         .slider {
             position: absolute;
             cursor: pointer;
@@ -615,7 +616,7 @@
                 <div class="switch-row">
                     <span>Monitor Output</span>
                     <label class="switch">
-                        <input type="checkbox">
+                        <input type="checkbox" aria-label="Monitor Output">
                         <span class="slider"></span>
                     </label>
                 </div>
@@ -623,7 +624,7 @@
                 <div class="switch-row">
                     <span>Bypass Processing</span>
                     <label class="switch">
-                        <input type="checkbox">
+                        <input type="checkbox" aria-label="Bypass Processing">
                         <span class="slider"></span>
                     </label>
                 </div>
