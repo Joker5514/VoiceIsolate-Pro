@@ -247,6 +247,8 @@ function onProcess() {
   const selection = ui.modelSelect.value;
   const chain = MODEL_CHAINS[selection];
   ui.processBtn.disabled = true;
+  ui.fileInput.disabled = true;
+  ui.modelSelect.disabled = true;
   ui.progress.hidden = false;
   ui.progress.value = 0;
   currentJobLabel = chain ? 'Maximum isolation (2 passes)…' : 'Separating stems…';
