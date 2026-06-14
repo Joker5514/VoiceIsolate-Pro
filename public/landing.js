@@ -95,6 +95,8 @@ function getWorker() {
         setStatus(`Processing failed: ${msg.message}`, 'error');
         ui.progress.hidden = true;
         ui.processBtn.disabled = false;
+        ui.fileInput.disabled = false;
+        ui.modelSelect.disabled = false;
         break;
       default:
         break;
@@ -103,6 +105,8 @@ function getWorker() {
   worker.addEventListener('error', (err) => {
     setStatus(`Worker error: ${err.message || 'unknown'}`, 'error');
     ui.processBtn.disabled = false;
+    ui.fileInput.disabled = false;
+    ui.modelSelect.disabled = false;
   });
   return worker;
 }
@@ -266,6 +270,8 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
   if (requestId !== requestSeq) return; // stale response
   ui.progress.hidden = true;
   ui.processBtn.disabled = false;
+  ui.fileInput.disabled = false;
+  ui.modelSelect.disabled = false;
 
   if (!mixer) {
     mixer = new PlaybackMixer();
