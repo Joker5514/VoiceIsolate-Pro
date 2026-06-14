@@ -46,7 +46,24 @@
       <div class="status-row">
         <div class="status-dot" id="statusDot"></div>
         <span id="statusText" role="status" aria-live="polite">Idle — choose a file to begin</span>
-        <progress id="inferenceProgress" max="100" value="0" hidden></progress>
+      </div>
+      <!--
+        Realtime processing indicator. Indeterminate (spins) while decoding /
+        resampling; determinate (the ring fills and a live % shows) during ONNX
+        inference. No inline scripts: landing.js drives the ring via
+        stroke-dashoffset so it runs under the strict CSP.
+      -->
+      <div class="proc-spinner" id="procSpinner" hidden>
+        <svg class="proc-ring" viewBox="0 0 52 52" width="52" height="52" aria-hidden="true">
+          <circle class="proc-ring-track" cx="26" cy="26" r="22" fill="none"></circle>
+          <circle class="proc-ring-fill" id="procRingFill" cx="26" cy="26" r="22" fill="none"
+                  stroke-dasharray="138.23" stroke-dashoffset="138.23"></circle>
+        </svg>
+        <div class="proc-spinner-info" id="procProgressbar" role="progressbar"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Processing progress">
+          <span class="proc-pct" id="procPct">0%</span>
+          <span class="proc-stage" id="procStage">Working…</span>
+        </div>
       </div>
     </section>
 
@@ -54,6 +71,18 @@
     <section class="panel" aria-labelledby="mixLabel">
       <h2 id="mixLabel" class="section-label">2 · Live Mix</h2>
       <p class="hint">Stems play through the Web Audio graph. Sliders act instantly on GainNodes — the AI never re-runs.</p>
+
+      <!--
+        Video preview. Shown only when the uploaded file is a video. The element
+        stays MUTED on purpose — its audio track is never used; sound comes from
+        the live-mixed stems through the Web Audio graph. The picture is kept in
+        sync with the mixer clock by landing.js (the mixer is the single clock).
+      -->
+      <div class="video-card" id="videoCard" hidden>
+        <video id="videoPlayer" class="video-player" playsinline muted preload="auto"
+               aria-label="Uploaded video — picture plays in sync with the processed audio"></video>
+        <p class="video-note">Picture only — this player is muted; the sound is the live-mixed processed audio below.</p>
+      </div>
 
       <div class="transport-row">
         <button id="playBtn" class="btn" type="button" disabled>&#9654; Play</button>
