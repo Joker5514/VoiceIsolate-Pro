@@ -30,6 +30,17 @@ function mockMixer() {
     setVolume(v) { this.calls.push(['setVolume', v]); },
     setLowShelf(v) { this.calls.push(['setLowShelf', v]); },
     setHighShelf(v) { this.calls.push(['setHighShelf', v]); },
+    setEqLowMid(v) { this.calls.push(['setEqLowMid', v]); },
+    setEqMid(v) { this.calls.push(['setEqMid', v]); },
+    setEqHighMid(v) { this.calls.push(['setEqHighMid', v]); },
+    setHighpass(v) { this.calls.push(['setHighpass', v]); },
+    setLowpass(v) { this.calls.push(['setLowpass', v]); },
+    setCompThreshold(v) { this.calls.push(['setCompThreshold', v]); },
+    setCompRatio(v) { this.calls.push(['setCompRatio', v]); },
+    setCompAttack(v) { this.calls.push(['setCompAttack', v]); },
+    setCompRelease(v) { this.calls.push(['setCompRelease', v]); },
+    setCompKnee(v) { this.calls.push(['setCompKnee', v]); },
+    setMakeupGain(v) { this.calls.push(['setMakeupGain', v]); },
   };
 }
 
@@ -44,6 +55,17 @@ const SLIDER_SPECS = {
   volumeSlider: { min: 0, max: 100, value: 100 },
   eqLowSlider: { min: -24, max: 24, value: 0 },
   eqHighSlider: { min: -24, max: 24, value: 0 },
+  eqLowMidSlider: { min: -24, max: 24, value: 0 },
+  eqMidSlider: { min: -24, max: 24, value: 0 },
+  eqHighMidSlider: { min: -24, max: 24, value: 0 },
+  highpassSlider: { min: 20, max: 2000, value: 20 },
+  lowpassSlider: { min: 1000, max: 20000, value: 20000 },
+  compThresholdSlider: { min: -60, max: 0, value: 0 },
+  compRatioSlider: { min: 1, max: 20, value: 1 },
+  compAttackSlider: { min: 0, max: 200, value: 20 },
+  compReleaseSlider: { min: 0, max: 1000, value: 250 },
+  compKneeSlider: { min: 0, max: 40, value: 0 },
+  makeupGainSlider: { min: 0, max: 24, value: 0 },
 };
 function buildSliders(values = {}) {
   document.body.innerHTML = '';
@@ -88,7 +110,7 @@ describe('SliderUI', () => {
   test('binds every present slider and initializes the graph from its value', () => {
     const ui = new SliderUI(mixer);
     const bound = ui.bind();
-    expect(bound).toBe(SLIDER_BINDINGS.length); // all 5 present
+    expect(bound).toBe(SLIDER_BINDINGS.length); // all present
     // bind() seeds the graph from each slider's current position.
     expect(mixer.calls).toEqual([
       ['setNoiseReduction', 100],
@@ -96,6 +118,17 @@ describe('SliderUI', () => {
       ['setVolume', 100],
       ['setLowShelf', 0],
       ['setHighShelf', 0],
+      ['setEqLowMid', 0],
+      ['setEqMid', 0],
+      ['setEqHighMid', 0],
+      ['setHighpass', 20],
+      ['setLowpass', 20000],
+      ['setCompThreshold', 0],
+      ['setCompRatio', 1],
+      ['setCompAttack', 20],
+      ['setCompRelease', 250],
+      ['setCompKnee', 0],
+      ['setMakeupGain', 0],
     ]);
   });
 

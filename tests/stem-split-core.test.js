@@ -161,6 +161,10 @@ function mockContext() {
       type: '', frequency: mockParam(), gain: mockParam(), Q: mockParam(),
     }),
     createAnalyser: () => mockNode({ fftSize: 0 }),
+    createDynamicsCompressor: () => mockNode({
+      threshold: mockParam(), knee: mockParam(), ratio: mockParam(),
+      attack: mockParam(), release: mockParam(), reduction: 0,
+    }),
     createBuffer: (channels, length, sampleRate) => ({
       numberOfChannels: channels,
       length,
@@ -217,6 +221,40 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     await mixer.play();
     mixer.setVoiceLevel(900);
     expect(mixer.cleanGain.gain.setTargetAtTime.mock.calls.at(-1)[0]).toBe(2);
+  });
+
+  test('Tier-A console defaults are transparent (unity / filters off)', () => {
+    expect(mixer.eqLowMid.gain.value).toBe(0);
+    expect(mixer.eqMid.gain.value).toBe(0);
+    expect(mixer.eqHighMid.gain.value).toBe(0);
+    expect(mixer.highpass.frequency.value).toBe(20);
+    expect(mixer.lowpass.frequency.value).toBe(20000);
+    expect(mixer.compressor.ratio.value).toBe(1);
+    expect(mixer.compressor.threshold.value).toBe(0);
+    expect(mixer.makeupGain.gain.value).toBe(1);
+  });
+
+  test('Tier-A setters clamp inputs and convert units (idle snap)', () => {
+    mixer.setEqMid(99);
+    expect(mixer.eqMid.gain.value).toBe(24);
+    mixer.setEqLowMid(-99);
+    expect(mixer.eqLowMid.gain.value).toBe(-24);
+    mixer.setHighpass(5);                 // below min → 20
+    expect(mixer.highpass.frequency.value).toBe(20);
+    mixer.setLowpass(99999);              // above max → 20000
+    expect(mixer.lowpass.frequency.value).toBe(20000);
+    mixer.setCompThreshold(-80);          // → -60
+    expect(mixer.compressor.threshold.value).toBe(-60);
+    mixer.setCompRatio(50);               // → 20
+    expect(mixer.compressor.ratio.value).toBe(20);
+    mixer.setCompAttack(200);             // 200 ms → 0.2 s
+    expect(mixer.compressor.attack.value).toBeCloseTo(0.2);
+    mixer.setCompRelease(1000);           // 1000 ms → 1 s
+    expect(mixer.compressor.release.value).toBeCloseTo(1);
+    mixer.setCompKnee(99);                // → 40
+    expect(mixer.compressor.knee.value).toBe(40);
+    mixer.setMakeupGain(6);               // +6 dB → linear ~1.995
+    expect(mixer.makeupGain.gain.value).toBeCloseTo(Math.pow(10, 6 / 20));
   });
 
   test('loadStems builds sample-locked buffers; transport round-trips', async () => {

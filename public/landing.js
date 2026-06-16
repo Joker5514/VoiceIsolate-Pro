@@ -35,6 +35,11 @@ const ui = {
   mixSliders: [
     $('noiseReductionSlider'), $('voiceLevelSlider'), $('volumeSlider'),
     $('eqLowSlider'), $('eqHighSlider'),
+    // Tier-A console
+    $('eqLowMidSlider'), $('eqMidSlider'), $('eqHighMidSlider'),
+    $('highpassSlider'), $('lowpassSlider'),
+    $('compThresholdSlider'), $('compRatioSlider'), $('compAttackSlider'),
+    $('compReleaseSlider'), $('compKneeSlider'), $('makeupGainSlider'),
   ],
   statusDot: $('statusDot'),
   statusText: $('statusText'),
@@ -299,6 +304,17 @@ const READOUTS = [
   ['volumeSlider', 'volumeVal', (v) => `${v}%`],
   ['eqLowSlider', 'eqLowVal', (v) => `${v} dB`],
   ['eqHighSlider', 'eqHighVal', (v) => `${v} dB`],
+  ['eqLowMidSlider', 'eqLowMidVal', (v) => `${v} dB`],
+  ['eqMidSlider', 'eqMidVal', (v) => `${v} dB`],
+  ['eqHighMidSlider', 'eqHighMidVal', (v) => `${v} dB`],
+  ['highpassSlider', 'highpassVal', (v) => `${v} Hz`],
+  ['lowpassSlider', 'lowpassVal', (v) => `${v} Hz`],
+  ['compThresholdSlider', 'compThresholdVal', (v) => `${v} dB`],
+  ['compRatioSlider', 'compRatioVal', (v) => `${v}:1`],
+  ['compAttackSlider', 'compAttackVal', (v) => `${v} ms`],
+  ['compReleaseSlider', 'compReleaseVal', (v) => `${v} ms`],
+  ['compKneeSlider', 'compKneeVal', (v) => `${v} dB`],
+  ['makeupGainSlider', 'makeupGainVal', (v) => `${v} dB`],
 ];
 
 function wireReadouts() {
