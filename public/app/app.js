@@ -779,7 +779,12 @@ class VoiceIsolatePro {
         this.handleFile(e.dataTransfer.files[0]);
       });
     }
-    bind('clearFile', d.clearFile, 'click', () => this._clearFile());
+    bind('clearFile', d.clearFile, 'click', () => {
+      if (this.inputBuffer) {
+        if (!confirm('Clear current file and discard all changes?')) return;
+      }
+      this._clearFile();
+    });
 
     // Process buttons
     bind('processBtn', d.processBtn, 'click', () => this.runPipeline());
