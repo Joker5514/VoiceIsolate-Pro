@@ -29,6 +29,18 @@ const SLIDER_BINDINGS = Object.freeze([
   { id: 'volumeSlider', method: 'setVolume', initial: 100 },
   { id: 'eqLowSlider', method: 'setLowShelf', initial: 0 },
   { id: 'eqHighSlider', method: 'setHighShelf', initial: 0 },
+  // Tier-A console (all map to PlaybackMixer AudioParams; absent ids skipped).
+  { id: 'eqLowMidSlider', method: 'setEqLowMid', initial: 0 },
+  { id: 'eqMidSlider', method: 'setEqMid', initial: 0 },
+  { id: 'eqHighMidSlider', method: 'setEqHighMid', initial: 0 },
+  { id: 'highpassSlider', method: 'setHighpass', initial: 20 },
+  { id: 'lowpassSlider', method: 'setLowpass', initial: 20000 },
+  { id: 'compThresholdSlider', method: 'setCompThreshold', initial: 0 },
+  { id: 'compRatioSlider', method: 'setCompRatio', initial: 1 },
+  { id: 'compAttackSlider', method: 'setCompAttack', initial: 20 },
+  { id: 'compReleaseSlider', method: 'setCompRelease', initial: 250 },
+  { id: 'compKneeSlider', method: 'setCompKnee', initial: 0 },
+  { id: 'makeupGainSlider', method: 'setMakeupGain', initial: 0 },
 ]);
 
 export class SliderUI {

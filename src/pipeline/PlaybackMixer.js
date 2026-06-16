@@ -4,8 +4,16 @@
  * Routes the offline-processed stems through a real-time Web Audio graph:
  *
  *   Clean stem ─► Source ─► SpeakerGain ─► CleanGain ─► VoiceMute ─┐
- *                                                                  ├─► lowShelf ─► highShelf ─► Master ─► destination
+ *                                                                  ├─► [Tier-A bus]
  *   Noise stem ─► Source ───────────────► NoiseGain ─► NoiseMute ─┘
+ *
+ *   [Tier-A bus] = highpass ─► lowpass ─► lowShelf ─► eqLowMid ─► eqMid
+ *                  ─► eqHighMid ─► highShelf ─► compressor ─► makeupGain
+ *                  ─► Master ─► Analyser ─► destination
+ *
+ * The Tier-A console (HP/LP filters, 5-band EQ, bus compressor) is shared by
+ * both stems and defaults to fully transparent — adding it never changes how
+ * freshly loaded stems sound until a control is moved.
  *
  * SpeakerGain is a per-speaker automation lane: diarization segments
  * (src/core/diarization.js) schedule gain ramps so individual speakers can
@@ -46,6 +54,14 @@ export class PlaybackMixer {
     this.noiseMuteGain = this.ctx.createGain();
     this.lowShelf = this.ctx.createBiquadFilter();
     this.highShelf = this.ctx.createBiquadFilter();
+    // ── Tier-A console (shared master bus; all default transparent) ──────
+    this.highpass = this.ctx.createBiquadFilter();
+    this.lowpass = this.ctx.createBiquadFilter();
+    this.eqLowMid = this.ctx.createBiquadFilter();
+    this.eqMid = this.ctx.createBiquadFilter();
+    this.eqHighMid = this.ctx.createBiquadFilter();
+    this.compressor = this.ctx.createDynamicsCompressor();
+    this.makeupGain = this.ctx.createGain();
     this.masterGain = this.ctx.createGain();
     this.analyser = this.ctx.createAnalyser();
 
@@ -53,15 +69,42 @@ export class PlaybackMixer {
     this.lowShelf.frequency.value = 250;
     this.highShelf.type = 'highshelf';
     this.highShelf.frequency.value = 4000;
+    this.highpass.type = 'highpass';
+    this.highpass.frequency.value = 20;     // 20 Hz ≈ off (no audible cut)
+    this.lowpass.type = 'lowpass';
+    this.lowpass.frequency.value = 20000;   // 20 kHz ≈ off
+    this.eqLowMid.type = 'peaking';
+    this.eqLowMid.frequency.value = 500;
+    this.eqLowMid.Q.value = 1;
+    this.eqMid.type = 'peaking';
+    this.eqMid.frequency.value = 1500;
+    this.eqMid.Q.value = 1;
+    this.eqHighMid.type = 'peaking';
+    this.eqHighMid.frequency.value = 3000;
+    this.eqHighMid.Q.value = 1;
+    // Compressor: transparent by default (ratio 1 + threshold 0 = no reduction).
+    this.compressor.threshold.value = 0;
+    this.compressor.knee.value = 0;
+    this.compressor.ratio.value = 1;
+    this.compressor.attack.value = 0.02;
+    this.compressor.release.value = 0.25;
     this.analyser.fftSize = 2048;
 
     this.speakerGain.connect(this.cleanGain);
     this.cleanGain.connect(this.voiceMuteGain);
-    this.voiceMuteGain.connect(this.lowShelf);
     this.noiseGain.connect(this.noiseMuteGain);
-    this.noiseMuteGain.connect(this.lowShelf);
-    this.lowShelf.connect(this.highShelf);
-    this.highShelf.connect(this.masterGain);
+    // Both stems join the shared master chain at the high-pass filter.
+    this.voiceMuteGain.connect(this.highpass);
+    this.noiseMuteGain.connect(this.highpass);
+    this.highpass.connect(this.lowpass);
+    this.lowpass.connect(this.lowShelf);
+    this.lowShelf.connect(this.eqLowMid);
+    this.eqLowMid.connect(this.eqMid);
+    this.eqMid.connect(this.eqHighMid);
+    this.eqHighMid.connect(this.highShelf);
+    this.highShelf.connect(this.compressor);
+    this.compressor.connect(this.makeupGain);
+    this.makeupGain.connect(this.masterGain);
     this.masterGain.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
 
@@ -72,6 +115,7 @@ export class PlaybackMixer {
     this.speakerGain.gain.value = 1;
     this.voiceMuteGain.gain.value = 1;
     this.noiseMuteGain.gain.value = 1;
+    this.makeupGain.gain.value = 1;   // 0 dB — transparent until raised
 
     // ── Transport state ──────────────────────────────────────────────────
     /** @type {AudioBuffer|null} */ this.cleanBuffer = null;
@@ -255,6 +299,65 @@ export class PlaybackMixer {
     this._applyParam(this.highShelf.gain, clamp(db, -24, 24));
   }
 
+  // ─── Tier-A console: 5-band EQ, HP/LP filters, bus compressor ─────────
+  // Every setter is AudioParam-only and clamps its input, exactly like the
+  // shelves above. No ML, no re-processing — pure Live-Mix (CLAUDE.md §1).
+
+  /** Low-mid peaking EQ gain in dB (−24 … +24) at 500 Hz. */
+  setEqLowMid(db) {
+    this._applyParam(this.eqLowMid.gain, clamp(db, -24, 24));
+  }
+
+  /** Mid peaking EQ gain in dB (−24 … +24) at 1.5 kHz. */
+  setEqMid(db) {
+    this._applyParam(this.eqMid.gain, clamp(db, -24, 24));
+  }
+
+  /** High-mid peaking EQ gain in dB (−24 … +24) at 3 kHz. */
+  setEqHighMid(db) {
+    this._applyParam(this.eqHighMid.gain, clamp(db, -24, 24));
+  }
+
+  /** High-pass cutoff in Hz (20 … 2000). 20 Hz ≈ off. */
+  setHighpass(hz) {
+    this._applyParam(this.highpass.frequency, clamp(hz, 20, 2000));
+  }
+
+  /** Low-pass cutoff in Hz (1000 … 20000). 20 kHz ≈ off. */
+  setLowpass(hz) {
+    this._applyParam(this.lowpass.frequency, clamp(hz, 1000, 20000));
+  }
+
+  /** Bus compressor threshold in dB (−60 … 0). 0 = no compression. */
+  setCompThreshold(db) {
+    this._applyParam(this.compressor.threshold, clamp(db, -60, 0));
+  }
+
+  /** Bus compressor ratio (1 … 20). 1 = no compression. */
+  setCompRatio(ratio) {
+    this._applyParam(this.compressor.ratio, clamp(ratio, 1, 20));
+  }
+
+  /** Bus compressor attack in milliseconds (0 … 200); stored as seconds. */
+  setCompAttack(ms) {
+    this._applyParam(this.compressor.attack, clamp(ms, 0, 200) / 1000);
+  }
+
+  /** Bus compressor release in milliseconds (0 … 1000); stored as seconds. */
+  setCompRelease(ms) {
+    this._applyParam(this.compressor.release, clamp(ms, 0, 1000) / 1000);
+  }
+
+  /** Bus compressor knee softness in dB (0 … 40). */
+  setCompKnee(db) {
+    this._applyParam(this.compressor.knee, clamp(db, 0, 40));
+  }
+
+  /** Post-compressor makeup gain in dB (0 … +24); applied as a linear gain. */
+  setMakeupGain(db) {
+    this._applyParam(this.makeupGain.gain, Math.pow(10, clamp(db, 0, 24) / 20));
+  }
+
   /**
    * Hard-mute the voice stem without disturbing the Voice Level slider.
    * @param {boolean} muted
@@ -436,8 +539,10 @@ export class PlaybackMixer {
   async dispose() {
     this.stop();
     for (const node of [this.speakerGain, this.cleanGain, this.voiceMuteGain,
-      this.noiseGain, this.noiseMuteGain, this.lowShelf,
-      this.highShelf, this.masterGain, this.analyser]) {
+      this.noiseGain, this.noiseMuteGain, this.highpass, this.lowpass,
+      this.lowShelf, this.eqLowMid, this.eqMid, this.eqHighMid,
+      this.highShelf, this.compressor, this.makeupGain,
+      this.masterGain, this.analyser]) {
       try { node.disconnect(); } catch { /* already disconnected */ }
     }
     try { await this.ctx.close(); } catch { /* already closed */ }
