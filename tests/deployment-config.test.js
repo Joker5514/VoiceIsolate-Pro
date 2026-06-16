@@ -62,7 +62,7 @@ describe('vercel.json — Content-Security-Policy header', () => {
 
   beforeAll(() => {
     const cfg = JSON.parse(readFile('vercel.json'));
-    const globalHeaders = cfg.headers.find(h => h.source === '/((?!api/).*)');
+    const globalHeaders = cfg.headers.find(h => h.source === '/((?!api/)(?!app(?:/|$))(?!blueprint(?:/|$))(?!docs(?:/|$)).*)');
     expect(globalHeaders).toBeDefined();
     const cspEntry = globalHeaders.headers.find(h => h.key === 'Content-Security-Policy');
     expect(cspEntry).toBeDefined();
@@ -95,8 +95,10 @@ describe('vercel.json — Content-Security-Policy header', () => {
     expect(directives['script-src']).toContain("'self'");
   });
 
-  test("script-src includes 'unsafe-inline'", () => {
-    expect(directives['script-src']).toContain("'unsafe-inline'");
+  test("script-src does NOT include 'unsafe-inline' on non-legacy paths (CLAUDE.md §1.1)", () => {
+    // The non-legacy CSP rule mirrors server/securityHeaders.js: 'unsafe-inline'
+    // is scoped to the frozen /app|/blueprint|/docs shell, never the new surfaces.
+    expect(directives['script-src']).not.toContain("'unsafe-inline'");
   });
 
   test('script-src includes /_vercel (Vercel runtime scripts)', () => {
@@ -177,12 +179,34 @@ describe('vercel.json — Content-Security-Policy header', () => {
   });
 });
 
+describe('vercel.json — legacy /app CSP keeps scoped unsafe-inline', () => {
+  let directives;
+
+  beforeAll(() => {
+    const cfg = JSON.parse(readFile('vercel.json'));
+    const legacy = cfg.headers.find(h => h.source === '/((?:app|blueprint|docs)(?:/.*)?)');
+    expect(legacy).toBeDefined();
+    const cspEntry = legacy.headers.find(h => h.key === 'Content-Security-Policy');
+    expect(cspEntry).toBeDefined();
+    directives = parseCSP(cspEntry.value);
+  });
+
+  test("legacy script-src retains 'unsafe-inline' for the frozen Engineer Mode shell", () => {
+    expect(directives['script-src']).toContain("'unsafe-inline'");
+  });
+
+  test("legacy script-src still includes 'self' and 'wasm-unsafe-eval'", () => {
+    expect(directives['script-src']).toContain("'self'");
+    expect(directives['script-src']).toContain("'wasm-unsafe-eval'");
+  });
+});
+
 describe('vercel.json — other security headers still present', () => {
   let globalHeaders;
 
   beforeAll(() => {
     const cfg = JSON.parse(readFile('vercel.json'));
-    const section = cfg.headers.find(h => h.source === '/((?!api/).*)');
+    const section = cfg.headers.find(h => h.source === '/((?!api/)(?!app(?:/|$))(?!blueprint(?:/|$))(?!docs(?:/|$)).*)');
     expect(section).toBeDefined();
     globalHeaders = section.headers;
   });
@@ -225,7 +249,7 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
   });
 
   test('global non-api headers include both COOP and COEP', () => {
-    const globalHeaders = cfg.headers.find((h) => h.source === '/((?!api/).*)');
+    const globalHeaders = cfg.headers.find((h) => h.source === '/((?!api/)(?!app(?:/|$))(?!blueprint(?:/|$))(?!docs(?:/|$)).*)');
     expect(globalHeaders).toBeDefined();
     const keys = globalHeaders.headers.map((h) => h.key);
     expect(keys).toContain('Cross-Origin-Opener-Policy');
@@ -472,7 +496,7 @@ describe('Cross-platform CSP consistency — vercel.json vs render.yaml', () => 
 
   beforeAll(() => {
     const vercelCfg = JSON.parse(readFile('vercel.json'));
-    const globalHeaders = vercelCfg.headers.find(h => h.source === '/((?!api/).*)');
+    const globalHeaders = vercelCfg.headers.find(h => h.source === '/((?!api/)(?!app(?:/|$))(?!blueprint(?:/|$))(?!docs(?:/|$)).*)');
     const vercelEntry = globalHeaders.headers.find(h => h.key === 'Content-Security-Policy');
     vercelCSP = vercelEntry.value;
     vercelDirectives = parseCSP(vercelCSP);
@@ -497,8 +521,12 @@ describe('Cross-platform CSP consistency — vercel.json vs render.yaml', () => 
     expect(renderScript).not.toContain('https://cdn.jsdelivr.net');
   });
 
-  test("both platforms keep 'unsafe-inline' in script-src", () => {
-    expect(vercelDirectives['script-src']).toContain("'unsafe-inline'");
+  test("Vercel non-legacy script-src drops 'unsafe-inline'; Render (glob-only) keeps it", () => {
+    // Vercel scopes 'unsafe-inline' to the legacy /app shell via path-specific
+    // rules (mirrors server/securityHeaders.js). Render's static headers are
+    // glob-only (path: /*) and serve the same bundle including the inline /app
+    // shell, so it retains one permissive CSP. Vercel is the primary host.
+    expect(vercelDirectives['script-src']).not.toContain("'unsafe-inline'");
     expect(renderDirectives['script-src']).toContain("'unsafe-inline'");
   });
 

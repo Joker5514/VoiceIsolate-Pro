@@ -30,11 +30,15 @@
         {
           "key": "Permissions-Policy",
           "value": "microphone=(), camera=(), geolocation=()"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=63072000; includeSubDomains"
         }
       ]
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api/)(?!app(?:/|$))(?!blueprint(?:/|$))(?!docs(?:/|$)).*)",
       "headers": [
         {
           "key": "Cross-Origin-Opener-Policy",
@@ -59,6 +63,19 @@
         {
           "key": "Referrer-Policy",
           "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' /_vercel/insights/ https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob: https://3jq9akm8vl1tub82.public.blob.vercel-storage.com https://blob.vercel-storage.com https://*.public.blob.vercel-storage.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://securetoken.googleapis.com https://api.revenuecat.com; worker-src 'self' blob: 'wasm-unsafe-eval'; frame-ancestors 'none'"
+        }
+      ]
+    },
+    {
+      "source": "/((?:app|blueprint|docs)(?:/.*)?)",
+      "headers": [
+        {
+          "key": "Cross-Origin-Resource-Policy",
+          "value": "same-origin"
         },
         {
           "key": "Content-Security-Policy",
