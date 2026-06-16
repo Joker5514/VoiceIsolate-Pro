@@ -101,6 +101,12 @@ describe('vercel.json — Content-Security-Policy header', () => {
     expect(directives['script-src']).not.toContain("'unsafe-inline'");
   });
 
+  test('CSP includes hardening directives aligned with dev (object-src/base-uri/form-action)', () => {
+    expect(directives['object-src']).toContain("'none'");
+    expect(directives['base-uri']).toContain("'self'");
+    expect(directives['form-action']).toContain("'self'");
+  });
+
   test('script-src includes /_vercel (Vercel runtime scripts)', () => {
     const scriptSrc = directives['script-src'].join(' ');
     expect(scriptSrc).toContain('/_vercel');
@@ -198,6 +204,23 @@ describe('vercel.json — legacy /app CSP keeps scoped unsafe-inline', () => {
   test("legacy script-src still includes 'self' and 'wasm-unsafe-eval'", () => {
     expect(directives['script-src']).toContain("'self'");
     expect(directives['script-src']).toContain("'wasm-unsafe-eval'");
+  });
+});
+
+describe('vercel.json — global HSTS header', () => {
+  let globalHeaders;
+
+  beforeAll(() => {
+    const cfg = JSON.parse(readFile('vercel.json'));
+    const section = cfg.headers.find(h => h.source === '/(.*)');
+    expect(section).toBeDefined();
+    globalHeaders = section.headers;
+  });
+
+  test('Strict-Transport-Security is set correctly on the global block', () => {
+    const hsts = globalHeaders.find(h => h.key === 'Strict-Transport-Security');
+    expect(hsts).toBeDefined();
+    expect(hsts.value).toBe('max-age=63072000; includeSubDomains');
   });
 });
 
