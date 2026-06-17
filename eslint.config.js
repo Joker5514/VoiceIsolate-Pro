@@ -238,7 +238,7 @@ export default [
   {
     // Layer 2 — module workers (spawned with { type: 'module' }); they import
     // src/core/ directly, so sourceType flips back to 'module'.
-    files: ['src/workers/DiarizationWorker.js'],
+    files: ['src/workers/DiarizationWorker.js', 'src/workers/SpectralCleanupWorker.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
