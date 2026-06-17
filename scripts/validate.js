@@ -121,6 +121,10 @@ check(fs.readFileSync(path.resolve(__dirname, '..', 'src/core/audio-config.js'),
 // Hard prohibitions (CLAUDE.md §1.1) — the live-mic pipeline must stay dead.
 const appDir = path.resolve(__dirname, '..', 'public/app');
 const offenders = [];
+// Playback-only DSP worklets explicitly permitted in src/ (NOT live-mic). See
+// CLAUDE.md §2.1. Any other worklet path — or a non-literal/dynamic module arg
+// — is still rejected, and getUserMedia stays banned outright.
+const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js'];
 const scanDirs = [
   ['public/app', appDir],
   ['src', path.resolve(__dirname, '..', 'src')],
@@ -129,7 +133,21 @@ for (const [label, dir] of scanDirs) {
   for (const f of walkJs(dir)) {
     const src = fs.readFileSync(f, 'utf8');
     if (/getUserMedia\s*\(/.test(src)) offenders.push(`${label}/${path.relative(dir, f)} (getUserMedia)`);
-    if (/audioWorklet\.addModule\s*\(/.test(src)) offenders.push(`${label}/${path.relative(dir, f)} (audioWorklet.addModule)`);
+    if (/audioWorklet\.addModule\s*\(/.test(src)) {
+      // Every addModule call must load an allowlisted playback worklet via a
+      // string literal; any other path or a dynamic argument is forbidden.
+      const argRe = /audioWorklet\.addModule\s*\(\s*['"]([^'"]+)['"]/g;
+      let m;
+      let verified = false;
+      let allAllowed = true;
+      while ((m = argRe.exec(src))) {
+        verified = true;
+        if (!ALLOWED_WORKLETS.includes(m[1])) allAllowed = false;
+      }
+      if (!verified || !allAllowed) {
+        offenders.push(`${label}/${path.relative(dir, f)} (audioWorklet.addModule)`);
+      }
+    }
   }
 }
 const landingHtml = fs.readFileSync(path.resolve(__dirname, '..', 'public/index.html'), 'utf8');

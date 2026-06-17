@@ -78,11 +78,24 @@ describe('CLAUDE.md §1.1 — live real-time pipeline stays removed', () => {
     return out;
   };
 
-  test('no file calls audioWorklet.addModule() (worklet pipeline removed)', () => {
+  test('audioWorklet.addModule() only loads the allowlisted playback gate worklet', () => {
+    // The live-mic worklet pipeline stays removed; the one permitted worklet is
+    // the playback-only noise gate (CLAUDE.md §2.1, scripts/validate.js). Any
+    // other module path — or a dynamic argument — is still forbidden.
+    const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js'];
     const offenders = [];
     for (const f of [...walkJs(APP_DIR), ...walkJs(SRC_DIR)]) {
       const src = fs.readFileSync(f, 'utf8');
-      if (/audioWorklet\.addModule\s*\(/.test(src)) offenders.push(path.relative(ROOT, f));
+      if (!/audioWorklet\.addModule\s*\(/.test(src)) continue;
+      const argRe = /audioWorklet\.addModule\s*\(\s*['"]([^'"]+)['"]/g;
+      let m;
+      let verified = false;
+      let allAllowed = true;
+      while ((m = argRe.exec(src))) {
+        verified = true;
+        if (!ALLOWED_WORKLETS.includes(m[1])) allAllowed = false;
+      }
+      if (!verified || !allAllowed) offenders.push(path.relative(ROOT, f));
     }
     expect(offenders).toEqual([]);
   });

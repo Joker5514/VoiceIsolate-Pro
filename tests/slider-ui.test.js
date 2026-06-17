@@ -42,6 +42,10 @@ function mockMixer() {
     setCompKnee(v) { this.calls.push(['setCompKnee', v]); },
     setMakeupGain(v) { this.calls.push(['setMakeupGain', v]); },
     setStereoWidth(v) { this.calls.push(['setStereoWidth', v]); },
+    setGateThreshold(v) { this.calls.push(['setGateThreshold', v]); },
+    setGateRange(v) { this.calls.push(['setGateRange', v]); },
+    setGateAttack(v) { this.calls.push(['setGateAttack', v]); },
+    setGateRelease(v) { this.calls.push(['setGateRelease', v]); },
   };
 }
 
@@ -68,6 +72,10 @@ const SLIDER_SPECS = {
   compKneeSlider: { min: 0, max: 40, value: 0 },
   makeupGainSlider: { min: 0, max: 24, value: 0 },
   stereoWidthSlider: { min: 0, max: 200, value: 100 },
+  gateThresholdSlider: { min: -100, max: 0, value: -45 },
+  gateRangeSlider: { min: 0, max: 80, value: 0 },
+  gateAttackSlider: { min: 0, max: 200, value: 5 },
+  gateReleaseSlider: { min: 0, max: 1000, value: 100 },
 };
 function buildSliders(values = {}) {
   document.body.innerHTML = '';
@@ -132,6 +140,10 @@ describe('SliderUI', () => {
       ['setCompKnee', 0],
       ['setMakeupGain', 0],
       ['setStereoWidth', 100],
+      ['setGateThreshold', -45],
+      ['setGateRange', 0],
+      ['setGateAttack', 5],
+      ['setGateRelease', 100],
     ]);
   });
 

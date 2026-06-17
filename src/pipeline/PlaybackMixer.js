@@ -7,7 +7,7 @@
  *                                                                  ├─► [Tier-A bus]
  *   Noise stem ─► Source ───────────────► NoiseGain ─► NoiseMute ─┘
  *
- *   [Tier-A bus] = highpass ─► lowpass ─► lowShelf ─► eqLowMid ─► eqMid
+ *   [Tier-A bus] = gate ─► highpass ─► lowpass ─► lowShelf ─► eqLowMid ─► eqMid
  *                  ─► eqHighMid ─► highShelf ─► compressor ─► makeupGain
  *                  ─► [stereo-width mid/side matrix] ─► Master ─► Analyser
  *                  ─► destination
@@ -59,6 +59,10 @@ export class PlaybackMixer {
     this.voiceMuteGain = this.ctx.createGain();
     this.noiseGain = this.ctx.createGain();
     this.noiseMuteGain = this.ctx.createGain();
+    // Gate slot: both stems feed gateInput, which feeds the EQ chain. The
+    // noise-gate worklet is spliced between them once it loads (see _loadGate);
+    // until then gateInput is a transparent pass-through.
+    this.gateInput = this.ctx.createGain();
     this.lowShelf = this.ctx.createBiquadFilter();
     this.highShelf = this.ctx.createBiquadFilter();
     // ── Tier-A console (shared master bus; all default transparent) ──────
@@ -122,9 +126,10 @@ export class PlaybackMixer {
     this.speakerGain.connect(this.cleanGain);
     this.cleanGain.connect(this.voiceMuteGain);
     this.noiseGain.connect(this.noiseMuteGain);
-    // Both stems join the shared master chain at the high-pass filter.
-    this.voiceMuteGain.connect(this.highpass);
-    this.noiseMuteGain.connect(this.highpass);
+    // Both stems join the shared master bus at the gate slot, then the EQ chain.
+    this.voiceMuteGain.connect(this.gateInput);
+    this.noiseMuteGain.connect(this.gateInput);
+    this.gateInput.connect(this.highpass);
     this.highpass.connect(this.lowpass);
     this.lowpass.connect(this.lowShelf);
     this.lowShelf.connect(this.eqLowMid);
@@ -166,6 +171,14 @@ export class PlaybackMixer {
     this.noiseMuteGain.gain.value = 1;
     this.makeupGain.gain.value = 1;   // 0 dB — transparent until raised
 
+    // ── Noise gate (playback-only worklet; spliced in asynchronously) ─────
+    // Default range 0 dB = bypass, so the gate is transparent until engaged.
+    /** @type {AudioWorkletNode|null} */ this.gate = null;
+    this._disposed = false;
+    this._gateParams = { threshold: -45, range: 0, attack: 5, release: 100 };
+    // Keep the load promise so dispose() can await it (avoids a splice-after-dispose race).
+    this._gatePromise = this._loadGate();
+
     // ── Transport state ──────────────────────────────────────────────────
     /** @type {AudioBuffer|null} */ this.cleanBuffer = null;
     /** @type {AudioBuffer|null} */ this.noiseBuffer = null;
@@ -184,6 +197,44 @@ export class PlaybackMixer {
     this._speakers = new Map();
     /** @type {string|null} */
     this._soloId = null;
+  }
+
+  // ─── Noise gate worklet ────────────────────────────────────────────────
+
+  /**
+   * Load and splice in the noise-gate worklet between the stems and the EQ
+   * chain (gateInput → gate → highpass). No-op when AudioWorklet is
+   * unavailable (e.g. the test mock) and graceful on failure — gateInput then
+   * stays a transparent pass-through, so playback is unaffected.
+   */
+  async _loadGate() {
+    const aw = this.ctx.audioWorklet;
+    const NodeCtor = globalThis.AudioWorkletNode;
+    if (!aw || typeof aw.addModule !== 'function' || typeof NodeCtor !== 'function') return;
+    try {
+      // Literal call (not via the `aw` alias) so validate.js's allowlist sees it.
+      await this.ctx.audioWorklet.addModule('/src/workers/GateProcessor.js');
+      if (this._disposed) return; // disposed mid-load — don't touch a torn-down graph
+      const gate = new NodeCtor(this.ctx, 'vip-gate');
+      this.gateInput.disconnect(this.highpass);
+      this.gateInput.connect(gate);
+      gate.connect(this.highpass);
+      for (const [name, value] of Object.entries(this._gateParams)) {
+        const p = gate.parameters.get(name);
+        if (p) p.value = value;
+      }
+      this.gate = gate;
+    } catch (err) {
+      console.error('[VIP][PlaybackMixer] noise-gate worklet failed to load; bypassing.', err);
+    }
+  }
+
+  /** Remember a gate parameter and apply it to the live worklet if present. */
+  _setGateParam(name, value) {
+    this._gateParams[name] = value;
+    if (!this.gate) return;
+    const param = this.gate.parameters.get(name);
+    if (param) this._applyParam(param, value);
   }
 
   // ─── Stem loading ──────────────────────────────────────────────────────
@@ -416,6 +467,18 @@ export class PlaybackMixer {
     this._applyParam(this.widthGain.gain, clamp(percentage, 0, 200) / 100);
   }
 
+  /** Noise-gate threshold in dB (−100 … 0): level below which it attenuates. */
+  setGateThreshold(db) { this._setGateParam('threshold', clamp(db, -100, 0)); }
+
+  /** Noise-gate range in dB (0 … 80): attenuation depth when closed. 0 = off. */
+  setGateRange(db) { this._setGateParam('range', clamp(db, 0, 80)); }
+
+  /** Noise-gate attack in ms (0 … 200). */
+  setGateAttack(ms) { this._setGateParam('attack', clamp(ms, 0, 200)); }
+
+  /** Noise-gate release in ms (0 … 1000). */
+  setGateRelease(ms) { this._setGateParam('release', clamp(ms, 0, 1000)); }
+
   /**
    * Hard-mute the voice stem without disturbing the Voice Level slider.
    * @param {boolean} muted
@@ -595,14 +658,21 @@ export class PlaybackMixer {
 
   /** Release all audio resources. The instance is unusable afterwards. */
   async dispose() {
+    this._disposed = true;
     this.stop();
+    // Let any in-flight gate-worklet load settle (it bails on _disposed) before teardown.
+    if (this._gatePromise) {
+      try { await this._gatePromise; } catch { /* ignore */ }
+    }
     for (const node of [this.speakerGain, this.cleanGain, this.voiceMuteGain,
-      this.noiseGain, this.noiseMuteGain, this.highpass, this.lowpass,
+      this.noiseGain, this.noiseMuteGain, this.gateInput, this.gate,
+      this.highpass, this.lowpass,
       this.lowShelf, this.eqLowMid, this.eqMid, this.eqHighMid,
       this.highShelf, this.compressor, this.makeupGain,
       this.stereoIn, this.msSplit, this.sideRNeg, this.midGain, this.sideGain,
       this.widthGain, this.sideSNeg, this.leftSum, this.rightSum, this.msMerge,
       this.masterGain, this.analyser]) {
+      if (!node) continue;
       try { node.disconnect(); } catch { /* already disconnected */ }
     }
     try { await this.ctx.close(); } catch { /* already closed */ }

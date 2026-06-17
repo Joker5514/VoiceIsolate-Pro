@@ -110,6 +110,16 @@ Rules:
     are still detected (`SILENCE_RMS` is intentionally low).
   - `PlaybackMixer.setSpeakerVolume` accepts **0–200** (>100 = up to +6 dB
     ENHANCE) so a faint/whispered speaker can be boosted. Still AudioParam-only.
+  - `src/workers/GateProcessor.js` is a **playback-only** `AudioWorklet`
+    (`registerProcessor('vip-gate')`) — a real-time noise gate on the loaded
+    stems, controlled by k-rate AudioParams (threshold/range/attack/release) so
+    sliders drive it like any other Live-Mix control. Web Audio has no built-in
+    gate/expander, so it must be a worklet. This is **not** the removed live-mic
+    pipeline: it never ingests a microphone and never re-runs ML. It is the one
+    worklet permitted in `src/`, allowlisted by `ALLOWED_WORKLETS` in
+    `scripts/validate.js`; any other `audioWorklet.addModule` target (or a
+    dynamic one) and `getUserMedia` remain forbidden. Do not delete it or
+    re-tighten the allowlist as a "live-pipeline" regression.
 
 ---
 
