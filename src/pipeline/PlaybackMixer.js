@@ -9,7 +9,8 @@
  *
  *   [Tier-A bus] = highpass ─► lowpass ─► lowShelf ─► eqLowMid ─► eqMid
  *                  ─► eqHighMid ─► highShelf ─► compressor ─► makeupGain
- *                  ─► Master ─► Analyser ─► destination
+ *                  ─► [stereo-width mid/side matrix] ─► Master ─► Analyser
+ *                  ─► destination
  *
  * The Tier-A console (HP/LP filters, 5-band EQ, bus compressor) is shared by
  * both stems and defaults to fully transparent — adding it never changes how
@@ -68,6 +69,17 @@ export class PlaybackMixer {
     this.eqHighMid = this.ctx.createBiquadFilter();
     this.compressor = this.ctx.createDynamicsCompressor();
     this.makeupGain = this.ctx.createGain();
+    // ── Stereo-width mid/side matrix (transparent at width = 100%) ────────
+    this.stereoIn = this.ctx.createGain();        // force 2ch: mono up-mix → L=R
+    this.msSplit = this.ctx.createChannelSplitter(2);
+    this.sideRNeg = this.ctx.createGain();        // −R, for Side = (L−R)/2
+    this.midGain = this.ctx.createGain();         // Mid  = (L+R)/2
+    this.sideGain = this.ctx.createGain();        // Side = (L−R)/2
+    this.widthGain = this.ctx.createGain();       // ← control: w·Side
+    this.sideSNeg = this.ctx.createGain();        // −w·Side, for R' = M − w·S
+    this.leftSum = this.ctx.createGain();         // L' = M + w·Side
+    this.rightSum = this.ctx.createGain();        // R' = M − w·Side
+    this.msMerge = this.ctx.createChannelMerger(2);
     this.masterGain = this.ctx.createGain();
     this.analyser = this.ctx.createAnalyser();
 
@@ -94,6 +106,17 @@ export class PlaybackMixer {
     this.compressor.ratio.value = 1;
     this.compressor.attack.value = 0.02;
     this.compressor.release.value = 0.25;
+    // Stereo-width matrix: fixed coefficients + the single width control.
+    this.stereoIn.channelCount = 2;
+    this.stereoIn.channelCountMode = 'explicit';
+    this.stereoIn.channelInterpretation = 'speakers'; // mono up-mixes to L=R
+    this.midGain.gain.value = 0.5;
+    this.sideGain.gain.value = 0.5;
+    this.sideRNeg.gain.value = -1;
+    this.sideSNeg.gain.value = -1;
+    this.leftSum.gain.value = 1;
+    this.rightSum.gain.value = 1;
+    this.widthGain.gain.value = 1;   // width 100% → Side unchanged → transparent
     this.analyser.fftSize = 2048;
 
     this.speakerGain.connect(this.cleanGain);
@@ -110,7 +133,27 @@ export class PlaybackMixer {
     this.eqHighMid.connect(this.highShelf);
     this.highShelf.connect(this.compressor);
     this.compressor.connect(this.makeupGain);
-    this.makeupGain.connect(this.masterGain);
+    // Stereo-width mid/side matrix: makeup → stereoIn → split → M/S → merge → master.
+    this.makeupGain.connect(this.stereoIn);
+    this.stereoIn.connect(this.msSplit);
+    // Mid = (L + R) · 0.5  (both split legs sum into midGain)
+    this.msSplit.connect(this.midGain, 0);
+    this.msSplit.connect(this.midGain, 1);
+    // Side = (L − R) · 0.5  (R is negated before summing with L)
+    this.msSplit.connect(this.sideGain, 0);
+    this.msSplit.connect(this.sideRNeg, 1);
+    this.sideRNeg.connect(this.sideGain);
+    // Width scales Side; a negated copy feeds the right leg.
+    this.sideGain.connect(this.widthGain);
+    this.widthGain.connect(this.sideSNeg);
+    // L' = M + w·S   ;   R' = M − w·S
+    this.midGain.connect(this.leftSum);
+    this.widthGain.connect(this.leftSum);
+    this.midGain.connect(this.rightSum);
+    this.sideSNeg.connect(this.rightSum);
+    this.leftSum.connect(this.msMerge, 0, 0);
+    this.rightSum.connect(this.msMerge, 0, 1);
+    this.msMerge.connect(this.masterGain);
     this.masterGain.connect(this.analyser);
     this.analyser.connect(this.ctx.destination);
 
@@ -365,6 +408,15 @@ export class PlaybackMixer {
   }
 
   /**
+   * Stereo width as a percentage (0 … 200). 100 = unchanged; 0 = mono (sides
+   * collapsed); 200 = doubled width. Drives the Side-signal gain in the mid/side
+   * matrix — a mono source stays mono at any setting (its Side is silent).
+   */
+  setStereoWidth(percentage) {
+    this._applyParam(this.widthGain.gain, clamp(percentage, 0, 200) / 100);
+  }
+
+  /**
    * Hard-mute the voice stem without disturbing the Voice Level slider.
    * @param {boolean} muted
    */
@@ -548,6 +600,8 @@ export class PlaybackMixer {
       this.noiseGain, this.noiseMuteGain, this.highpass, this.lowpass,
       this.lowShelf, this.eqLowMid, this.eqMid, this.eqHighMid,
       this.highShelf, this.compressor, this.makeupGain,
+      this.stereoIn, this.msSplit, this.sideRNeg, this.midGain, this.sideGain,
+      this.widthGain, this.sideSNeg, this.leftSum, this.rightSum, this.msMerge,
       this.masterGain, this.analyser]) {
       try { node.disconnect(); } catch { /* already disconnected */ }
     }

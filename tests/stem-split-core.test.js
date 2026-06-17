@@ -161,6 +161,8 @@ function mockContext() {
       type: '', frequency: mockParam(), gain: mockParam(), Q: mockParam(),
     }),
     createAnalyser: () => mockNode({ fftSize: 0 }),
+    createChannelSplitter: () => mockNode(),
+    createChannelMerger: () => mockNode(),
     createDynamicsCompressor: () => mockNode({
       threshold: mockParam(), knee: mockParam(), ratio: mockParam(),
       attack: mockParam(), release: mockParam(), reduction: 0,
@@ -232,6 +234,7 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.compressor.ratio.value).toBe(1);
     expect(mixer.compressor.threshold.value).toBe(0);
     expect(mixer.makeupGain.gain.value).toBe(1);
+    expect(mixer.widthGain.gain.value).toBe(1); // stereo width 100% = transparent
   });
 
   test('Tier-A setters clamp inputs and convert units (idle snap)', () => {
@@ -255,6 +258,10 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.compressor.knee.value).toBe(40);
     mixer.setMakeupGain(6);               // +6 dB → linear ~1.995
     expect(mixer.makeupGain.gain.value).toBeCloseTo(Math.pow(10, 6 / 20));
+    mixer.setStereoWidth(0);              // mono
+    expect(mixer.widthGain.gain.value).toBe(0);
+    mixer.setStereoWidth(500);            // clamps to 200 → 2×
+    expect(mixer.widthGain.gain.value).toBe(2);
   });
 
   test('loadStems builds sample-locked buffers; transport round-trips', async () => {

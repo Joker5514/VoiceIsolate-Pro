@@ -41,6 +41,7 @@ function mockMixer() {
     setCompRelease(v) { this.calls.push(['setCompRelease', v]); },
     setCompKnee(v) { this.calls.push(['setCompKnee', v]); },
     setMakeupGain(v) { this.calls.push(['setMakeupGain', v]); },
+    setStereoWidth(v) { this.calls.push(['setStereoWidth', v]); },
   };
 }
 
@@ -66,6 +67,7 @@ const SLIDER_SPECS = {
   compReleaseSlider: { min: 0, max: 1000, value: 250 },
   compKneeSlider: { min: 0, max: 40, value: 0 },
   makeupGainSlider: { min: 0, max: 24, value: 0 },
+  stereoWidthSlider: { min: 0, max: 200, value: 100 },
 };
 function buildSliders(values = {}) {
   document.body.innerHTML = '';
@@ -129,6 +131,7 @@ describe('SliderUI', () => {
       ['setCompRelease', 250],
       ['setCompKnee', 0],
       ['setMakeupGain', 0],
+      ['setStereoWidth', 100],
     ]);
   });
 
