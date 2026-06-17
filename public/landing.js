@@ -40,6 +40,7 @@ const ui = {
     $('highpassSlider'), $('lowpassSlider'),
     $('compThresholdSlider'), $('compRatioSlider'), $('compAttackSlider'),
     $('compReleaseSlider'), $('compKneeSlider'), $('makeupGainSlider'),
+    $('stereoWidthSlider'),
   ],
   statusDot: $('statusDot'),
   statusText: $('statusText'),
@@ -315,6 +316,7 @@ const READOUTS = [
   ['compReleaseSlider', 'compReleaseVal', (v) => `${v} ms`],
   ['compKneeSlider', 'compKneeVal', (v) => `${v} dB`],
   ['makeupGainSlider', 'makeupGainVal', (v) => `${v} dB`],
+  ['stereoWidthSlider', 'stereoWidthVal', (v) => `${v}%`],
 ];
 
 function wireReadouts() {

@@ -41,6 +41,7 @@ const SLIDER_BINDINGS = Object.freeze([
   { id: 'compReleaseSlider', method: 'setCompRelease', initial: 250 },
   { id: 'compKneeSlider', method: 'setCompKnee', initial: 0 },
   { id: 'makeupGainSlider', method: 'setMakeupGain', initial: 0 },
+  { id: 'stereoWidthSlider', method: 'setStereoWidth', initial: 100 },
 ]);
 
 export class SliderUI {
