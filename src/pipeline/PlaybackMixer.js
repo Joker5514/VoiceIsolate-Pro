@@ -78,6 +78,11 @@ export class PlaybackMixer {
     // high-band compressor squashes: out = dry + amount·(compHigh − origHigh).
     this.deEssHP = this.ctx.createBiquadFilter();      // sibilance band (high-pass)
     this.deEssComp = this.ctx.createDynamicsCompressor();
+    // DynamicsCompressorNode adds ~5 ms lookahead latency; delay the dry and
+    // original-high paths to match so the subtraction stays phase-aligned (no
+    // comb filtering). createDelay is guarded for the non-Web-Audio test mock.
+    this.deEssDelayDry = typeof this.ctx.createDelay === 'function' ? this.ctx.createDelay(0.1) : null;
+    this.deEssDelayOrig = typeof this.ctx.createDelay === 'function' ? this.ctx.createDelay(0.1) : null;
     this.deEssOrigNeg = this.ctx.createGain();         // −origHigh
     this.deEssAmount = this.ctx.createGain();          // ← control: scales the reduction
     this.deEssOut = this.ctx.createGain();             // dry + amount·(compHigh − origHigh)
@@ -127,6 +132,8 @@ export class PlaybackMixer {
     this.deEssComp.ratio.value = 6;
     this.deEssComp.attack.value = 0.0005;
     this.deEssComp.release.value = 0.05;
+    if (this.deEssDelayDry) this.deEssDelayDry.delayTime.value = 0.005;   // match compressor lookahead
+    if (this.deEssDelayOrig) this.deEssDelayOrig.delayTime.value = 0.005;
     this.deEssOrigNeg.gain.value = -1;
     this.deEssAmount.gain.value = 0;   // 0 = no reduction → transparent
     this.deEssOut.gain.value = 1;
@@ -160,11 +167,22 @@ export class PlaybackMixer {
     this.compressor.connect(this.makeupGain);
     // De-esser: dry passes straight through; the sibilance reduction (compHigh −
     // origHigh), scaled by amount, is summed in. amount 0 → deEssOut == dry.
-    this.makeupGain.connect(this.deEssOut);          // dry (full signal)
+    // Dry + original-high are delayed to align with the compressor's lookahead.
+    if (this.deEssDelayDry) {
+      this.makeupGain.connect(this.deEssDelayDry);
+      this.deEssDelayDry.connect(this.deEssOut);     // dry (full signal, delayed)
+    } else {
+      this.makeupGain.connect(this.deEssOut);        // dry (fallback: no delay node)
+    }
     this.makeupGain.connect(this.deEssHP);           // sidechain: sibilance band
     this.deEssHP.connect(this.deEssComp);
-    this.deEssComp.connect(this.deEssAmount);        // +compHigh
-    this.deEssHP.connect(this.deEssOrigNeg);
+    this.deEssComp.connect(this.deEssAmount);        // +compHigh (5 ms lookahead)
+    if (this.deEssDelayOrig) {
+      this.deEssHP.connect(this.deEssDelayOrig);
+      this.deEssDelayOrig.connect(this.deEssOrigNeg); // origHigh (delayed to match)
+    } else {
+      this.deEssHP.connect(this.deEssOrigNeg);
+    }
     this.deEssOrigNeg.connect(this.deEssAmount);     // −origHigh
     this.deEssAmount.connect(this.deEssOut);
     // Stereo-width mid/side matrix: deEssOut → stereoIn → split → M/S → merge → master.
@@ -706,7 +724,8 @@ export class PlaybackMixer {
       this.highpass, this.lowpass,
       this.lowShelf, this.eqLowMid, this.eqMid, this.eqHighMid,
       this.highShelf, this.compressor, this.makeupGain,
-      this.deEssHP, this.deEssComp, this.deEssOrigNeg, this.deEssAmount, this.deEssOut,
+      this.deEssHP, this.deEssComp, this.deEssDelayDry, this.deEssDelayOrig,
+      this.deEssOrigNeg, this.deEssAmount, this.deEssOut,
       this.stereoIn, this.msSplit, this.sideRNeg, this.midGain, this.sideGain,
       this.widthGain, this.sideSNeg, this.leftSum, this.rightSum, this.msMerge,
       this.masterGain, this.analyser]) {
