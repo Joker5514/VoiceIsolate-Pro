@@ -43,14 +43,18 @@ class GateProcessor extends AudioWorkletProcessor {
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     const output = outputs[0];
-    if (!input || input.length === 0) return true;
-    const nCh = input.length;
-    const nSamp = input[0].length;
+    if (!input || input.length === 0 || !output || output.length === 0) return true;
+    const inCh = input.length;
+    const outCh = output.length;
+    const nSamp = output[0].length;
 
     const rangeDb = parameters.range[0];
     // Bypass fast-path: range 0 → never attenuate → pass through untouched.
     if (rangeDb <= 0) {
-      for (let c = 0; c < nCh; c++) output[c].set(input[c]);
+      for (let c = 0; c < outCh; c++) {
+        if (input[c]) output[c].set(input[c]);
+        else output[c].fill(0);
+      }
       this._env = 0;
       this._gain = 1;
       return true;
@@ -67,8 +71,9 @@ class GateProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < nSamp; i++) {
       // Control signal = peak across channels (keeps L/R gated together).
       let x = 0;
-      for (let c = 0; c < nCh; c++) {
-        const a = Math.abs(input[c][i]);
+      for (let c = 0; c < inCh; c++) {
+        const ch = input[c];
+        const a = ch ? Math.abs(ch[i]) : 0;
         if (a > x) x = a;
       }
       // Fast-attack / slow-release envelope follower.
@@ -77,7 +82,7 @@ class GateProcessor extends AudioWorkletProcessor {
       // Ramp the gain toward the target (attack when opening, release when closing).
       const coef = target > gain ? atk : rel;
       gain = coef * gain + (1 - coef) * target;
-      for (let c = 0; c < nCh; c++) output[c][i] = input[c][i] * gain;
+      for (let c = 0; c < outCh; c++) output[c][i] = (input[c] ? input[c][i] : 0) * gain;
     }
     this._env = env;
     this._gain = gain;

@@ -174,8 +174,10 @@ export class PlaybackMixer {
     // ── Noise gate (playback-only worklet; spliced in asynchronously) ─────
     // Default range 0 dB = bypass, so the gate is transparent until engaged.
     /** @type {AudioWorkletNode|null} */ this.gate = null;
+    this._disposed = false;
     this._gateParams = { threshold: -45, range: 0, attack: 5, release: 100 };
-    this._loadGate();
+    // Keep the load promise so dispose() can await it (avoids a splice-after-dispose race).
+    this._gatePromise = this._loadGate();
 
     // ── Transport state ──────────────────────────────────────────────────
     /** @type {AudioBuffer|null} */ this.cleanBuffer = null;
@@ -212,6 +214,7 @@ export class PlaybackMixer {
     try {
       // Literal call (not via the `aw` alias) so validate.js's allowlist sees it.
       await this.ctx.audioWorklet.addModule('/src/workers/GateProcessor.js');
+      if (this._disposed) return; // disposed mid-load — don't touch a torn-down graph
       const gate = new NodeCtor(this.ctx, 'vip-gate');
       this.gateInput.disconnect(this.highpass);
       this.gateInput.connect(gate);
@@ -229,7 +232,9 @@ export class PlaybackMixer {
   /** Remember a gate parameter and apply it to the live worklet if present. */
   _setGateParam(name, value) {
     this._gateParams[name] = value;
-    if (this.gate) this._applyParam(this.gate.parameters.get(name), value);
+    if (!this.gate) return;
+    const param = this.gate.parameters.get(name);
+    if (param) this._applyParam(param, value);
   }
 
   // ─── Stem loading ──────────────────────────────────────────────────────
@@ -653,7 +658,12 @@ export class PlaybackMixer {
 
   /** Release all audio resources. The instance is unusable afterwards. */
   async dispose() {
+    this._disposed = true;
     this.stop();
+    // Let any in-flight gate-worklet load settle (it bails on _disposed) before teardown.
+    if (this._gatePromise) {
+      try { await this._gatePromise; } catch { /* ignore */ }
+    }
     for (const node of [this.speakerGain, this.cleanGain, this.voiceMuteGain,
       this.noiseGain, this.noiseMuteGain, this.gateInput, this.gate,
       this.highpass, this.lowpass,
