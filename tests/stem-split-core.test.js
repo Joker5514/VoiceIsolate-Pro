@@ -280,6 +280,19 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer._gateParams.release).toBe(0);
   });
 
+  test('de-esser: transparent by default; setters clamp', () => {
+    expect(mixer.deEssAmount.gain.value).toBe(0);     // amount 0 = bypass
+    expect(mixer.deEssHP.frequency.value).toBe(6000);
+    mixer.setDeEsserAmount(150);                       // clamps to 100 → 1.0
+    expect(mixer.deEssAmount.gain.value).toBe(1);
+    mixer.setDeEsserAmount(-10);                       // clamps to 0
+    expect(mixer.deEssAmount.gain.value).toBe(0);
+    mixer.setDeEsserFreq(500);                          // clamps to 2000
+    expect(mixer.deEssHP.frequency.value).toBe(2000);
+    mixer.setDeEsserFreq(99999);                        // clamps to 12000
+    expect(mixer.deEssHP.frequency.value).toBe(12000);
+  });
+
   test('loadStems builds sample-locked buffers; transport round-trips', async () => {
     mixer.loadStems(stems(), stems());
     expect(mixer.duration()).toBeCloseTo(1);

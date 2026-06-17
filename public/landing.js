@@ -41,9 +41,10 @@ const ui = {
     $('compThresholdSlider'), $('compRatioSlider'), $('compAttackSlider'),
     $('compReleaseSlider'), $('compKneeSlider'), $('makeupGainSlider'),
     $('stereoWidthSlider'),
-    // Tier-B: noise gate
+    // Tier-B: noise gate + de-esser
     $('gateThresholdSlider'), $('gateRangeSlider'),
     $('gateAttackSlider'), $('gateReleaseSlider'),
+    $('deEsserFreqSlider'), $('deEsserAmountSlider'),
   ],
   statusDot: $('statusDot'),
   statusText: $('statusText'),
@@ -323,6 +324,8 @@ const READOUTS = [
   ['gateRangeSlider', 'gateRangeVal', (v) => `${v} dB`],
   ['gateAttackSlider', 'gateAttackVal', (v) => `${v} ms`],
   ['gateReleaseSlider', 'gateReleaseVal', (v) => `${v} ms`],
+  ['deEsserFreqSlider', 'deEsserFreqVal', (v) => `${v} Hz`],
+  ['deEsserAmountSlider', 'deEsserAmountVal', (v) => `${v}%`],
 ];
 
 function wireReadouts() {

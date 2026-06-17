@@ -9,8 +9,8 @@
  *
  *   [Tier-A bus] = gate ─► highpass ─► lowpass ─► lowShelf ─► eqLowMid ─► eqMid
  *                  ─► eqHighMid ─► highShelf ─► compressor ─► makeupGain
- *                  ─► [stereo-width mid/side matrix] ─► Master ─► Analyser
- *                  ─► destination
+ *                  ─► de-esser ─► [stereo-width mid/side matrix] ─► Master
+ *                  ─► Analyser ─► destination
  *
  * The Tier-A console (HP/LP filters, 5-band EQ, bus compressor) is shared by
  * both stems and defaults to fully transparent — adding it never changes how
@@ -73,6 +73,14 @@ export class PlaybackMixer {
     this.eqHighMid = this.ctx.createBiquadFilter();
     this.compressor = this.ctx.createDynamicsCompressor();
     this.makeupGain = this.ctx.createGain();
+    // ── De-esser (subtractive split-band; transparent at amount 0) ───────
+    // The dry signal always passes; we subtract only the sibilance a fast
+    // high-band compressor squashes: out = dry + amount·(compHigh − origHigh).
+    this.deEssHP = this.ctx.createBiquadFilter();      // sibilance band (high-pass)
+    this.deEssComp = this.ctx.createDynamicsCompressor();
+    this.deEssOrigNeg = this.ctx.createGain();         // −origHigh
+    this.deEssAmount = this.ctx.createGain();          // ← control: scales the reduction
+    this.deEssOut = this.ctx.createGain();             // dry + amount·(compHigh − origHigh)
     // ── Stereo-width mid/side matrix (transparent at width = 100%) ────────
     this.stereoIn = this.ctx.createGain();        // force 2ch: mono up-mix → L=R
     this.msSplit = this.ctx.createChannelSplitter(2);
@@ -110,6 +118,18 @@ export class PlaybackMixer {
     this.compressor.ratio.value = 1;
     this.compressor.attack.value = 0.02;
     this.compressor.release.value = 0.25;
+    // De-esser: high-pass the sibilance band into a fast, aggressive compressor.
+    // Fixed dynamics; the user controls frequency + amount. amount 0 = bypass.
+    this.deEssHP.type = HP_FILTER_TYPE;
+    this.deEssHP.frequency.value = 6000;
+    this.deEssComp.threshold.value = -35;
+    this.deEssComp.knee.value = 0;
+    this.deEssComp.ratio.value = 6;
+    this.deEssComp.attack.value = 0.0005;
+    this.deEssComp.release.value = 0.05;
+    this.deEssOrigNeg.gain.value = -1;
+    this.deEssAmount.gain.value = 0;   // 0 = no reduction → transparent
+    this.deEssOut.gain.value = 1;
     // Stereo-width matrix: fixed coefficients + the single width control.
     this.stereoIn.channelCount = 2;
     this.stereoIn.channelCountMode = 'explicit';
@@ -138,8 +158,17 @@ export class PlaybackMixer {
     this.eqHighMid.connect(this.highShelf);
     this.highShelf.connect(this.compressor);
     this.compressor.connect(this.makeupGain);
-    // Stereo-width mid/side matrix: makeup → stereoIn → split → M/S → merge → master.
-    this.makeupGain.connect(this.stereoIn);
+    // De-esser: dry passes straight through; the sibilance reduction (compHigh −
+    // origHigh), scaled by amount, is summed in. amount 0 → deEssOut == dry.
+    this.makeupGain.connect(this.deEssOut);          // dry (full signal)
+    this.makeupGain.connect(this.deEssHP);           // sidechain: sibilance band
+    this.deEssHP.connect(this.deEssComp);
+    this.deEssComp.connect(this.deEssAmount);        // +compHigh
+    this.deEssHP.connect(this.deEssOrigNeg);
+    this.deEssOrigNeg.connect(this.deEssAmount);     // −origHigh
+    this.deEssAmount.connect(this.deEssOut);
+    // Stereo-width mid/side matrix: deEssOut → stereoIn → split → M/S → merge → master.
+    this.deEssOut.connect(this.stereoIn);
     this.stereoIn.connect(this.msSplit);
     // Mid = (L + R) · 0.5  (both split legs sum into midGain)
     this.msSplit.connect(this.midGain, 0);
@@ -479,6 +508,14 @@ export class PlaybackMixer {
   /** Noise-gate release in ms (0 … 1000). */
   setGateRelease(ms) { this._setGateParam('release', clamp(ms, 0, 1000)); }
 
+  /** De-esser band frequency in Hz (2000 … 12000): where sibilance reduction starts. */
+  setDeEsserFreq(hz) { this._applyParam(this.deEssHP.frequency, clamp(hz, 2000, 12000)); }
+
+  /** De-esser amount as a percentage (0 … 100). 0 = off (transparent). */
+  setDeEsserAmount(percentage) {
+    this._applyParam(this.deEssAmount.gain, clamp(percentage, 0, 100) / 100);
+  }
+
   /**
    * Hard-mute the voice stem without disturbing the Voice Level slider.
    * @param {boolean} muted
@@ -669,6 +706,7 @@ export class PlaybackMixer {
       this.highpass, this.lowpass,
       this.lowShelf, this.eqLowMid, this.eqMid, this.eqHighMid,
       this.highShelf, this.compressor, this.makeupGain,
+      this.deEssHP, this.deEssComp, this.deEssOrigNeg, this.deEssAmount, this.deEssOut,
       this.stereoIn, this.msSplit, this.sideRNeg, this.midGain, this.sideGain,
       this.widthGain, this.sideSNeg, this.leftSum, this.rightSum, this.msMerge,
       this.masterGain, this.analyser]) {
