@@ -42,6 +42,11 @@ const SLIDER_BINDINGS = Object.freeze([
   { id: 'compKneeSlider', method: 'setCompKnee', initial: 0 },
   { id: 'makeupGainSlider', method: 'setMakeupGain', initial: 0 },
   { id: 'stereoWidthSlider', method: 'setStereoWidth', initial: 100 },
+  // Tier-B: noise gate (playback worklet)
+  { id: 'gateThresholdSlider', method: 'setGateThreshold', initial: -45 },
+  { id: 'gateRangeSlider', method: 'setGateRange', initial: 0 },
+  { id: 'gateAttackSlider', method: 'setGateAttack', initial: 5 },
+  { id: 'gateReleaseSlider', method: 'setGateRelease', initial: 100 },
 ]);
 
 export class SliderUI {

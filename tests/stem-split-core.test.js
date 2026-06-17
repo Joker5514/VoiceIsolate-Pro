@@ -264,6 +264,22 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.widthGain.gain.value).toBe(2);
   });
 
+  test('noise gate: bypassed by default; setters clamp and store params', () => {
+    // The mock context has no AudioWorklet, so the gate stays bypassed (null)
+    // and gateInput passes through — playback is unaffected.
+    expect(mixer.gate).toBe(null);
+    expect(mixer.gateInput).toBeDefined();
+    expect(mixer._gateParams.range).toBe(0); // 0 dB range = transparent default
+    mixer.setGateThreshold(-200);            // clamps to -100
+    expect(mixer._gateParams.threshold).toBe(-100);
+    mixer.setGateRange(999);                 // clamps to 80
+    expect(mixer._gateParams.range).toBe(80);
+    mixer.setGateAttack(999);                // clamps to 200
+    expect(mixer._gateParams.attack).toBe(200);
+    mixer.setGateRelease(-5);                // clamps to 0
+    expect(mixer._gateParams.release).toBe(0);
+  });
+
   test('loadStems builds sample-locked buffers; transport round-trips', async () => {
     mixer.loadStems(stems(), stems());
     expect(mixer.duration()).toBeCloseTo(1);
