@@ -280,6 +280,23 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer._gateParams.release).toBe(0);
   });
 
+  test('de-esser worklet: bypassed by default; setters clamp + convert', () => {
+    // No AudioWorklet in the mock → the de-esser stays bypassed (null) and
+    // deEsserInput passes through; setters store/clamp into _deEsserParams.
+    expect(mixer.deEsser).toBe(null);
+    expect(mixer.deEsserInput).toBeDefined();
+    expect(mixer._deEsserParams.amount).toBe(0);       // amount 0 = transparent
+    expect(mixer._deEsserParams.frequency).toBe(6000);
+    mixer.setDeEsserAmount(150);                        // 150% → clamps to 100 → 1.0
+    expect(mixer._deEsserParams.amount).toBe(1);
+    mixer.setDeEsserAmount(-10);                        // clamps to 0
+    expect(mixer._deEsserParams.amount).toBe(0);
+    mixer.setDeEsserFreq(500);                          // clamps to 2000
+    expect(mixer._deEsserParams.frequency).toBe(2000);
+    mixer.setDeEsserFreq(99999);                        // clamps to 12000
+    expect(mixer._deEsserParams.frequency).toBe(12000);
+  });
+
   test('loadStems builds sample-locked buffers; transport round-trips', async () => {
     mixer.loadStems(stems(), stems());
     expect(mixer.duration()).toBeCloseTo(1);

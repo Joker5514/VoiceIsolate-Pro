@@ -9,8 +9,8 @@
  *
  *   [Tier-A bus] = gate ─► highpass ─► lowpass ─► lowShelf ─► eqLowMid ─► eqMid
  *                  ─► eqHighMid ─► highShelf ─► compressor ─► makeupGain
- *                  ─► [stereo-width mid/side matrix] ─► Master ─► Analyser
- *                  ─► destination
+ *                  ─► de-esser ─► [stereo-width mid/side matrix] ─► Master
+ *                  ─► Analyser ─► destination
  *
  * The Tier-A console (HP/LP filters, 5-band EQ, bus compressor) is shared by
  * both stems and defaults to fully transparent — adding it never changes how
@@ -73,6 +73,10 @@ export class PlaybackMixer {
     this.eqHighMid = this.ctx.createBiquadFilter();
     this.compressor = this.ctx.createDynamicsCompressor();
     this.makeupGain = this.ctx.createGain();
+    // De-esser slot: makeupGain → deEsserInput → stereo matrix. The de-esser
+    // worklet (true sidechain, no lookahead) is spliced between them once it
+    // loads (see _loadDeEsser); until then deEsserInput is a pass-through.
+    this.deEsserInput = this.ctx.createGain();
     // ── Stereo-width mid/side matrix (transparent at width = 100%) ────────
     this.stereoIn = this.ctx.createGain();        // force 2ch: mono up-mix → L=R
     this.msSplit = this.ctx.createChannelSplitter(2);
@@ -138,8 +142,10 @@ export class PlaybackMixer {
     this.eqHighMid.connect(this.highShelf);
     this.highShelf.connect(this.compressor);
     this.compressor.connect(this.makeupGain);
-    // Stereo-width mid/side matrix: makeup → stereoIn → split → M/S → merge → master.
-    this.makeupGain.connect(this.stereoIn);
+    // De-esser slot (worklet spliced in on load): makeupGain → deEsserInput → stereo.
+    this.makeupGain.connect(this.deEsserInput);
+    // Stereo-width mid/side matrix: deEsserInput → stereoIn → split → M/S → merge → master.
+    this.deEsserInput.connect(this.stereoIn);
     this.stereoIn.connect(this.msSplit);
     // Mid = (L + R) · 0.5  (both split legs sum into midGain)
     this.msSplit.connect(this.midGain, 0);
@@ -171,13 +177,17 @@ export class PlaybackMixer {
     this.noiseMuteGain.gain.value = 1;
     this.makeupGain.gain.value = 1;   // 0 dB — transparent until raised
 
-    // ── Noise gate (playback-only worklet; spliced in asynchronously) ─────
-    // Default range 0 dB = bypass, so the gate is transparent until engaged.
-    /** @type {AudioWorkletNode|null} */ this.gate = null;
+    // ── Playback-only worklets (gate + de-esser), spliced in asynchronously ─
+    // Both default to bypass (gate range 0 / de-esser amount 0) → transparent
+    // until engaged. Load promises are kept so dispose() can await them
+    // (avoids a splice-after-dispose race).
     this._disposed = false;
+    /** @type {AudioWorkletNode|null} */ this.gate = null;
     this._gateParams = { threshold: -45, range: 0, attack: 5, release: 100 };
-    // Keep the load promise so dispose() can await it (avoids a splice-after-dispose race).
     this._gatePromise = this._loadGate();
+    /** @type {AudioWorkletNode|null} */ this.deEsser = null;
+    this._deEsserParams = { frequency: 6000, amount: 0 };
+    this._deEsserPromise = this._loadDeEsser();
 
     // ── Transport state ──────────────────────────────────────────────────
     /** @type {AudioBuffer|null} */ this.cleanBuffer = null;
@@ -227,6 +237,40 @@ export class PlaybackMixer {
     } catch (err) {
       console.error('[VIP][PlaybackMixer] noise-gate worklet failed to load; bypassing.', err);
     }
+  }
+
+  /**
+   * Load and splice in the de-esser worklet (deEsserInput → deEsser → stereo).
+   * Same graceful no-op/bypass contract as _loadGate.
+   */
+  async _loadDeEsser() {
+    const aw = this.ctx.audioWorklet;
+    const NodeCtor = globalThis.AudioWorkletNode;
+    if (!aw || typeof aw.addModule !== 'function' || typeof NodeCtor !== 'function') return;
+    try {
+      // Literal call (not via the `aw` alias) so validate.js's allowlist sees it.
+      await this.ctx.audioWorklet.addModule('/src/workers/DeEsserProcessor.js');
+      if (this._disposed) return; // disposed mid-load — don't touch a torn-down graph
+      const deEsser = new NodeCtor(this.ctx, 'vip-deesser');
+      this.deEsserInput.disconnect(this.stereoIn);
+      this.deEsserInput.connect(deEsser);
+      deEsser.connect(this.stereoIn);
+      for (const [name, value] of Object.entries(this._deEsserParams)) {
+        const p = deEsser.parameters.get(name);
+        if (p) p.value = value;
+      }
+      this.deEsser = deEsser;
+    } catch (err) {
+      console.error('[VIP][PlaybackMixer] de-esser worklet failed to load; bypassing.', err);
+    }
+  }
+
+  /** Remember a de-esser parameter and apply it to the live worklet if present. */
+  _setDeEsserParam(name, value) {
+    this._deEsserParams[name] = value;
+    if (!this.deEsser) return;
+    const param = this.deEsser.parameters.get(name);
+    if (param) this._applyParam(param, value);
   }
 
   /** Remember a gate parameter and apply it to the live worklet if present. */
@@ -479,6 +523,14 @@ export class PlaybackMixer {
   /** Noise-gate release in ms (0 … 1000). */
   setGateRelease(ms) { this._setGateParam('release', clamp(ms, 0, 1000)); }
 
+  /** De-esser band frequency in Hz (2000 … 12000): where sibilance reduction starts. */
+  setDeEsserFreq(hz) { this._setDeEsserParam('frequency', clamp(hz, 2000, 12000)); }
+
+  /** De-esser amount as a percentage (0 … 100). 0 = off (transparent). */
+  setDeEsserAmount(percentage) {
+    this._setDeEsserParam('amount', clamp(percentage, 0, 100) / 100);
+  }
+
   /**
    * Hard-mute the voice stem without disturbing the Voice Level slider.
    * @param {boolean} muted
@@ -661,14 +713,15 @@ export class PlaybackMixer {
     this._disposed = true;
     this.stop();
     // Let any in-flight gate-worklet load settle (it bails on _disposed) before teardown.
-    if (this._gatePromise) {
-      try { await this._gatePromise; } catch { /* ignore */ }
+    for (const p of [this._gatePromise, this._deEsserPromise]) {
+      if (p) { try { await p; } catch { /* ignore */ } }
     }
     for (const node of [this.speakerGain, this.cleanGain, this.voiceMuteGain,
       this.noiseGain, this.noiseMuteGain, this.gateInput, this.gate,
       this.highpass, this.lowpass,
       this.lowShelf, this.eqLowMid, this.eqMid, this.eqHighMid,
       this.highShelf, this.compressor, this.makeupGain,
+      this.deEsserInput, this.deEsser,
       this.stereoIn, this.msSplit, this.sideRNeg, this.midGain, this.sideGain,
       this.widthGain, this.sideSNeg, this.leftSum, this.rightSum, this.msMerge,
       this.masterGain, this.analyser]) {

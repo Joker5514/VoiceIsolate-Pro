@@ -82,7 +82,7 @@ describe('CLAUDE.md §1.1 — live real-time pipeline stays removed', () => {
     // The live-mic worklet pipeline stays removed; the one permitted worklet is
     // the playback-only noise gate (CLAUDE.md §2.1, scripts/validate.js). Any
     // other module path — or a dynamic argument — is still forbidden.
-    const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js'];
+    const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js', '/src/workers/DeEsserProcessor.js'];
     const offenders = [];
     for (const f of [...walkJs(APP_DIR), ...walkJs(SRC_DIR)]) {
       const src = fs.readFileSync(f, 'utf8');

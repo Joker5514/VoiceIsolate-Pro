@@ -47,6 +47,9 @@ const SLIDER_BINDINGS = Object.freeze([
   { id: 'gateRangeSlider', method: 'setGateRange', initial: 0 },
   { id: 'gateAttackSlider', method: 'setGateAttack', initial: 5 },
   { id: 'gateReleaseSlider', method: 'setGateRelease', initial: 100 },
+  // Tier-B: de-esser
+  { id: 'deEsserFreqSlider', method: 'setDeEsserFreq', initial: 6000 },
+  { id: 'deEsserAmountSlider', method: 'setDeEsserAmount', initial: 0 },
 ]);
 
 export class SliderUI {

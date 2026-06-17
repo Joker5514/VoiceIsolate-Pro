@@ -124,7 +124,7 @@ const offenders = [];
 // Playback-only DSP worklets explicitly permitted in src/ (NOT live-mic). See
 // CLAUDE.md §2.1. Any other worklet path — or a non-literal/dynamic module arg
 // — is still rejected, and getUserMedia stays banned outright.
-const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js'];
+const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js', '/src/workers/DeEsserProcessor.js'];
 const scanDirs = [
   ['public/app', appDir],
   ['src', path.resolve(__dirname, '..', 'src')],

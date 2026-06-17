@@ -46,6 +46,8 @@ function mockMixer() {
     setGateRange(v) { this.calls.push(['setGateRange', v]); },
     setGateAttack(v) { this.calls.push(['setGateAttack', v]); },
     setGateRelease(v) { this.calls.push(['setGateRelease', v]); },
+    setDeEsserFreq(v) { this.calls.push(['setDeEsserFreq', v]); },
+    setDeEsserAmount(v) { this.calls.push(['setDeEsserAmount', v]); },
   };
 }
 
@@ -76,6 +78,8 @@ const SLIDER_SPECS = {
   gateRangeSlider: { min: 0, max: 80, value: 0 },
   gateAttackSlider: { min: 0, max: 200, value: 5 },
   gateReleaseSlider: { min: 0, max: 1000, value: 100 },
+  deEsserFreqSlider: { min: 2000, max: 12000, value: 6000 },
+  deEsserAmountSlider: { min: 0, max: 100, value: 0 },
 };
 function buildSliders(values = {}) {
   document.body.innerHTML = '';
@@ -144,6 +148,8 @@ describe('SliderUI', () => {
       ['setGateRange', 0],
       ['setGateAttack', 5],
       ['setGateRelease', 100],
+      ['setDeEsserFreq', 6000],
+      ['setDeEsserAmount', 0],
     ]);
   });
 
