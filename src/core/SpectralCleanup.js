@@ -188,10 +188,35 @@ function sanitize(buf) {
  */
 function estimateNoiseMag(samples, N, hop) {
   const bins = N / 2 + 1;
+  const win = hann(N);
+  const frames = frameCount(samples.length, N, hop);
+
+  // Pass 1 (time domain, cheap): per-frame windowed energy → an adaptive
+  // activity floor. Without it, minimum statistics is sabotaged not only by
+  // absolute digital silence (which would pin every bin's minimum at 0 and
+  // disable reduction for the whole file) but also by partial edge frames whose
+  // only signal sits where the Hann window ≈ 0 — tiny-but-nonzero energy that
+  // still drags the per-bin minimum far below the true noise floor. Excluding
+  // frames below a fraction of the median energy handles silence, fades, and
+  // those partial frames in one robust step.
+  const energy = new Float32Array(frames);
+  for (let f = 0; f < frames; f++) {
+    const start = f * hop;
+    const avail = Math.max(0, Math.min(N, samples.length - start));
+    let e = 0;
+    for (let i = 0; i < avail; i++) { const s = samples[start + i] * win[i]; e += s * s; }
+    energy[f] = e;
+  }
+  const active = Array.from(energy).filter((e) => e > 1e-12).sort((a, b) => a - b);
+  const median = active.length ? active[active.length >> 1] : 0;
+  const threshold = median * 0.1;
+
+  // Pass 2 (FFT): minimum statistics over active frames only.
   const smooth = new Float32Array(bins);
   const minPow = new Float32Array(bins).fill(Infinity);
   let first = true;
-  forwardSTFT(samples, N, hop, (re, im) => {
+  forwardSTFT(samples, N, hop, (re, im, _bins, f) => {
+    if (energy[f] <= 0 || energy[f] < threshold) return;
     for (let k = 0; k < bins; k++) {
       const pow = re[k] * re[k] + im[k] * im[k];
       smooth[k] = first ? pow : 0.7 * smooth[k] + 0.3 * pow;
@@ -238,7 +263,7 @@ export function reduceNoise(samples, opts = {}) {
 
   const out = overlapProcess(input, N, hop, (re, im) => {
     for (let k = 0; k < bins; k++) {
-      const mag = Math.hypot(re[k], im[k]);
+      const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]); // sqrt: hypot's overflow guard isn't needed here
       let g = mag > 1e-12 ? (mag - oversub * noiseMag[k]) / mag : 0;
       g = clamp01(g);
       if (g < FLOOR) g = FLOOR;
@@ -281,10 +306,11 @@ export function dereverb(samples, opts = {}) {
   const rt60 = opts.rt60 || 0.4;
   const bins = N / 2 + 1;
 
-  // Per-hop tail decay: 60 dB over rt60 seconds → factor^(hop/sr) loses
-  // (3·hop)/(rt60·sr) decades each frame.
+  // Per-hop tail decay on POWER (tail holds re²+im²): a 60 dB power decay over
+  // rt60 is a factor of 10⁻⁶, so the per-frame factor loses (6·hop)/(rt60·sr)
+  // decades. (−3 would model a 30 dB power decay → an effective RT60 of 2·rt60.)
   const hopTime = hop / sr;
-  const decay = Math.pow(10, -3 * hopTime / rt60);
+  const decay = Math.pow(10, -6 * hopTime / rt60);
   const beta = 1 + amount;   // over-subtraction of the tail estimate
   const FLOOR = 0.1;         // keep ≥ -20 dB so onsets/timbre survive
 

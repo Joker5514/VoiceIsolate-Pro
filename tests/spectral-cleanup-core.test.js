@@ -111,6 +111,23 @@ describe('reduceNoise', () => {
     expect(burstAfter).toBeGreaterThan(burstBefore * 0.7);
   });
 
+  test('digital-silence segments do not disable reduction (noise floor not zeroed)', () => {
+    // A leading + trailing block of absolute silence would pin every bin's
+    // minimum power at 0 and globally disable NR. The silence guard skips them.
+    const n = 3 * SR;
+    const x = new Float32Array(n);
+    const rnd = noiseGen(777);
+    for (let i = 0; i < n; i++) x[i] = 0.03 * rnd();
+    x.fill(0, 0, 0.5 * SR);            // 0.5 s leading digital silence
+    x.fill(0, 2.5 * SR, n);           // 0.5 s trailing digital silence
+    const y = sc.reduceNoise(x, { amount: 1, sampleRate: SR });
+    expect(allFinite(y)).toBe(true);
+    // The noisy middle must still be attenuated (not passed through untouched).
+    const before = rms(x, 1.2 * SR, 1.8 * SR);
+    const after = rms(y, 1.2 * SR, 1.8 * SR);
+    expect(after).toBeLessThan(before * 0.6);
+  });
+
   test('stronger amount removes more noise', () => {
     const x = makeNoisyBurst();
     const lo = sc.reduceNoise(x, { amount: 0.3, sampleRate: SR });
