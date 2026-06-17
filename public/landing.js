@@ -175,7 +175,6 @@ function hasVideo() { return Boolean(videoUrl) && !ui.videoCard.hidden; }
  * in sync without the video ever driving audio.
  */
 function syncVideo() {
-function syncVideo() {
   if (!hasVideo() || !mixer) return;
   const v = ui.videoPlayer;
   if (v.readyState < 1) return; // Ensure metadata is loaded before syncing
