@@ -365,7 +365,7 @@ class VoiceIsolatePro {
 
     // Pre-populate dom if DOM is already available (e.g. in jsdom test environments)
     if (typeof document !== 'undefined' && typeof document.getElementById === 'function') {
-      try { this.cacheDom(); } catch (_) {}
+      try { this.cacheDom(); } catch { /* ignore — DOM may not be ready */ }
     }
   }
 
@@ -519,10 +519,10 @@ class VoiceIsolatePro {
   // ── Render static visuals (waveform/spectrogram placeholder) ─────────────
   renderStaticVisuals(buffer) {
     if (typeof window.drawWaveform === 'function') {
-      try { window.drawWaveform(buffer); } catch (_) {}
+      try { window.drawWaveform(buffer); } catch { /* optional hook */ }
     }
     if (typeof window.VIP_spectro === 'object' && window.VIP_spectro) {
-      try { window.VIP_spectro.renderStatic(buffer); } catch (_) {}
+      try { window.VIP_spectro.renderStatic(buffer); } catch { /* optional hook */ }
     }
   }
 
@@ -799,7 +799,7 @@ class VoiceIsolatePro {
     }
 
     // ── Worklet / worker dispatch (routes by SLIDER_TARGETS from slider-map.js) ──
-    try { dispatchParam(id, value, this); } catch (_) {}
+    try { dispatchParam(id, value, this); } catch { /* ignore — worklet/worker may not be ready */ }
 
     // ── Orchestrator passthrough ──────────────────────────────────────────────
     if (orch && typeof orch.onSlider === 'function') {
@@ -1274,7 +1274,7 @@ class VoiceIsolatePro {
     if (this.dom.hFile) this.dom.hFile.textContent = (name || '').slice(0, 20);
 
     this.renderStaticVisuals(buf);
-    try { window.dispatchEvent(new CustomEvent('vip:fileLoaded', { detail: { name } })); } catch (_) {}
+    try { window.dispatchEvent(new CustomEvent('vip:fileLoaded', { detail: { name } })); } catch { /* ignore */ }
     this.showNotification('File loaded: ' + name, 'info');
   }
 
@@ -1354,7 +1354,7 @@ class VoiceIsolatePro {
       if (this.outputBuffer) this.renderStaticVisuals(this.outputBuffer);
       this.updatePipelineProgress(32, 'Complete', 100);
       this.setStatus('DONE');
-      try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}
+      try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch { /* ignore */ }
       this.showNotification('Processing complete!', 'info');
     } catch (err) {
       structuredLog('error', '[VIP] Pipeline error', { err: err.message });
@@ -1575,7 +1575,7 @@ class VoiceIsolatePro {
             session = await ort.InferenceSession.create(path, { executionProviders: [ep] });
             usedEp = ep;
             break;
-          } catch (_) { /* try next EP */ }
+          } catch { /* try next EP */ }
         }
         if (session) {
           this.onnxSessions[key] = session;
@@ -1603,7 +1603,7 @@ class VoiceIsolatePro {
     try {
       const result = await this._mlCall({ type: 'vad', buffer: buffer.getChannelData(0).buffer }, [buffer.getChannelData(0).buffer.slice(0)]);
       return result;
-    } catch (_) {
+    } catch {
       // Fallback: simple energy-based VAD
       return this._simpleVAD(buffer, p);
     }
@@ -2136,19 +2136,19 @@ class VoiceIsolatePro {
 
   teardownChain() {
     if (this.currentSource) {
-      try { this.currentSource.stop(); } catch (_) {}
-      try { this.currentSource.disconnect(); } catch (_) {}
+      try { this.currentSource.stop(); } catch { /* already stopped */ }
+      try { this.currentSource.disconnect(); } catch { /* already disconnected */ }
       this.currentSource = null;
     }
     if (this._dspNodes) {
       const { hp, lp, eqNodes, deEss, comp, compMakeupGain } = this._dspNodes;
       [hp, lp, ...(eqNodes || []), deEss, comp, compMakeupGain].forEach(n => {
-        if (n) try { n.disconnect(); } catch (_) {}
+        if (n) try { n.disconnect(); } catch { /* already disconnected */ }
       });
       this._dspNodes = null;
     }
     if (this._outGainNode) {
-      try { this._outGainNode.disconnect(); } catch (_) {}
+      try { this._outGainNode.disconnect(); } catch { /* already disconnected */ }
     }
     this._outGainNode = null;
   }
@@ -2160,8 +2160,8 @@ class VoiceIsolatePro {
       return;
     }
     if (this.currentSource) {
-      try { this.currentSource.stop(); } catch (_) {}
-      try { this.currentSource.disconnect(); } catch (_) {}
+      try { this.currentSource.stop(); } catch { /* already stopped */ }
+      try { this.currentSource.disconnect(); } catch { /* already disconnected */ }
       this.currentSource = null;
     }
     if (this.ctx && this.ctx.state === 'suspended') {
@@ -2284,7 +2284,7 @@ class VoiceIsolatePro {
       if (dismissed) return;
       dismissed = true;
       setTimeout(() => {
-        try { region.removeChild(toast); } catch (_) {}
+        try { region.removeChild(toast); } catch { /* already removed */ }
       }, 220);
     };
 
