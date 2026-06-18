@@ -17,7 +17,7 @@
  * 100 % local — no cloud APIs, no external fetch except /app/models/*.onnx.
  */
 
-import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
+import { SLIDER_REGISTRY, STAGES, dispatchParam } from './slider-map.js';
 import { ModelStatusUI } from './model-status-ui.js';
 
 // Model keys served by /app/models-manifest.json (ModelCDNLoader.getManifest()) —
@@ -726,21 +726,82 @@ class VoiceIsolatePro {
 
   onSlider(id, value) {
     const orch = window._vipOrch;
-    if (id === 'outGain' && this._outGainNode && this.currentSource && this.ctx) {
-      const gain = Math.pow(10, value / 20);
-      this._outGainNode.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.01);
-    }
-    if (id === 'outWidth' && this.isPlaying) {
-      const speed = numFromInput(this.dom && this.dom.tpSpeed, 1) || 1;
-      if (this.ctx) {
-        this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
+    const ctx = this.ctx;
+    const tau = 0.015; // 15 ms time-constant for all AudioParam ramps
+    const t = ctx ? ctx.currentTime : 0;
+    const nodes = this._dspNodes;
+    const EQ_IDS = ['eqSub','eqBass','eqWarmth','eqBody','eqLowMid','eqMid','eqPresence','eqClarity','eqAir','eqBrill'];
+
+    // ── Web Audio AudioParam updates (real-time, glitch-free ramps) ─────────
+    if (ctx) {
+      switch (id) {
+        case 'outGain': {
+          const g = Math.pow(10, value / 20);
+          if (this._outGainNode) this._outGainNode.gain.setTargetAtTime(g, t, tau);
+          break;
+        }
+        case 'hpFreq':
+          if (nodes?.hp) nodes.hp.frequency.setTargetAtTime(Math.max(20, value), t, tau);
+          break;
+        case 'hpQ':
+          if (nodes?.hp) nodes.hp.Q.setTargetAtTime(Math.max(0.001, value), t, tau);
+          break;
+        case 'lpFreq':
+          if (nodes?.lp) nodes.lp.frequency.setTargetAtTime(Math.min(ctx.sampleRate / 2 - 1, value), t, tau);
+          break;
+        case 'lpQ':
+          if (nodes?.lp) nodes.lp.Q.setTargetAtTime(Math.max(0.001, value), t, tau);
+          break;
+        case 'compThresh':
+          if (nodes?.comp) nodes.comp.threshold.setTargetAtTime(value, t, tau);
+          break;
+        case 'compRatio':
+          if (nodes?.comp) nodes.comp.ratio.setTargetAtTime(Math.max(1, value), t, tau);
+          break;
+        case 'compAttack':
+          if (nodes?.comp) nodes.comp.attack.setTargetAtTime(Math.max(0, value / 1000), t, tau);
+          break;
+        case 'compRelease':
+          if (nodes?.comp) nodes.comp.release.setTargetAtTime(Math.max(0, value / 1000), t, tau);
+          break;
+        case 'compKnee':
+          if (nodes?.comp) nodes.comp.knee.setTargetAtTime(Math.max(0, value), t, tau);
+          break;
+        case 'compMakeup':
+          if (nodes?.compMakeupGain) nodes.compMakeupGain.gain.setTargetAtTime(Math.pow(10, value / 20), t, tau);
+          break;
+        case 'deEssFreq':
+          if (nodes?.deEss) nodes.deEss.frequency.setTargetAtTime(value, t, tau);
+          break;
+        case 'deEssAmt':
+          if (nodes?.deEss) nodes.deEss.gain.setTargetAtTime(-Math.max(0, value), t, tau);
+          break;
+        case 'outWidth': {
+          if (this.isPlaying) {
+            const speed = numFromInput(this.dom && this.dom.tpSpeed, 1) || 1;
+            this.playOffset += (t - this.playStartTime) * speed;
+            const buf = this.abMode === 'processed'
+              ? (this.outputBuffer || this.procBuffer || this.inputBuffer || this.origBuffer)
+              : (this.inputBuffer || this.origBuffer);
+            if (buf) this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset));
+            this.play();
+          }
+          break;
+        }
+        default: {
+          const eqIdx = EQ_IDS.indexOf(id);
+          if (eqIdx >= 0 && nodes?.eqNodes?.[eqIdx]) {
+            nodes.eqNodes[eqIdx].gain.setTargetAtTime(value, t, tau);
+          }
+          break;
+        }
       }
-      const buf = this.abMode === 'processed'
-        ? (this.outputBuffer || this.procBuffer || this.inputBuffer || this.origBuffer)
-        : (this.inputBuffer || this.origBuffer);
-      if (buf) this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset));
-      this.play();
     }
+
+    // ── Worklet / worker dispatch (routes by SLIDER_TARGETS from slider-map.js) ──
+    try { dispatchParam(id, value, this); } catch (_) {}
+
+    // ── Orchestrator passthrough ──────────────────────────────────────────────
     if (orch && typeof orch.onSlider === 'function') {
       orch.onSlider(id, value);
     }
@@ -1490,6 +1551,52 @@ class VoiceIsolatePro {
     }
   }
 
+  // ── ONNX multi-model init (WebGPU → WASM fallback per model) ─────────────
+  async initONNX() {
+    const ort = (typeof window !== 'undefined' && window.ort) || (typeof globalThis !== 'undefined' && globalThis.ort);
+    if (!ort || !ort.InferenceSession) {
+      structuredLog('warn', '[VIP] initONNX: ORT unavailable');
+      this._onnxReady = false;
+      pill('engMlPill', 'unavailable');
+      return;
+    }
+    ort.env.wasm.wasmPaths = '/lib/';
+    pill('engMlPill', 'loading');
+    const MODELS = [
+      { key: 'rnnoise', path: '/app/models/rnnoise_suppressor.onnx' },
+      { key: 'bsrnn',   path: '/app/models/bsrnn_vocals.onnx' },
+    ];
+    try {
+      for (const { key, path } of MODELS) {
+        let session = null;
+        let usedEp = null;
+        for (const ep of ['webgpu', 'wasm']) {
+          try {
+            session = await ort.InferenceSession.create(path, { executionProviders: [ep] });
+            usedEp = ep;
+            break;
+          } catch (_) { /* try next EP */ }
+        }
+        if (session) {
+          this.onnxSessions[key] = session;
+          structuredLog('info', `[VIP] initONNX: ${key} loaded via ${usedEp}`);
+        } else {
+          structuredLog('warn', `[VIP] initONNX: ${key} failed all EPs`);
+        }
+      }
+      const loaded = Object.keys(this.onnxSessions).length;
+      this._onnxReady = loaded > 0;
+      this._dspOnlyMode = loaded === 0;
+      window.VIP_ML_AVAILABLE = loaded > 0;
+      pill('engMlPill', loaded > 0 ? 'ready' : 'unavailable');
+    } catch (err) {
+      structuredLog('error', '[VIP] initONNX failed', { err: err.message });
+      this._onnxReady = false;
+      this._dspOnlyMode = true;
+      pill('engMlPill', 'error');
+    }
+  }
+
   // ── VAD ───────────────────────────────────────────────────────────────────
   async runVAD(buffer, params) {
     const p = params || window.VIP_PARAMS || {};
@@ -1900,52 +2007,100 @@ class VoiceIsolatePro {
   }
 
   buildLiveChain(buf) {
-    // Invoked by play() — delegate to orchestrator if available
+    // Delegate to orchestrator if available
     if (window._vipOrch && typeof window._vipOrch.buildLiveChain === 'function') {
       window._vipOrch.buildLiveChain(buf);
       return;
     }
-    // Fallback: direct AudioContext source node
     if (!this.ctx || typeof this.ctx.createBufferSource !== 'function') return;
     this.teardownChain();
     const p = window.VIP_PARAMS || {};
-    const outGainDb = p.outGain ?? 0;
-    const widthLinear = (p.outWidth ?? 100) / 100;
+    const sr = this.ctx.sampleRate || 48000;
+    const nyq = sr / 2 - 1;
+
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
     src.playbackRate.value = numFromInput(this.dom && this.dom.tpSpeed, 1);
+
+    // ── HP filter ────────────────────────────────────────────────────────────
+    const hp = this.ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = Math.max(20, Math.min(nyq, p.hpFreq ?? 80));
+    hp.Q.value = Math.max(0.001, p.hpQ ?? 0.7);
+
+    // ── LP filter ────────────────────────────────────────────────────────────
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = Math.max(20, Math.min(nyq, p.lpFreq ?? 18000));
+    lp.Q.value = Math.max(0.001, p.lpQ ?? 0.7);
+
+    // ── 10-band parametric EQ ────────────────────────────────────────────────
+    const EQ_FREQS = [40, 120, 300, 700, 1500, 3000, 5000, 8000, 13000, 18000];
+    const EQ_IDS   = ['eqSub','eqBass','eqWarmth','eqBody','eqLowMid','eqMid','eqPresence','eqClarity','eqAir','eqBrill'];
+    const eqNodes = EQ_FREQS.map((freq, i) => {
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'peaking';
+      f.frequency.value = Math.min(freq, nyq);
+      f.gain.value = p[EQ_IDS[i]] ?? 0;
+      f.Q.value = 1.0;
+      return f;
+    });
+
+    // ── De-esser (peaking cut at sibilance band) ─────────────────────────────
+    const deEss = this.ctx.createBiquadFilter();
+    deEss.type = 'peaking';
+    deEss.frequency.value = Math.min(p.deEssFreq ?? 6000, nyq);
+    deEss.gain.value = -Math.max(0, p.deEssAmt ?? 0);
+    deEss.Q.value = 3.0;
+
+    // ── Compressor + makeup gain ─────────────────────────────────────────────
+    const comp = this.ctx.createDynamicsCompressor();
+    comp.threshold.value = p.compThresh ?? -24;
+    comp.ratio.value = Math.max(1, p.compRatio ?? 4);
+    comp.knee.value = Math.max(0, p.compKnee ?? 6);
+    comp.attack.value = Math.max(0, (p.compAttack ?? 10) / 1000);
+    comp.release.value = Math.max(0, (p.compRelease ?? 150) / 1000);
+
+    const compMakeupGain = this.ctx.createGain();
+    compMakeupGain.gain.value = Math.pow(10, (p.compMakeup ?? 0) / 20);
+
+    // ── Output gain ──────────────────────────────────────────────────────────
     const outGainNode = this.ctx.createGain();
-    outGainNode.gain.value = Math.pow(10, outGainDb / 20);
+    outGainNode.gain.value = Math.pow(10, (p.outGain ?? 0) / 20);
     this._outGainNode = outGainNode;
+    this._dspNodes = { hp, lp, eqNodes, deEss, comp, compMakeupGain };
+
+    // ── Wire chain: src → hp → lp → eq[0..9] → deEss → comp → compMakeupGain ─
+    src.connect(hp);
+    hp.connect(lp);
+    let prev = lp;
+    for (const eq of eqNodes) { prev.connect(eq); prev = eq; }
+    prev.connect(deEss);
+    deEss.connect(comp);
+    comp.connect(compMakeupGain);
+
+    // ── M/S stereo width → outGain → destination ─────────────────────────────
+    const widthLinear = (p.outWidth ?? 100) / 100;
     if (buf.numberOfChannels >= 2 && this.ctx.createChannelSplitter && this.ctx.createChannelMerger) {
       const splitter = this.ctx.createChannelSplitter(2);
       const merger = this.ctx.createChannelMerger(2);
       const mGain = (1 + widthLinear) / 2;
       const sGain = (1 - widthLinear) / 2;
-
-      const lMain = this.ctx.createGain();
-      const lCross = this.ctx.createGain();
-      const rMain = this.ctx.createGain();
-      const rCross = this.ctx.createGain();
-      lMain.gain.value = mGain;
-      lCross.gain.value = sGain;
-      rMain.gain.value = mGain;
-      rCross.gain.value = sGain;
-
-      src.connect(splitter);
-      splitter.connect(lMain, 0);
-      splitter.connect(lCross, 1);
-      splitter.connect(rMain, 1);
-      splitter.connect(rCross, 0);
-      lMain.connect(merger, 0, 0);
-      lCross.connect(merger, 0, 0);
-      rMain.connect(merger, 0, 1);
-      rCross.connect(merger, 0, 1);
+      const lMain = this.ctx.createGain(); lMain.gain.value = mGain;
+      const lCross = this.ctx.createGain(); lCross.gain.value = sGain;
+      const rMain = this.ctx.createGain(); rMain.gain.value = mGain;
+      const rCross = this.ctx.createGain(); rCross.gain.value = sGain;
+      compMakeupGain.connect(splitter);
+      splitter.connect(lMain, 0); splitter.connect(lCross, 1);
+      splitter.connect(rMain, 1); splitter.connect(rCross, 0);
+      lMain.connect(merger, 0, 0); lCross.connect(merger, 0, 0);
+      rMain.connect(merger, 0, 1); rCross.connect(merger, 0, 1);
       merger.connect(outGainNode);
     } else {
-      src.connect(outGainNode);
+      compMakeupGain.connect(outGainNode);
     }
     if (this.ctx.destination) outGainNode.connect(this.ctx.destination);
+
     src.start(0, this.playOffset || 0);
     src.onended = () => {
       this.isPlaying = false;
@@ -1984,6 +2139,13 @@ class VoiceIsolatePro {
       try { this.currentSource.stop(); } catch (_) {}
       try { this.currentSource.disconnect(); } catch (_) {}
       this.currentSource = null;
+    }
+    if (this._dspNodes) {
+      const { hp, lp, eqNodes, deEss, comp, compMakeupGain } = this._dspNodes;
+      [hp, lp, ...(eqNodes || []), deEss, comp, compMakeupGain].forEach(n => {
+        if (n) try { n.disconnect(); } catch (_) {}
+      });
+      this._dspNodes = null;
     }
     if (this._outGainNode) {
       try { this._outGainNode.disconnect(); } catch (_) {}
