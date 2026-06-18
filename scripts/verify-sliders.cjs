@@ -17,6 +17,7 @@ const { chromium } = require('playwright');
   await page.waitForTimeout(2500);
 
   const result = await page.evaluate(async () => {
+    /* global window, document, MouseEvent */
     window.VIP_DEBUG = true;
     const app = window._vipApp || window.vip;
     if (!app) return { fatal: 'no app instance' };
