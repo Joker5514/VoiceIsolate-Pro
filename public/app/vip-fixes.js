@@ -117,15 +117,19 @@
 
     function _stopSource() {
       if (_source) {
-        try { _source.onended = null; _source.stop(0); } catch (_) {}
-        try { _source.disconnect(); } catch (_) {}
+        try { _source.onended = null; _source.stop(0); } catch { /* already stopped */ }
+        try { _source.disconnect(); } catch { /* already disconnected */ }
         _source = null;
       }
+      if (app && app.currentSource) app.currentSource = null;
     }
 
     function _teardown(resetOffset) {
       cancelAnimationFrame(_rafId);
       _stopSource();
+      if (app && typeof app.teardownChain === 'function') {
+        try { app.teardownChain(); } catch { /* ignore */ }
+      }
       _isPlaying = false;
       if (resetOffset) _pauseOffset = 0;
       _setPlayIcon(false);
@@ -133,7 +137,7 @@
       const stop  = $('tpStop');
       if (pause) pause.disabled = true;
       if (stop)  stop.disabled  = true;
-      try { window.dispatchEvent(new CustomEvent('vip:playStopped')); } catch (_) {}
+      try { window.dispatchEvent(new CustomEvent('vip:playStopped')); } catch { /* ignore */ }
     }
 
     /* ── Core play ── */
@@ -155,13 +159,6 @@
       if (dur)  dur.textContent = _fmt(_duration);
       if (seek) { seek.max = '1000'; seek.disabled = false; }
 
-      _source = ctx.createBufferSource();
-      _source.buffer = buf;
-      const spSel = $('tpSpeed');
-      _source.playbackRate.value = parseFloat(spSel?.value || '1');
-
-      if (!_gainNode) { _gainNode = ctx.createGain(); _gainNode.gain.value = 1; }
-
       /* ── Analyser node — single shared FFT tap that drives every visualizer ── */
       if (!_analyser) {
         try {
@@ -172,56 +169,61 @@
         } catch (e) { warn('Analyser create failed', e); _analyser = null; }
       }
 
-      /* ── Routing chain ──
-         Wired ONCE and reused across replays — each new source connects to
-         the persistent _gainNode and the downstream chain takes care of the
-         rest. Reconnecting downstream nodes per-play would tear down the
-         worklet's connections to the orchestrator's other consumers.
-
-         Chain layout (built on first play, kept until teardown):
-           Source → Gain → [Worklet] → Analyser → ctx.destination
-       */
-      _source.connect(_gainNode);
-      if (!_chainBuilt) {
-        const orchWorklet = window._vipOrch?.workletNode;
-        try {
-          if (orchWorklet) {
-            _gainNode.connect(orchWorklet);
-            if (_analyser) {
-              orchWorklet.connect(_analyser);
-              _analyser.connect(ctx.destination);
-            } else {
-              orchWorklet.connect(ctx.destination);
-            }
-            _workletWired = true;
-          } else if (_analyser) {
-            _gainNode.connect(_analyser);
-            _analyser.connect(ctx.destination);
-          } else {
-            _gainNode.connect(ctx.destination);
-          }
-          _chainBuilt = true;
-        } catch (e) {
-          warn('Chain build failed, falling back to direct gain → destination', e);
-          try { _gainNode.connect(ctx.destination); } catch (_) {}
-          _chainBuilt = true;
-        }
-      }
-
+      // Clamp offset before chain build so buildLiveChain starts from the right position
       const safeOffset = Math.min(Math.max(_pauseOffset, 0), Math.max(_duration - 0.01, 0));
       _pauseOffset = safeOffset;
 
-      _source.start(0, safeOffset);
+      /* ── Full DSP chain via app.buildLiveChain ──────────────────────────────
+         Delegates audio graph construction to app.buildLiveChain(buf) which
+         wires: src → hp → lp → eq[0..9] → de-esser → comp → makeup →
+                M/S width → outGain → destination
+         and stores all nodes in app._dspNodes.  This is the prerequisite for
+         onSlider() to update AudioParams (setTargetAtTime) in real-time.
+         The simple gainNode chain we previously built here bypassed _dspNodes
+         entirely, causing all RT slider moves to be silently dropped.        */
+      app.playOffset = safeOffset;
+      app.buildLiveChain(buf);
+      _source = app.currentSource;  // BufferSource already started by buildLiveChain
+
+      // Tap analyser after outGainNode so visualizers still get an FFT feed.
+      // buildLiveChain connects outGainNode → ctx.destination; we intercept that
+      // and re-route. Re-wired on every play because buildLiveChain creates a
+      // fresh outGainNode each call.
+      //
+      // When an orchestrator worklet is present, route through it first:
+      //   outGainNode → _gainNode → orchWorklet → analyser → ctx.destination
+      // Otherwise:
+      //   outGainNode → analyser → ctx.destination
+      if (_analyser && app._outGainNode) {
+        const orchWorklet = window._vipOrch?.workletNode;
+        try {
+          app._outGainNode.disconnect();
+          if (orchWorklet) {
+            if (!_gainNode) { _gainNode = ctx.createGain(); _gainNode.gain.value = 1; }
+            app._outGainNode.connect(_gainNode);
+            _gainNode.connect(orchWorklet);
+            orchWorklet.connect(_analyser);
+            _analyser.connect(ctx.destination);
+            _workletWired = true;
+          } else {
+            app._outGainNode.connect(_analyser);
+            _analyser.connect(ctx.destination);
+            _workletWired = false;
+          }
+        } catch (e) { warn('Analyser tap failed', e); }
+      }
+
       _startTime = ctx.currentTime;
       _isPlaying = true;
 
       /* Roll the muted video in sync with the audio transport. */
       _syncVideo(safeOffset, true);
 
-      _source.onended = () => {
+      if (_source) _source.onended = () => {
         if (!_isPlaying) return;
         _pauseOffset = 0;
         _teardown(false);
+        if (app) { app.isPlaying = false; app.playOffset = 0; }
         _syncVideo(0, false);
         const seek2 = $('tpSeek');
         const cur2  = $('tpCur');
