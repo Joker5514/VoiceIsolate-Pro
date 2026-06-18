@@ -777,14 +777,14 @@ class VoiceIsolatePro {
           if (nodes?.deEss) nodes.deEss.gain.setTargetAtTime(-Math.max(0, value), t, tau);
           break;
         case 'outWidth': {
-          if (this.isPlaying) {
-            const speed = numFromInput(this.dom && this.dom.tpSpeed, 1) || 1;
-            this.playOffset += (t - this.playStartTime) * speed;
-            const buf = this.abMode === 'processed'
-              ? (this.outputBuffer || this.procBuffer || this.inputBuffer || this.origBuffer)
-              : (this.inputBuffer || this.origBuffer);
-            if (buf) this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset));
-            this.play();
+          const widthLinear = value / 100;
+          const mGain = (1 + widthLinear) / 2;
+          const sGain = (1 - widthLinear) / 2;
+          if (nodes?.lMain) {
+            nodes.lMain.gain.setTargetAtTime(mGain, t, tau);
+            nodes.lCross.gain.setTargetAtTime(sGain, t, tau);
+            nodes.rMain.gain.setTargetAtTime(mGain, t, tau);
+            nodes.rCross.gain.setTargetAtTime(sGain, t, tau);
           }
           break;
         }
@@ -2068,7 +2068,6 @@ class VoiceIsolatePro {
     const outGainNode = this.ctx.createGain();
     outGainNode.gain.value = Math.pow(10, (p.outGain ?? 0) / 20);
     this._outGainNode = outGainNode;
-    this._dspNodes = { hp, lp, eqNodes, deEss, comp, compMakeupGain };
 
     // ── Wire chain: src → hp → lp → eq[0..9] → deEss → comp → compMakeupGain ─
     src.connect(hp);
@@ -2081,15 +2080,16 @@ class VoiceIsolatePro {
 
     // ── M/S stereo width → outGain → destination ─────────────────────────────
     const widthLinear = (p.outWidth ?? 100) / 100;
+    let lMain = null, lCross = null, rMain = null, rCross = null;
     if (buf.numberOfChannels >= 2 && this.ctx.createChannelSplitter && this.ctx.createChannelMerger) {
       const splitter = this.ctx.createChannelSplitter(2);
       const merger = this.ctx.createChannelMerger(2);
       const mGain = (1 + widthLinear) / 2;
       const sGain = (1 - widthLinear) / 2;
-      const lMain = this.ctx.createGain(); lMain.gain.value = mGain;
-      const lCross = this.ctx.createGain(); lCross.gain.value = sGain;
-      const rMain = this.ctx.createGain(); rMain.gain.value = mGain;
-      const rCross = this.ctx.createGain(); rCross.gain.value = sGain;
+      lMain = this.ctx.createGain(); lMain.gain.value = mGain;
+      lCross = this.ctx.createGain(); lCross.gain.value = sGain;
+      rMain = this.ctx.createGain(); rMain.gain.value = mGain;
+      rCross = this.ctx.createGain(); rCross.gain.value = sGain;
       compMakeupGain.connect(splitter);
       splitter.connect(lMain, 0); splitter.connect(lCross, 1);
       splitter.connect(rMain, 1); splitter.connect(rCross, 0);
@@ -2099,6 +2099,7 @@ class VoiceIsolatePro {
     } else {
       compMakeupGain.connect(outGainNode);
     }
+    this._dspNodes = { hp, lp, eqNodes, deEss, comp, compMakeupGain, lMain, lCross, rMain, rCross };
     if (this.ctx.destination) outGainNode.connect(this.ctx.destination);
 
     src.start(0, this.playOffset || 0);
@@ -2141,8 +2142,8 @@ class VoiceIsolatePro {
       this.currentSource = null;
     }
     if (this._dspNodes) {
-      const { hp, lp, eqNodes, deEss, comp, compMakeupGain } = this._dspNodes;
-      [hp, lp, ...(eqNodes || []), deEss, comp, compMakeupGain].forEach(n => {
+      const { hp, lp, eqNodes, deEss, comp, compMakeupGain, lMain, lCross, rMain, rCross } = this._dspNodes;
+      [hp, lp, ...(eqNodes || []), deEss, comp, compMakeupGain, lMain, lCross, rMain, rCross].forEach(n => {
         if (n) try { n.disconnect(); } catch { /* already disconnected */ }
       });
       this._dspNodes = null;
