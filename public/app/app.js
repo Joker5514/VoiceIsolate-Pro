@@ -1218,6 +1218,7 @@ class VoiceIsolatePro {
   }
 
   _clearFile() {
+    if ((this.inputBuffer || this.origBuffer) && !window.confirm('Clear current file? Unsaved changes will be lost.')) return;
     this.stop();
     this.inputBuffer = null;
     this.outputBuffer = null;

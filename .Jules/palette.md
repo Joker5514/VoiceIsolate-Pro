@@ -16,3 +16,7 @@
 ## 2026-05-18 - [Custom Modal Keyboard Accessibility & ARIA States Update]
 **Learning:** When implementing 'Enter' to submit within custom UI modals, scope the keydown listener to the specific input field (e.g., verifying `e.target.id`) rather than the entire modal document/container to prevent intercepting and hijacking Enter key presses on other interactive elements like buttons.
 **Action:** When implementing modal keyboard accessibility, ensure `Enter` key events do not globally override native button click events by strictly limiting the event scope to text inputs.
+
+## 2026-05-19 - [Destructive Action Confirmation]
+**Learning:** Destructive UI actions, such as clearing a workspace or deleting files, can lead to accidental data loss if triggered unintentionally. Always wrapping these actions in a confirmation dialog (e.g., `confirm()`) when there is unsaved state provides a necessary safety net for users.
+**Action:** Always verify that destructive actions have a confirmation step if they result in the loss of unsaved state.
