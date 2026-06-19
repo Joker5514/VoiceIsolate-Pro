@@ -31,6 +31,7 @@ class GateProcessor extends AudioWorkletProcessor {
       { name: 'range', defaultValue: 0, minValue: 0, maxValue: 80, automationRate: 'k-rate' },
       { name: 'attack', defaultValue: 5, minValue: 0, maxValue: 200, automationRate: 'k-rate' },
       { name: 'release', defaultValue: 100, minValue: 0, maxValue: 1000, automationRate: 'k-rate' },
+      { name: 'hold', defaultValue: 0, minValue: 0, maxValue: 500, automationRate: 'k-rate' },
     ];
   }
 
@@ -38,6 +39,7 @@ class GateProcessor extends AudioWorkletProcessor {
     super();
     this._env = 0;  // envelope-follower state (linear)
     this._gain = 1; // smoothed gate gain (linear)
+    this._hold = 0; // remaining hold samples after the signal drops below threshold
   }
 
   process(inputs, outputs, parameters) {
@@ -57,6 +59,7 @@ class GateProcessor extends AudioWorkletProcessor {
       }
       this._env = 0;
       this._gain = 1;
+      this._hold = 0;
       return true;
     }
 
@@ -65,9 +68,13 @@ class GateProcessor extends AudioWorkletProcessor {
     // One-pole envelope/gain coefficients from the time constants (per sample).
     const atk = Math.exp(-1 / (Math.max(0.05, parameters.attack[0]) * 0.001 * sampleRate));
     const rel = Math.exp(-1 / (Math.max(1, parameters.release[0]) * 0.001 * sampleRate));
+    // Hold keeps the gate open for a fixed tail after the signal drops below
+    // threshold, so brief dips between syllables don't chatter it shut.
+    const holdSamples = Math.round(Math.max(0, parameters.hold[0]) * 0.001 * sampleRate);
 
     let env = this._env;
     let gain = this._gain;
+    let hold = this._hold;
     for (let i = 0; i < nSamp; i++) {
       // Control signal = peak across channels (keeps L/R gated together).
       let x = 0;
@@ -78,7 +85,11 @@ class GateProcessor extends AudioWorkletProcessor {
       }
       // Fast-attack / slow-release envelope follower.
       env = x > env ? atk * env + (1 - atk) * x : rel * env + (1 - rel) * x;
-      const target = env >= thrLin ? 1 : floor;
+      const aboveThr = env >= thrLin;
+      // Refresh the hold tail while open; otherwise count it down.
+      if (aboveThr) hold = holdSamples;
+      else if (hold > 0) hold--;
+      const target = aboveThr || hold > 0 ? 1 : floor;
       // Ramp the gain toward the target (attack when opening, release when closing).
       const coef = target > gain ? atk : rel;
       gain = coef * gain + (1 - coef) * target;
@@ -86,6 +97,7 @@ class GateProcessor extends AudioWorkletProcessor {
     }
     this._env = env;
     this._gain = gain;
+    this._hold = hold;
     return true;
   }
 }

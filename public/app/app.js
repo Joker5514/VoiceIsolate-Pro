@@ -551,6 +551,11 @@ class VoiceIsolatePro {
         this._workletReady = true;
         pill('engCtxPill', 'ready');
 
+        // Spin up the real-time Live-Mix bridge (src/ engine) so the rt:true
+        // sliders apply live instead of only on Reprocess. Fire-and-forget;
+        // failures fall back to the offline graph (see buildLiveChain).
+        this._ensureBridge();
+
         this._initSABRings();
         this._updateProcessButtonsState();
         structuredLog('info', '[VIP] AudioContext ready.');
@@ -725,6 +730,16 @@ class VoiceIsolatePro {
   }
 
   onSlider(id, value) {
+    // Real-time path: route the slider straight to the Live-Mix bridge. When
+    // the bridge handles it, the change is an immediate AudioParam update — no
+    // Reprocess, no ML re-run (CLAUDE.md §1). Unsupported ids (spectral/worker
+    // effects) fall through and still apply on the next Reprocess.
+    if (this._bridge && typeof this._bridge.applyParam === 'function') {
+      try {
+        if (this._bridge.applyParam(id, value)) return;
+      } catch (_) { /* fall through to legacy handling */ }
+    }
+
     const orch = window._vipOrch;
     if (id === 'outGain' && this._outGainNode && this.currentSource && this.ctx) {
       const gain = Math.pow(10, value / 20);
@@ -1899,13 +1914,65 @@ class VoiceIsolatePro {
     if (typeof this.renderStaticVisuals === 'function') this.renderStaticVisuals(buf);
   }
 
+  /**
+   * Lazily load the real-time Live-Mix bridge (src/pipeline/EngineerModeBridge).
+   * It shares this AudioContext so there is a single transport clock. Loaded by
+   * dynamic import so any failure (CSP, missing module) degrades gracefully to
+   * the offline Reprocess workflow rather than breaking Engineer Mode.
+   * @returns {Promise<object|null>}
+   */
+  async _ensureBridge() {
+    if (this._bridge) return this._bridge;
+    if (this._bridgePromise) return this._bridgePromise;
+    if (this._bridgeFailed || !this.ctx) return null;
+    this._bridgePromise = (async () => {
+      try {
+        const mod = await import('/src/pipeline/EngineerModeBridge.js');
+        this._bridge = new mod.EngineerModeBridge({ context: this.ctx });
+        structuredLog('info', '[VIP] Live-Mix bridge ready — rt sliders are now real-time.');
+        return this._bridge;
+      } catch (err) {
+        this._bridgeFailed = true;
+        structuredLog('warn', '[VIP] Live-Mix bridge unavailable; sliders apply on Reprocess.', { err: err && err.message });
+        return null;
+      } finally {
+        this._bridgePromise = null;
+      }
+    })();
+    return this._bridgePromise;
+  }
+
   buildLiveChain(buf) {
-    // Invoked by play() — delegate to orchestrator if available
+    // Preferred path: play through the real-time Live-Mix bridge so every
+    // rt:true slider is a live AudioParam (no Reprocess, no ML re-run).
+    const bridge = this._bridge;
+    if (bridge && typeof bridge.loadBuffer === 'function') {
+      try {
+        if (this._bridgeBuf !== buf) {
+          bridge.loadBuffer(buf);
+          this._bridgeBuf = buf;
+          // Seed the graph from the current slider positions.
+          if (typeof bridge.applyParams === 'function') bridge.applyParams(window.VIP_PARAMS || {});
+        }
+        // Honour the current scrub position, then start.
+        Promise.resolve(bridge.seek(this.playOffset || 0))
+          .then(() => bridge.play())
+          .catch((err) => structuredLog('warn', '[VIP] bridge play failed', { err: err && err.message }));
+        this.currentSource = null;
+        this._outGainNode = null;
+        return;
+      } catch (err) {
+        structuredLog('warn', '[VIP] bridge buildLiveChain failed; using offline graph.', { err: err && err.message });
+      }
+    }
+    // Kick off bridge init for next time if it is not ready yet.
+    if (!bridge && !this._bridgeFailed) this._ensureBridge();
+
+    // Fallback: direct AudioContext source node (offline-processed buffer).
     if (window._vipOrch && typeof window._vipOrch.buildLiveChain === 'function') {
       window._vipOrch.buildLiveChain(buf);
       return;
     }
-    // Fallback: direct AudioContext source node
     if (!this.ctx || typeof this.ctx.createBufferSource !== 'function') return;
     this.teardownChain();
     const p = window.VIP_PARAMS || {};
@@ -1980,6 +2047,15 @@ class VoiceIsolatePro {
   }
 
   teardownChain() {
+    // Bridge owns playback when active: capture position, then pause it.
+    if (this._bridge && typeof this._bridge.isPlaying === 'function') {
+      try {
+        if (this._bridge.isPlaying()) {
+          this.playOffset = this._bridge.currentTime();
+          this._bridge.pause();
+        }
+      } catch (_) { /* fall through to legacy teardown */ }
+    }
     if (this.currentSource) {
       try { this.currentSource.stop(); } catch (_) {}
       try { this.currentSource.disconnect(); } catch (_) {}
@@ -2096,7 +2172,36 @@ class VoiceIsolatePro {
   tickTime() {
     if (window._vipOrch && typeof window._vipOrch.tickTime === 'function') {
       window._vipOrch.tickTime();
+      return;
     }
+    // Drive the transport readout from the bridge clock and reset the UI when
+    // playback reaches the end.
+    const b = this._bridge;
+    if (!b || typeof b.currentTime !== 'function') return;
+    if (this._tickRaf) return; // single rAF loop
+    const loop = () => {
+      this._tickRaf = 0;
+      if (!this.isPlaying) return;
+      const cur = b.currentTime();
+      const dur = b.duration() || 0;
+      if (this.dom && this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(cur);
+      if (this.dom && this.dom.tpSeek && dur > 0) this.dom.tpSeek.value = (cur / dur) * 1000;
+      const ended = dur > 0 && !b.isPlaying() && cur >= dur - 0.05;
+      if (ended) {
+        this.isPlaying = false;
+        this.playOffset = 0;
+        if (this.dom && this.dom.tpSeek) this.dom.tpSeek.value = 0;
+        if (this.dom && this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(0);
+        if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
+        return;
+      }
+      this._tickRaf = (typeof requestAnimationFrame === 'function')
+        ? requestAnimationFrame(loop)
+        : setTimeout(loop, 50);
+    };
+    this._tickRaf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame(loop)
+      : setTimeout(loop, 50);
   }
 
   // ── Notifications / Toast ─────────────────────────────────────────────────
