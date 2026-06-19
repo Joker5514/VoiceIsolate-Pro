@@ -737,7 +737,7 @@ class VoiceIsolatePro {
     if (this._bridge && typeof this._bridge.applyParam === 'function') {
       try {
         if (this._bridge.applyParam(id, value)) return;
-      } catch (_) { /* fall through to legacy handling */ }
+      } catch { /* fall through to legacy handling */ }
     }
 
     const orch = window._vipOrch;
@@ -2054,7 +2054,7 @@ class VoiceIsolatePro {
           this.playOffset = this._bridge.currentTime();
           this._bridge.pause();
         }
-      } catch (_) { /* fall through to legacy teardown */ }
+      } catch { /* fall through to legacy teardown */ }
     }
     if (this.currentSource) {
       try { this.currentSource.stop(); } catch (_) {}

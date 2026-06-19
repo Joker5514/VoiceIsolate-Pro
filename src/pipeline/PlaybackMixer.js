@@ -634,8 +634,9 @@ export class PlaybackMixer {
    * @param {number} db
    */
   setLimiterThreshold(db) {
-    // Engage the limiter the moment a ceiling is dialled in.
-    this.limiter.ratio.value = 20;
+    // Engage the limiter the moment a ceiling is dialled in. Ramp the ratio
+    // (not a bare value = jump) so engaging mid-playback stays click-free.
+    this._applyParam(this.limiter.ratio, 20);
     this._applyParam(this.limiter.threshold, clamp(db, -24, 0));
   }
 

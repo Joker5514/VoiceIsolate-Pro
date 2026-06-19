@@ -109,7 +109,9 @@ export class EngineerModeBridge {
     const clean = [];
     const silent = [];
     for (let ch = 0; ch < channelCount; ch++) {
-      clean.push(new Float32Array(audioBuffer.getChannelData(ch)));
+      // loadStems → copyToChannel copies into the mixer's own buffer, so we can
+      // hand the source channel data straight through without a second copy.
+      clean.push(audioBuffer.getChannelData(ch));
       silent.push(new Float32Array(audioBuffer.length));
     }
     this.mixer.loadStems(clean, silent, audioBuffer.sampleRate);

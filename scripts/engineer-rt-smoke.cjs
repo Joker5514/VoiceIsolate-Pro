@@ -11,6 +11,8 @@
  * Usage: node scripts/engineer-rt-smoke.cjs   (PORT=xxxx to override)
  * Prereqs: pnpm install && npx playwright install chromium
  */
+// `window` is referenced only inside page.evaluate (browser context).
+/* global window */
 'use strict';
 
 const { spawn } = require('child_process');
@@ -28,7 +30,9 @@ catch { console.error('[engineer-rt-smoke] playwright missing — run pnpm insta
 const serverProc = spawn(process.execPath, ['server.js'], {
   cwd: path.resolve(__dirname, '..'),
   env: { ...process.env, PORT: String(PORT) },
-  stdio: ['ignore', 'pipe', 'pipe'],
+  // Ignore the child's streams: this test pings over HTTP and never reads the
+  // server log, so leaving stdout/stderr piped could fill the OS buffer and hang.
+  stdio: 'ignore',
 });
 let cleaned = false;
 function cleanup(code) {
@@ -149,7 +153,7 @@ function check(name, ok, detail = '') {
     check('outGain slider → output trim live', Math.abs(result.outputTrim - Math.pow(10, 6 / 20)) < 0.01, `${result.outputTrim.toFixed(3)}`);
     check('dryWet slider → wet/dry cross-fade live', Math.abs(result.wet - 0.4) < 0.001 && Math.abs(result.dry - 0.6) < 0.001, `wet ${result.wet} / dry ${result.dry}`);
     check('specTilt slider → tilt shelves live', Math.abs(result.tiltHigh - 3) < 0.001, `tiltHigh ${result.tiltHigh}`);
-    check('limThresh slider → limiter engaged (20:1)', result.limiterRatio === 20 && Math.abs(result.limiterThreshold + 3) < 0.01, `ratio ${result.limiterRatio}, thr ${result.limiterThreshold}`);
+    check('limThresh slider → limiter engaged (20:1)', Math.abs(result.limiterRatio - 20) < 0.05 && Math.abs(result.limiterThreshold + 3) < 0.05, `ratio ${result.limiterRatio}, thr ${result.limiterThreshold}`);
     check('compRatio slider → compressor live', Math.abs(result.compRatio - 8) < 0.001, `ratio ${result.compRatio}`);
     check('stereoWidth slider → width live', Math.abs(result.width - 1.5) < 0.001, `width ${result.width}`);
   }
