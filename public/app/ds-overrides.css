@@ -1,0 +1,331 @@
+/* ============================================================
+   VoiceIsolate Pro — Design System Overrides for Engineer Mode
+   Applies the DS visual language on top of the legacy style.css.
+   Import AFTER ds-tokens.css and style.css.
+   ============================================================ */
+
+/* ── Body & base ─────────────────────────────────────────────────────── */
+body {
+  background: var(--bg) !important;
+  font-family: var(--font-ui) !important;
+}
+/* Remove the neon radial gradient & scrolling grid from legacy body */
+body::before { display: none !important; }
+
+/* ── Header ──────────────────────────────────────────────────────────── */
+.hdr {
+  background: var(--surface-2) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: 1px solid var(--border-strong) !important;
+  box-shadow: var(--shadow-sm) !important;
+  padding: 0 16px !important;
+  height: var(--titlebar-h) !important;
+  gap: 12px !important;
+}
+
+/* brand icon — replace the teal gradient square with the equalizer mark */
+.hdr-icon {
+  width: 26px !important; height: 26px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+.hdr-icon svg { width: 26px; height: 26px; }
+
+/* title — remove the gradient text paint */
+.hdr-title {
+  font: var(--fw-bold) 13px/1 var(--font-ui) !important;
+  color: var(--text-hi) !important;
+  letter-spacing: var(--ls-tight, -0.01em) !important;
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  background-clip: unset !important;
+  -webkit-text-fill-color: unset !important;
+}
+
+.hdr-ver {
+  font: var(--fw-bold) 8px/1 var(--font-mono) !important;
+  letter-spacing: 0.22em !important;
+  text-transform: uppercase !important;
+  color: var(--red-500) !important;
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  background-clip: unset !important;
+  -webkit-text-fill-color: unset !important;
+}
+
+.hdr-badge, .diag-badge {
+  font: var(--fw-bold) var(--fs-2xs)/1 var(--font-mono) !important;
+  letter-spacing: 0.12em !important;
+  color: var(--text-dim) !important;
+  background: transparent !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: var(--radius-xs) !important;
+  padding: 2px 7px !important;
+}
+
+.hdr-stat .hs-val {
+  font: var(--fw-semibold) var(--fs-sm)/1 var(--font-mono) !important;
+  color: var(--red-400) !important;
+}
+.hdr-stat .hs-lbl {
+  font: var(--fw-bold) var(--fs-3xs)/1 var(--font-mono) !important;
+  letter-spacing: 0.1em !important;
+  color: var(--text-dim) !important;
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface-2) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+.card:hover {
+  border-color: var(--border-red) !important;
+  box-shadow: var(--shadow-md) !important;
+  transform: none !important;
+}
+
+/* ── Panels ──────────────────────────────────────────────────────────── */
+.panels {
+  background: var(--surface-3) !important;
+  backdrop-filter: none !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: none !important;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────── */
+.btn {
+  font: var(--fw-semibold) var(--fs-sm)/1 var(--font-ui) !important;
+  border-radius: var(--radius-md) !important;
+  transition: color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              transform var(--dur-fast) var(--ease-out) !important;
+}
+.btn:active:not(:disabled) { transform: translateY(0.5px) !important; }
+
+.btn-primary {
+  background: var(--red-600) !important;
+  border: 1px solid var(--red-600) !important;
+  color: #fff !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--red-500) !important;
+  border-color: var(--red-500) !important;
+  transform: none !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.btn-outline {
+  background: transparent !important;
+  color: var(--text-2) !important;
+  border: 1px solid var(--border-strong) !important;
+}
+.btn-outline:hover:not(:disabled) {
+  color: var(--text-hi) !important;
+  border-color: var(--border-red) !important;
+  background: var(--hover-fill) !important;
+  box-shadow: none !important;
+}
+
+.btn-reprocess {
+  background: var(--red-wash) !important;
+  color: var(--red-400) !important;
+  border: 1px solid var(--border-red) !important;
+}
+.btn-reprocess:hover:not(:disabled) {
+  background: rgba(220,38,38,0.12) !important;
+  border-color: var(--red-600) !important;
+  box-shadow: none !important;
+}
+
+/* Preset buttons */
+.btn-preset {
+  background: var(--surface-3) !important;
+  color: var(--text-dim) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+}
+.btn-preset:hover { color: var(--text) !important; border-color: var(--border-strong) !important; }
+.btn-preset.active {
+  background: var(--red-wash) !important;
+  color: var(--red-400) !important;
+  border-color: var(--border-red) !important;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────── */
+.tab {
+  font: var(--fw-semibold) var(--fs-xs)/1 var(--font-ui) !important;
+  background: var(--surface-3) !important;
+  color: var(--text-dim) !important;
+  border-radius: var(--radius-sm) !important;
+}
+.tab:hover { background: var(--surface-4) !important; color: var(--text-2) !important; }
+.tab.active { background: var(--red-600) !important; color: #fff !important; }
+
+/* ── Slider rows ─────────────────────────────────────────────────────── */
+.sr-row {
+  border-left: 2px solid transparent !important;
+  transition: background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out) !important;
+}
+.sr-row:hover {
+  background: var(--hover-fill) !important;
+  border-left-color: var(--red-600) !important;
+  transform: none !important;
+}
+.sr-row::after { display: none !important; }
+
+.sr-label { color: var(--text-2) !important; }
+.sr-row:hover .sr-label { color: var(--text-hi) !important; }
+
+.sr-val {
+  font-family: var(--font-mono) !important;
+  color: var(--text-2) !important;
+  background: var(--surface-3) !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+  transition: color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out) !important;
+}
+.sr-row:hover .sr-val {
+  color: var(--red-400) !important;
+  border-color: var(--border-red) !important;
+  background: var(--surface-3) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Slider track — red fill using --pct custom property */
+.sr-row > input[type="range"] {
+  background: linear-gradient(
+    to right,
+    var(--red-600) 0%,
+    var(--red-600) var(--pct, 50%),
+    var(--border-strong) var(--pct, 50%),
+    var(--border-strong) 100%
+  ) !important;
+  height: 3px !important;
+  border-radius: 2px !important;
+}
+.sr-row > input[type="range"]::-webkit-slider-thumb {
+  background: var(--text-hi) !important;
+  border: 2px solid var(--red-600) !important;
+  box-shadow: var(--shadow-sm) !important;
+  width: 12px !important; height: 12px !important;
+}
+.sr-row > input[type="range"]::-moz-range-thumb {
+  background: var(--text-hi) !important;
+  border: 2px solid var(--red-600) !important;
+  box-shadow: var(--shadow-sm) !important;
+  width: 12px !important; height: 12px !important;
+}
+/* Remove the realtime teal override */
+.sr-row > input[type="range"].realtime::-webkit-slider-thumb {
+  background: var(--text-hi) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* Slider group headers */
+.slider-group-header {
+  background: var(--surface-3) !important;
+  color: var(--text-2) !important;
+  transition: background var(--dur-fast) var(--ease-out) !important;
+}
+.slider-group-header::before {
+  background: var(--red-600) !important;
+  box-shadow: none !important;
+}
+.slider-group.active .slider-group-header::before { box-shadow: none !important; }
+.slider-group-header:hover {
+  background: var(--hover-fill) !important;
+  color: var(--text-hi) !important;
+  letter-spacing: normal !important;
+}
+.slider-group.active .slider-group-header { color: var(--text-hi) !important; }
+
+.slider-group-header .chevron {
+  color: var(--text-dim) !important;
+  text-shadow: none !important;
+}
+.slider-group.active .slider-group-header .chevron {
+  color: var(--red-500) !important;
+  text-shadow: none !important;
+}
+
+/* ── Upload zone ─────────────────────────────────────────────────────── */
+.upload-zone {
+  border: 2px dashed var(--border-strong) !important;
+  background: var(--canvas-bg) !important;
+  box-shadow: none !important;
+  border-radius: var(--radius-xl) !important;
+}
+.upload-zone:hover {
+  border-color: var(--red-600) !important;
+  background: var(--red-wash) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.upload-zone.dragover {
+  border-color: var(--red-500) !important;
+  background: rgba(220,38,38,0.1) !important;
+  box-shadow: none !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+.upload-title { color: var(--text-hi) !important; text-shadow: none !important; }
+.upload-sub { color: var(--text-dim) !important; }
+.upload-svg { color: var(--text-dim) !important; filter: none !important; }
+.upload-zone:hover .upload-svg,
+.upload-zone.dragover .upload-svg {
+  color: var(--red-600) !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+/* ── Boot splash ─────────────────────────────────────────────────────── */
+.boot-splash { background: var(--void) !important; }
+.boot-splash-card { background: var(--surface-2) !important; border: 1px solid var(--border-strong) !important; }
+.boot-mark { color: var(--red-600) !important; }
+.boot-title { color: var(--text-hi) !important; font-family: var(--font-ui) !important; }
+.boot-kicker {
+  font-family: var(--font-mono) !important;
+  color: var(--text-dim) !important;
+  letter-spacing: 0.12em !important;
+}
+.boot-text { color: var(--text-2) !important; }
+.boot-progress { background: var(--border-strong) !important; }
+.boot-progress-fill { background: var(--red-600) !important; }
+.boot-bar { background: var(--red-600) !important; }
+
+/* ── VIP status pills (if present) ──────────────────────────────────── */
+.vip-pill,
+span.vip-pill[data-state] {
+  font: var(--fw-bold) var(--fs-2xs)/1 var(--font-mono) !important;
+  letter-spacing: 0.12em !important;
+  border-radius: var(--radius-xs) !important;
+}
+
+/* ── Engineering grid opt-in ─────────────────────────────────────────── */
+.vip-gridfield,
+.em-gridfield {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important;
+}
+
+/* ── Misc structural cleanups ────────────────────────────────────────── */
+/* Remove neon glows from .main-grid cards */
+.main-grid .card:hover { box-shadow: var(--shadow-md) !important; }
+
+/* Reduce header neon stats glow */
+.hs-val { text-shadow: none !important; }

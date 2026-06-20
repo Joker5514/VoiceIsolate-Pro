@@ -1,0 +1,136 @@
+/* ============================================================
+   VoiceIsolate Pro — Design System Tokens
+   Single source of truth for all CSS custom properties.
+   Import this before any component or layout CSS.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  /* ── Backgrounds ──────────────────────────────────────────── */
+  --void:      #030306;
+  --bg:        #0a0a0e;
+  --app-bg:    #0a0a0e;
+  --surface-1: #0e0e13;
+  --surface-2: #111118;
+  --surface-3: #15151d;
+  --surface-4: #1a1a23;
+  --canvas-bg: #030306;
+  --well-bg:   rgba(0,0,0,0.32);
+
+  /* ── Signal red ramp ──────────────────────────────────────── */
+  --red-900: #450a0a;
+  --red-800: #7f1d1d;
+  --red-700: #b91c1c;
+  --red-600: #dc2626;
+  --red-500: #ef4444;
+  --red-400: #f87171;
+  --red-300: #fca5a5;
+  --red-wash: rgba(220,38,38,0.06);
+
+  /* ── Status ───────────────────────────────────────────────── */
+  --ok:     #34d399;
+  --warn:   #eab308;
+  --danger: #ef4444;
+  --info:   #60a5fa;
+
+  /* ── Stem colors ──────────────────────────────────────────── */
+  --stem-voice: #ef4444;
+  --stem-noise: #5e5e78;
+
+  /* ── Forensic magnitude ramp ──────────────────────────────── */
+  --signal-floor: #0a0e14;
+  --signal-low:   #1a2a3a;
+  --signal-mid:   #c2410c;
+  --signal-hot:   #f97316;
+  --signal-peak:  #fbbf24;
+  --signal-clip:  #ffffff;
+
+  /* ── Text ramp ────────────────────────────────────────────── */
+  --text-hi:    #eeeef2;
+  --text:       #c4c4d0;
+  --text-2:     #9090a4;
+  --text-dim:   #5e5e78;
+  --text-ghost: rgba(255,255,255,0.18);
+
+  /* ── Borders ──────────────────────────────────────────────── */
+  --border:       rgba(255,255,255,0.06);
+  --border-strong: #2a2a30;
+  --border-red:   rgba(220,38,38,0.14);
+  --border-focus: rgba(220,38,38,0.55);
+
+  /* ── Interaction fills ────────────────────────────────────── */
+  --hover-fill: rgba(255,255,255,0.04);
+
+  /* ── Shadows ──────────────────────────────────────────────── */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+  --glow-red:  0 0 20px rgba(220,38,38,0.35);
+
+  /* ── Engineering grid ─────────────────────────────────────── */
+  --grid-line: rgba(220,38,38,0.035);
+
+  /* ── Typography ───────────────────────────────────────────── */
+  --font-ui:   'Outfit', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --fw-regular:   400;
+  --fw-medium:    500;
+  --fw-semibold:  600;
+  --fw-bold:      700;
+  --fw-extrabold: 800;
+
+  /* ── Type scale ───────────────────────────────────────────── */
+  --fs-3xs: 9px;
+  --fs-2xs: 10px;
+  --fs-xs:  11px;
+  --fs-sm:  12px;
+  --fs-base: 13px;
+  --fs-md:  14px;
+  --fs-lg:  16px;
+  --fs-xl:  20px;
+  --fs-2xl: 24px;
+  --fs-3xl: 32px;
+
+  /* ── Composite text roles ─────────────────────────────────── */
+  --text-body:  400 var(--fs-base)/1.5 var(--font-ui);
+  --text-label: 500 var(--fs-xs)/1 var(--font-ui);
+  --eyebrow-size:  var(--fs-2xs);
+  --eyebrow-track: 0.14em;
+
+  /* ── Letter spacing ───────────────────────────────────────── */
+  --ls-tight:   -0.01em;
+  --ls-normal:  0em;
+  --ls-wide:    0.06em;
+  --ls-wider:   0.10em;
+  --ls-widest:  0.20em;
+
+  /* ── Corner radius ────────────────────────────────────────── */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 20px;
+
+  /* ── Spacing scale (4px base) ─────────────────────────────── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 28px;
+  --sp-8: 32px;
+
+  /* ── Motion ───────────────────────────────────────────────── */
+  --ease-out: cubic-bezier(0.22, 0.7, 0.2, 1);
+  --dur-fast: 0.12s;
+  --dur-base: 0.20s;
+  --dur-slow: 0.32s;
+
+  /* ── Layout ───────────────────────────────────────────────── */
+  --titlebar-h: 44px;
+  --rail-w:     280px;
+}
