@@ -133,7 +133,7 @@ function _renderProcLoader() {
  * runs so the UI remains active throughout.
  */
 function showSpinner(stage, { indeterminate = false } = {}) {
-  _procState = { active: /resamp/i.test(stage) ? 1 : 0, progress: 0 };
+  _procState = { active: stage.toLowerCase().includes('resamp') ? 1 : 0, progress: 0 };
   ui.procLoaderMount.hidden = false;
   _renderProcLoader();
 }
