@@ -77,7 +77,11 @@
         const val = props[key];
         if (val == null || key === 'key' || key === 'children') continue;
 
-        if (key === 'className') {
+        if (key === 'ref') {
+          /* Assign element to ref after creation so useEffect can access it. */
+          if (typeof val === 'function') val(el);
+          else if (val && typeof val === 'object') val.current = el;
+        } else if (key === 'className') {
           el.className = String(val);
         } else if (key === 'htmlFor') {
           el.htmlFor = String(val);
@@ -92,7 +96,8 @@
           }
         } else if (key.length > 2 && key[0] === 'o' && key[1] === 'n' &&
                    typeof val === 'function') {
-          el.addEventListener(key[2].toLowerCase() + key.slice(3), val);
+          /* key.slice(2).toLowerCase() maps onMouseEnter → mouseenter etc. */
+          el.addEventListener(key.slice(2).toLowerCase(), val);
         } else {
           /* setAttribute handles aria-*, data-*, role, etc. */
           try { el.setAttribute(key, String(val)); } catch (_) { /* skip */ }
@@ -110,7 +115,9 @@
   }
 
   function useEffect(fn /*, deps */) {
-    if (typeof fn === 'function') fn();
+    /* Defer to a microtask so refs are assigned and the element tree is
+     * returned before any effect body runs — matches React's contract. */
+    if (typeof fn === 'function') queueMicrotask(fn);
   }
 
   function useRef(init) {
