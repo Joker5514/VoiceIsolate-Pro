@@ -39,6 +39,30 @@ import { SAMPLE_RATE, PARAM_SMOOTHING, verifyContextSampleRate } from '../core/a
 const HP_FILTER_TYPE = 'highpass';
 const LP_FILTER_TYPE = 'lowpass';
 
+/**
+ * 10-band graphic EQ, matching the legacy Engineer Mode bands exactly so its
+ * sliders become genuine real-time AudioParam controls. Each band is a biquad:
+ * the two extremes are shelves, the middle eight are peaking filters centred on
+ * the geometric mean of the legacy frequency band, with Q ≈ fc / bandwidth so
+ * adjacent bands overlap the way a graphic EQ should. Every band defaults to
+ * 0 dB → transparent, so adding this chain never colours freshly loaded stems.
+ */
+const GRAPHIC_EQ_BANDS = Object.freeze([
+  { name: 'sub', type: 'lowshelf', freq: 60, Q: 0.7 },
+  { name: 'bass', type: 'peaking', freq: 110, Q: 0.78 },
+  { name: 'warmth', type: 'peaking', freq: 316, Q: 1.05 },
+  { name: 'body', type: 'peaking', freq: 707, Q: 1.41 },
+  { name: 'lowMid', type: 'peaking', freq: 1414, Q: 1.41 },
+  { name: 'mid', type: 'peaking', freq: 2828, Q: 1.41 },
+  { name: 'presence', type: 'peaking', freq: 4899, Q: 2.45 },
+  { name: 'clarity', type: 'peaking', freq: 7746, Q: 1.94 },
+  { name: 'air', type: 'peaking', freq: 12649, Q: 2.11 },
+  { name: 'brilliance', type: 'highshelf', freq: 16000, Q: 0.7 },
+]);
+
+/** Pivot frequency for the spectral-tilt shelf pair. */
+const TILT_PIVOT_HZ = 1000;
+
 export class PlaybackMixer {
   /**
    * @param {object} [options]
@@ -91,6 +115,41 @@ export class PlaybackMixer {
     this.masterGain = this.ctx.createGain();
     this.analyser = this.ctx.createAnalyser();
 
+    // ── Engineer-Mode parity effects (all default transparent) ───────────
+    // 10-band graphic EQ (legacy Engineer Mode), spliced after the 5-band
+    // console. Each band is a biquad with gain 0 dB by default → no colour.
+    /** @type {Map<string, BiquadFilterNode>} */
+    this.graphicBands = new Map();
+    /** @type {BiquadFilterNode[]} */
+    this._graphicChain = [];
+    for (const band of GRAPHIC_EQ_BANDS) {
+      const f = this.ctx.createBiquadFilter();
+      f.type = band.type;
+      f.frequency.value = band.freq;
+      f.Q.value = band.Q;
+      f.gain.value = 0;
+      this.graphicBands.set(band.name, f);
+      this._graphicChain.push(f);
+    }
+    // Spectral tilt: a low-shelf / high-shelf pair pivoting at 1 kHz. Equal and
+    // opposite gains brighten (+) or darken (−) around the pivot. 0 dB = flat.
+    this.tiltLow = this.ctx.createBiquadFilter();
+    this.tiltLow.type = 'lowshelf';
+    this.tiltLow.frequency.value = TILT_PIVOT_HZ;
+    this.tiltHigh = this.ctx.createBiquadFilter();
+    this.tiltHigh.type = 'highshelf';
+    this.tiltHigh.frequency.value = TILT_PIVOT_HZ;
+    // Brick-wall limiter: a DynamicsCompressor configured as a limiter once
+    // engaged. Default ratio 1 + threshold 0 = no reduction → fully transparent.
+    this.limiter = this.ctx.createDynamicsCompressor();
+    // Output trim (legacy outGain, ±24 dB): a plain post-chain gain, distinct
+    // from the master Volume control. 0 dB → unity.
+    this.outputTrim = this.ctx.createGain();
+    // Dry/wet parallel mix: wet = processed bus, dry = pre-effects tap. Default
+    // 100% wet (wetGain 1 / dryGain 0) → identical to a no-mix straight chain.
+    this.wetGain = this.ctx.createGain();
+    this.dryGain = this.ctx.createGain();
+
     this.lowShelf.type = 'lowshelf';
     this.lowShelf.frequency.value = 250;
     this.highShelf.type = 'highshelf';
@@ -126,6 +185,18 @@ export class PlaybackMixer {
     this.rightSum.gain.value = 1;
     this.widthGain.gain.value = 1;   // width 100% → Side unchanged → transparent
     this.analyser.fftSize = 2048;
+    // Tilt shelves flat by default.
+    this.tiltLow.gain.value = 0;
+    this.tiltHigh.gain.value = 0;
+    // Limiter transparent until engaged (ratio 1 = no compression).
+    this.limiter.threshold.value = 0;
+    this.limiter.knee.value = 0;
+    this.limiter.ratio.value = 1;
+    this.limiter.attack.value = 0.001;
+    this.limiter.release.value = 0.05;
+    this.outputTrim.gain.value = 1;  // 0 dB
+    this.wetGain.gain.value = 1;     // 100% wet
+    this.dryGain.gain.value = 0;
 
     this.speakerGain.connect(this.cleanGain);
     this.cleanGain.connect(this.voiceMuteGain);
@@ -140,12 +211,28 @@ export class PlaybackMixer {
     this.eqLowMid.connect(this.eqMid);
     this.eqMid.connect(this.eqHighMid);
     this.eqHighMid.connect(this.highShelf);
-    this.highShelf.connect(this.compressor);
+    // 5-band console → 10-band graphic EQ → spectral tilt → compressor.
+    this.highShelf.connect(this._graphicChain[0]);
+    for (let i = 0; i < this._graphicChain.length - 1; i++) {
+      this._graphicChain[i].connect(this._graphicChain[i + 1]);
+    }
+    this._graphicChain[this._graphicChain.length - 1].connect(this.tiltLow);
+    this.tiltLow.connect(this.tiltHigh);
+    this.tiltHigh.connect(this.compressor);
     this.compressor.connect(this.makeupGain);
-    // De-esser slot (worklet spliced in on load): makeupGain → deEsserInput → stereo.
+    // De-esser slot (worklet spliced in on load): makeupGain → deEsserInput → limiter.
     this.makeupGain.connect(this.deEsserInput);
-    // Stereo-width mid/side matrix: deEsserInput → stereoIn → split → M/S → merge → master.
-    this.deEsserInput.connect(this.stereoIn);
+    // Tail: deEsserInput → limiter → outputTrim → wetGain ─┐
+    //                      pre-effects gateInput → dryGain ─┴→ stereoIn → M/S → master.
+    this.deEsserInput.connect(this.limiter);
+    this.limiter.connect(this.outputTrim);
+    this.outputTrim.connect(this.wetGain);
+    this.wetGain.connect(this.stereoIn);
+    // Dry tap is taken pre-effects (at the gate input) so dry/wet blends the
+    // unprocessed stem mix against the fully processed bus.
+    this.gateInput.connect(this.dryGain);
+    this.dryGain.connect(this.stereoIn);
+    // Stereo-width mid/side matrix: stereoIn → split → M/S → merge → master.
     this.stereoIn.connect(this.msSplit);
     // Mid = (L + R) · 0.5  (both split legs sum into midGain)
     this.msSplit.connect(this.midGain, 0);
@@ -183,7 +270,7 @@ export class PlaybackMixer {
     // (avoids a splice-after-dispose race).
     this._disposed = false;
     /** @type {AudioWorkletNode|null} */ this.gate = null;
-    this._gateParams = { threshold: -45, range: 0, attack: 5, release: 100 };
+    this._gateParams = { threshold: -45, range: 0, attack: 5, release: 100, hold: 0 };
     this._gatePromise = this._loadGate();
     /** @type {AudioWorkletNode|null} */ this.deEsser = null;
     this._deEsserParams = { frequency: 6000, amount: 0 };
@@ -252,9 +339,9 @@ export class PlaybackMixer {
       await this.ctx.audioWorklet.addModule('/src/workers/DeEsserProcessor.js');
       if (this._disposed) return; // disposed mid-load — don't touch a torn-down graph
       const deEsser = new NodeCtor(this.ctx, 'vip-deesser');
-      this.deEsserInput.disconnect(this.stereoIn);
+      this.deEsserInput.disconnect(this.limiter);
       this.deEsserInput.connect(deEsser);
-      deEsser.connect(this.stereoIn);
+      deEsser.connect(this.limiter);
       for (const [name, value] of Object.entries(this._deEsserParams)) {
         const p = deEsser.parameters.get(name);
         if (p) p.value = value;
@@ -511,6 +598,72 @@ export class PlaybackMixer {
     this._applyParam(this.widthGain.gain, clamp(percentage, 0, 200) / 100);
   }
 
+  // ─── Engineer-Mode parity controls (AudioParam only — never ML) ────────
+  // 10-band graphic EQ, spectral tilt, brick-wall limiter, output trim and
+  // dry/wet — every one a live AudioParam, so the legacy Engineer Mode sliders
+  // become real-time the same way the 5-band console does (CLAUDE.md §1).
+
+  /**
+   * Set one graphic-EQ band's gain in dB (−12 … +12). `band` is one of the
+   * GRAPHIC_EQ_BANDS names (sub, bass, warmth, body, lowMid, mid, presence,
+   * clarity, air, brilliance). Unknown bands are ignored.
+   * @param {string} band
+   * @param {number} db
+   */
+  setGraphicEq(band, db) {
+    const node = this.graphicBands.get(band);
+    if (!node) return;
+    this._applyParam(node.gain, clamp(db, -12, 12));
+  }
+
+  /**
+   * Spectral tilt in dB (−6 … +6). Positive brightens (lifts highs, dips lows)
+   * around the 1 kHz pivot; negative darkens. 0 = flat.
+   * @param {number} db
+   */
+  setSpectralTilt(db) {
+    const tilt = clamp(db, -6, 6);
+    this._applyParam(this.tiltLow.gain, -tilt);
+    this._applyParam(this.tiltHigh.gain, tilt);
+  }
+
+  /**
+   * Brick-wall limiter ceiling in dB (−24 … 0). Engaging the limiter sets a
+   * hard 20:1 ratio with a fast attack; the threshold is the output ceiling.
+   * A ceiling of 0 dB is effectively transparent for sub-full-scale audio.
+   * @param {number} db
+   */
+  setLimiterThreshold(db) {
+    // Engage the limiter the moment a ceiling is dialled in. Ramp the ratio
+    // (not a bare value = jump) so engaging mid-playback stays click-free.
+    this._applyParam(this.limiter.ratio, 20);
+    this._applyParam(this.limiter.threshold, clamp(db, -24, 0));
+  }
+
+  /** Limiter release in milliseconds (10 … 500); stored as seconds. */
+  setLimiterRelease(ms) {
+    this._applyParam(this.limiter.release, clamp(ms, 10, 500) / 1000);
+  }
+
+  /** Final output trim in dB (−24 … +24), applied as a linear gain. */
+  setOutputGain(db) {
+    this._applyParam(this.outputTrim.gain, Math.pow(10, clamp(db, -24, 24) / 20));
+  }
+
+  /**
+   * Dry/wet mix as a percentage (0 … 100). 100 = fully processed (wet);
+   * 0 = the unprocessed stem mix (dry). Cross-fades the two parallel taps.
+   * @param {number} percentage
+   */
+  setDryWet(percentage) {
+    const wet = clamp(percentage, 0, 100) / 100;
+    this._applyParam(this.wetGain.gain, wet);
+    this._applyParam(this.dryGain.gain, 1 - wet);
+  }
+
+  /** Noise-gate hold time in ms (0 … 500): how long the gate stays open after the signal drops. */
+  setGateHold(ms) { this._setGateParam('hold', clamp(ms, 0, 500)); }
+
   /** Noise-gate threshold in dB (−100 … 0): level below which it attenuates. */
   setGateThreshold(db) { this._setGateParam('threshold', clamp(db, -100, 0)); }
 
@@ -720,8 +873,10 @@ export class PlaybackMixer {
       this.noiseGain, this.noiseMuteGain, this.gateInput, this.gate,
       this.highpass, this.lowpass,
       this.lowShelf, this.eqLowMid, this.eqMid, this.eqHighMid,
-      this.highShelf, this.compressor, this.makeupGain,
-      this.deEsserInput, this.deEsser,
+      this.highShelf, ...this._graphicChain, this.tiltLow, this.tiltHigh,
+      this.compressor, this.makeupGain,
+      this.deEsserInput, this.deEsser, this.limiter, this.outputTrim,
+      this.wetGain, this.dryGain,
       this.stereoIn, this.msSplit, this.sideRNeg, this.midGain, this.sideGain,
       this.widthGain, this.sideSNeg, this.leftSum, this.rightSum, this.msMerge,
       this.masterGain, this.analyser]) {
