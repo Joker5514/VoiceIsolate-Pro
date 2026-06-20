@@ -47,12 +47,24 @@ describe('Landing page — video preview plays in sync with processed audio', ()
   });
 });
 
-describe('Landing page — realtime processing spinner', () => {
-  test('index.html exposes the spinner ring + live readouts', () => {
-    for (const id of ['procSpinner', 'procRingFill', 'procPct', 'procStage', 'procProgressbar']) {
-      expect(html).toContain(`id="${id}"`);
-    }
-    expect(html).toMatch(/role="progressbar"/);
+describe('Landing page — realtime processing indicator (ProcessLoader)', () => {
+  test('index.html has a ProcessLoader mount point (no legacy SVG ring)', () => {
+    expect(html).toContain('id="procLoaderMount"');
+    // Legacy SVG ring elements are replaced by the DS component.
+    expect(html).not.toContain('id="procSpinner"');
+    expect(html).not.toContain('id="procRingFill"');
+    expect(html).not.toContain('strokeDashoffset');
+  });
+
+  test('DS bundle scripts are loaded before the landing module', () => {
+    expect(html).toContain('react-mini.js');
+    expect(html).toContain('_ds_bundle.js');
+    // Both must appear before the module entry-point.
+    const miniIdx  = html.indexOf('react-mini.js');
+    const bundleIdx = html.indexOf('_ds_bundle.js');
+    const moduleIdx = html.indexOf('/landing.js');
+    expect(miniIdx).toBeLessThan(moduleIdx);
+    expect(bundleIdx).toBeLessThan(moduleIdx);
   });
 
   test('the old thin <progress> bar is fully removed', () => {
@@ -60,11 +72,12 @@ describe('Landing page — realtime processing spinner', () => {
     expect(js).not.toContain('ui.progress');
   });
 
-  test('inference progress drives a determinate ring from the worker percent', () => {
+  test('inference progress drives the ProcessLoader component', () => {
     expect(js).toContain('function setProgress(');
     expect(js).toContain("case 'progress'");
     expect(js).toContain('setProgress(msg.percent');
-    expect(js).toContain('strokeDashoffset'); // ring fills via dashoffset
+    expect(js).toContain('ProcessLoader'); // DS component is used
+    expect(js).not.toContain('strokeDashoffset'); // ring approach replaced
   });
 
   test('decode + resample show an indeterminate spinner', () => {
@@ -75,14 +88,14 @@ describe('Landing page — realtime processing spinner', () => {
 
   test('spinner is dismissed on stems, error, and worker failure', () => {
     expect(js).toContain('hideSpinner()');
-    // every terminal path clears it
     const hideCount = (js.match(/hideSpinner\(\)/g) || []).length;
     expect(hideCount).toBeGreaterThanOrEqual(4);
   });
 
-  test('CSS defines the spinner + video styles', () => {
-    expect(css).toContain('.proc-ring-fill');
-    expect(css).toContain('proc-spin'); // indeterminate keyframes
+  test('CSS defines ProcessLoader animations + video styles', () => {
+    expect(css).toContain('vip-scan');        // scan-bar keyframes
+    expect(css).toContain('vip-node-pulse');  // pipeline-node keyframes
+    expect(css).toContain('.vip-ploader__bar');
     expect(css).toContain('.video-player');
   });
 });

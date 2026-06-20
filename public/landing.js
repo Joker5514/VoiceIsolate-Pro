@@ -48,13 +48,8 @@ const ui = {
   ],
   statusDot: $('statusDot'),
   statusText: $('statusText'),
-  // Realtime processing spinner (indeterminate while decoding/resampling,
-  // determinate during ONNX inference).
-  procSpinner: $('procSpinner'),
-  procRingFill: $('procRingFill'),
-  procPct: $('procPct'),
-  procStage: $('procStage'),
-  procProgressbar: $('procProgressbar'),
+  // Realtime processing indicator — DS ProcessLoader component mounts here.
+  procLoaderMount: $('procLoaderMount'),
   timeReadout: $('timeReadout'),
   presetSelect: $('presetSelect'),
   waveCanvas: $('waveCanvas'),
@@ -82,10 +77,6 @@ let videoUrl = null;
 
 const DIARIZATION_TIMEOUT_MS = 60000;
 
-// SVG ring circumference for r=22 (2π·22). Must match the stroke-dasharray in
-// index.html — the determinate ring fills by shrinking stroke-dashoffset.
-const RING_CIRCUMFERENCE = 138.23;
-
 function setStatus(msg, cls = '') {
   ui.statusText.textContent = msg;
   ui.statusDot.className = `status-dot${cls ? ` ${cls}` : ''}`;
@@ -96,43 +87,67 @@ function fmtTime(s) {
   return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 }
 
-// ─── Processing spinner (realtime progress) ──────────────────────────────────
+// ─── Processing indicator (DS ProcessLoader component) ───────────────────────
 
-/**
- * Show the spinner. `indeterminate` spins a fixed arc for stages without a
- * percentage (decode/resample); determinate stages call setProgress().
- */
-function showSpinner(stage, { indeterminate = false } = {}) {
-  ui.procSpinner.hidden = false;
-  ui.procStage.textContent = stage;
-  if (indeterminate) {
-    ui.procSpinner.classList.add('indeterminate');
-    ui.procPct.textContent = '';
-    ui.procRingFill.style.opacity = '1';
-    ui.procRingFill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * 0.75);
-    ui.procProgressbar.removeAttribute('aria-valuenow');
+// Design-system namespace populated by _ds_bundle.js (classic script, loads
+// before this module so the reference is valid at module init time).
+const DS = window.VoiceIsolateProDesignSystem_38f745;
+
+const PROC_STAGES = [
+  { id: 'decode',   label: 'Decode'   },
+  { id: 'resample', label: 'Resample' },
+  { id: 'separate', label: 'Separate' },
+];
+
+let _procState = { active: 0, progress: 0 };
+
+function _renderProcLoader() {
+  const mount = ui.procLoaderMount;
+  if (!mount) return;
+  mount.innerHTML = '';
+  if (DS && DS.ProcessLoader) {
+    try {
+      const el = DS.ProcessLoader({
+        stages: PROC_STAGES,
+        active: _procState.active,
+        progress: _procState.progress,
+      });
+      if (el instanceof Node) mount.appendChild(el);
+    } catch (err) {
+      console.warn('[VIP] ProcessLoader render error:', err);
+    }
   } else {
-    setProgress(0, stage);
+    // Graceful fallback when the DS bundle is unavailable.
+    const fb = document.createElement('div');
+    fb.style.cssText = 'padding:10px 0;color:var(--text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--font-ui)';
+    fb.textContent = PROC_STAGES[_procState.active]
+      ? `${PROC_STAGES[_procState.active].label}… ${_procState.progress > 0 ? _procState.progress + '%' : ''}`
+      : 'Processing…';
+    mount.appendChild(fb);
   }
 }
 
-/** Drive the determinate ring + numeric readout from a 0–100 percentage. */
+/**
+ * Show the ProcessLoader. `indeterminate` is accepted for call-site compat
+ * (decode/resample have no known duration); the scan-bar animation always
+ * runs so the UI remains active throughout.
+ */
+function showSpinner(stage, { indeterminate = false } = {}) {
+  _procState = { active: /resamp/i.test(stage) ? 1 : 0, progress: 0 };
+  ui.procLoaderMount.hidden = false;
+  _renderProcLoader();
+}
+
+/** Advance to the Separate stage and update the live progress percentage. */
 function setProgress(percent, stage) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
-  ui.procSpinner.hidden = false;
-  ui.procSpinner.classList.remove('indeterminate');
-  ui.procPct.textContent = `${pct}%`;
-  if (stage) ui.procStage.textContent = stage;
-  // At 0% the dash is fully offset; the round linecap would still draw a dot on
-  // the track, so hide the fill entirely until there is real progress.
-  ui.procRingFill.style.opacity = pct === 0 ? '0' : '1';
-  ui.procRingFill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - pct / 100));
-  ui.procProgressbar.setAttribute('aria-valuenow', String(pct));
+  _procState = { active: 2, progress: pct };
+  ui.procLoaderMount.hidden = false;
+  _renderProcLoader();
 }
 
 function hideSpinner() {
-  ui.procSpinner.hidden = true;
-  ui.procSpinner.classList.remove('indeterminate');
+  ui.procLoaderMount.hidden = true;
 }
 
 // ─── Video preview (picture in sync with processed audio) ────────────────────
