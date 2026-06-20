@@ -12,10 +12,6 @@ const __ds_scope = {};
 try { (() => {
 function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
 // Header.jsx — top app bar: brand, UI-scale stepper, session stat readouts.
-const {
-  Button,
-  Badge
-} = window.VoiceIsolateProDesignSystem_38f745;
 function HeaderStat({
   label,
   value,
@@ -38,6 +34,10 @@ function Header({
   onScale,
   onSaveScale
 }) {
+  const {
+    Button,
+    Badge
+  } = window.VoiceIsolateProDesignSystem_38f745;
   return /*#__PURE__*/React.createElement("header", {
     className: "ew-hdr"
   }, /*#__PURE__*/React.createElement("div", {
