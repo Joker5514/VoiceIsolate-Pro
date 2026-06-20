@@ -9,7 +9,7 @@
       "destination": "/api/handler"
     },
     {
-      "source": "/((?!api/|app/|blueprint/|docs/|lib/|src/|icon\\.jpg|manifest\\.json|sw\\.js|landing\\.css).*)",
+      "source": "/((?!api/|app/|blueprint/|docs/|lib/|src/|icon\\.jpg|manifest\\.json|sw\\.js|landing\\.js|landing\\.css).*)",
       "destination": "/index.html"
     }
   ],
