@@ -779,7 +779,7 @@ class VoiceIsolatePro {
         this.handleFile(e.dataTransfer.files[0]);
       });
     }
-    bind('clearFile', d.clearFile, 'click', () => this._clearFile());
+    bind('clearFile', d.clearFile, 'click', () => { if (this.inputBuffer && !confirm('Are you sure you want to clear the current file? Unsaved processed audio will be lost.')) return; this._clearFile(); });
 
     // Process buttons
     bind('processBtn', d.processBtn, 'click', () => this.runPipeline());
@@ -854,6 +854,7 @@ class VoiceIsolatePro {
 
     // Reset sliders
     bind('resetSlidersBtn', d.resetSlidersBtn, 'click', () => {
+      if (!confirm('Are you sure you want to reset all controls to their default values?')) return;
       qsa('[id^="sl_"]').forEach(el => {
         const id = el.id.slice(3);
         const spec = SLIDER_BY_ID[id];
