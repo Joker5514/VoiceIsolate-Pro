@@ -3,6 +3,16 @@
   "buildCommand": "node scripts/validate.js && rm -rf public/src && cp -r src public/src",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/handler"
+    },
+    {
+      "source": "/((?!api/|app/|blueprint/|docs/|lib/|src/|icon\\.jpg|manifest\\.json|sw\\.js|landing\\.css).*)",
+      "destination": "/index.html"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
