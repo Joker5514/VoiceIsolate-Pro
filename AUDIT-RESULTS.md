@@ -1,5 +1,11 @@
 # Audit Results
 
+> **Up to date as of 2026-06-21** — see [`docs/AUDIT-REPORT-2026-06-21.md`](docs/AUDIT-REPORT-2026-06-21.md)
+> for the current comprehensive audit. Headline: all gates green (validate ✓, 1836 tests ✓,
+> lint 0 errors, both model hashes verified, architecture compliant). One material finding:
+> two **moderate** transitive dependency CVEs (`qs`, `ip-address`) fixable via `pnpm.overrides`.
+> The notes below are the historical record of the earlier `public/app/` cleanup pass.
+
 ## Found
 - Redundant `voice-isolate-processor.js` AudioWorklet registered a second processor name beside the canonical `dsp-processor.js`.
 - Single-pass STFT boundaries were implicit in several DSP paths rather than explicitly marked.
