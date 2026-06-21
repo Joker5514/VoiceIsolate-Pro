@@ -46,8 +46,11 @@ const ui = {
     $('gateAttackSlider'), $('gateReleaseSlider'),
     $('deEsserFreqSlider'), $('deEsserAmountSlider'),
   ],
-  statusDot: $('statusDot'),
-  statusText: $('statusText'),
+  // DS StatusPill mounts here (setStatus re-renders it); the Badge and
+  // LevelMeter mount points are likewise populated by landing.js.
+  statusPillMount: $('statusPillMount'),
+  archBadgeMount: $('archBadgeMount'),
+  outputMeterMount: $('outputMeterMount'),
   // Realtime processing indicator — DS ProcessLoader component mounts here.
   procLoaderMount: $('procLoaderMount'),
   timeReadout: $('timeReadout'),
@@ -78,8 +81,7 @@ let videoUrl = null;
 const DIARIZATION_TIMEOUT_MS = 60000;
 
 function setStatus(msg, cls = '') {
-  ui.statusText.textContent = msg;
-  ui.statusDot.className = `status-dot${cls ? ` ${cls}` : ''}`;
+  renderStatusPill(STATE_FOR_CLS[cls] || 'pending', msg);
 }
 
 function fmtTime(s) {
@@ -92,6 +94,42 @@ function fmtTime(s) {
 // Design-system namespace populated by _ds_bundle.js (classic script, loads
 // before this module so the reference is valid at module init time).
 const DS = window.VoiceIsolateProDesignSystem_38f745;
+
+// Map the legacy status classes ('', 'warn', 'error', 'active') to the DS
+// StatusPill's data-state values.
+const STATE_FOR_CLS = { '': 'pending', warn: 'warn', error: 'error', active: 'active' };
+
+/** Render the DS StatusPill into the status row (falls back to dot + text). */
+function renderStatusPill(state, msg) {
+  const mount = ui.statusPillMount;
+  if (!mount) return;
+  if (DS && DS.StatusPill) {
+    try {
+      const el = DS.StatusPill({ state, children: msg });
+      if (el instanceof Node) { mount.replaceChildren(el); return; }
+    } catch (err) {
+      console.warn('[VIP] StatusPill render error:', err);
+    }
+  }
+  // Graceful fallback when the DS bundle is unavailable.
+  const dot = document.createElement('span');
+  dot.className = `status-dot${state === 'pending' ? '' : ` ${state}`}`;
+  const txt = document.createElement('span');
+  txt.textContent = msg;
+  mount.replaceChildren(dot, txt);
+}
+
+/** Swap the static header text badge for the DS Badge component when present. */
+function mountBadge() {
+  const mount = ui.archBadgeMount;
+  if (!mount || !(DS && DS.Badge)) return; // fallback: the static .arch-badge text
+  try {
+    const el = DS.Badge({ variant: 'accent', dot: true, children: 'STEM-SPLIT & LIVE-MIX' });
+    if (el instanceof Node) { mount.classList.remove('arch-badge'); mount.replaceChildren(el); }
+  } catch (err) {
+    console.warn('[VIP] Badge render error:', err);
+  }
+}
 
 const PROC_STAGES = [
   { id: 'decode',   label: 'Decode'   },
@@ -343,12 +381,27 @@ const READOUTS = [
   ['deEsserAmountSlider', 'deEsserAmountVal', (v) => `${v}%`],
 ];
 
+/** Paint the DS ParamSlider red value-fill (--pct) from the slider position. */
+function paintSliderFill(slider) {
+  const min = Number(slider.min) || 0;
+  const span = Number(slider.max) - min;
+  const pct = span > 0 ? ((Number(slider.value) - min) / span) * 100 : 0;
+  slider.style.setProperty('--pct', `${Math.max(0, Math.min(100, pct))}%`);
+}
+
 function wireReadouts() {
   for (const [sliderId, valId, fmt] of READOUTS) {
     const slider = $(sliderId);
     const val = $(valId);
     if (!slider || !val) continue;
-    slider.addEventListener('input', () => { val.textContent = fmt(slider.value); });
+    // Adopt the DS ParamSlider track (red value-fill) on the existing input —
+    // non-destructive: same id/range, so SliderUI binding + presets still apply.
+    slider.classList.add('vip-slider__input');
+    paintSliderFill(slider);
+    slider.addEventListener('input', () => {
+      val.textContent = fmt(slider.value);
+      paintSliderFill(slider);
+    });
   }
 }
 
@@ -450,6 +503,7 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
   mixer.loadStems(clean, noise, sampleRate);
   visualizer.loadStems(clean, noise, mixer.duration());
   syncMuteButtons();
+  startOutputMeter();
 
   for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn,
     ui.muteVoiceBtn, ui.muteNoiseBtn, ui.presetSelect,
@@ -478,13 +532,14 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
 
 function syncMuteButtons() {
   if (!mixer) return;
-  const paint = (btn, muted, label) => {
-    btn.textContent = muted ? `Unmute ${label}` : `Mute ${label}`;
-    btn.classList.toggle('active', muted);
-    btn.setAttribute('aria-pressed', String(muted));
+  // DS Switch visual state: thumb position (--on) + aria-checked. The label
+  // stays static ("Mute Voice"/"Mute Background"); the thumb shows on/off.
+  const paint = (btn, muted) => {
+    btn.classList.toggle('vip-switch--on', muted);
+    btn.setAttribute('aria-checked', String(muted));
   };
-  paint(ui.muteVoiceBtn, mixer.isVoiceMuted(), 'Voice');
-  paint(ui.muteNoiseBtn, mixer.isNoiseMuted(), 'Background');
+  paint(ui.muteVoiceBtn, mixer.isVoiceMuted());
+  paint(ui.muteNoiseBtn, mixer.isNoiseMuted());
 }
 
 function wireMuteButtons() {
@@ -498,6 +553,52 @@ function wireMuteButtons() {
     mixer.setNoiseMuted(!mixer.isNoiseMuted());
     syncMuteButtons();
   });
+}
+
+// ─── Output level meter (DS LevelMeter, real RMS from the mixer analyser) ────
+
+let _meterEl = null;   // mounted .vip-meter node; the RAF loop reuses its DOM
+let _meterRAF = 0;
+let _meterTd = null;   // reusable time-domain scratch buffer
+
+/** dBFS amplitude (0..1) → LevelMeter 0..100 (value-100 = dBFS, -100 floor). */
+function meterValue(amp) {
+  if (amp <= 1e-5) return 0;
+  return Math.max(0, Math.min(100, 100 + 20 * Math.log10(amp)));
+}
+
+function _meterTick() {
+  _meterRAF = requestAnimationFrame(_meterTick);
+  if (!mixer || !_meterEl) return;
+  let analyser;
+  try { analyser = mixer.getAnalyser(); } catch { return; }
+  if (!analyser) return;
+  const n = analyser.fftSize;
+  if (!_meterTd || _meterTd.length !== n) _meterTd = new Float32Array(n);
+  analyser.getFloatTimeDomainData(_meterTd);
+  let sumSq = 0;
+  for (let i = 0; i < n; i++) { const s = _meterTd[i]; sumSq += s * s; }
+  const v = meterValue(Math.sqrt(sumSq / n));
+  const fill = _meterEl.querySelector('.vip-meter__fill');
+  const read = _meterEl.querySelector('.vip-meter__val');
+  if (fill) fill.style.width = `${v}%`;
+  if (read) read.textContent = v <= 0 ? '-∞' : (v - 100).toFixed(1);
+}
+
+/** Reveal + mount the DS LevelMeter once; the RAF loop drives it from real audio. */
+function startOutputMeter() {
+  const mount = ui.outputMeterMount;
+  if (!mount) return;
+  mount.hidden = false;
+  if (!_meterEl && DS && DS.LevelMeter) {
+    try {
+      const el = DS.LevelMeter({ label: 'Output', value: 0, unit: 'dB' });
+      if (el instanceof Node) { mount.replaceChildren(el); _meterEl = el; }
+    } catch (err) {
+      console.warn('[VIP] LevelMeter render error:', err);
+    }
+  }
+  if (!_meterRAF && _meterEl) _meterRAF = requestAnimationFrame(_meterTick);
 }
 
 function wireTransport() {
@@ -524,4 +625,5 @@ ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.val
 wireReadouts();
 wireTransport();
 wireMuteButtons();
+mountBadge();
 setStatus('Idle — choose a file to begin', '');
