@@ -10,6 +10,7 @@
   --canvas-bg:  #030306;
   --well-bg:    rgba(0,0,0,0.32);
 
+  --red-700: #b91c1c;
   --red-600: #dc2626;
   --red-500: #ef4444;
   --red-400: #f87171;
@@ -45,6 +46,7 @@
   --fw-semibold: 600;
   --fw-bold:     700;
 
+  --fs-3xs: 9px;
   --fs-2xs: 10px;
   --fs-xs:  11px;
   --fs-sm:  12px;
@@ -58,6 +60,11 @@
   --radius-md: 6px;
   --radius-lg: 10px;
   --radius-xl: 14px;
+
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 28px;
 
   --dur-fast: 0.12s;
   --dur-base: 0.20s;
@@ -270,33 +277,31 @@ input[type="file"]:focus { border-color: var(--border-focus); }
   color: var(--text-2);
 }
 
-/* ── Processing spinner ───────────────────────────────────────────────── */
-.proc-spinner {
-  display: flex; align-items: center; gap: 14px; margin-top: 14px;
-}
-.proc-spinner[hidden] { display: none; }
+/* ── ProcessLoader (DS bundle component) ──────────────────────────────── */
+/* Mount point: hidden until landing.js mounts the component inside it.    */
+#procLoaderMount { margin-top: 14px; }
+#procLoaderMount[hidden] { display: none; }
 
-.proc-ring { flex: none; transform: rotate(-90deg); transform-origin: 50% 50%; }
-.proc-ring-track { stroke: var(--border-strong); stroke-width: 5; }
-.proc-ring-fill {
-  stroke: var(--red-600); stroke-width: 5; stroke-linecap: round;
-  transition: stroke-dashoffset 0.2s linear;
+/* Spectral scan-bar animation — staggered per bar via inline delay prop.  */
+@keyframes vip-scan {
+  0%, 100% { transform: scaleY(0.15); opacity: 0.45; }
+  50%       { transform: scaleY(1.0);  opacity: 1;    }
 }
-.proc-spinner.indeterminate .proc-ring { animation: proc-spin 0.9s linear infinite; }
-.proc-spinner.indeterminate .proc-ring-fill { transition: none; }
-@keyframes proc-spin { to { transform: rotate(270deg); } }
 
-.proc-spinner-info { display: flex; flex-direction: column; gap: 4px; line-height: 1.2; }
-.proc-pct {
-  font: var(--fw-bold) 18px/1 var(--font-mono);
-  color: var(--text-hi);
-  font-variant-numeric: tabular-nums;
+/* Active pipeline-node pulse. */
+@keyframes vip-node-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px var(--red-wash); }
+  50%       { box-shadow: 0 0 0 8px rgba(220,38,38,0.12); }
 }
-.proc-pct:empty { display: none; }
-.proc-stage { font: var(--fw-regular) var(--fs-sm)/1 var(--font-ui); color: var(--text-dim); }
+
+/* Each scan bar fills its flex row height and scales from the bottom. */
+.vip-ploader__bar {
+  height: 100%;
+  transform-origin: 50% 100%;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .proc-spinner.indeterminate .proc-ring { animation: none; }
+  .vip-ploader__bar { animation: none !important; }
 }
 
 /* ── Video preview ────────────────────────────────────────────────────── */
