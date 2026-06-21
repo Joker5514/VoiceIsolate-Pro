@@ -730,7 +730,8 @@ input[type="range"]:disabled { opacity: 0.34; cursor: not-allowed; }
   top: 0; left: 0; bottom: 0;
   width: 0%;
   background: linear-gradient(to right, var(--ok), var(--warn) 78%, var(--danger));
-  transition: width 0.06s linear;
+  /* No width transition: the fill is driven every animation frame from JS, so
+     a CSS transition would constantly restart and stutter behind the writes. */
 }
 .vip-meter__val { font: var(--fw-medium) var(--fs-2xs)/1 var(--font-mono); color: var(--text-2); flex: none; min-width: 42px; text-align: right; }
 

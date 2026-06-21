@@ -557,9 +557,12 @@ function wireMuteButtons() {
 
 // ─── Output level meter (DS LevelMeter, real RMS from the mixer analyser) ────
 
-let _meterEl = null;   // mounted .vip-meter node; the RAF loop reuses its DOM
+let _meterEl = null;     // mounted .vip-meter node
+let _meterFill = null;   // cached .vip-meter__fill (driven each frame)
+let _meterRead = null;   // cached .vip-meter__val
 let _meterRAF = 0;
-let _meterTd = null;   // reusable time-domain scratch buffer
+let _meterTd = null;     // reusable time-domain scratch buffer
+let _meterIdle = false;  // true once the meter has been zeroed while paused
 
 /** dBFS amplitude (0..1) → LevelMeter 0..100 (value-100 = dBFS, -100 floor). */
 function meterValue(amp) {
@@ -570,6 +573,16 @@ function meterValue(amp) {
 function _meterTick() {
   _meterRAF = requestAnimationFrame(_meterTick);
   if (!mixer || !_meterEl) return;
+  // Idle when paused/stopped: drop to the floor once, then skip the analyser
+  // read and DOM writes until playback resumes (no work on a silent graph).
+  if (!mixer.isPlaying()) {
+    if (_meterIdle) return;
+    _meterIdle = true;
+    if (_meterFill) _meterFill.style.width = '0%';
+    if (_meterRead) _meterRead.textContent = '-∞';
+    return;
+  }
+  _meterIdle = false;
   let analyser;
   try { analyser = mixer.getAnalyser(); } catch { return; }
   if (!analyser) return;
@@ -579,10 +592,8 @@ function _meterTick() {
   let sumSq = 0;
   for (let i = 0; i < n; i++) { const s = _meterTd[i]; sumSq += s * s; }
   const v = meterValue(Math.sqrt(sumSq / n));
-  const fill = _meterEl.querySelector('.vip-meter__fill');
-  const read = _meterEl.querySelector('.vip-meter__val');
-  if (fill) fill.style.width = `${v}%`;
-  if (read) read.textContent = v <= 0 ? '-∞' : (v - 100).toFixed(1);
+  if (_meterFill) _meterFill.style.width = `${v}%`;
+  if (_meterRead) _meterRead.textContent = v <= 0 ? '-∞' : (v - 100).toFixed(1);
 }
 
 /** Reveal + mount the DS LevelMeter once; the RAF loop drives it from real audio. */
@@ -593,7 +604,13 @@ function startOutputMeter() {
   if (!_meterEl && DS && DS.LevelMeter) {
     try {
       const el = DS.LevelMeter({ label: 'Output', value: 0, unit: 'dB' });
-      if (el instanceof Node) { mount.replaceChildren(el); _meterEl = el; }
+      if (el instanceof Node) {
+        mount.replaceChildren(el);
+        _meterEl = el;
+        // Cache the dynamic nodes once so the RAF loop never re-queries the DOM.
+        _meterFill = el.querySelector('.vip-meter__fill');
+        _meterRead = el.querySelector('.vip-meter__val');
+      }
     } catch (err) {
       console.warn('[VIP] LevelMeter render error:', err);
     }
