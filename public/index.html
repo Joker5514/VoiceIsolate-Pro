@@ -28,7 +28,7 @@
         </svg>
       </div>
       <span class="app-title">VoiceIsolate Pro</span>
-      <span class="arch-badge">STEM-SPLIT &amp; LIVE-MIX</span>
+      <span class="arch-badge" id="archBadgeMount">STEM-SPLIT &amp; LIVE-MIX</span>
     </div>
     <div class="titlebar-right">
       <a href="/app/" class="eng-mode-link">Engineer Mode</a>
@@ -37,22 +37,24 @@
 
   <main class="main-area">
     <!-- ── STEP 1: Upload ──────────────────────────────────────────────── -->
-    <section class="panel" aria-labelledby="uploadLabel">
+    <section class="panel vip-card" aria-labelledby="uploadLabel">
       <h2 id="uploadLabel" class="section-label">1 · Upload</h2>
       <p class="hint">Audio or video. Decoded and resampled to 48&nbsp;kHz on your device — nothing is uploaded anywhere.</p>
       <div class="upload-row">
-        <input type="file" id="fileInput" accept="audio/*,video/*" aria-label="Choose audio or video file">
+        <input type="file" id="fileInput" class="vip-input" accept="audio/*,video/*" aria-label="Choose audio or video file">
         <label for="modelSelect" class="inline-label">Model</label>
-        <select id="modelSelect" aria-label="Separation model">
+        <select id="modelSelect" class="vip-select" aria-label="Separation model">
           <option value="max_isolation">Maximum Isolation — Vocals → Denoise (chained)</option>
           <option value="bsrnn_vocals">Vocal Isolation — Band-Split RNN (~4 MB)</option>
           <option value="rnnoise">Noise Suppression — BiGRU mask (~2 MB)</option>
         </select>
-        <button id="processBtn" class="btn btn-primary" type="button" disabled>Separate Stems</button>
+        <button id="processBtn" class="vip-btn vip-btn--primary" type="button" disabled>Separate Stems</button>
       </div>
       <div class="status-row">
-        <div class="status-dot" id="statusDot"></div>
-        <span id="statusText" role="status" aria-live="polite">Idle — choose a file to begin</span>
+        <span id="statusPillMount" role="status" aria-live="polite">
+          <span class="status-dot"></span>
+          <span>Idle — choose a file to begin</span>
+        </span>
       </div>
       <!--
         Realtime processing indicator. Powered by the VoiceIsolate Pro design-
@@ -63,7 +65,7 @@
     </section>
 
     <!-- ── STEP 2: Live-Mix playback ───────────────────────────────────── -->
-    <section class="panel" aria-labelledby="mixLabel">
+    <section class="panel vip-card" aria-labelledby="mixLabel">
       <h2 id="mixLabel" class="section-label">2 · Live Mix</h2>
       <p class="hint">Stems play through the Web Audio graph. Sliders act instantly on GainNodes — the AI never re-runs.</p>
 
@@ -80,13 +82,19 @@
       </div>
 
       <div class="transport-row">
-        <button id="playBtn" class="btn" type="button" disabled>&#9654; Play</button>
-        <button id="pauseBtn" class="btn" type="button" disabled>&#10074;&#10074; Pause</button>
-        <button id="stopBtn" class="btn" type="button" disabled>&#9632; Stop</button>
-        <button id="muteVoiceBtn" class="btn btn-toggle" type="button" disabled aria-pressed="false">Mute Voice</button>
-        <button id="muteNoiseBtn" class="btn btn-toggle" type="button" disabled aria-pressed="false">Mute Background</button>
+        <button id="playBtn" class="vip-iconbtn" type="button" disabled aria-label="Play" title="Play">&#9654;</button>
+        <button id="pauseBtn" class="vip-iconbtn" type="button" disabled aria-label="Pause" title="Pause">&#10074;&#10074;</button>
+        <button id="stopBtn" class="vip-iconbtn" type="button" disabled aria-label="Stop" title="Stop">&#9632;</button>
+        <button id="muteVoiceBtn" class="vip-switch" type="button" role="switch" aria-checked="false" disabled>
+          <span class="vip-switch__track"><span class="vip-switch__thumb"></span></span>
+          <span class="vip-switch__label">Mute Voice</span>
+        </button>
+        <button id="muteNoiseBtn" class="vip-switch" type="button" role="switch" aria-checked="false" disabled>
+          <span class="vip-switch__track"><span class="vip-switch__thumb"></span></span>
+          <span class="vip-switch__label">Mute Background</span>
+        </button>
         <label for="presetSelect" class="inline-label">Preset</label>
-        <select id="presetSelect" aria-label="Mix preset" disabled>
+        <select id="presetSelect" class="vip-select" aria-label="Mix preset" disabled>
           <option value="voice-clarity" selected>Voice Clarity</option>
           <option value="balanced">Balanced</option>
           <option value="podcast-warm">Podcast Warm</option>
@@ -102,6 +110,13 @@
         <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to every slider in real time</span></div>
         <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>
       </div>
+
+      <!--
+        Output level meter. Powered by the design-system LevelMeter component;
+        landing.js taps the mixer's post-master AnalyserNode and drives the
+        fill from real RMS each animation frame (hidden until stems load).
+      -->
+      <div id="outputMeterMount" class="output-meter" hidden></div>
 
       <div class="slider-grid">
         <div class="slider-row">
@@ -223,7 +238,7 @@
     </section>
 
     <!-- ── STEP 3: Per-speaker isolation ───────────────────────────────── -->
-    <section class="panel" id="speakersPanel" aria-labelledby="speakersLabel" hidden>
+    <section class="panel vip-card" id="speakersPanel" aria-labelledby="speakersLabel" hidden>
       <h2 id="speakersLabel" class="section-label">3 · Speakers</h2>
       <p class="hint">
         Speakers detected on the isolated voice stem — entirely on your device.
@@ -236,7 +251,7 @@
       <div id="speakerCardsGrid" class="speaker-grid" aria-label="Per-speaker controls"></div>
     </section>
 
-    <section class="panel privacy-panel">
+    <section class="panel vip-card privacy-panel">
       <h2 class="section-label">Privacy</h2>
       <p class="hint">
         100% local processing — ONNX models run in a Web Worker on your device
