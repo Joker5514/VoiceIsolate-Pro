@@ -129,8 +129,10 @@ const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js', '/src/workers/DeEsser
 // shim). These are trusted build artifacts and a future upstream upgrade could
 // legitimately embed a string that looks like a CDN host, so the CDN-host scan
 // below skips them — but the getUserMedia / dynamic-worklet bans still apply to
-// every file, vendored or not.
-const VENDORED_BUNDLE = /(?:^|\/)(?:ort[.-][^/]*\.js|three[.-][^/]*\.js|_ds_bundle\.js|react-mini\.js)$|\.min\.js$/;
+// every file, vendored or not. The path-boundary and non-separator classes
+// accept both / and \ so the exclusion also holds on Windows (walkJs joins
+// paths with path.sep, which is \ there).
+const VENDORED_BUNDLE = /(?:^|[/\\])(?:ort[.-][^/\\]*\.js|three[.-][^/\\]*\.js|_ds_bundle\.js|react-mini\.js)$|\.min\.js$/;
 // Third-party CDN hosts that must never appear in shipped code: ORT and Three.js
 // are vendored locally under public/lib and the CSP blocks third-party script
 // origins, so any CDN reference is a regression (CLAUDE.md §1.1, §3).
