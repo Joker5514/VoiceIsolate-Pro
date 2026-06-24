@@ -71,6 +71,31 @@ export const MODEL_MANIFEST = Object.freeze({
       output: 'output',              // [batch, 2049] Float32 vocal mask
     }),
   }),
+
+  chain_voice_n4: Object.freeze({
+    id: 'chain_voice_n4',
+    name: '4-Stem Voice Isolation Chain',
+    task: 'multi-stage-stem-split',
+    strategy: 'multi-stage-chain',
+    sampleRate: 48000,
+    stages: Object.freeze([
+      Object.freeze({
+        modelId: 'rnnoise',
+        output: 'denoised',
+      }),
+      Object.freeze({
+        modelId: 'bsrnn_vocals',
+        input: 'denoised',
+        output: 'voice',
+      }),
+    ]),
+    outputs: Object.freeze([
+      Object.freeze({ id: 'voice', label: 'Voice', source: 'voice' }),
+      Object.freeze({ id: 'background', label: 'Background', source: 'residual', from: 'denoised', subtract: 'voice' }),
+      Object.freeze({ id: 'noise', label: 'Noise', source: 'residual', from: 'input', subtract: 'denoised' }),
+      Object.freeze({ id: 'master', label: 'Master', source: 'input' }),
+    ]),
+  }),
 });
 
 /** Stable list of model ids. */
@@ -97,6 +122,14 @@ export function getModel(id) {
  * @returns {boolean}
  */
 export function isValidEntry(entry) {
+  if (entry && entry.strategy === 'multi-stage-chain') {
+    return Boolean(
+      typeof entry.id === 'string' &&
+      Array.isArray(entry.stages) && entry.stages.length > 0 &&
+      Array.isArray(entry.outputs) && entry.outputs.length > 0 &&
+      Number.isInteger(entry.sampleRate) && entry.sampleRate > 0
+    );
+  }
   return Boolean(
     entry &&
     typeof entry.id === 'string' &&

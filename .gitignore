@@ -60,6 +60,7 @@ package-lock.json
 .vercel
 .env*.local
 
+
 # Dev scratch / prototype files — never deploy these
 scratch/
 *.scratch.js
@@ -70,3 +71,5 @@ design-test.html
 
 # Build-time copy of src/ for static deploys (vercel buildCommand)
 public/src/
+
+

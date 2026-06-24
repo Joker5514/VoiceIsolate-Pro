@@ -92,7 +92,7 @@ describe('BufferPool (Layer 1)', () => {
 describe('ModelManifest (Layer 1)', () => {
   test('declares the noise-suppression and vocal-separation models with valid entries', () => {
     expect(manifest.MODEL_IDS).toEqual(
-      expect.arrayContaining(['rnnoise', 'bsrnn_vocals'])
+      expect.arrayContaining(['rnnoise', 'bsrnn_vocals', 'chain_voice_n4'])
     );
     for (const id of manifest.MODEL_IDS) {
       expect(manifest.isValidEntry(manifest.MODEL_MANIFEST[id])).toBe(true);
@@ -101,7 +101,8 @@ describe('ModelManifest (Layer 1)', () => {
 
   test('model URLs are same-origin paths (never CDN)', () => {
     for (const id of manifest.MODEL_IDS) {
-      const { url } = manifest.MODEL_MANIFEST[id];
+      const { url, strategy } = manifest.MODEL_MANIFEST[id];
+      if (strategy === 'multi-stage-chain') continue;
       expect(url.startsWith('/')).toBe(true);
       expect(url).not.toMatch(/^https?:/);
     }
@@ -109,7 +110,8 @@ describe('ModelManifest (Layer 1)', () => {
 
   test('every shipped model has a pinned 64-char lowercase hex sha256', () => {
     for (const id of manifest.MODEL_IDS) {
-      const { sha256 } = manifest.MODEL_MANIFEST[id];
+      const { sha256, strategy } = manifest.MODEL_MANIFEST[id];
+      if (strategy === 'multi-stage-chain') continue;
       expect(sha256).toMatch(/^[0-9a-f]{64}$/);
     }
   });
@@ -118,6 +120,7 @@ describe('ModelManifest (Layer 1)', () => {
     expect(() => manifest.getModel('nope')).toThrow(/Unknown model 'nope'/);
     expect(manifest.getModel('bsrnn_vocals').task).toBe('vocal-separation');
     expect(manifest.getModel('rnnoise').task).toBe('noise-suppression');
+    expect(manifest.getModel('chain_voice_n4').strategy).toBe('multi-stage-chain');
   });
 
   test('manifest is frozen (no runtime mutation)', () => {
@@ -131,6 +134,7 @@ describe('ModelManifest (Layer 1)', () => {
     const crypto = require('crypto');
     for (const id of manifest.MODEL_IDS) {
       const entry = manifest.MODEL_MANIFEST[id];
+      if (entry.strategy === 'multi-stage-chain') continue;
       const file = path.join(__dirname, '../public', entry.url);
       expect(fs.existsSync(file)).toBe(true);
       const bytes = fs.readFileSync(file);
@@ -230,6 +234,18 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.currentTime()).toBeCloseTo(0.5);
     mixer.stop();
     expect(mixer.currentTime()).toBe(0);
+  });
+
+  test('loadStemSet registers every stem buffer while preserving voice/noise transport', () => {
+    const stemSet = [
+      { id: 'voice', channels: stems() },
+      { id: 'background', channels: stems() },
+      { id: 'noise', channels: stems() },
+      { id: 'master', channels: stems() },
+    ];
+    mixer.loadStemSet(stemSet);
+    expect(mixer.stemIds()).toEqual(['voice', 'noise', 'background', 'master']);
+    expect(mixer.duration()).toBeCloseTo(1);
   });
 
   test('play() without stems rejects loudly', async () => {

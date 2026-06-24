@@ -76,6 +76,7 @@ export class PlaybackMixer {
     // ── Transport state ──────────────────────────────────────────────────
     /** @type {AudioBuffer|null} */ this.cleanBuffer = null;
     /** @type {AudioBuffer|null} */ this.noiseBuffer = null;
+    /** @type {Map<string, AudioBuffer>} */ this.stemBuffers = new Map();
     /** @type {AudioBufferSourceNode|null} */ this._cleanSource = null;
     /** @type {AudioBufferSourceNode|null} */ this._noiseSource = null;
     this._isPlaying = false;
@@ -108,15 +109,44 @@ export class PlaybackMixer {
     this.stop();
     this.cleanBuffer = this._toAudioBuffer(cleanChannels, sampleRate);
     this.noiseBuffer = this._toAudioBuffer(noiseChannels, sampleRate);
+    this.stemBuffers = new Map([
+      ['voice', this.cleanBuffer],
+      ['noise', this.noiseBuffer],
+    ]);
     this._offset = 0;
     // New stems invalidate any previous diarization.
     this.loadSpeakerSegments([]);
+  }
+
+  getStemChannels() {
+    return {
+      clean: this.cleanBuffer ? cloneBufferChannels(this.cleanBuffer) : [],
+      noise: this.noiseBuffer ? cloneBufferChannels(this.noiseBuffer) : [],
+      sampleRate: this.cleanBuffer?.sampleRate || SAMPLE_RATE,
+    };
   }
 
   _toAudioBuffer(channels, sampleRate) {
     const buf = this.ctx.createBuffer(channels.length, channels[0].length, sampleRate);
     channels.forEach((data, ch) => buf.copyToChannel(data, ch));
     return buf;
+  }
+
+  loadStemSet(stems, sampleRate = SAMPLE_RATE) {
+    if (!Array.isArray(stems) || stems.length === 0) {
+      throw new TypeError('[VIP][PlaybackMixer] loadStemSet requires at least one stem.');
+    }
+    const voiceStem = stems.find((stem) => stem.id === 'voice') || stems[0];
+    const noiseStem = stems.find((stem) => stem.id === 'noise') || stems[1] || stems[0];
+    this.loadStems(voiceStem.channels, noiseStem.channels, sampleRate);
+    for (const stem of stems) {
+      if (!stem?.id || !Array.isArray(stem.channels) || stem.channels.length === 0) continue;
+      this.stemBuffers.set(stem.id, this._toAudioBuffer(stem.channels, sampleRate));
+    }
+  }
+
+  stemIds() {
+    return [...this.stemBuffers.keys()];
   }
 
   // ─── Transport ─────────────────────────────────────────────────────────
@@ -445,6 +475,14 @@ function clamp(v, lo, hi) {
   const n = Number(v);
   if (!Number.isFinite(n)) return lo;
   return Math.min(hi, Math.max(lo, n));
+}
+
+function cloneBufferChannels(buffer) {
+  const channels = [];
+  for (let index = 0; index < buffer.numberOfChannels; index++) {
+    channels.push(new Float32Array(buffer.getChannelData(index)));
+  }
+  return channels;
 }
 
 export default PlaybackMixer;

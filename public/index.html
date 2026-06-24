@@ -58,6 +58,9 @@
         <button id="playBtn" class="btn" type="button" disabled>&#9654; Play</button>
         <button id="pauseBtn" class="btn" type="button" disabled>&#10074;&#10074; Pause</button>
         <button id="stopBtn" class="btn" type="button" disabled>&#9632; Stop</button>
+        <button id="exportMixBtn" class="btn" type="button" disabled>Export Mix WAV</button>
+        <button id="exportVoiceBtn" class="btn" type="button" disabled>Export Voice WAV</button>
+        <button id="exportNoiseBtn" class="btn" type="button" disabled>Export Noise WAV</button>
         <button id="muteVoiceBtn" class="btn btn-toggle" type="button" disabled aria-pressed="false">Mute Voice</button>
         <button id="muteNoiseBtn" class="btn btn-toggle" type="button" disabled aria-pressed="false">Mute Background</button>
         <label for="presetSelect" class="inline-label">Preset</label>
@@ -76,6 +79,8 @@
         <canvas id="waveCanvas" class="vis-canvas" height="110" aria-label="Stem waveform overview"></canvas>
         <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to every slider in real time</span></div>
         <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>
+        <div class="vis-label">Speaker timeline <span class="vis-hint">— diarization lanes with live playhead</span></div>
+        <canvas id="diarCanvas" class="vis-canvas" height="120" aria-label="Speaker diarization timeline"></canvas>
       </div>
 
       <div class="slider-grid">
@@ -105,6 +110,7 @@
           <span class="slider-val" id="eqHighVal">0 dB</span>
         </div>
       </div>
+      <p class="hint">Exports are rendered fully client-side from the separated stems as 16-bit WAV downloads.</p>
     </section>
 
     <!-- ── STEP 3: Per-speaker isolation ───────────────────────────────── -->

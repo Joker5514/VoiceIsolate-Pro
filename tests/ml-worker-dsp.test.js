@@ -146,3 +146,41 @@ describe('MLWorker spectral-mask reconstruction (runSpectralMask)', () => {
     ).rejects.toThrow(/malformed output tensor/);
   });
 });
+
+describe('MLWorker multi-stage chain assembly', () => {
+  test('assembles N stems from chained stage outputs and residuals', async () => {
+    const sb = loadWorkerSandbox();
+    vm.runInContext(`
+      MANIFEST = {
+        rnnoise: { id: 'rnnoise', strategy: 'spectral-mask' },
+        bsrnn_vocals: { id: 'bsrnn_vocals', strategy: 'spectral-mask' },
+      };
+      runSingleStage = async (_entry, channels) =>
+        channels.map((channel) => {
+          const out = new Float32Array(channel.length);
+          for (let i = 0; i < channel.length; i++) out[i] = channel[i] * 0.5;
+          return out;
+        });
+    `, sb);
+
+    const input = [new Float32Array([1, 0.5, -0.5, -1])];
+    const result = await sb.runMultiStageChain({
+      id: 'chain_voice_n4',
+      stages: [
+        { modelId: 'rnnoise', output: 'denoised' },
+        { modelId: 'bsrnn_vocals', input: 'denoised', output: 'voice' },
+      ],
+      outputs: [
+        { id: 'voice', source: 'voice' },
+        { id: 'background', source: 'residual', from: 'denoised', subtract: 'voice' },
+        { id: 'noise', source: 'residual', from: 'input', subtract: 'denoised' },
+        { id: 'master', source: 'input' },
+      ],
+    }, input, () => {});
+
+    expect(result.stems.map((stem) => stem.id)).toEqual(['voice', 'background', 'noise', 'master']);
+    expect(Array.from(result.clean[0])).toEqual([0.25, 0.125, -0.125, -0.25]);
+    expect(Array.from(result.noise[0])).toEqual([0.5, 0.25, -0.25, -0.5]);
+    expect(Array.from(result.stems[1].channels[0])).toEqual([0.25, 0.125, -0.125, -0.25]);
+  });
+});

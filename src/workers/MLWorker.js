@@ -9,9 +9,7 @@
  *   3. Cache verified bytes in IndexedDB (re-verified on every load)
  *   4. Run offline ONNX Runtime inference over the full file: STFT →
  *      batched magnitude-mask inference → masked iSTFT overlap-add
- *   5. Post back two stems as transferable Float32Arrays:
- *        clean  — the model's voice estimate
- *        noise  — the residual (input − clean)
+ *   5. Post back one or more stems as transferable Float32Arrays
  *
  * Protocol (postMessage):
  *   → { type: 'init', manifest: ManifestEntry[] }
@@ -19,6 +17,7 @@
  *   → { type: 'process', requestId, modelId, channelData: Float32Array[], sampleRate }
  *   ← { type: 'progress', requestId, percent }
  *   ← { type: 'stems', requestId, clean: Float32Array[], noise: Float32Array[],
+ *       stems?: Array<{ id, label, channels: Float32Array[] }>,
  *       sampleRate, passthrough: boolean }
  *   ← { type: 'error', requestId?, message }
  *
@@ -341,6 +340,80 @@ function residual(channelData, cleanChannels) {
   });
 }
 
+function cloneChannels(channelData) {
+  return channelData.map((channel) => new Float32Array(channel));
+}
+
+function zeroChannelsLike(channelData) {
+  return channelData.map((channel) => new Float32Array(channel.length));
+}
+
+async function runSingleStage(entry, channelData, onProgress) {
+  if (entry.strategy !== 'spectral-mask') {
+    throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
+  }
+  const session = await getSession(entry);
+  const clean = [];
+  for (let ch = 0; ch < channelData.length; ch++) {
+    clean.push(await runSpectralMask(entry, session, channelData[ch], (p) =>
+      onProgress((ch + p) / channelData.length)
+    ));
+  }
+  return clean;
+}
+
+async function runMultiStageChain(entry, channelData, onProgress) {
+  const stageOutputs = Object.create(null);
+  stageOutputs.input = cloneChannels(channelData);
+
+  const totalStages = entry.stages.length;
+  for (let index = 0; index < totalStages; index++) {
+    const stage = entry.stages[index];
+    const stageEntry = MANIFEST[stage.modelId];
+    if (!stageEntry) {
+      throw new Error(`[VIP][MLWorker] Unknown stage model '${stage.modelId}' in '${entry.id}'.`);
+    }
+    const inputKey = stage.input || 'input';
+    const inputChannels = stageOutputs[inputKey];
+    if (!inputChannels) {
+      throw new Error(`[VIP][MLWorker] Stage '${stage.modelId}' requested missing input '${inputKey}'.`);
+    }
+    const outputChannels = await runSingleStage(stageEntry, inputChannels, (p) => {
+      onProgress((index + p) / totalStages);
+    });
+    stageOutputs[stage.output || stage.modelId] = outputChannels;
+  }
+
+  const stems = entry.outputs.map((output) => {
+    let channels;
+    if (output.source === 'input') {
+      channels = cloneChannels(stageOutputs.input);
+    } else if (output.source === 'residual') {
+      const from = stageOutputs[output.from];
+      const subtract = stageOutputs[output.subtract];
+      if (!from || !subtract) {
+        throw new Error(`[VIP][MLWorker] Output '${output.id}' references missing residual inputs.`);
+      }
+      channels = residual(from, subtract);
+    } else {
+      const source = stageOutputs[output.source];
+      if (!source) {
+        throw new Error(`[VIP][MLWorker] Output '${output.id}' references missing source '${output.source}'.`);
+      }
+      channels = cloneChannels(source);
+    }
+    return { id: output.id, label: output.label || output.id, channels };
+  });
+
+  const voiceStem = stems.find((stem) => stem.id === 'voice') || stems[0];
+  const noiseStem = stems.find((stem) => stem.id === 'noise') || stems[1] || { channels: zeroChannelsLike(channelData) };
+  return {
+    clean: cloneChannels(voiceStem.channels),
+    noise: cloneChannels(noiseStem.channels),
+    stems,
+  };
+}
+
 async function processRequest({ requestId, modelId, channelData, sampleRate }) {
   const entry = MANIFEST[modelId];
   if (!entry) {
@@ -352,33 +425,42 @@ async function processRequest({ requestId, modelId, channelData, sampleRate }) {
   };
 
   let clean;
+  let stems = null;
   let passthrough = false;
   try {
-    if (entry.strategy !== 'spectral-mask') {
-      throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
-    }
-    const session = await getSession(entry);
-    clean = [];
-    for (let ch = 0; ch < channelData.length; ch++) {
-      clean.push(await runSpectralMask(entry, session, channelData[ch], (p) =>
-        onProgress((ch + p) / channelData.length)
-      ));
+    if (entry.strategy === 'multi-stage-chain') {
+      const result = await runMultiStageChain(entry, channelData, onProgress);
+      clean = result.clean;
+      stems = result.stems;
+    } else {
+      clean = await runSingleStage(entry, channelData, onProgress);
     }
   } catch (err) {
     // Graceful degradation: the UI must keep working without a model.
     // Passthrough stems: clean = input, noise = silence.
     console.error(`[VIP][MLWorker] Inference failed for '${modelId}'; emitting passthrough stems.`, err);
-    clean = channelData.map((c) => new Float32Array(c));
+    clean = cloneChannels(channelData);
     passthrough = true;
   }
 
   const noise = passthrough
-    ? channelData.map((c) => new Float32Array(c.length))
+    ? zeroChannelsLike(channelData)
     : residual(channelData, clean);
 
-  const transfers = [...clean, ...noise].map((a) => a.buffer);
+  if (!stems) {
+    stems = [
+      { id: 'voice', label: 'Voice', channels: cloneChannels(clean) },
+      { id: 'noise', label: 'Noise', channels: cloneChannels(noise) },
+    ];
+  }
+
+  const transfers = [
+    ...clean,
+    ...noise,
+    ...stems.flatMap((stem) => stem.channels),
+  ].map((a) => a.buffer);
   self.postMessage(
-    { type: 'stems', requestId, clean, noise, sampleRate, passthrough },
+    { type: 'stems', requestId, clean, noise, stems, sampleRate, passthrough },
     transfers
   );
 }
