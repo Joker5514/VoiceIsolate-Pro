@@ -364,7 +364,8 @@
     // (Stem-Split & Live-Mix architecture — see CLAUDE.md). Offline processing
     // runs through app.js _runFallbackPipeline.
     const _parallel = [
-      './visuals.js',
+      // visuals.js is already loaded as a classic script in <head>; importing it
+      // again here would execute it twice (duplicate listeners / init).
       './processing-overlay.js',
       './session-persist.js',
     ];

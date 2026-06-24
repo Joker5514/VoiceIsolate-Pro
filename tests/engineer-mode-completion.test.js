@@ -28,8 +28,11 @@ describe('Engineer Mode completion wiring', () => {
     expect(indexHtml).toContain('href="how-it-works.html"');
   });
 
-  test('index.html loads visuals.js and processing-overlay.js modules', () => {
-    expect(indexHtml).toContain("'./visuals.js'");
+  test('index.html loads visuals.js (classic script) and processing-overlay.js module', () => {
+    // visuals.js is a classic <head> script; it must NOT also be dynamically
+    // imported as a module (that would execute it twice).
+    expect(indexHtml).toContain('<script src="./visuals.js"></script>');
+    expect(indexHtml).not.toContain("'./visuals.js'");
     expect(indexHtml).toContain("'./processing-overlay.js'");
   });
 

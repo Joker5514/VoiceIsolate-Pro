@@ -132,6 +132,7 @@ export class EngineerModeBridge {
    * @returns {boolean} true if the id mapped to a control
    */
   applyParam(id, value) {
+    if (!this.mixer) return false;
     const apply = PARAM_MAP[id];
     if (!apply) return false;
     const v = Number(value);
@@ -162,7 +163,10 @@ export class EngineerModeBridge {
   /** Release the underlying mixer and its AudioContext. */
   async dispose() {
     this._loaded = false;
-    await this.mixer.dispose();
+    if (this.mixer) {
+      await this.mixer.dispose();
+      this.mixer = null;
+    }
   }
 }
 
