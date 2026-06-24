@@ -1,202 +1,823 @@
-/* ============================================================
-   VoiceIsolate Pro — Engineer Mode
-   Custom range slider theme (cross-browser)
-   ============================================================ */
+/*
+  VoiceIsolate Pro — Slider Theme v4.0 (Premium)
+  ================================================
+  Deeply refined dark-neon slider styling for the
+  52-slider Engineer Mode UI.
 
-/* ---------- Base Reset for All Range Inputs ---------- */
-input[type="range"] {
+  What's new vs v3.0:
+  - Energy gradient track fill: dark at origin → full
+    color → bright pink tip right at the thumb pivot
+  - Ambient luminous glow shadow on the filled track
+  - Premium glass-sphere thumb with triple-layer
+    specular highlight + enlarged multi-ring glow aura
+  - Thumb grows to 18 px (21 px hover); 3D inner shadow
+  - Value chip: opaque glass pill, vivid glow on active
+  - Row hover: inset left-accent bar (box-shadow, zero
+    layout shift) + soft gradient background wash
+  - Tab active: neon underline with spread glow
+  - Reduced-motion: all animations suppressed
+
+  Track-fill position is driven by --pct (set by app.js).
+  RT = real-time params (cyan accent).
+*/
+
+/* ── Design tokens ─────────────────────────────────────────── */
+:root {
+  /* Red (offline) accent */
+  --vip-accent:         #ff2a3d;
+  --vip-accent-dim:     rgba(160, 5, 20, 0.65);
+  --vip-accent-tip:     #ffaab4;
+  --vip-accent-soft:    rgba(255, 42, 61, 0.18);
+  --vip-accent-glow:    rgba(255, 42, 61, 0.65);
+  --vip-accent-glow2:   rgba(255, 42, 61, 0.28);
+
+  /* Cyan (real-time) accent */
+  --vip-rt:             #00ffe7;
+  --vip-rt-dim:         rgba(0, 140, 120, 0.55);
+  --vip-rt-tip:         #b8fff8;
+  --vip-rt-soft:        rgba(0, 255, 231, 0.18);
+  --vip-rt-glow:        rgba(0, 255, 231, 0.62);
+  --vip-rt-glow2:       rgba(0, 255, 231, 0.26);
+
+  /* Track geometry */
+  --vip-track-empty:    rgba(255, 255, 255, 0.08);
+  --vip-track-h:        4px;
+  --vip-track-h-hov:    6px;
+
+  /* Thumb geometry */
+  --vip-thumb-size:     18px;
+  --vip-thumb-size-hov: 21px;
+
+  /* Typography / layout */
+  --vip-text:           #e9e9f3;
+  --vip-text-dim:       #8a8aa6;
+  --vip-row-pad-y:      7px;
+  --vip-row-pad-x:      12px;
+  --vip-row-radius:     8px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   ROW LAYOUT  (canonical .sr-row + legacy .slider-row)
+   4 columns: label | slider | value | lock-btn
+   ══════════════════════════════════════════════════════════════ */
+.sr-row,
+.slider-row {
+  display:               grid;
+  grid-template-columns: 132px 1fr 56px 24px;
+  align-items:           center;
+  gap:                   10px;
+  padding:               var(--vip-row-pad-y) var(--vip-row-pad-x);
+  border-radius:         var(--vip-row-radius);
+  position:              relative;
+  background:            transparent;
+  transition:            background 0.18s ease,
+                         box-shadow  0.18s ease;
+}
+
+.sr-row:hover,
+.slider-row:hover {
+  /* Inset 2-px left accent bar — no layout shift */
+  box-shadow:  inset 3px 0 0 var(--vip-accent),
+               inset 0 0 28px rgba(255, 42, 61, 0.045);
+  background:  linear-gradient(
+                 to right,
+                 rgba(255, 42, 61, 0.055) 0%,
+                 rgba(255, 255, 255, 0.018) 60%,
+                 transparent 100%
+               );
+}
+
+.sr-row:has(input.realtime):hover,
+.slider-row:has(input.realtime):hover {
+  box-shadow:  inset 3px 0 0 var(--vip-rt),
+               inset 0 0 28px rgba(0, 255, 231, 0.04);
+  background:  linear-gradient(
+                 to right,
+                 rgba(0, 255, 231, 0.04) 0%,
+                 rgba(255, 255, 255, 0.015) 60%,
+                 transparent 100%
+               );
+}
+
+/* ── Label ─────────────────────────────────────────────────── */
+.sr-label,
+.slider-label {
+  font-size:             0.72rem;
+  font-weight:           500;
+  color:                 var(--vip-text-dim);
+  letter-spacing:        0.018em;
+  white-space:           nowrap;
+  overflow:              hidden;
+  text-overflow:         ellipsis;
+  display:               flex;
+  align-items:           center;
+  gap:                   5px;
+  cursor:                default;
+  min-width:             0;
+  transition:            color 0.16s ease;
+}
+.sr-row:hover .sr-label,
+.slider-row:hover .slider-label,
+.slider-row:hover .sr-label {
+  color: #ffffff;
+}
+
+/* ── Value readout chip ─────────────────────────────────────── */
+.sr-val,
+.slider-val {
+  font-variant-numeric:  tabular-nums;
+  font-size:             0.68rem;
+  font-weight:           700;
+  text-align:            center;
+  white-space:           nowrap;
+  min-width:             54px;
+  padding:               3px 8px;
+  border-radius:         6px;
+  letter-spacing:        0.02em;
+  color:                 var(--vip-accent);
+  background:            rgba(255, 42, 61, 0.10);
+  border:                1px solid rgba(255, 42, 61, 0.28);
+  transition:            color      0.15s ease,
+                         background 0.15s ease,
+                         border-color 0.15s ease,
+                         box-shadow 0.22s ease;
+}
+.sr-row:hover .sr-val,
+.slider-row:hover .slider-val {
+  background:   rgba(255, 42, 61, 0.18);
+  border-color: rgba(255, 42, 61, 0.60);
+  box-shadow:   0 0 16px rgba(255, 42, 61, 0.28),
+                inset 0 0 10px rgba(255, 42, 61, 0.10);
+  color:        #ff5566;
+}
+/* RT readout */
+.sr-row:has(input.realtime) .sr-val,
+.slider-row:has(input.realtime) .slider-val {
+  color:        var(--vip-rt);
+  background:   rgba(0, 255, 231, 0.08);
+  border-color: rgba(0, 255, 231, 0.22);
+}
+.sr-row:has(input.realtime):hover .sr-val,
+.slider-row:has(input.realtime):hover .slider-val {
+  background:   rgba(0, 255, 231, 0.16);
+  border-color: rgba(0, 255, 231, 0.58);
+  box-shadow:   0 0 16px rgba(0, 255, 231, 0.26),
+                inset 0 0 10px rgba(0, 255, 231, 0.08);
+  color:        #44fff4;
+}
+
+/* ── RT live badge ─────────────────────────────────────────── */
+.rt-badge {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  font-size:       0.5rem;
+  font-weight:     700;
+  letter-spacing:  0.08em;
+  color:           var(--vip-rt);
+  background:      rgba(0, 255, 231, 0.08);
+  border:          1px solid rgba(0, 255, 231, 0.32);
+  border-radius:   3px;
+  padding:         1px 4px;
+  line-height:     1;
+  flex-shrink:     0;
+}
+
+/* ── Inline help icon ──────────────────────────────────────── */
+.sr-info {
+  font-size:  0.6rem;
+  font-style: normal;
+  color:      var(--vip-text-dim);
+  cursor:     help;
+  flex-shrink: 0;
+  opacity:    0.5;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.sr-info:hover { opacity: 1; color: var(--vip-text); }
+
+/* ══════════════════════════════════════════════════════════════
+   RANGE INPUT — track
+   ══════════════════════════════════════════════════════════════ */
+input[type="range"].slider,
+.sr-row > input[type="range"],
+.slider-row > input[type="range"] {
   -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 20px;
-  background: transparent;
-  cursor: pointer;
+  appearance:         none;
+  width:              100%;
+  height:             var(--vip-track-h);
+  border-radius:      999px;
+  outline:            none;
+  cursor:             pointer;
+
+  /*
+   * Energy gradient:
+   *   0 %         → dim dark-red  (feels like the source / off)
+   *   --pct - 3%  → full vivid red
+   *   --pct       → bright pink tip (hot-spot at the thumb pivot)
+   *   --pct + 0.1% → empty track begins
+   */
+  background: linear-gradient(
+    to right,
+    var(--vip-accent-dim)   0%,
+    var(--vip-accent)       calc(var(--pct, 50%) - 4%),
+    var(--vip-accent-tip)   var(--pct, 50%),
+    var(--vip-track-empty)  calc(var(--pct, 50%) + 0.15%),
+    rgba(255,255,255,0.045) 100%
+  );
+
+  /* Recessed depth + ambient glow that reads as the fill glowing */
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.65),
+              0 0 10px rgba(255, 42, 61, 0.14);
+  transition: height     0.14s ease,
+              box-shadow 0.20s ease;
+}
+
+input[type="range"].slider:hover,
+.sr-row:hover > input[type="range"],
+.slider-row:hover > input[type="range"] {
+  height:     var(--vip-track-h-hov);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7),
+              0 0 18px rgba(255, 42, 61, 0.28);
+}
+
+input[type="range"].slider:active,
+.sr-row > input[type="range"]:active,
+.slider-row > input[type="range"]:active {
+  height:     var(--vip-track-h-hov);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7),
+              0 0 24px rgba(255, 42, 61, 0.40);
+}
+
+/* ── RT variant (cyan) track ─────────────────────────────── */
+input[type="range"].slider.realtime,
+.sr-row > input[type="range"].realtime,
+.slider-row > input[type="range"].realtime {
+  background: linear-gradient(
+    to right,
+    var(--vip-rt-dim)       0%,
+    var(--vip-rt)           calc(var(--pct, 50%) - 4%),
+    var(--vip-rt-tip)       var(--pct, 50%),
+    var(--vip-track-empty)  calc(var(--pct, 50%) + 0.15%),
+    rgba(255,255,255,0.045) 100%
+  );
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.65),
+              0 0 10px rgba(0, 255, 231, 0.13);
+}
+input[type="range"].slider.realtime:hover,
+.sr-row:hover > input[type="range"].realtime,
+.slider-row:hover > input[type="range"].realtime {
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7),
+              0 0 18px rgba(0, 255, 231, 0.26);
+}
+input[type="range"].slider.realtime:active,
+.sr-row > input[type="range"].realtime:active,
+.slider-row > input[type="range"].realtime:active {
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7),
+              0 0 24px rgba(0, 255, 231, 0.38);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   THUMB — Webkit / Blink  (premium glass sphere)
+   ══════════════════════════════════════════════════════════════ */
+input[type="range"].slider::-webkit-slider-thumb,
+.sr-row > input[type="range"]::-webkit-slider-thumb,
+.slider-row > input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width:              var(--vip-thumb-size);
+  height:             var(--vip-thumb-size);
+  border-radius:      50%;
+
+  /* Triple-layer glass sphere:
+     1. Bright white specular at top-left (light source)
+     2. Tinted midtone transition
+     3. Full accent base, darker at bottom rim               */
+  background: radial-gradient(
+    circle at 33% 26%,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(255, 255, 255, 0.68) 14%,
+    rgba(255, 165, 175, 0.85) 32%,
+    var(--vip-accent)         62%,
+    rgba(140, 0, 15, 0.92)    100%
+  );
+  border:  1.5px solid rgba(255, 255, 255, 0.88);
+  cursor:  grab;
+  /* Drop shadow + inner depth + resting glow */
+  box-shadow:
+    inset 0 -2px 4px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.70),
+    0 0 0 0 transparent,
+    0 0 12px rgba(255, 42, 61, 0.40);
+  transition:
+    width      0.14s cubic-bezier(.22, .7, 0, 1.05),
+    height     0.14s cubic-bezier(.22, .7, 0, 1.05),
+    transform  0.14s cubic-bezier(.22, .7, 0, 1.05),
+    box-shadow 0.20s ease;
+}
+
+input[type="range"].slider:hover::-webkit-slider-thumb,
+.sr-row:hover > input[type="range"]::-webkit-slider-thumb,
+.slider-row:hover > input[type="range"]::-webkit-slider-thumb {
+  width:      var(--vip-thumb-size-hov);
+  height:     var(--vip-thumb-size-hov);
+  box-shadow:
+    inset 0 -2px 4px rgba(0, 0, 0, 0.38),
+    0 2px 8px rgba(0, 0, 0, 0.72),
+    0 0 0 4px rgba(255, 42, 61, 0.18),
+    0 0 0 7px rgba(255, 42, 61, 0.08),
+    0 0 22px rgba(255, 42, 61, 0.70);
+}
+
+input[type="range"].slider:active::-webkit-slider-thumb,
+.sr-row > input[type="range"]:active::-webkit-slider-thumb,
+.slider-row > input[type="range"]:active::-webkit-slider-thumb {
+  cursor:    grabbing;
+  transform: scale(1.14);
+  box-shadow:
+    inset 0 -3px 5px rgba(0, 0, 0, 0.42),
+    0 3px 10px rgba(0, 0, 0, 0.78),
+    0 0 0 5px rgba(255, 42, 61, 0.22),
+    0 0 0 9px rgba(255, 42, 61, 0.09),
+    0 0 30px rgba(255, 42, 61, 0.85);
+}
+
+/* ── RT thumb — cyan glass sphere ────────────────────────── */
+input[type="range"].slider.realtime::-webkit-slider-thumb,
+.sr-row > input[type="range"].realtime::-webkit-slider-thumb,
+.slider-row > input[type="range"].realtime::-webkit-slider-thumb {
+  background: radial-gradient(
+    circle at 33% 26%,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(255, 255, 255, 0.68) 14%,
+    rgba(140, 255, 245, 0.85) 32%,
+    var(--vip-rt)             62%,
+    rgba(0, 120, 108, 0.92)   100%
+  );
+  box-shadow:
+    inset 0 -2px 4px rgba(0, 0, 0, 0.35),
+    0 2px 6px rgba(0, 0, 0, 0.70),
+    0 0 0 0 transparent,
+    0 0 12px rgba(0, 255, 231, 0.38);
+}
+input[type="range"].slider.realtime:hover::-webkit-slider-thumb,
+.sr-row:hover > input[type="range"].realtime::-webkit-slider-thumb,
+.slider-row:hover > input[type="range"].realtime::-webkit-slider-thumb {
+  width:  var(--vip-thumb-size-hov);
+  height: var(--vip-thumb-size-hov);
+  box-shadow:
+    inset 0 -2px 4px rgba(0, 0, 0, 0.38),
+    0 2px 8px rgba(0, 0, 0, 0.72),
+    0 0 0 4px rgba(0, 255, 231, 0.17),
+    0 0 0 7px rgba(0, 255, 231, 0.07),
+    0 0 22px rgba(0, 255, 231, 0.65);
+}
+input[type="range"].slider.realtime:active::-webkit-slider-thumb,
+.sr-row > input[type="range"].realtime:active::-webkit-slider-thumb,
+.slider-row > input[type="range"].realtime:active::-webkit-slider-thumb {
+  transform: scale(1.14);
+  box-shadow:
+    inset 0 -3px 5px rgba(0, 0, 0, 0.42),
+    0 3px 10px rgba(0, 0, 0, 0.78),
+    0 0 0 5px rgba(0, 255, 231, 0.20),
+    0 0 0 9px rgba(0, 255, 231, 0.08),
+    0 0 30px rgba(0, 255, 231, 0.80);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   THUMB — Firefox
+   ══════════════════════════════════════════════════════════════ */
+input[type="range"].slider::-moz-range-track,
+.sr-row > input[type="range"]::-moz-range-track,
+.slider-row > input[type="range"]::-moz-range-track {
+  height:        var(--vip-track-h);
+  border-radius: 999px;
+  background:    rgba(255, 255, 255, 0.06);
+  border:        none;
+}
+input[type="range"].slider::-moz-range-progress,
+.sr-row > input[type="range"]::-moz-range-progress,
+.slider-row > input[type="range"]::-moz-range-progress {
+  height:        var(--vip-track-h);
+  border-radius: 999px;
+  background:    linear-gradient(to right, var(--vip-accent-dim), var(--vip-accent));
+}
+input[type="range"].slider.realtime::-moz-range-progress,
+.sr-row > input[type="range"].realtime::-moz-range-progress,
+.slider-row > input[type="range"].realtime::-moz-range-progress {
+  background: linear-gradient(to right, var(--vip-rt-dim), var(--vip-rt));
+}
+input[type="range"].slider::-moz-range-thumb,
+.sr-row > input[type="range"]::-moz-range-thumb,
+.slider-row > input[type="range"]::-moz-range-thumb {
+  width:         var(--vip-thumb-size);
+  height:        var(--vip-thumb-size);
+  border-radius: 50%;
+  border:        1.5px solid rgba(255, 255, 255, 0.88);
+  background:    radial-gradient(
+                   circle at 33% 26%,
+                   rgba(255,255,255,0.96) 0%,
+                   rgba(255,255,255,0.68) 14%,
+                   rgba(255,165,175,0.85) 32%,
+                   var(--vip-accent)      62%,
+                   rgba(140,0,15,0.92)    100%
+                 );
+  box-shadow:    0 2px 6px rgba(0,0,0,0.7),
+                 0 0 12px rgba(255,42,61,0.38);
+  cursor:        grab;
+  transition:    transform 0.14s ease, box-shadow 0.20s ease;
+}
+input[type="range"].slider.realtime::-moz-range-thumb,
+.sr-row > input[type="range"].realtime::-moz-range-thumb,
+.slider-row > input[type="range"].realtime::-moz-range-thumb {
+  background: radial-gradient(
+                circle at 33% 26%,
+                rgba(255,255,255,0.96) 0%,
+                rgba(255,255,255,0.68) 14%,
+                rgba(140,255,245,0.85) 32%,
+                var(--vip-rt)          62%,
+                rgba(0,120,108,0.92)   100%
+              );
+  box-shadow: 0 2px 6px rgba(0,0,0,0.7),
+              0 0 12px rgba(0,255,231,0.36);
+}
+input[type="range"].slider:hover::-moz-range-thumb,
+.sr-row:hover > input[type="range"]::-moz-range-thumb,
+.slider-row:hover > input[type="range"]::-moz-range-thumb {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.72),
+              0 0 0 4px rgba(255,42,61,0.18),
+              0 0 22px rgba(255,42,61,0.68);
+}
+input[type="range"].slider.realtime:hover::-moz-range-thumb,
+.sr-row:hover > input[type="range"].realtime::-moz-range-thumb,
+.slider-row:hover > input[type="range"].realtime::-moz-range-thumb {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.72),
+              0 0 0 4px rgba(0,255,231,0.17),
+              0 0 22px rgba(0,255,231,0.63);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   FOCUS RING  (keyboard nav)
+   ══════════════════════════════════════════════════════════════ */
+input[type="range"].slider:focus-visible,
+.sr-row > input[type="range"]:focus-visible,
+.slider-row > input[type="range"]:focus-visible {
   outline: none;
 }
-
-/* ==========================================================
-   TRACK — WebKit (Chrome / Edge / Safari)
-   ========================================================== */
-input[type="range"]::-webkit-slider-runnable-track {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: linear-gradient(
-    to right,
-    #6366f1 0%,
-    #6366f1 var(--fill, 50%),
-    #2a2d3a var(--fill, 50%),
-    #2a2d3a 100%
-  );
-  border: none;
-  transition: background 0.15s ease;
+input[type="range"].slider:focus-visible::-webkit-slider-thumb,
+.sr-row > input[type="range"]:focus-visible::-webkit-slider-thumb,
+.slider-row > input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px #050510,
+              0 0 0 5px var(--vip-accent),
+              0 0 16px rgba(255,42,61,0.55),
+              0 2px 6px rgba(0,0,0,0.7);
+}
+input[type="range"].slider.realtime:focus-visible::-webkit-slider-thumb,
+.sr-row > input[type="range"].realtime:focus-visible::-webkit-slider-thumb,
+.slider-row > input[type="range"].realtime:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px #050510,
+              0 0 0 5px var(--vip-rt),
+              0 0 16px rgba(0,255,231,0.52),
+              0 2px 6px rgba(0,0,0,0.7);
+}
+input[type="range"].slider:focus-visible::-moz-range-thumb,
+.sr-row > input[type="range"]:focus-visible::-moz-range-thumb,
+.slider-row > input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px #050510, 0 0 0 5px var(--vip-accent);
+}
+input[type="range"].slider.realtime:focus-visible::-moz-range-thumb,
+.sr-row > input[type="range"].realtime:focus-visible::-moz-range-thumb,
+.slider-row > input[type="range"].realtime:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px #050510, 0 0 0 5px var(--vip-rt);
 }
 
-/* Hover / active — lighter accent on the filled portion */
-input[type="range"]:hover::-webkit-slider-runnable-track,
-input[type="range"]:active::-webkit-slider-runnable-track {
-  background: linear-gradient(
-    to right,
-    #818cf8 0%,
-    #818cf8 var(--fill, 50%),
-    #2a2d3a var(--fill, 50%),
-    #2a2d3a 100%
-  );
-}
-
-/* ==========================================================
-   TRACK — Mozilla (Firefox)
-   ========================================================== */
-input[type="range"]::-moz-range-track {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: #2a2d3a;
-  border: none;
-}
-
-/* Firefox uses ::-moz-range-progress for the filled portion */
-input[type="range"]::-moz-range-progress {
-  height: 6px;
-  border-radius: 3px;
-  background: #6366f1;
-  transition: background 0.15s ease;
-}
-
-input[type="range"]:hover::-moz-range-progress,
-input[type="range"]:active::-moz-range-progress {
-  background: #818cf8;
-}
-
-/* Firefox track hover tint (subtle) */
-input[type="range"]:hover::-moz-range-track {
-  background: #2a2d3a;
-}
-
-/* ==========================================================
-   THUMB — WebKit (Chrome / Edge / Safari)
-   ========================================================== */
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #ffffff;
-  border: none;
-  margin-top: -6px; /* (track-height / 2) - (thumb-height / 2) => (6/2)-(18/2) = -6 */
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.35),
-    0 0 0 1px rgba(255, 255, 255, 0.08);
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-  box-shadow:
-    0 2px 8px rgba(99, 102, 241, 0.35),
-    0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-
-input[type="range"]:active::-webkit-slider-thumb {
-  transform: scale(1.2);
-  box-shadow:
-    0 2px 10px rgba(99, 102, 241, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.12);
-}
-
-/* ==========================================================
-   THUMB — Mozilla (Firefox)
-   ========================================================== */
-input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #ffffff;
-  border: none;
-  box-shadow:
-    0 1px 3px rgba(0, 0, 0, 0.35),
-    0 0 0 1px rgba(255, 255, 255, 0.08);
-  cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-input[type="range"]::-moz-range-thumb:hover {
-  transform: scale(1.15);
-  box-shadow:
-    0 2px 8px rgba(99, 102, 241, 0.35),
-    0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-
-input[type="range"]:active::-moz-range-thumb {
-  transform: scale(1.2);
-  box-shadow:
-    0 2px 10px rgba(99, 102, 241, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.12);
-}
-
-/* ==========================================================
+/* ══════════════════════════════════════════════════════════════
    DISABLED STATE
-   ========================================================== */
-input[type="range"]:disabled::-webkit-slider-runnable-track {
-  background: #2a2d3a;
+   ══════════════════════════════════════════════════════════════ */
+input[type="range"].slider:disabled,
+.sr-row > input[type="range"]:disabled,
+.slider-row > input[type="range"]:disabled {
+  opacity: 0.32;
+  cursor:  not-allowed;
+  filter:  grayscale(0.65);
 }
-
-input[type="range"]:disabled::-webkit-slider-thumb {
-  background: #555;
-  cursor: not-allowed;
+input[type="range"].slider:disabled::-webkit-slider-thumb,
+.sr-row > input[type="range"]:disabled::-webkit-slider-thumb,
+.slider-row > input[type="range"]:disabled::-webkit-slider-thumb {
+  cursor:     not-allowed;
   box-shadow: none;
-  transform: none;
 }
 
-input[type="range"]:disabled::-moz-range-track {
-  background: #2a2d3a;
+/* ══════════════════════════════════════════════════════════════
+   GROUP / PANEL
+   ══════════════════════════════════════════════════════════════ */
+.panel {
+  display:        none;
+  flex-direction: column;
+  gap:            1px;
+  padding:        6px 0;
+}
+.panel.active { display: flex; }
+
+/* ── Tab bar active indicator ───────────────────────────────── */
+#tabBar [data-tab].active {
+  color:         #fff;
+  border-bottom: 2px solid var(--vip-accent);
+  text-shadow:   0 0 12px rgba(255, 42, 61, 0.55);
+  box-shadow:    0 2px 0 0 var(--vip-accent),
+                 0 4px 14px rgba(255, 42, 61, 0.30);
 }
 
-input[type="range"]:disabled::-moz-range-progress {
-  background: #444;
+/* ── Preset buttons ─────────────────────────────────────────── */
+.btn-preset {
+  background:    transparent;
+  border:        1px solid rgba(255, 42, 61, 0.38);
+  color:         var(--vip-text);
+  border-radius: 6px;
+  padding:       4px 11px;
+  font-size:     0.72rem;
+  cursor:        pointer;
+  transition:    background   0.15s ease,
+                 border-color 0.15s ease,
+                 color        0.15s ease,
+                 box-shadow   0.20s ease;
+}
+.btn-preset:hover {
+  background:   rgba(255, 42, 61, 0.10);
+  border-color: var(--vip-accent);
+  color:        #fff;
+  box-shadow:   0 0 14px rgba(255, 42, 61, 0.24);
 }
 
-input[type="range"]:disabled::-moz-range-thumb {
-  background: #555;
-  cursor: not-allowed;
-  box-shadow: none;
-  transform: none;
+/* ══════════════════════════════════════════════════════════════
+   TOAST
+   ══════════════════════════════════════════════════════════════ */
+#toastRegion {
+  position:       fixed;
+  bottom:         24px;
+  right:          24px;
+  z-index:        9999;
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+  pointer-events: none;
+}
+.toast {
+  padding:       10px 18px;
+  border-radius: 9px;
+  font-size:     0.82rem;
+  font-weight:   600;
+  color:         #fff;
+  background:    rgba(14, 14, 22, 0.96);
+  border:        1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:    0 6px 28px rgba(0, 0, 0, 0.60);
+  animation:     toast-in 0.18s ease-out;
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+}
+.toast-success { border-color: #2ecc71; color: #2ecc71; }
+.toast-error   { border-color: var(--vip-accent); color: var(--vip-accent); }
+.toast-warn    { border-color: var(--vip-rt);     color: var(--vip-rt); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
 }
 
-/* ==========================================================
-   FOCUS-VISIBLE (Accessibility)
-   ========================================================== */
-input[type="range"]:focus-visible {
-  outline: none;
+/* ══════════════════════════════════════════════════════════════
+   RESPONSIVE  ≤ 600px
+   ══════════════════════════════════════════════════════════════ */
+@media (max-width: 600px) {
+  .sr-row,
+  .slider-row {
+    grid-template-columns: 110px 1fr 50px;
+    padding: 6px 8px;
+    gap:     8px;
+  }
+  .sr-label,
+  .slider-label { font-size: 0.7rem; }
+  .sr-val,
+  .slider-val   { font-size: 0.63rem; min-width: 46px; padding: 2px 6px; }
 }
 
-input[type="range"]:focus-visible::-webkit-slider-thumb {
-  box-shadow:
-    0 0 0 2px #0f1117,
-    0 0 0 4px #6366f1;
+/* ══════════════════════════════════════════════════════════════
+   LOCK BUTTON  — protects a slider from preset / reset changes
+   ══════════════════════════════════════════════════════════════ */
+
+/* Amber palette for lock state */
+:root {
+  --vip-lock:      #ffcc44;
+  --vip-lock-soft: rgba(255, 204, 68, 0.13);
+  --vip-lock-glow: rgba(255, 204, 68, 0.40);
 }
 
-input[type="range"]:focus-visible::-moz-range-thumb {
-  box-shadow:
-    0 0 0 2px #0f1117,
-    0 0 0 4px #6366f1;
+.sr-lock-btn {
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  width:           22px;
+  height:          22px;
+  padding:         0;
+  border:          1px solid rgba(255, 255, 255, 0.07);
+  border-radius:   5px;
+  background:      transparent;
+  color:           var(--vip-text-dim);
+  cursor:          pointer;
+  opacity:         0.28;
+  flex-shrink:     0;
+  transition:      opacity      0.15s ease,
+                   color        0.15s ease,
+                   background   0.15s ease,
+                   border-color 0.15s ease,
+                   box-shadow   0.18s ease;
 }
 
-/* Ensure :focus-visible takes precedence over :hover / :active
-   when using keyboard navigation */
-input[type="range"]:focus-visible:hover::-webkit-slider-thumb,
-input[type="range"]:focus-visible:active::-webkit-slider-thumb {
-  box-shadow:
-    0 0 0 2px #0f1117,
-    0 0 0 4px #6366f1;
+.sr-row:hover .sr-lock-btn,
+.slider-row:hover .sr-lock-btn {
+  opacity: 0.60;
 }
 
-input[type="range"]:focus-visible:hover::-moz-range-thumb,
-input[type="range"]:focus-visible:active::-moz-range-thumb {
-  box-shadow:
-    0 0 0 2px #0f1117,
-    0 0 0 4px #6366f1;
-  transform: none;
+.sr-lock-btn:hover {
+  opacity:      1 !important;
+  color:        var(--vip-lock);
+  background:   var(--vip-lock-soft);
+  border-color: rgba(255, 204, 68, 0.40);
+  box-shadow:   0 0 8px var(--vip-lock-glow);
+}
+
+.sr-lock-btn:focus-visible {
+  outline:      2px solid var(--vip-lock);
+  outline-offset: 2px;
+}
+
+/* Locked state — amber, always visible */
+.sr-lock-btn[aria-pressed="true"] {
+  opacity:      1;
+  color:        var(--vip-lock);
+  background:   var(--vip-lock-soft);
+  border-color: rgba(255, 204, 68, 0.52);
+  box-shadow:   0 0 10px var(--vip-lock-glow);
+}
+
+/* Locked row — amber left bar + warm tint */
+.sr-row.is-locked,
+.slider-row.is-locked {
+  box-shadow:  inset 3px 0 0 var(--vip-lock),
+               inset 0 0 28px rgba(255, 204, 68, 0.04);
+  background:  linear-gradient(
+                 to right,
+                 rgba(255, 204, 68, 0.05) 0%,
+                 rgba(255, 255, 255, 0.012) 60%,
+                 transparent 100%
+               );
+}
+
+/* Value chip turns amber when row is locked */
+.sr-row.is-locked .sr-val,
+.slider-row.is-locked .slider-val {
+  color:        var(--vip-lock);
+  background:   rgba(255, 204, 68, 0.09);
+  border-color: rgba(255, 204, 68, 0.32);
+}
+
+.sr-row.is-locked:hover .sr-val,
+.slider-row.is-locked:hover .slider-val {
+  background:   rgba(255, 204, 68, 0.18);
+  border-color: rgba(255, 204, 68, 0.60);
+  box-shadow:   0 0 14px rgba(255, 204, 68, 0.28),
+                inset 0 0 8px rgba(255, 204, 68, 0.10);
+  color:        #ffe07a;
+}
+
+/* Override default hover left-bar for locked rows */
+.sr-row.is-locked:hover,
+.slider-row.is-locked:hover {
+  box-shadow:  inset 3px 0 0 var(--vip-lock),
+               inset 0 0 28px rgba(255, 204, 68, 0.06);
+  background:  linear-gradient(
+                 to right,
+                 rgba(255, 204, 68, 0.08) 0%,
+                 rgba(255, 255, 255, 0.02) 60%,
+                 transparent 100%
+               );
+}
+
+/* Label turns slightly amber when row is locked */
+.sr-row.is-locked .sr-label,
+.slider-row.is-locked .slider-label,
+.slider-row.is-locked .sr-label {
+  color: rgba(255, 220, 100, 0.80);
+}
+.sr-row.is-locked:hover .sr-label,
+.slider-row.is-locked:hover .slider-label {
+  color: var(--vip-lock);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   SLIDER HELP TOOLTIP  — shown on label hover
+   ══════════════════════════════════════════════════════════════ */
+.vip-slider-tooltip {
+  position:         absolute;
+  z-index:          8500;
+  box-sizing:       border-box;
+  width:            264px;
+  background:       rgba(7, 7, 16, 0.97);
+  border:           1px solid rgba(255, 255, 255, 0.11);
+  border-radius:    10px;
+  padding:          13px 15px;
+  display:          none;
+  pointer-events:   none;
+  backdrop-filter:  blur(14px);
+  box-shadow:       0 10px 36px rgba(0, 0, 0, 0.72),
+                    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  line-height:      1.55;
+  font-size:        0.72rem;
+  color:            var(--vip-text);
+}
+
+.vip-slider-tooltip.is-visible {
+  display: block;
+  animation: tip-in 0.12s ease-out;
+}
+
+@keyframes tip-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.vip-slider-tooltip strong {
+  display:       block;
+  font-size:     0.80rem;
+  font-weight:   700;
+  color:         #ffffff;
+  margin-bottom: 5px;
+  letter-spacing: 0.01em;
+}
+
+.vip-tip-desc {
+  display:       block;
+  color:         var(--vip-text);
+  margin-bottom: 8px;
+}
+
+.vip-tip-range {
+  display:       block;
+  font-family:   'JetBrains Mono', monospace;
+  font-size:     0.60rem;
+  color:         var(--vip-text-dim);
+  margin-bottom: 5px;
+  letter-spacing: 0.02em;
+}
+
+.vip-tip-mode {
+  display:       block;
+  font-size:     0.60rem;
+  color:         var(--vip-text-dim);
+  border-top:    1px solid rgba(255, 255, 255, 0.07);
+  padding-top:   5px;
+  margin-top:    4px;
+}
+
+.vip-tip-rt {
+  color: var(--vip-rt);
+}
+
+.vip-tip-lock {
+  display:       block;
+  font-size:     0.60rem;
+  color:         rgba(255, 204, 68, 0.65);
+  margin-top:    4px;
+  font-style:    italic;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PRESET DESCRIPTION PANEL
+   ══════════════════════════════════════════════════════════════ */
+.preset-desc-panel {
+  font-size:    0.72rem;
+  color:        var(--vip-text-dim);
+  line-height:  1.5;
+  padding:      6px 10px 4px;
+  margin-top:   2px;
+  border-left:  2px solid rgba(255, 42, 61, 0.38);
+  font-style:   italic;
+  letter-spacing: 0.01em;
+  transition:   opacity 0.2s ease;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   REDUCED MOTION
+   ══════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  input[type="range"].slider,
+  input[type="range"].slider::-webkit-slider-thumb,
+  input[type="range"].slider::-moz-range-thumb,
+  .sr-row,
+  .slider-row,
+  .sr-val,
+  .slider-val,
+  .btn-preset,
+  .rt-badge,
+  .sr-lock-btn,
+  .vip-slider-tooltip {
+    animation:  none !important;
+    transition: none !important;
+  }
 }

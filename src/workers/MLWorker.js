@@ -41,22 +41,18 @@ const MAX_BATCH_FRAMES = 32;
 // Global State
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ONNX Runtime instance - may be provided by test sandbox or initialized by worker
-// Use var to allow checking if it exists in the global scope before assignment
-// eslint-disable-next-line no-undef, no-use-before-define -- Intentional pattern:
-// In test sandbox, ort is injected as a global before this code runs.
-// In worker, ort is undefined here and set by initializeORT() via importScripts.
-// The self-referential check (typeof ort !== 'undefined') is safe because it's
-// inside a try-catch and only evaluates if ort exists in the global scope.
-var ort = (function() {
+// ONNX Runtime instance — injected in tests or loaded via importScripts in worker.
+let ortRuntime = resolveOrtRuntime();
+
+function resolveOrtRuntime() {
   try {
-    // In test sandbox, ort is provided as a global
-    // In worker, it will be null and set by initializeORT()
-    return (typeof ort !== 'undefined') ? ort : null;
-  } catch (e) {
-    return null;
+    if (typeof globalThis !== 'undefined' && globalThis.ort) return globalThis.ort;
+    if (typeof self !== 'undefined' && self.ort) return self.ort;
+  } catch (_) {
+    /* sandbox may not expose globals yet */
   }
-})();
+  return null;
+}
 let modelManifest = {}; // Model manifest entries received via 'init'
 let sessions = new Map(); // Cached InferenceSessions: modelId → session
 let loading = new Map(); // In-progress loads: modelId → Promise
@@ -69,20 +65,20 @@ let loading = new Map(); // In-progress loads: modelId → Promise
  * Initialize ONNX Runtime. Called lazily on first use.
  */
 function initializeORT() {
-  if (ort) return;
+  if (ortRuntime) return;
 
   try {
     // Load ONNX Runtime from vendored file
     importScripts('/lib/ort.min.js');
-    ort = self.ort;
+    ortRuntime = self.ort;
 
-    if (!ort) {
+    if (!ortRuntime) {
       throw new Error('ONNX Runtime failed to load');
     }
 
     // Configure WASM paths
-    ort.env.wasm.wasmPaths = '/lib/';
-    ort.env.wasm.numThreads = 1; // Single-threaded for stability
+    ortRuntime.env.wasm.wasmPaths = '/lib/';
+    ortRuntime.env.wasm.numThreads = 1; // Single-threaded for stability
 
     console.log('[MLWorker] ONNX Runtime initialized');
   } catch (error) {
@@ -183,7 +179,7 @@ async function loadModel(modelId) {
       });
 
       // Create inference session
-      const session = await ort.InferenceSession.create(arrayBuffer, {
+      const session = await ortRuntime.InferenceSession.create(arrayBuffer, {
         executionProviders: ['wasm'],
         graphOptimizationLevel: 'all'
       });
@@ -310,17 +306,6 @@ async function runSpectralMask(entry, session, audio, onProgress) {
   const bins = entry.bins || DEFAULT_BINS;
   const maxBatchFrames = entry.maxBatchFrames || MAX_BATCH_FRAMES;
 
-  // Get ort reference - in test sandbox, ort is provided as a global variable
-  // In production worker, ort is the module-level variable initialized by initializeORT()
-  // Try multiple ways to access ort:
-  // 1. Module variable (worker environment after initializeORT())
-  // 2. globalThis (modern environments)
-  // 3. this (function context)
-  const ortRuntime = ort ||
-                     (typeof globalThis !== 'undefined' && globalThis.ort) ||
-                     (typeof this !== 'undefined' && this.ort) ||
-                     null;
-  
   if (!ortRuntime) {
     throw new Error('[MLWorker] ONNX Runtime not available');
   }
@@ -527,7 +512,7 @@ async function processAudio(audioData, sampleRate, modelId, options = {}) {
   const startTime = performance.now();
 
   // Initialize ORT if needed
-  if (!ort) {
+  if (!ortRuntime) {
     initializeORT();
   }
 
@@ -561,7 +546,7 @@ async function processAudio(audioData, sampleRate, modelId, options = {}) {
     }
 
     // Create input tensor
-    const inputTensor = new ort.Tensor('float32', inputData, [batchSize, bins]);
+    const inputTensor = new ortRuntime.Tensor('float32', inputData, [batchSize, bins]);
 
     // Run inference
     const feeds = { [modelInfo.io.input]: inputTensor };
