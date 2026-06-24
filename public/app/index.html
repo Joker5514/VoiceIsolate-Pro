@@ -1,43 +1,417 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VoiceIsolate Pro — Engineer Mode</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-  <link rel="stylesheet" href="slider-theme.css">
-  <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <title>VoiceIsolate Pro v25.0 – Engineer Mode</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- onnxruntime-web is loaded locally from /lib/ort.min.js — never from CDN -->
+  <script type="importmap">{ "imports": { "three": "/lib/three.module.min.js" } }</script>
+  <script type="module">
+    import('three').then((m) => { globalThis.THREE = m; }).catch(() => {});
+  </script>
+  <link rel="stylesheet" href="ds-tokens.css" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="slider-theme.css" />
+  <link rel="stylesheet" href="style-diag-log.css" />
+  <link rel="stylesheet" href="ds-overrides.css" />
+  <!-- // LOAD ORDER VERIFIED: dsp-core.js is available before any downstream spectral stage/module code runs. -->
+  <!-- DSP math (STFT/iSTFT, filters, Wiener NR) on window.DSPCore. Loaded as a
+       classic blocking script so the binding is live before any module imports
+       evaluate — app.js captures DSP = globalThis.DSPCore at module init. -->
+  <script src="./dsp-core.js"></script>
+  <!-- // LOAD ORDER VERIFIED: ring-buffer.js is available before pipeline-orchestrator.js can allocate SAB rings or load the canonical worklet. -->
+  <script src="./ring-buffer.js"></script>
+  <script src="./visuals.js"></script>
+  <script src="./premium-visuals.js"></script>
+  <!-- // LOAD ORDER VERIFIED: visuals-bootstrap.js follows visuals.js + premium-visuals.js so VIP_INFERNO_LUT and premium init helpers are already defined when the driver wires its tab listener. -->
+  <script src="./visuals-bootstrap.js"></script>
+  <link rel="stylesheet" href="model-status-ui.css" />
+  <link id="vip-overlay-css" rel="stylesheet" href="processing-overlay.css" />
+  <link rel="stylesheet" href="mobile.css" />
+  <link id="vip-enh-css" rel="stylesheet" href="vip-enhancements.css" />
+  <link rel="stylesheet" href="debug-menu.css" />
+
+  <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
+  <style>
+    #vip-boot-error {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 99999;
+      background: #1a0a0a;
+      border-bottom: 2px solid #ff3b3b;
+      color: #ff9090;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      padding: 10px 16px;
+      white-space: pre-wrap;
+      max-height: 40vh;
+      overflow: auto;
+    }
+    #vip-boot-error b { color: #ff3b3b; }
+    .tp-ab-no-output { animation: vip-ab-flash 0.6s ease; }
+    @keyframes vip-ab-flash {
+      0%,100% { opacity:1; }
+      50%      { opacity:0.25; color:#ff3b3b; }
+    }
+  </style>
+  <script data-vip-guard="true">
+    window._vipModuleErrors = [];
+    window._vipReportError = function(src, err) {
+      window._vipModuleErrors.push({ src: src, err: err });
+      var banner = document.getElementById('vip-boot-error');
+      if (!banner) return;
+      banner.style.display = 'block';
+      banner.innerHTML = '<b>\u26a0 VoiceIsolate Pro \u2014 Module Load Error</b>\n' +
+        window._vipModuleErrors.map(function(e) {
+          return '  [' + e.src + ']  ' + (e.err && e.err.message ? e.err.message : String(e.err));
+        }).join('\n') +
+        '\n\n<small>Open DevTools \u2192 Console for full stack trace.</small>';
+    };
+    window.addEventListener('error', function(e) {
+      if (e.filename) window._vipReportError(e.filename.split('/').pop(), e.error || e.message);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      window._vipReportError('unhandledRejection', e.reason);
+    });
+  </script>
 </head>
 <body>
-  <div class="engineer-mode">
-    <header class="engineer-header">
-      <div class="header-text">
-        <h1>VoiceIsolate Pro <span class="badge">Engineer Mode</span></h1>
-        <p class="subtitle">52-parameter live mixing console</p>
+  <div id="vip-boot-error"></div>
+
+  <div id="status-message" class="status-bar" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;opacity:0;" aria-live="polite" aria-atomic="true"></div>
+
+  <div id="bootSplash" class="boot-splash" aria-hidden="false" role="status" aria-live="polite">
+    <div class="boot-splash-card">
+      <div class="boot-mark" aria-hidden="true">VIP</div>
+      <div class="boot-kicker">ENGINEER MODE · v25 · LOCAL DSP STACK</div>
+      <h2 class="boot-title">Neural Audio Processor — Initializing</h2>
+      <p id="bootSplashText" class="boot-text">Priming AudioWorklet, ONNX model cache, 32-stage Deca-Pass pipeline, and spectral controls…</p>
+      <div class="boot-progress" aria-hidden="true"><div id="bootSplashProgress" class="boot-progress-fill"></div></div>
+      <div class="boot-bars" aria-hidden="true">
+        <span class="boot-bar"></span>
+        <span class="boot-bar"></span>
+        <span class="boot-bar"></span>
+        <span class="boot-bar"></span>
+        <span class="boot-bar"></span>
+        <span class="boot-bar"></span>
+        <span class="boot-bar"></span>
       </div>
-      <button id="resetSlidersBtn">
-        <i class="fas fa-rotate-left"></i> Reset All
-      </button>
-    </header>
-
-    <div class="file-drop-zone" id="fileDropZone">
-      <i class="fas fa-cloud-arrow-up"></i>
-      <p>Drop an audio file here or click to browse</p>
-      <input type="file" id="fileInput" accept="audio/*" hidden>
-    </div>
-
-    <div class="pipeline-status" id="pipelineStatus">
-      <span class="status-dot" id="statusDot"></span>
-      <span id="statusText">Waiting for audio file…</span>
-    </div>
-
-    <!-- SLIDER GROUPS WILL BE HERE -->
-    <div id="sliderGroups">
-      <!-- Generated by app.js from STAGES + SLIDER_REGISTRY -->
     </div>
   </div>
 
-  <script src="slider-map.js"></script>
-  <script src="app.js"></script>
+  <div id="vip-startup-banner" class="startup-banner" style="display:none" role="alert">
+    <div id="vip-startup-msg"></div>
+    <button id="vip-startup-close" class="btn btn-outline" type="button" aria-label="Dismiss startup warning">Dismiss</button>
+  </div>
+
+  <header class="hdr">
+    <div class="hdr-left">
+      <div class="hdr-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/></svg></div>
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <h1 class="hdr-title" style="margin:0;">VoiceIsolate</h1>
+        <span class="hdr-ver">PRO</span>
+      </div>
+      <div style="width:1px;height:22px;background:var(--border-strong);margin:0 2px;flex:none;"></div>
+      <span class="hdr-title" style="font-size:11px;font-weight:500;color:var(--text-dim);letter-spacing:0;">Engineer Mode</span>
+      <span class="hdr-badge">LOCAL DSP</span>
+      <span class="hdr-badge diag-badge" style="display:none;">32-Stage Deca-Pass</span>
+    </div>
+    <div class="hdr-scale" role="group" aria-label="UI scale">
+      <button id="uiScaleDn" type="button" class="btn-xs" title="Decrease UI scale" aria-label="Decrease UI scale">&minus;</button>
+      <span id="uiScaleVal" aria-live="polite">100%</span>
+      <button id="uiScaleUp" type="button" class="btn-xs" title="Increase UI scale" aria-label="Increase UI scale">+</button>
+      <button id="uiScaleSave" type="button" class="btn-xs" title="Save UI scale" aria-label="Save UI scale">Save</button>
+    </div>
+    <div class="hdr-actions">
+      <a class="btn btn-outline hdr-link" href="how-it-works.html">How It Works</a>
+    </div>
+    <button id="statsToggle" class="hdr-stats-toggle" aria-label="Toggle stats" title="Toggle stats" aria-expanded="false">&#9660;</button>
+    <div class="hdr-stats" id="hdrStats">
+      <div class="hdr-stat"><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR Gain</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hCh">--</span><span class="hs-lbl">Channels</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hRMS">--</span><span class="hs-lbl">RMS</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hPeak">--</span><span class="hs-lbl">Peak</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hLUFS">--</span><span class="hs-lbl">LUFS</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hVoices">--</span><span class="hs-lbl">Voices</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hFile">--</span><span class="hs-lbl">File</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hStatus">IDLE</span><span class="hs-lbl">Pipeline</span></div>
+    </div>
+  </header>
+
+  <section class="engine-cockpit">
+    <div class="card cockpit-card">
+      <div class="cockpit-row">
+        <div class="cockpit-copy">
+          <span class="cockpit-label">Launch Diagnostics</span>
+          <strong class="cockpit-title">Strictly local processing · WebGPU/WASM inference · one-pass spectral chain</strong>
+        </div>
+        <div class="engine-pills" role="status" aria-label="Engine status">
+          <span class="engine-pill" id="engCtxPill" data-state="pending">CTX</span>
+          <span class="engine-pill" id="engWorkletPill" data-state="pending">WORKLET</span>
+          <span class="engine-pill" id="engSabPill" data-state="pending">SAB</span>
+          <span class="engine-pill" id="engMlPill" data-state="pending">ML</span>
+          <span class="engine-pill" id="engNetPill" data-state="pending">NET</span>
+        </div>
+      </div>
+      <div class="cockpit-row cockpit-row--stack">
+        <div class="cockpit-models">
+          <span class="cockpit-label">Model Cache &amp; Providers</span>
+          <div id="modelStatusPills" class="engine-pills"></div>
+        </div>
+        <div id="cdnHealthPanel" class="cockpit-health"></div>
+      </div>
+    </div>
+  </section>
+
+  <main class="main-grid">
+    <section class="col-left">
+      <div class="card upload-card">
+        <input type="file" id="fileInput" accept="audio/*,video/*" style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;" tabindex="-1" aria-hidden="true" />
+        <div id="dropZone">
+          <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop Audio or Video file, or press Enter to browse">
+            <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <p class="upload-title">Drop Audio or Video</p>
+            <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · AAC · MP4 · MOV · WEBM · MKV · AVI</p>
+            <button id="fileBtn" class="btn btn-outline" type="button">Browse Files</button>
+          </div>
+        </div>
+        <div class="upload-row">
+          <span id="fileInfo" class="file-info">No file loaded</span>
+          <span id="fileLoadIndicator" class="file-load-indicator" role="status" aria-live="polite" hidden>
+            <span class="vip-helix-spinner" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="file-load-text">Loading…</span>
+          </span>
+          <button id="clearFile" class="btn btn-outline" type="button">Clear</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="presets-row">
+          <label for="presetSel" class="presets-label">Presets</label>
+          <select id="presetSel" class="btn btn-outline">
+            <option>Voice Clarity</option>
+            <option>Podcast Clean</option>
+            <option>Forensic Extract</option>
+            <option>Music Vocal</option>
+            <option>Whisper Boost</option>
+            <option>Phone/Radio</option>
+            <option>Live Performance</option>
+            <option>Surveillance</option>
+          </select>
+          <button class="btn-preset" data-preset="Voice Clarity">Voice Clarity</button>
+          <button class="btn-preset" data-preset="Podcast Clean">Podcast Clean</button>
+          <button id="openPresetModalBtn" class="btn btn-outline" type="button">Save Custom</button>
+        </div>
+        <div class="control-search-row">
+          <input type="text" id="sliderSearch" class="btn btn-outline" placeholder="Search controls…" aria-label="Search controls" style="width:100%;" />
+          <button id="resetSlidersBtn" class="btn btn-outline" type="button">Reset Controls</button>
+        </div>
+        <div id="preset-desc-panel" class="preset-desc-panel" style="display:none;" aria-live="polite"></div>
+
+        <div class="slider-group active">
+          <button id="btn-noise-reduction" class="slider-group-header" type="button" aria-expanded="true" aria-controls="group-noise-reduction"><span>Noise Reduction</span><span class="chevron" aria-hidden="true">▾</span></button>
+          <div id="group-noise-reduction" class="slider-group-content" role="region" aria-labelledby="btn-noise-reduction">
+            <p class="group-desc">Removes unwanted background sound. The <strong>gate</strong> silences the gaps between words, while <strong>spectral NR</strong> learns the steady noise (hiss, hum, fans) and subtracts it. <em>Example:</em> clean up a phone interview recorded next to an air conditioner — set NR Amount ~70% and a Gate Threshold around −40 dB.</p>
+            <div id="tab-gate" class="slider-panel"></div>
+            <div id="tab-nr" class="slider-panel"></div>
+          </div>
+        </div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-eq"><span>EQ (10 bands)</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-eq" class="slider-group-content"><p class="group-desc">Ten tone controls from deep bass to bright "air". Boost a band to bring it forward, cut it to push it back. <em>Example:</em> for a thin laptop-mic voice, add ~+2 dB Body and +1.5 dB Presence; for a boomy close mic, cut ~−4 dB Bass.</p><div id="tab-eq" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-dynamics"><span>Dynamics</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-dynamics" class="slider-group-content"><p class="group-desc">Evens out volume. The <strong>compressor</strong> brings loud and soft words closer together; the <strong>limiter</strong> sets a hard ceiling so nothing clips. <em>Example:</em> a guest who keeps drifting from the mic — Threshold ~−24 dB, Ratio 4:1, Makeup +3 dB for a steady, broadcast-level voice.</p><div id="tab-dyn" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-spectral"><span>Spectral</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-spectral" class="slider-group-content"><p class="group-desc">Surgical frequency tools: high-/low-pass filters to trim the extremes, a de-esser to tame harsh "s" sounds, tilt for quick brighter/darker, and formant shift for vocal character. <em>Example:</em> a sharp, sibilant narrator — De-ess Amount ~6 dB at 7 kHz, HP Freq 90 Hz to drop rumble.</p><div id="tab-spec" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-advanced"><span>Advanced</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-advanced" class="slider-group-content"><p class="group-desc">Restoration and stereo tools: <strong>dereverb</strong> pulls a voice out of an echoey room, <strong>harmonic recovery</strong> rebuilds detail lost to noise reduction, and width/phase shape the stereo image. <em>Example:</em> speech recorded in an empty hall — Dereverb ~50% with Rev Decay raised toward 70% for the long tail.</p><div id="tab-adv" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-output"><span>Output</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-output" class="slider-group-content"><p class="group-desc">Final mastering: overall volume trim, the dry/wet blend between original and processed, output stereo width, and export dither. <em>Example:</em> if cleanup sounds too aggressive, pull Dry/Wet to ~75% to mix a little of the natural original back in.</p><div id="tab-out" class="slider-panel"></div></div></div>
+        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-separation"><span>Separation</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-separation" class="slider-group-content"><p class="group-desc">Isolates the voice from everything else. Focus on the speech frequency band and push down whatever sits outside it, plus cancel stereo bleed between two mics. <em>Example:</em> lift a speaker out of background music — Voice Iso ~85% with BG Suppress ~60%.</p><div id="tab-sep" class="slider-panel"></div></div></div>
+
+        <div class="actions-row" style="margin-top:8px;">
+          <button id="processBtn" class="btn btn-primary" type="button" disabled>Process</button>
+          <button id="reprocessBtn" class="btn btn-reprocess" type="button" disabled>Reprocess</button>
+          <button id="forensicToggle" class="btn btn-outline" type="button">Forensic</button>
+          <button id="auditLogBtn" class="btn btn-outline" type="button" disabled>Audit Log</button>
+        </div>
+      </div>
+
+      <div class="card pipeline-box">
+        <div id="vip-proc-badge" role="status" aria-live="polite" data-state="idle">
+          <span class="vip-pb-dot" aria-hidden="true"></span>
+          <span class="vip-pb-label">Ready — drop a file or record to begin</span>
+          <span class="vip-sonar-spinner vip-pb-spinner" aria-hidden="true" style="display:none"><i></i><i></i><i></i><b></b></span>
+        </div>
+        <div class="pipe-header"><span class="pipe-stage" id="pipeStage">S00</span><span id="pipePercent">0%</span></div>
+        <div class="pipe-bar" id="pipeBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Processing progress">
+          <div id="pipeFill" class="pipe-fill"></div>
+        </div>
+        <div id="pipeDetail" class="pipe-detail">Ready</div>
+      </div>
+
+      <div class="card save-row">
+        <button id="saveOrigBtn" class="btn btn-save" disabled>Save Original WAV</button>
+        <button id="saveProcBtn" class="btn btn-save-proc" disabled>Save Processed WAV</button>
+      </div>
+
+      <!-- Mobile sticky action bar -->
+      <div class="mobile-action-bar" id="mobileActionBar">
+        <button id="mobileProcessBtn" class="btn btn-primary" disabled><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 3 19 12 5 21"></polygon></svg>Process</button>
+        <button id="mobileReprocessBtn" class="btn btn-reprocess" disabled>Reprocess</button>
+        <button id="mobileStopBtn" class="btn btn-danger" style="display:none">Stop</button>
+      </div>
+    </section>
+
+    <section class="col-right">
+      <div class="card transport-card">
+        <div class="transport-row">
+          <button id="tpPlay" class="btn btn-tp" type="button" aria-label="Play (Space)" title="Play (Space)" disabled><span aria-hidden="true">&#9654;</span></button>
+          <button id="tpPause" class="btn btn-tp" type="button" aria-label="Pause (Space)" title="Pause (Space)" disabled><span aria-hidden="true">&#9208;</span></button>
+          <button id="tpStop" class="btn btn-tp" type="button" aria-label="Stop" title="Stop" disabled><span aria-hidden="true">&#9209;</span></button>
+          <button id="tpRew" class="btn btn-tp" type="button" aria-label="Rewind" title="Rewind" disabled><span aria-hidden="true">&#9664;&#9664;</span></button>
+          <button id="tpFwd" class="btn btn-tp" type="button" aria-label="Fast Forward" title="Fast Forward" disabled><span aria-hidden="true">&#9654;&#9654;</span></button>
+          <span class="tp-time" id="tpCur">0:00</span>
+          <span class="tp-time">/</span>
+          <span class="tp-time" id="tpDur">0:00</span>
+          <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
+          <div class="tp-speed">
+            <label for="tpSpeed">Speed</label>
+            <button id="tpSpeedDown" class="btn btn-tp btn-speed" type="button" aria-label="Slow Down Playback" title="Slow Down (−)"><span aria-hidden="true">−</span></button>
+            <select id="tpSpeed" aria-label="Playback speed">
+              <option value="0.25">0.25x</option>
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="1.75">1.75x</option>
+              <option value="2">2x</option>
+            </select>
+            <button id="tpSpeedUp" class="btn btn-tp btn-speed" type="button" aria-label="Speed Up Playback" title="Speed Up (+)"><span aria-hidden="true">+</span></button>
+          </div>
+          <button id="tpAB" class="btn btn-ab" type="button"
+            aria-label="Toggle A/B Comparison"
+            aria-describedby="tpABLabel"
+            title="Toggle A/B — X key shortcut"
+            disabled>A/B</button>
+          <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite">
+            <span class="tp-ab-tag">A</span>
+            <span class="tp-ab-name">Original</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="card viz-card">
+        <div class="viz-hdr"><span>Visualizations</span><button id="fullscreenSpectroBtn" class="btn btn-xs" type="button" aria-label="Toggle Fullscreen" title="Toggle Fullscreen"><span aria-hidden="true">⛶</span></button></div>
+        <div id="tabBar" class="tabs" role="tablist" aria-label="Visualization tabs">
+          <button id="btn-spectrogram" class="tab-btn active" type="button" role="tab" aria-controls="tab-spectrogram" data-tab="spectrogram" aria-selected="true" tabindex="0">Spectrogram</button>
+          <button id="btn-waveform" class="tab-btn" type="button" role="tab" aria-controls="tab-waveform" data-tab="waveform" aria-selected="false" tabindex="-1">Waveform</button>
+          <button id="btn-abcompare" class="tab-btn" type="button" role="tab" aria-controls="tab-abcompare" data-tab="abcompare" aria-selected="false" tabindex="-1">A/B</button>
+          <button id="btn-lufs" class="tab-btn" type="button" role="tab" aria-controls="tab-lufs" data-tab="lufs" aria-selected="false" tabindex="-1">LUFS</button>
+          <button id="btn-clusters" class="tab-btn" type="button" role="tab" aria-controls="tab-clusters" data-tab="clusters" aria-selected="false" tabindex="-1">Clusters</button>
+          <button id="btn-aura" class="tab-btn" type="button" role="tab" aria-controls="tab-aura" data-tab="aura" aria-selected="false" tabindex="-1">Aura</button>
+          <button id="btn-topo" class="tab-btn" type="button" role="tab" aria-controls="tab-topo" data-tab="topo" aria-selected="false" tabindex="-1">3D Topo</button>
+          <button id="btn-swarm" class="tab-btn" type="button" role="tab" aria-controls="tab-swarm" data-tab="swarm" aria-selected="false" tabindex="-1">Swarm</button>
+          <button id="btn-liquid" class="tab-btn" type="button" role="tab" aria-controls="tab-liquid" data-tab="liquid" aria-selected="false" tabindex="-1">Liquid</button>
+        </div>
+          <div id="tab-spectrogram" role="tabpanel" aria-labelledby="btn-spectrogram" class="panel active" tabindex="0">
+            <div class="viz-legend">Live spectrum rail · scrolling spectrogram · local-only render</div>
+            <div id="spectro3d-container" class="spectro3d-container"><canvas id="spectroCanvas" class="viz-canvas"></canvas></div>
+            <canvas id="spectro2DCanvas" class="viz-canvas spectro2d" style="display:none"></canvas>
+            <canvas id="freqCanvas" class="viz-canvas freq-cv"></canvas>
+          </div>
+          <div id="tab-waveform" role="tabpanel" aria-labelledby="btn-waveform" class="panel"><div class="viz-legend">Static inspection before playback · live playhead during transport</div><canvas id="waveCanvas" class="viz-canvas wave-cv"></canvas></div>
+          <div id="tab-abcompare" role="tabpanel" aria-labelledby="btn-abcompare" class="panel"><div class="viz-legend">Original vs processed waveform overlay for transport A/B</div><div class="wave-row"><canvas id="waveOrigCanvas" class="viz-canvas wave-cv"></canvas><canvas id="waveProcCanvas" class="viz-canvas wave-cv"></canvas></div></div>
+          <div id="tab-lufs" role="tabpanel" aria-labelledby="btn-lufs" class="panel"><div class="lufs-readouts"><div class="lufs-rd"><span class="lufs-val" id="lufsI">-23.0</span><span class="lufs-lbl">Integrated</span></div><div class="lufs-rd"><span class="lufs-val" id="lufsS">-20.0</span><span class="lufs-lbl">Short</span></div></div></div>
+          <div id="tab-saliency" role="tabpanel" aria-labelledby="btn-saliency" class="panel"><canvas id="fsCanvas" class="viz-canvas diag-saliency-cv"></canvas></div>
+          <div id="tab-clusters" role="tabpanel" aria-labelledby="btn-clusters" class="panel">
+            <canvas id="diarCanvas" class="viz-canvas"></canvas>
+            <div id="panel-vu-meters" class="vu-meter-container">
+              <div class="vu-meter" style="--vu-level:42%"><div class="vu-meter-fill"></div><div class="vu-meter-peak" style="--peak-top:58%"></div><span class="vu-meter-label">IN</span></div>
+              <div class="vu-meter" style="--vu-level:36%"><div class="vu-meter-fill"></div><div class="vu-meter-peak" style="--peak-top:64%"></div><span class="vu-meter-label">OUT</span></div>
+            </div>
+            <div class="lufs-readouts"><span class="vu-val">Input -12.4 dB</span><span class="vu-val">Output -10.9 dB</span></div>
+          </div>
+          <div id="tab-aura" role="tabpanel" aria-labelledby="btn-aura" class="panel"><canvas id="auraCanvas" class="viz-canvas"></canvas></div>
+          <div id="tab-topo" role="tabpanel" aria-labelledby="btn-topo" class="panel"><div id="topoContainer" class="spectro3d-container"></div></div>
+          <div id="tab-swarm" role="tabpanel" aria-labelledby="btn-swarm" class="panel"><div id="swarmContainer" class="spectro3d-container"></div></div>
+          <div id="tab-liquid" role="tabpanel" aria-labelledby="btn-liquid" class="panel"><canvas id="liquidCanvas" class="viz-canvas"></canvas></div>
+      </div>
+
+      <div id="videoCard" class="card video-card" style="display:none">
+        <div class="video-hdr"><span>Video preview</span><span class="video-tag">picture + processed audio</span></div>
+        <video id="videoPlayer" class="video-el" playsinline muted></video>
+        <p class="video-note">The video plays muted in sync with the transport above — what you hear is the processed (or A/B original) audio, not the file's own track.</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="customPresetModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="customPresetTitle" aria-hidden="true">
+    <div class="modal-content">
+      <h3 id="customPresetTitle">Save Custom Preset</h3>
+      <input type="text" id="customPresetName" placeholder="Preset Name" aria-label="Preset Name" />
+      <button id="saveCustomPresetBtn" class="btn btn-primary" type="button">Save</button>
+      <button id="closePresetModal" class="btn btn-outline" type="button">Cancel</button>
+    </div>
+  </div>
+
+  <div id="toastRegion" aria-live="polite"></div>
+
+  <script type="module">
+    // LOAD ORDER VERIFIED: slider-map.js resolves as an app.js dependency before app.js evaluates.
+    // pipeline-orchestrator.js was removed with the live real-time pipeline
+    // (Stem-Split & Live-Mix architecture — see CLAUDE.md). Offline processing
+    // runs through app.js _runFallbackPipeline.
+    const _parallel = [
+      './processing-overlay.js',
+      './session-persist.js',
+    ];
+    await Promise.allSettled(_parallel.map(src =>
+      import(src).catch(err => {
+        console.error('[VIP] Failed to load module:', src, err);
+        if (typeof window._vipReportError === 'function') window._vipReportError(src, err);
+      })
+    ));
+    await import('./app.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./app.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./app.js', err);
+    });
+    await import('./vip-boot.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./vip-boot.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./vip-boot.js', err);
+    });
+    import('./vip-enhancements.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./vip-enhancements.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./vip-enhancements.js', err);
+    });
+    /* vip-fixes.js — transport, A/B, slider search, speed buttons, accordions */
+    import('./vip-fixes.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./vip-fixes.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./vip-fixes.js', err);
+    });
+    /* debug-menu.js — live system debug panel (` key to toggle) */
+    import('./debug-menu.js').catch(err => {
+      console.warn('[VIP] debug-menu.js not loaded:', err);
+    });
+  </script>
+
+  <!--
+    REMOVED: _vipSafetyNet <script> block (was here until this commit).
+
+    ROOT CAUSE of processBtn disappearing after file load:
+      The safety-net listened on DOMContentLoaded and called new VoiceIsolatePro()
+      if window._vipApp was falsy. Because ES module evaluation is async, the
+      safety-net's DOMContentLoaded callback often fired AFTER the module bootstrap
+      set window._vipApp — but in the critical race window it fired BEFORE, creating
+      a second VoiceIsolatePro() instance. That second constructor re-ran cacheDom()
+      and bindEvents(), which left processBtn.disabled = true (its HTML default),
+      overwriting the enabled state set by onAudioLoaded() on the first instance.
+
+    The module bootstrap chain (app.js → vip-boot.js) already has:
+      if (window._vipApp) return;
+    The safety-net was fully redundant. Do not re-add it.
+  -->
+
 </body>
 </html>
