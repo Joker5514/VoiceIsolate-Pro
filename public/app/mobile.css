@@ -64,7 +64,7 @@ html {
    ═══════════════════════════════════════════ */
 @media (max-width: 960px) {
   .main-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     margin: 6px auto;
     padding: 0 8px 80px; /* room for mobile action bar */
   }

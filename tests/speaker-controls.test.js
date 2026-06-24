@@ -122,4 +122,62 @@ describe('SpeakerControls', () => {
     controls.clear();
     expect(container.children).toHaveLength(0);
   });
+
+  // ── PR changes: volume range extended to 0–200 (ENHANCE / boost) ────────────
+
+  test('volume slider max is "200" (ENHANCE range, not the old 100)', () => {
+    controls.render();
+    const card = container.querySelector('[data-speaker-id="S1"]');
+    const slider = card.querySelector('input[type="range"]');
+    expect(slider.getAttribute('max')).toBe('200');
+  });
+
+  test('volume slider min remains "0"', () => {
+    controls.render();
+    const slider = container.querySelector('[data-speaker-id="S1"] input[type="range"]');
+    expect(slider.getAttribute('min')).toBe('0');
+  });
+
+  test('volume slider at 175 calls setSpeakerVolume with 175 (+~4.9 dB boost)', () => {
+    controls.render();
+    const card = container.querySelector('[data-speaker-id="S1"]');
+    const slider = card.querySelector('input[type="range"]');
+    slider.value = '175';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(mixer.setSpeakerVolume).toHaveBeenCalledWith('S1', 175);
+  });
+
+  test('volume slider at 200 calls setSpeakerVolume with 200 (maximum ENHANCE)', () => {
+    controls.render();
+    const card = container.querySelector('[data-speaker-id="S2"]');
+    const slider = card.querySelector('input[type="range"]');
+    slider.value = '200';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(mixer.setSpeakerVolume).toHaveBeenCalledWith('S2', 200);
+  });
+
+  test('readout shows "200%" when slider is at max boost', () => {
+    controls.render();
+    const card = container.querySelector('[data-speaker-id="S1"]');
+    const slider = card.querySelector('input[type="range"]');
+    const readout = card.querySelector('.slider-val');
+    slider.value = '200';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(readout.textContent).toBe('200%');
+  });
+
+  // ── PR change: aria-label mentions boost hint ─────────────────────────────
+
+  test('volume slider aria-label contains "(above 100% boosts)"', () => {
+    controls.render([{ speakerId: 'S1', label: 'Speaker S1' }]);
+    const card = container.querySelector('[data-speaker-id="S1"]');
+    const slider = card.querySelector('input[type="range"]');
+    expect(slider.getAttribute('aria-label')).toContain('(above 100% boosts)');
+  });
+
+  test('volume slider aria-label references the speaker label', () => {
+    controls.render([{ speakerId: 'S1', label: 'Speaker S1' }]);
+    const slider = container.querySelector('[data-speaker-id="S1"] input[type="range"]');
+    expect(slider.getAttribute('aria-label')).toContain('Speaker S1');
+  });
 });

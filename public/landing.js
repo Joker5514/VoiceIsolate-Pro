@@ -34,14 +34,37 @@ const ui = {
   exportNoiseBtn: $('exportNoiseBtn'),
   muteVoiceBtn: $('muteVoiceBtn'),
   muteNoiseBtn: $('muteNoiseBtn'),
-  statusDot: $('statusDot'),
-  statusText: $('statusText'),
-  progress: $('inferenceProgress'),
+  // Live-Mix sliders: disabled in markup until stems exist, then enabled in
+  // onStems() so they are never clickable-but-inert (no audio to mix yet).
+  mixSliders: [
+    $('noiseReductionSlider'), $('voiceLevelSlider'), $('volumeSlider'),
+    $('eqLowSlider'), $('eqHighSlider'),
+    // Tier-A console
+    $('eqLowMidSlider'), $('eqMidSlider'), $('eqHighMidSlider'),
+    $('highpassSlider'), $('lowpassSlider'),
+    $('compThresholdSlider'), $('compRatioSlider'), $('compAttackSlider'),
+    $('compReleaseSlider'), $('compKneeSlider'), $('makeupGainSlider'),
+    $('stereoWidthSlider'),
+    // Tier-B: noise gate + de-esser
+    $('gateThresholdSlider'), $('gateRangeSlider'),
+    $('gateAttackSlider'), $('gateReleaseSlider'),
+    $('deEsserFreqSlider'), $('deEsserAmountSlider'),
+  ],
+  // DS StatusPill mounts here (setStatus re-renders it); the Badge and
+  // LevelMeter mount points are likewise populated by landing.js.
+  statusPillMount: $('statusPillMount'),
+  archBadgeMount: $('archBadgeMount'),
+  outputMeterMount: $('outputMeterMount'),
+  // Realtime processing indicator — DS ProcessLoader component mounts here.
+  procLoaderMount: $('procLoaderMount'),
   timeReadout: $('timeReadout'),
   presetSelect: $('presetSelect'),
   waveCanvas: $('waveCanvas'),
   specCanvas: $('specCanvas'),
   diarCanvas: $('diarCanvas'),
+  // Video preview (shown only for video uploads; muted, mixer drives the clock).
+  videoCard: $('videoCard'),
+  videoPlayer: $('videoPlayer'),
   speakersPanel: $('speakersPanel'),
   speakerStatus: $('speakerStatus'),
   speakerCardsGrid: $('speakerCardsGrid'),
@@ -58,17 +81,176 @@ let exportEngine = null;
 let requestSeq = 0;
 let diarSeq = 0;
 let latestStemSet = [];
+let currentJobLabel = 'Separating stems…';
+/** Object URL backing the <video> preview; revoked when a new file loads. */
+let videoUrl = null;
 
 const DIARIZATION_TIMEOUT_MS = 60000;
 
 function setStatus(msg, cls = '') {
-  ui.statusText.textContent = msg;
-  ui.statusDot.className = `status-dot${cls ? ` ${cls}` : ''}`;
+  renderStatusPill(STATE_FOR_CLS[cls] || 'pending', msg);
 }
 
 function fmtTime(s) {
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+}
+
+// ─── Processing indicator (DS ProcessLoader component) ───────────────────────
+
+// Design-system namespace populated by _ds_bundle.js (classic script, loads
+// before this module so the reference is valid at module init time).
+const DS = window.VoiceIsolateProDesignSystem_38f745;
+
+// Map the legacy status classes ('', 'warn', 'error', 'active') to the DS
+// StatusPill's data-state values.
+const STATE_FOR_CLS = { '': 'pending', warn: 'warn', error: 'error', active: 'active' };
+
+/** Render the DS StatusPill into the status row (falls back to dot + text). */
+function renderStatusPill(state, msg) {
+  const mount = ui.statusPillMount;
+  if (!mount) return;
+  if (DS && DS.StatusPill) {
+    try {
+      const el = DS.StatusPill({ state, children: msg });
+      if (el instanceof Node) { mount.replaceChildren(el); return; }
+    } catch (err) {
+      console.warn('[VIP] StatusPill render error:', err);
+    }
+  }
+  // Graceful fallback when the DS bundle is unavailable.
+  const dot = document.createElement('span');
+  dot.className = `status-dot${state === 'pending' ? '' : ` ${state}`}`;
+  const txt = document.createElement('span');
+  txt.textContent = msg;
+  mount.replaceChildren(dot, txt);
+}
+
+/** Swap the static header text badge for the DS Badge component when present. */
+function mountBadge() {
+  const mount = ui.archBadgeMount;
+  if (!mount || !(DS && DS.Badge)) return; // fallback: the static .arch-badge text
+  try {
+    const el = DS.Badge({ variant: 'accent', dot: true, children: 'STEM-SPLIT & LIVE-MIX' });
+    if (el instanceof Node) { mount.classList.remove('arch-badge'); mount.replaceChildren(el); }
+  } catch (err) {
+    console.warn('[VIP] Badge render error:', err);
+  }
+}
+
+const PROC_STAGES = [
+  { id: 'decode',   label: 'Decode'   },
+  { id: 'resample', label: 'Resample' },
+  { id: 'separate', label: 'Separate' },
+];
+
+let _procState = { active: 0, progress: 0 };
+
+function _renderProcLoader() {
+  const mount = ui.procLoaderMount;
+  if (!mount) return;
+  mount.innerHTML = '';
+  if (DS && DS.ProcessLoader) {
+    try {
+      const el = DS.ProcessLoader({
+        stages: PROC_STAGES,
+        active: _procState.active,
+        progress: _procState.progress,
+      });
+      if (el instanceof Node) mount.appendChild(el);
+    } catch (err) {
+      console.warn('[VIP] ProcessLoader render error:', err);
+    }
+  } else {
+    // Graceful fallback when the DS bundle is unavailable.
+    const fb = document.createElement('div');
+    fb.style.cssText = 'padding:10px 0;color:var(--text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--font-ui)';
+    fb.textContent = PROC_STAGES[_procState.active]
+      ? `${PROC_STAGES[_procState.active].label}… ${_procState.progress > 0 ? _procState.progress + '%' : ''}`
+      : 'Processing…';
+    mount.appendChild(fb);
+  }
+}
+
+/**
+ * Show the ProcessLoader. `indeterminate` is accepted for call-site compat
+ * (decode/resample have no known duration); the scan-bar animation always
+ * runs so the UI remains active throughout.
+ */
+function showSpinner(stage, { indeterminate = false } = {}) {
+  _procState = { active: stage.toLowerCase().includes('resamp') ? 1 : 0, progress: 0 };
+  ui.procLoaderMount.hidden = false;
+  _renderProcLoader();
+}
+
+/** Advance to the Separate stage and update the live progress percentage. */
+function setProgress(percent, stage) {
+  const pct = Math.max(0, Math.min(100, Math.round(percent)));
+  _procState = { active: 2, progress: pct };
+  ui.procLoaderMount.hidden = false;
+  _renderProcLoader();
+}
+
+function hideSpinner() {
+  ui.procLoaderMount.hidden = true;
+}
+
+// ─── Video preview (picture in sync with processed audio) ────────────────────
+
+/** Treat as video by MIME type, or by container extension when MIME is absent. */
+function isVideoFile(file) {
+  if (file.type && file.type.startsWith('video/')) return true;
+  return /\.(mp4|webm|mov|m4v|ogv|mkv|avi)$/i.test(file.name || '');
+}
+
+function loadVideo(file) {
+  clearVideo();
+  videoUrl = URL.createObjectURL(file);
+  const v = ui.videoPlayer;
+  v.muted = true; // audio always comes from the Web Audio mixer
+  // Reveal only once the element can actually paint a frame, so we never flash
+  // an empty black box; drop the preview if the container's video track can't
+  // be displayed (audio-only processing still works).
+  v.onloadedmetadata = () => { ui.videoCard.hidden = false; };
+  v.onerror = () => clearVideo();
+  v.src = videoUrl;
+}
+
+function clearVideo() {
+  if (!videoUrl && ui.videoCard.hidden) return; // nothing loaded — avoid empty-src churn
+  const v = ui.videoPlayer;
+  // Detach handlers first: removeAttribute('src') + load() fires a spurious
+  // 'error' during teardown, which would otherwise re-enter clearVideo.
+  v.onloadedmetadata = null;
+  v.onerror = null;
+  try { v.pause(); } catch { /* not playing */ }
+  v.removeAttribute('src');
+  try { v.load(); } catch { /* reset is best-effort */ }
+  ui.videoCard.hidden = true;
+  if (videoUrl) { URL.revokeObjectURL(videoUrl); videoUrl = null; }
+}
+
+function hasVideo() { return Boolean(videoUrl) && !ui.videoCard.hidden; }
+
+/**
+ * Reconcile the muted <video> to the mixer, which is the single playback clock.
+ * Called after every transport action and on a periodic tick so seeks from the
+ * waveform (which go straight to mixer.seek) and natural end-of-stream all stay
+ * in sync without the video ever driving audio.
+ */
+function syncVideo() {
+  if (!hasVideo() || !mixer) return;
+  const v = ui.videoPlayer;
+  if (v.readyState < 1) return; // Ensure metadata is loaded before syncing
+  const target = mixer.currentTime();
+  if (mixer.isPlaying()) {
+    if (Math.abs(v.currentTime - target) > 0.3) v.currentTime = target;
+    // Muted playback is allowed to start without a user gesture.
+    if (v.paused) v.play().catch(() => {});
+  } else {
+    if (!v.paused) v.pause();
+    if (Math.abs(v.currentTime - target) > 0.05) v.currentTime = target;
+  }
 }
 
 // ─── Worker lifecycle ────────────────────────────────────────────────────────
@@ -84,17 +266,20 @@ function getWorker() {
         console.log(`[VIP][landing] MLWorker ready (backend: ${msg.backend})`);
         break;
       case 'progress':
-        ui.progress.hidden = false;
-        ui.progress.value = msg.percent;
-        setStatus(`Separating stems… ${msg.percent}%`, 'warn');
+        // Live inference progress: ring + numeric %. The status line keeps the
+        // stage label only (set once in onProcess) so the polite aria-live
+        // region isn't re-announced on every frame.
+        setProgress(msg.percent, currentJobLabel);
         break;
       case 'stems':
         onStems(msg);
         break;
       case 'error':
         setStatus(`Processing failed: ${msg.message}`, 'error');
-        ui.progress.hidden = true;
+        hideSpinner();
         ui.processBtn.disabled = false;
+        ui.fileInput.disabled = false;
+        ui.modelSelect.disabled = false;
         break;
       default:
         break;
@@ -102,7 +287,10 @@ function getWorker() {
   });
   worker.addEventListener('error', (err) => {
     setStatus(`Worker error: ${err.message || 'unknown'}`, 'error');
+    hideSpinner();
     ui.processBtn.disabled = false;
+    ui.fileInput.disabled = false;
+    ui.modelSelect.disabled = false;
   });
   return worker;
 }
@@ -182,14 +370,47 @@ const READOUTS = [
   ['volumeSlider', 'volumeVal', (v) => `${v}%`],
   ['eqLowSlider', 'eqLowVal', (v) => `${v} dB`],
   ['eqHighSlider', 'eqHighVal', (v) => `${v} dB`],
+  ['eqLowMidSlider', 'eqLowMidVal', (v) => `${v} dB`],
+  ['eqMidSlider', 'eqMidVal', (v) => `${v} dB`],
+  ['eqHighMidSlider', 'eqHighMidVal', (v) => `${v} dB`],
+  ['highpassSlider', 'highpassVal', (v) => `${v} Hz`],
+  ['lowpassSlider', 'lowpassVal', (v) => `${v} Hz`],
+  ['compThresholdSlider', 'compThresholdVal', (v) => `${v} dB`],
+  ['compRatioSlider', 'compRatioVal', (v) => `${v}:1`],
+  ['compAttackSlider', 'compAttackVal', (v) => `${v} ms`],
+  ['compReleaseSlider', 'compReleaseVal', (v) => `${v} ms`],
+  ['compKneeSlider', 'compKneeVal', (v) => `${v} dB`],
+  ['makeupGainSlider', 'makeupGainVal', (v) => `${v} dB`],
+  ['stereoWidthSlider', 'stereoWidthVal', (v) => `${v}%`],
+  ['gateThresholdSlider', 'gateThresholdVal', (v) => `${v} dB`],
+  ['gateRangeSlider', 'gateRangeVal', (v) => `${v} dB`],
+  ['gateAttackSlider', 'gateAttackVal', (v) => `${v} ms`],
+  ['gateReleaseSlider', 'gateReleaseVal', (v) => `${v} ms`],
+  ['deEsserFreqSlider', 'deEsserFreqVal', (v) => `${v} Hz`],
+  ['deEsserAmountSlider', 'deEsserAmountVal', (v) => `${v}%`],
 ];
+
+/** Paint the DS ParamSlider red value-fill (--pct) from the slider position. */
+function paintSliderFill(slider) {
+  const min = Number(slider.min) || 0;
+  const span = Number(slider.max) - min;
+  const pct = span > 0 ? ((Number(slider.value) - min) / span) * 100 : 0;
+  slider.style.setProperty('--pct', `${Math.max(0, Math.min(100, pct))}%`);
+}
 
 function wireReadouts() {
   for (const [sliderId, valId, fmt] of READOUTS) {
     const slider = $(sliderId);
     const val = $(valId);
     if (!slider || !val) continue;
-    slider.addEventListener('input', () => { val.textContent = fmt(slider.value); });
+    // Adopt the DS ParamSlider track (red value-fill) on the existing input —
+    // non-destructive: same id/range, so SliderUI binding + presets still apply.
+    slider.classList.add('vip-slider__input');
+    paintSliderFill(slider);
+    slider.addEventListener('input', () => {
+      val.textContent = fmt(slider.value);
+      paintSliderFill(slider);
+    });
   }
 }
 
@@ -221,42 +442,63 @@ async function onFileChosen() {
   const file = ui.fileInput.files && ui.fileInput.files[0];
   if (!file) return;
   ui.processBtn.disabled = true;
+  // Show the picture immediately for videos; hide the player for audio files.
+  if (isVideoFile(file)) loadVideo(file); else clearVideo();
   try {
+    showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
     ingested = await ingestFile(file, {
       onProgress: (stage) => {
-        if (stage === 'resampling') setStatus('Resampling to 48 kHz…', 'warn');
+        if (stage === 'resampling') {
+          showSpinner('Resampling to 48 kHz…', { indeterminate: true });
+          setStatus('Resampling to 48 kHz…', 'warn');
+        }
       },
     });
+    hideSpinner();
     setStatus(`Ready: ${ingested.sourceName} · ${fmtTime(ingested.duration)} · ${ingested.numberOfChannels} ch`, '');
     ui.processBtn.disabled = false;
   } catch (err) {
+    hideSpinner();
+    clearVideo(); // nothing to play — don't leave a dangling preview/object URL
     console.error('[VIP][landing] ingestion failed:', err);
     setStatus(err.message, 'error');
     ingested = null;
   }
 }
 
+// UI-level model chains: run several models in series for maximum isolation.
+// Keys are <select> values that are NOT single manifest entries; the worker
+// receives the resolved `modelIds` array (see MLWorker chain support).
+const MODEL_CHAINS = Object.freeze({
+  max_isolation: ['bsrnn_vocals', 'rnnoise'], // extract voice, then strip residual noise
+});
+
 function onProcess() {
   if (!ingested) return;
-  const modelId = getModel(ui.modelSelect.value).id;
+  const selection = ui.modelSelect.value;
+  const chain = MODEL_CHAINS[selection];
   ui.processBtn.disabled = true;
-  ui.progress.hidden = false;
-  ui.progress.value = 0;
-  setStatus('Separating stems… 0%', 'warn');
+  ui.fileInput.disabled = true;
+  ui.modelSelect.disabled = true;
+  currentJobLabel = chain ? 'Maximum isolation (2 passes)…' : 'Separating stems…';
+  setProgress(0, currentJobLabel);
+  setStatus(currentJobLabel, 'warn');
 
   // Channel copies are transferred — keep our reference for re-processing.
   const channelData = ingested.channelData.map((c) => new Float32Array(c));
-  getWorker().postMessage(
-    { type: 'process', requestId: ++requestSeq, modelId, channelData, sampleRate: ingested.sampleRate },
-    channelData.map((c) => c.buffer)
-  );
+  const msg = { type: 'process', requestId: ++requestSeq, channelData, sampleRate: ingested.sampleRate };
+  if (chain) msg.modelIds = chain;
+  else msg.modelId = getModel(selection).id;
+  getWorker().postMessage(msg, channelData.map((c) => c.buffer));
 }
 
 function onStems({ requestId, clean, noise, stems, sampleRate, passthrough }) {
   if (requestId !== requestSeq) return; // stale response
-  ui.progress.hidden = true;
+  hideSpinner();
   ui.processBtn.disabled = false;
+  ui.fileInput.disabled = false;
+  ui.modelSelect.disabled = false;
 
   if (!mixer) {
     mixer = new PlaybackMixer();
@@ -273,10 +515,16 @@ function onStems({ requestId, clean, noise, stems, sampleRate, passthrough }) {
   else mixer.loadStems(clean, noise, sampleRate);
   visualizer.loadStems(clean, noise, mixer.duration());
   syncMuteButtons();
+  startOutputMeter();
 
   for (const btn of [ui.playBtn, ui.pauseBtn, ui.stopBtn,
     ui.exportMixBtn, ui.exportVoiceBtn, ui.exportNoiseBtn,
     ui.muteVoiceBtn, ui.muteNoiseBtn, ui.presetSelect]) btn.disabled = false;
+  for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn,
+    ui.muteVoiceBtn, ui.muteNoiseBtn, ui.presetSelect,
+    ...ui.mixSliders]) {
+    if (el) el.disabled = false;
+  }
   setStatus(
     passthrough
       ? 'Model unavailable — passthrough stems loaded (original audio). Check that /app/models is being served.'
@@ -300,13 +548,14 @@ function onStems({ requestId, clean, noise, stems, sampleRate, passthrough }) {
 
 function syncMuteButtons() {
   if (!mixer) return;
-  const paint = (btn, muted, label) => {
-    btn.textContent = muted ? `Unmute ${label}` : `Mute ${label}`;
-    btn.classList.toggle('active', muted);
-    btn.setAttribute('aria-pressed', String(muted));
+  // DS Switch visual state: thumb position (--on) + aria-checked. The label
+  // stays static ("Mute Voice"/"Mute Background"); the thumb shows on/off.
+  const paint = (btn, muted) => {
+    btn.classList.toggle('vip-switch--on', muted);
+    btn.setAttribute('aria-checked', String(muted));
   };
-  paint(ui.muteVoiceBtn, mixer.isVoiceMuted(), 'Voice');
-  paint(ui.muteNoiseBtn, mixer.isNoiseMuted(), 'Background');
+  paint(ui.muteVoiceBtn, mixer.isVoiceMuted());
+  paint(ui.muteNoiseBtn, mixer.isNoiseMuted());
 }
 
 function wireMuteButtons() {
@@ -322,17 +571,83 @@ function wireMuteButtons() {
   });
 }
 
+// ─── Output level meter (DS LevelMeter, real RMS from the mixer analyser) ────
+
+let _meterEl = null;     // mounted .vip-meter node
+let _meterFill = null;   // cached .vip-meter__fill (driven each frame)
+let _meterRead = null;   // cached .vip-meter__val
+let _meterRAF = 0;
+let _meterTd = null;     // reusable time-domain scratch buffer
+let _meterIdle = false;  // true once the meter has been zeroed while paused
+
+/** dBFS amplitude (0..1) → LevelMeter 0..100 (value-100 = dBFS, -100 floor). */
+function meterValue(amp) {
+  if (amp <= 1e-5) return 0;
+  return Math.max(0, Math.min(100, 100 + 20 * Math.log10(amp)));
+}
+
+function _meterTick() {
+  _meterRAF = requestAnimationFrame(_meterTick);
+  if (!mixer || !_meterEl) return;
+  // Idle when paused/stopped: drop to the floor once, then skip the analyser
+  // read and DOM writes until playback resumes (no work on a silent graph).
+  if (!mixer.isPlaying()) {
+    if (_meterIdle) return;
+    _meterIdle = true;
+    if (_meterFill) _meterFill.style.width = '0%';
+    if (_meterRead) _meterRead.textContent = '-∞';
+    return;
+  }
+  _meterIdle = false;
+  let analyser;
+  try { analyser = mixer.getAnalyser(); } catch { return; }
+  if (!analyser) return;
+  const n = analyser.fftSize;
+  if (!_meterTd || _meterTd.length !== n) _meterTd = new Float32Array(n);
+  analyser.getFloatTimeDomainData(_meterTd);
+  let sumSq = 0;
+  for (let i = 0; i < n; i++) { const s = _meterTd[i]; sumSq += s * s; }
+  const v = meterValue(Math.sqrt(sumSq / n));
+  if (_meterFill) _meterFill.style.width = `${v}%`;
+  if (_meterRead) _meterRead.textContent = v <= 0 ? '-∞' : (v - 100).toFixed(1);
+}
+
+/** Reveal + mount the DS LevelMeter once; the RAF loop drives it from real audio. */
+function startOutputMeter() {
+  const mount = ui.outputMeterMount;
+  if (!mount) return;
+  mount.hidden = false;
+  if (!_meterEl && DS && DS.LevelMeter) {
+    try {
+      const el = DS.LevelMeter({ label: 'Output', value: 0, unit: 'dB' });
+      if (el instanceof Node) {
+        mount.replaceChildren(el);
+        _meterEl = el;
+        // Cache the dynamic nodes once so the RAF loop never re-queries the DOM.
+        _meterFill = el.querySelector('.vip-meter__fill');
+        _meterRead = el.querySelector('.vip-meter__val');
+      }
+    } catch (err) {
+      console.warn('[VIP] LevelMeter render error:', err);
+    }
+  }
+  if (!_meterRAF && _meterEl) _meterRAF = requestAnimationFrame(_meterTick);
+}
+
 function wireTransport() {
   ui.playBtn.addEventListener('click', async () => {
-    try { await mixer.play(); } catch (err) { setStatus(err.message, 'error'); }
+    try { await mixer.play(); syncVideo(); } catch (err) { setStatus(err.message, 'error'); }
   });
-  ui.pauseBtn.addEventListener('click', () => mixer && mixer.pause());
-  ui.stopBtn.addEventListener('click', () => mixer && mixer.stop());
+  ui.pauseBtn.addEventListener('click', () => { if (mixer) { mixer.pause(); syncVideo(); } });
+  ui.stopBtn.addEventListener('click', () => { if (mixer) { mixer.stop(); syncVideo(); } });
 
+  // One ticker drives the time readout and keeps the muted video aligned with
+  // the mixer clock (covers waveform click-to-seek and natural end-of-stream).
   setInterval(() => {
     if (!mixer) return;
     ui.timeReadout.textContent = `${fmtTime(mixer.currentTime())} / ${fmtTime(mixer.duration())}`;
-  }, 250);
+    syncVideo();
+  }, 200);
 }
 
 function exportPayload() {
@@ -374,4 +689,5 @@ wireReadouts();
 wireTransport();
 wireMuteButtons();
 wireExportButtons();
+mountBadge();
 setStatus('Idle — choose a file to begin', '');

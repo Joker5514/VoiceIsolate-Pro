@@ -20,7 +20,7 @@ const path = require('path');
 const appSrc = fs.readFileSync(
   path.join(__dirname, '../public/app/app.js'),
   'utf8'
-);
+).replace(/\r\n/g, '\n');
 
 const sliderMapSrc = fs.readFileSync(
   path.join(__dirname, '../public/app/slider-map.js'),
@@ -31,10 +31,10 @@ const sliderMapSrc = fs.readFileSync(
 // (used in structural tests without requiring the module)
 function extractSlidersFromSrc() {
   // Only collect id values from within the SLIDERS block (not from presets or other code).
-  // The regex captures everything between `const SLIDERS = {` and the following `const SLIDER_MAP`.
-  const slidersBlockMatch = appSrc.match(/const SLIDERS = \{([\s\S]*?)\};\s*\nconst SLIDER_MAP/);
+  // The regex captures everything between `const SLIDERS = {` and the following const declaration.
+  const slidersBlockMatch = appSrc.match(/const SLIDERS = \{([\s\S]*?)\};\s*\n(?:\/\/[^\n]*\n\s*)*const SLIDER_BY_ID/);
   if (!slidersBlockMatch) {
-    throw new Error('Could not locate SLIDERS block in app.js — check that const SLIDER_MAP follows immediately after the closing brace');
+    throw new Error('Could not locate SLIDERS block in app.js — check that const SLIDER_BY_ID follows after the closing brace');
   }
   const idMatches = [...slidersBlockMatch[1].matchAll(/id\s*:\s*'([^']+)'/g)];
   return idMatches.map(m => m[1]);

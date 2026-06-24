@@ -43,8 +43,9 @@ android {
             if (hasReleaseSigningConfig) {
                 signingConfig signingConfigs.release
             }
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // Enable ProGuard for code shrinking and obfuscation in release builds
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

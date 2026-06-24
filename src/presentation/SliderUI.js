@@ -29,6 +29,27 @@ const SLIDER_BINDINGS = Object.freeze([
   { id: 'volumeSlider', method: 'setVolume', initial: 100 },
   { id: 'eqLowSlider', method: 'setLowShelf', initial: 0 },
   { id: 'eqHighSlider', method: 'setHighShelf', initial: 0 },
+  // Tier-A console (all map to PlaybackMixer AudioParams; absent ids skipped).
+  { id: 'eqLowMidSlider', method: 'setEqLowMid', initial: 0 },
+  { id: 'eqMidSlider', method: 'setEqMid', initial: 0 },
+  { id: 'eqHighMidSlider', method: 'setEqHighMid', initial: 0 },
+  { id: 'highpassSlider', method: 'setHighpass', initial: 20 },
+  { id: 'lowpassSlider', method: 'setLowpass', initial: 20000 },
+  { id: 'compThresholdSlider', method: 'setCompThreshold', initial: 0 },
+  { id: 'compRatioSlider', method: 'setCompRatio', initial: 1 },
+  { id: 'compAttackSlider', method: 'setCompAttack', initial: 20 },
+  { id: 'compReleaseSlider', method: 'setCompRelease', initial: 250 },
+  { id: 'compKneeSlider', method: 'setCompKnee', initial: 0 },
+  { id: 'makeupGainSlider', method: 'setMakeupGain', initial: 0 },
+  { id: 'stereoWidthSlider', method: 'setStereoWidth', initial: 100 },
+  // Tier-B: noise gate (playback worklet)
+  { id: 'gateThresholdSlider', method: 'setGateThreshold', initial: -45 },
+  { id: 'gateRangeSlider', method: 'setGateRange', initial: 0 },
+  { id: 'gateAttackSlider', method: 'setGateAttack', initial: 5 },
+  { id: 'gateReleaseSlider', method: 'setGateRelease', initial: 100 },
+  // Tier-B: de-esser
+  { id: 'deEsserFreqSlider', method: 'setDeEsserFreq', initial: 6000 },
+  { id: 'deEsserAmountSlider', method: 'setDeEsserAmount', initial: 0 },
 ]);
 
 export class SliderUI {

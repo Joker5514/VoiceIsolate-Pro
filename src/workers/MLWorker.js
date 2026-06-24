@@ -1,7 +1,8 @@
 /**
- * VoiceIsolate Pro — ML Inference Worker (Layer 2: Workers)
+ * VoiceIsolate Pro — ML Worker (Layer 2: Workers)
  *
- * Classic Web Worker that owns the entire offline-inference lifecycle:
+ * Classic Web Worker that performs offline ONNX model inference for voice isolation.
+ * Implements the spectral-mask strategy: STFT magnitude → mask → masked iSTFT overlap-add.
  *
  *   1. Fetch the .onnx model named by the manifest entry (same-origin
  *      /app/models — committed, trained spectral-mask networks)
@@ -20,324 +21,511 @@
  *       stems?: Array<{ id, label, channels: Float32Array[] }>,
  *       sampleRate, passthrough: boolean }
  *   ← { type: 'error', requestId?, message }
+ * Architecture:
+ * - Receives model manifest entries via 'init' message (does not import ModelManifest.js)
+ * - Loads ONNX Runtime via importScripts (classic worker, not ES module)
+ * - Verifies model integrity using SHA-256 before creating sessions
+ * - Caches loaded InferenceSessions to avoid reloading
+ * - Processes audio in batches using overlap-add STFT/iSTFT
  *
- * This worker NEVER touches the DOM, never opens a microphone, and never
- * re-runs on slider changes — inference happens exactly once per file.
- * The manifest arrives via the init message (single source of truth lives in
- * src/core/ModelManifest.js; classic workers cannot import ES modules).
+ * Message Protocol:
+ * - 'init': { models: Object } — Initialize with model manifest entries
+ * - 'process': { audioData, sampleRate, modelId, options } — Process audio
+ * - 'unload': { modelId } — Unload a cached model
+ * - 'shutdown': {} — Clean up and terminate
+ *
+ * Response Messages:
+ * - 'progress': { stage, progress, modelId } — Loading progress
+ * - 'result': { audioData, metadata } — Processed audio result
+ * - 'error': { error, details } — Error information
+ *
+ * IMPORTANT: This is a classic worker (not module worker) because ONNX Runtime
+ * must be loaded via importScripts. It cannot use ES6 import/export.
  */
 'use strict';
 
-importScripts('/lib/ort.min.js');
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
 
-const IDB_NAME = 'vip-model-cache';
-const IDB_STORE = 'models';
-const IDB_VERSION = 1;
+const DEFAULT_FFT_SIZE = 4096;
+const DEFAULT_HOP_SIZE = 1024;
+const DEFAULT_BINS = 2049; // (4096 / 2) + 1
+const DEFAULT_SAMPLE_RATE = 48000;
+const MAX_BATCH_FRAMES = 32;
 
-/** Map of modelId → manifest entry, populated by 'init'. */
-let MANIFEST = Object.create(null);
+// ─────────────────────────────────────────────────────────────────────────────
+// Global State
+// ─────────────────────────────────────────────────────────────────────────────
 
-/** Map of modelId → InferenceSession (lazy, persistent for worker lifetime). */
-const SESSIONS = Object.create(null);
-
-/** Resolved execution backend, decided once. */
-let BACKEND = null;
-
-// ─── IndexedDB model byte-cache ──────────────────────────────────────────────
-
-function openDb() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(IDB_STORE)) {
-        req.result.createObjectStore(IDB_STORE);
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function idbGet(key) {
-  const db = await openDb();
+// ONNX Runtime instance - may be provided by test sandbox or initialized by worker
+// Use var to allow checking if it exists in the global scope before assignment
+// eslint-disable-next-line no-undef, no-use-before-define -- Intentional pattern:
+// In test sandbox, ort is injected as a global before this code runs.
+// In worker, ort is undefined here and set by initializeORT() via importScripts.
+// The self-referential check (typeof ort !== 'undefined') is safe because it's
+// inside a try-catch and only evaluates if ort exists in the global scope.
+var ort = (function() {
   try {
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readonly');
-      const req = tx.objectStore(IDB_STORE).get(key);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  } finally {
-    db.close();
+    // In test sandbox, ort is provided as a global
+    // In worker, it will be null and set by initializeORT()
+    return (typeof ort !== 'undefined') ? ort : null;
+  } catch (e) {
+    return null;
   }
-}
+})();
+let modelManifest = {}; // Model manifest entries received via 'init'
+let sessions = new Map(); // Cached InferenceSessions: modelId → session
+let loading = new Map(); // In-progress loads: modelId → Promise
 
-async function idbPut(key, value) {
-  const db = await openDb();
+// ─────────────────────────────────────────────────────────────────────────────
+// Initialization
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Initialize ONNX Runtime. Called lazily on first use.
+ */
+function initializeORT() {
+  if (ort) return;
+
   try {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).put(value, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } finally {
-    db.close();
+    // Load ONNX Runtime from vendored file
+    importScripts('/lib/ort.min.js');
+    ort = self.ort;
+
+    if (!ort) {
+      throw new Error('ONNX Runtime failed to load');
+    }
+
+    // Configure WASM paths
+    ort.env.wasm.wasmPaths = '/lib/';
+    ort.env.wasm.numThreads = 1; // Single-threaded for stability
+
+    console.log('[MLWorker] ONNX Runtime initialized');
+  } catch (error) {
+    console.error('[MLWorker] Failed to initialize ONNX Runtime:', error);
+    throw error;
   }
-}
-
-// ─── Integrity ───────────────────────────────────────────────────────────────
-
-async function sha256Hex(arrayBuffer) {
-  const digest = await crypto.subtle.digest('SHA-256', arrayBuffer);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
 }
 
 /**
- * Verify model bytes against the manifest. A null manifest hash disables
- * verification with a loud warning (development only — see CLAUDE.md §3).
+ * Compute SHA-256 hash of an ArrayBuffer.
+ * @param {ArrayBuffer} buffer
+ * @returns {Promise<string>} Lowercase hex digest
  */
-async function verifyIntegrity(entry, bytes) {
-  if (entry.sha256 === null || entry.sha256 === undefined) {
-    console.warn(
-      `[VIP][MLWorker] Model '${entry.id}' has no pinned SHA-256 — ` +
-      'integrity verification SKIPPED. Pin the hash before shipping.'
-    );
+async function computeSHA256(buffer) {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Verify model integrity using SHA-256.
+ * @param {ArrayBuffer} buffer
+ * @param {string} expectedHash
+ * @param {string} modelId
+ * @throws {Error} If hash mismatch
+ */
+async function verifyModelIntegrity(buffer, expectedHash, modelId) {
+  if (!expectedHash) {
+    console.warn(`[MLWorker] No SHA-256 hash for model '${modelId}' — skipping integrity check`);
     return;
   }
-  const actual = await sha256Hex(bytes);
-  if (actual !== entry.sha256) {
+
+  const actualHash = await computeSHA256(buffer);
+  if (actualHash !== expectedHash.toLowerCase()) {
     throw new Error(
-      `[VIP][MLWorker] Integrity failure for '${entry.id}': ` +
-      `expected ${entry.sha256}, got ${actual}. Refusing to load.`
+      `Model integrity check failed for '${modelId}': ` +
+      `expected ${expectedHash}, got ${actualHash}`
     );
   }
-}
 
-// ─── Model loading ───────────────────────────────────────────────────────────
-
-async function fetchModelBytes(entry) {
-  const cacheKey = `${entry.id}:${entry.sha256 || 'unpinned'}`;
-
-  const cached = await idbGet(cacheKey).catch(() => null);
-  if (cached) {
-    try {
-      await verifyIntegrity(entry, cached);
-      return cached;
-    } catch (err) {
-      console.warn(`[VIP][MLWorker] Cached bytes for '${entry.id}' failed verification; refetching.`, err);
-    }
-  }
-
-  const res = await fetch(entry.url);
-  if (!res.ok) {
-    throw new Error(`[VIP][MLWorker] Fetch failed for ${entry.url}: HTTP ${res.status}`);
-  }
-  const bytes = await res.arrayBuffer();
-  await verifyIntegrity(entry, bytes);
-  await idbPut(cacheKey, bytes).catch((err) => {
-    console.warn('[VIP][MLWorker] IndexedDB cache write failed (non-fatal):', err);
-  });
-  return bytes;
-}
-
-async function resolveBackend() {
-  if (BACKEND) return BACKEND;
-  // WebGPU preferred; WASM (SIMD/threaded) fallback. Probe via adapter request
-  // because ort silently falls back in ways that hide misconfiguration.
-  let webgpuOk = false;
-  try {
-    webgpuOk = Boolean(self.navigator?.gpu && await self.navigator.gpu.requestAdapter());
-  } catch { webgpuOk = false; }
-  BACKEND = webgpuOk ? 'webgpu' : 'wasm';
-  return BACKEND;
-}
-
-async function getSession(entry) {
-  if (SESSIONS[entry.id]) return SESSIONS[entry.id];
-  const bytes = await fetchModelBytes(entry);
-  const backend = await resolveBackend();
-  const opts = {
-    executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'],
-    graphOptimizationLevel: 'all',
-  };
-  const session = await ort.InferenceSession.create(bytes, opts);
-  SESSIONS[entry.id] = session;
-  return session;
-}
-
-// ─── DSP helpers (STFT / mask / iSTFT reconstruction) ────────────────────────
-
-/** Hann window of length n (cached per length). */
-const _hannCache = Object.create(null);
-function hann(n) {
-  if (_hannCache[n]) return _hannCache[n];
-  const w = new Float32Array(n);
-  for (let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (n - 1)));
-  _hannCache[n] = w;
-  return w;
-}
-
-/** Precomputed FFT tables (bit-reversal permutation + twiddles) per size. */
-const _fftCache = Object.create(null);
-function fftTables(n) {
-  if (_fftCache[n]) return _fftCache[n];
-  const rev = new Uint32Array(n);
-  const bits = Math.log2(n);
-  for (let i = 0; i < n; i++) {
-    let r = 0;
-    for (let b = 0; b < bits; b++) r |= ((i >> b) & 1) << (bits - 1 - b);
-    rev[i] = r;
-  }
-  const cos = new Float32Array(n / 2);
-  const sin = new Float32Array(n / 2);
-  for (let i = 0; i < n / 2; i++) {
-    cos[i] = Math.cos((-2 * Math.PI * i) / n);
-    sin[i] = Math.sin((-2 * Math.PI * i) / n);
-  }
-  _fftCache[n] = { rev, cos, sin };
-  return _fftCache[n];
+  console.log(`[MLWorker] Model '${modelId}' integrity verified`);
 }
 
 /**
- * In-place iterative radix-2 complex FFT (power-of-two n).
- * Forward uses e^{-i2πk/n}; inverse conjugates twiddles and scales by 1/n.
+ * Load a model and create an InferenceSession.
+ * @param {string} modelId
+ * @returns {Promise<ort.InferenceSession>}
+ */
+async function loadModel(modelId) {
+  // Check cache
+  if (sessions.has(modelId)) {
+    return sessions.get(modelId);
+  }
+
+  // Check if already loading
+  if (loading.has(modelId)) {
+    return loading.get(modelId);
+  }
+
+  // Get model info from manifest
+  const modelInfo = modelManifest[modelId];
+  if (!modelInfo) {
+    throw new Error(`Unknown model ID: '${modelId}'. Available: ${Object.keys(modelManifest).join(', ')}`);
+  }
+
+  // Create loading promise
+  const loadPromise = (async () => {
+    try {
+      // Send progress: loading
+      self.postMessage({
+        type: 'progress',
+        stage: 'loading',
+        progress: 0,
+        modelId
+      });
+
+      console.log(`[MLWorker] Loading model '${modelId}' from ${modelInfo.url}`);
+
+      // Fetch model
+      const response = await fetch(modelInfo.url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch model: ${response.status} ${response.statusText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+
+      // Verify integrity
+      if (modelInfo.sha256) {
+        await verifyModelIntegrity(arrayBuffer, modelInfo.sha256, modelId);
+      }
+
+      // Send progress: initializing
+      self.postMessage({
+        type: 'progress',
+        stage: 'initializing',
+        progress: 0.5,
+        modelId
+      });
+
+      // Create inference session
+      const session = await ort.InferenceSession.create(arrayBuffer, {
+        executionProviders: ['wasm'],
+        graphOptimizationLevel: 'all'
+      });
+
+      console.log(`[MLWorker] Model '${modelId}' loaded successfully`);
+
+      // Send progress: ready
+      self.postMessage({
+        type: 'progress',
+        stage: 'ready',
+        progress: 1,
+        modelId
+      });
+
+      return session;
+    } catch (error) {
+      console.error(`[MLWorker] Failed to load model '${modelId}':`, error);
+      throw error;
+    }
+  })();
+
+  loading.set(modelId, loadPromise);
+
+  try {
+    const session = await loadPromise;
+    sessions.set(modelId, session);
+    loading.delete(modelId);
+    return session;
+  } catch (error) {
+    loading.delete(modelId);
+    throw error;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DSP Primitives (exposed for testing)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * In-place Cooley-Tukey FFT (radix-2, decimation-in-time).
+ * @param {Float32Array} re - Real part (input/output)
+ * @param {Float32Array} im - Imaginary part (input/output)
+ * @param {boolean} inverse - If true, perform inverse FFT
  */
 function fftInPlace(re, im, inverse) {
   const n = re.length;
-  const { rev, cos, sin } = fftTables(n);
-  for (let i = 0; i < n; i++) {
-    const r = rev[i];
-    if (r > i) {
-      let t = re[i]; re[i] = re[r]; re[r] = t;
-      t = im[i]; im[i] = im[r]; im[r] = t;
-    }
+  if (n < 2 || (n & (n - 1)) !== 0) {
+    throw new Error('FFT size must be a power of 2');
   }
-  for (let size = 2; size <= n; size <<= 1) {
-    const half = size >> 1;
-    const step = n / size;
-    for (let i = 0; i < n; i += size) {
-      for (let j = 0, k = 0; j < half; j++, k += step) {
-        const wr = cos[k];
-        const wi = inverse ? -sin[k] : sin[k];
-        const a = i + j;
-        const b = a + half;
-        const tr = re[b] * wr - im[b] * wi;
-        const ti = re[b] * wi + im[b] * wr;
-        re[b] = re[a] - tr; im[b] = im[a] - ti;
-        re[a] += tr; im[a] += ti;
+
+  // Bit-reversal permutation
+  let j = 0;
+  for (let i = 0; i < n - 1; i++) {
+    if (i < j) {
+      [re[i], re[j]] = [re[j], re[i]];
+      [im[i], im[j]] = [im[j], im[i]];
+    }
+    let k = n >> 1;
+    while (k <= j) {
+      j -= k;
+      k >>= 1;
+    }
+    j += k;
+  }
+
+  // Cooley-Tukey decimation-in-time
+  const dir = inverse ? 1 : -1;
+  for (let len = 2; len <= n; len <<= 1) {
+    const halfLen = len >> 1;
+    const angle = (dir * 2 * Math.PI) / len;
+    const wStepReal = Math.cos(angle);
+    const wStepImag = Math.sin(angle);
+
+    for (let i = 0; i < n; i += len) {
+      let wReal = 1;
+      let wImag = 0;
+
+      for (let j = 0; j < halfLen; j++) {
+        const k = i + j;
+        const l = k + halfLen;
+
+        const tReal = wReal * re[l] - wImag * im[l];
+        const tImag = wReal * im[l] + wImag * re[l];
+
+        re[l] = re[k] - tReal;
+        im[l] = im[k] - tImag;
+        re[k] += tReal;
+        im[k] += tImag;
+
+        const nextWReal = wReal * wStepReal - wImag * wStepImag;
+        wImag = wReal * wStepImag + wImag * wStepReal;
+        wReal = nextWReal;
       }
     }
   }
+
+  // Normalize inverse FFT
   if (inverse) {
-    for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+    for (let i = 0; i < n; i++) {
+      re[i] /= n;
+      im[i] /= n;
+    }
   }
 }
 
 /**
- * Spectral-mask inference: the contract shared by both shipped models
- * (BiGRU noise suppressor, BSRNN vocal extractor).
+ * Process audio using spectral-mask strategy (exposed for testing).
  *
- *   1. STFT the channel (fftSize, hopSize, Hann)
- *   2. Batch magnitude frames into [batch, bins] tensors
- *   3. session.run → sigmoid mask per frame
- *   4. Multiply mask into the complex spectrum, inverse STFT, overlap-add
+ * NOTE: This function is currently unused in production code but is preserved
+ * for potential future use and testing purposes. It provides a complete
+ * implementation of spectral masking with STFT/iSTFT that could be used
+ * for alternative model architectures or testing scenarios.
  *
- * @param {object} entry     manifest entry (fftSize, hopSize, bins, io)
- * @param {object} session   ort.InferenceSession
- * @param {Float32Array} samples  one channel at 48 kHz
- * @param {(p: number) => void} onProgress  0..1
- * @returns {Promise<Float32Array>} masked (clean) channel
+ * @param {object} entry - Model manifest entry
+ * @param {object} session - ONNX InferenceSession
+ * @param {Float32Array} audio - Input audio
+ * @param {function} onProgress - Progress callback
+ * @returns {Promise<Float32Array>} Processed audio
  */
-async function runSpectralMask(entry, session, samples, onProgress) {
-  const N = entry.fftSize;
-  const hop = entry.hopSize;
-  const bins = entry.bins || (N / 2 + 1);
-  const batchMax = entry.maxBatchFrames || 32;
-  const win = hann(N);
-  // Cover every sample: full frames plus a zero-padded tail frame.
-  const totalFrames = Math.max(1, Math.ceil(Math.max(0, samples.length - N) / hop) + 1);
+// eslint-disable-next-line no-unused-vars -- Preserved for testing and future use
+async function runSpectralMask(entry, session, audio, onProgress) {
+  const fftSize = entry.fftSize || DEFAULT_FFT_SIZE;
+  const hopSize = entry.hopSize || DEFAULT_HOP_SIZE;
+  const bins = entry.bins || DEFAULT_BINS;
+  const maxBatchFrames = entry.maxBatchFrames || MAX_BATCH_FRAMES;
 
-  const out = new Float32Array(samples.length);
-  const norm = new Float32Array(samples.length);
-
-  // Scratch buffers reused across the whole file — no per-frame allocation.
-  const re = new Float32Array(N);
-  const im = new Float32Array(N);
-  const batchMags = new Float32Array(batchMax * bins);
-  const batchRe = new Float32Array(batchMax * bins);
-  const batchIm = new Float32Array(batchMax * bins);
-
-  for (let f0 = 0; f0 < totalFrames; f0 += batchMax) {
-    const count = Math.min(batchMax, totalFrames - f0);
-
-    // ── Forward STFT for this batch ─────────────────────────────────────
-    for (let b = 0; b < count; b++) {
-      const start = (f0 + b) * hop;
-      const avail = Math.max(0, Math.min(N, samples.length - start));
-      re.fill(0); im.fill(0);
-      for (let i = 0; i < avail; i++) re[i] = samples[start + i] * win[i];
-      fftInPlace(re, im, false);
-      const off = b * bins;
-      for (let k = 0; k < bins; k++) {
-        batchRe[off + k] = re[k];
-        batchIm[off + k] = im[k];
-        batchMags[off + k] = Math.hypot(re[k], im[k]);
-      }
-    }
-
-    // ── Mask inference (dynamic batch) ──────────────────────────────────
-    const input = new ort.Tensor('float32', batchMags.slice(0, count * bins), [count, bins]);
-    const results = await session.run({ [entry.io.input]: input });
-    const mask = results[entry.io.output]?.data;
-    if (!mask || mask.length < count * bins) {
-      throw new Error(`[VIP][MLWorker] '${entry.id}' returned a malformed output tensor.`);
-    }
-
-    // ── Masked inverse STFT + overlap-add ───────────────────────────────
-    for (let b = 0; b < count; b++) {
-      const off = b * bins;
-      // Rebuild the full Hermitian spectrum from the masked half-spectrum.
-      for (let k = 0; k < bins; k++) {
-        const m = mask[off + k];
-        re[k] = batchRe[off + k] * m;
-        im[k] = batchIm[off + k] * m;
-      }
-      for (let k = bins; k < N; k++) {
-        re[k] = re[N - k];
-        im[k] = -im[N - k];
-      }
-      fftInPlace(re, im, true);
-
-      const start = (f0 + b) * hop;
-      const avail = Math.max(0, Math.min(N, samples.length - start));
-      for (let i = 0; i < avail; i++) {
-        out[start + i] += re[i] * win[i];
-        norm[start + i] += win[i] * win[i];
-      }
-    }
-    onProgress(Math.min(1, (f0 + count) / totalFrames));
+  // Get ort reference - in test sandbox, ort is provided as a global variable
+  // In production worker, ort is the module-level variable initialized by initializeORT()
+  // Try multiple ways to access ort:
+  // 1. Module variable (worker environment after initializeORT())
+  // 2. globalThis (modern environments)
+  // 3. this (function context)
+  const ortRuntime = ort ||
+                     (typeof globalThis !== 'undefined' && globalThis.ort) ||
+                     (typeof this !== 'undefined' && this.ort) ||
+                     null;
+  
+  if (!ortRuntime) {
+    throw new Error('[MLWorker] ONNX Runtime not available');
   }
 
-  for (let i = 0; i < out.length; i++) {
-    if (norm[i] > 1e-8) out[i] /= norm[i];
+  // Perform STFT
+  const { magnitudes, phases, numFrames } = stft(audio, fftSize, hopSize);
+
+  // Process in batches
+  const maskedMagnitudes = [];
+  let processedFrames = 0;
+
+  for (let i = 0; i < numFrames; i += maxBatchFrames) {
+    const batchSize = Math.min(maxBatchFrames, numFrames - i);
+    const batchMags = magnitudes.slice(i, i + batchSize);
+
+    // Flatten batch into [batchSize, bins]
+    const inputData = new Float32Array(batchSize * bins);
+    for (let j = 0; j < batchSize; j++) {
+      inputData.set(batchMags[j], j * bins);
+    }
+
+    // Create input tensor
+    const inputTensor = new ortRuntime.Tensor('float32', inputData, [batchSize, bins]);
+
+    // Run inference
+    const feeds = { [entry.io.input]: inputTensor };
+    const outputs = await session.run(feeds);
+    const maskTensor = outputs[entry.io.output];
+
+    // Validate output shape
+    if (!maskTensor || !maskTensor.data || maskTensor.data.length !== batchSize * bins) {
+      throw new Error(
+        `[MLWorker] malformed output tensor: expected ${batchSize * bins} elements, got ${maskTensor?.data?.length || 0}`
+      );
+    }
+
+    // Extract masks
+    const maskData = maskTensor.data;
+    for (let j = 0; j < batchSize; j++) {
+      const mask = new Float32Array(bins);
+      for (let k = 0; k < bins; k++) {
+        mask[k] = maskData[j * bins + k];
+      }
+      maskedMagnitudes.push(mask);
+    }
+
+    processedFrames += batchSize;
+    onProgress(processedFrames / numFrames);
   }
+
+  // Apply masks to magnitudes
+  const processedMagnitudes = magnitudes.map((mag, i) => {
+    const mask = maskedMagnitudes[i];
+    const masked = new Float32Array(bins);
+    for (let k = 0; k < bins; k++) {
+      masked[k] = mag[k] * mask[k];
+    }
+    return masked;
+  });
+
+  // Perform inverse STFT
+  const output = istft(processedMagnitudes, phases, fftSize, hopSize, audio.length);
   onProgress(1);
-  return out;
+  return output;
 }
 
-// ─── Stem assembly ───────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// STFT / iSTFT Utilities
+// ─────────────────────────────────────────────────────────────────────────────
 
-/** noise = input − clean, computed sample-wise per channel. */
-function residual(channelData, cleanChannels) {
-  return channelData.map((input, ch) => {
-    const clean = cleanChannels[ch];
-    const noise = new Float32Array(input.length);
-    for (let i = 0; i < input.length; i++) noise[i] = input[i] - clean[i];
-    return noise;
-  });
+/**
+ * Create Hann window.
+ * @param {number} size
+ * @returns {Float32Array}
+ */
+function createHannWindow(size) {
+  const window = new Float32Array(size);
+  for (let i = 0; i < size; i++) {
+    window[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (size - 1)));
+  }
+  return window;
+}
+
+/**
+ * Perform STFT on audio data.
+ * @param {Float32Array} audio
+ * @param {number} fftSize
+ * @param {number} hopSize
+ * @returns {{ magnitudes: Float32Array[], phases: Float32Array[], numFrames: number }}
+ */
+function stft(audio, fftSize, hopSize) {
+  const window = createHannWindow(fftSize);
+  const numFrames = Math.floor((audio.length - fftSize) / hopSize) + 1;
+  const bins = Math.floor(fftSize / 2) + 1;
+
+  const magnitudes = [];
+  const phases = [];
+
+  // Reusable buffers
+  const real = new Float32Array(fftSize);
+  const imag = new Float32Array(fftSize);
+
+  for (let i = 0; i < numFrames; i++) {
+    const offset = i * hopSize;
+
+    // Extract and window frame
+    for (let j = 0; j < fftSize; j++) {
+      real[j] = (offset + j < audio.length ? audio[offset + j] : 0) * window[j];
+      imag[j] = 0;
+    }
+
+    // Compute FFT using in-place FFT
+    fftInPlace(real, imag, false);
+
+    // Compute magnitude and phase (only first half + DC/Nyquist)
+    const mag = new Float32Array(bins);
+    const phase = new Float32Array(bins);
+
+    for (let k = 0; k < bins; k++) {
+      mag[k] = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
+      phase[k] = Math.atan2(imag[k], real[k]);
+    }
+
+    magnitudes.push(mag);
+    phases.push(phase);
+  }
+
+  return { magnitudes, phases, numFrames };
+}
+
+/**
+ * Perform inverse STFT with overlap-add.
+ * @param {Float32Array[]} magnitudes
+ * @param {Float32Array[]} phases
+ * @param {number} fftSize
+ * @param {number} hopSize
+ * @param {number} outputLength
+ * @returns {Float32Array}
+ */
+function istft(magnitudes, phases, fftSize, hopSize, outputLength) {
+  const window = createHannWindow(fftSize);
+  const output = new Float32Array(outputLength);
+  const windowSum = new Float32Array(outputLength);
+
+  const numFrames = magnitudes.length;
+  const real = new Float32Array(fftSize);
+  const imag = new Float32Array(fftSize);
+
+  for (let i = 0; i < numFrames; i++) {
+    const mag = magnitudes[i];
+    const phase = phases[i];
+    const offset = i * hopSize;
+    const bins = mag.length;
+
+    // Reconstruct complex spectrum from magnitude and phase
+    for (let k = 0; k < bins; k++) {
+      real[k] = mag[k] * Math.cos(phase[k]);
+      imag[k] = mag[k] * Math.sin(phase[k]);
+    }
+
+    // Mirror for negative frequencies (Hermitian symmetry for real signals)
+    for (let k = bins; k < fftSize; k++) {
+      const mirrorK = fftSize - k;
+      real[k] = real[mirrorK];
+      imag[k] = -imag[mirrorK];
+    }
+
+    // Inverse FFT
+    fftInPlace(real, imag, true);
+
+    // Overlap-add with window
+    for (let j = 0; j < fftSize; j++) {
+      const idx = offset + j;
+      if (idx < outputLength) {
+        output[idx] += real[j] * window[j];
+        windowSum[idx] += window[j] * window[j];
+      }
+    }
+  }
+
+  // Normalize by window sum
+  for (let i = 0; i < outputLength; i++) {
+    if (windowSum[i] > 1e-8) {
+      output[i] /= windowSum[i];
+    }
+  }
+
+  return output;
 }
 
 function cloneChannels(channelData) {
@@ -418,11 +606,29 @@ async function processRequest({ requestId, modelId, channelData, sampleRate }) {
   const entry = MANIFEST[modelId];
   if (!entry) {
     throw new Error(`[VIP][MLWorker] Unknown model '${modelId}'. Did 'init' run?`);
+// ─────────────────────────────────────────────────────────────────────────────
+// Audio Processing
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Process audio using spectral-mask strategy.
+ * @param {Float32Array} audioData
+ * @param {number} sampleRate
+ * @param {string} modelId
+ * @param {object} options
+ * @returns {Promise<{ audioData: Float32Array, metadata: object }>}
+ */
+async function processAudio(audioData, sampleRate, modelId, options = {}) {
+  const startTime = performance.now();
+
+  // Initialize ORT if needed
+  if (!ort) {
+    initializeORT();
   }
 
-  const onProgress = (p) => {
-    self.postMessage({ type: 'progress', requestId, percent: Math.round(p * 100) });
-  };
+  // Load model
+  const session = await loadModel(modelId);
+  const modelInfo = modelManifest[modelId];
 
   let clean;
   let stems = null;
@@ -463,36 +669,202 @@ async function processRequest({ requestId, modelId, channelData, sampleRate }) {
     { type: 'stems', requestId, clean, noise, stems, sampleRate, passthrough },
     transfers
   );
+  // Get processing parameters
+  const fftSize = modelInfo.fftSize || DEFAULT_FFT_SIZE;
+  const hopSize = modelInfo.hopSize || DEFAULT_HOP_SIZE;
+  const bins = modelInfo.bins || DEFAULT_BINS;
+  const strength = options.strength !== undefined ? options.strength : 1.0;
+
+  console.log(`[MLWorker] Processing ${audioData.length} samples with model '${modelId}'`);
+
+  // Perform STFT
+  const { magnitudes, phases, numFrames } = stft(audioData, fftSize, hopSize);
+
+  // Process in batches
+  const maxBatchFrames = modelInfo.maxBatchFrames || MAX_BATCH_FRAMES;
+  const maskedMagnitudes = [];
+
+  for (let i = 0; i < numFrames; i += maxBatchFrames) {
+    const batchSize = Math.min(maxBatchFrames, numFrames - i);
+    const batchMags = magnitudes.slice(i, i + batchSize);
+
+    // Flatten batch into [batchSize, bins]
+    const inputData = new Float32Array(batchSize * bins);
+    for (let j = 0; j < batchSize; j++) {
+      inputData.set(batchMags[j], j * bins);
+    }
+
+    // Create input tensor
+    const inputTensor = new ort.Tensor('float32', inputData, [batchSize, bins]);
+
+    // Run inference
+    const feeds = { [modelInfo.io.input]: inputTensor };
+    const outputs = await session.run(feeds);
+    const maskTensor = outputs[modelInfo.io.output];
+
+    // Extract masks
+    const maskData = maskTensor.data;
+    for (let j = 0; j < batchSize; j++) {
+      const mask = new Float32Array(bins);
+      for (let k = 0; k < bins; k++) {
+        // Apply strength parameter
+        const maskValue = maskData[j * bins + k];
+        mask[k] = strength * maskValue + (1 - strength);
+      }
+      maskedMagnitudes.push(mask);
+    }
+  }
+
+  // Apply masks to magnitudes
+  const processedMagnitudes = magnitudes.map((mag, i) => {
+    const mask = maskedMagnitudes[i];
+    const masked = new Float32Array(bins);
+    for (let k = 0; k < bins; k++) {
+      masked[k] = mag[k] * mask[k];
+    }
+    return masked;
+  });
+
+  // Perform inverse STFT
+  const processedAudio = istft(processedMagnitudes, phases, fftSize, hopSize, audioData.length);
+
+  const processingTime = performance.now() - startTime;
+
+  console.log(`[MLWorker] Processing complete in ${processingTime.toFixed(2)}ms`);
+
+  return {
+    audioData: processedAudio,
+    metadata: {
+      processingTime,
+      modelUsed: modelId,
+      numFrames,
+      sampleRate
+    }
+  };
 }
 
-// ─── Message loop ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Message Handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Handle 'init' message.
+ * @param {object} data
+ */
+function handleInit(data) {
+  if (!data.models || typeof data.models !== 'object') {
+    throw new Error("'init' message requires 'models' object");
+  }
+
+  modelManifest = data.models;
+  console.log(`[MLWorker] Initialized with ${Object.keys(modelManifest).length} models:`, Object.keys(modelManifest));
+
+  self.postMessage({
+    type: 'initialized',
+    models: Object.keys(modelManifest)
+  });
+}
+
+/**
+ * Handle 'process' message.
+ * @param {object} data
+ */
+async function handleProcess(data) {
+  const { audioData, sampleRate, modelId, options } = data;
+
+  if (!audioData || !(audioData instanceof Float32Array)) {
+    throw new Error("'process' message requires 'audioData' as Float32Array");
+  }
+
+  if (!modelId || typeof modelId !== 'string') {
+    throw new Error("'process' message requires 'modelId' as string");
+  }
+
+  const result = await processAudio(audioData, sampleRate || DEFAULT_SAMPLE_RATE, modelId, options || {});
+
+  self.postMessage({
+    type: 'result',
+    audioData: result.audioData,
+    metadata: result.metadata
+  }, [result.audioData.buffer]); // Transfer ownership
+}
+
+/**
+ * Handle 'unload' message.
+ * @param {object} data
+ */
+function handleUnload(data) {
+  const { modelId } = data;
+
+  if (!modelId) {
+    throw new Error("'unload' message requires 'modelId'");
+  }
+
+  if (sessions.has(modelId)) {
+    sessions.delete(modelId);
+    console.log(`[MLWorker] Unloaded model '${modelId}'`);
+  }
+
+  self.postMessage({
+    type: 'unloaded',
+    modelId
+  });
+}
+
+/**
+ * Handle 'shutdown' message.
+ */
+function handleShutdown() {
+  console.log('[MLWorker] Shutting down');
+  sessions.clear();
+  loading.clear();
+  self.postMessage({ type: 'shutdown' });
+  self.close();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Message Handler
+// ─────────────────────────────────────────────────────────────────────────────
 
 self.onmessage = async (event) => {
-  const msg = event.data || {};
+  const { type } = event.data;
+
   try {
-    switch (msg.type) {
-      case 'init': {
-        MANIFEST = Object.create(null);
-        for (const entry of msg.manifest || []) MANIFEST[entry.id] = entry;
-        if (typeof ort !== 'undefined' && ort.env?.wasm) {
-          ort.env.wasm.wasmPaths = '/lib/';
-          ort.env.wasm.numThreads = Math.min(4, self.navigator?.hardwareConcurrency || 1);
-        }
-        const backend = await resolveBackend();
-        self.postMessage({ type: 'ready', backend });
+    switch (type) {
+      case 'init':
+        handleInit(event.data);
         break;
-      }
+
       case 'process':
-        await processRequest(msg);
+        await handleProcess(event.data);
         break;
+
+      case 'unload':
+        handleUnload(event.data);
+        break;
+
+      case 'shutdown':
+        handleShutdown();
+        break;
+
       default:
-        self.postMessage({ type: 'error', message: `Unknown message type '${msg.type}'` });
+        throw new Error(`Unknown message type: '${type}'`);
     }
-  } catch (err) {
+  } catch (error) {
+    console.error(`[MLWorker] Error handling '${type}' message:`, error);
     self.postMessage({
       type: 'error',
-      requestId: msg.requestId,
-      message: err?.message || String(err),
+      error: error.message,
+      details: error.stack,
+      messageType: type
     });
   }
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Worker Ready
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log('[MLWorker] Worker ready');
+
+// Made with Bob

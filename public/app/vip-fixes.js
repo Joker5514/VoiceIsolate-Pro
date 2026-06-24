@@ -509,9 +509,19 @@
       slider.addEventListener('input', () => {
         const v = parseFloat(slider.value);
         if (!Number.isFinite(v)) return;
+
         window.VIP_PARAMS = window.VIP_PARAMS || {};
         window.VIP_PARAMS[id] = v;
         if (app.params) app.params[id] = v;
+
+        // Route through app.onSlider() so RT-flagged params hit the Live-Mix
+        // bridge's AudioParams in real time (CLAUDE.md §1).
+        if (app && typeof app.onSlider === 'function') {
+          app.onSlider(id, v);
+          return; // onSlider handles orchestrator/worklet routing
+        }
+
+        // Fallback: direct orchestrator/worklet dispatch if app.onSlider unavailable
         const orch = window._vipOrch;
         if (orch?.updateParams) { orch.updateParams(orch._normalizeRawParams({ [id]: v })); return; }
         if (app.workletNode) {

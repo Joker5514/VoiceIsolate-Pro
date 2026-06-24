@@ -299,13 +299,51 @@
   background: rgba(255, 255, 255, 0.15);
 }
 
-/* Provider badges (rendered next to each model pill by ModelStatusUI) */
+/* Model cache pills (rendered in the "Model Cache & Providers" cockpit row) */
 .vip-pill-wrap {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   margin: 0 4px 4px 0;
 }
+
+.vip-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.vip-pill--green {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.10);
+  border-color: rgba(22, 163, 74, 0.25);
+}
+
+.vip-pill--amber {
+  color: #ca8a04;
+  background: rgba(202, 138, 4, 0.10);
+  border-color: rgba(202, 138, 4, 0.25);
+}
+
+.vip-pill--red {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.10);
+  border-color: rgba(220, 38, 38, 0.25);
+}
+
+.vip-pill--grey {
+  color: var(--dim, #4a5268);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Provider badges (rendered next to each model pill by ModelStatusUI) */
 
 .vip-provider {
   display: inline-block;

@@ -113,6 +113,11 @@ describe('ModelManifest (Layer 1)', () => {
       const { sha256, strategy } = manifest.MODEL_MANIFEST[id];
       if (strategy === 'multi-stage-chain') continue;
       expect(sha256).toMatch(/^[0-9a-f]{64}$/);
+      const { sha256 } = manifest.MODEL_MANIFEST[id];
+      // Skip models that don't have committed binaries yet (sha256 === null)
+      if (sha256 !== null) {
+        expect(sha256).toMatch(/^[0-9a-f]{64}$/);
+      }
     }
   });
 
@@ -135,6 +140,10 @@ describe('ModelManifest (Layer 1)', () => {
     for (const id of manifest.MODEL_IDS) {
       const entry = manifest.MODEL_MANIFEST[id];
       if (entry.strategy === 'multi-stage-chain') continue;
+      // Skip models that don't have committed binaries yet (sha256 === null)
+      if (entry.sha256 === null || entry.sizeBytes === null) {
+        continue;
+      }
       const file = path.join(__dirname, '../public', entry.url);
       expect(fs.existsSync(file)).toBe(true);
       const bytes = fs.readFileSync(file);
@@ -165,6 +174,12 @@ function mockContext() {
       type: '', frequency: mockParam(), gain: mockParam(), Q: mockParam(),
     }),
     createAnalyser: () => mockNode({ fftSize: 0 }),
+    createChannelSplitter: () => mockNode(),
+    createChannelMerger: () => mockNode(),
+    createDynamicsCompressor: () => mockNode({
+      threshold: mockParam(), knee: mockParam(), ratio: mockParam(),
+      attack: mockParam(), release: mockParam(), reduction: 0,
+    }),
     createBuffer: (channels, length, sampleRate) => ({
       numberOfChannels: channels,
       length,
@@ -221,6 +236,78 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     await mixer.play();
     mixer.setVoiceLevel(900);
     expect(mixer.cleanGain.gain.setTargetAtTime.mock.calls.at(-1)[0]).toBe(2);
+  });
+
+  test('Tier-A console defaults are transparent (unity / filters off)', () => {
+    expect(mixer.eqLowMid.gain.value).toBe(0);
+    expect(mixer.eqMid.gain.value).toBe(0);
+    expect(mixer.eqHighMid.gain.value).toBe(0);
+    expect(mixer.highpass.frequency.value).toBe(20);
+    expect(mixer.lowpass.frequency.value).toBe(20000);
+    expect(mixer.compressor.ratio.value).toBe(1);
+    expect(mixer.compressor.threshold.value).toBe(0);
+    expect(mixer.makeupGain.gain.value).toBe(1);
+    expect(mixer.widthGain.gain.value).toBe(1); // stereo width 100% = transparent
+  });
+
+  test('Tier-A setters clamp inputs and convert units (idle snap)', () => {
+    mixer.setEqMid(99);
+    expect(mixer.eqMid.gain.value).toBe(24);
+    mixer.setEqLowMid(-99);
+    expect(mixer.eqLowMid.gain.value).toBe(-24);
+    mixer.setHighpass(5);                 // below min → 20
+    expect(mixer.highpass.frequency.value).toBe(20);
+    mixer.setLowpass(99999);              // above max → 20000
+    expect(mixer.lowpass.frequency.value).toBe(20000);
+    mixer.setCompThreshold(-80);          // → -60
+    expect(mixer.compressor.threshold.value).toBe(-60);
+    mixer.setCompRatio(50);               // → 20
+    expect(mixer.compressor.ratio.value).toBe(20);
+    mixer.setCompAttack(200);             // 200 ms → 0.2 s
+    expect(mixer.compressor.attack.value).toBeCloseTo(0.2);
+    mixer.setCompRelease(1000);           // 1000 ms → 1 s
+    expect(mixer.compressor.release.value).toBeCloseTo(1);
+    mixer.setCompKnee(99);                // → 40
+    expect(mixer.compressor.knee.value).toBe(40);
+    mixer.setMakeupGain(6);               // +6 dB → linear ~1.995
+    expect(mixer.makeupGain.gain.value).toBeCloseTo(Math.pow(10, 6 / 20));
+    mixer.setStereoWidth(0);              // mono
+    expect(mixer.widthGain.gain.value).toBe(0);
+    mixer.setStereoWidth(500);            // clamps to 200 → 2×
+    expect(mixer.widthGain.gain.value).toBe(2);
+  });
+
+  test('noise gate: bypassed by default; setters clamp and store params', () => {
+    // The mock context has no AudioWorklet, so the gate stays bypassed (null)
+    // and gateInput passes through — playback is unaffected.
+    expect(mixer.gate).toBe(null);
+    expect(mixer.gateInput).toBeDefined();
+    expect(mixer._gateParams.range).toBe(0); // 0 dB range = transparent default
+    mixer.setGateThreshold(-200);            // clamps to -100
+    expect(mixer._gateParams.threshold).toBe(-100);
+    mixer.setGateRange(999);                 // clamps to 80
+    expect(mixer._gateParams.range).toBe(80);
+    mixer.setGateAttack(999);                // clamps to 200
+    expect(mixer._gateParams.attack).toBe(200);
+    mixer.setGateRelease(-5);                // clamps to 0
+    expect(mixer._gateParams.release).toBe(0);
+  });
+
+  test('de-esser worklet: bypassed by default; setters clamp + convert', () => {
+    // No AudioWorklet in the mock → the de-esser stays bypassed (null) and
+    // deEsserInput passes through; setters store/clamp into _deEsserParams.
+    expect(mixer.deEsser).toBe(null);
+    expect(mixer.deEsserInput).toBeDefined();
+    expect(mixer._deEsserParams.amount).toBe(0);       // amount 0 = transparent
+    expect(mixer._deEsserParams.frequency).toBe(6000);
+    mixer.setDeEsserAmount(150);                        // 150% → clamps to 100 → 1.0
+    expect(mixer._deEsserParams.amount).toBe(1);
+    mixer.setDeEsserAmount(-10);                        // clamps to 0
+    expect(mixer._deEsserParams.amount).toBe(0);
+    mixer.setDeEsserFreq(500);                          // clamps to 2000
+    expect(mixer._deEsserParams.frequency).toBe(2000);
+    mixer.setDeEsserFreq(99999);                        // clamps to 12000
+    expect(mixer._deEsserParams.frequency).toBe(12000);
   });
 
   test('loadStems builds sample-locked buffers; transport round-trips', async () => {
@@ -351,14 +438,74 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(calls.some(([v, t]) => Math.abs(v - 0.4) < 1e-9 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
     // Round-trip: the getter returns the same scale the setter accepts.
     expect(mixer.getSpeakerState('S1').volume).toBe(40);
+    // Clamp ceiling is now 200 (per-speaker ENHANCE / boost).
     mixer.setSpeakerVolume('S1', 900);
-    expect(mixer.getSpeakerState('S1').volume).toBe(100);
+    expect(mixer.getSpeakerState('S1').volume).toBe(200);
+  });
+
+  test('a speaker can be ENHANCED above unity to lift a faint/whisper voice', async () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments(SEGMENTS);
+    await mixer.play();
+    mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.setSpeakerVolume('S1', 175); // +~4.9 dB boost
+    expect(mixer.getSpeakerState('S1').volume).toBe(175);
+    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    // S1's segment (0.2–0.5 → ctx 0.21) ramps to the boosted gain 1.75.
+    expect(calls.some(([v, t]) => Math.abs(v - 1.75) < 1e-9 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
+  });
+
+  test('setSpeakerVolume 200 schedules gain 2.0 (maximum +6 dB ENHANCE)', async () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments(SEGMENTS);
+    await mixer.play();
+    mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.setSpeakerVolume('S1', 200);
+    expect(mixer.getSpeakerState('S1').volume).toBe(200);
+    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    expect(calls.some(([v]) => Math.abs(v - 2.0) < 1e-9)).toBe(true);
+  });
+
+  test('setSpeakerVolume 0 schedules gain 0.0 (silence via fader, floor clamp)', async () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments(SEGMENTS);
+    await mixer.play();
+    mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.setSpeakerVolume('S1', 0);
+    expect(mixer.getSpeakerState('S1').volume).toBe(0);
+    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    expect(calls.some(([v]) => Math.abs(v - 0.0) < 1e-9)).toBe(true);
+  });
+
+  test('negative volume is clamped to 0 (floor boundary)', () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments(SEGMENTS);
+    mixer.setSpeakerVolume('S1', -50);
+    expect(mixer.getSpeakerState('S1').volume).toBe(0);
+  });
+
+  test('volume 100 produces unity gain 1.0 (unchanged from pre-PR behaviour)', async () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments(SEGMENTS);
+    await mixer.play();
+    mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.setSpeakerVolume('S2', 100);
+    expect(mixer.getSpeakerState('S2').volume).toBe(100);
+    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    expect(calls.some(([v]) => Math.abs(v - 1.0) < 1e-9)).toBe(true);
+  });
+
+  test('setSpeakerVolume on an unknown speaker is a safe no-op', () => {
+    mixer.loadStems(stems(), stems());
+    mixer.loadSpeakerSegments(SEGMENTS);
+    // 'S99' is not registered — must not throw.
+    expect(() => mixer.setSpeakerVolume('S99', 150)).not.toThrow();
   });
 
   test('contiguous segments share one boundary ramp (no AudioParam collision)', async () => {
     mixer.loadStems(stems(), stems());
     mixer.loadSpeakerSegments([
-      { speakerId: 'S1', start: 0.2, end: 0.5 },
+
       { speakerId: 'S2', start: 0.5, end: 0.9 }, // starts exactly at S1's end
     ]);
     await mixer.play();

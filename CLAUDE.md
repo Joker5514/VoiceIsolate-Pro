@@ -83,8 +83,10 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/core/BufferPool.js` | 1 | Pre-allocated `Float32Array` pool (128 / 2048 / 4096) — zero-GC DSP. |
 | `src/core/ModelManifest.js` | 1 | Canonical model metadata: URLs, sizes, SHA-256 integrity hashes, I/O specs. |
 | `src/core/diarization.js` | 1 | Pure speaker diarization (frame features + k-means) run once per file on the clean stem. |
+| `src/core/SpectralCleanup.js` | 1 | Pure **offline** STFT post-passes run once per file on the clean stem: `reduceNoise()` (spectral subtraction + minimum-statistics noise floor) and `dereverb()` (decaying-tail subtraction). Strength is a processing parameter, **never a live slider**. |
 | `src/workers/MLWorker.js` | 2 | Fetch → verify SHA-256 → cache in IndexedDB → run offline ONNX inference (overlap-add) → emit stems. |
 | `src/workers/DiarizationWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `diarization.js` — keeps segmentation off the main thread. |
+| `src/workers/SpectralCleanupWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `SpectralCleanup.js` — runs the offline NR/dereverb passes off the main thread. |
 | `src/pipeline/FileIngestion.js` | 3 | Accept audio/video blobs, decode, resample to 48 kHz via `OfflineAudioContext`. |
 | `src/pipeline/PlaybackMixer.js` | 3 | The Live-Mix graph: stem sources → speaker lane → gains → mute lanes → EQ → destination. Exports `setNoiseReduction()`, `setVoiceMuted()`, `setSpeakerMuted()` etc. |
 | `src/presentation/SliderUI.js` | 4 | Slider event listeners, `requestAnimationFrame`-coalesced updates into `PlaybackMixer`. |
@@ -98,6 +100,30 @@ Rules:
   It receives the model manifest via its `init` message — it does not import
   `ModelManifest.js` directly. `ModelManifest.js` remains the single source of
   truth; the pipeline layer forwards it.
+- **Deliberate capabilities — do not "revert" as regressions:**
+  - `MLWorker` `process` accepts an optional `modelIds: string[]` chain that
+    runs models in series for **Maximum Isolation** (e.g. vocals → denoise);
+    each stage's clean output feeds the next, and the noise stem is still the
+    residual against the original input. Single `modelId` remains the one-pass
+    case. This is still one inference pass *per file* — not re-triggered by sliders.
+  - `diarization.js` builds a per-window **log-mel timbral fingerprint**
+    (loudness-invariant; see `melBands`) alongside RMS/ZCR/flatness, so speakers
+    are clustered by voice timbre rather than loudness, and whispers (low RMS)
+    are still detected (`SILENCE_RMS` is intentionally low).
+  - `PlaybackMixer.setSpeakerVolume` accepts **0–200** (>100 = up to +6 dB
+    ENHANCE) so a faint/whispered speaker can be boosted. Still AudioParam-only.
+  - `src/workers/GateProcessor.js` (`registerProcessor('vip-gate')`) and
+    `src/workers/DeEsserProcessor.js` (`registerProcessor('vip-deesser')`) are
+    **playback-only** `AudioWorklet`s — a real-time noise gate and de-esser on
+    the loaded stems, controlled by k-rate AudioParams so sliders drive them
+    like any other Live-Mix control. Web Audio has no built-in gate/expander,
+    and a built-in de-esser comb-filters (DynamicsCompressorNode lookahead), so
+    both must be worklets. These are **not** the removed live-mic pipeline: they
+    never ingest a microphone and never re-run ML. They are the only worklets
+    permitted in `src/`, allowlisted by `ALLOWED_WORKLETS` in
+    `scripts/validate.js`; any other `audioWorklet.addModule` target (or a
+    dynamic one) and `getUserMedia` remain forbidden. Do not delete them or
+    re-tighten the allowlist as a "live-pipeline" regression.
 
 ---
 
