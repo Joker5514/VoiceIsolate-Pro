@@ -1,0 +1,418 @@
+/* ============================================================
+   VoiceIsolate Pro — Engineer Mode
+   Main layout & component styles
+   ============================================================ */
+
+/* ---------- Reset / Base ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background: #0f1117;
+  color: #e0e0e0;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------- Engineer Mode Wrapper ---------- */
+.engineer-mode {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+
+/* ---------- Header ---------- */
+.engineer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.engineer-header .header-text h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #e0e0e0;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.engineer-header .header-text .badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #c7d2fe;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.engineer-header .header-text p {
+  font-size: 13px;
+  color: #8a8fa0;
+  margin-top: 4px;
+}
+
+/* ---------- Reset Button (Secondary / Outline) ---------- */
+#resetSlidersBtn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #8a8fa0;
+  background: transparent;
+  border: 1px solid #2a2d3a;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+  font-family: inherit;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+#resetSlidersBtn:hover {
+  color: #e0e0e0;
+  border-color: #6366f1;
+  background-color: rgba(99, 102, 241, 0.08);
+}
+
+#resetSlidersBtn:active {
+  background-color: rgba(99, 102, 241, 0.15);
+  border-color: #6366f1;
+  color: #e0e0e0;
+}
+
+/* ---------- File Drop Zone ---------- */
+.file-drop-zone {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  padding: 24px;
+  margin-bottom: 24px;
+  border: 2px dashed #2a2d3a;
+  border-radius: 10px;
+  background: #1a1d27;
+  cursor: pointer;
+  transition: border-color 0.25s ease, background-color 0.25s ease;
+  text-align: center;
+  user-select: none;
+}
+
+.file-drop-zone:hover {
+  border-color: #6366f1;
+  background-color: rgba(99, 102, 241, 0.04);
+}
+
+.file-drop-zone.active,
+.file-drop-zone.drag-over {
+  border-color: #818cf8;
+  background-color: rgba(99, 102, 241, 0.1);
+}
+
+.file-drop-zone .drop-label {
+  font-size: 14px;
+  color: #8a8fa0;
+  pointer-events: none;
+}
+
+.file-drop-zone .drop-label span {
+  color: #6366f1;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.file-drop-zone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* ---------- Pipeline Status Bar ---------- */
+.pipeline-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 24px;
+  border-radius: 8px;
+  background: #1a1d27;
+  border: 1px solid #2a2d3a;
+  font-size: 13px;
+  color: #8a8fa0;
+  transition: border-color 0.3s ease;
+}
+
+.pipeline-status.ready {
+  border-color: #22c55e;
+}
+
+.pipeline-status.loading {
+  border-color: #f59e0b;
+}
+
+.pipeline-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+  flex-shrink: 0;
+  transition: background-color 0.3s ease;
+}
+
+.pipeline-status.ready .status-dot {
+  background: #22c55e;
+}
+
+.pipeline-status.loading .status-dot {
+  background: #f59e0b;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+.pipeline-status .status-text {
+  font-weight: 500;
+}
+
+/* ---------- Slider Group (Accordion) ---------- */
+.slider-group {
+  background: #1a1d27;
+  border: 1px solid #2a2d3a;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  transition: border-color 0.25s ease;
+}
+
+.slider-group:hover {
+  border-color: #363a4a;
+}
+
+.slider-group-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s ease;
+}
+
+.slider-group-header:hover {
+  background-color: rgba(255, 255, 255, 0.025);
+}
+
+.slider-group-header .group-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.slider-group-header .group-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.slider-group-header .chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: #8a8fa0;
+  transition: transform 0.3s ease;
+  flex-shrink: 0;
+}
+
+.slider-group-header .chevron svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Accordion open/close animation — max-height + opacity (no display:none) */
+.slider-group-content {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.4s ease, opacity 0.3s ease;
+  padding: 0 16px;
+}
+
+.slider-group.active .slider-group-content {
+  max-height: 2000px;
+  opacity: 1;
+  overflow: visible;
+  padding: 4px 16px 16px;
+}
+
+/* Chevron rotation when group is active */
+.slider-group.active > .slider-group-header .chevron {
+  transform: rotate(180deg);
+}
+
+/* ---------- Slider Row ---------- */
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.slider-row label {
+  flex-shrink: 0;
+  width: 140px;
+  text-align: right;
+  font-size: 13px;
+  color: #8a8fa0;
+  line-height: 1.3;
+  padding-right: 4px;
+}
+
+.slider-row input[type="range"] {
+  flex: 1;
+  min-width: 0; /* allow shrinking in flex context */
+  height: 20px;
+}
+
+.slider-row .slider-value {
+  flex-shrink: 0;
+  width: 80px;
+  text-align: right;
+  font-family: 'SF Mono', 'Fira Code', 'Fira Mono', Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: #e0e0e0;
+  line-height: 1.3;
+  user-select: none;
+}
+
+/* Disabled slider */
+.slider-row input[type="range"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.slider-row input[type="range"]:disabled + .slider-value,
+.slider-row input[type="range"]:disabled ~ .slider-value {
+  opacity: 0.4;
+}
+
+/* ---------- Utility ---------- */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 767px) {
+  .engineer-mode {
+    padding: 20px 14px 36px;
+  }
+
+  .engineer-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .engineer-header .header-text h1 {
+    font-size: 18px;
+  }
+
+  .slider-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 10px 0 6px;
+  }
+
+  .slider-row label {
+    width: auto;
+    text-align: left;
+    font-size: 12px;
+  }
+
+  .slider-row input[type="range"] {
+    width: 100%;
+  }
+
+  .slider-row .slider-value {
+    width: auto;
+    text-align: left;
+    font-size: 12px;
+    margin-top: -2px;
+  }
+
+  .slider-group-header {
+    padding: 12px 14px;
+  }
+
+  .slider-group.active .slider-group-content {
+    padding: 2px 14px 14px;
+  }
+
+  .file-drop-zone {
+    min-height: 80px;
+    padding: 18px 14px;
+  }
+
+  .pipeline-status {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .engineer-mode {
+    padding: 14px 10px 28px;
+  }
+
+  .slider-row label {
+    font-size: 11px;
+  }
+
+  .slider-row .slider-value {
+    font-size: 11px;
+  }
+}

@@ -1,0 +1,202 @@
+/* ============================================================
+   VoiceIsolate Pro — Engineer Mode
+   Custom range slider theme (cross-browser)
+   ============================================================ */
+
+/* ---------- Base Reset for All Range Inputs ---------- */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+}
+
+/* ==========================================================
+   TRACK — WebKit (Chrome / Edge / Safari)
+   ========================================================== */
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(
+    to right,
+    #6366f1 0%,
+    #6366f1 var(--fill, 50%),
+    #2a2d3a var(--fill, 50%),
+    #2a2d3a 100%
+  );
+  border: none;
+  transition: background 0.15s ease;
+}
+
+/* Hover / active — lighter accent on the filled portion */
+input[type="range"]:hover::-webkit-slider-runnable-track,
+input[type="range"]:active::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    #818cf8 0%,
+    #818cf8 var(--fill, 50%),
+    #2a2d3a var(--fill, 50%),
+    #2a2d3a 100%
+  );
+}
+
+/* ==========================================================
+   TRACK — Mozilla (Firefox)
+   ========================================================== */
+input[type="range"]::-moz-range-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #2a2d3a;
+  border: none;
+}
+
+/* Firefox uses ::-moz-range-progress for the filled portion */
+input[type="range"]::-moz-range-progress {
+  height: 6px;
+  border-radius: 3px;
+  background: #6366f1;
+  transition: background 0.15s ease;
+}
+
+input[type="range"]:hover::-moz-range-progress,
+input[type="range"]:active::-moz-range-progress {
+  background: #818cf8;
+}
+
+/* Firefox track hover tint (subtle) */
+input[type="range"]:hover::-moz-range-track {
+  background: #2a2d3a;
+}
+
+/* ==========================================================
+   THUMB — WebKit (Chrome / Edge / Safari)
+   ========================================================== */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: none;
+  margin-top: -6px; /* (track-height / 2) - (thumb-height / 2) => (6/2)-(18/2) = -6 */
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  box-shadow:
+    0 2px 8px rgba(99, 102, 241, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  box-shadow:
+    0 2px 10px rgba(99, 102, 241, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+/* ==========================================================
+   THUMB — Mozilla (Firefox)
+   ========================================================== */
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: none;
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="range"]::-moz-range-thumb:hover {
+  transform: scale(1.15);
+  box-shadow:
+    0 2px 8px rgba(99, 102, 241, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+input[type="range"]:active::-moz-range-thumb {
+  transform: scale(1.2);
+  box-shadow:
+    0 2px 10px rgba(99, 102, 241, 0.45),
+    0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+/* ==========================================================
+   DISABLED STATE
+   ========================================================== */
+input[type="range"]:disabled::-webkit-slider-runnable-track {
+  background: #2a2d3a;
+}
+
+input[type="range"]:disabled::-webkit-slider-thumb {
+  background: #555;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+input[type="range"]:disabled::-moz-range-track {
+  background: #2a2d3a;
+}
+
+input[type="range"]:disabled::-moz-range-progress {
+  background: #444;
+}
+
+input[type="range"]:disabled::-moz-range-thumb {
+  background: #555;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* ==========================================================
+   FOCUS-VISIBLE (Accessibility)
+   ========================================================== */
+input[type="range"]:focus-visible {
+  outline: none;
+}
+
+input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 2px #0f1117,
+    0 0 0 4px #6366f1;
+}
+
+input[type="range"]:focus-visible::-moz-range-thumb {
+  box-shadow:
+    0 0 0 2px #0f1117,
+    0 0 0 4px #6366f1;
+}
+
+/* Ensure :focus-visible takes precedence over :hover / :active
+   when using keyboard navigation */
+input[type="range"]:focus-visible:hover::-webkit-slider-thumb,
+input[type="range"]:focus-visible:active::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 2px #0f1117,
+    0 0 0 4px #6366f1;
+}
+
+input[type="range"]:focus-visible:hover::-moz-range-thumb,
+input[type="range"]:focus-visible:active::-moz-range-thumb {
+  box-shadow:
+    0 0 0 2px #0f1117,
+    0 0 0 4px #6366f1;
+  transform: none;
+}
