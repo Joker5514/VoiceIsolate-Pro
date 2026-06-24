@@ -1,105 +1,187 @@
-/* global AudioWorkletProcessor, registerProcessor, sampleRate */
 /**
- * VoiceIsolate Pro — Noise-Gate AudioWorklet (Layer 2: playback DSP)
- *
- * A real-time downward noise gate for the Live-Mix playback bus. It is a
- * **playback-only** worklet: it processes already-loaded stems during
- * playback exactly like the EQ/compressor nodes — it NEVER ingests a
- * microphone and NEVER re-runs ML. This is the one worklet permitted in
- * src/ (allowlisted in scripts/validate.js); the removed live-mic pipeline
- * stays removed (CLAUDE.md §1.1 / §2.1).
- *
- * Web Audio has no built-in expander/gate (DynamicsCompressorNode only acts
- * *above* a threshold), so the gate needs sample-level envelope following —
- * hence a worklet rather than built-in nodes.
- *
- * Control is AudioParam-only (k-rate), so the UI sliders drive it through the
- * same setTargetAtTime path as every other Live-Mix control:
- *   - threshold (dB): level below which the gate attenuates
- *   - range (dB):     attenuation depth when closed; 0 = bypass (transparent)
- *   - attack (ms):    how fast the gate opens
- *   - release (ms):   how fast the gate closes
- *
- * Default range = 0 dB → the gate is fully transparent until engaged.
+ * GateProcessor - AudioWorklet Noise Gate Processor
+ * 
+ * Implements a dynamic noise gate that attenuates audio signals below a threshold.
+ * Uses exponential smoothing for natural attack and release envelopes.
+ * 
+ * @class GateProcessor
+ * @extends AudioWorkletProcessor
  */
-'use strict';
-
 class GateProcessor extends AudioWorkletProcessor {
+  /**
+   * Define the parameters exposed to the audio graph
+   * @returns {Array<AudioParamDescriptor>} Parameter descriptors
+   */
   static get parameterDescriptors() {
     return [
-      { name: 'threshold', defaultValue: -45, minValue: -100, maxValue: 0, automationRate: 'k-rate' },
-      { name: 'range', defaultValue: 0, minValue: 0, maxValue: 80, automationRate: 'k-rate' },
-      { name: 'attack', defaultValue: 5, minValue: 0, maxValue: 200, automationRate: 'k-rate' },
-      { name: 'release', defaultValue: 100, minValue: 0, maxValue: 1000, automationRate: 'k-rate' },
-      { name: 'hold', defaultValue: 0, minValue: 0, maxValue: 500, automationRate: 'k-rate' },
+      {
+        name: 'threshold',
+        defaultValue: -40,
+        minValue: -100,
+        maxValue: 0,
+        automationRate: 'k-rate'
+      },
+      {
+        name: 'attack',
+        defaultValue: 10,
+        minValue: 0,
+        maxValue: 1000,
+        automationRate: 'k-rate'
+      },
+      {
+        name: 'release',
+        defaultValue: 100,
+        minValue: 0,
+        maxValue: 5000,
+        automationRate: 'k-rate'
+      }
     ];
   }
 
+  /**
+   * Initialize the gate processor
+   */
   constructor() {
     super();
-    this._env = 0;  // envelope-follower state (linear)
-    this._gain = 1; // smoothed gate gain (linear)
-    this._hold = 0; // remaining hold samples after the signal drops below threshold
+    
+    // Envelope follower state for each channel
+    this.envelopes = [0, 0];
+    
+    // Current gain reduction for each channel
+    this.currentGain = [1, 1];
+    
+    // Sample rate (will be set on first process call)
+    this.sampleRate = 48000; // Default, will be updated
   }
 
+  /**
+   * Convert dB to linear amplitude
+   * @param {number} db - Decibel value
+   * @returns {number} Linear amplitude
+   */
+  dbToLinear(db) {
+    return 10 ** (db / 20);
+  }
+
+  /**
+   * Convert linear amplitude to dB
+   * @param {number} linear - Linear amplitude
+   * @returns {number} Decibel value
+   */
+  linearToDb(linear) {
+    if (linear <= 0) return -100;
+    return 20 * Math.log10(linear);
+  }
+
+  /**
+   * Calculate time constant for exponential smoothing
+   * @param {number} timeMs - Time in milliseconds
+   * @param {number} sampleRate - Sample rate in Hz
+   * @returns {number} Time constant coefficient
+   */
+  calculateTimeConstant(timeMs, sampleRate) {
+    if (timeMs <= 0) return 0;
+    // Convert ms to samples and calculate exponential coefficient
+    return Math.exp(-1 / (timeMs * 0.001 * sampleRate));
+  }
+
+  /**
+   * Process audio samples
+   * @param {Float32Array[][]} inputs - Input audio buffers
+   * @param {Float32Array[][]} outputs - Output audio buffers
+   * @param {Object} parameters - Parameter values
+   * @returns {boolean} True to keep processor alive
+   */
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     const output = outputs[0];
-    if (!input || input.length === 0 || !output || output.length === 0) return true;
-    const inCh = input.length;
-    const outCh = output.length;
-    const nSamp = output[0].length;
 
-    const rangeDb = parameters.range[0];
-    // Bypass fast-path: range 0 → never attenuate → pass through untouched.
-    if (rangeDb <= 0) {
-      for (let c = 0; c < outCh; c++) {
-        if (input[c]) output[c].set(input[c]);
-        else output[c].fill(0);
-      }
-      this._env = 0;
-      this._gain = 1;
-      this._hold = 0;
+    // If no input, pass through silence
+    if (!input || input.length === 0) {
       return true;
     }
 
-    const thrLin = Math.pow(10, parameters.threshold[0] / 20);
-    const floor = Math.pow(10, -rangeDb / 20); // gain when fully closed
-    // One-pole envelope/gain coefficients from the time constants (per sample).
-    const atk = Math.exp(-1 / (Math.max(0.05, parameters.attack[0]) * 0.001 * sampleRate));
-    const rel = Math.exp(-1 / (Math.max(1, parameters.release[0]) * 0.001 * sampleRate));
-    // Hold keeps the gate open for a fixed tail after the signal drops below
-    // threshold, so brief dips between syllables don't chatter it shut.
-    const holdSamples = Math.round(Math.max(0, parameters.hold[0]) * 0.001 * sampleRate);
+    // Get parameter values (k-rate, so one value per block)
+    const thresholdDb = parameters.threshold[0];
+    const attackMs = parameters.attack[0];
+    const releaseMs = parameters.release[0];
 
-    let env = this._env;
-    let gain = this._gain;
-    let hold = this._hold;
-    for (let i = 0; i < nSamp; i++) {
-      // Control signal = peak across channels (keeps L/R gated together).
-      let x = 0;
-      for (let c = 0; c < inCh; c++) {
-        const ch = input[c];
-        const a = ch ? Math.abs(ch[i]) : 0;
-        if (a > x) x = a;
-      }
-      // Fast-attack / slow-release envelope follower.
-      env = x > env ? atk * env + (1 - atk) * x : rel * env + (1 - rel) * x;
-      const aboveThr = env >= thrLin;
-      // Refresh the hold tail while open; otherwise count it down.
-      if (aboveThr) hold = holdSamples;
-      else if (hold > 0) hold--;
-      const target = aboveThr || hold > 0 ? 1 : floor;
-      // Ramp the gain toward the target (attack when opening, release when closing).
-      const coef = target > gain ? atk : rel;
-      gain = coef * gain + (1 - coef) * target;
-      for (let c = 0; c < outCh; c++) output[c][i] = (input[c] ? input[c][i] : 0) * gain;
+    // Update sample rate from the actual buffer length and expected duration
+    if (input[0]) {
+      this.sampleRate = sampleRate || 48000; // Use global sampleRate if available
     }
-    this._env = env;
-    this._gain = gain;
-    this._hold = hold;
+
+    // Calculate time constants for attack and release
+    const attackCoeff = this.calculateTimeConstant(attackMs, this.sampleRate);
+    const releaseCoeff = this.calculateTimeConstant(releaseMs, this.sampleRate);
+
+    // Convert threshold to linear
+    const thresholdLinear = this.dbToLinear(thresholdDb);
+
+    // Process each channel
+    const channelCount = Math.min(input.length, output.length, 2);
+    
+    for (let channel = 0; channel < channelCount; channel++) {
+      const inputChannel = input[channel];
+      const outputChannel = output[channel];
+      
+      if (!inputChannel || !outputChannel) continue;
+
+      const blockSize = inputChannel.length;
+
+      // Process each sample
+      for (let i = 0; i < blockSize; i++) {
+        const sample = inputChannel[i];
+        
+        // Handle edge cases
+        if (!isFinite(sample)) {
+          outputChannel[i] = 0;
+          continue;
+        }
+
+        // Calculate envelope (absolute value for level detection)
+        const inputLevel = Math.abs(sample);
+        
+        // Envelope follower with attack/release
+        if (inputLevel > this.envelopes[channel]) {
+          // Attack: signal is rising
+          this.envelopes[channel] = attackCoeff * this.envelopes[channel] + 
+                                    (1 - attackCoeff) * inputLevel;
+        } else {
+          // Release: signal is falling
+          this.envelopes[channel] = releaseCoeff * this.envelopes[channel] + 
+                                    (1 - releaseCoeff) * inputLevel;
+        }
+
+        // Determine target gain based on threshold
+        let targetGain;
+        if (this.envelopes[channel] > thresholdLinear) {
+          // Signal above threshold: full gain
+          targetGain = 1;
+        } else {
+          // Signal below threshold: gate closed (attenuate)
+          // Use ratio of envelope to threshold for smooth transition
+          const ratio = this.envelopes[channel] / thresholdLinear;
+          // Smooth curve: ratio^2 for gentler gating
+          targetGain = ratio * ratio;
+        }
+
+        // Smooth gain changes to avoid clicks
+        const gainSmoothCoeff = 0.9999; // Very fast smoothing for gain
+        this.currentGain[channel] = gainSmoothCoeff * this.currentGain[channel] + 
+                                    (1 - gainSmoothCoeff) * targetGain;
+
+        // Apply gain to output
+        outputChannel[i] = sample * this.currentGain[channel];
+      }
+    }
+
+    // Keep processor alive
     return true;
   }
 }
 
+// Register the processor with the audio worklet
 registerProcessor('vip-gate', GateProcessor);
+
+// Made with Bob

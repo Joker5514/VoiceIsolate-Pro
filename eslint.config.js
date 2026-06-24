@@ -236,6 +236,30 @@ export default [
     },
   },
   {
+    // Layer 2 — AudioWorklet processors (*Processor.js files)
+    // Run in AudioWorkletGlobalScope (no import/export, special globals)
+    files: ['src/workers/*Processor.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'script',
+      globals: {
+        ...globals.browser,
+        AudioWorkletProcessor: 'readonly',
+        registerProcessor: 'readonly',
+        sampleRate: 'readonly',
+        currentFrame: 'readonly',
+        currentTime: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'semi': ['warn', 'always'],
+      'quotes': ['warn', 'single', { avoidEscape: true }],
+    },
+  },
+  {
     // Layer 2 — module workers (spawned with { type: 'module' }); they import
     // src/core/ directly, so sourceType flips back to 'module'.
     files: ['src/workers/DiarizationWorker.js', 'src/workers/SpectralCleanupWorker.js'],

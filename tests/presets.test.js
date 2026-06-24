@@ -6,16 +6,16 @@
 const fs = require('fs');
 const path = require('path');
 
-const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
+const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8').replace(/\r\n/g, '\n');
 
 // Extract slider IDs from the SLIDERS block
-const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\s*\nconst SLIDER_MAP/);
+const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\s*\n(?:\/\/[^\n]*\n\s*)*const SLIDER_BY_ID/);
 const sliderIds = slidersBlockMatch
   ? [...slidersBlockMatch[1].matchAll(/id\s*:\s*'(\w+)'/g)].map(m => m[1])
   : [];
 
 // Extract preset block text
-const presetNameRegex = /const PRESETS = \{([\s\S]*?)\};\s*\n\/\/ Aliases/;
+const presetNameRegex = /const PRESETS = \{([\s\S]*?)\};\s*\n(?:(?:\/\/[^\n]*)?\n)*\/\/ Utility helpers/;
 const presetsBlock = appJs.match(presetNameRegex)?.[1] || '';
 
 const PRESET_NAMES = [
@@ -110,7 +110,7 @@ describe('Presets', () => {
 // gateThresh: 9999 that the previous "key completeness" test would miss.
 describe('Preset value-range validation', () => {
   // Build a sliderId → {min, max} table by parsing the SLIDERS literal.
-  const slidersBlock = appJs.match(/const SLIDERS\s*=\s*\{([\s\S]*?)\};\s*\nconst SLIDER_MAP/);
+  const slidersBlock = appJs.match(/const SLIDERS\s*=\s*\{([\s\S]*?)\};[\s\S]*?const SLIDER_BY_ID/);
   const sliderRanges = {};
   if (slidersBlock) {
     const sliderObjRegex = /\{\s*id\s*:\s*'(\w+)'[^{}]*?min\s*:\s*(-?\d+(?:\.\d+)?)[^{}]*?max\s*:\s*(-?\d+(?:\.\d+)?)/g;

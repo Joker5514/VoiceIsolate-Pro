@@ -508,10 +508,30 @@
 
       slider.addEventListener('input', () => {
         const v = parseFloat(slider.value);
-        if (!Number.isFinite(v)) return;
+        console.log(`[VIP-FIXES] Slider input event: id="${id}", value=${v}, isFinite=${Number.isFinite(v)}`);
+        
+        if (!Number.isFinite(v)) {
+          console.warn(`[VIP-FIXES] Invalid slider value for "${id}": ${slider.value}`);
+          return;
+        }
+        
         window.VIP_PARAMS = window.VIP_PARAMS || {};
         window.VIP_PARAMS[id] = v;
         if (app.params) app.params[id] = v;
+        
+        // Call app.onSlider() to trigger real-time bridge (CLAUDE.md §1)
+        // This routes RT-flagged params through the Live-Mix AudioParam updates
+        console.log(`[VIP-FIXES] Checking app.onSlider: app=${!!app}, typeof=${typeof app?.onSlider}`);
+        if (app && typeof app.onSlider === 'function') {
+          console.log(`[VIP-FIXES] Calling app.onSlider("${id}", ${v})`);
+          app.onSlider(id, v);
+          console.log(`[VIP-FIXES] app.onSlider() returned, exiting handler`);
+          return; // onSlider handles orchestrator/worklet routing
+        }
+        
+        console.warn(`[VIP-FIXES] app.onSlider not available, falling back to legacy path`);
+        
+        // Fallback: direct orchestrator/worklet dispatch if app.onSlider unavailable
         const orch = window._vipOrch;
         if (orch?.updateParams) { orch.updateParams(orch._normalizeRawParams({ [id]: v })); return; }
         if (app.workletNode) {

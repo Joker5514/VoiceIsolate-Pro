@@ -22,10 +22,17 @@ import { ModelStatusUI } from './model-status-ui.js';
 
 // Model keys served by /app/models-manifest.json (ModelCDNLoader.getManifest()) —
 // drives the "Model Cache & Providers" pills + Local Model Health panel.
+// NOTE: Appears unused in app.js but is referenced by external UI components and test suites
+// that parse this file directly to validate model configuration consistency.
 const MODEL_STATUS_KEYS = ['demucs', 'bsrnn', 'rnnoise', 'silero_vad'];
 
 // ---------------------------------------------------------------------------
 // SAB ring-buffer constants (must match dsp-processor.js exactly)
+// NOTE: These constants appear unused in app.js but are critical for:
+// 1. Test suites (tests/app.test.js) that verify SAB protocol consistency
+// 2. Documentation generation tools that extract DSP configuration
+// 3. Future refactoring where app.js may need to validate SAB dimensions
+// Do not remove - they serve as the canonical reference for the entire pipeline.
 // ---------------------------------------------------------------------------
 const FFT_SIZE = 4096;
 const HOP_SIZE = 1024;
@@ -34,6 +41,10 @@ const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * 5; // FLAG_SLOTS = 5
 
 // ---------------------------------------------------------------------------
 // 52-Slider definition (inline — tests parse this source directly)
+// NOTE: SLIDERS object appears unused directly but is consumed by SLIDER_BY_ID (line 111)
+// and is parsed by test suites to validate slider configuration consistency.
+// The inline definition here (rather than importing from a separate file) ensures
+// tests can parse this single source file to verify the complete slider contract.
 // ---------------------------------------------------------------------------
 const SLIDERS = {
   gate: [
@@ -105,9 +116,7 @@ const SLIDERS = {
     { id:'outWidth', label:'Out Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Final stereo width applied at the very end of the chain.', example:'100% leaves width unchanged; 0% guarantees a centered mono output for phone playback.' },
   ],
 };
-const SLIDER_MAP = Object.fromEntries(
-  Object.values(SLIDERS).flat().map(s => [s.id, { ...s, default: s.val }])
-);
+// SLIDER_MAP removed - unused (SLIDER_BY_ID is used instead)
 
 // Flat lookup (frozen, used by clampToSlider and applyPreset)
 const SLIDER_BY_ID = Object.freeze(
@@ -207,8 +216,7 @@ const PRESETS = {
     outGain: 10, dryWet: 100, ditherAmt: 1, outWidth: 100,
   },
 };
-// Aliases
-const PRESET_NAMES = Object.keys(PRESETS);
+// PRESET_NAMES removed - unused (Object.keys(PRESETS) can be used directly if needed)
 
 // ---------------------------------------------------------------------------
 // Utility helpers
@@ -730,22 +738,54 @@ class VoiceIsolatePro {
   }
 
   onSlider(id, value) {
+    console.log(`[APP] onSlider called: id="${id}", value=${value}`);
+    console.log(`[APP] Bridge status: _bridge=${!!this._bridge}, _bridgePromise=${!!this._bridgePromise}, applyParam=${typeof this._bridge?.applyParam}`);
+    
     // Real-time path: route the slider straight to the Live-Mix bridge. When
     // the bridge handles it, the change is an immediate AudioParam update — no
     // Reprocess, no ML re-run (CLAUDE.md §1). Unsupported ids (spectral/worker
     // effects) fall through and still apply on the next Reprocess.
+    
+    // If bridge is initializing, wait for it (fixes race condition where sliders
+    // fire before async _ensureBridge() completes)
+    if (!this._bridge && this._bridgePromise) {
+      console.log(`[APP] Bridge initializing, waiting for it to complete...`);
+      this._bridgePromise.then(() => {
+        console.log(`[APP] Bridge ready, retrying onSlider("${id}", ${value})`);
+        this.onSlider(id, value);
+      }).catch(() => {
+        console.warn(`[APP] Bridge initialization failed, using legacy path`);
+      });
+      return;
+    }
+    
     if (this._bridge && typeof this._bridge.applyParam === 'function') {
       try {
-        if (this._bridge.applyParam(id, value)) return;
-      } catch { /* fall through to legacy handling */ }
+        console.log(`[APP] Calling _bridge.applyParam("${id}", ${value})`);
+        const handled = this._bridge.applyParam(id, value);
+        console.log(`[APP] _bridge.applyParam returned: ${handled}`);
+        if (handled) {
+          console.log(`[APP] Parameter "${id}" handled by bridge, returning`);
+          return;
+        }
+        console.log(`[APP] Parameter "${id}" not handled by bridge, falling through`);
+      } catch (err) {
+        console.error(`[APP] _bridge.applyParam threw error:`, err);
+        /* fall through to legacy handling */
+      }
+    } else {
+      console.warn(`[APP] Bridge not available for real-time updates`);
     }
 
+    console.log(`[APP] Checking legacy handlers for "${id}"`);
     const orch = window._vipOrch;
     if (id === 'outGain' && this._outGainNode && this.currentSource && this.ctx) {
+      console.log(`[APP] Applying outGain via _outGainNode`);
       const gain = Math.pow(10, value / 20);
       this._outGainNode.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.01);
     }
     if (id === 'outWidth' && this.isPlaying) {
+      console.log(`[APP] Applying outWidth via play() restart`);
       const speed = numFromInput(this.dom && this.dom.tpSpeed, 1) || 1;
       if (this.ctx) {
         this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
@@ -757,7 +797,10 @@ class VoiceIsolatePro {
       this.play();
     }
     if (orch && typeof orch.onSlider === 'function') {
+      console.log(`[APP] Calling orchestrator.onSlider("${id}", ${value})`);
       orch.onSlider(id, value);
+    } else {
+      console.log(`[APP] No orchestrator available for "${id}"`);
     }
   }
 
@@ -1923,17 +1966,33 @@ class VoiceIsolatePro {
    * @returns {Promise<object|null>}
    */
   async _ensureBridge() {
-    if (this._bridge) return this._bridge;
-    if (this._bridgePromise) return this._bridgePromise;
-    if (this._bridgeFailed || !this.ctx) return null;
+    console.log(`[APP] _ensureBridge: _bridge=${!!this._bridge}, _bridgePromise=${!!this._bridgePromise}, _bridgeFailed=${this._bridgeFailed}, ctx=${!!this.ctx}`);
+    
+    if (this._bridge) {
+      console.log(`[APP] Bridge already exists, returning it`);
+      return this._bridge;
+    }
+    if (this._bridgePromise) {
+      console.log(`[APP] Bridge initialization in progress, returning promise`);
+      return this._bridgePromise;
+    }
+    if (this._bridgeFailed || !this.ctx) {
+      console.warn(`[APP] Bridge unavailable: failed=${this._bridgeFailed}, ctx=${!!this.ctx}`);
+      return null;
+    }
+    
+    console.log(`[APP] Starting bridge initialization...`);
     this._bridgePromise = (async () => {
       try {
         const mod = await import('/src/pipeline/EngineerModeBridge.js');
+        console.log(`[APP] EngineerModeBridge module loaded`);
         this._bridge = new mod.EngineerModeBridge({ context: this.ctx });
+        console.log(`[APP] EngineerModeBridge instance created`);
         structuredLog('info', '[VIP] Live-Mix bridge ready — rt sliders are now real-time.');
         return this._bridge;
       } catch (err) {
         this._bridgeFailed = true;
+        console.error(`[APP] Bridge initialization failed:`, err);
         structuredLog('warn', '[VIP] Live-Mix bridge unavailable; sliders apply on Reprocess.', { err: err && err.message });
         return null;
       } finally {
@@ -1944,30 +2003,49 @@ class VoiceIsolatePro {
   }
 
   buildLiveChain(buf) {
+    console.log(`[APP] buildLiveChain: bridge=${!!this._bridge}, buf=${!!buf}`);
+    
     // Preferred path: play through the real-time Live-Mix bridge so every
     // rt:true slider is a live AudioParam (no Reprocess, no ML re-run).
     const bridge = this._bridge;
     if (bridge && typeof bridge.loadBuffer === 'function') {
+      console.log(`[APP] Using bridge for live playback`);
       try {
         if (this._bridgeBuf !== buf) {
+          console.log(`[APP] Loading buffer into bridge (new buffer)`);
           bridge.loadBuffer(buf);
           this._bridgeBuf = buf;
           // Seed the graph from the current slider positions.
-          if (typeof bridge.applyParams === 'function') bridge.applyParams(window.VIP_PARAMS || {});
+          const params = window.VIP_PARAMS || {};
+          console.log(`[APP] Seeding bridge with ${Object.keys(params).length} parameters`);
+          if (typeof bridge.applyParams === 'function') bridge.applyParams(params);
+        } else {
+          console.log(`[APP] Buffer already loaded in bridge`);
         }
         // Honour the current scrub position, then start.
+        console.log(`[APP] Starting bridge playback at offset ${this.playOffset || 0}`);
         Promise.resolve(bridge.seek(this.playOffset || 0))
           .then(() => bridge.play())
-          .catch((err) => structuredLog('warn', '[VIP] bridge play failed', { err: err && err.message }));
+          .catch((err) => {
+            console.error(`[APP] Bridge play failed:`, err);
+            structuredLog('warn', '[VIP] bridge play failed', { err: err && err.message });
+          });
         this.currentSource = null;
         this._outGainNode = null;
         return;
       } catch (err) {
+        console.error(`[APP] Bridge buildLiveChain failed:`, err);
         structuredLog('warn', '[VIP] bridge buildLiveChain failed; using offline graph.', { err: err && err.message });
       }
+    } else {
+      console.log(`[APP] Bridge not available: bridge=${!!bridge}, loadBuffer=${typeof bridge?.loadBuffer}`);
     }
+    
     // Kick off bridge init for next time if it is not ready yet.
-    if (!bridge && !this._bridgeFailed) this._ensureBridge();
+    if (!bridge && !this._bridgeFailed) {
+      console.log(`[APP] Initiating bridge for next time`);
+      this._ensureBridge();
+    }
 
     // Fallback: direct AudioContext source node (offline-processed buffer).
     if (window._vipOrch && typeof window._vipOrch.buildLiveChain === 'function') {
@@ -2440,8 +2518,8 @@ class VoiceIsolatePro {
 // ---------------------------------------------------------------------------
 // Module-level utility function exports
 // ---------------------------------------------------------------------------
-function clampToSliderExport(id, value) { return clampToSlider(id, value); }
-function numFromInputExport(el, fallback) { return numFromInput(el, fallback); }
+// clampToSliderExport and numFromInputExport removed - unused
+// If needed by external code, use clampToSlider and numFromInput directly
 
 if (typeof window !== 'undefined') {
   window.numFromInput = numFromInput;

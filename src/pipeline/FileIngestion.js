@@ -15,6 +15,12 @@
  * Output contract: { channelData: Float32Array[], sampleRate, duration }.
  * channelData arrays are detached-safe copies — they may be transferred to
  * MLWorker without invalidating the caller.
+ *
+ * Model Chaining Support:
+ * Accepts an optional `isolationMode` parameter that maps to modelIds array:
+ *   - "standard" → ['bsrnn_vocals'] (default)
+ *   - "maximum" → ['bsrnn_vocals', 'rnnoise'] (chain)
+ *   - "noise-suppression" → ['rnnoise']
  */
 'use strict';
 
@@ -25,6 +31,48 @@ const ACCEPTED_TYPES = ['audio/', 'video/'];
 
 /** Refuse absurd inputs before burning memory (2 GB). */
 const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
+
+/**
+ * Map isolation mode to model IDs array for MLWorker.
+ * This is the bridge between UI mode selection and backend model chaining.
+ */
+const MODE_TO_MODELS = Object.freeze({
+  'standard': ['bsrnn_vocals'],
+  'maximum': ['bsrnn_vocals', 'rnnoise'],
+  'noise-suppression': ['rnnoise'],
+});
+
+/** Default isolation mode when none is specified. */
+const DEFAULT_ISOLATION_MODE = 'standard';
+
+/**
+ * Get model IDs for a given isolation mode.
+ * @param {string} [mode] - Isolation mode ('standard', 'maximum', 'noise-suppression')
+ * @returns {string[]} Array of model IDs to process in sequence
+ */
+export function getModelIdsForMode(mode) {
+  const normalizedMode = mode || DEFAULT_ISOLATION_MODE;
+  const modelIds = MODE_TO_MODELS[normalizedMode];
+  
+  if (!modelIds) {
+    console.warn(
+      `[VIP][FileIngestion] Unknown isolation mode '${normalizedMode}', ` +
+      `falling back to '${DEFAULT_ISOLATION_MODE}'`
+    );
+    return MODE_TO_MODELS[DEFAULT_ISOLATION_MODE];
+  }
+  
+  return modelIds;
+}
+
+/**
+ * Validate that an isolation mode is known.
+ * @param {string} mode
+ * @returns {boolean}
+ */
+export function isValidIsolationMode(mode) {
+  return Object.prototype.hasOwnProperty.call(MODE_TO_MODELS, mode);
+}
 
 /**
  * @typedef {object} IngestedAudio
@@ -129,10 +177,11 @@ function extractChannels(buffer) {
  * @param {File|Blob} file
  * @param {object} [hooks]
  * @param {(stage: 'decoding'|'resampling'|'done') => void} [hooks.onProgress]
+ * @param {string} [hooks.isolationMode] - Isolation mode ('standard', 'maximum', 'noise-suppression')
  * @returns {Promise<IngestedAudio>}
  */
 export async function ingestFile(file, hooks = {}) {
-  const { onProgress = () => {} } = hooks;
+  const { onProgress = () => {}, isolationMode } = hooks;
   assertIngestible(file);
 
   onProgress('decoding');
@@ -143,12 +192,18 @@ export async function ingestFile(file, hooks = {}) {
 
   onProgress('done');
   const channelData = extractChannels(canonical);
+  
+  // Get model IDs for the selected isolation mode
+  const modelIds = getModelIdsForMode(isolationMode);
+  
   return {
     channelData,
     sampleRate: SAMPLE_RATE,
     duration: canonical.duration,
     numberOfChannels: channelData.length,
     sourceName: file.name || 'untitled',
+    modelIds, // Pass model IDs to caller for MLWorker processing
+    isolationMode: isolationMode || DEFAULT_ISOLATION_MODE,
   };
 }
 

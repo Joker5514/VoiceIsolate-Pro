@@ -67,8 +67,8 @@ describe('SLIDER_REGISTRY', () => {
   test('all 52 slider IDs match the SLIDERS definition in app.js', () => {
     const appJs = fs.readFileSync(
       path.join(__dirname, '../public/app/app.js'), 'utf8'
-    );
-    const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\s*\nconst SLIDER_MAP/);
+    ).replace(/\r\n/g, '\n');
+    const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\s*\n(?:\/\/[^\n]*\n\s*)*const SLIDER_BY_ID/);
     expect(slidersBlockMatch).not.toBeNull();
     const appIds = [...slidersBlockMatch[1].matchAll(/id\s*:\s*'([^']+)'/g)].map(x => x[1]);
     const registryIds = entries.map(e => e.id);

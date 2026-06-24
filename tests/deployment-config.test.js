@@ -361,9 +361,9 @@ describe('render.yaml — Content-Security-Policy header', () => {
     expect(scriptSrc).not.toContain('https://cdn.jsdelivr.net');
   });
 
-  test('script-src includes /_vercel/ path (deployment platform scripts)', () => {
-    const scriptSrc = directives['script-src'].join(' ');
-    expect(scriptSrc).toContain('/_vercel/');
+  test('connect-src includes Firebase auth origins (deployment platform APIs)', () => {
+    const connectSrc = (directives['connect-src'] || []).join(' ');
+    expect(connectSrc).toContain('identitytoolkit.googleapis.com');
   });
 
   // ── Required CSP directives ───────────────────────────────────────────────

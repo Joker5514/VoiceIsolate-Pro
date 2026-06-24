@@ -130,11 +130,30 @@ export class EngineerModeBridge {
    * @returns {boolean} true if the id mapped to a control
    */
   applyParam(id, value) {
+    console.log(`[BRIDGE] applyParam called: id="${id}", value=${value}`);
     const apply = PARAM_MAP[id];
-    if (!apply) return false;
+    
+    if (!apply) {
+      console.log(`[BRIDGE] Parameter "${id}" not in PARAM_MAP (unsupported), returning false`);
+      return false;
+    }
+    
+    console.log(`[BRIDGE] Parameter "${id}" found in PARAM_MAP`);
     const v = Number(value);
-    if (!Number.isFinite(v)) return false;
-    apply(this.mixer, v);
+    
+    if (!Number.isFinite(v)) {
+      console.warn(`[BRIDGE] Invalid value for "${id}": ${value}, returning false`);
+      return false;
+    }
+    
+    console.log(`[BRIDGE] Applying "${id}"=${v} to mixer, loaded=${this._loaded}`);
+    try {
+      apply(this.mixer, v);
+      console.log(`[BRIDGE] Successfully applied "${id}"=${v}`);
+    } catch (err) {
+      console.error(`[BRIDGE] Error applying "${id}"=${v}:`, err);
+      throw err;
+    }
     return true;
   }
 

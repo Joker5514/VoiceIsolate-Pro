@@ -362,9 +362,14 @@ export class PlaybackMixer {
 
   /** Remember a gate parameter and apply it to the live worklet if present. */
   _setGateParam(name, value) {
+    console.log(`[MIXER] _setGateParam: name="${name}", value=${value}, gate=${!!this.gate}`);
     this._gateParams[name] = value;
-    if (!this.gate) return;
+    if (!this.gate) {
+      console.warn(`[MIXER] Gate worklet not available`);
+      return;
+    }
     const param = this.gate.parameters.get(name);
+    console.log(`[MIXER] Gate parameter "${name}" found: ${!!param}`);
     if (param) this._applyParam(param, value);
   }
 
@@ -480,9 +485,13 @@ export class PlaybackMixer {
    */
   _applyParam(param, target) {
     const now = this.ctx.currentTime;
+    console.log(`[MIXER] _applyParam: param=${param?.constructor?.name}, target=${target}, isPlaying=${this._isPlaying}, currentTime=${now}`);
+    
     if (this._isPlaying) {
+      console.log(`[MIXER] Setting param via setTargetAtTime (smoothed)`);
       param.setTargetAtTime(target, now, PARAM_SMOOTHING);
     } else {
+      console.log(`[MIXER] Setting param directly (not playing)`);
       param.cancelScheduledValues(now);
       param.value = target;
     }
@@ -611,9 +620,15 @@ export class PlaybackMixer {
    * @param {number} db
    */
   setGraphicEq(band, db) {
+    console.log(`[MIXER] setGraphicEq: band="${band}", db=${db}`);
     const node = this.graphicBands.get(band);
-    if (!node) return;
-    this._applyParam(node.gain, clamp(db, -12, 12));
+    if (!node) {
+      console.warn(`[MIXER] Graphic EQ band "${band}" not found`);
+      return;
+    }
+    const clamped = clamp(db, -12, 12);
+    console.log(`[MIXER] Applying EQ band "${band}": ${clamped} dB`);
+    this._applyParam(node.gain, clamped);
   }
 
   /**

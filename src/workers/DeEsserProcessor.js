@@ -1,109 +1,251 @@
-/* global AudioWorkletProcessor, registerProcessor, sampleRate */
 /**
- * VoiceIsolate Pro — De-Esser AudioWorklet (Layer 2: playback DSP)
- *
- * A real-time, sample-accurate de-esser for the Live-Mix playback bus —
- * **playback-only**, exactly like GateProcessor: it processes loaded stems,
- * never a microphone, never re-runs ML. The second (and only other) worklet
- * permitted in src/, allowlisted in scripts/validate.js (CLAUDE.md §2.1).
- *
- * Why a worklet rather than built-in nodes: a built-in split-band design must
- * route the sibilance band through a DynamicsCompressorNode, whose ~5 ms
- * lookahead misaligns it from the dry path and comb-filters the highs. Doing
- * the detection + reduction per sample avoids that entirely.
- *
- * Method (complementary filter, no latency, transparent by construction):
- *   low  = one-pole lowpass(x) at `frequency`
- *   high = x − low                      (so low + high == x exactly)
- *   out  = low + g·high                 (reduce only the sibilance band)
- * where g (1 → reduced) follows the high-band envelope: when it exceeds a
- * fixed threshold, g = (thr/env)^amount. amount 0 → g≡1 → fully transparent;
- * and g≡1 whenever the high band is quiet, so non-sibilant audio is untouched
- * at any amount.
- *
- * AudioParams (k-rate) so sliders drive it like any other Live-Mix control:
- *   - frequency (Hz): low/high split point (sibilance band start)
- *   - amount (0–1):   de-essing strength; 0 = off
+ * DeEsserProcessor - AudioWorklet De-Esser Processor
+ * 
+ * Implements a dynamic de-esser that reduces harsh sibilant frequencies (3.5kHz-10kHz).
+ * Uses a biquad high-shelf filter to isolate the sibilant band, applies dynamic
+ * compression to that band, and mixes it back with the original signal.
+ * 
+ * @class DeEsserProcessor
+ * @extends AudioWorkletProcessor
  */
-'use strict';
-
-const SIBILANCE_THRESHOLD = 0.05; // ≈ −26 dBFS high-band level where reduction begins
-
 class DeEsserProcessor extends AudioWorkletProcessor {
+  /**
+   * Define the parameters exposed to the audio graph
+   * @returns {Array<AudioParamDescriptor>} Parameter descriptors
+   */
   static get parameterDescriptors() {
     return [
-      { name: 'frequency', defaultValue: 6000, minValue: 2000, maxValue: 12000, automationRate: 'k-rate' },
-      { name: 'amount', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
+      {
+        name: 'level',
+        defaultValue: 0.5,
+        minValue: 0,
+        maxValue: 1,
+        automationRate: 'k-rate'
+      },
+      {
+        name: 'frequency',
+        defaultValue: 6000,
+        minValue: 3500,
+        maxValue: 10000,
+        automationRate: 'k-rate'
+      }
     ];
   }
 
+  /**
+   * Initialize the de-esser processor
+   */
   constructor() {
     super();
-    this._lp = new Float32Array(2);   // per-channel one-pole lowpass state
-    this._high = new Float32Array(2); // scratch: current-sample high band per channel
-    this._env = 0;                    // shared high-band envelope
-    this._gain = 1;                   // smoothed reduction gain
+    
+    // Biquad filter state for each channel (high-pass to isolate sibilants)
+    // Each channel needs: x1, x2, y1, y2 (previous input/output samples)
+    this.filterState = [
+      { x1: 0, x2: 0, y1: 0, y2: 0 },
+      { x1: 0, x2: 0, y1: 0, y2: 0 }
+    ];
+    
+    // Envelope follower for sibilant band (per channel)
+    this.sibilantEnvelope = [0, 0];
+    
+    // Current gain reduction (per channel)
+    this.currentGain = [1, 1];
+    
+    // Cached filter coefficients
+    this.filterCoeffs = {
+      b0: 1, b1: 0, b2: 0,
+      a1: 0, a2: 0
+    };
+    
+    // Last frequency used (to detect when to recalculate coefficients)
+    this.lastFrequency = 6000;
+    
+    // Sample rate
+    this.sampleRate = 48000; // Default, will be updated
   }
 
+  /**
+   * Calculate biquad high-pass filter coefficients
+   * @param {number} frequency - Cutoff frequency in Hz
+   * @param {number} sampleRate - Sample rate in Hz
+   * @param {number} Q - Quality factor (resonance)
+   */
+  calculateHighPassCoeffs(frequency, sampleRate, Q = 0.707) {
+    const omega = 2 * Math.PI * frequency / sampleRate;
+    const sinOmega = Math.sin(omega);
+    const cosOmega = Math.cos(omega);
+    const alpha = sinOmega / (2 * Q);
+    
+    // High-pass filter coefficients
+    const b0 = (1 + cosOmega) / 2;
+    const b1 = -(1 + cosOmega);
+    const b2 = (1 + cosOmega) / 2;
+    const a0 = 1 + alpha;
+    const a1 = -2 * cosOmega;
+    const a2 = 1 - alpha;
+    
+    // Normalize by a0
+    this.filterCoeffs = {
+      b0: b0 / a0,
+      b1: b1 / a0,
+      b2: b2 / a0,
+      a1: a1 / a0,
+      a2: a2 / a0
+    };
+  }
+
+  /**
+   * Apply biquad filter to a single sample
+   * @param {number} input - Input sample
+   * @param {number} channel - Channel index
+   * @returns {number} Filtered sample
+   */
+  applyBiquadFilter(input, channel) {
+    const state = this.filterState[channel];
+    const coeffs = this.filterCoeffs;
+    
+    // Biquad difference equation:
+    // y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2]
+    const output = coeffs.b0 * input + 
+                   coeffs.b1 * state.x1 + 
+                   coeffs.b2 * state.x2 - 
+                   coeffs.a1 * state.y1 - 
+                   coeffs.a2 * state.y2;
+    
+    // Update state
+    state.x2 = state.x1;
+    state.x1 = input;
+    state.y2 = state.y1;
+    state.y1 = output;
+    
+    return output;
+  }
+
+  /**
+   * Calculate time constant for exponential smoothing
+   * @param {number} timeMs - Time in milliseconds
+   * @param {number} sampleRate - Sample rate in Hz
+   * @returns {number} Time constant coefficient
+   */
+  calculateTimeConstant(timeMs, sampleRate) {
+    if (timeMs <= 0) return 0;
+    return Math.exp(-1 / (timeMs * 0.001 * sampleRate));
+  }
+
+  /**
+   * Process audio samples
+   * @param {Float32Array[][]} inputs - Input audio buffers
+   * @param {Float32Array[][]} outputs - Output audio buffers
+   * @param {Object} parameters - Parameter values
+   * @returns {boolean} True to keep processor alive
+   */
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     const output = outputs[0];
-    if (!input || input.length === 0 || !output || output.length === 0) return true;
-    const inCh = input.length;
-    const outCh = output.length;
-    const nSamp = output[0].length;
 
-    const amount = parameters.amount[0];
-    // Bypass fast-path: amount 0 → no reduction → pass through untouched.
-    if (amount <= 0) {
-      for (let c = 0; c < outCh; c++) {
-        if (input[c]) output[c].set(input[c]);
-        else output[c].fill(0);
-      }
-      this._env = 0;
-      this._gain = 1;
+    // If no input, pass through silence
+    if (!input || input.length === 0) {
       return true;
     }
 
-    if (this._lp.length < inCh) this._lp = new Float32Array(inCh);
-    if (this._high.length < inCh) this._high = new Float32Array(inCh);
+    // Get parameter values (k-rate, so one value per block)
+    const level = parameters.level[0]; // 0-1, amount of de-essing
+    const frequency = parameters.frequency[0]; // Hz, sibilant frequency center
 
-    const a = Math.exp(-2 * Math.PI * parameters.frequency[0] / sampleRate); // one-pole LP coef
-    const atk = Math.exp(-1 / (0.0005 * sampleRate)); // 0.5 ms detector/gain attack
-    const rel = Math.exp(-1 / (0.05 * sampleRate));   // 50 ms release
-    const thr = SIBILANCE_THRESHOLD;
+    // Update sample rate from global if available
+    if (typeof sampleRate !== 'undefined') {
+      this.sampleRate = sampleRate;
+    }
 
-    let env = this._env;
-    let gain = this._gain;
-    for (let i = 0; i < nSamp; i++) {
-      // Split each channel into low/high; track the peak |high| for detection.
-      let hpk = 0;
-      for (let c = 0; c < inCh; c++) {
-        const x = input[c] ? input[c][i] : 0;
-        const lp = a * this._lp[c] + (1 - a) * x;
-        this._lp[c] = lp;
-        const high = x - lp;
-        this._high[c] = high;
-        const ah = high < 0 ? -high : high;
-        if (ah > hpk) hpk = ah;
-      }
-      // Envelope (fast attack, slow release) on the high band.
-      env = hpk > env ? atk * env + (1 - atk) * hpk : rel * env + (1 - rel) * hpk;
-      // Target reduction gain for the high band; 1 (no cut) until env exceeds thr.
-      const target = env > thr ? Math.pow(thr / env, amount) : 1;
-      const coef = target < gain ? atk : rel;
-      gain = coef * gain + (1 - coef) * target;
-      // out = low + g·high; low = x − high so the sum is exact when g = 1.
-      for (let c = 0; c < outCh; c++) {
-        const x = input[c] ? input[c][i] : 0;
-        const high = c < inCh ? this._high[c] : 0;
-        output[c][i] = (x - high) + gain * high;
+    // Recalculate filter coefficients if frequency changed
+    if (Math.abs(frequency - this.lastFrequency) > 0.1) {
+      this.calculateHighPassCoeffs(frequency, this.sampleRate, 0.707);
+      this.lastFrequency = frequency;
+    }
+
+    // Time constants for envelope follower
+    const attackCoeff = this.calculateTimeConstant(1, this.sampleRate); // Fast attack (1ms)
+    const releaseCoeff = this.calculateTimeConstant(50, this.sampleRate); // Slower release (50ms)
+
+    // Process each channel
+    const channelCount = Math.min(input.length, output.length, 2);
+    
+    for (let channel = 0; channel < channelCount; channel++) {
+      const inputChannel = input[channel];
+      const outputChannel = output[channel];
+      
+      if (!inputChannel || !outputChannel) continue;
+
+      const blockSize = inputChannel.length;
+
+      // Process each sample
+      for (let i = 0; i < blockSize; i++) {
+        const sample = inputChannel[i];
+        
+        // Handle edge cases
+        if (!isFinite(sample)) {
+          outputChannel[i] = 0;
+          continue;
+        }
+
+        // Extract sibilant band using high-pass filter
+        const sibilantSample = this.applyBiquadFilter(sample, channel);
+        
+        // Measure sibilant energy with envelope follower
+        const sibilantLevel = Math.abs(sibilantSample);
+        
+        if (sibilantLevel > this.sibilantEnvelope[channel]) {
+          // Attack
+          this.sibilantEnvelope[channel] = attackCoeff * this.sibilantEnvelope[channel] + 
+                                           (1 - attackCoeff) * sibilantLevel;
+        } else {
+          // Release
+          this.sibilantEnvelope[channel] = releaseCoeff * this.sibilantEnvelope[channel] + 
+                                           (1 - releaseCoeff) * sibilantLevel;
+        }
+
+        // Calculate gain reduction based on sibilant energy
+        // Threshold for sibilance detection (normalized)
+        const sibilantThreshold = 0.1;
+        
+        let targetGain = 1;
+        if (this.sibilantEnvelope[channel] > sibilantThreshold) {
+          // Calculate how much above threshold
+          const excessDb = 20 * Math.log10(this.sibilantEnvelope[channel] / sibilantThreshold);
+          
+          // Linear reduction: higher level = more dB reduction
+          // level=0 → 0 dB, level=1 → full excessDb reduction
+          const gainReductionDb = excessDb * level;
+          
+          // Convert back to linear
+          targetGain = 10 ** (-gainReductionDb / 20);
+          
+          // Clamp gain reduction
+          targetGain = Math.max(0.1, Math.min(1, targetGain));
+        }
+
+        // Smooth gain changes
+        const gainSmoothCoeff = 0.999;
+        this.currentGain[channel] = gainSmoothCoeff * this.currentGain[channel] + 
+                                    (1 - gainSmoothCoeff) * targetGain;
+
+        // Apply gain reduction to sibilant band only
+        const processedSibilant = sibilantSample * this.currentGain[channel];
+        
+        // Mix processed sibilant back with original
+        // Original = sample, Sibilant = sibilantSample
+        // We want: original - sibilant + processedSibilant
+        const lowFreqComponent = sample - sibilantSample;
+        outputChannel[i] = lowFreqComponent + processedSibilant;
       }
     }
-    this._env = env;
-    this._gain = gain;
+
+    // Keep processor alive
     return true;
   }
 }
 
+// Register the processor with the audio worklet
 registerProcessor('vip-deesser', DeEsserProcessor);
+
+// Made with Bob
