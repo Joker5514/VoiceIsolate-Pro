@@ -1901,12 +1901,15 @@ class VoiceIsolatePro {
   // Permissions-Policy header denies the microphone entirely.
 
   // ── Transport ─────────────────────────────────────────────────────────────
-  play() {
-    this.ensureCtx();
+  async play() {
+    await this.ensureCtx();
     const buf = this.abMode === 'processed'
       ? (this.outputBuffer || this.procBuffer || this.inputBuffer || this.origBuffer)
       : (this.inputBuffer || this.origBuffer);
     if (!buf) return;
+
+    // Wait for the Live-Mix bridge so rt:true sliders affect playback on first play.
+    await this._ensureBridge();
 
     this.isPlaying = true;
     this.playStartTime = this.ctx ? this.ctx.currentTime : 0;
@@ -1916,7 +1919,7 @@ class VoiceIsolatePro {
       this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
     }
 
-    this.buildLiveChain(buf);
+    await this.buildLiveChain(buf);
 
     if (this.isVideo && this.dom && this.dom.videoPlayer) {
       const vp = this.dom.videoPlayer;
@@ -1962,10 +1965,10 @@ class VoiceIsolatePro {
     return this._bridgePromise;
   }
 
-  buildLiveChain(buf) {
+  async buildLiveChain(buf) {
     // Preferred path: play through the real-time Live-Mix bridge so every
     // rt:true slider is a live AudioParam (no Reprocess, no ML re-run).
-    const bridge = this._bridge;
+    const bridge = this._bridge || await this._ensureBridge();
     if (bridge && typeof bridge.loadBuffer === 'function') {
       try {
         if (this._bridgeBuf !== buf) {
