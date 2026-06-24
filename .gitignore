@@ -1,54 +1,72 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
 
-# dependencies
-node_modules
-/.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+# Build outputs
+build/
+dist/
+.next/
+.nuxt/
 
-# testing
-/coverage
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
+# Logs
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
+pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# OS files
+.DS_Store
+Thumbs.db
 
-# vercel
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Vercel
+.vercel/
+
+# Testing
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+
+# Model export workdirs (do not commit; export scripts produce these)
+/models_output/
+/vendor/
+/checkpoints/
+
+# Generated ONNX files (too large for git; upload to Vercel Blob instead)
+demucs_v4_fp32.onnx
+demucs_v4_quantized.onnx
+
+# Lockfile not used (memory note: project uses pnpm)
+package-lock.json
 .vercel
+.env*.local
 
+# Dev scratch / prototype files — never deploy these
+scratch/
+*.scratch.js
+*.scratch.ts
+*.bak
+design-test.html
+*.tmp
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
-local-*
-.claude
-.z-ai-config
-*.log
-dev.log
-dev.out.log
-test
-prompt
-
-server.log
-# Skills directory
-/skills/
+# Build-time copy of src/ for static deploys (vercel buildCommand)
+public/src/
