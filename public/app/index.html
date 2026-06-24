@@ -20,10 +20,10 @@
       </button>
     </header>
 
-    <div class="file-drop-zone" id="fileDropZone">
-      <i class="fas fa-cloud-arrow-up"></i>
+    <div class="file-drop-zone" id="fileDropZone" role="button" tabindex="0" aria-label="Upload audio file">
+      <i class="fas fa-cloud-arrow-up" aria-hidden="true"></i>
       <p>Drop an audio file here or click to browse</p>
-      <input type="file" id="fileInput" accept="audio/*" hidden>
+      <input type="file" id="fileInput" accept="audio/*" tabindex="-1" hidden>
     </div>
 
     <div class="pipeline-status" id="pipelineStatus">

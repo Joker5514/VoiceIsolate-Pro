@@ -404,6 +404,14 @@ function initFileDropZone() {
   // Click to open file browser
   dropZone.addEventListener('click', () => fileInput.click());
 
+  // Keyboard support to open file browser
+  dropZone.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      fileInput.click();
+    }
+  });
+
   // File selected via input
   fileInput.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {

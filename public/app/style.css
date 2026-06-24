@@ -131,6 +131,13 @@ body {
   background-color: rgba(99, 102, 241, 0.1);
 }
 
+.file-drop-zone:focus-visible {
+  outline: none;
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+  background-color: rgba(99, 102, 241, 0.04);
+}
+
 .file-drop-zone .drop-label {
   font-size: 14px;
   color: #8a8fa0;

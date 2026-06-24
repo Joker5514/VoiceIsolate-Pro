@@ -20,3 +20,7 @@
 ## 2026-05-20 - [Destructive Action Confirmations]
 **Learning:** Destructive actions (such as clearing a loaded file or resetting all UI control values) can cause unintended data loss. Implementing simple `confirm()` dialogs before these actions prevents accidental clicks from ruining user progress.
 **Action:** Always wrap destructive UI actions in a confirmation dialog (e.g., `confirm()`) if there is unsaved state to prevent accidental data loss.
+
+## 2026-06-24 - [Custom File Drop Zone Keyboard Accessibility]
+**Learning:** Custom file drop zones that hide the native `<input type="file">` element completely lose keyboard accessibility. They cannot be focused via tab navigation, and pressing Enter or Space on them does nothing, trapping keyboard users.
+**Action:** Always add `role="button"`, `tabindex="0"`, and an `aria-label` to the visible drop zone container. Additionally, explicitly bind `keydown` listeners for 'Enter' and 'Space' to programmatically trigger the hidden file input, and provide a `:focus-visible` outline.
