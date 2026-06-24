@@ -16,8 +16,10 @@ class DeEsserProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
       {
-        name: 'level',
-        defaultValue: 0.5,
+        // De-essing strength, 0–1. 0 = off (fully transparent), 1 = maximum
+        // sibilance reduction. Named to match PlaybackMixer.setDeEsserAmount.
+        name: 'amount',
+        defaultValue: 0,
         minValue: 0,
         maxValue: 1,
         automationRate: 'k-rate'
@@ -148,8 +150,9 @@ class DeEsserProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Get parameter values (k-rate, so one value per block)
-    const level = parameters.level[0]; // 0-1, amount of de-essing
+    // Get parameter values (k-rate, so one value per block). `amount` is read
+    // defensively so the processor still runs if a caller omits it.
+    const amount = parameters.amount ? parameters.amount[0] : 0; // 0-1, de-essing strength
     const frequency = parameters.frequency[0]; // Hz, sibilant frequency center
 
     // Update sample rate from global if available
@@ -213,9 +216,9 @@ class DeEsserProcessor extends AudioWorkletProcessor {
           // Calculate how much above threshold
           const excessDb = 20 * Math.log10(this.sibilantEnvelope[channel] / sibilantThreshold);
           
-          // Linear reduction: higher level = more dB reduction
-          // level=0 → 0 dB, level=1 → full excessDb reduction
-          const gainReductionDb = excessDb * level;
+          // Linear reduction: higher amount = more dB reduction
+          // amount=0 → 0 dB, amount=1 → full excessDb reduction
+          const gainReductionDb = excessDb * amount;
           
           // Convert back to linear
           targetGain = 10 ** (-gainReductionDb / 20);
@@ -247,5 +250,3 @@ class DeEsserProcessor extends AudioWorkletProcessor {
 
 // Register the processor with the audio worklet
 registerProcessor('vip-deesser', DeEsserProcessor);
-
-// Made with Bob

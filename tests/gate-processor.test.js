@@ -62,6 +62,28 @@ describe('GateProcessor', () => {
       expect(threshold.automationRate).toBe('k-rate');
     });
 
+    it('should define range parameter defaulting to 0 (gate off)', () => {
+      const descriptors = GateProcessor.parameterDescriptors;
+      const range = descriptors.find(d => d.name === 'range');
+
+      expect(range).toBeDefined();
+      expect(range.defaultValue).toBe(0);
+      expect(range.minValue).toBe(0);
+      expect(range.maxValue).toBe(80);
+      expect(range.automationRate).toBe('k-rate');
+    });
+
+    it('should define hold parameter with correct range', () => {
+      const descriptors = GateProcessor.parameterDescriptors;
+      const hold = descriptors.find(d => d.name === 'hold');
+
+      expect(hold).toBeDefined();
+      expect(hold.defaultValue).toBe(0);
+      expect(hold.minValue).toBe(0);
+      expect(hold.maxValue).toBe(1000);
+      expect(hold.automationRate).toBe('k-rate');
+    });
+
     it('should define attack parameter with correct range', () => {
       const descriptors = GateProcessor.parameterDescriptors;
       const attack = descriptors.find(d => d.name === 'attack');
@@ -89,6 +111,7 @@ describe('GateProcessor', () => {
     it('should initialize with default state', () => {
       expect(processor.envelopes).toEqual([0, 0]);
       expect(processor.currentGain).toEqual([1, 1]);
+      expect(processor.holdCounter).toEqual([0, 0]);
       expect(processor.sampleRate).toBe(48000);
     });
   });
@@ -172,15 +195,64 @@ describe('GateProcessor', () => {
 
       const parameters = {
         threshold: [-40],
+        range: [60],   // attenuate 60 dB when closed
         attack: [10],
         release: [100],
       };
 
+      // Run enough blocks for the release ramp to fully close the gate.
+      for (let i = 0; i < 30; i++) processor.process(inputs, outputs, parameters);
+
+      // Gate should be closed, so output should be heavily attenuated
+      const avgOutput = outputs[0][0].reduce((a, b) => a + Math.abs(b), 0) / blockSize;
+      expect(avgOutput).toBeLessThan(0.0005);
+    });
+
+    it('should stay transparent when range is 0 (gate off)', () => {
+      const blockSize = 128;
+      const inputs = [[new Float32Array(blockSize)]];
+      const outputs = [[new Float32Array(blockSize)]];
+
+      // Signal below threshold — but with range 0 the gate must not attenuate.
+      inputs[0][0].fill(0.001);
+
+      const parameters = {
+        threshold: [-40],
+        range: [0],
+        attack: [10],
+        release: [100],
+      };
+
+      for (let i = 0; i < 30; i++) processor.process(inputs, outputs, parameters);
+
+      // Closed-gate gain is unity, so output ≈ input.
+      const avgOutput = outputs[0][0].reduce((a, b) => a + b, 0) / blockSize;
+      expect(avgOutput).toBeCloseTo(0.001, 4);
+    });
+
+    it('should hold the gate open for the hold time after signal drops', () => {
+      const blockSize = 128;
+      const inputs = [[new Float32Array(blockSize)]];
+      const outputs = [[new Float32Array(blockSize)]];
+
+      // ~85 ms hold at 48 kHz ≈ 4080 samples ≈ 32 blocks of 128.
+      const parameters = {
+        threshold: [-40],
+        range: [60],
+        attack: [0],
+        release: [0],
+        hold: [85],
+      };
+
+      // Open the gate with a loud block, which arms the hold timer.
+      inputs[0][0].fill(0.5);
       processor.process(inputs, outputs, parameters);
 
-      // Gate should be closed, so output should be attenuated
-      const avgOutput = outputs[0][0].reduce((a, b) => a + b, 0) / blockSize;
-      expect(avgOutput).toBeLessThan(0.001); // Heavily attenuated
+      // Now feed silence: the gate must stay open (full gain) during the hold.
+      inputs[0][0].fill(0);
+      processor.process(inputs, outputs, parameters);
+      expect(processor.currentGain[0]).toBeGreaterThan(0.9);
+      expect(processor.holdCounter[0]).toBeGreaterThan(0);
     });
 
     it('should handle mono input', () => {
@@ -213,15 +285,16 @@ describe('GateProcessor', () => {
 
       const parameters = {
         threshold: [-40],
+        range: [60],
         attack: [10],
         release: [100],
       };
 
-      processor.process(inputs, outputs, parameters);
+      for (let i = 0; i < 30; i++) processor.process(inputs, outputs, parameters);
 
-      // Left should have more output than right
-      const leftAvg = outputs[0][0].reduce((a, b) => a + b, 0) / blockSize;
-      const rightAvg = outputs[0][1].reduce((a, b) => a + b, 0) / blockSize;
+      // Left should stay open (passes), right should be gated down.
+      const leftAvg = outputs[0][0].reduce((a, b) => a + Math.abs(b), 0) / blockSize;
+      const rightAvg = outputs[0][1].reduce((a, b) => a + Math.abs(b), 0) / blockSize;
       expect(leftAvg).toBeGreaterThan(rightAvg);
     });
   });
@@ -288,6 +361,7 @@ describe('GateProcessor', () => {
       // Very low threshold - gate should always be open
       let parameters = {
         threshold: [-100],
+        range: [60],
         attack: [10],
         release: [100],
       };
@@ -303,13 +377,14 @@ describe('GateProcessor', () => {
       // Very high threshold - gate should be closed
       parameters = {
         threshold: [0],
+        range: [60],
         attack: [10],
         release: [100],
       };
 
-      processor.process(inputs, outputs, parameters);
-      avgOutput = outputs[0][0].reduce((a, b) => a + b, 0) / blockSize;
-      expect(avgOutput).toBeLessThan(0.1);
+      for (let i = 0; i < 30; i++) processor.process(inputs, outputs, parameters);
+      avgOutput = outputs[0][0].reduce((a, b) => a + Math.abs(b), 0) / blockSize;
+      expect(avgOutput).toBeLessThan(0.05);
     });
 
     it('should handle zero attack time', () => {

@@ -64,7 +64,9 @@ const PARAM_MAP = Object.freeze({
 
   // ── HP / LP filters ─────────────────────────────────────────────────────
   hpFreq: (m, v) => m.setHighpass(v),
+  hpQ: (m, v) => m.setHighpassQ(v),
   lpFreq: (m, v) => m.setLowpass(v),
+  lpQ: (m, v) => m.setLowpassQ(v),
 
   // ── De-esser (legacy amount is 0–30 dB → 0–100%) ────────────────────────
   deEssFreq: (m, v) => m.setDeEsserFreq(v),
@@ -130,30 +132,11 @@ export class EngineerModeBridge {
    * @returns {boolean} true if the id mapped to a control
    */
   applyParam(id, value) {
-    console.log(`[BRIDGE] applyParam called: id="${id}", value=${value}`);
     const apply = PARAM_MAP[id];
-    
-    if (!apply) {
-      console.log(`[BRIDGE] Parameter "${id}" not in PARAM_MAP (unsupported), returning false`);
-      return false;
-    }
-    
-    console.log(`[BRIDGE] Parameter "${id}" found in PARAM_MAP`);
+    if (!apply) return false;
     const v = Number(value);
-    
-    if (!Number.isFinite(v)) {
-      console.warn(`[BRIDGE] Invalid value for "${id}": ${value}, returning false`);
-      return false;
-    }
-    
-    console.log(`[BRIDGE] Applying "${id}"=${v} to mixer, loaded=${this._loaded}`);
-    try {
-      apply(this.mixer, v);
-      console.log(`[BRIDGE] Successfully applied "${id}"=${v}`);
-    } catch (err) {
-      console.error(`[BRIDGE] Error applying "${id}"=${v}:`, err);
-      throw err;
-    }
+    if (!Number.isFinite(v)) return false;
+    apply(this.mixer, v);
     return true;
   }
 

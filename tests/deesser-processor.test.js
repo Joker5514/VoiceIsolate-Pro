@@ -2,7 +2,7 @@
  * VoiceIsolate Pro — DeEsser Processor Tests
  * 
  * Tests the DeEsserProcessor AudioWorklet implementation:
- * - Parameter clamping (level, frequency)
+ * - Parameter clamping (amount, frequency)
  * - Audio processing logic (sibilant detection and reduction)
  * - Biquad filter implementation
  * - Edge cases (silence, clipping, boundary values)
@@ -52,15 +52,15 @@ describe('DeEsserProcessor', () => {
   });
 
   describe('Parameter Descriptors', () => {
-    it('should define level parameter with correct range', () => {
+    it('should define amount parameter defaulting to 0 (de-esser off)', () => {
       const descriptors = DeEsserProcessor.parameterDescriptors;
-      const level = descriptors.find(d => d.name === 'level');
+      const amount = descriptors.find(d => d.name === 'amount');
 
-      expect(level).toBeDefined();
-      expect(level.defaultValue).toBe(0.5);
-      expect(level.minValue).toBe(0);
-      expect(level.maxValue).toBe(1);
-      expect(level.automationRate).toBe('k-rate');
+      expect(amount).toBeDefined();
+      expect(amount.defaultValue).toBe(0);
+      expect(amount.minValue).toBe(0);
+      expect(amount.maxValue).toBe(1);
+      expect(amount.automationRate).toBe('k-rate');
     });
 
     it('should define frequency parameter with correct range', () => {
@@ -191,7 +191,7 @@ describe('DeEsserProcessor', () => {
       const inputs = [[new Float32Array(blockSize), new Float32Array(blockSize)]];
       const outputs = [[new Float32Array(blockSize), new Float32Array(blockSize)]];
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -214,7 +214,7 @@ describe('DeEsserProcessor', () => {
       }
 
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -232,7 +232,7 @@ describe('DeEsserProcessor', () => {
       inputs[0][0].fill(0.1);
 
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -251,7 +251,7 @@ describe('DeEsserProcessor', () => {
       inputs[0][1].fill(0.2);
 
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -275,7 +275,7 @@ describe('DeEsserProcessor', () => {
 
       // First process with one frequency
       let parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -284,7 +284,7 @@ describe('DeEsserProcessor', () => {
 
       // Process with different frequency
       parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [8000],
       };
 
@@ -303,7 +303,7 @@ describe('DeEsserProcessor', () => {
       inputs[0][0].fill(0.1);
 
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -320,7 +320,7 @@ describe('DeEsserProcessor', () => {
   });
 
   describe('De-essing Behavior', () => {
-    it('should reduce gain when level is high', () => {
+    it('should reduce gain when amount is high', () => {
       const blockSize = 128;
       const inputs = [[new Float32Array(blockSize)]];
       const outputs = [[new Float32Array(blockSize)]];
@@ -331,7 +331,7 @@ describe('DeEsserProcessor', () => {
       }
 
       const parameters = {
-        level: [1.0], // Maximum de-essing
+        amount: [1.0], // Maximum de-essing
         frequency: [6000],
       };
 
@@ -344,7 +344,7 @@ describe('DeEsserProcessor', () => {
       expect(processor.currentGain[0]).toBeLessThan(1.0);
     });
 
-    it('should apply less reduction when level is low', () => {
+    it('should apply less reduction when amount is low', () => {
       const blockSize = 128;
       const inputs = [[new Float32Array(blockSize)]];
       const outputs = [[new Float32Array(blockSize)]];
@@ -353,9 +353,9 @@ describe('DeEsserProcessor', () => {
         inputs[0][0][i] = Math.sin(2 * Math.PI * 7000 * i / 48000) * 0.5;
       }
 
-      // Low level - minimal de-essing
+      // Low amount - minimal de-essing
       const parameters = {
-        level: [0.1],
+        amount: [0.1],
         frequency: [6000],
       };
 
@@ -368,7 +368,7 @@ describe('DeEsserProcessor', () => {
       expect(processor.currentGain[0]).toBeGreaterThan(0.8);
     });
 
-    it('should not affect signal when level is 0', () => {
+    it('should not affect signal when amount is 0', () => {
       const blockSize = 128;
       const inputs = [[new Float32Array(blockSize)]];
       const outputs = [[new Float32Array(blockSize)]];
@@ -376,13 +376,13 @@ describe('DeEsserProcessor', () => {
       inputs[0][0].fill(0.5);
 
       const parameters = {
-        level: [0],
+        amount: [0],
         frequency: [6000],
       };
 
       processor.process(inputs, outputs, parameters);
 
-      // With level 0, gain should remain at 1.0
+      // With amount 0, gain should remain at 1.0
       expect(processor.currentGain[0]).toBeCloseTo(1.0, 2);
     });
   });
@@ -392,7 +392,7 @@ describe('DeEsserProcessor', () => {
       const inputs = [[]];
       const outputs = [[]];
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -405,7 +405,7 @@ describe('DeEsserProcessor', () => {
       const inputs = [null];
       const outputs = [[new Float32Array(128)]];
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -424,7 +424,7 @@ describe('DeEsserProcessor', () => {
       inputs[0][0][2] = -Infinity;
 
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -445,7 +445,7 @@ describe('DeEsserProcessor', () => {
 
       // Minimum frequency
       let parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [3500],
       };
 
@@ -454,7 +454,7 @@ describe('DeEsserProcessor', () => {
 
       // Maximum frequency
       parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [10000],
       };
 
@@ -462,25 +462,25 @@ describe('DeEsserProcessor', () => {
       expect(result).toBe(true);
     });
 
-    it('should handle extreme level values', () => {
+    it('should handle extreme amount values', () => {
       const blockSize = 128;
       const inputs = [[new Float32Array(blockSize)]];
       const outputs = [[new Float32Array(blockSize)]];
 
       inputs[0][0].fill(0.1);
 
-      // Minimum level
+      // Minimum amount
       let parameters = {
-        level: [0],
+        amount: [0],
         frequency: [6000],
       };
 
       let result = processor.process(inputs, outputs, parameters);
       expect(result).toBe(true);
 
-      // Maximum level
+      // Maximum amount
       parameters = {
-        level: [1],
+        amount: [1],
         frequency: [6000],
       };
 
@@ -497,7 +497,7 @@ describe('DeEsserProcessor', () => {
       inputs[0][0].fill(2.0);
 
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -513,7 +513,7 @@ describe('DeEsserProcessor', () => {
       const outputs = [[new Float32Array(blockSize)]];
 
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -542,7 +542,7 @@ describe('DeEsserProcessor', () => {
       inputs[0][0].fill(0.1);
 
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -566,7 +566,7 @@ describe('DeEsserProcessor', () => {
       }
 
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 
@@ -585,7 +585,7 @@ describe('DeEsserProcessor', () => {
       const outputs = [[new Float32Array(blockSize)]];
 
       const parameters = {
-        level: [0.5],
+        amount: [0.5],
         frequency: [6000],
       };
 

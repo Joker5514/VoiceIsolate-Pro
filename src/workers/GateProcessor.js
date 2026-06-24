@@ -22,6 +22,15 @@ class GateProcessor extends AudioWorkletProcessor {
         automationRate: 'k-rate'
       },
       {
+        // Attenuation depth applied while the gate is closed, in dB.
+        // 0 = gate off (closed gain is unity → fully transparent).
+        name: 'range',
+        defaultValue: 0,
+        minValue: 0,
+        maxValue: 80,
+        automationRate: 'k-rate'
+      },
+      {
         name: 'attack',
         defaultValue: 10,
         minValue: 0,
@@ -34,6 +43,15 @@ class GateProcessor extends AudioWorkletProcessor {
         minValue: 0,
         maxValue: 5000,
         automationRate: 'k-rate'
+      },
+      {
+        // Minimum time the gate is held open after the signal drops below
+        // threshold, in ms — stops the gate "chattering" on breathy speech.
+        name: 'hold',
+        defaultValue: 0,
+        minValue: 0,
+        maxValue: 1000,
+        automationRate: 'k-rate'
       }
     ];
   }
@@ -43,13 +61,16 @@ class GateProcessor extends AudioWorkletProcessor {
    */
   constructor() {
     super();
-    
+
     // Envelope follower state for each channel
     this.envelopes = [0, 0];
-    
+
     // Current gain reduction for each channel
     this.currentGain = [1, 1];
-    
+
+    // Remaining hold time, in samples, for each channel
+    this.holdCounter = [0, 0];
+
     // Sample rate (will be set on first process call)
     this.sampleRate = 48000; // Default, will be updated
   }
@@ -101,10 +122,13 @@ class GateProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Get parameter values (k-rate, so one value per block)
+    // Get parameter values (k-rate, so one value per block). `range` and `hold`
+    // are read defensively so the processor still runs if a caller omits them.
     const thresholdDb = parameters.threshold[0];
+    const rangeDb = parameters.range ? parameters.range[0] : 0;
     const attackMs = parameters.attack[0];
     const releaseMs = parameters.release[0];
+    const holdMs = parameters.hold ? parameters.hold[0] : 0;
 
     // Update sample rate from the actual buffer length and expected duration
     if (input[0]) {
@@ -117,14 +141,19 @@ class GateProcessor extends AudioWorkletProcessor {
 
     // Convert threshold to linear
     const thresholdLinear = this.dbToLinear(thresholdDb);
+    // Closed-gate gain: attenuate by `range` dB. range = 0 → gain 1 (gate off,
+    // fully transparent); range = 80 → −80 dB (effectively silent).
+    const floorGain = this.dbToLinear(-rangeDb);
+    // Hold time converted to whole samples.
+    const holdSamples = Math.max(0, Math.round(holdMs * 0.001 * this.sampleRate));
 
     // Process each channel
     const channelCount = Math.min(input.length, output.length, 2);
-    
+
     for (let channel = 0; channel < channelCount; channel++) {
       const inputChannel = input[channel];
       const outputChannel = output[channel];
-      
+
       if (!inputChannel || !outputChannel) continue;
 
       const blockSize = inputChannel.length;
@@ -132,7 +161,7 @@ class GateProcessor extends AudioWorkletProcessor {
       // Process each sample
       for (let i = 0; i < blockSize; i++) {
         const sample = inputChannel[i];
-        
+
         // Handle edge cases
         if (!isFinite(sample)) {
           outputChannel[i] = 0;
@@ -141,35 +170,41 @@ class GateProcessor extends AudioWorkletProcessor {
 
         // Calculate envelope (absolute value for level detection)
         const inputLevel = Math.abs(sample);
-        
+
         // Envelope follower with attack/release
         if (inputLevel > this.envelopes[channel]) {
           // Attack: signal is rising
-          this.envelopes[channel] = attackCoeff * this.envelopes[channel] + 
+          this.envelopes[channel] = attackCoeff * this.envelopes[channel] +
                                     (1 - attackCoeff) * inputLevel;
         } else {
           // Release: signal is falling
-          this.envelopes[channel] = releaseCoeff * this.envelopes[channel] + 
+          this.envelopes[channel] = releaseCoeff * this.envelopes[channel] +
                                     (1 - releaseCoeff) * inputLevel;
         }
 
-        // Determine target gain based on threshold
-        let targetGain;
+        // Gate open/closed decision, honouring the hold time. While the
+        // envelope is above threshold the gate is open and the hold timer is
+        // re-armed; once it drops, the gate stays open until the timer expires.
+        let open;
         if (this.envelopes[channel] > thresholdLinear) {
-          // Signal above threshold: full gain
-          targetGain = 1;
+          this.holdCounter[channel] = holdSamples;
+          open = true;
+        } else if (this.holdCounter[channel] > 0) {
+          this.holdCounter[channel]--;
+          open = true;
         } else {
-          // Signal below threshold: gate closed (attenuate)
-          // Use ratio of envelope to threshold for smooth transition
-          const ratio = this.envelopes[channel] / thresholdLinear;
-          // Smooth curve: ratio^2 for gentler gating
-          targetGain = ratio * ratio;
+          open = false;
         }
 
-        // Smooth gain changes to avoid clicks
-        const gainSmoothCoeff = 0.9999; // Very fast smoothing for gain
-        this.currentGain[channel] = gainSmoothCoeff * this.currentGain[channel] + 
-                                    (1 - gainSmoothCoeff) * targetGain;
+        // Open → unity; closed → the range floor.
+        const targetGain = open ? 1 : floorGain;
+
+        // Smooth gain changes with the attack coefficient when opening and the
+        // release coefficient when closing, so the gate's timing controls
+        // shape the actual envelope (and avoid clicks).
+        const coeff = targetGain > this.currentGain[channel] ? attackCoeff : releaseCoeff;
+        this.currentGain[channel] = coeff * this.currentGain[channel] +
+                                    (1 - coeff) * targetGain;
 
         // Apply gain to output
         outputChannel[i] = sample * this.currentGain[channel];
@@ -183,5 +218,3 @@ class GateProcessor extends AudioWorkletProcessor {
 
 // Register the processor with the audio worklet
 registerProcessor('vip-gate', GateProcessor);
-
-// Made with Bob
