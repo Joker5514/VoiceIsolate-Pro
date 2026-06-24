@@ -47,6 +47,8 @@
     let _analyser    = null;  // FFT analyser tapped after worklet — drives visualizers
     let _workletWired = false; // sticky flag: once we route through worklet, stay routed
     let _chainBuilt  = false;  // downstream chain (gain → [worklet] → analyser → dest) wired once
+    let _usingBridge = false;  // rt:true sliders route through EngineerModeBridge → PlaybackMixer
+    let _bridge      = null;
 
     /* ── Helpers ── */
     function _fmt(sec) {
@@ -101,21 +103,42 @@
       btn.title = playing ? 'Pause' : 'Play';
     }
 
+    function _elapsedSeconds() {
+      const ctx = _getCtx();
+      if (_usingBridge && _bridge) {
+        return _bridge.isPlaying() ? _bridge.currentTime() : _pauseOffset;
+      }
+      if (!ctx) return _pauseOffset;
+      return _isPlaying ? (_pauseOffset + (ctx.currentTime - _startTime)) : _pauseOffset;
+    }
+
     function _updateUI() {
       const ctx = _getCtx();
-      if (!ctx) return;
-      const elapsed = _isPlaying
-        ? _pauseOffset + (ctx.currentTime - _startTime)
-        : _pauseOffset;
+      if (!ctx && !_usingBridge) return;
+      const elapsed = _elapsedSeconds();
       const clamped = Math.min(elapsed, _duration || 0);
       const cur = $('tpCur');
       const seek = $('tpSeek');
       if (cur) cur.textContent = _fmt(clamped);
       if (seek && !_seeking && _duration > 0) seek.value = String((clamped / _duration) * 1000);
+      // Bridge transport ended naturally.
+      if (_usingBridge && _bridge && _isPlaying && !_bridge.isPlaying()
+          && _duration > 0 && clamped >= _duration - 0.05) {
+        _pauseOffset = 0;
+        _teardown(false);
+        _syncVideo(0, false);
+        if (seek) seek.value = '0';
+        if (cur) cur.textContent = _fmt(0);
+        return;
+      }
       if (_isPlaying) _rafId = requestAnimationFrame(_updateUI);
     }
 
     function _stopSource() {
+      if (_usingBridge && _bridge) {
+        try { _bridge.pause(); } catch (_) {}
+        return;
+      }
       if (_source) {
         try { _source.onended = null; _source.stop(0); } catch (_) {}
         try { _source.disconnect(); } catch (_) {}
@@ -125,6 +148,14 @@
 
     function _teardown(resetOffset) {
       cancelAnimationFrame(_rafId);
+      if (_usingBridge && _bridge) {
+        try {
+          if (resetOffset) _bridge.stop();
+          else _bridge.pause();
+        } catch (_) {}
+        _usingBridge = false;
+        _bridge = null;
+      }
       _stopSource();
       _isPlaying = false;
       if (resetOffset) _pauseOffset = 0;
@@ -148,12 +179,62 @@
       }
 
       _stopSource();
+      _usingBridge = false;
+      _bridge = null;
 
       _duration = buf.duration || 0;
       const dur = $('tpDur');
       const seek = $('tpSeek');
       if (dur)  dur.textContent = _fmt(_duration);
       if (seek) { seek.max = '1000'; seek.disabled = false; }
+
+      const safeOffset = Math.min(Math.max(_pauseOffset, 0), Math.max(_duration - 0.01, 0));
+      _pauseOffset = safeOffset;
+
+      // Preferred path: Live-Mix bridge so every rt:true slider is a live AudioParam.
+      try {
+        if (typeof app.ensureCtx === 'function') await app.ensureCtx();
+        const bridge = typeof app._ensureBridge === 'function' ? await app._ensureBridge() : null;
+        if (bridge && typeof bridge.loadBuffer === 'function') {
+          app.playOffset = safeOffset;
+          if (app._bridgeBuf !== buf) {
+            bridge.loadBuffer(buf);
+            app._bridgeBuf = buf;
+            if (typeof bridge.applyParams === 'function') {
+              bridge.applyParams(window.VIP_PARAMS || {});
+            }
+          }
+          await bridge.seek(safeOffset);
+          await bridge.play();
+          _usingBridge = true;
+          _bridge = bridge;
+          app._bridge = bridge;
+          _analyser = bridge.getAnalyser ? bridge.getAnalyser() : null;
+          if (_analyser) window._vipPlayAnalyser = _analyser;
+          _startTime = ctx.currentTime;
+          _isPlaying = true;
+          app.isPlaying = true;
+          _syncVideo(safeOffset, true);
+          _setPlayIcon(true);
+          const pauseBtn = $('tpPause');
+          const stopBtn  = $('tpStop');
+          if (pauseBtn) pauseBtn.disabled = false;
+          if (stopBtn)  stopBtn.disabled  = false;
+          cancelAnimationFrame(_rafId);
+          _updateUI();
+          try {
+            window.dispatchEvent(new CustomEvent('vip:playStarted', {
+              detail: { analyser: _analyser, bridgeRouted: true },
+            }));
+          } catch (_) {}
+          log('play() started via Live-Mix bridge at offset', safeOffset);
+          return;
+        }
+      } catch (e) {
+        warn('Live-Mix bridge play failed; falling back to direct source', e);
+        _usingBridge = false;
+        _bridge = null;
+      }
 
       _source = ctx.createBufferSource();
       _source.buffer = buf;
@@ -208,9 +289,6 @@
         }
       }
 
-      const safeOffset = Math.min(Math.max(_pauseOffset, 0), Math.max(_duration - 0.01, 0));
-      _pauseOffset = safeOffset;
-
       _source.start(0, safeOffset);
       _startTime = ctx.currentTime;
       _isPlaying = true;
@@ -250,15 +328,23 @@
 
     function _pause() {
       if (!_isPlaying) return;
-      const ctx = _getCtx();
-      if (ctx) _pauseOffset += ctx.currentTime - _startTime;
+      if (_usingBridge && _bridge) {
+        _pauseOffset = _bridge.currentTime();
+      } else {
+        const ctx = _getCtx();
+        if (ctx) _pauseOffset += ctx.currentTime - _startTime;
+      }
+      app.playOffset = _pauseOffset;
+      app.isPlaying = false;
       _teardown(false);
-      _syncVideo(undefined, false);
+      _syncVideo(_pauseOffset, false);
       log('pause() at', _pauseOffset);
     }
 
     function _stop() {
       _pauseOffset = 0;
+      app.playOffset = 0;
+      app.isPlaying = false;
       _teardown(true);
       _syncVideo(0, false);
       const seek = $('tpSeek');
@@ -291,22 +377,36 @@
     if (pause) { pause.addEventListener('click', () => _pause()); pause.disabled = true; }
     if (stop)  { stop.addEventListener('click',  () => _stop());  stop.disabled  = true; }
 
+    function _restartAtOffset() {
+      app.playOffset = _pauseOffset;
+      if (_usingBridge && _bridge) {
+        _bridge.seek(_pauseOffset).catch(() => {});
+        return;
+      }
+      _stopSource();
+      _play();
+    }
+
     if (rew) rew.addEventListener('click', () => {
-      // Fold elapsed playback time into the offset first, so rewinding while
-      // playing steps back from the *current* position, not the segment start.
-      const ctx = _getCtx();
-      if (_isPlaying && ctx) _pauseOffset += ctx.currentTime - _startTime;
+      if (_isPlaying) _pauseOffset = _elapsedSeconds();
       _pauseOffset = Math.max(0, _pauseOffset - 5);
-      if (_isPlaying) { _stopSource(); _play(); }
-      else { const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset); _syncVideo(_pauseOffset, false); }
+      if (_isPlaying) _restartAtOffset();
+      else {
+        const cur = $('tpCur');
+        if (cur) cur.textContent = _fmt(_pauseOffset);
+        _syncVideo(_pauseOffset, false);
+      }
     });
 
     if (fwd) fwd.addEventListener('click', () => {
-      const ctx = _getCtx();
-      if (_isPlaying && ctx) _pauseOffset += ctx.currentTime - _startTime;
+      if (_isPlaying) _pauseOffset = _elapsedSeconds();
       _pauseOffset = Math.min((_duration || 0) - 0.1, _pauseOffset + 5);
-      if (_isPlaying) { _stopSource(); _play(); }
-      else { const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset); _syncVideo(_pauseOffset, false); }
+      if (_isPlaying) _restartAtOffset();
+      else {
+        const cur = $('tpCur');
+        if (cur) cur.textContent = _fmt(_pauseOffset);
+        _syncVideo(_pauseOffset, false);
+      }
     });
 
     /* Seek scrubber */
@@ -321,7 +421,7 @@
       seek.addEventListener('change', () => {
         _seeking = false;
         _pauseOffset = (parseFloat(seek.value) / 1000) * (_duration || 0);
-        if (_isPlaying) { _stopSource(); _play(); }
+        if (_isPlaying) _restartAtOffset();
       });
     }
 
@@ -370,9 +470,7 @@
       resetOffset()   { _pauseOffset = 0; },
       restart()       { if (_isPlaying) { _stopSource(); _play(); } },
       elapsed() {
-        const ctx = _getCtx();
-        if (!ctx) return _pauseOffset;
-        return _isPlaying ? (_pauseOffset + (ctx.currentTime - _startTime)) : _pauseOffset;
+        return _elapsedSeconds();
       },
       get analyser() { return _analyser; },
     };
