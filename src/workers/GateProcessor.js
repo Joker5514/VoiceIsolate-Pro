@@ -122,12 +122,13 @@ class GateProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Get parameter values (k-rate, so one value per block). `range` and `hold`
-    // are read defensively so the processor still runs if a caller omits them.
-    const thresholdDb = parameters.threshold[0];
+    // Get parameter values (k-rate, so one value per block). Every param is read
+    // defensively against its descriptor default so the processor still runs if
+    // a caller (or a mock/test) omits one.
+    const thresholdDb = parameters.threshold ? parameters.threshold[0] : -40;
     const rangeDb = parameters.range ? parameters.range[0] : 0;
-    const attackMs = parameters.attack[0];
-    const releaseMs = parameters.release[0];
+    const attackMs = parameters.attack ? parameters.attack[0] : 10;
+    const releaseMs = parameters.release ? parameters.release[0] : 100;
     const holdMs = parameters.hold ? parameters.hold[0] : 0;
 
     // Update sample rate from the actual buffer length and expected duration

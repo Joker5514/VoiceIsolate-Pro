@@ -150,10 +150,11 @@ class DeEsserProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // Get parameter values (k-rate, so one value per block). `amount` is read
-    // defensively so the processor still runs if a caller omits it.
+    // Get parameter values (k-rate, so one value per block). Both params are read
+    // defensively against their descriptor defaults so the processor still runs
+    // if a caller (or a mock/test) omits one.
     const amount = parameters.amount ? parameters.amount[0] : 0; // 0-1, de-essing strength
-    const frequency = parameters.frequency[0]; // Hz, sibilant frequency center
+    const frequency = parameters.frequency ? parameters.frequency[0] : 6000; // Hz, sibilant frequency center
 
     // Update sample rate from global if available
     if (typeof sampleRate !== 'undefined') {

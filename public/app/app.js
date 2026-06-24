@@ -753,7 +753,7 @@ class VoiceIsolatePro {
     if (this._bridge && typeof this._bridge.applyParam === 'function') {
       try {
         if (this._bridge.applyParam(id, value)) return;
-      } catch (_) {
+      } catch {
         /* fall through to legacy handling */
       }
     }
