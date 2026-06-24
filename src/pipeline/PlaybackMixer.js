@@ -362,14 +362,9 @@ export class PlaybackMixer {
 
   /** Remember a gate parameter and apply it to the live worklet if present. */
   _setGateParam(name, value) {
-    console.log(`[MIXER] _setGateParam: name="${name}", value=${value}, gate=${!!this.gate}`);
     this._gateParams[name] = value;
-    if (!this.gate) {
-      console.warn(`[MIXER] Gate worklet not available`);
-      return;
-    }
+    if (!this.gate) return;
     const param = this.gate.parameters.get(name);
-    console.log(`[MIXER] Gate parameter "${name}" found: ${!!param}`);
     if (param) this._applyParam(param, value);
   }
 
@@ -485,13 +480,9 @@ export class PlaybackMixer {
    */
   _applyParam(param, target) {
     const now = this.ctx.currentTime;
-    console.log(`[MIXER] _applyParam: param=${param?.constructor?.name}, target=${target}, isPlaying=${this._isPlaying}, currentTime=${now}`);
-    
     if (this._isPlaying) {
-      console.log(`[MIXER] Setting param via setTargetAtTime (smoothed)`);
       param.setTargetAtTime(target, now, PARAM_SMOOTHING);
     } else {
-      console.log(`[MIXER] Setting param directly (not playing)`);
       param.cancelScheduledValues(now);
       param.value = target;
     }
@@ -563,9 +554,19 @@ export class PlaybackMixer {
     this._applyParam(this.highpass.frequency, clamp(hz, 20, 2000));
   }
 
+  /** High-pass resonance / steepness (0.1 … 10). 0.7 ≈ a smooth Butterworth roll-off. */
+  setHighpassQ(q) {
+    this._applyParam(this.highpass.Q, clamp(q, 0.1, 10));
+  }
+
   /** Low-pass cutoff in Hz (1000 … 20000). 20 kHz ≈ off. */
   setLowpass(hz) {
     this._applyParam(this.lowpass.frequency, clamp(hz, 1000, 20000));
+  }
+
+  /** Low-pass resonance / steepness (0.1 … 10). 0.7 ≈ a smooth Butterworth roll-off. */
+  setLowpassQ(q) {
+    this._applyParam(this.lowpass.Q, clamp(q, 0.1, 10));
   }
 
   /** Bus compressor threshold in dB (−60 … 0). 0 = no compression. */
@@ -620,15 +621,9 @@ export class PlaybackMixer {
    * @param {number} db
    */
   setGraphicEq(band, db) {
-    console.log(`[MIXER] setGraphicEq: band="${band}", db=${db}`);
     const node = this.graphicBands.get(band);
-    if (!node) {
-      console.warn(`[MIXER] Graphic EQ band "${band}" not found`);
-      return;
-    }
-    const clamped = clamp(db, -12, 12);
-    console.log(`[MIXER] Applying EQ band "${band}": ${clamped} dB`);
-    this._applyParam(node.gain, clamped);
+    if (!node) return;
+    this._applyParam(node.gain, clamp(db, -12, 12));
   }
 
   /**

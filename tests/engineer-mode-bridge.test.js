@@ -130,6 +130,15 @@ describe('PlaybackMixer — Engineer Mode parity controls', () => {
     mixer.setGateHold(9999); // clamp 0..500
     expect(mixer._gateParams.hold).toBe(500);
   });
+
+  test('HP/LP Q setters drive the filter resonance and clamp to 0.1…10', () => {
+    mixer.setHighpassQ(2.5);
+    expect(mixer.highpass.Q.value).toBeCloseTo(2.5);
+    mixer.setHighpassQ(99); // clamp high
+    expect(mixer.highpass.Q.value).toBeCloseTo(10);
+    mixer.setLowpassQ(0.05); // clamp low
+    expect(mixer.lowpass.Q.value).toBeCloseTo(0.1);
+  });
 });
 
 describe('EngineerModeBridge', () => {
@@ -193,16 +202,25 @@ describe('EngineerModeBridge', () => {
     expect(spy).toHaveBeenCalledWith(50);
   });
 
+  test('hp/lp Q sliders drive the filter resonance controls', () => {
+    const hp = jest.spyOn(mixer, 'setHighpassQ');
+    const lp = jest.spyOn(mixer, 'setLowpassQ');
+    expect(bridge.applyParam('hpQ', 2)).toBe(true);
+    expect(bridge.applyParam('lpQ', 3)).toBe(true);
+    expect(hp).toHaveBeenCalledWith(2);
+    expect(lp).toHaveBeenCalledWith(3);
+  });
+
   test('unsupported ids and non-finite values are ignored', () => {
-    expect(bridge.applyParam('hpQ', 2)).toBe(false);       // stub, no mixer control
-    expect(bridge.applyParam('nrAmount', 50)).toBe(false); // worker param
-    expect(bridge.applyParam('eqMid', NaN)).toBe(false);   // non-finite
+    expect(bridge.applyParam('formantShift', 2)).toBe(false); // worker param, no mixer control
+    expect(bridge.applyParam('nrAmount', 50)).toBe(false);    // worker param
+    expect(bridge.applyParam('eqMid', NaN)).toBe(false);      // non-finite
     expect(bridge.applyParam('eqMid', 4)).toBe(true);
   });
 
   test('applyParams applies a whole slider map', () => {
     const spy = jest.spyOn(mixer, 'setGraphicEq');
-    bridge.applyParams({ eqBass: 2, eqMid: -3, hpQ: 1 });
+    bridge.applyParams({ eqBass: 2, eqMid: -3, formantShift: 1 });
     expect(spy).toHaveBeenCalledWith('bass', 2);
     expect(spy).toHaveBeenCalledWith('mid', -3);
   });
