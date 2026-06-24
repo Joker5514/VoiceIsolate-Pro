@@ -102,6 +102,12 @@ async function runInPage(page) {
     }
     app.inputBuffer = buf;
 
+    // Set neutral params so the continuous tone is not gated or aggressively denoised
+    window.VIP_PARAMS = window.VIP_PARAMS || {};
+    window.VIP_PARAMS.gateThresh = -80;
+    window.VIP_PARAMS.nrAmount = 0;
+    window.VIP_PARAMS.deEssAmt = 0;
+
     // No-op the progress UI so it doesn't await rAF on a hidden tab.
     app.pip = async () => {};
     // Stub mobile DOM cells the pipeline touches but headless doesn't render.
