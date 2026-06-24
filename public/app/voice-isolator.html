@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Isolator Pro</title>
+    <style>
+        :root {
+            --bg: #121212;
+            --panel-bg: #1e1e1e;
+            --border: #333;
+            --text: #e0e0e0;
+            --text-dim: #888;
+            --accent: #00ffcc;
+            --accent-hover: #00cca3;
+            --danger: #ff4444;
+            --meter-bg: #000;
+            --meter-low: #00ff00;
+            --meter-mid: #ffff00;
+            --meter-high: #ff0000;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* TITLE BAR */
+        .titlebar {
+            height: 40px;
+            background: #181818;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 10px;
+            -webkit-app-region: drag;
+        }
+
+        .titlebar-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            width: 20px;
+            height: 20px;
+            background: linear-gradient(135deg, var(--accent), #0088ff);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #000;
+            font-size: 12px;
+        }
+
+        .app-title {
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        .titlebar-center {
+            display: flex;
+            gap: 20px;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            font-size: 12px;
+            cursor: pointer;
+            -webkit-app-region: no-drag;
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .tab-btn.active {
+            color: var(--text);
+            background: rgba(255,255,255,0.1);
+        }
+        .tab-btn:hover:not(.active) {
+            color: var(--text);
+        }
+
+        .titlebar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            -webkit-app-region: no-drag;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+        }
+
+        .icon-btn:hover {
+            color: var(--text);
+            background: rgba(255,255,255,0.1);
+        }
+
+        .win-btns {
+            display: flex;
+            gap: 5px;
+        }
+
+        .win-btn {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+        }
+        .win-btn.close { background: #ff5f56; }
+        .win-btn.min   { background: #ffbd2e; }
+        .win-btn.max   { background: #27c93f; }
+
+        /* MAIN AREA */
+        .main-area {
+            flex: 1;
+            display: flex;
+            padding: 10px;
+            gap: 10px;
+        }
+
+        /* PANELS */
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .left-panel {
+            width: 300px;
+            min-width: 300px;
+            padding: 15px;
+            gap: 20px;
+        }
+
+        .center-panel {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .right-panel {
+            width: 250px;
+            min-width: 250px;
+            padding: 15px;
+            gap: 15px;
+        }
+
+        /* SECTION HEADERS */
+        .section-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        /* CONTROLS */
+        .device-select, .model-select {
+            width: 100%;
+            background: #121212;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 10px;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .device-select:hover, .model-select:hover {
+            border-color: #555;
+        }
+
+        .level-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            margin-bottom: 5px;
+        }
+        .level-label { color: var(--text-dim); }
+        .level-val   { color: var(--text); }
+
+        .meter-container {
+            background: var(--meter-bg);
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 5px;
+            position: relative;
+        }
+        .meter-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--meter-low) 60%, var(--meter-mid) 85%, var(--meter-high) 100%);
+            transition: width 0.1s ease;
+        }
+
+        .level-ticks {
+            display: flex;
+            justify-content: space-between;
+            font-size: 9px;
+            color: var(--text-dim);
+            margin-top: 2px;
+        }
+
+        .mode-btns {
+            display: flex;
+            background: #121212;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        .mode-btn {
+            flex: 1;
+            background: none;
+            border: none;
+            color: var(--text-dim);
+            padding: 8px 0;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .mode-btn.active {
+            background: rgba(0, 255, 204, 0.1);
+            color: var(--accent);
+        }
+
+        /* KNOBS / SLIDERS */
+        .knob-row {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .knob {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid var(--accent);
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            background: #121212;
+        }
+        .knob::after {
+            content: '';
+            position: absolute;
+            top: 4px;
+            width: 2px;
+            height: 8px;
+            background: var(--accent);
+            transform-origin: 50% 14px;
+            transform: rotate(45deg);
+        }
+        .slider-container { flex: 1; }
+        .slider-val {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            margin-bottom: 5px;
+        }
+        .val-num {
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            margin-top: -5px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: var(--border);
+            border-radius: 2px;
+        }
+
+        /* CENTER VISUALIZER */
+        .vis-header {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+        }
+        .vis-title {
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .live-badge {
+            background: rgba(255, 68, 68, 0.2);
+            color: var(--danger);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            border: 1px solid var(--danger);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%   { opacity: 1; }
+            50%  { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .vis-canvas {
+            width: 100%;
+            height: 100%;
+            background: #0a0a0a;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        /* RIGHT PANEL */
+        .output-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .switch-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 34px;
+            height: 20px;
+        }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #333;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider { background-color: var(--accent); }
+        input:checked + .slider:before { transform: translateX(14px); }
+
+        .big-btn {
+            background: var(--accent);
+            color: #000;
+            border: none;
+            padding: 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-top: auto;
+            transition: background 0.2s;
+        }
+        .big-btn:hover { background: var(--accent-hover); }
+        .big-btn.recording { background: var(--danger); color: white; }
+
+        .stats-box {
+            background: #121212;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: auto;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            margin-bottom: 5px;
+        }
+        .stat-row:last-child { margin-bottom: 0; }
+        .stat-label { color: var(--text-dim); }
+        .stat-val { color: var(--text); font-family: monospace; }
+    </style>
+</head>
+<body>
+    <!-- TITLE BAR -->
+    <div class="titlebar">
+        <div class="titlebar-left">
+            <div class="logo-icon">VI</div>
+            <div class="app-title">Voice Isolator Pro</div>
+        </div>
+        <div class="titlebar-center">
+            <button class="tab-btn active">
+                <span style="display:flex;align-items:center;gap:5px">
+                    <svg width="8" height="8" viewBox="0 0 8 8"><rect x="1" y="1" width="6" height="6" fill="white"/></svg>
+                    LIVE
+                </span>
+                <span class="tab-label">Real-time</span>
+            </button>
+            <button class="tab-btn">
+                <span style="display:flex;align-items:center;gap:5px">
+                    <svg width="8" height="8" viewBox="0 0 8 8"><rect x="0.5" y="0.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+                    PROCESS
+                </span>
+                <span class="tab-label">File Processing</span>
+            </button>
+        </div>
+        <div class="titlebar-right">
+            <button class="icon-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M4.22 4.22l2.12 2.12m11.32 11.32l2.12 2.12M2 12h3m14 0h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+            </button>
+            <button class="icon-btn settings" style="width:auto;padding:0 8px;gap:4px;font-size:11px">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M4.22 4.22l2.12 2.12m11.32 11.32l2.12 2.12M2 12h3m14 0h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+                SETTINGS
+            </button>
+            <div class="win-btns">
+                <button class="win-btn min"></button>
+                <button class="win-btn max"></button>
+                <button class="win-btn close"></button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN AREA -->
+    <div class="main-area">
+        <!-- LEFT PANEL -->
+        <div class="panel left-panel">
+            <!-- INPUT -->
+            <div class="panel-section">
+                <div class="section-label">Input</div>
+                <div class="device-select">
+                    <span style="display:flex;align-items:center;gap:5px">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                        Microphone (Scarlett 2i2)
+                    </span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <div class="level-row" style="margin-top:10px">
+                    <span class="level-label">Input Level</span>
+                    <span class="level-val">-12.4 dB</span>
+                </div>
+                <div class="meter-container"><div class="meter-bar" style="width:72%"></div></div>
+                <div class="level-ticks"><span>-60</span><span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0</span></div>
+            </div>
+
+            <!-- MODE -->
+            <div class="panel-section">
+                <div class="section-label">Mode</div>
+                <div class="mode-btns">
+                    <button class="mode-btn active">VOICE ISOLATE</button>
+                    <button class="mode-btn">VOICE REMOVE</button>
+                </div>
+            </div>
+
+            <!-- AI MODEL -->
+            <div class="panel-section">
+                <div class="section-label">AI Model</div>
+                <div class="model-select">
+                    <span>v2.2 - Best Quality</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+            </div>
+
+            <!-- ISOLATION CONTROLS -->
+            <div class="panel-section" style="flex:1">
+                <div class="iso-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
+                    <div class="section-label" style="margin:0">Isolation Controls</div>
+                    <button class="icon-btn" style="width:auto;height:auto;font-size:10px;color:var(--accent)">RESET</button>
+                </div>
+
+                <div class="knob-row">
+                    <div class="knob">85%</div>
+                    <div class="slider-container">
+                        <div class="slider-val">
+                            <span>Strength</span>
+                            <span class="val-num">85%</span>
+                        </div>
+                        <input type="range" min="0" max="100" value="85">
+                    </div>
+                </div>
+
+                <div class="knob-row">
+                    <div class="knob" style="border-color:#555">0ms</div>
+                    <div class="slider-container">
+                        <div class="slider-val">
+                            <span>Lookahead (Latency)</span>
+                            <span class="val-num" style="color:var(--text)">0ms</span>
+                        </div>
+                        <input type="range" min="0" max="100" value="0">
+                    </div>
+                </div>
+
+                <div class="knob-row" style="margin-bottom:0">
+                    <div class="knob" style="border-color:#555">120</div>
+                    <div class="slider-container">
+                        <div class="slider-val">
+                            <span>Gate Threshold</span>
+                            <span class="val-num" style="color:var(--text)">-45dB</span>
+                        </div>
+                        <input type="range" min="0" max="100" value="30">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CENTER PANEL -->
+        <div class="panel center-panel">
+            <div class="vis-header">
+                <div class="vis-title">
+                    Spectrum Analyzer
+                    <span class="live-badge">LIVE</span>
+                </div>
+                <div style="display:flex;gap:10px">
+                    <span style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px">
+                        <div style="width:8px;height:8px;background:#333;border-radius:50%"></div> Noise
+                    </span>
+                    <span style="font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px">
+                        <div style="width:8px;height:8px;background:var(--accent);border-radius:50%"></div> Voice
+                    </span>
+                </div>
+            </div>
+            <svg class="vis-canvas" preserveAspectRatio="none" viewBox="0 0 100 100">
+                <defs>
+                    <linearGradient id="voiceGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="rgba(0,255,204,0.5)" />
+                        <stop offset="100%" stop-color="rgba(0,255,204,0)" />
+                    </linearGradient>
+                </defs>
+                <!-- Noise profile -->
+                <path d="M0,100 L0,80 Q5,75 10,85 T20,70 T30,80 T40,60 T50,75 T60,65 T70,80 T80,70 T90,85 T100,75 L100,100 Z" fill="#222" />
+                <!-- Voice profile -->
+                <path d="M20,100 L20,90 Q25,60 30,50 T40,30 T50,45 T60,20 T70,55 T80,85 L80,100 Z" fill="url(#voiceGrad)" stroke="var(--accent)" stroke-width="0.5" />
+                <!-- Grid lines -->
+                <line x1="0" y1="25" x2="100" y2="25" stroke="#333" stroke-width="0.2" stroke-dasharray="1,1" />
+                <line x1="0" y1="50" x2="100" y2="50" stroke="#333" stroke-width="0.2" stroke-dasharray="1,1" />
+                <line x1="0" y1="75" x2="100" y2="75" stroke="#333" stroke-width="0.2" stroke-dasharray="1,1" />
+            </svg>
+        </div>
+
+        <!-- RIGHT PANEL -->
+        <div class="panel right-panel">
+            <div class="panel-section output-section" style="flex:1">
+                <div class="section-label">Output</div>
+
+                <div class="device-select" style="margin-bottom:15px">
+                    <span style="display:flex;align-items:center;gap:5px">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                        Virtual Cable A
+                    </span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+
+                <div class="switch-row">
+                    <span>Monitor Output</span>
+                    <label class="switch">
+                        <input type="checkbox" aria-label="Monitor Output">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="switch-row">
+                    <span>Bypass Processing</span>
+                    <label class="switch">
+                        <input type="checkbox" aria-label="Bypass Processing">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="level-row" style="margin-top:15px">
+                    <span class="level-label">Output Level</span>
+                    <span class="level-val" style="color:var(--accent)">-3.2 dB</span>
+                </div>
+                <div class="meter-container"><div class="meter-bar" style="width:85%"></div></div>
+                <div class="level-ticks"><span>-60</span><span>-48</span><span>-36</span><span>-24</span><span>-12</span><span>-6</span><span>0</span></div>
+
+                <div style="flex:1"></div>
+
+                <div class="stats-box">
+                    <div class="stat-row">
+                        <span class="stat-label">CPU Usage</span>
+                        <span class="stat-val">12%</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Latency</span>
+                        <span class="stat-val">4.2ms</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Model RAM</span>
+                        <span class="stat-val">450MB</span>
+                    </div>
+                </div>
+
+                <button class="big-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                    START RECORDING
+                </button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

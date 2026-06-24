@@ -1,0 +1,243 @@
+/*
+ * neon-pulse-visualizer.css  v2.0
+ * ─────────────────────────────────────────────────────────────
+ * Standalone stylesheet for NeonPulseCard & the legacy
+ * neon-pulse-visualizer.js canvas wrapper.
+ * Mobile-first, dark-neon theme. All animations are
+ * CSS-only (no JS dependency).
+ * ─────────────────────────────────────────────────────────────
+ */
+
+/* ══ Root tokens ═══════════════════════════════════════════ */
+:root {
+  --np-bg:       #090b10;
+  --np-card:     #0d1117;
+  --np-border:   #1e2d40;
+  --np-cyan:     #00ffe7;
+  --np-violet:   #bf00ff;
+  --np-pink:     #ff3cac;
+  --np-amber:    #f7971e;
+  --np-text:     #c8d8e8;
+  --np-dim:      #4a6070;
+  --np-radius:   14px;
+  --np-font:     'JetBrains Mono','Fira Code','Courier New', monospace;
+}
+
+/* ══ Shared visualizer container (legacy + card) ════════════ */
+.visualizer-container,
+.np-visualizer-legacy {
+  background: var(--np-bg);
+  border: 1px solid var(--np-border);
+  border-radius: var(--np-radius);
+  overflow: hidden;
+  position: relative;
+  font-family: var(--np-font);
+  color: var(--np-text);
+  transition: box-shadow .35s ease;
+}
+.visualizer-container:hover,
+.np-visualizer-legacy:hover {
+  box-shadow:
+    0 0 32px rgba(0,255,231,.14),
+    0 0 64px rgba(0,255,231,.06);
+}
+
+/* ══ Canvas ════════════════════════════════════════════════ */
+.visualizer-container canvas,
+.np-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 0;
+}
+
+/* ══ Glow animations ═══════════════════════════════════════ */
+@keyframes np-glow-cyan {
+  0%, 100% { box-shadow: 0 0 6px var(--np-cyan);  }
+  50%       { box-shadow: 0 0 22px var(--np-cyan), 0 0 40px rgba(0,255,231,.25); }
+}
+@keyframes np-glow-violet {
+  0%, 100% { box-shadow: 0 0 6px var(--np-violet);  }
+  50%       { box-shadow: 0 0 22px var(--np-violet), 0 0 40px rgba(191,0,255,.25); }
+}
+@keyframes np-pulse-border {
+  0%, 100% { border-color: var(--np-border); }
+  50%       { border-color: var(--np-cyan); }
+}
+@keyframes np-fade-in-up {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes np-scanline {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(200%); }
+}
+@keyframes np-badge-blink {
+  0%, 90%, 100% { opacity: 1; }
+  95%           { opacity: .3; }
+}
+
+/* ══ LIVE badge ════════════════════════════════════════════ */
+.np-live-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--np-bg);
+  background: var(--np-cyan);
+  padding: 2px 8px;
+  border-radius: 4px;
+  animation: np-badge-blink 2.4s ease-in-out infinite,
+             np-glow-cyan   2.4s ease-in-out infinite;
+}
+
+/* ══ Scanline overlay (optional aesthetic) ════════════════ */
+.np-scanline {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2;
+  opacity: .025;
+}
+.np-scanline::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 40%;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0,255,231,.18) 50%,
+    transparent 100%
+  );
+  animation: np-scanline 6s linear infinite;
+}
+
+/* ══ Stat chips ════════════════════════════════════════════ */
+.np-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--np-dim);
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--np-border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  letter-spacing: .5px;
+  transition: border-color .2s, color .2s;
+}
+.np-chip b { color: var(--np-cyan); }
+.np-chip.active {
+  border-color: var(--np-cyan);
+  color: var(--np-text);
+  animation: np-glow-cyan 2s ease-in-out infinite;
+}
+
+/* ══ Mode pill buttons ════════════════════════════════════ */
+.np-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-family: var(--np-font);
+  color: var(--np-dim);
+  background: transparent;
+  border: 1px solid var(--np-border);
+  border-radius: 20px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: all .2s ease;
+  white-space: nowrap;
+}
+.np-pill:hover, .np-pill.active {
+  border-color: var(--np-cyan);
+  color: var(--np-cyan);
+  background: rgba(0,255,231,.07);
+  box-shadow: 0 0 10px rgba(0,255,231,.2);
+}
+.np-pill.violet:hover, .np-pill.violet.active {
+  border-color: var(--np-violet);
+  color: var(--np-violet);
+  background: rgba(191,0,255,.07);
+  box-shadow: 0 0 10px rgba(191,0,255,.2);
+}
+
+/* ══ Peak meter bar ═══════════════════════════════════════ */
+.np-peak-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255,255,255,.06);
+  overflow: hidden;
+  position: relative;
+}
+.np-peak-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--np-cyan), var(--np-violet), var(--np-pink));
+  transition: width .08s linear;
+  box-shadow: 0 0 6px var(--np-cyan);
+}
+
+/* ══ Entrance / transition animations ════════════════════ */
+.np-enter {
+  animation: np-fade-in-up .45s cubic-bezier(.22,.68,0,1.2) both;
+}
+.np-enter-delay-1 { animation-delay: .06s; }
+.np-enter-delay-2 { animation-delay: .12s; }
+.np-enter-delay-3 { animation-delay: .18s; }
+
+/* ══ Responsive overrides ═════════════════════════════════ */
+@media (max-width: 768px) {
+  :root {
+    --np-radius: 10px;
+  }
+  .np-pill {
+    font-size: 10px;
+    padding: 3px 10px;
+  }
+  .np-chip {
+    font-size: 9px;
+    padding: 2px 6px;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --np-radius: 8px;
+  }
+  /* Stack mode pills onto two rows on very small screens */
+  .np-pill-group {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .np-pill {
+    font-size: 9px;
+    padding: 3px 8px;
+  }
+  /* Hide non-essential stat chips on tiny screens */
+  .np-chip.np-hide-xs {
+    display: none;
+  }
+}
+
+/* ══ Touch-target enlargement (iOS / Android) ════════════ */
+@media (pointer: coarse) {
+  .np-pill, .np-btn {
+    min-height: 40px;
+    min-width: 40px;
+    padding: 6px 12px;
+  }
+}
+
+/* ══ Reduced-motion override ══════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .np-live-badge,
+  .np-scanline::after,
+  .np-chip.active,
+  .np-badge-pulse {
+    animation: none;
+  }
+}

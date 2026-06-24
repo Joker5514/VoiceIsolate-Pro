@@ -1,0 +1,214 @@
+#!/usr/bin/env node
+/**
+ * VoiceIsolate Pro — Structural Validation
+ * Checks critical files, architecture patterns, and slider definitions.
+ */
+const fs = require('fs');
+const path = require('path');
+
+let errors = 0;
+const check = (condition, msg) => {
+  if (condition) { console.log(`  ✓ ${msg}`); }
+  else { console.log(`  ✗ ${msg}`); errors++; }
+};
+
+console.log('\n🔍 VoiceIsolate Pro — Validation\n');
+
+// Vercel runs this script as its buildCommand, but .vercelignore strips
+// dev-only files (tests/*.test.js, CI config) from the deploy context —
+// requiring them there fails every deployment. Dev-only checks run only
+// outside Vercel builds.
+const IS_VERCEL_BUILD = process.env.VERCEL === '1' || process.env.VERCEL === 'true';
+
+// 1. Critical files
+console.log('Files:');
+const required = [
+  'public/index.html',
+  'public/app/index.html',
+  'public/app/style.css',
+  'public/app/app.js',
+  'public/app/dsp-worker.js',           // Phase 3: AudioWorklet
+  'public/app/ml-worker.js',            // Phase 4: ML Web Worker
+  'public/app/models/README.md',        // Phase 4: ML model docs
+  'public/blueprint/index.html',
+  'vercel.json',
+  'package.json',
+  'README.md',
+];
+const devOnlyRequired = [
+  '.github/copilot-instructions.md',
+  'tests/dsp.test.js',                  // Phase 6: Tests
+  'tests/sliders.test.js',
+  'tests/presets.test.js',
+];
+required.forEach(f => check(fs.existsSync(path.resolve(__dirname, '..', f)), f));
+if (IS_VERCEL_BUILD) {
+  console.log('  ℹ  Vercel build context — dev-only file checks skipped (.vercelignore strips them)');
+} else {
+  devOnlyRequired.forEach(f => check(fs.existsSync(path.resolve(__dirname, '..', f)), f));
+}
+
+// 2. app.js structural checks
+console.log('\napp.js structure:');
+const appJs = fs.readFileSync(path.resolve(__dirname, '..', 'public/app/app.js'), 'utf8');
+check(appJs.length > 10000, `Size: ${appJs.length} bytes (>10KB)`);
+
+const sliderGroups = ['gate', 'nr', 'eq'];
+sliderGroups.forEach(g => check(appJs.includes(`${g}:`), `Slider group: ${g}`));
+
+// Count slider definitions inside the SLIDERS literal only (avoid counting
+// EQ-band config objects and other `id:` occurrences elsewhere in app.js).
+const slidersBlock = appJs.match(/const SLIDERS\s*=\s*\{([\s\S]*?)\s*\};/);
+const sliderMatches = slidersBlock ? slidersBlock[1].match(/\{\s*id\s*:\s*'/g) : null;
+const sliderCount = sliderMatches ? sliderMatches.length : 0;
+check(sliderCount === 52, `Slider count: ${sliderCount} (must be 52)`);
+
+// Count STAGES — now defined in slider-map.js
+const sliderMapPath = path.resolve(__dirname, '..', 'public/app/slider-map.js');
+const sliderMapJs = fs.existsSync(sliderMapPath) ? fs.readFileSync(sliderMapPath, 'utf8') : '';
+const stagesMatch = sliderMapJs.match(/export const STAGES = \[([\s\S]*?)\];/);
+const stageItems = stagesMatch ? (stagesMatch[1].match(/'[^']+'/g) || []) : [];
+check(stageItems.length === 32, `STAGES count: ${stageItems.length} (must be 32)`);
+
+// Phase 1: STFT engine presence
+console.log('\nSpectral Engine (Phase 1):');
+check(appJs.includes('_fft(re, im)'), 'FFT implementation present');
+check(appJs.includes('_ifft(re, im)'), 'IFFT implementation present');
+check(appJs.includes('_makeWindow(N)'), 'Blackman-Harris window present');
+check(appJs.includes('applySpectralNR'), 'Spectral NR function present');
+check(!appJs.includes('applyNR(buf,amt,smooth'), 'Old stub applyNR removed');
+
+// Phase 2: Wired sliders
+console.log('\nWired Sliders (Phase 2):');
+const wiredSliders = ['applyBgSuppress','applyCrosstalkCancel','applyFormantShift','applyPhaseCorr','applyDereverb','applyDither'];
+wiredSliders.forEach(fn => check(appJs.includes(fn), `${fn} implemented`));
+
+// Phase 3: AudioWorklet
+console.log('\nAudioWorklet (Phase 3):');
+const awJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/dsp-processor.js'))
+  ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/dsp-processor.js'), 'utf8') : '';
+check(awJs.includes("registerProcessor('dsp-processor'"), 'AudioWorklet registerProcessor present');
+check(awJs.includes('process(inputs, outputs'), 'AudioWorklet process() method present');
+
+// Phase 4: ONNX Runtime + ML Worker
+console.log('\nONNX Runtime (Phase 4):');
+const htmlPath = path.resolve(__dirname, '..', 'public/app/index.html');
+const html = fs.existsSync(htmlPath) ? fs.readFileSync(htmlPath, 'utf8') : '';
+const mlWorkerJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/ml-worker.js'))
+  ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/ml-worker.js'), 'utf8') : '';
+check(mlWorkerJs.includes('importScripts'), 'Legacy ML Worker loads ORT via importScripts');
+
+// Stem-Split & Live-Mix architecture (CLAUDE.md §1–§2)
+console.log('\nStem-Split & Live-Mix (CLAUDE.md):');
+const srcFiles = [
+  'src/core/audio-config.js',
+  'src/core/BufferPool.js',
+  'src/core/ModelManifest.js',
+  'src/pipeline/FileIngestion.js',
+  'src/pipeline/PlaybackMixer.js',
+  'src/presentation/SliderUI.js',
+  'src/workers/MLWorker.js',
+  'server/securityHeaders.js',
+];
+srcFiles.forEach(f => check(fs.existsSync(path.resolve(__dirname, '..', f)), f));
+
+const newMlWorker = fs.readFileSync(path.resolve(__dirname, '..', 'src/workers/MLWorker.js'), 'utf8');
+check(newMlWorker.includes("importScripts('/lib/ort.min.js')"), 'MLWorker loads ORT locally (never CDN)');
+check(newMlWorker.includes('SHA-256'), 'MLWorker verifies model SHA-256 integrity');
+check(fs.readFileSync(path.resolve(__dirname, '..', 'src/core/audio-config.js'), 'utf8')
+  .includes('SAMPLE_RATE = 48000'), 'Canonical SAMPLE_RATE = 48000 in audio-config.js');
+
+// Hard prohibitions (CLAUDE.md §1.1) — the live-mic pipeline must stay dead.
+const appDir = path.resolve(__dirname, '..', 'public/app');
+const offenders = [];
+// Playback-only DSP worklets explicitly permitted in src/ (NOT live-mic). See
+// CLAUDE.md §2.1. Any other worklet path — or a non-literal/dynamic module arg
+// — is still rejected, and getUserMedia stays banned outright.
+const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js', '/src/workers/DeEsserProcessor.js'];
+const scanDirs = [
+  ['public/app', appDir],
+  ['src', path.resolve(__dirname, '..', 'src')],
+];
+for (const [label, dir] of scanDirs) {
+  for (const f of walkJs(dir)) {
+    const src = fs.readFileSync(f, 'utf8');
+    if (/getUserMedia\s*\(/.test(src)) offenders.push(`${label}/${path.relative(dir, f)} (getUserMedia)`);
+    if (/audioWorklet\.addModule\s*\(/.test(src)) {
+      // Every addModule call must load an allowlisted playback worklet via a
+      // string literal; any other path or a dynamic argument is forbidden.
+      const argRe = /audioWorklet\.addModule\s*\(\s*['"]([^'"]+)['"]/g;
+      let m;
+      let verified = false;
+      let allAllowed = true;
+      while ((m = argRe.exec(src))) {
+        verified = true;
+        if (!ALLOWED_WORKLETS.includes(m[1])) allAllowed = false;
+      }
+      if (!verified || !allAllowed) {
+        offenders.push(`${label}/${path.relative(dir, f)} (audioWorklet.addModule)`);
+      }
+    }
+  }
+}
+const landingHtml = fs.readFileSync(path.resolve(__dirname, '..', 'public/index.html'), 'utf8');
+if (/getUserMedia/.test(landingHtml)) offenders.push('public/index.html (getUserMedia)');
+check(offenders.length === 0, offenders.length === 0
+  ? 'No live-mic ingestion or worklet registration (live pipeline stays removed)'
+  : `Forbidden live-pipeline code found: ${offenders.join(', ')}`);
+check(!fs.existsSync(path.resolve(appDir, 'pipeline-orchestrator.js')), 'pipeline-orchestrator.js stays deleted');
+check(!fs.existsSync(path.resolve(__dirname, '..', 'api-routes/auth.js')), 'api-routes/auth.js stays deleted');
+
+function walkJs(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkJs(full));
+    else if (entry.name.endsWith('.js')) out.push(full);
+  }
+  return out;
+}
+
+// Phase 5: Forensic
+console.log('\nForensic Mode (Phase 5):');
+check(html.includes('forensicToggle'), 'Forensic toggle in index.html');
+check(html.includes('auditLogBtn'), 'Audit log button in index.html');
+check(appJs.includes("crypto.subtle.digest('SHA-256'"), 'SHA-256 audit hashing present');
+check(appJs.includes('this.forensicLog = []'), 'forensicLog initialized');
+
+// 3. Balanced braces
+console.log('\nBrace balance:');
+const openBraces = (appJs.match(/{/g) || []).length;
+const closeBraces = (appJs.match(/}/g) || []).length;
+check(openBraces === closeBraces, `Braces: ${openBraces} open / ${closeBraces} close`);
+
+// 4. Blueprint check
+console.log('\nBlueprint:');
+const blueprint = fs.readFileSync(path.resolve(__dirname, '..', 'public/blueprint/index.html'), 'utf8');
+check(blueprint.includes('Deca-Pass'), 'Contains Deca-Pass pipeline reference');
+check(blueprint.includes('32'), 'References 32 stages');
+check(blueprint.includes('Threads from Space'), 'Threads from Space architecture');
+
+// 5. Duplicate JSON key check
+console.log('\nJSON duplicate key check:');
+const dupKeyScriptPath = path.resolve(__dirname, 'check-duplicate-keys.js');
+if (fs.existsSync(dupKeyScriptPath)) {
+  const { findDuplicateKeys } = require('./check-duplicate-keys.js');
+  function checkDuplicateKeysWrapper(filePath) {
+    const raw = fs.readFileSync(path.resolve(__dirname, '..', filePath), 'utf8');
+    return findDuplicateKeys(raw);
+  }
+  const pkgDupes = checkDuplicateKeysWrapper('package.json');
+  check(pkgDupes.length === 0, pkgDupes.length === 0
+    ? 'No duplicate keys in package.json'
+    : `Duplicate keys in package.json: ${pkgDupes.join(', ')}`);
+} else {
+  console.log('  ℹ  check-duplicate-keys.js not found — skipping duplicate key check');
+}
+
+// 6. vercel.json
+console.log('\nVercel config:');
+const vercelJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'vercel.json'), 'utf8'));
+check(vercelJson.outputDirectory === 'public', 'Output directory: public');
+
+console.log(`\n${errors === 0 ? '✅ All checks passed' : `❌ ${errors} check(s) failed`}\n`);
+process.exit(errors > 0 ? 1 : 0);

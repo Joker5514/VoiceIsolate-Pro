@@ -1,0 +1,581 @@
+/* ============================================================
+   VoiceIsolate Pro — ASTM FTS Processing Overlay Styles
+   Neural Audio Processor · Canvas Spinner + Mini Spectrograph
+   v3.0  ·  VoiceIsolate Pro v25.0.0
+   ============================================================ */
+
+:root {
+  --vip-bg:       rgba(2, 6, 12, 0.92);
+  --vip-panel:    rgba(8, 14, 22, 0.96);
+  --vip-panel-2:  rgba(12, 18, 28, 0.99);
+  --vip-border:   rgba(60, 100, 140, 0.22);
+  --vip-cyan:     #00ffe7;
+  --vip-cyan-dim: rgba(0, 255, 231, 0.55);
+  --vip-violet:   #9d4dff;
+  --vip-pink:     #ff3cac;
+  --vip-amber:    #f7b955;
+  --vip-text:     #d8e6f4;
+  --vip-dim:      #5a7a96;
+  --vip-shadow:   0 0 32px rgba(0,255,231,.07), 0 0 96px rgba(157,77,255,.07);
+  --vip-radius:   22px;
+}
+
+/* ── Body lock ─────────────────────────────────────────────── */
+body.vip-processing-lock {
+  overflow: hidden;
+  touch-action: none;
+}
+
+/* ── Overlay shell ─────────────────────────────────────────── */
+.processing-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: var(--vip-bg);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .32s ease, visibility .32s ease;
+  z-index: 99999;
+}
+
+.processing-overlay.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* ── Animated backdrop layers ──────────────────────────────── */
+.proc-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.proc-backdrop-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0,255,231,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,231,.035) 1px, transparent 1px),
+    radial-gradient(circle at 50% 50%, rgba(157,77,255,.13), transparent 48%);
+  background-size: 44px 44px, 44px 44px, 100% 100%;
+  mask-image: radial-gradient(circle at center, black 38%, transparent 88%);
+  animation: vip-grid-drift 20s linear infinite;
+}
+
+.proc-backdrop-scanline {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0, 255, 231, 0.012) 3px,
+    rgba(0, 255, 231, 0.012) 4px
+  );
+  pointer-events: none;
+}
+
+/* ── Processing card ───────────────────────────────────────── */
+.processing-card {
+  position: relative;
+  width: min(100%, 780px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 26px 26px 22px;
+  border-radius: var(--vip-radius);
+  border: 1px solid var(--vip-border);
+  background:
+    radial-gradient(circle at top center, rgba(0,255,231,.045), transparent 38%),
+    radial-gradient(circle at bottom right, rgba(255,60,172,.05), transparent 40%),
+    radial-gradient(circle at top left, rgba(157,77,255,.04), transparent 36%),
+    linear-gradient(180deg, var(--vip-panel) 0%, var(--vip-panel-2) 100%);
+  box-shadow: var(--vip-shadow), 0 40px 100px rgba(0,0,0,.45);
+  overflow: hidden;
+}
+
+/* Animated gradient border */
+.processing-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(0,255,231,.45),
+    rgba(157,77,255,.18),
+    rgba(255,60,172,.38),
+    rgba(247,185,85,.22),
+    rgba(0,255,231,.45)
+  );
+  background-size: 300% 300%;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  animation: vip-border-flow 6s ease infinite;
+}
+
+/* Corner accents */
+.processing-card::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,255,231,.6), transparent);
+  pointer-events: none;
+}
+
+/* ── Card entrance ─────────────────────────────────────────── */
+.vip-enter {
+  animation: vip-enter .48s cubic-bezier(.2,.72,0,1.06) both;
+}
+
+/* ── Title section ─────────────────────────────────────────── */
+.proc-title-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.proc-badge-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.proc-badge {
+  display: inline-flex;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font: 700 10px/1 'JetBrains Mono', monospace;
+  letter-spacing: 2.5px;
+  color: #030f0c;
+  background: linear-gradient(90deg, var(--vip-cyan), #7dfff5);
+  box-shadow: 0 0 18px rgba(0,255,231,.3), 0 0 40px rgba(0,255,231,.1);
+}
+
+.proc-badge--dim {
+  color: var(--vip-dim);
+  background: transparent;
+  border: 1px solid rgba(0,255,231,.14);
+  box-shadow: none;
+  letter-spacing: 1.8px;
+}
+
+.proc-title {
+  color: var(--vip-text);
+  font: 700 26px/1.15 'Outfit', 'Segoe UI', sans-serif;
+  letter-spacing: -.02em;
+}
+
+.proc-subtitle {
+  color: var(--vip-dim);
+  font: 500 11px/1.4 'JetBrains Mono', monospace;
+  letter-spacing: .8px;
+}
+
+/* ── Canvas spinner ────────────────────────────────────────── */
+.proc-spinner-wrap {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  isolation: isolate;
+}
+
+/* Concentric pulsing rings behind the spinner canvas — adds depth */
+.proc-spinner-wrap::before,
+.proc-spinner-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  border-radius: 50%;
+  border: 1px solid rgba(0,255,231,.18);
+  pointer-events: none;
+  z-index: -1;
+  animation: vip-spin-ring 3.4s cubic-bezier(.4,0,.2,1) infinite;
+}
+.proc-spinner-wrap::before {
+  width: 80%;
+  height: 80%;
+  border-color: rgba(255,42,61,.20);
+  animation-delay: .0s;
+}
+.proc-spinner-wrap::after {
+  width: 100%;
+  height: 100%;
+  border-color: rgba(167,107,255,.18);
+  animation-delay: 1.1s;
+}
+@keyframes vip-spin-ring {
+  0%   { transform: scale(.85); opacity: .55; }
+  60%  { transform: scale(1.05); opacity: 0; }
+  100% { transform: scale(1.20); opacity: 0; }
+}
+
+.proc-spinner-canvas {
+  display: block;
+  width: 220px;
+  height: 220px;
+  /* subtle drop-shadow + tinted bloom for depth */
+  filter:
+    drop-shadow(0 0 22px rgba(0,255,231,.26))
+    drop-shadow(0 0 36px rgba(255,42,61,.10));
+  animation: vip-spin-breathe 4.2s ease-in-out infinite;
+}
+@keyframes vip-spin-breathe {
+  0%,100% { transform: scale(1); }
+  50%     { transform: scale(1.02); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proc-spinner-wrap::before,
+  .proc-spinner-wrap::after,
+  .proc-spinner-canvas { animation: none !important; }
+}
+
+/* ── Stage cluster ─────────────────────────────────────────── */
+.proc-stage-cluster {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+}
+
+.proc-stage-chip {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,255,231,.22);
+  background: rgba(0,255,231,.07);
+  color: var(--vip-cyan);
+  font: 700 11px/1 'JetBrains Mono', monospace;
+  letter-spacing: 1px;
+  transition: border-color .2s, background .2s, color .2s;
+}
+
+.proc-stage-chip--cyan   { border-color: rgba(0,255,231,.22);   background: rgba(0,255,231,.07);   color: var(--vip-cyan); }
+.proc-stage-chip--violet { border-color: rgba(157,77,255,.26);  background: rgba(157,77,255,.07);  color: #c4a3ff; }
+.proc-stage-chip--pink   { border-color: rgba(255,60,172,.26);  background: rgba(255,60,172,.07);  color: #ff8acc; }
+.proc-stage-chip--amber  { border-color: rgba(247,185,85,.26);  background: rgba(247,185,85,.07);  color: #ffce7a; }
+
+.proc-stage-name {
+  color: var(--vip-text);
+  font: 600 20px/1.25 'Outfit', 'Segoe UI', sans-serif;
+  transition: color .18s;
+}
+
+.proc-stage-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font: 600 12px/1 'JetBrains Mono', monospace;
+  color: var(--vip-dim);
+}
+
+.proc-pct {
+  color: var(--vip-cyan);
+  text-shadow: 0 0 10px rgba(0,255,231,.5);
+}
+
+/* ── Progress bar ──────────────────────────────────────────── */
+.proc-bar-wrap {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.06);
+}
+
+.proc-bar-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg,
+    var(--vip-cyan)   0%,
+    var(--vip-violet) 35%,
+    var(--vip-pink)   70%,
+    var(--vip-amber)  100%
+  );
+  box-shadow: 0 0 20px rgba(0,255,231,.28);
+  transition: width .22s ease;
+}
+
+.proc-bar-shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    108deg,
+    transparent 18%,
+    rgba(255,255,255,.18) 48%,
+    transparent 78%
+  );
+  transform: translateX(-120%);
+  animation: vip-bar-shine 2.8s linear infinite;
+}
+
+/* ── Mini spectrograph ─────────────────────────────────────── */
+.proc-spectro-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.proc-spectro-label {
+  font: 700 9px/1 'JetBrains Mono', monospace;
+  letter-spacing: 2px;
+  color: var(--vip-dim);
+  text-transform: uppercase;
+  opacity: .75;
+}
+
+.proc-spectro-canvas {
+  display: block;
+  width: 100%;
+  height: 52px;
+  border-radius: 8px;
+  background: rgba(0,0,0,.3);
+  border: 1px solid rgba(255,255,255,.04);
+}
+
+/* ── Phase track ───────────────────────────────────────────── */
+.proc-phase-track {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.proc-phase-pill {
+  min-height: 62px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px 11px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.06);
+  background: rgba(255,255,255,.025);
+  color: var(--vip-dim);
+  transition:
+    transform .2s cubic-bezier(.22,.68,0,1.2),
+    border-color .2s ease,
+    background .2s ease,
+    color .2s ease,
+    box-shadow .2s ease;
+  cursor: default;
+}
+
+.proc-phase-pill.active {
+  transform: translateY(-3px);
+  color: var(--vip-text);
+}
+
+.proc-phase-pill.complete {
+  border-color: rgba(0,255,231,.15);
+  background: rgba(0,255,231,.04);
+}
+
+/* Colour variants */
+.proc-phase-pill--cyan.active   { border-color: rgba(0,255,231,.4);   background: rgba(0,255,231,.08);   box-shadow: 0 4px 20px rgba(0,255,231,.1); }
+.proc-phase-pill--violet.active { border-color: rgba(157,77,255,.4);  background: rgba(157,77,255,.08);  box-shadow: 0 4px 20px rgba(157,77,255,.1); }
+.proc-phase-pill--pink.active   { border-color: rgba(255,60,172,.4);  background: rgba(255,60,172,.08);  box-shadow: 0 4px 20px rgba(255,60,172,.1); }
+.proc-phase-pill--amber.active  { border-color: rgba(247,185,85,.4);  background: rgba(247,185,85,.08);  box-shadow: 0 4px 20px rgba(247,185,85,.1); }
+
+/* ── complete pulse for finished phases ── */
+.proc-phase-pill.complete::before {
+  display: none;
+}
+
+.proc-phase-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.proc-phase-label {
+  font: 600 10px/1.2 'JetBrains Mono', monospace;
+  letter-spacing: .3px;
+}
+
+/* ── Message ───────────────────────────────────────────────── */
+.proc-message-wrap {
+  width: 100%;
+}
+
+.proc-message-label {
+  margin-bottom: 5px;
+  color: var(--vip-dim);
+  font: 700 9px/1 'JetBrains Mono', monospace;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: .8;
+}
+
+.proc-message {
+  min-height: 26px;
+  color: var(--vip-text);
+  font: 600 15px/1.45 'Outfit', 'Segoe UI', sans-serif;
+  transition: opacity .25s ease, transform .25s ease;
+}
+
+.proc-message.fade-out {
+  opacity: 0;
+  transform: translateY(5px);
+}
+
+.proc-message.fade-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Status grid ───────────────────────────────────────────── */
+.proc-status-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.proc-status-cell {
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.025);
+  border: 1px solid rgba(255,255,255,.05);
+  transition: border-color .18s;
+}
+
+.proc-status-cell:hover {
+  border-color: rgba(0,255,231,.12);
+}
+
+.proc-status-k {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--vip-dim);
+  font: 700 9px/1 'JetBrains Mono', monospace;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+}
+
+.proc-status-v {
+  color: var(--vip-text);
+  font: 600 12px/1.35 'Outfit', 'Segoe UI', sans-serif;
+}
+
+/* ── Footer hint ───────────────────────────────────────────── */
+.proc-cancel-hint {
+  width: 100%;
+  text-align: center;
+  color: var(--vip-dim);
+  font: 600 9px/1 'JetBrains Mono', monospace;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  opacity: .65;
+}
+
+/* ── Keyframes ─────────────────────────────────────────────── */
+@keyframes vip-enter {
+  from { opacity: 0; transform: translateY(16px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+@keyframes vip-grid-drift {
+  from { transform: translate3d(0,0,0); }
+  to   { transform: translate3d(44px,44px,0); }
+}
+
+@keyframes vip-border-flow {
+  0%,100% { background-position: 0%   50%; }
+  50%      { background-position: 100% 50%; }
+}
+
+@keyframes vip-bar-shine {
+  from { transform: translateX(-140%); }
+  to   { transform: translateX(140%); }
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 840px) {
+  .processing-card {
+    width: min(100%, 680px);
+    padding: 22px 18px 18px;
+  }
+  .proc-phase-track {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .proc-status-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .processing-overlay {
+    padding: 10px;
+  }
+  .processing-card {
+    gap: 12px;
+    padding: 18px 14px 16px;
+    border-radius: 18px;
+  }
+  .proc-spinner-wrap,
+  .proc-spinner-canvas {
+    width: 176px;
+    height: 176px;
+  }
+  .proc-title {
+    font-size: 21px;
+  }
+  .proc-stage-name {
+    font-size: 17px;
+  }
+  .proc-phase-track {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .proc-phase-pill {
+    min-height: auto;
+  }
+  .proc-status-grid {
+    grid-template-columns: 1fr;
+  }
+  .proc-spectro-canvas {
+    height: 40px;
+  }
+}
+
+@media (max-width: 400px) {
+  .proc-phase-track {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Reduced motion ────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .proc-backdrop-grid,
+  .proc-bar-shine,
+  .processing-card::before {
+    animation: none !important;
+  }
+}

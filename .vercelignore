@@ -1,0 +1,53 @@
+# .vercelignore — files excluded from Vercel build output
+# These are development / infrastructure files that should never
+# be served as static assets or included in the Vercel deployment.
+
+# Dev scratch files (audit fix #18)
+scratch/
+*.scratch.js
+*.scratch.ts
+*.bak
+design-test.html
+*.tmp
+
+# Alternate deploy targets — Vercel is the canonical target
+Dockerfile
+render.yaml
+docker-compose*.yml
+
+# Backend / serverless code — Vercel hosts the STATIC site only (the app is
+# 100% on-device; the API is optional and not wired via vercel.json rewrites).
+# The api/ directory triggers Vercel's zero-config Serverless Functions build
+# (type: LAMBDAS), which was failing the deployment at provisioning. Excluding
+# it (plus the Express dev server and its routers) forces a clean static build.
+api/
+api-routes/
+server.js
+
+# NOTE: scripts/ is intentionally NOT excluded here.
+# scripts/setup-ort.js, scripts/setup-three.js, and scripts/stamp-sw-version.js
+# are required by the package.json build command and must be present during
+# Vercel's build phase. Excluding them causes MODULE_NOT_FOUND build failures.
+# Only exclude individual scripts that are purely dev/CI tools and NOT
+# referenced in the build command.
+scripts/cleanup-branches.sh
+scripts/bootstrap-libs.sh
+
+# Local dev / CI artifacts
+coverage/
+.nyc_output/
+*.test.js
+*.spec.js
+__tests__/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python model export artifacts
+models_output/
+checkpoints/
+venv/
+__pycache__/

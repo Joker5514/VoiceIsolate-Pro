@@ -1,0 +1,50 @@
+{
+  "_note": "Model delivery is same-origin only. All ONNX fetches must stay on /app/models/*.onnx so browser-side processing remains fully local.",
+  "schemaVersion": 2,
+  "models": {
+    "demucs": {
+      "filename": "demucs_v4_quantized.onnx",
+      "sizeBytes": 88080384,
+      "eager": false,
+      "sources": [
+        { "provider": "same-origin", "url": "/app/models/demucs_v4_quantized.onnx" }
+      ]
+    },
+    "bsrnn": {
+      "filename": "bsrnn_vocals.onnx",
+      "sizeBytes": 3870554,
+      "eager": false,
+      "sources": [
+        { "provider": "same-origin", "url": "/app/models/bsrnn_vocals.onnx" }
+      ]
+    },
+    "rnnoise": {
+      "filename": "rnnoise_suppressor.onnx",
+      "sizeBytes": 2027576,
+      "eager": true,
+      "sources": [
+        { "provider": "same-origin", "url": "/app/models/rnnoise_suppressor.onnx" }
+      ]
+    },
+    "silero_vad": {
+      "filename": "silero_vad.onnx",
+      "sizeBytes": 2327524,
+      "eager": true,
+      "sources": [
+        { "provider": "same-origin", "url": "/app/models/silero_vad.onnx" }
+      ]
+    }
+  },
+  "_sha256_note": "SHA256 last updated: 2026-05-20. Regenerate with: node scripts/hash-worklets.js",
+  "worklets": {
+    "dsp_processor": {
+      "filename": "dsp-processor.js",
+      "processorName": "dsp-processor",
+      "contentType": "application/javascript",
+      "sources": [
+        { "provider": "same-origin", "url": "/app/dsp-processor.js", "sha256": "e8870cd5c8ee1490a7c1e74d2fceab391f1f6c59d085882157acb3328c2dbba1" },
+        { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js", "sha256": "e8870cd5c8ee1490a7c1e74d2fceab391f1f6c59d085882157acb3328c2dbba1" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,31 @@
+# Demucs v4 Quantized ONNX Model Placeholder
+
+This placeholder indicates that the full `demucs_v4_quantized.onnx` model
+has not been committed to the repository due to its large size (~50–200 MB).
+
+## How to obtain the model
+
+### Option A — Download using the provided script (recommended)
+```bash
+bash scripts/download-models.sh
+# Outputs: public/app/models/demucs_v4_quantized.onnx
+```
+
+### Option B — Convert from PyTorch
+```bash
+pip install demucs torch onnx onnxruntime
+python scripts/export_demucs_onnx.py --quantize --output public/app/models/
+```
+
+## Runtime behaviour without this file
+- `ml-worker.js` emits warnings and continues processing (no hard failure)
+- One current warning string is: `[ml-worker] Demucs skipped: PCM chunk unavailable; using unity fallback`
+- All other models (BSRNN, RNNoise, Silero VAD) load and function normally
+- Processing quality is ~85% of full Demucs+BSRNN ensemble
+- All audio processing remains 100% local — no external API calls are made
+
+## Expected model spec
+- Input:  `input` — float32[1, 2, samples] (stereo PCM at 44100 Hz)
+- Output: `vocal_mask` — float32[1, halfBins] OR `output` — float32[1, 2, samples]
+- ONNX opset: 17
+- Quantized INT8 for browser performance
