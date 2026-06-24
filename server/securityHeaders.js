@@ -2,7 +2,17 @@
  * VoiceIsolate Pro — Security Headers Middleware (Layer 0)
  *
  * Single source of truth for every HTTP security header served by the
- * Express dev server. Production (Vercel) mirrors these in vercel.json.
+ * Express dev server. Production (Vercel) does NOT mirror these 1:1 — it
+ * deliberately *extends* this policy in vercel.json with explicitly-scoped
+ * third-party origins that only exist in the deployed app:
+ *   - script-src adds https://www.gstatic.com (Firebase) and /_vercel/insights/
+ *     (Vercel Analytics).
+ *   - connect-src adds Vercel Blob (*.public.blob.vercel-storage.com),
+ *     Firebase (identitytoolkit / firestore / securetoken) and
+ *     api.revenuecat.com (in-app purchase validation).
+ * Audio still never leaves the device under either policy. Keep the two in
+ * sync intentionally: a new prod origin belongs in vercel.json with a comment,
+ * never silently here.
  *
  * Enforced policy:
  *   - Cross-Origin-Opener-Policy: same-origin   (cross-origin isolation)

@@ -136,9 +136,11 @@ Rules:
   `Content-Security-Policy` (no `'unsafe-inline'` scripts outside the scoped
   legacy exception), `X-Content-Type-Options: nosniff`,
   `X-Frame-Options: DENY`, `Permissions-Policy: microphone=()`.
-- Server secrets: `ADMIN_SECRET`, `JWT_SECRET`, `WEBHOOK_IDEMPOTENCY_KEY` (see
-  `.env.example`). **Never** commit values; never invent fallback secrets that
-  ship to production.
+- Server secrets actually read by code: `LICENSE_JWT_SECRET` (license + sync JWT
+  signing, HMAC-SHA256) and the Stripe pair `STRIPE_SECRET_KEY` /
+  `STRIPE_WEBHOOK_SECRET` (see `.env.example`). Stripe webhook idempotency is
+  keyed off the Stripe `event.id`, not a separate secret. **Never** commit
+  values; never invent fallback secrets that ship to production.
 - There is **no** auth API in this repo anymore. `api-routes/auth.js`, the
   client `public/app/auth.js`, and the dev license stub
   `public/app/license-manager.js` were deliberately deleted. Do not recreate

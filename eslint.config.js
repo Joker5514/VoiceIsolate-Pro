@@ -26,7 +26,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
@@ -50,7 +50,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', varsIgnorePattern: '^SLIDER_REGISTRY$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', varsIgnorePattern: '^SLIDER_REGISTRY$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'semi': ['warn', 'always'],
@@ -65,7 +65,7 @@ export default [
       globals: { ...globals.browser },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'semi': ['warn', 'always'],
@@ -80,7 +80,7 @@ export default [
       globals: { ...globals.browser },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'semi': ['warn', 'always'],
@@ -103,7 +103,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
@@ -120,7 +120,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
@@ -137,7 +137,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
@@ -154,7 +154,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'semi': ['warn', 'always'],
@@ -173,7 +173,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'semi': ['warn', 'always'],
@@ -190,7 +190,7 @@ export default [
       globals: { ...globals.browser },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'semi': ['warn', 'always'],
@@ -208,7 +208,7 @@ export default [
       globals: { ...globals.browser },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'semi': ['warn', 'always'],
@@ -228,7 +228,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'semi': ['warn', 'always'],
@@ -252,7 +252,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'semi': ['warn', 'always'],
@@ -269,7 +269,7 @@ export default [
       globals: { ...globals.worker },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
       'semi': ['warn', 'always'],
@@ -287,7 +287,7 @@ export default [
       globals: { ...globals.node },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
@@ -301,7 +301,7 @@ export default [
       globals: { ...globals.node },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
@@ -318,7 +318,7 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
     },
   },
@@ -331,7 +331,7 @@ export default [
       globals: { ...globals.node },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       'no-undef': 'error',
     },
   },

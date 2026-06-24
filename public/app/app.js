@@ -35,6 +35,7 @@ const MODEL_STATUS_KEYS = ['demucs', 'bsrnn', 'rnnoise', 'silero_vad'];
 // Do not remove - they serve as the canonical reference for the entire pipeline.
 // ---------------------------------------------------------------------------
 const FFT_SIZE = 4096;
+// eslint-disable-next-line no-unused-vars -- pinned SAB/STFT reference constant; do NOT remove (see note above; parsed verbatim by tests/sab-protocol-fixes.test.js)
 const HOP_SIZE = 1024;
 const HALF_BINS = FFT_SIZE / 2 + 1;
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * 5; // FLAG_SLOTS = 5
@@ -1151,7 +1152,7 @@ class VoiceIsolatePro {
       // Copy the ArrayBuffer so the original is not detached/consumed
       const abCopy = ab.slice(0);
       buffer = await this.ctx.decodeAudioData(abCopy);
-    } catch (err) {
+    } catch {
       // Video fallback
       if (isVideoFile) {
         try {
@@ -1161,7 +1162,7 @@ class VoiceIsolatePro {
           }
           if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = '';
           this.isVideo = true;
-        } catch (vidErr) {
+        } catch {
           if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Cannot decode this video format';
           this.setStatus('ERROR');
           this.showNotification('Cannot decode: ' + file.name, 'error');
@@ -2321,7 +2322,6 @@ class VoiceIsolatePro {
 
   _updateProcessButtonsState() {
     const hasBuf = Boolean(this.inputBuffer || this.origBuffer);
-    const ready = this._ctxReady || this._workletReady || this._dspOnlyMode;
     const canProcess = hasBuf;
     if (this.dom.processBtn) this.dom.processBtn.disabled = !canProcess;
     if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !canProcess;

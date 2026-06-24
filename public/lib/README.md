@@ -12,7 +12,6 @@ in production**.
 | `three.min.js` | 603 KB | Three.js r128 (3D spectrogram, Engineer Mode) | committed manually |
 | `ort.min.js` + `ort.js` (+ maps) | ~4.3 MB | ONNX Runtime Web (`onnxruntime-web` npm) | auto-vendored |
 | `ort-wasm-simd-threaded*.wasm` | ~76 MB total | ONNX Runtime Web WASM backends | auto-vendored |
-| `ort-loader.js` | 2 KB | Custom loader wrapper | committed manually |
 
 ## Auto-vendoring
 

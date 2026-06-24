@@ -170,14 +170,14 @@ function _renderProcLoader() {
  * (decode/resample have no known duration); the scan-bar animation always
  * runs so the UI remains active throughout.
  */
-function showSpinner(stage, { indeterminate = false } = {}) {
+function showSpinner(stage, { indeterminate: _indeterminate = false } = {}) {
   _procState = { active: stage.toLowerCase().includes('resamp') ? 1 : 0, progress: 0 };
   ui.procLoaderMount.hidden = false;
   _renderProcLoader();
 }
 
 /** Advance to the Separate stage and update the live progress percentage. */
-function setProgress(percent, stage) {
+function setProgress(percent, _stage) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
   _procState = { active: 2, progress: pct };
   ui.procLoaderMount.hidden = false;

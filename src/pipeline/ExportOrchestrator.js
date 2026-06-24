@@ -20,8 +20,6 @@
  */
 'use strict';
 
-import { SAMPLE_RATE } from '../core/audio-config.js';
-
 /**
  * @typedef {object} ExportOptions
  * @property {'clean'|'noise'|'both'} [stems='clean'] - Which stems to export
