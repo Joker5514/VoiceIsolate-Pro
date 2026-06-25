@@ -41,22 +41,12 @@ const MAX_BATCH_FRAMES = 32;
 // Global State
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ONNX Runtime instance - may be provided by test sandbox or initialized by worker
-// Use var to allow checking if it exists in the global scope before assignment
-// eslint-disable-next-line no-undef, no-use-before-define -- Intentional pattern:
-// In test sandbox, ort is injected as a global before this code runs.
-// In worker, ort is undefined here and set by initializeORT() via importScripts.
-// The self-referential check (typeof ort !== 'undefined') is safe because it's
-// inside a try-catch and only evaluates if ort exists in the global scope.
-var ort = (function() {
-  try {
-    // In test sandbox, ort is provided as a global
-    // In worker, it will be null and set by initializeORT()
-    return (typeof ort !== 'undefined') ? ort : null;
-  } catch (e) {
-    return null;
-  }
-})();
+// ONNX Runtime instance. In the test sandbox `ort` is injected as a global
+// before this runs; in the real worker it is undefined here and assigned by
+// initializeORT() via importScripts('/lib/ort.min.js'). It is declared as a
+// writable global in eslint.config.js, so we assign it (never redeclare). The
+// typeof guard keeps this safe when the global is absent in the worker.
+ort = (typeof ort !== 'undefined' && ort) ? ort : null;
 let modelManifest = {}; // Model manifest entries received via 'init'
 let sessions = new Map(); // Cached InferenceSessions: modelId → session
 let loading = new Map(); // In-progress loads: modelId → Promise

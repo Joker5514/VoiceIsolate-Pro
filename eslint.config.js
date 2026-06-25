@@ -224,7 +224,9 @@ export default [
       globals: {
         ...globals.worker,
         importScripts: 'readonly',
-        ort: 'readonly',
+        // ort is injected by the test sandbox or assigned after importScripts
+        // loads /lib/ort.min.js, so it must be writable (see MLWorker.js).
+        ort: 'writable',
       },
     },
     rules: {
