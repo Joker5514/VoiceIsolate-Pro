@@ -165,8 +165,8 @@ Rules:
 |---|---|---|---|---|
 | BiGRU Noise Suppressor (`rnnoise_suppressor.onnx`) | Noise-suppression mask | ONNX, fp32 | ~2 MB | **Committed, trained, hash-pinned** |
 | Band-Split RNN Vocal Extractor (`bsrnn_vocals.onnx`) | Vocal-separation mask | ONNX, fp32 | ~3.7 MB | **Committed, trained, hash-pinned** |
-| Silero VAD (`silero_vad.onnx`) | Voice activity detection | ONNX, fp32 | ~1.8 MB | **Committed, hash-pinned** |
-| Silero VAD INT8 (`silero_vad_int8.onnx`) | Voice activity detection (fast path) | ONNX, int8 | ~0.5 MB | **Committed, hash-pinned** |
+| Silero VAD (`silero_vad.onnx`) | Voice activity detection | ONNX, fp32 | ~2.2 MB | **Committed, hash-pinned** |
+| Silero VAD INT8 (`silero_vad_int8.onnx`) | Voice activity detection (fast path) | ONNX, int8 | ~2.3 MB | **Committed, hash-pinned** |
 
 The separation models are trained spectral-mask networks (provenance in
 `public/app/models/models-manifest.json`) sharing one inference contract:
