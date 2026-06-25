@@ -686,6 +686,9 @@ input[type="range"]:disabled { opacity: 0.34; cursor: not-allowed; }
   outline: 2px dashed var(--border-focus);
   outline-offset: -3px;
 }
+.upload-panel--dragging * {
+  pointer-events: none;
+}
 .vip-card--hover { transition: border-color var(--dur-base) var(--ease-out); }
 .vip-card--hover:hover { border-color: var(--border-red); }
 .vip-card--well { background: var(--well-bg); box-shadow: none; }

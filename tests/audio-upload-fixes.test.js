@@ -29,6 +29,12 @@ describe('Upload race condition guard', () => {
     expect(js).toContain('ui.fileInput.disabled = true');
   });
 
+  test('ingestFrom() bails early when fileInput is already disabled', () => {
+    // Covers drag-and-drop concurrent calls AND drops during onProcess()
+    // (which also sets fileInput.disabled = true).
+    expect(js).toMatch(/if\s*\(!file\s*\|\|\s*ui\.fileInput\.disabled\)/);
+  });
+
   test('file input is re-enabled in a finally block (always runs)', () => {
     // Both success and error paths must restore the input; only a finally
     // block guarantees this.
@@ -83,8 +89,14 @@ describe('Drag-and-drop upload', () => {
     expect(js).toMatch(/dragover[^}]*preventDefault\(\)/s);
   });
 
-  test('dragleave handler checks relatedTarget to avoid false exits', () => {
-    expect(js).toContain('e.relatedTarget');
+  test('dragleave handler does not rely on relatedTarget (unreliable in Safari)', () => {
+    // pointer-events:none on children makes relatedTarget unnecessary.
+    expect(js).not.toContain('e.relatedTarget');
+  });
+
+  test('CSS prevents child elements from absorbing drag events (Safari fix)', () => {
+    expect(css).toContain('.upload-panel--dragging *');
+    expect(css).toContain('pointer-events: none');
   });
 
   test('drop handler calls preventDefault() and reads dataTransfer.files', () => {

@@ -438,7 +438,7 @@ function applyPreset(name) {
  * same file can be re-selected after a failed decode.
  */
 async function ingestFrom(file) {
-  if (!file) return;
+  if (!file || ui.fileInput.disabled) return;
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
   // Show the picture immediately for videos; hide the player for audio files.
@@ -663,12 +663,12 @@ function wireDragAndDrop() {
     zone.classList.add('upload-panel--dragging');
   });
 
-  zone.addEventListener('dragleave', (e) => {
-    // Only remove the class when the pointer leaves the panel entirely,
-    // not when it moves between child elements inside it.
-    if (!zone.contains(e.relatedTarget)) {
-      zone.classList.remove('upload-panel--dragging');
-    }
+  zone.addEventListener('dragleave', () => {
+    // pointer-events:none on .upload-panel--dragging > * (see landing.css)
+    // prevents child elements from absorbing drag events, so dragleave only
+    // fires when the pointer genuinely exits the panel — no relatedTarget
+    // check needed (and relatedTarget is null on Safari anyway).
+    zone.classList.remove('upload-panel--dragging');
   });
 
   zone.addEventListener('drop', (e) => {
