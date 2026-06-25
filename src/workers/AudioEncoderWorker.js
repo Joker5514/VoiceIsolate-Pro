@@ -101,7 +101,7 @@ async function encodeMP3(channels, sampleRate, bitrate, onProgress) {
   try {
     // Try to import from node_modules (works in bundled environments)
     lamejs = await import('lamejs');
-  } catch (err) {
+  } catch {
     // Fallback: try global (if loaded via script tag)
     if (typeof self.lamejs !== 'undefined') {
       lamejs = self.lamejs;

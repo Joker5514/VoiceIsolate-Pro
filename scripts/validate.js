@@ -125,14 +125,33 @@ const offenders = [];
 // CLAUDE.md §2.1. Any other worklet path — or a non-literal/dynamic module arg
 // — is still rejected, and getUserMedia stays banned outright.
 const ALLOWED_WORKLETS = ['/src/workers/GateProcessor.js', '/src/workers/DeEsserProcessor.js'];
+// Vendored, minified third-party bundles (ORT, Three.js, design-system, React
+// shim). These are trusted build artifacts and a future upstream upgrade could
+// legitimately embed a string that looks like a CDN host, so the CDN-host scan
+// below skips them — but the getUserMedia / dynamic-worklet bans still apply to
+// every file, vendored or not. The path-boundary and non-separator classes
+// accept both / and \ so the exclusion also holds on Windows (walkJs joins
+// paths with path.sep, which is \ there).
+const VENDORED_BUNDLE = /(?:^|[/\\])(?:ort[.-][^/\\]*\.js|three[.-][^/\\]*\.js|_ds_bundle\.js|react-mini\.js)$|\.min\.js$/;
+// Third-party CDN hosts that must never appear in shipped code: ORT and Three.js
+// are vendored locally under public/lib and the CSP blocks third-party script
+// origins, so any CDN reference is a regression (CLAUDE.md §1.1, §3).
+const CDN_HOSTS = /https?:\/\/(?:cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com|esm\.sh|cdn\.skypack\.dev|esm\.run|ga\.jspm\.io)/;
 const scanDirs = [
   ['public/app', appDir],
   ['src', path.resolve(__dirname, '..', 'src')],
+  // public/lib holds the vendored ORT/Three bundles; scan it too so a hand-added
+  // CDN loader shim here cannot slip past the "never CDN" guarantee (audit 2026-06-21).
+  ['public/lib', path.resolve(__dirname, '..', 'public/lib')],
 ];
 for (const [label, dir] of scanDirs) {
+  if (!fs.existsSync(dir)) continue;
   for (const f of walkJs(dir)) {
     const src = fs.readFileSync(f, 'utf8');
     if (/getUserMedia\s*\(/.test(src)) offenders.push(`${label}/${path.relative(dir, f)} (getUserMedia)`);
+    if (!VENDORED_BUNDLE.test(f) && CDN_HOSTS.test(src)) {
+      offenders.push(`${label}/${path.relative(dir, f)} (CDN reference)`);
+    }
     if (/audioWorklet\.addModule\s*\(/.test(src)) {
       // Every addModule call must load an allowlisted playback worklet via a
       // string literal; any other path or a dynamic argument is forbidden.

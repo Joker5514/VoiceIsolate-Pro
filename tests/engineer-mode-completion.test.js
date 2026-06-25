@@ -28,8 +28,13 @@ describe('Engineer Mode completion wiring', () => {
     expect(indexHtml).toContain('href="how-it-works.html"');
   });
 
-  test('index.html loads visuals.js and processing-overlay.js modules', () => {
-    expect(indexHtml).toContain("'./visuals.js'");
+  test('index.html loads visuals.js (classic, load-order-sensitive) and the processing-overlay module', () => {
+    // visuals.js is intentionally a classic blocking <script> so VIP_INFERNO_LUT
+    // and the premium init helpers are defined before visuals-bootstrap.js runs
+    // (see the "LOAD ORDER VERIFIED" comments in index.html). It must NOT be
+    // converted to a deferred/dynamic module. processing-overlay.js, by contrast,
+    // is pulled in as a dynamic ES module.
+    expect(indexHtml).toContain('src="./visuals.js"');
     expect(indexHtml).toContain("'./processing-overlay.js'");
   });
 

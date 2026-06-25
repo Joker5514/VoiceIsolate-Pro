@@ -15,7 +15,7 @@
  */
 'use strict';
 
-import { ingestFile, getModelIdsForMode } from './FileIngestion.js';
+import { ingestFile } from './FileIngestion.js';
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 
 /**
