@@ -36,6 +36,7 @@ export class ExportControls {
     this.orchestrator = new ExportOrchestrator(mixer);
     
     this._isExporting = false;
+    this._pendingTimers = new Set(); // deferred download-cleanup timers
     this._render();
     this._attachListeners();
   }
@@ -454,19 +455,22 @@ export class ExportControls {
     // Clean up — best-effort and deferred, so it can fire after the page/URL
     // have been torn down (navigation, or in tests after the DOM is closed and
     // global.URL removed). Guard each step so a stray timer can't throw an
-    // uncaught error.
-    setTimeout(() => {
+    // uncaught error, and track the timer so dispose() can cancel it.
+    const timer = setTimeout(() => {
+      this._pendingTimers.delete(timer);
       try { a.remove(); } catch { /* node/document already gone */ }
-      if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
-        URL.revokeObjectURL(url);
-      }
+      globalThis.URL?.revokeObjectURL?.(url);
     }, 100);
+    this._pendingTimers.add(timer);
   }
 
   /**
    * Clean up resources.
    */
   dispose() {
+    // Cancel any pending deferred download-cleanup timers.
+    for (const timer of this._pendingTimers) clearTimeout(timer);
+    this._pendingTimers.clear();
     if (this.orchestrator) {
       this.orchestrator.dispose();
     }
