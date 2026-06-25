@@ -132,6 +132,7 @@ export class EngineerModeBridge {
    * @returns {boolean} true if the id mapped to a control
    */
   applyParam(id, value) {
+    if (!this.mixer) return false;
     const apply = PARAM_MAP[id];
     if (!apply) return false;
     const v = Number(value);
@@ -149,20 +150,26 @@ export class EngineerModeBridge {
     for (const id of Object.keys(params)) this.applyParam(id, params[id]);
   }
 
-  // ── Transport (delegated straight to the mixer) ──────────────────────────
-  play() { return this.mixer.play(); }
-  pause() { return this.mixer.pause(); }
-  stop() { return this.mixer.stop(); }
-  seek(seconds) { return this.mixer.seek(seconds); }
-  isPlaying() { return this.mixer.isPlaying(); }
-  currentTime() { return this.mixer.currentTime(); }
-  duration() { return this.mixer.duration(); }
-  getAnalyser() { return this.mixer.getAnalyser(); }
+  // ── Transport (delegated to the mixer; no-op safe defaults after dispose) ──
+  play() { return this.mixer ? this.mixer.play() : undefined; }
+  pause() { return this.mixer ? this.mixer.pause() : undefined; }
+  stop() { return this.mixer ? this.mixer.stop() : undefined; }
+  seek(seconds) { return this.mixer ? this.mixer.seek(seconds) : undefined; }
+  isPlaying() { return this.mixer ? this.mixer.isPlaying() : false; }
+  currentTime() { return this.mixer ? this.mixer.currentTime() : 0; }
+  duration() { return this.mixer ? this.mixer.duration() : 0; }
+  getAnalyser() { return this.mixer ? this.mixer.getAnalyser() : null; }
 
-  /** Release the underlying mixer and its AudioContext. */
+  /** Release the underlying mixer and its AudioContext. Idempotent. */
   async dispose() {
     this._loaded = false;
-    await this.mixer.dispose();
+    // Null the reference synchronously before awaiting so a concurrent
+    // dispose()/transport call can't touch a mixer mid-teardown.
+    const mixer = this.mixer;
+    if (mixer) {
+      this.mixer = null;
+      await mixer.dispose();
+    }
   }
 }
 
