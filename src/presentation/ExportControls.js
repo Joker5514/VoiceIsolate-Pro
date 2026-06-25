@@ -451,10 +451,15 @@ export class ExportControls {
     document.body.appendChild(a);
     a.click();
     
-    // Clean up — use a.remove() so this is safe even if DOM is torn down first
+    // Clean up — best-effort and deferred, so it can fire after the page/URL
+    // have been torn down (navigation, or in tests after the DOM is closed and
+    // global.URL removed). Guard each step so a stray timer can't throw an
+    // uncaught error.
     setTimeout(() => {
-      a.remove();
-      URL.revokeObjectURL(url);
+      try { a.remove(); } catch { /* node/document already gone */ }
+      if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(url);
+      }
     }, 100);
   }
 
