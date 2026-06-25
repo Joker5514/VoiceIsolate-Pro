@@ -32,7 +32,7 @@ describe('VoiceIsolatePro Video Playback', () => {
     VoiceIsolatePro = sandbox.module.exports;
   });
 
-  test('handles video play promise rejection gracefully', () => {
+  test('handles video play promise rejection gracefully', async () => {
     const play = VoiceIsolatePro.prototype.play;
 
     const catchMock = jest.fn();
@@ -41,6 +41,10 @@ describe('VoiceIsolatePro Video Playback', () => {
     const mockThis = {
       stop: jest.fn(),
       ensureCtx: jest.fn(),
+      // play() awaits the Live-Mix bridge (CLAUDE.md §1 / app.js _ensureBridge);
+      // stub it on the partial mock so the async method resolves rather than
+      // throwing "this._ensureBridge is not a function".
+      _ensureBridge: jest.fn().mockResolvedValue(null),
       abMode: 'original',
       inputBuffer: {},
       buildLiveChain: jest.fn(),
@@ -63,7 +67,7 @@ describe('VoiceIsolatePro Video Playback', () => {
       playOffset: 0
     };
 
-    play.call(mockThis);
+    await play.call(mockThis);
 
     expect(playMock).toHaveBeenCalled();
     expect(catchMock).toHaveBeenCalled();

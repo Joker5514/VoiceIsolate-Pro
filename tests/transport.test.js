@@ -322,13 +322,17 @@ describe('Transport Methods', () => {
       mockContext.startSpectro = jest.fn();
       mockContext.startFreq = jest.fn();
       mockContext.tickTime = jest.fn();
+      // play() is async and awaits the Live-Mix bridge (CLAUDE.md §1 / app.js
+      // _ensureBridge). Stub it so the partial mock context resolves like the
+      // real prototype method instead of throwing "not a function".
+      mockContext._ensureBridge = jest.fn().mockResolvedValue(null);
     });
 
-    it('returns early when there is no buffer', () => {
+    it('returns early when there is no buffer', async () => {
       mockContext.inputBuffer = null;
       mockContext.outputBuffer = null;
 
-      const result = VoiceIsolatePro.prototype.play.call(mockContext);
+      const result = await VoiceIsolatePro.prototype.play.call(mockContext);
 
       // expect(mockContext.stop).toHaveBeenCalled();
       expect(mockContext.ensureCtx).toHaveBeenCalled();
@@ -337,10 +341,10 @@ describe('Transport Methods', () => {
       expect(mockContext.isPlaying).toBe(false);
     });
 
-    it('sets up play correctly when buffer exists', () => {
+    it('sets up play correctly when buffer exists', async () => {
       mockContext.inputBuffer = { some: 'buffer' };
 
-      VoiceIsolatePro.prototype.play.call(mockContext);
+      await VoiceIsolatePro.prototype.play.call(mockContext);
 
       expect(mockContext.buildLiveChain).toHaveBeenCalledWith(mockContext.inputBuffer);
       expect(mockContext.isPlaying).toBe(true);
@@ -351,18 +355,18 @@ describe('Transport Methods', () => {
       expect(mockContext.tickTime).toHaveBeenCalled();
     });
 
-    it('uses outputBuffer when in processed mode', () => {
+    it('uses outputBuffer when in processed mode', async () => {
       mockContext.inputBuffer = { some: 'buffer' };
       mockContext.outputBuffer = { some: 'processed buffer' };
       mockContext.abMode = 'processed';
 
-      VoiceIsolatePro.prototype.play.call(mockContext);
+      await VoiceIsolatePro.prototype.play.call(mockContext);
 
       expect(mockContext.buildLiveChain).toHaveBeenCalledWith(mockContext.outputBuffer);
       expect(mockContext.dom.tpABLabel.textContent).toBe('Processed');
     });
 
-    it('sets up video playback when isVideo is true', () => {
+    it('sets up video playback when isVideo is true', async () => {
       mockContext.inputBuffer = { some: 'buffer' };
       mockContext.isVideo = true;
       mockContext.playOffset = 42;
@@ -374,7 +378,7 @@ describe('Transport Methods', () => {
         play: jest.fn().mockResolvedValue()
       };
 
-      VoiceIsolatePro.prototype.play.call(mockContext);
+      await VoiceIsolatePro.prototype.play.call(mockContext);
 
       expect(mockContext.dom.videoPlayer.currentTime).toBe(42);
       expect(mockContext.dom.videoPlayer.playbackRate).toBe(1.5);
@@ -390,10 +394,9 @@ describe('Transport Methods', () => {
         play: jest.fn().mockRejectedValue(new Error('play blocked'))
       };
 
-      // Should not throw
-      expect(() => {
-        VoiceIsolatePro.prototype.play.call(mockContext);
-      }).not.toThrow();
+      // The internal videoPlayer.play() rejection is swallowed by .catch(), so
+      // the async play() resolves cleanly rather than rejecting.
+      await expect(VoiceIsolatePro.prototype.play.call(mockContext)).resolves.toBeUndefined();
 
       expect(mockContext.dom.videoPlayer.play).toHaveBeenCalled();
     });
