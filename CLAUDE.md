@@ -87,10 +87,17 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/workers/MLWorker.js` | 2 | Fetch → verify SHA-256 → cache in IndexedDB → run offline ONNX inference (overlap-add) → emit stems. |
 | `src/workers/DiarizationWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `diarization.js` — keeps segmentation off the main thread. |
 | `src/workers/SpectralCleanupWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `SpectralCleanup.js` — runs the offline NR/dereverb passes off the main thread. |
+| `src/workers/AudioEncoderWorker.js` | 2 | Module worker that encodes stems to WAV or MP3 (lamejs) off the main thread; stateless, one request per job. |
 | `src/pipeline/FileIngestion.js` | 3 | Accept audio/video blobs, decode, resample to 48 kHz via `OfflineAudioContext`. |
 | `src/pipeline/PlaybackMixer.js` | 3 | The Live-Mix graph: stem sources → speaker lane → gains → mute lanes → EQ → destination. Exports `setNoiseReduction()`, `setVoiceMuted()`, `setSpeakerMuted()` etc. |
+| `src/pipeline/ProcessingOrchestrator.js` | 3 | Bridges `IsolationModeSelector` → `FileIngestion` → `MLWorker`; translates user-chosen mode into a model-chain array for `MLWorker`. |
+| `src/pipeline/ExportOrchestrator.js` | 3 | Coordinates stem export: collects channels from `PlaybackMixer`, dispatches to `AudioEncoderWorker`, returns a downloadable `Blob`. |
+| `src/pipeline/EngineerModeBridge.js` | 3 | Thin adapter so the legacy `public/app/` Engineer Mode UI can delegate ingestion/playback to the new pipeline without a full migration. |
 | `src/presentation/SliderUI.js` | 4 | Slider event listeners, `requestAnimationFrame`-coalesced updates into `PlaybackMixer`. |
 | `src/presentation/SpeakerControls.js` | 4 | Per-speaker cards (volume / mute / solo) bound to `PlaybackMixer`'s speaker lane. |
+| `src/presentation/ExportControls.js` | 4 | Export format/quality picker; wires DOM events to `ExportOrchestrator`. |
+| `src/presentation/IsolationModeSelector.js` | 4 | Isolation-mode dropdown (Voice Only / Maximum Isolation / etc.) that feeds `ProcessingOrchestrator`. |
+| `src/presentation/LandingVisualizer.js` | 4 | Three.js–driven landing-page visualizer; purely cosmetic, no audio data. |
 
 Rules:
 - **ESM everywhere** in `src/` (`import`/`export`). Tests use CommonJS (`require`).
@@ -158,11 +165,14 @@ Rules:
 |---|---|---|---|---|
 | BiGRU Noise Suppressor (`rnnoise_suppressor.onnx`) | Noise-suppression mask | ONNX, fp32 | ~2 MB | **Committed, trained, hash-pinned** |
 | Band-Split RNN Vocal Extractor (`bsrnn_vocals.onnx`) | Vocal-separation mask | ONNX, fp32 | ~3.7 MB | **Committed, trained, hash-pinned** |
+| Silero VAD (`silero_vad.onnx`) | Voice activity detection | ONNX, fp32 | ~2.2 MB | **Committed, hash-pinned** |
+| Silero VAD INT8 (`silero_vad_int8.onnx`) | Voice activity detection (fast path) | ONNX, int8 | ~2.3 MB | **Committed, hash-pinned** |
 
-Both are trained spectral-mask networks (provenance in
+The separation models are trained spectral-mask networks (provenance in
 `public/app/models/models-manifest.json`) sharing one inference contract:
 `float32 [batch, 2049]` STFT magnitudes in → sigmoid mask out
-(fft 4096, hop 1024, Hann, 48 kHz). Larger upgrades (DeepFilterNet INT8,
+(fft 4096, hop 1024, Hann, 48 kHz). The VAD models gate silence before
+diarization to reduce compute. Larger upgrades (DeepFilterNet INT8,
 MDX-Net INT8) are planned and must follow the same manifest + integrity flow.
 
 - Delivery: fetched from `/app/models/` (same-origin), cached in IndexedDB by
@@ -203,7 +213,7 @@ pnpm validate         # scripts/validate.js structural checks (enforces this doc
 pnpm build            # copy public/ + src/ → build/
 ```
 
-Requirements: Node.js ≥ 22, pnpm ≥ 9. Use **pnpm**, never npm/yarn.
+Requirements: Node.js ≥ 22, pnpm ≥ 10. Use **pnpm**, never npm/yarn.
 
 ---
 
