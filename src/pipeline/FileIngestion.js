@@ -125,6 +125,8 @@ async function decodeViaMediaElement(blob, onProgress = () => {}) {
   const url = URL.createObjectURL(blob);
   const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
   const actx = new Ctx();
+  let audio = null;
+  let recorder = null;
   try {
     // Resume the context — it may start suspended outside the original user-gesture
     // call stack. Most browsers permit resume() after any prior page interaction.
@@ -132,7 +134,7 @@ async function decodeViaMediaElement(blob, onProgress = () => {}) {
       await actx.resume().catch(() => { /* proceed regardless */ });
     }
 
-    const audio = document.createElement('audio');
+    audio = document.createElement('audio');
     audio.preload = 'auto';
     // muted=true lets the element autoplay without a live user gesture;
     // createMediaElementSource() still captures the audio for Web Audio.
@@ -174,7 +176,7 @@ async function decodeViaMediaElement(blob, onProgress = () => {}) {
       ['audio/webm;codecs=pcm', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg']
         .find((m) => MediaRecorder.isTypeSupported(m)) || '';
     const chunks = [];
-    const recorder = new MediaRecorder(dest.stream, mimeType ? { mimeType } : {});
+    recorder = new MediaRecorder(dest.stream, mimeType ? { mimeType } : {});
 
     const capturePromise = new Promise((resolve, reject) => {
       recorder.addEventListener('dataavailable', (e) => {
@@ -207,7 +209,17 @@ async function decodeViaMediaElement(blob, onProgress = () => {}) {
     const capturedBuffer = await capturedBlob.arrayBuffer();
     return await actx.decodeAudioData(capturedBuffer);
   } finally {
-    URL.revokeObjectURL(url);
+    // Stop the recorder if an error interrupted the happy path.
+    if (recorder && recorder.state !== 'inactive') {
+      try { recorder.stop(); } catch { /* */ }
+    }
+    // Release browser-native decoder resources held by the media element.
+    if (audio) {
+      try { audio.pause(); } catch { /* */ }
+      audio.src = '';
+      try { audio.load(); } catch { /* */ }
+    }
+    globalThis.URL?.revokeObjectURL?.(url);
     try { await actx.close(); } catch { /* already closed */ }
   }
 }

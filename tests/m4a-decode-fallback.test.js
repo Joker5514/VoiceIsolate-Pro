@@ -30,15 +30,25 @@ describe('M4A decode fallback — FileIngestion.js', () => {
 
   test('fallback creates an object URL and always revokes it', () => {
     expect(fijs).toContain('URL.createObjectURL(blob)');
-    expect(fijs).toContain('URL.revokeObjectURL(url)');
+    expect(fijs).toContain('revokeObjectURL');
   });
 
   test('object URL is revoked in a finally block (no leaks on error paths)', () => {
-    expect(fijs).toMatch(/finally\s*\{[^}]*URL\.revokeObjectURL/s);
+    expect(fijs).toMatch(/finally\s*\{[\s\S]*revokeObjectURL/);
   });
 
   test('AudioContext is closed in a finally block (no hardware leaks)', () => {
-    expect(fijs).toMatch(/finally\s*\{[^}]*actx\.close\(\)/s);
+    expect(fijs).toMatch(/finally\s*\{[\s\S]*actx\.close\(\)/);
+  });
+
+  test('MediaRecorder is stopped in finally if still active (no recording leak)', () => {
+    expect(fijs).toContain("recorder.state !== 'inactive'");
+    expect(fijs).toMatch(/finally[\s\S]*recorder\.stop\(\)/);
+  });
+
+  test('audio element is cleaned up in finally (releases native decoder resources)', () => {
+    expect(fijs).toMatch(/finally[\s\S]*audio\.pause\(\)/);
+    expect(fijs).toMatch(/finally[\s\S]*audio\.src\s*=\s*''/);
   });
 
   test('fallback routes audio via createMediaElementSource', () => {
