@@ -6,9 +6,9 @@
  * PlaybackMixer) sees one uniform format.
  *
  * Decode strategy:
- *   1. Blob → ArrayBuffer
- *   2. decodeAudioData on a short-lived AudioContext (handles audio AND the
- *      audio track of video containers the browser can demux)
+ *   1. Blob → ArrayBuffer → decodeAudioData (fast path)
+ *   2. On failure: hidden <audio>/<video> + OfflineAudioContext
+ *      (handles M4A/MP4/AAC containers Web Audio cannot demux directly)
  *   3. If the decoded rate ≠ 48 000 Hz, render through an OfflineAudioContext
  *      sized for the target rate (high-quality browser-native resampling)
  *
@@ -25,6 +25,8 @@
 'use strict';
 
 import { SAMPLE_RATE, MAX_CHANNELS, resampledLength } from '../core/audio-config.js';
+import { inferMediaKind } from '../core/media-types.js';
+import { decodeBlobToAudioBuffer } from './media-decode.js';
 
 /** Accepted MIME prefixes. Container formats vary; the decoder is the judge. */
 const ACCEPTED_TYPES = ['audio/', 'video/'];
@@ -98,37 +100,19 @@ export function assertIngestible(blob) {
   if (blob.size > MAX_FILE_BYTES) {
     throw new RangeError('[VIP][FileIngestion] File exceeds the 2 GB limit.');
   }
+  const kind = inferMediaKind(blob);
+  if (kind === 'midi') {
+    throw new TypeError(
+      '[VIP][FileIngestion] MIDI files are not supported. Use an audio file (WAV, MP3, etc).'
+    );
+  }
   const type = blob.type || '';
-  // Some OSes hand over files with an empty MIME type — let the decoder try.
-  if (type && !ACCEPTED_TYPES.some((p) => type.startsWith(p))) {
+  // Some OSes hand over files with an empty or generic MIME type — fall back to
+  // filename extension before rejecting.
+  if (type && !ACCEPTED_TYPES.some((p) => type.startsWith(p)) && kind === null) {
     throw new TypeError(
       `[VIP][FileIngestion] Unsupported type '${type}'. Provide an audio or video file.`
     );
-  }
-}
-
-/**
- * Decode a blob into an AudioBuffer using a temporary AudioContext.
- * The context is closed immediately after decoding.
- * @param {Blob} blob
- * @returns {Promise<AudioBuffer>}
- */
-async function decodeBlob(blob) {
-  const arrayBuffer = await blob.arrayBuffer();
-  const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
-  if (!Ctx) {
-    throw new Error('[VIP][FileIngestion] Web Audio API is not available.');
-  }
-  const ctx = new Ctx();
-  try {
-    return await ctx.decodeAudioData(arrayBuffer);
-  } catch (err) {
-    throw new Error(
-      `[VIP][FileIngestion] Could not decode '${blob.name || 'file'}': ${err?.message || err}`
-    );
-  } finally {
-    // Decode contexts are throwaway; never leak hardware handles.
-    try { await ctx.close(); } catch { /* already closed */ }
   }
 }
 
@@ -185,7 +169,10 @@ export async function ingestFile(file, hooks = {}) {
   assertIngestible(file);
 
   onProgress('decoding');
-  const decoded = await decodeBlob(file);
+  // Yield so the presentation layer can paint a loading state before the
+  // (potentially heavy) main-thread decode call.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const decoded = await decodeBlobToAudioBuffer(file);
 
   onProgress('resampling');
   const canonical = await resampleToCanonical(decoded);

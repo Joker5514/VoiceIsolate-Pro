@@ -76,6 +76,7 @@ beforeAll(() => {
 
 // ── Helper: build a minimal mockVip ──────────────────────────────────────────
 function makeMockVip() {
+  const fileInput = { value: '' };
   return {
     ensureCtx:   jest.fn(),
     stop:        jest.fn(),
@@ -83,8 +84,10 @@ function makeMockVip() {
     onAudioLoaded: jest.fn(),
     showNotification: jest.fn(),
     decodeViaVideoElement: jest.fn().mockResolvedValue({ length: 100 }),
+    _resetFileInput: jest.fn(function () { if (this.dom?.fileInput) this.dom.fileInput.value = ''; }),
     dom: {
       fileInfo:   { textContent: '' },
+      fileInput,
       videoPlayer: { src: '', onloadedmetadata: null, onerror: null },
       videoCard:  { style: { display: '' } },
       processBtn: { disabled: false },
@@ -221,6 +224,20 @@ describe('handleFile() — file type validation', () => {
     expect(mockVip.dom.fileInfo.textContent).not.toContain('MIDI');
   });
 
+  test('accepts application/octet-stream when filename has a known audio extension', async () => {
+    const mockVip = makeMockVip();
+    const mockFile = {
+      name: 'voice.wav', size: 1024, type: 'application/octet-stream',
+      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
+    };
+
+    await handleFile.call(mockVip, mockFile);
+
+    expect(mockVip.setStatus).not.toHaveBeenCalledWith('ERROR');
+    expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
+    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalled();
+  });
+
   test('accepts audio/mpeg (MP3) files', async () => {
     const mockVip = makeMockVip();
     const mockFile = {
@@ -233,19 +250,11 @@ describe('handleFile() — file type validation', () => {
     expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
   });
 
-  test('accepts video/mp4 files by trying decodeAudioData first then video fallback', async () => {
+  test('accepts video/mp4 files through the shared media decode path', async () => {
     const mockVip = makeMockVip();
-    mockVip.ctx.decodeAudioData.mockRejectedValue(new Error('Decode failed'));
-    const videoPlayer = { src: '', _onloadedmetadata: null, _onerror: null };
-    Object.defineProperty(videoPlayer, 'onloadedmetadata', {
-      get() { return this._onloadedmetadata; },
-      set(fn) { this._onloadedmetadata = fn; setTimeout(() => fn && fn(), 0); }
-    });
-    Object.defineProperty(videoPlayer, 'onerror', {
-      get() { return this._onerror; },
-      set(fn) { this._onerror = fn; }
-    });
-    mockVip.dom.videoPlayer = videoPlayer;
+    const decoded = { length: 48000, duration: 2, sampleRate: 48000, numberOfChannels: 2 };
+    mockVip.ctx.decodeAudioData.mockResolvedValue(decoded);
+    mockVip.dom.videoPlayer = { src: '' };
     const mockFile = {
       name: 'clip.mp4', size: 1024, type: 'video/mp4',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
@@ -254,7 +263,7 @@ describe('handleFile() — file type validation', () => {
     await handleFile.call(mockVip, mockFile);
 
     expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
-    expect(mockVip.decodeViaVideoElement).toHaveBeenCalledWith(mockFile);
+    expect(mockVip.onAudioLoaded).toHaveBeenCalledWith('clip.mp4');
     expect(mockVip.dom.videoPlayer.src).toBe('blob:test');
     expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
   });

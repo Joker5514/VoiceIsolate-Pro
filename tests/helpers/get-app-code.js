@@ -71,15 +71,38 @@ function stripRelativeImports(src) {
   return src.replace(
     /^import\s+(?:[\w*${},\s]+\s+from\s+)?['"]\.\/[^'"]+['"]\s*;?\s*\n?/gm,
     ''
+  ).replace(
+    /^import\s+(?:[\w*${},\s]+\s+from\s+)?['"]\/src\/[^'"]+['"]\s*;?\s*\n?/gm,
+    ''
   );
+}
+
+function buildMediaDecodeShim() {
+  return `
+async function decodeBlobToAudioBuffer(file) {
+  const ab = await file.arrayBuffer();
+  const abCopy = ab.slice(0);
+  if (!this.ctx || typeof this.ctx.decodeAudioData !== 'function') {
+    throw new Error('AudioContext decode unavailable');
+  }
+  return this.ctx.decodeAudioData(abCopy);
+}
+`;
 }
 
 function getAppCode() {
   const preamble = buildDspCorePreamble();
   const inlined  = INLINED_MODULES.map(inlineAsIIFE).join('\n');
   const appJsRaw = fs.readFileSync(path.join(APP_DIR, 'app.js'), 'utf8');
-  const appJsCode = stripRelativeImports(appJsRaw);
-  return preamble + '\n' + inlined + '\n' + appJsCode;
+  let appJsCode = stripRelativeImports(appJsRaw);
+  if (appJsCode.includes('decodeBlobToAudioBuffer(file)')) {
+    appJsCode = appJsCode.replace(
+      'buffer = await decodeBlobToAudioBuffer(file);',
+      'buffer = await decodeBlobToAudioBuffer.call(this, file);'
+    );
+  }
+  const mediaDecodeShim = buildMediaDecodeShim();
+  return preamble + '\n' + inlined + '\n' + mediaDecodeShim + '\n' + appJsCode;
 }
 
 module.exports = getAppCode;

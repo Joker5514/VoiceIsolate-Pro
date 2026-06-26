@@ -34,7 +34,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       module: { exports: {} },
       Float32Array: Float32Array,
       Math: Math,
-      console: { error: jest.fn() }, // Mock console.error to avoid noise
+      console: { error: jest.fn() },
       parseFloat: parseFloat,
       URL: global.URL,
       setTimeout: setTimeout,
@@ -57,8 +57,9 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
     jest.clearAllTimers();
   });
 
-  it('tries decodeAudioData first and falls back to decodeViaVideoElement for video files', async () => {
+  it('decodes video files via the shared media decode path', async () => {
     const handleFile = VoiceIsolatePro.prototype.handleFile;
+    const decoded = { length: 48000, duration: 1, sampleRate: 48000, numberOfChannels: 2 };
 
     const mockVip = {
       ensureCtx: jest.fn(),
@@ -66,14 +67,14 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       setStatus: jest.fn(),
       onAudioLoaded: jest.fn(),
       showNotification: jest.fn(),
-      decodeViaVideoElement: jest.fn().mockResolvedValue([1, 2, 3]), // Mock successful fallback decode
+      _resetFileInput: jest.fn(),
       dom: {
         fileInfo: {},
-        videoPlayer: {},
+        videoPlayer: { src: '' },
         videoCard: { style: {} }
       },
       ctx: {
-        decodeAudioData: jest.fn().mockRejectedValue(new Error('Decode failed'))
+        decodeAudioData: jest.fn().mockResolvedValue(decoded)
       }
     };
 
@@ -84,25 +85,14 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10))
     };
 
-    // To prevent the timeout in the `await new Promise(...)` section:
-    // We execute the promise but we also setTimeout to trigger the `onloadedmetadata` event shortly after
-    const timeoutId = setTimeout(() => {
-      if (mockVip.dom.videoPlayer.onloadedmetadata) {
-        mockVip.dom.videoPlayer.onloadedmetadata();
-      }
-    }, 10);
-
     await handleFile.call(mockVip, mockFile);
 
-    clearTimeout(timeoutId);
-
     expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
-    expect(mockVip.decodeViaVideoElement).toHaveBeenCalledWith(mockFile);
-    expect(mockVip.inputBuffer).toEqual([1, 2, 3]);
+    expect(mockVip.inputBuffer).toBe(decoded);
     expect(mockVip.dom.videoPlayer.src).toBe('blob:test');
   });
 
-  it('throws an error when decodeAudioData fails and file is not a video', async () => {
+  it('shows an error when decode fails for audio files', async () => {
     const handleFile = VoiceIsolatePro.prototype.handleFile;
 
     const mockVip = {
@@ -111,14 +101,13 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       setStatus: jest.fn(),
       onAudioLoaded: jest.fn(),
       showNotification: jest.fn(),
-      decodeViaVideoElement: jest.fn(),
+      _resetFileInput: jest.fn(),
       dom: {
-        fileInfo: {},
+        fileInfo: { textContent: '' },
         videoPlayer: {},
         videoCard: { style: {} }
       },
       ctx: {
-        // Mock decodeAudioData to reject
         decodeAudioData: jest.fn().mockRejectedValue(new Error('Decode failed'))
       }
     };
@@ -133,12 +122,11 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
     await handleFile.call(mockVip, mockFile);
 
     expect(mockVip.ctx.decodeAudioData).toHaveBeenCalled();
-    expect(mockVip.decodeViaVideoElement).not.toHaveBeenCalled();
-    expect(mockVip.dom.fileInfo.textContent).toContain('Cannot decode this audio format');
+    expect(mockVip.dom.fileInfo.textContent).toContain('Decode failed');
     expect(mockVip.setStatus).toHaveBeenCalledWith('ERROR');
   });
 
-  it('throws an error when decoded audio buffer is empty', async () => {
+  it('shows an error when decoded audio buffer is empty', async () => {
     const handleFile = VoiceIsolatePro.prototype.handleFile;
 
     const mockVip = {
@@ -147,14 +135,13 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       setStatus: jest.fn(),
       onAudioLoaded: jest.fn(),
       showNotification: jest.fn(),
-      decodeViaVideoElement: jest.fn(),
+      _resetFileInput: jest.fn(),
       dom: {
-        fileInfo: {},
+        fileInfo: { textContent: '' },
         videoPlayer: {},
         videoCard: { style: {} }
       },
       ctx: {
-        // Mock decodeAudioData to resolve with an empty buffer
         decodeAudioData: jest.fn().mockResolvedValue([])
       }
     };
