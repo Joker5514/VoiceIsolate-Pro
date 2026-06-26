@@ -451,6 +451,9 @@ async function ingestFrom(file) {
         if (stage === 'resampling') {
           showSpinner('Resampling to 48 kHz…', { indeterminate: true });
           setStatus('Resampling to 48 kHz…', 'warn');
+        } else if (stage === 'transcoding') {
+          showSpinner('Transcoding (real-time capture — please wait)…', { indeterminate: true });
+          setStatus('Re-encoding via browser media pipeline — this takes as long as the audio…', 'warn');
         }
       },
     });
