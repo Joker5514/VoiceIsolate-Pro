@@ -1,6 +1,6 @@
 {
   "outputDirectory": "public",
-  "buildCommand": "node scripts/validate.js && rm -rf public/src && cp -r src public/src",
+  "buildCommand": "node scripts/vercel-build.js",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
   "rewrites": [
