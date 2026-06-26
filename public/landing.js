@@ -63,6 +63,8 @@ const ui = {
   speakersPanel: $('speakersPanel'),
   speakerStatus: $('speakerStatus'),
   speakerCardsGrid: $('speakerCardsGrid'),
+  // Upload panel — used as the drag-and-drop target.
+  uploadPanel: $('uploadPanel'),
 };
 
 let mixer = null;
@@ -429,10 +431,16 @@ function applyPreset(name) {
 
 // ─── Pipeline glue ───────────────────────────────────────────────────────────
 
-async function onFileChosen() {
-  const file = ui.fileInput.files && ui.fileInput.files[0];
-  if (!file) return;
+/**
+ * Shared ingestion entry point used by both the file-input change handler and
+ * the drag-and-drop drop handler. Guards against concurrent calls by disabling
+ * the file input for the duration, and resets its value in `finally` so the
+ * same file can be re-selected after a failed decode.
+ */
+async function ingestFrom(file) {
+  if (!file || ui.fileInput.disabled) return;
   ui.processBtn.disabled = true;
+  ui.fileInput.disabled = true;
   // Show the picture immediately for videos; hide the player for audio files.
   if (isVideoFile(file)) loadVideo(file); else clearVideo();
   try {
@@ -455,7 +463,17 @@ async function onFileChosen() {
     console.error('[VIP][landing] ingestion failed:', err);
     setStatus(err.message, 'error');
     ingested = null;
+  } finally {
+    // Re-enable the input unconditionally so the user can always pick again.
+    // Resetting the value lets the browser fire 'change' even if the same
+    // file is re-chosen (e.g. after a failed decode or an external edit).
+    ui.fileInput.disabled = false;
+    ui.fileInput.value = '';
   }
+}
+
+async function onFileChosen() {
+  await ingestFrom(ui.fileInput.files && ui.fileInput.files[0]);
 }
 
 // UI-level model chains: run several models in series for maximum isolation.
@@ -634,6 +652,33 @@ function wireTransport() {
   }, 200);
 }
 
+// ─── Drag-and-drop upload ────────────────────────────────────────────────────
+
+function wireDragAndDrop() {
+  const zone = ui.uploadPanel;
+  if (!zone) return;
+
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    zone.classList.add('upload-panel--dragging');
+  });
+
+  zone.addEventListener('dragleave', () => {
+    // pointer-events:none on .upload-panel--dragging > * (see landing.css)
+    // prevents child elements from absorbing drag events, so dragleave only
+    // fires when the pointer genuinely exits the panel — no relatedTarget
+    // check needed (and relatedTarget is null on Safari anyway).
+    zone.classList.remove('upload-panel--dragging');
+  });
+
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('upload-panel--dragging');
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) ingestFrom(file);
+  });
+}
+
 // ─── Boot ────────────────────────────────────────────────────────────────────
 
 ui.fileInput.addEventListener('change', onFileChosen);
@@ -642,5 +687,6 @@ ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.val
 wireReadouts();
 wireTransport();
 wireMuteButtons();
+wireDragAndDrop();
 mountBadge();
 setStatus('Idle — choose a file to begin', '');
