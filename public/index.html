@@ -40,8 +40,14 @@
     <section class="panel vip-card" id="uploadPanel" aria-labelledby="uploadLabel">
       <h2 id="uploadLabel" class="section-label">1 · Upload</h2>
       <p class="hint">Audio or video. Decoded and resampled to 48&nbsp;kHz on your device — nothing is uploaded anywhere.</p>
+      <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop audio or video here, or press Enter to browse">
+        <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <p class="upload-title">Drop audio or video here</p>
+        <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · MP4 · MOV and more</p>
+        <button id="browseBtn" class="btn" type="button">Browse Files</button>
+        <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/*,video/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.webm,.aiff,.aif,.caf,.mp4,.m4v,.mov,.mkv,.avi,.wmv" aria-label="Choose audio or video file">
+      </div>
       <div class="upload-row">
-        <input type="file" id="fileInput" class="vip-input" accept="audio/*,video/*" aria-label="Choose audio or video file">
         <label for="modelSelect" class="inline-label">Model</label>
         <select id="modelSelect" class="vip-select" aria-label="Separation model">
           <option value="max_isolation">Maximum Isolation — Vocals → Denoise (chained)</option>

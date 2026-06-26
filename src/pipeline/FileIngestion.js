@@ -6,9 +6,9 @@
  * PlaybackMixer) sees one uniform format.
  *
  * Decode strategy:
- *   1. Blob → ArrayBuffer
- *   2. decodeAudioData on a short-lived AudioContext (handles audio AND the
- *      audio track of video containers the browser can demux)
+ *   1. Blob → ArrayBuffer → decodeAudioData (fast path)
+ *   2. On failure: hidden <audio>/<video> + OfflineAudioContext
+ *      (handles M4A/MP4/AAC containers Web Audio cannot demux directly)
  *   3. If the decoded rate ≠ 48 000 Hz, render through an OfflineAudioContext
  *      sized for the target rate (high-quality browser-native resampling)
  *
@@ -25,15 +25,14 @@
 'use strict';
 
 import { SAMPLE_RATE, MAX_CHANNELS, resampledLength } from '../core/audio-config.js';
+import { inferMediaKind } from '../core/media-types.js';
+import { decodeBlobToAudioBuffer } from './media-decode.js';
 
 /** Accepted MIME prefixes. Container formats vary; the decoder is the judge. */
 const ACCEPTED_TYPES = ['audio/', 'video/'];
 
 /** Refuse absurd inputs before burning memory (2 GB). */
 const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
-
-/** Cap for the real-time media-element fallback (30 min). */
-const MAX_MEDIA_FALLBACK_SECONDS = 30 * 60;
 
 /**
  * Map isolation mode to model IDs array for MLWorker.
@@ -101,180 +100,19 @@ export function assertIngestible(blob) {
   if (blob.size > MAX_FILE_BYTES) {
     throw new RangeError('[VIP][FileIngestion] File exceeds the 2 GB limit.');
   }
+  const kind = inferMediaKind(blob);
+  if (kind === 'midi') {
+    throw new TypeError(
+      '[VIP][FileIngestion] MIDI files are not supported. Use an audio file (WAV, MP3, etc).'
+    );
+  }
   const type = blob.type || '';
-  // Some OSes hand over files with an empty MIME type — let the decoder try.
-  if (type && !ACCEPTED_TYPES.some((p) => type.startsWith(p))) {
+  // Some OSes hand over files with an empty or generic MIME type — fall back to
+  // filename extension before rejecting.
+  if (type && !ACCEPTED_TYPES.some((p) => type.startsWith(p)) && kind === null) {
     throw new TypeError(
       `[VIP][FileIngestion] Unsupported type '${type}'. Provide an audio or video file.`
     );
-  }
-}
-
-/**
- * Fallback decoder for formats that decodeAudioData() rejects (e.g. HE-AAC v2
- * in .m4a files from Android voice recorders).  Routes the file through an
- * HTMLMediaElement → MediaElementSource → MediaStreamDestination → MediaRecorder
- * pipeline, captures the re-encoded WebM, then decodes that with decodeAudioData.
- *
- * Requires a browser environment (DOM + MediaRecorder).
- * @param {Blob} blob
- * @param {(stage: string) => void} onProgress
- * @returns {Promise<AudioBuffer>}
- */
-async function decodeViaMediaElement(blob, onProgress = () => {}) {
-  const url = URL.createObjectURL(blob);
-  const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
-  const actx = new Ctx();
-  let audio = null;
-  let recorder = null;
-  try {
-    // Resume the context — it may start suspended outside the original user-gesture
-    // call stack. Most browsers permit resume() after any prior page interaction.
-    if (actx.state === 'suspended') {
-      await actx.resume().catch(() => { /* proceed regardless */ });
-    }
-
-    audio = document.createElement('audio');
-    audio.preload = 'auto';
-    // muted=true lets the element autoplay without a live user gesture;
-    // createMediaElementSource() still captures the audio for Web Audio.
-    audio.muted = true;
-
-    const duration = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(
-        () => reject(new Error('Media load timed out after 15 s')), 15_000
-      );
-      audio.addEventListener('loadedmetadata', () => {
-        clearTimeout(timeout);
-        resolve(audio.duration);
-      }, { once: true });
-      audio.addEventListener('error', () => {
-        clearTimeout(timeout);
-        const e = audio.error;
-        reject(new Error(e ? `Media error ${e.code}` : 'Browser could not load this file'));
-      }, { once: true });
-      audio.src = url;
-    });
-
-    if (!Number.isFinite(duration) || duration <= 0) {
-      throw new Error('Media element reported no valid duration.');
-    }
-    if (duration > MAX_MEDIA_FALLBACK_SECONDS) {
-      throw new Error(
-        `File is ${Math.round(duration / 60)} min long; the real-time fallback ` +
-        'decoder is capped at 30 min. Convert to MP3 or WAV first.'
-      );
-    }
-
-    onProgress('transcoding');
-
-    const source = actx.createMediaElementSource(audio);
-    const dest = actx.createMediaStreamDestination();
-    source.connect(dest);
-
-    const mimeType =
-      ['audio/webm;codecs=pcm', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg']
-        .find((m) => MediaRecorder.isTypeSupported(m)) || '';
-    const chunks = [];
-    recorder = new MediaRecorder(dest.stream, mimeType ? { mimeType } : {});
-
-    const capturePromise = new Promise((resolve, reject) => {
-      recorder.addEventListener('dataavailable', (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      });
-      recorder.addEventListener('stop', () =>
-        resolve(new Blob(chunks, { type: mimeType || 'audio/webm' }))
-      );
-      recorder.addEventListener('error', (e) =>
-        reject(e.error || new Error('MediaRecorder error'))
-      );
-    });
-
-    recorder.start();
-    await audio.play();
-    await new Promise((resolve, reject) => {
-      audio.addEventListener('ended', resolve, { once: true });
-      audio.addEventListener('error', () =>
-        reject(new Error('Playback error during capture')), { once: true }
-      );
-    });
-    recorder.stop();
-
-    const capturedBlob = await capturePromise;
-    if (capturedBlob.size < 128) {
-      throw new Error(
-        'Capture produced no audio — the browser may not support this codec.'
-      );
-    }
-    const capturedBuffer = await capturedBlob.arrayBuffer();
-    return await actx.decodeAudioData(capturedBuffer);
-  } finally {
-    // Stop the recorder if an error interrupted the happy path.
-    if (recorder && recorder.state !== 'inactive') {
-      try { recorder.stop(); } catch { /* */ }
-    }
-    // Release browser-native decoder resources held by the media element.
-    if (audio) {
-      try { audio.pause(); } catch { /* */ }
-      audio.src = '';
-      try { audio.load(); } catch { /* */ }
-    }
-    globalThis.URL?.revokeObjectURL?.(url);
-    try { await actx.close(); } catch { /* already closed */ }
-  }
-}
-
-/**
- * Decode a blob into an AudioBuffer.
- * Primary: decodeAudioData on a temporary AudioContext (fast, memory-efficient).
- * Fallback: media-element real-time capture via MediaRecorder — used when
- * decodeAudioData rejects (e.g. HE-AAC v2 in .m4a files).
- * @param {Blob} blob
- * @param {(stage: string) => void} [onProgress]
- * @returns {Promise<AudioBuffer>}
- */
-async function decodeBlob(blob, onProgress = () => {}) {
-  const arrayBuffer = await blob.arrayBuffer();
-  const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
-  if (!Ctx) {
-    throw new Error('[VIP][FileIngestion] Web Audio API is not available.');
-  }
-  const ctx = new Ctx();
-  try {
-    return await ctx.decodeAudioData(arrayBuffer);
-  } catch (primaryErr) {
-    // Attempt the media-element fallback only in a full browser environment.
-    const canFallback =
-      typeof document !== 'undefined' &&
-      typeof MediaRecorder !== 'undefined';
-    if (!canFallback) {
-      throw new Error(
-        `[VIP][FileIngestion] Could not decode '${blob.name || 'file'}': ${primaryErr?.message || primaryErr}`
-      );
-    }
-    try {
-      console.warn(
-        `[VIP][FileIngestion] decodeAudioData failed for '${blob.name || 'file'}'; ` +
-        'trying media-element fallback (real-time capture).'
-      );
-      return await decodeViaMediaElement(blob, onProgress);
-    } catch (fallbackErr) {
-      const name = blob.name || 'file';
-      const lname = name.toLowerCase();
-      const mime  = (blob.type || '').toLowerCase();
-      const isM4a = lname.endsWith('.m4a') || mime.includes('mp4') || mime.includes('x-m4a');
-      const hint = isM4a
-        ? ' Tip: converting to MP3 or WAV first (e.g. via Audacity or FFmpeg) will always work.'
-        : '';
-      throw new Error(
-        `[VIP][FileIngestion] Could not decode '${name}'.${hint} ` +
-        `(Web Audio: ${primaryErr?.message || primaryErr}; ` +
-        `fallback: ${fallbackErr?.message || fallbackErr})`
-      );
-    }
-  } finally {
-    // Decode contexts are throwaway; never leak hardware handles.
-    try { await ctx.close(); } catch { /* already closed */ }
   }
 }
 
@@ -331,7 +169,10 @@ export async function ingestFile(file, hooks = {}) {
   assertIngestible(file);
 
   onProgress('decoding');
-  const decoded = await decodeBlob(file, onProgress);
+  // Yield so the presentation layer can paint a loading state before the
+  // (potentially heavy) main-thread decode call.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const decoded = await decodeBlobToAudioBuffer(file);
 
   onProgress('resampling');
   const canonical = await resampleToCanonical(decoded);

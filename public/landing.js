@@ -23,6 +23,8 @@ const $ = (id) => document.getElementById(id);
 
 const ui = {
   fileInput: $('fileInput'),
+  uploadZone: $('uploadZone'),
+  browseBtn: $('browseBtn'),
   modelSelect: $('modelSelect'),
   processBtn: $('processBtn'),
   playBtn: $('playBtn'),
@@ -75,6 +77,7 @@ let worker = null;
 let diarWorker = null;
 let ingested = null;
 let requestSeq = 0;
+let ingestSeq = 0;
 let diarSeq = 0;
 let currentJobLabel = 'Separating stems…';
 /** Object URL backing the <video> preview; revoked when a new file loads. */
@@ -439,6 +442,7 @@ function applyPreset(name) {
  */
 async function ingestFrom(file) {
   if (!file || ui.fileInput.disabled) return;
+  const seq = ++ingestSeq;
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
   // Show the picture immediately for videos; hide the player for audio files.
@@ -446,26 +450,28 @@ async function ingestFrom(file) {
   try {
     showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
-    ingested = await ingestFile(file, {
+    const next = await ingestFile(file, {
       onProgress: (stage) => {
+        if (seq !== ingestSeq) return;
         if (stage === 'resampling') {
           showSpinner('Resampling to 48 kHz…', { indeterminate: true });
           setStatus('Resampling to 48 kHz…', 'warn');
-        } else if (stage === 'transcoding') {
-          showSpinner('Transcoding (real-time capture — please wait)…', { indeterminate: true });
-          setStatus('Re-encoding via browser media pipeline — this takes as long as the audio…', 'warn');
         }
       },
     });
+    if (seq !== ingestSeq) return;
+    ingested = next;
     hideSpinner();
     setStatus(`Ready: ${ingested.sourceName} · ${fmtTime(ingested.duration)} · ${ingested.numberOfChannels} ch`, '');
     ui.processBtn.disabled = false;
   } catch (err) {
+    if (seq !== ingestSeq) return;
     hideSpinner();
     clearVideo(); // nothing to play — don't leave a dangling preview/object URL
     console.error('[VIP][landing] ingestion failed:', err);
     setStatus(err.message, 'error');
     ingested = null;
+    ui.processBtn.disabled = true;
   } finally {
     // Re-enable the input unconditionally so the user can always pick again.
     // Resetting the value lets the browser fire 'change' even if the same
@@ -477,6 +483,47 @@ async function ingestFrom(file) {
 
 async function onFileChosen() {
   await ingestFrom(ui.fileInput.files && ui.fileInput.files[0]);
+}
+
+function wireUploadDropZone() {
+  const zone = ui.uploadZone;
+  if (!zone) return;
+
+  const openPicker = () => ui.fileInput && ui.fileInput.click();
+  zone.addEventListener('click', (event) => {
+    if (event.target.closest('#browseBtn')) return;
+    openPicker();
+  });
+  zone.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openPicker();
+    }
+  });
+  if (ui.browseBtn) {
+    ui.browseBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openPicker();
+    });
+  }
+
+  zone.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = event.dataTransfer?.files?.[0];
+    if (file) ingestFrom(file);
+  });
+}
+
+function warnIfNotServed() {
+  if (location.protocol === 'file:') {
+    setStatus('Open via the dev server (pnpm dev → http://localhost:3000), not as a local file.', 'error');
+  }
 }
 
 // UI-level model chains: run several models in series for maximum isolation.
@@ -685,6 +732,17 @@ function wireDragAndDrop() {
 // ─── Boot ────────────────────────────────────────────────────────────────────
 
 ui.fileInput.addEventListener('change', onFileChosen);
+wireUploadDropZone();
+warnIfNotServed();
+window.addEventListener('error', (event) => {
+  if (event.message && !String(event.message).includes('ResizeObserver')) {
+    setStatus(`App error: ${event.message}`, 'error');
+  }
+});
+window.addEventListener('unhandledrejection', (event) => {
+  const msg = event.reason?.message || String(event.reason || 'unknown');
+  setStatus(`Upload failed: ${msg}`, 'error');
+});
 ui.processBtn.addEventListener('click', onProcess);
 ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.value));
 wireReadouts();
