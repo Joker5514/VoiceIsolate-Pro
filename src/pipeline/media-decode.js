@@ -48,7 +48,7 @@ async function decodeWithAudioData(blob) {
   }
 }
 
-function mediaElementTag(kind, blob) {
+function mediaElementTag(kind, _blob) {
   if (kind === 'video') return 'video';
   // .m4a is often mis-tagged video/mp4; always route audio extensions through <audio>.
   return 'audio';
