@@ -248,7 +248,9 @@ async function decodeBlob(blob, onProgress = () => {}) {
       return await decodeViaMediaElement(blob, onProgress);
     } catch (fallbackErr) {
       const name = blob.name || 'file';
-      const isM4a = /\.m4a$/i.test(name) || /audio\/(mp4|x-m4a)/.test(blob.type || '');
+      const lname = name.toLowerCase();
+      const mime  = (blob.type || '').toLowerCase();
+      const isM4a = lname.endsWith('.m4a') || mime.includes('mp4') || mime.includes('x-m4a');
       const hint = isM4a
         ? ' Tip: converting to MP3 or WAV first (e.g. via Audacity or FFmpeg) will always work.'
         : '';

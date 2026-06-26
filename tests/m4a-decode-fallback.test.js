@@ -81,8 +81,16 @@ describe('M4A decode fallback — decodeBlob wiring', () => {
   });
 
   test('combined error message for M4A includes a conversion hint', () => {
-    expect(fijs).toContain('\\.m4a');
+    expect(fijs).toContain('.m4a');
     expect(fijs).toContain('MP3 or WAV');
+  });
+
+  test('M4A detection uses string methods (no ReDoS-vulnerable regex)', () => {
+    // Replaced /\.m4a$/i and /audio\/(mp4|x-m4a)/ with endsWith/includes
+    // to satisfy the nodejsscan ReDoS rule.
+    expect(fijs).toContain("endsWith('.m4a')");
+    expect(fijs).toContain("includes('mp4')");
+    expect(fijs).toContain("includes('x-m4a')");
   });
 });
 
