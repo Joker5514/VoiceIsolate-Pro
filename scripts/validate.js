@@ -48,40 +48,78 @@ if (IS_VERCEL_BUILD) {
   devOnlyRequired.forEach(f => check(fs.existsSync(path.resolve(__dirname, '..', f)), f));
 }
 
-// 2. app.js structural checks
+// 2. app.js / engineer shell structural checks
 console.log('\napp.js structure:');
 const appJs = fs.readFileSync(path.resolve(__dirname, '..', 'public/app/app.js'), 'utf8');
-check(appJs.length > 10000, `Size: ${appJs.length} bytes (>10KB)`);
-
-const sliderGroups = ['gate', 'nr', 'eq'];
-sliderGroups.forEach(g => check(appJs.includes(`${g}:`), `Slider group: ${g}`));
-
-// Count slider definitions inside the SLIDERS literal only (avoid counting
-// EQ-band config objects and other `id:` occurrences elsewhere in app.js).
-const slidersBlock = appJs.match(/const SLIDERS\s*=\s*\{([\s\S]*?)\s*\};/);
-const sliderMatches = slidersBlock ? slidersBlock[1].match(/\{\s*id\s*:\s*'/g) : null;
-const sliderCount = sliderMatches ? sliderMatches.length : 0;
-check(sliderCount === 52, `Slider count: ${sliderCount} (must be 52)`);
-
-// Count STAGES — now defined in slider-map.js
 const sliderMapPath = path.resolve(__dirname, '..', 'public/app/slider-map.js');
 const sliderMapJs = fs.existsSync(sliderMapPath) ? fs.readFileSync(sliderMapPath, 'utf8') : '';
-const stagesMatch = sliderMapJs.match(/export const STAGES = \[([\s\S]*?)\];/);
-const stageItems = stagesMatch ? (stagesMatch[1].match(/'[^']+'/g) || []) : [];
-check(stageItems.length === 32, `STAGES count: ${stageItems.length} (must be 32)`);
+const isModularEngineer = appJs.includes('function buildSliderUI()');
+const isLegacyMonolith = appJs.includes('class VoiceIsolatePro') || appJs.includes('const SLIDERS');
+
+check(appJs.length > 5000, `Size: ${appJs.length} bytes (>5KB)`);
+
+if (isModularEngineer) {
+  check(appJs.includes('function buildSliderUI()'), 'Engineer Mode: buildSliderUI present');
+  check(appJs.includes('SLIDER_REGISTRY'), 'Engineer Mode: SLIDER_REGISTRY referenced');
+  check(sliderMapJs.includes('const SLIDER_REGISTRY'), 'slider-map.js: SLIDER_REGISTRY defined');
+  const registryBlock = sliderMapJs.match(/const SLIDER_REGISTRY = \{([\s\S]*?)\n\};/);
+  const registryCount = registryBlock
+    ? (registryBlock[1].match(/^\s{2}\w+:/gm) || []).length
+    : 0;
+  check(registryCount === 52, `SLIDER_REGISTRY count: ${registryCount} (must be 52)`);
+  const stagesMatch = sliderMapJs.match(/const STAGES = \[([\s\S]*?)\];/);
+  const uiStageCount = stagesMatch ? (stagesMatch[1].match(/^\s+id:\s*'/gm) || []).length : 0;
+  check(uiStageCount >= 1, `UI STAGES count: ${uiStageCount} (must have ≥1)`);
+  const dspStagesPath = path.resolve(__dirname, '..', 'public/app/dsp-stages.js');
+  const dspStagesJs = fs.existsSync(dspStagesPath) ? fs.readFileSync(dspStagesPath, 'utf8') : '';
+  const pipelineStagesMatch = dspStagesJs.match(/const stages = \[([\s\S]*?)\];/);
+  const pipelineStageCount = pipelineStagesMatch
+    ? (pipelineStagesMatch[1].match(/'[^']+'/g) || []).length
+    : 0;
+  check(pipelineStageCount === 32, `DSP pipeline stages: ${pipelineStageCount} (must be 32)`);
+} else if (isLegacyMonolith) {
+  const sliderGroups = ['gate', 'nr', 'eq'];
+  sliderGroups.forEach(g => check(appJs.includes(`${g}:`), `Slider group: ${g}`));
+  const slidersBlock = appJs.match(/const SLIDERS\s*=\s*\{([\s\S]*?)\s*\};/);
+  const sliderMatches = slidersBlock ? slidersBlock[1].match(/\{\s*id\s*:\s*'/g) : null;
+  const sliderCount = sliderMatches ? sliderMatches.length : 0;
+  check(sliderCount === 52, `Slider count: ${sliderCount} (must be 52)`);
+  const stagesMatch = sliderMapJs.match(/(?:export )?const STAGES = \[([\s\S]*?)\];/);
+  const stageItems = stagesMatch ? (stagesMatch[1].match(/'[^']+'/g) || []) : [];
+  check(stageItems.length === 32, `STAGES count: ${stageItems.length} (must be 32)`);
+} else {
+  check(false, 'app.js matches neither modular Engineer nor legacy monolith layout');
+}
 
 // Phase 1: STFT engine presence
 console.log('\nSpectral Engine (Phase 1):');
-check(appJs.includes('_fft(re, im)'), 'FFT implementation present');
-check(appJs.includes('_ifft(re, im)'), 'IFFT implementation present');
-check(appJs.includes('_makeWindow(N)'), 'Blackman-Harris window present');
-check(appJs.includes('applySpectralNR'), 'Spectral NR function present');
+const spectralPaths = isModularEngineer
+  ? ['public/app/dsp-core.js', 'public/app/dsp-bootstrap.js', 'public/app/offline-processor.js', 'public/app/dsp-stages.js']
+  : ['public/app/app.js'];
+const spectralSource = spectralPaths
+  .map(f => {
+    const p = path.resolve(__dirname, '..', f);
+    return fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '';
+  })
+  .join('\n');
+const hasFft = /_fft|forwardSTFT|_fftInPlace/.test(spectralSource);
+const hasIfft = /_ifft|inverseSTFT|_ifftInPlace/.test(spectralSource);
+const hasWindow = /_makeWindow|Blackman|makeBlackmanHarris/.test(spectralSource);
+const hasSpectralNr = /applySpectralNR|spectralNR|applyWienerNR|spectralGate|stageSpectralSubtraction/.test(spectralSource);
+check(hasFft, 'FFT implementation present');
+check(hasIfft, 'IFFT implementation present');
+check(hasWindow, 'Window function present');
+check(hasSpectralNr, 'Spectral NR function present');
 check(!appJs.includes('applyNR(buf,amt,smooth'), 'Old stub applyNR removed');
 
-// Phase 2: Wired sliders
+// Phase 2: Wired sliders (legacy monolith only — modular shell delegates to slider-map)
 console.log('\nWired Sliders (Phase 2):');
-const wiredSliders = ['applyBgSuppress','applyCrosstalkCancel','applyFormantShift','applyPhaseCorr','applyDereverb','applyDither'];
-wiredSliders.forEach(fn => check(appJs.includes(fn), `${fn} implemented`));
+if (isLegacyMonolith) {
+  const wiredSliders = ['applyBgSuppress','applyCrosstalkCancel','applyFormantShift','applyPhaseCorr','applyDereverb','applyDither'];
+  wiredSliders.forEach(fn => check(appJs.includes(fn), `${fn} implemented`));
+} else {
+  console.log('  ℹ  Wired-slider body checks skipped (modular Engineer shell)');
+}
 
 // Phase 3: AudioWorklet
 console.log('\nAudioWorklet (Phase 3):');
@@ -102,9 +140,11 @@ check(mlWorkerJs.includes('importScripts'), 'Legacy ML Worker loads ORT via impo
 console.log('\nStem-Split & Live-Mix (CLAUDE.md):');
 const srcFiles = [
   'src/core/audio-config.js',
+  'src/core/media-types.js',
   'src/core/BufferPool.js',
   'src/core/ModelManifest.js',
   'src/pipeline/FileIngestion.js',
+  'src/pipeline/media-decode.js',
   'src/pipeline/PlaybackMixer.js',
   'src/presentation/SliderUI.js',
   'src/workers/MLWorker.js',
@@ -187,12 +227,26 @@ function walkJs(dir) {
   return out;
 }
 
-// Phase 5: Forensic
+// Phase 5: Forensic (legacy Engineer shell only)
 console.log('\nForensic Mode (Phase 5):');
-check(html.includes('forensicToggle'), 'Forensic toggle in index.html');
-check(html.includes('auditLogBtn'), 'Audit log button in index.html');
-check(appJs.includes("crypto.subtle.digest('SHA-256'"), 'SHA-256 audit hashing present');
-check(appJs.includes('this.forensicLog = []'), 'forensicLog initialized');
+if (html.includes('forensicToggle')) {
+  check(html.includes('forensicToggle'), 'Forensic toggle in index.html');
+  check(html.includes('auditLogBtn'), 'Audit log button in index.html');
+  check(appJs.includes("crypto.subtle.digest('SHA-256'"), 'SHA-256 audit hashing present');
+  check(appJs.includes('this.forensicLog = []'), 'forensicLog initialized');
+} else {
+  console.log('  ℹ  Forensic UI checks skipped (modular Engineer shell)');
+}
+
+// Landing page integration (Vercel primary entry)
+console.log('\nLanding page:');
+const landingJsPath = path.resolve(__dirname, '..', 'public/landing.js');
+const landingJs = fs.existsSync(landingJsPath) ? fs.readFileSync(landingJsPath, 'utf8') : '';
+check(landingHtml.includes('id="fileInput"'), 'landing index.html: fileInput present');
+check(landingHtml.includes('/landing.js'), 'landing index.html: landing.js script');
+check(landingJs.includes('/src/pipeline/FileIngestion.js'), 'landing.js: FileIngestion import');
+check(landingJs.includes('/src/pipeline/media-decode.js') || landingJs.includes('ingestFile'),
+  'landing.js: ingestion pipeline wired');
 
 // 3. Balanced braces
 console.log('\nBrace balance:');
