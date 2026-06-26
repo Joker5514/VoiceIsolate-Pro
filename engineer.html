@@ -85,7 +85,6 @@
   --on-accent:     #ffffff;
 }
 
-
 /* ── TYPOGRAPHY TOKENS ─────────────────────────────── */
 /* ============================================================
    VoiceIsolate Pro — Typography tokens
@@ -147,7 +146,6 @@
   --eyebrow-track: var(--ls-widest);
 }
 
-
 /* ── SPACING / RADIUS / SHADOW TOKENS ─────────────── */
 /* ============================================================
    VoiceIsolate Pro — Spacing, radius, border, shadow, motion
@@ -208,7 +206,6 @@
   --rail-w:       380px;   /* @kind spacing */
   --titlebar-h:   52px;    /* @kind spacing */
 }
-
 
 /* ── BASE LAYER ────────────────────────────────────── */
 /* ============================================================
@@ -273,7 +270,6 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
-
 
 /* ── COMPONENT STYLES ──────────────────────────────── */
 /* ============================================================
@@ -457,7 +453,6 @@ body {
 }
 .vip-ploader__bar { transform-origin: bottom; }
 
-
 /* ── THEME OVERRIDES ───────────────────────────────── */
 /* ============================================================
    VoiceIsolate Pro — Theme variants
@@ -556,7 +551,6 @@ body {
   --ok: #22d385;  --warn: #f0a030;  --info: #818cf8;
   --canvas-bg: #060304;  --grid-line: rgba(224,37,37,0.06);  --hover-fill: rgba(255,255,255,0.025);
 }
-
 
 /* ── EXTRA DS TOKENS (fill gaps) ───────────────────── */
 :root {
@@ -858,7 +852,11 @@ body { background: var(--app-bg); color: var(--text); font-family: var(--font-ui
 <body>
 <div id="app"></div>
 
-<!-- DS Bundle (inlined) -->
+<!-- React 18 from CDN -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+
+<!-- DS Bundle (inlined after React) -->
 <script>
 /* @ds-bundle: {"format":3,"namespace":"VoiceIsolateProDesignSystem_38f745","components":[{"name":"LevelMeter","sourcePath":"components/audio/LevelMeter.jsx"},{"name":"ParamSlider","sourcePath":"components/audio/ParamSlider.jsx"},{"name":"ProcessLoader","sourcePath":"components/audio/ProcessLoader.jsx"},{"name":"Spectrogram","sourcePath":"components/audio/Spectrogram.jsx"},{"name":"Waveform","sourcePath":"components/audio/Waveform.jsx"},{"name":"Badge","sourcePath":"components/core/Badge.jsx"},{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Card","sourcePath":"components/core/Card.jsx"},{"name":"IconButton","sourcePath":"components/core/IconButton.jsx"},{"name":"Input","sourcePath":"components/core/Input.jsx"},{"name":"Select","sourcePath":"components/core/Select.jsx"},{"name":"StatusPill","sourcePath":"components/core/StatusPill.jsx"},{"name":"Switch","sourcePath":"components/core/Switch.jsx"}],"sourceHashes":{"Header.jsx":"8b7921644e73","VizPanel.jsx":"7822ecfae206","components/audio/LevelMeter.jsx":"5323c4c12b52","components/audio/ParamSlider.jsx":"97aea8a94921","components/audio/ProcessLoader.jsx":"707e1782f499","components/audio/Spectrogram.jsx":"f1cb930d8ccb","components/audio/Waveform.jsx":"bc38325af069","components/core/Badge.jsx":"a1ef51e0035d","components/core/Button.jsx":"5376c8c51c0a","components/core/Card.jsx":"44dbbc122364","components/core/IconButton.jsx":"bee03a702550","components/core/Input.jsx":"78e1906962cf","components/core/Select.jsx":"f348c4c7fe84","components/core/StatusPill.jsx":"b649ac33981b","components/core/Switch.jsx":"39732110cd4c","ui_kits/engineer/ControlRail.jsx":"dbca9a961110","ui_kits/engineer/Icons.jsx":"6d9e7863213f","ui_kits/engineer/StemPanel.jsx":"d626af80bd7f","ui_kits/engineer/TitleBar.jsx":"ac4e1c3fff53","ui_kits/engineer/Transport.jsx":"441b97f43b38"},"inlinedExternals":[],"unexposedExports":[]} */
 
@@ -2810,12 +2808,11 @@ __ds_ns.Switch = __ds_scope.Switch;
 
 </script>
 
-<!-- React 18 from CDN -->
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+<!-- Babel Standalone -->
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
 
 <!-- All components + App in one Babel transpile -->
+
 <script type="text/babel">
 
 // ── Icons ──────────────────────────────────────────────────────
@@ -2866,7 +2863,6 @@ const Icons = {
 };
 
 if (typeof window !== 'undefined') window.Icons = Icons;
-
 
 // ── Tweaks Panel ───────────────────────────────────────────────
 // @ds-adherence-ignore -- omelette starter scaffold (raw elements/hex/px by design)
@@ -3411,7 +3407,6 @@ Object.assign(window, {
   TweakText, TweakNumber, TweakColor, TweakButton,
 });
 
-
 // ── Theme Dock ─────────────────────────────────────────────────
 // ThemeDock.jsx — fixed bottom-right color-theme switcher (5 DS themes).
 const THEMES = [
@@ -3437,7 +3432,6 @@ function ThemeDock({ theme, onTheme }) {
 }
 
 window.ThemeDock = ThemeDock;
-
 
 // ── Header ─────────────────────────────────────────────────────
 // Header.jsx — top app bar: brand, UI-scale stepper, session stat readouts.
@@ -3487,7 +3481,6 @@ function Header({ stats, scale, onScale, onSaveScale }) {
 }
 
 window.Header = Header;
-
 
 // ── Cockpit ────────────────────────────────────────────────────
 // Cockpit.jsx — launch diagnostics: engine subsystem pills + model cache.
@@ -3539,7 +3532,6 @@ function Cockpit() {
 }
 
 window.Cockpit = Cockpit;
-
 
 // ── Control Panel ──────────────────────────────────────────────
 // ControlPanel.jsx — left column: upload, presets, control search,
@@ -3730,7 +3722,6 @@ function ControlPanel({ fileLoaded, onLoad, onClear, processing, onProcess, pipe
 }
 
 window.ControlPanel = ControlPanel;
-
 
 // ── Viz Panel ──────────────────────────────────────────────────
 // VizPanel.jsx — right column: transport (A/B compare) + 9 visualization tabs.
@@ -4038,7 +4029,6 @@ function VizPanel({ themeKey, playing, onToggle, playhead, fileLoaded }) {
 }
 
 window.VizPanel = VizPanel;
-
 
 // ── App Root ───────────────────────────────────────────────────
 const PIPELINE_STAGES = [
