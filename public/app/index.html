@@ -15,6 +15,8 @@
   <link rel="stylesheet" href="ds-tokens.css" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="slider-theme.css" />
+  <!-- ✅ WIRED: slider-ticks.css — tick marks, snap targets, value callout bubbles -->
+  <link rel="stylesheet" href="slider-ticks.css" />
   <link rel="stylesheet" href="style-diag-log.css" />
   <link rel="stylesheet" href="ds-overrides.css" />
   <!-- // LOAD ORDER VERIFIED: dsp-core.js is available before any downstream spectral stage/module code runs. -->
@@ -389,6 +391,12 @@
     import('./vip-fixes.js').catch(err => {
       console.error('[VIP] Failed to load module: ./vip-fixes.js', err);
       if (typeof window._vipReportError === 'function') window._vipReportError('./vip-fixes.js', err);
+    });
+    /* ✅ WIRED: slider-ticks.js — tick marks, value callout bubbles, snap-to-default.
+       Loads AFTER app.js + vip-boot.js so all slider panels are in the DOM before
+       initSliderTicks() scans for [data-ticks] attributes. */
+    import('./slider-ticks.js').catch(err => {
+      console.warn('[VIP] slider-ticks.js not loaded (non-fatal):', err);
     });
     /* debug-menu.js — live system debug panel (` key to toggle) */
     import('./debug-menu.js').catch(err => {
