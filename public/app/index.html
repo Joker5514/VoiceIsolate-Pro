@@ -425,5 +425,10 @@
        touch-action bleed, MIME accept scope. Loads after all modules are bootstrapped. -->
   <script src="./mobile-upload-fix.js"></script>
 
+  <!-- M4A / audio-mp4 decode fix: patches handleFile() to resume the AudioContext
+       before decodeAudioData and extends isVideoFile detection to cover .m4a /
+       audio/mp4 so the <video>-element fallback is used when needed on mobile. -->
+  <script src="./m4a-decode-fix.js"></script>
+
 </body>
 </html>
