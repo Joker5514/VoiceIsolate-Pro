@@ -20,6 +20,8 @@
  */
 'use strict';
 
+import { debugLog } from '../core/debug.js';
+
 /**
  * @typedef {object} ExportOptions
  * @property {'clean'|'noise'|'both'} [stems='clean'] - Which stems to export
@@ -76,7 +78,7 @@ export class ExportOrchestrator {
         if (type === 'ready') {
           clearTimeout(timeout);
           this._workerReady = true;
-          console.log('[VIP][ExportOrchestrator] Encoder worker ready.');
+          debugLog('ExportOrchestrator', 'Encoder worker ready.');
           resolve();
           return;
         }

@@ -103,6 +103,13 @@ describe('visuals-bootstrap loading and event wiring', () => {
     const src = fs.readFileSync(APP_JS_PATH, 'utf8');
     expect(src).toContain("'vip:processingDone'");
   });
+
+  test('app.js startSpectro/stopSpectro delegate to VIP_VISUALS when present', () => {
+    const src = fs.readFileSync(APP_JS_PATH, 'utf8');
+    expect(src).toContain('window.VIP_VISUALS');
+    expect(src).toMatch(/startSpectro\(\)[\s\S]*VIP_VISUALS\.start/);
+    expect(src).toMatch(/stopSpectro\(\)[\s\S]*VIP_VISUALS\.stop/);
+  });
 });
 
 describe('visuals-bootstrap module evaluated in jsdom-like sandbox', () => {

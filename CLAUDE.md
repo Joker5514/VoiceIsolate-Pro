@@ -97,7 +97,7 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/presentation/SpeakerControls.js` | 4 | Per-speaker cards (volume / mute / solo) bound to `PlaybackMixer`'s speaker lane. |
 | `src/presentation/ExportControls.js` | 4 | Export format/quality picker; wires DOM events to `ExportOrchestrator`. |
 | `src/presentation/IsolationModeSelector.js` | 4 | Isolation-mode dropdown (Voice Only / Maximum Isolation / etc.) that feeds `ProcessingOrchestrator`. |
-| `src/presentation/LandingVisualizer.js` | 4 | Three.js–driven landing-page visualizer; purely cosmetic, no audio data. |
+| `src/presentation/LandingVisualizer.js` | 4 | Canvas 2D waveform overview + live spectrum analyzer; reads PlaybackMixer analyser. |
 
 Rules:
 - **ESM everywhere** in `src/` (`import`/`export`). Tests use CommonJS (`require`).

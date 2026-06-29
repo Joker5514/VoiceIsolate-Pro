@@ -122,7 +122,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
     await handleFile.call(mockVip, mockFile);
 
     expect(mockVip.ctx.decodeAudioData).toHaveBeenCalled();
-    expect(mockVip.dom.fileInfo.textContent).toContain('Decode failed');
+    expect(mockVip.dom.fileInfo.textContent).toContain('Cannot decode this audio format');
     expect(mockVip.setStatus).toHaveBeenCalledWith('ERROR');
   });
 

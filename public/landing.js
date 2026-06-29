@@ -261,7 +261,13 @@ function getWorker() {
     const msg = event.data || {};
     switch (msg.type) {
       case 'ready':
-        console.log(`[VIP][landing] MLWorker ready (backend: ${msg.backend})`);
+        let debugEnabled = false;
+        try {
+          debugEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('vip_debug') === '1';
+        } catch (_) {}
+        if (debugEnabled) {
+          console.log('[VIP][landing] MLWorker ready (backend: ' + msg.backend + ')');
+        }
         break;
       case 'progress':
         // Live inference progress: ring + numeric %. The status line keeps the

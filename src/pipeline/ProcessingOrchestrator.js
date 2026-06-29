@@ -17,6 +17,7 @@
 
 import { ingestFile } from './FileIngestion.js';
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
+import { debugLog } from '../core/debug.js';
 
 /**
  * ProcessingOrchestrator - Coordinates file ingestion and ML processing with mode selection.
@@ -55,7 +56,7 @@ export class ProcessingOrchestrator {
           clearTimeout(timeout);
           this.mlWorker.removeEventListener('message', handler);
           this._initialized = true;
-          console.log('[VIP][ProcessingOrchestrator] MLWorker initialized');
+          debugLog('ProcessingOrchestrator', 'MLWorker initialized');
           resolve();
         } else if (event.data.type === 'error') {
           clearTimeout(timeout);
@@ -97,14 +98,15 @@ export class ProcessingOrchestrator {
     const ingested = await ingestFile(file, {
       isolationMode,
       onProgress: (stage) => {
-        console.log(`[VIP][ProcessingOrchestrator] Ingestion stage: ${stage}`);
+        debugLog('ProcessingOrchestrator', `Ingestion stage: ${stage}`);
       },
     });
 
-    console.log(
-      `[VIP][ProcessingOrchestrator] Ingested ${ingested.sourceName}: ` +
-      `${ingested.duration.toFixed(2)}s, ${ingested.numberOfChannels}ch, ` +
-      `mode: ${ingested.isolationMode}, models: [${ingested.modelIds.join(', ')}]`
+    debugLog(
+      'ProcessingOrchestrator',
+      `Ingested ${ingested.sourceName}: ${ingested.duration.toFixed(2)}s, ` +
+      `${ingested.numberOfChannels}ch, mode: ${ingested.isolationMode}, ` +
+      `models: [${ingested.modelIds.join(', ')}]`
     );
 
     // Stage 2: Process with MLWorker using model chain

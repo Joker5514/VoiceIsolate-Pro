@@ -25,6 +25,8 @@
  */
 'use strict';
 
+import { debugLog } from '../core/debug.js';
+
 /**
  * Isolation mode definitions with metadata.
  * Maps mode keys to model chains and user-facing information.
@@ -144,7 +146,7 @@ export class IsolationModeSelector {
     this._boundHandler = () => this._handleChange();
     this._selector.addEventListener('change', this._boundHandler);
 
-    console.log(`[VIP][IsolationModeSelector] Bound to #${this.selectorId}, initial mode: ${this._currentMode}`);
+    debugLog('IsolationModeSelector', `Bound to #${this.selectorId}, initial mode: ${this._currentMode}`);
     return true;
   }
 
@@ -169,7 +171,7 @@ export class IsolationModeSelector {
     this._currentMode = newMode;
     this._updateDescription();
 
-    console.log(`[VIP][IsolationModeSelector] Mode changed: ${oldMode} → ${newMode}`);
+    debugLog('IsolationModeSelector', `Mode changed: ${oldMode} → ${newMode}`);
 
     // Emit custom event
     const mode = getMode(newMode);
