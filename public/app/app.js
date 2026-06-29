@@ -1125,8 +1125,7 @@ class VoiceIsolatePro {
     const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|avi|ogv|3gp)$/i;
     const mime = (file.type || '').toLowerCase();
     const hasKnownExt = AUDIO_EXT.test(file.name || '') || VIDEO_EXT.test(file.name || '');
-    const isAudio = !mime || mime.startsWith('audio/') || mime.startsWith('video/') ||
-      (mime === 'application/octet-stream' && hasKnownExt);
+    const isAudio = !mime || mime.startsWith('audio/') || mime.startsWith('video/') || hasKnownExt;
     if (!isAudio) {
       if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Unsupported file type: ' + (file.type || 'unknown');
       this.setStatus('ERROR');
