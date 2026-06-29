@@ -27,11 +27,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       // ── LAYER 2: Blob URL ──────────────────────────────────────────────────
       // fetch() here targets a local blob: URL — never an external server.
       // Revoke immediately after reading to free memory.
-      const response = await fetch(blobUrl);
-      if (!response.ok) throw new Error(`Blob fetch failed: ${response.status}`);
-      const arrayBuffer = await response.arrayBuffer();
-      URL.revokeObjectURL(blobUrl);   // Free memory — blob no longer needed
-      await decodeAndLoadAudio(arrayBuffer, fileName);
+      try {
+        const response = await fetch(blobUrl);
+        if (!response.ok) throw new Error('Blob fetch failed: ' + response.status);
+        const arrayBuffer = await response.arrayBuffer();
+        await decodeAndLoadAudio(arrayBuffer, fileName);
+      } finally {
+        globalThis.URL?.revokeObjectURL?.(blobUrl); // Free memory — blob no longer needed
+      }
 
     } else if (file instanceof File) {
       // ── LAYER 1: File Object via window.opener ─────────────────────────────
