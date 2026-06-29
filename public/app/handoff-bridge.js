@@ -156,12 +156,23 @@ export async function sendFileToApp(file, appUrl = '/app/index.html') {
   // Guard: only encode files under 4MB to avoid QuotaExceededError
   // (base64 encoding inflates size ~33%, so 4MB → ~5.3MB — near the 5MB quota)
   if (file.size < 4 * 1024 * 1024) {
-    await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload  = () => { sessionStorage.setItem('vip_pending_data', reader.result); resolve(); };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+    try {
+      await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => {
+          try {
+            sessionStorage.setItem('vip_pending_data', reader.result);
+            resolve();
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    } catch (err) {
+      console.warn('[VIP] Failed to write to sessionStorage (Layer 3 fallback):', err);
+    }
   }
 
   // Open the app in a new tab (enables window.opener access for Layer 1)
