@@ -283,6 +283,28 @@
       opacity: 0; z-index: 999; white-space: nowrap;
     }
     #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    /* ── progress overlay ── */
+    #progress-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(10,10,15,0.82);
+      backdrop-filter: blur(8px);
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 1.25rem;
+    }
+    #progress-overlay.visible { display: flex; }
+    #progress-overlay p {
+      font-family: var(--font-display);
+      font-size: 1.1rem; color: var(--text);
+    }
+    .spinner {
+      width: 42px; height: 42px;
+      border: 3px solid rgba(124,106,247,0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     /* ── mobile ── */
     @media (max-width: 640px) {
       .nav-links { display: none; }
@@ -299,6 +321,12 @@
 
 <!-- Toast notification -->
 <div id="toast" role="status" aria-live="polite"></div>
+
+<!-- Progress overlay shown while reading large files -->
+<div id="progress-overlay" role="status" aria-live="polite" aria-label="Loading file">
+  <div class="spinner" aria-hidden="true"></div>
+  <p id="progress-msg">Reading file…</p>
+</div>
 
 <!-- Nav -->
 <nav>
@@ -474,64 +502,121 @@
 (function () {
   'use strict';
 
-  const fileInput = document.getElementById('file-input-hidden');
-  const dropZone  = document.getElementById('drop-zone');
-  const browseBtn = document.getElementById('browse-btn');
-  const navBtn    = document.getElementById('nav-upload-btn');
-  const ctaBtn    = document.getElementById('cta-upload-btn');
-  const toast     = document.getElementById('toast');
+  const fileInput       = document.getElementById('file-input-hidden');
+  const dropZone        = document.getElementById('drop-zone');
+  const browseBtn       = document.getElementById('browse-btn');
+  const navBtn          = document.getElementById('nav-upload-btn');
+  const ctaBtn          = document.getElementById('cta-upload-btn');
+  const toast           = document.getElementById('toast');
+  const progressOverlay = document.getElementById('progress-overlay');
+  const progressMsg     = document.getElementById('progress-msg');
 
   // ── Toast helper ──────────────────────────────────────────
   let toastTimer;
-  function showToast(msg, duration = 3000) {
+  function showToast(msg, duration) {
+    duration = duration || 3000;
     toast.textContent = msg;
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
+    toastTimer = setTimeout(function () { toast.classList.remove('show'); }, duration);
+  }
+
+  // ── Progress overlay ──────────────────────────────────────
+  function showProgress(msg) {
+    progressMsg.textContent = msg || 'Loading file…';
+    progressOverlay.classList.add('visible');
+  }
+  function hideProgress() {
+    progressOverlay.classList.remove('visible');
   }
 
   // ── Accepted MIME / extension check ─────────────────────
-  const ACCEPTED_EXTS = /\.(mp3|wav|flac|aac|m4a|ogg|opus|mp4|mov|webm|wma|aiff|aif)$/i;
+  var ACCEPTED_EXTS = /\.(mp3|wav|flac|aac|m4a|ogg|opus|mp4|mov|webm|wma|aiff|aif)$/i;
   function isAccepted(file) {
     return file.type.startsWith('audio/') ||
            file.type.startsWith('video/') ||
            ACCEPTED_EXTS.test(file.name);
   }
 
-  // ── Hand file off to engineer page via sessionStorage ────
+  // ── Core: hand the File object to the engineer page ──────
+  //
+  // STRATEGY (in priority order):
+  //   1. window.VIP_PENDING_FILE — a global on the *same* window object.
+  //      Works when engineer page is opened via window.open() in the same
+  //      browsing context (same origin, opener still alive).
+  //   2. sessionStorage — works when pages share the same browsing context
+  //      and storage is not sandboxed.  We try both a raw Blob URL reference
+  //      (just the object-URL string, which only works same-tab) and a
+  //      base64 data-URL for the actual bytes (capped at 50 MB to avoid OOM).
+  //   3. BroadcastChannel — engineer page listens on 'vip_file_channel' and
+  //      receives {file, blobUrl} the moment it is ready.
+  //
+  // The engineer page (public/app/index.html / app.js) should check all
+  // three sources on DOMContentLoaded in the same priority order.
+
   function handleFile(file) {
     if (!file) return;
     if (!isAccepted(file)) {
-      showToast('Unsupported format. Please use MP3, WAV, FLAC, AAC, M4A, OGG, MP4 or similar.');
+      showToast('Unsupported format. Use MP3, WAV, FLAC, AAC, M4A, OGG, MP4 or similar.');
       return;
     }
 
-    showToast('Loading file…');
+    showProgress('Reading "' + file.name + '"…');
 
-    // Store metadata so engineer page can read it on load
+    // --- 1. Always create a Blob URL (works for same-tab navigations) ---
+    var blobUrl = URL.createObjectURL(file);
+
+    // Expose on the window so the engineer page can grab it via window.opener
+    window.VIP_PENDING_FILE    = file;
+    window.VIP_PENDING_BLOB    = blobUrl;
+    window.VIP_PENDING_META    = { name: file.name, type: file.type || 'audio/unknown', size: file.size };
+
+    // --- 2. sessionStorage (best-effort; may be blocked in sandboxes) ---
     try {
       sessionStorage.setItem('vip_pending_filename', file.name);
       sessionStorage.setItem('vip_pending_type',     file.type || 'audio/unknown');
       sessionStorage.setItem('vip_pending_size',     String(file.size));
-    } catch (_) { /* sessionStorage blocked in some contexts — graceful fallback */ }
+      sessionStorage.setItem('vip_pending_blob_url', blobUrl);  // valid same-tab only
+    } catch (_) { /* sandboxed — will rely on BroadcastChannel / opener */ }
 
-    // Use FileReader to pass the actual audio data
-    const reader = new FileReader();
-    reader.onload = function (e) {
-      try {
-        // Store as data-URL in sessionStorage (files < ~5MB) or fallback to URL param
-        const dataUrl = e.target.result;
-        if (dataUrl.length < 5 * 1024 * 1024) {
-          sessionStorage.setItem('vip_pending_data', dataUrl);
-        }
-      } catch (_) { /* quota exceeded — engineer page will prompt again */ }
-      // Navigate to engineer page
-      window.location.href = 'public/app/index.html?src=landing&file=' + encodeURIComponent(file.name);
-    };
-    reader.onerror = function () {
-      showToast('Could not read file. Please try again.');
-    };
-    reader.readAsDataURL(file);
+    // --- 3. BroadcastChannel — engineer page picks this up if already open ---
+    try {
+      var bc = new BroadcastChannel('vip_file_channel');
+      bc.postMessage({ type: 'VIP_FILE', name: file.name, mimeType: file.type, blobUrl: blobUrl });
+      bc.close();
+    } catch (_) { /* BroadcastChannel not available in this context */ }
+
+    // --- 4. For large files also try base64 in sessionStorage (≤ 50 MB) ---
+    var MAX_BASE64 = 50 * 1024 * 1024;
+    if (file.size <= MAX_BASE64) {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          sessionStorage.setItem('vip_pending_data', e.target.result);
+        } catch (_) { /* quota exceeded — blobUrl path is the fallback */ }
+        navigateToEngineer(file, blobUrl);
+      };
+      reader.onerror = function () {
+        hideProgress();
+        showToast('Could not read file. Please try again.');
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // File too large for base64; rely on blobUrl / BroadcastChannel
+      navigateToEngineer(file, blobUrl);
+    }
+  }
+
+  function navigateToEngineer(file, blobUrl) {
+    hideProgress();
+    // Pass metadata in the query string so engineer page always has at least the name
+    var params = new URLSearchParams({
+      src:  'landing',
+      file: file.name,
+      mime: file.type || 'audio/unknown',
+      blob: blobUrl          // Blob URLs survive same-tab navigation on all major browsers
+    });
+    window.location.href = 'public/app/index.html?' + params.toString();
   }
 
   // ── Open file picker ──────────────────────────────────────
@@ -588,7 +673,7 @@
   dropZone.addEventListener('drop', function (e) {
     e.preventDefault(); e.stopPropagation();
     dropZone.classList.remove('drag-over');
-    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (file) handleFile(file);
   });
 
@@ -596,7 +681,7 @@
   document.addEventListener('dragover', function (e) { e.preventDefault(); });
   document.addEventListener('drop', function (e) {
     e.preventDefault();
-    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
     if (file) handleFile(file);
   });
 
