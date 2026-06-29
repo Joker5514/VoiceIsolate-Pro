@@ -52,3 +52,15 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# pnpm-only — do not commit npm lockfile
+package-lock.json
+
+# Build artifact: canonical src/ copied for static /src/ imports
+public/src/
+
+# Large ONNX models — serve via Vercel Blob (see docs/MODEL_DELIVERY.md)
+public/app/models/demucs_v4_*.onnx
+
+# Parallel redesign workspace (not part of production tree)
+Voice enhancement/

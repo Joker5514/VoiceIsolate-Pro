@@ -22,6 +22,9 @@
     "postinstall": "node scripts/setup-ort.js && node scripts/setup-three.js",
     "setup:ort": "node scripts/setup-ort.js",
     "setup:three": "node scripts/setup-three.js",
+    "predev": "node scripts/sync-src.js",
+    "prestart": "node scripts/sync-src.js",
+    "sync:src": "node scripts/sync-src.js",
     "start": "node server.js",
     "dev": "node server.js",
     "serve": "npx serve public -l 3000 --cors",
@@ -69,7 +72,6 @@
     "jest-environment-jsdom": "^30.3.0",
     "jsdom": "^26.1.0",
     "playwright": "^1.58.2",
-    "puppeteer": "^24.40.0",
     "supertest": "^7.2.2"
   },
   "jest": {
