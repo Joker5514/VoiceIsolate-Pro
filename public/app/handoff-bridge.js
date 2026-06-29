@@ -85,9 +85,8 @@ export async function decodeAndLoadAudio(arrayBuffer, name = 'audio') {
     if (ctx.state === 'suspended') await ctx.resume();
 
     // decodeAudioData handles MP3, WAV, FLAC, OGG, M4A natively.
-    // Pass arrayBuffer.slice(0) — decodeAudioData detaches (neuters) its input,
-    // so the copy preserves the original for raw waveform rendering if needed.
-    const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+    // Pass arrayBuffer directly since we do not need to preserve the original buffer in this handoff flow.
+    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
 
     updateStatus(
       `Loaded: ${name} (${audioBuffer.duration.toFixed(2)}s \u2022 ${audioBuffer.sampleRate}Hz \u2022 ${audioBuffer.numberOfChannels}ch)`,
