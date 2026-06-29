@@ -1119,8 +1119,14 @@ class VoiceIsolatePro {
       return;
     }
 
-    // Reject clearly non-audio/non-video MIME types
-    const isAudio = !file.type || file.type.startsWith('audio/') || file.type.startsWith('video/');
+    // Reject clearly non-audio/non-video MIME types. Browsers often report
+    // application/octet-stream for valid audio files — fall back to extension.
+    const AUDIO_EXT = /\.(wav|mp3|m4a|aac|ogg|oga|opus|flac|weba|webm|aiff|aif|wma|caf)$/i;
+    const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|avi|ogv|3gp)$/i;
+    const mime = (file.type || '').toLowerCase();
+    const hasKnownExt = AUDIO_EXT.test(file.name || '') || VIDEO_EXT.test(file.name || '');
+    const isAudio = !mime || mime.startsWith('audio/') || mime.startsWith('video/') ||
+      (mime === 'application/octet-stream' && hasKnownExt);
     if (!isAudio) {
       if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Unsupported file type: ' + (file.type || 'unknown');
       this.setStatus('ERROR');
@@ -2182,18 +2188,30 @@ class VoiceIsolatePro {
   }
 
   startSpectro() {
+    if (window.VIP_VISUALS && typeof window.VIP_VISUALS.start === 'function') {
+      window.VIP_VISUALS.start();
+      return;
+    }
     if (window._vipOrch && typeof window._vipOrch.startSpectro === 'function') {
       window._vipOrch.startSpectro();
     }
   }
 
   stopSpectro() {
+    if (window.VIP_VISUALS && typeof window.VIP_VISUALS.stop === 'function') {
+      window.VIP_VISUALS.stop();
+      return;
+    }
     if (window._vipOrch && typeof window._vipOrch.stopSpectro === 'function') {
       window._vipOrch.stopSpectro();
     }
   }
 
   startFreq() {
+    if (window.VIP_VISUALS && typeof window.VIP_VISUALS.start === 'function') {
+      window.VIP_VISUALS.start();
+      return;
+    }
     if (window._vipOrch && typeof window._vipOrch.startFreq === 'function') {
       window._vipOrch.startFreq();
     }
