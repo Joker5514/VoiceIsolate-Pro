@@ -261,7 +261,9 @@ function getWorker() {
     const msg = event.data || {};
     switch (msg.type) {
       case 'ready':
-        console.log(`[VIP][landing] MLWorker ready (backend: ${msg.backend})`);
+        if (localStorage.getItem('vip_debug') === '1') {
+          console.log(`[VIP][landing] MLWorker ready (backend: ${msg.backend})`);
+        }
         break;
       case 'progress':
         // Live inference progress: ring + numeric %. The status line keeps the

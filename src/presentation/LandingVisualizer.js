@@ -32,6 +32,9 @@ export class LandingVisualizer {
     this.specCtx = specCanvas.getContext('2d');
     this._rafId = null;
     this._freqData = null;
+    /** Smoothed bar heights + peak-hold for fluid spectrum animation */
+    this._barSmooth = null;
+    this._barPeak = null;
     /** Precomputed envelopes: { clean: {min,max}, noise: {min,max}, columns } */
     this._envelope = null;
     this._duration = 0;
@@ -50,6 +53,12 @@ export class LandingVisualizer {
       }
     };
     this.waveCanvas.addEventListener('click', this._onWaveClick);
+    this._onWaveTouch = (e) => {
+      if (!e.touches || !e.touches[0]) return;
+      e.preventDefault();
+      this._onWaveClick({ clientX: e.touches[0].clientX });
+    };
+    this.waveCanvas.addEventListener('touchstart', this._onWaveTouch, { passive: false });
   }
 
   _resize() {
@@ -101,6 +110,7 @@ export class LandingVisualizer {
     this.stop();
     window.removeEventListener('resize', this._onResize);
     this.waveCanvas.removeEventListener('click', this._onWaveClick);
+    this.waveCanvas.removeEventListener('touchstart', this._onWaveTouch);
   }
 
   // ── Waveform overview + playhead ───────────────────────────────────────
@@ -164,16 +174,27 @@ export class LandingVisualizer {
     const bars = 96;
     const step = Math.floor(bins / bars);
     const barW = W / bars - 1;
+    if (!this._barSmooth || this._barSmooth.length !== bars) {
+      this._barSmooth = new Float32Array(bars);
+      this._barPeak = new Float32Array(bars);
+    }
     for (let i = 0; i < bars; i++) {
       let sum = 0;
       for (let k = 0; k < step; k++) sum += this._freqData[i * step + k];
-      const v = sum / step / 255;
-      const h = Math.max(1, v * H * 0.92);
+      const raw = sum / step / 255;
+      this._barSmooth[i] = this._barSmooth[i] * 0.72 + raw * 0.28;
+      this._barPeak[i] = Math.max(this._barSmooth[i], this._barPeak[i] * 0.94);
+      const h = Math.max(1, this._barSmooth[i] * H * 0.92);
       const g = ctx.createLinearGradient(0, H - h, 0, H);
       g.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
       g.addColorStop(1, 'rgba(239, 68, 68, 0.08)');
       ctx.fillStyle = g;
       ctx.fillRect(i * (barW + 1), H - h, barW, h);
+      const peakH = this._barPeak[i] * H * 0.92;
+      if (peakH > h + 2) {
+        ctx.fillStyle = 'rgba(52, 211, 153, 0.75)';
+        ctx.fillRect(i * (barW + 1), H - peakH, barW, 1.5);
+      }
     }
     if (!this.mixer.isPlaying()) {
       drawIdleText(ctx, W, H, this._envelope ? 'Press Play — sliders move this graph live' : '');
