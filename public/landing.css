@@ -228,13 +228,18 @@ body {
   font-size: var(--fs-xs);
 }
 
+/*
+ * FIX: Removed `pointer-events: none` — it silently blocked `.click()` on
+ * this input in Chromium 120+ when the element is off-screen, preventing
+ * the native file picker from opening via browseBtn or uploadZone click.
+ * The input stays visually hidden via position:fixed + left:-9999px + opacity:0.
+ */
 .visually-hidden-file {
   position: fixed;
   left: -9999px;
   width: 1px;
   height: 1px;
   opacity: 0;
-  pointer-events: none;
 }
 
 /* ── Form rows ────────────────────────────────────────────────────────── */
@@ -732,9 +737,13 @@ input[type="range"]:disabled { opacity: 0.34; cursor: not-allowed; }
   outline: 2px dashed var(--border-focus);
   outline-offset: -3px;
 }
-.upload-panel--dragging * {
-  pointer-events: none;
-}
+/*
+ * FIX: Removed `pointer-events: none` from `.upload-panel--dragging *`.
+ * That rule was accidentally disabling the fileInput during drag, which
+ * meant dragover feedback worked but the drop handler's fileInput.click()
+ * path was broken. The dragleave false-fire concern is handled by the
+ * panel-level dragover/dragleave guards in landing.js instead.
+ */
 .vip-card--hover { transition: border-color var(--dur-base) var(--ease-out); }
 .vip-card--hover:hover { border-color: var(--border-red); }
 .vip-card--well { background: var(--well-bg); box-shadow: none; }
