@@ -110,17 +110,26 @@ async function main() {
     console.log('\nIngestion & inference (real model, no passthrough):');
     await page.setInputFiles('#fileInput', wavPath);
     await page.waitForFunction(
-      () => document.getElementById('statusText').textContent.startsWith('Ready:'),
+      () => {
+        const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
+        return el && el.textContent.includes('Ready:');
+      },
       null, { timeout: 30000 }
     );
     check(true, 'file decoded + resampled to 48 kHz');
 
     await page.click('#processBtn');
     await page.waitForFunction(
-      () => document.getElementById('statusText').textContent.includes('Stems ready'),
+      () => {
+        const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
+        return el && el.textContent.includes('Stems ready');
+      },
       null, { timeout: 120000 }
     );
-    const statusAfter = await page.textContent('#statusText');
+    const statusAfter = await page.evaluate(() => {
+      const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
+      return el ? el.textContent : '';
+    });
     check(!statusAfter.includes('passthrough') && !statusAfter.includes('unavailable'),
       'REAL inference produced stems (not passthrough)');
     check(await page.evaluate(() => Boolean(globalThis.__vipDiagnostics?.mixer)), 'mixer + diagnostics exposed');

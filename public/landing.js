@@ -51,6 +51,7 @@ const ui = {
   // DS StatusPill mounts here (setStatus re-renders it); the Badge and
   // LevelMeter mount points are likewise populated by landing.js.
   statusPillMount: $('statusPillMount'),
+  statusText: $('statusText'),
   archBadgeMount: $('archBadgeMount'),
   outputMeterMount: $('outputMeterMount'),
   // Realtime processing indicator — DS ProcessLoader component mounts here.
@@ -87,6 +88,8 @@ const DIARIZATION_TIMEOUT_MS = 60000;
 
 function setStatus(msg, cls = '') {
   renderStatusPill(STATE_FOR_CLS[cls] || 'pending', msg);
+  const legacy = ui.statusText || document.getElementById('statusText');
+  if (legacy) legacy.textContent = msg;
 }
 
 function fmtTime(s) {

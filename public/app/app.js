@@ -384,10 +384,16 @@ class VoiceIsolatePro {
     this._initCalled = true;
 
     this.cacheDom();
-    this._renderSliders();
-    this.bindEvents();
-    this._updateProcessButtonsState();
     this.initBootSplash();
+    try {
+      this._renderSliders();
+      this.bindEvents();
+      this._updateProcessButtonsState();
+    } catch (initErr) {
+      this._dismissBootSplash();
+      structuredLog('error', '[VIP] init failed after splash', { err: initErr.message });
+      throw initErr;
+    }
     this.initModelStatusPanel();
 
     // Resolve the ML engine pill (CTX/WORKLET/SAB/ML/NET cockpit) based on ONNX Runtime
@@ -474,6 +480,19 @@ class VoiceIsolatePro {
   }
 
   // ── Boot splash ──────────────────────────────────────────────────────────
+  _dismissBootSplash() {
+    const splash = $('bootSplash');
+    if (!splash || splash.dataset.dismissed === '1') return;
+    splash.dataset.dismissed = '1';
+    splash.classList.add('is-complete');
+    splash.style.transition = 'opacity 0.4s ease';
+    splash.style.opacity = '0';
+    splash.style.pointerEvents = 'none';
+    splash.setAttribute('aria-hidden', 'true');
+    setTimeout(() => { splash.style.display = 'none'; }, 420);
+    if (typeof window._vipDismissBootSplash === 'function') window._vipDismissBootSplash();
+  }
+
   initBootSplash() {
     const splash = $('bootSplash');
     const fill = $('bootSplashProgress');
@@ -484,11 +503,7 @@ class VoiceIsolatePro {
       if (fill) fill.style.width = pct + '%';
       if (pct >= 100) {
         clearInterval(iv);
-        setTimeout(() => {
-          splash.style.transition = 'opacity 0.4s ease';
-          splash.style.opacity = '0';
-          setTimeout(() => { splash.style.display = 'none'; }, 420);
-        }, 200);
+        setTimeout(() => this._dismissBootSplash(), 200);
       }
     }, 80);
   }
@@ -795,12 +810,12 @@ class VoiceIsolatePro {
       return [];
     };
 
-    // File input
-    bind('fileBtn', d.fileBtn, 'click', () => { if (d.fileInput) d.fileInput.click(); });
+    // File input — always read this.dom.fileInput so late patches cannot orphan handlers
+    bind('fileBtn', d.fileBtn, 'click', () => { const fi = this.dom.fileInput; if (fi) fi.click(); });
     if (d.uploadZone) {
-      d.uploadZone.addEventListener('click', () => { if (d.fileInput) d.fileInput.click(); });
+      d.uploadZone.addEventListener('click', () => { const fi = this.dom.fileInput; if (fi) fi.click(); });
       d.uploadZone.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') { if (d.fileInput) d.fileInput.click(); }
+        if (e.key === 'Enter' || e.key === ' ') { const fi = this.dom.fileInput; if (fi) fi.click(); }
       });
     }
     bind('fileInput', d.fileInput, 'change', e => this.handleFile(e.target.files[0]));
@@ -1178,8 +1193,10 @@ class VoiceIsolatePro {
     // plays alongside the *processed* audio (video stays muted; sound comes
     // from the processed/original AudioBuffer). decodeAudioData demuxes the
     // audio track from most MP4/WEBM/MOV containers directly.
-    const isVideoFile = (file.type && file.type.startsWith('video/')) ||
-      /\.(mp4|m4v|mov|webm|mkv|avi|ogv|3gp)$/i.test(file.name || '');
+    const mimeLower = (file.type || '').toLowerCase();
+    const isVideoFile = (mimeLower.startsWith('video/')) ||
+      mimeLower === 'audio/mp4' || mimeLower === 'audio/x-m4a' ||
+      /\.(mp4|m4v|m4a|m4b|m4r|mov|webm|mkv|avi|ogv|3gp)$/i.test(file.name || '');
 
     // Release any previously-loaded video source first, so reloading a new clip
     // neither leaks the old object URL nor leaves the old picture on screen.
@@ -2576,6 +2593,8 @@ if (typeof module !== 'undefined') module.exports = VoiceIsolatePro;
       console.error('[app] Bootstrap failed:', e);
       window._vipApp = null;
       window.vip = null;
+      if (typeof window._vipDismissBootSplash === 'function') window._vipDismissBootSplash();
+      if (typeof window._vipReportError === 'function') window._vipReportError('bootstrap', e);
     }
     _callAuthInit();
   }

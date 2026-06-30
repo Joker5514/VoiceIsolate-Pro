@@ -86,6 +86,20 @@
 
   <div id="status-message" class="status-bar" style="position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;overflow:hidden;opacity:0;" aria-live="polite" aria-atomic="true"></div>
 
+  <script>
+    window._vipDismissBootSplash = function () {
+      var s = document.getElementById('bootSplash');
+      if (!s || s.dataset.dismissed === '1') return;
+      s.dataset.dismissed = '1';
+      s.classList.add('is-complete');
+      s.style.pointerEvents = 'none';
+      s.style.opacity = '0';
+      s.style.display = 'none';
+      s.setAttribute('aria-hidden', 'true');
+    };
+    setTimeout(window._vipDismissBootSplash, 8000);
+  </script>
+
   <div id="bootSplash" class="boot-splash" aria-hidden="false" role="status" aria-live="polite">
     <div class="boot-splash-card">
       <div class="boot-mark" aria-hidden="true">VIP</div>
@@ -445,10 +459,6 @@
        touch-action bleed, MIME accept scope. Loads after all modules are bootstrapped. -->
   <script src="./mobile-upload-fix.js"></script>
 
-  <!-- M4A / audio-mp4 decode fix: patches handleFile() to resume the AudioContext
-       before decodeAudioData and extends isVideoFile detection to cover .m4a /
-       audio/mp4 so the <video>-element fallback is used when needed on mobile. -->
-  <script src="./m4a-decode-fix.js"></script>
 
 </body>
 </html>
