@@ -1,7 +1,16 @@
 'use strict';
 
-import { inferMediaKind, isIngestibleMedia } from '../src/core/media-types.js';
-import { assertIngestible } from '../src/pipeline/FileIngestion.js';
+let inferMediaKind;
+let isIngestibleMedia;
+let assertIngestible;
+
+beforeAll(async () => {
+  const mediaTypes = await import('../src/core/media-types.js');
+  const fileIngestion = await import('../src/pipeline/FileIngestion.js');
+  inferMediaKind = mediaTypes.inferMediaKind;
+  isIngestibleMedia = mediaTypes.isIngestibleMedia;
+  assertIngestible = fileIngestion.assertIngestible;
+});
 
 describe('media-types', () => {
   test('accepts audio MIME types', () => {

@@ -1,5 +1,7 @@
+import { calibrateRegistry } from './slider-calibration.js';
+
 /**
- * VoiceIsolate Pro — slider-map.js  (audited v2.0)
+ * VoiceIsolate Pro — slider-map.js  (audited v3.0)
  * ==========================================================
  * Pure data module.  No DOM, no Web Audio, no side-effects.
  *
@@ -69,7 +71,7 @@ export const STAGES = [
   'S32: Final Export Ready',
 ];
 
-export const SLIDER_REGISTRY = [
+const RAW_SLIDER_REGISTRY = [
   // ── Noise Gate (6 sliders) ─────────────────────────────────────────────────
   {
     id: 'gateThresh', key: 'gateThresh', label: 'Gate Threshold',
@@ -447,7 +449,54 @@ export const SLIDER_REGISTRY = [
     transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
     tip: 'Processing aggression: Off, Light, Heavy, or Forensic multi-pass.'
   },
+
+  // ── Whisper Hunter DSP sliders (Part 1 + Part 4) ───────────────────────────
+  {
+    id: 'whisperClarity', key: 'whisperClarity', label: 'Whisper Clarity',
+    min: 0, max: 100, step: 1, default: 65, unit: '%',
+    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    tip: 'Sigmoid-mapped clarity floor for WhisperHunter gain (p_clarity).'
+  },
+  {
+    id: 'whisperSensitivity', key: 'whisperSensitivity', label: 'Whisper Sensitivity',
+    min: 0, max: 100, step: 1, default: 55, unit: '%',
+    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    tip: 'Scales W-VAD energy threshold θ_e — higher catches quieter whispers.'
+  },
+  {
+    id: 'whisperThreshold', key: 'whisperThreshold', label: 'Whisper Threshold',
+    min: 0, max: 100, step: 1, default: 50, unit: '%',
+    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    tip: 'Steepens suppression curve w_str = 1 + 2·p_threshold.'
+  },
+  {
+    id: 'transientShaper', key: 'transientShaper', label: 'Transient Shaper',
+    min: -100, max: 100, step: 5, default: 0, unit: '',
+    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    tip: 'Bipolar transient emphasis: negative softens, positive sharpens consonants.'
+  },
+  {
+    id: 'breathControl', key: 'breathControl', label: 'Breath Control',
+    min: 0, max: 100, step: 1, default: 30, unit: '%',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
+    tip: 'Attenuates breath noise between whispered phrases.'
+  },
+  {
+    id: 'roomCorrection', key: 'roomCorrection', label: 'Room Correction',
+    min: 0, max: 100, step: 1, default: 40, unit: '%',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    tip: 'Spectral room correction complementing dereverb for whisper tails.'
+  },
+  {
+    id: 'subHarmonic', key: 'subHarmonic', label: 'Sub Harmonic',
+    min: 0, max: 100, step: 1, default: 0, unit: '%',
+    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    tip: 'Sub-harmonic body reinforcement for thin whisper recordings.'
+  },
 ];
+
+/** Calibrated registry with Part 3 transfer functions + Part 1 examples */
+export const SLIDER_REGISTRY = calibrateRegistry(RAW_SLIDER_REGISTRY);
 
 /**
  * TICK CONFIGURATION  — used by slider-ticks.js to render tick marks.

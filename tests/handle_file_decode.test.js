@@ -39,7 +39,8 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       URL: global.URL,
       setTimeout: setTimeout,
       clearTimeout: clearTimeout,
-      Promise: Promise
+      Promise: Promise,
+      requestAnimationFrame: (cb) => setTimeout(cb, 0),
     };
     vm.createContext(sandbox);
     vm.runInContext(appJs, sandbox);
@@ -67,13 +68,19 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       setStatus: jest.fn(),
       onAudioLoaded: jest.fn(),
       showNotification: jest.fn(),
+      _showFileLoading: jest.fn(),
+      _hideFileLoading: jest.fn(),
       _resetFileInput: jest.fn(),
+      _readFileArrayBuffer: VoiceIsolatePro.prototype._readFileArrayBuffer,
+      _decodeFileBuffer: VoiceIsolatePro.prototype._decodeFileBuffer,
       dom: {
         fileInfo: {},
         videoPlayer: { src: '' },
         videoCard: { style: {} }
       },
       ctx: {
+        state: 'running',
+        resume: jest.fn().mockResolvedValue(undefined),
         decodeAudioData: jest.fn().mockResolvedValue(decoded)
       }
     };
@@ -101,13 +108,19 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       setStatus: jest.fn(),
       onAudioLoaded: jest.fn(),
       showNotification: jest.fn(),
+      _showFileLoading: jest.fn(),
+      _hideFileLoading: jest.fn(),
       _resetFileInput: jest.fn(),
+      _readFileArrayBuffer: VoiceIsolatePro.prototype._readFileArrayBuffer,
+      _decodeFileBuffer: VoiceIsolatePro.prototype._decodeFileBuffer,
       dom: {
         fileInfo: { textContent: '' },
         videoPlayer: {},
         videoCard: { style: {} }
       },
       ctx: {
+        state: 'running',
+        resume: jest.fn().mockResolvedValue(undefined),
         decodeAudioData: jest.fn().mockRejectedValue(new Error('Decode failed'))
       }
     };
@@ -135,13 +148,19 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       setStatus: jest.fn(),
       onAudioLoaded: jest.fn(),
       showNotification: jest.fn(),
+      _showFileLoading: jest.fn(),
+      _hideFileLoading: jest.fn(),
       _resetFileInput: jest.fn(),
+      _readFileArrayBuffer: VoiceIsolatePro.prototype._readFileArrayBuffer,
+      _decodeFileBuffer: VoiceIsolatePro.prototype._decodeFileBuffer,
       dom: {
         fileInfo: { textContent: '' },
         videoPlayer: {},
         videoCard: { style: {} }
       },
       ctx: {
+        state: 'running',
+        resume: jest.fn().mockResolvedValue(undefined),
         decodeAudioData: jest.fn().mockResolvedValue([])
       }
     };

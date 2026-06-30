@@ -43,13 +43,13 @@ describe('Presets', () => {
     expect(PRESET_NAMES.length).toBe(14);
   });
 
-  test('SLIDERS block defines exactly 60 slider IDs', () => {
-    expect(sliderIds.length).toBe(60);
+  test('SLIDERS block defines exactly 67 slider IDs', () => {
+    expect(sliderIds.length).toBe(67);
   });
 
-  test('Every preset covers all 60 slider IDs', () => {
+  test('Every preset covers all 67 slider IDs', () => {
     expect(appJs).toContain('_presetDefaults');
-    expect(appJs).toContain('Ensure every preset covers all 60 slider IDs');
+    expect(appJs).toContain('Ensure every preset covers all 67 slider IDs');
 
     PRESET_NAMES.forEach(presetName => {
       const escapedPreset = presetName.replace('/', '\\/');

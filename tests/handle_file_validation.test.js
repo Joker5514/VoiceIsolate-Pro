@@ -17,6 +17,7 @@ const getAppCode = require('./helpers/get-app-code');
 // ── Shared fixture: load VoiceIsolatePro.prototype.handleFile ─────────────────
 
 let handleFile;
+let vipProto;
 
 beforeAll(() => {
   const appJs = getAppCode();
@@ -71,7 +72,8 @@ beforeAll(() => {
   vm.runInContext(appJs, sandbox);
 
   const VoiceIsolatePro = sandbox.module.exports;
-  handleFile = VoiceIsolatePro.prototype.handleFile;
+  vipProto = VoiceIsolatePro.prototype;
+  handleFile = vipProto.handleFile;
 });
 
 // ── Helper: build a minimal mockVip ──────────────────────────────────────────
@@ -83,6 +85,10 @@ function makeMockVip() {
     setStatus:   jest.fn(),
     onAudioLoaded: jest.fn(),
     showNotification: jest.fn(),
+    _showFileLoading: jest.fn(),
+    _hideFileLoading: jest.fn(),
+    _readFileArrayBuffer: vipProto._readFileArrayBuffer,
+    _decodeFileBuffer: vipProto._decodeFileBuffer,
     decodeViaVideoElement: jest.fn().mockResolvedValue({ length: 100 }),
     _resetFileInput: jest.fn(function () { if (this.dom?.fileInput) this.dom.fileInput.value = ''; }),
     dom: {
@@ -95,6 +101,8 @@ function makeMockVip() {
       mobileReprocessBtn: { disabled: false },
     },
     ctx: {
+      state: 'running',
+      resume: jest.fn().mockResolvedValue(undefined),
       decodeAudioData: jest.fn().mockResolvedValue({ length: 100 }),
     },
     params: {},
