@@ -260,7 +260,7 @@ function getWorker() {
   worker.addEventListener('message', (event) => {
     const msg = event.data || {};
     switch (msg.type) {
-      case 'ready':
+      case 'ready': {
         let debugEnabled = false;
         try {
           debugEnabled = typeof localStorage !== 'undefined' && localStorage.getItem('vip_debug') === '1';
@@ -269,6 +269,7 @@ function getWorker() {
           console.log('[VIP][landing] MLWorker ready (backend: ' + msg.backend + ')');
         }
         break;
+      }
       case 'progress':
         // Live inference progress: ring + numeric %. The status line keeps the
         // stage label only (set once in onProcess) so the polite aria-live
