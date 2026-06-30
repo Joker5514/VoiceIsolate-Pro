@@ -814,14 +814,6 @@ class VoiceIsolatePro {
         labelEl.appendChild(badge);
       }
 
-      const infoEl = document.createElement('span');
-      infoEl.className = 'sr-info';
-      infoEl.textContent = 'i';
-      infoEl.setAttribute('aria-hidden', 'true');
-      labelEl.appendChild(infoEl);
-      // Full hover/tap tooltip with a concrete example for every control.
-      infoEl.title = (s.desc || '') + (s.example ? ' — Example: ' + s.example : '');
-
       const inputEl = document.createElement('input');
       inputEl.type = 'range';
       inputEl.id = 'sl_' + s.id;
@@ -868,47 +860,43 @@ class VoiceIsolatePro {
         this._applySliderToWorklet(s.id, v);
       });
 
-      // Per-control explanation (what it does + a concrete example). Collapsed
-      // by default; tapping the "i" reveals it. Linked via aria-describedby so
-      // screen readers announce it when the slider is focused.
-      const descEl = document.createElement('div');
-      descEl.className = 'sr-desc';
-      descEl.id = 'desc_' + s.id;
-      const descWhat = document.createElement('span');
-      descWhat.className = 'sr-desc-what';
-      descWhat.textContent = s.desc || '';
-      descEl.appendChild(descWhat);
-      if (s.example) {
-        const exEl = document.createElement('span');
-        exEl.className = 'sr-desc-ex';
-        exEl.innerHTML = '';
-        const exLabel = document.createElement('strong');
-        exLabel.textContent = 'Example: ';
-        exEl.appendChild(exLabel);
-        exEl.appendChild(document.createTextNode(s.example));
-        descEl.appendChild(exEl);
-      }
-      inputEl.setAttribute('aria-describedby', 'desc_' + s.id);
-
-      infoEl.setAttribute('aria-expanded', 'false');
-      const toggleDesc = (e) => {
-        if (e) { e.preventDefault(); e.stopPropagation(); }
-        const open = row.classList.toggle('info-open');
-        infoEl.setAttribute('aria-expanded', String(open));
-      };
-      infoEl.addEventListener('click', toggleDesc);
-
       row.appendChild(labelEl);
       row.appendChild(inputEl);
       row.appendChild(valEl);
 
       const regEntry = SLIDER_REG_BY_ID[s.id];
-      const hintText = (regEntry && regEntry.hint) ? regEntry.hint : '';
+      const hintText = (regEntry && regEntry.hint) ? regEntry.hint : (s.desc || '');
+      let hintPanel = null;
       if (hintText) {
-        const hintEl = document.createElement('span');
-        hintEl.className = 'slider-hint';
-        hintEl.textContent = hintText;
-        row.appendChild(hintEl);
+        const hintBtn = document.createElement('button');
+        hintBtn.type = 'button';
+        hintBtn.className = 'slider-hint-btn';
+        hintBtn.textContent = 'i';
+        hintBtn.setAttribute('aria-label', `Explain ${s.label}`);
+        hintBtn.setAttribute('aria-expanded', 'false');
+        hintBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const wasOpen = row.classList.contains('hint-open');
+          document.querySelectorAll('.slider-row.hint-open').forEach((r) => {
+            r.classList.remove('hint-open');
+            const b = r.querySelector('.slider-hint-btn');
+            if (b) b.setAttribute('aria-expanded', 'false');
+          });
+          const open = !wasOpen;
+          if (open) {
+            row.classList.add('hint-open');
+            hintBtn.setAttribute('aria-expanded', 'true');
+          }
+        });
+
+        hintPanel = document.createElement('div');
+        hintPanel.className = 'slider-hint';
+        hintPanel.id = 'hint_' + s.id;
+        hintPanel.textContent = hintText;
+        inputEl.setAttribute('aria-describedby', hintPanel.id);
+
+        row.appendChild(hintBtn);
       }
       const examples = (regEntry && regEntry.examples && regEntry.examples.length)
         ? regEntry.examples
@@ -926,8 +914,8 @@ class VoiceIsolatePro {
         this._toggleInfoPopover(row, s.id, inputEl, examples);
       });
       row.appendChild(infoBtn);
+      if (hintPanel) row.appendChild(hintPanel);
 
-      row.appendChild(descEl);
       container.appendChild(row);
 
       window.VIP_PARAMS = window.VIP_PARAMS || {};
@@ -935,6 +923,25 @@ class VoiceIsolatePro {
     }
     this._renderWhisperModeGroup();
     this._bindInfoPopoverDismiss();
+    this._bindHintDismiss();
+  }
+
+  _bindHintDismiss() {
+    if (this._hintDismissBound) return;
+    this._hintDismissBound = true;
+    const closeAll = () => {
+      document.querySelectorAll('.slider-row.hint-open, .whisper-mode-row.hint-open').forEach((r) => {
+        r.classList.remove('hint-open');
+        const b = r.querySelector('.slider-hint-btn');
+        if (b) b.setAttribute('aria-expanded', 'false');
+      });
+    };
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.slider-hint-btn') && !e.target.closest('.slider-hint')) closeAll();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeAll();
+    });
   }
 
   /** Fallback usage examples when registry entry has none (legacy sliders). */
@@ -1063,13 +1070,28 @@ class VoiceIsolatePro {
 
     row.appendChild(labelEl);
     row.appendChild(group);
+
     const wmReg = SLIDER_REG_BY_ID.whisperMode;
     if (wmReg && wmReg.hint) {
-      const hintEl = document.createElement('span');
-      hintEl.className = 'slider-hint';
-      hintEl.textContent = wmReg.hint;
-      row.appendChild(hintEl);
+      const hintBtn = document.createElement('button');
+      hintBtn.type = 'button';
+      hintBtn.className = 'slider-hint-btn';
+      hintBtn.textContent = 'i';
+      hintBtn.setAttribute('aria-label', 'Explain Whisper Mode');
+      hintBtn.setAttribute('aria-expanded', 'false');
+      hintBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const open = row.classList.toggle('hint-open');
+        hintBtn.setAttribute('aria-expanded', String(open));
+      });
+      const hintPanel = document.createElement('div');
+      hintPanel.className = 'slider-hint';
+      hintPanel.textContent = wmReg.hint;
+      row.appendChild(hintBtn);
+      row.appendChild(hintPanel);
     }
+
     panel.insertBefore(row, panel.firstChild);
 
     window.VIP_PARAMS = window.VIP_PARAMS || {};
