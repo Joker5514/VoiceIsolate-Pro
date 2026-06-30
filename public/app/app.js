@@ -169,6 +169,7 @@ class VoiceIsolatePro {
     this.initCanvases();
     this.init3D();
     this.initMLWorker(); // start loading ML models in background
+    this.updateSeekBar();
   }
 
   ensureCtx() {
@@ -243,6 +244,7 @@ class VoiceIsolatePro {
     this.dom = {
       uploadZone:g('uploadZone'), fileInput:g('fileInput'), fileBtn:g('fileBtn'),
       micBtn:g('micBtn'), micLabel:g('micLabel'), fileInfo:g('fileInfo'),
+      fileName:g('fileName'), fileMeta:g('fileMeta'),
       processBtn:g('processBtn'), reprocessBtn:g('reprocessBtn'), stopProcBtn:g('stopProcBtn'),
       saveOrigBtn:g('saveOrigBtn'), saveProcBtn:g('saveProcBtn'),
       auditLogBtn:g('auditLogBtn'), forensicToggle:g('forensicToggle'),
@@ -283,7 +285,10 @@ class VoiceIsolatePro {
     this.dom.tpStop.addEventListener('click', () => this.stop());
     this.dom.tpRew.addEventListener('click', () => this.seekDelta(-5));
     this.dom.tpFwd.addEventListener('click', () => this.seekDelta(5));
-    this.dom.tpSeek.addEventListener('input', () => this.seekTo(this.dom.tpSeek.value / 1000));
+    this.dom.tpSeek.addEventListener('input', () => {
+      this.updateSeekBar();
+      this.seekTo(this.dom.tpSeek.value / 1000);
+    });
     this.dom.tpSpeed.addEventListener('change', () => { const r = parseFloat(this.dom.tpSpeed.value); if (this.currentSource) this.currentSource.playbackRate.value = r; if (this.isVideo) this.dom.videoPlayer.playbackRate = r; });
     this.dom.tpAB.addEventListener('click', () => this.toggleAB());
     document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
@@ -348,70 +353,102 @@ class VoiceIsolatePro {
   }
 
   // ======== FILE HANDLING (FIXED) ========
-  async handleFile(file) {
-    try {
-      // 🛡️ Sentinel: Validate file size (max 200MB) and MIME type
-      const MAX_SIZE = 200 * 1024 * 1024;
-      if (file.size > MAX_SIZE) throw new Error('File exceeds maximum allowed size (200MB)');
+  stopPlayback() { this.stop(); }
 
-      const allowedTypes = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac', 'audio/webm', 'audio/mp4', 'audio/aac', 'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
-      if (file.type && !allowedTypes.includes(file.type)) throw new Error('Unsupported file type');
+  stopLive() {
+    this.teardownChain();
+    this.stopSpectro();
+    if (this.isRecording) this.stopRecording();
+  }
 
-      this.ensureCtx();
-      this.stop(); // stop any current playback
-      this.dom.fileInfo.textContent = 'Loading: ' + file.name + '...';
-      this.setStatus('LOADING');
+  handleFile(file) {
+    if (!file) return;
+    this.stopPlayback();
+    this.stopLive();
 
-      this.isVideo = file.type.startsWith('video/');
+    const isVideo = file.type.startsWith('video');
+    this.isVideo = isVideo;
+    this.fileType = isVideo ? 'video' : 'audio';
 
-      // Always read file as ArrayBuffer FIRST (works for both audio and video)
-      const fileArrayBuffer = await file.arrayBuffer();
+    this.dom.fileInfo.style.display = 'block';
+    this.dom.fileName.innerText = '⏳ Loading...';
+    this.dom.fileMeta.innerText = `${(file.size / 1024 / 1024).toFixed(1)} MB`;
+    this.setStatus('LOADING');
 
-      // Try to decode audio from the file bytes
-      // decodeAudioData needs a COPY because it detaches the buffer
-      let audioBuf = null;
-      try {
-        audioBuf = await this.ctx.decodeAudioData(fileArrayBuffer.slice(0));
-      } catch (decodeErr) {
-        // Fallback: if direct decode fails (some video formats), use video element
-        if (this.isVideo) {
-          audioBuf = await this.decodeViaVideoElement(file);
-        } else {
-          throw new Error('Cannot decode this audio format. Try WAV or MP3. (' + decodeErr.message + ')');
-        }
-      }
+    this.ensureCtx();
 
-      if (!audioBuf || audioBuf.length === 0) {
+    const finishLoad = async (buffer, name) => {
+      if (!buffer || buffer.length === 0) {
         throw new Error('Decoded audio is empty. The file may be corrupt or unsupported.');
       }
-
-      // Set up video player if video
-      if (this.isVideo) {
-        if (this.videoUrl) URL.revokeObjectURL(this.videoUrl);
-        this.videoUrl = URL.createObjectURL(file);
-        this.dom.videoPlayer.src = this.videoUrl;
-        this.dom.videoCard.style.display = 'block';
-        // Wait for metadata
-        await new Promise((res, rej) => {
-          this.dom.videoPlayer.onloadedmetadata = res;
-          this.dom.videoPlayer.onerror = () => rej(new Error('Video metadata load failed'));
-          setTimeout(res, 5000); // timeout fallback
-        });
-      } else {
-        this.dom.videoCard.style.display = 'none';
-      }
-
-      this.inputBuffer = audioBuf;
+      this.inputBuffer = buffer;
+      this.duration = buffer.duration;
       this.outputBuffer = null;
-      // Phase 4: Attempt to load ML models if ONNX Runtime is available
       if (!this.mlReady) this.loadModels().catch(() => {});
-      this.onAudioLoaded(file.name);
+      await new Promise(r => requestAnimationFrame(r));
+      this.buildDSP();
+      this.onAudioLoaded(name);
+    };
 
-    } catch (err) {
-      structuredLog('error', 'File load error', { error: err.message });
-      this.dom.fileInfo.textContent = 'Error: ' + err.message;
+    const onDecodeError = (err) => {
+      this.dom.fileName.innerText = '❌ Decode failed';
+      this.dom.fileMeta.innerText = err.message;
+      structuredLog('error', 'decodeAudioData error', { error: err.message });
       this.setStatus('ERROR');
-    }
+    };
+
+    const onReadError = () => {
+      this.dom.fileName.innerText = '❌ File read error';
+      this.dom.fileMeta.innerText = 'Could not read file from disk.';
+      this.setStatus('ERROR');
+    };
+
+    const reader = new FileReader();
+
+    reader.onload = async (e) => {
+      try {
+        if (this.ctx.state === 'suspended') await this.ctx.resume();
+        await new Promise(r => setTimeout(r, 0));
+
+        let audioBuf = null;
+        try {
+          audioBuf = await this.ctx.decodeAudioData(e.target.result.slice(0));
+        } catch (decodeErr) {
+          if (isVideo) {
+            audioBuf = await this.decodeViaVideoElement(file);
+          } else {
+            throw new Error('Cannot decode this audio format. Try WAV or MP3. (' + decodeErr.message + ')');
+          }
+        }
+
+        if (isVideo) {
+          if (this.videoUrl) URL.revokeObjectURL(this.videoUrl);
+          this.videoUrl = URL.createObjectURL(file);
+          this.dom.videoPlayer.src = this.videoUrl;
+          this.dom.videoCard.style.display = 'block';
+          await new Promise((res, rej) => {
+            this.dom.videoPlayer.onloadedmetadata = res;
+            this.dom.videoPlayer.onerror = () => rej(new Error('Video metadata load failed'));
+            setTimeout(res, 5000);
+          });
+        } else {
+          this.dom.videoCard.style.display = 'none';
+        }
+
+        this.dom.fileName.innerText = file.name;
+        this.dom.fileMeta.innerText =
+          `${isVideo ? 'Video' : 'Audio'} · ${audioBuf.numberOfChannels}ch · ` +
+          `${(audioBuf.sampleRate / 1000).toFixed(1)} kHz · ` +
+          `${audioBuf.duration.toFixed(1)}s`;
+
+        await finishLoad(audioBuf, file.name);
+      } catch (err) {
+        onDecodeError(err);
+      }
+    };
+
+    reader.onerror = onReadError;
+    reader.readAsArrayBuffer(file);
   }
 
   // Fallback: decode audio by playing video element into an offline context
@@ -472,7 +509,10 @@ class VoiceIsolatePro {
   onAudioLoaded(name) {
     const buf = this.inputBuffer;
     const dur = this.fmtDur(buf.duration);
-    this.dom.fileInfo.textContent = (name || 'Recording') + ' (' + dur + ')';
+    this.dom.fileInfo.style.display = 'block';
+    this.dom.fileName.innerText = name || 'Recording';
+    this.dom.fileMeta.innerText =
+      `${buf.numberOfChannels}ch · ${(buf.sampleRate / 1000).toFixed(1)} kHz · ${dur}`;
     this.dom.processBtn.disabled = false;
     this.dom.saveOrigBtn.disabled = false;
     this.dom.reprocessBtn.disabled = true;
@@ -517,15 +557,27 @@ class VoiceIsolatePro {
         const blob = new Blob(this.recordedChunks, { type: mt });
         const ab = await blob.arrayBuffer();
         try {
-          this.inputBuffer = await this.ctx.decodeAudioData(ab);
+          if (this.ctx.state === 'suspended') await this.ctx.resume();
+          await new Promise(r => setTimeout(r, 0));
+          this.inputBuffer = await this.ctx.decodeAudioData(ab.slice(0));
           this.outputBuffer = null;
           this.dom.videoCard.style.display = 'none';
           this.isVideo = false;
+          await new Promise(r => requestAnimationFrame(r));
+          this.buildDSP();
           this.onAudioLoaded('Recording');
-        } catch (e) { this.dom.fileInfo.textContent = 'Decode error: ' + e.message; this.setStatus('ERROR'); }
+        } catch (e) {
+          this.dom.fileName.innerText = '❌ Decode failed';
+          this.dom.fileMeta.innerText = e.message;
+          this.setStatus('ERROR');
+        }
       };
       this.mediaRecorder.start(100);
-    } catch (e) { this.dom.fileInfo.textContent = 'Mic denied'; this.setStatus('ERROR'); }
+    } catch (e) {
+      this.dom.fileName.innerText = '❌ Mic denied';
+      this.dom.fileMeta.innerText = e.message || 'Microphone access was blocked.';
+      this.setStatus('ERROR');
+    }
   }
 
   stopRecording() {
@@ -539,6 +591,14 @@ class VoiceIsolatePro {
     for (const t of ['audio/webm;codecs=opus','audio/webm','audio/ogg','audio/mp4'])
       if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(t)) return t;
     return 'audio/webm';
+  }
+
+  updateSeekBar() {
+    const el = this.dom.tpSeek;
+    if (!el) return;
+    const max = parseFloat(el.max) || 1000;
+    const pct = max > 0 ? (parseFloat(el.value) / max) * 100 : 0;
+    el.style.setProperty('--seek-pct', pct + '%');
   }
 
   // ======== TRANSPORT ========
@@ -557,8 +617,10 @@ class VoiceIsolatePro {
       this.dom.videoPlayer.muted = true;
       this.dom.videoPlayer.play().catch(() => {});
     }
-    this.startSpectro(this.analyserNode);
-    this.startFreq(this.analyserNode);
+    if (this.analyserNode) {
+      this.startSpectro(this.analyserNode);
+      this.startFreq(this.analyserNode);
+    }
     this.tickTime();
   }
 
@@ -580,6 +642,7 @@ class VoiceIsolatePro {
     this.stopSpectro();
     this.dom.tpCur.textContent = '0:00';
     this.dom.tpSeek.value = 0;
+    this.updateSeekBar();
   }
 
   seekDelta(d) {
@@ -588,7 +651,11 @@ class VoiceIsolatePro {
     if (this.isPlaying) this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset + d));
     if (this.isPlaying) this.play();
-    else { this.dom.tpCur.textContent = this.fmtDur(this.playOffset); this.dom.tpSeek.value = (this.playOffset / buf.duration) * 1000; }
+    else {
+      this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
+      this.dom.tpSeek.value = (this.playOffset / buf.duration) * 1000;
+      this.updateSeekBar();
+    }
   }
 
   seekTo(frac) {
@@ -618,23 +685,21 @@ class VoiceIsolatePro {
       if (elapsed >= dur) { this.stop(); return; }
       this.dom.tpCur.textContent = this.fmtDur(elapsed);
       this.dom.tpSeek.value = dur > 0 ? (elapsed / dur) * 1000 : 0;
+      this.updateSeekBar();
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   }
 
   // ======== LIVE AUDIO CHAIN ========
-  buildLiveChain(buf) {
+  buildDSP() {
     this.teardownChain();
     const ctx = this.ensureCtx();
     const p = this.params;
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.playbackRate.value = parseFloat(this.dom.tpSpeed.value) || 1;
-    src.onended = () => { if (this.isPlaying) this.stop(); };
 
     const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = p.hpFreq; hp.Q.value = p.hpQ;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = p.lpFreq; lp.Q.value = p.lpQ;
+    const hum = ctx.createBiquadFilter(); hum.type = 'notch'; hum.frequency.value = 60; hum.Q.value = 30;
 
     const eqDefs = [
       { id:'eqSub',f:40,type:'lowshelf'},{id:'eqBass',f:100,type:'peaking',q:1.2},{id:'eqWarmth',f:200,type:'peaking',q:1},
@@ -658,15 +723,28 @@ class VoiceIsolatePro {
     const wG = ctx.createGain(); wG.gain.value = p.outWidth/100;
     const ana = ctx.createAnalyser(); ana.fftSize = 4096; ana.smoothingTimeConstant = 0.75;
 
-    const chain = [src, hp, lp, ...eqs.map(e=>e.node), deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, ana];
-    for (let i = 0; i < chain.length-1; i++) chain[i].connect(chain[i+1]);
-    ana.connect(ctx.destination);
+    const dspChain = [hp, lp, hum, ...eqs.map(e => e.node), deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, ana];
+    for (let i = 0; i < dspChain.length - 1; i++) dspChain[i].connect(dspChain[i + 1]);
+
+    this.analyserNode = ana;
+    this.liveNodes = { hp, lp, hum, eqs, deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, ana, dspChain };
+    this.liveChainBuilt = true;
+  }
+
+  buildLiveChain(buf) {
+    this.buildDSP();
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = parseFloat(this.dom.tpSpeed.value) || 1;
+    src.onended = () => { if (this.isPlaying) this.stop(); };
+
+    src.connect(this.liveNodes.hp);
+    this.liveNodes.ana.connect(ctx.destination);
 
     src.start(0, this.playOffset);
     this.currentSource = src;
-    this.analyserNode = ana;
-    this.liveNodes = { hp, lp, eqs, deEss, tilt, vfL, vfH, comp, mkG, lim, outG, wG, chain };
-    this.liveChainBuilt = true;
+    this.liveNodes.chain = [src, ...this.liveNodes.dspChain];
   }
 
   updateLiveChain() {
@@ -694,29 +772,19 @@ class VoiceIsolatePro {
 
   teardownChain() {
     if (this.currentSource) {
-      try {
-        this.currentSource.stop();
-      } catch (e) {
-        // Ignore errors if the source is already stopped
-      }
-      try {
-        this.currentSource.disconnect();
-      } catch (e) {
-        // Ignore errors if the source is already disconnected
-      }
+      try { this.currentSource.stop(); } catch (e) { /* already stopped */ }
+      try { this.currentSource.disconnect(); } catch (e) { /* already disconnected */ }
       this.currentSource = null;
     }
-    if (this.liveNodes.chain) {
-      this.liveNodes.chain.forEach(n => {
-        try {
-          n.disconnect();
-        } catch (e) {
-          // Ignore errors if the node is already disconnected
-        }
+    const nodes = this.liveNodes.chain || this.liveNodes.dspChain;
+    if (nodes) {
+      nodes.forEach(n => {
+        try { n.disconnect(); } catch (e) { /* already disconnected */ }
       });
     }
     this.liveNodes = {};
     this.liveChainBuilt = false;
+    this.analyserNode = null;
   }
 
   // ======== 32-STAGE OCTA-PASS OFFLINE PIPELINE ========
@@ -1532,20 +1600,38 @@ class VoiceIsolatePro {
   // ======== VISUALIZATIONS ========
   initCanvases(){[this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas].forEach(c=>this.resizeCanvas(c));this.clearCanvas(this.dom.waveOrigCanvas,'Load audio to begin');this.clearCanvas(this.dom.waveProcCanvas,'Process to see result');this.clearCanvas(this.dom.spectro2DCanvas,'Play audio for spectrogram');this.clearCanvas(this.dom.freqCanvas,'Play audio for analyzer');}
 
-  resizeCanvas(c){const r=c.getBoundingClientRect();c.width=Math.floor(r.width);c.height=Math.floor(r.height);c._w=r.width;c._h=r.height;}
+  resizeCanvas(c){
+    const dpr = window.devicePixelRatio || 1;
+    const rect = c.getBoundingClientRect();
+    const w = Math.round(rect.width * dpr);
+    const h = Math.round(rect.height * dpr);
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+    c._w = rect.width;
+    c._h = rect.height;
+    c._dpr = dpr;
+  }
 
   clearCanvas(c,txt){const x=c.getContext('2d');x.fillStyle='#030306';x.fillRect(0,0,c.width,c.height);if(txt){x.font='11px Outfit,sans-serif';x.fillStyle='rgba(255,255,255,0.12)';x.textAlign='center';x.fillText(txt,c.width/2,c.height/2+3);}}
 
   drawWaveform(buf,canvas,color){const x=canvas.getContext('2d');const w=canvas.width;const h=canvas.height;x.fillStyle='#030306';x.fillRect(0,0,w,h);if(!buf)return;const d=buf.getChannelData(0);const step=Math.max(1,Math.floor(d.length/w));x.strokeStyle='rgba(255,255,255,0.04)';x.lineWidth=1;x.beginPath();x.moveTo(0,h/2);x.lineTo(w,h/2);x.stroke();x.fillStyle=color;for(let px=0;px<w;px++){const idx=px*step;let mn=1,mx=-1;for(let i=0;i<step&&(idx+i)<d.length;i++){const v=d[idx+i];if(v<mn)mn=v;if(v>mx)mx=v;}const y1=((1-mx)*0.5)*h;const y2=((1-mn)*0.5)*h;x.globalAlpha=0.8;x.fillRect(px,y1,1,Math.max(1,y2-y1));}x.globalAlpha=1;}
 
-  // ---- 2D Spectrogram (FIXED: no DPR scaling issues) ----
+  // ---- 2D Spectrogram (FIXED: DPR sizing + analyser guard) ----
   startSpectro(ana){
-    this.stopSpectro(); this.spectroRunning=true; this.spectroX=0;
-    const c=this.dom.spectro2DCanvas; this.resizeCanvas(c);
-    const x=c.getContext('2d'); x.fillStyle='#030306'; x.fillRect(0,0,c.width,c.height);
+    this.stopSpectro();
+    if (!ana) return;
+    this.spectroRunning=true; this.spectroX=0;
+    const c=this.dom.spectro2DCanvas;
+    const x=c.getContext('2d');
+    this.resizeCanvas(c);
+    x.fillStyle='#030306'; x.fillRect(0,0,c.width,c.height);
     const bLen=ana.frequencyBinCount; const arr=new Uint8Array(bLen);
     const draw=()=>{
-      if(!this.spectroRunning)return; this.animId=requestAnimationFrame(draw);
+      this.animId=requestAnimationFrame(draw);
+      if(!this.spectroRunning || !this.analyserNode) return;
+      this.resizeCanvas(c);
       ana.getByteFrequencyData(arr);
       const w=c.width;const h=c.height;const sw=2;
       if(this.spectroX+sw>=w){
@@ -1593,11 +1679,17 @@ class VoiceIsolatePro {
 
   // ---- Frequency Analyzer ----
   startFreq(ana){
-    const c=this.dom.freqCanvas;this.resizeCanvas(c);
-    const x=c.getContext('2d');const bLen=ana.frequencyBinCount;const arr=new Uint8Array(bLen);
+    if (!ana) return;
+    const c=this.dom.freqCanvas;
+    const x=c.getContext('2d');
+    const bLen=ana.frequencyBinCount;
+    const arr=new Uint8Array(bLen);
     const draw=()=>{
-      if(!this.spectroRunning)return;requestAnimationFrame(draw);
-      ana.getByteFrequencyData(arr);const w=c.width;const h=c.height;
+      requestAnimationFrame(draw);
+      if(!this.spectroRunning || !this.analyserNode) return;
+      this.resizeCanvas(c);
+      ana.getByteFrequencyData(arr);
+      const w=c.width;const h=c.height;
       x.fillStyle='#030306';x.fillRect(0,0,w,h);
       x.strokeStyle='rgba(255,255,255,0.03)';x.lineWidth=1;
       for(let i=1;i<5;i++){const gy=(i/5)*h;x.beginPath();x.moveTo(0,gy);x.lineTo(w,gy);x.stroke();}
@@ -1613,8 +1705,12 @@ class VoiceIsolatePro {
 
   // ---- 3D Spectrogram ----
   init3D(){
+    if (this.three.ren) return;
     const ct=this.dom.spectro3DContainer;const w=ct.clientWidth;const h=ct.clientHeight;
-    if(w===0||h===0)return;
+    if(w===0||h===0){
+      requestAnimationFrame(() => this.init3D());
+      return;
+    }
     const scene=new THREE.Scene();scene.background=new THREE.Color(0x030306);
     const cam=new THREE.PerspectiveCamera(45,w/h,0.1,1000);cam.position.set(0,40,60);cam.lookAt(0,0,0);
     const ren=new THREE.WebGLRenderer({canvas:this.dom.spectro3DCanvas,antialias:true});
@@ -1657,7 +1753,22 @@ class VoiceIsolatePro {
     pos.needsUpdate=true;colA.needsUpdate=true;
   }
 
-  render3D(){requestAnimationFrame(()=>this.render3D());if(this.three.ren)this.three.ren.render(this.three.scene,this.three.cam);}
+  render3D(){
+    requestAnimationFrame(() => this.render3D());
+    if (!this.three.ren) {
+      this.init3D();
+      return;
+    }
+    const ct = this.dom.spectro3DContainer;
+    const w = ct.clientWidth;
+    const h = ct.clientHeight;
+    if (w > 0 && h > 0) {
+      this.three.ren.setSize(w, h, false);
+      this.three.cam.aspect = w / h;
+      this.three.cam.updateProjectionMatrix();
+    }
+    this.three.ren.render(this.three.scene, this.three.cam);
+  }
 
   onResize(){
     [this.dom.waveOrigCanvas,this.dom.waveProcCanvas,this.dom.spectro2DCanvas,this.dom.freqCanvas].forEach(c=>this.resizeCanvas(c));
