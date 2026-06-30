@@ -463,8 +463,14 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     const frameMedian = new Float32Array(numBins);
     const bufIdx = this._frameIdx % 5;
+    const vals = new Float32Array(5);
     for (let k = 0; k < numBins; k++) {
-      const vals = this._circularMagBuffer.map(f => f[k]).sort((a, b) => a - b);
+      vals[0] = this._circularMagBuffer[0][k];
+      vals[1] = this._circularMagBuffer[1][k];
+      vals[2] = this._circularMagBuffer[2][k];
+      vals[3] = this._circularMagBuffer[3][k];
+      vals[4] = this._circularMagBuffer[4][k];
+      vals.sort();
       frameMedian[k] = vals[2];
       const ratio = mag[k] / (frameMedian[k] + 1e-10);
       if (ratio < 1.3) mag[k] *= (1 - params.musicKill / 100);
