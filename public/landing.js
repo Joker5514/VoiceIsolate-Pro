@@ -18,8 +18,41 @@ import { SpeakerControls } from '/src/presentation/SpeakerControls.js';
 import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
 import { MODEL_MANIFEST } from '/src/core/ModelManifest.js';
+import { SLIDER_HINTS } from '/app/slider-map.js';
 
 const $ = (id) => document.getElementById(id);
+
+/** Maps landing slider DOM ids → engineer-mode SLIDER_HINTS keys (or _custom). */
+const LANDING_HINT_MAP = Object.freeze({
+  noiseReductionSlider: 'nrAmount',
+  voiceLevelSlider: '_voiceLevel',
+  volumeSlider: 'outGain',
+  eqLowSlider: 'eqBass',
+  eqHighSlider: 'eqAir',
+  eqLowMidSlider: 'eqLowMid',
+  eqMidSlider: 'eqMid',
+  eqHighMidSlider: 'eqPresence',
+  highpassSlider: 'hpFreq',
+  lowpassSlider: 'lpFreq',
+  compThresholdSlider: 'compThresh',
+  compRatioSlider: 'compRatio',
+  compAttackSlider: 'compAttack',
+  compReleaseSlider: 'compRelease',
+  compKneeSlider: 'compKnee',
+  makeupGainSlider: 'compMakeup',
+  stereoWidthSlider: 'stereoWidth',
+  gateThresholdSlider: 'gateThresh',
+  gateRangeSlider: 'gateRange',
+  gateAttackSlider: 'gateAttack',
+  gateReleaseSlider: 'gateRelease',
+  deEsserFreqSlider: 'deEssFreq',
+  deEsserAmountSlider: '_deEsserPct',
+});
+
+const LANDING_CUSTOM_HINTS = Object.freeze({
+  _voiceLevel: 'Sets how loud the isolated voice sits against the removed noise stem. Raise toward 130% when the voice feels buried after separation.',
+  _deEsserPct: 'Limits how much harsh “S” and “T” sounds are pulled down in the live mix. Raise toward 40% for bright podcast mics; keep near 0% for already-smooth sources.',
+});
 
 const ui = {
   fileInput: $('fileInput'),
@@ -404,6 +437,78 @@ function paintSliderFill(slider) {
   slider.style.setProperty('--pct', `${Math.max(0, Math.min(100, pct))}%`);
 }
 
+function resolveLandingHint(sliderId) {
+  const key = LANDING_HINT_MAP[sliderId];
+  if (!key) return '';
+  if (key.startsWith('_')) return LANDING_CUSTOM_HINTS[key] || '';
+  return SLIDER_HINTS[key] || '';
+}
+
+/** Collapsed hint panels — tap “i” after each value readout to expand. */
+function wireSliderHints() {
+  const grid = document.querySelector('.slider-grid');
+  if (!grid) return;
+
+  grid.querySelectorAll('.slider-row').forEach((row) => {
+    if (row.querySelector('.slider-hint-btn')) return;
+    const input = row.querySelector('input[type="range"]');
+    if (!input) return;
+    const hintText = resolveLandingHint(input.id);
+    if (!hintText) return;
+
+    const hintBtn = document.createElement('button');
+    hintBtn.type = 'button';
+    hintBtn.className = 'slider-hint-btn';
+    hintBtn.textContent = 'i';
+    hintBtn.setAttribute('aria-label', `Explain ${row.querySelector('label')?.textContent || input.id}`);
+    hintBtn.setAttribute('aria-expanded', 'false');
+
+    const hintPanel = document.createElement('div');
+    hintPanel.className = 'slider-hint';
+    hintPanel.id = `landing_hint_${input.id}`;
+    hintPanel.textContent = hintText;
+    input.setAttribute('aria-describedby', hintPanel.id);
+
+    hintBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const wasOpen = row.classList.contains('hint-open');
+      grid.querySelectorAll('.slider-row.hint-open').forEach((r) => {
+        r.classList.remove('hint-open');
+        const b = r.querySelector('.slider-hint-btn');
+        if (b) b.setAttribute('aria-expanded', 'false');
+      });
+      if (!wasOpen) {
+        row.classList.add('hint-open');
+        hintBtn.setAttribute('aria-expanded', 'true');
+      }
+    });
+
+    row.appendChild(hintBtn);
+    row.appendChild(hintPanel);
+  });
+
+  if (!grid.dataset.hintDismissBound) {
+    grid.dataset.hintDismissBound = '1';
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('.slider-hint-btn') || e.target.closest('.slider-hint')) return;
+      grid.querySelectorAll('.slider-row.hint-open').forEach((r) => {
+        r.classList.remove('hint-open');
+        const b = r.querySelector('.slider-hint-btn');
+        if (b) b.setAttribute('aria-expanded', 'false');
+      });
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      grid.querySelectorAll('.slider-row.hint-open').forEach((r) => {
+        r.classList.remove('hint-open');
+        const b = r.querySelector('.slider-hint-btn');
+        if (b) b.setAttribute('aria-expanded', 'false');
+      });
+    });
+  }
+}
+
 function wireReadouts() {
   for (const [sliderId, valId, fmt] of READOUTS) {
     const slider = $(sliderId);
@@ -756,6 +861,7 @@ window.addEventListener('unhandledrejection', (event) => {
 ui.processBtn.addEventListener('click', onProcess);
 ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.value));
 wireReadouts();
+wireSliderHints();
 wireTransport();
 wireMuteButtons();
 wireDragAndDrop();
