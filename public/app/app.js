@@ -2257,7 +2257,7 @@ class VoiceIsolatePro {
 
     // [WHISPER UPDATE] WhisperHunterAI offline frame processing (Part 4)
     const hunter = typeof window !== 'undefined' ? window._vipWhisperHunter : null;
-    const mapUi = (typeof window !== 'undefined' && window.mapWhisperUi) ? window.mapWhisperUi : (v) => 0.5;
+    const mapUi = (typeof window !== 'undefined' && window.mapWhisperUi) ? window.mapWhisperUi : () => 0.5;
     if (hunter && typeof hunter.processMagnitudes === 'function') {
       const whParams = {
         clarity: mapUi(p.whisperClarity ?? 65),

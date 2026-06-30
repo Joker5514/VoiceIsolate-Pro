@@ -15,6 +15,8 @@
 
 'use strict';
 
+/* global window */
+
 const { chromium } = require('playwright');
 const http = require('http');
 

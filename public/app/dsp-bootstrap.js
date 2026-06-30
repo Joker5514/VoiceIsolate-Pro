@@ -1,3 +1,4 @@
+/* global WhisperHunterAI, PipelineOrchestrator */
 /**
  * dsp-bootstrap.js
  * ─────────────────────────────────────────────────────────────────────────────
@@ -165,7 +166,8 @@
 
   const FLAG_SLOTS        = 4;
   const FFT_SIZE          = 4096;
-  const HOP_SIZE          = 1024;
+  const _HOP_SIZE         = 1024; // pinned STFT hop — reserved for future SAB sizing
+  void _HOP_SIZE;
   const HALF_BINS         = FFT_SIZE / 2 + 1;
   const SAB_HEADER_BYTES  = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;
   const INPUT_SAB_BYTES   = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * HALF_BINS * 2;
