@@ -397,6 +397,56 @@ export const SLIDER_REGISTRY = [
     transform: v => v, target: 'worklet', rt: false, group: 'tab-out',
     tip: 'Final stereo width on the output bus. 100% = unchanged, 0% = mono sum, 200% = widened.'
   },
+
+  // ── Extreme Isolation (8 sliders) — [WHISPER UPDATE] ───────────────────────
+  {
+    id: 'whisperLift', key: 'whisperLift', label: 'Whisper Lift Gain',
+    min: 0, max: 40, step: 1, default: 18, unit: 'dB',
+    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    tip: 'Post-mask amplification on bins where voice confidence exceeds 0.55.'
+  },
+  {
+    id: 'crowdNull', key: 'crowdNull', label: 'Crowd Null Depth',
+    min: 0, max: 100, step: 1, default: 72, unit: '%',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    tip: 'Second-pass spectral subtraction targeting 200–2500 Hz crowd murmur.'
+  },
+  {
+    id: 'bassCrush', key: 'bassCrush', label: 'Bass Crush (Sub/Kick)',
+    min: 0, max: 100, step: 1, default: 90, unit: '%',
+    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    tip: 'Attenuates kick drum and sub bass that mask whisper formants.'
+  },
+  {
+    id: 'reverbStrip', key: 'reverbStrip', label: 'Reverb Strip (RT60)',
+    min: 0, max: 2000, step: 10, default: 600, unit: 'ms',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    tip: 'Single-pass spectral dereverb driven by estimated RT60.'
+  },
+  {
+    id: 'voiceTunnel', key: 'voiceTunnel', label: 'Voice Tunnel (Formant)',
+    min: 0, max: 100, step: 1, default: 65, unit: '%',
+    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    tip: 'Narrow-band formant emphasis for whisper intelligibility.'
+  },
+  {
+    id: 'musicKill', key: 'musicKill', label: 'Music Kill (Comb)',
+    min: 0, max: 100, step: 1, default: 80, unit: '%',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    tip: 'Suppresses steady-state harmonic music while preserving speech transients.'
+  },
+  {
+    id: 'snrFloor', key: 'snrFloor', label: 'SNR Rescue Floor',
+    min: -80, max: -20, step: 1, default: -52, unit: 'dBFS',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    tip: 'Minimum power threshold — bins below are treated as noise-only.'
+  },
+  {
+    id: 'whisperMode', key: 'whisperMode', label: 'Whisper Mode',
+    min: 0, max: 3, step: 1, default: 2, unit: '',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    tip: 'Processing aggression: Off, Light, Heavy, or Forensic multi-pass.'
+  },
 ];
 
 /**

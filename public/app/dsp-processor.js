@@ -162,8 +162,21 @@ class DSPProcessor extends AudioWorkletProcessor {
       eqPresence:  0.0,
       eqClarity:   0.0,
       eqAir:       0.0,
-      eqBrill:     0.0
+      eqBrill:     0.0,
+      whisperLift: 18,
+      crowdNull:   72,
+      bassCrush:   90,
+      reverbStrip: 600,
+      voiceTunnel: 65,
+      musicKill:   80,
+      snrFloor:    -52,
+      whisperMode: 2
     };
+
+    // [WHISPER UPDATE] Circular magnitude buffer for music-kill median tracking
+    this._circularMagBuffer = Array.from({ length: 5 }, () => new Float32Array(HALF_BINS));
+    this._frameIdx = 0;
+    this._noiseProfile = new Float32Array(HALF_BINS);
 
     // Define reasonable safety bounds for DSP stability
     this._bounds = {
@@ -191,7 +204,15 @@ class DSPProcessor extends AudioWorkletProcessor {
       eqPresence:  [-24, 24],
       eqClarity:   [-24, 24],
       eqAir:       [-24, 24],
-      eqBrill:     [-24, 24]
+      eqBrill:     [-24, 24],
+      whisperLift: [0, 40],
+      crowdNull:   [0, 100],
+      bassCrush:   [0, 100],
+      reverbStrip: [0, 2000],
+      voiceTunnel: [0, 100],
+      musicKill:   [0, 100],
+      snrFloor:    [-80, -20],
+      whisperMode: [0, 3]
     };
 
     // Gate hold state: prevents clicking on rapid gate transitions
@@ -432,24 +453,86 @@ class DSPProcessor extends AudioWorkletProcessor {
       }
     }
 
+    // [WHISPER UPDATE] Extreme isolation spectral ops (Steps A–E, in-place before mask)
+    const params = this._params;
+    const sRate = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
+    const numBins = HALF_BINS;
+
+    const bassCrushCutoff = Math.round((params.bassCrush / 100) * 0.045 * FFT_SIZE);
+    for (let k = 0; k < bassCrushCutoff; k++) mag[k] *= 0.0001;
+
+    const frameMedian = new Float32Array(numBins);
+    const bufIdx = this._frameIdx % 5;
+    const vals = new Float32Array(5);
+    for (let k = 0; k < numBins; k++) {
+      vals[0] = this._circularMagBuffer[0][k];
+      vals[1] = this._circularMagBuffer[1][k];
+      vals[2] = this._circularMagBuffer[2][k];
+      vals[3] = this._circularMagBuffer[3][k];
+      vals[4] = this._circularMagBuffer[4][k];
+      vals.sort();
+      frameMedian[k] = vals[2];
+      const ratio = mag[k] / (frameMedian[k] + 1e-10);
+      if (ratio < 1.3) mag[k] *= (1 - params.musicKill / 100);
+    }
+    this._circularMagBuffer[bufIdx].set(mag);
+    this._frameIdx++;
+
+    const crowdLowBin = Math.round(200 / (sRate / FFT_SIZE));
+    const crowdHighBin = Math.round(2500 / (sRate / FFT_SIZE));
+    const crowdOSF = 1.5 + (params.crowdNull / 100) * 4.5;
+    const crowdFloor = 0.005;
+    for (let k = crowdLowBin; k < crowdHighBin; k++) {
+      const suppressed = mag[k] - crowdOSF * this._noiseProfile[k];
+      mag[k] = Math.max(suppressed, crowdFloor * mag[k]);
+      this._noiseProfile[k] = this._noiseProfile[k] * 0.99 + mag[k] * 0.01;
+    }
+
+    const frameTimeSec = HOP_SIZE / sRate;
+    const rt60Sec = Math.max(params.reverbStrip / 1000, 0.001);
+    const decayMask = Math.exp(-Math.log(1000) * frameTimeSec / rt60Sec);
+    const revAmt = params.reverbStrip > 0 ? (1 - decayMask) * 0.9 : 0;
+    const revMultiplier = 1 - revAmt;
+    for (let k = 0; k < numBins; k++) {
+      mag[k] *= revMultiplier;
+    }
+
+    const snrThresh = Math.pow(10, params.snrFloor / 20);
+    for (let k = 0; k < numBins; k++) {
+      if (mag[k] < snrThresh) mag[k] = 0;
+    }
+
+    const wmModes = {
+      0: { maskFloor: 0.15, postGain: 1.0 },
+      1: { maskFloor: 0.08, postGain: 3.2 },
+      2: { maskFloor: 0.03, postGain: 8.0 },
+      3: { maskFloor: 0.005, postGain: 18.0 },
+    };
+    const wm = wmModes[Math.round(params.whisperMode)] || wmModes[2];
+
     // Build masked magnitude spectrum
     const maskedMag = new Float32Array(HALF_BINS);
     if (mask) {
-      // ML mask path: clamp mask to [0,1] and scale magnitude
       for (let k = 0; k < HALF_BINS; k++) {
-        maskedMag[k] = mag[k] * Math.max(0.0, Math.min(1.0, mask[k]));
+        const m = Math.max(wm.maskFloor, Math.min(1.0, mask[k]));
+        maskedMag[k] = mag[k] * m;
       }
     } else {
-      // Classical fallback: Wiener-style spectral subtraction
       const alpha = this._params.nrAmount || 0.0;
       const factor = Math.max(0.0, 1.0 - alpha * 0.5);
       for (let k = 0; k < HALF_BINS; k++) {
-        maskedMag[k] = mag[k] * factor;
+        maskedMag[k] = mag[k] * Math.max(wm.maskFloor, factor);
       }
     }
 
+    // [WHISPER UPDATE] Step F — whisper lift on high-confidence mask bins
+    const liftGain = Math.pow(10, params.whisperLift / 20) * wm.postGain;
+    for (let k = 0; k < HALF_BINS; k++) {
+      const m = mask ? Math.max(0.0, Math.min(1.0, mask[k])) : 0.6;
+      if (m > 0.55) maskedMag[k] *= liftGain;
+    }
+
     // ── Spectral EQ & Filters ──
-    const sRate = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
     const binHz = sRate / FFT_SIZE;
 
     const eq = [
@@ -496,6 +579,27 @@ class DSPProcessor extends AudioWorkletProcessor {
       }
 
       maskedMag[k] *= gain;
+    }
+
+    // [WHISPER UPDATE] Voice tunnel — formant-focused peaking emphasis
+    const voiceTunnel = params.voiceTunnel || 0;
+    if (voiceTunnel > 0) {
+      const tunnelQ1 = 2 + (voiceTunnel / 100) * 8;
+      const tunnelG1 = voiceTunnel * 0.12;
+      const tunnelQ2 = 3 + (voiceTunnel / 100) * 6;
+      const tunnelG2 = voiceTunnel * 0.08;
+      const loCut = 300 + (200 * voiceTunnel / 100);
+      const hiCut = 3400 - (600 * voiceTunnel / 100);
+      for (let k = 0; k < HALF_BINS; k++) {
+        const hz = k * binHz;
+        let g = 1;
+        const d1 = Math.abs(hz - 1200) / (1200 / tunnelQ1);
+        const d2 = Math.abs(hz - 2800) / (2800 / tunnelQ2);
+        if (d1 < 1) g *= Math.pow(10, (tunnelG1 * (1 - d1)) / 20);
+        if (d2 < 1) g *= Math.pow(10, (tunnelG2 * (1 - d2)) / 20);
+        if (hz < loCut || hz > hiCut) g *= 0.85;
+        maskedMag[k] *= g;
+      }
     }
 
     // FIX [3] + FIX [6]: Reconstruct complex spectrum using polar form.

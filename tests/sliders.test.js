@@ -23,8 +23,8 @@ while ((m = sliderIdRegex.exec(slidersBlock)) !== null) {
 }
 
 describe('SLIDERS definition', () => {
-  test('Should define exactly 52 sliders', () => {
-    expect(sliderIds.length).toBe(52);
+  test('Should define exactly 60 sliders', () => {
+    expect(sliderIds.length).toBe(60);
   });
 
   test('All sliders should have unique IDs', () => {

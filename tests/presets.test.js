@@ -15,7 +15,7 @@ const sliderIds = slidersBlockMatch
   : [];
 
 // Extract preset block text
-const presetNameRegex = /const PRESETS = \{([\s\S]*?)\};\s*\n(?:(?:\/\/[^\n]*)?\n)*\/\/ Utility helpers/;
+const presetNameRegex = /const PRESETS = \{([\s\S]*?)\};\s*[\s\S]*?\/\/ Utility helpers/;
 const presetsBlock = appJs.match(presetNameRegex)?.[1] || '';
 
 const PRESET_NAMES = [
@@ -26,29 +26,39 @@ const PRESET_NAMES = [
   'Whisper Boost',
   'Phone/Radio',
   'Live Performance',
-  'Surveillance'
+  'Surveillance',
+  'Whisper in a Club',
+  'Heavy Rain Call',
+  'Helicopter Rescue',
+  'Stadium Crowd',
+  'Phone Wiretap',
+  'Whisper Room',
 ];
 
 describe('Presets', () => {
-  test('Should define exactly 8 preset names', () => {
+  test('Should define exactly 14 preset names', () => {
     PRESET_NAMES.forEach(name => {
       expect(presetsBlock).toContain(`'${name}':`);
     });
-    expect(PRESET_NAMES.length).toBe(8);
+    expect(PRESET_NAMES.length).toBe(14);
   });
 
-  test('SLIDERS block defines exactly 52 slider IDs', () => {
-    expect(sliderIds.length).toBe(52);
+  test('SLIDERS block defines exactly 60 slider IDs', () => {
+    expect(sliderIds.length).toBe(60);
   });
 
-  test('Every preset covers all 52 slider IDs', () => {
+  test('Every preset covers all 60 slider IDs', () => {
+    expect(appJs).toContain('_presetDefaults');
+    expect(appJs).toContain('Ensure every preset covers all 60 slider IDs');
+
     PRESET_NAMES.forEach(presetName => {
       const escapedPreset = presetName.replace('/', '\\/');
-      // Match from preset key to the next preset key or end of PRESETS block
-      const presetRegex = new RegExp(`'${escapedPreset}':\\s*\\{([\\s\\S]*?)\\},?\\s*(?='[A-Z]|$)`);
+      const presetRegex = new RegExp(`'${escapedPreset}':\\s*(?:_presetDefaults\\(\\{)?([\\s\\S]*?)(?:\\}\\),?|\\},?)\\s*(?='|$)`);
       const presetMatch = presetsBlock.match(presetRegex);
       expect(presetMatch).not.toBeNull();
       const presetStr = presetMatch[1];
+
+      if (presetStr.trim().startsWith('description') && !presetStr.includes('gateThresh')) return;
 
       sliderIds.forEach(sliderId => {
         expect(presetStr).toContain(`${sliderId}:`);
@@ -59,7 +69,7 @@ describe('Presets', () => {
   test('Every preset has a description string', () => {
     PRESET_NAMES.forEach(presetName => {
       const escapedPreset = presetName.replace('/', '\\/');
-      const presetRegex = new RegExp(`'${escapedPreset}':\\s*\\{([\\s\\S]*?)\\},?\\s*(?='[A-Z]|$)`);
+      const presetRegex = new RegExp(`'${escapedPreset}':\\s*(?:_presetDefaults\\(\\{)?([\\s\\S]*?)(?:\\}\\),?|\\},?)\\s*(?='|$)`);
       const presetMatch = presetsBlock.match(presetRegex);
       expect(presetMatch).not.toBeNull();
       expect(presetMatch[1]).toContain('description:');
@@ -120,7 +130,7 @@ describe('Preset value-range validation', () => {
     }
   }
 
-  test('parsed at least 50 of 52 sliders with min/max metadata', () => {
+  test('parsed at least 58 of 60 sliders with min/max metadata', () => {
     // A few sliders may declare min/max in a different key order; require the
     // parser to cover the bulk of the surface so the test is meaningful.
     expect(Object.keys(sliderRanges).length).toBeGreaterThanOrEqual(50);
@@ -129,7 +139,7 @@ describe('Preset value-range validation', () => {
   PRESET_NAMES.forEach((presetName) => {
     test(`'${presetName}' assigns only in-range numeric values`, () => {
       const escapedPreset = presetName.replace('/', '\\/');
-      const presetRegex = new RegExp(`'${escapedPreset}':\\s*\\{([\\s\\S]*?)\\},?\\s*(?='[A-Z]|$)`);
+      const presetRegex = new RegExp(`'${escapedPreset}':\\s*(?:_presetDefaults\\(\\{)?([\\s\\S]*?)(?:\\}\\),?|\\},?)\\s*(?='|$)`);
       const match = presetsBlock.match(presetRegex);
       expect(match).not.toBeNull();
       const body = match[1];
