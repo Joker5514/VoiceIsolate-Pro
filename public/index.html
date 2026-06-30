@@ -1,3 +1,275 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0559167adfc92504697f0b49f114b26eb2cb9daedbfc2506e3d005672f4840fb
-size 15581
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="VoiceIsolate Pro — AI voice isolation, 100% in your browser. Upload, separate, and mix in real time. No cloud, no uploads.">
+  <title>VoiceIsolate Pro — Stem-Split &amp; Live-Mix</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icon.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/landing.css">
+  <!--
+    ARCHITECTURE NOTE (CLAUDE.md): this page contains NO inline scripts so it
+    runs under the strict CSP (script-src 'self'). It is the reference
+    integration of the Stem-Split & Live-Mix pipeline:
+      FileIngestion → MLWorker (offline ONNX) → PlaybackMixer → SliderUI.
+    There is intentionally no microphone access anywhere on this page.
+  -->
+</head>
+<body>
+  <header class="titlebar">
+    <div class="titlebar-left">
+      <div class="logo-icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"/>
+        </svg>
+      </div>
+      <span class="app-title">VoiceIsolate Pro</span>
+      <span class="arch-badge" id="archBadgeMount">STEM-SPLIT &amp; LIVE-MIX</span>
+    </div>
+    <div class="titlebar-right">
+      <a href="/app/" class="eng-mode-link">Engineer Mode</a>
+    </div>
+  </header>
+
+  <main class="main-area">
+    <!-- ── STEP 1: Upload ──────────────────────────────────────────────── -->
+    <section class="panel vip-card" id="uploadPanel" aria-labelledby="uploadLabel">
+      <h2 id="uploadLabel" class="section-label">1 · Upload</h2>
+      <p class="hint">Audio or video. Decoded and resampled to 48&nbsp;kHz on your device — nothing is uploaded anywhere.</p>
+      <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop audio or video here, or press Enter to browse">
+        <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <p class="upload-title">Drop audio or video here</p>
+        <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · MP4 · MOV and more</p>
+        <button id="browseBtn" class="btn" type="button">Browse Files</button>
+        <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/*,video/*,.wav,.mp3,.m4a,.aac,.ogg,.opus,.flac,.webm,.aiff,.aif,.caf,.mp4,.m4v,.mov,.mkv,.avi,.wmv" aria-label="Choose audio or video file">
+      </div>
+      <div class="upload-row">
+        <label for="modelSelect" class="inline-label">Model</label>
+        <select id="modelSelect" class="vip-select" aria-label="Separation model">
+          <option value="max_isolation">Maximum Isolation — Vocals → Denoise (chained)</option>
+          <option value="bsrnn_vocals">Vocal Isolation — Band-Split RNN (~4 MB)</option>
+          <option value="rnnoise">Noise Suppression — BiGRU mask (~2 MB)</option>
+        </select>
+        <button id="processBtn" class="vip-btn vip-btn--primary" type="button" disabled>Separate Stems</button>
+      </div>
+      <div class="status-row">
+        <span id="statusPillMount" role="status" aria-live="polite">
+          <span class="status-dot"></span>
+          <span>Idle — choose a file to begin</span>
+        </span>
+      </div>
+      <!--
+        Realtime processing indicator. Powered by the VoiceIsolate Pro design-
+        system ProcessLoader component (_ds_bundle.js). landing.js mounts and
+        updates it; no inline scripts so strict CSP is maintained.
+      -->
+      <div id="procLoaderMount" hidden></div>
+    </section>
+
+    <!-- ── STEP 2: Live-Mix playback ───────────────────────────────────── -->
+    <section class="panel vip-card" aria-labelledby="mixLabel">
+      <h2 id="mixLabel" class="section-label">2 · Live Mix</h2>
+      <p class="hint">Stems play through the Web Audio graph. Sliders act instantly on GainNodes — the AI never re-runs.</p>
+
+      <!--
+        Video preview. Shown only when the uploaded file is a video. The element
+        stays MUTED on purpose — its audio track is never used; sound comes from
+        the live-mixed stems through the Web Audio graph. The picture is kept in
+        sync with the mixer clock by landing.js (the mixer is the single clock).
+      -->
+      <div class="video-card" id="videoCard" hidden>
+        <video id="videoPlayer" class="video-player" playsinline muted preload="auto"
+               aria-label="Uploaded video — picture plays in sync with the processed audio"></video>
+        <p class="video-note">Picture only — this player is muted; the sound is the live-mixed processed audio below.</p>
+      </div>
+
+      <div class="transport-row">
+        <button id="playBtn" class="vip-iconbtn" type="button" disabled aria-label="Play" title="Play">&#9654;</button>
+        <button id="pauseBtn" class="vip-iconbtn" type="button" disabled aria-label="Pause" title="Pause">&#10074;&#10074;</button>
+        <button id="stopBtn" class="vip-iconbtn" type="button" disabled aria-label="Stop" title="Stop">&#9632;</button>
+        <button id="muteVoiceBtn" class="vip-switch" type="button" role="switch" aria-checked="false" disabled>
+          <span class="vip-switch__track"><span class="vip-switch__thumb"></span></span>
+          <span class="vip-switch__label">Mute Voice</span>
+        </button>
+        <button id="muteNoiseBtn" class="vip-switch" type="button" role="switch" aria-checked="false" disabled>
+          <span class="vip-switch__track"><span class="vip-switch__thumb"></span></span>
+          <span class="vip-switch__label">Mute Background</span>
+        </button>
+        <label for="presetSelect" class="inline-label">Preset</label>
+        <select id="presetSelect" class="vip-select" aria-label="Mix preset" disabled>
+          <option value="voice-clarity" selected>Voice Clarity</option>
+          <option value="balanced">Balanced</option>
+          <option value="podcast-warm">Podcast Warm</option>
+          <option value="residual-monitor">Residual Monitor (hear what was removed)</option>
+          <option value="original">Original (bypass)</option>
+        </select>
+        <span id="timeReadout" class="time-readout">0:00 / 0:00</span>
+      </div>
+
+      <div class="vis-block">
+        <div class="vis-label">Stem waveforms <span class="vis-hint">— voice in red, removed noise in gray · click to seek</span></div>
+        <canvas id="waveCanvas" class="vis-canvas" height="110" aria-label="Stem waveform overview"></canvas>
+        <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to every slider in real time</span></div>
+        <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>
+      </div>
+
+      <!--
+        Output level meter. Powered by the design-system LevelMeter component;
+        landing.js taps the mixer's post-master AnalyserNode and drives the
+        fill from real RMS each animation frame (hidden until stems load).
+      -->
+      <div id="outputMeterMount" class="output-meter" hidden></div>
+
+      <div class="slider-grid">
+        <div class="slider-row">
+          <label for="noiseReductionSlider">Noise Reduction</label>
+          <input type="range" id="noiseReductionSlider" min="0" max="100" value="100" step="1" disabled>
+          <span class="slider-val" id="noiseReductionVal">100%</span>
+        </div>
+        <div class="slider-row">
+          <label for="voiceLevelSlider">Voice Level</label>
+          <input type="range" id="voiceLevelSlider" min="0" max="200" value="100" step="1" disabled>
+          <span class="slider-val" id="voiceLevelVal">100%</span>
+        </div>
+        <div class="slider-row">
+          <label for="volumeSlider">Output Volume</label>
+          <input type="range" id="volumeSlider" min="0" max="100" value="100" step="1" disabled>
+          <span class="slider-val" id="volumeVal">100%</span>
+        </div>
+        <div class="slider-row">
+          <label for="eqLowSlider">EQ Low Shelf</label>
+          <input type="range" id="eqLowSlider" min="-24" max="24" value="0" step="1" disabled>
+          <span class="slider-val" id="eqLowVal">0 dB</span>
+        </div>
+        <div class="slider-row">
+          <label for="eqHighSlider">EQ High Shelf</label>
+          <input type="range" id="eqHighSlider" min="-24" max="24" value="0" step="1" disabled>
+          <span class="slider-val" id="eqHighVal">0 dB</span>
+        </div>
+        <div class="slider-row">
+          <label for="eqLowMidSlider">EQ Low-Mid (500 Hz)</label>
+          <input type="range" id="eqLowMidSlider" min="-24" max="24" value="0" step="1" disabled>
+          <span class="slider-val" id="eqLowMidVal">0 dB</span>
+        </div>
+        <div class="slider-row">
+          <label for="eqMidSlider">EQ Mid (1.5 kHz)</label>
+          <input type="range" id="eqMidSlider" min="-24" max="24" value="0" step="1" disabled>
+          <span class="slider-val" id="eqMidVal">0 dB</span>
+        </div>
+        <div class="slider-row">
+          <label for="eqHighMidSlider">EQ High-Mid (3 kHz)</label>
+          <input type="range" id="eqHighMidSlider" min="-24" max="24" value="0" step="1" disabled>
+          <span class="slider-val" id="eqHighMidVal">0 dB</span>
+        </div>
+        <div class="slider-row">
+          <label for="highpassSlider">High-Pass Filter</label>
+          <input type="range" id="highpassSlider" min="20" max="2000" value="20" step="1" disabled>
+          <span class="slider-val" id="highpassVal">20 Hz</span>
+        </div>
+        <div class="slider-row">
+          <label for="lowpassSlider">Low-Pass Filter</label>
+          <input type="range" id="lowpassSlider" min="1000" max="20000" value="20000" step="10" disabled>
+          <span class="slider-val" id="lowpassVal">20000 Hz</span>
+        </div>
+        <div class="slider-row">
+          <label for="compThresholdSlider">Comp Threshold</label>
+          <input type="range" id="compThresholdSlider" min="-60" max="0" value="0" step="1" disabled>
+          <span class="slider-val" id="compThresholdVal">0 dB</span>
+        </div>
+        <div class="slider-row">
+          <label for="compRatioSlider">Comp Ratio</label>
+          <input type="range" id="compRatioSlider" min="1" max="20" value="1" step="0.1" disabled>
+          <span class="slider-val" id="compRatioVal">1:1</span>
+        </div>
+        <div class="slider-row">
+          <label for="compAttackSlider">Comp Attack</label>
+          <input type="range" id="compAttackSlider" min="0" max="200" value="20" step="1" disabled>
+          <span class="slider-val" id="compAttackVal">20 ms</span>
+        </div>
+        <div class="slider-row">
+          <label for="compReleaseSlider">Comp Release</label>
+          <input type="range" id="compReleaseSlider" min="0" max="1000" value="250" step="10" disabled>
+          <span class="slider-val" id="compReleaseVal">250 ms</span>
+        </div>
+        <div class="slider-row">
+          <label for="compKneeSlider">Comp Knee</label>
+          <input type="range" id="compKneeSlider" min="0" max="40" value="0" step="1" disabled>
+          <span class="slider-val" id="compKneeVal">0 dB</span>
+        </div>
+        <div class="slider-row">
+          <label for="makeupGainSlider">Makeup Gain</label>
+          <input type="range" id="makeupGainSlider" min="0" max="24" value="0" step="1" disabled>
+          <span class="slider-val" id="makeupGainVal">0 dB</span>
+        </div>
+        <div class="slider-row">
+          <label for="stereoWidthSlider">Stereo Width</label>
+          <input type="range" id="stereoWidthSlider" min="0" max="200" value="100" step="1" disabled>
+          <span class="slider-val" id="stereoWidthVal">100%</span>
+        </div>
+        <div class="slider-row">
+          <label for="gateThresholdSlider">Gate Threshold</label>
+          <input type="range" id="gateThresholdSlider" min="-100" max="0" value="-45" step="1" disabled>
+          <span class="slider-val" id="gateThresholdVal">-45 dB</span>
+        </div>
+        <div class="slider-row">
+          <label for="gateRangeSlider">Gate Range</label>
+          <input type="range" id="gateRangeSlider" min="0" max="80" value="0" step="1" disabled>
+          <span class="slider-val" id="gateRangeVal">0 dB</span>
+        </div>
+        <div class="slider-row">
+          <label for="gateAttackSlider">Gate Attack</label>
+          <input type="range" id="gateAttackSlider" min="0" max="200" value="5" step="1" disabled>
+          <span class="slider-val" id="gateAttackVal">5 ms</span>
+        </div>
+        <div class="slider-row">
+          <label for="gateReleaseSlider">Gate Release</label>
+          <input type="range" id="gateReleaseSlider" min="0" max="1000" value="100" step="10" disabled>
+          <span class="slider-val" id="gateReleaseVal">100 ms</span>
+        </div>
+        <div class="slider-row">
+          <label for="deEsserFreqSlider">De-Esser Freq</label>
+          <input type="range" id="deEsserFreqSlider" min="2000" max="12000" value="6000" step="100" disabled>
+          <span class="slider-val" id="deEsserFreqVal">6000 Hz</span>
+        </div>
+        <div class="slider-row">
+          <label for="deEsserAmountSlider">De-Esser Amount</label>
+          <input type="range" id="deEsserAmountSlider" min="0" max="100" value="0" step="1" disabled>
+          <span class="slider-val" id="deEsserAmountVal">0%</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── STEP 3: Per-speaker isolation ───────────────────────────────── -->
+    <section class="panel vip-card" id="speakersPanel" aria-labelledby="speakersLabel" hidden>
+      <h2 id="speakersLabel" class="section-label">3 · Speakers</h2>
+      <p class="hint">
+        Speakers detected on the isolated voice stem — entirely on your device.
+        Mute, solo, or rebalance each voice; changes are instant gain
+        automation, the AI never re-runs.
+      </p>
+      <div class="status-row">
+        <span id="speakerStatus" role="status" aria-live="polite"></span>
+      </div>
+      <div id="speakerCardsGrid" class="speaker-grid" aria-label="Per-speaker controls"></div>
+    </section>
+
+    <section class="panel vip-card privacy-panel">
+      <h2 class="section-label">Privacy</h2>
+      <p class="hint">
+        100% local processing — ONNX models run in a Web Worker on your device
+        (WebGPU when available, WASM fallback). No microphone access, no audio
+        upload, no telemetry.
+      </p>
+    </section>
+  </main>
+
+  <!-- Design-system bundle (React shim must load first) -->
+  <script src="/lib/react-mini.js"></script>
+  <script src="/lib/_ds_bundle.js"></script>
+  <script type="module" src="/landing.js"></script>
+</body>
+</html>
