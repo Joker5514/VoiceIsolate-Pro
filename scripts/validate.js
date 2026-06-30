@@ -83,7 +83,7 @@ if (isModularEngineer) {
   const slidersBlock = appJs.match(/const SLIDERS\s*=\s*\{([\s\S]*?)\s*\};/);
   const sliderMatches = slidersBlock ? slidersBlock[1].match(/\{\s*id\s*:\s*'/g) : null;
   const sliderCount = sliderMatches ? sliderMatches.length : 0;
-  check(sliderCount === 60, `Slider count: ${sliderCount} (must be 60)`);
+  check(sliderCount === 67, `Slider count: ${sliderCount} (must be 67)`);
   const stagesMatch = sliderMapJs.match(/(?:export )?const STAGES = \[([\s\S]*?)\];/);
   const stageItems = stagesMatch ? (stagesMatch[1].match(/'[^']+'/g) || []) : [];
   check(stageItems.length === 32, `STAGES count: ${stageItems.length} (must be 32)`);

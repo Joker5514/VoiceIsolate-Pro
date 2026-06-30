@@ -149,6 +149,17 @@
     console.info('[DSP-Bootstrap] globalThis.DSP STFT/iSTFT registered (periodic Hann).');
   }
 
+  // [WHISPER UPDATE] Instantiate WhisperHunterAI for offline paths (Part 4)
+  (function _initWhisperHunter(retries) {
+    if (window._vipWhisperHunter) return;
+    if (typeof WhisperHunterAI !== 'undefined') {
+      window._vipWhisperHunter = new WhisperHunterAI(4096, 48000);
+      console.info('[DSP-Bootstrap] WhisperHunterAI ready.');
+      return;
+    }
+    if (retries > 0) setTimeout(() => _initWhisperHunter(retries - 1), 80);
+  })(40);
+
 
   /* ── 2. Patch initAudio() to boot AudioWorklet + ML Worker ─────────────── */
 

@@ -28,8 +28,8 @@ describe('SLIDER_REGISTRY', () => {
     expect(sliderMapSrc).toContain('export const SLIDER_REGISTRY');
   });
 
-  test('SLIDER_REGISTRY contains exactly 60 entries', () => {
-    expect(entries.length).toBe(60);
+  test('SLIDER_REGISTRY contains exactly 67 entries', () => {
+    expect(entries.length).toBe(67);
   });
 
   test('all entries have unique IDs', () => {
@@ -64,7 +64,7 @@ describe('SLIDER_REGISTRY', () => {
     expect(sliderMapSrc).toMatch(/id\s*:\s*'nrAmount'.*transform\s*:\s*v\s*=>\s*v\s*\/\s*100/s);
   });
 
-  test('all 60 slider IDs match the SLIDERS definition in app.js', () => {
+  test('all 67 slider IDs match the SLIDERS definition in app.js', () => {
     const appJs = fs.readFileSync(
       path.join(__dirname, '../public/app/app.js'), 'utf8'
     ).replace(/\r\n/g, '\n');

@@ -18,6 +18,11 @@
  */
 
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
+
+// Registry lookup for examples + calibrated transforms
+const SLIDER_REG_BY_ID = Object.freeze(
+  SLIDER_REGISTRY.reduce((acc, s) => { acc[s.id] = s; return acc; }, {})
+);
 import { ModelStatusUI } from './model-status-ui.js';
 
 // Model keys served by /app/models-manifest.json (ModelCDNLoader.getManifest()) —
@@ -41,7 +46,7 @@ const HALF_BINS = FFT_SIZE / 2 + 1;
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * 5; // FLAG_SLOTS = 5
 
 // ---------------------------------------------------------------------------
-// 60-Slider definition (inline — tests parse this source directly)
+// 67-Slider definition (inline — tests parse this source directly)
 // NOTE: SLIDERS object appears unused directly but is consumed by SLIDER_BY_ID (line 111)
 // and is parsed by test suites to validate slider configuration consistency.
 // The inline definition here (rather than importing from a separate file) ensures
@@ -125,6 +130,13 @@ const SLIDERS = {
     { id:'musicKill', label:'Music Kill (Harmonic Comb)', min:0, max:100, val:80, step:1, unit:'%', rt:false, desc:'Suppresses steady-state harmonic music while preserving transient speech.', example:'~92% when a DJ track is constant under the target whisper.' },
     { id:'snrFloor', label:'SNR Rescue Floor', min:-80, max:-20, val:-52, step:1, unit:' dBFS', rt:false, desc:'Minimum power threshold — bins below this are treated as noise-only.', example:'Lower toward −58 dBFS to catch quieter whispers; raise if musical noise appears.' },
     { id:'whisperMode', label:'Whisper Mode (Processing Aggression)', min:0, max:3, val:2, step:1, unit:'', rt:false, desc:'Compound processing aggression: Off, Light, Heavy, or Forensic multi-pass.', example:'Forensic (3) runs four iterative refinement passes for surveillance recovery.' },
+    { id:'whisperClarity', label:'Whisper Clarity', min:0, max:100, val:65, step:1, unit:'%', rt:true, desc:'Sigmoid-mapped clarity floor for WhisperHunter gain.', example:'~72% for podcast whispers; ~88% for buried field recordings.' },
+    { id:'whisperSensitivity', label:'Whisper Sensitivity', min:0, max:100, val:55, step:1, unit:'%', rt:true, desc:'Scales W-VAD energy threshold — higher catches quieter whispers.', example:'~82% in a noisy club; ~28% in a silent room.' },
+    { id:'whisperThreshold', label:'Whisper Threshold', min:0, max:100, val:50, step:1, unit:'%', rt:true, desc:'Steepens WhisperHunter suppression curve.', example:'~35% gentle; ~78% aggressive forensic extraction.' },
+    { id:'transientShaper', label:'Transient Shaper', min:-100, max:100, val:0, step:5, unit:'', rt:true, desc:'Bipolar transient emphasis for consonant shaping.', example:'−40 softens plosives; +45 sharpens whisper consonants.' },
+    { id:'breathControl', label:'Breath Control', min:0, max:100, val:30, step:1, unit:'%', rt:false, desc:'Attenuates breath noise between whisper phrases.', example:'~55% for ASMR-style cleanup; ~85% to strip breaths.' },
+    { id:'roomCorrection', label:'Room Correction', min:0, max:100, val:40, step:1, unit:'%', rt:false, desc:'Spectral room correction for whisper reverb tails.', example:'~60% for echoey hall; ~90% for deep dereverb.' },
+    { id:'subHarmonic', label:'Sub Harmonic', min:0, max:100, val:0, step:1, unit:'%', rt:true, desc:'Sub-harmonic body reinforcement for thin whispers.', example:'~35% adds warmth; ~65% restores chest body.' },
   ],
 };
 
@@ -138,6 +150,13 @@ const EXTREME_DATA_PARAMS = {
   musicKill: 'music-kill',
   snrFloor: 'snr-floor',
   whisperMode: 'whisper-mode',
+  whisperClarity: 'whisper-clarity',
+  whisperSensitivity: 'whisper-sensitivity',
+  whisperThreshold: 'whisper-threshold',
+  transientShaper: 'transient-shaper',
+  breathControl: 'breath-control',
+  roomCorrection: 'room-correction',
+  subHarmonic: 'sub-harmonic',
 };
 
 // [WHISPER UPDATE] Whisper mode compound state — drives OSF, mask floor, and pass count
@@ -176,6 +195,7 @@ const PRESETS = {
     voiceIso: 80, bgSuppress: 50, voiceFocusLo: 120, voiceFocusHi: 3400, crosstalkCancel: 0,
     outGain: 2, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 18, crowdNull: 72, bassCrush: 90, reverbStrip: 600, voiceTunnel: 65, musicKill: 80, snrFloor: -52, whisperMode: 2,
+    whisperClarity: 65, whisperSensitivity: 55, whisperThreshold: 50, transientShaper: 0, breathControl: 30, roomCorrection: 40, subHarmonic: 0,
   },
   'Podcast Clean': {
     description: 'Studio-clean podcast voice with de-essing and compression',
@@ -188,6 +208,7 @@ const PRESETS = {
     voiceIso: 75, bgSuppress: 60, voiceFocusLo: 120, voiceFocusHi: 3400, crosstalkCancel: 0,
     outGain: 0, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 18, crowdNull: 72, bassCrush: 90, reverbStrip: 600, voiceTunnel: 65, musicKill: 80, snrFloor: -52, whisperMode: 2,
+    whisperClarity: 65, whisperSensitivity: 55, whisperThreshold: 50, transientShaper: 0, breathControl: 30, roomCorrection: 40, subHarmonic: 0,
   },
   'Forensic Extract': {
     description: 'Maximum extraction for forensic audio analysis',
@@ -200,6 +221,7 @@ const PRESETS = {
     voiceIso: 98, bgSuppress: 90, voiceFocusLo: 100, voiceFocusHi: 4000, crosstalkCancel: 40,
     outGain: 8, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 18, crowdNull: 72, bassCrush: 90, reverbStrip: 600, voiceTunnel: 65, musicKill: 80, snrFloor: -52, whisperMode: 2,
+    whisperClarity: 65, whisperSensitivity: 55, whisperThreshold: 50, transientShaper: 0, breathControl: 30, roomCorrection: 40, subHarmonic: 0,
   },
   'Music Vocal': {
     description: 'Preserve natural vocal character for music production',
@@ -212,6 +234,7 @@ const PRESETS = {
     voiceIso: 60, bgSuppress: 30, voiceFocusLo: 100, voiceFocusHi: 5000, crosstalkCancel: 0,
     outGain: 0, dryWet: 100, ditherAmt: 1, outWidth: 110,
     whisperLift: 18, crowdNull: 72, bassCrush: 90, reverbStrip: 600, voiceTunnel: 65, musicKill: 80, snrFloor: -52, whisperMode: 2,
+    whisperClarity: 65, whisperSensitivity: 55, whisperThreshold: 50, transientShaper: 0, breathControl: 30, roomCorrection: 40, subHarmonic: 0,
   },
   'Whisper Boost': {
     description: 'Amplify and clarify soft whispering voices',
@@ -224,6 +247,7 @@ const PRESETS = {
     voiceIso: 70, bgSuppress: 65, voiceFocusLo: 150, voiceFocusHi: 4000, crosstalkCancel: 10,
     outGain: 6, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 20, crowdNull: 60, bassCrush: 70, reverbStrip: 400, voiceTunnel: 70, musicKill: 50, snrFloor: -54, whisperMode: 2,
+    whisperClarity: 72, whisperSensitivity: 60, whisperThreshold: 45, transientShaper: 10, breathControl: 40, roomCorrection: 35, subHarmonic: 15,
   },
   'Phone/Radio': {
     description: 'Simulate telephone or radio band-limited audio',
@@ -236,6 +260,7 @@ const PRESETS = {
     voiceIso: 85, bgSuppress: 70, voiceFocusLo: 300, voiceFocusHi: 3400, crosstalkCancel: 20,
     outGain: 2, dryWet: 100, ditherAmt: 1, outWidth: 0,
     whisperLift: 12, crowdNull: 50, bassCrush: 40, reverbStrip: 200, voiceTunnel: 60, musicKill: 25, snrFloor: -48, whisperMode: 1,
+    whisperClarity: 55, whisperSensitivity: 45, whisperThreshold: 40, transientShaper: 0, breathControl: 20, roomCorrection: 25, subHarmonic: 0,
   },
   'Live Performance': {
     description: 'Minimal processing for live stage or broadcast',
@@ -248,6 +273,7 @@ const PRESETS = {
     voiceIso: 50, bgSuppress: 25, voiceFocusLo: 100, voiceFocusHi: 5000, crosstalkCancel: 0,
     outGain: 0, dryWet: 100, ditherAmt: 1, outWidth: 120,
     whisperLift: 14, crowdNull: 55, bassCrush: 50, reverbStrip: 300, voiceTunnel: 55, musicKill: 35, snrFloor: -50, whisperMode: 1,
+    whisperClarity: 60, whisperSensitivity: 50, whisperThreshold: 42, transientShaper: 5, breathControl: 25, roomCorrection: 30, subHarmonic: 10,
   },
   'Surveillance': {
     description: 'Maximum noise reduction for challenging surveillance audio',
@@ -260,6 +286,7 @@ const PRESETS = {
     voiceIso: 90, bgSuppress: 85, voiceFocusLo: 100, voiceFocusHi: 4000, crosstalkCancel: 30,
     outGain: 10, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 16, crowdNull: 80, bassCrush: 75, reverbStrip: 500, voiceTunnel: 72, musicKill: 70, snrFloor: -55, whisperMode: 3,
+    whisperClarity: 70, whisperSensitivity: 75, whisperThreshold: 65, transientShaper: 20, breathControl: 50, roomCorrection: 55, subHarmonic: 20,
   },
   'Whisper in a Club': _presetDefaults({
     description: 'Extreme isolation: extracts a human whisper buried under 100dB+ club noise, crowd, and music.',
@@ -272,6 +299,7 @@ const PRESETS = {
     voiceIso: 97, bgSuppress: 92, voiceFocusLo: 280, voiceFocusHi: 3800, crosstalkCancel: 20,
     outGain: 12, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 22, crowdNull: 88, bassCrush: 95, reverbStrip: 900, voiceTunnel: 78, musicKill: 92, snrFloor: -58, whisperMode: 3,
+    whisperClarity: 88, whisperSensitivity: 82, whisperThreshold: 78, transientShaper: 35, breathControl: 55, roomCorrection: 70, subHarmonic: 25,
   }),
   'Heavy Rain Call': _presetDefaults({
     description: 'Isolate voice from heavy rain and outdoor wind noise.',
@@ -284,6 +312,7 @@ const PRESETS = {
     voiceIso: 82, bgSuppress: 78, voiceFocusLo: 150, voiceFocusHi: 4500, crosstalkCancel: 10,
     outGain: 6, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 14, crowdNull: 45, bassCrush: 55, reverbStrip: 350, voiceTunnel: 55, musicKill: 30, snrFloor: -50, whisperMode: 2,
+    whisperClarity: 75, whisperSensitivity: 70, whisperThreshold: 60, transientShaper: 15, breathControl: 45, roomCorrection: 50, subHarmonic: 15,
   }),
   'Helicopter Rescue': _presetDefaults({
     description: 'Extract speech under 85dB rotor noise and vibration.',
@@ -296,6 +325,7 @@ const PRESETS = {
     voiceIso: 92, bgSuppress: 88, voiceFocusLo: 200, voiceFocusHi: 4200, crosstalkCancel: 25,
     outGain: 10, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 18, crowdNull: 60, bassCrush: 85, reverbStrip: 400, voiceTunnel: 70, musicKill: 40, snrFloor: -54, whisperMode: 3,
+    whisperClarity: 80, whisperSensitivity: 78, whisperThreshold: 72, transientShaper: 25, breathControl: 40, roomCorrection: 45, subHarmonic: 18,
   }),
   'Stadium Crowd': _presetDefaults({
     description: 'Recover commentary buried in 90,000-person crowd roar.',
@@ -308,6 +338,7 @@ const PRESETS = {
     voiceIso: 90, bgSuppress: 85, voiceFocusLo: 140, voiceFocusHi: 5000, crosstalkCancel: 15,
     outGain: 8, dryWet: 100, ditherAmt: 1, outWidth: 110,
     whisperLift: 16, crowdNull: 92, bassCrush: 70, reverbStrip: 700, voiceTunnel: 72, musicKill: 55, snrFloor: -52, whisperMode: 2,
+    whisperClarity: 82, whisperSensitivity: 80, whisperThreshold: 68, transientShaper: 20, breathControl: 35, roomCorrection: 60, subHarmonic: 12,
   }),
   'Phone Wiretap': _presetDefaults({
     description: 'Reconstruct heavily compressed/bandlimited phone audio.',
@@ -320,6 +351,7 @@ const PRESETS = {
     voiceIso: 88, bgSuppress: 72, voiceFocusLo: 300, voiceFocusHi: 3400, crosstalkCancel: 30,
     outGain: 5, dryWet: 100, ditherAmt: 1, outWidth: 0,
     whisperLift: 12, crowdNull: 50, bassCrush: 40, reverbStrip: 200, voiceTunnel: 60, musicKill: 25, snrFloor: -48, whisperMode: 1,
+    whisperClarity: 68, whisperSensitivity: 62, whisperThreshold: 55, transientShaper: 0, breathControl: 30, roomCorrection: 35, subHarmonic: 8,
   }),
   'Whisper Room': _presetDefaults({
     description: 'Isolate whisper from air conditioning and office ambience.',
@@ -332,10 +364,11 @@ const PRESETS = {
     voiceIso: 75, bgSuppress: 68, voiceFocusLo: 120, voiceFocusHi: 4000, crosstalkCancel: 5,
     outGain: 6, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 20, crowdNull: 55, bassCrush: 35, reverbStrip: 180, voiceTunnel: 68, musicKill: 20, snrFloor: -56, whisperMode: 2,
+    whisperClarity: 78, whisperSensitivity: 72, whisperThreshold: 62, transientShaper: 12, breathControl: 50, roomCorrection: 45, subHarmonic: 10,
   }),
 };
 
-// [WHISPER UPDATE] Ensure every preset covers all 60 slider IDs
+// [WHISPER UPDATE] Ensure every preset covers all 67 slider IDs
 for (const preset of Object.values(PRESETS)) {
   for (const s of Object.values(SLIDERS).flat()) {
     if (preset[s.id] === undefined) preset[s.id] = s.val;
@@ -765,7 +798,7 @@ class VoiceIsolatePro {
       if (!container) continue;
 
       const row = document.createElement('div');
-      row.className = 'sr-row';
+      row.className = 'sr-row slider-row';
       row.dataset.sliderId = s.id;
 
       const labelEl = document.createElement('label');
@@ -832,6 +865,7 @@ class VoiceIsolatePro {
           if (idx !== undefined) this.sharedParams[idx] = v;
         }
         this.onSlider(s.id, v);
+        this._applySliderToWorklet(s.id, v);
       });
 
       // Per-control explanation (what it does + a concrete example). Collapsed
@@ -867,6 +901,25 @@ class VoiceIsolatePro {
       row.appendChild(labelEl);
       row.appendChild(inputEl);
       row.appendChild(valEl);
+
+      const regEntry = SLIDER_REG_BY_ID[s.id];
+      const examples = (regEntry && regEntry.examples && regEntry.examples.length)
+        ? regEntry.examples
+        : this._defaultSliderExamples(s);
+      const infoBtn = document.createElement('button');
+      infoBtn.type = 'button';
+      infoBtn.className = 'info-btn';
+      infoBtn.setAttribute('aria-label', `Examples for ${s.id}`);
+      infoBtn.dataset.sliderId = s.id;
+      infoBtn.tabIndex = 0;
+      infoBtn.textContent = 'ℹ';
+      infoBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._toggleInfoPopover(row, s.id, inputEl, examples);
+      });
+      row.appendChild(infoBtn);
+
       row.appendChild(descEl);
       container.appendChild(row);
 
@@ -874,6 +927,83 @@ class VoiceIsolatePro {
       window.VIP_PARAMS[s.id] = initVal;
     }
     this._renderWhisperModeGroup();
+    this._bindInfoPopoverDismiss();
+  }
+
+  /** Fallback usage examples when registry entry has none (legacy sliders). */
+  _defaultSliderExamples(s) {
+    const lo = s.min;
+    const hi = s.max;
+    const mid = s.val != null ? s.val : Math.round((lo + hi) / 2);
+    const snap = (v) => {
+      const step = s.step || 1;
+      const snapped = Math.round(v / step) * step;
+      return Math.max(lo, Math.min(hi, snapped));
+    };
+    return [
+      { label: 'Light', value: snap(lo + (mid - lo) * 0.35) },
+      { label: 'Balanced', value: snap(mid) },
+      { label: 'Strong', value: snap(mid + (hi - mid) * 0.65) },
+    ];
+  }
+
+  // [WHISPER UPDATE] Info popover — examples with Apply links (Part 2)
+  _bindInfoPopoverDismiss() {
+    if (this._infoDismissBound) return;
+    this._infoDismissBound = true;
+    const closeAll = () => document.querySelectorAll('.info-popover').forEach((p) => p.remove());
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.info-btn') && !e.target.closest('.info-popover')) closeAll();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeAll();
+    });
+  }
+
+  _toggleInfoPopover(row, sliderId, inputEl, examples) {
+    const existing = row.querySelector('.info-popover');
+    if (existing) { existing.remove(); return; }
+    document.querySelectorAll('.info-popover').forEach((p) => p.remove());
+
+    const pop = document.createElement('div');
+    pop.className = 'info-popover';
+    pop.setAttribute('role', 'dialog');
+
+    examples.forEach((ex) => {
+      const line = document.createElement('div');
+      line.className = 'info-popover-line';
+      const apply = document.createElement('button');
+      apply.type = 'button';
+      apply.className = 'info-popover-apply';
+      apply.textContent = `${ex.label} → ${ex.value}`;
+      apply.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        inputEl.value = ex.value;
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        pop.remove();
+      });
+      line.appendChild(apply);
+      pop.appendChild(line);
+    });
+
+    row.appendChild(pop);
+  }
+
+  // [WHISPER UPDATE] Send calibrated DSP value to worklet (Part 3)
+  _applySliderToWorklet(id, uiValue) {
+    const entry = SLIDER_REG_BY_ID[id];
+    if (!entry || typeof entry.transform !== 'function') return;
+    const dspVal = entry.transform(uiValue);
+    const paramId = entry.workletParam || entry.id;
+    const ctx = this.ctx;
+    const node = this.workletNode || (window._vipOrch && window._vipOrch.workletNode);
+    if (node && node.parameters && typeof node.parameters.get === 'function' && ctx) {
+      const param = node.parameters.get(paramId);
+      if (param) param.setValueAtTime(dspVal, ctx.currentTime);
+    }
+    if (node && node.port) {
+      node.port.postMessage({ type: 'param', id: paramId, value: dspVal });
+    }
   }
 
   // [WHISPER UPDATE] Render whisper-mode 4-button toggle group in EXTREME tab
@@ -985,6 +1115,8 @@ class VoiceIsolatePro {
       if (buf) this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset));
       this.play();
     }
+    this._applySliderToWorklet(id, value);
+
     if (orch && typeof orch.onSlider === 'function') {
       orch.onSlider(id, value);
     }
@@ -2123,6 +2255,24 @@ class VoiceIsolatePro {
     // [WHISPER UPDATE] Extreme isolation spectral ops (in-place, single STFT pass)
     this._applyExtremeSpectralOffline(mag, sr, p, halfN, FFT, HOP, DSP);
 
+    // [WHISPER UPDATE] WhisperHunterAI offline frame processing (Part 4)
+    const hunter = typeof window !== 'undefined' ? window._vipWhisperHunter : null;
+    const mapUi = (typeof window !== 'undefined' && window.mapWhisperUi) ? window.mapWhisperUi : (v) => 0.5;
+    if (hunter && typeof hunter.processMagnitudes === 'function') {
+      const whParams = {
+        clarity: mapUi(p.whisperClarity ?? 65),
+        sensitivity: mapUi(p.whisperSensitivity ?? 55),
+        threshold: mapUi(p.whisperThreshold ?? 50),
+        harmonic: Math.pow(Math.max(0, (p.harmRecov ?? 0)) / 100, 2),
+      };
+      for (let f = 0; f < mag.length; f++) {
+        hunter.processMagnitudes(mag[f], phase[f], whParams);
+      }
+    }
+
+    // Refresh extreme noise profile for forensic multi-pass (no second STFT).
+    this._extremeNoiseProfile = this._estimateNoiseFloor(mag);
+
     // SINGLE-PASS STFT BOUNDARY — the only inverse transform on this path.
     const rendered = DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);
     return (rendered && rendered.length === data.length) ? rendered : data;
@@ -3109,15 +3259,11 @@ const WHISPER_HUNTER = {
     if (typeof app.renderStaticVisuals === 'function') app.renderStaticVisuals(current);
   },
 
-  // [WHISPER UPDATE] Update noise profile between forensic passes
+  // [WHISPER UPDATE] Noise profile between forensic passes (updated in _spectralStage)
   updateNoiseProfileFromBuffer(buffer, app) {
     if (!buffer || !app) return;
-    const DSP = app._resolveDSP ? app._resolveDSP() : null;
-    const data = buffer.getChannelData(0);
-    if (!DSP || data.length < 4096) return;
-    const spec = DSP.forwardSTFT(data, 4096, 1024);
-    if (!spec || !spec.mag || !spec.mag.length) return;
-    app._extremeNoiseProfile = app._estimateNoiseFloor(spec.mag);
+    // Profile is refreshed in-place during each pipeline _spectralStage run.
+    // No second forwardSTFT here — single-pass spectral contract (CLAUDE.md §1).
   },
 
   // [WHISPER UPDATE] Report WhisperHunter analysis results to UI

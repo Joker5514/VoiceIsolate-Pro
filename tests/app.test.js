@@ -89,9 +89,9 @@ describe('SLIDERS constant', () => {
     }
   });
 
-  test('contains exactly 60 slider id entries', () => {
+  test('contains exactly 67 slider id entries', () => {
     const ids = extractSlidersFromSrc();
-    expect(ids).toHaveLength(60);
+    expect(ids).toHaveLength(67);
   });
 
   test('each slider entry has id, label, min, max, val, step, unit, rt, desc fields', () => {

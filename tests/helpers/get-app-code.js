@@ -5,6 +5,9 @@
  *   import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
  *   import { ModelStatusUI } from './model-status-ui.js';
  *
+ * slider-map.js imports calibrateRegistry from slider-calibration.js — both
+ * are inlined (calibration first) so eval-based tests never see bare import.
+ *
  * ES module syntax cannot be used inside vm.runInContext() or new Function()
  * bodies, so this helper inlines each imported module in an IIFE that exposes
  * only the symbols app.js actually imports. The IIFE prevents conflicts with
@@ -26,8 +29,9 @@ const APP_DIR = path.join(__dirname, '../../public/app');
 // Sibling modules imported by app.js. The `exports` list must include every
 // symbol app.js destructures from that module.
 const INLINED_MODULES = [
-  { file: 'slider-map.js',       exports: ['SLIDER_REGISTRY', 'STAGES'] },
-  { file: 'model-status-ui.js',  exports: ['ModelStatusUI'] },
+  { file: 'slider-calibration.js', exports: ['calibrateRegistry'] },
+  { file: 'slider-map.js',         exports: ['SLIDER_REGISTRY', 'STAGES'] },
+  { file: 'model-status-ui.js',    exports: ['ModelStatusUI'] },
 ];
 
 // dsp-core.js is loaded as a classic <script> in the browser before app.js,
@@ -55,8 +59,15 @@ ${src}
 `;
 }
 
+function stripModuleImports(src) {
+  return src.replace(
+    /^import\s+(?:[\w*${},\s]+\s+from\s+)?['"]\.\/[^'"]+['"]\s*;?\s*\n?/gm,
+    ''
+  );
+}
+
 function inlineAsIIFE({ file, exports: names }) {
-  const src = fs.readFileSync(path.join(APP_DIR, file), 'utf8')
+  const src = stripModuleImports(fs.readFileSync(path.join(APP_DIR, file), 'utf8'))
     // Strip `export ` prefixes so declarations become plain locals inside the IIFE.
     .replace(/^export\s+/gm, '');
   const returnObj = `return { ${names.join(', ')} };`;

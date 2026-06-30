@@ -24,6 +24,7 @@
        classic blocking script so the binding is live before any module imports
        evaluate — app.js captures DSP = globalThis.DSPCore at module init. -->
   <script src="./dsp-core.js"></script>
+  <script type="module" src="./whisper-hunter.js"></script>
   <!-- // LOAD ORDER VERIFIED: ring-buffer.js is available before pipeline-orchestrator.js can allocate SAB rings or load the canonical worklet. -->
   <script src="./ring-buffer.js"></script>
   <script src="./visuals.js"></script>

@@ -103,6 +103,67 @@ function makeHannWindow(N) {
   return w;
 }
 
+// [WHISPER UPDATE] Inline WhisperHunterAI for worklet context (Part 4)
+function _whSigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+function _mapWhisperUi(ui) {
+  const u = Math.max(0, Math.min(100, Number(ui) || 0));
+  return _whSigmoid((u - 50) / 15);
+}
+class WhisperHunterCore {
+  constructor(fftSize, sampleRate) {
+    this.halfBins = fftSize / 2 + 1;
+    this.sampleRate = sampleRate;
+    this.fftSize = fftSize;
+    this.noiseFloor = 0;
+    this.noisePsd = new Float32Array(this.halfBins);
+    this._alpha = 0.95;
+    this._scBinThreshold = Math.round(800 / (sampleRate / fftSize));
+    this._epsilon = 1e-10;
+    this._f0Est = 220;
+  }
+  processFrame(re, im, params) {
+    const halfN = this.halfBins;
+    let energy = 0; let scNum = 0; let scDen = 0;
+    const mags = new Float32Array(halfN);
+    for (let k = 0; k < halfN; k++) {
+      const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+      mags[k] = mag;
+      energy += mag * mag;
+      scNum += k * mag; scDen += mag;
+    }
+    energy /= halfN;
+    const sc = scDen > 1e-12 ? scNum / scDen : 0;
+    const thetaE = Math.max(this.noiseFloor * (params.sensitivity ?? 0.5), 1e-12);
+    const vad = (energy > thetaE * 0.08) && (sc > this._scBinThreshold) ? 1 : 0;
+    if (!vad) {
+      this.noiseFloor = this._alpha * this.noiseFloor + (1 - this._alpha) * energy;
+      for (let k = 0; k < halfN; k++) {
+        this.noisePsd[k] = this._alpha * this.noisePsd[k] + (1 - this._alpha) * mags[k] * mags[k];
+      }
+      return 0;
+    }
+    const wStr = 1 + 2 * (params.threshold ?? 0.5);
+    const binHz = this.sampleRate / this.fftSize;
+    for (let k = 0; k < halfN; k++) {
+      const sigPow = mags[k] * mags[k];
+      let gain = Math.pow(Math.max(0, 1 - this.noisePsd[k] / (sigPow + this._epsilon)), wStr);
+      gain = Math.max(params.clarity ?? 0.5, gain);
+      re[k] *= gain; im[k] *= gain;
+    }
+    const pHarm = params.harmonic ?? 0;
+    if (pHarm > 0.1) {
+      for (let h = 1; h <= 4; h++) {
+        const kh = Math.round((h * this._f0Est) / binHz);
+        if (kh > 0 && kh < halfN) {
+          const b = 1 + pHarm * 0.5;
+          re[kh] *= b; im[kh] *= b;
+        }
+      }
+    }
+    return 1;
+  }
+}
+
 class DSPProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super(options);
@@ -170,8 +231,15 @@ class DSPProcessor extends AudioWorkletProcessor {
       voiceTunnel: 65,
       musicKill:   80,
       snrFloor:    -52,
-      whisperMode: 2
+      whisperMode: 2,
+      whisperClarity: 65,
+      whisperSensitivity: 55,
+      whisperThreshold: 50,
+      harmRecov: 0
     };
+
+    const sRateInit = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
+    this._whisperHunter = new WhisperHunterCore(FFT_SIZE, sRateInit);
 
     // [WHISPER UPDATE] Circular magnitude buffer for music-kill median tracking
     this._circularMagBuffer = Array.from({ length: 5 }, () => new Float32Array(HALF_BINS));
@@ -212,7 +280,11 @@ class DSPProcessor extends AudioWorkletProcessor {
       voiceTunnel: [0, 100],
       musicKill:   [0, 100],
       snrFloor:    [-80, -20],
-      whisperMode: [0, 3]
+      whisperMode: [0, 3],
+      whisperClarity: [0, 100],
+      whisperSensitivity: [0, 100],
+      whisperThreshold: [0, 100],
+      harmRecov: [0, 100]
     };
 
     // Gate hold state: prevents clicking on rapid gate transitions
@@ -592,6 +664,23 @@ class DSPProcessor extends AudioWorkletProcessor {
         if (hz < loCut || hz > hiCut) g *= 0.85;
         maskedMag[k] *= g;
       }
+    }
+
+    // [WHISPER UPDATE] WhisperHunterAI listen→process on complex spectrum (Part 4)
+    const whRe = new Float32Array(HALF_BINS);
+    const whIm = new Float32Array(HALF_BINS);
+    for (let k = 0; k < HALF_BINS; k++) {
+      whRe[k] = maskedMag[k] * Math.cos(pha[k]);
+      whIm[k] = maskedMag[k] * Math.sin(pha[k]);
+    }
+    this._whisperHunter.processFrame(whRe, whIm, {
+      clarity: _mapWhisperUi(params.whisperClarity ?? 65),
+      sensitivity: _mapWhisperUi(params.whisperSensitivity ?? 55),
+      threshold: _mapWhisperUi(params.whisperThreshold ?? 50),
+      harmonic: Math.pow(Math.max(0, Math.min(100, params.harmRecov ?? 0)) / 100, 2),
+    });
+    for (let k = 0; k < HALF_BINS; k++) {
+      maskedMag[k] = Math.sqrt(whRe[k] * whRe[k] + whIm[k] * whIm[k]);
     }
 
     // FIX [3] + FIX [6]: Reconstruct complex spectrum using polar form.
