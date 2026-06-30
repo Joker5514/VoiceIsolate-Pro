@@ -17,6 +17,7 @@ import { calibrateRegistry } from './slider-calibration.js';
  *   rt        – true → cyan accent (live, <10 ms latency)
  *   group     – panel id inside index.html
  *   tip       – tooltip description
+ *   hint      – 1–2 sentence inline UI guidance (rendered as .slider-hint)
  *
  * AUDIT NOTES:
  *  • gateAttack / gateRelease / gateHold / gateLookahead:  added
@@ -70,6 +71,77 @@ export const STAGES = [
   'S31: Waveform Update',
   'S32: Final Export Ready',
 ];
+
+/** Inline 1–2 sentence hints for every slider row (Engineer Mode UI). */
+export const SLIDER_HINTS = {
+  gateThresh: 'Sets the level where the noise gate closes on quiet passages. Lower toward –50 dB when fan hum bleeds through pauses in a podcast recording.',
+  gateRange: 'Controls how deeply the gate mutes audio when closed. Push toward –80 dB for near-silence between phrases; ease toward –40 dB if words sound clipped.',
+  gateAttack: 'Sets how quickly the gate opens when speech returns. Shorten toward 5 ms for tight podcast edits; lengthen toward 30 ms to avoid chopping soft consonants.',
+  gateRelease: 'Sets how slowly the gate closes after speech ends. Lengthen toward 400 ms for natural room tails; shorten toward 100 ms for aggressive noise removal.',
+  gateHold: 'Keeps the gate open briefly after level drops to prevent flutter between syllables. Raise toward 80 ms when quiet vowels get chopped in forensic clips.',
+  gateLookahead: 'Pre-reads audio so the gate opens before a word starts (offline only). Raise toward 5 ms when plosives are late-cutting in an interview export.',
+  nrAmount: 'Sets overall spectral noise reduction strength. Raise toward 85% for steady hiss or air-conditioning; lower toward 50% if voices sound underwater.',
+  nrSensitivity: 'Controls how aggressively quiet bins are treated as noise. Raise toward 70% in constant background hum; lower toward 30% to protect soft consonants.',
+  nrSpectralSub: 'Balances subtraction depth against musical noise artifacts. Increase toward 65% for fan noise; decrease toward 25% when tonal ringing appears.',
+  nrFloor: 'Sets the minimum gain any frequency can be reduced to. Raise toward –60 dB if suppression sounds hollow; lower toward –90 dB for maximum hiss removal.',
+  nrSmoothing: 'Smooths noise estimates over time to reduce warble. Raise toward 60% for steady HVAC noise; lower toward 20% when transients feel dulled.',
+  eqSub: 'Trims deep sub-bass below 60 Hz. Cut toward –6 dB when desk rumble or traffic shakes the mic on a voice-over track.',
+  eqBass: 'Shapes low warmth between 60–200 Hz. Cut toward –4 dB for a boomy room; add +2 dB if the speaker sounds thin on a phone recording.',
+  eqWarmth: 'Adjusts body in the 200–500 Hz zone. Boost toward +3 dB for a distant speaker; cut toward –3 dB when the room sounds muddy.',
+  eqBody: 'Controls core vocal weight around 500 Hz–1 kHz. Cut toward –3 dB to reduce boxiness; add +2 dB when isolation leaves the voice small.',
+  eqLowMid: 'Targets nasal honk near 1–2 kHz. Cut toward –4 dB for indoor Zoom calls; leave flat for already-balanced broadcast chains.',
+  eqMid: 'Lifts intelligibility in the 2–4 kHz speech band. Boost toward +3 dB when the voice sits under music in a live mix.',
+  eqPresence: 'Adds consonant edge from 4–6 kHz. Raise toward +4 dB for whisper clarity; cut toward –2 dB if sibilance gets harsh.',
+  eqClarity: 'Shapes air and frication from 6–10 kHz. Boost toward +2 dB for forensic whispers; cut toward –3 dB when cymbals bleed on the mic.',
+  eqAir: 'Adds openness above 10 kHz. Nudge toward +2 dB for studio polish; cut toward –4 dB if hiss dominates after heavy noise reduction.',
+  eqBrill: 'Touches extreme top-end shimmer above 16 kHz. Use +1 dB sparingly for sheen; cut when the source has no real high-frequency content.',
+  compThresh: 'Sets the level where compression begins. Lower toward –30 dB for even podcast loudness; raise toward –18 dB for light touch-up only.',
+  compRatio: 'Controls how strongly levels above the threshold are reduced. Raise toward 6:1 for inconsistent field recordings; lower toward 2:1 for natural speech.',
+  compAttack: 'Sets how fast compression engages on peaks. Shorten toward 5 ms to catch plosives; lengthen toward 30 ms to preserve vocal punch.',
+  compRelease: 'Sets how fast compression lets go after peaks pass. Lengthen toward 300 ms for smooth narration; shorten toward 80 ms for tight broadcast levels.',
+  compKnee: 'Softens the transition into compression around the threshold. Widen toward 12 dB for invisible leveling; narrow toward 3 dB for firmer control.',
+  compMakeup: 'Restores level lost from compression. Raise toward +4 dB until the processed voice matches the raw loudness on your meter.',
+  limThresh: 'Sets the brickwall ceiling that prevents clipping. Keep near –1 dBFS for broadcast delivery; lower toward –3 dBFS for extra headroom on export.',
+  limRelease: 'Controls how quickly the limiter recovers after peaks. Shorten toward 30 ms for transparent podcast mastering; lengthen toward 100 ms if distortion flickers.',
+  hpFreq: 'Removes low-frequency rumble below the cutoff. Raise toward 100 Hz for desk mic rumble; lower toward 60 Hz to keep a warm male voice.',
+  hpQ: 'Sets steepness and resonance of the high-pass filter. Leave near 0.707 for a clean slope; raise toward 2 only when a narrow rumble band needs notching.',
+  lpFreq: 'Rolls off harsh or noisy highs above the cutoff. Lower toward 12 kHz for telephone-band isolation; keep near 18 kHz for full-band speech.',
+  lpQ: 'Sets the shape of the low-pass roll-off. Stay near 0.707 for natural air; increase only when targeting a specific whistling frequency.',
+  deEssFreq: 'Centers sibilance detection on the harsh “S” band. Sweep toward 8 kHz for bright speakers; lower toward 6 kHz for darker microphones.',
+  deEssAmt: 'Limits how much sibilance peaks are pulled down. Raise toward 10 dB for harsh podcast mics; keep near 4 dB for transparent correction.',
+  specTilt: 'Brightens or darkens the whole spectrum relative to 1 kHz. Tilt toward +3 dB/oct if the room sounds dull; toward –2 dB/oct to tame harsh overheads.',
+  formantShift: 'Moves vowel color up or down without changing pitch. Shift toward +2 semitones to lighten a muffled source; toward –2 to thicken a thin whisper.',
+  derevAmt: 'Reduces room echo and reverb tail on the voice. Raise toward 55% for reflective conference rooms; stay near 0% for already-dry studio takes.',
+  derevDecay: 'Estimates how long the room tail rings out. Raise toward 60% for large halls; lower toward 15% for small office reflections.',
+  harmRecov: 'Rebuilds harmonics lost to aggressive noise reduction. Raise toward 40% when the voice sounds fizzy or hollow after heavy NR.',
+  harmOrder: 'Sets how many overtones are restored. Raise toward 5 for fuller speech recovery; lower toward 2 if artifacts appear in the highs.',
+  stereoWidth: 'Widens or collapses the stereo image. Pull toward 0% for mono podcast delivery; push toward 140% only when the source is a clean stereo room mic.',
+  phaseCorr: 'Aligns stereo channels to fix cancellation. Raise toward 50% when dual lav mics on one subject sound thin or swishy.',
+  voiceIso: 'Sets machine-learning voice mask strength. Raise toward 85% to pull speech from crowd noise; lower toward 55% if words sound gargled.',
+  bgSuppress: 'Pushes down non-voice stems after separation. Raise toward 80% for music behind a reporter; lower toward 35% to keep natural ambience.',
+  voiceFocusLo: 'Sets the bottom edge of the speech band to isolate. Lower toward 120 Hz for deep male voices; raise toward 250 Hz to ignore subwoofer bleed.',
+  voiceFocusHi: 'Sets the top edge of the speech band to isolate. Lower toward 6 kHz for telephone speech; raise toward 10 kHz to keep breath and air.',
+  crosstalkCancel: 'Subtracts bleed between two microphones on one subject. Raise toward 60% for interview crosstalk; leave at 0% for single-mic recordings.',
+  outGain: 'Trims final output level after all processing. Boost toward +6 dB when isolation lowered loudness; cut toward –3 dB if export peaks near 0 dBFS.',
+  dryWet: 'Blends original audio with the processed result. Lower toward 40% to compare before/after; keep at 100% for full isolation output.',
+  ditherAmt: 'Adds tiny noise when reducing bit depth (0=off, 1=TPDF, 2=shaped, 3=high-pass). Use mode 1 for 16-bit podcast export; 0 for 32-bit float workflows.',
+  outWidth: 'Sets final stereo spread on the output bus. Narrow toward 0% for mono distribution; widen toward 130% only when the source is true stereo.',
+  whisperLift: 'Boosts bins where the voice mask is confident after isolation. Raise toward 24 dB when a whisper is buried under club noise; lower toward 10 dB for subtle lift.',
+  crowdNull: 'Targets crowd murmur in the 200–2500 Hz band. Raise toward 85% for stadium ambience; lower toward 50% if speech sounds phasey.',
+  bassCrush: 'Attenuates kick and sub energy that masks whispers. Raise toward 95% in EDM environments; lower toward 60% if the voice loses body.',
+  reverbStrip: 'Sets estimated room decay time for dereverb strength. Lengthen toward 900 ms for echoey halls; shorten toward 300 ms for tight booths.',
+  voiceTunnel: 'Narrows processing to speech formants for intelligibility. Raise toward 80% for forensic whispers; lower toward 40% for natural tone.',
+  musicKill: 'Suppresses steady harmonic music under speech. Raise toward 90% for DJ background; lower toward 50% if music pumping becomes audible.',
+  snrFloor: 'Bins quieter than this are treated as noise-only. Lower toward –60 dBFS to rescue faint whispers; raise toward –45 dBFS to reduce musical artifacts.',
+  whisperMode: 'Sets how many aggressive passes run (Off / Light / Heavy / Forensic). Choose Heavy for club whispers; Forensic only when maximum extraction is worth the wait.',
+  whisperClarity: 'Sets the minimum clarity floor so whispers are not crushed. Raise toward 80% when consonants vanish; lower toward 45% for lighter touch.',
+  whisperSensitivity: 'Controls how easily quiet whispers trigger processing. Raise toward 75% in noisy venues; lower toward 35% in quiet rooms to avoid false triggers.',
+  whisperThreshold: 'Steepens how hard non-whisper content is suppressed. Raise toward 70% for aggressive extraction; lower toward 35% for gentler results.',
+  transientShaper: 'Emphasizes or softens consonant attacks. Push toward +40 to sharpen buried consonants; pull toward –30 to tame harsh plosives.',
+  breathControl: 'Reduces breath noise between phrases. Raise toward 70% for ASMR-clean delivery; lower toward 15% to keep natural breathing.',
+  roomCorrection: 'Corrects room coloration on whisper tails. Raise toward 65% for reflective spaces; lower toward 20% for already-dry sources.',
+  subHarmonic: 'Adds synthetic low body to thin whispers. Raise toward 40% when the voice lacks chest resonance; leave at 0% for full-range recordings.',
+};
 
 const RAW_SLIDER_REGISTRY = [
   // ── Noise Gate (6 sliders) ─────────────────────────────────────────────────
@@ -495,8 +567,16 @@ const RAW_SLIDER_REGISTRY = [
   },
 ];
 
-/** Calibrated registry with Part 3 transfer functions + Part 1 examples */
-export const SLIDER_REGISTRY = calibrateRegistry(RAW_SLIDER_REGISTRY);
+/** Attach inline hints from SLIDER_HINTS to each registry entry. */
+function attachSliderHints(entries) {
+  return entries.map((entry) => ({
+    ...entry,
+    hint: entry.hint || SLIDER_HINTS[entry.id] || '',
+  }));
+}
+
+/** Calibrated registry with Part 3 transfer functions + Part 1 examples + hints */
+export const SLIDER_REGISTRY = calibrateRegistry(attachSliderHints(RAW_SLIDER_REGISTRY));
 
 /**
  * TICK CONFIGURATION  — used by slider-ticks.js to render tick marks.

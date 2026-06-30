@@ -903,6 +903,13 @@ class VoiceIsolatePro {
       row.appendChild(valEl);
 
       const regEntry = SLIDER_REG_BY_ID[s.id];
+      const hintText = (regEntry && regEntry.hint) ? regEntry.hint : '';
+      if (hintText) {
+        const hintEl = document.createElement('span');
+        hintEl.className = 'slider-hint';
+        hintEl.textContent = hintText;
+        row.appendChild(hintEl);
+      }
       const examples = (regEntry && regEntry.examples && regEntry.examples.length)
         ? regEntry.examples
         : this._defaultSliderExamples(s);
@@ -1056,6 +1063,13 @@ class VoiceIsolatePro {
 
     row.appendChild(labelEl);
     row.appendChild(group);
+    const wmReg = SLIDER_REG_BY_ID.whisperMode;
+    if (wmReg && wmReg.hint) {
+      const hintEl = document.createElement('span');
+      hintEl.className = 'slider-hint';
+      hintEl.textContent = wmReg.hint;
+      row.appendChild(hintEl);
+    }
     panel.insertBefore(row, panel.firstChild);
 
     window.VIP_PARAMS = window.VIP_PARAMS || {};

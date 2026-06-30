@@ -147,7 +147,15 @@ input[type='range']{
 
 /* ---- SLIDERS ---- */
 .sr{display:grid;grid-template-columns:1fr;gap:0;margin-bottom:2px}
-.sr-row{display:grid;grid-template-columns:130px 1fr 52px 22px;align-items:center;gap:8px;padding:4px 8px 4px 10px;border-radius:5px;position:relative;transition:background 0.1s;border-left:2px solid transparent}
+.sr-row{display:grid;grid-template-columns:130px 1fr 52px minmax(0,220px) 22px;align-items:center;gap:8px;padding:4px 8px 4px 10px;border-radius:5px;position:relative;transition:background 0.1s;border-left:2px solid transparent}
+.slider-hint{
+  font-size:11px;color:var(--text-dim,#888);line-height:1.35;
+  max-width:220px;margin-left:10px;align-self:center;flex-shrink:0;
+}
+@media (max-width:900px){
+  .sr-row{grid-template-columns:130px 1fr 52px 22px}
+  .slider-hint{grid-column:2 / -1;max-width:none;margin-left:0;margin-top:2px}
+}
 .slider-row{position:relative}
 .info-btn{
   flex:0 0 22px;width:22px;height:22px;border-radius:50%;
