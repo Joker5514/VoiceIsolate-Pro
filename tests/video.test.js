@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const getAppCode = require('./helpers/get-app-code');
 
 describe('VoiceIsolatePro Video Playback', () => {
   let VoiceIsolatePro;
@@ -9,7 +10,7 @@ describe('VoiceIsolatePro Video Playback', () => {
     // The test framework can't directly `import` app.js because it contains
     // browser-only code (document) that executes globally at the bottom if `module`
     // is not defined. We use `vm` to simulate a browser/module environment.
-    const code = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
+    const code = getAppCode();
     const sandbox = {
       window: {},
       document: {
@@ -22,14 +23,16 @@ describe('VoiceIsolatePro Video Playback', () => {
       console,
       URL: { createObjectURL: () => {}, revokeObjectURL: () => {} },
       setTimeout,
-      clearTimeout
+      clearTimeout,
+      requestAnimationFrame: jest.fn(cb => setTimeout(cb, 0)),
+      cancelAnimationFrame: jest.fn()
     };
     vm.createContext(sandbox);
     vm.runInContext(code, sandbox);
     VoiceIsolatePro = sandbox.module.exports;
   });
 
-  test('handles video play promise rejection gracefully', () => {
+  test('handles video play promise rejection gracefully', async () => {
     const play = VoiceIsolatePro.prototype.play;
 
     const catchMock = jest.fn();
@@ -38,6 +41,10 @@ describe('VoiceIsolatePro Video Playback', () => {
     const mockThis = {
       stop: jest.fn(),
       ensureCtx: jest.fn(),
+      // play() awaits the Live-Mix bridge (CLAUDE.md §1 / app.js _ensureBridge);
+      // stub it on the partial mock so the async method resolves rather than
+      // throwing "this._ensureBridge is not a function".
+      _ensureBridge: jest.fn().mockResolvedValue(null),
       abMode: 'original',
       inputBuffer: {},
       buildLiveChain: jest.fn(),
@@ -54,12 +61,13 @@ describe('VoiceIsolatePro Video Playback', () => {
       },
       isVideo: true,
       startSpectro: jest.fn(),
+      startDiagnostics: jest.fn(),
       startFreq: jest.fn(),
       tickTime: jest.fn(),
       playOffset: 0
     };
 
-    play.call(mockThis);
+    await play.call(mockThis);
 
     expect(playMock).toHaveBeenCalled();
     expect(catchMock).toHaveBeenCalled();

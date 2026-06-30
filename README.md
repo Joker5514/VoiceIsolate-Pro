@@ -1,144 +1,125 @@
 # VoiceIsolate Pro
 
-[![CI](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml/badge.svg)](https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml)
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Joker5514/VoiceIsolate-Pro)
+<p align="center">
+  <strong>Studio-grade voice isolation, 100% in your browser.</strong><br>
+  Upload a recording, let on-device AI split it into clean-voice and background-noise stems,
+  then mix the result in real time with zero-latency sliders.
+</p>
 
-**Studio-grade voice isolation. 32-stage Octa-Pass DSP pipeline. Hybrid ML + classical spectral processing. 100% local processing.**
-
-Built on the **Threads from Space v8** architecture.
-
----
-
-## Open in GitHub Codespaces
-
-Get a full cloud-based editor with live preview in one click:
-
-1. Click the **Open in GitHub Codespaces** badge above (or [click here](https://codespaces.new/Joker5514/VoiceIsolate-Pro))
-2. Dependencies install automatically via `npm install`
-3. Run `npm run dev` to start the preview server on port 3000
-4. The preview URL appears automatically in the **Ports** panel
+<p align="center">
+  <a href="https://v0-voice-isolate-pro.vercel.app">Live Demo</a> ·
+  No cloud processing · No audio upload · Your data never leaves the device
+</p>
 
 ---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **AI voice isolation** | Band-Split RNN vocal separation + BiGRU noise suppression via ONNX Runtime Web (WebGPU / WASM) |
+| **Speaker diarization** | Log-mel timbral fingerprinting clusters voices by timbre |
+| **Latency-free mixing** | NR, per-speaker volume, EQ, noise gate, and de-esser sliders act on the Web Audio graph in real time |
+| **Live visualizations** | Canvas 2D waveform overview + spectrum analyzer on Landing; scrolling spectrogram, frequency rail, 3D topo, particle swarm on Engineer Mode |
+| **Privacy-first** | Zero cloud processing; models SHA-256 verified and cached in IndexedDB |
+| **Export** | WAV or MP3 off the main thread via `AudioEncoderWorker` |
+| **Cross-platform** | Web (Vercel), Android & iOS via Capacitor |
+
+## How It Works
+
+VoiceIsolate Pro uses a deliberate **two-phase** model:
+
+### Phase 1 — Offline Batch Inference
+
+```
+Upload → Decode/Resample (48 kHz) → VAD → ONNX Inference → Spectral Cleanup → Diarization
+                                              (one pass)
+                                    ┌─────────┴─────────┐
+                                    ▼                   ▼
+                              Clean stem          Noise stem
+```
+
+### Phase 2 — Real-Time Playback Mixing
+
+Stems load into Web Audio `AudioBufferSourceNode`s with independent `GainNode`s, EQ, gate, and de-esser. Sliders adjust the graph instantly — ML models are never re-run.
 
 ## Quick Start
 
+### Requirements
+
+- **Node.js** ≥ 22
+- **pnpm** ≥ 10
+
+### Install & run
+
 ```bash
-# Local development
-npx serve public -l 3000 --cors
-
-# Or just open public/app/index.html in a browser
+git clone https://github.com/Joker5514/VoiceIsolate-Pro.git
+cd VoiceIsolate-Pro
+pnpm install          # vendors ONNX Runtime + Three.js locally
+pnpm dev              # http://localhost:3000  (auto-syncs src/ → public/src/)
 ```
 
-**Live**: Deploy via Vercel — auto-deploys on push to `main`.
+### Other commands
 
-## Architecture
+```bash
+pnpm test             # Jest — 2100+ tests
+pnpm lint             # ESLint
+pnpm validate         # Structural integrity checks (CI gate)
+pnpm build            # Production static build
+pnpm build:mobile     # Capacitor sync for Android/iOS
+```
+
+No `.env` is needed for local audio processing. Payment and licensing features require the variables in [`.env.example`](.env.example).
+
+## Pages
+
+| Route | Purpose |
+|-------|---------|
+| `/` | **Landing** — Stem-Split & Live-Mix with on-device ML (`public/index.html`) |
+| `/app/` | **Engineer Mode** — 32-stage classical DSP stack with premium visualizations (`public/app/`) |
+
+Both pages share the canonical `src/` pipeline for ML handoff via `EngineerModeBridge.js`.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | Vanilla JS (ES modules), Canvas 2D, Three.js (Engineer premium tabs) |
+| ML | ONNX Runtime Web 1.25, WebGPU + WASM |
+| Audio | Web Audio API, AudioWorklets |
+| Server | Express 5 (dev), Vercel serverless (prod) |
+| Payments | Stripe (optional, server-side only) |
+| Mobile | Capacitor 8 (Android / iOS) |
+| CI | GitHub Actions — Jest, ESLint, Semgrep, njsscan |
+
+## Repository Layout
 
 ```
-Audio Input → [INGEST] → [ANALYSIS] → [ML SEPARATION] → [SPECTRAL] → [ROOM] → [TIME-DOMAIN] → [NEURAL] → [MASTER] → Output
-                4 stages   4 stages     4 stages          4 stages     4 stages   4 stages        4 stages    4 stages
-```
+src/                       Canonical 4-layer architecture
+├── core/                  Pure primitives, ModelManifest, BufferPool
+├── workers/               MLWorker, Diarization, SpectralCleanup, Encoders
+├── pipeline/              FileIngestion, PlaybackMixer, Orchestrators
+└── presentation/          SliderUI, LandingVisualizer, ExportControls
 
-**32 stages across 8 passes**, orchestrated by the Threads from Space thread pool.
-
-### Critical Design Principle
-
-> **Single-pass spectral architecture**: One STFT → all spectral operations in-place → one iSTFT. Eliminates phase smearing from multiple spectral round-trips.
-
-## Project Structure
-
-```
 public/
-├── index.html              # Landing page
-├── app/                    # Engineer Mode v19 (the actual app)
-│   ├── index.html          # 52-slider processing interface
-│   ├── style.css           # Dark industrial theme
-│   └── app.js              # DSP pipeline + real-time audio chain
-├── blueprint/              # v18 Technical Blueprint
-│   └── index.html          # Full architecture documentation site
-└── docs/                   # Additional documentation
-    ├── TECHNICAL_GUIDE.md
-    └── v7.5-blueprint.md
+├── index.html + landing.js    Landing page
+├── app/                       Engineer Mode shell
+└── lib/                       Vendored ort.min.js, three.module.js
+
+server/                    Express + securityHeaders.js
+api-routes/                Stripe monetization, licensing, sync
+tests/                     80 Jest suites
+scripts/                   Build, validation, model tooling
 ```
 
-## ML Models (ONNX Runtime Web)
+See [`CLAUDE.md`](CLAUDE.md) for the full contributor contract and [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.
 
-| Model | Role | Size |
-|-------|------|------|
-| Demucs v4.1 | Source separation (Transformer + U-Net) | ~150MB INT8 |
-| BSRNN | Band-Split RNN ensemble partner | ~80MB |
-| ECAPA-TDNN | Speaker embeddings (256-dim) | ~25MB |
-| Silero VAD v5 | Voice activity detection | ~2MB |
-| HiFi-GAN v2 | Neural vocoder reconstruction | ~55MB |
-| Conformer | Spectral enhancement / final polish | ~40MB |
+## Security
 
-All models run locally via ONNX Runtime Web (WebGPU primary, WASM fallback). **Zero cloud inference.**
+- Strict headers (`COOP`/`COEP`, CSP, `nosniff`, `X-Frame-Options`, `microphone=()`) via `server/securityHeaders.js` and `vercel.json`
+- All secrets via environment variables — see `.env.example`
+- ONNX models verified against pinned SHA-256 hashes before every session
 
-## Execution Modes
+## License
 
-- **Live** (<10ms): AudioWorklet + SharedArrayBuffer, reduced pipeline
-- **Creator**: Full 32-stage, OfflineAudioContext, maximum quality
-- **Forensic**: Conservative + SHA-256 audit trail at every stage
-
-## Deployment
-
-### Vercel (Recommended)
-1. Connect this repo in Vercel dashboard
-2. Set output directory to `public`
-3. Auto-deploys on push to `main`
-
-### GitHub Actions
-Add these secrets to your repo:
-- `VERCEL_TOKEN`
-- `VERCEL_ORG_ID`
-- `VERCEL_PROJECT_ID`
-
-### Manual
-```bash
-npm i -g vercel
-vercel login
-vercel deploy --prod
-```
-
-## Copilot Agent
-
-GitHub Copilot is configured via `.github/copilot-instructions.md` with:
-- Architecture constraints (single-pass spectral, thread safety)
-- Pipeline stage definitions
-- Slider system documentation
-- Code quality rules
-
-## Tiers
-
-| Tier | Price | Features |
-|------|-------|----------|
-| Free | $0 | 5 min/file, watermarked, One-Tap mode |
-| Creator Pro | $12/mo | Unlimited, presets, batch 100 |
-| Studio | $29/mo | Engineer panel, API, desktop |
-| Forensic | $79/mo | Audit chain, chain-of-custody |
-
-## Version History
-
-| Version | Key Innovation |
-|---------|---------------|
-| v4 | Auto noise profiling, spectral subtraction |
-| v5 | Threads from Space concept, 12-stage pipeline |
-| v7 | Modular node graph, thread-per-stage |
-| v11 | ERB spectral gate, Band-Split RNN |
-| v13 | Neural vocoder, phase-coherent reconstruction |
-| v15 | Real Web Audio API chains |
-| v16 | BSRNN ensemble, 40+ slider wiring |
-| v17 | OfflineAudioContext graph, A/B comparison |
-| v18 | Conformer refiner, forensic audit chain |
-| **v19** | **52-slider Engineer Mode, 3D spectrogram** |
-
-## Privacy
-
-- 100% local processing
-- Zero telemetry
-- No audio data ever leaves the device
-- AES-256 encryption at rest (optional)
-- CSP blocks network during processing
-
----
-
-**Threads from Space v8** — Privacy-First — March 2026
+UNLICENSED — © Randy Jordan. All rights reserved.

@@ -9,8 +9,11 @@ const path = require('path');
 const appJsPath = path.join(__dirname, '../public/app/app.js');
 const appJs = fs.readFileSync(appJsPath, 'utf8');
 
+const mlWorkerPath = path.join(__dirname, '../public/app/ml-worker.js');
+const mlWorkerJs = fs.readFileSync(mlWorkerPath, 'utf8');
+
 // Extract slider IDs only from the SLIDERS constant block
-const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\s*\n\/\/ ---- PRESETS/);
+const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\n*const SLIDER_MAP/);
 const slidersBlock = slidersBlockMatch ? slidersBlockMatch[1] : appJs;
 const sliderIdRegex = /id:'(\w+)'/g;
 const sliderIds = [];
@@ -96,15 +99,23 @@ describe('STFT engine', () => {
     expect(appJs).toContain('_makeWindow(N)');
   });
 
-  test('Blackman-Harris coefficients should be present', () => {
-    expect(appJs).toContain('0.35875');
-    expect(appJs).toContain('0.48829');
+  test('Hann window formula should be present', () => {
+    // Window was updated from Blackman-Harris to periodic Hann for correct COLA
+    expect(appJs).toContain('0.5 * (1 - Math.cos(');
   });
 });
 
 describe('AudioWorklet registration', () => {
-  test('dsp-worker.js should be referenced in ensureCtx', () => {
-    expect(appJs).toContain("addModule('./dsp-worker.js')");
+  test('no file registers an AudioWorklet (live pipeline removed — CLAUDE.md §1.1)', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const appDir = path.join(__dirname, '../public/app');
+    const offenders = fs.readdirSync(appDir)
+      .filter((f) => f.endsWith('.js'))
+      .filter((f) => /audioWorklet\.addModule\s*\(/.test(
+        fs.readFileSync(path.join(appDir, f), 'utf8')
+      ));
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -114,38 +125,23 @@ describe('ONNX / VAD', () => {
   });
 
   test('runVAD method should be defined', () => {
-    expect(appJs).toContain('async runVAD(buf)');
+    expect(appJs).toContain('async runVAD(');
   });
 });
 
-describe('ML Worker (Phase 4b)', () => {
-  const fs = require('fs');
-  const path = require('path');
-  const mlWorkerPath = path.resolve(__dirname, '..', 'public/app/ml-worker.js');
-  const mlWorkerJs = fs.existsSync(mlWorkerPath) ? fs.readFileSync(mlWorkerPath, 'utf8') : '';
-
-  test('ml-worker.js file exists', () => {
-    expect(fs.existsSync(mlWorkerPath)).toBe(true);
+describe('ML Worker wiring', () => {
+  test('app.js communicates with ML Worker via _mlCall helper', () => {
+    expect(appJs).toContain('_mlCall(payload, transfer');
   });
 
-  test('app.js spawns ML Worker with initMLWorker', () => {
-    expect(appJs).toContain('initMLWorker()');
-  });
-
-  test('app.js creates Worker at correct path', () => {
-    expect(appJs).toContain("new Worker('./ml-worker.js')");
-  });
 
   test('app.js has _mlCall promise helper', () => {
     expect(appJs).toContain('_mlCall(payload, transfer');
   });
 
-  test('app.js has ML message handler', () => {
-    expect(appJs).toContain('.mlWorker.onmessage');
-  });
 
   test('app.js runSeparation delegates to ML Worker', () => {
-    expect(appJs).toContain('async runSeparation(buf, model');
+    expect(appJs).toContain('async runSeparation(');
   });
 
   test('ml-worker loads ORT via importScripts', () => {
@@ -153,27 +149,24 @@ describe('ML Worker (Phase 4b)', () => {
   });
 
   test('ml-worker handles init message', () => {
-    // ml-worker uses if/else if statements for message routing
-    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]init['"]/);
+    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]init['"]|case\s+['"]init['"]/);
   });
 
   test('ml-worker handles process message', () => {
-    // ml-worker uses 'process' message type for audio processing
-    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]process['"]/);
+    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]process['"]|case\s+['"]process['"]/);
   });
 
   test('ml-worker handles reset message', () => {
-    // ml-worker uses 'reset' message type to clear state
-    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]reset['"]/);
+    expect(mlWorkerJs).toMatch(/type\s*===?\s*['"]reset['"]|case\s+['"]reset['"]/);
   });
 
   test('ml-worker handles loadModel message', () => {
-    // ml-worker initializes models via initModels function
-    expect(mlWorkerJs).toContain('initModels');
+    // ml-worker handles model loading via 'loadModel' message
+    expect(mlWorkerJs).toContain('loadModel');
   });
 
   test('ml-worker supports implemented model types', () => {
-    // Current implementation supports: vad, deepfilter, demucs
+    // Current implementation supports: vad, rnnoise, demucs
     ['vad', 'demucs'].forEach(m => {
       expect(mlWorkerJs).toContain(`${m}`);
     });
@@ -181,6 +174,53 @@ describe('ML Worker (Phase 4b)', () => {
 
   test('ml-worker uses transferable ArrayBuffers for large results', () => {
     expect(mlWorkerJs).toContain('[output.buffer]');
+  });
+
+  // ── Regression: old test checked for initMLWorker which no longer exists ──
+
+  test('app.js does NOT use the old initMLWorker() pattern (replaced by _mlCall)', () => {
+    // The PR replaced `initMLWorker()` invocation with the `_mlCall` helper pattern.
+    // This regression test confirms the old symbol is gone.
+    expect(appJs).not.toContain('initMLWorker()');
+  });
+
+  // ── mlWorkerJs file load validation ────────────────────────────────────────
+
+  test('mlWorkerJs was loaded and is non-empty', () => {
+    expect(typeof mlWorkerJs).toBe('string');
+    expect(mlWorkerJs.length).toBeGreaterThan(0);
+  });
+
+  // ── _mlCall implementation details ─────────────────────────────────────────
+
+  test('app.js _mlCall has a default value of [] for the transfer parameter', () => {
+    expect(appJs).toContain('_mlCall(payload, transfer = [])');
+  });
+
+  test('app.js _mlCall increments an ID counter for request tracking', () => {
+    expect(appJs).toContain('_mlCallId');
+    expect(appJs).toContain('++this._mlCallId');
+  });
+
+  test('app.js _mlCall returns a Promise', () => {
+    // _mlCall wraps responses in a Promise for async/await callers
+    const mlCallBlock = appJs.match(/_mlCall\(payload,[\s\S]*?\n {2}\}/)?.[0] || '';
+    expect(mlCallBlock).toContain('Promise');
+  });
+
+  // ── ml-worker.js null-guard filter ─────────────────────────────────────────
+
+  test('ml-worker.js includes .filter(Boolean) null-guard for transferables', () => {
+    // The PR added `.filter(Boolean)` to guard against null stream entries
+    expect(mlWorkerJs).toContain('.filter(Boolean)');
+  });
+
+  test('ml-worker.js defines the handleMultiSeparate function', () => {
+    expect(mlWorkerJs).toContain('handleMultiSeparate');
+  });
+
+  test('ml-worker.js null-guard uses short-circuit: s && s.data && s.data.buffer', () => {
+    expect(mlWorkerJs).toContain('s && s.data && s.data.buffer');
   });
 });
 

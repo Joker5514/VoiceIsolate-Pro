@@ -1,162 +1,61 @@
 # Contributing to VoiceIsolate Pro
 
-Thank you for considering contributing to VoiceIsolate Pro! This document provides guidelines and information for developers who want to contribute.
+Thank you for your interest in contributing. This project enforces a strict
+four-layer architecture — read [`CLAUDE.md`](CLAUDE.md) before opening a PR.
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
-
-- Node.js 18+ (LTS recommended)
-- Modern browser with Web Audio API support (Chrome/Edge/Firefox)
-- Git
-
-### Setup
+- **Node.js** ≥ 22
+- **pnpm** ≥ 10 (npm/yarn lockfiles are not used)
 
 ```bash
-# Clone the repository
-git clone https://github.com/Joker5514/VoiceIsolate-Pro.git
-cd VoiceIsolate-Pro
-
-# Install dependencies
-npm install
-
-# Start the dev server
-npm run dev
+pnpm install
+pnpm sync:src    # copies src/ → public/src/ for local /src/ imports
+pnpm dev         # http://localhost:3000
 ```
 
-The app will be available at `http://localhost:3000/app/`.
+## Development workflow
 
-## Development Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start local development server |
-| `npm run lint` | Run ESLint on source files |
-| `npm run lint:fix` | Run ESLint with auto-fix |
-| `npm run test` | Run Jest unit tests |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run validate` | Run structural validation checks |
-
-## Architecture Overview
-
-### Single-Pass Spectral Principle
-
-**Critical rule**: The audio pipeline uses ONE STFT → all spectral processing in-place → ONE iSTFT. Never introduce additional STFT/iSTFT round-trips.
-
-This prevents phase smearing and echo artifacts that occur with multiple spectral transformations.
-
-### File Structure
-
-```
-public/
-├── index.html              # Landing page / router
-├── app/                    # Main application
-│   ├── index.html          # Engineer Mode v19 UI
-│   ├── style.css           # Dark industrial theme
-│   ├── app.js              # Main DSP pipeline + UI (52 sliders)
-│   ├── dsp-worker.js       # AudioWorklet processor
-│   ├── ml-worker.js        # ML inference worker (ONNX Runtime)
-│   └── models/             # ONNX model files (download separately)
-└── blueprint/              # Technical architecture docs
-```
-
-### The 52-Slider System
-
-Sliders are organized into groups in `app.js`:
-
-| Group | Sliders | Purpose |
-|-------|---------|---------|
-| `gate` | 6 | Noise gate controls |
-| `nr` | 5 | Noise reduction parameters |
-| `eq` | 10 | 10-band parametric EQ |
-| `dyn` | 8 | Dynamics (compression/limiting) |
-| `spec` | 8 | Spectral processing (filters, de-ess) |
-| `adv` | 6 | Advanced (dereverb, harmonics, stereo) |
-| `sep` | 5 | Voice separation controls |
-| `out` | 4 | Output stage (gain, mix, dither) |
-
-Each slider definition includes:
-- `id`: Unique identifier (used in presets)
-- `label`: Display name
-- `min/max/val`: Value range and default
-- `rt`: Real-time capable (wired to AudioParam)
-- `desc`: Tooltip description
-
-### Adding a New Slider
-
-1. Add definition to appropriate group in `SLIDERS` constant
-2. Add default value to all 7 presets in `PRESETS`
-3. Wire it to DSP code in the processing pipeline
-4. Run `npm run validate` to verify structural integrity
-
-### ML Models
-
-Models are loaded via ONNX Runtime Web. Place model files in `public/app/models/`:
-
-- `silero_vad.onnx` - Voice activity detection (required for VAD)
-- `enc.onnx`, `erb_dec.onnx`, `df_dec.onnx` - DeepFilterNet3 (all three required)
-- `demucs_v4.onnx` - Vocal stem separation (WebGPU recommended)
-
-See `public/app/models/README.md` for download instructions.
-
-## Code Style
-
-- Use single quotes for strings
-- Use `setTargetAtTime()` (not `setValueAtTime()`) for slider-to-AudioParam wiring
-- Always disconnect audio nodes on stop (prevents double playback)
-- Use `typeof AudioContext !== 'undefined'` checks (not `window.AudioContext`)
-
-## Testing
-
-### Unit Tests
-
-Tests are in `tests/` using Jest:
+1. Create a feature branch from `main`.
+2. Make focused changes — one concern per commit.
+3. Run the full validation gate before pushing:
 
 ```bash
-npm run test
+pnpm validate    # structural integrity (required)
+pnpm lint        # ESLint
+pnpm test        # Jest (2113+ tests)
 ```
 
-Current test coverage:
-- DSP math (FFT, Wiener, dither)
-- Slider definitions (52 sliders, unique IDs)
-- Preset completeness (all 7 presets cover all parameters)
-- STAGES array (exactly 32 stages)
+4. Open a PR with a clear summary, test results, and screenshots for UI changes.
 
-### Manual Testing
+## Architecture rules (summary)
 
-Always test with actual audio files:
-1. Upload a test file (speech with background noise)
-2. Process with "Podcast" preset
-3. Verify no freezing/silence
-4. A/B compare original vs processed
-5. Check all sliders update audio in real-time
+| Layer | Path | Responsibility |
+|-------|------|----------------|
+| 1 Core | `src/core/` | Pure DSP primitives, constants, manifests |
+| 2 Workers | `src/workers/` | Web Workers & AudioWorklets |
+| 3 Pipeline | `src/pipeline/` | Orchestration (ingest → infer → mix → export) |
+| 4 Presentation | `src/presentation/` | DOM bindings only |
 
-## Pull Request Guidelines
+**Do not:**
+- Add live-microphone ingestion
+- Load libraries from CDNs
+- Put business logic in `public/app/` (Engineer Mode is maintenance-frozen)
+- Commit large ONNX models (use Vercel Blob — see `docs/MODEL_DELIVERY.md`)
 
-1. **Branch naming**: `feature/description` or `fix/description`
-2. **Run checks before PR**:
-   ```bash
-   npm run lint
-   npm run test
-   npm run validate
-   ```
-3. **Keep PRs focused**: One feature or fix per PR
-4. **Update tests**: Add tests for new functionality
-5. **Update presets**: If adding sliders, update all 7 presets
+## Pages
 
-## Architecture Constraints
+| URL | File | Notes |
+|-----|------|-------|
+| `/` | `public/index.html` | Landing — Stem-Split & Live-Mix (canonical `src/`) |
+| `/app/` | `public/app/index.html` | Engineer Mode — classical DSP + visualization suite |
 
-These rules MUST be preserved:
+## Debug logging
 
-1. **Single-pass spectral** - No additional STFT/iSTFT round-trips
-2. **Privacy-first** - Zero external API calls during audio processing
-3. **Audio cleanup** - Always disconnect nodes on stop/reset
-4. **32-stage pipeline** - Stages execute in defined order
+Append `?debug=1` to the URL or set `localStorage.vip_debug = '1'` to enable
+gated `[VIP]` console output in pipeline modules.
 
-## Questions?
+## Questions
 
-Open an issue or check the [Blueprint](public/blueprint/index.html) for detailed architecture documentation.
-
----
-
-**Threads from Space v8** — Privacy-First — 2026
+Open a GitHub issue with the **bug** or **feature** template. For security
+concerns, do not file public issues — contact the maintainer directly.

@@ -1,0 +1,418 @@
+/**
+ * VoiceIsolate Pro — visuals.css
+ * Engineer Mode v19 — 3D Spectrogram + Waveform Canvas Styles
+ * Consumed by: visuals.js, neon-pulse-visualizer.js, premium-visuals.js
+ * ======================================================================
+ * Covers:
+ *   1. Canvas container layout & sizing
+ *   2. 3D spectrogram scene wrapper
+ *   3. Waveform overlay canvas
+ *   4. Frequency-bar meter strip
+ *   5. Peak-hold indicators
+ *   6. Gradient palette CSS custom properties (mirrored in visuals.js)
+ *   7. Responsive + reduced-motion guards
+ */
+
+/* ── 1. Design tokens (scoped to visuals) ──────────────────────────────── */
+:root {
+  /* Spectrogram colour ramp — low → mid → high energy */
+  --vis-color-floor:       #0a0a12;
+  --vis-color-low:         #0d1f4a;
+  --vis-color-mid-low:     #0e4d8a;
+  --vis-color-mid:         #0084c8;
+  --vis-color-mid-high:    #00c8b4;
+  --vis-color-high:        #39ff14;
+  --vis-color-peak:        #ff4e00;
+  --vis-color-clip:        #ff0033;
+
+  /* Waveform */
+  --vis-waveform-stroke:   rgba(0, 230, 180, 0.85);
+  --vis-waveform-fill:     rgba(0, 230, 180, 0.10);
+  --vis-waveform-rms:      rgba(255, 200, 0, 0.70);
+
+  /* Grid / axes */
+  --vis-grid-color:        rgba(255, 255, 255, 0.07);
+  --vis-axis-label:        rgba(200, 210, 220, 0.55);
+  --vis-axis-font:         'JetBrains Mono', 'Fira Code', monospace;
+  --vis-axis-size:         10px;
+
+  /* Peak-hold bar */
+  --vis-peak-color:        rgba(255, 120, 0, 0.90);
+  --vis-peak-decay-color:  rgba(255, 60, 0, 0.50);
+
+  /* Canvas background */
+  --vis-bg:                #08080f;
+  --vis-border:            rgba(0, 200, 180, 0.20);
+  --vis-border-active:     rgba(0, 230, 180, 0.60);
+
+  /* Corner radius */
+  --vis-radius:            6px;
+
+  /* Transition speed for show/hide */
+  --vis-transition:        240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── 2. Canvas container ──────────────────────────────────────────────── */
+.vis-container {
+  position:        relative;
+  display:         flex;
+  flex-direction:  column;
+  width:           100%;
+  background:      var(--vis-bg);
+  border:          1px solid var(--vis-border);
+  border-radius:   var(--vis-radius);
+  overflow:        hidden;
+  transition:      border-color var(--vis-transition);
+}
+
+.vis-container:focus-within,
+.vis-container.vis-active {
+  border-color: var(--vis-border-active);
+  box-shadow:   0 0 18px rgba(0, 230, 180, 0.12);
+}
+
+/* ── 3. 3-D spectrogram scene wrapper ─────────────────────────────────── */
+#spectrogram-scene,
+.vis-spectrogram-scene {
+  position:     relative;
+  width:        100%;
+  /* Height is driven by JS; CSS provides a safe fallback */
+  min-height:   180px;
+  flex:         1 1 auto;
+  background:   var(--vis-bg);
+  overflow:     hidden;
+}
+
+/* The Three.js renderer attaches a <canvas> directly inside the scene */
+#spectrogram-scene canvas,
+.vis-spectrogram-scene canvas {
+  display:        block;
+  width:          100%  !important;
+  height:         100%  !important;
+  touch-action:   none;
+  user-select:    none;
+  cursor:         crosshair;
+}
+
+/* Axis label overlay (absolute-positioned divs injected by visuals.js) */
+.vis-axis-overlay {
+  position:       absolute;
+  inset:          0;
+  pointer-events: none;
+  z-index:        2;
+}
+
+.vis-axis-label {
+  position:   absolute;
+  font-family: var(--vis-axis-font);
+  font-size:  var(--vis-axis-size);
+  color:      var(--vis-axis-label);
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.vis-axis-label.freq { bottom: 4px; }
+.vis-axis-label.time { left:   4px; }
+.vis-axis-label.amp  { right:  4px; top: 4px; }
+
+/* ── 4. Waveform overlay canvas ───────────────────────────────────────── */
+#waveform-canvas,
+.vis-waveform-canvas {
+  display:        block;
+  width:          100%;
+  /* Height controlled via JS; CSS default keeps layout stable */
+  height:         80px;
+  background:     transparent;
+  border-top:     1px solid var(--vis-grid-color);
+  touch-action:   none;
+  user-select:    none;
+}
+
+/* Positioned waveform (floated over spectrogram) */
+.vis-waveform-overlay {
+  position:       absolute;
+  left:           0;
+  right:          0;
+  bottom:         0;
+  height:         72px;
+  pointer-events: none;
+  z-index:        3;
+  opacity:        0.85;
+  transition:     opacity var(--vis-transition);
+}
+
+.vis-waveform-overlay.vis-hidden {
+  opacity: 0;
+}
+
+/* ── 5. Frequency bar meter strip ────────────────────────────────────── */
+.vis-freq-strip {
+  display:        flex;
+  align-items:    flex-end;
+  gap:            1px;
+  width:          100%;
+  height:         48px;
+  padding:        0 2px;
+  background:     var(--vis-bg);
+  border-top:     1px solid var(--vis-grid-color);
+  overflow:       hidden;
+  flex-shrink:    0;
+}
+
+.vis-freq-bar {
+  flex:           1 1 0;
+  min-width:      1px;
+  border-radius:  2px 2px 0 0;
+  background:     var(--vis-color-mid);
+  transition:     height 40ms linear, background 80ms linear;
+  transform-origin: bottom;
+}
+
+/* ── 6. Peak-hold indicators ─────────────────────────────────────────── */
+.vis-peak-hold {
+  position:     absolute;
+  left:         0;
+  right:        0;
+  height:       2px;
+  background:   var(--vis-peak-color);
+  pointer-events: none;
+  border-radius: 1px;
+  transition:   opacity 300ms ease, top 60ms linear;
+  z-index:      4;
+}
+
+.vis-peak-hold.vis-decay {
+  background: var(--vis-peak-decay-color);
+  opacity:    0.5;
+}
+
+/* ── 7. Colour-ramp gradient legend ──────────────────────────────────── */
+.vis-legend {
+  display:        flex;
+  align-items:    center;
+  gap:            var(--space-2, 8px);
+  padding:        4px 8px;
+  background:     rgba(0,0,0,0.40);
+  border-top:     1px solid var(--vis-grid-color);
+  flex-shrink:    0;
+}
+
+.vis-legend-gradient {
+  flex:           1 1 auto;
+  height:         8px;
+  border-radius:  4px;
+  background:     linear-gradient(
+    to right,
+    var(--vis-color-low),
+    var(--vis-color-mid),
+    var(--vis-color-high),
+    var(--vis-color-peak)
+  );
+}
+
+.vis-legend-label {
+  font-family: var(--vis-axis-font);
+  font-size:   9px;
+  color:       var(--vis-axis-label);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── 8. Canvas toolbar (play/pause, zoom, reset) ─────────────────────── */
+.vis-toolbar {
+  display:        flex;
+  align-items:    center;
+  gap:            4px;
+  padding:        4px 8px;
+  background:     rgba(8, 8, 15, 0.90);
+  border-bottom:  1px solid var(--vis-grid-color);
+  flex-shrink:    0;
+}
+
+.vis-toolbar-btn {
+  display:        inline-flex;
+  align-items:    center;
+  justify-content: center;
+  width:          28px;
+  height:         28px;
+  border:         1px solid var(--vis-border);
+  border-radius:  4px;
+  background:     transparent;
+  color:          var(--vis-axis-label);
+  cursor:         pointer;
+  transition:     background var(--vis-transition),
+                  border-color var(--vis-transition),
+                  color var(--vis-transition);
+  padding:        0;
+}
+
+.vis-toolbar-btn:hover {
+  background:    rgba(0, 230, 180, 0.10);
+  border-color:  var(--vis-border-active);
+  color:         #00e6b4;
+}
+
+.vis-toolbar-btn:active {
+  background: rgba(0, 230, 180, 0.20);
+}
+
+.vis-toolbar-btn.vis-active {
+  background:   rgba(0, 230, 180, 0.15);
+  border-color: var(--vis-border-active);
+  color:        #00e6b4;
+}
+
+.vis-toolbar-label {
+  font-family: var(--vis-axis-font);
+  font-size:   10px;
+  color:       var(--vis-axis-label);
+  margin-left: auto;
+  letter-spacing: 0.04em;
+}
+
+/* ── 9. Loading / initialising state ─────────────────────────────────── */
+.vis-loading {
+  position:       absolute;
+  inset:          0;
+  display:        flex;
+  align-items:    center;
+  justify-content: center;
+  background:     rgba(8, 8, 15, 0.80);
+  backdrop-filter: blur(4px);
+  z-index:        10;
+  pointer-events: all;
+  transition:     opacity var(--vis-transition);
+}
+
+.vis-loading.vis-hidden {
+  opacity:        0;
+  pointer-events: none;
+}
+
+.vis-loading-text {
+  font-family:  var(--vis-axis-font);
+  font-size:    13px;
+  color:        #00e6b4;
+  letter-spacing: 0.12em;
+  animation:    vis-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes vis-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.35; }
+}
+
+/* ── 10. Error / offline overlay ─────────────────────────────────────── */
+.vis-error {
+  position:       absolute;
+  inset:          0;
+  display:        flex;
+  flex-direction: column;
+  align-items:    center;
+  justify-content: center;
+  gap:            8px;
+  background:     rgba(8, 8, 15, 0.88);
+  z-index:        11;
+  pointer-events: all;
+}
+
+.vis-error-icon {
+  font-size:  28px;
+  color:      var(--vis-color-clip);
+  line-height: 1;
+}
+
+.vis-error-text {
+  font-family:  var(--vis-axis-font);
+  font-size:    11px;
+  color:        rgba(255,100,80,0.85);
+  text-align:   center;
+  max-width:    240px;
+  line-height:  1.4;
+}
+
+/* ── 11. RMS / level meter bar ───────────────────────────────────────── */
+.vis-level-meter {
+  display:     flex;
+  align-items: center;
+  gap:         3px;
+  padding:     0 8px 4px;
+  flex-shrink: 0;
+}
+
+.vis-level-meter-track {
+  flex:         1 1 auto;
+  height:       6px;
+  border-radius: 3px;
+  background:   rgba(255,255,255,0.06);
+  overflow:     hidden;
+  position:     relative;
+}
+
+.vis-level-meter-fill {
+  position:     absolute;
+  top:          0;
+  left:         0;
+  height:       100%;
+  border-radius: 3px;
+  /* width set inline by visuals.js */
+  background:   linear-gradient(
+    to right,
+    var(--vis-color-mid-low),
+    var(--vis-color-mid-high),
+    var(--vis-color-high)
+  );
+  transition:   width 50ms linear;
+}
+
+.vis-level-meter-fill.vis-clip {
+  background: var(--vis-color-clip);
+}
+
+.vis-level-meter-label {
+  font-family:  var(--vis-axis-font);
+  font-size:    9px;
+  color:        var(--vis-axis-label);
+  min-width:    30px;
+  text-align:   right;
+}
+
+/* ── 12. Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  #spectrogram-scene,
+  .vis-spectrogram-scene {
+    min-height: 120px;
+  }
+
+  .vis-freq-strip {
+    height: 32px;
+  }
+
+  .vis-toolbar {
+    padding: 3px 6px;
+  }
+
+  .vis-toolbar-btn {
+    width:  24px;
+    height: 24px;
+  }
+
+  .vis-legend-gradient {
+    height: 5px;
+  }
+}
+
+/* ── 13. Reduced-motion guard ────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .vis-freq-bar,
+  .vis-level-meter-fill,
+  .vis-peak-hold,
+  .vis-waveform-overlay {
+    transition: none !important;
+  }
+
+  .vis-loading-text {
+    animation: none !important;
+    opacity:   1;
+  }
+}

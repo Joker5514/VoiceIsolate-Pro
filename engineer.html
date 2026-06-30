@@ -1,0 +1,4193 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="midnight">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VoiceIsolate Pro — Engineer Mode</title>
+<style>
+/* ── FONTS ─────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+/* ── COLOR TOKENS ──────────────────────────────────── */
+/* ============================================================
+   VoiceIsolate Pro — Color tokens
+   Deep charcoal + graphite surfaces, deep-red signal accent.
+   Forensic-grade audio instrument. Minimal glow, thin borders.
+   ============================================================ */
+:root {
+  /* ── Base canvas — charcoal → graphite ramp ────────────────
+     Darkest behind the workstation; surfaces step up in value. */
+  --void:        #060609;  /* app backdrop, canvas wells */
+  --bg:          #0a0a0e;  /* page background */
+  --surface-1:   #0c0c12;  /* sunken wells, inputs */
+  --surface-2:   #111118;  /* panels, cards */
+  --surface-3:   #181823;  /* raised rows, headers, controls */
+  --surface-4:   #1f1f2e;  /* hover / active fills, chips */
+
+  /* ── Deep-red signal accent ────────────────────────────────
+     The voice. Used for the active stem, primary actions,
+     live meters and the brand mark. */
+  --red-900:     #7f1d1d;
+  --red-800:     #991b1b;
+  --red-700:     #b91c1c;
+  --red-600:     #dc2626;  /* PRIMARY accent */
+  --red-500:     #ef4444;  /* hover / hot signal */
+  --red-400:     #f87171;  /* peak / emphasis text on dark */
+  --red-glow:    rgba(220, 38, 38, 0.22);
+  --red-wash:    rgba(220, 38, 38, 0.06);
+
+  /* ── Text ──────────────────────────────────────────────────*/
+  --text-hi:     #f2f2f6;  /* headings, key readouts */
+  --text:        #e8e8ec;  /* body */
+  --text-2:      #b0b0c4;  /* secondary / labels */
+  --text-dim:    #5e5e78;  /* captions, units, disabled */
+  --text-ghost:  #3a3a48;  /* placeholder, hairline labels */
+
+  /* ── Borders — thin, mostly hairline ───────────────────────*/
+  --border:        rgba(255, 255, 255, 0.06);  /* default hairline */
+  --border-strong: #2a2a30;                     /* visible divider */
+  --border-red:    rgba(220, 38, 38, 0.14);     /* accented edge */
+  --border-focus:  var(--red-500);
+
+  /* ── Semantic status ───────────────────────────────────────*/
+  --ok:        #34d399;  /* engine ready, clean */
+  --ok-wash:   rgba(52, 211, 153, 0.10);
+  --warn:      #eab308;  /* loading, caution */
+  --warn-wash: rgba(234, 179, 8, 0.10);
+  --danger:    #ef4444;  /* error / clip / recording */
+  --danger-wash: rgba(239, 68, 68, 0.10);
+  --info:      #d4d4dd;  /* neutral notice */
+
+  /* ── Signal-analysis palette ───────────────────────────────
+     Forensic magnitude ramp: void → red → amber → bone.
+     Use for spectrograms, FFT bins, heat overlays. */
+  --signal-floor: #0b0b10;
+  --signal-low:   #5b1414;
+  --signal-mid:   #dc2626;
+  --signal-hot:   #f97316;
+  --signal-peak:  #fde68a;
+  --signal-clip:  #fff7ed;
+
+  /* Stem semantics — the two-stem split */
+  --stem-voice:   #ef4444;  /* clean-voice stem */
+  --stem-noise:   #6b6b82;  /* removed-noise stem (graphite) */
+  --grid-line:    rgba(220, 38, 38, 0.05);  /* faint engineering grid */
+
+  /* ── Semantic surface aliases ──────────────────────────────*/
+  --app-bg:        var(--bg);
+  --panel-bg:      var(--surface-2);
+  --panel-raised:  var(--surface-3);
+  --well-bg:       var(--surface-1);
+  --canvas-bg:     #030306;            /* waveform / spectrogram well */
+  --hover-fill:    rgba(255, 255, 255, 0.03);
+  --accent:        var(--red-600);
+  --accent-hot:    var(--red-500);
+  --on-accent:     #ffffff;
+}
+
+/* ── TYPOGRAPHY TOKENS ─────────────────────────────── */
+/* ============================================================
+   VoiceIsolate Pro — Typography tokens
+   Outfit for UI/display; JetBrains Mono for every number,
+   unit, badge and code string. Tight, technical, crisp.
+   ============================================================ */
+:root {
+  /* ── Families ──────────────────────────────────────────────*/
+  --font-ui:   'Outfit', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* ── Type scale (px @ 16px root) ───────────────────────────
+     Compact, instrument-panel sizing. */
+  --fs-3xs:  10px;  /* micro labels, badge text */
+  --fs-2xs:  11px;  /* unit captions, legends */
+  --fs-xs:   12px;  /* control labels, meta */
+  --fs-sm:   13px;  /* dense body */
+  --fs-base: 14px;  /* body */
+  --fs-md:   16px;  /* lead body, card titles */
+  --fs-lg:   20px;  /* section titles */
+  --fs-xl:   26px;  /* page titles */
+  --fs-2xl:  34px;  /* display */
+  --fs-3xl:  48px;  /* hero display */
+  --fs-4xl:  64px;  /* marketing hero */
+
+  /* ── Weights ───────────────────────────────────────────────*/
+  --fw-light:    300; /* @kind font */
+  --fw-regular:  400; /* @kind font */
+  --fw-medium:   500; /* @kind font */
+  --fw-semibold: 600; /* @kind font */
+  --fw-bold:     700; /* @kind font */
+  --fw-black:    800; /* @kind font */
+
+  /* ── Line heights ──────────────────────────────────────────*/
+  --lh-tight:   1.1;  /* @kind font */
+  --lh-snug:    1.25; /* @kind font */
+  --lh-normal:  1.5;  /* @kind font */
+  --lh-relaxed: 1.65; /* @kind font */
+
+  /* ── Letter spacing ────────────────────────────────────────
+     Display tightens; labels/badges track wide & uppercase. */
+  --ls-tight:   -0.02em; /* @kind font */
+  --ls-normal:  0;       /* @kind font */
+  --ls-wide:    0.06em;  /* @kind font */
+  --ls-wider:   0.12em;  /* @kind font */
+  --ls-widest:  0.2em;   /* @kind font */
+
+  /* ── Semantic roles ────────────────────────────────────────*/
+  --text-display: var(--fw-bold) var(--fs-3xl)/var(--lh-tight) var(--font-ui);
+  --text-title:   var(--fw-bold) var(--fs-xl)/var(--lh-snug) var(--font-ui);
+  --text-heading: var(--fw-semibold) var(--fs-md)/var(--lh-snug) var(--font-ui);
+  --text-body:    var(--fw-regular) var(--fs-base)/var(--lh-normal) var(--font-ui);
+  --text-label:   var(--fw-medium) var(--fs-xs)/1 var(--font-ui);
+  --text-readout: var(--fw-semibold) var(--fs-sm)/1 var(--font-mono);
+  --text-unit:    var(--fw-medium) var(--fs-2xs)/1 var(--font-mono);
+
+  /* Eyebrow / section kicker — uppercase mono, wide-tracked */
+  --eyebrow-size: var(--fs-3xs);
+  --eyebrow-track: var(--ls-widest);
+}
+
+/* ── SPACING / RADIUS / SHADOW TOKENS ─────────────── */
+/* ============================================================
+   VoiceIsolate Pro — Spacing, radius, border, shadow, motion
+   Compact, controlled, instrument-grade. Minimal glow.
+   ============================================================ */
+:root {
+  /* ── Spacing scale (4px base) ──────────────────────────────*/
+  --sp-0:   0; /* @kind spacing */
+  --sp-1:   2px;
+  --sp-2:   4px;
+  --sp-3:   6px;
+  --sp-4:   8px;
+  --sp-5:   10px;
+  --sp-6:   12px;
+  --sp-7:   14px;
+  --sp-8:   16px;
+  --sp-10:  20px;
+  --sp-12:  24px;
+  --sp-16:  32px;
+  --sp-20:  40px;
+  --sp-24:  48px;
+  --sp-32:  64px;
+
+  /* ── Radius — tight, hardware corners ──────────────────────*/
+  --radius-xs:   3px;
+  --radius-sm:   4px;
+  --radius-md:   6px;   /* buttons, inputs, chips */
+  --radius-lg:   10px;  /* cards, panels */
+  --radius-xl:   14px;  /* upload zones, modals */
+  --radius-pill: 999px;
+
+  /* ── Border widths ─────────────────────────────────────────*/
+  --bw-hair: 1px;
+  --bw-1:    1px;
+  --bw-2:    2px;       /* slider thumbs, focus rails */
+  --bw-accent: 2px;     /* left-accent on active rows */
+
+  /* ── Shadows — restrained depth, no soft halos ─────────────*/
+  --shadow-sm:    0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md:    0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg:    0 24px 60px rgba(0, 0, 0, 0.6);
+  --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-hair:  inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* Glow — used sparingly, only on live/active signal elements */
+  --glow-red:     0 0 10px var(--red-glow);
+  --glow-ok:      0 0 8px rgba(52, 211, 153, 0.4);
+
+  /* ── Motion — fast, mechanical, no bounce ──────────────────*/
+  --ease-out:   cubic-bezier(0.22, 0.7, 0.2, 1);  /* @kind other */
+  --ease-snap:  cubic-bezier(0.25, 0.8, 0.25, 1); /* @kind other */
+  --dur-fast:   0.12s; /* @kind other */
+  --dur-base:   0.2s;  /* @kind other */
+  --dur-slow:   0.32s; /* @kind other */
+
+  /* ── Layout ────────────────────────────────────────────────*/
+  --shell-max:    1520px;  /* @kind spacing */
+  --content-max:  880px;   /* @kind spacing */
+  --rail-w:       380px;   /* @kind spacing */
+  --titlebar-h:   52px;    /* @kind spacing */
+}
+
+/* ── BASE LAYER ────────────────────────────────────── */
+/* ============================================================
+   VoiceIsolate Pro — Base layer
+   Minimal element defaults + utility primitives. Token-driven.
+   Not a reset framework; just sane workstation defaults.
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--app-bg);
+  color: var(--text);
+  font: var(--text-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Faint engineering grid — opt-in via .vip-gridfield on a backdrop */
+.vip-gridfield {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Tabular numerals everywhere data is shown */
+.vip-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* Eyebrow / kicker label */
+.vip-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--eyebrow-track);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* Selection */
+::selection { background: var(--red-600); color: #fff; }
+
+/* Scrollbars — thin, graphite */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: var(--void); }
+::-webkit-scrollbar-thumb { background: var(--surface-4); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* Focus — single consistent ring */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ── COMPONENT STYLES ──────────────────────────────── */
+/* ============================================================
+   VoiceIsolate Pro — Component styles
+   Class-based primitives, token-driven. Shipped via styles.css.
+   Dense, sharp, instrument-grade. Consumed by the React
+   components in /components.
+   ============================================================ */
+
+/* ─────────────  BUTTON  ───────────── */
+.vip-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-3);
+  border: var(--bw-1) solid transparent; border-radius: var(--radius-md);
+  padding: 0 var(--sp-7); height: 32px;
+  font: var(--fw-semibold) var(--fs-xs)/1 var(--font-ui); letter-spacing: 0.01em;
+  white-space: nowrap; cursor: pointer; user-select: none;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+.vip-btn:disabled { opacity: 0.34; cursor: not-allowed; }
+.vip-btn:active:not(:disabled) { transform: translateY(0.5px); }
+.vip-btn svg { width: 14px; height: 14px; flex: none; }
+.vip-btn--primary { background: var(--red-600); border-color: var(--red-600); color: var(--on-accent); box-shadow: var(--shadow-hair); }
+.vip-btn--primary:hover:not(:disabled) { background: var(--red-500); border-color: var(--red-500); }
+.vip-btn--primary:active:not(:disabled) { box-shadow: var(--shadow-inset); }
+.vip-btn--outline { background: transparent; border-color: var(--border-strong); color: var(--text-2); }
+.vip-btn--outline:hover:not(:disabled) { border-color: var(--red-600); color: var(--text-hi); background: var(--red-wash); }
+.vip-btn--ghost { background: transparent; border-color: transparent; color: var(--text-2); }
+.vip-btn--ghost:hover:not(:disabled) { background: var(--hover-fill); color: var(--text-hi); }
+.vip-btn--danger { background: var(--danger-wash); border-color: rgba(239,68,68,0.5); color: var(--red-400); }
+.vip-btn--danger:hover:not(:disabled) { background: rgba(239,68,68,0.18); color: #fff; }
+.vip-btn--rec { position: relative; }
+.vip-btn--rec::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; animation: vip-blink 1.2s ease-in-out infinite; }
+@keyframes vip-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+.vip-btn--sm { height: 26px; padding: 0 var(--sp-5); font-size: var(--fs-3xs); }
+.vip-btn--lg { height: 40px; padding: 0 var(--sp-10); font-size: var(--fs-sm); }
+.vip-btn--block { width: 100%; }
+
+/* ─────────────  ICON BUTTON  ───────────── */
+.vip-iconbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border: var(--bw-1) solid var(--border-strong);
+  border-radius: var(--radius-md); background: var(--surface-3); color: var(--text-2);
+  cursor: pointer; transition: all var(--dur-fast) var(--ease-out);
+}
+.vip-iconbtn:hover:not(:disabled) { border-color: var(--red-600); color: var(--text-hi); background: var(--surface-4); }
+.vip-iconbtn:disabled { opacity: 0.34; cursor: not-allowed; }
+.vip-iconbtn--sm { width: 26px; height: 26px; }
+.vip-iconbtn--lg { width: 40px; height: 40px; }
+.vip-iconbtn--active { border-color: var(--red-600); color: var(--red-500); background: var(--red-wash); }
+.vip-iconbtn svg { width: 16px; height: 16px; }
+
+/* ─────────────  BADGE  ───────────── */
+.vip-badge {
+  display: inline-flex; align-items: center; gap: var(--sp-2); height: 18px; padding: 0 var(--sp-4);
+  border-radius: var(--radius-xs); border: var(--bw-1) solid var(--border-strong);
+  font: var(--fw-bold) var(--fs-3xs)/1 var(--font-mono); letter-spacing: var(--ls-wide);
+  text-transform: uppercase; color: var(--text-dim); background: var(--surface-2); white-space: nowrap;
+}
+.vip-badge--accent { color: var(--red-400); border-color: var(--border-red); background: var(--red-wash); }
+.vip-badge--ok     { color: var(--ok); border-color: rgba(52,211,153,0.3); background: var(--ok-wash); }
+.vip-badge--warn   { color: var(--warn); border-color: rgba(234,179,8,0.3); background: var(--warn-wash); }
+.vip-badge--danger { color: var(--red-400); border-color: rgba(239,68,68,0.4); background: var(--danger-wash); }
+.vip-badge--solid  { color: #fff; background: var(--red-600); border-color: var(--red-600); }
+.vip-badge__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; box-shadow: 0 0 5px currentColor; }
+
+/* ─────────────  STATUS PILL  ───────────── */
+.vip-pill {
+  display: inline-flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-5);
+  border-radius: var(--radius-pill); border: var(--bw-1) solid var(--border);
+  background: rgba(255,255,255,0.02); color: var(--text-dim);
+  font: var(--fw-semibold) var(--fs-3xs)/1 var(--font-mono); letter-spacing: var(--ls-wide);
+  text-transform: uppercase; transition: all var(--dur-base) var(--ease-out);
+}
+.vip-pill::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: currentColor; box-shadow: 0 0 5px currentColor; }
+.vip-pill[data-state="loading"] { color: var(--warn); border-color: rgba(234,179,8,0.32); animation: vip-pulse 1.1s ease-in-out infinite; }
+.vip-pill[data-state="ready"]   { color: var(--ok); border-color: rgba(52,211,153,0.3); background: var(--ok-wash); }
+.vip-pill[data-state="error"]   { color: var(--red-400); border-color: rgba(239,68,68,0.4); background: var(--danger-wash); }
+.vip-pill[data-state="live"]    { color: var(--red-400); border-color: rgba(239,68,68,0.4); }
+.vip-pill[data-state="live"]::before { animation: vip-blink 1.2s ease-in-out infinite; }
+@keyframes vip-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* ─────────────  CARD / PANEL  ───────────── */
+.vip-card {
+  background: var(--panel-bg); border: var(--bw-1) solid var(--border);
+  border-radius: var(--radius-lg); padding: var(--sp-7); box-shadow: var(--shadow-md);
+  transition: border-color var(--dur-slow) var(--ease-out), box-shadow var(--dur-slow) var(--ease-out);
+}
+.vip-card--hover:hover { border-color: var(--border-red); box-shadow: var(--shadow-lg); }
+.vip-card--flush { padding: 0; overflow: hidden; }
+.vip-card--well { background: var(--well-bg); box-shadow: var(--shadow-inset); }
+.vip-card__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); margin-bottom: var(--sp-5); }
+.vip-card__title { margin: 0; font: var(--fw-semibold) var(--fs-md)/var(--lh-snug) var(--font-ui); color: var(--text-hi); }
+.vip-card__kicker { margin: 0 0 var(--sp-2); font: var(--fw-bold) var(--fs-3xs)/1 var(--font-mono); letter-spacing: var(--ls-widest); text-transform: uppercase; color: var(--text-dim); }
+
+/* Panel header strip — the uppercase mono control-surface label bar */
+.vip-panelhead {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6); border-bottom: var(--bw-1) solid var(--border);
+  background: var(--surface-3);
+}
+.vip-panelhead__title { display: flex; align-items: center; gap: var(--sp-4); font: var(--fw-bold) var(--fs-3xs)/1 var(--font-mono); letter-spacing: var(--ls-wider); text-transform: uppercase; color: var(--text-2); }
+.vip-panelhead__title svg { width: 13px; height: 13px; color: var(--red-500); }
+
+/* ─────────────  INPUT / SELECT / FIELD  ───────────── */
+.vip-field { display: flex; flex-direction: column; gap: var(--sp-3); }
+.vip-field__label { font: var(--fw-medium) var(--fs-xs)/1 var(--font-ui); color: var(--text-2); }
+.vip-field__hint { font: var(--fw-regular) var(--fs-2xs)/1.4 var(--font-ui); color: var(--text-dim); }
+.vip-input, .vip-select {
+  width: 100%; height: 34px; padding: 0 var(--sp-5); color: var(--text);
+  background: var(--well-bg); border: var(--bw-1) solid var(--border-strong); border-radius: var(--radius-md);
+  font: var(--fw-regular) var(--fs-sm)/1 var(--font-ui);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.vip-input::placeholder { color: var(--text-ghost); }
+.vip-input:focus, .vip-select:focus { outline: none; border-color: var(--red-600); box-shadow: 0 0 0 3px var(--red-wash); }
+.vip-input:disabled, .vip-select:disabled { opacity: 0.4; cursor: not-allowed; }
+.vip-input--mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.vip-select {
+  appearance: none; cursor: pointer; padding-right: 28px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%), linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+  background-position: calc(100% - 14px) center, calc(100% - 9px) center;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+
+/* ─────────────  SWITCH  ───────────── */
+.vip-switch { display: inline-flex; align-items: center; gap: var(--sp-4); cursor: pointer; user-select: none; }
+.vip-switch__track { position: relative; width: 36px; height: 20px; border-radius: var(--radius-pill); background: var(--surface-4); border: var(--bw-1) solid var(--border-strong); transition: all var(--dur-fast) var(--ease-out); flex: none; }
+.vip-switch__thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--text-2); transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
+.vip-switch--on .vip-switch__track { background: var(--red-wash); border-color: var(--red-600); }
+.vip-switch--on .vip-switch__thumb { transform: translateX(16px); background: var(--red-500); }
+.vip-switch--disabled { opacity: 0.4; cursor: not-allowed; }
+.vip-switch__label { font: var(--fw-medium) var(--fs-xs)/1 var(--font-ui); color: var(--text-2); }
+
+/* ─────────────  PARAMETER SLIDER  ───────────── */
+.vip-slider { display: grid; grid-template-columns: 124px 1fr 54px; align-items: center; gap: var(--sp-6);
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-sm); border-left: var(--bw-accent) solid transparent;
+  transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+.vip-slider:hover { background: var(--hover-fill); border-left-color: rgba(220,38,38,0.45); }
+.vip-slider__label { font: var(--fw-medium) var(--fs-xs)/1 var(--font-ui); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vip-slider__val { font: var(--fw-semibold) var(--fs-2xs)/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--red-400); text-align: right;
+  background: var(--red-wash); border: var(--bw-1) solid rgba(220,38,38,0.12); border-radius: var(--radius-xs); padding: var(--sp-1) var(--sp-3); }
+.vip-slider__input { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: var(--radius-pill); outline: none; cursor: pointer; box-shadow: var(--shadow-inset);
+  background: linear-gradient(to right, var(--red-600) 0%, var(--red-600) var(--pct,50%), rgba(255,255,255,0.07) var(--pct,50%), rgba(255,255,255,0.07) 100%);
+  transition: height var(--dur-fast) var(--ease-out); }
+.vip-slider:hover .vip-slider__input { height: 5px; }
+.vip-slider__input::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #0d0d15; border: var(--bw-2) solid var(--red-600); margin-top: -5px; cursor: pointer; box-shadow: var(--shadow-sm); transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out); }
+.vip-slider__input::-webkit-slider-thumb:hover { transform: scale(1.18); box-shadow: var(--shadow-sm), 0 0 0 4px rgba(220,38,38,0.2); }
+.vip-slider__input::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #0d0d15; border: var(--bw-2) solid var(--red-600); cursor: pointer; }
+
+/* ─────────────  LEVEL METER  ───────────── */
+.vip-meter { display: flex; align-items: center; gap: var(--sp-4); }
+.vip-meter__label { font: var(--fw-medium) var(--fs-3xs)/1 var(--font-mono); color: var(--text-dim); width: 26px; flex: none; text-transform: uppercase; letter-spacing: var(--ls-wide); }
+.vip-meter__track { position: relative; flex: 1; height: 8px; border-radius: var(--radius-xs); background: var(--well-bg); border: var(--bw-1) solid var(--border); overflow: hidden; }
+.vip-meter__fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; background: linear-gradient(90deg, var(--red-700), var(--red-500) 70%, var(--signal-hot) 88%, var(--signal-peak) 100%); transition: width 60ms linear; }
+.vip-meter__val { font: var(--fw-semibold) var(--fs-2xs)/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-2); width: 48px; text-align: right; flex: none; }
+
+/* ─────────────  TABS  ───────────── */
+.vip-tabs { display: inline-flex; gap: var(--sp-1); padding: var(--sp-1); background: var(--well-bg); border: var(--bw-1) solid var(--border); border-radius: var(--radius-md); }
+.vip-tab { appearance: none; border: none; background: transparent; cursor: pointer; padding: var(--sp-3) var(--sp-6); border-radius: var(--radius-sm); color: var(--text-dim); font: var(--fw-medium) var(--fs-xs)/1 var(--font-ui); transition: all var(--dur-fast) var(--ease-out); white-space: nowrap; }
+.vip-tab:hover { color: var(--text-2); }
+.vip-tab--active { background: var(--surface-3); color: var(--text-hi); box-shadow: var(--shadow-hair); }
+.vip-tab--active::after { content: ''; }
+
+/* ─────────────  STAT / READOUT  ───────────── */
+.vip-stat { display: flex; flex-direction: column; gap: var(--sp-2); }
+.vip-stat__label { font: var(--fw-bold) var(--fs-3xs)/1 var(--font-mono); letter-spacing: var(--ls-wider); text-transform: uppercase; color: var(--text-dim); }
+.vip-stat__value { font: var(--fw-semibold) var(--fs-xl)/1 var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-hi); }
+.vip-stat__value--accent { color: var(--red-500); }
+.vip-stat__unit { font-size: var(--fs-sm); color: var(--text-dim); font-weight: var(--fw-regular); }
+
+/* ─────────────  PROCESS LOADER  ───────────── */
+@keyframes vip-scan {
+  0%, 100% { height: 12%; opacity: 0.35; }
+  50%      { height: 100%; opacity: 1; }
+}
+@keyframes vip-node-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px var(--red-wash); }
+  50%      { box-shadow: 0 0 0 4px rgba(220,38,38,0); }
+}
+.vip-ploader__bar { transform-origin: bottom; }
+
+/* ── THEME OVERRIDES ───────────────────────────────── */
+/* ============================================================
+   VoiceIsolate Pro — Theme variants
+   Five named color themes, applied via [data-theme="…"] on the
+   document root. Each remaps the base color tokens; the semantic
+   aliases in colors.css (--app-bg, --panel-bg, --accent, …) follow
+   automatically because they resolve var() at use-time.
+
+   Default (no data-theme) = the canonical graphite/red instrument.
+     editorial · studio · bone · signal · midnight
+   ============================================================ */
+
+/* ── EDITORIAL — warm paper light, deep-red ink ──────────────── */
+[data-theme="editorial"] {
+  color-scheme: light;
+  --void: #e8e5de;  --bg: #f0eeea;
+  --surface-1: #f8f6f2;  --surface-2: #ffffff;  --surface-3: #f2f0ec;  --surface-4: #e8e5de;
+  --red-700: #a11515;  --red-600: #c41a1a;  --red-500: #e02828;  --red-400: #c41a1a;
+  --red-wash: rgba(196,26,26,0.09);  --red-glow: rgba(196,26,26,0.16);  --border-red: rgba(196,26,26,0.22);
+  --text-hi: #1a1714;  --text: #1c1a17;  --text-2: #6b6763;  --text-dim: #a09c97;  --text-ghost: #c4c0b8;
+  --shadow-text: 0 1px 1px rgba(0,0,0,0.08);
+  --border: #e0ddd6;  --border-strong: #ccc9c0;
+  --ok: #146b36;  --ok-wash: rgba(20,107,54,0.08);
+  --warn: #7d5100;  --warn-wash: rgba(125,81,0,0.10);
+  --info: #1d4ed8;
+  --canvas-bg: #f2f0ec;  --grid-line: rgba(196,26,26,0.05);  --hover-fill: rgba(0,0,0,0.035);
+  --signal-floor: #f2f0ec;  --signal-low: #e9b9a0;  --signal-mid: #c41a1a;  --signal-hot: #e07a16;  --signal-peak: #f5c451;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-md: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.12);
+  --shadow-inset: inset 0 1px 2px rgba(0,0,0,0.05);
+  --shadow-hair: inset 0 1px 0 rgba(255,255,255,0.6);
+}
+
+/* ── STUDIO — neutral graphite-violet dark ───────────────────── */
+[data-theme="studio"] {
+  color-scheme: dark;
+  --void: #080710;  --bg: #0c0b10;
+  --surface-1: #1a1830;  --surface-2: #141322;  --surface-3: #1f1d38;  --surface-4: #262248;
+  --red-700: #c42a2a;  --red-600: #e83535;  --red-500: #f54545;  --red-400: #f87171;
+  --red-wash: rgba(232,53,53,0.10);  --red-glow: rgba(232,53,53,0.22);  --border-red: rgba(232,53,53,0.20);
+  --text-hi: #ece8f8;  --text: #e8e6f0;  --text-2: #8a8899;  --text-dim: #4d4c5a;  --text-ghost: #35344a;
+  --shadow-text: 0 2px 5px rgba(0,0,0,0.85), 0 -1px 0 rgba(200,195,255,0.07);
+  --border: rgba(255,255,255,0.07);  --border-strong: rgba(255,255,255,0.12);
+  --ok: #27c265;  --warn: #e0a020;  --info: #60a5fa;
+  --canvas-bg: #080710;  --grid-line: rgba(232,53,53,0.05);  --hover-fill: rgba(255,255,255,0.03);
+}
+
+/* ── BONE — soft warm-white, oxblood ─────────────────────────── */
+[data-theme="bone"] {
+  color-scheme: light;
+  --void: #f0ece4;  --bg: #faf8f4;
+  --surface-1: #f5f2ec;  --surface-2: #ffffff;  --surface-3: #ede8df;  --surface-4: #e4ded2;
+  --red-700: #840d0d;  --red-600: #9e1111;  --red-500: #c01818;  --red-400: #9e1111;
+  --red-wash: rgba(158,17,17,0.08);  --red-glow: rgba(158,17,17,0.14);  --border-red: rgba(158,17,17,0.22);
+  --text-hi: #1a1714;  --text: #1a1714;  --text-2: #5a5650;  --text-dim: #a09990;  --text-ghost: #c0bab0;
+  --shadow-text: 0 1px 1px rgba(0,0,0,0.06);
+  --border: #dad6cc;  --border-strong: #c4bfb4;
+  --ok: #115e2c;  --ok-wash: rgba(17,94,44,0.08);
+  --warn: #6d4400;  --warn-wash: rgba(109,68,0,0.10);
+  --info: #1e40af;
+  --canvas-bg: #ede8df;  --grid-line: rgba(158,17,17,0.05);  --hover-fill: rgba(0,0,0,0.03);
+  --signal-floor: #ede8df;  --signal-low: #e0b39a;  --signal-mid: #9e1111;  --signal-hot: #cf6a14;  --signal-peak: #e9bd55;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 1px 2px rgba(0,0,0,0.03), 0 4px 12px rgba(0,0,0,0.05);
+  --shadow-lg: 0 12px 36px rgba(0,0,0,0.10);
+  --shadow-inset: inset 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-hair: inset 0 1px 0 rgba(255,255,255,0.7);
+}
+
+/* ── SIGNAL — deep navy, electric-blue accent ────────────────── */
+[data-theme="signal"] {
+  color-scheme: dark;
+  --void: #050910;  --bg: #070d1a;
+  --surface-1: #132030;  --surface-2: #0d1628;  --surface-3: #182840;  --surface-4: #1f3354;
+  --red-700: #3a7ae0;  --red-600: #4a8fff;  --red-500: #6ba4ff;  --red-400: #6ba4ff;
+  --red-wash: rgba(74,143,255,0.10);  --red-glow: rgba(74,143,255,0.22);  --border-red: rgba(74,143,255,0.24);
+  --text-hi: #ddeeff;  --text: #dde8ff;  --text-2: #7090b8;  --text-dim: #3d5070;  --text-ghost: #2a3a55;
+  --shadow-text: 0 2px 5px rgba(0,0,0,0.88), 0 -1px 0 rgba(160,210,255,0.07);
+  --border: rgba(74,143,255,0.13);  --border-strong: rgba(74,143,255,0.22);
+  --ok: #10d97a;  --warn: #f0a030;  --info: #4a8fff;
+  --canvas-bg: #050910;  --grid-line: rgba(74,143,255,0.06);  --hover-fill: rgba(74,143,255,0.05);
+  --signal-floor: #050910;  --signal-low: #143a6b;  --signal-mid: #4a8fff;  --signal-hot: #46d6e0;  --signal-peak: #c9f0ff;
+}
+
+/* ── MIDNIGHT — near-black wine, hot-red signal ──────────────── */
+[data-theme="midnight"] {
+  color-scheme: dark;
+  --void: #060304;  --bg: #0a0508;
+  --surface-1: #190d15;  --surface-2: #110a0e;  --surface-3: #200f1c;  --surface-4: #2a1424;
+  --red-700: #c41f1f;  --red-600: #e02525;  --red-500: #f03535;  --red-400: #f87171;
+  --red-wash: rgba(224,37,37,0.10);  --red-glow: rgba(224,37,37,0.24);  --border-red: rgba(224,37,37,0.22);
+  --text-hi: #f2e4ea;  --text: #f0e8ec;  --text-2: #8c7888;  --text-dim: #3d2a38;  --text-ghost: #2d1f2a;
+  --shadow-text: 0 2px 5px rgba(0,0,0,0.88), 0 -1px 0 rgba(255,195,205,0.08);
+  --border: rgba(220,38,38,0.10);  --border-strong: rgba(220,38,38,0.22);
+  --ok: #22d385;  --warn: #f0a030;  --info: #818cf8;
+  --canvas-bg: #060304;  --grid-line: rgba(224,37,37,0.06);  --hover-fill: rgba(255,255,255,0.025);
+}
+
+/* ── EXTRA DS TOKENS (fill gaps) ───────────────────── */
+:root {
+  --sp-1:2px; --sp-2:4px; --sp-3:6px; --sp-4:8px; --sp-5:10px;
+  --sp-6:12px; --sp-7:14px; --sp-8:16px; --sp-9:18px; --sp-10:20px;
+  --bw-1:1px; --bw-2:2px; --bw-accent:2px;
+  --ls-wide:0.06em; --ls-wider:0.10em; --ls-widest:0.18em;
+  --lh-snug:1.25; --lh-base:1.5;
+  --ease-out:cubic-bezier(0.3,0.7,0.4,1);
+  --hover-fill:rgba(255,255,255,0.04);
+  --well-bg:rgba(0,0,0,0.22);
+  --border-focus:var(--red-600);
+  --on-accent:#fff;
+  --danger-wash:rgba(239,68,68,0.08);
+  --text-body:var(--fw-regular) var(--fs-base)/var(--lh-base) var(--font-ui);
+  --grid-line:rgba(220,38,38,0.05);
+  --eyebrow-size:var(--fs-3xs); --eyebrow-track:0.18em;
+  --shadow-hair:inset 0 1px 0 rgba(255,255,255,0.06);
+  --info:#60a5fa;
+}
+[data-theme="editorial"] { --well-bg:rgba(0,0,0,0.05); --hover-fill:rgba(0,0,0,0.04); --on-accent:#fff; --danger-wash:rgba(196,26,26,0.08); --border-focus:var(--red-600); --info:#1d4ed8; }
+[data-theme="bone"] { --well-bg:rgba(0,0,0,0.04); --hover-fill:rgba(0,0,0,0.03); --on-accent:#fff; --danger-wash:rgba(158,17,17,0.08); --border-focus:var(--red-600); --info:#1e40af; }
+[data-theme="signal"] { --well-bg:rgba(0,0,0,0.20); --hover-fill:rgba(74,143,255,0.05); --on-accent:#fff; --danger-wash:rgba(74,143,255,0.08); --border-focus:var(--red-600); }
+[data-theme="midnight"] { --well-bg:rgba(0,0,0,0.25); --hover-fill:rgba(255,255,255,0.025); --on-accent:#fff; --danger-wash:rgba(220,37,37,0.08); --border-focus:var(--red-600); --info:#818cf8; }
+[data-theme="studio"] { --well-bg:rgba(0,0,0,0.28); --hover-fill:rgba(255,255,255,0.03); --on-accent:#fff; --danger-wash:rgba(232,53,53,0.08); --border-focus:var(--red-600); }
+
+/* ── ENGINEER WORKSTATION LAYOUT ──────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { background: var(--app-bg); color: var(--text); font-family: var(--font-ui); -webkit-font-smoothing: antialiased; }
+#app { height: 100vh; display: flex; flex-direction: column; }
+
+/* ── ROOT LAYOUT ─────────────────── */
+.ew-root { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* ── HEADER ─────────────────────── */
+.ew-hdr {
+  display: flex; align-items: center; gap: 16px; padding: 0 16px;
+  height: 52px; flex: none;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.ew-hdr__left { display: flex; align-items: center; gap: 10px; flex: none; }
+.ew-hdr__icon {
+  width: 30px; height: 30px; border-radius: var(--radius-md);
+  background: var(--red-700); display: flex; align-items: center; justify-content: center;
+  flex: none;
+}
+.ew-hdr__title {
+  margin: 0; font: var(--fw-bold) 13px/1 var(--font-ui); letter-spacing: -0.01em;
+  color: var(--text-hi); white-space: nowrap;
+}
+.ew-hdr__title em { color: var(--red-500); font-style: normal; }
+.ew-hdr__ver { font: var(--fw-medium) 10px/1 var(--font-mono); color: var(--text-dim); }
+.ew-hdr__badges { display: flex; align-items: center; gap: 5px; margin-top: 3px; }
+.ew-hdr__scale {
+  display: flex; align-items: center; gap: 2px; flex: none;
+  background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.ew-step {
+  appearance: none; border: none; background: transparent; color: var(--text-2);
+  font: var(--fw-semibold) var(--fs-xs)/1 var(--font-ui);
+  padding: 0 7px; height: 26px; cursor: pointer;
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+.ew-step:hover { color: var(--text-hi); background: var(--hover-fill); }
+.ew-step--text { padding: 0 8px; font-size: var(--fs-3xs); color: var(--text-dim); border-left: 1px solid var(--border); }
+.ew-step__val { font: var(--fw-semibold) var(--fs-2xs)/1 var(--font-mono); color: var(--red-400); padding: 0 6px; }
+.ew-hdr__stats { display: flex; align-items: center; gap: 20px; flex: 1; justify-content: center; overflow: hidden; }
+.ew-hstat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.ew-hstat__v { font: var(--fw-semibold) var(--fs-xs)/1 var(--font-mono); color: var(--red-400); font-variant-numeric: tabular-nums; }
+.ew-hstat__l { font: var(--fw-medium) 9px/1 var(--font-mono); color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+.ew-hdr__actions { display: flex; align-items: center; gap: 8px; flex: none; }
+
+/* ── COCKPIT ─────────────────────── */
+.ew-cockpit {
+  flex: none; padding: 8px 12px;
+  background: var(--surface-1); border-bottom: 1px solid var(--border);
+}
+.ew-cockpit__card { padding: 8px 12px !important; }
+.ew-cockpit__row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.ew-cockpit__div { height: 1px; background: var(--border); margin: 6px 0; }
+.ew-cockpit__sub { font: var(--fw-regular) var(--fs-2xs)/1.4 var(--font-mono); color: var(--text-dim); }
+.ew-engpills { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.ew-engpill {
+  font: var(--fw-bold) 9px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 3px 7px; border-radius: var(--radius-xs); border: 1px solid var(--border);
+  background: var(--surface-3); color: var(--text-dim);
+}
+.ew-engpill[data-state="ready"] { color: var(--ok); border-color: rgba(52,211,153,0.3); background: var(--ok-wash); }
+.ew-engpill[data-state="loading"] { color: var(--warn); border-color: rgba(234,179,8,0.3); animation: vip-pulse 1.1s ease-in-out infinite; }
+.ew-engpill[data-state="error"] { color: var(--red-400); border-color: rgba(239,68,68,0.4); }
+
+/* ── BODY (2-col) ────────────────── */
+.ew-body {
+  display: grid;
+  grid-template-columns: 372px 1fr;
+  flex: 1; min-height: 0; overflow: hidden;
+}
+.ew-col { display: flex; flex-direction: column; gap: 8px; padding: 10px; overflow-y: auto; min-height: 0; }
+.ew-col:first-child { border-right: 1px solid var(--border); }
+
+/* ── CARD ────────────────────────── */
+.ew-card {
+  background: var(--panel-bg); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 12px; box-shadow: var(--shadow-sm);
+}
+
+/* ── KICKER ──────────────────────── */
+.ew-kicker { font: var(--fw-bold) 9px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); }
+.ew-mono { font-family: var(--font-mono); }
+.ew-faint { color: var(--text-dim); }
+
+/* ── DROP ZONE ───────────────────── */
+.ew-drop {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 24px 16px; border-radius: var(--radius-md);
+  border: 1.5px dashed var(--border-strong); text-align: center; cursor: pointer;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.ew-drop:hover, .ew-drop--over {
+  border-color: var(--red-600); background: var(--red-wash);
+}
+.ew-drop__icon { color: var(--text-dim); }
+.ew-drop__title { font: var(--fw-semibold) var(--fs-sm)/1 var(--font-ui); color: var(--text-hi); margin: 0; }
+.ew-drop__sub { font: var(--fw-regular) 10px/1.5 var(--font-mono); color: var(--text-dim); margin: 0; }
+.ew-filerow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+.ew-fileinfo { font: var(--fw-regular) var(--fs-2xs)/1 var(--font-mono); color: var(--text-dim); }
+
+/* ── PRESETS ─────────────────────── */
+.ew-presets { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 8px; }
+.ew-presets__label { font: var(--fw-bold) 9px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-right: 4px; }
+.ew-preset {
+  appearance: none; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-3); color: var(--text-2);
+  font: var(--fw-medium) var(--fs-3xs)/1 var(--font-ui); padding: 4px 8px; cursor: pointer;
+  transition: all var(--dur-fast);
+}
+.ew-preset:hover { border-color: var(--red-600); color: var(--text-hi); }
+.ew-preset--active { background: var(--red-wash); border-color: var(--red-600); color: var(--red-400); }
+.ew-preset--save { color: var(--text-dim); border-style: dashed; }
+
+/* ── SEARCH ──────────────────────── */
+.ew-search { position: relative; display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.ew-search__icon { position: absolute; left: 10px; color: var(--text-dim); pointer-events: none; display: flex; }
+.ew-search input {
+  flex: 1; height: 30px; padding: 0 8px 0 30px;
+  background: var(--well-bg); border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+  color: var(--text); font: var(--fw-regular) var(--fs-xs)/1 var(--font-ui);
+  outline: none; transition: border-color var(--dur-fast);
+}
+.ew-search input:focus { border-color: var(--red-600); }
+.ew-search input::placeholder { color: var(--text-ghost); }
+
+/* ── DSP GROUPS (accordion) ──────── */
+.ew-groups { display: flex; flex-direction: column; gap: 2px; }
+.ew-group { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.ew-group__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 10px; background: var(--surface-3); cursor: pointer;
+  font: var(--fw-semibold) var(--fs-xs)/1 var(--font-ui); color: var(--text-2);
+  border: none; width: 100%; text-align: left;
+  transition: color var(--dur-fast), background var(--dur-fast);
+}
+.ew-group__head:hover { color: var(--text-hi); background: var(--surface-4); }
+.ew-group--open .ew-group__head { color: var(--text-hi); }
+.ew-group__meta { display: flex; align-items: center; gap: 6px; }
+.ew-chev { font-size: 10px; color: var(--text-dim); transition: transform var(--dur-fast); }
+.ew-group--open .ew-chev { transform: rotate(180deg); }
+.ew-group__body { background: var(--panel-bg); padding: 4px 0; }
+
+/* ── PARAM SLIDER (override) ──────── */
+.vip-slider { grid-template-columns: 100px 1fr 48px; }
+
+/* ── ACTIONS ROW ─────────────────── */
+.ew-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+
+/* ── PIPELINE ────────────────────── */
+.ew-pipe { display: flex; flex-direction: column; gap: 6px; }
+.ew-pipe__badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font: var(--fw-medium) 9px/1 var(--font-mono); color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.ew-pipe__dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; flex: none; }
+.ew-pipe__badge[data-state="loading"] { color: var(--warn); animation: vip-pulse 1.1s ease-in-out infinite; }
+.ew-pipe__badge[data-state="ready"] { color: var(--ok); }
+.ew-pipe__head { display: flex; justify-content: space-between; align-items: center; }
+.ew-pipe__bar { height: 4px; border-radius: var(--radius-pill); background: var(--well-bg); overflow: hidden; }
+.ew-pipe__fill { height: 100%; background: linear-gradient(90deg, var(--red-700), var(--red-500)); border-radius: inherit; transition: width 0.35s ease-out; }
+
+/* ── SAVE ROW ────────────────────── */
+.ew-save { display: flex; flex-direction: column; gap: 6px; }
+
+/* ── TRANSPORT ───────────────────── */
+.ew-transport {
+  display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow: hidden;
+}
+.ew-tp__play {
+  appearance: none; border: none; cursor: pointer; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--red-600); color: #fff; display: flex; align-items: center; justify-content: center;
+  flex: none; transition: background var(--dur-fast);
+}
+.ew-tp__play:hover { background: var(--red-500); }
+.ew-tp__btn {
+  appearance: none; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-3); color: var(--text-2); width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none;
+  transition: all var(--dur-fast);
+}
+.ew-tp__btn:hover { border-color: var(--red-600); color: var(--text-hi); }
+.ew-tp__time { font: var(--fw-semibold) var(--fs-xs)/1 var(--font-mono); color: var(--text-2); white-space: nowrap; flex: none; font-variant-numeric: tabular-nums; }
+.ew-tp__seek {
+  flex: 1; min-width: 60px; height: 4px; appearance: none; cursor: pointer; border-radius: var(--radius-pill);
+  background: linear-gradient(to right, var(--red-600) 0%, var(--red-600) var(--pct,0%), rgba(255,255,255,0.08) var(--pct,0%), rgba(255,255,255,0.08) 100%);
+}
+.ew-tp__seek::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: var(--red-500); border: 1px solid var(--red-700); }
+.ew-tp__speed { display: flex; align-items: center; gap: 4px; flex: none; }
+.ew-tp__speed label { font: var(--fw-medium) 9px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; }
+.ew-tp__speed select { appearance: none; background: var(--well-bg); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); color: var(--text); font: var(--fw-medium) var(--fs-2xs)/1 var(--font-mono); padding: 3px 6px; cursor: pointer; }
+.ew-tp__ab {
+  display: flex; align-items: center; gap: 5px; flex: none;
+  font: var(--fw-medium) var(--fs-2xs)/1 var(--font-mono);
+  padding: 4px 10px; border-radius: var(--radius-sm); cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--surface-3); color: var(--text-2);
+  transition: all var(--dur-fast);
+}
+.ew-tp__ab:hover { border-color: var(--red-600); color: var(--text-hi); }
+.ew-tp__ab--B { border-color: var(--red-600); color: var(--red-400); background: var(--red-wash); }
+.ew-tp__abtag { font-weight: var(--fw-bold); }
+
+/* ── VIZ PANEL ───────────────────── */
+.ew-viz { display: flex; flex-direction: column; gap: 0; overflow: hidden; padding: 0 !important; }
+.ew-viz__hdr { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.ew-tabs { display: flex; gap: 1px; padding: 6px 10px; background: var(--surface-3); overflow-x: auto; border-bottom: 1px solid var(--border); }
+.ew-tabs::-webkit-scrollbar { height: 3px; }
+.ew-tab {
+  appearance: none; border: 1px solid transparent; background: transparent; cursor: pointer;
+  padding: 4px 10px; border-radius: var(--radius-sm);
+  font: var(--fw-medium) var(--fs-2xs)/1 var(--font-ui); color: var(--text-dim);
+  transition: all var(--dur-fast); white-space: nowrap;
+}
+.ew-tab:hover { color: var(--text-2); }
+.ew-tab--active { background: var(--surface-4); border-color: var(--border-strong); color: var(--text-hi); }
+.ew-viz__body { padding: 10px; }
+.ew-canvas { display: block; width: 100%; border-radius: var(--radius-sm); background: var(--canvas-bg); }
+.ew-legend { font: var(--fw-regular) 9px/1 var(--font-mono); color: var(--text-dim); margin-bottom: 6px; letter-spacing: 0.06em; }
+.ew-abgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ew-ablabel { font: var(--fw-semibold) 9px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 4px; }
+.ew-lufs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 16px 0; }
+.ew-lufs__cell { text-align: center; }
+.ew-lufs__v { font: var(--fw-black) 26px/1 var(--font-mono); color: var(--text-hi); font-variant-numeric: tabular-nums; }
+.ew-lufs__l { font: var(--fw-medium) 9px/1 var(--font-ui); color: var(--text-dim); margin-top: 5px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* ── SIGNAL BRIDGE ───────────────── */
+.ew-bridge { }
+.ew-bridge__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 10px; }
+.ew-bridge__meters { display: flex; flex-direction: column; gap: 6px; }
+.ew-bridge__readouts { }
+.ew-bridge__stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+.ew-stat { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; background: var(--well-bg); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+.ew-stat__k { font: var(--fw-regular) 8px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+.ew-stat__v { font: var(--fw-semibold) var(--fs-xs)/1 var(--font-mono); color: var(--text-hi); font-variant-numeric: tabular-nums; }
+.ew-stat__v--accent { color: var(--red-400); }
+.ew-stat__u { font-size: 9px; color: var(--text-dim); margin-left: 2px; font-weight: var(--fw-regular); }
+
+/* ── THEME DOCK ──────────────────── */
+.ew-dock {
+  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 200;
+  display: flex; align-items: center; gap: 7px; padding: 7px 14px;
+  background: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  border: 1px solid var(--border-strong); border-radius: 999px;
+  box-shadow: var(--shadow-lg); backdrop-filter: blur(8px);
+}
+.ew-dock__label { font: 700 8px/1 var(--font-mono); letter-spacing: 1px; text-transform: uppercase; color: var(--text-dim); }
+.ew-dock__btn {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2.5px solid transparent; cursor: pointer; padding: 0;
+  transition: transform 0.12s, border-color 0.12s; flex: none;
+}
+.ew-dock__btn:hover { transform: scale(1.25); }
+.ew-dock__btn--active { border-color: var(--text-2) !important; transform: scale(1.2); }
+
+/* Scrollbar */
+.ew-col::-webkit-scrollbar { width: 5px; }
+.ew-col::-webkit-scrollbar-track { background: transparent; }
+.ew-col::-webkit-scrollbar-thumb { background: var(--surface-4); border-radius: 3px; }
+
+@media (max-width: 900px) {
+  .ew-body { grid-template-columns: 1fr; }
+  .ew-col:first-child { border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; }
+  .ew-hdr__stats { display: none; }
+  .ew-dock { left: 16px; transform: none; }
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- React 18 from CDN -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+
+<!-- DS Bundle (inlined after React) -->
+<script>
+/* @ds-bundle: {"format":3,"namespace":"VoiceIsolateProDesignSystem_38f745","components":[{"name":"LevelMeter","sourcePath":"components/audio/LevelMeter.jsx"},{"name":"ParamSlider","sourcePath":"components/audio/ParamSlider.jsx"},{"name":"ProcessLoader","sourcePath":"components/audio/ProcessLoader.jsx"},{"name":"Spectrogram","sourcePath":"components/audio/Spectrogram.jsx"},{"name":"Waveform","sourcePath":"components/audio/Waveform.jsx"},{"name":"Badge","sourcePath":"components/core/Badge.jsx"},{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Card","sourcePath":"components/core/Card.jsx"},{"name":"IconButton","sourcePath":"components/core/IconButton.jsx"},{"name":"Input","sourcePath":"components/core/Input.jsx"},{"name":"Select","sourcePath":"components/core/Select.jsx"},{"name":"StatusPill","sourcePath":"components/core/StatusPill.jsx"},{"name":"Switch","sourcePath":"components/core/Switch.jsx"}],"sourceHashes":{"Header.jsx":"8b7921644e73","VizPanel.jsx":"7822ecfae206","components/audio/LevelMeter.jsx":"5323c4c12b52","components/audio/ParamSlider.jsx":"97aea8a94921","components/audio/ProcessLoader.jsx":"707e1782f499","components/audio/Spectrogram.jsx":"f1cb930d8ccb","components/audio/Waveform.jsx":"bc38325af069","components/core/Badge.jsx":"a1ef51e0035d","components/core/Button.jsx":"5376c8c51c0a","components/core/Card.jsx":"44dbbc122364","components/core/IconButton.jsx":"bee03a702550","components/core/Input.jsx":"78e1906962cf","components/core/Select.jsx":"f348c4c7fe84","components/core/StatusPill.jsx":"b649ac33981b","components/core/Switch.jsx":"39732110cd4c","ui_kits/engineer/ControlRail.jsx":"dbca9a961110","ui_kits/engineer/Icons.jsx":"6d9e7863213f","ui_kits/engineer/StemPanel.jsx":"d626af80bd7f","ui_kits/engineer/TitleBar.jsx":"ac4e1c3fff53","ui_kits/engineer/Transport.jsx":"441b97f43b38"},"inlinedExternals":[],"unexposedExports":[]} */
+
+(() => {
+
+const __ds_ns = (window.VoiceIsolateProDesignSystem_38f745 = window.VoiceIsolateProDesignSystem_38f745 || {});
+
+const __ds_scope = {};
+
+(__ds_ns.__errors = __ds_ns.__errors || []);
+
+// Header.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+// Header.jsx — top app bar: brand, UI-scale stepper, session stat readouts.
+const {
+  Button,
+  Badge
+} = window.VoiceIsolateProDesignSystem_38f745;
+function HeaderStat({
+  label,
+  value,
+  accent
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    className: "ew-hstat"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ew-hstat__v",
+    style: accent ? null : {
+      color: 'var(--text-hi)'
+    }
+  }, value), /*#__PURE__*/React.createElement("span", {
+    className: "ew-hstat__l"
+  }, label));
+}
+function Header({
+  stats,
+  scale,
+  onScale,
+  onSaveScale
+}) {
+  return /*#__PURE__*/React.createElement("header", {
+    className: "ew-hdr"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ew-hdr__left"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ew-hdr__icon",
+    "aria-label": "VoiceIsolate Pro",
+    "data-comment-anchor": "3fe7137db0-div-17-9"
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "20",
+    height: "20",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "#fff",
+    strokeWidth: "2.5",
+    strokeLinecap: "round",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"
+  }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h1", {
+    className: "ew-hdr__title"
+  }, "VoiceIsolate ", /*#__PURE__*/React.createElement("em", null, "Pro"), " ", /*#__PURE__*/React.createElement("span", {
+    className: "ew-hdr__ver"
+  }, "v25.0")), /*#__PURE__*/React.createElement("div", {
+    className: "ew-hdr__badges"
+  }, /*#__PURE__*/React.createElement(Badge, {
+    variant: "accent"
+  }, "Engineer Mode"), /*#__PURE__*/React.createElement(Badge, null, "32-Stage Deca-Pass")))), /*#__PURE__*/React.createElement("div", {
+    className: "ew-hdr__scale",
+    role: "group",
+    "aria-label": "UI scale"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "ew-step",
+    type: "button",
+    "aria-label": "Decrease UI scale",
+    onClick: () => onScale(-5)
+  }, "\u2212"), /*#__PURE__*/React.createElement("span", {
+    className: "ew-step__val"
+  }, scale, "%"), /*#__PURE__*/React.createElement("button", {
+    className: "ew-step",
+    type: "button",
+    "aria-label": "Increase UI scale",
+    onClick: () => onScale(5)
+  }, "+"), /*#__PURE__*/React.createElement("button", {
+    className: "ew-step ew-step--text",
+    type: "button",
+    onClick: onSaveScale
+  }, "Save")), /*#__PURE__*/React.createElement("div", {
+    className: "ew-hdr__stats"
+  }, stats.map(s => /*#__PURE__*/React.createElement(HeaderStat, _extends({
+    key: s.label
+  }, s)))), /*#__PURE__*/React.createElement("div", {
+    className: "ew-hdr__actions"
+  }, /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    size: "sm"
+  }, "How It Works")));
+}
+window.Header = Header;
+})(); } catch (e) { __ds_ns.__errors.push({ path: "Header.jsx", error: String((e && e.message) || e) }); }
+
+// VizPanel.jsx
+try { (() => {
+// VizPanel.jsx — right column: transport (A/B compare) + 9 visualization tabs.
+const NS_VZ = window.VoiceIsolateProDesignSystem_38f745;
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// Deterministic PRNG so each viz is stable per seed.
+function rng(seed) {
+  let s = seed * 9301 + 49297;
+  return () => {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+}
+function VizCanvas({
+  type,
+  seed = 4,
+  height = 200,
+  playhead = 0,
+  themeKey,
+  active
+}) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = cv.offsetWidth || 600,
+      H = height;
+    cv.width = W * dpr;
+    cv.height = H * dpr;
+    const ctx = cv.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, W, H);
+    const red = cssVar('--red-600') || '#dc2626';
+    const red2 = cssVar('--red-400') || '#f87171';
+    const hot = cssVar('--signal-hot') || '#f97316';
+    const ok = cssVar('--ok') || '#34d399';
+    const info = cssVar('--info') || '#60a5fa';
+    const dim = cssVar('--text-dim') || '#5e5e78';
+    const border = cssVar('--border-strong') || '#2a2a30';
+    const r = rng(seed);
+    ctx.strokeStyle = border;
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, H / 2);
+    ctx.lineTo(W, H / 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    if (type === 'aura') {
+      const cx = W / 2,
+        cy = H / 2;
+      for (let ring = 8; ring >= 1; ring--) {
+        const rad = ring / 8 * Math.min(W, H) * 0.46;
+        ctx.beginPath();
+        for (let a = 0; a <= Math.PI * 2 + 0.1; a += 0.12) {
+          const wob = 1 + Math.sin(a * (3 + ring) + ring) * 0.08 * (r() + 0.5);
+          const x = cx + Math.cos(a) * rad * wob,
+            y = cy + Math.sin(a) * rad * wob;
+          a === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = ring % 2 ? red : hot;
+        ctx.globalAlpha = 0.12 + ring / 8 * 0.35;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    } else if (type === 'topo') {
+      ctx.lineWidth = 1;
+      for (let row = 0; row < 14; row++) {
+        ctx.beginPath();
+        const base = row / 14 * H;
+        for (let x = 0; x <= W; x += 6) {
+          const y = base + Math.sin(x * 0.02 + row * 0.6 + seed) * 10 * Math.sin(x * 0.004 + row);
+          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        const t = row / 14;
+        ctx.strokeStyle = t < 0.5 ? red : hot;
+        ctx.globalAlpha = 0.25 + t * 0.5;
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    } else if (type === 'swarm') {
+      const N = 220;
+      for (let i = 0; i < N; i++) {
+        const x = r() * W,
+          y = r() * H;
+        const d = Math.abs(y - H / 2) / (H / 2);
+        ctx.beginPath();
+        ctx.arc(x, y, 1 + r() * 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = d < 0.4 ? red : d < 0.7 ? hot : info;
+        ctx.globalAlpha = 0.3 + (1 - d) * 0.6;
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else if (type === 'liquid') {
+      const grad = ctx.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, red);
+      grad.addColorStop(1, hot);
+      ctx.fillStyle = grad;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 5) {
+        const y = H * 0.55 + Math.sin(x * 0.016 + seed) * 22 + Math.sin(x * 0.05) * 8 * r();
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 5) {
+        const y = H * 0.7 + Math.cos(x * 0.02 + seed * 2) * 16;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H);
+      ctx.closePath();
+      ctx.fillStyle = red2;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (type === 'clusters') {
+      const speakers = [red, info, ok, hot];
+      const segs = 26;
+      let x = 0;
+      for (let i = 0; i < segs; i++) {
+        const w = (0.3 + r()) * (W / segs);
+        const sp = speakers[Math.floor(r() * speakers.length)];
+        ctx.fillStyle = sp;
+        ctx.globalAlpha = 0.55;
+        ctx.fillRect(x, H * 0.3, w - 2, H * 0.4);
+        x += w;
+        if (x > W) break;
+      }
+      ctx.globalAlpha = 1;
+    } else if (type === 'freq') {
+      const bars = 64,
+        bw = W / bars;
+      for (let i = 0; i < bars; i++) {
+        const h = (r() * 0.7 + Math.sin(i * 0.3) * 0.2 + 0.2) * H;
+        const t = i / bars;
+        ctx.fillStyle = t < 0.6 ? red : hot;
+        ctx.globalAlpha = 0.8;
+        ctx.fillRect(i * bw, H - h, bw - 1, h);
+      }
+      ctx.globalAlpha = 1;
+    }
+    if ((type === 'aura' || type === 'topo' || type === 'liquid') && playhead > 0) {
+      ctx.strokeStyle = red2;
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(playhead * W, 0);
+      ctx.lineTo(playhead * W, H);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }, [type, seed, height, playhead, themeKey, active]);
+  return /*#__PURE__*/React.createElement("canvas", {
+    ref: ref,
+    className: "ew-canvas",
+    style: {
+      height,
+      width: '100%',
+      display: 'block'
+    }
+  });
+}
+const TABS = [{
+  id: 'spectrogram',
+  label: 'Spectrogram'
+}, {
+  id: 'waveform',
+  label: 'Waveform'
+}, {
+  id: 'abcompare',
+  label: 'A/B'
+}, {
+  id: 'lufs',
+  label: 'LUFS'
+}, {
+  id: 'clusters',
+  label: 'Clusters'
+}, {
+  id: 'aura',
+  label: 'Aura'
+}, {
+  id: 'topo',
+  label: '3D Topo'
+}, {
+  id: 'swarm',
+  label: 'Swarm'
+}, {
+  id: 'liquid',
+  label: 'Liquid'
+}];
+function Transport({
+  playing,
+  onToggle,
+  cur,
+  dur,
+  pct,
+  version,
+  onVersion
+}) {
+  const {
+    IconButton,
+    Button
+  } = NS_VZ;
+  const I = window.Icons;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "ew-card ew-transport"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "ew-tp__play",
+    type: "button",
+    onClick: onToggle,
+    "aria-label": playing ? 'Pause' : 'Play'
+  }, playing ? /*#__PURE__*/React.createElement(I.Pause, {
+    size: 16
+  }) : /*#__PURE__*/React.createElement(I.Play, {
+    size: 16
+  })), /*#__PURE__*/React.createElement("button", {
+    className: "ew-tp__btn",
+    type: "button",
+    "aria-label": "Stop"
+  }, /*#__PURE__*/React.createElement(I.Stop, {
+    size: 14
+  })), /*#__PURE__*/React.createElement("button", {
+    className: "ew-tp__btn",
+    type: "button",
+    "aria-label": "Rewind"
+  }, /*#__PURE__*/React.createElement(I.SkipBack, {
+    size: 14
+  })), /*#__PURE__*/React.createElement("button", {
+    className: "ew-tp__btn",
+    type: "button",
+    "aria-label": "Forward"
+  }, /*#__PURE__*/React.createElement(I.SkipFwd, {
+    size: 14
+  })), /*#__PURE__*/React.createElement("span", {
+    className: "ew-tp__time ew-mono"
+  }, cur), /*#__PURE__*/React.createElement("input", {
+    type: "range",
+    className: "ew-tp__seek",
+    min: "0",
+    max: "100",
+    value: pct,
+    readOnly: true,
+    style: {
+      '--pct': pct + '%'
+    },
+    "aria-label": "Playback position"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "ew-tp__time ew-mono ew-faint"
+  }, dur), /*#__PURE__*/React.createElement("div", {
+    className: "ew-tp__speed"
+  }, /*#__PURE__*/React.createElement("label", {
+    className: "ew-faint"
+  }, "Speed"), /*#__PURE__*/React.createElement("select", {
+    "aria-label": "Playback speed",
+    defaultValue: "1"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "0.5"
+  }, "0.5\xD7"), /*#__PURE__*/React.createElement("option", {
+    value: "0.75"
+  }, "0.75\xD7"), /*#__PURE__*/React.createElement("option", {
+    value: "1"
+  }, "1\xD7"), /*#__PURE__*/React.createElement("option", {
+    value: "1.5"
+  }, "1.5\xD7"), /*#__PURE__*/React.createElement("option", {
+    value: "2"
+  }, "2\xD7"))), /*#__PURE__*/React.createElement("button", {
+    className: `ew-tp__ab ew-tp__ab--${version}`,
+    type: "button",
+    onClick: onVersion,
+    "aria-label": "A/B compare"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ew-tp__abtag"
+  }, version), /*#__PURE__*/React.createElement("span", null, version === 'A' ? 'Original' : 'Processed')));
+}
+function AnalysisDeck({
+  themeKey,
+  playhead
+}) {
+  const {
+    Spectrogram,
+    Waveform
+  } = NS_VZ;
+  const speakers = [{
+    id: 'S1',
+    color: 'var(--red-500)',
+    pct: 58
+  }, {
+    id: 'S2',
+    color: 'var(--info)',
+    pct: 24
+  }, {
+    id: 'S3',
+    color: 'var(--ok)',
+    pct: 12
+  }, {
+    id: 'S4',
+    color: 'var(--signal-hot)',
+    pct: 6
+  }];
+  return /*#__PURE__*/React.createElement("div", {
+    className: "ew-card ew-analysis",
+    "data-comment-anchor": "496eee54c3-div-175-5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ew-viz__hdr"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ew-kicker"
+  }, "Live Analysis"), /*#__PURE__*/React.createElement("span", {
+    className: "ew-mono ew-faint",
+    style: {
+      fontSize: 'var(--fs-3xs)'
+    }
+  }, "always-on \xB7 local")), /*#__PURE__*/React.createElement("div", {
+    className: "ew-analysis__grid"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ew-analysis__cell"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ew-ablabel ew-mono"
+  }, "Spectrograph"), /*#__PURE__*/React.createElement(Spectrogram, {
+    seed: 14,
+    height: 92
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "ew-analysis__cell"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ew-ablabel ew-mono"
+  }, "Wave Analyzer"), /*#__PURE__*/React.createElement(Waveform, {
+    seed: 21,
+    height: 92,
+    playhead: playhead
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "ew-analysis__cell"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ew-ablabel ew-mono"
+  }, "Voice / Speaker ID"), /*#__PURE__*/React.createElement(VizCanvas, {
+    type: "clusters",
+    seed: 5,
+    height: 56,
+    themeKey: themeKey,
+    active: true
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "ew-speakers"
+  }, speakers.map(s => /*#__PURE__*/React.createElement("span", {
+    key: s.id,
+    className: "ew-speaker ew-mono"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ew-speaker__dot",
+    style: {
+      background: s.color
+    }
+  }), s.id, " \xB7 ", s.pct, "%"))))));
+}
+function VizPanel({
+  themeKey,
+  playing,
+  onToggle,
+  playhead,
+  fileLoaded
+}) {
+  const {
+    Waveform,
+    Spectrogram,
+    IconButton
+  } = NS_VZ;
+  const [tab, setTab] = React.useState('spectrogram');
+  const [version, setVersion] = React.useState('A');
+  const secs = Math.round(playhead * 252);
+  const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return /*#__PURE__*/React.createElement("section", {
+    className: "ew-col"
+  }, /*#__PURE__*/React.createElement(Transport, {
+    playing: playing,
+    onToggle: onToggle,
+    cur: fmt(secs),
+    dur: "4:12",
+    pct: Math.round(playhead * 100),
+    version: version,
+    onVersion: () => setVersion(v => v === 'A' ? 'B' : 'A')
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "ew-card ew-viz"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ew-viz__hdr"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ew-kicker"
+  }, "Visualizations"), /*#__PURE__*/React.createElement("button", {
+    className: "ew-step",
+    type: "button",
+    "aria-label": "Fullscreen"
+  }, /*#__PURE__*/React.createElement(window.Icons.Maximize, {
+    size: 13
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "ew-tabs",
+    role: "tablist"
+  }, TABS.map(t => /*#__PURE__*/React.createElement("button", {
+    key: t.id,
+    type: "button",
+    role: "tab",
+    className: `ew-tab${tab === t.id ? ' ew-tab--active' : ''}`,
+    "aria-selected": tab === t.id,
+    onClick: () => setTab(t.id)
+  }, t.label))), /*#__PURE__*/React.createElement("div", {
+    className: "ew-viz__body"
+  }, tab === 'spectrogram' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "ew-legend ew-mono"
+  }, "Live spectrum rail \xB7 scrolling spectrogram \xB7 local-only render"), /*#__PURE__*/React.createElement(Spectrogram, {
+    seed: 3,
+    height: 190
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement(VizCanvas, {
+    type: "freq",
+    seed: 11,
+    height: 72,
+    themeKey: themeKey,
+    active: true
+  }))), tab === 'waveform' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "ew-legend ew-mono"
+  }, "Static waveform \xB7 live playhead during transport"), /*#__PURE__*/React.createElement(Waveform, {
+    seed: 7,
+    height: 150,
+    playhead: playhead,
+    selection: [0.30, 0.62]
+  })), tab === 'abcompare' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "ew-legend ew-mono"
+  }, "Original vs processed overlay"), /*#__PURE__*/React.createElement("div", {
+    className: "ew-abgrid"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "ew-ablabel ew-mono"
+  }, "A \xB7 Original"), /*#__PURE__*/React.createElement(Waveform, {
+    seed: 7,
+    height: 110,
+    color: "var(--text-dim)",
+    playhead: playhead
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "ew-ablabel ew-mono",
+    style: {
+      color: 'var(--red-400)'
+    }
+  }, "B \xB7 Processed"), /*#__PURE__*/React.createElement(Waveform, {
+    seed: 7,
+    height: 110,
+    playhead: playhead
+  })))), tab === 'lufs' && /*#__PURE__*/React.createElement("div", {
+    className: "ew-lufs"
+  }, [['-23.0', 'Integrated LUFS'], ['-20.0', 'Short-Term LUFS'], ['-1.2', 'True Peak dBTP'], ['7.4', 'LRA']].map(([v, l]) => /*#__PURE__*/React.createElement("div", {
+    key: l,
+    className: "ew-lufs__cell"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ew-lufs__v ew-mono"
+  }, v), /*#__PURE__*/React.createElement("div", {
+    className: "ew-lufs__l"
+  }, l)))), tab === 'clusters' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "ew-legend ew-mono"
+  }, "Speaker diarization \xB7 4 clusters detected"), /*#__PURE__*/React.createElement(VizCanvas, {
+    type: "clusters",
+    seed: 5,
+    height: 120,
+    themeKey: themeKey,
+    active: true
+  })), tab === 'aura' && /*#__PURE__*/React.createElement(VizCanvas, {
+    type: "aura",
+    seed: 9,
+    height: 210,
+    playhead: playhead,
+    themeKey: themeKey,
+    active: true
+  }), tab === 'topo' && /*#__PURE__*/React.createElement(VizCanvas, {
+    type: "topo",
+    seed: 2,
+    height: 210,
+    playhead: playhead,
+    themeKey: themeKey,
+    active: true
+  }), tab === 'swarm' && /*#__PURE__*/React.createElement(VizCanvas, {
+    type: "swarm",
+    seed: 8,
+    height: 210,
+    themeKey: themeKey,
+    active: true
+  }), tab === 'liquid' && /*#__PURE__*/React.createElement(VizCanvas, {
+    type: "liquid",
+    seed: 6,
+    height: 210,
+    playhead: playhead,
+    themeKey: themeKey,
+    active: true
+  }))), /*#__PURE__*/React.createElement(SignalBridge, {
+    playhead: playhead
+  }));
+}
+window.VizPanel = VizPanel;
+})(); } catch (e) { __ds_ns.__errors.push({ path: "VizPanel.jsx", error: String((e && e.message) || e) }); }
+
+// components/audio/LevelMeter.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/** LevelMeter — horizontal signal meter with red→amber→bone peak gradient. */
+function LevelMeter({
+  label,
+  value = 0,
+  peak,
+  unit = 'dB',
+  className = '',
+  ...rest
+}) {
+  const v = Math.max(0, Math.min(100, value));
+  const display = unit === 'dB' ? `${value <= 0 ? '-∞' : (value - 100).toFixed(1)}` : `${Math.round(value)}${unit}`;
+  return /*#__PURE__*/React.createElement("div", _extends({
+    className: ['vip-meter', className].filter(Boolean).join(' ')
+  }, rest), label && /*#__PURE__*/React.createElement("span", {
+    className: "vip-meter__label"
+  }, label), /*#__PURE__*/React.createElement("span", {
+    className: "vip-meter__track"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "vip-meter__fill",
+    style: {
+      width: `${v}%`
+    }
+  }), peak != null && /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      left: `${Math.max(0, Math.min(100, peak))}%`,
+      width: '2px',
+      background: 'var(--signal-peak)',
+      opacity: 0.9
+    }
+  })), /*#__PURE__*/React.createElement("span", {
+    className: "vip-meter__val"
+  }, display));
+}
+Object.assign(__ds_scope, { LevelMeter });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/audio/LevelMeter.jsx", error: String((e && e.message) || e) }); }
+
+// components/audio/ParamSlider.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/**
+ * ParamSlider — the signature control surface row: label · track · mono readout.
+ * The red fill tracks the value automatically.
+ */
+function ParamSlider({
+  label,
+  value = 50,
+  min = 0,
+  max = 100,
+  step = 1,
+  unit = '',
+  format,
+  onChange,
+  className = '',
+  ...rest
+}) {
+  const pct = (value - min) / (max - min) * 100;
+  const display = format ? format(value) : `${value}${unit}`;
+  return /*#__PURE__*/React.createElement("div", {
+    className: ['vip-slider', className].filter(Boolean).join(' ')
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "vip-slider__label"
+  }, label), /*#__PURE__*/React.createElement("input", _extends({
+    type: "range",
+    className: "vip-slider__input",
+    min: min,
+    max: max,
+    step: step,
+    value: value,
+    onChange: e => onChange && onChange(parseFloat(e.target.value)),
+    style: {
+      '--pct': `${pct}%`
+    }
+  }, rest)), /*#__PURE__*/React.createElement("span", {
+    className: "vip-slider__val"
+  }, display));
+}
+Object.assign(__ds_scope, { ParamSlider });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/audio/ParamSlider.jsx", error: String((e && e.message) || e) }); }
+
+// components/audio/ProcessLoader.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+const DEFAULT_STAGES = [{
+  id: 'decode',
+  label: 'Decoding'
+}, {
+  id: 'analyze',
+  label: 'Analyzing'
+}, {
+  id: 'separate',
+  label: 'Separating'
+}, {
+  id: 'render',
+  label: 'Rendering'
+}];
+
+/**
+ * ProcessLoader — staged audio-processing indicator.
+ * A spectral scan-bar runs while the engine works; below it, the
+ * pipeline stages light up red as each completes. The active stage
+ * pulses and shows live percent. Unique to VoiceIsolate Pro.
+ */
+function ProcessLoader({
+  stages = DEFAULT_STAGES,
+  active = 0,
+  progress = 0,
+  // 0..100 within the active stage
+  bars = 48,
+  className = '',
+  style,
+  ...rest
+}) {
+  const activeStage = stages[Math.max(0, Math.min(active, stages.length - 1))];
+  return /*#__PURE__*/React.createElement("div", _extends({
+    className: ['vip-ploader', className].filter(Boolean).join(' '),
+    style: {
+      background: 'var(--canvas-bg)',
+      border: '1px solid var(--border)',
+      borderRadius: 'var(--radius-lg)',
+      padding: 'var(--sp-7)',
+      ...style
+    },
+    role: "progressbar",
+    "aria-valuenow": Math.round(progress),
+    "aria-valuemin": 0,
+    "aria-valuemax": 100,
+    "aria-label": activeStage ? activeStage.label : 'Processing'
+  }, rest), /*#__PURE__*/React.createElement("div", {
+    className: "vip-ploader__scan",
+    style: {
+      display: 'flex',
+      alignItems: 'flex-end',
+      gap: 2,
+      height: 46,
+      marginBottom: 'var(--sp-6)'
+    }
+  }, Array.from({
+    length: bars
+  }).map((_, i) => /*#__PURE__*/React.createElement("span", {
+    key: i,
+    className: "vip-ploader__bar",
+    style: {
+      flex: 1,
+      borderRadius: 1,
+      background: 'linear-gradient(180deg, var(--red-400), var(--red-700))',
+      animation: `vip-scan 1.05s ${i / bars * 0.9}s ease-in-out infinite`
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 'var(--sp-5)'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: 'var(--fw-semibold) var(--fs-sm)/1 var(--font-ui)',
+      color: 'var(--text-hi)'
+    }
+  }, activeStage ? activeStage.label : 'Complete', /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--text-dim)'
+    }
+  }, "\u2026")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: 'var(--fw-semibold) var(--fs-sm)/1 var(--font-mono)',
+      fontVariantNumeric: 'tabular-nums',
+      color: 'var(--red-400)'
+    }
+  }, String(Math.round(progress)).padStart(2, '0'), "%")), /*#__PURE__*/React.createElement("div", {
+    className: "vip-ploader__rail",
+    style: {
+      display: 'flex',
+      alignItems: 'center'
+    }
+  }, stages.map((s, i) => {
+    const state = i < active ? 'done' : i === active ? 'active' : 'pending';
+    return /*#__PURE__*/React.createElement(React.Fragment, {
+      key: s.id
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 6,
+        flex: 'none',
+        width: 18
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: `vip-ploader__node vip-ploader__node--${state}`,
+      style: {
+        width: 11,
+        height: 11,
+        borderRadius: '50%',
+        flex: 'none',
+        border: '2px solid',
+        borderColor: state === 'pending' ? 'var(--border-strong)' : 'var(--red-600)',
+        background: state === 'done' ? 'var(--red-600)' : state === 'active' ? 'var(--red-wash)' : 'transparent',
+        boxShadow: state === 'active' ? '0 0 0 4px var(--red-wash)' : 'none',
+        animation: state === 'active' ? 'vip-node-pulse 1.1s ease-in-out infinite' : 'none'
+      }
+    })), i < stages.length - 1 && /*#__PURE__*/React.createElement("span", {
+      style: {
+        flex: 1,
+        height: 2,
+        margin: '0 4px',
+        borderRadius: 1,
+        background: i < active ? 'var(--red-600)' : 'var(--border-strong)',
+        transition: 'background var(--dur-base) var(--ease-out)'
+      }
+    }));
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      marginTop: 'var(--sp-4)'
+    }
+  }, stages.map((s, i) => /*#__PURE__*/React.createElement("span", {
+    key: s.id,
+    style: {
+      font: 'var(--fw-bold) var(--fs-3xs)/1 var(--font-mono)',
+      letterSpacing: 'var(--ls-wide)',
+      textTransform: 'uppercase',
+      color: i === active ? 'var(--red-400)' : i < active ? 'var(--text-2)' : 'var(--text-ghost)',
+      transition: 'color var(--dur-base) var(--ease-out)'
+    }
+  }, s.label))));
+}
+Object.assign(__ds_scope, { ProcessLoader });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/audio/ProcessLoader.jsx", error: String((e && e.message) || e) }); }
+
+// components/audio/Spectrogram.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/**
+ * Spectrogram — canvas FFT heatmap using the forensic magnitude ramp
+ * (void → red → amber → bone). Deterministic procedural energy field.
+ */
+function Spectrogram({
+  seed = 3,
+  cols = 220,
+  rows = 64,
+  height = 150,
+  className = '',
+  style,
+  ...rest
+}) {
+  const canvasRef = React.useRef(null);
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    let s = seed * 4129 + 7901;
+    const rnd = () => {
+      s = (s * 9301 + 49297) % 233280;
+      return s / 233280;
+    };
+
+    // magnitude ramp stops (forensic)
+    const ramp = [[0.00, [11, 11, 16]], [0.30, [91, 20, 20]], [0.55, [220, 38, 38]], [0.78, [249, 115, 22]], [0.92, [253, 230, 138]], [1.00, [255, 247, 237]]];
+    const colorAt = m => {
+      m = Math.max(0, Math.min(1, m));
+      for (let i = 1; i < ramp.length; i++) {
+        if (m <= ramp[i][0]) {
+          const [a0, c0] = ramp[i - 1],
+            [a1, c1] = ramp[i];
+          const f = (m - a0) / (a1 - a0);
+          return `rgb(${c0.map((c, k) => Math.round(c + (c1[k] - c) * f)).join(',')})`;
+        }
+      }
+      return 'rgb(255,247,237)';
+    };
+    const cw = w / cols;
+    const ch = h / rows;
+    // precompute per-column voice energy (formant bands move over time)
+    for (let x = 0; x < cols; x++) {
+      const t = x / cols;
+      const voiced = Math.sin(t * Math.PI * 4) * 0.5 + 0.5 > 0.35 ? 1 : 0.15;
+      const f0 = 0.12 + Math.sin(t * 7) * 0.03; // fundamental band
+      const f1 = 0.30 + Math.sin(t * 5 + 1) * 0.05; // formant 1
+      const f2 = 0.52 + Math.sin(t * 9 + 2) * 0.05; // formant 2
+      for (let y = 0; y < rows; y++) {
+        const fr = 1 - y / rows; // 0 bottom .. 1 top (low→high freq)
+        const band = cx => Math.exp(-Math.pow((fr - cx) * 9, 2));
+        let m = (band(f0) * 1.0 + band(f1) * 0.8 + band(f2) * 0.55) * voiced;
+        m += (rnd() - 0.5) * 0.12; // broadband noise floor
+        m *= 0.5 + fr * 0.2;
+        ctx.fillStyle = colorAt(m);
+        ctx.fillRect(x * cw, y * ch, cw + 0.5, ch + 0.5);
+      }
+    }
+  }, [seed, cols, rows, height]);
+  return /*#__PURE__*/React.createElement("div", _extends({
+    className: className,
+    style: {
+      background: 'var(--canvas-bg)',
+      borderRadius: 'var(--radius-md)',
+      border: '1px solid var(--border)',
+      overflow: 'hidden',
+      ...style
+    }
+  }, rest), /*#__PURE__*/React.createElement("canvas", {
+    ref: canvasRef,
+    style: {
+      display: 'block',
+      width: '100%',
+      height
+    }
+  }));
+}
+Object.assign(__ds_scope, { Spectrogram });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/audio/Spectrogram.jsx", error: String((e && e.message) || e) }); }
+
+// components/audio/Waveform.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/**
+ * Waveform — canvas-rendered audio waveform in the forensic well.
+ * Deterministic procedural data (seedable) so it renders identically
+ * without a real audio buffer. Optional playhead + selection region.
+ */
+function Waveform({
+  seed = 7,
+  bars = 160,
+  color = 'var(--red-600)',
+  height = 120,
+  playhead = null,
+  // 0..1 or null
+  selection = null,
+  // [start, end] in 0..1 or null
+  grid = true,
+  className = '',
+  style,
+  ...rest
+}) {
+  const canvasRef = React.useRef(null);
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    // resolve CSS vars to concrete colors
+    const cs = getComputedStyle(canvas);
+    const resolve = c => {
+      if (!c.startsWith('var(')) return c;
+      const name = c.slice(4, -1).trim();
+      return cs.getPropertyValue(name).trim() || '#dc2626';
+    };
+    const accent = resolve(color);
+
+    // engineering grid
+    if (grid) {
+      ctx.strokeStyle = 'rgba(220,38,38,0.06)';
+      ctx.lineWidth = 1;
+      for (let gx = 0; gx <= w; gx += 32) {
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, h);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2);
+      ctx.lineTo(w, h / 2);
+      ctx.stroke();
+    }
+
+    // pseudo-random but deterministic
+    let s = seed * 9301 + 49297;
+    const rnd = () => {
+      s = (s * 9301 + 49297) % 233280;
+      return s / 233280;
+    };
+    const mid = h / 2;
+    const gap = 2;
+    const bw = Math.max(1.2, (w - bars * gap) / bars);
+    const sel = selection;
+    for (let i = 0; i < bars; i++) {
+      const t = i / bars;
+      // layered sine envelope + noise → speech-like amplitude
+      const env = Math.abs(Math.sin(t * Math.PI * 3.1) * 0.5 + Math.sin(t * Math.PI * 11) * 0.25 + (rnd() - 0.5) * 0.6);
+      const amp = Math.pow(env, 1.4) * (mid - 6) * (0.35 + rnd() * 0.65);
+      const x = i * (bw + gap) + 1;
+      const inSel = sel && t >= sel[0] && t <= sel[1];
+      const past = playhead != null && t <= playhead;
+      ctx.fillStyle = inSel ? accent : past ? accent : 'rgba(120,120,150,0.5)';
+      ctx.globalAlpha = inSel ? 0.95 : past ? 0.85 : 0.55;
+      const a = Math.max(1.5, amp);
+      ctx.fillRect(x, mid - a, bw, a * 2);
+    }
+    ctx.globalAlpha = 1;
+
+    // selection overlay edges
+    if (sel) {
+      ctx.fillStyle = 'rgba(220,38,38,0.07)';
+      ctx.fillRect(sel[0] * w, 0, (sel[1] - sel[0]) * w, h);
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1;
+      [sel[0], sel[1]].forEach(p => {
+        ctx.beginPath();
+        ctx.moveTo(p * w, 0);
+        ctx.lineTo(p * w, h);
+        ctx.stroke();
+      });
+    }
+
+    // playhead
+    if (playhead != null) {
+      const px = playhead * w;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, h);
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(px - 4, 0);
+      ctx.lineTo(px + 4, 0);
+      ctx.lineTo(px, 6);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }, [seed, bars, color, playhead, selection, grid, height]);
+  return /*#__PURE__*/React.createElement("div", _extends({
+    className: ['vip-card--well', className].filter(Boolean).join(' '),
+    style: {
+      background: 'var(--canvas-bg)',
+      borderRadius: 'var(--radius-md)',
+      border: '1px solid var(--border)',
+      overflow: 'hidden',
+      ...style
+    }
+  }, rest), /*#__PURE__*/React.createElement("canvas", {
+    ref: canvasRef,
+    style: {
+      display: 'block',
+      width: '100%',
+      height
+    }
+  }));
+}
+Object.assign(__ds_scope, { Waveform });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/audio/Waveform.jsx", error: String((e && e.message) || e) }); }
+
+// components/core/Badge.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/** Badge — compact mono label for status, format, and metadata tags. */
+function Badge({
+  variant = 'default',
+  dot = false,
+  children,
+  className = '',
+  ...rest
+}) {
+  const cls = ['vip-badge', variant !== 'default' && `vip-badge--${variant}`, className].filter(Boolean).join(' ');
+  return /*#__PURE__*/React.createElement("span", _extends({
+    className: cls
+  }, rest), dot && /*#__PURE__*/React.createElement("span", {
+    className: "vip-badge__dot"
+  }), children);
+}
+Object.assign(__ds_scope, { Badge });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/core/Badge.jsx", error: String((e && e.message) || e) }); }
+
+// components/core/Button.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/**
+ * Button — the primary action control. Red signal for primary,
+ * graphite outline for secondary, ghost for inline, danger for destructive.
+ */
+function Button({
+  variant = 'outline',
+  size = 'md',
+  block = false,
+  recording = false,
+  icon = null,
+  disabled = false,
+  children,
+  className = '',
+  ...rest
+}) {
+  const cls = ['vip-btn', `vip-btn--${variant}`, size === 'sm' && 'vip-btn--sm', size === 'lg' && 'vip-btn--lg', block && 'vip-btn--block', recording && 'vip-btn--rec', className].filter(Boolean).join(' ');
+  return /*#__PURE__*/React.createElement("button", _extends({
+    className: cls,
+    disabled: disabled
+  }, rest), icon, children);
+}
+Object.assign(__ds_scope, { Button });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/core/Button.jsx", error: String((e && e.message) || e) }); }
+
+// components/core/Card.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/** Card — graphite panel container. Optional header with kicker + title. */
+function Card({
+  title,
+  kicker,
+  actions,
+  hover = false,
+  flush = false,
+  well = false,
+  children,
+  className = '',
+  ...rest
+}) {
+  const cls = ['vip-card', hover && 'vip-card--hover', flush && 'vip-card--flush', well && 'vip-card--well', className].filter(Boolean).join(' ');
+  const hasHead = title || kicker || actions;
+  return /*#__PURE__*/React.createElement("div", _extends({
+    className: cls
+  }, rest), hasHead && /*#__PURE__*/React.createElement("div", {
+    className: "vip-card__head",
+    style: flush ? {
+      padding: 'var(--sp-7) var(--sp-7) 0'
+    } : undefined
+  }, /*#__PURE__*/React.createElement("div", null, kicker && /*#__PURE__*/React.createElement("p", {
+    className: "vip-card__kicker"
+  }, kicker), title && /*#__PURE__*/React.createElement("h3", {
+    className: "vip-card__title"
+  }, title)), actions && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 'var(--sp-3)'
+    }
+  }, actions)), children);
+}
+Object.assign(__ds_scope, { Card });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/core/Card.jsx", error: String((e && e.message) || e) }); }
+
+// components/core/IconButton.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/** IconButton — square, icon-only control for toolbars and panel headers. */
+function IconButton({
+  size = 'md',
+  active = false,
+  disabled = false,
+  label,
+  children,
+  className = '',
+  ...rest
+}) {
+  const cls = ['vip-iconbtn', size === 'sm' && 'vip-iconbtn--sm', size === 'lg' && 'vip-iconbtn--lg', active && 'vip-iconbtn--active', className].filter(Boolean).join(' ');
+  return /*#__PURE__*/React.createElement("button", _extends({
+    className: cls,
+    disabled: disabled,
+    "aria-label": label,
+    title: label
+  }, rest), children);
+}
+Object.assign(__ds_scope, { IconButton });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/core/IconButton.jsx", error: String((e && e.message) || e) }); }
+
+// components/core/Input.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/** Input — text/number field with optional label and hint. */
+function Input({
+  label,
+  hint,
+  mono = false,
+  className = '',
+  id,
+  ...rest
+}) {
+  const inputCls = ['vip-input', mono && 'vip-input--mono', className].filter(Boolean).join(' ');
+  const input = /*#__PURE__*/React.createElement("input", _extends({
+    id: id,
+    className: inputCls
+  }, rest));
+  if (!label && !hint) return input;
+  return /*#__PURE__*/React.createElement("label", {
+    className: "vip-field",
+    htmlFor: id
+  }, label && /*#__PURE__*/React.createElement("span", {
+    className: "vip-field__label"
+  }, label), input, hint && /*#__PURE__*/React.createElement("span", {
+    className: "vip-field__hint"
+  }, hint));
+}
+Object.assign(__ds_scope, { Input });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/core/Input.jsx", error: String((e && e.message) || e) }); }
+
+// components/core/Select.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/** Select — styled native dropdown with optional label. */
+function Select({
+  label,
+  hint,
+  options = [],
+  children,
+  className = '',
+  id,
+  ...rest
+}) {
+  const selectCls = ['vip-select', className].filter(Boolean).join(' ');
+  const select = /*#__PURE__*/React.createElement("select", _extends({
+    id: id,
+    className: selectCls
+  }, rest), options.map(o => {
+    const value = typeof o === 'string' ? o : o.value;
+    const text = typeof o === 'string' ? o : o.label;
+    return /*#__PURE__*/React.createElement("option", {
+      key: value,
+      value: value
+    }, text);
+  }), children);
+  if (!label && !hint) return select;
+  return /*#__PURE__*/React.createElement("label", {
+    className: "vip-field",
+    htmlFor: id
+  }, label && /*#__PURE__*/React.createElement("span", {
+    className: "vip-field__label"
+  }, label), select, hint && /*#__PURE__*/React.createElement("span", {
+    className: "vip-field__hint"
+  }, hint));
+}
+Object.assign(__ds_scope, { Select });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/core/Select.jsx", error: String((e && e.message) || e) }); }
+
+// components/core/StatusPill.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/** StatusPill — engine / process state indicator with a glowing dot. */
+function StatusPill({
+  state = 'pending',
+  children,
+  className = '',
+  ...rest
+}) {
+  const cls = ['vip-pill', className].filter(Boolean).join(' ');
+  return /*#__PURE__*/React.createElement("span", _extends({
+    className: cls,
+    "data-state": state
+  }, rest), children);
+}
+Object.assign(__ds_scope, { StatusPill });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/core/StatusPill.jsx", error: String((e && e.message) || e) }); }
+
+// components/core/Switch.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+/** Switch — on/off toggle with optional label. Controlled via `checked`. */
+function Switch({
+  checked = false,
+  onChange,
+  label,
+  disabled = false,
+  className = '',
+  ...rest
+}) {
+  const cls = ['vip-switch', checked && 'vip-switch--on', disabled && 'vip-switch--disabled', className].filter(Boolean).join(' ');
+  const toggle = () => {
+    if (!disabled && onChange) onChange(!checked);
+  };
+  return /*#__PURE__*/React.createElement("button", _extends({
+    type: "button",
+    role: "switch",
+    "aria-checked": checked,
+    className: cls,
+    onClick: toggle,
+    disabled: disabled
+  }, rest), /*#__PURE__*/React.createElement("span", {
+    className: "vip-switch__track"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "vip-switch__thumb"
+  })), label && /*#__PURE__*/React.createElement("span", {
+    className: "vip-switch__label"
+  }, label));
+}
+Object.assign(__ds_scope, { Switch });
+})(); } catch (e) { __ds_ns.__errors.push({ path: "components/core/Switch.jsx", error: String((e && e.message) || e) }); }
+
+// ui_kits/engineer/ControlRail.jsx
+try { (() => {
+// Engineer Mode — control rail (right panel: model + sliders + stems).
+function ControlRail({
+  params,
+  onParam
+}) {
+  const {
+    Card,
+    Badge,
+    Switch,
+    Select,
+    Button,
+    ParamSlider
+  } = window.VoiceIsolateProDesignSystem_38f745;
+  const {
+    Shield,
+    Cpu
+  } = window.Icons;
+  const [bypassNoise, setBypassNoise] = React.useState(false);
+  const [bypassDereverb, setBypassDereverb] = React.useState(false);
+  return /*#__PURE__*/React.createElement("aside", {
+    className: "em-rail"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-rail__section"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-panelhead"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "em-panelhead__title"
+  }, /*#__PURE__*/React.createElement(Cpu, {
+    size: 13,
+    style: {
+      color: 'var(--red-500)',
+      marginRight: 6
+    }
+  }), "Model"), /*#__PURE__*/React.createElement(Badge, {
+    variant: "accent"
+  }, "v3.2")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '10px 12px'
+    }
+  }, /*#__PURE__*/React.createElement(Select, {
+    options: [{
+      value: 'std',
+      label: 'Standard (Fast)'
+    }, {
+      value: 'fwd',
+      label: 'Forensic (Accurate)'
+    }, {
+      value: 'ult',
+      label: 'Ultra (Max Quality)'
+    }],
+    defaultValue: "fwd"
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "em-model-stat vip-mono",
+    style: {
+      marginTop: 10,
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-mstat"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-mstat__k"
+  }, "CPU"), /*#__PURE__*/React.createElement("div", {
+    className: "em-mstat__v"
+  }, "12%")), /*#__PURE__*/React.createElement("div", {
+    className: "em-mstat"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-mstat__k"
+  }, "RAM"), /*#__PURE__*/React.createElement("div", {
+    className: "em-mstat__v"
+  }, "1.2 GB"))))), /*#__PURE__*/React.createElement("div", {
+    className: "em-rail__section"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-panelhead"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "em-panelhead__title"
+  }, "Noise Reduction"), /*#__PURE__*/React.createElement(Switch, {
+    checked: !bypassNoise,
+    onChange: v => setBypassNoise(!v)
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "em-sliders"
+  }, /*#__PURE__*/React.createElement(ParamSlider, {
+    label: "Reduction",
+    value: params.nr,
+    onChange: v => onParam('nr', v),
+    unit: "%"
+  }), /*#__PURE__*/React.createElement(ParamSlider, {
+    label: "Voice Gate",
+    value: params.gate,
+    onChange: v => onParam('gate', v),
+    min: -80,
+    max: 0,
+    unit: " dB"
+  }), /*#__PURE__*/React.createElement(ParamSlider, {
+    label: "Noise Floor",
+    value: params.floor,
+    onChange: v => onParam('floor', v),
+    min: -80,
+    max: 0,
+    unit: " dB"
+  }), /*#__PURE__*/React.createElement(ParamSlider, {
+    label: "Smooth",
+    value: params.smooth,
+    onChange: v => onParam('smooth', v),
+    unit: "%"
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "em-rail__section"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-panelhead"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "em-panelhead__title"
+  }, "De-reverb"), /*#__PURE__*/React.createElement(Switch, {
+    checked: !bypassDereverb,
+    onChange: v => setBypassDereverb(!v)
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "em-sliders"
+  }, /*#__PURE__*/React.createElement(ParamSlider, {
+    label: "Room Size",
+    value: params.room,
+    onChange: v => onParam('room', v),
+    unit: "%"
+  }), /*#__PURE__*/React.createElement(ParamSlider, {
+    label: "Tail Length",
+    value: params.tail,
+    onChange: v => onParam('tail', v),
+    min: 0,
+    max: 800,
+    unit: " ms"
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "em-rail__section"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-panelhead"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "em-panelhead__title"
+  }, "Output")), /*#__PURE__*/React.createElement("div", {
+    className: "em-sliders"
+  }, /*#__PURE__*/React.createElement(ParamSlider, {
+    label: "Voice Gain",
+    value: params.voiceGain,
+    onChange: v => onParam('voiceGain', v),
+    min: -24,
+    max: 24,
+    unit: " dB"
+  }), /*#__PURE__*/React.createElement(ParamSlider, {
+    label: "HP Filter",
+    value: params.hp,
+    onChange: v => onParam('hp', v),
+    min: 20,
+    max: 600,
+    unit: " Hz"
+  }), /*#__PURE__*/React.createElement(ParamSlider, {
+    label: "LP Filter",
+    value: params.lp,
+    onChange: v => onParam('lp', v),
+    min: 4000,
+    max: 20000,
+    unit: " Hz"
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "em-rail__footer"
+  }, /*#__PURE__*/React.createElement(Select, {
+    options: ['WAV 24-bit / 48kHz', 'WAV 32-bit float', 'FLAC', 'MP3 320kbps'],
+    style: {
+      marginBottom: 10
+    }
+  }), /*#__PURE__*/React.createElement(Button, {
+    variant: "primary",
+    block: true
+  }, "Export Voice Stem"), /*#__PURE__*/React.createElement(Button, {
+    variant: "outline",
+    block: true,
+    style: {
+      marginTop: 8
+    }
+  }, "Export Noise Stem")));
+}
+window.ControlRail = ControlRail;
+})(); } catch (e) { __ds_ns.__errors.push({ path: "ui_kits/engineer/ControlRail.jsx", error: String((e && e.message) || e) }); }
+
+// ui_kits/engineer/Icons.jsx
+try { (() => {
+function _extends() { return _extends = Object.assign ? Object.assign.bind() : function (n) { for (var e = 1; e < arguments.length; e++) { var t = arguments[e]; for (var r in t) ({}).hasOwnProperty.call(t, r) && (n[r] = t[r]); } return n; }, _extends.apply(null, arguments); }
+// VoiceIsolate Pro — shared inline icons (thin 2px stroke, lucide-style).
+// Exported to window for the UI-kit babel scripts.
+function VipIcon({
+  d,
+  fill,
+  size = 18,
+  ...p
+}) {
+  return /*#__PURE__*/React.createElement("svg", _extends({
+    viewBox: "0 0 24 24",
+    width: size,
+    height: size,
+    fill: fill ? 'currentColor' : 'none',
+    stroke: fill ? 'none' : 'currentColor',
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, p), d);
+}
+const Icons = {
+  Mic: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
+      x: "9",
+      y: "2",
+      width: "6",
+      height: "12",
+      rx: "3"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"
+    }))
+  })),
+  Play: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    fill: true,
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M7 4v16l13-8z"
+    })
+  })),
+  Pause: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    fill: true,
+    d: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
+      x: "6",
+      y: "4",
+      width: "4",
+      height: "16",
+      rx: "1"
+    }), /*#__PURE__*/React.createElement("rect", {
+      x: "14",
+      y: "4",
+      width: "4",
+      height: "16",
+      rx: "1"
+    }))
+  })),
+  Stop: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    fill: true,
+    d: /*#__PURE__*/React.createElement("rect", {
+      x: "5",
+      y: "5",
+      width: "14",
+      height: "14",
+      rx: "2"
+    })
+  })),
+  SkipBack: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    fill: true,
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M18 5v14l-9-7zM7 5v14H5V5z"
+    })
+  })),
+  SkipFwd: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    fill: true,
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M6 5v14l9-7zM17 5v14h2V5z"
+    })
+  })),
+  Upload: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("path", {
+      d: "M12 16V4M7 9l5-5 5 5"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"
+    }))
+  })),
+  Download: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("path", {
+      d: "M12 4v12M7 11l5 5 5-5"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M4 20h16"
+    }))
+  })),
+  Scissors: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("circle", {
+      cx: "6",
+      cy: "6",
+      r: "3"
+    }), /*#__PURE__*/React.createElement("circle", {
+      cx: "6",
+      cy: "18",
+      r: "3"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M20 4 8.5 15.5M14.5 14.5 20 20M8.5 8.5 12 12"
+    }))
+  })),
+  Layers: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M12 2 2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
+    })
+  })),
+  Gear: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("circle", {
+      cx: "12",
+      cy: "12",
+      r: "3"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"
+    }))
+  })),
+  Shield: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5z"
+    })
+  })),
+  Lock: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
+      x: "4",
+      y: "11",
+      width: "16",
+      height: "10",
+      rx: "2"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M8 11V7a4 4 0 0 1 8 0v4"
+    }))
+  })),
+  Cpu: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
+      x: "6",
+      y: "6",
+      width: "12",
+      height: "12",
+      rx: "1"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"
+    }))
+  })),
+  Zap: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M13 2 4 14h7l-1 8 10-12h-7z"
+    })
+  })),
+  Wave: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M2 12h2M6 8v8M10 4v16M14 7v10M18 9v6M22 12h0"
+    })
+  })),
+  Folder: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+    })
+  })),
+  Check: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M20 6 9 17l-5-5"
+    })
+  })),
+  Chevron: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "m9 18 6-6-6-6"
+    })
+  })),
+  Sliders: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"
+    })
+  })),
+  Volume: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("path", {
+      d: "M11 5 6 9H2v6h4l5 4z"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M19 5a9 9 0 0 1 0 14M16 8a5 5 0 0 1 0 8"
+    }))
+  })),
+  Headphones: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M3 14v-2a9 9 0 0 1 18 0v2M3 14a2 2 0 0 1 2 2v2a2 2 0 0 1-4 0v-2a2 2 0 0 1 2-2M21 14a2 2 0 0 0-2 2v2a2 2 0 0 0 4 0v-2a2 2 0 0 0-2-2"
+    })
+  })),
+  Waveform2: p => /*#__PURE__*/React.createElement(VipIcon, _extends({}, p, {
+    d: /*#__PURE__*/React.createElement("path", {
+      d: "M2 10v4M6 6v12M10 9v6M14 3v18M18 7v10M22 10v4"
+    })
+  }))
+};
+if (typeof window !== 'undefined') window.Icons = Icons;
+})(); } catch (e) { __ds_ns.__errors.push({ path: "ui_kits/engineer/Icons.jsx", error: String((e && e.message) || e) }); }
+
+// ui_kits/engineer/StemPanel.jsx
+try { (() => {
+// Engineer Mode — stem panel (voice / noise comparison strips).
+function StemPanel({
+  playing
+}) {
+  const {
+    LevelMeter,
+    Badge,
+    IconButton,
+    Switch
+  } = window.VoiceIsolateProDesignSystem_38f745;
+  const {
+    Play,
+    Volume,
+    Scissors
+  } = window.Icons;
+  const stems = [{
+    id: 'voice',
+    label: 'Voice',
+    color: 'var(--stem-voice)',
+    l: playing ? 72 : 5,
+    r: playing ? 63 : 4,
+    lp: 88,
+    rp: 81,
+    badge: {
+      v: 'accent',
+      t: 'WAV'
+    }
+  }, {
+    id: 'noise',
+    label: 'Removed Noise',
+    color: 'var(--stem-noise)',
+    l: playing ? 34 : 2,
+    r: playing ? 30 : 2,
+    lp: 55,
+    rp: 52,
+    badge: {
+      v: 'default',
+      t: 'WAV'
+    }
+  }];
+  const [muted, setMuted] = React.useState({
+    voice: false,
+    noise: false
+  });
+  return /*#__PURE__*/React.createElement("div", {
+    className: "em-stems"
+  }, stems.map(s => /*#__PURE__*/React.createElement("div", {
+    key: s.id,
+    className: "em-stem"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-stem__head"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "em-stem__dot",
+    style: {
+      background: s.color
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "em-stem__name"
+  }, s.label), /*#__PURE__*/React.createElement(Badge, {
+    variant: s.badge.v
+  }, s.badge.t, " \xB7 48kHz")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 6,
+      alignItems: 'center'
+    }
+  }, /*#__PURE__*/React.createElement(IconButton, {
+    label: "Solo",
+    size: "sm"
+  }, /*#__PURE__*/React.createElement(Volume, {
+    size: 13
+  })), /*#__PURE__*/React.createElement(Switch, {
+    checked: !muted[s.id],
+    onChange: v => setMuted(p => ({
+      ...p,
+      [s.id]: !v
+    }))
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "em-stem__meters"
+  }, /*#__PURE__*/React.createElement(LevelMeter, {
+    label: "L",
+    value: muted[s.id] ? 0 : s.l,
+    peak: muted[s.id] ? 0 : s.lp
+  }), /*#__PURE__*/React.createElement(LevelMeter, {
+    label: "R",
+    value: muted[s.id] ? 0 : s.r,
+    peak: muted[s.id] ? 0 : s.rp
+  })))));
+}
+window.StemPanel = StemPanel;
+})(); } catch (e) { __ds_ns.__errors.push({ path: "ui_kits/engineer/StemPanel.jsx", error: String((e && e.message) || e) }); }
+
+// ui_kits/engineer/TitleBar.jsx
+try { (() => {
+// Engineer Mode — title bar (app chrome). Reads window.Icons + DS components.
+function TitleBar({
+  onExport,
+  processed
+}) {
+  const {
+    Badge,
+    StatusPill,
+    IconButton
+  } = window.VoiceIsolateProDesignSystem_38f745;
+  const {
+    Gear,
+    Headphones
+  } = window.Icons;
+  return /*#__PURE__*/React.createElement("header", {
+    className: "em-titlebar"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-brand"
+  }, /*#__PURE__*/React.createElement("svg", {
+    className: "em-mark",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "#ef4444",
+    strokeWidth: "2.5",
+    strokeLinecap: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M12 1v22M8 5v14M4 9v6M16 5v14M20 9v6"
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "em-brand__txt"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "em-brand__name"
+  }, "VoiceIsolate"), /*#__PURE__*/React.createElement("span", {
+    className: "em-brand__pro"
+  }, "PRO")), /*#__PURE__*/React.createElement("span", {
+    className: "em-brand__div"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "em-brand__mode"
+  }, "Engineer Mode")), /*#__PURE__*/React.createElement("div", {
+    className: "em-titlebar__center"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "vip-badge"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "vip-badge__dot",
+    style: {
+      color: 'var(--ok)'
+    }
+  }), "session_04.wav"), /*#__PURE__*/React.createElement("span", {
+    className: "em-meta vip-mono"
+  }, "48kHz \xB7 24-bit \xB7 stereo \xB7 04:12")), /*#__PURE__*/React.createElement("div", {
+    className: "em-titlebar__right"
+  }, /*#__PURE__*/React.createElement(StatusPill, {
+    state: "ready"
+  }, "Engine Ready"), /*#__PURE__*/React.createElement("span", {
+    className: "vip-pill",
+    "data-state": "ready",
+    title: "All processing is local",
+    style: {
+      color: 'var(--ok)'
+    }
+  }, "Local \xB7 No Upload"), /*#__PURE__*/React.createElement(IconButton, {
+    label: "Monitor"
+  }, /*#__PURE__*/React.createElement(Headphones, {
+    size: 16
+  })), /*#__PURE__*/React.createElement(IconButton, {
+    label: "Settings"
+  }, /*#__PURE__*/React.createElement(Gear, {
+    size: 16
+  }))));
+}
+window.TitleBar = TitleBar;
+})(); } catch (e) { __ds_ns.__errors.push({ path: "ui_kits/engineer/TitleBar.jsx", error: String((e && e.message) || e) }); }
+
+// ui_kits/engineer/Transport.jsx
+try { (() => {
+// Engineer Mode — transport bar (play controls + timecode + meters).
+function Transport({
+  playing,
+  onToggle,
+  time = '00:01:54',
+  total = '00:04:12',
+  pct = 46
+}) {
+  const {
+    IconButton,
+    LevelMeter
+  } = window.VoiceIsolateProDesignSystem_38f745;
+  const {
+    Play,
+    Pause,
+    Stop,
+    SkipBack,
+    SkipFwd
+  } = window.Icons;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "em-transport"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "em-transport__controls"
+  }, /*#__PURE__*/React.createElement(IconButton, {
+    label: "Restart"
+  }, /*#__PURE__*/React.createElement(SkipBack, {
+    size: 15
+  })), /*#__PURE__*/React.createElement("button", {
+    className: "em-playbtn",
+    onClick: onToggle,
+    "aria-label": playing ? 'Pause' : 'Play'
+  }, playing ? /*#__PURE__*/React.createElement(Pause, {
+    size: 20
+  }) : /*#__PURE__*/React.createElement(Play, {
+    size: 20
+  })), /*#__PURE__*/React.createElement(IconButton, {
+    label: "Stop"
+  }, /*#__PURE__*/React.createElement(Stop, {
+    size: 14
+  })), /*#__PURE__*/React.createElement(IconButton, {
+    label: "Skip"
+  }, /*#__PURE__*/React.createElement(SkipFwd, {
+    size: 15
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "em-transport__time vip-mono"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "em-time-now"
+  }, time), /*#__PURE__*/React.createElement("span", {
+    className: "em-time-sep"
+  }, "/"), /*#__PURE__*/React.createElement("span", {
+    className: "em-time-total"
+  }, total)), /*#__PURE__*/React.createElement("div", {
+    className: "em-transport__meters"
+  }, /*#__PURE__*/React.createElement(LevelMeter, {
+    label: "L",
+    value: playing ? 68 : 4,
+    peak: 84
+  }), /*#__PURE__*/React.createElement(LevelMeter, {
+    label: "R",
+    value: playing ? 61 : 3,
+    peak: 79
+  })));
+}
+window.Transport = Transport;
+})(); } catch (e) { __ds_ns.__errors.push({ path: "ui_kits/engineer/Transport.jsx", error: String((e && e.message) || e) }); }
+
+__ds_ns.LevelMeter = __ds_scope.LevelMeter;
+
+__ds_ns.ParamSlider = __ds_scope.ParamSlider;
+
+__ds_ns.ProcessLoader = __ds_scope.ProcessLoader;
+
+__ds_ns.Spectrogram = __ds_scope.Spectrogram;
+
+__ds_ns.Waveform = __ds_scope.Waveform;
+
+__ds_ns.Badge = __ds_scope.Badge;
+
+__ds_ns.Button = __ds_scope.Button;
+
+__ds_ns.Card = __ds_scope.Card;
+
+__ds_ns.IconButton = __ds_scope.IconButton;
+
+__ds_ns.Input = __ds_scope.Input;
+
+__ds_ns.Select = __ds_scope.Select;
+
+__ds_ns.StatusPill = __ds_scope.StatusPill;
+
+__ds_ns.Switch = __ds_scope.Switch;
+
+})();
+
+</script>
+
+<!-- Babel Standalone -->
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+<!-- All components + App in one Babel transpile -->
+
+<script type="text/babel">
+
+// ── Icons ──────────────────────────────────────────────────────
+// VoiceIsolate Pro — shared inline icons (thin 2px stroke, lucide-style).
+// Exported to window for the UI-kit babel scripts.
+function VipIcon({ d, fill, size = 18, ...p }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size}
+         fill={fill ? 'currentColor' : 'none'}
+         stroke={fill ? 'none' : 'currentColor'}
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}>
+      {d}
+    </svg>
+  );
+}
+
+const Icons = {
+  Mic:      (p) => <VipIcon {...p} d={<><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/></>} />,
+  Play:     (p) => <VipIcon {...p} fill d={<path d="M7 4v16l13-8z"/>} />,
+  Pause:    (p) => <VipIcon {...p} fill d={<><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></>} />,
+  Stop:     (p) => <VipIcon {...p} fill d={<rect x="5" y="5" width="14" height="14" rx="2"/>} />,
+  SkipBack: (p) => <VipIcon {...p} fill d={<path d="M18 5v14l-9-7zM7 5v14H5V5z"/>} />,
+  SkipFwd:  (p) => <VipIcon {...p} fill d={<path d="M6 5v14l9-7zM17 5v14h2V5z"/>} />,
+  Upload:   (p) => <VipIcon {...p} d={<><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></>} />,
+  Download: (p) => <VipIcon {...p} d={<><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 20h16"/></>} />,
+  Scissors: (p) => <VipIcon {...p} d={<><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.5 15.5M14.5 14.5 20 20M8.5 8.5 12 12"/></>} />,
+  Layers:   (p) => <VipIcon {...p} d={<path d="M12 2 2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>} />,
+  Gear:     (p) => <VipIcon {...p} d={<><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></>} />,
+  Shield:   (p) => <VipIcon {...p} d={<path d="M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5z"/>} />,
+  Lock:     (p) => <VipIcon {...p} d={<><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></>} />,
+  Cpu:      (p) => <VipIcon {...p} d={<><rect x="6" y="6" width="12" height="12" rx="1"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3"/></>} />,
+  Zap:      (p) => <VipIcon {...p} d={<path d="M13 2 4 14h7l-1 8 10-12h-7z"/>} />,
+  Wave:     (p) => <VipIcon {...p} d={<path d="M2 12h2M6 8v8M10 4v16M14 7v10M18 9v6M22 12h0"/>} />,
+  Folder:   (p) => <VipIcon {...p} d={<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>} />,
+  Check:    (p) => <VipIcon {...p} d={<path d="M20 6 9 17l-5-5"/>} />,
+  Chevron:  (p) => <VipIcon {...p} d={<path d="m9 18 6-6-6-6"/>} />,
+  Sliders:  (p) => <VipIcon {...p} d={<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>} />,
+  Volume:   (p) => <VipIcon {...p} d={<><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M19 5a9 9 0 0 1 0 14M16 8a5 5 0 0 1 0 8"/></>} />,
+  Headphones:(p)=> <VipIcon {...p} d={<path d="M3 14v-2a9 9 0 0 1 18 0v2M3 14a2 2 0 0 1 2 2v2a2 2 0 0 1-4 0v-2a2 2 0 0 1 2-2M21 14a2 2 0 0 0-2 2v2a2 2 0 0 0 4 0v-2a2 2 0 0 0-2-2"/>} />,
+  Waveform2:(p) => <VipIcon {...p} d={<path d="M2 10v4M6 6v12M10 9v6M14 3v18M18 7v10M22 10v4"/>} />,
+  Search:   (p) => <VipIcon {...p} d={<><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></>} />,
+  Maximize: (p) => <VipIcon {...p} d={<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>} />,
+  Save:     (p) => <VipIcon {...p} d={<><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></>} />,
+  Refresh:  (p) => <VipIcon {...p} d={<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/>} />,
+  X:        (p) => <VipIcon {...p} d={<path d="M18 6 6 18M6 6l12 12"/>} />,
+  Activity: (p) => <VipIcon {...p} d={<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>} />,
+  Eye:      (p) => <VipIcon {...p} d={<><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></>} />,
+};
+
+if (typeof window !== 'undefined') window.Icons = Icons;
+
+// ── Tweaks Panel ───────────────────────────────────────────────
+// @ds-adherence-ignore -- omelette starter scaffold (raw elements/hex/px by design)
+
+/* BEGIN USAGE */
+// tweaks-panel.jsx
+// Reusable Tweaks shell + form-control helpers.
+// Exports (to window): useTweaks, TweaksPanel, TweakSection, TweakRow, TweakSlider,
+//   TweakToggle, TweakRadio, TweakSelect, TweakText, TweakNumber, TweakColor, TweakButton.
+//
+// Owns the host protocol (listens for __activate_edit_mode / __deactivate_edit_mode,
+// posts __edit_mode_available / __edit_mode_set_keys / __edit_mode_dismissed) so
+// individual prototypes don't re-roll it. Ships a consistent set of controls so you
+// don't hand-draw <input type="range">, segmented radios, steppers, etc.
+//
+// Usage (in an HTML file that loads React + Babel):
+//
+//   const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+//     "primaryColor": "#D97757",
+//     "palette": ["#D97757", "#29261b", "#f6f4ef"],
+//     "fontSize": 16,
+//     "density": "regular",
+//     "dark": false
+//   }/*EDITMODE-END*/;
+//
+//   function App() {
+//     const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+//     return (
+//       <div style={{ fontSize: t.fontSize, color: t.primaryColor }}>
+//         Hello
+//         <TweaksPanel>
+//           <TweakSection label="Typography" />
+//           <TweakSlider label="Font size" value={t.fontSize} min={10} max={32} unit="px"
+//                        onChange={(v) => setTweak('fontSize', v)} />
+//           <TweakRadio  label="Density" value={t.density}
+//                        options={['compact', 'regular', 'comfy']}
+//                        onChange={(v) => setTweak('density', v)} />
+//           <TweakSection label="Theme" />
+//           <TweakColor  label="Primary" value={t.primaryColor}
+//                        options={['#D97757', '#2A6FDB', '#1F8A5B', '#7A5AE0']}
+//                        onChange={(v) => setTweak('primaryColor', v)} />
+//           <TweakColor  label="Palette" value={t.palette}
+//                        options={[['#D97757', '#29261b', '#f6f4ef'],
+//                                  ['#475569', '#0f172a', '#f1f5f9']]}
+//                        onChange={(v) => setTweak('palette', v)} />
+//           <TweakToggle label="Dark mode" value={t.dark}
+//                        onChange={(v) => setTweak('dark', v)} />
+//         </TweaksPanel>
+//       </div>
+//     );
+//   }
+//
+// TweakRadio is the segmented control for 2–3 short options (auto-falls-back to
+// TweakSelect past ~16/~10 chars per label); reach for TweakSelect directly when
+// options are many or long. For color tweaks always curate 3-4 options rather than
+// a free picker; an option can also be a whole 2–5 color palette (the stored value
+// is the array). The Tweak* controls are a floor, not a ceiling — build custom
+// controls inside the panel if a tweak calls for UI they don't cover.
+/* END USAGE */
+// ─────────────────────────────────────────────────────────────────────────────
+
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    transform:scale(var(--dc-inv-zoom,1));transform-origin:bottom right;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-body::-webkit-scrollbar{width:8px}
+  .twk-body::-webkit-scrollbar-track{background:transparent;margin:2px}
+  .twk-body::-webkit-scrollbar-thumb{background:rgba(0,0,0,.15);border-radius:4px;
+    border:2px solid transparent;background-clip:content-box}
+  .twk-body::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.25);
+    border:2px solid transparent;background-clip:content-box}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;
+    color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+
+  .twk-field{appearance:none;box-sizing:border-box;width:100%;min-width:0;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-field:focus{border-color:rgba(0,0,0,.25);background:rgba(255,255,255,.85)}
+  select.twk-field{padding-right:22px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.5)' d='M0 0h10L5 6z'/></svg>");
+    background-repeat:no-repeat;background-position:right 8px center}
+
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg.dragging .twk-seg-thumb{transition:none}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
+    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2;
+    overflow-wrap:anywhere}
+
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+
+  .twk-num{display:flex;align-items:center;box-sizing:border-box;min-width:0;height:26px;padding:0 0 0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;background:rgba(255,255,255,.6)}
+  .twk-num-lbl{font-weight:500;color:rgba(41,38,27,.6);cursor:ew-resize;
+    user-select:none;padding-right:8px}
+  .twk-num input{flex:1;min-width:0;height:100%;border:0;background:transparent;
+    font:inherit;font-variant-numeric:tabular-nums;text-align:right;padding:0 8px 0 0;
+    outline:none;color:inherit;-moz-appearance:textfield}
+  .twk-num input::-webkit-inner-spin-button,.twk-num input::-webkit-outer-spin-button{
+    -webkit-appearance:none;margin:0}
+  .twk-num-unit{padding-right:8px;color:rgba(41,38,27,.45)}
+
+  .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+  .twk-btn:hover{background:rgba(0,0,0,.88)}
+  .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
+  .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
+
+  .twk-swatch{appearance:none;-webkit-appearance:none;width:56px;height:22px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:6px;padding:0;cursor:default;
+    background:transparent;flex-shrink:0}
+  .twk-swatch::-webkit-color-swatch-wrapper{padding:0}
+  .twk-swatch::-webkit-color-swatch{border:0;border-radius:5.5px}
+  .twk-swatch::-moz-color-swatch{border:0;border-radius:5.5px}
+
+  .twk-chips{display:flex;gap:6px}
+  .twk-chip{position:relative;appearance:none;flex:1;min-width:0;height:46px;
+    padding:0;border:0;border-radius:6px;overflow:hidden;cursor:default;
+    box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 1px 2px rgba(0,0,0,.06);
+    transition:transform .12s cubic-bezier(.3,.7,.4,1),box-shadow .12s}
+  .twk-chip:hover{transform:translateY(-1px);
+    box-shadow:0 0 0 .5px rgba(0,0,0,.18),0 4px 10px rgba(0,0,0,.12)}
+  .twk-chip[data-on="1"]{box-shadow:0 0 0 1.5px rgba(0,0,0,.85),
+    0 2px 6px rgba(0,0,0,.15)}
+  .twk-chip>span{position:absolute;top:0;bottom:0;right:0;width:34%;
+    display:flex;flex-direction:column;box-shadow:-1px 0 0 rgba(0,0,0,.1)}
+  .twk-chip>span>i{flex:1;box-shadow:0 -1px 0 rgba(0,0,0,.1)}
+  .twk-chip>span>i:first-child{box-shadow:none}
+  .twk-chip svg{position:absolute;top:6px;left:6px;width:13px;height:13px;
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.3))}
+`;
+
+// ── useTweaks ───────────────────────────────────────────────────────────────
+// Single source of truth for tweak values. setTweak persists via the host
+// (__edit_mode_set_keys → host rewrites the EDITMODE block on disk).
+function useTweaks(defaults) {
+  const [values, setValues] = React.useState(defaults);
+  // Accepts either setTweak('key', value) or setTweak({ key: value, ... }) so a
+  // useState-style call doesn't write a "[object Object]" key into the persisted
+  // JSON block.
+  const setTweak = React.useCallback((keyOrEdits, val) => {
+    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
+      ? keyOrEdits : { [keyOrEdits]: val };
+    setValues((prev) => ({ ...prev, ...edits }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
+    // Same-window signal so in-page listeners (deck-stage rail thumbnails)
+    // can react — the parent message only reaches the host, not peers.
+    window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
+  }, []);
+  return [values, setTweak];
+}
+
+// ── TweaksPanel ─────────────────────────────────────────────────────────────
+// Floating shell. Registers the protocol listener BEFORE announcing
+// availability — if the announce ran first, the host's activate could land
+// before our handler exists and the toolbar toggle would silently no-op.
+// The close button posts __edit_mode_dismissed so the host's toolbar toggle
+// flips off in lockstep; the host echoes __deactivate_edit_mode back which
+// is what actually hides the panel.
+function TweaksPanel({ title = 'Tweaks', children }) {
+  const [open, setOpen] = React.useState(false);
+  const dragRef = React.useRef(null);
+  const offsetRef = React.useRef({ x: 16, y: 16 });
+  const PAD = 16;
+
+  const clampToViewport = React.useCallback(() => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    offsetRef.current = {
+      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+    };
+    panel.style.right = offsetRef.current.x + 'px';
+    panel.style.bottom = offsetRef.current.y + 'px';
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    clampToViewport();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', clampToViewport);
+      return () => window.removeEventListener('resize', clampToViewport);
+    }
+    const ro = new ResizeObserver(clampToViewport);
+    ro.observe(document.documentElement);
+    return () => ro.disconnect();
+  }, [open, clampToViewport]);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const t = e?.data?.type;
+      if (t === '__activate_edit_mode') setOpen(true);
+      else if (t === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const dismiss = () => {
+    setOpen(false);
+    window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+  };
+
+  const onDragStart = (e) => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+    const move = (ev) => {
+      offsetRef.current = {
+        x: startRight - (ev.clientX - sx),
+        y: startBottom - (ev.clientY - sy),
+      };
+      clampToViewport();
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  if (!open) return null;
+  return (
+    <>
+      <style>{__TWEAKS_STYLE}</style>
+      <div ref={dragRef} className="twk-panel" data-omelette-chrome=""
+           style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+        <div className="twk-hd" onMouseDown={onDragStart}>
+          <b>{title}</b>
+          <button className="twk-x" aria-label="Close tweaks"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={dismiss}>✕</button>
+        </div>
+        <div className="twk-body">
+          {children}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Layout helpers ──────────────────────────────────────────────────────────
+
+function TweakSection({ label, children }) {
+  return (
+    <>
+      <div className="twk-sect">{label}</div>
+      {children}
+    </>
+  );
+}
+
+function TweakRow({ label, value, children, inline = false }) {
+  return (
+    <div className={inline ? 'twk-row twk-row-h' : 'twk-row'}>
+      <div className="twk-lbl">
+        <span>{label}</span>
+        {value != null && <span className="twk-val">{value}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ── Controls ────────────────────────────────────────────────────────────────
+
+function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+  return (
+    <TweakRow label={label} value={`${value}${unit}`}>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+             value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </TweakRow>
+  );
+}
+
+function TweakToggle({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
+              role="switch" aria-checked={!!value}
+              onClick={() => onChange(!value)}><i /></button>
+    </div>
+  );
+}
+
+function TweakRadio({ label, value, options, onChange }) {
+  const trackRef = React.useRef(null);
+  const [dragging, setDragging] = React.useState(false);
+  // The active value is read by pointer-move handlers attached for the lifetime
+  // of a drag — ref it so a stale closure doesn't fire onChange for every move.
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
+
+  // Segments wrap mid-word once per-segment width runs out. The track is
+  // ~248px (280 panel − 28 body pad − 4 seg pad), each button loses 12px
+  // to its own padding, and 11.5px system-ui averages ~6.3px/char — so 2
+  // options fit ~16 chars each, 3 fit ~10. Past that (or >3 options), fall
+  // back to a dropdown rather than wrap.
+  const labelLen = (o) => String(typeof o === 'object' ? o.label : o).length;
+  const maxLen = options.reduce((m, o) => Math.max(m, labelLen(o)), 0);
+  const fitsAsSegments = maxLen <= ({ 2: 16, 3: 10 }[options.length] ?? 0);
+  if (!fitsAsSegments) {
+    // <select> emits strings — map back to the original option value so the
+    // fallback stays type-preserving (numbers, booleans) like the segment path.
+    const resolve = (s) => {
+      const m = options.find((o) => String(typeof o === 'object' ? o.value : o) === s);
+      return m === undefined ? s : typeof m === 'object' ? m.value : m;
+    };
+    return <TweakSelect label={label} value={value} options={options}
+                        onChange={(s) => onChange(resolve(s))} />;
+  }
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+  const n = opts.length;
+
+  const segAt = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const inner = r.width - 4;
+    const i = Math.floor(((clientX - r.left - 2) / inner) * n);
+    return opts[Math.max(0, Math.min(n - 1, i))].value;
+  };
+
+  const onPointerDown = (e) => {
+    setDragging(true);
+    const v0 = segAt(e.clientX);
+    if (v0 !== valueRef.current) onChange(v0);
+    const move = (ev) => {
+      if (!trackRef.current) return;
+      const v = segAt(ev.clientX);
+      if (v !== valueRef.current) onChange(v);
+    };
+    const up = () => {
+      setDragging(false);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  return (
+    <TweakRow label={label}>
+      <div ref={trackRef} role="radiogroup" onPointerDown={onPointerDown}
+           className={dragging ? 'twk-seg dragging' : 'twk-seg'}>
+        <div className="twk-seg-thumb"
+             style={{ left: `calc(2px + ${idx} * (100% - 4px) / ${n})`,
+                      width: `calc((100% - 4px) / ${n})` }} />
+        {opts.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={o.value === value}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakSelect({ label, value, options, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => {
+          const v = typeof o === 'object' ? o.value : o;
+          const l = typeof o === 'object' ? o.label : o;
+          return <option key={v} value={v}>{l}</option>;
+        })}
+      </select>
+    </TweakRow>
+  );
+}
+
+function TweakText({ label, value, placeholder, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <input className="twk-field" type="text" value={value} placeholder={placeholder}
+             onChange={(e) => onChange(e.target.value)} />
+    </TweakRow>
+  );
+}
+
+function TweakNumber({ label, value, min, max, step = 1, unit = '', onChange }) {
+  const clamp = (n) => {
+    if (min != null && n < min) return min;
+    if (max != null && n > max) return max;
+    return n;
+  };
+  const startRef = React.useRef({ x: 0, val: 0 });
+  const onScrubStart = (e) => {
+    e.preventDefault();
+    startRef.current = { x: e.clientX, val: value };
+    const decimals = (String(step).split('.')[1] || '').length;
+    const move = (ev) => {
+      const dx = ev.clientX - startRef.current.x;
+      const raw = startRef.current.val + dx * step;
+      const snapped = Math.round(raw / step) * step;
+      onChange(clamp(Number(snapped.toFixed(decimals))));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <div className="twk-num">
+      <span className="twk-num-lbl" onPointerDown={onScrubStart}>{label}</span>
+      <input type="number" value={value} min={min} max={max} step={step}
+             onChange={(e) => onChange(clamp(Number(e.target.value)))} />
+      {unit && <span className="twk-num-unit">{unit}</span>}
+    </div>
+  );
+}
+
+// Relative-luminance contrast pick — checkmarks drawn over a swatch need to
+// read on both #111 and #fafafa without per-option configuration. Hex input
+// only (#rgb / #rrggbb); named or rgb()/hsl() colors fall through to "light".
+function __twkIsLight(hex) {
+  const h = String(hex).replace('#', '');
+  const x = h.length === 3 ? h.replace(/./g, (c) => c + c) : h.padEnd(6, '0');
+  const n = parseInt(x.slice(0, 6), 16);
+  if (Number.isNaN(n)) return true;
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return r * 299 + g * 587 + b * 114 > 148000;
+}
+
+const __TwkCheck = ({ light }) => (
+  <svg viewBox="0 0 14 14" aria-hidden="true">
+    <path d="M3 7.2 5.8 10 11 4.2" fill="none" strokeWidth="2.2"
+          strokeLinecap="round" strokeLinejoin="round"
+          stroke={light ? 'rgba(0,0,0,.78)' : '#fff'} />
+  </svg>
+);
+
+// TweakColor — curated color/palette picker. Each option is either a single
+// hex string or an array of 1-5 hex strings; the card adapts — a lone color
+// renders solid, a palette renders colors[0] as the hero (left ~2/3) with the
+// rest stacked in a sharp column on the right. onChange emits the
+// option in the shape it was passed (string stays string, array stays array).
+// Without options it falls back to the native color input for back-compat.
+function TweakColor({ label, value, options, onChange }) {
+  if (!options || !options.length) {
+    return (
+      <div className="twk-row twk-row-h">
+        <div className="twk-lbl"><span>{label}</span></div>
+        <input type="color" className="twk-swatch" value={value}
+               onChange={(e) => onChange(e.target.value)} />
+      </div>
+    );
+  }
+  // Native <input type=color> emits lowercase hex per the HTML spec, so
+  // compare case-insensitively. String() guards JSON.stringify(undefined),
+  // which returns the primitive undefined (no .toLowerCase).
+  const key = (o) => String(JSON.stringify(o)).toLowerCase();
+  const cur = key(value);
+  return (
+    <TweakRow label={label}>
+      <div className="twk-chips" role="radiogroup">
+        {options.map((o, i) => {
+          const colors = Array.isArray(o) ? o : [o];
+          const [hero, ...rest] = colors;
+          const sup = rest.slice(0, 4);
+          const on = key(o) === cur;
+          return (
+            <button key={i} type="button" className="twk-chip" role="radio"
+                    aria-checked={on} data-on={on ? '1' : '0'}
+                    aria-label={colors.join(', ')} title={colors.join(' · ')}
+                    style={{ background: hero }}
+                    onClick={() => onChange(o)}>
+              {sup.length > 0 && (
+                <span>
+                  {sup.map((c, j) => <i key={j} style={{ background: c }} />)}
+                </span>
+              )}
+              {on && <__TwkCheck light={__twkIsLight(hero)} />}
+            </button>
+          );
+        })}
+      </div>
+    </TweakRow>
+  );
+}
+
+function TweakButton({ label, onClick, secondary = false }) {
+  return (
+    <button type="button" className={secondary ? 'twk-btn secondary' : 'twk-btn'}
+            onClick={onClick}>{label}</button>
+  );
+}
+
+Object.assign(window, {
+  useTweaks, TweaksPanel, TweakSection, TweakRow,
+  TweakSlider, TweakToggle, TweakRadio, TweakSelect,
+  TweakText, TweakNumber, TweakColor, TweakButton,
+});
+
+// ── Theme Dock ─────────────────────────────────────────────────
+// ThemeDock.jsx — fixed bottom-right color-theme switcher (5 DS themes).
+const THEMES = [
+  { id: 'editorial', swatch: '#c41a1a', title: 'Editorial Light' },
+  { id: 'studio', swatch: '#141322', title: 'Studio Dark' },
+  { id: 'bone', swatch: '#e8e2d8', ring: true, title: 'Bone' },
+  { id: 'signal', swatch: '#4a8fff', title: 'Signal' },
+  { id: 'midnight', swatch: '#5a0a0a', title: 'Midnight' },
+];
+
+function ThemeDock({ theme, onTheme }) {
+  return (
+    <div className="ew-dock" role="group" aria-label="Color theme">
+      <span className="ew-dock__label">Theme</span>
+      {THEMES.map((t) => (
+        <button key={t.id} type="button" title={t.title}
+          className={`ew-dock__btn${theme === t.id ? ' ew-dock__btn--active' : ''}`}
+          style={{ background: t.swatch, borderColor: t.ring ? '#ccc' : undefined }}
+          onClick={() => onTheme(t.id)} aria-label={t.title} aria-pressed={theme === t.id} />
+      ))}
+    </div>
+  );
+}
+
+window.ThemeDock = ThemeDock;
+
+// ── Header ─────────────────────────────────────────────────────
+// Header.jsx — top app bar: brand, UI-scale stepper, session stat readouts.
+const { Button, Badge } = window.VoiceIsolateProDesignSystem_38f745;
+
+function HeaderStat({ label, value, accent }) {
+  return (
+    <div className="ew-hstat">
+      <span className="ew-hstat__v" style={accent ? null : { color: 'var(--text-hi)' }}>{value}</span>
+      <span className="ew-hstat__l">{label}</span>
+    </div>
+  );
+}
+
+function Header({ stats, scale, onScale, onSaveScale }) {
+  return (
+    <header className="ew-hdr">
+      <div className="ew-hdr__left">
+        <div className="ew-hdr__icon" aria-label="VoiceIsolate Pro">
+          <img className="ew-hdr__logo" src="assets/logo-still.jpeg" alt="VoiceIsolate Pro" />
+        </div>
+        <div>
+          <h1 className="ew-hdr__title">VoiceIsolate <em>Pro</em> <span className="ew-hdr__ver">v25.0</span></h1>
+          <div className="ew-hdr__badges">
+            <Badge variant="accent">Engineer Mode</Badge>
+            <Badge>32-Stage Deca-Pass</Badge>
+          </div>
+        </div>
+      </div>
+
+      <div className="ew-hdr__scale" role="group" aria-label="UI scale">
+        <button className="ew-step" type="button" aria-label="Decrease UI scale" onClick={() => onScale(-5)}>−</button>
+        <span className="ew-step__val">{scale}%</span>
+        <button className="ew-step" type="button" aria-label="Increase UI scale" onClick={() => onScale(5)}>+</button>
+        <button className="ew-step ew-step--text" type="button" onClick={onSaveScale}>Save</button>
+      </div>
+
+      <div className="ew-hdr__stats">
+        {stats.map((s) => <HeaderStat key={s.label} {...s} />)}
+      </div>
+
+      <div className="ew-hdr__actions">
+        <Button variant="outline" size="sm">How It Works</Button>
+      </div>
+    </header>
+  );
+}
+
+window.Header = Header;
+
+// ── Cockpit ────────────────────────────────────────────────────
+// Cockpit.jsx — launch diagnostics: engine subsystem pills + model cache.
+function EnginePill({ label, state }) {
+  return <span className="ew-engpill" data-state={state}>{label}</span>;
+}
+
+function Cockpit() {
+  const engine = [
+    { label: 'CTX', state: 'ready' },
+    { label: 'WORKLET', state: 'ready' },
+    { label: 'SAB', state: 'ready' },
+    { label: 'ML', state: 'loading' },
+    { label: 'NET', state: 'ready' },
+  ];
+  const models = [
+    { label: 'rnnoise', state: 'ready' },
+    { label: 'bsrnn_vocals', state: 'ready' },
+    { label: 'dtln_denoise', state: 'loading' },
+  ];
+  return (
+    <section className="ew-cockpit">
+      <div className="ew-card ew-cockpit__card">
+        <div className="ew-cockpit__row">
+          <div>
+            <div className="ew-kicker">Launch Diagnostics</div>
+            <div className="ew-cockpit__sub">Strictly local · WASM/ONNX inference · zero network requests</div>
+          </div>
+          <div className="ew-engpills" role="status" aria-label="Engine status">
+            {engine.map((e) => <EnginePill key={e.label} {...e} />)}
+          </div>
+        </div>
+        <div className="ew-cockpit__div" />
+        <div className="ew-cockpit__row">
+          <div>
+            <div className="ew-kicker">Model Cache &amp; Providers</div>
+            <div className="ew-engpills" style={{ marginTop: 6 }}>
+              {models.map((m) => <EnginePill key={m.label} {...m} />)}
+            </div>
+          </div>
+          <div className="ew-cockpit__sub" style={{ textAlign: 'right' }}>
+            CDN OK · 3 providers<br />
+            <span className="ew-mono ew-faint">cache 412 MB · ttl 24h</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+window.Cockpit = Cockpit;
+
+// ── Control Panel ──────────────────────────────────────────────
+// ControlPanel.jsx — left column: upload, presets, control search,
+// accordion DSP slider groups, action row, pipeline status, save row.
+const NS_CP = window.VoiceIsolateProDesignSystem_38f745;
+
+const DSP_GROUPS = [
+  { id: 'noise-reduction', name: 'Noise Reduction', open: true, params: [
+    { key: 'gateThresh', label: 'Gate Threshold', min: -80, max: 0, value: -40, unit: 'dB' },
+    { key: 'gateAttack', label: 'Gate Attack', min: 0, max: 100, value: 10, unit: 'ms' },
+    { key: 'gateRelease', label: 'Gate Release', min: 0, max: 500, value: 80, unit: 'ms' },
+    { key: 'nrReduction', label: 'NR Reduction', min: 0, max: 100, value: 85, unit: '%' },
+    { key: 'nrSmoothing', label: 'NR Smoothing', min: 0, max: 100, value: 60, unit: '%' },
+    { key: 'vadSens', label: 'VAD Sensitivity', min: 0, max: 100, value: 72, unit: '%' },
+  ]},
+  { id: 'eq', name: 'EQ (10 bands)', params: [
+    { key: 'eq80', label: '80 Hz', min: -18, max: 18, value: 2, unit: 'dB' },
+    { key: 'eq200', label: '200 Hz', min: -18, max: 18, value: 0, unit: 'dB' },
+    { key: 'eq500', label: '500 Hz', min: -18, max: 18, value: -1, unit: 'dB' },
+    { key: 'eq1k', label: '1 kHz', min: -18, max: 18, value: 3, unit: 'dB' },
+    { key: 'eq4k', label: '4 kHz', min: -18, max: 18, value: 1, unit: 'dB' },
+    { key: 'eq8k', label: '8 kHz', min: -18, max: 18, value: 0, unit: 'dB' },
+  ]},
+  { id: 'dynamics', name: 'Dynamics', params: [
+    { key: 'compThresh', label: 'Comp Threshold', min: -60, max: 0, value: -24, unit: 'dB' },
+    { key: 'compRatio', label: 'Comp Ratio', min: 1, max: 20, value: 4, format: (v) => v + ':1' },
+    { key: 'compAttack', label: 'Attack', min: 0, max: 200, value: 15, unit: 'ms' },
+  ]},
+  { id: 'spectral', name: 'Spectral', params: [
+    { key: 'specFloor', label: 'Spectral Floor', min: 0, max: 100, value: 20, unit: '%' },
+    { key: 'harmBoost', label: 'Harmonics Boost', min: 0, max: 100, value: 0, unit: '%' },
+  ]},
+  { id: 'advanced', name: 'Advanced', params: [
+    { key: 'wiener', label: 'Wiener Strength', min: 0, max: 100, value: 70, unit: '%' },
+    { key: 'mmse', label: 'MMSE Order', min: 1, max: 8, value: 2, format: (v) => String(v) },
+  ]},
+  { id: 'output', name: 'Output', params: [
+    { key: 'volume', label: 'Volume', min: 0, max: 200, value: 100, unit: '%' },
+    { key: 'width', label: 'Stereo Width', min: 0, max: 200, value: 100, unit: '%' },
+  ]},
+  { id: 'separation', name: 'Separation', params: [
+    { key: 'modelStr', label: 'Model Strength', min: 0, max: 100, value: 90, unit: '%' },
+    { key: 'overlap', label: 'Overlap Factor', min: 1, max: 8, value: 4, format: (v) => String(v) },
+  ]},
+];
+
+const PRESETS = ['Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Music Vocal', 'Whisper Boost'];
+
+function SliderGroup({ group, open, onToggle, values, onParam, query }) {
+  const q = query.trim().toLowerCase();
+  const visible = q ? group.params.filter((p) => p.label.toLowerCase().includes(q)) : group.params;
+  if (q && visible.length === 0) return null;
+  const isOpen = q ? true : open;
+  return (
+    <div className={`ew-group${isOpen ? ' ew-group--open' : ''}`}>
+      <button className="ew-group__head" type="button" aria-expanded={isOpen} onClick={onToggle}>
+        <span>{group.name}</span>
+        <span className="ew-group__meta">
+          <span className="ew-mono ew-faint">{visible.length}</span>
+          <span className="ew-chev">▾</span>
+        </span>
+      </button>
+      {isOpen && (
+        <div className="ew-group__body">
+          {visible.map((p) => (
+            <NS_CP.ParamSlider
+              key={p.key}
+              label={p.label}
+              min={p.min} max={p.max} step={p.step || 1}
+              value={values[p.key]}
+              unit={p.unit} format={p.format}
+              onChange={(v) => onParam(p.key, v)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Pipeline({ state, stage, pct, detail }) {
+  return (
+    <div className="ew-card ew-pipe">
+      <div className="ew-pipe__badge" data-state={state}>
+        <span className="ew-pipe__dot" />
+        <span className="ew-pipe__label">{detail}</span>
+      </div>
+      <div className="ew-pipe__head">
+        <span className="ew-mono" style={{ color: 'var(--red-400)' }}>{stage}</span>
+        <span className="ew-mono ew-faint">{pct}%</span>
+      </div>
+      <div className="ew-pipe__bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={pct}>
+        <div className="ew-pipe__fill" style={{ width: pct + '%' }} />
+      </div>
+    </div>
+  );
+}
+
+function ControlPanel({ fileLoaded, onLoad, onClear, processing, onProcess, pipe }) {
+  const { Button, Badge } = NS_CP;
+  const [openMap, setOpenMap] = React.useState(() => {
+    const m = {}; DSP_GROUPS.forEach((g) => { m[g.id] = !!g.open; }); return m;
+  });
+  const [values, setValues] = React.useState(() => {
+    const v = {}; DSP_GROUPS.forEach((g) => g.params.forEach((p) => { v[p.key] = p.value; })); return v;
+  });
+  const [query, setQuery] = React.useState('');
+  const [preset, setPreset] = React.useState('Voice Clarity');
+  const [drag, setDrag] = React.useState(false);
+
+  const onParam = (k, val) => setValues((s) => ({ ...s, [k]: val }));
+  const reset = () => {
+    const v = {}; DSP_GROUPS.forEach((g) => g.params.forEach((p) => { v[p.key] = p.value; }));
+    setValues(v);
+  };
+
+  return (
+    <section className="ew-col">
+      {/* Upload */}
+      <div className="ew-card">
+        <div
+          className={`ew-drop${drag ? ' ew-drop--over' : ''}`}
+          role="button" tabIndex={0}
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); onLoad(); }}
+          onClick={onLoad}
+          onKeyDown={(e) => { if (e.key === 'Enter') onLoad(); }}>
+          <div className="ew-drop__icon"><window.Icons.Upload size={26} /></div>
+          <p className="ew-drop__title">Drop Audio or Video</p>
+          <p className="ew-drop__sub ew-mono">MP3 · WAV · FLAC · OGG · M4A · AAC · MP4 · MOV · WEBM</p>
+          <Button variant="outline" size="sm">Browse Files</Button>
+        </div>
+        <div className="ew-filerow">
+          <span className="ew-fileinfo ew-mono">{fileLoaded ? 'session_04.wav · 48kHz · 24-bit' : 'No file loaded'}</span>
+          <Button variant="ghost" size="sm" onClick={onClear} disabled={!fileLoaded}>Clear</Button>
+        </div>
+      </div>
+
+      {/* Presets + Controls */}
+      <div className="ew-card">
+        <div className="ew-presets">
+          <span className="ew-presets__label">Presets</span>
+          {PRESETS.map((p) => (
+            <button key={p} type="button"
+              className={`ew-preset${preset === p ? ' ew-preset--active' : ''}`}
+              onClick={() => setPreset(p)}>{p}</button>
+          ))}
+          <button className="ew-preset ew-preset--save" type="button">+ Save Custom</button>
+        </div>
+
+        <div className="ew-search">
+          <span className="ew-search__icon"><window.Icons.Search size={13} /></span>
+          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search controls…" aria-label="Search controls" />
+          <Button variant="ghost" size="sm" onClick={reset}>Reset</Button>
+        </div>
+
+        <div className="ew-groups">
+          {DSP_GROUPS.map((g) => (
+            <SliderGroup key={g.id} group={g}
+              open={openMap[g.id]}
+              onToggle={() => setOpenMap((m) => ({ ...m, [g.id]: !m[g.id] }))}
+              values={values} onParam={onParam} query={query} />
+          ))}
+        </div>
+
+        <div className="ew-actions">
+          <Button variant="primary" size="sm" onClick={onProcess} disabled={!fileLoaded || processing}>
+            {processing ? 'Processing…' : 'Process'}
+          </Button>
+          <Button variant="outline" size="sm" disabled={!fileLoaded}>Reprocess</Button>
+          <Button variant="ghost" size="sm">Forensic</Button>
+          <Button variant="ghost" size="sm" disabled={!fileLoaded}>Audit Log</Button>
+        </div>
+      </div>
+
+      {/* Pipeline */}
+      <Pipeline {...pipe} />
+
+      {/* Save */}
+      <div className="ew-card ew-save">
+        <Button variant="outline" size="sm" block disabled={!fileLoaded}>Save Original WAV</Button>
+        <Button variant="primary" size="sm" block disabled={!pipe.done}>Save Processed WAV</Button>
+      </div>
+    </section>
+  );
+}
+
+window.ControlPanel = ControlPanel;
+
+// ── Viz Panel ──────────────────────────────────────────────────
+// VizPanel.jsx — right column: transport (A/B compare) + 9 visualization tabs.
+const NS_VZ = window.VoiceIsolateProDesignSystem_38f745;
+
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// Deterministic PRNG so each viz is stable per seed.
+function rng(seed) {
+  let s = seed * 9301 + 49297;
+  return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+}
+
+function VizCanvas({ type, seed = 4, height = 200, playhead = 0, themeKey, active }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const cv = ref.current; if (!cv) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = cv.offsetWidth || 600, H = height;
+    cv.width = W * dpr; cv.height = H * dpr;
+    const ctx = cv.getContext('2d'); ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, W, H);
+
+    const red = cssVar('--red-600') || '#dc2626';
+    const red2 = cssVar('--red-400') || '#f87171';
+    const hot = cssVar('--signal-hot') || '#f97316';
+    const ok = cssVar('--ok') || '#34d399';
+    const info = cssVar('--info') || '#60a5fa';
+    const dim = cssVar('--text-dim') || '#5e5e78';
+    const border = cssVar('--border-strong') || '#2a2a30';
+    const r = rng(seed);
+
+    ctx.strokeStyle = border; ctx.globalAlpha = 0.5;
+    ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    if (type === 'aura') {
+      const cx = W / 2, cy = H / 2;
+      for (let ring = 8; ring >= 1; ring--) {
+        const rad = (ring / 8) * Math.min(W, H) * 0.46;
+        ctx.beginPath();
+        for (let a = 0; a <= Math.PI * 2 + 0.1; a += 0.12) {
+          const wob = 1 + Math.sin(a * (3 + ring) + ring) * 0.08 * (r() + 0.5);
+          const x = cx + Math.cos(a) * rad * wob, y = cy + Math.sin(a) * rad * wob;
+          a === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = ring % 2 ? red : hot;
+        ctx.globalAlpha = 0.12 + (ring / 8) * 0.35; ctx.lineWidth = 1.2; ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    } else if (type === 'topo') {
+      ctx.lineWidth = 1;
+      for (let row = 0; row < 14; row++) {
+        ctx.beginPath();
+        const base = (row / 14) * H;
+        for (let x = 0; x <= W; x += 6) {
+          const y = base + Math.sin(x * 0.02 + row * 0.6 + seed) * 10 * Math.sin(x * 0.004 + row);
+          x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        const t = row / 14;
+        ctx.strokeStyle = t < 0.5 ? red : hot; ctx.globalAlpha = 0.25 + t * 0.5; ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    } else if (type === 'swarm') {
+      const N = 220;
+      for (let i = 0; i < N; i++) {
+        const x = r() * W, y = r() * H;
+        const d = Math.abs(y - H / 2) / (H / 2);
+        ctx.beginPath(); ctx.arc(x, y, 1 + r() * 2.2, 0, Math.PI * 2);
+        ctx.fillStyle = d < 0.4 ? red : (d < 0.7 ? hot : info);
+        ctx.globalAlpha = 0.3 + (1 - d) * 0.6; ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    } else if (type === 'liquid') {
+      const grad = ctx.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, red); grad.addColorStop(1, hot);
+      ctx.fillStyle = grad; ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 5) {
+        const y = H * 0.55 + Math.sin(x * 0.016 + seed) * 22 + Math.sin(x * 0.05) * 8 * r();
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.moveTo(0, H);
+      for (let x = 0; x <= W; x += 5) {
+        const y = H * 0.7 + Math.cos(x * 0.02 + seed * 2) * 16;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H); ctx.closePath(); ctx.fillStyle = red2; ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (type === 'clusters') {
+      const speakers = [red, info, ok, hot];
+      const segs = 26; let x = 0;
+      for (let i = 0; i < segs; i++) {
+        const w = (0.3 + r()) * (W / segs);
+        const sp = speakers[Math.floor(r() * speakers.length)];
+        ctx.fillStyle = sp; ctx.globalAlpha = 0.55;
+        ctx.fillRect(x, H * 0.3, w - 2, H * 0.4);
+        x += w; if (x > W) break;
+      }
+      ctx.globalAlpha = 1;
+    } else if (type === 'freq') {
+      const bars = 64, bw = W / bars;
+      for (let i = 0; i < bars; i++) {
+        const h = (r() * 0.7 + Math.sin(i * 0.3) * 0.2 + 0.2) * H;
+        const t = i / bars;
+        ctx.fillStyle = t < 0.6 ? red : hot; ctx.globalAlpha = 0.8;
+        ctx.fillRect(i * bw, H - h, bw - 1, h);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    if ((type === 'aura' || type === 'topo' || type === 'liquid') && playhead > 0) {
+      ctx.strokeStyle = red2; ctx.globalAlpha = 0.7; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(playhead * W, 0); ctx.lineTo(playhead * W, H); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }, [type, seed, height, playhead, themeKey, active]);
+
+  return <canvas ref={ref} className="ew-canvas" style={{ height, width: '100%', display: 'block' }} />;
+}
+
+const TABS = [
+  { id: 'spectrogram', label: 'Spectrogram' },
+  { id: 'waveform', label: 'Waveform' },
+  { id: 'abcompare', label: 'A/B' },
+  { id: 'lufs', label: 'LUFS' },
+  { id: 'clusters', label: 'Clusters' },
+  { id: 'aura', label: 'Aura' },
+  { id: 'topo', label: '3D Topo' },
+  { id: 'swarm', label: 'Swarm' },
+  { id: 'liquid', label: 'Liquid' },
+];
+
+function Transport({ playing, onToggle, cur, dur, pct, version, onVersion }) {
+  const { IconButton, Button } = NS_VZ;
+  const I = window.Icons;
+  return (
+    <div className="ew-card ew-transport">
+      <button className="ew-tp__play" type="button" onClick={onToggle} aria-label={playing ? 'Pause' : 'Play'}>
+        {playing ? <I.Pause size={16} /> : <I.Play size={16} />}
+      </button>
+      <button className="ew-tp__btn" type="button" aria-label="Stop"><I.Stop size={14} /></button>
+      <button className="ew-tp__btn" type="button" aria-label="Rewind"><I.SkipBack size={14} /></button>
+      <button className="ew-tp__btn" type="button" aria-label="Forward"><I.SkipFwd size={14} /></button>
+      <span className="ew-tp__time ew-mono">{cur}</span>
+      <input type="range" className="ew-tp__seek" min="0" max="100" value={pct} readOnly
+        style={{ '--pct': pct + '%' }} aria-label="Playback position" />
+      <span className="ew-tp__time ew-mono ew-faint">{dur}</span>
+      <div className="ew-tp__speed">
+        <label className="ew-faint">Speed</label>
+        <select aria-label="Playback speed" defaultValue="1">
+          <option value="0.5">0.5×</option><option value="0.75">0.75×</option>
+          <option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option>
+        </select>
+      </div>
+      <button className={`ew-tp__ab ew-tp__ab--${version}`} type="button" onClick={onVersion} aria-label="A/B compare">
+        <span className="ew-tp__abtag">{version}</span>
+        <span>{version === 'A' ? 'Original' : 'Processed'}</span>
+      </button>
+    </div>
+  );
+}
+
+function SignalBridge({ playhead }) {
+  const { LevelMeter } = NS_VZ;
+  const ph = playhead;
+  // Live-ish movement derived from the playhead, so meters dance while playing
+  // and settle when paused — no fake intervals.
+  const wob = (f, d, b) => Math.max(2, Math.min(99, b + Math.sin(ph * Math.PI * 2 * f) * d + Math.sin(ph * Math.PI * 13 * f) * d * 0.28));
+  const meters = [
+    { label: 'IN·L', value: wob(3.0, 11, 73), peak: 90 },
+    { label: 'IN·R', value: wob(3.4, 11, 70), peak: 88 },
+    { label: 'OUT·L', value: wob(3.0, 7, 83), peak: 94 },
+    { label: 'OUT·R', value: wob(3.4, 7, 81), peak: 93 },
+  ];
+  const grPct = wob(5, 14, 36);
+  const grDb = grPct * 0.12;
+  const readouts = [
+    { k: 'Noise Floor', v: (-72 + Math.sin(ph * 6) * 2.5).toFixed(1), u: 'dB' },
+    { k: 'SNR Gain', v: '+18.4', u: 'dB', accent: true },
+    { k: 'True Peak', v: '-1.2', u: 'dBTP' },
+    { k: 'THD+N', v: (0.38 + Math.abs(Math.sin(ph * 9)) * 0.18).toFixed(2), u: '%' },
+    { k: 'Latency', v: '11', u: 'ms' },
+    { k: 'Headroom', v: (6.8 - grDb * 0.4).toFixed(1), u: 'dB', accent: true },
+  ];
+  return (
+    <div className="ew-card ew-bridge" data-comment-anchor="496eee54c3-div-175-5">
+      <div className="ew-viz__hdr">
+        <span className="ew-kicker">Signal Bridge</span>
+        <span className="ew-mono ew-faint" style={{ fontSize: 'var(--fs-3xs)' }}>live telemetry · 48 kHz · 24-bit</span>
+      </div>
+      <div className="ew-bridge__grid">
+        <div className="ew-bridge__meters">
+          <div className="ew-ablabel ew-mono">I/O Metering</div>
+          {meters.map((m) => <LevelMeter key={m.label} {...m} />)}
+          <div className="vip-meter" title="Gain reduction">
+            <span className="vip-meter__label" style={{ color: 'var(--red-400)' }}>GR</span>
+            <span className="vip-meter__track"><span className="vip-meter__fill" style={{ width: grPct + '%' }} /></span>
+            <span className="vip-meter__val">-{grDb.toFixed(1)}</span>
+          </div>
+        </div>
+        <div className="ew-bridge__readouts">
+          <div className="ew-ablabel ew-mono">Readouts</div>
+          <div className="ew-bridge__stats">
+            {readouts.map((r) => (
+              <div key={r.k} className="ew-stat">
+                <div className="ew-stat__k ew-mono">{r.k}</div>
+                <div className={`ew-stat__v ew-mono${r.accent ? ' ew-stat__v--accent' : ''}`}>{r.v}<span className="ew-stat__u">{r.u}</span></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VizPanel({ themeKey, playing, onToggle, playhead, fileLoaded }) {
+  const { Waveform, Spectrogram, IconButton } = NS_VZ;
+  const [tab, setTab] = React.useState('spectrogram');
+  const [version, setVersion] = React.useState('A');
+  const secs = Math.round(playhead * 252);
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+  return (
+    <section className="ew-col">
+      <Transport
+        playing={playing} onToggle={onToggle}
+        cur={fmt(secs)} dur="4:12" pct={Math.round(playhead * 100)}
+        version={version} onVersion={() => setVersion((v) => (v === 'A' ? 'B' : 'A'))} />
+
+      <div className="ew-card ew-viz">
+        <div className="ew-viz__hdr">
+          <span className="ew-kicker">Visualizations</span>
+          <button className="ew-step" type="button" aria-label="Fullscreen"><window.Icons.Maximize size={13} /></button>
+        </div>
+        <div className="ew-tabs" role="tablist">
+          {TABS.map((t) => (
+            <button key={t.id} type="button" role="tab"
+              className={`ew-tab${tab === t.id ? ' ew-tab--active' : ''}`}
+              aria-selected={tab === t.id} onClick={() => setTab(t.id)}>{t.label}</button>
+          ))}
+        </div>
+
+        <div className="ew-viz__body">
+          {tab === 'spectrogram' && (
+            <div>
+              <div className="ew-legend ew-mono">Live spectrum rail · scrolling spectrogram · local-only render</div>
+              <Spectrogram seed={3} height={190} />
+              <div style={{ marginTop: 8 }}>
+                <VizCanvas type="freq" seed={11} height={72} themeKey={themeKey} active />
+              </div>
+            </div>
+          )}
+          {tab === 'waveform' && (
+            <div>
+              <div className="ew-legend ew-mono">Static waveform · live playhead during transport</div>
+              <Waveform seed={7} height={150} playhead={playhead} selection={[0.30, 0.62]} />
+            </div>
+          )}
+          {tab === 'abcompare' && (
+            <div>
+              <div className="ew-legend ew-mono">Original vs processed overlay</div>
+              <div className="ew-abgrid">
+                <div>
+                  <div className="ew-ablabel ew-mono">A · Original</div>
+                  <Waveform seed={7} height={110} color="var(--text-dim)" playhead={playhead} />
+                </div>
+                <div>
+                  <div className="ew-ablabel ew-mono" style={{ color: 'var(--red-400)' }}>B · Processed</div>
+                  <Waveform seed={7} height={110} playhead={playhead} />
+                </div>
+              </div>
+            </div>
+          )}
+          {tab === 'lufs' && (
+            <div className="ew-lufs">
+              {[['-23.0', 'Integrated LUFS'], ['-20.0', 'Short-Term LUFS'], ['-1.2', 'True Peak dBTP'], ['7.4', 'LRA']].map(([v, l]) => (
+                <div key={l} className="ew-lufs__cell">
+                  <div className="ew-lufs__v ew-mono">{v}</div>
+                  <div className="ew-lufs__l">{l}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          {tab === 'clusters' && (
+            <div>
+              <div className="ew-legend ew-mono">Speaker diarization · 4 clusters detected</div>
+              <VizCanvas type="clusters" seed={5} height={120} themeKey={themeKey} active />
+            </div>
+          )}
+          {tab === 'aura' && <VizCanvas type="aura" seed={9} height={210} playhead={playhead} themeKey={themeKey} active />}
+          {tab === 'topo' && <VizCanvas type="topo" seed={2} height={210} playhead={playhead} themeKey={themeKey} active />}
+          {tab === 'swarm' && <VizCanvas type="swarm" seed={8} height={210} themeKey={themeKey} active />}
+          {tab === 'liquid' && <VizCanvas type="liquid" seed={6} height={210} playhead={playhead} themeKey={themeKey} active />}
+        </div>
+      </div>
+      <SignalBridge playhead={playhead} />
+    </section>
+  );
+}
+
+window.VizPanel = VizPanel;
+
+// ── App Root ───────────────────────────────────────────────────
+const PIPELINE_STAGES = [
+  'S04·resample', 'S09·vad', 'S14·spectral-gate',
+  'S21·bsrnn', 'S27·wiener', 'S32·limiter'
+];
+
+const HEADER_STATS = [
+  { label: 'SNR Gain', value: '+18.4 dB', accent: true },
+  { label: 'Duration', value: '4:12' },
+  { label: 'Sample Rate', value: '48kHz' },
+  { label: 'Channels', value: 'Stereo' },
+  { label: 'RMS', value: '−22.1' },
+  { label: 'Pipeline', value: '32 stages' },
+];
+
+const TWEAK_DEFAULTS = {"density":"compact","intensity":53,"finish":"lit"};
+
+function App() {
+  const [theme, setTheme] = React.useState(
+    () => localStorage.getItem('vip-eng-theme') || 'midnight'
+  );
+  const [scale, setScale] = React.useState(
+    () => parseInt(localStorage.getItem('vip-eng-scale') || '100', 10)
+  );
+  const [fileLoaded, setFileLoaded] = React.useState(false);
+  const [processing, setProcessing] = React.useState(false);
+  const [playing, setPlaying] = React.useState(false);
+  const playheadRef = React.useRef(0);
+  const [playhead, setPlayhead] = React.useState(0);
+  const rafRef = React.useRef(null);
+  const lastRef = React.useRef(null);
+  const [pipe, setPipe] = React.useState({
+    state: 'idle', stage: 'S00·idle', pct: 0, detail: 'Awaiting input', done: false
+  });
+  const [tweak, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  // Apply theme to <html>
+  React.useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  const onTheme = (t) => {
+    setTheme(t);
+    localStorage.setItem('vip-eng-theme', t);
+  };
+
+  const onScale = (delta) => {
+    setScale(s => Math.max(70, Math.min(150, s + delta)));
+  };
+  const onSaveScale = () => {
+    localStorage.setItem('vip-eng-scale', String(scale));
+  };
+
+  // Playback loop
+  const onToggle = () => {
+    if (!fileLoaded) return;
+    setPlaying(p => !p);
+  };
+
+  React.useEffect(() => {
+    if (playing) {
+      lastRef.current = performance.now();
+      const tick = (now) => {
+        const dt = (now - (lastRef.current || now)) / 1000;
+        lastRef.current = now;
+        playheadRef.current = (playheadRef.current + dt / 252) % 1;
+        setPlayhead(playheadRef.current);
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    } else {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    }
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [playing]);
+
+  // Pipeline simulation
+  const onProcess = () => {
+    if (!fileLoaded || processing) return;
+    setProcessing(true);
+    playheadRef.current = 0; setPlayhead(0); setPlaying(false);
+    let i = 0;
+    const steps = PIPELINE_STAGES.length;
+    const run = () => {
+      if (i >= steps) {
+        setPipe({ state: 'ready', stage: 'S32·limiter', pct: 100, detail: 'Complete — all 32 passes finished', done: true });
+        setProcessing(false);
+        setPlaying(true);
+        return;
+      }
+      const stage = PIPELINE_STAGES[i];
+      const pct = Math.round(((i + 0.5) / steps) * 100);
+      const details = [
+        'Resampling to 48kHz...', 'Voice Activity Detection...', 'Spectral gate sweep...',
+        'BSRNN stem separation...', 'Wiener filter pass...', 'Brick-wall limiter...'
+      ];
+      setPipe({ state: 'loading', stage, pct, detail: details[i], done: false });
+      i++;
+      setTimeout(run, 420 + Math.random() * 180);
+    };
+    run();
+  };
+
+  const onLoad = () => {
+    setFileLoaded(true);
+    setPipe({ state: 'idle', stage: 'S00·ready', pct: 0, detail: 'File loaded — ready to process', done: false });
+  };
+
+  const onClear = () => {
+    setFileLoaded(false);
+    setProcessing(false);
+    setPlaying(false);
+    playheadRef.current = 0; setPlayhead(0);
+    setPipe({ state: 'idle', stage: 'S00·idle', pct: 0, detail: 'Awaiting input', done: false });
+  };
+
+  const scaleStyle = scale !== 100 ? { zoom: scale / 100 } : {};
+
+  return (
+    <div className="ew-root" style={scaleStyle}>
+      <Header
+        stats={HEADER_STATS}
+        scale={scale}
+        onScale={onScale}
+        onSaveScale={onSaveScale}
+      />
+      <Cockpit />
+      <div className="ew-body">
+        <ControlPanel
+          fileLoaded={fileLoaded}
+          onLoad={onLoad}
+          onClear={onClear}
+          processing={processing}
+          onProcess={onProcess}
+          pipe={pipe}
+        />
+        <VizPanel
+          themeKey={theme}
+          playing={playing}
+          onToggle={onToggle}
+          playhead={playhead}
+          fileLoaded={fileLoaded}
+        />
+      </div>
+      <ThemeDock theme={theme} onTheme={onTheme} />
+      <TweaksPanel title="Tweaks">
+        <TweakSection label="UI" />
+        <TweakRadio label="Density" value={tweak.density} options={['compact','regular','comfy']} onChange={v => setTweak('density', v)} />
+        <TweakSlider label="Intensity" value={tweak.intensity} min={0} max={100} unit="%" onChange={v => setTweak('intensity', v)} />
+        <TweakSection label="Finish" />
+        <TweakRadio label="Finish" value={tweak.finish} options={['flat','lit','glow']} onChange={v => setTweak('finish', v)} />
+      </TweaksPanel>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('app')).render(<App />);
+
+</script>
+</body>
+</html>

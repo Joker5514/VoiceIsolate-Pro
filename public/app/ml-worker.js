@@ -1,431 +1,1341 @@
-'use strict';
+// ─────────────────────────────────────────────────────────────────────────────
+// ml-worker.js — VoiceIsolate Pro · Threads from Space v13
+// Standard Web Worker (NOT AudioWorklet).
+//
+// Responsibilities:
+//   1. Load ONNX models via onnxruntime-web (WebGPU → WASM fallback)
+//   2. Poll SharedArrayBuffer for new magnitude frames from dsp-processor
+//   3. Run inference pipeline to produce a combined soft mask
+//   4. Write mask back to outputSAB for dsp-processor to apply in-band
+//
+// Tier gating:
+//   Main thread passes allowedModels[] and allowedStages from auth.js getCaps()
+//   so this worker never attempts to load models above the user's tier.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DEFAULT_NUM_BINS = 2049; // (4096 / 2) + 1
+const FLAG_SLOTS = 5;                                                // Bug #2 fix: 5 slots = 20 bytes, matches SharedRingBuffer header
+const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS; // 20
+const NOISE_WARMUP_FRAMES = 90;
+const FORENSIC_ALPHA_FLOOR_THRESHOLD = 0.005;
+const ALPHA_CAP_DEFAULT = 2.0;
+const ALPHA_CAP_FORENSIC = 3.0;
+const SNR_MAX = 1e6;
+
+const VAD_FALLBACK_RMS_BASELINE = 1e-4;
+const VAD_FALLBACK_RMS_RANGE = 7e-4;
+const VAD_FALLBACK_RATIO_BASELINE = 0.35;
+const VAD_FALLBACK_RATIO_RANGE = 0.45;
+const VAD_FALLBACK_BLEND_RMS = 0.45;
+const VAD_FALLBACK_BLEND_RATIO = 0.55;
+const NOISE_SEED_SCALE = 1.5;
+
+// ORT is loaded lazily inside initialize() — not at module top level —
+// so importScripts failures can be caught and reported gracefully.
+let ort = null;
+
+let inputView  = null; // Float32Array view of inputSAB payload: [mag | phase]
+let outputView = null; // Float32Array view of outputSAB payload: [mask]
+let pcmView    = null; // Float32Array view of inputSAB PCM region: [HOP_SIZE samples] (Bug #3)
+let flagsIn    = null; // Int32Array: flagsIn[0]=frameCounter (incremented by worklet)
+let flagsOut   = null; // Int32Array: flagsOut[0]=writeGen (incremented by ml-worker; Bug #1 fix)
+let _lastPollFrame = 0;    // last frame counter value seen in pollOnce()
+let _pollInFlight  = false; // in-flight guard — prevents overlapping async inference calls
+
+let sessions      = {}; // { modelId: ort.InferenceSession }
+let allowedModels = [];
+let allowedStages = 8;
+let pollTimer     = null;
+let currentNumBins = DEFAULT_NUM_BINS;
+let currentHalfN = DEFAULT_NUM_BINS;
+let currentFFTSize = 4096;
+let currentSampleRate = 48000;
+let latestPcmChunk = null;
+let vadModelMissing = false;
+let vadMissingWarned = false;
+let speechConfidence = 0;
+let speechStreak = 0;
+let _vadState = null; // silero VAD recurrent state [2, 1, 128]
+let noiseProfile = null;
+let noiseFrames = 0;
+let warmupComplete = false;
+let demucsPcmMissingWarned = false;
+let _isAndroidWebView = false;
+
+let runtimeParams = {
+  spectralFloor: 0.005,
+  noiseReduce: 0.7,
+  forensicMode: false,
+  nonVoiceSuppression: 2.0,
+};
+
+// ── Default models loaded on bare init (no payload) ──────────────────────────
+const DEFAULT_MODELS = ['vad', 'rnnoise', 'demucs', 'bsrnn'];
+
+// ── Model filename registry ───────────────────────────────────────────────────
+// Aliases → canonical .onnx filenames. MUST match public/app/model-loader.js
+// MODEL_REGISTRY and public/app/models/models-manifest.json. Drift breaks
+// the SW Cache lookup because the worker fetches a filename that was never
+// populated by model-loader.js.
+const MODEL_FILES = {
+  // canonical aliases used by pipeline-orchestrator init
+  'vad':              'silero_vad.onnx',
+  'vad_int8':         'silero_vad_int8.onnx',
+  'rnnoise':          'rnnoise_suppressor.onnx',
+  'demucs':           'demucs_v4_quantized.onnx',
+  'bsrnn':            'bsrnn_vocals.onnx',
+  // 4D complex-spectrogram BSRNN (pretrained crlandsc/bsrnn-vocals).
+  // Offline-only: consumed by offline-processor.js. NOT loaded by the
+  // real-time worklet path. See scripts/export_bsrnn_onnx.py.
+  'bsrnn_complex':         'bsrnn_vocals_complex.onnx',
+  'bsrnn_vocals_complex':  'bsrnn_vocals_complex.onnx',
+  // long-form aliases (kept for back-compat with auth/tier code)
+  'silero-vad':       'silero_vad.onnx',
+  'silero_vad':       'silero_vad.onnx',
+  'silero_vad_int8':  'silero_vad_int8.onnx',
+  'demucs-v4':        'demucs_v4_quantized.onnx',
+  'demucs_v4':        'demucs_v4_quantized.onnx',
+  'bsrnn_vocals':     'bsrnn_vocals.onnx',
+};
+
+// Optional Object-URL overrides keyed by canonical alias. Set by the
+// 'cacheModelPaths' message from pipeline-orchestrator.js when the IDB
+// fetch-cache (ml-worker-fetch-cache.js) has already streamed the .onnx
+// into memory. When set, takes precedence over the same-origin URL — the
+// session loads directly from the in-memory ArrayBuffer / Blob URL with
+// zero additional network or SW round-trip.
+const MODEL_URL_OVERRIDES = {};
+
+// ── SHA-256 expected hashes per model file ────────────────────────────────────
+// Populated by scripts/upload_models_to_vercel_blob.py after each upload.
+// Leave as empty string '' to skip integrity check for that model.
+const MODEL_SHA256 = {
+  'silero_vad.onnx':            '1a153a22f4509e292a94e67d6f9b85e8deb25b4988682b7e174c65279d8788e3',
+  'silero_vad_int8.onnx':       '16748abf8870b6e380fb3c56b662e2fd565504d28c30e6159a27017a569c8b05',
+  'rnnoise_suppressor.onnx':    '0bc4319f433f9b19411cbc1727f0b6eab83b3ccb89825d8229cbb28ccc3b62b6',
+  'demucs_v4_quantized.onnx':   '19be0f2c8e617e5ee2da0c2861f2f96e1a7f656ebf4b696b485e16f64b3bdac2',
+  'bsrnn_vocals.onnx':          '7edd7c51962e21086841b6c65ec1304deed75555e1bb05d64ec7c134a39c8141',
+  // bsrnn_vocals_complex.onnx is produced by scripts/export_bsrnn_onnx.py
+  // and is not committed to the repo — leave empty to skip integrity check
+  // until an authoritative SHA is recorded post-upload.
+  'bsrnn_vocals_complex.onnx':  '',
+};
+
+// ── ORT lazy initializer ──────────────────────────────────────────────────────
+// Called at the start of every message handler that needs ORT.
+// If self.ort is already populated (e.g. by a prior importScripts call or
+// injected in tests), it is reused; otherwise importScripts loads the local
+// vendored file (copied by scripts/setup-ort.js postinstall).
+function initialize() {
+  if (self.ort) {
+    ort = self.ort;
+  } else {
+    // Load ORT from local vendored file (copied by scripts/setup-ort.js postinstall)
+    importScripts('/lib/ort.min.js');
+    ort = self.ort;
+  }
+  _isAndroidWebView = detectAndroidWebView();
+  configureWasmRuntime();
+}
+
+function detectAndroidWebView() {
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+  if (!/Android/i.test(ua)) return false;
+  return /\bwv\b|; wv\)|Version\/[\d.]+.*Chrome\//i.test(ua);
+}
+
+function detectWasmSimdSupport() {
+  // Probe for WebAssembly SIMD (v128) support by validating a minimal module
+  // that uses the v128.const opcode. WebAssembly.validate() returns false
+  // (without throwing) when the engine lacks SIMD, so this is a safe,
+  // synchronous probe that correctly handles older Android WebViews where
+  // WebAssembly is available but SIMD is not.
+  try {
+    return typeof WebAssembly !== 'undefined' &&
+      typeof WebAssembly.validate === 'function' &&
+      WebAssembly.validate(new Uint8Array([
+        0x00, 0x61, 0x73, 0x6d, // magic: \0asm
+        0x01, 0x00, 0x00, 0x00, // version: 1
+        0x01, 0x05, 0x01,       // type section: 1 entry
+        0x60, 0x00, 0x01, 0x7b, // func type: () -> v128
+        0x03, 0x02, 0x01, 0x00, // function section: func[0] = type[0]
+        0x0a, 0x16, 0x01,       // code section: 1 body
+        0x14, 0x00,             // body: 20 bytes, 0 locals
+        0xfd, 0x0c,             // v128.const opcode
+        0x00, 0x00, 0x00, 0x00, // 16-byte immediate (zero vector)
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+        0x0b                    // end
+      ]));
+  } catch (_) {
+    return false;
+  }
+}
+
+function configureWasmRuntime() {
+  if (!ort || !ort.env || !ort.env.wasm) return;
+  ort.env.wasm.wasmPaths = '/lib/';
+  ort.env.wasm.proxy = true;
+  ort.env.wasm.numThreads = Math.min(navigator.hardwareConcurrency ?? 4, 4);
+  ort.env.wasm.simd = detectWasmSimdSupport();
+}
+
+
+// ── Diarization / isolation runtime state ──────────────────────────────────
+let _speakerVolumeMap = {};
+
 /**
- * VoiceIsolate Pro — ML Worker
- * Runs in a dedicated Web Worker context (no DOM access).
- *
- * Pipeline:
- *   audio → [Silero VAD] → [DeepFilterNet3 enhance] → [Demucs v4 separate] → isolated voice
- *
- * Models (all optional, graceful fallback):
- *   silero_vad.onnx   — 2 MB  — speech activity detection
- *   enc.onnx          — ~10 MB — DeepFilterNet3 encoder
- *   erb_dec.onnx      — ~10 MB — DeepFilterNet3 ERB mask decoder
- *   df_dec.onnx       — ~15 MB — DeepFilterNet3 deep-filter decoder
- *   demucs_v4.onnx    — ~150 MB — vocal stem separation (WebGPU recommended)
+ * Compute a 3-element feature vector [rms, spectralCentroid, zcr] for a PCM frame.
+ * Used for speaker clustering without requiring a neural model.
  */
+function _frameFeatures(frame, sampleRate) {
+  const n = frame.length;
+  if (n === 0) return [0, 0, 0];
 
-importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js');
+  // RMS energy
+  let sumSq = 0;
+  for (let i = 0; i < n; i++) sumSq += frame[i] * frame[i];
+  const rms = Math.sqrt(sumSq / n);
 
-const ORT_CDN = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
+  // Spectral centroid via zero-crossing approximation (cheap, no FFT)
+  let zcr = 0;
+  for (let i = 1; i < n; i++) {
+    if ((frame[i] >= 0) !== (frame[i - 1] >= 0)) zcr++;
+  }
+  zcr = zcr / (2 * n / sampleRate); // crossings per second → approx Hz
 
-// ── DeepFilterNet3 (low-latency variant) constants ────────────────────────
-const DF_SR      = 48000;
-const DF_FFT     = 960;    // 20 ms frame @ 48 kHz
-const DF_HOP     = 480;    // 10 ms hop  → 50 % overlap
-const DF_N_ERB   = 32;     // ERB frequency bands
-const DF_N_DF    = 96;     // deep-filter bins  (0 – ~4.8 kHz)
-const DF_ORDER   = 5;      // deep-filter FIR order
+  // Short-term spectral flatness via ratio of arithmetic to geometric mean of |x|
+  let sumAbs = 0, logSum = 0;
+  for (let i = 0; i < n; i++) {
+    const a = Math.abs(frame[i]) + 1e-9;
+    sumAbs += a;
+    logSum += Math.log(a);
+  }
+  const flatness = Math.exp(logSum / n) / (sumAbs / n);
 
-// ── Session handles ────────────────────────────────────────────────────────
-let vadSession    = null;
-let dfEnc         = null;
-let dfErbDec      = null;
-let dfDfDec       = null;
-let demucsSession = null;
-
-// ── Recurrent hidden states (reset per file) ───────────────────────────────
-let dfState = null;
-
-function initDFState() {
-  return {
-    erb_hidden: new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]),
-    df_hidden:  new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]),
-  };
+  return [rms, zcr / sampleRate, flatness]; // normalise zcr to [0,1] range
 }
 
-// ── Model loader ───────────────────────────────────────────────────────────
-async function initModels() {
-  ort.env.wasm.wasmPaths = ORT_CDN;
-  ort.env.logLevel = 'warning';
-  const EP = (typeof navigator !== 'undefined' && navigator.gpu)
-    ? ['webgpu', 'wasm'] : ['wasm'];
+/**
+ * Simple online k-means clustering (k=2..4) on feature vectors.
+ * Returns cluster ID (0-indexed) for each frame index.
+ */
+function _kMeans(features, k, maxIter = 20) {
+  if (features.length === 0) return [];
+  const dim  = features[0].length;
+  const n    = features.length;
 
-  const results = { vad: false, deepfilter: false, demucs: false };
+  // Initialise centroids by spreading across the feature array
+  const centroids = Array.from({ length: k }, (_, ci) => {
+    const fi = Math.floor((ci / k) * n);
+    return features[fi].slice();
+  });
 
-  // Silero VAD v5
-  try {
-    vadSession = await ort.InferenceSession.create('./models/silero_vad.onnx', { executionProviders: EP });
-    results.vad = true;
-  } catch (e) {
-    log('warn', 'VAD unavailable: ' + e.message);
-  }
+  let labels = new Int32Array(n);
 
-  // DeepFilterNet3 (three-part model — all three must load together)
-  try {
-    const [enc, erb, df] = await Promise.all([
-      ort.InferenceSession.create('./models/enc.onnx',     { executionProviders: EP }),
-      ort.InferenceSession.create('./models/erb_dec.onnx', { executionProviders: EP }),
-      ort.InferenceSession.create('./models/df_dec.onnx',  { executionProviders: EP }),
-    ]);
-    dfEnc = enc; dfErbDec = erb; dfDfDec = df;
-    dfState = initDFState();
-    results.deepfilter = true;
-  } catch (e) {
-    log('warn', 'DeepFilterNet3 unavailable: ' + e.message);
-  }
-
-  // Demucs v4 (optional, large — WebGPU recommended)
-  try {
-    demucsSession = await ort.InferenceSession.create('./models/demucs_v4.onnx', { executionProviders: EP });
-    results.demucs = true;
-  } catch (e) {
-    log('warn', 'Demucs v4 unavailable: ' + e.message);
-  }
-
-  self.postMessage({ type: 'ready', models: results });
-}
-
-// ── ERB filterbank (Moore & Glasberg) ─────────────────────────────────────
-// Precomputed once — maps each FFT bin to an ERB band index.
-const ERB_BIN_MAP = buildErbFilterbank();
-
-function hzToErb(hz) { return 21.4 * Math.log10(1 + hz / 228.7); }
-function erbToHz(erb) { return 228.7 * (Math.pow(10, erb / 21.4) - 1); }
-
-function buildErbFilterbank() {
-  const nBins = DF_FFT / 2 + 1;
-  const binFreq = Array.from({ length: nBins }, (_, k) => k * DF_SR / DF_FFT);
-  const loErb = hzToErb(0);
-  const hiErb = hzToErb(DF_SR / 2);
-  const step  = (hiErb - loErb) / (DF_N_ERB + 1);
-
-  // For each bin, find its ERB band (−1 = unmapped)
-  const map = new Int16Array(nBins).fill(-1);
-  const bands = Array.from({ length: DF_N_ERB }, () => []);
-
-  for (let k = 0; k < nBins; k++) {
-    const erbK = hzToErb(binFreq[k]);
-    const b = Math.floor((erbK - loErb) / step) - 1;
-    if (b >= 0 && b < DF_N_ERB) { map[k] = b; bands[b].push(k); }
-  }
-  return { map, bands };
-}
-
-function toErbFeatures(mag) {
-  // mag: Float32Array[nBins] → log-energy per ERB band: Float32Array[DF_N_ERB]
-  const erb = new Float32Array(DF_N_ERB);
-  const counts = new Uint16Array(DF_N_ERB);
-  for (let k = 0; k < mag.length; k++) {
-    const b = ERB_BIN_MAP.map[k];
-    if (b >= 0) { erb[b] += mag[k] * mag[k]; counts[b]++; }
-  }
-  for (let b = 0; b < DF_N_ERB; b++) {
-    erb[b] = Math.log(Math.max(counts[b] > 0 ? erb[b] / counts[b] : 0, 1e-10));
-  }
-  return erb;
-}
-
-// ── Hann window (precomputed) ──────────────────────────────────────────────
-const HANN = Float32Array.from({ length: DF_FFT }, (_, i) =>
-  0.5 * (1 - Math.cos(2 * Math.PI * i / DF_FFT)));
-
-// ── Radix-2 FFT ───────────────────────────────────────────────────────────
-function fftInPlace(re, im, inverse) {
-  const n = re.length;
-  for (let i = 1, j = 0; i < n; i++) {
-    let bit = n >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j ^= bit;
-    if (i < j) {
-      [re[i], re[j]] = [re[j], re[i]];
-      [im[i], im[j]] = [im[j], im[i]];
+  for (let iter = 0; iter < maxIter; iter++) {
+    // Assign
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      let best = 0, bestDist = Infinity;
+      for (let c = 0; c < k; c++) {
+        let d = 0;
+        for (let d2 = 0; d2 < dim; d2++) {
+          const diff = features[i][d2] - centroids[c][d2];
+          d += diff * diff;
+        }
+        if (d < bestDist) { bestDist = d; best = c; }
+      }
+      if (labels[i] !== best) { labels[i] = best; changed = true; }
     }
-  }
-  const sign = inverse ? 1 : -1;
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang  = sign * 2 * Math.PI / len;
-    const wRe  = Math.cos(ang);
-    const wIm  = Math.sin(ang);
-    for (let i = 0; i < n; i += len) {
-      let curRe = 1, curIm = 0;
-      for (let j = 0; j < len >> 1; j++) {
-        const uRe = re[i + j], uIm = im[i + j];
-        const vRe = re[i + j + (len >> 1)] * curRe - im[i + j + (len >> 1)] * curIm;
-        const vIm = re[i + j + (len >> 1)] * curIm + im[i + j + (len >> 1)] * curRe;
-        re[i + j]            = uRe + vRe;  im[i + j]            = uIm + vIm;
-        re[i + j + (len>>1)] = uRe - vRe;  im[i + j + (len>>1)] = uIm - vIm;
-        const nr = curRe * wRe - curIm * wIm;
-        curIm = curRe * wIm + curIm * wRe;
-        curRe = nr;
+    if (!changed) break;
+
+    // Recompute centroids
+    const sums   = Array.from({ length: k }, () => new Float64Array(dim));
+    const counts = new Int32Array(k);
+    for (let i = 0; i < n; i++) {
+      const c = labels[i];
+      counts[c]++;
+      for (let d2 = 0; d2 < dim; d2++) sums[c][d2] += features[i][d2];
+    }
+    for (let c = 0; c < k; c++) {
+      if (counts[c] > 0) {
+        for (let d2 = 0; d2 < dim; d2++) centroids[c][d2] = sums[c][d2] / counts[c];
       }
     }
   }
+
+  return labels;
 }
 
-// ── STFT / iSTFT ──────────────────────────────────────────────────────────
-function stft(signal) {
-  // Returns array of { re, im } per frame (half-spectrum, nBins = FFT/2+1)
-  const nBins   = DF_FFT / 2 + 1;
-  const nFrames = Math.max(1, Math.floor((signal.length - DF_FFT) / DF_HOP) + 1);
-  const frames  = [];
-  const tmpRe   = new Float32Array(DF_FFT);
-  const tmpIm   = new Float32Array(DF_FFT);
-  const flatRe  = new Float32Array(nFrames * nBins);
-  const flatIm  = new Float32Array(nFrames * nBins);
+/**
+ * runDiarization — multi-speaker segmentation using spectral features + k-means.
+ * Uses RMS, zero-crossing rate, and spectral flatness across 200ms windows.
+ * Falls back gracefully to energy-only if audio is very short.
+ * @param {Float32Array} pcm
+ * @param {number} sampleRate
+ * @returns {Promise<Array<{speakerId,label,start,end,confidence}>>}
+ */
+async function runDiarization(pcm, sampleRate) {
+  const winSamp     = Math.round(0.2 * sampleRate); // 200ms windows
+  const hopSamp     = Math.round(0.1 * sampleRate); // 100ms hop
+  const silThresh   = 0.003;                        // RMS below this = silence
+  const palette     = ['S1','S2','S3','S4','S5','S6','S7','S8'];
 
-  for (let f = 0; f < nFrames; f++) {
-    const off = f * DF_HOP;
-    tmpIm.fill(0);
-    for (let i = 0; i < DF_FFT; i++) {
-      tmpRe[i] = (off + i < signal.length ? signal[off + i] : 0) * HANN[i];
-    }
-    fftInPlace(tmpRe, tmpIm, false);
-
-    const offset = f * nBins;
-    flatRe.set(tmpRe.subarray(0, nBins), offset);
-    flatIm.set(tmpIm.subarray(0, nBins), offset);
-
-    const re = flatRe.subarray(offset, offset + nBins);
-    const im = flatIm.subarray(offset, offset + nBins);
-    frames.push({ re, im });
+  // Extract features for every hop
+  const features = [];
+  const frameStarts = [];
+  for (let i = 0; i + winSamp <= pcm.length; i += hopSamp) {
+    const frame = pcm.subarray(i, i + winSamp);
+    features.push(_frameFeatures(frame, sampleRate));
+    frameStarts.push(i);
   }
-  return frames;
+
+  if (features.length === 0) return [];
+
+  // Determine number of clusters (2–4) based on audio length
+  const durSec = pcm.length / sampleRate;
+  const k = durSec < 10 ? 2 : durSec < 30 ? 3 : 4;
+
+  // Normalise features to [0,1] per dimension for balanced clustering
+  const dim = features[0].length;
+  const fMin = new Float64Array(dim).fill(Infinity);
+  const fMax = new Float64Array(dim).fill(-Infinity);
+  for (const f of features) {
+    for (let d = 0; d < dim; d++) {
+      if (f[d] < fMin[d]) fMin[d] = f[d];
+      if (f[d] > fMax[d]) fMax[d] = f[d];
+    }
+  }
+  const normed = features.map(f =>
+    f.map((v, d) => fMax[d] > fMin[d] ? (v - fMin[d]) / (fMax[d] - fMin[d]) : 0)
+  );
+
+  const labels = _kMeans(normed, k);
+
+  // Build segments: merge adjacent frames with same label
+  const segments = [];
+  let segLabel = null, segStart = 0;
+  const isSilent = (fi) => features[fi][0] < silThresh;
+
+  for (let fi = 0; fi < frameStarts.length; fi++) {
+    const spk = isSilent(fi) ? null : palette[labels[fi]];
+    if (spk !== segLabel) {
+      if (segLabel !== null) {
+        const endSamp = frameStarts[fi];
+        const conf    = 0.68 + normed[fi][0] * 0.29; // energy-weighted confidence
+        segments.push({
+          speakerId:  segLabel,
+          label:      'Speaker ' + segLabel,
+          start:      segStart / sampleRate,
+          end:        endSamp / sampleRate,
+          confidence: Math.min(0.97, conf),
+        });
+      }
+      segStart = frameStarts[fi];
+      segLabel = spk;
+    }
+  }
+  // Close last segment
+  if (segLabel !== null) {
+    segments.push({
+      speakerId:  segLabel,
+      label:      'Speaker ' + segLabel,
+      start:      segStart / sampleRate,
+      end:        pcm.length / sampleRate,
+      confidence: 0.72,
+    });
+  }
+
+  // Filter out very short segments (< 300ms)
+  return segments.filter(s => s.speakerId !== null && (s.end - s.start) >= 0.3);
 }
 
-function istft(frames, outLen) {
-  const nBins  = DF_FFT / 2 + 1;
-  const output = new Float32Array(outLen);
-  const norm   = new Float32Array(outLen);
-  const tmpRe  = new Float32Array(DF_FFT);
-  const tmpIm  = new Float32Array(DF_FFT);
-
-  for (let f = 0; f < frames.length; f++) {
-    const off = f * DF_HOP;
-    const { re, im } = frames[f];
-    tmpRe.fill(0); tmpIm.fill(0);
-    for (let k = 0; k < nBins; k++) { tmpRe[k] = re[k]; tmpIm[k] = im[k]; }
-    // Hermitian symmetry
-    for (let k = 1; k < DF_FFT / 2; k++) {
-      tmpRe[DF_FFT - k] =  re[k];
-      tmpIm[DF_FFT - k] = -im[k];
-    }
-    fftInPlace(tmpRe, tmpIm, true);
-    for (let i = 0; i < DF_FFT; i++) {
-      if (off + i >= outLen) break;
-      output[off + i] += (tmpRe[i] / DF_FFT) * HANN[i];
-      norm[off + i]   += HANN[i] * HANN[i];
-    }
-  }
-  for (let i = 0; i < outLen; i++) {
-    if (norm[i] > 1e-8) output[i] /= norm[i];
-  }
-  return output;
+// ── Inference timeout helper — prevents a hung ONNX session from blocking the worker indefinitely ──
+const INFERENCE_TIMEOUT_MS = 30000;
+function _runWithTimeout(session, feeds) {
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error('Inference timed out after ' + INFERENCE_TIMEOUT_MS + 'ms')),
+      INFERENCE_TIMEOUT_MS
+    );
+  });
+  return Promise.race([session.run(feeds), timeoutPromise]).finally(() => clearTimeout(timer));
 }
 
-// ── DeepFilterNet3 inference ───────────────────────────────────────────────
-async function runDeepFilter(signal) {
-  if (!dfEnc || !dfErbDec || !dfDfDec) return signal;
+// ── 1. Message dispatcher ─────────────────────────────────────────────────────
+self.onmessage = async (ev) => {
+  const { type, payload, models: msgModels } = ev.data || {};
 
-  const frames   = stft(signal);
-  const nBins    = DF_FFT / 2 + 1;
-  const enhanced = frames.map(f => ({ re: new Float32Array(f.re), im: new Float32Array(f.im) }));
+  switch (type) {
 
-  for (let f = 0; f < frames.length; f++) {
-    const { re, im } = frames[f];
+    // ── init: full SAB + model init (called by app-init.js) ───────────────────
+    case 'init': {
+      try {
+        initialize();
+      } catch (err) {
+        self.postMessage({ type: 'error', msg: err.message });
+        return;
+      }
 
-    // Magnitude spectrum
-    const mag = new Float32Array(nBins);
-    for (let k = 0; k < nBins; k++) mag[k] = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+      if (payload) {
+        const {
+          inputSAB,
+          outputSAB,
+          pcmChunk,
+          fftSize             = 4096,
+          halfN               = Math.floor(fftSize / 2) + 1,
+          sampleRate          = 48000,
+          // Default to the absolute /app/models/ path so the SW intercepts
+          // the fetch and serves from the vip-models-v1 Cache populated by
+          // the same-origin model loader.
+          modelBasePath: _rawBasePath = '/app/models/',
+          preferredProviders  = ['webgpu', 'wasm'],
+          allowedModels: am   = DEFAULT_MODELS,
+          allowedStages: as_  = 8,
+          params              = null,
+        } = payload;
 
-    // ERB log-energy features  [1, 1, 1, n_erb]
-    const erbFeat  = toErbFeatures(mag);
-    const featErb  = new ort.Tensor('float32', erbFeat, [1, 1, 1, DF_N_ERB]);
+        // Reject caller-supplied base paths that could redirect model fetches
+        // off-origin. Only same-origin model paths are accepted.
+        const _safePath = (p) => typeof p === 'string' && !p.includes('..') &&
+          (p.startsWith('./models/') || p.startsWith('/app/models/') || p.startsWith('/models/'));
+        const modelBasePath = _safePath(_rawBasePath) ? _rawBasePath : '/app/models/';
 
-    // Complex spectral features for DF bins  [1, 2*n_df, 1, 1]
-    const specFeat = new Float32Array(2 * DF_N_DF);
-    for (let k = 0; k < DF_N_DF && k < nBins; k++) {
-      specFeat[k]            = re[k];
-      specFeat[k + DF_N_DF]  = im[k];
+        allowedModels = am;
+        allowedStages = as_;
+        currentFFTSize = fftSize;
+        currentHalfN = halfN;
+        currentNumBins = halfN;
+        currentSampleRate = sampleRate;
+        if (params && typeof params === 'object') {
+          runtimeParams = { ...runtimeParams, ...params };
+        }
+        if (pcmChunk) {
+          latestPcmChunk = pcmChunk instanceof Float32Array ? pcmChunk : new Float32Array(pcmChunk);
+        }
+
+        if (inputSAB && outputSAB) {
+          const inputPayloadFloats = currentHalfN * 2;
+          const outputPayloadFloats = currentHalfN;
+          const pcmFloats = 1024; // HOP_SIZE
+          const inputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * (inputPayloadFloats + pcmFloats);
+          const outputBytes = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * outputPayloadFloats;
+          if (inputSAB.byteLength < inputBytes || outputSAB.byteLength < outputBytes) {
+            // Guard: do not create typed-array views on an undersized SAB — the views
+            // would throw RangeError or silently alias into adjacent memory.
+            console.error('[ml-worker] SAB size mismatch — SAB views not created', {
+              expectedInputBytes: inputBytes,
+              actualInputBytes: inputSAB.byteLength,
+              expectedOutputBytes: outputBytes,
+              actualOutputBytes: outputSAB.byteLength,
+            });
+          } else {
+            console.info('[ml-worker] SAB payload sizes verified', {
+              halfN: currentHalfN,
+              inputBytes,
+              outputBytes,
+            });
+            flagsIn    = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+            flagsOut   = new Int32Array(outputSAB, 0, FLAG_SLOTS);
+            inputView  = new Float32Array(inputSAB, SAB_HEADER_BYTES, inputPayloadFloats);
+            outputView = new Float32Array(outputSAB, SAB_HEADER_BYTES, outputPayloadFloats);
+            // PCM region immediately after mag+pha payload
+            const pcmByteOffset = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
+            pcmView = inputSAB.byteLength >= pcmByteOffset + pcmFloats * Float32Array.BYTES_PER_ELEMENT
+              ? new Float32Array(inputSAB, pcmByteOffset, pcmFloats)
+              : null;
+            startPollLoop();
+          }
+        }
+
+        const modelStatus = await loadModels(modelBasePath, preferredProviders, allowedModels);
+        vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
+        if (vadModelMissing) {
+          const msg = 'Silero VAD unavailable, using fallback VAD';
+          console.warn('[ml-worker] ' + msg);
+          self.postMessage({ type: 'log', level: 'warn', msg });
+          self.postMessage({ type: 'vad_status', vadModelMissing: true });
+        } else {
+          self.postMessage({ type: 'vad_status', vadModelMissing: false });
+        }
+        self.postMessage({ type: 'ready', models: modelStatus });
+      } else {
+        // Bare init (no payload — used in tests and simple invocations)
+        const modelStatus = await loadModels('/app/models/', ['webgpu', 'wasm'], DEFAULT_MODELS);
+        vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
+        self.postMessage({ type: 'ready', models: modelStatus });
+      }
+      break;
     }
-    const featSpec = new ort.Tensor('float32', specFeat, [1, 2 * DF_N_DF, 1, 1]);
 
-    try {
-      // ── Encoder
-      const encOut = await dfEnc.run({ feat_erb: featErb, feat_spec: featSpec });
-      const { e0, e1, e2, e3, emb, c0 } = encOut;
+    // ── loadModel: load a specific set of models and report status ─────────────
+    case 'loadModel': {
+      try {
+        initialize();
+      } catch (err) {
+        self.postMessage({ type: 'error', msg: err.message });
+        return;
+      }
 
-      // ── ERB mask decoder  →  m [1, 1, 1, n_erb] in [0,1]
-      const erbDecOut = await dfErbDec.run({ emb, e0, e1, e2, e3, hidden: dfState.erb_hidden });
-      const erbMask   = erbDecOut.m.data;
-      dfState.erb_hidden = erbDecOut.hidden;
+      const modelList   = msgModels || DEFAULT_MODELS;
+      const modelStatus = await loadModels('/app/models/', ['webgpu', 'wasm'], modelList);
+      vadModelMissing = !modelStatus.vad && !modelStatus['silero-vad'];
+      self.postMessage({ type: 'ready', models: modelStatus });
+      break;
+    }
 
-      // ── Deep-filter coefficient decoder  →  coefs [1, 1, n_df, df_order, 2]
-      const dfDecOut = await dfDfDec.run({ emb, c0, hidden: dfState.df_hidden });
-      const coefs    = dfDecOut.coefs.data;
-      dfState.df_hidden = dfDecOut.hidden;
+    // ── process: run inference on a single frame of magnitude data ─────────────
+    case 'process': {
+      if (!ort || (!inputView && !(payload && payload.magnitudes))) return;
 
-      // Apply ERB mask to all bins in each band
-      for (let b = 0; b < DF_N_ERB; b++) {
-        const gain = Math.min(1.0, Math.max(0.0, erbMask[b]));
-        for (const k of ERB_BIN_MAP.bands[b]) {
-          enhanced[f].re[k] = re[k] * gain;
-          enhanced[f].im[k] = im[k] * gain;
+      const magnitudes = payload && payload.magnitudes
+        ? new Float32Array(payload.magnitudes)
+        : new Float32Array(inputView.subarray(0, currentNumBins));
+      const pcmChunk = payload && payload.pcmChunk
+        ? (payload.pcmChunk instanceof Float32Array ? payload.pcmChunk : new Float32Array(payload.pcmChunk))
+        : latestPcmChunk;
+      const mask       = await buildMask(magnitudes, pcmChunk);
+
+      const output = new Float32Array(mask);
+      self.postMessage({ type: 'processed', output }, [output.buffer]);
+      break;
+    }
+
+    // ── bsrnnComplex: offline 4D complex-spectrogram BSRNN inference ──────────
+    // Input  payload:
+    //   {
+    //     id:        string,                // correlation id
+    //     halfBins:  number,                 // freq bins (must be 1025 for the
+    //                                        // pretrained crlandsc model)
+    //     timeFrames:number,                 // T  (dynamic axis)
+    //     channels:  Float32Array,           // packed real/imag, length
+    //                                        // = 4 * halfBins * timeFrames
+    //                                        // layout per the model:
+    //                                        //   [ch0_re, ch0_im, ch1_re, ch1_im]
+    //                                        // each plane is [freq][time] row-major.
+    //   }
+    //
+    // Output payload:
+    //   { type: 'bsrnnComplexResult', id, separated: Float32Array, halfBins, timeFrames }
+    //   `separated` mirrors the input layout but contains the separated
+    //   vocals only. On failure: { type: 'bsrnnComplexResult', id, error }.
+    case 'bsrnnComplex': {
+      const reqId = payload && payload.id;
+      const fail = (msg) => self.postMessage({
+        type: 'bsrnnComplexResult', id: reqId, error: msg,
+      });
+      try {
+        initialize();
+      } catch (err) { fail(err.message); break; }
+      const session = sessions['bsrnn_complex'] || sessions['bsrnn_vocals_complex'];
+      if (!session) { fail('bsrnn_complex model not loaded'); break; }
+      const halfBins = payload && payload.halfBins | 0;
+      const timeFrames = payload && payload.timeFrames | 0;
+      const flat = payload && payload.channels;
+      const expected = 4 * halfBins * timeFrames;
+      if (!flat || flat.length !== expected) {
+        fail(`bsrnnComplex: payload size ${flat?.length} != expected ${expected}`);
+        break;
+      }
+      try {
+        const tensor = new ort.Tensor('float32', flat, [1, 4, halfBins, timeFrames]);
+        const result = await _runWithTimeout(session, { input: tensor });
+        const out = result.output?.data || result[Object.keys(result)[0]]?.data;
+        if (!out || out.length !== expected) {
+          fail(`bsrnnComplex: output size ${out?.length} != expected ${expected}`);
+          break;
+        }
+        // Copy into a fresh Float32Array so we can transfer the underlying buffer.
+        const separated = new Float32Array(out);
+        self.postMessage(
+          { type: 'bsrnnComplexResult', id: reqId, separated, halfBins, timeFrames },
+          [separated.buffer],
+        );
+      } catch (err) {
+        const errMsg = (err && err.message) ? err.message : String(err);
+        if (errMsg.startsWith('Inference timed out')) {
+          delete sessions['bsrnn_complex'];
+          delete sessions['bsrnn_vocals_complex'];
+        }
+        fail(`bsrnnComplex: ${errMsg}`);
+      }
+      break;
+    }
+
+    // ── reset: clear inference sessions and polling state ─────────────────────
+    case 'reset': {
+      clearInterval(pollTimer);
+      sessions  = {};
+      pollTimer = null;
+      noiseProfile = null;
+      noiseFrames = 0;
+      warmupComplete = false;
+      speechConfidence = 0;
+      speechStreak = 0;
+      latestPcmChunk = null;
+      _vadState = null;
+      demucsPcmMissingWarned = false;
+      _lastPollFrame = 0;
+      _pollInFlight  = false;
+      self.postMessage({ type: 'reset_done' });
+      break;
+    }
+
+    // ── unload: full cleanup ───────────────────────────────────────────────────
+    case 'unload': {
+      clearInterval(pollTimer);
+      sessions = {};
+      latestPcmChunk = null;
+      demucsPcmMissingWarned = false;
+      self.postMessage({ type: 'unloaded' });
+      break;
+    }
+
+    // ── update_params: adjust tier caps at runtime ─────────────────────────────
+    case 'update_params': {
+      if (payload && payload.allowedModels) allowedModels = payload.allowedModels;
+      if (payload && payload.allowedStages) allowedStages = payload.allowedStages;
+      break;
+    }
+
+    case 'setParams': {
+      if (payload && typeof payload === 'object') {
+        runtimeParams = { ...runtimeParams, ...payload };
+      }
+      break;
+    }
+
+    case 'pcmChunk': {
+      const chunk = payload && payload.pcmChunk;
+      if (chunk) {
+        latestPcmChunk = chunk instanceof Float32Array ? chunk : new Float32Array(chunk);
+      }
+      break;
+    }
+
+    // ── setIsolationConfig: diarization/isolation UI runtime controls ──────────
+    case 'setIsolationConfig': {
+      if (payload && typeof payload.isolationMethod === 'string') {
+        self._isolationMethod = payload.isolationMethod;
+      }
+      if (payload && typeof payload.ecapaSimilarityThreshold === 'number') {
+        self._ecapaSimilarityThreshold = payload.ecapaSimilarityThreshold;
+      }
+      if (payload && typeof payload.backgroundVolume === 'number') {
+        self._backgroundVolume = payload.backgroundVolume;
+      }
+      if (payload && typeof payload.maskRefinement === 'boolean') {
+        self._maskRefinement = payload.maskRefinement;
+      }
+      break;
+    }
+
+    // ── multi_separate: multi-speaker stream separation ────────────────────────
+    case 'multi_separate': {
+      await handleMultiSeparate(payload && payload.streams);
+      break;
+    }
+
+    // ── diarize ────────────────────────────────────────────────────────────────
+    case 'diarize': {
+      try {
+        const { signal, sampleRate = 48000 } = payload || {};
+        if (!signal) { self.postMessage({ type: 'error', msg: 'diarize: no signal' }); return; }
+        const pcm      = signal instanceof Float32Array ? signal : new Float32Array(signal);
+        const segments = await runDiarization(pcm, sampleRate);
+        self.postMessage({
+          type:         'diarization',
+          segments,
+          duration:     pcm.length / sampleRate,
+          speakerCount: new Set(segments.map(s => s.speakerId)).size,
+        });
+      } catch(err) {
+        self.postMessage({ type: 'error', msg: 'diarize: ' + err.message });
+      }
+      break;
+    }
+
+    // ── speakerVolumes ─────────────────────────────────────────────────────────
+    case 'speakerVolumes': {
+      _speakerVolumeMap = payload || {};
+      break;
+    }
+
+    // ── setSoundMutes: background sound categories the user wants suppressed ──
+    case 'setSoundMutes': {
+      self._soundMutes = (payload && typeof payload === 'object') ? payload : {};
+      break;
+    }
+
+    // ── enrollVoiceprint ───────────────────────────────────────────────────────
+    case 'enrollVoiceprint': {
+      try {
+        const { signal, pcm: rawPcm, speakerId = 'manual' } = payload || {};
+        const source = signal || rawPcm;
+        if (!source) {
+          self.postMessage({ type: 'error', msg: 'enrollVoiceprint: no signal' });
+          break;
+        }
+
+        const pcm = source instanceof Float32Array ? source : new Float32Array(source);
+        if (!pcm.length) {
+          self.postMessage({ type: 'error', msg: 'enrollVoiceprint: empty signal' });
+          break;
+        }
+
+        let hasFiniteSample = false;
+        for (let i = 0; i < pcm.length; i++) {
+          if (Number.isFinite(pcm[i])) {
+            hasFiniteSample = true;
+            break;
+          }
+        }
+        if (!hasFiniteSample) {
+          self.postMessage({ type: 'error', msg: 'enrollVoiceprint: invalid signal' });
+          break;
+        }
+
+        self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId } });
+      } catch (err) {
+        self.postMessage({ type: 'error', msg: 'enrollVoiceprint: ' + err.message });
+      }
+      break;
+    }
+
+    // ── enrollFromDiarization ──────────────────────────────────────────────────
+    case 'enrollFromDiarization': {
+      const { speakerId } = payload || {};
+      self.postMessage({ type: 'voiceprintEnrolled', payload: { speakerId } });
+      break;
+    }
+
+    // ── clearVoiceprint ────────────────────────────────────────────────────────
+    case 'clearVoiceprint': {
+      self.postMessage({ type: 'voiceprintCleared' });
+      break;
+    }
+
+    // ── cacheModelPaths: accept Object-URL overrides from fetch-cache ─────────
+    // Pipeline-orchestrator forwards URLs of models that ml-worker-fetch-cache.js
+    // has already streamed into IndexedDB and converted to blob: Object URLs.
+    // When a subsequent loadModels() call resolves a canonical alias to one of
+    // these overrides, ort.InferenceSession.create() loads from the in-memory
+    // ArrayBuffer with zero additional network or SW round-trip.
+    //
+    // Security: we only accept blob: URLs (created from in-memory ArrayBuffers
+    // via URL.createObjectURL) — never absolute http(s):// URLs that could
+    // redirect inference off-origin.
+    case 'cacheModelPaths': {
+      const paths = ev.data && ev.data.modelPaths;
+      if (!paths || typeof paths !== 'object') break;
+      let accepted = 0;
+      for (const k of Object.keys(paths)) {
+        const v = paths[k];
+        if (typeof v === 'string' && v.startsWith('blob:')) {
+          MODEL_URL_OVERRIDES[k] = v;
+          accepted++;
+        }
+      }
+      if (accepted > 0) {
+        console.info(`[ml-worker] cacheModelPaths accepted ${accepted} blob URL override(s)`);
+      }
+      break;
+    }
+
+    // ── initRingBuffers: wire up SAB views posted by PipelineOrchestrator ────────
+    case 'initRingBuffers': {
+      const { inputRing, maskRing, halfN: h, ringCapacity, quantumSize } = ev.data || {};
+      if (!inputRing || !maskRing) {
+        console.warn('[ml-worker] initRingBuffers: missing inputRing or maskRing');
+        break;
+      }
+      if (h) {
+        currentHalfN   = h;
+        currentNumBins = h;
+      }
+      const inputPayloadFloats = currentHalfN * 2;
+      const pcmFloats = 1024; // HOP_SIZE
+      const pcmByteOffset = SAB_HEADER_BYTES + Float32Array.BYTES_PER_ELEMENT * inputPayloadFloats;
+      flagsIn    = new Int32Array(inputRing, 0, FLAG_SLOTS);
+      flagsOut   = new Int32Array(maskRing,  0, FLAG_SLOTS);
+      inputView  = new Float32Array(inputRing, SAB_HEADER_BYTES, inputPayloadFloats);
+      outputView = new Float32Array(maskRing,  SAB_HEADER_BYTES, currentHalfN);
+      // Bug #3: PCM region after mag+pha payload
+      pcmView = inputRing.byteLength >= pcmByteOffset + pcmFloats * Float32Array.BYTES_PER_ELEMENT
+        ? new Float32Array(inputRing, pcmByteOffset, pcmFloats)
+        : null;
+      if (!pollTimer) startPollLoop();
+      console.info('[ml-worker] initRingBuffers: SAB views wired', {
+        halfN: currentHalfN, ringCapacity, quantumSize,
+      });
+      break;
+    }
+
+    // ── infer: single-frame inference via explicit postMessage protocol ──────────
+    // IN:  { type: 'infer', model: 'demucs'|'bsrnn', mag: Float32Array }
+    // OUT: { type: 'mask',  model: 'demucs'|'bsrnn', mask: Float32Array }
+    // OUT: { type: 'error', message: string }
+    // This is a simpler, worker-native alternative to the SAB polling path.
+    case 'infer': {
+      const modelKey  = ev.data && ev.data.model;
+      const magRaw    = ev.data && ev.data.mag;
+      if (!modelKey || !magRaw) {
+        self.postMessage({ type: 'error', message: 'infer: missing model or mag' });
+        break;
+      }
+      const mag = magRaw instanceof Float32Array ? magRaw : new Float32Array(magRaw);
+
+      try {
+        initialize();
+      } catch (err) {
+        self.postMessage({ type: 'error', message: err.message });
+        break;
+      }
+
+      // Resolve session — support both short ('demucs','bsrnn') and long aliases
+      const sess = sessions[modelKey] || sessions[modelKey + '-v4'] || sessions[modelKey + '_vocals'];
+      if (!sess) {
+        // Model not yet loaded: attempt load then re-infer
+        try {
+          const statusMap = await loadModels('/app/models/', ['webgpu', 'wasm'], [modelKey]);
+          if (!statusMap[modelKey]) throw new Error(`Model '${modelKey}' could not be loaded`);
+        } catch (loadErr) {
+          self.postMessage({ type: 'error', message: loadErr.message });
+          break;
         }
       }
 
-      // Apply deep filtering to first n_df bins (order-1 complex multiply)
-      for (let k = 0; k < DF_N_DF && k < nBins; k++) {
-        const base = k * DF_ORDER * 2;
-        const cr   = coefs[base];
-        const ci   = coefs[base + 1];
-        const inR  = enhanced[f].re[k];
-        const inI  = enhanced[f].im[k];
-        enhanced[f].re[k] = inR * cr - inI * ci;
-        enhanced[f].im[k] = inR * ci + inI * cr;
+      try {
+        const session = sessions[modelKey] || sessions[modelKey + '-v4'] || sessions[modelKey + '_vocals'];
+        const numBins = mag.length;
+
+        let maskData;
+        if (modelKey === 'demucs' || modelKey.startsWith('demucs')) {
+          // Demucs operates on PCM; fall back to magnitude-based proxy mask
+          const tensor = new ort.Tensor('float32', mag, [1, 1, numBins]);
+          const result = await _runWithTimeout(session, { input: tensor });
+          maskData = result.vocal_mask?.data || result.output?.data || null;
+        } else {
+          // BSRNN and others accept [1, numBins] magnitude input
+          const tensor = new ort.Tensor('float32', mag, [1, numBins]);
+          const result = await _runWithTimeout(session, { input: tensor });
+          maskData = result.vocal_mask?.data || result.output?.data || null;
+        }
+
+        if (!maskData || maskData.length < numBins) {
+          // Unity mask fallback — audio passes through unmodified
+          maskData = new Float32Array(numBins).fill(1.0);
+        }
+
+        // Apply Demucs/BSRNN blend weights from runtimeParams
+        const demucsW = modelKey === 'demucs'
+          ? Math.max(0, Math.min(1, (runtimeParams.demucsWeight ?? 50) / 100))
+          : 0;
+        const bsrnnW = modelKey === 'bsrnn'
+          ? Math.max(0, Math.min(1, (runtimeParams.bsrnnWeight ?? 50) / 100))
+          : 0;
+        const blendW = demucsW || bsrnnW || 1.0;
+
+        const outMask = new Float32Array(numBins);
+        for (let i = 0; i < numBins; i++) {
+          const v = Number(maskData[i]);
+          outMask[i] = Math.max(0, Math.min(1, Number.isFinite(v) ? v * blendW : 1));
+        }
+
+        self.postMessage({ type: 'mask', model: modelKey, mask: outMask }, [outMask.buffer]);
+      } catch (inferErr) {
+        const inferErrMsg = (inferErr && inferErr.message) ? inferErr.message : String(inferErr);
+        if (inferErrMsg.startsWith('Inference timed out')) {
+          delete sessions[modelKey];
+          delete sessions[modelKey + '-v4'];
+          delete sessions[modelKey + '_vocals'];
+        }
+        self.postMessage({ type: 'error', message: `infer(${modelKey}): ${inferErrMsg}` });
+      }
+      break;
+    }
+
+    default:
+      console.warn('[ml-worker] unknown message type:', type);
+  }
+
+};
+
+// ── 2. Multi-speaker separation ───────────────────────────────────────────────
+async function handleMultiSeparate(streams) {
+  if (!streams || !streams.length) {
+    self.postMessage({ type: 'multi_done', streams: [] });
+    return;
+  }
+
+  // Apply per-speaker volume from the current speakerVolumeMap.
+  // A volume of 0 silences the stream (muted, or not the solo/isolated speaker).
+  // _speakerVolumeMap keys may be strings or numbers; check both.
+  streams.forEach(s => {
+    if (!s || !s.data) return;
+    const id = s.speakerId;
+    const vol = id in _speakerVolumeMap ? _speakerVolumeMap[id]
+              : String(id) in _speakerVolumeMap ? _speakerVolumeMap[String(id)]
+              : 1;
+    if (vol === 0) {
+      s.data.fill(0);
+    } else if (vol !== 1) {
+      for (let i = 0; i < s.data.length; i++) s.data[i] *= vol;
+    }
+  });
+
+  // Null-guard: filter out invalid stream entries before extracting buffers
+  const transferables = streams
+    .map(s => s && s.data && s.data.buffer)
+    .filter(Boolean);
+
+  self.postMessage({ type: 'multi_done', streams }, transferables);
+}
+
+// ── 3. Model loader ───────────────────────────────────────────────────────────
+async function loadModels(basePath, providers, modelList) {
+  const modelStatus = {};
+
+  for (const modelId of modelList) {
+    const file = MODEL_FILES[modelId];
+    if (!file) {
+      modelStatus[modelId] = false;
+      continue;
+    }
+
+    // Prefer an in-memory blob: URL from the local fetch-cache when available —
+    // this skips both network and SW Cache. Otherwise load the same-origin
+    // /app/models/<file> URL only.
+    const overrideUrl = MODEL_URL_OVERRIDES[modelId] || MODEL_URL_OVERRIDES[file];
+    const modelUrl    = overrideUrl || (basePath + file);
+    const eps         = await resolveProviders(providers);
+    const expectedSha256 = MODEL_SHA256[file] || '';
+
+    try {
+      const { session, provider } = await createSessionWithFallback(modelUrl, expectedSha256, eps);
+      await warmupSession(modelId, session);
+      sessions[modelId] = session;
+      modelStatus[modelId] = true;
+      self.postMessage({ type: 'model_loaded', modelId, providers: eps });
+      console.info(`[ml-worker] ${modelId} loaded via ${provider || eps.join(',')} (${overrideUrl ? 'blob-cache' : 'same-origin'})`);
+    } catch (err) {
+      modelStatus[modelId] = false;
+      const errMsg = modelId === 'vad'
+        ? `VAD unavailable: ${err.message}`
+        : `Failed to load ${modelId}: ${err.message}`;
+      self.postMessage({ type: 'log', level: 'warn', msg: errMsg });
+      console.warn(`[ml-worker] ${errMsg}`);
+    }
+  }
+
+  return modelStatus;
+}
+
+async function resolveProviders(providers) {
+  if (_isAndroidWebView) return ['wasm'];
+  const eps = [];
+  for (const p of providers) {
+    if (p === 'webgpu') {
+      try {
+        const adapter = await navigator?.gpu?.requestAdapter();
+        if (adapter) eps.push('webgpu');
+      } catch { /* WebGPU unavailable */ }
+    } else if (p === 'wasm') {
+      eps.push('wasm');
+    }
+  }
+  if (eps.length === 0) eps.push('wasm');
+  return eps;
+}
+
+async function createSessionWithFallback(modelUrl, expectedSha256, executionProviders = ['webgpu', 'wasm']) {
+  // ── SHA-256 integrity check ─────────────────────────────────────────────
+  // If an expected hash is provided and fetch/SubtleCrypto are available,
+  // fetch the model, verify its SHA-256, then create the ONNX session from
+  // the verified ArrayBuffer. This prevents loading tampered or corrupt model
+  // files. The check is skipped when expectedSha256 is empty/undefined or
+  // when fetch/crypto.subtle are unavailable.
+  // Infrastructure errors (network, URL parsing) are non-fatal: we fall back
+  // to URL-based loading. Only a confirmed hash mismatch is a hard failure.
+  let modelData = null;
+  if (
+    expectedSha256 &&
+    typeof fetch !== 'undefined' &&
+    typeof crypto !== 'undefined' &&
+    typeof crypto.subtle !== 'undefined'
+  ) {
+    try {
+      const resp = await fetch(modelUrl);
+      if (resp.ok) {
+        const buffer = await resp.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        const actual = Array.from(new Uint8Array(hashBuffer))
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+        if (actual !== expectedSha256.toLowerCase()) {
+          throw new Error(
+            `SHA-256 mismatch for ${modelUrl}: expected ${expectedSha256}, got ${actual}`
+          );
+        }
+        modelData = buffer;
+        console.info(`[ml-worker] SHA-256 verified for ${modelUrl}`);
+      } else {
+        console.warn(`[ml-worker] SHA-256 check: HTTP ${resp.status} for ${modelUrl} — skipping integrity check`);
+      }
+    } catch (err) {
+      // Re-throw confirmed integrity failures; absorb infrastructure errors
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('SHA-256 mismatch')) throw err;
+      console.warn(`[ml-worker] SHA-256 check skipped (${errMsg}) — loading from URL`);
+    }
+  }
+
+  const source = modelData !== null ? modelData : modelUrl;
+  const canUseWebGpu = Array.isArray(executionProviders) && executionProviders.includes('webgpu');
+  if (canUseWebGpu) {
+    try {
+      // EP: WebGPU primary, WASM fallback — local inference only, no cloud.
+      const session = await ort.InferenceSession.create(source, {
+        executionProviders: ['webgpu', 'wasm'],
+        graphOptimizationLevel: 'all',
+      });
+      return { session, provider: 'webgpu' };
+    } catch (err) {
+      console.warn('[ml-worker] WebGPU session creation failed, falling back to WASM:', err?.message || err);
+    }
+  }
+
+  {
+    // EP: WebGPU primary, WASM fallback — local inference only, no cloud.
+    const session = await ort.InferenceSession.create(source, {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    });
+    return { session, provider: 'wasm' };
+  }
+}
+
+async function warmupSession(modelId, session) {
+  if (!session || typeof session.run !== 'function') return;
+  if (modelId === 'demucs' || modelId === 'demucs-v4') return;
+
+  // Bug #7 fix: bsrnn_complex expects [1, 4, halfBins, timeFrames] — generic [1, numBins] throws
+  if (modelId === 'bsrnn_complex' || modelId === 'bsrnn_vocals_complex') {
+    const halfBins   = currentHalfN;
+    const timeFrames = 32;
+    const dummyInput = new ort.Tensor('float32',
+      new Float32Array(4 * halfBins * timeFrames),
+      [1, 4, halfBins, timeFrames]
+    );
+    try {
+      await session.run({ input: dummyInput });
+    } catch (e) {
+      console.warn('[ml-worker] bsrnn_complex warmup failed:', e.message);
+    }
+    return;
+  }
+
+  try {
+    const size = currentNumBins;
+    const dims = [1, currentNumBins];
+    const input = new ort.Tensor('float32', new Float32Array(size), dims);
+    await session.run({ input });
+  } catch (err) {
+    console.warn('[ml-worker] warm-up skipped', {
+      modelId,
+      reason: String(err && err.message ? err.message : err),
+    });
+  }
+}
+
+// ── 4. SAB polling loop (50 Hz) ───────────────────────────────────────────────
+function startPollLoop() {
+  pollTimer = setInterval(pollOnce, 20);
+}
+
+async function pollOnce() {
+  if (!flagsIn || !flagsOut) return;
+  // In-flight guard: setInterval does not await async callbacks, so multiple
+  // pollOnce() calls can overlap when ONNX inference takes >20 ms. Without this
+  // guard, a slow inference round could overwrite a newer mask with a stale one.
+  if (_pollInFlight) return;
+
+  // SAB protocol: flagsIn[0] = frame counter incremented by worklet via Atomics.add.
+  // Worklet checks flagsOut[0] (writeGen) != flagsOut[1] (readGen) to detect a new mask.
+  const currentFrame = Atomics.load(flagsIn, 0);
+  if (currentFrame === _lastPollFrame) return; // no new frame
+  _lastPollFrame = currentFrame;
+
+  // subarray() is a zero-copy view — copy out before any await.
+  const magnitudes = new Float32Array(inputView.subarray(0, currentNumBins));
+  // Prefer live SAB PCM region written by worklet; fall back to last postMessage chunk
+  const pcmChunk = pcmView ? new Float32Array(pcmView) : latestPcmChunk;
+
+  _pollInFlight = true;
+  try {
+    const mask = await buildMask(magnitudes, pcmChunk);
+    outputView.set(mask.subarray(0, currentNumBins));
+    // Bug #1 fix: increment writeGen (slot[0]) — worklet detects mask by slot[0] != slot[1]
+    Atomics.add(flagsOut, 0, 1);
+  } catch (err) {
+    // Don't poison the poll loop — log and let worklet fall back to bypass mag.
+    console.warn('[ml-worker] pollOnce buildMask failed:', err?.message || err);
+  } finally {
+    _pollInFlight = false;
+  }
+}
+
+// ── 5. Combined mask inference pipeline ──────────────────────────────────────
+// Reusable mask buffer — avoids one Float32Array allocation per inference call.
+let _maskBuffer = null;
+// Reusable 3-bin smoothing scratch — avoids a full-spectrum Float32Array
+// allocation per applyWienerFilter() call (~400KB/s GC churn at 50 Hz).
+let _smoothBuffer = null;
+
+const SILERO_SR    = 16000;
+const SILERO_CHUNK = 512;
+
+// Run silero_vad.onnx with correct inputs: raw PCM + recurrent state + sr.
+// Silero VAD expects float32 PCM samples (not magnitudes). We downsample from
+// the Web Audio context rate (typically 48 kHz) to 16 kHz via simple decimation,
+// then pass a 512-sample window with the stateful h/c tensors from the previous call.
+async function runSileroVAD(vadSess, pcmChunk, audioSrHz) {
+  const step = Math.max(1, Math.round((audioSrHz || SILERO_SR) / SILERO_SR));
+  const samples = new Float32Array(SILERO_CHUNK);
+  if (pcmChunk && pcmChunk.length > 0) {
+    // Bug #4 fix: 3-tap FIR low-pass [0.25, 0.5, 0.25] before decimation to attenuate
+    // content above the new Nyquist (srcRate/2/step) that would alias into the baseband.
+    // Skipped when step=1 (source already at 16 kHz) to avoid unnecessary smoothing.
+    const take = Math.min(SILERO_CHUNK, Math.floor(pcmChunk.length / step));
+    for (let i = 0; i < take; i++) {
+      const j = i * step;
+      if (step > 1) {
+        const prev = j > 0 ? pcmChunk[j - 1] : pcmChunk[j];
+        const next = j < pcmChunk.length - 1 ? pcmChunk[j + 1] : pcmChunk[j];
+        samples[i] = 0.25 * prev + 0.5 * pcmChunk[j] + 0.25 * next;
+      } else {
+        samples[i] = pcmChunk[j];
+      }
+    }
+  }
+  if (!_vadState) _vadState = new Float32Array(2 * 1 * 128); // zero-init h,c
+  const inputTensor = new ort.Tensor('float32', samples, [1, SILERO_CHUNK]);
+  const stateTensor = new ort.Tensor('float32', _vadState, [2, 1, 128]);
+  // BigInt64Array for the sr scalar — required by silero_vad.onnx opset
+  const srData   = typeof BigInt64Array !== 'undefined'
+    ? BigInt64Array.from([BigInt(SILERO_SR)])
+    : new Int32Array([SILERO_SR]);
+  const srTensor = new ort.Tensor(typeof BigInt64Array !== 'undefined' ? 'int64' : 'int32', srData, []);
+  const result = await vadSess.run({ input: inputTensor, state: stateTensor, sr: srTensor });
+  // Keep state only when the model returns it (stubs / mocks may omit stateN)
+  if (result.stateN && result.stateN.data) {
+    _vadState = new Float32Array(result.stateN.data);
+  }
+  return Number(result.output.data[0]);
+}
+
+async function buildMask(magnitudes, pcmChunk = null) {
+  const numBins = magnitudes.length;
+  // Grow buffer only when numBins increases (rare); reuse otherwise.
+  if (!_maskBuffer || _maskBuffer.length < numBins) {
+    _maskBuffer = new Float32Array(numBins);
+  }
+  const mask = _maskBuffer.subarray(0, numBins);
+  mask.fill(1.0);
+
+  const fallbackVAD = runVADFallback(magnitudes);
+
+  // VAD gate — silero_vad.onnx requires PCM samples + recurrent state + sr.
+  // runSileroVAD() handles downsampling from the context rate to 16 kHz.
+  const vadSess = sessions['vad'] || sessions['silero-vad'] || sessions['vad_int8'];
+  let hasModelVAD = false;
+  let isVoice = fallbackVAD.isVoice;
+  if (vadSess && allowedStages >= 5) {
+    try {
+      const prob = await runSileroVAD(vadSess, pcmChunk, currentSampleRate);
+      hasModelVAD = true;
+      isVoice = prob >= 0.5;
+      const gate = Math.max(0, prob * 2 - 0.5);
+      for (let k = 0; k < numBins; k++) mask[k] *= gate;
+    } catch (e) {
+      console.warn('[ml-worker] vad error:', e.message);
+    }
+  }
+  if (!hasModelVAD && vadModelMissing && !vadMissingWarned) {
+    vadMissingWarned = true;
+    console.warn('[ml-worker] Silero VAD unavailable, fallback VAD enabled');
+  }
+  if (!isVoice) {
+    const nonVoiceMask = 1 / Math.max(1, Number(runtimeParams.nonVoiceSuppression) || 2);
+    for (let k = 0; k < numBins; k++) mask[k] *= nonVoiceMask;
+  }
+
+  if (!warmupComplete) {
+    updateNoiseProfile(magnitudes);
+    // Ramp mask from near-silence up to full passthrough over the warmup
+    // window instead of clamping to 0. Users previously heard ~1.8s of dead
+    // silence before the noise profile was considered converged.
+    const ramp = Math.min(1, noiseFrames / NOISE_WARMUP_FRAMES);
+    const rampGain = 0.05 + 0.95 * ramp * ramp;
+    for (let k = 0; k < numBins; k++) mask[k] *= rampGain;
+    return mask;
+  }
+
+  applyWienerFilter(magnitudes, mask, isVoice);
+
+  // Demucs v4 vocal separation mask
+  const demucsSess = sessions['demucs'] || sessions['demucs-v4'];
+  if (demucsSess && allowedStages >= 10 && pcmChunk && pcmChunk.length > 0) {
+    try {
+      const demucsIn = new ort.Tensor('float32', pcmChunk, [1, 1, pcmChunk.length]);
+      const result = await demucsSess.run({ input: demucsIn });
+      const vocalMask = result.vocal_mask?.data || result.output?.data || null;
+      if (vocalMask) for (let k = 0; k < numBins; k++) {
+        mask[k] = Math.min(mask[k], Math.max(0, vocalMask[k]));
       }
     } catch (e) {
-      // Inference error on this frame — pass through unchanged
-      enhanced[f].re = re;
-      enhanced[f].im = im;
+      console.warn('[ml-worker] demucs error:', e.message);
+    }
+  } else if (demucsSess && allowedStages >= 10) {
+    // Intentional no-op: never feed magnitude spectra to Demucs.
+    // Unity mask is safer than invalid spectral approximation.
+    if (!demucsPcmMissingWarned) {
+      demucsPcmMissingWarned = true;
+      console.warn('[ml-worker] Demucs skipped: PCM chunk unavailable; using unity fallback');
     }
   }
 
-  return istft(enhanced, signal.length);
-}
-
-// ── Silero VAD ─────────────────────────────────────────────────────────────
-async function runVAD(signal, sr) {
-  if (!vadSession) return null;
-  const frameSize = Math.floor(sr / 100); // 10 ms
-  const result    = [];
-  let h = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-  let c = new ort.Tensor('float32', new Float32Array(2 * 1 * 64), [2, 1, 64]);
-  for (let i = 0; i + frameSize <= signal.length; i += frameSize) {
-    const frame    = signal.slice(i, i + frameSize);
-    const input    = new ort.Tensor('float32', frame, [1, frame.length]);
-    const srTensor = new ort.Tensor('int64', BigInt64Array.from([BigInt(sr)]), [1]);
+  // BSRNN band-split vocal separation mask
+  const bsrnnSess = sessions['bsrnn'] || sessions['bsrnn_vocals'];
+  if (bsrnnSess && allowedStages >= 10) {
     try {
-      const out = await vadSession.run({ input, sr: srTensor, h, c });
-      result.push(out.output.data[0] > 0.5);
-      h = out.hn; c = out.cn;
-    } catch (_) { result.push(true); }
-  }
-  return result;
-}
-
-// ── Demucs v4 — vocals stem ────────────────────────────────────────────────
-async function runDemucs(signal) {
-  if (!demucsSession) return signal;
-  try {
-    // Demucs expects stereo input [1, 2, samples]; pad mono→stereo
-    const stereo = new Float32Array(2 * signal.length);
-    stereo.set(signal, 0);
-    stereo.set(signal, signal.length);
-    const input  = new ort.Tensor('float32', stereo, [1, 2, signal.length]);
-    const out    = await demucsSession.run({ input });
-    // Output [1, 4, 2, samples]: stems = [drums, bass, other, vocals]
-    const vocalsOffset = 3 * 2 * signal.length; // vocals stem, left channel
-    return Float32Array.from(out.output.data.slice(vocalsOffset, vocalsOffset + signal.length));
-  } catch (e) {
-    log('warn', 'Demucs inference failed: ' + e.message);
-    return signal;
-  }
-}
-
-// ── Linear resampler ───────────────────────────────────────────────────────
-function resampleLinear(signal, fromSR, toSR) {
-  if (fromSR === toSR) return signal;
-  const ratio  = fromSR / toSR;
-  const outLen = Math.round(signal.length / ratio);
-  const out    = new Float32Array(outLen);
-  for (let i = 0; i < outLen; i++) {
-    const pos  = i * ratio;
-    const lo   = Math.floor(pos);
-    const hi   = Math.min(lo + 1, signal.length - 1);
-    const frac = pos - lo;
-    out[i] = signal[lo] * (1 - frac) + signal[hi] * frac;
-  }
-  return out;
-}
-
-// ── Main processing pipeline ───────────────────────────────────────────────
-async function processAudio({ signal, sampleRate, params }) {
-  progress('VAD', 5);
-
-  // Resample to 48 kHz for DeepFilterNet if needed
-  const needResample = sampleRate !== DF_SR && dfEnc !== null;
-  let working = needResample ? resampleLinear(signal, sampleRate, DF_SR) : signal;
-  const workSR = needResample ? DF_SR : sampleRate;
-
-  // 1. Silero VAD — speech activity mask
-  const vadMask = await runVAD(working, workSR);
-  progress('DeepFilter', 20);
-
-  // 2. DeepFilterNet3 — denoising + de-reverberation
-  if (dfEnc) {
-    dfState  = initDFState(); // reset recurrent state per file
-    working  = await runDeepFilter(working);
-  }
-  progress('Demucs', 60);
-
-  // 3. Demucs v4 — vocal stem separation
-  if (demucsSession) {
-    working = await runDemucs(working);
-  }
-  progress('Finalising', 88);
-
-  // 4. Resample back to original SR
-  let output = needResample ? resampleLinear(working, DF_SR, sampleRate) : working;
-
-  // 5. VAD gating — attenuate non-speech frames when voiceIso is set
-  if (vadMask && params && params.voiceIso > 0) {
-    const frameSize = Math.floor(sampleRate / 100);
-    const floor     = 1 - (params.voiceIso / 100) * 0.9; // min gain 10% at 100%
-    for (let i = 0; i < vadMask.length; i++) {
-      if (!vadMask[i]) {
-        const start = i * frameSize;
-        const end   = Math.min(start + frameSize, output.length);
-        for (let j = start; j < end; j++) output[j] *= floor;
+      const bsrnnIn = new ort.Tensor('float32', magnitudes, [1, numBins]);
+      const result = await bsrnnSess.run({ input: bsrnnIn });
+      const vocalMask = result.vocal_mask?.data || result.output?.data || null;
+      if (vocalMask && vocalMask.length >= numBins) {
+        for (let k = 0; k < numBins; k++) {
+          mask[k] = Math.min(mask[k], Math.max(0, vocalMask[k]));
+        }
       }
+    } catch (e) {
+      console.warn('[ml-worker] bsrnn error:', e.message);
     }
   }
 
-  // 6. Peak-normalise to −1 dBFS
-  let peak = 0;
-  for (let i = 0; i < output.length; i++) {
-    const a = Math.abs(output[i]);
-    if (a > peak) peak = a;
-  }
-  if (peak > 0 && peak < 0.891) {
-    const g = 0.891 / peak; // ~−1 dBFS
-    for (let i = 0; i < output.length; i++) output[i] *= g;
-  }
-
-  progress('Done', 100);
-  self.postMessage({ type: 'result', signal: output, sampleRate }, [output.buffer]);
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-function log(level, msg) {
-  self.postMessage({ type: 'log', level, msg });
-}
-
-function progress(stage, pct) {
-  self.postMessage({ type: 'progress', stage, pct });
-}
-
-// ── Message handler ────────────────────────────────────────────────────────
-self.onmessage = async (e) => {
-  const { type } = e.data;
-  try {
-    if (type === 'init') {
-      await initModels();
-    } else if (type === 'process') {
-      await processAudio(e.data);
-    } else if (type === 'reset') {
-      dfState = dfEnc ? initDFState() : null;
+  // RNNoise residual noise suppression
+  if (sessions['rnnoise'] && allowedStages >= 8) {
+    try {
+      const rnIn   = new ort.Tensor('float32', magnitudes, [1, numBins]);
+      const result = await sessions['rnnoise'].run({ input: rnIn });
+      const rnMask = result.output.data;
+      for (let k = 0; k < numBins; k++) {
+        mask[k] *= Math.max(0.01, rnMask[k]); // floor prevents total silence
+      }
+    } catch (e) {
+      console.warn('[ml-worker] rnnoise error:', e.message);
     }
-  } catch (err) {
-    self.postMessage({ type: 'error', msg: err.message });
   }
-};
+
+  // VoiceFixer harmonic restoration (ENTERPRISE only)
+  if (sessions['voicefixer'] && allowedStages >= 14) {
+    try {
+      const vfIn   = new ort.Tensor('float32', magnitudes, [1, numBins]);
+      const result = await sessions['voicefixer'].run({ input: vfIn });
+      const vfGain = result.gain.data;
+      for (let k = 0; k < numBins; k++) {
+        mask[k] = mask[k] * (0.5 + 0.5 * Math.min(2, vfGain[k]));
+      }
+    } catch (e) {
+      console.warn('[ml-worker] voicefixer error:', e.message);
+    }
+  }
+
+  // Final safety pass: clamp all values to [0, 1]; replace NaN/Inf with 1 (passthrough)
+  for (let k = 0; k < numBins; k++) {
+    const v = mask[k];
+    mask[k] = (Number.isFinite(v) && v >= 0) ? Math.min(v, 1) : 1;
+  }
+
+  return mask;
+}
+
+function runVADFallback(magnitudes) {
+  let sum = 0;
+  let voiceBand = 0;
+  const voiceLo = Math.round((300 / (currentFFTSize / 2)) * (magnitudes.length - 1));
+  const voiceHi = Math.round((3400 / (currentFFTSize / 2)) * (magnitudes.length - 1));
+  for (let k = 0; k < magnitudes.length; k++) {
+    const e = magnitudes[k] * magnitudes[k];
+    sum += e;
+    if (k >= voiceLo && k <= voiceHi) voiceBand += e;
+  }
+  const totalRMS = Math.sqrt(sum / Math.max(1, magnitudes.length));
+  const energyRatio = voiceBand / Math.max(sum, 1e-9);
+  const rmsScore = Math.max(0, Math.min(1, (totalRMS - VAD_FALLBACK_RMS_BASELINE) / VAD_FALLBACK_RMS_RANGE));
+  const ratioScore = Math.max(0, Math.min(1, (energyRatio - VAD_FALLBACK_RATIO_BASELINE) / VAD_FALLBACK_RATIO_RANGE));
+  const rawScore = VAD_FALLBACK_BLEND_RMS * rmsScore + VAD_FALLBACK_BLEND_RATIO * ratioScore;
+  speechConfidence = speechConfidence * 0.85 + rawScore * 0.15;
+  speechStreak = speechConfidence > 0.6 ? speechStreak + 1 : Math.max(0, speechStreak - 1);
+  return { isVoice: speechStreak >= 3, speechConfidence };
+}
+
+function updateNoiseProfile(magnitudes) {
+  if (!noiseProfile || noiseProfile.length !== magnitudes.length) {
+    noiseProfile = new Float32Array(magnitudes.length);
+    noiseFrames = 0;
+    warmupComplete = false;
+  }
+  let sumSq = 0;
+  for (let k = 0; k < magnitudes.length; k++) sumSq += magnitudes[k] * magnitudes[k];
+  // Seed with a conservative broadband estimate so warmup starts suppressing
+  // immediately instead of passing near-raw noise during early frames.
+  const broadbandSeed = Math.sqrt(sumSq / Math.max(1, magnitudes.length)) * NOISE_SEED_SCALE + 1e-6;
+  const alpha = noiseFrames < 5 ? 0.5 : 0.92;
+  for (let k = 0; k < magnitudes.length; k++) {
+    if (noiseFrames === 0) noiseProfile[k] = broadbandSeed;
+    noiseProfile[k] = alpha * noiseProfile[k] + (1 - alpha) * magnitudes[k];
+  }
+  noiseFrames++;
+  if (noiseFrames >= NOISE_WARMUP_FRAMES) warmupComplete = true;
+}
+
+function applyWienerFilter(magnitudes, mask, isVoice) {
+  updateNoiseProfile(magnitudes);
+  const spectralFloor = Math.max(0.001, Math.min(0.05, Number(runtimeParams.spectralFloor) || 0.005));
+  const forensicMode = !!runtimeParams.forensicMode;
+  const noiseReduce = Math.max(0, Math.min(1, Number(runtimeParams.noiseReduce) || 0.7));
+  // For forensic mode with very low floor, allow stronger subtraction.
+  // Otherwise keep alpha capped for voice quality to reduce musical noise.
+  const alphaCap = (forensicMode && spectralFloor < FORENSIC_ALPHA_FLOOR_THRESHOLD)
+    ? ALPHA_CAP_FORENSIC
+    : ALPHA_CAP_DEFAULT;
+  const alpha = Math.min(alphaCap, 1.0 + noiseReduce);
+
+  for (let k = 0; k < magnitudes.length; k++) {
+    const signalPow = magnitudes[k] * magnitudes[k];
+    const noisePow = Math.max(1e-12, noiseProfile[k] * noiseProfile[k] * alpha);
+    const snr = Math.min(SNR_MAX, signalPow / noisePow);
+    const gain = snr / (snr + 1.0);
+    mask[k] *= Math.max(spectralFloor, Math.min(1, gain));
+  }
+
+  // 3-bin moving-average smoothing reduces isolated spectral holes (musical noise).
+  // Boundary-unrolled to avoid per-bin Math.max/Math.min; buffer is cached.
+  const len = mask.length;
+  if (!_smoothBuffer || _smoothBuffer.length < len) _smoothBuffer = new Float32Array(len);
+  const smooth = _smoothBuffer;
+  if (len > 0) {
+    smooth[0] = len > 1 ? (mask[0] + mask[0] + mask[1]) / 3 : mask[0];
+    const last = len - 1;
+    for (let k = 1; k < last; k++) smooth[k] = (mask[k - 1] + mask[k] + mask[k + 1]) / 3;
+    if (last > 0) smooth[last] = (mask[last - 1] + mask[last] + mask[last]) / 3;
+  }
+  const voiceFloor = isVoice ? spectralFloor : Math.min(1, spectralFloor * runtimeParams.nonVoiceSuppression);
+  for (let k = 0; k < len; k++) {
+    const s = smooth[k];
+    mask[k] = s > 1 ? 1 : (s < voiceFloor ? voiceFloor : s);
+  }
+}

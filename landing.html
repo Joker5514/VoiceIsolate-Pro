@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VoiceIsolate Pro — Studio-Grade Audio Isolation</title>
+  <meta name="description" content="Browser-based AI audio isolation. Remove noise, isolate vocals, separate stems — 100% local, no uploads to any server." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111118;
+      --surface2: #16161f;
+      --border: rgba(255,255,255,0.08);
+      --text: #e8e8f0;
+      --muted: #8888a8;
+      --faint: #444458;
+      --accent: #7c6af7;
+      --accent2: #4fa8ff;
+      --glow: rgba(124,106,247,0.35);
+      --font-display: 'Space Grotesk', sans-serif;
+      --font-body: 'Inter', sans-serif;
+      --radius: 12px;
+      --radius-lg: 20px;
+    }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.6;
+      min-height: 100dvh;
+      overflow-x: hidden;
+    }
+    /* ── hidden file input ── */
+    #file-input-hidden {
+      position: absolute;
+      width: 1px; height: 1px;
+      opacity: 0; pointer-events: none;
+      left: -9999px; top: -9999px;
+    }
+    /* ── nav ── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 clamp(1.5rem, 5vw, 4rem);
+      height: 64px;
+      background: rgba(10,10,15,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo {
+      font-family: var(--font-display);
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+      text-decoration: none;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .nav-logo svg { color: var(--accent); }
+    .nav-links { display: flex; align-items: center; gap: 2rem; }
+    .nav-links a {
+      color: var(--muted); text-decoration: none; font-size: 0.875rem;
+      transition: color 0.18s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .btn-nav {
+      background: var(--accent); color: #fff;
+      padding: 0.5rem 1.25rem; border-radius: 8px;
+      font-size: 0.875rem; font-weight: 600; border: none; cursor: pointer;
+      transition: opacity 0.18s, transform 0.18s;
+      text-decoration: none;
+    }
+    .btn-nav:hover { opacity: 0.88; transform: translateY(-1px); }
+    /* ── hero ── */
+    .hero {
+      min-height: 100dvh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      text-align: center;
+      padding: 120px clamp(1.5rem, 5vw, 4rem) 80px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-glow {
+      position: absolute; top: -20%; left: 50%; transform: translateX(-50%);
+      width: 800px; height: 600px;
+      background: radial-gradient(ellipse at center, rgba(124,106,247,0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(124,106,247,0.12); border: 1px solid rgba(124,106,247,0.3);
+      color: #a89cf8; border-radius: 999px;
+      padding: 0.35rem 1rem; font-size: 0.8rem; font-weight: 500;
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2.5rem, 7vw, 5.5rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      margin-bottom: 1.25rem;
+      background: linear-gradient(135deg, #fff 30%, #a89cf8 70%, #4fa8ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero p {
+      font-size: clamp(1rem, 2vw, 1.25rem);
+      color: var(--muted);
+      max-width: 560px;
+      margin: 0 auto 2.5rem;
+    }
+    /* ── upload drop zone ── */
+    .upload-zone {
+      width: min(560px, 90vw);
+      background: var(--surface);
+      border: 2px dashed rgba(124,106,247,0.4);
+      border-radius: var(--radius-lg);
+      padding: 2.5rem 2rem;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(124,106,247,0.05);
+    }
+    .upload-zone-icon {
+      width: 56px; height: 56px; margin: 0 auto 1rem;
+      background: rgba(124,106,247,0.15);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .upload-zone h3 {
+      font-family: var(--font-display);
+      font-size: 1.1rem; font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+    .upload-zone p {
+      font-size: 0.875rem; color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--accent); color: #fff;
+      padding: 0.75rem 1.75rem; border-radius: 10px;
+      font-size: 1rem; font-weight: 600;
+      border: none; cursor: pointer;
+      transition: opacity 0.18s, transform 0.18s, box-shadow 0.18s;
+      box-shadow: 0 0 0 0 var(--glow);
+    }
+    .btn-primary:hover {
+      opacity: 0.9; transform: translateY(-2px);
+      box-shadow: 0 8px 24px var(--glow);
+    }
+    .btn-primary:active { transform: translateY(0); }
+    .upload-formats {
+      margin-top: 1rem;
+      font-size: 0.75rem; color: var(--faint);
+    }
+    /* ── secondary CTAs ── */
+    .hero-actions {
+      display: flex; flex-wrap: wrap; gap: 1rem;
+      justify-content: center; margin-top: 1.5rem;
+    }
+    .btn-secondary {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.65rem 1.4rem; border-radius: 10px;
+      font-size: 0.9rem; font-weight: 500; cursor: pointer;
+      transition: border-color 0.18s, color 0.18s, background 0.18s;
+      text-decoration: none;
+    }
+    .btn-secondary:hover {
+      border-color: rgba(255,255,255,0.2);
+      color: var(--text);
+      background: rgba(255,255,255,0.04);
+    }
+    /* ── features ── */
+    .features {
+      padding: clamp(4rem, 8vw, 8rem) clamp(1.5rem, 5vw, 4rem);
+      max-width: 1100px; margin: 0 auto;
+    }
+    .section-label {
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+    .section-title {
+      font-family: var(--font-display);
+      font-size: clamp(1.75rem, 4vw, 2.75rem);
+      font-weight: 700; line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+    .section-sub { color: var(--muted); max-width: 500px; margin-bottom: 3rem; }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+      gap: 1.25rem;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .feature-card:hover { border-color: rgba(124,106,247,0.3); transform: translateY(-3px); }
+    .feature-icon {
+      width: 40px; height: 40px; margin-bottom: 1rem;
+      background: rgba(124,106,247,0.12);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent);
+    }
+    .feature-card h4 {
+      font-family: var(--font-display);
+      font-size: 1rem; font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+    .feature-card p { font-size: 0.875rem; color: var(--muted); }
+    /* ── how it works ── */
+    .how {
+      padding: clamp(4rem, 8vw, 8rem) clamp(1.5rem, 5vw, 4rem);
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .how-inner { max-width: 1100px; margin: 0 auto; }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+      gap: 2rem; margin-top: 3rem;
+    }
+    .step { display: flex; flex-direction: column; gap: 0.75rem; }
+    .step-num {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(124,106,247,0.15);
+      border: 1px solid rgba(124,106,247,0.4);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-display);
+      font-size: 0.875rem; font-weight: 700; color: var(--accent);
+    }
+    .step h4 { font-family: var(--font-display); font-weight: 600; }
+    .step p { font-size: 0.875rem; color: var(--muted); }
+    /* ── CTA section ── */
+    .cta-section {
+      padding: clamp(4rem, 8vw, 8rem) clamp(1.5rem, 5vw, 4rem);
+      text-align: center;
+    }
+    .cta-section h2 {
+      font-family: var(--font-display);
+      font-size: clamp(1.75rem, 4vw, 2.75rem);
+      font-weight: 700; margin-bottom: 1rem;
+    }
+    .cta-section p { color: var(--muted); margin-bottom: 2rem; }
+    /* ── footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem clamp(1.5rem, 5vw, 4rem);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 1rem;
+      color: var(--faint); font-size: 0.8rem;
+    }
+    /* ── toast ── */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); padding: 0.75rem 1.5rem;
+      border-radius: 999px; font-size: 0.875rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      transition: transform 0.3s cubic-bezier(0.16,1,0.3,1), opacity 0.3s;
+      opacity: 0; z-index: 999; white-space: nowrap;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    /* ── progress overlay ── */
+    #progress-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(10,10,15,0.82);
+      backdrop-filter: blur(8px);
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 1.25rem;
+    }
+    #progress-overlay.visible { display: flex; }
+    #progress-overlay p {
+      font-family: var(--font-display);
+      font-size: 1.1rem; color: var(--text);
+    }
+    .spinner {
+      width: 42px; height: 42px;
+      border: 3px solid rgba(124,106,247,0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* ── mobile ── */
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .upload-zone { padding: 2rem 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Hidden real file input — browser file picker target -->
+<input type="file" id="file-input-hidden"
+  accept="audio/*,video/*,.mp3,.wav,.flac,.aac,.m4a,.ogg,.opus,.mp4,.mov,.webm"
+  aria-hidden="true" tabindex="-1" />
+
+<!-- Toast notification -->
+<div id="toast" role="status" aria-live="polite"></div>
+
+<!-- Progress overlay shown while reading large files -->
+<div id="progress-overlay" role="status" aria-live="polite" aria-label="Loading file">
+  <div class="spinner" aria-hidden="true"></div>
+  <p id="progress-msg">Reading file…</p>
+</div>
+
+<!-- Nav -->
+<nav>
+  <a href="/" class="nav-logo">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+    </svg>
+    VoiceIsolate Pro
+  </a>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#how-it-works">How it works</a>
+    <a href="public/app/index.html">Engineer Mode</a>
+    <button class="btn-nav" id="nav-upload-btn">Upload Audio</button>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-glow" aria-hidden="true"></div>
+
+  <div class="hero-badge">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>
+    100% Local · No Cloud · No Data Sent
+  </div>
+
+  <h1>Studio-Grade<br/>Audio Isolation</h1>
+
+  <p>Remove background noise, isolate vocals, and separate stems — powered by on-device AI with a 32-stage DSP pipeline. Your audio never leaves your browser.</p>
+
+  <!-- Drop Zone -->
+  <div class="upload-zone" id="drop-zone" role="button" tabindex="0"
+    aria-label="Upload audio file — click or drag and drop">
+    <div class="upload-zone-icon" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#7c6af7" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+    </div>
+    <h3>Drop your audio file here</h3>
+    <p>MP3, WAV, FLAC, AAC, M4A, OGG, OPUS, MP4 and more</p>
+    <button class="btn-primary" id="browse-btn" type="button">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      Browse Files
+    </button>
+    <div class="upload-formats">Supported: MP3 · WAV · FLAC · AAC · M4A · OGG · MP4 · MOV · WEBM</div>
+  </div>
+
+  <!-- Secondary actions -->
+  <div class="hero-actions">
+    <a href="public/app/index.html" class="btn-secondary" id="engineer-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M4.93 4.93a10 10 0 0 0 14.14 14.14"/>
+      </svg>
+      Open Engineer Mode
+    </a>
+    <a href="#how-it-works" class="btn-secondary">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      How it works
+    </a>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="features" id="features">
+  <div class="section-label">Capabilities</div>
+  <h2 class="section-title">Everything you need<br/>in one pipeline</h2>
+  <p class="section-sub">A 32-stage Octa-Pass DSP pipeline with hybrid ML models running entirely in your browser.</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+      </div>
+      <h4>Vocal Isolation</h4>
+      <p>Separate lead vocals from any mix using Demucs v4 and BSRNN models running locally via ONNX Runtime.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M23 9l-6 6M17 9l6 6"/></svg>
+      </div>
+      <h4>Noise Removal</h4>
+      <p>Spectral subtraction, Wiener filtering, and ML denoising eliminate background noise, hum, and hiss.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      </div>
+      <h4>Stem Separation</h4>
+      <p>Split any audio into vocals, drums, bass, and other instruments with stems available for individual export.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </div>
+      <h4>Real-Time Live Mode</h4>
+      <p>Sub-10ms latency AudioWorklet pipeline with SharedArrayBuffer for live monitoring during recording or streaming.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <h4>100% Private</h4>
+      <p>All processing happens on your device. No audio is ever uploaded to any server. Completely offline-capable.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <h4>52-Slider Engineer Mode</h4>
+      <p>Professional-grade controls with a 3D spectrogram, per-stage gain staging, and full DSP parameter access.</p>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section class="how" id="how-it-works">
+  <div class="how-inner">
+    <div class="section-label">Process</div>
+    <h2 class="section-title">How it works</h2>
+    <p class="section-sub">Single-pass spectral architecture — one STFT in, one iSTFT out. No phase smearing.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h4>Upload your file</h4>
+        <p>Drop any audio or video file. It's decoded locally using the Web Audio API — nothing leaves your device.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h4>AI Analysis</h4>
+        <p>Demucs v4 and BSRNN models (WebGPU-accelerated) analyse your audio with a single forward STFT pass.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h4>32-Stage DSP</h4>
+        <p>The Octa-Pass pipeline applies spectral denoising, harmonic separation, and transient shaping in-place.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <h4>Export</h4>
+        <p>Download your clean vocals, stems, or full mix as WAV or FLAC — studio-ready quality, right from your browser.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta-section">
+  <h2>Ready to isolate?</h2>
+  <p>Drop your first file and hear the difference in seconds.</p>
+  <button class="btn-primary" id="cta-upload-btn" type="button" style="font-size:1.05rem; padding: 0.85rem 2rem;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+    </svg>
+    Upload Audio Now
+  </button>
+</section>
+
+<!-- Footer -->
+<footer>
+  <span>© 2026 VoiceIsolate Pro · Conqueror Studios</span>
+  <span>100% local processing · No cloud · No tracking</span>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+
+  const fileInput       = document.getElementById('file-input-hidden');
+  const dropZone        = document.getElementById('drop-zone');
+  const browseBtn       = document.getElementById('browse-btn');
+  const navBtn          = document.getElementById('nav-upload-btn');
+  const ctaBtn          = document.getElementById('cta-upload-btn');
+  const toast           = document.getElementById('toast');
+  const progressOverlay = document.getElementById('progress-overlay');
+  const progressMsg     = document.getElementById('progress-msg');
+
+  // ── Toast helper ──────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg, duration) {
+    duration = duration || 3000;
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove('show'); }, duration);
+  }
+
+  // ── Progress overlay ──────────────────────────────────────
+  function showProgress(msg) {
+    progressMsg.textContent = msg || 'Loading file…';
+    progressOverlay.classList.add('visible');
+  }
+  function hideProgress() {
+    progressOverlay.classList.remove('visible');
+  }
+
+  // ── Accepted MIME / extension check ─────────────────────
+  var ACCEPTED_EXTS = /\.(mp3|wav|flac|aac|m4a|ogg|opus|mp4|mov|webm|wma|aiff|aif)$/i;
+  function isAccepted(file) {
+    return file.type.startsWith('audio/') ||
+           file.type.startsWith('video/') ||
+           ACCEPTED_EXTS.test(file.name);
+  }
+
+  // ── Core: hand the File object to the engineer page ──────
+  //
+  // STRATEGY (in priority order):
+  //   1. window.VIP_PENDING_FILE — a global on the *same* window object.
+  //      Works when engineer page is opened via window.open() in the same
+  //      browsing context (same origin, opener still alive).
+  //   2. sessionStorage — works when pages share the same browsing context
+  //      and storage is not sandboxed.  We try both a raw Blob URL reference
+  //      (just the object-URL string, which only works same-tab) and a
+  //      base64 data-URL for the actual bytes (capped at 50 MB to avoid OOM).
+  //   3. BroadcastChannel — engineer page listens on 'vip_file_channel' and
+  //      receives {file, blobUrl} the moment it is ready.
+  //
+  // The engineer page (public/app/index.html / app.js) should check all
+  // three sources on DOMContentLoaded in the same priority order.
+
+  function handleFile(file) {
+    if (!file) return;
+    if (!isAccepted(file)) {
+      showToast('Unsupported format. Use MP3, WAV, FLAC, AAC, M4A, OGG, MP4 or similar.');
+      return;
+    }
+
+    showProgress('Reading "' + file.name + '"…');
+
+    // --- 1. Always create a Blob URL (works for same-tab navigations) ---
+    var blobUrl = URL.createObjectURL(file);
+
+    // Expose on the window so the engineer page can grab it via window.opener
+    window.VIP_PENDING_FILE    = file;
+    window.VIP_PENDING_BLOB    = blobUrl;
+    window.VIP_PENDING_META    = { name: file.name, type: file.type || 'audio/unknown', size: file.size };
+
+    // --- 2. sessionStorage (best-effort; may be blocked in sandboxes) ---
+    try {
+      sessionStorage.setItem('vip_pending_filename', file.name);
+      sessionStorage.setItem('vip_pending_type',     file.type || 'audio/unknown');
+      sessionStorage.setItem('vip_pending_size',     String(file.size));
+      sessionStorage.setItem('vip_pending_blob_url', blobUrl);  // valid same-tab only
+    } catch (_) { /* sandboxed — will rely on BroadcastChannel / opener */ }
+
+    // --- 3. BroadcastChannel — engineer page picks this up if already open ---
+    try {
+      var bc = new BroadcastChannel('vip_file_channel');
+      bc.postMessage({ type: 'VIP_FILE', name: file.name, mimeType: file.type, blobUrl: blobUrl });
+      bc.close();
+    } catch (_) { /* BroadcastChannel not available in this context */ }
+
+    // --- 4. For large files also try base64 in sessionStorage (≤ 50 MB) ---
+    var MAX_BASE64 = 50 * 1024 * 1024;
+    if (file.size <= MAX_BASE64) {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          sessionStorage.setItem('vip_pending_data', e.target.result);
+        } catch (_) { /* quota exceeded — blobUrl path is the fallback */ }
+        navigateToEngineer(file, blobUrl);
+      };
+      reader.onerror = function () {
+        hideProgress();
+        showToast('Could not read file. Please try again.');
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // File too large for base64; rely on blobUrl / BroadcastChannel
+      navigateToEngineer(file, blobUrl);
+    }
+  }
+
+  function navigateToEngineer(file, blobUrl) {
+    hideProgress();
+    // Pass metadata in the query string so engineer page always has at least the name
+    var params = new URLSearchParams({
+      src:  'landing',
+      file: file.name,
+      mime: file.type || 'audio/unknown',
+      blob: blobUrl          // Blob URLs survive same-tab navigation on all major browsers
+    });
+    window.location.href = 'public/app/index.html?' + params.toString();
+  }
+
+  // ── Open file picker ──────────────────────────────────────
+  function triggerPicker() {
+    fileInput.value = ''; // reset so same file can be re-selected
+    fileInput.click();
+  }
+
+  // ── Wire up all upload triggers ───────────────────────────
+  browseBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    triggerPicker();
+  });
+
+  navBtn.addEventListener('click', triggerPicker);
+  ctaBtn.addEventListener('click', triggerPicker);
+
+  // Drop zone click (whole card)
+  dropZone.addEventListener('click', function (e) {
+    if (e.target === browseBtn || browseBtn.contains(e.target)) return;
+    triggerPicker();
+  });
+
+  // Keyboard accessibility on drop zone
+  dropZone.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      triggerPicker();
+    }
+  });
+
+  // File input change
+  fileInput.addEventListener('change', function () {
+    if (fileInput.files && fileInput.files[0]) {
+      handleFile(fileInput.files[0]);
+    }
+  });
+
+  // ── Drag and drop ────────────────────────────────────────
+  ['dragenter', 'dragover'].forEach(function (evt) {
+    dropZone.addEventListener(evt, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      dropZone.classList.add('drag-over');
+    });
+  });
+
+  ['dragleave', 'dragend'].forEach(function (evt) {
+    dropZone.addEventListener(evt, function (e) {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+    });
+  });
+
+  dropZone.addEventListener('drop', function (e) {
+    e.preventDefault(); e.stopPropagation();
+    dropZone.classList.remove('drag-over');
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+
+  // Also accept full-page drops as convenience
+  document.addEventListener('dragover', function (e) { e.preventDefault(); });
+  document.addEventListener('drop', function (e) {
+    e.preventDefault();
+    var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+
+})();
+</script>
+
+</body>
+</html>

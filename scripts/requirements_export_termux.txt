@@ -1,0 +1,23 @@
+# VoiceIsolate Pro -- Termux/Android export requirements
+# Run: pip install -r scripts/requirements_export_termux.txt
+#
+# NOTE: Install libopenblas via pkg first:
+#   pkg install libopenblas -y
+
+# Core ML (CPU-only wheels -- no CUDA on Android)
+torch>=2.1.0
+demucs>=4.0.0
+
+# ONNX
+onnx>=1.15.0
+onnxruntime>=1.17.0
+
+# RAM monitoring (critical for Termux)
+psutil>=5.9.0
+
+# Numpy
+numpy>=1.24.0
+
+# Optional graph simplification
+# onnxsim may fail to build on Android ARM -- skip if pip install fails
+# onnxsim>=0.4.33

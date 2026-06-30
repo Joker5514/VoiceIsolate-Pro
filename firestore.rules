@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    function isAuthed() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isAuthed() && request.auth.uid == uid;
+    }
+    // Fields the client must never be allowed to write directly.
+    // tier and plan are set server-side by RevenueCat webhook / Cloud Function.
+    function noPrivilegeEscalation() {
+      return !request.resource.data.diff(resource.data)
+               .affectedKeys()
+               .hasAny(['tier', 'licenseKey', 'plan', 'role', 'isAdmin']);
+    }
+    // Lightweight size guards — prevent runaway writes.
+    function presetSizeOk() {
+      return request.resource.data.keys().size() <= 30
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 120
+          && request.resource.data.userId is string;
+    }
+    function sessionSizeOk() {
+      return request.resource.data.keys().size() <= 20
+          && request.resource.data.userId is string
+          && request.resource.data.createdAt != null;
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────
+    // Users can read and update their own doc, but NEVER escalate privileges.
+    // `tier`, `licenseKey`, `plan`, `role`, `isAdmin` are server-only fields.
+    match /users/{userId} {
+      allow read:   if isOwner(userId);
+      allow create: if isOwner(userId)
+                    && !request.resource.data.keys()
+                        .hasAny(['tier', 'licenseKey', 'plan', 'role', 'isAdmin']);
+      allow update: if isOwner(userId) && noPrivilegeEscalation();
+      // Deletes are never allowed from the client.
+    }
+
+    // ── Presets ───────────────────────────────────────────────────────────
+    match /presets/{presetId} {
+      allow read:          if isAuthed() && resource.data.userId == request.auth.uid;
+      allow create:        if isAuthed()
+                           && request.resource.data.userId == request.auth.uid
+                           && presetSizeOk();
+      allow update, delete: if isAuthed() && resource.data.userId == request.auth.uid
+                            && presetSizeOk();
+    }
+
+    // ── Sessions ─────────────────────────────────────────────────────────
+    // Append-only: no update or delete to preserve audit log integrity.
+    match /sessions/{sessionId} {
+      allow read:   if isAuthed() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthed()
+                    && request.resource.data.userId == request.auth.uid
+                    && sessionSizeOk();
+      // No update, no delete — sessions are immutable audit records.
+    }
+
+    // ── Licenses ─────────────────────────────────────────────────────────
+    // Read-only for the licence owner. No client writes ever.
+    match /licenses/{licenseKey} {
+      allow read:  if isAuthed() && resource.data.userId == request.auth.uid;
+      allow write: if false;  // server-side (Cloud Function / webhook) only
+    }
+
+    // ── Catch-all deny ───────────────────────────────────────────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

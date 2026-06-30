@@ -1,0 +1,102 @@
+process.env.LICENSE_JWT_SECRET = 'test-secret';
+const request = require('supertest');
+const path = require('path');
+
+describe('Server.js Integration Tests', () => {
+  let app;
+
+  beforeAll(async () => {
+    const serverModule = await import('../server.js');
+    app = serverModule.app;
+  });
+
+  describe('Cross-Origin Isolation Headers', () => {
+    test('should return correct cross-origin headers for root path', async () => {
+      const res = await request(app).get('/');
+      expect(res.headers['cross-origin-opener-policy']).toBe('same-origin');
+      expect(res.headers['cross-origin-embedder-policy']).toBe('require-corp');
+      expect(res.headers['cross-origin-resource-policy']).toBe('same-origin');
+    });
+
+    test('should return correct cross-origin headers for health endpoint', async () => {
+      const res = await request(app).get('/health');
+      expect(res.headers['cross-origin-opener-policy']).toBe('same-origin');
+      expect(res.headers['cross-origin-embedder-policy']).toBe('require-corp');
+      expect(res.headers['cross-origin-resource-policy']).toBe('same-origin');
+    });
+  });
+
+  describe('Security Hardening Headers', () => {
+    test('should return proper security headers', async () => {
+      const res = await request(app).get('/');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['x-frame-options']).toBe('DENY');
+      expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
+      // Microphone fully denied — live-mic ingestion is architecturally forbidden
+      expect(res.headers['permissions-policy']).toBe('microphone=(), camera=(), geolocation=()');
+    });
+
+    test('should return proper Content-Security-Policy', async () => {
+      const res = await request(app).get('/');
+      const csp = res.headers['content-security-policy'];
+      expect(csp).toBeDefined();
+      expect(csp).toContain("default-src 'self'");
+      expect(csp).toContain("script-src 'self'");
+      expect(csp).toContain("style-src 'self'");
+      expect(csp).toContain("font-src 'self'");
+      expect(csp).toContain("img-src 'self' data: blob:");
+      expect(csp).toContain("media-src 'self' blob:");
+      expect(csp).not.toContain('mediastream:');
+      expect(csp).toContain("connect-src 'self'");
+      expect(csp).toContain("worker-src 'self' blob:");
+      // 'wasm-src' is not a real CSP directive — wasm is governed by
+      // 'wasm-unsafe-eval' in script-src.
+      expect(csp).not.toContain('wasm-src');
+      expect(csp).toContain("'wasm-unsafe-eval'");
+    });
+
+    test('non-legacy paths get strict CSP without unsafe-inline scripts', async () => {
+      const res = await request(app).get('/health');
+      const csp = res.headers['content-security-policy'];
+      expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
+      expect(csp.match(/script-src[^;]*/)[0]).not.toContain('unsafe-inline');
+    });
+
+    test('legacy /app path keeps scoped inline-script exception during migration', async () => {
+      const res = await request(app).get('/app/index.html');
+      const csp = res.headers['content-security-policy'];
+      expect(csp.match(/script-src[^;]*/)[0]).toContain("'unsafe-inline'");
+    });
+  });
+
+  describe('API Endpoints', () => {
+    test('GET /health returns minimal health status (no version/feature disclosure)', async () => {
+      const res = await request(app).get('/health');
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toHaveProperty('status', 'ok');
+      // Version and feature details must not be exposed on the public health endpoint
+      expect(res.body).not.toHaveProperty('version');
+      expect(res.body).not.toHaveProperty('app');
+      expect(res.body).not.toHaveProperty('features');
+    });
+  });
+
+  describe('Static Assets', () => {
+    test('should serve index.html for root', async () => {
+      const res = await request(app).get('/');
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('text/html');
+    });
+
+    test('should serve static files with correct COOP/COEP headers', async () => {
+      const res = await request(app).get('/app/app.js');
+      expect(res.statusCode).not.toBe(404);
+      if (res.statusCode === 200) {
+        // Accept both: application/javascript (Express 4 default) and
+        // text/javascript (Express 5 / serve-static@2 default per RFC 9239)
+        expect(res.headers['content-type']).toMatch(/(application|text)\/javascript/);
+        expect(res.headers['cross-origin-resource-policy']).toBe('same-origin');
+      }
+    });
+  });
+});

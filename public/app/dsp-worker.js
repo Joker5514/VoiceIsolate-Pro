@@ -1,169 +1,169 @@
 /* ============================================
-   VoiceIsolate Pro — AudioWorklet Processor
-   Phase 3: Low-latency live-mode DSP (<10ms)
-   Threads from Space v8 · dsp-worker.js
+   VoiceIsolate Pro v24.0 — DSP Worker
+   Threads from Space v13 · ML Inference Thread
+   Runs in a dedicated Worker. Owns all ONNX sessions.
    ============================================ */
 
-class VoiceIsolateProcessor extends AudioWorkletProcessor {
-  constructor(options) {
-    super(options);
-    // Current DSP parameter values — updated via port messages from main thread
-    this.params = {
-      hpFreq: 80, hpQ: 0.71,
-      lpFreq: 14000, lpQ: 0.71,
-      gateThresh: -42, gateRelease: 80,
-      compThresh: -24, compRatio: 4, compAttack: 8, compRelease: 200, compKnee: 6,
-      compMakeup: 6, limThresh: -1, outGain: 0
-    };
-    // Biquad filter state (2 channels × HP + LP)
-    this._hpState = [[0,0,0,0],[0,0,0,0]]; // [ch][x1,x2,y1,y2]
-    this._lpState = [[0,0,0,0],[0,0,0,0]];
-    // Gate state
-    this._gateGain = [1, 1];
-    // Compressor envelope follower
-    this._compEnv = [0, 0];
-    // Biquad coefficients (pre-computed at sampleRate)
-    this._hp = null; this._lp = null;
-    this._sr = sampleRate; // AudioWorklet global sampleRate
-    this._computeCoeffs();
+'use strict';
 
-    // Accept parameter updates from main thread
-    this.port.onmessage = (e) => {
-      if (e.data && e.data.sliders) {
-        Object.assign(this.params, e.data.sliders);
-        this._computeCoeffs();
-      }
-    };
-  }
+// BUG-K FIX: explicit relative path prevents failure in some worker origins
+importScripts('./dsp-core.js');
 
-  // Pre-compute biquad coefficients and linear gains from current params
-  _computeCoeffs() {
-    const sr = this._sr;
-    // High-pass Butterworth
-    this._hp = this._biquadHP(this.params.hpFreq, this.params.hpQ, sr);
-    // Low-pass Butterworth
-    this._lp = this._biquadLP(this.params.lpFreq, this.params.lpQ, sr);
+// eslint-disable-next-line no-undef
+const DSPCoreLocal = self.DSPCore || DSPCore;
 
-    // Gate constants
-    this._gateThreshLin = Math.pow(10, this.params.gateThresh / 20);
-    this._gateReleaseCoef = Math.exp(-1 / (sr * (this.params.gateRelease / 1000)));
+// ONNX Runtime is loaded by the main thread before creating this worker.
+// Never importScripts ort.min.js here — it must come from /lib/ort.min.js
+// and be loaded via WorkerManager before this worker is spawned.
 
-    // Compressor constants
-    this._compThreshLin = Math.pow(10, this.params.compThresh / 20);
-    const ratio = Math.max(1, this.params.compRatio);
-    this._compSlope = 1 - 1 / ratio;
-    this._compAttackCoef = Math.exp(-1 / (sr * (this.params.compAttack / 1000)));
-    this._compReleaseCoef = Math.exp(-1 / (sr * (this.params.compRelease / 1000)));
-    this._compMakeupLin = Math.pow(10, this.params.compMakeup / 20);
+const ML_TIMEOUT_MS = 30000;
 
-    // Limiter constants
-    this._limThreshLin = Math.pow(10, this.params.limThresh / 20);
+let dspCore = null;
+let ortSessions = {};
+let isInitialized = false;
 
-    // Global output gain
-    this._outGainLin = Math.pow(10, (this.params.outGain || 0) / 20);
-  }
-
-  // Biquad high-pass coefficients
-  _biquadHP(freq, Q, sr) {
-    const w0 = 2 * Math.PI * freq / sr;
-    const alpha = Math.sin(w0) / (2 * Q);
-    const cos0 = Math.cos(w0);
-    const b0 = (1 + cos0) / 2, b1 = -(1 + cos0), b2 = (1 + cos0) / 2;
-    const a0 = 1 + alpha, a1 = -2 * cos0, a2 = 1 - alpha;
-    return { b0:b0/a0, b1:b1/a0, b2:b2/a0, a1:a1/a0, a2:a2/a0 };
-  }
-
-  // Biquad low-pass coefficients
-  _biquadLP(freq, Q, sr) {
-    const w0 = 2 * Math.PI * freq / sr;
-    const alpha = Math.sin(w0) / (2 * Q);
-    const cos0 = Math.cos(w0);
-    const b0 = (1 - cos0) / 2, b1 = 1 - cos0, b2 = (1 - cos0) / 2;
-    const a0 = 1 + alpha, a1 = -2 * cos0, a2 = 1 - alpha;
-    return { b0:b0/a0, b1:b1/a0, b2:b2/a0, a1:a1/a0, a2:a2/a0 };
-  }
-
-  // Apply a biquad filter in-place to a single-channel block
-  _applyBiquad(block, coeff, state) {
-    const { b0, b1, b2, a1, a2 } = coeff;
-    let [x1, x2, y1, y2] = state;
-    for (let i = 0; i < block.length; i++) {
-      const x = block[i];
-      const y = b0*x + b1*x1 + b2*x2 - a1*y1 - a2*y2;
-      x2 = x1; x1 = x; y2 = y1; y1 = y;
-      block[i] = y;
+// ---------------------------------------------------------------------------
+// Message router
+// ---------------------------------------------------------------------------
+self.onmessage = async function (e) {
+  const { type, id, payload } = e.data;
+  try {
+    let result;
+    switch (type) {
+      case 'init':       result = await handleInit(payload);      break;
+      case 'process':    result = await handleProcess(payload);   break;
+      case 'loadModel':  result = await handleLoadModel(payload); break;
+      case 'getMetrics': result = handleGetMetrics();             break;
+      case 'reset':      result = handleReset();                  break;
+      default: throw new Error(`Unknown message type: ${type}`);
     }
-    state[0] = x1; state[1] = x2; state[2] = y1; state[3] = y2;
+    // Transfer any ArrayBuffer payload (processedData) instead of structured-cloning
+    // — this saves a full PCM copy on every processed block.
+    const transfers = (result && result.processedData instanceof ArrayBuffer)
+      ? [result.processedData]
+      : undefined;
+    self.postMessage({ type: 'result', id, result }, transfers);
+  } catch (err) {
+    self.postMessage({ type: 'error', id, error: err.message, stack: err.stack });
   }
+};
 
-  // Simple RMS-based noise gate (time domain)
-  _applyGate(block, ch) {
-    const threshLin = this._gateThreshLin;
-    const releaseCoef = this._gateReleaseCoef;
-    let g = this._gateGain[ch];
-    for (let i = 0; i < block.length; i++) {
-      const abs = Math.abs(block[i]);
-      const target = abs >= threshLin ? 1 : 0.001;
-      g = target > g ? target : g * releaseCoef + target * (1 - releaseCoef);
-      block[i] *= g;
-    }
-    this._gateGain[ch] = g;
-  }
-
-  // Feed-forward compressor with makeup gain
-  _applyComp(block, ch) {
-    const threshLin = this._compThreshLin;
-    const slope = this._compSlope;
-    const attackCoef = this._compAttackCoef;
-    const releaseCoef = this._compReleaseCoef;
-    const makeupLin = this._compMakeupLin;
-    const limThreshLin = this._limThreshLin;
-    let env = this._compEnv[ch];
-    for (let i = 0; i < block.length; i++) {
-      const abs = Math.abs(block[i]);
-      // Envelope follower
-      env = abs > env ? abs * (1 - attackCoef) + env * attackCoef : abs * (1 - releaseCoef) + env * releaseCoef;
-      let gain = 1;
-      if (env > threshLin) {
-        // ⚡ Bolt: Simplified compressor gain math to avoid slow log10/pow operations
-        // Math.pow(10, -(20 * Math.log10(env/threshLin) * slope) / 20) => Math.pow(env/threshLin, -slope)
-        gain = Math.pow(env / threshLin, -slope);
-      }
-      // Brickwall limiter
-      const out = block[i] * gain * makeupLin;
-      block[i] = Math.max(-limThreshLin, Math.min(limThreshLin, out));
-    }
-    this._compEnv[ch] = env;
-  }
-
-  process(inputs, outputs) {
-    const input = inputs[0];
-    const output = outputs[0];
-    if (!input || !input.length) return true;
-
-    for (let ch = 0; ch < input.length; ch++) {
-      const inCh = input[ch];
-      const outCh = output[ch];
-      if (!inCh || !outCh) continue;
-
-      // Copy input to output buffer for in-place processing
-      outCh.set(inCh);
-
-      // HP filter
-      if (this._hp) this._applyBiquad(outCh, this._hp, this._hpState[ch] || (this._hpState[ch] = [0,0,0,0]));
-      // LP filter
-      if (this._lp) this._applyBiquad(outCh, this._lp, this._lpState[ch] || (this._lpState[ch] = [0,0,0,0]));
-      // Noise gate
-      this._applyGate(outCh, ch);
-      // Compressor + limiter
-      this._applyComp(outCh, ch);
-
-      // Output gain
-      const outGainLin = this._outGainLin;
-      for (let i = 0; i < outCh.length; i++) outCh[i] *= outGainLin;
-    }
-    return true; // keep processor alive
-  }
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+async function handleInit(payload) {
+  // DSPCore is a plain-object singleton, not a class — do not call with `new`
+  dspCore = DSPCoreLocal;
+  isInitialized = true;
+  return { status: 'initialized', sampleRate: payload.sampleRate || 48000 };
 }
 
-registerProcessor('voice-isolate-processor', VoiceIsolateProcessor);
+// ---------------------------------------------------------------------------
+// Load ONNX model
+// ---------------------------------------------------------------------------
+async function handleLoadModel({ modelName, modelPath, ortEnvConfig }) {
+  if (!self.ort) {
+    throw new Error('onnxruntime-web (ort) not available. Ensure /lib/ort.min.js is loaded before worker creation.');
+  }
+
+  // BUG-O FIX: timeout now calls reject() so callers use .catch() properly.
+  // Previously returned { error } which callers silently consumed as success.
+  const session = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`ML model load timeout after ${ML_TIMEOUT_MS / 1000}s — model: ${modelName}`));
+    }, ML_TIMEOUT_MS);
+
+    const opts = {
+      executionProviders: ortEnvConfig?.providers || ['webgpu', 'wasm'],
+      graphOptimizationLevel: 'all',
+    };
+
+    self.ort.InferenceSession.create(modelPath, opts)
+      .then(s => { clearTimeout(timer); resolve(s); })
+      .catch(err => { clearTimeout(timer); reject(err); });
+  });
+
+  ortSessions[modelName] = session;
+  return { status: 'loaded', modelName, inputNames: session.inputNames, outputNames: session.outputNames };
+}
+
+// ---------------------------------------------------------------------------
+// Run inference with timeout (BUG-O pattern applied here too)
+// ---------------------------------------------------------------------------
+async function runInference(modelName, inputTensor) {
+  const session = ortSessions[modelName];
+  if (!session) throw new Error(`Model not loaded: ${modelName}`);
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`ML inference timeout after ${ML_TIMEOUT_MS / 1000}s — model: ${modelName}`));
+    }, ML_TIMEOUT_MS);
+
+    const feeds = {};
+    feeds[session.inputNames[0]] = inputTensor;
+
+    session.run(feeds)
+      .then(out => { clearTimeout(timer); resolve(out); })
+      .catch(err => { clearTimeout(timer); reject(err); });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Process audio block
+// ---------------------------------------------------------------------------
+async function handleProcess(payload) {
+  if (!isInitialized) throw new Error('Worker not initialized — send init message first');
+
+  const { audioData, sampleRate, params, enabledModels } = payload;
+  const input = new Float32Array(audioData);
+  let processed = input;
+
+  // ML separation first (time-domain) — must run before STFT so spectral ops see ML output
+  if (enabledModels?.includes('demucs') && ortSessions['demucs']) {
+    try {
+      const tensor = new self.ort.Tensor('float32', processed, [1, 1, processed.length]);
+      const out = await runInference('demucs', tensor);
+      // out[key].data is already a Float32Array — reference it directly instead of copying.
+      processed = out[Object.keys(out)[0]].data;
+    } catch (err) {
+      console.warn('[dsp-worker] Demucs failed, continuing classical DSP:', err.message);
+      try {
+        self.postMessage({
+          type:  'modelFailed',
+          model: 'demucs',
+          error: err?.message || String(err)
+        });
+      } catch { /* postMessage can fail during teardown */ }
+    }
+  }
+
+  // Single Forward STFT — do not add a second one anywhere in this function
+  const { mag, phase } = dspCore.forwardSTFT(processed);
+
+  // In-place spectral operations on mag/phase arrays
+  if (params) {
+    // ERB spectral gate using noise floor parameter
+    dspCore.spectralGate(mag, params.nrFloor ?? -60, sampleRate);
+    // Wiener noise subtraction (no pre-computed profile available at worker level)
+    if ((params.nrAmount ?? 0) > 0) {
+      dspCore.wienerMMSE(mag, null, params.nrAmount);
+    }
+  }
+
+  // Single Inverse STFT — do not add a second one anywhere
+  const output = dspCore.inverseSTFT(mag, phase);
+
+  return {
+    processedData: output.buffer,
+    metrics: dspCore.getMetrics ? dspCore.getMetrics() : {}
+  };
+}
+
+function handleGetMetrics() {
+  return dspCore?.getMetrics ? dspCore.getMetrics() : {};
+}
+
+function handleReset() {
+  if (dspCore?.reset) dspCore.reset();
+  return { status: 'reset' };
+}

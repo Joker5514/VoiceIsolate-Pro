@@ -1,0 +1,327 @@
+/* =============================================================
+   VoiceIsolate Pro — Playback Speed · A/B Label · Helix Spinner
+   · Processing Badge   v1.0.0
+   ============================================================= */
+
+/* ── Speed buttons ─────────────────────────────────────────── */
+.btn-speed {
+  min-width: 26px;
+  padding: 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 4px;
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.28);
+  border: 1px solid rgba(239, 68, 68, 0.32);
+  transition: background 0.14s, color 0.14s, transform 0.08s;
+  cursor: pointer;
+}
+.btn-speed:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.38);
+  color: #fff;
+}
+.btn-speed:active:not(:disabled) {
+  transform: scale(0.92);
+}
+.btn-speed:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Flash the speed select when value changes */
+@keyframes vip-speed-flash {
+  0%   { box-shadow: 0 0 0 2px rgba(239,68,68,0.0); }
+  35%  { box-shadow: 0 0 0 3px rgba(239,68,68,0.75); }
+  100% { box-shadow: 0 0 0 2px rgba(239,68,68,0.0); }
+}
+.tp-speed-flash {
+  animation: vip-speed-flash 0.45s ease-out forwards;
+}
+
+/* ── A/B label pill ─────────────────────────────────────────── */
+.tp-ab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 4px;
+  border-radius: 20px;
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  background: rgba(127, 29, 29, 0.22);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #fca5a5;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Version tag badge inside the pill */
+.tp-ab-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.32);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: background 0.18s;
+}
+
+/* Original (A) state */
+.tp-ab-label[data-version="A"] {
+  border-color: rgba(239, 68, 68, 0.36);
+  background: rgba(127, 29, 29, 0.28);
+  color: #fca5a5;
+}
+.tp-ab-label[data-version="A"] .tp-ab-tag {
+  background: rgba(239, 68, 68, 0.42);
+}
+
+/* Processed (B) state */
+.tp-ab-label[data-version="B"] {
+  border-color: rgba(255, 42, 42, 0.42);
+  background: rgba(68, 8, 8, 0.38);
+  color: #ff6b6b;
+}
+.tp-ab-label[data-version="B"] .tp-ab-tag {
+  background: rgba(255, 42, 42, 0.36);
+  color: #4a0c0c;
+}
+
+/* Playing pulse on the pill */
+@keyframes vip-ab-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 42, 42,0.0); }
+  50%       { box-shadow: 0 0 0 4px rgba(255, 42, 42,0.28); }
+}
+.tp-ab-label.is-playing {
+  animation: vip-ab-pulse 1.8s ease-in-out infinite;
+}
+
+/* ── VIP DNA Helix Spinner ──────────────────────────────────── */
+/*
+  Uses 8 strands arranged like a double-helix cross-section.
+  Each strand animates with a phase offset, creating a coiling
+  double-helix optical illusion in pure CSS.
+*/
+.vip-helix-spinner {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 20px;
+  vertical-align: middle;
+}
+
+.vip-helix-spinner i {
+  display: block;
+  width: 3px;
+  border-radius: 2px;
+  background: currentColor;
+  animation: vip-helix-wave 1.1s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+/* 8 strands — alternating helix arcs */
+.vip-helix-spinner i:nth-child(1)  { height: 8px;  animation-delay: 0.00s; background: #ef4444; }
+.vip-helix-spinner i:nth-child(2)  { height: 14px; animation-delay: 0.14s; background: #f87171; }
+.vip-helix-spinner i:nth-child(3)  { height: 18px; animation-delay: 0.28s; background: #fca5a5; }
+.vip-helix-spinner i:nth-child(4)  { height: 20px; animation-delay: 0.42s; background: #ff6b6b; }
+.vip-helix-spinner i:nth-child(5)  { height: 18px; animation-delay: 0.56s; background: #ff2a2a; }
+.vip-helix-spinner i:nth-child(6)  { height: 14px; animation-delay: 0.70s; background: #fca5a5; }
+.vip-helix-spinner i:nth-child(7)  { height: 8px;  animation-delay: 0.84s; background: #f87171; }
+.vip-helix-spinner i:nth-child(8)  { height: 14px; animation-delay: 0.98s; background: #ef4444; }
+
+@keyframes vip-helix-wave {
+  0%, 100% { transform: scaleY(0.35) scaleX(1);   opacity: 0.5; }
+  25%       { transform: scaleY(1.0)  scaleX(1.4); opacity: 1.0; }
+  50%       { transform: scaleY(0.6)  scaleX(0.8); opacity: 0.7; }
+  75%       { transform: scaleY(1.0)  scaleX(1.4); opacity: 1.0; }
+}
+
+/* ── Unique "Sonar" processing spinner ─────────────────────────
+   Three orbiting scan rings around a pulsing core — a distinct
+   audio/sonar motif shown while the DSP pipeline is running. It
+   carries the .vip-pb-spinner class so the badge's show/hide logic
+   reveals it during processing and loading. */
+.vip-sonar-spinner {
+  position: relative;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.vip-sonar-spinner i {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-sizing: border-box;
+}
+.vip-sonar-spinner i:nth-child(1) {
+  inset: 0;
+  border-top-color: #00f5ff;
+  border-right-color: #00f5ff;
+  animation: vip-sonar-spin 1.1s linear infinite;
+}
+.vip-sonar-spinner i:nth-child(2) {
+  inset: 4px;
+  border-bottom-color: #9d4dff;
+  border-left-color: #9d4dff;
+  animation: vip-sonar-spin 0.85s linear infinite reverse;
+}
+.vip-sonar-spinner i:nth-child(3) {
+  inset: 8px;
+  border-top-color: #ff3cac;
+  animation: vip-sonar-spin 0.65s linear infinite;
+}
+.vip-sonar-spinner b {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #00f5ff;
+  box-shadow: 0 0 6px #00f5ff, 0 0 12px rgba(0, 245, 255, 0.5);
+  animation: vip-sonar-pulse 1.1s ease-in-out infinite;
+}
+@keyframes vip-sonar-spin { to { transform: rotate(360deg); } }
+@keyframes vip-sonar-pulse {
+  0%, 100% { transform: scale(0.6); opacity: 0.5; }
+  50%      { transform: scale(1.25); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vip-sonar-spinner i, .vip-sonar-spinner b { animation-duration: 2.6s; }
+}
+
+/* Override the old vip-eq-spinner bars with helix in .file-load-indicator */
+.file-load-indicator .vip-eq-spinner {
+  /* Legacy bars hidden; helix inserted by vip-enhancements.js */
+  display: none !important;
+}
+
+/* ── Processing Status Badge ───────────────────────────────── */
+#vip-proc-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #fca5a5;
+  background: rgba(127, 29, 29, 0.22);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  transition: background 0.22s, border-color 0.22s, color 0.22s;
+}
+
+#vip-proc-badge .vip-pb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6b7280;
+  flex-shrink: 0;
+  transition: background 0.22s;
+}
+
+#vip-proc-badge .vip-pb-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#vip-proc-badge .vip-pb-spinner {
+  flex-shrink: 0;
+}
+
+/* Badge states */
+#vip-proc-badge[data-state="idle"] .vip-pb-dot     { background: #6b7280; }
+#vip-proc-badge[data-state="loading"] {
+  background: rgba(6, 38, 62, 0.36);
+  border-color: rgba(255, 42, 42, 0.38);
+  color: #ff6b6b;
+}
+#vip-proc-badge[data-state="loading"] .vip-pb-dot  { background: #ff2a2a; }
+
+#vip-proc-badge[data-state="processing"] {
+  background: rgba(79, 24, 9, 0.36);
+  border-color: rgba(249, 115, 22, 0.45);
+  color: #fdba74;
+}
+#vip-proc-badge[data-state="processing"] .vip-pb-dot { background: #f97316; }
+
+@keyframes vip-badge-proc-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+#vip-proc-badge[data-state="processing"] .vip-pb-dot {
+  animation: vip-badge-proc-pulse 1s ease-in-out infinite;
+}
+
+#vip-proc-badge[data-state="done"] {
+  background: rgba(5, 46, 22, 0.34);
+  border-color: rgba(255, 85, 0, 0.42);
+  color: #86efac;
+}
+#vip-proc-badge[data-state="done"] .vip-pb-dot { background: #ff5500; }
+
+#vip-proc-badge[data-state="error"] {
+  background: rgba(127, 29, 29, 0.38);
+  border-color: rgba(239, 68, 68, 0.55);
+  color: #fca5a5;
+}
+#vip-proc-badge[data-state="error"] .vip-pb-dot {
+  background: #ef4444;
+  animation: none;
+}
+
+/* -- VIP Reactor Core Loader ------------------------------------ */
+.reactor-core-loader {
+  display: inline-flex;
+  position: relative;
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+}
+.reactor-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border: 2px solid transparent;
+  border-top-color: #ff2a2a;
+  border-bottom-color: #ff2a2a;
+  border-radius: 50%;
+  animation: reactor-spin 1s linear infinite;
+  box-shadow: 0 0 8px rgba(255, 42, 42, 0.4) inset, 0 0 8px rgba(255, 42, 42, 0.4);
+}
+.reactor-core {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #ff1111;
+  border-radius: 50%;
+  box-shadow: 0 0 12px #ff1111, 0 0 24px #cc0000;
+  animation: reactor-pulse 0.8s ease-in-out infinite alternate;
+}
+@keyframes reactor-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes reactor-pulse {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(1.3); opacity: 1; }
+}
+

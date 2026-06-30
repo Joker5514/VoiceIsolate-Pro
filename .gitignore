@@ -1,14 +1,66 @@
-node_modules/
-.vercel/
-.env
-.env.local
-.DS_Store
-*.log
-dist/
-.cache/
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# ML model files — too large for git, download separately (see public/app/models/README.md)
-public/app/models/*.onnx
-public/app/models/*.tar.gz
-public/app/models/*.bin
-public/app/models/deepfilter/
+# dependencies
+node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+local-*
+.claude
+.z-ai-config
+*.log
+dev.log
+dev.out.log
+test
+prompt
+
+server.log
+# Skills directory
+/skills/
+
+# pnpm-only — do not commit npm lockfile
+package-lock.json
+
+# Build artifact: canonical src/ copied for static /src/ imports
+public/src/
+
+# Large ONNX models — serve via Vercel Blob (see docs/MODEL_DELIVERY.md)
+public/app/models/demucs_v4_*.onnx
+
+# Parallel redesign workspace (not part of production tree)
+Voice enhancement/

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How VoiceIsolate Pro Works</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    body{background:radial-gradient(circle at top,rgba(220,38,38,.16),transparent 34%),#050507}
+    .how-shell{max-width:1180px;margin:0 auto;padding:32px 18px 64px;position:relative;z-index:1}
+    .how-hero{display:grid;grid-template-columns:1.2fr .8fr;gap:18px;align-items:stretch;margin-bottom:18px}
+    .how-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .how-card{background:linear-gradient(180deg,rgba(20,9,12,.96),rgba(11,11,16,.96));border:1px solid rgba(255,92,92,.12);border-radius:16px;padding:18px;box-shadow:0 22px 80px rgba(0,0,0,.34)}
+    .how-kicker{display:inline-flex;padding:4px 10px;border-radius:999px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.24);font:700 11px/1 'JetBrains Mono',monospace;letter-spacing:.16em;color:#fca5a5;text-transform:uppercase}
+    .how-title{font-size:clamp(2rem,4vw,3.4rem);line-height:1.02;margin:14px 0 10px}
+    .how-copy,.how-list{color:rgba(255,236,236,.78);line-height:1.7}
+    .how-flow{display:grid;gap:10px}
+    .flow-step{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start;padding:12px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05)}
+    .flow-num{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;background:linear-gradient(135deg,#ef4444,#7f1d1d);color:#fff;font:700 12px/1 'JetBrains Mono',monospace}
+    .flow-step h3,.how-card h2{margin:0 0 8px}
+    .how-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+    .how-meta div{padding:12px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.05)}
+    .how-meta strong{display:block;margin-bottom:6px;color:#fff}
+    .how-link-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+    @media (max-width:900px){.how-hero,.how-grid,.how-meta{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <header class="hdr">
+    <div class="hdr-left">
+      <div class="hdr-icon">VIP</div>
+      <div>
+        <h1 class="hdr-title">VoiceIsolate Pro <span class="hdr-ver">Architecture</span></h1>
+        <span class="hdr-badge">HOW IT WORKS</span>
+      </div>
+    </div>
+    <div class="hdr-actions">
+      <a class="btn btn-outline hdr-link" href="index.html">Back to Engineer Mode</a>
+    </div>
+  </header>
+
+  <main class="how-shell">
+    <section class="how-hero">
+      <article class="how-card">
+        <span class="how-kicker">Privacy-first local processing</span>
+        <h2 class="how-title">One forward STFT. In-place spectral work. One inverse STFT.</h2>
+        <p class="how-copy">VoiceIsolate Pro keeps audio inside the browser. Files or live input are decoded locally, cleaned in the time domain, routed through a single spectral pass, reconstructed once, and then polished in an OfflineAudioContext or live AudioWorklet chain. No cloud inference, no telemetry, and no server-side audio processing are introduced in the active pipeline.</p>
+        <div class="how-link-row">
+          <a class="btn btn-primary" href="index.html">Launch Engineer Mode</a>
+          <a class="btn btn-outline" href="../docs/TECHNICAL_GUIDE.md">Technical Guide</a>
+        </div>
+      </article>
+      <aside class="how-card">
+        <h2>Plain-English flow</h2>
+        <div class="how-flow">
+          <div class="flow-step"><div class="flow-num">01</div><div><h3>Input</h3><p class="how-copy">Upload audio/video or capture live input. Decode and allocate buffers locally.</p></div></div>
+          <div class="flow-step"><div class="flow-num">02</div><div><h3>Cleanup</h3><p class="how-copy">Apply gating, hum cleanup, de-essing, and pre-spectral conditioning before FFT.</p></div></div>
+          <div class="flow-step"><div class="flow-num">03</div><div><h3>Isolation</h3><p class="how-copy">Run Wiener-style suppression, voice emphasis, crosstalk control, dereverb, and optional local ML masks in the same spectral buffer.</p></div></div>
+          <div class="flow-step"><div class="flow-num">04</div><div><h3>Rebuild</h3><p class="how-copy">Reconstruct once, then finish with EQ, dynamics, limiting, loudness metrics, A/B review, and export.</p></div></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="how-grid">
+      <article class="how-card">
+        <h2>Execution paths</h2>
+        <ul class="how-list">
+          <li><strong>Live path:</strong> AudioWorklet + SharedArrayBuffer ring buffer for responsive monitoring.</li>
+          <li><strong>Creator / forensic path:</strong> OfflineAudioContext render for deeper cleanup and export-ready output.</li>
+          <li><strong>ML path:</strong> ONNX Runtime Web loads local model assets, preferring WebGPU with WASM fallback.</li>
+        </ul>
+      </article>
+      <article class="how-card">
+        <h2>Engineer controls</h2>
+        <p class="how-copy">The Engineer Mode panel exposes grouped controls for gating, NR, EQ, dynamics, spectral shaping, separation, advanced restoration, and output management. Sliders stay wired to the active transport state, A/B compare, diagnostics cards, and the processing rail.</p>
+      </article>
+      <article class="how-card">
+        <h2>Why the single-pass spectral rule matters</h2>
+        <p class="how-copy">Additional STFT → iSTFT round-trips smear phase, soften transients, and introduce watery artifacts. VoiceIsolate Pro preserves phase coherence by doing spectral operations in-place between one forward transform and one inverse transform.</p>
+      </article>
+      <article class="how-card">
+        <h2>Privacy and local guarantees</h2>
+        <ul class="how-list">
+          <li>No external audio uploads during processing.</li>
+          <li>No telemetry that includes user audio.</li>
+          <li>Models are fetched from same-origin assets and cached locally for repeat runs.</li>
+          <li>SharedArrayBuffer isolation stays protected by COOP/COEP headers.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="how-card" style="margin-top:14px">
+      <h2>32-stage production flow</h2>
+      <div class="how-meta">
+        <div><strong>Passes 1–2</strong><span class="how-copy">Decode, normalize, VAD, gate, click/pop cleanup, hum removal, de-essing.</span></div>
+        <div><strong>Passes 3–6</strong><span class="how-copy">Forward STFT, Wiener NR, spectral refinement, single inverse STFT reconstruction.</span></div>
+        <div><strong>Passes 7–10</strong><span class="how-copy">Offline graph polish, render/mix, loudness metrics, export and forensic audit chain.</span></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

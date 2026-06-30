@@ -52,19 +52,27 @@ public/
     └── v7.5-blueprint.md
 ```
 
-## 32-Stage Octa-Pass Pipeline
-Every code change must preserve these 8 passes in order:
+## 32-Stage Deca-Pass Pipeline
+Every code change must preserve these 10 passes in order. Stage names are canonical
+in `public/app/slider-map.js` (`STAGES` array); validator enforces count = 32.
+This split mirrors the architecture diagram in `README.md`.
 
 | Pass | Stages | Function |
 |------|--------|----------|
-| 1. INGEST | 01–04 | Decode, buffer, noise profile, VAD |
-| 2. ANALYSIS | 05–08 | STFT, pitch track, speaker embed, room analyze |
-| 3. ML SEPARATION | 09–12 | Demucs, BSRNN, ensemble fusion, voiceprint gate |
-| 4. SPECTRAL | 13–16 | Spectral subtract, ERB gate, hum eliminate, transient repair |
-| 5. ROOM | 17–20 | Dereverb, room compensate, stereo recover, iSTFT |
-| 6. TIME-DOMAIN | 21–24 | Dynamics, de-ess, gap fill, temporal coherence |
-| 7. NEURAL | 25–28 | HiFi-GAN vocoder, formant preserve, conformer refine, A/B quality |
-| 8. MASTER | 29–32 | LUFS normalize, voice HF boost, brick-wall limit, audit log |
+| 1.  Input & Normalization     | 01–04 | Decode, buffer allocation, DC offset removal, peak normalize |
+| 2.  Pre-Spectral Cleanup      | 05–09 | Silero VAD, time-domain noise gate, click/pop, 60 Hz hum + harmonics, de-essing |
+| 3.  Forward STFT              | 10    | Single forward FFT (one-time transform — phase coherence anchor) |
+| 4.  Wiener NR                 | 11–12 | Adaptive Wiener pass + residual Wiener pass |
+| 5.  Spectral Refinement       | 13–19 | 32-band ERB gate, voice-band emphasis, crosstalk cancel, anti-garble smoothing, tilt comp, dereverb, harmonic reconstruction |
+| 6.  Inverse STFT              | 20    | Single inverse FFT (one-time transform) |
+| 7.  Offline Audio Graph       | 21–25 | OAC setup, HP/LP filters, 10-band parametric EQ, dynamics compression, brickwall limiter |
+| 8.  Render & Mix              | 26–28 | OfflineAudioContext render, post-render cleanup, dry/wet mix |
+| 9.  Finalize & Metrics        | 29–31 | Peak normalize, quality metrics, waveform update |
+| 10. Forensic Export           | 32    | Final export ready (with SHA-256 audit chain in Forensic mode) |
+
+**Single-pass STFT is non-negotiable.** Pass 3 is the only forward FFT; Pass 6 is the only
+inverse FFT. All spectral operations (Passes 4–5) run in-place on the same complex spectrum.
+Multiple STFT/iSTFT round-trips cause phase smearing, echo, and audio degradation.
 
 ## ML Models (ONNX Runtime Web)
 - **Demucs v4.1**: Hybrid Transformer+U-Net source separation (~150MB INT8)
