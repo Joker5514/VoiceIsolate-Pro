@@ -559,7 +559,7 @@ class VoiceIsolatePro {
         try {
           if (this.ctx.state === 'suspended') await this.ctx.resume();
           await new Promise(r => setTimeout(r, 0));
-          this.inputBuffer = await this.ctx.decodeAudioData(ab.slice(0));
+          this.inputBuffer = await this.ctx.decodeAudioData(ab);
           this.outputBuffer = null;
           this.dom.videoCard.style.display = 'none';
           this.isVideo = false;
