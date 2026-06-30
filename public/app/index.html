@@ -220,6 +220,12 @@
               <option>Phone/Radio</option>
               <option>Live Performance</option>
               <option>Surveillance</option>
+              <option>Whisper in a Club</option>
+              <option>Heavy Rain Call</option>
+              <option>Helicopter Rescue</option>
+              <option>Stadium Crowd</option>
+              <option>Phone Wiretap</option>
+              <option>Whisper Room</option>
             </select>
             <button id="openPresetModalBtn" class="btn btn-outline" type="button">Save Custom</button>
           </div>
@@ -232,8 +238,15 @@
             <button class="btn btn-preset" type="button" data-preset="Phone/Radio">Phone/Radio</button>
             <button class="btn btn-preset" type="button" data-preset="Live Performance">Live Performance</button>
             <button class="btn btn-preset" type="button" data-preset="Surveillance">Surveillance</button>
+            <button class="btn btn-preset" type="button" data-preset="Whisper in a Club">Whisper in a Club</button>
+            <button class="btn btn-preset" type="button" data-preset="Heavy Rain Call">Heavy Rain Call</button>
+            <button class="btn btn-preset" type="button" data-preset="Helicopter Rescue">Helicopter Rescue</button>
+            <button class="btn btn-preset" type="button" data-preset="Stadium Crowd">Stadium Crowd</button>
+            <button class="btn btn-preset" type="button" data-preset="Phone Wiretap">Phone Wiretap</button>
+            <button class="btn btn-preset" type="button" data-preset="Whisper Room">Whisper Room</button>
           </div>
         </div>
+        <button id="btn-whisper-hunter" type="button">🎙️ WhisperHunter AI</button>
         <div class="control-search-row">
           <input type="text" id="sliderSearch" class="btn btn-outline" placeholder="Search controls…" aria-label="Search controls" style="width:100%;" />
           <button id="resetSlidersBtn" class="btn btn-outline" type="button">Reset Controls</button>
@@ -254,6 +267,13 @@
         <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-advanced"><span>Advanced</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-advanced" class="slider-group-content"><p class="group-desc">Restoration and stereo tools: <strong>dereverb</strong> pulls a voice out of an echoey room, <strong>harmonic recovery</strong> rebuilds detail lost to noise reduction, and width/phase shape the stereo image. <em>Example:</em> speech recorded in an empty hall — Dereverb ~50% with Rev Decay raised toward 70% for the long tail.</p><div id="tab-adv" class="slider-panel"></div></div></div>
         <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-output"><span>Output</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-output" class="slider-group-content"><p class="group-desc">Final mastering: overall volume trim, the dry/wet blend between original and processed, output stereo width, and export dither. <em>Example:</em> if cleanup sounds too aggressive, pull Dry/Wet to ~75% to mix a little of the natural original back in.</p><div id="tab-out" class="slider-panel"></div></div></div>
         <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-separation"><span>Separation</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-separation" class="slider-group-content"><p class="group-desc">Isolates the voice from everything else. Focus on the speech frequency band and push down whatever sits outside it, plus cancel stereo bleed between two mics. <em>Example:</em> lift a speaker out of background music — Voice Iso ~85% with BG Suppress ~60%.</p><div id="tab-sep" class="slider-panel"></div></div></div>
+        <div class="slider-group" id="tab-extreme-group">
+          <button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-extreme"><span>EXTREME</span><span class="chevron" aria-hidden="true">▾</span></button>
+          <div id="group-extreme" class="slider-group-content" role="region">
+            <p class="group-desc">Extreme voice isolation for whispers buried under club noise, crowd roar, and music. <em>Example:</em> nightclub recording with a whisper at −55 dBFS — Whisper Mode Forensic, Crowd Null ~88%, Bass Crush ~95%.</p>
+            <div id="tab-extreme" class="slider-panel"></div>
+          </div>
+        </div>
 
         <div class="actions-row" style="margin-top:8px;">
           <button id="processBtn" class="btn btn-primary" type="button" disabled>Process</button>

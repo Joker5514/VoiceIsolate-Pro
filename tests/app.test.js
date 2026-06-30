@@ -83,16 +83,15 @@ describe('SLIDERS constant', () => {
   });
 
   test('SLIDERS has all expected tab keys', () => {
-    const keys = ['gate', 'nr', 'eq', 'dyn', 'spec', 'adv', 'sep', 'out'];
+    const keys = ['gate', 'nr', 'eq', 'dyn', 'spec', 'adv', 'sep', 'out', 'extreme'];
     for (const key of keys) {
       expect(appSrc).toContain(`${key}:`);
     }
   });
 
-  test('contains exactly 52 slider id entries', () => {
-    // The PR comment states "52 Sliders" and the SLIDERS definition has 52 entries
+  test('contains exactly 60 slider id entries', () => {
     const ids = extractSlidersFromSrc();
-    expect(ids).toHaveLength(52);
+    expect(ids).toHaveLength(60);
   });
 
   test('each slider entry has id, label, min, max, val, step, unit, rt, desc fields', () => {
@@ -141,8 +140,8 @@ describe('PRESETS constant', () => {
     expect(appSrc).toContain('const PRESETS');
   });
 
-  test('contains the eight tuned preset names', () => {
-    const presets = ['Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Music Vocal', 'Whisper Boost', 'Phone/Radio', 'Live Performance', 'Surveillance'];
+  test('contains the fourteen tuned preset names', () => {
+    const presets = ['Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Music Vocal', 'Whisper Boost', 'Phone/Radio', 'Live Performance', 'Surveillance', 'Whisper in a Club', 'Heavy Rain Call', 'Helicopter Rescue', 'Stadium Crowd', 'Phone Wiretap', 'Whisper Room'];
     for (const name of presets) {
       expect(appSrc).toContain(`'${name}':`);
     }

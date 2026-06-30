@@ -18,7 +18,7 @@ const sliderMapSrc = fs.readFileSync(
 describe('SLIDER_REGISTRY', () => {
   // Parse entries by extracting each { id, key, transform, target } object block
   const entries = [];
-  const re = /\{\s*id\s*:\s*'([^']+)',\s*key\s*:\s*'([^']+)',\s*transform\s*:\s*[^,]+,\s*target\s*:\s*'([^']+)'\s*\}/g;
+  const re = /\{\s*id\s*:\s*'([^']+)',\s*key\s*:\s*'([^']+)'[\s\S]*?target\s*:\s*'([^']+)'/g;
   let m;
   while ((m = re.exec(sliderMapSrc)) !== null) {
     entries.push({ id: m[1], key: m[2], target: m[3] });
@@ -28,8 +28,8 @@ describe('SLIDER_REGISTRY', () => {
     expect(sliderMapSrc).toContain('export const SLIDER_REGISTRY');
   });
 
-  test('SLIDER_REGISTRY contains exactly 52 entries', () => {
-    expect(entries.length).toBe(52);
+  test('SLIDER_REGISTRY contains exactly 60 entries', () => {
+    expect(entries.length).toBe(60);
   });
 
   test('all entries have unique IDs', () => {
@@ -64,7 +64,7 @@ describe('SLIDER_REGISTRY', () => {
     expect(sliderMapSrc).toMatch(/id\s*:\s*'nrAmount'.*transform\s*:\s*v\s*=>\s*v\s*\/\s*100/s);
   });
 
-  test('all 52 slider IDs match the SLIDERS definition in app.js', () => {
+  test('all 60 slider IDs match the SLIDERS definition in app.js', () => {
     const appJs = fs.readFileSync(
       path.join(__dirname, '../public/app/app.js'), 'utf8'
     ).replace(/\r\n/g, '\n');
