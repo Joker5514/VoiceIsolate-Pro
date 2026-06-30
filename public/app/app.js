@@ -1686,7 +1686,6 @@ class VoiceIsolatePro {
     const draw=()=>{
       requestAnimationFrame(draw);
       if(!this.spectroRunning || !this.analyserNode) return;
-      this.resizeCanvas(c);
       ana.getByteFrequencyData(arr);
       const w=c.width;const h=c.height;
       x.fillStyle='#030306';x.fillRect(0,0,w,h);
