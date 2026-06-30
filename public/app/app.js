@@ -18,6 +18,7 @@
  */
 
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
+import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 
 // Registry lookup for examples + calibrated transforms
 const SLIDER_REG_BY_ID = Object.freeze(
@@ -865,6 +866,9 @@ class VoiceIsolatePro {
       row.appendChild(valEl);
 
       const regEntry = SLIDER_REG_BY_ID[s.id];
+      const examples = (regEntry && regEntry.examples && regEntry.examples.length)
+        ? regEntry.examples
+        : this._defaultSliderExamples(s);
       const hintText = (regEntry && regEntry.hint) ? regEntry.hint : (s.desc || '');
       let hintPanel = null;
       if (hintText) {
@@ -890,17 +894,23 @@ class VoiceIsolatePro {
           }
         });
 
-        hintPanel = document.createElement('div');
-        hintPanel.className = 'slider-hint';
-        hintPanel.id = 'hint_' + s.id;
-        hintPanel.textContent = hintText;
+        hintPanel = buildHintPanel({
+          id: 'hint_' + s.id,
+          text: hintText,
+          min: s.min,
+          max: s.max,
+          value: initVal,
+          unit: s.unit || '',
+          examples,
+          onApplyExample: (val) => {
+            inputEl.value = val;
+            inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+          },
+        });
         inputEl.setAttribute('aria-describedby', hintPanel.id);
 
         row.appendChild(hintBtn);
       }
-      const examples = (regEntry && regEntry.examples && regEntry.examples.length)
-        ? regEntry.examples
-        : this._defaultSliderExamples(s);
       const infoBtn = document.createElement('button');
       infoBtn.type = 'button';
       infoBtn.className = 'info-btn';
@@ -965,7 +975,7 @@ class VoiceIsolatePro {
   _bindInfoPopoverDismiss() {
     if (this._infoDismissBound) return;
     this._infoDismissBound = true;
-    const closeAll = () => document.querySelectorAll('.info-popover').forEach((p) => p.remove());
+    const closeAll = () => removeAllInfoPopovers();
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.info-btn') && !e.target.closest('.info-popover')) closeAll();
     });
@@ -977,11 +987,17 @@ class VoiceIsolatePro {
   _toggleInfoPopover(row, sliderId, inputEl, examples) {
     const existing = row.querySelector('.info-popover');
     if (existing) { existing.remove(); return; }
-    document.querySelectorAll('.info-popover').forEach((p) => p.remove());
+    removeAllInfoPopovers();
 
     const pop = document.createElement('div');
     pop.className = 'info-popover';
     pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-label', `Examples for ${sliderId}`);
+
+    const title = document.createElement('div');
+    title.className = 'info-popover-title';
+    title.textContent = 'Quick presets';
+    pop.appendChild(title);
 
     examples.forEach((ex) => {
       const line = document.createElement('div');
@@ -994,13 +1010,13 @@ class VoiceIsolatePro {
         ev.stopPropagation();
         inputEl.value = ex.value;
         inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-        pop.remove();
+        removeAllInfoPopovers();
       });
       line.appendChild(apply);
       pop.appendChild(line);
     });
 
-    row.appendChild(pop);
+    mountInfoPopover(pop, row);
   }
 
   // [WHISPER UPDATE] Send calibrated DSP value to worklet (Part 3)
@@ -1085,9 +1101,13 @@ class VoiceIsolatePro {
         const open = row.classList.toggle('hint-open');
         hintBtn.setAttribute('aria-expanded', String(open));
       });
-      const hintPanel = document.createElement('div');
-      hintPanel.className = 'slider-hint';
-      hintPanel.textContent = wmReg.hint;
+      const hintPanel = buildHintPanel({
+        text: wmReg.hint,
+        min: wmReg.min,
+        max: wmReg.max,
+        value: initMode,
+        unit: '',
+      });
       row.appendChild(hintBtn);
       row.appendChild(hintPanel);
     }
