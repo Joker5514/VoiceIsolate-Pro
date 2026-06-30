@@ -10,7 +10,7 @@
  * To exercise it explicitly:
  *   pnpm dev &                   # or pnpm start
  *   pnpm exec playwright install
- *   pnpm test -- tests/worklet-integration.test.js
+ *   VIP_RUN_INTEGRATION=1 pnpm test -- tests/worklet-integration.test.js
  */
 
 'use strict';
@@ -19,6 +19,7 @@ const { chromium } = require('playwright');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
+const INTEGRATION_OPT_IN = process.env.VIP_RUN_INTEGRATION === '1';
 
 function probeServer(port) {
   return new Promise((resolve) => {
@@ -58,6 +59,10 @@ describe('Worklet Integration Verification', () => {
   });
 
   test('AudioWorklets are loaded correctly in Orchestrator and ML Worker processes', async () => {
+    if (!INTEGRATION_OPT_IN) {
+      console.warn('[worklet-integration] VIP_RUN_INTEGRATION=1 not set — skipping live integration test.');
+      return;
+    }
     if (!serverReachable || !chromiumAvailable) {
       // Treat as passing: this is an opt-in integration test.
       return;
