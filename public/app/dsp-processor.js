@@ -490,9 +490,11 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     const frameTimeSec = HOP_SIZE / sRate;
     const rt60Sec = Math.max(params.reverbStrip / 1000, 0.001);
+    const decayMask = Math.exp(-Math.log(1000) * frameTimeSec / rt60Sec);
+    const revAmt = params.reverbStrip > 0 ? (1 - decayMask) * 0.9 : 0;
+    const revMultiplier = 1 - revAmt;
     for (let k = 0; k < numBins; k++) {
-      const decayMask = Math.exp(-Math.log(1000) * frameTimeSec / rt60Sec);
-      mag[k] *= (1 - (params.reverbStrip > 0 ? (1 - decayMask) * 0.9 : 0));
+      mag[k] *= revMultiplier;
     }
 
     const snrThresh = Math.pow(10, params.snrFloor / 20);
