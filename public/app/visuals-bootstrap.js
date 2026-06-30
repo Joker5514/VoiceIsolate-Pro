@@ -103,18 +103,27 @@
   }
 
   /* ── 2D scrolling spectrogram using Inferno LUT (or fallback ramp) ────── */
+  function _resizeCanvas(canvas, fallbackH) {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const baseW = rect.width > 0 ? rect.width : (canvas.clientWidth || 800);
+    const baseH = rect.height > 0 ? rect.height : (canvas.clientHeight || fallbackH || 240);
+    const w = Math.round(baseW * dpr);
+    const h = Math.round(baseH * dpr);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    return { w, h };
+  }
+
   function _drawSpectro2DColumn(canvas, freqBytes) {
     if (!canvas) return;
     // willReadFrequently=true avoids the Canvas2D readback warning since we
     // call getImageData every RAF tick to scroll the spectrogram left by 1 px.
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
-    const w = canvas.width  || canvas.clientWidth || 800;
-    const h = canvas.height || canvas.clientHeight || 240;
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-    }
+    const { w, h } = _resizeCanvas(canvas, 240);
     // Shift image left by 1 px
     try {
       const img = ctx.getImageData(1, 0, w - 1, h);
@@ -149,13 +158,7 @@
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const w = (rect.width > 0 ? Math.floor(rect.width) : canvas.width)  || 800;
-    const h = (rect.height > 0 ? Math.floor(rect.height) : canvas.height) || 80;
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-    }
+    const { w, h } = _resizeCanvas(canvas, 80);
     // Trail for motion blur
     ctx.fillStyle = 'rgba(3,3,6,0.45)';
     ctx.fillRect(0, 0, w, h);

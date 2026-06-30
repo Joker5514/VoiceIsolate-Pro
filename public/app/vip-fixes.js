@@ -112,6 +112,14 @@
       return _isPlaying ? (_pauseOffset + (ctx.currentTime - _startTime)) : _pauseOffset;
     }
 
+    function _updateSeekBar() {
+      const seek = $('tpSeek');
+      if (!seek) return;
+      const max = parseFloat(seek.max) || 1000;
+      const pct = max > 0 ? (parseFloat(seek.value) / max) * 100 : 0;
+      seek.style.setProperty('--seek-pct', pct + '%');
+    }
+
     function _updateUI() {
       const ctx = _getCtx();
       if (!ctx && !_usingBridge) return;
@@ -121,6 +129,7 @@
       const seek = $('tpSeek');
       if (cur) cur.textContent = _fmt(clamped);
       if (seek && !_seeking && _duration > 0) seek.value = String((clamped / _duration) * 1000);
+      _updateSeekBar();
       // Bridge transport ended naturally.
       if (_usingBridge && _bridge && _isPlaying && !_bridge.isPlaying()
           && _duration > 0 && clamped >= _duration - 0.05) {
@@ -186,7 +195,7 @@
       const dur = $('tpDur');
       const seek = $('tpSeek');
       if (dur)  dur.textContent = _fmt(_duration);
-      if (seek) { seek.max = '1000'; seek.disabled = false; }
+      if (seek) { seek.max = '1000'; seek.disabled = false; _updateSeekBar(); }
 
       const safeOffset = Math.min(Math.max(_pauseOffset, 0), Math.max(_duration - 0.01, 0));
       _pauseOffset = safeOffset;
@@ -416,13 +425,16 @@
       seek.addEventListener('input', () => {
         _pauseOffset = (parseFloat(seek.value) / 1000) * (_duration || 0);
         const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset);
+        _updateSeekBar();
         if (!_isPlaying) _syncVideo(_pauseOffset, false);
       });
       seek.addEventListener('change', () => {
         _seeking = false;
         _pauseOffset = (parseFloat(seek.value) / 1000) * (_duration || 0);
+        _updateSeekBar();
         if (_isPlaying) _restartAtOffset();
       });
+      _updateSeekBar();
     }
 
     /* Speed ± buttons — step <select> + update playbackRate live */

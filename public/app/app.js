@@ -1100,20 +1100,60 @@ class VoiceIsolatePro {
     this.showNotification('Preset applied: ' + name, 'info');
   }
 
+  _showFileLoading(text) {
+    const msg = text || 'Loading…';
+    const ind = this.dom && this.dom.fileLoadIndicator;
+    const info = this.dom && this.dom.fileInfo;
+    if (ind) {
+      ind.hidden = false;
+      const label = ind.querySelector('.file-load-text');
+      if (label) label.textContent = msg;
+    }
+    if (info) info.textContent = msg;
+  }
+
+  _hideFileLoading() {
+    const ind = this.dom && this.dom.fileLoadIndicator;
+    if (ind) ind.hidden = true;
+  }
+
+  async _readFileArrayBuffer(file) {
+    if (typeof file.arrayBuffer === 'function') {
+      const ab = await file.arrayBuffer();
+      return ab.slice(0);
+    }
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.slice(0));
+      reader.onerror = () => reject(new Error('Could not read file from disk.'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  async _decodeFileBuffer(ctx, arrayBuffer) {
+    if (typeof window.safeDecodeAudioData === 'function') {
+      return window.safeDecodeAudioData(ctx, arrayBuffer);
+    }
+    if (ctx.state === 'suspended') await ctx.resume();
+    return ctx.decodeAudioData(arrayBuffer.slice(0));
+  }
+
   // ── File handling ─────────────────────────────────────────────────────────
   async handleFile(file) {
     if (!file) return;
     this.stop();
     this.setStatus('LOADING');
-    if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = file.name;
+    this._showFileLoading(file.name ? `Loading ${file.name}…` : 'Loading…');
 
     await this.ensureCtx();
+    await new Promise(r => setTimeout(r, 0));
 
     // Reject MIDI files early — not supported by Web Audio API
     const midiMimes = ['audio/midi', 'audio/x-midi', 'audio/mid'];
     const isMidi = midiMimes.includes((file.type || '').toLowerCase()) ||
       /\.(mid|midi)$/i.test(file.name || '');
     if (isMidi) {
+      this._hideFileLoading();
       if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'MIDI files are not supported. Use an audio file (WAV, MP3, etc).';
       this.setStatus('ERROR');
       return;
@@ -1127,6 +1167,7 @@ class VoiceIsolatePro {
     const hasKnownExt = AUDIO_EXT.test(file.name || '') || VIDEO_EXT.test(file.name || '');
     const isAudio = !mime || mime.startsWith('audio/') || mime.startsWith('video/') || hasKnownExt;
     if (!isAudio) {
+      this._hideFileLoading();
       if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Unsupported file type: ' + (file.type || 'unknown');
       this.setStatus('ERROR');
       return;
@@ -1153,10 +1194,11 @@ class VoiceIsolatePro {
 
     let buffer;
     try {
-      const ab = await file.arrayBuffer();
-      // Copy the ArrayBuffer so the original is not detached/consumed
-      const abCopy = ab.slice(0);
-      buffer = await this.ctx.decodeAudioData(abCopy);
+      if (this.ctx.state === 'suspended') await this.ctx.resume();
+      await new Promise(r => setTimeout(r, 0));
+      const abCopy = await this._readFileArrayBuffer(file);
+      await new Promise(r => requestAnimationFrame(r));
+      buffer = await this._decodeFileBuffer(this.ctx, abCopy);
     } catch {
       // Video fallback
       if (isVideoFile) {
@@ -1168,12 +1210,14 @@ class VoiceIsolatePro {
           if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = '';
           this.isVideo = true;
         } catch {
+          this._hideFileLoading();
           if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Cannot decode this video format';
           this.setStatus('ERROR');
           this.showNotification('Cannot decode: ' + file.name, 'error');
           return;
         }
       } else {
+        this._hideFileLoading();
         if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Cannot decode this audio format';
         this.setStatus('ERROR');
         this.showNotification('Cannot decode: ' + file.name, 'error');
@@ -1183,6 +1227,7 @@ class VoiceIsolatePro {
 
     // Check for empty/null decoded buffer
     if (!buffer || !buffer.length) {
+      this._hideFileLoading();
       if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Decoded audio is empty or unreadable.';
       this.setStatus('ERROR');
       return;
@@ -1215,6 +1260,8 @@ class VoiceIsolatePro {
 
     this.inputBuffer = buffer;
     this.origBuffer = buffer;
+    await new Promise(r => requestAnimationFrame(r));
+    this._hideFileLoading();
     this.onAudioLoaded(file.name);
   }
 
