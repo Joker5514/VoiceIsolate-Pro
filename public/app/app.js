@@ -422,7 +422,7 @@ class VoiceIsolatePro {
         }
 
         if (isVideo) {
-          if (this.videoUrl) URL.revokeObjectURL(this.videoUrl);
+          if (this.videoUrl) globalThis.URL?.revokeObjectURL?.(this.videoUrl);
           this.videoUrl = URL.createObjectURL(file);
           this.dom.videoPlayer.src = this.videoUrl;
           this.dom.videoCard.style.display = 'block';
