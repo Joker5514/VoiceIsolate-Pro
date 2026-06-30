@@ -19,6 +19,7 @@ import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
 import { MODEL_MANIFEST } from '/src/core/ModelManifest.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
+import { buildHintPanel } from '/app/slider-hint-ui.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -463,10 +464,22 @@ function wireSliderHints() {
     hintBtn.setAttribute('aria-label', `Explain ${row.querySelector('label')?.textContent || input.id}`);
     hintBtn.setAttribute('aria-expanded', 'false');
 
-    const hintPanel = document.createElement('div');
-    hintPanel.className = 'slider-hint';
-    hintPanel.id = `landing_hint_${input.id}`;
-    hintPanel.textContent = hintText;
+    const min = Number(input.min) || 0;
+    const max = Number(input.max) || 100;
+    const value = Number(input.value) || min;
+    const hintPanel = buildHintPanel({
+      id: `landing_hint_${input.id}`,
+      text: hintText,
+      min,
+      max,
+      value,
+      unit: '',
+      onApplyExample: (val) => {
+        input.value = val;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        paintSliderFill(input);
+      },
+    });
     input.setAttribute('aria-describedby', hintPanel.id);
 
     hintBtn.addEventListener('click', (e) => {

@@ -155,14 +155,12 @@ html {
     border-radius: 8px;
   }
 
-  /* ── Slider rows: 2-row layout on mobile ──
-     Top row: label + value
-     Bottom row: full-width track              */
+  /* ── Slider rows: label + controls / track / hint panel ── */
   .sr-row {
     display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto;
-    gap: 4px 8px;
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+    grid-template-rows: auto auto auto;
+    gap: 4px 6px;
     padding: 9px 8px;
     border-radius: 8px;
   }
@@ -176,8 +174,8 @@ html {
     overflow: visible;
     text-overflow: unset;
     line-height: 1.3;
+    align-self: center;
   }
-  /* Info icon is a real tap target on mobile — reveals the explanation panel */
   .sr-info {
     display: inline-flex;
     width: 22px;
@@ -186,85 +184,34 @@ html {
     margin-left: 4px;
   }
   .sr-desc { font-size: 0.72rem; padding: 9px 10px; }
-
-  /* ── Slider rows: 2-row layout on mobile ──
-     Top row: label + value
-     Bottom row: full-width track              */
-  .sr-row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto;
-    gap: 4px 8px;
-    padding: 9px 8px;
-    border-radius: 8px;
-  }
-  .sr-label {
-    grid-column: 1;
-    grid-row: 1;
-    font-size: 0.72rem;
-    font-weight: 600;
-    color: var(--text);
-    white-space: normal;
-    overflow: visible;
-    text-overflow: unset;
-    line-height: 1.3;
-  }
-  /* Info icon is a real tap target on mobile — reveals the explanation panel */
-  .sr-info {
-    display: inline-flex;
-    width: 22px;
-    height: 22px;
-    font-size: 0.62rem;
-    margin-left: 4px;
-  }
-  .sr-desc { font-size: 0.72rem; padding: 9px 10px; }
-
   .sr-val {
     grid-column: 2;
     grid-row: 1;
     font-size: 0.7rem;
     padding: 3px 7px;
     align-self: center;
-    min-width: 52px;
+    min-width: 48px;
     text-align: center;
   }
-  .sr-row > input[type="range"] {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    height: var(--mob-slider-track);
-    border-radius: calc(var(--mob-slider-track) / 2);
-    /* track gradient shape still driven by --pct */
-  }
-  .sr-row > input[type="range"]::-webkit-slider-runnable-track {
-    height: var(--mob-slider-track);
-  }
-  .sr-row > input[type="range"]::-webkit-slider-thumb {
-    width: var(--mob-slider-thumb);
-    height: var(--mob-slider-thumb);
-    margin-top: calc((var(--mob-slider-thumb) / -2) + (var(--mob-slider-track) / 2));
-    border-width: 3px;
-  }
-  .sr-row > input[type="range"]::-moz-range-thumb {
-    width: var(--mob-slider-thumb);
-    height: var(--mob-slider-thumb);
-    border-width: 3px;
-  }
-
-  /* RT badge sizing */
-  .rt-badge { font-size: 0.5rem; padding: 1px 5px; }
-
-  .sr-val {
-    grid-column: 2;
+  .slider-hint-btn {
+    grid-column: 3;
     grid-row: 1;
-    font-size: 0.7rem;
-    padding: 3px 7px;
     align-self: center;
-    min-width: 52px;
-    text-align: center;
+    justify-self: center;
   }
-  .sr-row > input[type="range"] {
+  .info-btn {
+    grid-column: 4;
+    grid-row: 1;
+    align-self: center;
+    justify-self: center;
+    margin-left: 0;
+  }
+  .sr-row > input[type="range"],
+  .sr-row > .slider-tick-wrapper {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+  .sr-row > input[type="range"] {
     height: var(--mob-slider-track);
     border-radius: calc(var(--mob-slider-track) / 2);
   }
@@ -282,6 +229,23 @@ html {
     height: var(--mob-slider-thumb);
     border-width: 3px;
   }
+  .slider-hint {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    font-size: 0.72rem;
+    padding: 9px 10px;
+  }
+  .hint-aids-row { gap: 6px; }
+  .hint-range-meter { min-width: 0; flex: 1 1 100%; }
+  .hint-body { font-size: 0.72rem; }
+  .hint-chip, .hint-example-pill { font-size: 0.68rem; }
+  .whisper-mode-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+  }
+  .whisper-mode-group { grid-column: 1 / -1; grid-row: 2; }
+  .whisper-mode-row .slider-hint-btn { grid-column: 2; grid-row: 1; }
+  .whisper-mode-row .slider-hint { grid-column: 1 / -1; grid-row: 3; }
 
   /* RT badge sizing */
   .rt-badge { font-size: 0.5rem; padding: 1px 5px; }
@@ -450,9 +414,24 @@ html {
   .btn,
   .tab,
   .btn-tp,
-  .btn-preset {
+  .btn-preset,
+  .slider-hint-btn,
+  .info-btn,
+  .hint-example-pill,
+  .info-popover-apply {
     min-height: var(--mob-touch-min);
     min-width: var(--mob-touch-min);
+  }
+  .slider-hint-btn,
+  .info-btn {
+    width: var(--mob-touch-min);
+    height: var(--mob-touch-min);
+    line-height: var(--mob-touch-min);
+    font-size: 14px;
+  }
+  .hint-example-pill {
+    padding: 8px 12px;
+    font-size: 0.72rem;
   }
 
   /* Slider hit-area — invisible expansion */

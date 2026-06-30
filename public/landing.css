@@ -463,6 +463,49 @@ input[type="file"]:focus { border-color: var(--border-focus); }
   border: 1px solid rgba(220, 38, 38, 0.18);
 }
 .slider-row.hint-open .slider-hint { display: block; }
+.hint-aids-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.hint-dir-badge {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px;
+  font: var(--fw-bold) 10px/1 var(--font-ui); border: 1px solid var(--border-strong);
+  background: rgba(255, 255, 255, 0.05); color: var(--text-dim);
+}
+.hint-dir-up { color: #6ee7b7; border-color: rgba(52, 211, 153, 0.35); background: rgba(52, 211, 153, 0.1); }
+.hint-dir-down { color: #fca5a5; border-color: rgba(248, 113, 113, 0.35); background: rgba(248, 113, 113, 0.1); }
+.hint-dir-both { color: var(--red-400); border-color: rgba(220, 38, 38, 0.35); background: rgba(220, 38, 38, 0.08); }
+.hint-range-meter { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 120px; }
+.hint-range-lo, .hint-range-hi { font: var(--fw-regular) 9px/1 var(--font-mono); color: var(--text-ghost); }
+.hint-range-track {
+  position: relative; flex: 1; height: 5px; border-radius: 99px;
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.35), rgba(52, 211, 153, 0.35));
+}
+.hint-range-thumb {
+  position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%;
+  transform: translate(-50%, -50%); background: var(--text-hi); border: 2px solid var(--red-600);
+}
+.hint-body { margin: 0; font: var(--fw-regular) var(--fs-2xs)/1.4 var(--font-ui); color: var(--text-dim); }
+.hint-toward { background: rgba(220, 38, 38, 0.08); border-radius: 3px; padding: 0 2px; }
+.hint-toward em { color: var(--red-400); font-style: normal; font-weight: var(--fw-semibold); }
+.hint-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.hint-chip {
+  display: inline-flex; padding: 3px 8px; border-radius: 6px; font: var(--fw-medium) 10px/1.25 var(--font-ui);
+  border: 1px solid var(--border-strong); background: rgba(255, 255, 255, 0.04); color: var(--text-dim);
+}
+.hint-chip-up { border-color: rgba(52, 211, 153, 0.28); color: #a7f3d0; }
+.hint-chip-down { border-color: rgba(248, 113, 113, 0.28); color: #fecaca; }
+.hint-chip-both { border-color: rgba(220, 38, 38, 0.22); color: var(--red-400); }
+.hint-examples {
+  display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.hint-example-pill {
+  padding: 4px 9px; border-radius: 99px; border: 1px solid rgba(220, 38, 38, 0.28);
+  background: rgba(220, 38, 38, 0.08); color: var(--text-2); font: var(--fw-semibold) 10px/1 var(--font-ui);
+  cursor: pointer;
+}
+.hint-example-pill:hover { background: rgba(220, 38, 38, 0.16); color: var(--text-hi); }
+.slider-hint-btn:focus-visible, .hint-example-pill:focus-visible {
+  outline: 2px solid var(--red-400); outline-offset: 2px;
+}
 .slider-row:hover {
   background: var(--hover-fill);
   border-left-color: var(--red-600);
@@ -573,10 +616,37 @@ input[type="range"]:disabled { opacity: 0.34; cursor: not-allowed; }
 .speaker-empty { margin: 0; color: var(--text-dim); }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .slider-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-rows: auto auto auto;
+    gap: 6px;
+    padding: 8px 6px;
+  }
+  .slider-row label { grid-column: 1; grid-row: 1; align-self: center; }
+  .slider-val { grid-column: 2; grid-row: 1; align-self: center; min-width: 44px; }
+  .slider-hint-btn { grid-column: 3; grid-row: 1; align-self: center; }
+  .slider-row input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
+  .slider-hint { grid-column: 1 / -1; grid-row: 3; font-size: var(--fs-xs); padding: 10px; }
+  .hint-range-meter { min-width: 0; flex: 1 1 100%; }
+}
 @media (max-width: 560px) {
-  .slider-row { grid-template-columns: 110px 1fr 50px 22px; }
   .time-readout { margin-left: 0; }
   .main-area { padding: 14px 12px 48px; }
+}
+@media (pointer: coarse) {
+  .slider-hint-btn, .hint-example-pill {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .slider-hint-btn {
+    width: 44px;
+    height: 44px;
+    line-height: 44px;
+    font-size: 14px;
+  }
+  .hint-example-pill { padding: 10px 14px; font-size: var(--fs-xs); }
+  .slider-row input[type="range"] { padding: 12px 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
