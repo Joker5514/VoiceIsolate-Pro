@@ -126,9 +126,9 @@ async function _decodeViaMediaElement(blob, kind) {
     };
 
     // 4. Timeout guard.
-    const timeoutHandle = setTimeout(() => {
+    timeoutHandle = setTimeout(() => {
       spn.onaudioprocess = null;
-      rejectDone(new Error(`Media element capture timed out after ${MEDIA_DECODE_TIMEOUT_MS / 1000}s`));
+      rejectDone(new Error('Media element capture timed out after ' + (MEDIA_DECODE_TIMEOUT_MS / 1000) + 's'));
     }, MEDIA_DECODE_TIMEOUT_MS);
 
     // 5. Start playback — required to drive the ScriptProcessorNode.
