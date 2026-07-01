@@ -282,7 +282,6 @@
       global.dispatchEvent(new CustomEvent('vip:isolationBandSet', {
         detail: { freqLow, freqHigh, source: source },
       }));
-      global.VIP_ISOLATION_BUS.emit('vip:isolationBandSet', { freqLow, freqHigh, source: source });
     }
 
     canvas.addEventListener('mousedown', onDown);
