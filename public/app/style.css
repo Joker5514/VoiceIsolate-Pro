@@ -1558,6 +1558,30 @@ body::after {
   .spectro3d-container { transition: none !important; }
 }
 
+/* Click-isolation overlay styles */
+.viz-canvas { cursor: crosshair; user-select: none; }
+#waveCanvas { cursor: col-resize; }
+.viz-iso-badge {
+  position: absolute; top: 6px; right: 8px;
+  background: rgba(0,255,231,0.15); border: 1px solid rgba(0,255,231,0.4);
+  color: #00ffe7; font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  padding: 2px 6px; border-radius: 3px; pointer-events: none;
+  letter-spacing: 0.08em; text-transform: uppercase; z-index: 4;
+}
+.viz-iso-badge.hidden { display: none; }
+@keyframes iso-pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.viz-iso-badge.active { animation: iso-pulse 1.8s ease-in-out infinite; }
+#tab-aura, #tab-topo, #tab-swarm, #tab-liquid { position: relative; }
+.viz-iso-tooltip {
+  position: fixed; z-index: 10000; transform: translateX(-50%);
+  background: rgba(3,3,6,0.92); border: 1px solid rgba(0,255,231,0.35);
+  color: #00ffe7; font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  padding: 4px 8px; border-radius: 4px; pointer-events: none; opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.viz-iso-tooltip.visible { opacity: 1; }
+.neon-pulse-slot { width: 100%; margin-bottom: 6px; }
+
 /* [WHISPER UPDATE] EXTREME TAB — deep purple accent */
 #tab-extreme-group { border-color: #7c3aed; }
 #tab-extreme-group.active { border-color: #7c3aed; }
