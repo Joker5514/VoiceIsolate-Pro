@@ -59,7 +59,7 @@
   </div>
 
   <div class="np-canvas-wrap">
-    <canvas class="np-canvas" id="np-canvas-${uid}" aria-label="Live audio visualizer"></canvas>
+    <canvas class="np-canvas" id="np-canvas-${uid}" role="img" aria-label="Live audio visualizer"></canvas>
     <div class="np-overlay-stats" id="np-stats-${uid}">
       <span class="np-stat" id="np-rms-${uid}">RMS <b>—</b></span>
       <span class="np-stat" id="np-peak-${uid}">PEAK <b>—</b></span>
