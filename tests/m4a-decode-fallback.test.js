@@ -22,15 +22,16 @@ describe('M4A decode fallback — media-decode.js', () => {
     expect(mdjs).toContain('export async function decodeBlobToAudioBuffer');
   });
 
-  test('fallback uses live AudioContext ScriptProcessor capture (not MediaRecorder)', () => {
-    expect(mdjs).toContain('live AudioContext + createMediaElementSource +');
-    expect(mdjs).toContain('createScriptProcessor');
-    expect(mdjs).toContain('onaudioprocess');
+  test('fallback uses live AudioContext + ScriptProcessorNode capture', () => {
+    expect(mdjs).toContain('createMediaElementSource(media)');
+    expect(mdjs).toContain('createScriptProcessor(SPN_BLOCK_SIZE, numChannels, numChannels)');
     expect(mdjs).not.toContain('MediaRecorder');
+    expect(mdjs).not.toContain('offline.startRendering()');
   });
 
-  test('play() is awaited to drive live ScriptProcessor capture', () => {
-    expect(mdjs).toContain('await media.play();');
+  test('ended listener is armed before awaiting play()', () => {
+    expect(mdjs).toMatch(/const endedPromise = new Promise\([\s\S]*media\.addEventListener\('ended'/);
+    expect(mdjs).toContain('await media.play()');
   });
 
   test('object URL is created and revoked in finally', () => {
@@ -45,6 +46,9 @@ describe('M4A decode fallback — media-decode.js', () => {
 
   test('fallback routes audio via createMediaElementSource', () => {
     expect(mdjs).toContain('createMediaElementSource(media)');
+  });
+  test('fallback creates audio/video element by inferred kind', () => {
+    expect(mdjs).toContain("const tag = kind === 'video' ? 'video' : 'audio'");
   });
 });
 

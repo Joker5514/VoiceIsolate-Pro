@@ -77,13 +77,14 @@ async function _decodeViaMediaElement(blob, kind) {
   const tag = kind === 'video' ? 'video' : 'audio';
   const media = doc.createElement(tag);
   media.preload = 'auto';
-  media.muted = true;          // lets browser play without a user gesture
+  media.muted = false;
   media.setAttribute('playsinline', '');
   media.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
   doc.body.appendChild(media);
   media.src = url;
 
   let ctx = null;
+  let timeoutHandle = null;
   try {
     // 1. Wait until metadata (duration / channels) is available.
     await _waitForMetadata(media);
@@ -102,15 +103,18 @@ async function _decodeViaMediaElement(blob, kind) {
     //    PCM access — the only option for a MediaElementSource on a live ctx.
     const numChannels = 2;
     const estimatedFrames = Math.ceil(duration * SAMPLE_RATE) + SPN_BLOCK_SIZE * 4;
+    const captureTimeoutMs = Math.max(MEDIA_DECODE_TIMEOUT_MS, Math.ceil(duration * 1000) + 5000);
     const chunks = [];            // Array<Array<Float32Array>>  [block][ch]
     let capturedFrames = 0;
     let resolveDone, rejectDone;
     const donePromise = new Promise((res, rej) => { resolveDone = res; rejectDone = rej; });
 
-    // eslint-disable-next-line no-deprecated
     const spn = ctx.createScriptProcessor(SPN_BLOCK_SIZE, numChannels, numChannels);
+    const silentGain = ctx.createGain();
+    silentGain.gain.setValueAtTime(0, ctx.currentTime);
     source.connect(spn);
-    spn.connect(ctx.destination); // must be connected to run
+    spn.connect(silentGain);
+    silentGain.connect(ctx.destination); // must be connected to run
 
     spn.onaudioprocess = (e) => {
       const block = [];
@@ -135,10 +139,7 @@ async function _decodeViaMediaElement(blob, kind) {
       rejectDone(new Error('Media element capture timed out after ' + (captureTimeoutMs / 1000) + 's'));
     }, captureTimeoutMs);
 
-    // 5. Start playback — required to drive the ScriptProcessorNode.
-    await media.play();
-
-    // 6. Also resolve when the element fires 'ended' (handles short files
+    // 5. Also resolve when the element fires 'ended' (handles short files
     //    that end before estimatedFrames is reached).
     const endedPromise = new Promise((res) => {
       media.addEventListener('ended', () => {
@@ -149,6 +150,9 @@ async function _decodeViaMediaElement(blob, kind) {
         }, Math.ceil((SPN_BLOCK_SIZE / SAMPLE_RATE) * 1000) + 50);
       }, { once: true });
     });
+
+    // 6. Start playback — required to drive the ScriptProcessorNode.
+    await media.play();
 
     await Promise.race([donePromise, endedPromise]);
     clearTimeout(timeoutHandle);
@@ -174,6 +178,7 @@ async function _decodeViaMediaElement(blob, kind) {
     return result;
 
   } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
     try { media.pause(); } catch { /* ignore */ }
     try { media.removeAttribute('src'); media.load(); media.remove(); } catch { /* ignore */ }
     URL.revokeObjectURL(url);
