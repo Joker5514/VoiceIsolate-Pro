@@ -46,6 +46,10 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Large ONNX models — served from Vercel Blob at runtime (see docs/MODEL_DELIVERY.md).
+# Never bundle demucs weights in the static deployment (exceeds 100 MB limit).
+public/app/models/demucs_v4_*.onnx
+
 # Python model export artifacts
 models_output/
 checkpoints/
