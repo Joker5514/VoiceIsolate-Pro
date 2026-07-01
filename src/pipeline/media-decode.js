@@ -103,7 +103,6 @@ async function _decodeViaMediaElement(blob, kind) {
     //    PCM access — the only option for a MediaElementSource on a live ctx.
     const numChannels = 2;
     const estimatedFrames = Math.ceil(duration * SAMPLE_RATE) + SPN_BLOCK_SIZE * 4;
-    const captureTimeoutMs = Math.max(MEDIA_DECODE_TIMEOUT_MS, Math.ceil(duration * 1000) + 5000);
     const chunks = [];            // Array<Array<Float32Array>>  [block][ch]
     let capturedFrames = 0;
     let resolveDone, rejectDone;
@@ -134,7 +133,7 @@ async function _decodeViaMediaElement(blob, kind) {
       MEDIA_DECODE_TIMEOUT_MS,
       Math.ceil(duration * 1000) + 10_000
     );
-    let timeoutHandle = setTimeout(() => {
+    timeoutHandle = setTimeout(() => {
       spn.onaudioprocess = null;
       rejectDone(new Error('Media element capture timed out after ' + (captureTimeoutMs / 1000) + 's'));
     }, captureTimeoutMs);
