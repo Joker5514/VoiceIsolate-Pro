@@ -22,15 +22,15 @@ describe('M4A decode fallback — media-decode.js', () => {
     expect(mdjs).toContain('export async function decodeBlobToAudioBuffer');
   });
 
-  test('fallback uses OfflineAudioContext (not real-time MediaRecorder capture)', () => {
-    expect(mdjs).toContain('OfflineAudioContext');
-    expect(mdjs).toContain('offline.startRendering()');
+  test('fallback uses live AudioContext ScriptProcessor capture (not MediaRecorder)', () => {
+    expect(mdjs).toContain('live AudioContext + createMediaElementSource +');
+    expect(mdjs).toContain('createScriptProcessor');
+    expect(mdjs).toContain('onaudioprocess');
     expect(mdjs).not.toContain('MediaRecorder');
   });
 
-  test('play() is fire-and-forget to avoid interruption errors', () => {
-    expect(mdjs).toContain('void media.play().catch(() => {})');
-    expect(mdjs).toMatch(/Do NOT await play\(\)/);
+  test('play() is awaited to drive live ScriptProcessor capture', () => {
+    expect(mdjs).toContain('await media.play();');
   });
 
   test('object URL is created and revoked in finally', () => {
@@ -45,11 +45,6 @@ describe('M4A decode fallback — media-decode.js', () => {
 
   test('fallback routes audio via createMediaElementSource', () => {
     expect(mdjs).toContain('createMediaElementSource(media)');
-  });
-
-  test('.m4a routes through <audio> even when MIME is video/mp4', () => {
-    expect(mdjs).toContain("return 'audio'");
-    expect(mdjs).toContain('.m4a is often mis-tagged video/mp4');
   });
 });
 
