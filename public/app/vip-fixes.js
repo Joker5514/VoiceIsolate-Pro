@@ -820,9 +820,14 @@
           const s = Math.max(0, Math.floor(sec || 0));
           return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
         };
-        if (seek) seek.value = String(ratio * 1000);
-        if (cur) cur.textContent = fmtSec(off);
-        app.playOffset = off;
+        if (seek) {
+          seek.value = String(ratio * 1000);
+          seek.dispatchEvent(new Event('input', { bubbles: true }));
+          seek.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          if (cur) cur.textContent = fmtSec(off);
+          app.playOffset = off;
+        }
       }
     });
 

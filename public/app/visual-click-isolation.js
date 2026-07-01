@@ -124,14 +124,24 @@
     return Math.max(0, Math.min(canvas.width || rect.width, (clientX - rect.left) * scale));
   }
 
-  function logBinFromX(x, canvasWidth, logScale) {
+  function pointerCanvasY(canvas, e) {
+    const rect = canvas.getBoundingClientRect();
+    const clientY = (e.touches && e.touches.length) ? e.touches[0].clientY : e.clientY;
+    const scale = (canvas.height || rect.height) / Math.max(1, rect.height);
+    return Math.max(0, Math.min(canvas.height || rect.height, (clientY - rect.top) * scale));
+  }
+
+  function logBinFromY(y, canvasHeight) {
     const an = getAnalyser();
     const binCount = an ? an.frequencyBinCount : 1024;
-    const t = Math.max(0, Math.min(1, x / Math.max(1, canvasWidth)));
-    if (logScale) {
-      return Math.floor(Math.pow(t, 2.0) * binCount);
-    }
-    return Math.floor(t * binCount);
+    const h = Math.max(1, canvasHeight);
+    const t = 1 - (y / h);
+    return Math.floor(Math.pow(Math.max(0, Math.min(1, t)), 2.0) * binCount);
+  }
+
+  function binToCanvasY(bin, canvasHeight, binCount) {
+    const t = Math.sqrt(Math.max(0, bin) / Math.max(1, binCount));
+    return (1 - t) * canvasHeight;
   }
 
   function linearBarFromX(x, canvasWidth) {
@@ -162,6 +172,29 @@
     }
   }
 
+  function drawHorizontalBandOverlay(overlay, y1, y2, label, color) {
+    if (!overlay) return;
+    const ctx = overlay.getContext('2d');
+    if (!ctx) return;
+    const w = overlay.width;
+    const h = overlay.height;
+    ctx.clearRect(0, 0, w, h);
+    const top = Math.min(y1, y2);
+    const height = Math.max(2, Math.abs(y2 - y1));
+    const fill = color || 'rgba(0,255,231,0.18)';
+    const stroke = color ? 'rgba(105,255,71,0.75)' : 'rgba(0,255,231,0.65)';
+    ctx.fillStyle = fill;
+    ctx.fillRect(0, top, w, height);
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, top + 0.5, w - 1, Math.max(0, height - 1));
+    if (label) {
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.fillStyle = color ? '#69ff47' : '#00ffe7';
+      ctx.fillText(label, 6, Math.max(14, top + 14));
+    }
+  }
+
   function updateSpecBadge(freqLow, freqHigh, active) {
     const badge = $('iso-badge-spec');
     if (!badge) return;
@@ -180,26 +213,24 @@
     if (!canvas) return;
     const overlay = ensureOverlay(canvas);
     let dragging = false;
-    let startX = 0;
-    let curX = 0;
+    let startY = 0;
     let lastDown = 0;
     let selLow = 0;
     let selHigh = 0;
 
-    function redraw() {
-      if (!dragging && selLow === selHigh && selLow === 0) {
-        clearOverlay(overlay);
-        return;
-      }
+    function drawSpectroSelection() {
       syncOverlaySize(canvas, overlay);
+      const h = canvas.height || overlay.height;
       const an = getAnalyser();
       const binCount = an ? an.frequencyBinCount : 1024;
       const lo = Math.min(selLow, selHigh);
       const hi = Math.max(selLow, selHigh);
       const freqLow = binToHz(lo, binCount);
       const freqHigh = binToHz(Math.max(lo + 1, hi), binCount);
-      const label = 'ISO: ' + fmtHz(freqLow) + ' – ' + fmtHz(freqHigh);
-      drawBandOverlay(overlay, lo / binCount * canvas.width, hi / binCount * canvas.width, label);
+      const yTop = binToCanvasY(hi, h, binCount);
+      const yBot = binToCanvasY(lo, h, binCount);
+      drawHorizontalBandOverlay(overlay, yTop, yBot,
+        'ISO: ' + fmtHz(freqLow) + ' – ' + fmtHz(freqHigh));
     }
 
     function onDown(e) {
@@ -219,34 +250,24 @@
       }
       lastDown = now;
       dragging = true;
-      const w = canvas.width || canvas.getBoundingClientRect().width;
-      startX = pointerCanvasX(canvas, e);
-      curX = startX;
-      const bin = logBinFromX(startX, w, true);
+      const h = canvas.height || canvas.getBoundingClientRect().height;
+      startY = pointerCanvasY(canvas, e);
+      const bin = logBinFromY(startY, h);
       selLow = bin;
       selHigh = bin;
-      syncOverlaySize(canvas, overlay);
-      drawBandOverlay(overlay, startX, startX, null);
+      drawSpectroSelection();
       if (e.type === 'touchstart') e.preventDefault();
     }
 
     function onMove(e) {
       if (!dragging) return;
-      curX = pointerCanvasX(canvas, e);
-      const w = canvas.width || canvas.getBoundingClientRect().width;
-      const b1 = logBinFromX(startX, w, true);
-      const b2 = logBinFromX(curX, w, true);
+      const h = canvas.height || canvas.getBoundingClientRect().height;
+      const y = pointerCanvasY(canvas, e);
+      const b1 = logBinFromY(startY, h);
+      const b2 = logBinFromY(y, h);
       selLow = Math.min(b1, b2);
       selHigh = Math.max(b1, b2);
-      syncOverlaySize(canvas, overlay);
-      const an = getAnalyser();
-      const binCount = an ? an.frequencyBinCount : 1024;
-      const freqLow = binToHz(selLow, binCount);
-      const freqHigh = binToHz(Math.max(selLow + 1, selHigh), binCount);
-      drawBandOverlay(overlay,
-        (selLow / binCount) * w,
-        (selHigh / binCount) * w,
-        'ISO: ' + fmtHz(freqLow) + ' – ' + fmtHz(freqHigh));
+      drawSpectroSelection();
       if (e.type === 'touchmove') e.preventDefault();
     }
 
@@ -287,7 +308,6 @@
     let startX = 0;
     let barLo = 0;
     let barHi = 0;
-    let lastDown = 0;
     const nyquist = () => getSampleRate() / 2;
 
     function barsToHz(lo, hi) {
@@ -380,7 +400,6 @@
     if (!canvas) return;
     const overlay = ensureOverlay(canvas);
     let dragging = false;
-    let startX = 0;
     let loopStart = null;
     let loopEnd = null;
 
@@ -410,7 +429,6 @@
       }
 
       dragging = true;
-      startX = ratio;
       loopStart = ratio;
       loopEnd = ratio;
       drawLoop();
@@ -481,11 +499,9 @@
       setStemBadge(badge, stem === 'all' ? null : stem);
       global.dispatchEvent(new CustomEvent('vip:stemToggle', { detail: { stem } }));
       global.VIP_ISOLATION_BUS.emit('vip:stemToggle', { stem });
-      if (e.type === 'touchstart') e.preventDefault();
     }
 
     target.addEventListener('click', onClick);
-    target.addEventListener('touchstart', onClick, { passive: false });
   }
 
   function init() {

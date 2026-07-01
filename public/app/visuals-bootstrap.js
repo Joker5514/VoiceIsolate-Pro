@@ -122,37 +122,36 @@
 
   function _drawSpectro2DColumn(canvas, freqBytes) {
     if (!canvas) return;
-    // willReadFrequently=true avoids the Canvas2D readback warning since we
-    // call getImageData every RAF tick to scroll the spectrogram left by 1 px.
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const { w, h } = _resizeCanvas(canvas, 240);
-    // Shift image left by 1 px
     try {
-      const img = ctx.getImageData(1, 0, w - 1, h);
-      ctx.putImageData(img, 0, 0);
-    } catch (_) { /* tainted canvas — recover by clearing */ ctx.clearRect(0, 0, w, h); }
-    // Draw new column at right edge
+      ctx.drawImage(canvas, 1, 0, w - 1, h, 0, 0, w - 1, h);
+    } catch (_) { ctx.clearRect(0, 0, w, h); }
     const colX = w - 1;
     const N = freqBytes.length;
     const lut = global.VIP_INFERNO_LUT;
+    const colImg = ctx.createImageData(1, h);
     for (let y = 0; y < h; y++) {
-      // Top of canvas = high freq, bottom = low. Use log scale.
       const t = 1 - (y / h);
       const idx = Math.min(N - 1, Math.floor(Math.pow(t, 2.0) * (N - 1)));
       const v = freqBytes[idx] / 255;
+      let r = 0; let g = 0; let b = 0;
       if (lut) {
         const li = Math.min(255, Math.floor(v * 255)) * 3;
-        ctx.fillStyle = 'rgb(' + lut[li] + ',' + lut[li + 1] + ',' + lut[li + 2] + ')';
+        r = lut[li]; g = lut[li + 1]; b = lut[li + 2];
       } else {
-        // Built-in fallback gradient (cyan → magenta → yellow)
-        const r = Math.min(255, Math.floor(v * 320));
-        const g = Math.min(255, Math.floor((1 - Math.abs(v - 0.55)) * 220));
-        const b = Math.min(255, Math.floor((1 - v) * 220));
-        ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+        r = Math.min(255, Math.floor(v * 320));
+        g = Math.min(255, Math.floor((1 - Math.abs(v - 0.55)) * 220));
+        b = Math.min(255, Math.floor((1 - v) * 220));
       }
-      ctx.fillRect(colX, y, 1, 1);
+      const pixelIdx = y * 4;
+      colImg.data[pixelIdx] = r;
+      colImg.data[pixelIdx + 1] = g;
+      colImg.data[pixelIdx + 2] = b;
+      colImg.data[pixelIdx + 3] = 255;
     }
+    ctx.putImageData(colImg, colX, 0);
     _specX = (_specX + 1) % w;
   }
 
@@ -186,7 +185,7 @@
   }
 
   /* ── LUFS rolling estimate + header peak/RMS ──────────────────────────── */
-  function _updateLufs(timeBytes, freqBytes) {
+  function _updateLufs(timeBytes, _freqBytes) {
     // K-weighted LUFS is expensive — approximate with un-weighted RMS scaled to
     // BS.1770 style ~−0.691 LU offset so the readouts feel familiar to ENGs.
     let sumSq = 0;
@@ -363,6 +362,8 @@
     window.addEventListener('vip:fileLoaded',     drawStaticVisuals);
     window.addEventListener('vip:processingDone', drawStaticVisuals);
     window.addEventListener('vip:playStarted', () => {
+      _lufsShortBuf = [];
+      _lufsIntBuf = [];
       start();
       if (_activePremiumTab) {
         _activePremium = null;
