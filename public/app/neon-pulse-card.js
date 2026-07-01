@@ -49,17 +49,17 @@
     <span class="np-card__badge">LIVE</span>
     <span class="np-card__title">Neon Pulse <span class="np-accent">Visualizer</span></span>
     <div class="np-card__controls">
-      <button class="np-btn np-btn--mode" data-mode="combined"   title="Combined">⬡</button>
-      <button class="np-btn np-btn--mode" data-mode="spectrum"   title="Spectrum">▤</button>
-      <button class="np-btn np-btn--mode" data-mode="waveform"   title="Waveform">〜</button>
-      <button class="np-btn np-btn--mode" data-mode="radial"     title="Radial">◎</button>
-      <button class="np-btn np-btn--mode" data-mode="waterfall"  title="Waterfall">▦</button>
-      <button class="np-btn np-btn--action" id="np-freeze-${uid}" title="Freeze">❄</button>
+      <button class="np-btn np-btn--mode" data-mode="combined"   aria-label="Combined view" title="Combined">⬡</button>
+      <button class="np-btn np-btn--mode" data-mode="spectrum"   aria-label="Spectrum view" title="Spectrum">▤</button>
+      <button class="np-btn np-btn--mode" data-mode="waveform"   aria-label="Waveform view" title="Waveform">〜</button>
+      <button class="np-btn np-btn--mode" data-mode="radial"     aria-label="Radial view" title="Radial">◎</button>
+      <button class="np-btn np-btn--mode" data-mode="waterfall"  aria-label="Waterfall view" title="Waterfall">▦</button>
+      <button class="np-btn np-btn--action" id="np-freeze-${uid}" aria-label="Freeze visualizer" title="Freeze">❄</button>
     </div>
   </div>
 
   <div class="np-canvas-wrap">
-    <canvas class="np-canvas" id="np-canvas-${uid}"></canvas>
+    <canvas class="np-canvas" id="np-canvas-${uid}" role="img" aria-label="Live audio visualizer"></canvas>
     <div class="np-overlay-stats" id="np-stats-${uid}">
       <span class="np-stat" id="np-rms-${uid}">RMS <b>—</b></span>
       <span class="np-stat" id="np-peak-${uid}">PEAK <b>—</b></span>
