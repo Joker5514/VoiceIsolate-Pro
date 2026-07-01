@@ -751,6 +751,85 @@
   window.VIP_DEBUG_REPORT = buildReport;
 
   /* ═══════════════════════════════════════════════════════════════
+   * 8. VISUAL CLICK-ISOLATION → DSP pipeline
+   * ═══════════════════════════════════════════════════════════════ */
+  function patchClickIsolation() {
+    if (window._vipClickIsoPatched) return;
+    window._vipClickIsoPatched = true;
+
+    function _syncVoiceFocusSliders(lo, hi) {
+      document.querySelectorAll('.sr-row[data-slider-id="voiceFocusLo"] input[type="range"]').forEach((sl) => {
+        sl.value = String(lo);
+        sl.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      document.querySelectorAll('.sr-row[data-slider-id="voiceFocusHi"] input[type="range"]').forEach((sl) => {
+        sl.value = String(hi);
+        sl.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    }
+
+    window.addEventListener('vip:isolationBandSet', (e) => {
+      const { freqLow, freqHigh } = e.detail || {};
+      const app = window._vipApp;
+      if (!app) return;
+      app.dspParams = app.dspParams || {};
+      app.dspParams.isolationFreqLow = freqLow;
+      app.dspParams.isolationFreqHigh = freqHigh;
+      app.dspParams.isolationActive = true;
+      window.VIP_PARAMS = window.VIP_PARAMS || {};
+      const lo = Math.max(80, Math.round(freqLow || 120));
+      const hi = Math.min(8000, Math.round(freqHigh || 3400));
+      window.VIP_PARAMS.voiceFocusLo = lo;
+      window.VIP_PARAMS.voiceFocusHi = Math.max(lo + 10, hi);
+      _syncVoiceFocusSliders(lo, window.VIP_PARAMS.voiceFocusHi);
+      if (typeof app.runPipeline === 'function') app.runPipeline();
+      else if (typeof app.reprocess === 'function') app.reprocess();
+    });
+
+    window.addEventListener('vip:isolationBandClear', () => {
+      const app = window._vipApp;
+      if (!app || !app.dspParams) return;
+      app.dspParams.isolationActive = false;
+    });
+
+    window.addEventListener('vip:stemToggle', (e) => {
+      const stem = (e.detail && e.detail.stem) || 'all';
+      const app = window._vipApp;
+      if (app && typeof app.setStemSolo === 'function') {
+        app.setStemSolo(stem);
+      } else {
+        window.dispatchEvent(new CustomEvent('vip:stemSoloChanged', { detail: { stem } }));
+      }
+    });
+
+    window.addEventListener('vip:seekRequest', (e) => {
+      const ratio = (e.detail && e.detail.ratio) || 0;
+      const app = window._vipApp;
+      if (!app) return;
+      const buf = app.inputBuffer || app.outputBuffer || app.origBuffer;
+      const dur = buf?.duration || 0;
+      if (typeof app.seekTo === 'function') {
+        app.seekTo(Math.max(0, Math.min(1, ratio)));
+      } else if (typeof app.seek === 'function') {
+        app.seek(ratio * dur);
+      } else {
+        const seek = $('tpSeek');
+        const cur = $('tpCur');
+        const off = ratio * dur;
+        const fmtSec = (sec) => {
+          const s = Math.max(0, Math.floor(sec || 0));
+          return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+        };
+        if (seek) seek.value = String(ratio * 1000);
+        if (cur) cur.textContent = fmtSec(off);
+        app.playOffset = off;
+      }
+    });
+
+    log('Click-isolation DSP patch OK');
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
    * INIT
    * ═══════════════════════════════════════════════════════════════ */
   function applyAll(app) {
@@ -760,10 +839,12 @@
     patchSliderSearch();
     patchPresetSelect(app);
     patchAccordions();
+    patchClickIsolation();
     console.info('[VIP-FIX] All patches applied. Call VIP_DEBUG_REPORT() in DevTools for a full snapshot.');
   }
 
   function init() {
+    patchClickIsolation();
     if (window._vipApp) { applyAll(window._vipApp); return; }
     let tries = 0;
     const poll = setInterval(() => {
