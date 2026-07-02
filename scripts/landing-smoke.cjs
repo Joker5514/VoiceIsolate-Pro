@@ -88,6 +88,11 @@ async function main() {
   page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
   page.on('pageerror', (e) => consoleErrors.push(String(e)));
 
+  const statusMsg = () => page.evaluate(() => {
+    const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
+    return (el?.textContent || '').trim();
+  });
+
   try {
     // ── Load page ───────────────────────────────────────────────────────────
     console.log('Page load:');
@@ -112,7 +117,7 @@ async function main() {
     await page.waitForFunction(
       () => {
         const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
-        return el && el.textContent.includes('Ready:');
+        return el && (el.textContent || '').trim().startsWith('Ready:');
       },
       null, { timeout: 30000 }
     );
@@ -122,16 +127,14 @@ async function main() {
     await page.waitForFunction(
       () => {
         const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
-        return el && el.textContent.includes('Stems ready');
+        return el && (el.textContent || '').includes('Stems ready');
       },
       null, { timeout: 120000 }
     );
-    const statusAfter = await page.evaluate(() => {
-      const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
-      return el ? el.textContent : '';
-    });
+    const statusAfter = await statusMsg();
     check(!statusAfter.includes('passthrough') && !statusAfter.includes('unavailable'),
       'REAL inference produced stems (not passthrough)');
+    check(statusAfter.includes('calibrated'), `auto-calibration applied (“${statusAfter}”)`);
     check(await page.evaluate(() => Boolean(globalThis.__vipDiagnostics?.mixer)), 'mixer + diagnostics exposed');
     check(
       await page.evaluate((ids) => ids.every((id) => !document.getElementById(id).disabled), mixSliderIds),
@@ -190,6 +193,9 @@ async function main() {
       return {
         noise: m.noiseGain.gain.value, clean: m.cleanGain.gain.value,
         master: m.masterGain.gain.value, low: m.lowShelf.gain.value, high: m.highShelf.gain.value,
+        eqMid: m.eqMid.gain.value, compRatio: m.compressor.ratio.value,
+        gateThresh: m._gateParams?.threshold ?? m.gate?.parameters?.get('threshold')?.value,
+        deEssAmt: m._deEsserParams?.amount ?? m.deEsser?.parameters?.get('amount')?.value,
       };
     });
     const near = (a, b, tol = 0.06) => Math.abs(a - b) <= tol;
@@ -216,15 +222,42 @@ async function main() {
       check(near(p[key], expected, tol), `${id}=${v} → ${key} gain ${p[key].toFixed(3)} (expect ${expected})`);
     }
 
+    const rtSweep = [
+      ['eqMidSlider', 6, 'eqMid', 6],
+      ['compRatioSlider', 4, 'compRatio', 4],
+      ['deEsserAmountSlider', 25, 'deEssAmt', 0.25],
+    ];
+    for (const [id, v, key, expected] of rtSweep) {
+      await drive(id, v);
+      await page.waitForTimeout(350);
+      const p = await params();
+      const tol = key === 'deEssAmt' ? 0.06 : (Math.abs(expected) > 2 ? 1.5 : 0.06);
+      const actual = p[key];
+      if (actual == null) {
+        check(false, `${id}=${v} → ${key} (worklet not loaded yet)`);
+      } else {
+        check(near(actual, expected, tol), `${id}=${v} → ${key} ${actual.toFixed(3)} (expect ${expected})`);
+      }
+    }
+
+    // Rewind so mute/preset checks run from a known transport state.
+    await page.click('#stopBtn');
+    await page.click('#playBtn');
+    await page.waitForTimeout(300);
+
     // ── Presets ─────────────────────────────────────────────────────────────
     console.log('\nPresets:');
     for (const [name, expectNoise, expectClean] of [
       ['residual-monitor', 1.0, 0.0],
       ['original', 1.0, 1.0],
       ['voice-clarity', 0.0, 1.15],
+      ['whisper-boost', 0.15, 1.4],
     ]) {
       await page.selectOption('#presetSelect', name);
-      await page.waitForTimeout(350);
+      await page.evaluate(() => {
+        document.getElementById('presetSelect').dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.waitForTimeout(400);
       const p = await params();
       check(near(p.noise, expectNoise) && near(p.clean, expectClean),
         `preset '${name}' → noise ${p.noise.toFixed(2)} / voice ${p.clean.toFixed(2)}`);
@@ -245,7 +278,8 @@ async function main() {
     check(near(mute.clean, cleanBeforeMute),
       `Voice Level slider untouched by mute (${mute.clean.toFixed(2)} = pre-mute ${cleanBeforeMute.toFixed(2)})`);
     check(near(mute.n, 1.0), 'noise lane unaffected');
-    check((await page.textContent('#muteVoiceBtn')).includes('Unmute'), 'button label flips to Unmute');
+    check((await page.getAttribute('#muteVoiceBtn', 'aria-checked')) === 'true',
+      'voice mute switch aria-checked=true');
 
     await page.click('#muteVoiceBtn');
     await page.click('#muteNoiseBtn');

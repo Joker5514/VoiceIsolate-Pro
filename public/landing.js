@@ -14,6 +14,7 @@
 import { ingestFile } from '/src/pipeline/FileIngestion.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
+import { LANDING_PRESETS, calibrateFromStems } from '/src/core/MixCalibration.js';
 import { SpeakerControls } from '/src/presentation/SpeakerControls.js';
 import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
@@ -538,19 +539,11 @@ function wireReadouts() {
   }
 }
 
-// ─── Presets (preloaded mix calibrations) ────────────────────────────────────
-// Values are slider positions, applied by dispatching 'input' events so they
-// flow through SliderUI's rAF-coalesced path exactly like a manual drag.
-const PRESETS = {
-  'voice-clarity':    { noiseReductionSlider: 100, voiceLevelSlider: 115, volumeSlider: 100, eqLowSlider: -4, eqHighSlider: 3 },
-  'balanced':         { noiseReductionSlider: 70,  voiceLevelSlider: 100, volumeSlider: 100, eqLowSlider: 0,  eqHighSlider: 1 },
-  'podcast-warm':     { noiseReductionSlider: 90,  voiceLevelSlider: 110, volumeSlider: 95,  eqLowSlider: 3,  eqHighSlider: 1 },
-  'residual-monitor': { noiseReductionSlider: 0,   voiceLevelSlider: 0,   volumeSlider: 100, eqLowSlider: 0,  eqHighSlider: 0 },
-  'original':         { noiseReductionSlider: 0,   voiceLevelSlider: 100, volumeSlider: 100, eqLowSlider: 0,  eqHighSlider: 0 },
-};
+// ─── Presets (canonical 23-slider calibrations from MixCalibration.js) ─────
+const PRESETS = LANDING_PRESETS;
 
-function applyPreset(name) {
-  const preset = PRESETS[name];
+function applyPreset(name, sliderMap = PRESETS[name]) {
+  const preset = sliderMap;
   if (!preset) return;
   for (const [sliderId, value] of Object.entries(preset)) {
     const el = $(sliderId);
@@ -558,6 +551,18 @@ function applyPreset(name) {
     el.value = String(value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   }
+}
+
+/** Auto-calibrate all real-time sliders from the clean stem loudness profile. */
+function autoCalibrateMix(clean, sampleRate) {
+  const { preset, level, rmsDb, sliders } = calibrateFromStems(clean, sampleRate);
+  applyPreset(preset, sliders);
+  if (ui.presetSelect) {
+    const hasOption = [...ui.presetSelect.options].some((o) => o.value === preset);
+    ui.presetSelect.value = hasOption ? preset : ui.presetSelect.value;
+  }
+  console.info(`[VIP][landing] Auto-calibrated (${level}, ${rmsDb.toFixed(1)} dBFS) → preset "${preset}"`);
+  return { preset, level, rmsDb };
 }
 
 // ─── Pipeline glue ───────────────────────────────────────────────────────────
@@ -706,10 +711,16 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
     ...ui.mixSliders]) {
     if (el) el.disabled = false;
   }
+  let calLabel = '';
+  if (!passthrough) {
+    const cal = autoCalibrateMix(clean, sampleRate);
+    calLabel = ` · calibrated: ${cal.preset} (${cal.level})`;
+  }
+
   setStatus(
     passthrough
       ? 'Model unavailable — passthrough stems loaded (original audio). Check that /app/models is being served.'
-      : 'Stems ready — press Play and mix in real time.',
+      : `Stems ready — press Play and mix in real time${calLabel}.`,
     passthrough ? 'warn' : 'active'
   );
 

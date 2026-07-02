@@ -25,6 +25,7 @@ const SLIDER_REG_BY_ID = Object.freeze(
   SLIDER_REGISTRY.reduce((acc, s) => { acc[s.id] = s; return acc; }, {})
 );
 import { ModelStatusUI } from './model-status-ui.js';
+import { recommendEngineerPreset } from '/src/core/MixCalibration.js';
 
 // Model keys served by /app/models-manifest.json (ModelCDNLoader.getManifest()) —
 // drives the "Model Cache & Providers" pills + Local Model Health panel.
@@ -239,13 +240,13 @@ const PRESETS = {
   },
   'Whisper Boost': {
     description: 'Amplify and clarify soft whispering voices',
-    gateThresh: -65, gateRange: -70, gateAttack: 3, gateRelease: 150, gateHold: 30, gateLookahead: 8,
-    nrAmount: 60, nrSensitivity: 50, nrSpectralSub: 45, nrFloor: -75, nrSmoothing: 65,
+    gateThresh: -68, gateRange: -80, gateAttack: 3, gateRelease: 150, gateHold: 40, gateLookahead: 8,
+    nrAmount: 62, nrSensitivity: 52, nrSpectralSub: 48, nrFloor: -75, nrSmoothing: 68,
     eqSub: -6, eqBass: -3, eqWarmth: 0, eqBody: 2, eqLowMid: 2, eqMid: 3, eqPresence: 3, eqClarity: 2, eqAir: 1, eqBrill: 0,
-    compThresh: -36, compRatio: 6, compAttack: 5, compRelease: 100, compKnee: 4, compMakeup: 8, limThresh: -1, limRelease: 40,
-    hpFreq: 120, hpQ: 0.7, lpFreq: 14000, lpQ: 0.7, deEssFreq: 6000, deEssAmt: 3, specTilt: 1, formantShift: 0,
-    derevAmt: 20, derevDecay: 40, harmRecov: 10, harmOrder: 3, stereoWidth: 100, phaseCorr: 10,
-    voiceIso: 70, bgSuppress: 65, voiceFocusLo: 150, voiceFocusHi: 4000, crosstalkCancel: 10,
+    compThresh: -36, compRatio: 5, compAttack: 8, compRelease: 120, compKnee: 5, compMakeup: 8, limThresh: -1, limRelease: 40,
+    hpFreq: 120, hpQ: 0.7, lpFreq: 14000, lpQ: 0.7, deEssFreq: 5500, deEssAmt: 3, specTilt: 1, formantShift: 0,
+    derevAmt: 18, derevDecay: 40, harmRecov: 12, harmOrder: 3, stereoWidth: 100, phaseCorr: 10,
+    voiceIso: 72, bgSuppress: 62, voiceFocusLo: 150, voiceFocusHi: 4000, crosstalkCancel: 8,
     outGain: 6, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 20, crowdNull: 60, bassCrush: 70, reverbStrip: 400, voiceTunnel: 70, musicKill: 50, snrFloor: -54, whisperMode: 2,
     whisperClarity: 72, whisperSensitivity: 60, whisperThreshold: 45, transientShaper: 10, breathControl: 40, roomCorrection: 35, subHarmonic: 15,
@@ -1518,6 +1519,37 @@ class VoiceIsolatePro {
     this.showNotification('Preset applied: ' + name, 'info');
   }
 
+  /**
+   * Auto-calibrate Engineer Mode sliders from processed audio loudness.
+   * Applies the best-matching named preset, then merges AIIntelligence hints
+   * for whisper/quiet content when the module is loaded.
+   */
+  _autoCalibratePreset(buffer) {
+    if (!buffer || typeof buffer.getChannelData !== 'function') return null;
+    const channels = [];
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      channels.push(buffer.getChannelData(ch));
+    }
+    const { preset, level, rmsDb } = recommendEngineerPreset(channels);
+    this.applyPreset(preset);
+
+    const AI = globalThis.AIIntelligence;
+    if (AI && typeof AI.autoTuneParams === 'function') {
+      const mono = channels[0];
+      const tune = AI.autoTuneParams(mono, buffer.sampleRate, this.params);
+      for (const [key, val] of Object.entries(tune.suggestions || {})) {
+        if (!SLIDER_BY_ID[key] || !Number.isFinite(val)) continue;
+        const clamped = clampToSlider(key, val);
+        this.onSlider(key, clamped);
+      }
+    }
+
+    const detail = `${preset} (${level}, ${rmsDb.toFixed(1)} dBFS)`;
+    structuredLog('info', '[VIP] Auto-calibrated mix', { preset, level, rmsDb });
+    this.showNotification('Auto-calibrated: ' + detail, 'info');
+    return { preset, level, rmsDb };
+  }
+
   _showFileLoading(text) {
     const msg = text || 'Loading…';
     const ind = this.dom && this.dom.fileLoadIndicator;
@@ -1876,11 +1908,13 @@ class VoiceIsolatePro {
       if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = false;
 
-      if (this.outputBuffer) this.renderStaticVisuals(this.outputBuffer);
+      if (this.outputBuffer) {
+        this.renderStaticVisuals(this.outputBuffer);
+        this._autoCalibratePreset(this.outputBuffer);
+      }
       this.updatePipelineProgress(32, 'Complete', 100);
       this.setStatus('DONE');
       try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}
-      this.showNotification('Processing complete!', 'info');
     } catch (err) {
       structuredLog('error', '[VIP] Pipeline error', { err: err.message });
       this.setStatus('ERROR');
