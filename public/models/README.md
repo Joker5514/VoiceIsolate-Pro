@@ -74,7 +74,7 @@ public/models/silero-vad.onnx
 ## Integration
 
 `SpeakerDiarizer` (`public/app/speaker-diarizer.js`) expects three pre-loaded `ort.InferenceSession` instances.
-Run diarization **after** the Octa-Pass STFT → ML → iSTFT pipeline on the **cleaned** buffer for best accuracy.
+Run diarization **after** the Deca-Pass STFT → ML → iSTFT pipeline on the **cleaned** buffer for best accuracy.
 
 ```javascript
 import SpeakerDiarizer from './speaker-diarizer.js';
