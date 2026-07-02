@@ -186,7 +186,15 @@ describe('AIIntelligence — Auto-Tune Parameters', () => {
   test('includes scene classification in result', () => {
     const audio = generateSpeechLike(sr, 1.0);
     const result = AIIntelligence.autoTuneParams(audio, sr, {});
-    expect(['podcast', 'interview', 'music', 'broadcast', 'forensic', 'film']).toContain(result.scene);
+    expect(['podcast', 'interview', 'music', 'broadcast', 'forensic', 'film', 'whisper']).toContain(result.scene);
+  });
+
+  test('whisper-level audio suggests lift and sensitive gate', () => {
+    const audio = generateSineWave(300, sr, 1.0, 0.008);
+    const result = AIIntelligence.autoTuneParams(audio, sr, {});
+    expect(result.suggestions.compMakeup).toBe(8);
+    expect(result.suggestions.gateThresh).toBeLessThanOrEqual(-60);
+    expect(result.suggestions.outGain).toBe(6);
   });
 });
 
