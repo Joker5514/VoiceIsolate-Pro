@@ -587,10 +587,10 @@ export class SpeakerDiarizer {
       const s0 = Math.floor(seg.startSample * scale);
       const s1 = Math.min(totalSamples, Math.ceil(seg.endSample * scale));
       for (let i = s0; i < s1; i++) mask[i] = 1;
-      for (let r = 0; r < rampSamples && s0 + r < totalSamples; r++) {
-        mask[s0 + r] = Math.max(mask[s0 + r], r / rampSamples);
+      for (let r = 0; r < rampSamples && s0 + r < s1; r++) {
+        mask[s0 + r] = r / rampSamples;
       }
-      for (let r = 0; r < rampSamples && s1 - 1 - r >= 0; r++) {
+      for (let r = 0; r < rampSamples && s1 - 1 - r >= s0; r++) {
         const idx = s1 - 1 - r;
         mask[idx] = Math.min(mask[idx], r / rampSamples);
       }
