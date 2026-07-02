@@ -443,9 +443,15 @@ export class SpeakerDiarizer {
       if (prev && next) {
         const dPrev = out[i].startSample - prev.endSample;
         const dNext = next.startSample - out[i].endSample;
-        const target = dPrev <= dNext ? prev : next;
-        target.localLabel = out[i].localLabel;
-        target.confidence = (target.confidence + out[i].confidence) / 2;
+        if (dPrev <= dNext) {
+          prev.endSample = out[i].endSample;
+          prev.localLabel = out[i].localLabel;
+          prev.confidence = (prev.confidence + out[i].confidence) / 2;
+        } else {
+          next.startSample = out[i].startSample;
+          next.localLabel = out[i].localLabel;
+          next.confidence = (next.confidence + out[i].confidence) / 2;
+        }
       } else if (prev) {
         prev.endSample = out[i].endSample;
         prev.confidence = (prev.confidence + out[i].confidence) / 2;
