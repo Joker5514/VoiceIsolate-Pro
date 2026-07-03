@@ -112,9 +112,8 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
-      - name: Check ONNX models are real binaries on Vercel Blob
+      - name: Check ONNX models are real binaries on HuggingFace CDN
         run: node scripts/validate-onnx-models.js
-        continue-on-error: ${{ github.event_name == 'pull_request' }}
 
 
   deploy-preview:
