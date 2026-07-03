@@ -65,3 +65,4 @@ public/models/*.onnx
 
 # Parallel redesign workspace (not part of production tree)
 Voice enhancement/
+.env*.local
