@@ -389,6 +389,7 @@ async function runWaveformMask(entry, session, samples, sampleRate, onProgress) 
     fixed.set(back.subarray(0, Math.min(back.length, samples.length)));
     return fixed;
   }
+  if (sampleRate !== modelSr) return resampleLinear(out, modelSr, sampleRate);
   return out;
 }
 
