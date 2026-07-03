@@ -88,6 +88,7 @@
     if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = file.name;
 
     await this.ensureCtx();
+    if (typeof this._warmupMLModels === 'function') this._warmupMLModels().catch(() => {});
 
     // --- MIDI guard (unchanged) ---
     const midiMimes = ['audio/midi', 'audio/x-midi', 'audio/mid'];
