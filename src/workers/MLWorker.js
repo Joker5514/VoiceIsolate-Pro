@@ -380,6 +380,15 @@ async function runWaveformMask(entry, session, samples, sampleRate, onProgress) 
     onProgress((seg + 1) / totalSegs);
   }
 
+  if (sampleRate !== modelSr) {
+    const back = resampleLinear(out, modelSr, sampleRate);
+    if (back.length === samples.length) return back;
+    // Keep clean/noise stems aligned to the original input length so residual()
+    // never reads past the clean array (NaN) and both stems match in length.
+    const fixed = new Float32Array(samples.length);
+    fixed.set(back.subarray(0, Math.min(back.length, samples.length)));
+    return fixed;
+  }
   if (sampleRate !== modelSr) return resampleLinear(out, modelSr, sampleRate);
   return out;
 }
