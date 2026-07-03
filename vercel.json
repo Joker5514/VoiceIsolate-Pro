@@ -1,7 +1,8 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "outputDirectory": "public",
   "buildCommand": "node scripts/vercel-build.js",
-  "installCommand": "pnpm install --frozen-lockfile",
+  "installCommand": "bash scripts/vercel-install.sh",
   "framework": null,
   "rewrites": [
     {
