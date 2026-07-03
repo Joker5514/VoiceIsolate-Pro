@@ -57,8 +57,8 @@ const MODEL_STATUS_KEYS = ['demucs', 'bsrnn', 'rnnoise', 'silero_vad'];
 const DEFAULT_ML_CHAIN = Object.freeze(['demucs', 'rnnoise']);
 
 function _yieldToUI(cb) {
-  if (typeof queueMicrotask === 'function') queueMicrotask(cb);
-  else setTimeout(cb, 0);
+  const timerId = setTimeout(cb, 0);
+  // Track timerId in active timers set if within a component context
 }
 
 // ---------------------------------------------------------------------------
