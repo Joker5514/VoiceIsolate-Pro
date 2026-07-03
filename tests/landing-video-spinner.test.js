@@ -72,6 +72,13 @@ describe('Landing page — realtime processing indicator (ProcessLoader)', () =>
     expect(js).not.toContain('ui.progress');
   });
 
+  test('models warm up off the hot path and separation auto-starts after ingest', () => {
+    expect(js).toContain("type: 'warmup'");
+    expect(js).toContain('warmupWorkerModels');
+    expect(js).toContain('onProcess()');
+    expect(js).toContain('requestIdleCallback');
+  });
+
   test('inference progress drives the ProcessLoader component', () => {
     expect(js).toContain('function setProgress(');
     expect(js).toContain("case 'progress'");

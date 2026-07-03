@@ -341,6 +341,20 @@ function syncVideo() {
 
 // ─── Worker lifecycle ────────────────────────────────────────────────────────
 
+const DEFAULT_WARMUP_CHAIN = ['demucs', 'rnnoise'];
+
+function resolveModelIds(selection) {
+  const chain = MODEL_CHAINS[selection];
+  if (chain) return chain;
+  return [getModel(selection).id];
+}
+
+/** Prefetch model bytes + compile ONNX sessions off the hot path. */
+function warmupWorkerModels(modelIds) {
+  if (!modelIds?.length) return;
+  getWorker().postMessage({ type: 'warmup', modelIds });
+}
+
 function getWorker() {
   if (worker) return worker;
   worker = new Worker('/src/workers/MLWorker.js');
@@ -356,6 +370,7 @@ function getWorker() {
         if (debugEnabled) {
           console.log('[VIP][landing] MLWorker ready (backend: ' + msg.backend + ')');
         }
+        warmupWorkerModels(DEFAULT_WARMUP_CHAIN);
         break;
       }
       case 'stage':
@@ -594,6 +609,7 @@ async function ingestFrom(file) {
   try {
     showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
+    warmupWorkerModels(resolveModelIds(ui.modelSelect.value));
     const next = await ingestFile(file, {
       onProgress: (stage, percent = 0) => {
         if (seq !== ingestSeq) return;
@@ -606,9 +622,8 @@ async function ingestFrom(file) {
     });
     if (seq !== ingestSeq) return;
     ingested = next;
-    hideSpinner();
-    setStatus(`Ready: ${ingested.sourceName} · ${fmtTime(ingested.duration)} · ${ingested.numberOfChannels} ch`, '');
-    ui.processBtn.disabled = false;
+    // Auto-start separation — models were warming during decode; skip the extra click.
+    onProcess();
   } catch (err) {
     if (seq !== ingestSeq) return;
     hideSpinner();
@@ -733,7 +748,10 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
   const cal = autoCalibrateMix(clean, sampleRate);
   const calLabel = ` · calibrated: ${cal.preset} (${cal.level})`;
   setStatus(`Stems ready — press Play and mix in real time${calLabel}.`, 'active');
-  detectSpeakers(clean, sampleRate);
+  const scheduleIdle = globalThis.requestIdleCallback
+    ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
+    : (cb) => setTimeout(cb, 0);
+  scheduleIdle(() => detectSpeakers(clean, sampleRate));
 }
 
 // ─── Stem mute toggles ───────────────────────────────────────────────────────
