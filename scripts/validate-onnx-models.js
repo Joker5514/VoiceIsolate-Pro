@@ -48,26 +48,43 @@ if (!BLOB_BASE_URL) {
   BLOB_BASE_URL = 'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/';
 }
 
+const BLOB_ROOT = BLOB_BASE_URL.replace(/\/$/, '');
+
 const FALLBACK_MODELS = [
   {
     name: 'silero_vad.onnx',
-    cdn_src: `${BLOB_BASE_URL.replace(/\/$/, '')}/silero_vad.onnx`,
+    cdn_src: `${BLOB_ROOT}/silero_vad.onnx`,
     min_bytes: 100_000,
   },
   {
     name: 'rnnoise_suppressor.onnx',
-    cdn_src: `${BLOB_BASE_URL.replace(/\/$/, '')}/rnnoise_suppressor.onnx`,
+    cdn_src: `${BLOB_ROOT}/rnnoise_suppressor.onnx`,
     min_bytes: 100_000,
   },
   {
     name: 'demucs_v4_quantized.onnx',
-    cdn_src: `${BLOB_BASE_URL.replace(/\/$/, '')}/demucs_v4_quantized.onnx`,
+    cdn_src: `${BLOB_ROOT}/demucs_v4_quantized.onnx`,
     min_bytes: 10_000_000,
   },
   {
     name: 'bsrnn_vocals.onnx',
-    cdn_src: `${BLOB_BASE_URL.replace(/\/$/, '')}/bsrnn_vocals.onnx`,
+    cdn_src: `${BLOB_ROOT}/bsrnn_vocals.onnx`,
     min_bytes: 10_000_000,
+  },
+  {
+    name: 'pyannote-segmentation-3.0.onnx',
+    cdn_src: `${BLOB_ROOT}/pyannote-segmentation-3.0.onnx`,
+    min_bytes: 1_000_000,
+  },
+  {
+    name: 'wespeaker-resnet34.onnx',
+    cdn_src: `${BLOB_ROOT}/wespeaker-resnet34.onnx`,
+    min_bytes: 10_000_000,
+  },
+  {
+    name: 'silero-vad.onnx',
+    cdn_src: `${BLOB_ROOT}/silero-vad.onnx`,
+    min_bytes: 100_000,
   },
 ];
 
@@ -160,10 +177,21 @@ function humanBytes(n) {
         let src = m.cdn_src || m.url || m.path || '';
         // Demucs is hosted on Vercel Blob and rewritten. The other three models
         // are committed in-repo and served same-origin.
+        const blobHosted = new Set([
+          'demucs_v4_quantized.onnx',
+          'pyannote-segmentation-3.0.onnx',
+          'wespeaker-resnet34.onnx',
+          'silero-vad.onnx',
+        ]);
         if (src.startsWith('/app/models/')) {
           const name = m.name || m.filename || path.basename(src);
-          if (name === 'demucs_v4_quantized.onnx') {
-            src = src.replace('/app/models/', BLOB_BASE_URL.replace(/\/$/, '') + '/');
+          if (blobHosted.has(name)) {
+            src = src.replace('/app/models/', `${BLOB_ROOT}/`);
+          }
+        } else if (src.startsWith('/models/')) {
+          const name = m.name || m.filename || path.basename(src);
+          if (blobHosted.has(name)) {
+            src = src.replace('/models/', `${BLOB_ROOT}/`);
           }
         }
         return {
