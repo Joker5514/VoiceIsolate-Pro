@@ -50,8 +50,9 @@
       <div class="upload-row">
         <label for="modelSelect" class="inline-label">Model</label>
         <select id="modelSelect" class="vip-select" aria-label="Separation model">
-          <option value="max_isolation">Maximum Isolation — Vocals → Denoise (chained)</option>
-          <option value="bsrnn_vocals">Vocal Isolation — Band-Split RNN (~4 MB)</option>
+          <option value="max_isolation">Maximum Isolation — Demucs → Denoise (best)</option>
+          <option value="demucs">Vocal Isolation — Demucs v4 (~149 MB)</option>
+          <option value="bsrnn_vocals">Vocal Isolation — Band-Split RNN (~4 MB, fast)</option>
           <option value="rnnoise">Noise Suppression — BiGRU mask (~2 MB)</option>
         </select>
         <button id="processBtn" class="vip-btn vip-btn--primary" type="button" disabled>Separate Stems</button>
@@ -272,6 +273,7 @@
   <!-- Design-system bundle (React shim must load first) -->
   <script src="/lib/react-mini.js"></script>
   <script src="/lib/_ds_bundle.js"></script>
+  <script src="/lib/ort.min.js"></script>
   <script type="module" src="/landing.js"></script>
 </body>
 </html>

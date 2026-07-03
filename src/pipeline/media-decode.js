@@ -107,7 +107,6 @@ async function _decodeViaMediaElement(blob, kind) {
     let resolveDone, rejectDone;
     const donePromise = new Promise((res, rej) => { resolveDone = res; rejectDone = rej; });
 
-    // eslint-disable-next-line no-deprecated
     const spn = ctx.createScriptProcessor(SPN_BLOCK_SIZE, numChannels, numChannels);
     source.connect(spn);
     spn.connect(ctx.destination); // must be connected to run

@@ -80,8 +80,8 @@
       "execution_provider_preference": ["webgpu", "wasm"],
       "load_priority": "lazy",
       "delivery": "vercel_blob",
-      "status": "pending_export",
-      "sha256": "",
+      "status": "vercel_blob",
+      "sha256": "19be0f2c8e617e5ee2da0c2861f2f96e1a7f656ebf4b696b485e16f64b3bdac2",
       "source": "https://github.com/facebookresearch/demucs",
       "export_notes": "Blocked: HDemucs uses internal torch.stft on complex tensors. torch.onnx.export at opset 17 fails with SymbolicValueError; opset 20 succeeds tracing but OOMs at graph emit. Until shipped, ml-worker.js falls back to BSRNN-only or DSP-only path."
     },

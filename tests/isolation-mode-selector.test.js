@@ -64,12 +64,12 @@ describe('IsolationModeSelector', () => {
       });
     });
 
-    test('Standard mode uses bsrnn_vocals', () => {
-      expect(ISOLATION_MODES.standard.modelIds).toEqual(['bsrnn_vocals']);
+    test('Standard mode uses demucs', () => {
+      expect(ISOLATION_MODES.standard.modelIds).toEqual(['demucs']);
     });
 
-    test('Maximum mode chains bsrnn_vocals and rnnoise', () => {
-      expect(ISOLATION_MODES.maximum.modelIds).toEqual(['bsrnn_vocals', 'rnnoise']);
+    test('Maximum mode chains demucs and rnnoise', () => {
+      expect(ISOLATION_MODES.maximum.modelIds).toEqual(['demucs', 'rnnoise']);
     });
 
     test('Noise suppression mode uses rnnoise only', () => {
@@ -147,13 +147,13 @@ describe('IsolationModeSelector', () => {
   describe('currentModelIds getter', () => {
     test('Returns model IDs for current mode', () => {
       const selector = new IsolationModeSelector({ initialMode: 'standard' });
-      expect(selector.currentModelIds).toEqual(['bsrnn_vocals']);
+      expect(selector.currentModelIds).toEqual(['demucs']);
     });
 
     test('Updates when mode changes', () => {
       const selector = new IsolationModeSelector({ initialMode: 'standard' });
       selector.setMode('maximum');
-      expect(selector.currentModelIds).toEqual(['bsrnn_vocals', 'rnnoise']);
+      expect(selector.currentModelIds).toEqual(['demucs', 'rnnoise']);
     });
   });
 
@@ -188,7 +188,7 @@ describe('IsolationModeSelector', () => {
       const selector = new IsolationModeSelector({ document: mockDocument });
       selector.bind();
       expect(mockDescription.innerHTML).toContain('Standard');
-      expect(mockDescription.innerHTML).toContain('Fast vocal isolation');
+      expect(mockDescription.innerHTML).toContain('Demucs v4 vocal extraction');
     });
   });
 
@@ -233,7 +233,7 @@ describe('IsolationModeSelector', () => {
           type: 'isolationmodechange',
           detail: expect.objectContaining({
             mode: 'maximum',
-            modelIds: ['bsrnn_vocals', 'rnnoise'],
+            modelIds: ['demucs', 'rnnoise'],
             previousMode: 'standard',
           }),
         })
@@ -293,7 +293,7 @@ describe('IsolationModeSelector', () => {
       const def = selector.getCurrentModeDefinition();
       expect(def).toBe(ISOLATION_MODES.maximum);
       expect(def.name).toBe('Maximum Isolation');
-      expect(def.modelIds).toEqual(['bsrnn_vocals', 'rnnoise']);
+      expect(def.modelIds).toEqual(['demucs', 'rnnoise']);
     });
   });
 

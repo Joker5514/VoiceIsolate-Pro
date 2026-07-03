@@ -332,6 +332,58 @@ async function runSpectralMask(entry, session, samples, onProgress) {
   return out;
 }
 
+/** Linear resample mono PCM between sample rates. */
+function resampleLinear(samples, fromSr, toSr) {
+  if (fromSr === toSr) return new Float32Array(samples);
+  const ratio = toSr / fromSr;
+  const outLen = Math.max(1, Math.round(samples.length * ratio));
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const src = i / ratio;
+    const i0 = Math.floor(src);
+    const i1 = Math.min(samples.length - 1, i0 + 1);
+    const frac = src - i0;
+    out[i] = samples[i0] * (1 - frac) + samples[i1] * frac;
+  }
+  return out;
+}
+
+/**
+ * Waveform strategy — Demucs vocal-ratio mask [1,1,T] applied to input PCM.
+ * Processes fixed-length segments (default 344520 @ 44.1 kHz ≈ 7.8 s).
+ */
+async function runWaveformMask(entry, session, samples, sampleRate, onProgress) {
+  const modelSr = entry.sampleRate || 44100;
+  let pcm = sampleRate === modelSr ? samples : resampleLinear(samples, sampleRate, modelSr);
+  const segmentLen = entry.segmentSamples || 344520;
+  const inName = entry.io?.input || 'input';
+  const outName = entry.io?.output || 'output';
+  const out = new Float32Array(pcm.length);
+  const totalSegs = Math.ceil(pcm.length / segmentLen) || 1;
+
+  for (let seg = 0; seg < totalSegs; seg++) {
+    const offset = seg * segmentLen;
+    const len = Math.min(segmentLen, pcm.length - offset);
+    const chunk = new Float32Array(segmentLen);
+    chunk.set(pcm.subarray(offset, offset + len));
+    const input = new ort.Tensor('float32', chunk, [1, 1, segmentLen]);
+    const result = await session.run({ [inName]: input });
+    const maskTensor = result[outName] || result.output;
+    if (!maskTensor?.data) {
+      throw new Error(`[VIP][MLWorker] '${entry.id}' returned no mask tensor.`);
+    }
+    const mask = maskTensor.data;
+    for (let i = 0; i < len; i++) {
+      const m = Math.max(0, Math.min(1, mask[i]));
+      out[offset + i] = chunk[i] * m;
+    }
+    onProgress((seg + 1) / totalSegs);
+  }
+
+  if (sampleRate !== modelSr) return resampleLinear(out, modelSr, sampleRate);
+  return out;
+}
+
 // ─── Stem assembly ───────────────────────────────────────────────────────────
 
 /** noise = input − clean, computed sample-wise per channel. */
@@ -365,44 +417,33 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
     self.postMessage({ type: 'progress', requestId, percent: Math.round(p * 100) });
   };
 
-  let clean;
-  let passthrough = false;
-  try {
-    const totalSteps = chain.length * channelData.length;
-    let stepBase = 0;
-    let current = channelData;
-    for (const id of chain) {
-      const entry = MANIFEST[id];
-      if (entry.strategy !== 'spectral-mask') {
+  const totalSteps = chain.length * channelData.length;
+  let stepBase = 0;
+  let current = channelData;
+  for (const id of chain) {
+    const entry = MANIFEST[id];
+    const session = await getSession(entry);
+    const next = [];
+    for (let ch = 0; ch < current.length; ch++) {
+      const step = stepBase + ch;
+      const progress = (p) => onProgress((step + p) / totalSteps);
+      if (entry.strategy === 'spectral-mask') {
+        next.push(await runSpectralMask(entry, session, current[ch], progress));
+      } else if (entry.strategy === 'waveform') {
+        next.push(await runWaveformMask(entry, session, current[ch], sampleRate, progress));
+      } else {
         throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
       }
-      const session = await getSession(entry);
-      const next = [];
-      for (let ch = 0; ch < current.length; ch++) {
-        const step = stepBase + ch;
-        next.push(await runSpectralMask(entry, session, current[ch], (p) =>
-          onProgress((step + p) / totalSteps)
-        ));
-      }
-      current = next;
-      stepBase += channelData.length;
     }
-    clean = current;
-  } catch (err) {
-    // Graceful degradation: the UI must keep working without a model.
-    // Passthrough stems: clean = input, noise = silence.
-    console.error(`[VIP][MLWorker] Inference failed for [${chain.join(' → ')}]; emitting passthrough stems.`, err);
-    clean = channelData.map((c) => new Float32Array(c));
-    passthrough = true;
+    current = next;
+    stepBase += channelData.length;
   }
-
-  const noise = passthrough
-    ? channelData.map((c) => new Float32Array(c.length))
-    : residual(channelData, clean);
+  const clean = current;
+  const noise = residual(channelData, clean);
 
   const transfers = [...clean, ...noise].map((a) => a.buffer);
   self.postMessage(
-    { type: 'stems', requestId, clean, noise, sampleRate, passthrough },
+    { type: 'stems', requestId, clean, noise, sampleRate, passthrough: false },
     transfers
   );
 }

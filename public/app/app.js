@@ -1892,6 +1892,8 @@ class VoiceIsolatePro {
             this.outputBuffer = result;
             this.procBuffer = result;
           }
+        } else if (await this._runMLIsolationPipeline()) {
+          // ML offline path succeeded (same Demucs chain as Landing).
         } else {
           await this._runFallbackPipeline();
         }
@@ -1938,6 +1940,35 @@ class VoiceIsolatePro {
   async pip() {
     // Alias — kept for compatibility
     return this.runPipeline();
+  }
+
+  /**
+   * Offline ML isolation — same Demucs → denoise chain as the Landing page.
+   * @returns {Promise<boolean>} true when ML produced a non-passthrough result
+   */
+  async _runMLIsolationPipeline() {
+    const buf = this.inputBuffer || this.origBuffer;
+    if (!buf) return false;
+    try {
+      await this.ensureCtx();
+      const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
+      const channelData = [];
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        channelData.push(buf.getChannelData(ch).slice());
+      }
+      this.updatePipelineProgress(4, 'ML isolation (Demucs)…', 15);
+      const result = await separateStems(channelData, buf.sampleRate, {
+        modelIds: ['demucs', 'rnnoise'],
+      });
+      if (result.passthrough) return false;
+      this.outputBuffer = stemsToAudioBuffer(this.ctx, result.clean, result.sampleRate);
+      this.procBuffer = this.outputBuffer;
+      this.updatePipelineProgress(20, 'ML isolation complete', 85);
+      return true;
+    } catch (err) {
+      structuredLog('warn', '[VIP] ML isolation unavailable, falling back to DSP', { err: err.message });
+      return false;
+    }
   }
 
   // Full offline DSP chain (32-stage Deca-Pass). Every capability is wired to

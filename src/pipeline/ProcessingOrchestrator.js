@@ -1,17 +1,7 @@
 /**
  * VoiceIsolate Pro — Processing Orchestrator (Layer 3: Pipeline)
  *
- * Orchestrates the complete file processing workflow with model chaining support.
- * Bridges the UI layer (IsolationModeSelector) with the pipeline layer (FileIngestion, MLWorker).
- *
- * Workflow:
- * 1. User selects isolation mode via IsolationModeSelector
- * 2. User uploads file
- * 3. FileIngestion decodes and resamples
- * 4. MLWorker processes with model chain based on mode
- * 5. Results returned as stems for PlaybackMixer
- *
- * This is the integration point that makes model chaining accessible to users.
+ * Orchestrates file ingestion + MLWorker model chaining for isolation modes.
  */
 'use strict';
 
@@ -19,216 +9,145 @@ import { ingestFile } from './FileIngestion.js';
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 import { debugLog } from '../core/debug.js';
 
-/**
- * ProcessingOrchestrator - Coordinates file ingestion and ML processing with mode selection.
- */
+const MANIFEST_ARRAY = Object.values(MODEL_MANIFEST);
+
 export class ProcessingOrchestrator {
-  /**
-   * @param {object} options
-   * @param {Worker} options.mlWorker - MLWorker instance
-   * @param {(progress: number, stage: string) => void} [options.onProgress] - Progress callback
-   */
   constructor(options) {
     if (!options.mlWorker) {
       throw new TypeError('[VIP][ProcessingOrchestrator] mlWorker is required');
     }
-    
     this.mlWorker = options.mlWorker;
     this.onProgress = options.onProgress || (() => {});
     this._initialized = false;
+    this._requestSeq = 0;
   }
 
-  /**
-   * Initialize MLWorker with model manifest.
-   * Must be called before processing.
-   * @returns {Promise<void>}
-   */
   async initialize() {
     if (this._initialized) return;
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('[VIP][ProcessingOrchestrator] MLWorker initialization timeout'));
-      }, 10000);
+      }, 30000);
 
       const handler = (event) => {
-        if (event.data.type === 'initialized') {
+        const msg = event.data || {};
+        if (msg.type === 'ready') {
           clearTimeout(timeout);
           this.mlWorker.removeEventListener('message', handler);
           this._initialized = true;
-          debugLog('ProcessingOrchestrator', 'MLWorker initialized');
+          debugLog('ProcessingOrchestrator', `MLWorker ready (${msg.backend})`);
           resolve();
-        } else if (event.data.type === 'error') {
+        } else if (msg.type === 'error') {
           clearTimeout(timeout);
           this.mlWorker.removeEventListener('message', handler);
-          reject(new Error(`MLWorker init error: ${event.data.error}`));
+          reject(new Error(msg.message || 'MLWorker init error'));
         }
       };
 
       this.mlWorker.addEventListener('message', handler);
-      this.mlWorker.postMessage({
-        type: 'init',
-        models: MODEL_MANIFEST,
-      });
+      this.mlWorker.postMessage({ type: 'init', manifest: MANIFEST_ARRAY });
     });
   }
 
-  /**
-   * Process a file with the specified isolation mode.
-   * 
-   * @param {File|Blob} file - Audio/video file to process
-   * @param {object} [options]
-   * @param {string} [options.isolationMode] - Isolation mode ('standard', 'maximum', 'noise-suppression')
-   * @returns {Promise<ProcessingResult>}
-   * 
-   * @typedef {object} ProcessingResult
-   * @property {Float32Array} cleanStem - Isolated voice/clean audio
-   * @property {Float32Array} noiseStem - Background/noise audio
-   * @property {object} metadata - Processing metadata
-   */
   async processFile(file, options = {}) {
-    if (!this._initialized) {
-      await this.initialize();
-    }
+    if (!this._initialized) await this.initialize();
 
     const { isolationMode = 'standard' } = options;
 
-    // Stage 1: Ingest file (decode + resample)
     this.onProgress(0, 'ingesting');
-    const ingested = await ingestFile(file, {
-      isolationMode,
-      onProgress: (stage) => {
-        debugLog('ProcessingOrchestrator', `Ingestion stage: ${stage}`);
-      },
-    });
+    const ingested = await ingestFile(file, { isolationMode });
 
-    debugLog(
-      'ProcessingOrchestrator',
-      `Ingested ${ingested.sourceName}: ${ingested.duration.toFixed(2)}s, ` +
-      `${ingested.numberOfChannels}ch, mode: ${ingested.isolationMode}, ` +
-      `models: [${ingested.modelIds.join(', ')}]`
+    this.onProgress(0.2, 'processing');
+
+    const channelData = ingested.channelData.map((c) => new Float32Array(c));
+    const requestId = ++this._requestSeq;
+    const result = await this._processWithMLWorker(
+      channelData,
+      ingested.sampleRate,
+      ingested.modelIds,
+      requestId,
     );
 
-    // Stage 2: Process with MLWorker using model chain
-    this.onProgress(0.2, 'processing');
-    
-    // For now, we'll process with the first model in the chain
-    // Full model chaining will be implemented when MLWorker supports it
-    const modelId = ingested.modelIds[0];
-    
-    // Convert stereo to mono for processing (mix down)
-    const monoData = this._mixToMono(ingested.channelData);
-
-    const result = await this._processWithMLWorker(monoData, ingested.sampleRate, modelId);
+    if (result.passthrough) {
+      throw new Error('ML isolation failed — models unavailable or inference error.');
+    }
 
     this.onProgress(1, 'complete');
 
+    const mono = this._mixToMono(result.clean);
+    const noiseMono = this._mixToMono(result.noise);
+
     return {
-      cleanStem: result.audioData,
-      noiseStem: this._computeNoiseStem(monoData, result.audioData),
+      cleanStem: mono,
+      noiseStem: noiseMono,
+      cleanChannels: result.clean,
+      noiseChannels: result.noise,
       metadata: {
-        ...result.metadata,
         isolationMode: ingested.isolationMode,
         modelIds: ingested.modelIds,
         sourceName: ingested.sourceName,
         duration: ingested.duration,
+        sampleRate: ingested.sampleRate,
+        passthrough: false,
       },
     };
   }
 
-  /**
-   * Process audio with MLWorker.
-   * @private
-   * @param {Float32Array} audioData
-   * @param {number} sampleRate
-   * @param {string} modelId
-   * @returns {Promise<{audioData: Float32Array, metadata: object}>}
-   */
-  _processWithMLWorker(audioData, sampleRate, modelId) {
+  _processWithMLWorker(channelData, sampleRate, modelIds, requestId) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('[VIP][ProcessingOrchestrator] MLWorker processing timeout'));
-      }, 300000); // 5 minutes
+      }, 600000);
 
       const handler = (event) => {
-        const { type } = event.data;
+        const msg = event.data || {};
+        if (msg.requestId !== requestId) return;
 
-        if (type === 'progress') {
-          const { stage, progress } = event.data;
-          this.onProgress(0.2 + progress * 0.8, stage);
-        } else if (type === 'result') {
+        if (msg.type === 'progress') {
+          this.onProgress(0.2 + (msg.percent / 100) * 0.8, 'processing');
+        } else if (msg.type === 'stems') {
           clearTimeout(timeout);
           this.mlWorker.removeEventListener('message', handler);
           resolve({
-            audioData: event.data.audioData,
-            metadata: event.data.metadata,
+            clean: msg.clean,
+            noise: msg.noise,
+            passthrough: Boolean(msg.passthrough),
           });
-        } else if (type === 'error') {
+        } else if (msg.type === 'error') {
           clearTimeout(timeout);
           this.mlWorker.removeEventListener('message', handler);
-          reject(new Error(`MLWorker error: ${event.data.error}`));
+          reject(new Error(msg.message || 'MLWorker error'));
         }
       };
 
       this.mlWorker.addEventListener('message', handler);
+      const transfers = channelData.map((c) => c.buffer);
       this.mlWorker.postMessage({
         type: 'process',
-        audioData,
+        requestId,
+        modelIds,
+        channelData,
         sampleRate,
-        modelId,
-      }, [audioData.buffer]); // Transfer ownership
+      }, transfers);
     });
   }
 
-  /**
-   * Mix stereo channels to mono.
-   * @private
-   * @param {Float32Array[]} channelData
-   * @returns {Float32Array}
-   */
   _mixToMono(channelData) {
-    if (channelData.length === 1) {
-      return new Float32Array(channelData[0]);
-    }
-
+    if (channelData.length === 1) return new Float32Array(channelData[0]);
     const length = channelData[0].length;
     const mono = new Float32Array(length);
-    
     for (let i = 0; i < length; i++) {
       let sum = 0;
-      for (let ch = 0; ch < channelData.length; ch++) {
-        sum += channelData[ch][i];
-      }
+      for (let ch = 0; ch < channelData.length; ch++) sum += channelData[ch][i];
       mono[i] = sum / channelData.length;
     }
-    
     return mono;
   }
 
-  /**
-   * Compute noise stem as residual (input - clean).
-   * @private
-   * @param {Float32Array} input
-   * @param {Float32Array} clean
-   * @returns {Float32Array}
-   */
-  _computeNoiseStem(input, clean) {
-    const noise = new Float32Array(input.length);
-    for (let i = 0; i < input.length; i++) {
-      noise[i] = input[i] - clean[i];
-    }
-    return noise;
-  }
-
-  /**
-   * Clean up resources.
-   */
   dispose() {
-    // MLWorker is owned by caller, don't terminate it
     this._initialized = false;
   }
 }
 
 export default ProcessingOrchestrator;
-
-// Made with Bob

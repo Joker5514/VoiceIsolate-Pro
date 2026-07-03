@@ -8,9 +8,11 @@
 'use strict';
 
 import express from 'express';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
 import apiRouter from './api-routes/index.js';
 import { securityHeaders } from './server/securityHeaders.js';
 import { spawn } from 'child_process';
@@ -30,6 +32,9 @@ if (process.env.BLOB_READ_WRITE_TOKEN && process.env.NODE_ENV !== 'test') {
   });
 }
 
+const BLOB_MODEL_BASE = process.env.BLOB_BASE_URL
+  || 'https://3jq9akm8vl1tub82.public.blob.vercel-storage.com';
+
 const PORT       = process.env.PORT || 3000;
 const APP_VERSION = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')).version;
 const app        = express();
@@ -41,6 +46,32 @@ app.use(securityHeaders());
 // ── API Routes ──────────────────────────────────────────────────────────
 app.use('/api', apiRouter);
 
+// ── Blob proxy for large ONNX models not committed locally (Demucs, diarization) ──
+async function proxyOnnxFromBlob(req, res, next) {
+  const filename = req.params.filename;
+  if (!filename || !filename.endsWith('.onnx')) return next();
+  const localPath = join(__dirname, 'public', 'app', 'models', filename);
+  const altLocal = join(__dirname, 'public', 'models', filename);
+  if (existsSync(localPath) || existsSync(altLocal)) return next();
+  try {
+    const upstream = await fetch(`${BLOB_MODEL_BASE.replace(/\/$/, '')}/${filename}`);
+    if (!upstream.ok) return res.status(upstream.status).json({ error: `Model not found: ${filename}` });
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    if (upstream.body) {
+      await pipeline(Readable.fromWeb(upstream.body), res);
+    } else {
+      res.end(Buffer.from(await upstream.arrayBuffer()));
+    }
+  } catch (err) {
+    next(err);
+  }
+}
+
+app.get('/app/models/:filename', proxyOnnxFromBlob);
+app.get('/models/:filename', proxyOnnxFromBlob);
+
 // ── Model files caching ──────────────────────────────────────────────────
 app.use('/app/models', express.static(join(__dirname, 'public', 'app', 'models'), {
   setHeaders: (res, filePath) => {
@@ -49,6 +80,15 @@ app.use('/app/models', express.static(join(__dirname, 'public', 'app', 'models')
       res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     }
   }
+}));
+
+app.use('/models', express.static(join(__dirname, 'public', 'models'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.onnx')) {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    }
+  },
 }));
 
 // ── Serve /src (4-layer Stem-Split & Live-Mix modules — see CLAUDE.md) ──

@@ -19,6 +19,7 @@ import { SpeakerControls } from '/src/presentation/SpeakerControls.js';
 import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
 import { MODEL_MANIFEST } from '/src/core/ModelManifest.js';
+import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
 import { buildHintPanel } from '/app/slider-hint-ui.js';
 
@@ -110,16 +111,16 @@ let sliderUI = null;
 let speakerControls = null;
 let visualizer = null;
 let worker = null;
-let diarWorker = null;
+
 let ingested = null;
 let requestSeq = 0;
 let ingestSeq = 0;
-let diarSeq = 0;
+
 let currentJobLabel = 'Separating stems…';
 /** Object URL backing the <video> preview; revoked when a new file loads. */
 let videoUrl = null;
 
-const DIARIZATION_TIMEOUT_MS = 60000;
+
 
 function setStatus(msg, cls = '') {
   renderStatusPill(STATE_FOR_CLS[cls] || 'pending', msg);
@@ -338,65 +339,22 @@ function getWorker() {
   return worker;
 }
 
-// ─── Speaker diarization (module worker, one-shot per file) ──────────────────
-
-function getDiarWorker() {
-  if (diarWorker) return diarWorker;
-  diarWorker = new Worker('/src/workers/DiarizationWorker.js', { type: 'module' });
-  return diarWorker;
-}
-
-/**
- * Diarize the clean stem off the main thread. Resolves with
- * { segments, speakers }; rejects on worker error or stall (timeout).
- */
-function diarize(cleanChannel, sampleRate) {
-  return new Promise((resolve, reject) => {
-    const w = getDiarWorker();
-    const requestId = ++diarSeq;
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(`Diarization stalled (> ${DIARIZATION_TIMEOUT_MS / 1000}s)`));
-    }, DIARIZATION_TIMEOUT_MS);
-    const onMessage = (event) => {
-      const msg = event.data || {};
-      if (msg.requestId !== requestId) return;
-      cleanup();
-      if (msg.type === 'segments') resolve(msg);
-      else reject(new Error(msg.message || 'Diarization failed'));
-    };
-    const onError = (err) => { cleanup(); reject(new Error(err.message || 'Diarization worker error')); };
-    const cleanup = () => {
-      clearTimeout(timer);
-      w.removeEventListener('message', onMessage);
-      w.removeEventListener('error', onError);
-    };
-    w.addEventListener('message', onMessage);
-    w.addEventListener('error', onError);
-    // Transfer a copy — the mixer already holds its own AudioBuffer copy.
-    const samples = new Float32Array(cleanChannel);
-    w.postMessage({ type: 'diarize', requestId, samples, sampleRate }, [samples.buffer]);
-  });
-}
-
 async function detectSpeakers(clean, sampleRate) {
   ui.speakersPanel.hidden = false;
   ui.speakerStatus.textContent = 'Detecting speakers…';
   speakerControls.clear();
-  // Staleness guard (same contract as onStems): if another file is processed
-  // while diarization is in flight, its result must not touch the new mixer.
   const seq = requestSeq;
   try {
-    const { segments, speakers } = await diarize(clean[0], sampleRate);
+    const { segments, speakers, method } = await detectSpeakersPipeline(clean, sampleRate);
     if (seq !== requestSeq) return;
     mixer.loadSpeakerSegments(segments);
     const count = speakerControls.render(speakers);
+    const methodLabel = method === 'onnx' ? 'ONNX embeddings' : 'spectral fingerprint';
     ui.speakerStatus.textContent = count === 0
       ? 'No distinct speakers detected.'
-      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments`;
+      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments (${methodLabel})`;
   } catch (err) {
     if (seq !== requestSeq) return;
-    // Graceful degradation: stems + global mutes keep working without it.
     console.error('[VIP][landing] diarization failed:', err);
     mixer.loadSpeakerSegments([]);
     ui.speakerStatus.textContent = `Speaker detection unavailable: ${err.message}`;
@@ -663,7 +621,7 @@ function warnIfNotServed() {
 // Keys are <select> values that are NOT single manifest entries; the worker
 // receives the resolved `modelIds` array (see MLWorker chain support).
 const MODEL_CHAINS = Object.freeze({
-  max_isolation: ['bsrnn_vocals', 'rnnoise'], // extract voice, then strip residual noise
+  max_isolation: ['demucs', 'rnnoise'],
 });
 
 function onProcess() {
@@ -692,6 +650,13 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
   ui.fileInput.disabled = false;
   ui.modelSelect.disabled = false;
 
+  if (passthrough) {
+    setStatus('Isolation failed — models could not run. Check /app/models is being served (Demucs ~149 MB on first load).', 'error');
+    speakerControls?.clear();
+    ui.speakersPanel.hidden = true;
+    return;
+  }
+
   if (!mixer) {
     mixer = new PlaybackMixer();
     sliderUI = new SliderUI(mixer);
@@ -711,28 +676,10 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
     ...ui.mixSliders]) {
     if (el) el.disabled = false;
   }
-  let calLabel = '';
-  if (!passthrough) {
-    const cal = autoCalibrateMix(clean, sampleRate);
-    calLabel = ` · calibrated: ${cal.preset} (${cal.level})`;
-  }
-
-  setStatus(
-    passthrough
-      ? 'Model unavailable — passthrough stems loaded (original audio). Check that /app/models is being served.'
-      : `Stems ready — press Play and mix in real time${calLabel}.`,
-    passthrough ? 'warn' : 'active'
-  );
-
-  // Per-speaker isolation runs on the clean stem; passthrough stems carry the
-  // raw mix, so speaker features would be meaningless noise — skip.
-  if (passthrough) {
-    ui.speakersPanel.hidden = false;
-    ui.speakerStatus.textContent = 'Speaker detection skipped — model unavailable (passthrough stems).';
-    speakerControls.clear();
-  } else {
-    detectSpeakers(clean, sampleRate);
-  }
+  const cal = autoCalibrateMix(clean, sampleRate);
+  const calLabel = ` · calibrated: ${cal.preset} (${cal.level})`;
+  setStatus(`Stems ready — press Play and mix in real time${calLabel}.`, 'active');
+  detectSpeakers(clean, sampleRate);
 }
 
 // ─── Stem mute toggles ───────────────────────────────────────────────────────

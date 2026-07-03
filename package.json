@@ -61,7 +61,8 @@
     "models:upload": "python scripts/upload_models_to_vercel_blob.py",
     "models:upload:blob": "node scripts/upload-to-vercel-blob.mjs",
     "models:validate": "node scripts/validate-onnx-models.js",
-    "models:wire": "python3 scripts/wire-blob-models.py"
+    "models:wire": "python3 scripts/wire-blob-models.py",
+    "models:diarization": "node scripts/download-diarization-models.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
