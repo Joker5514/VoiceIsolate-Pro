@@ -6,7 +6,7 @@
  * or it auto-runs in debug mode (window.VIP_DEBUG=true).
  *
  * Tests covered:
- *   1.  DOM: All 52 slider elements present
+ *   1.  DOM: All 67 slider elements present
  *   2.  DOM: All tab panels present
  *   3.  DOM: Transport controls present
  *   4.  DOM: Upload zone / file input wired

@@ -160,7 +160,7 @@ function extractChannels(buffer) {
  *
  * @param {File|Blob} file
  * @param {object} [hooks]
- * @param {(stage: 'decoding'|'resampling'|'done') => void} [hooks.onProgress]
+ * @param {(stage: 'decoding'|'resampling'|'done', percent?: number) => void} [hooks.onProgress]
  * @param {string} [hooks.isolationMode] - Isolation mode ('standard', 'maximum', 'noise-suppression')
  * @returns {Promise<IngestedAudio>}
  */
@@ -168,16 +168,19 @@ export async function ingestFile(file, hooks = {}) {
   const { onProgress = () => {}, isolationMode } = hooks;
   assertIngestible(file);
 
-  onProgress('decoding');
+  onProgress('decoding', 5);
   // Yield so the presentation layer can paint a loading state before the
   // (potentially heavy) main-thread decode call.
   await new Promise((resolve) => setTimeout(resolve, 0));
+  onProgress('decoding', 15);
   const decoded = await decodeBlobToAudioBuffer(file);
+  onProgress('decoding', 100);
 
-  onProgress('resampling');
+  onProgress('resampling', 10);
   const canonical = await resampleToCanonical(decoded);
+  onProgress('resampling', 100);
 
-  onProgress('done');
+  onProgress('done', 100);
   const channelData = extractChannels(canonical);
   
   // Get model IDs for the selected isolation mode

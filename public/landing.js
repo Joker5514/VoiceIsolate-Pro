@@ -178,35 +178,83 @@ function mountBadge() {
 const PROC_STAGES = [
   { id: 'decode',   label: 'Decode'   },
   { id: 'resample', label: 'Resample' },
+  { id: 'load',     label: 'Load model' },
   { id: 'separate', label: 'Separate' },
 ];
 
+const STAGE_INDEX = Object.freeze({
+  decode: 0,
+  resample: 1,
+  load: 2,
+  separate: 3,
+});
+
+/** Unified 0–100% weights: decode → resample → model load → inference. */
+const PIPELINE_WEIGHTS = Object.freeze({
+  decode: [0, 12],
+  resample: [12, 20],
+  load: [20, 35],
+  separate: [35, 100],
+});
+
 let _procState = { active: 0, progress: 0 };
+let _procRenderRAF = 0;
+let _procFallbackEl = null;
+
+function mapPipelinePercent(stage, localPercent = 0) {
+  const w = PIPELINE_WEIGHTS[stage];
+  if (!w) return Math.max(0, Math.min(100, Math.round(localPercent)));
+  const pct = w[0] + (Math.max(0, Math.min(100, localPercent)) / 100) * (w[1] - w[0]);
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+function scheduleProcRender() {
+  if (_procRenderRAF) return;
+  _procRenderRAF = requestAnimationFrame(() => {
+    _procRenderRAF = 0;
+    _renderProcLoader();
+  });
+}
+
+function setProcStage(stage, localPercent = 0, statusLabel) {
+  const idx = STAGE_INDEX[stage] ?? 0;
+  _procState = { active: idx, progress: mapPipelinePercent(stage, localPercent) };
+  ui.procLoaderMount.hidden = false;
+  if (statusLabel) {
+    currentJobLabel = statusLabel;
+    setStatus(statusLabel, 'warn');
+  }
+  scheduleProcRender();
+}
 
 function _renderProcLoader() {
   const mount = ui.procLoaderMount;
   if (!mount) return;
-  mount.innerHTML = '';
   if (DS && DS.ProcessLoader) {
     try {
+      mount.innerHTML = '';
       const el = DS.ProcessLoader({
         stages: PROC_STAGES,
         active: _procState.active,
         progress: _procState.progress,
       });
       if (el instanceof Node) mount.appendChild(el);
+      _procFallbackEl = null;
+      return;
     } catch (err) {
       console.warn('[VIP] ProcessLoader render error:', err);
     }
-  } else {
-    // Graceful fallback when the DS bundle is unavailable.
-    const fb = document.createElement('div');
-    fb.style.cssText = 'padding:10px 0;color:var(--text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--font-ui)';
-    fb.textContent = PROC_STAGES[_procState.active]
-      ? `${PROC_STAGES[_procState.active].label}… ${_procState.progress > 0 ? _procState.progress + '%' : ''}`
-      : 'Processing…';
-    mount.appendChild(fb);
   }
+  if (!_procFallbackEl || !_procFallbackEl.isConnected) {
+    mount.innerHTML = '';
+    _procFallbackEl = document.createElement('div');
+    _procFallbackEl.style.cssText = 'padding:10px 0;color:var(--text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--font-ui)';
+    mount.appendChild(_procFallbackEl);
+  }
+  const stage = PROC_STAGES[_procState.active];
+  _procFallbackEl.textContent = stage
+    ? `${stage.label}… ${_procState.progress}%`
+    : `Processing… ${_procState.progress}%`;
 }
 
 /**
@@ -215,21 +263,22 @@ function _renderProcLoader() {
  * runs so the UI remains active throughout.
  */
 function showSpinner(stage, { indeterminate: _indeterminate = false } = {}) {
-  _procState = { active: stage.toLowerCase().includes('resamp') ? 1 : 0, progress: 0 };
-  ui.procLoaderMount.hidden = false;
-  _renderProcLoader();
+  const key = stage.toLowerCase().includes('resamp') ? 'resample' : 'decode';
+  setProcStage(key, _indeterminate ? 5 : 50, stage);
 }
 
-/** Advance to the Separate stage and update the live progress percentage. */
+/** Map inference-local percent into the unified pipeline bar. */
 function setProgress(percent, _stage) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
-  _procState = { active: 2, progress: pct };
-  ui.procLoaderMount.hidden = false;
-  _renderProcLoader();
+  setProcStage('separate', pct, currentJobLabel);
 }
 
 function hideSpinner() {
   ui.procLoaderMount.hidden = true;
+  if (_procRenderRAF) {
+    cancelAnimationFrame(_procRenderRAF);
+    _procRenderRAF = 0;
+  }
 }
 
 // ─── Video preview (picture in sync with processed audio) ────────────────────
@@ -309,10 +358,14 @@ function getWorker() {
         }
         break;
       }
+      case 'stage':
+        if (msg.stage === 'load') {
+          setProcStage('load', msg.percent ?? 0, msg.label || `Loading ${msg.modelId || 'model'}…`);
+        } else if (msg.stage === 'separate') {
+          setProcStage('separate', msg.percent ?? 0, currentJobLabel);
+        }
+        break;
       case 'progress':
-        // Live inference progress: ring + numeric %. The status line keeps the
-        // stage label only (set once in onProcess) so the polite aria-live
-        // region isn't re-announced on every frame.
         setProgress(msg.percent, currentJobLabel);
         break;
       case 'stems':
@@ -542,11 +595,12 @@ async function ingestFrom(file) {
     showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
     const next = await ingestFile(file, {
-      onProgress: (stage) => {
+      onProgress: (stage, percent = 0) => {
         if (seq !== ingestSeq) return;
-        if (stage === 'resampling') {
-          showSpinner('Resampling to 48 kHz…', { indeterminate: true });
-          setStatus('Resampling to 48 kHz…', 'warn');
+        if (stage === 'decoding') {
+          setProcStage('decode', percent, `Decoding “${file.name}”…`);
+        } else if (stage === 'resampling') {
+          setProcStage('resample', percent, 'Resampling to 48 kHz…');
         }
       },
     });
@@ -837,4 +891,5 @@ wireTransport();
 wireMuteButtons();
 wireDragAndDrop();
 mountBadge();
+getWorker();
 setStatus('Idle — choose a file to begin', '');
