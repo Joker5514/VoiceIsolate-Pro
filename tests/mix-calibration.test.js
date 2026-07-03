@@ -3,26 +3,40 @@
  */
 'use strict';
 
-import {
-  RT_SLIDER_DEFAULTS,
-  LANDING_PRESETS,
-  LANDING_PRESET_NAMES,
-  buildPreset,
-  calcRms,
-  classifyLevel,
-  calibrateFromStems,
-  mergePreset,
-  recommendEngineerPreset,
-  levelOverrides,
-} from '../src/core/MixCalibration.js';
+let RT_SLIDER_DEFAULTS;
+let LANDING_PRESETS;
+let LANDING_PRESET_NAMES;
+let buildPreset;
+let calcRms;
+let classifyLevel;
+let calibrateFromStems;
+let mergePreset;
+let recommendEngineerPreset;
+let levelOverrides;
 
-const SLIDER_IDS = Object.keys(RT_SLIDER_DEFAULTS);
+beforeAll(async () => {
+  const mod = await import('../src/core/MixCalibration.js');
+  ({
+    RT_SLIDER_DEFAULTS,
+    LANDING_PRESETS,
+    LANDING_PRESET_NAMES,
+    buildPreset,
+    calcRms,
+    classifyLevel,
+    calibrateFromStems,
+    mergePreset,
+    recommendEngineerPreset,
+    levelOverrides,
+  } = mod);
+});
+
+const SLIDER_IDS = () => Object.keys(RT_SLIDER_DEFAULTS);
 
 describe('MixCalibration — presets', () => {
   test('every landing preset covers all 23 real-time sliders', () => {
     for (const name of LANDING_PRESET_NAMES) {
       const preset = LANDING_PRESETS[name];
-      for (const id of SLIDER_IDS) {
+      for (const id of SLIDER_IDS()) {
         expect(preset).toHaveProperty(id);
         expect(Number.isFinite(preset[id])).toBe(true);
       }

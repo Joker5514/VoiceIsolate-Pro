@@ -15,12 +15,12 @@ describe('FileIngestion Mode Mapping', () => {
   describe('getModelIdsForMode()', () => {
     test('Returns correct models for standard mode', () => {
       const modelIds = getModelIdsForMode('standard');
-      expect(modelIds).toEqual(['bsrnn_vocals']);
+      expect(modelIds).toEqual(['demucs']);
     });
 
     test('Returns correct models for maximum mode', () => {
       const modelIds = getModelIdsForMode('maximum');
-      expect(modelIds).toEqual(['bsrnn_vocals', 'rnnoise']);
+      expect(modelIds).toEqual(['demucs', 'rnnoise']);
     });
 
     test('Returns correct models for noise-suppression mode', () => {
@@ -30,22 +30,22 @@ describe('FileIngestion Mode Mapping', () => {
 
     test('Returns default mode models for undefined', () => {
       const modelIds = getModelIdsForMode(undefined);
-      expect(modelIds).toEqual(['bsrnn_vocals']);
+      expect(modelIds).toEqual(['demucs']);
     });
 
     test('Returns default mode models for null', () => {
       const modelIds = getModelIdsForMode(null);
-      expect(modelIds).toEqual(['bsrnn_vocals']);
+      expect(modelIds).toEqual(['demucs']);
     });
 
     test('Returns default mode models for invalid mode', () => {
       const modelIds = getModelIdsForMode('invalid-mode');
-      expect(modelIds).toEqual(['bsrnn_vocals']);
+      expect(modelIds).toEqual(['demucs']);
     });
 
     test('Returns default mode models for empty string', () => {
       const modelIds = getModelIdsForMode('');
-      expect(modelIds).toEqual(['bsrnn_vocals']);
+      expect(modelIds).toEqual(['demucs']);
     });
 
     test('Model IDs are arrays', () => {
@@ -63,7 +63,7 @@ describe('FileIngestion Mode Mapping', () => {
     test('Maximum mode has multiple models (chain)', () => {
       const modelIds = getModelIdsForMode('maximum');
       expect(modelIds.length).toBeGreaterThan(1);
-      expect(modelIds).toContain('bsrnn_vocals');
+      expect(modelIds).toContain('demucs');
       expect(modelIds).toContain('rnnoise');
     });
   });
@@ -121,7 +121,7 @@ describe('FileIngestion Mode Mapping', () => {
     });
 
     test('Model IDs reference known models', () => {
-      const knownModels = ['bsrnn_vocals', 'rnnoise'];
+      const knownModels = ['demucs', 'rnnoise'];
       const modes = ['standard', 'maximum', 'noise-suppression'];
       
       modes.forEach((mode) => {
@@ -140,7 +140,7 @@ describe('FileIngestion Mode Mapping', () => {
     test('Maximum mode uses model chain', () => {
       const modelIds = getModelIdsForMode('maximum');
       expect(modelIds.length).toBe(2);
-      expect(modelIds[0]).toBe('bsrnn_vocals'); // First stage
+      expect(modelIds[0]).toBe('demucs'); // First stage
       expect(modelIds[1]).toBe('rnnoise'); // Second stage
     });
   });

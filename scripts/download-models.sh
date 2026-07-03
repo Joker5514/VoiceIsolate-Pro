@@ -55,6 +55,9 @@ declare -a MODELS=(
   "rnnoise_suppressor.onnx"
   "demucs_v4_quantized.onnx"
   "bsrnn_vocals.onnx"
+  "pyannote-segmentation-3.0.onnx"
+  "wespeaker-resnet34.onnx"
+  "silero-vad.onnx"
 )
 
 FAILED=0

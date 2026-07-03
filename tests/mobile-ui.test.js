@@ -2,7 +2,7 @@
  * VoiceIsolate Pro — Mobile UI Tests
  *
  * Covers the changes introduced in this PR:
- *   - app.js: sr-info element creation in slider rendering
+ *   - app.js: slider-hint-btn creation in slider rendering
  *   - app.js: --pct CSS variable calculation (initPct, onSlider, applyPreset)
  *   - app.js: Mobile DOM refs (mobileProcessBtn, mobileReprocessBtn, mobileStopBtn, statsToggle, hdrStats)
  *   - app.js: Mobile action bar event listeners
@@ -132,31 +132,37 @@ describe('app.js — --pct CSS variable wiring', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 3.  app.js source — sr-info element
+// 3.  app.js source — slider hint button (replaces legacy sr-info span)
 // ═══════════════════════════════════════════════════════════════
 
-describe('app.js — sr-info element creation', () => {
-  test('creates an infoEl span with className sr-info', () => {
-    expect(appJs).toContain("infoEl.className = 'sr-info'");
+describe('app.js — slider hint button creation', () => {
+  test('imports slider-hint-ui helpers', () => {
+    expect(appJs).toContain("from './slider-hint-ui.js'");
+    expect(appJs).toContain('buildHintPanel');
   });
 
-  test('infoEl text content is "i"', () => {
-    expect(appJs).toContain("infoEl.textContent = 'i'");
+  test('creates a hintBtn with className slider-hint-btn', () => {
+    expect(appJs).toContain("hintBtn.className = 'slider-hint-btn'");
   });
 
-  test('infoEl has aria-hidden="true" (decorative icon)', () => {
-    expect(appJs).toContain("infoEl.setAttribute('aria-hidden', 'true')");
+  test('hintBtn text content is "i"', () => {
+    expect(appJs).toContain("hintBtn.textContent = 'i'");
   });
 
-  test('infoEl is appended to labelEl', () => {
-    expect(appJs).toContain('labelEl.appendChild(infoEl)');
+  test('hintBtn has accessible label and aria-expanded', () => {
+    expect(appJs).toContain("hintBtn.setAttribute('aria-label', `Explain ${s.label}`)");
+    expect(appJs).toContain("hintBtn.setAttribute('aria-expanded', 'false')");
   });
 
-  test('sr-info creation appears after rt-badge block in render loop', () => {
-    const rtBadgePos  = appJs.indexOf("badge.className = 'rt-badge'");
-    const infoElPos   = appJs.indexOf("infoEl.className = 'sr-info'");
+  test('hintBtn is appended to slider row', () => {
+    expect(appJs).toContain('row.appendChild(hintBtn)');
+  });
+
+  test('hint button creation appears after rt-badge block in render loop', () => {
+    const rtBadgePos = appJs.indexOf("badge.className = 'rt-badge'");
+    const hintBtnPos = appJs.indexOf("hintBtn.className = 'slider-hint-btn'");
     expect(rtBadgePos).toBeGreaterThan(-1);
-    expect(infoElPos).toBeGreaterThan(rtBadgePos);
+    expect(hintBtnPos).toBeGreaterThan(rtBadgePos);
   });
 });
 
@@ -547,15 +553,15 @@ describe('Regression and boundary cases', () => {
     expect(r).toBe('14.3%');
   });
 
-  test('app.js: sr-info is always appended regardless of the s.rt flag', () => {
-    // The infoEl code block is outside the `if (s.rt)` guard
+  test('app.js: hint button is always appended regardless of the s.rt flag', () => {
+    // The hintBtn block is outside the `if (s.rt)` guard
     const rtIfBlock = appJs.indexOf('if (s.rt) {');
-    const infoElBlock = appJs.indexOf("infoEl.className = 'sr-info'");
-    // infoEl comes after the rt-badge if-block
-    expect(infoElBlock).toBeGreaterThan(rtIfBlock);
-    // infoEl is NOT inside the if (s.rt) block (it appears after the closing brace)
+    const hintBtnBlock = appJs.indexOf("hintBtn.className = 'slider-hint-btn'");
+    // hintBtn comes after the rt-badge if-block
+    expect(hintBtnBlock).toBeGreaterThan(rtIfBlock);
+    // hintBtn is NOT inside the if (s.rt) block (it appears after the closing brace)
     const rtBlockEnd = appJs.indexOf("labelEl.appendChild(badge)");
-    expect(infoElBlock).toBeGreaterThan(rtBlockEnd);
+    expect(hintBtnBlock).toBeGreaterThan(rtBlockEnd);
   });
 
   test('index.html: mobileProcessBtn SVG icon has aria-hidden="true" (decorative)', () => {

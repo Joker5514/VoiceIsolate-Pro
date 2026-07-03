@@ -134,8 +134,8 @@ describe('ModelManifest (Layer 1)', () => {
     const crypto = require('crypto');
     for (const id of manifest.MODEL_IDS) {
       const entry = manifest.MODEL_MANIFEST[id];
-      // Skip models that don't have committed binaries yet (sha256 === null)
-      if (entry.sha256 === null || entry.sizeBytes === null) {
+      // Skip blob-hosted or uncommitted models (not in public/app/models/)
+      if (entry.sha256 === null || entry.sizeBytes === null || entry.delivery === 'vercel_blob') {
         continue;
       }
       const file = path.join(__dirname, '../public', entry.url);

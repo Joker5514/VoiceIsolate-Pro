@@ -61,6 +61,7 @@ public/src/
 
 # Large ONNX models — serve via Vercel Blob (see docs/MODEL_DELIVERY.md)
 public/app/models/demucs_v4_*.onnx
+public/models/*.onnx
 
 # Parallel redesign workspace (not part of production tree)
 Voice enhancement/

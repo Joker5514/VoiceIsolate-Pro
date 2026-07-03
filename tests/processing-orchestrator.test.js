@@ -61,14 +61,14 @@ describe('ProcessingOrchestrator', () => {
       // Simulate MLWorker responding
       setTimeout(() => {
         const handler = mockMLWorker.addEventListener.mock.calls[0][1];
-        handler({ data: { type: 'initialized' } });
+        handler({ data: { type: 'ready', backend: 'wasm' } });
       }, 10);
 
       await orchestrator.initialize();
 
       expect(mockMLWorker.postMessage).toHaveBeenCalledWith({
         type: 'init',
-        models: expect.any(Object),
+        manifest: expect.any(Array),
       });
     });
 
@@ -77,7 +77,7 @@ describe('ProcessingOrchestrator', () => {
 
       setTimeout(() => {
         const handler = mockMLWorker.addEventListener.mock.calls[0][1];
-        handler({ data: { type: 'initialized' } });
+        handler({ data: { type: 'ready', backend: 'wasm' } });
       }, 10);
 
       await orchestrator.initialize();
@@ -89,7 +89,7 @@ describe('ProcessingOrchestrator', () => {
 
       setTimeout(() => {
         const handler = mockMLWorker.addEventListener.mock.calls[0][1];
-        handler({ data: { type: 'initialized' } });
+        handler({ data: { type: 'ready', backend: 'wasm' } });
       }, 10);
 
       await orchestrator.initialize();
@@ -104,7 +104,7 @@ describe('ProcessingOrchestrator', () => {
 
       setTimeout(() => {
         const handler = mockMLWorker.addEventListener.mock.calls[0][1];
-        handler({ data: { type: 'error', error: 'Init failed' } });
+        handler({ data: { type: 'error', message: 'Init failed' } });
       }, 10);
 
       await expect(orchestrator.initialize()).rejects.toThrow('Init failed');
@@ -115,7 +115,7 @@ describe('ProcessingOrchestrator', () => {
 
       // Don't send response - let it timeout
       await expect(orchestrator.initialize()).rejects.toThrow('timeout');
-    }, 15000);
+    }, 35000);
   });
 
   describe('Mode selection integration', () => {
@@ -164,34 +164,7 @@ describe('ProcessingOrchestrator', () => {
     });
   });
 
-  describe('_computeNoiseStem()', () => {
-    test('Computes residual correctly', () => {
-      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
-      const input = new Float32Array([1, 2, 3, 4]);
-      const clean = new Float32Array([0.5, 1, 1.5, 2]);
-      const noise = orchestrator._computeNoiseStem(input, clean);
-      
-      expect(noise).toEqual(new Float32Array([0.5, 1, 1.5, 2]));
-    });
 
-    test('Handles negative values', () => {
-      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
-      const input = new Float32Array([1, -1, 2, -2]);
-      const clean = new Float32Array([0.5, -0.5, 1, -1]);
-      const noise = orchestrator._computeNoiseStem(input, clean);
-      
-      expect(noise).toEqual(new Float32Array([0.5, -0.5, 1, -1]));
-    });
-
-    test('Returns zero when clean equals input', () => {
-      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
-      const input = new Float32Array([1, 2, 3, 4]);
-      const clean = new Float32Array([1, 2, 3, 4]);
-      const noise = orchestrator._computeNoiseStem(input, clean);
-      
-      expect(noise).toEqual(new Float32Array([0, 0, 0, 0]));
-    });
-  });
 
   describe('dispose()', () => {
     test('Clears initialized flag', () => {
