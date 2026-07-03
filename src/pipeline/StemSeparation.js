@@ -50,13 +50,14 @@ function ensureReady() {
  * Run offline inference on decoded channel data.
  * @param {Float32Array[]} channelData
  * @param {number} sampleRate
- * @param {{ modelIds?: string[], modelId?: string }} options
+ * @param {{ modelIds?: string[], modelId?: string, onProgress?: (event: object) => void }} options
  * @returns {Promise<{ clean: Float32Array[], noise: Float32Array[], sampleRate: number, passthrough: boolean }>}
  */
 export async function separateStems(channelData, sampleRate, options = {}) {
   await ensureReady();
   const w = getWorker();
   const requestId = ++_seq;
+  const { onProgress } = options;
   const copies = channelData.map((c) => new Float32Array(c));
   const msg = { type: 'process', requestId, channelData: copies, sampleRate };
   if (options.modelIds?.length) msg.modelIds = options.modelIds;
@@ -71,7 +72,9 @@ export async function separateStems(channelData, sampleRate, options = {}) {
     const onMsg = (ev) => {
       const m = ev.data || {};
       if (m.requestId !== requestId) return;
-      if (m.type === 'stems') {
+      if (m.type === 'progress' || m.type === 'stage') {
+        onProgress?.(m);
+      } else if (m.type === 'stems') {
         cleanup();
         resolve({
           clean: m.clean,

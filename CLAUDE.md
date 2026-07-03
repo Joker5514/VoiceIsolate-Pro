@@ -163,17 +163,25 @@ Rules:
 
 | Model | Task | Format | Size | Status |
 |---|---|---|---|---|
+| Demucs HT Demucs (`demucs_htdemucs.onnx`) | Vocal-ratio waveform mask (default chain) | ONNX, fp32 | ~149 MB | **Blob-hosted, hash-pinned** |
 | BiGRU Noise Suppressor (`rnnoise_suppressor.onnx`) | Noise-suppression mask | ONNX, fp32 | ~2 MB | **Committed, trained, hash-pinned** |
 | Band-Split RNN Vocal Extractor (`bsrnn_vocals.onnx`) | Vocal-separation mask | ONNX, fp32 | ~3.7 MB | **Committed, trained, hash-pinned** |
 | Silero VAD (`silero_vad.onnx`) | Voice activity detection | ONNX, fp32 | ~2.2 MB | **Committed, hash-pinned** |
 | Silero VAD INT8 (`silero_vad_int8.onnx`) | Voice activity detection (fast path) | ONNX, int8 | ~2.3 MB | **Committed, hash-pinned** |
+| Diarization ONNX bundle | Speaker embedding + clustering | ONNX, fp32 | ~3 files | **Blob-hosted, hash-pinned** |
 
-The separation models are trained spectral-mask networks (provenance in
-`public/app/models/models-manifest.json`) sharing one inference contract:
-`float32 [batch, 2049]` STFT magnitudes in → sigmoid mask out
-(fft 4096, hop 1024, Hann, 48 kHz). The VAD models gate silence before
-diarization to reduce compute. Larger upgrades (DeepFilterNet INT8,
-MDX-Net INT8) are planned and must follow the same manifest + integrity flow.
+**Default isolation chain:** `['demucs', 'rnnoise']` — Demucs extracts the vocal
+ratio mask (waveform strategy, 44.1 kHz internal resample), then RNNoise strips
+residual background. Spectral-mask models (`bsrnn_vocals`, `rnnoise`) share one
+inference contract: `float32 [batch, 2049]` STFT magnitudes in → sigmoid mask out
+(fft 4096, hop 1024, Hann, 48 kHz). VAD models gate silence before diarization.
+Larger upgrades (DeepFilterNet INT8, MDX-Net INT8) are planned and must follow
+the same manifest + integrity flow.
+
+**Dual worker note:** `src/workers/MLWorker.js` is the canonical offline worker
+(Landing + `StemSeparation.js`). `public/app/ml-worker.js` is the legacy Engineer
+real-time SAB path — do not add passthrough fallbacks there; new ML work targets
+`MLWorker.js` only.
 
 - Delivery: fetched from `/app/models/` (same-origin), cached in IndexedDB by
   `MLWorker.js`, integrity-checked via SHA-256 from `ModelManifest.js`.
@@ -197,8 +205,13 @@ The Engineer Mode app under `public/app/` predates this architecture. It is in
   remains the shipped UI until the new presentation layer replaces it.
 - Do not add features to `public/app/`. New work targets `src/`.
 - Legacy data invariants still enforced by tests/`scripts/validate.js`:
-  52 sliders in `app.js` `SLIDERS`, 32 `STAGES` in `slider-map.js`, presets
-  covering all slider IDs, single STFT/iSTFT pass per processing path.
+  **67 sliders** — `SLIDER_REGISTRY` in `slider-map.js` is the calibrated source
+  of truth; `app.js` `RENDER_SLIDERS` mirrors it for DOM rendering. The inline
+  `SLIDERS` block remains for preset/test parsing. 32 `STAGES` in `slider-map.js`,
+  presets covering all slider IDs, single STFT/iSTFT pass per processing path.
+- Deleted legacy files (do not restore): `handoff-bridge.js`, `ai-engine-v2.js`,
+  `speaker-ui.js`, `speaker-mixer.js`, `isolation-controls.js`, root `engineer.html`,
+  root `landing.html`. Surfaces are `public/index.html` and `public/app/` only.
 
 ---
 

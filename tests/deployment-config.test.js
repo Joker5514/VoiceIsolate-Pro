@@ -70,7 +70,8 @@ describe('vercel.json — build & install (pnpm-only)', () => {
   test('installCommand uses pnpm via vercel-install.sh (not npm)', () => {
     expect(cfg.installCommand).toBe('bash scripts/vercel-install.sh');
     expect(fs.readFileSync(path.join(ROOT, 'scripts/vercel-install.sh'), 'utf8')).toMatch(/pnpm install/);
-    expect(fs.readFileSync(path.join(ROOT, 'scripts/vercel-install.sh'), 'utf8')).not.toMatch(/npm install/);
+    const installSh = fs.readFileSync(path.join(ROOT, 'scripts/vercel-install.sh'), 'utf8');
+    expect(installSh).not.toMatch(/^\s*npm install/m);
   });
 
   test('pnpm-lock.yaml is committed (Vercel falls back to npm without it)', () => {

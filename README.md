@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://v0-voice-isolate-pro.vercel.app">Live Demo</a> ·
+  <a href="https://voice-isolate-pro.vercel.app">Live Demo</a> ·
   No cloud processing · No audio upload · Your data never leaves the device
 </p>
 
@@ -17,10 +17,11 @@
 
 | Feature | Description |
 |---------|-------------|
-| **AI voice isolation** | Band-Split RNN vocal separation + BiGRU noise suppression via ONNX Runtime Web (WebGPU / WASM) |
+| **AI voice isolation** | Demucs vocal-ratio mask + BiGRU noise suppression via ONNX Runtime Web (WebGPU / WASM) |
 | **Speaker diarization** | Log-mel timbral fingerprinting clusters voices by timbre |
-| **Latency-free mixing** | NR, per-speaker volume, EQ, noise gate, and de-esser sliders act on the Web Audio graph in real time |
-| **Live visualizations** | Canvas 2D waveform overview + spectrum analyzer on Landing; scrolling spectrogram, frequency rail, 3D topo, particle swarm on Engineer Mode |
+| **Real-time progress UI** | Four-step ProcessLoader (decode → resample → load model → separate) with live % |
+| **Latency-free mixing** | 67 calibrated sliders (NR, EQ, gate, de-esser, per-speaker volume) on the Web Audio graph |
+| **Live visualizations** | Canvas 2D waveform + spectrum on Landing; spectrogram, 3D topo, particle swarm on Engineer Mode |
 | **Privacy-first** | Zero cloud processing; models SHA-256 verified and cached in IndexedDB |
 | **Export** | WAV or MP3 off the main thread via `AudioEncoderWorker` |
 | **Cross-platform** | Web (Vercel), Android & iOS via Capacitor |
@@ -32,12 +33,14 @@ VoiceIsolate Pro uses a deliberate **two-phase** model:
 ### Phase 1 — Offline Batch Inference
 
 ```
-Upload → Decode/Resample (48 kHz) → VAD → ONNX Inference → Spectral Cleanup → Diarization
-                                              (one pass)
+Upload → Decode/Resample (48 kHz) → Demucs → RNNoise → Spectral Cleanup → Diarization
+                                              (one pass per file)
                                     ┌─────────┴─────────┐
                                     ▼                   ▼
                               Clean stem          Noise stem
 ```
+
+Stereo channels run in parallel inside `MLWorker.js`. Model bytes are cached in IndexedDB and verified on every load.
 
 ### Phase 2 — Real-Time Playback Mixing
 
@@ -78,16 +81,16 @@ No `.env` is needed for local audio processing. Payment and licensing features r
 | `/` | **Landing** — Stem-Split & Live-Mix with on-device ML (`public/index.html`) |
 | `/app/` | **Engineer Mode** — 32-stage classical DSP stack with premium visualizations (`public/app/`) |
 
-Both pages share the canonical `src/` pipeline for ML handoff via `EngineerModeBridge.js`.
+Both surfaces share the canonical `src/pipeline/StemSeparation.js` path for offline ML (Demucs → RNNoise chain).
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
 | Frontend | Vanilla JS (ES modules), Canvas 2D, Three.js (Engineer premium tabs) |
-| ML | ONNX Runtime Web 1.25, WebGPU + WASM |
-| Audio | Web Audio API, AudioWorklets |
-| Server | Express 5 (dev), Vercel serverless (prod) |
+| ML | ONNX Runtime Web 1.25, WebGPU + WASM (up to 8 threads) |
+| Audio | Web Audio API, AudioWorklets (gate + de-esser on playback stems) |
+| Server | Express 5 (dev), Vercel serverless (prod, pnpm via `scripts/vercel-install.sh`) |
 | Payments | Stripe (optional, server-side only) |
 | Mobile | Capacitor 8 (Android / iOS) |
 | CI | GitHub Actions — Jest, ESLint, Semgrep, njsscan |
@@ -97,19 +100,19 @@ Both pages share the canonical `src/` pipeline for ML handoff via `EngineerModeB
 ```
 src/                       Canonical 4-layer architecture
 ├── core/                  Pure primitives, ModelManifest, BufferPool
-├── workers/               MLWorker, Diarization, SpectralCleanup, Encoders
-├── pipeline/              FileIngestion, PlaybackMixer, Orchestrators
+├── workers/               MLWorker (offline), Diarization, SpectralCleanup, Encoders
+├── pipeline/              FileIngestion, PlaybackMixer, StemSeparation, Orchestrators
 └── presentation/          SliderUI, LandingVisualizer, ExportControls
 
 public/
-├── index.html + landing.js    Landing page
-├── app/                       Engineer Mode shell
+├── index.html + landing.js    Landing page (ProcessLoader, PlaybackMixer)
+├── app/                       Engineer Mode shell (67 sliders via SLIDER_REGISTRY)
 └── lib/                       Vendored ort.min.js, three.module.js
 
 server/                    Express + securityHeaders.js
 api-routes/                Stripe monetization, licensing, sync
-tests/                     80 Jest suites
-scripts/                   Build, validation, model tooling
+tests/                     80+ Jest suites
+scripts/                   Build, validation, model tooling, Vercel install
 ```
 
 See [`CLAUDE.md`](CLAUDE.md) for the full contributor contract and [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.

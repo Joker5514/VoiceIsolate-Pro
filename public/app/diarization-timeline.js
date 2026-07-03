@@ -159,9 +159,9 @@ export function fitTimeline() {
 }
 
 // ── Public: speaker state passthrough ─────────────────────────────────────────
-export function setSpeakerVolume(id, vol) { /* consumed by isolation-controls.js */ }
-export function setSpeakerMute(id, muted) { /* consumed by isolation-controls.js */ }
-export function setSpeakerSolo(id, solo)  { /* consumed by isolation-controls.js */ }
+export function setSpeakerVolume(id, vol) { /* legacy stub — SpeakerControls in src/presentation */ }
+export function setSpeakerMute(id, muted) { /* legacy stub — SpeakerControls in src/presentation */ }
+export function setSpeakerSolo(id, solo)  { /* legacy stub — SpeakerControls in src/presentation */ }
 
 // ── Internal: render ──────────────────────────────────────────────────────────
 function _resize() {

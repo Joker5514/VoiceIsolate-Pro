@@ -24,6 +24,26 @@ import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slide
 const SLIDER_REG_BY_ID = Object.freeze(
   SLIDER_REGISTRY.reduce((acc, s) => { acc[s.id] = s; return acc; }, {})
 );
+
+function _formatSliderUnit(unit) {
+  if (!unit) return '';
+  if (unit === '%' || unit === ':1' || unit.startsWith(' ')) return unit;
+  return ` ${unit}`;
+}
+
+/** Calibrated render contract — min/max/step/default from SLIDER_REGISTRY. */
+const RENDER_SLIDERS = SLIDER_REGISTRY.map((s) => ({
+  id: s.id,
+  label: s.label,
+  min: s.min,
+  max: s.max,
+  val: s.default,
+  step: s.step,
+  unit: _formatSliderUnit(s.unit),
+  rt: Boolean(s.rt),
+  desc: s.hint || s.tip || '',
+  group: s.group,
+}));
 import { ModelStatusUI } from './model-status-ui.js';
 import { recommendEngineerPreset } from '/src/core/MixCalibration.js';
 
@@ -791,8 +811,7 @@ class VoiceIsolatePro {
 
   // ── Slider rendering ─────────────────────────────────────────────────────
   _renderSliders() {
-    const allSliders = Object.values(SLIDERS).flat();
-    for (const s of allSliders) {
+    for (const s of RENDER_SLIDERS) {
       if (s.id === 'whisperMode') continue; // [WHISPER UPDATE] rendered as button group
       const panelId = this._getSliderPanelId(s.id);
       const panel = panelId ? document.getElementById(panelId) : null;
@@ -1122,17 +1141,8 @@ class VoiceIsolatePro {
   }
 
   _getSliderPanelId(sliderId) {
-    const tabMap = {
-      gate: 'tab-gate', nr: 'tab-nr', eq: 'tab-eq', dyn: 'tab-dyn',
-      spec: 'tab-spec', adv: 'tab-adv', sep: 'tab-sep', out: 'tab-out',
-      extreme: 'tab-extreme',
-    };
-    for (const [group, panelId] of Object.entries(tabMap)) {
-      if (SLIDERS[group] && SLIDERS[group].some(s => s.id === sliderId)) {
-        return panelId;
-      }
-    }
-    return null;
+    const entry = SLIDER_REG_BY_ID[sliderId];
+    return entry?.group || null;
   }
 
   onSlider(id, value) {
@@ -1959,6 +1969,15 @@ class VoiceIsolatePro {
       this.updatePipelineProgress(4, 'ML isolation (Demucs)…', 15);
       const result = await separateStems(channelData, buf.sampleRate, {
         modelIds: ['demucs', 'rnnoise'],
+        onProgress: (ev) => {
+          if (ev.type === 'stage') {
+            const label = ev.label || `ML: ${ev.stage} (${ev.modelId || 'model'})…`;
+            const pct = 15 + Math.round((ev.percent || 0) * 0.55);
+            this.updatePipelineProgress(4, label, pct);
+          } else if (ev.type === 'progress') {
+            this.updatePipelineProgress(4, 'ML isolation…', 15 + Math.round((ev.percent || 0) * 0.7));
+          }
+        },
       });
       if (result.passthrough) return false;
       this.outputBuffer = stemsToAudioBuffer(this.ctx, result.clean, result.sampleRate);

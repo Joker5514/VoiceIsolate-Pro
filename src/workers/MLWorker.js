@@ -21,6 +21,7 @@
  *        (chain — runs models in series, e.g. vocals → denoise, for maximum
  *         isolation; each stage's clean output feeds the next)
  *   ← { type: 'progress', requestId, percent }
+ *   ← { type: 'stage', requestId, stage, percent, modelId?, label? }
  *   ← { type: 'stems', requestId, clean: Float32Array[], noise: Float32Array[],
  *       sampleRate, passthrough: boolean }
  *   ← { type: 'error', requestId?, message }
@@ -41,53 +42,64 @@ const IDB_VERSION = 1;
 /** Map of modelId → manifest entry, populated by 'init'. */
 let MANIFEST = Object.create(null);
 
-/** Map of modelId → InferenceSession (lazy, persistent for worker lifetime). */
+/** Map of sessionKey → InferenceSession (lazy, persistent for worker lifetime). */
 const SESSIONS = Object.create(null);
 
 /** Resolved execution backend, decided once. */
 let BACKEND = null;
 
-// ─── IndexedDB model byte-cache ──────────────────────────────────────────────
+/** Active process request id for stage/progress messages. */
+let ACTIVE_REQUEST_ID = null;
+
+// ─── IndexedDB model byte-cache (single connection — no open/close per op) ───
+
+let _idb = null;
+let _idbPromise = null;
 
 function openDb() {
-  return new Promise((resolve, reject) => {
+  if (_idb) return Promise.resolve(_idb);
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, IDB_VERSION);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(IDB_STORE)) {
         req.result.createObjectStore(IDB_STORE);
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => { _idb = req.result; resolve(_idb); };
     req.onerror = () => reject(req.error);
   });
+  return _idbPromise;
 }
 
 async function idbGet(key) {
   const db = await openDb();
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readonly');
-      const req = tx.objectStore(IDB_STORE).get(key);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  } finally {
-    db.close();
-  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
 }
 
 async function idbPut(key, value) {
   const db = await openDb();
-  try {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).put(value, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } finally {
-    db.close();
-  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function postStage(stage, percent, extra = {}) {
+  if (ACTIVE_REQUEST_ID == null) return;
+  self.postMessage({ type: 'stage', requestId: ACTIVE_REQUEST_ID, stage, percent, ...extra });
+}
+
+function effectiveBatchFrames(entry) {
+  const base = entry.maxBatchFrames || 32;
+  return BACKEND === 'webgpu' ? Math.min(128, base * 2) : base;
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────
@@ -159,16 +171,19 @@ async function resolveBackend() {
   return BACKEND;
 }
 
-async function getSession(entry) {
-  if (SESSIONS[entry.id]) return SESSIONS[entry.id];
+async function getSession(entry, sessionKey = entry.id) {
+  if (SESSIONS[sessionKey]) return SESSIONS[sessionKey];
+  postStage('load', 0, { modelId: entry.id, label: `Loading ${entry.name || entry.id}…` });
   const bytes = await fetchModelBytes(entry);
+  postStage('load', 50, { modelId: entry.id });
   const backend = await resolveBackend();
   const opts = {
     executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'],
     graphOptimizationLevel: 'all',
   };
   const session = await ort.InferenceSession.create(bytes, opts);
-  SESSIONS[entry.id] = session;
+  SESSIONS[sessionKey] = session;
+  postStage('load', 100, { modelId: entry.id });
   return session;
 }
 
@@ -259,7 +274,7 @@ async function runSpectralMask(entry, session, samples, onProgress) {
   const N = entry.fftSize;
   const hop = entry.hopSize;
   const bins = entry.bins || (N / 2 + 1);
-  const batchMax = entry.maxBatchFrames || 32;
+  const batchMax = effectiveBatchFrames(entry);
   const win = hann(N);
   // Cover every sample: full frames plus a zero-padded tail frame.
   const totalFrames = Math.max(1, Math.ceil(Math.max(0, samples.length - N) / hop) + 1);
@@ -293,7 +308,7 @@ async function runSpectralMask(entry, session, samples, onProgress) {
     }
 
     // ── Mask inference (dynamic batch) ──────────────────────────────────
-    const input = new ort.Tensor('float32', batchMags.slice(0, count * bins), [count, bins]);
+    const input = new ort.Tensor('float32', batchMags.subarray(0, count * bins), [count, bins]);
     const results = await session.run({ [entry.io.input]: input });
     const mask = results[entry.io.output]?.data;
     if (!mask || mask.length < count * bins) {
@@ -382,14 +397,10 @@ async function runWaveformMask(entry, session, samples, sampleRate, onProgress) 
 
   if (sampleRate !== modelSr) {
     const back = resampleLinear(out, modelSr, sampleRate);
-    if (back.length === samples.length) return back;
-    // Keep clean/noise stems aligned to the original input length so residual()
-    // never reads past the clean array (NaN) and both stems match in length.
     const fixed = new Float32Array(samples.length);
     fixed.set(back.subarray(0, Math.min(back.length, samples.length)));
     return fixed;
   }
-  if (sampleRate !== modelSr) return resampleLinear(out, modelSr, sampleRate);
   return out;
 }
 
@@ -422,6 +433,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
     }
   }
 
+  ACTIVE_REQUEST_ID = requestId;
   const onProgress = (p) => {
     self.postMessage({ type: 'progress', requestId, percent: Math.round(p * 100) });
   };
@@ -429,23 +441,28 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   const totalSteps = chain.length * channelData.length;
   let stepBase = 0;
   let current = channelData;
-  for (const id of chain) {
-    const entry = MANIFEST[id];
-    const session = await getSession(entry);
-    const next = [];
-    for (let ch = 0; ch < current.length; ch++) {
-      const step = stepBase + ch;
-      const progress = (p) => onProgress((step + p) / totalSteps);
-      if (entry.strategy === 'spectral-mask') {
-        next.push(await runSpectralMask(entry, session, current[ch], progress));
-      } else if (entry.strategy === 'waveform') {
-        next.push(await runWaveformMask(entry, session, current[ch], sampleRate, progress));
-      } else {
+  try {
+    for (const id of chain) {
+      const entry = MANIFEST[id];
+      postStage('separate', Math.round((stepBase / totalSteps) * 100), { modelId: id });
+      const next = await Promise.all(current.map(async (samples, ch) => {
+        const sessionKey = current.length > 1 ? `${entry.id}:ch${ch}` : entry.id;
+        const session = await getSession(entry, sessionKey);
+        const step = stepBase + ch;
+        const progress = (p) => onProgress((step + p) / totalSteps);
+        if (entry.strategy === 'spectral-mask') {
+          return runSpectralMask(entry, session, samples, progress);
+        }
+        if (entry.strategy === 'waveform') {
+          return runWaveformMask(entry, session, samples, sampleRate, progress);
+        }
         throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
-      }
+      }));
+      current = next;
+      stepBase += channelData.length;
     }
-    current = next;
-    stepBase += channelData.length;
+  } finally {
+    ACTIVE_REQUEST_ID = null;
   }
   const clean = current;
   const noise = residual(channelData, clean);
@@ -468,7 +485,8 @@ self.onmessage = async (event) => {
         for (const entry of msg.manifest || []) MANIFEST[entry.id] = entry;
         if (typeof ort !== 'undefined' && ort.env?.wasm) {
           ort.env.wasm.wasmPaths = '/lib/';
-          ort.env.wasm.numThreads = Math.min(4, self.navigator?.hardwareConcurrency || 1);
+          const cores = self.navigator?.hardwareConcurrency || 4;
+          ort.env.wasm.numThreads = Math.min(8, Math.max(1, cores - 1));
         }
         const backend = await resolveBackend();
         self.postMessage({ type: 'ready', backend });
