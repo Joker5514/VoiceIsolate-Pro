@@ -1985,8 +1985,7 @@ class VoiceIsolatePro {
     if (!buf) return false;
     try {
       await this.ensureCtx();
-      const { separateStems, stemsToAudioBuffer, warmupModels } = await import('/src/pipeline/StemSeparation.js');
-      warmupModels(DEFAULT_ML_CHAIN).catch(() => {});
+      const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
       const channelData = [];
       for (let ch = 0; ch < buf.numberOfChannels; ch++) {
         channelData.push(buf.getChannelData(ch).slice());
