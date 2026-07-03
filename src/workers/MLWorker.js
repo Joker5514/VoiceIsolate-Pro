@@ -24,6 +24,8 @@
  *   ← { type: 'stage', requestId, stage, percent, modelId?, label? }
  *   ← { type: 'stems', requestId, clean: Float32Array[], noise: Float32Array[],
  *       sampleRate, passthrough: boolean }
+ *   → { type: 'warmup', modelIds: string[] }
+ *   ← { type: 'warmed', modelIds: string[] }
  *   ← { type: 'error', requestId?, message }
  *
  * This worker NEVER touches the DOM, never opens a microphone, and never
@@ -171,20 +173,39 @@ async function resolveBackend() {
   return BACKEND;
 }
 
-async function getSession(entry, sessionKey = entry.id) {
-  if (SESSIONS[sessionKey]) return SESSIONS[sessionKey];
-  postStage('load', 0, { modelId: entry.id, label: `Loading ${entry.name || entry.id}…` });
-  const bytes = await fetchModelBytes(entry);
-  postStage('load', 50, { modelId: entry.id });
+async function createSessionFromBytes(entry, bytes) {
   const backend = await resolveBackend();
   const opts = {
     executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'],
     graphOptimizationLevel: 'all',
   };
-  const session = await ort.InferenceSession.create(bytes, opts);
+  return ort.InferenceSession.create(bytes, opts);
+}
+
+async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) {
+  if (SESSIONS[sessionKey]) return SESSIONS[sessionKey];
+  if (!quiet) postStage('load', 0, { modelId: entry.id, label: `Loading ${entry.name || entry.id}…` });
+  const bytes = await fetchModelBytes(entry);
+  if (!quiet) postStage('load', 50, { modelId: entry.id });
+  const session = await createSessionFromBytes(entry, bytes);
   SESSIONS[sessionKey] = session;
-  postStage('load', 100, { modelId: entry.id });
+  if (!quiet) postStage('load', 100, { modelId: entry.id });
   return session;
+}
+
+/** Cache bytes + compile ONNX sessions off the hot path (boot / during decode). */
+async function warmupModels(modelIds) {
+  const ids = (Array.isArray(modelIds) ? modelIds : [])
+    .filter((id) => typeof id === 'string' && MANIFEST[id]);
+  await Promise.all(ids.map(async (id) => {
+    const entry = MANIFEST[id];
+    try {
+      await getSession(entry, entry.id, { quiet: true });
+    } catch (err) {
+      console.warn(`[VIP][MLWorker] Warmup failed for '${id}':`, err);
+    }
+  }));
+  self.postMessage({ type: 'warmed', modelIds: ids });
 }
 
 // ─── DSP helpers (STFT / mask / iSTFT reconstruction) ────────────────────────
@@ -375,11 +396,12 @@ async function runWaveformMask(entry, session, samples, sampleRate, onProgress) 
   const outName = entry.io?.output || 'output';
   const out = new Float32Array(pcm.length);
   const totalSegs = Math.ceil(pcm.length / segmentLen) || 1;
+  const chunk = new Float32Array(segmentLen);
 
   for (let seg = 0; seg < totalSegs; seg++) {
     const offset = seg * segmentLen;
     const len = Math.min(segmentLen, pcm.length - offset);
-    const chunk = new Float32Array(segmentLen);
+    chunk.fill(0);
     chunk.set(pcm.subarray(offset, offset + len));
     const input = new ort.Tensor('float32', chunk, [1, 1, segmentLen]);
     const result = await session.run({ [inName]: input });
@@ -434,16 +456,26 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   }
 
   ACTIVE_REQUEST_ID = requestId;
+  let lastProgressSent = -1;
   const onProgress = (p) => {
-    self.postMessage({ type: 'progress', requestId, percent: Math.round(p * 100) });
+    const pct = Math.round(p * 100);
+    if (pct === lastProgressSent) return;
+    if (pct < 100 && lastProgressSent >= 0 && pct - lastProgressSent < 2) return;
+    lastProgressSent = pct;
+    self.postMessage({ type: 'progress', requestId, percent: pct });
   };
 
   const totalSteps = chain.length * channelData.length;
   let stepBase = 0;
   let current = channelData;
   try {
-    for (const id of chain) {
+    for (let ci = 0; ci < chain.length; ci++) {
+      const id = chain[ci];
       const entry = MANIFEST[id];
+      const nextId = chain[ci + 1];
+      const nextWarm = nextId && MANIFEST[nextId]
+        ? getSession(MANIFEST[nextId], MANIFEST[nextId].id, { quiet: true }).catch(() => {})
+        : null;
       postStage('separate', Math.round((stepBase / totalSteps) * 100), { modelId: id });
       const next = await Promise.all(current.map(async (samples, ch) => {
         const sessionKey = current.length > 1 ? `${entry.id}:ch${ch}` : entry.id;
@@ -460,6 +492,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       }));
       current = next;
       stepBase += channelData.length;
+      if (nextWarm) await nextWarm;
     }
   } finally {
     ACTIVE_REQUEST_ID = null;
@@ -494,6 +527,9 @@ self.onmessage = async (event) => {
       }
       case 'process':
         await processRequest(msg);
+        break;
+      case 'warmup':
+        await warmupModels(msg.modelIds);
         break;
       default:
         self.postMessage({ type: 'error', message: `Unknown message type '${msg.type}'` });
