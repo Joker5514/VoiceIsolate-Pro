@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-frozen-lockfile || npm install
+
+      - name: Validate project
+        run: node scripts/validate.js
+
+      - name: Validate ONNX models
+        run: node scripts/validate-onnx-models.js
+        continue-on-error: true
+
+      - name: Check DSP isolation
+        run: node scripts/check-dsp-isolation.js
+
+      - name: Duplicate key check
+        run: node scripts/check-duplicate-keys.js
