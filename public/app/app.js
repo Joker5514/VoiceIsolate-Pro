@@ -53,6 +53,14 @@ import { recommendEngineerPreset } from '/src/core/MixCalibration.js';
 // that parse this file directly to validate model configuration consistency.
 const MODEL_STATUS_KEYS = ['demucs', 'bsrnn', 'rnnoise', 'silero_vad'];
 
+/** Default offline chain — same as Landing (Demucs → RNNoise). */
+const DEFAULT_ML_CHAIN = Object.freeze(['demucs', 'rnnoise']);
+
+function _yieldToUI(cb) {
+  const timerId = setTimeout(cb, 0);
+  // Track timerId in active timers set if within a component context
+}
+
 // ---------------------------------------------------------------------------
 // SAB ring-buffer constants (must match dsp-processor.js exactly)
 // NOTE: These constants appear unused in app.js but are critical for:
@@ -602,6 +610,8 @@ class VoiceIsolatePro {
       document.addEventListener('click', () => this.ensureCtx(), { once: true });
       document.addEventListener('keydown', () => this.ensureCtx(), { once: true });
     }
+
+    this._warmupMLModels().catch(() => {});
 
     window.__vipAppReady = true;
     if (typeof CustomEvent !== 'undefined' && typeof window.dispatchEvent === 'function') {
@@ -1598,6 +1608,12 @@ class VoiceIsolatePro {
     return ctx.decodeAudioData(arrayBuffer.slice(0));
   }
 
+  /** Prefetch + compile ONNX sessions off the hot path (Landing parity). */
+  async _warmupMLModels(modelIds = DEFAULT_ML_CHAIN) {
+    const { warmupModels } = await import('/src/pipeline/StemSeparation.js');
+    await warmupModels(modelIds);
+  }
+
   // ── File handling ─────────────────────────────────────────────────────────
   async handleFile(file) {
     if (!file) return;
@@ -1606,7 +1622,8 @@ class VoiceIsolatePro {
     this._showFileLoading(file.name ? `Loading ${file.name}…` : 'Loading…');
 
     await this.ensureCtx();
-    await new Promise(r => setTimeout(r, 0));
+    if (typeof this._warmupMLModels === 'function') this._warmupMLModels().catch(() => {});
+    await new Promise((r) => _yieldToUI(r));
 
     // Reject MIDI files early — not supported by Web Audio API
     const midiMimes = ['audio/midi', 'audio/x-midi', 'audio/mid'];
@@ -1657,9 +1674,8 @@ class VoiceIsolatePro {
     let buffer;
     try {
       if (this.ctx.state === 'suspended') await this.ctx.resume();
-      await new Promise(r => setTimeout(r, 0));
+      await new Promise((r) => _yieldToUI(r));
       const abCopy = await this._readFileArrayBuffer(file);
-      await new Promise(r => requestAnimationFrame(r));
       buffer = await this._decodeFileBuffer(this.ctx, abCopy);
     } catch {
       // Video fallback
@@ -1722,7 +1738,6 @@ class VoiceIsolatePro {
 
     this.inputBuffer = buffer;
     this.origBuffer = buffer;
-    await new Promise(r => requestAnimationFrame(r));
     this._hideFileLoading();
     this.onAudioLoaded(file.name);
   }
@@ -1764,6 +1779,15 @@ class VoiceIsolatePro {
     this.renderStaticVisuals(buf);
     try { window.dispatchEvent(new CustomEvent('vip:fileLoaded', { detail: { name } })); } catch (_) {}
     this.showNotification('File loaded: ' + name, 'info');
+
+    // Auto-start pipeline — models warmed during decode (matches Landing latency UX).
+    _yieldToUI(() => {
+      if (!this.isProcessing && (this.inputBuffer || this.origBuffer)) {
+        this.runPipeline().catch((err) => {
+          structuredLog('error', '[VIP] Auto-process failed', { err: err.message });
+        });
+      }
+    });
   }
 
   _clearFile() {
@@ -1968,7 +1992,7 @@ class VoiceIsolatePro {
       }
       this.updatePipelineProgress(4, 'ML isolation (Demucs)…', 15);
       const result = await separateStems(channelData, buf.sampleRate, {
-        modelIds: ['demucs', 'rnnoise'],
+        modelIds: DEFAULT_ML_CHAIN,
         onProgress: (ev) => {
           if (ev.type === 'stage') {
             const label = ev.label || `ML: ${ev.stage} (${ev.modelId || 'model'})…`;

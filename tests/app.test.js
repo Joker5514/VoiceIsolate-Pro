@@ -401,6 +401,13 @@ describe('VoiceIsolatePro class structure', () => {
     expect(appSrc).toContain('async runPipeline()');
   });
 
+  test('Engineer mode warms ML models and auto-starts pipeline after file load', () => {
+    expect(appSrc).toContain('_warmupMLModels');
+    expect(appSrc).toContain('warmupModels');
+    expect(appSrc).toContain('DEFAULT_ML_CHAIN');
+    expect(appSrc).toMatch(/_yieldToUI\(\(\)\s*=>\s*\{[\s\S]*runPipeline\(\)/);
+  });
+
   test('pipeline has 32 stages to match STAGES array', () => {
     // The STAGES array is defined in slider-map.js with 32 stages
     const stageMatches = [...sliderMapSrc.matchAll(/'S\d{2}:/g)];
