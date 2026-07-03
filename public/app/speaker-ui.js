@@ -151,7 +151,7 @@ export class SpeakerUI {
       muteBtn.className = 'speaker-strip__mute';
       muteBtn.style.position = 'relative';
       muteBtn.setAttribute('aria-label', `Mute ${speakerLabel(speakerId, index)}`);
-      muteBtn.setAttribute('title', `Mute ${speakerLabel(speakerId, index)}`);
+      muteBtn.setAttribute('title', muteBtn.getAttribute('aria-label'));
       muteBtn.innerHTML = `${MIC_SVG}<span class="speaker-strip__mic-strike"></span>`;
 
       muteBtn.addEventListener('click', () => {
