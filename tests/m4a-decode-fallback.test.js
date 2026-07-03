@@ -67,7 +67,7 @@ describe('M4A decode fallback — FileIngestion wiring', () => {
 
   test('ingestFile calls decodeBlobToAudioBuffer after yielding to the UI', () => {
     expect(fijs).toContain('decodeBlobToAudioBuffer(file)');
-    expect(fijs).toMatch(/setTimeout\(resolve,\s*0\)/);
+    expect(fijs).toMatch(/queueMicrotask\(resolve\)/);
   });
 
   test('validation uses inferMediaKind for extension-based acceptance', () => {
