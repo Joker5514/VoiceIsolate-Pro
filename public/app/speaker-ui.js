@@ -151,16 +151,16 @@ export class SpeakerUI {
       muteBtn.className = 'speaker-strip__mute';
       muteBtn.style.position = 'relative';
       muteBtn.setAttribute('aria-label', `Mute ${speakerLabel(speakerId, index)}`);
+      muteBtn.setAttribute('title', `Mute ${speakerLabel(speakerId, index)}`);
       muteBtn.innerHTML = `${MIC_SVG}<span class="speaker-strip__mic-strike"></span>`;
 
       muteBtn.addEventListener('click', () => {
         const muted = mixer.toggleMute(speakerId);
         muteBtn.classList.toggle('speaker-strip__mute--muted', muted);
         strip.classList.toggle('speaker-strip--muted', muted);
-        muteBtn.setAttribute(
-          'aria-label',
-          muted ? `Unmute ${speakerLabel(speakerId, index)}` : `Mute ${speakerLabel(speakerId, index)}`,
-        );
+        const label = muted ? `Unmute ${speakerLabel(speakerId, index)}` : `Mute ${speakerLabel(speakerId, index)}`;
+        muteBtn.setAttribute('aria-label', label);
+        muteBtn.setAttribute('title', label);
       });
 
       const gainSlider = document.createElement('input');
