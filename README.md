@@ -128,6 +128,28 @@ scripts/                   Build, validation, model tooling, Vercel install
 
 See [`CLAUDE.md`](CLAUDE.md) for the full contributor contract and [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.
 
+## Legacy Rollback Points
+
+Pinned snapshots to restore an earlier codebase without digging through history.
+
+| Legacy | Ref | Commit | When to use |
+|--------|-----|--------|-------------|
+| **v2.0 (pre–Blueprint v2.1)** | [branch `legacy/v2.0`](https://github.com/Joker5514/VoiceIsolate-Pro/tree/legacy/v2.0) · [tag `legacy-v2.0`](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/legacy-v2.0) | [`ebf1783`](https://github.com/Joker5514/VoiceIsolate-Pro/commit/ebf1783) | Roll back before the Electron MVP, ring-buffer OLA, and Blueprint v2.1 desktop work (merged in [#657](https://github.com/Joker5514/VoiceIsolate-Pro/pull/657)). |
+| **v-legacy (earlier web stack)** | [tag `v-legacy`](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v-legacy) | [`0cf8252`](https://github.com/Joker5514/VoiceIsolate-Pro/commit/0cf8252) | Older browser-only snapshot (pre–v24 stem-split refactor). |
+
+```bash
+git fetch origin --tags
+
+# v2.0 — immediately before Blueprint v2.1 / Electron MVP
+git checkout legacy-v2.0          # tag
+git checkout legacy/v2.0        # branch (same commit)
+
+# earlier web-era snapshot
+git checkout v-legacy
+```
+
+Current development line: [`main`](https://github.com/Joker5514/VoiceIsolate-Pro/tree/main) (includes Blueprint v2.1 Deliverable 1).
+
 ## Security
 
 - Strict headers (`COOP`/`COEP`, CSP, `nosniff`, `X-Frame-Options`, `microphone=()`) via `server/securityHeaders.js` and `vercel.json`
