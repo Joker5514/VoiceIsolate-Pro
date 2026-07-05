@@ -23,7 +23,7 @@
 | **Live visualizations** | Canvas 2D waveform overview + spectrum analyzer on Landing; scrolling spectrogram, frequency rail, 3D topo, particle swarm on Engineer Mode |
 | **Privacy-first** | Zero cloud processing; models SHA-256 verified and cached in IndexedDB |
 | **Export** | WAV or MP3 off the main thread via `AudioEncoderWorker` |
-| **Cross-platform** | Web (Vercel), Android & iOS via Capacitor |
+| **Cross-platform** | Web (Vercel), Desktop (Electron MVP), Android via Capacitor (iOS out of scope v1.0) |
 
 ## How It Works
 
@@ -66,10 +66,21 @@ pnpm test             # Jest — 2100+ tests
 pnpm lint             # ESLint
 pnpm validate         # Structural integrity checks (CI gate)
 pnpm build            # Production static build
-pnpm build:mobile     # Capacitor sync for Android/iOS
+pnpm build:mobile     # Capacitor sync for Android
+pnpm electron:dev     # Desktop shell (requires pnpm dev in another terminal)
+pnpm build:electron   # Signed desktop installer (electron-builder)
 ```
 
 No `.env` is needed for local audio processing. Payment and licensing features require the variables in [`.env.example`](.env.example).
+
+### Desktop (Electron)
+
+```bash
+pnpm dev              # Terminal 1
+pnpm electron:dev     # Terminal 2 — secure preload, filesystem model cache
+```
+
+See [`docs/electron-desktop.md`](docs/electron-desktop.md) and [`docs/VoiceIsolate-Pro_Master_Blueprint_v2.1.md`](docs/VoiceIsolate-Pro_Master_Blueprint_v2.1.md).
 
 ## Pages
 

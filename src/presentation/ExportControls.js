@@ -14,6 +14,7 @@
 'use strict';
 
 import { ExportOrchestrator } from '../pipeline/ExportOrchestrator.js';
+import { isDesktopShell, saveExportBlob, filtersForFilename } from '../core/DesktopBridge.js';
 
 export class ExportControls {
   /**
@@ -328,12 +329,21 @@ export class ExportControls {
       // Handle single or multiple results
       const results = Array.isArray(result) ? result : [result];
       
-      // Download each file
+      const savedPaths = [];
       for (const res of results) {
-        this._downloadBlob(res.blob, res.filename);
+        const delivery = await this._deliverBlob(res.blob, res.filename);
+        if (delivery.filePath) savedPaths.push(delivery.filePath);
       }
 
-      this._showStatus('success', `Exported ${results.length} file${results.length > 1 ? 's' : ''} successfully!`);
+      const countLabel = `${results.length} file${results.length > 1 ? 's' : ''}`;
+      if (savedPaths.length > 0) {
+        this._showStatus(
+          'success',
+          `Saved ${countLabel} to ${savedPaths.join(', ')}`
+        );
+      } else {
+        this._showStatus('success', `Exported ${countLabel} successfully!`);
+      }
     } catch (error) {
       console.error('[VIP][ExportControls] Export failed:', error);
       this._showStatus('error', `Export failed: ${error.message}`);
@@ -438,7 +448,29 @@ export class ExportControls {
   }
 
   /**
-   * Trigger browser download of a blob.
+   * Deliver export blob — native save dialog on desktop, anchor download on web.
+   * @private
+   * @param {Blob} blob
+   * @param {string} filename
+   * @returns {Promise<{ canceled: boolean, filePath?: string, usedNative: boolean }>}
+   */
+  async _deliverBlob(blob, filename) {
+    if (isDesktopShell()) {
+      const result = await saveExportBlob(blob, {
+        defaultName: filename,
+        filters: filtersForFilename(filename),
+      });
+      if (result.canceled) {
+        throw new Error('Export canceled.');
+      }
+      return { canceled: false, filePath: result.filePath, usedNative: true };
+    }
+    this._downloadBlob(blob, filename);
+    return { canceled: false, usedNative: false };
+  }
+
+  /**
+   * Trigger browser download of a blob (web fallback).
    * @private
    * @param {Blob} blob
    * @param {string} filename
