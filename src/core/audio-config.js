@@ -13,14 +13,22 @@ export const SAMPLE_RATE = 48000;
 /** Maximum channels carried through the pipeline (stereo). */
 export const MAX_CHANNELS = 2;
 
-/** Render quantum of the Web Audio API (fixed by spec). */
+/** Render quantum of the Web Audio API (fixed by spec). Alias: QUANTUM in ring-buffer-constants. */
 export const RENDER_QUANTUM = 128;
 
 /** STFT frame size used by frame-based models (e.g. DeepFilterNet). */
 export const FRAME_SIZE = 2048;
 
-/** Hop size between successive frames (75% overlap). */
+/** Hop size between successive frames (75% overlap). Must be integer multiple of RENDER_QUANTUM. */
 export const HOP_SIZE = 512;
+
+export {
+  QUANTUM,
+  FFT_SIZE_LIVE,
+  FFT_SIZE_CREATOR,
+  QUANTA_PER_HOP,
+  validateRingBufferConstants,
+} from './ring-buffer-constants.js';
 
 /** Segment length, in samples, for waveform-domain models (MDX-Net). 8 s. */
 export const SEGMENT_SAMPLES = SAMPLE_RATE * 8;

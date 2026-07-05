@@ -1,0 +1,44 @@
+appId: com.voiceisolate.pro
+productName: VoiceIsolate Pro
+copyright: Copyright © 2026 VoiceIsolate Pro
+
+directories:
+  output: dist/electron
+  buildResources: electron/resources
+
+files:
+  - build/**/*
+  - electron/**/*
+  - package.json
+
+extraMetadata:
+  main: electron/main.cjs
+
+win:
+  target:
+    - nsis
+  artifactName: VoiceIsolate-Pro-${version}-win-${arch}.${ext}
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.music
+  artifactName: VoiceIsolate-Pro-${version}-mac-${arch}.${ext}
+  hardenedRuntime: true
+  gatekeeperAssess: false
+
+linux:
+  target:
+    - AppImage
+  category: AudioVideo
+  artifactName: VoiceIsolate-Pro-${version}-linux-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+
+publish:
+  provider: github
+  owner: Joker5514
+  repo: VoiceIsolate-Pro

@@ -276,3 +276,175 @@ if (typeof window !== 'undefined') window.RingBuffer = RingBuffer;
 if (typeof module !== 'undefined' && module.exports) {
   module.exports.RingBuffer = RingBuffer;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Blueprint v2.1 — Codified overlap-add constants & quantum bridge
+// Canonical ESM copies live in src/core/ring-buffer-constants.js and
+// src/core/OverlapAddAccumulator.js (synced to public/src/ for imports).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** @type {128} AudioWorklet render quantum */
+const QUANTUM = 128;
+/** @type {1024} Live-mode FFT (sub-100 ms latency target) */
+const FFT_SIZE_LIVE = 1024;
+/** @type {4096} Creator / Forensic FFT */
+const FFT_SIZE_CREATOR = 4096;
+/** @type {512} Hop size — must be integer multiple of QUANTUM */
+const HOP_SIZE = 512;
+/** @type {4} Quanta accumulated per hop (HOP_SIZE / QUANTUM) */
+const QUANTA_PER_HOP = HOP_SIZE / QUANTUM;
+
+const _hannCache = Object.create(null);
+function hannWindow(n) {
+  if (_hannCache[n]) return _hannCache[n];
+  const w = new Float32Array(n);
+  for (let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / n));
+  _hannCache[n] = w;
+  return w;
+}
+
+function validateRingBufferConstants(opts) {
+  const quantum = (opts && opts.quantum) || QUANTUM;
+  const hopSize = (opts && opts.hopSize) || HOP_SIZE;
+  const fftSize = (opts && opts.fftSize) || FFT_SIZE_LIVE;
+  if (hopSize % quantum !== 0) {
+    throw new RangeError(
+      '[VIP][ring-buffer] HOP_SIZE (' + hopSize + ') must be an integer multiple of QUANTUM (' + quantum + ').'
+    );
+  }
+  if ((fftSize & (fftSize - 1)) !== 0) {
+    throw new RangeError('[VIP][ring-buffer] fftSize must be a power of two.');
+  }
+  return { quantum, hopSize, fftSize, quantaPerHop: hopSize / quantum };
+}
+
+/**
+ * Accumulates exactly QUANTA_PER_HOP AudioWorklet quanta before each hop advance.
+ * Use with SharedRingBuffer / RingBuffer for worklet ↔ worker handoff.
+ */
+class QuantumHopBridge {
+  constructor(opts) {
+    opts = opts || {};
+    const v = validateRingBufferConstants({
+      quantum: opts.quantum || QUANTUM,
+      hopSize: opts.hopSize || HOP_SIZE,
+      fftSize: opts.fftSize || FFT_SIZE_LIVE,
+    });
+    this.quantum = v.quantum;
+    this.hopSize = v.hopSize;
+    this.fftSize = v.fftSize;
+    this.quantaPerHop = v.quantaPerHop;
+    this._ring = new Float32Array(this.fftSize);
+    this._writePos = 0;
+    this._quantaSinceHop = 0;
+    this._hopIndex = 0;
+  }
+
+  reset() {
+    this._ring.fill(0);
+    this._writePos = 0;
+    this._quantaSinceHop = 0;
+    this._hopIndex = 0;
+  }
+
+  pushQuantum(quantumSamples) {
+    if (quantumSamples.length !== this.quantum) {
+      throw new RangeError('[VIP][OverlapAdd] invalid quantum length.');
+    }
+    for (let i = 0; i < this.quantum; i++) {
+      this._ring[this._writePos] = quantumSamples[i];
+      this._writePos = (this._writePos + 1) % this.fftSize;
+    }
+    this._quantaSinceHop += 1;
+    if (this._quantaSinceHop < this.quantaPerHop) return false;
+    this._quantaSinceHop = 0;
+    this._hopIndex += 1;
+    return true;
+  }
+
+  getAnalysisWindow(dest) {
+    const out = dest && dest.length === this.fftSize ? dest : new Float32Array(this.fftSize);
+    const start = this._writePos;
+    const tail = this.fftSize - start;
+    out.set(this._ring.subarray(start), 0);
+    if (start > 0) out.set(this._ring.subarray(0, start), tail);
+    return out;
+  }
+
+  get hopCount() { return this._hopIndex; }
+}
+
+/** Symmetric Hann overlap-add reconstructor with COLA normalization. */
+class OverlapAddReconstructor {
+  constructor(opts) {
+    opts = opts || {};
+    const v = validateRingBufferConstants({
+      fftSize: opts.fftSize || FFT_SIZE_LIVE,
+      hopSize: opts.hopSize || HOP_SIZE,
+    });
+    this.fftSize = v.fftSize;
+    this.hopSize = v.hopSize;
+    this.window = hannWindow(this.fftSize);
+    this._outputLength = opts.outputLength || (this.hopSize * 8 + this.fftSize);
+    this._output = new Float32Array(this._outputLength);
+    this._norm = new Float32Array(this._outputLength);
+    this._framesAdded = 0;
+  }
+
+  reset(outputLength) {
+    if (outputLength !== undefined) {
+      this._outputLength = outputLength;
+      this._output = new Float32Array(outputLength);
+      this._norm = new Float32Array(outputLength);
+    } else {
+      this._output.fill(0);
+      this._norm.fill(0);
+    }
+    this._framesAdded = 0;
+  }
+
+  addGrain(grain, frameIndex) {
+    if (grain.length !== this.fftSize) {
+      throw new RangeError('[VIP][OverlapAdd] grain length mismatch.');
+    }
+    const start = frameIndex * this.hopSize;
+    const win = this.window;
+    for (let i = 0; i < this.fftSize; i++) {
+      const pos = start + i;
+      if (pos >= this._outputLength) break;
+      const w = win[i];
+      this._output[pos] += grain[i] * w;
+      this._norm[pos] += w * w;
+    }
+    this._framesAdded += 1;
+  }
+
+  finalize() {
+    const out = new Float32Array(this._outputLength);
+    for (let i = 0; i < this._outputLength; i++) {
+      out[i] = this._norm[i] > 1e-12 ? this._output[i] / this._norm[i] : 0;
+    }
+    return out;
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.QUANTUM = QUANTUM;
+  window.FFT_SIZE_LIVE = FFT_SIZE_LIVE;
+  window.FFT_SIZE_CREATOR = FFT_SIZE_CREATOR;
+  window.HOP_SIZE = HOP_SIZE;
+  window.QUANTA_PER_HOP = QUANTA_PER_HOP;
+  window.QuantumHopBridge = QuantumHopBridge;
+  window.OverlapAddReconstructor = OverlapAddReconstructor;
+}
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports.QUANTUM = QUANTUM;
+  module.exports.FFT_SIZE_LIVE = FFT_SIZE_LIVE;
+  module.exports.FFT_SIZE_CREATOR = FFT_SIZE_CREATOR;
+  module.exports.HOP_SIZE = HOP_SIZE;
+  module.exports.QUANTA_PER_HOP = QUANTA_PER_HOP;
+  module.exports.hannWindow = hannWindow;
+  module.exports.validateRingBufferConstants = validateRingBufferConstants;
+  module.exports.QuantumHopBridge = QuantumHopBridge;
+  module.exports.OverlapAddReconstructor = OverlapAddReconstructor;
+}

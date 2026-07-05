@@ -17,6 +17,9 @@ describe('ExportControls', () => {
   let mockOrchestrator;
 
   beforeEach(async () => {
+    delete globalThis.vipDesktop;
+    delete global.window?.vipDesktop;
+
     // Setup JSDOM
     dom = new JSDOM('<!DOCTYPE html><html><body><div id="container"></div></body></html>', {
       url: 'http://localhost',
@@ -51,10 +54,15 @@ describe('ExportControls', () => {
       getSoloSpeaker: jest.fn().mockReturnValue(null),
     };
 
+    const mockBlob = new window.Blob(['test'], { type: 'audio/wav' });
+    if (typeof mockBlob.arrayBuffer !== 'function') {
+      mockBlob.arrayBuffer = async () => new TextEncoder().encode('test').buffer;
+    }
+
     // Mock orchestrator
     mockOrchestrator = {
       export: jest.fn().mockResolvedValue({
-        blob: new window.Blob(['test'], { type: 'audio/wav' }),
+        blob: mockBlob,
         filename: 'test.wav',
         format: 'wav',
         duration: 10,
@@ -78,6 +86,7 @@ describe('ExportControls', () => {
   });
 
   afterEach(() => {
+    delete globalThis.vipDesktop;
     delete global.document;
     delete global.window;
     delete global.HTMLElement;
@@ -256,6 +265,35 @@ describe('ExportControls', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
       
       expect(global.URL.createObjectURL).toHaveBeenCalled();
+    });
+
+    it('should use native save dialog in Electron shell', async () => {
+      window.vipDesktop = {
+        openFile: jest.fn(async () => ({ canceled: true })),
+        saveFile: jest.fn(async () => ({
+          canceled: false,
+          filePath: 'C:\\Exports\\test.wav',
+        })),
+      };
+      globalThis.vipDesktop = window.vipDesktop;
+
+      const controls = new ExportControls({ mixer: mockMixer, container });
+      controls.orchestrator = mockOrchestrator;
+
+      const button = container.querySelector('#vip-export-button');
+      button.click();
+
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      expect(window.vipDesktop.saveFile).toHaveBeenCalled();
+      expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+
+      const status = container.querySelector('.vip-export-status');
+      expect(status.classList.contains('success')).toBe(true);
+      expect(status.textContent).toContain('C:\\Exports\\test.wav');
+
+      delete window.vipDesktop;
+      delete globalThis.vipDesktop;
     });
 
     it('should show success message after export', async () => {

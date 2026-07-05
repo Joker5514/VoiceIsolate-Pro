@@ -51,12 +51,31 @@ one-shot offline pass.
 |---|---|
 | `navigator.mediaDevices.getUserMedia` or any live-mic ingestion | Live-mic processing was removed by design. The Permissions-Policy header denies the microphone (`microphone=()`). |
 | Re-running ML inference from a slider/UI event | Sliders are wired to Web Audio nodes only. Inference happens once, at ingestion. |
-| SharedArrayBuffer ring-buffer audio transport for new code | Eliminated with the live pipeline. New code passes stems as transferable `Float32Array`s. |
+| Restoring the deleted `pipeline-orchestrator.js` live-mic monolith | Replaced by Stem-Split & Live-Mix (shipped) and the v2.1 Live-mode ring-buffer path (in progress). |
 | Client-side authentication or tier gating as a security boundary | All auth/licensing decisions are server-side (JWT). Client code may only *display* state. |
 | Hardcoded secrets, seeded credentials, dev-bypass license stubs | Secrets come from environment variables only (see `.env.example`). |
 | Loading ONNX Runtime, Three.js, or any library from a CDN | Vendored locally under `public/lib/`. CSP blocks third-party script origins. |
 | `'unsafe-inline'` in `script-src` for new surfaces | `server/securityHeaders.js` enforces strict CSP. Only the legacy `/app/` shell has a temporary, explicitly-scoped exception. |
 | Sending audio (or any derivative of audio) to a server | 100% local processing is the product's core promise. |
+
+### 1.2 Master Blueprint v2.1 — Cross-Platform Mandate
+
+The authoritative plan is `docs/VoiceIsolate-Pro_Master_Blueprint_v2.1.md`. Key
+constraints every contributor must enforce:
+
+| Constraint | Rule |
+|---|---|
+| **Privacy** | 100% local inference. No audio or derivatives sent to cloud. |
+| **Single STFT / single iSTFT** | Exactly one forward STFT and one inverse iSTFT per processing path. No repeated phase damage. |
+| **Dual pipeline** | Lightweight Live path (<80–100 ms, FFT 512/1024 + RNNoise fallback) vs. heavy Creator/Forensic path (FFT 4096–8192 + full ML). |
+| **Ring-buffer math** | `HOP_SIZE` **must** be an integer multiple of `QUANTUM` (128). See §8. |
+| **Mask equation** | `X_out = X · max(M_hum · M_noise · M_speech · M_speaker · M_dereverb · M_res, M_floor)` with typical `M_floor = -30 dB`. |
+| **Platform scope v1.0** | Web + Desktop (Electron MVP) + Android (Capacitor). **iOS explicitly out of scope** until Android is stable. |
+| **Model storage** | Platform-aware: IndexedDB + Cache API (web; warn on iOS Safari ~50 MB quota), filesystem (desktop), scoped storage (Android). SHA-256 manifest before every session. |
+| **HTDemucs strategy** | Full/specialist ONNX on web/desktop; quantized specialist or ExecuTorch (Vulkan/NNAPI) on Android — validate SDR vs. size before committing. |
+| **Electron security** | `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, preload-only IPC. See `electron/main.cjs`. |
+
+**Timelines (realistic):** Electron MVP 3–4 weeks (signing + auto-update); Android hardening 5–6 weeks.
 
 ---
 
@@ -79,7 +98,10 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 
 | File | Layer | Responsibility |
 |---|---|---|
-| `src/core/audio-config.js` | 1 | Single source of truth for `SAMPLE_RATE = 48000` and DSP constants. |
+| `src/core/audio-config.js` | 1 | Single source of truth for `SAMPLE_RATE = 48000` and DSP constants; re-exports ring-buffer constants. |
+| `src/core/ring-buffer-constants.js` | 1 | Codified `QUANTUM`, `FFT_SIZE_LIVE`, `FFT_SIZE_CREATOR`, `HOP_SIZE`, `QUANTA_PER_HOP`, enrollment defaults. |
+| `src/core/OverlapAddAccumulator.js` | 1 | `QuantumHopBridge` + `OverlapAddReconstructor` — symmetric Hann OLA per blueprint §III. |
+| `src/core/DesktopBridge.js` | 1 | Thin `window.vipDesktop` adapter — native open/save IPC (no Node in renderer). |
 | `src/core/BufferPool.js` | 1 | Pre-allocated `Float32Array` pool (128 / 2048 / 4096) — zero-GC DSP. |
 | `src/core/ModelManifest.js` | 1 | Canonical model metadata: URLs, sizes, SHA-256 integrity hashes, I/O specs. |
 | `src/core/diarization.js` | 1 | Pure speaker diarization (frame features + k-means) run once per file on the clean stem. |
@@ -88,7 +110,7 @@ Layer 1  src/core/           Pure primitives. No DOM, no Web Audio, no I/O.
 | `src/workers/DiarizationWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `diarization.js` — keeps segmentation off the main thread. |
 | `src/workers/SpectralCleanupWorker.js` | 2 | Module worker (`{ type: 'module' }`) wrapping `SpectralCleanup.js` — runs the offline NR/dereverb passes off the main thread. |
 | `src/workers/AudioEncoderWorker.js` | 2 | Module worker that encodes stems to WAV or MP3 (lamejs) off the main thread; stateless, one request per job. |
-| `src/pipeline/FileIngestion.js` | 3 | Accept audio/video blobs, decode, resample to 48 kHz via `OfflineAudioContext`. |
+| `src/pipeline/FileIngestion.js` | 3 | Accept audio/video blobs, decode, resample to 48 kHz; `pickAndIngestFile()` for Electron native open. |
 | `src/pipeline/PlaybackMixer.js` | 3 | The Live-Mix graph: stem sources → speaker lane → gains → mute lanes → EQ → destination. Exports `setNoiseReduction()`, `setVoiceMuted()`, `setSpeakerMuted()` etc. |
 | `src/pipeline/ProcessingOrchestrator.js` | 3 | Bridges `IsolationModeSelector` → `FileIngestion` → `MLWorker`; translates user-chosen mode into a model-chain array for `MLWorker`. |
 | `src/pipeline/ExportOrchestrator.js` | 3 | Coordinates stem export: collects channels from `PlaybackMixer`, dispatches to `AudioEncoderWorker`, returns a downloadable `Blob`. |
@@ -224,13 +246,94 @@ pnpm test             # Jest suites
 pnpm lint             # ESLint flat config
 pnpm validate         # scripts/validate.js structural checks (enforces this doc)
 pnpm build            # copy public/ + src/ → build/
+pnpm electron:dev     # Electron shell → http://localhost:3000 (run pnpm dev first)
+pnpm build:electron   # production desktop installer (electron-builder)
 ```
 
 Requirements: Node.js ≥ 22, pnpm ≥ 10. Use **pnpm**, never npm/yarn.
 
 ---
 
-## 7. Conventions
+## 7. Target-Speaker Enrollment (ECAPA-TDNN)
+
+Per blueprint v2.1 §III — session-scoped speaker focus for Live and Creator modes:
+
+| Parameter | Value |
+|---|---|
+| Minimum enrollment | **3 seconds** of clean target speech at **SNR > 10 dB** |
+| Embedding model | ECAPA-TDNN → **192-dim** vector |
+| Update strategy | EMA with **α = 0.05** (smooth within-session adaptation) |
+| Similarity threshold | Configurable; **default cosine = 0.75** |
+| Soft mask | `clamp((cos_sim − threshold) / (1 − threshold), 0, 1)` |
+| Multi-speaker | Up to N enrolled embeddings; **union mask** (logical OR) with per-speaker gain |
+| Persistence | Session-scoped by default; disk persistence only when user explicitly saves a voice profile |
+
+Enrollment UI: user highlights a clean region in the spectrogram (`visual-click-isolation.js`).
+
+---
+
+## 8. Ring-Buffer & Overlap-Add Constants (Non-Negotiable)
+
+Codified in `src/core/ring-buffer-constants.js` and mirrored in `public/app/ring-buffer.js`
+for AudioWorklet / legacy worker glue:
+
+```javascript
+const QUANTUM = 128;           // AudioWorklet render quantum
+const FFT_SIZE_LIVE = 1024;    // Live mode (<80–100 ms latency target)
+const FFT_SIZE_CREATOR = 4096; // Creator / Forensic
+const HOP_SIZE = 512;          // 75% overlap when FFT = 4 × HOP
+const QUANTA_PER_HOP = HOP_SIZE / QUANTUM; // MUST be integer (4)
+```
+
+**Hard rules:**
+1. `HOP_SIZE % QUANTUM === 0` — enforced by `validateRingBufferConstants()`.
+2. `QuantumHopBridge` accumulates exactly `QUANTA_PER_HOP` quanta before each hop advance.
+3. Analysis and synthesis use **symmetric periodic Hann**; reconstruction divides by the summed window² envelope (COLA).
+4. Live mode uses `FFT_SIZE_LIVE` (1024 or 512) + RNNoise fallback; Creator/Forensic uses `FFT_SIZE_CREATOR` (4096–8192) with full ML.
+5. Tests in `tests/overlap-add.test.js` must pass before merging ring-buffer changes.
+
+Lock-free `SharedRingBuffer` / `RingBuffer` FIFO transport (zero-copy worklet ↔ worker) remains in `public/app/ring-buffer.js`; the new `QuantumHopBridge` sits above it for hop-aligned FFT triggering.
+
+---
+
+## 9. Desktop (Electron) Security
+
+Implementation: `electron/main.cjs`, `electron/preload.cjs`, `electron/ipc-channels.cjs`.
+
+```javascript
+webPreferences: {
+  contextIsolation: true,   // REQUIRED
+  nodeIntegration: false,   // REQUIRED
+  sandbox: true,            // REQUIRED
+  preload: path.join(__dirname, 'preload.cjs'),
+  webSecurity: true,
+  allowRunningInsecureContent: false,
+  experimentalFeatures: false,
+}
+```
+
+- All IPC via `contextBridge` → `window.vipDesktop` only. No `require` in renderer.
+- File I/O and model cache: main process with native dialogs (`vip:open-file`, `vip:save-file`, `vip:model-cache-path`).
+- Stripe / payment keys: main process or server only — never exposed to renderer.
+- Packaging: `pnpm build:electron` → `electron-builder` with code signing (Phase 1 deliverable).
+
+Long-term: evaluate **Tauri 2** for unified desktop + Android (8–12 week pilot per roadmap).
+
+---
+
+## 10. Platform Model Storage Strategy
+
+| Platform | Primary cache | Fallback / notes |
+|---|---|---|
+| **Web** | IndexedDB + SHA-256 verify | Cache API; warn users on iOS Safari ~50 MB origin quota |
+| **Desktop (Electron)** | Filesystem (`app.getPath('userData')/models`) | Do not rely solely on IndexedDB |
+| **Android** | App-scoped / scoped storage | On-demand model download; quantized or ExecuTorch path |
+
+All platforms share `src/core/ModelManifest.js` as the canonical manifest.
+
+---
+
+## 11. Conventions
 
 - Single quotes, semicolons, 2-space indent. `camelCase` vars, `UPPER_CASE`
   constants, `PascalCase` classes.

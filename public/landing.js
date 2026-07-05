@@ -11,7 +11,7 @@
  */
 'use strict';
 
-import { ingestFile } from '/src/pipeline/FileIngestion.js';
+import { ingestFile, isDesktopShell, pickAudioFile } from '/src/pipeline/FileIngestion.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
 import { LANDING_PRESETS, calibrateFromStems } from '/src/core/MixCalibration.js';
@@ -649,7 +649,19 @@ function wireUploadDropZone() {
   const zone = ui.uploadZone;
   if (!zone) return;
 
-  const openPicker = () => ui.fileInput && ui.fileInput.click();
+  const openPicker = async () => {
+    if (isDesktopShell()) {
+      try {
+        const file = await pickAudioFile();
+        if (file) await ingestFrom(file);
+      } catch (err) {
+        console.error('[VIP][landing] desktop open failed:', err);
+        setStatus(err.message, 'error');
+      }
+      return;
+    }
+    if (ui.fileInput) ui.fileInput.click();
+  };
   zone.addEventListener('click', (event) => {
     if (event.target.closest('#browseBtn')) return;
     openPicker();

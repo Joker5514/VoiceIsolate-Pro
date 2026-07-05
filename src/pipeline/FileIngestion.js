@@ -26,7 +26,10 @@
 
 import { SAMPLE_RATE, MAX_CHANNELS, resampledLength } from '../core/audio-config.js';
 import { inferMediaKind } from '../core/media-types.js';
+import { pickAudioFile, isDesktopShell } from '../core/DesktopBridge.js';
 import { decodeBlobToAudioBuffer } from './media-decode.js';
+
+export { isDesktopShell, pickAudioFile } from '../core/DesktopBridge.js';
 
 /** Accepted MIME prefixes. Container formats vary; the decoder is the judge. */
 const ACCEPTED_TYPES = ['audio/', 'video/'];
@@ -164,6 +167,24 @@ function extractChannels(buffer) {
  * @param {string} [hooks.isolationMode] - Isolation mode ('standard', 'maximum', 'noise-suppression')
  * @returns {Promise<IngestedAudio>}
  */
+/**
+ * Open the native desktop file picker (Electron) and ingest the selection.
+ * Returns null when the user cancels or when not running in the desktop shell.
+ *
+ * @param {object} [hooks] — same hooks as ingestFile()
+ * @returns {Promise<IngestedAudio|null>}
+ */
+export async function pickAndIngestFile(hooks = {}) {
+  if (!isDesktopShell()) {
+    throw new Error(
+      '[VIP][FileIngestion] pickAndIngestFile() requires the Electron desktop shell.'
+    );
+  }
+  const file = await pickAudioFile();
+  if (!file) return null;
+  return ingestFile(file, hooks);
+}
+
 export async function ingestFile(file, hooks = {}) {
   const { onProgress = () => {}, isolationMode } = hooks;
   assertIngestible(file);
