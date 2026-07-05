@@ -69,8 +69,8 @@
     "models:upload:diarization": "node scripts/upload-diarization-blob.mjs",
     "electron:dev": "cross-env VIP_ELECTRON_DEV=1 electron .",
     "electron:start": "electron .",
-    "build:electron": "pnpm run build && electron-builder --config electron/electron-builder.yml",
-    "build:electron:dir": "pnpm run build && electron-builder --dir --config electron/electron-builder.yml"
+    "build:electron": "node scripts/electron-build-win.mjs",
+    "build:electron:dir": "node scripts/electron-build-win.mjs --dir"
   },
   "devDependencies": {
     "@capacitor/android": "^8.3.1",
