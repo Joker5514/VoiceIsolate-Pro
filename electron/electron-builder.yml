@@ -2,6 +2,9 @@ appId: com.voiceisolate.pro
 productName: VoiceIsolate Pro
 copyright: Copyright © 2026 VoiceIsolate Pro
 
+# No native Node addons in this app — skip rebuild that scans parent pnpm workspace.
+npmRebuild: false
+
 directories:
   output: dist/electron
   buildResources: electron/resources
