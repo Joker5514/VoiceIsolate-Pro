@@ -20,6 +20,8 @@ extraMetadata:
 win:
   target:
     - nsis
+  # Unsigned local builds: winCodeSign cache extraction needs symlink privilege on Windows.
+  signAndEditExecutable: false
   artifactName: VoiceIsolate-Pro-${version}-win-${arch}.${ext}
 
 mac:
