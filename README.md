@@ -68,15 +68,53 @@ pnpm dev              # http://localhost:3000  (auto-syncs src/ → public/src/)
 pnpm test             # Jest — 2100+ tests
 pnpm lint             # ESLint
 pnpm validate         # Structural integrity checks (CI gate)
-pnpm build            # Production static build
+pnpm build            # Production static build (cross-platform via scripts/build.mjs)
 pnpm build:mobile     # Capacitor sync for Android
 pnpm electron:dev     # Desktop shell (requires pnpm dev in another terminal)
-pnpm build:electron   # Signed desktop installer (electron-builder)
+pnpm build:electron   # Unsigned desktop installer (electron-builder)
 ```
 
 No `.env` is needed for local audio processing. Payment and licensing features require the variables in [`.env.example`](.env.example).
 
-### Desktop (Electron)
+### Local test artifacts (Windows)
+
+Build unsigned debug builds on your machine for sideload testing. Outputs land in `dist/` (gitignored).
+
+| Platform | Command | Output |
+|----------|---------|--------|
+| **Android debug APK** | `pnpm android:build:win` | `dist/android/VoiceIsolate-Pro-debug.apk` (~304 MB) |
+| **Desktop unpacked** | `pnpm build:electron:dir` | `dist/electron/win-unpacked/VoiceIsolate Pro.exe` |
+
+**Android requirements (Windows)**
+
+- [Android SDK](https://developer.android.com/studio#command-tools) at `%LOCALAPPDATA%\Android\Sdk`
+- **JDK 21** — Gradle 8.11 does not support Java 25. The `android:build:win` script auto-detects a portable JDK at `%USERPROFILE%\.jdks\temurin-21`, or set `VIP_JAVA_HOME` to your JDK 21 install.
+
+```powershell
+# One-shot Android debug APK
+pnpm android:build:win
+
+# Install on a USB-connected device (USB debugging enabled)
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" install -r "dist\android\VoiceIsolate-Pro-debug.apk"
+```
+
+- **App ID:** `com.voiceisolatepro.app`
+- **Min Android:** 8.0 (API 26)
+- **Signing:** debug keystore — for local testing only, not Play Store
+
+**Desktop requirements (Windows)**
+
+- `pnpm setup:electron` once after install
+- Unsigned builds skip code-sign tooling that needs symlink privileges on Windows (`signAndEditExecutable: false`)
+
+```powershell
+pnpm build:electron:dir
+# Run: dist\electron\win-unpacked\VoiceIsolate Pro.exe
+```
+
+> **Note:** Production desktop builds load `build/index.html` via `file://`. SharedArrayBuffer may require the dev server (`pnpm dev` + `pnpm electron:dev`) until a desktop model-cache adapter ships. See Blueprint §V.
+
+### Desktop (Electron dev)
 
 ```bash
 pnpm dev              # Terminal 1
