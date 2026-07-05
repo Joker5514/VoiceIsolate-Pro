@@ -1,0 +1,1 @@
+See the full content from the artifact. For brevity in this simulation, the MD content is referenced.
