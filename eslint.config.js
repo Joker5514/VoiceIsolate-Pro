@@ -293,6 +293,20 @@ export default [
     },
   },
   {
+    // Electron main + preload — Node.js CommonJS (Blueprint v2.1 §VIII)
+    files: ['electron/**/*.cjs', 'electron/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  {
     // Dev server + security middleware — Node.js ESM
     files: ['server.js', 'server/**/*.js'],
     languageOptions: {
