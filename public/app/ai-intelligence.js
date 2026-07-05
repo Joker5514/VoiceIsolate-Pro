@@ -152,6 +152,14 @@ const AIIntelligence = {
       [zcr, 0.06, 0.30, 0.5],
     ]);
 
+    // Whisper: very low RMS, breathy dynamics, speech-band centroid
+    scores.whisper = this._score([
+      [rms, 0.003, 0.025, 1.0],
+      [crestFactor, 8, 28, 0.8],
+      [spectralCentroid, 700, 3500, 0.9],
+      [dynamicRange, 20, 55, 0.6],
+    ]);
+
     // Forensic: often degraded audio, wide noise floor
     scores.forensic = this._score([
       [crestFactor, 10, 30, 1.0],
@@ -193,7 +201,25 @@ const AIIntelligence = {
     // Auto-tune noise gate based on noise floor
     const noiseFloorDb = 20 * Math.log10(features.rms + 1e-10);
     if (noiseFloorDb < -50) {
-      suggestions.gateThresh = Math.max(-60, noiseFloorDb - 5);
+      suggestions.gateThresh = Math.max(-70, noiseFloorDb - 5);
+    }
+
+    // Whisper / very quiet speech: lift intelligibility without gating breath
+    if (analysis.scene === 'whisper' || features.rms < 0.025) {
+      suggestions.gateThresh = Math.min(-60, Math.max(-70, noiseFloorDb - 18));
+      suggestions.gateRange = -80;
+      suggestions.gateHold = 40;
+      suggestions.nrAmount = Math.min(70, Math.max(50, suggestions.nrAmount || 60));
+      suggestions.compThresh = -36;
+      suggestions.compRatio = 5;
+      suggestions.compMakeup = 8;
+      suggestions.outGain = 6;
+      suggestions.eqMid = 3;
+      suggestions.eqPresence = 3;
+      suggestions.eqBody = 2;
+      suggestions.deEssAmt = 3;
+      suggestions.hpFreq = 120;
+      suggestions.lpFreq = 14000;
     }
 
     // Auto-tune NR amount based on SNR estimate

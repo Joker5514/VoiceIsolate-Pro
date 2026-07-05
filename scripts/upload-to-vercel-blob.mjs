@@ -73,7 +73,7 @@ async function main() {
     const filePath = join(MODELS_DIR, filename);
     console.log(`Uploading ${filename} → vercel blob ...`);
     const buffer = readFileSync(filePath);
-    const { url: blobUrl } = await put(`models/${filename}`, buffer, {
+    const { url: blobUrl } = await put(filename, buffer, {
       access: 'public',
       contentType: 'application/octet-stream',
       addRandomSuffix: false,

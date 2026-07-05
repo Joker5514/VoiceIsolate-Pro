@@ -1,9 +1,18 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "outputDirectory": "public",
   "buildCommand": "node scripts/vercel-build.js",
-  "installCommand": "pnpm install --frozen-lockfile",
+  "installCommand": "bash scripts/vercel-install.sh",
   "framework": null,
   "rewrites": [
+    {
+      "source": "/app/models/:filename",
+      "destination": "https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/:filename"
+    },
+    {
+      "source": "/models/:filename",
+      "destination": "https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/:filename"
+    },
     {
       "source": "/((?!app/|blueprint/|docs/|lib/|src/|icon\\.jpg|manifest\\.json|sw\\.js|landing\\.js|landing\\.css).*)",
       "destination": "/index.html"
@@ -143,6 +152,19 @@
     },
     {
       "source": "/app/models/(.*\\.onnx)",
+      "headers": [
+        {
+          "key": "Cross-Origin-Resource-Policy",
+          "value": "cross-origin"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        }
+      ]
+    },
+    {
+      "source": "/models/(.*\\.onnx)",
       "headers": [
         {
           "key": "Cross-Origin-Resource-Policy",

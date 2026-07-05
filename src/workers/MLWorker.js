@@ -21,8 +21,11 @@
  *        (chain — runs models in series, e.g. vocals → denoise, for maximum
  *         isolation; each stage's clean output feeds the next)
  *   ← { type: 'progress', requestId, percent }
+ *   ← { type: 'stage', requestId, stage, percent, modelId?, label? }
  *   ← { type: 'stems', requestId, clean: Float32Array[], noise: Float32Array[],
  *       sampleRate, passthrough: boolean }
+ *   → { type: 'warmup', modelIds: string[] }
+ *   ← { type: 'warmed', modelIds: string[] }
  *   ← { type: 'error', requestId?, message }
  *
  * This worker NEVER touches the DOM, never opens a microphone, and never
@@ -41,53 +44,64 @@ const IDB_VERSION = 1;
 /** Map of modelId → manifest entry, populated by 'init'. */
 let MANIFEST = Object.create(null);
 
-/** Map of modelId → InferenceSession (lazy, persistent for worker lifetime). */
+/** Map of sessionKey → InferenceSession (lazy, persistent for worker lifetime). */
 const SESSIONS = Object.create(null);
 
 /** Resolved execution backend, decided once. */
 let BACKEND = null;
 
-// ─── IndexedDB model byte-cache ──────────────────────────────────────────────
+/** Active process request id for stage/progress messages. */
+let ACTIVE_REQUEST_ID = null;
+
+// ─── IndexedDB model byte-cache (single connection — no open/close per op) ───
+
+let _idb = null;
+let _idbPromise = null;
 
 function openDb() {
-  return new Promise((resolve, reject) => {
+  if (_idb) return Promise.resolve(_idb);
+  if (_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, IDB_VERSION);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(IDB_STORE)) {
         req.result.createObjectStore(IDB_STORE);
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => { _idb = req.result; resolve(_idb); };
     req.onerror = () => reject(req.error);
   });
+  return _idbPromise;
 }
 
 async function idbGet(key) {
   const db = await openDb();
-  try {
-    return await new Promise((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readonly');
-      const req = tx.objectStore(IDB_STORE).get(key);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  } finally {
-    db.close();
-  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
 }
 
 async function idbPut(key, value) {
   const db = await openDb();
-  try {
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      tx.objectStore(IDB_STORE).put(value, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } finally {
-    db.close();
-  }
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+function postStage(stage, percent, extra = {}) {
+  if (ACTIVE_REQUEST_ID == null) return;
+  self.postMessage({ type: 'stage', requestId: ACTIVE_REQUEST_ID, stage, percent, ...extra });
+}
+
+function effectiveBatchFrames(entry) {
+  const base = entry.maxBatchFrames || 32;
+  return BACKEND === 'webgpu' ? Math.min(128, base * 2) : base;
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────
@@ -159,17 +173,39 @@ async function resolveBackend() {
   return BACKEND;
 }
 
-async function getSession(entry) {
-  if (SESSIONS[entry.id]) return SESSIONS[entry.id];
-  const bytes = await fetchModelBytes(entry);
+async function createSessionFromBytes(entry, bytes) {
   const backend = await resolveBackend();
   const opts = {
     executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'],
     graphOptimizationLevel: 'all',
   };
-  const session = await ort.InferenceSession.create(bytes, opts);
-  SESSIONS[entry.id] = session;
+  return ort.InferenceSession.create(bytes, opts);
+}
+
+async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) {
+  if (SESSIONS[sessionKey]) return SESSIONS[sessionKey];
+  if (!quiet) postStage('load', 0, { modelId: entry.id, label: `Loading ${entry.name || entry.id}…` });
+  const bytes = await fetchModelBytes(entry);
+  if (!quiet) postStage('load', 50, { modelId: entry.id });
+  const session = await createSessionFromBytes(entry, bytes);
+  SESSIONS[sessionKey] = session;
+  if (!quiet) postStage('load', 100, { modelId: entry.id });
   return session;
+}
+
+/** Cache bytes + compile ONNX sessions off the hot path (boot / during decode). */
+async function warmupModels(modelIds) {
+  const ids = (Array.isArray(modelIds) ? modelIds : [])
+    .filter((id) => typeof id === 'string' && MANIFEST[id]);
+  await Promise.all(ids.map(async (id) => {
+    const entry = MANIFEST[id];
+    try {
+      await getSession(entry, entry.id, { quiet: true });
+    } catch (err) {
+      console.warn(`[VIP][MLWorker] Warmup failed for '${id}':`, err);
+    }
+  }));
+  self.postMessage({ type: 'warmed', modelIds: ids });
 }
 
 // ─── DSP helpers (STFT / mask / iSTFT reconstruction) ────────────────────────
@@ -259,7 +295,7 @@ async function runSpectralMask(entry, session, samples, onProgress) {
   const N = entry.fftSize;
   const hop = entry.hopSize;
   const bins = entry.bins || (N / 2 + 1);
-  const batchMax = entry.maxBatchFrames || 32;
+  const batchMax = effectiveBatchFrames(entry);
   const win = hann(N);
   // Cover every sample: full frames plus a zero-padded tail frame.
   const totalFrames = Math.max(1, Math.ceil(Math.max(0, samples.length - N) / hop) + 1);
@@ -293,7 +329,7 @@ async function runSpectralMask(entry, session, samples, onProgress) {
     }
 
     // ── Mask inference (dynamic batch) ──────────────────────────────────
-    const input = new ort.Tensor('float32', batchMags.slice(0, count * bins), [count, bins]);
+    const input = new ort.Tensor('float32', batchMags.subarray(0, count * bins), [count, bins]);
     const results = await session.run({ [entry.io.input]: input });
     const mask = results[entry.io.output]?.data;
     if (!mask || mask.length < count * bins) {
@@ -332,6 +368,64 @@ async function runSpectralMask(entry, session, samples, onProgress) {
   return out;
 }
 
+/** Linear resample mono PCM between sample rates. */
+function resampleLinear(samples, fromSr, toSr) {
+  if (fromSr === toSr) return new Float32Array(samples);
+  const ratio = toSr / fromSr;
+  const outLen = Math.max(1, Math.round(samples.length * ratio));
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const src = i / ratio;
+    const i0 = Math.floor(src);
+    const i1 = Math.min(samples.length - 1, i0 + 1);
+    const frac = src - i0;
+    out[i] = samples[i0] * (1 - frac) + samples[i1] * frac;
+  }
+  return out;
+}
+
+/**
+ * Waveform strategy — Demucs vocal-ratio mask [1,1,T] applied to input PCM.
+ * Processes fixed-length segments (default 344520 @ 44.1 kHz ≈ 7.8 s).
+ */
+async function runWaveformMask(entry, session, samples, sampleRate, onProgress) {
+  const modelSr = entry.sampleRate || 44100;
+  let pcm = sampleRate === modelSr ? samples : resampleLinear(samples, sampleRate, modelSr);
+  const segmentLen = entry.segmentSamples || 344520;
+  const inName = entry.io?.input || 'input';
+  const outName = entry.io?.output || 'output';
+  const out = new Float32Array(pcm.length);
+  const totalSegs = Math.ceil(pcm.length / segmentLen) || 1;
+  const chunk = new Float32Array(segmentLen);
+
+  for (let seg = 0; seg < totalSegs; seg++) {
+    const offset = seg * segmentLen;
+    const len = Math.min(segmentLen, pcm.length - offset);
+    chunk.fill(0);
+    chunk.set(pcm.subarray(offset, offset + len));
+    const input = new ort.Tensor('float32', chunk, [1, 1, segmentLen]);
+    const result = await session.run({ [inName]: input });
+    const maskTensor = result[outName] || result.output;
+    if (!maskTensor?.data) {
+      throw new Error(`[VIP][MLWorker] '${entry.id}' returned no mask tensor.`);
+    }
+    const mask = maskTensor.data;
+    for (let i = 0; i < len; i++) {
+      const m = Math.max(0, Math.min(1, mask[i]));
+      out[offset + i] = chunk[i] * m;
+    }
+    onProgress((seg + 1) / totalSegs);
+  }
+
+  if (sampleRate !== modelSr) {
+    const back = resampleLinear(out, modelSr, sampleRate);
+    const fixed = new Float32Array(samples.length);
+    fixed.set(back.subarray(0, Math.min(back.length, samples.length)));
+    return fixed;
+  }
+  return out;
+}
+
 // ─── Stem assembly ───────────────────────────────────────────────────────────
 
 /** noise = input − clean, computed sample-wise per channel. */
@@ -361,48 +455,54 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
     }
   }
 
+  ACTIVE_REQUEST_ID = requestId;
+  let lastProgressSent = -1;
   const onProgress = (p) => {
-    self.postMessage({ type: 'progress', requestId, percent: Math.round(p * 100) });
+    const pct = Math.round(p * 100);
+    if (pct === lastProgressSent) return;
+    if (pct < 100 && lastProgressSent >= 0 && pct - lastProgressSent < 2) return;
+    lastProgressSent = pct;
+    self.postMessage({ type: 'progress', requestId, percent: pct });
   };
 
-  let clean;
-  let passthrough = false;
+  const totalSteps = chain.length * channelData.length;
+  let stepBase = 0;
+  let current = channelData;
   try {
-    const totalSteps = chain.length * channelData.length;
-    let stepBase = 0;
-    let current = channelData;
-    for (const id of chain) {
+    for (let ci = 0; ci < chain.length; ci++) {
+      const id = chain[ci];
       const entry = MANIFEST[id];
-      if (entry.strategy !== 'spectral-mask') {
-        throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
-      }
-      const session = await getSession(entry);
-      const next = [];
-      for (let ch = 0; ch < current.length; ch++) {
+      const nextId = chain[ci + 1];
+      const nextWarm = nextId && MANIFEST[nextId]
+        ? getSession(MANIFEST[nextId], MANIFEST[nextId].id, { quiet: true }).catch(() => {})
+        : null;
+      postStage('separate', Math.round((stepBase / totalSteps) * 100), { modelId: id });
+      const next = await Promise.all(current.map(async (samples, ch) => {
+        const sessionKey = current.length > 1 ? `${entry.id}:ch${ch}` : entry.id;
+        const session = await getSession(entry, sessionKey);
         const step = stepBase + ch;
-        next.push(await runSpectralMask(entry, session, current[ch], (p) =>
-          onProgress((step + p) / totalSteps)
-        ));
-      }
+        const progress = (p) => onProgress((step + p) / totalSteps);
+        if (entry.strategy === 'spectral-mask') {
+          return runSpectralMask(entry, session, samples, progress);
+        }
+        if (entry.strategy === 'waveform') {
+          return runWaveformMask(entry, session, samples, sampleRate, progress);
+        }
+        throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
+      }));
       current = next;
       stepBase += channelData.length;
+      if (nextWarm) await nextWarm;
     }
-    clean = current;
-  } catch (err) {
-    // Graceful degradation: the UI must keep working without a model.
-    // Passthrough stems: clean = input, noise = silence.
-    console.error(`[VIP][MLWorker] Inference failed for [${chain.join(' → ')}]; emitting passthrough stems.`, err);
-    clean = channelData.map((c) => new Float32Array(c));
-    passthrough = true;
+  } finally {
+    ACTIVE_REQUEST_ID = null;
   }
-
-  const noise = passthrough
-    ? channelData.map((c) => new Float32Array(c.length))
-    : residual(channelData, clean);
+  const clean = current;
+  const noise = residual(channelData, clean);
 
   const transfers = [...clean, ...noise].map((a) => a.buffer);
   self.postMessage(
-    { type: 'stems', requestId, clean, noise, sampleRate, passthrough },
+    { type: 'stems', requestId, clean, noise, sampleRate, passthrough: false },
     transfers
   );
 }
@@ -418,7 +518,8 @@ self.onmessage = async (event) => {
         for (const entry of msg.manifest || []) MANIFEST[entry.id] = entry;
         if (typeof ort !== 'undefined' && ort.env?.wasm) {
           ort.env.wasm.wasmPaths = '/lib/';
-          ort.env.wasm.numThreads = Math.min(4, self.navigator?.hardwareConcurrency || 1);
+          const cores = self.navigator?.hardwareConcurrency || 4;
+          ort.env.wasm.numThreads = Math.min(8, Math.max(1, cores - 1));
         }
         const backend = await resolveBackend();
         self.postMessage({ type: 'ready', backend });
@@ -426,6 +527,9 @@ self.onmessage = async (event) => {
       }
       case 'process':
         await processRequest(msg);
+        break;
+      case 'warmup':
+        await warmupModels(msg.modelIds);
         break;
       default:
         self.postMessage({ type: 'error', message: `Unknown message type '${msg.type}'` });

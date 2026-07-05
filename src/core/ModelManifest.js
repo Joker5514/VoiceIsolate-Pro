@@ -98,14 +98,13 @@ export const MODEL_MANIFEST = Object.freeze({
     name: 'Demucs v4 (Quantized)',
     task: 'source-separation',
     url: '/app/models/demucs_v4_quantized.onnx',
-    sizeBytes: null, // TODO: measure actual file size when model is downloaded
+    sizeBytes: 148932181,
     quantization: 'int8',
-    // TODO: Model file not yet available (placeholder exists at public/app/models/demucs_v4_quantized.onnx.placeholder).
-    // Compute hash when model is obtained via scripts/download-models.sh or scripts/export_demucs_onnx.py:
-    // node -e "const c=require('crypto'),f=require('fs');console.log(c.createHash('sha256').update(f.readFileSync(process.argv[1])).digest('hex'))" public/app/models/demucs_v4_quantized.onnx
-    sha256: null,
-    strategy: 'waveform', // Demucs operates on raw waveforms
-    sampleRate: 44100, // Demucs v4 native sample rate
+    delivery: 'vercel_blob',
+    sha256: '19be0f2c8e617e5ee2da0c2861f2f96e1a7f656ebf4b696b485e16f64b3bdac2',
+    strategy: 'waveform',
+    sampleRate: 44100,
+    segmentSamples: 344520,
     io: Object.freeze({
       input: 'input',
       output: 'output',

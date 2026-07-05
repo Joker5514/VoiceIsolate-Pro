@@ -35,17 +35,17 @@ export const ISOLATION_MODES = Object.freeze({
   standard: Object.freeze({
     id: 'standard',
     name: 'Standard',
-    description: 'Fast vocal isolation using Band-Split RNN. Best for most use cases.',
-    modelIds: ['bsrnn_vocals'],
-    estimatedTime: '~2-3s per minute of audio',
+    description: 'Demucs v4 vocal extraction. Best quality for most recordings.',
+    modelIds: ['demucs'],
+    estimatedTime: '~5-8s per minute of audio',
     icon: '🎤',
   }),
   maximum: Object.freeze({
     id: 'maximum',
     name: 'Maximum Isolation',
-    description: 'Two-stage processing: vocal extraction followed by noise suppression. Highest quality, slower processing.',
-    modelIds: ['bsrnn_vocals', 'rnnoise'],
-    estimatedTime: '~4-6s per minute of audio',
+    description: 'Demucs vocal extraction followed by BiGRU noise suppression. Highest isolation quality.',
+    modelIds: ['demucs', 'rnnoise'],
+    estimatedTime: '~8-12s per minute of audio',
     icon: '🎯',
   }),
   'noise-suppression': Object.freeze({

@@ -236,7 +236,7 @@ export const VIPSliderAudit = {
       }
     });
     if (issues.length === 0) {
-      console.log('%c[VIP Audit] All 52 sliders PASS', 'color:#00ffe7;font-weight:700');
+      console.log('%c[VIP Audit] All 67 sliders PASS', 'color:#00ffe7;font-weight:700');
     } else {
       console.warn(`[VIP Audit] ${issues.length} issue(s) found:`);
       issues.forEach(i => console.warn(`  • ${i.id}: ${i.problem}`));

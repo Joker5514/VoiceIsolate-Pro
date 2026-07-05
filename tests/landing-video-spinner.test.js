@@ -72,17 +72,29 @@ describe('Landing page — realtime processing indicator (ProcessLoader)', () =>
     expect(js).not.toContain('ui.progress');
   });
 
+  test('models warm up off the hot path and separation auto-starts after ingest', () => {
+    expect(js).toContain("type: 'warmup'");
+    expect(js).toContain('warmupWorkerModels');
+    expect(js).toContain('onProcess()');
+    expect(js).toContain('requestIdleCallback');
+  });
+
   test('inference progress drives the ProcessLoader component', () => {
     expect(js).toContain('function setProgress(');
     expect(js).toContain("case 'progress'");
+    expect(js).toContain("case 'stage'");
     expect(js).toContain('setProgress(msg.percent');
+    expect(js).toContain('setProcStage');
+    expect(js).toContain('Load model');
     expect(js).toContain('ProcessLoader'); // DS component is used
     expect(js).not.toContain('strokeDashoffset'); // ring approach replaced
   });
 
-  test('decode + resample show an indeterminate spinner', () => {
+  test('decode + resample drive real-time ProcessLoader stages', () => {
     expect(js).toContain("showSpinner('Decoding…'");
-    expect(js).toContain("showSpinner('Resampling to 48 kHz…'");
+    expect(js).toContain("setProcStage('decode'");
+    expect(js).toContain("setProcStage('resample'");
+    expect(js).toContain('Resampling to 48 kHz');
     expect(js).toContain('indeterminate: true');
   });
 

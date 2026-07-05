@@ -14,10 +14,12 @@
 import { ingestFile, isDesktopShell, pickAudioFile } from '/src/pipeline/FileIngestion.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
+import { LANDING_PRESETS, calibrateFromStems } from '/src/core/MixCalibration.js';
 import { SpeakerControls } from '/src/presentation/SpeakerControls.js';
 import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
 import { MODEL_MANIFEST } from '/src/core/ModelManifest.js';
+import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
 import { buildHintPanel } from '/app/slider-hint-ui.js';
 
@@ -109,16 +111,16 @@ let sliderUI = null;
 let speakerControls = null;
 let visualizer = null;
 let worker = null;
-let diarWorker = null;
+
 let ingested = null;
 let requestSeq = 0;
 let ingestSeq = 0;
-let diarSeq = 0;
+
 let currentJobLabel = 'Separating stems…';
 /** Object URL backing the <video> preview; revoked when a new file loads. */
 let videoUrl = null;
 
-const DIARIZATION_TIMEOUT_MS = 60000;
+
 
 function setStatus(msg, cls = '') {
   renderStatusPill(STATE_FOR_CLS[cls] || 'pending', msg);
@@ -176,35 +178,83 @@ function mountBadge() {
 const PROC_STAGES = [
   { id: 'decode',   label: 'Decode'   },
   { id: 'resample', label: 'Resample' },
+  { id: 'load',     label: 'Load model' },
   { id: 'separate', label: 'Separate' },
 ];
 
+const STAGE_INDEX = Object.freeze({
+  decode: 0,
+  resample: 1,
+  load: 2,
+  separate: 3,
+});
+
+/** Unified 0–100% weights: decode → resample → model load → inference. */
+const PIPELINE_WEIGHTS = Object.freeze({
+  decode: [0, 12],
+  resample: [12, 20],
+  load: [20, 35],
+  separate: [35, 100],
+});
+
 let _procState = { active: 0, progress: 0 };
+let _procRenderRAF = 0;
+let _procFallbackEl = null;
+
+function mapPipelinePercent(stage, localPercent = 0) {
+  const w = PIPELINE_WEIGHTS[stage];
+  if (!w) return Math.max(0, Math.min(100, Math.round(localPercent)));
+  const pct = w[0] + (Math.max(0, Math.min(100, localPercent)) / 100) * (w[1] - w[0]);
+  return Math.max(0, Math.min(100, Math.round(pct)));
+}
+
+function scheduleProcRender() {
+  if (_procRenderRAF) return;
+  _procRenderRAF = requestAnimationFrame(() => {
+    _procRenderRAF = 0;
+    _renderProcLoader();
+  });
+}
+
+function setProcStage(stage, localPercent = 0, statusLabel) {
+  const idx = STAGE_INDEX[stage] ?? 0;
+  _procState = { active: idx, progress: mapPipelinePercent(stage, localPercent) };
+  ui.procLoaderMount.hidden = false;
+  if (statusLabel) {
+    currentJobLabel = statusLabel;
+    setStatus(statusLabel, 'warn');
+  }
+  scheduleProcRender();
+}
 
 function _renderProcLoader() {
   const mount = ui.procLoaderMount;
   if (!mount) return;
-  mount.innerHTML = '';
   if (DS && DS.ProcessLoader) {
     try {
+      mount.innerHTML = '';
       const el = DS.ProcessLoader({
         stages: PROC_STAGES,
         active: _procState.active,
         progress: _procState.progress,
       });
       if (el instanceof Node) mount.appendChild(el);
+      _procFallbackEl = null;
+      return;
     } catch (err) {
       console.warn('[VIP] ProcessLoader render error:', err);
     }
-  } else {
-    // Graceful fallback when the DS bundle is unavailable.
-    const fb = document.createElement('div');
-    fb.style.cssText = 'padding:10px 0;color:var(--text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--font-ui)';
-    fb.textContent = PROC_STAGES[_procState.active]
-      ? `${PROC_STAGES[_procState.active].label}… ${_procState.progress > 0 ? _procState.progress + '%' : ''}`
-      : 'Processing…';
-    mount.appendChild(fb);
   }
+  if (!_procFallbackEl || !_procFallbackEl.isConnected) {
+    mount.innerHTML = '';
+    _procFallbackEl = document.createElement('div');
+    _procFallbackEl.style.cssText = 'padding:10px 0;color:var(--text-2);font:var(--fw-medium) var(--fs-sm)/1 var(--font-ui)';
+    mount.appendChild(_procFallbackEl);
+  }
+  const stage = PROC_STAGES[_procState.active];
+  _procFallbackEl.textContent = stage
+    ? `${stage.label}… ${_procState.progress}%`
+    : `Processing… ${_procState.progress}%`;
 }
 
 /**
@@ -213,21 +263,22 @@ function _renderProcLoader() {
  * runs so the UI remains active throughout.
  */
 function showSpinner(stage, { indeterminate: _indeterminate = false } = {}) {
-  _procState = { active: stage.toLowerCase().includes('resamp') ? 1 : 0, progress: 0 };
-  ui.procLoaderMount.hidden = false;
-  _renderProcLoader();
+  const key = stage.toLowerCase().includes('resamp') ? 'resample' : 'decode';
+  setProcStage(key, _indeterminate ? 5 : 50, stage);
 }
 
-/** Advance to the Separate stage and update the live progress percentage. */
+/** Map inference-local percent into the unified pipeline bar. */
 function setProgress(percent, _stage) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
-  _procState = { active: 2, progress: pct };
-  ui.procLoaderMount.hidden = false;
-  _renderProcLoader();
+  setProcStage('separate', pct, currentJobLabel);
 }
 
 function hideSpinner() {
   ui.procLoaderMount.hidden = true;
+  if (_procRenderRAF) {
+    cancelAnimationFrame(_procRenderRAF);
+    _procRenderRAF = 0;
+  }
 }
 
 // ─── Video preview (picture in sync with processed audio) ────────────────────
@@ -290,6 +341,20 @@ function syncVideo() {
 
 // ─── Worker lifecycle ────────────────────────────────────────────────────────
 
+const DEFAULT_WARMUP_CHAIN = ['demucs', 'rnnoise'];
+
+function resolveModelIds(selection) {
+  const chain = MODEL_CHAINS[selection];
+  if (chain) return chain;
+  return [getModel(selection).id];
+}
+
+/** Prefetch model bytes + compile ONNX sessions off the hot path. */
+function warmupWorkerModels(modelIds) {
+  if (!modelIds?.length) return;
+  getWorker().postMessage({ type: 'warmup', modelIds });
+}
+
 function getWorker() {
   if (worker) return worker;
   worker = new Worker('/src/workers/MLWorker.js');
@@ -305,12 +370,17 @@ function getWorker() {
         if (debugEnabled) {
           console.log('[VIP][landing] MLWorker ready (backend: ' + msg.backend + ')');
         }
+        warmupWorkerModels(DEFAULT_WARMUP_CHAIN);
         break;
       }
+      case 'stage':
+        if (msg.stage === 'load') {
+          setProcStage('load', msg.percent ?? 0, msg.label || `Loading ${msg.modelId || 'model'}…`);
+        } else if (msg.stage === 'separate') {
+          setProcStage('separate', msg.percent ?? 0, currentJobLabel);
+        }
+        break;
       case 'progress':
-        // Live inference progress: ring + numeric %. The status line keeps the
-        // stage label only (set once in onProcess) so the polite aria-live
-        // region isn't re-announced on every frame.
         setProgress(msg.percent, currentJobLabel);
         break;
       case 'stems':
@@ -337,65 +407,22 @@ function getWorker() {
   return worker;
 }
 
-// ─── Speaker diarization (module worker, one-shot per file) ──────────────────
-
-function getDiarWorker() {
-  if (diarWorker) return diarWorker;
-  diarWorker = new Worker('/src/workers/DiarizationWorker.js', { type: 'module' });
-  return diarWorker;
-}
-
-/**
- * Diarize the clean stem off the main thread. Resolves with
- * { segments, speakers }; rejects on worker error or stall (timeout).
- */
-function diarize(cleanChannel, sampleRate) {
-  return new Promise((resolve, reject) => {
-    const w = getDiarWorker();
-    const requestId = ++diarSeq;
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(`Diarization stalled (> ${DIARIZATION_TIMEOUT_MS / 1000}s)`));
-    }, DIARIZATION_TIMEOUT_MS);
-    const onMessage = (event) => {
-      const msg = event.data || {};
-      if (msg.requestId !== requestId) return;
-      cleanup();
-      if (msg.type === 'segments') resolve(msg);
-      else reject(new Error(msg.message || 'Diarization failed'));
-    };
-    const onError = (err) => { cleanup(); reject(new Error(err.message || 'Diarization worker error')); };
-    const cleanup = () => {
-      clearTimeout(timer);
-      w.removeEventListener('message', onMessage);
-      w.removeEventListener('error', onError);
-    };
-    w.addEventListener('message', onMessage);
-    w.addEventListener('error', onError);
-    // Transfer a copy — the mixer already holds its own AudioBuffer copy.
-    const samples = new Float32Array(cleanChannel);
-    w.postMessage({ type: 'diarize', requestId, samples, sampleRate }, [samples.buffer]);
-  });
-}
-
 async function detectSpeakers(clean, sampleRate) {
   ui.speakersPanel.hidden = false;
   ui.speakerStatus.textContent = 'Detecting speakers…';
   speakerControls.clear();
-  // Staleness guard (same contract as onStems): if another file is processed
-  // while diarization is in flight, its result must not touch the new mixer.
   const seq = requestSeq;
   try {
-    const { segments, speakers } = await diarize(clean[0], sampleRate);
+    const { segments, speakers, method } = await detectSpeakersPipeline(clean, sampleRate);
     if (seq !== requestSeq) return;
     mixer.loadSpeakerSegments(segments);
     const count = speakerControls.render(speakers);
+    const methodLabel = method === 'onnx' ? 'ONNX embeddings' : 'spectral fingerprint';
     ui.speakerStatus.textContent = count === 0
       ? 'No distinct speakers detected.'
-      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments`;
+      : `${count} speaker${count === 1 ? '' : 's'} detected · ${segments.length} segments (${methodLabel})`;
   } catch (err) {
     if (seq !== requestSeq) return;
-    // Graceful degradation: stems + global mutes keep working without it.
     console.error('[VIP][landing] diarization failed:', err);
     mixer.loadSpeakerSegments([]);
     ui.speakerStatus.textContent = `Speaker detection unavailable: ${err.message}`;
@@ -538,19 +565,11 @@ function wireReadouts() {
   }
 }
 
-// ─── Presets (preloaded mix calibrations) ────────────────────────────────────
-// Values are slider positions, applied by dispatching 'input' events so they
-// flow through SliderUI's rAF-coalesced path exactly like a manual drag.
-const PRESETS = {
-  'voice-clarity':    { noiseReductionSlider: 100, voiceLevelSlider: 115, volumeSlider: 100, eqLowSlider: -4, eqHighSlider: 3 },
-  'balanced':         { noiseReductionSlider: 70,  voiceLevelSlider: 100, volumeSlider: 100, eqLowSlider: 0,  eqHighSlider: 1 },
-  'podcast-warm':     { noiseReductionSlider: 90,  voiceLevelSlider: 110, volumeSlider: 95,  eqLowSlider: 3,  eqHighSlider: 1 },
-  'residual-monitor': { noiseReductionSlider: 0,   voiceLevelSlider: 0,   volumeSlider: 100, eqLowSlider: 0,  eqHighSlider: 0 },
-  'original':         { noiseReductionSlider: 0,   voiceLevelSlider: 100, volumeSlider: 100, eqLowSlider: 0,  eqHighSlider: 0 },
-};
+// ─── Presets (canonical 23-slider calibrations from MixCalibration.js) ─────
+const PRESETS = LANDING_PRESETS;
 
-function applyPreset(name) {
-  const preset = PRESETS[name];
+function applyPreset(name, sliderMap = PRESETS[name]) {
+  const preset = sliderMap;
   if (!preset) return;
   for (const [sliderId, value] of Object.entries(preset)) {
     const el = $(sliderId);
@@ -558,6 +577,18 @@ function applyPreset(name) {
     el.value = String(value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   }
+}
+
+/** Auto-calibrate all real-time sliders from the clean stem loudness profile. */
+function autoCalibrateMix(clean, sampleRate) {
+  const { preset, level, rmsDb, sliders } = calibrateFromStems(clean, sampleRate);
+  applyPreset(preset, sliders);
+  if (ui.presetSelect) {
+    const hasOption = [...ui.presetSelect.options].some((o) => o.value === preset);
+    ui.presetSelect.value = hasOption ? preset : ui.presetSelect.value;
+  }
+  console.info(`[VIP][landing] Auto-calibrated (${level}, ${rmsDb.toFixed(1)} dBFS) → preset "${preset}"`);
+  return { preset, level, rmsDb };
 }
 
 // ─── Pipeline glue ───────────────────────────────────────────────────────────
@@ -578,20 +609,21 @@ async function ingestFrom(file) {
   try {
     showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
+    warmupWorkerModels(resolveModelIds(ui.modelSelect.value));
     const next = await ingestFile(file, {
-      onProgress: (stage) => {
+      onProgress: (stage, percent = 0) => {
         if (seq !== ingestSeq) return;
-        if (stage === 'resampling') {
-          showSpinner('Resampling to 48 kHz…', { indeterminate: true });
-          setStatus('Resampling to 48 kHz…', 'warn');
+        if (stage === 'decoding') {
+          setProcStage('decode', percent, `Decoding “${file.name}”…`);
+        } else if (stage === 'resampling') {
+          setProcStage('resample', percent, 'Resampling to 48 kHz…');
         }
       },
     });
     if (seq !== ingestSeq) return;
     ingested = next;
-    hideSpinner();
-    setStatus(`Ready: ${ingested.sourceName} · ${fmtTime(ingested.duration)} · ${ingested.numberOfChannels} ch`, '');
-    ui.processBtn.disabled = false;
+    // Auto-start separation — models were warming during decode; skip the extra click.
+    onProcess();
   } catch (err) {
     if (seq !== ingestSeq) return;
     hideSpinner();
@@ -670,7 +702,7 @@ function warnIfNotServed() {
 // Keys are <select> values that are NOT single manifest entries; the worker
 // receives the resolved `modelIds` array (see MLWorker chain support).
 const MODEL_CHAINS = Object.freeze({
-  max_isolation: ['bsrnn_vocals', 'rnnoise'], // extract voice, then strip residual noise
+  max_isolation: ['demucs', 'rnnoise'],
 });
 
 function onProcess() {
@@ -699,6 +731,13 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
   ui.fileInput.disabled = false;
   ui.modelSelect.disabled = false;
 
+  if (passthrough) {
+    setStatus('Isolation failed — models could not run. Check /app/models is being served (Demucs ~149 MB on first load).', 'error');
+    speakerControls?.clear();
+    ui.speakersPanel.hidden = true;
+    return;
+  }
+
   if (!mixer) {
     mixer = new PlaybackMixer();
     sliderUI = new SliderUI(mixer);
@@ -718,22 +757,13 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
     ...ui.mixSliders]) {
     if (el) el.disabled = false;
   }
-  setStatus(
-    passthrough
-      ? 'Model unavailable — passthrough stems loaded (original audio). Check that /app/models is being served.'
-      : 'Stems ready — press Play and mix in real time.',
-    passthrough ? 'warn' : 'active'
-  );
-
-  // Per-speaker isolation runs on the clean stem; passthrough stems carry the
-  // raw mix, so speaker features would be meaningless noise — skip.
-  if (passthrough) {
-    ui.speakersPanel.hidden = false;
-    ui.speakerStatus.textContent = 'Speaker detection skipped — model unavailable (passthrough stems).';
-    speakerControls.clear();
-  } else {
-    detectSpeakers(clean, sampleRate);
-  }
+  const cal = autoCalibrateMix(clean, sampleRate);
+  const calLabel = ` · calibrated: ${cal.preset} (${cal.level})`;
+  setStatus(`Stems ready — press Play and mix in real time${calLabel}.`, 'active');
+  const scheduleIdle = globalThis.requestIdleCallback
+    ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
+    : (cb) => setTimeout(cb, 0);
+  scheduleIdle(() => detectSpeakers(clean, sampleRate));
 }
 
 // ─── Stem mute toggles ───────────────────────────────────────────────────────
@@ -891,4 +921,5 @@ wireTransport();
 wireMuteButtons();
 wireDragAndDrop();
 mountBadge();
+getWorker();
 setStatus('Idle — choose a file to begin', '');

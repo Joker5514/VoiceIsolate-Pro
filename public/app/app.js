@@ -24,13 +24,42 @@ import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slide
 const SLIDER_REG_BY_ID = Object.freeze(
   SLIDER_REGISTRY.reduce((acc, s) => { acc[s.id] = s; return acc; }, {})
 );
+
+function _formatSliderUnit(unit) {
+  if (!unit) return '';
+  if (unit === '%' || unit === ':1' || unit.startsWith(' ')) return unit;
+  return ` ${unit}`;
+}
+
+/** Calibrated render contract — min/max/step/default from SLIDER_REGISTRY. */
+const RENDER_SLIDERS = SLIDER_REGISTRY.map((s) => ({
+  id: s.id,
+  label: s.label,
+  min: s.min,
+  max: s.max,
+  val: s.default,
+  step: s.step,
+  unit: _formatSliderUnit(s.unit),
+  rt: Boolean(s.rt),
+  desc: s.hint || s.tip || '',
+  group: s.group,
+}));
 import { ModelStatusUI } from './model-status-ui.js';
+import { recommendEngineerPreset } from '/src/core/MixCalibration.js';
 
 // Model keys served by /app/models-manifest.json (ModelCDNLoader.getManifest()) —
 // drives the "Model Cache & Providers" pills + Local Model Health panel.
 // NOTE: Appears unused in app.js but is referenced by external UI components and test suites
 // that parse this file directly to validate model configuration consistency.
 const MODEL_STATUS_KEYS = ['demucs', 'bsrnn', 'rnnoise', 'silero_vad'];
+
+/** Default offline chain — same as Landing (Demucs → RNNoise). */
+const DEFAULT_ML_CHAIN = Object.freeze(['demucs', 'rnnoise']);
+
+function _yieldToUI(cb) {
+  const timerId = setTimeout(cb, 0);
+  // Track timerId in active timers set if within a component context
+}
 
 // ---------------------------------------------------------------------------
 // SAB ring-buffer constants (must match dsp-processor.js exactly)
@@ -239,13 +268,13 @@ const PRESETS = {
   },
   'Whisper Boost': {
     description: 'Amplify and clarify soft whispering voices',
-    gateThresh: -65, gateRange: -70, gateAttack: 3, gateRelease: 150, gateHold: 30, gateLookahead: 8,
-    nrAmount: 60, nrSensitivity: 50, nrSpectralSub: 45, nrFloor: -75, nrSmoothing: 65,
+    gateThresh: -68, gateRange: -80, gateAttack: 3, gateRelease: 150, gateHold: 40, gateLookahead: 8,
+    nrAmount: 62, nrSensitivity: 52, nrSpectralSub: 48, nrFloor: -75, nrSmoothing: 68,
     eqSub: -6, eqBass: -3, eqWarmth: 0, eqBody: 2, eqLowMid: 2, eqMid: 3, eqPresence: 3, eqClarity: 2, eqAir: 1, eqBrill: 0,
-    compThresh: -36, compRatio: 6, compAttack: 5, compRelease: 100, compKnee: 4, compMakeup: 8, limThresh: -1, limRelease: 40,
-    hpFreq: 120, hpQ: 0.7, lpFreq: 14000, lpQ: 0.7, deEssFreq: 6000, deEssAmt: 3, specTilt: 1, formantShift: 0,
-    derevAmt: 20, derevDecay: 40, harmRecov: 10, harmOrder: 3, stereoWidth: 100, phaseCorr: 10,
-    voiceIso: 70, bgSuppress: 65, voiceFocusLo: 150, voiceFocusHi: 4000, crosstalkCancel: 10,
+    compThresh: -36, compRatio: 5, compAttack: 8, compRelease: 120, compKnee: 5, compMakeup: 8, limThresh: -1, limRelease: 40,
+    hpFreq: 120, hpQ: 0.7, lpFreq: 14000, lpQ: 0.7, deEssFreq: 5500, deEssAmt: 3, specTilt: 1, formantShift: 0,
+    derevAmt: 18, derevDecay: 40, harmRecov: 12, harmOrder: 3, stereoWidth: 100, phaseCorr: 10,
+    voiceIso: 72, bgSuppress: 62, voiceFocusLo: 150, voiceFocusHi: 4000, crosstalkCancel: 8,
     outGain: 6, dryWet: 100, ditherAmt: 1, outWidth: 100,
     whisperLift: 20, crowdNull: 60, bassCrush: 70, reverbStrip: 400, voiceTunnel: 70, musicKill: 50, snrFloor: -54, whisperMode: 2,
     whisperClarity: 72, whisperSensitivity: 60, whisperThreshold: 45, transientShaper: 10, breathControl: 40, roomCorrection: 35, subHarmonic: 15,
@@ -582,6 +611,8 @@ class VoiceIsolatePro {
       document.addEventListener('keydown', () => this.ensureCtx(), { once: true });
     }
 
+    this._warmupMLModels().catch(() => {});
+
     window.__vipAppReady = true;
     if (typeof CustomEvent !== 'undefined' && typeof window.dispatchEvent === 'function') {
       window.dispatchEvent(new CustomEvent('app:ready'));
@@ -790,8 +821,7 @@ class VoiceIsolatePro {
 
   // ── Slider rendering ─────────────────────────────────────────────────────
   _renderSliders() {
-    const allSliders = Object.values(SLIDERS).flat();
-    for (const s of allSliders) {
+    for (const s of RENDER_SLIDERS) {
       if (s.id === 'whisperMode') continue; // [WHISPER UPDATE] rendered as button group
       const panelId = this._getSliderPanelId(s.id);
       const panel = panelId ? document.getElementById(panelId) : null;
@@ -1121,17 +1151,8 @@ class VoiceIsolatePro {
   }
 
   _getSliderPanelId(sliderId) {
-    const tabMap = {
-      gate: 'tab-gate', nr: 'tab-nr', eq: 'tab-eq', dyn: 'tab-dyn',
-      spec: 'tab-spec', adv: 'tab-adv', sep: 'tab-sep', out: 'tab-out',
-      extreme: 'tab-extreme',
-    };
-    for (const [group, panelId] of Object.entries(tabMap)) {
-      if (SLIDERS[group] && SLIDERS[group].some(s => s.id === sliderId)) {
-        return panelId;
-      }
-    }
-    return null;
+    const entry = SLIDER_REG_BY_ID[sliderId];
+    return entry?.group || null;
   }
 
   onSlider(id, value) {
@@ -1518,6 +1539,37 @@ class VoiceIsolatePro {
     this.showNotification('Preset applied: ' + name, 'info');
   }
 
+  /**
+   * Auto-calibrate Engineer Mode sliders from processed audio loudness.
+   * Applies the best-matching named preset, then merges AIIntelligence hints
+   * for whisper/quiet content when the module is loaded.
+   */
+  _autoCalibratePreset(buffer) {
+    if (!buffer || typeof buffer.getChannelData !== 'function') return null;
+    const channels = [];
+    for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+      channels.push(buffer.getChannelData(ch));
+    }
+    const { preset, level, rmsDb } = recommendEngineerPreset(channels);
+    this.applyPreset(preset);
+
+    const AI = globalThis.AIIntelligence;
+    if (AI && typeof AI.autoTuneParams === 'function') {
+      const mono = channels[0];
+      const tune = AI.autoTuneParams(mono, buffer.sampleRate, this.params);
+      for (const [key, val] of Object.entries(tune.suggestions || {})) {
+        if (!SLIDER_BY_ID[key] || !Number.isFinite(val)) continue;
+        const clamped = clampToSlider(key, val);
+        this.onSlider(key, clamped);
+      }
+    }
+
+    const detail = `${preset} (${level}, ${rmsDb.toFixed(1)} dBFS)`;
+    structuredLog('info', '[VIP] Auto-calibrated mix', { preset, level, rmsDb });
+    this.showNotification('Auto-calibrated: ' + detail, 'info');
+    return { preset, level, rmsDb };
+  }
+
   _showFileLoading(text) {
     const msg = text || 'Loading…';
     const ind = this.dom && this.dom.fileLoadIndicator;
@@ -1556,6 +1608,12 @@ class VoiceIsolatePro {
     return ctx.decodeAudioData(arrayBuffer.slice(0));
   }
 
+  /** Prefetch + compile ONNX sessions off the hot path (Landing parity). */
+  async _warmupMLModels(modelIds = DEFAULT_ML_CHAIN) {
+    const { warmupModels } = await import('/src/pipeline/StemSeparation.js');
+    await warmupModels(modelIds);
+  }
+
   // ── File handling ─────────────────────────────────────────────────────────
   async handleFile(file) {
     if (!file) return;
@@ -1564,7 +1622,8 @@ class VoiceIsolatePro {
     this._showFileLoading(file.name ? `Loading ${file.name}…` : 'Loading…');
 
     await this.ensureCtx();
-    await new Promise(r => setTimeout(r, 0));
+    if (typeof this._warmupMLModels === 'function') this._warmupMLModels().catch(() => {});
+    await new Promise((r) => _yieldToUI(r));
 
     // Reject MIDI files early — not supported by Web Audio API
     const midiMimes = ['audio/midi', 'audio/x-midi', 'audio/mid'];
@@ -1615,9 +1674,8 @@ class VoiceIsolatePro {
     let buffer;
     try {
       if (this.ctx.state === 'suspended') await this.ctx.resume();
-      await new Promise(r => setTimeout(r, 0));
+      await new Promise((r) => _yieldToUI(r));
       const abCopy = await this._readFileArrayBuffer(file);
-      await new Promise(r => requestAnimationFrame(r));
       buffer = await this._decodeFileBuffer(this.ctx, abCopy);
     } catch {
       // Video fallback
@@ -1680,7 +1738,6 @@ class VoiceIsolatePro {
 
     this.inputBuffer = buffer;
     this.origBuffer = buffer;
-    await new Promise(r => requestAnimationFrame(r));
     this._hideFileLoading();
     this.onAudioLoaded(file.name);
   }
@@ -1722,6 +1779,15 @@ class VoiceIsolatePro {
     this.renderStaticVisuals(buf);
     try { window.dispatchEvent(new CustomEvent('vip:fileLoaded', { detail: { name } })); } catch (_) {}
     this.showNotification('File loaded: ' + name, 'info');
+
+    // Auto-start pipeline — models warmed during decode (matches Landing latency UX).
+    _yieldToUI(() => {
+      if (!this.isProcessing && (this.inputBuffer || this.origBuffer)) {
+        this.runPipeline().catch((err) => {
+          structuredLog('error', '[VIP] Auto-process failed', { err: err.message });
+        });
+      }
+    });
   }
 
   _clearFile() {
@@ -1860,6 +1926,8 @@ class VoiceIsolatePro {
             this.outputBuffer = result;
             this.procBuffer = result;
           }
+        } else if (await this._runMLIsolationPipeline()) {
+          // ML offline path succeeded (same Demucs chain as Landing).
         } else {
           await this._runFallbackPipeline();
         }
@@ -1876,11 +1944,13 @@ class VoiceIsolatePro {
       if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = false;
 
-      if (this.outputBuffer) this.renderStaticVisuals(this.outputBuffer);
+      if (this.outputBuffer) {
+        this.renderStaticVisuals(this.outputBuffer);
+        this._autoCalibratePreset(this.outputBuffer);
+      }
       this.updatePipelineProgress(32, 'Complete', 100);
       this.setStatus('DONE');
       try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}
-      this.showNotification('Processing complete!', 'info');
     } catch (err) {
       structuredLog('error', '[VIP] Pipeline error', { err: err.message });
       this.setStatus('ERROR');
@@ -1904,6 +1974,44 @@ class VoiceIsolatePro {
   async pip() {
     // Alias — kept for compatibility
     return this.runPipeline();
+  }
+
+  /**
+   * Offline ML isolation — same Demucs → denoise chain as the Landing page.
+   * @returns {Promise<boolean>} true when ML produced a non-passthrough result
+   */
+  async _runMLIsolationPipeline() {
+    const buf = this.inputBuffer || this.origBuffer;
+    if (!buf) return false;
+    try {
+      await this.ensureCtx();
+      const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
+      const channelData = [];
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        channelData.push(buf.getChannelData(ch).slice());
+      }
+      this.updatePipelineProgress(4, 'ML isolation (Demucs)…', 15);
+      const result = await separateStems(channelData, buf.sampleRate, {
+        modelIds: DEFAULT_ML_CHAIN,
+        onProgress: (ev) => {
+          if (ev.type === 'stage') {
+            const label = ev.label || `ML: ${ev.stage} (${ev.modelId || 'model'})…`;
+            const pct = 15 + Math.round((ev.percent || 0) * 0.55);
+            this.updatePipelineProgress(4, label, pct);
+          } else if (ev.type === 'progress') {
+            this.updatePipelineProgress(4, 'ML isolation…', 15 + Math.round((ev.percent || 0) * 0.7));
+          }
+        },
+      });
+      if (result.passthrough) return false;
+      this.outputBuffer = stemsToAudioBuffer(this.ctx, result.clean, result.sampleRate);
+      this.procBuffer = this.outputBuffer;
+      this.updatePipelineProgress(20, 'ML isolation complete', 85);
+      return true;
+    } catch (err) {
+      structuredLog('warn', '[VIP] ML isolation unavailable, falling back to DSP', { err: err.message });
+      return false;
+    }
   }
 
   // Full offline DSP chain (32-stage Deca-Pass). Every capability is wired to

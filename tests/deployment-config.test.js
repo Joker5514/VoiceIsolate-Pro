@@ -56,6 +56,35 @@ describe('vercel.json — file integrity', () => {
   });
 });
 
+describe('vercel.json — build & install (pnpm-only)', () => {
+  let cfg;
+
+  beforeAll(() => {
+    cfg = JSON.parse(readFile('vercel.json'));
+  });
+
+  test('uses vercel-build.js as buildCommand', () => {
+    expect(cfg.buildCommand).toBe('node scripts/vercel-build.js');
+  });
+
+  test('installCommand uses pnpm via vercel-install.sh (not npm)', () => {
+    expect(cfg.installCommand).toBe('bash scripts/vercel-install.sh');
+    expect(fs.readFileSync(path.join(ROOT, 'scripts/vercel-install.sh'), 'utf8')).toMatch(/pnpm install/);
+    const installSh = fs.readFileSync(path.join(ROOT, 'scripts/vercel-install.sh'), 'utf8');
+    expect(installSh).not.toMatch(/^\s*npm install/m);
+  });
+
+  test('pnpm-lock.yaml is committed (Vercel falls back to npm without it)', () => {
+    expect(fileExists('pnpm-lock.yaml')).toBe(true);
+    expect(fileExists('package-lock.json')).toBe(false);
+  });
+
+  test('package.json declares pnpm packageManager', () => {
+    const pkg = JSON.parse(readFile('package.json'));
+    expect(pkg.packageManager).toMatch(/^pnpm@/);
+  });
+});
+
 describe('vercel.json — Content-Security-Policy header', () => {
   let cspValue;
   let directives;
