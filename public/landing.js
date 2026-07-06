@@ -18,7 +18,7 @@ import { LANDING_PRESETS, calibrateFromStems } from '/src/core/MixCalibration.js
 import { SpeakerControls } from '/src/presentation/SpeakerControls.js';
 import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
-import { MODEL_MANIFEST } from '/src/core/ModelManifest.js';
+
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
 import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';

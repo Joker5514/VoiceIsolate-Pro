@@ -57,8 +57,7 @@ const MODEL_STATUS_KEYS = ['demucs', 'bsrnn', 'rnnoise', 'silero_vad'];
 const DEFAULT_ML_CHAIN = Object.freeze(['bsrnn_vocals', 'rnnoise']);
 
 function _yieldToUI(cb) {
-  const timerId = setTimeout(cb, 0);
-  // Track timerId in active timers set if within a component context
+  setTimeout(cb, 0);
 }
 
 // ---------------------------------------------------------------------------

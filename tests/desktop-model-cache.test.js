@@ -3,14 +3,22 @@
  */
 'use strict';
 
-import { jest } from '@jest/globals';
-import {
-  modelCacheKey,
-  modelCacheRelativePath,
-  readModelCacheBytes,
-  writeModelCacheBytes,
-} from '../src/core/DesktopModelCache.js';
-import { attachMLWorkerModelCache } from '../src/core/ModelCacheBridge.js';
+let modelCacheKey;
+let modelCacheRelativePath;
+let readModelCacheBytes;
+let writeModelCacheBytes;
+let attachMLWorkerModelCache;
+
+beforeAll(async () => {
+  const cache = await import('../src/core/DesktopModelCache.js');
+  modelCacheKey = cache.modelCacheKey;
+  modelCacheRelativePath = cache.modelCacheRelativePath;
+  readModelCacheBytes = cache.readModelCacheBytes;
+  writeModelCacheBytes = cache.writeModelCacheBytes;
+
+  const bridge = await import('../src/core/ModelCacheBridge.js');
+  attachMLWorkerModelCache = bridge.attachMLWorkerModelCache;
+});
 
 describe('DesktopModelCache', () => {
   const originalVip = globalThis.vipDesktop;
@@ -34,14 +42,15 @@ describe('DesktopModelCache', () => {
 
   test('readModelCacheBytes prefers filesystem on desktop', async () => {
     const buffer = new ArrayBuffer(4);
+    const readModelCache = jest.fn(async () => buffer);
     globalThis.vipDesktop = {
       openFile: async () => ({ canceled: true }),
-      readModelCache: jest.fn(async () => buffer),
+      readModelCache,
       writeModelCache: jest.fn(),
     };
     const result = await readModelCacheBytes('demucs:abc');
     expect(result).toBe(buffer);
-    expect(globalThis.vipDesktop.readModelCache).toHaveBeenCalledWith('demucs_abc.onnx');
+    expect(readModelCache).toHaveBeenCalledWith('demucs_abc.onnx');
   });
 
   test('writeModelCacheBytes writes to desktop filesystem', async () => {

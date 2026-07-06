@@ -3,8 +3,20 @@
  */
 'use strict';
 
-import { QUANTUM, HOP_SIZE, FFT_SIZE_LIVE } from '../src/core/ring-buffer-constants.js';
-import { LivePipeline } from '../src/pipeline/LivePipeline.js';
+let QUANTUM;
+let HOP_SIZE;
+let FFT_SIZE_LIVE;
+let LivePipeline;
+
+beforeAll(async () => {
+  const constants = await import('../src/core/ring-buffer-constants.js');
+  QUANTUM = constants.QUANTUM;
+  HOP_SIZE = constants.HOP_SIZE;
+  FFT_SIZE_LIVE = constants.FFT_SIZE_LIVE;
+
+  const pipeline = await import('../src/pipeline/LivePipeline.js');
+  LivePipeline = pipeline.LivePipeline;
+});
 
 describe('LivePipeline', () => {
   test('fires onHop after QUANTA_PER_HOP quanta', () => {

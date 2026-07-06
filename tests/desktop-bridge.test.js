@@ -3,15 +3,22 @@
  */
 'use strict';
 
-import { jest } from '@jest/globals';
-import {
-  isDesktopShell,
-  pickAudioFile,
-  saveExportBlob,
-  filtersForFilename,
-} from '../src/core/DesktopBridge.js';
+let isDesktopShell;
+let pickAudioFile;
+let saveExportBlob;
+let filtersForFilename;
+let pickAndIngestFile;
 
-import { pickAndIngestFile } from '../src/pipeline/FileIngestion.js';
+beforeAll(async () => {
+  const bridge = await import('../src/core/DesktopBridge.js');
+  isDesktopShell = bridge.isDesktopShell;
+  pickAudioFile = bridge.pickAudioFile;
+  saveExportBlob = bridge.saveExportBlob;
+  filtersForFilename = bridge.filtersForFilename;
+
+  const ingestion = await import('../src/pipeline/FileIngestion.js');
+  pickAndIngestFile = ingestion.pickAndIngestFile;
+});
 
 describe('DesktopBridge', () => {
   const originalVip = globalThis.vipDesktop;
@@ -57,15 +64,16 @@ describe('DesktopBridge', () => {
   });
 
   test('saveExportBlob forwards to vipDesktop.saveFile', async () => {
+    const saveFile = jest.fn(async () => ({ canceled: false, filePath: '/tmp/out.wav' }));
     globalThis.vipDesktop = {
       openFile: async () => ({ canceled: true }),
-      saveFile: jest.fn(async () => ({ canceled: false, filePath: '/tmp/out.wav' })),
+      saveFile,
     };
     const blob = new Blob(['RIFF'], { type: 'audio/wav' });
     const result = await saveExportBlob(blob, { defaultName: 'out.wav' });
     expect(result.canceled).toBe(false);
     expect(result.filePath).toBe('/tmp/out.wav');
-    expect(globalThis.vipDesktop.saveFile).toHaveBeenCalledWith(
+    expect(saveFile).toHaveBeenCalledWith(
       expect.objectContaining({ defaultName: 'out.wav' })
     );
   });

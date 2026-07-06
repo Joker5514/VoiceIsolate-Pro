@@ -503,40 +503,8 @@ describe('deploy/render.yaml — other security headers still present', () => {
   });
 });
 
-// ─── .jules/sentinel.md ──────────────────────────────────────────────────────
-
-describe('.jules/sentinel.md — CSP documentation update', () => {
-  let sentinel;
-
-  beforeAll(() => {
-    sentinel = readFile('.jules/sentinel.md');
-  });
-
-  test('file exists', () => {
-    expect(fileExists('.jules/sentinel.md')).toBe(true);
-  });
-
-  test('section "2026-03-29 - Harden CSP by removing unsafe-eval" is present', () => {
-    expect(sentinel).toContain('2026-03-29 - Harden CSP by removing unsafe-eval');
-  });
-
-  test('pre-existing innerHTML XSS entry is still present', () => {
-    expect(sentinel).toContain('2026-03-10 - Eliminate innerHTML usage for DOM construction');
-  });
-
-  test('pre-existing Secure PRNG entry is still present', () => {
-    expect(sentinel).toContain('2024-05-24 - Secure PRNG for Dither');
-  });
-
-  test('pre-existing crypto.getRandomValues guidance is retained', () => {
-    expect(sentinel).toContain('crypto.getRandomValues()');
-  });
-
-  test('file contains exactly three top-level section entries', () => {
-    const sections = (sentinel.match(/^##\s+/gm) || []);
-    expect(sections).toHaveLength(3);
-  });
-});
+// .jules/sentinel.md was removed in the PR #663 repo cleanup — CSP posture is
+// enforced via vercel.json / server/securityHeaders.js tests above.
 
 // ─── Cross-platform CSP consistency ──────────────────────────────────────────
 

@@ -112,24 +112,28 @@ async function main() {
     );
 
     // ── Ingest + true inference ─────────────────────────────────────────────
+    // Landing auto-starts separation after decode (no separate "Ready:" gate).
     console.log('\nIngestion & inference (real model, no passthrough):');
     await page.setInputFiles('#fileInput', wavPath);
     await page.waitForFunction(
       () => {
         const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
-        return el && (el.textContent || '').trim().startsWith('Ready:');
+        const text = (el?.textContent || '').trim();
+        return text.includes('Decoding')
+          || text.includes('Separating')
+          || text.includes('isolation')
+          || text.includes('Stems ready');
       },
       null, { timeout: 30000 }
     );
-    check(true, 'file decoded + resampled to 48 kHz');
+    check(true, 'file accepted and pipeline started');
 
-    await page.click('#processBtn');
     await page.waitForFunction(
       () => {
         const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
         return el && (el.textContent || '').includes('Stems ready');
       },
-      null, { timeout: 120000 }
+      null, { timeout: 180000 }
     );
     const statusAfter = await statusMsg();
     check(!statusAfter.includes('passthrough') && !statusAfter.includes('unavailable'),

@@ -4,29 +4,43 @@
  */
 'use strict';
 
-import { createRequire } from 'module';
-import {
-  QUANTUM,
-  HOP_SIZE,
-  FFT_SIZE_LIVE,
-  FFT_SIZE_CREATOR,
-  QUANTA_PER_HOP,
-  validateRingBufferConstants,
-} from '../src/core/ring-buffer-constants.js';
+const { createRequire } = require('module');
+const nodeRequire = createRequire(__filename);
 
-import {
-  QuantumHopBridge,
-  OverlapAddReconstructor,
-  reconstructPassThrough,
-} from '../src/core/OverlapAddAccumulator.js';
+let QUANTUM;
+let HOP_SIZE;
+let FFT_SIZE_LIVE;
+let FFT_SIZE_CREATOR;
+let QUANTA_PER_HOP;
+let validateRingBufferConstants;
+let QuantumHopBridge;
+let OverlapAddReconstructor;
+let reconstructPassThrough;
+let CJS_QUANTUM;
+let CJS_HOP;
+let CJS_QPH;
+let CjsBridge;
 
-const require = createRequire(import.meta.url);
-const {
-  QUANTUM: CJS_QUANTUM,
-  HOP_SIZE: CJS_HOP,
-  QUANTA_PER_HOP: CJS_QPH,
-  QuantumHopBridge: CjsBridge,
-} = require('../public/app/ring-buffer.js');
+beforeAll(async () => {
+  const constants = await import('../src/core/ring-buffer-constants.js');
+  QUANTUM = constants.QUANTUM;
+  HOP_SIZE = constants.HOP_SIZE;
+  FFT_SIZE_LIVE = constants.FFT_SIZE_LIVE;
+  FFT_SIZE_CREATOR = constants.FFT_SIZE_CREATOR;
+  QUANTA_PER_HOP = constants.QUANTA_PER_HOP;
+  validateRingBufferConstants = constants.validateRingBufferConstants;
+
+  const overlap = await import('../src/core/OverlapAddAccumulator.js');
+  QuantumHopBridge = overlap.QuantumHopBridge;
+  OverlapAddReconstructor = overlap.OverlapAddReconstructor;
+  reconstructPassThrough = overlap.reconstructPassThrough;
+
+  const ring = nodeRequire('../public/app/ring-buffer.js');
+  CJS_QUANTUM = ring.QUANTUM;
+  CJS_HOP = ring.HOP_SIZE;
+  CJS_QPH = ring.QUANTA_PER_HOP;
+  CjsBridge = ring.QuantumHopBridge;
+});
 
 describe('ring-buffer-constants (blueprint v2.1)', () => {
   test('codified constants match specification', () => {

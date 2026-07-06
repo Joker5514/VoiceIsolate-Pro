@@ -408,6 +408,16 @@ describe('VoiceIsolatePro class structure', () => {
     expect(appSrc).toMatch(/_yieldToUI\(\(\)\s*=>\s*\{[\s\S]*runPipeline\(\)/);
   });
 
+  test('Engineer ML chain uses fast BS-RNN default (not Demucs)', () => {
+    expect(appSrc).toMatch(/DEFAULT_ML_CHAIN\s*=\s*Object\.freeze\(\[['"]bsrnn_vocals['"],\s*['"]rnnoise['"]\]\)/);
+  });
+
+  test('Engineer ML inference runs once per file (whisper passes are DSP-only)', () => {
+    expect(appSrc).toContain('pass === 0');
+    expect(appSrc).toMatch(/ML inference runs exactly once per file/);
+    expect(appSrc).toMatch(/const mlOk = await this\._runMLIsolationPipeline\(\)/);
+  });
+
   test('pipeline has 32 stages to match STAGES array', () => {
     // The STAGES array is defined in slider-map.js with 32 stages
     const stageMatches = [...sliderMapSrc.matchAll(/'S\d{2}:/g)];
