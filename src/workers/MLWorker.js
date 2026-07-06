@@ -53,6 +53,13 @@ let BACKEND = null;
 /** Active process request id for stage/progress messages. */
 let ACTIVE_REQUEST_ID = null;
 
+/** When true, cache I/O is proxied to the main thread (filesystem-first on desktop). */
+let USE_DESKTOP_CACHE = false;
+
+let _cacheReqId = 0;
+/** @type {Map<number, { resolve: Function, reject: Function }>} */
+const _cachePending = new Map();
+
 // ─── IndexedDB model byte-cache (single connection — no open/close per op) ───
 
 let _idb = null;
@@ -101,7 +108,9 @@ function postStage(stage, percent, extra = {}) {
 
 function effectiveBatchFrames(entry) {
   const base = entry.maxBatchFrames || 32;
-  return BACKEND === 'webgpu' ? Math.min(128, base * 2) : base;
+  if (BACKEND === 'webgpu') return Math.min(128, base * 2);
+  // Larger WASM batches amortize ONNX session.run overhead on spectral models.
+  return Math.min(64, base * 2);
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────
@@ -136,10 +145,45 @@ async function verifyIntegrity(entry, bytes) {
 
 // ─── Model loading ───────────────────────────────────────────────────────────
 
+function cacheRequest(op, key, buffer) {
+  return new Promise((resolve, reject) => {
+    const requestId = ++_cacheReqId;
+    _cachePending.set(requestId, { resolve, reject });
+    const msg = { type: 'cache-request', requestId, op, key };
+    if (buffer) {
+      msg.buffer = buffer;
+      self.postMessage(msg, [buffer]);
+    } else {
+      self.postMessage(msg);
+    }
+  });
+}
+
+async function bridgedCacheGet(cacheKey) {
+  const resp = await cacheRequest('get', cacheKey);
+  return resp || null;
+}
+
+async function bridgedCachePut(cacheKey, bytes) {
+  await cacheRequest('put', cacheKey, bytes);
+}
+
+async function localCacheGet(cacheKey) {
+  return idbGet(cacheKey).catch(() => null);
+}
+
+async function localCachePut(cacheKey, bytes) {
+  await idbPut(cacheKey, bytes).catch((err) => {
+    console.warn('[VIP][MLWorker] IndexedDB cache write failed (non-fatal):', err);
+  });
+}
+
 async function fetchModelBytes(entry) {
   const cacheKey = `${entry.id}:${entry.sha256 || 'unpinned'}`;
+  const cacheGet = USE_DESKTOP_CACHE ? bridgedCacheGet : localCacheGet;
+  const cachePut = USE_DESKTOP_CACHE ? bridgedCachePut : localCachePut;
 
-  const cached = await idbGet(cacheKey).catch(() => null);
+  const cached = await cacheGet(cacheKey);
   if (cached) {
     try {
       await verifyIntegrity(entry, cached);
@@ -155,9 +199,7 @@ async function fetchModelBytes(entry) {
   }
   const bytes = await res.arrayBuffer();
   await verifyIntegrity(entry, bytes);
-  await idbPut(cacheKey, bytes).catch((err) => {
-    console.warn('[VIP][MLWorker] IndexedDB cache write failed (non-fatal):', err);
-  });
+  await cachePut(cacheKey, bytes);
   return bytes;
 }
 
@@ -512,10 +554,23 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
 self.onmessage = async (event) => {
   const msg = event.data || {};
   try {
+    if (msg.type === 'cache-response') {
+      const pending = _cachePending.get(msg.requestId);
+      if (!pending) return;
+      _cachePending.delete(msg.requestId);
+      if (!msg.ok) {
+        pending.reject(new Error(msg.error || '[VIP][MLWorker] cache-response failed'));
+        return;
+      }
+      pending.resolve(msg.buffer ?? null);
+      return;
+    }
+
     switch (msg.type) {
       case 'init': {
         MANIFEST = Object.create(null);
         for (const entry of msg.manifest || []) MANIFEST[entry.id] = entry;
+        USE_DESKTOP_CACHE = Boolean(msg.useDesktopCache);
         if (typeof ort !== 'undefined' && ort.env?.wasm) {
           ort.env.wasm.wasmPaths = '/lib/';
           const cores = self.navigator?.hardwareConcurrency || 4;

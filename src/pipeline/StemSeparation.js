@@ -6,9 +6,7 @@
  */
 'use strict';
 
-import { MODEL_MANIFEST } from '../core/ModelManifest.js';
-
-const MANIFEST_ARRAY = Object.values(MODEL_MANIFEST);
+import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 
 let _worker = null;
 let _ready = null;
@@ -16,7 +14,7 @@ let _seq = 0;
 
 function getWorker() {
   if (_worker) return _worker;
-  _worker = new Worker('/src/workers/MLWorker.js');
+  _worker = createMLWorker();
   return _worker;
 }
 
@@ -32,7 +30,7 @@ function ensureReady() {
       const msg = ev.data || {};
       if (msg.type === 'ready') {
         cleanup();
-        w.postMessage({ type: 'warmup', modelIds: ['demucs', 'rnnoise'] });
+        w.postMessage({ type: 'warmup', modelIds: ['bsrnn_vocals', 'rnnoise'] });
         resolve(msg.backend || 'wasm');
       } else if (msg.type === 'error') { cleanup(); reject(new Error(msg.message || 'MLWorker init failed')); }
     };
@@ -44,7 +42,7 @@ function ensureReady() {
     };
     w.addEventListener('message', onMsg);
     w.addEventListener('error', onErr);
-    w.postMessage({ type: 'init', manifest: MANIFEST_ARRAY });
+    initMLWorker(w);
   });
   return _ready;
 }
@@ -57,7 +55,7 @@ function ensureReady() {
  * @returns {Promise<{ clean: Float32Array[], noise: Float32Array[], sampleRate: number, passthrough: boolean }>}
  */
 /** Prefetch + compile ONNX sessions while the user decodes a file. */
-export async function warmupModels(modelIds = ['demucs', 'rnnoise']) {
+export async function warmupModels(modelIds = ['bsrnn_vocals', 'rnnoise']) {
   await ensureReady();
   getWorker().postMessage({ type: 'warmup', modelIds });
 }
@@ -71,7 +69,7 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   const msg = { type: 'process', requestId, channelData: copies, sampleRate };
   if (options.modelIds?.length) msg.modelIds = options.modelIds;
   else if (options.modelId) msg.modelId = options.modelId;
-  else msg.modelIds = ['demucs', 'rnnoise'];
+  else msg.modelIds = ['bsrnn_vocals', 'rnnoise'];
 
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {

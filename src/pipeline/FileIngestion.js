@@ -42,8 +42,8 @@ const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
  * This is the bridge between UI mode selection and backend model chaining.
  */
 const MODE_TO_MODELS = Object.freeze({
-  'standard': ['demucs'],
-  'maximum': ['demucs', 'rnnoise'],
+  'standard': ['bsrnn_vocals'],
+  'maximum': ['bsrnn_vocals', 'rnnoise'],
   'noise-suppression': ['rnnoise'],
 });
 

@@ -49,6 +49,26 @@ const vipDesktop = Object.freeze({
    * @returns {Promise<{ ok: boolean, bytes: number }>}
    */
   writeModelCache: (opts) => ipcRenderer.invoke(IPC.WRITE_MODEL_CACHE, opts),
+
+  /** @returns {Promise<{ ok: boolean, reason?: string, updateInfo?: string|null }>} */
+  checkForUpdates: () => ipcRenderer.invoke(IPC.UPDATE_CHECK),
+
+  /** @returns {Promise<{ ok: boolean, reason?: string }>} */
+  downloadUpdate: () => ipcRenderer.invoke(IPC.UPDATE_DOWNLOAD),
+
+  /** @returns {Promise<{ ok: boolean, reason?: string }>} */
+  installUpdate: () => ipcRenderer.invoke(IPC.UPDATE_INSTALL),
+
+  /**
+   * Subscribe to auto-update status events from the main process.
+   * @param {(status: object) => void} callback
+   * @returns {() => void} unsubscribe
+   */
+  onUpdateStatus: (callback) => {
+    const handler = (_evt, status) => callback(status);
+    ipcRenderer.on(IPC.UPDATE_STATUS, handler);
+    return () => ipcRenderer.removeListener(IPC.UPDATE_STATUS, handler);
+  },
 });
 
 contextBridge.exposeInMainWorld('vipDesktop', vipDesktop);

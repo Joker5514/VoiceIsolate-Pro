@@ -20,6 +20,7 @@ import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
 import { MODEL_MANIFEST } from '/src/core/ModelManifest.js';
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
+import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
 import { buildHintPanel } from '/app/slider-hint-ui.js';
 
@@ -341,7 +342,7 @@ function syncVideo() {
 
 // ─── Worker lifecycle ────────────────────────────────────────────────────────
 
-const DEFAULT_WARMUP_CHAIN = ['demucs', 'rnnoise'];
+const DEFAULT_WARMUP_CHAIN = ['bsrnn_vocals', 'rnnoise'];
 
 function resolveModelIds(selection) {
   const chain = MODEL_CHAINS[selection];
@@ -357,8 +358,8 @@ function warmupWorkerModels(modelIds) {
 
 function getWorker() {
   if (worker) return worker;
-  worker = new Worker('/src/workers/MLWorker.js');
-  worker.postMessage({ type: 'init', manifest: Object.values(MODEL_MANIFEST) });
+  worker = createMLWorker();
+  initMLWorker(worker);
   worker.addEventListener('message', (event) => {
     const msg = event.data || {};
     switch (msg.type) {
@@ -702,7 +703,8 @@ function warnIfNotServed() {
 // Keys are <select> values that are NOT single manifest entries; the worker
 // receives the resolved `modelIds` array (see MLWorker chain support).
 const MODEL_CHAINS = Object.freeze({
-  max_isolation: ['demucs', 'rnnoise'],
+  max_isolation: ['bsrnn_vocals', 'rnnoise'],
+  studio_isolation: ['demucs', 'rnnoise'],
 });
 
 function onProcess() {
