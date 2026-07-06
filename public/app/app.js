@@ -19,6 +19,9 @@
 
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
+import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
+import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
+import { isDesktopShell, pickAudioFile } from '/src/core/DesktopBridge.js';
 
 // Registry lookup for examples + calibrated transforms
 const SLIDER_REG_BY_ID = Object.freeze(
@@ -1213,12 +1216,29 @@ class VoiceIsolatePro {
       return [];
     };
 
+    const openFilePicker = async () => {
+      if (isDesktopShell()) {
+        try {
+          const file = await pickAudioFile();
+          if (file) await this.handleFile(file);
+        } catch (err) {
+          structuredLog('error', '[VIP] desktop open failed', { err: err?.message });
+          this.showNotification(err?.message || 'Could not open file', 'error');
+        }
+        return;
+      }
+      const fi = this.dom.fileInput;
+      if (fi) fi.click();
+    };
     // File input — always read this.dom.fileInput so late patches cannot orphan handlers
-    bind('fileBtn', d.fileBtn, 'click', () => { const fi = this.dom.fileInput; if (fi) fi.click(); });
+    bind('fileBtn', d.fileBtn, 'click', (e) => { e.preventDefault(); openFilePicker(); });
     if (d.uploadZone) {
-      d.uploadZone.addEventListener('click', () => { const fi = this.dom.fileInput; if (fi) fi.click(); });
+      d.uploadZone.addEventListener('click', (e) => {
+        if (e.target.closest('#fileBtn')) return;
+        openFilePicker();
+      });
       d.uploadZone.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') { const fi = this.dom.fileInput; if (fi) fi.click(); }
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFilePicker(); }
       });
     }
     bind('fileInput', d.fileInput, 'change', e => this.handleFile(e.target.files[0]));
@@ -1674,32 +1694,18 @@ class VoiceIsolatePro {
     try {
       if (this.ctx.state === 'suspended') await this.ctx.resume();
       await new Promise((r) => _yieldToUI(r));
-      const abCopy = await this._readFileArrayBuffer(file);
-      buffer = await this._decodeFileBuffer(this.ctx, abCopy);
-    } catch {
-      // Video fallback
-      if (isVideoFile) {
-        try {
-          buffer = await this.decodeViaVideoElement(file);
-          if (buffer && this.dom && this.dom.videoPlayer) {
-            this.dom.videoPlayer.src = URL.createObjectURL(file);
-          }
-          if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = '';
-          this.isVideo = true;
-        } catch {
-          this._hideFileLoading();
-          if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Cannot decode this video format';
-          this.setStatus('ERROR');
-          this.showNotification('Cannot decode: ' + file.name, 'error');
-          return;
-        }
-      } else {
-        this._hideFileLoading();
-        if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Cannot decode this audio format';
-        this.setStatus('ERROR');
-        this.showNotification('Cannot decode: ' + file.name, 'error');
-        return;
-      }
+      const decoded = await decodeBlobToAudioBuffer(file);
+      buffer = await resampleToCanonical(decoded);
+    } catch (decodeErr) {
+      this._hideFileLoading();
+      const msg = isVideoFile
+        ? 'Cannot decode this video — try converting to WAV or MP3.'
+        : 'Cannot decode this audio format — try WAV or MP3.';
+      if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = msg;
+      this.setStatus('ERROR');
+      this.showNotification('Cannot decode: ' + file.name, 'error');
+      structuredLog('error', '[VIP] handleFile decode failed', { err: decodeErr?.message });
+      return;
     }
 
     // Check for empty/null decoded buffer
@@ -1741,18 +1747,10 @@ class VoiceIsolatePro {
     this.onAudioLoaded(file.name);
   }
 
+  /** @deprecated Use decodeBlobToAudioBuffer — kept for legacy patch scripts. */
   async decodeViaVideoElement(file) {
-    return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      if (this.dom.videoPlayer) {
-        this.dom.videoPlayer.src = url;
-        this.dom.videoPlayer.onloadedmetadata = () => resolve(this.inputBuffer || null);
-        this.dom.videoPlayer.onerror = () => reject(new Error('Video decode failed'));
-        setTimeout(() => reject(new Error('Video decode timeout')), 10000);
-      } else {
-        reject(new Error('No video player element'));
-      }
-    });
+    const decoded = await decodeBlobToAudioBuffer(file);
+    return resampleToCanonical(decoded);
   }
 
   onAudioLoaded(name) {

@@ -136,6 +136,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
 
     expect(mockVip.ctx.decodeAudioData).toHaveBeenCalled();
     expect(mockVip.dom.fileInfo.textContent).toContain('Cannot decode this audio format');
+    expect(mockVip.dom.fileInfo.textContent).toContain('WAV or MP3');
     expect(mockVip.setStatus).toHaveBeenCalledWith('ERROR');
   });
 
