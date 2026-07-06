@@ -126,8 +126,7 @@
   /* ─── 5. Re-wire upload zone click to ensure AudioContext is in gesture ───
    */
   function wireUploadZoneGesture() {
-    const zones      = document.querySelectorAll('#dz, #dropZone, #uploadZone, .drop-zone');
-    const fileInputs = document.querySelectorAll('input[type="file"]');
+    const zones = document.querySelectorAll('#dz, #dropZone, #uploadZone, .drop-zone');
 
     zones.forEach(function (zone) {
       const fresh = zone.cloneNode(true);
