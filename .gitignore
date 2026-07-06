@@ -66,4 +66,20 @@ public/models/*.onnx
 
 # Parallel redesign workspace (not part of production tree)
 Voice enhancement/
+
+# Agent / IDE scratch (not part of the shipped product)
+.qodo/
+.jules/
+.Jules/
+.claude/
+
+# Local Vercel CLI metadata
+.vercel/
+
+# Jupyter notebooks (local experiments)
+notebooks/
+
+# Screenshots not referenced by docs
+landing-vercel.png
+
 .env*.local

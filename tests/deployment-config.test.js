@@ -2,7 +2,7 @@
  * Tests for deployment configuration changes introduced in this PR:
  *   - vercel.json keeps SharedArrayBuffer headers and only exposes the canonical
  *     dsp-processor worklet route
- *   - render.yaml still carries the expected CSP/security posture
+ *   - deploy/render.yaml still carries the expected CSP/security posture
  */
 'use strict';
 
@@ -335,28 +335,28 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
   });
 });
 
-// ─── render.yaml ─────────────────────────────────────────────────────────────
+// ─── deploy/render.yaml ─────────────────────────────────────────────────────────────
 
-describe('render.yaml — file integrity', () => {
+describe('deploy/render.yaml — file integrity', () => {
   test('file exists', () => {
-    expect(fileExists('render.yaml')).toBe(true);
+    expect(fileExists('deploy/render.yaml')).toBe(true);
   });
 
   test('file is non-empty', () => {
-    expect(readFile('render.yaml').trim().length).toBeGreaterThan(0);
+    expect(readFile('deploy/render.yaml').trim().length).toBeGreaterThan(0);
   });
 
   test('declares a services block', () => {
-    expect(readFile('render.yaml')).toContain('services:');
+    expect(readFile('deploy/render.yaml')).toContain('services:');
   });
 });
 
-describe('render.yaml — Content-Security-Policy header', () => {
+describe('deploy/render.yaml — Content-Security-Policy header', () => {
   let cspValue;
   let directives;
 
   beforeAll(() => {
-    const yaml = readFile('render.yaml');
+    const yaml = readFile('deploy/render.yaml');
     // Extract the CSP value: the line that sets the Content-Security-Policy header value
     const cspLineMatch = yaml.match(/name:\s*Content-Security-Policy[\s\S]*?value:\s*"([^"]+)"/);
     expect(cspLineMatch).not.toBeNull();
@@ -460,11 +460,11 @@ describe('render.yaml — Content-Security-Policy header', () => {
   });
 });
 
-describe('render.yaml — other security headers still present', () => {
+describe('deploy/render.yaml — other security headers still present', () => {
   let yaml;
 
   beforeAll(() => {
-    yaml = readFile('render.yaml');
+    yaml = readFile('deploy/render.yaml');
   });
 
   test('Cross-Origin-Opener-Policy header is declared', () => {
@@ -540,7 +540,7 @@ describe('.jules/sentinel.md — CSP documentation update', () => {
 
 // ─── Cross-platform CSP consistency ──────────────────────────────────────────
 
-describe('Cross-platform CSP consistency — vercel.json vs render.yaml', () => {
+describe('Cross-platform CSP consistency — vercel.json vs deploy/render.yaml', () => {
   let vercelCSP;
   let renderCSP;
   let vercelDirectives;
@@ -553,7 +553,7 @@ describe('Cross-platform CSP consistency — vercel.json vs render.yaml', () => 
     vercelCSP = vercelEntry.value;
     vercelDirectives = parseCSP(vercelCSP);
 
-    const yaml = readFile('render.yaml');
+    const yaml = readFile('deploy/render.yaml');
     const cspLineMatch = yaml.match(/name:\s*Content-Security-Policy[\s\S]*?value:\s*"([^"]+)"/);
     renderCSP = cspLineMatch[1];
     renderDirectives = parseCSP(renderCSP);

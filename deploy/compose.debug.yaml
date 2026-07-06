@@ -2,8 +2,8 @@ services:
   voiceisolatepro:
     image: voiceisolatepro
     build:
-      context: .
-      dockerfile: ./Dockerfile
+      context: ..
+      dockerfile: deploy/Dockerfile
     environment:
       NODE_ENV: development
     ports:
