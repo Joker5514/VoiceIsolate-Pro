@@ -11,8 +11,7 @@ design-test.html
 *.tmp
 
 # Alternate deploy targets — Vercel is the canonical target
-Dockerfile
-render.yaml
+deploy/
 docker-compose*.yml
 
 # Backend / serverless code — Vercel hosts the STATIC site only (the app is

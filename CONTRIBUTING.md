@@ -21,9 +21,10 @@ pnpm dev         # http://localhost:3000
 3. Run the full validation gate before pushing:
 
 ```bash
-pnpm validate    # structural integrity (required)
-pnpm lint        # ESLint
-pnpm test        # Jest (2113+ tests)
+pnpm validate           # structural integrity (required)
+pnpm worklets:verify    # AudioWorklet packaging
+pnpm lint               # ESLint
+pnpm test               # Jest (2150+ tests)
 ```
 
 4. Open a PR with a clear summary, test results, and screenshots for UI changes.

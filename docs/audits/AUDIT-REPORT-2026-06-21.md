@@ -3,7 +3,7 @@
 **Date**: June 21, 2026
 **Scope**: Architecture compliance (CLAUDE.md), security, dependency CVEs, build/test/lint health, model integrity
 **Branch audited**: `claude/sharp-darwin-w1vdxz` (HEAD `7e4caf8`)
-**Supersedes**: `docs/AUDIT-REPORT-2026-05-30.md` (which found 18 criticals; all major paths have since been remediated)
+**Supersedes**: `docs/audits/AUDIT-REPORT-2026-05-30.md` (which found 18 criticals; all major paths have since been remediated)
 
 ---
 

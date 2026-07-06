@@ -19,6 +19,14 @@
   ],
   "author": "Randy Jordan <joker5514@users.noreply.github.com>",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Joker5514/VoiceIsolate-Pro.git"
+  },
+  "homepage": "https://voice-isolate-pro.vercel.app",
+  "bugs": {
+    "url": "https://github.com/Joker5514/VoiceIsolate-Pro/issues"
+  },
   "scripts": {
     "postinstall": "node scripts/setup-ort.js && node scripts/setup-three.js",
     "setup:ort": "node scripts/setup-ort.js",
