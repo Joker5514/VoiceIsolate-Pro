@@ -22,8 +22,11 @@ const MANIFEST_PATH = path.join(__dirname, 'worklet-manifest.json');
 const MODELS_MANIFEST = path.join(ROOT, 'public', 'app', 'models-manifest.json');
 const SW_PATH = path.join(ROOT, 'public', 'app', 'sw.js');
 
+/** LF-normalized SHA-256 so Windows CRLF working copies match Linux CI / git blobs. */
 function sha256File(absPath) {
-  return crypto.createHash('sha256').update(fs.readFileSync(absPath)).digest('hex');
+  const raw = fs.readFileSync(absPath, 'utf8');
+  const normalized = raw.replace(/\r\n/g, '\n');
+  return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
 }
 
 function loadWorkletManifest() {

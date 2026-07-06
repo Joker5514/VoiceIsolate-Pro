@@ -22,8 +22,10 @@ const MANIFEST_KEYS = {
   'dsp-processor': 'dsp_processor',
 };
 
+/** LF-normalized digest — matches git blobs and Linux CI (avoids CRLF drift on Windows). */
 function sha256(absPath) {
-  return crypto.createHash('sha256').update(fs.readFileSync(absPath)).digest('hex');
+  const normalized = fs.readFileSync(absPath, 'utf8').replace(/\r\n/g, '\n');
+  return crypto.createHash('sha256').update(normalized, 'utf8').digest('hex');
 }
 
 const registry = JSON.parse(fs.readFileSync(REGISTRY, 'utf8'));

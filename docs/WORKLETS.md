@@ -38,7 +38,9 @@ public/app/dsp-processor.js              ──►              ──► build/
 
 ## Integrity
 
-SHA-256 pins live in `public/app/models-manifest.json` under `worklets`. Regenerate after any worklet edit:
+SHA-256 pins live in `public/app/models-manifest.json` under `worklets`. Hashes are
+computed on **LF-normalized** file bytes so Windows CRLF working copies match Linux
+CI and git blobs. Regenerate after any worklet edit:
 
 ```bash
 pnpm worklets:hash      # recompute + update models-manifest.json
