@@ -61,6 +61,7 @@ if (jdk21) {
 
 run('pnpm', ['run', 'build']);
 run('npx', ['cap', 'sync', 'android']);
+run('node', [path.join(ROOT, 'scripts', 'verify-worklets.js'), '--require-build', '--require-android']);
 run(path.join(ANDROID, 'gradlew.bat'), ['assembleDebug'], ANDROID);
 
 const apk = path.join(ANDROID, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');

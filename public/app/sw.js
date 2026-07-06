@@ -35,6 +35,10 @@ const APP_SHELL = [
   '/app/style.css',
   '/app/dsp-core.js',
   '/app/dsp-processor.js',
+  // Playback-only Live-Mix worklets (Gate + De-esser) — loaded by PlaybackMixer
+  '/src/workers/GateProcessor.js',
+  '/src/workers/DeEsserProcessor.js',
+  '/src/pipeline/PlaybackMixer.js',
   '/app/dsp-worker.js',
   '/app/pipeline-state.js',
   '/app/ml-worker.js',

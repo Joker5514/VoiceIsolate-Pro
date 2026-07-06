@@ -127,6 +127,14 @@ const awJs = fs.existsSync(path.resolve(__dirname, '..', 'public/app/dsp-process
   ? fs.readFileSync(path.resolve(__dirname, '..', 'public/app/dsp-processor.js'), 'utf8') : '';
 check(awJs.includes("registerProcessor('dsp-processor'"), 'AudioWorklet registerProcessor present');
 check(awJs.includes('process(inputs, outputs'), 'AudioWorklet process() method present');
+const { verifyWorklets } = require('./verify-worklets.js');
+const workletResult = verifyWorklets({ quiet: true });
+if (!workletResult.ok) {
+  workletResult.errors.forEach((e) => console.log(`  ✗ ${e}`));
+  errors += workletResult.errors.length;
+} else {
+  check(true, 'All 3 AudioWorklets present, hashed, and APP_SHELL precached (verify-worklets.js)');
+}
 
 // Phase 4: ONNX Runtime + ML Worker
 console.log('\nONNX Runtime (Phase 4):');

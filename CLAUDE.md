@@ -153,6 +153,12 @@ Rules:
     `scripts/validate.js`; any other `audioWorklet.addModule` target (or a
     dynamic one) and `getUserMedia` remain forbidden. Do not delete them or
     re-tighten the allowlist as a "live-pipeline" regression.
+  - `public/app/dsp-processor.js` (`registerProcessor('dsp-processor')`) is
+    **legacy-shipped** on web, Android, and desktop for Engineer Mode
+    compatibility and offline precache, but it is **not** `addModule`-loaded
+    (the live SharedArrayBuffer worklet path was removed). Packaging is governed
+    by `scripts/worklet-manifest.json`, `scripts/verify-worklets.js`, and
+    `docs/WORKLETS.md`. After any worklet edit run `pnpm worklets:hash`.
 
 ---
 

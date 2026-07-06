@@ -68,6 +68,7 @@ pnpm dev              # http://localhost:3000  (auto-syncs src/ → public/src/)
 pnpm test             # Jest — 2100+ tests
 pnpm lint             # ESLint
 pnpm validate         # Structural integrity checks (CI gate)
+pnpm worklets:verify  # AudioWorklet packaging (web + Android + desktop paths)
 pnpm build            # Production static build (cross-platform via scripts/build.mjs)
 pnpm build:mobile     # Capacitor sync for Android
 pnpm electron:dev     # Desktop shell (requires pnpm dev in another terminal)
@@ -138,7 +139,7 @@ Both surfaces share the canonical `src/pipeline/StemSeparation.js` path for offl
 |-------|------------|
 | Frontend | Vanilla JS (ES modules), Canvas 2D, Three.js (Engineer premium tabs) |
 | ML | ONNX Runtime Web 1.25, WebGPU + WASM (up to 8 threads) |
-| Audio | Web Audio API, AudioWorklets (gate + de-esser on playback stems) |
+| Audio | Web Audio API, 3 AudioWorklets (gate + de-esser active; dsp-processor legacy-shipped) |
 | Server | Express 5 (dev), Vercel serverless (prod, pnpm via `scripts/vercel-install.sh`) |
 | Payments | Stripe (optional, server-side only) |
 | Mobile | Capacitor 8 (Android / iOS) |
@@ -149,7 +150,7 @@ Both surfaces share the canonical `src/pipeline/StemSeparation.js` path for offl
 ```
 src/                       Canonical 4-layer architecture
 ├── core/                  Pure primitives, ModelManifest, BufferPool
-├── workers/               MLWorker (offline), Diarization, SpectralCleanup, Encoders
+├── workers/               MLWorker, GateProcessor, DeEsserProcessor, Diarization, Encoders
 ├── pipeline/              FileIngestion, PlaybackMixer, StemSeparation, Orchestrators
 └── presentation/          SliderUI, LandingVisualizer, ExportControls
 
@@ -161,7 +162,22 @@ public/
 server/                    Express + securityHeaders.js
 api-routes/                Stripe monetization, licensing, sync
 tests/                     80+ Jest suites
-scripts/                   Build, validation, model tooling, Vercel install
+scripts/                   Build, validation, model + worklet tooling, Vercel install
+```
+
+### AudioWorklets (all platforms)
+
+Three worklet files ship in every web, Android, and desktop build. See [`docs/WORKLETS.md`](docs/WORKLETS.md).
+
+| Worklet | Path | Runtime |
+|---------|------|---------|
+| Gate | `/src/workers/GateProcessor.js` | Active — playback noise gate |
+| De-esser | `/src/workers/DeEsserProcessor.js` | Active — playback de-esser |
+| DSP (legacy) | `/app/dsp-processor.js` | Shipped + precached; not loaded (live SAB path removed) |
+
+```bash
+pnpm worklets:hash           # after editing any *Processor.js
+pnpm worklets:verify:build   # confirm build/ copies before cap sync / electron pack
 ```
 
 See [`CLAUDE.md`](CLAUDE.md) for the full contributor contract and [`CONTRIBUTING.md`](CONTRIBUTING.md) for the development workflow.

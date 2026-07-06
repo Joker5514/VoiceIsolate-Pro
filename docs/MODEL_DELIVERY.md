@@ -47,6 +47,14 @@ Model files are hosted on Vercel Blob Storage and mirrored on Cloudflare R2.
 The `models-manifest.json` file at `public/app/models-manifest.json` lists all
 models, their sizes, checksums, and provider URLs.
 
+## AudioWorklet delivery
+
+Processor scripts (gate, de-esser, legacy dsp-processor) follow the same
+same-origin packaging path as ONNX models but are committed to the repo and
+pinned by SHA-256 in `models-manifest.json` → `worklets`. See
+[`docs/WORKLETS.md`](WORKLETS.md) for the full cross-platform matrix and CI
+checks.
+
 ## Adding a new model
 
 1. Upload the `.onnx` file to Vercel Blob (`vercel blob upload`).

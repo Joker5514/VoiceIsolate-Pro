@@ -1,0 +1,41 @@
+{
+  "_note": "Canonical AudioWorklet registry. verify-worklets.js and hash-worklets.js read this file. Run: pnpm worklets:hash && node scripts/verify-worklets.js",
+  "worklets": [
+    {
+      "id": "vip-gate",
+      "name": "GateProcessor",
+      "source": "src/workers/GateProcessor.js",
+      "url": "/src/workers/GateProcessor.js",
+      "buildPath": "build/src/workers/GateProcessor.js",
+      "androidAssetPath": "android/app/src/main/assets/public/src/workers/GateProcessor.js",
+      "processorName": "vip-gate",
+      "role": "active",
+      "loadedBy": "PlaybackMixer._loadGate()",
+      "platforms": ["web", "android", "desktop"]
+    },
+    {
+      "id": "vip-deesser",
+      "name": "DeEsserProcessor",
+      "source": "src/workers/DeEsserProcessor.js",
+      "url": "/src/workers/DeEsserProcessor.js",
+      "buildPath": "build/src/workers/DeEsserProcessor.js",
+      "androidAssetPath": "android/app/src/main/assets/public/src/workers/DeEsserProcessor.js",
+      "processorName": "vip-deesser",
+      "role": "active",
+      "loadedBy": "PlaybackMixer._loadDeEsser()",
+      "platforms": ["web", "android", "desktop"]
+    },
+    {
+      "id": "dsp-processor",
+      "name": "DSPProcessor",
+      "source": "public/app/dsp-processor.js",
+      "url": "/app/dsp-processor.js",
+      "buildPath": "build/app/dsp-processor.js",
+      "androidAssetPath": "android/app/src/main/assets/public/app/dsp-processor.js",
+      "processorName": "dsp-processor",
+      "role": "legacy-shipped",
+      "loadedBy": "Shipped for Engineer Mode compatibility; not addModule-loaded (live SAB pipeline removed per CLAUDE.md §1.1)",
+      "platforms": ["web", "android", "desktop"]
+    }
+  ]
+}
