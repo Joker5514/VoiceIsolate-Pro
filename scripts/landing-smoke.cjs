@@ -108,8 +108,8 @@ async function waitForLandingBoot(page) {
 }
 
 async function triggerFileIngest(page, wavPath) {
-  const chooserPromise = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
-  await page.locator('#browseBtn').click();
+  const chooserPromise = page.waitForEvent('filechooser', { timeout: 3000 }).catch(() => null);
+  await page.evaluate(() => document.getElementById('browseBtn')?.click()).catch(() => {});
   const fileChooser = await chooserPromise;
   if (fileChooser) {
     await fileChooser.setFiles(wavPath);

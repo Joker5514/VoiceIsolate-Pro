@@ -100,9 +100,9 @@ function makeWav() {
       { timeout: 20000 },
     );
 
-    // Browse Files — prefer real filechooser; headless may skip the event.
-    const chooserPromise = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
-    await page.locator('#fileBtn').click();
+    // Browse Files — best-effort picker; headless often skips filechooser.
+    const chooserPromise = page.waitForEvent('filechooser', { timeout: 3000 }).catch(() => null);
+    await page.evaluate(() => document.getElementById('fileBtn')?.click()).catch(() => {});
     const fileChooser = await chooserPromise;
     if (fileChooser) {
       await fileChooser.setFiles(wavPath);
