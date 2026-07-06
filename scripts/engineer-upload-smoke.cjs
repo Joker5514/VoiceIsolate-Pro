@@ -45,6 +45,47 @@ function waitForServer(base, timeoutMs = 20000) {
   });
 }
 
+async function ensureAppReady(page) {
+  await page.waitForFunction(
+    () => typeof window._vipApp?.handleFile === 'function' && !!document.getElementById('fileInput'),
+    null,
+    { timeout: 20000 },
+  );
+  await page.evaluate(() => {
+    window._vipApp?._dismissBootSplash?.();
+    const splash = document.getElementById('bootSplash');
+    if (splash && splash.dataset.dismissed !== '1') {
+      splash.dataset.dismissed = '1';
+      splash.style.pointerEvents = 'none';
+      splash.style.display = 'none';
+    }
+  });
+}
+
+async function ingestWav(page, wavPath) {
+  await page.setInputFiles('#fileInput', wavPath);
+  await page.evaluate(async () => {
+    const input = document.getElementById('fileInput');
+    const file = input?.files?.[0];
+    if (!file) throw new Error('file input has no files after setInputFiles');
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!window._vipApp?.inputBuffer?.length) {
+      await window._vipApp.handleFile(file);
+    }
+  });
+}
+
+async function readUploadDiag(page) {
+  return page.evaluate(() => ({
+    hasApp: Boolean(window._vipApp),
+    hasHandleFile: typeof window._vipApp?.handleFile === 'function',
+    bufferLen: window._vipApp?.inputBuffer?.length ?? 0,
+    fileInfo: document.getElementById('fileInfo')?.textContent || '',
+    splashDismissed: document.getElementById('bootSplash')?.dataset?.dismissed || '',
+    processDisabled: document.getElementById('processBtn')?.disabled ?? true,
+  }));
+}
+
 function makeWav() {
   const sr = 48000, secs = 1, n = sr * secs;
   const pcm = new Int16Array(n);
@@ -87,35 +128,19 @@ function makeWav() {
 
   try {
     await page.goto(`${BASE}/app/`, { waitUntil: 'load' });
-    await page.waitForFunction(
-      () => {
-        const splash = document.getElementById('bootSplash');
-        const splashGone = !splash
-          || splash.dataset.dismissed === '1'
-          || splash.classList.contains('is-complete')
-          || splash.style.display === 'none';
-        return splashGone && !!window._vipApp && !!document.getElementById('fileInput');
-      },
-      null,
-      { timeout: 20000 },
-    );
+    await ensureAppReady(page);
+    await ingestWav(page, wavPath);
 
-    // Browse Files — best-effort picker; headless often skips filechooser.
-    const chooserPromise = page.waitForEvent('filechooser', { timeout: 3000 }).catch(() => null);
-    await page.evaluate(() => document.getElementById('fileBtn')?.click()).catch(() => {});
-    const fileChooser = await chooserPromise;
-    if (fileChooser) {
-      await fileChooser.setFiles(wavPath);
-    } else {
-      await page.setInputFiles('#fileInput', wavPath);
-      await page.locator('#fileInput').dispatchEvent('change');
+    try {
+      await page.waitForFunction(
+        () => window._vipApp?.inputBuffer?.length > 0,
+        null,
+        { timeout: 30000 },
+      );
+    } catch (waitErr) {
+      const diag = await readUploadDiag(page);
+      throw new Error(`inputBuffer not ready: ${JSON.stringify(diag)} (${waitErr.message})`);
     }
-
-    await page.waitForFunction(
-      () => window._vipApp?.inputBuffer?.length > 0,
-      null,
-      { timeout: 30000 }
-    );
 
     const state = await page.evaluate(() => ({
       hasBuffer: Boolean(window._vipApp?.inputBuffer?.length),
