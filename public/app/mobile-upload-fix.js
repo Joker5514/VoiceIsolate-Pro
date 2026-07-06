@@ -123,51 +123,75 @@
     });
   }
 
-  /* ─── 5. Re-wire upload zone click to ensure AudioContext is in gesture ───
+  /* ─── 5. Re-wire upload controls WITHOUT cloning DOM nodes ───────────────
+   * Cloning #dropZone / #uploadZone orphaned app.js handlers and could fire
+   * fileInput.click() twice (zone + nested zone).  Instead, refresh live DOM
+   * refs on _vipApp and bind idempotent listeners once the app boots.
    */
-  function wireUploadZoneGesture() {
-    const zones = document.querySelectorAll('#dz, #dropZone, #uploadZone, .drop-zone');
+  function ensureUploadWiring() {
+    var app = window._vipApp;
+    var fi = document.getElementById('fileInput');
+    if (!fi) return false;
 
-    zones.forEach(function (zone) {
-      const fresh = zone.cloneNode(true);
-      zone.parentNode && zone.parentNode.replaceChild(fresh, zone);
+    if (app && app.dom) {
+      app.dom.fileInput = fi;
+      var fb = document.getElementById('fileBtn');
+      if (fb) app.dom.fileBtn = fb;
+      var uz = document.getElementById('uploadZone');
+      if (uz) app.dom.uploadZone = uz;
+      var dz = document.getElementById('dropZone');
+      if (dz) app.dom.dropZone = dz;
+    }
 
-      fresh.addEventListener('click', async function (e) {
-        // Zone is cloned after app.js bindEvents(), so Browse must open the
-        // picker here — skipping BUTTON clicks left fileBtn inert.
-        e.preventDefault();
-        try { await window.getAudioContext(); } catch (_) {}
-        const fi = document.getElementById('fileInput') ||
-                   document.getElementById('fi') ||
-                   document.querySelector('input[type="file"]');
-        if (fi) fi.click();
+    // Re-bind change in case a legacy patch cloned/replaced the input node.
+    if (!fi.dataset.vipChangeBound) {
+      fi.dataset.vipChangeBound = '1';
+      fi.addEventListener('change', function (e) {
+        var file = e.target.files && e.target.files[0];
+        if (!file) return;
+        var live = window._vipApp;
+        if (live && typeof live.handleFile === 'function') {
+          live.handleFile(file);
+        }
       });
+    }
 
+    var dropZone = document.getElementById('dropZone');
+    if (dropZone && !dropZone.dataset.vipDropBound) {
+      dropZone.dataset.vipDropBound = '1';
       ['dragenter', 'dragover'].forEach(function (ev) {
-        fresh.addEventListener(ev, function (e) {
+        dropZone.addEventListener(ev, function (e) {
           e.preventDefault();
-          fresh.classList.add('over', 'dragover');
+          dropZone.classList.add('drag-over', 'dragover', 'over');
         });
       });
       ['dragleave', 'dragend'].forEach(function (ev) {
-        fresh.addEventListener(ev, function () {
-          fresh.classList.remove('over', 'dragover');
+        dropZone.addEventListener(ev, function () {
+          dropZone.classList.remove('drag-over', 'dragover', 'over');
         });
       });
-      fresh.addEventListener('drop', async function (e) {
+      dropZone.addEventListener('drop', async function (e) {
         e.preventDefault();
-        fresh.classList.remove('over', 'dragover');
-        const file = e.dataTransfer && e.dataTransfer.files[0];
+        dropZone.classList.remove('drag-over', 'dragover', 'over');
+        var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
         if (!file) return;
         try { await window.getAudioContext(); } catch (_) {}
-        const app = window._vipApp;
-        if (app && typeof app.handleFile === 'function') {
-          app.handleFile(file);
-        } else if (typeof window.loadFile === 'function') {
-          window.loadFile(file);
+        var live = window._vipApp;
+        if (live && typeof live.handleFile === 'function') {
+          live.handleFile(file);
         }
       });
-    });
+    }
+
+    return true;
+  }
+
+  function waitForUploadWiring() {
+    if (ensureUploadWiring()) return;
+    var tries = 0;
+    var timer = setInterval(function () {
+      if (ensureUploadWiring() || ++tries >= 40) clearInterval(timer);
+    }, 250);
   }
 
   /* ─── 6. Patch loadFile — intercept the decode call with safeDecodeAudioData
@@ -238,7 +262,7 @@
   function init() {
     fixUploadZoneTouchTarget();
     patchFileInput();
-    wireUploadZoneGesture();
+    waitForUploadWiring();
     patchLoadFile();
 
     // MutationObserver: re-apply if DOM is rebuilt by app.js
@@ -246,6 +270,7 @@
       fixUploadZoneTouchTarget();
       patchFileInput();
       patchLoadFile();
+      ensureUploadWiring();
     });
     observer.observe(document.body, { childList: true, subtree: true });
 

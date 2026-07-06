@@ -22,6 +22,7 @@ import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slide
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
 import { isDesktopShell, pickAudioFile } from '/src/core/DesktopBridge.js';
+import { openFilePicker as triggerFileInput, primeAudioGesture } from '/src/presentation/UploadWiring.js';
 
 // Registry lookup for examples + calibrated transforms
 const SLIDER_REG_BY_ID = Object.freeze(
@@ -586,6 +587,8 @@ class VoiceIsolatePro {
       this._renderSliders();
       this.bindEvents();
       this._updateProcessButtonsState();
+      // Upload controls are live — do not leave the splash intercepting clicks.
+      this._dismissBootSplash();
     } catch (initErr) {
       this._dismissBootSplash();
       structuredLog('error', '[VIP] init failed after splash', { err: initErr.message });
@@ -1227,8 +1230,8 @@ class VoiceIsolatePro {
         }
         return;
       }
-      const fi = this.dom.fileInput;
-      if (fi) fi.click();
+      try { await primeAudioGesture(); } catch { /* best-effort */ }
+      triggerFileInput(this.dom.fileInput);
     };
     // File input — always read this.dom.fileInput so late patches cannot orphan handlers
     bind('fileBtn', d.fileBtn, 'click', (e) => { e.preventDefault(); openFilePicker(); });

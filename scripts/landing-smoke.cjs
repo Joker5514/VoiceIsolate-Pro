@@ -108,10 +108,15 @@ async function waitForLandingBoot(page) {
 }
 
 async function triggerFileIngest(page, wavPath) {
-  await page.setInputFiles('#fileInput', wavPath);
-  // Playwright usually fires `change`, but dispatch explicitly to avoid races
-  // when the ESM bundle finishes loading right as the file is attached.
-  await page.locator('#fileInput').dispatchEvent('change');
+  const chooserPromise = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
+  await page.locator('#browseBtn').click();
+  const fileChooser = await chooserPromise;
+  if (fileChooser) {
+    await fileChooser.setFiles(wavPath);
+  } else {
+    await page.setInputFiles('#fileInput', wavPath);
+    await page.locator('#fileInput').dispatchEvent('change');
+  }
 }
 
 async function waitForPipelineStart(page, consoleErrors) {

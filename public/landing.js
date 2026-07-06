@@ -12,6 +12,7 @@
 'use strict';
 
 import { ingestFile, isDesktopShell, pickAudioFile } from '/src/pipeline/FileIngestion.js';
+import { openFilePicker, primeAudioGesture, fixUploadTouchTargets } from '/src/presentation/UploadWiring.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
 import { LANDING_PRESETS, calibrateFromStems } from '/src/core/MixCalibration.js';
@@ -661,7 +662,8 @@ function wireUploadDropZone() {
       }
       return;
     }
-    if (ui.fileInput) ui.fileInput.click();
+    try { await primeAudioGesture(); } catch { /* best-effort */ }
+    openFilePicker(ui.fileInput);
   };
   zone.addEventListener('click', (event) => {
     if (event.target.closest('#browseBtn')) return;
@@ -904,6 +906,7 @@ function wireDragAndDrop() {
 // ─── Boot ────────────────────────────────────────────────────────────────────
 
 ui.fileInput.addEventListener('change', onFileChosen);
+fixUploadTouchTargets();
 wireUploadDropZone();
 warnIfNotServed();
 window.addEventListener('error', (event) => {

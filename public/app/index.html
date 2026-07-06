@@ -101,7 +101,8 @@
       s.style.display = 'none';
       s.setAttribute('aria-hidden', 'true');
     };
-    setTimeout(window._vipDismissBootSplash, 8000);
+    // Safety net only — app.init() dismisses once bindEvents() completes.
+    setTimeout(window._vipDismissBootSplash, 3000);
   </script>
 
   <div id="bootSplash" class="boot-splash" aria-hidden="false" role="status" aria-live="polite">
