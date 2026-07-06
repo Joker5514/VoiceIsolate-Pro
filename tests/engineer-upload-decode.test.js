@@ -27,4 +27,13 @@ describe('Engineer upload decode wiring', () => {
     expect(appJs).toContain('pickAudioFile');
     expect(appJs).toContain('isDesktopShell');
   });
+
+  test('boot splash dismisses once bindEvents completes (upload not blocked)', () => {
+    expect(appJs).toMatch(/bindEvents\(\);[\s\S]*_dismissBootSplash\(\)/);
+  });
+
+  test('openFilePicker import is aliased to avoid infinite recursion', () => {
+    expect(appJs).toContain('openFilePicker as triggerFileInput');
+    expect(appJs).toContain('triggerFileInput(this.dom.fileInput)');
+  });
 });

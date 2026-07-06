@@ -4,7 +4,7 @@
  */
 'use strict';
 
-/* global window, document — used inside Playwright page.evaluate / waitForFunction */
+/* global window, document */
 
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -87,11 +87,29 @@ function makeWav() {
 
   try {
     await page.goto(`${BASE}/app/`, { waitUntil: 'load' });
-    await page.waitForFunction(() => !!window._vipApp, null, { timeout: 20000 });
+    await page.waitForFunction(
+      () => {
+        const splash = document.getElementById('bootSplash');
+        const splashGone = !splash
+          || splash.dataset.dismissed === '1'
+          || splash.classList.contains('is-complete')
+          || splash.style.display === 'none';
+        return splashGone && !!window._vipApp && !!document.getElementById('fileInput');
+      },
+      null,
+      { timeout: 20000 },
+    );
 
-    await page.click('#fileBtn');
-    await page.setInputFiles('#fileInput', wavPath);
-    await page.locator('#fileInput').dispatchEvent('change');
+    // Browse Files — prefer real filechooser; headless may skip the event.
+    const chooserPromise = page.waitForEvent('filechooser', { timeout: 8000 }).catch(() => null);
+    await page.locator('#fileBtn').click();
+    const fileChooser = await chooserPromise;
+    if (fileChooser) {
+      await fileChooser.setFiles(wavPath);
+    } else {
+      await page.setInputFiles('#fileInput', wavPath);
+      await page.locator('#fileInput').dispatchEvent('change');
+    }
 
     await page.waitForFunction(
       () => window._vipApp?.inputBuffer?.length > 0,

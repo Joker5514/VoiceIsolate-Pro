@@ -12,15 +12,22 @@ const js = fs.readFileSync(
 );
 
 describe('mobile-upload-fix.js', () => {
-  test('upload zone click opens file picker for BUTTON targets (Browse Files)', () => {
-    expect(js).not.toMatch(
-      /if\s*\(\s*e\.target\.tagName\s*===\s*['"]BUTTON['"]\s*&&\s*e\.target\s*!==\s*fresh\s*\)\s*return/
-    );
-    expect(js).toContain('if (fi) fi.click()');
+  test('does not clone upload zones (avoids orphaning app.js handlers)', () => {
+    expect(js).not.toContain('cloneNode(true)');
+    expect(js).not.toContain('replaceChild(fresh, zone)');
+  });
+
+  test('re-binds file input change to _vipApp.handleFile', () => {
+    expect(js).toContain('ensureUploadWiring');
+    expect(js).toContain('live.handleFile(file)');
+  });
+
+  test('does not add duplicate picker click handlers (app.js owns Browse)', () => {
+    expect(js).not.toContain('vipPickerBound');
   });
 
   test('drop handler routes to Engineer Mode handleFile when available', () => {
     expect(js).toContain('window._vipApp');
-    expect(js).toContain('app.handleFile(file)');
+    expect(js).toContain('live.handleFile(file)');
   });
 });
