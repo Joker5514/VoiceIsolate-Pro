@@ -309,7 +309,7 @@ describe('vercel.json — COOP/COEP and model CORP route assertions', () => {
   });
 
   test('worklet script routes explicitly include both COOP and COEP', () => {
-    const workletRoutes = ['/app/dsp-processor.js'];
+    const workletRoutes = ['/app/dsp-processor.js', '/src/workers/(.*\\.js)'];
     for (const route of workletRoutes) {
       const routeHeaders = cfg.headers.find((h) => h.source === route);
       expect(routeHeaders).toBeDefined();

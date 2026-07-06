@@ -7,7 +7,10 @@
       "sizeBytes": 88080384,
       "eager": false,
       "sources": [
-        { "provider": "same-origin", "url": "/app/models/demucs_v4_quantized.onnx" }
+        {
+          "provider": "same-origin",
+          "url": "/app/models/demucs_v4_quantized.onnx"
+        }
       ]
     },
     "bsrnn": {
@@ -15,7 +18,10 @@
       "sizeBytes": 3870554,
       "eager": false,
       "sources": [
-        { "provider": "same-origin", "url": "/app/models/bsrnn_vocals.onnx" }
+        {
+          "provider": "same-origin",
+          "url": "/app/models/bsrnn_vocals.onnx"
+        }
       ]
     },
     "rnnoise": {
@@ -23,7 +29,10 @@
       "sizeBytes": 2027576,
       "eager": true,
       "sources": [
-        { "provider": "same-origin", "url": "/app/models/rnnoise_suppressor.onnx" }
+        {
+          "provider": "same-origin",
+          "url": "/app/models/rnnoise_suppressor.onnx"
+        }
       ]
     },
     "silero_vad": {
@@ -31,19 +40,52 @@
       "sizeBytes": 2327524,
       "eager": true,
       "sources": [
-        { "provider": "same-origin", "url": "/app/models/silero_vad.onnx" }
+        {
+          "provider": "same-origin",
+          "url": "/app/models/silero_vad.onnx"
+        }
       ]
     }
   },
-  "_sha256_note": "SHA256 last updated: 2026-05-20. Regenerate with: node scripts/hash-worklets.js",
+  "_sha256_note": "SHA256 last updated: 2026-07-06. Regenerate with: pnpm worklets:hash",
   "worklets": {
     "dsp_processor": {
       "filename": "dsp-processor.js",
       "processorName": "dsp-processor",
+      "role": "legacy-shipped",
       "contentType": "application/javascript",
       "sources": [
-        { "provider": "same-origin", "url": "/app/dsp-processor.js", "sha256": "e8870cd5c8ee1490a7c1e74d2fceab391f1f6c59d085882157acb3328c2dbba1" },
-        { "provider": "vercel-blob", "url": "https://blob.vercel-storage.com/voiceisolate-pro/worklets/dsp-processor.js", "sha256": "e8870cd5c8ee1490a7c1e74d2fceab391f1f6c59d085882157acb3328c2dbba1" }
+        {
+          "provider": "same-origin",
+          "url": "/app/dsp-processor.js",
+          "sha256": "5692dac6eeb7b82058f53ecf77ac78d23f2f8a0011797398ffb46e93b97057ee"
+        }
+      ]
+    },
+    "gate_processor": {
+      "filename": "GateProcessor.js",
+      "processorName": "vip-gate",
+      "role": "active",
+      "contentType": "application/javascript",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/src/workers/GateProcessor.js",
+          "sha256": "1105c1fe087e55462fcd41f1b67eb27c18c2314f9330dd8c5b8e3aec6e49c60d"
+        }
+      ]
+    },
+    "deesser_processor": {
+      "filename": "DeEsserProcessor.js",
+      "processorName": "vip-deesser",
+      "role": "active",
+      "contentType": "application/javascript",
+      "sources": [
+        {
+          "provider": "same-origin",
+          "url": "/src/workers/DeEsserProcessor.js",
+          "sha256": "bb66cd422d1f023b802c6de04ad8413fad1eeadb86adccd171720ece119bbb83"
+        }
       ]
     }
   }
