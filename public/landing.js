@@ -342,7 +342,7 @@ function syncVideo() {
 
 // ─── Worker lifecycle ────────────────────────────────────────────────────────
 
-const DEFAULT_WARMUP_CHAIN = ['demucs', 'rnnoise'];
+const DEFAULT_WARMUP_CHAIN = ['bsrnn_vocals', 'rnnoise'];
 
 function resolveModelIds(selection) {
   const chain = MODEL_CHAINS[selection];
@@ -703,7 +703,8 @@ function warnIfNotServed() {
 // Keys are <select> values that are NOT single manifest entries; the worker
 // receives the resolved `modelIds` array (see MLWorker chain support).
 const MODEL_CHAINS = Object.freeze({
-  max_isolation: ['demucs', 'rnnoise'],
+  max_isolation: ['bsrnn_vocals', 'rnnoise'],
+  studio_isolation: ['demucs', 'rnnoise'],
 });
 
 function onProcess() {

@@ -108,7 +108,9 @@ function postStage(stage, percent, extra = {}) {
 
 function effectiveBatchFrames(entry) {
   const base = entry.maxBatchFrames || 32;
-  return BACKEND === 'webgpu' ? Math.min(128, base * 2) : base;
+  if (BACKEND === 'webgpu') return Math.min(128, base * 2);
+  // Larger WASM batches amortize ONNX session.run overhead on spectral models.
+  return Math.min(64, base * 2);
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────

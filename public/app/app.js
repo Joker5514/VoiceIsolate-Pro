@@ -53,8 +53,8 @@ import { recommendEngineerPreset } from '/src/core/MixCalibration.js';
 // that parse this file directly to validate model configuration consistency.
 const MODEL_STATUS_KEYS = ['demucs', 'bsrnn', 'rnnoise', 'silero_vad'];
 
-/** Default offline chain — same as Landing (Demucs → RNNoise). */
-const DEFAULT_ML_CHAIN = Object.freeze(['demucs', 'rnnoise']);
+/** Default offline chain — BS-RNN vocals → denoise (fast; Demucs is opt-in on Landing). */
+const DEFAULT_ML_CHAIN = Object.freeze(['bsrnn_vocals', 'rnnoise']);
 
 function _yieldToUI(cb) {
   const timerId = setTimeout(cb, 0);
@@ -1926,8 +1926,11 @@ class VoiceIsolatePro {
             this.outputBuffer = result;
             this.procBuffer = result;
           }
-        } else if (await this._runMLIsolationPipeline()) {
-          // ML offline path succeeded (same Demucs chain as Landing).
+        } else if (pass === 0) {
+          // ML inference runs exactly once per file (CLAUDE.md §1). Whisper
+          // forensic passes are DSP-only refinement on procBuffer.
+          const mlOk = await this._runMLIsolationPipeline();
+          if (!mlOk) await this._runFallbackPipeline();
         } else {
           await this._runFallbackPipeline();
         }
@@ -1990,7 +1993,7 @@ class VoiceIsolatePro {
       for (let ch = 0; ch < buf.numberOfChannels; ch++) {
         channelData.push(buf.getChannelData(ch).slice());
       }
-      this.updatePipelineProgress(4, 'ML isolation (Demucs)…', 15);
+      this.updatePipelineProgress(4, 'ML isolation…', 15);
       const result = await separateStems(channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
         onProgress: (ev) => {
