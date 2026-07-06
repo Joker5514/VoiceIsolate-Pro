@@ -98,6 +98,9 @@ async function decodeBlobToAudioBuffer(file) {
   }
   return this.ctx.decodeAudioData(abCopy);
 }
+async function resampleToCanonical(buffer) {
+  return buffer;
+}
 `;
 }
 
@@ -108,8 +111,8 @@ function getAppCode() {
   let appJsCode = stripRelativeImports(appJsRaw);
   if (appJsCode.includes('decodeBlobToAudioBuffer(file)')) {
     appJsCode = appJsCode.replace(
-      'buffer = await decodeBlobToAudioBuffer(file);',
-      'buffer = await decodeBlobToAudioBuffer.call(this, file);'
+      'const decoded = await decodeBlobToAudioBuffer(file);',
+      'const decoded = await decodeBlobToAudioBuffer.call(this, file);'
     );
   }
   const mediaDecodeShim = buildMediaDecodeShim();

@@ -22,12 +22,48 @@
 
 const { spawn } = require('child_process');
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 const os = require('os');
 
-const PORT = process.env.SMOKE_PORT || 3457;
-const BASE = `http://127.0.0.1:${PORT}`;
 const ROOT = path.join(__dirname, '..');
+
+/** Bind to an ephemeral port when SMOKE_PORT is unset — avoids stale listeners. */
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const s = http.createServer();
+    s.listen(0, '127.0.0.1', () => {
+      const port = s.address().port;
+      s.close(() => resolve(port));
+    });
+    s.on('error', reject);
+  });
+}
+
+async function resolveSmokePort() {
+  if (process.env.SMOKE_PORT) return Number(process.env.SMOKE_PORT);
+  return getFreePort();
+}
+
+function waitForServer(base, timeoutMs = 20000) {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const ping = () => {
+      const req = http.get(`${base}/`, (res) => {
+        res.resume();
+        if (res.statusCode && res.statusCode < 500) resolve();
+        else retry();
+      });
+      req.on('error', retry);
+      req.setTimeout(1500, () => { req.destroy(); retry(); });
+    };
+    const retry = () => {
+      if (Date.now() - start > timeoutMs) reject(new Error(`server did not start (${base})`));
+      else setTimeout(ping, 250);
+    };
+    ping();
+  });
+}
 
 let failures = 0;
 const check = (ok, label) => {
@@ -61,23 +97,78 @@ function makeWav() {
   return file;
 }
 
+async function waitForLandingBoot(page) {
+  await page.waitForFunction(() => {
+    const legacy = document.getElementById('statusText')?.textContent || '';
+    const pill = document.getElementById('statusPillMount')?.textContent || '';
+    const text = (legacy || pill).trim();
+    const input = document.getElementById('fileInput');
+    return text.includes('Idle') && input && !input.disabled;
+  }, null, { timeout: 30000 });
+}
+
+async function triggerFileIngest(page, wavPath) {
+  await page.setInputFiles('#fileInput', wavPath);
+  // Playwright usually fires `change`, but dispatch explicitly to avoid races
+  // when the ESM bundle finishes loading right as the file is attached.
+  await page.locator('#fileInput').dispatchEvent('change');
+}
+
+async function waitForPipelineStart(page, consoleErrors) {
+  try {
+    await page.waitForFunction(
+      () => {
+        const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
+        const text = (el?.textContent || '').trim();
+        return text.includes('Decoding')
+          || text.includes('Separating')
+          || text.includes('isolation')
+          || text.includes('Stems ready');
+      },
+      null, { timeout: 60000 }
+    );
+  } catch (err) {
+    const status = await page.evaluate(() => {
+      const legacy = document.getElementById('statusText')?.textContent || '';
+      const pill = document.getElementById('statusPillMount')?.textContent || '';
+      return (legacy || pill).trim();
+    });
+    const inputState = await page.evaluate(() => {
+      const input = document.getElementById('fileInput');
+      return { disabled: input?.disabled ?? null, files: input?.files?.length ?? 0 };
+    });
+    const detail = [
+      `status="${status}"`,
+      `fileInput.disabled=${inputState.disabled}`,
+      `fileInput.files=${inputState.files}`,
+      consoleErrors.length ? `console=${consoleErrors.slice(0, 3).join(' | ')}` : '',
+    ].filter(Boolean).join('; ');
+    throw new Error(`pipeline did not start within 60s (${detail})`);
+  }
+}
+
 async function main() {
   const wavPath = makeWav();
+  const PORT = await resolveSmokePort();
+  const BASE = `http://127.0.0.1:${PORT}`;
   console.log(`\n🔊 VoiceIsolate Pro — Landing E2E smoke (${BASE})\n`);
 
   // ── Server ────────────────────────────────────────────────────────────────
-  const server = spawn('node', ['server.js'], {
+  const server = spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
     env: { ...process.env, PORT: String(PORT) },
-    stdio: 'pipe',
+    stdio: 'ignore',
   });
-  await new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error('server start timeout')), 15000);
-    server.stdout.on('data', (d) => {
-      if (String(d).includes('running on port')) { clearTimeout(t); resolve(); }
-    });
-    server.on('exit', () => reject(new Error('server exited early')));
-  });
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    try { server.kill('SIGTERM'); } catch { /* noop */ }
+    setTimeout(() => { try { server.kill('SIGKILL'); } catch { /* noop */ } }, 2000).unref();
+  };
+  process.on('SIGINT', () => { cleanup(); process.exit(130); });
+  process.on('SIGTERM', () => { cleanup(); process.exit(143); });
+  await waitForServer(BASE);
 
   const { chromium } = require('playwright');
   const browser = await chromium.launch({
@@ -96,7 +187,8 @@ async function main() {
   try {
     // ── Load page ───────────────────────────────────────────────────────────
     console.log('Page load:');
-    await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${BASE}/`, { waitUntil: 'load' });
+    await waitForLandingBoot(page);
     check(await page.title() === 'VoiceIsolate Pro — Stem-Split & Live-Mix', 'title correct');
     for (const id of ['noiseReductionSlider', 'voiceLevelSlider', 'volumeSlider',
       'eqLowSlider', 'eqHighSlider', 'presetSelect', 'waveCanvas', 'specCanvas',
@@ -114,18 +206,8 @@ async function main() {
     // ── Ingest + true inference ─────────────────────────────────────────────
     // Landing auto-starts separation after decode (no separate "Ready:" gate).
     console.log('\nIngestion & inference (real model, no passthrough):');
-    await page.setInputFiles('#fileInput', wavPath);
-    await page.waitForFunction(
-      () => {
-        const el = document.getElementById('statusText') || document.getElementById('statusPillMount');
-        const text = (el?.textContent || '').trim();
-        return text.includes('Decoding')
-          || text.includes('Separating')
-          || text.includes('isolation')
-          || text.includes('Stems ready');
-      },
-      null, { timeout: 30000 }
-    );
+    await triggerFileIngest(page, wavPath);
+    await waitForPipelineStart(page, consoleErrors);
     check(true, 'file accepted and pipeline started');
 
     await page.waitForFunction(
@@ -359,7 +441,7 @@ async function main() {
       : `console errors: ${realErrors.slice(0, 3).join(' | ')}`);
   } finally {
     await browser.close();
-    server.kill();
+    cleanup();
   }
 
   console.log(`\n${failures === 0 ? '✅ Landing E2E: ALL CHECKS PASSED' : `❌ Landing E2E: ${failures} check(s) failed`}\n`);

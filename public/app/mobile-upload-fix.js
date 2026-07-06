@@ -134,11 +134,13 @@
       zone.parentNode && zone.parentNode.replaceChild(fresh, zone);
 
       fresh.addEventListener('click', async function (e) {
-        if (e.target.tagName === 'BUTTON' && e.target !== fresh) return;
+        // Zone is cloned after app.js bindEvents(), so Browse must open the
+        // picker here — skipping BUTTON clicks left fileBtn inert.
+        e.preventDefault();
         try { await window.getAudioContext(); } catch (_) {}
-        const fi = document.getElementById('fi') ||
-                   document.getElementById('fileInput') ||
-                   fileInputs[0];
+        const fi = document.getElementById('fileInput') ||
+                   document.getElementById('fi') ||
+                   document.querySelector('input[type="file"]');
         if (fi) fi.click();
       });
 
@@ -157,8 +159,12 @@
         e.preventDefault();
         fresh.classList.remove('over', 'dragover');
         const file = e.dataTransfer && e.dataTransfer.files[0];
-        if (file && window.loadFile) {
-          try { await window.getAudioContext(); } catch (_) {}
+        if (!file) return;
+        try { await window.getAudioContext(); } catch (_) {}
+        const app = window._vipApp;
+        if (app && typeof app.handleFile === 'function') {
+          app.handleFile(file);
+        } else if (typeof window.loadFile === 'function') {
           window.loadFile(file);
         }
       });
