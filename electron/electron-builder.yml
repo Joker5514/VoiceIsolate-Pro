@@ -20,8 +20,10 @@ extraMetadata:
 win:
   target:
     - nsis
-  # Unsigned local builds: winCodeSign cache extraction needs symlink privilege on Windows.
-  signAndEditExecutable: false
+  # Signing runs when CSC_LINK / WIN_CSC_LINK + CSC_KEY_PASSWORD are set (CI).
+  # Local unsigned builds: pnpm build:electron sets CSC_IDENTITY_AUTO_DISCOVERY=false.
+  signAndEditExecutable: true
+  signDlls: true
   artifactName: VoiceIsolate-Pro-${version}-win-${arch}.${ext}
 
 mac:
@@ -31,6 +33,10 @@ mac:
   artifactName: VoiceIsolate-Pro-${version}-mac-${arch}.${ext}
   hardenedRuntime: true
   gatekeeperAssess: false
+  entitlements: electron/entitlements.mac.plist
+  entitlementsInherit: electron/entitlements.mac.plist
+
+afterSign: electron/notarize.cjs
 
 linux:
   target:

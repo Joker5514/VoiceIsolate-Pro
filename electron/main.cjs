@@ -13,6 +13,7 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
+const { autoUpdater } = require('electron-updater');
 const { IPC } = require('./ipc-channels.cjs');
 
 const ROOT = path.join(__dirname, '..');
@@ -21,6 +22,41 @@ const DEV_URL = process.env.VIP_DEV_URL || 'http://localhost:3000';
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
+
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
+function sendUpdateStatus(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(IPC.UPDATE_STATUS, payload);
+  }
+}
+
+function setupAutoUpdater() {
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdateStatus({ state: 'checking' });
+  });
+  autoUpdater.on('update-available', (info) => {
+    sendUpdateStatus({ state: 'available', version: info.version, releaseNotes: info.releaseNotes });
+  });
+  autoUpdater.on('update-not-available', (info) => {
+    sendUpdateStatus({ state: 'not-available', version: info.version });
+  });
+  autoUpdater.on('error', (err) => {
+    sendUpdateStatus({ state: 'error', message: err?.message || String(err) });
+  });
+  autoUpdater.on('download-progress', (progress) => {
+    sendUpdateStatus({
+      state: 'downloading',
+      percent: progress.percent,
+      transferred: progress.transferred,
+      total: progress.total,
+    });
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    sendUpdateStatus({ state: 'downloaded', version: info.version });
+  });
+}
 
 function modelCacheDir() {
   return path.join(app.getPath('userData'), 'models');
@@ -137,11 +173,38 @@ function registerIpc() {
     await fs.writeFile(full, buf);
     return { ok: true, bytes: buf.byteLength };
   });
+
+  ipcMain.handle(IPC.UPDATE_CHECK, async () => {
+    if (!app.isPackaged) {
+      return { ok: false, reason: 'dev' };
+    }
+    const result = await autoUpdater.checkForUpdates();
+    return { ok: true, updateInfo: result?.updateInfo?.version || null };
+  });
+
+  ipcMain.handle(IPC.UPDATE_DOWNLOAD, async () => {
+    if (!app.isPackaged) return { ok: false, reason: 'dev' };
+    await autoUpdater.downloadUpdate();
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC.UPDATE_INSTALL, () => {
+    if (!app.isPackaged) return { ok: false, reason: 'dev' };
+    autoUpdater.quitAndInstall();
+    return { ok: true };
+  });
 }
 
 app.whenReady().then(() => {
+  setupAutoUpdater();
   registerIpc();
   createWindow();
+
+  if (app.isPackaged && process.env.VIP_SKIP_AUTO_UPDATE !== '1') {
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.warn('[electron] Auto-update check failed:', err?.message || err);
+    });
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

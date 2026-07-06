@@ -12,6 +12,10 @@ const IPC = Object.freeze({
   MODEL_CACHE_PATH: 'vip:model-cache-path',
   READ_MODEL_CACHE: 'vip:read-model-cache',
   WRITE_MODEL_CACHE: 'vip:write-model-cache',
+  UPDATE_CHECK: 'vip:update-check',
+  UPDATE_DOWNLOAD: 'vip:update-download',
+  UPDATE_INSTALL: 'vip:update-install',
+  UPDATE_STATUS: 'vip:update-status',
 });
 
 module.exports = { IPC };

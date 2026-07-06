@@ -6,9 +6,7 @@
  */
 'use strict';
 
-import { MODEL_MANIFEST } from '../core/ModelManifest.js';
-
-const MANIFEST_ARRAY = Object.values(MODEL_MANIFEST);
+import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 
 let _worker = null;
 let _ready = null;
@@ -16,7 +14,7 @@ let _seq = 0;
 
 function getWorker() {
   if (_worker) return _worker;
-  _worker = new Worker('/src/workers/MLWorker.js');
+  _worker = createMLWorker();
   return _worker;
 }
 
@@ -44,7 +42,7 @@ function ensureReady() {
     };
     w.addEventListener('message', onMsg);
     w.addEventListener('error', onErr);
-    w.postMessage({ type: 'init', manifest: MANIFEST_ARRAY });
+    initMLWorker(w);
   });
   return _ready;
 }

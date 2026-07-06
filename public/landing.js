@@ -20,6 +20,7 @@ import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
 import { MODEL_MANIFEST } from '/src/core/ModelManifest.js';
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
+import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
 import { buildHintPanel } from '/app/slider-hint-ui.js';
 
@@ -357,8 +358,8 @@ function warmupWorkerModels(modelIds) {
 
 function getWorker() {
   if (worker) return worker;
-  worker = new Worker('/src/workers/MLWorker.js');
-  worker.postMessage({ type: 'init', manifest: Object.values(MODEL_MANIFEST) });
+  worker = createMLWorker();
+  initMLWorker(worker);
   worker.addEventListener('message', (event) => {
     const msg = event.data || {};
     switch (msg.type) {

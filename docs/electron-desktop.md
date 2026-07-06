@@ -24,6 +24,10 @@ Renderer API surface: `window.vipDesktop` (see `electron/preload.cjs`).
 | `vip:model-cache-path` | invoke | Filesystem model cache directory |
 | `vip:read-model-cache` | invoke | Read cached ONNX by relative path |
 | `vip:write-model-cache` | invoke | Write ONNX blob to filesystem cache |
+| `vip:update-check` | invoke | Check GitHub Releases for updates |
+| `vip:update-download` | invoke | Download available update |
+| `vip:update-install` | invoke | Quit and install downloaded update |
+| `vip:update-status` | event | Auto-update progress (main → renderer) |
 
 ## Development
 
@@ -57,7 +61,10 @@ Unlike web (IndexedDB), desktop uses filesystem storage under:
 {userData}/models/
 ```
 
-The renderer should prefer `vipDesktop.readModelCache()` / `writeModelCache()` over IndexedDB when `window.vipDesktop` is present.
+`src/core/DesktopModelCache.js` implements filesystem-first caching with IndexedDB
+fallback. `src/core/ModelCacheBridge.js` proxies MLWorker cache I/O to the main
+thread (workers cannot call `vipDesktop` directly). All MLWorker hosts use
+`src/pipeline/MLWorkerHost.js` which attaches the bridge automatically.
 
 ## File I/O Integration (Done)
 
@@ -68,11 +75,43 @@ The renderer should prefer `vipDesktop.readModelCache()` / `writeModelCache()` o
 | Presentation | `src/presentation/ExportControls.js` | `_deliverBlob()` → native save |
 | Landing | `public/landing.js` | Upload zone uses native picker when `isDesktopShell()` |
 
-## Phase 1 Remaining Work
+## Auto-Update (GitHub Releases)
+
+Packaged builds check for updates on launch (`electron-updater` + `publish: github`
+in `electron/electron-builder.yml`). Renderer API:
+
+```js
+await window.vipDesktop.checkForUpdates();
+const off = window.vipDesktop.onUpdateStatus((s) => console.log(s.state));
+await window.vipDesktop.downloadUpdate();
+await window.vipDesktop.installUpdate();
+```
+
+Set `VIP_SKIP_AUTO_UPDATE=1` to disable the startup check. Dev mode (`VIP_ELECTRON_DEV=1`)
+never checks for updates.
+
+## Code Signing
+
+| Platform | Env vars | Notes |
+|----------|----------|-------|
+| Windows Authenticode | `CSC_LINK` or `WIN_CSC_LINK`, `CSC_KEY_PASSWORD` | `signAndEditExecutable: true` in builder config |
+| macOS | `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_TEAM_ID` | `hardenedRuntime` + `electron/entitlements.mac.plist` |
+| Apple notarization | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | `electron/notarize.cjs` afterSign hook |
+
+Local unsigned Windows builds use `pnpm build:electron` which sets
+`CSC_IDENTITY_AUTO_DISCOVERY=false`.
+
+## Live-Mode Pipeline
+
+`src/pipeline/LivePipeline.js` integrates `QuantumHopBridge` for hop-aligned FFT
+windows in live mode (Blueprint v2.1 §III). It accepts AudioWorklet quanta via
+`pushQuantum()` or drains a ring buffer via `drainRingBuffer()`.
+
+## Phase 1 Desktop MVP — Complete
 
 - [x] Wire `FileIngestion` to `vipDesktop.openFile()` in desktop shell
 - [x] Wire `ExportOrchestrator` / `ExportControls` to `vipDesktop.saveFile()`
-- [ ] Desktop model loader adapter (filesystem-first, IndexedDB fallback)
-- [ ] Code signing (Windows Authenticode, Apple notarization)
-- [ ] `electron-updater` auto-update channel (GitHub Releases)
-- [ ] Live-mode pipeline integration with `QuantumHopBridge`
+- [x] Desktop model loader adapter (filesystem-first, IndexedDB fallback)
+- [x] Code signing (Windows Authenticode, Apple notarization)
+- [x] `electron-updater` auto-update channel (GitHub Releases)
+- [x] Live-mode pipeline integration with `QuantumHopBridge`
