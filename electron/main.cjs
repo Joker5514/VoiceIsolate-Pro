@@ -114,10 +114,32 @@ function registerIpc() {
 
   ipcMain.handle(IPC.OPEN_FILE, async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      title: 'Import Audio',
+      title: 'Import Audio or Video',
       properties: ['openFile'],
       filters: [
-        { name: 'Audio', extensions: ['wav', 'mp3', 'flac', 'ogg', 'm4a', 'aac', 'webm'] },
+        {
+          name: 'Audio & Video',
+          extensions: [
+            'wav', 'wave', 'mp3', 'flac', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'webm', 'weba',
+            'aiff', 'aif', 'caf', 'wma', 'mka', 'm4b', 'm4r', 'amr', 'ac3', 'eac3',
+            'mp4', 'm4v', 'mov', 'mkv', 'avi', 'ogv', '3gp', '3g2', 'wmv', 'mpeg', 'mpg',
+            'ts', 'm2ts', 'mts', 'flv', 'f4v', 'asf',
+          ],
+        },
+        {
+          name: 'Video',
+          extensions: [
+            'mp4', 'm4v', 'mov', 'mkv', 'avi', 'ogv', '3gp', '3g2', 'wmv', 'mpeg', 'mpg',
+            'webm', 'ts', 'm2ts', 'mts', 'flv', 'f4v', 'asf',
+          ],
+        },
+        {
+          name: 'Audio',
+          extensions: [
+            'wav', 'wave', 'mp3', 'flac', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'webm', 'weba',
+            'aiff', 'aif', 'caf', 'wma', 'mka', 'm4b', 'm4r', 'amr', 'ac3', 'eac3',
+          ],
+        },
         { name: 'All Files', extensions: ['*'] },
       ],
     });

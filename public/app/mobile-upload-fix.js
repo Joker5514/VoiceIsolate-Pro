@@ -110,11 +110,20 @@
    * Explicit MIME list forces the correct native picker on iOS + Android.
    */
   const AUDIO_ACCEPT = [
-    'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav',
-    'audio/ogg', 'audio/flac', 'audio/x-flac', 'audio/aac',
-    'audio/x-m4a', 'audio/m4a', 'audio/mp4',
-    'video/mp4', 'video/webm', 'video/quicktime',
-    'audio/*', 'video/*'
+    'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave',
+    'audio/ogg', 'audio/flac', 'audio/x-flac', 'audio/aac', 'audio/x-aac',
+    'audio/x-m4a', 'audio/m4a', 'audio/mp4', 'audio/webm', 'audio/amr',
+    'audio/aiff', 'audio/x-aiff', 'audio/x-caf', 'audio/x-ms-wma',
+    'audio/opus', 'audio/ac3', 'audio/eac3',
+    'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo',
+    'video/x-matroska', 'video/ogg', 'video/3gpp', 'video/3gpp2',
+    'video/x-ms-wmv', 'video/mpeg', 'video/mp2t', 'video/x-flv',
+    'audio/*', 'video/*',
+    '.wav', '.wave', '.mp3', '.m4a', '.aac', '.ogg', '.oga', '.opus',
+    '.flac', '.webm', '.weba', '.aiff', '.aif', '.caf', '.wma', '.mka',
+    '.m4b', '.m4r', '.amr', '.ac3', '.eac3',
+    '.mp4', '.m4v', '.mov', '.mkv', '.avi', '.ogv', '.3gp', '.3g2',
+    '.wmv', '.mpeg', '.mpg', '.ts', '.m2ts', '.mts', '.flv', '.f4v', '.asf',
   ].join(',');
 
   function patchFileInput() {

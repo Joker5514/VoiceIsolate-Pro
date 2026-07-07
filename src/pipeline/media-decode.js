@@ -3,7 +3,8 @@
 import { SAMPLE_RATE } from '../core/audio-config.js';
 import { inferMediaKind } from '../core/media-types.js';
 
-const MEDIA_DECODE_TIMEOUT_MS = 60_000;
+/** Minimum capture timeout — long files scale beyond this. */
+const MEDIA_DECODE_MIN_TIMEOUT_MS = 120_000;
 // ScriptProcessorNode block size — must be a power-of-two 256–16384.
 const SPN_BLOCK_SIZE = 4096;
 
@@ -11,19 +12,23 @@ const SPN_BLOCK_SIZE = 4096;
  * Decode any supported blob to an AudioBuffer.
  *
  * Strategy:
- *  1. Fast path  — ctx.decodeAudioData()  (PCM/WAV/MP3/OGG/FLAC)
- *  2. Fallback   — live AudioContext + createMediaElementSource +
- *                  ScriptProcessorNode ring-buffer capture.
- *                  (M4A / AAC / MP4 / WebM containers the browser can
- *                  demux natively but decodeAudioData cannot handle.)
- *
- * ⚠️  OfflineAudioContext.createMediaElementSource() does NOT exist in
- *     any browser. The source MUST come from a live AudioContext.
+ *   Video containers always use the media-element capture path so the browser
+ *   demuxes the full timeline (decodeAudioData can truncate some MP4/MOV).
+ *   Audio:
+ *     1. Fast path  — ctx.decodeAudioData()  (PCM/WAV/MP3/OGG/FLAC)
+ *     2. Fallback   — live AudioContext + createMediaElementSource +
+ *                     ScriptProcessorNode ring-buffer capture until 'ended'.
  *
  * @param {Blob|File} blob
  * @returns {Promise<AudioBuffer>}
  */
 export async function decodeBlobToAudioBuffer(blob) {
+  const kind = inferMediaKind(blob) || 'audio';
+
+  if (kind === 'video') {
+    return _decodeViaMediaElement(blob, kind);
+  }
+
   let primaryErr = null;
   try {
     return await _decodeWithAudioData(blob);
@@ -31,7 +36,6 @@ export async function decodeBlobToAudioBuffer(blob) {
     primaryErr = err;
   }
 
-  const kind = inferMediaKind(blob) || 'audio';
   try {
     return await _decodeViaMediaElement(blob, kind);
   } catch (fallbackErr) {
@@ -60,10 +64,6 @@ async function _decodeWithAudioData(blob) {
 
 // ---------------------------------------------------------------------------
 // Fallback — live AudioContext + createMediaElementSource + ring-buffer
-//
-// OfflineAudioContext does NOT have createMediaElementSource() — it is a
-// live-AudioContext-only API. We capture the output of the live graph with a
-// ScriptProcessorNode and assemble PCM frames into an AudioBuffer ourselves.
 // ---------------------------------------------------------------------------
 async function _decodeViaMediaElement(blob, kind) {
   const doc = globalThis.document;
@@ -77,98 +77,114 @@ async function _decodeViaMediaElement(blob, kind) {
   const tag = kind === 'video' ? 'video' : 'audio';
   const media = doc.createElement(tag);
   media.preload = 'auto';
-  media.muted = true;          // lets browser play without a user gesture
+  media.muted = true;
   media.setAttribute('playsinline', '');
   media.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
   doc.body.appendChild(media);
   media.src = url;
 
   let ctx = null;
+  let timeoutHandle = null;
   try {
-    // 1. Wait until metadata (duration / channels) is available.
     await _waitForMetadata(media);
 
-    const duration = media.duration;
+    let duration = media.duration;
     if (!Number.isFinite(duration) || duration <= 0) {
       throw new Error('Media has no decodable audio duration.');
     }
 
-    // 2. Build the live audio graph.
     ctx = new Ctx({ sampleRate: SAMPLE_RATE });
-    const source = ctx.createMediaElementSource(media); // ✅ valid on live ctx
+    const source = ctx.createMediaElementSource(media);
 
-    // 3. Ring-buffer via ScriptProcessorNode.
-    //    SPN is deprecated but universally supported and gives synchronous
-    //    PCM access — the only option for a MediaElementSource on a live ctx.
     const numChannels = 2;
-    const estimatedFrames = Math.ceil(duration * SAMPLE_RATE) + SPN_BLOCK_SIZE * 4;
-    const chunks = [];   // Array<Array<Float32Array>>  [block][ch]
-    let capturedFrames = 0;
-    let resolveDone, rejectDone;
-    const donePromise = new Promise((res, rej) => { resolveDone = res; rejectDone = rej; });
+    const chunks = [];
+    let captureDone = false;
 
     const spn = ctx.createScriptProcessor(SPN_BLOCK_SIZE, numChannels, numChannels);
     source.connect(spn);
-    spn.connect(ctx.destination); // must be connected to run
+    spn.connect(ctx.destination);
 
     spn.onaudioprocess = (e) => {
+      if (captureDone) return;
       const block = [];
       for (let ch = 0; ch < numChannels; ch++) {
-        block.push(new Float32Array(e.inputBuffer.getChannelData(ch))); // copy!
+        block.push(new Float32Array(e.inputBuffer.getChannelData(ch)));
       }
       chunks.push(block);
-      capturedFrames += SPN_BLOCK_SIZE;
-      if (capturedFrames >= estimatedFrames) {
-        spn.onaudioprocess = null;
-        resolveDone();
-      }
     };
 
-    // 4. Timeout guard.
-    const timeoutHandle = setTimeout(() => {
-      spn.onaudioprocess = null;
-      rejectDone(new Error(`Media element capture timed out after ${MEDIA_DECODE_TIMEOUT_MS / 1000}s`));
-    }, MEDIA_DECODE_TIMEOUT_MS);
+    const flushTailMs = Math.ceil((SPN_BLOCK_SIZE / SAMPLE_RATE) * 1000) + 100;
 
-    // 5. Start playback — required to drive the ScriptProcessorNode.
-    await media.play();
+    const resetCaptureTimeout = () => {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      const captureTimeoutMs = Math.max(
+        MEDIA_DECODE_MIN_TIMEOUT_MS,
+        Math.ceil(duration * 1000 * 2) + 60_000,
+      );
+      timeoutHandle = setTimeout(() => {
+        captureDone = true;
+        spn.onaudioprocess = null;
+        media.pause();
+      }, captureTimeoutMs);
+    };
 
-    // 6. Also resolve when element fires 'ended' (handles short files
-    //    that finish before estimatedFrames is reached).
-    const endedPromise = new Promise((res) => {
-      media.addEventListener('ended', () => {
-        // One extra SPN quantum to flush the tail.
-        setTimeout(() => {
-          spn.onaudioprocess = null;
-          res();
-        }, Math.ceil((SPN_BLOCK_SIZE / SAMPLE_RATE) * 1000) + 50);
+    const endedPromise = new Promise((resolve, reject) => {
+      const finish = () => {
+        if (captureDone) return;
+        captureDone = true;
+        spn.onaudioprocess = null;
+        setTimeout(resolve, flushTailMs);
+      };
+      media.addEventListener('ended', finish, { once: true });
+      media.addEventListener('error', () => {
+        reject(new Error(media.error?.message || 'Media playback failed'));
       }, { once: true });
+      media.addEventListener('durationchange', () => {
+        if (Number.isFinite(media.duration) && media.duration > duration) {
+          duration = media.duration;
+          resetCaptureTimeout();
+        }
+      });
     });
 
-    await Promise.race([donePromise, endedPromise]);
-    clearTimeout(timeoutHandle);
+    resetCaptureTimeout();
+
+    await media.play();
+    await endedPromise;
+    if (timeoutHandle) clearTimeout(timeoutHandle);
     spn.onaudioprocess = null;
 
-    // 7. Assemble captured chunks into a single AudioBuffer.
-    const totalFrames = chunks.length * SPN_BLOCK_SIZE;
+    if (!chunks.length) {
+      throw new Error('Media element produced an empty audio buffer.');
+    }
+
+    const reportedDuration = Number.isFinite(media.duration) && media.duration > 0
+      ? media.duration
+      : duration;
+    const targetFrames = Math.max(1, Math.ceil(reportedDuration * SAMPLE_RATE));
+    const capturedFrames = chunks.length * SPN_BLOCK_SIZE;
+    const outFrames = Math.min(capturedFrames, targetFrames);
+
     const result = new AudioBuffer({
       numberOfChannels: numChannels,
-      length: totalFrames,
+      length: outFrames,
       sampleRate: SAMPLE_RATE,
     });
     for (let ch = 0; ch < numChannels; ch++) {
       const dest = result.getChannelData(ch);
       let offset = 0;
       for (const block of chunks) {
-        dest.set(block[ch], offset);
-        offset += SPN_BLOCK_SIZE;
+        const remain = outFrames - offset;
+        if (remain <= 0) break;
+        const copyLen = Math.min(SPN_BLOCK_SIZE, remain);
+        dest.set(block[ch].subarray(0, copyLen), offset);
+        offset += copyLen;
       }
     }
 
-    if (!result.length) throw new Error('Media element produced an empty audio buffer.');
     return result;
-
   } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
     try { media.pause(); } catch { /* ignore */ }
     try { media.removeAttribute('src'); media.load(); media.remove(); } catch { /* ignore */ }
     URL.revokeObjectURL(url);
@@ -184,7 +200,7 @@ function _waitForMetadata(media) {
     const HAVE_METADATA = globalThis.HTMLMediaElement?.HAVE_METADATA ?? 1;
     const timer = setTimeout(
       () => reject(new Error('Media metadata load timeout')),
-      MEDIA_DECODE_TIMEOUT_MS
+      MEDIA_DECODE_MIN_TIMEOUT_MS,
     );
     const done = () => { clearTimeout(timer); resolve(); };
     const fail = () => {
@@ -195,7 +211,7 @@ function _waitForMetadata(media) {
     };
     if (media.readyState >= HAVE_METADATA) { done(); return; }
     media.addEventListener('loadedmetadata', done, { once: true });
-    media.addEventListener('error',          fail, { once: true });
+    media.addEventListener('error', fail, { once: true });
   });
 }
 

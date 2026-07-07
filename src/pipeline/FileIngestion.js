@@ -34,8 +34,8 @@ export { isDesktopShell, pickAudioFile } from '../core/DesktopBridge.js';
 /** Accepted MIME prefixes. Container formats vary; the decoder is the judge. */
 const ACCEPTED_TYPES = ['audio/', 'video/'];
 
-/** Refuse absurd inputs before burning memory (2 GB). */
-const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024;
+/** No practical upload size cap — whole files are decoded on-device. */
+const MAX_FILE_BYTES = Number.MAX_SAFE_INTEGER;
 
 /**
  * Map isolation mode to model IDs array for MLWorker.
@@ -101,7 +101,7 @@ export function assertIngestible(blob) {
     throw new RangeError('[VIP][FileIngestion] File is empty.');
   }
   if (blob.size > MAX_FILE_BYTES) {
-    throw new RangeError('[VIP][FileIngestion] File exceeds the 2 GB limit.');
+    throw new RangeError('[VIP][FileIngestion] File exceeds the maximum supported size.');
   }
   const kind = inferMediaKind(blob);
   if (kind === 'midi') {
