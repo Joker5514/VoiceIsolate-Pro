@@ -24,6 +24,257 @@ import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
 import { isDesktopShell, pickAudioFile } from '/src/core/DesktopBridge.js';
 import { openFilePicker as triggerFileInput, primeAudioGesture } from '/src/presentation/UploadWiring.js';
 
+/** Hero landing + branded loader — local-only cinematic shell */
+const HeroExperience = (() => {
+  const STAGE_LABELS = [
+    'decode', 'normalize', 'profile', 'isolate', 'gate',
+    'spectral refine', 'compress', 'render', 'finalize',
+  ];
+  let appRef = null;
+  let recording = false;
+  let mediaRec = null;
+  let recordChunks = [];
+
+  function $(id) { return document.getElementById(id); }
+
+  function mapStageLabel(detail, pct) {
+    const d = (detail || '').toLowerCase();
+    if (d.includes('decod')) return 'decode';
+    if (d.includes('normal')) return 'normalize';
+    if (d.includes('vad') || d.includes('profile')) return 'profile';
+    if (d.includes('isol') || d.includes('stft') || d.includes('spectral')) return 'spectral refine';
+    if (d.includes('gate')) return 'gate';
+    if (d.includes('compress') || d.includes('dyn') || d.includes('eq')) return 'compress';
+    if (d.includes('render') || d.includes('export') || d.includes('final')) return 'finalize';
+    if (pct >= 100) return 'finalize';
+    if (pct > 75) return 'render';
+    if (pct > 45) return 'isolate';
+    return 'decode';
+  }
+
+  function setUiState(state) {
+    const hero = $('vipHero');
+    if (hero) hero.dataset.uiState = state;
+  }
+
+  function setHeroCopy(status, enableProcess) {
+    const statusEl = $('heroStatus');
+    if (statusEl && status) statusEl.textContent = status;
+    const cta = $('heroCtaProcess');
+    if (cta) cta.disabled = !enableProcess;
+  }
+
+  function syncAliasControls() {
+    const pairs = [
+      ['tpAB', 'abToggle'],
+      ['tpABLabel', 'abLabel'],
+      ['saveProcBtn', 'exportBtn'],
+    ];
+    for (const [src, dst] of pairs) {
+      const s = $(src);
+      const d = $(dst);
+      if (!s || !d) continue;
+      d.disabled = s.disabled;
+      if (dst === 'abLabel') d.textContent = s.textContent;
+    }
+  }
+
+  function syncStatStrip(buf, statusText) {
+    if (buf) {
+      const dur = $('stat-duration');
+      const sr = $('stat-sr');
+      const ch = $('stat-channels');
+      if (dur) dur.textContent = typeof fmtTime === 'function' ? fmtTime(buf.duration) : `${buf.duration.toFixed(1)}s`;
+      if (sr) sr.textContent = `${buf.sampleRate} Hz`;
+      if (ch) ch.textContent = buf.numberOfChannels === 1 ? 'Mono' : 'Stereo';
+    }
+    const st = $('stat-status');
+    if (st && statusText) st.textContent = statusText;
+    const snr = $('stat-snr');
+    if (snr && appRef?.lastSNR != null) snr.textContent = `${appRef.lastSNR} dB`;
+  }
+
+  function mirrorWaveCanvases() {
+    const pairs = [['waveCanvas', 'inputCanvas'], ['waveProcCanvas', 'outputCanvas']];
+    for (const [srcId, dstId] of pairs) {
+      const src = $(srcId);
+      const dst = $(dstId);
+      if (!src || !dst || !src.width) continue;
+      dst.width = src.width;
+      dst.height = src.height;
+      const ctx = dst.getContext('2d');
+      if (ctx) ctx.drawImage(src, 0, 0);
+    }
+  }
+
+  function initHeroVideo() {
+    const video = $('heroVideo');
+    const fallback = $('heroFallback');
+    if (!video) return;
+    const showFallback = () => {
+      if (fallback) { fallback.hidden = false; fallback.setAttribute('aria-hidden', 'false'); }
+      video.style.display = 'none';
+    };
+    video.addEventListener('error', showFallback);
+    const playAttempt = video.play();
+    if (playAttempt && typeof playAttempt.catch === 'function') {
+      playAttempt.catch(showFallback);
+    }
+  }
+
+  function bindHeroCtas(app) {
+    $('heroCtaUpload')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      app.dom.fileBtn?.click();
+    });
+    $('heroCtaRecord')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleMicRecord(app);
+    });
+    $('heroCtaProcess')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!app.dom.processBtn?.disabled) app.runPipeline();
+    });
+    $('micBtn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleMicRecord(app);
+    });
+    $('exportBtn')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      app.dom.saveProcBtn?.click();
+    });
+    $('playOrig')?.addEventListener('click', () => {
+      if (app._abMode !== 'A') app.dom.tpAB?.click();
+      app.dom.tpPlay?.click();
+    });
+    $('playProc')?.addEventListener('click', () => {
+      if (app._abMode !== 'B') app.dom.tpAB?.click();
+      app.dom.tpPlay?.click();
+    });
+    $('abToggle')?.addEventListener('click', () => app.dom.tpAB?.click());
+  }
+
+  async function toggleMicRecord(app) {
+    const micBtn = $('micBtn');
+    const heroRec = $('heroCtaRecord');
+    if (recording) {
+      mediaRec?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordChunks = [];
+      mediaRec = new MediaRecorder(stream);
+      mediaRec.ondataavailable = (ev) => { if (ev.data?.size) recordChunks.push(ev.data); };
+      mediaRec.onstop = async () => {
+        recording = false;
+        stream.getTracks().forEach((t) => t.stop());
+        micBtn?.classList.remove('recording');
+        heroRec?.classList.remove('recording');
+        setUiState('idle');
+        setHeroCopy('Processing recording…', false);
+        const blob = new Blob(recordChunks, { type: mediaRec.mimeType || 'audio/webm' });
+        const file = new File([blob], `vip-recording-${Date.now()}.webm`, { type: blob.type });
+        await app.handleFile(file);
+      };
+      mediaRec.start();
+      recording = true;
+      micBtn?.classList.add('recording');
+      heroRec?.classList.add('recording');
+      setUiState('recording');
+      setHeroCopy('Recording from microphone… click again to stop', false);
+    } catch (err) {
+      app.showNotification?.(err?.message || 'Microphone access denied', 'error');
+      setUiState('error');
+      setHeroCopy('Microphone unavailable — use file upload', false);
+    }
+  }
+
+  function patchOverlayRefs() {
+    const tryPatch = (n = 0) => {
+      if (!globalThis.VIPOverlay) {
+        if (n < 80) setTimeout(() => tryPatch(n + 1), 100);
+        return;
+      }
+      const ov = globalThis.VIPOverlay;
+      const origInit = ov._initRefs.bind(ov);
+      ov._initRefs = function patchedInitRefs() {
+        origInit.call(this);
+        if (!this._refs) return;
+        this._refs.stageName = $('processingStage') || this._refs.stageName;
+        this._refs.pct = $('processingPercent') || this._refs.pct;
+        this._refs.bar = $('processingBarFill') || this._refs.bar;
+      };
+      ov._initRefs();
+    };
+    tryPatch();
+  }
+
+  function onPipelineProgress(stageIndex, detail, pct) {
+    const p = typeof pct === 'number' ? pct : 0;
+    const label = mapStageLabel(detail, p);
+    const stageEl = $('processingStage');
+    const pctEl = $('processingPercent');
+    const bar = $('processingBarFill');
+    const pipeFill = $('pipelineFill');
+    const chip = $('procStageChip');
+    if (stageEl && detail) stageEl.textContent = detail;
+    if (pctEl) pctEl.textContent = `${Math.round(p)}%`;
+    if (bar) bar.style.width = `${p}%`;
+    if (pipeFill) pipeFill.style.width = `${p}%`;
+    if (chip) chip.textContent = `◉ ${label}`;
+    const barWrap = $('pipelineStage');
+    if (barWrap) barWrap.setAttribute('aria-valuenow', String(Math.round(p)));
+    if (p > 0 && p < 100) setUiState('processing');
+    if (p >= 100) setUiState('processed');
+    syncStatStrip(appRef?.inputBuffer || appRef?.origBuffer, detail || 'Processing');
+    mirrorWaveCanvases();
+  }
+
+  return {
+    init(app) {
+      appRef = app;
+      initHeroVideo();
+      bindHeroCtas(app);
+      patchOverlayRefs();
+      setUiState('idle');
+      setHeroCopy('Ready — upload or record to begin', false);
+      window.addEventListener('vip:fileLoaded', () => {
+        setUiState('file-ready');
+        setHeroCopy('File loaded — processing pipeline starting', true);
+        syncStatStrip(app.inputBuffer || app.origBuffer, 'File loaded');
+        mirrorWaveCanvases();
+      });
+      window.addEventListener('vip:processingDone', () => {
+        setUiState('processed');
+        setHeroCopy('Processing complete — playback and export ready', true);
+        syncStatStrip(app.outputBuffer || app.procBuffer, 'Complete');
+        mirrorWaveCanvases();
+        syncAliasControls();
+      });
+      document.addEventListener('vip:playStarted', () => setUiState('playback'));
+    },
+    onDecodeStart() {
+      setUiState('processing');
+      setHeroCopy('Decoding audio locally…', false);
+    },
+    onDecodeError(msg) {
+      setUiState('error');
+      setHeroCopy(msg || 'Could not decode file', false);
+    },
+    onPipelineProgress(stageIndex, detail, pct) {
+      onPipelineProgress(stageIndex, detail, pct);
+    },
+    onClear() {
+      setUiState('idle');
+      setHeroCopy('Ready — upload or record to begin', false);
+      syncStatStrip(null, 'Idle');
+    },
+    mirrorWaveCanvases,
+    syncAliasControls,
+  };
+})();
+
 // Registry lookup for examples + calibrated transforms
 const SLIDER_REG_BY_ID = Object.freeze(
   SLIDER_REGISTRY.reduce((acc, s) => { acc[s.id] = s; return acc; }, {})
@@ -587,6 +838,7 @@ class VoiceIsolatePro {
       this._renderSliders();
       this.bindEvents();
       this._updateProcessButtonsState();
+      HeroExperience.init(this);
       // Upload controls are live — do not leave the splash intercepting clicks.
       this._dismissBootSplash();
     } catch (initErr) {
@@ -740,6 +992,7 @@ class VoiceIsolatePro {
     if (spinner) spinner.style.display = (p > 0 && p < 100) ? '' : 'none';
     const lbl = badge && badge.querySelector('.vip-pb-label');
     if (lbl) lbl.textContent = detail || (p >= 100 ? 'Done' : 'Ready');
+    HeroExperience.onPipelineProgress(stageIndex, detail, p);
   }
 
   // ── Render static visuals (waveform/spectrogram placeholder) ─────────────
@@ -750,6 +1003,7 @@ class VoiceIsolatePro {
     if (typeof window.VIP_spectro === 'object' && window.VIP_spectro) {
       try { window.VIP_spectro.renderStatic(buffer); } catch (_) {}
     }
+    HeroExperience.mirrorWaveCanvases();
   }
 
   // ── Audio context ────────────────────────────────────────────────────────
@@ -1641,6 +1895,7 @@ class VoiceIsolatePro {
     if (!file) return;
     this.stop();
     this.setStatus('LOADING');
+    HeroExperience.onDecodeStart();
     this._showFileLoading(file.name ? `Loading ${file.name}…` : 'Loading…');
 
     await this.ensureCtx();
@@ -1708,6 +1963,7 @@ class VoiceIsolatePro {
       this.setStatus('ERROR');
       this.showNotification('Cannot decode: ' + file.name, 'error');
       structuredLog('error', '[VIP] handleFile decode failed', { err: decodeErr?.message });
+      HeroExperience.onDecodeError(msg);
       return;
     }
 
@@ -1777,6 +2033,7 @@ class VoiceIsolatePro {
     if (this.dom.hFile) this.dom.hFile.textContent = (name || '').slice(0, 20);
 
     this.renderStaticVisuals(buf);
+    HeroExperience.mirrorWaveCanvases();
     try { window.dispatchEvent(new CustomEvent('vip:fileLoaded', { detail: { name } })); } catch (_) {}
     this.showNotification('File loaded: ' + name, 'info');
 
@@ -1791,6 +2048,7 @@ class VoiceIsolatePro {
   }
 
   _clearFile() {
+    HeroExperience.onClear();
     this.stop();
     this.inputBuffer = null;
     this.outputBuffer = null;

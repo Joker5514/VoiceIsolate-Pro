@@ -165,6 +165,87 @@
     </div>
   </header>
 
+  <!-- ── Cinematic hero / start experience ─────────────────────────────── -->
+  <section id="vipHero" class="vip-hero" data-ui-state="idle" aria-label="VoiceIsolate Pro start">
+    <div class="vip-hero-bg" aria-hidden="true">
+      <div class="vip-hero-wave-accent"></div>
+      <div class="vip-hero-grid-accent"></div>
+    </div>
+    <div class="vip-hero-inner">
+      <div class="vip-hero-media">
+        <div class="vip-hero-video-frame">
+          <video id="heroVideo" class="vip-hero-video" autoplay muted loop playsinline preload="auto"
+            poster="" aria-label="VoiceIsolate Pro logo animation">
+            <source src="media/Voice_Isolate_Pro_logo_animation_202606182115.mp4" type="video/mp4" />
+          </video>
+          <div id="heroFallback" class="vip-hero-fallback" hidden aria-hidden="true">
+            <div class="vip-hero-fallback-mark" aria-hidden="true">VIP</div>
+            <p class="vip-hero-fallback-text">VoiceIsolate Pro</p>
+          </div>
+          <div class="vip-hero-video-scan" aria-hidden="true"></div>
+        </div>
+      </div>
+      <div class="vip-hero-copy">
+        <p class="vip-hero-kicker">LOCAL-ONLY · ENGINEER MODE · v24</p>
+        <h2 id="heroTitle" class="vip-hero-title">VoiceIsolate Pro</h2>
+        <p id="heroTagline" class="vip-hero-tagline">Isolate voice. Erase noise. Export broadcast-ready audio — entirely on your device.</p>
+        <p id="heroStatus" class="vip-hero-status" role="status" aria-live="polite">Ready — upload or record to begin</p>
+        <div class="vip-hero-cta-row" role="group" aria-label="Start actions">
+          <button id="heroCtaUpload" class="btn btn-primary vip-hero-cta" type="button">Upload Audio</button>
+          <button id="heroCtaRecord" class="btn btn-outline vip-hero-cta btn-mic" type="button">Record Mic</button>
+          <button id="heroCtaProcess" class="btn btn-reprocess vip-hero-cta" type="button" disabled>Process Now</button>
+        </div>
+        <div class="vip-hero-trust" role="status" aria-label="Local processing trust">
+          <span class="vip-hero-trust-dot" aria-hidden="true"></span>
+          <span class="vip-hero-trust-text">100% local processing · no cloud · no telemetry · no upload</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pre-built processing overlay (required IDs for hero + pipeline sync) -->
+  <div id="processingOverlay" class="processing-overlay vip-dsp-overlay" role="status" aria-live="polite" aria-hidden="true" aria-label="Processing audio locally">
+    <div class="proc-backdrop" aria-hidden="true">
+      <div class="proc-backdrop-grid"></div>
+      <div class="proc-backdrop-scanline"></div>
+    </div>
+    <div class="processing-card vip-enter">
+      <div class="proc-title-wrap">
+        <div class="proc-badge-wrap">
+          <span class="proc-badge">VIP DSP</span>
+          <span class="proc-badge proc-badge--dim">32-STAGE DECA-PASS</span>
+        </div>
+        <div class="proc-title">Spectral Reactor Engine</div>
+        <div class="proc-subtitle">Neural Audio Processor · On-Device Only</div>
+      </div>
+      <div id="processingLoader" class="vip-dsp-loader" aria-hidden="true">
+        <div class="vip-dsp-loader-core"></div>
+        <div class="vip-dsp-loader-ring vip-dsp-loader-ring--a"></div>
+        <div class="vip-dsp-loader-ring vip-dsp-loader-ring--b"></div>
+        <div class="vip-dsp-loader-arc" id="spinner"></div>
+        <canvas class="proc-spinner-canvas" id="procSpinnerCanvas" width="220" height="220"></canvas>
+      </div>
+      <div class="proc-stage-cluster">
+        <div class="proc-stage-chip" id="procStageChip">◉ Decode</div>
+        <div class="proc-stage-name" id="processingStage">Preparing pipeline…</div>
+        <div class="proc-stage-meta">
+          <span class="proc-stage-index" id="procStageIndex">Stage 1 / 32</span>
+          <span class="proc-pct" id="processingPercent">0%</span>
+        </div>
+      </div>
+      <div class="proc-bar-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="pipelineStage" aria-label="Pipeline progress">
+        <div class="proc-bar-fill" id="processingBarFill"></div>
+        <div class="proc-bar-fill proc-bar-fill--mirror" id="pipelineFill"></div>
+        <div class="proc-bar-shine"></div>
+      </div>
+      <div class="proc-message-wrap">
+        <div class="proc-message-label">Current operation</div>
+        <div class="proc-message" id="procMessage">Loading models…</div>
+      </div>
+      <div class="proc-cancel-hint">Processing runs entirely on-device · no audio leaves this browser</div>
+    </div>
+  </div>
+
   <section class="engine-cockpit">
     <div class="card cockpit-card">
       <div class="cockpit-row">
@@ -200,6 +281,7 @@
             <p class="upload-title">Drop Audio or Video</p>
             <p class="upload-sub">MP3 · WAV · FLAC · OGG · M4A · AAC · MP4 · MOV · WEBM · MKV · AVI</p>
             <button id="fileBtn" class="btn btn-outline" type="button">Browse Files</button>
+            <button id="micBtn" class="btn btn-outline btn-mic" type="button" aria-label="Record from microphone">Record Mic</button>
           </div>
         </div>
         <div class="upload-row">
@@ -295,6 +377,13 @@
           <span class="vip-sonar-spinner vip-pb-spinner" aria-hidden="true" style="display:none"><i></i><i></i><i></i><b></b></span>
         </div>
         <div class="pipe-header"><span class="pipe-stage" id="pipeStage">S00</span><span id="pipePercent">0%</span></div>
+        <div class="vip-stat-strip" aria-label="Session stats">
+          <span class="vip-stat"><span class="vip-stat-lbl">Duration</span><span id="stat-duration" class="vip-stat-val">--</span></span>
+          <span class="vip-stat"><span class="vip-stat-lbl">Status</span><span id="stat-status" class="vip-stat-val">Idle</span></span>
+          <span class="vip-stat"><span class="vip-stat-lbl">SNR</span><span id="stat-snr" class="vip-stat-val">--</span></span>
+          <span class="vip-stat"><span class="vip-stat-lbl">Sample Rate</span><span id="stat-sr" class="vip-stat-val">--</span></span>
+          <span class="vip-stat"><span class="vip-stat-lbl">Channels</span><span id="stat-channels" class="vip-stat-val">--</span></span>
+        </div>
         <div class="pipe-bar" id="pipeBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Processing progress">
           <div id="pipeFill" class="pipe-fill"></div>
         </div>
@@ -304,6 +393,7 @@
       <div class="card save-row">
         <button id="saveOrigBtn" class="btn btn-save" disabled>Save Original WAV</button>
         <button id="saveProcBtn" class="btn btn-save-proc" disabled>Save Processed WAV</button>
+        <button id="exportBtn" class="btn btn-save-proc vip-export-alias" type="button" disabled hidden aria-hidden="true">Export WAV</button>
       </div>
 
       <!-- Mobile sticky action bar -->
@@ -319,6 +409,8 @@
         <div class="transport-top">
           <div class="tp-buttons" role="group" aria-label="Playback controls">
             <button id="tpPlay" class="btn btn-tp btn-tp-play" type="button" aria-label="Play (Space)" title="Play (Space)" disabled><span aria-hidden="true">&#9654;</span></button>
+            <button id="playOrig" class="btn btn-tp vip-tp-alias" type="button" hidden aria-hidden="true" tabindex="-1">Play Original</button>
+            <button id="playProc" class="btn btn-tp vip-tp-alias" type="button" hidden aria-hidden="true" tabindex="-1">Play Processed</button>
             <button id="tpPause" class="btn btn-tp" type="button" aria-label="Pause (Space)" title="Pause (Space)" disabled><span aria-hidden="true">&#9208;</span></button>
             <button id="tpStop" class="btn btn-tp" type="button" aria-label="Stop" title="Stop" disabled><span aria-hidden="true">&#9209;</span></button>
             <button id="tpRew" class="btn btn-tp" type="button" aria-label="Rewind" title="Rewind" disabled><span aria-hidden="true">&#9664;&#9664;</span></button>
@@ -351,10 +443,12 @@
                 aria-describedby="tpABLabel"
                 title="Toggle A/B — X key shortcut"
                 disabled>A/B</button>
+              <button id="abToggle" class="btn btn-ab vip-tp-alias" type="button" hidden aria-hidden="true" tabindex="-1">A/B</button>
               <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite">
                 <span class="tp-ab-tag">A</span>
                 <span class="tp-ab-name">Original</span>
               </span>
+              <span id="abLabel" class="tp-ab-label vip-tp-alias" data-version="A" hidden aria-hidden="true"></span>
             </div>
           </div>
         </div>
@@ -383,8 +477,8 @@
             <canvas id="spectro2DCanvas" class="viz-canvas spectro2d"></canvas>
             <canvas id="freqCanvas" class="viz-canvas freq-cv"></canvas>
           </div>
-          <div id="tab-waveform" role="tabpanel" aria-labelledby="btn-waveform" class="panel"><div class="viz-legend">Static inspection before playback · live playhead during transport</div><canvas id="waveCanvas" class="viz-canvas wave-cv"></canvas></div>
-          <div id="tab-abcompare" role="tabpanel" aria-labelledby="btn-abcompare" class="panel"><div class="viz-legend">Original vs processed waveform overlay for transport A/B</div><div class="wave-row"><canvas id="waveOrigCanvas" class="viz-canvas wave-cv"></canvas><canvas id="waveProcCanvas" class="viz-canvas wave-cv"></canvas></div></div>
+          <div id="tab-waveform" role="tabpanel" aria-labelledby="btn-waveform" class="panel"><div class="viz-legend">Static inspection before playback · live playhead during transport</div><canvas id="waveCanvas" class="viz-canvas wave-cv"></canvas><canvas id="inputCanvas" class="viz-canvas wave-cv vip-canvas-alias" aria-hidden="true" tabindex="-1"></canvas></div>
+          <div id="tab-abcompare" role="tabpanel" aria-labelledby="btn-abcompare" class="panel"><div class="viz-legend">Original vs processed waveform overlay for transport A/B</div><div class="wave-row"><canvas id="waveOrigCanvas" class="viz-canvas wave-cv"></canvas><canvas id="waveProcCanvas" class="viz-canvas wave-cv"></canvas><canvas id="outputCanvas" class="viz-canvas wave-cv vip-canvas-alias" aria-hidden="true" tabindex="-1"></canvas></div></div>
           <div id="tab-lufs" role="tabpanel" aria-labelledby="btn-lufs" class="panel"><div class="lufs-readouts"><div class="lufs-rd"><span class="lufs-val" id="lufsI">-23.0</span><span class="lufs-lbl">Integrated</span></div><div class="lufs-rd"><span class="lufs-val" id="lufsS">-20.0</span><span class="lufs-lbl">Short</span></div></div></div>
           <div id="tab-saliency" role="tabpanel" aria-labelledby="btn-saliency" class="panel"><canvas id="fsCanvas" class="viz-canvas diag-saliency-cv"></canvas></div>
           <div id="tab-clusters" role="tabpanel" aria-labelledby="btn-clusters" class="panel">
