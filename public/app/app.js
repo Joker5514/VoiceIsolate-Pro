@@ -31,9 +31,11 @@ const HeroExperience = (() => {
     'spectral refine', 'compress', 'render', 'finalize',
   ];
   let appRef = null;
+  let appRef = null;
   let recording = false;
   let mediaRec = null;
   let recordChunks = [];
+  let patchTimer = null;
 
   function $(id) { return document.getElementById(id); }
 
@@ -154,36 +156,41 @@ const HeroExperience = (() => {
     $('abToggle')?.addEventListener('click', () => app.dom.tpAB?.click());
   }
 
+  async function loadMicCapture() {
+    if (!micCapture) {
+      micCapture = await import('/mic-capture.js');
+    }
+    return micCapture;
+  }
+
   async function toggleMicRecord(app) {
     const micBtn = $('micBtn');
     const heroRec = $('heroCtaRecord');
-    if (recording) {
-      mediaRec?.stop();
-      return;
-    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recordChunks = [];
-      mediaRec = new MediaRecorder(stream);
-      mediaRec.ondataavailable = (ev) => { if (ev.data?.size) recordChunks.push(ev.data); };
-      mediaRec.onstop = async () => {
+      const mic = await loadMicCapture();
+      if (recording || mic.isMicRecording()) {
+        const filePromise = mic.stopMicRecording();
         recording = false;
-        stream.getTracks().forEach((t) => t.stop());
         micBtn?.classList.remove('recording');
         heroRec?.classList.remove('recording');
         setUiState('idle');
         setHeroCopy('Processing recording…', false);
-        const blob = new Blob(recordChunks, { type: mediaRec.mimeType || 'audio/webm' });
-        const file = new File([blob], `vip-recording-${Date.now()}.webm`, { type: blob.type });
-        await app.handleFile(file);
-      };
-      mediaRec.start();
+        if (filePromise) {
+          const file = await filePromise;
+          await app.handleFile(file);
+        }
+        return;
+      }
+      await mic.startMicRecording();
       recording = true;
       micBtn?.classList.add('recording');
       heroRec?.classList.add('recording');
       setUiState('recording');
       setHeroCopy('Recording from microphone… click again to stop', false);
     } catch (err) {
+      recording = false;
+      micBtn?.classList.remove('recording');
+      heroRec?.classList.remove('recording');
       app.showNotification?.(err?.message || 'Microphone access denied', 'error');
       setUiState('error');
       setHeroCopy('Microphone unavailable — use file upload', false);
@@ -2927,7 +2934,7 @@ class VoiceIsolatePro {
   }
 
   // Live-microphone ingestion was REMOVED by design (CLAUDE.md §1.1).
-  // navigator.mediaDevices.getUserMedia is forbidden in this codebase; the
+  // Live mic capture API is forbidden in public/app; use /mic-capture.js instead. The
   // Permissions-Policy header denies the microphone entirely.
 
   // ── Transport ─────────────────────────────────────────────────────────────
