@@ -197,7 +197,7 @@ const HeroExperience = (() => {
   function patchOverlayRefs() {
     const tryPatch = (n = 0) => {
       if (!globalThis.VIPOverlay) {
-        if (n < 80) setTimeout(() => tryPatch(n + 1), 100);
+        if (n < 80) patchTimer = setTimeout(() => tryPatch(n + 1), 100);
         return;
       }
       const ov = globalThis.VIPOverlay;
