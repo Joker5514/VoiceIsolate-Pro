@@ -27,6 +27,7 @@ export class ProcessingOrchestrator {
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        this.mlWorker.removeEventListener('message', handler);
         reject(new Error('[VIP][ProcessingOrchestrator] MLWorker initialization timeout'));
       }, 30000);
 
@@ -97,6 +98,7 @@ export class ProcessingOrchestrator {
   _processWithMLWorker(channelData, sampleRate, modelIds, requestId) {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
+        this.mlWorker.removeEventListener('message', handler);
         reject(new Error('[VIP][ProcessingOrchestrator] MLWorker processing timeout'));
       }, 600000);
 

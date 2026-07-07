@@ -49,7 +49,7 @@ const HeroExperience = (() => {
 
   function setUiState(state) {
     const hero = $('vipHero');
-    if (hero) hero.dataset.uiState = state;
+    if (hero && hero.dataset) hero.dataset.uiState = state;
   }
 
   function setHeroCopy(status, enableProcess) {

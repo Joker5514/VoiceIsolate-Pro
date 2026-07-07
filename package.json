@@ -145,6 +145,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.2",
     "onnxruntime-web": "1.25.1",
+    "stripe": "^17.7.0",
     "three": "0.184.0"
   },
   "pnpm": {
