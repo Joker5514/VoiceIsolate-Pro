@@ -242,7 +242,8 @@ const HeroExperience = (() => {
       bindHeroCtas(app);
       patchOverlayRefs();
       setUiState('idle');
-      setHeroCopy('Ready — upload or record to begin', false);
+      const tierStatus = WorkflowTier.getConfig?.()?.statusIdle;
+      setHeroCopy(tierStatus || 'Ready — upload or record to begin', false);
       window.addEventListener('vip:fileLoaded', () => {
         setUiState('file-ready');
         setHeroCopy('File loaded — processing pipeline starting', true);
@@ -271,7 +272,8 @@ const HeroExperience = (() => {
     },
     onClear() {
       setUiState('idle');
-      setHeroCopy('Ready — upload or record to begin', false);
+      const tierStatus = WorkflowTier.getConfig?.()?.statusIdle;
+      setHeroCopy(tierStatus || 'Ready — upload or record to begin', false);
       syncStatStrip(null, 'Idle');
     },
     mirrorWaveCanvases,
@@ -304,6 +306,7 @@ const RENDER_SLIDERS = SLIDER_REGISTRY.map((s) => ({
   group: s.group,
 }));
 import { ModelStatusUI } from './model-status-ui.js';
+import WorkflowTier from './workflow-tier.js';
 import { recommendEngineerPreset } from '/src/core/MixCalibration.js';
 
 // Model keys served by /app/models-manifest.json (ModelCDNLoader.getManifest()) —
@@ -843,6 +846,7 @@ class VoiceIsolatePro {
       this.bindEvents();
       this._updateProcessButtonsState();
       HeroExperience.init(this);
+      WorkflowTier.init(this);
       // Upload controls are live — do not leave the splash intercepting clicks.
       this._dismissBootSplash();
     } catch (initErr) {
@@ -1826,6 +1830,11 @@ class VoiceIsolatePro {
    */
   _autoCalibratePreset(buffer) {
     if (!buffer || typeof buffer.getChannelData !== 'function') return null;
+    if (WorkflowTier.shouldSkipAutoCalibrate()) {
+      const preset = WorkflowTier.getDefaultPreset();
+      this.applyPreset(preset);
+      return { preset, level: 'creator', rmsDb: 0 };
+    }
     const channels = [];
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       channels.push(buffer.getChannelData(ch));
