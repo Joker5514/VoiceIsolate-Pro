@@ -36,4 +36,9 @@ describe('Engineer upload decode wiring', () => {
     expect(appJs).toContain('openFilePicker as triggerFileInput');
     expect(appJs).toContain('triggerFileInput(this.dom.fileInput)');
   });
+
+  test('app.js disables live mic capture on desktop shell', () => {
+    expect(appJs).toContain('isMicCaptureEnabled');
+    expect(appJs).toContain('hideMicControls');
+  });
 });

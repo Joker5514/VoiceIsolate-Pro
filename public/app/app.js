@@ -21,7 +21,8 @@ import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
-import { isDesktopShell, pickAudioFile } from '/src/core/DesktopBridge.js';
+import { isDesktopShell, isMicCaptureEnabled, pickAudioFile } from '/src/core/DesktopBridge.js';
+import { inferMediaKind } from '/src/core/media-types.js';
 import { openFilePicker as triggerFileInput, primeAudioGesture } from '/src/presentation/UploadWiring.js';
 
 /** Hero landing + branded loader — local-only cinematic shell */
@@ -117,22 +118,37 @@ const HeroExperience = (() => {
     }
   }
 
+  function hideMicControls() {
+    for (const id of ['heroCtaRecord', 'micBtn']) {
+      const el = $(id);
+      if (el) {
+        el.hidden = true;
+        el.style.display = 'none';
+        el.setAttribute('aria-hidden', 'true');
+      }
+    }
+  }
+
   function bindHeroCtas(app) {
     $('heroCtaUpload')?.addEventListener('click', (e) => {
       e.preventDefault();
       app.dom.fileBtn?.click();
     });
-    $('heroCtaRecord')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      toggleMicRecord(app);
-    });
+    if (isMicCaptureEnabled()) {
+      $('heroCtaRecord')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleMicRecord(app);
+      });
+      $('micBtn')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleMicRecord(app);
+      });
+    } else {
+      hideMicControls();
+    }
     $('heroCtaProcess')?.addEventListener('click', (e) => {
       e.preventDefault();
       if (!app.dom.processBtn?.disabled) app.runPipeline();
-    });
-    $('micBtn')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      toggleMicRecord(app);
     });
     $('exportBtn')?.addEventListener('click', (e) => {
       e.preventDefault();
@@ -239,7 +255,10 @@ const HeroExperience = (() => {
       patchOverlayRefs();
       setUiState('idle');
       const tierStatus = WorkflowTier.getConfig?.()?.statusIdle;
-      setHeroCopy(tierStatus || 'Ready — upload or record to begin', false);
+      setHeroCopy(
+        tierStatus || (isMicCaptureEnabled() ? 'Ready — upload or record to begin' : 'Ready — upload audio or video to begin'),
+        false,
+      );
       window.addEventListener('vip:fileLoaded', () => {
         setUiState('file-ready');
         setHeroCopy('File loaded — processing pipeline starting', true);
@@ -269,7 +288,10 @@ const HeroExperience = (() => {
     onClear() {
       setUiState('idle');
       const tierStatus = WorkflowTier.getConfig?.()?.statusIdle;
-      setHeroCopy(tierStatus || 'Ready — upload or record to begin', false);
+      setHeroCopy(
+        tierStatus || (isMicCaptureEnabled() ? 'Ready — upload or record to begin' : 'Ready — upload audio or video to begin'),
+        false,
+      );
       syncStatStrip(null, 'Idle');
     },
     mirrorWaveCanvases,
@@ -1923,12 +1945,11 @@ class VoiceIsolatePro {
     }
 
     // Reject clearly non-audio/non-video MIME types. Browsers often report
-    // application/octet-stream for valid audio files — fall back to extension.
-    const AUDIO_EXT = /\.(wav|mp3|m4a|aac|ogg|oga|opus|flac|weba|webm|aiff|aif|wma|caf)$/i;
-    const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|avi|ogv|3gp)$/i;
+    // application/octet-stream for valid media files — fall back to extension.
+    const mediaKind = inferMediaKind(file);
     const mime = (file.type || '').toLowerCase();
-    const hasKnownExt = AUDIO_EXT.test(file.name || '') || VIDEO_EXT.test(file.name || '');
-    const isAudio = !mime || mime.startsWith('audio/') || mime.startsWith('video/') || hasKnownExt;
+    const isAudio = mediaKind === 'audio' || mediaKind === 'video'
+      || !mime || mime.startsWith('audio/') || mime.startsWith('video/');
     if (!isAudio) {
       this._hideFileLoading();
       if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Unsupported file type: ' + (file.type || 'unknown');
@@ -1942,9 +1963,9 @@ class VoiceIsolatePro {
     // from the processed/original AudioBuffer). decodeAudioData demuxes the
     // audio track from most MP4/WEBM/MOV containers directly.
     const mimeLower = (file.type || '').toLowerCase();
-    const isVideoFile = (mimeLower.startsWith('video/')) ||
-      mimeLower === 'audio/mp4' || mimeLower === 'audio/x-m4a' ||
-      /\.(mp4|m4v|m4a|m4b|m4r|mov|webm|mkv|avi|ogv|3gp)$/i.test(file.name || '');
+    const isVideoFile = mediaKind === 'video'
+      || (mimeLower.startsWith('video/') && mediaKind !== 'audio')
+      || (mimeLower === 'audio/mp4' && /\.(mp4|m4v|mov)$/i.test(file.name || ''));
 
     // Release any previously-loaded video source first, so reloading a new clip
     // neither leaks the old object URL nor leaves the old picture on screen.

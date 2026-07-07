@@ -88,6 +88,12 @@ function stripRelativeImports(src) {
   );
 }
 
+function buildMediaTypesShim() {
+  return fs.readFileSync(path.join(__dirname, '../../src/core/media-types.js'), 'utf8')
+    .replace(/^export default\s*\{[\s\S]*$/m, '')
+    .replace(/^export\s+/gm, '');
+}
+
 function buildMediaDecodeShim() {
   return `
 async function decodeBlobToAudioBuffer(file) {
@@ -101,6 +107,9 @@ async function decodeBlobToAudioBuffer(file) {
 async function resampleToCanonical(buffer) {
   return buffer;
 }
+function isDesktopShell() { return false; }
+function isMicCaptureEnabled() { return true; }
+async function pickAudioFile() { return null; }
 `;
 }
 
@@ -115,8 +124,9 @@ function getAppCode() {
       'const decoded = await decodeBlobToAudioBuffer.call(this, file);'
     );
   }
+  const mediaTypesShim = buildMediaTypesShim();
   const mediaDecodeShim = buildMediaDecodeShim();
-  return preamble + '\n' + inlined + '\n' + mediaDecodeShim + '\n' + appJsCode;
+  return preamble + '\n' + inlined + '\n' + mediaTypesShim + '\n' + mediaDecodeShim + '\n' + appJsCode;
 }
 
 module.exports = getAppCode;

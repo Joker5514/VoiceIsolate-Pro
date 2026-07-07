@@ -50,6 +50,17 @@ describe('M4A decode fallback — media-decode.js', () => {
   test('fallback creates audio/video element by inferred kind', () => {
     expect(mdjs).toContain("const tag = kind === 'video' ? 'video' : 'audio'");
   });
+
+  test('video containers always use media-element capture (full timeline)', () => {
+    expect(mdjs).toContain("if (kind === 'video')");
+    expect(mdjs).toContain('return _decodeViaMediaElement(blob, kind)');
+  });
+
+  test('capture timeout scales with media duration', () => {
+    expect(mdjs).toContain('resetCaptureTimeout');
+    expect(mdjs).toContain('duration * 1000 * 2');
+    expect(mdjs).not.toContain('capturedFrames >= estimatedFrames');
+  });
 });
 
 describe('M4A decode fallback — media-types.js', () => {
