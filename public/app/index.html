@@ -189,6 +189,25 @@
         <p class="vip-hero-kicker">LOCAL-ONLY · ENGINEER MODE · v24</p>
         <h2 id="heroTitle" class="vip-hero-title">VoiceIsolate Pro</h2>
         <p id="heroTagline" class="vip-hero-tagline">Isolate voice. Erase noise. Export broadcast-ready audio — entirely on your device.</p>
+        <div class="vip-hero-tier" role="group" aria-label="Workflow tier">
+          <span class="vip-hero-tier-label">Workflow</span>
+          <div id="heroTierPicker" class="vip-hero-tier-picker">
+            <button type="button" class="vip-tier-pill" data-hero-tier="creator" aria-pressed="false">Creator Pro</button>
+            <button type="button" class="vip-tier-pill" data-hero-tier="studio" aria-pressed="true">Studio</button>
+            <button type="button" class="vip-tier-pill" data-hero-tier="forensic" aria-pressed="false">Forensic</button>
+          </div>
+        </div>
+        <div id="heroSceneRow" class="vip-hero-scene" hidden>
+          <label for="heroSceneSelect" class="vip-hero-scene-label">Scene preset</label>
+          <select id="heroSceneSelect" class="vip-hero-scene-select" aria-label="Studio scene preset">
+            <option value="podcast">Podcast</option>
+            <option value="film">Film</option>
+            <option value="interview">Interview</option>
+            <option value="broadcast">Broadcast</option>
+            <option value="restoration">Restoration</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
         <p id="heroStatus" class="vip-hero-status" role="status" aria-live="polite">Ready — upload or record to begin</p>
         <div class="vip-hero-cta-row" role="group" aria-label="Start actions">
           <button id="heroCtaUpload" class="btn btn-primary vip-hero-cta" type="button">Upload Audio</button>
