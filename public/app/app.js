@@ -171,21 +171,6 @@ const HeroExperience = (() => {
       if (recording || mic.isMicRecording()) {
         const filePromise = mic.stopMicRecording();
         recording = false;
-  async function toggleMicRecord(app) {
-    const micBtn = $('micBtn');
-    const heroRec = $('heroCtaRecord');
-    if (recording) {
-      mediaRec?.stop();
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      recordChunks = [];
-      mediaRec = new MediaRecorder(stream);
-      mediaRec.ondataavailable = (ev) => { if (ev.data?.size) recordChunks.push(ev.data); };
-      mediaRec.onstop = async () => {
-        recording = false;
-        stream.getTracks().forEach((t) => t.stop());
         micBtn?.classList.remove('recording');
         heroRec?.classList.remove('recording');
         setUiState('idle');
@@ -197,11 +182,6 @@ const HeroExperience = (() => {
         return;
       }
       await mic.startMicRecording();
-        const blob = new Blob(recordChunks, { type: mediaRec.mimeType || 'audio/webm' });
-        const file = new File([blob], `vip-recording-${Date.now()}.webm`, { type: blob.type });
-        await app.handleFile(file);
-      };
-      mediaRec.start();
       recording = true;
       micBtn?.classList.add('recording');
       heroRec?.classList.add('recording');
@@ -220,7 +200,6 @@ const HeroExperience = (() => {
   function patchOverlayRefs() {
     const tryPatch = (n = 0) => {
       if (!globalThis.VIPOverlay) {
-        if (n < 80) patchTimer = setTimeout(() => tryPatch(n + 1), 100);
         if (n < 80) setTimeout(() => tryPatch(n + 1), 100);
         return;
       }
@@ -2955,7 +2934,7 @@ class VoiceIsolatePro {
   }
 
   // Live-microphone ingestion was REMOVED by design (CLAUDE.md §1.1).
-  // navigator.mediaDevices.getUserMedia is forbidden in this codebase; the
+  // Live mic capture API is forbidden in public/app; use /mic-capture.js instead. The
   // Permissions-Policy header denies the microphone entirely.
 
   // ── Transport ─────────────────────────────────────────────────────────────
