@@ -26,10 +26,6 @@ import { openFilePicker as triggerFileInput, primeAudioGesture } from '/src/pres
 
 /** Hero landing + branded loader — local-only cinematic shell */
 const HeroExperience = (() => {
-  const STAGE_LABELS = [
-    'decode', 'normalize', 'profile', 'isolate', 'gate',
-    'spectral refine', 'compress', 'render', 'finalize',
-  ];
   let appRef = null;
   let recording = false;
   let micCapture = null;
