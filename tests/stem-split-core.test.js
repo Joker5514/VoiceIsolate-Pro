@@ -287,6 +287,15 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer._gateParams.release).toBe(0);
   });
 
+  test('workletsReady resolves and reports bypass state without AudioWorklet', async () => {
+    await mixer.workletsReady();
+    const status = mixer.getWorkletStatus();
+    expect(status.gate.state).toBe('bypassed');
+    expect(status.gate.node).toBe(false);
+    expect(status.deEsser.state).toBe('bypassed');
+    expect(status.deEsser.node).toBe(false);
+  });
+
   test('de-esser worklet: bypassed by default; setters clamp + convert', () => {
     // No AudioWorklet in the mock → the de-esser stays bypassed (null) and
     // deEsserInput passes through; setters store/clamp into _deEsserParams.

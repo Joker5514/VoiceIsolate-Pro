@@ -39,6 +39,20 @@ import { SAMPLE_RATE, PARAM_SMOOTHING, verifyContextSampleRate } from '../core/a
 const HP_FILTER_TYPE = 'highpass';
 const LP_FILTER_TYPE = 'lowpass';
 
+/** Per-AudioContext dedupe so gate + de-esser never double-register a module. */
+const workletModulesByContext = new WeakMap();
+
+function getLoadedWorkletModules(ctx) {
+  let set = workletModulesByContext.get(ctx);
+  if (!set) {
+    set = new Set();
+    workletModulesByContext.set(ctx, set);
+  }
+  return set;
+}
+
+
+
 /**
  * 10-band graphic EQ, matching the legacy Engineer Mode bands exactly so its
  * sliders become genuine real-time AudioParam controls. Each band is a biquad:
@@ -271,9 +285,11 @@ export class PlaybackMixer {
     this._disposed = false;
     /** @type {AudioWorkletNode|null} */ this.gate = null;
     this._gateParams = { threshold: -45, range: 0, attack: 5, release: 100, hold: 0 };
+    this._gateLoadState = 'pending';
     this._gatePromise = this._loadGate();
     /** @type {AudioWorkletNode|null} */ this.deEsser = null;
     this._deEsserParams = { frequency: 6000, amount: 0 };
+    this._deEsserLoadState = 'pending';
     this._deEsserPromise = this._loadDeEsser();
 
     // ── Transport state ──────────────────────────────────────────────────
@@ -307,10 +323,18 @@ export class PlaybackMixer {
   async _loadGate() {
     const aw = this.ctx.audioWorklet;
     const NodeCtor = globalThis.AudioWorkletNode;
-    if (!aw || typeof aw.addModule !== 'function' || typeof NodeCtor !== 'function') return;
+    if (!aw || typeof aw.addModule !== 'function' || typeof NodeCtor !== 'function') {
+      this._gateLoadState = 'bypassed';
+      return;
+    }
     try {
-      // Literal call (not via the `aw` alias) so validate.js's allowlist sees it.
-      await this.ctx.audioWorklet.addModule('/src/workers/GateProcessor.js');
+      const gateUrl = '/src/workers/GateProcessor.js';
+      const gateLoaded = getLoadedWorkletModules(this.ctx);
+      if (!gateLoaded.has(gateUrl)) {
+        // Literal call (not via alias) so validate.js's allowlist sees it.
+        await this.ctx.audioWorklet.addModule('/src/workers/GateProcessor.js');
+        gateLoaded.add(gateUrl);
+      }
       if (this._disposed) return; // disposed mid-load — don't touch a torn-down graph
       const gate = new NodeCtor(this.ctx, 'vip-gate');
       this.gateInput.disconnect(this.highpass);
@@ -321,7 +345,9 @@ export class PlaybackMixer {
         if (p) p.value = value;
       }
       this.gate = gate;
+      this._gateLoadState = 'loaded';
     } catch (err) {
+      this._gateLoadState = 'failed';
       console.error('[VIP][PlaybackMixer] noise-gate worklet failed to load; bypassing.', err);
     }
   }
@@ -333,10 +359,18 @@ export class PlaybackMixer {
   async _loadDeEsser() {
     const aw = this.ctx.audioWorklet;
     const NodeCtor = globalThis.AudioWorkletNode;
-    if (!aw || typeof aw.addModule !== 'function' || typeof NodeCtor !== 'function') return;
+    if (!aw || typeof aw.addModule !== 'function' || typeof NodeCtor !== 'function') {
+      this._deEsserLoadState = 'bypassed';
+      return;
+    }
     try {
-      // Literal call (not via the `aw` alias) so validate.js's allowlist sees it.
-      await this.ctx.audioWorklet.addModule('/src/workers/DeEsserProcessor.js');
+      const deEsserUrl = '/src/workers/DeEsserProcessor.js';
+      const deEsserLoaded = getLoadedWorkletModules(this.ctx);
+      if (!deEsserLoaded.has(deEsserUrl)) {
+        // Literal call (not via alias) so validate.js's allowlist sees it.
+        await this.ctx.audioWorklet.addModule('/src/workers/DeEsserProcessor.js');
+        deEsserLoaded.add(deEsserUrl);
+      }
       if (this._disposed) return; // disposed mid-load — don't touch a torn-down graph
       const deEsser = new NodeCtor(this.ctx, 'vip-deesser');
       this.deEsserInput.disconnect(this.limiter);
@@ -347,9 +381,24 @@ export class PlaybackMixer {
         if (p) p.value = value;
       }
       this.deEsser = deEsser;
+      this._deEsserLoadState = 'loaded';
     } catch (err) {
+      this._deEsserLoadState = 'failed';
       console.error('[VIP][PlaybackMixer] de-esser worklet failed to load; bypassing.', err);
     }
+  }
+
+  /** Resolves when both playback worklets have loaded or gracefully bypassed. */
+  workletsReady() {
+    return Promise.all([this._gatePromise, this._deEsserPromise]);
+  }
+
+  /** Snapshot of playback worklet load outcomes for diagnostics. */
+  getWorkletStatus() {
+    return {
+      gate: { state: this._gateLoadState, node: this.gate !== null },
+      deEsser: { state: this._deEsserLoadState, node: this.deEsser !== null },
+    };
   }
 
   /** Remember a de-esser parameter and apply it to the live worklet if present. */

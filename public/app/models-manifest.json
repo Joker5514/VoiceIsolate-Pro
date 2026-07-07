@@ -47,7 +47,7 @@
       ]
     }
   },
-  "_sha256_note": "SHA256 last updated: 2026-07-06. Regenerate with: pnpm worklets:hash",
+  "_sha256_note": "SHA256 last updated: 2026-07-07. Regenerate with: pnpm worklets:hash",
   "worklets": {
     "dsp_processor": {
       "filename": "dsp-processor.js",
@@ -58,7 +58,7 @@
         {
           "provider": "same-origin",
           "url": "/app/dsp-processor.js",
-          "sha256": "5692dac6eeb7b82058f53ecf77ac78d23f2f8a0011797398ffb46e93b97057ee"
+          "sha256": "914ed6504baab6c2232b0d59d1b78514c91f9834a93ae4d8dc5e1dab051ad8b5"
         }
       ]
     },
@@ -71,7 +71,7 @@
         {
           "provider": "same-origin",
           "url": "/src/workers/GateProcessor.js",
-          "sha256": "1105c1fe087e55462fcd41f1b67eb27c18c2314f9330dd8c5b8e3aec6e49c60d"
+          "sha256": "66746484a21ae63ecc338533ced37901e760d3a2a8d4235b7dab925a030a13bd"
         }
       ]
     },
@@ -84,7 +84,7 @@
         {
           "provider": "same-origin",
           "url": "/src/workers/DeEsserProcessor.js",
-          "sha256": "bb66cd422d1f023b802c6de04ad8413fad1eeadb86adccd171720ece119bbb83"
+          "sha256": "1ee6af1974f626638514d50b3d2260d9d2470ac82d8c08de0040cd24be33e452"
         }
       ]
     }

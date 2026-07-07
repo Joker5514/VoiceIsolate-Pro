@@ -114,6 +114,44 @@ describe('dsp-processor AudioWorklet behavior', () => {
     expect(Atomics.load(flagsIn, 0)).toBe(2);
   });
 
+  test('pre-allocates scratch buffers in the constructor (no per-frame allocs)', () => {
+    const processor = loadProcessor();
+    expect(processor._monoScratch).toBeInstanceOf(Float32Array);
+    expect(processor._monoScratch.length).toBe(Q);
+    expect(processor._magScratch.length).toBe(HALF_BINS);
+    expect(processor._maskedMagScratch.length).toBe(HALF_BINS);
+    expect(processor._fallbackPostCount).toBe(0);
+  });
+
+  test('SAB fallback postMessage fires only while input readGen is 0, capped at 3', () => {
+    const processor = loadProcessor();
+    const { inputSAB, outputSAB } = makeSABs();
+    initSAB(processor, { inputSAB, outputSAB });
+    const flagsIn = new Int32Array(inputSAB, 0, FLAG_SLOTS);
+
+    const callsPerHop = HOP_SIZE / Q;
+    for (let hop = 0; hop < 4; hop++) {
+      for (let i = 0; i < callsPerHop; i++) {
+        processor.process([[new Float32Array(Q).fill(0.05)]], [[new Float32Array(Q)]]);
+      }
+    }
+
+    const fallbackMsgs = processor.port.postMessage.mock.calls
+      .filter((c) => c[0] && c[0].type === 'magnitude');
+    expect(fallbackMsgs.length).toBe(3);
+    expect(processor._fallbackPostCount).toBe(3);
+
+    // Simulate ML consumer ack — further frames must not spam postMessage.
+    Atomics.store(flagsIn, 1, Atomics.load(flagsIn, 0));
+    processor.port.postMessage.mockClear();
+    for (let i = 0; i < callsPerHop; i++) {
+      processor.process([[new Float32Array(Q).fill(0.05)]], [[new Float32Array(Q)]]);
+    }
+    const afterAck = processor.port.postMessage.mock.calls
+      .filter((c) => c[0] && c[0].type === 'magnitude');
+    expect(afterAck.length).toBe(0);
+  });
+
   test('consumes the mask write-generation flag and acks it on the read slot', () => {
     const processor = loadProcessor();
     const { inputSAB, outputSAB } = makeSABs();

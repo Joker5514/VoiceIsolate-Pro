@@ -43,6 +43,7 @@ const HOP_SIZE   = 1024;           // 75% overlap
 const HALF_BINS  = FFT_SIZE / 2 + 1;
 const RENDER_QUANTUM = 128;
 const STARTUP_PRIME_SAMPLES = HOP_SIZE - RENDER_QUANTUM;
+const MAX_SAB_FALLBACK_POSTS = 3;
 const FLAG_SLOTS = 5;                                                   // Bug #2 fix: 5 slots = 20 bytes, matches SharedRingBuffer header
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;     // 20
 
@@ -290,11 +291,24 @@ class DSPProcessor extends AudioWorkletProcessor {
     // Gate hold state: prevents clicking on rapid gate transitions
     this._gateHoldSamples = 0;
     const GATE_HOLD_MS    = 20;
-    this._GATE_HOLD_LEN   = Math.round((GATE_HOLD_MS / 1000) * sampleRate);
+    const ctorSampleRate  = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
+    this._GATE_HOLD_LEN   = Math.round((GATE_HOLD_MS / 1000) * ctorSampleRate);
 
     // Compressor envelope state
     this._envDb  = 0;
     this._gainDb = 0;
+
+    // Pre-allocated scratch buffers — no per-quantum / per-frame allocations (CLAUDE.md §11)
+    this._monoScratch        = new Float32Array(RENDER_QUANTUM);
+    this._magScratch         = new Float32Array(HALF_BINS);
+    this._phaScratch         = new Float32Array(HALF_BINS);
+    this._frameMedianScratch = new Float32Array(HALF_BINS);
+    this._maskedMagScratch   = new Float32Array(HALF_BINS);
+    this._whReScratch        = new Float32Array(HALF_BINS);
+    this._whImScratch        = new Float32Array(HALF_BINS);
+    this._maskScratch        = new Float32Array(HALF_BINS);
+    this._valsScratch        = new Float32Array(5);
+    this._fallbackPostCount  = 0;
 
     this.port.onmessage = (ev) => this._onMessage(ev.data);
   }
@@ -351,20 +365,23 @@ class DSPProcessor extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const input  = inputs[0];
     const output = outputs[0];
-    if (!input || !input[0]) return true;
+    if (!input || !input[0] || !output || !output[0]) return true;
 
     const outCh = output[0];
     const Q     = outCh.length; // always 128
 
     // Mix to mono: average all available input channels
     const numCh = input.length;
-    const mono   = new Float32Array(Q);
+    const mono  = this._monoScratch;
+    mono.fill(0);
     for (let c = 0; c < numCh; c++) {
       const ch = input[c];
+      if (!ch) continue;
       for (let i = 0; i < Q; i++) mono[i] += ch[i];
     }
     if (numCh > 1) {
-      for (let i = 0; i < Q; i++) mono[i] /= numCh;
+      const inv = 1 / numCh;
+      for (let i = 0; i < Q; i++) mono[i] *= inv;
     }
 
     // Noise gate with hold to prevent clicks
@@ -481,8 +498,8 @@ class DSPProcessor extends AudioWorkletProcessor {
     fftInPlace(this._re, this._im, false);
 
     // Convert to polar: magnitude + phase for all positive bins + DC + Nyquist
-    const mag = new Float32Array(HALF_BINS);
-    const pha = new Float32Array(HALF_BINS);
+    const mag = this._magScratch;
+    const pha = this._phaScratch;
     for (let k = 0; k < HALF_BINS; k++) {
       mag[k] = Math.sqrt(this._re[k] * this._re[k] + this._im[k] * this._im[k]);
       pha[k] = Math.atan2(this._im[k], this._re[k]);
@@ -494,7 +511,7 @@ class DSPProcessor extends AudioWorkletProcessor {
       const writeGen = Atomics.load(this._outputFlags, 0);
       const readGen  = Atomics.load(this._outputFlags, 1);
       if (writeGen !== readGen) {
-        mask = new Float32Array(HALF_BINS);
+        mask = this._maskScratch;
         mask.set(this._outputView.subarray(0, HALF_BINS));
         Atomics.store(this._outputFlags, 1, writeGen); // acknowledge
       }
@@ -519,9 +536,14 @@ class DSPProcessor extends AudioWorkletProcessor {
       }
       Atomics.add(this._inputFlags, 0, 1);    // bump write generation
 
-      // FIX [4]: fallback postMessage for pre-SAB frames — clone buffer, do NOT transfer
-      if (Atomics.load(this._inputFlags, 0) <= 2) {
+      // Fallback postMessage only while the ML consumer has never acked (readGen === 0).
+      // Cap consecutive fallbacks so we do not spam the main thread once SAB is live.
+      const inputReadGen = Atomics.load(this._inputFlags, 1);
+      if (inputReadGen > 0) {
+        this._fallbackPostCount = 0;
+      } else if (this._fallbackPostCount < MAX_SAB_FALLBACK_POSTS) {
         this.port.postMessage({ type: 'magnitude', mag: mag.slice().buffer });
+        this._fallbackPostCount++;
       }
     }
 
@@ -533,9 +555,9 @@ class DSPProcessor extends AudioWorkletProcessor {
     const bassCrushCutoff = Math.round((params.bassCrush / 100) * 0.045 * FFT_SIZE);
     for (let k = 0; k < bassCrushCutoff; k++) mag[k] *= 0.0001;
 
-    const frameMedian = new Float32Array(numBins);
+    const frameMedian = this._frameMedianScratch;
     const bufIdx = this._frameIdx % 5;
-    const vals = new Float32Array(5);
+    const vals = this._valsScratch;
     for (let k = 0; k < numBins; k++) {
       vals[0] = this._circularMagBuffer[0][k];
       vals[1] = this._circularMagBuffer[1][k];
@@ -583,7 +605,7 @@ class DSPProcessor extends AudioWorkletProcessor {
     const wm = wmModes[Math.round(params.whisperMode)] || wmModes[2];
 
     // Build masked magnitude spectrum
-    const maskedMag = new Float32Array(HALF_BINS);
+    const maskedMag = this._maskedMagScratch;
     if (mask) {
       for (let k = 0; k < HALF_BINS; k++) {
         const m = Math.max(wm.maskFloor, Math.min(1.0, mask[k]));
@@ -675,8 +697,8 @@ class DSPProcessor extends AudioWorkletProcessor {
     }
 
     // [WHISPER UPDATE] WhisperHunterAI listen→process on complex spectrum (Part 4)
-    const whRe = new Float32Array(HALF_BINS);
-    const whIm = new Float32Array(HALF_BINS);
+    const whRe = this._whReScratch;
+    const whIm = this._whImScratch;
     for (let k = 0; k < HALF_BINS; k++) {
       whRe[k] = maskedMag[k] * Math.cos(pha[k]);
       whIm[k] = maskedMag[k] * Math.sin(pha[k]);

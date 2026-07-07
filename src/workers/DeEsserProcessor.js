@@ -141,25 +141,30 @@ class DeEsserProcessor extends AudioWorkletProcessor {
    * @param {Object} parameters - Parameter values
    * @returns {boolean} True to keep processor alive
    */
+  _clampParam(value, fallback, min, max) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     const output = outputs[0];
 
-    // If no input, pass through silence
-    if (!input || input.length === 0) {
+    // If no input or output, stay alive without touching buffers
+    if (!input || input.length === 0 || !output || output.length === 0) {
       return true;
     }
 
     // Get parameter values (k-rate, so one value per block). Both params are read
     // defensively against their descriptor defaults so the processor still runs
     // if a caller (or a mock/test) omits one.
-    const amount = parameters.amount ? parameters.amount[0] : 0; // 0-1, de-essing strength
-    const frequency = parameters.frequency ? parameters.frequency[0] : 6000; // Hz, sibilant frequency center
+    const amount = this._clampParam(parameters.amount?.[0], 0, 0, 1);
+    const frequency = this._clampParam(parameters.frequency?.[0], 6000, 3500, 10000);
 
-    // Update sample rate from global if available
-    if (typeof sampleRate !== 'undefined') {
-      this.sampleRate = sampleRate;
-    }
+    // Update sample rate from the AudioWorklet global (falls back to 48 kHz)
+    const sr = typeof sampleRate !== 'undefined' ? sampleRate : this.sampleRate;
+    if (Number.isFinite(sr) && sr > 0) this.sampleRate = sr;
 
     // Recalculate filter coefficients if frequency changed
     if (Math.abs(frequency - this.lastFrequency) > 0.1) {

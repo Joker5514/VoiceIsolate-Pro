@@ -113,28 +113,33 @@ class GateProcessor extends AudioWorkletProcessor {
    * @param {Object} parameters - Parameter values
    * @returns {boolean} True to keep processor alive
    */
+  _clampParam(value, fallback, min, max) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     const output = outputs[0];
 
-    // If no input, pass through silence
-    if (!input || input.length === 0) {
+    // If no input or output, stay alive without touching buffers
+    if (!input || input.length === 0 || !output || output.length === 0) {
       return true;
     }
 
     // Get parameter values (k-rate, so one value per block). Every param is read
     // defensively against its descriptor default so the processor still runs if
     // a caller (or a mock/test) omits one.
-    const thresholdDb = parameters.threshold ? parameters.threshold[0] : -40;
-    const rangeDb = parameters.range ? parameters.range[0] : 0;
-    const attackMs = parameters.attack ? parameters.attack[0] : 10;
-    const releaseMs = parameters.release ? parameters.release[0] : 100;
-    const holdMs = parameters.hold ? parameters.hold[0] : 0;
+    const thresholdDb = this._clampParam(parameters.threshold?.[0], -40, -100, 0);
+    const rangeDb = this._clampParam(parameters.range?.[0], 0, 0, 80);
+    const attackMs = this._clampParam(parameters.attack?.[0], 10, 0, 1000);
+    const releaseMs = this._clampParam(parameters.release?.[0], 100, 0, 5000);
+    const holdMs = this._clampParam(parameters.hold?.[0], 0, 0, 1000);
 
-    // Update sample rate from the actual buffer length and expected duration
-    if (input[0]) {
-      this.sampleRate = sampleRate || 48000; // Use global sampleRate if available
-    }
+    // Update sample rate from the AudioWorklet global (falls back to 48 kHz)
+    const sr = typeof sampleRate !== 'undefined' ? sampleRate : this.sampleRate;
+    if (Number.isFinite(sr) && sr > 0) this.sampleRate = sr;
 
     // Calculate time constants for attack and release
     const attackCoeff = this.calculateTimeConstant(attackMs, this.sampleRate);

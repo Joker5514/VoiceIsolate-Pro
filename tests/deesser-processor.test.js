@@ -51,6 +51,20 @@ describe('DeEsserProcessor', () => {
     delete global.sampleRate;
   });
 
+  describe('Defensive guards', () => {
+    it('returns true when output bus is missing', () => {
+      const input = [new Float32Array(128).fill(0.5)];
+      expect(processor.process([input], [[]], {})).toBe(true);
+    });
+
+    it('clamps out-of-range frequency to descriptor bounds', () => {
+      const input = [new Float32Array(128).fill(0.5)];
+      const output = [new Float32Array(128)];
+      expect(() => processor.process([input], [output], { frequency: [99999] })).not.toThrow();
+      expect(processor.lastFrequency).toBe(10000);
+    });
+  });
+
   describe('Parameter Descriptors', () => {
     it('should define amount parameter defaulting to 0 (de-esser off)', () => {
       const descriptors = DeEsserProcessor.parameterDescriptors;

@@ -50,6 +50,19 @@ describe('GateProcessor', () => {
     delete global.sampleRate;
   });
 
+  describe('Defensive guards', () => {
+    it('returns true when output bus is missing', () => {
+      const input = [new Float32Array(128).fill(0.5)];
+      expect(processor.process([input], [[]], {})).toBe(true);
+    });
+
+    it('clamps non-finite threshold to the default', () => {
+      const input = [new Float32Array(128).fill(0.5)];
+      const output = [new Float32Array(128)];
+      expect(() => processor.process([input], [output], { threshold: [NaN] })).not.toThrow();
+    });
+  });
+
   describe('Parameter Descriptors', () => {
     it('should define threshold parameter with correct range', () => {
       const descriptors = GateProcessor.parameterDescriptors;
