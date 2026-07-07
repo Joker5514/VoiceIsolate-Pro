@@ -31,10 +31,11 @@ const HeroExperience = (() => {
     'spectral refine', 'compress', 'render', 'finalize',
   ];
   let appRef = null;
+  let appRef = null;
   let recording = false;
-  let micCapture = null;
   let mediaRec = null;
   let recordChunks = [];
+  let patchTimer = null;
 
   function $(id) { return document.getElementById(id); }
 
