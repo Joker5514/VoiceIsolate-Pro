@@ -5,6 +5,8 @@
  */
 'use strict';
 
+/* global window, document — used only inside page.evaluate */
+
 const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -121,7 +123,6 @@ async function main() {
   while (Date.now() < deadline) {
     const snap = await page.evaluate(() => {
       const status = (document.getElementById('hStatus')?.textContent || '').trim();
-      const pctEl = document.querySelector('.pipe-pct, #pipePct, [data-pipe-pct]');
       const pctText = document.getElementById('pipeDetail')?.closest('.pipe-row')?.textContent || '';
       const pctMatch = pctText.match(/(\d+)%/) || document.body.textContent.match(/Pipeline\s+(\d+)%/);
       const pct = pctMatch ? Number(pctMatch[1]) : null;
