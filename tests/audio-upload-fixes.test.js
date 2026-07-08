@@ -51,6 +51,22 @@ describe('Upload race condition guard', () => {
 
 // ── Bug 2: same-file re-selection ────────────────────────────────────────────
 
+describe('Upload validation and mobile gesture', () => {
+  test('ingestFrom validates the file before disabling the input', () => {
+    expect(js).toContain('assertIngestible(file)');
+    expect(js).toMatch(/assertIngestible\(file\)[\s\S]*ingestSeq/);
+  });
+
+  test('ingestFrom primes audio gesture before decode', () => {
+    expect(js).toMatch(/ingestFrom[\s\S]*primeAudioGesture[\s\S]*ingestFile/);
+  });
+
+  test('drag-and-drop primes the audio gesture before ingest', () => {
+    expect(js).toContain('primeAudioGesture');
+    expect(js).toMatch(/drop[\s\S]*primeAudioGesture[\s\S]*ingestFrom\(file\)/);
+  });
+});
+
 describe('Same-file re-upload', () => {
   test("fileInput.value is reset to '' after every ingestion attempt", () => {
     // Without this reset the browser won't fire 'change' for the same file.

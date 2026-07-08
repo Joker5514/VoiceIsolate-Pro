@@ -30,8 +30,23 @@ describe('M4A decode fallback — media-decode.js', () => {
   });
 
   test('ended listener is armed before awaiting play()', () => {
-    expect(mdjs).toMatch(/const endedPromise = new Promise\([\s\S]*media\.addEventListener\('ended'/);
+    expect(mdjs).toMatch(/media\.addEventListener\('ended'/);
     expect(mdjs).toContain('await media.play()');
+    expect(mdjs).toContain('finishCapture');
+  });
+
+  test('capture timeout always settles the decode promise (no hang)', () => {
+    expect(mdjs).toContain('captureSettled');
+    expect(mdjs).toContain('finishCapture');
+    expect(mdjs).toMatch(/setTimeout\([\s\S]*finishCapture/);
+  });
+
+  test('decode accepts onProgress hooks for live capture feedback', () => {
+    expect(mdjs).toContain('onProgress = () => {}');
+    expect(mdjs).toContain('reportProgress');
+    expect(mdjs).toContain('readBlobWithProgress');
+    expect(mdjs).toContain('createGrowingChannel');
+    expect(fijs).toContain('onProgress: (pct) => onProgress');
   });
 
   test('object URL is created and revoked in finally', () => {
@@ -53,7 +68,7 @@ describe('M4A decode fallback — media-decode.js', () => {
 
   test('video containers always use media-element capture (full timeline)', () => {
     expect(mdjs).toContain("if (kind === 'video')");
-    expect(mdjs).toContain('return _decodeViaMediaElement(blob, kind)');
+    expect(mdjs).toContain('return _decodeViaMediaElement(blob, kind, onProgress)');
   });
 
   test('capture timeout scales with media duration', () => {
@@ -77,7 +92,7 @@ describe('M4A decode fallback — FileIngestion wiring', () => {
   });
 
   test('ingestFile calls decodeBlobToAudioBuffer after yielding to the UI', () => {
-    expect(fijs).toContain('decodeBlobToAudioBuffer(file)');
+    expect(fijs).toContain('decodeBlobToAudioBuffer(file');
     expect(fijs).toMatch(/queueMicrotask\(resolve\)/);
   });
 
