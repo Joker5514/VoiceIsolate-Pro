@@ -119,13 +119,13 @@ describe('app.js — --pct CSS variable wiring', () => {
   });
 
   test('applyPreset dispatches slider input/change events for each slider element', () => {
-    const presetBlock = appJs.match(/applyPreset\(name\)[\s\S]*?if \(this\.liveChainBuilt\)/)?.[0] || '';
+    const presetBlock = appJs.match(/applyPreset\(name[\s\S]*?\)[\s\S]*?if \(this\.liveChainBuilt\)/)?.[0] || '';
     expect(presetBlock).toContain("dispatchEvent(new Event('input'");
     expect(presetBlock).toContain("dispatchEvent(new Event('change'");
   });
 
   test('applyPreset still updates slider value and aria metadata before dispatch', () => {
-    const presetBlock = appJs.match(/applyPreset\(name\)[\s\S]*?if \(this\.liveChainBuilt\)/)?.[0] || '';
+    const presetBlock = appJs.match(/applyPreset\(name[\s\S]*?\)[\s\S]*?if \(this\.liveChainBuilt\)/)?.[0] || '';
     expect(presetBlock).toContain('sliderDom.el.value = value');
     expect(presetBlock).toContain("sliderDom.el.setAttribute('aria-valuenow', value)");
   });

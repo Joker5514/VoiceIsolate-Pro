@@ -232,17 +232,51 @@ export function mergePreset(presetName, overrides = {}) {
 }
 
 /**
+ * Fine-tune Engineer Mode slider overrides from measured loudness.
+ * Targets bridge-wired RT controls (gate, EQ, comp, output).
+ * @param {'whisper'|'quiet'|'normal'|'loud'} level
+ * @param {number} rmsDb
+ * @returns {Record<string, number>}
+ */
+export function engineerLevelOverrides(level, rmsDb) {
+  const overrides = {};
+  if (level === 'whisper') {
+    overrides.outGain = Math.min(10, Math.max(4, Math.round(6 + (-rmsDb - 42) * 0.25)));
+    overrides.gateThresh = -68;
+    overrides.compThresh = -36;
+    overrides.compMakeup = 6;
+    overrides.eqPresence = 3;
+    overrides.eqMid = 2;
+    overrides.deEssAmt = 4;
+  } else if (level === 'quiet') {
+    overrides.outGain = 3;
+    overrides.gateThresh = -52;
+    overrides.nrAmount = 75;
+    overrides.compThresh = -26;
+  } else if (level === 'loud') {
+    overrides.outGain = 0;
+    overrides.compThresh = -22;
+    overrides.compMakeup = 1;
+    overrides.compRatio = 3;
+  }
+  return overrides;
+}
+
+/**
  * Recommend an Engineer Mode preset from processed audio.
  * @param {Float32Array[]} channels
  */
 export function recommendEngineerPreset(channels) {
   const mono = downmixToMono(channels);
-  if (mono.length === 0) return { preset: 'Voice Clarity', level: 'normal', rmsDb: -60 };
+  if (mono.length === 0) {
+    return { preset: 'Voice Clarity', level: 'normal', rmsDb: -60, overrides: {} };
+  }
   const rms = calcRms(mono);
   const rmsDb = 20 * Math.log10(rms + 1e-10);
   const level = classifyLevel(rms);
   const preset = SCENE_TO_ENGINEER_PRESET[level] || 'Voice Clarity';
-  return { preset, level, rmsDb };
+  const overrides = engineerLevelOverrides(level, rmsDb);
+  return { preset, level, rmsDb, overrides };
 }
 
 export default {
@@ -256,5 +290,6 @@ export default {
   levelOverrides,
   calibrateFromStems,
   mergePreset,
+  engineerLevelOverrides,
   recommendEngineerPreset,
 };

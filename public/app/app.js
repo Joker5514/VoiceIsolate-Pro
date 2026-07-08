@@ -159,11 +159,11 @@ const HeroExperience = (() => {
       app.dom.saveProcBtn?.click();
     });
     $('playOrig')?.addEventListener('click', () => {
-      if (app._abMode !== 'A') app.dom.tpAB?.click();
+      if (app.abMode !== 'original') app.dom.tpAB?.click();
       app.dom.tpPlay?.click();
     });
     $('playProc')?.addEventListener('click', () => {
-      if (app._abMode !== 'B') app.dom.tpAB?.click();
+      if (app.abMode !== 'processed') app.dom.tpAB?.click();
       app.dom.tpPlay?.click();
     });
     $('abToggle')?.addEventListener('click', () => app.dom.tpAB?.click());
@@ -1064,7 +1064,7 @@ class VoiceIsolatePro {
           const sab = new SharedArrayBuffer(256 * Float32Array.BYTES_PER_ELEMENT);
           this.sharedParams = new Float32Array(sab);
           SLIDER_REGISTRY.forEach((s, i) => {
-            this.sharedParams[i + 1] = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined) ? window.VIP_PARAMS[s.id] : (s.val || 0);
+            this.sharedParams[i + 1] = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined) ? window.VIP_PARAMS[s.id] : (s.default ?? 0);
           });
         }
 
@@ -1846,11 +1846,32 @@ class VoiceIsolatePro {
     }
   }
 
+  /** Push VIP_PARAMS to the live-mix bridge when loaded. */
+  _syncBridgeParams() {
+    const bridge = this._bridge;
+    if (!bridge || typeof bridge.applyParams !== 'function') return;
+    bridge.applyParams(window.VIP_PARAMS || {});
+    if (bridge.isLoaded && bridge.isLoaded()) this.liveChainBuilt = true;
+  }
+
+  /** After processing, default playback to the isolated output. */
+  _setProcessedPlaybackMode() {
+    this.abMode = 'processed';
+    this._bridgeBuf = null;
+    if (this.dom?.tpAB) this.dom.tpAB.classList.add('active');
+    if (this.dom?.tpABLabel) this.dom.tpABLabel.textContent = 'Processed';
+  }
+
   // ── Preset application ────────────────────────────────────────────────────
-  applyPreset(name) {
+  applyPreset(name, options = {}) {
+    const { preserveWhisperMode = false } = options;
     const preset = PRESETS[name];
     if (!preset) return;
+    const savedWhisper = preserveWhisperMode
+      ? (window.VIP_PARAMS?.whisperMode ?? this.whisperMode ?? 0)
+      : null;
     Object.entries(preset).forEach(([key, rawValue]) => {
+      if (preserveWhisperMode && key === 'whisperMode') return;
       if (key === 'description') return;
       const sliderId = key;
       const value = SLIDER_BY_ID[sliderId] ? clampToSlider(sliderId, rawValue) : rawValue;
@@ -1873,8 +1894,11 @@ class VoiceIsolatePro {
       sliderDom.el.dispatchEvent(new Event('input', { bubbles: true }));
       sliderDom.el.dispatchEvent(new Event('change', { bubbles: true }));
     });
+    if (preserveWhisperMode && savedWhisper != null) {
+      this._setWhisperMode(savedWhisper);
+    }
+    this._syncBridgeParams();
     if (this.liveChainBuilt) {
-      // Sync params to worklet after preset application
       if (window._vipOrch && typeof window._vipOrch.syncParams === 'function') {
         window._vipOrch.syncParams(window.VIP_PARAMS || {});
       }
@@ -1898,8 +1922,13 @@ class VoiceIsolatePro {
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       channels.push(buffer.getChannelData(ch));
     }
-    const { preset, level, rmsDb } = recommendEngineerPreset(channels);
-    this.applyPreset(preset);
+    const { preset, level, rmsDb, overrides = {} } = recommendEngineerPreset(channels);
+    this.applyPreset(preset, { preserveWhisperMode: true });
+
+    for (const [key, val] of Object.entries(overrides)) {
+      if (!SLIDER_BY_ID[key] || !Number.isFinite(val)) continue;
+      this.onSlider(key, clampToSlider(key, val));
+    }
 
     const AI = globalThis.AIIntelligence;
     if (AI && typeof AI.autoTuneParams === 'function') {
@@ -1911,6 +1940,8 @@ class VoiceIsolatePro {
         this.onSlider(key, clamped);
       }
     }
+
+    this._syncBridgeParams();
 
     const detail = `${preset} (${level}, ${rmsDb.toFixed(1)} dBFS)`;
     structuredLog('info', '[VIP] Auto-calibrated mix', { preset, level, rmsDb });
@@ -2332,6 +2363,8 @@ class VoiceIsolatePro {
       if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = false;
 
+      this._setProcessedPlaybackMode();
+
       if (this.outputBuffer) {
         const scheduleIdle = globalThis.requestIdleCallback
           ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
@@ -2340,6 +2373,7 @@ class VoiceIsolatePro {
           if (fileSeq !== this._fileSeq) return;
           this.renderStaticVisuals(this.outputBuffer);
           this._autoCalibratePreset(this.outputBuffer);
+          this._syncBridgeParams();
         });
       }
       stageEnd('pipeline');
@@ -2381,6 +2415,9 @@ class VoiceIsolatePro {
     if (fileSeq !== this._fileSeq) return false;
     try {
       await this.ensureCtx();
+      if (typeof this._warmupMLModels === 'function') {
+        await this._warmupMLModels().catch(() => {});
+      }
       const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
       const channelData = [];
       for (let ch = 0; ch < buf.numberOfChannels; ch++) {
@@ -3144,9 +3181,9 @@ class VoiceIsolatePro {
           bridge.loadBuffer(buf);
           this._bridgeBuf = buf;
           this._transportRegionWired = false;
-          // Seed the graph from the current slider positions.
           const params = window.VIP_PARAMS || {};
           if (typeof bridge.applyParams === 'function') bridge.applyParams(params);
+          this.liveChainBuilt = true;
         }
         this._ensureTransportRegionWiring();
         // Honour the current scrub position, then start.

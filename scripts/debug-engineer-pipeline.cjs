@@ -107,13 +107,8 @@ async function main() {
   await page.goto(`${BASE}/app/`, { waitUntil: 'load' });
   await ensureAppReady(page);
 
-  const fileBuf = fs.readFileSync(wavPath);
-  const fileName = path.basename(wavPath);
-  await page.evaluate(async ({ bytes, name }) => {
-    const blob = new Blob([new Uint8Array(bytes)], { type: 'audio/wav' });
-    const file = new File([blob], name, { type: 'audio/wav' });
-    await window._vipApp.handleFile(file);
-  }, { bytes: [...fileBuf], name: fileName });
+  await page.setInputFiles('#fileInput', wavPath);
+  await page.locator('#fileInput').dispatchEvent('change');
 
   const start = Date.now();
   let lastPct = -1;
@@ -131,15 +126,18 @@ async function main() {
         status,
         pct,
         detail,
+        abMode: window._vipApp?.abMode,
         whisperMode: window.VIP_PARAMS?.whisperMode,
         mlOk: window._vipApp?._mlIsolationSucceeded,
+        outGain: window.VIP_PARAMS?.outGain,
+        gateThresh: window.VIP_PARAMS?.gateThresh,
         timings: window.__vipStageTimings || {},
       };
     });
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
     if (snap.pct !== lastPct || snap.detail) {
-      console.log(`  [${elapsed}s] ${snap.pct ?? '—'}% | ${snap.status} | ${snap.detail || '—'} | wm=${snap.whisperMode} ml=${snap.mlOk}`);
+      console.log(`  [${elapsed}s] ${snap.pct ?? '—'}% | ${snap.status} | ${snap.detail || '—'} | ab=${snap.abMode} wm=${snap.whisperMode} ml=${snap.mlOk}`);
       lastPct = snap.pct;
       stallMs = 0;
     } else if (snap.status === 'PROCESSING') {
@@ -156,7 +154,14 @@ async function main() {
     if (snap.status === 'DONE') {
       console.log(`\n✓ Engineer pipeline complete in ${elapsed}s`);
       console.log('  Stage timings (ms):', snap.timings);
-      console.log(`  whisperMode=${snap.whisperMode} mlIsolation=${snap.mlOk}`);
+      console.log(`  abMode=${snap.abMode} whisperMode=${snap.whisperMode} mlIsolation=${snap.mlOk}`);
+      console.log(`  calibrated outGain=${snap.outGain} gateThresh=${snap.gateThresh}`);
+      if (snap.abMode !== 'processed') {
+        console.error('\n✗ Expected abMode=processed after pipeline');
+        await browser.close();
+        cleanup();
+        process.exit(4);
+      }
       await browser.close();
       cleanup();
       return;
