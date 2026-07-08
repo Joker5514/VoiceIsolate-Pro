@@ -106,6 +106,8 @@ function makeMockVip() {
       decodeAudioData: jest.fn().mockResolvedValue({ length: 100 }),
     },
     params: {},
+    _fileSeq: 0,
+    isProcessing: false,
   };
 }
 
@@ -271,7 +273,7 @@ describe('handleFile() — file type validation', () => {
     await handleFile.call(mockVip, mockFile);
 
     expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
-    expect(mockVip.onAudioLoaded).toHaveBeenCalledWith('clip.mp4');
+    expect(mockVip.onAudioLoaded).toHaveBeenCalledWith('clip.mp4', 1);
     expect(mockVip.dom.videoPlayer.src).toBe('blob:test');
     expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
   });

@@ -47,6 +47,12 @@ let MANIFEST = Object.create(null);
 /** Map of sessionKey → InferenceSession (lazy, persistent for worker lifetime). */
 const SESSIONS = Object.create(null);
 
+/** In-flight session compiles — dedup concurrent getSession for the same key. */
+const _sessionInflight = Object.create(null);
+
+/** Serialize process requests — overlapping jobs corrupt ACTIVE_REQUEST_ID. */
+let _processChain = Promise.resolve();
+
 /** Per-session ONNX run queue. WASM JSEP allows only one active run worker-wide. */
 const _runQueues = Object.create(null);
 
@@ -246,13 +252,17 @@ async function createSessionFromBytes(entry, bytes) {
 
 async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) {
   if (SESSIONS[sessionKey]) return SESSIONS[sessionKey];
-  if (!quiet) postStage('load', 0, { modelId: entry.id, label: `Loading ${entry.name || entry.id}…` });
-  const bytes = await fetchModelBytes(entry);
-  if (!quiet) postStage('load', 50, { modelId: entry.id });
-  const session = await createSessionFromBytes(entry, bytes);
-  SESSIONS[sessionKey] = session;
-  if (!quiet) postStage('load', 100, { modelId: entry.id });
-  return session;
+  if (_sessionInflight[sessionKey]) return _sessionInflight[sessionKey];
+  _sessionInflight[sessionKey] = (async () => {
+    if (!quiet) postStage('load', 0, { modelId: entry.id, label: `Loading ${entry.name || entry.id}…` });
+    const bytes = await fetchModelBytes(entry);
+    if (!quiet) postStage('load', 50, { modelId: entry.id });
+    const session = await createSessionFromBytes(entry, bytes);
+    SESSIONS[sessionKey] = session;
+    if (!quiet) postStage('load', 100, { modelId: entry.id });
+    return session;
+  })().finally(() => { delete _sessionInflight[sessionKey]; });
+  return _sessionInflight[sessionKey];
 }
 
 /** Cache bytes + compile ONNX sessions off the hot path (boot / during decode). */
@@ -622,9 +632,12 @@ self.onmessage = async (event) => {
         self.postMessage({ type: 'ready', backend });
         break;
       }
-      case 'process':
-        await processRequest(msg);
+      case 'process': {
+        const run = _processChain.then(() => processRequest(msg));
+        _processChain = run.catch(() => {});
+        await run;
         break;
+      }
       case 'warmup':
         await warmupModels(msg.modelIds);
         break;

@@ -29,16 +29,13 @@ describe('Upload race condition guard', () => {
     expect(js).toContain('ui.fileInput.disabled = true');
   });
 
-  test('ingestFrom() bails early when fileInput is already disabled', () => {
-    // Covers drag-and-drop concurrent calls AND drops during onProcess()
-    // (which also sets fileInput.disabled = true).
-    expect(js).toMatch(/if\s*\(!file\s*\|\|\s*ui\.fileInput\.disabled\)/);
+  test('ingestFrom() bails early when ingest or ML processing is in flight', () => {
+    expect(js).toMatch(/if\s*\(!file\s*\|\|\s*ingestInFlight\s*\|\|\s*processingInFlight\)/);
   });
 
-  test('file input is re-enabled in a finally block (always runs)', () => {
-    // Both success and error paths must restore the input; only a finally
-    // block guarantees this.
-    expect(js).toMatch(/finally\s*\{[^}]*ui\.fileInput\.disabled\s*=\s*false/s);
+  test('file input is re-enabled after decode unless ML isolation is still running', () => {
+    expect(js).toContain('processingInFlight');
+    expect(js).toMatch(/if\s*\(!processingInFlight\)\s*\{[^}]*ui\.fileInput\.disabled\s*=\s*false/s);
   });
 
   test('onFileChosen() delegates to ingestFrom()', () => {
@@ -74,7 +71,7 @@ describe('Same-file re-upload', () => {
   });
 
   test('the reset happens in the finally block (also runs after errors)', () => {
-    expect(js).toMatch(/finally\s*\{[^}]*ui\.fileInput\.value\s*=\s*''/s);
+    expect(js).toMatch(/finally\s*\{[\s\S]*ui\.fileInput\.value\s*=\s*''/);
   });
 });
 

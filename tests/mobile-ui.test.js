@@ -324,7 +324,7 @@ describe('app.js — mobile button state in onAudioLoaded()', () => {
 
   test('disables mobileReprocessBtn on fresh audio load', () => {
     // After a new file is loaded the reprocess button resets to disabled
-    const onAudioLoadedBlock = appJs.match(/onAudioLoaded\(name\)[\s\S]*?this\.dom\.hDur/)?.[0] || '';
+    const onAudioLoadedBlock = appJs.match(/onAudioLoaded\(name[\s\S]*?\)[\s\S]*?this\.dom\.hDur/)?.[0] || '';
     expect(onAudioLoadedBlock).toContain('this.dom.mobileReprocessBtn.disabled = true');
   });
 
@@ -577,7 +577,7 @@ describe('Regression and boundary cases', () => {
 
   test('app.js: every mobileProcessBtn access in runPipeline is covered by a null guard', () => {
     // Count how many times the null-guard appears vs how many times the button is accessed
-    const runPipelineBlock = appJs.match(/async runPipeline\(\)[\s\S]*?async pip\(/)?.[0] || '';
+    const runPipelineBlock = appJs.match(/async runPipeline\([\s\S]*?async pip\(/)?.[0] || '';
     const guardCount  = (runPipelineBlock.match(/if \(this\.dom\.mobileProcessBtn\)/g) || []).length;
     const accessCount = (runPipelineBlock.match(/this\.dom\.mobileProcessBtn\b/g) || []).length;
     // Each guard covers at least one access so guards must be >= half of total occurrences
