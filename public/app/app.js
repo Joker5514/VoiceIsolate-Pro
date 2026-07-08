@@ -21,6 +21,7 @@ import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
+import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { isDesktopShell, isMicCaptureEnabled, pickAudioFile } from '/src/core/DesktopBridge.js';
 import { inferMediaKind } from '/src/core/media-types.js';
 import { openFilePicker as triggerFileInput, primeAudioGesture } from '/src/presentation/UploadWiring.js';
@@ -438,7 +439,7 @@ const SLIDERS = {
     { id:'voiceTunnel', label:'Voice Tunnel (Formant Focus)', min:0, max:100, val:65, step:1, unit:'%', rt:true, desc:'Narrow-band emphasis on speech formants (300–3400 Hz, sharpening with higher values).', example:'~78% concentrates energy on vowel formants so a whisper cuts through music.' },
     { id:'musicKill', label:'Music Kill (Harmonic Comb)', min:0, max:100, val:80, step:1, unit:'%', rt:false, desc:'Suppresses steady-state harmonic music while preserving transient speech.', example:'~92% when a DJ track is constant under the target whisper.' },
     { id:'snrFloor', label:'SNR Rescue Floor', min:-80, max:-20, val:-52, step:1, unit:' dBFS', rt:false, desc:'Minimum power threshold — bins below this are treated as noise-only.', example:'Lower toward −58 dBFS to catch quieter whispers; raise if musical noise appears.' },
-    { id:'whisperMode', label:'Whisper Mode (Processing Aggression)', min:0, max:3, val:2, step:1, unit:'', rt:false, desc:'Compound processing aggression: Off, Light, Heavy, or Forensic multi-pass.', example:'Forensic (3) runs four iterative refinement passes for surveillance recovery.' },
+    { id:'whisperMode', label:'Whisper Mode (Processing Aggression)', min:0, max:3, val:0, step:1, unit:'', rt:false, desc:'Compound processing aggression: Off, Light, Heavy, or Forensic multi-pass.', example:'Forensic (3) runs four iterative refinement passes for surveillance recovery.' },
     { id:'whisperClarity', label:'Whisper Clarity', min:0, max:100, val:65, step:1, unit:'%', rt:true, desc:'Sigmoid-mapped clarity floor for WhisperHunter gain.', example:'~72% for podcast whispers; ~88% for buried field recordings.' },
     { id:'whisperSensitivity', label:'Whisper Sensitivity', min:0, max:100, val:55, step:1, unit:'%', rt:true, desc:'Scales W-VAD energy threshold — higher catches quieter whispers.', example:'~82% in a noisy club; ~28% in a silent room.' },
     { id:'whisperThreshold', label:'Whisper Threshold', min:0, max:100, val:50, step:1, unit:'%', rt:true, desc:'Steepens WhisperHunter suppression curve.', example:'~35% gentle; ~78% aggressive forensic extraction.' },
@@ -820,7 +821,9 @@ class VoiceIsolatePro {
     this.forensicLog = [];
 
     // [WHISPER UPDATE] Whisper mode + extreme spectral state
-    this.whisperMode = 2;
+    this.whisperMode = 0;
+    this._mlIsolationSucceeded = false;
+    this._autoPipelineRun = false;
     this._forceSinglePass = false;
     this._extremeFrameIdx = 0;
     this._extremeCircularMag = null;
@@ -1358,7 +1361,7 @@ class VoiceIsolatePro {
 
     const spec = SLIDER_BY_ID.whisperMode;
     const initMode = (window.VIP_PARAMS && window.VIP_PARAMS.whisperMode !== undefined)
-      ? window.VIP_PARAMS.whisperMode : (spec ? spec.val : 2);
+      ? window.VIP_PARAMS.whisperMode : (spec ? spec.val : 0);
 
     const row = document.createElement('div');
     row.className = 'sr-row whisper-mode-row';
@@ -1615,7 +1618,7 @@ class VoiceIsolatePro {
         const spec = SLIDER_BY_ID[id];
         if (spec) { el.value = spec.val; el.dispatchEvent(new Event('input', { bubbles: true })); }
       });
-      this._setWhisperMode(SLIDER_BY_ID.whisperMode ? SLIDER_BY_ID.whisperMode.val : 2);
+      this._setWhisperMode(SLIDER_BY_ID.whisperMode ? SLIDER_BY_ID.whisperMode.val : 0);
     });
 
     // [WHISPER UPDATE] WhisperHunter AI auto-processing
@@ -1979,11 +1982,16 @@ class VoiceIsolatePro {
     }
 
     let buffer;
+    resetTimings();
     try {
       if (this.ctx.state === 'suspended') await this.ctx.resume();
       await new Promise((r) => _yieldToUI(r));
+      stageStart('decode');
       const decoded = await decodeBlobToAudioBuffer(file);
+      stageEnd('decode');
+      stageStart('resample');
       buffer = await resampleToCanonical(decoded);
+      stageEnd('resample');
     } catch (decodeErr) {
       this._hideFileLoading();
       const msg = isVideoFile
@@ -2062,14 +2070,20 @@ class VoiceIsolatePro {
     if (this.dom.hCh) this.dom.hCh.textContent = buf.numberOfChannels === 1 ? 'Mono' : 'Stereo';
     if (this.dom.hFile) this.dom.hFile.textContent = (name || '').slice(0, 20);
 
-    this.renderStaticVisuals(buf);
-    HeroExperience.mirrorWaveCanvases();
+    const scheduleIdle = globalThis.requestIdleCallback
+      ? (cb) => requestIdleCallback(cb, { timeout: 1500 })
+      : (cb) => setTimeout(cb, 0);
+    scheduleIdle(() => {
+      this.renderStaticVisuals(buf);
+      HeroExperience.mirrorWaveCanvases();
+    });
     try { window.dispatchEvent(new CustomEvent('vip:fileLoaded', { detail: { name } })); } catch (_) {}
     this.showNotification('File loaded: ' + name, 'info');
 
     // Auto-start pipeline — models warmed during decode (matches Landing latency UX).
     _yieldToUI(() => {
       if (!this.isProcessing && (this.inputBuffer || this.origBuffer)) {
+        this._autoPipelineRun = true;
         this.runPipeline().catch((err) => {
           structuredLog('error', '[VIP] Auto-process failed', { err: err.message });
         });
@@ -2111,8 +2125,8 @@ class VoiceIsolatePro {
 
   // [WHISPER UPDATE] Read compound whisper-mode state from VIP_PARAMS
   _getWhisperModeState() {
-    const mode = Math.round(window.VIP_PARAMS?.whisperMode ?? this.whisperMode ?? 2);
-    return WHISPER_MODE_STATES[mode] || WHISPER_MODE_STATES[2];
+    const mode = Math.round(window.VIP_PARAMS?.whisperMode ?? this.whisperMode ?? 0);
+    return WHISPER_MODE_STATES[mode] || WHISPER_MODE_STATES[0];
   }
 
   // [WHISPER UPDATE] Animate sliders toward target values with cubic ease-out
@@ -2122,7 +2136,7 @@ class VoiceIsolatePro {
     if (!entries.length) return Promise.resolve();
 
     const startVals = entries.map(([id]) => {
-      if (id === 'whisperMode') return window.VIP_PARAMS?.whisperMode ?? this.whisperMode ?? 2;
+      if (id === 'whisperMode') return window.VIP_PARAMS?.whisperMode ?? this.whisperMode ?? 0;
       const el = document.getElementById('sl_' + id);
       return el ? parseFloat(el.value) : (window.VIP_PARAMS?.[id] ?? 0);
     });
@@ -2177,6 +2191,8 @@ class VoiceIsolatePro {
 
     this.isProcessing = true;
     this.abortFlag = false;
+    this._mlIsolationSucceeded = false;
+    stageStart('pipeline');
 
     // Hide process buttons, show stop button
     if (this.dom.mobileProcessBtn) {
@@ -2190,10 +2206,14 @@ class VoiceIsolatePro {
     }
 
     const wm = this._getWhisperModeState();
-    const totalPasses = this._forceSinglePass ? 1 : (wm.passes || 1);
+    let totalPasses = this._forceSinglePass ? 1 : (wm.passes || 1);
+    if (this._autoPipelineRun) {
+      totalPasses = 1;
+      this._autoPipelineRun = false;
+    }
 
     this.setStatus('PROCESSING');
-    this.updatePipelineProgress(0, 'Starting 32-Stage Deca-Pass…', 0);
+    this.updatePipelineProgress(0, totalPasses > 1 ? 'Starting 32-Stage Deca-Pass…' : 'ML isolation…', 0);
 
     try {
       let sourceBuf = this.inputBuffer || this.origBuffer;
@@ -2217,11 +2237,23 @@ class VoiceIsolatePro {
         } else if (pass === 0) {
           // ML inference runs exactly once per file (CLAUDE.md §1). Whisper
           // forensic passes are DSP-only refinement on procBuffer.
+          stageStart('ml_isolation');
           const mlOk = await this._runMLIsolationPipeline();
-          if (!mlOk) await this._runFallbackPipeline();
-        } else {
+          stageEnd('ml_isolation');
+          this._mlIsolationSucceeded = mlOk;
+          if (!mlOk) {
+            stageStart('dsp_fallback');
+            await this._runFallbackPipeline();
+            stageEnd('dsp_fallback');
+          }
+        } else if (!this._mlIsolationSucceeded) {
+          stageStart(`dsp_whisper_pass_${pass}`);
           await this._runFallbackPipeline();
+          stageEnd(`dsp_whisper_pass_${pass}`);
         }
+        // When ML already isolated vocals, skip redundant forensic DSP passes.
+
+        if (this._mlIsolationSucceeded) break;
 
         if (pass < totalPasses - 1 && this.procBuffer) {
           WHISPER_HUNTER.updateNoiseProfileFromBuffer(this.procBuffer, this);
@@ -2236,9 +2268,15 @@ class VoiceIsolatePro {
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = false;
 
       if (this.outputBuffer) {
-        this.renderStaticVisuals(this.outputBuffer);
-        this._autoCalibratePreset(this.outputBuffer);
+        const scheduleIdle = globalThis.requestIdleCallback
+          ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
+          : (cb) => setTimeout(cb, 0);
+        scheduleIdle(() => {
+          this.renderStaticVisuals(this.outputBuffer);
+          this._autoCalibratePreset(this.outputBuffer);
+        });
       }
+      stageEnd('pipeline');
       this.updatePipelineProgress(32, 'Complete', 100);
       this.setStatus('DONE');
       try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}

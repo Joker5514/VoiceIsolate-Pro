@@ -418,6 +418,27 @@ describe('VoiceIsolatePro class structure', () => {
     expect(appSrc).toMatch(/const mlOk = await this\._runMLIsolationPipeline\(\)/);
   });
 
+  test('Engineer default whisper mode is OFF for low-latency first pass', () => {
+    expect(appSrc).toMatch(/id:\s*'whisperMode'[\s\S]*?val:\s*0/);
+    expect(appSrc).toContain('this.whisperMode = 0');
+  });
+
+  test('Engineer skips redundant DSP whisper passes when ML isolation succeeded', () => {
+    expect(appSrc).toContain('this._mlIsolationSucceeded = mlOk');
+    expect(appSrc).toMatch(/else if \(!this\._mlIsolationSucceeded\)/);
+    expect(appSrc).toContain('skip redundant forensic DSP passes');
+    expect(appSrc).toContain('if (this._mlIsolationSucceeded) break');
+  });
+
+  test('Engineer auto-upload uses single ML pass for low latency', () => {
+    expect(appSrc).toContain('this._autoPipelineRun = true');
+    expect(appSrc).toMatch(/if \(this\._autoPipelineRun\)[\s\S]*totalPasses = 1/);
+  });
+
+  test('Engineer imports pipeline stage timing for debug scripts', () => {
+    expect(appSrc).toContain("import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js'");
+  });
+
   test('pipeline has 32 stages to match STAGES array', () => {
     // The STAGES array is defined in slider-map.js with 32 stages
     const stageMatches = [...sliderMapSrc.matchAll(/'S\d{2}:/g)];
