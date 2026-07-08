@@ -128,6 +128,8 @@ let _syncTransportRegion = null;
 let ingested = null;
 let requestSeq = 0;
 let ingestSeq = 0;
+let ingestInFlight = false;
+let processingInFlight = false;
 
 let currentJobLabel = 'Separating stems…';
 /** Object URL backing the <video> preview; revoked when a new file loads. */
@@ -374,6 +376,7 @@ function getWorker() {
   initMLWorker(worker);
   worker.addEventListener('message', (event) => {
     const msg = event.data || {};
+    const stale = msg.requestId != null && msg.requestId !== requestSeq;
     switch (msg.type) {
       case 'ready': {
         let debugEnabled = false;
@@ -387,6 +390,7 @@ function getWorker() {
         break;
       }
       case 'stage':
+        if (stale) break;
         if (msg.stage === 'load') {
           if ((msg.percent ?? 0) <= 1) stageStart('model_load');
           setProcStage(
@@ -402,12 +406,16 @@ function getWorker() {
         }
         break;
       case 'progress':
-        setProgress(msg.percent);
+        if (!stale) setProgress(msg.percent);
         break;
       case 'stems':
         onStems(msg);
         break;
       case 'error':
+        if (stale) break;
+        stageEnd('isolate');
+        stageEnd('model_load');
+        processingInFlight = false;
         setStatus(`Processing failed: ${msg.message}`, 'error');
         hideSpinner();
         ui.processBtn.disabled = false;
@@ -621,7 +629,7 @@ function autoCalibrateMix(clean, sampleRate) {
  * same file can be re-selected after a failed decode.
  */
 async function ingestFrom(file) {
-  if (!file || ui.fileInput.disabled) return;
+  if (!file || ingestInFlight || processingInFlight) return;
   try {
     assertIngestible(file);
   } catch (err) {
@@ -629,6 +637,7 @@ async function ingestFrom(file) {
     return;
   }
   const seq = ++ingestSeq;
+  ingestInFlight = true;
   resetTimings();
   clearStemCache();
   ui.processBtn.disabled = true;
@@ -669,10 +678,11 @@ async function ingestFrom(file) {
     ingested = null;
     ui.processBtn.disabled = true;
   } finally {
-    // Re-enable the input unconditionally so the user can always pick again.
-    // Resetting the value lets the browser fire 'change' even if the same
-    // file is re-chosen (e.g. after a failed decode or an external edit).
-    ui.fileInput.disabled = false;
+    ingestInFlight = false;
+    // Keep input locked while ML isolation runs; onStems/error re-enables it.
+    if (!processingInFlight) {
+      ui.fileInput.disabled = false;
+    }
     ui.fileInput.value = '';
   }
 }
@@ -747,6 +757,8 @@ const MODEL_CHAINS = Object.freeze({
 
 function onProcess() {
   if (!ingested) return;
+  processingInFlight = true;
+  ui.fileInput.disabled = true;
   const selection = ui.modelSelect.value;
   const chain = MODEL_CHAINS[selection];
   const modelIds = chain || [getModel(selection).id];
@@ -786,7 +798,7 @@ function onProcess() {
   ingested._stemCacheKey = cacheKey;
 
   // Channel copies are transferred — keep our reference for re-processing.
-  const channelData = ingested.channelData.map((c) => new Float32Array(c));
+  const channelData = ingested.channelData.map((c) => c.slice());
   const msg = { type: 'process', requestId: ++requestSeq, channelData, sampleRate: ingested.sampleRate };
   if (chain) msg.modelIds = chain;
   else msg.modelId = getModel(selection).id;
@@ -795,6 +807,7 @@ function onProcess() {
 
 function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }) {
   if (requestId !== requestSeq) return; // stale response
+  processingInFlight = false;
   stageEnd('isolate');
   stageEnd('model_load');
   setProgress(100);

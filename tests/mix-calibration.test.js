@@ -12,6 +12,7 @@ let classifyLevel;
 let calibrateFromStems;
 let mergePreset;
 let recommendEngineerPreset;
+let engineerLevelOverrides;
 let levelOverrides;
 
 beforeAll(async () => {
@@ -26,6 +27,7 @@ beforeAll(async () => {
     calibrateFromStems,
     mergePreset,
     recommendEngineerPreset,
+    engineerLevelOverrides,
     levelOverrides,
   } = mod);
 });
@@ -113,5 +115,12 @@ describe('MixCalibration — auto-calibration', () => {
     const rec = recommendEngineerPreset([ch]);
     expect(rec.preset).toBe('Whisper Boost');
     expect(rec.level).toBe('whisper');
+    expect(rec.overrides?.outGain).toBeGreaterThan(0);
+  });
+
+  test('engineerLevelOverrides boosts quiet content', () => {
+    const o = engineerLevelOverrides('quiet', -35);
+    expect(o.outGain).toBe(3);
+    expect(o.gateThresh).toBeLessThan(-40);
   });
 });

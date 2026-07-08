@@ -398,7 +398,7 @@ describe('VoiceIsolatePro class structure', () => {
   });
 
   test('defines runPipeline async method', () => {
-    expect(appSrc).toContain('async runPipeline()');
+    expect(appSrc).toMatch(/async runPipeline\(/);
   });
 
   test('Engineer mode warms ML models and auto-starts pipeline after file load', () => {
@@ -420,7 +420,7 @@ describe('VoiceIsolatePro class structure', () => {
   test('Engineer ML inference runs once per file (whisper passes are DSP-only)', () => {
     expect(appSrc).toContain('pass === 0');
     expect(appSrc).toMatch(/ML inference runs exactly once per file/);
-    expect(appSrc).toMatch(/const mlOk = await this\._runMLIsolationPipeline\(\)/);
+    expect(appSrc).toMatch(/const mlOk = await this\._runMLIsolationPipeline\(/);
   });
 
   test('Engineer default whisper mode is OFF for low-latency first pass', () => {

@@ -32,6 +32,13 @@ describe('MLStemCache', () => {
     expect(a).not.toBe(b);
   });
 
+  test('stemCacheKey preserves model chain order', () => {
+    const ch = [new Float32Array([0.1, 0.2, 0.3, 0.4])];
+    const a = stemCacheKey(ch, 48000, ['demucs', 'rnnoise'], 'clip.wav');
+    const b = stemCacheKey(ch, 48000, ['rnnoise', 'demucs'], 'clip.wav');
+    expect(a).not.toBe(b);
+  });
+
   test('setCachedStems stores and getCachedStems retrieves copies', () => {
     const key = 'test-key';
     const cleanIn = new Float32Array([1, 2]);

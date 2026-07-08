@@ -47,6 +47,32 @@ let MANIFEST = Object.create(null);
 /** Map of sessionKey → InferenceSession (lazy, persistent for worker lifetime). */
 const SESSIONS = Object.create(null);
 
+/** In-flight session compiles — dedup concurrent getSession for the same key. */
+const _sessionInflight = Object.create(null);
+
+/** Serialize process requests — overlapping jobs corrupt ACTIVE_REQUEST_ID. */
+let _processChain = Promise.resolve();
+
+/** Per-session ONNX run queue. WASM JSEP allows only one active run worker-wide. */
+const _runQueues = Object.create(null);
+
+function inferenceQueueKey(sessionKey) {
+  return BACKEND === 'webgpu' ? sessionKey : '__wasm_global__';
+}
+
+async function queuedSessionRun(sessionKey, session, feeds) {
+  const key = inferenceQueueKey(sessionKey);
+  const prev = _runQueues[key] || Promise.resolve();
+  let release;
+  _runQueues[key] = new Promise((resolve) => { release = resolve; });
+  await prev;
+  try {
+    return await session.run(feeds);
+  } finally {
+    release();
+  }
+}
+
 /** Resolved execution backend, decided once. */
 let BACKEND = null;
 
@@ -108,9 +134,9 @@ function postStage(stage, percent, extra = {}) {
 
 function effectiveBatchFrames(entry) {
   const base = entry.maxBatchFrames || 32;
-  if (BACKEND === 'webgpu') return Math.min(128, base * 2);
+  if (BACKEND === 'webgpu') return Math.min(128, base * 3);
   // Larger WASM batches amortize ONNX session.run overhead on spectral models.
-  return Math.min(64, base * 2);
+  return Math.min(96, base * 3);
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────
@@ -226,13 +252,17 @@ async function createSessionFromBytes(entry, bytes) {
 
 async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) {
   if (SESSIONS[sessionKey]) return SESSIONS[sessionKey];
-  if (!quiet) postStage('load', 0, { modelId: entry.id, label: `Loading ${entry.name || entry.id}…` });
-  const bytes = await fetchModelBytes(entry);
-  if (!quiet) postStage('load', 50, { modelId: entry.id });
-  const session = await createSessionFromBytes(entry, bytes);
-  SESSIONS[sessionKey] = session;
-  if (!quiet) postStage('load', 100, { modelId: entry.id });
-  return session;
+  if (_sessionInflight[sessionKey]) return _sessionInflight[sessionKey];
+  _sessionInflight[sessionKey] = (async () => {
+    if (!quiet) postStage('load', 0, { modelId: entry.id, label: `Loading ${entry.name || entry.id}…` });
+    const bytes = await fetchModelBytes(entry);
+    if (!quiet) postStage('load', 50, { modelId: entry.id });
+    const session = await createSessionFromBytes(entry, bytes);
+    SESSIONS[sessionKey] = session;
+    if (!quiet) postStage('load', 100, { modelId: entry.id });
+    return session;
+  })().finally(() => { delete _sessionInflight[sessionKey]; });
+  return _sessionInflight[sessionKey];
 }
 
 /** Cache bytes + compile ONNX sessions off the hot path (boot / during decode). */
@@ -333,6 +363,14 @@ function fftInPlace(re, im, inverse) {
  * @param {(p: number) => void} onProgress  0..1
  * @returns {Promise<Float32Array>} masked (clean) channel
  */
+function makeStftBatchBuf(batchMax, bins) {
+  return {
+    batchMags: new Float32Array(batchMax * bins),
+    batchRe: new Float32Array(batchMax * bins),
+    batchIm: new Float32Array(batchMax * bins),
+  };
+}
+
 async function runSpectralMask(entry, session, samples, onProgress) {
   const N = entry.fftSize;
   const hop = entry.hopSize;
@@ -345,17 +383,12 @@ async function runSpectralMask(entry, session, samples, onProgress) {
   const out = new Float32Array(samples.length);
   const norm = new Float32Array(samples.length);
 
-  // Scratch buffers reused across the whole file — no per-frame allocation.
   const re = new Float32Array(N);
   const im = new Float32Array(N);
-  const batchMags = new Float32Array(batchMax * bins);
-  const batchRe = new Float32Array(batchMax * bins);
-  const batchIm = new Float32Array(batchMax * bins);
+  let cur = makeStftBatchBuf(batchMax, bins);
+  let nxt = makeStftBatchBuf(batchMax, bins);
 
-  for (let f0 = 0; f0 < totalFrames; f0 += batchMax) {
-    const count = Math.min(batchMax, totalFrames - f0);
-
-    // ── Forward STFT for this batch ─────────────────────────────────────
+  const forwardStftBatch = (buf, f0, count) => {
     for (let b = 0; b < count; b++) {
       const start = (f0 + b) * hop;
       const avail = Math.max(0, Math.min(N, samples.length - start));
@@ -364,15 +397,35 @@ async function runSpectralMask(entry, session, samples, onProgress) {
       fftInPlace(re, im, false);
       const off = b * bins;
       for (let k = 0; k < bins; k++) {
-        batchRe[off + k] = re[k];
-        batchIm[off + k] = im[k];
-        batchMags[off + k] = Math.hypot(re[k], im[k]);
+        buf.batchRe[off + k] = re[k];
+        buf.batchIm[off + k] = im[k];
+        buf.batchMags[off + k] = Math.hypot(re[k], im[k]);
       }
     }
+  };
 
-    // ── Mask inference (dynamic batch) ──────────────────────────────────
-    const input = new ort.Tensor('float32', batchMags.subarray(0, count * bins), [count, bins]);
-    const results = await session.run({ [entry.io.input]: input });
+  let prefetch = null;
+
+  for (let f0 = 0; f0 < totalFrames; f0 += batchMax) {
+    const count = Math.min(batchMax, totalFrames - f0);
+
+    if (prefetch) {
+      await prefetch;
+      const swap = cur; cur = nxt; nxt = swap;
+    } else {
+      forwardStftBatch(cur, f0, count);
+    }
+
+    const nextF0 = f0 + batchMax;
+    const nextCount = nextF0 < totalFrames ? Math.min(batchMax, totalFrames - nextF0) : 0;
+    prefetch = nextCount > 0
+      ? Promise.resolve().then(() => forwardStftBatch(nxt, nextF0, nextCount))
+      : null;
+
+    // ── Mask inference (prefetch overlaps ONNX on the WASM thread pool) ─
+    const magSlice = cur.batchMags.subarray(0, count * bins);
+    const input = new ort.Tensor('float32', magSlice, [count, bins]);
+    const results = await queuedSessionRun(entry.id, session, { [entry.io.input]: input });
     const mask = results[entry.io.output]?.data;
     if (!mask || mask.length < count * bins) {
       throw new Error(`[VIP][MLWorker] '${entry.id}' returned a malformed output tensor.`);
@@ -381,11 +434,10 @@ async function runSpectralMask(entry, session, samples, onProgress) {
     // ── Masked inverse STFT + overlap-add ───────────────────────────────
     for (let b = 0; b < count; b++) {
       const off = b * bins;
-      // Rebuild the full Hermitian spectrum from the masked half-spectrum.
       for (let k = 0; k < bins; k++) {
         const m = mask[off + k];
-        re[k] = batchRe[off + k] * m;
-        im[k] = batchIm[off + k] * m;
+        re[k] = cur.batchRe[off + k] * m;
+        im[k] = cur.batchIm[off + k] * m;
       }
       for (let k = bins; k < N; k++) {
         re[k] = re[N - k];
@@ -446,7 +498,7 @@ async function runWaveformMask(entry, session, samples, sampleRate, onProgress) 
     chunk.fill(0);
     chunk.set(pcm.subarray(offset, offset + len));
     const input = new ort.Tensor('float32', chunk, [1, 1, segmentLen]);
-    const result = await session.run({ [inName]: input });
+    const result = await queuedSessionRun(entry.id, session, { [inName]: input });
     const maskTensor = result[outName] || result.output;
     if (!maskTensor?.data) {
       throw new Error(`[VIP][MLWorker] '${entry.id}' returned no mask tensor.`);
@@ -519,9 +571,8 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
         ? getSession(MANIFEST[nextId], MANIFEST[nextId].id, { quiet: true }).catch(() => {})
         : null;
       postStage('separate', Math.round((stepBase / totalSteps) * 100), { modelId: id });
+      const session = await getSession(entry, entry.id);
       const next = await Promise.all(current.map(async (samples, ch) => {
-        const sessionKey = current.length > 1 ? `${entry.id}:ch${ch}` : entry.id;
-        const session = await getSession(entry, sessionKey);
         const step = stepBase + ch;
         const progress = (p) => onProgress((step + p) / totalSteps);
         if (entry.strategy === 'spectral-mask') {
@@ -581,9 +632,12 @@ self.onmessage = async (event) => {
         self.postMessage({ type: 'ready', backend });
         break;
       }
-      case 'process':
-        await processRequest(msg);
+      case 'process': {
+        const run = _processChain.then(() => processRequest(msg));
+        _processChain = run.catch(() => {});
+        await run;
         break;
+      }
       case 'warmup':
         await warmupModels(msg.modelIds);
         break;

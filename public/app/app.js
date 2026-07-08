@@ -159,11 +159,11 @@ const HeroExperience = (() => {
       app.dom.saveProcBtn?.click();
     });
     $('playOrig')?.addEventListener('click', () => {
-      if (app._abMode !== 'A') app.dom.tpAB?.click();
+      if (app.abMode !== 'original') app.dom.tpAB?.click();
       app.dom.tpPlay?.click();
     });
     $('playProc')?.addEventListener('click', () => {
-      if (app._abMode !== 'B') app.dom.tpAB?.click();
+      if (app.abMode !== 'processed') app.dom.tpAB?.click();
       app.dom.tpPlay?.click();
     });
     $('abToggle')?.addEventListener('click', () => app.dom.tpAB?.click());
@@ -780,6 +780,8 @@ class VoiceIsolatePro {
 
     // Abort flag for runPipeline cancellation
     this.abortFlag = false;
+    /** Monotonic file generation — stale pipeline results are discarded. */
+    this._fileSeq = 0;
 
     // Live chain state
     this.liveChainBuilt = false;
@@ -1062,7 +1064,7 @@ class VoiceIsolatePro {
           const sab = new SharedArrayBuffer(256 * Float32Array.BYTES_PER_ELEMENT);
           this.sharedParams = new Float32Array(sab);
           SLIDER_REGISTRY.forEach((s, i) => {
-            this.sharedParams[i + 1] = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined) ? window.VIP_PARAMS[s.id] : (s.val || 0);
+            this.sharedParams[i + 1] = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined) ? window.VIP_PARAMS[s.id] : (s.default ?? 0);
           });
         }
 
@@ -1844,11 +1846,32 @@ class VoiceIsolatePro {
     }
   }
 
+  /** Push VIP_PARAMS to the live-mix bridge when loaded. */
+  _syncBridgeParams() {
+    const bridge = this._bridge;
+    if (!bridge || typeof bridge.applyParams !== 'function') return;
+    bridge.applyParams(window.VIP_PARAMS || {});
+    if (bridge.isLoaded && bridge.isLoaded()) this.liveChainBuilt = true;
+  }
+
+  /** After processing, default playback to the isolated output. */
+  _setProcessedPlaybackMode() {
+    this.abMode = 'processed';
+    this._bridgeBuf = null;
+    if (this.dom?.tpAB) this.dom.tpAB.classList.add('active');
+    if (this.dom?.tpABLabel) this.dom.tpABLabel.textContent = 'Processed';
+  }
+
   // ── Preset application ────────────────────────────────────────────────────
-  applyPreset(name) {
+  applyPreset(name, options = {}) {
+    const { preserveWhisperMode = false } = options;
     const preset = PRESETS[name];
     if (!preset) return;
+    const savedWhisper = preserveWhisperMode
+      ? (window.VIP_PARAMS?.whisperMode ?? this.whisperMode ?? 0)
+      : null;
     Object.entries(preset).forEach(([key, rawValue]) => {
+      if (preserveWhisperMode && key === 'whisperMode') return;
       if (key === 'description') return;
       const sliderId = key;
       const value = SLIDER_BY_ID[sliderId] ? clampToSlider(sliderId, rawValue) : rawValue;
@@ -1871,8 +1894,11 @@ class VoiceIsolatePro {
       sliderDom.el.dispatchEvent(new Event('input', { bubbles: true }));
       sliderDom.el.dispatchEvent(new Event('change', { bubbles: true }));
     });
+    if (preserveWhisperMode && savedWhisper != null) {
+      this._setWhisperMode(savedWhisper);
+    }
+    this._syncBridgeParams();
     if (this.liveChainBuilt) {
-      // Sync params to worklet after preset application
       if (window._vipOrch && typeof window._vipOrch.syncParams === 'function') {
         window._vipOrch.syncParams(window.VIP_PARAMS || {});
       }
@@ -1896,8 +1922,13 @@ class VoiceIsolatePro {
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       channels.push(buffer.getChannelData(ch));
     }
-    const { preset, level, rmsDb } = recommendEngineerPreset(channels);
-    this.applyPreset(preset);
+    const { preset, level, rmsDb, overrides = {} } = recommendEngineerPreset(channels);
+    this.applyPreset(preset, { preserveWhisperMode: true });
+
+    for (const [key, val] of Object.entries(overrides)) {
+      if (!SLIDER_BY_ID[key] || !Number.isFinite(val)) continue;
+      this.onSlider(key, clampToSlider(key, val));
+    }
 
     const AI = globalThis.AIIntelligence;
     if (AI && typeof AI.autoTuneParams === 'function') {
@@ -1909,6 +1940,8 @@ class VoiceIsolatePro {
         this.onSlider(key, clamped);
       }
     }
+
+    this._syncBridgeParams();
 
     const detail = `${preset} (${level}, ${rmsDb.toFixed(1)} dBFS)`;
     structuredLog('info', '[VIP] Auto-calibrated mix', { preset, level, rmsDb });
@@ -1963,9 +1996,12 @@ class VoiceIsolatePro {
   // ── File handling ─────────────────────────────────────────────────────────
   async handleFile(file) {
     if (!file) return;
+    if (typeof this._fileSeq !== 'number' || !Number.isFinite(this._fileSeq)) this._fileSeq = 0;
+    const fileSeq = ++this._fileSeq;
     clearStemCache();
     this._sourceName = file.name || '';
     this.stop();
+    if (this.isProcessing) this.abortFlag = true;
     this.setStatus('LOADING');
     HeroExperience.onDecodeStart();
     this._showFileLoading(file.name ? `Loading ${file.name}…` : 'Loading…');
@@ -1997,6 +2033,7 @@ class VoiceIsolatePro {
       this.setStatus('ERROR');
       return;
     }
+    if (fileSeq !== this._fileSeq) return;
 
     // Detect video by MIME type or container extension. The <video> element is
     // then shown and kept in sync with the Web Audio transport so the picture
@@ -2050,6 +2087,7 @@ class VoiceIsolatePro {
       this.setStatus('ERROR');
       return;
     }
+    if (fileSeq !== this._fileSeq) return;
 
     // Show & wire the <video> element for video files (covers the common path
     // where decodeAudioData succeeded). The transport plays the processed audio
@@ -2079,7 +2117,8 @@ class VoiceIsolatePro {
     this.inputBuffer = buffer;
     this.origBuffer = buffer;
     this._hideFileLoading();
-    this.onAudioLoaded(file.name);
+    if (fileSeq !== this._fileSeq) return;
+    this.onAudioLoaded(file.name, fileSeq);
   }
 
   /** @deprecated Use decodeBlobToAudioBuffer — kept for legacy patch scripts. */
@@ -2088,9 +2127,10 @@ class VoiceIsolatePro {
     return resampleToCanonical(decoded);
   }
 
-  onAudioLoaded(name) {
+  onAudioLoaded(name, fileSeq = this._fileSeq) {
     const buf = this.inputBuffer || this.origBuffer;
     if (!buf) return;
+    if (fileSeq !== this._fileSeq) return;
 
     this.setStatus('READY');
 
@@ -2120,9 +2160,10 @@ class VoiceIsolatePro {
 
     // Auto-start pipeline — models warmed during decode (matches Landing latency UX).
     _yieldToUI(() => {
+      if (fileSeq !== this._fileSeq) return;
       if (!this.isProcessing && (this.inputBuffer || this.origBuffer)) {
         this._autoPipelineRun = true;
-        this.runPipeline().catch((err) => {
+        this.runPipeline(fileSeq).catch((err) => {
           structuredLog('error', '[VIP] Auto-process failed', { err: err.message });
         });
       }
@@ -2227,9 +2268,10 @@ class VoiceIsolatePro {
   }
 
   // ── Main pipeline (32-stage Deca-Pass) ────────────────────────────────────
-  async runPipeline() {
+  async runPipeline(fileSeq = this._fileSeq) {
     if (!this.origBuffer && !this.inputBuffer) return;
     if (this.isProcessing) return;
+    if (fileSeq !== this._fileSeq) return;
 
     this.isProcessing = true;
     this.abortFlag = false;
@@ -2280,8 +2322,9 @@ class VoiceIsolatePro {
           // ML inference runs exactly once per file (CLAUDE.md §1). Whisper
           // forensic passes are DSP-only refinement on procBuffer.
           stageStart('ml_isolation');
-          const mlOk = await this._runMLIsolationPipeline();
+          const mlOk = await this._runMLIsolationPipeline(fileSeq);
           stageEnd('ml_isolation');
+          if (fileSeq !== this._fileSeq) break;
           this._mlIsolationSucceeded = mlOk;
           if (!mlOk) {
             stageStart('dsp_fallback');
@@ -2302,6 +2345,17 @@ class VoiceIsolatePro {
         }
       }
 
+      if (fileSeq !== this._fileSeq) {
+        stageEnd('pipeline');
+        return;
+      }
+      if (this.abortFlag) {
+        stageEnd('pipeline');
+        this.setStatus('READY');
+        this.updatePipelineProgress(0, 'Cancelled', 0);
+        return;
+      }
+
       // Success — enable reprocess
       this.outputBuffer = this.outputBuffer || this.procBuffer;
       if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = false;
@@ -2309,13 +2363,17 @@ class VoiceIsolatePro {
       if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = false;
 
+      this._setProcessedPlaybackMode();
+
       if (this.outputBuffer) {
         const scheduleIdle = globalThis.requestIdleCallback
           ? (cb) => requestIdleCallback(cb, { timeout: 2000 })
           : (cb) => setTimeout(cb, 0);
         scheduleIdle(() => {
+          if (fileSeq !== this._fileSeq) return;
           this.renderStaticVisuals(this.outputBuffer);
           this._autoCalibratePreset(this.outputBuffer);
+          this._syncBridgeParams();
         });
       }
       stageEnd('pipeline');
@@ -2351,11 +2409,15 @@ class VoiceIsolatePro {
    * Offline ML isolation — same Demucs → denoise chain as the Landing page.
    * @returns {Promise<boolean>} true when ML produced a non-passthrough result
    */
-  async _runMLIsolationPipeline() {
+  async _runMLIsolationPipeline(fileSeq = this._fileSeq) {
     const buf = this.inputBuffer || this.origBuffer;
     if (!buf) return false;
+    if (fileSeq !== this._fileSeq) return false;
     try {
       await this.ensureCtx();
+      if (typeof this._warmupMLModels === 'function') {
+        await this._warmupMLModels().catch(() => {});
+      }
       const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
       const channelData = [];
       for (let ch = 0; ch < buf.numberOfChannels; ch++) {
@@ -2366,6 +2428,7 @@ class VoiceIsolatePro {
         modelIds: DEFAULT_ML_CHAIN,
         sourceName: this._sourceName || '',
         onProgress: (ev) => {
+          if (fileSeq !== this._fileSeq) return;
           if (ev.type === 'stage') {
             const label = ev.label || `ML: ${ev.stage} (${ev.modelId || 'model'})…`;
             const pct = 15 + Math.round((ev.percent || 0) * 0.55);
@@ -2375,6 +2438,7 @@ class VoiceIsolatePro {
           }
         },
       });
+      if (fileSeq !== this._fileSeq) return false;
       if (result.passthrough) return false;
       this.outputBuffer = stemsToAudioBuffer(this.ctx, result.clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
@@ -3117,9 +3181,9 @@ class VoiceIsolatePro {
           bridge.loadBuffer(buf);
           this._bridgeBuf = buf;
           this._transportRegionWired = false;
-          // Seed the graph from the current slider positions.
           const params = window.VIP_PARAMS || {};
           if (typeof bridge.applyParams === 'function') bridge.applyParams(params);
+          this.liveChainBuilt = true;
         }
         this._ensureTransportRegionWiring();
         // Honour the current scrub position, then start.

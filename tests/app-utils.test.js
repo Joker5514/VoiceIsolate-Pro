@@ -381,7 +381,7 @@ describe('applyPreset uses clampToSlider for clamping (source inspection)', () =
     // v24 renamed value → rawValue in the for loop to clarify that clamping happens next.
     // Match the method definition (with opening brace) — not the first call site,
     // which is just an invocation inside an event handler.
-    const methodSrc = appSrc.slice(appSrc.indexOf('applyPreset(name) {'));
+    const methodSrc = appSrc.slice(appSrc.indexOf('applyPreset(name, options = {}) {'));
     expect(methodSrc.slice(0, 500)).toContain('rawValue');
   });
 });

@@ -13,7 +13,7 @@ const _cache = new Map();
  * @param {string} [sourceName]
  */
 export function stemCacheKey(channelData, sampleRate, modelIds, sourceName = '') {
-  const models = [...modelIds].sort().join('+');
+  const models = modelIds.join('→');
   const ch0 = channelData[0];
   if (!ch0?.length) return `${models}|${sampleRate}|0|${sourceName}`;
   const len = ch0.length;

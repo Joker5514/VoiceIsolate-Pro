@@ -94,6 +94,15 @@ function buildMediaTypesShim() {
     .replace(/^export\s+/gm, '');
 }
 
+function buildPipelineShim() {
+  return `
+function clearStemCache() {}
+function resetTimings() {}
+function stageStart() {}
+function stageEnd() {}
+`;
+}
+
 function buildMediaDecodeShim() {
   return `
 async function decodeBlobToAudioBuffer(file) {
@@ -126,7 +135,8 @@ function getAppCode() {
   }
   const mediaTypesShim = buildMediaTypesShim();
   const mediaDecodeShim = buildMediaDecodeShim();
-  return preamble + '\n' + inlined + '\n' + mediaTypesShim + '\n' + mediaDecodeShim + '\n' + appJsCode;
+  const pipelineShim = buildPipelineShim();
+  return preamble + '\n' + inlined + '\n' + mediaTypesShim + '\n' + mediaDecodeShim + '\n' + pipelineShim + '\n' + appJsCode;
 }
 
 module.exports = getAppCode;
