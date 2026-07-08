@@ -22,6 +22,7 @@ import { getModel } from '/src/core/ModelManifest.js';
 
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
 import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
+import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
 import { buildHintPanel } from '/app/slider-hint-ui.js';
 
@@ -377,6 +378,7 @@ function getWorker() {
       }
       case 'stage':
         if (msg.stage === 'load') {
+          if ((msg.percent ?? 0) <= 1) stageStart('model_load');
           setProcStage(
             'load',
             msg.percent ?? 0,
@@ -384,6 +386,8 @@ function getWorker() {
             { updateJobLabel: false },
           );
         } else if (msg.stage === 'separate') {
+          stageEnd('model_load');
+          stageStart('isolate');
           setProcStage('separate', msg.percent ?? 0, currentJobLabel);
         }
         break;
@@ -615,6 +619,7 @@ async function ingestFrom(file) {
     return;
   }
   const seq = ++ingestSeq;
+  resetTimings();
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
   // Unlock Web Audio inside the user gesture (required on mobile + some desktop builds).
@@ -739,6 +744,7 @@ function onProcess() {
   currentJobLabel = chain ? 'Maximum isolation (2 passes)…' : 'Separating stems…';
   setProgress(0, currentJobLabel);
   setStatus(currentJobLabel, 'warn');
+  stageStart('model_load');
 
   // Channel copies are transferred — keep our reference for re-processing.
   const channelData = ingested.channelData.map((c) => new Float32Array(c));
@@ -750,6 +756,8 @@ function onProcess() {
 
 function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
   if (requestId !== requestSeq) return; // stale response
+  stageEnd('isolate');
+  stageEnd('model_load');
   setProgress(100);
   hideSpinner();
   ui.processBtn.disabled = false;

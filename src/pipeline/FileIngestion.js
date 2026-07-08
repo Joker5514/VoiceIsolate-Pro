@@ -28,6 +28,7 @@ import { SAMPLE_RATE, MAX_CHANNELS, resampledLength } from '../core/audio-config
 import { inferMediaKind } from '../core/media-types.js';
 import { pickAudioFile, isDesktopShell } from '../core/DesktopBridge.js';
 import { decodeBlobToAudioBuffer } from './media-decode.js';
+import { stageEnd, stageStart } from './PipelineTiming.js';
 
 export { isDesktopShell, pickAudioFile } from '../core/DesktopBridge.js';
 
@@ -194,13 +195,17 @@ export async function ingestFile(file, hooks = {}) {
   // (potentially heavy) main-thread decode call.
   await new Promise((resolve) => queueMicrotask(resolve));
   onProgress('decoding', 5);
+  stageStart('decode');
   const decoded = await decodeBlobToAudioBuffer(file, {
     onProgress: (pct) => onProgress('decoding', pct),
   });
+  stageEnd('decode');
   onProgress('decoding', 100);
 
   onProgress('resampling', 10);
+  stageStart('resample');
   const canonical = await resampleToCanonical(decoded);
+  stageEnd('resample');
   onProgress('resampling', 100);
 
   onProgress('done', 100);
