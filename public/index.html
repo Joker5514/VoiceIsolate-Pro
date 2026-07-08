@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/landing.css">
+  <link rel="stylesheet" href="/transport-polish.css">
   <!--
     ARCHITECTURE NOTE (CLAUDE.md): this page contains NO inline scripts so it
     runs under the strict CSP (script-src 'self'). It is the reference
@@ -112,10 +113,20 @@
           <option value="original">Original (bypass)</option>
         </select>
         <span id="timeReadout" class="time-readout">0:00 / 0:00</span>
+        <span class="landing-transport-extras">
+          <button id="loopBtn" class="btn-tp-region btn-tp-loop" type="button" disabled aria-pressed="false" title="Loop playback">Loop</button>
+          <button id="cropInBtn" class="btn-tp-region" type="button" disabled title="Set crop in-point at playhead">In</button>
+          <button id="cropOutBtn" class="btn-tp-region" type="button" disabled title="Set crop out-point at playhead">Out</button>
+          <button id="cropClearBtn" class="btn-tp-region" type="button" disabled title="Clear crop region">Clear</button>
+        </span>
+      </div>
+      <div class="transport-seek">
+        <div id="landingRegionBar" class="transport-region-bar" hidden aria-hidden="true"></div>
+        <input type="range" id="seekSlider" class="landing-seek-input" min="0" max="1000" value="0" disabled aria-label="Playback position">
       </div>
 
       <div class="vis-block">
-        <div class="vis-label">Stem waveforms <span class="vis-hint">— voice in red, removed noise in gray · click to seek</span></div>
+        <div class="vis-label">Stem waveforms <span class="vis-hint">— click to seek · In/Out to crop · Loop toggles repeat</span></div>
         <canvas id="waveCanvas" class="vis-canvas" height="110" aria-label="Stem waveform overview"></canvas>
         <div class="vis-label">Live output spectrum <span class="vis-hint">— reacts to every slider in real time</span></div>
         <canvas id="specCanvas" class="vis-canvas" height="110" aria-label="Live output spectrum"></canvas>

@@ -159,6 +159,14 @@ export class EngineerModeBridge {
   currentTime() { return this.mixer ? this.mixer.currentTime() : 0; }
   duration() { return this.mixer ? this.mixer.duration() : 0; }
   getAnalyser() { return this.mixer ? this.mixer.getAnalyser() : null; }
+  setLoop(on) { return this.mixer ? this.mixer.setLoop(on) : undefined; }
+  isLoopEnabled() { return this.mixer ? this.mixer.isLoopEnabled() : false; }
+  setCropRegion(inSec, outSec) { return this.mixer ? this.mixer.setCropRegion(inSec, outSec) : undefined; }
+  getCropRegion() { return this.mixer ? this.mixer.getCropRegion() : { in: 0, out: 0 }; }
+  hasCrop() { return this.mixer ? this.mixer.hasCrop() : false; }
+  clearCrop() { return this.mixer ? this.mixer.clearCrop() : undefined; }
+  markCropIn(at) { return this.mixer ? this.mixer.markCropIn(at) : undefined; }
+  markCropOut(at) { return this.mixer ? this.mixer.markCropOut(at) : undefined; }
 
   /** Release the underlying mixer and its AudioContext. Idempotent. */
   async dispose() {

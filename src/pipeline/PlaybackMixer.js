@@ -300,6 +300,10 @@ export class PlaybackMixer {
     this._isPlaying = false;
     this._startedAt = 0;    // ctx.currentTime when playback began
     this._offset = 0;       // seconds into the stems
+    this._loopEnabled = false;
+    this._cropIn = 0;
+    /** @type {number|null} null = end of file */
+    this._cropOut = null;
 
     // ── Mute + per-speaker state ─────────────────────────────────────────
     this._voiceMuted = false;
@@ -433,6 +437,7 @@ export class PlaybackMixer {
     this.cleanBuffer = this._toAudioBuffer(cleanChannels, sampleRate);
     this.noiseBuffer = this._toAudioBuffer(noiseChannels, sampleRate);
     this._offset = 0;
+    this.clearCrop();
     // New stems invalidate any previous diarization.
     this.loadSpeakerSegments([]);
   }
@@ -445,6 +450,72 @@ export class PlaybackMixer {
 
   // ─── Transport ─────────────────────────────────────────────────────────
 
+  _regionStart() {
+    return clamp(this._cropIn, 0, this.duration());
+  }
+
+  _regionEnd() {
+    const dur = this.duration();
+    const end = this._cropOut == null ? dur : clamp(this._cropOut, 0, dur);
+    return Math.max(this._regionStart(), end);
+  }
+
+  _normalizeCrop() {
+    const dur = this.duration();
+    this._cropIn = clamp(this._cropIn, 0, dur);
+    if (this._cropOut != null) {
+      this._cropOut = clamp(this._cropOut, 0, dur);
+      if (this._cropOut < this._cropIn) {
+        const t = this._cropIn;
+        this._cropIn = this._cropOut;
+        this._cropOut = t;
+      }
+    }
+  }
+
+  setLoop(enabled) {
+    this._loopEnabled = Boolean(enabled);
+  }
+
+  isLoopEnabled() { return this._loopEnabled; }
+
+  setCropRegion(inSec, outSec) {
+    this._cropIn = Number(inSec) || 0;
+    this._cropOut = outSec == null ? null : Number(outSec);
+    this._normalizeCrop();
+  }
+
+  getCropRegion() {
+    return { in: this._regionStart(), out: this._regionEnd() };
+  }
+
+  hasCrop() {
+    const dur = this.duration();
+    if (!dur) return false;
+    return this._cropIn > 0.01 || (this._cropOut != null && this._cropOut < dur - 0.01);
+  }
+
+  clearCrop() {
+    this._cropIn = 0;
+    this._cropOut = null;
+  }
+
+  markCropIn(atSec = this.currentTime()) {
+    this._cropIn = atSec;
+    if (this._cropOut != null && this._cropOut <= this._cropIn) {
+      this._cropOut = this.duration();
+    }
+    this._normalizeCrop();
+  }
+
+  markCropOut(atSec = this.currentTime()) {
+    this._cropOut = atSec;
+    if (this._cropOut <= this._cropIn) {
+      this._cropIn = 0;
+    }
+    this._normalizeCrop();
+  }
+
   /** Begin (or resume) playback of both stems, sample-locked. */
   async play() {
     if (!this.cleanBuffer || !this.noiseBuffer) {
@@ -452,6 +523,12 @@ export class PlaybackMixer {
     }
     if (this._isPlaying) return;
     if (this.ctx.state === 'suspended') await this.ctx.resume();
+
+    const regionStart = this._regionStart();
+    const regionEnd = this._regionEnd();
+    if (this._offset < regionStart || this._offset >= regionEnd - 0.001) {
+      this._offset = regionStart;
+    }
 
     this._teardownSources();
     this._cleanSource = this.ctx.createBufferSource();
@@ -462,20 +539,29 @@ export class PlaybackMixer {
     this._noiseSource.buffer = this.noiseBuffer;
     this._noiseSource.connect(this.noiseGain);
 
-    // Single shared start time keeps the stems phase-aligned.
     const when = this.ctx.currentTime + 0.01;
-    this._cleanSource.start(when, this._offset);
-    this._noiseSource.start(when, this._offset);
-    this._startedAt = when - this._offset;
+    const startAt = this._offset;
+    const segmentLen = Math.max(0.001, regionEnd - startAt);
+    this._cleanSource.start(when, startAt, segmentLen);
+    this._noiseSource.start(when, startAt, segmentLen);
+    this._startedAt = when - startAt;
     this._isPlaying = true;
     this._scheduleSpeakerAutomation();
 
-    this._cleanSource.onended = () => {
-      if (this._isPlaying && this.currentTime() >= this.duration()) {
-        this._isPlaying = false;
-        this._offset = 0;
+    const onSegmentEnd = () => {
+      if (!this._isPlaying) return;
+      this._isPlaying = false;
+      this._teardownSources();
+      if (this._loopEnabled) {
+        this._offset = regionStart;
+        this.play().catch(() => {});
+        return;
       }
+      this._offset = regionStart;
+      this._scheduleSpeakerAutomation();
     };
+    this._cleanSource.onended = onSegmentEnd;
+    this._noiseSource.onended = null;
   }
 
   /** Pause, retaining position. */
@@ -487,11 +573,11 @@ export class PlaybackMixer {
     this._scheduleSpeakerAutomation(); // clear stale ramps from the old timeline
   }
 
-  /** Stop and rewind. */
+  /** Stop and rewind to region start (or file start). */
   stop() {
     this._teardownSources();
     this._isPlaying = false;
-    this._offset = 0;
+    this._offset = this._regionStart();
     this._scheduleSpeakerAutomation();
   }
 

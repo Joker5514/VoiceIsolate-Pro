@@ -41,12 +41,12 @@
 
   /* Track geometry */
   --vip-track-empty:    rgba(255, 255, 255, 0.08);
-  --vip-track-h:        4px;
-  --vip-track-h-hov:    6px;
+  --vip-track-h:        3px;
+  --vip-track-h-hov:    5px;
 
   /* Thumb geometry */
-  --vip-thumb-size:     18px;
-  --vip-thumb-size-hov: 21px;
+  --vip-thumb-size:     14px;
+  --vip-thumb-size-hov: 17px;
 
   /* Typography / layout */
   --vip-text:           #e9e9f3;
