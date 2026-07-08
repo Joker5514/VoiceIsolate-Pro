@@ -85,7 +85,8 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   const w = getWorker();
   const requestId = ++_seq;
   const { onProgress } = options;
-  const copies = channelData.map((c) => new Float32Array(c));
+  // Transferable copies — originals stay intact for cache keys / reprocess.
+  const copies = channelData.map((c) => c.slice());
   const msg = { type: 'process', requestId, channelData: copies, sampleRate, modelIds };
 
   return new Promise((resolve, reject) => {

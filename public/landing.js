@@ -786,7 +786,7 @@ function onProcess() {
   ingested._stemCacheKey = cacheKey;
 
   // Channel copies are transferred — keep our reference for re-processing.
-  const channelData = ingested.channelData.map((c) => new Float32Array(c));
+  const channelData = ingested.channelData.map((c) => c.slice());
   const msg = { type: 'process', requestId: ++requestSeq, channelData, sampleRate: ingested.sampleRate };
   if (chain) msg.modelIds = chain;
   else msg.modelId = getModel(selection).id;
