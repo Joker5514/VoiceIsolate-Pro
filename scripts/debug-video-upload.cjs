@@ -4,6 +4,8 @@
  */
 'use strict';
 
+/* global document — used only inside page.evaluate */
+
 const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -45,7 +47,6 @@ function waitForServer(base) {
 }
 
 function makeMp4(secs) {
-  const wav = path.join(os.tmpdir(), 'vip-vid-src.wav');
   const mp4 = path.join(os.tmpdir(), `vip-vid-${secs}s.mp4`);
   try {
     execSync('ffmpeg -version', { stdio: 'ignore' });
@@ -76,7 +77,7 @@ async function main() {
     env: { ...process.env, PORT: String(PORT) },
     stdio: 'ignore',
   });
-  const cleanup = () => { try { server.kill('SIGTERM'); } catch {} };
+  const cleanup = () => { try { server.kill('SIGTERM'); } catch { /* noop */ } };
   process.on('exit', cleanup);
   await waitForServer(BASE);
 

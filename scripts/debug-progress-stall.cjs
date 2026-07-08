@@ -5,6 +5,8 @@
  */
 'use strict';
 
+/* global document — used only inside page.evaluate */
+
 const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -82,7 +84,7 @@ async function main() {
     env: { ...process.env, PORT: String(PORT) },
     stdio: 'ignore',
   });
-  const cleanup = () => { try { server.kill('SIGTERM'); } catch {} };
+  const cleanup = () => { try { server.kill('SIGTERM'); } catch { /* noop */ } };
   process.on('exit', cleanup);
   await waitForServer(BASE);
 

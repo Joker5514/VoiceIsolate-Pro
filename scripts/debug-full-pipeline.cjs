@@ -5,6 +5,8 @@
  */
 'use strict';
 
+/* global document, window, MutationObserver — used only inside page.evaluate */
+
 const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
@@ -78,7 +80,7 @@ async function main() {
     env: { ...process.env, PORT: String(PORT) },
     stdio: 'ignore',
   });
-  const cleanup = () => { try { server.kill('SIGTERM'); } catch {} };
+  const cleanup = () => { try { server.kill('SIGTERM'); } catch { /* noop */ } };
   process.on('exit', cleanup);
   await waitForServer(BASE);
 
@@ -139,7 +141,6 @@ async function main() {
         console.error(`  status: ${snap.status}`);
         const trace = await page.evaluate(() => window.__vipTrace?.slice(-20) || []);
         console.error('  trace:', trace);
-        const errs = await page.evaluate(() => window.__vipErrors || []);
         await browser.close();
         cleanup();
         process.exit(2);
