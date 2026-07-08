@@ -6,7 +6,9 @@
  */
 'use strict';
 
+import { DEFAULT_ML_MODEL_IDS } from '../core/ml-defaults.js';
 import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
+import { clearStemCache, getCachedStems, setCachedStems, stemCacheKey } from './MLStemCache.js';
 
 let _worker = null;
 let _ready = null;
@@ -30,7 +32,7 @@ function ensureReady() {
       const msg = ev.data || {};
       if (msg.type === 'ready') {
         cleanup();
-        w.postMessage({ type: 'warmup', modelIds: ['bsrnn_vocals', 'rnnoise'] });
+        w.postMessage({ type: 'warmup', modelIds: [...DEFAULT_ML_MODEL_IDS] });
         resolve(msg.backend || 'wasm');
       } else if (msg.type === 'error') { cleanup(); reject(new Error(msg.message || 'MLWorker init failed')); }
     };
@@ -55,21 +57,36 @@ function ensureReady() {
  * @returns {Promise<{ clean: Float32Array[], noise: Float32Array[], sampleRate: number, passthrough: boolean }>}
  */
 /** Prefetch + compile ONNX sessions while the user decodes a file. */
-export async function warmupModels(modelIds = ['bsrnn_vocals', 'rnnoise']) {
+export async function warmupModels(modelIds = DEFAULT_ML_MODEL_IDS) {
   await ensureReady();
   getWorker().postMessage({ type: 'warmup', modelIds });
 }
 
 export async function separateStems(channelData, sampleRate, options = {}) {
+  const modelIds = options.modelIds?.length
+    ? options.modelIds
+    : options.modelId
+      ? [options.modelId]
+      : [...DEFAULT_ML_MODEL_IDS];
+  const cacheKey = stemCacheKey(channelData, sampleRate, modelIds, options.sourceName);
+  const cached = getCachedStems(cacheKey);
+  if (cached) {
+    options.onProgress?.({ type: 'stage', stage: 'separate', percent: 100, label: 'Using cached stems…' });
+    return {
+      clean: cached.clean.map((c) => new Float32Array(c)),
+      noise: cached.noise.map((c) => new Float32Array(c)),
+      sampleRate: cached.sampleRate,
+      passthrough: cached.passthrough,
+      fromCache: true,
+    };
+  }
+
   await ensureReady();
   const w = getWorker();
   const requestId = ++_seq;
   const { onProgress } = options;
   const copies = channelData.map((c) => new Float32Array(c));
-  const msg = { type: 'process', requestId, channelData: copies, sampleRate };
-  if (options.modelIds?.length) msg.modelIds = options.modelIds;
-  else if (options.modelId) msg.modelId = options.modelId;
-  else msg.modelIds = ['bsrnn_vocals', 'rnnoise'];
+  const msg = { type: 'process', requestId, channelData: copies, sampleRate, modelIds };
 
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -83,12 +100,14 @@ export async function separateStems(channelData, sampleRate, options = {}) {
         onProgress?.(m);
       } else if (m.type === 'stems') {
         cleanup();
-        resolve({
+        const out = {
           clean: m.clean,
           noise: m.noise,
           sampleRate: m.sampleRate,
           passthrough: Boolean(m.passthrough),
-        });
+        };
+        if (!out.passthrough) setCachedStems(cacheKey, out);
+        resolve(out);
       } else if (m.type === 'error') {
         cleanup();
         reject(new Error(m.message || 'Separation failed'));
@@ -121,6 +140,9 @@ export function resetStemSeparation() {
     _worker = null;
   }
   _ready = null;
+  clearStemCache();
 }
 
-export default { ensureReady, warmupModels, separateStems, stemsToAudioBuffer, resetStemSeparation };
+export { clearStemCache };
+
+export default { ensureReady, warmupModels, separateStems, stemsToAudioBuffer, resetStemSeparation, clearStemCache };

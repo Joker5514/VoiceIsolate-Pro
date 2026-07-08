@@ -21,6 +21,7 @@ import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
+import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { isDesktopShell, isMicCaptureEnabled, pickAudioFile } from '/src/core/DesktopBridge.js';
 import { inferMediaKind } from '/src/core/media-types.js';
@@ -334,8 +335,8 @@ import { recommendEngineerPreset } from '/src/core/MixCalibration.js';
 // that parse this file directly to validate model configuration consistency.
 const MODEL_STATUS_KEYS = ['demucs', 'bsrnn', 'rnnoise', 'silero_vad'];
 
-/** Default offline chain — BS-RNN vocals → denoise (fast; Demucs is opt-in on Landing). */
-const DEFAULT_ML_CHAIN = Object.freeze(['bsrnn_vocals', 'rnnoise']);
+/** Default offline chain — BS-RNN vocals only (fast; denoise chain is opt-in). */
+const DEFAULT_ML_CHAIN = Object.freeze(['bsrnn_vocals']);
 
 function _yieldToUI(cb) {
   setTimeout(cb, 0);
@@ -1927,6 +1928,8 @@ class VoiceIsolatePro {
   // ── File handling ─────────────────────────────────────────────────────────
   async handleFile(file) {
     if (!file) return;
+    clearStemCache();
+    this._sourceName = file.name || '';
     this.stop();
     this.setStatus('LOADING');
     HeroExperience.onDecodeStart();
@@ -2092,6 +2095,8 @@ class VoiceIsolatePro {
   }
 
   _clearFile() {
+    clearStemCache();
+    this._sourceName = '';
     HeroExperience.onClear();
     this.stop();
     this.inputBuffer = null;
@@ -2322,6 +2327,7 @@ class VoiceIsolatePro {
       this.updatePipelineProgress(4, 'ML isolation…', 15);
       const result = await separateStems(channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
+        sourceName: this._sourceName || '',
         onProgress: (ev) => {
           if (ev.type === 'stage') {
             const label = ev.label || `ML: ${ev.stage} (${ev.modelId || 'model'})…`;
@@ -2335,7 +2341,8 @@ class VoiceIsolatePro {
       if (result.passthrough) return false;
       this.outputBuffer = stemsToAudioBuffer(this.ctx, result.clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
-      this.updatePipelineProgress(20, 'ML isolation complete', 85);
+      const mlLabel = result.fromCache ? 'ML isolation (cached)' : 'ML isolation complete';
+      this.updatePipelineProgress(20, mlLabel, 85);
       return true;
     } catch (err) {
       structuredLog('warn', '[VIP] ML isolation unavailable, falling back to DSP', { err: err.message });

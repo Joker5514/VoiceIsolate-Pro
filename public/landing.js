@@ -21,7 +21,9 @@ import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
 
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
+import { DEFAULT_ML_MODEL_IDS } from '/src/core/ml-defaults.js';
 import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
+import { clearStemCache, getCachedStems, setCachedStems, stemCacheKey } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
 import { buildHintPanel } from '/app/slider-hint-ui.js';
@@ -344,7 +346,7 @@ function syncVideo() {
 
 // ─── Worker lifecycle ────────────────────────────────────────────────────────
 
-const DEFAULT_WARMUP_CHAIN = ['bsrnn_vocals', 'rnnoise'];
+const DEFAULT_WARMUP_CHAIN = DEFAULT_ML_MODEL_IDS;
 
 function resolveModelIds(selection) {
   const chain = MODEL_CHAINS[selection];
@@ -620,6 +622,7 @@ async function ingestFrom(file) {
   }
   const seq = ++ingestSeq;
   resetTimings();
+  clearStemCache();
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
   // Unlock Web Audio inside the user gesture (required on mobile + some desktop builds).
@@ -738,13 +741,41 @@ function onProcess() {
   if (!ingested) return;
   const selection = ui.modelSelect.value;
   const chain = MODEL_CHAINS[selection];
+  const modelIds = chain || [getModel(selection).id];
+  const cacheKey = stemCacheKey(
+    ingested.channelData,
+    ingested.sampleRate,
+    modelIds,
+    ingested.sourceName,
+  );
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
   ui.modelSelect.disabled = true;
   currentJobLabel = chain ? 'Maximum isolation (2 passes)…' : 'Separating stems…';
   setProgress(0, currentJobLabel);
   setStatus(currentJobLabel, 'warn');
+
+  const cached = getCachedStems(cacheKey);
+  if (cached) {
+    currentJobLabel = 'Using cached stems…';
+    setStatus(currentJobLabel, 'warn');
+    stageStart('model_load');
+    stageEnd('model_load');
+    stageStart('isolate');
+    stageEnd('isolate');
+    onStems({
+      requestId: ++requestSeq,
+      clean: cached.clean.map((c) => new Float32Array(c)),
+      noise: cached.noise.map((c) => new Float32Array(c)),
+      sampleRate: cached.sampleRate,
+      passthrough: false,
+      _cacheKey: cacheKey,
+    });
+    return;
+  }
+
   stageStart('model_load');
+  ingested._stemCacheKey = cacheKey;
 
   // Channel copies are transferred — keep our reference for re-processing.
   const channelData = ingested.channelData.map((c) => new Float32Array(c));
@@ -754,12 +785,17 @@ function onProcess() {
   getWorker().postMessage(msg, channelData.map((c) => c.buffer));
 }
 
-function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
+function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }) {
   if (requestId !== requestSeq) return; // stale response
   stageEnd('isolate');
   stageEnd('model_load');
   setProgress(100);
   hideSpinner();
+
+  const cacheKey = _cacheKey || ingested?._stemCacheKey;
+  if (!passthrough && cacheKey) {
+    setCachedStems(cacheKey, { clean, noise, sampleRate, passthrough: false });
+  }
   ui.processBtn.disabled = false;
   ui.fileInput.disabled = false;
   ui.modelSelect.disabled = false;

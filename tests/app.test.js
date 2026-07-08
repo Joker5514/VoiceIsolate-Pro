@@ -408,8 +408,13 @@ describe('VoiceIsolatePro class structure', () => {
     expect(appSrc).toMatch(/_yieldToUI\(\(\)\s*=>\s*\{[\s\S]*runPipeline\(\)/);
   });
 
-  test('Engineer ML chain uses fast BS-RNN default (not Demucs)', () => {
-    expect(appSrc).toMatch(/DEFAULT_ML_CHAIN\s*=\s*Object\.freeze\(\[['"]bsrnn_vocals['"],\s*['"]rnnoise['"]\]\)/);
+  test('Engineer ML chain uses fast BS-RNN-only default (not Demucs)', () => {
+    expect(appSrc).toMatch(/DEFAULT_ML_CHAIN\s*=\s*Object\.freeze\(\[['"]bsrnn_vocals['"]\]\)/);
+  });
+
+  test('Engineer clears stem cache on new file load', () => {
+    expect(appSrc).toContain("import { clearStemCache } from '/src/pipeline/MLStemCache.js'");
+    expect(appSrc).toMatch(/async handleFile\(file\)[\s\S]*clearStemCache\(\)/);
   });
 
   test('Engineer ML inference runs once per file (whisper passes are DSP-only)', () => {
