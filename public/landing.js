@@ -11,7 +11,7 @@
  */
 'use strict';
 
-import { ingestFile, isDesktopShell, pickAudioFile } from '/src/pipeline/FileIngestion.js';
+import { ingestFile, assertIngestible, isDesktopShell, pickAudioFile } from '/src/pipeline/FileIngestion.js';
 import { openFilePicker, primeAudioGesture, fixUploadTouchTargets } from '/src/presentation/UploadWiring.js';
 import { PlaybackMixer } from '/src/pipeline/PlaybackMixer.js';
 import { SliderUI } from '/src/presentation/SliderUI.js';
@@ -218,12 +218,12 @@ function scheduleProcRender() {
   });
 }
 
-function setProcStage(stage, localPercent = 0, statusLabel) {
+function setProcStage(stage, localPercent = 0, statusLabel, { updateJobLabel = true } = {}) {
   const idx = STAGE_INDEX[stage] ?? 0;
   _procState = { active: idx, progress: mapPipelinePercent(stage, localPercent) };
   ui.procLoaderMount.hidden = false;
   if (statusLabel) {
-    currentJobLabel = statusLabel;
+    if (updateJobLabel) currentJobLabel = statusLabel;
     setStatus(statusLabel, 'warn');
   }
   scheduleProcRender();
@@ -270,7 +270,7 @@ function showSpinner(stage, { indeterminate: _indeterminate = false } = {}) {
 }
 
 /** Map inference-local percent into the unified pipeline bar. */
-function setProgress(percent, _stage) {
+function setProgress(percent) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
   setProcStage('separate', pct, currentJobLabel);
 }
@@ -377,13 +377,18 @@ function getWorker() {
       }
       case 'stage':
         if (msg.stage === 'load') {
-          setProcStage('load', msg.percent ?? 0, msg.label || `Loading ${msg.modelId || 'model'}…`);
+          setProcStage(
+            'load',
+            msg.percent ?? 0,
+            msg.label || `Loading ${msg.modelId || 'model'}…`,
+            { updateJobLabel: false },
+          );
         } else if (msg.stage === 'separate') {
           setProcStage('separate', msg.percent ?? 0, currentJobLabel);
         }
         break;
       case 'progress':
-        setProgress(msg.percent, currentJobLabel);
+        setProgress(msg.percent);
         break;
       case 'stems':
         onStems(msg);
@@ -603,11 +608,20 @@ function autoCalibrateMix(clean, sampleRate) {
  */
 async function ingestFrom(file) {
   if (!file || ui.fileInput.disabled) return;
+  try {
+    assertIngestible(file);
+  } catch (err) {
+    setStatus(err.message, 'error');
+    return;
+  }
   const seq = ++ingestSeq;
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
-  // Show the picture immediately for videos; hide the player for audio files.
-  if (isVideoFile(file)) loadVideo(file); else clearVideo();
+  // Unlock Web Audio inside the user gesture (required on mobile + some desktop builds).
+  try { await primeAudioGesture(); } catch { /* best-effort */ }
+  // Avoid loading the preview <video> during decode — demuxing the same file twice
+  // (preview + hidden capture element) stalls progress on large uploads.
+  clearVideo();
   try {
     showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
@@ -616,7 +630,10 @@ async function ingestFrom(file) {
       onProgress: (stage, percent = 0) => {
         if (seq !== ingestSeq) return;
         if (stage === 'decoding') {
-          setProcStage('decode', percent, `Decoding “${file.name}”…`);
+          const label = percent < 20
+            ? `Reading “${file.name}”…`
+            : `Decoding “${file.name}”…`;
+          setProcStage('decode', percent, label);
         } else if (stage === 'resampling') {
           setProcStage('resample', percent, 'Resampling to 48 kHz…');
         }
@@ -624,6 +641,7 @@ async function ingestFrom(file) {
     });
     if (seq !== ingestSeq) return;
     ingested = next;
+    if (isVideoFile(file)) loadVideo(file);
     // Auto-start separation — models were warming during decode; skip the extra click.
     onProcess();
   } catch (err) {
@@ -644,6 +662,7 @@ async function ingestFrom(file) {
 }
 
 async function onFileChosen() {
+  try { await primeAudioGesture(); } catch { /* best-effort */ }
   await ingestFrom(ui.fileInput.files && ui.fileInput.files[0]);
 }
 
@@ -691,7 +710,8 @@ function wireUploadDropZone() {
     event.preventDefault();
     zone.classList.remove('drag-over');
     const file = event.dataTransfer?.files?.[0];
-    if (file) ingestFrom(file);
+    if (!file) return;
+    primeAudioGesture().catch(() => {}).finally(() => ingestFrom(file));
   });
 }
 
@@ -730,6 +750,7 @@ function onProcess() {
 
 function onStems({ requestId, clean, noise, sampleRate, passthrough }) {
   if (requestId !== requestSeq) return; // stale response
+  setProgress(100);
   hideSpinner();
   ui.processBtn.disabled = false;
   ui.fileInput.disabled = false;
@@ -899,7 +920,8 @@ function wireDragAndDrop() {
     e.preventDefault();
     zone.classList.remove('upload-panel--dragging');
     const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (file) ingestFrom(file);
+    if (!file) return;
+    primeAudioGesture().catch(() => {}).finally(() => ingestFrom(file));
   });
 }
 

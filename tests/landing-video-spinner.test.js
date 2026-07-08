@@ -26,6 +26,11 @@ describe('Landing page — video preview plays in sync with processed audio', ()
     expect(js).toContain('URL.revokeObjectURL'); // released to avoid leaks
   });
 
+  test('video preview loads after decode (not during — avoids double demux stall)', () => {
+    expect(js).toMatch(/ingestFile\(file[\s\S]*if \(isVideoFile\(file\)\) loadVideo\(file\)/);
+    expect(js).toMatch(/clearVideo\(\);[\s\S]*ingestFile\(file/);
+  });
+
   test('the video stays muted — sound always comes from the Web Audio mixer', () => {
     // muted enforced in markup AND in JS (alias-agnostic: `v.muted` or `ui.videoPlayer.muted`).
     expect(html).toMatch(/id="videoPlayer"[^>]*\bmuted\b/);
@@ -85,6 +90,7 @@ describe('Landing page — realtime processing indicator (ProcessLoader)', () =>
     expect(js).toContain("case 'stage'");
     expect(js).toContain('setProgress(msg.percent');
     expect(js).toContain('setProcStage');
+    expect(js).toContain('updateJobLabel: false');
     expect(js).toContain('Load model');
     expect(js).toContain('ProcessLoader'); // DS component is used
     expect(js).not.toContain('strokeDashoffset'); // ring approach replaced

@@ -539,6 +539,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   } finally {
     ACTIVE_REQUEST_ID = null;
   }
+  onProgress(1);
   const clean = current;
   const noise = residual(channelData, clean);
 
