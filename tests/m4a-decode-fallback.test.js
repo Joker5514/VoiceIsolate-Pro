@@ -66,15 +66,34 @@ describe('M4A decode fallback — media-decode.js', () => {
     expect(mdjs).toContain("const tag = kind === 'video' ? 'video' : 'audio'");
   });
 
-  test('video containers always use media-element capture (full timeline)', () => {
+  test('video tries fast decodeAudioData then accelerated media-element fallback', () => {
     expect(mdjs).toContain("if (kind === 'video')");
-    expect(mdjs).toContain('return _decodeViaMediaElement(blob, kind, onProgress)');
+    expect(mdjs).toContain('_likelyTruncatedDecode');
+    expect(mdjs).toContain('_decodeViaMediaElement(blob, kind, onProgress)');
+    expect(mdjs).toContain('playbackRate');
+    expect(mdjs).toContain('MAX_CAPTURE_PLAYBACK_RATE');
   });
 
-  test('capture timeout scales with media duration', () => {
+  test('capture timeout scales with media duration and playback rate', () => {
     expect(mdjs).toContain('resetCaptureTimeout');
-    expect(mdjs).toContain('duration * 1000 * 2');
+    expect(mdjs).toContain('realtimeMs');
+    expect(mdjs).toMatch(/\/\s*playbackRate/);
     expect(mdjs).not.toContain('capturedFrames >= estimatedFrames');
+  });
+
+  test('small files use a single arrayBuffer read for speed', () => {
+    expect(mdjs).toContain('FAST_READ_BYTES');
+    expect(mdjs).toContain('total <= FAST_READ_BYTES');
+  });
+
+  test('media capture uses larger ScriptProcessor blocks for less overhead', () => {
+    expect(mdjs).toContain('SPN_BLOCK_SIZE = 8192');
+  });
+
+  test('decode speed benchmark script enforces sub-realtime budget', () => {
+    const bench = fs.readFileSync(path.join(ROOT, 'scripts/bench-decode-speed.cjs'), 'utf8');
+    expect(bench).toContain('MAX_DECODE_RATIO');
+    expect(bench).not.toContain('full-audit');
   });
 });
 

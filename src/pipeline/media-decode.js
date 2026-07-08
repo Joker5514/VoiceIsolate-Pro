@@ -5,19 +5,23 @@ import { inferMediaKind } from '../core/media-types.js';
 
 /** Minimum capture timeout — long files scale beyond this. */
 const MEDIA_DECODE_MIN_TIMEOUT_MS = 120_000;
+/** Below 16 MiB a single arrayBuffer() read is faster than streaming chunks. */
+const FAST_READ_BYTES = 16 * 1024 * 1024;
+/** Target media-element capture rate (16× is widely supported). */
+const MAX_CAPTURE_PLAYBACK_RATE = 16;
 // ScriptProcessorNode block size — must be a power-of-two 256–16384.
-const SPN_BLOCK_SIZE = 4096;
+const SPN_BLOCK_SIZE = 8192;
 
 /**
  * Decode any supported blob to an AudioBuffer.
  *
  * Strategy:
- *   Video containers always use the media-element capture path so the browser
- *   demuxes the full timeline (decodeAudioData can truncate some MP4/MOV).
+ *   Video:
+ *     1. Fast path  — decodeAudioData when the browser demuxes the full timeline
+ *     2. Fallback   — accelerated media-element capture (up to 16× realtime)
  *   Audio:
- *     1. Fast path  — ctx.decodeAudioData()  (PCM/WAV/MP3/OGG/FLAC)
- *     2. Fallback   — live AudioContext + createMediaElementSource +
- *                     ScriptProcessorNode ring-buffer capture until 'ended'.
+ *     1. Fast path  — decodeAudioData (PCM/WAV/MP3/OGG/FLAC)
+ *     2. Fallback   — accelerated media-element capture
  *
  * @param {Blob|File} blob
  * @param {object} [hooks]
@@ -29,6 +33,12 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
   const kind = inferMediaKind(blob) || 'audio';
 
   if (kind === 'video') {
+    try {
+      const fast = await _decodeWithAudioData(blob, onProgress);
+      if (!_likelyTruncatedDecode(blob, fast)) return fast;
+    } catch {
+      /* fall through to media-element capture */
+    }
     return _decodeViaMediaElement(blob, kind, onProgress);
   }
 
@@ -40,7 +50,7 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
   }
 
   try {
-    return await _decodeViaMediaElement(blob, kind, onProgress);
+    return _decodeViaMediaElement(blob, kind, onProgress);
   } catch (fallbackErr) {
     throw new Error(
       `[VIP][FileIngestion] Could not decode '${blob.name || 'file'}'. ` +
@@ -55,7 +65,7 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
 // ---------------------------------------------------------------------------
 async function readBlobWithProgress(blob, onProgress) {
   const total = blob.size || 1;
-  if (typeof blob.stream !== 'function') {
+  if (total <= FAST_READ_BYTES || typeof blob.stream !== 'function') {
     onProgress(15);
     await yieldToMain();
     const buf = await blob.arrayBuffer();
@@ -74,7 +84,7 @@ async function readBlobWithProgress(blob, onProgress) {
     parts.push(value);
     received += value.byteLength;
     onProgress(Math.min(44, 8 + Math.round((received / total) * 36)));
-    if (received % (4 * 1024 * 1024) < value.byteLength) await yieldToMain();
+    if (received % (8 * 1024 * 1024) < value.byteLength) await yieldToMain();
   }
 
   const out = new Uint8Array(received);
@@ -92,6 +102,34 @@ function yieldToMain() {
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
     else setTimeout(resolve, 0);
   });
+}
+
+/**
+ * decodeAudioData on MP4/MOV often returns only the first ~15 s. Detect that
+ * so we can fall back to full media-element capture.
+ */
+function _likelyTruncatedDecode(blob, buffer) {
+  if (!buffer?.duration || buffer.duration <= 0) return true;
+  const sizeMB = (blob.size || 0) / (1024 * 1024);
+  const name = blob.name || '';
+  const isVideoContainer = /\.(mp4|m4v|mov|mkv|webm|avi|ogv|3gp|wmv)$/i.test(name)
+    || (blob.type || '').startsWith('video/');
+  if (!isVideoContainer) return false;
+  if (sizeMB >= 1.5 && buffer.duration < 18) return true;
+  if (sizeMB >= 8 && buffer.duration < 45) return true;
+  return false;
+}
+
+/** Apply the highest playback rate the element accepts (faster-than-realtime capture). */
+function _applyCapturePlaybackRate(media) {
+  try {
+    media.playbackRate = MAX_CAPTURE_PLAYBACK_RATE;
+    if (typeof media.preservesPitch === 'boolean') media.preservesPitch = false;
+    const applied = media.playbackRate;
+    return applied >= 1 ? applied : 1;
+  } catch {
+    return 1;
+  }
 }
 
 /** Incremental channel buffer — grows in chunks instead of one huge upfront alloc. */
@@ -112,11 +150,9 @@ function createGrowingChannel() {
       len += count;
     },
     get length() { return len; },
-    toArray(outLen) {
+    copyInto(dest, outLen) {
       const n = Math.min(len, outLen);
-      const out = new Float32Array(n);
-      out.set(buf.subarray(0, n));
-      return out;
+      dest.set(buf.subarray(0, n));
     },
   };
 }
@@ -132,7 +168,6 @@ async function _decodeWithAudioData(blob, onProgress) {
   const arrayBuffer = await readBlobWithProgress(blob, onProgress);
 
   onProgress(50);
-  await yieldToMain();
   const ctx = new Ctx();
   try {
     if (ctx.state === 'suspended') await ctx.resume();
@@ -146,7 +181,7 @@ async function _decodeWithAudioData(blob, onProgress) {
 }
 
 // ---------------------------------------------------------------------------
-// Fallback — live AudioContext + createMediaElementSource + ring-buffer
+// Fallback — accelerated media-element capture via ScriptProcessorNode
 // ---------------------------------------------------------------------------
 async function _decodeViaMediaElement(blob, kind, onProgress) {
   const doc = globalThis.document;
@@ -179,17 +214,18 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
       throw new Error('Media has no decodable audio duration.');
     }
 
+    const playbackRate = _applyCapturePlaybackRate(media);
+
     const numChannels = 2;
     const channels = Array.from({ length: numChannels }, () => createGrowingChannel());
     let writeOffset = 0;
     let captureDone = false;
     let captureSettled = false;
     let resolveCapture = null;
-    let rejectCapture = null;
     /** @type {ScriptProcessorNode|null} */
     let spn = null;
 
-    const flushTailMs = Math.ceil((SPN_BLOCK_SIZE / SAMPLE_RATE) * 1000) + 100;
+    const flushTailMs = Math.ceil((SPN_BLOCK_SIZE / SAMPLE_RATE) * 1000) + 50;
     const estimatedFrames = Math.max(1, Math.ceil(duration * SAMPLE_RATE));
 
     const reportProgress = () => {
@@ -216,14 +252,22 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
 
     const capturePromise = new Promise((resolve, reject) => {
       resolveCapture = resolve;
-      rejectCapture = reject;
+      media.addEventListener('error', () => {
+        if (captureSettled) return;
+        captureSettled = true;
+        captureDone = true;
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (spn) spn.onaudioprocess = null;
+        reject(new Error(media.error?.message || 'Media playback failed'));
+      }, { once: true });
     });
 
     const resetCaptureTimeout = () => {
       if (timeoutHandle) clearTimeout(timeoutHandle);
+      const realtimeMs = Math.ceil(duration * 1000);
       const captureTimeoutMs = Math.max(
         MEDIA_DECODE_MIN_TIMEOUT_MS,
-        Math.ceil(duration * 1000 * 2) + 60_000,
+        Math.ceil((realtimeMs * 2) / playbackRate) + 60_000,
       );
       timeoutHandle = setTimeout(() => {
         try { media.pause(); } catch { /* ignore */ }
@@ -242,22 +286,13 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
       if (captureDone) return;
       const copyLen = SPN_BLOCK_SIZE;
       for (let ch = 0; ch < numChannels; ch++) {
-        const src = e.inputBuffer.getChannelData(ch);
-        channels[ch].append(src, copyLen);
+        channels[ch].append(e.inputBuffer.getChannelData(ch), copyLen);
       }
       writeOffset += copyLen;
       reportProgress();
     };
 
     media.addEventListener('ended', finishCapture, { once: true });
-    media.addEventListener('error', () => {
-      if (captureSettled) return;
-      captureSettled = true;
-      captureDone = true;
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-      if (spn) spn.onaudioprocess = null;
-      rejectCapture?.(new Error(media.error?.message || 'Media playback failed'));
-    }, { once: true });
     media.addEventListener('durationchange', () => {
       updateDuration(media.duration);
       resetCaptureTimeout();
@@ -290,7 +325,6 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
     );
 
     onProgress(98);
-    await yieldToMain();
 
     const result = new AudioBuffer({
       numberOfChannels: numChannels,
@@ -298,7 +332,7 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
       sampleRate: SAMPLE_RATE,
     });
     for (let ch = 0; ch < numChannels; ch++) {
-      result.getChannelData(ch).set(channels[ch].toArray(outFrames));
+      channels[ch].copyInto(result.getChannelData(ch), outFrames);
     }
 
     return result;
