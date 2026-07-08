@@ -17,6 +17,9 @@ const ACCENT = '#ef4444';
 const NOISE_COLOR = 'rgba(154, 154, 164, 0.55)';
 const GRID = 'rgba(80, 80, 90, 0.5)';
 const PLAYHEAD = '#34d399';
+const CROP_FILL = 'rgba(52, 211, 153, 0.14)';
+const CROP_EDGE = 'rgba(52, 211, 153, 0.75)';
+const LOOP_COLOR = 'rgba(239, 68, 68, 0.35)';
 
 export class LandingVisualizer {
   /**
@@ -80,6 +83,10 @@ export class LandingVisualizer {
    * @param {Float32Array[]} noiseChannels
    * @param {number} duration seconds
    */
+  invalidate() {
+    this._drawWave();
+  }
+
   loadStems(cleanChannels, noiseChannels, duration) {
     const columns = Math.max(200, this.waveCanvas.clientWidth || 600);
     this._envelope = {
@@ -144,8 +151,29 @@ export class LandingVisualizer {
       ctx.fillRect(c * colW, y0, Math.max(1, colW), Math.max(1, y1 - y0));
     }
 
-    // Playhead
     if (this._duration > 0) {
+      const region = this.mixer.getCropRegion?.() || { in: 0, out: this._duration };
+      if (this.mixer.hasCrop?.()) {
+        const x0 = (region.in / this._duration) * W;
+        const x1 = (region.out / this._duration) * W;
+        ctx.fillStyle = CROP_FILL;
+        ctx.fillRect(x0, 0, Math.max(1, x1 - x0), H);
+        ctx.strokeStyle = CROP_EDGE;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x0, 0); ctx.lineTo(x0, H);
+        ctx.moveTo(x1, 0); ctx.lineTo(x1, H);
+        ctx.stroke();
+      }
+      if (this.mixer.isLoopEnabled?.()) {
+        const lx0 = (region.in / this._duration) * W;
+        const lx1 = (region.out / this._duration) * W;
+        ctx.strokeStyle = LOOP_COLOR;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(lx0, 2, Math.max(1, lx1 - lx0), H - 4);
+        ctx.setLineDash([]);
+      }
       const x = (this.mixer.currentTime() / this._duration) * W;
       ctx.strokeStyle = PLAYHEAD;
       ctx.lineWidth = 2;

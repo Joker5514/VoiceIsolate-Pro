@@ -39,6 +39,7 @@
   <link rel="stylesheet" href="mobile.css" />
   <link id="vip-enh-css" rel="stylesheet" href="vip-enhancements.css" />
   <link rel="stylesheet" href="debug-menu.css" />
+  <link rel="stylesheet" href="../transport-polish.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
   <style>
@@ -456,6 +457,12 @@
               </select>
               <button id="tpSpeedUp" class="btn btn-tp btn-speed" type="button" aria-label="Speed Up Playback" title="Speed Up (+)"><span aria-hidden="true">+</span></button>
             </div>
+            <div class="tp-region-group">
+              <button id="tpLoop" class="btn btn-tp btn-tp-region btn-tp-loop" type="button" disabled aria-pressed="false" title="Loop playback (L)">Loop</button>
+              <button id="tpCropIn" class="btn btn-tp btn-tp-region" type="button" disabled title="Crop in-point at playhead ([)">In</button>
+              <button id="tpCropOut" class="btn btn-tp btn-tp-region" type="button" disabled title="Crop out-point at playhead (])">Out</button>
+              <button id="tpCropClear" class="btn btn-tp btn-tp-region" type="button" disabled title="Clear crop">Clr</button>
+            </div>
             <div class="tp-ab">
               <button id="tpAB" class="btn btn-ab" type="button"
                 aria-label="Toggle A/B Comparison"
@@ -472,6 +479,7 @@
           </div>
         </div>
         <div class="transport-seek">
+          <div id="tpRegionBar" class="transport-region-bar" hidden aria-hidden="true"></div>
           <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
         </div>
       </div>

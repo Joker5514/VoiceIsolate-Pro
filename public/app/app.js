@@ -21,8 +21,10 @@ import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
+import { sliceAudioBuffer } from '/src/core/audio-slice.js';
 import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
+import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { isDesktopShell, isMicCaptureEnabled, pickAudioFile } from '/src/core/DesktopBridge.js';
 import { inferMediaKind } from '/src/core/media-types.js';
 import { openFilePicker as triggerFileInput, primeAudioGesture } from '/src/presentation/UploadWiring.js';
@@ -825,6 +827,8 @@ class VoiceIsolatePro {
     this.whisperMode = 0;
     this._mlIsolationSucceeded = false;
     this._autoPipelineRun = false;
+    this._transportRegionWired = false;
+    this._syncTransportRegion = null;
     this._forceSinglePass = false;
     this._extremeFrameIdx = 0;
     this._extremeCircularMag = null;
@@ -930,6 +934,11 @@ class VoiceIsolatePro {
       tpRew:g('tpRew'),
       tpFwd:g('tpFwd'),
       tpSeek:g('tpSeek'),
+      tpRegionBar:g('tpRegionBar'),
+      tpLoop:g('tpLoop'),
+      tpCropIn:g('tpCropIn'),
+      tpCropOut:g('tpCropOut'),
+      tpCropClear:g('tpCropClear'),
       tpAB:g('tpAB'),
       tpABLabel:g('tpABLabel'),
       tpSpeed:g('tpSpeed'),
@@ -1599,8 +1608,16 @@ class VoiceIsolatePro {
     bind('saveOrigBtn', d.saveOrigBtn, 'click', () => {
       if (this.origBuffer || this.inputBuffer) downloadWav(this.origBuffer || this.inputBuffer, 'original-' + Date.now() + '.wav');
     });
-    bind('saveProcBtn', d.saveProcBtn, 'click', () => {
-      if (this.procBuffer || this.outputBuffer) downloadWav(this.procBuffer || this.outputBuffer, 'processed-' + Date.now() + '.wav');
+    bind('saveProcBtn', d.saveProcBtn, 'click', async () => {
+      let buf = this.procBuffer || this.outputBuffer;
+      if (!buf) return;
+      await this.ensureCtx();
+      const transport = this._getTransportMixer();
+      if (transport?.hasCrop?.()) {
+        const { in: cropIn, out: cropOut } = transport.getCropRegion();
+        buf = sliceAudioBuffer(this.ctx, buf, cropIn, cropOut);
+      }
+      downloadWav(buf, 'processed-' + Date.now() + '.wav');
     });
     bind('auditLogBtn', d.auditLogBtn, 'click', () => this.downloadAuditLog());
 
@@ -1807,6 +1824,24 @@ class VoiceIsolatePro {
     }
     if (e.key === 'ArrowLeft') { this.seekDelta(-5); return; }
     if (e.key === 'ArrowRight') { this.seekDelta(5); return; }
+    if (e.key === 'l' || e.key === 'L') {
+      const mixer = this._getTransportMixer();
+      if (mixer) {
+        mixer.setLoop(!mixer.isLoopEnabled());
+        this._syncTransportRegion?.();
+      }
+      return;
+    }
+    if (e.key === '[') {
+      this._getTransportMixer()?.markCropIn(this.playOffset || this._bridge?.currentTime?.() || 0);
+      this._syncTransportRegion?.();
+      return;
+    }
+    if (e.key === ']') {
+      this._getTransportMixer()?.markCropOut(this.playOffset || this._bridge?.currentTime?.() || 0);
+      this._syncTransportRegion?.();
+      return;
+    }
   }
 
   // ── Preset application ────────────────────────────────────────────────────
@@ -2097,6 +2132,8 @@ class VoiceIsolatePro {
   _clearFile() {
     clearStemCache();
     this._sourceName = '';
+    this._transportRegionWired = false;
+    this._syncTransportRegion = null;
     HeroExperience.onClear();
     this.stop();
     this.inputBuffer = null;
@@ -3079,10 +3116,12 @@ class VoiceIsolatePro {
         if (this._bridgeBuf !== buf) {
           bridge.loadBuffer(buf);
           this._bridgeBuf = buf;
+          this._transportRegionWired = false;
           // Seed the graph from the current slider positions.
           const params = window.VIP_PARAMS || {};
           if (typeof bridge.applyParams === 'function') bridge.applyParams(params);
         }
+        this._ensureTransportRegionWiring();
         // Honour the current scrub position, then start.
         Promise.resolve(bridge.seek(this.playOffset || 0))
           .then(() => bridge.play())
@@ -3331,14 +3370,25 @@ class VoiceIsolatePro {
       const cur = b.currentTime();
       const dur = b.duration() || 0;
       if (this.dom && this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(cur);
-      if (this.dom && this.dom.tpSeek && dur > 0) this.dom.tpSeek.value = (cur / dur) * 1000;
-      const ended = dur > 0 && !b.isPlaying() && cur >= dur - 0.05;
+      if (this.dom && this.dom.tpSeek && dur > 0) {
+        this.dom.tpSeek.value = (cur / dur) * 1000;
+        paintSeekFill(this.dom.tpSeek, cur, dur);
+      }
+      const region = b.getCropRegion?.() || { in: 0, out: dur };
+      const looping = b.isLoopEnabled?.();
+      const ended = dur > 0 && !b.isPlaying() && !looping && cur >= region.out - 0.05;
       if (ended) {
         this.isPlaying = false;
-        this.playOffset = 0;
-        if (this.dom && this.dom.tpSeek) this.dom.tpSeek.value = 0;
-        if (this.dom && this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(0);
+        this.playOffset = region.in || 0;
+        if (this.dom && this.dom.tpSeek && dur > 0) this.dom.tpSeek.value = (this.playOffset / dur) * 1000;
+        if (this.dom && this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
         if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
+        return;
+      }
+      if (looping && !b.isPlaying()) {
+        this._tickRaf = (typeof requestAnimationFrame === 'function')
+          ? requestAnimationFrame(loop)
+          : setTimeout(loop, 50);
         return;
       }
       this._tickRaf = (typeof requestAnimationFrame === 'function')
@@ -3443,15 +3493,37 @@ class VoiceIsolatePro {
     if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !canProcess;
   }
 
+  _getTransportMixer() {
+    return this._bridge?.mixer || null;
+  }
+
+  _ensureTransportRegionWiring() {
+    const mixer = this._getTransportMixer();
+    if (!mixer || this._transportRegionWired) return;
+    this._transportRegionWired = true;
+    this._syncTransportRegion = wireTransportRegion({
+      mixer,
+      loopBtn: this.dom.tpLoop,
+      cropInBtn: this.dom.tpCropIn,
+      cropOutBtn: this.dom.tpCropOut,
+      cropClearBtn: this.dom.tpCropClear,
+      seekEl: this.dom.tpSeek,
+      regionBar: this.dom.tpRegionBar,
+    });
+  }
+
   _updateTransportUI() {
     const buf = this.inputBuffer || this.origBuffer;
     const dur = buf ? buf.duration : 0;
     if (this.dom.tpDur) this.dom.tpDur.textContent = fmtTime(dur);
     const enabled = Boolean(buf);
     [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew,
-     this.dom.tpFwd, this.dom.tpSeek, this.dom.tpAB].forEach(b => {
+     this.dom.tpFwd, this.dom.tpSeek, this.dom.tpAB,
+     this.dom.tpLoop, this.dom.tpCropIn, this.dom.tpCropOut, this.dom.tpCropClear].forEach(b => {
       if (b) b.disabled = !enabled;
     });
+    if (enabled) this._ensureTransportRegionWiring();
+    this._syncTransportRegion?.();
   }
 
   // ── Pure utility methods (also used as instance methods) ──────────────────

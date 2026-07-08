@@ -25,6 +25,7 @@ import { DEFAULT_ML_MODEL_IDS } from '/src/core/ml-defaults.js';
 import { createMLWorker, initMLWorker } from '/src/pipeline/MLWorkerHost.js';
 import { clearStemCache, getCachedStems, setCachedStems, stemCacheKey } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
+import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
 import { buildHintPanel } from '/app/slider-hint-ui.js';
 
@@ -98,6 +99,12 @@ const ui = {
   // Realtime processing indicator — DS ProcessLoader component mounts here.
   procLoaderMount: $('procLoaderMount'),
   timeReadout: $('timeReadout'),
+  seekSlider: $('seekSlider'),
+  loopBtn: $('loopBtn'),
+  cropInBtn: $('cropInBtn'),
+  cropOutBtn: $('cropOutBtn'),
+  cropClearBtn: $('cropClearBtn'),
+  regionBar: $('landingRegionBar'),
   presetSelect: $('presetSelect'),
   waveCanvas: $('waveCanvas'),
   specCanvas: $('specCanvas'),
@@ -116,6 +123,7 @@ let sliderUI = null;
 let speakerControls = null;
 let visualizer = null;
 let worker = null;
+let _syncTransportRegion = null;
 
 let ingested = null;
 let requestSeq = 0;
@@ -823,9 +831,20 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
 
   for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn,
     ui.muteVoiceBtn, ui.muteNoiseBtn, ui.presetSelect,
+    ui.seekSlider, ui.loopBtn, ui.cropInBtn, ui.cropOutBtn, ui.cropClearBtn,
     ...ui.mixSliders]) {
     if (el) el.disabled = false;
   }
+  _syncTransportRegion = wireTransportRegion({
+    mixer,
+    loopBtn: ui.loopBtn,
+    cropInBtn: ui.cropInBtn,
+    cropOutBtn: ui.cropOutBtn,
+    cropClearBtn: ui.cropClearBtn,
+    seekEl: ui.seekSlider,
+    regionBar: ui.regionBar,
+    onChange: () => visualizer?.invalidate?.(),
+  });
   const cal = autoCalibrateMix(clean, sampleRate);
   const calLabel = ` · calibrated: ${cal.preset} (${cal.level})`;
   setStatus(`Stems ready — press Play and mix in real time${calLabel}.`, 'active');
@@ -932,11 +951,28 @@ function wireTransport() {
   ui.pauseBtn.addEventListener('click', () => { if (mixer) { mixer.pause(); syncVideo(); } });
   ui.stopBtn.addEventListener('click', () => { if (mixer) { mixer.stop(); syncVideo(); } });
 
+  ui.seekSlider?.addEventListener('input', async (e) => {
+    if (!mixer) return;
+    const frac = Number(e.target.value) / 1000;
+    try {
+      await mixer.seek(frac * mixer.duration());
+      syncVideo();
+    } catch (err) {
+      console.warn('[VIP][landing] seek failed:', err);
+    }
+  });
+
   // One ticker drives the time readout and keeps the muted video aligned with
   // the mixer clock (covers waveform click-to-seek and natural end-of-stream).
   setInterval(() => {
     if (!mixer) return;
-    ui.timeReadout.textContent = `${fmtTime(mixer.currentTime())} / ${fmtTime(mixer.duration())}`;
+    const cur = mixer.currentTime();
+    const dur = mixer.duration();
+    ui.timeReadout.textContent = `${fmtTime(cur)} / ${fmtTime(dur)}`;
+    if (ui.seekSlider && dur > 0) {
+      ui.seekSlider.value = String(Math.round((cur / dur) * 1000));
+      paintSeekFill(ui.seekSlider, cur, dur);
+    }
     syncVideo();
   }, 200);
 }
