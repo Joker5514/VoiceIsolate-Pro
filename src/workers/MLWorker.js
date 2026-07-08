@@ -65,7 +65,7 @@ async function queuedSessionRun(sessionKey, session, feeds) {
   const prev = _runQueues[key] || Promise.resolve();
   let release;
   _runQueues[key] = new Promise((resolve) => { release = resolve; });
-  await prev;
+  await prev.catch(() => {});
   try {
     return await session.run(feeds);
   } finally {
