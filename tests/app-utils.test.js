@@ -369,12 +369,14 @@ describe('SLIDER_BY_ID (v24 flat slider lookup)', () => {
 
 // ── applyPreset clampToSlider integration (v24 change) ────────────────────────
 describe('applyPreset uses clampToSlider for clamping (source inspection)', () => {
-  test('app.js source calls clampToSlider within applyPreset', () => {
-    expect(appSrc).toContain('clampToSlider(sliderId, rawValue)');
+  test('app.js source calls clampToSlider within slider UI setter', () => {
+    expect(appSrc).toContain('_setSliderUiInner');
+    expect(appSrc).toContain('clampToSlider(id, rawValue)');
   });
 
-  test('app.js source checks SLIDER_BY_ID[sliderId] before clamping', () => {
-    expect(appSrc).toContain('SLIDER_BY_ID[sliderId]');
+  test('app.js applyPreset delegates to _setSliderUi', () => {
+    const methodSrc = appSrc.slice(appSrc.indexOf('applyPreset(name, options = {}) {'));
+    expect(methodSrc.slice(0, 800)).toContain('_setSliderUi(key, rawValue');
   });
 
   test('app.js applyPreset uses rawValue variable (not value)', () => {

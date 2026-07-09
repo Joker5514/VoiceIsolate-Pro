@@ -81,9 +81,10 @@ describe('Presets', () => {
     expect(appJs).toContain("dispatchEvent(new Event('change', { bubbles: true }))");
   });
 
-  test('Preset application stores non-slider values in VIP params', () => {
+  test('Preset application stores slider values in VIP params via _setSliderUi', () => {
     expect(appJs).toContain('window.VIP_PARAMS = window.VIP_PARAMS || {}');
-    expect(appJs).toContain('window.VIP_PARAMS[key] = value');
+    expect(appJs).toContain('window.VIP_PARAMS[id] = value');
+    expect(appJs).toContain('_setSliderUi(key, rawValue');
   });
 
   test('Forensic Extract uses maximum voice isolation', () => {

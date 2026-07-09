@@ -118,16 +118,15 @@ describe('app.js — --pct CSS variable wiring', () => {
     expect(appJs).toContain('parseFloat(el.max)');
   });
 
-  test('applyPreset dispatches slider input/change events for each slider element', () => {
+  test('applyPreset delegates slider updates through _setSliderUi', () => {
     const presetBlock = appJs.match(/applyPreset\(name[\s\S]*?\)[\s\S]*?if \(this\.liveChainBuilt\)/)?.[0] || '';
-    expect(presetBlock).toContain("dispatchEvent(new Event('input'");
-    expect(presetBlock).toContain("dispatchEvent(new Event('change'");
+    expect(presetBlock).toContain('_setSliderUi(key, rawValue');
   });
 
-  test('applyPreset still updates slider value and aria metadata before dispatch', () => {
-    const presetBlock = appJs.match(/applyPreset\(name[\s\S]*?\)[\s\S]*?if \(this\.liveChainBuilt\)/)?.[0] || '';
-    expect(presetBlock).toContain('sliderDom.el.value = value');
-    expect(presetBlock).toContain("sliderDom.el.setAttribute('aria-valuenow', value)");
+  test('_setSliderUi updates slider value and aria metadata', () => {
+    const setterBlock = appJs.match(/_setSliderUiInner\(id, rawValue[\s\S]*?if \(notify\)/)?.[0] || '';
+    expect(setterBlock).toContain('el.value = value');
+    expect(setterBlock).toContain("el.setAttribute('aria-valuenow', value)");
   });
 });
 

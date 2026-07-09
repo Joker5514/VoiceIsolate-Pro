@@ -314,6 +314,17 @@ function _formatSliderUnit(unit) {
   return ` ${unit}`;
 }
 
+/** Live-mix bridge sliders — only these affect playback in real time (EngineerModeBridge.PARAM_MAP). */
+const BRIDGE_RT_SLIDER_IDS = new Set([
+  'gateThresh', 'gateRange', 'gateAttack', 'gateRelease', 'gateHold',
+  'eqSub', 'eqBass', 'eqWarmth', 'eqBody', 'eqLowMid', 'eqMid', 'eqPresence', 'eqClarity', 'eqAir', 'eqBrill',
+  'compThresh', 'compRatio', 'compAttack', 'compRelease', 'compKnee', 'compMakeup',
+  'limThresh', 'limRelease',
+  'hpFreq', 'hpQ', 'lpFreq', 'lpQ',
+  'deEssFreq', 'deEssAmt',
+  'specTilt', 'outGain', 'dryWet', 'outWidth', 'stereoWidth',
+]);
+
 /** Calibrated render contract — min/max/step/default from SLIDER_REGISTRY. */
 const RENDER_SLIDERS = SLIDER_REGISTRY.map((s) => ({
   id: s.id,
@@ -323,7 +334,7 @@ const RENDER_SLIDERS = SLIDER_REGISTRY.map((s) => ({
   val: s.default,
   step: s.step,
   unit: _formatSliderUnit(s.unit),
-  rt: Boolean(s.rt),
+  rt: BRIDGE_RT_SLIDER_IDS.has(s.id),
   desc: s.hint || s.tip || '',
   group: s.group,
 }));
@@ -838,6 +849,12 @@ class VoiceIsolatePro {
     this._extremeFrameIdx = 0;
     this._extremeCircularMag = null;
     this._extremeNoiseProfile = null;
+    /** Sliders the user dragged — preserved across auto-calibrate on process. */
+    this._userTouchedSliders = new Set();
+    /** Sliders locked — never overwritten by preset or auto-calibrate. */
+    this._sliderLocks = new Set();
+    this._programmaticSliderUpdate = false;
+    this._loadSliderLocks();
 
     // SAB param lane
     this.sharedParams = null;
@@ -1122,6 +1139,50 @@ class VoiceIsolatePro {
     }
   }
 
+  _loadSliderLocks() {
+    if (typeof sessionStorage === 'undefined') return;
+    try {
+      const raw = sessionStorage.getItem('vip-slider-locks');
+      if (!raw) return;
+      const ids = JSON.parse(raw);
+      if (Array.isArray(ids)) this._sliderLocks = new Set(ids);
+    } catch (_) { /* ignore corrupt storage */ }
+  }
+
+  _persistSliderLocks() {
+    if (typeof sessionStorage === 'undefined') return;
+    try {
+      sessionStorage.setItem('vip-slider-locks', JSON.stringify([...this._sliderLocks]));
+    } catch (_) { /* ignore quota */ }
+  }
+
+  _isSliderLocked(id) {
+    return this._sliderLocks.has(id);
+  }
+
+  _shouldPreserveSlider(id) {
+    return this._isSliderLocked(id) || this._userTouchedSliders.has(id);
+  }
+
+  _syncSliderLockUi(id) {
+    const row = document.querySelector(`.slider-row[data-slider-id="${id}"]`);
+    const btn = row?.querySelector('.slider-lock-btn');
+    if (!row || !btn) return;
+    const locked = this._isSliderLocked(id);
+    row.classList.toggle('slider-locked', locked);
+    btn.classList.toggle('is-locked', locked);
+    btn.setAttribute('aria-pressed', String(locked));
+    btn.title = locked ? 'Unlock slider (allow preset changes)' : 'Lock slider (ignore preset changes)';
+    btn.textContent = locked ? '\u{1F512}' : '\u{1F513}';
+  }
+
+  _toggleSliderLock(id) {
+    if (this._sliderLocks.has(id)) this._sliderLocks.delete(id);
+    else this._sliderLocks.add(id);
+    this._persistSliderLocks();
+    this._syncSliderLockUi(id);
+  }
+
   // ── Slider rendering ─────────────────────────────────────────────────────
   _renderSliders() {
     for (const s of RENDER_SLIDERS) {
@@ -1174,6 +1235,7 @@ class VoiceIsolatePro {
 
       // PATCHED BY vip-fixes.js — consider merging
       inputEl.addEventListener('input', () => {
+        if (!this._programmaticSliderUpdate) this._userTouchedSliders.add(s.id);
         const el = inputEl;
         const v = parseFloat(el.value);
         const min = parseFloat(el.min);
@@ -1194,9 +1256,23 @@ class VoiceIsolatePro {
         this._applySliderToWorklet(s.id, v);
       });
 
+      const lockBtn = document.createElement('button');
+      lockBtn.type = 'button';
+      lockBtn.className = 'slider-lock-btn';
+      lockBtn.setAttribute('aria-label', `Lock ${s.label}`);
+      lockBtn.setAttribute('aria-pressed', 'false');
+      lockBtn.title = 'Lock slider (ignore preset changes)';
+      lockBtn.textContent = '\u{1F513}';
+      lockBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this._toggleSliderLock(s.id);
+      });
+
       row.appendChild(labelEl);
       row.appendChild(inputEl);
       row.appendChild(valEl);
+      row.appendChild(lockBtn);
 
       const regEntry = SLIDER_REG_BY_ID[s.id];
       const examples = (regEntry && regEntry.examples && regEntry.examples.length)
@@ -1260,6 +1336,7 @@ class VoiceIsolatePro {
       if (hintPanel) row.appendChild(hintPanel);
 
       container.appendChild(row);
+      if (this._isSliderLocked(s.id)) this._syncSliderLockUi(s.id);
 
       window.VIP_PARAMS = window.VIP_PARAMS || {};
       window.VIP_PARAMS[s.id] = initVal;
@@ -1881,6 +1958,15 @@ class VoiceIsolatePro {
 
   /** Push a calibrated slider value through VIP_PARAMS, DOM, bridge, and worklet. */
   _setSliderUi(id, rawValue, { notify = true } = {}) {
+    this._programmaticSliderUpdate = true;
+    try {
+      this._setSliderUiInner(id, rawValue, { notify });
+    } finally {
+      this._programmaticSliderUpdate = false;
+    }
+  }
+
+  _setSliderUiInner(id, rawValue, { notify = true } = {}) {
     if (id === 'whisperMode') {
       this._setWhisperMode(rawValue);
       return;
@@ -1924,6 +2010,7 @@ class VoiceIsolatePro {
     Object.entries(preset).forEach(([key, rawValue]) => {
       if (preserveWhisperMode && key === 'whisperMode') return;
       if (key === 'description') return;
+      if (this._isSliderLocked(key)) return;
       this._setSliderUi(key, rawValue, { notify: false });
     });
     if (preserveWhisperMode && savedWhisper != null) {
@@ -1943,11 +2030,25 @@ class VoiceIsolatePro {
    * Applies the best-matching named preset, then merges AIIntelligence hints
    * for whisper/quiet content when the module is loaded.
    */
+  _applyPresetValues(presetName, options = {}) {
+    const { preserveWhisperMode = false, respectUserTouched = false } = options;
+    const preset = PRESETS[presetName];
+    if (!preset) return;
+    Object.entries(preset).forEach(([key, rawValue]) => {
+      if (preserveWhisperMode && key === 'whisperMode') return;
+      if (key === 'description') return;
+      if (this._isSliderLocked(key)) return;
+      if (respectUserTouched && this._userTouchedSliders.has(key)) return;
+      this._setSliderUi(key, rawValue, { notify: false });
+    });
+  }
+
   _autoCalibratePreset(buffer) {
     if (!buffer || typeof buffer.getChannelData !== 'function') return null;
     if (WorkflowTier.shouldSkipAutoCalibrate()) {
       const preset = WorkflowTier.getDefaultPreset();
-      this.applyPreset(preset);
+      this._applyPresetValues(preset, { respectUserTouched: true });
+      this._syncBridgeParams();
       return { preset, level: 'creator', rmsDb: 0 };
     }
     const channels = [];
@@ -1955,10 +2056,11 @@ class VoiceIsolatePro {
       channels.push(buffer.getChannelData(ch));
     }
     const { preset, level, rmsDb, overrides = {} } = recommendEngineerPreset(channels);
-    this.applyPreset(preset, { preserveWhisperMode: true });
+    this._applyPresetValues(preset, { preserveWhisperMode: true, respectUserTouched: true });
 
     for (const [key, val] of Object.entries(overrides)) {
       if (!(SLIDER_REG_BY_ID[key] || SLIDER_BY_ID[key]) || !Number.isFinite(val)) continue;
+      if (this._shouldPreserveSlider(key)) continue;
       this._setSliderUi(key, val);
     }
 
@@ -1968,6 +2070,7 @@ class VoiceIsolatePro {
       const tune = AI.autoTuneParams(mono, buffer.sampleRate, this.params);
       for (const [key, val] of Object.entries(tune.suggestions || {})) {
         if (!(SLIDER_REG_BY_ID[key] || SLIDER_BY_ID[key]) || !Number.isFinite(val)) continue;
+        if (this._shouldPreserveSlider(key)) continue;
         this._setSliderUi(key, val);
       }
     }
@@ -4046,6 +4149,7 @@ const WHISPER_HUNTER = {
 if (typeof window !== 'undefined') {
   window.numFromInput = numFromInput;
   window.clampToSlider = clampToSlider;
+  window.BRIDGE_RT_SLIDER_IDS = BRIDGE_RT_SLIDER_IDS;
 }
 
 // ---------------------------------------------------------------------------
