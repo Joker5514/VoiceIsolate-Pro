@@ -710,9 +710,12 @@ function structuredLog(level, msg, data = {}) {
 }
 
 function clampToSlider(id, value) {
-  const s = SLIDER_BY_ID[id];
+  const reg = SLIDER_REG_BY_ID[id];
+  const legacy = SLIDER_BY_ID[id];
+  const s = reg || legacy;
   const v = Number(value);
-  if (!Number.isFinite(v)) return s ? s.val : 0;
+  const fallback = reg ? (reg.default ?? 0) : (legacy ? legacy.val : 0);
+  if (!Number.isFinite(v)) return fallback;
   if (!s) return v;
   if (v < s.min) return s.min;
   if (v > s.max) return s.max;
@@ -1580,7 +1583,21 @@ class VoiceIsolatePro {
     bind('tpStop', d.tpStop, 'click', () => this.stop());
     bind('tpRew', d.tpRew, 'click', () => this.seekDelta(-10));
     bind('tpFwd', d.tpFwd, 'click', () => this.seekDelta(10));
-    bind('tpSeek', d.tpSeek, 'input', e => this.seekTo(parseFloat(e.target.value) / 1000));
+    if (d.tpSeek) {
+      d.tpSeek.addEventListener('mousedown', () => { this._transportSeeking = true; });
+      d.tpSeek.addEventListener('touchstart', () => { this._transportSeeking = true; }, { passive: true });
+      d.tpSeek.addEventListener('input', (e) => {
+        const frac = parseFloat(e.target.value) / 1000;
+        const dur = this._getTransportDuration();
+        const off = frac * dur;
+        this.playOffset = off;
+        this._paintTransport(off, dur, { skipSeekValue: true });
+      });
+      d.tpSeek.addEventListener('change', (e) => {
+        this._transportSeeking = false;
+        this.seekTo(parseFloat(e.target.value) / 1000);
+      });
+    }
 
     const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
     bind('tpSpeed', d.tpSpeed, 'change', () => {
@@ -1862,6 +1879,40 @@ class VoiceIsolatePro {
     if (this.dom?.tpABLabel) this.dom.tpABLabel.textContent = 'Processed';
   }
 
+  /** Push a calibrated slider value through VIP_PARAMS, DOM, bridge, and worklet. */
+  _setSliderUi(id, rawValue, { notify = true } = {}) {
+    if (id === 'whisperMode') {
+      this._setWhisperMode(rawValue);
+      return;
+    }
+    const hasSpec = SLIDER_REG_BY_ID[id] || SLIDER_BY_ID[id];
+    if (!hasSpec) return;
+    const value = clampToSlider(id, rawValue);
+    window.VIP_PARAMS = window.VIP_PARAMS || {};
+    window.VIP_PARAMS[id] = value;
+    this.params[id] = value;
+    if (this.sharedParams) {
+      const idx = this._sliderIndexById.get(id);
+      if (idx !== undefined) this.sharedParams[idx] = value;
+    }
+    const el = document.getElementById('sl_' + id);
+    if (el) {
+      el.value = value;
+      el.setAttribute('aria-valuenow', value);
+      const min = parseFloat(el.min);
+      const max = parseFloat(el.max);
+      const range = max - min;
+      const pct = range > 0 ? ((value - min) / range) * 100 : 0;
+      el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
+      const valEl = document.getElementById('val_' + id);
+      const unit = SLIDER_REG_BY_ID[id]?.unit || SLIDER_BY_ID[id]?.unit || '';
+      if (valEl) valEl.textContent = value + _formatSliderUnit(unit);
+    }
+    this.onSlider(id, value);
+    this._applySliderToWorklet(id, value);
+    if (notify) el?.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   // ── Preset application ────────────────────────────────────────────────────
   applyPreset(name, options = {}) {
     const { preserveWhisperMode = false } = options;
@@ -1873,26 +1924,7 @@ class VoiceIsolatePro {
     Object.entries(preset).forEach(([key, rawValue]) => {
       if (preserveWhisperMode && key === 'whisperMode') return;
       if (key === 'description') return;
-      const sliderId = key;
-      const value = SLIDER_BY_ID[sliderId] ? clampToSlider(sliderId, rawValue) : rawValue;
-      window.VIP_PARAMS = window.VIP_PARAMS || {};
-      window.VIP_PARAMS[key] = value;
-      this.params[key] = value;
-      if (key === 'whisperMode') {
-        this._setWhisperMode(value);
-        return;
-      }
-      const sliderDom = { el: document.getElementById('sl_' + key) };
-      if (!sliderDom.el) return;
-      sliderDom.el.value = value;
-      sliderDom.el.setAttribute('aria-valuenow', value);
-      const min = parseFloat(sliderDom.el.min);
-      const max = parseFloat(sliderDom.el.max);
-      const range = max - min;
-      const pct = range > 0 ? ((value - min) / range) * 100 : 0;
-      sliderDom.el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
-      sliderDom.el.dispatchEvent(new Event('input', { bubbles: true }));
-      sliderDom.el.dispatchEvent(new Event('change', { bubbles: true }));
+      this._setSliderUi(key, rawValue, { notify: false });
     });
     if (preserveWhisperMode && savedWhisper != null) {
       this._setWhisperMode(savedWhisper);
@@ -1926,8 +1958,8 @@ class VoiceIsolatePro {
     this.applyPreset(preset, { preserveWhisperMode: true });
 
     for (const [key, val] of Object.entries(overrides)) {
-      if (!SLIDER_BY_ID[key] || !Number.isFinite(val)) continue;
-      this.onSlider(key, clampToSlider(key, val));
+      if (!(SLIDER_REG_BY_ID[key] || SLIDER_BY_ID[key]) || !Number.isFinite(val)) continue;
+      this._setSliderUi(key, val);
     }
 
     const AI = globalThis.AIIntelligence;
@@ -1935,9 +1967,8 @@ class VoiceIsolatePro {
       const mono = channels[0];
       const tune = AI.autoTuneParams(mono, buffer.sampleRate, this.params);
       for (const [key, val] of Object.entries(tune.suggestions || {})) {
-        if (!SLIDER_BY_ID[key] || !Number.isFinite(val)) continue;
-        const clamped = clampToSlider(key, val);
-        this.onSlider(key, clamped);
+        if (!(SLIDER_REG_BY_ID[key] || SLIDER_BY_ID[key]) || !Number.isFinite(val)) continue;
+        this._setSliderUi(key, val);
       }
     }
 
@@ -3107,6 +3138,102 @@ class VoiceIsolatePro {
   // Permissions-Policy header denies the microphone entirely.
 
   // ── Transport ─────────────────────────────────────────────────────────────
+
+  /** Active playback buffer (honours A/B mode). */
+  _getPlaybackBuffer() {
+    if (this.abMode === 'processed') {
+      return this.outputBuffer || this.procBuffer || this.inputBuffer || this.origBuffer || null;
+    }
+    return this.inputBuffer || this.origBuffer || null;
+  }
+
+  _getTransportDuration() {
+    const bridgeDur = this._bridge?.duration?.();
+    if (Number.isFinite(bridgeDur) && bridgeDur > 0) return bridgeDur;
+    const buf = this._getPlaybackBuffer();
+    return buf?.duration || 0;
+  }
+
+  _getTransportPosition() {
+    const bridge = this._bridge;
+    if (bridge?.isPlaying?.() && typeof bridge.currentTime === 'function') {
+      return bridge.currentTime();
+    }
+    if (this.isPlaying && this.ctx && Number.isFinite(this.playStartTime)) {
+      const speed = numFromInput(this.dom?.tpSpeed, 1) || 1;
+      return this.playOffset + (this.ctx.currentTime - this.playStartTime) * speed;
+    }
+    return this.playOffset || 0;
+  }
+
+  /** Paint time readout + seek bar fill from seconds (not normalised fraction). */
+  _paintTransport(cur, dur, opts = {}) {
+    const { skipSeekValue = false } = opts;
+    const clamped = Math.max(0, Math.min(cur, dur || 0));
+    if (this.dom?.tpCur) this.dom.tpCur.textContent = this.fmtDur(clamped);
+    if (this.dom?.tpSeek && dur > 0) {
+      if (!skipSeekValue) this.dom.tpSeek.value = (clamped / dur) * 1000;
+      if (typeof paintSeekFill === 'function') {
+        paintSeekFill(this.dom.tpSeek, clamped, dur);
+      } else if (this.dom.tpSeek.style?.setProperty) {
+        const pct = Math.max(0, Math.min(100, (clamped / dur) * 100));
+        this.dom.tpSeek.style.setProperty('--seek-pct', `${pct}%`);
+      }
+    }
+  }
+
+  _stopTransportClock() {
+    if (!this._tickRaf) return;
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(this._tickRaf);
+    else clearTimeout(this._tickRaf);
+    this._tickRaf = 0;
+  }
+
+  _startTransportClock() {
+    if (this._tickRaf) return;
+    const loop = () => {
+      this._tickRaf = 0;
+      if (!this.isPlaying) return;
+
+      const dur = this._getTransportDuration();
+      let cur = Math.min(this._getTransportPosition(), dur);
+
+      if (!this._transportSeeking) {
+        this.playOffset = cur;
+        this._paintTransport(cur, dur);
+      }
+
+      const bridge = this._bridge;
+      const region = bridge?.getCropRegion?.() || { in: 0, out: dur };
+      const looping = bridge?.isLoopEnabled?.();
+      const naturalEnd = dur > 0 && bridge && !bridge.isPlaying()
+        && !looping && cur >= (region.out ?? dur) - 0.05;
+
+      if (naturalEnd) {
+        this.isPlaying = false;
+        this.playOffset = region.in || 0;
+        this._paintTransport(this.playOffset, dur);
+        this._updateTransportUI?.();
+        try { window.dispatchEvent(new CustomEvent('vip:playStopped')); } catch (_) {}
+        return;
+      }
+
+      if (looping && bridge && !bridge.isPlaying()) {
+        this._tickRaf = (typeof requestAnimationFrame === 'function')
+          ? requestAnimationFrame(loop)
+          : setTimeout(loop, 50);
+        return;
+      }
+
+      this._tickRaf = (typeof requestAnimationFrame === 'function')
+        ? requestAnimationFrame(loop)
+        : setTimeout(loop, 50);
+    };
+    this._tickRaf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame(loop)
+      : setTimeout(loop, 50);
+  }
+
   async play() {
     await this.ensureCtx();
     const buf = this.abMode === 'processed'
@@ -3137,7 +3264,7 @@ class VoiceIsolatePro {
 
     if (typeof this.startSpectro === 'function') this.startSpectro();
     if (typeof this.startFreq === 'function') this.startFreq();
-    if (typeof this.tickTime === 'function') this.tickTime();
+    if (typeof this._startTransportClock === 'function') this._startTransportClock();
     if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
     if (typeof this.renderStaticVisuals === 'function') this.renderStaticVisuals(buf);
   }
@@ -3158,6 +3285,9 @@ class VoiceIsolatePro {
       try {
         const mod = await import('/src/pipeline/EngineerModeBridge.js');
         this._bridge = new mod.EngineerModeBridge({ context: this.ctx });
+        if (typeof window !== 'undefined' && mod.PARAM_MAP) {
+          window._vipBridgeIds = Object.keys(mod.PARAM_MAP);
+        }
         structuredLog('info', '[VIP] Live-Mix bridge ready — rt sliders are now real-time.');
         return this._bridge;
       } catch (err) {
@@ -3261,8 +3391,13 @@ class VoiceIsolatePro {
 
   pause() {
     if (!this.isPlaying) return;
-    const speed = numFromInput(this.dom.tpSpeed, 1);
-    this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
+    if (typeof this._getTransportPosition === 'function') {
+      this.playOffset = this._getTransportPosition();
+    } else {
+      const speed = numFromInput(this.dom?.tpSpeed, 1);
+      this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
+    }
+    if (typeof this._stopTransportClock === 'function') this._stopTransportClock();
     this.teardownChain();
     if (typeof this.stopSpectro === 'function') this.stopSpectro();
     if (this.isVideo && this.dom.videoPlayer) this.dom.videoPlayer.pause();
@@ -3270,7 +3405,11 @@ class VoiceIsolatePro {
   }
 
   stop() {
+    if (typeof this._stopTransportClock === 'function') this._stopTransportClock();
     this.teardownChain();
+    if (this._bridge && typeof this._bridge.stop === 'function') {
+      try { this._bridge.stop(); } catch (_) {}
+    }
     this.isPlaying = false;
     this.playOffset = 0;
     if (typeof this.stopSpectro === 'function') this.stopSpectro();
@@ -3278,8 +3417,12 @@ class VoiceIsolatePro {
       this.dom.videoPlayer.pause();
       this.dom.videoPlayer.currentTime = 0;
     }
-    if (this.dom && this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(0);
-    if (this.dom && this.dom.tpSeek) this.dom.tpSeek.value = 0;
+    if (typeof this._paintTransport === 'function') {
+      this._paintTransport(0, typeof this._getTransportDuration === 'function' ? this._getTransportDuration() : 0);
+    } else {
+      if (this.dom?.tpCur) this.dom.tpCur.textContent = this.fmtDur(0);
+      if (this.dom?.tpSeek) this.dom.tpSeek.value = 0;
+    }
     if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
   }
 
@@ -3322,31 +3465,46 @@ class VoiceIsolatePro {
   }
 
   seekDelta(delta) {
-    const buf = this.inputBuffer || this.origBuffer;
-    if (!buf) return;
-    const speed = numFromInput(this.dom.tpSpeed, 1);
-    if (this.isPlaying) {
-      this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
-    }
-    this.playOffset = Math.max(0, Math.min(buf.duration, this.playOffset + delta));
-    if (this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
-    if (this.dom.tpSeek) this.dom.tpSeek.value = (this.playOffset / buf.duration) * 1000;
-    if (this.isPlaying) this.play();
+    const dur = typeof this._getTransportDuration === 'function'
+      ? this._getTransportDuration()
+      : (this.inputBuffer || this.origBuffer)?.duration || 0;
+    if (!dur) return;
+    const pos = typeof this._getTransportPosition === 'function'
+      ? this._getTransportPosition()
+      : (this.playOffset || 0);
+    const next = Math.max(0, Math.min(dur, pos + delta));
+    return VoiceIsolatePro.prototype.seekTo.call(this, next / dur);
   }
 
   seekTo(frac) {
-    const buf = this.inputBuffer || this.origBuffer;
+    const buf = typeof this._getPlaybackBuffer === 'function'
+      ? this._getPlaybackBuffer()
+      : (this.inputBuffer || this.origBuffer);
     if (!buf) return;
-    const speed = numFromInput(this.dom.tpSpeed, 1) || 1;
-    if (this.isPlaying) {
-      this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
-    }
-    this.playOffset = frac * buf.duration;
-    if (this.isPlaying) {
-      this.play();
+    const dur = buf.duration || 0;
+    if (!dur) return;
+    const target = Math.round(Math.max(0, Math.min(1, frac)) * dur * 1000) / 1000;
+    const wasPlaying = this.isPlaying;
+
+    this.playOffset = target;
+    if (typeof this._paintTransport === 'function') {
+      this._paintTransport(target, dur);
     } else {
-      if (this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
-      if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
+      if (this.dom?.tpCur) this.dom.tpCur.textContent = this.fmtDur(target);
+      if (this.dom?.tpSeek) this.dom.tpSeek.value = frac * 1000;
+    }
+
+    if (this.isVideo && this.dom?.videoPlayer) {
+      this.dom.videoPlayer.currentTime = target;
+    }
+
+    const bridge = this._bridge;
+    if (bridge && typeof bridge.seek === 'function') {
+      Promise.resolve(bridge.seek(target)).catch(() => {});
+    }
+
+    if (wasPlaying) {
+      this.play();
     }
   }
 
@@ -3423,45 +3581,7 @@ class VoiceIsolatePro {
       window._vipOrch.tickTime();
       return;
     }
-    // Drive the transport readout from the bridge clock and reset the UI when
-    // playback reaches the end.
-    const b = this._bridge;
-    if (!b || typeof b.currentTime !== 'function') return;
-    if (this._tickRaf) return; // single rAF loop
-    const loop = () => {
-      this._tickRaf = 0;
-      if (!this.isPlaying) return;
-      const cur = b.currentTime();
-      const dur = b.duration() || 0;
-      if (this.dom && this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(cur);
-      if (this.dom && this.dom.tpSeek && dur > 0) {
-        this.dom.tpSeek.value = (cur / dur) * 1000;
-        paintSeekFill(this.dom.tpSeek, cur, dur);
-      }
-      const region = b.getCropRegion?.() || { in: 0, out: dur };
-      const looping = b.isLoopEnabled?.();
-      const ended = dur > 0 && !b.isPlaying() && !looping && cur >= region.out - 0.05;
-      if (ended) {
-        this.isPlaying = false;
-        this.playOffset = region.in || 0;
-        if (this.dom && this.dom.tpSeek && dur > 0) this.dom.tpSeek.value = (this.playOffset / dur) * 1000;
-        if (this.dom && this.dom.tpCur) this.dom.tpCur.textContent = this.fmtDur(this.playOffset);
-        if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
-        return;
-      }
-      if (looping && !b.isPlaying()) {
-        this._tickRaf = (typeof requestAnimationFrame === 'function')
-          ? requestAnimationFrame(loop)
-          : setTimeout(loop, 50);
-        return;
-      }
-      this._tickRaf = (typeof requestAnimationFrame === 'function')
-        ? requestAnimationFrame(loop)
-        : setTimeout(loop, 50);
-    };
-    this._tickRaf = (typeof requestAnimationFrame === 'function')
-      ? requestAnimationFrame(loop)
-      : setTimeout(loop, 50);
+    this._startTransportClock();
   }
 
   // ── Notifications / Toast ─────────────────────────────────────────────────
@@ -3577,8 +3697,8 @@ class VoiceIsolatePro {
   }
 
   _updateTransportUI() {
-    const buf = this.inputBuffer || this.origBuffer;
-    const dur = buf ? buf.duration : 0;
+    const buf = this._getPlaybackBuffer() || this.inputBuffer || this.origBuffer;
+    const dur = this._getTransportDuration() || (buf ? buf.duration : 0);
     if (this.dom.tpDur) this.dom.tpDur.textContent = fmtTime(dur);
     const enabled = Boolean(buf);
     [this.dom.tpPlay, this.dom.tpPause, this.dom.tpStop, this.dom.tpRew,
@@ -3586,7 +3706,10 @@ class VoiceIsolatePro {
      this.dom.tpLoop, this.dom.tpCropIn, this.dom.tpCropOut, this.dom.tpCropClear].forEach(b => {
       if (b) b.disabled = !enabled;
     });
-    if (enabled) this._ensureTransportRegionWiring();
+    if (enabled) {
+      this._ensureTransportRegionWiring();
+      if (!this.isPlaying) this._paintTransport(this.playOffset || 0, dur);
+    }
     this._syncTransportRegion?.();
   }
 
