@@ -152,10 +152,18 @@
 
   // [WHISPER UPDATE] Instantiate WhisperHunterAI for offline paths (Part 4)
   (function _initWhisperHunter(retries) {
+    const sr = window._vipAudioCtx?.sampleRate
+      || window._vipApp?.ctx?.sampleRate
+      || 48000;
+    if (typeof ensureWhisperHunterInstance === 'function') {
+      ensureWhisperHunterInstance(4096, sr);
+      console.info('[DSP-Bootstrap] WhisperHunterAI ready @', sr, 'Hz');
+      return;
+    }
     if (window._vipWhisperHunter) return;
     if (typeof WhisperHunterAI !== 'undefined') {
-      window._vipWhisperHunter = new WhisperHunterAI(4096, 48000);
-      console.info('[DSP-Bootstrap] WhisperHunterAI ready.');
+      window._vipWhisperHunter = new WhisperHunterAI(4096, sr);
+      console.info('[DSP-Bootstrap] WhisperHunterAI ready @', sr, 'Hz');
       return;
     }
     if (retries > 0) setTimeout(() => _initWhisperHunter(retries - 1), 80);

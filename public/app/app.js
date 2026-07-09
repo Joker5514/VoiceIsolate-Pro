@@ -28,7 +28,15 @@ import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportR
 import { isDesktopShell, isMicCaptureEnabled, pickAudioFile } from '/src/core/DesktopBridge.js';
 import { inferMediaKind } from '/src/core/media-types.js';
 import { openFilePicker as triggerFileInput, primeAudioGesture } from '/src/presentation/UploadWiring.js';
-import { analyzeAcousticEnvironment, chunkedMaskInference, maskConfidence } from './whisper-hunter.js';
+import {
+  analyzeAcousticEnvironment,
+  buildHeuristicMask,
+  chunkedMaskInference,
+  detectWhisperPlatform,
+  ensureWhisperHunterInstance,
+  getWhisperPlatformProfile,
+  maskConfidence,
+} from './whisper-hunter.js';
 
 /** Hero landing + branded loader — local-only cinematic shell */
 const HeroExperience = (() => {
@@ -1746,12 +1754,27 @@ class VoiceIsolatePro {
         this.showNotification('Load an audio file first', 'warn');
         return;
       }
+      if (WHISPER_HUNTER._running) {
+        this.showNotification('WhisperHunter is already running', 'warn');
+        return;
+      }
       const btn = document.getElementById('btn-whisper-hunter');
-      if (btn) btn.classList.add('running');
+      if (btn) {
+        btn.classList.add('running');
+        btn.setAttribute('aria-busy', 'true');
+        btn.disabled = true;
+      }
       try {
         await WHISPER_HUNTER.run(this.inputBuffer || this.origBuffer, this);
+      } catch (err) {
+        structuredLog('error', '[WHISPER_HUNTER] run failed', { err: err && err.message });
+        this.showNotification('WhisperHunter failed — try again or reduce file length', 'error');
       } finally {
-        if (btn) btn.classList.remove('running');
+        if (btn) {
+          btn.classList.remove('running');
+          btn.removeAttribute('aria-busy');
+          btn.disabled = false;
+        }
       }
     });
 
@@ -3961,57 +3984,72 @@ class VoiceIsolatePro {
 
 // [WHISPER UPDATE] WhisperHunter AI — automatic extreme isolation orchestrator
 const WHISPER_HUNTER = {
+  _running: false,
+
   async run(audioBuffer, app) {
     app = app || window._vipApp;
-    if (!app || !audioBuffer) return;
-
-    const hunter = window._vipWhisperHunter;
-    if (hunter && typeof hunter.seedNoiseFromAudio === 'function') {
-      hunter.reset();
-      hunter.seedNoiseFromAudio(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
+    if (!app || !audioBuffer || this._running) return;
+    if (!audioBuffer.getChannelData || !audioBuffer.length) {
+      app.showNotification?.('Invalid audio buffer for WhisperHunter', 'warn');
+      return;
     }
 
-    const envProfile = this.analyzeEnvironment(audioBuffer);
-    const basePreset = this.selectPreset(envProfile);
-    if (PRESETS[basePreset]) {
-      app.applyPreset(basePreset);
-      await app.morphSlidersTo(
-        Object.fromEntries(
-          Object.entries(PRESETS[basePreset]).filter(([k]) => k !== 'description')
-        ),
-        400
-      );
+    this._running = true;
+    const platformProfile = getWhisperPlatformProfile(detectWhisperPlatform());
+    const detail = document.getElementById('pipeDetail');
+    if (detail) detail.textContent = `WhisperHunter analyzing (${platformProfile.platform})…`;
+
+    try {
+      const hunter = ensureWhisperHunterInstance(4096, audioBuffer.sampleRate);
+      if (hunter && typeof hunter.seedNoiseFromAudio === 'function') {
+        hunter.reset();
+        hunter.seedNoiseFromAudio(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
+      }
+
+      const envProfile = this.analyzeEnvironment(audioBuffer);
+      const basePreset = this.selectPreset(envProfile);
+      if (PRESETS[basePreset]) {
+        app.applyPreset(basePreset);
+        await app.morphSlidersTo(
+          Object.fromEntries(
+            Object.entries(PRESETS[basePreset]).filter(([k]) => k !== 'description')
+          ),
+          400
+        );
+      }
+
+      const masks = await this.runDeepFilterNet(audioBuffer, app, platformProfile);
+      const avgMaskConf = maskConfidence(masks);
+      const separationScore = Math.max(0, Math.min(1, (1 - avgMaskConf) * 0.55 + (1 - envProfile.speechPresence) * 0.45));
+
+      await app.morphSlidersTo({
+        whisperClarity: Math.round(58 + separationScore * 32),
+        whisperSensitivity: Math.round(48 + (1 - envProfile.voiceRatio) * 38),
+        whisperThreshold: Math.round(42 + separationScore * 48),
+        harmRecov: envProfile.voiceRatio < 0.25 ? Math.round(18 + separationScore * 22) : 8,
+        whisperLift: Math.round(14 + separationScore * 24),
+        snrFloor: Math.round(-78 + avgMaskConf * 26),
+        crowdNull: Math.round(68 + separationScore * 28),
+        musicKill: envProfile.dominantNoise === 'music' ? Math.round(82 + separationScore * 16) : Math.round(45 + separationScore * 20),
+        bassCrush: Math.round(55 + envProfile.musicRatio * 40),
+        reverbStrip: Math.min(1200, Math.round(envProfile.rt60 * (0.85 + separationScore * 0.35))),
+        voiceTunnel: Math.round(52 + avgMaskConf * 38),
+        whisperMode: separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1,
+      }, 600);
+
+      const mode = window.VIP_PARAMS?.whisperMode ?? 2;
+      const passPlan = mode >= 3 ? 4 : mode === 2 ? 2 : 1;
+      const numPasses = Math.min(platformProfile.forensicCap, Math.max(platformProfile.minPasses, passPlan));
+      if (numPasses > 1) {
+        await this.runForensicPasses(audioBuffer, numPasses, app, envProfile);
+      } else {
+        await app.runPipeline();
+      }
+
+      this.reportResults(envProfile, avgMaskConf, app, platformProfile);
+    } finally {
+      this._running = false;
     }
-
-    const masks = await this.runDeepFilterNet(audioBuffer, app);
-    const avgMaskConf = maskConfidence(masks);
-    const separationScore = Math.max(0, Math.min(1, (1 - avgMaskConf) * 0.55 + (1 - envProfile.speechPresence) * 0.45));
-
-    await app.morphSlidersTo({
-      whisperClarity: Math.round(58 + separationScore * 32),
-      whisperSensitivity: Math.round(48 + (1 - envProfile.voiceRatio) * 38),
-      whisperThreshold: Math.round(42 + separationScore * 48),
-      harmRecov: envProfile.voiceRatio < 0.25 ? Math.round(18 + separationScore * 22) : 8,
-      whisperLift: Math.round(14 + separationScore * 24),
-      snrFloor: Math.round(-78 + avgMaskConf * 26),
-      crowdNull: Math.round(68 + separationScore * 28),
-      musicKill: envProfile.dominantNoise === 'music' ? Math.round(82 + separationScore * 16) : Math.round(45 + separationScore * 20),
-      bassCrush: Math.round(55 + envProfile.musicRatio * 40),
-      reverbStrip: Math.min(1200, Math.round(envProfile.rt60 * (0.85 + separationScore * 0.35))),
-      voiceTunnel: Math.round(52 + avgMaskConf * 38),
-      whisperMode: separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1,
-    }, 600);
-
-    const mode = window.VIP_PARAMS?.whisperMode ?? 2;
-    if (mode >= 3) {
-      await this.runForensicPasses(audioBuffer, 4, app, envProfile);
-    } else if (mode === 2) {
-      await this.runForensicPasses(audioBuffer, 2, app, envProfile);
-    } else {
-      await app.runPipeline();
-    }
-
-    this.reportResults(envProfile, avgMaskConf, app);
   },
 
   analyzeEnvironment(buffer) {
@@ -4027,16 +4065,19 @@ const WHISPER_HUNTER = {
     return 'Whisper in a Club';
   },
 
-  async runDeepFilterNet(audioBuffer, app) {
+  async runDeepFilterNet(audioBuffer, app, platformProfile = getWhisperPlatformProfile()) {
     const masks = [];
     try {
       const worker = window._vipOrch && window._vipOrch.mlWorker;
-      if (worker && app) {
+      if (worker && app && platformProfile.mlEnabled) {
         const inferred = await chunkedMaskInference(audioBuffer, worker, {
           callIdBase: app._mlCallId || 0,
-          maxChunks: 12,
+          maxChunks: platformProfile.maxChunks,
+          timeoutMs: platformProfile.timeoutMs,
+          chunkYieldMs: platformProfile.chunkYieldMs,
+          mlEnabled: platformProfile.mlEnabled,
         });
-        app._mlCallId = (app._mlCallId || 0) + 12;
+        app._mlCallId = (app._mlCallId || 0) + platformProfile.maxChunks;
         if (inferred.length) return inferred;
       }
     } catch (err) {
@@ -4044,11 +4085,7 @@ const WHISPER_HUNTER = {
     }
     if (!masks.length) {
       const env = analyzeAcousticEnvironment(audioBuffer);
-      const base = 0.28 + env.voiceRatio * 0.35;
-      for (let i = 0; i < 2049; i++) {
-        const voiceWeight = (i > 160 && i < 900) ? 1.15 : 0.75;
-        masks.push(Math.min(0.92, base * voiceWeight));
-      }
+      return buildHeuristicMask(env, 2049);
     }
     return masks;
   },
@@ -4083,18 +4120,18 @@ const WHISPER_HUNTER = {
   },
 
   updateNoiseProfileFromBuffer(buffer, app) {
-    if (!buffer || !app) return;
-    const hunter = window._vipWhisperHunter;
+    if (!buffer || !app || !buffer.getChannelData) return;
+    const hunter = ensureWhisperHunterInstance(4096, buffer.sampleRate);
     if (hunter && typeof hunter.seedNoiseFromAudio === 'function') {
       hunter.seedNoiseFromAudio(buffer.getChannelData(0), buffer.sampleRate);
     }
     app._extremeNoiseProfile = null;
   },
 
-  reportResults(envProfile, avgMaskConf, app) {
+  reportResults(envProfile, avgMaskConf, app, platformProfile = getWhisperPlatformProfile()) {
     app = app || window._vipApp;
     const detail = document.getElementById('pipeDetail');
-    const msg = `WhisperHunter: ${envProfile.dominantNoise} · voice ${(envProfile.voiceRatio * 100).toFixed(0)}% · mask ${(avgMaskConf * 100).toFixed(0)}% · RT60 ${envProfile.rt60}ms`;
+    const msg = `WhisperHunter (${platformProfile.platform}): ${envProfile.dominantNoise} · voice ${(envProfile.voiceRatio * 100).toFixed(0)}% · mask ${(avgMaskConf * 100).toFixed(0)}% · RT60 ${envProfile.rt60}ms`;
     if (detail) detail.textContent = msg;
     if (app && typeof app.showNotification === 'function') {
       app.showNotification(msg, 'info');

@@ -14,6 +14,96 @@ export function mapWhisperUi(uiValue) {
   return sigmoid((ui - 50) / 15);
 }
 
+/** Detect runtime shell: desktop Electron, native Android, or browser */
+export function detectWhisperPlatform() {
+  if (typeof globalThis !== 'undefined' && globalThis.vipDesktop?.openFile) return 'desktop';
+  const cap = typeof window !== 'undefined' ? window.Capacitor : null;
+  if (cap?.isNativePlatform?.()) {
+    const p = cap.getPlatform?.() || 'web';
+    if (p === 'android') return 'android';
+    if (p === 'ios') return 'ios';
+  }
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+  if (/Android/i.test(ua)) return 'android';
+  return 'browser';
+}
+
+/** Platform-tuned WhisperHunter limits (desktop / browser / Android WebView) */
+export function getWhisperPlatformProfile(platform = detectWhisperPlatform()) {
+  switch (platform) {
+    case 'android':
+      return {
+        platform: 'android',
+        maxChunks: 6,
+        timeoutMs: 12000,
+        chunkYieldMs: 8,
+        mlEnabled: true,
+        forensicCap: 3,
+        minPasses: 1,
+      };
+    case 'ios':
+      return {
+        platform: 'ios',
+        maxChunks: 8,
+        timeoutMs: 10000,
+        chunkYieldMs: 4,
+        mlEnabled: true,
+        forensicCap: 3,
+        minPasses: 1,
+      };
+    case 'desktop':
+      return {
+        platform: 'desktop',
+        maxChunks: 16,
+        timeoutMs: 8000,
+        chunkYieldMs: 0,
+        mlEnabled: true,
+        forensicCap: 4,
+        minPasses: 1,
+      };
+    default:
+      return {
+        platform: 'browser',
+        maxChunks: 12,
+        timeoutMs: 6000,
+        chunkYieldMs: 0,
+        mlEnabled: true,
+        forensicCap: 4,
+        minPasses: 1,
+      };
+  }
+}
+
+/** Create or resync the global WhisperHunter instance for the active sample rate */
+export function ensureWhisperHunterInstance(fftSize = 4096, sampleRate = 48000) {
+  const sr = Math.max(8000, Math.min(192000, Number(sampleRate) || 48000));
+  const bins = Math.max(64, Number(fftSize) || 4096);
+  if (typeof window === 'undefined') {
+    return new WhisperHunterAI(bins, sr);
+  }
+  const existing = window._vipWhisperHunter;
+  if (existing && existing.sampleRate === sr && existing.fftSize === bins) {
+    return existing;
+  }
+  const hunter = new WhisperHunterAI(bins, sr);
+  window._vipWhisperHunter = hunter;
+  return hunter;
+}
+
+/** Heuristic voice mask when ML worker is unavailable (offline-safe fallback) */
+export function buildHeuristicMask(envProfile, halfBins = 2049) {
+  const env = envProfile || {};
+  const base = 0.28 + (env.voiceRatio || 0.3) * 0.35;
+  const voiceStart = Math.floor(halfBins * 0.08);
+  const voiceEnd = Math.floor(halfBins * 0.45);
+  const masks = new Array(halfBins);
+  for (let i = 0; i < halfBins; i++) {
+    const voiceWeight = (i >= voiceStart && i <= voiceEnd) ? 1.15 : 0.75;
+    masks[i] = Math.min(0.92, base * voiceWeight);
+  }
+  return masks;
+}
+
 function _goertzelPower(data, offset, len, sampleRate, targetHz) {
   const k = Math.round(0.5 + (len * targetHz) / sampleRate);
   const w = (2 * Math.PI * k) / len;
@@ -188,14 +278,19 @@ export function maskConfidence(masks) {
 /** Chunked BSRNN mask inference across the file (local worker) */
 export async function chunkedMaskInference(audioBuffer, worker, options = {}) {
   const masks = [];
-  if (!audioBuffer || !worker) return masks;
+  if (!audioBuffer || !worker || options.mlEnabled === false) return masks;
+  if (typeof audioBuffer.getChannelData !== 'function') return masks;
 
   const data = audioBuffer.getChannelData(0);
+  if (!data || !data.length) return masks;
+
+  const sr = Math.max(8000, audioBuffer.sampleRate || 48000);
   const FFT = options.fftSize || 4096;
   const halfN = FFT / 2 + 1;
   const hop = options.hop || Math.floor(FFT / 2);
-  const maxChunks = options.maxChunks || 12;
-  const timeoutMs = options.timeoutMs || 6000;
+  const maxChunks = Math.max(1, options.maxChunks || 12);
+  const timeoutMs = Math.max(500, options.timeoutMs || 6000);
+  const chunkYieldMs = Math.max(0, options.chunkYieldMs || 0);
   const callIdBase = options.callIdBase || 0;
 
   const positions = [];
@@ -205,24 +300,39 @@ export async function chunkedMaskInference(audioBuffer, worker, options = {}) {
   if (!positions.length && data.length >= FFT / 4) positions.push(0);
 
   for (let ci = 0; ci < positions.length; ci++) {
+    if (chunkYieldMs > 0 && ci > 0) {
+      await new Promise((resolve) => setTimeout(resolve, chunkYieldMs));
+    }
     const off = positions[ci];
-    const mag = _frameMagnitude(data, off, FFT, halfN, audioBuffer.sampleRate);
+    const mag = _frameMagnitude(data, off, FFT, halfN, sr);
     const id = callIdBase + ci + 1;
     try {
       const result = await new Promise((resolve) => {
+        let settled = false;
+        const finish = (value) => {
+          if (settled) return;
+          settled = true;
+          worker.removeEventListener('message', handler);
+          clearTimeout(timer);
+          resolve(value);
+        };
         const handler = (ev) => {
           if (ev.data && ev.data.type === 'maskResult' && ev.data.id === id) {
-            worker.removeEventListener('message', handler);
-            resolve(ev.data.mask || mag);
+            finish(ev.data.mask || mag);
           }
         };
         worker.addEventListener('message', handler);
         const magClone = mag.slice();
-        worker.postMessage({ type: 'infer', model: 'bsrnn', mag: magClone.buffer, id }, [magClone.buffer]);
-        setTimeout(() => {
-          worker.removeEventListener('message', handler);
-          resolve(mag);
-        }, timeoutMs);
+        try {
+          worker.postMessage(
+            { type: 'infer', model: 'bsrnn', mag: magClone.buffer, id },
+            [magClone.buffer]
+          );
+        } catch (postErr) {
+          finish(mag);
+          return;
+        }
+        const timer = setTimeout(() => finish(mag), timeoutMs);
       });
       if (result instanceof Float32Array) masks.push(...result);
       else if (Array.isArray(result)) masks.push(...result);
@@ -259,14 +369,21 @@ export class WhisperHunterAI {
 
   /** Seed noise PSD from quiet frames at the start of a buffer (between forensic passes) */
   seedNoiseFromAudio(data, sampleRate = this.sampleRate) {
-    if (!data || !data.length) return;
+    if (!data || !data.length) return 0;
+    const sr = Math.max(8000, Number(sampleRate) || this.sampleRate);
+    if (sr !== this.sampleRate) {
+      this.sampleRate = sr;
+      this._binHz = sr / this.fftSize;
+      this._voiceLo = Math.round(300 / this._binHz);
+      this._voiceHi = Math.round(3400 / this._binHz);
+    }
     const FFT = this.fftSize;
     const halfN = this.halfBins;
     const hop = FFT / 2;
-    const analyzeLen = Math.min(data.length, Math.floor(sampleRate * 1.5));
+    const analyzeLen = Math.min(data.length, Math.floor(sr * 1.5));
     let seeded = 0;
     for (let off = 0; off + FFT <= analyzeLen; off += hop) {
-      const mags = _frameMagnitude(data, off, FFT, halfN, sampleRate);
+      const mags = _frameMagnitude(data, off, FFT, halfN, sr);
       let energy = 0;
       for (let k = 0; k < halfN; k++) energy += mags[k] * mags[k];
       energy /= halfN;
@@ -412,4 +529,8 @@ if (typeof window !== 'undefined') {
   window.analyzeAcousticEnvironment = analyzeAcousticEnvironment;
   window.chunkedMaskInference = chunkedMaskInference;
   window.maskConfidence = maskConfidence;
+  window.detectWhisperPlatform = detectWhisperPlatform;
+  window.getWhisperPlatformProfile = getWhisperPlatformProfile;
+  window.ensureWhisperHunterInstance = ensureWhisperHunterInstance;
+  window.buildHeuristicMask = buildHeuristicMask;
 }
