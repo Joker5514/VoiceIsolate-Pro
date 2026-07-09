@@ -956,6 +956,7 @@ class VoiceIsolatePro {
       tpRew:g('tpRew'),
       tpFwd:g('tpFwd'),
       tpSeek:g('tpSeek'),
+      tpSeekFill:g('tpSeekFill'),
       tpRegionBar:g('tpRegionBar'),
       tpLoop:g('tpLoop'),
       tpCropIn:g('tpCropIn'),
@@ -3280,7 +3281,9 @@ class VoiceIsolatePro {
         paintSeekFill(this.dom.tpSeek, clamped, dur);
       } else if (this.dom.tpSeek.style?.setProperty) {
         const pct = Math.max(0, Math.min(100, (clamped / dur) * 100));
-        this.dom.tpSeek.style.setProperty('--seek-pct', `${pct}%`);
+        const pctStr = `${pct}%`;
+        this.dom.tpSeek.style.setProperty('--seek-pct', pctStr);
+        if (this.dom.tpSeekFill) this.dom.tpSeekFill.style.width = pctStr;
       }
     }
   }

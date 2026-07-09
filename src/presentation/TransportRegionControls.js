@@ -63,9 +63,13 @@ export function wireTransportRegion(opts) {
   return syncUi;
 }
 
-/** Paint --seek-pct on a transport range input from current/duration. */
+/** Paint playback position on the transport seek rail (current/duration in seconds). */
 export function paintSeekFill(seekEl, current, duration) {
   if (!seekEl || !duration) return;
   const pct = Math.max(0, Math.min(100, (current / duration) * 100));
-  seekEl.style.setProperty('--seek-pct', `${pct}%`);
+  const pctStr = `${pct}%`;
+  seekEl.style.setProperty('--seek-pct', pctStr);
+  const wrap = seekEl.closest('.transport-seek');
+  const fill = wrap?.querySelector('.tp-seek-fill');
+  if (fill) fill.style.width = pctStr;
 }
