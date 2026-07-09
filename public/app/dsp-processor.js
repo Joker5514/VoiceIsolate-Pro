@@ -117,47 +117,77 @@ class WhisperHunterCore {
     this.fftSize = fftSize;
     this.noiseFloor = 0;
     this.noisePsd = new Float32Array(this.halfBins);
-    this._alpha = 0.95;
-    this._scBinThreshold = Math.round(800 / (sampleRate / fftSize));
+    this._alpha = 0.92;
+    this._speechAlpha = 0.98;
     this._epsilon = 1e-10;
-    this._f0Est = 220;
+    this._f0Est = 180;
+    this._binHz = sampleRate / fftSize;
+    this._voiceLo = Math.round(300 / this._binHz);
+    this._voiceHi = Math.round(3400 / this._binHz);
+  }
+  _trackF0(mags) {
+    const f0Lo = Math.max(1, Math.round(80 / this._binHz));
+    const f0Hi = Math.min(this.halfBins - 1, Math.round(420 / this._binHz));
+    let peak = 0; let peakBin = 0;
+    for (let k = f0Lo; k <= f0Hi; k++) {
+      if (mags[k] > peak) { peak = mags[k]; peakBin = k; }
+    }
+    if (peak > 1e-8) this._f0Est = 0.82 * this._f0Est + 0.18 * (peakBin * this._binHz);
   }
   processFrame(re, im, params) {
     const halfN = this.halfBins;
-    let energy = 0; let scNum = 0; let scDen = 0;
+    const pClarity = params.clarity ?? 0.5;
+    const pSensitive = params.sensitivity ?? 0.5;
+    const pThreshold = params.threshold ?? 0.5;
+    const pHarm = params.harmonic ?? 0;
+    let energy = 0; let voiceEnergy = 0; let geoSum = 0; let arithSum = 0;
     const mags = new Float32Array(halfN);
     for (let k = 0; k < halfN; k++) {
       const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
       mags[k] = mag;
-      energy += mag * mag;
-      scNum += k * mag; scDen += mag;
+      const pow = mag * mag;
+      energy += pow;
+      if (k >= this._voiceLo && k <= this._voiceHi) {
+        voiceEnergy += pow;
+        arithSum += mag;
+        geoSum += Math.log(mag + 1e-12);
+      }
     }
     energy /= halfN;
-    const sc = scDen > 1e-12 ? scNum / scDen : 0;
-    const thetaE = Math.max(this.noiseFloor * (params.sensitivity ?? 0.5), 1e-12);
-    const vad = (energy > thetaE * 0.08) && (sc > this._scBinThreshold) ? 1 : 0;
+    const voiceRatio = voiceEnergy / (energy * halfN + this._epsilon);
+    const voiceBins = Math.max(1, this._voiceHi - this._voiceLo);
+    const flatness = arithSum > 1e-12 ? Math.exp(geoSum / voiceBins) / (arithSum / voiceBins + 1e-12) : 1;
+    const thetaE = Math.max(this.noiseFloor * (0.5 + pSensitive), 1e-12);
+    const vad = (energy > thetaE * 0.06) && (voiceRatio > (0.12 + 0.22 * pSensitive)) && (flatness < (0.42 + 0.18 * pSensitive)) ? 1 : 0;
+    const alpha = vad ? this._speechAlpha : this._alpha;
     if (!vad) {
-      this.noiseFloor = this._alpha * this.noiseFloor + (1 - this._alpha) * energy;
-      for (let k = 0; k < halfN; k++) {
-        this.noisePsd[k] = this._alpha * this.noisePsd[k] + (1 - this._alpha) * mags[k] * mags[k];
-      }
+      this.noiseFloor = alpha * this.noiseFloor + (1 - alpha) * energy;
+      for (let k = 0; k < halfN; k++) this.noisePsd[k] = alpha * this.noisePsd[k] + (1 - alpha) * mags[k] * mags[k];
       return 0;
     }
-    const wStr = 1 + 2 * (params.threshold ?? 0.5);
-    const binHz = this.sampleRate / this.fftSize;
+    this._trackF0(mags);
+    const wStr = 1 + 2.2 * pThreshold;
+    const oversub = 1.15 + 2.8 * pThreshold;
+    const minGain = Math.max(0.08, pClarity * 0.35);
     for (let k = 0; k < halfN; k++) {
       const sigPow = mags[k] * mags[k];
-      let gain = Math.pow(Math.max(0, 1 - this.noisePsd[k] / (sigPow + this._epsilon)), wStr);
-      gain = Math.max(params.clarity ?? 0.5, gain);
+      const snrNum = Math.max(0, sigPow - oversub * this.noisePsd[k]);
+      const wiener = snrNum / (sigPow + 0.02 * this.noisePsd[k] + this._epsilon);
+      let gain = Math.pow(Math.max(0, wiener), wStr);
+      const inVoice = k >= this._voiceLo && k <= this._voiceHi;
+      gain = Math.max(minGain * (inVoice ? 1 : 0.3 + 0.25 * (1 - pThreshold)), gain);
+      if (inVoice && voiceRatio > 0.2) gain = Math.min(1.8, gain * (1 + 0.15 * pClarity));
       re[k] *= gain; im[k] *= gain;
     }
-    const pHarm = params.harmonic ?? 0;
-    if (pHarm > 0.1) {
-      for (let h = 1; h <= 4; h++) {
-        const kh = Math.round((h * this._f0Est) / binHz);
-        if (kh > 0 && kh < halfN) {
-          const b = 1 + pHarm * 0.5;
-          re[kh] *= b; im[kh] *= b;
+    if (pHarm > 0.08) {
+      for (let h = 1; h <= 6; h++) {
+        const kh = Math.round((h * this._f0Est) / this._binHz);
+        for (let dk = -1; dk <= 1; dk++) {
+          const k = kh + dk;
+          if (k > 0 && k < halfN) {
+            const b = 1 + (pHarm * 0.4) / h;
+            re[k] *= b; im[k] *= b;
+          }
         }
       }
     }
