@@ -1624,6 +1624,11 @@ body::after {
 #btn-whisper-hunter.running {
   animation: whisper-pulse 1.2s ease-in-out infinite;
 }
+#btn-whisper-hunter:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
 @keyframes whisper-pulse {
   0%, 100% { box-shadow: 0 0 8px #7c3aed44; }
   50% { box-shadow: 0 0 24px #7c3aed99; }

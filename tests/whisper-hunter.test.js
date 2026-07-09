@@ -8,8 +8,8 @@ function loadWhisperHunterModule() {
   src = src.replace(/^export /gm, '');
   const sandbox = { exports: {} };
   // eslint-disable-next-line no-new-func
-  const fn = new Function('exports', 'window', `${src}\nreturn { WhisperHunterAI, mapWhisperUi, analyzeAcousticEnvironment, maskConfidence, chunkedMaskInference };`);
-  return fn(sandbox, {});
+  const fn = new Function('exports', 'window', 'globalThis', `${src}\nreturn { WhisperHunterAI, mapWhisperUi, analyzeAcousticEnvironment, maskConfidence, chunkedMaskInference, detectWhisperPlatform, getWhisperPlatformProfile, ensureWhisperHunterInstance, buildHeuristicMask };`);
+  return fn(sandbox, {}, {});
 }
 
 const {
@@ -17,6 +17,9 @@ const {
   mapWhisperUi,
   analyzeAcousticEnvironment,
   maskConfidence,
+  detectWhisperPlatform,
+  getWhisperPlatformProfile,
+  buildHeuristicMask,
 } = loadWhisperHunterModule();
 
 function makeToneBuffer(freq = 440, durationSec = 0.25, sampleRate = 48000) {
@@ -94,6 +97,40 @@ describe('WhisperHunter analysis helpers', () => {
     const conf = maskConfidence(masks);
     expect(conf).toBeGreaterThan(0.5);
   });
+
+  test('buildHeuristicMask produces voice-weighted fallback mask', () => {
+    const masks = buildHeuristicMask({ voiceRatio: 0.4 }, 2049);
+    expect(masks).toHaveLength(2049);
+    expect(masks[400]).toBeGreaterThan(masks[50]);
+  });
+});
+
+describe('WhisperHunter cross-platform profiles', () => {
+  test('detectWhisperPlatform returns browser in Node test sandbox', () => {
+    expect(detectWhisperPlatform()).toBe('browser');
+  });
+
+  test('getWhisperPlatformProfile tunes Android for lighter ML load', () => {
+    const android = getWhisperPlatformProfile('android');
+    const desktop = getWhisperPlatformProfile('desktop');
+    expect(android.maxChunks).toBeLessThan(desktop.maxChunks);
+    expect(android.timeoutMs).toBeGreaterThanOrEqual(desktop.timeoutMs);
+    expect(android.chunkYieldMs).toBeGreaterThan(0);
+    expect(android.forensicCap).toBe(3);
+  });
+
+  test('ensureWhisperHunterInstance resyncs sample rate on window', () => {
+    const win = {};
+    let src = fs.readFileSync(path.join(__dirname, '../public/app/whisper-hunter.js'), 'utf8');
+    src = src.replace(/^export /gm, '');
+    const fn = new Function('exports', 'window', 'globalThis', `${src}\nreturn { ensureWhisperHunterInstance };`);
+    const { ensureWhisperHunterInstance: ensure } = fn({}, win, win);
+    const a = ensure(512, 44100);
+    expect(win._vipWhisperHunter).toBe(a);
+    const b = ensure(512, 48000);
+    expect(b.sampleRate).toBe(48000);
+    expect(b).not.toBe(a);
+  });
 });
 
 describe('whisper-hunter.js source features', () => {
@@ -104,6 +141,10 @@ describe('whisper-hunter.js source features', () => {
     expect(src).toContain('seedNoiseFromAudio');
     expect(src).toContain('analyzeAcousticEnvironment');
     expect(src).toContain('flatness');
+    expect(src).toContain('detectWhisperPlatform');
+    expect(src).toContain('getWhisperPlatformProfile');
+    expect(src).toContain('ensureWhisperHunterInstance');
+    expect(src).toContain('buildHeuristicMask');
   });
 });
 
@@ -115,11 +156,33 @@ describe('app.js WhisperHunter orchestrator wiring', () => {
     expect(appJs).toContain('analyzeAcousticEnvironment');
     expect(appJs).toContain('chunkedMaskInference');
     expect(appJs).toContain('maskConfidence');
+    expect(appJs).toContain('detectWhisperPlatform');
+    expect(appJs).toContain('getWhisperPlatformProfile');
+    expect(appJs).toContain('ensureWhisperHunterInstance');
+    expect(appJs).toContain('buildHeuristicMask');
   });
 
   test('forensic passes escalate separation sliders', () => {
     expect(appJs).toContain('WhisperHunter pass');
     expect(appJs).toContain('crowdNull: Math.min(100');
     expect(appJs).toContain('seedNoiseFromAudio');
+  });
+
+  test('orchestrator has cross-platform running lock and error handling', () => {
+    expect(appJs).toContain('_running: false');
+    expect(appJs).toContain('WHISPER_HUNTER._running');
+    expect(appJs).toContain('aria-busy');
+    expect(appJs).toContain('platformProfile.forensicCap');
+    expect(appJs).toContain('WhisperHunter failed');
+  });
+});
+
+describe('mobile.css WhisperHunter touch targets', () => {
+  const mobileCss = fs.readFileSync(path.join(__dirname, '../public/app/mobile.css'), 'utf8');
+
+  test('whisper button has mobile touch sizing', () => {
+    expect(mobileCss).toContain('#btn-whisper-hunter');
+    expect(mobileCss).toContain('var(--mob-touch-min');
+    expect(mobileCss).toContain('touch-action: manipulation');
   });
 });
