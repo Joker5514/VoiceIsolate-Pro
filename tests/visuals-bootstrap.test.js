@@ -19,8 +19,21 @@ describe('visuals-bootstrap.js — visualization driver', () => {
     expect(src).toContain('drawStatic');
     expect(src).toContain('onTabActivated');
     expect(src).toContain('initPremium');
+    expect(src).toContain('setViewMode');
+    expect(src).toContain('getViewMode');
     expect(src).toContain('start');
     expect(src).toContain('stop');
+  });
+
+  test('supports gallery show-all view mode', () => {
+    expect(src).toContain('viz-gallery');
+    expect(src).toContain('btnVizGallery');
+    expect(src).toContain("mode === 'gallery'");
+  });
+
+  test('wires VisualizationEngine for clusters tab', () => {
+    expect(src).toContain('VisualizationEngine');
+    expect(src).toContain('diarCanvas');
   });
 
   test('listens for vip:fileLoaded, vip:playStarted, vip:playStopped, vip:processingDone', () => {
@@ -110,6 +123,17 @@ describe('visuals-bootstrap loading and event wiring', () => {
     expect(src).toMatch(/startSpectro\(\)[\s\S]*VIP_VISUALS\.start/);
     expect(src).toMatch(/stopSpectro\(\)[\s\S]*VIP_VISUALS\.stop/);
   });
+
+  test('app.js tab switching calls VIP_VISUALS.onTabActivated', () => {
+    const src = fs.readFileSync(APP_JS_PATH, 'utf8');
+    expect(src).toContain('VIP_VISUALS.onTabActivated');
+  });
+
+  test('index.html includes Show All gallery toggle', () => {
+    const html = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+    expect(html).toContain('btnVizGallery');
+    expect(html).toContain('data-viz-panel');
+  });
 });
 
 describe('visuals-bootstrap module evaluated in jsdom-like sandbox', () => {
@@ -136,5 +160,7 @@ describe('visuals-bootstrap module evaluated in jsdom-like sandbox', () => {
     expect(typeof window.VIP_VISUALS.initPremium).toBe('function');
     expect(typeof window.VIP_VISUALS.start).toBe('function');
     expect(typeof window.VIP_VISUALS.stop).toBe('function');
+    expect(typeof window.VIP_VISUALS.setViewMode).toBe('function');
+    expect(typeof window.VIP_VISUALS.getViewMode).toBe('function');
   });
 });

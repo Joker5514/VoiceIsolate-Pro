@@ -1059,6 +1059,9 @@ class VoiceIsolatePro {
 
   // ── Render static visuals (waveform/spectrogram placeholder) ─────────────
   renderStaticVisuals(buffer) {
+    if (window.VIP_VISUALS && typeof window.VIP_VISUALS.drawStatic === 'function') {
+      try { window.VIP_VISUALS.drawStatic(); } catch (_) {}
+    }
     if (typeof window.drawWaveform === 'function') {
       try { window.drawWaveform(buffer); } catch (_) {}
     }
@@ -1761,21 +1764,30 @@ class VoiceIsolatePro {
       });
     });
 
-    // Tab switching
+    // Tab switching — CSS visibility + VIP_VISUALS driver
     const tabs = qsa('.tab-btn[data-tab]');
     tabs.forEach((btn, index) => {
       btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+        if (window.VIP_VISUALS && typeof window.VIP_VISUALS.getViewMode === 'function'
+            && window.VIP_VISUALS.getViewMode() === 'gallery'
+            && typeof window.VIP_VISUALS.setViewMode === 'function') {
+          window.VIP_VISUALS.setViewMode('single');
+        }
         tabs.forEach(b => {
           b.classList.remove('active');
           b.setAttribute('aria-selected', 'false');
           b.setAttribute('tabindex', '-1');
         });
-        qsa('.panel').forEach(p => p.classList.remove('active'));
+        qsa('.viz-card .panel[data-viz-panel]').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         btn.setAttribute('aria-selected', 'true');
         btn.setAttribute('tabindex', '0');
-        const panel = document.getElementById('tab-' + btn.dataset.tab);
+        const panel = document.getElementById('tab-' + tab);
         if (panel) panel.classList.add('active');
+        if (window.VIP_VISUALS && typeof window.VIP_VISUALS.onTabActivated === 'function') {
+          window.VIP_VISUALS.onTabActivated(tab);
+        }
       });
 
       btn.addEventListener('keydown', (e) => {

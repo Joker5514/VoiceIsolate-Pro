@@ -437,6 +437,15 @@ input[type="range"].realtime:not(.tp-seek):not(.landing-seek-input)::-webkit-sli
 .viz-card{margin-bottom:8px}
 .viz-hdr{display:flex;justify-content:space-between;align-items:center;font-size:0.68rem;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px}
 .viz-actions{display:flex;align-items:center;gap:6px}
+.btn-viz-gallery.is-active{border-color:rgba(0,255,231,.45);color:var(--cyan);background:rgba(0,255,231,.08)}
+.viz-panel-label{display:none;font-size:0.58rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--cyan);margin-bottom:4px}
+.viz-card.viz-gallery .viz-panel-label{display:block}
+.viz-card.viz-gallery .panel{display:block!important;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;background:rgba(0,0,0,.18)}
+.viz-card.viz-gallery .panel .spectro3d-container{height:140px}
+.viz-card.viz-gallery .spectro2d{height:80px}
+.viz-card.viz-gallery .freq-cv{height:56px}
+.viz-card.viz-gallery .wave-cv{height:56px}
+.viz-card.viz-gallery .wave-row{grid-template-columns:1fr 1fr}
 .viz-hint{font-size:0.55rem;color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0}
 .viz-canvas{width:100%;display:block;border-radius:4px;background:#030306}
 .spectro2d{height:110px}

@@ -1,30 +1,7 @@
 /**
  * visuals-bootstrap.js
- * ─────────────────────────────────────────────────────────────────────────────
- * Wires the visualization tabs to the playback analyser created in vip-fixes.js.
- *
- * What this owns (purely additive — no module imports, no STFT/iSTFT):
- *   1. Static waveform render to #waveCanvas on `vip:fileLoaded`.
- *   2. A single RAF loop driving:
- *        • #spectro2DCanvas — scrolling 2D spectrogram (Inferno LUT from visuals.js)
- *        • #freqCanvas      — frequency bar rail
- *        • LUFS readouts (#lufsI / #lufsS) — rolling 400ms short-term, 3s integrated
- *        • Header peak/RMS (#hPeak / #hRMS)
- *   3. Lazy init of premium visualizers (aura / topo / swarm / liquid)
- *      from premium-visuals.js the first time the user activates their tab.
- *   4. Wave A/B comparison render whenever a processed buffer becomes available.
- *
- * Inputs:
- *   • window._vipPlayAnalyser  → set by vip-fixes.js when play() starts
- *   • Events:  vip:fileLoaded, vip:playStarted, vip:playStopped, vip:processingDone
- *
- * Hard constraints honored:
- *   • Zero external fetches / zero network.
- *   • Loaded as a classic <script src> so it works without ESM evaluation order
- *     gymnastics. Exposes globals on window for testability.
- *   • One RAF loop total (premium tab visualizers run their own internal loops,
- *     but only one is active at a time and we stop the previous on tab switch).
- * ─────────────────────────────────────────────────────────────────────────────
+ * Wires visualization tabs to the playback analyser from vip-fixes.js.
+ * Supports single-tab mode and gallery (show-all) mode.
  */
 (function (global) {
   'use strict';
@@ -33,18 +10,45 @@
   global.__VIP_VISUALS_BOOT__ = true;
 
   const $ = (id) => document.getElementById(id);
+  const qsa = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+  const PREMIUM_TABS = ['aura', 'topo', 'swarm', 'liquid'];
+  const CLUSTERS_TAB = 'clusters';
 
   /* ── State ────────────────────────────────────────────────────────────── */
   let _rafId = 0;
   let _running = false;
   let _activeTab = 'spectrogram';
-  let _activePremium = null;   // { stop() } handle for aura/topo/swarm/liquid
-  let _activePremiumTab = null;
-  // Rolling spectrogram scroll position
+  let _viewMode = 'single';
+  let _premiumHandles = new Map();
+  let _vizEngine = null;
   let _specX = 0;
-  // LUFS rolling state
-  let _lufsShortBuf = []; // last ~400 ms of mean-square per RAF tick
-  let _lufsIntBuf   = []; // last ~3 s
+  let _lufsShortBuf = [];
+  let _lufsIntBuf = [];
+  let _syntheticDiarHistory = [];
+  let _lastDiarSpeaker = 0;
+  let _lastDiarSegStart = 0;
+  let _lastSpeakerState = null;
+
+  function _getPlayOffset() {
+    const app = global._vipApp;
+    if (app && app._fixPlayState && typeof app._fixPlayState.elapsed === 'function') {
+      return app._fixPlayState.elapsed();
+    }
+    return (app && app.playOffset) || 0;
+  }
+
+  function _isTabDrawTarget(tab) {
+    if (_viewMode === 'gallery') return true;
+    return tab === _activeTab;
+  }
+
+  function _panelVisible(tabName) {
+    const panel = $('tab-' + tabName);
+    if (!panel) return false;
+    if (_viewMode === 'gallery') return true;
+    return panel.classList.contains('active');
+  }
 
   /* ── Static waveform render ───────────────────────────────────────────── */
   function _drawWaveformOnto(canvas, audioBuf, color) {
@@ -53,26 +57,27 @@
     if (!ctx) return;
     const rect = canvas.getBoundingClientRect();
     const cssH = parseInt(getComputedStyle(canvas).height, 10) || 0;
-    const bw = rect.width  > 0 ? rect.width  : (canvas.offsetWidth  || 800);
+    const bw = rect.width > 0 ? rect.width : (canvas.offsetWidth || 800);
     const bh = rect.height > 0 ? rect.height : (cssH || canvas.offsetHeight || 70);
-    canvas.width  = Math.floor(bw);
+    canvas.width = Math.floor(bw);
     canvas.height = Math.floor(bh);
-    const w = canvas.width  || 800;
+    const w = canvas.width || 800;
     const h = canvas.height || 70;
     ctx.fillStyle = '#030306';
     ctx.fillRect(0, 0, w, h);
 
     const data = audioBuf.getChannelData(0);
     const step = Math.max(1, Math.floor(data.length / w));
-    const mid  = h / 2;
+    const mid = h / 2;
 
     ctx.strokeStyle = color || '#22d3ee';
-    ctx.fillStyle   = (color || '#22d3ee') + '33';
-    ctx.lineWidth   = 1;
+    ctx.fillStyle = (color || '#22d3ee') + '33';
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, mid);
     for (let x = 0; x < w; x++) {
-      let min = 1.0, max = -1.0;
+      let min = 1.0;
+      let max = -1.0;
       const base = x * step;
       const end = Math.min(base + step, data.length);
       for (let i = base; i < end; i++) {
@@ -87,7 +92,6 @@
     }
     ctx.stroke();
 
-    // Zero line
     ctx.strokeStyle = 'rgba(255,255,255,0.06)';
     ctx.beginPath();
     ctx.moveTo(0, mid);
@@ -95,21 +99,36 @@
     ctx.stroke();
   }
 
+  function _drawPlayhead(canvas, buffer, color) {
+    if (!canvas || !buffer) return;
+    _drawWaveformOnto(canvas, buffer, color);
+    const dur = buffer.duration || 1;
+    const px = (_getPlayOffset() / dur) * canvas.width;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.strokeStyle = '#ff2a2a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, canvas.height);
+    ctx.stroke();
+  }
+
   function drawStaticVisuals() {
     const app = global._vipApp;
     if (!app) return;
-    const inBuf  = app.inputBuffer || app.origBuffer;
+    const inBuf = app.inputBuffer || app.origBuffer;
     const outBuf = app.outputBuffer || app.procBuffer;
     _drawWaveformOnto($('waveCanvas'), inBuf, '#22d3ee');
-    _drawWaveformOnto($('waveOrigCanvas'), inBuf,  '#22d3ee');
+    _drawWaveformOnto($('waveOrigCanvas'), inBuf, '#22d3ee');
     _drawWaveformOnto($('waveProcCanvas'), outBuf, '#69ff47');
   }
 
-  /* ── 2D scrolling spectrogram using Inferno LUT (or fallback ramp) ────── */
+  /* ── Canvas helpers ───────────────────────────────────────────────────── */
   function _resizeCanvas(canvas, fallbackH) {
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    const baseW = rect.width  > 0 ? rect.width  : (canvas.offsetWidth  || canvas.clientWidth  || 800);
+    const baseW = rect.width > 0 ? rect.width : (canvas.offsetWidth || canvas.clientWidth || 800);
     const baseH = rect.height > 0 ? rect.height : (parseInt(getComputedStyle(canvas).height, 10) || canvas.clientHeight || fallbackH || 240);
     const w = Math.round(baseW * dpr);
     const h = Math.round(baseH * dpr);
@@ -120,6 +139,40 @@
     return { w, h };
   }
 
+  function _resizeVisibleCanvases() {
+    const targets = [
+      ['spectro2DCanvas', 240],
+      ['spectroCanvas', 200],
+      ['freqCanvas', 80],
+      ['waveCanvas', 70],
+      ['waveOrigCanvas', 70],
+      ['waveProcCanvas', 70],
+      ['diarCanvas', 80],
+      ['auraCanvas', 180],
+      ['liquidCanvas', 180],
+    ];
+    for (const [id, h] of targets) {
+      const c = $(id);
+      if (c && _panelVisible(_canvasTabFor(id))) _resizeCanvas(c, h);
+    }
+  }
+
+  function _canvasTabFor(id) {
+    const map = {
+      spectro2DCanvas: 'spectrogram',
+      spectroCanvas: 'spectrogram',
+      freqCanvas: 'spectrogram',
+      waveCanvas: 'waveform',
+      waveOrigCanvas: 'abcompare',
+      waveProcCanvas: 'abcompare',
+      diarCanvas: CLUSTERS_TAB,
+      auraCanvas: 'aura',
+      liquidCanvas: 'liquid',
+    };
+    return map[id] || _activeTab;
+  }
+
+  /* ── Spectrogram + frequency bars ─────────────────────────────────────── */
   function _drawSpectro2DColumn(canvas, freqBytes) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -127,7 +180,9 @@
     const { w, h } = _resizeCanvas(canvas, 240);
     try {
       ctx.drawImage(canvas, 1, 0, w - 1, h, 0, 0, w - 1, h);
-    } catch (_) { ctx.clearRect(0, 0, w, h); }
+    } catch (_) {
+      ctx.clearRect(0, 0, w, h);
+    }
     const colX = w - 1;
     const N = freqBytes.length;
     const lut = global.VIP_INFERNO_LUT;
@@ -136,10 +191,14 @@
       const t = 1 - (y / h);
       const idx = Math.min(N - 1, Math.floor(Math.pow(t, 2.0) * (N - 1)));
       const v = freqBytes[idx] / 255;
-      let r = 0; let g = 0; let b = 0;
+      let r = 0;
+      let g = 0;
+      let b = 0;
       if (lut) {
         const li = Math.min(255, Math.floor(v * 255)) * 3;
-        r = lut[li]; g = lut[li + 1]; b = lut[li + 2];
+        r = lut[li];
+        g = lut[li + 1];
+        b = lut[li + 2];
       } else {
         r = Math.min(255, Math.floor(v * 320));
         g = Math.min(255, Math.floor((1 - Math.abs(v - 0.55)) * 220));
@@ -155,13 +214,21 @@
     _specX = (_specX + 1) % w;
   }
 
-  /* ── Frequency bars ───────────────────────────────────────────────────── */
+  function _mirrorSpectro3D() {
+    const src = $('spectro2DCanvas');
+    const dst = $('spectroCanvas');
+    if (!src || !dst || !src.width) return;
+    const ctx = dst.getContext('2d');
+    if (!ctx) return;
+    _resizeCanvas(dst, 200);
+    ctx.drawImage(src, 0, 0, dst.width, dst.height);
+  }
+
   function _drawFreqBars(canvas, freqBytes) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const { w, h } = _resizeCanvas(canvas, 80);
-    // Trail for motion blur
     ctx.fillStyle = 'rgba(3,3,6,0.45)';
     ctx.fillRect(0, 0, w, h);
 
@@ -177,19 +244,25 @@
       const avg = sum / (end - base);
       const v = avg / 255;
       const barH = v * h * 0.92;
-      // Color: cyan → red as frequency rises
       const hue = 180 - (b / bars) * 160;
       ctx.fillStyle = 'hsla(' + hue.toFixed(0) + ',95%,55%,0.9)';
       ctx.fillRect(b * barW + 1, h - barH, Math.max(1, barW - 2), barH);
     }
   }
 
-  /* ── LUFS rolling estimate + header peak/RMS ──────────────────────────── */
-  function _updateLufs(timeBytes, _freqBytes) {
-    // K-weighted LUFS is expensive — approximate with un-weighted RMS scaled to
-    // BS.1770 style ~−0.691 LU offset so the readouts feel familiar to ENGs.
+  function _drawABCompareLive() {
+    const app = global._vipApp;
+    if (!app) return;
+    const inBuf = app.inputBuffer || app.origBuffer;
+    const outBuf = app.outputBuffer || app.procBuffer;
+    if (inBuf) _drawPlayhead($('waveOrigCanvas'), inBuf, '#22d3ee');
+    if (outBuf) _drawPlayhead($('waveProcCanvas'), outBuf, '#69ff47');
+  }
+
+  /* ── LUFS + header meters ─────────────────────────────────────────────── */
+  function _updateLufs(timeBytes) {
     let sumSq = 0;
-    let peak  = 0;
+    let peak = 0;
     for (let i = 0; i < timeBytes.length; i++) {
       const s = (timeBytes[i] - 128) / 128;
       const a = Math.abs(s);
@@ -199,30 +272,114 @@
     const ms = sumSq / timeBytes.length;
     _lufsShortBuf.push(ms);
     _lufsIntBuf.push(ms);
-    if (_lufsShortBuf.length > 24) _lufsShortBuf.shift(); // ~400 ms @ 60 fps
-    if (_lufsIntBuf.length > 180) _lufsIntBuf.shift();    // ~3 s
+    if (_lufsShortBuf.length > 24) _lufsShortBuf.shift();
+    if (_lufsIntBuf.length > 180) _lufsIntBuf.shift();
 
     const meanShort = _lufsShortBuf.reduce((a, b) => a + b, 0) / Math.max(1, _lufsShortBuf.length);
-    const meanInt   = _lufsIntBuf.reduce((a, b) => a + b, 0) / Math.max(1, _lufsIntBuf.length);
+    const meanInt = _lufsIntBuf.reduce((a, b) => a + b, 0) / Math.max(1, _lufsIntBuf.length);
 
     const lufsShort = meanShort > 1e-12 ? 10 * Math.log10(meanShort) - 0.691 : -70;
-    const lufsInt   = meanInt   > 1e-12 ? 10 * Math.log10(meanInt)   - 0.691 : -70;
+    const lufsInt = meanInt > 1e-12 ? 10 * Math.log10(meanInt) - 0.691 : -70;
 
-    const sEl = $('lufsS'); if (sEl) sEl.textContent = lufsShort.toFixed(1);
-    const iEl = $('lufsI'); if (iEl) iEl.textContent = lufsInt.toFixed(1);
+    const sEl = $('lufsS');
+    if (sEl) sEl.textContent = lufsShort.toFixed(1);
+    const iEl = $('lufsI');
+    if (iEl) iEl.textContent = lufsInt.toFixed(1);
 
-    // Header peak / rms
     const peakDb = peak > 1e-6 ? 20 * Math.log10(peak) : -60;
-    const rmsDb  = meanShort > 1e-12 ? 10 * Math.log10(meanShort) : -60;
+    const rmsDb = meanShort > 1e-12 ? 10 * Math.log10(meanShort) : -60;
     const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(1) + ' dB';
-    const hPeak = $('hPeak'); if (hPeak) hPeak.textContent = fmt(peakDb);
-    const hRMS  = $('hRMS');  if (hRMS)  hRMS.textContent  = fmt(rmsDb);
+    const hPeak = $('hPeak');
+    if (hPeak) hPeak.textContent = fmt(peakDb);
+    const hRMS = $('hRMS');
+    if (hRMS) hRMS.textContent = fmt(rmsDb);
 
-    // VU meters defined in static HTML — drive the first two as IN / OUT
-    const meters = document.querySelectorAll('#panel-vu-meters .vu-meter');
-    const toLevel = (db) => Math.max(0, ((db + 60) / 60) * 100).toFixed(1) + '%';
-    if (meters.length >= 1) meters[0].style.setProperty('--vu-level', toLevel(rmsDb));
-    if (meters.length >= 2) meters[1].style.setProperty('--vu-level', toLevel(peakDb));
+    if (!_isTabDrawTarget(CLUSTERS_TAB)) {
+      const meters = document.querySelectorAll('#panel-vu-meters .vu-meter');
+      const toLevel = (db) => Math.max(0, ((db + 60) / 60) * 100).toFixed(1) + '%';
+      if (meters.length >= 1) meters[0].style.setProperty('--vu-level', toLevel(rmsDb));
+      if (meters.length >= 2) meters[1].style.setProperty('--vu-level', toLevel(peakDb));
+    }
+  }
+
+  /* ── Synthetic diarization for clusters tab ───────────────────────────── */
+  function _getSyntheticSpeakerState(freqBytes) {
+    const numSpeakers = 4;
+    const speakerRMS = new Float32Array(numSpeakers);
+    const chunk = Math.max(1, Math.floor(freqBytes.length / numSpeakers));
+    let activeSpeaker = 0;
+    let maxEnergy = 0;
+    for (let s = 0; s < numSpeakers; s++) {
+      let sum = 0;
+      for (let i = s * chunk; i < (s + 1) * chunk && i < freqBytes.length; i++) sum += freqBytes[i];
+      const rms = (sum / chunk) / 255 * 0.45;
+      speakerRMS[s] = rms;
+      if (rms > maxEnergy) {
+        maxEnergy = rms;
+        activeSpeaker = s;
+      }
+    }
+
+    const now = _getPlayOffset();
+    if (activeSpeaker !== _lastDiarSpeaker || now - _lastDiarSegStart > 1.2) {
+      if (_syntheticDiarHistory.length && _syntheticDiarHistory[_syntheticDiarHistory.length - 1].endTime === now) {
+        _syntheticDiarHistory[_syntheticDiarHistory.length - 1].endTime = now;
+      } else if (_lastDiarSegStart > 0) {
+        _syntheticDiarHistory.push({
+          speaker: _lastDiarSpeaker,
+          confidence: 0.75 + Math.random() * 0.2,
+          startTime: _lastDiarSegStart,
+          endTime: now,
+        });
+      }
+      _lastDiarSpeaker = activeSpeaker;
+      _lastDiarSegStart = now;
+      if (_syntheticDiarHistory.length > 120) _syntheticDiarHistory.shift();
+    } else if (_syntheticDiarHistory.length) {
+      _syntheticDiarHistory[_syntheticDiarHistory.length - 1].endTime = now;
+    } else {
+      _syntheticDiarHistory.push({
+        speaker: activeSpeaker,
+        confidence: 0.85,
+        startTime: Math.max(0, now - 0.5),
+        endTime: now,
+      });
+    }
+
+    return {
+      activeSpeaker,
+      numSpeakers,
+      confidence: 0.85,
+      speakerRMS,
+      currentTime: now,
+      history: _syntheticDiarHistory,
+    };
+  }
+
+  function _ensureVizEngine() {
+    if (_vizEngine || typeof global.VisualizationEngine !== 'function') return;
+    _vizEngine = new global.VisualizationEngine({
+      vuPanel: $('panel-vu-meters'),
+      diarCanvas: $('diarCanvas'),
+      maxSpeakers: 4,
+      getAnalysers: () => {
+        const an = global._vipPlayAnalyser;
+        return { orig: an, proc: an };
+      },
+      getSpeakerState: () => _lastSpeakerState,
+    });
+  }
+
+  function _syncClustersEngine(freqBytes) {
+    if (!_isTabDrawTarget(CLUSTERS_TAB)) {
+      if (_vizEngine) _vizEngine.stop();
+      return;
+    }
+    _ensureVizEngine();
+    if (!_vizEngine) return;
+    _lastSpeakerState = _getSyntheticSpeakerState(freqBytes);
+    if (!_vizEngine._running) _vizEngine.start();
+    if (_vizEngine.diarCanvas) _resizeCanvas(_vizEngine.diarCanvas, 80);
   }
 
   /* ── Main RAF loop ────────────────────────────────────────────────────── */
@@ -238,44 +395,32 @@
     try {
       an.getByteFrequencyData(freqBytes);
       an.getByteTimeDomainData(timeBytes);
-    } catch (_) { return; }
+    } catch (_) {
+      return;
+    }
 
-    // Always update LUFS / header — cheap and informative across tabs
-    _updateLufs(timeBytes, freqBytes);
+    _updateLufs(timeBytes);
 
-    // Tab-targeted draws — only redraw the active tab to keep RAF light
-    if (_activeTab === 'spectrogram') {
+    if (_isTabDrawTarget('spectrogram')) {
       const spec2d = $('spectro2DCanvas');
       if (spec2d) {
         if (spec2d.style.display === 'none') spec2d.style.display = '';
         _drawSpectro2DColumn(spec2d, freqBytes);
+        _mirrorSpectro3D();
       }
       const freq = $('freqCanvas');
       if (freq) _drawFreqBars(freq, freqBytes);
-    } else if (_activeTab === 'waveform') {
-      // Live playhead overlay on the static waveform
-      const wave = $('waveCanvas');
-      const app  = global._vipApp;
-      if (wave && app) {
-        const buf = app.inputBuffer || app.origBuffer;
-        if (buf) {
-          const ctx = wave.getContext('2d');
-          // Redraw static then overlay playhead (cheap — buffer is decoded once)
-          _drawWaveformOnto(wave, buf, '#22d3ee');
-          const playOffset = (app._fixPlayState && typeof app._fixPlayState.elapsed === 'function')
-            ? app._fixPlayState.elapsed()
-            : 0;
-          const dur = buf.duration || 1;
-          const px = (playOffset / dur) * wave.width;
-          ctx.strokeStyle = '#ff2a2a';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.moveTo(px, 0);
-          ctx.lineTo(px, wave.height);
-          ctx.stroke();
-        }
-      }
     }
+
+    if (_isTabDrawTarget('waveform')) {
+      const app = global._vipApp;
+      const buf = app && (app.inputBuffer || app.origBuffer);
+      if (buf) _drawPlayhead($('waveCanvas'), buf, '#22d3ee');
+    }
+
+    if (_isTabDrawTarget('abcompare')) _drawABCompareLive();
+
+    _syncClustersEngine(freqBytes);
   }
 
   function start() {
@@ -283,101 +428,174 @@
     _running = true;
     _rafId = requestAnimationFrame(_loop);
   }
+
   function stop() {
     _running = false;
-    if (_rafId) { cancelAnimationFrame(_rafId); _rafId = 0; }
+    if (_rafId) {
+      cancelAnimationFrame(_rafId);
+      _rafId = 0;
+    }
+    if (_vizEngine) _vizEngine.stop();
   }
 
-  /* ── Premium visualizer lazy init on tab activation ───────────────────── */
-  function _stopPremium() {
-    if (_activePremium && typeof _activePremium.stop === 'function') {
-      try { _activePremium.stop(); } catch (_) {}
+  /* ── Premium visualizers ──────────────────────────────────────────────── */
+  function _stopPremiumTab(tabName) {
+    const handle = _premiumHandles.get(tabName);
+    if (handle && typeof handle.stop === 'function') {
+      try { handle.stop(); } catch (_) {}
     }
-    _activePremium = null;
-    _activePremiumTab = null;
+    _premiumHandles.delete(tabName);
   }
-  function _initPremium(tabName) {
-    if (_activePremiumTab === tabName && _activePremium) return; // already running
-    _stopPremium();
-    _activePremiumTab = tabName;
+
+  function _stopAllPremium() {
+    for (const tab of Array.from(_premiumHandles.keys())) _stopPremiumTab(tab);
+  }
+
+  function _initPremiumTab(tabName) {
+    if (_premiumHandles.has(tabName)) return;
+    if (!_panelVisible(tabName)) return;
     const an = global._vipPlayAnalyser;
-    if (!an) return; // analyser will appear when play() starts; we'll re-init then
+    if (!an) return;
+
+    let handle = null;
     if (tabName === 'aura') {
       const c = $('auraCanvas');
       if (c && typeof global.VIP_initPulsingAura === 'function') {
-        const r = c.getBoundingClientRect();
-        if (r.width > 0)  c.width  = Math.floor(r.width);
-        if (r.height > 0) c.height = Math.floor(r.height);
-        _activePremium = global.VIP_initPulsingAura(an, c);
+        _resizeCanvas(c, 180);
+        handle = global.VIP_initPulsingAura(an, c);
       }
     } else if (tabName === 'topo') {
       const cont = $('topoContainer');
       if (cont && typeof global.VIP_initTopographic3D === 'function') {
-        _activePremium = global.VIP_initTopographic3D(an, cont);
+        if (cont.clientWidth < 2) cont.style.minHeight = '180px';
+        handle = global.VIP_initTopographic3D(an, cont);
       }
     } else if (tabName === 'swarm') {
       const cont = $('swarmContainer');
       if (cont && typeof global.VIP_initParticleSwarm === 'function') {
-        _activePremium = global.VIP_initParticleSwarm(an, cont);
+        if (cont.clientWidth < 2) cont.style.minHeight = '180px';
+        handle = global.VIP_initParticleSwarm(an, cont);
       }
     } else if (tabName === 'liquid') {
       const c = $('liquidCanvas');
       if (c && typeof global.VIP_initLiquidWaves === 'function') {
-        const r = c.getBoundingClientRect();
-        if (r.width > 0)  c.width  = Math.floor(r.width);
-        if (r.height > 0) c.height = Math.floor(r.height);
-        _activePremium = global.VIP_initLiquidWaves(an, c);
+        _resizeCanvas(c, 180);
+        handle = global.VIP_initLiquidWaves(an, c);
       }
-    } else if (tabName === 'clusters' || tabName === 'lufs' || tabName === 'abcompare') {
-      // No premium visualizer to spin up — main RAF loop already drives meters/lufs
     }
+    if (handle) _premiumHandles.set(tabName, handle);
+  }
+
+  function _syncPremiumViz() {
+    const tabsToRun = _viewMode === 'gallery'
+      ? PREMIUM_TABS.slice()
+      : (PREMIUM_TABS.includes(_activeTab) ? [_activeTab] : []);
+
+    for (const tab of Array.from(_premiumHandles.keys())) {
+      if (!tabsToRun.includes(tab)) _stopPremiumTab(tab);
+    }
+
+    if (!global._vipPlayAnalyser) return;
+    for (const tab of tabsToRun) {
+      if (!_premiumHandles.has(tab)) {
+        requestAnimationFrame(() => _initPremiumTab(tab));
+      }
+    }
+  }
+
+  /* ── View mode + tab activation ───────────────────────────────────────── */
+  function _applyGalleryDom() {
+    const card = document.querySelector('.viz-card');
+    const btn = $('btnVizGallery');
+    if (card) card.classList.toggle('viz-gallery', _viewMode === 'gallery');
+    if (btn) {
+      btn.classList.toggle('is-active', _viewMode === 'gallery');
+      btn.setAttribute('aria-pressed', String(_viewMode === 'gallery'));
+      btn.textContent = _viewMode === 'gallery' ? 'Single View' : 'Show All';
+    }
+    const panels = qsa('.viz-card .panel[data-viz-panel]');
+    if (_viewMode === 'gallery') {
+      panels.forEach((p) => p.classList.add('active'));
+      qsa('.tab-btn[data-tab]').forEach((b) => {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+        b.setAttribute('tabindex', '-1');
+      });
+    } else {
+      panels.forEach((p) => p.classList.remove('active'));
+      const panel = $('tab-' + _activeTab);
+      const tabBtn = document.querySelector('.tab-btn[data-tab="' + _activeTab + '"]');
+      if (panel) panel.classList.add('active');
+      if (tabBtn) {
+        tabBtn.classList.add('active');
+        tabBtn.setAttribute('aria-selected', 'true');
+        tabBtn.setAttribute('tabindex', '0');
+      }
+    }
+  }
+
+  function setViewMode(mode) {
+    _viewMode = mode === 'gallery' ? 'gallery' : 'single';
+    _applyGalleryDom();
+    _resizeVisibleCanvases();
+    _syncPremiumViz();
+    try {
+      window.dispatchEvent(new CustomEvent('vip:vizModeChanged', { detail: { mode: _viewMode } }));
+    } catch (_) {}
+  }
+
+  function getViewMode() {
+    return _viewMode;
   }
 
   function _onTabActivated(tab) {
-    _activeTab = tab;
-    if (tab === 'aura' || tab === 'topo' || tab === 'swarm' || tab === 'liquid') {
-      _initPremium(tab);
-    } else if (tab === 'abcompare') {
-      // Refresh the A/B waveform pair lazily — output buffer may have arrived
-      drawStaticVisuals();
-      _stopPremium();
-    } else {
-      _stopPremium();
-    }
+    if (_viewMode === 'gallery') setViewMode('single');
+    _activeTab = tab || 'spectrogram';
+    if (tab === 'abcompare') drawStaticVisuals();
+    _resizeVisibleCanvases();
+    _syncPremiumViz();
   }
 
-  /* ── Listen for tab clicks via a delegated listener ───────────────────── */
-  function _wireTabListener() {
-    document.addEventListener('click', (e) => {
-      const t = e.target && e.target.closest && e.target.closest('.tab-btn[data-tab]');
-      if (!t) return;
-      const tab = t.dataset.tab;
-      if (!tab) return;
-      _onTabActivated(tab);
+  function _wireGalleryToggle() {
+    const btn = $('btnVizGallery');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      setViewMode(_viewMode === 'gallery' ? 'single' : 'gallery');
     });
+  }
+
+  function _wireResizeObserver() {
+    const card = document.querySelector('.viz-card');
+    if (!card || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      _resizeVisibleCanvases();
+      _syncPremiumViz();
+    });
+    ro.observe(card);
   }
 
   /* ── Event wiring ─────────────────────────────────────────────────────── */
   function _bindEvents() {
-    window.addEventListener('vip:fileLoaded',     drawStaticVisuals);
+    window.addEventListener('vip:fileLoaded', drawStaticVisuals);
     window.addEventListener('vip:processingDone', drawStaticVisuals);
     window.addEventListener('vip:playStarted', () => {
       _lufsShortBuf = [];
       _lufsIntBuf = [];
+      _syntheticDiarHistory = [];
+      _lastDiarSegStart = _getPlayOffset();
       start();
-      if (_activePremiumTab) {
-        _activePremium = null;
-        _initPremium(_activePremiumTab);
-      }
+      _resizeVisibleCanvases();
+      _syncPremiumViz();
       const an = global._vipPlayAnalyser;
       if (an && global.NeonPulseViz && typeof global.NeonPulseViz.init === 'function') {
         try { global.NeonPulseViz.init(an); } catch (_) {}
       }
     });
-    window.addEventListener('vip:playStopped', stop);
+    window.addEventListener('vip:playStopped', () => {
+      stop();
+      _stopAllPremium();
+    });
 
-    // Synthesize vip:fileLoaded when buffers arrive — vip-fixes already dispatches it
-    // but in case the legacy code path is used, poll briefly for first buffer.
     let polls = 0;
     const poll = setInterval(() => {
       polls++;
@@ -385,19 +603,19 @@
       if (app && (app.inputBuffer || app.origBuffer)) {
         clearInterval(poll);
         try { window.dispatchEvent(new CustomEvent('vip:fileLoaded')); } catch (_) {}
-      } else if (polls > 600) { // ~60s
+      } else if (polls > 600) {
         clearInterval(poll);
       }
     }, 100);
   }
 
   function _init() {
-    _wireTabListener();
+    _wireGalleryToggle();
+    _wireResizeObserver();
     _bindEvents();
     if (global.NeonPulseViz && typeof global.NeonPulseViz.mount === 'function') {
       try { global.NeonPulseViz.mount('#neon-pulse-slot'); } catch (_) {}
     }
-    // Initial render in case a file is already loaded (re-mount / hot reload)
     setTimeout(drawStaticVisuals, 400);
   }
 
@@ -407,11 +625,14 @@
     _init();
   }
 
-  /* ── Export for tests / diagnostics ───────────────────────────────────── */
   global.VIP_VISUALS = {
     drawStatic: drawStaticVisuals,
-    start, stop,
+    start,
+    stop,
     onTabActivated: _onTabActivated,
-    initPremium: _initPremium,
+    initPremium: _initPremiumTab,
+    setViewMode,
+    getViewMode,
+    syncPremium: _syncPremiumViz,
   };
 })(typeof window !== 'undefined' ? window : this);
