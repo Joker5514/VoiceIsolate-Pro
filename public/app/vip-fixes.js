@@ -433,6 +433,9 @@
           : (_duration || 0);
         _pauseOffset = (parseFloat(seek.value) / 1000) * dur;
         app.playOffset = _pauseOffset;
+        if (typeof app._paintTransport === 'function') {
+          app._paintTransport(_pauseOffset, dur, { skipSeekValue: true });
+        }
         if (!_isPlaying) _syncVideo(_pauseOffset, false);
       });
       seek.addEventListener('change', () => {

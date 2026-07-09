@@ -3,10 +3,12 @@
 .transport-seek {
   position: relative;
   width: 100%;
-  padding: 10px 2px 6px;
+  padding: 14px 2px 10px;
+  min-height: 28px;
 }
 
-.transport-region-bar {
+.transport-region-bar,
+.tp-seek-rail {
   position: absolute;
   left: 2px;
   right: 2px;
@@ -15,6 +17,10 @@
   transform: translateY(-50%);
   border-radius: 99px;
   pointer-events: none;
+}
+
+.transport-region-bar {
+  z-index: 0;
   background: rgba(255, 255, 255, 0.06);
   overflow: hidden;
 }
@@ -31,32 +37,43 @@
   border-right: 2px solid rgba(52, 211, 153, 0.85);
 }
 
+.tp-seek-rail {
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.tp-seek-fill {
+  display: block;
+  height: 100%;
+  width: var(--seek-pct, 0%);
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--red, #dc2626) 0%, var(--red2, #ef4444) 100%);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.35);
+  transition: width 0.04s linear;
+  pointer-events: none;
+}
+
 .tp-seek,
 .landing-seek-input {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
-  height: 4px;
+  height: 18px;
+  margin: 0;
   border-radius: 99px;
   outline: none;
   cursor: pointer;
   position: relative;
-  z-index: 1;
-  background: linear-gradient(
-    90deg,
-    var(--red, #dc2626) 0%,
-    var(--red2, #ef4444) var(--seek-pct, 0%),
-    rgba(255, 255, 255, 0.07) var(--seek-pct, 0%),
-    rgba(255, 255, 255, 0.07) 100%
-  );
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
-  transition: height 0.15s ease, box-shadow 0.15s ease;
+  z-index: 2;
+  background: transparent;
+  box-shadow: none;
 }
 
 .tp-seek:hover:not(:disabled),
 .landing-seek-input:hover:not(:disabled) {
-  height: 5px;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35), 0 0 10px rgba(239, 68, 68, 0.25);
+  cursor: pointer;
 }
 
 .tp-seek:disabled,
@@ -65,11 +82,29 @@
   cursor: not-allowed;
 }
 
+.transport-seek:hover .tp-seek-rail {
+  height: 5px;
+}
+
+.transport-seek:hover .tp-seek-fill {
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.45);
+}
+
+.tp-seek::-webkit-slider-runnable-track,
+.landing-seek-input::-webkit-slider-runnable-track {
+  -webkit-appearance: none;
+  height: 4px;
+  border-radius: 99px;
+  background: transparent;
+  border: none;
+}
+
 .tp-seek::-webkit-slider-thumb,
 .landing-seek-input::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 11px;
-  height: 11px;
+  width: 13px;
+  height: 13px;
+  margin-top: -4.5px;
   border-radius: 50%;
   background: #fff;
   border: 2px solid var(--red2, #ef4444);
@@ -80,19 +115,8 @@
 
 .tp-seek::-webkit-slider-thumb:hover,
 .landing-seek-input::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
+  transform: scale(1.12);
   box-shadow: 0 0 14px rgba(239, 68, 68, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
-}
-
-.tp-seek::-moz-range-thumb,
-.landing-seek-input::-moz-range-thumb {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #fff;
-  border: 2px solid var(--red2, #ef4444);
-  cursor: pointer;
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.45);
 }
 
 .tp-seek::-moz-range-track,
@@ -101,6 +125,24 @@
   border-radius: 99px;
   background: transparent;
   border: none;
+}
+
+.tp-seek::-moz-range-progress,
+.landing-seek-input::-moz-range-progress {
+  height: 4px;
+  border-radius: 99px;
+  background: transparent;
+}
+
+.tp-seek::-moz-range-thumb,
+.landing-seek-input::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--red2, #ef4444);
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.45);
 }
 
 .btn-tp-region {
@@ -149,4 +191,37 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+/* Touch / mobile — engineer + landing seek bars (Android, iOS, coarse pointers) */
+@media (pointer: coarse) {
+  .transport-seek {
+    padding: 16px 2px 14px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .tp-seek,
+  .landing-seek-input {
+    height: 28px;
+  }
+
+  .tp-seek::-webkit-slider-thumb,
+  .landing-seek-input::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+    margin-top: -7px;
+  }
+
+  .tp-seek::-moz-range-thumb,
+  .landing-seek-input::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@media (hover: none) {
+  .transport-seek:hover .tp-seek-rail {
+    height: 4px;
+  }
 }

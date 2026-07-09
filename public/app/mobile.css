@@ -139,12 +139,17 @@ html {
     flex-wrap: nowrap;
     gap: 4px;
     padding-bottom: 2px;
+    touch-action: pan-x;
   }
   .tabs::-webkit-scrollbar { display: none; }
-  .tab {
-    padding: 7px 12px;
+  .tab,
+  .tab-btn {
+    padding: 10px 14px;
     font-size: 0.68rem;
     border-radius: 8px;
+    min-height: var(--mob-touch-min);
+    flex-shrink: 0;
+    touch-action: manipulation;
   }
 
   /* ── Slider panels ── */
@@ -329,11 +334,16 @@ html {
     text-align: right;
     font-size: 0.65rem;
   }
+  .transport-seek {
+    width: 100%;
+    padding: 12px 0 8px;
+    min-height: var(--mob-touch-min);
+    touch-action: manipulation;
+  }
   .tp-seek {
-    grid-row: 2;
-    grid-column: 1 / -1;
     width: 100%;
     padding: 14px 0;
+    min-height: var(--mob-touch-min);
   }
   .tp-speed { display: none; }
   .tp-ab {
@@ -351,7 +361,21 @@ html {
   .freq-cv   { height: 70px; }
   .fs-wrap   { height: 130px; }
   .viz-hdr   { flex-direction: column; align-items: flex-start; gap: 4px; }
-  .viz-actions { flex-wrap: wrap; gap: 4px; }
+  .viz-actions { flex-wrap: wrap; gap: 4px; width: 100%; }
+  .btn-viz-gallery,
+  #fullscreenSpectroBtn {
+    min-height: var(--mob-touch-min);
+    padding: 8px 12px;
+    touch-action: manipulation;
+  }
+  .viz-card.viz-gallery .panel {
+    margin-bottom: 10px;
+    padding: 6px;
+  }
+  .viz-card.viz-gallery .spectro3d-container { height: 120px; }
+  .viz-card.viz-gallery .spectro2d { height: 72px; }
+  .viz-card.viz-gallery .freq-cv { height: 48px; }
+  .viz-card.viz-gallery .wave-cv { height: 48px; }
 
   /* ── Sticky mobile action bar ── */
   .mobile-action-bar {
@@ -550,7 +574,24 @@ html {
   .freq-cv   { height: 70px; }
   .fs-wrap   { height: 130px; }
   .viz-hdr   { flex-direction: column; align-items: flex-start; gap: 4px; }
-  .viz-actions { flex-wrap: wrap; gap: 4px; }
+  .viz-actions { flex-wrap: wrap; gap: 4px; width: 100%; }
+  .tab-btn {
+    min-height: var(--mob-touch-min);
+    padding: 10px 12px;
+    flex-shrink: 0;
+    touch-action: manipulation;
+  }
+  .transport-seek {
+    width: 100%;
+    padding: 12px 0 8px;
+    min-height: var(--mob-touch-min);
+  }
+  .btn-viz-gallery,
+  #fullscreenSpectroBtn {
+    min-height: var(--mob-touch-min);
+    padding: 8px 12px;
+  }
+  .viz-card.viz-gallery .panel { margin-bottom: 10px; }
 }
 
 /* ═══════════════════════════════════════════

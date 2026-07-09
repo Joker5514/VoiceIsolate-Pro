@@ -324,13 +324,15 @@ input[type='range']{
 
 .rt-badge{display:inline-block;font-size:0.44rem;padding:1px 4px;border-radius:3px;background:rgba(255, 42, 42,0.12);color:var(--cyan);font-weight:700;vertical-align:middle;margin-left:2px;letter-spacing:0.06em;border:1px solid rgba(255, 42, 42,0.2)}
 
-/* Global range fallback — transport scrubber, volume control */
-input[type="range"]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;background:var(--s4);outline:none}
-input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--red);cursor:pointer;box-shadow:0 0 6px var(--red-glow);transition:transform 0.1s}
-input[type="range"]::-webkit-slider-thumb:hover{transform:scale(1.3);box-shadow:0 0 10px rgba(220,38,38,0.5)}
-input[type="range"]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--red);border:none;cursor:pointer}
-input[type="range"].realtime{background:linear-gradient(90deg,rgba(220,38,38,0.15),var(--s4))}
-input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-shadow:0 0 6px rgba(255, 42, 42,0.4)}
+/* Global range fallback — volume and misc controls (not transport scrubbers) */
+input[type="range"]:not(.tp-seek):not(.landing-seek-input):not(.dsp-slider){
+  -webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:2px;background:var(--s4);outline:none}
+input[type="range"]:not(.tp-seek):not(.landing-seek-input):not(.dsp-slider)::-webkit-slider-thumb{
+  -webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--red);cursor:pointer;box-shadow:0 0 6px var(--red-glow);transition:transform 0.1s}
+input[type="range"]:not(.tp-seek):not(.landing-seek-input):not(.dsp-slider)::-webkit-slider-thumb:hover{transform:scale(1.3);box-shadow:0 0 10px rgba(220,38,38,0.5)}
+input[type="range"]:not(.tp-seek):not(.landing-seek-input):not(.dsp-slider)::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--red);border:none;cursor:pointer}
+input[type="range"].realtime:not(.tp-seek):not(.landing-seek-input){background:linear-gradient(90deg,rgba(220,38,38,0.15),var(--s4))}
+input[type="range"].realtime:not(.tp-seek):not(.landing-seek-input)::-webkit-slider-thumb{background:var(--cyan);box-shadow:0 0 6px rgba(255, 42, 42,0.4)}
 
 /* ---- PRESETS ---- */
 .presets-wrap{margin-bottom:8px}
@@ -435,6 +437,15 @@ input[type="range"].realtime::-webkit-slider-thumb{background:var(--cyan);box-sh
 .viz-card{margin-bottom:8px}
 .viz-hdr{display:flex;justify-content:space-between;align-items:center;font-size:0.68rem;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px}
 .viz-actions{display:flex;align-items:center;gap:6px}
+.btn-viz-gallery.is-active{border-color:rgba(0,255,231,.45);color:var(--cyan);background:rgba(0,255,231,.08)}
+.viz-panel-label{display:none;font-size:0.58rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--cyan);margin-bottom:4px}
+.viz-card.viz-gallery .viz-panel-label{display:block}
+.viz-card.viz-gallery .panel{display:block!important;border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px;background:rgba(0,0,0,.18)}
+.viz-card.viz-gallery .panel .spectro3d-container{height:140px}
+.viz-card.viz-gallery .spectro2d{height:80px}
+.viz-card.viz-gallery .freq-cv{height:56px}
+.viz-card.viz-gallery .wave-cv{height:56px}
+.viz-card.viz-gallery .wave-row{grid-template-columns:1fr 1fr}
 .viz-hint{font-size:0.55rem;color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0}
 .viz-canvas{width:100%;display:block;border-radius:4px;background:#030306}
 .spectro2d{height:110px}
@@ -667,10 +678,10 @@ input[type="range"]:focus-visible::-moz-range-thumb{
 }
 
 .slider-val,.tp-time,.vu-val,.lufs-val { font-family:'JetBrains Mono',monospace; }
-input[type="range"].realtime {
+input[type="range"].realtime:not(.tp-seek):not(.landing-seek-input):not(.dsp-slider) {
   background: linear-gradient(to right, var(--cyan) 0%, var(--cyan) var(--pct,50%), #2a2a3a var(--pct,50%), #2a2a3a 100%);
 }
-input[type="range"]:not(.realtime) {
+input[type="range"]:not(.realtime):not(.tp-seek):not(.landing-seek-input):not(.dsp-slider) {
   background: linear-gradient(to right, var(--red) 0%, var(--red) var(--pct,50%), #2a2a3a var(--pct,50%), #2a2a3a 100%);
 }
 .slider-group{border:1px solid var(--border);border-radius:var(--rs);margin-bottom:6px;overflow:hidden;transition:border-color 0.15s}

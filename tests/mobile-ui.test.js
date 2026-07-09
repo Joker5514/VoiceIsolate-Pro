@@ -20,6 +20,9 @@ const path = require('path');
 const appJs   = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
 const html    = fs.readFileSync(path.join(__dirname, '../public/app/index.html'), 'utf8');
 const styleCss = fs.readFileSync(path.join(__dirname, '../public/app/style.css'), 'utf8');
+const mobileCss = fs.readFileSync(path.join(__dirname, '../public/app/mobile.css'), 'utf8');
+const transportCss = fs.readFileSync(path.join(__dirname, '../public/transport-polish.css'), 'utf8');
+const landingCss = fs.readFileSync(path.join(__dirname, '../public/landing.css'), 'utf8');
 
 // ─── Pure --pct calculation (extracted from changed code) ────────────────────
 
@@ -640,5 +643,41 @@ describe('--pct formula — range variable approach (regression for removed asse
     // The formula does not clamp; documents the deliberate no-clamp behaviour
     const r = calcPct(-10, 0, 100);
     expect(parseFloat(r)).toBeLessThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 15. Cross-platform transport + visualization mobile styles
+// ═══════════════════════════════════════════════════════════════
+
+describe('mobile.css — transport seek + viz gallery touch targets', () => {
+  test('styles transport-seek container for mobile touch', () => {
+    expect(mobileCss).toContain('.transport-seek');
+    expect(mobileCss).toContain('var(--mob-touch-min)');
+  });
+
+  test('tab-btn has minimum touch height on mobile', () => {
+    expect(mobileCss).toContain('.tab-btn');
+    expect(mobileCss).toContain('touch-action: manipulation');
+  });
+
+  test('gallery mode compact sizing on mobile', () => {
+    expect(mobileCss).toContain('.viz-card.viz-gallery');
+    expect(mobileCss).toContain('.btn-viz-gallery');
+  });
+});
+
+describe('transport-polish.css — coarse pointer seek bar sizing', () => {
+  test('enlarges seek thumb on touch devices', () => {
+    expect(transportCss).toContain('@media (pointer: coarse)');
+    expect(transportCss).toContain('.landing-seek-input');
+    expect(transportCss).toContain('width: 18px');
+  });
+});
+
+describe('landing.css — landing page seek bar touch support', () => {
+  test('transport-seek touch styles for browser landing page', () => {
+    expect(landingCss).toContain('.transport-seek');
+    expect(landingCss).toContain('.landing-seek-input');
   });
 });

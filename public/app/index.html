@@ -480,12 +480,19 @@
         </div>
         <div class="transport-seek">
           <div id="tpRegionBar" class="transport-region-bar" hidden aria-hidden="true"></div>
+          <div class="tp-seek-rail" aria-hidden="true"><span id="tpSeekFill" class="tp-seek-fill"></span></div>
           <input type="range" id="tpSeek" class="tp-seek" min="0" max="1000" value="0" aria-label="Playback position" />
         </div>
       </div>
 
       <div class="card viz-card">
-        <div class="viz-hdr"><span>Visualizations</span><button id="fullscreenSpectroBtn" class="btn btn-xs" type="button" aria-label="Toggle Fullscreen" title="Toggle Fullscreen"><span aria-hidden="true">⛶</span></button></div>
+        <div class="viz-hdr">
+          <span>Visualizations</span>
+          <div class="viz-actions">
+            <button id="btnVizGallery" class="btn btn-xs btn-viz-gallery" type="button" aria-pressed="false" title="Show all visualizations at once">Show All</button>
+            <button id="fullscreenSpectroBtn" class="btn btn-xs" type="button" aria-label="Toggle Fullscreen" title="Toggle Fullscreen"><span aria-hidden="true">⛶</span></button>
+          </div>
+        </div>
         <div id="neon-pulse-slot" class="neon-pulse-slot"></div>
         <div id="tabBar" class="tabs" role="tablist" aria-label="Visualization tabs">
           <button id="btn-spectrogram" class="tab-btn active" type="button" role="tab" aria-controls="tab-spectrogram" data-tab="spectrogram" aria-selected="true" tabindex="0">Spectrogram</button>
@@ -498,17 +505,18 @@
           <button id="btn-swarm" class="tab-btn" type="button" role="tab" aria-controls="tab-swarm" data-tab="swarm" aria-selected="false" tabindex="-1">Swarm</button>
           <button id="btn-liquid" class="tab-btn" type="button" role="tab" aria-controls="tab-liquid" data-tab="liquid" aria-selected="false" tabindex="-1">Liquid</button>
         </div>
-          <div id="tab-spectrogram" role="tabpanel" aria-labelledby="btn-spectrogram" class="panel active" tabindex="0">
+          <div id="tab-spectrogram" role="tabpanel" aria-labelledby="btn-spectrogram" class="panel active" data-viz-panel="spectrogram" tabindex="0">
+            <div class="viz-panel-label">Spectrogram</div>
             <div class="viz-legend">Live spectrum rail · scrolling spectrogram · local-only render</div>
             <div id="spectro3d-container" class="spectro3d-container"><div class="viz-iso-badge hidden" id="iso-badge-spec"></div><canvas id="spectroCanvas" class="viz-canvas"></canvas></div>
             <canvas id="spectro2DCanvas" class="viz-canvas spectro2d"></canvas>
             <canvas id="freqCanvas" class="viz-canvas freq-cv"></canvas>
           </div>
-          <div id="tab-waveform" role="tabpanel" aria-labelledby="btn-waveform" class="panel"><div class="viz-legend">Static inspection before playback · live playhead during transport</div><canvas id="waveCanvas" class="viz-canvas wave-cv"></canvas><canvas id="inputCanvas" class="viz-canvas wave-cv vip-canvas-alias" aria-hidden="true" tabindex="-1"></canvas></div>
-          <div id="tab-abcompare" role="tabpanel" aria-labelledby="btn-abcompare" class="panel"><div class="viz-legend">Original vs processed waveform overlay for transport A/B</div><div class="wave-row"><canvas id="waveOrigCanvas" class="viz-canvas wave-cv"></canvas><canvas id="waveProcCanvas" class="viz-canvas wave-cv"></canvas><canvas id="outputCanvas" class="viz-canvas wave-cv vip-canvas-alias" aria-hidden="true" tabindex="-1"></canvas></div></div>
-          <div id="tab-lufs" role="tabpanel" aria-labelledby="btn-lufs" class="panel"><div class="lufs-readouts"><div class="lufs-rd"><span class="lufs-val" id="lufsI">-23.0</span><span class="lufs-lbl">Integrated</span></div><div class="lufs-rd"><span class="lufs-val" id="lufsS">-20.0</span><span class="lufs-lbl">Short</span></div></div></div>
-          <div id="tab-saliency" role="tabpanel" aria-labelledby="btn-saliency" class="panel"><canvas id="fsCanvas" class="viz-canvas diag-saliency-cv"></canvas></div>
-          <div id="tab-clusters" role="tabpanel" aria-labelledby="btn-clusters" class="panel">
+          <div id="tab-waveform" role="tabpanel" aria-labelledby="btn-waveform" class="panel" data-viz-panel="waveform"><div class="viz-panel-label">Waveform</div><div class="viz-legend">Static inspection before playback · live playhead during transport</div><canvas id="waveCanvas" class="viz-canvas wave-cv"></canvas><canvas id="inputCanvas" class="viz-canvas wave-cv vip-canvas-alias" aria-hidden="true" tabindex="-1"></canvas></div>
+          <div id="tab-abcompare" role="tabpanel" aria-labelledby="btn-abcompare" class="panel" data-viz-panel="abcompare"><div class="viz-panel-label">A/B Compare</div><div class="viz-legend">Original vs processed waveform overlay for transport A/B</div><div class="wave-row"><canvas id="waveOrigCanvas" class="viz-canvas wave-cv"></canvas><canvas id="waveProcCanvas" class="viz-canvas wave-cv"></canvas><canvas id="outputCanvas" class="viz-canvas wave-cv vip-canvas-alias" aria-hidden="true" tabindex="-1"></canvas></div></div>
+          <div id="tab-lufs" role="tabpanel" aria-labelledby="btn-lufs" class="panel" data-viz-panel="lufs"><div class="viz-panel-label">LUFS</div><div class="lufs-readouts"><div class="lufs-rd"><span class="lufs-val" id="lufsI">-23.0</span><span class="lufs-lbl">Integrated</span></div><div class="lufs-rd"><span class="lufs-val" id="lufsS">-20.0</span><span class="lufs-lbl">Short</span></div></div></div>
+          <div id="tab-clusters" role="tabpanel" aria-labelledby="btn-clusters" class="panel" data-viz-panel="clusters">
+            <div class="viz-panel-label">Clusters</div>
             <canvas id="diarCanvas" class="viz-canvas"></canvas>
             <div id="panel-vu-meters" class="vu-meter-container">
               <div class="vu-meter" style="--vu-level:42%"><div class="vu-meter-fill"></div><div class="vu-meter-peak" style="--peak-top:58%"></div><span class="vu-meter-label">IN</span></div>
@@ -516,10 +524,10 @@
             </div>
             <div class="lufs-readouts"><span class="vu-val">Input -12.4 dB</span><span class="vu-val">Output -10.9 dB</span></div>
           </div>
-          <div id="tab-aura" role="tabpanel" aria-labelledby="btn-aura" class="panel"><div class="viz-iso-badge hidden" id="iso-badge-aura"></div><canvas id="auraCanvas" class="viz-canvas"></canvas></div>
-          <div id="tab-topo" role="tabpanel" aria-labelledby="btn-topo" class="panel"><div class="viz-iso-badge hidden" id="iso-badge-topo"></div><div id="topoContainer" class="spectro3d-container"></div></div>
-          <div id="tab-swarm" role="tabpanel" aria-labelledby="btn-swarm" class="panel"><div class="viz-iso-badge hidden" id="iso-badge-swarm"></div><div id="swarmContainer" class="spectro3d-container"></div></div>
-          <div id="tab-liquid" role="tabpanel" aria-labelledby="btn-liquid" class="panel"><div class="viz-iso-badge hidden" id="iso-badge-liquid"></div><canvas id="liquidCanvas" class="viz-canvas"></canvas></div>
+          <div id="tab-aura" role="tabpanel" aria-labelledby="btn-aura" class="panel" data-viz-panel="aura"><div class="viz-panel-label">Aura</div><div class="viz-iso-badge hidden" id="iso-badge-aura"></div><canvas id="auraCanvas" class="viz-canvas"></canvas></div>
+          <div id="tab-topo" role="tabpanel" aria-labelledby="btn-topo" class="panel" data-viz-panel="topo"><div class="viz-panel-label">3D Topo</div><div class="viz-iso-badge hidden" id="iso-badge-topo"></div><div id="topoContainer" class="spectro3d-container"></div></div>
+          <div id="tab-swarm" role="tabpanel" aria-labelledby="btn-swarm" class="panel" data-viz-panel="swarm"><div class="viz-panel-label">Swarm</div><div class="viz-iso-badge hidden" id="iso-badge-swarm"></div><div id="swarmContainer" class="spectro3d-container"></div></div>
+          <div id="tab-liquid" role="tabpanel" aria-labelledby="btn-liquid" class="panel" data-viz-panel="liquid"><div class="viz-panel-label">Liquid</div><div class="viz-iso-badge hidden" id="iso-badge-liquid"></div><canvas id="liquidCanvas" class="viz-canvas"></canvas></div>
       </div>
 
       <div id="videoCard" class="card video-card" style="display:none">
