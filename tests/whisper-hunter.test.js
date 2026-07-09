@@ -19,7 +19,6 @@ const {
   maskConfidence,
   detectWhisperPlatform,
   getWhisperPlatformProfile,
-  ensureWhisperHunterInstance,
   buildHeuristicMask,
 } = loadWhisperHunterModule();
 

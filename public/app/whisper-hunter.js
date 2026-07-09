@@ -124,7 +124,7 @@ function _goertzelPower(data, offset, len, sampleRate, targetHz) {
 }
 
 /** Hann-windowed radix-2 FFT magnitude spectrum (worklet/test safe, no imports) */
-function _frameMagnitude(data, offset, fftSize, halfN, sampleRate = 48000) {
+function _frameMagnitude(data, offset, fftSize, halfN, _sampleRate = 48000) {
   const re = new Float32Array(fftSize);
   const im = new Float32Array(fftSize);
   for (let i = 0; i < fftSize; i++) {
@@ -328,7 +328,7 @@ export async function chunkedMaskInference(audioBuffer, worker, options = {}) {
             { type: 'infer', model: 'bsrnn', mag: magClone.buffer, id },
             [magClone.buffer]
           );
-        } catch (postErr) {
+        } catch (_postErr) {
           finish(mag);
           return;
         }
