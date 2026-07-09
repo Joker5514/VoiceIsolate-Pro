@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <title>VoiceIsolate Pro v24.0 – Engineer Mode</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="VoiceIsolate Pro Engineer Mode — 32-stage local DSP, WhisperHunter AI, and forensic voice isolation. No cloud uploads." />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/icon.jpg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -26,7 +29,7 @@
   <script src="./dsp-core.js"></script>
   <script src="./ai-intelligence.js"></script>
   <script type="module" src="./whisper-hunter.js"></script>
-  <!-- // LOAD ORDER VERIFIED: ring-buffer.js is available before pipeline-orchestrator.js can allocate SAB rings or load the canonical worklet. -->
+  <script src="./dsp-bootstrap.js"></script>
   <script src="./ring-buffer.js"></script>
   <script src="./visuals.js"></script>
   <script src="./premium-visuals.js"></script>
@@ -111,7 +114,7 @@
       <div class="boot-mark" aria-hidden="true">VIP</div>
       <div class="boot-kicker">ENGINEER MODE · v24 · LOCAL DSP STACK</div>
       <h2 class="boot-title">Neural Audio Processor — Initializing</h2>
-      <p id="bootSplashText" class="boot-text">Priming AudioWorklet, ONNX model cache, 32-stage Deca-Pass pipeline, and spectral controls…</p>
+      <p id="bootSplashText" class="boot-text">Loading ONNX model cache, WhisperHunter AI, 32-stage Deca-Pass pipeline, and spectral controls…</p>
       <div class="boot-progress" aria-hidden="true"><div id="bootSplashProgress" class="boot-progress-fill"></div></div>
       <div class="boot-bars" aria-hidden="true">
         <span class="boot-bar"></span>
@@ -149,6 +152,7 @@
       <button id="uiScaleSave" type="button" class="btn-xs" title="Save UI scale" aria-label="Save UI scale">Save</button>
     </div>
     <div class="hdr-actions">
+      <a class="btn btn-outline hdr-link" href="/">Stem-Split</a>
       <a class="btn btn-outline hdr-link" href="how-it-works.html">How It Works</a>
     </div>
     <button id="statsToggle" class="hdr-stats-toggle" aria-label="Toggle stats" title="Toggle stats" aria-expanded="false">&#9660;</button>
@@ -550,10 +554,7 @@
   <div id="toastRegion" aria-live="polite"></div>
 
   <script type="module">
-    // LOAD ORDER VERIFIED: slider-map.js resolves as an app.js dependency before app.js evaluates.
-    // pipeline-orchestrator.js was removed with the live real-time pipeline
-    // (Stem-Split & Live-Mix architecture — see CLAUDE.md). Offline processing
-    // runs through app.js _runFallbackPipeline.
+    // Offline Engineer pipeline runs through app.js (32-stage Deca-Pass + WhisperHunter).
     const _parallel = [
       './processing-overlay.js',
       './session-persist.js',
@@ -592,23 +593,6 @@
       console.warn('[VIP] debug-menu.js not loaded:', err);
     });
   </script>
-
-  <!--
-    REMOVED: _vipSafetyNet <script> block (was here until this commit).
-
-    ROOT CAUSE of processBtn disappearing after file load:
-      The safety-net listened on DOMContentLoaded and called new VoiceIsolatePro()
-      if window._vipApp was falsy. Because ES module evaluation is async, the
-      safety-net's DOMContentLoaded callback often fired AFTER the module bootstrap
-      set window._vipApp — but in the critical race window it fired BEFORE, creating
-      a second VoiceIsolatePro() instance. That second constructor re-ran cacheDom()
-      and bindEvents(), which left processBtn.disabled = true (its HTML default),
-      overwriting the enabled state set by onAudioLoaded() on the first instance.
-
-    The module bootstrap chain (app.js → vip-boot.js) already has:
-      if (window._vipApp) return;
-    The safety-net was fully redundant. Do not re-add it.
-  -->
 
   <!-- Mobile upload fix: iOS Safari decodeAudioData, AudioContext gesture lock,
        touch-action bleed, MIME accept scope. Loads after all modules are bootstrapped. -->

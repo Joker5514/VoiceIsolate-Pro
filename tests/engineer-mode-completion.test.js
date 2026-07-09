@@ -22,10 +22,13 @@ describe('Engineer Mode completion wiring', () => {
     });
   });
 
-  test('index.html includes model status containers and How It Works link', () => {
+  test('index.html includes model status containers and navigation links', () => {
     expect(indexHtml).toContain('id="modelStatusPills"');
     expect(indexHtml).toContain('id="cdnHealthPanel"');
     expect(indexHtml).toContain('href="how-it-works.html"');
+    expect(indexHtml).toContain('href="/">Stem-Split</a>');
+    expect(indexHtml).toContain('src="./dsp-bootstrap.js"');
+    expect(indexHtml).toContain('rel="manifest"');
   });
 
   test('index.html loads visuals.js (classic, load-order-sensitive) and the processing-overlay module', () => {

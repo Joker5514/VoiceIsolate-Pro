@@ -22,6 +22,14 @@ if (validate.status !== 0) {
   process.exit(validate.status || 1);
 }
 
+const verifyWorklets = spawnSync(process.execPath, [path.join(__dirname, 'verify-worklets.js')], {
+  stdio: 'inherit',
+  env: process.env,
+});
+if (verifyWorklets.status !== 0) {
+  process.exit(verifyWorklets.status || 1);
+}
+
 if (fs.existsSync(DEST)) {
   fs.rmSync(DEST, { recursive: true, force: true });
 }

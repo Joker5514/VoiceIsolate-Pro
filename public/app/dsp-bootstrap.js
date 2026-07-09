@@ -5,11 +5,8 @@
  * Wires three previously disconnected pieces:
  *   1. globalThis.DSP  — exposes forwardSTFT / inverseSTFT so runPipeline()
  *                        produces real audio instead of a silent copy.
- *   2. initAudio()     — patches the existing stub to set up the audio graph.
- *                        Worklet registration and ML worker lifecycle are owned
- *                        exclusively by pipeline-orchestrator.js (CLAUDE.md §2/§3).
- *   3. _vipOrch        — initialises the PipelineOrchestrator and stores it
- *                        on window so slider dispatches route correctly.
+ *   2. initAudio()     — patches AudioContext + SharedArrayBuffers onto the app.
+ *   3. WhisperHunter   — early _vipWhisperHunter init (retries until module loads).
  *
  * CONSTRAINTS MAINTAINED:
  *   • Exactly ONE forward STFT, in-place spectral ops, ONE iSTFT.
