@@ -65,6 +65,14 @@ describe('AudioWorklet packaging (all platforms)', () => {
     }
   });
 
+  test('public/app/sw.js APP_SHELL precaches WhisperHunter and dsp-bootstrap', () => {
+    const sw = fs.readFileSync(path.join(ROOT, 'public/app/sw.js'), 'utf8');
+    expect(sw).toContain("'/app/whisper-hunter.js'");
+    expect(sw).toContain("'/app/dsp-bootstrap.js'");
+    expect(sw).not.toContain("'/app/batch-orchestrator.js'");
+    expect(sw).not.toContain("'/app/paywall.js'");
+  });
+
   test('capacitor.config.json webDir is build (worklets flow through pnpm build)', () => {
     const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'capacitor.config.json'), 'utf8'));
     expect(cfg.webDir).toBe('build');
@@ -73,6 +81,13 @@ describe('AudioWorklet packaging (all platforms)', () => {
   test('electron-builder.yml packs build/** (includes worklets)', () => {
     const yml = fs.readFileSync(path.join(ROOT, 'electron/electron-builder.yml'), 'utf8');
     expect(yml).toContain('build/**/*');
+  });
+
+  test('landing and engineer pages cross-link each other', () => {
+    const landing = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
+    const engineer = fs.readFileSync(path.join(ROOT, 'public/app/index.html'), 'utf8');
+    expect(landing).toContain('href="/app/"');
+    expect(engineer).toContain('href="/">Stem-Split</a>');
   });
 
   test('PlaybackMixer allowlists only Gate + DeEsser for addModule', () => {

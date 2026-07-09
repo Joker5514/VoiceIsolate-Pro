@@ -33,9 +33,12 @@ const APP_SHELL = [
   '/app/index.html',
   '/app/app.js',
   '/app/style.css',
+  '/app/mobile.css',
   '/app/dsp-core.js',
+  '/app/dsp-bootstrap.js',
   '/app/dsp-processor.js',
-  // Playback-only Live-Mix worklets (Gate + De-esser) — loaded by PlaybackMixer
+  '/app/whisper-hunter.js',
+  // Playback Live-Mix worklets (Gate + De-esser) — loaded by PlaybackMixer on landing + engineer playback
   '/src/workers/GateProcessor.js',
   '/src/workers/DeEsserProcessor.js',
   '/src/pipeline/PlaybackMixer.js',
@@ -44,16 +47,15 @@ const APP_SHELL = [
   '/app/ml-worker.js',
   '/app/ml-worker-fetch-cache.js',
   '/app/ring-buffer.js',
-  '/app/batch-orchestrator.js',
-  '/app/batch-processor.js',
   '/app/visuals.js',
-  '/app/analytics.js',
-  '/app/paywall.js',
   '/app/sw-register.js',
   '/app/model-loader.js',
   '/app/vip-boot.js',
+  '/app/vip-fixes.js',
+  '/app/mobile-upload-fix.js',
   '/app/session-persist.js',
   '/app/slider-map.js',
+  '/app/slider-hint-ui.js',
   '/app/processing-overlay.js',
 ];
 // NOTE: revenuecat.js is intentionally excluded from APP_SHELL pre-cache.
