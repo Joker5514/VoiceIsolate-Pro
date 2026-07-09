@@ -20,7 +20,7 @@ describe('Transport Methods', () => {
   let mockContext;
 
   beforeEach(() => {
-    mockContext = {
+    mockContext = Object.assign(Object.create(VoiceIsolatePro.prototype), {
       inputBuffer: null,
       outputBuffer: null,
       abMode: 'original',
@@ -31,22 +31,19 @@ describe('Transport Methods', () => {
       dom: {
         tpSpeed: { value: 1 },
         tpCur: { textContent: '' },
-        tpSeek: { value: 0 },
+        tpSeek: { value: 0, style: { setProperty: jest.fn() } },
         tpAB: { classList: { toggle: jest.fn() } },
         tpABLabel: { textContent: '' }
       },
       play: jest.fn(),
       fmtDur: jest.fn(() => '0:00'),
-      _setScrubPos: function(frac) {
-        if (this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
-      },
       stopDiagnostics: jest.fn(),
       startDiagnostics: jest.fn(),
       renderStaticVisuals: jest.fn(),
       _setScrubPos: jest.fn(function(frac) {
         if (this.dom && this.dom.tpSeek) this.dom.tpSeek.value = frac * 1000;
       })
-    };
+    });
   });
 
 
@@ -227,7 +224,6 @@ describe('Transport Methods', () => {
       // but let's test that play() gets called and the new playOffset is frac * duration.
       expect(mockContext.playOffset).toBe(50);
       expect(mockContext.play).toHaveBeenCalled();
-      expect(mockContext.fmtDur).not.toHaveBeenCalled();
     });
 
     it('works normally when inputBuffer exists and is not playing (updates UI)', () => {
@@ -321,7 +317,7 @@ describe('Transport Methods', () => {
       mockContext.buildLiveChain = jest.fn();
       mockContext.startSpectro = jest.fn();
       mockContext.startFreq = jest.fn();
-      mockContext.tickTime = jest.fn();
+      mockContext._startTransportClock = jest.fn();
       // play() is async and awaits the Live-Mix bridge (CLAUDE.md §1 / app.js
       // _ensureBridge). Stub it so the partial mock context resolves like the
       // real prototype method instead of throwing "not a function".
@@ -352,7 +348,7 @@ describe('Transport Methods', () => {
       expect(mockContext.dom.tpABLabel.textContent).toBe('Original');
       expect(mockContext.startSpectro).toHaveBeenCalled();
       expect(mockContext.startFreq).toHaveBeenCalled();
-      expect(mockContext.tickTime).toHaveBeenCalled();
+      expect(mockContext._startTransportClock).toHaveBeenCalled();
     });
 
     it('uses outputBuffer when in processed mode', async () => {

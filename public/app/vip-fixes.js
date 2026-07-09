@@ -61,9 +61,20 @@
     }
 
     function _getBuffer() {
+      if (typeof app._getPlaybackBuffer === 'function') return app._getPlaybackBuffer();
       const mode = app.abMode || 'original';
-      if (mode === 'processed' && app.outputBuffer) return app.outputBuffer;
-      return app.inputBuffer || app.outputBuffer || null;
+      if (mode === 'processed') {
+        return app.outputBuffer || app.procBuffer || app.inputBuffer || app.origBuffer || null;
+      }
+      return app.inputBuffer || app.origBuffer || app.outputBuffer || null;
+    }
+
+    function _syncDuration() {
+      const buf = _getBuffer();
+      _duration = buf?.duration || 0;
+      const dur = $('tpDur');
+      if (dur) dur.textContent = _fmt(_duration);
+      if (typeof app._updateTransportUI === 'function') app._updateTransportUI();
     }
 
     /* ── Video element sync ──
@@ -112,35 +123,32 @@
       return _isPlaying ? (_pauseOffset + (ctx.currentTime - _startTime)) : _pauseOffset;
     }
 
-    function _updateSeekBar() {
-      const seek = $('tpSeek');
-      if (!seek) return;
-      const max = parseFloat(seek.max) || 1000;
-      const pct = max > 0 ? (parseFloat(seek.value) / max) * 100 : 0;
-      seek.style.setProperty('--seek-pct', pct + '%');
+    function _paintTransportFromApp() {
+      if (typeof app._paintTransport !== 'function') return;
+      const dur = (typeof app._getTransportDuration === 'function')
+        ? app._getTransportDuration()
+        : (_duration || 0);
+      const cur = (typeof app._getTransportPosition === 'function')
+        ? app._getTransportPosition()
+        : _elapsedSeconds();
+      app._paintTransport(cur, dur);
     }
 
-    function _updateUI() {
-      const ctx = _getCtx();
-      if (!ctx && !_usingBridge) return;
-      const elapsed = _elapsedSeconds();
-      const clamped = Math.min(elapsed, _duration || 0);
-      const cur = $('tpCur');
-      const seek = $('tpSeek');
-      if (cur) cur.textContent = _fmt(clamped);
-      if (seek && !_seeking && _duration > 0) seek.value = String((clamped / _duration) * 1000);
-      _updateSeekBar();
-      // Bridge transport ended naturally.
-      if (_usingBridge && _bridge && _isPlaying && !_bridge.isPlaying()
-          && _duration > 0 && clamped >= _duration - 0.05) {
-        _pauseOffset = 0;
-        _teardown(false);
-        _syncVideo(0, false);
-        if (seek) seek.value = '0';
-        if (cur) cur.textContent = _fmt(0);
+    function _startTransportUi() {
+      app.playOffset = _pauseOffset;
+      app.isPlaying = true;
+      if (typeof app._startTransportClock === 'function') {
+        app._startTransportClock();
         return;
       }
-      if (_isPlaying) _rafId = requestAnimationFrame(_updateUI);
+      _paintTransportFromApp();
+    }
+
+    function _stopTransportUi() {
+      app.playOffset = _pauseOffset;
+      app.isPlaying = false;
+      if (typeof app._stopTransportClock === 'function') app._stopTransportClock();
+      _paintTransportFromApp();
     }
 
     function _stopSource() {
@@ -195,7 +203,7 @@
       const dur = $('tpDur');
       const seek = $('tpSeek');
       if (dur)  dur.textContent = _fmt(_duration);
-      if (seek) { seek.max = '1000'; seek.disabled = false; _updateSeekBar(); }
+      if (seek) { seek.max = '1000'; seek.disabled = false; _paintTransportFromApp(); }
 
       const safeOffset = Math.min(Math.max(_pauseOffset, 0), Math.max(_duration - 0.01, 0));
       _pauseOffset = safeOffset;
@@ -229,8 +237,7 @@
           const stopBtn  = $('tpStop');
           if (pauseBtn) pauseBtn.disabled = false;
           if (stopBtn)  stopBtn.disabled  = false;
-          cancelAnimationFrame(_rafId);
-          _updateUI();
+          _startTransportUi();
           try {
             window.dispatchEvent(new CustomEvent('vip:playStarted', {
               detail: { analyser: _analyser, bridgeRouted: true },
@@ -322,8 +329,7 @@
       if (pause) pause.disabled = false;
       if (stop)  stop.disabled  = false;
 
-      cancelAnimationFrame(_rafId);
-      _updateUI();
+      _startTransportUi();
 
       /* Announce playback so visualizers can hook in */
       try {
@@ -343,8 +349,11 @@
         const ctx = _getCtx();
         if (ctx) _pauseOffset += ctx.currentTime - _startTime;
       }
+      _pauseOffset = (typeof app._getTransportPosition === 'function')
+        ? app._getTransportPosition()
+        : _pauseOffset;
       app.playOffset = _pauseOffset;
-      app.isPlaying = false;
+      _stopTransportUi();
       _teardown(false);
       _syncVideo(_pauseOffset, false);
       log('pause() at', _pauseOffset);
@@ -352,14 +361,12 @@
 
     function _stop() {
       _pauseOffset = 0;
-      app.playOffset = 0;
-      app.isPlaying = false;
+      _stopTransportUi();
       _teardown(true);
       _syncVideo(0, false);
-      const seek = $('tpSeek');
-      const cur  = $('tpCur');
-      if (seek) seek.value = '0';
-      if (cur)  cur.textContent = _fmt(0);
+      if (typeof app._paintTransport === 'function') {
+        app._paintTransport(0, (typeof app._getTransportDuration === 'function') ? app._getTransportDuration() : _duration);
+      }
       log('stop()');
     }
 
@@ -418,23 +425,25 @@
       }
     });
 
-    /* Seek scrubber */
+    /* Seek scrubber — app.js owns input/change handlers; sync local offset only */
     if (seek) {
-      seek.addEventListener('mousedown',  () => { _seeking = true; });
-      seek.addEventListener('touchstart', () => { _seeking = true; }, { passive: true });
       seek.addEventListener('input', () => {
-        _pauseOffset = (parseFloat(seek.value) / 1000) * (_duration || 0);
-        const cur = $('tpCur'); if (cur) cur.textContent = _fmt(_pauseOffset);
-        _updateSeekBar();
+        const dur = (typeof app._getTransportDuration === 'function')
+          ? app._getTransportDuration()
+          : (_duration || 0);
+        _pauseOffset = (parseFloat(seek.value) / 1000) * dur;
+        app.playOffset = _pauseOffset;
         if (!_isPlaying) _syncVideo(_pauseOffset, false);
       });
       seek.addEventListener('change', () => {
-        _seeking = false;
-        _pauseOffset = (parseFloat(seek.value) / 1000) * (_duration || 0);
-        _updateSeekBar();
+        const dur = (typeof app._getTransportDuration === 'function')
+          ? app._getTransportDuration()
+          : (_duration || 0);
+        _pauseOffset = (parseFloat(seek.value) / 1000) * dur;
+        app.playOffset = _pauseOffset;
         if (_isPlaying) _restartAtOffset();
       });
-      _updateSeekBar();
+      _syncDuration();
     }
 
     /* Speed ± buttons — step <select> + update playbackRate live */
@@ -494,8 +503,8 @@
     }
     const _poll = setInterval(() => { _checkEnable(); if (app.inputBuffer) clearInterval(_poll); }, 300);
     setTimeout(() => clearInterval(_poll), 30000);
-    window.addEventListener('vip:fileLoaded',     () => { _checkEnable(); _duration = app.inputBuffer?.duration || 0; const dur = $('tpDur'); if (dur) dur.textContent = _fmt(_duration); });
-    window.addEventListener('vip:processingDone', _checkEnable);
+    window.addEventListener('vip:fileLoaded', () => { _checkEnable(); _syncDuration(); });
+    window.addEventListener('vip:processingDone', () => { _checkEnable(); _syncDuration(); });
 
     log('Transport patch OK');
   }
