@@ -192,3 +192,36 @@
   align-items: center;
   gap: 4px;
 }
+
+/* Touch / mobile — engineer + landing seek bars (Android, iOS, coarse pointers) */
+@media (pointer: coarse) {
+  .transport-seek {
+    padding: 16px 2px 14px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .tp-seek,
+  .landing-seek-input {
+    height: 28px;
+  }
+
+  .tp-seek::-webkit-slider-thumb,
+  .landing-seek-input::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+    margin-top: -7px;
+  }
+
+  .tp-seek::-moz-range-thumb,
+  .landing-seek-input::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@media (hover: none) {
+  .transport-seek:hover .tp-seek-rail {
+    height: 4px;
+  }
+}

@@ -36,6 +36,11 @@ describe('visuals-bootstrap.js — visualization driver', () => {
     expect(src).toContain('diarCanvas');
   });
 
+  test('handles mobile viewport resize and orientation changes', () => {
+    expect(src).toContain('orientationchange');
+    expect(src).toContain('_resizeVisibleCanvases');
+  });
+
   test('listens for vip:fileLoaded, vip:playStarted, vip:playStopped, vip:processingDone', () => {
     expect(src).toContain("'vip:fileLoaded'");
     expect(src).toContain("'vip:playStarted'");

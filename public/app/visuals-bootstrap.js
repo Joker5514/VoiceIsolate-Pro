@@ -572,6 +572,14 @@
       _syncPremiumViz();
     });
     ro.observe(card);
+    const onViewportChange = () => {
+      setTimeout(() => {
+        _resizeVisibleCanvases();
+        _syncPremiumViz();
+      }, 180);
+    };
+    window.addEventListener('orientationchange', onViewportChange);
+    window.addEventListener('resize', onViewportChange);
   }
 
   /* ── Event wiring ─────────────────────────────────────────────────────── */

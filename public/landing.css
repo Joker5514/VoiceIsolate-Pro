@@ -635,6 +635,14 @@ input[type="range"]:disabled { opacity: 0.34; cursor: not-allowed; }
   .main-area { padding: 14px 12px 48px; }
 }
 @media (pointer: coarse) {
+  .transport-seek {
+    padding: 14px 0 12px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+  .landing-seek-input {
+    height: 28px;
+  }
   .slider-hint-btn, .hint-example-pill {
     min-width: 44px;
     min-height: 44px;
