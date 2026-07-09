@@ -186,7 +186,7 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'nrAmount', key: 'nrAmount', label: 'NR Amount',
     min: 0, max: 100, step: 5, default: 78, unit: '%',
-    transform: v => v / 100, target: 'both', rt: true, group: 'tab-nr',
+    transform: v => v / 100, target: 'both', rt: false, group: 'tab-nr',
     tip: 'Strength of spectral noise reduction. 0 = off, 100 = maximum suppression. Start at 70–80% for hiss/fan noise.'
   },
   {
@@ -336,7 +336,7 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'hpQ', key: 'hpQ', label: 'HP Q',
     min: 0.5, max: 10, step: 0.5, default: 0.707, unit: '',
-    transform: v => v, target: 'worklet', rt: false, group: 'tab-spec',
+    transform: v => v, target: 'worklet', rt: true, group: 'tab-spec',
     tip: 'High-pass filter resonance (Q). 0.707 = Butterworth (flat); higher = ringing peak at cutoff.'
   },
   {
@@ -348,19 +348,19 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'lpQ', key: 'lpQ', label: 'LP Q',
     min: 0.5, max: 10, step: 0.5, default: 0.707, unit: '',
-    transform: v => v, target: 'worklet', rt: false, group: 'tab-spec',
+    transform: v => v, target: 'worklet', rt: true, group: 'tab-spec',
     tip: 'Low-pass filter resonance (Q). 0.707 = flat Butterworth response.'
   },
   {
     id: 'deEssFreq', key: 'deEssFreq', label: 'De-ess Freq',
     min: 2000, max: 16000, step: 500, default: 7000, unit: 'Hz',
-    transform: v => v, target: 'worker', rt: false, group: 'tab-spec',
+    transform: v => v, target: 'worklet', rt: true, group: 'tab-spec',
     tip: 'Center frequency for de-esser detection. Set to the harshest sibilant peak (typically 6–8 kHz).'
   },
   {
     id: 'deEssAmt', key: 'deEssAmt', label: 'De-ess Amount',
     min: 0, max: 24, step: 1, default: 6, unit: 'dB',
-    transform: v => v, target: 'worker', rt: false, group: 'tab-spec',
+    transform: v => v, target: 'worklet', rt: true, group: 'tab-spec',
     tip: 'Maximum attenuation applied to sibilant peaks. 6 dB is subtle; 12+ dB is heavy correction.'
   },
   {
@@ -404,7 +404,7 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'stereoWidth', key: 'stereoWidth', label: 'Stereo Width',
     min: 0, max: 200, step: 10, default: 100, unit: '%',
-    transform: v => v, target: 'worklet', rt: false, group: 'tab-adv',
+    transform: v => v, target: 'worklet', rt: true, group: 'tab-adv',
     tip: '0% = mono, 100% = natural stereo, 200% = extra-wide. Affects M/S balance post-processing.'
   },
   {
@@ -468,7 +468,7 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'outWidth', key: 'outWidth', label: 'Output Width',
     min: 0, max: 200, step: 10, default: 100, unit: '%',
-    transform: v => v, target: 'worklet', rt: false, group: 'tab-out',
+    transform: v => v, target: 'worklet', rt: true, group: 'tab-out',
     tip: 'Final stereo width on the output bus. 100% = unchanged, 0% = mono sum, 200% = widened.'
   },
 
@@ -476,7 +476,7 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'whisperLift', key: 'whisperLift', label: 'Whisper Lift Gain',
     min: 0, max: 40, step: 1, default: 18, unit: 'dB',
-    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
     tip: 'Post-mask amplification on bins where voice confidence exceeds 0.55.'
   },
   {
@@ -488,7 +488,7 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'bassCrush', key: 'bassCrush', label: 'Bass Crush (Sub/Kick)',
     min: 0, max: 100, step: 1, default: 90, unit: '%',
-    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
     tip: 'Attenuates kick drum and sub bass that mask whisper formants.'
   },
   {
@@ -500,7 +500,7 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'voiceTunnel', key: 'voiceTunnel', label: 'Voice Tunnel (Formant)',
     min: 0, max: 100, step: 1, default: 65, unit: '%',
-    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
     tip: 'Narrow-band formant emphasis for whisper intelligibility.'
   },
   {
@@ -526,25 +526,25 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'whisperClarity', key: 'whisperClarity', label: 'Whisper Clarity',
     min: 0, max: 100, step: 1, default: 65, unit: '%',
-    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
     tip: 'Sigmoid-mapped clarity floor for WhisperHunter gain (p_clarity).'
   },
   {
     id: 'whisperSensitivity', key: 'whisperSensitivity', label: 'Whisper Sensitivity',
     min: 0, max: 100, step: 1, default: 55, unit: '%',
-    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
     tip: 'Scales W-VAD energy threshold θ_e — higher catches quieter whispers.'
   },
   {
     id: 'whisperThreshold', key: 'whisperThreshold', label: 'Whisper Threshold',
     min: 0, max: 100, step: 1, default: 50, unit: '%',
-    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
     tip: 'Steepens suppression curve w_str = 1 + 2·p_threshold.'
   },
   {
     id: 'transientShaper', key: 'transientShaper', label: 'Transient Shaper',
     min: -100, max: 100, step: 5, default: 0, unit: '',
-    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
     tip: 'Bipolar transient emphasis: negative softens, positive sharpens consonants.'
   },
   {
@@ -562,7 +562,7 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'subHarmonic', key: 'subHarmonic', label: 'Sub Harmonic',
     min: 0, max: 100, step: 1, default: 0, unit: '%',
-    transform: v => v, target: 'both', rt: true, group: 'tab-extreme',
+    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
     tip: 'Sub-harmonic body reinforcement for thin whisper recordings.'
   },
 ];
