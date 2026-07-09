@@ -28,6 +28,7 @@ import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportR
 import { isDesktopShell, isMicCaptureEnabled, pickAudioFile } from '/src/core/DesktopBridge.js';
 import { inferMediaKind } from '/src/core/media-types.js';
 import { openFilePicker as triggerFileInput, primeAudioGesture } from '/src/presentation/UploadWiring.js';
+import { analyzeAcousticEnvironment, chunkedMaskInference, maskConfidence } from './whisper-hunter.js';
 
 /** Hero landing + branded loader — local-only cinematic shell */
 const HeroExperience = (() => {
@@ -3964,7 +3965,13 @@ const WHISPER_HUNTER = {
     app = app || window._vipApp;
     if (!app || !audioBuffer) return;
 
-    const envProfile = await this.analyzeEnvironment(audioBuffer);
+    const hunter = window._vipWhisperHunter;
+    if (hunter && typeof hunter.seedNoiseFromAudio === 'function') {
+      hunter.reset();
+      hunter.seedNoiseFromAudio(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
+    }
+
+    const envProfile = this.analyzeEnvironment(audioBuffer);
     const basePreset = this.selectPreset(envProfile);
     if (PRESETS[basePreset]) {
       app.applyPreset(basePreset);
@@ -3977,24 +3984,29 @@ const WHISPER_HUNTER = {
     }
 
     const masks = await this.runDeepFilterNet(audioBuffer, app);
-    const avgMaskConf = masks.length
-      ? masks.reduce((s, v) => s + v, 0) / masks.length
-      : 0.4;
+    const avgMaskConf = maskConfidence(masks);
+    const separationScore = Math.max(0, Math.min(1, (1 - avgMaskConf) * 0.55 + (1 - envProfile.speechPresence) * 0.45));
 
     await app.morphSlidersTo({
-      whisperLift: Math.round(12 + (1 - avgMaskConf) * 28),
-      snrFloor: Math.round(-80 + avgMaskConf * 30),
-      crowdNull: Math.round(70 + (1 - envProfile.speechPresence) * 28),
-      musicKill: envProfile.dominantNoise === 'music' ? 95 : 50,
-      bassCrush: Math.round(60 + envProfile.noiseFloor * -0.8),
-      reverbStrip: envProfile.rt60,
-      voiceTunnel: Math.round(50 + avgMaskConf * 40),
-      whisperMode: avgMaskConf < 0.3 ? 3 : avgMaskConf < 0.6 ? 2 : 1,
+      whisperClarity: Math.round(58 + separationScore * 32),
+      whisperSensitivity: Math.round(48 + (1 - envProfile.voiceRatio) * 38),
+      whisperThreshold: Math.round(42 + separationScore * 48),
+      harmRecov: envProfile.voiceRatio < 0.25 ? Math.round(18 + separationScore * 22) : 8,
+      whisperLift: Math.round(14 + separationScore * 24),
+      snrFloor: Math.round(-78 + avgMaskConf * 26),
+      crowdNull: Math.round(68 + separationScore * 28),
+      musicKill: envProfile.dominantNoise === 'music' ? Math.round(82 + separationScore * 16) : Math.round(45 + separationScore * 20),
+      bassCrush: Math.round(55 + envProfile.musicRatio * 40),
+      reverbStrip: Math.min(1200, Math.round(envProfile.rt60 * (0.85 + separationScore * 0.35))),
+      voiceTunnel: Math.round(52 + avgMaskConf * 38),
+      whisperMode: separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1,
     }, 600);
 
     const mode = window.VIP_PARAMS?.whisperMode ?? 2;
-    if (mode === 3) {
-      await this.runForensicPasses(audioBuffer, 4, app);
+    if (mode >= 3) {
+      await this.runForensicPasses(audioBuffer, 4, app, envProfile);
+    } else if (mode === 2) {
+      await this.runForensicPasses(audioBuffer, 2, app, envProfile);
     } else {
       await app.runPipeline();
     }
@@ -4002,128 +4014,62 @@ const WHISPER_HUNTER = {
     this.reportResults(envProfile, avgMaskConf, app);
   },
 
-  // [WHISPER UPDATE] Acoustic environment analysis via OfflineAudioContext
-  async analyzeEnvironment(buffer) {
-    const sr = buffer.sampleRate;
-    const len = Math.min(buffer.length, sr * 2);
-    const data = buffer.getChannelData(0).subarray(0, len);
-
-    let bassEnergy = 0;
-    let crowdEnergy = 0;
-    let totalEnergy = 0;
-    for (let i = 0; i < data.length; i++) {
-      const s = data[i];
-      totalEnergy += s * s;
-    }
-    totalEnergy = Math.sqrt(totalEnergy / Math.max(1, data.length));
-
-    const oac = new OfflineAudioContext(1, len, sr);
-    const src = oac.createBufferSource();
-    const tmp = oac.createBuffer(1, len, sr);
-    tmp.getChannelData(0).set(data);
-    src.buffer = tmp;
-    const analyser = oac.createAnalyser();
-    analyser.fftSize = 4096;
-    src.connect(analyser);
-    analyser.connect(oac.destination);
-    src.start(0);
-    await oac.startRendering();
-
-    const freqData = new Float32Array(analyser.frequencyBinCount);
-    analyser.getFloatFrequencyData(freqData);
-    const binHz = sr / 4096;
-    for (let k = 0; k < freqData.length; k++) {
-      const hz = k * binHz;
-      const lin = Math.pow(10, freqData[k] / 20);
-      if (hz >= 40 && hz <= 120) bassEnergy += lin;
-      if (hz >= 200 && hz <= 2500) crowdEnergy += lin;
-    }
-
-    let rt60 = 400;
-    let peak = 0;
-    let peakIdx = 0;
-    for (let i = 0; i < data.length; i++) {
-      const a = Math.abs(data[i]);
-      if (a > peak) { peak = a; peakIdx = i; }
-    }
-    const thresh = peak * 0.01;
-    for (let i = peakIdx; i < data.length; i++) {
-      if (Math.abs(data[i]) < thresh) {
-        rt60 = ((i - peakIdx) / sr) * 1000;
-        break;
-      }
-    }
-
-    const noiseFloor = 20 * Math.log10(totalEnergy + 1e-12);
-    let dominantNoise = 'crowd';
-    if (bassEnergy > crowdEnergy * 1.4) dominantNoise = 'music';
-    else if (crowdEnergy > bassEnergy * 1.2) dominantNoise = 'crowd';
-    else if (rt60 < 200) dominantNoise = 'hum';
-    else dominantNoise = 'traffic';
-
-    const speechPresence = Math.min(1, crowdEnergy / (bassEnergy + crowdEnergy + 1e-9));
-
-    return { rt60: Math.round(rt60), dominantNoise, noiseFloor, speechPresence };
+  analyzeEnvironment(buffer) {
+    return analyzeAcousticEnvironment(buffer);
   },
 
-  // [WHISPER UPDATE] Adaptive preset selection from environment profile
   selectPreset(envProfile) {
     if (envProfile.dominantNoise === 'music' && envProfile.rt60 > 500) return 'Whisper in a Club';
-    if (envProfile.dominantNoise === 'crowd') return 'Stadium Crowd';
+    if (envProfile.dominantNoise === 'crowd' && envProfile.speechPresence < 0.35) return 'Stadium Crowd';
+    if (envProfile.voiceRatio < 0.18) return 'Forensic Extract';
     if (envProfile.rt60 < 200) return 'Whisper Room';
-    return 'Forensic Extract';
+    if (envProfile.dominantNoise === 'traffic') return 'Forensic Extract';
+    return 'Whisper in a Club';
   },
 
-  // [WHISPER UPDATE] ML mask inference — uses local BSRNN ONNX (deepfilternet3 slot unavailable)
   async runDeepFilterNet(audioBuffer, app) {
     const masks = [];
     try {
       const worker = window._vipOrch && window._vipOrch.mlWorker;
-      if (worker && typeof app !== 'undefined') {
-        const data = audioBuffer.getChannelData(0);
-        const FFT = 4096;
-        const halfN = FFT / 2 + 1;
-        const chunk = data.subarray(0, Math.min(data.length, FFT));
-        const mag = new Float32Array(halfN);
-        for (let k = 0; k < halfN; k++) {
-          let re = 0;
-          for (let n = 0; n < chunk.length; n++) {
-            re += chunk[n] * Math.cos(-2 * Math.PI * k * n / FFT);
-          }
-          mag[k] = Math.abs(re);
-        }
-        const id = ++app._mlCallId;
-        const result = await new Promise((resolve) => {
-          const handler = (ev) => {
-            if (ev.data && ev.data.type === 'maskResult' && ev.data.id === id) {
-              worker.removeEventListener('message', handler);
-              resolve(ev.data.mask || mag);
-            }
-          };
-          worker.addEventListener('message', handler);
-          const magClone = mag.slice();
-          worker.postMessage({ type: 'infer', model: 'bsrnn', mag: magClone.buffer, id }, [magClone.buffer]);
-          setTimeout(() => { worker.removeEventListener('message', handler); resolve(mag); }, 8000);
+      if (worker && app) {
+        const inferred = await chunkedMaskInference(audioBuffer, worker, {
+          callIdBase: app._mlCallId || 0,
+          maxChunks: 12,
         });
-        if (result instanceof Float32Array) masks.push(...result);
-        else if (Array.isArray(result)) masks.push(...result);
+        app._mlCallId = (app._mlCallId || 0) + 12;
+        if (inferred.length) return inferred;
       }
     } catch (err) {
       structuredLog('warn', '[WHISPER_HUNTER] ML inference fallback', { err: err && err.message });
     }
     if (!masks.length) {
-      for (let i = 0; i < 2049; i++) masks.push(0.35 + Math.random() * 0.15);
+      const env = analyzeAcousticEnvironment(audioBuffer);
+      const base = 0.28 + env.voiceRatio * 0.35;
+      for (let i = 0; i < 2049; i++) {
+        const voiceWeight = (i > 160 && i < 900) ? 1.15 : 0.75;
+        masks.push(Math.min(0.92, base * voiceWeight));
+      }
     }
     return masks;
   },
 
-  // [WHISPER UPDATE] Iterative forensic multi-pass processing
-  async runForensicPasses(buffer, numPasses, app) {
+  async runForensicPasses(buffer, numPasses, app, envProfile = {}) {
     app = app || window._vipApp;
     let current = buffer;
     for (let pass = 0; pass < numPasses; pass++) {
       const detail = document.getElementById('pipeDetail');
-      if (detail) detail.textContent = `Forensic pass ${pass + 1}/${numPasses}…`;
+      if (detail) detail.textContent = `WhisperHunter pass ${pass + 1}/${numPasses}…`;
+
+      const escalate = pass / Math.max(1, numPasses - 1);
+      await app.morphSlidersTo({
+        crowdNull: Math.min(100, Math.round(62 + escalate * 32)),
+        musicKill: Math.min(100, Math.round((envProfile.dominantNoise === 'music' ? 70 : 48) + escalate * 28)),
+        whisperLift: Math.min(40, Math.round(12 + escalate * 14)),
+        whisperThreshold: Math.min(100, Math.round(45 + escalate * 40)),
+        voiceTunnel: Math.min(100, Math.round(50 + escalate * 30)),
+        snrFloor: Math.round(-76 - escalate * 8),
+      }, 280);
+
       app.inputBuffer = current;
       app._forceSinglePass = true;
       await app.runPipeline();
@@ -4136,18 +4082,19 @@ const WHISPER_HUNTER = {
     if (typeof app.renderStaticVisuals === 'function') app.renderStaticVisuals(current);
   },
 
-  // [WHISPER UPDATE] Noise profile between forensic passes (updated in _spectralStage)
   updateNoiseProfileFromBuffer(buffer, app) {
     if (!buffer || !app) return;
-    // Profile is refreshed in-place during each pipeline _spectralStage run.
-    // No second forwardSTFT here — single-pass spectral contract (CLAUDE.md §1).
+    const hunter = window._vipWhisperHunter;
+    if (hunter && typeof hunter.seedNoiseFromAudio === 'function') {
+      hunter.seedNoiseFromAudio(buffer.getChannelData(0), buffer.sampleRate);
+    }
+    app._extremeNoiseProfile = null;
   },
 
-  // [WHISPER UPDATE] Report WhisperHunter analysis results to UI
   reportResults(envProfile, avgMaskConf, app) {
     app = app || window._vipApp;
     const detail = document.getElementById('pipeDetail');
-    const msg = `WhisperHunter: ${envProfile.dominantNoise} env, RT60 ${envProfile.rt60}ms, mask ${(avgMaskConf * 100).toFixed(0)}%`;
+    const msg = `WhisperHunter: ${envProfile.dominantNoise} · voice ${(envProfile.voiceRatio * 100).toFixed(0)}% · mask ${(avgMaskConf * 100).toFixed(0)}% · RT60 ${envProfile.rt60}ms`;
     if (detail) detail.textContent = msg;
     if (app && typeof app.showNotification === 'function') {
       app.showNotification(msg, 'info');
