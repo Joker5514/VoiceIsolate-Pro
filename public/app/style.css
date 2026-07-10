@@ -95,6 +95,9 @@ input[type='range']{
 .card{background:linear-gradient(165deg,rgba(16,10,12,.6) 0%,rgba(6,4,6,.8) 100%);backdrop-filter:blur(32px) saturate(180%);border-radius:var(--r);padding:14px;border:1px solid rgba(255,255,255,0.06);box-shadow:inset 0 1px 0 rgba(255,255,255,0.1),0 24px 60px rgba(0,0,0,.6),0 0 20px rgba(220,38,38,0.1);transition:border-color .3s,box-shadow .3s, transform .2s}
 .card:hover{border-color:rgba(220,38,38,0.3);box-shadow:inset 0 1px 0 rgba(255,255,255,0.15),0 24px 60px rgba(0,0,0,.8),0 0 40px rgba(220,38,38,0.2);transform:translateY(-2px)}
 
+/* Visually hidden file input — must stay in viewport for Chromium picker */
+.visually-hidden-file{position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.001;overflow:hidden;pointer-events:auto;z-index:2147483646}
+
 /* ---- UPLOAD ZONE — PREMIUM ---- */
 .upload-zone{border:2px dashed rgba(220,38,38,0.3);border-radius:16px;padding:36px 20px;text-align:center;cursor:pointer;background:linear-gradient(180deg, rgba(220,38,38,0.02) 0%, rgba(0,0,0,0.4) 100%);box-shadow:inset 0 0 20px rgba(0,0,0,0.5);transition:all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)}
 .upload-zone:hover{border-color:var(--red2);background:linear-gradient(180deg, rgba(220,38,38,0.08) 0%, rgba(220,38,38,0.02) 100%);box-shadow:inset 0 0 40px rgba(220,38,38,0.15), 0 0 20px rgba(220,38,38,0.2);transform:scale(1.02)}

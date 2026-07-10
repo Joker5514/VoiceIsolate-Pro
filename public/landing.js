@@ -723,12 +723,7 @@ function wireUploadDropZone() {
       openPicker();
     }
   });
-  if (ui.browseBtn) {
-    ui.browseBtn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      openPicker();
-    });
-  }
+  // browseBtn is <label for="fileInput"> — native picker; skip redundant JS handler.
 
   zone.addEventListener('dragover', (event) => {
     event.preventDefault();
@@ -1023,6 +1018,7 @@ function wireDragAndDrop() {
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 
+ui.fileInput.addEventListener('click', () => { primeAudioGesture().catch(() => {}); });
 ui.fileInput.addEventListener('change', onFileChosen);
 fixUploadTouchTargets();
 wireUploadDropZone();

@@ -17,10 +17,11 @@ const appJs = fs.readFileSync(
 );
 
 describe('UploadWiring.js', () => {
-  test('exports openFilePicker with showPicker fallback', () => {
+  test('exports openFilePicker with in-viewport click + showPicker fallback', () => {
     expect(uploadJs).toContain('export function openFilePicker');
-    expect(uploadJs).toContain('showPicker');
+    expect(uploadJs).toContain("left: '0'");
     expect(uploadJs).toContain('fileInput.click()');
+    expect(uploadJs).toContain('showPicker');
   });
 
   test('exports primeAudioGesture for mobile decode unlock', () => {
@@ -43,5 +44,13 @@ describe('Landing + Engineer import UploadWiring', () => {
   test('landing opens picker before awaiting primeAudioGesture', () => {
     expect(landingJs).toContain('openFilePicker(ui.fileInput)');
     expect(landingJs).toMatch(/openFilePicker\(ui\.fileInput\)[\s\S]*primeAudioGesture/);
+  });
+
+  test('browse controls use native label for fileInput', () => {
+    const landingHtml = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
+    const engineerHtml = fs.readFileSync(path.join(__dirname, '../public/app/index.html'), 'utf8');
+    expect(landingHtml).toContain('<label for="fileInput" id="browseBtn"');
+    expect(engineerHtml).toContain('<label for="fileInput" id="fileBtn"');
+    expect(engineerHtml).toContain('class="visually-hidden-file"');
   });
 });

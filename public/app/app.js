@@ -1564,8 +1564,14 @@ class VoiceIsolatePro {
       }
       primeAudioGesture().catch(() => {});
     };
-    // File input — always read this.dom.fileInput so late patches cannot orphan handlers
-    bind('fileBtn', d.fileBtn, 'click', (e) => { e.preventDefault(); openFilePicker(); });
+    // Prime Web Audio inside the browse gesture (label or programmatic picker).
+    bind('fileInput', d.fileInput, 'click', () => { primeAudioGesture().catch(() => {}); });
+    // fileBtn is a <label for="fileInput"> — native picker; only wire JS fallback for legacy buttons.
+    const browseIsLabel = d.fileBtn?.tagName === 'LABEL'
+      && (d.fileBtn.htmlFor === 'fileInput' || d.fileBtn.getAttribute('for') === 'fileInput');
+    if (!browseIsLabel) {
+      bind('fileBtn', d.fileBtn, 'click', (e) => { e.preventDefault(); openFilePicker(); });
+    }
     if (d.uploadZone) {
       d.uploadZone.addEventListener('click', (e) => {
         if (e.target.closest('#fileBtn')) return;
