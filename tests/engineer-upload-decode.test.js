@@ -37,8 +37,11 @@ describe('Engineer upload decode wiring', () => {
     expect(appJs).toContain('triggerFileInput(this.dom.fileInput)');
   });
 
-  test('app.js disables live mic capture on desktop shell', () => {
-    expect(appJs).toContain('isMicCaptureEnabled');
-    expect(appJs).toContain('hideMicControls');
+  test('file picker opens synchronously before primeAudioGesture (preserves user activation)', () => {
+    expect(appJs).toContain('triggerFileInput(this.dom.fileInput)');
+    expect(appJs).toMatch(/triggerFileInput\([\s\S]*?\)[\s\S]*primeAudioGesture\(\)/);
+    expect(appJs).not.toContain("import('/mic-capture.js')");
+    expect(appJs).not.toContain('heroCtaRecord');
+    expect(appJs).not.toContain('id="micBtn"');
   });
 });

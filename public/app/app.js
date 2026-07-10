@@ -25,9 +25,9 @@ import { sliceAudioBuffer } from '/src/core/audio-slice.js';
 import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
-import { isDesktopShell, isMicCaptureEnabled, pickAudioFile } from '/src/core/DesktopBridge.js';
+import { isDesktopShell, pickAudioFile } from '/src/core/DesktopBridge.js';
 import { inferMediaKind } from '/src/core/media-types.js';
-import { openFilePicker as triggerFileInput, primeAudioGesture } from '/src/presentation/UploadWiring.js';
+import { openFilePicker as triggerFileInput, primeAudioGesture, fixUploadTouchTargets } from '/src/presentation/UploadWiring.js';
 import {
   analyzeAcousticEnvironment,
   buildHeuristicMask,
@@ -41,8 +41,6 @@ import {
 /** Hero landing + branded loader — local-only cinematic shell */
 const HeroExperience = (() => {
   let appRef = null;
-  let recording = false;
-  let micCapture = null;
 
   function $(id) { return document.getElementById(id); }
 
@@ -131,34 +129,21 @@ const HeroExperience = (() => {
     }
   }
 
-  function hideMicControls() {
-    for (const id of ['heroCtaRecord', 'micBtn']) {
-      const el = $(id);
-      if (el) {
-        el.hidden = true;
-        el.style.display = 'none';
-        el.setAttribute('aria-hidden', 'true');
-      }
-    }
-  }
-
   function bindHeroCtas(app) {
-    $('heroCtaUpload')?.addEventListener('click', (e) => {
+    $('heroCtaUpload')?.addEventListener('click', async (e) => {
       e.preventDefault();
-      app.dom.fileBtn?.click();
+      if (isDesktopShell()) {
+        try {
+          const file = await pickAudioFile();
+          if (file) await app.handleFile(file);
+        } catch (err) {
+          app.showNotification?.(err?.message || 'Could not open file', 'error');
+        }
+        return;
+      }
+      triggerFileInput(app.dom?.fileInput);
+      primeAudioGesture().catch(() => {});
     });
-    if (isMicCaptureEnabled()) {
-      $('heroCtaRecord')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        toggleMicRecord(app);
-      });
-      $('micBtn')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        toggleMicRecord(app);
-      });
-    } else {
-      hideMicControls();
-    }
     $('heroCtaProcess')?.addEventListener('click', (e) => {
       e.preventDefault();
       if (!app.dom.processBtn?.disabled) app.runPipeline();
@@ -176,47 +161,6 @@ const HeroExperience = (() => {
       app.dom.tpPlay?.click();
     });
     $('abToggle')?.addEventListener('click', () => app.dom.tpAB?.click());
-  }
-
-  async function loadMicCapture() {
-    if (!micCapture) {
-      micCapture = await import('/mic-capture.js');
-    }
-    return micCapture;
-  }
-
-  async function toggleMicRecord(app) {
-    const micBtn = $('micBtn');
-    const heroRec = $('heroCtaRecord');
-    try {
-      const mic = await loadMicCapture();
-      if (recording || mic.isMicRecording()) {
-        const filePromise = mic.stopMicRecording();
-        recording = false;
-        micBtn?.classList.remove('recording');
-        heroRec?.classList.remove('recording');
-        setUiState('idle');
-        setHeroCopy('Processing recording…', false);
-        if (filePromise) {
-          const file = await filePromise;
-          await app.handleFile(file);
-        }
-        return;
-      }
-      await mic.startMicRecording();
-      recording = true;
-      micBtn?.classList.add('recording');
-      heroRec?.classList.add('recording');
-      setUiState('recording');
-      setHeroCopy('Recording from microphone… click again to stop', false);
-    } catch (err) {
-      recording = false;
-      micBtn?.classList.remove('recording');
-      heroRec?.classList.remove('recording');
-      app.showNotification?.(err?.message || 'Microphone access denied', 'error');
-      setUiState('error');
-      setHeroCopy('Microphone unavailable — use file upload', false);
-    }
   }
 
   function patchOverlayRefs() {
@@ -268,10 +212,7 @@ const HeroExperience = (() => {
       patchOverlayRefs();
       setUiState('idle');
       const tierStatus = WorkflowTier.getConfig?.()?.statusIdle;
-      setHeroCopy(
-        tierStatus || (isMicCaptureEnabled() ? 'Ready — upload or record to begin' : 'Ready — upload audio or video to begin'),
-        false,
-      );
+      setHeroCopy(tierStatus || 'Ready — upload audio or video to begin', false);
       window.addEventListener('vip:fileLoaded', () => {
         setUiState('file-ready');
         setHeroCopy('File loaded — processing pipeline starting', true);
@@ -301,10 +242,7 @@ const HeroExperience = (() => {
     onClear() {
       setUiState('idle');
       const tierStatus = WorkflowTier.getConfig?.()?.statusIdle;
-      setHeroCopy(
-        tierStatus || (isMicCaptureEnabled() ? 'Ready — upload or record to begin' : 'Ready — upload audio or video to begin'),
-        false,
-      );
+      setHeroCopy(tierStatus || 'Ready — upload audio or video to begin', false);
       syncStatStrip(null, 'Idle');
     },
     mirrorWaveCanvases,
@@ -901,6 +839,7 @@ class VoiceIsolatePro {
     try {
       this._renderSliders();
       this.bindEvents();
+      fixUploadTouchTargets();
       this._updateProcessButtonsState();
       HeroExperience.init(this);
       WorkflowTier.init(this);
@@ -1618,8 +1557,12 @@ class VoiceIsolatePro {
         }
         return;
       }
-      try { await primeAudioGesture(); } catch { /* best-effort */ }
-      triggerFileInput(this.dom.fileInput);
+      if (!triggerFileInput(this.dom.fileInput)) {
+        structuredLog('warn', '[VIP] file input unavailable for picker');
+        this.showNotification('Upload control unavailable — refresh the page', 'warn');
+        return;
+      }
+      primeAudioGesture().catch(() => {});
     };
     // File input — always read this.dom.fileInput so late patches cannot orphan handlers
     bind('fileBtn', d.fileBtn, 'click', (e) => { e.preventDefault(); openFilePicker(); });
@@ -3273,9 +3216,7 @@ class VoiceIsolatePro {
     return data;
   }
 
-  // Live-microphone ingestion was REMOVED by design (CLAUDE.md §1.1).
-  // Live mic capture API is forbidden in public/app; use /mic-capture.js instead. The
-  // Permissions-Policy header denies the microphone entirely.
+  // Live-microphone ingestion removed — upload-only workflow (CLAUDE.md §1.1).
 
   // ── Transport ─────────────────────────────────────────────────────────────
 

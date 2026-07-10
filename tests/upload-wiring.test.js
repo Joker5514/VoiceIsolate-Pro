@@ -39,4 +39,9 @@ describe('Landing + Engineer import UploadWiring', () => {
     expect(appJs).toContain("openFilePicker as triggerFileInput");
     expect(appJs).toContain('triggerFileInput(this.dom.fileInput)');
   });
+
+  test('landing opens picker before awaiting primeAudioGesture', () => {
+    expect(landingJs).toContain('openFilePicker(ui.fileInput)');
+    expect(landingJs).toMatch(/openFilePicker\(ui\.fileInput\)[\s\S]*primeAudioGesture/);
+  });
 });

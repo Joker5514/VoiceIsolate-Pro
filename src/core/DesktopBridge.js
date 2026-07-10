@@ -19,13 +19,11 @@ export function isDesktopShell() {
 }
 
 /**
- * Live microphone capture is enabled on web and native mobile (Capacitor),
- * but disabled in the Electron desktop shell.
+ * Live microphone capture is disabled app-wide (upload-only workflow).
  * @returns {boolean}
  */
 export function isMicCaptureEnabled() {
-  if (isDesktopShell()) return false;
-  return true;
+  return false;
 }
 
 /**

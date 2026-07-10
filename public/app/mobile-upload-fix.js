@@ -94,7 +94,7 @@
       '#dz', '#dropZone', '.drop-zone', '#uploadZone',
       '#fi', 'input[type="file"]',
       '.drop-btns', '.drop-btns button',
-      '#micBtn'
+      '#fileBtn'
     ];
     selectors.forEach(function (sel) {
       document.querySelectorAll(sel).forEach(function (el) {
