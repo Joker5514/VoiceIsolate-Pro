@@ -28,6 +28,7 @@ import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportR
 import { isDesktopShell, pickAudioFile } from '/src/core/DesktopBridge.js';
 import { inferMediaKind } from '/src/core/media-types.js';
 import { openFilePicker as triggerFileInput, primeAudioGesture, fixUploadTouchTargets } from '/src/presentation/UploadWiring.js';
+import { startWorkletStatusDriver } from '/src/presentation/WorkletStatus.js';
 import {
   analyzeAcousticEnvironment,
   buildHeuristicMask,
@@ -819,6 +820,9 @@ class VoiceIsolatePro {
 
     // Model status UI
     this._modelStatusUI = null;
+    this._mlWarmupPromise = null;
+    this._mlWarmupDone = false;
+    this._stopWorkletStatus = null;
 
     // DOM cache (populated in cacheDom / init)
     this.dom = {};
@@ -851,6 +855,7 @@ class VoiceIsolatePro {
       throw initErr;
     }
     this.initModelStatusPanel();
+    this._stopWorkletStatus = startWorkletStatusDriver({ getApp: () => this });
 
     // Resolve the ML engine pill (CTX/WORKLET/SAB/ML/NET cockpit) based on ONNX Runtime
     // availability — without this, engMlPill stays stuck on "loading" forever since no
@@ -1044,10 +1049,11 @@ class VoiceIsolatePro {
         this._workletReady = true;
         pill('engCtxPill', 'ready');
 
-        // Spin up the real-time Live-Mix bridge (src/ engine) so the rt:true
-        // sliders apply live instead of only on Reprocess. Fire-and-forget;
-        // failures fall back to the offline graph (see buildLiveChain).
-        this._ensureBridge();
+        // Spin up Live-Mix bridge + playback worklets in parallel (rt sliders).
+        const bridgeBoot = this._ensureBridge()
+          .then((b) => b?.workletsReady?.())
+          .catch(() => {});
+        void bridgeBoot;
 
         this._initSABRings();
         this._updateProcessButtonsState();
@@ -2107,10 +2113,19 @@ class VoiceIsolatePro {
     return ctx.decodeAudioData(arrayBuffer.slice(0));
   }
 
-  /** Prefetch + compile ONNX sessions off the hot path (Landing parity). */
+  /** Prefetch + compile ONNX sessions off the hot path (deduped). */
   async _warmupMLModels(modelIds = DEFAULT_ML_CHAIN) {
-    const { warmupModels } = await import('/src/pipeline/StemSeparation.js');
-    await warmupModels(modelIds);
+    if (this._mlWarmupDone) return;
+    if (this._mlWarmupPromise) return this._mlWarmupPromise;
+    this._mlWarmupPromise = (async () => {
+      const { warmupModels } = await import('/src/pipeline/StemSeparation.js');
+      await warmupModels(modelIds);
+      this._mlWarmupDone = true;
+    })().catch((err) => {
+      structuredLog('warn', '[VIP] ML warmup failed', { err: err?.message });
+      this._mlWarmupPromise = null;
+    });
+    return this._mlWarmupPromise;
   }
 
   // ── File handling ─────────────────────────────────────────────────────────
@@ -2535,14 +2550,13 @@ class VoiceIsolatePro {
     if (fileSeq !== this._fileSeq) return false;
     try {
       await this.ensureCtx();
-      if (typeof this._warmupMLModels === 'function') {
-        await this._warmupMLModels().catch(() => {});
-      }
+      const warmupP = this._warmupMLModels().catch(() => {});
       const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
       const channelData = [];
       for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-        channelData.push(buf.getChannelData(ch).slice());
+        channelData.push(buf.getChannelData(ch));
       }
+      await warmupP;
       this.updatePipelineProgress(4, 'ML isolation…', 15);
       const result = await separateStems(channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
@@ -2622,14 +2636,13 @@ class VoiceIsolatePro {
       if ((p.deEssAmt ?? 0) > 0) DSP.deEss(data, p.deEssFreq ?? 6000, p.deEssAmt ?? 0, sr);
       channels[ch] = data;
     }
-    await this._yield();
 
     // ── Pass 3–5: spectral isolation — ONE STFT/iSTFT per channel ──
     this.updatePipelineProgress(10, 'Spectral isolation…', 32);
     for (let ch = 0; ch < nCh; ch++) {
       channels[ch] = this._spectralStage(channels[ch], sr, p) || channels[ch];
-      await this._yield();
     }
+    await this._yield();
 
     // S15 crosstalk cancellation (needs both channels).
     if (nCh >= 2 && (p.crosstalkCancel ?? 0) > 0) {
@@ -2640,8 +2653,8 @@ class VoiceIsolatePro {
     this.updatePipelineProgress(21, 'EQ + dynamics…', 62);
     for (let ch = 0; ch < nCh; ch++) {
       this._eqDynamicsStage(channels[ch], sr, p);
-      await this._yield();
     }
+    await this._yield();
 
     // ── Pass 9: stereo image (phase correlation + width) ──
     if (nCh >= 2) {

@@ -159,6 +159,19 @@ export class EngineerModeBridge {
   currentTime() { return this.mixer ? this.mixer.currentTime() : 0; }
   duration() { return this.mixer ? this.mixer.duration() : 0; }
   getAnalyser() { return this.mixer ? this.mixer.getAnalyser() : null; }
+
+  /** @returns {Promise<void>} resolves when playback worklets load or bypass */
+  workletsReady() {
+    return this.mixer?.workletsReady?.() || Promise.resolve();
+  }
+
+  /** Snapshot for cockpit pills / debug menu. */
+  getWorkletStatus() {
+    return this.mixer?.getWorkletStatus?.() || {
+      gate: { state: 'pending', node: false },
+      deEsser: { state: 'pending', node: false },
+    };
+  }
   setLoop(on) { return this.mixer ? this.mixer.setLoop(on) : undefined; }
   isLoopEnabled() { return this.mixer ? this.mixer.isLoopEnabled() : false; }
   setCropRegion(inSec, outSec) { return this.mixer ? this.mixer.setCropRegion(inSec, outSec) : undefined; }

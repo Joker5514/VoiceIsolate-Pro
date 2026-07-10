@@ -17,7 +17,7 @@ describe('Engineer Mode completion wiring', () => {
   });
 
   test('index.html includes engine status pills expected by vip-boot.js', () => {
-    ['engCtxPill', 'engWorkletPill', 'engSabPill', 'engMlPill', 'engNetPill'].forEach((id) => {
+    ['engCtxPill', 'engWorkletPill', 'engGatePill', 'engDeessPill', 'engSabPill', 'engMlPill', 'engNetPill'].forEach((id) => {
       expect(indexHtml).toContain(`id="${id}"`);
     });
   });

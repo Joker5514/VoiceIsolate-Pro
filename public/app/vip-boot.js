@@ -113,7 +113,14 @@
   function startPillDriver() {
     // Synchronous capability pills
     setEnginePill('engSabPill',     hasSAB() ? 'ready' : 'error');
-    setEnginePill('engWorkletPill', hasAudioWorklet() ? 'ready' : 'error');
+    setEnginePill('engWorkletPill', hasAudioWorklet() ? 'loading' : 'error');
+    if (hasAudioWorklet()) {
+      setEnginePill('engGatePill', 'loading');
+      setEnginePill('engDeessPill', 'loading');
+    } else {
+      setEnginePill('engGatePill', 'error');
+      setEnginePill('engDeessPill', 'error');
+    }
 
     var startedAt = Date.now();
     var POLL_MS   = 250;

@@ -117,10 +117,11 @@ function buildHTML() {
     </div>
     <div class="dbg-section-body">
       <div class="dbg-row"><span class="dbg-label">ml-worker.js</span><span class="dbg-value" id="dbgWkML">—</span></div>
-      <div class="dbg-row"><span class="dbg-label">dsp-processor.js ★</span><span class="dbg-value" id="dbgWkDSP">—</span></div>
-      <div class="dbg-row"><span class="dbg-label">dsp-worker.js</span><span class="dbg-value" id="dbgWkDSPW">—</span></div>
-      <div class="dbg-row"><span class="dbg-label">voice-isolate-proc</span><span class="dbg-value" id="dbgWkVIP">—</span></div>
-      <div class="dbg-row" style="padding-top:2px"><span class="dbg-label" style="font-size:9px;color:rgba(176,184,200,0.35)">★ = active AudioWorklet</span><span></span></div>
+      <div class="dbg-row"><span class="dbg-label">vip-gate ★</span><span class="dbg-value" id="dbgWkGate">—</span></div>
+      <div class="dbg-row"><span class="dbg-label">vip-deesser ★</span><span class="dbg-value" id="dbgWkDeess">—</span></div>
+      <div class="dbg-row"><span class="dbg-label">Live-Mix bridge</span><span class="dbg-value" id="dbgWkBridge">—</span></div>
+      <div class="dbg-row"><span class="dbg-label">dsp-processor (legacy)</span><span class="dbg-value" id="dbgWkDSP">—</span></div>
+      <div class="dbg-row" style="padding-top:2px"><span class="dbg-label" style="font-size:9px;color:rgba(176,184,200,0.35)">★ = playback AudioWorklet (Gate + DeEsser)</span><span></span></div>
     </div>
   </div>
 
@@ -174,7 +175,7 @@ let _open  = false;
 let _startTime = Date.now();
 let _perfHistory = Array(20).fill(0);
 let _lastLogId = 0;
-let _workerStatus = { ml: null, dsp: null, dspw: null, vip: null };
+let _workerStatus = { ml: null, dsp: null };
 
 /* ── Utility helpers ──────────────────────────────────────────────────── */
 function badge(state, text) {
@@ -333,17 +334,30 @@ function refresh() {
     }).join('');
   }
 
-  /* ── Workers ── */
+  /* ── Workers / playback worklets ── */
   const wml  = _workerStatus.ml;
   const wdsp = _workerStatus.dsp;
-  const wdspw= _workerStatus.dspw;
-  const wvip = _workerStatus.vip;
   const wSt  = (s) => s === 'ok' ? 'ok' : s === null ? 'dim' : 'err';
   const wLbl = (s) => badge(wSt(s), s || 'checking…');
-  cls(document.getElementById('dbgWkML'),   wSt(wml),  wLbl(wml));
-  cls(document.getElementById('dbgWkDSP'),  wSt(wdsp), wLbl(wdsp));
-  cls(document.getElementById('dbgWkDSPW'), wSt(wdspw),wLbl(wdspw));
-  cls(document.getElementById('dbgWkVIP'),  wSt(wvip), wLbl(wvip));
+  cls(document.getElementById('dbgWkML'), wSt(wml), wLbl(wml));
+  cls(document.getElementById('dbgWkDSP'), wSt(wdsp), wLbl(wdsp));
+
+  const bridge = app?._bridge;
+  const wk = bridge?.getWorkletStatus?.() || bridge?.mixer?.getWorkletStatus?.() || {};
+  const wkSt = (state) => {
+    if (state === 'loaded') return ['ok', badge('ok', 'loaded')];
+    if (state === 'pending') return ['warn', badge('warn', 'loading')];
+    if (state === 'bypassed') return ['warn', badge('warn', 'bypassed')];
+    if (state === 'failed') return ['err', badge('err', 'failed')];
+    return ['dim', badge('dim', '—')];
+  };
+  const [gateCls, gateLbl] = wkSt(wk.gate?.state);
+  const [deCls, deLbl] = wkSt(wk.deEsser?.state);
+  cls(document.getElementById('dbgWkGate'), gateCls, gateLbl);
+  cls(document.getElementById('dbgWkDeess'), deCls, deLbl);
+  const bridgeLive = !!(bridge && (bridge.isLoaded?.() || bridge.mixer));
+  cls(document.getElementById('dbgWkBridge'), bridgeLive ? 'ok' : app?._bridgeFailed ? 'err' : 'warn',
+    badge(bridgeLive ? 'ok' : app?._bridgeFailed ? 'err' : 'warn', bridgeLive ? 'ready' : app?._bridgeFailed ? 'failed' : 'booting'));
 
   /* ── Performance ── */
   _refreshCount++;
@@ -394,8 +408,6 @@ function openPanel() {
   _lastLogId = _log.length > 0 ? _log[_log.length - 1].id - 1 : 0;
   checkWorker('./ml-worker.js', 'ml');
   checkWorker('./dsp-processor.js', 'dsp');
-  checkWorker('./dsp-worker.js', 'dspw');
-  checkWorker('./voice-isolate-processor.js', 'vip');
   refresh();
   _timer = setInterval(refresh, REFRESH_MS);
 }
