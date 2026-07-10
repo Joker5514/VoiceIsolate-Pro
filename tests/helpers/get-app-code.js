@@ -117,7 +117,7 @@ async function resampleToCanonical(buffer) {
   return buffer;
 }
 function isDesktopShell() { return false; }
-function isMicCaptureEnabled() { return true; }
+function isMicCaptureEnabled() { return false; }
 async function pickAudioFile() { return null; }
 `;
 }

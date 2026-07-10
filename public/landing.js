@@ -707,8 +707,11 @@ function wireUploadDropZone() {
       }
       return;
     }
-    try { await primeAudioGesture(); } catch { /* best-effort */ }
-    openFilePicker(ui.fileInput);
+    if (!openFilePicker(ui.fileInput)) {
+      setStatus('Upload control unavailable — refresh the page', 'error');
+      return;
+    }
+    primeAudioGesture().catch(() => {});
   };
   zone.addEventListener('click', (event) => {
     if (event.target.closest('#browseBtn')) return;
