@@ -48,8 +48,10 @@ pnpm test               # Jest (2150+ tests)
 
 | URL | File | Notes |
 |-----|------|-------|
-| `/` | `public/index.html` | Landing — Stem-Split & Live-Mix (canonical `src/`) |
-| `/app/` | `public/app/index.html` | Engineer Mode — classical DSP + visualization suite |
+| `/` | `public/index.html` | Landing — Stem-Split (ML separation, upload-only) |
+| `/app/` | `public/app/index.html` | Engineer Mode v24 — 67-slider DSP + visualization suite |
+
+Upload wiring is shared via `src/presentation/UploadWiring.js` (imported by `public/landing.js` and `public/app/app.js`). Browse buttons use `<label for="fileInput">`; do not position file inputs off-screen (`left:-9999px`) — Chromium 120+ blocks the native picker.
 
 ## Debug logging
 

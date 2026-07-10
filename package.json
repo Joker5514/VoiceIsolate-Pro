@@ -2,7 +2,7 @@
   "name": "voiceisolate-pro",
   "version": "24.0.0",
   "type": "module",
-  "description": "Studio-grade voice isolation platform. 32-stage Deca-Pass DSP pipeline with hybrid ML + classical spectral processing. Mobile-ready via Capacitor for Android & iOS.",
+  "description": "Studio-grade voice isolation platform. Upload-only workflow — 32-stage Octa-Pass DSP with hybrid ML + classical spectral processing. Web, Electron desktop, and Capacitor Android.",
   "private": true,
   "main": "electron/main.cjs",
   "keywords": [
