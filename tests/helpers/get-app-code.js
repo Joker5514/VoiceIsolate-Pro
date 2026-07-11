@@ -105,13 +105,17 @@ function stageEnd() {}
 
 function buildMediaDecodeShim() {
   return `
-async function decodeBlobToAudioBuffer(file) {
+async function decodeBlobToAudioBuffer(file, hooks) {
+  const onProgress = (hooks && hooks.onProgress) || (() => {});
+  onProgress(50);
   const ab = await file.arrayBuffer();
   const abCopy = ab.slice(0);
   if (!this.ctx || typeof this.ctx.decodeAudioData !== 'function') {
     throw new Error('AudioContext decode unavailable');
   }
-  return this.ctx.decodeAudioData(abCopy);
+  const decoded = await this.ctx.decodeAudioData(abCopy);
+  onProgress(100);
+  return decoded;
 }
 async function resampleToCanonical(buffer) {
   return buffer;
@@ -119,6 +123,7 @@ async function resampleToCanonical(buffer) {
 function isDesktopShell() { return false; }
 function isMicCaptureEnabled() { return false; }
 async function pickAudioFile() { return null; }
+function createYieldBudget() { return async () => {}; }
 `;
 }
 
@@ -127,9 +132,9 @@ function getAppCode() {
   const inlined  = INLINED_MODULES.map(inlineAsIIFE).join('\n');
   const appJsRaw = fs.readFileSync(path.join(APP_DIR, 'app.js'), 'utf8');
   let appJsCode = stripRelativeImports(appJsRaw);
-  if (appJsCode.includes('decodeBlobToAudioBuffer(file)')) {
+  if (appJsCode.includes('decodeBlobToAudioBuffer(file')) {
     appJsCode = appJsCode.replace(
-      'const decoded = await decodeBlobToAudioBuffer(file);',
+      /const decoded = await decodeBlobToAudioBuffer\(file(?:,\s*\{[\s\S]*?\})?\);/,
       'const decoded = await decodeBlobToAudioBuffer.call(this, file);'
     );
   }

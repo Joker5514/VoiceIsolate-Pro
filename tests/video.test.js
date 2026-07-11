@@ -48,6 +48,7 @@ describe('VoiceIsolatePro Video Playback', () => {
       abMode: 'original',
       inputBuffer: {},
       buildLiveChain: jest.fn(),
+      _dispatchPlayStarted: jest.fn(),
       ctx: { currentTime: 0 },
       dom: {
         tpABLabel: { textContent: '' },

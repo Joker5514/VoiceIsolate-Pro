@@ -91,6 +91,9 @@ function makeMockVip() {
     _decodeFileBuffer: vipProto._decodeFileBuffer,
     decodeViaVideoElement: jest.fn().mockResolvedValue({ length: 100 }),
     _resetFileInput: jest.fn(function () { if (this.dom?.fileInput) this.dom.fileInput.value = ''; }),
+    _waitForPipelineIdle: jest.fn().mockResolvedValue(undefined),
+    _warmupMLModels: jest.fn().mockResolvedValue(undefined),
+    abortFlag: false,
     dom: {
       fileInfo:   { textContent: '' },
       fileInput,

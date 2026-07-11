@@ -320,22 +320,21 @@ describe('Stats toggle — expand / collapse behaviour (simulated DOM)', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('app.js — mobile button state in onAudioLoaded()', () => {
-  test('enables mobileProcessBtn after audio is loaded', () => {
-    expect(appJs).toContain('this.dom.mobileProcessBtn.disabled = false');
+  test('updates process buttons via _updateProcessButtonsState after audio is loaded', () => {
+    const onAudioLoadedBlock = appJs.match(/onAudioLoaded\(name[\s\S]*?_updateProcessButtonsState\(\)/)?.[0] || '';
+    expect(onAudioLoadedBlock.length).toBeGreaterThan(0);
   });
 
-  test('disables mobileReprocessBtn on fresh audio load', () => {
-    // After a new file is loaded the reprocess button resets to disabled
-    const onAudioLoadedBlock = appJs.match(/onAudioLoaded\(name[\s\S]*?\)[\s\S]*?this\.dom\.hDur/)?.[0] || '';
-    expect(onAudioLoadedBlock).toContain('this.dom.mobileReprocessBtn.disabled = true');
+  test('disables mobileReprocessBtn until output exists', () => {
+    expect(appJs).toMatch(/mobileReprocessBtn\.disabled\s*=\s*!hasOut\s*\|\|\s*busy/);
   });
 
-  test('mobileProcessBtn state change is null-guarded', () => {
-    expect(appJs).toContain('if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false');
+  test('mobileProcessBtn state is null-guarded in _updateProcessButtonsState', () => {
+    expect(appJs).toContain('if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !hasBuf || busy');
   });
 
-  test('mobileReprocessBtn state change is null-guarded', () => {
-    expect(appJs).toContain('if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true');
+  test('mobileReprocessBtn state is null-guarded in _updateProcessButtonsState', () => {
+    expect(appJs).toContain('if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = !hasOut || busy');
   });
 });
 

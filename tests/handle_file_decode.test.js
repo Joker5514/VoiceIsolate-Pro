@@ -73,6 +73,10 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       _resetFileInput: jest.fn(),
       _readFileArrayBuffer: VoiceIsolatePro.prototype._readFileArrayBuffer,
       _decodeFileBuffer: VoiceIsolatePro.prototype._decodeFileBuffer,
+      _waitForPipelineIdle: jest.fn().mockResolvedValue(undefined),
+      _warmupMLModels: jest.fn().mockResolvedValue(undefined),
+      _fileSeq: 0,
+      abortFlag: false,
       dom: {
         fileInfo: {},
         videoPlayer: { src: '' },
@@ -113,6 +117,10 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       _resetFileInput: jest.fn(),
       _readFileArrayBuffer: VoiceIsolatePro.prototype._readFileArrayBuffer,
       _decodeFileBuffer: VoiceIsolatePro.prototype._decodeFileBuffer,
+      _waitForPipelineIdle: jest.fn().mockResolvedValue(undefined),
+      _warmupMLModels: jest.fn().mockResolvedValue(undefined),
+      _fileSeq: 0,
+      abortFlag: false,
       dom: {
         fileInfo: { textContent: '' },
         videoPlayer: {},
@@ -154,6 +162,10 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       _resetFileInput: jest.fn(),
       _readFileArrayBuffer: VoiceIsolatePro.prototype._readFileArrayBuffer,
       _decodeFileBuffer: VoiceIsolatePro.prototype._decodeFileBuffer,
+      _waitForPipelineIdle: jest.fn().mockResolvedValue(undefined),
+      _warmupMLModels: jest.fn().mockResolvedValue(undefined),
+      _fileSeq: 0,
+      abortFlag: false,
       dom: {
         fileInfo: { textContent: '' },
         videoPlayer: {},
