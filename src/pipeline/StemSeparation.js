@@ -13,6 +13,14 @@ import { clearStemCache, getCachedStems, setCachedStems, stemCacheKey } from './
 let _worker = null;
 let _ready = null;
 let _seq = 0;
+/** @type {Set<string>} */
+const _warmedModels = new Set();
+/** @type {Array<{ resolve: Function, reject: Function, timer: *, ids: string[] }>} */
+let _warmupWaiters = [];
+let _warmupHooked = false;
+
+const WARMUP_TIMEOUT_MS = 120000;
+const COPY_CHUNK_SAMPLES = 48000 * 2; // ~2 s @ 48 kHz — yield between chunks to keep UI alive
 
 function getWorker() {
   if (_worker) return _worker;
@@ -20,9 +28,30 @@ function getWorker() {
   return _worker;
 }
 
+function hookWarmupListener(w) {
+  if (_warmupHooked) return;
+  _warmupHooked = true;
+  w.addEventListener('message', (ev) => {
+    const msg = ev.data || {};
+    if (msg.type !== 'warmed') return;
+    for (const id of msg.modelIds || []) _warmedModels.add(id);
+    const pending = _warmupWaiters.splice(0);
+    for (const waiter of pending) {
+      clearTimeout(waiter.timer);
+      const stillMissing = waiter.ids.filter((id) => !_warmedModels.has(id));
+      if (stillMissing.length === 0) waiter.resolve(msg);
+      else {
+        // Partial warmup — wait for a later warmed message.
+        _warmupWaiters.push(waiter);
+      }
+    }
+  });
+}
+
 function ensureReady() {
   if (_ready) return _ready;
   const w = getWorker();
+  hookWarmupListener(w);
   _ready = new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup();
@@ -49,6 +78,17 @@ function ensureReady() {
   return _ready;
 }
 
+/** Yield-friendly typed-array copy so large files don't freeze the main thread. */
+async function copyChannelChunked(src) {
+  const out = new Float32Array(src.length);
+  for (let i = 0; i < src.length; i += COPY_CHUNK_SAMPLES) {
+    const end = Math.min(src.length, i + COPY_CHUNK_SAMPLES);
+    out.set(src.subarray(i, end), i);
+    if (end < src.length) await new Promise((r) => setTimeout(r, 0));
+  }
+  return out;
+}
+
 /**
  * Run offline inference on decoded channel data.
  * @param {Float32Array[]} channelData
@@ -59,7 +99,20 @@ function ensureReady() {
 /** Prefetch + compile ONNX sessions while the user decodes a file. */
 export async function warmupModels(modelIds = DEFAULT_ML_MODEL_IDS) {
   await ensureReady();
-  getWorker().postMessage({ type: 'warmup', modelIds });
+  const ids = (Array.isArray(modelIds) ? modelIds : []).filter((id) => typeof id === 'string' && id);
+  const missing = ids.filter((id) => !_warmedModels.has(id));
+  if (missing.length === 0) return { modelIds: ids };
+
+  const w = getWorker();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const idx = _warmupWaiters.findIndex((x) => x.resolve === resolve);
+      if (idx >= 0) _warmupWaiters.splice(idx, 1);
+      reject(new Error('[VIP][StemSeparation] ML warmup timeout'));
+    }, WARMUP_TIMEOUT_MS);
+    _warmupWaiters.push({ resolve, reject, timer, ids: missing });
+    w.postMessage({ type: 'warmup', modelIds: missing });
+  });
 }
 
 export async function separateStems(channelData, sampleRate, options = {}) {
@@ -86,7 +139,10 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   const requestId = ++_seq;
   const { onProgress } = options;
   // Transferable copies — originals stay intact for cache keys / reprocess.
-  const copies = channelData.map((c) => c.slice());
+  const copies = [];
+  for (let ch = 0; ch < channelData.length; ch++) {
+    copies.push(await copyChannelChunked(channelData[ch]));
+  }
   const msg = { type: 'process', requestId, channelData: copies, sampleRate, modelIds };
 
   return new Promise((resolve, reject) => {
@@ -127,11 +183,19 @@ export async function separateStems(channelData, sampleRate, options = {}) {
 }
 
 /** Build an AudioBuffer from separated mono/stereo clean stem. */
-export function stemsToAudioBuffer(ctx, clean, sampleRate) {
+export async function stemsToAudioBuffer(ctx, clean, sampleRate) {
   const nCh = clean.length;
   const len = clean[0].length;
   const buf = ctx.createBuffer(nCh, len, sampleRate);
-  for (let ch = 0; ch < nCh; ch++) buf.copyToChannel(clean[ch], ch);
+  for (let ch = 0; ch < nCh; ch++) {
+    const data = clean[ch];
+    const dst = buf.getChannelData(ch);
+    for (let i = 0; i < len; i += COPY_CHUNK_SAMPLES) {
+      const end = Math.min(len, i + COPY_CHUNK_SAMPLES);
+      dst.set(data.subarray(i, end), i);
+      if (end < len) await new Promise((r) => setTimeout(r, 0));
+    }
+  }
   return buf;
 }
 
@@ -141,6 +205,9 @@ export function resetStemSeparation() {
     _worker = null;
   }
   _ready = null;
+  _warmupHooked = false;
+  _warmedModels.clear();
+  _warmupWaiters = [];
   clearStemCache();
 }
 

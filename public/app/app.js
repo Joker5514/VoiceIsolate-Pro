@@ -2536,6 +2536,7 @@ class VoiceIsolatePro {
       for (let ch = 0; ch < buf.numberOfChannels; ch++) {
         channelData.push(buf.getChannelData(ch));
       }
+      this.updatePipelineProgress(4, 'Loading ML model…', 10);
       await warmupP;
       this.updatePipelineProgress(4, 'ML isolation…', 15);
       const result = await separateStems(channelData, buf.sampleRate, {
@@ -2554,7 +2555,8 @@ class VoiceIsolatePro {
       });
       if (fileSeq !== this._fileSeq) return false;
       if (result.passthrough) return false;
-      this.outputBuffer = stemsToAudioBuffer(this.ctx, result.clean, result.sampleRate);
+      this.updatePipelineProgress(20, 'Building output buffer…', 82);
+      this.outputBuffer = await stemsToAudioBuffer(this.ctx, result.clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
       const mlLabel = result.fromCache ? 'ML isolation (cached)' : 'ML isolation complete';
       this.updatePipelineProgress(20, mlLabel, 85);
@@ -2618,11 +2620,16 @@ class VoiceIsolatePro {
     }
 
     // ── Pass 3–5: spectral isolation — ONE STFT/iSTFT per channel ──
-    this.updatePipelineProgress(10, 'Spectral isolation…', 32);
+    this.updatePipelineProgress(10, 'Spectral isolation…', 20);
     for (let ch = 0; ch < nCh; ch++) {
-      channels[ch] = this._spectralStage(channels[ch], sr, p) || channels[ch];
+      if (this.abortFlag) break;
+      const chLabel = nCh > 1 ? `Spectral isolation (ch ${ch + 1}/${nCh})…` : 'Spectral isolation…';
+      channels[ch] = await this._spectralStageAsync(channels[ch], sr, p, (frac) => {
+        const pct = 20 + Math.round(((ch + frac) / nCh) * 18);
+        this.updatePipelineProgress(10, chLabel, pct);
+      }) || channels[ch];
+      await this._yield();
     }
-    await this._yield();
 
     // S15 crosstalk cancellation (needs both channels).
     if (nCh >= 2 && (p.crosstalkCancel ?? 0) > 0) {
@@ -2915,24 +2922,42 @@ class VoiceIsolatePro {
     return null;
   }
 
+  // Median of five values — allocation-free (reuses scratch buffer).
+  _median5(v0, v1, v2, v3, v4) {
+    const s = this._median5Buf || (this._median5Buf = new Float32Array(5));
+    s[0] = v0; s[1] = v1; s[2] = v2; s[3] = v3; s[4] = v4;
+    for (let i = 1; i < 5; i++) {
+      const v = s[i];
+      let j = i;
+      while (j > 0 && s[j - 1] > v) { s[j] = s[j - 1]; j--; }
+      s[j] = v;
+    }
+    return s[2];
+  }
+
   // S10–S20: spectral isolation on a single channel. Exactly ONE forward STFT
   // and ONE inverse STFT — the single-pass spectral contract (CLAUDE.md §1).
-  // All in-between stages mutate the magnitude frames in place.
-  _spectralStage(data, sr, p) {
+  // Yields between frame batches so the processing overlay stays responsive.
+  async _spectralStageAsync(data, sr, p, onProgress) {
     const DSP = this._resolveDSP();
     const FFT = 4096;
     const HOP = 1024;
-    // Clips shorter than one analysis window have no spectral frames.
+    const FRAME_CHUNK = 12;
     if (!DSP || !data || data.length < FFT) return data;
 
-    // SINGLE-PASS STFT BOUNDARY — the only forward transform on this path.
+    if (onProgress) onProgress(0);
+    await this._yield();
+
     const spec = DSP.forwardSTFT(data, FFT, HOP);
     if (!spec || !Array.isArray(spec.mag) || spec.mag.length === 0) return data;
     const mag = spec.mag;
     const phase = spec.phase;
     const halfN = mag[0].length;
+    const totalFrames = mag.length;
 
-    // S11 adaptive Wiener noise reduction (nrAmount, shaped by sensitivity/sub).
+    if (onProgress) onProgress(0.12);
+    await this._yield();
+
     const wm = this._getWhisperModeState();
     const nrAmount = (p.nrAmount ?? 0) * (wm.osf / 4.5);
     if (nrAmount > 0) {
@@ -2942,58 +2967,49 @@ class VoiceIsolatePro {
       DSP.wienerMMSE(mag, noise, nrAmount);
     }
 
-    // S13 ERB-band spectral gate down to the NR floor.
     if ((p.nrFloor ?? -96) > -96) DSP.spectralGate(mag, p.nrFloor ?? -72, sr, HOP);
-
-    // S14 voice focus / isolation + background suppression.
     this._applyVoiceFocus(mag, sr, p, halfN, FFT);
-
-    // S16 temporal smoothing (suppress musical noise).
     if ((p.nrSmoothing ?? 0) > 0) DSP.temporalSmooth(mag, p.nrSmoothing);
-
-    // S17 spectral tilt.
     if (Math.abs(p.specTilt ?? 0) > 0.01) this._applySpectralTilt(mag, sr, p.specTilt, halfN, FFT);
-
-    // Formant shift (envelope warp; pitch unchanged because phase is kept).
     if (Math.abs(p.formantShift ?? 0) > 0.01) this._applyFormantShiftSpec(mag, p.formantShift, halfN);
-
-    // S18 dereverb.
     if ((p.derevAmt ?? 0) > 0) {
-      const decaySec = 0.12 + (p.derevDecay ?? 50) / 100 * 0.68; // ~0.12–0.8 s
+      const decaySec = 0.12 + (p.derevDecay ?? 50) / 100 * 0.68;
       DSP.dereverb(mag, p.derevAmt, decaySec, sr, HOP);
     }
-
-    // S19 harmonic reconstruction.
     if ((p.harmRecov ?? 0) > 0) DSP.harmonicEnhance(mag, phase, p.harmRecov);
 
-    // [WHISPER UPDATE] Extreme isolation spectral ops (in-place, single STFT pass)
-    this._applyExtremeSpectralOffline(mag, sr, p, halfN, FFT, HOP, DSP);
-
-    // [WHISPER UPDATE] WhisperHunterAI offline frame processing (Part 4)
     const hunter = typeof window !== 'undefined' ? window._vipWhisperHunter : null;
     const mapUi = (typeof window !== 'undefined' && window.mapWhisperUi) ? window.mapWhisperUi : () => 0.5;
-    if (hunter && typeof hunter.processMagnitudes === 'function') {
-      const whParams = {
-        clarity: mapUi(p.whisperClarity ?? 65),
-        sensitivity: mapUi(p.whisperSensitivity ?? 55),
-        threshold: mapUi(p.whisperThreshold ?? 50),
-        harmonic: Math.pow(Math.max(0, (p.harmRecov ?? 0)) / 100, 2),
-      };
-      for (let f = 0; f < mag.length; f++) {
-        hunter.processMagnitudes(mag[f], phase[f], whParams);
+    const whParams = hunter && typeof hunter.processMagnitudes === 'function' ? {
+      clarity: mapUi(p.whisperClarity ?? 65),
+      sensitivity: mapUi(p.whisperSensitivity ?? 55),
+      threshold: mapUi(p.whisperThreshold ?? 50),
+      harmonic: Math.pow(Math.max(0, (p.harmRecov ?? 0)) / 100, 2),
+    } : null;
+
+    for (let f0 = 0; f0 < totalFrames; f0 += FRAME_CHUNK) {
+      if (this.abortFlag) return data;
+      const f1 = Math.min(totalFrames, f0 + FRAME_CHUNK);
+      this._applyExtremeSpectralOffline(mag, sr, p, halfN, FFT, HOP, DSP, f0, f1);
+      if (whParams) {
+        for (let f = f0; f < f1; f++) hunter.processMagnitudes(mag[f], phase[f], whParams);
       }
+      if (onProgress) onProgress(0.2 + 0.65 * (f1 / totalFrames));
+      await this._yield();
     }
 
-    // Refresh extreme noise profile for forensic multi-pass (no second STFT).
     this._extremeNoiseProfile = this._estimateNoiseFloor(mag);
 
-    // SINGLE-PASS STFT BOUNDARY — the only inverse transform on this path.
+    if (onProgress) onProgress(0.9);
+    await this._yield();
+
     const rendered = DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);
+    if (onProgress) onProgress(1);
     return (rendered && rendered.length === data.length) ? rendered : data;
   }
 
   // [WHISPER UPDATE] Extreme isolation ops — in-place per STFT frame (offline path)
-  _applyExtremeSpectralOffline(mag, sr, p, halfN, fftSize, hop, DSP) {
+  _applyExtremeSpectralOffline(mag, sr, p, halfN, fftSize, hop, DSP, frameStart = 0, frameEnd = mag.length) {
     const bassCrush = p.bassCrush ?? 0;
     const musicKill = p.musicKill ?? 0;
     const crowdNull = p.crowdNull ?? 0;
@@ -3024,17 +3040,21 @@ class VoiceIsolatePro {
     const tunnelQ2 = 3 + (voiceTunnel / 100) * 6;
     const tunnelG2 = voiceTunnel * 0.08;
 
-    for (let f = 0; f < mag.length; f++) {
+    for (let f = frameStart; f < frameEnd; f++) {
       const frame = mag[f];
       const bufIdx = this._extremeFrameIdx % 5;
 
       for (let k = 0; k < bassCrushCutoff; k++) frame[k] *= 0.0001;
 
-      const frameMedian = new Float32Array(halfN);
       for (let k = 0; k < halfN; k++) {
-        const vals = this._extremeCircularMag.map(row => row[k]).sort((a, b) => a - b);
-        frameMedian[k] = vals[2];
-        const ratio = frame[k] / (frameMedian[k] + 1e-10);
+        const med = this._median5(
+          this._extremeCircularMag[0][k],
+          this._extremeCircularMag[1][k],
+          this._extremeCircularMag[2][k],
+          this._extremeCircularMag[3][k],
+          this._extremeCircularMag[4][k]
+        );
+        const ratio = frame[k] / (med + 1e-10);
         if (ratio < 1.3) frame[k] *= (1 - musicKill / 100);
       }
       this._extremeCircularMag[bufIdx].set(frame);

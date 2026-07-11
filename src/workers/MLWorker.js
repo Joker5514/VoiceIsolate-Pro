@@ -256,10 +256,21 @@ async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) 
   _sessionInflight[sessionKey] = (async () => {
     if (!quiet) postStage('load', 0, { modelId: entry.id, label: `Loading ${entry.name || entry.id}…` });
     const bytes = await fetchModelBytes(entry);
-    if (!quiet) postStage('load', 50, { modelId: entry.id });
-    const session = await createSessionFromBytes(entry, bytes);
+    if (!quiet) postStage('load', 40, { modelId: entry.id, label: `Verifying ${entry.name || entry.id}…` });
+    if (!quiet) postStage('load', 55, { modelId: entry.id, label: `Compiling ${entry.name || entry.id}…` });
+    const compileBeat = !quiet && ACTIVE_REQUEST_ID != null
+      ? setInterval(() => {
+          postStage('load', 60, { modelId: entry.id, label: `Compiling ${entry.name || entry.id}…` });
+        }, 800)
+      : null;
+    let session;
+    try {
+      session = await createSessionFromBytes(entry, bytes);
+    } finally {
+      if (compileBeat) clearInterval(compileBeat);
+    }
     SESSIONS[sessionKey] = session;
-    if (!quiet) postStage('load', 100, { modelId: entry.id });
+    if (!quiet) postStage('load', 100, { modelId: entry.id, label: `${entry.name || entry.id} ready` });
     return session;
   })().finally(() => { delete _sessionInflight[sessionKey]; });
   return _sessionInflight[sessionKey];
@@ -554,7 +565,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   const onProgress = (p) => {
     const pct = Math.round(p * 100);
     if (pct === lastProgressSent) return;
-    if (pct < 100 && lastProgressSent >= 0 && pct - lastProgressSent < 2) return;
+    if (pct < 100 && lastProgressSent >= 0 && pct - lastProgressSent < 1) return;
     lastProgressSent = pct;
     self.postMessage({ type: 'progress', requestId, percent: pct });
   };
