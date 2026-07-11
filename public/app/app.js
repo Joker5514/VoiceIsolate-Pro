@@ -1743,54 +1743,10 @@ class VoiceIsolatePro {
       });
     });
 
-    // Tab switching — CSS visibility + VIP_VISUALS driver
-    const tabs = qsa('.tab-btn[data-tab]');
-    tabs.forEach((btn, index) => {
-      btn.addEventListener('click', () => {
-        const tab = btn.dataset.tab;
-        if (window.VIP_VISUALS && typeof window.VIP_VISUALS.getViewMode === 'function'
-            && window.VIP_VISUALS.getViewMode() === 'gallery'
-            && typeof window.VIP_VISUALS.setViewMode === 'function') {
-          window.VIP_VISUALS.setViewMode('single');
-        }
-        tabs.forEach(b => {
-          b.classList.remove('active');
-          b.setAttribute('aria-selected', 'false');
-          b.setAttribute('tabindex', '-1');
-        });
-        qsa('.viz-card .panel[data-viz-panel]').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        btn.setAttribute('aria-selected', 'true');
-        btn.setAttribute('tabindex', '0');
-        const panel = document.getElementById('tab-' + tab);
-        if (panel) panel.classList.add('active');
-        if (window.VIP_VISUALS && typeof window.VIP_VISUALS.onTabActivated === 'function') {
-          window.VIP_VISUALS.onTabActivated(tab);
-        }
-      });
-
-      btn.addEventListener('keydown', (e) => {
-        let newIndex = index;
-        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-          newIndex = (index + 1) % tabs.length;
-          e.preventDefault();
-        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-          newIndex = (index - 1 + tabs.length) % tabs.length;
-          e.preventDefault();
-        } else if (e.key === 'Home') {
-          newIndex = 0;
-          e.preventDefault();
-        } else if (e.key === 'End') {
-          newIndex = tabs.length - 1;
-          e.preventDefault();
-        }
-
-        if (newIndex !== index) {
-          tabs[newIndex].focus();
-          tabs[newIndex].click();
-        }
-      });
-    });
+    // Viz tabs, Show All, and fullscreen — owned by visuals-bootstrap.js (VIP_VISUALS.wireChrome).
+    if (window.VIP_VISUALS && typeof window.VIP_VISUALS.wireChrome === 'function') {
+      window.VIP_VISUALS.wireChrome();
+    }
 
     // UI scale controls
     let uiScale = 1;
@@ -1803,12 +1759,6 @@ class VoiceIsolatePro {
       uiScale = Math.min(1.4, uiScale + 0.05);
       if (document.body) document.body.style.zoom = uiScale;
       const v = $('uiScaleVal'); if (v) v.textContent = Math.round(uiScale * 100) + '%';
-    });
-
-    // Fullscreen spectrogram
-    bind('fullscreenSpectroBtn', $('fullscreenSpectroBtn'), 'click', () => {
-      const el = $('spectro3d-container') || $('spectroCanvas');
-      if (el && el.requestFullscreen) el.requestFullscreen();
     });
 
     // Custom preset modal

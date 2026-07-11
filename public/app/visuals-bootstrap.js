@@ -29,6 +29,7 @@
   let _lastDiarSpeaker = 0;
   let _lastDiarSegStart = 0;
   let _lastSpeakerState = null;
+  let _vizFullscreen = false;
 
   function _getPlayOffset() {
     const app = global._vipApp;
@@ -588,19 +589,168 @@
   }
 
   function _onTabActivated(tab) {
-    if (_viewMode === 'gallery') setViewMode('single');
     _activeTab = tab || 'spectrogram';
     if (tab === 'abcompare') drawStaticVisuals();
     _resizeVisibleCanvases();
     _syncPremiumViz();
   }
 
+  function _activateTab(tab, btn) {
+    if (!tab) return;
+    if (_viewMode === 'gallery') setViewMode('single');
+    const tabs = qsa('.viz-card .tab-btn[data-tab]');
+    tabs.forEach((b) => {
+      const on = b === btn || b.dataset.tab === tab;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', String(on));
+      b.setAttribute('tabindex', on ? '0' : '-1');
+    });
+    qsa('.viz-card .panel[data-viz-panel]').forEach((p) => {
+      p.classList.toggle('active', p.dataset.vizPanel === tab);
+    });
+    _onTabActivated(tab);
+  }
+
+  function _docFullscreenEl() {
+    return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+  }
+
+  function _exitVizFullscreen() {
+    const card = document.querySelector('.viz-card');
+    const btn = $('fullscreenSpectroBtn');
+    _vizFullscreen = false;
+    if (card) card.classList.remove('viz-fullscreen');
+    $('spectro3d-container')?.classList.remove('fullscreen');
+    if (btn) {
+      btn.setAttribute('aria-pressed', 'false');
+      btn.title = 'Enter fullscreen';
+      btn.setAttribute('aria-label', 'Enter fullscreen');
+    }
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (_docFullscreenEl() && exit) {
+      try { Promise.resolve(exit.call(document)).catch(() => {}); } catch (_) {}
+    }
+    setTimeout(() => {
+      _resizeVisibleCanvases();
+      _syncPremiumViz();
+    }, 120);
+  }
+
+  function _enterVizFullscreen() {
+    const card = document.querySelector('.viz-card');
+    const target = card || $('spectro3d-container') || $('spectroCanvas');
+    const btn = $('fullscreenSpectroBtn');
+    if (!target) return;
+    _vizFullscreen = true;
+    if (card) card.classList.add('viz-fullscreen');
+    $('spectro3d-container')?.classList.add('fullscreen');
+    if (btn) {
+      btn.setAttribute('aria-pressed', 'true');
+      btn.title = 'Exit fullscreen';
+      btn.setAttribute('aria-label', 'Exit fullscreen');
+    }
+    const req = target.requestFullscreen
+      || target.webkitRequestFullscreen
+      || target.msRequestFullscreen;
+    if (req) {
+      try {
+        Promise.resolve(req.call(target)).catch(() => {});
+      } catch (_) {}
+    }
+    setTimeout(() => {
+      _resizeVisibleCanvases();
+      _syncPremiumViz();
+    }, 120);
+  }
+
+  function toggleFullscreen() {
+    if (_vizFullscreen || _docFullscreenEl()) _exitVizFullscreen();
+    else _enterVizFullscreen();
+  }
+
+  function _wireFullscreen() {
+    const btn = $('fullscreenSpectroBtn');
+    if (!btn || btn.dataset.vipVizWired === '1') return;
+    btn.dataset.vipVizWired = '1';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleFullscreen();
+    });
+    document.addEventListener('fullscreenchange', () => {
+      if (!_docFullscreenEl() && _vizFullscreen) _exitVizFullscreen();
+      else if (_docFullscreenEl()) {
+        _vizFullscreen = true;
+        document.querySelector('.viz-card')?.classList.add('viz-fullscreen');
+      }
+      setTimeout(() => {
+        _resizeVisibleCanvases();
+        _syncPremiumViz();
+      }, 80);
+    });
+    document.addEventListener('webkitfullscreenchange', () => {
+      if (!_docFullscreenEl() && _vizFullscreen) _exitVizFullscreen();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && (_vizFullscreen || _docFullscreenEl())) {
+        _exitVizFullscreen();
+      }
+    });
+  }
+
+  function _wireTabBar() {
+    const bar = $('tabBar');
+    if (!bar || bar.dataset.vipVizWired === '1') return;
+    bar.dataset.vipVizWired = '1';
+    const tabs = qsa('.viz-card .tab-btn[data-tab]');
+
+    bar.addEventListener('click', (e) => {
+      const btn = e.target.closest('.tab-btn[data-tab]');
+      if (!btn || !bar.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      _activateTab(btn.dataset.tab, btn);
+    });
+
+    tabs.forEach((btn, index) => {
+      btn.addEventListener('keydown', (e) => {
+        let newIndex = index;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          newIndex = (index + 1) % tabs.length;
+          e.preventDefault();
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          newIndex = (index - 1 + tabs.length) % tabs.length;
+          e.preventDefault();
+        } else if (e.key === 'Home') {
+          newIndex = 0;
+          e.preventDefault();
+        } else if (e.key === 'End') {
+          newIndex = tabs.length - 1;
+          e.preventDefault();
+        } else {
+          return;
+        }
+        tabs[newIndex].focus();
+        _activateTab(tabs[newIndex].dataset.tab, tabs[newIndex]);
+      });
+    });
+  }
+
   function _wireGalleryToggle() {
     const btn = $('btnVizGallery');
-    if (!btn) return;
-    btn.addEventListener('click', () => {
+    if (!btn || btn.dataset.vipVizWired === '1') return;
+    btn.dataset.vipVizWired = '1';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       setViewMode(_viewMode === 'gallery' ? 'single' : 'gallery');
     });
+  }
+
+  function wireChrome() {
+    _wireGalleryToggle();
+    _wireFullscreen();
+    _wireTabBar();
   }
 
   function _wireResizeObserver() {
@@ -657,7 +807,7 @@
   }
 
   function _init() {
-    _wireGalleryToggle();
+    wireChrome();
     _wireResizeObserver();
     _bindEvents();
     if (global.NeonPulseViz && typeof global.NeonPulseViz.mount === 'function') {
@@ -677,9 +827,12 @@
     start,
     stop,
     onTabActivated: _onTabActivated,
+    activateTab: _activateTab,
     initPremium: _initPremiumTab,
     setViewMode,
     getViewMode,
     syncPremium: _syncPremiumViz,
+    toggleFullscreen,
+    wireChrome,
   };
 })(typeof window !== 'undefined' ? window : this);

@@ -18,11 +18,21 @@ describe('visuals-bootstrap.js — visualization driver', () => {
     expect(src).toContain('global.VIP_VISUALS');
     expect(src).toContain('drawStatic');
     expect(src).toContain('onTabActivated');
+    expect(src).toContain('activateTab');
     expect(src).toContain('initPremium');
     expect(src).toContain('setViewMode');
     expect(src).toContain('getViewMode');
+    expect(src).toContain('toggleFullscreen');
+    expect(src).toContain('wireChrome');
     expect(src).toContain('start');
     expect(src).toContain('stop');
+  });
+
+  test('owns viz chrome wiring (tabs, gallery, fullscreen)', () => {
+    expect(src).toContain('_wireTabBar');
+    expect(src).toContain('_wireFullscreen');
+    expect(src).toContain('_wireGalleryToggle');
+    expect(src).toContain('viz-fullscreen');
   });
 
   test('supports gallery show-all view mode', () => {
@@ -153,9 +163,9 @@ describe('visuals-bootstrap loading and event wiring', () => {
     expect(src).toContain('VIP_drawStaticSpectrogram');
   });
 
-  test('app.js tab switching calls VIP_VISUALS.onTabActivated', () => {
+  test('app.js delegates viz chrome to VIP_VISUALS.wireChrome', () => {
     const src = fs.readFileSync(APP_JS_PATH, 'utf8');
-    expect(src).toContain('VIP_VISUALS.onTabActivated');
+    expect(src).toContain('VIP_VISUALS.wireChrome');
   });
 
   test('index.html includes Show All gallery toggle', () => {
@@ -191,5 +201,8 @@ describe('visuals-bootstrap module evaluated in jsdom-like sandbox', () => {
     expect(typeof window.VIP_VISUALS.stop).toBe('function');
     expect(typeof window.VIP_VISUALS.setViewMode).toBe('function');
     expect(typeof window.VIP_VISUALS.getViewMode).toBe('function');
+    expect(typeof window.VIP_VISUALS.wireChrome).toBe('function');
+    expect(typeof window.VIP_VISUALS.toggleFullscreen).toBe('function');
+    expect(typeof window.VIP_VISUALS.activateTab).toBe('function');
   });
 });
