@@ -30,6 +30,12 @@
   let _lastDiarSegStart = 0;
   let _lastSpeakerState = null;
   let _vizFullscreen = false;
+  let _roRaf = 0;
+  let _roScheduled = false;
+  let _freqScratch = null;
+  let _timeScratch = null;
+  let _waveBaseCache = new WeakMap();
+  let _playheadPxCache = new WeakMap();
 
   function _getPlayOffset() {
     const app = global._vipApp;
@@ -74,28 +80,30 @@
     return panel.classList.contains('active');
   }
 
-  /* ── Static waveform render ───────────────────────────────────────────── */
-  function _drawWaveformOnto(canvas, audioBuf, color) {
-    if (!canvas || !audioBuf || !audioBuf.getChannelData) return;
+  /* ── Static waveform render (cached — playhead overlays only during playback) ── */
+  function _waveCacheKey(audioBuf, color) {
+    return (audioBuf.length || 0) + ':' + (audioBuf.sampleRate || 0) + ':' + (color || '');
+  }
+
+  function _drawWaveformBase(canvas, audioBuf, color) {
+    if (!canvas || !audioBuf || !audioBuf.getChannelData) return false;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const cssH = parseInt(getComputedStyle(canvas).height, 10) || 0;
-    const bw = rect.width > 0 ? rect.width : (canvas.offsetWidth || 800);
-    const bh = rect.height > 0 ? rect.height : (cssH || canvas.offsetHeight || 70);
-    canvas.width = Math.floor(bw);
-    canvas.height = Math.floor(bh);
-    const w = canvas.width || 800;
-    const h = canvas.height || 70;
-    ctx.fillStyle = '#030306';
-    ctx.fillRect(0, 0, w, h);
+    if (!ctx) return false;
+    const { w, h } = _resizeCanvas(canvas, 70);
+    const cacheKey = _waveCacheKey(audioBuf, color);
+    const cached = _waveBaseCache.get(canvas);
+    if (cached && cached.key === cacheKey && cached.w === w && cached.h === h) {
+      ctx.putImageData(cached.image, 0, 0);
+      return true;
+    }
 
     const data = audioBuf.getChannelData(0);
     const step = Math.max(1, Math.floor(data.length / w));
     const mid = h / 2;
 
+    ctx.fillStyle = '#030306';
+    ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = color || '#22d3ee';
-    ctx.fillStyle = (color || '#22d3ee') + '33';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(0, mid);
@@ -121,13 +129,31 @@
     ctx.moveTo(0, mid);
     ctx.lineTo(w, mid);
     ctx.stroke();
+
+    try {
+      _waveBaseCache.set(canvas, {
+        key: cacheKey,
+        w,
+        h,
+        image: ctx.getImageData(0, 0, w, h),
+      });
+    } catch (_) {}
+    _playheadPxCache.delete(canvas);
+    return true;
+  }
+
+  function _drawWaveformOnto(canvas, audioBuf, color) {
+    _drawWaveformBase(canvas, audioBuf, color);
   }
 
   function _drawPlayhead(canvas, buffer, color) {
     if (!canvas || !buffer) return;
-    _drawWaveformOnto(canvas, buffer, color);
+    if (!_drawWaveformBase(canvas, buffer, color)) return;
     const dur = buffer.duration || 1;
-    const px = (_getPlayOffset() / dur) * canvas.width;
+    const px = Math.round((_getPlayOffset() / dur) * canvas.width);
+    const lastPx = _playheadPxCache.get(canvas);
+    if (lastPx === px) return;
+    _playheadPxCache.set(canvas, px);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.strokeStyle = '#ff2a2a';
@@ -139,6 +165,9 @@
   }
 
   function drawStaticVisuals() {
+    _waveBaseCache = new WeakMap();
+    _playheadPxCache = new WeakMap();
+    _resetCanvasDimCache();
     const app = global._vipApp;
     if (!app) return;
     const inBuf = app.inputBuffer || app.origBuffer;
@@ -166,17 +195,34 @@
 
   /* ── Canvas helpers ───────────────────────────────────────────────────── */
   function _resizeCanvas(canvas, fallbackH) {
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const rect = canvas.getBoundingClientRect();
-    const baseW = rect.width > 0 ? rect.width : (canvas.offsetWidth || canvas.clientWidth || 800);
-    const baseH = rect.height > 0 ? rect.height : (parseInt(getComputedStyle(canvas).height, 10) || canvas.clientHeight || fallbackH || 240);
-    const w = Math.round(baseW * dpr);
-    const h = Math.round(baseH * dpr);
-    if (canvas.width !== w || canvas.height !== h) {
+    const cssW = Math.max(1, Math.round(
+      rect.width > 0 ? rect.width : (canvas.offsetWidth || canvas.clientWidth || 800),
+    ));
+    const cssH = Math.max(1, Math.round(
+      rect.height > 0
+        ? rect.height
+        : (parseInt(getComputedStyle(canvas).height, 10) || canvas.clientHeight || fallbackH || 240),
+    ));
+    const w = Math.round(cssW * dpr);
+    const h = Math.round(cssH * dpr);
+    const prev = canvas.dataset.vipCssSize || '';
+    const next = cssW + 'x' + cssH;
+    if (canvas.width !== w || canvas.height !== h || prev !== next) {
       canvas.width = w;
       canvas.height = h;
+      canvas.style.width = cssW + 'px';
+      canvas.style.height = cssH + 'px';
+      canvas.dataset.vipCssSize = next;
+      _playheadPxCache.delete(canvas);
     }
-    return { w, h };
+    return { w, h, cssW, cssH };
+  }
+
+  function _resetCanvasDimCache() {
+    _spectroDims = null;
+    _freqDims = null;
   }
 
   function _resizeVisibleCanvases() {
@@ -191,9 +237,26 @@
       ['auraCanvas', 180],
       ['liquidCanvas', 180],
     ];
+    let changed = false;
     for (const [id, h] of targets) {
       const c = $(id);
-      if (c && _panelVisible(_canvasTabFor(id))) _resizeCanvas(c, h);
+      if (!c || !_panelVisible(_canvasTabFor(id))) continue;
+      const prev = c.dataset.vipCssSize || '';
+      _resizeCanvas(c, h);
+      if ((c.dataset.vipCssSize || '') !== prev) changed = true;
+    }
+    if (changed) {
+      _resetCanvasDimCache();
+      _waveBaseCache = new WeakMap();
+      _playheadPxCache = new WeakMap();
+    }
+  }
+
+  function _resizePremiumContainers() {
+    for (const handle of _premiumHandles.values()) {
+      if (handle && typeof handle.resize === 'function') {
+        try { handle.resize(); } catch (_) {}
+      }
     }
   }
 
@@ -213,11 +276,16 @@
   }
 
   /* ── Spectrogram + frequency bars ─────────────────────────────────────── */
+  let _spectroDims = null;
+
   function _drawSpectro2DColumn(canvas, freqBytes) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const { w, h } = _resizeCanvas(canvas, 240);
+    if (!_spectroDims || _spectroDims.canvas !== canvas) {
+      _spectroDims = { canvas, ..._resizeCanvas(canvas, 240) };
+    }
+    const { w, h } = _spectroDims;
     try {
       ctx.drawImage(canvas, 1, 0, w - 1, h, 0, 0, w - 1, h);
     } catch (_) {
@@ -264,11 +332,16 @@
     ctx.drawImage(src, 0, 0, dst.width, dst.height);
   }
 
+  let _freqDims = null;
+
   function _drawFreqBars(canvas, freqBytes) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const { w, h } = _resizeCanvas(canvas, 80);
+    if (!_freqDims || _freqDims.canvas !== canvas) {
+      _freqDims = { canvas, ..._resizeCanvas(canvas, 80) };
+    }
+    const { w, h } = _freqDims;
     ctx.fillStyle = 'rgba(3,3,6,0.45)';
     ctx.fillRect(0, 0, w, h);
 
@@ -430,26 +503,28 @@
     if (!an) return;
 
     const bins = an.frequencyBinCount;
-    const freqBytes = new Uint8Array(bins);
-    const timeBytes = new Uint8Array(bins);
+    if (!_freqScratch || _freqScratch.length !== bins) {
+      _freqScratch = new Uint8Array(bins);
+      _timeScratch = new Uint8Array(bins);
+    }
     try {
-      an.getByteFrequencyData(freqBytes);
-      an.getByteTimeDomainData(timeBytes);
+      an.getByteFrequencyData(_freqScratch);
+      an.getByteTimeDomainData(_timeScratch);
     } catch (_) {
       return;
     }
 
-    _updateLufs(timeBytes);
+    _updateLufs(_timeScratch);
 
     if (_isTabDrawTarget('spectrogram')) {
       const spec2d = $('spectro2DCanvas');
       if (spec2d) {
         if (spec2d.style.display === 'none') spec2d.style.display = '';
-        _drawSpectro2DColumn(spec2d, freqBytes);
+        _drawSpectro2DColumn(spec2d, _freqScratch);
         _mirrorSpectro3D();
       }
       const freq = $('freqCanvas');
-      if (freq) _drawFreqBars(freq, freqBytes);
+      if (freq) _drawFreqBars(freq, _freqScratch);
     }
 
     if (_isTabDrawTarget('waveform')) {
@@ -460,7 +535,13 @@
 
     if (_isTabDrawTarget('abcompare')) _drawABCompareLive();
 
-    _syncClustersEngine(freqBytes);
+    _syncClustersEngine(_freqScratch);
+
+    for (const handle of _premiumHandles.values()) {
+      if (handle && typeof handle.tick === 'function') {
+        try { handle.tick(); } catch (_) {}
+      }
+    }
   }
 
   function start() {
@@ -537,9 +618,7 @@
 
     if (!_getAnalyser()) return;
     for (const tab of tabsToRun) {
-      if (!_premiumHandles.has(tab)) {
-        requestAnimationFrame(() => _initPremiumTab(tab));
-      }
+      if (!_premiumHandles.has(tab)) _initPremiumTab(tab);
     }
   }
 
@@ -753,19 +832,24 @@
     _wireTabBar();
   }
 
+  function _scheduleLayoutResize() {
+    if (_roScheduled) return;
+    _roScheduled = true;
+    cancelAnimationFrame(_roRaf);
+    _roRaf = requestAnimationFrame(() => {
+      _roScheduled = false;
+      _resizeVisibleCanvases();
+      _resizePremiumContainers();
+    });
+  }
+
   function _wireResizeObserver() {
     const card = document.querySelector('.viz-card');
     if (!card || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => {
-      _resizeVisibleCanvases();
-      _syncPremiumViz();
-    });
+    const ro = new ResizeObserver(() => _scheduleLayoutResize());
     ro.observe(card);
     const onViewportChange = () => {
-      setTimeout(() => {
-        _resizeVisibleCanvases();
-        _syncPremiumViz();
-      }, 180);
+      setTimeout(_scheduleLayoutResize, 180);
     };
     window.addEventListener('orientationchange', onViewportChange);
     window.addEventListener('resize', onViewportChange);

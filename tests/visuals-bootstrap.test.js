@@ -4,6 +4,7 @@ const path = require('path');
 const VISUALS_BOOT_PATH = path.join(__dirname, '..', 'public', 'app', 'visuals-bootstrap.js');
 const INDEX_HTML_PATH   = path.join(__dirname, '..', 'public', 'app', 'index.html');
 const VIP_FIXES_PATH    = path.join(__dirname, '..', 'public', 'app', 'vip-fixes.js');
+const PREMIUM_VIS_PATH  = path.join(__dirname, '..', 'public', 'app', 'premium-visuals.js');
 const APP_JS_PATH       = path.join(__dirname, '..', 'public', 'app', 'app.js');
 
 describe('visuals-bootstrap.js — visualization driver', () => {
@@ -65,6 +66,13 @@ describe('visuals-bootstrap.js — visualization driver', () => {
     expect(src).toContain('VIP_initLiquidWaves');
   });
 
+  test('premium-visuals.js exposes coordinator tick API (no internal RAF loops)', () => {
+    const premium = fs.readFileSync(PREMIUM_VIS_PATH, 'utf8');
+    expect(premium).toContain('tick');
+    expect(premium).toContain('resize');
+    expect(premium).not.toMatch(/rafId\s*=\s*requestAnimationFrame\(draw\)/);
+  });
+
   test('uses VIP_INFERNO_LUT from visuals.js for spectrogram colors', () => {
     expect(src).toContain('VIP_INFERNO_LUT');
   });
@@ -78,6 +86,19 @@ describe('visuals-bootstrap.js — visualization driver', () => {
     expect(src).toContain('_running');
     // Single _loop function as the RAF callback
     expect(src.match(/function _loop/g) || []).toHaveLength(1);
+    expect(src).toContain('handle.tick');
+  });
+
+  test('debounces ResizeObserver layout work to avoid feedback loops', () => {
+    expect(src).toContain('_scheduleLayoutResize');
+    expect(src).toContain('_resizePremiumContainers');
+    expect(src).not.toMatch(/new ResizeObserver\(\(\) => \{\s*_resizeVisibleCanvases\(\);\s*_syncPremiumViz\(\)/);
+  });
+
+  test('caches waveform bases instead of redrawing full buffers every frame', () => {
+    expect(src).toContain('_waveBaseCache');
+    expect(src).toContain('_drawWaveformBase');
+    expect(src).toContain('putImageData');
   });
 
   test('does NOT define any STFT/iSTFT or fetch — pure tap consumer', () => {

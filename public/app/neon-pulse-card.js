@@ -287,19 +287,32 @@
       document.getElementById(`np-freeze-${this._uid}`)
         .addEventListener('click', () => this._toggleFreeze());
 
-      this._ro = new ResizeObserver(() => this._resize());
+      let roPending = false;
+      this._ro = new ResizeObserver(() => {
+        if (roPending) return;
+        roPending = true;
+        requestAnimationFrame(() => {
+          roPending = false;
+          this._resize();
+        });
+      });
       this._ro.observe(this._canvas);
     }
 
     /* ── Resize canvas to display size ────────── */
     _resize() {
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const rect = this._canvas.getBoundingClientRect();
-      this._canvas.width  = rect.width  * dpr;
-      this._canvas.height = rect.height * dpr;
+      const cssW = Math.max(1, Math.round(rect.width));
+      const cssH = Math.max(1, Math.round(rect.height));
+      this._canvas.width = cssW * dpr;
+      this._canvas.height = cssH * dpr;
+      this._canvas.style.width = cssW + 'px';
+      this._canvas.style.height = cssH + 'px';
+      this._ctx.setTransform(1, 0, 0, 1, 0, 0);
       this._ctx.scale(dpr, dpr);
-      this._W = rect.width;
-      this._H = rect.height;
+      this._W = cssW;
+      this._H = cssH;
     }
 
     /* ── Wire to global PipelineState ─────────── */
