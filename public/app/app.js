@@ -21,6 +21,7 @@ import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
+import { createYieldBudget } from '/src/pipeline/ui-yield.js';
 import { sliceAudioBuffer } from '/src/core/audio-slice.js';
 import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
@@ -2105,7 +2106,6 @@ class VoiceIsolatePro {
 
     await this.ensureCtx();
     if (typeof this._warmupMLModels === 'function') this._warmupMLModels().catch(() => {});
-    await new Promise((r) => _yieldToUI(r));
 
     // Reject MIDI files early — not supported by Web Audio API
     const midiMimes = ['audio/midi', 'audio/x-midi', 'audio/mid'];
@@ -2157,9 +2157,14 @@ class VoiceIsolatePro {
     resetTimings();
     try {
       if (this.ctx.state === 'suspended') await this.ctx.resume();
-      await new Promise((r) => _yieldToUI(r));
       stageStart('decode');
-      const decoded = await decodeBlobToAudioBuffer(file);
+      const decoded = await decodeBlobToAudioBuffer(file, {
+        onProgress: (pct) => {
+          if (fileSeq !== this._fileSeq) return;
+          const label = pct < 50 ? 'Reading file…' : pct < 100 ? 'Decoding audio…' : 'Decode complete';
+          this._showFileLoading(`${label} (${Math.round(pct)}%)`);
+        },
+      });
       stageEnd('decode');
       stageStart('resample');
       buffer = await resampleToCanonical(decoded);
@@ -2555,8 +2560,7 @@ class VoiceIsolatePro {
       });
       if (fileSeq !== this._fileSeq) return false;
       if (result.passthrough) return false;
-      this.updatePipelineProgress(20, 'Building output buffer…', 82);
-      this.outputBuffer = await stemsToAudioBuffer(this.ctx, result.clean, result.sampleRate);
+      this.outputBuffer = stemsToAudioBuffer(this.ctx, result.clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
       const mlLabel = result.fromCache ? 'ML isolation (cached)' : 'ML isolation complete';
       this.updatePipelineProgress(20, mlLabel, 85);
@@ -2628,7 +2632,6 @@ class VoiceIsolatePro {
         const pct = 20 + Math.round(((ch + frac) / nCh) * 18);
         this.updatePipelineProgress(10, chLabel, pct);
       }) || channels[ch];
-      await this._yield();
     }
 
     // S15 crosstalk cancellation (needs both channels).
@@ -2937,16 +2940,17 @@ class VoiceIsolatePro {
 
   // S10–S20: spectral isolation on a single channel. Exactly ONE forward STFT
   // and ONE inverse STFT — the single-pass spectral contract (CLAUDE.md §1).
-  // Yields between frame batches so the processing overlay stays responsive.
+  // Time-budget yields keep the overlay alive without per-frame slowdown.
   async _spectralStageAsync(data, sr, p, onProgress) {
     const DSP = this._resolveDSP();
     const FFT = 4096;
     const HOP = 1024;
-    const FRAME_CHUNK = 12;
+    const FRAME_CHUNK = 256;
     if (!DSP || !data || data.length < FFT) return data;
 
-    if (onProgress) onProgress(0);
-    await this._yield();
+    const yieldBudget = createYieldBudget(32);
+    if (onProgress) onProgress(0.02);
+    await yieldBudget();
 
     const spec = DSP.forwardSTFT(data, FFT, HOP);
     if (!spec || !Array.isArray(spec.mag) || spec.mag.length === 0) return data;
@@ -2954,9 +2958,6 @@ class VoiceIsolatePro {
     const phase = spec.phase;
     const halfN = mag[0].length;
     const totalFrames = mag.length;
-
-    if (onProgress) onProgress(0.12);
-    await this._yield();
 
     const wm = this._getWhisperModeState();
     const nrAmount = (p.nrAmount ?? 0) * (wm.osf / 4.5);
@@ -2978,7 +2979,9 @@ class VoiceIsolatePro {
     }
     if ((p.harmRecov ?? 0) > 0) DSP.harmonicEnhance(mag, phase, p.harmRecov);
 
-    const hunter = typeof window !== 'undefined' ? window._vipWhisperHunter : null;
+    const whisperMode = Math.round(p.whisperMode ?? this.whisperMode ?? 0);
+    const runExtreme = this._extremeSpectralActive(p);
+    const hunter = whisperMode > 0 && typeof window !== 'undefined' ? window._vipWhisperHunter : null;
     const mapUi = (typeof window !== 'undefined' && window.mapWhisperUi) ? window.mapWhisperUi : () => 0.5;
     const whParams = hunter && typeof hunter.processMagnitudes === 'function' ? {
       clarity: mapUi(p.whisperClarity ?? 65),
@@ -2987,25 +2990,37 @@ class VoiceIsolatePro {
       harmonic: Math.pow(Math.max(0, (p.harmRecov ?? 0)) / 100, 2),
     } : null;
 
-    for (let f0 = 0; f0 < totalFrames; f0 += FRAME_CHUNK) {
-      if (this.abortFlag) return data;
-      const f1 = Math.min(totalFrames, f0 + FRAME_CHUNK);
-      this._applyExtremeSpectralOffline(mag, sr, p, halfN, FFT, HOP, DSP, f0, f1);
-      if (whParams) {
-        for (let f = f0; f < f1; f++) hunter.processMagnitudes(mag[f], phase[f], whParams);
+    if (runExtreme || whParams) {
+      for (let f0 = 0; f0 < totalFrames; f0 += FRAME_CHUNK) {
+        if (this.abortFlag) return data;
+        const f1 = Math.min(totalFrames, f0 + FRAME_CHUNK);
+        if (runExtreme) this._applyExtremeSpectralOffline(mag, sr, p, halfN, FFT, HOP, DSP, f0, f1);
+        if (whParams) {
+          for (let f = f0; f < f1; f++) hunter.processMagnitudes(mag[f], phase[f], whParams);
+        }
+        if (onProgress) onProgress(0.2 + 0.65 * (f1 / totalFrames));
+        await yieldBudget();
       }
-      if (onProgress) onProgress(0.2 + 0.65 * (f1 / totalFrames));
-      await this._yield();
+    } else if (onProgress) {
+      onProgress(0.85);
     }
 
     this._extremeNoiseProfile = this._estimateNoiseFloor(mag);
-
-    if (onProgress) onProgress(0.9);
-    await this._yield();
+    if (onProgress) onProgress(0.92);
+    await yieldBudget();
 
     const rendered = DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);
     if (onProgress) onProgress(1);
     return (rendered && rendered.length === data.length) ? rendered : data;
+  }
+
+  _extremeSpectralActive(p) {
+    return (p.bassCrush ?? 0) > 0
+      || (p.musicKill ?? 0) > 0
+      || (p.crowdNull ?? 0) > 0
+      || (p.reverbStrip ?? 0) > 0
+      || (p.voiceTunnel ?? 0) > 0
+      || (p.whisperLift ?? 0) > 0;
   }
 
   // [WHISPER UPDATE] Extreme isolation ops — in-place per STFT frame (offline path)
@@ -3040,6 +3055,38 @@ class VoiceIsolatePro {
     const tunnelQ2 = 3 + (voiceTunnel / 100) * 6;
     const tunnelG2 = voiceTunnel * 0.08;
 
+    if (frameStart === 0 || !this._extremeMaskGains || this._extremeMaskGains.length !== halfN) {
+      const maskGains = new Float32Array(halfN);
+      for (let k = 0; k < halfN; k++) {
+        let mask = 1;
+        if (DSP && typeof DSP.getVoiceMaskGain === 'function') {
+          mask = DSP.getVoiceMaskGain(k, sr, fftSize);
+        }
+        maskGains[k] = mask > 0.55 ? liftGain : Math.max(wm.maskFloor, mask);
+      }
+      this._extremeMaskGains = maskGains;
+      if (voiceTunnel > 0) {
+        const tunnelGains = new Float32Array(halfN);
+        const lowCut = 300 + (200 * voiceTunnel / 100);
+        const highCut = 3400 - (600 * voiceTunnel / 100);
+        for (let k = 0; k < halfN; k++) {
+          const hz = k * sr / fftSize;
+          let g = 1;
+          const d1 = Math.abs(hz - 1200) / (1200 / tunnelQ1);
+          const d2 = Math.abs(hz - 2800) / (2800 / tunnelQ2);
+          if (d1 < 1) g *= Math.pow(10, (tunnelG1 * (1 - d1)) / 20);
+          if (d2 < 1) g *= Math.pow(10, (tunnelG2 * (1 - d2)) / 20);
+          if (hz < lowCut || hz > highCut) g *= 0.85;
+          tunnelGains[k] = g;
+        }
+        this._extremeTunnelGains = tunnelGains;
+      } else {
+        this._extremeTunnelGains = null;
+      }
+    }
+    const maskGains = this._extremeMaskGains;
+    const tunnelGains = this._extremeTunnelGains;
+
     for (let f = frameStart; f < frameEnd; f++) {
       const frame = mag[f];
       const bufIdx = this._extremeFrameIdx % 5;
@@ -3073,28 +3120,9 @@ class VoiceIsolatePro {
         if (frame[k] < snrThresh) frame[k] = 0;
       }
 
-      for (let k = 0; k < halfN; k++) {
-        let mask = 1;
-        if (DSP && typeof DSP.getVoiceMaskGain === 'function') {
-          mask = DSP.getVoiceMaskGain(k, sr, fftSize);
-        }
-        if (mask > 0.55) frame[k] *= liftGain;
-        else frame[k] *= Math.max(wm.maskFloor, mask);
-      }
-
-      if (voiceTunnel > 0) {
-        for (let k = 0; k < halfN; k++) {
-          const hz = k * sr / fftSize;
-          let g = 1;
-          const d1 = Math.abs(hz - 1200) / (1200 / tunnelQ1);
-          const d2 = Math.abs(hz - 2800) / (2800 / tunnelQ2);
-          if (d1 < 1) g *= Math.pow(10, (tunnelG1 * (1 - d1)) / 20);
-          if (d2 < 1) g *= Math.pow(10, (tunnelG2 * (1 - d2)) / 20);
-          if (hz < 300 + (200 * voiceTunnel / 100) || hz > 3400 - (600 * voiceTunnel / 100)) {
-            g *= 0.85;
-          }
-          frame[k] *= g;
-        }
+      for (let k = 0; k < halfN; k++) frame[k] *= maskGains[k];
+      if (tunnelGains) {
+        for (let k = 0; k < halfN; k++) frame[k] *= tunnelGains[k];
       }
     }
   }

@@ -134,9 +134,9 @@ function postStage(stage, percent, extra = {}) {
 
 function effectiveBatchFrames(entry) {
   const base = entry.maxBatchFrames || 32;
-  if (BACKEND === 'webgpu') return Math.min(128, base * 3);
+  if (BACKEND === 'webgpu') return Math.min(256, base * 4);
   // Larger WASM batches amortize ONNX session.run overhead on spectral models.
-  return Math.min(96, base * 3);
+  return Math.min(128, base * 4);
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────
@@ -258,17 +258,7 @@ async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) 
     const bytes = await fetchModelBytes(entry);
     if (!quiet) postStage('load', 40, { modelId: entry.id, label: `Verifying ${entry.name || entry.id}…` });
     if (!quiet) postStage('load', 55, { modelId: entry.id, label: `Compiling ${entry.name || entry.id}…` });
-    const compileBeat = !quiet && ACTIVE_REQUEST_ID != null
-      ? setInterval(() => {
-          postStage('load', 60, { modelId: entry.id, label: `Compiling ${entry.name || entry.id}…` });
-        }, 800)
-      : null;
-    let session;
-    try {
-      session = await createSessionFromBytes(entry, bytes);
-    } finally {
-      if (compileBeat) clearInterval(compileBeat);
-    }
+    const session = await createSessionFromBytes(entry, bytes);
     SESSIONS[sessionKey] = session;
     if (!quiet) postStage('load', 100, { modelId: entry.id, label: `${entry.name || entry.id} ready` });
     return session;
