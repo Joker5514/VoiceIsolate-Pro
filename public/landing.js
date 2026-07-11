@@ -687,7 +687,8 @@ async function ingestFrom(file) {
     showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
     const modelIds = resolveModelIds(ui.modelSelect.value);
-    const warmupP = warmupWorkerModels(modelIds).catch(() => {});
+    // Overlap model prefetch with decode; separateStems reports load progress.
+    void warmupWorkerModels(modelIds).catch(() => {});
     const next = await ingestFile(file, {
       onProgress: (stage, percent = 0) => {
         if (seq !== ingestSeq) return;
@@ -704,9 +705,8 @@ async function ingestFrom(file) {
     if (seq !== ingestSeq) return;
     ingested = next;
     if (isVideoFile(file)) loadVideo(file);
-    await warmupP;
     if (seq !== ingestSeq) return;
-    // Auto-start separation — models warmed during decode; skip the extra click.
+    // Auto-start separation — model load progress shows during onProcess().
     onProcess();
   } catch (err) {
     if (seq !== ingestSeq) return;

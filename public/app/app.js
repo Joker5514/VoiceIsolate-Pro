@@ -2535,14 +2535,14 @@ class VoiceIsolatePro {
     if (fileSeq !== this._fileSeq) return false;
     try {
       await this.ensureCtx();
-      const warmupP = this._warmupMLModels().catch(() => {});
+      // Warmup may already run from handleFile — keep it in flight but never block
+      // pipeline start on full ONNX compile (can take 30–120s on first load).
+      void this._warmupMLModels().catch(() => {});
       const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
       const channelData = [];
       for (let ch = 0; ch < buf.numberOfChannels; ch++) {
         channelData.push(buf.getChannelData(ch));
       }
-      this.updatePipelineProgress(4, 'Loading ML model…', 10);
-      await warmupP;
       this.updatePipelineProgress(4, 'ML isolation…', 15);
       const result = await separateStems(channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
