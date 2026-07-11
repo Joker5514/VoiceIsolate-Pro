@@ -503,6 +503,11 @@
     target.addEventListener('click', onClick);
   }
 
+  function clearAllIsolationVisuals() {
+    updateSpecBadge(0, 0, false);
+    document.querySelectorAll('.viz-iso-overlay').forEach(clearOverlay);
+  }
+
   function init() {
     bindSpectrogramCanvas($('spectro2DCanvas'), 'spectrogram');
     bindSpectrogramCanvas($('spectroCanvas'), 'spectrogram-3d');
@@ -513,6 +518,8 @@
     bindStemClick($('liquidCanvas'), $('iso-badge-liquid'));
     bindStemClick($('topoContainer'), $('iso-badge-topo'));
     bindStemClick($('swarmContainer'), $('iso-badge-swarm'));
+
+    global.addEventListener('vip:isolationBandClear', clearAllIsolationVisuals);
   }
 
   if (document.readyState === 'loading') {
