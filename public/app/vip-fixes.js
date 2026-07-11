@@ -599,9 +599,9 @@
           return await orig(...args);
         } finally {
           _refreshAB();
-          const pb = $('processBtn');   if (pb) pb.disabled = false;
-          const rb = $('reprocessBtn'); if (rb) rb.disabled = false;
-          window.dispatchEvent(new CustomEvent('vip:processingDone'));
+          if (typeof app._updateProcessButtonsState === 'function') {
+            app._updateProcessButtonsState();
+          }
         }
       };
       app._fixRunPipelineWrapped = true;

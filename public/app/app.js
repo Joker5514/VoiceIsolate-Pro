@@ -69,7 +69,11 @@ const HeroExperience = (() => {
     const statusEl = $('heroStatus');
     if (statusEl && status) statusEl.textContent = status;
     const cta = $('heroCtaProcess');
-    if (cta) cta.disabled = !enableProcess;
+    const busy = !!(appRef && appRef.isProcessing);
+    if (cta) cta.disabled = !enableProcess || busy;
+    if (appRef && typeof appRef._updateProcessButtonsState === 'function') {
+      appRef._updateProcessButtonsState();
+    }
   }
 
   function syncAliasControls() {
@@ -147,6 +151,7 @@ const HeroExperience = (() => {
     });
     $('heroCtaProcess')?.addEventListener('click', (e) => {
       e.preventDefault();
+      if (app.isProcessing) return;
       if (!app.dom.processBtn?.disabled) app.runPipeline();
     });
     $('exportBtn')?.addEventListener('click', (e) => {
@@ -201,6 +206,9 @@ const HeroExperience = (() => {
     if (barWrap) barWrap.setAttribute('aria-valuenow', String(Math.round(p)));
     if (p > 0 && p < 100) setUiState('processing');
     if (p >= 100) setUiState('processed');
+    if (appRef && typeof appRef._updateProcessButtonsState === 'function') {
+      appRef._updateProcessButtonsState();
+    }
     syncStatStrip(appRef?.inputBuffer || appRef?.origBuffer, detail || 'Processing');
     mirrorWaveCanvases();
   }
@@ -2087,7 +2095,10 @@ class VoiceIsolatePro {
     clearStemCache();
     this._sourceName = file.name || '';
     this.stop();
-    if (this.isProcessing) this.abortFlag = true;
+    if (this.isProcessing) {
+      this.abortFlag = true;
+      await this._waitForPipelineIdle();
+    }
     this.setStatus('LOADING');
     HeroExperience.onDecodeStart();
     this._showFileLoading(file.name ? `Loading ${file.name}…` : 'Loading…');
@@ -2221,10 +2232,7 @@ class VoiceIsolatePro {
     this.setStatus('READY');
 
     // Button states — set before updating header stats
-    if (this.dom.processBtn) this.dom.processBtn.disabled = false;
-    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
-    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
-    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
+    this._updateProcessButtonsState();
     if (this.dom.playBtn) this.dom.playBtn.disabled = false;
     if (this.dom.saveOrigBtn) this.dom.saveOrigBtn.disabled = false;
 
@@ -2353,15 +2361,36 @@ class VoiceIsolatePro {
     this.onSlider('whisperMode', m);
   }
 
+  /** Wait for an in-flight pipeline (after abort) before loading or re-running. */
+  async _waitForPipelineIdle(maxMs = 20000) {
+    const start = Date.now();
+    while (this.isProcessing && Date.now() - start < maxMs) {
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    if (this.isProcessing) {
+      structuredLog('warn', '[VIP] Pipeline idle wait timed out — forcing reset.');
+      this.isProcessing = false;
+      this.abortFlag = false;
+      if (typeof this.hideProcessingOverlay === 'function') {
+        try { this.hideProcessingOverlay(); } catch (_) {}
+      }
+      document.body.classList.remove('vip-processing-lock');
+    }
+  }
+
   // ── Main pipeline (32-stage Deca-Pass) ────────────────────────────────────
   async runPipeline(fileSeq = this._fileSeq) {
     if (!this.origBuffer && !this.inputBuffer) return;
-    if (this.isProcessing) return;
+    if (this.isProcessing) {
+      this.showNotification('Processing already in progress…', 'info');
+      return;
+    }
     if (fileSeq !== this._fileSeq) return;
 
     this.isProcessing = true;
     this.abortFlag = false;
     this._mlIsolationSucceeded = false;
+    this._updateProcessButtonsState();
     stageStart('pipeline');
 
     // Hide process buttons, show stop button
@@ -2513,7 +2542,7 @@ class VoiceIsolatePro {
         modelIds: DEFAULT_ML_CHAIN,
         sourceName: this._sourceName || '',
         onProgress: (ev) => {
-          if (fileSeq !== this._fileSeq) return;
+          if (fileSeq !== this._fileSeq || this.abortFlag) return;
           if (ev.type === 'stage') {
             const label = ev.label || `ML: ${ev.stage} (${ev.modelId || 'model'})…`;
             const pct = 15 + Math.round((ev.percent || 0) * 0.55);
@@ -3784,9 +3813,14 @@ class VoiceIsolatePro {
 
   _updateProcessButtonsState() {
     const hasBuf = Boolean(this.inputBuffer || this.origBuffer);
-    const canProcess = hasBuf;
-    if (this.dom.processBtn) this.dom.processBtn.disabled = !canProcess;
-    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !canProcess;
+    const hasOut = Boolean(this.outputBuffer || this.procBuffer);
+    const busy = Boolean(this.isProcessing);
+    if (this.dom.processBtn) this.dom.processBtn.disabled = !hasBuf || busy;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !hasBuf || busy;
+    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = !hasOut || busy;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = !hasOut || busy;
+    const heroCta = document.getElementById('heroCtaProcess');
+    if (heroCta) heroCta.disabled = !hasBuf || busy;
   }
 
   _getTransportMixer() {

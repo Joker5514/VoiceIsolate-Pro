@@ -110,6 +110,14 @@ describe('visuals-bootstrap loading and event wiring', () => {
     expect(src).toContain("'vip:playStopped'");
   });
 
+  test('vip-fixes runPipeline guard does not fake vip:processingDone on every exit', () => {
+    const src = fs.readFileSync(VIP_FIXES_PATH, 'utf8');
+    const guard = src.match(/app\.runPipeline = async function[\s\S]*?_fixRunPipelineWrapped = true/);
+    expect(guard).toBeTruthy();
+    expect(guard[0]).not.toContain("'vip:processingDone'");
+    expect(guard[0]).toContain('_updateProcessButtonsState');
+  });
+
   test('vip-fixes.js routes playback through orchestrator workletNode when present', () => {
     const src = fs.readFileSync(VIP_FIXES_PATH, 'utf8');
     expect(src).toMatch(/_vipOrch\?\.workletNode|_vipOrch\.workletNode/);
