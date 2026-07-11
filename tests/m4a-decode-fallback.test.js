@@ -110,9 +110,14 @@ describe('M4A decode fallback — FileIngestion wiring', () => {
     expect(fijs).toContain("import { decodeBlobToAudioBuffer } from './media-decode.js'");
   });
 
-  test('ingestFile calls decodeBlobToAudioBuffer after yielding to the UI', () => {
+  test('ingestFile calls decodeBlobToAudioBuffer without an artificial pre-decode delay', () => {
     expect(fijs).toContain('decodeBlobToAudioBuffer(file');
-    expect(fijs).toMatch(/queueMicrotask\(resolve\)/);
+    expect(fijs).not.toMatch(/queueMicrotask\(resolve\)/);
+  });
+
+  test('media-decode uses cross-browser safe decodeAudioData wrapper', () => {
+    expect(mdjs).toContain('decodeAudioBufferSafe');
+    expect(mdjs).toContain('safeDecodeAudioData');
   });
 
   test('validation uses inferMediaKind for extension-based acceptance', () => {
@@ -134,5 +139,10 @@ describe('M4A decode fallback — landing.js upload UX', () => {
 
   test('landing.js resets file input so the same file can be re-selected', () => {
     expect(ljs).toMatch(/finally[\s\S]*ui\.fileInput\.value\s*=\s*''/);
+  });
+
+  test('landing.js awaits ML warmup before auto-processing after decode', () => {
+    expect(ljs).toContain('await warmupP');
+    expect(ljs).toContain('warmupWorkerModels(modelIds)');
   });
 });

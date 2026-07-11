@@ -106,6 +106,46 @@ function yieldToMain() {
 }
 
 /**
+ * Cross-browser decodeAudioData — iOS callback API, Android resume/retry.
+ * Uses window.safeDecodeAudioData when mobile-upload-fix.js is loaded (Engineer).
+ */
+async function decodeAudioBufferSafe(ctx, arrayBuffer) {
+  const shim = globalThis.safeDecodeAudioData;
+  if (typeof shim === 'function') {
+    return shim(ctx, arrayBuffer);
+  }
+  if (ctx.state === 'suspended') {
+    try { await ctx.resume(); } catch { /* best-effort */ }
+  }
+  const decodeOnce = (context, buf) => new Promise((resolve, reject) => {
+    const onOk = (decoded) => resolve(decoded);
+    const onErr = (err) => reject(err || new Error('decodeAudioData failed'));
+    try {
+      const ret = context.decodeAudioData(buf, onOk, onErr);
+      if (ret && typeof ret.then === 'function') ret.then(resolve, reject);
+    } catch (err) {
+      reject(err);
+    }
+  });
+  try {
+    return await decodeOnce(ctx, arrayBuffer);
+  } catch (firstErr) {
+    const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!Ctx) throw firstErr;
+    const fresh = new Ctx();
+    try {
+      if (fresh.state === 'suspended') await fresh.resume();
+      const retryBuf = arrayBuffer.byteLength > 0 ? arrayBuffer.slice(0) : arrayBuffer;
+      return await decodeOnce(fresh, retryBuf);
+    } catch {
+      throw firstErr;
+    } finally {
+      try { await fresh.close(); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
  * decodeAudioData on MP4/MOV often returns only the first ~15 s. Detect that
  * so we can fall back to full media-element capture.
  */
@@ -173,7 +213,7 @@ async function _decodeWithAudioData(blob, onProgress) {
   try {
     if (ctx.state === 'suspended') await ctx.resume();
     onProgress(55);
-    const decoded = await ctx.decodeAudioData(arrayBuffer);
+    const decoded = await decodeAudioBufferSafe(ctx, arrayBuffer);
     onProgress(100);
     return decoded;
   } finally {

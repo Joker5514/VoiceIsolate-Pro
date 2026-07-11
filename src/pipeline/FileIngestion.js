@@ -190,10 +190,6 @@ export async function ingestFile(file, hooks = {}) {
   const { onProgress = () => {}, isolationMode } = hooks;
   assertIngestible(file);
 
-  onProgress('decoding', 2);
-  // Yield so the presentation layer can paint a loading state before the
-  // (potentially heavy) main-thread decode call.
-  await new Promise((resolve) => queueMicrotask(resolve));
   onProgress('decoding', 5);
   stageStart('decode');
   const decoded = await decodeBlobToAudioBuffer(file, {
