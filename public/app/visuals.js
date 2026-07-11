@@ -541,12 +541,65 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* 6. Global exports                                                   */
+  /* 6. Static spectrogram (pre-playback preview)                        */
+  /* ------------------------------------------------------------------ */
+  function drawStaticSpectrogram(canvas, audioBuf) {
+    if (!canvas || !audioBuf || !audioBuf.getChannelData) return;
+    var dsp = global.DSP || globalThis.DSP;
+    if (!dsp || typeof dsp.forwardSTFT !== 'function') return;
+
+    var data = audioBuf.getChannelData(0);
+    var fftSize = 1024;
+    var hopSize = 256;
+    var spec;
+    try { spec = dsp.forwardSTFT(data, fftSize, hopSize); } catch (_) { return; }
+    if (!spec || !spec.mag || !spec.mag.length) return;
+
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    var rect = canvas.getBoundingClientRect();
+    var cssH = parseInt(getComputedStyle(canvas).height, 10) || 0;
+    var w = Math.floor(rect.width > 0 ? rect.width : (canvas.offsetWidth || 800));
+    var h = Math.floor(rect.height > 0 ? rect.height : (cssH || canvas.offsetHeight || 240));
+    if (w < 2 || h < 2) return;
+    canvas.width = w;
+    canvas.height = h;
+
+    var frames = spec.mag.length;
+    var bins = spec.mag[0].length;
+    var img = ctx.createImageData(w, h);
+    var maxMag = 1e-9;
+    for (var f = 0; f < frames; f++) {
+      for (var b = 0; b < bins; b++) {
+        if (spec.mag[f][b] > maxMag) maxMag = spec.mag[f][b];
+      }
+    }
+
+    for (var x = 0; x < w; x++) {
+      var frame = Math.min(frames - 1, Math.floor((x / w) * frames));
+      for (var y = 0; y < h; y++) {
+        var t = 1 - (y / h);
+        var bin = Math.min(bins - 1, Math.floor(Math.pow(t, 2.0) * (bins - 1)));
+        var v = Math.min(1, spec.mag[frame][bin] / maxMag);
+        var li = Math.min(255, Math.floor(v * 255)) * 3;
+        var px = (y * w + x) * 4;
+        img.data[px]     = INFERNO_LUT[li];
+        img.data[px + 1] = INFERNO_LUT[li + 1];
+        img.data[px + 2] = INFERNO_LUT[li + 2];
+        img.data[px + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 7. Global exports                                                   */
   /* ------------------------------------------------------------------ */
   global.VIP_SPEAKER_COLORS = SPEAKER_COLORS;
   global.VIP_INFERNO_LUT    = INFERNO_LUT;
   global.VIP_buildInfernoLUT = buildInfernoLUT;
   global.VIP_inferno        = inferno;
+  global.VIP_drawStaticSpectrogram = drawStaticSpectrogram;
   global.VisualizationEngine = VisualizationEngine;
   global.VIP_initNeonVisualizer = initNeonVisualizer;
 })(typeof window !== 'undefined' ? window : this);

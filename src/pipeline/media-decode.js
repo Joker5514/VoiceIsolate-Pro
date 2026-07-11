@@ -5,8 +5,10 @@ import { inferMediaKind } from '../core/media-types.js';
 
 /** Minimum capture timeout — long files scale beyond this. */
 const MEDIA_DECODE_MIN_TIMEOUT_MS = 120_000;
-/** Below 16 MiB a single arrayBuffer() read is faster than streaming chunks. */
-const FAST_READ_BYTES = 16 * 1024 * 1024;
+/** Below 64 MiB a single arrayBuffer() read is faster than streaming chunks. */
+const FAST_READ_BYTES = 64 * 1024 * 1024;
+/** Yield during streaming reads at most every N bytes. */
+const STREAM_YIELD_BYTES = 32 * 1024 * 1024;
 /** Target media-element capture rate (16× is widely supported). */
 const MAX_CAPTURE_PLAYBACK_RATE = 16;
 // ScriptProcessorNode block size — must be a power-of-two 256–16384.
@@ -67,7 +69,6 @@ async function readBlobWithProgress(blob, onProgress) {
   const total = blob.size || 1;
   if (total <= FAST_READ_BYTES || typeof blob.stream !== 'function') {
     onProgress(15);
-    await yieldToMain();
     const buf = await blob.arrayBuffer();
     onProgress(45);
     return buf;
@@ -84,7 +85,7 @@ async function readBlobWithProgress(blob, onProgress) {
     parts.push(value);
     received += value.byteLength;
     onProgress(Math.min(44, 8 + Math.round((received / total) * 36)));
-    if (received % (8 * 1024 * 1024) < value.byteLength) await yieldToMain();
+    if (received % STREAM_YIELD_BYTES < value.byteLength) await yieldToMain();
   }
 
   const out = new Uint8Array(received);
@@ -102,6 +103,46 @@ function yieldToMain() {
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
     else setTimeout(resolve, 0);
   });
+}
+
+/**
+ * Cross-browser decodeAudioData — iOS callback API, Android resume/retry.
+ * Uses window.safeDecodeAudioData when mobile-upload-fix.js is loaded (Engineer).
+ */
+async function decodeAudioBufferSafe(ctx, arrayBuffer) {
+  const shim = globalThis.safeDecodeAudioData;
+  if (typeof shim === 'function') {
+    return shim(ctx, arrayBuffer);
+  }
+  if (ctx.state === 'suspended') {
+    try { await ctx.resume(); } catch { /* best-effort */ }
+  }
+  const decodeOnce = (context, buf) => new Promise((resolve, reject) => {
+    const onOk = (decoded) => resolve(decoded);
+    const onErr = (err) => reject(err || new Error('decodeAudioData failed'));
+    try {
+      const ret = context.decodeAudioData(buf, onOk, onErr);
+      if (ret && typeof ret.then === 'function') ret.then(resolve, reject);
+    } catch (err) {
+      reject(err);
+    }
+  });
+  try {
+    return await decodeOnce(ctx, arrayBuffer);
+  } catch (firstErr) {
+    const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!Ctx) throw firstErr;
+    const fresh = new Ctx();
+    try {
+      if (fresh.state === 'suspended') await fresh.resume();
+      const retryBuf = arrayBuffer.byteLength > 0 ? arrayBuffer.slice(0) : arrayBuffer;
+      return await decodeOnce(fresh, retryBuf);
+    } catch {
+      throw firstErr;
+    } finally {
+      try { await fresh.close(); } catch { /* ignore */ }
+    }
+  }
 }
 
 /**
@@ -172,7 +213,7 @@ async function _decodeWithAudioData(blob, onProgress) {
   try {
     if (ctx.state === 'suspended') await ctx.resume();
     onProgress(55);
-    const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+    const decoded = await decodeAudioBufferSafe(ctx, arrayBuffer);
     onProgress(100);
     return decoded;
   } finally {

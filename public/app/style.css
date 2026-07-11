@@ -437,9 +437,14 @@ input[type="range"].realtime:not(.tp-seek):not(.landing-seek-input)::-webkit-sli
 .osc-mode.active{border-color:var(--green);color:var(--green);background:rgba(255, 85, 0,0.06)}
 
 /* ---- VISUALIZATIONS ---- */
-.viz-card{margin-bottom:8px}
-.viz-hdr{display:flex;justify-content:space-between;align-items:center;font-size:0.68rem;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px}
-.viz-actions{display:flex;align-items:center;gap:6px}
+.viz-card{margin-bottom:8px;position:relative}
+.viz-hdr{display:flex;justify-content:space-between;align-items:center;font-size:0.68rem;color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;position:relative;z-index:6}
+.viz-actions{display:flex;align-items:center;gap:6px;position:relative;z-index:6}
+.viz-card .tabs{position:relative;z-index:6}
+.viz-card .tab-btn{position:relative;z-index:6;cursor:pointer;touch-action:manipulation}
+.viz-card.viz-fullscreen{position:fixed;inset:12px;z-index:9998;overflow:auto;margin:0;max-height:none;background:#040408;border:1px solid var(--border);box-shadow:0 24px 80px rgba(0,0,0,.75)}
+.viz-card.viz-fullscreen .viz-hdr{position:sticky;top:0;background:rgba(4,4,8,.92);backdrop-filter:blur(10px);padding:6px 0;margin-bottom:8px;z-index:9}
+.viz-card.viz-fullscreen .tabs{position:sticky;top:36px;background:rgba(4,4,8,.88);backdrop-filter:blur(8px);z-index:8;padding-bottom:4px}
 .btn-viz-gallery.is-active{border-color:rgba(0,255,231,.45);color:var(--cyan);background:rgba(0,255,231,.08)}
 .viz-panel-label{display:none;font-size:0.58rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--cyan);margin-bottom:4px}
 .viz-card.viz-gallery .viz-panel-label{display:block}
@@ -705,7 +710,9 @@ input[type="range"]:not(.realtime):not(.tp-seek):not(.landing-seek-input):not(.d
 .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:9999; align-items:center; justify-content:center; }
 .modal.open { display:flex; }
 .modal-content { background:var(--s2); border:1px solid var(--border); border-radius:var(--rs); padding:24px; min-width:300px; display:flex; flex-direction:column; gap:12px; }
-#spectro3d-container.fullscreen{position:fixed;inset:12px;z-index:9998;background:#000;border:1px solid var(--border)}
+#spectro3d-container.fullscreen{min-height:min(48vh,420px)}
+.viz-card.viz-fullscreen #spectro3d-container{min-height:min(42vh,360px)}
+.viz-card.viz-fullscreen .spectro2d{height:min(28vh,220px)}
 
 @media (max-width:960px) {
   .main-grid { grid-template-columns:minmax(0,1fr); }

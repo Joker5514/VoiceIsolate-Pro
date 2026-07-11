@@ -18,11 +18,21 @@ describe('visuals-bootstrap.js — visualization driver', () => {
     expect(src).toContain('global.VIP_VISUALS');
     expect(src).toContain('drawStatic');
     expect(src).toContain('onTabActivated');
+    expect(src).toContain('activateTab');
     expect(src).toContain('initPremium');
     expect(src).toContain('setViewMode');
     expect(src).toContain('getViewMode');
+    expect(src).toContain('toggleFullscreen');
+    expect(src).toContain('wireChrome');
     expect(src).toContain('start');
     expect(src).toContain('stop');
+  });
+
+  test('owns viz chrome wiring (tabs, gallery, fullscreen)', () => {
+    expect(src).toContain('_wireTabBar');
+    expect(src).toContain('_wireFullscreen');
+    expect(src).toContain('_wireGalleryToggle');
+    expect(src).toContain('viz-fullscreen');
   });
 
   test('supports gallery show-all view mode', () => {
@@ -100,6 +110,14 @@ describe('visuals-bootstrap loading and event wiring', () => {
     expect(src).toContain("'vip:playStopped'");
   });
 
+  test('vip-fixes runPipeline guard does not fake vip:processingDone on every exit', () => {
+    const src = fs.readFileSync(VIP_FIXES_PATH, 'utf8');
+    const guard = src.match(/app\.runPipeline = async function[\s\S]*?_fixRunPipelineWrapped = true/);
+    expect(guard).toBeTruthy();
+    expect(guard[0]).not.toContain("'vip:processingDone'");
+    expect(guard[0]).toContain('_updateProcessButtonsState');
+  });
+
   test('vip-fixes.js routes playback through orchestrator workletNode when present', () => {
     const src = fs.readFileSync(VIP_FIXES_PATH, 'utf8');
     expect(src).toMatch(/_vipOrch\?\.workletNode|_vipOrch\.workletNode/);
@@ -129,9 +147,33 @@ describe('visuals-bootstrap loading and event wiring', () => {
     expect(src).toMatch(/stopSpectro\(\)[\s\S]*VIP_VISUALS\.stop/);
   });
 
-  test('app.js tab switching calls VIP_VISUALS.onTabActivated', () => {
+  test('app.js wires playback analyser and dispatches vip:playStarted / vip:playStopped', () => {
     const src = fs.readFileSync(APP_JS_PATH, 'utf8');
-    expect(src).toContain('VIP_VISUALS.onTabActivated');
+    expect(src).toContain('_ensurePlaybackAnalyser');
+    expect(src).toContain('_dispatchPlayStarted');
+    expect(src).toContain('_dispatchPlayStopped');
+    expect(src).toContain('window._vipPlayAnalyser');
+    expect(src).toContain("'vip:playStarted'");
+    expect(src).toContain("'vip:playStopped'");
+  });
+
+  test('visuals.js exposes VIP_drawStaticSpectrogram for pre-playback spectro preview', () => {
+    const visualsPath = path.join(__dirname, '..', 'public', 'app', 'visuals.js');
+    const src = fs.readFileSync(visualsPath, 'utf8');
+    expect(src).toContain('VIP_drawStaticSpectrogram');
+    expect(src).toContain('drawStaticSpectrogram');
+  });
+
+  test('visuals-bootstrap.js resolves analyser via bridge / app fallback', () => {
+    const src = fs.readFileSync(VISUALS_BOOT_PATH, 'utf8');
+    expect(src).toContain('function _getAnalyser');
+    expect(src).toContain('_ensurePlaybackAnalyser');
+    expect(src).toContain('VIP_drawStaticSpectrogram');
+  });
+
+  test('app.js delegates viz chrome to VIP_VISUALS.wireChrome', () => {
+    const src = fs.readFileSync(APP_JS_PATH, 'utf8');
+    expect(src).toContain('VIP_VISUALS.wireChrome');
   });
 
   test('index.html includes Show All gallery toggle', () => {
@@ -167,5 +209,8 @@ describe('visuals-bootstrap module evaluated in jsdom-like sandbox', () => {
     expect(typeof window.VIP_VISUALS.stop).toBe('function');
     expect(typeof window.VIP_VISUALS.setViewMode).toBe('function');
     expect(typeof window.VIP_VISUALS.getViewMode).toBe('function');
+    expect(typeof window.VIP_VISUALS.wireChrome).toBe('function');
+    expect(typeof window.VIP_VISUALS.toggleFullscreen).toBe('function');
+    expect(typeof window.VIP_VISUALS.activateTab).toBe('function');
   });
 });

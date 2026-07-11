@@ -364,10 +364,46 @@ function resolveModelIds(selection) {
   return [getModel(selection).id];
 }
 
+/** @type {Set<string>} */
+const _warmedModels = new Set();
+/** @type {Array<{ resolve: Function, reject: Function, timer: *, ids: string[] }>} */
+let _warmupWaiters = [];
+let _warmupHooked = false;
+const WARMUP_TIMEOUT_MS = 120_000;
+
+function hookWarmupListener(w) {
+  if (_warmupHooked) return;
+  _warmupHooked = true;
+  w.addEventListener('message', (ev) => {
+    const msg = ev.data || {};
+    if (msg.type !== 'warmed') return;
+    for (const id of msg.modelIds || []) _warmedModels.add(id);
+    const pending = _warmupWaiters.splice(0);
+    for (const waiter of pending) {
+      clearTimeout(waiter.timer);
+      const stillMissing = waiter.ids.filter((id) => !_warmedModels.has(id));
+      if (stillMissing.length === 0) waiter.resolve(msg);
+      else _warmupWaiters.push(waiter);
+    }
+  });
+}
+
 /** Prefetch model bytes + compile ONNX sessions off the hot path. */
-function warmupWorkerModels(modelIds) {
-  if (!modelIds?.length) return;
-  getWorker().postMessage({ type: 'warmup', modelIds });
+async function warmupWorkerModels(modelIds) {
+  const ids = (Array.isArray(modelIds) ? modelIds : []).filter((id) => typeof id === 'string' && id);
+  const missing = ids.filter((id) => !_warmedModels.has(id));
+  if (missing.length === 0) return { modelIds: ids };
+  const w = getWorker();
+  hookWarmupListener(w);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const idx = _warmupWaiters.findIndex((x) => x.resolve === resolve);
+      if (idx >= 0) _warmupWaiters.splice(idx, 1);
+      reject(new Error('[VIP][landing] ML warmup timeout'));
+    }, WARMUP_TIMEOUT_MS);
+    _warmupWaiters.push({ resolve, reject, timer, ids: missing });
+    w.postMessage({ type: 'warmup', modelIds: missing });
+  });
 }
 
 function getWorker() {
@@ -386,7 +422,7 @@ function getWorker() {
         if (debugEnabled) {
           console.log('[VIP][landing] MLWorker ready (backend: ' + msg.backend + ')');
         }
-        warmupWorkerModels(DEFAULT_WARMUP_CHAIN);
+        warmupWorkerModels(DEFAULT_WARMUP_CHAIN).catch(() => {});
         break;
       }
       case 'stage':
@@ -650,7 +686,8 @@ async function ingestFrom(file) {
   try {
     showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
-    warmupWorkerModels(resolveModelIds(ui.modelSelect.value));
+    const modelIds = resolveModelIds(ui.modelSelect.value);
+    const warmupP = warmupWorkerModels(modelIds).catch(() => {});
     const next = await ingestFile(file, {
       onProgress: (stage, percent = 0) => {
         if (seq !== ingestSeq) return;
@@ -667,7 +704,9 @@ async function ingestFrom(file) {
     if (seq !== ingestSeq) return;
     ingested = next;
     if (isVideoFile(file)) loadVideo(file);
-    // Auto-start separation — models were warming during decode; skip the extra click.
+    await warmupP;
+    if (seq !== ingestSeq) return;
+    // Auto-start separation — models warmed during decode; skip the extra click.
     onProcess();
   } catch (err) {
     if (seq !== ingestSeq) return;

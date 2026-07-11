@@ -21,6 +21,7 @@ import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
+import { createYieldBudget } from '/src/pipeline/ui-yield.js';
 import { sliceAudioBuffer } from '/src/core/audio-slice.js';
 import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
@@ -69,7 +70,11 @@ const HeroExperience = (() => {
     const statusEl = $('heroStatus');
     if (statusEl && status) statusEl.textContent = status;
     const cta = $('heroCtaProcess');
-    if (cta) cta.disabled = !enableProcess;
+    const busy = !!(appRef && appRef.isProcessing);
+    if (cta) cta.disabled = !enableProcess || busy;
+    if (appRef && typeof appRef._updateProcessButtonsState === 'function') {
+      appRef._updateProcessButtonsState();
+    }
   }
 
   function syncAliasControls() {
@@ -147,6 +152,7 @@ const HeroExperience = (() => {
     });
     $('heroCtaProcess')?.addEventListener('click', (e) => {
       e.preventDefault();
+      if (app.isProcessing) return;
       if (!app.dom.processBtn?.disabled) app.runPipeline();
     });
     $('exportBtn')?.addEventListener('click', (e) => {
@@ -201,6 +207,9 @@ const HeroExperience = (() => {
     if (barWrap) barWrap.setAttribute('aria-valuenow', String(Math.round(p)));
     if (p > 0 && p < 100) setUiState('processing');
     if (p >= 100) setUiState('processed');
+    if (appRef && typeof appRef._updateProcessButtonsState === 'function') {
+      appRef._updateProcessButtonsState();
+    }
     syncStatStrip(appRef?.inputBuffer || appRef?.origBuffer, detail || 'Processing');
     mirrorWaveCanvases();
   }
@@ -1743,54 +1752,10 @@ class VoiceIsolatePro {
       });
     });
 
-    // Tab switching — CSS visibility + VIP_VISUALS driver
-    const tabs = qsa('.tab-btn[data-tab]');
-    tabs.forEach((btn, index) => {
-      btn.addEventListener('click', () => {
-        const tab = btn.dataset.tab;
-        if (window.VIP_VISUALS && typeof window.VIP_VISUALS.getViewMode === 'function'
-            && window.VIP_VISUALS.getViewMode() === 'gallery'
-            && typeof window.VIP_VISUALS.setViewMode === 'function') {
-          window.VIP_VISUALS.setViewMode('single');
-        }
-        tabs.forEach(b => {
-          b.classList.remove('active');
-          b.setAttribute('aria-selected', 'false');
-          b.setAttribute('tabindex', '-1');
-        });
-        qsa('.viz-card .panel[data-viz-panel]').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        btn.setAttribute('aria-selected', 'true');
-        btn.setAttribute('tabindex', '0');
-        const panel = document.getElementById('tab-' + tab);
-        if (panel) panel.classList.add('active');
-        if (window.VIP_VISUALS && typeof window.VIP_VISUALS.onTabActivated === 'function') {
-          window.VIP_VISUALS.onTabActivated(tab);
-        }
-      });
-
-      btn.addEventListener('keydown', (e) => {
-        let newIndex = index;
-        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-          newIndex = (index + 1) % tabs.length;
-          e.preventDefault();
-        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-          newIndex = (index - 1 + tabs.length) % tabs.length;
-          e.preventDefault();
-        } else if (e.key === 'Home') {
-          newIndex = 0;
-          e.preventDefault();
-        } else if (e.key === 'End') {
-          newIndex = tabs.length - 1;
-          e.preventDefault();
-        }
-
-        if (newIndex !== index) {
-          tabs[newIndex].focus();
-          tabs[newIndex].click();
-        }
-      });
-    });
+    // Viz tabs, Show All, and fullscreen — owned by visuals-bootstrap.js (VIP_VISUALS.wireChrome).
+    if (window.VIP_VISUALS && typeof window.VIP_VISUALS.wireChrome === 'function') {
+      window.VIP_VISUALS.wireChrome();
+    }
 
     // UI scale controls
     let uiScale = 1;
@@ -1803,12 +1768,6 @@ class VoiceIsolatePro {
       uiScale = Math.min(1.4, uiScale + 0.05);
       if (document.body) document.body.style.zoom = uiScale;
       const v = $('uiScaleVal'); if (v) v.textContent = Math.round(uiScale * 100) + '%';
-    });
-
-    // Fullscreen spectrogram
-    bind('fullscreenSpectroBtn', $('fullscreenSpectroBtn'), 'click', () => {
-      const el = $('spectro3d-container') || $('spectroCanvas');
-      if (el && el.requestFullscreen) el.requestFullscreen();
     });
 
     // Custom preset modal
@@ -1892,6 +1851,7 @@ class VoiceIsolatePro {
 
     if ((e.key === ' ' || e.key === 'k' || e.key === 'K') && (this.inputBuffer || this.origBuffer)) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (this._fixTransportPatched) return;
       e.preventDefault();
       this.togglePlayback();
       return;
@@ -2136,14 +2096,16 @@ class VoiceIsolatePro {
     clearStemCache();
     this._sourceName = file.name || '';
     this.stop();
-    if (this.isProcessing) this.abortFlag = true;
+    if (this.isProcessing) {
+      this.abortFlag = true;
+      await this._waitForPipelineIdle();
+    }
     this.setStatus('LOADING');
     HeroExperience.onDecodeStart();
     this._showFileLoading(file.name ? `Loading ${file.name}…` : 'Loading…');
 
     await this.ensureCtx();
     if (typeof this._warmupMLModels === 'function') this._warmupMLModels().catch(() => {});
-    await new Promise((r) => _yieldToUI(r));
 
     // Reject MIDI files early — not supported by Web Audio API
     const midiMimes = ['audio/midi', 'audio/x-midi', 'audio/mid'];
@@ -2195,9 +2157,14 @@ class VoiceIsolatePro {
     resetTimings();
     try {
       if (this.ctx.state === 'suspended') await this.ctx.resume();
-      await new Promise((r) => _yieldToUI(r));
       stageStart('decode');
-      const decoded = await decodeBlobToAudioBuffer(file);
+      const decoded = await decodeBlobToAudioBuffer(file, {
+        onProgress: (pct) => {
+          if (fileSeq !== this._fileSeq) return;
+          const label = pct < 50 ? 'Reading file…' : pct < 100 ? 'Decoding audio…' : 'Decode complete';
+          this._showFileLoading(`${label} (${Math.round(pct)}%)`);
+        },
+      });
       stageEnd('decode');
       stageStart('resample');
       buffer = await resampleToCanonical(decoded);
@@ -2270,10 +2237,7 @@ class VoiceIsolatePro {
     this.setStatus('READY');
 
     // Button states — set before updating header stats
-    if (this.dom.processBtn) this.dom.processBtn.disabled = false;
-    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
-    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = true;
-    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = true;
+    this._updateProcessButtonsState();
     if (this.dom.playBtn) this.dom.playBtn.disabled = false;
     if (this.dom.saveOrigBtn) this.dom.saveOrigBtn.disabled = false;
 
@@ -2402,15 +2366,36 @@ class VoiceIsolatePro {
     this.onSlider('whisperMode', m);
   }
 
+  /** Wait for an in-flight pipeline (after abort) before loading or re-running. */
+  async _waitForPipelineIdle(maxMs = 20000) {
+    const start = Date.now();
+    while (this.isProcessing && Date.now() - start < maxMs) {
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    if (this.isProcessing) {
+      structuredLog('warn', '[VIP] Pipeline idle wait timed out — forcing reset.');
+      this.isProcessing = false;
+      this.abortFlag = false;
+      if (typeof this.hideProcessingOverlay === 'function') {
+        try { this.hideProcessingOverlay(); } catch (_) {}
+      }
+      document.body.classList.remove('vip-processing-lock');
+    }
+  }
+
   // ── Main pipeline (32-stage Deca-Pass) ────────────────────────────────────
   async runPipeline(fileSeq = this._fileSeq) {
     if (!this.origBuffer && !this.inputBuffer) return;
-    if (this.isProcessing) return;
+    if (this.isProcessing) {
+      this.showNotification('Processing already in progress…', 'info');
+      return;
+    }
     if (fileSeq !== this._fileSeq) return;
 
     this.isProcessing = true;
     this.abortFlag = false;
     this._mlIsolationSucceeded = false;
+    this._updateProcessButtonsState();
     stageStart('pipeline');
 
     // Hide process buttons, show stop button
@@ -2556,13 +2541,14 @@ class VoiceIsolatePro {
       for (let ch = 0; ch < buf.numberOfChannels; ch++) {
         channelData.push(buf.getChannelData(ch));
       }
+      this.updatePipelineProgress(4, 'Loading ML model…', 10);
       await warmupP;
       this.updatePipelineProgress(4, 'ML isolation…', 15);
       const result = await separateStems(channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
         sourceName: this._sourceName || '',
         onProgress: (ev) => {
-          if (fileSeq !== this._fileSeq) return;
+          if (fileSeq !== this._fileSeq || this.abortFlag) return;
           if (ev.type === 'stage') {
             const label = ev.label || `ML: ${ev.stage} (${ev.modelId || 'model'})…`;
             const pct = 15 + Math.round((ev.percent || 0) * 0.55);
@@ -2638,11 +2624,15 @@ class VoiceIsolatePro {
     }
 
     // ── Pass 3–5: spectral isolation — ONE STFT/iSTFT per channel ──
-    this.updatePipelineProgress(10, 'Spectral isolation…', 32);
+    this.updatePipelineProgress(10, 'Spectral isolation…', 20);
     for (let ch = 0; ch < nCh; ch++) {
-      channels[ch] = this._spectralStage(channels[ch], sr, p) || channels[ch];
+      if (this.abortFlag) break;
+      const chLabel = nCh > 1 ? `Spectral isolation (ch ${ch + 1}/${nCh})…` : 'Spectral isolation…';
+      channels[ch] = await this._spectralStageAsync(channels[ch], sr, p, (frac) => {
+        const pct = 20 + Math.round(((ch + frac) / nCh) * 18);
+        this.updatePipelineProgress(10, chLabel, pct);
+      }) || channels[ch];
     }
-    await this._yield();
 
     // S15 crosstalk cancellation (needs both channels).
     if (nCh >= 2 && (p.crosstalkCancel ?? 0) > 0) {
@@ -2935,24 +2925,40 @@ class VoiceIsolatePro {
     return null;
   }
 
+  // Median of five values — allocation-free (reuses scratch buffer).
+  _median5(v0, v1, v2, v3, v4) {
+    const s = this._median5Buf || (this._median5Buf = new Float32Array(5));
+    s[0] = v0; s[1] = v1; s[2] = v2; s[3] = v3; s[4] = v4;
+    for (let i = 1; i < 5; i++) {
+      const v = s[i];
+      let j = i;
+      while (j > 0 && s[j - 1] > v) { s[j] = s[j - 1]; j--; }
+      s[j] = v;
+    }
+    return s[2];
+  }
+
   // S10–S20: spectral isolation on a single channel. Exactly ONE forward STFT
   // and ONE inverse STFT — the single-pass spectral contract (CLAUDE.md §1).
-  // All in-between stages mutate the magnitude frames in place.
-  _spectralStage(data, sr, p) {
+  // Time-budget yields keep the overlay alive without per-frame slowdown.
+  async _spectralStageAsync(data, sr, p, onProgress) {
     const DSP = this._resolveDSP();
     const FFT = 4096;
     const HOP = 1024;
-    // Clips shorter than one analysis window have no spectral frames.
+    const FRAME_CHUNK = 256;
     if (!DSP || !data || data.length < FFT) return data;
 
-    // SINGLE-PASS STFT BOUNDARY — the only forward transform on this path.
+    const yieldBudget = createYieldBudget(32);
+    if (onProgress) onProgress(0.02);
+    await yieldBudget();
+
     const spec = DSP.forwardSTFT(data, FFT, HOP);
     if (!spec || !Array.isArray(spec.mag) || spec.mag.length === 0) return data;
     const mag = spec.mag;
     const phase = spec.phase;
     const halfN = mag[0].length;
+    const totalFrames = mag.length;
 
-    // S11 adaptive Wiener noise reduction (nrAmount, shaped by sensitivity/sub).
     const wm = this._getWhisperModeState();
     const nrAmount = (p.nrAmount ?? 0) * (wm.osf / 4.5);
     if (nrAmount > 0) {
@@ -2962,58 +2968,63 @@ class VoiceIsolatePro {
       DSP.wienerMMSE(mag, noise, nrAmount);
     }
 
-    // S13 ERB-band spectral gate down to the NR floor.
     if ((p.nrFloor ?? -96) > -96) DSP.spectralGate(mag, p.nrFloor ?? -72, sr, HOP);
-
-    // S14 voice focus / isolation + background suppression.
     this._applyVoiceFocus(mag, sr, p, halfN, FFT);
-
-    // S16 temporal smoothing (suppress musical noise).
     if ((p.nrSmoothing ?? 0) > 0) DSP.temporalSmooth(mag, p.nrSmoothing);
-
-    // S17 spectral tilt.
     if (Math.abs(p.specTilt ?? 0) > 0.01) this._applySpectralTilt(mag, sr, p.specTilt, halfN, FFT);
-
-    // Formant shift (envelope warp; pitch unchanged because phase is kept).
     if (Math.abs(p.formantShift ?? 0) > 0.01) this._applyFormantShiftSpec(mag, p.formantShift, halfN);
-
-    // S18 dereverb.
     if ((p.derevAmt ?? 0) > 0) {
-      const decaySec = 0.12 + (p.derevDecay ?? 50) / 100 * 0.68; // ~0.12–0.8 s
+      const decaySec = 0.12 + (p.derevDecay ?? 50) / 100 * 0.68;
       DSP.dereverb(mag, p.derevAmt, decaySec, sr, HOP);
     }
-
-    // S19 harmonic reconstruction.
     if ((p.harmRecov ?? 0) > 0) DSP.harmonicEnhance(mag, phase, p.harmRecov);
 
-    // [WHISPER UPDATE] Extreme isolation spectral ops (in-place, single STFT pass)
-    this._applyExtremeSpectralOffline(mag, sr, p, halfN, FFT, HOP, DSP);
-
-    // [WHISPER UPDATE] WhisperHunterAI offline frame processing (Part 4)
-    const hunter = typeof window !== 'undefined' ? window._vipWhisperHunter : null;
+    const whisperMode = Math.round(p.whisperMode ?? this.whisperMode ?? 0);
+    const runExtreme = this._extremeSpectralActive(p);
+    const hunter = whisperMode > 0 && typeof window !== 'undefined' ? window._vipWhisperHunter : null;
     const mapUi = (typeof window !== 'undefined' && window.mapWhisperUi) ? window.mapWhisperUi : () => 0.5;
-    if (hunter && typeof hunter.processMagnitudes === 'function') {
-      const whParams = {
-        clarity: mapUi(p.whisperClarity ?? 65),
-        sensitivity: mapUi(p.whisperSensitivity ?? 55),
-        threshold: mapUi(p.whisperThreshold ?? 50),
-        harmonic: Math.pow(Math.max(0, (p.harmRecov ?? 0)) / 100, 2),
-      };
-      for (let f = 0; f < mag.length; f++) {
-        hunter.processMagnitudes(mag[f], phase[f], whParams);
+    const whParams = hunter && typeof hunter.processMagnitudes === 'function' ? {
+      clarity: mapUi(p.whisperClarity ?? 65),
+      sensitivity: mapUi(p.whisperSensitivity ?? 55),
+      threshold: mapUi(p.whisperThreshold ?? 50),
+      harmonic: Math.pow(Math.max(0, (p.harmRecov ?? 0)) / 100, 2),
+    } : null;
+
+    if (runExtreme || whParams) {
+      for (let f0 = 0; f0 < totalFrames; f0 += FRAME_CHUNK) {
+        if (this.abortFlag) return data;
+        const f1 = Math.min(totalFrames, f0 + FRAME_CHUNK);
+        if (runExtreme) this._applyExtremeSpectralOffline(mag, sr, p, halfN, FFT, HOP, DSP, f0, f1);
+        if (whParams) {
+          for (let f = f0; f < f1; f++) hunter.processMagnitudes(mag[f], phase[f], whParams);
+        }
+        if (onProgress) onProgress(0.2 + 0.65 * (f1 / totalFrames));
+        await yieldBudget();
       }
+    } else if (onProgress) {
+      onProgress(0.85);
     }
 
-    // Refresh extreme noise profile for forensic multi-pass (no second STFT).
     this._extremeNoiseProfile = this._estimateNoiseFloor(mag);
+    if (onProgress) onProgress(0.92);
+    await yieldBudget();
 
-    // SINGLE-PASS STFT BOUNDARY — the only inverse transform on this path.
     const rendered = DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);
+    if (onProgress) onProgress(1);
     return (rendered && rendered.length === data.length) ? rendered : data;
   }
 
+  _extremeSpectralActive(p) {
+    return (p.bassCrush ?? 0) > 0
+      || (p.musicKill ?? 0) > 0
+      || (p.crowdNull ?? 0) > 0
+      || (p.reverbStrip ?? 0) > 0
+      || (p.voiceTunnel ?? 0) > 0
+      || (p.whisperLift ?? 0) > 0;
+  }
+
   // [WHISPER UPDATE] Extreme isolation ops — in-place per STFT frame (offline path)
-  _applyExtremeSpectralOffline(mag, sr, p, halfN, fftSize, hop, DSP) {
+  _applyExtremeSpectralOffline(mag, sr, p, halfN, fftSize, hop, DSP, frameStart = 0, frameEnd = mag.length) {
     const bassCrush = p.bassCrush ?? 0;
     const musicKill = p.musicKill ?? 0;
     const crowdNull = p.crowdNull ?? 0;
@@ -3044,17 +3055,53 @@ class VoiceIsolatePro {
     const tunnelQ2 = 3 + (voiceTunnel / 100) * 6;
     const tunnelG2 = voiceTunnel * 0.08;
 
-    for (let f = 0; f < mag.length; f++) {
+    if (frameStart === 0 || !this._extremeMaskGains || this._extremeMaskGains.length !== halfN) {
+      const maskGains = new Float32Array(halfN);
+      for (let k = 0; k < halfN; k++) {
+        let mask = 1;
+        if (DSP && typeof DSP.getVoiceMaskGain === 'function') {
+          mask = DSP.getVoiceMaskGain(k, sr, fftSize);
+        }
+        maskGains[k] = mask > 0.55 ? liftGain : Math.max(wm.maskFloor, mask);
+      }
+      this._extremeMaskGains = maskGains;
+      if (voiceTunnel > 0) {
+        const tunnelGains = new Float32Array(halfN);
+        const lowCut = 300 + (200 * voiceTunnel / 100);
+        const highCut = 3400 - (600 * voiceTunnel / 100);
+        for (let k = 0; k < halfN; k++) {
+          const hz = k * sr / fftSize;
+          let g = 1;
+          const d1 = Math.abs(hz - 1200) / (1200 / tunnelQ1);
+          const d2 = Math.abs(hz - 2800) / (2800 / tunnelQ2);
+          if (d1 < 1) g *= Math.pow(10, (tunnelG1 * (1 - d1)) / 20);
+          if (d2 < 1) g *= Math.pow(10, (tunnelG2 * (1 - d2)) / 20);
+          if (hz < lowCut || hz > highCut) g *= 0.85;
+          tunnelGains[k] = g;
+        }
+        this._extremeTunnelGains = tunnelGains;
+      } else {
+        this._extremeTunnelGains = null;
+      }
+    }
+    const maskGains = this._extremeMaskGains;
+    const tunnelGains = this._extremeTunnelGains;
+
+    for (let f = frameStart; f < frameEnd; f++) {
       const frame = mag[f];
       const bufIdx = this._extremeFrameIdx % 5;
 
       for (let k = 0; k < bassCrushCutoff; k++) frame[k] *= 0.0001;
 
-      const frameMedian = new Float32Array(halfN);
       for (let k = 0; k < halfN; k++) {
-        const vals = this._extremeCircularMag.map(row => row[k]).sort((a, b) => a - b);
-        frameMedian[k] = vals[2];
-        const ratio = frame[k] / (frameMedian[k] + 1e-10);
+        const med = this._median5(
+          this._extremeCircularMag[0][k],
+          this._extremeCircularMag[1][k],
+          this._extremeCircularMag[2][k],
+          this._extremeCircularMag[3][k],
+          this._extremeCircularMag[4][k]
+        );
+        const ratio = frame[k] / (med + 1e-10);
         if (ratio < 1.3) frame[k] *= (1 - musicKill / 100);
       }
       this._extremeCircularMag[bufIdx].set(frame);
@@ -3073,28 +3120,9 @@ class VoiceIsolatePro {
         if (frame[k] < snrThresh) frame[k] = 0;
       }
 
-      for (let k = 0; k < halfN; k++) {
-        let mask = 1;
-        if (DSP && typeof DSP.getVoiceMaskGain === 'function') {
-          mask = DSP.getVoiceMaskGain(k, sr, fftSize);
-        }
-        if (mask > 0.55) frame[k] *= liftGain;
-        else frame[k] *= Math.max(wm.maskFloor, mask);
-      }
-
-      if (voiceTunnel > 0) {
-        for (let k = 0; k < halfN; k++) {
-          const hz = k * sr / fftSize;
-          let g = 1;
-          const d1 = Math.abs(hz - 1200) / (1200 / tunnelQ1);
-          const d2 = Math.abs(hz - 2800) / (2800 / tunnelQ2);
-          if (d1 < 1) g *= Math.pow(10, (tunnelG1 * (1 - d1)) / 20);
-          if (d2 < 1) g *= Math.pow(10, (tunnelG2 * (1 - d2)) / 20);
-          if (hz < 300 + (200 * voiceTunnel / 100) || hz > 3400 - (600 * voiceTunnel / 100)) {
-            g *= 0.85;
-          }
-          frame[k] *= g;
-        }
+      for (let k = 0; k < halfN; k++) frame[k] *= maskGains[k];
+      if (tunnelGains) {
+        for (let k = 0; k < halfN; k++) frame[k] *= tunnelGains[k];
       }
     }
   }
@@ -3336,6 +3364,56 @@ class VoiceIsolatePro {
       : setTimeout(loop, 50);
   }
 
+  /** FFT tap shared by visuals-bootstrap.js, neon pulse, and premium tabs. */
+  _ensurePlaybackAnalyser() {
+    const bridge = this._bridge;
+    if (bridge && typeof bridge.getAnalyser === 'function') {
+      const bridged = bridge.getAnalyser();
+      if (bridged) {
+        window._vipPlayAnalyser = bridged;
+        return bridged;
+      }
+    }
+    if (!this.ctx) return null;
+    if (!this._playbackAnalyser) {
+      try {
+        this._playbackAnalyser = this.ctx.createAnalyser();
+        this._playbackAnalyser.fftSize = 2048;
+        this._playbackAnalyser.smoothingTimeConstant = 0.82;
+      } catch (_) {
+        return null;
+      }
+    }
+    window._vipPlayAnalyser = this._playbackAnalyser;
+    return this._playbackAnalyser;
+  }
+
+  _connectFallbackAnalyser(outNode) {
+    const an = this._ensurePlaybackAnalyser();
+    if (!an || !outNode || !this.ctx) return an;
+    try {
+      outNode.connect(an);
+      if (!this._playbackAnalyserToDest) {
+        an.connect(this.ctx.destination);
+        this._playbackAnalyserToDest = true;
+      }
+    } catch (_) { /* chain may already be wired */ }
+    return an;
+  }
+
+  _dispatchPlayStarted(extra) {
+    const an = this._ensurePlaybackAnalyser();
+    try {
+      window.dispatchEvent(new CustomEvent('vip:playStarted', {
+        detail: Object.assign({ analyser: an }, extra || {}),
+      }));
+    } catch (_) {}
+  }
+
+  _dispatchPlayStopped() {
+    try { window.dispatchEvent(new CustomEvent('vip:playStopped')); } catch (_) {}
+  }
+
   async play() {
     await this.ensureCtx();
     const buf = this.abMode === 'processed'
@@ -3364,6 +3442,7 @@ class VoiceIsolatePro {
       vp.play && vp.play().catch(() => {});
     }
 
+    this._dispatchPlayStarted({ bridgeRouted: !!(this._bridge && typeof this._bridge.getAnalyser === 'function') });
     if (typeof this.startSpectro === 'function') this.startSpectro();
     if (typeof this.startFreq === 'function') this.startFreq();
     if (typeof this._startTransportClock === 'function') this._startTransportClock();
@@ -3419,6 +3498,7 @@ class VoiceIsolatePro {
         }
         this._ensureTransportRegionWiring();
         // Honour the current scrub position, then start.
+        this._ensurePlaybackAnalyser();
         Promise.resolve(bridge.seek(this.playOffset || 0))
           .then(() => bridge.play())
           .catch((err) => {
@@ -3481,12 +3561,13 @@ class VoiceIsolatePro {
     } else {
       src.connect(outGainNode);
     }
-    if (this.ctx.destination) outGainNode.connect(this.ctx.destination);
+    this._connectFallbackAnalyser(outGainNode);
     src.start(0, this.playOffset || 0);
     src.onended = () => {
       this.isPlaying = false;
       this.playOffset = 0;
       if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
+      this._dispatchPlayStopped();
     };
     this.currentSource = src;
   }
@@ -3504,6 +3585,7 @@ class VoiceIsolatePro {
     if (typeof this.stopSpectro === 'function') this.stopSpectro();
     if (this.isVideo && this.dom.videoPlayer) this.dom.videoPlayer.pause();
     this.isPlaying = false;
+    this._dispatchPlayStopped();
   }
 
   stop() {
@@ -3526,6 +3608,7 @@ class VoiceIsolatePro {
       if (this.dom?.tpSeek) this.dom.tpSeek.value = 0;
     }
     if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
+    this._dispatchPlayStopped();
   }
 
   teardownChain() {
@@ -3550,6 +3633,10 @@ class VoiceIsolatePro {
   }
 
   async togglePlayback() {
+    if (this._fixTransportPatched) {
+      const tp = this.dom?.tpPlay || document.getElementById('tpPlay');
+      if (tp) { tp.click(); return; }
+    }
     this.ensureCtx();
     if (this.isPlaying) {
       this.pause();
@@ -3774,9 +3861,14 @@ class VoiceIsolatePro {
 
   _updateProcessButtonsState() {
     const hasBuf = Boolean(this.inputBuffer || this.origBuffer);
-    const canProcess = hasBuf;
-    if (this.dom.processBtn) this.dom.processBtn.disabled = !canProcess;
-    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !canProcess;
+    const hasOut = Boolean(this.outputBuffer || this.procBuffer);
+    const busy = Boolean(this.isProcessing);
+    if (this.dom.processBtn) this.dom.processBtn.disabled = !hasBuf || busy;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !hasBuf || busy;
+    if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = !hasOut || busy;
+    if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = !hasOut || busy;
+    const heroCta = document.getElementById('heroCtaProcess');
+    if (heroCta) heroCta.disabled = !hasBuf || busy;
   }
 
   _getTransportMixer() {

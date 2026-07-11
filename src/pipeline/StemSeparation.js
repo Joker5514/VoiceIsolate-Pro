@@ -9,10 +9,18 @@
 import { DEFAULT_ML_MODEL_IDS } from '../core/ml-defaults.js';
 import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 import { clearStemCache, getCachedStems, setCachedStems, stemCacheKey } from './MLStemCache.js';
+import { copyFloat32Channel, createYieldBudget } from './ui-yield.js';
 
 let _worker = null;
 let _ready = null;
 let _seq = 0;
+/** @type {Set<string>} */
+const _warmedModels = new Set();
+/** @type {Array<{ resolve: Function, reject: Function, timer: *, ids: string[] }>} */
+let _warmupWaiters = [];
+let _warmupHooked = false;
+
+const WARMUP_TIMEOUT_MS = 120000;
 
 function getWorker() {
   if (_worker) return _worker;
@@ -20,9 +28,27 @@ function getWorker() {
   return _worker;
 }
 
+function hookWarmupListener(w) {
+  if (_warmupHooked) return;
+  _warmupHooked = true;
+  w.addEventListener('message', (ev) => {
+    const msg = ev.data || {};
+    if (msg.type !== 'warmed') return;
+    for (const id of msg.modelIds || []) _warmedModels.add(id);
+    const pending = _warmupWaiters.splice(0);
+    for (const waiter of pending) {
+      clearTimeout(waiter.timer);
+      const stillMissing = waiter.ids.filter((id) => !_warmedModels.has(id));
+      if (stillMissing.length === 0) waiter.resolve(msg);
+      else _warmupWaiters.push(waiter);
+    }
+  });
+}
+
 function ensureReady() {
   if (_ready) return _ready;
   const w = getWorker();
+  hookWarmupListener(w);
   _ready = new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup();
@@ -49,17 +75,23 @@ function ensureReady() {
   return _ready;
 }
 
-/**
- * Run offline inference on decoded channel data.
- * @param {Float32Array[]} channelData
- * @param {number} sampleRate
- * @param {{ modelIds?: string[], modelId?: string, onProgress?: (event: object) => void }} options
- * @returns {Promise<{ clean: Float32Array[], noise: Float32Array[], sampleRate: number, passthrough: boolean }>}
- */
 /** Prefetch + compile ONNX sessions while the user decodes a file. */
 export async function warmupModels(modelIds = DEFAULT_ML_MODEL_IDS) {
   await ensureReady();
-  getWorker().postMessage({ type: 'warmup', modelIds });
+  const ids = (Array.isArray(modelIds) ? modelIds : []).filter((id) => typeof id === 'string' && id);
+  const missing = ids.filter((id) => !_warmedModels.has(id));
+  if (missing.length === 0) return { modelIds: ids };
+
+  const w = getWorker();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const idx = _warmupWaiters.findIndex((x) => x.resolve === resolve);
+      if (idx >= 0) _warmupWaiters.splice(idx, 1);
+      reject(new Error('[VIP][StemSeparation] ML warmup timeout'));
+    }, WARMUP_TIMEOUT_MS);
+    _warmupWaiters.push({ resolve, reject, timer, ids: missing });
+    w.postMessage({ type: 'warmup', modelIds: missing });
+  });
 }
 
 export async function separateStems(channelData, sampleRate, options = {}) {
@@ -85,8 +117,11 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   const w = getWorker();
   const requestId = ++_seq;
   const { onProgress } = options;
-  // Transferable copies — originals stay intact for cache keys / reprocess.
-  const copies = channelData.map((c) => c.slice());
+  const yieldBudget = createYieldBudget();
+  const copies = [];
+  for (let ch = 0; ch < channelData.length; ch++) {
+    copies.push(await copyFloat32Channel(channelData[ch], { yieldBudget }));
+  }
   const msg = { type: 'process', requestId, channelData: copies, sampleRate, modelIds };
 
   return new Promise((resolve, reject) => {
@@ -141,6 +176,9 @@ export function resetStemSeparation() {
     _worker = null;
   }
   _ready = null;
+  _warmupHooked = false;
+  _warmedModels.clear();
+  _warmupWaiters = [];
   clearStemCache();
 }
 

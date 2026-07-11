@@ -29,6 +29,7 @@
   let _lastDiarSpeaker = 0;
   let _lastDiarSegStart = 0;
   let _lastSpeakerState = null;
+  let _vizFullscreen = false;
 
   function _getPlayOffset() {
     const app = global._vipApp;
@@ -36,6 +37,29 @@
       return app._fixPlayState.elapsed();
     }
     return (app && app.playOffset) || 0;
+  }
+
+  function _getAnalyser() {
+    if (global._vipPlayAnalyser) return global._vipPlayAnalyser;
+    const app = global._vipApp;
+    if (app && typeof app._ensurePlaybackAnalyser === 'function') {
+      try { return app._ensurePlaybackAnalyser(); } catch (_) {}
+    }
+    const bridge = app && app._bridge;
+    if (bridge && typeof bridge.getAnalyser === 'function') {
+      try {
+        const an = bridge.getAnalyser();
+        if (an) {
+          global._vipPlayAnalyser = an;
+          return an;
+        }
+      } catch (_) {}
+    }
+    if (app && app._fixPlayState && app._fixPlayState.analyser) {
+      global._vipPlayAnalyser = app._fixPlayState.analyser;
+      return global._vipPlayAnalyser;
+    }
+    return null;
   }
 
   function _isTabDrawTarget(tab) {
@@ -122,6 +146,22 @@
     _drawWaveformOnto($('waveCanvas'), inBuf, '#22d3ee');
     _drawWaveformOnto($('waveOrigCanvas'), inBuf, '#22d3ee');
     _drawWaveformOnto($('waveProcCanvas'), outBuf, '#69ff47');
+
+    const specBuf = outBuf || inBuf;
+    if (specBuf && typeof global.VIP_drawStaticSpectrogram === 'function') {
+      const spec2d = $('spectro2DCanvas');
+      const spec3d = $('spectroCanvas');
+      try {
+        global.VIP_drawStaticSpectrogram(spec2d, specBuf);
+        if (spec2d && spec3d && spec2d.width) {
+          const ctx = spec3d.getContext('2d');
+          if (ctx) {
+            _resizeCanvas(spec3d, 200);
+            ctx.drawImage(spec2d, 0, 0, spec3d.width, spec3d.height);
+          }
+        }
+      } catch (_) {}
+    }
   }
 
   /* ── Canvas helpers ───────────────────────────────────────────────────── */
@@ -386,7 +426,7 @@
   function _loop() {
     if (!_running) return;
     _rafId = requestAnimationFrame(_loop);
-    const an = global._vipPlayAnalyser;
+    const an = _getAnalyser();
     if (!an) return;
 
     const bins = an.frequencyBinCount;
@@ -454,7 +494,7 @@
   function _initPremiumTab(tabName) {
     if (_premiumHandles.has(tabName)) return;
     if (!_panelVisible(tabName)) return;
-    const an = global._vipPlayAnalyser;
+    const an = _getAnalyser();
     if (!an) return;
 
     let handle = null;
@@ -495,7 +535,7 @@
       if (!tabsToRun.includes(tab)) _stopPremiumTab(tab);
     }
 
-    if (!global._vipPlayAnalyser) return;
+    if (!_getAnalyser()) return;
     for (const tab of tabsToRun) {
       if (!_premiumHandles.has(tab)) {
         requestAnimationFrame(() => _initPremiumTab(tab));
@@ -549,19 +589,168 @@
   }
 
   function _onTabActivated(tab) {
-    if (_viewMode === 'gallery') setViewMode('single');
     _activeTab = tab || 'spectrogram';
     if (tab === 'abcompare') drawStaticVisuals();
     _resizeVisibleCanvases();
     _syncPremiumViz();
   }
 
+  function _activateTab(tab, btn) {
+    if (!tab) return;
+    if (_viewMode === 'gallery') setViewMode('single');
+    const tabs = qsa('.viz-card .tab-btn[data-tab]');
+    tabs.forEach((b) => {
+      const on = b === btn || b.dataset.tab === tab;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', String(on));
+      b.setAttribute('tabindex', on ? '0' : '-1');
+    });
+    qsa('.viz-card .panel[data-viz-panel]').forEach((p) => {
+      p.classList.toggle('active', p.dataset.vizPanel === tab);
+    });
+    _onTabActivated(tab);
+  }
+
+  function _docFullscreenEl() {
+    return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+  }
+
+  function _exitVizFullscreen() {
+    const card = document.querySelector('.viz-card');
+    const btn = $('fullscreenSpectroBtn');
+    _vizFullscreen = false;
+    if (card) card.classList.remove('viz-fullscreen');
+    $('spectro3d-container')?.classList.remove('fullscreen');
+    if (btn) {
+      btn.setAttribute('aria-pressed', 'false');
+      btn.title = 'Enter fullscreen';
+      btn.setAttribute('aria-label', 'Enter fullscreen');
+    }
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (_docFullscreenEl() && exit) {
+      try { Promise.resolve(exit.call(document)).catch(() => {}); } catch (_) {}
+    }
+    setTimeout(() => {
+      _resizeVisibleCanvases();
+      _syncPremiumViz();
+    }, 120);
+  }
+
+  function _enterVizFullscreen() {
+    const card = document.querySelector('.viz-card');
+    const target = card || $('spectro3d-container') || $('spectroCanvas');
+    const btn = $('fullscreenSpectroBtn');
+    if (!target) return;
+    _vizFullscreen = true;
+    if (card) card.classList.add('viz-fullscreen');
+    $('spectro3d-container')?.classList.add('fullscreen');
+    if (btn) {
+      btn.setAttribute('aria-pressed', 'true');
+      btn.title = 'Exit fullscreen';
+      btn.setAttribute('aria-label', 'Exit fullscreen');
+    }
+    const req = target.requestFullscreen
+      || target.webkitRequestFullscreen
+      || target.msRequestFullscreen;
+    if (req) {
+      try {
+        Promise.resolve(req.call(target)).catch(() => {});
+      } catch (_) {}
+    }
+    setTimeout(() => {
+      _resizeVisibleCanvases();
+      _syncPremiumViz();
+    }, 120);
+  }
+
+  function toggleFullscreen() {
+    if (_vizFullscreen || _docFullscreenEl()) _exitVizFullscreen();
+    else _enterVizFullscreen();
+  }
+
+  function _wireFullscreen() {
+    const btn = $('fullscreenSpectroBtn');
+    if (!btn || btn.dataset.vipVizWired === '1') return;
+    btn.dataset.vipVizWired = '1';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleFullscreen();
+    });
+    document.addEventListener('fullscreenchange', () => {
+      if (!_docFullscreenEl() && _vizFullscreen) _exitVizFullscreen();
+      else if (_docFullscreenEl()) {
+        _vizFullscreen = true;
+        document.querySelector('.viz-card')?.classList.add('viz-fullscreen');
+      }
+      setTimeout(() => {
+        _resizeVisibleCanvases();
+        _syncPremiumViz();
+      }, 80);
+    });
+    document.addEventListener('webkitfullscreenchange', () => {
+      if (!_docFullscreenEl() && _vizFullscreen) _exitVizFullscreen();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && (_vizFullscreen || _docFullscreenEl())) {
+        _exitVizFullscreen();
+      }
+    });
+  }
+
+  function _wireTabBar() {
+    const bar = $('tabBar');
+    if (!bar || bar.dataset.vipVizWired === '1') return;
+    bar.dataset.vipVizWired = '1';
+    const tabs = qsa('.viz-card .tab-btn[data-tab]');
+
+    bar.addEventListener('click', (e) => {
+      const btn = e.target.closest('.tab-btn[data-tab]');
+      if (!btn || !bar.contains(btn)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      _activateTab(btn.dataset.tab, btn);
+    });
+
+    tabs.forEach((btn, index) => {
+      btn.addEventListener('keydown', (e) => {
+        let newIndex = index;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          newIndex = (index + 1) % tabs.length;
+          e.preventDefault();
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          newIndex = (index - 1 + tabs.length) % tabs.length;
+          e.preventDefault();
+        } else if (e.key === 'Home') {
+          newIndex = 0;
+          e.preventDefault();
+        } else if (e.key === 'End') {
+          newIndex = tabs.length - 1;
+          e.preventDefault();
+        } else {
+          return;
+        }
+        tabs[newIndex].focus();
+        _activateTab(tabs[newIndex].dataset.tab, tabs[newIndex]);
+      });
+    });
+  }
+
   function _wireGalleryToggle() {
     const btn = $('btnVizGallery');
-    if (!btn) return;
-    btn.addEventListener('click', () => {
+    if (!btn || btn.dataset.vipVizWired === '1') return;
+    btn.dataset.vipVizWired = '1';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       setViewMode(_viewMode === 'gallery' ? 'single' : 'gallery');
     });
+  }
+
+  function wireChrome() {
+    _wireGalleryToggle();
+    _wireFullscreen();
+    _wireTabBar();
   }
 
   function _wireResizeObserver() {
@@ -594,7 +783,7 @@
       start();
       _resizeVisibleCanvases();
       _syncPremiumViz();
-      const an = global._vipPlayAnalyser;
+      const an = _getAnalyser();
       if (an && global.NeonPulseViz && typeof global.NeonPulseViz.init === 'function') {
         try { global.NeonPulseViz.init(an); } catch (_) {}
       }
@@ -618,7 +807,7 @@
   }
 
   function _init() {
-    _wireGalleryToggle();
+    wireChrome();
     _wireResizeObserver();
     _bindEvents();
     if (global.NeonPulseViz && typeof global.NeonPulseViz.mount === 'function') {
@@ -638,9 +827,12 @@
     start,
     stop,
     onTabActivated: _onTabActivated,
+    activateTab: _activateTab,
     initPremium: _initPremiumTab,
     setViewMode,
     getViewMode,
     syncPremium: _syncPremiumViz,
+    toggleFullscreen,
+    wireChrome,
   };
 })(typeof window !== 'undefined' ? window : this);

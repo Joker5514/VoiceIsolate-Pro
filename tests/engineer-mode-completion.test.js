@@ -67,6 +67,12 @@ describe('app.js completion helpers', () => {
       expect(appJs).toContain(snippet);
     });
   });
+
+  test('app.js disables process controls while pipeline is busy and waits on re-upload', () => {
+    expect(appJs).toContain('_waitForPipelineIdle');
+    expect(appJs).toContain('const busy = Boolean(this.isProcessing)');
+    expect(appJs).toContain('Processing already in progress');
+  });
 });
 
 describe('How It Works page', () => {
