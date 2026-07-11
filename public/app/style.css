@@ -465,6 +465,8 @@ input[type="range"].realtime:not(.tp-seek):not(.landing-seek-input)::-webkit-sli
 .sl-dot{width:8px;height:8px;border-radius:2px;display:inline-block}
 .wave-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:0}
 .wave-cv{height:70px}
+#auraCanvas,#liquidCanvas{height:180px}
+.viz-card.viz-gallery #auraCanvas,.viz-card.viz-gallery #liquidCanvas{height:140px}
 .freq-cv{height:80px}
 
 /* ---- STATS ---- */

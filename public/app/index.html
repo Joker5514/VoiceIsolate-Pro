@@ -26,6 +26,14 @@
   <!-- DSP math (STFT/iSTFT, filters, Wiener NR) on window.DSPCore. Loaded as a
        classic blocking script so the binding is live before any module imports
        evaluate — app.js captures DSP = globalThis.DSPCore at module init. -->
+  <script>
+    // Benign browser warning when canvas layout + ResizeObserver update in the same frame.
+    window.addEventListener('error', function (e) {
+      if (e && e.message && String(e.message).indexOf('ResizeObserver') >= 0) {
+        e.stopImmediatePropagation();
+      }
+    });
+  </script>
   <script src="./dsp-core.js"></script>
   <script src="./ai-intelligence.js"></script>
   <script type="module" src="./whisper-hunter.js"></script>
