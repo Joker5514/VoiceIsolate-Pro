@@ -38,6 +38,29 @@
     return (app && app.playOffset) || 0;
   }
 
+  function _getAnalyser() {
+    if (global._vipPlayAnalyser) return global._vipPlayAnalyser;
+    const app = global._vipApp;
+    if (app && typeof app._ensurePlaybackAnalyser === 'function') {
+      try { return app._ensurePlaybackAnalyser(); } catch (_) {}
+    }
+    const bridge = app && app._bridge;
+    if (bridge && typeof bridge.getAnalyser === 'function') {
+      try {
+        const an = bridge.getAnalyser();
+        if (an) {
+          global._vipPlayAnalyser = an;
+          return an;
+        }
+      } catch (_) {}
+    }
+    if (app && app._fixPlayState && app._fixPlayState.analyser) {
+      global._vipPlayAnalyser = app._fixPlayState.analyser;
+      return global._vipPlayAnalyser;
+    }
+    return null;
+  }
+
   function _isTabDrawTarget(tab) {
     if (_viewMode === 'gallery') return true;
     return tab === _activeTab;
@@ -122,6 +145,22 @@
     _drawWaveformOnto($('waveCanvas'), inBuf, '#22d3ee');
     _drawWaveformOnto($('waveOrigCanvas'), inBuf, '#22d3ee');
     _drawWaveformOnto($('waveProcCanvas'), outBuf, '#69ff47');
+
+    const specBuf = outBuf || inBuf;
+    if (specBuf && typeof global.VIP_drawStaticSpectrogram === 'function') {
+      const spec2d = $('spectro2DCanvas');
+      const spec3d = $('spectroCanvas');
+      try {
+        global.VIP_drawStaticSpectrogram(spec2d, specBuf);
+        if (spec2d && spec3d && spec2d.width) {
+          const ctx = spec3d.getContext('2d');
+          if (ctx) {
+            _resizeCanvas(spec3d, 200);
+            ctx.drawImage(spec2d, 0, 0, spec3d.width, spec3d.height);
+          }
+        }
+      } catch (_) {}
+    }
   }
 
   /* ── Canvas helpers ───────────────────────────────────────────────────── */
@@ -386,7 +425,7 @@
   function _loop() {
     if (!_running) return;
     _rafId = requestAnimationFrame(_loop);
-    const an = global._vipPlayAnalyser;
+    const an = _getAnalyser();
     if (!an) return;
 
     const bins = an.frequencyBinCount;
@@ -454,7 +493,7 @@
   function _initPremiumTab(tabName) {
     if (_premiumHandles.has(tabName)) return;
     if (!_panelVisible(tabName)) return;
-    const an = global._vipPlayAnalyser;
+    const an = _getAnalyser();
     if (!an) return;
 
     let handle = null;
@@ -495,7 +534,7 @@
       if (!tabsToRun.includes(tab)) _stopPremiumTab(tab);
     }
 
-    if (!global._vipPlayAnalyser) return;
+    if (!_getAnalyser()) return;
     for (const tab of tabsToRun) {
       if (!_premiumHandles.has(tab)) {
         requestAnimationFrame(() => _initPremiumTab(tab));
@@ -594,7 +633,7 @@
       start();
       _resizeVisibleCanvases();
       _syncPremiumViz();
-      const an = global._vipPlayAnalyser;
+      const an = _getAnalyser();
       if (an && global.NeonPulseViz && typeof global.NeonPulseViz.init === 'function') {
         try { global.NeonPulseViz.init(an); } catch (_) {}
       }

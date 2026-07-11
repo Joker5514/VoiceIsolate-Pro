@@ -1892,6 +1892,7 @@ class VoiceIsolatePro {
 
     if ((e.key === ' ' || e.key === 'k' || e.key === 'K') && (this.inputBuffer || this.origBuffer)) {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (this._fixTransportPatched) return;
       e.preventDefault();
       this.togglePlayback();
       return;
@@ -3336,6 +3337,56 @@ class VoiceIsolatePro {
       : setTimeout(loop, 50);
   }
 
+  /** FFT tap shared by visuals-bootstrap.js, neon pulse, and premium tabs. */
+  _ensurePlaybackAnalyser() {
+    const bridge = this._bridge;
+    if (bridge && typeof bridge.getAnalyser === 'function') {
+      const bridged = bridge.getAnalyser();
+      if (bridged) {
+        window._vipPlayAnalyser = bridged;
+        return bridged;
+      }
+    }
+    if (!this.ctx) return null;
+    if (!this._playbackAnalyser) {
+      try {
+        this._playbackAnalyser = this.ctx.createAnalyser();
+        this._playbackAnalyser.fftSize = 2048;
+        this._playbackAnalyser.smoothingTimeConstant = 0.82;
+      } catch (_) {
+        return null;
+      }
+    }
+    window._vipPlayAnalyser = this._playbackAnalyser;
+    return this._playbackAnalyser;
+  }
+
+  _connectFallbackAnalyser(outNode) {
+    const an = this._ensurePlaybackAnalyser();
+    if (!an || !outNode || !this.ctx) return an;
+    try {
+      outNode.connect(an);
+      if (!this._playbackAnalyserToDest) {
+        an.connect(this.ctx.destination);
+        this._playbackAnalyserToDest = true;
+      }
+    } catch (_) { /* chain may already be wired */ }
+    return an;
+  }
+
+  _dispatchPlayStarted(extra) {
+    const an = this._ensurePlaybackAnalyser();
+    try {
+      window.dispatchEvent(new CustomEvent('vip:playStarted', {
+        detail: Object.assign({ analyser: an }, extra || {}),
+      }));
+    } catch (_) {}
+  }
+
+  _dispatchPlayStopped() {
+    try { window.dispatchEvent(new CustomEvent('vip:playStopped')); } catch (_) {}
+  }
+
   async play() {
     await this.ensureCtx();
     const buf = this.abMode === 'processed'
@@ -3364,6 +3415,7 @@ class VoiceIsolatePro {
       vp.play && vp.play().catch(() => {});
     }
 
+    this._dispatchPlayStarted({ bridgeRouted: !!(this._bridge && typeof this._bridge.getAnalyser === 'function') });
     if (typeof this.startSpectro === 'function') this.startSpectro();
     if (typeof this.startFreq === 'function') this.startFreq();
     if (typeof this._startTransportClock === 'function') this._startTransportClock();
@@ -3419,6 +3471,7 @@ class VoiceIsolatePro {
         }
         this._ensureTransportRegionWiring();
         // Honour the current scrub position, then start.
+        this._ensurePlaybackAnalyser();
         Promise.resolve(bridge.seek(this.playOffset || 0))
           .then(() => bridge.play())
           .catch((err) => {
@@ -3481,12 +3534,13 @@ class VoiceIsolatePro {
     } else {
       src.connect(outGainNode);
     }
-    if (this.ctx.destination) outGainNode.connect(this.ctx.destination);
+    this._connectFallbackAnalyser(outGainNode);
     src.start(0, this.playOffset || 0);
     src.onended = () => {
       this.isPlaying = false;
       this.playOffset = 0;
       if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
+      this._dispatchPlayStopped();
     };
     this.currentSource = src;
   }
@@ -3504,6 +3558,7 @@ class VoiceIsolatePro {
     if (typeof this.stopSpectro === 'function') this.stopSpectro();
     if (this.isVideo && this.dom.videoPlayer) this.dom.videoPlayer.pause();
     this.isPlaying = false;
+    this._dispatchPlayStopped();
   }
 
   stop() {
@@ -3526,6 +3581,7 @@ class VoiceIsolatePro {
       if (this.dom?.tpSeek) this.dom.tpSeek.value = 0;
     }
     if (typeof this._updateTransportUI === 'function') this._updateTransportUI();
+    this._dispatchPlayStopped();
   }
 
   teardownChain() {
@@ -3550,6 +3606,10 @@ class VoiceIsolatePro {
   }
 
   async togglePlayback() {
+    if (this._fixTransportPatched) {
+      const tp = this.dom?.tpPlay || document.getElementById('tpPlay');
+      if (tp) { tp.click(); return; }
+    }
     this.ensureCtx();
     if (this.isPlaying) {
       this.pause();

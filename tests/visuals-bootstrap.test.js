@@ -129,6 +129,30 @@ describe('visuals-bootstrap loading and event wiring', () => {
     expect(src).toMatch(/stopSpectro\(\)[\s\S]*VIP_VISUALS\.stop/);
   });
 
+  test('app.js wires playback analyser and dispatches vip:playStarted / vip:playStopped', () => {
+    const src = fs.readFileSync(APP_JS_PATH, 'utf8');
+    expect(src).toContain('_ensurePlaybackAnalyser');
+    expect(src).toContain('_dispatchPlayStarted');
+    expect(src).toContain('_dispatchPlayStopped');
+    expect(src).toContain('window._vipPlayAnalyser');
+    expect(src).toContain("'vip:playStarted'");
+    expect(src).toContain("'vip:playStopped'");
+  });
+
+  test('visuals.js exposes VIP_drawStaticSpectrogram for pre-playback spectro preview', () => {
+    const visualsPath = path.join(__dirname, '..', 'public', 'app', 'visuals.js');
+    const src = fs.readFileSync(visualsPath, 'utf8');
+    expect(src).toContain('VIP_drawStaticSpectrogram');
+    expect(src).toContain('drawStaticSpectrogram');
+  });
+
+  test('visuals-bootstrap.js resolves analyser via bridge / app fallback', () => {
+    const src = fs.readFileSync(VISUALS_BOOT_PATH, 'utf8');
+    expect(src).toContain('function _getAnalyser');
+    expect(src).toContain('_ensurePlaybackAnalyser');
+    expect(src).toContain('VIP_drawStaticSpectrogram');
+  });
+
   test('app.js tab switching calls VIP_VISUALS.onTabActivated', () => {
     const src = fs.readFileSync(APP_JS_PATH, 'utf8');
     expect(src).toContain('VIP_VISUALS.onTabActivated');
