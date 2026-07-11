@@ -73,6 +73,20 @@ describe('app.js completion helpers', () => {
     expect(appJs).toContain('const busy = Boolean(this.isProcessing)');
     expect(appJs).toContain('Processing already in progress');
   });
+
+  test('app.js syncs pipeline progress to processing overlay and clears hero state on cancel', () => {
+    expect(appJs).toContain('this.updateProcessingOverlay(detail');
+    expect(appJs).not.toContain('window._vipOrch.run');
+    expect(appJs).toContain("updatePipelineProgress(0, 'Cancelled (new file loaded)', 0)");
+  });
+});
+
+describe('StemSeparation timeouts', () => {
+  const stemJs = fs.readFileSync(path.join(__dirname, '../src/pipeline/StemSeparation.js'), 'utf8');
+
+  test('caps ML separation wait so Engineer Mode can fall back to DSP', () => {
+    expect(stemJs).toContain('PROCESS_TIMEOUT_MS = 180000');
+  });
 });
 
 describe('How It Works page', () => {

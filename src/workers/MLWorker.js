@@ -79,6 +79,20 @@ let BACKEND = null;
 /** Active process request id for stage/progress messages. */
 let ACTIVE_REQUEST_ID = null;
 
+const SESSION_COMPILE_TIMEOUT_MS = 90000;
+
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`[VIP][MLWorker] ${label} timed out after ${ms}ms`));
+    }, ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 /** When true, cache I/O is proxied to the main thread (filesystem-first on desktop). */
 let USE_DESKTOP_CACHE = false;
 
@@ -258,7 +272,11 @@ async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) 
     const bytes = await fetchModelBytes(entry);
     if (!quiet) postStage('load', 40, { modelId: entry.id, label: `Verifying ${entry.name || entry.id}…` });
     if (!quiet) postStage('load', 55, { modelId: entry.id, label: `Compiling ${entry.name || entry.id}…` });
-    const session = await createSessionFromBytes(entry, bytes);
+    const session = await withTimeout(
+      createSessionFromBytes(entry, bytes),
+      SESSION_COMPILE_TIMEOUT_MS,
+      `Compile ${entry.id}`,
+    );
     SESSIONS[sessionKey] = session;
     if (!quiet) postStage('load', 100, { modelId: entry.id, label: `${entry.name || entry.id} ready` });
     return session;
@@ -640,7 +658,10 @@ self.onmessage = async (event) => {
         break;
       }
       case 'warmup':
-        await warmupModels(msg.modelIds);
+        // Non-blocking — process messages must not queue behind a long compile.
+        void warmupModels(msg.modelIds).catch((err) => {
+          console.warn('[VIP][MLWorker] Warmup failed:', err?.message || err);
+        });
         break;
       default:
         self.postMessage({ type: 'error', message: `Unknown message type '${msg.type}'` });

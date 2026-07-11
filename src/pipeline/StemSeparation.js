@@ -21,6 +21,8 @@ let _warmupWaiters = [];
 let _warmupHooked = false;
 
 const WARMUP_TIMEOUT_MS = 120000;
+/** Max wait for a single separation job before falling back to DSP. */
+const PROCESS_TIMEOUT_MS = 180000;
 
 function getWorker() {
   if (_worker) return _worker;
@@ -128,7 +130,7 @@ export async function separateStems(channelData, sampleRate, options = {}) {
     const timer = setTimeout(() => {
       cleanup();
       reject(new Error('[VIP][StemSeparation] processing timeout'));
-    }, 600000);
+    }, PROCESS_TIMEOUT_MS);
     const onMsg = (ev) => {
       const m = ev.data || {};
       if (m.requestId !== requestId) return;
