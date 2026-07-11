@@ -769,6 +769,13 @@
     if (window._vipClickIsoPatched) return;
     window._vipClickIsoPatched = true;
 
+    let _pendingIsolation = null;
+
+    function _fmtIsoHz(hz) {
+      if (hz >= 1000) return (hz / 1000).toFixed(hz >= 10000 ? 0 : 1) + 'kHz';
+      return Math.round(hz) + 'Hz';
+    }
+
     function _syncVoiceFocusSliders(lo, hi) {
       document.querySelectorAll('.sr-row[data-slider-id="voiceFocusLo"] input[type="range"]').forEach((sl) => {
         sl.value = String(lo);
@@ -780,10 +787,33 @@
       });
     }
 
-    window.addEventListener('vip:isolationBandSet', (e) => {
-      const { freqLow, freqHigh } = e.detail || {};
+    function _hideIsoConfirm() {
+      const bar = $('vizIsoConfirm');
+      if (!bar) return;
+      bar.classList.add('hidden');
+      bar.setAttribute('aria-hidden', 'true');
+    }
+
+    function _showIsoConfirm(freqLow, freqHigh) {
+      const bar = $('vizIsoConfirm');
+      const label = $('vizIsoConfirmLabel');
+      const confirmBtn = $('vizIsoConfirmBtn');
+      if (!bar || !label) return;
+      const app = window._vipApp;
+      const busy = !!(app && app.isProcessing);
+      label.textContent = busy
+        ? `Isolate ${_fmtIsoHz(freqLow)} – ${_fmtIsoHz(freqHigh)} — wait for current processing to finish`
+        : `Isolate ${_fmtIsoHz(freqLow)} – ${_fmtIsoHz(freqHigh)} — confirm to process?`;
+      if (confirmBtn) confirmBtn.disabled = busy;
+      bar.classList.remove('hidden');
+      bar.setAttribute('aria-hidden', 'false');
+    }
+
+    function _applyPendingIsolation() {
+      if (!_pendingIsolation) return;
       const app = window._vipApp;
       if (!app) return;
+      const { freqLow, freqHigh } = _pendingIsolation;
       app.dspParams = app.dspParams || {};
       app.dspParams.isolationFreqLow = freqLow;
       app.dspParams.isolationFreqHigh = freqHigh;
@@ -796,9 +826,38 @@
       _syncVoiceFocusSliders(lo, window.VIP_PARAMS.voiceFocusHi);
       if (typeof app.runPipeline === 'function') app.runPipeline();
       else if (typeof app.reprocess === 'function') app.reprocess();
+      _pendingIsolation = null;
+      _hideIsoConfirm();
+    }
+
+    function _wireIsoConfirmButtons() {
+      if (window._vipIsoConfirmWired) return;
+      window._vipIsoConfirmWired = true;
+      $('vizIsoConfirmBtn')?.addEventListener('click', () => {
+        const app = window._vipApp;
+        if (app?.isProcessing) return;
+        _applyPendingIsolation();
+      });
+      $('vizIsoConfirmCancel')?.addEventListener('click', () => {
+        _pendingIsolation = null;
+        _hideIsoConfirm();
+        window.dispatchEvent(new CustomEvent('vip:isolationBandClear'));
+      });
+    }
+
+    _wireIsoConfirmButtons();
+
+    window.addEventListener('vip:isolationBandSet', (e) => {
+      const { freqLow, freqHigh } = e.detail || {};
+      const app = window._vipApp;
+      if (!app) return;
+      _pendingIsolation = { freqLow, freqHigh, source: e.detail?.source || '' };
+      _showIsoConfirm(freqLow, freqHigh);
     });
 
     window.addEventListener('vip:isolationBandClear', () => {
+      _pendingIsolation = null;
+      _hideIsoConfirm();
       const app = window._vipApp;
       if (!app || !app.dspParams) return;
       app.dspParams.isolationActive = false;

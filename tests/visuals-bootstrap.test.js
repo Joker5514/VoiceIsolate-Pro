@@ -130,6 +130,23 @@ describe('visuals-bootstrap loading and event wiring', () => {
     expect(src).toContain('window._vipPlayAnalyser');
   });
 
+  test('vip-fixes.js requires confirm before click-isolation triggers runPipeline', () => {
+    const src = fs.readFileSync(VIP_FIXES_PATH, 'utf8');
+    const isoBlock = src.match(/vip:isolationBandSet[\s\S]*?vip:isolationBandClear/);
+    expect(isoBlock).toBeTruthy();
+    expect(isoBlock[0]).toContain('_pendingIsolation');
+    expect(isoBlock[0]).toContain('_showIsoConfirm');
+    expect(isoBlock[0]).not.toMatch(/vip:isolationBandSet[\s\S]*?runPipeline\(\)/);
+    expect(src).toContain('vizIsoConfirmBtn');
+    expect(src).toContain('_applyPendingIsolation');
+  });
+
+  test('visual-click-isolation.js clears overlays when isolation is cancelled', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'app', 'visual-click-isolation.js'), 'utf8');
+    expect(src).toContain('clearAllIsolationVisuals');
+    expect(src).toContain("addEventListener('vip:isolationBandClear', clearAllIsolationVisuals)");
+  });
+
   test('app.js dispatches vip:fileLoaded after onAudioLoaded', () => {
     const src = fs.readFileSync(APP_JS_PATH, 'utf8');
     expect(src).toContain("'vip:fileLoaded'");
