@@ -205,8 +205,11 @@ const HeroExperience = (() => {
     if (chip) chip.textContent = `◉ ${label}`;
     const barWrap = $('pipelineStage');
     if (barWrap) barWrap.setAttribute('aria-valuenow', String(Math.round(p)));
-    if (p > 0 && p < 100) setUiState('processing');
     if (p >= 100) setUiState('processed');
+    else if (p > 0) setUiState('processing');
+    else if (appRef?.outputBuffer || appRef?.procBuffer) setUiState('processed');
+    else if (appRef?.inputBuffer || appRef?.origBuffer) setUiState('file-ready');
+    else setUiState('idle');
     if (appRef && typeof appRef._updateProcessButtonsState === 'function') {
       appRef._updateProcessButtonsState();
     }
@@ -1016,6 +1019,9 @@ class VoiceIsolatePro {
     if (spinner) spinner.style.display = (p > 0 && p < 100) ? '' : 'none';
     const lbl = badge && badge.querySelector('.vip-pb-label');
     if (lbl) lbl.textContent = detail || (p >= 100 ? 'Done' : 'Ready');
+    if (typeof this.updateProcessingOverlay === 'function') {
+      this.updateProcessingOverlay(detail || '', p, stageIndex);
+    }
     HeroExperience.onPipelineProgress(stageIndex, detail, p);
   }
 
@@ -2432,13 +2438,7 @@ class VoiceIsolatePro {
         this.inputBuffer = pass === 0 ? (this.inputBuffer || this.origBuffer) : (this.procBuffer || sourceBuf);
         sourceBuf = this.inputBuffer;
 
-        if (window._vipOrch && typeof window._vipOrch.run === 'function') {
-          const result = await window._vipOrch.run(this.inputBuffer, window.VIP_PARAMS || {});
-          if (result) {
-            this.outputBuffer = result;
-            this.procBuffer = result;
-          }
-        } else if (pass === 0) {
+        if (pass === 0) {
           // ML inference runs exactly once per file (CLAUDE.md §1). Whisper
           // forensic passes are DSP-only refinement on procBuffer.
           stageStart('ml_isolation');
@@ -2467,6 +2467,8 @@ class VoiceIsolatePro {
 
       if (fileSeq !== this._fileSeq) {
         stageEnd('pipeline');
+        this.setStatus('READY');
+        this.updatePipelineProgress(0, 'Cancelled (new file loaded)', 0);
         return;
       }
       if (this.abortFlag) {
@@ -2951,8 +2953,12 @@ class VoiceIsolatePro {
     const yieldBudget = createYieldBudget(32);
     if (onProgress) onProgress(0.02);
     await yieldBudget();
+    if (onProgress) onProgress(0.08);
+    await yieldBudget();
 
     const spec = DSP.forwardSTFT(data, FFT, HOP);
+    if (onProgress) onProgress(0.15);
+    await yieldBudget();
     if (!spec || !Array.isArray(spec.mag) || spec.mag.length === 0) return data;
     const mag = spec.mag;
     const phase = spec.phase;
