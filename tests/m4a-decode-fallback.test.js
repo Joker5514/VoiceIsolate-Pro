@@ -141,8 +141,8 @@ describe('M4A decode fallback — landing.js upload UX', () => {
     expect(ljs).toMatch(/finally[\s\S]*ui\.fileInput\.value\s*=\s*''/);
   });
 
-  test('landing.js awaits ML warmup before auto-processing after decode', () => {
-    expect(ljs).toContain('await warmupP');
-    expect(ljs).toContain('warmupWorkerModels(modelIds)');
+  test('landing.js overlaps ML warmup with decode (non-blocking before process)', () => {
+    expect(ljs).toContain('void warmupWorkerModels(modelIds)');
+    expect(ljs).not.toContain('await warmupP');
   });
 });
