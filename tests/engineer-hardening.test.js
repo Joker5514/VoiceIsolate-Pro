@@ -39,7 +39,8 @@ describe('Engineer Mode hardening', () => {
   });
 
   test('vip-fixes A/B toggle preserves transport position', () => {
-    expect(VIP_FIXES).toMatch(/function _toggleAB[\s\S]*_getTransportPosition[\s\S]*_pauseOffset = pos/);
+    expect(VIP_FIXES).toContain('restartAt(offsetSec)');
+    expect(VIP_FIXES).toMatch(/function _toggleAB[\s\S]*restartAt\(pos\)/);
     expect(VIP_FIXES).not.toMatch(/function _toggleAB[\s\S]*resetOffset\(\)/);
   });
 

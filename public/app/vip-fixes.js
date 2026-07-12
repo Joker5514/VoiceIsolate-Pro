@@ -507,6 +507,11 @@
       get isPlaying() { return _isPlaying; },
       resetOffset()   { _pauseOffset = 0; },
       restart()       { if (_isPlaying) { _stopSource(); _play(); } },
+      restartAt(offsetSec) {
+        _pauseOffset = Math.max(0, offsetSec || 0);
+        app.playOffset = _pauseOffset;
+        if (_isPlaying) { _stopSource(); _play(); }
+      },
       elapsed() {
         return _elapsedSeconds();
       },
@@ -573,15 +578,12 @@
       const wasPlaying = !!app._fixPlayState?.isPlaying;
       const pos = (typeof app._getTransportPosition === 'function')
         ? app._getTransportPosition()
-        : (_pauseOffset || app.playOffset || 0);
+        : (app.playOffset || 0);
       app.abMode = next;
       app._bridgeBuf = null;
       _setABLabel(next === 'processed' ? 'B' : 'A');
-      if (wasPlaying) {
-        _pauseOffset = pos;
-        app.playOffset = pos;
-        _stopSource();
-        _play();
+      if (wasPlaying && typeof app._fixPlayState?.restartAt === 'function') {
+        app._fixPlayState.restartAt(pos);
       }
       log('A/B toggled to', next);
     }
