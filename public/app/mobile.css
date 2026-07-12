@@ -606,6 +606,8 @@ html {
     min-height: var(--mob-touch-min);
   }
   .btn-viz-gallery,
+  .btn-viz-tab-nav,
+  .btn-viz-minimize,
   #fullscreenSpectroBtn {
     min-height: var(--mob-touch-min);
     padding: 8px 12px;
