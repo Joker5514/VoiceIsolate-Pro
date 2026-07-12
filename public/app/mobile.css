@@ -378,11 +378,15 @@ html {
   .viz-hdr   { flex-direction: column; align-items: flex-start; gap: 4px; }
   .viz-actions { flex-wrap: wrap; gap: 4px; width: 100%; }
   .btn-viz-gallery,
+  .btn-viz-tab-nav,
+  .btn-viz-minimize,
   #fullscreenSpectroBtn {
     min-height: var(--mob-touch-min);
     padding: 8px 12px;
     touch-action: manipulation;
   }
+  .viz-tab-rail__scroll{scrollbar-width:auto}
+  .viz-card .tab-btn{flex-shrink:0}
   .viz-card.viz-gallery .panel {
     margin-bottom: 10px;
     padding: 6px;
@@ -602,6 +606,8 @@ html {
     min-height: var(--mob-touch-min);
   }
   .btn-viz-gallery,
+  .btn-viz-tab-nav,
+  .btn-viz-minimize,
   #fullscreenSpectroBtn {
     min-height: var(--mob-touch-min);
     padding: 8px 12px;

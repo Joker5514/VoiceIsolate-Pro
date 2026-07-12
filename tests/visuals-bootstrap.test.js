@@ -24,16 +24,22 @@ describe('visuals-bootstrap.js — visualization driver', () => {
     expect(src).toContain('setViewMode');
     expect(src).toContain('getViewMode');
     expect(src).toContain('toggleFullscreen');
+    expect(src).toContain('toggleMinimized');
+    expect(src).toContain('cycleTab');
     expect(src).toContain('wireChrome');
     expect(src).toContain('start');
     expect(src).toContain('stop');
   });
 
-  test('owns viz chrome wiring (tabs, gallery, fullscreen)', () => {
+  test('owns viz chrome wiring (tabs, gallery, fullscreen, minimize)', () => {
     expect(src).toContain('_wireTabBar');
     expect(src).toContain('_wireFullscreen');
     expect(src).toContain('_wireGalleryToggle');
+    expect(src).toContain('_wireTabNav');
+    expect(src).toContain('_wireMinimizeToggle');
     expect(src).toContain('viz-fullscreen');
+    expect(src).toContain('viz-minimized');
+    expect(src).toContain('vizTabScroll');
   });
 
   test('supports gallery show-all view mode', () => {
@@ -218,6 +224,16 @@ describe('visuals-bootstrap loading and event wiring', () => {
     const html = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
     expect(html).toContain('btnVizGallery');
     expect(html).toContain('data-viz-panel');
+  });
+
+  test('index.html includes horizontal tab scroll rail and viz minimize controls', () => {
+    const html = fs.readFileSync(INDEX_HTML_PATH, 'utf8');
+    expect(html).toContain('viz-tab-rail');
+    expect(html).toContain('vizTabScroll');
+    expect(html).toContain('btnVizMinimize');
+    expect(html).toContain('btnVizTabPrev');
+    expect(html).toContain('btnVizTabNext');
+    expect(html).toContain('vizCardBody');
   });
 });
 

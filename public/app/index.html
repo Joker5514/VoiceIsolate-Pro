@@ -497,20 +497,26 @@
         </div>
       </div>
 
-      <div class="card viz-card">
+      <div class="card viz-card" id="vizCard">
         <div class="viz-hdr">
           <span>Visualizations</span>
           <div class="viz-actions">
+            <button id="btnVizTabPrev" class="btn btn-xs btn-viz-tab-nav" type="button" aria-label="Previous visualization" title="Previous visualization"><span aria-hidden="true">&#8249;</span></button>
+            <button id="btnVizTabNext" class="btn btn-xs btn-viz-tab-nav" type="button" aria-label="Next visualization" title="Next visualization"><span aria-hidden="true">&#8250;</span></button>
+            <button id="btnVizMinimize" class="btn btn-xs btn-viz-minimize" type="button" aria-pressed="false" aria-label="Minimize visualizations" title="Minimize visualizations"><span aria-hidden="true">&#8722;</span></button>
             <button id="btnVizGallery" class="btn btn-xs btn-viz-gallery" type="button" aria-pressed="false" title="Show all visualizations at once">Show All</button>
             <button id="fullscreenSpectroBtn" class="btn btn-xs" type="button" aria-label="Toggle Fullscreen" title="Toggle Fullscreen"><span aria-hidden="true">⛶</span></button>
           </div>
         </div>
+        <div id="vizCardBody" class="viz-card-body">
         <div id="neon-pulse-slot" class="neon-pulse-slot"></div>
         <div id="vizIsoConfirm" class="viz-iso-confirm hidden" role="group" aria-label="Confirm isolation processing" aria-hidden="true">
           <span id="vizIsoConfirmLabel" class="viz-iso-confirm-label">Process with selected frequency band?</span>
           <button id="vizIsoConfirmBtn" class="btn btn-xs btn-primary" type="button">Process</button>
           <button id="vizIsoConfirmCancel" class="btn btn-xs btn-outline" type="button">Cancel</button>
         </div>
+        <div class="viz-tab-rail">
+          <div id="vizTabScroll" class="viz-tab-rail__scroll" role="presentation" aria-hidden="true">
         <div id="tabBar" class="tabs" role="tablist" aria-label="Visualization tabs">
           <button id="btn-spectrogram" class="tab-btn active" type="button" role="tab" aria-controls="tab-spectrogram" data-tab="spectrogram" aria-selected="true" tabindex="0">Spectrogram</button>
           <button id="btn-waveform" class="tab-btn" type="button" role="tab" aria-controls="tab-waveform" data-tab="waveform" aria-selected="false" tabindex="-1">Waveform</button>
@@ -521,6 +527,8 @@
           <button id="btn-topo" class="tab-btn" type="button" role="tab" aria-controls="tab-topo" data-tab="topo" aria-selected="false" tabindex="-1">3D Topo</button>
           <button id="btn-swarm" class="tab-btn" type="button" role="tab" aria-controls="tab-swarm" data-tab="swarm" aria-selected="false" tabindex="-1">Swarm</button>
           <button id="btn-liquid" class="tab-btn" type="button" role="tab" aria-controls="tab-liquid" data-tab="liquid" aria-selected="false" tabindex="-1">Liquid</button>
+        </div>
+          </div>
         </div>
           <div id="tab-spectrogram" role="tabpanel" aria-labelledby="btn-spectrogram" class="panel active" data-viz-panel="spectrogram" tabindex="0">
             <div class="viz-panel-label">Spectrogram</div>
@@ -545,6 +553,7 @@
           <div id="tab-topo" role="tabpanel" aria-labelledby="btn-topo" class="panel" data-viz-panel="topo"><div class="viz-panel-label">3D Topo</div><div class="viz-iso-badge hidden" id="iso-badge-topo"></div><div id="topoContainer" class="spectro3d-container"></div></div>
           <div id="tab-swarm" role="tabpanel" aria-labelledby="btn-swarm" class="panel" data-viz-panel="swarm"><div class="viz-panel-label">Swarm</div><div class="viz-iso-badge hidden" id="iso-badge-swarm"></div><div id="swarmContainer" class="spectro3d-container"></div></div>
           <div id="tab-liquid" role="tabpanel" aria-labelledby="btn-liquid" class="panel" data-viz-panel="liquid"><div class="viz-panel-label">Liquid</div><div class="viz-iso-badge hidden" id="iso-badge-liquid"></div><canvas id="liquidCanvas" class="viz-canvas"></canvas></div>
+        </div>
       </div>
 
       <div id="videoCard" class="card video-card" style="display:none">

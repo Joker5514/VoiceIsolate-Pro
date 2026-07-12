@@ -30,6 +30,7 @@
   let _lastDiarSegStart = 0;
   let _lastSpeakerState = null;
   let _vizFullscreen = false;
+  let _vizMinimized = false;
   let _roRaf = 0;
   let _roScheduled = false;
   let _freqScratch = null;
@@ -677,9 +678,70 @@
     _syncPremiumViz();
   }
 
+  function _tabOrder() {
+    return qsa('.viz-card .tab-btn[data-tab]').map((b) => b.dataset.tab).filter(Boolean);
+  }
+
+  function _scrollActiveTabIntoView() {
+    const scroll = $('vizTabScroll');
+    const active = $('tabBar')?.querySelector('.tab-btn.active');
+    if (!scroll || !active) return;
+    const target = active.offsetLeft - (scroll.clientWidth - active.offsetWidth) / 2;
+    try {
+      scroll.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+    } catch (_) {
+      scroll.scrollLeft = Math.max(0, target);
+    }
+  }
+
+  function cycleTab(delta) {
+    if (_vizMinimized) toggleMinimized(false);
+    const tabs = _tabOrder();
+    if (!tabs.length) return;
+    let idx = tabs.indexOf(_activeTab);
+    if (idx < 0) idx = 0;
+    idx = (idx + delta + tabs.length) % tabs.length;
+    const nextTab = tabs[idx];
+    const btn = document.querySelector('.viz-card .tab-btn[data-tab="' + nextTab + '"]');
+    _activateTab(nextTab, btn);
+  }
+
+  function toggleMinimized(force) {
+    _vizMinimized = typeof force === 'boolean' ? force : !_vizMinimized;
+    const card = $('vizCard') || document.querySelector('.viz-card');
+    const btn = $('btnVizMinimize');
+    if (card) card.classList.toggle('viz-minimized', _vizMinimized);
+    if (btn) {
+      btn.classList.toggle('is-active', _vizMinimized);
+      btn.setAttribute('aria-pressed', String(_vizMinimized));
+      btn.setAttribute('aria-label', _vizMinimized ? 'Expand visualizations' : 'Minimize visualizations');
+      btn.title = _vizMinimized ? 'Expand visualizations' : 'Minimize visualizations';
+      const glyph = btn.querySelector('span[aria-hidden="true"]');
+      if (glyph) glyph.textContent = _vizMinimized ? '+' : '−';
+    }
+    if (_vizMinimized && _vizFullscreen) _exitVizFullscreen();
+    if (!_vizMinimized) {
+      setTimeout(() => {
+        _resizeVisibleCanvases();
+        _syncPremiumViz();
+        _scrollActiveTabIntoView();
+      }, 80);
+    }
+    try {
+      window.dispatchEvent(new CustomEvent('vip:vizMinimizeChanged', {
+        detail: { minimized: _vizMinimized },
+      }));
+    } catch (_) {}
+  }
+
+  function isMinimized() {
+    return _vizMinimized;
+  }
+
   function _activateTab(tab, btn) {
     if (!tab) return;
     if (_viewMode === 'gallery') setViewMode('single');
+    if (_vizMinimized) toggleMinimized(false);
     const tabs = qsa('.viz-card .tab-btn[data-tab]');
     tabs.forEach((b) => {
       const on = b === btn || b.dataset.tab === tab;
@@ -691,6 +753,7 @@
       p.classList.toggle('active', p.dataset.vizPanel === tab);
     });
     _onTabActivated(tab);
+    _scrollActiveTabIntoView();
   }
 
   function _docFullscreenEl() {
@@ -825,14 +888,57 @@
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (_vizMinimized) toggleMinimized(false);
       setViewMode(_viewMode === 'gallery' ? 'single' : 'gallery');
     });
+  }
+
+  function _wireTabNav() {
+    const prev = $('btnVizTabPrev');
+    const next = $('btnVizTabNext');
+    if (prev && prev.dataset.vipVizWired !== '1') {
+      prev.dataset.vipVizWired = '1';
+      prev.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        cycleTab(-1);
+      });
+    }
+    if (next && next.dataset.vipVizWired !== '1') {
+      next.dataset.vipVizWired = '1';
+      next.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        cycleTab(1);
+      });
+    }
+  }
+
+  function _wireMinimizeToggle() {
+    const btn = $('btnVizMinimize');
+    if (!btn || btn.dataset.vipVizWired === '1') return;
+    btn.dataset.vipVizWired = '1';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleMinimized();
+    });
+    const hdr = document.querySelector('.viz-card .viz-hdr > span');
+    if (hdr && !hdr.dataset.vipVizWired) {
+      hdr.dataset.vipVizWired = '1';
+      hdr.style.cursor = 'pointer';
+      hdr.title = 'Click to expand or collapse visualizations';
+      hdr.addEventListener('click', () => toggleMinimized());
+    }
   }
 
   function wireChrome() {
     _wireGalleryToggle();
     _wireFullscreen();
     _wireTabBar();
+    _wireTabNav();
+    _wireMinimizeToggle();
+    setTimeout(_scrollActiveTabIntoView, 120);
   }
 
   function _scheduleLayoutResize() {
@@ -922,11 +1028,14 @@
     stop,
     onTabActivated: _onTabActivated,
     activateTab: _activateTab,
+    cycleTab,
     initPremium: _initPremiumTab,
     setViewMode,
     getViewMode,
     syncPremium: _syncPremiumViz,
     toggleFullscreen,
+    toggleMinimized,
+    isMinimized,
     wireChrome,
   };
 })(typeof window !== 'undefined' ? window : this);
