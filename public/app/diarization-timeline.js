@@ -80,7 +80,14 @@ export function initDiarizationTimeline(opts = {}) {
   _onSpeakerClick = opts.onSpeakerClick || null;
 
   if (!_resizeObserver) {
-    _resizeObserver = new ResizeObserver(() => _resize());
+    let roRaf = 0;
+    _resizeObserver = new ResizeObserver(() => {
+      if (roRaf) cancelAnimationFrame(roRaf);
+      roRaf = requestAnimationFrame(() => {
+        roRaf = 0;
+        _resize();
+      });
+    });
     _resizeObserver.observe(_canvas.parentElement || _canvas);
   }
   _resize();

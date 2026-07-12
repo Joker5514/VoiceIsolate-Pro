@@ -433,8 +433,10 @@
       }
     });
 
-    /* Seek scrubber — app.js owns input/change handlers; sync local offset only */
+    /* Seek scrubber — vip-fixes owns transport when patched */
     if (seek) {
+      seek.addEventListener('mousedown', () => { app._transportSeeking = true; });
+      seek.addEventListener('touchstart', () => { app._transportSeeking = true; }, { passive: true });
       seek.addEventListener('input', () => {
         const dur = (typeof app._getTransportDuration === 'function')
           ? app._getTransportDuration()
@@ -445,8 +447,12 @@
           app._paintTransport(_pauseOffset, dur, { skipSeekValue: true });
         }
         if (!_isPlaying) _syncVideo(_pauseOffset, false);
+        if (window.VIP_VISUALS && typeof window.VIP_VISUALS.paintPlayheads === 'function') {
+          window.VIP_VISUALS.paintPlayheads(_pauseOffset);
+        }
       });
       seek.addEventListener('change', () => {
+        app._transportSeeking = false;
         const dur = (typeof app._getTransportDuration === 'function')
           ? app._getTransportDuration()
           : (_duration || 0);
@@ -564,9 +570,19 @@
         return;
       }
       const next = (app.abMode === 'processed') ? 'original' : 'processed';
+      const wasPlaying = !!app._fixPlayState?.isPlaying;
+      const pos = (typeof app._getTransportPosition === 'function')
+        ? app._getTransportPosition()
+        : (_pauseOffset || app.playOffset || 0);
       app.abMode = next;
+      app._bridgeBuf = null;
       _setABLabel(next === 'processed' ? 'B' : 'A');
-      if (app._fixPlayState?.isPlaying) { app._fixPlayState.resetOffset(); app._fixPlayState.restart(); }
+      if (wasPlaying) {
+        _pauseOffset = pos;
+        app.playOffset = pos;
+        _stopSource();
+        _play();
+      }
       log('A/B toggled to', next);
     }
 
@@ -860,6 +876,12 @@
       const app = window._vipApp;
       if (!app) return;
       _pendingIsolation = { freqLow, freqHigh, source: e.detail?.source || '' };
+      _showIsoConfirm(freqLow, freqHigh);
+    });
+
+    window.addEventListener('vip:processingDone', () => {
+      if (!_pendingIsolation) return;
+      const { freqLow, freqHigh } = _pendingIsolation;
       _showIsoConfirm(freqLow, freqHigh);
     });
 

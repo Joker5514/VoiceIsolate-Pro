@@ -1644,9 +1644,16 @@ class VoiceIsolatePro {
     bind('tpRew', d.tpRew, 'click', () => this.seekDelta(-10));
     bind('tpFwd', d.tpFwd, 'click', () => this.seekDelta(10));
     if (d.tpSeek) {
-      d.tpSeek.addEventListener('mousedown', () => { this._transportSeeking = true; });
-      d.tpSeek.addEventListener('touchstart', () => { this._transportSeeking = true; }, { passive: true });
+      d.tpSeek.addEventListener('mousedown', () => {
+        if (this._fixTransportPatched) return;
+        this._transportSeeking = true;
+      });
+      d.tpSeek.addEventListener('touchstart', () => {
+        if (this._fixTransportPatched) return;
+        this._transportSeeking = true;
+      }, { passive: true });
       d.tpSeek.addEventListener('input', (e) => {
+        if (this._fixTransportPatched) return;
         const frac = parseFloat(e.target.value) / 1000;
         const dur = this._getTransportDuration();
         const off = frac * dur;
@@ -1654,6 +1661,7 @@ class VoiceIsolatePro {
         this._paintTransport(off, dur, { skipSeekValue: true });
       });
       d.tpSeek.addEventListener('change', (e) => {
+        if (this._fixTransportPatched) return;
         this._transportSeeking = false;
         this.seekTo(parseFloat(e.target.value) / 1000);
       });
@@ -1865,12 +1873,16 @@ class VoiceIsolatePro {
     if (e.key === 'Escape') {
       if (this.isProcessing) {
         this.abortFlag = true;
+        import('/src/pipeline/StemSeparation.js')
+          .then((m) => { if (m.resetStemSeparation) m.resetStemSeparation(); })
+          .catch(() => {});
       } else {
         this.stop();
       }
       return;
     }
     if (e.key === 'x' || e.key === 'X') {
+      if (this._fixABPatched) return;
       if (!(this.outputBuffer || this.procBuffer)) return;
       if (this.dom && this.dom.tpAB && this.dom.tpAB.disabled) return;
       this.toggleAB();
@@ -2104,7 +2116,11 @@ class VoiceIsolatePro {
     this.stop();
     if (this.isProcessing) {
       this.abortFlag = true;
-      await this._waitForPipelineIdle();
+      try {
+        const { resetStemSeparation } = await import('/src/pipeline/StemSeparation.js');
+        if (resetStemSeparation) resetStemSeparation();
+      } catch (_) {}
+      await this._waitForPipelineIdle(90000);
     }
     this.setStatus('LOADING');
     HeroExperience.onDecodeStart();
@@ -2380,12 +2396,16 @@ class VoiceIsolatePro {
     }
     if (this.isProcessing) {
       structuredLog('warn', '[VIP] Pipeline idle wait timed out — forcing reset.');
+      import('/src/pipeline/StemSeparation.js')
+        .then((m) => { if (m.resetStemSeparation) m.resetStemSeparation(); })
+        .catch(() => {});
       this.isProcessing = false;
       this.abortFlag = false;
       if (typeof this.hideProcessingOverlay === 'function') {
         try { this.hideProcessingOverlay(); } catch (_) {}
       }
       document.body.classList.remove('vip-processing-lock');
+      try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}
     }
   }
 
@@ -3708,18 +3728,22 @@ class VoiceIsolatePro {
       Promise.resolve(bridge.seek(target)).catch(() => {});
     }
 
-    if (wasPlaying) {
+    if (wasPlaying && !this._fixTransportPatched) {
       this.play();
     }
   }
 
   toggleAB() {
+    if (this._fixABPatched) return;
     const buf = this.outputBuffer || this.procBuffer;
     if (!buf) return;
-    const speed = numFromInput(this.dom.tpSpeed, 1);
-    if (this.isPlaying) {
+    if (this.isPlaying && typeof this._getTransportPosition === 'function') {
+      this.playOffset = this._getTransportPosition();
+    } else if (this.isPlaying) {
+      const speed = numFromInput(this.dom.tpSpeed, 1);
       this.playOffset += (this.ctx.currentTime - this.playStartTime) * speed;
     }
+    this._bridgeBuf = null;
     this.abMode = this.abMode === 'original' ? 'processed' : 'original';
     if (this.dom.tpAB) this.dom.tpAB.classList.toggle('active', this.abMode === 'processed');
     // PATCHED BY vip-fixes.js — consider merging
