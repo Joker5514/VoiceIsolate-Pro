@@ -129,6 +129,7 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup();
+      resetStemSeparation();
       reject(new Error('[VIP][StemSeparation] processing timeout'));
     }, PROCESS_TIMEOUT_MS);
     const onMsg = (ev) => {

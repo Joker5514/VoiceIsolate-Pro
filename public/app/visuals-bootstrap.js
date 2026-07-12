@@ -383,15 +383,6 @@
     }
   }
 
-  function _drawABCompareLive() {
-    const app = global._vipApp;
-    if (!app) return;
-    const inBuf = app.inputBuffer || app.origBuffer;
-    const outBuf = app.outputBuffer || app.procBuffer;
-    if (inBuf) _drawPlayhead($('waveOrigCanvas'), inBuf, '#22d3ee');
-    if (outBuf) _drawPlayhead($('waveProcCanvas'), outBuf, '#69ff47');
-  }
-
   /* ── LUFS + header meters ─────────────────────────────────────────────── */
   function _updateLufs(timeBytes) {
     let sumSq = 0;
@@ -546,14 +537,6 @@
       const freq = $('freqCanvas');
       if (freq) _drawFreqBars(freq, _freqScratch);
     }
-
-    if (_isTabDrawTarget('waveform')) {
-      const app = global._vipApp;
-      const buf = app && (app.inputBuffer || app.origBuffer);
-      if (buf) _drawPlayhead($('waveCanvas'), buf, '#22d3ee');
-    }
-
-    if (_isTabDrawTarget('abcompare')) _drawABCompareLive();
 
     _syncClustersEngine(_freqScratch);
 
@@ -909,7 +892,7 @@
       const app = global._vipApp;
       if (app && (app.inputBuffer || app.origBuffer)) {
         clearInterval(poll);
-        try { window.dispatchEvent(new CustomEvent('vip:fileLoaded')); } catch (_) {}
+        drawStaticVisuals();
       } else if (polls > 600) {
         clearInterval(poll);
       }
