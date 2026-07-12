@@ -39,6 +39,9 @@
 
   function _getPlayOffset() {
     const app = global._vipApp;
+    if (app && typeof app._getTransportPosition === 'function') {
+      return app._getTransportPosition();
+    }
     if (app && app._fixPlayState && typeof app._fixPlayState.elapsed === 'function') {
       return app._fixPlayState.elapsed();
     }
@@ -146,11 +149,14 @@
     _drawWaveformBase(canvas, audioBuf, color);
   }
 
-  function _drawPlayhead(canvas, buffer, color) {
+  function _drawPlayhead(canvas, buffer, color, positionSec) {
     if (!canvas || !buffer) return;
     if (!_drawWaveformBase(canvas, buffer, color)) return;
     const dur = buffer.duration || 1;
-    const px = Math.round((_getPlayOffset() / dur) * canvas.width);
+    const offset = (typeof positionSec === 'number' && Number.isFinite(positionSec))
+      ? positionSec
+      : _getPlayOffset();
+    const px = Math.round((offset / dur) * canvas.width);
     const lastPx = _playheadPxCache.get(canvas);
     if (lastPx === px) return;
     _playheadPxCache.set(canvas, px);
@@ -162,6 +168,20 @@
     ctx.moveTo(px, 0);
     ctx.lineTo(px, canvas.height);
     ctx.stroke();
+  }
+
+  function paintPlayheads(positionSec) {
+    const app = global._vipApp;
+    if (!app) return;
+    const inBuf = app.inputBuffer || app.origBuffer;
+    const outBuf = app.outputBuffer || app.procBuffer;
+    if (_isTabDrawTarget('waveform') && inBuf) {
+      _drawPlayhead($('waveCanvas'), inBuf, '#22d3ee', positionSec);
+    }
+    if (_isTabDrawTarget('abcompare')) {
+      if (inBuf) _drawPlayhead($('waveOrigCanvas'), inBuf, '#22d3ee', positionSec);
+      if (outBuf) _drawPlayhead($('waveProcCanvas'), outBuf, '#69ff47', positionSec);
+    }
   }
 
   function drawStaticVisuals() {
@@ -876,6 +896,12 @@
       stop();
       _stopAllPremium();
     });
+    window.addEventListener('vip:transportTick', (e) => {
+      const pos = e && e.detail && typeof e.detail.position === 'number'
+        ? e.detail.position
+        : _getPlayOffset();
+      paintPlayheads(pos);
+    });
 
     let polls = 0;
     const poll = setInterval(() => {
@@ -908,6 +934,7 @@
 
   global.VIP_VISUALS = {
     drawStatic: drawStaticVisuals,
+    paintPlayheads,
     start,
     stop,
     onTabActivated: _onTabActivated,

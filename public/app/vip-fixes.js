@@ -115,6 +115,9 @@
     }
 
     function _elapsedSeconds() {
+      if (typeof app._getTransportPosition === 'function') {
+        return app._getTransportPosition();
+      }
       const ctx = _getCtx();
       if (_usingBridge && _bridge) {
         return _bridge.isPlaying() ? _bridge.currentTime() : _pauseOffset;
@@ -172,6 +175,7 @@
         } catch (_) {}
         _usingBridge = false;
         _bridge = null;
+        app._transportViaBridge = false;
       }
       _stopSource();
       _isPlaying = false;
@@ -198,6 +202,7 @@
       _stopSource();
       _usingBridge = false;
       _bridge = null;
+      app._transportViaBridge = false;
 
       _duration = buf.duration || 0;
       const dur = $('tpDur');
@@ -226,6 +231,7 @@
           _usingBridge = true;
           _bridge = bridge;
           app._bridge = bridge;
+          app._transportViaBridge = true;
           _analyser = bridge.getAnalyser ? bridge.getAnalyser() : null;
           if (_analyser) window._vipPlayAnalyser = _analyser;
           _startTime = ctx.currentTime;
@@ -250,8 +256,10 @@
         warn('Live-Mix bridge play failed; falling back to direct source', e);
         _usingBridge = false;
         _bridge = null;
+        app._transportViaBridge = false;
       }
 
+      app._transportViaBridge = false;
       _source = ctx.createBufferSource();
       _source.buffer = buf;
       const spSel = $('tpSpeed');

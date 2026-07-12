@@ -3290,7 +3290,9 @@ class VoiceIsolatePro {
 
   _getTransportPosition() {
     const bridge = this._bridge;
-    if (bridge?.isPlaying?.() && typeof bridge.currentTime === 'function') {
+    // Bridge clock is authoritative whenever it drives transport — including
+    // the brief seek gap where mixer.isPlaying() is false but app.isPlaying is true.
+    if (this._transportViaBridge && bridge && typeof bridge.currentTime === 'function') {
       return bridge.currentTime();
     }
     if (this.isPlaying && this.ctx && Number.isFinite(this.playStartTime)) {
@@ -3337,6 +3339,11 @@ class VoiceIsolatePro {
       if (!this._transportSeeking) {
         this.playOffset = cur;
         this._paintTransport(cur, dur);
+        try {
+          window.dispatchEvent(new CustomEvent('vip:transportTick', {
+            detail: { position: cur, duration: dur },
+          }));
+        } catch (_) {}
       }
 
       const bridge = this._bridge;
@@ -3505,6 +3512,7 @@ class VoiceIsolatePro {
         this._ensureTransportRegionWiring();
         // Honour the current scrub position, then start.
         this._ensurePlaybackAnalyser();
+        this._transportViaBridge = true;
         Promise.resolve(bridge.seek(this.playOffset || 0))
           .then(() => bridge.play())
           .catch((err) => {
@@ -3522,6 +3530,8 @@ class VoiceIsolatePro {
     if (!bridge && !this._bridgeFailed) {
       this._ensureBridge();
     }
+
+    this._transportViaBridge = false;
 
     // Fallback: direct AudioContext source node (offline-processed buffer).
     if (window._vipOrch && typeof window._vipOrch.buildLiveChain === 'function') {
