@@ -26,8 +26,12 @@ import { sliceAudioBuffer } from '/src/core/audio-slice.js';
 import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
-import { isDesktopShell, pickAudioFile } from '/src/core/DesktopBridge.js';
-import { inferMediaKind } from '/src/core/media-types.js';
+import { isDesktopShell, pickAudioFile, saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
+import { inferMediaKind, isVideoSource } from '/src/core/media-types.js';
+import {
+  exportVideoWithProcessedAudio,
+  triggerBlobDownload,
+} from '/src/pipeline/video-export.js';
 import { openFilePicker as triggerFileInput, primeAudioGesture, fixUploadTouchTargets } from '/src/presentation/UploadWiring.js';
 import { startWorkletStatusDriver } from '/src/presentation/WorkletStatus.js';
 import {
@@ -785,6 +789,10 @@ class VoiceIsolatePro {
     this.isPlaying = false;
     this.isProcessing = false;
     this.isVideo = false;
+    /** @type {File|Blob|null} original upload — retained for video remux export */
+    this._sourceFile = null;
+    /** @type {string|null} object URL currently assigned to #videoPlayer */
+    this._videoObjectUrl = null;
 
     // Playback state
     this.inputBuffer = null;
@@ -1696,15 +1704,7 @@ class VoiceIsolatePro {
       if (this.origBuffer || this.inputBuffer) downloadWav(this.origBuffer || this.inputBuffer, 'original-' + Date.now() + '.wav');
     });
     bind('saveProcBtn', d.saveProcBtn, 'click', async () => {
-      let buf = this.procBuffer || this.outputBuffer;
-      if (!buf) return;
-      await this.ensureCtx();
-      const transport = this._getTransportMixer();
-      if (transport?.hasCrop?.()) {
-        const { in: cropIn, out: cropOut } = transport.getCropRegion();
-        buf = sliceAudioBuffer(this.ctx, buf, cropIn, cropOut);
-      }
-      downloadWav(buf, 'processed-' + Date.now() + '.wav');
+      await this._downloadProcessed();
     });
     bind('auditLogBtn', d.auditLogBtn, 'click', () => this.downloadAuditLog());
 
@@ -2154,25 +2154,17 @@ class VoiceIsolatePro {
     }
     if (fileSeq !== this._fileSeq) return;
 
-    // Detect video by MIME type or container extension. The <video> element is
-    // then shown and kept in sync with the Web Audio transport so the picture
-    // plays alongside the *processed* audio (video stays muted; sound comes
-    // from the processed/original AudioBuffer). decodeAudioData demuxes the
-    // audio track from most MP4/WEBM/MOV containers directly.
-    const mimeLower = (file.type || '').toLowerCase();
-    const isVideoFile = mediaKind === 'video'
-      || (mimeLower.startsWith('video/') && mediaKind !== 'audio')
-      || (mimeLower === 'audio/mp4' && /\.(mp4|m4v|mov)$/i.test(file.name || ''));
+    // Detect video by MIME / extension. The muted <video> element shows the
+    // picture while Web Audio plays processed audio; export remuxes them.
+    const isVideoFile = isVideoSource(file);
+    this._sourceFile = file;
+    this.isVideo = isVideoFile;
 
-    // Release any previously-loaded video source first, so reloading a new clip
-    // neither leaks the old object URL nor leaves the old picture on screen.
-    if (this.dom && this.dom.videoPlayer && this.dom.videoPlayer.src) {
-      const prev = this.dom.videoPlayer;
-      try { URL.revokeObjectURL(prev.src); } catch { /* ignore */ }
-      try {
-        if (typeof prev.removeAttribute === 'function') prev.removeAttribute('src');
-        else prev.src = '';
-      } catch { /* ignore */ }
+    // Always tear down any previous object URL so a new clip cannot keep the
+    // old picture. Check getAttribute('src') — the IDL .src is never empty
+    // after a prior absolute URL assignment.
+    if (typeof this._clearVideoElement === 'function') {
+      this._clearVideoElement();
     }
 
     let buffer;
@@ -2213,36 +2205,118 @@ class VoiceIsolatePro {
     }
     if (fileSeq !== this._fileSeq) return;
 
-    // Show & wire the <video> element for video files (covers the common path
-    // where decodeAudioData succeeded). The transport plays the processed audio
-    // through Web Audio while the muted video supplies the picture in sync.
-    if (isVideoFile && this.dom && this.dom.videoPlayer) {
+    // Always assign a fresh object URL for video (never rely on a stale/empty
+    // IDL .src check — that previously left the preview blank after reload).
+    if (isVideoFile && this.dom?.videoPlayer) {
       this.isVideo = true;
       try {
-        if (!this.dom.videoPlayer.src) {
-          this.dom.videoPlayer.src = URL.createObjectURL(file);
-        }
-      } catch { /* ignore */ }
-      this.dom.videoPlayer.muted = true;
+        const url = URL.createObjectURL(file);
+        this._videoObjectUrl = url;
+        this.dom.videoPlayer.src = url;
+        this.dom.videoPlayer.muted = true;
+        this.dom.videoPlayer.load?.();
+      } catch (err) {
+        structuredLog('warn', '[VIP] video preview URL failed', { err: err?.message });
+      }
       if (this.dom.videoCard) this.dom.videoCard.style.display = '';
     } else {
       this.isVideo = false;
-      if (this.dom && this.dom.videoPlayer) {
-        const vp = this.dom.videoPlayer;
-        try {
-          if (vp.src) { try { URL.revokeObjectURL(vp.src); } catch { /* ignore */ } }
-          if (typeof vp.removeAttribute === 'function') vp.removeAttribute('src');
-          else vp.src = '';
-        } catch { /* ignore */ }
-      }
-      if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = 'none';
+      if (this.dom?.videoCard) this.dom.videoCard.style.display = 'none';
     }
+    if (typeof this._updateSaveButtonLabels === 'function') this._updateSaveButtonLabels();
 
     this.inputBuffer = buffer;
     this.origBuffer = buffer;
     this._hideFileLoading();
     if (fileSeq !== this._fileSeq) return;
     this.onAudioLoaded(file.name, fileSeq);
+  }
+
+  /** Revoke object URL and detach <video> source without leaving a dead URL. */
+  _clearVideoElement() {
+    const vp = this.dom?.videoPlayer;
+    if (!vp) return;
+    try { if (typeof vp.pause === 'function') vp.pause(); } catch { /* ignore */ }
+    const attrSrc = typeof vp.getAttribute === 'function' ? vp.getAttribute('src') : null;
+    const blobUrl = this._videoObjectUrl
+      || (attrSrc && attrSrc.startsWith('blob:') ? attrSrc : null)
+      || (typeof vp.src === 'string' && vp.src.startsWith('blob:') ? vp.src : null);
+    if (blobUrl) {
+      try { URL.revokeObjectURL(blobUrl); } catch { /* ignore */ }
+    }
+    this._videoObjectUrl = null;
+    try {
+      if (typeof vp.removeAttribute === 'function') vp.removeAttribute('src');
+      else vp.src = '';
+      if (typeof vp.load === 'function') vp.load();
+    } catch { /* ignore */ }
+  }
+
+  _updateSaveButtonLabels() {
+    const btn = this.dom?.saveProcBtn;
+    if (!btn) return;
+    btn.textContent = this.isVideo ? 'Save Processed Video' : 'Save Processed WAV';
+    btn.title = this.isVideo
+      ? 'Download video with isolated/processed audio track'
+      : 'Download processed audio as WAV';
+  }
+
+  /**
+   * Download processed audio, remuxed into the original video container when
+   * the source was a video file. Falls back to WAV if remux is unavailable.
+   */
+  async _downloadProcessed() {
+    const fullBuf = this.procBuffer || this.outputBuffer;
+    if (!fullBuf) {
+      this.showNotification('Nothing to save yet — process a file first.', 'info');
+      return;
+    }
+    await this.ensureCtx();
+
+    let cropIn = 0;
+    let cropOut = fullBuf.duration;
+    const transport = this._getTransportMixer?.();
+    if (transport?.hasCrop?.()) {
+      const region = transport.getCropRegion();
+      cropIn = region.in;
+      cropOut = region.out;
+    }
+
+    const wantsVideo = this.isVideo && this._sourceFile && isVideoSource(this._sourceFile);
+    if (wantsVideo) {
+      try {
+        this.showNotification('Encoding processed video…', 'info');
+        // Pass the full buffer + crop window so the picture seeks to crop-in
+        // while audio is sliced to the same window inside the exporter.
+        const result = await exportVideoWithProcessedAudio(this._sourceFile, fullBuf, {
+          startSec: cropIn,
+          endSec: cropOut,
+          onProgress: (pct, stage) => {
+            if (pct === 100 || stage === 'complete') return;
+            this.updatePipelineProgress?.(Math.round(pct), `Exporting video… ${Math.round(pct)}%`, 1);
+          },
+        });
+        if (isDesktopShell()) {
+          await saveExportBlob(result.blob, {
+            defaultName: result.filename,
+            filters: filtersForFilename(result.filename),
+          });
+        } else {
+          triggerBlobDownload(result.blob, result.filename);
+        }
+        this.showNotification('Processed video saved: ' + result.filename, 'info');
+        return;
+      } catch (err) {
+        structuredLog('warn', '[VIP] video export failed — falling back to WAV', { err: err?.message });
+        this.showNotification('Video remux unavailable — saving WAV instead.', 'info');
+      }
+    }
+
+    let buf = fullBuf;
+    if (cropIn > 0 || cropOut < fullBuf.duration) {
+      buf = sliceAudioBuffer(this.ctx, fullBuf, cropIn, cropOut);
+    }
+    downloadWav(buf, 'processed-' + Date.now() + '.wav');
   }
 
   /** @deprecated Use decodeBlobToAudioBuffer — kept for legacy patch scripts. */
@@ -2294,6 +2368,7 @@ class VoiceIsolatePro {
   _clearFile() {
     clearStemCache();
     this._sourceName = '';
+    this._sourceFile = null;
     this._transportRegionWired = false;
     this._syncTransportRegion = null;
     HeroExperience.onClear();
@@ -2303,16 +2378,9 @@ class VoiceIsolatePro {
     this.origBuffer = null;
     this.procBuffer = null;
     this.isVideo = false;
-    if (this.dom && this.dom.videoPlayer) {
-      const vp = this.dom.videoPlayer;
-      try {
-        if (typeof vp.pause === 'function') vp.pause();
-        if (vp.src) { try { URL.revokeObjectURL(vp.src); } catch { /* ignore */ } }
-        if (typeof vp.removeAttribute === 'function') vp.removeAttribute('src');
-        else vp.src = '';
-      } catch { /* ignore */ }
-    }
+    this._clearVideoElement();
     if (this.dom && this.dom.videoCard) this.dom.videoCard.style.display = 'none';
+    this._updateSaveButtonLabels();
     if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'No file loaded';
     if (this.dom.fileInput) this.dom.fileInput.value = '';
     [this.dom.processBtn, this.dom.reprocessBtn, this.dom.saveProcBtn,
@@ -2504,6 +2572,7 @@ class VoiceIsolatePro {
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
       if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = false;
+      this._updateSaveButtonLabels();
 
       this._setProcessedPlaybackMode();
 

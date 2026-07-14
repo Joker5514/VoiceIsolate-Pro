@@ -246,11 +246,16 @@ body {
 /* ── Form rows ────────────────────────────────────────────────────────── */
 .upload-row,
 .transport-row,
-.status-row {
+.status-row,
+.export-row {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.export-row {
+  margin: 12px 0 4px;
 }
 
 .inline-label {

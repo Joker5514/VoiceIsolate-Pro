@@ -19,6 +19,12 @@ import { LANDING_PRESETS, calibrateFromStems } from '/src/core/MixCalibration.js
 import { SpeakerControls } from '/src/presentation/SpeakerControls.js';
 import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
+import { isVideoSource } from '/src/core/media-types.js';
+import { saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
+import {
+  exportVideoWithProcessedAudio,
+  triggerBlobDownload,
+} from '/src/pipeline/video-export.js';
 
 import { detectSpeakers as detectSpeakersPipeline } from '/src/pipeline/SpeakerDetection.js';
 import { DEFAULT_ML_MODEL_IDS } from '/src/core/ml-defaults.js';
@@ -116,6 +122,9 @@ const ui = {
   speakerCardsGrid: $('speakerCardsGrid'),
   // Upload panel — used as the drag-and-drop target.
   uploadPanel: $('uploadPanel'),
+  exportRow: $('exportRow'),
+  downloadBtn: $('downloadBtn'),
+  downloadStatus: $('downloadStatus'),
 };
 
 let mixer = null;
@@ -126,10 +135,13 @@ let worker = null;
 let _syncTransportRegion = null;
 
 let ingested = null;
+/** @type {File|Blob|null} original upload retained for video remux export */
+let sourceFile = null;
 let requestSeq = 0;
 let ingestSeq = 0;
 let ingestInFlight = false;
 let processingInFlight = false;
+let downloadInFlight = false;
 
 let currentJobLabel = 'Separating stems…';
 /** Object URL backing the <video> preview; revoked when a new file loads. */
@@ -300,26 +312,36 @@ function hideSpinner() {
 
 /** Treat as video by MIME type, or by container extension when MIME is absent. */
 function isVideoFile(file) {
-  if (file.type && file.type.startsWith('video/')) return true;
-  return /\.(mp4|webm|mov|m4v|ogv|mkv|avi)$/i.test(file.name || '');
+  return isVideoSource(file);
 }
 
 function loadVideo(file) {
   clearVideo();
+  if (!ui.videoPlayer || !ui.videoCard) return;
   videoUrl = URL.createObjectURL(file);
   const v = ui.videoPlayer;
   v.muted = true; // audio always comes from the Web Audio mixer
   // Reveal only once the element can actually paint a frame, so we never flash
   // an empty black box; drop the preview if the container's video track can't
   // be displayed (audio-only processing still works).
-  v.onloadedmetadata = () => { ui.videoCard.hidden = false; };
+  v.onloadedmetadata = () => {
+    // Prefer videoWidth so pure-audio .webm with a video MIME still hides.
+    if ((v.videoWidth || 0) > 0 || (v.readyState || 0) >= 1) {
+      ui.videoCard.hidden = false;
+    }
+  };
   v.onerror = () => clearVideo();
   v.src = videoUrl;
+  try { v.load(); } catch { /* best-effort */ }
 }
 
 function clearVideo() {
-  if (!videoUrl && ui.videoCard.hidden) return; // nothing loaded — avoid empty-src churn
+  if (!videoUrl && (!ui.videoCard || ui.videoCard.hidden)) return; // nothing loaded
   const v = ui.videoPlayer;
+  if (!v) {
+    videoUrl = null;
+    return;
+  }
   // Detach handlers first: removeAttribute('src') + load() fires a spurious
   // 'error' during teardown, which would otherwise re-enter clearVideo.
   v.onloadedmetadata = null;
@@ -327,11 +349,150 @@ function clearVideo() {
   try { v.pause(); } catch { /* not playing */ }
   v.removeAttribute('src');
   try { v.load(); } catch { /* reset is best-effort */ }
-  ui.videoCard.hidden = true;
+  if (ui.videoCard) ui.videoCard.hidden = true;
   if (videoUrl) { URL.revokeObjectURL(videoUrl); videoUrl = null; }
 }
 
-function hasVideo() { return Boolean(videoUrl) && !ui.videoCard.hidden; }
+function hasVideo() { return Boolean(videoUrl) && ui.videoCard && !ui.videoCard.hidden; }
+
+function updateDownloadButton() {
+  const ready = Boolean(mixer?.cleanBuffer);
+  if (ui.exportRow) ui.exportRow.hidden = !ready;
+  if (!ui.downloadBtn) return;
+  ui.downloadBtn.disabled = !ready || downloadInFlight;
+  ui.downloadBtn.textContent = (sourceFile && isVideoFile(sourceFile))
+    ? 'Download Processed Video'
+    : 'Download Processed WAV';
+}
+
+/** Encode clean stem to a 16-bit stereo/mono WAV Blob. */
+function encodeCleanStemWav(audioBuffer) {
+  const numCh = Math.min(2, audioBuffer.numberOfChannels || 1);
+  const sr = audioBuffer.sampleRate;
+  const len = audioBuffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = numCh * bytesPerSample;
+  const dataSize = len * blockAlign;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buf);
+  const ws = (off, str) => {
+    for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
+  };
+  ws(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  ws(8, 'WAVE');
+  ws(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numCh, true);
+  view.setUint32(24, sr, true);
+  view.setUint32(28, sr * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  ws(36, 'data');
+  view.setUint32(40, dataSize, true);
+  let offset = 44;
+  const channels = [];
+  for (let ch = 0; ch < numCh; ch++) channels.push(audioBuffer.getChannelData(ch));
+  for (let i = 0; i < len; i++) {
+    for (let ch = 0; ch < numCh; ch++) {
+      const s = Math.max(-1, Math.min(1, channels[ch][i]));
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      offset += 2;
+    }
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+async function onDownloadProcessed() {
+  if (!mixer?.cleanBuffer || downloadInFlight) return;
+  downloadInFlight = true;
+  updateDownloadButton();
+  const setDl = (msg) => { if (ui.downloadStatus) ui.downloadStatus.textContent = msg || ''; };
+
+  try {
+    let cropIn = 0;
+    let cropOut = mixer.cleanBuffer.duration;
+    if (mixer.hasCrop?.()) {
+      const region = mixer.getCropRegion();
+      cropIn = region.in;
+      cropOut = region.out;
+    }
+
+    const full = mixer.cleanBuffer;
+
+    if (sourceFile && isVideoFile(sourceFile)) {
+      setDl('Encoding video with processed audio…');
+      setStatus('Encoding processed video…', 'warn');
+      try {
+        // Full buffer + crop window keeps picture/audio aligned on remux.
+        const result = await exportVideoWithProcessedAudio(sourceFile, full, {
+          startSec: cropIn,
+          endSec: cropOut,
+          onProgress: (pct) => setDl(`Encoding video… ${Math.round(pct)}%`),
+        });
+        if (isDesktopShell()) {
+          await saveExportBlob(result.blob, {
+            defaultName: result.filename,
+            filters: filtersForFilename(result.filename),
+          });
+        } else {
+          triggerBlobDownload(result.blob, result.filename);
+        }
+        setDl(`Saved ${result.filename}`);
+        setStatus(`Processed video ready — ${result.filename}`, 'active');
+        return;
+      } catch (err) {
+        console.warn('[VIP][landing] video export failed, falling back to WAV:', err);
+        setDl('Video remux unavailable — saving WAV…');
+      }
+    }
+
+    // WAV path: materialize crop window into a new buffer.
+    const sr = full.sampleRate;
+    const start = Math.max(0, Math.floor(cropIn * sr));
+    const end = Math.min(full.length, Math.ceil(cropOut * sr));
+    const length = Math.max(1, end - start);
+    const channels = Math.min(2, full.numberOfChannels);
+    let exportBuf;
+    if (typeof AudioBuffer === 'function') {
+      try {
+        exportBuf = new AudioBuffer({ numberOfChannels: channels, length, sampleRate: sr });
+      } catch { exportBuf = null; }
+    }
+    if (!exportBuf) {
+      const Offline = globalThis.OfflineAudioContext || globalThis.webkitOfflineAudioContext;
+      const offline = new Offline(channels, length, sr);
+      exportBuf = offline.createBuffer(channels, length, sr);
+    }
+    for (let ch = 0; ch < channels; ch++) {
+      exportBuf.copyToChannel(full.getChannelData(ch).subarray(start, start + length), ch);
+    }
+
+    const wavBlob = encodeCleanStemWav(exportBuf);
+    const base = (sourceFile?.name || ingested?.sourceName || 'export')
+      .replace(/\.[^.]+$/, '')
+      .slice(0, 80) || 'export';
+    const filename = `${base}-processed.wav`;
+    if (isDesktopShell()) {
+      await saveExportBlob(wavBlob, {
+        defaultName: filename,
+        filters: filtersForFilename(filename),
+      });
+    } else {
+      triggerBlobDownload(wavBlob, filename);
+    }
+    setDl(`Saved ${filename}`);
+    setStatus(`Processed audio ready — ${filename}`, 'active');
+  } catch (err) {
+    console.error('[VIP][landing] download failed:', err);
+    setDl(err?.message || 'Download failed');
+    setStatus(err?.message || 'Download failed', 'error');
+  } finally {
+    downloadInFlight = false;
+    updateDownloadButton();
+  }
+}
 
 /**
  * Reconcile the muted <video> to the mixer, which is the single playback clock.
@@ -676,8 +837,11 @@ async function ingestFrom(file) {
   ingestInFlight = true;
   resetTimings();
   clearStemCache();
+  sourceFile = file;
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
+  if (ui.downloadBtn) ui.downloadBtn.disabled = true;
+  if (ui.exportRow) ui.exportRow.hidden = true;
   // Unlock Web Audio inside the user gesture (required on mobile + some desktop builds).
   try { await primeAudioGesture(); } catch { /* best-effort */ }
   // Avoid loading the preview <video> during decode — demuxing the same file twice
@@ -704,6 +868,7 @@ async function ingestFrom(file) {
     });
     if (seq !== ingestSeq) return;
     ingested = next;
+    // Always attempt preview for video sources after decode succeeds.
     if (isVideoFile(file)) loadVideo(file);
     if (seq !== ingestSeq) return;
     // Auto-start separation — model load progress shows during onProcess().
@@ -715,7 +880,9 @@ async function ingestFrom(file) {
     console.error('[VIP][landing] ingestion failed:', err);
     setStatus(err.message, 'error');
     ingested = null;
+    sourceFile = null;
     ui.processBtn.disabled = true;
+    updateDownloadButton();
   } finally {
     ingestInFlight = false;
     // Keep input locked while ML isolation runs; onStems/error re-enables it.
@@ -878,10 +1045,12 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
   visualizer.loadStems(clean, noise, mixer.duration());
   syncMuteButtons();
   startOutputMeter();
+  updateDownloadButton();
 
   for (const el of [ui.playBtn, ui.pauseBtn, ui.stopBtn,
     ui.muteVoiceBtn, ui.muteNoiseBtn, ui.presetSelect,
     ui.seekSlider, ui.loopBtn, ui.cropInBtn, ui.cropOutBtn, ui.cropClearBtn,
+    ui.downloadBtn,
     ...ui.mixSliders]) {
     if (el) el.disabled = false;
   }
@@ -1073,6 +1242,7 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 ui.processBtn.addEventListener('click', onProcess);
 ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.value));
+ui.downloadBtn?.addEventListener('click', () => { onDownloadProcessed().catch(() => {}); });
 wireReadouts();
 wireSliderHints();
 wireTransport();

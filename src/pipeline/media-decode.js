@@ -237,7 +237,11 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
   const tag = kind === 'video' ? 'video' : 'audio';
   const media = doc.createElement(tag);
   media.preload = 'auto';
-  media.muted = true;
+  // Prefer volume=0 over muted=true: WebKit/Safari (and some Chromium paths)
+  // feed silence into MediaElementAudioSourceNode when muted is set, which
+  // makes video fallback decode produce empty stems.
+  media.muted = false;
+  try { media.volume = 0; } catch { /* ignore */ }
   media.setAttribute('playsinline', '');
   media.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
   doc.body.appendChild(media);
@@ -320,8 +324,13 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
     if (ctx.state === 'suspended') await ctx.resume();
     const source = ctx.createMediaElementSource(media);
     spn = ctx.createScriptProcessor(SPN_BLOCK_SIZE, numChannels, numChannels);
+    // Zero-gain sink: SPN must stay connected for onaudioprocess to fire, but
+    // we must not blast 16×-rate audio through the speakers during decode.
+    const silentGain = ctx.createGain();
+    silentGain.gain.value = 0;
     source.connect(spn);
-    spn.connect(ctx.destination);
+    spn.connect(silentGain);
+    silentGain.connect(ctx.destination);
 
     spn.onaudioprocess = (e) => {
       if (captureDone) return;
