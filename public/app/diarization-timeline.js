@@ -37,10 +37,13 @@ let _isDragging  = false;
 let _dragStartX  = 0;
 let _dragViewStart = 0;
 let _rafId       = null;
+let _dirty       = true;
 let _resizeObserver = null;
 let _listenersBound = false;
 let _touchStartHandler = null;
 let _touchMoveHandler  = null;
+/** Last canvas playhead X — skip full redraw when only sub-pixel drift. */
+let _lastPlayheadPx = -1;
 
 const PALETTE = [
   '#3b82f6','#a855f7','#10b981','#f59e0b',
@@ -111,7 +114,8 @@ export function initDiarizationTimeline(opts = {}) {
     _listenersBound = true;
   }
 
-  if (!_rafId) _startRAF();
+  // One-shot paint — no continuous RAF (was a major main-thread lag source).
+  _markDirty();
   console.info('[DiarTimeline] initialised on #' + canvasId);
 }
 
@@ -121,6 +125,7 @@ export function onDiarizationResult({ segments = [], duration = 0, speakerCount 
   _duration = duration || (segments.length ? Math.max(...segments.map(s => s.end)) : 0);
   _viewStart = 0;
   _viewEnd   = _duration;
+  _lastPlayheadPx = -1;
 
   // Update badge
   if (_countEl) {
@@ -129,6 +134,7 @@ export function onDiarizationResult({ segments = [], duration = 0, speakerCount 
   }
   // Show playhead
   if (_playheadEl) _playheadEl.style.display = 'block';
+  _markDirty();
 }
 
 // ── Public: playhead sync ─────────────────────────────────────────────────────
@@ -138,16 +144,24 @@ export function seekTimeline(timeSec) {
 
   // Auto-scroll: keep playhead in view
   const viewLen = _viewEnd - _viewStart;
+  let scrolled = false;
   if (_duration > 0 && timeSec > _viewEnd - viewLen * 0.1) {
     _viewStart = Math.min(timeSec - viewLen * 0.1, _duration - viewLen);
     _viewEnd   = _viewStart + viewLen;
+    scrolled = true;
   }
   // Sync playhead DOM element
+  let px = -1;
   if (_playheadEl && _canvas && _duration > 0) {
-    const frac = (_currentTime - _viewStart) / (_viewEnd - _viewStart);
-    const px   = Math.max(0, Math.min(_canvas.offsetWidth, frac * _canvas.offsetWidth));
+    const frac = (_currentTime - _viewStart) / Math.max(1e-6, _viewEnd - _viewStart);
+    px = Math.max(0, Math.min(_canvas.offsetWidth, frac * _canvas.offsetWidth));
     _playheadEl.style.left = px + 'px';
     _playheadEl.style.display = 'block';
+  }
+  // Redraw canvas only when the playhead moved ≥1 px or the view scrolled.
+  if (scrolled || Math.round(px) !== _lastPlayheadPx) {
+    _lastPlayheadPx = Math.round(px);
+    _markDirty();
   }
 }
 
@@ -158,11 +172,13 @@ export function zoomTimeline(factor) {
   const halfLen = (_viewEnd - _viewStart) / 2 / factor;
   _viewStart = Math.max(0, center - halfLen);
   _viewEnd   = Math.min(_duration, center + halfLen);
+  _markDirty();
 }
 
 export function fitTimeline() {
   _viewStart = 0;
   _viewEnd   = _duration || 1;
+  _markDirty();
 }
 
 // ── Public: speaker state passthrough ─────────────────────────────────────────
@@ -180,8 +196,13 @@ function _resize() {
   _canvas.height = h * devicePixelRatio;
   _canvas.style.width  = w + 'px';
   _canvas.style.height = h + 'px';
-  if (_ctx) _ctx.scale(devicePixelRatio, devicePixelRatio);
+  if (_ctx) {
+    _ctx.setTransform(1, 0, 0, 1, 0, 0);
+    _ctx.scale(devicePixelRatio, devicePixelRatio);
+  }
   if (!_viewEnd && _duration) _viewEnd = _duration;
+  _lastPlayheadPx = -1;
+  _markDirty();
 }
 
 function _draw() {
@@ -258,9 +279,24 @@ function _draw() {
   }
 }
 
+/**
+ * Schedule a single redraw on the next animation frame when content is dirty.
+ * Replaces the previous continuous RAF loop that painted every frame forever.
+ */
+function _markDirty() {
+  _dirty = true;
+  if (_rafId != null) return;
+  _rafId = requestAnimationFrame(() => {
+    _rafId = null;
+    if (!_dirty) return;
+    _dirty = false;
+    _draw();
+  });
+}
+
+/** @deprecated Use _markDirty — kept name for older call sites / tests. */
 function _startRAF() {
-  const loop = () => { _draw(); _rafId = requestAnimationFrame(loop); };
-  _rafId = requestAnimationFrame(loop);
+  _markDirty();
 }
 
 // ── Internal: cleanup ─────────────────────────────────────────────────────────
@@ -302,6 +338,8 @@ function _onMouseMove(e) {
   const dSec    = (dx / _canvas.offsetWidth) * viewLen;
   _viewStart    = Math.max(0, Math.min(_duration - viewLen, _dragViewStart - dSec));
   _viewEnd      = _viewStart + viewLen;
+  _lastPlayheadPx = -1;
+  _markDirty();
 }
 function _onMouseUp() {
   _isDragging = false;

@@ -276,8 +276,10 @@
       // fired, or the user hasn't pressed play).
       var ans = self.getAnalysers();
       if (!ans || !ans.proc) {
-        // Still update diarization timeline so the timebase keeps moving.
-        self._drawDiarization(ts);
+        // Idle: only keep the timeline alive when we already have speaker data.
+        if (self.getSpeakerState && self.getSpeakerState()) {
+          self._drawDiarization(ts);
+        }
         return;
       }
 
