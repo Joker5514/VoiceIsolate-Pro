@@ -198,7 +198,8 @@ export class PlaybackMixer {
     this.leftSum.gain.value = 1;
     this.rightSum.gain.value = 1;
     this.widthGain.gain.value = 1;   // width 100% → Side unchanged → transparent
-    this.analyser.fftSize = 2048;
+    // 1024 is enough for live meters/spectro and halves analyser CPU vs 2048.
+    this.analyser.fftSize = 1024;
     // Tilt shelves flat by default.
     this.tiltLow.gain.value = 0;
     this.tiltHigh.gain.value = 0;

@@ -152,14 +152,15 @@
 
   function _drawPlayhead(canvas, buffer, color, positionSec) {
     if (!canvas || !buffer) return;
-    if (!_drawWaveformBase(canvas, buffer, color)) return;
     const dur = buffer.duration || 1;
     const offset = (typeof positionSec === 'number' && Number.isFinite(positionSec))
       ? positionSec
       : _getPlayOffset();
-    const px = Math.round((offset / dur) * canvas.width);
+    const px = Math.round((offset / Math.max(1e-6, dur)) * (canvas.width || 1));
     const lastPx = _playheadPxCache.get(canvas);
-    if (lastPx === px) return;
+    // Skip full canvas restore when the playhead has not moved a pixel.
+    if (lastPx === px && _waveBaseCache.get(canvas)) return;
+    if (!_drawWaveformBase(canvas, buffer, color)) return;
     _playheadPxCache.set(canvas, px);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -298,6 +299,11 @@
 
   /* ── Spectrogram + frequency bars ─────────────────────────────────────── */
   let _spectroDims = null;
+  /** Reused 1×H ImageData — avoids per-frame GC from createImageData. */
+  let _spectroColImg = null;
+  let _spectroColH = 0;
+  let _lufsDomFrame = 0;
+  let _mirrorFrame = 0;
 
   function _drawSpectro2DColumn(canvas, freqBytes) {
     if (!canvas) return;
@@ -315,7 +321,11 @@
     const colX = w - 1;
     const N = freqBytes.length;
     const lut = global.VIP_INFERNO_LUT;
-    const colImg = ctx.createImageData(1, h);
+    if (!_spectroColImg || _spectroColH !== h) {
+      _spectroColImg = ctx.createImageData(1, h);
+      _spectroColH = h;
+    }
+    const colImg = _spectroColImg;
     for (let y = 0; y < h; y++) {
       const t = 1 - (y / h);
       const idx = Math.min(N - 1, Math.floor(Math.pow(t, 2.0) * (N - 1)));
@@ -344,6 +354,9 @@
   }
 
   function _mirrorSpectro3D() {
+    // 3D mirror is decorative — half rate is enough and cuts GPU blit cost.
+    _mirrorFrame = (_mirrorFrame + 1) % 2;
+    if (_mirrorFrame !== 0) return;
     const src = $('spectro2DCanvas');
     const dst = $('spectroCanvas');
     if (!src || !dst || !src.width) return;
@@ -402,6 +415,10 @@
 
     const meanShort = _lufsShortBuf.reduce((a, b) => a + b, 0) / Math.max(1, _lufsShortBuf.length);
     const meanInt = _lufsIntBuf.reduce((a, b) => a + b, 0) / Math.max(1, _lufsIntBuf.length);
+
+    // DOM meter updates at ~15–20 Hz is plenty; buffer math stays every frame.
+    _lufsDomFrame = (_lufsDomFrame + 1) % 3;
+    if (_lufsDomFrame !== 0) return;
 
     const lufsShort = meanShort > 1e-12 ? 10 * Math.log10(meanShort) - 0.691 : -70;
     const lufsInt = meanInt > 1e-12 ? 10 * Math.log10(meanInt) - 0.691 : -70;
@@ -511,6 +528,9 @@
   function _loop() {
     if (!_running) return;
     _rafId = requestAnimationFrame(_loop);
+    // Minimized viz card: stop burning GPU/CPU on hidden canvases.
+    if (_vizMinimized) return;
+
     const an = _getAnalyser();
     if (!an) return;
 
@@ -539,7 +559,10 @@
       if (freq) _drawFreqBars(freq, _freqScratch);
     }
 
-    _syncClustersEngine(_freqScratch);
+    // Clusters synthetic engine only when that panel is actually shown.
+    if (_isTabDrawTarget(CLUSTERS_TAB)) {
+      _syncClustersEngine(_freqScratch);
+    }
 
     for (const handle of _premiumHandles.values()) {
       if (handle && typeof handle.tick === 'function') {

@@ -132,11 +132,28 @@ const HeroExperience = (() => {
       if (fallback) { fallback.hidden = false; fallback.setAttribute('aria-hidden', 'false'); }
       video.style.display = 'none';
     };
+    const releaseHero = () => {
+      try { video.pause(); } catch { /* ignore */ }
+      try {
+        video.removeAttribute('src');
+        video.load();
+      } catch { /* ignore */ }
+      video.style.display = 'none';
+      if (fallback) {
+        fallback.hidden = false;
+        fallback.setAttribute('aria-hidden', 'false');
+      }
+    };
     video.addEventListener('error', showFallback);
     const playAttempt = video.play();
     if (playAttempt && typeof playAttempt.catch === 'function') {
       playAttempt.catch(showFallback);
     }
+    // Hero loop is decorative only — release decoder after a short intro so it
+    // cannot keep the main thread / GPU busy during engineer workflow.
+    setTimeout(releaseHero, 6000);
+    window.addEventListener('vip:fileLoaded', releaseHero, { once: true });
+    window.addEventListener('vip:playStarted', releaseHero, { once: true });
   }
 
   function bindHeroCtas(app) {
@@ -3036,14 +3053,13 @@ class VoiceIsolatePro {
     const DSP = this._resolveDSP();
     const FFT = 4096;
     const HOP = 1024;
-    const FRAME_CHUNK = 256;
+    // Larger chunks = fewer yields during offline spectral work (snappier UI).
+    const FRAME_CHUNK = 512;
     if (!DSP || !data || data.length < FFT) return data;
 
-    const yieldBudget = createYieldBudget(32);
-    if (onProgress) onProgress(0.02);
-    await yieldBudget();
-    if (onProgress) onProgress(0.08);
-    await yieldBudget();
+    // Yield only between real work chunks — empty pre-STFT yields just added lag.
+    const yieldBudget = createYieldBudget(48);
+    if (onProgress) onProgress(0.05);
 
     const spec = DSP.forwardSTFT(data, FFT, HOP);
     if (onProgress) onProgress(0.15);
@@ -3428,11 +3444,19 @@ class VoiceIsolatePro {
       if (!this._transportSeeking) {
         this.playOffset = cur;
         this._paintTransport(cur, dur);
-        try {
-          window.dispatchEvent(new CustomEvent('vip:transportTick', {
-            detail: { position: cur, duration: dur },
-          }));
-        } catch (_) {}
+        // Throttle playhead events ~30 Hz — full 60 Hz CustomEvent + canvas
+        // restores was a major source of engineer-mode lag.
+        const now = (typeof performance !== 'undefined' && performance.now)
+          ? performance.now()
+          : Date.now();
+        if (!this._lastTransportTickEvt || now - this._lastTransportTickEvt >= 32) {
+          this._lastTransportTickEvt = now;
+          try {
+            window.dispatchEvent(new CustomEvent('vip:transportTick', {
+              detail: { position: cur, duration: dur },
+            }));
+          } catch (_) {}
+        }
       }
 
       const bridge = this._bridge;
@@ -3480,7 +3504,8 @@ class VoiceIsolatePro {
     if (!this._playbackAnalyser) {
       try {
         this._playbackAnalyser = this.ctx.createAnalyser();
-        this._playbackAnalyser.fftSize = 2048;
+        // 1024 bins is enough for spectro/LUFS and halves analyser work vs 2048.
+        this._playbackAnalyser.fftSize = 1024;
         this._playbackAnalyser.smoothingTimeConstant = 0.82;
       } catch (_) {
         return null;

@@ -64,6 +64,26 @@ describe('Engineer Mode hardening', () => {
     expect(DIAR_TIMELINE).toMatch(/ResizeObserver[\s\S]*requestAnimationFrame[\s\S]*_resize\(\)/);
   });
 
+  test('diarization-timeline does not run a continuous RAF paint loop', () => {
+    expect(DIAR_TIMELINE).toContain('function _markDirty');
+    expect(DIAR_TIMELINE).toMatch(/_markDirty\(\)/);
+    // Must not re-arm RAF unconditionally every frame.
+    expect(DIAR_TIMELINE).not.toMatch(/const loop = \(\) => \{ _draw\(\); _rafId = requestAnimationFrame\(loop\); \}/);
+  });
+
+  test('visuals-bootstrap skips playhead restore when pixel unchanged', () => {
+    expect(VISUALS_BOOT).toMatch(/lastPx === px && _waveBaseCache\.get\(canvas\)/);
+  });
+
+  test('visuals-bootstrap skips paint when viz card is minimized', () => {
+    expect(VISUALS_BOOT).toMatch(/if \(_vizMinimized\) return/);
+  });
+
+  test('app transport tick is throttled for playhead events', () => {
+    expect(APP_JS).toMatch(/_lastTransportTickEvt/);
+    expect(APP_JS).toMatch(/>= 32/);
+  });
+
   test('toggleAB early-returns when vip-fixes patched', () => {
     const ctx = {
       _fixABPatched: true,
