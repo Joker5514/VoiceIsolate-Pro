@@ -4,11 +4,14 @@ let inferMediaKind;
 let isIngestibleMedia;
 let assertIngestible;
 
+let isVideoSource;
+
 beforeAll(async () => {
   const mediaTypes = await import('../src/core/media-types.js');
   const fileIngestion = await import('../src/pipeline/FileIngestion.js');
   inferMediaKind = mediaTypes.inferMediaKind;
   isIngestibleMedia = mediaTypes.isIngestibleMedia;
+  isVideoSource = mediaTypes.isVideoSource;
   assertIngestible = fileIngestion.assertIngestible;
 });
 
@@ -44,6 +47,15 @@ describe('media-types', () => {
 
   test('returns null for unknown binary files', () => {
     expect(inferMediaKind({ type: 'application/octet-stream', name: 'data.bin' })).toBe(null);
+  });
+
+  test('isVideoSource detects video containers for remux/preview', () => {
+    expect(isVideoSource({ type: 'video/mp4', name: 'clip.mp4' })).toBe(true);
+    expect(isVideoSource({ type: '', name: 'clip.mov' })).toBe(true);
+    expect(isVideoSource({ type: 'video/webm', name: 'clip.webm' })).toBe(true);
+    expect(isVideoSource({ type: 'audio/webm', name: 'note.webm' })).toBe(false);
+    expect(isVideoSource({ type: 'video/mp4', name: 'memo.m4a' })).toBe(false);
+    expect(isVideoSource({ type: 'audio/wav', name: 'a.wav' })).toBe(false);
   });
 });
 

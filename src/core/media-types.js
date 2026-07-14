@@ -1,10 +1,15 @@
 'use strict';
 
 /** Common audio container extensions browsers can demux via decodeAudioData or media element. */
-export const AUDIO_EXTENSIONS = /\.(wav|wave|mp3|m4a|aac|ogg|oga|opus|flac|webm|weba|wma|aiff?|caf|mka|m4b|m4r|amr|3ga|ape|wv|tta|ac3|eac3|dts)$/i;
+// Note: `.webm` is intentionally NOT listed here — it is ambiguous (audio or video).
+// Use `inferMediaKind()` / `isVideoSource()` which prefer MIME for ambiguous containers.
+export const AUDIO_EXTENSIONS = /\.(wav|wave|mp3|m4a|aac|ogg|oga|opus|flac|weba|wma|aiff?|caf|mka|m4b|m4r|amr|3ga|ape|wv|tta|ac3|eac3|dts)$/i;
 
 /** Common video container extensions (audio track extracted via decode or media element). */
 export const VIDEO_EXTENSIONS = /\.(mp4|m4v|mov|mkv|avi|ogv|3gp|3g2|wmv|mpeg|mpg|webm|ts|m2ts|mts|flv|f4v|asf|divx)$/i;
+
+/** Containers that may be audio-only or video depending on tracks / MIME. */
+export const AMBIGUOUS_MEDIA_EXTENSIONS = /\.(webm)$/i;
 
 /** MIDI is never supported by the Web Audio decode path. */
 export const MIDI_EXTENSIONS = /\.(mid|midi)$/i;
@@ -52,12 +57,49 @@ export function inferMediaKind(blob) {
   const name = blob?.name || '';
 
   if (MIDI_MIMES.has(type) || MIDI_EXTENSIONS.test(name)) return 'midi';
-  // Extension wins over misleading MIME (e.g. .m4a reported as video/mp4).
+
+  // Voice memos labeled video/mp4 — extension wins.
+  if (/\.(m4a|m4b|m4r)$/i.test(name)) return 'audio';
+
+  // Ambiguous containers (e.g. .webm): prefer MIME when present.
+  if (AMBIGUOUS_MEDIA_EXTENSIONS.test(name)) {
+    if (type.startsWith('video/')) return 'video';
+    if (type.startsWith('audio/')) return 'audio';
+    // Phone voice notes often omit MIME — treat as audio unless proven video later.
+    return 'audio';
+  }
+
+  // Extension wins over misleading MIME for unambiguous types.
   if (AUDIO_EXTENSIONS.test(name)) return 'audio';
   if (VIDEO_EXTENSIONS.test(name)) return 'video';
   if (type.startsWith('audio/')) return 'audio';
   if (type.startsWith('video/')) return 'video';
   return null;
+}
+
+/**
+ * True when the source should drive the picture preview and video remux export.
+ * Slightly broader than `inferMediaKind === 'video'` so video/* MIME wins for
+ * containers like .webm that can also be pure audio.
+ *
+ * @param {Blob|File|null|undefined} blob
+ * @returns {boolean}
+ */
+export function isVideoSource(blob) {
+  if (!blob) return false;
+  const type = (blob.type || '').toLowerCase();
+  const name = blob.name || '';
+  // Voice memos mislabeled as video/mp4.
+  if (/\.(m4a|m4b|m4r)$/i.test(name)) return false;
+  // Explicit audio MIME wins for ambiguous containers (e.g. audio/webm notes).
+  // Exception: .mp4/.mov sometimes report audio/mp4 but still have a picture track.
+  if (type.startsWith('audio/') && !/\.(mp4|m4v|mov)$/i.test(name)) return false;
+  if (type.startsWith('video/')) return true;
+  if (inferMediaKind(blob) === 'video') return true;
+  if (/\.(mp4|m4v|mov)$/i.test(name) && (type === 'audio/mp4' || type === 'audio/x-m4a' || !type)) {
+    return true;
+  }
+  return VIDEO_EXTENSIONS.test(name) && !AUDIO_EXTENSIONS.test(name) && !type.startsWith('audio/');
 }
 
 /**
@@ -70,9 +112,11 @@ export function isIngestibleMedia(blob) {
 
 export default {
   inferMediaKind,
+  isVideoSource,
   isIngestibleMedia,
   AUDIO_EXTENSIONS,
   VIDEO_EXTENSIONS,
+  AMBIGUOUS_MEDIA_EXTENSIONS,
   FILE_INPUT_ACCEPT,
   AUDIO_OPEN_EXTENSIONS,
   VIDEO_OPEN_EXTENSIONS,

@@ -140,6 +140,14 @@
       -->
       <div id="outputMeterMount" class="output-meter" hidden></div>
 
+      <div class="export-row" id="exportRow" hidden>
+        <button id="downloadBtn" class="vip-btn vip-btn--primary" type="button" disabled
+                title="Download isolated voice (video with processed audio when the source is a video)">
+          Download Processed
+        </button>
+        <span id="downloadStatus" class="hint" role="status" aria-live="polite"></span>
+      </div>
+
       <div class="slider-grid">
         <div class="slider-row">
           <label for="noiseReductionSlider">Noise Reduction</label>
