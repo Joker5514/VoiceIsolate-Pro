@@ -97,6 +97,7 @@ describe('Presets', () => {
   test('Standard Voice Clarity keeps extreme path off (fast path)', () => {
     // EXTREME_OFF sets whisperMode: 0 for standard isolation presets
     expect(appJs).toContain('EXTREME_OFF');
-    expect(presetsBlock).toMatch(/whisperMode:\s*0/);
+    expect(appJs).toMatch(/const EXTREME_OFF[\s\S]*?whisperMode:\s*0/);
+    expect(presetsBlock).toContain('...EXTREME_OFF');
   });
 });
