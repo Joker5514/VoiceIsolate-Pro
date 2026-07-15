@@ -560,7 +560,6 @@ const PRESETS = {
     voiceIso: 86, bgSuppress: 72, voiceFocusLo: 300, voiceFocusHi: 3400, crosstalkCancel: 15,
     outGain: 2, dryWet: 100, ditherAmt: 1, outWidth: 0,
     ...EXTREME_OFF,
-    harmRecov: 20, harmOrder: 4,
   },
   'Surveillance': {
     description: 'Aggressive isolation for challenging surveillance audio',
@@ -638,7 +637,6 @@ const PRESETS = {
     voiceIso: 88, bgSuppress: 74, voiceFocusLo: 300, voiceFocusHi: 3400, crosstalkCancel: 25,
     outGain: 4, dryWet: 100, ditherAmt: 1, outWidth: 0,
     ...EXTREME_OFF,
-    harmRecov: 55, harmOrder: 5, whisperMode: 0,
   }),
   'Whisper Room': _presetDefaults({
     description: 'Isolate whisper from air conditioning and office ambience.',
