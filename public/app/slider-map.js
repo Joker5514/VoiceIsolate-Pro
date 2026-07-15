@@ -475,51 +475,51 @@ const RAW_SLIDER_REGISTRY = [
   // ── Extreme Isolation (8 sliders) — [WHISPER UPDATE] ───────────────────────
   {
     id: 'whisperLift', key: 'whisperLift', label: 'Whisper Lift Gain',
-    min: 0, max: 40, step: 1, default: 18, unit: 'dB',
+    min: 0, max: 40, step: 1, default: 0, unit: 'dB',
     transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
-    tip: 'Post-mask amplification on bins where voice confidence exceeds 0.55.'
+    tip: 'Post-mask amplification on bins where voice confidence exceeds 0.55. Off by default — only enable for buried whispers.'
   },
   {
     id: 'crowdNull', key: 'crowdNull', label: 'Crowd Null Depth',
-    min: 0, max: 100, step: 1, default: 72, unit: '%',
+    min: 0, max: 100, step: 1, default: 0, unit: '%',
     transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
-    tip: 'Second-pass spectral subtraction targeting 200–2500 Hz crowd murmur.'
+    tip: 'Spectral subtraction targeting 200–2500 Hz crowd murmur. Off by default (expensive extreme path).'
   },
   {
     id: 'bassCrush', key: 'bassCrush', label: 'Bass Crush (Sub/Kick)',
-    min: 0, max: 100, step: 1, default: 90, unit: '%',
+    min: 0, max: 100, step: 1, default: 0, unit: '%',
     transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
-    tip: 'Attenuates kick drum and sub bass that mask whisper formants.'
+    tip: 'Attenuates kick drum and sub bass that mask whisper formants. Off by default.'
   },
   {
     id: 'reverbStrip', key: 'reverbStrip', label: 'Reverb Strip (RT60)',
-    min: 0, max: 2000, step: 10, default: 600, unit: 'ms',
+    min: 0, max: 2000, step: 10, default: 0, unit: 'ms',
     transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
-    tip: 'Single-pass spectral dereverb driven by estimated RT60.'
+    tip: 'Single-pass spectral dereverb driven by estimated RT60. Prefer Dereverb Amount for standard rooms.'
   },
   {
     id: 'voiceTunnel', key: 'voiceTunnel', label: 'Voice Tunnel (Formant)',
-    min: 0, max: 100, step: 1, default: 65, unit: '%',
+    min: 0, max: 100, step: 1, default: 0, unit: '%',
     transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
-    tip: 'Narrow-band formant emphasis for whisper intelligibility.'
+    tip: 'Narrow-band formant emphasis for whisper intelligibility. Off by default.'
   },
   {
     id: 'musicKill', key: 'musicKill', label: 'Music Kill (Comb)',
-    min: 0, max: 100, step: 1, default: 80, unit: '%',
+    min: 0, max: 100, step: 1, default: 0, unit: '%',
     transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
-    tip: 'Suppresses steady-state harmonic music while preserving speech transients.'
+    tip: 'Suppresses steady-state harmonic music while preserving speech transients. Off by default.'
   },
   {
     id: 'snrFloor', key: 'snrFloor', label: 'SNR Rescue Floor',
     min: -80, max: -20, step: 1, default: -52, unit: 'dBFS',
     transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
-    tip: 'Minimum power threshold — bins below are treated as noise-only.'
+    tip: 'Minimum power threshold — bins below are treated as noise-only (active only with extreme isolation).'
   },
   {
     id: 'whisperMode', key: 'whisperMode', label: 'Whisper Mode',
-    min: 0, max: 3, step: 1, default: 2, unit: '',
+    min: 0, max: 3, step: 1, default: 0, unit: '',
     transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
-    tip: 'Processing aggression: Off, Light, Heavy, or Forensic multi-pass.'
+    tip: 'Processing aggression: Off, Light, Heavy, or Forensic multi-pass. Keep Off when ML isolation succeeds.'
   },
 
   // ── Whisper Hunter DSP sliders (Part 1 + Part 4) ───────────────────────────
@@ -549,15 +549,15 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'breathControl', key: 'breathControl', label: 'Breath Control',
-    min: 0, max: 100, step: 1, default: 30, unit: '%',
+    min: 0, max: 100, step: 1, default: 0, unit: '%',
     transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
-    tip: 'Attenuates breath noise between whispered phrases.'
+    tip: 'Attenuates breath noise between whispered phrases. Off by default.'
   },
   {
     id: 'roomCorrection', key: 'roomCorrection', label: 'Room Correction',
-    min: 0, max: 100, step: 1, default: 40, unit: '%',
+    min: 0, max: 100, step: 1, default: 0, unit: '%',
     transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
-    tip: 'Spectral room correction complementing dereverb for whisper tails.'
+    tip: 'Adds to dereverb strength for whisper tails. Prefer Dereverb Amount for standard rooms.'
   },
   {
     id: 'subHarmonic', key: 'subHarmonic', label: 'Sub Harmonic',

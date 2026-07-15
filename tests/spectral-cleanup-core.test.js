@@ -175,6 +175,40 @@ describe('dereverb', () => {
   });
 });
 
+// ── cleanupSpectral (fused single STFT path) ─────────────────────────────────
+
+describe('cleanupSpectral', () => {
+  test('amount 0 / 0 returns a copy', () => {
+    const x = new Float32Array([0.1, -0.2, 0.3, 0]);
+    const y = sc.cleanupSpectral(x, { noiseReduction: 0, dereverb: 0 });
+    expect(y).toBeInstanceOf(Float32Array);
+    expect(y.length).toBe(x.length);
+    expect(Array.from(y)).toEqual(Array.from(x));
+  });
+
+  test('NR-only delegates to reduceNoise path (finite output)', () => {
+    const n = SR;
+    const x = new Float32Array(n);
+    for (let i = 0; i < n; i++) x[i] = 0.05 * Math.sin((2 * Math.PI * 440 * i) / SR) + 0.02 * Math.sin(i);
+    const y = sc.cleanupSpectral(x, { noiseReduction: 0.8, dereverb: 0, sampleRate: SR });
+    expect(y.length).toBe(x.length);
+    expect(allFinite(y)).toBe(true);
+  });
+
+  test('both stages active yields finite same-length output', () => {
+    const n = Math.floor(0.5 * SR);
+    const x = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const tone = Math.sin((2 * Math.PI * 300 * i) / SR);
+      const env = i < 0.05 * SR ? 1 : Math.exp(-(i - 0.05 * SR) / (0.15 * SR));
+      x[i] = 0.4 * env * tone + 0.02 * Math.sin(i * 0.7);
+    }
+    const y = sc.cleanupSpectral(x, { noiseReduction: 0.7, dereverb: 0.6, sampleRate: SR, rt60: 0.3 });
+    expect(y.length).toBe(x.length);
+    expect(allFinite(y)).toBe(true);
+  });
+});
+
 // ── invariants ───────────────────────────────────────────────────────────────
 
 describe('invariants', () => {

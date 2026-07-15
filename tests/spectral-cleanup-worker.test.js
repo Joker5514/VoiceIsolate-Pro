@@ -18,6 +18,7 @@ const workerSource = fs.readFileSync(workerPath, 'utf8');
 
 // Mock the spectral cleanup core module
 const mockSpectralCleanup = {
+  cleanupSpectral: jest.fn(),
   reduceNoise: jest.fn(),
   dereverb: jest.fn(),
 };
@@ -30,10 +31,12 @@ describe('SpectralCleanupWorker', () => {
     postedMessages = [];
     
     // Reset mocks
+    mockSpectralCleanup.cleanupSpectral.mockReset();
     mockSpectralCleanup.reduceNoise.mockReset();
     mockSpectralCleanup.dereverb.mockReset();
 
     // Default mock implementations (pass-through)
+    mockSpectralCleanup.cleanupSpectral.mockImplementation((audio) => audio);
     mockSpectralCleanup.reduceNoise.mockImplementation((audio) => audio);
     mockSpectralCleanup.dereverb.mockImplementation((audio) => audio);
 
@@ -57,8 +60,13 @@ describe('SpectralCleanupWorker', () => {
     );
 
     // Inject the mocked functions into the worker context
-    const argNames = [...Object.keys(workerGlobal), 'reduceNoise', 'dereverb'];
-    const argValues = [...Object.values(workerGlobal), mockSpectralCleanup.reduceNoise, mockSpectralCleanup.dereverb];
+    const argNames = [...Object.keys(workerGlobal), 'cleanupSpectral', 'reduceNoise', 'dereverb'];
+    const argValues = [
+      ...Object.values(workerGlobal),
+      mockSpectralCleanup.cleanupSpectral,
+      mockSpectralCleanup.reduceNoise,
+      mockSpectralCleanup.dereverb,
+    ];
 
     // Execute worker code with injected globals
     const fn = new Function(...argNames, moduleCode);
@@ -66,7 +74,7 @@ describe('SpectralCleanupWorker', () => {
   });
 
   describe('Message Protocol', () => {
-    it('should handle cleanup message with valid data', async () => {
+    it('should use fused cleanupSpectral when both NR and dereverb are active', async () => {
       const testChannels = [
         new Float32Array([0.1, 0.2, 0.3]),
         new Float32Array([0.4, 0.5, 0.6]),
@@ -84,9 +92,10 @@ describe('SpectralCleanupWorker', () => {
         },
       });
 
-      // Verify both processing functions were called
-      expect(mockSpectralCleanup.reduceNoise).toHaveBeenCalledTimes(2);
-      expect(mockSpectralCleanup.dereverb).toHaveBeenCalledTimes(2);
+      // Fused path: one cleanupSpectral call per channel (not chained reduce+dereverb)
+      expect(mockSpectralCleanup.cleanupSpectral).toHaveBeenCalledTimes(2);
+      expect(mockSpectralCleanup.reduceNoise).not.toHaveBeenCalled();
+      expect(mockSpectralCleanup.dereverb).not.toHaveBeenCalled();
 
       // Verify response message
       expect(postedMessages).toHaveLength(1);
@@ -115,6 +124,7 @@ describe('SpectralCleanupWorker', () => {
         },
       });
 
+      expect(mockSpectralCleanup.cleanupSpectral).not.toHaveBeenCalled();
       expect(mockSpectralCleanup.reduceNoise).not.toHaveBeenCalled();
       expect(mockSpectralCleanup.dereverb).toHaveBeenCalledTimes(1);
     });
@@ -151,6 +161,7 @@ describe('SpectralCleanupWorker', () => {
         },
       });
 
+      expect(mockSpectralCleanup.cleanupSpectral).not.toHaveBeenCalled();
       expect(mockSpectralCleanup.reduceNoise).not.toHaveBeenCalled();
       expect(mockSpectralCleanup.dereverb).not.toHaveBeenCalled();
       
@@ -202,7 +213,7 @@ describe('SpectralCleanupWorker', () => {
       });
     });
 
-    it('should pass correct parameters to processing functions', async () => {
+    it('should pass correct parameters to fused cleanupSpectral', async () => {
       const testChannels = [new Float32Array([0.1, 0.2])];
       const sampleRate = 44100;
       const nrAmount = 0.75;
@@ -219,17 +230,12 @@ describe('SpectralCleanupWorker', () => {
         },
       });
 
-      // Check reduceNoise parameters
-      expect(mockSpectralCleanup.reduceNoise).toHaveBeenCalledWith(
+      expect(mockSpectralCleanup.cleanupSpectral).toHaveBeenCalledWith(
         expect.any(Float32Array),
-        { amount: nrAmount, sampleRate }
+        { noiseReduction: nrAmount, dereverb: drAmount, sampleRate }
       );
-
-      // Check dereverb parameters
-      expect(mockSpectralCleanup.dereverb).toHaveBeenCalledWith(
-        expect.any(Float32Array),
-        { amount: drAmount, sampleRate }
-      );
+      expect(mockSpectralCleanup.reduceNoise).not.toHaveBeenCalled();
+      expect(mockSpectralCleanup.dereverb).not.toHaveBeenCalled();
     });
   });
 

@@ -137,8 +137,8 @@ export const SCENE_TO_ENGINEER_PRESET = Object.freeze({
   interview: 'Voice Clarity',
   broadcast: 'Podcast Clean',
   forensic: 'Forensic Extract',
-  music: 'Music Vocal',
-  film: 'Live Performance',
+  music: 'Stadium Crowd',
+  film: 'Voice Clarity',
 });
 
 /** Compute RMS with subsampling for long buffers. */
