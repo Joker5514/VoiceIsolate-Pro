@@ -2501,17 +2501,23 @@ class VoiceIsolatePro {
     }
 
     const wm = this._getWhisperModeState();
-    let totalPasses = this._forceSinglePass ? 1 : (wm.passes || 1);
+    // Forensic multi-pass multiplies full STFT cost. Cap at 2; auto-process is always 1.
+    let totalPasses = this._forceSinglePass ? 1 : Math.min(2, wm.passes || 1);
     if (this._autoPipelineRun) {
       totalPasses = 1;
       this._autoPipelineRun = false;
     }
+    // Manual reprocess after a successful ML run: prefer cache (near-instant) and
+    // never re-enter multi-pass DSP unless ML is unavailable.
+    if (this._mlIsolationSucceeded && totalPasses > 1) totalPasses = 1;
 
     this.setStatus('PROCESSING');
-    this.updatePipelineProgress(0, totalPasses > 1 ? 'Starting 32-Stage Deca-Pass…' : 'ML isolation…', 0);
+    this.updatePipelineProgress(0, totalPasses > 1 ? 'Starting isolation passes…' : 'ML isolation…', 0);
 
     try {
-      let sourceBuf = this.inputBuffer || this.origBuffer;
+      // Always preserve the uploaded buffer as origBuffer for ML/cache identity.
+      if (!this.origBuffer && this.inputBuffer) this.origBuffer = this.inputBuffer;
+      let sourceBuf = this.origBuffer || this.inputBuffer;
       for (let pass = 0; pass < totalPasses; pass++) {
         if (this.abortFlag) break;
         if (totalPasses > 1) {
@@ -2520,8 +2526,10 @@ class VoiceIsolatePro {
             this.dom.pipeDetail.textContent = `Forensic pass ${pass + 1}/${totalPasses}…`;
           }
         }
-        this.inputBuffer = pass === 0 ? (this.inputBuffer || this.origBuffer) : (this.procBuffer || sourceBuf);
-        sourceBuf = this.inputBuffer;
+        // Pass 0 works from original; later forensic DSP passes refine procBuffer.
+        sourceBuf = pass === 0
+          ? (this.origBuffer || this.inputBuffer)
+          : (this.procBuffer || this.origBuffer || this.inputBuffer);
 
         if (pass === 0) {
           // ML inference runs exactly once per file (CLAUDE.md §1). Whisper
@@ -2533,12 +2541,12 @@ class VoiceIsolatePro {
           this._mlIsolationSucceeded = mlOk;
           if (!mlOk) {
             stageStart('dsp_fallback');
-            await this._runFallbackPipeline();
+            await this._runFallbackPipeline(sourceBuf);
             stageEnd('dsp_fallback');
           }
         } else if (!this._mlIsolationSucceeded) {
           stageStart(`dsp_whisper_pass_${pass}`);
-          await this._runFallbackPipeline();
+          await this._runFallbackPipeline(sourceBuf);
           stageEnd(`dsp_whisper_pass_${pass}`);
         }
         // When ML already isolated vocals, skip redundant forensic DSP passes.
@@ -2614,11 +2622,49 @@ class VoiceIsolatePro {
   }
 
   /**
-   * Offline ML isolation — same Demucs → denoise chain as the Landing page.
+   * Build mid (L+R)/2 for multi-channel — one ML pass instead of N channels.
+   * @param {AudioBuffer} buf
+   * @returns {{ channelData: Float32Array[], expandStereo: boolean, left?: Float32Array, right?: Float32Array, mid?: Float32Array }}
+   */
+  _mlChannelPlan(buf) {
+    const nCh = buf.numberOfChannels;
+    if (nCh < 2) {
+      return { channelData: [buf.getChannelData(0)], expandStereo: false };
+    }
+    const left = buf.getChannelData(0);
+    const right = buf.getChannelData(1);
+    const mid = new Float32Array(left.length);
+    for (let i = 0; i < left.length; i++) mid[i] = 0.5 * (left[i] + right[i]);
+    return { channelData: [mid], expandStereo: true, left, right, mid };
+  }
+
+  /**
+   * Apply mono clean stem as a per-sample gain envelope onto stereo sources.
+   * Preserves L/R imaging while only running ML once on the mid channel.
+   */
+  _expandMonoCleanToStereo(cleanMono, mid, left, right) {
+    const n = cleanMono.length;
+    const cleanL = new Float32Array(n);
+    const cleanR = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const m = mid[i];
+      let g = Math.abs(m) > 1e-8 ? cleanMono[i] / m : 0;
+      if (g < 0) g = 0;
+      else if (g > 1.35) g = 1.35;
+      cleanL[i] = left[i] * g;
+      cleanR[i] = right[i] * g;
+    }
+    return [cleanL, cleanR];
+  }
+
+  /**
+   * Offline ML isolation — BS-RNN vocals (DEFAULT_ML_CHAIN). Stereo files are
+   * reduced to mid for a single inference pass (≈2× faster than per-channel).
    * @returns {Promise<boolean>} true when ML produced a non-passthrough result
    */
   async _runMLIsolationPipeline(fileSeq = this._fileSeq) {
-    const buf = this.inputBuffer || this.origBuffer;
+    // Always isolate from the original upload — never re-ML a previous procBuffer.
+    const buf = this.origBuffer || this.inputBuffer;
     if (!buf) return false;
     if (fileSeq !== this._fileSeq) return false;
     try {
@@ -2627,12 +2673,9 @@ class VoiceIsolatePro {
       // pipeline start on full ONNX compile (can take 30–120s on first load).
       void this._warmupMLModels().catch(() => {});
       const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
-      const channelData = [];
-      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-        channelData.push(buf.getChannelData(ch));
-      }
-      this.updatePipelineProgress(4, 'ML isolation…', 15);
-      const result = await separateStems(channelData, buf.sampleRate, {
+      const plan = this._mlChannelPlan(buf);
+      this.updatePipelineProgress(4, plan.expandStereo ? 'ML isolation (mid)…' : 'ML isolation…', 15);
+      const result = await separateStems(plan.channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
         sourceName: this._sourceName || '',
         onProgress: (ev) => {
@@ -2648,10 +2691,23 @@ class VoiceIsolatePro {
       });
       if (fileSeq !== this._fileSeq) return false;
       if (result.passthrough) return false;
-      this.outputBuffer = stemsToAudioBuffer(this.ctx, result.clean, result.sampleRate);
+
+      let clean = result.clean;
+      if (plan.expandStereo && clean?.[0] && plan.left && plan.right && plan.mid) {
+        clean = this._expandMonoCleanToStereo(clean[0], plan.mid, plan.left, plan.right);
+      }
+      this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
+      // Keep origBuffer as the ML source of truth for subsequent reprocess/cache keys.
+      if (!this.origBuffer) this.origBuffer = buf;
       const mlLabel = result.fromCache ? 'ML isolation (cached)' : 'ML isolation complete';
       this.updatePipelineProgress(20, mlLabel, 85);
+      structuredLog('info', '[VIP] ML isolation done', {
+        fromCache: Boolean(result.fromCache),
+        channels: clean.length,
+        midOnly: plan.expandStereo,
+        samples: clean[0]?.length || 0,
+      });
       return true;
     } catch (err) {
       structuredLog('warn', '[VIP] ML isolation unavailable, falling back to DSP', { err: err.message });
@@ -2659,15 +2715,12 @@ class VoiceIsolatePro {
     }
   }
 
-  // Full offline DSP chain (32-stage Deca-Pass). Every capability is wired to
-  // its slider in window.VIP_PARAMS and runs through the tested DSPCore
-  // primitives:
-  //   S03 DC offset · S05/06 noise gate · S09 de-ess · S10–S20 spectral
-  //   isolation (single STFT/iSTFT) · S15 crosstalk · S22 HP/LP · S23 10-band
-  //   EQ · S24 compressor · S25 limiter · S31 phase/width · S28 dry-wet ·
-  //   output trim · safety limiter · dither.
-  async _runFallbackPipeline() {
-    const buf = this.inputBuffer || this.origBuffer;
+  // Full offline DSP chain (fallback when ML is unavailable). Capabilities are
+  // wired to window.VIP_PARAMS via DSPCore. Performance: process mid only on
+  // multi-channel sources (one STFT path), FFT 2048 / hop 512 for Engineer speed.
+  // @param {AudioBuffer} [sourceBuf] — pass-local source (orig or prior proc for multi-pass)
+  async _runFallbackPipeline(sourceBuf) {
+    const buf = sourceBuf || this.origBuffer || this.inputBuffer;
     if (!buf) return;
 
     await this.ensureCtx();
@@ -2684,17 +2737,26 @@ class VoiceIsolatePro {
       return;
     }
 
-    // Writable copy of every channel (.slice() is a fast typed-array memcpy).
-    const channels = [];
-    for (let ch = 0; ch < nCh; ch++) channels.push(buf.getChannelData(ch).slice());
+    // Stereo → process mid once (halves STFT + spectral cost). Re-expand at end.
+    const processStereoAsMid = nCh >= 2;
+    let channels;
+    if (processStereoAsMid) {
+      const L = buf.getChannelData(0);
+      const R = buf.getChannelData(1);
+      const mid = new Float32Array(len);
+      for (let i = 0; i < len; i++) mid[i] = 0.5 * (L[i] + R[i]);
+      channels = [mid];
+      this._dspStereoSources = { L, R };
+    } else {
+      channels = [buf.getChannelData(0).slice()];
+      this._dspStereoSources = null;
+    }
 
-    // ── Pass 1–2: input conditioning + time-domain cleanup (per channel) ──
+    // ── Pass 1–2: input conditioning + time-domain cleanup ──
     this.updatePipelineProgress(3, 'Conditioning input…', 8);
-    for (let ch = 0; ch < nCh; ch++) {
+    for (let ch = 0; ch < channels.length; ch++) {
       let data = channels[ch];
-      // S03 DC-offset removal — always (harmless, kills sub-sonic rumble).
       DSP.removeDCOffset(data, sr);
-      // S05/S06 noise gate.
       const gateThresh = p.gateThresh ?? -42;
       if (gateThresh > -80) {
         data = DSP.noiseGate(data, {
@@ -2706,36 +2768,44 @@ class VoiceIsolatePro {
           lookahead: p.gateLookahead ?? 5,
         }, sr);
       }
-      // S09 de-esser (pre-spectral).
       if ((p.deEssAmt ?? 0) > 0) DSP.deEss(data, p.deEssFreq ?? 6000, p.deEssAmt ?? 0, sr);
       channels[ch] = data;
     }
 
-    // ── Pass 3–5: spectral isolation — ONE STFT/iSTFT per channel ──
+    // ── Pass 3–5: spectral isolation — ONE STFT/iSTFT per process channel ──
     this.updatePipelineProgress(10, 'Spectral isolation…', 20);
-    for (let ch = 0; ch < nCh; ch++) {
+    for (let ch = 0; ch < channels.length; ch++) {
       if (this.abortFlag) break;
-      const chLabel = nCh > 1 ? `Spectral isolation (ch ${ch + 1}/${nCh})…` : 'Spectral isolation…';
       channels[ch] = await this._spectralStageAsync(channels[ch], sr, p, (frac) => {
-        const pct = 20 + Math.round(((ch + frac) / nCh) * 18);
-        this.updatePipelineProgress(10, chLabel, pct);
+        const pct = 20 + Math.round(frac * 40);
+        this.updatePipelineProgress(10, 'Spectral isolation…', pct);
       }) || channels[ch];
     }
 
-    // S15 crosstalk cancellation (needs both channels).
-    if (nCh >= 2 && (p.crosstalkCancel ?? 0) > 0) {
+    // Expand mono-processed mid back to stereo with gain envelope.
+    if (processStereoAsMid && this._dspStereoSources) {
+      const midProc = channels[0];
+      const { L, R } = this._dspStereoSources;
+      const midSrc = new Float32Array(len);
+      for (let i = 0; i < len; i++) midSrc[i] = 0.5 * (L[i] + R[i]);
+      channels = this._expandMonoCleanToStereo(midProc, midSrc, L, R);
+      this._dspStereoSources = null;
+    }
+
+    // S15 crosstalk (only when both channels were processed independently — skipped on mid path)
+    if (channels.length >= 2 && (p.crosstalkCancel ?? 0) > 0 && !processStereoAsMid) {
       this._applyStereoCrosstalk(channels, (p.crosstalkCancel ?? 0) / 100);
     }
 
-    // ── Pass 7–8: filters, EQ, dynamics (per channel) ──
-    this.updatePipelineProgress(21, 'EQ + dynamics…', 62);
-    for (let ch = 0; ch < nCh; ch++) {
+    // ── Pass 7–8: filters, EQ, dynamics ──
+    this.updatePipelineProgress(21, 'EQ + dynamics…', 70);
+    for (let ch = 0; ch < channels.length; ch++) {
       this._eqDynamicsStage(channels[ch], sr, p);
     }
     await this._yield();
 
-    // ── Pass 9: stereo image (phase correlation + width) ──
-    if (nCh >= 2) {
+    // ── Pass 9: stereo image ──
+    if (channels.length >= 2) {
       if ((p.phaseCorr ?? 0) > 0) this._applyPhaseCorrection(channels, (p.phaseCorr ?? 0) / 100);
       const widthPct = ((p.stereoWidth ?? 100) / 100) * ((p.outWidth ?? 100) / 100) * 100;
       if (Math.abs(widthPct - 100) > 0.5) {
@@ -2746,8 +2816,9 @@ class VoiceIsolatePro {
 
     // Assemble the processed AudioBuffer.
     this.updatePipelineProgress(28, 'Rendering output…', 88);
-    let processed = this.ctx.createBuffer(nCh, len, sr);
-    for (let ch = 0; ch < nCh; ch++) {
+    const outCh = channels.length;
+    let processed = this.ctx.createBuffer(outCh, len, sr);
+    for (let ch = 0; ch < outCh; ch++) {
       const src = channels[ch];
       processed.getChannelData(ch).set(src.length === len ? src : src.subarray(0, len));
     }
@@ -3028,17 +3099,19 @@ class VoiceIsolatePro {
 
   // S10–S20: spectral isolation on a single channel. Exactly ONE forward STFT
   // and ONE inverse STFT — the single-pass spectral contract (CLAUDE.md §1).
-  // Time-budget yields keep the overlay alive without per-frame slowdown.
+  // Engineer speed path: FFT 2048 / hop 512 (same 75% COLA, ~2× faster than 4096).
   async _spectralStageAsync(data, sr, p, onProgress) {
     const DSP = this._resolveDSP();
-    const FFT = 4096;
-    const HOP = 1024;
-    // Larger chunks = fewer yields during offline spectral work (snappier UI).
-    const FRAME_CHUNK = 512;
+    // 2048/512 is the Engineer "creator" resolution — full 4096 reserved for
+    // forensic whisper modes (mode ≥ 2) where extra bins matter.
+    const whisperMode = Math.round(p.whisperMode ?? this.whisperMode ?? 0);
+    const forensic = whisperMode >= 2;
+    const FFT = forensic ? 4096 : 2048;
+    const HOP = forensic ? 1024 : 512;
+    const FRAME_CHUNK = forensic ? 256 : 512;
     if (!DSP || !data || data.length < FFT) return data;
 
-    // Yield only between real work chunks — empty pre-STFT yields just added lag.
-    const yieldBudget = createYieldBudget(48);
+    const yieldBudget = createYieldBudget(forensic ? 32 : 64);
     if (onProgress) onProgress(0.05);
 
     const spec = DSP.forwardSTFT(data, FFT, HOP);
@@ -3051,7 +3124,9 @@ class VoiceIsolatePro {
     const totalFrames = mag.length;
 
     const wm = this._getWhisperModeState();
-    const nrAmount = (p.nrAmount ?? 0) * (wm.osf / 4.5);
+    // Mode 0: full NR slider. Whisper modes scale OSF relative to Heavy (4.5).
+    const nrScale = whisperMode > 0 ? (wm.osf / 4.5) : 1;
+    const nrAmount = (p.nrAmount ?? 0) * nrScale;
     if (nrAmount > 0) {
       const noise = this._estimateNoiseFloor(mag);
       const scale = 1 + (p.nrSensitivity ?? 60) / 100 * 0.6 + (p.nrSpectralSub ?? 50) / 100 * 0.6;
@@ -3064,27 +3139,20 @@ class VoiceIsolatePro {
     if ((p.nrSmoothing ?? 0) > 0) DSP.temporalSmooth(mag, p.nrSmoothing);
     if (Math.abs(p.specTilt ?? 0) > 0.01) this._applySpectralTilt(mag, sr, p.specTilt, halfN, FFT);
     if (Math.abs(p.formantShift ?? 0) > 0.01) this._applyFormantShiftSpec(mag, p.formantShift, halfN);
-    // roomCorrection adds to classical dereverb (no second STFT).
     const derevTotal = Math.min(100, (p.derevAmt ?? 0) + (p.roomCorrection ?? 0) * 0.5);
     if (derevTotal > 0) {
       const decaySec = 0.12 + (p.derevDecay ?? 50) / 100 * 0.68;
       DSP.dereverb(mag, derevTotal, decaySec, sr, HOP);
     }
     if ((p.harmRecov ?? 0) > 0) {
-      // harmOrder scales how many peak harmonics are boosted (1–8 → mild…full).
       const orderScale = Math.max(1, Math.min(8, p.harmOrder ?? 3)) / 3;
       DSP.harmonicEnhance(mag, phase, (p.harmRecov ?? 0) * orderScale);
     }
-    // Breath control: attenuate high-band energy on low-RMS frames (between phrases).
     if ((p.breathControl ?? 0) > 0) this._applyBreathControl(mag, p.breathControl, halfN);
-    // Transient shaper: boost/cut spectral peaks (consonants) vs steady bins.
     if (Math.abs(p.transientShaper ?? 0) > 1) this._applyTransientShaper(mag, p.transientShaper);
-    // Sub-harmonic body: mild low-band lift under the voice focus floor.
     if ((p.subHarmonic ?? 0) > 0) this._applySubHarmonic(mag, sr, p, halfN, FFT);
 
-    const whisperMode = Math.round(p.whisperMode ?? this.whisperMode ?? 0);
     const runExtreme = this._extremeSpectralActive(p);
-    // WhisperHunter only when mode > 0 AND hunter is available — never force by default.
     const hunter = whisperMode > 0 && typeof window !== 'undefined' ? window._vipWhisperHunter : null;
     const mapUi = (typeof window !== 'undefined' && window.mapWhisperUi) ? window.mapWhisperUi : () => 0.5;
     const whParams = (whisperMode > 0 && hunter && typeof hunter.processMagnitudes === 'function') ? {
@@ -3093,6 +3161,9 @@ class VoiceIsolatePro {
       threshold: mapUi(p.whisperThreshold ?? 50),
       harmonic: Math.pow(Math.max(0, (p.harmRecov ?? 0)) / 100, 2),
     } : null;
+
+    // Noise profile for extreme path only (skip full-frame scan on the fast path).
+    if (runExtreme) this._extremeNoiseProfile = this._estimateNoiseFloor(mag);
 
     if (runExtreme || whParams) {
       for (let f0 = 0; f0 < totalFrames; f0 += FRAME_CHUNK) {
@@ -3109,10 +3180,7 @@ class VoiceIsolatePro {
       onProgress(0.85);
     }
 
-    this._extremeNoiseProfile = this._estimateNoiseFloor(mag);
     if (onProgress) onProgress(0.92);
-    await yieldBudget();
-
     const rendered = DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);
     if (onProgress) onProgress(1);
     return (rendered && rendered.length === data.length) ? rendered : data;

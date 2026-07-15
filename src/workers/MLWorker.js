@@ -147,10 +147,11 @@ function postStage(stage, percent, extra = {}) {
 }
 
 function effectiveBatchFrames(entry) {
-  const base = entry.maxBatchFrames || 32;
+  const base = entry.maxBatchFrames || 64;
   if (BACKEND === 'webgpu') return Math.min(256, base * 4);
   // Larger WASM batches amortize ONNX session.run overhead on spectral models.
-  return Math.min(128, base * 4);
+  // Cap at 192 to avoid oversized tensor allocs on low-memory devices.
+  return Math.min(192, base * 3);
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────
