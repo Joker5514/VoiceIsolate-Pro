@@ -11,7 +11,7 @@ export const WORKFLOW_TIERS = Object.freeze({
     tagline: 'Fast clean voice — one tap to share-ready audio',
     statusIdle: 'Creator Pro — upload or record for one-tap clean voice',
     defaultPreset: 'Voice Clarity',
-    presets: ['Voice Clarity', 'Podcast Clean', 'Music Vocal'],
+    presets: ['Voice Clarity', 'Podcast Clean', 'Whisper Boost'],
     groups: ['gate', 'nr', 'out'],
     showPresetGrid: false,
     showPresetSelect: false,
@@ -28,8 +28,8 @@ export const WORKFLOW_TIERS = Object.freeze({
     statusIdle: 'Studio — pick a scene preset, tune lightly, then process',
     defaultPreset: 'Podcast Clean',
     presets: [
-      'Podcast Clean', 'Music Vocal', 'Live Performance', 'Phone/Radio',
-      'Whisper Boost', 'Heavy Rain Call', 'Voice Clarity',
+      'Podcast Clean', 'Phone/Radio', 'Phone Wiretap',
+      'Whisper Boost', 'Heavy Rain Call', 'Voice Clarity', 'Stadium Crowd',
     ],
     groups: ['gate', 'nr', 'eq', 'dyn', 'sep', 'out'],
     showPresetGrid: true,
@@ -59,9 +59,9 @@ export const WORKFLOW_TIERS = Object.freeze({
 
 export const STUDIO_SCENES = Object.freeze([
   { id: 'podcast', label: 'Podcast', preset: 'Podcast Clean' },
-  { id: 'film', label: 'Film', preset: 'Music Vocal' },
+  { id: 'film', label: 'Film', preset: 'Voice Clarity' },
   { id: 'interview', label: 'Interview', preset: 'Voice Clarity' },
-  { id: 'broadcast', label: 'Broadcast', preset: 'Live Performance' },
+  { id: 'broadcast', label: 'Broadcast', preset: 'Podcast Clean' },
   { id: 'restoration', label: 'Restoration', preset: 'Heavy Rain Call' },
   { id: 'custom', label: 'Custom', preset: null },
 ]);

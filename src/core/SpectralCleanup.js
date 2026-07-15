@@ -344,3 +344,86 @@ export function dereverb(samples, opts = {}) {
   });
   return sanitize(out);
 }
+
+// ─── Fused cleanup (single reconstructive STFT → iSTFT) ──────────────────────
+
+/**
+ * Combined stationary NR + dereverb in **one** reconstructive STFT/iSTFT pass.
+ * Noise-floor estimation still uses a magnitude-only analysis STFT (no iSTFT)
+ * when noiseReduction > 0 — that is analysis, not a second processing path.
+ *
+ * Prefer this over chaining reduceNoise() then dereverb() (which doubles FFT work).
+ *
+ * @param {Float32Array} samples
+ * @param {object} [opts]
+ * @param {number} [opts.noiseReduction=0]  0–1 NR strength
+ * @param {number} [opts.dereverb=0]        0–1 dereverb strength
+ * @param {number} [opts.rt60=0.4]
+ * @param {number} [opts.sampleRate=SAMPLE_RATE]
+ * @param {number} [opts.frameSize=FRAME_SIZE]
+ * @param {number} [opts.hopSize=HOP_SIZE]
+ * @returns {Float32Array}
+ */
+export function cleanupSpectral(samples, opts = {}) {
+  const input = samples instanceof Float32Array ? samples : new Float32Array(samples || []);
+  const nrAmt = clamp01(opts.noiseReduction ?? 0);
+  const drAmt = clamp01(opts.dereverb ?? 0);
+  if (input.length === 0) return new Float32Array(0);
+  if (nrAmt <= 0 && drAmt <= 0) return new Float32Array(input);
+  // Single-op fast paths reuse the specialized kernels (identical quality).
+  if (drAmt <= 0) return reduceNoise(input, { amount: nrAmt, sampleRate: opts.sampleRate, frameSize: opts.frameSize, hopSize: opts.hopSize });
+  if (nrAmt <= 0) return dereverb(input, { amount: drAmt, rt60: opts.rt60, sampleRate: opts.sampleRate, frameSize: opts.frameSize, hopSize: opts.hopSize });
+
+  const N = opts.frameSize || FRAME_SIZE;
+  const hop = opts.hopSize || HOP_SIZE;
+  const sr = opts.sampleRate || SAMPLE_RATE;
+  const rt60 = opts.rt60 || 0.4;
+  const bins = N / 2 + 1;
+
+  const noiseMag = estimateNoiseMag(input, N, hop);
+  const oversub = 1.5 + nrAmt;
+  const NR_FLOOR = 0.05;
+  const GSMOOTH = 0.5;
+  const prevGain = new Float32Array(bins).fill(1);
+
+  const hopTime = hop / sr;
+  const decay = Math.pow(10, -6 * hopTime / rt60);
+  const beta = 1 + drAmt;
+  const DR_FLOOR = 0.1;
+  const D = 3;
+  const decayD = Math.pow(decay, D);
+  const tail = new Float32Array(bins);
+  const ring = Array.from({ length: D }, () => new Float32Array(bins));
+  let ringPos = 0;
+
+  const out = overlapProcess(input, N, hop, (re, im) => {
+    const delayed = ring[ringPos];
+    for (let k = 0; k < bins; k++) {
+      const mag = Math.sqrt(re[k] * re[k] + im[k] * im[k]);
+      // Pass A — stationary spectral subtraction (in-place)
+      let gNr = mag > 1e-12 ? (mag - oversub * noiseMag[k]) / mag : 0;
+      gNr = clamp01(gNr);
+      if (gNr < NR_FLOOR) gNr = NR_FLOOR;
+      gNr = GSMOOTH * prevGain[k] + (1 - GSMOOTH) * gNr;
+      prevGain[k] = gNr;
+      const blendNr = 1 - nrAmt * (1 - gNr);
+      re[k] *= blendNr;
+      im[k] *= blendNr;
+
+      // Pass B — late-tail dereverb on the NR-cleaned spectrum (same frame)
+      const pow = re[k] * re[k] + im[k] * im[k];
+      const predictedTail = decayD * delayed[k];
+      const reverbPart = Math.min(pow, predictedTail);
+      let cleanPow = pow - beta * reverbPart;
+      if (cleanPow < DR_FLOOR * pow) cleanPow = DR_FLOOR * pow;
+      const gDr = pow > 1e-12 ? Math.sqrt(cleanPow / pow) : 1;
+      const blendDr = 1 - drAmt * (1 - gDr);
+      re[k] *= blendDr;
+      im[k] *= blendDr;
+      tail[k] = Math.max(decay * tail[k], pow);
+    }
+    delayed.set(tail);
+    ringPos = (ringPos + 1) % D;
+  });
+  return sanitize(out);
+}

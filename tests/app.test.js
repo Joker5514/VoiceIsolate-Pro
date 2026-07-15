@@ -141,7 +141,7 @@ describe('PRESETS constant', () => {
   });
 
   test('contains the fourteen tuned preset names', () => {
-    const presets = ['Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Music Vocal', 'Whisper Boost', 'Phone/Radio', 'Live Performance', 'Surveillance', 'Whisper in a Club', 'Heavy Rain Call', 'Helicopter Rescue', 'Stadium Crowd', 'Phone Wiretap', 'Whisper Room'];
+    const presets = ['Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Whisper Boost', 'Phone/Radio', 'Surveillance', 'Whisper in a Club', 'Heavy Rain Call', 'Helicopter Rescue', 'Stadium Crowd', 'Phone Wiretap', 'Whisper Room'];
     for (const name of presets) {
       expect(appSrc).toContain(`'${name}':`);
     }

@@ -13,11 +13,11 @@
  *   ← { type: 'error', requestId?, message }
  *
  * Both strengths are processing parameters fixed for this pass — never live
- * sliders. Each stage is a no-op at 0, so passing both 0 returns copies.
+ * sliders. Prefer fused cleanupSpectral() so NR+dereverb share one STFT/iSTFT.
  */
 'use strict';
 
-import { reduceNoise, dereverb } from '../core/SpectralCleanup.js';
+import { cleanupSpectral, reduceNoise, dereverb } from '../core/SpectralCleanup.js';
 
 self.onmessage = (event) => {
   const msg = event.data || {};
@@ -28,11 +28,14 @@ self.onmessage = (event) => {
         const nr = Number(msg.noiseReduction) || 0;
         const dr = Number(msg.dereverb) || 0;
         const channels = (msg.channels || []).map((ch) => {
-          let out = ch instanceof Float32Array ? ch : new Float32Array(ch || []);
-          // Denoise first (removes the stationary floor), then dereverb.
-          if (nr > 0) out = reduceNoise(out, { amount: nr, sampleRate });
-          if (dr > 0) out = dereverb(out, { amount: dr, sampleRate });
-          return out;
+          const input = ch instanceof Float32Array ? ch : new Float32Array(ch || []);
+          // Fused path when both stages are active (one reconstructive STFT).
+          if (nr > 0 && dr > 0) {
+            return cleanupSpectral(input, { noiseReduction: nr, dereverb: dr, sampleRate });
+          }
+          if (nr > 0) return reduceNoise(input, { amount: nr, sampleRate });
+          if (dr > 0) return dereverb(input, { amount: dr, sampleRate });
+          return new Float32Array(input);
         });
         self.postMessage(
           { type: 'cleaned', requestId: msg.requestId, channels, sampleRate },

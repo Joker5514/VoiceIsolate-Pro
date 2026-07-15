@@ -130,16 +130,21 @@ function inverseSTFT({ frames, hopCount, pcmLen }) {
   const window  = makeBlackmanHarris(FFT_SIZE);
   const out     = new Float32Array(pcmLen + FFT_SIZE);
   const norm    = new Float32Array(pcmLen + FFT_SIZE);
+  // Reuse one scratch buffer — frames are already consumed after spectral ops,
+  // so we can IFFT in-place on a copy only when the caller needs frames later.
+  // Single alloc avoids per-hop Float64Array.slice() GC pressure on long files.
+  const scratch = new Float64Array(FFT_SIZE * 2);
 
   for (let h = 0; h < hopCount; h++) {
-    const frame = frames[h].slice(); // copy before in-place IFFT
+    const src = frames[h];
+    scratch.set(src);
     // SINGLE-PASS STFT BOUNDARY
     // Inverse transform exit for the offline Creator / Forensic path.
-    fftInPlace(frame, FFT_SIZE, true);
+    fftInPlace(scratch, FFT_SIZE, true);
     const start = h * HOP_SIZE;
     for (let i = 0; i < FFT_SIZE; i++) {
       const w2 = window[i] * window[i];
-      out[start + i]  += frame[2 * i] * window[i];
+      out[start + i]  += scratch[2 * i] * window[i];
       norm[start + i] += w2;
     }
   }
