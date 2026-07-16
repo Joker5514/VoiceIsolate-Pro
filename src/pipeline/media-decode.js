@@ -52,7 +52,9 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
   }
 
   try {
-    return _decodeViaMediaElement(blob, kind, onProgress);
+    // Must await — otherwise rejections bypass this catch and surface as
+    // unhandled rejections, leaving upload UI stuck mid-decode.
+    return await _decodeViaMediaElement(blob, kind, onProgress);
   } catch (fallbackErr) {
     throw new Error(
       `[VIP][FileIngestion] Could not decode '${blob.name || 'file'}'. ` +

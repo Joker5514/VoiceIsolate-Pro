@@ -192,8 +192,10 @@ function cacheRequest(op, key, buffer) {
     _cachePending.set(requestId, { resolve, reject });
     const msg = { type: 'cache-request', requestId, op, key };
     if (buffer) {
-      msg.buffer = buffer;
-      self.postMessage(msg, [buffer]);
+      // NEVER transfer the caller's ArrayBuffer — ORT session compile and
+      // subsequent retries need the bytes intact. Copy for the put payload.
+      msg.buffer = buffer.slice(0);
+      self.postMessage(msg, [msg.buffer]);
     } else {
       self.postMessage(msg);
     }
@@ -262,13 +264,18 @@ async function createSessionFromBytes(entry, bytes) {
     executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'],
     graphOptimizationLevel: 'all',
   };
-  return ort.InferenceSession.create(bytes, opts);
+  // Slice: InferenceSession.create may detach/neuter the input ArrayBuffer.
+  // Callers (and IDB cache entries) must keep a usable copy for retries.
+  const safeBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
+  return ort.InferenceSession.create(safeBytes, opts);
 }
 
 async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) {
   if (SESSIONS[sessionKey]) return SESSIONS[sessionKey];
   if (_sessionInflight[sessionKey]) return _sessionInflight[sessionKey];
   _sessionInflight[sessionKey] = (async () => {
+    // Re-check after awaiting the lock — concurrent warmup/process share one compile.
+    if (SESSIONS[sessionKey]) return SESSIONS[sessionKey];
     if (!quiet) postStage('load', 0, { modelId: entry.id, label: `Loading ${entry.name || entry.id}…` });
     const bytes = await fetchModelBytes(entry);
     if (!quiet) postStage('load', 40, { modelId: entry.id, label: `Verifying ${entry.name || entry.id}…` });

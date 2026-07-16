@@ -26,24 +26,27 @@ const PRESET_NAMES = [
   'Phone/Radio',
   'Surveillance',
   'Whisper in a Club',
+  'Stadium Crowd',
+];
+
+const REMOVED_PRESETS = [
+  'Music Vocal',
+  'Live Performance',
   'Heavy Rain Call',
   'Helicopter Rescue',
-  'Stadium Crowd',
   'Phone Wiretap',
   'Whisper Room',
 ];
 
-const REMOVED_PRESETS = ['Music Vocal', 'Live Performance'];
-
 describe('Presets', () => {
-  test('Should define exactly 12 isolation-focused preset names', () => {
+  test('Should define exactly 8 calibrated isolation preset names', () => {
     PRESET_NAMES.forEach(name => {
       expect(presetsBlock).toContain(`'${name}':`);
     });
-    expect(PRESET_NAMES.length).toBe(12);
+    expect(PRESET_NAMES.length).toBe(8);
   });
 
-  test('Removes non-isolation presets (Music Vocal, Live Performance)', () => {
+  test('Removes redundant and non-isolation presets', () => {
     REMOVED_PRESETS.forEach(name => {
       expect(presetsBlock).not.toContain(`'${name}':`);
     });
@@ -95,7 +98,6 @@ describe('Presets', () => {
   });
 
   test('Standard Voice Clarity keeps extreme path off (fast path)', () => {
-    // EXTREME_OFF sets whisperMode: 0 for standard isolation presets
     expect(appJs).toContain('EXTREME_OFF');
     expect(appJs).toMatch(/const EXTREME_OFF[\s\S]*?whisperMode:\s*0/);
     expect(presetsBlock).toContain('...EXTREME_OFF');

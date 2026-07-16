@@ -18,13 +18,19 @@ export function createMLWorker() {
 }
 
 /**
- * Send init manifest with desktop cache bridge enabled.
+ * Send init manifest. Desktop cache bridge is only used in the Electron shell
+ * (filesystem-backed model cache). Browser/Android use IndexedDB in-worker.
  * @param {Worker} worker
  */
 export function initMLWorker(worker) {
+  const useDesktopCache = Boolean(
+    globalThis.vipDesktop?.readModelCache
+    || globalThis.vipDesktop?.openFile
+    || globalThis.__VIP_DESKTOP__
+  );
   worker.postMessage({
     type: 'init',
     manifest: Object.values(MODEL_MANIFEST),
-    useDesktopCache: true,
+    useDesktopCache,
   });
 }

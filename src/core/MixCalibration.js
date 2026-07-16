@@ -139,6 +139,10 @@ export const SCENE_TO_ENGINEER_PRESET = Object.freeze({
   forensic: 'Forensic Extract',
   music: 'Stadium Crowd',
   film: 'Voice Clarity',
+  // Legacy scene keys remapped after preset cleanup
+  rain: 'Surveillance',
+  helicopter: 'Surveillance',
+  wiretap: 'Phone/Radio',
 });
 
 /** Compute RMS with subsampling for long buffers. */

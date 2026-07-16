@@ -27,14 +27,18 @@ export function attachMLWorkerModelCache(worker) {
       if (op === 'get') {
         const data = await readModelCacheBytes(key);
         if (data) {
-          worker.postMessage({ type: 'cache-response', requestId, ok: true, buffer: data }, [data]);
+          // Transfer a copy so the main-thread cache retains usable bytes.
+          const copy = data.byteLength > 0 ? data.slice(0) : data;
+          worker.postMessage({ type: 'cache-response', requestId, ok: true, buffer: copy }, [copy]);
         } else {
           worker.postMessage({ type: 'cache-response', requestId, ok: true, buffer: null });
         }
         return;
       }
       if (op === 'put') {
-        const result = await writeModelCacheBytes(key, buffer);
+        // Copy before write — worker may have transferred, but never mutate shared refs.
+        const bytes = buffer && buffer.byteLength > 0 ? buffer.slice(0) : buffer;
+        const result = await writeModelCacheBytes(key, bytes);
         worker.postMessage({ type: 'cache-response', requestId, ok: result.ok, bytes: result.bytes });
         return;
       }
