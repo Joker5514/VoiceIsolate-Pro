@@ -82,7 +82,9 @@ export function startWorkletStatusDriver(opts = {}) {
   for (const w of WORKLET_PILLS) setPill(w.pillId, 'loading');
 
   let ticks = 0;
-  const MAX_TICKS = 240; // ~60s @ 250ms
+  // Keep polling long enough that late ensureCtx()/bridge boot still paints pills.
+  // (~5 min @ 250ms) — stop early once both worklets settle.
+  const MAX_TICKS = 1200;
 
   const iv = setInterval(() => {
     ticks += 1;

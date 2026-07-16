@@ -30,7 +30,8 @@ describe('Engineer processing speed path', () => {
 
   test('spectral stage uses FFT 2048 for non-forensic Engineer path', () => {
     expect(appJs).toMatch(/const FFT = forensic \? 4096 : 2048/);
-    expect(appJs).toMatch(/const HOP = forensic \? 1024 : 512/);
+    // Fast path hop 768 (~33% fewer frames than 512, still COLA-safe)
+    expect(appJs).toMatch(/const HOP = forensic \? 1024 : 768/);
   });
 
   test('forensic multi-pass is capped at 2', () => {

@@ -75,9 +75,42 @@
   --ease-out: cubic-bezier(0.22, 0.7, 0.2, 1);
 
   --titlebar-h: 44px;
+
+  /* Creative flair — spectral aurora accents */
+  --aurora-1: rgba(220, 38, 38, 0.18);
+  --aurora-2: rgba(239, 68, 68, 0.10);
+  --aurora-3: rgba(252, 211, 77, 0.06);
+  --glow-ring: 0 0 0 1px rgba(220, 38, 38, 0.22), 0 0 28px rgba(220, 38, 38, 0.12);
+  --pulse-glow: 0 0 20px rgba(220, 38, 38, 0.35);
 }
 
 /* ── Reset & Base ─────────────────────────────────────────────────────── */
+
+/* Ambient spectral aurora behind the app shell */
+body::after {
+  content: '';
+  position: fixed;
+  inset: -20% -10% auto -10%;
+  height: 55vh;
+  background:
+    radial-gradient(ellipse 50% 40% at 20% 30%, var(--aurora-1), transparent 70%),
+    radial-gradient(ellipse 40% 35% at 80% 20%, var(--aurora-2), transparent 65%),
+    radial-gradient(ellipse 35% 30% at 55% 60%, var(--aurora-3), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+  animation: vip-aurora-drift 18s ease-in-out infinite alternate;
+  opacity: 0.9;
+}
+
+@keyframes vip-aurora-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); filter: hue-rotate(0deg); }
+  to   { transform: translate3d(2%, 3%, 0) scale(1.04); filter: hue-rotate(8deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::after { animation: none; }
+}
+
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
@@ -169,11 +202,42 @@ body {
 
 /* ── Panels ───────────────────────────────────────────────────────────── */
 .panel {
-  background: var(--surface-2);
+  position: relative;
+  background:
+    linear-gradient(165deg, rgba(220, 38, 38, 0.04) 0%, transparent 42%),
+    var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 16px 18px;
   box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(8px);
+  transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out);
+}
+
+.panel:hover {
+  border-color: rgba(220, 38, 38, 0.22);
+  box-shadow: var(--shadow-sm), var(--glow-ring);
+}
+
+.panel.vip-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(120deg, transparent 40%, rgba(220, 38, 38, 0.05) 50%, transparent 60%);
+  background-size: 200% 100%;
+  animation: vip-card-sheen 8s ease-in-out infinite;
+  opacity: 0.7;
+}
+
+@keyframes vip-card-sheen {
+  0%, 100% { background-position: 100% 0; }
+  50% { background-position: 0% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel.vip-card::before { animation: none; }
 }
 
 .section-label {
@@ -204,6 +268,10 @@ body {
   border-radius: var(--radius-lg);
   cursor: pointer;
   text-align: center;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(220, 38, 38, 0.08), transparent 70%),
+    linear-gradient(180deg, rgba(220, 38, 38, 0.03), transparent);
+  transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out), transform var(--dur-fast) var(--ease-out);
   transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
 

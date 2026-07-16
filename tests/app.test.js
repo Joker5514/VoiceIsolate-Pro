@@ -140,11 +140,15 @@ describe('PRESETS constant', () => {
     expect(appSrc).toContain('const PRESETS');
   });
 
-  test('contains the fourteen tuned preset names', () => {
-    const presets = ['Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Whisper Boost', 'Phone/Radio', 'Surveillance', 'Whisper in a Club', 'Heavy Rain Call', 'Helicopter Rescue', 'Stadium Crowd', 'Phone Wiretap', 'Whisper Room'];
+  test('contains the eight calibrated isolation preset names', () => {
+    const presets = ['Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Whisper Boost', 'Phone/Radio', 'Surveillance', 'Whisper in a Club', 'Stadium Crowd'];
     for (const name of presets) {
       expect(appSrc).toContain(`'${name}':`);
     }
+    // Redundant presets removed
+    expect(appSrc).not.toContain("'Phone Wiretap':");
+    expect(appSrc).not.toContain("'Heavy Rain Call':");
+    expect(appSrc).not.toContain("'Helicopter Rescue':");
   });
 
   test('preset objects use actual slider IDs as keys', () => {

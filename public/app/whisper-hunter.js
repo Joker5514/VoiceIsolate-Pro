@@ -34,9 +34,9 @@ export function getWhisperPlatformProfile(platform = detectWhisperPlatform()) {
     case 'android':
       return {
         platform: 'android',
-        maxChunks: 6,
-        timeoutMs: 12000,
-        chunkYieldMs: 8,
+        maxChunks: 10,
+        timeoutMs: 8000,
+        chunkYieldMs: 4,
         mlEnabled: true,
         forensicCap: 3,
         minPasses: 1,
@@ -44,9 +44,9 @@ export function getWhisperPlatformProfile(platform = detectWhisperPlatform()) {
     case 'ios':
       return {
         platform: 'ios',
-        maxChunks: 8,
-        timeoutMs: 10000,
-        chunkYieldMs: 4,
+        maxChunks: 10,
+        timeoutMs: 8000,
+        chunkYieldMs: 2,
         mlEnabled: true,
         forensicCap: 3,
         minPasses: 1,
@@ -54,8 +54,8 @@ export function getWhisperPlatformProfile(platform = detectWhisperPlatform()) {
     case 'desktop':
       return {
         platform: 'desktop',
-        maxChunks: 16,
-        timeoutMs: 8000,
+        maxChunks: 24,
+        timeoutMs: 5000,
         chunkYieldMs: 0,
         mlEnabled: true,
         forensicCap: 4,
@@ -64,8 +64,8 @@ export function getWhisperPlatformProfile(platform = detectWhisperPlatform()) {
     default:
       return {
         platform: 'browser',
-        maxChunks: 12,
-        timeoutMs: 6000,
+        maxChunks: 18,
+        timeoutMs: 4500,
         chunkYieldMs: 0,
         mlEnabled: true,
         forensicCap: 4,
@@ -93,13 +93,24 @@ export function ensureWhisperHunterInstance(fftSize = 4096, sampleRate = 48000) 
 /** Heuristic voice mask when ML worker is unavailable (offline-safe fallback) */
 export function buildHeuristicMask(envProfile, halfBins = 2049) {
   const env = envProfile || {};
-  const base = 0.28 + (env.voiceRatio || 0.3) * 0.35;
-  const voiceStart = Math.floor(halfBins * 0.08);
-  const voiceEnd = Math.floor(halfBins * 0.45);
+  const speech = Math.max(0, Math.min(1, env.speechPresence ?? env.voiceRatio ?? 0.3));
+  const music = Math.max(0, Math.min(1, env.musicRatio ?? 0.2));
+  // Stronger mid-band (formants) when speech dominates; suppress bass when music-heavy.
+  const base = 0.32 + speech * 0.42;
+  const voiceStart = Math.floor(halfBins * 0.06);
+  const voiceEnd = Math.floor(halfBins * 0.48);
+  const formantCore = Math.floor(halfBins * 0.12);
+  const formantHi = Math.floor(halfBins * 0.32);
   const masks = new Array(halfBins);
   for (let i = 0; i < halfBins; i++) {
-    const voiceWeight = (i >= voiceStart && i <= voiceEnd) ? 1.15 : 0.75;
-    masks[i] = Math.min(0.92, base * voiceWeight);
+    let voiceWeight = 0.55;
+    if (i >= voiceStart && i <= voiceEnd) voiceWeight = 1.05;
+    if (i >= formantCore && i <= formantHi) voiceWeight = 1.28;
+    // Soft-kill sub-bass when club/music dominates.
+    if (i < Math.floor(halfBins * 0.04)) voiceWeight *= (1 - music * 0.55);
+    // Soften extreme highs (hiss) slightly.
+    if (i > Math.floor(halfBins * 0.55)) voiceWeight *= 0.82;
+    masks[i] = Math.min(0.96, Math.max(0.04, base * voiceWeight));
   }
   return masks;
 }
@@ -352,19 +363,26 @@ export class WhisperHunterAI {
     this.halfBins = fftSize / 2 + 1;
     this.noiseFloor = 0;
     this.noisePsd = new Float32Array(this.halfBins);
-    this._alpha = 0.92;
-    this._speechAlpha = 0.98;
+    this._alpha = 0.90;
+    this._speechAlpha = 0.985;
     this._f0Est = 180;
     this._binHz = sampleRate / fftSize;
-    this._voiceLo = Math.round(300 / this._binHz);
-    this._voiceHi = Math.round(3400 / this._binHz);
+    // Broader band catches whispered fricatives (~200–5.5 kHz).
+    this._voiceLo = Math.round(200 / this._binHz);
+    this._voiceHi = Math.round(5500 / this._binHz);
+    this._formantLo = Math.round(400 / this._binHz);
+    this._formantHi = Math.round(3200 / this._binHz);
     this._epsilon = 1e-10;
+    this._prevVad = 0;
+    this._hangover = 0;
   }
 
   reset() {
     this.noiseFloor = 0;
     this.noisePsd.fill(0);
     this._f0Est = 180;
+    this._prevVad = 0;
+    this._hangover = 0;
   }
 
   /** Seed noise PSD from quiet frames at the start of a buffer (between forensic passes) */
@@ -374,8 +392,10 @@ export class WhisperHunterAI {
     if (sr !== this.sampleRate) {
       this.sampleRate = sr;
       this._binHz = sr / this.fftSize;
-      this._voiceLo = Math.round(300 / this._binHz);
-      this._voiceHi = Math.round(3400 / this._binHz);
+      this._voiceLo = Math.round(200 / this._binHz);
+      this._voiceHi = Math.round(5500 / this._binHz);
+      this._formantLo = Math.round(400 / this._binHz);
+      this._formantHi = Math.round(3200 / this._binHz);
     }
     const FFT = this.fftSize;
     const halfN = this.halfBins;
@@ -426,6 +446,7 @@ export class WhisperHunterAI {
 
     let energy = 0;
     let voiceEnergy = 0;
+    let formantEnergy = 0;
     let geoSum = 0;
     let arithSum = 0;
     const mags = new Float32Array(halfN);
@@ -440,20 +461,33 @@ export class WhisperHunterAI {
         arithSum += mag;
         geoSum += Math.log(mag + 1e-12);
       }
+      if (k >= this._formantLo && k <= this._formantHi) formantEnergy += pow;
     }
     energy /= halfN;
     const voiceRatio = voiceEnergy / (energy * halfN + this._epsilon);
+    const formantRatio = formantEnergy / (voiceEnergy + this._epsilon);
     const voiceBins = Math.max(1, this._voiceHi - this._voiceLo);
     const flatness = arithSum > 1e-12
       ? Math.exp(geoSum / voiceBins) / (arithSum / voiceBins + 1e-12)
       : 1;
 
-    const thetaE = Math.max(this.noiseFloor * (0.5 + pSensitive), 1e-12);
-    const voiceGate = 0.12 + 0.22 * pSensitive;
-    const flatGate = 0.42 + 0.18 * pSensitive;
-    const vad = (energy > thetaE * 0.06)
+    // Adaptive VAD: lower energy gate for whispers, hangover to keep phrase tails.
+    const thetaE = Math.max(this.noiseFloor * (0.35 + 0.45 * pSensitive), 1e-13);
+    const voiceGate = 0.08 + 0.18 * (1 - pSensitive);
+    const flatGate = 0.48 + 0.16 * pSensitive;
+    const formantGate = 0.18 + 0.12 * pSensitive;
+    let vad = (energy > thetaE * 0.04)
       && (voiceRatio > voiceGate)
-      && (flatness < flatGate) ? 1 : 0;
+      && (flatness < flatGate || formantRatio > formantGate) ? 1 : 0;
+
+    // Hangover: keep gate open ~3 frames after speech to avoid chopping whispers.
+    if (vad) {
+      this._hangover = 3;
+    } else if (this._hangover > 0) {
+      this._hangover -= 1;
+      vad = 1;
+    }
+    this._prevVad = vad;
 
     const alpha = vad ? this._speechAlpha : this._alpha;
     if (vad === 0) {
@@ -466,37 +500,47 @@ export class WhisperHunterAI {
 
     this._trackF0(mags);
 
-    const wStr = 1 + 2.2 * pThreshold;
-    const oversub = 1.15 + 2.8 * pThreshold;
-    const minGain = Math.max(0.08, pClarity * 0.35);
+    // Soft Wiener + formant emphasis — clearer whispers without musical noise.
+    const wStr = 0.85 + 1.9 * pThreshold;
+    const oversub = 1.05 + 2.4 * pThreshold;
+    const minGain = Math.max(0.06, pClarity * 0.42);
     const binHz = this._binHz;
 
     for (let k = 0; k < halfN; k++) {
       const sigPow = mags[k] * mags[k];
-      const noisePow = this.noisePsd[k];
+      const noisePow = this.noisePsd[k] + this._epsilon;
       const snrNum = Math.max(0, sigPow - oversub * noisePow);
-      const wiener = snrNum / (sigPow + 0.02 * noisePow + this._epsilon);
+      const wiener = snrNum / (sigPow + 0.015 * noisePow);
       let gain = Math.pow(Math.max(0, wiener), wStr);
 
       const inVoice = k >= this._voiceLo && k <= this._voiceHi;
-      const outBandWeight = inVoice ? 1 : 0.3 + 0.25 * (1 - pThreshold);
+      const inFormant = k >= this._formantLo && k <= this._formantHi;
+      const outBandWeight = inVoice ? 1 : 0.22 + 0.28 * (1 - pThreshold);
       gain = Math.max(minGain * outBandWeight, gain);
 
-      if (inVoice && voiceRatio > 0.2) {
-        gain = Math.min(1.8, gain * (1 + 0.15 * pClarity));
+      if (inFormant && voiceRatio > 0.12) {
+        gain = Math.min(2.1, gain * (1 + 0.28 * pClarity));
+      } else if (inVoice && voiceRatio > 0.18) {
+        gain = Math.min(1.85, gain * (1 + 0.18 * pClarity));
+      }
+
+      // Spectral floor tilt: protect low formants for whispered vowels.
+      if (k < this._formantLo && k > 0) {
+        gain = Math.max(gain, minGain * 0.55);
       }
 
       re[k] *= gain;
       im[k] *= gain;
     }
 
-    if (pHarmonic > 0.08) {
-      for (let h = 1; h <= 6; h++) {
+    if (pHarmonic > 0.06) {
+      const maxH = pHarmonic > 0.4 ? 8 : 6;
+      for (let h = 1; h <= maxH; h++) {
         const kh = Math.round((h * this._f0Est) / binHz);
         for (let dk = -1; dk <= 1; dk++) {
           const k = kh + dk;
           if (k > 0 && k < halfN) {
-            const boost = 1 + (pHarmonic * 0.4) / h;
+            const boost = 1 + (pHarmonic * 0.48) / h;
             re[k] *= boost;
             im[k] *= boost;
           }
