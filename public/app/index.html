@@ -290,7 +290,8 @@
           <span class="engine-pill" id="engGatePill" data-state="pending" title="vip-gate noise gate">GATE</span>
           <span class="engine-pill" id="engDeessPill" data-state="pending" title="vip-deesser de-esser">DEESS</span>
           <span class="engine-pill" id="engSabPill" data-state="pending">SAB</span>
-          <span class="engine-pill" id="engMlPill" data-state="pending">ML</span>
+          <span class="engine-pill" id="engMlPill" data-state="pending" title="ONNX Runtime provider">ML</span>
+          <span class="engine-pill" id="engOrtPill" data-state="pending" title="WebGPU / WASM status">ORT</span>
           <span class="engine-pill" id="engNetPill" data-state="pending">NET</span>
         </div>
       </div>
@@ -607,6 +608,8 @@
   <!-- Mobile upload fix: iOS Safari decodeAudioData, AudioContext gesture lock,
        touch-action bleed, MIME accept scope. Loads after all modules are bootstrapped. -->
   <script src="./mobile-upload-fix.js"></script>
+  <!-- Research mode: local session export + ORT/benchmark strip (no network) -->
+  <script src="./research-mode.js" defer></script>
 
 
 </body>
