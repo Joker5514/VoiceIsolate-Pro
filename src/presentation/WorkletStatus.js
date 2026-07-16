@@ -50,6 +50,14 @@ export function readWorkletStatusFromApp(app = globalThis._vipApp) {
   if (mixer && typeof mixer.getWorkletStatus === 'function') {
     return mixer.getWorkletStatus();
   }
+  // Landing diagnostics expose mixer without a full Engineer bridge.
+  const landingMixer = globalThis.__vipDiagnostics?.mixer;
+  if (landingMixer && typeof landingMixer.getWorkletStatus === 'function') {
+    return landingMixer.getWorkletStatus();
+  }
+  if (globalThis.__vipWorkletStatus) {
+    return globalThis.__vipWorkletStatus;
+  }
   return {
     gate: { state: 'pending', node: false },
     deEsser: { state: 'pending', node: false },

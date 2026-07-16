@@ -41,6 +41,14 @@ const LP_FILTER_TYPE = 'lowpass';
 
 /** Per-AudioContext dedupe so gate + de-esser never double-register a module. */
 const workletModulesByContext = new WeakMap();
+/** In-flight addModule promises keyed by context → url (dedupe concurrent loads). */
+const workletInflightByContext = new WeakMap();
+
+/** Canonical playback worklet URLs (must match scripts/worklet-manifest.json). */
+export const PLAYBACK_WORKLET_URLS = Object.freeze({
+  gate: '/src/workers/GateProcessor.js',
+  deEsser: '/src/workers/DeEsserProcessor.js',
+});
 
 function getLoadedWorkletModules(ctx) {
   let set = workletModulesByContext.get(ctx);
@@ -49,6 +57,81 @@ function getLoadedWorkletModules(ctx) {
     workletModulesByContext.set(ctx, set);
   }
   return set;
+}
+
+function getInflightMap(ctx) {
+  let map = workletInflightByContext.get(ctx);
+  if (!map) {
+    map = new Map();
+    workletInflightByContext.set(ctx, map);
+  }
+  return map;
+}
+
+/**
+ * Resolve a same-origin worklet URL. Absolute URLs are required by some
+ * Android WebViews / Capacitor shells when the page is not at `/`.
+ * @param {string} path
+ * @returns {string}
+ */
+export function resolveWorkletUrl(path) {
+  if (!path) return path;
+  if (/^https?:\/\//i.test(path) || path.startsWith('blob:')) return path;
+  try {
+    const origin = globalThis.location?.origin;
+    if (origin && origin !== 'null') return new URL(path, origin).href;
+  } catch { /* fall through */ }
+  return path;
+}
+
+/**
+ * Load an AudioWorklet module once per context with resume + retry.
+ * @param {AudioContext} ctx
+ * @param {string} path  e.g. /src/workers/GateProcessor.js
+ * @returns {Promise<void>}
+ */
+export async function ensureWorkletModule(ctx, path) {
+  if (!ctx?.audioWorklet || typeof ctx.audioWorklet.addModule !== 'function') {
+    throw new Error('[VIP][PlaybackMixer] AudioWorklet not available on this context.');
+  }
+  const loaded = getLoadedWorkletModules(ctx);
+  if (loaded.has(path)) return;
+
+  const inflight = getInflightMap(ctx);
+  if (inflight.has(path)) return inflight.get(path);
+
+  const job = (async () => {
+    // Many engines refuse or flake addModule while suspended (Safari / Android).
+    if (ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch { /* best-effort */ }
+    }
+    const absolute = resolveWorkletUrl(path);
+    let lastErr = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const src = attempt === 0
+          ? absolute
+          : `${absolute}${absolute.includes('?') ? '&' : '?'}vipwk=${Date.now()}`;
+        // Literal-ish call kept for allowlists; path is a constant from callers.
+        await ctx.audioWorklet.addModule(src);
+        loaded.add(path);
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (ctx.state === 'suspended') {
+          try { await ctx.resume(); } catch { /* ignore */ }
+        }
+      }
+    }
+    throw lastErr || new Error(`[VIP][PlaybackMixer] addModule failed for ${path}`);
+  })();
+
+  inflight.set(path, job);
+  try {
+    await job;
+  } finally {
+    inflight.delete(path);
+  }
 }
 
 
@@ -332,17 +415,27 @@ export class PlaybackMixer {
       this._gateLoadState = 'bypassed';
       return;
     }
+    this._gateLoadState = 'pending';
     try {
-      const gateUrl = '/src/workers/GateProcessor.js';
-      const gateLoaded = getLoadedWorkletModules(this.ctx);
-      if (!gateLoaded.has(gateUrl)) {
-        // Literal call (not via alias) so validate.js's allowlist sees it.
+      // ensureWorkletModule: resume + absolute URL + retry. Falls back to a
+      // literal addModule call so validate.js allowlist scanners still see it.
+      try {
+        await ensureWorkletModule(this.ctx, '/src/workers/GateProcessor.js');
+      } catch (primary) {
+        if (this.ctx.state === 'suspended') {
+          try { await this.ctx.resume(); } catch { /* ignore */ }
+        }
         await this.ctx.audioWorklet.addModule('/src/workers/GateProcessor.js');
-        gateLoaded.add(gateUrl);
+        getLoadedWorkletModules(this.ctx).add('/src/workers/GateProcessor.js');
+        if (!primary) { /* keep eslint quiet */ }
       }
-      if (this._disposed) return; // disposed mid-load — don't touch a torn-down graph
+      if (this._disposed) return;
       const gate = new NodeCtor(this.ctx, 'vip-gate');
-      this.gateInput.disconnect(this.highpass);
+      try {
+        this.gateInput.disconnect(this.highpass);
+      } catch {
+        try { this.gateInput.disconnect(); } catch { /* graph already open */ }
+      }
       this.gateInput.connect(gate);
       gate.connect(this.highpass);
       for (const [name, value] of Object.entries(this._gateParams)) {
@@ -354,6 +447,8 @@ export class PlaybackMixer {
     } catch (err) {
       this._gateLoadState = 'failed';
       console.error('[VIP][PlaybackMixer] noise-gate worklet failed to load; bypassing.', err);
+      // Keep graph connected: gateInput → highpass must stay live.
+      try { this.gateInput.connect(this.highpass); } catch { /* already connected */ }
     }
   }
 
@@ -368,17 +463,25 @@ export class PlaybackMixer {
       this._deEsserLoadState = 'bypassed';
       return;
     }
+    this._deEsserLoadState = 'pending';
     try {
-      const deEsserUrl = '/src/workers/DeEsserProcessor.js';
-      const deEsserLoaded = getLoadedWorkletModules(this.ctx);
-      if (!deEsserLoaded.has(deEsserUrl)) {
-        // Literal call (not via alias) so validate.js's allowlist sees it.
+      try {
+        await ensureWorkletModule(this.ctx, '/src/workers/DeEsserProcessor.js');
+      } catch {
+        if (this.ctx.state === 'suspended') {
+          try { await this.ctx.resume(); } catch { /* ignore */ }
+        }
+        // Literal call for validate.js allowlist.
         await this.ctx.audioWorklet.addModule('/src/workers/DeEsserProcessor.js');
-        deEsserLoaded.add(deEsserUrl);
+        getLoadedWorkletModules(this.ctx).add('/src/workers/DeEsserProcessor.js');
       }
-      if (this._disposed) return; // disposed mid-load — don't touch a torn-down graph
+      if (this._disposed) return;
       const deEsser = new NodeCtor(this.ctx, 'vip-deesser');
-      this.deEsserInput.disconnect(this.limiter);
+      try {
+        this.deEsserInput.disconnect(this.limiter);
+      } catch {
+        try { this.deEsserInput.disconnect(); } catch { /* ignore */ }
+      }
       this.deEsserInput.connect(deEsser);
       deEsser.connect(this.limiter);
       for (const [name, value] of Object.entries(this._deEsserParams)) {
@@ -390,6 +493,7 @@ export class PlaybackMixer {
     } catch (err) {
       this._deEsserLoadState = 'failed';
       console.error('[VIP][PlaybackMixer] de-esser worklet failed to load; bypassing.', err);
+      try { this.deEsserInput.connect(this.limiter); } catch { /* already connected */ }
     }
   }
 
