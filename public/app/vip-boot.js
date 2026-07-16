@@ -109,59 +109,183 @@
     return true;
   }
 
-  // -- Pill driver (poll-based, self-terminating) --------------------------
+  /**
+   * Map PlaybackMixer load states → pill states.
+   * loaded→ready, pending→loading, failed→error, bypassed→unavailable
+   */
+  function mapWorkletLoadState(s) {
+    if (s === 'loaded') return 'ready';
+    if (s === 'pending') return 'loading';
+    if (s === 'failed') return 'error';
+    if (s === 'bypassed') return 'unavailable';
+    return 'pending';
+  }
+
+  /** Read gate/de-esser status from Engineer bridge, landing mixer, or global. */
+  function readPlaybackWorkletStatus() {
+    try {
+      var app = window._vipApp;
+      var bridge = app && app._bridge;
+      if (bridge && typeof bridge.getWorkletStatus === 'function') {
+        return bridge.getWorkletStatus();
+      }
+      if (bridge && bridge.mixer && typeof bridge.mixer.getWorkletStatus === 'function') {
+        return bridge.mixer.getWorkletStatus();
+      }
+      var landing = window.__vipDiagnostics && window.__vipDiagnostics.mixer;
+      if (landing && typeof landing.getWorkletStatus === 'function') {
+        return landing.getWorkletStatus();
+      }
+      if (window.__vipWorkletStatus) return window.__vipWorkletStatus;
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  function setPillTitle(id, title) {
+    var el = document.getElementById(id);
+    if (el && title) el.title = title;
+  }
+
+  // -- Pill driver: keeps ALL cockpit pills (CTX/WORKLET/GATE/DEESS/SAB/ML/ORT/NET) fresh --
   function startPillDriver() {
-    // Synchronous capability pills
-    setEnginePill('engSabPill',     hasSAB() ? 'ready' : 'error');
-    setEnginePill('engWorkletPill', hasAudioWorklet() ? 'loading' : 'error');
-    if (hasAudioWorklet()) {
-      setEnginePill('engGatePill', 'loading');
-      setEnginePill('engDeessPill', 'loading');
-    } else {
-      setEnginePill('engGatePill', 'error');
-      setEnginePill('engDeessPill', 'error');
-    }
+    var awOk = hasAudioWorklet();
+    setEnginePill('engSabPill', hasSAB() ? 'ready' : 'error');
+    setPillTitle('engSabPill', hasSAB()
+      ? 'SharedArrayBuffer available (cross-origin isolated)'
+      : 'SharedArrayBuffer missing — need COOP/COEP');
+    setEnginePill('engNetPill', getInitialNetworkState() ? 'ready' : 'error');
+    setEnginePill('engCtxPill', hasAudioContext() ? 'loading' : 'error');
+    setPillTitle('engCtxPill', 'AudioContext awaits first user gesture');
+    setEnginePill('engWorkletPill', awOk ? 'loading' : 'error');
+    setEnginePill('engGatePill', awOk ? 'loading' : 'error');
+    setEnginePill('engDeessPill', awOk ? 'loading' : 'error');
+    setEnginePill('engMlPill', 'loading');
+    setEnginePill('engOrtPill', 'loading');
 
-    var startedAt = Date.now();
-    var POLL_MS   = 250;
-    var TIMEOUT   = (typeof process !== 'undefined' && process.env.NODE_ENV === 'test') ? 500 : 30000;
-
-    var ctxResolved = false;
-    var mlResolved  = false;
+    var POLL_MS = 250;
+    // Keep polling long enough that late ensureCtx()/worklet boot still paints pills.
+    // (~10 min). Stops early once every pill has left pending/loading where possible.
+    var MAX_TICKS = 2400;
+    var ticks = 0;
+    var workletsSettled = false;
 
     var iv = setInterval(function () {
-      // CTX pill -- ready as soon as app instance owns an AudioContext
-      if (!ctxResolved) {
-        var app = window._vipApp;
-        if (app && app.ctx && typeof app.ctx.state === 'string') {
-          setEnginePill('engCtxPill', 'ready');
-          ctxResolved = true;
-        } else if (hasAudioContext()) {
-          // Constructor exists; actual context awaits user gesture
-          setEnginePill('engCtxPill', 'loading');
-        }
-      }
+      ticks += 1;
 
-      // ML pill -- ready when orchestrator reports the worker is up
-      if (!mlResolved) {
-        var orch = window._vipOrch;
-        if (orch && orch.mlReady === true) {
-          setEnginePill('engMlPill', 'ready');
-          mlResolved = true;
-        } else if (window.VIP_ML_AVAILABLE === false) {
-          // Models genuinely missing -- degrade to classical DSP
-          setEnginePill('engMlPill', 'unavailable');
-          mlResolved = true;
+      // SAB — re-check isolation (headers can matter after nav)
+      var sabOk = hasSAB();
+      setEnginePill('engSabPill', sabOk ? 'ready' : 'error');
+
+      // NET
+      var online = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean')
+        ? navigator.onLine : true;
+      setEnginePill('engNetPill', online ? 'ready' : 'error');
+
+      // CTX
+      var app = window._vipApp;
+      if (app && app.ctx && typeof app.ctx.state === 'string') {
+        if (app.ctx.state === 'closed') {
+          setEnginePill('engCtxPill', 'error');
+          setPillTitle('engCtxPill', 'AudioContext closed');
         } else {
-          setEnginePill('engMlPill', 'loading');
+          setEnginePill('engCtxPill', 'ready');
+          setPillTitle('engCtxPill', 'AudioContext ' + app.ctx.state);
+        }
+      } else if (hasAudioContext()) {
+        setEnginePill('engCtxPill', 'loading');
+        setPillTitle('engCtxPill', 'Click or press a key to unlock Web Audio');
+      } else {
+        setEnginePill('engCtxPill', 'error');
+      }
+
+      // GATE / DEESS / WORKLET from live mixer status
+      if (awOk) {
+        var st = readPlaybackWorkletStatus();
+        if (st && st.gate && st.deEsser) {
+          var gState = st.gate.state || 'pending';
+          var dState = st.deEsser.state || 'pending';
+          setEnginePill('engGatePill', mapWorkletLoadState(gState));
+          setEnginePill('engDeessPill', mapWorkletLoadState(dState));
+          setPillTitle('engGatePill', 'vip-gate — ' + gState + (st.gate.node ? ' (node active)' : ''));
+          setPillTitle('engDeessPill', 'vip-deesser — ' + dState + (st.deEsser.node ? ' (node active)' : ''));
+
+          var gBad = gState === 'failed';
+          var dBad = dState === 'failed';
+          var gOk = gState === 'loaded' || gState === 'bypassed';
+          var dOk = dState === 'loaded' || dState === 'bypassed';
+          if (gBad || dBad) setEnginePill('engWorkletPill', 'error');
+          else if (gOk && dOk) {
+            setEnginePill('engWorkletPill', 'ready');
+            workletsSettled = true;
+          } else {
+            setEnginePill('engWorkletPill', 'loading');
+          }
+          setPillTitle('engWorkletPill', 'Playback worklets gate=' + gState + ' deess=' + dState);
+        } else if (app && app._workletReady === true) {
+          setEnginePill('engWorkletPill', 'ready');
+          setEnginePill('engGatePill', 'ready');
+          setEnginePill('engDeessPill', 'ready');
+          workletsSettled = true;
+        } else {
+          // API present but modules not loaded yet (await user gesture / ensureCtx)
+          setEnginePill('engWorkletPill', 'loading');
+          setPillTitle('engWorkletPill', 'Worklets load after first click unlocks audio');
         }
       }
 
-      if ((ctxResolved && mlResolved) || (Date.now() - startedAt) > TIMEOUT) {
+      // ML + ORT — prefer live worker/provider status over a stale VIP_ML_AVAILABLE=false
+      // (app.js may set false before ort.min.js finishes evaluating on window).
+      var ortGlobal = window.ort || (typeof globalThis !== 'undefined' && globalThis.ort);
+      var ortSt = window.__vipOrtStatus;
+      var providerLive = ortSt && (ortSt.provider === 'webgpu' || ortSt.provider === 'wasm');
+      var ortApi = !!(ortGlobal && ortGlobal.InferenceSession);
+      var orchReady = !!(window._vipOrch && window._vipOrch.mlReady === true);
+
+      if (providerLive || orchReady || window.VIP_ML_AVAILABLE === true || ortApi) {
+        setEnginePill('engMlPill', 'ready');
+        setPillTitle('engMlPill', 'Local ONNX inference ready'
+          + (providerLive ? (' (' + ortSt.provider + ')') : ''));
+        if (window.VIP_ML_AVAILABLE !== true) window.VIP_ML_AVAILABLE = true;
+      } else if (window.VIP_ML_AVAILABLE === false && !ortSt) {
+        setEnginePill('engMlPill', 'unavailable');
+        setPillTitle('engMlPill', 'ONNX Runtime not loaded — classical DSP fallback');
+      } else {
+        setEnginePill('engMlPill', 'loading');
+      }
+
+      // ORT provider pill
+      if (providerLive) {
+        setEnginePill('engOrtPill', 'ready');
+        setPillTitle('engOrtPill', 'ORT provider: ' + ortSt.provider
+          + (ortSt.modelsLoaded && ortSt.modelsLoaded.length
+            ? ' · models: ' + ortSt.modelsLoaded.join(',')
+            : ''));
+      } else if (ortSt && ortSt.provider === 'error') {
+        setEnginePill('engOrtPill', 'error');
+        setPillTitle('engOrtPill', ortSt.detail || 'ORT error');
+      } else if (ortSt && ortSt.provider === 'probing') {
+        setEnginePill('engOrtPill', 'loading');
+        setPillTitle('engOrtPill', 'Probing WebGPU / WASM…');
+      } else if (ortApi) {
+        setEnginePill('engOrtPill', 'loading');
+        setPillTitle('engOrtPill', 'Waiting for MLWorker provider (WebGPU/WASM)');
+      } else if (window.VIP_ML_AVAILABLE === false && !ortSt) {
+        setEnginePill('engOrtPill', 'unavailable');
+      } else {
+        setEnginePill('engOrtPill', 'loading');
+      }
+
+      // Stop only when worklets settled (or API missing) and we have polled enough
+      // to cover late ensureCtx — never abandon GATE/DEESS as permanent "loading"
+      // after 30s the way the old driver did.
+      if (ticks >= MAX_TICKS) {
         clearInterval(iv);
+      } else if (workletsSettled && ticks > 40) {
+        // Slow down after worklets are up (still refresh NET/SAB occasionally)
+        if (ticks % 8 !== 0) return;
       }
     }, POLL_MS);
-    // Expose handle so test teardown can clear it without waiting for timeout
+
     if (typeof window !== 'undefined') window._vipPillDriverIv = iv;
   }
 

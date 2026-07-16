@@ -833,15 +833,45 @@ class VoiceIsolatePro {
     if (ort && ort.InferenceSession) {
       window.VIP_ML_AVAILABLE = true;
       pill('engMlPill', 'ready');
+      // Provider not known until MLWorker posts `ready` — leave ORT loading.
+      pill('engOrtPill', 'loading');
     } else {
       window.VIP_ML_AVAILABLE = false;
       pill('engMlPill', 'unavailable');
+      pill('engOrtPill', 'unavailable');
     }
 
-    // Lazy AudioContext — requires user gesture
+    // SAB pill — capability is known at boot (COOP/COEP isolation).
+    try {
+      const sabOk = typeof SharedArrayBuffer !== 'undefined'
+        && typeof Atomics !== 'undefined'
+        && (typeof self === 'undefined' || self.crossOriginIsolated !== false);
+      pill('engSabPill', sabOk ? 'ready' : 'error');
+    } catch {
+      pill('engSabPill', 'error');
+    }
+
+    // Probe WebGPU availability for ORT status (non-blocking).
+    void import('/src/core/OrtStatus.js').then(async (m) => {
+      try {
+        await m.probeWebGpuAvailable?.();
+        const st = m.getOrtStatus?.();
+        if (st?.webgpuAvailable) {
+          // Prefer WebGPU label until worker confirms
+          if (!window.__vipOrtStatus || window.__vipOrtStatus.provider === 'unknown') {
+            m.setOrtStatus?.({ provider: 'probing', webgpuAvailable: true });
+          }
+        }
+      } catch { /* ignore */ }
+    }).catch(() => {});
+
+    // Lazy AudioContext — requires user gesture (also kicks worklet addModule).
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
-      document.addEventListener('click', () => this.ensureCtx(), { once: true });
-      document.addEventListener('keydown', () => this.ensureCtx(), { once: true });
+      const unlock = () => { this.ensureCtx().catch(() => {}); };
+      document.addEventListener('pointerdown', unlock, { once: true, passive: true });
+      document.addEventListener('click', unlock, { once: true });
+      document.addEventListener('keydown', unlock, { once: true });
+      document.addEventListener('touchstart', unlock, { once: true, passive: true });
     }
 
     this._warmupMLModels().catch(() => {});
@@ -1013,11 +1043,17 @@ class VoiceIsolatePro {
           SLIDER_REGISTRY.forEach((s, i) => {
             this.sharedParams[i + 1] = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined) ? window.VIP_PARAMS[s.id] : (s.default ?? 0);
           });
+          pill('engSabPill', 'ready');
+        } else {
+          pill('engSabPill', 'error');
         }
 
         this._ctxReady = true;
         this._workletReady = false;
         pill('engCtxPill', 'ready');
+        pill('engWorkletPill', 'loading');
+        pill('engGatePill', 'loading');
+        pill('engDeessPill', 'loading');
 
         // Boot Live-Mix bridge + gate/de-esser worklets without blocking decode.
         // Upload/process must not wait on AudioWorklet addModule.
