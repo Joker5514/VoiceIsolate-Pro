@@ -583,6 +583,12 @@ function getWorker() {
         if (debugEnabled) {
           console.log('[VIP][landing] MLWorker ready (backend: ' + msg.backend + ')');
         }
+        // Provider status for research / UI (OrtStatus also updated in MLWorkerHost).
+        try {
+          const label = msg.backend === 'webgpu' ? 'WebGPU' : (msg.backend || 'WASM');
+          const el = document.getElementById('ortProviderHint');
+          if (el) el.textContent = `Inference: ${label} (local)`;
+        } catch (_) { /* ignore */ }
         warmupWorkerModels(DEFAULT_WARMUP_CHAIN).catch(() => {});
         break;
       }

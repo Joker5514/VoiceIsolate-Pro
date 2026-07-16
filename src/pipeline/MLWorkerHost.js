@@ -7,6 +7,7 @@
 
 import { MODEL_MANIFEST } from '../core/ModelManifest.js';
 import { attachMLWorkerModelCache } from '../core/ModelCacheBridge.js';
+import { applyMlWorkerMessage, setOrtStatus } from '../core/OrtStatus.js';
 
 /**
  * @returns {Worker}
@@ -14,6 +15,10 @@ import { attachMLWorkerModelCache } from '../core/ModelCacheBridge.js';
 export function createMLWorker() {
   const worker = new Worker('/src/workers/MLWorker.js');
   attachMLWorkerModelCache(worker);
+  setOrtStatus({ provider: 'probing', detail: null });
+  worker.addEventListener('message', (ev) => {
+    applyMlWorkerMessage(ev.data || {});
+  });
   return worker;
 }
 

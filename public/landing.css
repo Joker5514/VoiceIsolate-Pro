@@ -84,6 +84,22 @@
   --pulse-glow: 0 0 20px rgba(220, 38, 38, 0.35);
 }
 
+/* Consumer-mode ORT provider hint (Landing) */
+.ort-provider-hint {
+  margin-left: auto;
+  font: var(--fw-medium) var(--fs-2xs) / 1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 /* ── Reset & Base ─────────────────────────────────────────────────────── */
 
 /* Ambient spectral aurora behind the app shell */

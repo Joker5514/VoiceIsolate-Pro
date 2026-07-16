@@ -1,8 +1,14 @@
 /**
  * VoiceIsolate Pro — dsp-processor.js
- * AudioWorkletProcessor: Threads from Space v8
+ * AudioWorkletProcessor: Threads from Space v8 (research / packaged path)
  * ==========================================================
- * Architecture:
+ * PRODUCT NOTE (Architecture v26 / CLAUDE.md §1.1):
+ *   This processor implements a real-time STFT ↔ SAB ↔ iSTFT loop for research
+ *   and packaging integrity. The shipping product path is Stem-Split & Live-Mix
+ *   (offline MLWorker + PlaybackMixer). Live microphone ingestion is FORBIDDEN.
+ *   ONNX Runtime must NEVER be called from process() — only via Worker/main.
+ *
+ * Architecture (single-pass spectral hop):
  *   1. Accumulate 128-sample quanta into a 4096-pt ring buffer (mono mix)
  *   2. Every HOP_SIZE (1024) new samples: apply periodic Hann window + single
  *      forward FFT (one STFT per hop — strict single-pass constraint)
