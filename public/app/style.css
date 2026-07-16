@@ -1655,12 +1655,16 @@ body::after {
 .wm-btn.active[data-mode="2"] { background: #7c2d12; color: #fb923c; border-color: #9a3412; }
 .wm-btn.active[data-mode="3"] { background: #4c1d95; color: #c4b5fd; border-color: #6d28d9; box-shadow: 0 0 12px #7c3aed44; }
 
+/* Always-visible WhisperHunter CTA (all workflow tiers) */
 #btn-whisper-hunter {
+  display: inline-flex !important;
+  visibility: visible !important;
   width: 100%; margin: 10px 0; padding: 12px;
   background: linear-gradient(135deg, #1a0533, #2d1060);
   border: 1px solid #7c3aed; border-radius: 8px;
   color: #c4b5fd; font-weight: 700; font-size: 0.88em;
-  cursor: pointer; display: flex; align-items: center;
+  cursor: pointer;
+  align-items: center;
   justify-content: center; gap: 8px;
   transition: all 200ms ease;
 }

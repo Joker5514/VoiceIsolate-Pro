@@ -34,41 +34,41 @@ export function getWhisperPlatformProfile(platform = detectWhisperPlatform()) {
     case 'android':
       return {
         platform: 'android',
-        maxChunks: 10,
-        timeoutMs: 8000,
+        maxChunks: 6,
+        timeoutMs: 4000,
         chunkYieldMs: 4,
         mlEnabled: true,
-        forensicCap: 3,
+        forensicCap: 1,
         minPasses: 1,
       };
     case 'ios':
       return {
         platform: 'ios',
-        maxChunks: 10,
-        timeoutMs: 8000,
+        maxChunks: 6,
+        timeoutMs: 4000,
         chunkYieldMs: 2,
         mlEnabled: true,
-        forensicCap: 3,
+        forensicCap: 1,
         minPasses: 1,
       };
     case 'desktop':
       return {
         platform: 'desktop',
-        maxChunks: 24,
-        timeoutMs: 5000,
+        maxChunks: 12,
+        timeoutMs: 3500,
         chunkYieldMs: 0,
         mlEnabled: true,
-        forensicCap: 4,
+        forensicCap: 1,
         minPasses: 1,
       };
     default:
       return {
         platform: 'browser',
-        maxChunks: 18,
-        timeoutMs: 4500,
+        maxChunks: 10,
+        timeoutMs: 3500,
         chunkYieldMs: 0,
         mlEnabled: true,
-        forensicCap: 4,
+        forensicCap: 1,
         minPasses: 1,
       };
   }

@@ -21,7 +21,7 @@ import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
-import { createYieldBudget } from '/src/pipeline/ui-yield.js';
+import { createYieldBudget, yieldToBrowser } from '/src/pipeline/ui-yield.js';
 import { sliceAudioBuffer } from '/src/core/audio-slice.js';
 import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
@@ -2466,6 +2466,8 @@ class VoiceIsolatePro {
     this._mlIsolationSucceeded = false;
     this._updateProcessButtonsState();
     stageStart('pipeline');
+    // Let the browser paint the processing overlay before heavy work.
+    await yieldToBrowser();
 
     // Hide process buttons, show stop button
     if (this.dom.mobileProcessBtn) {
@@ -2478,16 +2480,12 @@ class VoiceIsolatePro {
       this.dom.mobileStopBtn.style.display = 'inline-flex';
     }
 
-    const wm = this._getWhisperModeState();
-    // Forensic multi-pass multiplies full STFT cost. Cap at 2; auto-process is always 1.
-    let totalPasses = this._forceSinglePass ? 1 : Math.min(2, wm.passes || 1);
-    if (this._autoPipelineRun) {
-      totalPasses = 1;
-      this._autoPipelineRun = false;
-    }
-    // Manual reprocess after a successful ML run: prefer cache (near-instant) and
-    // never re-enter multi-pass DSP unless ML is unavailable.
-    if (this._mlIsolationSucceeded && totalPasses > 1) totalPasses = 1;
+    // Always single-pass isolation on the auto/default path — multi-pass STFT
+    // loops freeze the main thread for multi-minute files. Whisper aggressiveness
+    // is controlled by whisperMode spectral params inside one spectral stage.
+    let totalPasses = 1;
+    if (this._autoPipelineRun) this._autoPipelineRun = false;
+    void this._getWhisperModeState();
 
     this.setStatus('PROCESSING');
     this.updatePipelineProgress(0, totalPasses > 1 ? 'Starting isolation passes…' : 'ML isolation…', 0);
@@ -2718,17 +2716,23 @@ class VoiceIsolatePro {
     // Stereo → process mid once (halves STFT + spectral cost). Re-expand at end.
     const processStereoAsMid = nCh >= 2;
     let channels;
+    const yieldBudget = createYieldBudget(12);
     if (processStereoAsMid) {
       const L = buf.getChannelData(0);
       const R = buf.getChannelData(1);
       const mid = new Float32Array(len);
-      for (let i = 0; i < len; i++) mid[i] = 0.5 * (L[i] + R[i]);
+      const CHUNK = 48000; // ~1 s
+      for (let i = 0; i < len; i++) {
+        mid[i] = 0.5 * (L[i] + R[i]);
+        if (i > 0 && (i % CHUNK) === 0) await yieldBudget();
+      }
       channels = [mid];
       this._dspStereoSources = { L, R, mid };
     } else {
       channels = [buf.getChannelData(0).slice()];
       this._dspStereoSources = null;
     }
+    await yieldToBrowser();
 
     // ── Pass 1–2: input conditioning + time-domain cleanup ──
     this.updatePipelineProgress(3, 'Conditioning input…', 8);
@@ -3077,22 +3081,31 @@ class VoiceIsolatePro {
 
   // S10–S20: spectral isolation on a single channel. Exactly ONE forward STFT
   // and ONE inverse STFT — the single-pass spectral contract (CLAUDE.md §1).
-  // Fast path: FFT 2048 / hop 768 (~33% fewer frames than 512, still COLA-safe).
+  // Fast path: FFT 2048 / hop 1024 (50% COLA, ~2× fewer frames than 512).
   // Forensic (whisperMode ≥ 2): full 4096 / 1024 for whisper recovery quality.
+  // Async STFT yields so long files no longer freeze the browser tab.
   async _spectralStageAsync(data, sr, p, onProgress) {
     const DSP = this._resolveDSP();
     const whisperMode = Math.round(p.whisperMode ?? this.whisperMode ?? 0);
     const forensic = whisperMode >= 2;
     const FFT = forensic ? 4096 : 2048;
-    const HOP = forensic ? 1024 : 768;
-    const FRAME_CHUNK = forensic ? 256 : 640;
+    const HOP = 1024;
+    const FRAME_CHUNK = forensic ? 128 : 256;
     if (!DSP || !data || data.length < FFT) return data;
 
-    const yieldBudget = createYieldBudget(forensic ? 32 : 64);
-    if (onProgress) onProgress(0.05);
+    const yieldBudget = createYieldBudget(forensic ? 10 : 12);
+    if (onProgress) onProgress(0.02);
+    await yieldToBrowser();
 
-    const spec = DSP.forwardSTFT(data, FFT, HOP);
-    if (onProgress) onProgress(0.15);
+    const stftOpts = {
+      yieldEvery: forensic ? 24 : 40,
+      onProgress: (frac) => { if (onProgress) onProgress(0.02 + frac * 0.18); },
+      shouldAbort: () => this.abortFlag,
+    };
+    const spec = typeof DSP.forwardSTFTAsync === 'function'
+      ? await DSP.forwardSTFTAsync(data, FFT, HOP, stftOpts)
+      : DSP.forwardSTFT(data, FFT, HOP);
+    if (onProgress) onProgress(0.22);
     await yieldBudget();
     if (!spec || !Array.isArray(spec.mag) || spec.mag.length === 0) return data;
     const mag = spec.mag;
@@ -3109,6 +3122,7 @@ class VoiceIsolatePro {
       const scale = 1 + (p.nrSensitivity ?? 60) / 100 * 0.6 + (p.nrSpectralSub ?? 50) / 100 * 0.6;
       for (let k = 0; k < noise.length; k++) noise[k] *= scale;
       DSP.wienerMMSE(mag, noise, nrAmount);
+      await yieldBudget();
     }
 
     if ((p.nrFloor ?? -96) > -96) DSP.spectralGate(mag, p.nrFloor ?? -72, sr, HOP);
@@ -3116,6 +3130,7 @@ class VoiceIsolatePro {
     if ((p.nrSmoothing ?? 0) > 0) DSP.temporalSmooth(mag, p.nrSmoothing);
     if (Math.abs(p.specTilt ?? 0) > 0.01) this._applySpectralTilt(mag, sr, p.specTilt, halfN, FFT);
     if (Math.abs(p.formantShift ?? 0) > 0.01) this._applyFormantShiftSpec(mag, p.formantShift, halfN);
+    await yieldBudget();
     const derevTotal = Math.min(100, (p.derevAmt ?? 0) + (p.roomCorrection ?? 0) * 0.5);
     if (derevTotal > 0) {
       const decaySec = 0.12 + (p.derevDecay ?? 50) / 100 * 0.68;
@@ -3128,7 +3143,12 @@ class VoiceIsolatePro {
     if ((p.breathControl ?? 0) > 0) this._applyBreathControl(mag, p.breathControl, halfN);
     if (Math.abs(p.transientShaper ?? 0) > 1) this._applyTransientShaper(mag, p.transientShaper);
     if ((p.subHarmonic ?? 0) > 0) this._applySubHarmonic(mag, sr, p, halfN, FFT);
+    await yieldBudget();
 
+    // Ensure WhisperHunter instance exists when whisper mode is engaged.
+    if (whisperMode > 0 && typeof ensureWhisperHunterInstance === 'function') {
+      ensureWhisperHunterInstance(FFT, sr);
+    }
     const runExtreme = this._extremeSpectralActive(p);
     const hunter = whisperMode > 0 && typeof window !== 'undefined' ? window._vipWhisperHunter : null;
     const mapUi = (typeof window !== 'undefined' && window.mapWhisperUi) ? window.mapWhisperUi : () => 0.5;
@@ -3150,15 +3170,21 @@ class VoiceIsolatePro {
         if (whParams) {
           for (let f = f0; f < f1; f++) hunter.processMagnitudes(mag[f], phase[f], whParams);
         }
-        if (onProgress) onProgress(0.2 + 0.65 * (f1 / totalFrames));
+        if (onProgress) onProgress(0.25 + 0.55 * (f1 / totalFrames));
         await yieldBudget();
       }
     } else if (onProgress) {
-      onProgress(0.85);
+      onProgress(0.80);
     }
 
-    if (onProgress) onProgress(0.92);
-    const rendered = DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);
+    if (onProgress) onProgress(0.85);
+    await yieldToBrowser();
+    const rendered = typeof DSP.inverseSTFTAsync === 'function'
+      ? await DSP.inverseSTFTAsync(mag, phase, FFT, HOP, data.length, {
+        yieldEvery: forensic ? 24 : 40,
+        onProgress: (frac) => { if (onProgress) onProgress(0.85 + frac * 0.14); },
+      })
+      : DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);
     if (onProgress) onProgress(1);
     return (rendered && rendered.length === data.length) ? rendered : data;
   }
@@ -4331,13 +4357,13 @@ const WHISPER_HUNTER = {
         whisperMode: separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1,
       }, 600);
 
-      const mode = window.VIP_PARAMS?.whisperMode ?? 2;
-      const passPlan = mode >= 3 ? 4 : mode === 2 ? 2 : 1;
-      const numPasses = Math.min(platformProfile.forensicCap, Math.max(platformProfile.minPasses, passPlan));
-      if (numPasses > 1) {
-        await this.runForensicPasses(audioBuffer, numPasses, app, envProfile);
-      } else {
+      // Single pipeline pass keeps the UI responsive. WhisperMode still drives
+      // spectral aggressiveness inside the offline path — multi-pass loops froze tabs.
+      app._forceSinglePass = true;
+      try {
         await app.runPipeline();
+      } finally {
+        app._forceSinglePass = false;
       }
 
       this.reportResults(envProfile, avgMaskConf, app, platformProfile);
@@ -4354,9 +4380,9 @@ const WHISPER_HUNTER = {
     if (envProfile.dominantNoise === 'music' && envProfile.rt60 > 500) return 'Whisper in a Club';
     if (envProfile.dominantNoise === 'crowd' && envProfile.speechPresence < 0.35) return 'Stadium Crowd';
     if (envProfile.voiceRatio < 0.18) return 'Forensic Extract';
-    if (envProfile.rt60 < 200) return 'Whisper Room';
-    if (envProfile.dominantNoise === 'traffic') return 'Forensic Extract';
-    return 'Whisper in a Club';
+    if (envProfile.rt60 < 200) return 'Whisper Boost';
+    if (envProfile.dominantNoise === 'traffic') return 'Surveillance';
+    return 'Whisper Boost';
   },
 
   async runDeepFilterNet(audioBuffer, app, platformProfile = getWhisperPlatformProfile()) {
@@ -4385,32 +4411,27 @@ const WHISPER_HUNTER = {
   },
 
   async runForensicPasses(buffer, numPasses, app, envProfile = {}) {
+    // Cap at 1 — full reprocess loops freeze the browser on multi-minute files.
     app = app || window._vipApp;
-    let current = buffer;
-    for (let pass = 0; pass < numPasses; pass++) {
-      const detail = document.getElementById('pipeDetail');
-      if (detail) detail.textContent = `WhisperHunter pass ${pass + 1}/${numPasses}…`;
-
-      const escalate = pass / Math.max(1, numPasses - 1);
-      await app.morphSlidersTo({
-        crowdNull: Math.min(100, Math.round(62 + escalate * 32)),
-        musicKill: Math.min(100, Math.round((envProfile.dominantNoise === 'music' ? 70 : 48) + escalate * 28)),
-        whisperLift: Math.min(40, Math.round(12 + escalate * 14)),
-        whisperThreshold: Math.min(100, Math.round(45 + escalate * 40)),
-        voiceTunnel: Math.min(100, Math.round(50 + escalate * 30)),
-        snrFloor: Math.round(-76 - escalate * 8),
-      }, 280);
-
-      app.inputBuffer = current;
-      app._forceSinglePass = true;
+    const detail = document.getElementById('pipeDetail');
+    if (detail) detail.textContent = 'WhisperHunter isolation (single pass)…';
+    await app.morphSlidersTo({
+      crowdNull: Math.min(100, Math.round(70 + (envProfile.speechPresence < 0.3 ? 20 : 0))),
+      musicKill: Math.min(100, Math.round(envProfile.dominantNoise === 'music' ? 85 : 55)),
+      whisperLift: 18,
+      whisperThreshold: 62,
+      voiceTunnel: 65,
+      snrFloor: -72,
+      whisperMode: Math.min(2, Math.max(1, Math.round(numPasses > 1 ? 2 : 1))),
+    }, 200);
+    app.inputBuffer = buffer;
+    app._forceSinglePass = true;
+    try {
       await app.runPipeline();
+    } finally {
       app._forceSinglePass = false;
-      current = app.procBuffer || app.outputBuffer || current;
-      this.updateNoiseProfileFromBuffer(current, app);
     }
-    app.procBuffer = current;
-    app.outputBuffer = current;
-    if (typeof app.renderStaticVisuals === 'function') app.renderStaticVisuals(current);
+    this.updateNoiseProfileFromBuffer(app.procBuffer || app.outputBuffer || buffer, app);
   },
 
   updateNoiseProfileFromBuffer(buffer, app) {

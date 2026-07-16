@@ -17,7 +17,7 @@ export const WORKFLOW_TIERS = Object.freeze({
     showPresetSelect: false,
     showScenePicker: false,
     showSearch: false,
-    showWhisperHunter: false,
+    showWhisperHunter: true,
     showSaveCustom: false,
   },
   studio: {
@@ -28,15 +28,15 @@ export const WORKFLOW_TIERS = Object.freeze({
     statusIdle: 'Studio — pick a scene preset, tune lightly, then process',
     defaultPreset: 'Podcast Clean',
     presets: [
-      'Podcast Clean', 'Phone/Radio', 'Phone Wiretap',
-      'Whisper Boost', 'Heavy Rain Call', 'Voice Clarity', 'Stadium Crowd',
+      'Podcast Clean', 'Phone/Radio',
+      'Whisper Boost', 'Voice Clarity', 'Stadium Crowd', 'Surveillance',
     ],
-    groups: ['gate', 'nr', 'eq', 'dyn', 'sep', 'out'],
+    groups: ['gate', 'nr', 'eq', 'dyn', 'sep', 'out', 'extreme'],
     showPresetGrid: true,
     showPresetSelect: true,
     showScenePicker: true,
     showSearch: true,
-    showWhisperHunter: false,
+    showWhisperHunter: true,
     showSaveCustom: true,
   },
   forensic: {
@@ -62,7 +62,7 @@ export const STUDIO_SCENES = Object.freeze([
   { id: 'film', label: 'Film', preset: 'Voice Clarity' },
   { id: 'interview', label: 'Interview', preset: 'Voice Clarity' },
   { id: 'broadcast', label: 'Broadcast', preset: 'Podcast Clean' },
-  { id: 'restoration', label: 'Restoration', preset: 'Heavy Rain Call' },
+  { id: 'restoration', label: 'Restoration', preset: 'Surveillance' },
   { id: 'custom', label: 'Custom', preset: null },
 ]);
 
@@ -193,8 +193,12 @@ const WorkflowTier = (() => {
 
     const whisperBtn = $('btn-whisper-hunter');
     if (whisperBtn) {
-      whisperBtn.hidden = !tier.showWhisperHunter;
-      whisperBtn.style.display = tier.showWhisperHunter ? '' : 'none';
+      // Always surface WhisperHunter AI — tiers may still flag showWhisperHunter
+      // but we no longer hide the control (was effectively "removed" on Creator/Studio).
+      whisperBtn.hidden = false;
+      whisperBtn.style.display = '';
+      whisperBtn.removeAttribute('hidden');
+      whisperBtn.setAttribute('aria-hidden', 'false');
     }
 
     const sceneRow = $('heroSceneRow');

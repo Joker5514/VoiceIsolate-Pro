@@ -30,12 +30,14 @@ describe('Engineer processing speed path', () => {
 
   test('spectral stage uses FFT 2048 for non-forensic Engineer path', () => {
     expect(appJs).toMatch(/const FFT = forensic \? 4096 : 2048/);
-    // Fast path hop 768 (~33% fewer frames than 512, still COLA-safe)
-    expect(appJs).toMatch(/const HOP = forensic \? 1024 : 768/);
+    // Hop 1024 for both paths — fewer frames, UI-friendly async STFT
+    expect(appJs).toMatch(/const HOP = 1024/);
+    expect(appJs).toContain('forwardSTFTAsync');
   });
 
-  test('forensic multi-pass is capped at 2', () => {
-    expect(appJs).toMatch(/Math\.min\(2,\s*wm\.passes/);
+  test('isolation always uses a single process pass (UI freeze guard)', () => {
+    expect(appJs).toMatch(/let totalPasses = 1/);
+    expect(appJs).toContain('Always single-pass isolation');
   });
 
   test('extreme noise-floor scan only runs when extreme path is active', () => {
