@@ -2746,7 +2746,7 @@ class VoiceIsolatePro {
       const mid = new Float32Array(len);
       for (let i = 0; i < len; i++) mid[i] = 0.5 * (L[i] + R[i]);
       channels = [mid];
-      this._dspStereoSources = { L, R };
+      this._dspStereoSources = { L, R, mid };
     } else {
       channels = [buf.getChannelData(0).slice()];
       this._dspStereoSources = null;
