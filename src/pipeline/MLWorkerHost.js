@@ -18,6 +18,22 @@ export function createMLWorker() {
   setOrtStatus({ provider: 'probing', detail: null });
   worker.addEventListener('message', (ev) => {
     applyMlWorkerMessage(ev.data || {});
+    // Mirror ORT/ML cockpit pills when the worker reports provider/backend.
+    const msg = ev.data || {};
+    const setPill = globalThis._setVipEnginePill;
+    if (typeof setPill !== 'function') return;
+    if (msg.type === 'ready') {
+      const backend = String(msg.backend || '').toLowerCase();
+      setPill('engOrtPill', backend === 'webgpu' || backend === 'wasm' ? 'ready' : 'loading');
+      setPill('engMlPill', 'ready');
+      try {
+        const el = globalThis.document?.getElementById?.('engOrtPill');
+        if (el) el.title = `ORT provider: ${backend || 'unknown'}`;
+      } catch { /* ignore */ }
+    } else if (msg.type === 'error' && !msg.requestId) {
+      setPill('engOrtPill', 'error');
+      setPill('engMlPill', 'error');
+    }
   });
   return worker;
 }

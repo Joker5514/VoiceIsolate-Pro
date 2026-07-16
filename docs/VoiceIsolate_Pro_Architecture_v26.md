@@ -162,6 +162,21 @@ Typical \(M_{floor} = -30\,\mathrm{dB}\) (`MASK_FLOOR_DB` in core).
 | Benchmark harness | `src/pipeline/BenchmarkHarness.js` |
 | ORT status helper | `src/core/OrtStatus.js` |
 | Research UI | `public/app/research-mode.js` |
+| Engine cockpit pills | `public/app/vip-boot.js` (CTX/WORKLET/GATE/DEESS/SAB/ML/ORT/NET) |
+| Playback worklet load | `src/pipeline/PlaybackMixer.js` (`ensureWorkletModule`) |
+
+### 8.1 Cockpit pill contracts
+
+| Pill | Ready means |
+|------|-------------|
+| **CTX** | `AudioContext` created (after user gesture) |
+| **WORKLET** | Gate + de-esser modules settled (loaded or bypassed) |
+| **GATE** | `vip-gate` node spliced (or bypassed) |
+| **DEESS** | `vip-deesser` node spliced (or bypassed) |
+| **SAB** | `SharedArrayBuffer` + cross-origin isolation |
+| **ML** | ONNX Runtime present for local worker inference |
+| **ORT** | Worker reported WebGPU or WASM provider |
+| **NET** | `navigator.onLine` (models still local; net only for asset host) |
 
 ---
 
