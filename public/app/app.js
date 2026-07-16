@@ -2793,7 +2793,7 @@ class VoiceIsolatePro {
     }
 
     // S15 crosstalk (only when both channels were processed independently — skipped on mid path)
-    if (channels.length >= 2 && (p.crosstalkCancel ?? 0) > 0 && !processStereoAsMid) {
+    if (channels.length >= 2 && (p.crosstalkCancel ?? 0) > 0) {
       this._applyStereoCrosstalk(channels, (p.crosstalkCancel ?? 0) / 100);
     }
 
