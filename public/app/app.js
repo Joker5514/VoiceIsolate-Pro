@@ -1031,15 +1031,26 @@ class VoiceIsolatePro {
           else if ((g === 'loaded' || g === 'bypassed') && (d === 'loaded' || d === 'bypassed')) pill('engWorkletPill', 'ready');
           else pill('engWorkletPill', 'loading');
         };
+        // Resume before worklet modules — suspended contexts flake addModule.
+        if (this.ctx.state === 'suspended') {
+          try { await this.ctx.resume(); } catch { /* best-effort */ }
+        }
         void this._ensureBridge()
           .then(async (bridge) => {
+            if (this.ctx?.state === 'suspended') {
+              try { await this.ctx.resume(); } catch { /* ignore */ }
+            }
             if (bridge?.workletsReady) await bridge.workletsReady();
             const st = bridge?.getWorkletStatus?.() || {};
             const gateOk = st.gate?.state === 'loaded' || st.gate?.state === 'bypassed';
             const deOk = st.deEsser?.state === 'loaded' || st.deEsser?.state === 'bypassed';
             this._workletReady = gateOk && deOk;
             paintWorkletPills(st);
+            try { globalThis.__vipWorkletStatus = st; } catch { /* ignore */ }
             structuredLog('info', '[VIP] Playback worklets ready', st);
+            if (!gateOk || !deOk) {
+              structuredLog('warn', '[VIP] One or more worklets did not load', st);
+            }
           })
           .catch((wErr) => {
             structuredLog('warn', '[VIP] Worklet boot failed (mixer bypass)', { err: wErr?.message });

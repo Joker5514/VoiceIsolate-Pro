@@ -92,9 +92,14 @@ app.use('/models', express.static(join(__dirname, 'public', 'models'), {
 }));
 
 // ── Serve /src (4-layer Stem-Split & Live-Mix modules — see CLAUDE.md) ──
+// AudioWorklet addModule requires correct JS MIME + CORP for COEP pages.
 app.use('/src', express.static(join(__dirname, 'src'), {
-  setHeaders: (res) => {
+  setHeaders: (res, filePath) => {
     res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    if (filePath.endsWith('.js')) {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache');
+    }
   }
 }));
 

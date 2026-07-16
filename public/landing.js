@@ -1040,6 +1040,12 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
 
   if (!mixer) {
     mixer = new PlaybackMixer();
+    // Ensure gate/de-esser worklets finish loading (non-blocking for play).
+    void mixer.workletsReady?.().then(() => {
+      try {
+        globalThis.__vipWorkletStatus = mixer.getWorkletStatus?.();
+      } catch { /* ignore */ }
+    }).catch(() => {});
     sliderUI = new SliderUI(mixer);
     sliderUI.bind();
     speakerControls = new SpeakerControls(mixer, ui.speakerCardsGrid);
