@@ -238,6 +238,127 @@ const DSPCore = {
   },
 
   /**
+   * Async STFT — same single-pass math as forwardSTFT, but yields to the UI
+   * every `yieldEvery` frames so long files do not freeze the browser tab.
+   * @param {Float32Array} data
+   * @param {number} [fftSize]
+   * @param {number} [hopSize]
+   * @param {{ yieldEvery?: number, onProgress?: (frac: number) => void, shouldAbort?: () => boolean }} [opts]
+   * @returns {Promise<{ mag: Float32Array[], phase: Float32Array[], frameCount: number }>}
+   */
+  async forwardSTFTAsync(data, fftSize = 4096, hopSize = 1024, opts = {}) {
+    if (!Number.isInteger(fftSize) || fftSize < 2 || (fftSize & (fftSize - 1)) !== 0) {
+      throw new RangeError(`forwardSTFTAsync: fftSize must be a power of two >= 2 (got ${fftSize})`);
+    }
+    const yieldEvery = Math.max(8, opts.yieldEvery || 48);
+    const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+    const shouldAbort = typeof opts.shouldAbort === 'function' ? opts.shouldAbort : null;
+    const window = this.hannWindow(fftSize);
+    const halfN = fftSize / 2 + 1;
+    const frameCount = data.length >= fftSize
+      ? Math.floor((data.length - fftSize) / hopSize) + 1
+      : 0;
+    const mag = new Array(frameCount);
+    const phase = new Array(frameCount);
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
+    const yieldUI = () => new Promise((resolve) => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => setTimeout(resolve, 0));
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
+
+    for (let f = 0; f < frameCount; f++) {
+      if (shouldAbort && shouldAbort()) {
+        return { mag: mag.slice(0, f), phase: phase.slice(0, f), frameCount: f };
+      }
+      const offset = f * hopSize;
+      imag.fill(0);
+      for (let i = 0; i < fftSize; i++) {
+        real[i] = (offset + i < data.length) ? data[offset + i] * window[i] : 0;
+      }
+      this._fft(real, imag, false);
+      const m = new Float32Array(halfN);
+      const p = new Float32Array(halfN);
+      for (let k = 0; k < halfN; k++) {
+        m[k] = Math.sqrt(real[k] * real[k] + imag[k] * imag[k]);
+        p[k] = Math.atan2(imag[k], real[k]);
+      }
+      mag[f] = m;
+      phase[f] = p;
+      if (f > 0 && (f % yieldEvery) === 0) {
+        if (onProgress) onProgress(f / frameCount);
+        await yieldUI();
+      }
+    }
+    if (onProgress) onProgress(1);
+    return { mag, phase, frameCount };
+  },
+
+  /**
+   * Async inverse STFT with periodic UI yields (same OLA math as inverseSTFT).
+   */
+  async inverseSTFTAsync(mag, phase, fftSize = 4096, hopSize = 1024, outputLength = 0, opts = {}) {
+    if (!Number.isInteger(fftSize) || fftSize < 2 || (fftSize & (fftSize - 1)) !== 0) {
+      throw new RangeError(`inverseSTFTAsync: fftSize must be a power of two >= 2 (got ${fftSize})`);
+    }
+    const yieldEvery = Math.max(8, opts.yieldEvery || 48);
+    const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+    const window = this.hannWindow(fftSize);
+    const windowSq = this._hannSqCache(fftSize, window);
+    const frameCount = mag.length;
+    const halfN = fftSize / 2 + 1;
+    const len = outputLength || (frameCount - 1) * hopSize + fftSize;
+    const output = new Float32Array(len);
+    const windowSum = new Float32Array(len);
+    const real = new Float32Array(fftSize);
+    const imag = new Float32Array(fftSize);
+
+    const yieldUI = () => new Promise((resolve) => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => setTimeout(resolve, 0));
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
+
+    for (let f = 0; f < frameCount; f++) {
+      const offset = f * hopSize;
+      const magF = mag[f];
+      const phaseF = phase[f];
+      for (let k = 0; k < halfN; k++) {
+        const rawM = magF[k];
+        const m = (rawM >= 0 && rawM < Infinity) ? rawM : 0;
+        const ph = phaseF[k];
+        real[k] = m * Math.cos(ph);
+        imag[k] = m * Math.sin(ph);
+      }
+      for (let k = halfN; k < fftSize; k++) {
+        real[k] = real[fftSize - k];
+        imag[k] = -imag[fftSize - k];
+      }
+      this._fft(real, imag, true);
+      const nMax = Math.min(fftSize, len - offset);
+      for (let i = 0; i < nMax; i++) {
+        output[offset + i] += real[i] * window[i];
+        windowSum[offset + i] += windowSq[i];
+      }
+      if (f > 0 && (f % yieldEvery) === 0) {
+        if (onProgress) onProgress(f / frameCount);
+        await yieldUI();
+      }
+    }
+    for (let i = 0; i < len; i++) {
+      if (windowSum[i] > 1e-12) output[i] /= windowSum[i];
+    }
+    if (onProgress) onProgress(1);
+    return output;
+  },
+
+  /**
    * Inverse STFT: magnitude + phase → time-domain
    * Single exit point after all spectral operations.
    */
