@@ -21,6 +21,13 @@ node_modules
 /build
 /dist
 
+# Large installers / APKs (publish via GitHub Releases only)
+*.apk
+*.aab
+*.ipa
+public/download/*.apk
+public/download/*.aab
+
 # misc
 .DS_Store
 *.pem
