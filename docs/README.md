@@ -10,6 +10,7 @@
 | [VoiceIsolate-Pro_Master_Blueprint_v2.1.md](VoiceIsolate-Pro_Master_Blueprint_v2.1.md) | Product / eng | Authoritative product blueprint (cross-platform) |
 | [REVENUECAT_ISOLATION.md](REVENUECAT_ISOLATION.md) | Mobile | In-app purchase boundary rules |
 | [adr/001-firebase-exception.md](adr/001-firebase-exception.md) | Contributors | Why Firebase is the sole cloud exception |
+| [../download/README.md](../download/README.md) | Users / mobile | Android APK build + GitHub Releases download |
 
 ### Audits
 

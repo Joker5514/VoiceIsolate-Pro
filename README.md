@@ -3,6 +3,10 @@
 <p align="center">
   <a href="https://voice-isolate-pro.vercel.app"><strong>Live Demo</strong></a>
   &nbsp;·&nbsp;
+  <a href="https://voice-isolate-pro.vercel.app/download/"><strong>Download</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases"><strong>Android APK</strong></a>
+  &nbsp;·&nbsp;
   <a href="docs/README.md">Documentation</a>
   &nbsp;·&nbsp;
   <a href="CONTRIBUTING.md">Contributing</a>
@@ -43,9 +47,20 @@
 | Route | Surface | What it does |
 |-------|---------|--------------|
 | [`/`](https://voice-isolate-pro.vercel.app/) | **Landing — Stem-Split** | Fast ML stem separation (vocals / accompaniment / noise). Upload → auto-process → preview stems. |
-| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Mode v24** | Full 67-slider DSP suite, scene presets, 3D spectrogram, A/B transport, forensic audit log. |
+| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Mode v24** | Full 67-slider DSP suite, scene presets, 3D spectrogram, A/B transport, forensic audit log, WhisperHunter AI. |
+| [`/download/`](https://voice-isolate-pro.vercel.app/download/) | **Downloads** | Android APK (GitHub Releases), web links, desktop build notes. |
 
 **Upload controls (both pages):** Browse Files (`<label for="fileInput">`), click the drop zone, drag-and-drop, or **Upload Audio or Video** in the Engineer hero. Shared wiring lives in `src/presentation/UploadWiring.js`.
+
+### Playback worklets & engine status (Engineer)
+
+| Component | Role |
+|-----------|------|
+| `vip-gate` | Real-time noise gate (`src/workers/GateProcessor.js`) |
+| `vip-deesser` | Real-time de-esser (`src/workers/DeEsserProcessor.js`) |
+| Cockpit pills | **CTX · WORKLET · GATE · DEESS · SAB · ML · ORT · NET** — driven by `vip-boot.js` + `PlaybackMixer` |
+
+Verify packaging: `pnpm worklets:verify`.
 
 ---
 
@@ -160,8 +175,29 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 | `pnpm validate` | Structural integrity gate (CI) |
 | `pnpm lint` | ESLint |
 | `pnpm worklets:verify` | AudioWorklet packaging check |
-| `pnpm android:build:win` | Windows Android debug APK |
+| `pnpm android:build:win` | Windows Android debug APK → `dist/android/` |
+| `pnpm android:build` | Android debug APK (Unix/macOS) |
+| `pnpm worklets:verify` | AudioWorklet packaging integrity |
 | `pnpm build:electron:dir` | Desktop unpacked (Windows) |
+
+### Android download
+
+| Channel | URL |
+|---------|-----|
+| **Web download page** | https://voice-isolate-pro.vercel.app/download/ |
+| **GitHub Releases (APK)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
+| **Latest APK asset** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
+
+Build locally (Windows):
+
+```bash
+pnpm android:build:win
+# → dist/android/VoiceIsolate-Pro-debug.apk
+# → android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Sideload: enable **Install unknown apps** for your browser/file manager, then open the APK.  
+Details: [download/README.md](download/README.md).
 
 ### Upload troubleshooting
 
@@ -199,8 +235,11 @@ android/             Capacitor Android project
 | Topic | Link |
 |-------|------|
 | Full docs index | [docs/README.md](docs/README.md) |
+| Architecture v26 | [docs/VoiceIsolate_Pro_Architecture_v26.md](docs/VoiceIsolate_Pro_Architecture_v26.md) |
+| Technical whitepaper | [docs/VoiceIsolate_Pro_Technical_Whitepaper.md](docs/VoiceIsolate_Pro_Technical_Whitepaper.md) |
 | Contributor contract | [CLAUDE.md](CLAUDE.md) |
 | AudioWorklets | [docs/WORKLETS.md](docs/WORKLETS.md) |
+| Android / desktop downloads | [download/README.md](download/README.md) |
 | Model delivery | [docs/MODEL_DELIVERY.md](docs/MODEL_DELIVERY.md) |
 | Desktop | [docs/electron-desktop.md](docs/electron-desktop.md) |
 | Master Blueprint | [docs/VoiceIsolate-Pro_Master_Blueprint_v2.1.md](docs/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) |
@@ -236,7 +275,11 @@ android/             Capacitor Android project
 
 - **Upload-only workflow** — live mic capture removed; browse, drop-zone, and hero upload CTAs wired through `UploadWiring.js`
 - **Chromium picker fix** — file inputs kept in-viewport; Browse uses native `<label for="fileInput">`
-- **Whisper Hunter** — forensic whisper isolation with cross-platform hardening (desktop, browser, Android)
+- **WhisperHunter AI** — restored on all workflow tiers; single-pass to avoid UI freezes
+- **Playback worklets** — gate + de-esser with resume/retry load; cockpit pills CTX–NET hardened
+- **UI freeze fix** — async STFT/iSTFT with rAF yields on long files
+- **Research mode** — local session JSON export + parameter schema (Engineer)
+- **Android download** — `/download/` page + GitHub Releases APK channel
 - **Page cleanup** — streamlined landing + Engineer shells, hardened worklet precache
 
 ---
