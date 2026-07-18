@@ -4,6 +4,18 @@
   "buildCommand": "node scripts/vercel-build.js",
   "installCommand": "bash scripts/vercel-install.sh",
   "framework": null,
+  "redirects": [
+    {
+      "source": "/download/VoiceIsolate-Pro-android-debug.apk",
+      "destination": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk",
+      "permanent": false
+    },
+    {
+      "source": "/download/:file(.*\\.apk)",
+      "destination": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/:file",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/app/models/:filename",
@@ -14,7 +26,7 @@
       "destination": "https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/:filename"
     },
     {
-      "source": "/((?!app/|blueprint/|docs/|lib/|src/|icon\\.jpg|manifest\\.json|sw\\.js|landing\\.js|landing\\.css).*)",
+      "source": "/((?!app/|blueprint/|docs/|download/|lib/|src/|icon\\.jpg|manifest\\.json|sw\\.js|landing\\.js|landing\\.css).*)",
       "destination": "/index.html"
     }
   ],
@@ -194,6 +206,23 @@
         {
           "key": "Cache-Control",
           "value": "public, max-age=86400"
+        }
+      ]
+    },
+    {
+      "source": "/download/(.*\\.apk)",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/vnd.android.package-archive"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=\"VoiceIsolate-Pro-android-debug.apk\""
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
         }
       ]
     }

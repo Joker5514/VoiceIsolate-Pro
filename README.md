@@ -187,6 +187,10 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 | **Web download page** | https://voice-isolate-pro.vercel.app/download/ |
 | **GitHub Releases (APK)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 | **Latest APK asset** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
+| **Pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
+
+The download page always links to the **real GitHub Release binary** (~303 MB, `application/vnd.android.package-archive`).  
+Same-origin `/download/*.apk` redirects to GitHub so it never serves SPA HTML.
 
 Build locally (Windows):
 

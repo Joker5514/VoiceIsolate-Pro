@@ -12,11 +12,14 @@ This folder documents **where installers and APKs live**. Large binaries are **n
 
 ### Public download
 
-1. **GitHub Releases** (preferred):  
+1. **GitHub Releases** (canonical binary host):  
    https://github.com/Joker5514/VoiceIsolate-Pro/releases  
-   Latest APK asset name: `VoiceIsolate-Pro-android-debug.apk`
+   Latest APK asset: `VoiceIsolate-Pro-android-debug.apk`  
+   Direct: `https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk`
 2. **Web page:** https://voice-isolate-pro.vercel.app/download/  
-   (falls back to GitHub Releases; serves a local APK only if present under `public/download/` at deploy time)
+   Primary buttons open the GitHub release asset (real APK, ~303 MB).  
+   Same-origin `/download/*.apk` is **redirected** to GitHub Releases so it never returns SPA HTML.
+3. Do **not** rely on committing APKs under `public/download/` — Vercel SPA rewrites previously turned missing `.apk` paths into `index.html`.
 
 ### Publish a release (maintainers)
 

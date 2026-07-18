@@ -24,6 +24,8 @@
     .dl-nav a { color: #f87171; text-decoration: none; font-size: 0.9rem; }
     .dl-nav a:hover { text-decoration: underline; }
     .warn { color: #fcd34d; font-size: 0.85rem; }
+    .dl-ok { color: #86efac; font-size: 0.85rem; }
+    code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.85em; }
   </style>
 </head>
 <body>
@@ -31,7 +33,7 @@
     <nav class="dl-nav" aria-label="Site">
       <a href="/">← Landing</a>
       <a href="/app/">Engineer Mode</a>
-      <a href="https://github.com/Joker5514/VoiceIsolate-Pro">GitHub</a>
+      <a href="https://github.com/Joker5514/VoiceIsolate-Pro" rel="noopener noreferrer" target="_blank">GitHub</a>
     </nav>
 
     <h1 class="section-label" style="font-size:1.4rem;letter-spacing:.06em;">Download VoiceIsolate Pro</h1>
@@ -42,22 +44,39 @@
       <p>
         Sideload the debug APK for phones/tablets. Enable
         <strong>Install unknown apps</strong> for your browser or file manager, then open the file.
+        The button below starts a <strong>real APK download</strong> from GitHub Releases
+        (~303&nbsp;MB, content-type <code>application/vnd.android.package-archive</code>).
       </p>
       <div class="dl-actions">
+        <!-- Primary: always GitHub Releases — never rewrite to a same-origin SPA HTML path -->
         <a class="btn" id="apkPrimary"
-           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk">
+           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"
+           rel="noopener noreferrer"
+           target="_blank"
+           download="VoiceIsolate-Pro-android-debug.apk">
           Download Android APK
         </a>
         <a class="btn btn-outline"
-           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases">
+           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk"
+           rel="noopener noreferrer"
+           target="_blank"
+           download="VoiceIsolate-Pro-android-debug.apk">
+          v24.0.0 direct
+        </a>
+        <a class="btn btn-outline"
+           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases"
+           rel="noopener noreferrer"
+           target="_blank">
           All releases
         </a>
-        <a class="btn btn-outline" id="apkLocal" href="./VoiceIsolate-Pro-android-debug.apk" hidden>
-          Local APK (dev server)
-        </a>
       </div>
-      <p class="dl-meta warn">Debug build · not Play Store signed · ~300&nbsp;MB with models/assets</p>
-      <p class="dl-meta">Direct release asset URL uses the latest GitHub Release tag.</p>
+      <p class="dl-meta dl-ok">Hosted on GitHub Releases · real binary · not SPA HTML</p>
+      <p class="dl-meta warn">Debug build · not Play Store signed · ~303&nbsp;MB with models/assets</p>
+      <p class="dl-meta">
+        Asset name: <code>VoiceIsolate-Pro-android-debug.apk</code><br />
+        Latest: <code>…/releases/latest/download/VoiceIsolate-Pro-android-debug.apk</code><br />
+        Pinned: <code>…/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk</code>
+      </p>
     </section>
 
     <section class="dl-card" aria-labelledby="web-dl">
@@ -77,19 +96,5 @@ pnpm build:electron:dir</pre>
       <p class="dl-meta">See <code>docs/electron-desktop.md</code> and <code>pnpm android:build:win</code> for Android rebuilds.</p>
     </section>
   </main>
-  <script>
-    // Prefer local file when present (pnpm dev / deploy that includes the APK).
-    (async function () {
-      try {
-        var local = document.getElementById('apkLocal');
-        var res = await fetch('./VoiceIsolate-Pro-android-debug.apk', { method: 'HEAD' });
-        if (res.ok && local) {
-          local.hidden = false;
-          var primary = document.getElementById('apkPrimary');
-          if (primary) primary.href = './VoiceIsolate-Pro-android-debug.apk';
-        }
-      } catch (e) { /* use GitHub release URL */ }
-    })();
-  </script>
 </body>
 </html>
