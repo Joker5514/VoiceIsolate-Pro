@@ -13,17 +13,26 @@ files:
   - build/**/*
   - electron/**/*
   - package.json
+  # Exclude huge optional weights not needed for default offline isolation.
+  # Default chain is bsrnn_vocals (~4 MB); demucs FP32 is ~350 MB.
+  - '!build/app/models/demucs_v4_fp32.onnx'
+  # Keep quantized demucs optional; still large (~142 MB). Include for Maximum Isolation.
+  # Comment next line to shrink installer if only bsrnn is required:
+  # - '!build/app/models/demucs_v4_quantized.onnx'
 
 extraMetadata:
   main: electron/main.cjs
 
+# Offline-first: all essential models ship inside the app (under build/app/models).
+# On first launch, main process seeds {userData}/models for the desktop cache bridge.
+
 win:
   target:
     - nsis
-  # Signing runs when CSC_LINK / WIN_CSC_LINK + CSC_KEY_PASSWORD are set (CI).
-  # Local unsigned builds: pnpm build:electron sets CSC_IDENTITY_AUTO_DISCOVERY=false.
-  signAndEditExecutable: true
-  signDlls: true
+  # Unsigned by default (local/dev). CI can pass CSC_LINK + set VIP_WIN_SIGN=1
+  # and flip signAndEditExecutable via env-driven config if needed.
+  # signAndEditExecutable:true forces winCodeSign extract (needs SeCreateSymbolicLink).
+  signAndEditExecutable: false
   artifactName: VoiceIsolate-Pro-${version}-win-${arch}.${ext}
 
 mac:
@@ -48,6 +57,11 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: VoiceIsolate Pro
+  uninstallDisplayName: VoiceIsolate Pro
+  # Offline installer — no online package download during setup
+  runAfterFinish: true
 
 publish:
   provider: github

@@ -34,10 +34,19 @@ gh release create v24.0.0 public/download/VoiceIsolate-Pro-android-debug.apk \
 
 Do **not** commit `*.apk` files (see `.gitignore`).
 
-## Desktop
+## Desktop (Windows) — offline installer
 
 ```bash
-pnpm build:electron:dir
+pnpm setup:electron
+pnpm build:electron        # NSIS → dist/electron/*.exe  (downloadable)
+pnpm build:electron:dir    # portable win-unpacked/
 ```
 
-See [docs/electron-desktop.md](../docs/electron-desktop.md).
+| Goal | Command / asset |
+|------|-----------------|
+| End-user download | GitHub Release: `VoiceIsolate-Pro-*-win-x64.exe` |
+| Local smoke test | `dist/electron/win-unpacked/VoiceIsolate Pro.exe` |
+| Web download page | https://voice-isolate-pro.vercel.app/download/ |
+
+Packaged app is **100% offline** for voice isolation: UI, ORT wasm, and default
+ONNX models (BS-RNN + denoise + VAD) are bundled. See [docs/electron-desktop.md](../docs/electron-desktop.md).

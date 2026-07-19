@@ -88,6 +88,7 @@
     "@capacitor/ios": "^8.3.1",
     "@electron/notarize": "^2.5.0",
     "@eslint/js": "^9.0.0",
+    "@types/express": "5.0.6",
     "@vercel/blob": "^0.27.0",
     "cross-env": "^7.0.3",
     "electron": "^39.8.5",
@@ -131,10 +132,10 @@
     "forceExit": true,
     "openHandlesTimeout": 1000
   },
-  "packageManager": "pnpm@10.0.0",
+  "packageManager": "pnpm@11.3.0",
   "engines": {
     "node": ">=22",
-    "pnpm": ">=10.0.0"
+    "pnpm": ">=11.0.0"
   },
   "dependencies": {
     "@capacitor/core": "^8.3.1",
@@ -147,32 +148,6 @@
     "onnxruntime-web": "1.25.1",
     "stripe": "^17.7.0",
     "three": "0.184.0"
-  },
-  "pnpm": {
-    "overrides": {
-      "protobufjs": ">=8.4.1",
-      "@xmldom/xmldom": ">=0.9.10",
-      "basic-ftp": ">=5.3.0",
-      "@tootallnate/once": ">=3.0.1",
-      "picomatch@<2.3.2": "2.3.2",
-      "picomatch@>=4.0.0 <4.0.4": "4.0.4",
-      "flatted": ">=3.4.2",
-      "brace-expansion": ">=1.1.13",
-      "tar": ">=6.2.1",
-      "ws": ">=8.21.0",
-      "tough-cookie": ">=4.1.4",
-      "semver": ">=7.5.4",
-      "word-wrap": ">=1.2.4",
-      "ip": ">=2.0.1",
-      "undici": ">=8.5.0",
-      "got": ">=14.4.2",
-      "cross-spawn": ">=7.0.5",
-      "micromatch": ">=4.0.8",
-      "esbuild": ">=0.25.0",
-      "form-data": ">=4.0.6",
-      "qs": ">=6.15.2",
-      "ip-address": ">=10.1.1"
-    }
   },
   "overrides": {
     "tar": ">=6.2.1",
