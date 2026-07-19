@@ -138,8 +138,10 @@ for (const rel of ['docs', 'blueprint']) {
     console.log(`[prepare-android] Removed build/${rel} (not needed in APK)`);
   }
 }
-// Compact download stub so /download links never 404 if something still points there.
+// Compact download stub so /download links never 404. Never ship host APKs
+// inside the package (a prior APK in public/download would bloat assets ~300MB).
 const dlDir = path.join(BUILD, 'download');
+rmIfExists(dlDir);
 fs.mkdirSync(dlDir, { recursive: true });
 fs.writeFileSync(
   path.join(dlDir, 'index.html'),
@@ -155,6 +157,22 @@ a{color:#fca5a5}</style></head><body>
 </body></html>`,
   'utf8',
 );
+// Sweep any nested installers that may have been copied from public/
+function stripApkBinaries(dir) {
+  if (!fs.existsSync(dir)) return 0;
+  let n = 0;
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, ent.name);
+    if (ent.isDirectory()) n += stripApkBinaries(p);
+    else if (/\.(apk|aab|ipa|exe|dmg|blockmap)$/i.test(ent.name)) {
+      fs.unlinkSync(p);
+      n += 1;
+      console.log(`[prepare-android] Removed bundled installer: ${path.relative(BUILD, p)}`);
+    }
+  }
+  return n;
+}
+stripApkBinaries(BUILD);
 console.log('[prepare-android] /download → offline stub linking to landing + Engineer Mode');
 
 // ── 3. Models: require core, drop FP32 demucs ──
