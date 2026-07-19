@@ -65,10 +65,15 @@ describe('Engineer processing speed path', () => {
 
   test('auto-process races model warmup before isolation', () => {
     expect(appJs).toMatch(/_warmupMLModels\(\)[\s\S]*?runPipeline\(fileSeq\)/);
-    expect(appJs).toMatch(/setTimeout\(r,\s*10000\)/);
+    expect(appJs).toMatch(/warmCapMs/);
   });
 
   test('MLWorker skips re-hash when cache key embeds sha256', () => {
     expect(mlWorker).toMatch(/if \(entry\.sha256\) return cached/);
+  });
+
+  test('MLWorker uses smaller WASM batches on constrained/Android devices', () => {
+    expect(mlWorker).toContain('isConstrainedDevice');
+    expect(mlWorker).toMatch(/if \(mobile\) return Math\.min\(128/);
   });
 });

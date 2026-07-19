@@ -12,8 +12,20 @@ import { applyMlWorkerMessage, setOrtStatus } from '../core/OrtStatus.js';
 /**
  * @returns {Worker}
  */
+/** Resolve worker URL for browser / Capacitor / Electron vip:// (absolute same-origin). */
+function resolveWorkerUrl(path) {
+  try {
+    const href = globalThis.location?.href;
+    if (href && href !== 'about:blank') return new URL(path, href).href;
+  } catch { /* fall through */ }
+  return path;
+}
+
 export function createMLWorker() {
-  const worker = new Worker('/src/workers/MLWorker.js');
+  // Absolute path required so Capacitor Android (https://voiceisolatepro.app/…)
+  // and Electron vip://app resolve /src/workers correctly.
+  const workerUrl = resolveWorkerUrl('/src/workers/MLWorker.js');
+  const worker = new Worker(workerUrl, { name: 'vip-ml-worker' });
   attachMLWorkerModelCache(worker);
   setOrtStatus({ provider: 'probing', detail: null });
   worker.addEventListener('message', (ev) => {

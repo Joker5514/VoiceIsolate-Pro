@@ -129,16 +129,57 @@ public class MainActivity extends BridgeActivity {
             if (path == null || path.isEmpty() || "/".equals(path)) {
                 path = "/index.html";
             }
+            // Normalize so asset open matches cap sync layout (public/…).
+            if (!path.startsWith("/")) {
+                path = "/" + path;
+            }
 
             final String assetPath = ASSET_PATH_PREFIX + path;
             try {
                 InputStream is = getAssets().open(assetPath);
-                String mimeType = URLConnection.guessContentTypeFromName(assetPath);
-                if (mimeType == null) mimeType = "application/octet-stream";
+                String mimeType = mimeTypeForAsset(assetPath);
                 return new WebResourceResponse(mimeType, "UTF-8", is);
             } catch (IOException ignored) {
                 return null;
             }
         }
+    }
+
+    /**
+     * Correct MIME for AudioWorklet / classic Workers / ORT WASM.
+     * URLConnection.guessContentTypeFromName often returns null or wrong types
+     * for .js/.wasm, which breaks addModule and wasm instantiation on Android.
+     */
+    private static String mimeTypeForAsset(String assetPath) {
+        String lower = assetPath.toLowerCase();
+        if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) {
+            return "application/javascript";
+        }
+        if (lower.endsWith(".wasm")) {
+            return "application/wasm";
+        }
+        if (lower.endsWith(".onnx")) {
+            return "application/octet-stream";
+        }
+        if (lower.endsWith(".json")) {
+            return "application/json";
+        }
+        if (lower.endsWith(".css")) {
+            return "text/css";
+        }
+        if (lower.endsWith(".html") || lower.endsWith(".htm")) {
+            return "text/html";
+        }
+        if (lower.endsWith(".svg")) {
+            return "image/svg+xml";
+        }
+        if (lower.endsWith(".png")) {
+            return "image/png";
+        }
+        if (lower.endsWith(".woff2")) {
+            return "font/woff2";
+        }
+        String guessed = URLConnection.guessContentTypeFromName(assetPath);
+        return guessed != null ? guessed : "application/octet-stream";
     }
 }

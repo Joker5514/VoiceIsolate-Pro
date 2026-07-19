@@ -2385,15 +2385,20 @@ class VoiceIsolatePro {
 
     // Auto-start pipeline after a short model-warmup race so first isolation
     // does not pay ONNX compile mid-process (the common "loading forever" feel).
+    // Desktop/browser: wait up to 10s. Android: 6s — compile is lighter (WASM, smaller batches).
     _yieldToUI(() => {
       if (fileSeq !== this._fileSeq) return;
       if (this.isProcessing || !(this.inputBuffer || this.origBuffer)) return;
       this._autoPipelineRun = true;
+      const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
+      const mobile = /Android|iPhone|iPad|Mobile|Capacitor/i.test(ua);
+      const warmCapMs = mobile ? 6000 : 10000;
       void (async () => {
         try {
+          this.updatePipelineProgress?.(0, mobile ? 'Warming models…' : 'Preparing ML…', 2);
           await Promise.race([
             this._warmupMLModels().catch(() => {}),
-            new Promise((r) => setTimeout(r, 10000)),
+            new Promise((r) => setTimeout(r, warmCapMs)),
           ]);
         } catch { /* proceed even if warmup flakes */ }
         if (fileSeq !== this._fileSeq || this.isProcessing) return;

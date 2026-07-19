@@ -146,11 +146,29 @@ function postStage(stage, percent, extra = {}) {
   self.postMessage({ type: 'stage', requestId: ACTIVE_REQUEST_ID, stage, percent, ...extra });
 }
 
+/** True on Android WebView / Capacitor / small phones (lower peak RAM). */
+function isConstrainedDevice() {
+  try {
+    const ua = String(self.navigator?.userAgent || '');
+    if (/Android|Mobile|Capacitor/i.test(ua)) return true;
+    const mem = self.navigator?.deviceMemory; // GiB, Chromium
+    if (typeof mem === 'number' && mem > 0 && mem <= 4) return true;
+    const cores = self.navigator?.hardwareConcurrency || 4;
+    if (cores <= 4 && /Linux/i.test(ua) && !/X11|Wayland/i.test(ua)) return true;
+  } catch { /* ignore */ }
+  return false;
+}
+
 function effectiveBatchFrames(entry) {
   const base = entry.maxBatchFrames || 64;
-  if (BACKEND === 'webgpu') return Math.min(384, base * 4);
-  // Larger WASM batches amortize ONNX session.run overhead on spectral models.
-  // Cap at 256 — ~2 MB tensors for 2049 bins; safe on desktop/Electron/Android.
+  const mobile = isConstrainedDevice();
+  if (BACKEND === 'webgpu') {
+    // WebGPU is fast; still cap mobile VRAM/host allocs.
+    return mobile ? Math.min(192, base * 2) : Math.min(384, base * 4);
+  }
+  // WASM: larger batches cut session.run overhead. Mobile uses a lower cap to
+  // avoid OOM on mid-tier Android while staying faster than tiny batches.
+  if (mobile) return Math.min(128, Math.max(base, 64));
   return Math.min(256, Math.max(base * 3, 128));
 }
 
@@ -660,9 +678,15 @@ self.onmessage = async (event) => {
         for (const entry of msg.manifest || []) MANIFEST[entry.id] = entry;
         USE_DESKTOP_CACHE = Boolean(msg.useDesktopCache);
         if (typeof ort !== 'undefined' && ort.env?.wasm) {
+          // Absolute /lib/ works for browser + Capacitor https origin + Electron vip://.
           ort.env.wasm.wasmPaths = '/lib/';
           const cores = self.navigator?.hardwareConcurrency || 4;
-          ort.env.wasm.numThreads = Math.min(8, Math.max(1, cores - 1));
+          const mobile = isConstrainedDevice();
+          // Threaded WASM needs COOP/COEP (Android MainActivity injects headers).
+          // Cap threads on mobile — oversubscription hurts more than it helps.
+          ort.env.wasm.numThreads = mobile
+            ? Math.min(2, Math.max(1, cores))
+            : Math.min(8, Math.max(1, cores - 1));
         }
         const backend = await resolveBackend();
         self.postMessage({ type: 'ready', backend });
