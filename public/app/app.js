@@ -2383,15 +2383,25 @@ class VoiceIsolatePro {
     try { window.dispatchEvent(new CustomEvent('vip:fileLoaded', { detail: { name } })); } catch (_) {}
     this.showNotification('File loaded: ' + name, 'info');
 
-    // Auto-start pipeline — models warmed during decode (matches Landing latency UX).
+    // Auto-start pipeline after a short model-warmup race so first isolation
+    // does not pay ONNX compile mid-process (the common "loading forever" feel).
     _yieldToUI(() => {
       if (fileSeq !== this._fileSeq) return;
-      if (!this.isProcessing && (this.inputBuffer || this.origBuffer)) {
-        this._autoPipelineRun = true;
+      if (this.isProcessing || !(this.inputBuffer || this.origBuffer)) return;
+      this._autoPipelineRun = true;
+      void (async () => {
+        try {
+          await Promise.race([
+            this._warmupMLModels().catch(() => {}),
+            new Promise((r) => setTimeout(r, 10000)),
+          ]);
+        } catch { /* proceed even if warmup flakes */ }
+        if (fileSeq !== this._fileSeq || this.isProcessing) return;
+        if (!(this.inputBuffer || this.origBuffer)) return;
         this.runPipeline(fileSeq).catch((err) => {
           structuredLog('error', '[VIP] Auto-process failed', { err: err.message });
         });
-      }
+      })();
     });
   }
 
@@ -2660,11 +2670,13 @@ class VoiceIsolatePro {
   _mlChannelPlan(buf) {
     const nCh = buf.numberOfChannels;
     if (nCh < 2) {
-      return { channelData: [buf.getChannelData(0)], expandStereo: false };
+      // Owned copy — safe to transfer to the ML worker without a second memcpy.
+      return { channelData: [new Float32Array(buf.getChannelData(0))], expandStereo: false };
     }
     const left = buf.getChannelData(0);
     const right = buf.getChannelData(1);
     const mid = new Float32Array(left.length);
+    // Unrolled-ish mid mix (single pass).
     for (let i = 0; i < left.length; i++) mid[i] = 0.5 * (left[i] + right[i]);
     return { channelData: [mid], expandStereo: true, left, right, mid };
   }
@@ -2672,13 +2684,15 @@ class VoiceIsolatePro {
   /**
    * Apply mono clean stem as a per-sample gain envelope onto stereo sources.
    * Preserves L/R imaging while only running ML once on the mid channel.
+   * `mid` may be null/detached after worker transfer — recompute from L/R.
    */
   _expandMonoCleanToStereo(cleanMono, mid, left, right) {
     const n = cleanMono.length;
     const cleanL = new Float32Array(n);
     const cleanR = new Float32Array(n);
+    const midOk = mid && mid.length >= n;
     for (let i = 0; i < n; i++) {
-      const m = mid[i];
+      const m = midOk ? mid[i] : 0.5 * (left[i] + right[i]);
       let g = Math.abs(m) > 1e-8 ? cleanMono[i] / m : 0;
       if (g < 0) g = 0;
       else if (g > 1.35) g = 1.35;
@@ -2709,6 +2723,8 @@ class VoiceIsolatePro {
       const result = await separateStems(plan.channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
         sourceName: this._sourceName || '',
+        // Owned Float32Arrays from _mlChannelPlan — transfer, don't re-copy.
+        transferOwned: true,
         onProgress: (ev) => {
           if (fileSeq !== this._fileSeq || this.abortFlag) return;
           if (ev.type === 'stage') {
@@ -2771,17 +2787,19 @@ class VoiceIsolatePro {
     // Stereo → process mid once (halves STFT + spectral cost). Re-expand at end.
     const processStereoAsMid = nCh >= 2;
     let channels;
-    const yieldBudget = createYieldBudget(12);
+    // Yield less often during bulk DSP — 24ms budget keeps UI alive without thrashing.
+    const yieldBudget = createYieldBudget(24);
     if (processStereoAsMid) {
       const L = buf.getChannelData(0);
       const R = buf.getChannelData(1);
       const mid = new Float32Array(len);
-      const CHUNK = 48000; // ~1 s
+      const CHUNK = 48000 * 4; // ~4 s between yields
       for (let i = 0; i < len; i++) {
         mid[i] = 0.5 * (L[i] + R[i]);
         if (i > 0 && (i % CHUNK) === 0) await yieldBudget();
       }
       channels = [mid];
+      // Reuse the mid buffer on expand — avoid a second full mid mix.
       this._dspStereoSources = { L, R, mid };
     } else {
       channels = [buf.getChannelData(0).slice()];
@@ -2822,10 +2840,8 @@ class VoiceIsolatePro {
     // Expand mono-processed mid back to stereo with gain envelope.
     if (processStereoAsMid && this._dspStereoSources) {
       const midProc = channels[0];
-      const { L, R } = this._dspStereoSources;
-      const midSrc = new Float32Array(len);
-      for (let i = 0; i < len; i++) midSrc[i] = 0.5 * (L[i] + R[i]);
-      channels = this._expandMonoCleanToStereo(midProc, midSrc, L, R);
+      const { L, R, mid } = this._dspStereoSources;
+      channels = this._expandMonoCleanToStereo(midProc, mid, L, R);
       this._dspStereoSources = null;
     }
 
@@ -3148,12 +3164,13 @@ class VoiceIsolatePro {
     const FRAME_CHUNK = forensic ? 128 : 256;
     if (!DSP || !data || data.length < FFT) return data;
 
-    const yieldBudget = createYieldBudget(forensic ? 10 : 12);
+    const yieldBudget = createYieldBudget(forensic ? 14 : 24);
     if (onProgress) onProgress(0.02);
     await yieldToBrowser();
 
     const stftOpts = {
-      yieldEvery: forensic ? 24 : 40,
+      // Fewer yields = faster STFT on desktop; still paint occasionally.
+      yieldEvery: forensic ? 32 : 64,
       onProgress: (frac) => { if (onProgress) onProgress(0.02 + frac * 0.18); },
       shouldAbort: () => this.abortFlag,
     };
@@ -3236,7 +3253,7 @@ class VoiceIsolatePro {
     await yieldToBrowser();
     const rendered = typeof DSP.inverseSTFTAsync === 'function'
       ? await DSP.inverseSTFTAsync(mag, phase, FFT, HOP, data.length, {
-        yieldEvery: forensic ? 24 : 40,
+        yieldEvery: forensic ? 32 : 64,
         onProgress: (frac) => { if (onProgress) onProgress(0.85 + frac * 0.14); },
       })
       : DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);

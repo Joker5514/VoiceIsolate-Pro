@@ -84,7 +84,7 @@ export const MODEL_MANIFEST = Object.freeze({
     fftSize: 4096,
     hopSize: 1024,
     bins: 2049,
-    maxBatchFrames: 64,
+    maxBatchFrames: 96,
     sampleRate: 48000,
     io: Object.freeze({
       input: 'input',                // [batch, 2049] Float32 magnitudes
@@ -125,7 +125,7 @@ export const MODEL_MANIFEST = Object.freeze({
     hopSize: 1024,
     bins: 2049,
     // Larger base batches cut session.run overhead (effectiveBatchFrames multiplies further).
-    maxBatchFrames: 64,
+    maxBatchFrames: 128,
     sampleRate: 48000,
     io: Object.freeze({
       input: 'input',                // [batch, 2049] Float32 magnitudes

@@ -148,10 +148,10 @@ function postStage(stage, percent, extra = {}) {
 
 function effectiveBatchFrames(entry) {
   const base = entry.maxBatchFrames || 64;
-  if (BACKEND === 'webgpu') return Math.min(256, base * 4);
+  if (BACKEND === 'webgpu') return Math.min(384, base * 4);
   // Larger WASM batches amortize ONNX session.run overhead on spectral models.
-  // Cap at 192 to avoid oversized tensor allocs on low-memory devices.
-  return Math.min(192, base * 3);
+  // Cap at 256 — ~2 MB tensors for 2049 bins; safe on desktop/Electron/Android.
+  return Math.min(256, Math.max(base * 3, 128));
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────
@@ -228,6 +228,9 @@ async function fetchModelBytes(entry) {
 
   const cached = await cacheGet(cacheKey);
   if (cached) {
+    // Cache key already embeds the pinned SHA-256. Re-hashing multi-MB models
+    // on every process adds 100–500ms+ of pure CPU — trust the key after put.
+    if (entry.sha256) return cached;
     try {
       await verifyIntegrity(entry, cached);
       return cached;
@@ -242,7 +245,8 @@ async function fetchModelBytes(entry) {
   }
   const bytes = await res.arrayBuffer();
   await verifyIntegrity(entry, bytes);
-  await cachePut(cacheKey, bytes);
+  // Fire-and-forget cache write — do not block compile/process on IDB put.
+  void cachePut(cacheKey, bytes);
   return bytes;
 }
 
@@ -263,6 +267,8 @@ async function createSessionFromBytes(entry, bytes) {
   const opts = {
     executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'],
     graphOptimizationLevel: 'all',
+    enableCpuMemArena: true,
+    enableMemPattern: true,
   };
   // Slice: InferenceSession.create may detach/neuter the input ArrayBuffer.
   // Callers (and IDB cache entries) must keep a usable copy for retries.
@@ -423,10 +429,13 @@ async function runSpectralMask(entry, session, samples, onProgress) {
       for (let i = 0; i < avail; i++) re[i] = samples[start + i] * win[i];
       fftInPlace(re, im, false);
       const off = b * bins;
+      // sqrt(re²+im²) is faster than Math.hypot for dense spectral loops.
       for (let k = 0; k < bins; k++) {
-        buf.batchRe[off + k] = re[k];
-        buf.batchIm[off + k] = im[k];
-        buf.batchMags[off + k] = Math.hypot(re[k], im[k]);
+        const rr = re[k];
+        const ii = im[k];
+        buf.batchRe[off + k] = rr;
+        buf.batchIm[off + k] = ii;
+        buf.batchMags[off + k] = Math.sqrt(rr * rr + ii * ii);
       }
     }
   };
