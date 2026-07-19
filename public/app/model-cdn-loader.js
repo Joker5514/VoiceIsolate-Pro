@@ -11,11 +11,57 @@
 
   const PROVIDER_PRIORITY = ['same-origin'];
 
-  // In-memory registry of which providers are known-healthy this session
-  const providerHealth = { 'same-origin': true };
+  // In-memory registry of which providers are known-healthy this session.
+  // Start undefined until first successful probe / fetch so UI can show "unknown"
+  // then flip to healthy/degraded — never leave the panel stuck forever.
+  const providerHealth = { 'same-origin': null };
 
   // Track which provider served each model in this session (for diagnostics)
   const modelProviderMap = {};
+
+  let _healthProbePromise = null;
+
+  /**
+   * probeSameOriginHealth — lightweight HEAD/GET of models-manifest.json so
+   * Local Model Health leaves "unknown" on boot (web / Electron vip:// / Capacitor).
+   */
+  async function probeSameOriginHealth() {
+    if (_healthProbePromise) return _healthProbePromise;
+    _healthProbePromise = (async () => {
+      try {
+        const urls = [
+          '/app/models-manifest.json',
+          './models-manifest.json',
+          '/app/models/models-manifest.json',
+        ];
+        let ok = false;
+        for (const url of urls) {
+          try {
+            const resp = await fetch(url, {
+              method: 'GET',
+              credentials: 'omit',
+              cache: 'no-cache',
+            });
+            if (resp.ok) {
+              ok = true;
+              break;
+            }
+          } catch {
+            /* try next */
+          }
+        }
+        providerHealth['same-origin'] = ok;
+        return ok;
+      } catch {
+        providerHealth['same-origin'] = false;
+        return false;
+      } finally {
+        // Allow a later re-probe after network reconnect
+        setTimeout(() => { _healthProbePromise = null; }, 30_000);
+      }
+    })();
+    return _healthProbePromise;
+  }
 
   // Service Worker cache name — must match sw-register.js
   const CACHE_NAME = 'vip-models-v1';
@@ -178,23 +224,40 @@
   let _manifest = null;
   async function getManifest() {
     if (_manifest) return _manifest;
-    const MANIFEST_URL = '/app/models-manifest.json'; // canonical loader manifest; model binaries remain under /app/models/
-    const resp = await fetch(MANIFEST_URL);
-    if (!resp.ok) throw new Error('Cannot load models-manifest.json');
-    const json = await resp.json();
-    if (Array.isArray(json?.models)) {
-      _manifest = {
-        ...json,
-        models: Object.fromEntries(json.models.map((entry) => [entry.id, {
-          filename: entry.filename,
-          eager: entry.load_priority === 'eager' || entry.eager === true,
-          sources: [{ provider: 'same-origin', url: entry.path || `/app/models/${entry.filename}` }],
-        }])),
-      };
-    } else {
-      _manifest = json;
+    const candidates = [
+      '/app/models-manifest.json', // canonical
+      './models-manifest.json',
+      '/app/models/models-manifest.json',
+    ];
+    let lastErr;
+    for (const MANIFEST_URL of candidates) {
+      try {
+        const resp = await fetch(MANIFEST_URL, { credentials: 'omit' });
+        if (!resp.ok) {
+          lastErr = new Error(`HTTP ${resp.status} for ${MANIFEST_URL}`);
+          continue;
+        }
+        const json = await resp.json();
+        providerHealth['same-origin'] = true;
+        if (Array.isArray(json?.models)) {
+          _manifest = {
+            ...json,
+            models: Object.fromEntries(json.models.map((entry) => [entry.id, {
+              filename: entry.filename,
+              eager: entry.load_priority === 'eager' || entry.eager === true,
+              sources: [{ provider: 'same-origin', url: entry.path || `/app/models/${entry.filename}` }],
+            }])),
+          };
+        } else {
+          _manifest = json;
+        }
+        return _manifest;
+      } catch (err) {
+        lastErr = err;
+      }
     }
-    return _manifest;
+    providerHealth['same-origin'] = false;
+    throw lastErr || new Error('Cannot load models-manifest.json');
   }
 
   window.ModelCDNLoader = {
@@ -203,8 +266,14 @@
     getProviderHealthReport,
     getModelProvider,
     getManifest,
+    probeSameOriginHealth,
     PROVIDER_PRIORITY,
     providerHealth,
     modelProviderMap
   };
+
+  // Non-blocking boot probe so Local Model Health leaves "unknown" quickly.
+  if (typeof window !== 'undefined') {
+    void probeSameOriginHealth();
+  }
 })();

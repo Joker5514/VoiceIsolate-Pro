@@ -983,6 +983,14 @@ class VoiceIsolatePro {
           MODEL_STATUS_KEYS,
           { healthContainer: $('cdnHealthPanel') }
         );
+        // Ensure same-origin health is probed even if the classic loader script
+        // loaded after the first paint (or Electron vip:// cold start).
+        if (window.ModelCDNLoader?.probeSameOriginHealth) {
+          void window.ModelCDNLoader.probeSameOriginHealth()
+            .then(() => this._modelStatusUI?.refreshHealth?.())
+            .catch(() => {});
+        }
+        void this._modelStatusUI.refreshStatus?.().catch?.(() => {});
       } catch (e) {
         structuredLog('warn', '[VIP] ModelStatusUI init failed', { err: e.message });
       }

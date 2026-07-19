@@ -71,17 +71,47 @@ function getInflightMap(ctx) {
 /**
  * Resolve a same-origin worklet URL. Absolute URLs are required by some
  * Android WebViews / Capacitor shells when the page is not at `/`.
+ * Uses location.href as base so Electron vip://app/... and Capacitor hosts
+ * keep the correct authority (origin-only can drop the hostname on custom schemes).
  * @param {string} path
  * @returns {string}
  */
 export function resolveWorkletUrl(path) {
   if (!path) return path;
-  if (/^https?:\/\//i.test(path) || path.startsWith('blob:')) return path;
+  if (/^(https?:|blob:|vip:)/i.test(path)) return path;
+  try {
+    const href = globalThis.location?.href;
+    if (href && href !== 'about:blank') return new URL(path, href).href;
+  } catch { /* fall through */ }
   try {
     const origin = globalThis.location?.origin;
     if (origin && origin !== 'null') return new URL(path, origin).href;
   } catch { /* fall through */ }
   return path;
+}
+
+/**
+ * Candidate URLs for addModule across web / Electron vip:// / Capacitor.
+ * @param {string} path
+ * @returns {string[]}
+ */
+export function workletUrlCandidates(path) {
+  const abs = resolveWorkletUrl(path);
+  const out = [];
+  const push = (u) => { if (u && !out.includes(u)) out.push(u); };
+  push(abs);
+  push(path);
+  // Relative to page (helps when document is under /app/ and /src is sibling).
+  try {
+    if (globalThis.location?.href) {
+      push(new URL(path.replace(/^\//, ''), globalThis.location.href).href);
+      // From /app/index.html → ../src/workers/...
+      if (path.startsWith('/src/')) {
+        push(new URL(`..${path}`, globalThis.location.href).href);
+      }
+    }
+  } catch { /* ignore */ }
+  return out;
 }
 
 /**
@@ -105,21 +135,24 @@ export async function ensureWorkletModule(ctx, path) {
     if (ctx.state === 'suspended') {
       try { await ctx.resume(); } catch { /* best-effort */ }
     }
-    const absolute = resolveWorkletUrl(path);
+    const candidates = workletUrlCandidates(path);
     let lastErr = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const src = attempt === 0
-          ? absolute
-          : `${absolute}${absolute.includes('?') ? '&' : '?'}vipwk=${Date.now()}`;
-        // Literal-ish call kept for allowlists; path is a constant from callers.
-        await ctx.audioWorklet.addModule(src);
-        loaded.add(path);
-        return;
-      } catch (err) {
-        lastErr = err;
-        if (ctx.state === 'suspended') {
-          try { await ctx.resume(); } catch { /* ignore */ }
+    for (let i = 0; i < candidates.length; i++) {
+      const base = candidates[i];
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const src = attempt === 0
+            ? base
+            : `${base}${base.includes('?') ? '&' : '?'}vipwk=${Date.now()}`;
+          // Literal-ish call kept for allowlists; path is a constant from callers.
+          await ctx.audioWorklet.addModule(src);
+          loaded.add(path);
+          return;
+        } catch (err) {
+          lastErr = err;
+          if (ctx.state === 'suspended') {
+            try { await ctx.resume(); } catch { /* ignore */ }
+          }
         }
       }
     }
@@ -413,12 +446,14 @@ export class PlaybackMixer {
     const NodeCtor = globalThis.AudioWorkletNode;
     if (!aw || typeof aw.addModule !== 'function' || typeof NodeCtor !== 'function') {
       this._gateLoadState = 'bypassed';
+      try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
       return;
     }
     this._gateLoadState = 'pending';
+    try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
     try {
-      // ensureWorkletModule: resume + absolute URL + retry. Falls back to a
-      // literal addModule call so validate.js allowlist scanners still see it.
+      // ensureWorkletModule: resume + absolute URL + multi-candidate retry.
+      // Falls back to a literal addModule call so validate.js allowlist scanners still see it.
       try {
         await ensureWorkletModule(this.ctx, '/src/workers/GateProcessor.js');
       } catch (primary) {
@@ -444,8 +479,10 @@ export class PlaybackMixer {
       }
       this.gate = gate;
       this._gateLoadState = 'loaded';
+      try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
     } catch (err) {
       this._gateLoadState = 'failed';
+      try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
       console.error('[VIP][PlaybackMixer] noise-gate worklet failed to load; bypassing.', err);
       // Keep graph connected: gateInput → highpass must stay live.
       try { this.gateInput.connect(this.highpass); } catch { /* already connected */ }
@@ -461,9 +498,11 @@ export class PlaybackMixer {
     const NodeCtor = globalThis.AudioWorkletNode;
     if (!aw || typeof aw.addModule !== 'function' || typeof NodeCtor !== 'function') {
       this._deEsserLoadState = 'bypassed';
+      try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
       return;
     }
     this._deEsserLoadState = 'pending';
+    try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
     try {
       try {
         await ensureWorkletModule(this.ctx, '/src/workers/DeEsserProcessor.js');
@@ -490,8 +529,10 @@ export class PlaybackMixer {
       }
       this.deEsser = deEsser;
       this._deEsserLoadState = 'loaded';
+      try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
     } catch (err) {
       this._deEsserLoadState = 'failed';
+      try { globalThis.__vipWorkletStatus = this.getWorkletStatus(); } catch { /* ignore */ }
       console.error('[VIP][PlaybackMixer] de-esser worklet failed to load; bypassing.', err);
       try { this.deEsserInput.connect(this.limiter); } catch { /* already connected */ }
     }

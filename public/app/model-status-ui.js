@@ -189,11 +189,22 @@ export class ModelStatusUI {
 
   /**
    * refreshHealth — pull current provider health from window.ModelCDNLoader and update rows.
+   * When still unknown, kick a same-origin probe so the panel does not stay stuck.
    */
   refreshHealth() {
     if (!this._healthContainer) return;
-    if (!window.ModelCDNLoader || !window.ModelCDNLoader.getProviderHealthReport) return;
+    if (!window.ModelCDNLoader || !window.ModelCDNLoader.getProviderHealthReport) {
+      // Loader script missing — surface degraded so operators notice wiring issues.
+      for (const provider of Object.keys(this._healthRows)) {
+        const el = this._healthRows[provider];
+        el.classList.remove('vip-cdn-health-status--healthy', 'vip-cdn-health-status--degraded', 'vip-cdn-health-status--unknown');
+        el.classList.add('vip-cdn-health-status--unknown');
+        el.textContent = 'loader missing';
+      }
+      return;
+    }
     const report = window.ModelCDNLoader.getProviderHealthReport();
+    let needsProbe = false;
     for (const provider of Object.keys(this._healthRows)) {
       const el = this._healthRows[provider];
       const healthy = report[provider];
@@ -206,8 +217,32 @@ export class ModelStatusUI {
         el.textContent = 'degraded';
       } else {
         el.classList.add('vip-cdn-health-status--unknown');
-        el.textContent = 'unknown';
+        el.textContent = 'probing…';
+        needsProbe = true;
       }
+    }
+    if (needsProbe && typeof window.ModelCDNLoader.probeSameOriginHealth === 'function') {
+      window.ModelCDNLoader.probeSameOriginHealth()
+        .then(() => {
+          // Re-paint after probe settles (avoid recursive probe storm via needsProbe).
+          const next = window.ModelCDNLoader.getProviderHealthReport();
+          for (const provider of Object.keys(this._healthRows)) {
+            const el = this._healthRows[provider];
+            const healthy = next[provider];
+            el.classList.remove('vip-cdn-health-status--healthy', 'vip-cdn-health-status--degraded', 'vip-cdn-health-status--unknown');
+            if (healthy === true) {
+              el.classList.add('vip-cdn-health-status--healthy');
+              el.textContent = 'healthy';
+            } else if (healthy === false) {
+              el.classList.add('vip-cdn-health-status--degraded');
+              el.textContent = 'degraded';
+            } else {
+              el.classList.add('vip-cdn-health-status--unknown');
+              el.textContent = 'unknown';
+            }
+          }
+        })
+        .catch(() => {});
     }
   }
 
@@ -225,7 +260,10 @@ export class ModelStatusUI {
 
   _startHealthPolling() {
     if (this._healthTimer || !this._healthContainer) return;
-    this._healthTimer = setInterval(() => this.refreshHealth(), 10000);
+    // Faster first paint for health (was 10s — looked stuck on "unknown")
+    this._healthTimer = setInterval(() => this.refreshHealth(), 2500);
+    // One immediate refresh after loader's boot probe may have finished
+    setTimeout(() => this.refreshHealth(), 400);
   }
 
   destroy() {

@@ -216,17 +216,41 @@
   }
 
   /* ── Canvas helpers ───────────────────────────────────────────────────── */
-  function _resizeCanvas(canvas, fallbackH) {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  function _measureCanvasCss(canvas, fallbackH) {
+    // Prefer layout box of the panel / container so Electron desktop and
+    // gallery grids size correctly (getBoundingClientRect can be 0 while
+    // parent is still laying out, or inflated when overflow is clipped).
+    const parent = canvas.parentElement;
+    const panel = canvas.closest?.('.panel, .viz-card-body, .spectro3d-container') || parent;
     const rect = canvas.getBoundingClientRect();
-    const cssW = Math.max(1, Math.round(
-      rect.width > 0 ? rect.width : (canvas.offsetWidth || canvas.clientWidth || 800),
-    ));
-    const cssH = Math.max(1, Math.round(
-      rect.height > 0
+    const parentW = Math.max(
+      parent?.clientWidth || 0,
+      panel?.clientWidth || 0,
+      canvas.offsetWidth || 0,
+      canvas.clientWidth || 0,
+    );
+    // Cap to the viz card content width so we never paint wider than the column.
+    const card = canvas.closest?.('.viz-card, .col-right');
+    const cardW = card ? Math.max(0, card.clientWidth - 8) : 0;
+    let cssW = Math.round(rect.width > 2 ? rect.width : parentW);
+    if (cardW > 0) cssW = Math.min(cssW || cardW, cardW);
+    if (!cssW || cssW < 2) cssW = Math.max(parentW, 280);
+    cssW = Math.max(1, Math.min(cssW, 4096));
+
+    const styleH = parseInt(getComputedStyle(canvas).height, 10);
+    let cssH = Math.round(
+      rect.height > 2
         ? rect.height
-        : (parseInt(getComputedStyle(canvas).height, 10) || canvas.clientHeight || fallbackH || 240),
-    ));
+        : (styleH || canvas.clientHeight || fallbackH || 240),
+    );
+    cssH = Math.max(1, Math.min(cssH || fallbackH || 240, 2048));
+    return { cssW, cssH };
+  }
+
+  function _resizeCanvas(canvas, fallbackH) {
+    if (!canvas) return { w: 1, h: 1, cssW: 1, cssH: 1 };
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const { cssW, cssH } = _measureCanvasCss(canvas, fallbackH);
     const w = Math.round(cssW * dpr);
     const h = Math.round(cssH * dpr);
     const prev = canvas.dataset.vipCssSize || '';
@@ -234,7 +258,10 @@
     if (canvas.width !== w || canvas.height !== h || prev !== next) {
       canvas.width = w;
       canvas.height = h;
-      canvas.style.width = cssW + 'px';
+      // Fluid CSS width so grid/desktop column resizes reflow correctly;
+      // height stays explicit so empty canvases keep their slot.
+      canvas.style.width = '100%';
+      canvas.style.maxWidth = '100%';
       canvas.style.height = cssH + 'px';
       canvas.dataset.vipCssSize = next;
       _playheadPxCache.delete(canvas);
@@ -976,15 +1003,30 @@
   }
 
   function _wireResizeObserver() {
-    const card = document.querySelector('.viz-card');
-    if (!card || typeof ResizeObserver === 'undefined') return;
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', () => setTimeout(_scheduleLayoutResize, 180));
+      return;
+    }
     const ro = new ResizeObserver(() => _scheduleLayoutResize());
-    ro.observe(card);
+    const targets = [
+      document.querySelector('.viz-card'),
+      document.querySelector('.col-right'),
+      document.getElementById('vizCardBody'),
+      document.getElementById('vizTabScroll'),
+      document.getElementById('spectro3d-container'),
+    ].filter(Boolean);
+    for (const el of targets) {
+      try { ro.observe(el); } catch (_) { /* ignore */ }
+    }
     const onViewportChange = () => {
       setTimeout(_scheduleLayoutResize, 180);
     };
     window.addEventListener('orientationchange', onViewportChange);
     window.addEventListener('resize', onViewportChange);
+    // Electron desktop: first paint often has 0-width panels until the window shows.
+    setTimeout(_scheduleLayoutResize, 50);
+    setTimeout(_scheduleLayoutResize, 300);
+    setTimeout(_scheduleLayoutResize, 1000);
   }
 
   /* ── Event wiring ─────────────────────────────────────────────────────── */
