@@ -17,13 +17,18 @@ const cap = JSON.parse(fs.readFileSync(path.join(ROOT, 'capacitor.config.json'),
 const dl = fs.readFileSync(path.join(ROOT, 'public/download/index.html'), 'utf8');
 
 describe('Android complete app pipeline', () => {
-  test('prepare script ships Engineer entry + required models', () => {
-    expect(prepare).toContain("location.replace('/app/index.html')");
+  test('prepare script ships offline landing + Engineer + required models', () => {
+    expect(prepare).toContain('landing.js');
+    expect(prepare).toContain('landing.css');
+    expect(prepare).toContain('offline landing');
+    expect(prepare).toContain('fonts.googleapis.com');
     expect(prepare).toContain('bsrnn_vocals.onnx');
     expect(prepare).toContain('rnnoise_suppressor.onnx');
     expect(prepare).toContain('silero_vad.onnx');
     expect(prepare).toContain('demucs_v4_fp32.onnx');
     expect(prepare).toMatch(/EXCLUDE_MODELS/);
+    // Must NOT force-redirect away from landing into Engineer only
+    expect(prepare).not.toContain("location.replace('/app/index.html')");
   });
 
   test('win + package scripts run prepare + verify', () => {
@@ -57,7 +62,9 @@ describe('Android complete app pipeline', () => {
     expect(dl).toMatch(/no network required/i);
   });
 
-  test('verify script rejects Google Fonts on entry + missing models', () => {
+  test('verify script requires landing + rejects Google Fonts + missing models', () => {
+    expect(verify).toContain('landing.js');
+    expect(verify).toContain('uploadZone');
     expect(verify).toContain('fonts.googleapis.com');
     expect(verify).toContain('bsrnn_vocals.onnx');
     expect(verify).toContain('demucs_v4_fp32.onnx');

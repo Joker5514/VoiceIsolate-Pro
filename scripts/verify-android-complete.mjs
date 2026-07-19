@@ -11,8 +11,12 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ASSETS = path.join(ROOT, 'android', 'app', 'src', 'main', 'assets', 'public');
 
 const REQUIRED = [
+  // Landing home
   'index.html',
+  'landing.js',
+  'landing.css',
   'vip-android.json',
+  // Engineer Mode
   'app/index.html',
   'app/app.js',
   'app/models/bsrnn_vocals.onnx',
@@ -52,12 +56,28 @@ for (const rel of FORBIDDEN) {
 }
 
 const entry = fs.readFileSync(path.join(ASSETS, 'index.html'), 'utf8');
-if (!entry.includes('/app/index.html')) {
-  errors.push('Root index.html must boot into Engineer Mode (/app/index.html)');
+// Landing is the home screen — must keep upload UI + Engineer Mode link.
+if (!entry.includes('landing.js') && !entry.includes('/landing.js')) {
+  errors.push('Root index.html must be the landing page (landing.js)');
+}
+if (!entry.includes('uploadZone') && !entry.includes('fileInput')) {
+  errors.push('Landing must include file upload UI');
+}
+if (!entry.includes('/app/') && !entry.includes('/app/index.html')) {
+  errors.push('Landing must link to Engineer Mode (/app/)');
 }
 // Offline: root entry must not pull Google Fonts (or any CDN).
 if (entry.includes('fonts.googleapis.com') || entry.includes('fonts.gstatic.com')) {
   errors.push('Root entry must not load Google Fonts (offline app)');
+}
+const marker = path.join(ASSETS, 'vip-android.json');
+if (fs.existsSync(marker)) {
+  try {
+    const meta = JSON.parse(fs.readFileSync(marker, 'utf8'));
+    if (meta.landing !== true) warnings.push('vip-android.json should set landing: true');
+  } catch {
+    warnings.push('vip-android.json is not valid JSON');
+  }
 }
 
 const mainJava = path.join(
