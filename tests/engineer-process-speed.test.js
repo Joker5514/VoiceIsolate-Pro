@@ -50,11 +50,30 @@ describe('Engineer processing speed path', () => {
     );
   });
 
-  test('bsrnn maxBatchFrames is at least 64', () => {
-    expect(manifest).toMatch(/bsrnn_vocals:[\s\S]*?maxBatchFrames:\s*64/);
+  test('bsrnn maxBatchFrames is at least 128', () => {
+    expect(manifest).toMatch(/bsrnn_vocals:[\s\S]*?maxBatchFrames:\s*128/);
   });
 
   test('MLWorker effectiveBatchFrames uses larger WASM batches', () => {
-    expect(mlWorker).toMatch(/Math\.min\(192,\s*base \* 3\)/);
+    expect(mlWorker).toMatch(/Math\.min\(256,/);
+  });
+
+  test('ML transfers owned mid channel (no second memcpy)', () => {
+    expect(appJs).toContain('transferOwned: true');
+    expect(appJs).toMatch(/new Float32Array\(buf\.getChannelData\(0\)\)/);
+  });
+
+  test('auto-process races model warmup before isolation', () => {
+    expect(appJs).toMatch(/_warmupMLModels\(\)[\s\S]*?runPipeline\(fileSeq\)/);
+    expect(appJs).toMatch(/warmCapMs/);
+  });
+
+  test('MLWorker skips re-hash when cache key embeds sha256', () => {
+    expect(mlWorker).toMatch(/if \(entry\.sha256\) return cached/);
+  });
+
+  test('MLWorker uses smaller WASM batches on constrained/Android devices', () => {
+    expect(mlWorker).toContain('isConstrainedDevice');
+    expect(mlWorker).toMatch(/if \(mobile\) return Math\.min\(128/);
   });
 });

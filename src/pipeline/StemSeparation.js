@@ -119,10 +119,17 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   const w = getWorker();
   const requestId = ++_seq;
   const { onProgress } = options;
-  const yieldBudget = createYieldBudget();
-  const copies = [];
-  for (let ch = 0; ch < channelData.length; ch++) {
-    copies.push(await copyFloat32Channel(channelData[ch], { yieldBudget }));
+  // transferOwned: channel buffers are exclusive copies the worker may detach.
+  // Engineer mid-channel plan always allocates owned arrays — skip a second memcpy.
+  let copies;
+  if (options.transferOwned) {
+    copies = channelData.map((ch) => (ch instanceof Float32Array ? ch : new Float32Array(ch)));
+  } else {
+    const yieldBudget = createYieldBudget();
+    copies = [];
+    for (let ch = 0; ch < channelData.length; ch++) {
+      copies.push(await copyFloat32Channel(channelData[ch], { yieldBudget }));
+    }
   }
   const msg = { type: 'process', requestId, channelData: copies, sampleRate, modelIds };
 

@@ -146,12 +146,30 @@ function postStage(stage, percent, extra = {}) {
   self.postMessage({ type: 'stage', requestId: ACTIVE_REQUEST_ID, stage, percent, ...extra });
 }
 
+/** True on Android WebView / Capacitor / small phones (lower peak RAM). */
+function isConstrainedDevice() {
+  try {
+    const ua = String(self.navigator?.userAgent || '');
+    if (/Android|Mobile|Capacitor/i.test(ua)) return true;
+    const mem = self.navigator?.deviceMemory; // GiB, Chromium
+    if (typeof mem === 'number' && mem > 0 && mem <= 4) return true;
+    const cores = self.navigator?.hardwareConcurrency || 4;
+    if (cores <= 4 && /Linux/i.test(ua) && !/X11|Wayland/i.test(ua)) return true;
+  } catch { /* ignore */ }
+  return false;
+}
+
 function effectiveBatchFrames(entry) {
   const base = entry.maxBatchFrames || 64;
-  if (BACKEND === 'webgpu') return Math.min(256, base * 4);
-  // Larger WASM batches amortize ONNX session.run overhead on spectral models.
-  // Cap at 192 to avoid oversized tensor allocs on low-memory devices.
-  return Math.min(192, base * 3);
+  const mobile = isConstrainedDevice();
+  if (BACKEND === 'webgpu') {
+    // WebGPU is fast; still cap mobile VRAM/host allocs.
+    return mobile ? Math.min(192, base * 2) : Math.min(384, base * 4);
+  }
+  // WASM: larger batches cut session.run overhead. Mobile uses a lower cap to
+  // avoid OOM on mid-tier Android while staying faster than tiny batches.
+  if (mobile) return Math.min(128, Math.max(base, 64));
+  return Math.min(256, Math.max(base * 3, 128));
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────
@@ -228,6 +246,9 @@ async function fetchModelBytes(entry) {
 
   const cached = await cacheGet(cacheKey);
   if (cached) {
+    // Cache key already embeds the pinned SHA-256. Re-hashing multi-MB models
+    // on every process adds 100–500ms+ of pure CPU — trust the key after put.
+    if (entry.sha256) return cached;
     try {
       await verifyIntegrity(entry, cached);
       return cached;
@@ -242,7 +263,8 @@ async function fetchModelBytes(entry) {
   }
   const bytes = await res.arrayBuffer();
   await verifyIntegrity(entry, bytes);
-  await cachePut(cacheKey, bytes);
+  // Fire-and-forget cache write — do not block compile/process on IDB put.
+  void cachePut(cacheKey, bytes);
   return bytes;
 }
 
@@ -263,6 +285,8 @@ async function createSessionFromBytes(entry, bytes) {
   const opts = {
     executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'],
     graphOptimizationLevel: 'all',
+    enableCpuMemArena: true,
+    enableMemPattern: true,
   };
   // Slice: InferenceSession.create may detach/neuter the input ArrayBuffer.
   // Callers (and IDB cache entries) must keep a usable copy for retries.
@@ -423,10 +447,13 @@ async function runSpectralMask(entry, session, samples, onProgress) {
       for (let i = 0; i < avail; i++) re[i] = samples[start + i] * win[i];
       fftInPlace(re, im, false);
       const off = b * bins;
+      // sqrt(re²+im²) is faster than Math.hypot for dense spectral loops.
       for (let k = 0; k < bins; k++) {
-        buf.batchRe[off + k] = re[k];
-        buf.batchIm[off + k] = im[k];
-        buf.batchMags[off + k] = Math.hypot(re[k], im[k]);
+        const rr = re[k];
+        const ii = im[k];
+        buf.batchRe[off + k] = rr;
+        buf.batchIm[off + k] = ii;
+        buf.batchMags[off + k] = Math.sqrt(rr * rr + ii * ii);
       }
     }
   };
@@ -651,9 +678,15 @@ self.onmessage = async (event) => {
         for (const entry of msg.manifest || []) MANIFEST[entry.id] = entry;
         USE_DESKTOP_CACHE = Boolean(msg.useDesktopCache);
         if (typeof ort !== 'undefined' && ort.env?.wasm) {
+          // Absolute /lib/ works for browser + Capacitor https origin + Electron vip://.
           ort.env.wasm.wasmPaths = '/lib/';
           const cores = self.navigator?.hardwareConcurrency || 4;
-          ort.env.wasm.numThreads = Math.min(8, Math.max(1, cores - 1));
+          const mobile = isConstrainedDevice();
+          // Threaded WASM needs COOP/COEP (Android MainActivity injects headers).
+          // Cap threads on mobile — oversubscription hurts more than it helps.
+          ort.env.wasm.numThreads = mobile
+            ? Math.min(2, Math.max(1, cores))
+            : Math.min(8, Math.max(1, cores - 1));
         }
         const backend = await resolveBackend();
         self.postMessage({ type: 'ready', backend });
