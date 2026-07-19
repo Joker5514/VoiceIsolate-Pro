@@ -3,16 +3,16 @@
   "appName": "VoiceIsolate Pro",
   "webDir": "build",
   "server": {
-    "url": null,
     "androidScheme": "https",
     "iosScheme": "capacitor",
-    "hostname": "voiceisolatepro.app"
+    "hostname": "voiceisolatepro.app",
+    "cleartext": false
   },
   "android": {
     "allowMixedContent": false,
     "webContentsDebuggingEnabled": false,
     "captureInput": true,
-    "appendUserAgent": "VoiceIsolatePro/24.0",
+    "appendUserAgent": "VoiceIsolatePro/24.0 Android",
     "backgroundColor": "#0a0a0f"
   },
   "ios": {
