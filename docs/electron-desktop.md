@@ -44,14 +44,35 @@ pnpm electron:dev
 
 Optional: `VIP_ELECTRON_DEVTOOLS=1 pnpm electron:dev` opens DevTools.
 
-## Production Build
+## Production Build (downloadable + 100% offline)
 
 ```bash
-pnpm build:electron        # NSIS (Win) / DMG (macOS) / AppImage (Linux)
-pnpm build:electron:dir    # unpacked dir for local smoke test
+pnpm setup:electron        # once — download Electron binary
+pnpm build:electron        # NSIS installer (Windows)
+pnpm build:electron:dir    # portable unpacked folder (no installer)
 ```
 
 Output: `dist/electron/`.
+
+| Artifact | Path | Use |
+|----------|------|-----|
+| Windows installer | `dist/electron/VoiceIsolate-Pro-*-win-x64.exe` | Download + install for end users |
+| Portable | `dist/electron/win-unpacked/VoiceIsolate Pro.exe` | Smoke test / USB portable |
+
+### Offline guarantees (packaged app)
+
+| Capability | How |
+|------------|-----|
+| UI + workers + ORT wasm | Shipped under `build/` inside the app |
+| Default isolation models | `bsrnn_vocals`, `rnnoise`, Silero VAD bundled in `build/app/models/` |
+| Model load without network | Custom **`vip://`** protocol (not `file://`) + first-launch seed into `{userData}/models/` |
+| COOP / COEP | Set on every `vip://` response → SharedArrayBuffer worklets work offline |
+| Auto-update | Optional; skipped when offline; never required to isolate audio |
+
+Huge optional weights (`demucs_v4_fp32.onnx`) are **excluded** from the installer to keep size reasonable. Default chain is BS-RNN only (~4 MB).
+
+Publish installer to GitHub Releases; the web download page links there:
+https://voice-isolate-pro.vercel.app/download/
 
 ## Model Cache (Desktop)
 
@@ -60,6 +81,9 @@ Unlike web (IndexedDB), desktop uses filesystem storage under:
 ```
 {userData}/models/
 ```
+
+On first launch the main process copies bundled offline ONNX files into this
+cache so MLWorker never needs a network fetch.
 
 `src/core/DesktopModelCache.js` implements filesystem-first caching with IndexedDB
 fallback. `src/core/ModelCacheBridge.js` proxies MLWorker cache I/O to the main

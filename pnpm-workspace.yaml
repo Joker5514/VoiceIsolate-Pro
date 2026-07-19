@@ -1,0 +1,43 @@
+# VoiceIsolate Pro — pnpm 11 workspace config
+# (package.json "pnpm" field is no longer read by pnpm ≥10.x/11)
+packages:
+  - '.'
+
+# Allow postinstall scripts for packages that need them.
+# true  = run build scripts (required for electron, esbuild, etc.)
+# false = reviewed and blocked (prevents ERR_PNPM_IGNORED_BUILDS)
+allowBuilds:
+  electron: true
+  esbuild: true
+  protobufjs: true
+  '@electron/node-gyp': true
+  electron-winstaller: true
+  cpu-features: true
+  ssh2: true
+  unrs-resolver: false
+  frida: false
+
+# Security / compatibility overrides (moved from package.json pnpm.overrides)
+overrides:
+  'protobufjs': '>=8.4.1'
+  '@xmldom/xmldom': '>=0.9.10'
+  'basic-ftp': '>=5.3.0'
+  '@tootallnate/once': '>=3.0.1'
+  'picomatch@<2.3.2': '2.3.2'
+  'picomatch@>=4.0.0 <4.0.4': '4.0.4'
+  'flatted': '>=3.4.2'
+  'brace-expansion': '>=1.1.13'
+  'tar': '>=6.2.1'
+  'ws': '>=8.21.0'
+  'tough-cookie': '>=4.1.4'
+  'semver': '>=7.5.4'
+  'word-wrap': '>=1.2.4'
+  'ip': '>=2.0.1'
+  'undici': '>=8.5.0'
+  'got': '>=14.4.2'
+  'cross-spawn': '>=7.0.5'
+  'micromatch': '>=4.0.8'
+  'esbuild': '>=0.25.0'
+  'form-data': '>=4.0.6'
+  'qs': '>=6.15.2'
+  'ip-address': '>=10.1.1'

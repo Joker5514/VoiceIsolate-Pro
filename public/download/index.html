@@ -89,11 +89,37 @@
     </section>
 
     <section class="dl-card" aria-labelledby="desktop-dl">
-      <h2 id="desktop-dl">Desktop (Windows)</h2>
-      <p>Build the Electron shell locally (unsigned dir build is the supported path today):</p>
-      <pre style="background:#0a0a10;padding:12px;border-radius:8px;overflow:auto;font-size:12px;color:#c4c4d0;">pnpm install
-pnpm build:electron:dir</pre>
-      <p class="dl-meta">See <code>docs/electron-desktop.md</code> and <code>pnpm android:build:win</code> for Android rebuilds.</p>
+      <h2 id="desktop-dl">Desktop (Windows) — 100% offline</h2>
+      <p>
+        Install once, then isolate voice with <strong>no internet</strong>.
+        ONNX models (BS-RNN + denoise + VAD) and the app UI ship inside the installer.
+        Audio never leaves your PC.
+      </p>
+      <div class="dl-actions">
+        <a class="btn" id="desktopPrimary"
+           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest"
+           rel="noopener noreferrer"
+           target="_blank">
+          Download Windows installer
+        </a>
+        <a class="btn btn-outline"
+           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases"
+           rel="noopener noreferrer"
+           target="_blank">
+          All desktop releases
+        </a>
+      </div>
+      <p class="dl-meta dl-ok">NSIS installer · models bundled · works offline after install</p>
+      <p class="dl-meta">
+        Asset name: <code>VoiceIsolate-Pro-*-win-x64.exe</code> (or <code>win-unpacked</code> portable folder)<br />
+        Build locally:
+      </p>
+      <pre style="background:#0a0a10;padding:12px;border-radius:8px;overflow:auto;font-size:12px;color:#c4c4d0;">cd VoiceIsolate-Pro
+pnpm install
+pnpm setup:electron
+pnpm build:electron        # NSIS installer → dist/electron/
+pnpm build:electron:dir    # portable folder (no install)</pre>
+      <p class="dl-meta">See <code>docs/electron-desktop.md</code> for signing, auto-update, and offline notes.</p>
     </section>
   </main>
 </body>
