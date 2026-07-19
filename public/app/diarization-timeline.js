@@ -189,16 +189,31 @@ export function setSpeakerSolo(id, solo)  { /* legacy stub — SpeakerControls i
 // ── Internal: render ──────────────────────────────────────────────────────────
 function _resize() {
   if (!_canvas) return;
+  // Match _draw() which divides by devicePixelRatio — keep the same scale factor.
+  const dpr = (typeof devicePixelRatio === 'number' && devicePixelRatio > 0) ? devicePixelRatio : 1;
   const parent = _canvas.parentElement;
-  const w = parent ? parent.clientWidth : 600;
+  const card = typeof _canvas.closest === 'function'
+    ? _canvas.closest('.viz-card, .col-right, .panel')
+    : null;
+  let w = Math.max(
+    parent ? parent.clientWidth : 0,
+    card ? card.clientWidth : 0,
+    _canvas.clientWidth || 0,
+  );
+  if (card && card.clientWidth > 0) {
+    w = Math.min(w || card.clientWidth, card.clientWidth);
+  }
+  w = Math.max(1, w || 280);
   const h = Math.max(80, _canvas.clientHeight || 90);
-  _canvas.width  = w * devicePixelRatio;
-  _canvas.height = h * devicePixelRatio;
-  _canvas.style.width  = w + 'px';
+  _canvas.width  = Math.round(w * dpr);
+  _canvas.height = Math.round(h * dpr);
+  // Fluid width so desktop grid columns reflow; keep explicit height for slot.
+  _canvas.style.width  = '100%';
+  _canvas.style.maxWidth = '100%';
   _canvas.style.height = h + 'px';
   if (_ctx) {
     _ctx.setTransform(1, 0, 0, 1, 0, 0);
-    _ctx.scale(devicePixelRatio, devicePixelRatio);
+    _ctx.scale(dpr, dpr);
   }
   if (!_viewEnd && _duration) _viewEnd = _duration;
   _lastPlayheadPx = -1;

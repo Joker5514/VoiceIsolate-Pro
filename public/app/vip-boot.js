@@ -362,6 +362,10 @@
     Object.keys(window.ModelCDNLoader.providerHealth).forEach(function (k) {
       window.ModelCDNLoader.providerHealth[k] = true;
     });
+    // Re-probe so Local Model Health flips off "unknown" after reconnect
+    if (typeof window.ModelCDNLoader.probeSameOriginHealth === 'function') {
+      try { window.ModelCDNLoader.probeSameOriginHealth(); } catch (e) { /* ignore */ }
+    }
     return true;
   }
 
