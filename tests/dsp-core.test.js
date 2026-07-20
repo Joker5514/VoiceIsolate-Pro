@@ -132,9 +132,9 @@ describe('DSPCore.getVoiceMaskGain', () => {
     expect(DSPCore.getVoiceMaskGain(bin, SR, FFT)).toBe(1.0);
   });
 
-  test('returns 0.4 for frequencies above 12 kHz', () => {
+  test('returns 0.12 for frequencies above 12 kHz (anti-whistle)', () => {
     const bin = Math.round(14000 / (SR / FFT));
-    expect(DSPCore.getVoiceMaskGain(bin, SR, FFT)).toBe(0.40);
+    expect(DSPCore.getVoiceMaskGain(bin, SR, FFT)).toBe(0.12);
   });
 
   test('all bin values are in [0, 1]', () => {

@@ -141,10 +141,10 @@ function getVoiceMaskGain(binIndex, sampleRate, fftSize) {
   if (freq < 80)   return 0.60;        // bass / male fundamentals
   if (freq < 200)  return 0.90;        // voice fundamentals: keep nearly full
   if (freq <= 4000) return 1.0;        // CORE VOICE BAND
-  if (freq <= 6000) return 0.90;       // sibilants / presence — keep
-  if (freq <= 9000) return 0.75;       // upper presence / breath — preserve naturalness
-  if (freq <= 12000) return 0.55;      // air band
-  return 0.40;                         // ultra-high: gently attenuate (no near-kill)
+  if (freq <= 6000) return 0.88;       // sibilants / presence
+  if (freq <= 8000) return 0.55;       // upper presence — was 0.75, let HF noise through
+  if (freq <= 10000) return 0.28;      // air band — cut whistle / musical-noise ring
+  return 0.12;                         // ultra-high: strong attenuate (anti-whistle)
 }
 
 /**
@@ -795,17 +795,67 @@ const DSPCore = {
     return getVoiceMaskGain(binIndex, sampleRate, fftSize);
   },
 
-  /** S15: Wiener-MMSE spectral noise subtraction */
-  wienerMMSE(mag, noiseProfile, amount) {
-    const alpha = amount / 100;
-    const floor = 0.01; // spectral floor
+  /**
+   * S15: Wiener-MMSE spectral noise subtraction.
+   * High bins use a higher gain floor so over-subtraction cannot leave thin
+   * "musical noise" tones / high-pitch rings (classic spectral NR artifact).
+   */
+  wienerMMSE(mag, noiseProfile, amount, opts = {}) {
+    const alpha = Math.min(1, Math.max(0, amount / 100));
+    const halfN = mag[0]?.length || 1;
+    const baseFloor = 0.02; // was 0.01 — less deep holes
     for (let f = 0; f < mag.length; f++) {
-      for (let k = 0; k < mag[f].length; k++) {
+      const frame = mag[f];
+      for (let k = 0; k < frame.length; k++) {
         const noise = noiseProfile ? (noiseProfile[k] || 0) : 0;
-        const sigPower = mag[f][k] * mag[f][k];
+        const sigPower = frame[k] * frame[k];
         const noisePower = noise * noise * alpha;
+        // Raise floor toward Nyquist so residual HF is suppressed gently, not chirped.
+        const hf = k / halfN; // 0..1
+        const floor = baseFloor + hf * hf * 0.12;
         const gain = Math.max(floor, 1 - noisePower / (sigPower + 1e-10));
-        mag[f][k] *= gain;
+        frame[k] *= gain;
+      }
+    }
+    return mag;
+  },
+
+  /**
+   * Kill thin high-pitch / whistle residuals left after aggressive NR or ML masks.
+   * Median-ish peak clamp above `cutHz` + progressive rolloff to Nyquist.
+   */
+  deWhistle(mag, sampleRate, fftSize, opts = {}) {
+    const cutHz = opts.cutHz ?? 7500;
+    const rollHz = opts.rollHz ?? 11000;
+    if (!mag?.length || !mag[0]) return mag;
+    const halfN = mag[0].length;
+    const binHz = sampleRate / fftSize;
+    const cutBin = Math.max(1, Math.floor(cutHz / binHz));
+    const rollBin = Math.min(halfN - 1, Math.floor(rollHz / binHz));
+    for (let f = 0; f < mag.length; f++) {
+      const frame = mag[f];
+      // Local peak clamp: no bin above cut may exceed 1.6× mean of neighbors
+      for (let k = cutBin; k < halfN; k++) {
+        const k0 = Math.max(cutBin, k - 2);
+        const k1 = Math.min(halfN - 1, k + 2);
+        let sum = 0;
+        let n = 0;
+        for (let j = k0; j <= k1; j++) {
+          if (j === k) continue;
+          sum += frame[j];
+          n += 1;
+        }
+        const neigh = n > 0 ? sum / n : frame[k];
+        const cap = neigh * 1.55 + 1e-9;
+        if (frame[k] > cap) frame[k] = cap;
+        // Progressive HF rolloff
+        if (k >= rollBin) {
+          const t = (k - rollBin) / Math.max(1, halfN - 1 - rollBin);
+          frame[k] *= Math.max(0.08, 1 - t * 0.92);
+        } else if (k >= cutBin) {
+          const t = (k - cutBin) / Math.max(1, rollBin - cutBin);
+          frame[k] *= 1 - t * 0.35;
+        }
       }
     }
     return mag;
@@ -921,16 +971,22 @@ const DSPCore = {
     return mag;
   },
 
-  /** S17: Harmonic enhancement via pitch-tracked boost */
-  harmonicEnhance(mag, phase, amount) {
+  /**
+   * S17: Harmonic enhancement via peak boost — speech band only.
+   * Boosting peaks above ~5.5 kHz turns residual hiss into a high-pitch ring.
+   */
+  harmonicEnhance(mag, phase, amount, opts = {}) {
     if (amount <= 0) return mag;
-    const boost = 1 + amount / 100;
+    const boost = 1 + (amount / 100) * 0.65; // milder than full amount
+    const maxBin = opts.maxBin
+      ?? Math.max(8, Math.floor((mag[0]?.length || 1) * 0.22)); // ~5–6 kHz @ 48k/2048
     for (let f = 0; f < mag.length; f++) {
-      // Simple harmonic detection: bins with local magnitude peaks
-      for (let k = 2; k < mag[f].length - 2; k++) {
-        if (mag[f][k] > mag[f][k-1] && mag[f][k] > mag[f][k+1] &&
-            mag[f][k] > mag[f][k-2] && mag[f][k] > mag[f][k+2]) {
-          mag[f][k] *= boost;
+      const frame = mag[f];
+      const top = Math.min(frame.length - 2, maxBin);
+      for (let k = 2; k < top; k++) {
+        if (frame[k] > frame[k - 1] * 1.25 && frame[k] > frame[k + 1] * 1.25
+            && frame[k] > frame[k - 2] && frame[k] > frame[k + 2]) {
+          frame[k] *= boost;
         }
       }
     }

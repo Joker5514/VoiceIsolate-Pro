@@ -486,10 +486,18 @@ async function runSpectralMask(entry, session, samples, onProgress) {
     }
 
     // ── Masked inverse STFT + overlap-add ───────────────────────────────
+    // Soft HF mask floor: thin residual bins at high k become a high-pitch ring
+    // when the mask is near 1 but the phase is noise-like. Tame without a 2nd pass.
+    const hfStart = Math.floor(bins * 0.35); // ~8 kHz @ 48k/4096
     for (let b = 0; b < count; b++) {
       const off = b * bins;
       for (let k = 0; k < bins; k++) {
-        const m = mask[off + k];
+        let m = mask[off + k];
+        if (k >= hfStart) {
+          const t = (k - hfStart) / Math.max(1, bins - 1 - hfStart);
+          // Cap mask contribution in air band (anti-whistle)
+          m *= 1 - t * 0.55;
+        }
         re[k] = cur.batchRe[off + k] * m;
         im[k] = cur.batchIm[off + k] * m;
       }
