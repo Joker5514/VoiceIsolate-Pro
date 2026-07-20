@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Download — VoiceIsolate Pro</title>
-  <meta name="description" content="Download VoiceIsolate Pro for Android, desktop, or open the web app. 100% on-device voice isolation." />
+  <meta name="description" content="Download VoiceIsolate Pro for Android, Windows desktop, or open the web app. 100% on-device voice isolation." />
   <link rel="icon" href="/icon.jpg" />
   <link rel="stylesheet" href="/landing.css" />
   <style>
@@ -26,6 +26,15 @@
     .warn { color: #fcd34d; font-size: 0.85rem; }
     .dl-ok { color: #86efac; font-size: 0.85rem; }
     code { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 0.85em; }
+    pre {
+      background: #0a0a10;
+      padding: 12px;
+      border-radius: 8px;
+      overflow: auto;
+      font-size: 12px;
+      color: #c4c4d0;
+      margin: 8px 0 0;
+    }
   </style>
 </head>
 <body>
@@ -39,17 +48,16 @@
     <h1 class="section-label" style="font-size:1.4rem;letter-spacing:.06em;">Download VoiceIsolate Pro</h1>
     <p class="hint">Privacy-first voice isolation. Audio never leaves your device.</p>
 
+    <!-- ── Android ─────────────────────────────────────────────────────── -->
     <section class="dl-card" aria-labelledby="android-dl">
       <h2 id="android-dl">Android (APK) — complete offline app</h2>
       <p>
-        Full on-device studio: Engineer Mode, BS-RNN isolation, worklets, and ONNX models
-        bundled in the APK — <strong>no network required</strong> after install.
+        Full on-device studio: <strong>Landing + Engineer Mode</strong>, BS-RNN isolation,
+        worklets, and ONNX models bundled — <strong>no network required</strong> after install.
         Enable <strong>Install unknown apps</strong>, then open the file.
-        Download from GitHub Releases
-        (content-type <code>application/vnd.android.package-archive</code>).
       </p>
       <div class="dl-actions">
-        <!-- Primary: always GitHub Releases — never rewrite to a same-origin SPA HTML path -->
+        <!-- Always GitHub Releases — never a same-origin SPA HTML path -->
         <a class="btn" id="apkPrimary"
            href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"
            rel="noopener noreferrer"
@@ -71,15 +79,81 @@
           All releases
         </a>
       </div>
-      <p class="dl-meta dl-ok">Complete offline app · Landing + Engineer Mode · models + ORT bundled · real APK binary</p>
-      <p class="dl-meta warn">Debug/sideload build · not Play Store signed · Demucs FP32 excluded (BS-RNN default)</p>
+      <p class="dl-meta dl-ok">
+        Complete offline app · Landing + Engineer Mode · models + ORT ·
+        real APK (~238&nbsp;MB)
+      </p>
+      <p class="dl-meta warn">Debug/sideload build · not Play Store signed</p>
       <p class="dl-meta">
-        Asset name: <code>VoiceIsolate-Pro-android-debug.apk</code><br />
-        Latest: <code>…/releases/latest/download/VoiceIsolate-Pro-android-debug.apk</code><br />
-        Pinned: <code>…/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk</code>
+        Asset: <code>VoiceIsolate-Pro-android-debug.apk</code><br />
+        Latest:
+        <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"
+           rel="noopener noreferrer" target="_blank" style="color:#f87171">
+          …/latest/download/VoiceIsolate-Pro-android-debug.apk
+        </a><br />
+        Pinned v24.0.0:
+        <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk"
+           rel="noopener noreferrer" target="_blank" style="color:#f87171">
+          …/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk
+        </a>
       </p>
     </section>
 
+    <!-- ── Desktop ─────────────────────────────────────────────────────── -->
+    <section class="dl-card" aria-labelledby="desktop-dl">
+      <h2 id="desktop-dl">Desktop (Windows) — 100% offline</h2>
+      <p>
+        NSIS installer for Windows x64. Install once, then isolate with
+        <strong>no internet</strong>. UI, ORT WASM, and default ONNX models
+        (BS-RNN + denoise + VAD) ship inside the package.
+      </p>
+      <div class="dl-actions">
+        <a class="btn" id="desktopPrimary"
+           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe"
+           rel="noopener noreferrer"
+           target="_blank"
+           download="VoiceIsolate-Pro-24.0.0-win-x64.exe">
+          Download Windows installer
+        </a>
+        <a class="btn btn-outline"
+           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe"
+           rel="noopener noreferrer"
+           target="_blank"
+           download="VoiceIsolate-Pro-24.0.0-win-x64.exe">
+          v24.0.0 direct
+        </a>
+        <a class="btn btn-outline"
+           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases"
+           rel="noopener noreferrer"
+           target="_blank">
+          All releases
+        </a>
+      </div>
+      <p class="dl-meta dl-ok">NSIS · models bundled · offline after install · ~480&nbsp;MB</p>
+      <p class="dl-meta warn">Unsigned local builds may trigger SmartScreen — More info → Run anyway</p>
+      <p class="dl-meta">
+        Asset: <code>VoiceIsolate-Pro-24.0.0-win-x64.exe</code><br />
+        Latest:
+        <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe"
+           rel="noopener noreferrer" target="_blank" style="color:#f87171">
+          …/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe
+        </a><br />
+        Pinned v24.0.0:
+        <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe"
+           rel="noopener noreferrer" target="_blank" style="color:#f87171">
+          …/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe
+        </a>
+      </p>
+      <p class="dl-meta">Build locally:</p>
+      <pre>cd VoiceIsolate-Pro
+pnpm install
+pnpm setup:electron
+pnpm build:electron        # NSIS → dist/electron/
+pnpm build:electron:dir    # portable win-unpacked/</pre>
+      <p class="dl-meta">See <code>docs/electron-desktop.md</code> for signing and offline notes.</p>
+    </section>
+
+    <!-- ── Web ─────────────────────────────────────────────────────────── -->
     <section class="dl-card" aria-labelledby="web-dl">
       <h2 id="web-dl">Web (no install)</h2>
       <p>Run fully in the browser — Landing (stem-split) or Engineer Mode (full DSP).</p>
@@ -87,40 +161,6 @@
         <a class="btn" href="/">Open Landing</a>
         <a class="btn btn-outline" href="/app/">Open Engineer Mode</a>
       </div>
-    </section>
-
-    <section class="dl-card" aria-labelledby="desktop-dl">
-      <h2 id="desktop-dl">Desktop (Windows) — 100% offline</h2>
-      <p>
-        Install once, then isolate voice with <strong>no internet</strong>.
-        ONNX models (BS-RNN + denoise + VAD) and the app UI ship inside the installer.
-        Audio never leaves your PC.
-      </p>
-      <div class="dl-actions">
-        <a class="btn" id="desktopPrimary"
-           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest"
-           rel="noopener noreferrer"
-           target="_blank">
-          Download Windows installer
-        </a>
-        <a class="btn btn-outline"
-           href="https://github.com/Joker5514/VoiceIsolate-Pro/releases"
-           rel="noopener noreferrer"
-           target="_blank">
-          All desktop releases
-        </a>
-      </div>
-      <p class="dl-meta dl-ok">NSIS installer · models bundled · works offline after install</p>
-      <p class="dl-meta">
-        Asset name: <code>VoiceIsolate-Pro-*-win-x64.exe</code> (or <code>win-unpacked</code> portable folder)<br />
-        Build locally:
-      </p>
-      <pre style="background:#0a0a10;padding:12px;border-radius:8px;overflow:auto;font-size:12px;color:#c4c4d0;">cd VoiceIsolate-Pro
-pnpm install
-pnpm setup:electron
-pnpm build:electron        # NSIS installer → dist/electron/
-pnpm build:electron:dir    # portable folder (no install)</pre>
-      <p class="dl-meta">See <code>docs/electron-desktop.md</code> for signing, auto-update, and offline notes.</p>
     </section>
   </main>
 </body>
