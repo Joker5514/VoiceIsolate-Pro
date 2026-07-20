@@ -367,11 +367,11 @@ const SLIDERS = {
     { id:'gateLookahead', label:'Lookahead', min:0, max:50, val:5, step:1, unit:' ms', rt:false, desc:'Lets the gate peek ahead so it opens just before a sound arrives.', example:'5–10 ms preserves the sharp attack of a clapper or plosive that a zero-lookahead gate would shave off.' },
   ],
   nr: [
-    { id:'nrAmount', label:'NR Amount', min:0, max:100, val:78, step:1, unit:'%', rt:false, desc:'Overall strength of the spectral noise removal.', example:'~70% cleans steady air-conditioner hiss from an interview; push past 90% only for heavy noise, as it can make the voice sound underwater.' },
-    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:60, step:1, unit:'%', rt:false, desc:'How aggressively the noise floor is detected and learned.', example:'Raise to ~80% when noise is loud and constant (traffic); lower to ~40% to avoid mistaking quiet speech for noise.' },
-    { id:'nrSpectralSub', label:'Spectral Sub', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Extra subtraction of the learned noise spectrum.', example:'Bump to ~70% to scrub tonal hum/whine; high values can add a "musical noise" warble, so back off if you hear bubbling.' },
-    { id:'nrFloor', label:'NR Floor', min:-96, max:-30, val:-72, step:1, unit:' dB', rt:false, desc:'How deep the quietest residual noise is allowed to drop.', example:'-72 dB is transparent; set -40 dB to leave a faint natural noise bed so dialogue does not sound unnaturally dead.' },
-    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:70, step:1, unit:'%', rt:false, desc:'Averages noise estimates over time to reduce artifacts.', example:'~70% smooths out flutter on steady noise; lower to ~30% for fast-changing scenes so reduction can react quickly.' },
+    { id:'nrAmount', label:'NR Amount', min:0, max:100, val:52, step:1, unit:'%', rt:false, desc:'Overall strength of the spectral noise removal.', example:'~50–55% cleans steady hiss without high-pitch musical noise; push past 85% only for heavy noise (can sound underwater).' },
+    { id:'nrSensitivity', label:'Sensitivity', min:0, max:100, val:48, step:1, unit:'%', rt:false, desc:'How aggressively the noise floor is detected and learned.', example:'Raise to ~80% when noise is loud and constant (traffic); lower to ~40% to avoid mistaking quiet speech for noise.' },
+    { id:'nrSpectralSub', label:'Spectral Sub', min:0, max:100, val:35, step:1, unit:'%', rt:false, desc:'Extra subtraction of the learned noise spectrum.', example:'Bump to ~70% to scrub tonal hum/whine; high values can add a "musical noise" warble, so back off if you hear bubbling.' },
+    { id:'nrFloor', label:'NR Floor', min:-96, max:-30, val:-68, step:1, unit:' dB', rt:false, desc:'How deep the quietest residual noise is allowed to drop.', example:'-68 dB is transparent; set -40 dB to leave a faint natural noise bed so dialogue does not sound unnaturally dead.' },
+    { id:'nrSmoothing', label:'Smoothing', min:0, max:100, val:32, step:1, unit:'%', rt:false, desc:'Averages noise estimates over time to reduce artifacts.', example:'~30–40% reduces smear; high values blur consonants and can smear the voice.' },
   ],
   eq: [
     { id:'eqSub', label:'Sub', min:-12, max:12, val:0, step:0.5, unit:' dB', rt:true, desc:'Lowest rumble band (20–60 Hz).', example:'Cut -6 dB to remove desk thumps and AC rumble from a podcast; rarely boosted for voice.' },
@@ -400,8 +400,8 @@ const SLIDERS = {
     { id:'hpQ', label:'HP Q', min:0.1, max:10, val:0.7, step:0.1, unit:'', rt:true, desc:'Sharpness of the high-pass cutoff.', example:'0.7 is a smooth, natural roll-off; higher Q makes the cut steeper with a slight bump at the corner.' },
     { id:'lpFreq', label:'LP Freq', min:4000, max:20000, val:18000, step:100, unit:' Hz', rt:true, desc:'Removes everything above this frequency (a low-pass filter).', example:'18 kHz keeps it natural; drop to 4 kHz to hide hiss or fake an old-radio sound.' },
     { id:'lpQ', label:'LP Q', min:0.1, max:10, val:0.7, step:0.1, unit:'', rt:true, desc:'Sharpness of the low-pass cutoff.', example:'0.7 is gentle; higher Q steepens the cut and adds a resonant edge near the corner frequency.' },
-    { id:'deEssFreq', label:'De-ess Freq', min:2000, max:12000, val:6000, step:100, unit:' Hz', rt:true, desc:'Center of the harsh "ess/sh" sibilance the de-esser targets.', example:'~6 kHz for most voices; sweep to 7–8 kHz for a bright/sharp speaker whose "s" sounds pierce.' },
-    { id:'deEssAmt', label:'De-ess Amt', min:0, max:30, val:0, step:1, unit:' dB', rt:true, desc:'How much the harsh "s" and "sh" sounds are tamed.', example:'Set 6 dB to soften sharp sibilance on a podcast; 0 leaves it untouched.' },
+    { id:'deEssFreq', label:'De-ess Freq', min:2000, max:12000, val:6500, step:100, unit:' Hz', rt:true, desc:'Center of the harsh "ess/sh" sibilance the de-esser targets.', example:'~6–7 kHz for most voices; sweep to 7–8 kHz for a bright/sharp speaker whose "s" sounds pierce.' },
+    { id:'deEssAmt', label:'De-ess Amt', min:0, max:30, val:5, step:1, unit:' dB', rt:true, desc:'How much the harsh "s" and "sh" sounds are tamed.', example:'~5 dB softens piercing sibilance and high-pitch residue without lisping; 0 leaves it untouched.' },
     { id:'specTilt', label:'Spec Tilt', min:-6, max:6, val:0, step:0.5, unit:' dB', rt:true, desc:'Tilts overall tone darker (−) or brighter (+) in one move.', example:'+2 dB brightens a dull recording; -2 dB warms a harsh one without touching individual EQ bands.' },
     { id:'formantShift', label:'Formant Shift', min:-6, max:6, val:0, step:0.5, unit:' st', rt:false, desc:'Shifts vocal character without changing pitch (semitones).', example:'-2 st makes a voice sound larger/deeper; +2 st sounds smaller/younger — useful for light disguise or tone.' },
   ],
@@ -414,16 +414,16 @@ const SLIDERS = {
     { id:'phaseCorr', label:'Phase Corr', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Fixes out-of-phase stereo so it stays solid in mono.', example:'Raise to ~40% when a stereo clip goes hollow/thin on a phone speaker that sums to mono.' },
   ],
   sep: [
-    { id:'voiceIso', label:'Voice Iso', min:0, max:100, val:80, step:1, unit:'%', rt:false, desc:'Emphasises the human voice over everything else.', example:'~80% lifts a speaker out of background music; near 100% is forensic-grade but can sound processed.' },
-    { id:'bgSuppress', label:'BG Suppress', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Lowers sound that sits outside the voice focus band.', example:'Set ~60% to push down street noise and crowd chatter while keeping the dialogue forward.' },
-    { id:'voiceFocusLo', label:'Focus Lo', min:80, max:500, val:120, step:10, unit:' Hz', rt:false, desc:'Bottom edge of the band kept as "voice".', example:'~120 Hz suits most voices; raise to 200 Hz to ignore deep rumble, lower for very deep male voices.' },
-    { id:'voiceFocusHi', label:'Focus Hi', min:1000, max:8000, val:3400, step:100, unit:' Hz', rt:false, desc:'Top edge of the band kept as "voice".', example:'3400 Hz mimics telephone clarity; raise to 5000 Hz to keep crisp consonants and a more natural top.' },
+    { id:'voiceIso', label:'Voice Iso', min:0, max:100, val:72, step:1, unit:'%', rt:false, desc:'Emphasises the human voice over everything else.', example:'~70% lifts a speaker out of background music; near 100% is forensic-grade but can sound processed.' },
+    { id:'bgSuppress', label:'BG Suppress', min:0, max:100, val:38, step:1, unit:'%', rt:false, desc:'Lowers sound that sits outside the voice focus band.', example:'Set ~60% to push down street noise and crowd chatter while keeping the dialogue forward.' },
+    { id:'voiceFocusLo', label:'Focus Lo', min:80, max:500, val:100, step:10, unit:' Hz', rt:false, desc:'Bottom edge of the band kept as "voice".', example:'~100–120 Hz suits most voices; raise to 200 Hz to ignore deep rumble, lower for very deep male voices.' },
+    { id:'voiceFocusHi', label:'Focus Hi', min:1000, max:8000, val:4200, step:100, unit:' Hz', rt:false, desc:'Top edge of the band kept as "voice" (lower blocks high-pitch residual).', example:'4200 Hz mimics telephone clarity; raise to 5000 Hz to keep crisp consonants and a more natural top.' },
     { id:'crosstalkCancel', label:'Crosstalk', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Removes bleed of one stereo channel into the other.', example:'Use ~40% on a two-mic interview where each voice leaks into the opposite channel.' },
   ],
   out: [
     { id:'outGain', label:'Output Gain', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Final overall volume trim on the processed output.', example:'Add +3 dB if the cleaned voice is too quiet; the limiter still prevents clipping above its ceiling.' },
     { id:'dryWet', label:'Dry/Wet', min:0, max:100, val:100, step:1, unit:'%', rt:true, desc:'Blends the original (dry) with the processed (wet) signal.', example:'100% is fully processed; drop to 70% to keep a touch of the natural original and soften aggressive cleanup.' },
-    { id:'ditherAmt', label:'Dither', min:0, max:10, val:1, step:0.1, unit:' bits', rt:false, desc:'Adds tiny noise that smooths quiet detail when exporting.', example:'Leave at ~1 for clean fades to silence; set 0 if you will keep full 32-bit float quality.' },
+    { id:'ditherAmt', label:'Dither', min:0, max:10, val:0, step:0.1, unit:' bits', rt:false, desc:'Adds tiny noise that smooths quiet detail when exporting.', example:'Leave at 0 for full float quality; set ~1 only when dithering for 16-bit export.' },
     { id:'outWidth', label:'Out Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Final stereo width applied at the very end of the chain.', example:'100% leaves width unchanged; 0% guarantees a centered mono output for phone playback.' },
   ],
   extreme: [
@@ -502,25 +502,25 @@ const PRESETS = {
   'Voice Clarity': {
     description: 'Isolate speech and enhance intelligibility with balanced noise reduction',
     gateThresh: -44, gateRange: -58, gateAttack: 4, gateRelease: 180, gateHold: 40, gateLookahead: 5,
-    nrAmount: 74, nrSensitivity: 56, nrSpectralSub: 50, nrFloor: -74, nrSmoothing: 62,
-    eqSub: 0, eqBass: 0, eqWarmth: 1, eqBody: 1.5, eqLowMid: 0.5, eqMid: 1.5, eqPresence: 2, eqClarity: 1, eqAir: 0.5, eqBrill: 0,
+    nrAmount: 52, nrSensitivity: 48, nrSpectralSub: 32, nrFloor: -68, nrSmoothing: 30,
+    eqSub: 0, eqBass: 0, eqWarmth: 0.5, eqBody: 1, eqLowMid: 0.5, eqMid: 1, eqPresence: 1, eqClarity: 0.5, eqAir: 0, eqBrill: 0,
     compThresh: -22, compRatio: 3.5, compAttack: 8, compRelease: 140, compKnee: 5, compMakeup: 1.5, limThresh: -1, limRelease: 45,
-    hpFreq: 70, hpQ: 0.7, lpFreq: 16000, lpQ: 0.7, deEssFreq: 6200, deEssAmt: 2.5, specTilt: 0.3, formantShift: 0,
-    derevAmt: 12, derevDecay: 35, harmRecov: 12, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
-    voiceIso: 84, bgSuppress: 58, voiceFocusLo: 100, voiceFocusHi: 4200, crosstalkCancel: 0,
-    outGain: 2, dryWet: 100, ditherAmt: 1, outWidth: 100,
+    hpFreq: 70, hpQ: 0.7, lpFreq: 14000, lpQ: 0.7, deEssFreq: 6500, deEssAmt: 5, specTilt: 0, formantShift: 0,
+    derevAmt: 8, derevDecay: 30, harmRecov: 0, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
+    voiceIso: 72, bgSuppress: 38, voiceFocusLo: 100, voiceFocusHi: 4200, crosstalkCancel: 0,
+    outGain: 1, dryWet: 100, ditherAmt: 0, outWidth: 100,
     ...EXTREME_OFF,
   },
   'Podcast Clean': {
     description: 'Studio-clean podcast isolation with de-essing and steady loudness',
     gateThresh: -52, gateRange: -62, gateAttack: 5, gateRelease: 200, gateHold: 45, gateLookahead: 5,
-    nrAmount: 80, nrSensitivity: 60, nrSpectralSub: 52, nrFloor: -74, nrSmoothing: 68,
-    eqSub: -2, eqBass: 0, eqWarmth: 1.5, eqBody: 1, eqLowMid: 0, eqMid: 0.5, eqPresence: 1.5, eqClarity: 0.5, eqAir: 0, eqBrill: 0,
+    nrAmount: 55, nrSensitivity: 50, nrSpectralSub: 35, nrFloor: -68, nrSmoothing: 32,
+    eqSub: -1, eqBass: 0, eqWarmth: 1, eqBody: 0.5, eqLowMid: 0, eqMid: 0.5, eqPresence: 1, eqClarity: 0, eqAir: 0, eqBrill: 0,
     compThresh: -18, compRatio: 3, compAttack: 12, compRelease: 160, compKnee: 6, compMakeup: 2, limThresh: -1, limRelease: 50,
-    hpFreq: 90, hpQ: 0.7, lpFreq: 15000, lpQ: 0.7, deEssFreq: 6800, deEssAmt: 5, specTilt: 0, formantShift: 0,
-    derevAmt: 10, derevDecay: 40, harmRecov: 6, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
-    voiceIso: 80, bgSuppress: 60, voiceFocusLo: 110, voiceFocusHi: 3800, crosstalkCancel: 0,
-    outGain: 0, dryWet: 100, ditherAmt: 1, outWidth: 100,
+    hpFreq: 90, hpQ: 0.7, lpFreq: 14000, lpQ: 0.7, deEssFreq: 6500, deEssAmt: 6, specTilt: 0, formantShift: 0,
+    derevAmt: 8, derevDecay: 35, harmRecov: 0, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
+    voiceIso: 74, bgSuppress: 42, voiceFocusLo: 110, voiceFocusHi: 3800, crosstalkCancel: 0,
+    outGain: 0, dryWet: 100, ditherAmt: 0, outWidth: 100,
     ...EXTREME_OFF,
     breathControl: 28,
   },
@@ -2748,6 +2748,8 @@ class VoiceIsolatePro {
       if (plan.expandStereo && clean?.[0] && plan.left && plan.right && plan.mid) {
         clean = this._expandMonoCleanToStereo(clean[0], plan.mid, plan.left, plan.right);
       }
+      // Fast time-domain HF tame — kills residual ML mask whistle without a 2nd STFT.
+      this._postIsolationDeWhistle(clean, result.sampleRate || buf.sampleRate);
       this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
       // Keep origBuffer as the ML source of truth for subsequent reprocess/cache keys.
@@ -3065,12 +3067,41 @@ class VoiceIsolatePro {
     if (strength < 0.001) return;
   }
 
+  /**
+   * Soft one-pole low-pass + light HF peak clamp after ML isolation.
+   * Removes thin high-pitch residual without a full STFT pass (keeps speed).
+   */
+  _postIsolationDeWhistle(channels, sampleRate = 48000) {
+    if (!channels?.length) return;
+    const sr = sampleRate || 48000;
+    // ~11 kHz cutoff — speech stays clear, whistle/hiss ring dies.
+    const fc = 11000;
+    const x = Math.exp(-2 * Math.PI * fc / sr);
+    const a0 = 1 - x;
+    for (let ch = 0; ch < channels.length; ch++) {
+      const d = channels[ch];
+      if (!d?.length) continue;
+      let y = 0;
+      let prev = 0;
+      for (let i = 0; i < d.length; i++) {
+        y = a0 * d[i] + x * y;
+        // Soft clamp of high-freq delta (kills single-sample ticks / ring)
+        const delta = y - prev;
+        const limited = Math.max(-0.08, Math.min(0.08, delta));
+        const out = prev + limited * 0.35 + (y - prev) * 0.65;
+        prev = out;
+        d[i] = out;
+      }
+    }
+  }
+
   applyDither(buf, p) {
     const bits = p.ditherAmt || 0;
-    if (!bits) return;
-    const amp = Math.pow(2, -(bits * 8)) * 0.5;
+    if (!bits || bits <= 0) return;
+    // Interpret ditherAmt as optional 16-bit-ish TPDF level (not bits*8 — that was too loud/harsh).
+    const amp = Math.min(1e-3, Math.pow(2, -(16 + bits)) * 0.5);
     for (let i = 0; i < buf.length; i++) {
-      buf[i] += (Math.random() * 2 - 1) * amp;
+      buf[i] += (Math.random() + Math.random() - 1) * amp;
     }
   }
 
@@ -3196,15 +3227,18 @@ class VoiceIsolatePro {
     const nrAmount = (p.nrAmount ?? 0) * nrScale;
     if (nrAmount > 0) {
       const noise = this._estimateNoiseFloor(mag);
-      const scale = 1 + (p.nrSensitivity ?? 60) / 100 * 0.6 + (p.nrSpectralSub ?? 50) / 100 * 0.6;
+      // Milder over-subtraction scale — high sens+sub was creating HF musical noise.
+      const scale = 1 + (p.nrSensitivity ?? 48) / 100 * 0.35 + (p.nrSpectralSub ?? 35) / 100 * 0.35;
       for (let k = 0; k < noise.length; k++) noise[k] *= scale;
       DSP.wienerMMSE(mag, noise, nrAmount);
       await yieldBudget();
     }
 
-    if ((p.nrFloor ?? -96) > -96) DSP.spectralGate(mag, p.nrFloor ?? -72, sr, HOP);
+    if ((p.nrFloor ?? -96) > -90) DSP.spectralGate(mag, p.nrFloor ?? -68, sr, HOP);
     this._applyVoiceFocus(mag, sr, p, halfN, FFT);
-    if ((p.nrSmoothing ?? 0) > 0) DSP.temporalSmooth(mag, p.nrSmoothing);
+    // Cap smoothing — high values smear speech and cost CPU.
+    const smooth = Math.min(45, p.nrSmoothing ?? 0);
+    if (smooth > 0) DSP.temporalSmooth(mag, smooth);
     if (Math.abs(p.specTilt ?? 0) > 0.01) this._applySpectralTilt(mag, sr, p.specTilt, halfN, FFT);
     if (Math.abs(p.formantShift ?? 0) > 0.01) this._applyFormantShiftSpec(mag, p.formantShift, halfN);
     await yieldBudget();
@@ -3215,11 +3249,16 @@ class VoiceIsolatePro {
     }
     if ((p.harmRecov ?? 0) > 0) {
       const orderScale = Math.max(1, Math.min(8, p.harmOrder ?? 3)) / 3;
-      DSP.harmonicEnhance(mag, phase, (p.harmRecov ?? 0) * orderScale);
+      const maxBin = Math.floor(5500 / (sr / FFT));
+      DSP.harmonicEnhance(mag, phase, (p.harmRecov ?? 0) * orderScale, { maxBin });
     }
     if ((p.breathControl ?? 0) > 0) this._applyBreathControl(mag, p.breathControl, halfN);
     if (Math.abs(p.transientShaper ?? 0) > 1) this._applyTransientShaper(mag, p.transientShaper);
     if ((p.subHarmonic ?? 0) > 0) this._applySubHarmonic(mag, sr, p, halfN, FFT);
+    // Always kill thin high-pitch residual after spectral chain (whistle / smear).
+    if (typeof DSP.deWhistle === 'function') {
+      DSP.deWhistle(mag, sr, FFT, { cutHz: 7200, rollHz: 10500 });
+    }
     await yieldBudget();
 
     // Ensure WhisperHunter instance exists when whisper mode is engaged.
@@ -3449,15 +3488,18 @@ class VoiceIsolatePro {
     }
   }
 
-  // Per-bin stationary-noise estimate via minimum statistics across frames.
+  // Per-bin stationary-noise estimate via minimum statistics (subsample frames for speed).
   _estimateNoiseFloor(mag) {
     const halfN = mag[0].length;
     const floor = new Float32Array(halfN).fill(Infinity);
-    for (let f = 0; f < mag.length; f++) {
+    // Sample every Nth frame — full min-scan is O(frames×bins) and dominated long files.
+    const step = mag.length > 400 ? 4 : mag.length > 150 ? 2 : 1;
+    for (let f = 0; f < mag.length; f += step) {
       const frame = mag[f];
       for (let k = 0; k < halfN; k++) if (frame[k] < floor[k]) floor[k] = frame[k];
     }
-    for (let k = 0; k < halfN; k++) floor[k] = Number.isFinite(floor[k]) ? floor[k] * 1.6 : 0;
+    // Milder multiplier — 1.6× made Wiener dig holes → high-pitch musical noise.
+    for (let k = 0; k < halfN; k++) floor[k] = Number.isFinite(floor[k]) ? floor[k] * 1.25 : 0;
     return floor;
   }
 

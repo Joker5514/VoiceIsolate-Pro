@@ -185,33 +185,33 @@ const RAW_SLIDER_REGISTRY = [
   // ── Noise Reduction (5 sliders) ────────────────────────────────────────────
   {
     id: 'nrAmount', key: 'nrAmount', label: 'NR Amount',
-    min: 0, max: 100, step: 5, default: 78, unit: '%',
+    min: 0, max: 100, step: 5, default: 52, unit: '%',
     transform: v => v / 100, target: 'both', rt: false, group: 'tab-nr',
     tip: 'Strength of spectral noise reduction. 0 = off, 100 = maximum suppression. Start at 70–80% for hiss/fan noise.'
   },
   {
     id: 'nrSensitivity', key: 'nrSensitivity', label: 'NR Sensitivity',
-    min: 0, max: 100, step: 5, default: 50, unit: '%',
+    min: 0, max: 100, step: 5, default: 48, unit: '%',
     transform: v => v, target: 'worker', rt: false, group: 'tab-nr',
     tip: 'How aggressively the noise profile is estimated. Higher = more bins treated as noise.'
   },
   {
     id: 'nrSpectralSub', key: 'nrSpectralSub', label: 'Spectral Sub',
-    min: 0, max: 100, step: 5, default: 50, unit: '%',
+    min: 0, max: 100, step: 5, default: 35, unit: '%',
     transform: v => v, target: 'worker', rt: false, group: 'tab-nr',
-    tip: 'Amount of spectral subtraction applied in the Wiener pass. Balances musical noise vs. residual.'
+    tip: 'Amount of spectral subtraction applied in the Wiener pass. Keep moderate to avoid high-pitch musical noise.'
   },
   {
     id: 'nrFloor', key: 'nrFloor', label: 'NR Floor',
-    min: -120, max: -20, step: 5, default: -80, unit: 'dB',
+    min: -120, max: -20, step: 5, default: -68, unit: 'dB',
     transform: v => v, target: 'worker', rt: false, group: 'tab-nr',
     tip: 'Minimum gain floor for NR bins. Prevents over-suppression artifacts on tonal content.'
   },
   {
     id: 'nrSmoothing', key: 'nrSmoothing', label: 'NR Smoothing',
-    min: 0, max: 100, step: 5, default: 40, unit: '%',
+    min: 0, max: 100, step: 5, default: 32, unit: '%',
     transform: v => v, target: 'worker', rt: false, group: 'tab-nr',
-    tip: 'Temporal smoothing on the noise estimate. Higher = fewer musical noise artifacts, slower response.'
+    tip: 'Temporal smoothing. Lower = less smear/faster; higher can blur consonants.'
   },
 
   // ── EQ — 10 bands (11 sliders) ─────────────────────────────────────────────
@@ -341,7 +341,7 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'lpFreq', key: 'lpFreq', label: 'LP Freq',
-    min: 1000, max: 20000, step: 500, default: 18000, unit: 'Hz',
+    min: 1000, max: 20000, step: 500, default: 14000, unit: 'Hz',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-spec',
     tip: 'Low-pass filter cutoff. Attenuates everything above this frequency. Use to cut hiss or harsh air.'
   },
@@ -353,13 +353,13 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'deEssFreq', key: 'deEssFreq', label: 'De-ess Freq',
-    min: 2000, max: 16000, step: 500, default: 7000, unit: 'Hz',
+    min: 2000, max: 16000, step: 500, default: 6500, unit: 'Hz',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-spec',
     tip: 'Center frequency for de-esser detection. Set to the harshest sibilant peak (typically 6–8 kHz).'
   },
   {
     id: 'deEssAmt', key: 'deEssAmt', label: 'De-ess Amount',
-    min: 0, max: 24, step: 1, default: 6, unit: 'dB',
+    min: 0, max: 24, step: 1, default: 5, unit: 'dB',
     transform: v => v, target: 'worklet', rt: true, group: 'tab-spec',
     tip: 'Maximum attenuation applied to sibilant peaks. 6 dB is subtle; 12+ dB is heavy correction.'
   },
@@ -417,27 +417,27 @@ const RAW_SLIDER_REGISTRY = [
   // ── Separation (6 sliders) ─────────────────────────────────────────────────
   {
     id: 'voiceIso', key: 'voiceIso', label: 'Voice Isolation',
-    min: 0, max: 100, step: 5, default: 70, unit: '%',
+    min: 0, max: 100, step: 5, default: 72, unit: '%',
     transform: v => v, target: 'worker', rt: false, group: 'tab-sep',
-    tip: 'ML mask strength for isolating the primary voice from all other sources. 70–85% for clean extraction.'
+    tip: 'ML mask strength for isolating the primary voice from all other sources. ~70% is clean without over-processing.'
   },
   {
     id: 'bgSuppress', key: 'bgSuppress', label: 'BG Suppress',
-    min: 0, max: 100, step: 5, default: 50, unit: '%',
+    min: 0, max: 100, step: 5, default: 38, unit: '%',
     transform: v => v, target: 'worker', rt: false, group: 'tab-sep',
-    tip: 'Suppression strength on non-voice stems (music, effects). Higher = more aggressive background removal.'
+    tip: 'Suppression strength on non-voice bands. Moderate values avoid thin/hollow speech.'
   },
   {
     id: 'voiceFocusLo', key: 'voiceFocusLo', label: 'Voice Focus Lo',
-    min: 50, max: 1000, step: 25, default: 200, unit: 'Hz',
+    min: 50, max: 1000, step: 25, default: 100, unit: 'Hz',
     transform: v => v, target: 'worker', rt: false, group: 'tab-sep',
     tip: 'Low edge of the target voice frequency band for separation. Lower = include more bass fundamentals.'
   },
   {
     id: 'voiceFocusHi', key: 'voiceFocusHi', label: 'Voice Focus Hi',
-    min: 1000, max: 16000, step: 500, default: 8000, unit: 'Hz',
+    min: 1000, max: 16000, step: 500, default: 4500, unit: 'Hz',
     transform: v => v, target: 'worker', rt: false, group: 'tab-sep',
-    tip: 'High edge of the target voice frequency band. 8 kHz covers all speech content; higher adds air.'
+    tip: 'High edge of the speech band. ~4–5 kHz covers intelligibility; higher admits hiss/whistle residual.'
   },
   {
     id: 'crosstalkCancel', key: 'crosstalkCancel', label: 'Crosstalk Cancel',
@@ -461,7 +461,7 @@ const RAW_SLIDER_REGISTRY = [
   },
   {
     id: 'ditherAmt', key: 'ditherAmt', label: 'Dither',
-    min: 0, max: 3, step: 1, default: 1, unit: '',
+    min: 0, max: 3, step: 1, default: 0, unit: '',
     transform: v => v, target: 'worklet', rt: false, group: 'tab-out',
     tip: 'Noise shaping dither applied before bit-depth reduction: 0=off, 1=TPDF, 2=shaped, 3=high-pass.'
   },
