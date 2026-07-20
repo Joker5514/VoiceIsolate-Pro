@@ -5,7 +5,9 @@
   &nbsp;·&nbsp;
   <a href="https://voice-isolate-pro.vercel.app/download/"><strong>Download</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases"><strong>Android APK</strong></a>
+  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"><strong>Android APK</strong></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe"><strong>Windows</strong></a>
   &nbsp;·&nbsp;
   <a href="docs/README.md">Documentation</a>
   &nbsp;·&nbsp;
@@ -48,7 +50,7 @@
 |-------|---------|--------------|
 | [`/`](https://voice-isolate-pro.vercel.app/) | **Landing — Stem-Split** | Fast ML stem separation (vocals / accompaniment / noise). Upload → auto-process → preview stems. |
 | [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Mode v24** | Full 67-slider DSP suite, scene presets, 3D spectrogram, A/B transport, forensic audit log, WhisperHunter AI. |
-| [`/download/`](https://voice-isolate-pro.vercel.app/download/) | **Downloads** | Android APK (GitHub Releases), web links, desktop build notes. |
+| [`/download/`](https://voice-isolate-pro.vercel.app/download/) | **Downloads** | Android APK + Windows installer (GitHub Releases), web app links. |
 
 **Upload controls (both pages):** Browse Files (`<label for="fileInput">`), click the drop zone, drag-and-drop, or **Upload Audio or Video** in the Engineer hero. Shared wiring lives in `src/presentation/UploadWiring.js`.
 
@@ -180,27 +182,36 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 | `pnpm worklets:verify` | AudioWorklet packaging integrity |
 | `pnpm build:electron:dir` | Desktop unpacked (Windows) |
 
-### Android download
+### Downloads (GitHub Releases — correct asset URLs)
 
 | Channel | URL |
 |---------|-----|
 | **Web download page** | https://voice-isolate-pro.vercel.app/download/ |
-| **GitHub Releases (APK)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
-| **Latest APK asset** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
-| **Pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
+| **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
+| **Latest Android APK** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
+| **Pinned Android v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
+| **Latest Windows installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| **Pinned Windows v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 
-The download page always links to the **real GitHub Release binary** (~303 MB, `application/vnd.android.package-archive`).  
-Same-origin `/download/*.apk` redirects to GitHub so it never serves SPA HTML.
+| Asset | Name | Approx. size |
+|-------|------|----------------|
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~238 MB |
+| Windows NSIS installer | `VoiceIsolate-Pro-24.0.0-win-x64.exe` | ~480 MB |
+
+The download page always points at **real GitHub Release binaries** (never SPA HTML).  
+Same-origin `/download/*.apk` and `/download/*.exe` redirect to Releases (`vercel.json`).
 
 Build locally (Windows):
 
 ```bash
 pnpm android:build:win
-# → dist/android/VoiceIsolate-Pro-debug.apk
-# → android/app/build/outputs/apk/debug/app-debug.apk
+# → dist/android/VoiceIsolate-Pro-android-debug.apk
+
+pnpm build:electron
+# → dist/electron/VoiceIsolate-Pro-24.0.0-win-x64.exe
 ```
 
-Sideload: enable **Install unknown apps** for your browser/file manager, then open the APK.  
+Sideload APK: enable **Install unknown apps**, then open the file.  
 Details: [download/README.md](download/README.md).
 
 ### Upload troubleshooting

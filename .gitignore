@@ -27,6 +27,7 @@ node_modules
 *.ipa
 public/download/*.apk
 public/download/*.aab
+public/download/*.exe
 
 # misc
 .DS_Store

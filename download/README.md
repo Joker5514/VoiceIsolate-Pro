@@ -2,51 +2,62 @@
 
 This folder documents **where installers and APKs live**. Large binaries are **not** committed to git.
 
+Canonical host for end users: **GitHub Releases**  
+https://github.com/Joker5514/VoiceIsolate-Pro/releases
+
+Web download page: https://voice-isolate-pro.vercel.app/download/
+
+---
+
 ## Android APK
 
 | Build | Command | Output |
 |-------|---------|--------|
-| Debug (Windows) | `pnpm android:build:win` | `android/app/build/outputs/apk/debug/app-debug.apk` and `dist/android/VoiceIsolate-Pro-debug.apk` |
-| Debug (Unix) | `pnpm android:build` | same under `android/app/build/outputs/apk/debug/` |
-| Release AAB | `pnpm android:bundle` (or CI `release-build.yml`) | `android/app/build/outputs/bundle/release/` |
+| Debug (Windows) | `pnpm android:build:win` | `dist/android/VoiceIsolate-Pro-android-debug.apk` (also `VoiceIsolate-Pro-debug.apk`) |
+| Debug (Unix) | `pnpm android:build` | `android/app/build/outputs/apk/debug/app-debug.apk` |
+| Release AAB | `pnpm android:bundle` | `android/app/build/outputs/bundle/release/` |
 
-### Public download
+### Public download links (correct)
 
-1. **GitHub Releases** (canonical binary host):  
-   https://github.com/Joker5514/VoiceIsolate-Pro/releases  
-   Latest APK asset: `VoiceIsolate-Pro-android-debug.apk`  
-   Direct: `https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk`
-2. **Web page:** https://voice-isolate-pro.vercel.app/download/  
-   Primary buttons open the GitHub release asset (real APK, ~303 MB).  
-   Same-origin `/download/*.apk` is **redirected** to GitHub Releases so it never returns SPA HTML.
-3. Do **not** rely on committing APKs under `public/download/` — Vercel SPA rewrites previously turned missing `.apk` paths into `index.html`.
+| Channel | URL |
+|---------|-----|
+| **Latest APK** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
+| **Pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
+| **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 
-### Publish a release (maintainers)
+Asset name: `VoiceIsolate-Pro-android-debug.apk` · ~238 MB · complete offline app (Landing + Engineer Mode + models).
+
+Same-origin `/download/*.apk` is **redirected** to GitHub Releases (`vercel.json`) so Vercel never serves SPA HTML for APK URLs.
+
+### Publish Android (maintainers)
 
 ```bash
-# After a successful android:build:win
 pnpm android:build:win
-cp dist/android/VoiceIsolate-Pro-debug.apk public/download/VoiceIsolate-Pro-android-debug.apk
-gh release create v24.0.0 public/download/VoiceIsolate-Pro-android-debug.apk \
-  --title "VoiceIsolate Pro v24.0.0" \
-  --notes "Android debug APK + web app"
+# → dist/android/VoiceIsolate-Pro-android-debug.apk
+gh release upload v24.0.0 dist/android/VoiceIsolate-Pro-android-debug.apk --clobber
 ```
 
-Do **not** commit `*.apk` files (see `.gitignore`).
+Do **not** commit `*.apk` under `public/download/` (see `.gitignore`) — nesting an APK inside web assets bloats the next Android package.
+
+---
 
 ## Desktop (Windows) — offline installer
 
+| Goal | Asset / command |
+|------|-----------------|
+| **Latest installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| **Pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| Local build | `pnpm build:electron` → `dist/electron/VoiceIsolate-Pro-24.0.0-win-x64.exe` |
+| Portable smoke test | `pnpm build:electron:dir` → `dist/electron/win-unpacked/VoiceIsolate Pro.exe` |
+
+Asset name: `VoiceIsolate-Pro-24.0.0-win-x64.exe` · ~480 MB · 100% offline (UI + ORT + default models).
+
+### Publish desktop (maintainers)
+
 ```bash
 pnpm setup:electron
-pnpm build:electron        # NSIS → dist/electron/*.exe  (downloadable)
-pnpm build:electron:dir    # portable win-unpacked/
+pnpm build:electron
+gh release upload v24.0.0 dist/electron/VoiceIsolate-Pro-24.0.0-win-x64.exe --clobber
 ```
 
-| Goal | Command / asset |
-|------|-----------------|
-| End-user download | GitHub Release: `VoiceIsolate-Pro-*-win-x64.exe` |
-| Local smoke test | `dist/electron/win-unpacked/VoiceIsolate Pro.exe` |
-| Web download page | https://voice-isolate-pro.vercel.app/download/ |
-
-Packaged app is **100% offline** for voice isolation: UI, ORT wasm, and default
-ONNX models (BS-RNN + denoise + VAD) are bundled. See [docs/electron-desktop.md](../docs/electron-desktop.md).
+See [docs/electron-desktop.md](../docs/electron-desktop.md).

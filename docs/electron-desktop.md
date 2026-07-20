@@ -72,7 +72,12 @@ Output: `dist/electron/`.
 Huge optional weights (`demucs_v4_fp32.onnx`) are **excluded** from the installer to keep size reasonable. Default chain is BS-RNN only (~4 MB).
 
 Publish installer to GitHub Releases; the web download page links there:
-https://voice-isolate-pro.vercel.app/download/
+
+| Channel | URL |
+|---------|-----|
+| Web download page | https://voice-isolate-pro.vercel.app/download/ |
+| Latest Windows installer | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| Pinned v24.0.0 | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 
 ## Model Cache (Desktop)
 
