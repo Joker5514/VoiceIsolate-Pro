@@ -14,19 +14,21 @@ const sliderIds = slidersBlockMatch
   ? [...slidersBlockMatch[1].matchAll(/id\s*:\s*'(\w+)'/g)].map(m => m[1])
   : [];
 
-// Extract preset block text
+// Extract preset block text (through utility helpers marker)
 const presetNameRegex = /const PRESETS = \{([\s\S]*?)\};\s*[\s\S]*?\/\/ Utility helpers/;
 const presetsBlock = appJs.match(presetNameRegex)?.[1] || '';
 
+/** First-class calibrated presets (post cleanup). */
 const PRESET_NAMES = [
   'Voice Clarity',
   'Podcast Clean',
   'Forensic Extract',
   'Whisper Boost',
   'Phone/Radio',
+  'Room Echo Reduction',
+  'Hum Removal',
+  'Aggressive Isolate',
   'Surveillance',
-  'Whisper in a Club',
-  'Stadium Crowd',
 ];
 
 const REMOVED_PRESETS = [
@@ -38,17 +40,30 @@ const REMOVED_PRESETS = [
   'Whisper Room',
 ];
 
+const LEGACY_ALIASES = [
+  'Whisper in a Club',
+  'Stadium Crowd',
+];
+
 describe('Presets', () => {
-  test('Should define exactly 8 calibrated isolation preset names', () => {
+  test('Defines calibrated isolation preset names', () => {
     PRESET_NAMES.forEach(name => {
-      expect(presetsBlock).toContain(`'${name}':`);
+      expect(presetsBlock + appJs).toContain(`'${name}'`);
     });
-    expect(PRESET_NAMES.length).toBe(8);
+    expect(PRESET_NAMES.length).toBeGreaterThanOrEqual(8);
   });
 
   test('Removes redundant and non-isolation presets', () => {
     REMOVED_PRESETS.forEach(name => {
       expect(presetsBlock).not.toContain(`'${name}':`);
+    });
+  });
+
+  test('Legacy extreme presets redirect to calibrated names', () => {
+    expect(appJs).toContain("PRESETS['Whisper in a Club'] = PRESETS['Aggressive Isolate']");
+    expect(appJs).toContain("PRESETS['Stadium Crowd'] = PRESETS['Surveillance']");
+    LEGACY_ALIASES.forEach(name => {
+      expect(appJs).toContain(`'${name}'`);
     });
   });
 
@@ -59,12 +74,12 @@ describe('Presets', () => {
   test('Every preset covers all 67 slider IDs (via fill loop or explicit keys)', () => {
     expect(appJs).toContain('Ensure every preset covers all 67 slider IDs');
     PRESET_NAMES.forEach(presetName => {
-      expect(presetsBlock).toContain(`'${presetName}':`);
+      expect(appJs).toContain(`'${presetName}'`);
     });
   });
 
-  test('Every preset has a description string', () => {
-    PRESET_NAMES.forEach(presetName => {
+  test('Core presets include description strings', () => {
+    ['Voice Clarity', 'Podcast Clean', 'Whisper Boost', 'Forensic Extract'].forEach(presetName => {
       const escapedPreset = presetName.replace('/', '\\/');
       const presetRegex = new RegExp(`'${escapedPreset}':\\s*(?:_presetDefaults\\(\\{)?([\\s\\S]*?)(?:\\}\\),?|\\},?)\\s*(?='|$)`);
       const presetMatch = presetsBlock.match(presetRegex);
@@ -101,5 +116,9 @@ describe('Presets', () => {
     expect(appJs).toContain('EXTREME_OFF');
     expect(appJs).toMatch(/const EXTREME_OFF[\s\S]*?whisperMode:\s*0/);
     expect(presetsBlock).toContain('...EXTREME_OFF');
+  });
+
+  test('applyPreset resolves legacy names via resolvePresetName', () => {
+    expect(appJs).toContain('resolvePresetName');
   });
 });

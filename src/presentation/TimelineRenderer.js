@@ -1,0 +1,207 @@
+/**
+ * VoiceIsolate Pro — Timeline Lane Renderer (Layer 4: Presentation)
+ *
+ * Renders stacked source lanes from analysis.visualLayers.
+ */
+'use strict';
+
+const DEFAULT_COLORS = {
+  lead_speech: '#3b82f6',
+  secondary_speech: '#8b5cf6',
+  music: '#ec4899',
+  noise: '#6b7280',
+  hum: '#f59e0b',
+  transients: '#ef4444',
+  ambience: '#14b8a6',
+  silence: '#374151',
+  whisper: '#a3e635',
+  difficult: '#fbbf24',
+  overlap: '#f472b6',
+};
+
+export class TimelineRenderer {
+  /**
+   * @param {HTMLCanvasElement|HTMLElement} container
+   * @param {object} [opts]
+   */
+  constructor(container, opts = {}) {
+    this.container = container;
+    this.opts = opts;
+    this.duration = 1;
+    this.layers = [];
+    this.playhead = 0;
+    this._canvas = null;
+    this._tooltip = null;
+    this._onRegionClick = opts.onRegionClick || null;
+    this._dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    this._ensureCanvas();
+  }
+
+  _ensureCanvas() {
+    if (!this.container) return;
+    if (this.container.tagName === 'CANVAS') {
+      this._canvas = this.container;
+    } else {
+      let c = this.container.querySelector('canvas.vip-timeline-canvas');
+      if (!c) {
+        c = document.createElement('canvas');
+        c.className = 'vip-timeline-canvas';
+        c.style.width = '100%';
+        c.style.height = '100%';
+        c.style.display = 'block';
+        this.container.innerHTML = '';
+        this.container.appendChild(c);
+      }
+      this._canvas = c;
+    }
+    this._canvas.addEventListener('click', (e) => this._handleClick(e));
+    this._canvas.addEventListener('mousemove', (e) => this._handleMove(e));
+    this._canvas.addEventListener('mouseleave', () => this._hideTip());
+  }
+
+  /**
+   * @param {object} analysis
+   */
+  setAnalysis(analysis) {
+    this.duration = Math.max(0.01, analysis?.duration || 1);
+    this.layers = (analysis?.visualLayers || []).filter((L) => L.segments && L.segments.length);
+    // Always keep structure of all lanes for empty state
+    if (!this.layers.length && analysis?.visualLayers) {
+      this.layers = analysis.visualLayers;
+    }
+    this.draw();
+  }
+
+  setPlayhead(t) {
+    this.playhead = Math.max(0, t);
+    this.draw();
+  }
+
+  draw() {
+    const canvas = this._canvas;
+    if (!canvas) return;
+    const parent = canvas.parentElement || canvas;
+    const cssW = parent.clientWidth || 640;
+    const laneH = 28;
+    const labelW = 120;
+    const cssH = Math.max(laneH * Math.max(this.layers.length, 1) + 8, 120);
+    canvas.style.height = `${cssH}px`;
+    const dpr = this._dpr;
+    canvas.width = Math.floor(cssW * dpr);
+    canvas.height = Math.floor(cssH * dpr);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    // background
+    ctx.fillStyle = '#0b1220';
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    const trackW = cssW - labelW - 8;
+    const layers = this.layers.length ? this.layers : [{ id: 'empty', label: 'No analysis yet', segments: [], color: '#334155' }];
+
+    layers.forEach((layer, i) => {
+      const y = 4 + i * laneH;
+      // label
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px ui-sans-serif, system-ui, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(layer.label || layer.id, 6, y + laneH / 2);
+
+      // track bg
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(labelW, y + 4, trackW, laneH - 8);
+
+      const segs = layer.segments || [];
+      if (!segs.length) {
+        ctx.fillStyle = 'rgba(51,65,85,0.35)';
+        ctx.fillRect(labelW, y + 4, trackW, laneH - 8);
+        ctx.fillStyle = '#475569';
+        ctx.font = '10px ui-sans-serif, system-ui, sans-serif';
+        ctx.fillText('not detected', labelW + 8, y + laneH / 2);
+        return;
+      }
+
+      for (const s of segs) {
+        const x0 = labelW + (s.start / this.duration) * trackW;
+        const x1 = labelW + (s.end / this.duration) * trackW;
+        const conf = s.confidence != null ? s.confidence : (layer.confidence ?? 0.5);
+        const col = layer.color || DEFAULT_COLORS[layer.id] || '#64748b';
+        ctx.globalAlpha = 0.25 + conf * 0.7;
+        ctx.fillStyle = col;
+        ctx.fillRect(x0, y + 4, Math.max(2, x1 - x0), laneH - 8);
+        ctx.globalAlpha = 1;
+      }
+    });
+
+    // playhead
+    const px = labelW + (this.playhead / this.duration) * trackW;
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(px, 0);
+    ctx.lineTo(px, cssH);
+    ctx.stroke();
+
+    this._layout = { labelW, trackW, laneH, cssW, cssH, layers };
+  }
+
+  _handleClick(e) {
+    const hit = this._hit(e);
+    if (!hit) return;
+    if (this._onRegionClick) this._onRegionClick(hit);
+  }
+
+  _handleMove(e) {
+    const hit = this._hit(e);
+    if (!hit || !hit.segment) {
+      this._hideTip();
+      return;
+    }
+    this._showTip(e, hit);
+  }
+
+  _hit(e) {
+    if (!this._layout) return null;
+    const rect = this._canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const { labelW, trackW, laneH, layers } = this._layout;
+    if (x < labelW) return null;
+    const i = Math.floor((y - 4) / laneH);
+    if (i < 0 || i >= layers.length) return null;
+    const layer = layers[i];
+    const t = ((x - labelW) / trackW) * this.duration;
+    const segment = (layer.segments || []).find((s) => t >= s.start && t <= s.end) || null;
+    return { layer, time: t, segment };
+  }
+
+  _showTip(e, hit) {
+    if (typeof document === 'undefined') return;
+    if (!this._tooltip) {
+      this._tooltip = document.createElement('div');
+      this._tooltip.className = 'vip-timeline-tooltip';
+      this._tooltip.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:6px 8px;border-radius:6px;font:11px/1.35 ui-sans-serif,system-ui;max-width:240px;';
+      document.body.appendChild(this._tooltip);
+    }
+    const s = hit.segment;
+    const conf = s ? Math.round((s.confidence ?? 0) * 100) : 0;
+    this._tooltip.innerHTML = `<strong>${hit.layer.label}</strong><br>${s ? `${s.start.toFixed(2)}s – ${s.end.toFixed(2)}s` : hit.time.toFixed(2) + 's'}<br>Confidence: ${conf}%${s?.meta ? `<br>${s.meta}` : ''}`;
+    this._tooltip.style.left = `${e.clientX + 12}px`;
+    this._tooltip.style.top = `${e.clientY + 12}px`;
+    this._tooltip.style.display = 'block';
+  }
+
+  _hideTip() {
+    if (this._tooltip) this._tooltip.style.display = 'none';
+  }
+
+  dispose() {
+    this._hideTip();
+    if (this._tooltip && this._tooltip.parentNode) this._tooltip.parentNode.removeChild(this._tooltip);
+    this._tooltip = null;
+  }
+}
+
+export default TimelineRenderer;

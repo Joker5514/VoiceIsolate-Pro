@@ -43,6 +43,23 @@ import {
   getWhisperPlatformProfile,
   maskConfidence,
 } from './whisper-hunter.js';
+/**
+ * Local preset redirect (mirrors src/core/PresetCalibration.js).
+ * Kept in-app so Jest eval helpers that strip ESM imports still work.
+ */
+function resolvePresetNameLocal(name) {
+  const redirects = {
+    'Whisper in a Club': 'Aggressive Isolate',
+    'Stadium Crowd': 'Surveillance',
+  };
+  if (!name) return 'Voice Clarity';
+  if (typeof PRESETS !== 'undefined' && PRESETS[name] && !redirects[name]) return name;
+  if (redirects[name] && typeof PRESETS !== 'undefined' && PRESETS[redirects[name]]) {
+    return redirects[name];
+  }
+  if (typeof PRESETS !== 'undefined' && PRESETS[name]) return name;
+  return redirects[name] || name || 'Voice Clarity';
+}
 
 /** Hero landing + branded loader — local-only cinematic shell */
 const HeroExperience = (() => {
@@ -575,33 +592,40 @@ const PRESETS = {
     whisperLift: 15, crowdNull: 72, bassCrush: 58, reverbStrip: 380, voiceTunnel: 70, musicKill: 52, snrFloor: -56, whisperMode: 2,
     whisperClarity: 74, whisperSensitivity: 76, whisperThreshold: 64, transientShaper: 20, breathControl: 35, roomCorrection: 42, subHarmonic: 12,
   },
-  'Whisper in a Club': _presetDefaults({
-    description: 'Extreme isolation: extract a whisper buried under club noise, crowd, and music.',
-    gateThresh: -66, gateRange: -80, gateAttack: 2, gateRelease: 110, gateHold: 25, gateLookahead: 8,
-    nrAmount: 96, nrSensitivity: 84, nrSpectralSub: 90, nrFloor: -90, nrSmoothing: 82,
-    eqSub: -8, eqBass: -4, eqWarmth: -1, eqBody: 2, eqLowMid: 2, eqMid: 3.5, eqPresence: 6, eqClarity: 8, eqAir: 2, eqBrill: 0,
-    compThresh: -46, compRatio: 10, compAttack: 3, compRelease: 110, compKnee: 3, compMakeup: 12, limThresh: -0.5, limRelease: 28,
-    hpFreq: 220, hpQ: 1.0, lpFreq: 5200, lpQ: 0.85, deEssFreq: 6200, deEssAmt: 3, specTilt: 1.3, formantShift: 0,
-    derevAmt: 65, derevDecay: 65, harmRecov: 50, harmOrder: 4, stereoWidth: 100, phaseCorr: 18,
-    voiceIso: 96, bgSuppress: 92, voiceFocusLo: 220, voiceFocusHi: 4000, crosstalkCancel: 12,
-    outGain: 8, dryWet: 100, ditherAmt: 1, outWidth: 100,
-    whisperLift: 24, crowdNull: 88, bassCrush: 92, reverbStrip: 750, voiceTunnel: 80, musicKill: 90, snrFloor: -58, whisperMode: 3,
-    whisperClarity: 88, whisperSensitivity: 85, whisperThreshold: 70, transientShaper: 32, breathControl: 45, roomCorrection: 55, subHarmonic: 18,
+  'Room Echo Reduction': _presetDefaults({
+    description: 'Reduce room tone and reverb tails while preserving speech clarity',
+    gateThresh: -50, gateRange: -62, gateAttack: 4, gateRelease: 180, gateHold: 40,
+    nrAmount: 48, nrSensitivity: 45, nrSpectralSub: 30, nrFloor: -68, nrSmoothing: 40,
+    eqPresence: 1.5, eqClarity: 1, eqAir: 0,
+    derevAmt: 62, derevDecay: 58, roomCorrection: 55, reverbStrip: 420,
+    voiceIso: 70, bgSuppress: 45, outGain: 1,
+    ...EXTREME_OFF,
   }),
-  'Stadium Crowd': _presetDefaults({
-    description: 'Recover commentary buried in large crowd roar.',
-    gateThresh: -52, gateRange: -72, gateAttack: 3, gateRelease: 140, gateHold: 30, gateLookahead: 6,
-    nrAmount: 90, nrSensitivity: 78, nrSpectralSub: 78, nrFloor: -80, nrSmoothing: 74,
-    eqSub: -5, eqBass: -3, eqWarmth: -1, eqBody: 1.5, eqLowMid: 3, eqMid: 4, eqPresence: 5, eqClarity: 4, eqAir: 1, eqBrill: -1,
-    compThresh: -32, compRatio: 6.5, compAttack: 5, compRelease: 120, compKnee: 4, compMakeup: 7, limThresh: -1, limRelease: 38,
-    hpFreq: 150, hpQ: 0.9, lpFreq: 7800, lpQ: 0.7, deEssFreq: 5800, deEssAmt: 4, specTilt: 0.9, formantShift: 0,
-    derevAmt: 35, derevDecay: 50, harmRecov: 32, harmOrder: 3, stereoWidth: 100, phaseCorr: 12,
-    voiceIso: 91, bgSuppress: 86, voiceFocusLo: 130, voiceFocusHi: 5200, crosstalkCancel: 10,
-    outGain: 6, dryWet: 100, ditherAmt: 1, outWidth: 100,
-    whisperLift: 10, crowdNull: 90, bassCrush: 48, reverbStrip: 450, voiceTunnel: 70, musicKill: 38, snrFloor: -54, whisperMode: 1,
-    whisperClarity: 82, whisperSensitivity: 80, whisperThreshold: 60, transientShaper: 16, breathControl: 22, roomCorrection: 40, subHarmonic: 8,
+  'Hum Removal': _presetDefaults({
+    description: 'Target mains hum/buzz with conservative speech preservation',
+    gateThresh: -46, gateRange: -58, gateAttack: 4, gateRelease: 180,
+    nrAmount: 40, nrSensitivity: 40, nrSpectralSub: 28, nrFloor: -68,
+    eqSub: -2, eqBass: -1, hpFreq: 85,
+    phaseCorr: 28, voiceIso: 65, bgSuppress: 30, outGain: 0,
+    ...EXTREME_OFF,
   }),
+  'Aggressive Isolate': _presetDefaults({
+    description: 'Strong voice isolation against music beds and dense backgrounds',
+    gateThresh: -58, gateRange: -72, gateAttack: 2, gateRelease: 120, gateHold: 25,
+    nrAmount: 88, nrSensitivity: 80, nrSpectralSub: 72, nrFloor: -80, nrSmoothing: 70,
+    eqPresence: 3, eqClarity: 2,
+    voiceIso: 94, bgSuppress: 90, outGain: 3,
+    musicKill: 82, bassCrush: 70, crowdNull: 70, voiceTunnel: 75,
+    snrFloor: -56, whisperMode: 0,
+  }),
+  // Legacy aliases (redirect to calibrated presets)
+  'Whisper in a Club': null,
+  'Stadium Crowd': null,
 };
+
+// Resolve legacy null aliases (calibrated merge may refine these after ESM loads)
+PRESETS['Whisper in a Club'] = PRESETS['Aggressive Isolate'];
+PRESETS['Stadium Crowd'] = PRESETS['Surveillance'];
 
 // Ensure every preset covers all 67 slider IDs
 for (const preset of Object.values(PRESETS)) {
@@ -849,6 +873,18 @@ class VoiceIsolatePro {
       pill('engSabPill', sabOk ? 'ready' : 'error');
     } catch {
       pill('engSabPill', 'error');
+    }
+
+    // Full-audio analysis workspace — installed by analysis-workspace.js module
+    // (index.html) via window.__VIP_INSTALL_ANALYSIS_WORKSPACE__ when ready.
+    try {
+      if (typeof window !== 'undefined' && typeof window.__VIP_INSTALL_ANALYSIS_WORKSPACE__ === 'function') {
+        window.__VIP_INSTALL_ANALYSIS_WORKSPACE__(this);
+      } else if (typeof window !== 'undefined') {
+        window.__VIP_PENDING_ANALYSIS_APP__ = this;
+      }
+    } catch (wsErr) {
+      structuredLog('warn', '[VIP] analysis workspace install failed', { err: wsErr && wsErr.message });
     }
 
     // Probe WebGPU availability for ORT status (non-blocking).
@@ -1998,8 +2034,10 @@ class VoiceIsolatePro {
   // ── Preset application ────────────────────────────────────────────────────
   applyPreset(name, options = {}) {
     const { preserveWhisperMode = false } = options;
-    const preset = PRESETS[name];
+    const resolved = resolvePresetNameLocal(name);
+    const preset = PRESETS[resolved] || PRESETS[name];
     if (!preset) return;
+    name = resolved;
     const savedWhisper = preserveWhisperMode
       ? (window.VIP_PARAMS?.whisperMode ?? this.whisperMode ?? 0)
       : null;
@@ -4530,8 +4568,12 @@ const WHISPER_HUNTER = {
   },
 
   async runForensicPasses(buffer, numPasses, app, envProfile = {}) {
-    // Cap at 1 — full reprocess loops freeze the browser on multi-minute files.
+    // Cap via platformProfile.forensicCap — full reprocess loops freeze multi-minute files.
     app = app || window._vipApp;
+    const platformProfile = getWhisperPlatformProfile(detectWhisperPlatform());
+    const forensicCap = Math.max(1, Number(platformProfile.forensicCap) || 1);
+    const passes = Math.min(Math.max(1, Number(numPasses) || 1), forensicCap);
+    void passes; // single spectral reprocess; multi-pass STFT loops are intentionally disabled
     const detail = document.getElementById('pipeDetail');
     if (detail) detail.textContent = 'WhisperHunter isolation (single pass)…';
     await app.morphSlidersTo({
