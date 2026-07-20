@@ -116,7 +116,8 @@ describe('WhisperHunter cross-platform profiles', () => {
     expect(android.maxChunks).toBeLessThan(desktop.maxChunks);
     expect(android.timeoutMs).toBeGreaterThanOrEqual(desktop.timeoutMs);
     expect(android.chunkYieldMs).toBeGreaterThan(0);
-    expect(android.forensicCap).toBe(3);
+    // Single forensic reprocess cap — multi-pass STFT loops freeze long files.
+    expect(android.forensicCap).toBe(1);
   });
 
   test('ensureWhisperHunterInstance resyncs sample rate on window', () => {
@@ -163,9 +164,10 @@ describe('app.js WhisperHunter orchestrator wiring', () => {
   });
 
   test('forensic passes escalate separation sliders', () => {
-    expect(appJs).toContain('WhisperHunter pass');
+    expect(appJs).toContain('WhisperHunter isolation');
     expect(appJs).toContain('crowdNull: Math.min(100');
     expect(appJs).toContain('seedNoiseFromAudio');
+    expect(appJs).toContain('platformProfile.forensicCap');
   });
 
   test('orchestrator has cross-platform running lock and error handling', () => {

@@ -340,9 +340,10 @@
               <option>Forensic Extract</option>
               <option>Whisper Boost</option>
               <option>Phone/Radio</option>
+              <option>Room Echo Reduction</option>
+              <option>Hum Removal</option>
+              <option>Aggressive Isolate</option>
               <option>Surveillance</option>
-              <option>Whisper in a Club</option>
-              <option>Stadium Crowd</option>
             </select>
             <button id="openPresetModalBtn" class="btn btn-outline" type="button">Save Custom</button>
           </div>
@@ -352,9 +353,10 @@
             <button class="btn btn-preset" type="button" data-preset="Forensic Extract">Forensic Extract</button>
             <button class="btn btn-preset" type="button" data-preset="Whisper Boost">Whisper Boost</button>
             <button class="btn btn-preset" type="button" data-preset="Phone/Radio">Phone/Radio</button>
+            <button class="btn btn-preset" type="button" data-preset="Room Echo Reduction">Room Echo</button>
+            <button class="btn btn-preset" type="button" data-preset="Hum Removal">Hum Removal</button>
+            <button class="btn btn-preset" type="button" data-preset="Aggressive Isolate">Aggressive Isolate</button>
             <button class="btn btn-preset" type="button" data-preset="Surveillance">Surveillance</button>
-            <button class="btn btn-preset" type="button" data-preset="Whisper in a Club">Whisper in a Club</button>
-            <button class="btn btn-preset" type="button" data-preset="Stadium Crowd">Stadium Crowd</button>
           </div>
         </div>
         <button id="btn-whisper-hunter" type="button">🎙️ WhisperHunter AI</button>
@@ -413,6 +415,55 @@
         </div>
         <div id="pipeDetail" class="pipe-detail">Ready</div>
       </div>
+
+      <!-- Full-audio analysis workspace (local-only) -->
+      <section id="analysisWorkspace" class="card analysis-workspace" data-state="idle" aria-label="Full audio analysis workspace">
+        <div class="analysis-hdr">
+          <h3 class="analysis-title">Source Analysis Workspace</h3>
+          <span id="analysisConfidence" class="analysis-conf" data-level="low">Confidence —</span>
+        </div>
+        <p class="analysis-lead">Analyze the full recording locally, inspect detected layers, audition stems, and apply explainable recommendations before processing. Audio never leaves this device.</p>
+        <div id="capabilityPanel" class="capability-panel" aria-live="polite"></div>
+        <div class="analysis-actions">
+          <button id="btnAnalyzeFull" class="btn btn-primary" type="button">Analyze Full Audio</button>
+          <button id="btnApplyRecommendations" class="btn btn-outline" type="button">Apply Recommendations</button>
+          <button id="btnAnalyzeProcessAuto" class="btn btn-reprocess" type="button">Analyze + Process</button>
+          <button id="btnCancelAnalysis" class="btn btn-danger" type="button" hidden>Cancel</button>
+          <button id="btnExportAnalysisWav" class="btn btn-save-proc" type="button">Export WAV</button>
+        </div>
+        <div id="analysisProgress" class="analysis-progress" hidden>
+          <div class="analysis-progress-bar"><div id="analysisProgressFill" class="analysis-progress-fill"></div></div>
+          <span id="analysisProgressLabel" class="analysis-progress-label">Idle</span>
+        </div>
+        <div id="analysisError" class="analysis-error" hidden role="alert"></div>
+        <div class="analysis-grid">
+          <div class="analysis-col">
+            <div id="analysisPresetCard" class="rec-preset-card">
+              <div class="rec-preset-name">No recommendation yet</div>
+              <div class="rec-preset-meta">Run Analyze Full Audio</div>
+            </div>
+            <h4 class="analysis-sub">Findings</h4>
+            <ul id="analysisFindings" class="analysis-list"><li>Load a file, then analyze.</li></ul>
+            <h4 class="analysis-sub">Why this preset</h4>
+            <ul id="analysisReasons" class="analysis-list"><li>—</li></ul>
+            <div id="analysisSourceChips" class="source-chips" aria-label="Detected sources"></div>
+          </div>
+          <div class="analysis-col analysis-col-wide">
+            <h4 class="analysis-sub">Source lanes</h4>
+            <div id="analysisTimeline" class="analysis-timeline" role="img" aria-label="Source separation timeline"></div>
+            <div class="audition-toolbar">
+              <span class="aud-label">Audition</span>
+              <button id="audModeOriginal" class="btn btn-xs active" type="button" data-mode="original">Original</button>
+              <button id="audModeLayer" class="btn btn-xs" type="button" data-mode="layer">Layers</button>
+              <button id="audModeProcessed" class="btn btn-xs" type="button" data-mode="processed">Processed</button>
+              <button id="audPlay" class="btn btn-xs btn-primary" type="button">Play</button>
+              <button id="audStop" class="btn btn-xs" type="button">Stop</button>
+              <button id="audResetMix" class="btn btn-xs" type="button">Reset mix</button>
+            </div>
+            <div id="auditionStrip" class="audition-strip"></div>
+          </div>
+        </div>
+      </section>
 
       <div class="card save-row">
         <button id="saveOrigBtn" class="btn btn-save" disabled>Save Original WAV</button>
@@ -582,6 +633,11 @@
     await import('./app.js').catch(err => {
       console.error('[VIP] Failed to load module: ./app.js', err);
       if (typeof window._vipReportError === 'function') window._vipReportError('./app.js', err);
+    });
+    // Full-audio analysis workspace (timeline / audition / recommendations)
+    await import('./lib/analysis-workspace.js').catch(err => {
+      console.error('[VIP] Failed to load module: ./lib/analysis-workspace.js', err);
+      if (typeof window._vipReportError === 'function') window._vipReportError('./lib/analysis-workspace.js', err);
     });
     await import('./vip-boot.js').catch(err => {
       console.error('[VIP] Failed to load module: ./vip-boot.js', err);

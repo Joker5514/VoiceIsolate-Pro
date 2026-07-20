@@ -441,7 +441,10 @@ describe('VoiceIsolatePro class structure', () => {
 
   test('Engineer auto-upload uses single ML pass for low latency', () => {
     expect(appSrc).toContain('this._autoPipelineRun = true');
-    expect(appSrc).toMatch(/if \(this\._autoPipelineRun\)[\s\S]*totalPasses = 1/);
+    // Default path is always single-pass (multi-pass STFT loops freeze long files).
+    expect(appSrc).toMatch(/let totalPasses = 1/);
+    expect(appSrc).toContain('Always single-pass isolation on the auto/default path');
+    expect(appSrc).toMatch(/if \(this\._autoPipelineRun\) this\._autoPipelineRun = false/);
   });
 
   test('Engineer imports pipeline stage timing for debug scripts', () => {

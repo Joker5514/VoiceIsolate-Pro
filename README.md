@@ -84,69 +84,100 @@ Audio flows through **one Forward STFT** at the start of the spectral phase, in-
 
 | Feature | Spec |
 |---------|------|
-| **Noise floor** | −96 dB (offline) · −70 dB (real-time playback) |
-| **Real-time latency** | `<10 ms` AudioWorklet + SharedArrayBuffer ring buffer (playback/mixing) |
-| **ML models** | Demucs v4, BSRNN, ECAPA-TDNN 192-dim, HiFi-GAN v1, Silero VAD — all via ONNX Runtime Web |
-| **GPU execution** | WebGPU (preferred) → WebGL2 → WASM fallback |
-| **Speaker isolation** | ECAPA-TDNN voiceprint enrollment, cosine-similarity gating per frame |
-| **Room adaptation** | 8 acoustic profiles (Auto, Bedroom, Bathroom, Kitchen, Hallway, Garage, Outdoor, Car) |
-| **Batch processing** | Up to 11,000 files via async thread pool with priority queue |
+| **Full-audio analysis** | Local classical DSP (+ ML hints when models load): speech/noise/music/hum/whisper regions, confidence, explainable recommendations |
+| **Source workspace** | Timeline lanes, source chips, independent layer audition (solo/mute/gain), original/layer/processed compare |
+| **Whisper / faint speech** | WhisperLogic + WhisperHunter — detect low-level speech-like zones and process carefully (no word hallucination; no cloud ASR) |
+| **Live-Mix (preview)** | Real-time gate/de-esser/EQ/comp via AudioWorklet + PlaybackMixer — sliders never re-run ML |
+| **Offline process** | Higher-quality ML stem separation + single-pass spectral chain (one STFT → ops → one iSTFT) |
+| **ML models (shipped)** | Demucs v4 quant, BSRNN vocals, RNNoise suppressor, Silero VAD — ONNX Runtime Web |
+| **GPU execution** | WebGPU preferred → WASM fallback |
+| **Speaker diarization** | Classical + optional worker path on clean stem; mute/solo/volume per speaker |
 | **Format support** | MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MOV, WEBM, MKV, AVI, WMV, TS |
-| **Privacy** | 100% local processing · zero telemetry · AES-256 export encryption · no cloud API calls |
-| **Export presets** | Crystal Voice · Podcast Pro · Film Dialogue · Forensic · Voice Message · Interview |
+| **Privacy** | 100% local processing · no telemetry · audio never uploaded |
+| **Engineer presets** | Voice Clarity · Podcast Clean · Whisper Boost · Phone/Radio · Room Echo · Hum Removal · Forensic · Aggressive Isolate · Surveillance |
 
 ---
 
 ## Architecture: Stem-Split & Live-Mix
 
-The app uses a **two-phase model** (see [`CLAUDE.md`](CLAUDE.md)):
+The app uses a **two-phase model** (see [`CLAUDE.md`](CLAUDE.md)), plus optional full-audio analysis before process:
 
-1. **Phase 1 — Offline inference** (once per uploaded file): `FileIngestion` → `MLWorker` (ONNX) → stem cache.
-2. **Phase 2 — Live-Mix playback** (continuous, zero ML): cached stems → `PlaybackMixer` / AudioWorklet graph → real-time slider response.
+1. **Analyze (optional):** `FullAnalysisWorker` / classical `FeatureExtractor` → segments, whisper regions, recommendations, visual layers, audition metadata.
+2. **Phase 1 — Offline inference** (once per file): `FileIngestion` → `MLWorker` (ONNX) → clean/noise stems + spectral cleanup.
+3. **Phase 2 — Live-Mix playback** (continuous, zero ML): stems → `PlaybackMixer` + `vip-gate` / `vip-deesser` worklets → real-time sliders.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  UI LAYER (Main Thread)                                  │
-│  Landing upload zone · Engineer 67-slider UI · transport │
-│  3D Spectrogram · A/B Waveform Comparison                │
-└────────────────────┬────────────────────────────────────┘
-                     │ postMessage / SharedArrayBuffer
-┌────────────────────▼────────────────────────────────────┐
-│  DISPATCHER (Web Worker)                                 │
-│  Job scheduling · Pipeline orchestration · Priority queue│
-└──┬─────────────────┬──────────────────┬─────────────────┘
-   │                 │                  │
-┌──▼──────┐  ┌───────▼──────┐  ┌────────▼──────────┐
-│ DSP     │  │  ML Workers  │  │  AudioWorklet     │
-│ Workers │  │  ONNX / WebGPU│  │  Live-Mix <10 ms  │
-│ Pass 1  │  │  Pass 2      │  │  Ring buffer SAB  │
-└──┬──────┘  └───────┬──────┘  └────────┬──────────┘
-   └─────────────────┴──────────────────┘
-              GPU ACCELERATION LAYER
-        WebGPU compute shaders (preferred)
-        WebGL2 fallback · WASM-FFT fallback
-        Single STFT → in-place ops → single iSTFT
+UI Thread
+  upload / transport / controls
+  analysis workspace (lanes, chips, explanation)
+  source audition · export
+       │
+Capability / Init
+  DSP registry · worklet · worker · model · calibration
+       │
+  ┌────┴────────────────────────────┐
+  │ LIVE (preview)                  │ OFFLINE
+  │ PlaybackMixer + AudioWorklet    │ FullAnalysisWorker
+  │ gate/deess/EQ AudioParams only  │ FeatureExtractor · WhisperLogic
+  │                                 │ RecommendationEngine
+  │                                 │ MLWorker (WebGPU/WASM)
+  │                                 │ one STFT → ops → one iSTFT
+  └─────────────────────────────────┘
 ```
+
+### Live vs offline
+
+| Path | Role | Latency / quality |
+|------|------|-------------------|
+| **Live-Mix** | Preview processed stems; tweak gate/EQ/comp in real time | Low latency; no re-inference |
+| **Offline analysis** | Understand the whole file before processing | Full-file features + recommendations |
+| **Offline process** | ML isolation + spectral chain for final quality | Higher fidelity than preview-only |
 
 ### Critical Constraints
-- **Single-Pass Spectral Architecture** — exactly ONE Forward STFT, in-place spectral operations, exactly ONE iSTFT. No exceptions.
-- **100% Local Processing** — no fetch to external servers (except loading local `.onnx` models). No telemetry.
+- **Single-Pass Spectral Architecture** — exactly ONE Forward STFT, in-place spectral operations, exactly ONE iSTFT per offline spectral branch.
+- **100% Local Processing** — no fetch of user audio to servers; models load same-origin from `/app/models/`.
 - **ML via ONNX Runtime Web** — WebGPU EP preferred, WASM EP fallback.
-- **No live microphone ingestion** — `getUserMedia` and the legacy live-mic pipeline are removed by design.
+- **No live microphone ingestion** — upload-only workflow (`getUserMedia` forbidden).
+- **Honest layers** — audition quality badges (`high` / `medium` / `low`); no fake perfect stems.
+
+### Engineer analysis flow
+
+```
+Load App → Validate capabilities → Upload/Decode
+→ Analyze Full Audio → Detect sources / whisper regions
+→ Build recommendations + visual lanes + audition layers
+→ Solo / mute / loop inspect → Apply Recommendations
+→ (optional) Analyze + Process → Offline render → Export
+```
 
 ---
 
-## ML Model Stack
+## ML Model Stack (actually shipped)
 
-| Model | Task | Size (INT8) | Inference |
-|-------|------|-------------|----------|
-| Demucs v4 (htdemucs) | Voice / source separation | ~37 MB | ~85 ms/3s GPU |
-| Band-Split RNN | Band-specific separation | ~12 MB | ~62 ms/3s GPU |
-| ECAPA-TDNN 192-dim | Speaker embedding / voiceprint | ~8 MB | ~50 ms/3s GPU |
-| HiFi-GAN v1 | Neural vocoder (mel → waveform) | ~14 MB | ~120 ms/3s GPU |
-| Silero VAD | Voice activity detection | ~1 MB | ~5 ms/frame CPU |
+| Model | Path | Task | Approx size |
+|-------|------|------|-------------|
+| Demucs v4 quantized | `public/app/models/demucs_v4_quantized.onnx` | Vocal / source separation | ~149 MB |
+| Demucs v4 fp32 | `demucs_v4_fp32.onnx` (optional heavy) | Separation | ~370 MB |
+| Band-Split RNN | `bsrnn_vocals.onnx` | Vocal mask | ~3.7 MB |
+| RNNoise suppressor | `rnnoise_suppressor.onnx` | Noise suppression mask | ~2 MB |
+| Silero VAD | `silero_vad.onnx` / `_int8` | Voice activity | ~2.3 MB |
 
-All models: loaded lazily on first use · cached in IndexedDB · INT8 quantized · SHA-256 verified.
+Loaded lazily · SHA-256 verified via `src/core/ModelManifest.js` · cached in IndexedDB where supported.
+
+**Fallback:** if a model is missing or integrity fails, classical DSP analysis/processing continues with lower confidence and UI notices — never silent fake ML.
+
+---
+
+## Capability matrix
+
+| Capability | Web (COOP/COEP) | Electron | Android WebView |
+|------------|-----------------|----------|-----------------|
+| Live-Mix playback | Yes | Yes | Yes |
+| AudioWorklet gate/deess | Yes | Yes | Best-effort (bypass if fail) |
+| SharedArrayBuffer | Yes when cross-origin isolated | Yes | Often limited → message-port fallback |
+| WebGPU ORT | If available | If available | Device-dependent → WASM |
+| Full analysis worker | Yes | Yes | Yes (memory-aware) |
+| Export WAV | Download | Native save dialog | Download / share via OS |
 
 ---
 
