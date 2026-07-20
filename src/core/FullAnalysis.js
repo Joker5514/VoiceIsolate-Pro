@@ -120,7 +120,7 @@ export function analyzeAudio(channels, sampleRate, opts = {}) {
   let overlapRegions = opts.mlHints?.overlapRegions || [];
   if (!speakerSegments.length && speechSegments.length) {
     // Single lead speaker covering speech regions
-    speakerSegments = speechSegments.map((s, i) => ({
+    speakerSegments = speechSegments.map((s) => ({
       speakerId: 'S1',
       label: 'Lead speech',
       start: s.start,

@@ -29,8 +29,8 @@ export function probeSharedArrayBuffer(g = globalThis) {
       return entry('sab', false, 'Page is not cross-origin isolated', 'message-port');
     }
     // Smoke-allocate to catch partially broken environments.
-    // eslint-disable-next-line no-new
-    new g.SharedArrayBuffer(8);
+    const _probe = new g.SharedArrayBuffer(8);
+    void _probe;
     return entry('sab', true, 'SharedArrayBuffer available', null);
   } catch (err) {
     return entry('sab', false, err && err.message ? err.message : 'SAB probe failed', 'message-port');

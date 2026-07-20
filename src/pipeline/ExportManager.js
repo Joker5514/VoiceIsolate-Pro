@@ -62,7 +62,7 @@ export function encodeWav(channels, sampleRate) {
 export function safeFilename(base, ext = 'wav') {
   const cleaned = String(base || 'voiceisolate-export')
     .replace(/\.[^.]+$/, '')
-    .replace(/[^\w\-]+/g, '_')
+    .replace(/[^\w-]+/g, '_')
     .replace(/_+/g, '_')
     .slice(0, 80) || 'voiceisolate-export';
   return `${cleaned}.${ext.replace(/^\./, '')}`;
