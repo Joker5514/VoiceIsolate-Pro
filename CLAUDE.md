@@ -60,7 +60,8 @@ one-shot offline pass.
 
 ### 1.2 Master Blueprint v2.1 — Cross-Platform Mandate
 
-The authoritative plan is `docs/VoiceIsolate-Pro_Master_Blueprint_v2.1.md`. Key
+The authoritative plan is `docs/architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md`
+(stub redirect also at `docs/VoiceIsolate-Pro_Master_Blueprint_v2.1.md`). Key
 constraints every contributor must enforce:
 
 | Constraint | Rule |
@@ -158,7 +159,7 @@ Rules:
     compatibility and offline precache, but it is **not** `addModule`-loaded
     (the live SharedArrayBuffer worklet path was removed). Packaging is governed
     by `scripts/worklet-manifest.json`, `scripts/verify-worklets.js`, and
-    `docs/WORKLETS.md`. After any worklet edit run `pnpm worklets:hash`.
+    `docs/guides/WORKLETS.md`. After any worklet edit run `pnpm worklets:hash`.
 
 ---
 

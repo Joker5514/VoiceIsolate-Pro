@@ -42,7 +42,17 @@ pnpm test               # Jest (2150+ tests)
 - Add live-microphone ingestion
 - Load libraries from CDNs
 - Put business logic in `public/app/` (Engineer Mode is maintenance-frozen)
-- Commit large ONNX models (use Vercel Blob — see `docs/MODEL_DELIVERY.md`)
+- Commit large ONNX models (use Vercel Blob — see `docs/guides/MODEL_DELIVERY.md`)
+
+## Documentation map
+
+| Topic | Doc |
+|-------|-----|
+| Full index | [`docs/README.md`](docs/README.md) |
+| Architecture | [`docs/architecture/`](docs/architecture/) |
+| How-tos (Android, worklets, desktop, analysis) | [`docs/guides/`](docs/guides/) |
+| Downloads | [`docs/DOWNLOADS.md`](docs/DOWNLOADS.md) |
+| Historical only | [`docs/archive/`](docs/archive/) |
 
 ## Pages
 
