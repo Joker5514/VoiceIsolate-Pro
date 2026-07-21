@@ -36,9 +36,12 @@ describe('Download page links', () => {
     expect(dl).toMatch(/releases\/latest\/download\/VoiceIsolate-Pro-24\.0\.0-win-x64\.exe/);
   });
 
-  test('reports realistic package sizes (not stale 303 MB)', () => {
+  test('reports realistic package sizes (not stale 303/480 MB)', () => {
     expect(dl).toMatch(/~?238/);
+    // Windows installer is the lean offline package (~178 MB), not the old ~480 MB build
+    expect(dl).toMatch(/~?178/);
     expect(dl).not.toMatch(/~303/);
+    expect(dl).not.toMatch(/~480/);
   });
 });
 

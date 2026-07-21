@@ -224,10 +224,13 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 | **Latest Windows installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 | **Pinned Windows v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 
-| Asset | Name | Approx. size |
-|-------|------|----------------|
-| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~238 MB |
-| Windows NSIS installer | `VoiceIsolate-Pro-24.0.0-win-x64.exe` | ~480 MB |
+| Asset | Name | Approx. size | Updated |
+|-------|------|----------------|---------|
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~238 MB | 2026-07-21 |
+| Windows NSIS installer | `VoiceIsolate-Pro-24.0.0-win-x64.exe` | ~178 MB | 2026-07-21 |
+
+Current GitHub Release tag: **[v24.0.0](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v24.0.0)**  
+(includes production analysis workspace + processing-stall fixes).
 
 The download page always points at **real GitHub Release binaries** (never SPA HTML).  
 Same-origin `/download/*.apk` and `/download/*.exe` redirect to Releases (`vercel.json`).

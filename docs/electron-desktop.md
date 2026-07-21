@@ -78,6 +78,8 @@ Publish installer to GitHub Releases; the web download page links there:
 | Web download page | https://voice-isolate-pro.vercel.app/download/ |
 | Latest Windows installer | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 | Pinned v24.0.0 | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| Approx. size | ~178 MB (BS-RNN + denoise + VAD offline; Demucs not in installer) |
+| Last release upload | 2026-07-21 |
 
 ## Model Cache (Desktop)
 
