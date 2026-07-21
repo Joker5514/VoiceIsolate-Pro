@@ -25,7 +25,8 @@ Web download page: https://voice-isolate-pro.vercel.app/download/
 | **Pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
 | **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 
-Asset name: `VoiceIsolate-Pro-android-debug.apk` · ~238 MB · complete offline app (Landing + Engineer Mode + models).
+Asset name: `VoiceIsolate-Pro-android-debug.apk` · **~238 MB** · complete offline app (Landing + Engineer Mode + models).  
+Last published to **v24.0.0**: 2026-07-21.
 
 Same-origin `/download/*.apk` is **redirected** to GitHub Releases (`vercel.json`) so Vercel never serves SPA HTML for APK URLs.
 
@@ -50,7 +51,8 @@ Do **not** commit `*.apk` under `public/download/` (see `.gitignore`) — nestin
 | Local build | `pnpm build:electron` → `dist/electron/VoiceIsolate-Pro-24.0.0-win-x64.exe` |
 | Portable smoke test | `pnpm build:electron:dir` → `dist/electron/win-unpacked/VoiceIsolate Pro.exe` |
 
-Asset name: `VoiceIsolate-Pro-24.0.0-win-x64.exe` · ~480 MB · 100% offline (UI + ORT + default models).
+Asset name: `VoiceIsolate-Pro-24.0.0-win-x64.exe` · **~178 MB** · 100% offline (UI + ORT + BS-RNN/denoise/VAD; Demucs optional/not bundled).  
+Last published to **v24.0.0**: 2026-07-21.
 
 ### Publish desktop (maintainers)
 
