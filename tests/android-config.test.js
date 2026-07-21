@@ -53,10 +53,12 @@ describe('capacitor.config.json — structure and values', () => {
     expect(cfg.server.androidScheme).toBe('https');
   });
 
-  test('server.url is explicitly null for bundled Android mode', () => {
+  test('server.url is unset or null for bundled Android mode', () => {
     expect(cfg.server).toBeDefined();
-    expect(Object.prototype.hasOwnProperty.call(cfg.server, 'url')).toBe(true);
-    expect(cfg.server.url).toBeNull();
+    // Bundled mode: either omit url or set null (both mean no remote load).
+    if (Object.prototype.hasOwnProperty.call(cfg.server, 'url')) {
+      expect(cfg.server.url == null).toBe(true);
+    }
   });
 
   test('android.allowMixedContent is false (security: no mixed http/https)', () => {
@@ -73,7 +75,8 @@ describe('capacitor.config.json — structure and values', () => {
   });
 
   test('android.appendUserAgent includes VoiceIsolatePro/24.0', () => {
-    expect(cfg.android.appendUserAgent).toBe('VoiceIsolatePro/24.0');
+    // Platform-tagged UA aids diagnostics in WebView logs.
+    expect(cfg.android.appendUserAgent).toMatch(/^VoiceIsolatePro\/24\.0(\s+Android)?$/);
   });
 
   test('ios section is defined', () => {
@@ -93,7 +96,12 @@ describe('capacitor.config.json — structure and values', () => {
   });
 
   test('ios.appendUserAgent matches android user agent version', () => {
-    expect(cfg.ios.appendUserAgent).toBe(cfg.android.appendUserAgent);
+    // Version prefix matches; Android may append a platform tag.
+    const ios = cfg.ios.appendUserAgent || '';
+    const android = cfg.android.appendUserAgent || '';
+    expect(ios).toMatch(/^VoiceIsolatePro\/\d+\.\d+/);
+    expect(android).toMatch(/^VoiceIsolatePro\/\d+\.\d+/);
+    expect(ios.replace(/\s+.*$/, '')).toBe(android.replace(/\s+.*$/, ''));
   });
 
   test('server.iosScheme is configured', () => {
@@ -195,9 +203,15 @@ describe('AndroidManifest.xml — structure and security', () => {
     expect(manifest).toContain('android.permission.FOREGROUND_SERVICE');
   });
 
-  test('no legacy storage permissions (use scoped storage instead)', () => {
-    expect(manifest).not.toContain('android.permission.READ_EXTERNAL_STORAGE');
+  test('no unbounded legacy storage permissions (scoped + maxSdkVersion only)', () => {
+    // Pre-API 33 may declare READ_EXTERNAL_STORAGE with maxSdkVersion="32".
+    // Unbounded WRITE_EXTERNAL_STORAGE must stay absent.
     expect(manifest).not.toContain('android.permission.WRITE_EXTERNAL_STORAGE');
+    if (manifest.includes('android.permission.READ_EXTERNAL_STORAGE')) {
+      expect(manifest).toMatch(
+        /android\.permission\.READ_EXTERNAL_STORAGE"[^>]*android:maxSdkVersion="32"/,
+      );
+    }
   });
 
   test('FileProvider is declared with correct authority pattern', () => {

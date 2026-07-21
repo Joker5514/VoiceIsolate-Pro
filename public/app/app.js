@@ -1034,24 +1034,52 @@ class VoiceIsolatePro {
   }
 
   // ── Pipeline progress ────────────────────────────────────────────────────
-  updatePipelineProgress(stageIndex, detail, pct) {
+  /**
+   * Monotonic progress updates — never regress the bar (prevents "stuck at 55%"
+   * when stage events fire after higher progress ticks).
+   * @param {number} stageIndex
+   * @param {string} detail
+   * @param {number} [pct]
+   * @param {{ force?: boolean }} [opts]
+   */
+  updatePipelineProgress(stageIndex, detail, pct, opts = {}) {
     const fill = this.dom.pipeFill || $('pipeFill');
     const bar = this.dom.pipeBar || $('pipeBar');
     const detailEl = this.dom.pipeDetail || $('pipeDetail');
     const badge = $('vip-proc-badge');
-    const p = typeof pct === 'number' ? pct : (stageIndex / 32) * 100;
+    let p = typeof pct === 'number' ? pct : (stageIndex / 32) * 100;
+    if (!Number.isFinite(p)) p = 0;
+    p = Math.max(0, Math.min(100, p));
+    // Reset only on force (new job start / cancel / error).
+    if (opts.force) {
+      this._pipelinePct = p;
+    } else {
+      const prev = Number(this._pipelinePct) || 0;
+      // Allow reset when going back to idle (0) or completing (100).
+      if (p > 0 && p < 100 && p < prev) p = prev;
+      this._pipelinePct = p;
+    }
     if (fill) fill.style.width = p + '%';
-    if (bar) bar.setAttribute('aria-valuenow', p);
+    if (bar) bar.setAttribute('aria-valuenow', String(Math.round(p)));
     if (detailEl) detailEl.textContent = detail || '';
     if (badge) badge.dataset.state = p >= 100 ? 'done' : p > 0 ? 'processing' : 'idle';
     const spinner = badge && badge.querySelector('.vip-pb-spinner');
     if (spinner) spinner.style.display = (p > 0 && p < 100) ? '' : 'none';
     const lbl = badge && badge.querySelector('.vip-pb-label');
     if (lbl) lbl.textContent = detail || (p >= 100 ? 'Done' : 'Ready');
+    // Overlay stage index should track percent so UI does not freeze mid-pipeline.
+    const stageFromPct = Math.max(0, Math.min(32, Math.round((p / 100) * 32)));
+    const stage = Number.isFinite(stageIndex) && stageIndex > 0 ? stageIndex : stageFromPct;
     if (typeof this.updateProcessingOverlay === 'function') {
-      this.updateProcessingOverlay(detail || '', p, stageIndex);
+      this.updateProcessingOverlay(detail || '', p, stage);
     }
-    HeroExperience.onPipelineProgress(stageIndex, detail, p);
+    HeroExperience.onPipelineProgress(stage, detail, p);
+  }
+
+  /** Map ML worker percent (0–100) into the isolation band (15–88). */
+  _mapMlProgressPercent(workerPercent) {
+    const w = Math.max(0, Math.min(100, Number(workerPercent) || 0));
+    return 15 + Math.round(w * 0.73);
   }
 
   // ── Render static visuals (waveform/spectrogram placeholder) ─────────────
@@ -2572,6 +2600,7 @@ class VoiceIsolatePro {
     this.isProcessing = true;
     this.abortFlag = false;
     this._mlIsolationSucceeded = false;
+    this._pipelinePct = 0;
     this._updateProcessButtonsState();
     stageStart('pipeline');
     // Let the browser paint the processing overlay before heavy work.
@@ -2596,7 +2625,7 @@ class VoiceIsolatePro {
     void this._getWhisperModeState();
 
     this.setStatus('PROCESSING');
-    this.updatePipelineProgress(0, totalPasses > 1 ? 'Starting isolation passes…' : 'ML isolation…', 0);
+    this.updatePipelineProgress(0, totalPasses > 1 ? 'Starting isolation passes…' : 'ML isolation…', 0, { force: true });
 
     try {
       // Always preserve the uploaded buffer as origBuffer for ML/cache identity.
@@ -2645,25 +2674,34 @@ class VoiceIsolatePro {
       if (fileSeq !== this._fileSeq) {
         stageEnd('pipeline');
         this.setStatus('READY');
-        this.updatePipelineProgress(0, 'Cancelled (new file loaded)', 0);
+        this.updatePipelineProgress(0, 'Cancelled (new file loaded)', 0, { force: true });
         return;
       }
       if (this.abortFlag) {
         stageEnd('pipeline');
         this.setStatus('READY');
-        this.updatePipelineProgress(0, 'Cancelled', 0);
+        this.updatePipelineProgress(0, 'Cancelled', 0, { force: true });
         return;
       }
 
       // Success — enable reprocess
       this.outputBuffer = this.outputBuffer || this.procBuffer;
+      if (!this.outputBuffer && (this.origBuffer || this.inputBuffer)) {
+        // Guard: never leave processing "done" with no playable buffer.
+        this.outputBuffer = this.procBuffer = this.origBuffer || this.inputBuffer;
+      }
       if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = false;
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
       if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = false;
       this._updateSaveButtonLabels();
 
-      this._setProcessedPlaybackMode();
+      this.updatePipelineProgress(28, 'Loading Live-Mix…', 92);
+      try {
+        this._setProcessedPlaybackMode();
+      } catch (playErr) {
+        structuredLog('warn', '[VIP] Live-Mix load failed after process', { err: playErr?.message });
+      }
 
       if (this.outputBuffer) {
         const scheduleIdle = globalThis.requestIdleCallback
@@ -2671,21 +2709,26 @@ class VoiceIsolatePro {
           : (cb) => setTimeout(cb, 0);
         scheduleIdle(() => {
           if (fileSeq !== this._fileSeq) return;
-          this.renderStaticVisuals(this.outputBuffer);
-          this._autoCalibratePreset(this.outputBuffer);
-          this._syncBridgeParams();
+          try {
+            this.renderStaticVisuals(this.outputBuffer);
+            this._autoCalibratePreset(this.outputBuffer);
+            this._syncBridgeParams();
+          } catch (idleErr) {
+            structuredLog('warn', '[VIP] post-process idle work failed', { err: idleErr?.message });
+          }
         });
       }
       stageEnd('pipeline');
-      this.updatePipelineProgress(32, 'Complete', 100);
+      this.updatePipelineProgress(32, 'Complete', 100, { force: true });
       this.setStatus('DONE');
       try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}
     } catch (err) {
       structuredLog('error', '[VIP] Pipeline error', { err: err.message });
       this.setStatus('ERROR');
       this.showNotification('Processing failed: ' + err.message, 'error');
-      this.updatePipelineProgress(0, 'Error', 0);
+      this.updatePipelineProgress(0, 'Error', 0, { force: true });
     } finally {
+      // Always unlock the UI — never leave the bar stuck mid-process.
       this.isProcessing = false;
       this._updateProcessButtonsState();
       if (this.dom.mobileProcessBtn) {
@@ -2762,6 +2805,10 @@ class VoiceIsolatePro {
       void this._warmupMLModels().catch(() => {});
       const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
       const plan = this._mlChannelPlan(buf);
+      // Keep a non-transferred mid copy for stereo expand (worker detaches transfer list).
+      const midCopy = plan.expandStereo && plan.mid
+        ? new Float32Array(plan.mid)
+        : null;
       this.updatePipelineProgress(4, plan.expandStereo ? 'ML isolation (mid)…' : 'ML isolation…', 15);
       const result = await separateStems(plan.channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
@@ -2770,30 +2817,43 @@ class VoiceIsolatePro {
         transferOwned: true,
         onProgress: (ev) => {
           if (fileSeq !== this._fileSeq || this.abortFlag) return;
+          const workerPct = Number(ev.percent);
+          const mapped = this._mapMlProgressPercent(
+            Number.isFinite(workerPct) ? workerPct : 0,
+          );
           if (ev.type === 'stage') {
             const label = ev.label || `ML: ${ev.stage} (${ev.modelId || 'model'})…`;
-            const pct = 15 + Math.round((ev.percent || 0) * 0.55);
-            this.updatePipelineProgress(4, label, pct);
+            this.updatePipelineProgress(4, label, mapped);
           } else if (ev.type === 'progress') {
-            this.updatePipelineProgress(4, 'ML isolation…', 15 + Math.round((ev.percent || 0) * 0.7));
+            this.updatePipelineProgress(4, 'ML isolation…', mapped);
           }
         },
       });
       if (fileSeq !== this._fileSeq) return false;
       if (result.passthrough) return false;
 
+      this.updatePipelineProgress(18, 'Reconstructing stems…', 88);
       let clean = result.clean;
-      if (plan.expandStereo && clean?.[0] && plan.left && plan.right && plan.mid) {
-        clean = this._expandMonoCleanToStereo(clean[0], plan.mid, plan.left, plan.right);
+      if (plan.expandStereo && clean?.[0] && plan.left && plan.right) {
+        clean = this._expandMonoCleanToStereo(
+          clean[0],
+          midCopy || plan.mid,
+          plan.left,
+          plan.right,
+        );
       }
       // Fast time-domain HF tame — kills residual ML mask whistle without a 2nd STFT.
-      this._postIsolationDeWhistle(clean, result.sampleRate || buf.sampleRate);
+      try {
+        this._postIsolationDeWhistle(clean, result.sampleRate || buf.sampleRate);
+      } catch (dwErr) {
+        structuredLog('warn', '[VIP] post-isolation dewhistle skipped', { err: dwErr?.message });
+      }
       this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
       // Keep origBuffer as the ML source of truth for subsequent reprocess/cache keys.
       if (!this.origBuffer) this.origBuffer = buf;
       const mlLabel = result.fromCache ? 'ML isolation (cached)' : 'ML isolation complete';
-      this.updatePipelineProgress(20, mlLabel, 85);
+      this.updatePipelineProgress(20, mlLabel, 90);
       structuredLog('info', '[VIP] ML isolation done', {
         fromCache: Boolean(result.fromCache),
         channels: clean.length,
@@ -2803,6 +2863,11 @@ class VoiceIsolatePro {
       return true;
     } catch (err) {
       structuredLog('warn', '[VIP] ML isolation unavailable, falling back to DSP', { err: err.message });
+      // Surface stall/timeout so the user knows DSP fallback is starting.
+      if (/stall|timeout/i.test(err.message || '')) {
+        this.updatePipelineProgress(10, 'ML stalled — classical DSP fallback…', Math.max(this._pipelinePct || 20, 40));
+        this.showNotification('ML isolation stalled — finishing with classical DSP', 'warn');
+      }
       return false;
     }
   }

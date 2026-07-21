@@ -23,6 +23,8 @@ let _warmupHooked = false;
 const WARMUP_TIMEOUT_MS = 120000;
 /** Max wait for a single separation job before falling back to DSP. */
 const PROCESS_TIMEOUT_MS = 180000;
+/** If the worker stops posting progress for this long, treat as stall and fail fast. */
+const PROGRESS_STALL_MS = 45000;
 
 function getWorker() {
   if (_worker) return _worker;
@@ -134,15 +136,24 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   const msg = { type: 'process', requestId, channelData: copies, sampleRate, modelIds };
 
   return new Promise((resolve, reject) => {
+    let lastProgressAt = Date.now();
     const timer = setTimeout(() => {
       cleanup();
       resetStemSeparation();
       reject(new Error('[VIP][StemSeparation] processing timeout'));
     }, PROCESS_TIMEOUT_MS);
+    // Fail fast when the worker goes silent mid-job (common "stuck at ~55%" UX).
+    const stallWatch = setInterval(() => {
+      if (Date.now() - lastProgressAt < PROGRESS_STALL_MS) return;
+      cleanup();
+      resetStemSeparation();
+      reject(new Error('[VIP][StemSeparation] processing stalled (no progress)'));
+    }, 5000);
     const onMsg = (ev) => {
       const m = ev.data || {};
       if (m.requestId !== requestId) return;
       if (m.type === 'progress' || m.type === 'stage') {
+        lastProgressAt = Date.now();
         onProgress?.(m);
       } else if (m.type === 'stems') {
         cleanup();
@@ -162,6 +173,7 @@ export async function separateStems(channelData, sampleRate, options = {}) {
     const onErr = (e) => { cleanup(); reject(new Error(e.message || 'MLWorker error')); };
     const cleanup = () => {
       clearTimeout(timer);
+      clearInterval(stallWatch);
       w.removeEventListener('message', onMsg);
       w.removeEventListener('error', onErr);
     };
