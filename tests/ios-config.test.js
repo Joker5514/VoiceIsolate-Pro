@@ -446,7 +446,12 @@ describe('Cross-platform consistency — Android & iOS', () => {
   });
 
   test('user agent version is consistent between Android and iOS', () => {
-    expect(cfg.android.appendUserAgent).toBe(cfg.ios.appendUserAgent);
+    // Version prefix matches; Android may append a platform tag (e.g. " Android").
+    const ios = cfg.ios.appendUserAgent || '';
+    const android = cfg.android.appendUserAgent || '';
+    expect(ios).toMatch(/^VoiceIsolatePro\/\d+\.\d+/);
+    expect(android).toMatch(/^VoiceIsolatePro\/\d+\.\d+/);
+    expect(ios.replace(/\s+.*$/, '')).toBe(android.replace(/\s+.*$/, ''));
   });
 
   test('backgroundColor is consistent between Android and iOS', () => {

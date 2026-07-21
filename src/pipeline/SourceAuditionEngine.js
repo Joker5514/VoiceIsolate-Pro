@@ -145,29 +145,37 @@ export class SourceAuditionEngine {
       });
     }
 
-    // Hum / transients / ambience — low quality classical previews using filtered noise/original
+    // Hum / transients / ambience — multi-buffer classical reconstruction
+    // (honest quality: medium when analysis profiles exist, else low)
     if (noise || original) {
-      const base = noise || original;
+      const humSrc = noise || original;
+      const humFreq = analysis?.humProfile?.freq || 60;
+      const humBuf = this._extractHumBuffer(humSrc, ctx, humFreq);
       this.setLayer({
         id: 'hum',
-        label: 'Hum (preview)',
-        buffer: base,
+        label: 'Hum (reconstructed)',
+        buffer: humBuf,
         confidence: analysis?.humProfile?.strength ?? 0.3,
-        quality: 'low',
+        quality: analysis?.humProfile?.present ? 'medium' : 'low',
       });
+
+      const transientBuf = this._extractTransientBuffer(original, ctx);
       this.setLayer({
         id: 'transients',
-        label: 'Transients (preview)',
-        buffer: original,
-        confidence: 0.35,
-        quality: 'low',
+        label: 'Transients (reconstructed)',
+        buffer: transientBuf,
+        confidence: 0.45,
+        quality: 'medium',
       });
+
+      const ambSrc = noise || this._residualBuffer(original, clean || original, ctx);
+      const ambBuf = this._extractAmbienceBuffer(ambSrc, ctx);
       this.setLayer({
         id: 'ambience',
         label: 'Ambience / room',
-        buffer: noise || original,
+        buffer: ambBuf,
         confidence: analysis?.roomEstimate ?? 0.3,
-        quality: 'low',
+        quality: (analysis?.roomEstimate || 0) > 0.25 ? 'medium' : 'low',
       });
     }
 
@@ -192,6 +200,94 @@ export class SourceAuditionEngine {
       const d = out.getChannelData(c);
       for (let i = 0; i < len; i++) {
         d[i] = o[i] - v[i];
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Narrowband comb around mains hum + harmonics (time-domain resonators).
+   * Best-effort preview — not a studio hum strip.
+   */
+  _extractHumBuffer(source, ctx, baseFreq = 60) {
+    const nCh = source.numberOfChannels;
+    const len = source.length;
+    const sr = source.sampleRate;
+    const out = ctx.createBuffer(nCh, len, sr);
+    const f0 = baseFreq === 50 ? 50 : 60;
+    const harmonics = [1, 2, 3, 4, 5];
+    for (let c = 0; c < nCh; c++) {
+      const x = source.getChannelData(c);
+      const y = out.getChannelData(c);
+      // Parallel resonator bank (one-pole complex-ish via biquad-like IIR)
+      const states = harmonics.map(() => ({ y1: 0, y2: 0, x1: 0, x2: 0 }));
+      for (let i = 0; i < len; i++) {
+        let sum = 0;
+        const xi = x[i];
+        for (let h = 0; h < harmonics.length; h++) {
+          const f = f0 * harmonics[h];
+          if (f >= sr * 0.45) continue;
+          // Bandpass via difference of two one-pole LP approximations
+          const w = 2 * Math.PI * f / sr;
+          const r = 0.995 - h * 0.002;
+          const st = states[h];
+          const y0 = 2 * r * Math.cos(w) * st.y1 - r * r * st.y2 + xi - st.x2;
+          st.x2 = st.x1;
+          st.x1 = xi;
+          st.y2 = st.y1;
+          st.y1 = y0;
+          sum += y0 * (0.35 / harmonics[h]);
+        }
+        y[i] = Math.max(-1, Math.min(1, sum * 0.85));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * High-pass residual of a short differentiator — emphasizes attacks/clicks.
+   */
+  _extractTransientBuffer(source, ctx) {
+    const nCh = source.numberOfChannels;
+    const len = source.length;
+    const out = ctx.createBuffer(nCh, len, source.sampleRate);
+    for (let c = 0; c < nCh; c++) {
+      const x = source.getChannelData(c);
+      const y = out.getChannelData(c);
+      let env = 0;
+      let prev = 0;
+      for (let i = 0; i < len; i++) {
+        const d = x[i] - prev;
+        prev = x[i];
+        const a = Math.abs(d);
+        env = a > env ? a : env * 0.995;
+        // Gate by flux envelope
+        const g = env > 0.012 ? Math.min(1.5, env * 18) : 0;
+        y[i] = Math.max(-1, Math.min(1, d * g * 2.2));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Soft low-passed residual for room tone / reverb tail preview.
+   */
+  _extractAmbienceBuffer(source, ctx) {
+    const nCh = source.numberOfChannels;
+    const len = source.length;
+    const sr = source.sampleRate;
+    const out = ctx.createBuffer(nCh, len, sr);
+    // ~800 Hz LPF for bed / room
+    const fc = 800;
+    const xcoef = Math.exp(-2 * Math.PI * fc / sr);
+    const a0 = 1 - xcoef;
+    for (let c = 0; c < nCh; c++) {
+      const inp = source.getChannelData(c);
+      const y = out.getChannelData(c);
+      let z = 0;
+      for (let i = 0; i < len; i++) {
+        z = a0 * inp[i] + xcoef * z;
+        y[i] = z * 0.9;
       }
     }
     return out;

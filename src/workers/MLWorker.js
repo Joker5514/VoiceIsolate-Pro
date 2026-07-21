@@ -26,6 +26,9 @@
  *       sampleRate, passthrough: boolean }
  *   → { type: 'warmup', modelIds: string[] }
  *   ← { type: 'warmed', modelIds: string[] }
+ *   → { type: 'vad', requestId, samples: Float32Array, sampleRate }
+ *   ← { type: 'vad-result', requestId, scores: Float32Array, times: Float32Array,
+ *       hopSec, source: 'silero'|'unavailable' }
  *   ← { type: 'error', requestId?, message }
  *
  * This worker NEVER touches the DOM, never opens a microphone, and never
@@ -594,6 +597,87 @@ function residual(channelData, cleanChannels) {
   });
 }
 
+// ─── Silero VAD (analysis soft-scores) ───────────────────────────────────────
+
+const SILERO_SR = 16000;
+const SILERO_CHUNK = 512;
+let _vadState = null;
+
+/**
+ * Run Silero VAD over mono PCM and return per-chunk soft scores.
+ * Ported from public/app/ml-worker.js runSileroVAD (local only).
+ */
+async function runVadRequest({ requestId, samples, sampleRate }) {
+  const entry = MANIFEST.vad || MANIFEST.vad_int8;
+  if (!entry) {
+    self.postMessage({
+      type: 'vad-result',
+      requestId,
+      scores: new Float32Array(0),
+      times: new Float32Array(0),
+      hopSec: SILERO_CHUNK / SILERO_SR,
+      source: 'unavailable',
+    });
+    return;
+  }
+  const session = await getSession(entry, entry.id);
+  const pcm = samples instanceof Float32Array ? samples : new Float32Array(samples || []);
+  const sr = sampleRate || 48000;
+  const step = Math.max(1, Math.round(sr / SILERO_SR));
+  const hopSrc = SILERO_CHUNK * step;
+  const nChunks = Math.max(0, Math.floor(pcm.length / hopSrc));
+  const scores = new Float32Array(nChunks);
+  const times = new Float32Array(nChunks);
+  _vadState = new Float32Array(2 * 1 * 128);
+
+  for (let c = 0; c < nChunks; c++) {
+    const off = c * hopSrc;
+    const chunk = new Float32Array(SILERO_CHUNK);
+    for (let i = 0; i < SILERO_CHUNK; i++) {
+      const j = off + i * step;
+      if (j >= pcm.length) break;
+      if (step > 1) {
+        const prev = j > 0 ? pcm[j - 1] : pcm[j];
+        const next = j < pcm.length - 1 ? pcm[j + 1] : pcm[j];
+        chunk[i] = 0.25 * prev + 0.5 * pcm[j] + 0.25 * next;
+      } else {
+        chunk[i] = pcm[j];
+      }
+    }
+    const inputTensor = new ort.Tensor('float32', chunk, [1, SILERO_CHUNK]);
+    const stateTensor = new ort.Tensor('float32', _vadState, [2, 1, 128]);
+    const srData = typeof BigInt64Array !== 'undefined'
+      ? BigInt64Array.from([BigInt(SILERO_SR)])
+      : new Int32Array([SILERO_SR]);
+    const srTensor = new ort.Tensor(typeof BigInt64Array !== 'undefined' ? 'int64' : 'int32', srData, []);
+    const result = await queuedSessionRun(entry.id, session, {
+      input: inputTensor,
+      state: stateTensor,
+      sr: srTensor,
+    });
+    if (result.stateN?.data) _vadState = new Float32Array(result.stateN.data);
+    const out = result.output?.data;
+    scores[c] = out && out.length ? Number(out[0]) : 0;
+    times[c] = (off + hopSrc * 0.5) / sr;
+    if (c % 32 === 0) {
+      self.postMessage({
+        type: 'progress',
+        requestId,
+        percent: Math.round((c / Math.max(1, nChunks)) * 100),
+      });
+    }
+  }
+
+  self.postMessage({
+    type: 'vad-result',
+    requestId,
+    scores,
+    times,
+    hopSec: hopSrc / sr,
+    source: 'silero',
+  }, [scores.buffer, times.buffer]);
+}
+
 async function processRequest({ requestId, modelId, modelIds, channelData, sampleRate }) {
   // A chain (`modelIds`) runs models in series for maximum isolation —
   // e.g. ['bsrnn_vocals', 'rnnoise'] extracts the voice, then strips any
@@ -712,6 +796,12 @@ self.onmessage = async (event) => {
           console.warn('[VIP][MLWorker] Warmup failed:', err?.message || err);
         });
         break;
+      case 'vad': {
+        const run = _processChain.then(() => runVadRequest(msg));
+        _processChain = run.catch(() => {});
+        await run;
+        break;
+      }
       default:
         self.postMessage({ type: 'error', message: `Unknown message type '${msg.type}'` });
     }

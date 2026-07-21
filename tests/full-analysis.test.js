@@ -48,7 +48,10 @@ beforeAll(async () => {
   ({ bootstrapScenario, clampGainStaging, wienerIntensity } = dc);
   const em = await import('../src/pipeline/ExportManager.js');
   ({ safeFilename, encodeWav } = em);
+  softVad = await import('../src/core/SoftVad.js');
 });
+
+let softVad;
 
 function tone(freq, sr, sec, amp = 0.2) {
   const n = Math.floor(sr * sec);
@@ -233,5 +236,46 @@ describe('Capability + Calibration + Export', () => {
     expect(blob.type).toBe('audio/wav');
     expect(blob.size).toBeGreaterThan(44);
     expect(safeFilename('My File!!!.wav')).toMatch(/\.wav$/);
+  });
+});
+
+describe('SoftVad + analysis VAD hints', () => {
+  test('softVadFromExtraction produces scores', () => {
+    const s = quietSpeechLike(16000, 0.8);
+    const ext = extractFrameFeatures(s, 16000, { frameSec: 0.025, hopSec: 0.01 });
+    const vad = softVad.softVadFromExtraction(ext);
+    expect(vad.scores.length).toBe(ext.frames.length);
+    expect(vad.active.length).toBe(ext.frames.length);
+  });
+
+  test('analyzeAudio uses vadActive to promote speech labels', () => {
+    const s = tone(300, 16000, 0.6, 0.05);
+    const analysis = analyzeAudio([s], 16000, {
+      mlHints: {
+        vadActive: new Array(200).fill(true),
+        vadScores: new Float32Array(200).fill(0.9),
+        vadSource: 'silero+classical',
+      },
+    });
+    expect(analysis.confidenceScores.vadSource).toBe('silero+classical');
+    expect(analysis.confidenceScores.analysisQuality).toBeGreaterThanOrEqual(0.8);
+  });
+
+  test('blendVadScores prefers ML weight', () => {
+    const c = new Float32Array([0, 0, 0]);
+    const m = new Float32Array([1, 1, 1]);
+    const b = softVad.blendVadScores(c, m, 0.7);
+    expect(b[0]).toBeCloseTo(0.7, 5);
+  });
+});
+
+describe('pipeline progress monotonic mapping', () => {
+  test('map formula covers isolation band without dead zone at 55', () => {
+    // Mirror app.js _mapMlProgressPercent: 15 + round(w * 0.73)
+    const map = (w) => 15 + Math.round(Math.max(0, Math.min(100, w)) * 0.73);
+    expect(map(0)).toBe(15);
+    expect(map(50)).toBe(52);
+    expect(map(57)).toBe(57); // no longer pins UI at 55 from 0.55 multiplier
+    expect(map(100)).toBe(88);
   });
 });

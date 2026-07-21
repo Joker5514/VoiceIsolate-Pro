@@ -75,12 +75,19 @@ export function analyzeAudio(channels, sampleRate, opts = {}) {
   };
 
   const labels = frames.map((f) => classifyFrame(f, ctx));
-  // Optional ML VAD soft override
-  if (opts.mlHints && Array.isArray(opts.mlHints.vadActive)) {
-    for (let i = 0; i < labels.length && i < opts.mlHints.vadActive.length; i++) {
-      if (opts.mlHints.vadActive[i] && labels[i] === 'noise') labels[i] = 'speech';
-      if (opts.mlHints.vadActive[i] === false && labels[i] === 'speech' && frames[i].rmsDb < -40) {
-        // keep classical if uncertain
+  // Optional ML / soft VAD override (Silero scores or classical SoftVad)
+  const vadActive = opts.mlHints?.vadActive;
+  const vadScores = opts.mlHints?.vadScores;
+  if (vadActive && (Array.isArray(vadActive) || ArrayBuffer.isView(vadActive))) {
+    for (let i = 0; i < labels.length && i < vadActive.length; i++) {
+      const score = vadScores?.[i];
+      const isVoice = vadActive[i] || (typeof score === 'number' && score >= 0.55);
+      if (isVoice && (labels[i] === 'noise' || labels[i] === 'silence')) {
+        labels[i] = 'speech';
+      }
+      // High-confidence non-speech: demote weak speech labels
+      if (typeof score === 'number' && score < 0.2 && labels[i] === 'speech' && frames[i].rmsDb < -38) {
+        labels[i] = frames[i].flatness > 0.5 ? 'noise' : labels[i];
       }
     }
   }
@@ -135,6 +142,8 @@ export function analyzeAudio(channels, sampleRate, opts = {}) {
     ? frames.reduce((a, f) => a + f.rolloff, 0) / frames.length < 4500
     : false;
 
+  const vadSource = opts.mlHints?.vadSource || null;
+  const hasMlVad = vadSource === 'silero' || vadSource === 'silero+classical';
   const confidenceScores = {
     speechRatio,
     musicRatio,
@@ -142,9 +151,10 @@ export function analyzeAudio(channels, sampleRate, opts = {}) {
     continuity: continuityScore(labels),
     hum: extraction.humProfile.strength,
     reverb: extraction.reverbEstimate,
-    analysisQuality: opts.mlHints ? 0.75 : 0.55,
+    analysisQuality: hasMlVad ? 0.82 : (opts.mlHints ? 0.72 : 0.55),
     bandwidthLimited,
-    classicalOnly: !opts.mlHints,
+    classicalOnly: !hasMlVad,
+    vadSource: vadSource || 'none',
   };
 
   const detectedSources = [];
