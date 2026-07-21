@@ -13,6 +13,31 @@
 export async function registerSW() {
   if (!('serviceWorker' in navigator)) return null;
   try {
+    // Capacitor / complete offline Android package: Service Workers frequently
+    // break local asset loads (COEP isolation + WebView asset loader). Prefer
+    // direct asset fetch so the sideload APK boots reliably.
+    const isNative = Boolean(
+      globalThis.Capacitor?.isNativePlatform?.()
+      || /VoiceIsolatePro\/[\d.]+\s*Android/i.test(navigator.userAgent || ''),
+    );
+    let isAndroidPackage = false;
+    if (!isNative) {
+      try {
+        const res = await fetch('/vip-android.json', { cache: 'no-store' });
+        isAndroidPackage = res.ok;
+      } catch {
+        isAndroidPackage = false;
+      }
+    }
+    if (isNative || isAndroidPackage) {
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      } catch { /* ignore */ }
+      console.info('[sw-register] SW disabled on native/Android offline package');
+      return null;
+    }
+
     // Register the canonical SW directly. The /sw.js root shim also points
     // here via importScripts, so existing cached clients converge seamlessly.
     const reg = await navigator.serviceWorker.register('/app/sw.js', { scope: '/' });
