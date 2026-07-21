@@ -31,6 +31,7 @@ const REQUIRED = [
 
 const FORBIDDEN = [
   'app/models/demucs_v4_fp32.onnx',
+  'app/models/demucs_v4_quantized.onnx',
 ];
 
 const errors = [];
@@ -91,6 +92,12 @@ if (fs.existsSync(mainJava)) {
   }
   if (!java.includes('Cross-Origin-Embedder-Policy')) {
     errors.push('MainActivity missing COEP injection (SharedArrayBuffer)');
+  }
+  if (!java.includes('normalizeAssetPath') && !java.includes('URLDecoder')) {
+    warnings.push('MainActivity should normalize asset paths (query/fragment strip)');
+  }
+  if (!java.includes('status >= 100') && !java.includes('status = 200')) {
+    warnings.push('MainActivity should sanitize WebResourceResponse status codes');
   }
 }
 

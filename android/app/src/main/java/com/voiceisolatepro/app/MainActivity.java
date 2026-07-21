@@ -1,13 +1,14 @@
 package com.voiceisolatepro.app;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.webkit.ServiceWorkerClient;
-import android.webkit.ServiceWorkerController;
+import android.util.Log;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 
 import androidx.annotation.Nullable;
@@ -15,143 +16,235 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.webkit.WebViewAssetLoader;
 
+import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URLConnection;
+import java.net.URLDecoder;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * VoiceIsolate Pro — Capacitor host.
+ *
+ * Critical Android WebView fixes:
+ *  1. COOP/COEP headers so SharedArrayBuffer / ORT threaded WASM can enable
+ *  2. Correct MIME for .js / .mjs / .wasm (AudioWorklet + Workers + ORT)
+ *  3. Safe WebResourceResponse reconstruction (null status/reason crashes many devices)
+ *  4. Strip query/fragment from asset paths so ?cacheBust= loads still hit disk
+ */
 public class MainActivity extends BridgeActivity {
+    private static final String TAG = "VIPMainActivity";
     private static final int REQUEST_RECORD_AUDIO = 1001;
     private static final String ASSET_PATH_PREFIX = "public";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Non-blocking; upload-only product does not require mic.
         requestRecordAudioPermissionIfNeeded();
-        setupCrossOriginIsolation();
-    }
-
-    private void requestRecordAudioPermissionIfNeeded() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{Manifest.permission.RECORD_AUDIO},
-                    REQUEST_RECORD_AUDIO
-            );
+        // Bridge WebView is ready after super.onCreate — wire isolation + MIME.
+        try {
+            setupWebViewHardening();
+        } catch (Throwable t) {
+            Log.e(TAG, "WebView hardening failed — app may run without SAB", t);
         }
     }
 
-    /**
-     * SharedArrayBuffer requires cross-origin isolation:
-     *   Cross-Origin-Opener-Policy: same-origin
-     *   Cross-Origin-Embedder-Policy: require-corp
-     *
-     * Capacitor's WebViewClient does NOT inject these headers when serving
-     * local assets, so SAB is permanently disabled unless we intercept every
-     * response and inject them ourselves.
-     */
-    private void setupCrossOriginIsolation() {
-        WebView webView = getBridge().getWebView();
+    private void requestRecordAudioPermissionIfNeeded() {
+        try {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                        this,
+                        new String[]{Manifest.permission.RECORD_AUDIO},
+                        REQUEST_RECORD_AUDIO
+                );
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "RECORD_AUDIO permission request skipped", t);
+        }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private void setupWebViewHardening() {
+        Bridge bridge = getBridge();
+        if (bridge == null) {
+            Log.e(TAG, "Bridge is null after onCreate");
+            return;
+        }
+        WebView webView = bridge.getWebView();
+        if (webView == null) {
+            Log.e(TAG, "WebView is null after onCreate");
+            return;
+        }
+
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
+        // Large local models + OfflineAudioContext need generous cache / file access.
+        settings.setAllowFileAccess(true);
+        settings.setAllowContentAccess(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            settings.setSafeBrowsingEnabled(false);
+        }
+        // Debug sideload builds: chrome://inspect for WebView.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
+
         final WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
                 .setDomain("voiceisolatepro.app")
                 .setHttpAllowed(false)
                 .addPathHandler("/", new PublicAssetPathHandler())
                 .build();
 
-        // ── 1. Main-frame + subresource header injection ──────────────────────
-        webView.setWebViewClient(new BridgeWebViewClient(getBridge()) {
+        webView.setWebViewClient(new BridgeWebViewClient(bridge) {
             @Override
             public WebResourceResponse shouldInterceptRequest(
                     WebView view, WebResourceRequest request) {
-                WebResourceResponse assetResponse =
-                        assetLoader.shouldInterceptRequest(request.getUrl());
-                if (assetResponse != null) {
-                    return injectIsolationHeaders(assetResponse);
+                try {
+                    if (request != null && request.getUrl() != null) {
+                        WebResourceResponse assetResponse =
+                                assetLoader.shouldInterceptRequest(request.getUrl());
+                        if (assetResponse != null) {
+                            return injectIsolationHeaders(assetResponse, request.getUrl().getPath());
+                        }
+                    }
+                    WebResourceResponse response =
+                            super.shouldInterceptRequest(view, request);
+                    if (response == null) return null;
+                    String path = request != null && request.getUrl() != null
+                            ? request.getUrl().getPath() : null;
+                    return injectIsolationHeaders(response, path);
+                } catch (Throwable t) {
+                    Log.e(TAG, "shouldInterceptRequest failed", t);
+                    try {
+                        return super.shouldInterceptRequest(view, request);
+                    } catch (Throwable ignored) {
+                        return null;
+                    }
                 }
-
-                // Let Capacitor handle the actual resource fetch first
-                WebResourceResponse response =
-                        super.shouldInterceptRequest(view, request);
-
-                if (response == null) return null;
-
-                // Inject cross-origin isolation headers into every response
-                return injectIsolationHeaders(response);
             }
         });
-
-        // ── 2. Service Worker header injection (Android 8.0+ / API 26+) ──────
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            ServiceWorkerController swController =
-                    ServiceWorkerController.getInstance();
-            swController.setServiceWorkerClient(new ServiceWorkerClient() {
-                @Override
-                public WebResourceResponse shouldInterceptRequest(
-                        WebResourceRequest request) {
-                    return null;
-                }
-            });
-        }
     }
 
     /**
-     * Returns a new WebResourceResponse with COOP + COEP headers merged in.
+     * Rebuild the response with COOP/COEP/CORP. Never pass null/invalid status
+     * into the 6-arg WebResourceResponse constructor (crashes on many devices).
      */
-    private WebResourceResponse injectIsolationHeaders(WebResourceResponse original) {
-        Map<String, String> headers = new HashMap<>();
-        if (original.getResponseHeaders() != null) {
-            headers.putAll(original.getResponseHeaders());
-        }
-        headers.put("Cross-Origin-Opener-Policy",  "same-origin");
-        headers.put("Cross-Origin-Embedder-Policy", "require-corp");
-        headers.put("Cross-Origin-Resource-Policy", "same-origin");
+    private WebResourceResponse injectIsolationHeaders(
+            WebResourceResponse original, @Nullable String pathHint) {
+        if (original == null) return null;
+        try {
+            Map<String, String> headers = new HashMap<>();
+            if (original.getResponseHeaders() != null) {
+                headers.putAll(original.getResponseHeaders());
+            }
+            headers.put("Cross-Origin-Opener-Policy", "same-origin");
+            headers.put("Cross-Origin-Embedder-Policy", "require-corp");
+            headers.put("Cross-Origin-Resource-Policy", "same-origin");
+            // Cache static assets for snappier offline navigation.
+            headers.put("Cache-Control", "public, max-age=86400");
 
-        return new WebResourceResponse(
-                original.getMimeType(),
-                original.getEncoding(),
-                original.getStatusCode(),
-                original.getReasonPhrase(),
-                headers,
-                original.getData()
-        );
+            String mime = original.getMimeType();
+            if (mime == null || mime.isEmpty() || "text/plain".equals(mime)) {
+                mime = mimeTypeForAsset(pathHint != null ? pathHint : "");
+            }
+            String encoding = original.getEncoding();
+            // Binary types must not force a charset.
+            if (mime != null && (mime.contains("wasm")
+                    || mime.contains("octet-stream")
+                    || mime.contains("onnx"))) {
+                encoding = null;
+            } else if (encoding == null || encoding.isEmpty()) {
+                encoding = "UTF-8";
+            }
+
+            int status = 200;
+            String reason = "OK";
+            try {
+                int s = original.getStatusCode();
+                if (s >= 100 && s <= 599) status = s;
+            } catch (Throwable ignored) { /* 3-arg responses */ }
+            try {
+                String r = original.getReasonPhrase();
+                if (r != null && !r.isEmpty()) reason = r;
+            } catch (Throwable ignored) { /* 3-arg responses */ }
+
+            InputStream data = original.getData();
+            return new WebResourceResponse(
+                    mime,
+                    encoding,
+                    status,
+                    reason,
+                    headers,
+                    data
+            );
+        } catch (Throwable t) {
+            Log.e(TAG, "injectIsolationHeaders failed — returning original", t);
+            return original;
+        }
     }
 
-    // webkit 1.8+ PathHandler uses handle(String path) not handle(Uri)
     private final class PublicAssetPathHandler implements WebViewAssetLoader.PathHandler {
         @Override
         @Nullable
         public WebResourceResponse handle(String path) {
-            if (path == null || path.isEmpty() || "/".equals(path)) {
-                path = "/index.html";
-            }
-            // Normalize so asset open matches cap sync layout (public/…).
-            if (!path.startsWith("/")) {
-                path = "/" + path;
-            }
-
-            final String assetPath = ASSET_PATH_PREFIX + path;
             try {
+                path = normalizeAssetPath(path);
+                final String assetPath = ASSET_PATH_PREFIX + path;
                 InputStream is = getAssets().open(assetPath);
                 String mimeType = mimeTypeForAsset(assetPath);
+                // Use 3-arg ctor; injectIsolationHeaders upgrades safely.
                 return new WebResourceResponse(mimeType, "UTF-8", is);
-            } catch (IOException ignored) {
+            } catch (IOException e) {
+                // Directory indexes: try …/index.html
+                try {
+                    String fallback = normalizeAssetPath(path);
+                    if (!fallback.endsWith(".html") && !fallback.contains(".")) {
+                        if (!fallback.endsWith("/")) fallback = fallback + "/";
+                        fallback = fallback + "index.html";
+                        InputStream is = getAssets().open(ASSET_PATH_PREFIX + fallback);
+                        return new WebResourceResponse("text/html", "UTF-8", is);
+                    }
+                } catch (IOException ignored) { /* fall through */ }
+                Log.w(TAG, "Asset miss: " + path);
                 return null;
             }
         }
     }
 
-    /**
-     * Correct MIME for AudioWorklet / classic Workers / ORT WASM.
-     * URLConnection.guessContentTypeFromName often returns null or wrong types
-     * for .js/.wasm, which breaks addModule and wasm instantiation on Android.
-     */
+    /** Strip query/fragment, decode, ensure leading slash, map "" → /index.html */
+    private static String normalizeAssetPath(@Nullable String path) {
+        if (path == null || path.isEmpty() || "/".equals(path)) {
+            return "/index.html";
+        }
+        int q = path.indexOf('?');
+        if (q >= 0) path = path.substring(0, q);
+        int h = path.indexOf('#');
+        if (h >= 0) path = path.substring(0, h);
+        try {
+            path = URLDecoder.decode(path, "UTF-8");
+        } catch (UnsupportedEncodingException ignored) { /* UTF-8 always present */ }
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        // Collapse accidental double slashes
+        while (path.contains("//")) {
+            path = path.replace("//", "/");
+        }
+        return path;
+    }
+
     private static String mimeTypeForAsset(String assetPath) {
-        String lower = assetPath.toLowerCase();
+        String lower = assetPath == null ? "" : assetPath.toLowerCase();
         if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) {
             return "application/javascript";
         }
@@ -176,8 +269,14 @@ public class MainActivity extends BridgeActivity {
         if (lower.endsWith(".png")) {
             return "image/png";
         }
+        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+            return "image/jpeg";
+        }
         if (lower.endsWith(".woff2")) {
             return "font/woff2";
+        }
+        if (lower.endsWith(".mp4") || lower.endsWith(".webm")) {
+            return "video/mp4";
         }
         String guessed = URLConnection.guessContentTypeFromName(assetPath);
         return guessed != null ? guessed : "application/octet-stream";

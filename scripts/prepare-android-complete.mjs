@@ -26,15 +26,16 @@ const REQUIRED_MODELS = [
   'silero_vad.onnx',
 ];
 
-/** Optional but useful if present (heavy). */
+/** Optional but useful if present (still keep APK lean). */
 const OPTIONAL_MODELS = [
   'silero_vad_int8.onnx',
-  'demucs_v4_quantized.onnx',
 ];
 
 /** Never ship these in the Android APK (bloat / unused on mobile default path). */
 const EXCLUDE_MODELS = [
   'demucs_v4_fp32.onnx',
+  // Quantized Demucs is still ~149 MB and can OOM mid-tier devices; default chain is BS-RNN.
+  'demucs_v4_quantized.onnx',
 ];
 
 const REQUIRED_ORT = [
