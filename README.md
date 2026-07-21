@@ -284,14 +284,17 @@ android/             Capacitor Android project
 | Topic | Link |
 |-------|------|
 | Full docs index | [docs/README.md](docs/README.md) |
-| Architecture v26 | [docs/VoiceIsolate_Pro_Architecture_v26.md](docs/VoiceIsolate_Pro_Architecture_v26.md) |
-| Technical whitepaper | [docs/VoiceIsolate_Pro_Technical_Whitepaper.md](docs/VoiceIsolate_Pro_Technical_Whitepaper.md) |
+| Architecture v26 | [docs/architecture/VoiceIsolate_Pro_Architecture_v26.md](docs/architecture/VoiceIsolate_Pro_Architecture_v26.md) |
+| Technical whitepaper | [docs/architecture/VoiceIsolate_Pro_Technical_Whitepaper.md](docs/architecture/VoiceIsolate_Pro_Technical_Whitepaper.md) |
+| Master Blueprint | [docs/architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md](docs/architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) |
 | Contributor contract | [CLAUDE.md](CLAUDE.md) |
-| AudioWorklets | [docs/WORKLETS.md](docs/WORKLETS.md) |
-| Android / desktop downloads | [download/README.md](download/README.md) |
-| Model delivery | [docs/MODEL_DELIVERY.md](docs/MODEL_DELIVERY.md) |
-| Desktop | [docs/electron-desktop.md](docs/electron-desktop.md) |
-| Master Blueprint | [docs/VoiceIsolate-Pro_Master_Blueprint_v2.1.md](docs/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) |
+| Analysis workspace | [docs/guides/ANALYSIS_WORKSPACE.md](docs/guides/ANALYSIS_WORKSPACE.md) |
+| AudioWorklets | [docs/guides/WORKLETS.md](docs/guides/WORKLETS.md) |
+| Android app | [docs/guides/ANDROID.md](docs/guides/ANDROID.md) |
+| Downloads (APK / Windows) | [docs/DOWNLOADS.md](docs/DOWNLOADS.md) |
+| Model delivery | [docs/guides/MODEL_DELIVERY.md](docs/guides/MODEL_DELIVERY.md) |
+| Desktop | [docs/guides/electron-desktop.md](docs/guides/electron-desktop.md) |
+| Archive (historical) | [docs/archive/README.md](docs/archive/README.md) |
 
 ---
 

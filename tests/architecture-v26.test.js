@@ -10,7 +10,7 @@ const ROOT = path.join(__dirname, '..');
 
 describe('Architecture v26 documentation', () => {
   test('architecture summary exists', () => {
-    const p = path.join(ROOT, 'docs/VoiceIsolate_Pro_Architecture_v26.md');
+    const p = path.join(ROOT, 'docs/architecture/VoiceIsolate_Pro_Architecture_v26.md');
     expect(fs.existsSync(p)).toBe(true);
     const text = fs.readFileSync(p, 'utf8');
     expect(text).toContain('Stem-Split');
@@ -20,7 +20,7 @@ describe('Architecture v26 documentation', () => {
   });
 
   test('technical whitepaper exists', () => {
-    const p = path.join(ROOT, 'docs/VoiceIsolate_Pro_Technical_Whitepaper.md');
+    const p = path.join(ROOT, 'docs/architecture/VoiceIsolate_Pro_Technical_Whitepaper.md');
     expect(fs.existsSync(p)).toBe(true);
     const text = fs.readFileSync(p, 'utf8');
     expect(text).toContain('Live-Mix');
@@ -29,8 +29,13 @@ describe('Architecture v26 documentation', () => {
 
   test('docs README links architecture v26', () => {
     const text = fs.readFileSync(path.join(ROOT, 'docs/README.md'), 'utf8');
-    expect(text).toContain('VoiceIsolate_Pro_Architecture_v26.md');
-    expect(text).toContain('VoiceIsolate_Pro_Technical_Whitepaper.md');
+    expect(text).toContain('architecture/VoiceIsolate_Pro_Architecture_v26.md');
+    expect(text).toContain('architecture/VoiceIsolate_Pro_Technical_Whitepaper.md');
+  });
+
+  test('legacy doc paths redirect with Moved stubs', () => {
+    const stub = fs.readFileSync(path.join(ROOT, 'docs/WORKLETS.md'), 'utf8');
+    expect(stub).toMatch(/Moved|guides\/WORKLETS/i);
   });
 });
 
@@ -96,7 +101,7 @@ describe('Single-pass + local constraints (structural)', () => {
   });
 
   test('architecture doc forbids live mic', () => {
-    const text = fs.readFileSync(path.join(ROOT, 'docs/VoiceIsolate_Pro_Architecture_v26.md'), 'utf8');
+    const text = fs.readFileSync(path.join(ROOT, 'docs/architecture/VoiceIsolate_Pro_Architecture_v26.md'), 'utf8');
     expect(text).toMatch(/No live microphone|upload-only/i);
   });
 });

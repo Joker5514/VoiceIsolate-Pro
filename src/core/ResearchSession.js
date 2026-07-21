@@ -66,7 +66,7 @@ export class ResearchSession {
       fftSizeLive: FFT_SIZE_LIVE,
       singlePassSpectral: true,
       architecture: 'stem-split-live-mix',
-      architectureDoc: 'docs/VoiceIsolate_Pro_Architecture_v26.md',
+      architectureDoc: 'docs/architecture/VoiceIsolate_Pro_Architecture_v26.md',
     };
     /** @type {ResearchStageEvent[]} */
     this.stages = [];

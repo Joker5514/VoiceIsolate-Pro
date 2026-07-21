@@ -62,4 +62,4 @@ pnpm build:electron
 gh release upload v24.0.0 dist/electron/VoiceIsolate-Pro-24.0.0-win-x64.exe --clobber
 ```
 
-See [docs/electron-desktop.md](../docs/electron-desktop.md).
+See [docs/guides/electron-desktop.md](../docs/guides/electron-desktop.md) and [docs/DOWNLOADS.md](../docs/DOWNLOADS.md).
