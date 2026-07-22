@@ -1,12 +1,17 @@
 {
   "appId": "com.voiceisolatepro.app",
   "appName": "VoiceIsolate Pro",
-  "webDir": "build",
+  "webDir": "public",
   "server": {
     "androidScheme": "https",
     "iosScheme": "capacitor",
     "hostname": "voiceisolatepro.app",
-    "cleartext": false
+    "cleartext": false,
+    "headers": {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+      "Cross-Origin-Resource-Policy": "same-origin"
+    }
   },
   "android": {
     "allowMixedContent": false,

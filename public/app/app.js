@@ -1,3 +1,69 @@
+
+/* ------------------------------------------------------------------
+ * VoiceIsolate Pro: Android/Capacitor capability gate.
+ * Local-only. No telemetry. No cloud inference.
+ * ------------------------------------------------------------------ */
+(function () {
+  const rt = window.VoiceIsolateRuntime;
+  if (!rt) return;
+  const capabilities = rt.detectRuntime();
+  const mode = rt.selectExecutionMode(capabilities);
+  const state = { capabilities, mode, backend: 'pending', mlReady: false, mlWorker: null };
+  window.VIP_STATE = state;
+  const LIVE_SELECTORS = '[data-vip-control="live"], #live-toggle, #btn-live, .live-toggle, button[data-mode="live"], input[data-mode="live"]';
+  function whenDomReady() { return new Promise((resolve) => { if (document.readyState !== 'loading') { resolve(); return; } document.addEventListener('DOMContentLoaded', resolve, { once: true }); }); }
+  function meta(name, fallback) { const el = document.querySelector(`meta[name="${name}"]`); return el?.content || fallback; }
+  function renderStatus() {
+    const host = document.getElementById('runtime-status'), list = document.getElementById('runtime-status-list');
+    if (!host || !list) return;
+    const messages = rt.statusMessages(state);
+    list.textContent = '';
+    for (const msg of messages) { const li = document.createElement('li'); li.className = `vip-badge vip-badge-${msg.level}`; li.textContent = msg.text; list.appendChild(li); }
+    host.hidden = messages.length === 0;
+    document.body?.setAttribute('data-vip-mode', state.mode);
+  }
+  function disableLiveControls(disabled, reason) {
+    document.querySelectorAll(LIVE_SELECTORS).forEach((el) => {
+      el.disabled = disabled; el.setAttribute('aria-disabled', String(disabled));
+      if (disabled) { el.title = reason; el.dataset.vipDisabledReason = reason; } else { el.title = ''; delete el.dataset.vipDisabledReason; }
+    });
+  }
+  function applyMode() {
+    const liveBlocked = state.mode !== 'full-live';
+    const reason = liveBlocked ? 'Live Mode unavailable: SharedArrayBuffer not supported in this environment' : '';
+    disableLiveControls(liveBlocked, reason); renderStatus();
+  }
+  function guardLiveEvent(event) {
+    const target = event.target instanceof Element ? event.target.closest(LIVE_SELECTORS) : null;
+    if (!target) return;
+    if (state.mode !== 'full-live') { event.preventDefault(); event.stopImmediatePropagation(); renderStatus(); if (typeof target.blur === 'function') target.blur(); }
+  }
+  async function requestMlInit(worker = state.mlWorker) {
+    if (!worker) return;
+    await whenDomReady();
+    try {
+      state.modelUrl = rt.resolveAssetUrl(meta('vip:model', './models/voice_isolate_pro.onnx'), document.baseURI);
+      state.wasmPaths = rt.resolveAssetUrl(meta('vip:ort-wasm', './vendor/onnxruntime-web/'), document.baseURI);
+    } catch (err) { console.error('[VIP] local asset resolution failed', err); state.backend = 'failed'; state.mlReady = false; renderStatus(); return; }
+    worker.postMessage({ type: 'vip:ml:init', modelUrl: state.modelUrl, capabilities: { hasWebGPU: capabilities.hasWebGPU, sabSafe: capabilities.sabSafe, forceSingleThreadWasm: capabilities.androidWebView || !capabilities.sabSafe, wasmPaths: state.wasmPaths } });
+  }
+  function bindMlWorker(worker) {
+    if (!worker || state.mlWorker === worker) return worker;
+    state.mlWorker = worker;
+    worker.addEventListener('message', (event) => {
+      const msg = event.data || {};
+      if (msg.type === 'vip:ml:init:done') { state.backend = msg.backend; state.mlReady = true; renderStatus(); }
+      else if (msg.type === 'vip:ml:init:error') { state.backend = 'failed'; state.mlReady = false; renderStatus(); }
+    });
+    worker.addEventListener('error', () => { state.backend = 'failed'; state.mlReady = false; renderStatus(); });
+    requestMlInit(worker).catch((err) => { console.error('[VIP] ML init request failed', err); state.backend = 'failed'; state.mlReady = false; renderStatus(); });
+    return worker;
+  }
+  window.__vipBindMlWorker = bindMlWorker;
+  window.__vipRequestMlInit = requestMlInit;
+  whenDomReady().then(applyMode).catch(console.error);
+  for (const type of ['click', 'pointerdown', 'change']) { document.addEventListener(type, guardLiveEvent, true); }
+})();
 /**
  * VoiceIsolate Pro — app.js  v24.0.0
  * ====================================

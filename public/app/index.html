@@ -98,6 +98,10 @@
       window._vipReportError('unhandledRejection', e.reason);
     });
   </script>
+  <!-- VoiceIsolate Pro: local-only runtime capability gate -->
+  <meta name="vip:model" content="./models/voice_isolate_pro.onnx" />
+  <meta name="vip:ort-wasm" content="./vendor/onnxruntime-web/" />
+  <script src="./runtime.js" defer></script>
 </head>
 <body>
   <div id="vip-boot-error"></div>
@@ -308,7 +312,10 @@
     </div>
   </section>
 
-  <main class="main-grid">
+    <section id="runtime-status" class="vip-runtime-status" role="status" aria-live="polite" hidden>
+    <ul id="runtime-status-list" class="vip-runtime-status-list"></ul>
+  </section>
+<main class="main-grid">
     <section class="col-left">
       <div class="card upload-card">
         <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,audio/ogg,audio/flac,audio/x-flac,audio/aac,audio/x-m4a,audio/m4a,audio/mp4,audio/webm,audio/amr,audio/aiff,audio/x-aiff,audio/x-caf,audio/x-ms-wma,audio/opus,audio/ac3,audio/eac3,video/mp4,video/webm,video/quicktime,video/x-msvideo,video/x-matroska,video/ogg,video/3gpp,video/3gpp2,video/x-ms-wmv,video/mpeg,video/mp2t,video/x-flv,audio/*,video/*,.wav,.wave,.mp3,.m4a,.aac,.ogg,.oga,.opus,.flac,.webm,.weba,.aiff,.aif,.caf,.wma,.mka,.m4b,.m4r,.amr,.ac3,.eac3,.mp4,.m4v,.mov,.mkv,.avi,.ogv,.3gp,.3g2,.wmv,.mpeg,.mpg,.ts,.m2ts,.mts,.flv,.f4v,.asf" tabindex="-1" aria-hidden="true" />

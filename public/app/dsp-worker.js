@@ -1,3 +1,13 @@
+
+/* VoiceIsolate Pro: fail cleanly if live SAB path is requested without SAB. */
+function vipRequireSharedArrayBuffer() {
+  if (typeof SharedArrayBuffer === 'undefined') {
+    self.postMessage({ type: 'dsp:live:alloc:error', code: 'SAB_UNAVAILABLE', message: 'SharedArrayBuffer unavailable in this environment' });
+    return false;
+  }
+  return true;
+}
+
 /* ============================================
    VoiceIsolate Pro v24.0 — DSP Worker
    Threads from Space v13 · ML Inference Thread

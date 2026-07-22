@@ -1,3 +1,76 @@
+
+/* ------------------------------------------------------------------
+ * VoiceIsolate Pro deterministic ML initialization.
+ * Local-only. No remote inference. No telemetry.
+ * ------------------------------------------------------------------ */
+const VIP_ML = { session: null, backend: 'pending', initializing: false };
+self.VIP_ML = VIP_ML;
+function vipPost(msg) { self.postMessage(msg); }
+function vipWithTimeout(promise, ms, label) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => { timeoutId = setTimeout(() => reject(new Error(label)), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+function vipAssertSameOrigin(path) {
+  const url = new URL(path, self.location.href);
+  if (url.origin !== self.location.origin) throw new Error('Remote model URLs are not allowed');
+  return url.href;
+}
+async function vipGetOrt() {
+  if (self.ort) return self.ort;
+  if (typeof importScripts === 'function') {
+    try { importScripts('./vendor/onnxruntime-web/ort.all.min.js'); if (self.ort) return self.ort; } catch (e) {}
+  }
+  try {
+    const mod = await import('./vendor/onnxruntime-web/ort.all.min.mjs');
+    self.ort = mod.default || mod; return self.ort;
+  } catch (e) { throw new Error('onnxruntime-web is not available locally'); }
+}
+async function vipCreateSession(modelUrl, backend, caps) {
+  const ort = await vipGetOrt();
+  const forceSingleThread = caps?.forceSingleThreadWasm === true || caps?.sabSafe !== true;
+  const maxThreads = typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 1;
+  ort.env.wasm.numThreads = forceSingleThread ? 1 : Math.max(1, Math.min(4, maxThreads));
+  ort.env.wasm.proxy = false;
+  if (caps?.wasmPaths) ort.env.wasm.wasmPaths = caps.wasmPaths;
+  const sessionOptions = backend === 'webgpu' ? { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' } : { executionProviders: ['wasm'], graphOptimizationLevel: 'all', enableCpuMemArena: false, enableMemPattern: false };
+  const timeoutMs = backend === 'webgpu' ? 6000 : 12000;
+  return vipWithTimeout(ort.InferenceSession.create(modelUrl, sessionOptions), timeoutMs, `ML ${backend} initialization timed out`);
+}
+async function vipInitModel(request) {
+  if (VIP_ML.initializing) return;
+  VIP_ML.initializing = true;
+  const requestId = request.requestId || 'init';
+  try {
+    const modelUrl = vipAssertSameOrigin(request.modelUrl || './models/voice_isolate_pro.onnx');
+    const caps = request.capabilities || {};
+    const requestedBackend = request.backendPreference || 'auto';
+    let session = null, backend = null;
+    if (requestedBackend !== 'wasm' && caps.hasWebGPU === true) {
+      vipPost({ type: 'vip:ml:init:progress', requestId, stage: 'webgpu-attempt' });
+      try { session = await vipCreateSession(modelUrl, 'webgpu', caps); backend = 'webgpu'; } catch (err) { console.warn('[VIP ML] WebGPU init failed; falling back to WASM', err); }
+    }
+    if (!session) {
+      vipPost({ type: 'vip:ml:init:progress', requestId, stage: 'wasm-attempt' });
+      session = await vipCreateSession(modelUrl, 'wasm', caps); backend = 'wasm';
+    }
+    VIP_ML.session = session; VIP_ML.backend = backend;
+    vipPost({ type: 'vip:ml:init:done', requestId, backend });
+  } catch (err) {
+    VIP_ML.session = null; VIP_ML.backend = 'failed';
+    vipPost({ type: 'vip:ml:init:error', requestId, message: err?.message || 'Local model initialization failed' });
+  } finally { VIP_ML.initializing = false; }
+}
+self.addEventListener('message', (event) => {
+  const msg = event.data || {};
+  if (msg.type === 'vip:ml:init') {
+    vipInitModel(msg).catch((err) => {
+      console.error('[VIP ML] init handler failed', err);
+      vipPost({ type: 'vip:ml:init:error', requestId: msg.requestId || 'init', message: err?.message || 'Local model initialization failed' });
+    });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ml-worker.js — VoiceIsolate Pro · Threads from Space v13
 // Standard Web Worker (NOT AudioWorklet).
