@@ -2663,6 +2663,10 @@ class VoiceIsolatePro {
     if (!decoded || fileSeq !== this._fileSeq) return;
     if (!this.origBuffer && !this.inputBuffer) return;
 
+    if (this.isProcessing) {
+      this.showNotification('Processing already in progress…', 'info');
+      return;
+    }
     this.isProcessing = true;
     this.abortFlag = false;
     this._mlIsolationSucceeded = false;
