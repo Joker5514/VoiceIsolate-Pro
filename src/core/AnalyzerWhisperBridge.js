@@ -52,7 +52,7 @@ export function mergeRegions(regions, mergeGapSec = 0.08) {
     .map((r) => ({
       start: Number(r.start) || 0,
       end: Math.max(Number(r.start) || 0, Number(r.end) || 0),
-      confidence: (function() { const c = Number(r.confidence); return Number.isFinite(c) ? c : 0.5; }()),
+      confidence: Number.isFinite(Number(r.confidence)) ? Number(r.confidence) : 0.5,
       label: r.label || 'region',
       explanation: r.explanation,
     }))

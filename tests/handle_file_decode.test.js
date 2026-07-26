@@ -34,7 +34,7 @@ describe('VoiceIsolatePro handleFile() and ensureDecoded()', () => {
       module: { exports: {} },
       Float32Array: Float32Array,
       Math: Math,
-      console: { error: jest.fn() },
+      console: { error: jest.fn(), warn: jest.fn(), log: jest.fn() },
       parseFloat: parseFloat,
       URL: global.URL,
       setTimeout: setTimeout,

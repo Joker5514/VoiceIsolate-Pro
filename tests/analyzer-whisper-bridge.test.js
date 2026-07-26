@@ -177,7 +177,8 @@ describe('AnalyzerWhisperBridge', () => {
     expect(plan.recommendedStageConfig.transientShaper).toBeLessThan(0);
   });
 
-
+  test('empty analysis yields safe failure plan', () => {
+    const plan = buildJointProcessingPlan(null);
     expect(plan.ok).toBe(false);
     expect(plan.protectRegions).toEqual([]);
   });

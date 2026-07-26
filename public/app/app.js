@@ -2345,7 +2345,9 @@ class VoiceIsolatePro {
     if (this.dom.playBtn) this.dom.playBtn.disabled = false;
     if (this.dom.saveOrigBtn) this.dom.saveOrigBtn.disabled = true; // needs decode
 
-    try { window.dispatchEvent(new CustomEvent('vip:fileAccepted', { detail: { name: file.name, size: file.size, video: isVideoFile } })); } catch (_) {}
+    try { window.dispatchEvent(new CustomEvent('vip:fileAccepted', { detail: { name: file.name, size: file.size, video: isVideoFile } })); } catch (evErr) {
+      structuredLog('warn', '[VIP] vip:fileAccepted dispatch failed', { err: evErr?.message });
+    }
     this.showNotification(`${file.name || 'File'} ready — Analyze or Process to decode & isolate`, 'info');
 
     // Idle ML warmup only (no decode) so first process is faster.
