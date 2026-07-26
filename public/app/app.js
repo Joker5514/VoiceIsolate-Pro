@@ -3523,6 +3523,8 @@ class VoiceIsolatePro {
     // Apply time-region masks from Analyze + WhisperHunter joint plan.
     // Protect regions (voice/whisper): blend some pre-spectral signal back to
     // reduce over-suppression. Suppress regions (noise/music): attenuate further.
+    // SUPPRESS_MAX_ATTENUATION: 0.5 → up to 50% additional gain reduction (~-6 dB).
+    const SUPPRESS_MAX_ATTENUATION = 0.5;
     const protect = regionMaps?.protect;
     const suppress = regionMaps?.suppress;
     if ((protect && protect.length) || (suppress && suppress.length)) {
@@ -3531,10 +3533,10 @@ class VoiceIsolatePro {
           const sStart = Math.max(0, Math.round(region.start * sr));
           const sEnd = Math.min(rendered.length, Math.round(region.end * sr));
           if (sEnd <= sStart) continue;
-          const weight = Math.min(0.45, (region.confidence ?? 0.5) * 0.45);
-          const keep = 1 - weight;
+          const originalWeight = Math.min(0.45, (region.confidence ?? 0.5) * 0.45);
+          const spectralWeight = 1 - originalWeight;
           for (let i = sStart; i < sEnd; i++) {
-            rendered[i] = rendered[i] * keep + data[i] * weight;
+            rendered[i] = rendered[i] * spectralWeight + data[i] * originalWeight;
           }
         }
       }
@@ -3543,7 +3545,7 @@ class VoiceIsolatePro {
           const sStart = Math.max(0, Math.round(region.start * sr));
           const sEnd = Math.min(rendered.length, Math.round(region.end * sr));
           if (sEnd <= sStart) continue;
-          const scale = 1 - Math.min(0.5, (region.confidence ?? 0.5) * 0.5);
+          const scale = 1 - Math.min(SUPPRESS_MAX_ATTENUATION, (region.confidence ?? 0.5) * SUPPRESS_MAX_ATTENUATION);
           for (let i = sStart; i < sEnd; i++) {
             rendered[i] *= scale;
           }
