@@ -1123,50 +1123,6 @@ class VoiceIsolatePro {
         this._ctxReady = true;
         this._workletReady = false;
         pill('engCtxPill', 'ready');
-        pill('engWorkletPill', 'loading');
-        pill('engGatePill', 'loading');
-        pill('engDeessPill', 'loading');
-
-        // Boot Live-Mix bridge + gate/de-esser worklets without blocking decode.
-        // Upload/process must not wait on AudioWorklet addModule.
-        const paintWorkletPills = (st = {}) => {
-          const map = (s) => (s === 'loaded' ? 'ready' : s === 'failed' ? 'error' : s === 'bypassed' ? 'unavailable' : 'loading');
-          pill('engGatePill', map(st.gate?.state));
-          pill('engDeessPill', map(st.deEsser?.state));
-          const g = st.gate?.state;
-          const d = st.deEsser?.state;
-          if (g === 'failed' || d === 'failed') pill('engWorkletPill', 'error');
-          else if ((g === 'loaded' || g === 'bypassed') && (d === 'loaded' || d === 'bypassed')) pill('engWorkletPill', 'ready');
-          else pill('engWorkletPill', 'loading');
-        };
-        // Resume before worklet modules — suspended contexts flake addModule.
-        if (this.ctx.state === 'suspended') {
-          try { await this.ctx.resume(); } catch { /* best-effort */ }
-        }
-        void this._ensureBridge()
-          .then(async (bridge) => {
-            if (this.ctx?.state === 'suspended') {
-              try { await this.ctx.resume(); } catch { /* ignore */ }
-            }
-            if (bridge?.workletsReady) await bridge.workletsReady();
-            const st = bridge?.getWorkletStatus?.() || {};
-            const gateOk = st.gate?.state === 'loaded' || st.gate?.state === 'bypassed';
-            const deOk = st.deEsser?.state === 'loaded' || st.deEsser?.state === 'bypassed';
-            this._workletReady = gateOk && deOk;
-            paintWorkletPills(st);
-            try { globalThis.__vipWorkletStatus = st; } catch { /* ignore */ }
-            structuredLog('info', '[VIP] Playback worklets ready', st);
-            if (!gateOk || !deOk) {
-              structuredLog('warn', '[VIP] One or more worklets did not load', st);
-            }
-          })
-          .catch((wErr) => {
-            structuredLog('warn', '[VIP] Worklet boot failed (mixer bypass)', { err: wErr?.message });
-            this._workletReady = false;
-            pill('engWorkletPill', 'error');
-            pill('engGatePill', 'error');
-            pill('engDeessPill', 'error');
-          });
 
         this._initSABRings();
         this._updateProcessButtonsState();
@@ -1185,6 +1141,65 @@ class VoiceIsolatePro {
 
   // Alias used by some tests
   _ensureAudioCtx() { return this.ensureCtx(); }
+
+  /**
+   * Load the Live-Mix bridge and gate/de-esser worklets. Deduped and idempotent.
+   * Called only on first playback so no resources are spent before Live-Mix is needed.
+   * @returns {Promise<void>}
+   */
+  async _ensureBridgeAndWorklets() {
+    if (this._workletReady) return;
+    if (this._pendingWorkletInit) return this._pendingWorkletInit;
+
+    const paintWorkletPills = (st = {}) => {
+      const map = (s) => (s === 'loaded' ? 'ready' : s === 'failed' ? 'error' : s === 'bypassed' ? 'unavailable' : 'loading');
+      pill('engGatePill', map(st.gate?.state));
+      pill('engDeessPill', map(st.deEsser?.state));
+      const g = st.gate?.state;
+      const d = st.deEsser?.state;
+      if (g === 'failed' || d === 'failed') pill('engWorkletPill', 'error');
+      else if ((g === 'loaded' || g === 'bypassed') && (d === 'loaded' || d === 'bypassed')) pill('engWorkletPill', 'ready');
+      else pill('engWorkletPill', 'loading');
+    };
+
+    pill('engWorkletPill', 'loading');
+    pill('engGatePill', 'loading');
+    pill('engDeessPill', 'loading');
+
+    this._pendingWorkletInit = (async () => {
+      try {
+        // Resume before worklet modules — suspended contexts flake addModule.
+        if (this.ctx?.state === 'suspended') {
+          try { await this.ctx.resume(); } catch { /* best-effort */ }
+        }
+        const bridge = await this._ensureBridge();
+        if (this.ctx?.state === 'suspended') {
+          try { await this.ctx.resume(); } catch { /* ignore */ }
+        }
+        if (bridge?.workletsReady) await bridge.workletsReady();
+        const st = bridge?.getWorkletStatus?.() || {};
+        const gateOk = st.gate?.state === 'loaded' || st.gate?.state === 'bypassed';
+        const deOk = st.deEsser?.state === 'loaded' || st.deEsser?.state === 'bypassed';
+        this._workletReady = gateOk && deOk;
+        paintWorkletPills(st);
+        try { globalThis.__vipWorkletStatus = st; } catch { /* ignore */ }
+        structuredLog('info', '[VIP] Playback worklets ready', st);
+        if (!gateOk || !deOk) {
+          structuredLog('warn', '[VIP] One or more worklets did not load', st);
+        }
+      } catch (wErr) {
+        structuredLog('warn', '[VIP] Worklet boot failed (mixer bypass)', { err: wErr?.message });
+        this._workletReady = false;
+        pill('engWorkletPill', 'error');
+        pill('engGatePill', 'error');
+        pill('engDeessPill', 'error');
+      } finally {
+        this._pendingWorkletInit = null;
+      }
+    })();
+
+    return this._pendingWorkletInit;
+  }
 
   // ── SAB ring buffer init ─────────────────────────────────────────────────
   _initSABRings() {
@@ -4001,8 +4016,8 @@ class VoiceIsolatePro {
       : (this.inputBuffer || this.origBuffer);
     if (!buf) return;
 
-    // Wait for the Live-Mix bridge so rt:true sliders affect playback on first play.
-    await this._ensureBridge();
+    // Wait for the Live-Mix bridge and worklets so rt:true sliders affect playback on first play.
+    await this._ensureBridgeAndWorklets();
 
     this.isPlaying = true;
     this.playStartTime = this.ctx ? this.ctx.currentTime : 0;
