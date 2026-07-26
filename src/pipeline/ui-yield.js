@@ -23,7 +23,7 @@ export const COPY_CHUNK_SAMPLES = 48000 * 20;
 function isMobileShell() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';
-  if (/Android|iPhone|iPad|Mobile/i.test(ua)) return true;
+  if (/Android|Mobile/i.test(ua)) return true;
   try {
     const cap = typeof window !== 'undefined' ? window.Capacitor : null;
     if (cap?.isNativePlatform?.()) return true;

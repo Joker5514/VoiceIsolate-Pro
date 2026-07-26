@@ -81,6 +81,19 @@ describe('AnalyzerWhisperBridge', () => {
     expect(merged[0].confidence).toBe(0.8);
   });
 
+  test('mergeRegions preserves confidence: 0 and does not replace it with 0.5', () => {
+    const merged = mergeRegions([{ start: 0, end: 1, confidence: 0, label: 'x' }]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].confidence).toBe(0);
+  });
+
+  test('mergeRegions uses 0.5 default when confidence is NaN or missing', () => {
+    const withNaN = mergeRegions([{ start: 0, end: 1, confidence: NaN }]);
+    expect(withNaN[0].confidence).toBe(0.5);
+    const withMissing = mergeRegions([{ start: 0, end: 1 }]);
+    expect(withMissing[0].confidence).toBe(0.5);
+  });
+
   test('classifyUnwantedSounds detects music and impulses', () => {
     const u = classifyUnwantedSounds(mockAnalysis());
     expect(u.classes.music.present).toBe(true);
@@ -156,8 +169,15 @@ describe('AnalyzerWhisperBridge', () => {
     expect(withFb.confidenceScores.hunterMask).toBe(0.72);
   });
 
-  test('empty analysis yields safe failure plan', () => {
-    const plan = buildJointProcessingPlan(null);
+  test('buildJointProcessingPlan uses negative transientShaper to soften impulses', () => {
+    const analysis = mockAnalysis(); // has 2 transientSegments
+    const plan = buildJointProcessingPlan(analysis);
+    expect(plan.ok).toBe(true);
+    // Impulse suppression must produce a softening (negative) value, not a sharpening one
+    expect(plan.recommendedStageConfig.transientShaper).toBeLessThan(0);
+  });
+
+
     expect(plan.ok).toBe(false);
     expect(plan.protectRegions).toEqual([]);
   });

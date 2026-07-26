@@ -123,7 +123,8 @@ export function installAnalysisWorkspace(app) {
       if (audioBuffer && typeof analyzeAcousticEnvironment === 'function') {
         envProfile = analyzeAcousticEnvironment(audioBuffer);
       }
-    } catch {
+    } catch (err) {
+      console.warn('[VIP] analyzeAcousticEnvironment failed in collaborateWithHunter', err?.message);
       envProfile = null;
     }
     const enriched = enrichAnalysisWithCollaboration(analysis, envProfile);

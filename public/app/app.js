@@ -264,6 +264,10 @@ const HeroExperience = (() => {
       setUiState('idle');
       const tierStatus = WorkflowTier.getConfig?.()?.statusIdle;
       setHeroCopy(tierStatus || 'Ready — upload audio or video to begin', false);
+      window.addEventListener('vip:fileAccepted', () => {
+        setUiState('file-ready');
+        setHeroCopy('File accepted — Analyze or Process to decode', true);
+      });
       window.addEventListener('vip:fileLoaded', () => {
         setUiState('file-ready');
         setHeroCopy('File loaded — processing pipeline starting', true);
@@ -2249,6 +2253,8 @@ class VoiceIsolatePro {
     if (!file) return;
     if (typeof this._fileSeq !== 'number' || !Number.isFinite(this._fileSeq)) this._fileSeq = 0;
     const fileSeq = ++this._fileSeq;
+    // Immediately hide any in-flight decode indicator from the previous file.
+    this._hideFileLoading?.();
     clearStemCache();
     this._sourceName = file.name || '';
     this._decodePromise = null;
@@ -2260,7 +2266,9 @@ class VoiceIsolatePro {
       try {
         const { resetStemSeparation } = await import('/src/pipeline/StemSeparation.js');
         if (resetStemSeparation) resetStemSeparation();
-      } catch (_) {}
+      } catch (err) {
+        structuredLog('warn', '[VIP] resetStemSeparation failed', { err: err?.message });
+      }
       await this._waitForPipelineIdle(90000);
     }
 
@@ -2347,12 +2355,16 @@ class VoiceIsolatePro {
         : (cb) => setTimeout(cb, 50);
       scheduleIdle(() => {
         if (fileSeq !== this._fileSeq) return;
-        this._warmupMLModels().catch(() => {});
+        this._warmupMLModels().catch((err) => {
+          structuredLog('warn', '[VIP] ML warmup (idle) failed', { err: err?.message });
+        });
       });
     }
 
     // Soft gesture unlock for AudioContext (worklets still lazy).
-    this.ensureCtx().catch(() => {});
+    this.ensureCtx().catch((err) => {
+      structuredLog('warn', '[VIP] AudioContext soft unlock failed', { err: err?.message });
+    });
   }
 
   /**
@@ -2375,6 +2387,7 @@ class VoiceIsolatePro {
     if (this._decodePromise) return this._decodePromise;
 
     this._decodePromise = (async () => {
+      const decodeUiSeq = fileSeq;
       this.setStatus('LOADING');
       HeroExperience.onDecodeStart();
       this._showFileLoading(file.name ? `Decoding ${file.name}…` : 'Decoding…');
@@ -2409,12 +2422,10 @@ class VoiceIsolatePro {
         this.inputBuffer = buffer;
         this.origBuffer = buffer;
         this._decodeReady = true;
-        this._hideFileLoading();
         this.onAudioLoaded(file.name, fileSeq);
         return buffer;
       } catch (decodeErr) {
         if (fileSeq !== this._fileSeq) return null;
-        this._hideFileLoading();
         this._decodePromise = null;
         this._decodeReady = false;
         const isVideoFile = this.isVideo;
@@ -2428,6 +2439,12 @@ class VoiceIsolatePro {
         structuredLog('error', '[VIP] ensureDecoded failed', { err: decodeErr?.message });
         HeroExperience.onDecodeError(msg);
         return null;
+      } finally {
+        // Hide loading indicator when this decode completes/fails/is stale,
+        // but only if a newer decode hasn't already taken ownership of the UI.
+        if (decodeUiSeq === this._fileSeq) {
+          this._hideFileLoading();
+        }
       }
     })();
 
@@ -3415,7 +3432,7 @@ class VoiceIsolatePro {
 
     // Mobile yields more often; desktop keeps longer stretches for speed.
     const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
-    const mobile = /Android|iPhone|iPad|Mobile|Capacitor/i.test(ua);
+    const mobile = /Android|Mobile|Capacitor/i.test(ua);
     const yieldBudget = createYieldBudget(forensic ? (mobile ? 10 : 14) : (mobile ? 12 : 20));
     if (onProgress) onProgress(0.02);
     await yieldToBrowser();
@@ -4104,9 +4121,43 @@ class VoiceIsolatePro {
           window._vipBridgeIds = Object.keys(mod.PARAM_MAP);
         }
         structuredLog('info', '[VIP] Live-Mix bridge ready — rt sliders are now real-time.');
+
+        // Load gate/de-esser worklets lazily on first playback (not on upload).
+        const paintWorkletPills = (st = {}) => {
+          const map = (s) => (s === 'loaded' ? 'ready' : s === 'failed' ? 'error' : s === 'bypassed' ? 'unavailable' : 'loading');
+          pill('engGatePill', map(st.gate?.state));
+          pill('engDeessPill', map(st.deEsser?.state));
+          const g = st.gate?.state;
+          const d = st.deEsser?.state;
+          if (g === 'failed' || d === 'failed') pill('engWorkletPill', 'error');
+          else if ((g === 'loaded' || g === 'bypassed') && (d === 'loaded' || d === 'bypassed')) pill('engWorkletPill', 'ready');
+          else pill('engWorkletPill', 'loading');
+        };
+        pill('engWorkletPill', 'loading');
+        pill('engGatePill', 'loading');
+        pill('engDeessPill', 'loading');
+        if (this.ctx?.state === 'suspended') {
+          try { await this.ctx.resume(); } catch { /* best-effort */ }
+        }
+        if (this._bridge.workletsReady) await this._bridge.workletsReady();
+        const st = this._bridge.getWorkletStatus?.() || {};
+        const gateOk = st.gate?.state === 'loaded' || st.gate?.state === 'bypassed';
+        const deOk = st.deEsser?.state === 'loaded' || st.deEsser?.state === 'bypassed';
+        this._workletReady = gateOk && deOk;
+        paintWorkletPills(st);
+        try { globalThis.__vipWorkletStatus = st; } catch { /* ignore */ }
+        structuredLog('info', '[VIP] Playback worklets ready', st);
+        if (!gateOk || !deOk) {
+          structuredLog('warn', '[VIP] One or more worklets did not load', st);
+        }
+
         return this._bridge;
       } catch (err) {
         this._bridgeFailed = true;
+        this._workletReady = false;
+        pill('engWorkletPill', 'error');
+        pill('engGatePill', 'error');
+        pill('engDeessPill', 'error');
         structuredLog('warn', '[VIP] Live-Mix bridge unavailable; sliders apply on Reprocess.', { err: err && err.message });
         return null;
       } finally {
@@ -4795,12 +4846,6 @@ const WHISPER_HUNTER = {
           voiceTunnel: Math.round(52 + avgMaskConf * 38),
           whisperMode: separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1,
         };
-      }
-
-      // Region maps for any offline path that honors them
-      if (analysis?.jointPlan) {
-        app._protectRegions = analysis.jointPlan.protectRegions || [];
-        app._suppressRegions = analysis.jointPlan.suppressRegions || [];
       }
 
       await app.morphSlidersTo(morph, 600);

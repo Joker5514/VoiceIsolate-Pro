@@ -52,7 +52,7 @@ export function mergeRegions(regions, mergeGapSec = 0.08) {
     .map((r) => ({
       start: Number(r.start) || 0,
       end: Math.max(Number(r.start) || 0, Number(r.end) || 0),
-      confidence: Number(r.confidence) || 0.5,
+      confidence: (function() { const c = Number(r.confidence); return Number.isFinite(c) ? c : 0.5; }()),
       label: r.label || 'region',
       explanation: r.explanation,
     }))
@@ -312,7 +312,7 @@ export function buildIsolationStageConfig(analysis, opts = {}) {
     stage.crowdNull = Math.max(stage.crowdNull || 0, Math.round(55 + s * 40));
     stage.nrAmount = Math.max(stage.nrAmount || 0, Math.round(50 + s * 25));
     stage.transientShaper = Math.round(
-      Math.max(-20, Math.min(35, (stage.transientShaper || 0) * 0.5 + 12 + s * 10)),
+      Math.max(-35, Math.min(0, (stage.transientShaper || 0) * 0.5 - 12 - s * 10)),
     );
     findings.push(
       `Impulsive noise (horns / barks / claps) ~${(unwanted.classes.impulse.coverage * 100).toFixed(0)}% of file`,

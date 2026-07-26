@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Generate docs/releases/VoiceIsolate_Pro_v24_Latest.pdf"""
+"""Generate docs/releases/VoiceIsolate_Pro_v24_Latest.pdf
+
+Requires ReportLab:
+    pip install -r scripts/requirements_export.txt
+    # or: pip install reportlab>=4.0.0
+
+Usage:
+    python scripts/gen-release-pdf.py
+"""
 from pathlib import Path
 
 from reportlab.lib.pagesizes import letter
