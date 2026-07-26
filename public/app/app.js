@@ -1181,7 +1181,14 @@ class VoiceIsolatePro {
           try { await this.ctx.resume(); } catch { /* ignore */ }
         }
         if (bridge?.workletsReady) await bridge.workletsReady();
-        const st = bridge?.getWorkletStatus?.() || {};
+        if (!bridge) {
+          this._workletReady = false;
+          pill('engWorkletPill', 'error');
+          pill('engGatePill', 'error');
+          pill('engDeessPill', 'error');
+          return;
+        }
+        const st = bridge.getWorkletStatus?.() || {};
         const gateOk = st.gate?.state === 'loaded' || st.gate?.state === 'bypassed';
         const deOk = st.deEsser?.state === 'loaded' || st.deEsser?.state === 'bypassed';
         this._workletReady = gateOk && deOk;
