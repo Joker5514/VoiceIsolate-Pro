@@ -164,7 +164,7 @@ export function recommendFromAnalysis(analysis) {
     findings.push(`${transients.length} impulsive event region(s) (horns / barks / claps)`);
     stageConfig.crowdNull = Math.max(stageConfig.crowdNull || 0, Math.min(100, 45 + transients.length * 6));
     stageConfig.nrAmount = Math.max(stageConfig.nrAmount || 0, 55);
-    stageConfig.transientShaper = Math.max(stageConfig.transientShaper || 0, 10);
+    stageConfig.transientShaper = Math.min(stageConfig.transientShaper || 0, -10);
     reasons.push('Impulsive noise map → crowdNull + NR while protecting speech zones');
     confidence = Math.min(confidence + 0.03, 0.82);
   }
