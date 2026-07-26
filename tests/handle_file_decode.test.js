@@ -23,6 +23,7 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
     };
     global.window = { dispatchEvent: jest.fn() };
     global.CustomEvent = function CustomEvent(type, init = {}) {
+      if (!(this instanceof CustomEvent)) return new CustomEvent(type, init);
       this.type = type;
       this.detail = init.detail;
     };
