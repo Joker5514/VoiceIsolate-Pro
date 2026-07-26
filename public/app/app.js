@@ -1790,8 +1790,15 @@ class VoiceIsolatePro {
     }
 
     // Save buttons
-    bind('saveOrigBtn', d.saveOrigBtn, 'click', () => {
-      if (this.origBuffer || this.inputBuffer) downloadWav(this.origBuffer || this.inputBuffer, 'original-' + Date.now() + '.wav');
+    bind('saveOrigBtn', d.saveOrigBtn, 'click', async () => {
+      if (!(this.origBuffer || this.inputBuffer) && this._sourceFile) {
+        await this.ensureDecoded();
+      }
+      if (this.origBuffer || this.inputBuffer) {
+        downloadWav(this.origBuffer || this.inputBuffer, 'original-' + Date.now() + '.wav');
+      } else {
+        this.showNotification('Nothing to save yet — load and decode a file first.', 'info');
+      }
     });
     bind('saveProcBtn', d.saveProcBtn, 'click', async () => {
       await this._downloadProcessed();
