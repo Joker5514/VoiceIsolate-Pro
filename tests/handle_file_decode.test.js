@@ -8,18 +8,24 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
   let originalDocument;
   let originalWindow;
   let originalURL;
+  let originalCustomEvent;
 
   beforeAll(() => {
     originalDocument = global.document;
     originalWindow = global.window;
     originalURL = global.URL;
+    originalCustomEvent = global.CustomEvent;
 
     global.document = {
       addEventListener: jest.fn(),
       getElementById: jest.fn(() => ({ addEventListener: jest.fn(), appendChild: jest.fn() })),
       createElement: jest.fn(() => ({})),
     };
-    global.window = {};
+    global.window = { dispatchEvent: jest.fn() };
+    global.CustomEvent = function CustomEvent(type, init = {}) {
+      this.type = type;
+      this.detail = init.detail;
+    };
 
     global.URL = {
       createObjectURL: jest.fn(() => 'blob:test'),
@@ -40,7 +46,13 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
       setTimeout: setTimeout,
       clearTimeout: clearTimeout,
       Promise: Promise,
+      CustomEvent: global.CustomEvent,
       requestAnimationFrame: (cb) => setTimeout(cb, 0),
+      requestIdleCallback: (cb) => cb(),
+      resetFileInput: (input) => {
+        if (input) input.value = '';
+      },
+      yieldToBrowser: async () => {},
     };
     vm.createContext(sandbox);
     vm.runInContext(appJs, sandbox);
@@ -52,42 +64,52 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
     global.document = originalDocument;
     global.window = originalWindow;
     global.URL = originalURL;
+    global.CustomEvent = originalCustomEvent;
   });
 
   afterEach(() => {
     jest.clearAllTimers();
   });
 
-  it('decodes video files via the shared media decode path', async () => {
-    const handleFile = VoiceIsolatePro.prototype.handleFile;
-    const decoded = { length: 48000, duration: 1, sampleRate: 48000, numberOfChannels: 2 };
-
-    const mockVip = {
-      ensureCtx: jest.fn(),
+  function makeMockVip() {
+    return {
+      ensureCtx: jest.fn().mockResolvedValue(undefined),
       stop: jest.fn(),
       setStatus: jest.fn(),
       onAudioLoaded: jest.fn(),
       showNotification: jest.fn(),
       _showFileLoading: jest.fn(),
       _hideFileLoading: jest.fn(),
-      _resetFileInput: jest.fn(),
-      _readFileArrayBuffer: VoiceIsolatePro.prototype._readFileArrayBuffer,
-      _decodeFileBuffer: VoiceIsolatePro.prototype._decodeFileBuffer,
       _waitForPipelineIdle: jest.fn().mockResolvedValue(undefined),
       _warmupMLModels: jest.fn().mockResolvedValue(undefined),
+      _updateProcessButtonsState: jest.fn(),
+      _updateSaveButtonLabels: jest.fn(),
       _fileSeq: 0,
+      _decodePromise: null,
+      _decodeReady: false,
       abortFlag: false,
+      isProcessing: false,
       dom: {
-        fileInfo: {},
-        videoPlayer: { src: '' },
-        videoCard: { style: {} }
+        fileInput: { value: 'selected-file' },
+        fileInfo: { textContent: '' },
+        videoPlayer: { src: '', load: jest.fn() },
+        videoCard: { style: {} },
+        processBtn: { disabled: true },
+        mobileProcessBtn: { disabled: true },
+        playBtn: { disabled: true },
+        saveOrigBtn: { disabled: false },
       },
       ctx: {
         state: 'running',
         resume: jest.fn().mockResolvedValue(undefined),
-        decodeAudioData: jest.fn().mockResolvedValue(decoded)
-      }
+        decodeAudioData: jest.fn(),
+      },
     };
+  }
+
+  it('accepts video files without decoding during handleFile()', async () => {
+    const handleFile = VoiceIsolatePro.prototype.handleFile;
+    const mockVip = makeMockVip();
 
     const mockFile = {
       name: 'test.mp4',
@@ -98,40 +120,23 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
 
     await handleFile.call(mockVip, mockFile);
 
-    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
-    expect(mockVip.inputBuffer).toBe(decoded);
+    expect(mockVip.ctx.decodeAudioData).not.toHaveBeenCalled();
+    expect(mockVip.inputBuffer).toBeNull();
+    expect(mockVip._sourceFile).toBe(mockFile);
+    expect(mockVip._decodeReady).toBe(false);
     expect(mockVip.dom.videoPlayer.src).toBe('blob:test');
+    expect(mockVip.dom.fileInfo.textContent).toContain('ready (decode on Analyze/Process)');
+    expect(mockVip.setStatus).toHaveBeenCalledWith('READY');
+    expect(mockVip._warmupMLModels).toHaveBeenCalledTimes(1);
   });
 
-  it('shows an error when decode fails for audio files', async () => {
+  it('ensureDecoded decodes an accepted file and caches the decoded buffer', async () => {
     const handleFile = VoiceIsolatePro.prototype.handleFile;
-
-    const mockVip = {
-      ensureCtx: jest.fn(),
-      stop: jest.fn(),
-      setStatus: jest.fn(),
-      onAudioLoaded: jest.fn(),
-      showNotification: jest.fn(),
-      _showFileLoading: jest.fn(),
-      _hideFileLoading: jest.fn(),
-      _resetFileInput: jest.fn(),
-      _readFileArrayBuffer: VoiceIsolatePro.prototype._readFileArrayBuffer,
-      _decodeFileBuffer: VoiceIsolatePro.prototype._decodeFileBuffer,
-      _waitForPipelineIdle: jest.fn().mockResolvedValue(undefined),
-      _warmupMLModels: jest.fn().mockResolvedValue(undefined),
-      _fileSeq: 0,
-      abortFlag: false,
-      dom: {
-        fileInfo: { textContent: '' },
-        videoPlayer: {},
-        videoCard: { style: {} }
-      },
-      ctx: {
-        state: 'running',
-        resume: jest.fn().mockResolvedValue(undefined),
-        decodeAudioData: jest.fn().mockRejectedValue(new Error('Decode failed'))
-      }
-    };
+    const ensureDecoded = VoiceIsolatePro.prototype.ensureDecoded;
+    const decoded = { length: 48000, duration: 1, sampleRate: 48000, numberOfChannels: 2 };
+    const mockVip = makeMockVip();
+    mockVip.ctx.decodeAudioData.mockResolvedValue(decoded);
+    mockVip.ensureDecoded = ensureDecoded;
 
     const mockFile = {
       name: 'test.wav',
@@ -141,42 +146,54 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
     };
 
     await handleFile.call(mockVip, mockFile);
+    const buffer = await ensureDecoded.call(mockVip);
 
-    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalled();
+    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
+    expect(buffer).toBe(decoded);
+    expect(mockVip.inputBuffer).toBe(decoded);
+    expect(mockVip.origBuffer).toBe(decoded);
+    expect(mockVip._decodeReady).toBe(true);
+    expect(mockVip.onAudioLoaded).toHaveBeenCalledWith('test.wav', 1);
+    expect(mockVip._hideFileLoading).toHaveBeenCalled();
+  });
+
+  it('ensureDecoded surfaces decode failures after file acceptance', async () => {
+    const handleFile = VoiceIsolatePro.prototype.handleFile;
+    const ensureDecoded = VoiceIsolatePro.prototype.ensureDecoded;
+    const mockVip = makeMockVip();
+    mockVip.ctx.decodeAudioData.mockRejectedValue(new Error('Decode failed'));
+    mockVip.ensureDecoded = ensureDecoded;
+
+    const mockFile = {
+      name: 'test.wav',
+      size: 1000,
+      type: 'audio/wav',
+      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10))
+    };
+
+    await handleFile.call(mockVip, mockFile);
+    const buffer = await ensureDecoded.call(mockVip);
+
+    expect(buffer).toBeNull();
+    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
     expect(mockVip.dom.fileInfo.textContent).toContain('Cannot decode this audio format');
     expect(mockVip.dom.fileInfo.textContent).toContain('WAV or MP3');
+    expect(mockVip._decodeReady).toBe(false);
     expect(mockVip.setStatus).toHaveBeenCalledWith('ERROR');
   });
 
-  it('shows an error when decoded audio buffer is empty', async () => {
+  it('ensureDecoded dedupes concurrent decode requests for the same accepted file', async () => {
     const handleFile = VoiceIsolatePro.prototype.handleFile;
+    const ensureDecoded = VoiceIsolatePro.prototype.ensureDecoded;
+    const decoded = { length: 48000, duration: 1, sampleRate: 48000, numberOfChannels: 2 };
+    const mockVip = makeMockVip();
+    mockVip.ensureDecoded = ensureDecoded;
 
-    const mockVip = {
-      ensureCtx: jest.fn(),
-      stop: jest.fn(),
-      setStatus: jest.fn(),
-      onAudioLoaded: jest.fn(),
-      showNotification: jest.fn(),
-      _showFileLoading: jest.fn(),
-      _hideFileLoading: jest.fn(),
-      _resetFileInput: jest.fn(),
-      _readFileArrayBuffer: VoiceIsolatePro.prototype._readFileArrayBuffer,
-      _decodeFileBuffer: VoiceIsolatePro.prototype._decodeFileBuffer,
-      _waitForPipelineIdle: jest.fn().mockResolvedValue(undefined),
-      _warmupMLModels: jest.fn().mockResolvedValue(undefined),
-      _fileSeq: 0,
-      abortFlag: false,
-      dom: {
-        fileInfo: { textContent: '' },
-        videoPlayer: {},
-        videoCard: { style: {} }
-      },
-      ctx: {
-        state: 'running',
-        resume: jest.fn().mockResolvedValue(undefined),
-        decodeAudioData: jest.fn().mockResolvedValue([])
-      }
-    };
+    let resolveDecode;
+    const decodePromise = new Promise((resolve) => {
+      resolveDecode = () => resolve(decoded);
+    });
+    mockVip.ctx.decodeAudioData.mockReturnValue(decodePromise);
 
     const mockFile = {
       name: 'test.wav',
@@ -187,8 +204,15 @@ describe('VoiceIsolatePro handleFile() Audio Decoding', () => {
 
     await handleFile.call(mockVip, mockFile);
 
-    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalled();
-    expect(mockVip.dom.fileInfo.textContent).toContain('Decoded audio is empty');
-    expect(mockVip.setStatus).toHaveBeenCalledWith('ERROR');
+    const first = ensureDecoded.call(mockVip);
+    const second = ensureDecoded.call(mockVip);
+    resolveDecode();
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
+    expect(firstResult).toBe(decoded);
+    expect(secondResult).toBe(decoded);
+    expect(mockVip.onAudioLoaded).toHaveBeenCalledTimes(1);
   });
 });
