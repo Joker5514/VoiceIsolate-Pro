@@ -3045,12 +3045,16 @@ class VoiceIsolatePro {
 
     // ── Pass 3–5: spectral isolation — ONE STFT/iSTFT per process channel ──
     this.updatePipelineProgress(10, 'Spectral isolation…', 20);
+    const regionMaps = {
+      protect: this._protectRegions || [],
+      suppress: this._suppressRegions || [],
+    };
     for (let ch = 0; ch < channels.length; ch++) {
       if (this.abortFlag) break;
       channels[ch] = await this._spectralStageAsync(channels[ch], sr, p, (frac) => {
         const pct = 20 + Math.round(frac * 40);
         this.updatePipelineProgress(10, 'Spectral isolation…', pct);
-      }) || channels[ch];
+      }, regionMaps) || channels[ch];
     }
 
     // Expand mono-processed mid back to stereo with gain envelope.
@@ -3400,7 +3404,7 @@ class VoiceIsolatePro {
   // Fast path: FFT 2048 / hop 1024 (50% COLA, ~2× fewer frames than 512).
   // Forensic (whisperMode ≥ 2): full 4096 / 1024 for whisper recovery quality.
   // Async STFT yields so long files no longer freeze the browser tab.
-  async _spectralStageAsync(data, sr, p, onProgress) {
+  async _spectralStageAsync(data, sr, p, onProgress, regionMaps = null) {
     const DSP = this._resolveDSP();
     const whisperMode = Math.round(p.whisperMode ?? this.whisperMode ?? 0);
     const forensic = whisperMode >= 2;
@@ -3514,7 +3518,40 @@ class VoiceIsolatePro {
       })
       : DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);
     if (onProgress) onProgress(1);
-    return (rendered && rendered.length === data.length) ? rendered : data;
+    if (!rendered || rendered.length !== data.length) return data;
+
+    // Apply time-region masks from Analyze + WhisperHunter joint plan.
+    // Protect regions (voice/whisper): blend some pre-spectral signal back to
+    // reduce over-suppression. Suppress regions (noise/music): attenuate further.
+    const protect = regionMaps?.protect;
+    const suppress = regionMaps?.suppress;
+    if ((protect && protect.length) || (suppress && suppress.length)) {
+      if (protect) {
+        for (const region of protect) {
+          const sStart = Math.max(0, Math.round(region.start * sr));
+          const sEnd = Math.min(rendered.length, Math.round(region.end * sr));
+          if (sEnd <= sStart) continue;
+          const weight = Math.min(0.45, (region.confidence ?? 0.5) * 0.45);
+          const keep = 1 - weight;
+          for (let i = sStart; i < sEnd; i++) {
+            rendered[i] = rendered[i] * keep + data[i] * weight;
+          }
+        }
+      }
+      if (suppress) {
+        for (const region of suppress) {
+          const sStart = Math.max(0, Math.round(region.start * sr));
+          const sEnd = Math.min(rendered.length, Math.round(region.end * sr));
+          if (sEnd <= sStart) continue;
+          const scale = 1 - Math.min(0.5, (region.confidence ?? 0.5) * 0.5);
+          for (let i = sStart; i < sEnd; i++) {
+            rendered[i] *= scale;
+          }
+        }
+      }
+    }
+
+    return rendered;
   }
 
   /**
