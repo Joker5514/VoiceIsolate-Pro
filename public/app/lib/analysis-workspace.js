@@ -261,6 +261,42 @@ export function installAnalysisWorkspace(app) {
     if (els.root) els.root.dataset.state = 'ready';
   }
 
+  function clearState() {
+    cancelled = false;
+    lastAnalysis = null;
+    host.dispose();
+    audition.stop(true);
+    audition.resetMix();
+    transport.stop(true);
+    transport.setDuration(0);
+    if (timeline) {
+      timeline.setAnalysis(null);
+      timeline.setPlayhead(0);
+    }
+    if (els.confBadge) {
+      els.confBadge.textContent = 'Confidence —';
+      els.confBadge.dataset.level = 'low';
+    }
+    if (els.presetCard) {
+      els.presetCard.innerHTML = `
+        <div class="rec-preset-name">No recommendation yet</div>
+        <div class="rec-preset-meta">Run Analyze Full Audio</div>`;
+    }
+    if (els.findings) els.findings.innerHTML = '<li>Load a file, then analyze.</li>';
+    if (els.reasons) els.reasons.innerHTML = '<li>—</li>';
+    if (els.chips) els.chips.innerHTML = '';
+    if (els.collab) {
+      els.collab.hidden = true;
+      els.collab.innerHTML = '';
+    }
+    if (els.progress) els.progress.hidden = true;
+    if (els.progressFill) els.progressFill.style.width = '0%';
+    if (els.progressLabel) els.progressLabel.textContent = 'Idle';
+    showError('');
+    renderAuditionStrip();
+    if (els.root) els.root.dataset.state = 'idle';
+  }
+
   function renderAuditionStrip() {
     if (!els.audition) return;
     const states = audition.getLayerStates().filter((s) => s.id !== 'original' || true);
@@ -601,6 +637,7 @@ export function installAnalysisWorkspace(app) {
     analyzeAndProcess,
     analyzeAndWhisperCollab,
     collaborateWithHunter,
+    clearState,
     getAnalysis: () => lastAnalysis,
     getJointPlan: () => lastAnalysis?.jointPlan || app._jointIsolationPlan || null,
     audition,

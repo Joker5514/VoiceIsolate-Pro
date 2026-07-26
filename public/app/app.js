@@ -2170,6 +2170,25 @@ class VoiceIsolatePro {
     if (ind) ind.hidden = true;
   }
 
+  _resetCollaborationState() {
+    this._lastFullAnalysis = null;
+    this._jointIsolationPlan = null;
+    this._hunterEnvFromAnalysis = null;
+    this._hunterSliderTargets = null;
+    this._preferAnalysisForHunter = false;
+    this._protectRegions = [];
+    this._suppressRegions = [];
+    this._lastHunterEnv = null;
+    this._lastHunterMaskConf = null;
+    this._lastHunterPlatform = null;
+    this._lastHunterMessage = null;
+    try {
+      this._analysisWorkspace?.clearState?.();
+    } catch (err) {
+      structuredLog('warn', '[VIP] analysis workspace reset failed', { err: err?.message });
+    }
+  }
+
   async _readFileArrayBuffer(file) {
     if (typeof file.arrayBuffer === 'function') {
       const ab = await file.arrayBuffer();
@@ -2219,6 +2238,7 @@ class VoiceIsolatePro {
     this._sourceName = file.name || '';
     this._decodePromise = null;
     this._decodeReady = false;
+    this._resetCollaborationState?.();
     this.stop();
     if (this.isProcessing) {
       this.abortFlag = true;
@@ -2542,6 +2562,7 @@ class VoiceIsolatePro {
     this._sourceFile = null;
     this._decodePromise = null;
     this._decodeReady = false;
+    this._resetCollaborationState?.();
     this._transportRegionWired = false;
     this._syncTransportRegion = null;
     HeroExperience.onClear();
