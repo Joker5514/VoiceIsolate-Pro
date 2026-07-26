@@ -2378,6 +2378,7 @@ class VoiceIsolatePro {
         this.onAudioLoaded(file.name, fileSeq);
         return buffer;
       } catch (decodeErr) {
+        if (fileSeq !== this._fileSeq) return null;
         this._hideFileLoading();
         this._decodePromise = null;
         this._decodeReady = false;
