@@ -11,6 +11,7 @@ Production analysis path for Engineer Mode (`/app/`).
 | Whisper / faint speech | `src/core/WhisperLogic.js` |
 | Full analysis | `src/core/FullAnalysis.js` |
 | Recommendations | `src/core/RecommendationEngine.js` |
+| **Analyzer ↔ WhisperHunter bridge** | `src/core/AnalyzerWhisperBridge.js` |
 | DSP defaults | `src/core/DspCalibration.js` |
 | Presets | `src/core/PresetCalibration.js` |
 | Capabilities | `src/core/CapabilityChecker.js` |
@@ -21,6 +22,18 @@ Production analysis path for Engineer Mode (`/app/`).
 | Timeline UI | `src/presentation/TimelineRenderer.js` |
 | Transport sync | `src/presentation/TransportSync.js` |
 | Engineer wiring | `public/app/lib/analysis-workspace.js` |
+
+## Engineer Mode flow
+
+1. **Upload** audio/video (local decode only).
+2. **Analyze Full Audio** — classical full-file map (speech, whisper, music, noise, hum, impulses).
+3. **Joint map** — `AnalyzerWhisperBridge` fuses analysis with WhisperHunter environment profiling:
+   - **Protect** speech / whisper / difficult regions (amplify & isolate)
+   - **Suppress** music, broadband noise, hum, impulses (horns, barks, claps), reverb, crowd/traffic
+4. **WhisperHunter AI** (or **Analyze + WhisperHunter**) consumes the joint plan for preset + slider morph + single-pass isolation.
+5. Live-Mix preview / export.
+
+WhisperHunter alone still works without prior analysis, but quality is better when the workspace map is available (`app._lastFullAnalysis` / `app._jointIsolationPlan`).
 
 Facades under `public/app/lib/*` re-export `/src/...` for stable relative URLs.
 

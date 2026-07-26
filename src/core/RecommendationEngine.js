@@ -158,6 +158,17 @@ export function recommendFromAnalysis(analysis) {
     stageConfig.voiceIso = Math.max(stageConfig.voiceIso || 70, 85);
   }
 
+  // Impulses: car horns, barks, claps — suppress without nuking speech formants
+  const transients = analysis.transientSegments || [];
+  if (transients.length >= 2) {
+    findings.push(`${transients.length} impulsive event region(s) (horns / barks / claps)`);
+    stageConfig.crowdNull = Math.max(stageConfig.crowdNull || 0, Math.min(100, 45 + transients.length * 6));
+    stageConfig.nrAmount = Math.max(stageConfig.nrAmount || 0, 55);
+    stageConfig.transientShaper = Math.max(stageConfig.transientShaper || 0, 10);
+    reasons.push('Impulsive noise map → crowdNull + NR while protecting speech zones');
+    confidence = Math.min(confidence + 0.03, 0.82);
+  }
+
   if (overlap.length) {
     // Conservative isolation to reduce artifacts on overlaps
     stageConfig.voiceIso = Math.min(stageConfig.voiceIso || 80, 78);

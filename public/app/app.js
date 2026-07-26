@@ -1818,7 +1818,7 @@ class VoiceIsolatePro {
 
     // [WHISPER UPDATE] WhisperHunter AI auto-processing
     bind('btnWhisperHunter', document.getElementById('btn-whisper-hunter'), 'click', async () => {
-      if (!this.inputBuffer && !this.origBuffer) {
+      if (!this.inputBuffer && !this.origBuffer && !this._sourceFile) {
         this.showNotification('Load an audio file first', 'warn');
         return;
       }
@@ -1833,6 +1833,7 @@ class VoiceIsolatePro {
         btn.disabled = true;
       }
       try {
+        // ensureDecoded runs inside WHISPER_HUNTER when buffers are not ready yet
         await WHISPER_HUNTER.run(this.inputBuffer || this.origBuffer, this);
       } catch (err) {
         structuredLog('error', '[WHISPER_HUNTER] run failed', { err: err && err.message });
@@ -2199,12 +2200,18 @@ class VoiceIsolatePro {
   }
 
   // ── File handling ─────────────────────────────────────────────────────────
+  /**
+   * Accept a file without decoding. Decode starts on Analyze / Process / Play
+   * via ensureDecoded() so upload never freezes the tab on large media.
+   */
   async handleFile(file) {
     if (!file) return;
     if (typeof this._fileSeq !== 'number' || !Number.isFinite(this._fileSeq)) this._fileSeq = 0;
     const fileSeq = ++this._fileSeq;
     clearStemCache();
     this._sourceName = file.name || '';
+    this._decodePromise = null;
+    this._decodeReady = false;
     this.stop();
     if (this.isProcessing) {
       this.abortFlag = true;
@@ -2214,19 +2221,12 @@ class VoiceIsolatePro {
       } catch (_) {}
       await this._waitForPipelineIdle(90000);
     }
-    this.setStatus('LOADING');
-    HeroExperience.onDecodeStart();
-    this._showFileLoading(file.name ? `Loading ${file.name}…` : 'Loading…');
-
-    await this.ensureCtx();
-    if (typeof this._warmupMLModels === 'function') this._warmupMLModels().catch(() => {});
 
     // Reject MIDI files early — not supported by Web Audio API
     const midiMimes = ['audio/midi', 'audio/x-midi', 'audio/mid'];
     const isMidi = midiMimes.includes((file.type || '').toLowerCase()) ||
       /\.(mid|midi)$/i.test(file.name || '');
     if (isMidi) {
-      this._hideFileLoading();
       if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'MIDI files are not supported. Use an audio file (WAV, MP3, etc).';
       this.setStatus('ERROR');
       return;
@@ -2239,68 +2239,27 @@ class VoiceIsolatePro {
     const isAudio = mediaKind === 'audio' || mediaKind === 'video'
       || !mime || mime.startsWith('audio/') || mime.startsWith('video/');
     if (!isAudio) {
-      this._hideFileLoading();
       if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Unsupported file type: ' + (file.type || 'unknown');
       this.setStatus('ERROR');
       return;
     }
     if (fileSeq !== this._fileSeq) return;
 
-    // Detect video by MIME / extension. The muted <video> element shows the
-    // picture while Web Audio plays processed audio; export remuxes them.
+    // Detect video by MIME / extension. Preview uses the raw File blob URL —
+    // no PCM decode required until Analyze/Process.
     const isVideoFile = isVideoSource(file);
     this._sourceFile = file;
     this.isVideo = isVideoFile;
+    this.inputBuffer = null;
+    this.origBuffer = null;
+    this.procBuffer = null;
+    this.outputBuffer = null;
 
-    // Always tear down any previous object URL so a new clip cannot keep the
-    // old picture. Check getAttribute('src') — the IDL .src is never empty
-    // after a prior absolute URL assignment.
     if (typeof this._clearVideoElement === 'function') {
       this._clearVideoElement();
     }
 
-    let buffer;
-    resetTimings();
-    try {
-      if (this.ctx.state === 'suspended') await this.ctx.resume();
-      stageStart('decode');
-      const decoded = await decodeBlobToAudioBuffer(file, {
-        onProgress: (pct) => {
-          if (fileSeq !== this._fileSeq) return;
-          const label = pct < 50 ? 'Reading file…' : pct < 100 ? 'Decoding audio…' : 'Decode complete';
-          this._showFileLoading(`${label} (${Math.round(pct)}%)`);
-        },
-      });
-      stageEnd('decode');
-      stageStart('resample');
-      buffer = await resampleToCanonical(decoded);
-      stageEnd('resample');
-    } catch (decodeErr) {
-      this._hideFileLoading();
-      resetFileInput(this.dom?.fileInput);
-      const detail = decodeErr?.message ? ` (${decodeErr.message})` : '';
-      const msg = isVideoFile
-        ? `Cannot decode this video — try WAV or MP3.${detail}`
-        : `Cannot decode this audio format — try WAV or MP3.${detail}`;
-      if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = msg;
-      this.setStatus('ERROR');
-      this.showNotification('Cannot decode: ' + file.name, 'error');
-      structuredLog('error', '[VIP] handleFile decode failed', { err: decodeErr?.message });
-      HeroExperience.onDecodeError(msg);
-      return;
-    }
-
-    // Check for empty/null decoded buffer
-    if (!buffer || !buffer.length) {
-      this._hideFileLoading();
-      if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Decoded audio is empty or unreadable.';
-      this.setStatus('ERROR');
-      return;
-    }
-    if (fileSeq !== this._fileSeq) return;
-
-    // Always assign a fresh object URL for video (never rely on a stale/empty
-    // IDL .src check — that previously left the preview blank after reload).
+    // Lightweight video picture preview (no audio decode).
     if (isVideoFile && this.dom?.videoPlayer) {
       this.isVideo = true;
       try {
@@ -2319,13 +2278,122 @@ class VoiceIsolatePro {
     }
     if (typeof this._updateSaveButtonLabels === 'function') this._updateSaveButtonLabels();
 
-    this.inputBuffer = buffer;
-    this.origBuffer = buffer;
-    this._hideFileLoading();
     // Reset so the same file can be re-selected (change event fires again).
     resetFileInput(this.dom?.fileInput);
     if (fileSeq !== this._fileSeq) return;
-    this.onAudioLoaded(file.name, fileSeq);
+
+    const sizeMb = file.size ? (file.size / (1024 * 1024)).toFixed(1) : '?';
+    const kindLabel = isVideoFile ? 'Video' : 'Audio';
+    if (this.dom?.fileInfo) {
+      this.dom.fileInfo.textContent = `${file.name || 'File'} · ${kindLabel} · ${sizeMb} MB · ready (decode on Analyze/Process)`;
+    }
+    this.setStatus('READY');
+    this._updateProcessButtonsState();
+    // Enable analyze/process without decoded buffers — ensureDecoded runs first.
+    if (this.dom.processBtn) this.dom.processBtn.disabled = false;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
+    if (this.dom.playBtn) this.dom.playBtn.disabled = false;
+    if (this.dom.saveOrigBtn) this.dom.saveOrigBtn.disabled = true; // needs decode
+
+    try { window.dispatchEvent(new CustomEvent('vip:fileAccepted', { detail: { name: file.name, size: file.size, video: isVideoFile } })); } catch (_) {}
+    this.showNotification(`${file.name || 'File'} ready — Analyze or Process to decode & isolate`, 'info');
+
+    // Idle ML warmup only (no decode) so first process is faster.
+    if (typeof this._warmupMLModels === 'function') {
+      const scheduleIdle = globalThis.requestIdleCallback
+        ? (cb) => requestIdleCallback(cb, { timeout: 2500 })
+        : (cb) => setTimeout(cb, 50);
+      scheduleIdle(() => {
+        if (fileSeq !== this._fileSeq) return;
+        this._warmupMLModels().catch(() => {});
+      });
+    }
+
+    // Soft gesture unlock for AudioContext (worklets still lazy).
+    this.ensureCtx().catch(() => {});
+  }
+
+  /**
+   * Decode + resample the pending source file once. Safe to call from Analyze,
+   * Process, Play, or WhisperHunter. Dedupes concurrent callers.
+   * @param {number} [fileSeq]
+   * @returns {Promise<AudioBuffer|null>}
+   */
+  async ensureDecoded(fileSeq = this._fileSeq) {
+    if (fileSeq !== this._fileSeq) return null;
+    if (this.origBuffer || this.inputBuffer) {
+      this._decodeReady = true;
+      return this.origBuffer || this.inputBuffer;
+    }
+    const file = this._sourceFile;
+    if (!file) {
+      this.showNotification?.('Load an audio or video file first', 'warn');
+      return null;
+    }
+    if (this._decodePromise) return this._decodePromise;
+
+    this._decodePromise = (async () => {
+      this.setStatus('LOADING');
+      HeroExperience.onDecodeStart();
+      this._showFileLoading(file.name ? `Decoding ${file.name}…` : 'Decoding…');
+      resetTimings();
+      try {
+        await this.ensureCtx();
+        if (this.ctx?.state === 'suspended') await this.ctx.resume();
+        if (fileSeq !== this._fileSeq) return null;
+
+        stageStart('decode');
+        const decoded = await decodeBlobToAudioBuffer(file, {
+          onProgress: (pct) => {
+            if (fileSeq !== this._fileSeq) return;
+            const label = pct < 50 ? 'Reading file…' : pct < 100 ? 'Decoding audio…' : 'Decode complete';
+            this._showFileLoading(`${label} (${Math.round(pct)}%)`);
+          },
+        });
+        stageEnd('decode');
+        await yieldToBrowser();
+        if (fileSeq !== this._fileSeq) return null;
+
+        stageStart('resample');
+        const buffer = await resampleToCanonical(decoded);
+        stageEnd('resample');
+        await yieldToBrowser();
+
+        if (!buffer || !buffer.length) {
+          throw new Error('Decoded audio is empty or unreadable');
+        }
+        if (fileSeq !== this._fileSeq) return null;
+
+        this.inputBuffer = buffer;
+        this.origBuffer = buffer;
+        this._decodeReady = true;
+        this._hideFileLoading();
+        this.onAudioLoaded(file.name, fileSeq);
+        return buffer;
+      } catch (decodeErr) {
+        this._hideFileLoading();
+        this._decodePromise = null;
+        this._decodeReady = false;
+        const isVideoFile = this.isVideo;
+        const detail = decodeErr?.message ? ` (${decodeErr.message})` : '';
+        const msg = isVideoFile
+          ? `Cannot decode this video — try WAV or MP3.${detail}`
+          : `Cannot decode this audio format — try WAV or MP3.${detail}`;
+        if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = msg;
+        this.setStatus('ERROR');
+        this.showNotification('Cannot decode: ' + (file.name || 'file'), 'error');
+        structuredLog('error', '[VIP] ensureDecoded failed', { err: decodeErr?.message });
+        HeroExperience.onDecodeError(msg);
+        return null;
+      }
+    })();
+
+    try {
+      return await this._decodePromise;
+    } finally {
+      // Keep resolved promise for dedupe until a new file clears it in handleFile
+      if (!this._decodeReady) this._decodePromise = null;
+    }
   }
 
   /** Revoke object URL and detach <video> source without leaving a dead URL. */
@@ -2438,48 +2506,34 @@ class VoiceIsolatePro {
     if (this.dom.hSR) this.dom.hSR.textContent = buf.sampleRate + ' Hz';
     if (this.dom.hCh) this.dom.hCh.textContent = buf.numberOfChannels === 1 ? 'Mono' : 'Stereo';
     if (this.dom.hFile) this.dom.hFile.textContent = (name || '').slice(0, 20);
+    if (this.dom.fileInfo) {
+      this.dom.fileInfo.textContent = `${name || 'File'} · ${fmtTime(buf.duration)} · ${buf.sampleRate} Hz · decoded`;
+    }
 
     const scheduleIdle = globalThis.requestIdleCallback
       ? (cb) => requestIdleCallback(cb, { timeout: 1500 })
       : (cb) => setTimeout(cb, 0);
     scheduleIdle(() => {
+      if (fileSeq !== this._fileSeq) return;
       this.renderStaticVisuals(buf);
       HeroExperience.mirrorWaveCanvases();
     });
     try { window.dispatchEvent(new CustomEvent('vip:fileLoaded', { detail: { name } })); } catch (_) {}
-    this.showNotification('File loaded: ' + name, 'info');
+    this.showNotification('Decoded: ' + name + ' — run Analyze or Process', 'info');
 
-    // Auto-start pipeline after a short model-warmup race so first isolation
-    // does not pay ONNX compile mid-process (the common "loading forever" feel).
-    // Desktop/browser: wait up to 10s. Android: 6s — compile is lighter (WASM, smaller batches).
-    _yieldToUI(() => {
-      if (fileSeq !== this._fileSeq) return;
-      if (this.isProcessing || !(this.inputBuffer || this.origBuffer)) return;
-      this._autoPipelineRun = true;
-      const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
-      const mobile = /Android|iPhone|iPad|Mobile|Capacitor/i.test(ua);
-      const warmCapMs = mobile ? 6000 : 10000;
-      void (async () => {
-        try {
-          this.updatePipelineProgress?.(0, mobile ? 'Warming models…' : 'Preparing ML…', 2);
-          await Promise.race([
-            this._warmupMLModels().catch(() => {}),
-            new Promise((r) => setTimeout(r, warmCapMs)),
-          ]);
-        } catch { /* proceed even if warmup flakes */ }
-        if (fileSeq !== this._fileSeq || this.isProcessing) return;
-        if (!(this.inputBuffer || this.origBuffer)) return;
-        this.runPipeline(fileSeq).catch((err) => {
-          structuredLog('error', '[VIP] Auto-process failed', { err: err.message });
-        });
-      })();
-    });
+    // No auto-pipeline on decode — user drives Analyze / Process / WhisperHunter.
+    // Keeps the UI free; ML warmup continues in idle if already scheduled.
+    if (typeof this._warmupMLModels === 'function') {
+      this._warmupMLModels().catch(() => {});
+    }
   }
 
   _clearFile() {
     clearStemCache();
     this._sourceName = '';
     this._sourceFile = null;
+    this._decodePromise = null;
+    this._decodeReady = false;
     this._transportRegionWired = false;
     this._syncTransportRegion = null;
     HeroExperience.onClear();
@@ -2590,12 +2644,16 @@ class VoiceIsolatePro {
 
   // ── Main pipeline (32-stage Deca-Pass) ────────────────────────────────────
   async runPipeline(fileSeq = this._fileSeq) {
-    if (!this.origBuffer && !this.inputBuffer) return;
     if (this.isProcessing) {
       this.showNotification('Processing already in progress…', 'info');
       return;
     }
     if (fileSeq !== this._fileSeq) return;
+
+    // Decode only when processing starts (not at upload).
+    const decoded = await this.ensureDecoded(fileSeq);
+    if (!decoded || fileSeq !== this._fileSeq) return;
+    if (!this.origBuffer && !this.inputBuffer) return;
 
     this.isProcessing = true;
     this.abortFlag = false;
@@ -3015,7 +3073,7 @@ class VoiceIsolatePro {
   // Yield to the event loop between heavy passes so the processing overlay /
   // spinner keeps animating and the page stays responsive.
   _yield() {
-    return new Promise((resolve) => setTimeout(resolve, 0));
+    return yieldToBrowser();
   }
 
   // ── Old process() alias ───────────────────────────────────────────────────
@@ -3303,13 +3361,16 @@ class VoiceIsolatePro {
     const FRAME_CHUNK = forensic ? 128 : 256;
     if (!DSP || !data || data.length < FFT) return data;
 
-    const yieldBudget = createYieldBudget(forensic ? 14 : 24);
+    // Mobile yields more often; desktop keeps longer stretches for speed.
+    const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
+    const mobile = /Android|iPhone|iPad|Mobile|Capacitor/i.test(ua);
+    const yieldBudget = createYieldBudget(forensic ? (mobile ? 10 : 14) : (mobile ? 12 : 20));
     if (onProgress) onProgress(0.02);
     await yieldToBrowser();
 
     const stftOpts = {
-      // Fewer yields = faster STFT on desktop; still paint occasionally.
-      yieldEvery: forensic ? 32 : 64,
+      // Cooperative STFT: yield every N frames so long files never freeze the tab.
+      yieldEvery: forensic ? (mobile ? 16 : 32) : (mobile ? 32 : 48),
       onProgress: (frac) => { if (onProgress) onProgress(0.02 + frac * 0.18); },
       shouldAbort: () => this.abortFlag,
     };
@@ -3899,6 +3960,9 @@ class VoiceIsolatePro {
 
   async play() {
     await this.ensureCtx();
+    if (!(this.inputBuffer || this.origBuffer) && this._sourceFile) {
+      await this.ensureDecoded();
+    }
     const buf = this.abMode === 'processed'
       ? (this.outputBuffer || this.procBuffer || this.inputBuffer || this.origBuffer)
       : (this.inputBuffer || this.origBuffer);
@@ -4525,31 +4589,61 @@ class VoiceIsolatePro {
 }
 
 // [WHISPER UPDATE] WhisperHunter AI — automatic extreme isolation orchestrator
+// Collaborates with Source Analysis Workspace when app._lastFullAnalysis is set
+// (protect speech/whisper zones; suppress music, horns, barks, crowd, etc.).
 const WHISPER_HUNTER = {
   _running: false,
 
   async run(audioBuffer, app) {
     app = app || window._vipApp;
-    if (!app || !audioBuffer || this._running) return;
-    if (!audioBuffer.getChannelData || !audioBuffer.length) {
-      app.showNotification?.('Invalid audio buffer for WhisperHunter', 'warn');
+    if (!app || this._running) return;
+
+    // Decode on demand when upload deferred decode (File only, no PCM yet).
+    if ((!audioBuffer || !audioBuffer.getChannelData) && typeof app.ensureDecoded === 'function') {
+      audioBuffer = await app.ensureDecoded();
+    }
+    if (!audioBuffer || !audioBuffer.getChannelData || !audioBuffer.length) {
+      app.showNotification?.('Load an audio file first', 'warn');
       return;
     }
 
     this._running = true;
     const platformProfile = getWhisperPlatformProfile(detectWhisperPlatform());
     const detail = document.getElementById('pipeDetail');
-    if (detail) detail.textContent = `WhisperHunter analyzing (${platformProfile.platform})…`;
+    const analysis = app._lastFullAnalysis || null;
+    const hasJoint = !!(analysis && (analysis.jointPlan || app._jointIsolationPlan || app._preferAnalysisForHunter));
+    if (detail) {
+      detail.textContent = hasJoint
+        ? `WhisperHunter + Analyzer (${platformProfile.platform})…`
+        : `WhisperHunter analyzing (${platformProfile.platform})…`;
+    }
 
     try {
       const hunter = ensureWhisperHunterInstance(4096, audioBuffer.sampleRate);
       if (hunter && typeof hunter.seedNoiseFromAudio === 'function') {
         hunter.reset();
+        // Prefer noise-only seeding when analyzer marked suppress zones (approximate: full seed still OK)
         hunter.seedNoiseFromAudio(audioBuffer.getChannelData(0), audioBuffer.sampleRate);
       }
 
-      const envProfile = this.analyzeEnvironment(audioBuffer);
-      const basePreset = this.selectPreset(envProfile);
+      let envProfile = this.analyzeEnvironment(audioBuffer);
+      // Fuse analyzer map when available (music / impulse / whisper / SNR)
+      if (analysis?.jointPlan?.jointEnv) {
+        envProfile = { ...envProfile, ...analysis.jointPlan.jointEnv, source: 'analyzer+hunter' };
+      } else if (app._hunterEnvFromAnalysis) {
+        envProfile = { ...envProfile, ...app._hunterEnvFromAnalysis, source: 'analyzer+hunter' };
+      }
+
+      // Prefer joint plan preset, then hunter heuristic
+      let basePreset = this.selectPreset(envProfile, analysis);
+      if (analysis?.jointPlan?.recommendedPreset) {
+        basePreset = analysis.jointPlan.recommendedPreset;
+      } else if (app._hunterSliderTargets?.preset) {
+        basePreset = app._hunterSliderTargets.preset;
+      }
+      // resolvePresetNameLocal maps retired names → current catalog
+      basePreset = resolvePresetNameLocal(basePreset);
+
       if (PRESETS[basePreset]) {
         app.applyPreset(basePreset);
         await app.morphSlidersTo(
@@ -4562,22 +4656,67 @@ const WHISPER_HUNTER = {
 
       const masks = await this.runDeepFilterNet(audioBuffer, app, platformProfile);
       const avgMaskConf = maskConfidence(masks);
-      const separationScore = Math.max(0, Math.min(1, (1 - avgMaskConf) * 0.55 + (1 - envProfile.speechPresence) * 0.45));
+      const separationScore = Math.max(0, Math.min(1, (1 - avgMaskConf) * 0.55 + (1 - (envProfile.speechPresence || 0.4)) * 0.45));
 
-      await app.morphSlidersTo({
-        whisperClarity: Math.round(58 + separationScore * 32),
-        whisperSensitivity: Math.round(48 + (1 - envProfile.voiceRatio) * 38),
-        whisperThreshold: Math.round(42 + separationScore * 48),
-        harmRecov: envProfile.voiceRatio < 0.25 ? Math.round(18 + separationScore * 22) : 8,
-        whisperLift: Math.round(14 + separationScore * 24),
-        snrFloor: Math.round(-78 + avgMaskConf * 26),
-        crowdNull: Math.round(68 + separationScore * 28),
-        musicKill: envProfile.dominantNoise === 'music' ? Math.round(82 + separationScore * 16) : Math.round(45 + separationScore * 20),
-        bassCrush: Math.round(55 + envProfile.musicRatio * 40),
-        reverbStrip: Math.min(1200, Math.round(envProfile.rt60 * (0.85 + separationScore * 0.35))),
-        voiceTunnel: Math.round(52 + avgMaskConf * 38),
-        whisperMode: separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1,
-      }, 600);
+      // Slider targets: joint analyzer plan when present, else pure hunter heuristic
+      let morph = null;
+      if (app._hunterSliderTargets?.sliders) {
+        morph = { ...app._hunterSliderTargets.sliders };
+      } else if (analysis && typeof window !== 'undefined') {
+        try {
+          // Lazy import not needed — targets may already be on analysis.jointPlan
+          const cfg = analysis.jointPlan?.recommendedStageConfig
+            || analysis.recommendedStageConfig
+            || analysis.recommendation?.recommendedStageConfig;
+          if (cfg && Object.keys(cfg).length) {
+            morph = {
+              whisperClarity: Math.round(cfg.whisperClarity ?? (58 + separationScore * 32)),
+              whisperSensitivity: Math.round(cfg.whisperSensitivity ?? (48 + (1 - (envProfile.voiceRatio || 0.3)) * 38)),
+              whisperThreshold: Math.round(cfg.whisperThreshold ?? (42 + separationScore * 48)),
+              harmRecov: Math.round(cfg.harmRecov ?? ((envProfile.voiceRatio || 0) < 0.25 ? 18 + separationScore * 22 : 8)),
+              whisperLift: Math.round(cfg.whisperLift ?? (14 + separationScore * 24)),
+              snrFloor: Math.round(cfg.snrFloor ?? (-78 + avgMaskConf * 26)),
+              crowdNull: Math.round(cfg.crowdNull ?? (68 + separationScore * 28)),
+              musicKill: Math.round(cfg.musicKill ?? (envProfile.dominantNoise === 'music' ? 82 + separationScore * 16 : 45 + separationScore * 20)),
+              bassCrush: Math.round(cfg.bassCrush ?? (55 + (envProfile.musicRatio || 0) * 40)),
+              reverbStrip: Math.min(1200, Math.round(cfg.reverbStrip ?? ((envProfile.rt60 || 400) * (0.85 + separationScore * 0.35)))),
+              voiceTunnel: Math.round(cfg.voiceTunnel ?? (52 + avgMaskConf * 38)),
+              voiceIso: Math.round(cfg.voiceIso ?? 85),
+              bgSuppress: Math.round(cfg.bgSuppress ?? 55),
+              nrAmount: Math.round(cfg.nrAmount ?? 60),
+              humRemoval: Math.round(cfg.humRemoval ?? 0),
+              derevAmt: Math.round(cfg.derevAmt ?? 0),
+              whisperMode: cfg.whisperMode ?? (separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1),
+              transientShaper: Math.round(cfg.transientShaper ?? 12),
+            };
+          }
+        } catch { /* fall through */ }
+      }
+
+      if (!morph) {
+        morph = {
+          whisperClarity: Math.round(58 + separationScore * 32),
+          whisperSensitivity: Math.round(48 + (1 - (envProfile.voiceRatio || 0.3)) * 38),
+          whisperThreshold: Math.round(42 + separationScore * 48),
+          harmRecov: (envProfile.voiceRatio || 0) < 0.25 ? Math.round(18 + separationScore * 22) : 8,
+          whisperLift: Math.round(14 + separationScore * 24),
+          snrFloor: Math.round(-78 + avgMaskConf * 26),
+          crowdNull: Math.round(68 + separationScore * 28),
+          musicKill: envProfile.dominantNoise === 'music' ? Math.round(82 + separationScore * 16) : Math.round(45 + separationScore * 20),
+          bassCrush: Math.round(55 + (envProfile.musicRatio || 0) * 40),
+          reverbStrip: Math.min(1200, Math.round((envProfile.rt60 || 400) * (0.85 + separationScore * 0.35))),
+          voiceTunnel: Math.round(52 + avgMaskConf * 38),
+          whisperMode: separationScore > 0.65 ? 3 : separationScore > 0.35 ? 2 : 1,
+        };
+      }
+
+      // Region maps for any offline path that honors them
+      if (analysis?.jointPlan) {
+        app._protectRegions = analysis.jointPlan.protectRegions || [];
+        app._suppressRegions = analysis.jointPlan.suppressRegions || [];
+      }
+
+      await app.morphSlidersTo(morph, 600);
 
       // Single pipeline pass keeps the UI responsive. WhisperMode still drives
       // spectral aggressiveness inside the offline path — multi-pass loops froze tabs.
@@ -4588,7 +4727,10 @@ const WHISPER_HUNTER = {
         app._forceSinglePass = false;
       }
 
-      this.reportResults(envProfile, avgMaskConf, app, platformProfile);
+      app._lastHunterEnv = envProfile;
+      app._lastHunterMaskConf = avgMaskConf;
+      app._lastHunterPlatform = platformProfile.platform;
+      this.reportResults(envProfile, avgMaskConf, app, platformProfile, hasJoint);
     } finally {
       this._running = false;
     }
@@ -4598,12 +4740,17 @@ const WHISPER_HUNTER = {
     return analyzeAcousticEnvironment(buffer);
   },
 
-  selectPreset(envProfile) {
+  selectPreset(envProfile, analysis) {
+    // Analyzer joint plan wins when present
+    if (analysis?.jointPlan?.recommendedPreset) return analysis.jointPlan.recommendedPreset;
+    if (analysis?.recommendedPreset) return analysis.recommendedPreset;
     if (envProfile.dominantNoise === 'music' && envProfile.rt60 > 500) return 'Whisper in a Club';
     if (envProfile.dominantNoise === 'crowd' && envProfile.speechPresence < 0.35) return 'Stadium Crowd';
     if (envProfile.voiceRatio < 0.18) return 'Forensic Extract';
+    if (envProfile.hasWhisper || (analysis?.whisperRegions || []).length) return 'Whisper Boost';
     if (envProfile.rt60 < 200) return 'Whisper Boost';
     if (envProfile.dominantNoise === 'traffic') return 'Surveillance';
+    if (envProfile.dominantNoise === 'music') return 'Aggressive Isolate';
     return 'Whisper Boost';
   },
 
@@ -4669,16 +4816,25 @@ const WHISPER_HUNTER = {
     app._extremeNoiseProfile = null;
   },
 
-  reportResults(envProfile, avgMaskConf, app, platformProfile = getWhisperPlatformProfile()) {
+  reportResults(envProfile, avgMaskConf, app, platformProfile = getWhisperPlatformProfile(), collab = false) {
     app = app || window._vipApp;
     const detail = document.getElementById('pipeDetail');
-    const msg = `WhisperHunter (${platformProfile.platform}): ${envProfile.dominantNoise} · voice ${(envProfile.voiceRatio * 100).toFixed(0)}% · mask ${(avgMaskConf * 100).toFixed(0)}% · RT60 ${envProfile.rt60}ms`;
+    const voicePct = ((envProfile.voiceRatio || 0) * 100).toFixed(0);
+    const maskPct = ((avgMaskConf || 0) * 100).toFixed(0);
+    const prefix = collab ? 'Analyzer↔Hunter' : 'WhisperHunter';
+    const extra = envProfile.unwantedPrimary ? ` · kill ${envProfile.unwantedPrimary}` : '';
+    const msg = `${prefix} (${platformProfile.platform}): ${envProfile.dominantNoise} · voice ${voicePct}% · mask ${maskPct}% · RT60 ${envProfile.rt60}ms${extra}`;
+    app._lastHunterMessage = msg;
     if (detail) detail.textContent = msg;
     if (app && typeof app.showNotification === 'function') {
       app.showNotification(msg, 'info');
     }
   },
 };
+
+if (typeof window !== 'undefined') {
+  window.WHISPER_HUNTER = WHISPER_HUNTER;
+}
 
 // ---------------------------------------------------------------------------
 // Module-level utility function exports

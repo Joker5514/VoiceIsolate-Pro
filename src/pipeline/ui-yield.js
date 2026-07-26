@@ -1,23 +1,46 @@
 /**
  * Time-budgeted main-thread yields — keep the UI alive without slowing bulk work.
+ *
+ * Discipline:
+ *  - Prefer scheduler.yield() when available (Chrome 115+ / modern Android WebView)
+ *  - Fall back to rAF + macrotask so paint/input can run during STFT/DSP
+ *  - Budgeted yields: yield at most once per interval (avoid thrashing)
  */
 'use strict';
 
-/** Minimum ms between yields during long CPU-bound loops. */
-export const YIELD_BUDGET_MS = 12;
+/** Default ms between yields during long CPU-bound loops (~1 frame @ 60 Hz). */
+export const YIELD_BUDGET_MS = 16;
+
+/** Mobile / low-end: yield slightly more often so WebView stays responsive. */
+export const YIELD_BUDGET_MOBILE_MS = 12;
 
 /** Above this sample count, bulk copies may use budgeted chunking. */
-export const LARGE_CHANNEL_SAMPLES = 48000 * 300; // 5 min @ 48 kHz
+export const LARGE_CHANNEL_SAMPLES = 48000 * 180; // 3 min @ 48 kHz
 
-/** Chunk size when budgeted copying is used (~30 s of audio). */
-export const COPY_CHUNK_SAMPLES = 48000 * 30;
+/** Chunk size when budgeted copying is used (~20 s of audio). */
+export const COPY_CHUNK_SAMPLES = 48000 * 20;
+
+function isMobileShell() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/Android|iPhone|iPad|Mobile/i.test(ua)) return true;
+  try {
+    const cap = typeof window !== 'undefined' ? window.Capacitor : null;
+    if (cap?.isNativePlatform?.()) return true;
+  } catch { /* ignore */ }
+  return false;
+}
 
 /**
- * Yield to the browser so paint/input can run (rAF + macrotask).
+ * Yield to the browser so paint/input can run.
  * Prefer this over bare setTimeout(0) during multi-second DSP.
  * @returns {Promise<void>}
  */
 export function yieldToBrowser() {
+  // Chromium: cooperative scheduling (best for not freezing tabs).
+  if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') {
+    return scheduler.yield();
+  }
   return new Promise((resolve) => {
     const done = () => {
       if (typeof setTimeout === 'function') setTimeout(resolve, 0);
@@ -32,11 +55,13 @@ export function yieldToBrowser() {
  * @param {number} [intervalMs]
  * @returns {() => Promise<void>}
  */
-export function createYieldBudget(intervalMs = YIELD_BUDGET_MS) {
+export function createYieldBudget(intervalMs) {
+  const defaultMs = isMobileShell() ? YIELD_BUDGET_MOBILE_MS : YIELD_BUDGET_MS;
+  const budget = Math.max(4, Number(intervalMs) || defaultMs);
   let last = typeof performance !== 'undefined' ? performance.now() : 0;
   return async function maybeYield() {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    if (now - last < intervalMs) return;
+    if (now - last < budget) return;
     last = now;
     await yieldToBrowser();
   };

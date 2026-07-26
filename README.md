@@ -35,9 +35,9 @@
 | | |
 |---|---|
 | **Problem** | Extract studio-quality voice from noisy recordings without sending audio to a server |
-| **Workflow** | Upload a file → decode locally → ML stem separation + DSP enhancement → playback & export |
+| **Workflow** | Upload (no decode freeze) → Analyze maps noise/voice → joint WhisperHunter isolation → Live-Mix preview & export |
 | **Architecture** | Threads from Space v8 — Dispatcher-Worker model, SharedArrayBuffer ring buffers, single Forward STFT + single iSTFT constraint |
-| **Execution** | Offline/batch inference on upload · real-time slider playback via AudioWorklet · Forensic export via OfflineAudioContext |
+| **Execution** | Deferred decode on Analyze/Process · offline ML isolation · real-time Live-Mix via AudioWorklet · Forensic export via OfflineAudioContext |
 | **Platforms** | Web (Vercel) · Desktop (Electron) · Android (Capacitor) |
 
 > **Upload-only:** live microphone capture is intentionally disabled. Drop or browse for audio/video files on both surfaces — nothing is streamed to the cloud.
@@ -84,7 +84,9 @@ Audio flows through **one Forward STFT** at the start of the spectral phase, in-
 
 | Feature | Spec |
 |---------|------|
-| **Full-audio analysis** | Local classical DSP (+ ML hints when models load): speech/noise/music/hum/whisper regions, confidence, explainable recommendations |
+| **Full-audio analysis** | Local classical DSP (+ ML hints when models load): speech/noise/music/hum/whisper/impulse regions, confidence, explainable recommendations |
+| **Analyzer ↔ WhisperHunter** | Joint protect/suppress map — isolate voices & whispers while removing music, horns, barks, crowd, hum |
+| **Deferred decode** | Upload accepts the file instantly; PCM decode starts on Analyze / Process / Play (no upload freeze) |
 | **Source workspace** | Timeline lanes, source chips, independent layer audition (solo/mute/gain), original/layer/processed compare |
 | **Whisper / faint speech** | WhisperLogic + WhisperHunter — detect low-level speech-like zones and process carefully (no word hallucination; no cloud ASR) |
 | **Live-Mix (preview)** | Real-time gate/de-esser/EQ/comp via AudioWorklet + PlaybackMixer — sliders never re-run ML |
@@ -102,9 +104,10 @@ Audio flows through **one Forward STFT** at the start of the spectral phase, in-
 
 The app uses a **two-phase model** (see [`CLAUDE.md`](CLAUDE.md)), plus optional full-audio analysis before process:
 
-1. **Analyze (optional):** `FullAnalysisWorker` / classical `FeatureExtractor` → segments, whisper regions, recommendations, visual layers, audition metadata.
-2. **Phase 1 — Offline inference** (once per file): `FileIngestion` → `MLWorker` (ONNX) → clean/noise stems + spectral cleanup.
-3. **Phase 2 — Live-Mix playback** (continuous, zero ML): stems → `PlaybackMixer` + `vip-gate` / `vip-deesser` worklets → real-time sliders.
+1. **Upload:** accept File only (metadata + optional video picture). No PCM decode — UI stays responsive.
+2. **Analyze:** `ensureDecoded()` then `FullAnalysisWorker` / classical `FeatureExtractor` → segments, whisper regions, recommendations. `AnalyzerWhisperBridge` builds a joint protect/suppress map with WhisperHunter env profiling.
+3. **Phase 1 — Offline inference** (once per file): `MLWorker` (ONNX) + single-pass spectral cleanup.
+4. **Phase 2 — Live-Mix playback** (continuous, zero ML): stems → `PlaybackMixer` + `vip-gate` / `vip-deesser` worklets → real-time sliders.
 
 ```
 UI Thread
@@ -143,12 +146,23 @@ Capability / Init
 ### Engineer analysis flow
 
 ```
-Load App → Validate capabilities → Upload/Decode
-→ Analyze Full Audio → Detect sources / whisper regions
-→ Build recommendations + visual lanes + audition layers
+Load App → Validate capabilities → Upload (no decode)
+→ Analyze Full Audio (decode here) → Detect sources / whisper / noise / impulses
+→ Analyzer ↔ WhisperHunter joint map (protect voice, suppress interference)
 → Solo / mute / loop inspect → Apply Recommendations
-→ (optional) Analyze + Process → Offline render → Export
+→ Analyze + WhisperHunter  or  Process → Offline render → Export
 ```
+
+### Freeze resistance
+
+- Cooperative `scheduler.yield` / rAF yields during STFT and long DSP
+- Mid-channel stereo process path (halves spectral cost)
+- Worklets load lazy on first Live-Mix need — never block upload
+- No auto-pipeline on file drop (user starts Analyze / Process)
+
+### Release notes PDF
+
+Latest product snapshot: [`docs/releases/VoiceIsolate_Pro_v24_Latest.pdf`](docs/releases/VoiceIsolate_Pro_v24_Latest.pdf)
 
 ---
 

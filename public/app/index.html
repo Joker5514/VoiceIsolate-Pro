@@ -330,6 +330,57 @@
         </div>
       </div>
 
+      <!-- Full-audio analysis workspace (local-only) — sits under upload; WhisperHunter collaborates via joint map -->
+      <section id="analysisWorkspace" class="card analysis-workspace" data-state="idle" aria-label="Full audio analysis workspace">
+        <div class="analysis-hdr">
+          <h3 class="analysis-title">1 · Source Analysis Workspace</h3>
+          <span id="analysisConfidence" class="analysis-conf" data-level="low">Confidence —</span>
+        </div>
+        <p class="analysis-lead">Upload above (instant — no decode freeze). Analyze starts local PCM decode and maps voices, whispers, music, horns, barks, and other noise — then shares that map with WhisperHunter so isolation protects speech and suppresses interference. Audio never leaves this device.</p>
+        <div id="capabilityPanel" class="capability-panel" aria-live="polite"></div>
+        <div class="analysis-actions">
+          <button id="btnAnalyzeFull" class="btn btn-primary" type="button">Analyze Full Audio</button>
+          <button id="btnApplyRecommendations" class="btn btn-outline" type="button">Apply Recommendations</button>
+          <button id="btnAnalyzeProcessAuto" class="btn btn-reprocess" type="button">Analyze + Process</button>
+          <button id="btnAnalyzeWhisperCollab" class="btn btn-primary btn-collab" type="button" title="Run analysis, build protect/suppress map, then WhisperHunter isolation">Analyze + WhisperHunter</button>
+          <button id="btnCancelAnalysis" class="btn btn-danger" type="button" hidden>Cancel</button>
+          <button id="btnExportAnalysisWav" class="btn btn-save-proc" type="button">Export WAV</button>
+        </div>
+        <div id="analysisCollabStatus" class="analysis-collab" hidden role="status" aria-live="polite"></div>
+        <div id="analysisProgress" class="analysis-progress" hidden>
+          <div class="analysis-progress-bar"><div id="analysisProgressFill" class="analysis-progress-fill"></div></div>
+          <span id="analysisProgressLabel" class="analysis-progress-label">Idle</span>
+        </div>
+        <div id="analysisError" class="analysis-error" hidden role="alert"></div>
+        <div class="analysis-grid">
+          <div class="analysis-col">
+            <div id="analysisPresetCard" class="rec-preset-card">
+              <div class="rec-preset-name">No recommendation yet</div>
+              <div class="rec-preset-meta">Run Analyze Full Audio</div>
+            </div>
+            <h4 class="analysis-sub">Findings</h4>
+            <ul id="analysisFindings" class="analysis-list"><li>Load a file, then analyze.</li></ul>
+            <h4 class="analysis-sub">Why this preset</h4>
+            <ul id="analysisReasons" class="analysis-list"><li>—</li></ul>
+            <div id="analysisSourceChips" class="source-chips" aria-label="Detected sources"></div>
+          </div>
+          <div class="analysis-col analysis-col-wide">
+            <h4 class="analysis-sub">Source lanes</h4>
+            <div id="analysisTimeline" class="analysis-timeline" role="img" aria-label="Source separation timeline"></div>
+            <div class="audition-toolbar">
+              <span class="aud-label">Audition</span>
+              <button id="audModeOriginal" class="btn btn-xs active" type="button" data-mode="original">Original</button>
+              <button id="audModeLayer" class="btn btn-xs" type="button" data-mode="layer">Layers</button>
+              <button id="audModeProcessed" class="btn btn-xs" type="button" data-mode="processed">Processed</button>
+              <button id="audPlay" class="btn btn-xs btn-primary" type="button">Play</button>
+              <button id="audStop" class="btn btn-xs" type="button">Stop</button>
+              <button id="audResetMix" class="btn btn-xs" type="button">Reset mix</button>
+            </div>
+            <div id="auditionStrip" class="audition-strip"></div>
+          </div>
+        </div>
+      </section>
+
       <div class="card">
         <div class="presets-wrap">
           <div class="presets-head">
@@ -359,7 +410,11 @@
             <button class="btn btn-preset" type="button" data-preset="Surveillance">Surveillance</button>
           </div>
         </div>
-        <button id="btn-whisper-hunter" type="button">🎙️ WhisperHunter AI</button>
+        <div class="whisper-hunter-row">
+          <span class="whisper-hunter-label">2 · WhisperHunter AI</span>
+          <button id="btn-whisper-hunter" type="button" title="Uses the analyzer joint map when available (protect voice/whisper, suppress music/horns/noise)">🎙️ WhisperHunter AI</button>
+          <p class="whisper-hunter-hint">Best after Analyze Full Audio — collaborates with the workspace above to remove unwanted sound and lift voices/whispers.</p>
+        </div>
         <div class="control-search-row">
           <input type="text" id="sliderSearch" class="btn btn-outline" placeholder="Search controls…" aria-label="Search controls" style="width:100%;" />
           <button id="resetSlidersBtn" class="btn btn-outline" type="button">Reset Controls</button>
@@ -415,55 +470,6 @@
         </div>
         <div id="pipeDetail" class="pipe-detail">Ready</div>
       </div>
-
-      <!-- Full-audio analysis workspace (local-only) -->
-      <section id="analysisWorkspace" class="card analysis-workspace" data-state="idle" aria-label="Full audio analysis workspace">
-        <div class="analysis-hdr">
-          <h3 class="analysis-title">Source Analysis Workspace</h3>
-          <span id="analysisConfidence" class="analysis-conf" data-level="low">Confidence —</span>
-        </div>
-        <p class="analysis-lead">Analyze the full recording locally, inspect detected layers, audition stems, and apply explainable recommendations before processing. Audio never leaves this device.</p>
-        <div id="capabilityPanel" class="capability-panel" aria-live="polite"></div>
-        <div class="analysis-actions">
-          <button id="btnAnalyzeFull" class="btn btn-primary" type="button">Analyze Full Audio</button>
-          <button id="btnApplyRecommendations" class="btn btn-outline" type="button">Apply Recommendations</button>
-          <button id="btnAnalyzeProcessAuto" class="btn btn-reprocess" type="button">Analyze + Process</button>
-          <button id="btnCancelAnalysis" class="btn btn-danger" type="button" hidden>Cancel</button>
-          <button id="btnExportAnalysisWav" class="btn btn-save-proc" type="button">Export WAV</button>
-        </div>
-        <div id="analysisProgress" class="analysis-progress" hidden>
-          <div class="analysis-progress-bar"><div id="analysisProgressFill" class="analysis-progress-fill"></div></div>
-          <span id="analysisProgressLabel" class="analysis-progress-label">Idle</span>
-        </div>
-        <div id="analysisError" class="analysis-error" hidden role="alert"></div>
-        <div class="analysis-grid">
-          <div class="analysis-col">
-            <div id="analysisPresetCard" class="rec-preset-card">
-              <div class="rec-preset-name">No recommendation yet</div>
-              <div class="rec-preset-meta">Run Analyze Full Audio</div>
-            </div>
-            <h4 class="analysis-sub">Findings</h4>
-            <ul id="analysisFindings" class="analysis-list"><li>Load a file, then analyze.</li></ul>
-            <h4 class="analysis-sub">Why this preset</h4>
-            <ul id="analysisReasons" class="analysis-list"><li>—</li></ul>
-            <div id="analysisSourceChips" class="source-chips" aria-label="Detected sources"></div>
-          </div>
-          <div class="analysis-col analysis-col-wide">
-            <h4 class="analysis-sub">Source lanes</h4>
-            <div id="analysisTimeline" class="analysis-timeline" role="img" aria-label="Source separation timeline"></div>
-            <div class="audition-toolbar">
-              <span class="aud-label">Audition</span>
-              <button id="audModeOriginal" class="btn btn-xs active" type="button" data-mode="original">Original</button>
-              <button id="audModeLayer" class="btn btn-xs" type="button" data-mode="layer">Layers</button>
-              <button id="audModeProcessed" class="btn btn-xs" type="button" data-mode="processed">Processed</button>
-              <button id="audPlay" class="btn btn-xs btn-primary" type="button">Play</button>
-              <button id="audStop" class="btn btn-xs" type="button">Stop</button>
-              <button id="audResetMix" class="btn btn-xs" type="button">Reset mix</button>
-            </div>
-            <div id="auditionStrip" class="audition-strip"></div>
-          </div>
-        </div>
-      </section>
 
       <div class="card save-row">
         <button id="saveOrigBtn" class="btn btn-save" disabled>Save Original WAV</button>
