@@ -265,6 +265,9 @@ export function installAnalysisWorkspace(app) {
   function clearState() {
     cancelled = false;
     lastAnalysis = null;
+    app._lastFullAnalysis = null;
+    app._jointIsolationPlan = null;
+    app._hunterEnvFromAnalysis = null;
     host.dispose();
     audition.stop(true);
     audition.resetMix();
