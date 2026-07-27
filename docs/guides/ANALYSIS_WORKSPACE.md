@@ -18,6 +18,7 @@ Production analysis path for Engineer Mode (`/app/`).
 | Worker | `src/workers/FullAnalysisWorker.js` |
 | Host | `src/pipeline/FullAnalysisHost.js` |
 | Audition | `src/pipeline/SourceAuditionEngine.js` |
+| Universal Source Matrix | `src/core/UniversalSourceMatrix.js` + `src/pipeline/USMNode.js` |
 | Export helper | `src/pipeline/ExportManager.js` |
 | Timeline UI | `src/presentation/TimelineRenderer.js` |
 | Transport sync | `src/presentation/TransportSync.js` |
@@ -54,11 +55,23 @@ See `analyzeAudio()` return value — includes segments, `visualLayers`, `recomm
 | High confidence | Auto-apply allowed |
 | Low confidence | Recommend only; user must Apply |
 
+## Universal Source Matrix (Creator / Forensic)
+
+Engineer Mode panel under **Source Analysis Workspace**:
+
+1. **Separate sources** — classical multi-component NMF soft masks (variable K, default 6). Optional ONNX `universal-separator.onnx` when shipped (`USMNode({ preferOnnx: true })`).
+2. **Query separate** — text priors (“AC hum”, “dog barking”, “speech”) for LASS/AudioSep-style targeting without cloud APIs.
+3. **Mute / Solo / Gain (dB)** — Live-Mix only; never re-runs ML. **Refine** is an intentional one-shot query on the retained mixture.
+4. **Apply mix** — writes the combined matrix mix into the processed buffer for export / A-B.
+
+Not used on the Live low-latency path (keep voice / ambient / music coarse stems there).
+
 ## Honesty rules
 
 - No fabricated words or ASR transcription unless a local ASR model is explicitly bundled later.
 - Layer quality badges: high (true stems), medium (ML/classical mix), low (best-effort residual).
 - Empty lanes show “not detected” — never decorative fake regions.
+- USM cannot produce a deterministic “one fader per atom of sound”; K semantic components + query refine is the practical ceiling.
 
 ## Performance
 

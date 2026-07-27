@@ -29,6 +29,10 @@
  *   → { type: 'vad', requestId, samples: Float32Array, sampleRate }
  *   ← { type: 'vad-result', requestId, scores: Float32Array, times: Float32Array,
  *       hopSec, source: 'silero'|'unavailable' }
+ *   → { type: 'universal_separate', requestId, waveform, sampleRate,
+ *       mode?: 'auto'|'query', numSources?: number, queries?: string[] }
+ *   ← { type: 'universal_separate_result', requestId, sources: [{id,label,pcm,mask?}],
+ *       shape: { frames, bins } }
  *   ← { type: 'error', requestId?, message }
  *
  * This worker NEVER touches the DOM, never opens a microphone, and never
@@ -678,6 +682,147 @@ async function runVadRequest({ requestId, samples, sampleRate }) {
   }, [scores.buffer, times.buffer]);
 }
 
+/**
+ * Optional AudioSep-class ONNX path for Universal Source Matrix.
+ * When weights are absent or strategy unsupported, posts an error so the
+ * pipeline USMNode falls back to classical NMF + query priors (core).
+ */
+async function runUniversalSeparate(msg) {
+  const {
+    requestId,
+    waveform,
+    sampleRate,
+    mode = 'auto',
+    numSources = 6,
+    queries = [],
+  } = msg;
+  const entry = MANIFEST.universal_separator;
+  if (!entry) {
+    throw new Error(
+      '[VIP][MLWorker] universal_separator not in manifest — use classical USM'
+    );
+  }
+  // Refuse unverified weights — null sha is development-only and must not ship
+  if (!entry.sha256 || !/^[0-9a-f]{64}$/.test(entry.sha256)) {
+    throw new Error(
+      '[VIP][MLWorker] universal_separator has no pinned SHA-256 — use classical USM'
+    );
+  }
+
+  ACTIVE_REQUEST_ID = requestId;
+  try {
+    postStage('universal-separate', 5, { modelId: entry.id });
+    let session;
+    try {
+      session = await getSession(entry, entry.id);
+    } catch (err) {
+      throw new Error(
+        `[VIP][MLWorker] universal-separator.onnx unavailable (${err?.message || err}). ` +
+        'USMNode will use classical separation.'
+      );
+    }
+
+    const pcm = waveform instanceof Float32Array ? waveform : new Float32Array(waveform || []);
+    const sr = sampleRate || 48000;
+
+    // Contract for future AudioSep-class exports:
+    //   input  'input'  float32 [1, T]  waveform
+    //   output 'output' float32 [K, T]  time-domain stems
+    if (entry.strategy !== 'universal-query' && entry.strategy !== 'waveform') {
+      throw new Error(`[VIP][MLWorker] Unsupported universal strategy '${entry.strategy}'`);
+    }
+
+    // Text query requires a graph-owned encoder; without it, force classical path
+    if (mode === 'query' && queries?.length && !entry.io?.query) {
+      throw new Error(
+        '[VIP][MLWorker] Text query I/O not wired on universal model — use classical query'
+      );
+    }
+
+    postStage('universal-separate', 20, { modelId: entry.id });
+    const inName = entry.io?.input || 'input';
+    const outName = entry.io?.output || 'output';
+
+    // Single-window only until full OLA is implemented — longer files fall back
+    const winSec = 4;
+    const winSamples = Math.max(1, Math.round(sr * winSec));
+    const K = Math.max(2, Math.min(12, numSources || 6));
+    if (pcm.length > winSamples) {
+      throw new Error(
+        `[VIP][MLWorker] universal ONNX path supports ≤${winSec}s until multi-window OLA lands`
+      );
+    }
+
+    const padded = new Float32Array(winSamples);
+    padded.set(pcm.subarray(0, Math.min(pcm.length, winSamples)));
+
+    let feeds;
+    try {
+      feeds = { [inName]: new ort.Tensor('float32', padded, [1, 1, winSamples]) };
+    } catch {
+      feeds = { [inName]: new ort.Tensor('float32', padded, [1, winSamples]) };
+    }
+
+    const result = await queuedSessionRun(entry.id, session, feeds);
+    const outTensor = result[outName] || result.output;
+    if (!outTensor?.data) {
+      throw new Error('[VIP][MLWorker] universal model returned no output tensor');
+    }
+
+    postStage('universal-separate', 80, { modelId: entry.id });
+
+    // Interpret [K, T] or [1, K, T] only — never treat frequency bins as stem count
+    const data = outTensor.data;
+    const dims = outTensor.dims || [];
+    let stemsK = K;
+    let stemLen = padded.length;
+    if (dims.length === 3) {
+      // Prefer [1, K, T] layout
+      stemsK = dims[0] === 1 ? dims[1] : dims[0];
+      stemLen = dims[2] || stemLen;
+    } else if (dims.length === 2) {
+      stemsK = dims[0];
+      stemLen = dims[1];
+    } else {
+      stemsK = K;
+      stemLen = Math.floor(data.length / K) || pcm.length;
+    }
+    stemsK = Math.max(1, Math.min(12, stemsK | 0));
+    stemLen = Math.max(1, Math.min(stemLen | 0, data.length));
+
+    const sources = [];
+    const transfers = [];
+    for (let k = 0; k < stemsK; k++) {
+      const stem = new Float32Array(pcm.length);
+      const off = k * stemLen;
+      if (off >= data.length) break;
+      const n = Math.min(stemLen, pcm.length, data.length - off);
+      for (let i = 0; i < n; i++) stem[i] = data[off + i];
+      sources.push({
+        id: `usm_onnx_${k + 1}`,
+        label: (queries && queries[k]) || `ONNX source ${k + 1}`,
+        pcm: stem,
+        confidence: 0.75,
+        quality: 'high',
+      });
+      transfers.push(stem.buffer);
+    }
+    if (!sources.length) {
+      throw new Error('[VIP][MLWorker] universal model produced zero stems');
+    }
+
+    self.postMessage({
+      type: 'universal_separate_result',
+      requestId,
+      sources,
+      shape: { frames: 0, bins: 0 },
+      method: 'onnx-universal',
+    }, transfers);
+  } finally {
+    ACTIVE_REQUEST_ID = null;
+  }
+}
+
 async function processRequest({ requestId, modelId, modelIds, channelData, sampleRate }) {
   // A chain (`modelIds`) runs models in series for maximum isolation —
   // e.g. ['bsrnn_vocals', 'rnnoise'] extracts the voice, then strips any
@@ -798,6 +943,12 @@ self.onmessage = async (event) => {
         break;
       case 'vad': {
         const run = _processChain.then(() => runVadRequest(msg));
+        _processChain = run.catch(() => {});
+        await run;
+        break;
+      }
+      case 'universal_separate': {
+        const run = _processChain.then(() => runUniversalSeparate(msg));
         _processChain = run.catch(() => {});
         await run;
         break;

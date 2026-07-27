@@ -377,6 +377,45 @@
               <button id="audResetMix" class="btn btn-xs" type="button">Reset mix</button>
             </div>
             <div id="auditionStrip" class="audition-strip"></div>
+
+            <!-- Universal Source Matrix (Creator/Forensic) — mute/solo/gain per semantic stem -->
+            <div id="sourceMatrixPanel" class="source-matrix-panel" aria-label="Universal Source Matrix">
+              <div class="usm-hdr">
+                <h4 class="analysis-sub">Universal Source Matrix</h4>
+                <span id="usmMethodBadge" class="usm-method-badge" hidden>—</span>
+              </div>
+              <p class="usm-lead">Separate open-domain sources (speech, hum, dogs, TV, residual…) then mute/solo/gain each stem. 100% local — no cloud. Live mode keeps lightweight 2–3 stems only.</p>
+              <div class="usm-actions">
+                <button id="btnUsmSeparate" class="btn btn-primary btn-xs" type="button" title="Auto-discover K semantic sources (Creator/Forensic)">Separate sources</button>
+                <label class="usm-k-label">K
+                  <input id="usmNumSources" type="number" min="2" max="12" value="6" class="usm-k-input" aria-label="Number of sources" />
+                </label>
+                <input id="usmQueryInput" type="text" class="usm-query-input" placeholder="Or describe a source… e.g. the AC hum" aria-label="Text query for source separation" />
+                <button id="btnUsmQuery" class="btn btn-outline btn-xs" type="button">Query separate</button>
+                <button id="btnUsmApplyMix" class="btn btn-reprocess btn-xs" type="button" title="Write combined matrix mix to processed buffer">Apply mix</button>
+              </div>
+              <div id="usmProgress" class="usm-progress" hidden>
+                <div class="usm-progress-bar"><div id="usmProgressFill" class="usm-progress-fill"></div></div>
+                <span id="usmProgressLabel" class="usm-progress-label">Idle</span>
+              </div>
+              <div id="usmError" class="usm-error" hidden role="alert"></div>
+              <div class="usm-table-wrap">
+                <table class="usm-table" aria-label="Source matrix stems">
+                  <thead>
+                    <tr>
+                      <th scope="col">M</th>
+                      <th scope="col">S</th>
+                      <th scope="col">Gain (dB)</th>
+                      <th scope="col">Label</th>
+                      <th scope="col">Refine</th>
+                    </tr>
+                  </thead>
+                  <tbody id="usmTableBody">
+                    <tr class="usm-empty-row"><td colspan="5">Run Separate sources after loading a file (Creator / Forensic).</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
       </section>

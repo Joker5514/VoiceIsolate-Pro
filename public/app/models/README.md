@@ -13,6 +13,16 @@ No audio data leaves the device. WebGPU execution provider is preferred; WASM is
 | `demucs_v4_quantized.onnx` | Hybrid Demucs v4 source separation | ~83 MB | ⚠️ Manual download required |
 | `bsrnn_vocals.onnx` | Band-Split RNN vocals extraction | ~45 MB | ⚠️ Manual download required |
 | `rnnoise_suppressor.onnx` | Broadband noise suppression | ~180 KB | ⚠️ Manual download required |
+| `universal-separator.onnx` | Optional AudioSep-class query universal separator | — | ⬜ Optional (not shipped). Classical USM NMF + text priors run without it. |
+
+### Universal Source Matrix (USM)
+
+Engineer Mode → **Universal Source Matrix** panel (under Source Analysis Workspace):
+
+- **Separate sources** — unsupervised multi-component soft masks (classical NMF; FUSS-style variable-K).
+- **Query separate** — language priors (“AC hum”, “dog barking”, “speech”) for LASS/AudioSep-style control.
+- **Mute / Solo / Gain** — Live-Mix only (no ML re-run). **Refine** re-runs a one-shot query on the retained mixture.
+- Drop `universal-separator.onnx` under this folder and pin `sha256` in `src/core/ModelManifest.js` (`universal_separator`) to enable the ONNX path (`preferOnnx: true` on `USMNode`).
 
 ---
 
