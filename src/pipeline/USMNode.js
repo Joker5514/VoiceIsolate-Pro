@@ -78,7 +78,8 @@ function ensureWorkerReady() {
 async function tryOnnxUniversal(samples, sampleRate, config) {
   try {
     await ensureWorkerReady();
-  } catch {
+  } catch (err) {
+    console.warn('[VIP][USMNode] MLWorker init failed for ONNX USM:', err?.message || err);
     return null;
   }
   const w = getWorker();
@@ -88,6 +89,7 @@ async function tryOnnxUniversal(samples, sampleRate, config) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       cleanup();
+      console.warn('[VIP][USMNode] universal_separate timed out — classical fallback');
       resolve(null);
     }, 120000);
     const onMsg = (ev) => {
@@ -111,11 +113,13 @@ async function tryOnnxUniversal(samples, sampleRate, config) {
         });
       } else if (m.type === 'error') {
         cleanup();
+        console.warn('[VIP][USMNode] universal_separate error:', m.message || 'unknown');
         resolve(null);
       }
     };
-    const onErr = () => {
+    const onErr = (e) => {
       cleanup();
+      console.warn('[VIP][USMNode] universal_separate worker error:', e?.message || e);
       resolve(null);
     };
     const cleanup = () => {
@@ -183,6 +187,11 @@ export class USMNode {
     this._sampleRate = SAMPLE_RATE;
     /** @type {Float32Array|null} mixture mono retained for refine() */
     this._mixtureMono = null;
+  }
+
+  /** Public sample-rate accessor (UI must not read `_sampleRate`). */
+  get sampleRate() {
+    return this._sampleRate || SAMPLE_RATE;
   }
 
   /**
@@ -286,9 +295,12 @@ export class USMNode {
       method: 'query-refine',
       mask: target.mask,
     });
-    // Cap visible sources
     if (this.sources.length > USM_MAX_SOURCES) {
-      this.sources = this.sources.slice(-USM_MAX_SOURCES);
+      // Reject rather than silently dropping stems (keeps audition layers consistent)
+      this.sources.pop();
+      throw new Error(
+        `[VIP][USMNode] Max sources (${USM_MAX_SOURCES}) reached — remove a stem before refine`
+      );
     }
     return this.sources;
   }
@@ -360,11 +372,21 @@ export class USMNode {
  */
 export function usmSourcesToAudioBuffers(ctx, sources, sampleRate) {
   if (!ctx) throw new TypeError('[VIP][USMNode] AudioContext required');
-  return sources.map((s) => {
-    const buf = ctx.createBuffer(1, s.pcm.length, sampleRate || SAMPLE_RATE);
+  const sr = sampleRate || SAMPLE_RATE;
+  const out = [];
+  for (const s of sources || []) {
+    if (!s?.pcm || !(s.pcm.length > 0)) continue;
+    const buf = ctx.createBuffer(1, s.pcm.length, sr);
     buf.copyToChannel(s.pcm, 0);
-    return { id: s.id, label: s.label, buffer: buf, confidence: s.confidence, quality: s.quality || 'medium' };
-  });
+    out.push({
+      id: s.id,
+      label: s.label,
+      buffer: buf,
+      confidence: s.confidence,
+      quality: s.quality || 'medium',
+    });
+  }
+  return out;
 }
 
 export default USMNode;

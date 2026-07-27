@@ -77,6 +77,8 @@ export class SourceAuditionEngine {
     for (const id of [...this.layers.keys()]) {
       if (id.startsWith('usm_')) this.layers.delete(id);
     }
+    // Duration must reflect the current separation, not a prior file max
+    this._duration = 0;
     if (original) {
       this.setLayer({
         id: 'original',

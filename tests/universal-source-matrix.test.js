@@ -204,7 +204,10 @@ describe('USMNode pipeline', () => {
     expect(peak).toBeGreaterThan(0);
 
     await node.refine('dog barking');
-    expect(node.sources.length).toBeGreaterThanOrEqual(3);
+    expect(node.sources.length).toBeGreaterThanOrEqual(4);
+    const refined = node.sources.find((s) => s.method === 'query-refine');
+    expect(refined).toBeTruthy();
+    expect(String(refined.label).toLowerCase()).toMatch(/dog|bark/);
 
     node.dispose();
   });

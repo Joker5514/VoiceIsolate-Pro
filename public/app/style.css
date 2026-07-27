@@ -2468,7 +2468,12 @@ body::after {
   flex: 1;
   min-width: 160px;
   max-width: 320px;
-  text-align: left !important;
+  background: #0b1220;
+  border: 1px solid #334155;
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
 }
 .usm-progress {
   margin: 6px 0 8px;
@@ -2487,7 +2492,7 @@ body::after {
 }
 .usm-progress-label {
   font-size: 0.7rem;
-  color: #64748b;
+  color: #94a3b8;
 }
 .usm-error {
   font-size: 0.78rem;
@@ -2521,7 +2526,7 @@ body::after {
   letter-spacing: 0.03em;
 }
 .usm-table tr:last-child td { border-bottom: none; }
-.usm-empty-row td { color: #64748b; font-style: italic; }
+.usm-empty-row td { color: #94a3b8; font-style: italic; }
 .usm-table input[type="range"] { width: 100px; vertical-align: middle; }
 .usm-table input[type="text"].usm-label-input {
   width: 100%;
@@ -2547,7 +2552,7 @@ body::after {
 }
 .usm-conf {
   font-size: 0.65rem;
-  color: #64748b;
+  color: #94a3b8;
   margin-left: 4px;
 }
 

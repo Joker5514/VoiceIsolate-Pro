@@ -386,11 +386,11 @@ export function nmfSoftMasks(mag, frames, bins, K, iterations = 40, seed = 42) {
   // Wiener soft masks M_k = (W_k H_k) / sum_j W_j H_j  (on compressed space; fine for partitioning)
   const masks = [];
   for (let k = 0; k < K; k++) masks.push(new Float32Array(frames * bins));
+  const parts = new Float32Array(K); // reuse per-bin buffer
 
   for (let t = 0; t < frames; t++) {
     for (let b = 0; b < bins; b++) {
       let sum = 0;
-      const parts = new Float32Array(K);
       for (let k = 0; k < K; k++) {
         let p = W[b * K + k] * H[k * frames + t];
         if (!Number.isFinite(p) || p < 0) p = 0;
@@ -522,6 +522,10 @@ export function querySoftMasks(mag, frames, bins, queries, sampleRate, fftSize) 
  * @param {USMConfig} [config]
  * @returns {USMResult}
  */
+function isPowerOfTwo(n) {
+  return Number.isInteger(n) && n > 0 && (n & (n - 1)) === 0;
+}
+
 export function separateUniversal(samples, sampleRate = SAMPLE_RATE, config = {}) {
   if (!(samples instanceof Float32Array) && !ArrayBuffer.isView(samples)) {
     throw new TypeError('[VIP][USM] samples must be a Float32Array');
@@ -530,6 +534,12 @@ export function separateUniversal(samples, sampleRate = SAMPLE_RATE, config = {}
   const sr = sampleRate || SAMPLE_RATE;
   const fftSize = config.fftSize || USM_FFT_SIZE;
   const hopSize = config.hopSize || USM_HOP_SIZE;
+  if (!isPowerOfTwo(fftSize) || fftSize < 256) {
+    throw new TypeError(`[VIP][USM] fftSize must be a power of two ≥ 256 (got ${fftSize})`);
+  }
+  if (!Number.isInteger(hopSize) || hopSize < 1 || hopSize > fftSize) {
+    throw new TypeError(`[VIP][USM] hopSize must be an integer in [1, fftSize] (got ${hopSize})`);
+  }
   const mode = config.mode === 'query' ? 'query' : 'auto';
   const Kreq = Math.max(2, Math.min(USM_MAX_SOURCES, config.numSources || USM_DEFAULT_SOURCES));
   const iterations = Math.max(8, Math.min(80, config.nmfIterations || 32));

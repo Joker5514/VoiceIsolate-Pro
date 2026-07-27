@@ -702,6 +702,12 @@ async function runUniversalSeparate(msg) {
       '[VIP][MLWorker] universal_separator not in manifest — use classical USM'
     );
   }
+  // Refuse unverified weights — null sha is development-only and must not ship
+  if (!entry.sha256 || !/^[0-9a-f]{64}$/.test(entry.sha256)) {
+    throw new Error(
+      '[VIP][MLWorker] universal_separator has no pinned SHA-256 — use classical USM'
+    );
+  }
 
   ACTIVE_REQUEST_ID = requestId;
   try {
@@ -721,41 +727,40 @@ async function runUniversalSeparate(msg) {
 
     // Contract for future AudioSep-class exports:
     //   input  'input'  float32 [1, T]  waveform
-    //   output 'output' float32 [K, T]  time-domain stems  OR  [K, F, T] masks
-    // Until a real export lands, attempt a single waveform run and split channels.
+    //   output 'output' float32 [K, T]  time-domain stems
     if (entry.strategy !== 'universal-query' && entry.strategy !== 'waveform') {
       throw new Error(`[VIP][MLWorker] Unsupported universal strategy '${entry.strategy}'`);
+    }
+
+    // Text query requires a graph-owned encoder; without it, force classical path
+    if (mode === 'query' && queries?.length && !entry.io?.query) {
+      throw new Error(
+        '[VIP][MLWorker] Text query I/O not wired on universal model — use classical query'
+      );
     }
 
     postStage('universal-separate', 20, { modelId: entry.id });
     const inName = entry.io?.input || 'input';
     const outName = entry.io?.output || 'output';
 
-    // Chunk long audio to bound GPU memory (≈4 s windows; hop reserved for future OLA)
+    // Single-window only until full OLA is implemented — longer files fall back
     const winSec = 4;
     const winSamples = Math.max(1, Math.round(sr * winSec));
     const K = Math.max(2, Math.min(12, numSources || 6));
+    if (pcm.length > winSamples) {
+      throw new Error(
+        `[VIP][MLWorker] universal ONNX path supports ≤${winSec}s until multi-window OLA lands`
+      );
+    }
 
-    // If the model cannot accept our feeds, fail → classical fallback.
-    // Try full-file first for short clips; else first window as smoke.
-    const segment = pcm.length <= winSamples
-      ? pcm
-      : pcm.subarray(0, Math.min(pcm.length, winSamples));
     const padded = new Float32Array(winSamples);
-    padded.set(segment.subarray(0, Math.min(segment.length, winSamples)));
+    padded.set(pcm.subarray(0, Math.min(pcm.length, winSamples)));
 
     let feeds;
     try {
       feeds = { [inName]: new ort.Tensor('float32', padded, [1, 1, winSamples]) };
     } catch {
       feeds = { [inName]: new ort.Tensor('float32', padded, [1, winSamples]) };
-    }
-
-    // Optional text queries: only if model declares a query input name
-    if (mode === 'query' && queries?.length && entry.io?.query) {
-      // Placeholder embedding length — real AudioSep graphs own tokenization.
-      // Without a text encoder in-graph, skip and let classical query handle it.
-      console.warn('[VIP][MLWorker] Text query I/O not fully wired; prefer classical query mode.');
     }
 
     const result = await queuedSessionRun(entry.id, session, feeds);
@@ -766,40 +771,33 @@ async function runUniversalSeparate(msg) {
 
     postStage('universal-separate', 80, { modelId: entry.id });
 
-    // Interpret [K, T] or [1, K, T] as stems for this window; tile/OLA for full file.
+    // Interpret [K, T] or [1, K, T] only — never treat frequency bins as stem count
     const data = outTensor.data;
     const dims = outTensor.dims || [];
     let stemsK = K;
     let stemLen = padded.length;
     if (dims.length === 3) {
-      // [1, K, T] or [K, 1, T]
-      stemsK = dims[1] === 1 ? dims[0] : dims[1];
+      // Prefer [1, K, T] layout
+      stemsK = dims[0] === 1 ? dims[1] : dims[0];
       stemLen = dims[2] || stemLen;
     } else if (dims.length === 2) {
       stemsK = dims[0];
       stemLen = dims[1];
     } else {
-      // Flat — partition into K equal chunks
       stemsK = K;
       stemLen = Math.floor(data.length / K) || pcm.length;
     }
+    stemsK = Math.max(1, Math.min(12, stemsK | 0));
+    stemLen = Math.max(1, Math.min(stemLen | 0, data.length));
 
     const sources = [];
     const transfers = [];
     for (let k = 0; k < stemsK; k++) {
       const stem = new Float32Array(pcm.length);
-      // Copy first-window estimate; for multi-window production models extend OLA here.
       const off = k * stemLen;
+      if (off >= data.length) break;
       const n = Math.min(stemLen, pcm.length, data.length - off);
       for (let i = 0; i < n; i++) stem[i] = data[off + i];
-      // Scale residual energy into remaining samples for long files (best-effort)
-      if (pcm.length > n && n > 0) {
-        for (let i = n; i < pcm.length; i++) {
-          const src = pcm[i];
-          const ref = Math.abs(pcm[i % n]) > 1e-8 ? data[off + (i % n)] / (pcm[i % n] || 1e-8) : 0;
-          stem[i] = src * Math.max(0, Math.min(1, Math.abs(ref)));
-        }
-      }
       sources.push({
         id: `usm_onnx_${k + 1}`,
         label: (queries && queries[k]) || `ONNX source ${k + 1}`,
@@ -808,6 +806,9 @@ async function runUniversalSeparate(msg) {
         quality: 'high',
       });
       transfers.push(stem.buffer);
+    }
+    if (!sources.length) {
+      throw new Error('[VIP][MLWorker] universal model produced zero stems');
     }
 
     self.postMessage({

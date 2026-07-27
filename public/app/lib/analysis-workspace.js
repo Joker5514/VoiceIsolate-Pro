@@ -165,6 +165,7 @@ export function installAnalysisWorkspace(app) {
         usmNode.setMute(id, next);
         // Mirror into audition for immediate hear (Live-Mix — no ML re-run)
         audition.setLayerMute(id, next);
+        refreshAuditionIfPlaying();
         renderUsmTable();
       });
       tr.querySelector('[data-usm-act="solo"]')?.addEventListener('click', () => {
@@ -173,6 +174,7 @@ export function installAnalysisWorkspace(app) {
         usmNode.setSolo(id, next);
         audition.setLayerSolo(id, next);
         if (next) audition.setMode('layer');
+        refreshAuditionIfPlaying();
         renderUsmTable();
       });
       tr.querySelector('[data-usm-act="gain"]')?.addEventListener('input', (e) => {
@@ -182,6 +184,7 @@ export function installAnalysisWorkspace(app) {
         audition.setLayerGain(id, lin);
         const val = tr.querySelector('.usm-gain-val');
         if (val) val.textContent = db.toFixed(1);
+        refreshAuditionIfPlaying();
       });
       tr.querySelector('[data-usm-act="label"]')?.addEventListener('change', (e) => {
         usmNode.setLabel(id, e.target.value);
@@ -208,11 +211,18 @@ export function installAnalysisWorkspace(app) {
     if (!ctx) return;
     if (ctx.state === 'suspended') await ctx.resume();
     const original = app.origBuffer || app.inputBuffer;
-    const packed = usmSourcesToAudioBuffers(ctx, usmNode.sources, usmNode._sampleRate);
+    const packed = usmSourcesToAudioBuffers(ctx, usmNode.sources, usmNode.sampleRate);
     audition.buildFromUSM(packed, ctx, original || null);
     transport.attachClock(() => audition.getCurrentTime());
     renderAuditionStrip();
     setModeButtons('layer');
+  }
+
+  /** Re-snap Live-Mix if audition is already playing (gain nodes are one-shot per play). */
+  function refreshAuditionIfPlaying() {
+    if (!audition._playing) return;
+    const t = typeof audition.getCurrentTime === 'function' ? audition.getCurrentTime() : 0;
+    audition.play(t).catch(() => {});
   }
 
   async function runUsmSeparate(mode) {
@@ -287,8 +297,12 @@ export function installAnalysisWorkspace(app) {
       return;
     }
     const mix = usmNode.renderMix();
-    const out = ctx.createBuffer(1, mix.length, usmNode._sampleRate || ctx.sampleRate);
-    out.copyToChannel(mix, 0);
+    const sr = usmNode.sampleRate || ctx.sampleRate;
+    // Preserve channel count of the loaded file (mono mix expanded to stereo if needed)
+    const srcBuf = app.origBuffer || app.inputBuffer;
+    const nCh = Math.max(1, Math.min(2, srcBuf?.numberOfChannels || 1));
+    const out = ctx.createBuffer(nCh, mix.length, sr);
+    for (let c = 0; c < nCh; c++) out.copyToChannel(mix, c);
     app.procBuffer = out;
     app.outputBuffer = out;
     // Also expose as processed audition layer
