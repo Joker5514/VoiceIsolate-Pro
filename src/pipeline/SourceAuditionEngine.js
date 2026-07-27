@@ -65,6 +65,41 @@ export class SourceAuditionEngine {
   }
 
   /**
+   * Register Universal Source Matrix stems as audition layers (Creator/Forensic).
+   * Replaces previous usm_* layers; keeps original/processed when present.
+   * @param {Array<{ id: string, label: string, buffer: AudioBuffer, confidence?: number, quality?: string }>} stems
+   * @param {AudioContext} ctx
+   * @param {AudioBuffer} [original]
+   */
+  buildFromUSM(stems, ctx, original) {
+    this.setContext(ctx);
+    // Drop previous USM layers only
+    for (const id of [...this.layers.keys()]) {
+      if (id.startsWith('usm_')) this.layers.delete(id);
+    }
+    if (original) {
+      this.setLayer({
+        id: 'original',
+        label: 'Original mix',
+        buffer: original,
+        confidence: 1,
+        quality: 'high',
+      });
+    }
+    for (const s of stems || []) {
+      if (!s?.buffer) continue;
+      this.setLayer({
+        id: s.id,
+        label: s.label || s.id,
+        buffer: s.buffer,
+        confidence: s.confidence ?? 0.6,
+        quality: s.quality || 'medium',
+      });
+    }
+    this.setMode('layer');
+  }
+
+  /**
    * Build classical preview layers from mono original + optional clean/noise stems.
    * Honest quality tags.
    * @param {object} args

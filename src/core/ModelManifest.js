@@ -156,6 +156,35 @@ export const MODEL_MANIFEST = Object.freeze({
       output: 'output', // 4D complex spectrogram tensor
     }),
   }),
+
+  // ── Universal / query-based source separation (optional AudioSep-class) ──
+  // Weights are optional. When missing, USMNode falls back to classical NMF +
+  // language-prior masks in src/core/UniversalSourceMatrix.js (always available).
+  // Drop an ONNX export at the URL below and pin sha256 before shipping.
+  universal_separator: Object.freeze({
+    id: 'universal_separator',
+    name: 'Universal Query Separator (AudioSep-class)',
+    task: 'universal-source-separation',
+    url: '/app/models/universal-separator.onnx',
+    sizeBytes: null,
+    quantization: 'fp32',
+    delivery: 'optional',
+    sha256: null,
+    strategy: 'universal-query',
+    fftSize: 4096,
+    hopSize: 1024,
+    bins: 2049,
+    maxBatchFrames: 64,
+    sampleRate: 48000,
+    io: Object.freeze({
+      // Expected when a real AudioSep-class ONNX is provided:
+      //   audio  float32 [1, T]  and/or  mag [batch, 2049]
+      //   query  optional text embedding path handled inside the graph
+      //   masks  float32 [K, frames, bins] or [K, T]
+      input: 'input',
+      output: 'output',
+    }),
+  }),
 });
 
 /** Stable list of model ids. */

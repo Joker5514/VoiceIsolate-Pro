@@ -19,6 +19,7 @@ import {
   analysisToHunterSliderTargets,
 } from '/src/core/AnalyzerWhisperBridge.js';
 import { analyzeAcousticEnvironment } from '../whisper-hunter.js';
+import { USMNode, usmSourcesToAudioBuffers } from '/src/pipeline/USMNode.js';
 
 /**
  * @param {object} app VoiceIsolatePro instance (legacy Engineer shell)
@@ -58,6 +59,19 @@ export function installAnalysisWorkspace(app) {
     btnAudStop: document.getElementById('audStop'),
     btnAudReset: document.getElementById('audResetMix'),
     btnExport: document.getElementById('btnExportAnalysisWav'),
+    // Universal Source Matrix
+    usmPanel: document.getElementById('sourceMatrixPanel'),
+    btnUsmSeparate: document.getElementById('btnUsmSeparate'),
+    btnUsmQuery: document.getElementById('btnUsmQuery'),
+    btnUsmApplyMix: document.getElementById('btnUsmApplyMix'),
+    usmNumSources: document.getElementById('usmNumSources'),
+    usmQueryInput: document.getElementById('usmQueryInput'),
+    usmTableBody: document.getElementById('usmTableBody'),
+    usmProgress: document.getElementById('usmProgress'),
+    usmProgressFill: document.getElementById('usmProgressFill'),
+    usmProgressLabel: document.getElementById('usmProgressLabel'),
+    usmError: document.getElementById('usmError'),
+    usmMethodBadge: document.getElementById('usmMethodBadge'),
   };
 
   const host = new FullAnalysisHost({
@@ -70,9 +84,18 @@ export function installAnalysisWorkspace(app) {
 
   const audition = new SourceAuditionEngine();
   const transport = new TransportSync();
+  const usmNode = new USMNode({
+    preferOnnx: false, // classical USM default; set true when universal-separator.onnx ships
+    onProgress: (pct, label) => {
+      if (els.usmProgress) els.usmProgress.hidden = false;
+      if (els.usmProgressFill) els.usmProgressFill.style.width = `${Math.round((pct || 0) * 100)}%`;
+      if (els.usmProgressLabel) els.usmProgressLabel.textContent = `${label || 'usm'}… ${Math.round((pct || 0) * 100)}%`;
+    },
+  });
   let timeline = null;
   let lastAnalysis = null;
   let cancelled = false;
+  let usmBusy = false;
 
   if (els.timeline) {
     timeline = new TimelineRenderer(els.timeline, {
@@ -103,6 +126,184 @@ export function installAnalysisWorkspace(app) {
     if (!els.error) return;
     els.error.hidden = !msg;
     els.error.textContent = msg || '';
+  }
+
+  function showUsmError(msg) {
+    if (!els.usmError) return;
+    els.usmError.hidden = !msg;
+    els.usmError.textContent = msg || '';
+  }
+
+  function renderUsmTable() {
+    if (!els.usmTableBody) return;
+    const rows = usmNode.sources;
+    if (!rows.length) {
+      els.usmTableBody.innerHTML =
+        '<tr class="usm-empty-row"><td colspan="5">Run Separate sources after loading a file (Creator / Forensic).</td></tr>';
+      return;
+    }
+    els.usmTableBody.innerHTML = rows.map((s) => `
+      <tr data-usm-id="${escapeHtml(s.id)}">
+        <td><button type="button" class="btn btn-xs ${s.mute ? 'active' : ''}" data-usm-act="mute" title="Mute">M</button></td>
+        <td><button type="button" class="btn btn-xs ${s.solo ? 'active' : ''}" data-usm-act="solo" title="Solo">S</button></td>
+        <td>
+          <input type="range" min="-48" max="12" step="0.5" value="${s.gainDb}" data-usm-act="gain" aria-label="Gain dB" />
+          <span class="usm-gain-val">${s.gainDb.toFixed(1)}</span>
+        </td>
+        <td>
+          <input type="text" class="usm-label-input" data-usm-act="label" value="${escapeHtml(s.label)}" />
+          <span class="usm-conf" title="Confidence">${Math.round((s.confidence || 0) * 100)}%</span>
+        </td>
+        <td><button type="button" class="btn btn-xs" data-usm-act="refine" title="Refine via text query">Refine</button></td>
+      </tr>`).join('');
+
+    els.usmTableBody.querySelectorAll('tr[data-usm-id]').forEach((tr) => {
+      const id = tr.dataset.usmId;
+      tr.querySelector('[data-usm-act="mute"]')?.addEventListener('click', () => {
+        const s = usmNode.sources.find((x) => x.id === id);
+        const next = !s?.mute;
+        usmNode.setMute(id, next);
+        // Mirror into audition for immediate hear (Live-Mix — no ML re-run)
+        audition.setLayerMute(id, next);
+        renderUsmTable();
+      });
+      tr.querySelector('[data-usm-act="solo"]')?.addEventListener('click', () => {
+        const s = usmNode.sources.find((x) => x.id === id);
+        const next = !s?.solo;
+        usmNode.setSolo(id, next);
+        audition.setLayerSolo(id, next);
+        if (next) audition.setMode('layer');
+        renderUsmTable();
+      });
+      tr.querySelector('[data-usm-act="gain"]')?.addEventListener('input', (e) => {
+        const db = Number(e.target.value);
+        usmNode.setGainDb(id, db);
+        const lin = Math.pow(10, db / 20);
+        audition.setLayerGain(id, lin);
+        const val = tr.querySelector('.usm-gain-val');
+        if (val) val.textContent = db.toFixed(1);
+      });
+      tr.querySelector('[data-usm-act="label"]')?.addEventListener('change', (e) => {
+        usmNode.setLabel(id, e.target.value);
+        const L = audition.layers.get(id);
+        if (L) L.label = e.target.value;
+      });
+      tr.querySelector('[data-usm-act="refine"]')?.addEventListener('click', async () => {
+        const q = window.prompt('Describe what to keep for this source (local query mask):', usmNode.sources.find((x) => x.id === id)?.label || '');
+        if (!q) return;
+        try {
+          showUsmError('');
+          await usmNode.refine(q);
+          await pushUsmToAudition();
+          renderUsmTable();
+        } catch (err) {
+          showUsmError(err?.message || String(err));
+        }
+      });
+    });
+  }
+
+  async function pushUsmToAudition() {
+    const ctx = app.ctx || app.audioCtx;
+    if (!ctx) return;
+    if (ctx.state === 'suspended') await ctx.resume();
+    const original = app.origBuffer || app.inputBuffer;
+    const packed = usmSourcesToAudioBuffers(ctx, usmNode.sources, usmNode._sampleRate);
+    audition.buildFromUSM(packed, ctx, original || null);
+    transport.attachClock(() => audition.getCurrentTime());
+    renderAuditionStrip();
+    setModeButtons('layer');
+  }
+
+  async function runUsmSeparate(mode) {
+    if (usmBusy) return;
+    showUsmError('');
+    if (typeof app.ensureDecoded === 'function') {
+      const decoded = await app.ensureDecoded();
+      if (!decoded) {
+        showUsmError('Load an audio or video file first.');
+        return;
+      }
+    }
+    const buf = app.origBuffer || app.inputBuffer;
+    if (!buf) {
+      showUsmError('Load an audio or video file first.');
+      return;
+    }
+    usmBusy = true;
+    [els.btnUsmSeparate, els.btnUsmQuery, els.btnUsmApplyMix].forEach((b) => {
+      if (b) b.disabled = true;
+    });
+    if (els.usmProgress) els.usmProgress.hidden = false;
+    try {
+      const channels = [];
+      for (let c = 0; c < buf.numberOfChannels; c++) {
+        channels.push(buf.getChannelData(c).slice());
+      }
+      const K = Math.max(2, Math.min(12, Number(els.usmNumSources?.value) || 6));
+      const queryText = (els.usmQueryInput?.value || '').trim();
+      const config = mode === 'query' || queryText
+        ? {
+          mode: 'query',
+          queries: queryText
+            ? queryText.split(/[,;|]/).map((s) => s.trim()).filter(Boolean)
+            : ['speech'],
+          numSources: K,
+        }
+        : { mode: 'auto', numSources: K };
+
+      const result = await usmNode.process(channels, buf.sampleRate, config);
+      app._usmResult = result;
+      app._usmNode = usmNode;
+
+      if (els.usmMethodBadge) {
+        els.usmMethodBadge.hidden = false;
+        els.usmMethodBadge.textContent = result.method || 'usm';
+      }
+      await pushUsmToAudition();
+      renderUsmTable();
+      if (typeof app.setStatus === 'function') {
+        app.setStatus(`USM: ${result.sources.length} sources (${result.method})`);
+      }
+    } catch (err) {
+      showUsmError(err?.message || String(err));
+    } finally {
+      usmBusy = false;
+      [els.btnUsmSeparate, els.btnUsmQuery, els.btnUsmApplyMix].forEach((b) => {
+        if (b) b.disabled = false;
+      });
+      if (els.usmProgress) els.usmProgress.hidden = true;
+    }
+  }
+
+  function applyUsmMixToProcessed() {
+    if (!usmNode.sources.length) {
+      showUsmError('Separate sources first.');
+      return;
+    }
+    const ctx = app.ctx || app.audioCtx;
+    if (!ctx) {
+      showUsmError('Audio context not ready');
+      return;
+    }
+    const mix = usmNode.renderMix();
+    const out = ctx.createBuffer(1, mix.length, usmNode._sampleRate || ctx.sampleRate);
+    out.copyToChannel(mix, 0);
+    app.procBuffer = out;
+    app.outputBuffer = out;
+    // Also expose as processed audition layer
+    audition.setLayer({
+      id: 'processed',
+      label: 'USM mix (processed)',
+      buffer: out,
+      confidence: 1,
+      quality: 'high',
+    });
+    renderAuditionStrip();
+    if (typeof app.setStatus === 'function') {
+      app.setStatus('USM mix applied to processed buffer');
+    }
+    showUsmError('');
   }
 
   function setBusy(busy) {
@@ -609,6 +810,17 @@ export function installAnalysisWorkspace(app) {
     else if (typeof app.setStatus === 'function') app.setStatus(`Exported ${result.filename}`);
   });
 
+  // Universal Source Matrix controls
+  els.btnUsmSeparate?.addEventListener('click', () => { runUsmSeparate('auto'); });
+  els.btnUsmQuery?.addEventListener('click', () => { runUsmSeparate('query'); });
+  els.btnUsmApplyMix?.addEventListener('click', () => applyUsmMixToProcessed());
+  els.usmQueryInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      runUsmSeparate('query');
+    }
+  });
+
   // Inject calibrated presets into app if PRESETS exists
   try {
     const calibrated = getCalibratedPresets();
@@ -646,6 +858,9 @@ export function installAnalysisWorkspace(app) {
     getJointPlan: () => lastAnalysis?.jointPlan || app._jointIsolationPlan || null,
     audition,
     host,
+    usmNode,
+    runUsmSeparate,
+    applyUsmMixToProcessed,
     refreshCapability: renderCapability,
   };
   app._analysisWorkspace = api;
