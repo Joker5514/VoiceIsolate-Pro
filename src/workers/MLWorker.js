@@ -699,7 +699,7 @@ async function runUniversalSeparate(msg) {
   const entry = MANIFEST.universal_separator;
   if (!entry) {
     throw new Error(
-      "[VIP][MLWorker] universal_separator not in manifest — use classical USM"
+      '[VIP][MLWorker] universal_separator not in manifest — use classical USM'
     );
   }
 
@@ -731,11 +731,9 @@ async function runUniversalSeparate(msg) {
     const inName = entry.io?.input || 'input';
     const outName = entry.io?.output || 'output';
 
-    // Chunk long audio to bound GPU memory (3–5 s windows, 50% overlap)
+    // Chunk long audio to bound GPU memory (≈4 s windows; hop reserved for future OLA)
     const winSec = 4;
-    const hopSec = 2;
     const winSamples = Math.max(1, Math.round(sr * winSec));
-    const hopSamples = Math.max(1, Math.round(sr * hopSec));
     const K = Math.max(2, Math.min(12, numSources || 6));
 
     // If the model cannot accept our feeds, fail → classical fallback.
