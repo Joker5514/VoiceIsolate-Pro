@@ -188,10 +188,10 @@ describe('Video Playback Error Handling', () => {
     vip._updateTransportUI = jest.fn();
     vip.renderStaticVisuals = jest.fn();
     vip.ctx = { currentTime: 0 };
-    // play() awaits the Live-Mix bridge (CLAUDE.md §1 / app.js _ensureBridge),
+    // play() awaits the Live-Mix bridge and worklets (CLAUDE.md §1 / app.js _ensureBridgeAndWorklets),
     // which lazily dynamic-imports a module that does not resolve under the test
     // VM. Stub it so the async flow is deterministic instead of timing-dependent.
-    vip._ensureBridge = jest.fn().mockResolvedValue(null);
+    vip._ensureBridgeAndWorklets = jest.fn().mockResolvedValue(null);
 
     // This is the important part: mock play() to return a rejected promise
     // Without the .catch() in the source code, this would cause an UnhandledPromiseRejectionWarning

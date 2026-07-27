@@ -12,15 +12,21 @@ const appJs = fs.readFileSync(
 );
 
 describe('Engineer upload decode wiring', () => {
+  const handleFileSection = appJs.match(/async handleFile\(file\) \{[\s\S]*?\n  \}\n\n  \/\*\*/)?.[0] || '';
+  const ensureDecodedSection = appJs.match(/async ensureDecoded\(fileSeq = this\._fileSeq\) \{[\s\S]*?\n  \}\n\n  \/\*\*/)?.[0] || '';
+
   test('app.js imports decodeBlobToAudioBuffer and resampleToCanonical', () => {
     expect(appJs).toContain("import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js'");
     expect(appJs).toContain("import { resampleToCanonical } from '/src/pipeline/FileIngestion.js'");
   });
 
-  test('handleFile decodes via shared media path (not broken video-metadata stub)', () => {
-    expect(appJs).toContain('const decoded = await decodeBlobToAudioBuffer(file)');
-    expect(appJs).toContain('buffer = await resampleToCanonical(decoded)');
-    expect(appJs).not.toContain('resolve(this.inputBuffer || null)');
+  test('handleFile accepts uploads without decoding and ensureDecoded owns shared decode path', () => {
+    expect(handleFileSection).toContain('ready (decode on Analyze/Process)');
+    expect(handleFileSection).not.toContain('decodeBlobToAudioBuffer(');
+    expect(handleFileSection).not.toContain('resampleToCanonical(');
+    expect(ensureDecodedSection).toContain('const decoded = await decodeBlobToAudioBuffer(file, {');
+    expect(ensureDecodedSection).toContain('const buffer = await resampleToCanonical(decoded);');
+    expect(ensureDecodedSection).not.toContain('resolve(this.inputBuffer || null)');
   });
 
   test('app.js wires desktop native picker in bindEvents', () => {

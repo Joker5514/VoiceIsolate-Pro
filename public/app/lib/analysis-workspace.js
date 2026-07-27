@@ -13,6 +13,12 @@ import { checkCapabilities, formatCapabilityLines } from '/src/core/CapabilityCh
 import { getCalibratedPresets, resolvePresetName } from '/src/core/PresetCalibration.js';
 import { exportAudioBuffer, safeFilename } from '/src/pipeline/ExportManager.js';
 import { downmixToMono } from '/src/core/FeatureExtractor.js';
+import {
+  enrichAnalysisWithCollaboration,
+  applyHunterFeedbackToAnalysis,
+  analysisToHunterSliderTargets,
+} from '/src/core/AnalyzerWhisperBridge.js';
+import { analyzeAcousticEnvironment } from '../whisper-hunter.js';
 
 /**
  * @param {object} app VoiceIsolatePro instance (legacy Engineer shell)
@@ -30,6 +36,7 @@ export function installAnalysisWorkspace(app) {
     btnAnalyze: document.getElementById('btnAnalyzeFull'),
     btnApplyRec: document.getElementById('btnApplyRecommendations'),
     btnAutoProcess: document.getElementById('btnAnalyzeProcessAuto'),
+    btnCollab: document.getElementById('btnAnalyzeWhisperCollab'),
     btnCancel: document.getElementById('btnCancelAnalysis'),
     progress: document.getElementById('analysisProgress'),
     progressFill: document.getElementById('analysisProgressFill'),
@@ -39,6 +46,7 @@ export function installAnalysisWorkspace(app) {
     presetCard: document.getElementById('analysisPresetCard'),
     confBadge: document.getElementById('analysisConfidence'),
     chips: document.getElementById('analysisSourceChips'),
+    collab: document.getElementById('analysisCollabStatus'),
     timeline: document.getElementById('analysisTimeline'),
     audition: document.getElementById('auditionStrip'),
     capPanel: document.getElementById('capabilityPanel'),
@@ -98,10 +106,64 @@ export function installAnalysisWorkspace(app) {
   }
 
   function setBusy(busy) {
-    [els.btnAnalyze, els.btnApplyRec, els.btnAutoProcess].forEach((b) => {
+    [els.btnAnalyze, els.btnApplyRec, els.btnAutoProcess, els.btnCollab].forEach((b) => {
       if (b) b.disabled = !!busy;
     });
     if (els.btnCancel) els.btnCancel.hidden = !busy;
+  }
+
+  /**
+   * Fuse analyzer result with WhisperHunter acoustic env (local, no cloud).
+   * Stores joint plan on app for WHISPER_HUNTER.run and Process to consume.
+   */
+  function collaborateWithHunter(analysis, audioBuffer) {
+    if (!analysis) return analysis;
+    let envProfile = null;
+    try {
+      if (audioBuffer && typeof analyzeAcousticEnvironment === 'function') {
+        envProfile = analyzeAcousticEnvironment(audioBuffer);
+      }
+    } catch (err) {
+      console.warn('[VIP] analyzeAcousticEnvironment failed in collaborateWithHunter', err?.message);
+      envProfile = null;
+    }
+    const enriched = enrichAnalysisWithCollaboration(analysis, envProfile);
+    app._lastFullAnalysis = enriched;
+    app._jointIsolationPlan = enriched.jointPlan || null;
+    app._hunterEnvFromAnalysis = envProfile;
+    lastAnalysis = enriched;
+    return enriched;
+  }
+
+  function renderCollabStatus(analysis) {
+    if (!els.collab) return;
+    const plan = analysis?.jointPlan;
+    if (!plan?.ok) {
+      els.collab.hidden = true;
+      els.collab.innerHTML = '';
+      return;
+    }
+    const u = plan.unwanted;
+    const badges = (u?.present || []).map((key) => {
+      const c = u.classes[key];
+      return `<span class="collab-badge collab-badge--suppress" title="${escapeHtml(c.hint)}">${escapeHtml(c.label)}</span>`;
+    });
+    if ((analysis.whisperRegions || []).length) {
+      badges.unshift(
+        `<span class="collab-badge collab-badge--protect">Whisper ×${analysis.whisperRegions.length}</span>`,
+      );
+    }
+    if ((analysis.speechSegments || []).length) {
+      badges.unshift(
+        `<span class="collab-badge collab-badge--protect">Voice zones ×${analysis.speechSegments.length}</span>`,
+      );
+    }
+    els.collab.hidden = false;
+    els.collab.innerHTML = `
+      <div class="collab-title">Analyzer ↔ WhisperHunter</div>
+      <p class="collab-summary">${escapeHtml(plan.collaboration?.summary || 'Joint isolation map ready')}</p>
+      <div class="collab-badges">${badges.join('') || '<span class="collab-badge">No strong interference</span>'}</div>
+      <p class="collab-meta">Protect ${plan.protectRegions?.length || 0} · Suppress ${plan.suppressRegions?.length || 0} · Preset <strong>${escapeHtml(plan.recommendedPreset || '—')}</strong></p>`;
   }
 
   function renderCapability() {
@@ -143,6 +205,7 @@ export function installAnalysisWorkspace(app) {
   function renderAnalysis(analysis) {
     lastAnalysis = analysis;
     app._lastFullAnalysis = analysis;
+    if (analysis?.jointPlan) app._jointIsolationPlan = analysis.jointPlan;
 
     if (timeline) timeline.setAnalysis(analysis);
     transport.setDuration(analysis.duration || 0);
@@ -155,10 +218,13 @@ export function installAnalysisWorkspace(app) {
 
     if (els.presetCard) {
       const rec = analysis.recommendation;
+      const emphasize = rec?.recommendedProcessingPlan?.emphasize
+        || analysis.jointPlan?.emphasize
+        || [];
       els.presetCard.innerHTML = `
         <div class="rec-preset-name">${escapeHtml(rec?.recommendedPreset || '—')}</div>
         <div class="rec-preset-meta">Auto-apply: ${rec?.autoApplySafe ? 'safe' : 'review first'}</div>
-        <div class="rec-emphasize">${(rec?.recommendedProcessingPlan?.emphasize || []).map(escapeHtml).join(' · ') || 'Balanced chain'}</div>`;
+        <div class="rec-emphasize">${emphasize.map(escapeHtml).join(' · ') || 'Balanced chain'}</div>`;
     }
 
     if (els.findings) {
@@ -169,6 +235,8 @@ export function installAnalysisWorkspace(app) {
       const items = analysis.recommendation?.reasons || [];
       els.reasons.innerHTML = items.map((r) => `<li>${escapeHtml(r)}</li>`).join('') || '<li>—</li>';
     }
+
+    renderCollabStatus(analysis);
 
     if (els.chips) {
       els.chips.innerHTML = (analysis.detectedSources || []).map((s) => `
@@ -192,6 +260,45 @@ export function installAnalysisWorkspace(app) {
 
     renderAuditionStrip();
     if (els.root) els.root.dataset.state = 'ready';
+  }
+
+  function clearState() {
+    cancelled = false;
+    lastAnalysis = null;
+    app._lastFullAnalysis = null;
+    app._jointIsolationPlan = null;
+    app._hunterEnvFromAnalysis = null;
+    host.dispose();
+    audition.stop(true);
+    audition.resetMix();
+    transport.stop(true);
+    transport.setDuration(0);
+    if (timeline) {
+      timeline.setAnalysis(null);
+      timeline.setPlayhead(0);
+    }
+    if (els.confBadge) {
+      els.confBadge.textContent = 'Confidence —';
+      els.confBadge.dataset.level = 'low';
+    }
+    if (els.presetCard) {
+      els.presetCard.innerHTML = `
+        <div class="rec-preset-name">No recommendation yet</div>
+        <div class="rec-preset-meta">Run Analyze Full Audio</div>`;
+    }
+    if (els.findings) els.findings.innerHTML = '<li>Load a file, then analyze.</li>';
+    if (els.reasons) els.reasons.innerHTML = '<li>—</li>';
+    if (els.chips) els.chips.innerHTML = '';
+    if (els.collab) {
+      els.collab.hidden = true;
+      els.collab.innerHTML = '';
+    }
+    if (els.progress) els.progress.hidden = true;
+    if (els.progressFill) els.progressFill.style.width = '0%';
+    if (els.progressLabel) els.progressLabel.textContent = 'Idle';
+    showError('');
+    renderAuditionStrip();
+    if (els.root) els.root.dataset.state = 'idle';
   }
 
   function renderAuditionStrip() {
@@ -255,6 +362,14 @@ export function installAnalysisWorkspace(app) {
   async function runAnalysis() {
     showError('');
     cancelled = false;
+    // Decode on the analyzer path (not at upload) — keeps the tab responsive.
+    if (typeof app.ensureDecoded === 'function') {
+      const decoded = await app.ensureDecoded();
+      if (!decoded) {
+        showError('Load an audio or video file first, then analyze.');
+        return null;
+      }
+    }
     const buf = app.origBuffer || app.inputBuffer;
     if (!buf) {
       showError('Load an audio or video file first.');
@@ -269,18 +384,21 @@ export function installAnalysisWorkspace(app) {
       }
       // Use mono mix for speed on long files — still multi-channel aware via count
       const mono = downmixToMono(channels);
-      const analysis = await host.analyze([mono], buf.sampleRate, {
+      let analysis = await host.analyze([mono], buf.sampleRate, {
         platformHints: {
           lowMemory: /Android/i.test(navigator.userAgent || ''),
         },
       });
       if (cancelled) return null;
+      // Analyzer → WhisperHunter env fuse (protect voices, suppress horns/music/etc.)
+      analysis = collaborateWithHunter(analysis, buf);
       await ensureAuditionBuffers(analysis);
       renderAnalysis(analysis);
+      const preset = analysis.recommendedPreset || analysis.jointPlan?.recommendedPreset;
       if (typeof app.setStatus === 'function') {
-        app.setStatus(`Analysis complete — ${analysis.recommendedPreset}`);
+        app.setStatus(`Analysis complete — ${preset || 'ready'} · joint isolation map ready`);
       } else if (els.progressLabel) {
-        els.progressLabel.textContent = 'Analysis complete';
+        els.progressLabel.textContent = 'Analysis complete · Analyzer ↔ WhisperHunter linked';
       }
       return analysis;
     } catch (err) {
@@ -295,39 +413,45 @@ export function installAnalysisWorkspace(app) {
 
   function applyRecommendations() {
     const analysis = lastAnalysis || app._lastFullAnalysis;
-    if (!analysis?.recommendation) {
+    if (!analysis?.recommendation && !analysis?.jointPlan) {
       showError('Run Analyze Full Audio first.');
       return;
     }
-    const rec = analysis.recommendation;
-    const presetName = resolvePresetName(rec.recommendedPreset);
+    const rec = analysis.recommendation || {};
+    const plan = analysis.jointPlan;
+    const presetName = resolvePresetName(plan?.recommendedPreset || rec.recommendedPreset);
     if (typeof app.applyPreset === 'function') {
       app.applyPreset(presetName);
     }
-    // Overlay stage config
-    const cfg = rec.recommendedStageConfig || {};
+    // Prefer joint isolation stage config (analyzer + hunter)
+    const cfg = {
+      ...(rec.recommendedStageConfig || {}),
+      ...(plan?.recommendedStageConfig || {}),
+    };
     if (app.params) {
       Object.assign(app.params, cfg);
       if (window.VIP_PARAMS) Object.assign(window.VIP_PARAMS, cfg);
     }
+    // Region maps for offline / WhisperHunter spectral protect-suppress
+    app._protectRegions = plan?.protectRegions || analysis.protectRegions || [];
+    app._suppressRegions = plan?.suppressRegions || analysis.suppressRegions || [];
+
     if (typeof app.syncSlidersFromParams === 'function') {
       app.syncSlidersFromParams();
     } else if (typeof app.updateAllSliders === 'function') {
       app.updateAllSliders();
     } else {
-      // Push known rt params through bridge
       for (const [k, v] of Object.entries(cfg)) {
         if (typeof app.onSlider === 'function') app.onSlider(k, v);
       }
     }
-    // Update preset select if present
     const sel = document.getElementById('presetSel');
     if (sel) {
       const opt = [...sel.options].find((o) => o.value === presetName || o.textContent === presetName);
       if (opt) sel.value = opt.value;
     }
     if (typeof app.setStatus === 'function') {
-      app.setStatus(`Applied recommendation: ${presetName}`);
+      app.setStatus(`Applied joint plan: ${presetName}`);
     }
     showError('');
   }
@@ -337,14 +461,95 @@ export function installAnalysisWorkspace(app) {
     if (!analysis) return;
     const rec = analysis.recommendation;
     if (rec && !rec.autoApplySafe) {
-      // Still apply but warn
       showError('Low confidence — recommendations applied; review before relying on export.');
     }
     applyRecommendations();
     if (typeof app.process === 'function') {
       await app.process();
-      // Rebuild audition with processed output
       if (lastAnalysis) await ensureAuditionBuffers(lastAnalysis);
+    }
+  }
+
+  /**
+   * Analyze → joint map → WhisperHunter isolation (uses analyzer protect/suppress).
+   */
+  async function analyzeAndWhisperCollab() {
+    showError('');
+    let analysis = lastAnalysis || app._lastFullAnalysis;
+    if (!analysis) {
+      analysis = await runAnalysis();
+    } else if (!analysis.jointPlan) {
+      const buf = app.origBuffer || app.inputBuffer;
+      analysis = collaborateWithHunter(analysis, buf);
+      renderAnalysis(analysis);
+    }
+    if (!analysis) return;
+
+    applyRecommendations();
+
+    const buf = app.inputBuffer || app.origBuffer;
+    if (!buf) {
+      showError('Load an audio or video file first.');
+      return;
+    }
+
+    // Prefer WHISPER_HUNTER on app/window (wired in app.js)
+    const hunter = (typeof window !== 'undefined' && window.WHISPER_HUNTER)
+      || app.WHISPER_HUNTER
+      || null;
+
+    setBusy(true);
+    if (els.root) els.root.dataset.state = 'running';
+    if (els.progress) els.progress.hidden = false;
+    if (els.progressLabel) els.progressLabel.textContent = 'WhisperHunter using analyzer map…';
+    if (els.progressFill) els.progressFill.style.width = '35%';
+
+    try {
+      // Pre-load hunter slider targets from joint plan so run() can reuse them
+      const env = app._hunterEnvFromAnalysis || null;
+      const targets = analysisToHunterSliderTargets(analysis, env, 0.5);
+      app._hunterSliderTargets = targets;
+      app._preferAnalysisForHunter = true;
+
+      if (hunter && typeof hunter.run === 'function') {
+        await hunter.run(buf, app);
+      } else if (typeof app.process === 'function') {
+        await app.process();
+      } else {
+        showError('WhisperHunter not available — applied analyzer recommendations only.');
+      }
+
+      // Fold hunter feedback into analysis for UI
+      const envAfter = app._lastHunterEnv || env;
+      const maskConf = app._lastHunterMaskConf;
+      const enriched = applyHunterFeedbackToAnalysis(analysis, {
+        envProfile: envAfter,
+        maskConfidence: maskConf,
+        platform: app._lastHunterPlatform,
+        message: app._lastHunterMessage,
+      });
+      lastAnalysis = enriched;
+      app._lastFullAnalysis = enriched;
+      renderAnalysis(enriched);
+      if (lastAnalysis) await ensureAuditionBuffers(lastAnalysis);
+
+      if (typeof app.setStatus === 'function') {
+        app.setStatus('Analyzer ↔ WhisperHunter isolation complete');
+      }
+      if (typeof app.showNotification === 'function') {
+        app.showNotification(
+          enriched.jointPlan?.collaboration?.summary || 'Joint isolation finished',
+          'info',
+        );
+      }
+    } catch (err) {
+      showError(err?.message || String(err));
+      if (els.root) els.root.dataset.state = 'error';
+    } finally {
+      app._preferAnalysisForHunter = false;
+      setBusy(false);
+      if (els.progress) els.progress.hidden = true;
+      if (els.root && els.root.dataset.state === 'running') els.root.dataset.state = 'ready';
     }
   }
 
@@ -352,6 +557,7 @@ export function installAnalysisWorkspace(app) {
   els.btnAnalyze?.addEventListener('click', () => { runAnalysis(); });
   els.btnApplyRec?.addEventListener('click', () => applyRecommendations());
   els.btnAutoProcess?.addEventListener('click', () => { analyzeAndProcess(); });
+  els.btnCollab?.addEventListener('click', () => { analyzeAndWhisperCollab(); });
   els.btnCancel?.addEventListener('click', () => {
     cancelled = true;
     host.dispose();
@@ -433,7 +639,11 @@ export function installAnalysisWorkspace(app) {
     runAnalysis,
     applyRecommendations,
     analyzeAndProcess,
+    analyzeAndWhisperCollab,
+    collaborateWithHunter,
+    clearState,
     getAnalysis: () => lastAnalysis,
+    getJointPlan: () => lastAnalysis?.jointPlan || app._jointIsolationPlan || null,
     audition,
     host,
     refreshCapability: renderCapability,

@@ -25,3 +25,6 @@ onnxsim>=0.4.33
 
 # Numpy (usually installed with torch, pinned for reproducibility)
 numpy>=1.24.0
+
+# PDF generation (used by scripts/gen-release-pdf.py)
+reportlab>=4.0.0

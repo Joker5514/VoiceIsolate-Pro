@@ -318,10 +318,10 @@ describe('Transport Methods', () => {
       mockContext.startSpectro = jest.fn();
       mockContext.startFreq = jest.fn();
       mockContext._startTransportClock = jest.fn();
-      // play() is async and awaits the Live-Mix bridge (CLAUDE.md §1 / app.js
-      // _ensureBridge). Stub it so the partial mock context resolves like the
+      // play() is async and awaits the Live-Mix bridge and worklets (CLAUDE.md §1 / app.js
+      // _ensureBridgeAndWorklets). Stub it so the partial mock context resolves like the
       // real prototype method instead of throwing "not a function".
-      mockContext._ensureBridge = jest.fn().mockResolvedValue(null);
+      mockContext._ensureBridgeAndWorklets = jest.fn().mockResolvedValue(null);
     });
 
     it('returns early when there is no buffer', async () => {

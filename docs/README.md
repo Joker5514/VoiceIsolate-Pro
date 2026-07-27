@@ -35,7 +35,8 @@ Single map of product, architecture, platform, and historical docs.
 
 | Document | Description |
 |----------|-------------|
-| [guides/ANALYSIS_WORKSPACE.md](guides/ANALYSIS_WORKSPACE.md) | Full-audio analysis, recommendations, audition layers |
+| [guides/ANALYSIS_WORKSPACE.md](guides/ANALYSIS_WORKSPACE.md) | Full-audio analysis, Analyzer↔WhisperHunter joint map, deferred decode |
+| [releases/VoiceIsolate_Pro_v24_Latest.pdf](releases/VoiceIsolate_Pro_v24_Latest.pdf) | **Latest release notes PDF** (product + architecture snapshot) |
 | [guides/WORKLETS.md](guides/WORKLETS.md) | AudioWorklet packaging (web, Android, desktop) |
 | [guides/MODEL_DELIVERY.md](guides/MODEL_DELIVERY.md) | ONNX delivery, integrity, offline packaging |
 | [guides/electron-desktop.md](guides/electron-desktop.md) | Electron shell, offline installer, IPC |

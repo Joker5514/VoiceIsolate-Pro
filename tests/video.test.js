@@ -43,8 +43,8 @@ describe('VoiceIsolatePro Video Playback', () => {
       ensureCtx: jest.fn(),
       // play() awaits the Live-Mix bridge (CLAUDE.md §1 / app.js _ensureBridge);
       // stub it on the partial mock so the async method resolves rather than
-      // throwing "this._ensureBridge is not a function".
-      _ensureBridge: jest.fn().mockResolvedValue(null),
+      // throwing "this._ensureBridgeAndWorklets is not a function".
+      _ensureBridgeAndWorklets: jest.fn().mockResolvedValue(null),
       abMode: 'original',
       inputBuffer: {},
       buildLiveChain: jest.fn(),
