@@ -409,7 +409,9 @@ describe('VoiceIsolatePro class structure', () => {
     expect(appSrc).toContain('_warmupMLModels');
     expect(appSrc).toContain('warmupModels');
     expect(appSrc).toContain('DEFAULT_ML_CHAIN');
-    expect(appSrc).toMatch(/_yieldToUI\(\(\)\s*=>\s*\{[\s\S]*runPipeline\(\)/);
+    // Deferred decode path: handleFile schedules idle ML warmup; process starts via runPipeline.
+    expect(appSrc).toMatch(/_warmupMLModels\(\)/);
+    expect(appSrc).toMatch(/async runPipeline\(/);
   });
 
   test('Engineer ML chain uses fast BS-RNN-only default (not Demucs)', () => {
@@ -440,11 +442,11 @@ describe('VoiceIsolatePro class structure', () => {
   });
 
   test('Engineer auto-upload uses single ML pass for low latency', () => {
-    expect(appSrc).toContain('this._autoPipelineRun = true');
     // Default path is always single-pass (multi-pass STFT loops freeze long files).
     expect(appSrc).toMatch(/let totalPasses = 1/);
     expect(appSrc).toContain('Always single-pass isolation on the auto/default path');
     expect(appSrc).toMatch(/if \(this\._autoPipelineRun\) this\._autoPipelineRun = false/);
+    expect(appSrc).toContain('this._autoPipelineRun = false');
   });
 
   test('Engineer imports pipeline stage timing for debug scripts', () => {

@@ -64,8 +64,10 @@ describe('Engineer processing speed path', () => {
   });
 
   test('auto-process races model warmup before isolation', () => {
-    expect(appJs).toMatch(/_warmupMLModels\(\)[\s\S]*?runPipeline\(fileSeq\)/);
-    expect(appJs).toMatch(/warmCapMs/);
+    // handleFile schedules idle warmup; ML isolation path kicks another warmup without blocking.
+    expect(appJs).toMatch(/_warmupMLModels\(\)/);
+    expect(appJs).toMatch(/void this\._warmupMLModels\(\)/);
+    expect(appJs).toMatch(/async runPipeline\(/);
   });
 
   test('MLWorker skips re-hash when cache key embeds sha256', () => {

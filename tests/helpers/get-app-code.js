@@ -29,7 +29,16 @@ const APP_DIR = path.join(__dirname, '../../public/app');
 // Sibling modules imported by app.js. The `exports` list must include every
 // symbol app.js destructures from that module.
 const INLINED_MODULES = [
-  { file: 'slider-calibration.js', exports: ['calibrateRegistry'] },
+  {
+    file: 'slider-calibration.js',
+    exports: [
+      'calibrateRegistry',
+      'calibrate',
+      'getEffectiveDspParams',
+      'applyCoupling',
+      'softClampArtifacts',
+    ],
+  },
   { file: 'slider-map.js',         exports: ['SLIDER_REGISTRY', 'STAGES'] },
   { file: 'model-status-ui.js',    exports: ['ModelStatusUI'] },
 ];
@@ -124,6 +133,33 @@ function isDesktopShell() { return false; }
 function isMicCaptureEnabled() { return false; }
 async function pickAudioFile() { return null; }
 function createYieldBudget() { return async () => {}; }
+function yieldToBrowser() { return Promise.resolve(); }
+function paintSeekFill() {}
+function wireTransportRegion() { return null; }
+async function saveExportBlob() { return null; }
+function filtersForFilename() { return []; }
+function inferMediaKind(file) {
+  const name = (file && file.name) || '';
+  const type = (file && file.type) || '';
+  if (/video\\//i.test(type) || /\\.(mp4|mov|mkv|webm|avi|m4v)$/i.test(name)) return 'video';
+  if (/audio\\//i.test(type) || /\\.(wav|mp3|flac|ogg|m4a|aac|opus|aiff|aif|wma|webm)$/i.test(name)) return 'audio';
+  if (/midi/i.test(type) || /\\.(mid|midi)$/i.test(name)) return 'midi';
+  // Unknown binary / extension — not media
+  return 'unknown';
+}
+function isVideoSource(file) { return inferMediaKind(file) === 'video'; }
+function triggerFileInput() {}
+function primeAudioGesture() {}
+function fixUploadTouchTargets() {}
+function resetFileInput(input) { if (input) try { input.value = ''; } catch (_) {} }
+function startWorkletStatusDriver() { return null; }
+function buildHintPanel() { return null; }
+function mountInfoPopover() { return () => {}; }
+function removeAllInfoPopovers() {}
+function sliceAudioBuffer(buf) { return buf; }
+function exportVideoWithProcessedAudio() { return Promise.resolve(null); }
+function triggerBlobDownload() {}
+const WHISPER_HUNTER_IMPORTS = {};
 `;
 }
 

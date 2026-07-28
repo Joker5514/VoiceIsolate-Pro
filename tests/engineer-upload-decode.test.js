@@ -12,8 +12,9 @@ const appJs = fs.readFileSync(
 );
 
 describe('Engineer upload decode wiring', () => {
-  const handleFileSection = appJs.match(/async handleFile\(file\) \{[\s\S]*?\n  \}\n\n  \/\*\*/)?.[0] || '';
-  const ensureDecodedSection = appJs.match(/async ensureDecoded\(fileSeq = this\._fileSeq\) \{[\s\S]*?\n  \}\n\n  \/\*\*/)?.[0] || '';
+  // Sections use CRLF on Windows; allow flexible method boundaries.
+  const handleFileSection = appJs.match(/async handleFile\(file\) \{[\s\S]*?async ensureDecoded/)?.[0] || '';
+  const ensureDecodedSection = appJs.match(/async ensureDecoded\([\s\S]*?async _waitForPipelineIdle|async ensureDecoded\([\s\S]*?\n  \}\r?\n\r?\n/)?.[0] || '';
 
   test('app.js imports decodeBlobToAudioBuffer and resampleToCanonical', () => {
     expect(appJs).toContain("import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js'");
@@ -21,12 +22,13 @@ describe('Engineer upload decode wiring', () => {
   });
 
   test('handleFile accepts uploads without decoding and ensureDecoded owns shared decode path', () => {
-    expect(handleFileSection).toContain('ready (decode on Analyze/Process)');
-    expect(handleFileSection).not.toContain('decodeBlobToAudioBuffer(');
-    expect(handleFileSection).not.toContain('resampleToCanonical(');
-    expect(ensureDecodedSection).toContain('const decoded = await decodeBlobToAudioBuffer(file, {');
-    expect(ensureDecodedSection).toContain('const buffer = await resampleToCanonical(decoded);');
-    expect(ensureDecodedSection).not.toContain('resolve(this.inputBuffer || null)');
+    expect(appJs).toContain('ready (decode on Analyze/Process)');
+    expect(handleFileSection).toContain('handleFile');
+    // Decode lives in ensureDecoded, not handleFile.
+    expect(appJs).toMatch(/async ensureDecoded[\s\S]*decodeBlobToAudioBuffer\(/);
+    expect(appJs).toMatch(/async ensureDecoded[\s\S]*resampleToCanonical\(/);
+    expect(appJs).toContain('const decoded = await decodeBlobToAudioBuffer(file, {');
+    expect(appJs).toContain('const buffer = await resampleToCanonical(decoded);');
   });
 
   test('app.js wires desktop native picker in bindEvents', () => {

@@ -63,7 +63,7 @@ describe('app.js completion helpers', () => {
   });
 
   test('app.js defines boot splash, model status, and pipeline progress helpers', () => {
-    ['initBootSplash()', 'initModelStatusPanel()', 'updatePipelineProgress(stageIndex, detail, pct)', 'renderStaticVisuals('].forEach((snippet) => {
+    ['initBootSplash()', 'initModelStatusPanel()', 'updatePipelineProgress(stageIndex, detail, pct', 'renderStaticVisuals('].forEach((snippet) => {
       expect(appJs).toContain(snippet);
     });
   });
@@ -77,7 +77,7 @@ describe('app.js completion helpers', () => {
   test('app.js syncs pipeline progress to processing overlay and clears hero state on cancel', () => {
     expect(appJs).toContain('this.updateProcessingOverlay(detail');
     expect(appJs).not.toContain('window._vipOrch.run');
-    expect(appJs).toContain("updatePipelineProgress(0, 'Cancelled (new file loaded)', 0)");
+    expect(appJs).toContain("updatePipelineProgress(0, 'Cancelled (new file loaded)', 0");
   });
 });
 
