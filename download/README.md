@@ -9,6 +9,19 @@ Web download page: https://voice-isolate-pro.vercel.app/download/
 
 **In-repo version:** **25.0.0** · build **250000**
 
+**Synced web shell (Engineer Mode + pipeline):** rebuild from `main` @ **`9466892`**  
+(PRs **#725** + **#726** — expand/collapse, separation→isolation Live-Mix, USM backend, lock accent).
+
+Local rebuild (artifacts under `dist/`, not committed):
+
+```bash
+pnpm run build
+pnpm android:build:win          # → dist/android/VoiceIsolate-Pro-android-debug.apk
+pnpm build:electron:dir         # → dist/electron/win-unpacked/
+# optional full installer:
+pnpm build:electron             # → dist/electron/VoiceIsolate-Pro-25.0.0-win-x64.exe
+```
+
 ---
 
 ## Android APK

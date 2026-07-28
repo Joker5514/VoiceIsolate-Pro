@@ -3,14 +3,19 @@
 **In-repo version:** **25.0.0** (Android `versionName` / Electron artifact / API version)  
 **Build number:** **250000** (`versionCode` / iOS `CFBundleVersion`)
 
+**Platform web-shell sync (local rebuild):** last run from `main` @ **`9466892`**  
+(PRs **#725** + **#726** — USM/lock/A-B + slider expand + separation→isolation Live-Mix).  
+See [PLATFORM_SYNC.md](releases/PLATFORM_SYNC.md).  
+`build/`, `android/.../assets/public`, and `dist/*` binaries are **gitignored** — regenerate after pulling.
+
 Published GitHub Release assets are cut separately. Until a **v25.0.0** release is uploaded, the **latest** tag may still serve prior **v24.0.0** binaries.
 
 ## Current code target
 
 | Platform | Artifact name | Notes |
 |----------|---------------|--------|
-| **Android** | `VoiceIsolate-Pro-android-debug.apk` | `versionName "25.0.0"`, `versionCode 250000` |
-| **Windows** | `VoiceIsolate-Pro-25.0.0-win-x64.exe` | electron-builder `${version}` |
+| **Android** | `VoiceIsolate-Pro-android-debug.apk` | `versionName "25.0.0"`, `versionCode 250000` · Engineer expand + stem Live-Mix |
+| **Windows** | `VoiceIsolate-Pro-25.0.0-win-x64.exe` | electron-builder `${version}` · loads `build/` shell |
 
 ### Prior published tag (v24.0.0)
 
