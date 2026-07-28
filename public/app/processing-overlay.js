@@ -93,6 +93,30 @@
     return STAGE_GROUPS.find(g => stageIndex >= g.start && stageIndex <= g.end) || STAGE_GROUPS[STAGE_GROUPS.length - 1];
   }
 
+  /**
+   * Map pipeline stage index / percent to a named visual variant:
+   * uploading | decoding | analyzing | separating | isolating | reconstructing | exporting
+   */
+  function variantForStage(stageIndex, pct, stageName) {
+    const name = String(stageName || '').toLowerCase();
+    if (/upload|file select|drop|read/.test(name)) return 'uploading';
+    if (/decod|container|buffer alloc/.test(name)) return 'decoding';
+    if (/analy|vad|preflight|detect/.test(name)) return 'analyzing';
+    if (/separat|mask|ml|wiener|stem/.test(name)) return 'separating';
+    if (/isolat|spectral|erb|voice-band|crosstalk|dereverb|harmonic/.test(name)) return 'isolating';
+    if (/reconstr|inverse|istft|render|eq|compress|limit|mix/.test(name)) return 'reconstructing';
+    if (/export|wav|write|download|complete|ready/.test(name)) return 'exporting';
+    const i = Number(stageIndex) || 0;
+    const p = Number(pct) || 0;
+    if (p < 5 || i <= 1) return 'uploading';
+    if (i <= 4) return 'decoding';
+    if (i <= 8) return 'analyzing';
+    if (i <= 14) return 'separating';
+    if (i <= 19) return 'isolating';
+    if (i <= 27) return 'reconstructing';
+    return 'exporting';
+  }
+
   /* ── NeuralSpinner — radial spectrum + oscilloscope + helix ─────── */
   function NeuralSpinner(canvas) {
     this.canvas  = canvas;
@@ -691,6 +715,18 @@
       var groupIndex = STAGE_GROUPS.indexOf(group);
       this._lastStageIndex = Number.isFinite(stageIndex) ? stageIndex : this._lastStageIndex;
 
+      var el = this._el();
+      if (el) {
+        var variant = variantForStage(this._lastStageIndex, pct, stageName);
+        el.setAttribute('data-variant', variant);
+        if (this._refs && this._refs.card) {
+          this._refs.card.setAttribute('data-variant', variant);
+        } else {
+          var card = el.querySelector('.processing-card');
+          if (card) card.setAttribute('data-variant', variant);
+        }
+      }
+
       if (this._stageName() && stageName) this._stageName().textContent = stageName;
       if (this._pct() && Number.isFinite(pct))  this._pct().textContent  = pct + '%';
       if (this._bar() && Number.isFinite(pct))  this._bar().style.width  = pct + '%';
@@ -786,8 +822,13 @@
     if (vip._overlayPatched) return;
     vip._overlayPatched = true;
 
-    vip.showProcessingOverlay = function (stageName, pct) {
-      if (global.VIPOverlay) global.VIPOverlay.show(stageName, pct);
+    vip.showProcessingOverlay = function (stageName, pct, variant) {
+      if (global.VIPOverlay) {
+        global.VIPOverlay.show(stageName, pct);
+        if (variant && global.VIPOverlay._el && global.VIPOverlay._el()) {
+          global.VIPOverlay._el().setAttribute('data-variant', variant);
+        }
+      }
     };
 
     vip.hideProcessingOverlay = function () {
@@ -801,8 +842,9 @@
     var origPip = vip.pip ? vip.pip.bind(vip) : null;
     if (origPip) {
       vip.pip = async function (i, t) {
-        var pct       = Math.round(((i + 1) / t) * 100);
-        var stages    = global._vipApp && global._vipApp.STAGES;
+        var total = t || 32;
+        var pct       = Math.round(((i + 1) / total) * 100);
+        var stages    = this.STAGES || (global._vipApp && global._vipApp.STAGES);
         var stageName = (stages && stages[i]) ? stages[i] : ('Stage ' + (i + 1));
         this.updateProcessingOverlay(stageName, pct, i);
         return origPip(i, t);
@@ -811,10 +853,11 @@
 
     var origRun = vip.runPipeline.bind(vip);
     vip.runPipeline = async function () {
-      this.showProcessingOverlay('Preparing pipeline…', 0);
+      this.showProcessingOverlay('Preparing pipeline…', 0, 'analyzing');
       try {
-        return await origRun();
+        return await origRun.apply(this, arguments);
       } finally {
+        // Always hide — covers success, failure, and user-abort.
         this.hideProcessingOverlay();
       }
     };
