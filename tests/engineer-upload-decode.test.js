@@ -12,9 +12,8 @@ const appJs = fs.readFileSync(
 );
 
 describe('Engineer upload decode wiring', () => {
-  // Sections use CRLF on Windows; allow flexible method boundaries.
+  // Flexible method boundaries for CRLF line endings on Windows.
   const handleFileSection = appJs.match(/async handleFile\(file\) \{[\s\S]*?async ensureDecoded/)?.[0] || '';
-  const ensureDecodedSection = appJs.match(/async ensureDecoded\([\s\S]*?async _waitForPipelineIdle|async ensureDecoded\([\s\S]*?\n  \}\r?\n\r?\n/)?.[0] || '';
 
   test('app.js imports decodeBlobToAudioBuffer and resampleToCanonical', () => {
     expect(appJs).toContain("import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js'");

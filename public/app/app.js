@@ -2226,7 +2226,10 @@ class VoiceIsolatePro {
   }
 
   _resetSliders({ unlockedOnly = true } = {}) {
-    qsa('[id^="sl_"]').forEach((el) => {
+    const rows = (typeof document !== 'undefined' && document.querySelectorAll)
+      ? document.querySelectorAll('[id^="sl_"]')
+      : [];
+    rows.forEach((el) => {
       const id = el.id.slice(3);
       if (unlockedOnly && this._isSliderLocked(id)) return;
       const spec = SLIDER_BY_ID[id] || SLIDER_REG_BY_ID[id];
