@@ -11,10 +11,35 @@
  *
  * Single-Pass Spectral Contract:
  *   ONE forward STFT  → in-place spectral ops → ONE iSTFT
- *   All spectral work delegated to pipeline-orchestrator.js.
- *   app.js provides DSP helpers used by the pipeline.
+ *   Heavy DSP/ML runs in workers (MLWorker, FullAnalysisWorker, USMWorker).
+ *   app.js wires UI → pipeline hosts; never re-runs ML from slider events.
  *
  * 100 % local — no cloud APIs, no external fetch except /app/models/*.onnx.
+ *
+ * ── Engineer Mode data flow (path correctness) ─────────────────────────────
+ *   Upload  →  File selected (blob kept; decode deferred)
+ *        ↓
+ *   Decode  →  ensureDecoded() / FileIngestion (main thread yield + OfflineAudio)
+ *        ↓
+ *   Analyze →  FullAnalysisHost → FullAnalysisWorker (features, segments, recs)
+ *              + USM backend (USMNode / USMWorker) once per file — stems cached
+ *              → chips + audition layers; does NOT block sliders or Process
+ *        ↓
+ *   Config  →  Slider / preset / WhisperHunter map (Live-Mix GainNodes only)
+ *        ↓
+ *   Process →  runPipeline(): pause transport if playing → MLWorker isolation
+ *              (or DSP fallback) → stems → Live-Mix load. Heartbeats + timeout.
+ *        ↓
+ *   Playback / A-B  →  Transport + toggleAB() swaps original vs processed
+ *                      sample-accurate (playhead retained); no re-decode
+ *        ↓
+ *   Export  →  Save Original / Save Processed (local download only)
+ *
+ * Non-blocking contracts:
+ *   - Analysis does not freeze slider interaction (worker + yield).
+ *   - USM runs post-analysis off-main; never on mute/solo/slider drag.
+ *   - Process pauses playback intentionally but does not auto-resume.
+ *   - Transport A/B and playhead remain available after Process completes.
  */
 
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
@@ -1002,27 +1027,55 @@ class VoiceIsolatePro {
   }
 
   /**
-   * Collapsible sections defaults:
-   * open: Upload, Processing, active slider family (Noise/Gate)
-   * collapsed on small viewports: Waveform/Spectrum + inactive slider tabs
+   * Collapsible sections:
+   *  - defaults: Upload, Processing, active slider family (Noise/Gate) open
+   *  - collapsed on small viewports: Waveform/Spectrum + inactive slider tabs
+   *  - open/closed state persisted per section id in localStorage
+   *  - toggle never triggers re-process or analysis
    */
   _initCollapsibleSections() {
     if (typeof document === 'undefined') return;
+    const STORAGE_KEY = 'vip.engineer.sectionOpen.v1';
+    let stored = {};
+    try {
+      if (typeof localStorage !== 'undefined') {
+        stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {};
+      }
+    } catch { stored = {}; }
+
     const narrow = typeof window !== 'undefined'
       && window.matchMedia
       && window.matchMedia('(max-width: 900px)').matches;
-    const openIds = new Set(['section-upload', 'section-presets', 'section-processing', 'section-gate']);
-    if (!narrow) openIds.add('vizCard');
+    const defaultOpen = new Set(['section-upload', 'section-presets', 'section-processing', 'section-gate', 'section-analysis']);
+    if (!narrow) defaultOpen.add('vizCard');
+
+    const persist = () => {
+      try {
+        if (typeof localStorage === 'undefined') return;
+        const next = {};
+        document.querySelectorAll('details.vip-section[id]').forEach((el) => {
+          if (el.id) next[el.id] = !!el.open;
+        });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      } catch { /* private mode */ }
+    };
+
     document.querySelectorAll('details.vip-section').forEach((el) => {
-      if (openIds.has(el.id) || el.classList.contains('active')) {
+      const id = el.id || '';
+      if (id && Object.prototype.hasOwnProperty.call(stored, id)) {
+        el.open = !!stored[id];
+      } else if (defaultOpen.has(id) || el.classList.contains('active')) {
         el.open = true;
-      } else if (narrow || el.id === 'vizCard' || el.classList.contains('slider-group')) {
-        // Secondary / inactive slider tabs collapsed by default on small screens;
-        // on desktop keep viz open, leave inactive slider groups closed.
-        if (el.id === 'vizCard') el.open = !narrow;
+      } else if (narrow || id === 'vizCard' || el.classList.contains('slider-group')) {
+        if (id === 'vizCard') el.open = !narrow;
         else if (el.classList.contains('slider-group') && !el.classList.contains('active')) {
           el.open = false;
         }
+      }
+      // Persist user toggles only — never re-run DSP on collapse/expand.
+      if (!el.dataset.vipCollapseWired) {
+        el.dataset.vipCollapseWired = '1';
+        el.addEventListener('toggle', () => { persist(); });
       }
     });
   }
@@ -1339,9 +1392,10 @@ class VoiceIsolatePro {
 
   _syncSliderLockUi(id) {
     const row = document.querySelector(`.slider-row[data-slider-id="${id}"], .sr-row[data-slider-id="${id}"]`);
-    const btn = row?.querySelector('.slider-lock-btn');
+    const btn = row?.querySelector('.slider-lock-btn, .sr-lock-btn');
     if (!row || !btn) return;
     const locked = this._isSliderLocked(id);
+    // Both data-locked and class toggles: style.css + slider-theme.css key off both.
     row.dataset.locked = locked ? 'true' : 'false';
     row.classList.toggle('slider-locked', locked);
     row.classList.toggle('is-locked', locked);
@@ -1356,6 +1410,12 @@ class VoiceIsolatePro {
       input.style.pointerEvents = locked ? 'none' : '';
       if (locked) input.setAttribute('aria-readonly', 'true');
       else input.removeAttribute('aria-readonly');
+      // slider-ticks.css keys off .slider-tick-wrapper.is-locked — keep in sync.
+      const tickWrap = input.closest('.slider-tick-wrapper');
+      if (tickWrap) {
+        tickWrap.classList.toggle('is-locked', locked);
+        tickWrap.dataset.locked = locked ? 'true' : 'false';
+      }
     }
   }
 
@@ -1805,6 +1865,9 @@ class VoiceIsolatePro {
     // the bridge handles it, the change is an immediate AudioParam update — no
     // Reprocess, no ML re-run (CLAUDE.md §1). Unsupported ids (spectral/worker
     // effects) fall through and still apply on the next Reprocess.
+    //
+    // rAF-coalesce rapid drag events so we never queue redundant worklet/
+    // bridge recalcs mid-frame (calibration pipeline safety).
 
     // If the bridge is still initializing, wait for it so early slider moves are
     // not dropped (race where sliders fire before async _ensureBridge resolves).
@@ -1813,6 +1876,26 @@ class VoiceIsolatePro {
       return;
     }
 
+    this._pendingSliderParams = this._pendingSliderParams || Object.create(null);
+    this._pendingSliderParams[id] = value;
+    if (this._sliderFlushRaf) return;
+    const flush = () => {
+      this._sliderFlushRaf = 0;
+      const batch = this._pendingSliderParams || {};
+      this._pendingSliderParams = Object.create(null);
+      for (const [sid, sval] of Object.entries(batch)) {
+        this._applySliderImmediate(sid, sval);
+      }
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      this._sliderFlushRaf = requestAnimationFrame(flush);
+    } else {
+      this._sliderFlushRaf = setTimeout(flush, 0);
+    }
+  }
+
+  /** Immediate Live-Mix / worklet application (one id). Called from rAF flush. */
+  _applySliderImmediate(id, value) {
     if (this._bridge && typeof this._bridge.applyParam === 'function') {
       try {
         if (this._bridge.applyParam(id, value)) return;
@@ -1821,7 +1904,7 @@ class VoiceIsolatePro {
       }
     }
 
-    const orch = window._vipOrch;
+    const orch = typeof window !== 'undefined' ? window._vipOrch : null;
     if (id === 'outGain' && this._outGainNode && this.currentSource && this.ctx) {
       const gain = Math.pow(10, value / 20);
       this._outGainNode.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.01);
@@ -2221,8 +2304,15 @@ class VoiceIsolatePro {
   _setProcessedPlaybackMode() {
     this.abMode = 'processed';
     this._bridgeBuf = null;
-    if (this.dom?.tpAB) this.dom.tpAB.classList.add('active');
-    if (this.dom?.tpABLabel) this.dom.tpABLabel.textContent = 'Processed';
+    if (this.dom?.tpAB) {
+      this.dom.tpAB.classList.add('active');
+      this.dom.tpAB.disabled = false;
+      this.dom.tpAB.title = 'Compare Original / Processed (X) — sample-accurate, keeps playhead';
+    }
+    if (this.dom?.tpABLabel) {
+      this.dom.tpABLabel.dataset.version = 'B';
+      this.dom.tpABLabel.innerHTML = '<span class="tp-ab-tag">B</span><span class="tp-ab-name">Processed</span>';
+    }
   }
 
   _resetSliders({ unlockedOnly = true } = {}) {
@@ -2938,6 +3028,26 @@ class VoiceIsolatePro {
     this.abortFlag = false;
     this._mlIsolationSucceeded = false;
     this._pipelinePct = 0;
+    // Pause active playback before heavy work; retain playhead; do NOT auto-resume.
+    // Prevents overlapping graph nodes / double STFT races with AudioWorklet.
+    this._pausedForProcess = false;
+    this._playheadBeforeProcess = null;
+    try {
+      const bridgePlaying = this._bridge && typeof this._bridge.isPlaying === 'function'
+        && this._bridge.isPlaying();
+      if (this.isPlaying || bridgePlaying) {
+        if (typeof this._getTransportPosition === 'function') {
+          this._playheadBeforeProcess = this._getTransportPosition();
+        } else {
+          this._playheadBeforeProcess = this.playOffset || 0;
+        }
+        this.pause();
+        this._pausedForProcess = true;
+      }
+    } catch (pauseErr) {
+      structuredLog('warn', '[VIP] pause-before-process failed', { err: pauseErr?.message });
+    }
+    this._setTransportProcessingState(true);
     this._updateProcessButtonsState();
     stageStart('pipeline');
     // Let the browser paint the processing overlay before heavy work.
@@ -3070,6 +3180,16 @@ class VoiceIsolatePro {
     } finally {
       // Always unlock the UI — never leave the bar stuck mid-process.
       this.isProcessing = false;
+      // Restore transport controls; restore playhead if we paused — never auto-resume.
+      this._setTransportProcessingState(false);
+      if (this._playheadBeforeProcess != null && Number.isFinite(this._playheadBeforeProcess)) {
+        try {
+          if (typeof this.seekTo === 'function') this.seekTo(this._playheadBeforeProcess);
+          else this.playOffset = this._playheadBeforeProcess;
+        } catch { /* keep current offset */ }
+      }
+      this._pausedForProcess = false;
+      this._playheadBeforeProcess = null;
       this._updateProcessButtonsState();
       // Highest-risk regression: stuck-open overlay. Always hide here too
       // (processing-overlay.js also wraps runPipeline in try/finally).
@@ -3085,6 +3205,46 @@ class VoiceIsolatePro {
       if (this.dom.mobileStopBtn) {
         this.dom.mobileStopBtn.style.display='none';
       }
+    }
+  }
+
+  /**
+   * During Process: disable transport except visible "processing" state.
+   * Restores on completion/error without starting playback.
+   */
+  _setTransportProcessingState(busy) {
+    const ids = ['tpPlay', 'tpPause', 'tpStop', 'tpRew', 'tpFwd', 'tpSeek', 'tpSpeed', 'tpLoop', 'tpCropIn', 'tpCropOut', 'tpCropClear', 'tpAB'];
+    for (const id of ids) {
+      const el = this.dom?.[id] || (typeof document !== 'undefined' ? document.getElementById(id) : null);
+      if (!el) continue;
+      if (busy) {
+        if (el.dataset.vipPrevDisabled == null) {
+          el.dataset.vipPrevDisabled = el.disabled ? '1' : '0';
+        }
+        el.disabled = true;
+      } else if (el.dataset.vipPrevDisabled != null) {
+        // Leave disabled if no buffer / no processed yet for A/B; else restore.
+        const had = el.dataset.vipPrevDisabled === '1';
+        delete el.dataset.vipPrevDisabled;
+        if (id === 'tpAB') {
+          el.disabled = !(this.outputBuffer || this.procBuffer);
+        } else {
+          el.disabled = had && !(this.inputBuffer || this.origBuffer || this.outputBuffer);
+          if (this.inputBuffer || this.origBuffer || this.outputBuffer) {
+            el.disabled = false;
+          }
+        }
+      }
+    }
+    const card = typeof document !== 'undefined' ? document.querySelector('.transport-card') : null;
+    if (card) {
+      card.dataset.processing = busy ? 'true' : 'false';
+      card.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+    const ab = this.dom?.tpAB || (typeof document !== 'undefined' ? document.getElementById('tpAB') : null);
+    if (ab && !busy) {
+      ab.title = 'Compare Original / Processed (X) — sample-accurate, keeps playhead';
+      ab.setAttribute('aria-label', 'Compare Original vs Processed');
     }
   }
 
@@ -4613,6 +4773,11 @@ class VoiceIsolatePro {
     }
   }
 
+  /**
+   * Instant original ↔ processed swap during playback (transport bar).
+   * Sample-accurate: retains playhead; does not reload the file.
+   * vip-fixes may own this path when _fixABPatched is set.
+   */
   toggleAB() {
     if (this._fixABPatched) return;
     const buf = this.outputBuffer || this.procBuffer;
@@ -4625,9 +4790,26 @@ class VoiceIsolatePro {
     }
     this._bridgeBuf = null;
     this.abMode = this.abMode === 'original' ? 'processed' : 'original';
-    if (this.dom.tpAB) this.dom.tpAB.classList.toggle('active', this.abMode === 'processed');
-    // PATCHED BY vip-fixes.js — consider merging
-    if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
+    if (this.dom.tpAB) {
+      if (this.dom.tpAB.classList && typeof this.dom.tpAB.classList.toggle === 'function') {
+        this.dom.tpAB.classList.toggle('active', this.abMode === 'processed');
+      }
+      if (typeof this.dom.tpAB.setAttribute === 'function') {
+        this.dom.tpAB.setAttribute('aria-pressed', this.abMode === 'processed' ? 'true' : 'false');
+      }
+    }
+    if (this.dom.tpABLabel) {
+      const isProc = this.abMode === 'processed';
+      const labelText = isProc ? 'Processed' : 'Original';
+      if (this.dom.tpABLabel.dataset) this.dom.tpABLabel.dataset.version = isProc ? 'B' : 'A';
+      // Tests mock textContent; real DOM also gets structured A/B tags when possible.
+      this.dom.tpABLabel.textContent = labelText;
+      if (typeof Element !== 'undefined' && this.dom.tpABLabel instanceof Element) {
+        this.dom.tpABLabel.innerHTML = isProc
+          ? '<span class="tp-ab-tag">B</span><span class="tp-ab-name">Processed</span>'
+          : '<span class="tp-ab-tag">A</span><span class="tp-ab-name">Original</span>';
+      }
+    }
     if (this.isPlaying) this.play();
     // Keep Voice/Noise/SNR in sync across every readout on A/B toggle.
     this.updateAudioMetrics(this._computeAudioMetricsState());

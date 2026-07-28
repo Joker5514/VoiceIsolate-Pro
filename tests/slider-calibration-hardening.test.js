@@ -166,6 +166,12 @@ describe('lock persistence (app.js contract)', () => {
     expect(appSrc).toMatch(/dataset\.locked/);
   });
 
+  test('_syncSliderLockUi toggles tick wrapper is-locked for CSS parity', () => {
+    expect(appSrc).toMatch(/slider-tick-wrapper/);
+    expect(appSrc).toMatch(/classList\.toggle\('is-locked'/);
+    expect(appSrc).toMatch(/tickWrap\.dataset\.locked/);
+  });
+
   test('reset supports unlocked-only path', () => {
     expect(appSrc).toMatch(/_resetSliders\s*\(/);
     expect(appSrc).toMatch(/unlockedOnly/);
