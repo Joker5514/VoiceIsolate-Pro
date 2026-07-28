@@ -19,6 +19,10 @@
 
 import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
+import {
+  calibrate,
+  getEffectiveDspParams,
+} from './slider-calibration.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
 import { createYieldBudget, yieldToBrowser } from '/src/pipeline/ui-yield.js';
@@ -124,8 +128,13 @@ const HeroExperience = (() => {
     }
     const st = $('stat-status');
     if (st && statusText) st.textContent = statusText;
-    const snr = $('stat-snr');
-    if (snr && appRef?.lastSNR != null) snr.textContent = `${appRef.lastSNR} dB`;
+    // Voice / Noise / SNR always flow through the centralized metrics writer.
+    if (appRef && typeof appRef.updateAudioMetrics === 'function') {
+      appRef.updateAudioMetrics(appRef._lastMetricsState || null);
+    } else {
+      const snr = $('stat-snr');
+      if (snr && appRef?.lastSNR != null) snr.textContent = `${appRef.lastSNR} dB`;
+    }
   }
 
   function mirrorWaveCanvases() {
@@ -838,8 +847,11 @@ class VoiceIsolatePro {
     try {
       this._renderSliders();
       this.bindEvents();
+      this._initCollapsibleSections();
       fixUploadTouchTargets();
       this._updateProcessButtonsState();
+      // Restore lock UI after sliders exist (already applied in _renderSliders; re-sync all).
+      for (const id of this._sliderLocks) this._syncSliderLockUi(id);
       HeroExperience.init(this);
       WorkflowTier.init(this);
       // Upload controls are live — do not leave the splash intercepting clicks.
@@ -964,6 +976,7 @@ class VoiceIsolatePro {
       auditLogBtn:g('auditLogBtn'),
       presetSel:g('presetSel'),
       resetSlidersBtn:g('resetSlidersBtn'),
+      resetUnlockedBtn:g('resetUnlockedBtn'),
       sliderSearch:g('sliderSearch'),
       pipeFill:g('pipeFill'),
       pipeBar:g('pipeBar'),
@@ -977,12 +990,41 @@ class VoiceIsolatePro {
       hFile:g('hFile'),
       hPeak:g('hPeak'),
       hRMS:g('hRMS'),
+      hVoice:g('hVoice'),
+      hNoise:g('hNoise'),
+      hSNR:g('hSNR'),
       mobileProcessBtn:g('mobileProcessBtn'),
       mobileReprocessBtn:g('mobileReprocessBtn'),
       mobileStopBtn:g('mobileStopBtn'),
       statsToggle:g('statsToggle'),
       hdrStats:g('hdrStats'),
     };
+  }
+
+  /**
+   * Collapsible sections defaults:
+   * open: Upload, Processing, active slider family (Noise/Gate)
+   * collapsed on small viewports: Waveform/Spectrum + inactive slider tabs
+   */
+  _initCollapsibleSections() {
+    if (typeof document === 'undefined') return;
+    const narrow = typeof window !== 'undefined'
+      && window.matchMedia
+      && window.matchMedia('(max-width: 900px)').matches;
+    const openIds = new Set(['section-upload', 'section-presets', 'section-processing', 'section-gate']);
+    if (!narrow) openIds.add('vizCard');
+    document.querySelectorAll('details.vip-section').forEach((el) => {
+      if (openIds.has(el.id) || el.classList.contains('active')) {
+        el.open = true;
+      } else if (narrow || el.id === 'vizCard' || el.classList.contains('slider-group')) {
+        // Secondary / inactive slider tabs collapsed by default on small screens;
+        // on desktop keep viz open, leave inactive slider groups closed.
+        if (el.id === 'vizCard') el.open = !narrow;
+        else if (el.classList.contains('slider-group') && !el.classList.contains('active')) {
+          el.open = false;
+        }
+      }
+    });
   }
 
   // ── Boot splash ──────────────────────────────────────────────────────────
@@ -1236,20 +1278,42 @@ class VoiceIsolatePro {
     }
   }
 
+  static get SLIDER_LOCK_STORAGE_KEY() { return 'vip-slider-locks'; }
+
   _loadSliderLocks() {
-    if (typeof sessionStorage === 'undefined') return;
-    try {
-      const raw = sessionStorage.getItem('vip-slider-locks');
-      if (!raw) return;
-      const ids = JSON.parse(raw);
-      if (Array.isArray(ids)) this._sliderLocks = new Set(ids);
-    } catch (_) { /* ignore corrupt storage */ }
+    const storages = [];
+    if (typeof localStorage !== 'undefined') storages.push(localStorage);
+    if (typeof sessionStorage !== 'undefined') storages.push(sessionStorage);
+    for (const store of storages) {
+      try {
+        const raw = store.getItem(VoiceIsolatePro.SLIDER_LOCK_STORAGE_KEY);
+        if (!raw) continue;
+        const ids = JSON.parse(raw);
+        if (Array.isArray(ids)) {
+          this._sliderLocks = new Set(ids);
+          // Migrate session → local so locks survive reload.
+          if (store === sessionStorage && typeof localStorage !== 'undefined') {
+            try {
+              localStorage.setItem(VoiceIsolatePro.SLIDER_LOCK_STORAGE_KEY, raw);
+            } catch (_) { /* ignore */ }
+          }
+          return;
+        }
+      } catch (_) { /* ignore corrupt storage */ }
+    }
   }
 
   _persistSliderLocks() {
-    if (typeof sessionStorage === 'undefined') return;
+    const payload = JSON.stringify([...this._sliderLocks]);
     try {
-      sessionStorage.setItem('vip-slider-locks', JSON.stringify([...this._sliderLocks]));
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(VoiceIsolatePro.SLIDER_LOCK_STORAGE_KEY, payload);
+      }
+    } catch (_) { /* ignore quota */ }
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(VoiceIsolatePro.SLIDER_LOCK_STORAGE_KEY, payload);
+      }
     } catch (_) { /* ignore quota */ }
   }
 
@@ -1261,23 +1325,110 @@ class VoiceIsolatePro {
     return this._isSliderLocked(id) || this._userTouchedSliders.has(id);
   }
 
+  /** Inline SVG padlock icons — swapped via CSS on data-locked, not re-rendered. */
+  _lockButtonSvgHtml() {
+    return [
+      '<svg class="lock-icon lock-icon--locked" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">',
+      '<path fill="currentColor" d="M17 8h-1V6a4 4 0 0 0-8 0v2H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zm-7-2a2 2 0 1 1 4 0v2h-4V6zm7 14H7V10h10v10zm-5-3a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>',
+      '</svg>',
+      '<svg class="lock-icon lock-icon--unlocked" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">',
+      '<path fill="currentColor" d="M17 8h-1V6a4 4 0 0 0-7.2-2.4l1.4 1.4A2 2 0 0 1 14 6v2H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zM7 20V10h10v10H7zm5-3a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/>',
+      '</svg>',
+    ].join('');
+  }
+
   _syncSliderLockUi(id) {
-    const row = document.querySelector(`.slider-row[data-slider-id="${id}"]`);
+    const row = document.querySelector(`.slider-row[data-slider-id="${id}"], .sr-row[data-slider-id="${id}"]`);
     const btn = row?.querySelector('.slider-lock-btn');
     if (!row || !btn) return;
     const locked = this._isSliderLocked(id);
+    row.dataset.locked = locked ? 'true' : 'false';
     row.classList.toggle('slider-locked', locked);
+    row.classList.toggle('is-locked', locked);
     btn.classList.toggle('is-locked', locked);
     btn.setAttribute('aria-pressed', String(locked));
-    btn.title = locked ? 'Unlock slider (allow preset changes)' : 'Lock slider (ignore preset changes)';
-    btn.textContent = locked ? '\u{1F512}' : '\u{1F513}';
+    btn.setAttribute('aria-label', locked ? `Unlock ${id}` : `Lock ${id}`);
+    btn.title = locked ? 'Unlock slider (allow preset/reset changes)' : 'Lock slider (ignore preset changes)';
+    const input = row.querySelector('input[type="range"]');
+    if (input) {
+      input.classList.toggle('slider-input-locked', locked);
+      // Keep visually present; block pointer interaction only.
+      input.style.pointerEvents = locked ? 'none' : '';
+      if (locked) input.setAttribute('aria-readonly', 'true');
+      else input.removeAttribute('aria-readonly');
+    }
   }
 
-  _toggleSliderLock(id) {
-    if (this._sliderLocks.has(id)) this._sliderLocks.delete(id);
-    else this._sliderLocks.add(id);
+  /**
+   * Public lock toggle — flips data-locked, in-memory map, and localStorage.
+   * @param {string} sliderId
+   * @returns {boolean} new locked state
+   */
+  toggleSliderLock(sliderId) {
+    if (!sliderId) return false;
+    if (this._sliderLocks.has(sliderId)) this._sliderLocks.delete(sliderId);
+    else this._sliderLocks.add(sliderId);
     this._persistSliderLocks();
-    this._syncSliderLockUi(id);
+    this._syncSliderLockUi(sliderId);
+    return this._isSliderLocked(sliderId);
+  }
+
+  /** @deprecated use toggleSliderLock */
+  _toggleSliderLock(id) {
+    return this.toggleSliderLock(id);
+  }
+
+  /**
+   * Raw UI params → discipline curves + coupling + soft clamps.
+   * Never mutates visible slider positions.
+   */
+  getEffectiveParams(rawParams) {
+    const raw = rawParams || window.VIP_PARAMS || this.params || {};
+    const stereoHint = this._stereoHintFromBuffers
+      ? this._stereoHintFromBuffers()
+      : this._computeStereoHint();
+    return getEffectiveDspParams(raw, {
+      stereoHint,
+      debug: typeof globalThis !== 'undefined' && globalThis.VIP_DEBUG_CALIBRATION === true,
+    });
+  }
+
+  _computeStereoHint() {
+    const buf = this.origBuffer || this.inputBuffer;
+    if (!buf || typeof buf.numberOfChannels !== 'number' || buf.numberOfChannels < 2) {
+      return { stereoActive: false, channelDiff: 0 };
+    }
+    try {
+      const L = buf.getChannelData(0);
+      const R = buf.getChannelData(1);
+      const n = Math.min(L.length, R.length, 48000);
+      let lRms = 0;
+      let rRms = 0;
+      let diff = 0;
+      const step = Math.max(1, Math.floor(n / 4000));
+      let count = 0;
+      for (let i = 0; i < n; i += step) {
+        const a = L[i];
+        const b = R[i];
+        lRms += a * a;
+        rRms += b * b;
+        diff += Math.abs(a - b);
+        count += 1;
+      }
+      if (!count) return { stereoActive: true, channelDiff: 0, leftRms: 0, rightRms: 0 };
+      lRms = Math.sqrt(lRms / count);
+      rRms = Math.sqrt(rRms / count);
+      const meanDiff = diff / count;
+      const scale = Math.max(lRms + rRms, 1e-8);
+      return {
+        stereoActive: true,
+        leftRms: lRms,
+        rightRms: rRms,
+        channelDiff: Math.max(0, Math.min(1, meanDiff / scale)),
+      };
+    } catch (_) {
+      return { stereoActive: true, channelDiff: 0.3 };
+    }
   }
 
   // ── Slider rendering ─────────────────────────────────────────────────────
@@ -1331,7 +1482,19 @@ class VoiceIsolatePro {
       valEl.textContent = initVal + (s.unit || '');
 
       // PATCHED BY vip-fixes.js — consider merging
+      inputEl.addEventListener('pointerdown', (ev) => {
+        if (this._isSliderLocked(s.id)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+        }
+      });
       inputEl.addEventListener('input', () => {
+        if (this._isSliderLocked(s.id) && !this._programmaticSliderUpdate) {
+          // Restore locked value — block manual drag.
+          const lockedVal = window.VIP_PARAMS?.[s.id] ?? s.val;
+          inputEl.value = lockedVal;
+          return;
+        }
         if (!this._programmaticSliderUpdate) this._userTouchedSliders.add(s.id);
         const el = inputEl;
         const v = parseFloat(el.value);
@@ -1359,13 +1522,14 @@ class VoiceIsolatePro {
       lockBtn.setAttribute('aria-label', `Lock ${s.label}`);
       lockBtn.setAttribute('aria-pressed', 'false');
       lockBtn.title = 'Lock slider (ignore preset changes)';
-      lockBtn.textContent = '\u{1F513}';
+      lockBtn.innerHTML = this._lockButtonSvgHtml();
       lockBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this._toggleSliderLock(s.id);
+        this.toggleSliderLock(s.id);
       });
 
+      row.dataset.locked = 'false';
       row.appendChild(labelEl);
       row.appendChild(inputEl);
       row.appendChild(valEl);
@@ -1408,7 +1572,9 @@ class VoiceIsolatePro {
           value: initVal,
           unit: s.unit || '',
           examples,
+          meta: regEntry?.hintMeta || null,
           onApplyExample: (val) => {
+            if (this._isSliderLocked(s.id)) return;
             inputEl.value = val;
             inputEl.dispatchEvent(new Event('input', { bubbles: true }));
           },
@@ -1527,10 +1693,12 @@ class VoiceIsolatePro {
   }
 
   // [WHISPER UPDATE] Send calibrated DSP value to worklet (Part 3)
+  // Separation sliders: apply discipline curve on UI value before family transform.
   _applySliderToWorklet(id, uiValue) {
     const entry = SLIDER_REG_BY_ID[id];
     if (!entry || typeof entry.transform !== 'function') return;
-    const dspVal = entry.transform(uiValue);
+    const disciplined = calibrate(id, uiValue);
+    const dspVal = entry.transform(disciplined);
     const paramId = entry.workletParam || entry.id;
     const ctx = this.ctx;
     const node = this.workletNode || (window._vipOrch && window._vipOrch.workletNode);
@@ -1838,15 +2006,22 @@ class VoiceIsolatePro {
       b.addEventListener('click', () => this.applyPreset(b.dataset.preset));
     });
 
-    // Reset sliders
+    // Reset sliders — locked rows preserved unless user chooses "reset unlocked only"
+    // then "reset all" (explicit second path via confirm).
     bind('resetSlidersBtn', d.resetSlidersBtn, 'click', () => {
-      if (!confirm('Are you sure you want to reset all controls to their default values?')) return;
-      qsa('[id^="sl_"]').forEach(el => {
-        const id = el.id.slice(3);
-        const spec = SLIDER_BY_ID[id];
-        if (spec) { el.value = spec.val; el.dispatchEvent(new Event('input', { bubbles: true })); }
-      });
-      this._setWhisperMode(SLIDER_BY_ID.whisperMode ? SLIDER_BY_ID.whisperMode.val : 0);
+      const unlockedOnly = confirm(
+        'Reset unlocked controls to defaults?\n\nOK = Reset unlocked only (locked sliders stay)\nCancel = ask about full reset',
+      );
+      if (unlockedOnly) {
+        this._resetSliders({ unlockedOnly: true });
+        return;
+      }
+      const resetAll = confirm('Reset ALL controls including locked sliders?');
+      if (!resetAll) return;
+      this._resetSliders({ unlockedOnly: false });
+    });
+    bind('resetUnlockedBtn', d.resetUnlockedBtn || $('resetUnlockedBtn'), 'click', () => {
+      this._resetSliders({ unlockedOnly: true });
     });
 
     // [WHISPER UPDATE] WhisperHunter AI auto-processing
@@ -2050,21 +2225,41 @@ class VoiceIsolatePro {
     if (this.dom?.tpABLabel) this.dom.tpABLabel.textContent = 'Processed';
   }
 
+  _resetSliders({ unlockedOnly = true } = {}) {
+    qsa('[id^="sl_"]').forEach((el) => {
+      const id = el.id.slice(3);
+      if (unlockedOnly && this._isSliderLocked(id)) return;
+      const spec = SLIDER_BY_ID[id] || SLIDER_REG_BY_ID[id];
+      if (!spec) return;
+      const def = spec.val != null ? spec.val : spec.default;
+      this._setSliderUi(id, def, { notify: true, force: !unlockedOnly });
+      this._userTouchedSliders.delete(id);
+    });
+    if (!unlockedOnly || !this._isSliderLocked('whisperMode')) {
+      this._setWhisperMode(SLIDER_BY_ID.whisperMode ? SLIDER_BY_ID.whisperMode.val : 0);
+      this._userTouchedSliders.delete('whisperMode');
+    }
+    this.showNotification(unlockedOnly ? 'Unlocked controls reset' : 'All controls reset', 'info');
+  }
+
   /** Push a calibrated slider value through VIP_PARAMS, DOM, bridge, and worklet. */
-  _setSliderUi(id, rawValue, { notify = true } = {}) {
+  _setSliderUi(id, rawValue, { notify = true, force = false } = {}) {
     this._programmaticSliderUpdate = true;
     try {
-      this._setSliderUiInner(id, rawValue, { notify });
+      this._setSliderUiInner(id, rawValue, { notify, force });
     } finally {
       this._programmaticSliderUpdate = false;
     }
   }
 
-  _setSliderUiInner(id, rawValue, { notify = true } = {}) {
+  _setSliderUiInner(id, rawValue, { notify = true, force = false } = {}) {
     if (id === 'whisperMode') {
+      if (this._isSliderLocked(id) && !force) return;
       this._setWhisperMode(rawValue);
       return;
     }
+    // Presets / auto-calibrate must not overwrite locked sliders unless force.
+    if (this._isSliderLocked(id) && !force) return;
     const hasSpec = SLIDER_REG_BY_ID[id] || SLIDER_BY_ID[id];
     if (!hasSpec) return;
     const value = clampToSlider(id, rawValue);
@@ -2345,7 +2540,7 @@ class VoiceIsolatePro {
       this.dom.fileInfo.textContent = `${file.name || 'File'} · ${kindLabel} · ${sizeMb} MB · ready (decode on Analyze/Process)`;
     }
     this.setStatus('READY');
-    this._updateProcessButtonsState();
+    if (typeof this._updateProcessButtonsState === 'function') this._updateProcessButtonsState();
     // Enable analyze/process without decoded buffers — ensureDecoded runs first.
     if (this.dom.processBtn) this.dom.processBtn.disabled = false;
     if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
@@ -2371,9 +2566,16 @@ class VoiceIsolatePro {
     }
 
     // Soft gesture unlock for AudioContext (worklets still lazy).
-    this.ensureCtx().catch((err) => {
+    try {
+      const ctxP = typeof this.ensureCtx === 'function' ? this.ensureCtx() : null;
+      if (ctxP && typeof ctxP.catch === 'function') {
+        ctxP.catch((err) => {
+          structuredLog('warn', '[VIP] AudioContext soft unlock failed', { err: err?.message });
+        });
+      }
+    } catch (err) {
       structuredLog('warn', '[VIP] AudioContext soft unlock failed', { err: err?.message });
-    });
+    }
   }
 
   /**
@@ -2853,6 +3055,9 @@ class VoiceIsolatePro {
       stageEnd('pipeline');
       this.updatePipelineProgress(32, 'Complete', 100, { force: true });
       this.setStatus('DONE');
+      try {
+        this.updateAudioMetrics(this._computeAudioMetricsState());
+      } catch (_) { /* metrics must not fail the pipeline */ }
       try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}
     } catch (err) {
       structuredLog('error', '[VIP] Pipeline error', { err: err.message });
@@ -2863,6 +3068,11 @@ class VoiceIsolatePro {
       // Always unlock the UI — never leave the bar stuck mid-process.
       this.isProcessing = false;
       this._updateProcessButtonsState();
+      // Highest-risk regression: stuck-open overlay. Always hide here too
+      // (processing-overlay.js also wraps runPipeline in try/finally).
+      if (typeof this.hideProcessingOverlay === 'function') {
+        try { this.hideProcessingOverlay(); } catch (_) {}
+      }
       if (this.dom.mobileProcessBtn) {
         this.dom.mobileProcessBtn.style.display='inline-flex';
       }
@@ -3014,7 +3224,8 @@ class VoiceIsolatePro {
 
     await this.ensureCtx();
     const DSP = this._resolveDSP();
-    const p = window.VIP_PARAMS || {};
+    // Discipline/coupling soft-clamps — effective only; UI sliders stay put.
+    const p = { ...this.getEffectiveParams(window.VIP_PARAMS || {}), __effective: true };
     const sr = buf.sampleRate;
     const nCh = buf.numberOfChannels;
     const len = buf.length;
@@ -3230,7 +3441,8 @@ class VoiceIsolatePro {
 
   // ── Source separation ─────────────────────────────────────────────────────
   async runSeparation(buffer, params) {
-    const p = params || window.VIP_PARAMS || {};
+    const raw = params || window.VIP_PARAMS || {};
+    const p = this.getEffectiveParams(raw);
     const iso = p.voiceIso || 80;
     try {
       const channelData = buffer.getChannelData(0);
@@ -3274,7 +3486,8 @@ class VoiceIsolatePro {
     }
   }
 
-  applyBgSuppress(spec, p) {
+  applyBgSuppress(spec, pIn) {
+    const p = pIn?.__effective ? pIn : this.getEffectiveParams(pIn || {});
     const g = 1 - (p.bgSuppress || 0) / 100;
     for (let i = 0; i < spec.length; i++) spec[i] *= g;
   }
@@ -3299,7 +3512,8 @@ class VoiceIsolatePro {
     if (strength < 0.001) return;
   }
 
-  applyCrosstalkCancel(spec, p) {
+  applyCrosstalkCancel(spec, pIn) {
+    const p = pIn?.__effective ? pIn : this.getEffectiveParams(pIn || {});
     if (!p.crosstalkCancel) return;
     // Crosstalk cancellation
     const strength = (p.crosstalkCancel || 0) / 100;
@@ -3782,7 +3996,9 @@ class VoiceIsolatePro {
 
   // S14: keep the voice band (voiceFocusLo..Hi) plus the speech-shaped mask;
   // attenuate everything else by bgSuppress, weighted by voiceIso.
-  _applyVoiceFocus(mag, sr, p, halfN, fftSize) {
+  // Uses effective (calibrated/coupled) values — never mutates UI sliders.
+  _applyVoiceFocus(mag, sr, pIn, halfN, fftSize) {
+    const p = pIn?.__effective ? pIn : this.getEffectiveParams(pIn || window.VIP_PARAMS || {});
     const DSP = this._resolveDSP();
     const iso = (p.voiceIso ?? 0) / 100;
     const bg = (p.bgSuppress ?? 0) / 100;
@@ -4410,6 +4626,126 @@ class VoiceIsolatePro {
     // PATCHED BY vip-fixes.js — consider merging
     if (this.dom.tpABLabel) this.dom.tpABLabel.textContent = this.abMode === 'processed' ? 'Processed' : 'Original';
     if (this.isPlaying) this.play();
+    // Keep Voice/Noise/SNR in sync across every readout on A/B toggle.
+    this.updateAudioMetrics(this._computeAudioMetricsState());
+  }
+
+  /**
+   * Centralized Voice % / Noise % / SNR dB writer.
+   * Computes once (or accepts precomputed state) and pushes to every DOM location.
+   * @param {{ voicePct?: number, noisePct?: number, snrDb?: number }|null} [computedState]
+   */
+  updateAudioMetrics(computedState) {
+    const state = computedState || this._computeAudioMetricsState() || this._lastMetricsState || {
+      voicePct: null,
+      noisePct: null,
+      snrDb: null,
+    };
+    this._lastMetricsState = state;
+    if (Number.isFinite(state.snrDb)) this.lastSNR = state.snrDb;
+
+    const voiceTxt = Number.isFinite(state.voicePct) ? `${Math.round(state.voicePct)}%` : '--';
+    const noiseTxt = Number.isFinite(state.noisePct) ? `${Math.round(state.noisePct)}%` : '--';
+    const snrTxt = Number.isFinite(state.snrDb)
+      ? `${state.snrDb >= 0 ? '+' : ''}${state.snrDb.toFixed(1)} dB`
+      : '-- dB';
+    const snrShort = Number.isFinite(state.snrDb)
+      ? `${state.snrDb >= 0 ? '+' : ''}${state.snrDb.toFixed(1)}`
+      : '--';
+
+    const write = (id, text) => {
+      if (typeof document === 'undefined' || typeof document.getElementById !== 'function') return;
+      try {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+      } catch (_) { /* test sandboxes may lack DOM */ }
+    };
+    // Header badges
+    write('hVoice', voiceTxt);
+    write('hNoise', noiseTxt);
+    write('hSNR', snrTxt);
+    // Pipeline stat strip
+    write('stat-voice', voiceTxt);
+    write('stat-noise', noiseTxt);
+    write('stat-snr', Number.isFinite(state.snrDb) ? `${snrShort} dB` : '--');
+    // Neon pulse card
+    write('np-stat-voice', Number.isFinite(state.voicePct) ? String(Math.round(state.voicePct)) : '--');
+    write('np-stat-noise', Number.isFinite(state.noisePct) ? String(Math.round(state.noisePct)) : '--');
+    write('np-stat-snr', Number.isFinite(state.snrDb) ? snrShort : '--');
+    if (window.NeonPulseViz && typeof window.NeonPulseViz.updateStats === 'function') {
+      window.NeonPulseViz.updateStats({
+        voice: Number.isFinite(state.voicePct) ? state.voicePct : 0,
+        noise: Number.isFinite(state.noisePct) ? state.noisePct : 0,
+        snr: Number.isFinite(state.snrDb) ? snrShort : '--',
+      });
+    }
+    return state;
+  }
+
+  /**
+   * Derive Voice %, Noise %, SNR dB from current buffers / analysis once.
+   */
+  _computeAudioMetricsState() {
+    const orig = this.origBuffer || this.inputBuffer;
+    const proc = this.abMode === 'original'
+      ? orig
+      : (this.outputBuffer || this.procBuffer || orig);
+    if (!orig || typeof orig.getChannelData !== 'function') {
+      return this._lastMetricsState || { voicePct: null, noisePct: null, snrDb: null };
+    }
+    try {
+      const o = orig.getChannelData(0);
+      const p = (proc && proc.getChannelData) ? proc.getChannelData(0) : o;
+      const n = Math.min(o.length, p.length);
+      if (n < 32) return { voicePct: null, noisePct: null, snrDb: null };
+
+      // Subsample for UI speed.
+      const step = Math.max(1, Math.floor(n / 8000));
+      let oRms = 0;
+      let pRms = 0;
+      let oCount = 0;
+      let voiceEnergy = 0;
+      let noiseEnergy = 0;
+      for (let i = 0; i < n; i += step) {
+        const ov = o[i];
+        const pv = p[i];
+        oRms += ov * ov;
+        pRms += pv * pv;
+        oCount += 1;
+        // Proxy: residual |orig-proc| ≈ noise removed; retained energy ≈ voice.
+        const resid = ov - pv;
+        noiseEnergy += resid * resid;
+        voiceEnergy += pv * pv;
+      }
+      if (!oCount) return { voicePct: null, noisePct: null, snrDb: null };
+      oRms = Math.sqrt(oRms / oCount);
+      pRms = Math.sqrt(pRms / oCount);
+      const total = voiceEnergy + noiseEnergy + 1e-12;
+      let voicePct = (voiceEnergy / total) * 100;
+      let noisePct = (noiseEnergy / total) * 100;
+      // Clamp + normalize to 100
+      voicePct = Math.max(0, Math.min(100, voicePct));
+      noisePct = Math.max(0, Math.min(100, 100 - voicePct));
+
+      // SNR estimate: processed signal vs residual (noise proxy)
+      const noiseRms = Math.sqrt(noiseEnergy / oCount) + 1e-10;
+      const sigRms = pRms + 1e-10;
+      let snrDb = 20 * Math.log10(sigRms / noiseRms);
+      if (!Number.isFinite(snrDb)) snrDb = 0;
+      snrDb = Math.max(-40, Math.min(60, snrDb));
+
+      // Prefer analyzer profile when present.
+      const env = this._lastEnvProfile || this.lastEnvProfile;
+      if (env && Number.isFinite(env.voiceRatio)) {
+        voicePct = Math.max(0, Math.min(100, env.voiceRatio * 100));
+        noisePct = Math.max(0, Math.min(100, 100 - voicePct));
+      }
+      if (env && Number.isFinite(env.snrDb)) snrDb = env.snrDb;
+
+      return { voicePct, noisePct, snrDb, oRms, pRms };
+    } catch (_) {
+      return this._lastMetricsState || { voicePct: null, noisePct: null, snrDb: null };
+    }
   }
 
   _setScrubPos(frac) {

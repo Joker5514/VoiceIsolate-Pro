@@ -1,11 +1,20 @@
 /**
- * slider-calibration.js — calibrated DSP transfer functions + usage examples
- * [WHISPER UPDATE] Part 1 & Part 3
+ * slider-calibration.js — calibrated DSP transfer functions, coupling rules,
+ * and soft artifact guards for separation/isolation sliders.
+ *
+ * Pure module: no DOM, no side-effects on UI slider positions.
+ * Effective values only — visible UI ranges stay unchanged.
+ *
+ * [HARDENING v25] Separation/isolation slider discipline
  */
 'use strict';
 
 export function clamp01(v) {
   return Math.max(0, Math.min(1, v));
+}
+
+export function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
 }
 
 export function normUi(v, min, max) {
@@ -17,7 +26,36 @@ export function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
 
-/** Calibrated transfer families (Part 3) */
+/** Debug flag for soft-clamp console warnings (dev only). */
+export const CALIBRATION_DEBUG =
+  (typeof globalThis !== 'undefined' && globalThis.VIP_DEBUG_CALIBRATION === true);
+
+// ── Coupling / speech-band constants ────────────────────────────────────────
+/** Effective voiceIso above this may cap bgSuppress unless speech-safe span. */
+export const VOICE_ISO_HIGH_THRESHOLD = 75;
+/** Max bgSuppress (effective) when voiceIso is high and band is not speech-safe. */
+export const BG_SUPPRESS_CAP_WHEN_ISO_HIGH = 72;
+/**
+ * Speech-safe span: band must cover at least this frequency width AND
+ * intersect the natural speech corridor (≈300–3400 Hz fundamentals+formants).
+ */
+export const SPEECH_SAFE_MIN_WIDTH_HZ = 2600;
+export const SPEECH_SAFE_LO_HZ = 800;
+export const SPEECH_SAFE_HI_HZ = 3400;
+/** Absolute minimum protected speech window width (never collapse below this). */
+export const PROTECTED_SPEECH_MIN_WIDTH_HZ = 1800;
+/** Prefer clamping edges toward this natural speech corridor. */
+export const SPEECH_CORRIDOR_LO_HZ = 200;
+export const SPEECH_CORRIDOR_HI_HZ = 5000;
+/** "Stable middle corridor" band-width bounds for bgSuppress auto-correction. */
+export const STABLE_BAND_NARROW_HZ = 2200;
+export const STABLE_BAND_WIDE_HZ = 9000;
+/** Soft-clamp risk thresholds. */
+export const ARTIFACT_ISO_EXTREME = 88;
+export const ARTIFACT_BG_EXTREME = 82;
+export const ARTIFACT_NARROW_BAND_HZ = 2000;
+
+/** Calibrated transfer families (legacy registry + Part 3) */
 export const TF = {
   passthrough(v) { return v; },
 
@@ -74,7 +112,10 @@ export const SLIDER_FAMILY = {
   deEssFreq: 'logHz', deEssAmt: 'quadGain', specTilt: 'bipolarTransient', formantShift: 'bipolarTransient',
   derevAmt: 'quadGain', derevDecay: 'quadGain', harmRecov: 'quadGain', harmOrder: 'passthrough',
   stereoWidth: 'quadGain', phaseCorr: 'quadGain',
-  voiceIso: 'quadGain', bgSuppress: 'quadGain', voiceFocusLo: 'logHz', voiceFocusHi: 'logHz', crosstalkCancel: 'quadGain',
+  // Separation sliders: ui→dsp family still used by registry transform; discipline
+  // curves live in calibrate() and applyCoupling() for effective DSP values.
+  voiceIso: 'passthrough', bgSuppress: 'passthrough',
+  voiceFocusLo: 'passthrough', voiceFocusHi: 'passthrough', crosstalkCancel: 'passthrough',
   outGain: 'quadGain', dryWet: 'dryWet', ditherAmt: 'passthrough', outWidth: 'quadGain',
   whisperLift: 'quadGain', crowdNull: 'expNR', bassCrush: 'expNR', reverbStrip: 'sqrtTime',
   voiceTunnel: 'quadGain', musicKill: 'expNR', snrFloor: 'dbPassthrough', whisperMode: 'passthrough',
@@ -247,6 +288,328 @@ export const SLIDER_EXAMPLES = {
   ],
 };
 
+// ── Non-linear discipline curves (Task 1a) ──────────────────────────────────
+
+/**
+ * Cubic ease-out: f(t) = 1 - (1-t)^3, t in [0,1].
+ * Smooth deceleration — large early steps, tiny late steps.
+ */
+export function easeOutCubic(t) {
+  const x = clamp01(t);
+  return 1 - Math.pow(1 - x, 3);
+}
+
+/**
+ * Logarithmic taper for upper-range compression (alternate family).
+ * f(t) = log(1 + k*t) / log(1+k), k>0. Higher k → more compression at top.
+ */
+export function logTaper(t, k = 4) {
+  const x = clamp01(t);
+  return Math.log(1 + k * x) / Math.log(1 + k);
+}
+
+/**
+ * voiceIso discipline curve (UI raw 0–100 → effective 0–100).
+ *
+ * Formula (documented):
+ *   pivot = 72  (default UI value; preserves current default behavior)
+ *   headroom = 14  (max effective lift above pivot at UI=100 → effective ≤ 86)
+ *   For raw ≤ pivot:
+ *     effective = raw                       // near-linear (identity)
+ *   For raw > pivot:
+ *     t = (raw - pivot) / (100 - pivot)     // 0 at 72, 1 at 100
+ *     effective = pivot + headroom * easeOutCubic(t)
+ *   Consequence: UI travel 80→100 (last 20 points) only yields a small
+ *   bounded increase in effective isolation (ease-out cubic decelerates hard).
+ *
+ * At raw=72: effective=72. At raw=100: effective=86. At raw=0: effective=0.
+ */
+export function curveVoiceIso(raw) {
+  const v = Number(raw);
+  if (!Number.isFinite(v)) return 0;
+  const pivot = 72;
+  const headroom = 14;
+  if (v <= pivot) return clamp(v, 0, 100);
+  const t = (v - pivot) / (100 - pivot);
+  return clamp(pivot + headroom * easeOutCubic(t), 0, 100);
+}
+
+/**
+ * bgSuppress upper-range safety curve (UI 0–100 → effective 0–100).
+ * Linear to 60; above 60, log-taper into remaining 28 effective points
+ * so aggressive top-end does not jump abruptly.
+ */
+export function curveBgSuppress(raw) {
+  const v = Number(raw);
+  if (!Number.isFinite(v)) return 0;
+  const pivot = 60;
+  const headroom = 28; // max effective at 100 = 88
+  if (v <= pivot) return clamp(v, 0, 100);
+  const t = (v - pivot) / (100 - pivot);
+  return clamp(pivot + headroom * logTaper(t, 5), 0, 100);
+}
+
+/**
+ * crosstalkCancel: conservative by default — strong soft-start, full strength
+ * only approached at high UI values (further gated by stereo heuristic in coupling).
+ * effective = 100 * (raw/100)^1.85  (power-curve soft-start)
+ */
+export function curveCrosstalkCancel(raw) {
+  const v = clamp(Number(raw) || 0, 0, 100);
+  return clamp(100 * Math.pow(v / 100, 1.85), 0, 100);
+}
+
+/**
+ * Pure per-slider calibration: raw UI value → effective DSP-domain value
+ * (same unit scale as the slider display; UI positions are never mutated).
+ *
+ * @param {string} sliderId
+ * @param {number} rawValue
+ * @returns {number} effectiveValue
+ */
+export function calibrate(sliderId, rawValue) {
+  const v = Number(rawValue);
+  if (!Number.isFinite(v)) return 0;
+  switch (sliderId) {
+    case 'voiceIso':
+      return curveVoiceIso(v);
+    case 'bgSuppress':
+      return curveBgSuppress(v);
+    case 'crosstalkCancel':
+      return curveCrosstalkCancel(v);
+    case 'voiceFocusLo':
+    case 'voiceFocusHi':
+      return v; // band edges coupled separately; raw Hz preserved until coupling
+    default:
+      return v;
+  }
+}
+
+// ── Coupling rules (Task 1b) ────────────────────────────────────────────────
+
+/**
+ * True when voiceFocusLo/Hi define a speech-safe span:
+ * width ≥ SPEECH_SAFE_MIN_WIDTH_HZ and band covers [SPEECH_SAFE_LO, SPEECH_SAFE_HI].
+ */
+export function isSpeechSafeSpan(loHz, hiHz) {
+  const lo = Number(loHz);
+  const hi = Number(hiHz);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return false;
+  const width = hi - lo;
+  if (width < SPEECH_SAFE_MIN_WIDTH_HZ) return false;
+  return lo <= SPEECH_SAFE_LO_HZ && hi >= SPEECH_SAFE_HI_HZ;
+}
+
+/**
+ * Enforce protected speech window on focus band edges.
+ * Never mutates UI — returns clamped effective { voiceFocusLo, voiceFocusHi }.
+ * Bias: when collapsing, prefer keeping [SPEECH_CORRIDOR_LO, SPEECH_CORRIDOR_HI].
+ */
+export function protectSpeechWindow(loHz, hiHz) {
+  let lo = Number(loHz);
+  let hi = Number(hiHz);
+  if (!Number.isFinite(lo)) lo = SPEECH_CORRIDOR_LO_HZ;
+  if (!Number.isFinite(hi)) hi = SPEECH_CORRIDOR_HI_HZ;
+  if (hi < lo) {
+    const mid = (lo + hi) / 2;
+    lo = mid - PROTECTED_SPEECH_MIN_WIDTH_HZ / 2;
+    hi = mid + PROTECTED_SPEECH_MIN_WIDTH_HZ / 2;
+  }
+  let width = hi - lo;
+  if (width < PROTECTED_SPEECH_MIN_WIDTH_HZ) {
+    const deficit = PROTECTED_SPEECH_MIN_WIDTH_HZ - width;
+    // Expand toward natural speech corridor first
+    const preferLo = SPEECH_CORRIDOR_LO_HZ;
+    const preferHi = SPEECH_CORRIDOR_HI_HZ;
+    let expandLo = Math.min(deficit / 2, Math.max(0, lo - preferLo));
+    let expandHi = Math.min(deficit / 2, Math.max(0, preferHi - hi));
+    lo -= expandLo;
+    hi += expandHi;
+    width = hi - lo;
+    if (width < PROTECTED_SPEECH_MIN_WIDTH_HZ) {
+      const still = PROTECTED_SPEECH_MIN_WIDTH_HZ - width;
+      lo -= still / 2;
+      hi += still / 2;
+    }
+  }
+  lo = clamp(lo, 50, 1000);
+  hi = clamp(hi, 1000, 16000);
+  if (hi - lo < PROTECTED_SPEECH_MIN_WIDTH_HZ) {
+    hi = Math.min(16000, lo + PROTECTED_SPEECH_MIN_WIDTH_HZ);
+    if (hi - lo < PROTECTED_SPEECH_MIN_WIDTH_HZ) {
+      lo = Math.max(50, hi - PROTECTED_SPEECH_MIN_WIDTH_HZ);
+    }
+  }
+  return { voiceFocusLo: lo, voiceFocusHi: hi };
+}
+
+/**
+ * Simple stereo-channel-difference heuristic when no pipeline correlation
+ * detector is available. Returns strength 0..1.
+ * @param {{ leftRms?: number, rightRms?: number, channelDiff?: number, stereoActive?: boolean }|null} stereoHint
+ */
+export function stereoCorrelationGate(stereoHint) {
+  if (!stereoHint || typeof stereoHint !== 'object') return 0;
+  if (stereoHint.stereoActive === true) {
+    if (Number.isFinite(stereoHint.channelDiff)) {
+      return clamp01(Math.abs(stereoHint.channelDiff));
+    }
+    const L = Number(stereoHint.leftRms) || 0;
+    const R = Number(stereoHint.rightRms) || 0;
+    const sum = L + R;
+    if (sum <= 1e-12) return 0;
+    return clamp01(Math.abs(L - R) / sum);
+  }
+  if (Number.isFinite(stereoHint.channelDiff)) {
+    return clamp01(Math.abs(stereoHint.channelDiff));
+  }
+  return 0;
+}
+
+/**
+ * Apply coupling rules to a raw (or partially calibrated) param map.
+ * Side-effect-only on returned effective values — never mutates inputs or UI.
+ *
+ * @param {Record<string, number>} rawParams UI/raw values
+ * @param {{ stereoHint?: object, debug?: boolean }} [opts]
+ * @returns {{ effective: Record<string, number>, clamps: string[] }}
+ */
+export function applyCoupling(rawParams, opts = {}) {
+  const p = rawParams && typeof rawParams === 'object' ? rawParams : {};
+  const clamps = [];
+  const effective = { ...p };
+
+  // Per-slider discipline curves first
+  effective.voiceIso = calibrate('voiceIso', p.voiceIso ?? 72);
+  effective.bgSuppress = calibrate('bgSuppress', p.bgSuppress ?? 38);
+  effective.crosstalkCancel = calibrate('crosstalkCancel', p.crosstalkCancel ?? 0);
+
+  const band = protectSpeechWindow(p.voiceFocusLo ?? 100, p.voiceFocusHi ?? 4500);
+  if (band.voiceFocusLo !== (p.voiceFocusLo ?? 100) || band.voiceFocusHi !== (p.voiceFocusHi ?? 4500)) {
+    clamps.push('protected-speech-window');
+  }
+  effective.voiceFocusLo = band.voiceFocusLo;
+  effective.voiceFocusHi = band.voiceFocusHi;
+
+  const bandWidth = effective.voiceFocusHi - effective.voiceFocusLo;
+  const speechSafe = isSpeechSafeSpan(effective.voiceFocusLo, effective.voiceFocusHi);
+
+  // Cap bgSuppress when voiceIso is high unless speech-safe span
+  if (effective.voiceIso > VOICE_ISO_HIGH_THRESHOLD && !speechSafe) {
+    if (effective.bgSuppress > BG_SUPPRESS_CAP_WHEN_ISO_HIGH) {
+      effective.bgSuppress = BG_SUPPRESS_CAP_WHEN_ISO_HIGH;
+      clamps.push('bgSuppress-cap-high-iso');
+    }
+  }
+
+  // Stable middle corridor: auto-correct bgSuppress when band too narrow/wide
+  if (effective.bgSuppress > 55) {
+    if (bandWidth < STABLE_BAND_NARROW_HZ) {
+      // Narrow band + high suppress → intelligibility risk; pull suppress down
+      const scale = clamp01(bandWidth / STABLE_BAND_NARROW_HZ);
+      const corrected = effective.bgSuppress * (0.55 + 0.45 * scale);
+      if (corrected < effective.bgSuppress - 0.5) {
+        effective.bgSuppress = corrected;
+        clamps.push('bgSuppress-stable-narrow');
+      }
+    } else if (bandWidth > STABLE_BAND_WIDE_HZ) {
+      // Too wide → bleed risk; mild reduce so we don't leave wash under high suppress
+      const over = (bandWidth - STABLE_BAND_WIDE_HZ) / STABLE_BAND_WIDE_HZ;
+      const corrected = effective.bgSuppress * (1 - 0.12 * clamp01(over));
+      if (corrected < effective.bgSuppress - 0.5) {
+        effective.bgSuppress = corrected;
+        clamps.push('bgSuppress-stable-wide');
+      }
+    }
+  }
+
+  // Crosstalk: scale by stereo gate (conservative without stereo evidence)
+  const gate = stereoCorrelationGate(opts.stereoHint || null);
+  const xtBase = effective.crosstalkCancel;
+  // Gate 0 → ~25% of curve strength; gate 1 → full strength
+  effective.crosstalkCancel = xtBase * (0.25 + 0.75 * gate);
+  if (gate < 0.35 && xtBase > 1) {
+    clamps.push('crosstalk-stereo-gate');
+  }
+
+  return { effective, clamps };
+}
+
+// ── Artifact soft clamps (Task 1c) ──────────────────────────────────────────
+
+/**
+ * Soft-clamp known bad combinations (e.g. extreme iso + extreme suppress + narrow band).
+ * De-risks effective values sent to DSP; does not snap visible sliders.
+ *
+ * @param {Record<string, number>} effectiveParams
+ * @param {{ debug?: boolean }} [opts]
+ * @returns {{ effective: Record<string, number>, activated: string[] }}
+ */
+export function softClampArtifacts(effectiveParams, opts = {}) {
+  const e = { ...(effectiveParams || {}) };
+  const activated = [];
+  const lo = e.voiceFocusLo ?? 100;
+  const hi = e.voiceFocusHi ?? 4500;
+  const width = hi - lo;
+  const iso = e.voiceIso ?? 0;
+  const bg = e.bgSuppress ?? 0;
+
+  const extremeCombo =
+    iso >= ARTIFACT_ISO_EXTREME &&
+    bg >= ARTIFACT_BG_EXTREME &&
+    width <= ARTIFACT_NARROW_BAND_HZ;
+
+  if (extremeCombo) {
+    // De-risk: pull both extremes toward safer envelope
+    e.voiceIso = Math.min(iso, 82);
+    e.bgSuppress = Math.min(bg, 70);
+    // Nudge band slightly wider toward speech corridor if possible
+    const safeBand = protectSpeechWindow(
+      Math.min(lo, SPEECH_CORRIDOR_LO_HZ + 50),
+      Math.max(hi, SPEECH_CORRIDOR_HI_HZ - 200),
+    );
+    e.voiceFocusLo = safeBand.voiceFocusLo;
+    e.voiceFocusHi = safeBand.voiceFocusHi;
+    activated.push('extreme-iso-bg-narrow-band');
+  }
+
+  // Secondary: very high tunnel + high musicKill style risk proxies via bg+iso mid-high
+  if (iso >= 90 && bg >= 75 && width < STABLE_BAND_NARROW_HZ) {
+    e.bgSuppress = Math.min(e.bgSuppress, 68);
+    activated.push('high-iso-narrow-bg');
+  }
+
+  const debug = opts.debug === true || CALIBRATION_DEBUG;
+  if (debug && activated.length && typeof console !== 'undefined' && console.warn) {
+    console.warn('[VIP calibration] soft clamp activated:', activated.join(', '), {
+      before: { voiceIso: iso, bgSuppress: bg, width },
+      after: { voiceIso: e.voiceIso, bgSuppress: e.bgSuppress, width: e.voiceFocusHi - e.voiceFocusLo },
+    });
+  }
+
+  return { effective: e, activated };
+}
+
+/**
+ * Full pipeline: raw UI params → discipline curves → coupling → soft clamps.
+ * Single entry point for DSP-side effective values.
+ *
+ * @param {Record<string, number>} rawParams
+ * @param {{ stereoHint?: object, debug?: boolean }} [opts]
+ * @returns {Record<string, number>}
+ */
+export function getEffectiveDspParams(rawParams, opts = {}) {
+  const { effective: coupled, clamps } = applyCoupling(rawParams, opts);
+  const { effective, activated } = softClampArtifacts(coupled, opts);
+  if ((opts.debug || CALIBRATION_DEBUG) && (clamps.length || activated.length)) {
+    // Non-blocking dev log for coupling (softClamp logs its own)
+    if (clamps.length && typeof console !== 'undefined' && console.debug) {
+      console.debug('[VIP calibration] coupling clamps:', clamps.join(', '));
+    }
+  }
+  return effective;
+}
+
 /**
  * Apply calibrated transforms, examples, and workletParam to registry entries.
  */
@@ -262,6 +625,8 @@ export function calibrateRegistry(entries) {
       family,
       transform: (v) => tfFn(v, entry),
       uiToDsp: (v) => tfFn(v, entry),
+      // Discipline curve (identity for non-separation sliders)
+      calibrate: (v) => calibrate(entry.id, v),
     };
   });
 }

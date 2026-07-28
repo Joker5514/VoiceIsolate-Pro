@@ -168,6 +168,8 @@
     </div>
     <button id="statsToggle" class="hdr-stats-toggle" aria-label="Toggle stats" title="Toggle stats" aria-expanded="false">&#9660;</button>
     <div class="hdr-stats" id="hdrStats">
+      <div class="hdr-stat"><span class="hs-val" id="hVoice">--</span><span class="hs-lbl">Voice %</span></div>
+      <div class="hdr-stat"><span class="hs-val" id="hNoise">--</span><span class="hs-lbl">Noise %</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hSNR">-- dB</span><span class="hs-lbl">SNR Gain</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hDur">--</span><span class="hs-lbl">Duration</span></div>
       <div class="hdr-stat"><span class="hs-val" id="hSR">--</span><span class="hs-lbl">Sample Rate</span></div>
@@ -310,7 +312,9 @@
 
   <main class="main-grid">
     <section class="col-left">
-      <div class="card upload-card">
+      <details class="card upload-card vip-section" id="section-upload" open>
+        <summary class="vip-section-summary">Upload</summary>
+        <div class="vip-section-body">
         <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,audio/ogg,audio/flac,audio/x-flac,audio/aac,audio/x-m4a,audio/m4a,audio/mp4,audio/webm,audio/amr,audio/aiff,audio/x-aiff,audio/x-caf,audio/x-ms-wma,audio/opus,audio/ac3,audio/eac3,video/mp4,video/webm,video/quicktime,video/x-msvideo,video/x-matroska,video/ogg,video/3gpp,video/3gpp2,video/x-ms-wmv,video/mpeg,video/mp2t,video/x-flv,audio/*,video/*,.wav,.wave,.mp3,.m4a,.aac,.ogg,.oga,.opus,.flac,.webm,.weba,.aiff,.aif,.caf,.wma,.mka,.m4b,.m4r,.amr,.ac3,.eac3,.mp4,.m4v,.mov,.mkv,.avi,.ogv,.3gp,.3g2,.wmv,.mpeg,.mpg,.ts,.m2ts,.mts,.flv,.f4v,.asf" tabindex="-1" aria-hidden="true" />
         <div id="dropZone">
           <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop Audio or Video file, or press Enter to browse">
@@ -328,7 +332,8 @@
           </span>
           <button id="clearFile" class="btn btn-outline" type="button">Clear</button>
         </div>
-      </div>
+        </div>
+      </details>
 
       <!-- Full-audio analysis workspace (local-only) — sits under upload; WhisperHunter collaborates via joint map -->
       <section id="analysisWorkspace" class="card analysis-workspace" data-state="idle" aria-label="Full audio analysis workspace">
@@ -420,7 +425,9 @@
         </div>
       </section>
 
-      <div class="card">
+      <details class="card vip-section" id="section-presets" open>
+        <summary class="vip-section-summary">Presets &amp; Processing Controls</summary>
+        <div class="vip-section-body">
         <div class="presets-wrap">
           <div class="presets-head">
             <label for="presetSel" class="presets-label">Presets</label>
@@ -456,31 +463,32 @@
         </div>
         <div class="control-search-row">
           <input type="text" id="sliderSearch" class="btn btn-outline" placeholder="Search controls…" aria-label="Search controls" style="width:100%;" />
-          <button id="resetSlidersBtn" class="btn btn-outline" type="button">Reset Controls</button>
+          <button id="resetSlidersBtn" class="btn btn-outline" type="button" title="Reset controls (prompts for unlocked-only vs all)">Reset Controls</button>
+          <button id="resetUnlockedBtn" class="btn btn-outline" type="button" title="Reset only unlocked sliders">Reset Unlocked Only</button>
         </div>
         <div id="preset-desc-panel" class="preset-desc-panel" style="display:none;" aria-live="polite"></div>
 
-        <div class="slider-group active">
-          <button id="btn-noise-reduction" class="slider-group-header" type="button" aria-expanded="true" aria-controls="group-noise-reduction"><span>Noise Reduction</span><span class="chevron" aria-hidden="true">▾</span></button>
-          <div id="group-noise-reduction" class="slider-group-content" role="region" aria-labelledby="btn-noise-reduction">
+        <details class="slider-group vip-section active" id="section-gate" open>
+          <summary class="vip-section-summary slider-group-header" id="btn-noise-reduction" aria-controls="group-noise-reduction">Noise Reduction / Gate</summary>
+          <div id="group-noise-reduction" class="slider-group-content vip-section-body" role="region" aria-labelledby="btn-noise-reduction">
             <p class="group-desc">Removes unwanted background sound. The <strong>gate</strong> silences the gaps between words, while <strong>spectral NR</strong> learns the steady noise (hiss, hum, fans) and subtracts it. <em>Example:</em> clean up a phone interview recorded next to an air conditioner — set NR Amount ~70% and a Gate Threshold around −40 dB.</p>
             <div id="tab-gate" class="slider-panel"></div>
             <div id="tab-nr" class="slider-panel"></div>
           </div>
-        </div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-eq"><span>EQ (10 bands)</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-eq" class="slider-group-content"><p class="group-desc">Ten tone controls from deep bass to bright "air". Boost a band to bring it forward, cut it to push it back. <em>Example:</em> for a thin laptop-mic voice, add ~+2 dB Body and +1.5 dB Presence; for a boomy close mic, cut ~−4 dB Bass.</p><div id="tab-eq" class="slider-panel"></div></div></div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-dynamics"><span>Dynamics</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-dynamics" class="slider-group-content"><p class="group-desc">Evens out volume. The <strong>compressor</strong> brings loud and soft words closer together; the <strong>limiter</strong> sets a hard ceiling so nothing clips. <em>Example:</em> a guest who keeps drifting from the mic — Threshold ~−24 dB, Ratio 4:1, Makeup +3 dB for a steady, broadcast-level voice.</p><div id="tab-dyn" class="slider-panel"></div></div></div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-spectral"><span>Spectral</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-spectral" class="slider-group-content"><p class="group-desc">Surgical frequency tools: high-/low-pass filters to trim the extremes, a de-esser to tame harsh "s" sounds, tilt for quick brighter/darker, and formant shift for vocal character. <em>Example:</em> a sharp, sibilant narrator — De-ess Amount ~6 dB at 7 kHz, HP Freq 90 Hz to drop rumble.</p><div id="tab-spec" class="slider-panel"></div></div></div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-advanced"><span>Advanced</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-advanced" class="slider-group-content"><p class="group-desc">Restoration and stereo tools: <strong>dereverb</strong> pulls a voice out of an echoey room, <strong>harmonic recovery</strong> rebuilds detail lost to noise reduction, and width/phase shape the stereo image. <em>Example:</em> speech recorded in an empty hall — Dereverb ~50% with Rev Decay raised toward 70% for the long tail.</p><div id="tab-adv" class="slider-panel"></div></div></div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-output"><span>Output</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-output" class="slider-group-content"><p class="group-desc">Final mastering: overall volume trim, the dry/wet blend between original and processed, output stereo width, and export dither. <em>Example:</em> if cleanup sounds too aggressive, pull Dry/Wet to ~75% to mix a little of the natural original back in.</p><div id="tab-out" class="slider-panel"></div></div></div>
-        <div class="slider-group"><button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-separation"><span>Separation</span><span class="chevron" aria-hidden="true">▾</span></button><div id="group-separation" class="slider-group-content"><p class="group-desc">Isolates the voice from everything else. Focus on the speech frequency band and push down whatever sits outside it, plus cancel stereo bleed between two mics. <em>Example:</em> lift a speaker out of background music — Voice Iso ~85% with BG Suppress ~60%.</p><div id="tab-sep" class="slider-panel"></div></div></div>
-        <div class="slider-group" id="tab-extreme-group">
-          <button class="slider-group-header" type="button" aria-expanded="false" aria-controls="group-extreme"><span>EXTREME</span><span class="chevron" aria-hidden="true">▾</span></button>
-          <div id="group-extreme" class="slider-group-content" role="region">
+        </details>
+        <details class="slider-group vip-section"><summary class="vip-section-summary">EQ (10 bands)</summary><div id="group-eq" class="slider-group-content vip-section-body"><p class="group-desc">Ten tone controls from deep bass to bright "air". Boost a band to bring it forward, cut it to push it back. <em>Example:</em> for a thin laptop-mic voice, add ~+2 dB Body and +1.5 dB Presence; for a boomy close mic, cut ~−4 dB Bass.</p><div id="tab-eq" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section"><summary class="vip-section-summary">Dynamics</summary><div id="group-dynamics" class="slider-group-content vip-section-body"><p class="group-desc">Evens out volume. The <strong>compressor</strong> brings loud and soft words closer together; the <strong>limiter</strong> sets a hard ceiling so nothing clips. <em>Example:</em> a guest who keeps drifting from the mic — Threshold ~−24 dB, Ratio 4:1, Makeup +3 dB for a steady, broadcast-level voice.</p><div id="tab-dyn" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section"><summary class="vip-section-summary">Spectral</summary><div id="group-spectral" class="slider-group-content vip-section-body"><p class="group-desc">Surgical frequency tools: high-/low-pass filters to trim the extremes, a de-esser to tame harsh "s" sounds, tilt for quick brighter/darker, and formant shift for vocal character. <em>Example:</em> a sharp, sibilant narrator — De-ess Amount ~6 dB at 7 kHz, HP Freq 90 Hz to drop rumble.</p><div id="tab-spec" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section"><summary class="vip-section-summary">Advanced</summary><div id="group-advanced" class="slider-group-content vip-section-body"><p class="group-desc">Restoration and stereo tools: <strong>dereverb</strong> pulls a voice out of an echoey room, <strong>harmonic recovery</strong> rebuilds detail lost to noise reduction, and width/phase shape the stereo image. <em>Example:</em> speech recorded in an empty hall — Dereverb ~50% with Rev Decay raised toward 70% for the long tail.</p><div id="tab-adv" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section"><summary class="vip-section-summary">Output</summary><div id="group-output" class="slider-group-content vip-section-body"><p class="group-desc">Final mastering: overall volume trim, the dry/wet blend between original and processed, output stereo width, and export dither. <em>Example:</em> if cleanup sounds too aggressive, pull Dry/Wet to ~75% to mix a little of the natural original back in.</p><div id="tab-out" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section" id="section-separation"><summary class="vip-section-summary">Separation</summary><div id="group-separation" class="slider-group-content vip-section-body"><p class="group-desc">Isolates the voice from everything else. Focus on the speech frequency band and push down whatever sits outside it, plus cancel stereo bleed between two mics. <em>Example:</em> lift a speaker out of background music — Voice Iso ~85% with BG Suppress ~60%.</p><div id="tab-sep" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section" id="tab-extreme-group">
+          <summary class="vip-section-summary">EXTREME</summary>
+          <div id="group-extreme" class="slider-group-content vip-section-body" role="region">
             <p class="group-desc">Extreme voice isolation for whispers buried under club noise, crowd roar, and music. <em>Example:</em> nightclub recording with a whisper at −55 dBFS — Whisper Mode Forensic, Crowd Null ~88%, Bass Crush ~95%.</p>
             <div id="tab-extreme" class="slider-panel"></div>
           </div>
-        </div>
+        </details>
 
         <div class="actions-row" style="margin-top:8px;">
           <button id="processBtn" class="btn btn-primary" type="button" disabled>Process</button>
@@ -488,9 +496,12 @@
           <button id="forensicToggle" class="btn btn-outline" type="button">Forensic</button>
           <button id="auditLogBtn" class="btn btn-outline" type="button" disabled>Audit Log</button>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="card pipeline-box">
+      <details class="card pipeline-box vip-section" id="section-processing" open>
+        <summary class="vip-section-summary">Processing Pipeline</summary>
+        <div class="vip-section-body">
         <div id="vip-proc-badge" role="status" aria-live="polite" data-state="idle">
           <span class="vip-pb-dot" aria-hidden="true"></span>
           <span class="vip-pb-label">Ready — drop a file or browse to begin</span>
@@ -500,6 +511,8 @@
         <div class="vip-stat-strip" aria-label="Session stats">
           <span class="vip-stat"><span class="vip-stat-lbl">Duration</span><span id="stat-duration" class="vip-stat-val">--</span></span>
           <span class="vip-stat"><span class="vip-stat-lbl">Status</span><span id="stat-status" class="vip-stat-val">Idle</span></span>
+          <span class="vip-stat"><span class="vip-stat-lbl">Voice %</span><span id="stat-voice" class="vip-stat-val">--</span></span>
+          <span class="vip-stat"><span class="vip-stat-lbl">Noise %</span><span id="stat-noise" class="vip-stat-val">--</span></span>
           <span class="vip-stat"><span class="vip-stat-lbl">SNR</span><span id="stat-snr" class="vip-stat-val">--</span></span>
           <span class="vip-stat"><span class="vip-stat-lbl">Sample Rate</span><span id="stat-sr" class="vip-stat-val">--</span></span>
           <span class="vip-stat"><span class="vip-stat-lbl">Channels</span><span id="stat-channels" class="vip-stat-val">--</span></span>
@@ -508,7 +521,8 @@
           <div id="pipeFill" class="pipe-fill"></div>
         </div>
         <div id="pipeDetail" class="pipe-detail">Ready</div>
-      </div>
+        </div>
+      </details>
 
       <div class="card save-row">
         <button id="saveOrigBtn" class="btn btn-save" disabled>Save Original WAV</button>
@@ -585,18 +599,18 @@
         </div>
       </div>
 
-      <div class="card viz-card" id="vizCard">
-        <div class="viz-hdr">
-          <span>Visualizations</span>
-          <div class="viz-actions">
+      <details class="card viz-card vip-section" id="vizCard" open>
+        <summary class="vip-section-summary viz-hdr">
+          <span>Waveform &amp; Spectrum</span>
+          <div class="viz-actions" onclick="event.preventDefault()">
             <button id="btnVizTabPrev" class="btn btn-xs btn-viz-tab-nav" type="button" aria-label="Previous visualization" title="Previous visualization"><span aria-hidden="true">&#8249;</span></button>
             <button id="btnVizTabNext" class="btn btn-xs btn-viz-tab-nav" type="button" aria-label="Next visualization" title="Next visualization"><span aria-hidden="true">&#8250;</span></button>
             <button id="btnVizMinimize" class="btn btn-xs btn-viz-minimize" type="button" aria-pressed="false" aria-label="Minimize visualizations" title="Minimize visualizations"><span aria-hidden="true">&#8722;</span></button>
             <button id="btnVizGallery" class="btn btn-xs btn-viz-gallery" type="button" aria-pressed="false" title="Show all visualizations at once">Show All</button>
             <button id="fullscreenSpectroBtn" class="btn btn-xs" type="button" aria-label="Toggle Fullscreen" title="Toggle Fullscreen"><span aria-hidden="true">⛶</span></button>
           </div>
-        </div>
-        <div id="vizCardBody" class="viz-card-body">
+        </summary>
+        <div id="vizCardBody" class="viz-card-body vip-section-body">
         <div id="neon-pulse-slot" class="neon-pulse-slot"></div>
         <div id="vizIsoConfirm" class="viz-iso-confirm hidden" role="group" aria-label="Confirm isolation processing" aria-hidden="true">
           <span id="vizIsoConfirmLabel" class="viz-iso-confirm-label">Process with selected frequency band?</span>
@@ -642,7 +656,7 @@
           <div id="tab-swarm" role="tabpanel" aria-labelledby="btn-swarm" class="panel" data-viz-panel="swarm"><div class="viz-panel-label">Swarm</div><div class="viz-iso-badge hidden" id="iso-badge-swarm"></div><div id="swarmContainer" class="spectro3d-container"></div></div>
           <div id="tab-liquid" role="tabpanel" aria-labelledby="btn-liquid" class="panel" data-viz-panel="liquid"><div class="viz-panel-label">Liquid</div><div class="viz-iso-badge hidden" id="iso-badge-liquid"></div><canvas id="liquidCanvas" class="viz-canvas"></canvas></div>
         </div>
-      </div>
+      </details>
 
       <div id="videoCard" class="card video-card" style="display:none">
         <div class="video-hdr"><span>Video preview</span><span class="video-tag">picture + processed audio</span></div>
