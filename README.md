@@ -49,7 +49,7 @@
 | Route | Surface | What it does |
 |-------|---------|--------------|
 | [`/`](https://voice-isolate-pro.vercel.app/) | **Landing — Stem-Split** | Fast ML stem separation (vocals / accompaniment / noise). Upload → auto-process → preview stems. |
-| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Mode v25** | Full 67-slider DSP suite with calibrated separation discipline, per-slider locks, collapsible sections, stage-aware processing overlay, scene presets, 3D spectrogram, A/B transport, forensic audit log, WhisperHunter AI. |
+| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Mode v25** | Full 67-slider DSP suite with calibrated separation discipline, per-slider locks, collapsible sections (localStorage), stage-aware processing overlay, scene presets, 3D spectrogram, **Compare Original** A/B transport, forensic audit log, WhisperHunter AI. Universal Source Matrix runs as an **internal backend** after Analyze (stems for chips + WhisperHunter) — not a separate user Process panel. |
 | [`/download/`](https://voice-isolate-pro.vercel.app/download/) | **Downloads** | Android APK + Windows installer (GitHub Releases), web app links. |
 
 **Upload controls (both pages):** Browse Files (`<label for="fileInput">`), click the drop zone, drag-and-drop, or **Upload Audio or Video** in the Engineer hero. Shared wiring lives in `src/presentation/UploadWiring.js`.

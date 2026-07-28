@@ -1,15 +1,18 @@
 /**
  * VoiceIsolate Pro — Universal Source Matrix Node (Layer 3: Pipeline)
  *
- * Upgrades the offline ML separation slot for Creator / Forensic modes:
- *   mixture PCM → K soft-masked stems + labels → Source Matrix Live-Mix.
+ * **Internal backend service** (not a user-facing panel). Consumed by:
+ *   a) Full Analysis pipeline — source segmentation / labeling chips
+ *   b) WhisperHunter — per-source stems for whisper isolation targeting
+ *
+ * Flow: mixture PCM → K soft-masked stems + labels (once per file, cached).
+ * Public API for consumers: getSourceStems(), getSourceLabels(), ensureComputed().
  *
  * Does NOT re-run on slider / mute / solo changes (Live-Mix contract).
- * Text "Refine" intentionally re-runs query separation once.
+ * Mute/solo/gain stay for SourceAuditionEngine only — not Engineer slider UI.
  *
- * Prefer classical core USM always available; optionally ask MLWorker for an
- * ONNX AudioSep-class model when `universal_separator` is in the manifest
- * and the weights are present.
+ * Classical NMF runs in USMWorker (off main thread). Optional ONNX via MLWorker
+ * when `universal_separator` is in the manifest and weights are present.
  */
 'use strict';
 
@@ -30,11 +33,77 @@ import { createMLWorker, initMLWorker } from './MLWorkerHost.js';
 let _worker = null;
 let _ready = null;
 let _seq = 0;
+/** Classical USM module worker (separate from ONNX MLWorker). */
+let _usmWorker = null;
+let _usmSeq = 0;
 
 function getWorker() {
   if (_worker) return _worker;
   _worker = createMLWorker();
   return _worker;
+}
+
+function getUsmWorker() {
+  if (_usmWorker) return _usmWorker;
+  if (typeof Worker === 'undefined') return null;
+  try {
+    const url = new URL('/src/workers/USMWorker.js', globalThis.location?.href || 'http://localhost/');
+    _usmWorker = new Worker(url.href, { type: 'module' });
+    return _usmWorker;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Classical separateUniversal via USMWorker (heartbeat + timeout).
+ * Falls back to main-thread if workers unavailable.
+ * @returns {Promise<import('../core/UniversalSourceMatrix.js').USMResult>}
+ */
+function runClassicalInWorker(mono, sampleRate, cfg, onProgress, timeoutMs = 120000) {
+  const w = getUsmWorker();
+  if (!w) {
+    onProgress?.(0.25, 'classical-usm-main');
+    return Promise.resolve(separateUniversal(mono, sampleRate, cfg));
+  }
+  const requestId = ++_usmSeq;
+  const copy = mono instanceof Float32Array ? new Float32Array(mono) : new Float32Array(mono);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error('[VIP][USMNode] USMWorker timed out'));
+    }, timeoutMs);
+    const onMsg = (ev) => {
+      const m = ev.data || {};
+      if (m.requestId !== requestId) return;
+      if (m.type === 'progress' || m.type === 'heartbeat') {
+        const pct = Math.max(0.15, Math.min(0.95, (m.percent || 0) / 100));
+        onProgress?.(pct, m.stage || 'usm');
+      } else if (m.type === 'result') {
+        cleanup();
+        resolve(m.result);
+      } else if (m.type === 'error') {
+        cleanup();
+        reject(new Error(m.message || 'USMWorker failed'));
+      }
+    };
+    const onErr = (e) => {
+      cleanup();
+      reject(new Error(e?.message || 'USMWorker error'));
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      w.removeEventListener('message', onMsg);
+      w.removeEventListener('error', onErr);
+    };
+    w.addEventListener('message', onMsg);
+    w.addEventListener('error', onErr);
+    onProgress?.(0.12, 'dispatch-usm-worker');
+    w.postMessage(
+      { type: 'separate', requestId, samples: copy, sampleRate, config: cfg },
+      [copy.buffer],
+    );
+  });
 }
 
 function ensureWorkerReady() {
@@ -187,6 +256,8 @@ export class USMNode {
     this._sampleRate = SAMPLE_RATE;
     /** @type {Float32Array|null} mixture mono retained for refine() */
     this._mixtureMono = null;
+    /** @type {string|null} cache key for ensureComputed() */
+    this._cacheKey = null;
   }
 
   /** Public sample-rate accessor (UI must not read `_sampleRate`). */
@@ -233,7 +304,18 @@ export class USMNode {
 
     if (!result || !result.sources?.length) {
       this.onProgress(0.2, 'classical-usm');
-      result = separateUniversal(mono, this._sampleRate, cfg);
+      try {
+        result = await runClassicalInWorker(
+          mono,
+          this._sampleRate,
+          cfg,
+          (p, label) => this.onProgress(p, label),
+          config.timeoutMs || 120000,
+        );
+      } catch (err) {
+        console.warn('[VIP][USMNode] worker failed, main-thread fallback:', err?.message || err);
+        result = separateUniversal(mono, this._sampleRate, cfg);
+      }
     }
 
     this.onProgress(0.9, 'pack-sources');
@@ -244,12 +326,13 @@ export class USMNode {
       gainDb: 0,
       mute: false,
       solo: false,
-      pcm: s.pcm,
+      pcm: s.pcm instanceof Float32Array ? s.pcm : new Float32Array(s.pcm || []),
       confidence: s.confidence,
       quality: s.quality,
       method: s.method,
       mask: s.mask,
     }));
+    this._cacheKey = this._buildCacheKey(mono, this._sampleRate, cfg);
 
     this.onProgress(1, 'complete');
     return {
@@ -258,6 +341,77 @@ export class USMNode {
       method: result.method,
       sampleRate: this._sampleRate,
     };
+  }
+
+  /**
+   * Ensure stems exist for this mixture (once per file). Skips recompute if
+   * cache key matches. Safe to call from Analyze / WhisperHunter — never from
+   * slider or mute/solo handlers.
+   * @param {Float32Array|Float32Array[]} channelData
+   * @param {number} sampleRate
+   * @param {object} [config]
+   */
+  async ensureComputed(channelData, sampleRate = SAMPLE_RATE, config = {}) {
+    if (config && Object.keys(config).length) this.configure(config);
+    const cfg = this._config || { mode: 'auto', numSources: USM_DEFAULT_SOURCES, queries: [] };
+    const channels = Array.isArray(channelData) && channelData[0]?.length != null
+      ? channelData
+      : [channelData];
+    const mono = downmixChannels(channels);
+    const key = this._buildCacheKey(mono, sampleRate || SAMPLE_RATE, cfg);
+    if (this.sources?.length && this._cacheKey === key) {
+      return {
+        sources: this.sources,
+        shape: this._lastResult?.shape,
+        method: this._lastResult?.method || 'cached',
+        sampleRate: this._sampleRate,
+        cached: true,
+      };
+    }
+    return this.process(mono, sampleRate, config);
+  }
+
+  _buildCacheKey(mono, sampleRate, cfg) {
+    const n = mono?.length || 0;
+    const mid = n ? mono[n >> 1] : 0;
+    const end = n ? mono[n - 1] : 0;
+    let sum = 0;
+    const step = Math.max(1, Math.floor(n / 64));
+    for (let i = 0; i < n; i += step) sum += Math.abs(mono[i]);
+    return `${sampleRate}|${n}|${sum.toFixed(4)}|${mid}|${end}|${cfg.mode}|${cfg.numSources}|${(cfg.queries || []).join(',')}`;
+  }
+
+  /**
+   * Internal API: soft-mask stems (Float32Array PCM) for WhisperHunter / audition.
+   * @returns {{ id: string, label: string, pcm: Float32Array, confidence: number, quality: string, method: string }[]}
+   */
+  getSourceStems() {
+    return this.sources.map((s) => ({
+      id: s.id,
+      label: s.label,
+      pcm: s.pcm,
+      confidence: s.confidence ?? 0,
+      quality: s.quality || 'medium',
+      method: s.method || 'classical-nmf',
+    }));
+  }
+
+  /**
+   * Internal API: labels + confidence for Analyzer summary chips (no PCM).
+   * @returns {{ id: string, label: string, confidence: number, quality: string }[]}
+   */
+  getSourceLabels() {
+    return this.sources.map((s) => ({
+      id: s.id,
+      label: s.label,
+      confidence: s.confidence ?? 0,
+      quality: s.quality || 'medium',
+    }));
+  }
+
+  /** True when at least one stem is cached from the last ensureComputed/process. */
+  isReady() {
+    return Array.isArray(this.sources) && this.sources.length > 0;
   }
 
   /**
@@ -352,6 +506,7 @@ export class USMNode {
     this.sources = [];
     this._lastResult = null;
     this._mixtureMono = null;
+    this._cacheKey = null;
   }
 
   dispose() {
@@ -360,6 +515,10 @@ export class USMNode {
       try { _worker.terminate(); } catch { /* ignore */ }
       _worker = null;
       _ready = null;
+    }
+    if (_usmWorker) {
+      try { _usmWorker.terminate(); } catch { /* ignore */ }
+      _usmWorker = null;
     }
   }
 }

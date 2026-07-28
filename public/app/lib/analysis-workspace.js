@@ -2,6 +2,11 @@
  * Engineer Mode — Analysis Workspace Controller
  * Wires full analysis, timeline, audition, recommendations into the UI.
  * 100% local. Imports canonical logic from /src/.
+ *
+ * Universal Source Matrix is an **internal backend** (not a user Separate panel):
+ * after Full Analysis completes, USMNode.ensureComputed() runs once per file
+ * (worker-backed), caches stems, and exposes getSourceStems()/getSourceLabels()
+ * for chips + WhisperHunter. Mute/solo live only in SourceAuditionEngine.
  */
 'use strict';
 
@@ -134,76 +139,69 @@ export function installAnalysisWorkspace(app) {
     els.usmError.textContent = msg || '';
   }
 
-  function renderUsmTable() {
-    if (!els.usmTableBody) return;
-    const rows = usmNode.sources;
-    if (!rows.length) {
-      els.usmTableBody.innerHTML =
-        '<tr class="usm-empty-row"><td colspan="5">Run Separate sources after loading a file (Creator / Forensic).</td></tr>';
-      return;
+  /**
+   * Read-only Detected Sources summary (backend USM). Mute/solo live in
+   * the Audition strip only — not Engineer sliders.
+   */
+  function renderUsmSummary() {
+    const labels = typeof usmNode.getSourceLabels === 'function'
+      ? usmNode.getSourceLabels()
+      : (usmNode.sources || []).map((s) => ({
+        id: s.id,
+        label: s.label,
+        confidence: s.confidence ?? 0,
+        quality: s.quality || 'medium',
+      }));
+    if (els.usmMethodBadge) {
+      const method = usmNode._lastResult?.method || (labels.length ? 'usm' : '');
+      els.usmMethodBadge.hidden = !method;
+      if (method) els.usmMethodBadge.textContent = method;
     }
-    els.usmTableBody.innerHTML = rows.map((s) => `
-      <tr data-usm-id="${escapeHtml(s.id)}">
-        <td><button type="button" class="btn btn-xs ${s.mute ? 'active' : ''}" data-usm-act="mute" title="Mute">M</button></td>
-        <td><button type="button" class="btn btn-xs ${s.solo ? 'active' : ''}" data-usm-act="solo" title="Solo">S</button></td>
-        <td>
-          <input type="range" min="-48" max="12" step="0.5" value="${s.gainDb}" data-usm-act="gain" aria-label="Gain dB" />
-          <span class="usm-gain-val">${s.gainDb.toFixed(1)}</span>
-        </td>
-        <td>
-          <input type="text" class="usm-label-input" data-usm-act="label" value="${escapeHtml(s.label)}" />
-          <span class="usm-conf" title="Confidence">${Math.round((s.confidence || 0) * 100)}%</span>
-        </td>
-        <td><button type="button" class="btn btn-xs" data-usm-act="refine" title="Refine via text query">Refine</button></td>
-      </tr>`).join('');
+    // Compact chip list inside USM panel (if present)
+    if (els.usmTableBody) {
+      if (!labels.length) {
+        els.usmTableBody.innerHTML =
+          '<tr class="usm-empty-row"><td colspan="2">Sources appear after Analyze Full Audio (computed automatically).</td></tr>';
+      } else {
+        els.usmTableBody.innerHTML = labels.map((s) => `
+          <tr data-usm-id="${escapeHtml(s.id)}">
+            <td>${escapeHtml(s.label)}</td>
+            <td><span class="usm-conf" title="Confidence">${Math.round((s.confidence || 0) * 100)}%</span>
+              <span class="aud-quality q-${escapeHtml(s.quality || 'medium')}">${escapeHtml(s.quality || 'medium')}</span>
+            </td>
+          </tr>`).join('');
+      }
+    }
+    // Also merge into analysis source chips when USM labels available
+    if (els.chips && labels.length) {
+      const existing = new Set(
+        [...els.chips.querySelectorAll('.source-chip')].map((b) => b.dataset.source),
+      );
+      for (const s of labels) {
+        if (existing.has(s.id)) continue;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'source-chip source-chip--usm';
+        btn.dataset.source = s.id;
+        btn.title = `USM · confidence ${Math.round((s.confidence || 0) * 100)}%`;
+        btn.innerHTML = `${escapeHtml(s.label)} <span class="chip-conf">${Math.round((s.confidence || 0) * 100)}%</span>`;
+        btn.addEventListener('click', () => {
+          audition.setMode('layer');
+          for (const L of audition.layers.values()) L.solo = false;
+          const layer = audition.layers.get(s.id);
+          if (layer) {
+            layer.solo = true;
+            audition.play().catch(() => {});
+          }
+        });
+        els.chips.appendChild(btn);
+      }
+    }
+  }
 
-    els.usmTableBody.querySelectorAll('tr[data-usm-id]').forEach((tr) => {
-      const id = tr.dataset.usmId;
-      tr.querySelector('[data-usm-act="mute"]')?.addEventListener('click', () => {
-        const s = usmNode.sources.find((x) => x.id === id);
-        const next = !s?.mute;
-        usmNode.setMute(id, next);
-        // Mirror into audition for immediate hear (Live-Mix — no ML re-run)
-        audition.setLayerMute(id, next);
-        refreshAuditionIfPlaying();
-        renderUsmTable();
-      });
-      tr.querySelector('[data-usm-act="solo"]')?.addEventListener('click', () => {
-        const s = usmNode.sources.find((x) => x.id === id);
-        const next = !s?.solo;
-        usmNode.setSolo(id, next);
-        audition.setLayerSolo(id, next);
-        if (next) audition.setMode('layer');
-        refreshAuditionIfPlaying();
-        renderUsmTable();
-      });
-      tr.querySelector('[data-usm-act="gain"]')?.addEventListener('input', (e) => {
-        const db = Number(e.target.value);
-        usmNode.setGainDb(id, db);
-        const lin = Math.pow(10, db / 20);
-        audition.setLayerGain(id, lin);
-        const val = tr.querySelector('.usm-gain-val');
-        if (val) val.textContent = db.toFixed(1);
-        refreshAuditionIfPlaying();
-      });
-      tr.querySelector('[data-usm-act="label"]')?.addEventListener('change', (e) => {
-        usmNode.setLabel(id, e.target.value);
-        const L = audition.layers.get(id);
-        if (L) L.label = e.target.value;
-      });
-      tr.querySelector('[data-usm-act="refine"]')?.addEventListener('click', async () => {
-        const q = window.prompt('Describe what to keep for this source (local query mask):', usmNode.sources.find((x) => x.id === id)?.label || '');
-        if (!q) return;
-        try {
-          showUsmError('');
-          await usmNode.refine(q);
-          await pushUsmToAudition();
-          renderUsmTable();
-        } catch (err) {
-          showUsmError(err?.message || String(err));
-        }
-      });
-    });
+  /** @deprecated name kept for any external callers */
+  function renderUsmTable() {
+    renderUsmSummary();
   }
 
   async function pushUsmToAudition() {
@@ -225,70 +223,65 @@ export function installAnalysisWorkspace(app) {
     audition.play(t).catch(() => {});
   }
 
-  async function runUsmSeparate(mode) {
-    if (usmBusy) return;
+  /**
+   * Backend USM: compute once after analysis (or on demand for WhisperHunter).
+   * Never called from mute/solo/slider. Progress updates chips only.
+   */
+  async function runUsmBackend(opts = {}) {
+    if (usmBusy) return usmNode.isReady?.() ? {
+      sources: usmNode.sources,
+      method: usmNode._lastResult?.method,
+      cached: true,
+    } : null;
     showUsmError('');
-    if (typeof app.ensureDecoded === 'function') {
-      const decoded = await app.ensureDecoded();
-      if (!decoded) {
-        showUsmError('Load an audio or video file first.');
-        return;
-      }
-    }
     const buf = app.origBuffer || app.inputBuffer;
-    if (!buf) {
-      showUsmError('Load an audio or video file first.');
-      return;
-    }
+    if (!buf) return null;
     usmBusy = true;
-    [els.btnUsmSeparate, els.btnUsmQuery, els.btnUsmApplyMix].forEach((b) => {
-      if (b) b.disabled = true;
-    });
     if (els.usmProgress) els.usmProgress.hidden = false;
     try {
       const channels = [];
       for (let c = 0; c < buf.numberOfChannels; c++) {
         channels.push(buf.getChannelData(c).slice());
       }
-      const K = Math.max(2, Math.min(12, Number(els.usmNumSources?.value) || 6));
-      const queryText = (els.usmQueryInput?.value || '').trim();
-      const config = mode === 'query' || queryText
-        ? {
-          mode: 'query',
-          queries: queryText
-            ? queryText.split(/[,;|]/).map((s) => s.trim()).filter(Boolean)
-            : ['speech'],
-          numSources: K,
-        }
-        : { mode: 'auto', numSources: K };
-
-      const result = await usmNode.process(channels, buf.sampleRate, config);
+      const K = Math.max(2, Math.min(12, Number(opts.numSources) || 6));
+      const config = {
+        mode: opts.mode === 'query' ? 'query' : 'auto',
+        numSources: K,
+        queries: opts.queries || [],
+        nmfIterations: opts.nmfIterations || 20,
+      };
+      const result = typeof usmNode.ensureComputed === 'function'
+        ? await usmNode.ensureComputed(channels, buf.sampleRate, config)
+        : await usmNode.process(channels, buf.sampleRate, config);
       app._usmResult = result;
       app._usmNode = usmNode;
+      // Expose internal API on app for WhisperHunter / Process consumers
+      app.getSourceStems = () => usmNode.getSourceStems();
+      app.getSourceLabels = () => usmNode.getSourceLabels();
 
-      if (els.usmMethodBadge) {
-        els.usmMethodBadge.hidden = false;
-        els.usmMethodBadge.textContent = result.method || 'usm';
-      }
       await pushUsmToAudition();
-      renderUsmTable();
-      if (typeof app.setStatus === 'function') {
-        app.setStatus(`USM: ${result.sources.length} sources (${result.method})`);
+      renderUsmSummary();
+      if (typeof app.setStatus === 'function' && !result.cached) {
+        app.setStatus(`Detected ${result.sources.length} sources (${result.method})`);
       }
+      return result;
     } catch (err) {
       showUsmError(err?.message || String(err));
+      return null;
     } finally {
       usmBusy = false;
-      [els.btnUsmSeparate, els.btnUsmQuery, els.btnUsmApplyMix].forEach((b) => {
-        if (b) b.disabled = false;
-      });
       if (els.usmProgress) els.usmProgress.hidden = true;
     }
   }
 
+  /** @deprecated user-facing Separate removed — maps to backend auto mode */
+  async function runUsmSeparate(mode) {
+    return runUsmBackend({ mode: mode === 'query' ? 'query' : 'auto' });
+  }
+
   function applyUsmMixToProcessed() {
     if (!usmNode.sources.length) {
-      showUsmError('Separate sources first.');
+      showUsmError('Run Analyze Full Audio first (USM computes automatically).');
       return;
     }
     const ctx = app.ctx || app.audioCtx;
@@ -298,14 +291,12 @@ export function installAnalysisWorkspace(app) {
     }
     const mix = usmNode.renderMix();
     const sr = usmNode.sampleRate || ctx.sampleRate;
-    // Preserve channel count of the loaded file (mono mix expanded to stereo if needed)
     const srcBuf = app.origBuffer || app.inputBuffer;
     const nCh = Math.max(1, Math.min(2, srcBuf?.numberOfChannels || 1));
     const out = ctx.createBuffer(nCh, mix.length, sr);
     for (let c = 0; c < nCh; c++) out.copyToChannel(mix, c);
     app.procBuffer = out;
     app.outputBuffer = out;
-    // Also expose as processed audition layer
     audition.setLayer({
       id: 'processed',
       label: 'USM mix (processed)',
@@ -483,11 +474,14 @@ export function installAnalysisWorkspace(app) {
     app._lastFullAnalysis = null;
     app._jointIsolationPlan = null;
     app._hunterEnvFromAnalysis = null;
+    app._usmResult = null;
+    usmNode.clear?.();
     host.dispose();
     audition.stop(true);
     audition.resetMix();
     transport.stop(true);
     transport.setDuration(0);
+    renderUsmSummary();
     if (timeline) {
       timeline.setAnalysis(null);
       timeline.setPlayhead(0);
@@ -615,6 +609,10 @@ export function installAnalysisWorkspace(app) {
       } else if (els.progressLabel) {
         els.progressLabel.textContent = 'Analysis complete · Analyzer ↔ WhisperHunter linked';
       }
+      // Post-analysis USM backend (does not block Process; runs off-main via worker)
+      runUsmBackend({ mode: 'auto', numSources: 6 }).catch((e) => {
+        console.warn('[VIP] USM backend skipped:', e?.message || e);
+      });
       return analysis;
     } catch (err) {
       showError(err.message || String(err));
@@ -824,16 +822,21 @@ export function installAnalysisWorkspace(app) {
     else if (typeof app.setStatus === 'function') app.setStatus(`Exported ${result.filename}`);
   });
 
-  // Universal Source Matrix controls
-  els.btnUsmSeparate?.addEventListener('click', () => { runUsmSeparate('auto'); });
-  els.btnUsmQuery?.addEventListener('click', () => { runUsmSeparate('query'); });
-  els.btnUsmApplyMix?.addEventListener('click', () => applyUsmMixToProcessed());
-  els.usmQueryInput?.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      runUsmSeparate('query');
+  // USM is backend-only: hide legacy Separate/Query buttons if still in DOM.
+  [els.btnUsmSeparate, els.btnUsmQuery, els.btnUsmApplyMix].forEach((b) => {
+    if (b) {
+      b.hidden = true;
+      b.setAttribute('aria-hidden', 'true');
     }
   });
+  if (els.usmQueryInput) {
+    els.usmQueryInput.hidden = true;
+    els.usmQueryInput.setAttribute('aria-hidden', 'true');
+  }
+  if (els.usmNumSources) {
+    const wrap = els.usmNumSources.closest?.('.usm-k-label') || els.usmNumSources;
+    if (wrap) wrap.hidden = true;
+  }
 
   // Inject calibrated presets into app if PRESETS exists
   try {
@@ -873,7 +876,11 @@ export function installAnalysisWorkspace(app) {
     audition,
     host,
     usmNode,
-    runUsmSeparate,
+    /** Backend API */
+    runUsmBackend,
+    getSourceStems: () => usmNode.getSourceStems(),
+    getSourceLabels: () => usmNode.getSourceLabels(),
+    runUsmSeparate, // deprecated alias
     applyUsmMixToProcessed,
     refreshCapability: renderCapability,
   };

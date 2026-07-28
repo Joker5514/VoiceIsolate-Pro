@@ -601,11 +601,14 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
    LOCK BUTTON  — protects a slider from preset / reset changes
    ══════════════════════════════════════════════════════════════ */
 
-/* Amber palette for lock state */
+/* Cyan "protected" lock accent — must match style.css / slider-ticks.css */
 :root {
-  --vip-lock:      #ffcc44;
-  --vip-lock-soft: rgba(255, 204, 68, 0.13);
-  --vip-lock-glow: rgba(255, 204, 68, 0.40);
+  --vip-lock-accent: #67e8f9;
+  --vip-lock:        var(--vip-lock-accent);
+  --vip-lock-soft:   rgba(103, 232, 249, 0.14);
+  --vip-lock-glow:   rgba(103, 232, 249, 0.40);
+  --vip-lock-border: rgba(103, 232, 249, 0.55);
+  --vip-lock-text:   #a5f3fc;
 }
 
 .sr-lock-btn {
@@ -636,45 +639,50 @@ input[type="range"].slider:disabled::-webkit-slider-thumb,
 
 .sr-lock-btn:hover {
   opacity:      1 !important;
-  color:        var(--vip-lock);
+  color:        var(--vip-lock-accent);
   background:   var(--vip-lock-soft);
-  border-color: rgba(255, 204, 68, 0.40);
+  border-color: var(--vip-lock-border);
   box-shadow:   0 0 8px var(--vip-lock-glow);
 }
 
 .sr-lock-btn:focus-visible {
-  outline:      2px solid var(--vip-lock);
+  outline:      2px solid var(--vip-lock-accent);
   outline-offset: 2px;
 }
 
-/* Locked state — amber, always visible */
-.sr-lock-btn[aria-pressed="true"] {
+/* Locked state — cyan protected, always visible */
+.sr-lock-btn[aria-pressed="true"],
+.sr-lock-btn.is-locked {
   opacity:      1;
-  color:        var(--vip-lock);
+  color:        var(--vip-lock-accent);
   background:   var(--vip-lock-soft);
-  border-color: rgba(255, 204, 68, 0.52);
+  border-color: var(--vip-lock-border);
   box-shadow:   0 0 10px var(--vip-lock-glow);
 }
 
-/* Locked row — amber left bar + warm tint */
+/* Locked row — cyan left bar + cool tint */
 .sr-row.is-locked,
-.slider-row.is-locked {
-  box-shadow:  inset 3px 0 0 var(--vip-lock),
-               inset 0 0 28px rgba(255, 204, 68, 0.04);
+.slider-row.is-locked,
+.sr-row[data-locked="true"],
+.slider-row[data-locked="true"] {
+  box-shadow:  inset 3px 0 0 var(--vip-lock-accent),
+               inset 0 0 28px rgba(103, 232, 249, 0.04);
   background:  linear-gradient(
                  to right,
-                 rgba(255, 204, 68, 0.05) 0%,
+                 rgba(103, 232, 249, 0.06) 0%,
                  rgba(255, 255, 255, 0.012) 60%,
                  transparent 100%
                );
 }
 
-/* Value chip turns amber when row is locked */
+/* Value chip turns cyan when row is locked */
 .sr-row.is-locked .sr-val,
-.slider-row.is-locked .slider-val {
-  color:        var(--vip-lock);
-  background:   rgba(255, 204, 68, 0.09);
-  border-color: rgba(255, 204, 68, 0.32);
+.slider-row.is-locked .slider-val,
+.sr-row[data-locked="true"] .sr-val,
+.slider-row[data-locked="true"] .slider-val {
+  color:        var(--vip-lock-text, var(--vip-lock-accent));
+  background:   rgba(103, 232, 249, 0.09);
+  border-color: var(--vip-lock-border);
 }
 
 .sr-row.is-locked:hover .sr-val,

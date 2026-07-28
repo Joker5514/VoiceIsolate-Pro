@@ -336,11 +336,13 @@
       </details>
 
       <!-- Full-audio analysis workspace (local-only) — sits under upload; WhisperHunter collaborates via joint map -->
-      <section id="analysisWorkspace" class="card analysis-workspace" data-state="idle" aria-label="Full audio analysis workspace">
-        <div class="analysis-hdr">
-          <h3 class="analysis-title">1 · Source Analysis Workspace</h3>
+      <details class="card analysis-workspace vip-section" id="section-analysis" open>
+        <summary class="vip-section-summary analysis-hdr">
+          <span class="analysis-title">1 · Source Analysis Workspace</span>
           <span id="analysisConfidence" class="analysis-conf" data-level="low">Confidence —</span>
-        </div>
+        </summary>
+        <div class="vip-section-body">
+      <section id="analysisWorkspace" class="analysis-workspace-inner" data-state="idle" aria-label="Full audio analysis workspace">
         <p class="analysis-lead">Upload above (instant — no decode freeze). Analyze starts local PCM decode and maps voices, whispers, music, horns, barks, and other noise — then shares that map with WhisperHunter so isolation protects speech and suppresses interference. Audio never leaves this device.</p>
         <div id="capabilityPanel" class="capability-panel" aria-live="polite"></div>
         <div class="analysis-actions">
@@ -383,21 +385,23 @@
             </div>
             <div id="auditionStrip" class="audition-strip"></div>
 
-            <!-- Universal Source Matrix (Creator/Forensic) — mute/solo/gain per semantic stem -->
-            <div id="sourceMatrixPanel" class="source-matrix-panel" aria-label="Universal Source Matrix">
-              <div class="usm-hdr">
-                <h4 class="analysis-sub">Universal Source Matrix</h4>
+            <!-- USM backend summary — computed after Analyze; mute/solo via Audition only -->
+            <details class="source-matrix-panel vip-section" id="sourceMatrixPanel" open aria-label="Detected sources summary">
+              <summary class="vip-section-summary usm-hdr">
+                <span class="analysis-sub">Detected Sources</span>
                 <span id="usmMethodBadge" class="usm-method-badge" hidden>—</span>
-              </div>
-              <p class="usm-lead">Separate open-domain sources (speech, hum, dogs, TV, residual…) then mute/solo/gain each stem. 100% local — no cloud. Live mode keeps lightweight 2–3 stems only.</p>
-              <div class="usm-actions">
-                <button id="btnUsmSeparate" class="btn btn-primary btn-xs" type="button" title="Auto-discover K semantic sources (Creator/Forensic)">Separate sources</button>
+              </summary>
+              <div class="vip-section-body">
+              <p class="usm-lead">Open-domain sources (speech, hum, residual…) are discovered automatically after Analyze and cached for WhisperHunter. Audition layers below support mute/solo — not a separate process button. 100% local.</p>
+              <!-- Legacy ids kept hidden for API/tests that still query them -->
+              <div class="usm-actions" hidden aria-hidden="true">
+                <button id="btnUsmSeparate" class="btn btn-primary btn-xs" type="button" hidden tabindex="-1">Separate sources</button>
                 <label class="usm-k-label">K
                   <input id="usmNumSources" type="number" min="2" max="12" value="6" class="usm-k-input" aria-label="Number of sources" />
                 </label>
-                <input id="usmQueryInput" type="text" class="usm-query-input" placeholder="Or describe a source… e.g. the AC hum" aria-label="Text query for source separation" />
-                <button id="btnUsmQuery" class="btn btn-outline btn-xs" type="button">Query separate</button>
-                <button id="btnUsmApplyMix" class="btn btn-reprocess btn-xs" type="button" title="Write combined matrix mix to processed buffer">Apply mix</button>
+                <input id="usmQueryInput" type="text" class="usm-query-input" aria-label="Text query" hidden />
+                <button id="btnUsmQuery" type="button" hidden tabindex="-1">Query separate</button>
+                <button id="btnUsmApplyMix" type="button" hidden tabindex="-1">Apply mix</button>
               </div>
               <div id="usmProgress" class="usm-progress" hidden>
                 <div class="usm-progress-bar"><div id="usmProgressFill" class="usm-progress-fill"></div></div>
@@ -405,25 +409,25 @@
               </div>
               <div id="usmError" class="usm-error" hidden role="alert"></div>
               <div class="usm-table-wrap">
-                <table class="usm-table" aria-label="Source matrix stems">
+                <table class="usm-table" aria-label="Detected source labels">
                   <thead>
                     <tr>
-                      <th scope="col">M</th>
-                      <th scope="col">S</th>
-                      <th scope="col">Gain (dB)</th>
                       <th scope="col">Label</th>
-                      <th scope="col">Refine</th>
+                      <th scope="col">Confidence</th>
                     </tr>
                   </thead>
                   <tbody id="usmTableBody">
-                    <tr class="usm-empty-row"><td colspan="5">Run Separate sources after loading a file (Creator / Forensic).</td></tr>
+                    <tr class="usm-empty-row"><td colspan="2">Sources appear after Analyze Full Audio (computed automatically).</td></tr>
                   </tbody>
                 </table>
               </div>
-            </div>
+              </div>
+            </details>
           </div>
         </div>
       </section>
+        </div>
+      </details>
 
       <details class="card vip-section" id="section-presets" open>
         <summary class="vip-section-summary">Presets &amp; Processing Controls</summary>
@@ -456,11 +460,13 @@
             <button class="btn btn-preset" type="button" data-preset="Surveillance">Surveillance</button>
           </div>
         </div>
-        <div class="whisper-hunter-row">
-          <span class="whisper-hunter-label">2 · WhisperHunter AI</span>
+        <details class="whisper-hunter-row vip-section" id="section-whisper-hunter" open>
+          <summary class="vip-section-summary whisper-hunter-label">2 · WhisperHunter AI</summary>
+          <div class="vip-section-body">
           <button id="btn-whisper-hunter" type="button" title="Uses the analyzer joint map when available (protect voice/whisper, suppress music/horns/noise)">🎙️ WhisperHunter AI</button>
-          <p class="whisper-hunter-hint">Best after Analyze Full Audio — collaborates with the workspace above to remove unwanted sound and lift voices/whispers.</p>
-        </div>
+          <p class="whisper-hunter-hint">Best after Analyze Full Audio — collaborates with the workspace above to remove unwanted sound and lift voices/whispers. Uses USM stems when available.</p>
+          </div>
+        </details>
         <div class="control-search-row">
           <input type="text" id="sliderSearch" class="btn btn-outline" placeholder="Search controls…" aria-label="Search controls" style="width:100%;" />
           <button id="resetSlidersBtn" class="btn btn-outline" type="button" title="Reset controls (prompts for unlocked-only vs all)">Reset Controls</button>
@@ -579,10 +585,11 @@
             </div>
             <div class="tp-ab">
               <button id="tpAB" class="btn btn-ab" type="button"
-                aria-label="Toggle A/B Comparison"
+                aria-label="Compare Original vs Processed"
                 aria-describedby="tpABLabel"
-                title="Toggle A/B — X key shortcut"
-                disabled>A/B</button>
+                aria-pressed="false"
+                title="Compare Original / Processed (X) — sample-accurate, keeps playhead"
+                disabled>Compare Original</button>
               <button id="abToggle" class="btn btn-ab vip-tp-alias" type="button" hidden aria-hidden="true" tabindex="-1">A/B</button>
               <span id="tpABLabel" class="tp-ab-label" data-version="A" aria-live="polite">
                 <span class="tp-ab-tag">A</span>

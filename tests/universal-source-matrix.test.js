@@ -211,4 +211,106 @@ describe('USMNode pipeline', () => {
 
     node.dispose();
   });
+
+  test('internal API: getSourceStems / getSourceLabels / isReady / ensureComputed cache', async () => {
+    const mix = syntheticMix(0.25, SAMPLE_RATE);
+    const node = new USMNode({ preferOnnx: false });
+    expect(node.isReady()).toBe(false);
+    expect(node.getSourceStems()).toEqual([]);
+    expect(node.getSourceLabels()).toEqual([]);
+
+    const first = await node.ensureComputed(mix, SAMPLE_RATE, {
+      mode: 'auto',
+      numSources: 3,
+      nmfIterations: 10,
+    });
+    expect(first.sources).toHaveLength(3);
+    expect(first.cached).toBeFalsy();
+    expect(node.isReady()).toBe(true);
+
+    const stems = node.getSourceStems();
+    expect(stems).toHaveLength(3);
+    expect(stems[0].pcm).toBeInstanceOf(Float32Array);
+    expect(stems[0].label).toBeTruthy();
+    expect(stems[0].id).toMatch(/^usm_/);
+
+    const labels = node.getSourceLabels();
+    expect(labels).toHaveLength(3);
+    expect(labels[0]).toEqual(expect.objectContaining({
+      id: expect.any(String),
+      label: expect.any(String),
+      confidence: expect.any(Number),
+    }));
+    // Labels must not expose PCM (UI summary only)
+    expect(labels[0].pcm).toBeUndefined();
+
+    const second = await node.ensureComputed(mix, SAMPLE_RATE, {
+      mode: 'auto',
+      numSources: 3,
+      nmfIterations: 10,
+    });
+    expect(second.cached).toBe(true);
+    expect(second.sources).toHaveLength(3);
+
+    node.dispose();
+  });
+
+  test('Live-Mix contract: mute/solo/gain do not re-invoke process', async () => {
+    const mix = syntheticMix(0.2, SAMPLE_RATE);
+    const node = new USMNode({ preferOnnx: false });
+    await node.ensureComputed(mix, SAMPLE_RATE, { mode: 'auto', numSources: 3, nmfIterations: 8 });
+    const processSpy = jest.spyOn(node, 'process');
+    const ensureSpy = jest.spyOn(node, 'ensureComputed');
+
+    const id = node.sources[0].id;
+    node.setMute(id, true);
+    node.setSolo(id, true);
+    node.setGainDb(id, -3);
+    node.setLabel(id, 'renamed');
+    node.renderMix();
+
+    expect(processSpy).not.toHaveBeenCalled();
+    expect(ensureSpy).not.toHaveBeenCalled();
+    processSpy.mockRestore();
+    ensureSpy.mockRestore();
+    node.dispose();
+  });
+});
+
+describe('USM engineer UI contract (source)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const workspace = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'app', 'lib', 'analysis-workspace.js'),
+    'utf8',
+  );
+  const usmNodeSrc = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'pipeline', 'USMNode.js'),
+    'utf8',
+  );
+  const indexHtml = fs.readFileSync(
+    path.join(__dirname, '..', 'public', 'app', 'index.html'),
+    'utf8',
+  );
+
+  test('analysis-workspace auto-runs USM backend after analysis', () => {
+    expect(workspace).toMatch(/runUsmBackend/);
+    expect(workspace).toMatch(/ensureComputed/);
+    expect(workspace).toMatch(/getSourceStems/);
+    expect(workspace).toMatch(/getSourceLabels/);
+  });
+
+  test('USMNode documents backend role and Live-Mix contract', () => {
+    expect(usmNodeSrc).toMatch(/Internal backend service/);
+    expect(usmNodeSrc).toMatch(/getSourceStems/);
+    expect(usmNodeSrc).toMatch(/getSourceLabels/);
+    expect(usmNodeSrc).toMatch(/USMWorker/);
+  });
+
+  test('Engineer HTML shows Detected Sources summary, not Separate controls as primary', () => {
+    expect(indexHtml).toMatch(/Detected Sources/);
+    expect(indexHtml).toMatch(/computed automatically/i);
+    // Separate buttons exist only as hidden legacy ids
+    expect(indexHtml).toMatch(/btnUsmSeparate[\s\S]*hidden/);
+  });
 });

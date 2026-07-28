@@ -83,15 +83,18 @@
   );
 }
 
-/* Locked sliders (amber accent) */
+/* Locked sliders — cyan protected accent (same token as style.css / slider-theme) */
 .slider-tick-wrapper.is-locked::after {
   background: repeating-linear-gradient(
     to right,
     rgba(255, 255, 255, 0.0) 0%,
     rgba(255, 255, 255, 0.0) calc(var(--tick-pct-step, 10%) - 0.5px),
-    rgba(255, 204, 68, 0.40) calc(var(--tick-pct-step, 10%) - 0.5px),
-    rgba(255, 204, 68, 0.40) var(--tick-pct-step, 10%)
+    rgba(103, 232, 249, 0.45) calc(var(--tick-pct-step, 10%) - 0.5px),
+    rgba(103, 232, 249, 0.45) var(--tick-pct-step, 10%)
   );
+}
+.slider-tick-wrapper.is-locked > input[type="range"] {
+  accent-color: var(--vip-lock-accent, #67e8f9);
 }
 
 /* ── Active state: brighten ticks when dragging ─────────────── */

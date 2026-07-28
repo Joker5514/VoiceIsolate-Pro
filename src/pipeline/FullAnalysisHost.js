@@ -82,16 +82,27 @@ export class FullAnalysisHost {
     const requestId = ++this._requestId;
     return new Promise((resolve, reject) => {
       const timeoutMs = enriched.timeoutMs ?? 180000;
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error('Full analysis timed out'));
-      }, timeoutMs);
+      // Stall = no heartbeat/progress for stallMs (hard timeout still overall).
+      const stallMs = enriched.stallMs ?? 45000;
+      let lastActivity = Date.now();
+      const hardDeadline = Date.now() + timeoutMs;
+      const timer = setInterval(() => {
+        const now = Date.now();
+        if (now - lastActivity > stallMs) {
+          cleanup();
+          reject(new Error('Full analysis stalled (no worker heartbeat) — retry Analyze'));
+        } else if (now > hardDeadline) {
+          cleanup();
+          reject(new Error('Full analysis timed out'));
+        }
+      }, 2000);
 
       const onMessage = (event) => {
         const msg = event.data || {};
         if (msg.requestId !== requestId) return;
-        if (msg.type === 'progress') {
-          this.onProgress(msg.percent || 0, msg.stage || 'analysis');
+        if (msg.type === 'progress' || msg.type === 'heartbeat') {
+          lastActivity = Date.now();
+          this.onProgress(msg.percent || 0, msg.stage || (msg.type === 'heartbeat' ? 'working' : 'analysis'));
         } else if (msg.type === 'result') {
           cleanup();
           resolve(msg.analysis);
@@ -114,7 +125,7 @@ export class FullAnalysisHost {
       };
 
       const cleanup = () => {
-        clearTimeout(timer);
+        clearInterval(timer);
         worker.removeEventListener('message', onMessage);
         worker.removeEventListener('error', onError);
       };
