@@ -825,10 +825,15 @@ input[type="range"]:not(.realtime):not(.tp-seek):not(.landing-seek-input):not(.d
 .slider-group-header{width:100%;padding:7px 10px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;background:var(--s2);color:var(--text);border:0;font-size:0.74rem;font-weight:600;letter-spacing:0.02em;transition:background 0.1s,color 0.1s}
 .slider-group-header:hover{background:var(--s3)}
 .slider-group.active .slider-group-header{color:rgba(255,120,120,0.95)}
+/* Canonical visibility: native details[open] (not only .active class) */
 .slider-group-content{display:none;padding:6px 0 4px}
-.slider-group.active .slider-group-content{display:block}
+.slider-group.active .slider-group-content,
+details.slider-group[open] > .slider-group-content,
+details.slider-group[open] > .vip-section-body{display:block}
 .slider-group-header .chevron{transition:transform 0.2s ease;transform:rotate(-90deg)}
-.slider-group.active .slider-group-header .chevron{transform:rotate(0deg)}
+.slider-group.active .slider-group-header .chevron,
+details.slider-group[open] > .slider-group-header .chevron,
+details.slider-group[open] > .vip-section-summary .chevron{transform:rotate(0deg)}
 .tabs { display:flex; gap:2px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
 .tab-btn { padding:8px 16px; background:var(--s2); border:1px solid var(--border); border-bottom:none; cursor:pointer; font-size:12px; color:var(--text2); }
 .tab-btn.active { background:var(--s1); color:var(--cyan); }
@@ -1516,8 +1521,9 @@ body::after {
 .slider-group.active .slider-group-header::before { opacity: 1; box-shadow: 0 0 12px rgba(255,42,61,.6); }
 .slider-group-header:hover { background: linear-gradient(180deg, rgba(255,42,61,.10), rgba(255,255,255,.02)); color: #fff; letter-spacing: .04em; }
 .slider-group.active .slider-group-header { color: #ffd9dc; }
-.slider-group-content {
-  /* Override display:none from the base rule — use max-height/opacity for transition */
+/* Collapsed body: hide with max-height only when NOT open (details[open] wins) */
+.slider-group:not(.active):not([open]) > .slider-group-content,
+.slider-group:not(.active):not([open]) > .vip-section-body {
   display: block;
   overflow: hidden;
   max-height: 0;
@@ -1527,12 +1533,17 @@ body::after {
   transform: translateY(-2px);
   transition: max-height .35s ease, opacity .25s ease, transform .25s ease, padding .25s ease, visibility 0s linear .35s;
 }
-.slider-group.active .slider-group-content {
+.slider-group.active > .slider-group-content,
+.slider-group.active > .vip-section-body,
+details.slider-group[open] > .slider-group-content,
+details.slider-group[open] > .vip-section-body {
+  display: block !important;
   max-height: 9999px;
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
   transform: translateY(0);
+  overflow: visible;
   transition-delay: 0s, 0s, 0s, 0s, 0s;
 }
 .slider-group-header .chevron {
@@ -1541,7 +1552,8 @@ body::after {
   text-shadow: 0 0 8px rgba(0,255,231,.5);
   transition: transform .25s ease, color .2s ease;
 }
-.slider-group.active .slider-group-header .chevron { color: var(--vip-neon-red); text-shadow: 0 0 8px rgba(255,42,61,.6); }
+.slider-group.active .slider-group-header .chevron,
+details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-neon-red); text-shadow: 0 0 8px rgba(255,42,61,.6); }
 
 /* ── Slider rows — sleek hover + active glow ───────────────────────────── */
 .sr-row {
@@ -2625,9 +2637,27 @@ details.vip-section[open] > .vip-section-summary::before{transform:rotate(90deg)
 .vip-section-body{padding-top:8px}
 .slider-group.vip-section{margin-bottom:8px;border:1px solid rgba(255,255,255,0.05);border-radius:10px;padding:4px}
 .slider-group.vip-section > .vip-section-summary{margin:2px;background:rgba(0,0,0,0.2)}
-/* Keep slider panels visible when details open (legacy accordion content) */
-details.slider-group.vip-section[open] > .slider-group-content{display:block}
-details.slider-group.vip-section:not([open]) > .slider-group-content{display:none}
+/* Keep slider panels visible when details open (details[open] is source of truth) */
+details.slider-group.vip-section[open] > .slider-group-content,
+details.slider-group.vip-section[open] > .vip-section-body{
+  display:block !important;
+  max-height:none;
+  opacity:1;
+  visibility:visible;
+  pointer-events:auto;
+  overflow:visible;
+}
+details.slider-group.vip-section:not([open]) > .slider-group-content,
+details.slider-group.vip-section:not([open]) > .vip-section-body{
+  display:none !important;
+  max-height:0;
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+}
+/* Any open vip-section body must be visible (analysis, presets, viz, etc.) */
+details.vip-section[open] > .vip-section-body{display:block}
+details.vip-section:not([open]) > .vip-section-body{/* native details already hides non-open children */}
 .viz-hdr.vip-section-summary{margin-bottom:0}
 .viz-hdr.vip-section-summary .viz-actions{pointer-events:auto}
 

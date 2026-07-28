@@ -152,7 +152,11 @@ describe('EngineerModeBridge', () => {
   test('handles() / supportedIds() cover the rt slider set', () => {
     expect(EngineerModeBridge.handles('eqMid')).toBe(true);
     expect(EngineerModeBridge.handles('limThresh')).toBe(true);
-    expect(EngineerModeBridge.handles('nrAmount')).toBe(false); // worker-targeted, not bridged
+    // Separation→isolation Live-Mix refinements (stem balance)
+    expect(EngineerModeBridge.handles('voiceIso')).toBe(true);
+    expect(EngineerModeBridge.handles('bgSuppress')).toBe(true);
+    expect(EngineerModeBridge.handles('nrAmount')).toBe(true);
+    expect(EngineerModeBridge.handles('whisperMode')).toBe(false); // offline Process only
     expect(EngineerModeBridge.supportedIds().length).toBeGreaterThanOrEqual(30);
   });
 
@@ -162,6 +166,26 @@ describe('EngineerModeBridge', () => {
     expect(mixer.cleanBuffer).toBeTruthy();
     expect(mixer.noiseBuffer).toBeTruthy();
     expect(mixer.duration()).toBeCloseTo(4800 / 48000);
+    expect(bridge.hasNoiseStem()).toBe(false);
+  });
+
+  test('loadStemPair loads clean+noise for isolation Live-Mix', () => {
+    const n = 4800;
+    const clean = [Float32Array.from({ length: n }, (_, i) => Math.sin(i / 20) * 0.2)];
+    const noise = [Float32Array.from({ length: n }, (_, i) => Math.sin(i / 3) * 0.05)];
+    const voiceSpy = jest.spyOn(mixer, 'setVoiceLevel');
+    const nrSpy = jest.spyOn(mixer, 'setNoiseReduction');
+    bridge.loadStemPair(clean, noise, 48000);
+    expect(bridge.isLoaded()).toBe(true);
+    expect(bridge.hasNoiseStem()).toBe(true);
+    // Isolation refinements map to gains (no ML)
+    expect(bridge.applyParam('voiceIso', 72)).toBe(true);
+    expect(voiceSpy).toHaveBeenCalled();
+    expect(bridge.applyParam('bgSuppress', 60)).toBe(true);
+    expect(nrSpy).toHaveBeenCalledWith(60);
+    // Isolation-only param changes must not require re-load
+    expect(bridge.applyParam('voiceIso', 90)).toBe(true);
+    expect(voiceSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   test('applyParam maps legacy ids to mixer setters', () => {
@@ -213,7 +237,8 @@ describe('EngineerModeBridge', () => {
 
   test('unsupported ids and non-finite values are ignored', () => {
     expect(bridge.applyParam('formantShift', 2)).toBe(false); // worker param, no mixer control
-    expect(bridge.applyParam('nrAmount', 50)).toBe(false);    // worker param
+    expect(bridge.applyParam('whisperMode', 2)).toBe(false);  // offline Process tier, not Live-Mix
+    expect(bridge.applyParam('nrAmount', 50)).toBe(true);     // residual duck via Live-Mix
     expect(bridge.applyParam('eqMid', NaN)).toBe(false);      // non-finite
     expect(bridge.applyParam('eqMid', 4)).toBe(true);
   });

@@ -1033,6 +1033,10 @@ class VoiceIsolatePro {
    *  - open/closed state persisted per section id in localStorage
    *  - toggle never triggers re-process or analysis
    */
+  /**
+   * Collapsible sections — details[open] is the single source of truth.
+   * .active is mirrored for legacy CSS only. Never re-runs DSP.
+   */
   _initCollapsibleSections() {
     if (typeof document === 'undefined') return;
     const STORAGE_KEY = 'vip.engineer.sectionOpen.v1';
@@ -1046,36 +1050,59 @@ class VoiceIsolatePro {
     const narrow = typeof window !== 'undefined'
       && window.matchMedia
       && window.matchMedia('(max-width: 900px)').matches;
-    const defaultOpen = new Set(['section-upload', 'section-presets', 'section-processing', 'section-gate', 'section-analysis']);
+    const defaultOpen = new Set([
+      'section-upload', 'section-presets', 'section-processing',
+      'section-gate', 'section-analysis', 'section-separation',
+    ]);
     if (!narrow) defaultOpen.add('vizCard');
+
+    const syncActive = (el) => {
+      el.classList.toggle('active', !!el.open);
+      const sum = el.querySelector(':scope > summary');
+      if (sum) sum.setAttribute('aria-expanded', String(!!el.open));
+    };
 
     const persist = () => {
       try {
         if (typeof localStorage === 'undefined') return;
         const next = {};
-        document.querySelectorAll('details.vip-section[id]').forEach((el) => {
+        document.querySelectorAll('details.vip-section[id], details.slider-group[id]').forEach((el) => {
           if (el.id) next[el.id] = !!el.open;
+        });
+        // Also key anonymous slider groups by summary text for restore stability
+        document.querySelectorAll('details.slider-group:not([id])').forEach((el, i) => {
+          const key = el.dataset.vipSectionKey || `vip-section-anon-${i}`;
+          el.dataset.vipSectionKey = key;
+          next[key] = !!el.open;
         });
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       } catch { /* private mode */ }
     };
 
-    document.querySelectorAll('details.vip-section').forEach((el) => {
+    document.querySelectorAll('details.vip-section, details.slider-group').forEach((el, i) => {
       const id = el.id || '';
-      if (id && Object.prototype.hasOwnProperty.call(stored, id)) {
-        el.open = !!stored[id];
+      if (!id && !el.dataset.vipSectionKey) {
+        el.dataset.vipSectionKey = `vip-section-anon-${i}`;
+      }
+      const storeKey = id || el.dataset.vipSectionKey;
+      if (storeKey && Object.prototype.hasOwnProperty.call(stored, storeKey)) {
+        el.open = !!stored[storeKey];
       } else if (defaultOpen.has(id) || el.classList.contains('active')) {
         el.open = true;
       } else if (narrow || id === 'vizCard' || el.classList.contains('slider-group')) {
         if (id === 'vizCard') el.open = !narrow;
-        else if (el.classList.contains('slider-group') && !el.classList.contains('active')) {
+        else if (el.classList.contains('slider-group') && !el.classList.contains('active') && !el.hasAttribute('open')) {
           el.open = false;
         }
       }
+      syncActive(el);
       // Persist user toggles only — never re-run DSP on collapse/expand.
       if (!el.dataset.vipCollapseWired) {
         el.dataset.vipCollapseWired = '1';
-        el.addEventListener('toggle', () => { persist(); });
+        el.addEventListener('toggle', () => {
+          syncActive(el);
+          persist();
+        });
       }
     });
   }
@@ -1863,8 +1890,9 @@ class VoiceIsolatePro {
   onSlider(id, value) {
     // Real-time path: route the slider straight to the Live-Mix bridge. When
     // the bridge handles it, the change is an immediate AudioParam update — no
-    // Reprocess, no ML re-run (CLAUDE.md §1). Unsupported ids (spectral/worker
-    // effects) fall through and still apply on the next Reprocess.
+    // Reprocess, no ML re-run (CLAUDE.md §1). Separation→isolation: voiceIso /
+    // bgSuppress rebalance clean/noise stems only. Unsupported ids (spectral/
+    // worker effects) fall through and still apply on the next Reprocess.
     //
     // rAF-coalesce rapid drag events so we never queue redundant worklet/
     // bridge recalcs mid-frame (calibration pipeline safety).
@@ -1898,7 +1926,15 @@ class VoiceIsolatePro {
   _applySliderImmediate(id, value) {
     if (this._bridge && typeof this._bridge.applyParam === 'function') {
       try {
-        if (this._bridge.applyParam(id, value)) return;
+        // Calibrate separation-family ids so extreme isolation never NaNs gains
+        let v = value;
+        if (id === 'voiceIso' || id === 'bgSuppress' || id === 'nrAmount') {
+          try {
+            const eff = this.getEffectiveParams({ ...(window.VIP_PARAMS || {}), [id]: value });
+            if (eff && Number.isFinite(eff[id])) v = eff[id];
+          } catch { /* use raw */ }
+        }
+        if (this._bridge.applyParam(id, v)) return;
       } catch {
         /* fall through to legacy handling */
       }
@@ -2292,18 +2328,53 @@ class VoiceIsolatePro {
     }
   }
 
-  /** Push VIP_PARAMS to the live-mix bridge when loaded. */
+  /** Push VIP_PARAMS to the live-mix bridge when loaded (effective DSP where available). */
   _syncBridgeParams() {
     const bridge = this._bridge;
     if (!bridge || typeof bridge.applyParams !== 'function') return;
-    bridge.applyParams(window.VIP_PARAMS || {});
+    // Prefer calibrated effective params for separation→isolation coupling safety.
+    let params = window.VIP_PARAMS || {};
+    try {
+      if (typeof this.getEffectiveParams === 'function') {
+        params = this.getEffectiveParams(params);
+      }
+    } catch { /* raw VIP_PARAMS fallback */ }
+    bridge.applyParams(params);
     if (bridge.isLoaded && bridge.isLoaded()) this.liveChainBuilt = true;
+  }
+
+  /**
+   * Load retained ML separation stems into the Live-Mix bridge.
+   * Isolation (voiceIso / bgSuppress / gate / EQ) then refines without re-ML.
+   */
+  async _loadSeparationStemsToBridge() {
+    if (!this._cleanStemChannels?.length) return null;
+    await this.ensureCtx();
+    const bridge = this._bridge || await this._ensureBridge();
+    if (!bridge) return null;
+    if (typeof bridge.loadStemPair === 'function') {
+      bridge.loadStemPair(
+        this._cleanStemChannels,
+        this._noiseStemChannels || null,
+        this._stemSampleRate || this.ctx?.sampleRate || 48000,
+      );
+    } else if (typeof bridge.loadBuffer === 'function' && this.outputBuffer) {
+      bridge.loadBuffer(this.outputBuffer);
+    }
+    this._bridgeBuf = this.outputBuffer || null;
+    this._syncBridgeParams();
+    this.liveChainBuilt = true;
+    return bridge;
   }
 
   /** After processing, default playback to the isolated output. */
   _setProcessedPlaybackMode() {
     this.abMode = 'processed';
     this._bridgeBuf = null;
+    // Prefer stem-pair Live-Mix when separation retained clean+noise
+    if (this._cleanStemChannels?.length) {
+      this._loadSeparationStemsToBridge().catch(() => {});
+    }
     if (this.dom?.tpAB) {
       this.dom.tpAB.classList.add('active');
       this.dom.tpAB.disabled = false;
@@ -2901,6 +2972,11 @@ class VoiceIsolatePro {
     this._resetCollaborationState?.();
     this._transportRegionWired = false;
     this._syncTransportRegion = null;
+    this._cleanStemChannels = null;
+    this._noiseStemChannels = null;
+    this._stemSampleRate = null;
+    this.noiseBuffer = null;
+    this._bridgeBuf = null;
     HeroExperience.onClear();
     this.stop();
     this.inputBuffer = null;
@@ -3355,8 +3431,45 @@ class VoiceIsolatePro {
       }
       this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
+      // Retain residual/noise stem for Live-Mix isolation refinements (bgSuppress).
+      // Separation once → isolation sliders only rebalance stems (never re-ML).
+      try {
+        let noise = result.noise;
+        if (plan.expandStereo && noise?.[0] && plan.left && plan.right) {
+          // Mid-only residual expanded to stereo via inverse envelope on residual energy
+          const n = noise[0].length;
+          const noiseL = new Float32Array(n);
+          const noiseR = new Float32Array(n);
+          for (let i = 0; i < n; i++) {
+            noiseL[i] = noise[0][i];
+            noiseR[i] = noise[0][i];
+          }
+          noise = [noiseL, noiseR];
+        }
+        if (noise?.length && noise[0]?.length) {
+          this.noiseBuffer = stemsToAudioBuffer(this.ctx, noise, result.sampleRate || buf.sampleRate);
+          this._cleanStemChannels = clean.map((c) => new Float32Array(c));
+          this._noiseStemChannels = noise.map((c) => new Float32Array(c));
+          this._stemSampleRate = result.sampleRate || buf.sampleRate;
+        } else {
+          this.noiseBuffer = null;
+          this._cleanStemChannels = clean.map((c) => new Float32Array(c));
+          this._noiseStemChannels = null;
+          this._stemSampleRate = result.sampleRate || buf.sampleRate;
+        }
+      } catch (stemErr) {
+        structuredLog('warn', '[VIP] noise stem retain failed', { err: stemErr?.message });
+        this._cleanStemChannels = clean.map((c) => new Float32Array(c));
+        this._noiseStemChannels = null;
+      }
       // Keep origBuffer as the ML source of truth for subsequent reprocess/cache keys.
       if (!this.origBuffer) this.origBuffer = buf;
+      // Load separation stems into Live-Mix so isolation sliders refine immediately.
+      try {
+        await this._loadSeparationStemsToBridge();
+      } catch (loadErr) {
+        structuredLog('warn', '[VIP] stem Live-Mix load deferred', { err: loadErr?.message });
+      }
       const mlLabel = result.fromCache ? 'ML isolation (cached)' : 'ML isolation complete';
       this.updatePipelineProgress(20, mlLabel, 90);
       structuredLog('info', '[VIP] ML isolation done', {
@@ -3364,6 +3477,7 @@ class VoiceIsolatePro {
         channels: clean.length,
         midOnly: plan.expandStereo,
         samples: clean[0]?.length || 0,
+        hasNoiseStem: Boolean(this._noiseStemChannels?.length),
       });
       return true;
     } catch (err) {
@@ -4558,15 +4672,27 @@ class VoiceIsolatePro {
   async buildLiveChain(buf) {
     // Preferred path: play through the real-time Live-Mix bridge so every
     // rt:true slider is a live AudioParam (no Reprocess, no ML re-run).
+    // When separation stems exist and we're playing processed, use stem-pair
+    // so isolation sliders (voiceIso/bgSuppress) refine the residual balance.
     const bridge = this._bridge || await this._ensureBridge();
-    if (bridge && typeof bridge.loadBuffer === 'function') {
+    if (bridge && (typeof bridge.loadBuffer === 'function' || typeof bridge.loadStemPair === 'function')) {
       try {
-        if (this._bridgeBuf !== buf) {
-          bridge.loadBuffer(buf);
+        const useStems = this.abMode === 'processed'
+          && this._cleanStemChannels?.length
+          && buf === (this.outputBuffer || this.procBuffer);
+        if (this._bridgeBuf !== buf || (useStems && !bridge.hasNoiseStem?.())) {
+          if (useStems && typeof bridge.loadStemPair === 'function') {
+            bridge.loadStemPair(
+              this._cleanStemChannels,
+              this._noiseStemChannels || null,
+              this._stemSampleRate || buf.sampleRate,
+            );
+          } else if (typeof bridge.loadBuffer === 'function') {
+            bridge.loadBuffer(buf);
+          }
           this._bridgeBuf = buf;
           this._transportRegionWired = false;
-          const params = window.VIP_PARAMS || {};
-          if (typeof bridge.applyParams === 'function') bridge.applyParams(params);
+          this._syncBridgeParams();
           this.liveChainBuilt = true;
         }
         this._ensureTransportRegionWiring();

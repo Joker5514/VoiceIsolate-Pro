@@ -727,31 +727,44 @@
   }
 
   /* ═══════════════════════════════════════════════════════════════
-   * 6. ACCORDION GROUPS — click-to-expand
+   * 6. ACCORDION GROUPS — mirror details[open] (never fight native toggle)
+   * Legacy code toggled .active + inline display, which left open
+   * <details> bodies at max-height:0 / opacity:0. Native <details>/<summary>
+   * is the single source of truth; .active is styling only.
    * ═══════════════════════════════════════════════════════════════ */
   function patchAccordions() {
-    document.querySelectorAll('.slider-group-header').forEach(btn => {
-      if (btn.dataset.vipFixAcc === '1') return;
-
-      // Clone the button to remove the original listener registered in app.js
-      const newBtn = btn.cloneNode(true);
-      newBtn.dataset.vipFixAcc = '1';
-      btn.parentNode.replaceChild(newBtn, btn);
-
-      newBtn.addEventListener('click', () => {
-        const group   = newBtn.closest('.slider-group');
-        const content = $(newBtn.getAttribute('aria-controls'));
-        if (!group || !content) return;
-        const open = group.classList.toggle('active');
-        newBtn.setAttribute('aria-expanded', String(open));
-        content.style.display = open ? '' : 'none';
+    function syncDetailsVisual(details) {
+      if (!details || details.tagName !== 'DETAILS') return;
+      const open = !!details.open;
+      details.classList.toggle('active', open);
+      const sum = details.querySelector(':scope > summary');
+      if (sum) sum.setAttribute('aria-expanded', String(open));
+      // Clear any legacy inline display hacks from older patches
+      details.querySelectorAll(':scope > .slider-group-content, :scope > .vip-section-body').forEach((body) => {
+        if (body.style && body.style.display) body.style.display = '';
       });
-      /* Sync initial display state with class */
-      const isActive = newBtn.closest('.slider-group')?.classList.contains('active');
-      const content  = $(newBtn.getAttribute('aria-controls'));
-      if (content) content.style.display = isActive ? '' : 'none';
+    }
+
+    document.querySelectorAll('details.slider-group, details.vip-section').forEach((details) => {
+      if (details.dataset.vipFixAcc === '1') return;
+      details.dataset.vipFixAcc = '1';
+      syncDetailsVisual(details);
+      details.addEventListener('toggle', () => syncDetailsVisual(details));
     });
-    log('Accordions patch OK');
+
+    // Legacy non-details .slider-group-header (if any remain): toggle .active only
+    document.querySelectorAll('.slider-group:not(details) > .slider-group-header').forEach((btn) => {
+      if (btn.dataset.vipFixAcc === '1') return;
+      btn.dataset.vipFixAcc = '1';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const group = btn.closest('.slider-group');
+        if (!group) return;
+        const open = group.classList.toggle('active');
+        btn.setAttribute('aria-expanded', String(open));
+      });
+    });
+    log('Accordions patch OK (details[open] source of truth)');
   }
 
   /* ═══════════════════════════════════════════════════════════════
