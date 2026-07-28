@@ -14,10 +14,13 @@
  * the SharedArrayBuffer transport — it is pure Web Audio, exactly like the
  * modern `/` UI.
  *
- * A single decoded buffer (the processed output, or the original) is loaded as
- * the mixer's "clean" stem with a silent "noise" stem, so the whole Tier-A bus
- * (gate, 10-band graphic EQ, tilt, compressor, limiter, de-esser, width,
- * dry/wet, output trim) acts on it in real time.
+ * Separation → Isolation workflow (Stem-Split & Live-Mix):
+ *   1. Process once → clean + noise stems (ML separation)
+ *   2. loadStems(clean, noise) into PlaybackMixer
+ *   3. Isolation refinements (voiceIso, bgSuppress, gate, EQ…) are Live-Mix
+ *      gains only — no second ML pass. voiceIso → cleanGain; bgSuppress →
+ *      noiseGain attenuation. Extreme/whisper spectral params still apply on
+ *      the next offline Process when needed.
  */
 'use strict';
 
@@ -78,6 +81,23 @@ const PARAM_MAP = Object.freeze({
   dryWet: (m, v) => m.setDryWet(v),
   outWidth: (m, v) => m.setStereoWidth(v),
   stereoWidth: (m, v) => m.setStereoWidth(v),
+
+  // ── Separation → Isolation (Live-Mix stem balance; never re-runs ML) ─────
+  // voiceIso: lift clean stem (0–100 UI → 70–140% gain)
+  voiceIso: (m, v) => {
+    const pct = Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 72;
+    const gainPct = 70 + (pct / 100) * 70;
+    m.setVoiceLevel(gainPct);
+  },
+  // bgSuppress: duck residual/noise stem
+  bgSuppress: (m, v) => {
+    const pct = Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 38;
+    m.setNoiseReduction(pct);
+  },
+  nrAmount: (m, v) => {
+    const pct = Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0;
+    m.setNoiseReduction(pct);
+  },
 });
 
 export class EngineerModeBridge {
@@ -89,6 +109,7 @@ export class EngineerModeBridge {
   constructor(options = {}) {
     this.mixer = options.mixer || new PlaybackMixer({ context: options.context });
     this._loaded = false;
+    this._hasNoiseStem = false;
   }
 
   /** Slider ids this bridge can drive in real time. */
@@ -101,6 +122,7 @@ export class EngineerModeBridge {
    * Load a decoded AudioBuffer as the live-mix source. Channels are copied out
    * as Float32Arrays (so cross-context buffers are fine) and paired with a
    * silent noise stem; the mixer's clean lane carries the audio at unity.
+   * Prefer {@link loadStemPair} after ML separation so isolation can duck residual.
    * @param {AudioBuffer} audioBuffer
    */
   loadBuffer(audioBuffer) {
@@ -118,6 +140,62 @@ export class EngineerModeBridge {
     }
     this.mixer.loadStems(clean, silent, audioBuffer.sampleRate);
     this._loaded = true;
+    this._hasNoiseStem = false;
+  }
+
+  /**
+   * Load ML separation stems for Isolation Live-Mix.
+   * clean = voice stem; noise = residual/background. Isolation sliders then
+   * refine the balance without re-running separation.
+   * @param {Float32Array[]|AudioBuffer} clean
+   * @param {Float32Array[]|AudioBuffer|null} [noise]
+   * @param {number} [sampleRate]
+   */
+  loadStemPair(clean, noise = null, sampleRate) {
+    const toChannels = (src) => {
+      if (!src) return null;
+      if (Array.isArray(src) && src[0] instanceof Float32Array) return src;
+      if (src && typeof src.getChannelData === 'function') {
+        const out = [];
+        for (let c = 0; c < src.numberOfChannels; c++) out.push(src.getChannelData(c));
+        return out;
+      }
+      if (src instanceof Float32Array) return [src];
+      return null;
+    };
+    const cleanCh = toChannels(clean);
+    if (!cleanCh?.length) {
+      throw new TypeError('[VIP][EngineerModeBridge] loadStemPair requires clean stem channels.');
+    }
+    let noiseCh = toChannels(noise);
+    if (!noiseCh?.length) {
+      noiseCh = cleanCh.map((ch) => new Float32Array(ch.length));
+      this._hasNoiseStem = false;
+    } else {
+      // Match lengths
+      const n = cleanCh[0].length;
+      noiseCh = noiseCh.map((ch) => {
+        if (ch.length === n) return ch;
+        const fixed = new Float32Array(n);
+        fixed.set(ch.subarray(0, Math.min(ch.length, n)));
+        return fixed;
+      });
+      while (noiseCh.length < cleanCh.length) {
+        noiseCh.push(new Float32Array(n));
+      }
+      this._hasNoiseStem = true;
+    }
+    const sr = sampleRate
+      || (clean && clean.sampleRate)
+      || (noise && noise.sampleRate)
+      || 48000;
+    this.mixer.loadStems(cleanCh, noiseCh, sr);
+    this._loaded = true;
+  }
+
+  /** True when a real residual/noise stem was loaded (vs silent placeholder). */
+  hasNoiseStem() {
+    return !!this._hasNoiseStem;
   }
 
   /** Whether a buffer is loaded and ready to play. */
