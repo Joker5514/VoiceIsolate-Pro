@@ -1,49 +1,46 @@
 # Downloads — VoiceIsolate Pro
 
-Canonical installers are hosted on **GitHub Releases** (not inside the git tree).
+**In-repo version:** **25.0.0** (Android `versionName` / Electron artifact / API version)  
+**Build number:** **250000** (`versionCode` / iOS `CFBundleVersion`)
 
-**Web download page:** https://voice-isolate-pro.vercel.app/download/  
-**All releases:** https://github.com/Joker5514/VoiceIsolate-Pro/releases  
-**Current tag:** [v24.0.0](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v24.0.0)
+Published GitHub Release assets are cut separately. Until a **v25.0.0** release is uploaded, the **latest** tag may still serve prior **v24.0.0** binaries.
 
-## Latest assets
+## Current code target
 
-| Platform | Asset | Approx. size | Latest URL |
-|----------|--------|--------------|------------|
-| **Android** | `VoiceIsolate-Pro-android-debug.apk` | ~238 MB | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
-| **Windows** | `VoiceIsolate-Pro-24.0.0-win-x64.exe` | ~178 MB | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| Platform | Artifact name | Notes |
+|----------|---------------|--------|
+| **Android** | `VoiceIsolate-Pro-android-debug.apk` | `versionName "25.0.0"`, `versionCode 250000` |
+| **Windows** | `VoiceIsolate-Pro-25.0.0-win-x64.exe` | electron-builder `${version}` |
 
-### Pinned v24.0.0
+### Prior published tag (v24.0.0)
 
 | Platform | URL |
 |----------|-----|
 | Android | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
 | Windows | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 
-## What each package includes
-
-| Package | Contents |
-|---------|----------|
-| Android APK | Landing + Engineer Mode, ORT WASM, BS-RNN + RNNoise + Silero VAD, worklets. **Offline after install.** Sideload debug build (not Play Store signed). |
-| Windows EXE | NSIS installer; same offline model set (Demucs not bundled). |
-
 ## Build & publish (maintainers)
 
 ```bash
-# Android (Windows host)
-pnpm android:build:win
+# Android
+pnpm android:build:win   # or pnpm android:build on Unix
 # → dist/android/VoiceIsolate-Pro-android-debug.apk
-gh release upload v24.0.0 dist/android/VoiceIsolate-Pro-android-debug.apk --clobber
 
-# Windows desktop
-pnpm setup:electron
+# Desktop
 pnpm build:electron
-# → dist/electron/VoiceIsolate-Pro-24.0.0-win-x64.exe
-gh release upload v24.0.0 dist/electron/VoiceIsolate-Pro-24.0.0-win-x64.exe --clobber
+# → dist/electron/VoiceIsolate-Pro-25.0.0-win-x64.exe
+
+# After cutting a GitHub release tag v25.0.0:
+gh release upload v25.0.0 dist/android/VoiceIsolate-Pro-android-debug.apk --clobber
+gh release upload v25.0.0 dist/electron/VoiceIsolate-Pro-25.0.0-win-x64.exe --clobber
 ```
 
-See also: [guides/ANDROID.md](guides/ANDROID.md), [guides/electron-desktop.md](guides/electron-desktop.md), [../download/README.md](../download/README.md).
+Sync versions after editing `package.json#version`:
 
-## Vercel redirects
+```bash
+pnpm mobile:sync-version
+```
 
-Same-origin paths `/download/*.apk` and `/download/*.exe` redirect to GitHub Releases (`vercel.json`) so the web host never serves SPA HTML for binary URLs.
+## Product snapshot PDF
+
+See [docs/releases/VoiceIsolate_Pro_v25_Current_State.pdf](releases/VoiceIsolate_Pro_v25_Current_State.pdf).

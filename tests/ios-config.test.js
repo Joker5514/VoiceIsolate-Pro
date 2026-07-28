@@ -64,13 +64,14 @@ describe('Info.plist — iOS app configuration', () => {
     expect(plist).toContain('<string>VoiceIsolate Pro</string>');
   });
 
-  test('CFBundleShortVersionString is 24.0.0', () => {
+  test('CFBundleShortVersionString matches package.json', () => {
     expect(plist).toContain('<key>CFBundleShortVersionString</key>');
     const versionMatch = plist.match(
       /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/
     );
     expect(versionMatch).not.toBeNull();
-    expect(versionMatch[1]).toBe('24.0.0');
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    expect(versionMatch[1]).toBe(pkg.version);
   });
 
   test('CFBundleVersion matches the major*10000 + minor*100 + patch formula', () => {

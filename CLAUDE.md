@@ -242,6 +242,28 @@ The Engineer Mode app under `public/app/` predates this architecture. It is in
   `speaker-ui.js`, `speaker-mixer.js`, `isolation-controls.js`, root `engineer.html`,
   root `landing.html`. Surfaces are `public/index.html` and `public/app/` only.
 
+### 5.1 Engineer Mode v25 — Slider Discipline & UI Polish (shipped)
+
+Hardening pass only — **not** an architecture rewrite. Scope stays in
+`public/app/slider-*.js`, `app.js`, `index.html`, `style.css`, and
+`processing-overlay.js`. Never reintroduce a second STFT/iSTFT. Never touch
+`voice-isolate-processor.js` ring-buffer pointer math unless explicitly tasked.
+
+| Module | Contract |
+|---|---|
+| `slider-calibration.js` | Pure `calibrate(id, raw)` + `getEffectiveDspParams(raw)`. UI ranges stay as displayed; **effective** values compress upper ranges (e.g. voiceIso 0–72 identity, 72–100 ease-out cubic → max effective ≈ 86). Coupling caps extreme combos; soft clamps de-risk gargling/pumping without snapping visible sliders. |
+| `slider-map.js` `SLIDER_HINTS` | Structured metadata (`purpose`, `bestFor`, `artifactRisk`, `pairedWith`, `modeDefaults`) for separation/whisper families; string hints still valid. |
+| `slider-hint-ui.js` | Augments existing hint panels with expandable details — do not replace inline hints. |
+| Slider lock UI | `data-locked` + SVG padlock; `toggleSliderLock(id)`; persist `vip-slider-locks` in `localStorage`; locked rows block drag, preset overwrite, and full reset (unless user chooses full reset). |
+| `updateAudioMetrics()` | **One** writer for Voice %, Noise %, SNR dB to header / pipeline strip / neon pulse. Call after process complete and A/B toggle. |
+| Collapsible sections | Native `<details>`/`<summary>` with non-empty summary text (a11y). |
+| Processing overlay | Stage-aware `data-variant` (uploading → … → exporting). Always `hideProcessingOverlay()` in `runPipeline` `finally`. |
+
+**Version:** product version is **`package.json` → 25.0.0**. Sync Android/iOS with
+`pnpm mobile:sync-version` (writes `versionCode` / `CFBundleVersion` as
+`major*10000 + minor*100 + patch` → **250000**). Electron artifact name uses
+`${version}` from package.json.
+
 ---
 
 ## 6. Commands
@@ -257,7 +279,13 @@ pnpm electron:dev     # Electron shell → http://localhost:3000 (run pnpm dev f
 pnpm build:electron   # production desktop installer (electron-builder)
 ```
 
-Requirements: Node.js ≥ 22, pnpm ≥ 10. Use **pnpm**, never npm/yarn.
+Requirements: Node.js ≥ 22, pnpm ≥ 11. Use **pnpm**, never npm/yarn.
+
+```bash
+pnpm mobile:sync-version   # android versionName/versionCode + iOS CFBundle* from package.json
+pnpm test                  # Jest (node)
+pnpm test:live             # Playwright headless Engineer pipeline smoke
+```
 
 ---
 

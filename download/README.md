@@ -7,6 +7,8 @@ https://github.com/Joker5514/VoiceIsolate-Pro/releases
 
 Web download page: https://voice-isolate-pro.vercel.app/download/
 
+**In-repo version:** **25.0.0** · build **250000**
+
 ---
 
 ## Android APK
@@ -17,16 +19,16 @@ Web download page: https://voice-isolate-pro.vercel.app/download/
 | Debug (Unix) | `pnpm android:build` | `android/app/build/outputs/apk/debug/app-debug.apk` |
 | Release AAB | `pnpm android:bundle` | `android/app/build/outputs/bundle/release/` |
 
-### Public download links (correct)
+### Public download links
 
 | Channel | URL |
 |---------|-----|
 | **Latest APK** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
-| **Pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
+| **Pinned v24.0.0** (prior) | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
 | **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 
-Asset name: `VoiceIsolate-Pro-android-debug.apk` · **~238 MB** · complete offline app (Landing + Engineer Mode + models).  
-Last published to **v24.0.0**: 2026-07-21.
+Asset name: `VoiceIsolate-Pro-android-debug.apk` · complete offline app (Landing + Engineer Mode + models).  
+Gradle: `versionName "25.0.0"`, `versionCode 250000`.
 
 Same-origin `/download/*.apk` is **redirected** to GitHub Releases (`vercel.json`) so Vercel never serves SPA HTML for APK URLs.
 
@@ -35,10 +37,10 @@ Same-origin `/download/*.apk` is **redirected** to GitHub Releases (`vercel.json
 ```bash
 pnpm android:build:win
 # → dist/android/VoiceIsolate-Pro-android-debug.apk
-gh release upload v24.0.0 dist/android/VoiceIsolate-Pro-android-debug.apk --clobber
+gh release upload v25.0.0 dist/android/VoiceIsolate-Pro-android-debug.apk --clobber
 ```
 
-Do **not** commit `*.apk` under `public/download/` (see `.gitignore`) — nesting an APK inside web assets bloats the next Android package.
+Do **not** commit `*.apk` under `public/download/` (see `.gitignore`).
 
 ---
 
@@ -46,20 +48,19 @@ Do **not** commit `*.apk` under `public/download/` (see `.gitignore`) — nestin
 
 | Goal | Asset / command |
 |------|-----------------|
-| **Latest installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe |
-| **Pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
-| Local build | `pnpm build:electron` → `dist/electron/VoiceIsolate-Pro-24.0.0-win-x64.exe` |
+| **Latest installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe |
+| **Pinned v24.0.0** (prior) | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| Local build | `pnpm build:electron` → `dist/electron/VoiceIsolate-Pro-25.0.0-win-x64.exe` |
 | Portable smoke test | `pnpm build:electron:dir` → `dist/electron/win-unpacked/VoiceIsolate Pro.exe` |
 
-Asset name: `VoiceIsolate-Pro-24.0.0-win-x64.exe` · **~178 MB** · 100% offline (UI + ORT + BS-RNN/denoise/VAD; Demucs optional/not bundled).  
-Last published to **v24.0.0**: 2026-07-21.
+Asset name: `VoiceIsolate-Pro-25.0.0-win-x64.exe` · 100% offline (UI + ORT + BS-RNN/denoise/VAD; Demucs optional/not bundled).
 
 ### Publish desktop (maintainers)
 
 ```bash
 pnpm setup:electron
 pnpm build:electron
-gh release upload v24.0.0 dist/electron/VoiceIsolate-Pro-24.0.0-win-x64.exe --clobber
+gh release upload v25.0.0 dist/electron/VoiceIsolate-Pro-25.0.0-win-x64.exe --clobber
 ```
 
 See [docs/guides/electron-desktop.md](../docs/guides/electron-desktop.md) and [docs/DOWNLOADS.md](../docs/DOWNLOADS.md).

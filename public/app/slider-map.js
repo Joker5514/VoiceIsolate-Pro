@@ -72,7 +72,12 @@ export const STAGES = [
   'S32: Final Export Ready',
 ];
 
-/** Inline 1–2 sentence hints for every slider row (Engineer Mode UI). */
+/**
+ * Inline hints for every slider row (Engineer Mode UI).
+ * String values remain supported for legacy rows.
+ * Structured objects add: purpose, bestFor, artifactRisk, pairedWith, modeDefaults
+ * plus `hint` (or legacy body text) for the existing inline panel.
+ */
 export const SLIDER_HINTS = {
   gateThresh: 'Sets the level where the noise gate closes on quiet passages. Lower toward –50 dB when fan hum bleeds through pauses in a podcast recording.',
   gateRange: 'Controls how deeply the gate mutes audio when closed. Push toward –80 dB for near-silence between phrases; ease toward –40 dB if words sound clipped.',
@@ -117,31 +122,150 @@ export const SLIDER_HINTS = {
   harmOrder: 'Sets how many overtones are restored. Raise toward 5 for fuller speech recovery; lower toward 2 if artifacts appear in the highs.',
   stereoWidth: 'Widens or collapses the stereo image. Pull toward 0% for mono podcast delivery; push toward 140% only when the source is a clean stereo room mic.',
   phaseCorr: 'Aligns stereo channels to fix cancellation. Raise toward 50% when dual lav mics on one subject sound thin or swishy.',
-  voiceIso: 'Sets machine-learning voice mask strength. Raise toward 85% to pull speech from crowd noise; lower toward 55% if words sound gargled.',
-  bgSuppress: 'Pushes down non-voice stems after separation. Raise toward 80% for music behind a reporter; lower toward 35% to keep natural ambience.',
-  voiceFocusLo: 'Sets the bottom edge of the speech band to isolate. Lower toward 120 Hz for deep male voices; raise toward 250 Hz to ignore subwoofer bleed.',
-  voiceFocusHi: 'Sets the top edge of the speech band to isolate. Lower toward 6 kHz for telephone speech; raise toward 10 kHz to keep breath and air.',
-  crosstalkCancel: 'Subtracts bleed between two microphones on one subject. Raise toward 60% for interview crosstalk; leave at 0% for single-mic recordings.',
+
+  voiceIso: {
+    hint: 'Sets machine-learning voice mask strength. Raise toward 85% to pull speech from crowd noise; lower toward 55% if words sound gargled.',
+    purpose: 'Controls how strongly the ML/spectral mask keeps speech and rejects non-voice content.',
+    bestFor: ['podcast', 'interview', 'crowd', 'forensic', 'whisper'],
+    artifactRisk: 'gargling, pumping, phasey isolation, hollowed-out voice when pushed with high BG Suppress',
+    pairedWith: 'Caps effective BG Suppress above ~75 isolation unless Voice Focus spans a speech-safe band (≈800–3400 Hz width). Soft-clamped with narrow focus bands.',
+    modeDefaults: { whisper: 88, podcast: 72, interview: 78, crowd: 86, forensic: 92 },
+  },
+  bgSuppress: {
+    hint: 'Pushes down non-voice stems after separation. Raise toward 80% for music behind a reporter; lower toward 35% to keep natural ambience.',
+    purpose: 'Attenuates energy outside the voice-focus band after separation.',
+    bestFor: ['interview', 'crowd', 'podcast', 'forensic'],
+    artifactRisk: 'pumping, hollowed-out voice, musical noise when combined with extreme Voice Iso and a narrow focus band',
+    pairedWith: 'Auto-capped when Voice Iso is high without a speech-safe span; stable-corridor logic reduces strength if the focus band is too narrow or too wide.',
+    modeDefaults: { whisper: 70, podcast: 38, interview: 60, crowd: 78, forensic: 88 },
+  },
+  voiceFocusLo: {
+    hint: 'Sets the bottom edge of the speech band to isolate. Lower toward 120 Hz for deep male voices; raise toward 250 Hz to ignore subwoofer bleed.',
+    purpose: 'Lower frequency bound of the protected speech band for isolation and BG suppress.',
+    bestFor: ['podcast', 'interview', 'forensic', 'whisper'],
+    artifactRisk: 'thin voice if set too high; rumble bleed if set too low with high BG Suppress',
+    pairedWith: 'Coupled with Voice Focus Hi — calibration enforces a minimum protected speech window (~1800 Hz) biased toward natural speech frequencies.',
+    modeDefaults: { whisper: 140, podcast: 100, interview: 120, crowd: 150, forensic: 90 },
+  },
+  voiceFocusHi: {
+    hint: 'Sets the top edge of the speech band to isolate. Lower toward 6 kHz for telephone speech; raise toward 10 kHz to keep breath and air.',
+    purpose: 'Upper frequency bound of the protected speech band for isolation and BG suppress.',
+    bestFor: ['podcast', 'interview', 'telephone', 'forensic', 'whisper'],
+    artifactRisk: 'muffled consonants if set too low; hiss/bleed if set too high with aggressive suppress',
+    pairedWith: 'Coupled with Voice Focus Lo for the protected speech window; speech-safe span unlocks higher BG Suppress under high Voice Iso.',
+    modeDefaults: { whisper: 6000, podcast: 4500, interview: 4200, crowd: 4000, forensic: 5000 },
+  },
+  crosstalkCancel: {
+    hint: 'Subtracts bleed between two microphones on one subject. Raise toward 60% for interview crosstalk; leave at 0% for single-mic recordings.',
+    purpose: 'Reduces correlated bleed between stereo or dual-mic channels.',
+    bestFor: ['interview', 'podcast'],
+    artifactRisk: 'phasey isolation, thin mono collapse, comb-filtering on single-mic sources',
+    pairedWith: 'Effective strength is gated by a stereo channel-difference heuristic — stays conservative without real stereo evidence; not a substitute for Voice Iso.',
+    modeDefaults: { whisper: 0, podcast: 0, interview: 40, crowd: 10, forensic: 25 },
+  },
+
   outGain: 'Trims final output level after all processing. Boost toward +6 dB when isolation lowered loudness; cut toward –3 dB if export peaks near 0 dBFS.',
   dryWet: 'Blends original audio with the processed result. Lower toward 40% to compare before/after; keep at 100% for full isolation output.',
   ditherAmt: 'Adds tiny noise when reducing bit depth (0=off, 1=TPDF, 2=shaped, 3=high-pass). Use mode 1 for 16-bit podcast export; 0 for 32-bit float workflows.',
   outWidth: 'Sets final stereo spread on the output bus. Narrow toward 0% for mono distribution; widen toward 130% only when the source is true stereo.',
-  whisperLift: 'Boosts bins where the voice mask is confident after isolation. Raise toward 24 dB when a whisper is buried under club noise; lower toward 10 dB for subtle lift.',
-  crowdNull: 'Targets crowd murmur in the 200–2500 Hz band. Raise toward 85% for stadium ambience; lower toward 50% if speech sounds phasey.',
-  bassCrush: 'Attenuates kick and sub energy that masks whispers. Raise toward 95% in EDM environments; lower toward 60% if the voice loses body.',
+
+  whisperLift: {
+    hint: 'Boosts bins where the voice mask is confident after isolation. Raise toward 24 dB when a whisper is buried under club noise; lower toward 10 dB for subtle lift.',
+    purpose: 'Post-mask gain for high-confidence whisper bins after isolation.',
+    bestFor: ['whisper', 'forensic', 'crowd'],
+    artifactRisk: 'pumping, harsh consonants, noise floor lift',
+    pairedWith: 'Works with Whisper Mode / Sensitivity; keep moderate when Voice Iso is already extreme.',
+    modeDefaults: { whisper: 22, podcast: 0, interview: 0, crowd: 12, forensic: 28 },
+  },
+  crowdNull: {
+    hint: 'Targets crowd murmur in the 200–2500 Hz band. Raise toward 85% for stadium ambience; lower toward 50% if speech sounds phasey.',
+    purpose: 'Spectral null aimed at dense crowd murmur under speech.',
+    bestFor: ['crowd', 'forensic', 'whisper'],
+    artifactRisk: 'phasey isolation, hollow midrange, gargling',
+    pairedWith: 'Stack carefully with BG Suppress and Voice Iso — soft clamps de-risk extreme combos.',
+    modeDefaults: { whisper: 70, podcast: 0, interview: 25, crowd: 88, forensic: 80 },
+  },
+  bassCrush: {
+    hint: 'Attenuates kick and sub energy that masks whispers. Raise toward 95% in EDM environments; lower toward 60% if the voice loses body.',
+    purpose: 'Kills sub/kick energy that masks low formants and whispers.',
+    bestFor: ['whisper', 'crowd', 'forensic'],
+    artifactRisk: 'hollowed-out voice, loss of body',
+    pairedWith: 'Complement Voice Focus Lo; avoid maxing with high HP when voice already thin.',
+    modeDefaults: { whisper: 90, podcast: 0, interview: 20, crowd: 75, forensic: 70 },
+  },
   reverbStrip: 'Sets estimated room decay time for dereverb strength. Lengthen toward 900 ms for echoey halls; shorten toward 300 ms for tight booths.',
-  voiceTunnel: 'Narrows processing to speech formants for intelligibility. Raise toward 80% for forensic whispers; lower toward 40% for natural tone.',
-  musicKill: 'Suppresses steady harmonic music under speech. Raise toward 90% for DJ background; lower toward 50% if music pumping becomes audible.',
+  voiceTunnel: {
+    hint: 'Narrows processing to speech formants for intelligibility. Raise toward 80% for forensic whispers; lower toward 40% for natural tone.',
+    purpose: 'Formant-focused tunnel that narrows isolation to speech intelligibility bands.',
+    bestFor: ['whisper', 'forensic'],
+    artifactRisk: 'telephone-like thinness, hollowed-out voice',
+    pairedWith: 'Interacts with Voice Focus Lo/Hi; extreme tunnel + extreme iso risks soft-clamp de-risk path.',
+    modeDefaults: { whisper: 78, podcast: 0, interview: 20, crowd: 45, forensic: 85 },
+  },
+  musicKill: {
+    hint: 'Suppresses steady harmonic music under speech. Raise toward 90% for DJ background; lower toward 50% if music pumping becomes audible.',
+    purpose: 'Suppresses steady harmonic music beds under dialogue.',
+    bestFor: ['crowd', 'interview', 'forensic', 'whisper'],
+    artifactRisk: 'pumping, musical comb artifacts, phasey isolation',
+    pairedWith: 'Pairs with BG Suppress; keep lower when Voice Iso is already high.',
+    modeDefaults: { whisper: 60, podcast: 0, interview: 40, crowd: 80, forensic: 70 },
+  },
   snrFloor: 'Bins quieter than this are treated as noise-only. Lower toward –60 dBFS to rescue faint whispers; raise toward –45 dBFS to reduce musical artifacts.',
-  whisperMode: 'Sets how many aggressive passes run (Off / Light / Heavy / Forensic). Choose Heavy for club whispers; Forensic only when maximum extraction is worth the wait.',
-  whisperClarity: 'Sets the minimum clarity floor so whispers are not crushed. Raise toward 80% when consonants vanish; lower toward 45% for lighter touch.',
-  whisperSensitivity: 'Controls how easily quiet whispers trigger processing. Raise toward 75% in noisy venues; lower toward 35% in quiet rooms to avoid false triggers.',
-  whisperThreshold: 'Steepens how hard non-whisper content is suppressed. Raise toward 70% for aggressive extraction; lower toward 35% for gentler results.',
+  whisperMode: {
+    hint: 'Sets how many aggressive passes run (Off / Light / Heavy / Forensic). Choose Heavy for club whispers; Forensic only when maximum extraction is worth the wait.',
+    purpose: 'Selects whisper-isolation aggression tier (Off → Forensic).',
+    bestFor: ['whisper', 'forensic', 'crowd'],
+    artifactRisk: 'artifacts and longer processing at Forensic; over-processing clean speech',
+    pairedWith: 'Drives whisper-family defaults; lock other separation sliders if you want mode switches not to overwrite them.',
+    modeDefaults: { whisper: 2, podcast: 0, interview: 0, crowd: 1, forensic: 3 },
+  },
+  whisperClarity: {
+    hint: 'Sets the minimum clarity floor so whispers are not crushed. Raise toward 80% when consonants vanish; lower toward 45% for lighter touch.',
+    purpose: 'Minimum clarity floor so whisper consonants survive aggressive isolation.',
+    bestFor: ['whisper', 'forensic'],
+    artifactRisk: 'harsh sibilance if too high with de-ess off',
+    pairedWith: 'Pairs with Whisper Sensitivity and Threshold.',
+    modeDefaults: { whisper: 78, podcast: 65, interview: 60, crowd: 70, forensic: 82 },
+  },
+  whisperSensitivity: {
+    hint: 'Controls how easily quiet whispers trigger processing. Raise toward 75% in noisy venues; lower toward 35% in quiet rooms to avoid false triggers.',
+    purpose: 'How easily quiet energy is treated as whisper speech.',
+    bestFor: ['whisper', 'crowd', 'forensic'],
+    artifactRisk: 'false triggers on noise; missed whispers if too low',
+    pairedWith: 'Works with Whisper Threshold and SNR Floor.',
+    modeDefaults: { whisper: 78, podcast: 45, interview: 50, crowd: 72, forensic: 80 },
+  },
+  whisperThreshold: {
+    hint: 'Steepens how hard non-whisper content is suppressed. Raise toward 70% for aggressive extraction; lower toward 35% for gentler results.',
+    purpose: 'Steepness of non-whisper suppression during whisper isolation.',
+    bestFor: ['whisper', 'forensic'],
+    artifactRisk: 'gargling, pumping when maxed with high Voice Iso',
+    pairedWith: 'Coupled in spirit with Voice Iso / BG Suppress discipline curves.',
+    modeDefaults: { whisper: 68, podcast: 40, interview: 45, crowd: 60, forensic: 75 },
+  },
   transientShaper: 'Emphasizes or softens consonant attacks. Push toward +40 to sharpen buried consonants; pull toward –30 to tame harsh plosives.',
   breathControl: 'Reduces breath noise between phrases. Raise toward 70% for ASMR-clean delivery; lower toward 15% to keep natural breathing.',
   roomCorrection: 'Corrects room coloration on whisper tails. Raise toward 65% for reflective spaces; lower toward 20% for already-dry sources.',
   subHarmonic: 'Adds synthetic low body to thin whispers. Raise toward 40% when the voice lacks chest resonance; leave at 0% for full-range recordings.',
 };
+
+/** Normalize a SLIDER_HINTS entry (string or object) to a structured record. */
+export function normalizeSliderHint(entry) {
+  if (!entry) {
+    return { hint: '', purpose: '', bestFor: [], artifactRisk: '', pairedWith: '', modeDefaults: null };
+  }
+  if (typeof entry === 'string') {
+    return { hint: entry, purpose: '', bestFor: [], artifactRisk: '', pairedWith: '', modeDefaults: null };
+  }
+  return {
+    hint: entry.hint || entry.text || '',
+    purpose: entry.purpose || '',
+    bestFor: Array.isArray(entry.bestFor) ? entry.bestFor : [],
+    artifactRisk: entry.artifactRisk || '',
+    pairedWith: entry.pairedWith || '',
+    modeDefaults: entry.modeDefaults || null,
+  };
+}
 
 const RAW_SLIDER_REGISTRY = [
   // ── Noise Gate (6 sliders) ─────────────────────────────────────────────────
@@ -567,12 +691,24 @@ const RAW_SLIDER_REGISTRY = [
   },
 ];
 
-/** Attach inline hints from SLIDER_HINTS to each registry entry. */
+/** Attach inline hints + structured metadata from SLIDER_HINTS to each registry entry. */
 function attachSliderHints(entries) {
-  return entries.map((entry) => ({
-    ...entry,
-    hint: entry.hint || SLIDER_HINTS[entry.id] || '',
-  }));
+  return entries.map((entry) => {
+    const meta = normalizeSliderHint(entry.hintMeta || SLIDER_HINTS[entry.id]);
+    const hintText = typeof entry.hint === 'string' && entry.hint
+      ? entry.hint
+      : (meta.hint || '');
+    return {
+      ...entry,
+      hint: hintText,
+      hintMeta: meta,
+      purpose: meta.purpose,
+      bestFor: meta.bestFor,
+      artifactRisk: meta.artifactRisk,
+      pairedWith: meta.pairedWith,
+      modeDefaults: meta.modeDefaults,
+    };
+  });
 }
 
 /** Calibrated registry with Part 3 transfer functions + Part 1 examples + hints */

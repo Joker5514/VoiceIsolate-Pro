@@ -184,14 +184,14 @@ describe('Terminal error middleware', () => {
   });
 });
 
-// ── Health check endpoint version (api/index.js v24) ─────────────────────────
-describe('GET /health — version 24.0.0', () => {
+// ── Health check endpoint version (api/index.js v25) ─────────────────────────
+describe('GET /health — version 25.0.0', () => {
   function buildHealthApp() {
     const app = express();
     app.get('/health', (req, res) => {
       res.json({
         status: 'ok',
-        version: '24.0.0',
+        version: '25.0.0',
         timestamp: new Date().toISOString(),
         services: {
           stripe:  !!process.env.STRIPE_SECRET_KEY,
@@ -211,9 +211,9 @@ describe('GET /health — version 24.0.0', () => {
     expect(res.body.status).toBe('ok');
   });
 
-  test('returns version 24.0.0', async () => {
+  test('returns version 25.0.0', async () => {
     const res = await request(healthApp).get('/health');
-    expect(res.body.version).toBe('24.0.0');
+    expect(res.body.version).toBe('25.0.0');
   });
 
   test('returns a valid ISO timestamp', async () => {

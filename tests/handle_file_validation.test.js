@@ -248,7 +248,8 @@ describe('handleFile() — file type validation', () => {
 
     expect(mockVip.setStatus).not.toHaveBeenCalledWith('ERROR');
     expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
-    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalled();
+    // Deferred decode: handleFile accepts without calling decodeAudioData.
+    expect(mockVip.dom.fileInfo.textContent).toMatch(/ready|wav|Audio/i);
   });
 
   test('accepts audio/mpeg (MP3) files', async () => {
@@ -265,9 +266,8 @@ describe('handleFile() — file type validation', () => {
 
   test('accepts video/mp4 files through the shared media decode path', async () => {
     const mockVip = makeMockVip();
-    const decoded = { length: 48000, duration: 2, sampleRate: 48000, numberOfChannels: 2 };
-    mockVip.ctx.decodeAudioData.mockResolvedValue(decoded);
-    mockVip.dom.videoPlayer = { src: '' };
+    mockVip.dom.videoPlayer = { src: '', muted: false, load: jest.fn() };
+    mockVip.dom.videoCard = { style: { display: 'none' } };
     const mockFile = {
       name: 'clip.mp4', size: 1024, type: 'video/mp4',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
@@ -275,13 +275,14 @@ describe('handleFile() — file type validation', () => {
 
     await handleFile.call(mockVip, mockFile);
 
-    expect(mockVip.ctx.decodeAudioData).toHaveBeenCalledTimes(1);
-    expect(mockVip.onAudioLoaded).toHaveBeenCalledWith('clip.mp4', 1);
+    // Deferred decode: accept + optional video preview, no PCM decode on upload.
+    expect(mockVip.ctx.decodeAudioData).not.toHaveBeenCalled();
     expect(mockVip.dom.videoPlayer.src).toBe('blob:test');
     expect(mockVip.dom.fileInfo.textContent).not.toContain('Unsupported');
+    expect(mockVip.setStatus).toHaveBeenCalledWith('READY');
   });
 
-  test('copies ArrayBuffer before decodeAudioData for audio files', async () => {
+  test('defers ArrayBuffer decode until ensureDecoded (not handleFile)', async () => {
     const mockVip = makeMockVip();
     const rawBuffer = new ArrayBuffer(64);
     const mockFile = {
@@ -291,8 +292,8 @@ describe('handleFile() — file type validation', () => {
 
     await handleFile.call(mockVip, mockFile);
 
-    const decodeArg = mockVip.ctx.decodeAudioData.mock.calls[0][0];
-    expect(decodeArg).not.toBe(rawBuffer);
-    expect(decodeArg.byteLength).toBe(rawBuffer.byteLength);
+    // Upload path no longer decodes — ensureDecoded owns the shared media path.
+    expect(mockVip.ctx.decodeAudioData).not.toHaveBeenCalled();
+    expect(mockVip.dom.fileInfo.textContent).toMatch(/ready/i);
   });
 });

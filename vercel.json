@@ -11,8 +11,13 @@
       "permanent": false
     },
     {
+      "source": "/download/VoiceIsolate-Pro-25.0.0-win-x64.exe",
+      "destination": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe",
+      "permanent": false
+    },
+    {
       "source": "/download/VoiceIsolate-Pro-24.0.0-win-x64.exe",
-      "destination": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe",
+      "destination": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe",
       "permanent": false
     },
     {

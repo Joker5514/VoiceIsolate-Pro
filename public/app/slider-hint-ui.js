@@ -62,6 +62,88 @@ function directionLabel(dir) {
 }
 
 /**
+ * Build expandable structured metadata block (purpose / bestFor / risk / paired / defaults).
+ * Compact: collapsed by default behind a summary row.
+ * @param {object} meta
+ */
+export function buildHintMetaDetails(meta) {
+  if (!meta) return null;
+  const {
+    purpose = '',
+    bestFor = [],
+    artifactRisk = '',
+    pairedWith = '',
+    modeDefaults = null,
+  } = meta;
+  const hasAny = purpose || (bestFor && bestFor.length) || artifactRisk || pairedWith || modeDefaults;
+  if (!hasAny) return null;
+
+  const details = document.createElement('details');
+  details.className = 'hint-meta-details';
+
+  const summary = document.createElement('summary');
+  summary.className = 'hint-meta-summary';
+  summary.setAttribute('aria-label', 'More slider guidance');
+  summary.innerHTML = '<span class="hint-meta-icon" aria-hidden="true">ⓘ</span><span>Details</span>';
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'hint-meta-body';
+
+  if (purpose) {
+    const p = document.createElement('p');
+    p.className = 'hint-meta-purpose';
+    p.innerHTML = `<strong>Purpose</strong> ${escapeHtml(purpose)}`;
+    body.appendChild(p);
+  }
+  if (bestFor && bestFor.length) {
+    const row = document.createElement('div');
+    row.className = 'hint-meta-bestfor';
+    row.setAttribute('aria-label', 'Best for');
+    const label = document.createElement('strong');
+    label.textContent = 'Best for';
+    row.appendChild(label);
+    bestFor.forEach((tag) => {
+      const chip = document.createElement('span');
+      chip.className = 'hint-meta-tag';
+      chip.textContent = tag;
+      row.appendChild(chip);
+    });
+    body.appendChild(row);
+  }
+  if (artifactRisk) {
+    const p = document.createElement('p');
+    p.className = 'hint-meta-risk';
+    p.innerHTML = `<strong>Artifact risk</strong> ${escapeHtml(artifactRisk)}`;
+    body.appendChild(p);
+  }
+  if (pairedWith) {
+    const p = document.createElement('p');
+    p.className = 'hint-meta-paired';
+    p.innerHTML = `<strong>Paired with</strong> ${escapeHtml(pairedWith)}`;
+    body.appendChild(p);
+  }
+  if (modeDefaults && typeof modeDefaults === 'object') {
+    const row = document.createElement('div');
+    row.className = 'hint-meta-defaults';
+    row.setAttribute('aria-label', 'Mode defaults');
+    const label = document.createElement('strong');
+    label.textContent = 'Mode defaults';
+    row.appendChild(label);
+    Object.entries(modeDefaults).forEach(([mode, val]) => {
+      const chip = document.createElement('span');
+      chip.className = 'hint-meta-default-chip';
+      chip.textContent = `${mode}: ${val}`;
+      row.appendChild(chip);
+    });
+    body.appendChild(row);
+  }
+
+  details.appendChild(body);
+  return details;
+}
+
+/**
  * Build a rich hint panel DOM node.
  * @param {object} opts
  * @param {string} opts.id
@@ -72,10 +154,11 @@ function directionLabel(dir) {
  * @param {string} [opts.unit]
  * @param {Array<{label:string,value:number}>} [opts.examples]
  * @param {(value:number)=>void} [opts.onApplyExample]
+ * @param {object} [opts.meta] structured fields (purpose, bestFor, artifactRisk, pairedWith, modeDefaults)
  */
 export function buildHintPanel(opts) {
   const {
-    id, text, min, max, value, unit = '', examples = [], onApplyExample,
+    id, text, min, max, value, unit = '', examples = [], onApplyExample, meta = null,
   } = opts;
 
   const panel = document.createElement('div');
@@ -114,6 +197,9 @@ export function buildHintPanel(opts) {
   body.className = 'hint-body';
   body.innerHTML = formatHintText(text);
   panel.appendChild(body);
+
+  const metaEl = buildHintMetaDetails(meta);
+  if (metaEl) panel.appendChild(metaEl);
 
   const chips = extractTowardChips(text);
   if (chips.length) {
