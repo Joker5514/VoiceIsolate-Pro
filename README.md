@@ -7,7 +7,7 @@
   &nbsp;·&nbsp;
   <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"><strong>Android APK</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe"><strong>Windows</strong></a>
+  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe"><strong>Windows</strong></a>
   &nbsp;·&nbsp;
   <a href="docs/README.md">Documentation</a>
   &nbsp;·&nbsp;
@@ -20,10 +20,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v24.0.0-red" alt="v24">
+  <img src="https://img.shields.io/badge/version-v25.0.0-red" alt="v25">
   <img src="https://img.shields.io/badge/architecture-Threads%20from%20Space%20v8-blueviolet" alt="Architecture">
   <img src="https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white" alt="Node 22+">
-  <img src="https://img.shields.io/badge/pnpm-10-000000?logo=pnpm&logoColor=f69220" alt="pnpm 10">
+  <img src="https://img.shields.io/badge/pnpm-11-000000?logo=pnpm&logoColor=f69220" alt="pnpm 11">
   <img src="https://img.shields.io/badge/privacy-no%20cloud%20audio-blue" alt="Privacy">
   <img src="https://img.shields.io/badge/license-Proprietary-red" alt="License">
 </p>
@@ -49,7 +49,7 @@
 | Route | Surface | What it does |
 |-------|---------|--------------|
 | [`/`](https://voice-isolate-pro.vercel.app/) | **Landing — Stem-Split** | Fast ML stem separation (vocals / accompaniment / noise). Upload → auto-process → preview stems. |
-| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Mode v24** | Full 67-slider DSP suite, scene presets, 3D spectrogram, A/B transport, forensic audit log, WhisperHunter AI. |
+| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Mode v25** | Full 67-slider DSP suite with calibrated separation discipline, per-slider locks, collapsible sections, stage-aware processing overlay, scene presets, 3D spectrogram, A/B transport, forensic audit log, WhisperHunter AI. |
 | [`/download/`](https://voice-isolate-pro.vercel.app/download/) | **Downloads** | Android APK + Windows installer (GitHub Releases), web app links. |
 
 **Upload controls (both pages):** Browse Files (`<label for="fileInput">`), click the drop zone, drag-and-drop, or **Upload Audio or Video** in the Engineer hero. Shared wiring lives in `src/presentation/UploadWiring.js`.
@@ -97,6 +97,11 @@ Audio flows through **one Forward STFT** at the start of the spectral phase, in-
 | **Format support** | MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MOV, WEBM, MKV, AVI, WMV, TS |
 | **Privacy** | 100% local processing · no telemetry · audio never uploaded |
 | **Engineer presets** | Voice Clarity · Podcast Clean · Whisper Boost · Phone/Radio · Room Echo · Hum Removal · Forensic · Aggressive Isolate · Surveillance |
+| **Slider discipline (v25)** | Non-linear calibration for Voice Iso / BG Suppress / Crosstalk; coupling + soft artifact clamps on **effective DSP values only** (UI ranges never snapped) |
+| **Per-slider lock** | Padlock on every row; locks survive reload (`localStorage`); presets/reset skip locked controls; **Reset Unlocked Only** |
+| **Unified metrics** | Single `updateAudioMetrics()` writer for Voice % · Noise % · SNR dB across header, pipeline strip, and neon pulse |
+| **Collapsible sections** | Native `<details>`/`<summary>` for Upload, Processing, slider families, waveform/spectrum |
+| **Stage-aware overlay** | Processing spinner variants: uploading → decoding → analyzing → separating → isolating → reconstructing → exporting |
 
 ---
 
@@ -162,7 +167,8 @@ Load App → Validate capabilities → Upload (no decode)
 
 ### Release notes PDF
 
-Latest product snapshot: [`docs/releases/VoiceIsolate_Pro_v24_Latest.pdf`](docs/releases/VoiceIsolate_Pro_v24_Latest.pdf)
+Latest product snapshot: [`docs/releases/VoiceIsolate_Pro_v25_Current_State.pdf`](docs/releases/VoiceIsolate_Pro_v25_Current_State.pdf)  
+(Prior archive: [`docs/releases/VoiceIsolate_Pro_v24_Latest.pdf`](docs/releases/VoiceIsolate_Pro_v24_Latest.pdf))
 
 ---
 
@@ -197,7 +203,7 @@ Loaded lazily · SHA-256 verified via `src/core/ModelManifest.js` · cached in I
 
 ## Quick Start
 
-**Requirements:** Node.js ≥ 22 · pnpm ≥ 10
+**Requirements:** Node.js ≥ 22 · pnpm ≥ 11
 
 ```bash
 git clone https://github.com/Joker5514/VoiceIsolate-Pro.git
@@ -218,7 +224,7 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 |---------|---------|
 | `pnpm dev` | Dev server at `localhost:3000` (COOP/COEP for SharedArrayBuffer) |
 | `pnpm build` | Production build → `build/` |
-| `pnpm test` | Jest suite (2150+ tests) |
+| `pnpm test` | Jest suite (2400+ tests) |
 | `pnpm validate` | Structural integrity gate (CI) |
 | `pnpm lint` | ESLint |
 | `pnpm worklets:verify` | AudioWorklet packaging check |
@@ -235,16 +241,16 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 | **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 | **Latest Android APK** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
 | **Pinned Android v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
-| **Latest Windows installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe |
-| **Pinned Windows v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| **Latest Windows installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe |
+| **Pinned Windows v24.0.0** (prior) | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 
 | Asset | Name | Approx. size | Updated |
 |-------|------|----------------|---------|
-| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~238 MB | 2026-07-21 |
-| Windows NSIS installer | `VoiceIsolate-Pro-24.0.0-win-x64.exe` | ~178 MB | 2026-07-21 |
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~238 MB | code **v25.0.0** |
+| Windows NSIS installer | `VoiceIsolate-Pro-25.0.0-win-x64.exe` | ~178 MB | code **v25.0.0** |
 
-Current GitHub Release tag: **[v24.0.0](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v24.0.0)**  
-(includes production analysis workspace + processing-stall fixes).
+In-repo version (Web / Android `versionName` / Electron artifact): **25.0.0** (`versionCode` / iOS build **250000**).  
+Published GitHub Release binaries are cut separately — until a **v25.0.0** release is uploaded, `latest` may still resolve to the prior **[v24.0.0](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v24.0.0)** assets.
 
 The download page always points at **real GitHub Release binaries** (never SPA HTML).  
 Same-origin `/download/*.apk` and `/download/*.exe` redirect to Releases (`vercel.json`).
@@ -253,10 +259,10 @@ Build locally (Windows):
 
 ```bash
 pnpm android:build:win
-# → dist/android/VoiceIsolate-Pro-android-debug.apk
+# → dist/android/VoiceIsolate-Pro-android-debug.apk  (versionName 25.0.0)
 
 pnpm build:electron
-# → dist/electron/VoiceIsolate-Pro-24.0.0-win-x64.exe
+# → dist/electron/VoiceIsolate-Pro-25.0.0-win-x64.exe
 ```
 
 Sideload APK: enable **Install unknown apps**, then open the file.  
@@ -280,7 +286,7 @@ src/                 Core 4-layer architecture (core → workers → pipeline �
 public/              Static shells
   index.html         Landing — Stem-Split
   landing.js         Landing upload + ML ingest pipeline
-  app/               Engineer Mode v24 (app.js, style.css, worklets, models)
+  app/               Engineer Mode v25 (app.js, style.css, worklets, models)
 server/              Express dev server + COOP/COEP/CSP security headers
 api/                 Vercel serverless API routes
 scripts/             Build, validation, model & worklet tooling
@@ -337,16 +343,19 @@ android/             Capacitor Android project
 
 ---
 
-## Recent changes (v24)
+## Recent changes (v25.0.0)
 
-- **Upload-only workflow** — live mic capture removed; browse, drop-zone, and hero upload CTAs wired through `UploadWiring.js`
-- **Chromium picker fix** — file inputs kept in-viewport; Browse uses native `<label for="fileInput">`
-- **WhisperHunter AI** — restored on all workflow tiers; single-pass to avoid UI freezes
-- **Playback worklets** — gate + de-esser with resume/retry load; cockpit pills CTX–NET hardened
-- **UI freeze fix** — async STFT/iSTFT with rAF yields on long files
-- **Research mode** — local session JSON export + parameter schema (Engineer)
-- **Android download** — `/download/` page + GitHub Releases APK channel
-- **Page cleanup** — streamlined landing + Engineer shells, hardened worklet precache
+- **Version sync** — `package.json`, Android (`25.0.0` / `250000`), iOS, Capacitor UA, API version, Electron artifact name
+- **Slider discipline** — non-linear calibration + coupling + soft clamps (effective DSP only; UI ranges preserved)
+- **Per-slider locks** — SVG padlocks, cyan protected state, localStorage persistence, Reset Unlocked Only
+- **Unified metrics** — Voice % / Noise % / SNR dB via one `updateAudioMetrics()` writer
+- **Collapsible sections** — native details/summary for major Engineer panels
+- **Stage-aware overlay** — processing variants + always-hide in `runPipeline` finally
+- **Docs** — README, CLAUDE.md §5.1, DOWNLOADS, snapshot PDF `docs/releases/VoiceIsolate_Pro_v25_Current_State.pdf`
+
+### Prior (v24)
+
+- Upload-only workflow · Chromium picker fix · WhisperHunter single-pass · gate/de-esser worklets · STFT yields · Android download channel
 
 ---
 

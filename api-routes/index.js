@@ -49,7 +49,7 @@ router.get('/client-config', clientConfigHandler);
 router.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    version: '24.0.0',
+    version: '25.0.0',
     timestamp: new Date().toISOString(),
     services: {
       stripe: !!process.env.STRIPE_SECRET_KEY,

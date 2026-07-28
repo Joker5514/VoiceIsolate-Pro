@@ -75,9 +75,9 @@ describe('capacitor.config.json — structure and values', () => {
     expect(cfg.android.captureInput).toBe(true);
   });
 
-  test('android.appendUserAgent includes VoiceIsolatePro/24.0', () => {
+  test('android.appendUserAgent includes VoiceIsolatePro/25.0', () => {
     // Platform-tagged UA aids diagnostics in WebView logs.
-    expect(cfg.android.appendUserAgent).toMatch(/^VoiceIsolatePro\/24\.0(\s+Android)?$/);
+    expect(cfg.android.appendUserAgent).toMatch(/^VoiceIsolatePro\/25\.0(\s+Android)?$/);
   });
 
   test('ios section is defined', () => {
@@ -485,8 +485,9 @@ describe('build.gradle — app namespace and applicationId', () => {
     expect(Number(m[1])).toBe(expected);
   });
 
-  test('versionName is 24.0.0', () => {
-    expect(buildGradle).toContain('versionName "24.0.0"');
+  test('versionName matches package.json', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
+    expect(buildGradle).toContain(`versionName "${pkg.version}"`);
   });
 
   test('testInstrumentationRunner is AndroidJUnitRunner', () => {

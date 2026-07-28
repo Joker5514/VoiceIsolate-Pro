@@ -17,7 +17,7 @@ const APK_LATEST =
 const APK_PINNED =
   'https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk';
 const EXE_LATEST =
-  'https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe';
+  'https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe';
 const EXE_PINNED =
   'https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe';
 
@@ -31,9 +31,9 @@ describe('Download page links', () => {
   test('Windows installer latest + pinned direct download URLs', () => {
     expect(dl).toContain(EXE_LATEST);
     expect(dl).toContain(EXE_PINNED);
-    expect(dl).toContain('VoiceIsolate-Pro-24.0.0-win-x64.exe');
+    expect(dl).toContain('VoiceIsolate-Pro-25.0.0-win-x64.exe');
     // Must not only link the releases index without a direct asset
-    expect(dl).toMatch(/releases\/latest\/download\/VoiceIsolate-Pro-24\.0\.0-win-x64\.exe/);
+    expect(dl).toMatch(/releases\/latest\/download\/VoiceIsolate-Pro-25\.0\.0-win-x64\.exe/);
   });
 
   test('reports realistic package sizes (not stale 303/480 MB)', () => {
@@ -49,7 +49,7 @@ describe('README + download docs', () => {
   test('README lists correct APK and Windows asset URLs', () => {
     expect(readme).toContain(APK_LATEST);
     expect(readme).toContain(EXE_LATEST);
-    expect(readme).toContain('VoiceIsolate-Pro-24.0.0-win-x64.exe');
+    expect(readme).toContain('VoiceIsolate-Pro-25.0.0-win-x64.exe');
   });
 
   test('download/README.md documents both assets', () => {
@@ -62,9 +62,9 @@ describe('README + download docs', () => {
 describe('Vercel download redirects', () => {
   test('redirects APK and EXE to GitHub Releases', () => {
     expect(vercel).toContain('VoiceIsolate-Pro-android-debug.apk');
-    expect(vercel).toContain('VoiceIsolate-Pro-24.0.0-win-x64.exe');
+    expect(vercel).toContain('VoiceIsolate-Pro-25.0.0-win-x64.exe');
     expect(vercel).toContain('releases/latest/download/VoiceIsolate-Pro-android-debug.apk');
-    expect(vercel).toContain('releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe');
+    expect(vercel).toContain('releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe');
     expect(vercel).toContain('.apk');
     expect(vercel).toContain('.exe');
   });

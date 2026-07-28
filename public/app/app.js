@@ -1,5 +1,5 @@
 /**
- * VoiceIsolate Pro — app.js  v24.0.0
+ * VoiceIsolate Pro — app.js  v25.0.0
  * ====================================
  * Exports:  class VoiceIsolatePro  (also assigned to window.VoiceIsolatePro)
  *
