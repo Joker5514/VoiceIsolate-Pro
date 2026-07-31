@@ -44,9 +44,10 @@
 
 importScripts('/lib/ort.min.js');
 
+// Canonical schema (keep in sync with ModelIdbSchema.js + ml-worker-fetch-cache.js)
 const IDB_NAME = 'vip-model-cache';
 const IDB_STORE = 'models';
-const IDB_VERSION = 1;
+const IDB_VERSION = 3;
 
 /** Map of modelId → manifest entry, populated by 'init'. */
 let MANIFEST = Object.create(null);
@@ -117,9 +118,15 @@ function openDb() {
   if (_idbPromise) return _idbPromise;
   _idbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, IDB_VERSION);
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(IDB_STORE)) {
-        req.result.createObjectStore(IDB_STORE);
+    req.onupgradeneeded = (ev) => {
+      const db = req.result;
+      const oldVersion = ev.oldVersion || 0;
+      // v2 used keyPath:'key' — cannot alter keyPath; rebuild store as key-value.
+      if (oldVersion > 0 && oldVersion < 3 && db.objectStoreNames.contains(IDB_STORE)) {
+        try { db.deleteObjectStore(IDB_STORE); } catch { /* ignore */ }
+      }
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
       }
     };
     req.onsuccess = () => { _idb = req.result; resolve(_idb); };

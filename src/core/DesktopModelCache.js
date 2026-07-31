@@ -9,10 +9,16 @@
 'use strict';
 
 import { isDesktopShell } from './DesktopBridge.js';
+import {
+  MODEL_IDB_NAME,
+  MODEL_IDB_STORE,
+  MODEL_IDB_VERSION,
+  upgradeModelIdb,
+} from './storage/ModelIdbSchema.js';
 
-const IDB_NAME = 'vip-model-cache';
-const IDB_STORE = 'models';
-const IDB_VERSION = 1;
+const IDB_NAME = MODEL_IDB_NAME;
+const IDB_STORE = MODEL_IDB_STORE;
+const IDB_VERSION = MODEL_IDB_VERSION;
 
 let _idb = null;
 let _idbPromise = null;
@@ -25,10 +31,8 @@ function openDb() {
   }
   _idbPromise = new Promise((resolve, reject) => {
     const req = indexedDB.open(IDB_NAME, IDB_VERSION);
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(IDB_STORE)) {
-        req.result.createObjectStore(IDB_STORE);
-      }
+    req.onupgradeneeded = (ev) => {
+      upgradeModelIdb(req.result, ev.oldVersion || 0);
     };
     req.onsuccess = () => { _idb = req.result; resolve(_idb); };
     req.onerror = () => reject(req.error);

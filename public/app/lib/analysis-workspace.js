@@ -587,6 +587,31 @@ export function installAnalysisWorkspace(app) {
     setBusy(true);
     if (els.root) els.root.dataset.state = 'running';
     try {
+      // Restore durable analysis when available (same library file after reload).
+      const libId = app._libraryFileId;
+      if (libId && !app._forceAnalysisRerun) {
+        try {
+          const { loadAnalysisDurable } = await import('/src/core/storage/DerivedCache.js');
+          const cached = await loadAnalysisDurable(libId);
+          if (cached && typeof cached === 'object') {
+            let analysis = collaborateWithHunter(cached, buf);
+            await ensureAuditionBuffers(analysis);
+            renderAnalysis(analysis);
+            if (typeof app.setStatus === 'function') {
+              app.setStatus('Analysis restored from local cache');
+            }
+            if (els.progressLabel) els.progressLabel.textContent = 'Analysis restored (local cache)';
+            // Still run USM backend for chips when missing
+            try {
+              await runUsmBackend({ mode: 'auto', numSources: 6 });
+            } catch { /* optional */ }
+            return analysis;
+          }
+        } catch (cacheErr) {
+          console.warn('[VIP] analysis cache load failed', cacheErr?.message);
+        }
+      }
+
       const channels = [];
       for (let c = 0; c < buf.numberOfChannels; c++) {
         channels.push(buf.getChannelData(c).slice());
@@ -601,6 +626,17 @@ export function installAnalysisWorkspace(app) {
       if (cancelled) return null;
       // Analyzer → WhisperHunter env fuse (protect voices, suppress horns/music/etc.)
       analysis = collaborateWithHunter(analysis, buf);
+      if (libId) {
+        try {
+          const { saveAnalysisDurable } = await import('/src/core/storage/DerivedCache.js');
+          await saveAnalysisDurable(libId, analysis);
+          if (typeof app !== 'undefined' && app._libraryFileId) {
+            // best-effort status on library meta
+          }
+        } catch (saveErr) {
+          console.warn('[VIP] analysis cache save failed', saveErr?.message);
+        }
+      }
       await ensureAuditionBuffers(analysis);
       renderAnalysis(analysis);
       const preset = analysis.recommendedPreset || analysis.jointPlan?.recommendedPreset;

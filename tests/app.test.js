@@ -420,7 +420,7 @@ describe('VoiceIsolatePro class structure', () => {
 
   test('Engineer clears stem cache on new file load', () => {
     expect(appSrc).toContain("import { clearStemCache } from '/src/pipeline/MLStemCache.js'");
-    expect(appSrc).toMatch(/async handleFile\(file\)[\s\S]*clearStemCache\(\)/);
+    expect(appSrc).toMatch(/async handleFile\(file(?:,\s*options\s*=\s*\{\})?\)[\s\S]*clearStemCache\(\)/);
   });
 
   test('Engineer ML inference runs once per file (whisper passes are DSP-only)', () => {

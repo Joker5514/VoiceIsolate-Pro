@@ -17,7 +17,7 @@
  * 100 % local — no cloud APIs, no external fetch except /app/models/*.onnx.
  *
  * ── Engineer Mode data flow (path correctness) ─────────────────────────────
- *   Upload  →  File selected (blob kept; decode deferred)
+ *   Upload  →  File selected → FileLibrary (OPFS/IDB) unless Quick import
  *        ↓
  *   Decode  →  ensureDecoded() / FileIngestion (main thread yield + OfflineAudio)
  *        ↓
@@ -57,6 +57,20 @@ import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { isDesktopShell, pickAudioFile, saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
 import { inferMediaKind, isVideoSource } from '/src/core/media-types.js';
+import * as FileLibrary from '/src/core/FileLibrary.js';
+import * as ProjectStore from '/src/core/ProjectStore.js';
+import {
+  saveStemsDurable,
+  loadStemsDurable,
+  saveAnalysisDurable,
+  loadAnalysisDurable,
+} from '/src/core/storage/DerivedCache.js';
+import {
+  mountFileLibraryUI,
+  refreshLibraryList,
+  readImportOptionsFromUi,
+} from '/src/presentation/FileLibraryUI.js';
+import { persistAppSession, restoreAppSession } from './session-persist.js';
 import {
   exportVideoWithProcessedAudio,
   triggerBlobDownload,
@@ -798,6 +812,12 @@ class VoiceIsolatePro {
     this.isVideo = false;
     /** @type {File|Blob|null} original upload — retained for video remux export */
     this._sourceFile = null;
+    /** @type {string|null} FileLibrary catalog id for the active source */
+    this._libraryFileId = null;
+    /** @type {number|null} fileSeq for which _cleanStemChannels were produced */
+    this._stemFileSeq = null;
+    /** @type {ReturnType<typeof setTimeout>|null} */
+    this._sessionPersistTimer = null;
     /** @type {string|null} object URL currently assigned to #videoPlayer */
     this._videoObjectUrl = null;
 
@@ -924,6 +944,23 @@ class VoiceIsolatePro {
       }
     } catch (wsErr) {
       structuredLog('warn', '[VIP] analysis workspace install failed', { err: wsErr && wsErr.message });
+    }
+
+    // Durable library + slider session (local-only). Restore after DOM/sliders exist.
+    try {
+      mountFileLibraryUI(this);
+      const restored = restoreAppSession(this.params, { applyDom: true });
+      if (restored?.params) {
+        window.VIP_PARAMS = window.VIP_PARAMS || {};
+        Object.assign(window.VIP_PARAMS, restored.params);
+        structuredLog('info', '[VIP] Restored slider session from localStorage');
+      }
+      // File restore is async — do not block boot splash dismissal path above.
+      this._restoreLibrarySession().catch((err) => {
+        structuredLog('warn', '[VIP] library session restore failed', { err: err?.message });
+      });
+    } catch (libErr) {
+      structuredLog('warn', '[VIP] FileLibrary UI mount failed', { err: libErr?.message });
     }
 
     // Probe WebGPU availability for ORT status (non-blocking).
@@ -1599,6 +1636,7 @@ class VoiceIsolatePro {
         }
         this.onSlider(s.id, v);
         this._applySliderToWorklet(s.id, v);
+        this._scheduleSessionPersist();
       });
 
       const lockBtn = document.createElement('button');
@@ -2475,6 +2513,8 @@ class VoiceIsolatePro {
         window._vipOrch.syncParams(window.VIP_PARAMS || {});
       }
     }
+    this._activePresetName = name;
+    this._scheduleSessionPersist();
     this.showNotification('Preset applied: ' + name, 'info');
   }
 
@@ -2610,16 +2650,88 @@ class VoiceIsolatePro {
 
   // ── File handling ─────────────────────────────────────────────────────────
   /**
+   * Debounced write of slider params to localStorage (session-persist).
+   */
+  _scheduleSessionPersist() {
+    if (this._sessionPersistTimer) clearTimeout(this._sessionPersistTimer);
+    this._sessionPersistTimer = setTimeout(() => {
+      this._sessionPersistTimer = null;
+      try {
+        const presetName = this.dom?.presetSel?.value || this._activePresetName || null;
+        persistAppSession(this.params || window.VIP_PARAMS || {}, {
+          presetName,
+          mode: 'engineer',
+        });
+      } catch (err) {
+        structuredLog('warn', '[VIP] session persist failed', { err: err?.message });
+      }
+    }, 400);
+  }
+
+  /**
+   * Restore last library file after reload (source blob from OPFS/IDB).
+   * Decode remains deferred until Analyze/Process/Play.
+   */
+  async _restoreLibrarySession() {
+    const { active, backend } = await FileLibrary.restoreSessionBootstrap();
+    const hint = document.getElementById('libraryBackendHint');
+    if (hint) {
+      hint.textContent = backend === 'opfs'
+        ? 'Storage: OPFS (source files)'
+        : 'Storage: IndexedDB (source files)';
+    }
+    await refreshLibraryList(this);
+    if (!active?.file) return;
+    this._libraryFileId = active.meta.id;
+    await this.handleFile(active.file, {
+      skipPersist: true,
+      libraryId: active.meta.id,
+      fromRestore: true,
+    });
+  }
+
+  /**
+   * Open a catalog entry from the library list (reconstructs File from storage).
+   * @param {string} id
+   */
+  async openLibraryFile(id) {
+    if (!id) return;
+    try {
+      const opened = await FileLibrary.openSourceFile(id);
+      if (!opened?.file) {
+        this.showNotification('Could not open library file — it may have been deleted.', 'error');
+        await refreshLibraryList(this);
+        return;
+      }
+      this._libraryFileId = id;
+      await FileLibrary.setSessionState({ activeFileId: id, updatedAt: Date.now() });
+      await this.handleFile(opened.file, { skipPersist: true, libraryId: id });
+      await refreshLibraryList(this);
+    } catch (err) {
+      structuredLog('error', '[VIP] openLibraryFile failed', { err: err?.message });
+      this.showNotification('Failed to open library file', 'error');
+    }
+  }
+
+  /**
    * Accept a file without decoding. Decode starts on Analyze / Process / Play
    * via ensureDecoded() so upload never freezes the tab on large media.
+   *
+   * @param {File|Blob} file
+   * @param {{ skipPersist?: boolean, libraryId?: string|null, fromRestore?: boolean }} [options]
    */
-  async handleFile(file) {
+  async handleFile(file, options = {}) {
     if (!file) return;
     if (typeof this._fileSeq !== 'number' || !Number.isFinite(this._fileSeq)) this._fileSeq = 0;
     const fileSeq = ++this._fileSeq;
+    const skipPersist = Boolean(options.skipPersist);
+    const fromRestore = Boolean(options.fromRestore);
     // Immediately hide any in-flight decode indicator from the previous file.
     this._hideFileLoading?.();
     clearStemCache();
+    this._stemFileSeq = null;
+    this._cleanStemChannels = null;
+    this._noiseStemChannels = null;
     this._sourceName = file.name || '';
     this._decodePromise = null;
     this._decodeReady = false;
@@ -2668,6 +2780,41 @@ class VoiceIsolatePro {
     this.origBuffer = null;
     this.procBuffer = null;
     this.outputBuffer = null;
+    this.noiseBuffer = null;
+
+    // Persist source to OPFS/IDB (library/project) unless opening an existing entry.
+    if (!skipPersist) {
+      try {
+        const { mode, projectId } = await readImportOptionsFromUi();
+        const meta = await FileLibrary.importFile(file, { mode, projectId });
+        this._libraryFileId = meta.id;
+        if (mode === 'project' && projectId) {
+          await ProjectStore.linkSourceFile(projectId, meta.id);
+          await FileLibrary.updateFileMeta(meta.id, { projectId });
+        }
+        if (mode === 'temporary') {
+          structuredLog('info', '[VIP] Quick import — not written to durable library');
+        } else {
+          structuredLog('info', '[VIP] Source saved to local library', {
+            id: meta.id,
+            mode,
+            backend: meta.blobRef?.backend,
+          });
+        }
+        await refreshLibraryList(this);
+      } catch (persistErr) {
+        structuredLog('warn', '[VIP] library persist failed — file still usable this session', {
+          err: persistErr?.message,
+        });
+        this.showNotification('Could not save to library (session-only)', 'warn');
+      }
+    } else if (options.libraryId) {
+      this._libraryFileId = options.libraryId;
+      await FileLibrary.setSessionState({
+        activeFileId: options.libraryId,
+        updatedAt: Date.now(),
+      }).catch(() => {});
+    }
 
     if (typeof this._clearVideoElement === 'function') {
       this._clearVideoElement();
@@ -2698,20 +2845,26 @@ class VoiceIsolatePro {
 
     const sizeMb = file.size ? (file.size / (1024 * 1024)).toFixed(1) : '?';
     const kindLabel = isVideoFile ? 'Video' : 'Audio';
+    const restoreTag = fromRestore ? ' · restored' : (this._libraryFileId ? ' · in library' : '');
     if (this.dom?.fileInfo) {
-      this.dom.fileInfo.textContent = `${file.name || 'File'} · ${kindLabel} · ${sizeMb} MB · ready (decode on Analyze/Process)`;
+      this.dom.fileInfo.textContent = `${file.name || 'File'} · ${kindLabel} · ${sizeMb} MB · ready (decode on Analyze/Process)${restoreTag}`;
     }
     this.setStatus('READY');
     if (this.dom.saveOrigBtn) this.dom.saveOrigBtn.disabled = true; // needs decode
     // Single source of truth for Process / Play enablement (includes _sourceFile).
     if (typeof this._updateProcessButtonsState === 'function') this._updateProcessButtonsState();
 
-    try { window.dispatchEvent(new CustomEvent('vip:fileAccepted', { detail: { name: file.name, size: file.size, video: isVideoFile } })); } catch (evErr) {
+    try { window.dispatchEvent(new CustomEvent('vip:fileAccepted', { detail: { name: file.name, size: file.size, video: isVideoFile, libraryId: this._libraryFileId, restored: fromRestore } })); } catch (evErr) {
       structuredLog('warn', '[VIP] vip:fileAccepted dispatch failed', { err: evErr?.message });
     }
     // Re-apply after hero/status listeners that may re-run button state.
     if (typeof this._updateProcessButtonsState === 'function') this._updateProcessButtonsState();
-    this.showNotification(`${file.name || 'File'} ready — Analyze or Process to decode & isolate`, 'info');
+    this.showNotification(
+      fromRestore
+        ? `Restored “${file.name || 'File'}” from local library — Analyze or Process to decode`
+        : `${file.name || 'File'} ready — Analyze or Process to decode & isolate`,
+      'info',
+    );
 
     // Idle ML warmup only (no decode) so first process is faster.
     if (typeof this._warmupMLModels === 'function') {
@@ -2794,6 +2947,16 @@ class VoiceIsolatePro {
         this.inputBuffer = buffer;
         this.origBuffer = buffer;
         this._decodeReady = true;
+        // Update library metadata only (not full PCM) — duration / rate / channels.
+        if (this._libraryFileId) {
+          FileLibrary.updateFileMeta(this._libraryFileId, {
+            duration: buffer.duration,
+            sampleRate: buffer.sampleRate,
+            channels: buffer.numberOfChannels,
+            processingStatus: 'decoded',
+            waveformCacheKey: `wf:${this._libraryFileId}:${buffer.length}`,
+          }).then(() => refreshLibraryList(this)).catch(() => {});
+        }
         this.onAudioLoaded(file.name, fileSeq);
         return buffer;
       } catch (decodeErr) {
@@ -2964,6 +3127,9 @@ class VoiceIsolatePro {
     clearStemCache();
     this._sourceName = '';
     this._sourceFile = null;
+    // Clear only the working set — library entries remain until Remove/Delete.
+    this._libraryFileId = null;
+    this._stemFileSeq = null;
     this._decodePromise = null;
     this._decodeReady = false;
     this._resetCollaborationState?.();
@@ -2974,6 +3140,8 @@ class VoiceIsolatePro {
     this._stemSampleRate = null;
     this.noiseBuffer = null;
     this._bridgeBuf = null;
+    FileLibrary.setSessionState({ activeFileId: null, updatedAt: Date.now() }).catch(() => {});
+    refreshLibraryList(this).catch(() => {});
     HeroExperience.onClear();
     this.stop();
     this.inputBuffer = null;
@@ -3376,6 +3544,65 @@ class VoiceIsolatePro {
     const buf = this.origBuffer || this.inputBuffer;
     if (!buf) return false;
     if (fileSeq !== this._fileSeq) return false;
+
+    // Reprocess with retained stems: skip ONNX (audit P-04) unless forced.
+    if (
+      !this._forceMlRerun
+      && this._stemFileSeq === fileSeq
+      && this._cleanStemChannels?.length
+      && this.outputBuffer
+    ) {
+      this.updatePipelineProgress(20, 'ML isolation (retained stems)', 90);
+      try {
+        await this._loadSeparationStemsToBridge();
+      } catch { /* best-effort */ }
+      structuredLog('info', '[VIP] ML isolation skipped — retained stems for this file');
+      return true;
+    }
+
+    // Durable stem cache (OPFS/IDB) for library files — skip re-inference after reload.
+    if (!this._forceMlRerun && this._libraryFileId) {
+      try {
+        const durable = await loadStemsDurable(this._libraryFileId, DEFAULT_ML_CHAIN);
+        if (durable?.clean?.length) {
+          await this.ensureCtx();
+          const { stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
+          let clean = durable.clean;
+          let noise = durable.noise;
+          // Mid-only durable packs expand to mono; stereo expand if source is stereo.
+          if (buf.numberOfChannels >= 2 && clean.length === 1) {
+            const plan = this._mlChannelPlan(buf);
+            const midCopy = plan.mid ? new Float32Array(plan.mid) : null;
+            clean = this._expandMonoCleanToStereo(clean[0], midCopy, plan.left, plan.right);
+            if (noise?.[0]) {
+              const n = noise[0].length;
+              noise = [new Float32Array(noise[0]), new Float32Array(noise[0])];
+              void n;
+            }
+          }
+          this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, durable.sampleRate || buf.sampleRate);
+          this.procBuffer = this.outputBuffer;
+          this._stemFileSeq = fileSeq;
+          this._cleanStemChannels = clean.map((c) => new Float32Array(c));
+          this._noiseStemChannels = noise?.length
+            ? noise.map((c) => new Float32Array(c))
+            : null;
+          this._stemSampleRate = durable.sampleRate || buf.sampleRate;
+          if (this._noiseStemChannels) {
+            this.noiseBuffer = stemsToAudioBuffer(this.ctx, this._noiseStemChannels, this._stemSampleRate);
+          }
+          await this._loadSeparationStemsToBridge().catch(() => {});
+          this.updatePipelineProgress(20, 'ML isolation (disk cache)', 90);
+          structuredLog('info', '[VIP] ML isolation from durable stem cache', {
+            fileId: this._libraryFileId,
+          });
+          return true;
+        }
+      } catch (durErr) {
+        structuredLog('warn', '[VIP] durable stem load failed', { err: durErr?.message });
+      }
+    }
+
     try {
       await this.ensureCtx();
       // Warmup may already run from handleFile — keep it in flight but never block
@@ -3428,6 +3655,7 @@ class VoiceIsolatePro {
       }
       this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
+      this._stemFileSeq = fileSeq;
       // Retain residual/noise stem for Live-Mix isolation refinements (bgSuppress).
       // Separation once → isolation sliders only rebalance stems (never re-ML).
       try {
@@ -3469,6 +3697,24 @@ class VoiceIsolatePro {
       }
       const mlLabel = result.fromCache ? 'ML isolation (cached)' : 'ML isolation complete';
       this.updatePipelineProgress(20, mlLabel, 90);
+      if (this._libraryFileId) {
+        FileLibrary.updateFileMeta(this._libraryFileId, {
+          processingStatus: 'processed',
+          analysisCacheKey: this._lastFullAnalysis
+            ? `an:${this._libraryFileId}:${Date.now()}`
+            : null,
+        }).then(() => refreshLibraryList(this)).catch(() => {});
+        // Persist mid-channel stems (pre-expand) for durable reload — smaller + matches ML.
+        const durableClean = result.clean;
+        const durableNoise = result.noise;
+        void saveStemsDurable(this._libraryFileId, DEFAULT_ML_CHAIN, {
+          clean: durableClean,
+          noise: durableNoise,
+          sampleRate: result.sampleRate || buf.sampleRate,
+        }).catch((err) => {
+          structuredLog('warn', '[VIP] durable stem save failed', { err: err?.message });
+        });
+      }
       structuredLog('info', '[VIP] ML isolation done', {
         fromCache: Boolean(result.fromCache),
         channels: clean.length,
