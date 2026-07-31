@@ -267,6 +267,7 @@ export default [
       'src/workers/SpectralCleanupWorker.js',
       'src/workers/FullAnalysisWorker.js',
       'src/workers/AudioEncoderWorker.js',
+      'src/workers/USMWorker.js',
     ],
     languageOptions: {
       ecmaVersion: 2022,

@@ -237,6 +237,45 @@ export function melBands(frame, sampleRate, bands = MEL_BANDS) {
 }
 
 /**
+ * True when k-means labels look like over-segmentation rather than real
+ * speaker turns (rapid flip-flopping or a tiny minority cluster). Continuous
+ * single-voice audio often forces k≥2 into alternating junk labels; those
+ * must collapse to one speaker so the UI does not report "no speakers" or
+ * phantom S1/S2 chips.
+ *
+ * Real two-speaker material (separated by silence or long coherent runs)
+ * keeps a low switch rate and balanced talk time → returns false.
+ *
+ * @param {Int32Array|number[]} labels
+ * @returns {boolean}
+ */
+export function shouldCollapseToOneSpeaker(labels) {
+  const n = labels?.length || 0;
+  if (n < 2) return true;
+
+  let switches = 0;
+  for (let i = 1; i < n; i++) {
+    if (labels[i] !== labels[i - 1]) switches++;
+  }
+  // Adjacent-frame label changes: true turn-taking is rare; flip-flopping is not.
+  if (switches / (n - 1) > 0.2) return true;
+
+  const counts = new Map();
+  for (let i = 0; i < n; i++) {
+    const lab = labels[i];
+    counts.set(lab, (counts.get(lab) || 0) + 1);
+  }
+  if (counts.size <= 1) return true;
+  let minShare = 1;
+  for (const c of counts.values()) {
+    const share = c / n;
+    if (share < minShare) minShare = share;
+  }
+  // Tiny minority cluster is almost always k-means noise on one voice.
+  return minShare < 0.15;
+}
+
+/**
  * Plain k-means over feature vectors. Deterministic init (centroids spread
  * across the timeline) so results are reproducible for tests.
  * @param {number[][]} features
@@ -373,7 +412,11 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
   }
   const normEnergy = (fi) => (eMax > eMin ? (energies[fi] - eMin) / (eMax - eMin) : 0);
 
-  const voicedLabels = kMeans(voicedIdx.map(norm), k);
+  let voicedLabels = kMeans(voicedIdx.map(norm), k);
+  // Collapse forced multi-cluster noise on continuous single-voice audio.
+  if (k > 1 && shouldCollapseToOneSpeaker(voicedLabels)) {
+    voicedLabels = new Int32Array(voicedIdx.length); // all cluster 0
+  }
   const labelByFrame = new Map(voicedIdx.map((fi, j) => [fi, voicedLabels[j]]));
 
   // Merge adjacent same-speaker windows; silence breaks segments.
@@ -414,7 +457,27 @@ export function diarizeChannel(samples, sampleRate, options = {}) {
 
   // Drop jitter, then relabel clusters compactly (S1, S2, …) in order of
   // first appearance so absent clusters never produce phantom speakers.
-  const kept = segments.filter((s) => s.end - s.start >= MIN_SEGMENT_SEC);
+  let kept = segments.filter((s) => s.end - s.start >= MIN_SEGMENT_SEC);
+
+  // Safety net: voiced content existed but every segment was shorter than
+  // MIN_SEGMENT_SEC (pathological flip-flop before collapse). Emit one
+  // continuous S1 covering the full voiced span so the mixer always has a
+  // speaker when there is audible speech.
+  if (kept.length === 0 && voicedIdx.length > 0) {
+    const firstFi = voicedIdx[0];
+    const lastFi = voicedIdx[voicedIdx.length - 1];
+    const start = frameStarts[firstFi] / sampleRate;
+    const end = (frameStarts[lastFi] + winSamp) / sampleRate;
+    if (end - start >= MIN_SEGMENT_SEC) {
+      kept = [{
+        cluster: 0,
+        start,
+        end: Math.min(end, samples.length / sampleRate),
+        confidence: 0.75,
+      }];
+    }
+  }
+
   const idByCluster = new Map();
   return kept.map((s) => {
     if (!idByCluster.has(s.cluster)) idByCluster.set(s.cluster, `S${idByCluster.size + 1}`);

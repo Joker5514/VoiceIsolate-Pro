@@ -338,11 +338,13 @@ async function main() {
 
     // ── Presets ─────────────────────────────────────────────────────────────
     console.log('\nPresets:');
+    // Expected gains must match LANDING_PRESETS in src/core/MixCalibration.js:
+    // noiseGain = 1 - noiseReductionSlider/100, cleanGain = voiceLevelSlider/100.
     for (const [name, expectNoise, expectClean] of [
-      ['residual-monitor', 1.0, 0.0],
-      ['original', 1.0, 1.0],
-      ['voice-clarity', 0.0, 1.15],
-      ['whisper-boost', 0.15, 1.4],
+      ['residual-monitor', 1.0, 0.0],   // nr=0, voice=0
+      ['original', 1.0, 1.0],           // nr=0, voice=100
+      ['voice-clarity', 0.28, 1.08],    // nr=72, voice=108
+      ['whisper-boost', 0.30, 1.25],    // nr=70, voice=125
     ]) {
       await page.selectOption('#presetSelect', name);
       await page.evaluate(() => {

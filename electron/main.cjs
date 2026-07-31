@@ -16,7 +16,6 @@ const {
   shell,
   protocol,
   net,
-  session,
 } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
