@@ -19,6 +19,9 @@ export const MAX_FILE_CONSTRUCTOR_COPY_BYTES = 32 * 1024 * 1024; // 32 MiB
 /** sessionStorage key: skip one auto-restore after a detected crash. */
 export const CRASH_GUARD_KEY = 'vip-crash-guard';
 
+/** Max simultaneous library tracks (canonical state each). */
+export const MAX_LIBRARY_TRACKS = 5;
+
 /**
  * @param {number} nClean
  * @param {number} nNoise

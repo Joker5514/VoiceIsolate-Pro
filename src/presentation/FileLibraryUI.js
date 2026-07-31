@@ -232,7 +232,11 @@ export async function refreshLibraryList(app) {
   }
 
   const badge = document.getElementById('libraryCountBadge');
-  if (badge) badge.textContent = String(files.length);
+  if (badge) {
+    const max = FileLibrary.MAX_LIBRARY_TRACKS || 5;
+    badge.textContent = `${files.length}/${max}`;
+    badge.title = `Library tracks (max ${max})`;
+  }
 }
 
 /**
