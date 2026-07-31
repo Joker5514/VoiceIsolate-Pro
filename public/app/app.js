@@ -1262,22 +1262,31 @@ class VoiceIsolatePro {
     this._lastVisualFp = fp;
     // Coalesce multiple callers in one frame
     if (this._visualRaf) return;
-    this._visualRaf = requestAnimationFrame(() => {
+    const mobile = this._isMobileEngineer?.() || false;
+    // Mobile: defer heavy spectro until idle — waveform only keeps UI snappy.
+    const paint = () => {
       this._visualRaf = 0;
       try {
-        if (window.VIP_VISUALS && typeof window.VIP_VISUALS.drawStatic === 'function') {
-          window.VIP_VISUALS.drawStatic();
-        }
         if (typeof window.drawWaveform === 'function') {
           window.drawWaveform(buffer);
         }
-        if (typeof window.VIP_spectro === 'object' && window.VIP_spectro) {
-          window.VIP_spectro.renderStatic(buffer);
+        if (!mobile && window.VIP_VISUALS && typeof window.VIP_VISUALS.drawStatic === 'function') {
+          window.VIP_VISUALS.drawStatic();
         }
-        HeroExperience.mirrorWaveCanvases();
+        if (!mobile && typeof window.VIP_spectro === 'object' && window.VIP_spectro) {
+          window.VIP_spectro.renderStatic(buffer);
+        } else if (mobile && typeof window.VIP_spectro === 'object' && window.VIP_spectro) {
+          // Lightweight spectro later — never block decode/process
+          const idle = globalThis.requestIdleCallback || ((cb) => setTimeout(cb, 200));
+          idle(() => {
+            try { window.VIP_spectro.renderStatic(buffer); } catch { /* ignore */ }
+          });
+        }
+        if (!mobile) HeroExperience.mirrorWaveCanvases();
         this._visualsDrawn = true;
       } catch (_) { /* ignore visual errors */ }
-    });
+    };
+    this._visualRaf = requestAnimationFrame(paint);
   }
 
   // ── Audio context ────────────────────────────────────────────────────────
@@ -3071,12 +3080,13 @@ class VoiceIsolatePro {
     );
 
     // Idle ML warmup only (no decode) so first process is faster.
-    // Skip on large restore / crash recovery to avoid compounding RAM pressure.
-    const tooLargeForWarmup = (file.size || 0) > 80 * 1024 * 1024;
-    if (!skipMlWarmup && !tooLargeForWarmup && typeof this._warmupMLModels === 'function') {
+    // Skip on mobile + large files — compile competes with UI/decode and freezes WebView.
+    const tooLargeForWarmup = (file.size || 0) > 40 * 1024 * 1024;
+    const mobileSkipWarm = this._isMobileEngineer?.();
+    if (!skipMlWarmup && !tooLargeForWarmup && !mobileSkipWarm && typeof this._warmupMLModels === 'function') {
       const scheduleIdle = globalThis.requestIdleCallback
-        ? (cb) => requestIdleCallback(cb, { timeout: 2500 })
-        : (cb) => setTimeout(cb, 50);
+        ? (cb) => requestIdleCallback(cb, { timeout: 4000 })
+        : (cb) => setTimeout(cb, 200);
       scheduleIdle(() => {
         if (fileSeq !== this._fileSeq) return;
         this._warmupMLModels().catch((err) => {
@@ -3712,35 +3722,53 @@ class VoiceIsolatePro {
     return this.runPipeline();
   }
 
+  /** Mobile / low-memory Engineer shell — freeze-sensitive path. */
+  _isMobileEngineer() {
+    try {
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+      if (/Android|iPhone|iPad|Mobile|Capacitor/i.test(ua)) return true;
+      if (typeof navigator !== 'undefined' && navigator.deviceMemory > 0 && navigator.deviceMemory <= 4) {
+        return true;
+      }
+      if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) return true;
+    } catch { /* ignore */ }
+    return false;
+  }
+
   /**
    * Build mid (L+R)/2 for multi-channel — one ML pass instead of N channels.
+   * Async + yielded so long stereo files do not freeze mobile UI.
    * @param {AudioBuffer} buf
-   * @returns {{ channelData: Float32Array[], expandStereo: boolean, left?: Float32Array, right?: Float32Array, mid?: Float32Array }}
+   * @returns {Promise<{ channelData: Float32Array[], expandStereo: boolean, left?: Float32Array, right?: Float32Array, mid?: Float32Array }>}
    */
-  _mlChannelPlan(buf) {
+  async _mlChannelPlan(buf) {
     const nCh = buf.numberOfChannels;
     if (nCh < 2) {
-      // Owned copy — safe to transfer to the ML worker without a second memcpy.
       return { channelData: [new Float32Array(buf.getChannelData(0))], expandStereo: false };
     }
     const left = buf.getChannelData(0);
     const right = buf.getChannelData(1);
     const mid = new Float32Array(left.length);
-    // Unrolled-ish mid mix (single pass).
-    for (let i = 0; i < left.length; i++) mid[i] = 0.5 * (left[i] + right[i]);
+    const yieldBudget = createYieldBudget(this._isMobileEngineer() ? 10 : 16);
+    const CHUNK = this._isMobileEngineer() ? 48000 : 48000 * 4; // 1s mobile / 4s desktop
+    for (let i = 0; i < left.length; i++) {
+      mid[i] = 0.5 * (left[i] + right[i]);
+      if (i > 0 && (i % CHUNK) === 0) await yieldBudget();
+    }
     return { channelData: [mid], expandStereo: true, left, right, mid };
   }
 
   /**
    * Apply mono clean stem as a per-sample gain envelope onto stereo sources.
-   * Preserves L/R imaging while only running ML once on the mid channel.
-   * `mid` may be null/detached after worker transfer — recompute from L/R.
+   * Yields on mobile so expand of multi-minute stereo does not freeze the tab.
    */
-  _expandMonoCleanToStereo(cleanMono, mid, left, right) {
+  async _expandMonoCleanToStereo(cleanMono, mid, left, right) {
     const n = cleanMono.length;
     const cleanL = new Float32Array(n);
     const cleanR = new Float32Array(n);
     const midOk = mid && mid.length >= n;
+    const yieldBudget = createYieldBudget(this._isMobileEngineer() ? 10 : 16);
+    const CHUNK = this._isMobileEngineer() ? 48000 : 48000 * 4;
     for (let i = 0; i < n; i++) {
       const m = midOk ? mid[i] : 0.5 * (left[i] + right[i]);
       let g = Math.abs(m) > 1e-8 ? cleanMono[i] / m : 0;
@@ -3748,6 +3776,7 @@ class VoiceIsolatePro {
       else if (g > 1.35) g = 1.35;
       cleanL[i] = left[i] * g;
       cleanR[i] = right[i] * g;
+      if (i > 0 && (i % CHUNK) === 0) await yieldBudget();
     }
     return [cleanL, cleanR];
   }
@@ -3827,15 +3856,20 @@ class VoiceIsolatePro {
       // pipeline start on full ONNX compile (can take 30–120s on first load).
       void this._warmupMLModels().catch(() => {});
       const { separateStems, stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
-      const plan = this._mlChannelPlan(buf);
+      await yieldToBrowser();
+      const plan = await this._mlChannelPlan(buf);
+      await yieldToBrowser();
       // Keep a non-transferred mid copy for stereo expand (worker detaches transfer list).
-      const midCopy = plan.expandStereo && plan.mid
+      // On mobile, skip midCopy when possible — expand recomputes mid from L/R (saves RAM).
+      const midCopy = plan.expandStereo && plan.mid && !this._isMobileEngineer()
         ? new Float32Array(plan.mid)
         : null;
       const durSec = buf.duration || (buf.length / (buf.sampleRate || 48000));
-      if (durSec > 180) {
+      if (durSec > 90 || this._isMobileEngineer()) {
         this.showNotification?.(
-          `Long file (~${(durSec / 60).toFixed(1)} min) — using fast adaptive isolation (larger hop). You can Play original while this runs.`,
+          this._isMobileEngineer()
+            ? 'Mobile fast isolation — Play original anytime while processing.'
+            : `Long file (~${(durSec / 60).toFixed(1)} min) — fast adaptive isolation. Play original while this runs.`,
           'info',
         );
       }
@@ -3864,15 +3898,17 @@ class VoiceIsolatePro {
       if (result.passthrough) return false;
 
       this.updatePipelineProgress(18, 'Reconstructing stems…', 88);
+      await yieldToBrowser();
       let clean = result.clean;
       if (plan.expandStereo && clean?.[0] && plan.left && plan.right) {
-        clean = this._expandMonoCleanToStereo(
+        clean = await this._expandMonoCleanToStereo(
           clean[0],
           midCopy || plan.mid,
           plan.left,
           plan.right,
         );
       }
+      await yieldToBrowser();
       // Fast time-domain HF tame — kills residual ML mask whistle without a 2nd STFT.
       try {
         this._postIsolationDeWhistle(clean, result.sampleRate || buf.sampleRate);
@@ -3993,19 +4029,19 @@ class VoiceIsolatePro {
     // Stereo → process mid once (halves STFT + spectral cost). Re-expand at end.
     const processStereoAsMid = nCh >= 2;
     let channels;
-    // Yield less often during bulk DSP — 24ms budget keeps UI alive without thrashing.
-    const yieldBudget = createYieldBudget(24);
+    // Mobile yields every ~1s of audio so WebView stays interactive.
+    const mobile = this._isMobileEngineer();
+    const yieldBudget = createYieldBudget(mobile ? 10 : 20);
     if (processStereoAsMid) {
       const L = buf.getChannelData(0);
       const R = buf.getChannelData(1);
       const mid = new Float32Array(len);
-      const CHUNK = 48000 * 4; // ~4 s between yields
+      const CHUNK = mobile ? 48000 : 48000 * 2;
       for (let i = 0; i < len; i++) {
         mid[i] = 0.5 * (L[i] + R[i]);
         if (i > 0 && (i % CHUNK) === 0) await yieldBudget();
       }
       channels = [mid];
-      // Reuse the mid buffer on expand — avoid a second full mid mix.
       this._dspStereoSources = { L, R, mid };
     } else {
       channels = [buf.getChannelData(0).slice()];
@@ -4051,8 +4087,9 @@ class VoiceIsolatePro {
     if (processStereoAsMid && this._dspStereoSources) {
       const midProc = channels[0];
       const { L, R, mid } = this._dspStereoSources;
-      channels = this._expandMonoCleanToStereo(midProc, mid, L, R);
+      channels = await this._expandMonoCleanToStereo(midProc, mid, L, R);
       this._dspStereoSources = null;
+      await yieldToBrowser();
     }
 
     // S15 crosstalk (only when both channels were processed independently — skipped on mid path)
@@ -4401,21 +4438,20 @@ class VoiceIsolatePro {
     const DSP = this._resolveDSP();
     const whisperMode = Math.round(p.whisperMode ?? this.whisperMode ?? 0);
     const forensic = whisperMode >= 2;
-    const FFT = forensic ? 4096 : 2048;
-    const HOP = 1024;
-    const FRAME_CHUNK = forensic ? 128 : 256;
+    const mobile = this._isMobileEngineer();
+    // Mobile: smaller FFT + larger hop → far fewer frames (WebView freeze fix).
+    const FFT = forensic ? (mobile ? 2048 : 4096) : (mobile ? 1024 : 2048);
+    const HOP = mobile ? Math.max(512, FFT / 2) : 1024;
+    const FRAME_CHUNK = forensic ? (mobile ? 48 : 128) : (mobile ? 64 : 256);
     if (!DSP || !data || data.length < FFT) return data;
 
-    // Mobile yields more often; desktop keeps longer stretches for speed.
-    const ua = typeof navigator !== 'undefined' ? (navigator.userAgent || '') : '';
-    const mobile = /Android|Mobile|Capacitor/i.test(ua);
-    const yieldBudget = createYieldBudget(forensic ? (mobile ? 10 : 14) : (mobile ? 12 : 20));
+    const yieldBudget = createYieldBudget(forensic ? (mobile ? 8 : 14) : (mobile ? 8 : 20));
     if (onProgress) onProgress(0.02);
     await yieldToBrowser();
 
     const stftOpts = {
       // Cooperative STFT: yield every N frames so long files never freeze the tab.
-      yieldEvery: forensic ? (mobile ? 16 : 32) : (mobile ? 32 : 48),
+      yieldEvery: forensic ? (mobile ? 8 : 32) : (mobile ? 12 : 48),
       onProgress: (frac) => { if (onProgress) onProgress(0.02 + frac * 0.18); },
       shouldAbort: () => this.abortFlag,
     };
@@ -4506,7 +4542,7 @@ class VoiceIsolatePro {
     await yieldToBrowser();
     const rendered = typeof DSP.inverseSTFTAsync === 'function'
       ? await DSP.inverseSTFTAsync(mag, phase, FFT, HOP, data.length, {
-        yieldEvery: forensic ? 32 : 64,
+        yieldEvery: forensic ? (mobile ? 16 : 32) : (mobile ? 24 : 64),
         onProgress: (frac) => { if (onProgress) onProgress(0.85 + frac * 0.14); },
       })
       : DSP.inverseSTFT(mag, phase, FFT, HOP, data.length);

@@ -20,10 +20,10 @@ describe('MLWorker adaptive hop (speed)', () => {
     expect(SRC).toMatch(/const hop = adaptiveHopSize\(/);
   });
 
-  test('long-file hop multipliers present', () => {
-    expect(SRC).toMatch(/20 \* 60/);
-    expect(SRC).toMatch(/base \* 8/);
+  test('long-file hop multipliers present (mobile + desktop)', () => {
+    expect(SRC).toMatch(/base \* 16|base \* 8/);
     expect(SRC).toMatch(/base \* 4/);
+    expect(SRC).toMatch(/mobile/);
   });
 
   test('batch frames raised for speed', () => {

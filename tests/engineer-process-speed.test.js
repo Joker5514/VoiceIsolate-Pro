@@ -28,10 +28,9 @@ describe('Engineer processing speed path', () => {
     expect(appJs).toMatch(/processStereoAsMid = nCh >= 2/);
   });
 
-  test('spectral stage uses FFT 2048 for non-forensic Engineer path', () => {
-    expect(appJs).toMatch(/const FFT = forensic \? 4096 : 2048/);
-    // Hop 1024 for both paths — fewer frames, UI-friendly async STFT
-    expect(appJs).toMatch(/const HOP = 1024/);
+  test('spectral stage uses lighter FFT on mobile / 2048 desktop non-forensic', () => {
+    // Desktop non-forensic: 2048; mobile non-forensic: 1024 (freeze fix)
+    expect(appJs).toMatch(/mobile \? 1024 : 2048/);
     expect(appJs).toContain('forwardSTFTAsync');
   });
 
@@ -55,7 +54,7 @@ describe('Engineer processing speed path', () => {
   });
 
   test('MLWorker effectiveBatchFrames uses larger WASM batches', () => {
-    expect(mlWorker).toMatch(/Math\.min\(256,/);
+    expect(mlWorker).toMatch(/Math\.min\(384,/);
   });
 
   test('ML transfers owned mid channel (no second memcpy)', () => {
@@ -76,6 +75,16 @@ describe('Engineer processing speed path', () => {
 
   test('MLWorker uses smaller WASM batches on constrained/Android devices', () => {
     expect(mlWorker).toContain('isConstrainedDevice');
-    expect(mlWorker).toMatch(/if \(mobile\) return Math\.min\(128/);
+    expect(mlWorker).toMatch(/if \(mobile\) return Math\.min\(160/);
+  });
+
+  test('ML channel plan is async with yields (mobile freeze fix)', () => {
+    expect(appJs).toMatch(/async _mlChannelPlan\s*\(/);
+    expect(appJs).toMatch(/async _expandMonoCleanToStereo\s*\(/);
+    expect(appJs).toContain('_isMobileEngineer');
+  });
+
+  test('spectral stage uses lighter FFT on mobile', () => {
+    expect(appJs).toMatch(/mobile \? 1024 : 2048/);
   });
 });
