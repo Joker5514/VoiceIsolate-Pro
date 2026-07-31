@@ -853,23 +853,27 @@ async function ingestFrom(file) {
   // Avoid loading the preview <video> during decode — demuxing the same file twice
   // (preview + hidden capture element) stalls progress on large uploads.
   clearVideo();
-  // Persist source into shared FileLibrary so Engineer Mode can restore after reload.
-  // Skip auto-library for very large files (OOM risk on IDB/WebView copy path).
-  try {
-    if ((file.size || 0) <= 200 * 1024 * 1024) {
-      const meta = await FileLibrary.importFile(file, { mode: 'library' });
-      window.__vipLandingLibraryId = meta.id;
-    } else {
-      console.info('[VIP][landing] skipped library persist for large file (>200MB)');
-    }
-  } catch (libErr) {
-    console.warn('[VIP][landing] library persist failed:', libErr?.message || libErr);
-  }
+  // Library persist off the critical path — never block decode/listen.
+  const scheduleLib = globalThis.requestIdleCallback
+    || ((cb) => setTimeout(cb, 400));
+  scheduleLib(() => {
+    if ((file.size || 0) > 200 * 1024 * 1024) return;
+    FileLibrary.importFile(file, { mode: 'library' })
+      .then((meta) => { window.__vipLandingLibraryId = meta.id; })
+      .catch((libErr) => console.warn('[VIP][landing] library persist failed:', libErr?.message || libErr));
+  });
   try {
     showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');
-    const modelIds = resolveModelIds(ui.modelSelect.value);
-    // Overlap model prefetch with decode; separateStems reports load progress.
+    // Prefer fast single-model default for auto-path; never auto-run Demucs.
+    let selection = ui.modelSelect?.value || 'bsrnn_vocals';
+    if (selection === 'demucs' || selection === 'studio_isolation') {
+      selection = 'bsrnn_vocals';
+      if (ui.modelSelect) ui.modelSelect.value = 'bsrnn_vocals';
+      setStatus('Using fast BS-RNN (Demucs disabled for auto-process)', 'warn');
+    }
+    const modelIds = resolveModelIds(selection);
+    // Overlap model prefetch with decode (bsrnn only ~4 MB).
     void warmupWorkerModels(modelIds).catch(() => {});
     const next = await ingestFile(file, {
       onProgress: (stage, percent = 0) => {
@@ -889,7 +893,38 @@ async function ingestFrom(file) {
     // Always attempt preview for video sources after decode succeeds.
     if (isVideoFile(file)) loadVideo(file);
     if (seq !== ingestSeq) return;
-    // Auto-start separation — model load progress shows during onProcess().
+
+    // CRITICAL UX: enable listen immediately after decode — do not force-wait on ML.
+    hideSpinner();
+    ui.processBtn.disabled = false;
+    ui.fileInput.disabled = false;
+    setStatus(
+      `Ready to play — “${file.name}” decoded (${(next.duration || 0).toFixed?.(1) || '?'}s). Isolating…`,
+      'warn',
+    );
+    // Load raw mix into playback so user can listen while isolation runs.
+    try {
+      if (mixer && next.channelData) {
+        // Clean = full mix, noise = silence so user hears original immediately.
+        const silence = next.channelData.map((c) => new Float32Array(c.length));
+        mixer.loadStems(next.channelData, silence, next.sampleRate);
+        if (typeof mixer.setVoiceLevel === 'function') mixer.setVoiceLevel(100);
+        if (typeof mixer.setVolume === 'function') mixer.setVolume(100);
+      }
+    } catch (playPrepErr) {
+      console.warn('[VIP][landing] early play prep failed', playPrepErr);
+    }
+
+    // Long files: do not auto-run ML (can take many minutes). User hits Separate.
+    const dur = next.duration || (next.channelData?.[0]?.length || 0) / (next.sampleRate || 48000);
+    if (dur > 180) {
+      setStatus(
+        `Decoded ${(dur / 60).toFixed(1)} min — press “Separate Stems” to isolate (auto-skip for long files). You can play now.`,
+        'warn',
+      );
+      return;
+    }
+    // Short files: auto-isolate in background; playback already available.
     onProcess();
   } catch (err) {
     if (seq !== ingestSeq) return;

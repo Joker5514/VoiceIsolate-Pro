@@ -52,11 +52,11 @@
       <div class="upload-row">
         <label for="modelSelect" class="inline-label">Model</label>
         <select id="modelSelect" class="vip-select" aria-label="Separation model">
-          <option value="max_isolation">Maximum Isolation — BS-RNN → Denoise (2-pass)</option>
-          <option value="bsrnn_vocals" selected>Vocal Isolation — Band-Split RNN (~4 MB, fast, recommended)</option>
-          <option value="rnnoise">Noise Suppression — BiGRU mask (~2 MB)</option>
-          <option value="studio_isolation">Studio Quality — Demucs → Denoise (slow, ~149 MB)</option>
-          <option value="demucs">Vocal Isolation — Demucs v4 only (~149 MB)</option>
+          <option value="bsrnn_vocals" selected>Fast Vocal Isolation — BS-RNN (~4 MB, recommended)</option>
+          <option value="max_isolation">Maximum Isolation — BS-RNN → Denoise (2-pass, slower)</option>
+          <option value="rnnoise">Noise Suppression only — BiGRU (~2 MB, fastest)</option>
+          <option value="studio_isolation">Studio — Demucs → Denoise (very slow, ~149 MB)</option>
+          <option value="demucs">Demucs v4 only (very slow, ~149 MB)</option>
         </select>
         <button id="processBtn" class="vip-btn vip-btn--primary" type="button" disabled>Separate Stems</button>
       </div>
