@@ -38,8 +38,9 @@
 //  CONFIGURATION
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Canonical schema — must match src/core/storage/ModelIdbSchema.js and MLWorker.js
 const VIP_IDB_NAME    = 'vip-model-cache';
-const VIP_IDB_VERSION = 2;   // Bump to invalidate cache on model updates
+const VIP_IDB_VERSION = 3;   // v3: unified key-value store (no keyPath); rebuilds from v2
 const VIP_IDB_STORE   = 'models';
 
 /**
@@ -83,9 +84,13 @@ async function openModelDB() {
 
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
+      const oldVersion = e.oldVersion || 0;
+      // v2 used keyPath:'key'. v3 is out-of-line key-value (raw ArrayBuffer).
+      if (oldVersion > 0 && oldVersion < 3 && db.objectStoreNames.contains(VIP_IDB_STORE)) {
+        try { db.deleteObjectStore(VIP_IDB_STORE); } catch { /* ignore */ }
+      }
       if (!db.objectStoreNames.contains(VIP_IDB_STORE)) {
-        // keyPath = modelKey (e.g. 'demucs'), value = { buffer: ArrayBuffer, ts: number, size: number }
-        db.createObjectStore(VIP_IDB_STORE, { keyPath: 'key' });
+        db.createObjectStore(VIP_IDB_STORE);
       }
     };
 
@@ -105,7 +110,15 @@ async function idbGet(key) {
   return new Promise((resolve, reject) => {
     const tx  = db.transaction(VIP_IDB_STORE, 'readonly');
     const req = tx.objectStore(VIP_IDB_STORE).get(key);
-    req.onsuccess = (e) => resolve(e.target.result?.buffer ?? null);
+    req.onsuccess = (e) => {
+      const val = e.target.result;
+      // v3: raw ArrayBuffer. Tolerate legacy { buffer } records if present.
+      if (!val) resolve(null);
+      else if (val instanceof ArrayBuffer) resolve(val);
+      else if (val?.buffer instanceof ArrayBuffer) resolve(val.buffer);
+      else if (ArrayBuffer.isView(val)) resolve(val.buffer);
+      else resolve(null);
+    };
     req.onerror   = (e) => reject(new Error(`IDB get failed: ${e.target.error?.message}`));
   });
 }
@@ -121,7 +134,8 @@ async function idbPut(key, buffer) {
   return new Promise((resolve, reject) => {
     const tx    = db.transaction(VIP_IDB_STORE, 'readwrite');
     const store = tx.objectStore(VIP_IDB_STORE);
-    const req   = store.put({ key, buffer, ts: Date.now(), size: buffer.byteLength });
+    // v3 key-value: put(value, key) — raw ArrayBuffer matches MLWorker
+    const req   = store.put(buffer, key);
     req.onsuccess = () => resolve();
     req.onerror   = (e) => reject(new Error(`IDB put failed: ${e.target.error?.message}`));
   });
@@ -359,24 +373,25 @@ window._vipClearModelCache = async function clearModelCache() {
  * Call from devtools: await window._vipCacheStatus()
  */
 window._vipCacheStatus = async function cacheStatus() {
-  const db    = await openModelDB();
-  const store = new Promise((res, rej) => {
+  const db = await openModelDB();
+  const keys = await new Promise((res, rej) => {
     const tx  = db.transaction(VIP_IDB_STORE, 'readonly');
-    const req = tx.objectStore(VIP_IDB_STORE).getAll();
-    req.onsuccess = (e) => res(e.target.result);
+    const req = tx.objectStore(VIP_IDB_STORE).getAllKeys();
+    req.onsuccess = (e) => res(e.target.result || []);
     req.onerror   = (e) => rej(e.target.error);
   });
-  const entries = await store;
-  const totalMB = entries.reduce((a, e) => a + (e.size || 0), 0) / 1_048_576;
-  console.group('[VIP cache] IndexedDB Model Cache Status');
-  console.table(entries.map(e => ({
-    key:  e.key,
-    size: `${(e.size / 1_048_576).toFixed(1)} MB`,
-    cached: new Date(e.ts).toLocaleString()
-  })));
+  const rows = [];
+  for (const key of keys) {
+    const buf = await idbGet(key);
+    const size = buf?.byteLength || 0;
+    rows.push({ key, size: `${(size / 1_048_576).toFixed(1)} MB` });
+  }
+  const totalMB = rows.reduce((a, r) => a + parseFloat(r.size), 0);
+  console.group('[VIP cache] IndexedDB Model Cache Status (v3 key-value)');
+  console.table(rows);
   console.log(`Total cached: ${totalMB.toFixed(1)} MB`);
   console.groupEnd();
-  return entries;
+  return rows;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

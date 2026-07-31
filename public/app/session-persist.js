@@ -147,3 +147,62 @@ export function loadSessionTemp() {
     return null;
   }
 }
+
+// ── App wiring helpers (used by app.js) ─────────────────────────────────────
+
+/**
+ * Snapshot slider params + light meta for durable restore.
+ * @param {Record<string, number|string|boolean>} params
+ * @param {{ activeTab?: string, presetName?: string, bypassState?: boolean, mode?: string }} [meta]
+ */
+export function persistAppSession(params, meta = {}) {
+  if (!params || typeof params !== 'object') return;
+  saveSession(params, {
+    activeTab: meta.activeTab ?? null,
+    presetName: meta.presetName ?? null,
+    bypassState: meta.bypassState ?? false,
+    mode: meta.mode ?? 'engineer',
+  });
+}
+
+/**
+ * Apply saved session params onto a flat params object and optional DOM ranges.
+ * @param {Record<string, number>} targetParams  mutated in place when provided
+ * @param {{ applyDom?: boolean }} [opts]
+ * @returns {{ params: object, meta: object }|null}
+ */
+export function restoreAppSession(targetParams = null, opts = {}) {
+  const loaded = loadSession();
+  if (!loaded?.params) return null;
+  if (targetParams && typeof targetParams === 'object') {
+    for (const [k, v] of Object.entries(loaded.params)) {
+      if (typeof v === 'number' && Number.isFinite(v)) targetParams[k] = v;
+    }
+  }
+  if (opts.applyDom !== false && typeof document !== 'undefined') {
+    for (const [k, v] of Object.entries(loaded.params)) {
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue;
+      const el = document.getElementById(`sl_${k}`) || document.querySelector(`[data-param="${k}"]`);
+      if (el && 'value' in el) {
+        try {
+          el.value = String(v);
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        } catch { /* ignore */ }
+      }
+    }
+  }
+  return loaded;
+}
+
+// Expose for classic script consumers / debug
+if (typeof window !== 'undefined') {
+  window.VIPSessionPersist = {
+    saveSession,
+    loadSession,
+    clearSession,
+    saveSessionTemp,
+    loadSessionTemp,
+    persistAppSession,
+    restoreAppSession,
+  };
+}

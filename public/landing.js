@@ -34,6 +34,7 @@ import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { SLIDER_HINTS } from '/app/slider-map.js';
 import { buildHintPanel } from '/app/slider-hint-ui.js';
+import * as FileLibrary from '/src/core/FileLibrary.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -852,6 +853,13 @@ async function ingestFrom(file) {
   // Avoid loading the preview <video> during decode — demuxing the same file twice
   // (preview + hidden capture element) stalls progress on large uploads.
   clearVideo();
+  // Persist source into shared FileLibrary so Engineer Mode can restore after reload.
+  try {
+    const meta = await FileLibrary.importFile(file, { mode: 'library' });
+    window.__vipLandingLibraryId = meta.id;
+  } catch (libErr) {
+    console.warn('[VIP][landing] library persist failed:', libErr?.message || libErr);
+  }
   try {
     showSpinner('Decoding…', { indeterminate: true });
     setStatus(`Decoding “${file.name}”…`, 'warn');

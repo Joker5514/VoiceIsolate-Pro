@@ -332,6 +332,36 @@
           </span>
           <button id="clearFile" class="btn btn-outline" type="button">Clear</button>
         </div>
+        <div class="import-mode-row" id="importModeRow">
+          <label class="import-mode-label" for="importModeSelect">Import mode</label>
+          <select id="importModeSelect" class="btn btn-outline import-mode-select" aria-label="Import mode">
+            <option value="library">Save to library (survives reload)</option>
+            <option value="temporary">Quick import (this session only)</option>
+            <option value="project">Save to project</option>
+          </select>
+        </div>
+        <div class="project-select-row" id="projectSelectRow" hidden>
+          <label class="import-mode-label" for="projectSelect">Project</label>
+          <select id="projectSelect" class="btn btn-outline import-mode-select" aria-label="Project"></select>
+          <button id="newProjectBtn" class="btn btn-outline" type="button">New project</button>
+        </div>
+        <details class="file-library-panel" id="fileLibraryPanel" open>
+          <summary class="file-library-summary">
+            Library <span id="libraryCountBadge" class="library-count-badge">0</span>
+            <span class="file-library-hint">Local OPFS / IndexedDB — never leaves this device</span>
+          </summary>
+          <div class="file-library-body">
+            <div class="file-library-toolbar">
+              <button id="libraryRefreshBtn" class="btn btn-outline" type="button">Refresh</button>
+              <button id="exportProjectPackBtn" class="btn btn-outline" type="button" title="Export .vippack for desktop/Android handoff">Export pack</button>
+              <button id="importProjectPackBtn" class="btn btn-outline" type="button" title="Import .vippack">Import pack</button>
+              <input type="file" id="importProjectPackInput" accept=".vippack,application/octet-stream" class="visually-hidden-file" tabindex="-1" aria-hidden="true" />
+              <span id="libraryBackendHint" class="file-library-backend hint" aria-live="polite"></span>
+            </div>
+            <p id="fileLibraryEmpty" class="file-library-empty">No saved files yet. Choose “Save to library” and upload audio/video.</p>
+            <ul id="fileLibraryList" class="file-library-list" aria-label="Saved files"></ul>
+          </div>
+        </details>
         </div>
       </details>
 

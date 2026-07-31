@@ -192,6 +192,11 @@ export function stemsToAudioBuffer(ctx, clean, sampleRate) {
   return buf;
 }
 
+/**
+ * Recycle the ML worker after stall/timeout.
+ * Does NOT clear MLStemCache — successful stem results must survive worker death
+ * so reprocess can hit cache instead of re-burning ONNX.
+ */
 export function resetStemSeparation() {
   if (_worker) {
     _worker.terminate();
@@ -201,7 +206,7 @@ export function resetStemSeparation() {
   _warmupHooked = false;
   _warmedModels.clear();
   _warmupWaiters = [];
-  clearStemCache();
+  // Intentionally keep in-memory stem cache across worker recycle (audit P-03).
 }
 
 export { clearStemCache };
