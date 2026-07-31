@@ -178,12 +178,38 @@ function effectiveBatchFrames(entry) {
   const mobile = isConstrainedDevice();
   if (BACKEND === 'webgpu') {
     // WebGPU is fast; still cap mobile VRAM/host allocs.
-    return mobile ? Math.min(192, base * 2) : Math.min(384, base * 4);
+    return mobile ? Math.min(256, base * 3) : Math.min(512, base * 4);
   }
   // WASM: larger batches cut session.run overhead. Mobile uses a lower cap to
   // avoid OOM on mid-tier Android while staying faster than tiny batches.
-  if (mobile) return Math.min(128, Math.max(base, 64));
-  return Math.min(256, Math.max(base * 3, 128));
+  if (mobile) return Math.min(160, Math.max(base, 96));
+  return Math.min(384, Math.max(base * 3, 192));
+}
+
+/**
+ * Adaptive hop for long files — model bins stay fftSize/2+1; hop only changes
+ * time resolution. 30 min @ hop 1024 ≈ 84k frames (hours on WASM); hop 8192
+ * ≈ 10k frames (minutes). Quality trades gracefully for speed.
+ * @param {object} entry
+ * @param {number} sampleCount
+ * @param {number} sampleRate
+ */
+function adaptiveHopSize(entry, sampleCount, sampleRate) {
+  const base = entry.hopSize || 1024;
+  const fft = entry.fftSize || 4096;
+  const sr = sampleRate || entry.sampleRate || 48000;
+  const durSec = sampleCount / sr;
+  let hop = base;
+  // Targets roughly ≤12k spectral frames for interactive isolation.
+  if (durSec > 20 * 60) hop = base * 8;      // 20+ min → hop 8192
+  else if (durSec > 8 * 60) hop = base * 4;  // 8+ min → hop 4096
+  else if (durSec > 3 * 60) hop = base * 2;  // 3+ min → hop 2048
+  else if (durSec > 90) hop = Math.round(base * 1.5); // slight stretch
+  // Hop must be ≤ fftSize and power-of-two friendly
+  hop = Math.min(fft, Math.max(256, hop));
+  // Snap to power of two
+  hop = 2 ** Math.round(Math.log2(hop));
+  return hop;
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────
@@ -438,12 +464,17 @@ function makeStftBatchBuf(batchMax, bins) {
 
 async function runSpectralMask(entry, session, samples, onProgress) {
   const N = entry.fftSize;
-  const hop = entry.hopSize;
+  const hop = adaptiveHopSize(entry, samples.length, entry.sampleRate || 48000);
   const bins = entry.bins || (N / 2 + 1);
   const batchMax = effectiveBatchFrames(entry);
   const win = hann(N);
   // Cover every sample: full frames plus a zero-padded tail frame.
   const totalFrames = Math.max(1, Math.ceil(Math.max(0, samples.length - N) / hop) + 1);
+  if (hop !== entry.hopSize) {
+    console.info(
+      `[VIP][MLWorker] adaptive hop ${entry.hopSize}→${hop} (${totalFrames} frames, ${(samples.length / (entry.sampleRate || 48000)).toFixed(1)}s)`,
+    );
+  }
 
   const out = new Float32Array(samples.length);
   const norm = new Float32Array(samples.length);

@@ -3832,7 +3832,15 @@ class VoiceIsolatePro {
       const midCopy = plan.expandStereo && plan.mid
         ? new Float32Array(plan.mid)
         : null;
+      const durSec = buf.duration || (buf.length / (buf.sampleRate || 48000));
+      if (durSec > 180) {
+        this.showNotification?.(
+          `Long file (~${(durSec / 60).toFixed(1)} min) — using fast adaptive isolation (larger hop). You can Play original while this runs.`,
+          'info',
+        );
+      }
       this.updatePipelineProgress(4, plan.expandStereo ? 'ML isolation (mid)…' : 'ML isolation…', 15);
+      // Always single fast model (bsrnn) — never chain demucs on engineer default path.
       const result = await separateStems(plan.channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
         sourceName: this._sourceName || '',
@@ -5034,13 +5042,19 @@ class VoiceIsolatePro {
 
   async play() {
     await this.ensureCtx();
+    // Never block listening on ML — decode only, then play original if process still running.
     if (!(this.inputBuffer || this.origBuffer) && (this._sourceFile || this._libraryFileId)) {
       await this.ensureDecoded();
     }
-    const buf = this.abMode === 'processed'
+    // While isolating, force original so user can audition immediately.
+    const wantProcessed = this.abMode === 'processed' && !this.isProcessing;
+    const buf = wantProcessed
       ? (this.outputBuffer || this.procBuffer || this.inputBuffer || this.origBuffer)
       : (this.inputBuffer || this.origBuffer);
-    if (!buf) return;
+    if (!buf) {
+      this.showNotification?.('Decode audio first — drop a file, then press Play', 'warn');
+      return;
+    }
 
     // Wait for the Live-Mix bridge and worklets so rt:true sliders affect playback on first play.
     await this._ensureBridgeAndWorklets();

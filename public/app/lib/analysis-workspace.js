@@ -601,10 +601,8 @@ export function installAnalysisWorkspace(app) {
               app.setStatus('Analysis restored from local cache');
             }
             if (els.progressLabel) els.progressLabel.textContent = 'Analysis restored (local cache)';
-            // Still run USM backend for chips when missing
-            try {
-              await runUsmBackend({ mode: 'auto', numSources: 6 });
-            } catch { /* optional */ }
+            // USM chips in background — never block listen/process
+            void runUsmBackend({ mode: 'auto', numSources: 6 }).catch(() => {});
             return analysis;
           }
         } catch (cacheErr) {
@@ -645,30 +643,20 @@ export function installAnalysisWorkspace(app) {
       } else if (els.progressLabel) {
         els.progressLabel.textContent = 'Analysis complete · Analyzer ↔ WhisperHunter linked';
       }
-      // Separation (USM) runs in a worker — await so chips + stems exist before
-      // Process / Analyze+Process. Does not freeze the main thread.
-      if (els.progressLabel) els.progressLabel.textContent = 'Separating sources…';
-      if (els.progress) els.progress.hidden = false;
-      try {
-        await runUsmBackend({ mode: 'auto', numSources: 6 });
-        if (typeof app.setStatus === 'function') {
-          const n = usmNode.getSourceLabels?.()?.length || usmNode.sources?.length || 0;
-          app.setStatus(
-            n
-              ? `Analysis + separation ready — ${n} source${n === 1 ? '' : 's'} · Process to isolate`
-              : `Analysis complete — ${preset || 'ready'} · Process to isolate`,
-          );
-        }
-        if (els.progressLabel) {
-          const n = usmNode.getSourceLabels?.()?.length || usmNode.sources?.length || 0;
-          els.progressLabel.textContent = n
-            ? `Ready — ${n} sources separated`
-            : 'Analysis complete';
-        }
-      } catch (e) {
-        console.warn('[VIP] USM backend skipped:', e?.message || e);
-        if (els.progressLabel) els.progressLabel.textContent = 'Analysis complete (separation skipped)';
+      // USM source matrix is optional and expensive — do NOT block Analyze on it.
+      // Fire-and-forget so user can Process / listen immediately after analysis.
+      if (els.progressLabel) els.progressLabel.textContent = 'Analysis complete — Process to isolate';
+      if (typeof app.setStatus === 'function') {
+        app.setStatus(`Analysis complete — ${preset || 'ready'} · Process to isolate (USM in background)`);
       }
+      void runUsmBackend({ mode: 'auto', numSources: 6 })
+        .then(() => {
+          const n = usmNode.getSourceLabels?.()?.length || usmNode.sources?.length || 0;
+          if (els.progressLabel && n) {
+            els.progressLabel.textContent = `Ready — ${n} source chip${n === 1 ? '' : 's'}`;
+          }
+        })
+        .catch((e) => console.warn('[VIP] USM backend skipped:', e?.message || e));
       return analysis;
     } catch (err) {
       showError(err.message || String(err));
@@ -729,13 +717,11 @@ export function installAnalysisWorkspace(app) {
     // Full path: decode → analyze → USM separation → apply recs → Process (ML/DSP).
     const analysis = lastAnalysis || (await runAnalysis());
     if (!analysis) return;
-    // If analysis was cached, still ensure USM stems once per file.
+    // USM is optional — never block Process/listen path.
     if (!usmNode.isReady?.() && !usmNode.sources?.length) {
-      try {
-        await runUsmBackend({ mode: 'auto', numSources: 6 });
-      } catch (e) {
+      void runUsmBackend({ mode: 'auto', numSources: 6 }).catch((e) => {
         console.warn('[VIP] USM before process skipped:', e?.message || e);
-      }
+      });
     }
     const rec = analysis.recommendation;
     if (rec && !rec.autoApplySafe) {
