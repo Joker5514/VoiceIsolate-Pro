@@ -1,7 +1,11 @@
 /**
  * In-memory stem cache — skip repeat ONNX runs for the same file + model chain.
+ * LRU capped to avoid RAM blowups on multi-file sessions.
  */
 'use strict';
+
+/** Max retained full stem results (each can be tens of MB). */
+const MAX_ENTRIES = 2;
 
 /** @type {Map<string, { clean: Float32Array[], noise: Float32Array[], sampleRate: number, passthrough: boolean }>} */
 const _cache = new Map();
@@ -27,17 +31,30 @@ export function stemCacheKey(channelData, sampleRate, modelIds, sourceName = '')
 }
 
 export function getCachedStems(key) {
-  return _cache.get(key) || null;
+  if (!key || !_cache.has(key)) return null;
+  // LRU touch
+  const val = _cache.get(key);
+  _cache.delete(key);
+  _cache.set(key, val);
+  return val || null;
 }
 
 export function setCachedStems(key, result) {
   if (!key || !result || result.passthrough) return;
+  // Always store independent copies so callers can mutate/transfer sources safely.
+  const clean = result.clean.map((c) => new Float32Array(c));
+  const noise = (result.noise || []).map((c) => new Float32Array(c));
+  if (_cache.has(key)) _cache.delete(key);
   _cache.set(key, {
-    clean: result.clean.map((c) => new Float32Array(c)),
-    noise: result.noise.map((c) => new Float32Array(c)),
+    clean,
+    noise,
     sampleRate: result.sampleRate,
     passthrough: false,
   });
+  while (_cache.size > MAX_ENTRIES) {
+    const oldest = _cache.keys().next().value;
+    _cache.delete(oldest);
+  }
 }
 
 export function clearStemCache() {
@@ -47,3 +64,5 @@ export function clearStemCache() {
 export function getStemCacheSize() {
   return _cache.size;
 }
+
+export { MAX_ENTRIES as ML_STEM_CACHE_MAX };

@@ -24,11 +24,15 @@ import {
   blobToFile,
   resolveBlobBackend,
 } from './storage/BlobStore.js';
+import { contentFingerprint, purgeTrackCaches } from './storage/CacheManifest.js';
 
 const DB_NAME = 'vip-file-library';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const META_STORE = 'files';
 const SESSION_STORE = 'session';
+
+/** Hard cap: one user, five tracks total (canonical state each). */
+export const MAX_LIBRARY_TRACKS = 5;
 
 /** @typedef {'temporary'|'library'|'project'} ImportMode */
 /** @typedef {'idle'|'imported'|'decoded'|'analyzed'|'processed'|'error'} ProcessingStatus */
@@ -55,12 +59,21 @@ const SESSION_STORE = 'session';
  */
 
 function openLibraryDb() {
-  return openIdb(DB_NAME, DB_VERSION, (db) => {
+  return openIdb(DB_NAME, DB_VERSION, (db, oldVersion, tx) => {
+    let store;
     if (!db.objectStoreNames.contains(META_STORE)) {
-      const store = db.createObjectStore(META_STORE, { keyPath: 'id' });
+      store = db.createObjectStore(META_STORE, { keyPath: 'id' });
       store.createIndex('updatedAt', 'updatedAt', { unique: false });
       store.createIndex('projectId', 'projectId', { unique: false });
       store.createIndex('inLibrary', 'inLibrary', { unique: false });
+      store.createIndex('fingerprint', 'fingerprint', { unique: false });
+    } else if (oldVersion < 2 && tx) {
+      try {
+        store = tx.objectStore(META_STORE);
+        if (!store.indexNames.contains('fingerprint')) {
+          store.createIndex('fingerprint', 'fingerprint', { unique: false });
+        }
+      } catch { /* index may exist */ }
     }
     if (!db.objectStoreNames.contains(SESSION_STORE)) {
       db.createObjectStore(SESSION_STORE, { keyPath: 'key' });
@@ -76,11 +89,42 @@ function newId() {
 }
 
 /**
+ * Find existing library row by content fingerprint (canonical track).
+ * @param {string} fingerprint
+ * @returns {Promise<LibraryFileMeta|null>}
+ */
+async function findByFingerprint(fingerprint) {
+  if (!fingerprint) return null;
+  const files = await listLibraryFiles();
+  return files.find((f) => f.fingerprint === fingerprint) || null;
+}
+
+/**
+ * Evict oldest tracks until count ≤ MAX_LIBRARY_TRACKS (excluding keepId).
+ * @param {string} [keepId]
+ */
+export async function enforceTrackCap(keepId = null) {
+  let files = await listLibraryFiles();
+  // Oldest first for eviction
+  files = files.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+  while (files.length > MAX_LIBRARY_TRACKS) {
+    const victim = files.find((f) => f.id !== keepId) || files[0];
+    if (!victim) break;
+    await deleteFilePermanently(victim.id);
+    files = files.filter((f) => f.id !== victim.id);
+  }
+}
+
+/**
+ * Import or upsert a track. Same content → same canonical id (no duplicates).
+ * Library capped at MAX_LIBRARY_TRACKS.
+ *
  * @param {File|Blob} file
  * @param {object} [opts]
  * @param {ImportMode} [opts.mode]
  * @param {string|null} [opts.projectId]
  * @param {string[]} [opts.tags]
+ * @param {boolean} [opts.forceNew]  skip fingerprint upsert
  * @returns {Promise<LibraryFileMeta>}
  */
 export async function importFile(file, opts = {}) {
@@ -88,12 +132,89 @@ export async function importFile(file, opts = {}) {
   const mode = /** @type {ImportMode} */ (opts.mode || 'library');
   const projectId = opts.projectId || null;
   const tags = Array.isArray(opts.tags) ? opts.tags.slice() : [];
-  const id = newId();
   const now = Date.now();
   const originalFilename = /** @type {File} */ (file).name || 'import';
   const mimeType = file.type || 'application/octet-stream';
   const size = file.size || 0;
 
+  let fingerprint = null;
+  try {
+    fingerprint = await contentFingerprint(file);
+  } catch {
+    fingerprint = `sz_${size}_${originalFilename}`;
+  }
+
+  // Temporary: no catalog, no blob write
+  if (mode === 'temporary') {
+    const id = newId();
+    /** @type {LibraryFileMeta} */
+    const meta = {
+      id,
+      originalFilename,
+      mimeType,
+      size,
+      duration: null,
+      sampleRate: null,
+      channels: null,
+      waveformCacheKey: null,
+      analysisCacheKey: null,
+      createdAt: now,
+      updatedAt: now,
+      processingStatus: 'imported',
+      projectId: null,
+      tags,
+      importMode: 'temporary',
+      blobRef: null,
+      inLibrary: false,
+      fingerprint,
+    };
+    _ephemeral.set(id, { file, meta });
+    await setSessionState({
+      activeFileId: id,
+      importMode: mode,
+      lastFilename: originalFilename,
+      updatedAt: now,
+    });
+    return meta;
+  }
+
+  // Canonical upsert by fingerprint
+  if (!opts.forceNew && fingerprint) {
+    const existing = await findByFingerprint(fingerprint);
+    if (existing) {
+      const updated = {
+        ...existing,
+        originalFilename,
+        mimeType,
+        size,
+        updatedAt: now,
+        projectId: projectId || existing.projectId,
+        tags: tags.length ? tags : existing.tags,
+        importMode: mode,
+        inLibrary: true,
+        fingerprint,
+        processingStatus: existing.processingStatus || 'imported',
+      };
+      // Refresh blob only if missing
+      if (!updated.blobRef) {
+        updated.blobRef = await writeSourceBlob(updated.id, file);
+      }
+      const db = await openLibraryDb();
+      const tx = db.transaction(META_STORE, 'readwrite');
+      await idbPut(tx.objectStore(META_STORE), updated);
+      await idbTxDone(tx);
+      await setSessionState({
+        activeFileId: updated.id,
+        importMode: mode,
+        lastFilename: originalFilename,
+        updatedAt: now,
+      });
+      await enforceTrackCap(updated.id);
+      return updated;
+    }
+  }
+
+  const id = newId();
   /** @type {LibraryFileMeta} */
   let meta = {
     id,
@@ -112,22 +233,17 @@ export async function importFile(file, opts = {}) {
     tags,
     importMode: mode,
     blobRef: null,
-    inLibrary: mode !== 'temporary',
+    inLibrary: true,
+    fingerprint,
   };
 
-  if (mode !== 'temporary') {
-    const blobRef = await writeSourceBlob(id, file);
-    meta.blobRef = blobRef;
-  }
+  meta.blobRef = await writeSourceBlob(id, file);
 
-  if (meta.inLibrary) {
-    const db = await openLibraryDb();
-    const tx = db.transaction(META_STORE, 'readwrite');
-    await idbPut(tx.objectStore(META_STORE), meta);
-    await idbTxDone(tx);
-  }
+  const db = await openLibraryDb();
+  const tx = db.transaction(META_STORE, 'readwrite');
+  await idbPut(tx.objectStore(META_STORE), meta);
+  await idbTxDone(tx);
 
-  // Session always tracks last active (including temporary id for tab recovery mid-session only)
   await setSessionState({
     activeFileId: id,
     importMode: mode,
@@ -135,11 +251,7 @@ export async function importFile(file, opts = {}) {
     updatedAt: now,
   });
 
-  // Attach ephemeral handle for current tab when temporary
-  if (mode === 'temporary') {
-    _ephemeral.set(id, { file, meta });
-  }
-
+  await enforceTrackCap(id);
   return meta;
 }
 
@@ -242,14 +354,12 @@ export async function deleteFilePermanently(id) {
     _ephemeral.delete(id);
   }
   const meta = await getFileMeta(id);
-  if (meta?.blobRef) {
-    await deleteSourceBlob(meta.blobRef);
-  }
   try {
-    const { deleteDerivedForFile } = await import('./storage/DerivedCache.js');
-    await deleteDerivedForFile(id);
+    await purgeTrackCaches(id, { blobRef: meta?.blobRef || null });
   } catch {
-    // ignore derived cleanup failures
+    if (meta?.blobRef) {
+      try { await deleteSourceBlob(meta.blobRef); } catch { /* ignore */ }
+    }
   }
   try {
     const db = await openLibraryDb();

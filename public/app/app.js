@@ -65,6 +65,13 @@ import {
   saveAnalysisDurable,
   loadAnalysisDurable,
 } from '/src/core/storage/DerivedCache.js';
+import { ensureCacheFresh } from '/src/core/storage/CacheManifest.js';
+import {
+  getTrackState,
+  scheduleSaveTrackState,
+  flushTrackStateSaves,
+  saveTrackState,
+} from '/src/core/TrackState.js';
 import {
   mountFileLibraryUI,
   refreshLibraryList,
@@ -946,16 +953,19 @@ class VoiceIsolatePro {
       structuredLog('warn', '[VIP] analysis workspace install failed', { err: wsErr && wsErr.message });
     }
 
-    // Durable library + slider session (local-only). Restore after DOM/sliders exist.
+    // Durable library + track state (IDB). UI chrome may use localStorage only.
     try {
       mountFileLibraryUI(this);
-      const restored = restoreAppSession(this.params, { applyDom: true });
+      // Versioned cache cleanup (non-blocking)
+      void ensureCacheFresh({ pruneOrphans: false }).catch(() => {});
+      // Prefer IDB track params after library id known; localStorage is UI fallback only.
+      const restored = restoreAppSession(this.params, { applyDom: false });
       if (restored?.params) {
+        this.params = { ...this.params, ...restored.params };
         window.VIP_PARAMS = window.VIP_PARAMS || {};
         Object.assign(window.VIP_PARAMS, restored.params);
-        structuredLog('info', '[VIP] Restored slider session from localStorage');
       }
-      // File restore is async — do not block boot splash dismissal path above.
+      this._bindCrashSafeFlush();
       this._restoreLibrarySession().catch((err) => {
         structuredLog('warn', '[VIP] library session restore failed', { err: err?.message });
       });
@@ -1243,18 +1253,31 @@ class VoiceIsolatePro {
     return 15 + Math.round(w * 0.73);
   }
 
-  // ── Render static visuals (waveform/spectrogram placeholder) ─────────────
+  // ── Render static visuals (waveform/spectrogram) — throttled, fingerprint-deduped ─
   renderStaticVisuals(buffer) {
-    if (window.VIP_VISUALS && typeof window.VIP_VISUALS.drawStatic === 'function') {
-      try { window.VIP_VISUALS.drawStatic(); } catch (_) {}
-    }
-    if (typeof window.drawWaveform === 'function') {
-      try { window.drawWaveform(buffer); } catch (_) {}
-    }
-    if (typeof window.VIP_spectro === 'object' && window.VIP_spectro) {
-      try { window.VIP_spectro.renderStatic(buffer); } catch (_) {}
-    }
-    HeroExperience.mirrorWaveCanvases();
+    if (!buffer || typeof buffer.getChannelData !== 'function') return;
+    // Skip identical buffer re-renders (major reopen cost).
+    const fp = `${buffer.length}|${buffer.sampleRate}|${buffer.numberOfChannels}|${buffer.duration?.toFixed?.(3) || 0}`;
+    if (this._lastVisualFp === fp && this._visualsDrawn) return;
+    this._lastVisualFp = fp;
+    // Coalesce multiple callers in one frame
+    if (this._visualRaf) return;
+    this._visualRaf = requestAnimationFrame(() => {
+      this._visualRaf = 0;
+      try {
+        if (window.VIP_VISUALS && typeof window.VIP_VISUALS.drawStatic === 'function') {
+          window.VIP_VISUALS.drawStatic();
+        }
+        if (typeof window.drawWaveform === 'function') {
+          window.drawWaveform(buffer);
+        }
+        if (typeof window.VIP_spectro === 'object' && window.VIP_spectro) {
+          window.VIP_spectro.renderStatic(buffer);
+        }
+        HeroExperience.mirrorWaveCanvases();
+        this._visualsDrawn = true;
+      } catch (_) { /* ignore visual errors */ }
+    });
   }
 
   // ── Audio context ────────────────────────────────────────────────────────
@@ -1635,7 +1658,20 @@ class VoiceIsolatePro {
           if (idx !== undefined) this.sharedParams[idx] = v;
         }
         this.onSlider(s.id, v);
-        this._applySliderToWorklet(s.id, v);
+        // Coalesce Live-Mix param storm — one rAF batch for bridge/worklet.
+        this._pendingLiveParam = this._pendingLiveParam || {};
+        this._pendingLiveParam[s.id] = v;
+        if (!this._liveParamRaf) {
+          this._liveParamRaf = requestAnimationFrame(() => {
+            this._liveParamRaf = 0;
+            const batch = this._pendingLiveParam || {};
+            this._pendingLiveParam = null;
+            for (const [pid, pval] of Object.entries(batch)) {
+              this._applySliderToWorklet(pid, pval);
+            }
+            this._syncBridgeParams?.();
+          });
+        }
         this._scheduleSessionPersist();
       });
 
@@ -2650,7 +2686,8 @@ class VoiceIsolatePro {
 
   // ── File handling ─────────────────────────────────────────────────────────
   /**
-   * Debounced write of slider params to localStorage (session-persist).
+   * Crash-safe save: critical params → IndexedDB TrackState; light UI chrome → localStorage.
+   * Debounced. Never stores binary audio.
    */
   _scheduleSessionPersist() {
     if (this._sessionPersistTimer) clearTimeout(this._sessionPersistTimer);
@@ -2658,14 +2695,82 @@ class VoiceIsolatePro {
       this._sessionPersistTimer = null;
       try {
         const presetName = this.dom?.presetSel?.value || this._activePresetName || null;
-        persistAppSession(this.params || window.VIP_PARAMS || {}, {
-          presetName,
-          mode: 'engineer',
-        });
+        const params = this.params || window.VIP_PARAMS || {};
+        // Light fallback for non-critical UI continuity only
+        persistAppSession(params, { presetName, mode: 'engineer' });
+        // Canonical crash-safe state
+        if (this._libraryFileId) {
+          scheduleSaveTrackState(this._libraryFileId, {
+            params,
+            presetName,
+            status: this.outputBuffer || this.procBuffer
+              ? 'processed'
+              : (this.origBuffer || this.inputBuffer ? 'decoded' : 'imported'),
+            meta: {
+              abMode: this.abMode,
+              sourceName: this._sourceName || null,
+            },
+          });
+        }
       } catch (err) {
         structuredLog('warn', '[VIP] session persist failed', { err: err?.message });
       }
     }, 400);
+  }
+
+  /** Flush pending TrackState + session on hide/unload (crash-safe). */
+  _bindCrashSafeFlush() {
+    if (this._crashFlushBound || typeof window === 'undefined') return;
+    this._crashFlushBound = true;
+    const flush = () => {
+      try {
+        if (this._libraryFileId) {
+          const params = this.params || window.VIP_PARAMS || {};
+          void saveTrackState(this._libraryFileId, {
+            params,
+            presetName: this._activePresetName || this.dom?.presetSel?.value || null,
+            status: this.outputBuffer || this.procBuffer ? 'processed' : 'imported',
+          });
+        }
+        void flushTrackStateSaves();
+      } catch { /* ignore */ }
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') flush();
+    });
+  }
+
+  /**
+   * Apply saved TrackState params onto sliders (IDB canonical).
+   * @param {string} fileId
+   */
+  async _restoreTrackStateParams(fileId) {
+    if (!fileId) return;
+    try {
+      const row = await getTrackState(fileId);
+      if (!row?.params || typeof row.params !== 'object') return;
+      window.VIP_PARAMS = window.VIP_PARAMS || {};
+      Object.assign(window.VIP_PARAMS, row.params);
+      Object.assign(this.params, row.params);
+      this._programmaticSliderUpdate = true;
+      try {
+        for (const [id, val] of Object.entries(row.params)) {
+          if (typeof val !== 'number' || !Number.isFinite(val)) continue;
+          this._setSliderUi?.(id, val, { notify: false, force: true });
+        }
+        if (row.presetName && this.dom?.presetSel) {
+          this.dom.presetSel.value = row.presetName;
+          this._activePresetName = row.presetName;
+        }
+      } finally {
+        this._programmaticSliderUpdate = false;
+      }
+      this._syncBridgeParams?.();
+      structuredLog('info', '[VIP] Restored track state from IndexedDB', { fileId, rev: row.rev });
+    } catch (err) {
+      structuredLog('warn', '[VIP] track state restore failed', { err: err?.message });
+    }
   }
 
   /**
@@ -2711,6 +2816,17 @@ class VoiceIsolatePro {
 
     this._libraryFileId = meta.id;
     await FileLibrary.setSessionState({ activeFileId: meta.id, updatedAt: Date.now() }).catch(() => {});
+
+    // Prune orphans against live catalog
+    try {
+      const files = await FileLibrary.listLibraryFiles();
+      await ensureCacheFresh({
+        pruneOrphans: true,
+        fileIds: files.map((f) => f.id),
+      });
+    } catch { /* ignore */ }
+
+    await this._restoreTrackStateParams(meta.id);
 
     if (active?.file && hydrated) {
       await this.handleFile(active.file, {
@@ -2782,6 +2898,7 @@ class VoiceIsolatePro {
       }
       this._libraryFileId = id;
       await FileLibrary.setSessionState({ activeFileId: id, updatedAt: Date.now() });
+      await this._restoreTrackStateParams(id);
       await this.handleFile(opened.file, { skipPersist: true, libraryId: id });
       await refreshLibraryList(this);
     } catch (err) {
@@ -2806,10 +2923,19 @@ class VoiceIsolatePro {
     const skipMlWarmup = Boolean(options.skipMlWarmup);
     // Immediately hide any in-flight decode indicator from the previous file.
     this._hideFileLoading?.();
-    clearStemCache();
-    this._stemFileSeq = null;
-    this._cleanStemChannels = null;
-    this._noiseStemChannels = null;
+    // Only clear in-memory stems when switching to a different source name/size
+    // (same track reopen should hit MLStemCache / durable cache).
+    const sameSource = this._sourceName === (file.name || '')
+      && this._sourceFile
+      && this._sourceFile.size === file.size;
+    if (!sameSource) {
+      clearStemCache();
+      this._stemFileSeq = null;
+      this._cleanStemChannels = null;
+      this._noiseStemChannels = null;
+      this._visualsDrawn = false;
+      this._lastVisualFp = null;
+    }
     this._sourceName = file.name || '';
     this._decodePromise = null;
     this._decodeReady = false;
@@ -3040,6 +3166,14 @@ class VoiceIsolatePro {
             processingStatus: 'decoded',
             waveformCacheKey: `wf:${this._libraryFileId}:${buffer.length}`,
           }).then(() => refreshLibraryList(this)).catch(() => {});
+          scheduleSaveTrackState(this._libraryFileId, {
+            status: 'decoded',
+            meta: {
+              duration: buffer.duration,
+              sampleRate: buffer.sampleRate,
+              channels: buffer.numberOfChannels,
+            },
+          });
         }
         this.onAudioLoaded(file.name, fileSeq);
         return buffer;

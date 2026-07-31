@@ -54,6 +54,9 @@ function installMemoryIdb() {
       return req;
     }
     createIndex() { /* no-op */ }
+    get indexNames() {
+      return { contains: () => false };
+    }
   }
 
   class MemTx {
@@ -94,17 +97,26 @@ function installMemoryIdb() {
   }
 
   globalThis.indexedDB = {
-    open(name) {
+    open(name, version = 1) {
       const req = new MemReq();
-      const existing = dbs.get(name);
+      const cacheKey = `${name}@${version}`;
+      const existing = dbs.get(cacheKey);
       const db = existing || new MemDb(name);
-      if (!existing) dbs.set(name, db);
+      if (!existing) dbs.set(cacheKey, db);
+      req.transaction = {
+        objectStore: (n) => {
+          if (!db._stores.has(n)) db._stores.set(n, new Map());
+          const s = new MemStore(db._stores.get(n));
+          s.indexNames = { contains: () => false };
+          s.createIndex = () => {};
+          return s;
+        },
+      };
       queueMicrotask(() => {
         if (!existing) {
           req.result = db;
           req.onupgradeneeded?.({ target: req, oldVersion: 0 });
         }
-        // Nested so onsuccess is attached after open() returns.
         queueMicrotask(() => {
           req.result = db;
           req.onsuccess?.({ target: req });
@@ -201,6 +213,21 @@ describe('FileLibrary', () => {
     const f = blobToFile(big, { originalFilename: 'x.wav', mimeType: 'audio/wav' });
     expect(f).toBeTruthy();
     expect(f.name === 'x.wav' || f.size === 1024).toBe(true);
+  });
+
+  test('same content re-import upserts canonical track (no duplicate)', async () => {
+    const bytes = [9, 8, 7, 6, 5, 4];
+    const a = makeFile(bytes, 'dup.wav', 'audio/wav');
+    const b = makeFile(bytes, 'dup.wav', 'audio/wav');
+    const m1 = await FileLibrary.importFile(a, { mode: 'library' });
+    const m2 = await FileLibrary.importFile(b, { mode: 'library' });
+    expect(m2.id).toBe(m1.id);
+    const listed = await FileLibrary.listLibraryFiles();
+    expect(listed.filter((f) => f.id === m1.id)).toHaveLength(1);
+  }, 15000);
+
+  test('MAX_LIBRARY_TRACKS is 5', () => {
+    expect(FileLibrary.MAX_LIBRARY_TRACKS).toBe(5);
   });
 });
 
