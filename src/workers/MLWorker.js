@@ -199,15 +199,23 @@ function adaptiveHopSize(entry, sampleCount, sampleRate) {
   const fft = entry.fftSize || 4096;
   const sr = sampleRate || entry.sampleRate || 48000;
   const durSec = sampleCount / sr;
+  const mobile = isConstrainedDevice();
   let hop = base;
-  // Targets roughly ≤12k spectral frames for interactive isolation.
-  if (durSec > 20 * 60) hop = base * 8;      // 20+ min → hop 8192
-  else if (durSec > 8 * 60) hop = base * 4;  // 8+ min → hop 4096
-  else if (durSec > 3 * 60) hop = base * 2;  // 3+ min → hop 2048
-  else if (durSec > 90) hop = Math.round(base * 1.5); // slight stretch
-  // Hop must be ≤ fftSize and power-of-two friendly
+  // Targets roughly ≤12k spectral frames desktop / ≤6k mobile for responsive UI.
+  // Mobile freezes the tab if WASM STFT runs tens of thousands of frames.
+  if (mobile) {
+    if (durSec > 10 * 60) hop = base * 16;     // 10+ min → hop 16384 (capped by fft)
+    else if (durSec > 4 * 60) hop = base * 8;   // 4+ min
+    else if (durSec > 90) hop = base * 4;       // 90s+
+    else if (durSec > 45) hop = base * 2;
+    else hop = base * 2; // always at least 2× on mobile
+  } else {
+    if (durSec > 20 * 60) hop = base * 8;
+    else if (durSec > 8 * 60) hop = base * 4;
+    else if (durSec > 3 * 60) hop = base * 2;
+    else if (durSec > 90) hop = Math.round(base * 1.5);
+  }
   hop = Math.min(fft, Math.max(256, hop));
-  // Snap to power of two
   hop = 2 ** Math.round(Math.log2(hop));
   return hop;
 }

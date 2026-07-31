@@ -12,8 +12,10 @@ const appJs = fs.readFileSync(
 );
 
 describe('Engineer upload decode wiring', () => {
-  // Flexible method boundaries for CRLF line endings on Windows.
-  const handleFileSection = appJs.match(/async handleFile\(file\) \{[\s\S]*?async ensureDecoded/)?.[0] || '';
+  // Flexible method boundaries for CRLF line endings + optional options param.
+  const handleFileSection = appJs.match(
+    /async handleFile\(file(?:,\s*options\s*=\s*\{\})?\)\s*\{[\s\S]*?async ensureDecoded/,
+  )?.[0] || '';
 
   test('app.js imports decodeBlobToAudioBuffer and resampleToCanonical', () => {
     expect(appJs).toContain("import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js'");
@@ -22,8 +24,9 @@ describe('Engineer upload decode wiring', () => {
 
   test('handleFile accepts uploads without decoding and ensureDecoded owns shared decode path', () => {
     expect(appJs).toContain('ready (decode on Analyze/Process)');
-    expect(handleFileSection).toContain('handleFile');
-    // Decode lives in ensureDecoded, not handleFile.
+    expect(appJs).toMatch(/async handleFile\(/);
+    expect(handleFileSection.length).toBeGreaterThan(50);
+    // Decode lives in ensureDecoded, not handleFile body.
     expect(appJs).toMatch(/async ensureDecoded[\s\S]*decodeBlobToAudioBuffer\(/);
     expect(appJs).toMatch(/async ensureDecoded[\s\S]*resampleToCanonical\(/);
     expect(appJs).toContain('const decoded = await decodeBlobToAudioBuffer(file, {');
