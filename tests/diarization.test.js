@@ -173,6 +173,28 @@ describe('kMeans', () => {
   });
 });
 
+describe('shouldCollapseToOneSpeaker', () => {
+  test('collapses rapid flip-flop labels (over-segmentation)', () => {
+    const flip = new Int32Array(20);
+    for (let i = 0; i < flip.length; i++) flip[i] = i % 2;
+    expect(diar.shouldCollapseToOneSpeaker(flip)).toBe(true);
+  });
+
+  test('keeps two long coherent runs (true speaker turns)', () => {
+    const runs = new Int32Array(40);
+    for (let i = 0; i < 20; i++) runs[i] = 0;
+    for (let i = 20; i < 40; i++) runs[i] = 1;
+    expect(diar.shouldCollapseToOneSpeaker(runs)).toBe(false);
+  });
+
+  test('collapses tiny minority clusters', () => {
+    const labels = new Int32Array(20);
+    for (let i = 0; i < 19; i++) labels[i] = 0;
+    labels[19] = 1;
+    expect(diar.shouldCollapseToOneSpeaker(labels)).toBe(true);
+  });
+});
+
 describe('diarizeChannel', () => {
   test('finds two distinct speakers split by silence', () => {
     const segments = diar.diarizeChannel(makeTwoSpeakerSignal(), SR);
@@ -232,6 +254,27 @@ describe('diarizeChannel', () => {
     expect(segments.length).toBeGreaterThanOrEqual(1);
     const talk = diar.summarizeSpeakers(segments).reduce((s, sp) => s + sp.talkTime, 0);
     expect(talk).toBeGreaterThan(1); // most of the 2 s is captured
+  });
+
+  test('continuous single-voice tone maps to one speaker (no phantom S2)', () => {
+    // Smoke-like multi-partial continuous voice — previously over-segmented to
+    // zero kept segments or alternating fake speakers.
+    const samples = new Float32Array(3 * SR);
+    for (let i = 0; i < samples.length; i++) {
+      const t = i / SR;
+      samples[i] =
+        0.35 * Math.sin(2 * Math.PI * 220 * t) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 3 * t)) +
+        0.18 * Math.sin(2 * Math.PI * 440 * t) +
+        0.08 * Math.sin(2 * Math.PI * 880 * t) +
+        0.05 * (Math.random() * 2 - 1);
+    }
+    const segments = diar.diarizeChannel(samples, SR);
+    expect(segments.length).toBeGreaterThanOrEqual(1);
+    const speakers = new Set(segments.map((s) => s.speakerId));
+    expect(speakers.size).toBe(1);
+    expect(speakers.has('S1')).toBe(true);
+    const talk = diar.summarizeSpeakers(segments).reduce((s, sp) => s + sp.talkTime, 0);
+    expect(talk).toBeGreaterThan(2);
   });
 
   test('confidence reflects the segment own energy, not the boundary frame', () => {

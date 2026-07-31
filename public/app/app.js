@@ -387,10 +387,6 @@ const MODEL_STATUS_KEYS = ['demucs', 'bsrnn', 'rnnoise', 'silero_vad'];
 /** Default offline chain — BS-RNN vocals only (fast; denoise chain is opt-in). */
 const DEFAULT_ML_CHAIN = Object.freeze(['bsrnn_vocals']);
 
-function _yieldToUI(cb) {
-  setTimeout(cb, 0);
-}
-
 // ---------------------------------------------------------------------------
 // SAB ring-buffer constants (must match dsp-processor.js exactly)
 // NOTE: These constants appear unused in app.js but are critical for:

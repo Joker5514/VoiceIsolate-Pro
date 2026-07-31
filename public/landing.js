@@ -132,7 +132,6 @@ let sliderUI = null;
 let speakerControls = null;
 let visualizer = null;
 let worker = null;
-let _syncTransportRegion = null;
 
 let ingested = null;
 /** @type {File|Blob|null} original upload retained for video remux export */
@@ -1066,7 +1065,9 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
     ...ui.mixSliders]) {
     if (el) el.disabled = false;
   }
-  _syncTransportRegion = wireTransportRegion({
+  // wireTransportRegion attaches listeners and paints crop/loop UI once;
+  // re-sync is not needed on landing (no external region mutations).
+  wireTransportRegion({
     mixer,
     loopBtn: ui.loopBtn,
     cropInBtn: ui.cropInBtn,
