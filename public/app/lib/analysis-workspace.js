@@ -609,10 +609,30 @@ export function installAnalysisWorkspace(app) {
       } else if (els.progressLabel) {
         els.progressLabel.textContent = 'Analysis complete · Analyzer ↔ WhisperHunter linked';
       }
-      // Post-analysis USM backend (does not block Process; runs off-main via worker)
-      runUsmBackend({ mode: 'auto', numSources: 6 }).catch((e) => {
+      // Separation (USM) runs in a worker — await so chips + stems exist before
+      // Process / Analyze+Process. Does not freeze the main thread.
+      if (els.progressLabel) els.progressLabel.textContent = 'Separating sources…';
+      if (els.progress) els.progress.hidden = false;
+      try {
+        await runUsmBackend({ mode: 'auto', numSources: 6 });
+        if (typeof app.setStatus === 'function') {
+          const n = usmNode.getSourceLabels?.()?.length || usmNode.sources?.length || 0;
+          app.setStatus(
+            n
+              ? `Analysis + separation ready — ${n} source${n === 1 ? '' : 's'} · Process to isolate`
+              : `Analysis complete — ${preset || 'ready'} · Process to isolate`,
+          );
+        }
+        if (els.progressLabel) {
+          const n = usmNode.getSourceLabels?.()?.length || usmNode.sources?.length || 0;
+          els.progressLabel.textContent = n
+            ? `Ready — ${n} sources separated`
+            : 'Analysis complete';
+        }
+      } catch (e) {
         console.warn('[VIP] USM backend skipped:', e?.message || e);
-      });
+        if (els.progressLabel) els.progressLabel.textContent = 'Analysis complete (separation skipped)';
+      }
       return analysis;
     } catch (err) {
       showError(err.message || String(err));
@@ -670,8 +690,17 @@ export function installAnalysisWorkspace(app) {
   }
 
   async function analyzeAndProcess() {
+    // Full path: decode → analyze → USM separation → apply recs → Process (ML/DSP).
     const analysis = lastAnalysis || (await runAnalysis());
     if (!analysis) return;
+    // If analysis was cached, still ensure USM stems once per file.
+    if (!usmNode.isReady?.() && !usmNode.sources?.length) {
+      try {
+        await runUsmBackend({ mode: 'auto', numSources: 6 });
+      } catch (e) {
+        console.warn('[VIP] USM before process skipped:', e?.message || e);
+      }
+    }
     const rec = analysis.recommendation;
     if (rec && !rec.autoApplySafe) {
       showError('Low confidence — recommendations applied; review before relying on export.');
@@ -679,6 +708,9 @@ export function installAnalysisWorkspace(app) {
     applyRecommendations();
     if (typeof app.process === 'function') {
       await app.process();
+      if (lastAnalysis) await ensureAuditionBuffers(lastAnalysis);
+    } else if (typeof app.runPipeline === 'function') {
+      await app.runPipeline();
       if (lastAnalysis) await ensureAuditionBuffers(lastAnalysis);
     }
   }

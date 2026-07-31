@@ -119,12 +119,14 @@ const HeroExperience = (() => {
   function setHeroCopy(status, enableProcess) {
     const statusEl = $('heroStatus');
     if (statusEl && status) statusEl.textContent = status;
-    const cta = $('heroCtaProcess');
-    const busy = !!(appRef && appRef.isProcessing);
-    if (cta) cta.disabled = !enableProcess || busy;
+    // Prefer the app's button state (knows about deferred _sourceFile). Only
+    // force-enable when the caller explicitly says the file is ready.
     if (appRef && typeof appRef._updateProcessButtonsState === 'function') {
       appRef._updateProcessButtonsState();
     }
+    const cta = $('heroCtaProcess');
+    const busy = !!(appRef && appRef.isProcessing);
+    if (cta && enableProcess && !busy) cta.disabled = false;
   }
 
   function syncAliasControls() {
@@ -2700,16 +2702,15 @@ class VoiceIsolatePro {
       this.dom.fileInfo.textContent = `${file.name || 'File'} · ${kindLabel} · ${sizeMb} MB · ready (decode on Analyze/Process)`;
     }
     this.setStatus('READY');
-    if (typeof this._updateProcessButtonsState === 'function') this._updateProcessButtonsState();
-    // Enable analyze/process without decoded buffers — ensureDecoded runs first.
-    if (this.dom.processBtn) this.dom.processBtn.disabled = false;
-    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = false;
-    if (this.dom.playBtn) this.dom.playBtn.disabled = false;
     if (this.dom.saveOrigBtn) this.dom.saveOrigBtn.disabled = true; // needs decode
+    // Single source of truth for Process / Play enablement (includes _sourceFile).
+    if (typeof this._updateProcessButtonsState === 'function') this._updateProcessButtonsState();
 
     try { window.dispatchEvent(new CustomEvent('vip:fileAccepted', { detail: { name: file.name, size: file.size, video: isVideoFile } })); } catch (evErr) {
       structuredLog('warn', '[VIP] vip:fileAccepted dispatch failed', { err: evErr?.message });
     }
+    // Re-apply after hero/status listeners that may re-run button state.
+    if (typeof this._updateProcessButtonsState === 'function') this._updateProcessButtonsState();
     this.showNotification(`${file.name || 'File'} ready — Analyze or Process to decode & isolate`, 'info');
 
     // Idle ML warmup only (no decode) so first process is faster.
@@ -5204,15 +5205,24 @@ class VoiceIsolatePro {
   }
 
   _updateProcessButtonsState() {
-    const hasBuf = Boolean(this.inputBuffer || this.origBuffer);
+    // Deferred decode: a pending _sourceFile is enough to enable Process/Analyze.
+    // Decode happens inside ensureDecoded() on Process/Analyze — never block the CTA
+    // waiting for PCM buffers or the UI stays stuck with a disabled Process button.
+    const hasSource = Boolean(
+      this.inputBuffer || this.origBuffer || this._sourceFile,
+    );
     const hasOut = Boolean(this.outputBuffer || this.procBuffer);
     const busy = Boolean(this.isProcessing);
-    if (this.dom.processBtn) this.dom.processBtn.disabled = !hasBuf || busy;
-    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !hasBuf || busy;
+    if (this.dom.processBtn) this.dom.processBtn.disabled = !hasSource || busy;
+    if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !hasSource || busy;
     if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = !hasOut || busy;
     if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = !hasOut || busy;
     const heroCta = document.getElementById('heroCtaProcess');
-    if (heroCta) heroCta.disabled = !hasBuf || busy;
+    if (heroCta) heroCta.disabled = !hasSource || busy;
+    // Play is allowed with a pending source (ensureDecoded on first play).
+    if (this.dom.playBtn && !busy) {
+      this.dom.playBtn.disabled = !hasSource;
+    }
   }
 
   _getTransportMixer() {

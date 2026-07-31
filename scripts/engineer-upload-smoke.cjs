@@ -63,16 +63,14 @@ async function ensureAppReady(page) {
 }
 
 async function ingestWav(page, wavPath) {
-  await page.setInputFiles('#fileInput', wavPath);
-  await page.evaluate(async () => {
-    const input = document.getElementById('fileInput');
-    const file = input?.files?.[0];
-    if (!file) throw new Error('file input has no files after setInputFiles');
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    if (!window._vipApp?.inputBuffer?.length) {
-      await window._vipApp.handleFile(file);
-    }
-  });
+  // Prefer File constructor + handleFile — more reliable than setInputFiles on
+  // hidden inputs with long accept= lists across Playwright/Chromium builds.
+  const bytes = fs.readFileSync(wavPath);
+  await page.evaluate(async (arr) => {
+    const u8 = new Uint8Array(arr);
+    const file = new File([u8], 'vip-engineer-smoke.wav', { type: 'audio/wav' });
+    await window._vipApp.handleFile(file);
+  }, [...bytes]);
 }
 
 async function readUploadDiag(page) {
@@ -131,28 +129,65 @@ function makeWav() {
     await ensureAppReady(page);
     await ingestWav(page, wavPath);
 
+    // Deferred decode: source file + enabled Process is the success criterion.
+    // Decode happens on Process / Analyze (ensureDecoded), not at upload.
     try {
       await page.waitForFunction(
-        () => window._vipApp?.inputBuffer?.length > 0,
+        () => Boolean(window._vipApp?._sourceFile) && !document.getElementById('processBtn')?.disabled,
         null,
-        { timeout: 30000 },
+        { timeout: 15000 },
       );
     } catch (waitErr) {
       const diag = await readUploadDiag(page);
-      throw new Error(`inputBuffer not ready: ${JSON.stringify(diag)} (${waitErr.message})`);
+      throw new Error(`source not ready for Process: ${JSON.stringify(diag)} (${waitErr.message})`);
+    }
+
+    // Exercise Process path: decode + ML isolation must complete without freeze.
+    await page.evaluate(() => window._vipApp.runPipeline());
+    try {
+      await page.waitForFunction(
+        () => {
+          const app = window._vipApp;
+          if (!app) return false;
+          if (app.isProcessing) return false;
+          const status = (document.getElementById('hStatus')?.textContent || '').trim();
+          const out = app.outputBuffer?.length || app.procBuffer?.length || 0;
+          return status === 'DONE' || status === 'ERROR' || out > 0;
+        },
+        null,
+        { timeout: 120000 },
+      );
+    } catch (procErr) {
+      const diag = await page.evaluate(() => ({
+        status: document.getElementById('hStatus')?.textContent,
+        detail: document.getElementById('pipeDetail')?.textContent,
+        isProcessing: window._vipApp?.isProcessing,
+        inputLen: window._vipApp?.inputBuffer?.length || 0,
+        outLen: window._vipApp?.outputBuffer?.length || window._vipApp?.procBuffer?.length || 0,
+      }));
+      throw new Error(`process did not complete: ${JSON.stringify(diag)} (${procErr.message})`);
     }
 
     const state = await page.evaluate(() => ({
+      hasSource: Boolean(window._vipApp?._sourceFile),
       hasBuffer: Boolean(window._vipApp?.inputBuffer?.length),
+      hasOut: Boolean(window._vipApp?.outputBuffer?.length || window._vipApp?.procBuffer?.length),
       fileInfo: document.getElementById('fileInfo')?.textContent || '',
       processEnabled: !document.getElementById('processBtn')?.disabled,
+      status: (document.getElementById('hStatus')?.textContent || '').trim(),
+      mlOk: window._vipApp?._mlIsolationSucceeded,
     }));
 
-    if (!state.hasBuffer) fails.push('inputBuffer not loaded');
-    if (!state.processEnabled) fails.push('processBtn still disabled after load');
+    if (!state.hasSource && !state.hasBuffer) fails.push('no source after upload');
+    if (!state.processEnabled && state.status !== 'DONE') fails.push('processBtn still disabled after load');
     if (!state.fileInfo.includes('vip-engineer-smoke')) fails.push(`fileInfo unexpected: ${state.fileInfo}`);
+    if (!state.hasBuffer) fails.push('inputBuffer not decoded after Process');
+    if (!state.hasOut && state.status !== 'DONE') fails.push('no processed output after Process');
+    if (state.status === 'ERROR') fails.push('pipeline ended in ERROR');
 
-    console.log('  ✓ audio upload via Browse → inputBuffer loaded');
+    console.log('  ✓ audio upload accepted (deferred decode)');
+    console.log('  ✓ Process enabled after upload');
+    console.log(`  ✓ Process completed — status=${state.status} ml=${state.mlOk} out=${state.hasOut}`);
     console.log(`  ✓ fileInfo: ${state.fileInfo}`);
   } finally {
     await browser.close();

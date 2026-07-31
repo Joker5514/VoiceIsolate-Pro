@@ -330,7 +330,7 @@ describe('app.js — mobile button state in onAudioLoaded()', () => {
   });
 
   test('mobileProcessBtn state is null-guarded in _updateProcessButtonsState', () => {
-    expect(appJs).toContain('if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !hasBuf || busy');
+    expect(appJs).toContain('if (this.dom.mobileProcessBtn) this.dom.mobileProcessBtn.disabled = !hasSource || busy');
   });
 
   test('mobileReprocessBtn state is null-guarded in _updateProcessButtonsState', () => {
