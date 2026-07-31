@@ -30,6 +30,17 @@ describe('Engineer upload decode wiring', () => {
     expect(appJs).toContain('const buffer = await resampleToCanonical(decoded);');
   });
 
+  test('Process stays enabled for deferred _sourceFile (no decoded buffer yet)', () => {
+    // Regression: hero/status handlers re-ran _updateProcessButtonsState and
+    // disabled Process because hasBuf only checked inputBuffer/origBuffer.
+    expect(appJs).toMatch(
+      /_updateProcessButtonsState\(\)\s*\{[\s\S]*?_sourceFile/,
+    );
+    expect(appJs).toMatch(
+      /this\.inputBuffer \|\| this\.origBuffer \|\| this\._sourceFile/,
+    );
+  });
+
   test('app.js wires desktop native picker in bindEvents', () => {
     expect(appJs).toContain('pickAudioFile');
     expect(appJs).toContain('isDesktopShell');
