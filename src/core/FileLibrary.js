@@ -297,24 +297,40 @@ export async function getSessionState() {
 
 /**
  * Restore bootstrap: session + preferred active library file.
- * @returns {Promise<{ session: object|null, files: LibraryFileMeta[], active: { file: File, meta: LibraryFileMeta }|null, backend: string }>}
+ *
+ * By default does NOT hydrate giant blobs into RAM (that OOM-crashed browsers).
+ * Pass `{ hydrateActive: true }` only for small files or explicit user open.
+ *
+ * @param {{ hydrateActive?: boolean, maxHydrateBytes?: number }} [opts]
+ * @returns {Promise<{ session: object|null, files: LibraryFileMeta[], active: { file: File|Blob, meta: LibraryFileMeta }|null, activeMeta: LibraryFileMeta|null, backend: string, hydrated: boolean }>}
  */
-export async function restoreSessionBootstrap() {
+export async function restoreSessionBootstrap(opts = {}) {
+  const {
+    hydrateActive = false,
+    maxHydrateBytes = 64 * 1024 * 1024,
+  } = opts;
   const backend = await resolveBlobBackend().catch(() => 'idb');
   const session = await getSessionState();
   const files = await listLibraryFiles();
-  let active = null;
+  let activeMeta = null;
   const activeId = session?.activeFileId;
   if (activeId) {
-    active = await openSourceFile(activeId);
-    // If session pointed at temporary / missing, fall back to newest library file
-    if (!active && files[0]) {
-      active = await openSourceFile(files[0].id);
-    }
+    activeMeta = await getFileMeta(activeId);
+    if (!activeMeta && files[0]) activeMeta = files[0];
   } else if (files[0]) {
-    active = await openSourceFile(files[0].id);
+    activeMeta = files[0];
   }
-  return { session, files, active, backend };
+
+  let active = null;
+  let hydrated = false;
+  if (activeMeta && hydrateActive) {
+    const size = Number(activeMeta.size) || 0;
+    if (size > 0 && size <= maxHydrateBytes) {
+      active = await openSourceFile(activeMeta.id);
+      hydrated = Boolean(active?.file);
+    }
+  }
+  return { session, files, active, activeMeta, backend, hydrated };
 }
 
 export async function getStorageBackendName() {

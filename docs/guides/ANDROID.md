@@ -38,6 +38,12 @@ Pipeline:
 | Service Worker | **Disabled** on native / `vip-android.json` packages |
 | Isolation | `MainActivity` injects COOP/COEP + correct MIME for JS/WASM |
 | Debugging | WebView debugging enabled on sideload debug APKs (`chrome://inspect`) |
+| File library | Same OPFS/IndexedDB FileLibrary as web (`src/core/FileLibrary.js`) |
+| Boot restore | **Lazy** — catalog only until user opens/Analyzes (prevents WebView OOM) |
+| Durable stems | Size-capped (`memory-limits.js`); oversized packs are not written |
+| Project packs | `.vippack` import/export for handoff with desktop/web |
+
+Rebuild after web changes: `pnpm android:build:win` (or `pnpm android:build`) so Capacitor picks up `build/` + `src/`.
 | Origin | `https://voiceisolatepro.app` (Capacitor hostname) |
 
 ## Troubleshooting
