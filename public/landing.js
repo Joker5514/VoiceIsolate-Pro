@@ -854,9 +854,14 @@ async function ingestFrom(file) {
   // (preview + hidden capture element) stalls progress on large uploads.
   clearVideo();
   // Persist source into shared FileLibrary so Engineer Mode can restore after reload.
+  // Skip auto-library for very large files (OOM risk on IDB/WebView copy path).
   try {
-    const meta = await FileLibrary.importFile(file, { mode: 'library' });
-    window.__vipLandingLibraryId = meta.id;
+    if ((file.size || 0) <= 200 * 1024 * 1024) {
+      const meta = await FileLibrary.importFile(file, { mode: 'library' });
+      window.__vipLandingLibraryId = meta.id;
+    } else {
+      console.info('[VIP][landing] skipped library persist for large file (>200MB)');
+    }
   } catch (libErr) {
     console.warn('[VIP][landing] library persist failed:', libErr?.message || libErr);
   }

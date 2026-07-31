@@ -2140,7 +2140,7 @@ class VoiceIsolatePro {
 
     // Save buttons
     bind('saveOrigBtn', d.saveOrigBtn, 'click', async () => {
-      if (!(this.origBuffer || this.inputBuffer) && this._sourceFile) {
+      if (!(this.origBuffer || this.inputBuffer) && (this._sourceFile || this._libraryFileId)) {
         await this.ensureDecoded();
       }
       if (this.origBuffer || this.inputBuffer) {
@@ -2181,7 +2181,7 @@ class VoiceIsolatePro {
 
     // [WHISPER UPDATE] WhisperHunter AI auto-processing
     bind('btnWhisperHunter', document.getElementById('btn-whisper-hunter'), 'click', async () => {
-      if (!this.inputBuffer && !this.origBuffer && !this._sourceFile) {
+      if (!this.inputBuffer && !this.origBuffer && !this._sourceFile && !this._libraryFileId) {
         this.showNotification('Load an audio file first', 'warn');
         return;
       }
@@ -2671,9 +2671,30 @@ class VoiceIsolatePro {
   /**
    * Restore last library file after reload (source blob from OPFS/IDB).
    * Decode remains deferred until Analyze/Process/Play.
+   *
+   * Crash-safety: do not auto-hydrate multi-hundred-MB blobs into RAM on boot
+   * (that OOM-killed Chrome/Edge/WebView). Prefer catalog restore + lazy open.
    */
   async _restoreLibrarySession() {
-    const { active, backend } = await FileLibrary.restoreSessionBootstrap();
+    const { CRASH_GUARD_KEY, MAX_AUTO_RESTORE_BYTES } = await import('/src/core/storage/memory-limits.js');
+    // Crash guard: if the previous tab never cleared the boot flag, skip auto-hydrate once.
+    let skipHydrate = false;
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        if (sessionStorage.getItem(CRASH_GUARD_KEY) === '1') {
+          skipHydrate = true;
+          sessionStorage.removeItem(CRASH_GUARD_KEY);
+          structuredLog('warn', '[VIP] crash guard: skipped auto-hydrate after prior unclean exit');
+        } else {
+          sessionStorage.setItem(CRASH_GUARD_KEY, '1');
+        }
+      }
+    } catch { /* private mode */ }
+
+    const { active, activeMeta, backend, hydrated } = await FileLibrary.restoreSessionBootstrap({
+      hydrateActive: !skipHydrate,
+      maxHydrateBytes: MAX_AUTO_RESTORE_BYTES,
+    });
     const hint = document.getElementById('libraryBackendHint');
     if (hint) {
       hint.textContent = backend === 'opfs'
@@ -2681,13 +2702,69 @@ class VoiceIsolatePro {
         : 'Storage: IndexedDB (source files)';
     }
     await refreshLibraryList(this);
-    if (!active?.file) return;
-    this._libraryFileId = active.meta.id;
-    await this.handleFile(active.file, {
-      skipPersist: true,
-      libraryId: active.meta.id,
-      fromRestore: true,
-    });
+
+    const meta = active?.meta || activeMeta;
+    if (!meta?.id) {
+      this._clearCrashGuard(CRASH_GUARD_KEY);
+      return;
+    }
+
+    this._libraryFileId = meta.id;
+    await FileLibrary.setSessionState({ activeFileId: meta.id, updatedAt: Date.now() }).catch(() => {});
+
+    if (active?.file && hydrated) {
+      await this.handleFile(active.file, {
+        skipPersist: true,
+        libraryId: meta.id,
+        fromRestore: true,
+        skipMlWarmup: true,
+      });
+    } else {
+      // Soft restore — metadata only; blob loads on Analyze/Process/Play/open.
+      this._sourceName = meta.originalFilename || '';
+      this._sourceFile = null;
+      this._pendingLibraryHydrate = true;
+      this.setStatus('READY');
+      if (this.dom?.fileInfo) {
+        const mb = meta.size ? (meta.size / (1024 * 1024)).toFixed(1) : '?';
+        this.dom.fileInfo.textContent =
+          `${meta.originalFilename || 'Library file'} · ${mb} MB · in library (open or Analyze to load)`;
+      }
+      if (typeof this._updateProcessButtonsState === 'function') this._updateProcessButtonsState();
+      this.showNotification(
+        skipHydrate
+          ? 'Recovered after crash — open a library file when ready'
+          : `Library ready: ${meta.originalFilename || 'file'} — click it or Analyze to load`,
+        'info',
+      );
+    }
+    this._clearCrashGuard(CRASH_GUARD_KEY);
+  }
+
+  _clearCrashGuard(key = 'vip-crash-guard') {
+    try {
+      if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(key);
+    } catch { /* ignore */ }
+  }
+
+  /**
+   * Ensure _sourceFile is available for a library-backed session (lazy hydrate).
+   * @returns {Promise<File|Blob|null>}
+   */
+  async _ensureSourceFileFromLibrary() {
+    if (this._sourceFile) return this._sourceFile;
+    if (!this._libraryFileId) return null;
+    try {
+      const opened = await FileLibrary.openSourceFile(this._libraryFileId);
+      if (!opened?.file) return null;
+      this._sourceFile = opened.file;
+      this._sourceName = opened.meta?.originalFilename || this._sourceName || '';
+      this._pendingLibraryHydrate = false;
+      return this._sourceFile;
+    } catch (err) {
+      structuredLog('warn', '[VIP] library hydrate failed', { err: err?.message });
+      return null;
+    }
   }
 
   /**
@@ -2726,6 +2803,7 @@ class VoiceIsolatePro {
     const fileSeq = ++this._fileSeq;
     const skipPersist = Boolean(options.skipPersist);
     const fromRestore = Boolean(options.fromRestore);
+    const skipMlWarmup = Boolean(options.skipMlWarmup);
     // Immediately hide any in-flight decode indicator from the previous file.
     this._hideFileLoading?.();
     clearStemCache();
@@ -2867,7 +2945,9 @@ class VoiceIsolatePro {
     );
 
     // Idle ML warmup only (no decode) so first process is faster.
-    if (typeof this._warmupMLModels === 'function') {
+    // Skip on large restore / crash recovery to avoid compounding RAM pressure.
+    const tooLargeForWarmup = (file.size || 0) > 80 * 1024 * 1024;
+    if (!skipMlWarmup && !tooLargeForWarmup && typeof this._warmupMLModels === 'function') {
       const scheduleIdle = globalThis.requestIdleCallback
         ? (cb) => requestIdleCallback(cb, { timeout: 2500 })
         : (cb) => setTimeout(cb, 50);
@@ -2903,6 +2983,10 @@ class VoiceIsolatePro {
     if (this.origBuffer || this.inputBuffer) {
       this._decodeReady = true;
       return this.origBuffer || this.inputBuffer;
+    }
+    // Lazy library hydrate — blob was not loaded at boot to avoid OOM.
+    if (!this._sourceFile && this._libraryFileId) {
+      await this._ensureSourceFileFromLibrary();
     }
     const file = this._sourceFile;
     if (!file) {
@@ -3583,11 +3667,11 @@ class VoiceIsolatePro {
           this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, durable.sampleRate || buf.sampleRate);
           this.procBuffer = this.outputBuffer;
           this._stemFileSeq = fileSeq;
-          this._cleanStemChannels = clean.map((c) => new Float32Array(c));
-          this._noiseStemChannels = noise?.length
-            ? noise.map((c) => new Float32Array(c))
-            : null;
+          // Reuse channel views when possible — avoid 2× float copies (OOM risk).
+          this._cleanStemChannels = clean;
+          this._noiseStemChannels = noise?.length ? noise : null;
           this._stemSampleRate = durable.sampleRate || buf.sampleRate;
+          this._durableStemBacking = durable._backing || null;
           if (this._noiseStemChannels) {
             this.noiseBuffer = stemsToAudioBuffer(this.ctx, this._noiseStemChannels, this._stemSampleRate);
           }
@@ -3673,18 +3757,19 @@ class VoiceIsolatePro {
         }
         if (noise?.length && noise[0]?.length) {
           this.noiseBuffer = stemsToAudioBuffer(this.ctx, noise, result.sampleRate || buf.sampleRate);
-          this._cleanStemChannels = clean.map((c) => new Float32Array(c));
-          this._noiseStemChannels = noise.map((c) => new Float32Array(c));
+          // Keep references without cloning when arrays are already owned.
+          this._cleanStemChannels = clean;
+          this._noiseStemChannels = noise;
           this._stemSampleRate = result.sampleRate || buf.sampleRate;
         } else {
           this.noiseBuffer = null;
-          this._cleanStemChannels = clean.map((c) => new Float32Array(c));
+          this._cleanStemChannels = clean;
           this._noiseStemChannels = null;
           this._stemSampleRate = result.sampleRate || buf.sampleRate;
         }
       } catch (stemErr) {
         structuredLog('warn', '[VIP] noise stem retain failed', { err: stemErr?.message });
-        this._cleanStemChannels = clean.map((c) => new Float32Array(c));
+        this._cleanStemChannels = clean;
         this._noiseStemChannels = null;
       }
       // Keep origBuffer as the ML source of truth for subsequent reprocess/cache keys.
@@ -3704,15 +3789,21 @@ class VoiceIsolatePro {
             ? `an:${this._libraryFileId}:${Date.now()}`
             : null,
         }).then(() => refreshLibraryList(this)).catch(() => {});
-        // Persist mid-channel stems (pre-expand) for durable reload — smaller + matches ML.
+        // Persist mid-channel stems (pre-expand) off the critical path; size-capped.
         const durableClean = result.clean;
         const durableNoise = result.noise;
-        void saveStemsDurable(this._libraryFileId, DEFAULT_ML_CHAIN, {
-          clean: durableClean,
-          noise: durableNoise,
-          sampleRate: result.sampleRate || buf.sampleRate,
-        }).catch((err) => {
-          structuredLog('warn', '[VIP] durable stem save failed', { err: err?.message });
+        const sampleRate = result.sampleRate || buf.sampleRate;
+        const schedule = globalThis.requestIdleCallback
+          || ((cb) => setTimeout(cb, 250));
+        schedule(() => {
+          if (fileSeq !== this._fileSeq) return;
+          void saveStemsDurable(this._libraryFileId, DEFAULT_ML_CHAIN, {
+            clean: durableClean,
+            noise: durableNoise,
+            sampleRate,
+          }).catch((err) => {
+            structuredLog('warn', '[VIP] durable stem save failed', { err: err?.message });
+          });
         });
       }
       structuredLog('info', '[VIP] ML isolation done', {
@@ -4809,7 +4900,7 @@ class VoiceIsolatePro {
 
   async play() {
     await this.ensureCtx();
-    if (!(this.inputBuffer || this.origBuffer) && this._sourceFile) {
+    if (!(this.inputBuffer || this.origBuffer) && (this._sourceFile || this._libraryFileId)) {
       await this.ensureDecoded();
     }
     const buf = this.abMode === 'processed'
@@ -5451,11 +5542,10 @@ class VoiceIsolatePro {
   }
 
   _updateProcessButtonsState() {
-    // Deferred decode: a pending _sourceFile is enough to enable Process/Analyze.
-    // Decode happens inside ensureDecoded() on Process/Analyze — never block the CTA
-    // waiting for PCM buffers or the UI stays stuck with a disabled Process button.
+    // Deferred decode: pending _sourceFile OR library id (lazy hydrate) is enough.
+    // Decode happens inside ensureDecoded() on Process/Analyze — never block the CTA.
     const hasSource = Boolean(
-      this.inputBuffer || this.origBuffer || this._sourceFile,
+      this.inputBuffer || this.origBuffer || this._sourceFile || this._libraryFileId,
     );
     const hasOut = Boolean(this.outputBuffer || this.procBuffer);
     const busy = Boolean(this.isProcessing);

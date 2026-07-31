@@ -33,6 +33,28 @@ describe('DerivedCache codec', () => {
   test('decodeStemPack rejects garbage', () => {
     expect(Derived.decodeStemPack(new ArrayBuffer(4))).toBeNull();
   });
+
+  test('canPersistStems rejects oversized packs', () => {
+    const huge = new Float32Array(48000 * 200); // > 180s limit
+    expect(Derived.canPersistStems({
+      clean: [huge],
+      noise: [huge],
+      sampleRate: 48000,
+    })).toBe(false);
+  });
+
+  test('compactAnalysisForStorage drops bulk fields', () => {
+    const compact = Derived.compactAnalysisForStorage({
+      duration: 12,
+      speechSegments: [{ start: 0, end: 1 }],
+      frameFeatures: new Float32Array(10000),
+      recommendedPreset: 'Voice Clarity',
+    });
+    expect(compact.duration).toBe(12);
+    expect(compact.speechSegments).toHaveLength(1);
+    expect(compact.frameFeatures).toBeUndefined();
+    expect(compact.recommendedPreset).toBe('Voice Clarity');
+  });
 });
 
 describe('ProjectPack binary', () => {

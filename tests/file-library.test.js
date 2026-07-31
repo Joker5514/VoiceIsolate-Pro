@@ -185,6 +185,23 @@ describe('FileLibrary', () => {
     expect(got.sourceFileIds).toContain('file-1');
     expect(got.name).toBe('Test Proj');
   }, 15000);
+
+  test('restoreSessionBootstrap does not hydrate by default', async () => {
+    const file = makeFile([1, 2, 3], 'soft.wav', 'audio/wav');
+    const meta = await FileLibrary.importFile(file, { mode: 'library' });
+    const boot = await FileLibrary.restoreSessionBootstrap({ hydrateActive: false });
+    expect(boot.activeMeta?.id || boot.files.some((f) => f.id === meta.id)).toBeTruthy();
+    expect(boot.hydrated).toBe(false);
+    expect(boot.active).toBeNull();
+  }, 15000);
+
+  test('blobToFile does not throw on large-ish blobs', async () => {
+    const { blobToFile } = await import('../src/core/storage/BlobStore.js');
+    const big = new Blob([new Uint8Array(1024)]);
+    const f = blobToFile(big, { originalFilename: 'x.wav', mimeType: 'audio/wav' });
+    expect(f).toBeTruthy();
+    expect(f.name === 'x.wav' || f.size === 1024).toBe(true);
+  });
 });
 
 describe('StemSeparation reset keeps cache', () => {

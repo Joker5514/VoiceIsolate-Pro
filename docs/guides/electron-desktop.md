@@ -29,6 +29,19 @@ Renderer API surface: `window.vipDesktop` (see `electron/preload.cjs`).
 | `vip:update-install` | invoke | Quit and install downloaded update |
 | `vip:update-status` | event | Auto-update progress (main → renderer) |
 
+## Persistence (synced with browser / Android)
+
+Desktop uses the same renderer FileLibrary stack as the web app:
+
+| Feature | Behavior |
+|---------|----------|
+| Source library | OPFS when available; IndexedDB blob fallback |
+| Model cache | Filesystem-first via ipDesktop + IDB v3 key-value |
+| Boot restore | Lazy hydrate — no giant File copy on startup |
+| Project packs | Export/import .vippack for Android/web handoff |
+
+Rebuild after web changes: pnpm build:electron:dir or pnpm build:electron.
+
 ## Development
 
 ```bash
