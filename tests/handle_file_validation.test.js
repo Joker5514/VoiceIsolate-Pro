@@ -140,9 +140,13 @@ describe('handleFile() — no upload size limit', () => {
 
     expect(mockVip.dom.fileInfo.textContent).not.toContain('File too large');
     expect(mockVip.dom.fileInfo.textContent).not.toContain('hard cap');
+    expect(mockVip.showNotification).not.toHaveBeenCalledWith(
+      expect.stringContaining('Large file detected'),
+      'warn',
+    );
   });
 
-  test('accepts a very large file (2 GB) without a size error', async () => {
+  test('warns for files larger than 500 MB without rejecting them', async () => {
     const mockVip = makeMockVip();
     const mockFile = {
       name: 'huge.wav', size: 2 * 1024 * 1024 * 1024, type: 'audio/wav',
@@ -152,6 +156,12 @@ describe('handleFile() — no upload size limit', () => {
     await handleFile.call(mockVip, mockFile);
 
     expect(mockVip.dom.fileInfo.textContent).not.toContain('File too large');
+    expect(mockVip.dom.fileInfo.textContent).toContain('large file: decode may take longer');
+    expect(mockVip.setStatus).toHaveBeenCalledWith('READY');
+    expect(mockVip.showNotification).toHaveBeenCalledWith(
+      expect.stringContaining('Large file detected (>500 MB)'),
+      'warn',
+    );
   });
 
   test('handleFile source contains no hard-coded 200 MB cap', () => {

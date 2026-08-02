@@ -1,4 +1,4 @@
-/* global WhisperHunterAI, PipelineOrchestrator */
+/* global WhisperHunterAI, PipelineOrchestrator, ensureWhisperHunterInstance */
 /**
  * dsp-bootstrap.js
  * ─────────────────────────────────────────────────────────────────────────────
@@ -21,6 +21,18 @@
 
 (function _vipDspBootstrap() {
   'use strict';
+
+  function ensureLegacyDecodePatch() {
+    if (typeof document === 'undefined') return;
+    if (window.__vipM4ADecodeFixLoaded) return;
+    if (document.querySelector('script[data-vip-m4a-fix="1"]')) return;
+    const script = document.createElement('script');
+    script.src = './m4a-decode-fix.js';
+    script.async = true;
+    script.dataset.vipM4aFix = '1';
+    const parent = document.head || document.body || document.documentElement;
+    parent?.appendChild(script);
+  }
 
   /* ── 1. Standalone Hann-windowed STFT / iSTFT on globalThis.DSP ────────── */
 
@@ -227,6 +239,7 @@
   /* ── 3. Auto-run after DOM is ready ────────────────────────────────────── */
 
   function _run() {
+    ensureLegacyDecodePatch();
     if (typeof AudioContext !== 'undefined') {
       window._vipInitAudioFull().catch(e =>
         console.error('[DSP-Bootstrap] initAudioFull error:', e)

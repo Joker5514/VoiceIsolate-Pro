@@ -63,6 +63,11 @@
     }
   }
 
+  window.decodeM4AWithFallback = async function decodeM4AWithFallback(ctx, arrayBuffer) {
+    return safeDecodeAudioData(ctx, arrayBuffer.slice(0));
+  };
+  window.__vipM4ADecodeFixLoaded = true;
+
   /**
    * Detect whether a file should be treated as a container that may need
    * the <video>-element decode fallback.  Covers .m4a / audio/mp4 in

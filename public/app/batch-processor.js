@@ -34,6 +34,40 @@ const BatchProcessor = (() => {
   let _maxConcurrent = 3;
   let _jobCounter = 0;
 
+  function _now() {
+    return (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now()
+      : Date.now();
+  }
+
+  function _createProfiler(job) {
+    const enabled = typeof window !== 'undefined' && (window.VIP_DEBUG || window.__VIP_DEV_PROFILE__);
+    if (!enabled) return null;
+    const marks = [];
+    return {
+      mark(label, startMs) {
+        marks.push({ label, ms: _now() - startMs });
+      },
+      flush() {
+        const top = marks
+          .slice()
+          .sort((a, b) => b.ms - a.ms)
+          .slice(0, 3)
+          .map((entry) => ({
+            stage: entry.label,
+            ms: Math.round(entry.ms * 100) / 100,
+          }));
+        if (top.length) {
+          console.info('[BatchProcessor] Slowest stages', {
+            jobId: job.id,
+            file: job.name,
+            topStages: top,
+          });
+        }
+      },
+    };
+  }
+
   // ─── Event System ─────────────────────────────────────────────────────────────
   function _emit(event, data) {
     _listeners.filter(l => l.event === event || l.event === '*')
@@ -86,10 +120,13 @@ const BatchProcessor = (() => {
     job.state = JobState.PROCESSING;
     job.startedAt = Date.now();
     _emit('job:started', { job });
+    const profiler = _createProfiler(job);
 
     try {
+      let t0 = _now();
       // Read file as ArrayBuffer
       const arrayBuffer = await _readFile(job.file, controller.signal);
+      profiler?.mark('readFile', t0);
       if (controller.signal.aborted) throw new Error('Cancelled');
 
       job.progress = 10;
@@ -97,9 +134,11 @@ const BatchProcessor = (() => {
 
       // Decode audio — use AudioContext (not OfflineAudioContext) so the native
       // device sample rate is preserved and files are not silently resampled to 44100 Hz.
+      t0 = _now();
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
       audioCtx.close().catch(() => {});
+      profiler?.mark('decodeAudio', t0);
       const audioData = audioBuffer.getChannelData(0);
       const sampleRate = audioBuffer.sampleRate;
 
@@ -114,6 +153,7 @@ const BatchProcessor = (() => {
       // If the main pipeline is available, use it
       if (window.VoiceIsolatePipeline && job.options.params) {
         try {
+          t0 = _now();
           processedData = await window.VoiceIsolatePipeline.process(audioData, sampleRate, {
             ...job.options.params,
             onProgress: (p) => {
@@ -121,6 +161,7 @@ const BatchProcessor = (() => {
               _emit('job:progress', { job, progress: job.progress });
             },
           });
+          profiler?.mark('pipelineProcess', t0);
         } catch {
           // Fall through to basic processing
         }
@@ -140,7 +181,9 @@ const BatchProcessor = (() => {
       }
 
       // Encode to output format
+      t0 = _now();
       const outputBlob = await _encodeAudio(processedData, sampleRate, job.options.outputFormat);
+      profiler?.mark('encodeAudio', t0);
 
       job.progress = 100;
       job.state = JobState.DONE;
@@ -148,6 +191,7 @@ const BatchProcessor = (() => {
       _results.set(job.id, { blob: outputBlob, name: _getOutputName(job) });
 
       _active.delete(job.id);
+      profiler?.flush();
       _emit('job:done', { job, blob: outputBlob });
 
     } catch (err) {
