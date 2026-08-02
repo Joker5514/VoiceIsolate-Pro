@@ -56,7 +56,7 @@ import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { isDesktopShell, pickAudioFile, saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
-import { inferMediaKind, isVideoSource } from '/src/core/media-types.js';
+import { FILE_INPUT_ACCEPT, inferMediaKind, isVideoSource } from '/src/core/media-types.js';
 import * as FileLibrary from '/src/core/FileLibrary.js';
 import * as ProjectStore from '/src/core/ProjectStore.js';
 import {
@@ -109,6 +109,43 @@ function resolvePresetNameLocal(name) {
   }
   if (typeof PRESETS !== 'undefined' && PRESETS[name]) return name;
   return redirects[name] || name || 'Voice Clarity';
+}
+
+const LARGE_FILE_WARNING_BYTES = 500 * 1024 * 1024;
+const EXTENSION_MIME_TYPES = Object.freeze({
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  wave: 'audio/wav',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+  ogg: 'audio/ogg',
+  oga: 'audio/ogg',
+  flac: 'audio/flac',
+  opus: 'audio/opus',
+  webm: 'audio/webm',
+});
+
+function cloneArrayBuffer(arrayBuffer) {
+  if (!(arrayBuffer instanceof ArrayBuffer)) return arrayBuffer;
+  const out = new Uint8Array(arrayBuffer.byteLength);
+  out.set(new Uint8Array(arrayBuffer));
+  return out.buffer;
+}
+
+function detectUploadMimeType(file) {
+  const explicit = (file?.type || '').toLowerCase();
+  if (explicit) return explicit;
+  const name = (file?.name || '').toLowerCase();
+  const ext = name.includes('.') ? name.split('.').pop() : '';
+  if (EXTENSION_MIME_TYPES[ext]) return EXTENSION_MIME_TYPES[ext];
+  const kind = inferMediaKind(file);
+  if (kind === 'video') return 'video/mp4';
+  if (kind === 'audio') return 'audio/unknown';
+  return '';
+}
+
+function isLikelyAacContainerMime(mimeType) {
+  return /(?:audio\/mp4|audio\/x-m4a|audio\/m4a|audio\/aac|audio\/x-aac|aac|m4a)/i.test(mimeType || '');
 }
 
 /** Hero landing + branded loader — local-only cinematic shell */
@@ -2047,6 +2084,7 @@ class VoiceIsolatePro {
   // ── Event binding ────────────────────────────────────────────────────────
   bindEvents() {
     const d = this.dom;
+    if (d.fileInput?.setAttribute) d.fileInput.setAttribute('accept', FILE_INPUT_ACCEPT);
 
     // Helper: safe addEventListener
     const bind = (name, el, event, fn) => {
@@ -2660,22 +2698,40 @@ class VoiceIsolatePro {
   async _readFileArrayBuffer(file) {
     if (typeof file.arrayBuffer === 'function') {
       const ab = await file.arrayBuffer();
-      return ab.slice(0);
+      return cloneArrayBuffer(ab);
     }
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.slice(0));
+      reader.onload = () => resolve(cloneArrayBuffer(reader.result));
       reader.onerror = () => reject(new Error('Could not read file from disk.'));
       reader.readAsArrayBuffer(file);
     });
   }
 
-  async _decodeFileBuffer(ctx, arrayBuffer) {
-    if (typeof window.safeDecodeAudioData === 'function') {
-      return window.safeDecodeAudioData(ctx, arrayBuffer);
+  async _decodeFileBuffer(ctx, arrayBuffer, file = null) {
+    if (!ctx || typeof ctx.decodeAudioData !== 'function') {
+      throw new Error('Audio decode unavailable on this device.');
     }
-    if (ctx.state === 'suspended') await ctx.resume();
-    return ctx.decodeAudioData(arrayBuffer.slice(0));
+    if (ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch { /* best-effort */ }
+    }
+    const mimeType = detectUploadMimeType(file);
+    try {
+      if (typeof globalThis.safeDecodeAudioData === 'function') {
+        return await globalThis.safeDecodeAudioData(ctx, cloneArrayBuffer(arrayBuffer));
+      }
+      return await ctx.decodeAudioData(cloneArrayBuffer(arrayBuffer));
+    } catch (primaryErr) {
+      let decodeError = primaryErr;
+      if (isLikelyAacContainerMime(mimeType) && typeof globalThis.decodeM4AWithFallback === 'function') {
+        try {
+          return await globalThis.decodeM4AWithFallback(ctx, cloneArrayBuffer(arrayBuffer), file, primaryErr);
+        } catch (fallbackErr) {
+          decodeError = fallbackErr;
+        }
+      }
+      throw new Error(`Cannot decode audio: ${file?.name || 'file'} (${mimeType || 'unknown'}). ${decodeError?.message || decodeError}`);
+    }
   }
 
   /** Prefetch + compile ONNX sessions off the hot path (deduped). */
@@ -2982,6 +3038,15 @@ class VoiceIsolatePro {
       this.setStatus('ERROR');
       return;
     }
+    const isLargeUpload = (file.size || 0) > LARGE_FILE_WARNING_BYTES;
+    if (isLargeUpload) {
+      structuredLog('warn', '[VIP] Large upload selected — decode may take longer', {
+        name: file.name || '',
+        sizeBytes: file.size || 0,
+        mime: detectUploadMimeType(file),
+      });
+      this.showNotification?.('Large file detected (>500 MB) — decode may take longer on this device', 'warn');
+    }
     if (fileSeq !== this._fileSeq) return;
 
     // Detect video by MIME / extension. Preview uses the raw File blob URL —
@@ -3059,8 +3124,9 @@ class VoiceIsolatePro {
     const sizeMb = file.size ? (file.size / (1024 * 1024)).toFixed(1) : '?';
     const kindLabel = isVideoFile ? 'Video' : 'Audio';
     const restoreTag = fromRestore ? ' · restored' : (this._libraryFileId ? ' · in library' : '');
+    const sizeHint = isLargeUpload ? ' · large file: decode may take longer' : '';
     if (this.dom?.fileInfo) {
-      this.dom.fileInfo.textContent = `${file.name || 'File'} · ${kindLabel} · ${sizeMb} MB · ready (decode on Analyze/Process)${restoreTag}`;
+      this.dom.fileInfo.textContent = `${file.name || 'File'} · ${kindLabel} · ${sizeMb} MB · ready (decode on Analyze/Process)${restoreTag}${sizeHint}`;
     }
     this.setStatus('READY');
     if (this.dom.saveOrigBtn) this.dom.saveOrigBtn.disabled = true; // needs decode

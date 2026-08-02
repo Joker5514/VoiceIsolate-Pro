@@ -22,6 +22,11 @@ describe('Engineer upload decode wiring', () => {
     expect(appJs).toContain("import { resampleToCanonical } from '/src/pipeline/FileIngestion.js'");
   });
 
+  test('app.js refreshes the upload input accept list from shared media-types metadata', () => {
+    expect(appJs).toContain('FILE_INPUT_ACCEPT');
+    expect(appJs).toContain("d.fileInput.setAttribute('accept', FILE_INPUT_ACCEPT)");
+  });
+
   test('handleFile accepts uploads without decoding and ensureDecoded owns shared decode path', () => {
     expect(appJs).toContain('ready (decode on Analyze/Process)');
     expect(appJs).toMatch(/async handleFile\(/);

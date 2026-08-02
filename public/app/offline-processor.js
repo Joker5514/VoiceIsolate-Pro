@@ -19,13 +19,49 @@
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-const FFT_SIZE       = 2048;
-const HOP_SIZE       = FFT_SIZE / 4;       // 75% overlap
-const HALF_BINS      = FFT_SIZE / 2 + 1;  // 1025
+const DEFAULT_FFT_SIZE = 2048;
+let FFT_SIZE         = DEFAULT_FFT_SIZE;
+let HOP_SIZE         = FFT_SIZE / 4;       // 75% overlap
+let HALF_BINS        = FFT_SIZE / 2 + 1;   // 1025
 const STAGES         = 32;
 
 // Blackman-Harris window coefficients
 const A0 = 0.35875, A1 = 0.48829, A2 = 0.14128, A3 = 0.01168;
+
+function getFFTSize(mode) {
+  const sizes = { live: 1024, creator: 2048, forensic: 4096 };
+  return sizes[mode] || sizes.creator;
+}
+
+function configureProcessingResolution(params = {}) {
+  const mode = String(
+    params.qualityMode || params.mode || params.workflowMode || params.renderMode || 'creator'
+  ).toLowerCase();
+  FFT_SIZE = getFFTSize(mode);
+  HOP_SIZE = FFT_SIZE / 4;
+  HALF_BINS = FFT_SIZE / 2 + 1;
+  return { fftSize: FFT_SIZE, hopSize: HOP_SIZE, halfBins: HALF_BINS };
+}
+
+async function renderWithProgress(renderPromise, startPercent, endPercent, progressCallback) {
+  const emit = typeof progressCallback === 'function' ? progressCallback : () => {};
+  const start = Math.max(0, Number(startPercent) || 0);
+  const end = Math.max(start, Number(endPercent) || start);
+  const step = Math.max(1, Math.round((end - start) / 3));
+  let current = start;
+  emit(start);
+  const timer = setInterval(() => {
+    current = Math.min(end - 1, current + step);
+    emit(current);
+  }, 250);
+  try {
+    const rendered = await renderPromise;
+    emit(end);
+    return rendered;
+  } finally {
+    clearInterval(timer);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Minimal Cooley-Tukey FFT (inlined — AudioWorklet scope cannot be imported)
@@ -318,6 +354,7 @@ function runBsrnnComplexViaWorker(mlWorker, packed, halfBins, timeFrames) {
  */
 export async function processFile(arrayBuffer, params = {}, progressCallback = () => {}, mlWorker = null) {
   const p = { ...params };
+  configureProcessingResolution(p);
   const stageStep = 100 / STAGES;
 
   // ── S01 Input decode ───────────────────────────────────────────────────
@@ -402,7 +439,12 @@ export async function processFile(arrayBuffer, params = {}, progressCallback = (
   src.start(0);
   progressCallback(stageStep * 9);
 
-  const preRendered = await preCtx.startRendering();
+  const preRendered = await renderWithProgress(
+    preCtx.startRendering(),
+    stageStep * 5,
+    stageStep * 9,
+    progressCallback,
+  );
 
   // ── S10 Forward STFT — THE single forward FFT pass ────────────────────
   progressCallback(stageStep * 10);
@@ -526,7 +568,12 @@ export async function processFile(arrayBuffer, params = {}, progressCallback = (
   postSrc.start(0);
   progressCallback(stageStep * 25);
 
-  const postRendered = await postCtx.startRendering();
+  const postRendered = await renderWithProgress(
+    postCtx.startRendering(),
+    stageStep * 21,
+    stageStep * 25,
+    progressCallback,
+  );
 
   // ── S26–S28 Dry/wet mix + cleanup ─────────────────────────────────────
   progressCallback(stageStep * 26);

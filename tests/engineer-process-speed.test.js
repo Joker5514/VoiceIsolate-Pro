@@ -9,6 +9,8 @@ const path = require('path');
 const appJs = fs.readFileSync(path.join(__dirname, '../public/app/app.js'), 'utf8');
 const manifest = fs.readFileSync(path.join(__dirname, '../src/core/ModelManifest.js'), 'utf8');
 const mlWorker = fs.readFileSync(path.join(__dirname, '../src/workers/MLWorker.js'), 'utf8');
+const offlineProcessor = fs.readFileSync(path.join(__dirname, '../public/app/offline-processor.js'), 'utf8');
+const batchProcessor = fs.readFileSync(path.join(__dirname, '../public/app/batch-processor.js'), 'utf8');
 
 describe('Engineer processing speed path', () => {
   test('ML isolation uses mid-channel plan for stereo (single inference pass)', () => {
@@ -86,5 +88,23 @@ describe('Engineer processing speed path', () => {
 
   test('spectral stage uses lighter FFT on mobile', () => {
     expect(appJs).toMatch(/mobile \? 1024 : 2048/);
+  });
+
+  test('offline processor adapts FFT size by quality mode and keeps 75% overlap', () => {
+    expect(offlineProcessor).toContain('function getFFTSize(mode)');
+    expect(offlineProcessor).toContain('forensic: 4096');
+    expect(offlineProcessor).toContain('HOP_SIZE = FFT_SIZE / 4');
+  });
+
+  test('offline processor emits progress while long OfflineAudioContext renders are running', () => {
+    expect(offlineProcessor).toContain('async function renderWithProgress');
+    expect(offlineProcessor).toContain('setInterval(() => {');
+    expect(offlineProcessor).toContain('emit(end)');
+  });
+
+  test('batch processor profiles the top slow stages in debug mode', () => {
+    expect(batchProcessor).toContain('function _createProfiler(job)');
+    expect(batchProcessor).toContain("[BatchProcessor] Slowest stages");
+    expect(batchProcessor).toContain("slice(0, 3)");
   });
 });

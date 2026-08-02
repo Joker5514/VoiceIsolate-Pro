@@ -16,10 +16,24 @@ const fijs = fs.readFileSync(path.join(ROOT, 'src/pipeline/FileIngestion.js'), '
 const mdjs = fs.readFileSync(path.join(ROOT, 'src/pipeline/media-decode.js'), 'utf8');
 const mtjs = fs.readFileSync(path.join(ROOT, 'src/core/media-types.js'), 'utf8');
 const ljs = fs.readFileSync(path.join(ROOT, 'public/landing.js'), 'utf8');
+const m4ajs = fs.readFileSync(path.join(ROOT, 'public/app/m4a-decode-fix.js'), 'utf8');
+const bootstrapJs = fs.readFileSync(path.join(ROOT, 'public/app/dsp-bootstrap.js'), 'utf8');
 
 describe('M4A decode fallback — media-decode.js', () => {
   test('decodeBlobToAudioBuffer() is exported', () => {
     expect(mdjs).toContain('export async function decodeBlobToAudioBuffer');
+  });
+
+  describe('M4A decode fallback — legacy engineer patch wiring', () => {
+    test('m4a-decode-fix exposes a reusable fallback helper on window', () => {
+      expect(m4ajs).toContain('window.decodeM4AWithFallback');
+      expect(m4ajs).toContain('window.__vipM4ADecodeFixLoaded = true');
+    });
+
+    test('dsp-bootstrap injects m4a-decode-fix.js without changing index.html', () => {
+      expect(bootstrapJs).toContain("script.src = './m4a-decode-fix.js'");
+      expect(bootstrapJs).toContain('window.__vipM4ADecodeFixLoaded');
+    });
   });
 
   test('fallback uses live AudioContext + ScriptProcessorNode capture', () => {
