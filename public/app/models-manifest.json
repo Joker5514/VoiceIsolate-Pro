@@ -6,6 +6,9 @@
       "filename": "demucs_v4_quantized.onnx",
       "sizeBytes": 88080384,
       "eager": false,
+      "optional": true,
+      "shipped": false,
+      "_note": "Optional — not committed by default. Engineer Process uses BSRNN. Place ONNX at /app/models/demucs_v4_quantized.onnx to enable.",
       "sources": [
         {
           "provider": "same-origin",

@@ -16,7 +16,7 @@ export const MAX_CHANNELS = 2;
 /** Render quantum of the Web Audio API (fixed by spec). Alias: QUANTUM in ring-buffer-constants. */
 export const RENDER_QUANTUM = 128;
 
-/** STFT frame size used by frame-based models (e.g. DeepFilterNet). */
+/** STFT frame size used by frame-based models / SpectralCleanup (75% hop). */
 export const FRAME_SIZE = 2048;
 
 /** Hop size between successive frames (75% overlap). Must be integer multiple of RENDER_QUANTUM. */
@@ -29,6 +29,16 @@ export {
   QUANTA_PER_HOP,
   validateRingBufferConstants,
 } from './ring-buffer-constants.js';
+
+/** Shared STFT geometry + periodic Hann (see stft-math.js — audit F-01/F-06). */
+export {
+  STFT_PRESETS,
+  periodicHann,
+  hannWindow,
+  frameCount as stftFrameCount,
+  engineerStftGeometry,
+  checkColaFlat,
+} from './stft-math.js';
 
 /** Segment length, in samples, for waveform-domain models (MDX-Net). 8 s. */
 export const SEGMENT_SAMPLES = SAMPLE_RATE * 8;

@@ -20,10 +20,12 @@
 
 import { SAMPLE_RATE } from './audio-config.js';
 import { FFT_SIZE_CREATOR } from './ring-buffer-constants.js';
+import { periodicHann, frameCount as stftFrameCount, STFT_PRESETS } from './stft-math.js';
+import { STFT_OWNERS } from './stft-budget.js';
 
 /** Default Creator-mode STFT (matches spectral-mask models: 4096 / 1024). */
-export const USM_FFT_SIZE = FFT_SIZE_CREATOR;
-export const USM_HOP_SIZE = 1024;
+export const USM_FFT_SIZE = STFT_PRESETS.usm.fftSize || FFT_SIZE_CREATOR;
+export const USM_HOP_SIZE = STFT_PRESETS.usm.hopSize;
 export const USM_MAX_SOURCES = 12;
 export const USM_DEFAULT_SOURCES = 6;
 
@@ -88,9 +90,8 @@ function fftInPlace(re, im, inverse) {
 }
 
 function hann(n) {
-  const w = new Float32Array(n);
-  for (let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (n - 1)));
-  return w;
+  // PERIODIC Hann via shared stft-math (was symmetric N−1 — COLA drift F-04).
+  return periodicHann(n);
 }
 
 /**
@@ -98,11 +99,16 @@ function hann(n) {
  * @returns {{ re: Float32Array, im: Float32Array, mag: Float32Array, frames: number, bins: number, fftSize: number, hopSize: number, win: Float32Array }}
  */
 export function computeStft(samples, fftSize = USM_FFT_SIZE, hopSize = USM_HOP_SIZE) {
+  try {
+    const budget = (typeof globalThis !== 'undefined') ? globalThis.__vipStftBudget : null;
+    budget?.record?.(STFT_OWNERS.USM, `N=${fftSize} hop=${hopSize}`);
+  } catch { /* best-effort */ }
   const N = fftSize;
   const hop = hopSize;
   const bins = (N >> 1) + 1;
   const win = hann(N);
-  const frames = Math.max(1, Math.ceil(Math.max(0, samples.length - N) / hop) + 1);
+  let frames = stftFrameCount(samples.length, N, hop);
+  if (frames === 0 && samples.length > 0) frames = 1;
   const re = new Float32Array(frames * bins);
   const im = new Float32Array(frames * bins);
   const mag = new Float32Array(frames * bins);
@@ -428,7 +434,29 @@ export function nmfSoftMasks(mag, frames, bins, K, iterations = 40, seed = 42) {
     centroids[k] = e > eps ? c / e : bins / 2;
   }
 
-  return { masks, centroids, energies, W, H };
+  // Residual partner so soft masks form a partition (same idea as query path).
+  const residual = new Float32Array(frames * bins);
+  for (let i = 0; i < frames * bins; i++) {
+    let used = 0;
+    for (let k = 0; k < K; k++) used += masks[k][i];
+    residual[i] = Math.max(0, 1 - Math.min(1, used));
+  }
+  masks.push(residual);
+  const residualEnergy = (() => {
+    let e = 0;
+    for (let i = 0; i < residual.length; i++) e += residual[i] * mag[i];
+    return e;
+  })();
+  // Extend centroid/energy arrays conceptually via parallel arrays on return.
+  return {
+    masks,
+    centroids,
+    energies,
+    residualIndex: K,
+    residualEnergy,
+    W,
+    H,
+  };
 }
 
 function labelFromCentroid(centroidBin, bins, sampleRate, fftSize, rankByEnergy) {
@@ -560,15 +588,25 @@ export function separateUniversal(samples, sampleRate = SAMPLE_RATE, config = {}
     method = 'query-prior';
   } else {
     const nmf = nmfSoftMasks(mag, frames, bins, Kreq, iterations, config.seed ?? 42);
-    // Sort by energy descending for stable UI order.
+    // Sort NMF components by energy; keep residual last with a stable label (F residual).
     // NOTE: do not use Float32Array.map for object tuples — it returns a
     // Float32Array and coerces objects to NaN.
-    const order = Array.from(nmf.energies, (e, i) => ({ e: Number(e) || 0, i }))
+    const residualIndex = nmf.residualIndex;
+    const componentIdx = [];
+    for (let i = 0; i < nmf.masks.length; i++) {
+      if (i !== residualIndex) componentIdx.push(i);
+    }
+    const order = componentIdx
+      .map((i) => ({ e: Number(nmf.energies[i]) || 0, i }))
       .sort((a, b) => b.e - a.e)
       .map((x) => x.i);
     masks = order.map((i) => nmf.masks[i]);
     labels = order.map((i, rank) =>
       labelFromCentroid(nmf.centroids[i], bins, sr, fftSize, rank));
+    if (residualIndex != null && nmf.masks[residualIndex]) {
+      masks.push(nmf.masks[residualIndex]);
+      labels.push('residual / other');
+    }
     method = 'classical-nmf';
   }
 

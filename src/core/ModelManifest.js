@@ -100,7 +100,11 @@ export const MODEL_MANIFEST = Object.freeze({
     url: '/app/models/demucs_v4_quantized.onnx',
     sizeBytes: 148932181,
     quantization: 'int8',
-    delivery: 'vercel_blob',
+    // Not shipped in the default git tree (~84–149 MB). Drop the ONNX under
+    // public/app/models/ to enable. Engineer default chain uses BSRNN only.
+    delivery: 'optional',
+    optional: true,
+    shipped: false,
     sha256: '19be0f2c8e617e5ee2da0c2861f2f96e1a7f656ebf4b696b485e16f64b3bdac2',
     strategy: 'waveform',
     sampleRate: 44100,

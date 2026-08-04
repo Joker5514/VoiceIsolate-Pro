@@ -22,18 +22,16 @@
 'use strict';
 
 import { SAMPLE_RATE, FRAME_SIZE, HOP_SIZE } from './audio-config.js';
+import { periodicHann, frameCount as stftFrameCount } from './stft-math.js';
+import { STFT_OWNERS } from './stft-budget.js';
 
 // ─── FFT primitives (radix-2, power-of-two) ──────────────────────────────────
 // Self-contained copy of the proven transform: src/core/ must not depend on the
 // classic MLWorker (which can't export ESM), so the math lives here too.
+// Windowing is shared via stft-math (periodic Hann — AUDIT-FIX #12/#15 / F-04).
 
-const _hannCache = Object.create(null);
 function hann(n) {
-  if (_hannCache[n]) return _hannCache[n];
-  const w = new Float32Array(n);
-  for (let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (n - 1)));
-  _hannCache[n] = w;
-  return w;
+  return periodicHann(n);
 }
 
 const _fftCache = Object.create(null);
@@ -90,8 +88,13 @@ function fftInPlace(re, im, inverse) {
 
 // ─── STFT scaffolding ────────────────────────────────────────────────────────
 
+/** Canonical frame count (stft-math). Pad short clips to one frame at call sites. */
 function frameCount(length, N, hop) {
-  return Math.max(1, Math.ceil(Math.max(0, length - N) / hop) + 1);
+  const n = stftFrameCount(length, N, hop);
+  // Preserve prior “at least one partial frame” behaviour for edge-padded short files
+  // when length > 0 but < N: treat as a single zero-padded frame.
+  if (n === 0 && length > 0) return 1;
+  return n;
 }
 
 /**
@@ -99,6 +102,13 @@ function frameCount(length, N, hop) {
  * with the Hann-windowed half-spectrum. Reconstruction is the caller's job
  * (used by the noise-floor pre-pass, which needs magnitudes only).
  */
+function recordCleanupBudget(detail) {
+  try {
+    const budget = (typeof globalThis !== 'undefined') ? globalThis.__vipStftBudget : null;
+    budget?.record?.(STFT_OWNERS.CLEANUP, detail);
+  } catch { /* best-effort */ }
+}
+
 function forwardSTFT(samples, N, hop, visit) {
   const win = hann(N);
   const bins = N / 2 + 1;
@@ -250,6 +260,7 @@ export function reduceNoise(samples, opts = {}) {
   const input = samples instanceof Float32Array ? samples : new Float32Array(samples || []);
   const amount = clamp01(opts.amount ?? 0);
   if (amount <= 0 || input.length === 0) return new Float32Array(input);
+  recordCleanupBudget('reduceNoise');
 
   const N = opts.frameSize || FRAME_SIZE;
   const hop = opts.hopSize || HOP_SIZE;
@@ -299,6 +310,7 @@ export function dereverb(samples, opts = {}) {
   const input = samples instanceof Float32Array ? samples : new Float32Array(samples || []);
   const amount = clamp01(opts.amount ?? 0);
   if (amount <= 0 || input.length === 0) return new Float32Array(input);
+  recordCleanupBudget('dereverb');
 
   const N = opts.frameSize || FRAME_SIZE;
   const hop = opts.hopSize || HOP_SIZE;
@@ -371,8 +383,10 @@ export function cleanupSpectral(samples, opts = {}) {
   if (input.length === 0) return new Float32Array(0);
   if (nrAmt <= 0 && drAmt <= 0) return new Float32Array(input);
   // Single-op fast paths reuse the specialized kernels (identical quality).
+  // Budget is recorded inside reduceNoise/dereverb or once below for the fused path.
   if (drAmt <= 0) return reduceNoise(input, { amount: nrAmt, sampleRate: opts.sampleRate, frameSize: opts.frameSize, hopSize: opts.hopSize });
   if (nrAmt <= 0) return dereverb(input, { amount: drAmt, rt60: opts.rt60, sampleRate: opts.sampleRate, frameSize: opts.frameSize, hopSize: opts.hopSize });
+  recordCleanupBudget('cleanupSpectral-fused');
 
   const N = opts.frameSize || FRAME_SIZE;
   const hop = opts.hopSize || HOP_SIZE;

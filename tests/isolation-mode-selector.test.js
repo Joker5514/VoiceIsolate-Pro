@@ -49,6 +49,7 @@ describe('IsolationModeSelector', () => {
       expect(ISOLATION_MODES).toHaveProperty('standard');
       expect(ISOLATION_MODES).toHaveProperty('maximum');
       expect(ISOLATION_MODES).toHaveProperty('noise-suppression');
+      expect(ISOLATION_MODES).toHaveProperty('prompted');
     });
 
     test('Each mode has required properties', () => {
@@ -60,7 +61,10 @@ describe('IsolationModeSelector', () => {
         expect(mode).toHaveProperty('estimatedTime');
         expect(mode).toHaveProperty('icon');
         expect(Array.isArray(mode.modelIds)).toBe(true);
-        expect(mode.modelIds.length).toBeGreaterThan(0);
+        // Prompted Isolation is USM-only (empty modelIds is intentional).
+        if (mode.id !== 'prompted') {
+          expect(mode.modelIds.length).toBeGreaterThan(0);
+        }
       });
     });
 
@@ -84,7 +88,14 @@ describe('IsolationModeSelector', () => {
       expect(MODE_IDS).toContain('standard');
       expect(MODE_IDS).toContain('maximum');
       expect(MODE_IDS).toContain('noise-suppression');
-      expect(MODE_IDS.length).toBe(3);
+      expect(MODE_IDS).toContain('prompted');
+      expect(MODE_IDS.length).toBe(4);
+    });
+
+    test('Prompted Isolation is offline-only USM query route', () => {
+      expect(ISOLATION_MODES.prompted.offlineOnly).toBe(true);
+      expect(ISOLATION_MODES.prompted.usmMode).toBe('query');
+      expect(ISOLATION_MODES.prompted.modelIds).toEqual([]);
     });
   });
 

@@ -70,7 +70,8 @@ let runtimeParams = {
 };
 
 // ── Default models loaded on bare init (no payload) ──────────────────────────
-const DEFAULT_MODELS = ['vad', 'rnnoise', 'demucs', 'bsrnn'];
+// Demucs is optional / not shipped by default — do not block warmup on it.
+const DEFAULT_MODELS = ['vad', 'rnnoise', 'bsrnn'];
 
 // ── Model filename registry ───────────────────────────────────────────────────
 // Aliases → canonical .onnx filenames. MUST match public/app/model-loader.js

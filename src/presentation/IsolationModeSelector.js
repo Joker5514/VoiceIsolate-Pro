@@ -43,7 +43,7 @@ export const ISOLATION_MODES = Object.freeze({
   maximum: Object.freeze({
     id: 'maximum',
     name: 'Maximum Isolation',
-    description: 'BS-RNN vocal extraction followed by BiGRU noise suppression. Best balance of speed and isolation.',
+    description: 'BS-RNN vocal extraction followed by BiGRU noise suppression. Best balance of speed and isolation. (Demucs is optional and not in the default chain — drop demucs_v4_quantized.onnx to enable separately.)',
     modelIds: ['bsrnn_vocals', 'rnnoise'],
     estimatedTime: '~2-4s per minute of audio',
     icon: '🎯',
@@ -55,6 +55,20 @@ export const ISOLATION_MODES = Object.freeze({
     modelIds: ['rnnoise'],
     estimatedTime: '~1-2s per minute of audio',
     icon: '🔇',
+  }),
+  /**
+   * Offline Prompted Isolation entry (USM query priors / future SAM-class ONNX).
+   * Does not run in Live-Mix; route via Analyze / USM worker only.
+   */
+  prompted: Object.freeze({
+    id: 'prompted',
+    name: 'Prompted Isolation',
+    description: 'Text/span guided source separation via Universal Source Matrix (classical query priors; optional AudioSep ONNX). Offline only — never Live-Mix.',
+    modelIds: [],
+    usmMode: 'query',
+    estimatedTime: 'Depends on length — offline USM pass',
+    icon: '✨',
+    offlineOnly: true,
   }),
 });
 

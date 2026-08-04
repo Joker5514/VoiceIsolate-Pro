@@ -3563,6 +3563,28 @@ class VoiceIsolatePro {
     this.abortFlag = false;
     this._mlIsolationSucceeded = false;
     this._pipelinePct = 0;
+    // STFT owner budget for this Process job (audit F-02) — soft observability.
+    try {
+      if (typeof globalThis !== 'undefined') {
+        // Dynamic import avoided in hot path; budget factory is tiny and inlined via global hook.
+        const factory = globalThis.__vipCreateStftBudget;
+        if (typeof factory === 'function') {
+          globalThis.__vipStftBudget = factory({ label: 'process', maxOwners: 2 });
+        } else {
+          globalThis.__vipStftBudget = {
+            _m: new Map(),
+            record(owner) {
+              const n = (this._m.get(owner) || 0) + 1;
+              this._m.set(owner, n);
+              return { allowed: n <= 1, count: n, ownerCount: this._m.size };
+            },
+            owners() { return [...this._m.keys()]; },
+            snapshot() { const o = {}; for (const [k, v] of this._m) o[k] = v; return o; },
+            getWarnings() { return []; },
+          };
+        }
+      }
+    } catch { /* budget is best-effort */ }
     // Pause active playback before heavy work; retain playhead; do NOT auto-resume.
     // Prevents overlapping graph nodes / double STFT races with AudioWorklet.
     this._pausedForProcess = false;
@@ -4497,17 +4519,21 @@ class VoiceIsolatePro {
 
   // S10–S20: spectral isolation on a single channel. Exactly ONE forward STFT
   // and ONE inverse STFT — the single-pass spectral contract (CLAUDE.md §1).
-  // Fast path: FFT 2048 / hop 1024 (50% COLA, ~2× fewer frames than 512).
+  // Desktop: FFT 2048 / hop 512 (75% COLA — flat w² envelope; audit F-03).
   // Forensic (whisperMode ≥ 2): full 4096 / 1024 for whisper recovery quality.
+  // Mobile: smaller FFT + 50% hop → fewer frames (WebView freeze fix; quality tradeoff).
   // Async STFT yields so long files no longer freeze the browser tab.
   async _spectralStageAsync(data, sr, p, onProgress, regionMaps = null) {
     const DSP = this._resolveDSP();
     const whisperMode = Math.round(p.whisperMode ?? this.whisperMode ?? 0);
     const forensic = whisperMode >= 2;
     const mobile = this._isMobileEngineer();
-    // Mobile: smaller FFT + larger hop → far fewer frames (WebView freeze fix).
+    // Desktop Engineer: 75% overlap (hop = FFT/4). Mobile speed path: 50% hop.
     const FFT = forensic ? (mobile ? 2048 : 4096) : (mobile ? 1024 : 2048);
-    const HOP = mobile ? Math.max(512, FFT / 2) : 1024;
+    const HOP = mobile ? Math.max(512, FFT / 2) : Math.max(256, FFT >> 2);
+    try {
+      globalThis.__vipStftBudget?.record?.('engineer-spectral', `N=${FFT} hop=${HOP}`);
+    } catch { /* best-effort */ }
     const FRAME_CHUNK = forensic ? (mobile ? 48 : 128) : (mobile ? 64 : 256);
     if (!DSP || !data || data.length < FFT) return data;
 

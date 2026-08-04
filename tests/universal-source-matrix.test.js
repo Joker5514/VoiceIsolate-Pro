@@ -56,7 +56,8 @@ describe('UniversalSourceMatrix core', () => {
       nmfIterations: 16,
       seed: 7,
     });
-    expect(result.sources).toHaveLength(K);
+    expect(result.sources).toHaveLength(K + 1); // K NMF + residual / other
+    expect(result.sources.some((s) => /residual/i.test(s.label))).toBe(true);
     expect(result.method).toBe('classical-nmf');
     expect(result.shape.frames).toBeGreaterThan(0);
     expect(result.shape.bins).toBe(2049);
@@ -192,7 +193,9 @@ describe('USMNode pipeline', () => {
       numSources: 3,
       nmfIterations: 12,
     });
-    expect(result.sources).toHaveLength(3);
+    // K NMF components + residual / other partition
+    expect(result.sources).toHaveLength(4);
+    expect(result.sources.some((s) => /residual/i.test(s.label))).toBe(true);
     expect(node.sources.every((s) => s.gainDb === 0 && !s.mute && !s.solo)).toBe(true);
 
     node.setMute(result.sources[0].id, true);
@@ -224,18 +227,18 @@ describe('USMNode pipeline', () => {
       numSources: 3,
       nmfIterations: 10,
     });
-    expect(first.sources).toHaveLength(3);
+    expect(first.sources).toHaveLength(4);
     expect(first.cached).toBeFalsy();
     expect(node.isReady()).toBe(true);
 
     const stems = node.getSourceStems();
-    expect(stems).toHaveLength(3);
+    expect(stems).toHaveLength(4);
     expect(stems[0].pcm).toBeInstanceOf(Float32Array);
     expect(stems[0].label).toBeTruthy();
     expect(stems[0].id).toMatch(/^usm_/);
 
     const labels = node.getSourceLabels();
-    expect(labels).toHaveLength(3);
+    expect(labels).toHaveLength(4);
     expect(labels[0]).toEqual(expect.objectContaining({
       id: expect.any(String),
       label: expect.any(String),
@@ -250,7 +253,7 @@ describe('USMNode pipeline', () => {
       nmfIterations: 10,
     });
     expect(second.cached).toBe(true);
-    expect(second.sources).toHaveLength(3);
+    expect(second.sources).toHaveLength(4);
 
     node.dispose();
   });
