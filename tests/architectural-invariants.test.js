@@ -38,6 +38,22 @@ describe('CLAUDE.md §1 — single STFT + iSTFT per processing path', () => {
     expect(inv).toHaveLength(1);
   });
 
+  test('USM and SpectralCleanup share periodic Hann from stft-math (no symmetric N-1)', () => {
+    const usm = read('src/core/UniversalSourceMatrix.js');
+    const cleanup = read('src/core/SpectralCleanup.js');
+    const stftMath = read('src/core/stft-math.js');
+    expect(stftMath).toMatch(/export function periodicHann/);
+    expect(usm).toMatch(/from '\.\/stft-math\.js'/);
+    expect(cleanup).toMatch(/from '\.\/stft-math\.js'/);
+    expect(usm).not.toMatch(/cos\(\(2 \* Math\.PI \* i\) \/ \(n - 1\)\)/);
+    expect(cleanup).not.toMatch(/cos\(\(2 \* Math\.PI \* i\) \/ \(n - 1\)\)/);
+  });
+
+  test('Engineer desktop STFT hop uses 75% overlap (FFT>>2)', () => {
+    const src = read('public/app/app.js');
+    expect(src).toMatch(/Math\.max\(256, FFT >> 2\)/);
+  });
+
   test('app.js (offline main path) calls DSP.forwardSTFT and DSP.inverseSTFT exactly once each', () => {
     const src = read('public/app/app.js');
     const fwdCalls = src.match(/DSP\.forwardSTFT\s*\(/g) || [];

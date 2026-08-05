@@ -172,7 +172,11 @@ const DSPCore = {
   // Cache for hannWindow — keyed by N so identical sizes are only computed once.
   _hannCache: new Map(),
 
-  /** Generate periodic Hann window of given length (required for COLA at 75% overlap) */
+  /**
+   * Generate PERIODIC Hann window of given length (required for COLA at 75% overlap).
+   * Formula must stay bit-identical to src/core/stft-math.js periodicHann (audit F-01).
+   * w[i] = 0.5 * (1 - cos(2π i / N))  — never use (N-1) denominator.
+   */
   hannWindow(N) {
     if (this._hannCache.has(N)) return this._hannCache.get(N);
     const w = new Float32Array(N);

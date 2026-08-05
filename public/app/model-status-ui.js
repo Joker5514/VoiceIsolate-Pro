@@ -3,11 +3,13 @@
 // Also renders a "Local Model Health" panel populated by window.ModelCDNLoader.getProviderHealthReport().
 
 const STATUS_CONFIG = {
-  cached:  { label: '✓ Cached',                    cls: 'vip-pill--green' },
-  loading: { label: '⟳ Loading…',                  cls: 'vip-pill--amber' },
-  pending: { label: 'Lazy — loads on first drop',  cls: 'vip-pill--grey'  },
-  error:   { label: '✗ All failed',                cls: 'vip-pill--red'   },
-  unknown: { label: '? Unknown',                   cls: 'vip-pill--grey'  },
+  cached:   { label: '✓ Cached',                         cls: 'vip-pill--green' },
+  loading:  { label: '⟳ Loading…',                       cls: 'vip-pill--amber' },
+  pending:  { label: 'Lazy — loads on first drop',       cls: 'vip-pill--grey'  },
+  optional: { label: 'Optional — not shipped',           cls: 'vip-pill--grey'  },
+  missing:  { label: '✗ Missing (place ONNX in /models)', cls: 'vip-pill--red'   },
+  error:    { label: '✗ All failed',                     cls: 'vip-pill--red'   },
+  unknown:  { label: '? Unknown',                        cls: 'vip-pill--grey'  },
 };
 
 const PROVIDER_BADGE = {

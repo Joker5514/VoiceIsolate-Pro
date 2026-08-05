@@ -10,7 +10,7 @@ No audio data leaves the device. WebGPU execution provider is preferred; WASM is
 | File | Purpose | Size | Status |
 |------|---------|------|--------|
 | `silero_vad.onnx` | Voice Activity Detection (gate) | ~2.2 MB | ✅ Committed |
-| `demucs_v4_quantized.onnx` | Hybrid Demucs v4 source separation | ~83 MB | ⚠️ Manual download required |
+| `demucs_v4_quantized.onnx` | Hybrid Demucs v4 source separation | ~83-149 MB | **Optional — not shipped**. Engineer Process uses BSRNN. |
 | `bsrnn_vocals.onnx` | Band-Split RNN vocals extraction | ~45 MB | ⚠️ Manual download required |
 | `rnnoise_suppressor.onnx` | Broadband noise suppression | ~180 KB | ⚠️ Manual download required |
 | `universal-separator.onnx` | Optional AudioSep-class query universal separator | — | ⬜ Optional (not shipped). Classical USM NMF + text priors run without it. |

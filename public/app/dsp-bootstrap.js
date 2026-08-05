@@ -22,6 +22,46 @@
 (function _vipDspBootstrap() {
   'use strict';
 
+  // STFT budget factory (audit F-02) — used by app.js Process path.
+  // Full implementation also lives in src/core/stft-budget.js for ESM consumers.
+  if (typeof globalThis !== 'undefined' && typeof globalThis.__vipCreateStftBudget !== 'function') {
+    globalThis.__vipCreateStftBudget = function createStftBudget(opts) {
+      const maxOwners = Math.max(1, (opts && opts.maxOwners) || 2);
+      const label = (opts && opts.label) || 'job';
+      const counts = new Map();
+      const warnings = [];
+      return {
+        label,
+        maxOwners,
+        record(owner, detail) {
+          const key = String(owner || 'unknown');
+          const next = (counts.get(key) || 0) + 1;
+          counts.set(key, next);
+          let warning;
+          if (counts.size > maxOwners) {
+            warning = `[STFT-budget:${label}] ${counts.size} owners > max ${maxOwners} (${key})`;
+            warnings.push(warning);
+          }
+          if (next > 1) {
+            const multi = `[STFT-budget:${label}] owner "${key}" ran ${next}×`;
+            warnings.push(multi);
+            warning = warning ? `${warning}; ${multi}` : multi;
+          }
+          return { allowed: counts.size <= maxOwners && next <= 1, count: next, ownerCount: counts.size, warning };
+        },
+        owners() { return [...counts.keys()]; },
+        snapshot() { const o = {}; for (const [k, v] of counts) o[k] = v; return o; },
+        getWarnings() { return warnings.slice(); },
+        wouldExceed(owner) {
+          const key = String(owner || 'unknown');
+          if (counts.has(key)) return (counts.get(key) || 0) >= 1;
+          return counts.size >= maxOwners;
+        },
+        reset() { counts.clear(); warnings.length = 0; },
+      };
+    };
+  }
+
   function ensureLegacyDecodePatch() {
     if (typeof document === 'undefined') return;
     if (window.__vipM4ADecodeFixLoaded) return;

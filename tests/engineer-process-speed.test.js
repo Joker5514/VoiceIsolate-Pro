@@ -34,6 +34,8 @@ describe('Engineer processing speed path', () => {
     // Desktop non-forensic: 2048; mobile non-forensic: 1024 (freeze fix)
     expect(appJs).toMatch(/mobile \? 1024 : 2048/);
     expect(appJs).toContain('forwardSTFTAsync');
+    // Desktop hop = FFT/4 (75% COLA); mobile keeps 50% hop for speed
+    expect(appJs).toMatch(/mobile \? Math\.max\(512, FFT \/ 2\) : Math\.max\(256, FFT >> 2\)/);
   });
 
   test('isolation always uses a single process pass (UI freeze guard)', () => {

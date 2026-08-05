@@ -118,7 +118,11 @@ describe('ml-worker.js', () => {
     expect(readyMsg).toBeDefined();
     expect(readyMsg.models.vad).toBe(false);
     expect(readyMsg.models.rnnoise).toBe(true); // Assuming others succeed
-    expect(readyMsg.models.demucs).toBe(true); // Assuming others succeed
+    // Demucs is optional / not in DEFAULT_MODELS — may be absent from ready map.
+    if (readyMsg.models.demucs !== undefined) {
+      expect(typeof readyMsg.models.demucs).toBe('boolean');
+    }
+    expect(readyMsg.models.bsrnn).toBe(true);
   });
 
   it('falls back to WASM provider when WebGPU session creation fails', async () => {

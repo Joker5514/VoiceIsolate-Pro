@@ -137,8 +137,11 @@ export function computeSTFT(pcm, fftSize = 4096, hopSize = 1024, sampleRate = 44
   const phases     = [];
   const times      = [];
 
-  const totalSamples = Math.max(1, pcm.length) + fftSize - hopSize;
-  const numFrames = Math.max(1, Math.ceil(totalSamples / hopSize));
+  // Frame count aligned with DSPCore / stft-math (F-07): floor((L-N)/H)+1 when L≥N.
+  // Empty/short clips: one zero-padded frame so callers never receive an empty STFT.
+  const numFrames = pcm.length >= fftSize
+    ? Math.floor((pcm.length - fftSize) / hopSize) + 1
+    : 1;
 
   for (let frame = 0; frame < numFrames; frame++) {
     const pos = frame * hopSize;
