@@ -53,10 +53,12 @@ const MAX_SAB_FALLBACK_POSTS = 3;
 const FLAG_SLOTS = 5;                                                   // Bug #2 fix: 5 slots = 20 bytes, matches SharedRingBuffer header
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;     // 20
 
-// ─── OLA normalisation scalar for periodic Hann at 75% overlap ───────────────
-// sum of (unsquared) Hann windows spaced HOP apart = FFT_SIZE / (2 * HOP_SIZE) = 2.0
-// So we divide by 2 during synthesis to normalise energy
-const OLA_NORM = 1.0 / (FFT_SIZE / (2.0 * HOP_SIZE)); // = 0.5
+// ─── OLA normalisation for periodic Hann @ 75% hop (analysis × synthesis = w²) ─
+// ∑ w² of periodic Hann spaced HOP apart ≈ 1.5 (not 2.0 — that was ∑w not ∑w²).
+// dsp-core normalizes per-sample with windowSum += w²; constant form is 1/1.5.
+const OLA_NORM = 1.0 / 1.5; // ≈ 0.6667 — restores ~0 dB vs previous 0.5 (−2.5 dB)
+// Algorithmic STFT latency for dry/wet alignment (samples)
+const DRY_DELAY = FFT_SIZE;
 
 // ─── In-place Cooley-Tukey radix-2 FFT (worklet-safe, no imports) ─────────────
 function fftInPlace(re, im, inverse = false) {
@@ -172,17 +174,24 @@ class WhisperHunterCore {
       return 0;
     }
     this._trackF0(mags);
-    const wStr = 1 + 2.2 * pThreshold;
-    const oversub = 1.15 + 2.8 * pThreshold;
-    const minGain = Math.max(0.08, pClarity * 0.35);
+    // Softer oversubtraction / Wiener exponent — reduce metallic pumping
+    const wStr = 1 + 1.4 * pThreshold;
+    const oversub = 1.05 + 1.6 * pThreshold;
+    const minGain = Math.max(0.12, pClarity * 0.4);
+    // Cap speech boost to avoid harshness / post-limit clipping
+    const speechBoostCap = 1.22;
     for (let k = 0; k < halfN; k++) {
       const sigPow = mags[k] * mags[k];
       const snrNum = Math.max(0, sigPow - oversub * this.noisePsd[k]);
-      const wiener = snrNum / (sigPow + 0.02 * this.noisePsd[k] + this._epsilon);
+      const wiener = snrNum / (sigPow + 0.04 * this.noisePsd[k] + this._epsilon);
       let gain = Math.pow(Math.max(0, wiener), wStr);
       const inVoice = k >= this._voiceLo && k <= this._voiceHi;
-      gain = Math.max(minGain * (inVoice ? 1 : 0.3 + 0.25 * (1 - pThreshold)), gain);
-      if (inVoice && voiceRatio > 0.2) gain = Math.min(1.8, gain * (1 + 0.15 * pClarity));
+      gain = Math.max(minGain * (inVoice ? 1 : 0.35 + 0.3 * (1 - pThreshold)), gain);
+      if (inVoice && voiceRatio > 0.2) {
+        gain = Math.min(speechBoostCap, gain * (1 + 0.1 * pClarity));
+      }
+      // Never amplify non-voice bins (prevents metallic ringing)
+      if (!inVoice) gain = Math.min(1.0, gain);
       re[k] *= gain; im[k] *= gain;
     }
     if (pHarm > 0.08) {
@@ -191,7 +200,7 @@ class WhisperHunterCore {
         for (let dk = -1; dk <= 1; dk++) {
           const k = kh + dk;
           if (k > 0 && k < halfN) {
-            const b = 1 + (pHarm * 0.4) / h;
+            const b = 1 + (pHarm * 0.28) / h;
             re[k] *= b; im[k] *= b;
           }
         }
@@ -221,6 +230,12 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._outRing = new Float32Array(FFT_SIZE * 8);
     this._outRd   = 0;
     this._outWr   = 0;
+
+    // Dry delay ring — aligns dry path with wet STFT latency (kills comb/phasey blend)
+    this._dryRing = new Float32Array(DRY_DELAY + RENDER_QUANTUM * 2);
+    this._dryWr = 0;
+    this._dryRd = 0;
+    this._dryFilled = 0;
 
     // How many new samples have arrived since last frame trigger
     this._newSamples = STARTUP_PRIME_SAMPLES; // primes hop counter so the first render quantum can emit a frame
@@ -261,14 +276,14 @@ class DSPProcessor extends AudioWorkletProcessor {
       eqClarity:   0.0,
       eqAir:       0.0,
       eqBrill:     0.0,
-      whisperLift: 18,
-      crowdNull:   72,
-      bassCrush:   90,
-      reverbStrip: 600,
-      voiceTunnel: 65,
-      musicKill:   80,
+      whisperLift: 6,   // dB — was 18 (harsh); UI default is 0
+      crowdNull:   48,
+      bassCrush:   55,
+      reverbStrip: 400,
+      voiceTunnel: 40,
+      musicKill:   50,
       snrFloor:    -52,
-      whisperMode: 2,
+      whisperMode: 1,
       whisperClarity: 65,
       whisperSensitivity: 55,
       whisperThreshold: 50,
@@ -324,11 +339,18 @@ class DSPProcessor extends AudioWorkletProcessor {
       harmRecov: [0, 100]
     };
 
-    // Gate hold state: prevents clicking on rapid gate transitions
+    // Soft noise gate state (envelope + hold) — never hard-zero samples
     this._gateHoldSamples = 0;
-    const GATE_HOLD_MS    = 20;
+    this._gateGain = 1.0;
+    const GATE_HOLD_MS    = 40;
     const ctorSampleRate  = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
     this._GATE_HOLD_LEN   = Math.round((GATE_HOLD_MS / 1000) * ctorSampleRate);
+    // Attack ~4 ms open, release ~90 ms close.
+    // Applied once per render quantum (Q samples), so raise per-sample coeff to Q.
+    const atkSample = Math.exp(-1 / (0.004 * ctorSampleRate));
+    const relSample = Math.exp(-1 / (0.090 * ctorSampleRate));
+    this._gateAtkCoeff = Math.pow(atkSample, RENDER_QUANTUM);
+    this._gateRelCoeff = Math.pow(relSample, RENDER_QUANTUM);
 
     // Compressor envelope state
     this._envDb  = 0;
@@ -420,25 +442,45 @@ class DSPProcessor extends AudioWorkletProcessor {
       for (let i = 0; i < Q; i++) mono[i] *= inv;
     }
 
-    // Noise gate with hold to prevent clicks
+    // Soft noise gate: RMS detector + hold + exponential gain envelope.
+    // Uses gateRange (dB) as closed floor instead of hard-zero (stops pumping/clicks).
     let rms = 0;
     for (let i = 0; i < Q; i++) rms += mono[i] * mono[i];
     rms = Math.sqrt(rms / Q);
     const rmsDb = rms > 0 ? 20.0 * Math.log10(rms) : -160.0;
-    const belowGate = rmsDb < this._params.gateThresh;
+    const gateThresh = Number.isFinite(this._params.gateThresh) ? this._params.gateThresh : -42;
+    const belowGate = rmsDb < gateThresh;
 
     if (!belowGate) {
       this._gateHoldSamples = this._GATE_HOLD_LEN;
     } else if (this._gateHoldSamples > 0) {
       this._gateHoldSamples -= Q;
     }
-    const gated = belowGate && this._gateHoldSamples <= 0;
+    const gateOpen = !belowGate || this._gateHoldSamples > 0;
+    // gateRange is negative dB attenuation when closed (e.g. -60 → floor ≈ 0.001)
+    let rangeDb = Number(this._params.gateRange);
+    if (!Number.isFinite(rangeDb)) rangeDb = -60;
+    // Accept UI values as either negative dB or positive depth
+    if (rangeDb > 0) rangeDb = -rangeDb;
+    const floorGain = Math.pow(10.0, Math.max(-120, rangeDb) / 20.0);
+    const targetGain = gateOpen ? 1.0 : Math.max(0, Math.min(1, floorGain));
+    const gCoeff = targetGain > this._gateGain ? this._gateAtkCoeff : this._gateRelCoeff;
+    // One-pole toward target per quantum (smooth, non-clicking)
+    this._gateGain = gCoeff * this._gateGain + (1 - gCoeff) * targetGain;
+    if (!Number.isFinite(this._gateGain)) this._gateGain = 1.0;
+    const g = Math.max(0, Math.min(1, this._gateGain));
 
-    // Write mono (or silence) into input ring
+    // Write gated mono into input ring (analysis path)
     const inLen = this._inRing.length;
+    const dryLen = this._dryRing.length;
     for (let i = 0; i < Q; i++) {
-      this._inRing[this._inWr] = gated ? 0.0 : mono[i];
+      const sample = mono[i] * g;
+      this._inRing[this._inWr] = sample;
       this._inWr = (this._inWr + 1) % inLen;
+      // Dry delay (ungated dry would comb with gated wet; use same gated feed for blend)
+      this._dryRing[this._dryWr] = mono[i];
+      this._dryWr = (this._dryWr + 1) % dryLen;
+      if (this._dryFilled < DRY_DELAY) this._dryFilled++;
     }
     this._newSamples += Q;
 
@@ -462,6 +504,14 @@ class DSPProcessor extends AudioWorkletProcessor {
     const cAtk = Math.exp(-1 / ((this._params.compAttack || 10) * sr / 1000));
     const cRel = Math.exp(-1 / ((this._params.compRelease || 150) * sr / 1000));
     const cMakeup = Math.pow(10.0, (this._params.compMakeup || 0) / 20.0);
+    const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
+
+    // Read delayed dry (aligned with wet); if not primed yet, use current mono
+    const readDry = (i) => {
+      if (this._dryFilled < DRY_DELAY) return mono[i];
+      const idx = (this._dryWr - DRY_DELAY + i + dryLen) % dryLen;
+      return this._dryRing[idx];
+    };
 
     if (avail >= Q) {
       for (let i = 0; i < Q; i++) {
@@ -489,20 +539,33 @@ class DSPProcessor extends AudioWorkletProcessor {
         }
         s *= Math.pow(10.0, -this._envDb / 20.0) * cMakeup * outGain;
 
-        // Brickwall limiter
-        if (s >  lim) s =  lim;
+        // Soft knee into limThresh, then hard clamp to lim (brickwall contract)
+        const soft = lim * 0.85;
+        const abs = Math.abs(s);
+        if (abs > soft) {
+          const sign = s < 0 ? -1 : 1;
+          if (abs >= lim) {
+            s = sign * lim;
+          } else {
+            // Smooth blend soft→lim (stays ≤ lim)
+            const t = (abs - soft) / (lim - soft + 1e-12);
+            const shaped = soft + (lim - soft) * (1 - Math.exp(-3 * t));
+            s = sign * Math.min(lim, shaped);
+          }
+        }
+        if (s > lim) s = lim;
         if (s < -lim) s = -lim;
-        
-        // Dry/Wet mixing
-        const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
-        outCh[i] = mono[i] * (1.0 - dryWet) + s * dryWet;
+        if (s > 0.999) s = 0.999;
+        if (s < -0.999) s = -0.999;
+
+        // Dry/Wet with delay-aligned dry (reduces phasey comb)
+        const d = readDry(i);
+        outCh[i] = d * (1.0 - dryWet) + s * dryWet;
       }
     } else {
-      // Pipeline latency — not enough processed samples yet.
-      // Output scaled dry signal only.
-      const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
+      // Wet underrun: never hard-silence at dryWet=1 — emit delay-aligned dry
       for (let i = 0; i < Q; i++) {
-        outCh[i] = mono[i] * (1.0 - dryWet);
+        outCh[i] = readDry(i);
       }
     }
 
@@ -655,11 +718,12 @@ class DSPProcessor extends AudioWorkletProcessor {
       }
     }
 
-    // [WHISPER UPDATE] Step F — whisper lift on high-confidence mask bins
-    const liftGain = Math.pow(10, params.whisperLift / 20) * wm.postGain;
+    // Whisper lift on high-confidence mask bins (capped — default 18 dB was harsh)
+    const liftDb = Math.min(12, Math.max(0, Number(params.whisperLift) || 0));
+    const liftGain = Math.min(4.0, Math.pow(10, liftDb / 20) * (wm.postGain || 1));
     for (let k = 0; k < HALF_BINS; k++) {
       const m = mask ? Math.max(0.0, Math.min(1.0, mask[k])) : 0.6;
-      if (m > 0.55) maskedMag[k] *= liftGain;
+      if (m > 0.62) maskedMag[k] *= liftGain;
     }
 
     // ── Spectral EQ & Filters ──

@@ -1439,20 +1439,43 @@ class VoiceIsolatePro {
   }
 
   // ── SAB ring buffer init ─────────────────────────────────────────────────
+  // Layout must match public/app/dsp-processor.js + ml-worker dual-SAB protocol:
+  //   input  = header(20) + mag(HALF_BINS) + pha(HALF_BINS) + pcm(HOP_SIZE)
+  //   output = header(20) + mask(HALF_BINS)
   _initSABRings() {
     if (typeof SharedArrayBuffer === 'undefined') return;
-    const inputByteLen = SAB_HEADER_BYTES + HALF_BINS * 4 * 2;
-    const outputByteLen = SAB_HEADER_BYTES + HALF_BINS * 4 * 2;
+    const f32 = Float32Array.BYTES_PER_ELEMENT;
+    const inputByteLen = SAB_HEADER_BYTES + (HALF_BINS * 2 + HOP_SIZE) * f32;
+    const outputByteLen = SAB_HEADER_BYTES + HALF_BINS * f32;
     const inputSAB = new SharedArrayBuffer(inputByteLen);
     const outputSAB = new SharedArrayBuffer(outputByteLen);
     this._inputSAB = inputSAB;
     this._outputSAB = outputSAB;
     const worker = window._vipOrch && window._vipOrch.mlWorker;
     if (worker) {
-      worker.postMessage({ type: 'initRingBuffers', inputRing: inputSAB, maskRing: outputSAB }, []);
+      try {
+        worker.postMessage({
+          type: 'initRingBuffers',
+          inputRing: inputSAB,
+          maskRing: outputSAB,
+          halfN: HALF_BINS,
+          hop: HOP_SIZE,
+          headerBytes: SAB_HEADER_BYTES,
+        }, []);
+      } catch { /* worker may not accept transfer list */ }
     }
+    // If legacy spectral worklet is mounted, hand SABs via canonical initSAB
     const workletNode = window._vipOrch && window._vipOrch.workletNode;
-    if (workletNode) {
+    if (workletNode?.port) {
+      try {
+        workletNode.port.postMessage({
+          type: 'initSAB',
+          inputSAB,
+          outputSAB,
+          halfN: HALF_BINS,
+          hop: HOP_SIZE,
+        });
+      } catch { /* port closed */ }
       workletNode.port.addEventListener('message', (ev) => {
         if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {
           this._inputSAB = ev.data.inputSAB;
@@ -2383,7 +2406,18 @@ class VoiceIsolatePro {
     });
 
     // Forensic toggle
-    bind('forensicToggle', $('forensicToggle'), 'click', () => this.showNotification('Forensic mode: set in Advanced sliders.', 'info'));
+    bind('forensicToggle', $('forensicToggle'), 'click', () => {
+      try {
+        if (typeof WorkflowTier?.setTier === 'function') {
+          WorkflowTier.setTier('forensic');
+          this.showNotification('Forensic tier active — full engineer panel.', 'ok');
+        } else {
+          this.showNotification('Forensic mode: use the Forensic tier pill above.', 'info');
+        }
+      } catch {
+        this.showNotification('Forensic mode: use the Forensic tier pill above.', 'info');
+      }
+    });
   }
 
   // ── Global keyboard shortcuts ────────────────────────────────────────────
@@ -4742,10 +4776,11 @@ class VoiceIsolatePro {
     const crowdNull = p.crowdNull ?? 0;
     const reverbStrip = p.reverbStrip ?? 0;
     const snrFloor = p.snrFloor ?? -52;
-    const whisperLift = p.whisperLift ?? 0;
+    const whisperLift = Math.min(12, Math.max(0, p.whisperLift ?? 0));
     const voiceTunnel = p.voiceTunnel ?? 0;
     const wm = WHISPER_MODE_STATES[Math.round(p.whisperMode ?? 2)] || WHISPER_MODE_STATES[2];
-    const liftGain = Math.pow(10, whisperLift / 20) * wm.postGain;
+    // Cap lift to avoid metallic / clipped offline forensic output
+    const liftGain = Math.min(4.0, Math.pow(10, whisperLift / 20) * (wm.postGain || 1));
 
     if (!this._extremeCircularMag || this._extremeCircularMag[0].length !== halfN) {
       this._extremeCircularMag = Array.from({ length: 5 }, () => new Float32Array(halfN));
@@ -6197,7 +6232,7 @@ const WHISPER_HUNTER = {
     await app.morphSlidersTo({
       crowdNull: Math.min(100, Math.round(70 + (envProfile.speechPresence < 0.3 ? 20 : 0))),
       musicKill: Math.min(100, Math.round(envProfile.dominantNoise === 'music' ? 85 : 55)),
-      whisperLift: 18,
+      whisperLift: 8,
       whisperThreshold: 62,
       voiceTunnel: 65,
       snrFloor: -72,

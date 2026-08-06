@@ -160,6 +160,33 @@ body::before { display: none !important; }
   border-color: var(--border-red) !important;
 }
 
+/* Workflow tier pills — force red DS (overrides any leftover teal neon) */
+.vip-tier-pill {
+  border-color: var(--border-red) !important;
+  background: var(--surface-3) !important;
+  color: var(--text-2) !important;
+  box-shadow: none !important;
+}
+.vip-tier-pill:hover {
+  border-color: rgba(239, 68, 68, 0.55) !important;
+  color: var(--text-hi) !important;
+  background: var(--hover-fill) !important;
+}
+.vip-tier-pill.is-active,
+.vip-tier-pill[aria-pressed="true"] {
+  border-color: rgba(239, 68, 68, 0.75) !important;
+  background: linear-gradient(135deg, rgba(220, 38, 38, 0.22), rgba(127, 29, 29, 0.16)) !important;
+  color: var(--text-hi) !important;
+  box-shadow: var(--glow-red) !important;
+}
+
+/* Align engineer .btn-xs with primary DS density */
+.btn-xs {
+  font: var(--fw-semibold) var(--fs-2xs)/1 var(--font-ui) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 5px 8px !important;
+}
+
 /* ── Tabs ────────────────────────────────────────────────────────────── */
 .tab {
   font: var(--fw-semibold) var(--fs-xs)/1 var(--font-ui) !important;

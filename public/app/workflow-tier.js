@@ -9,7 +9,7 @@ export const WORKFLOW_TIERS = Object.freeze({
     label: 'Creator Pro',
     short: 'Creator',
     tagline: 'Fast clean voice — one tap to share-ready audio',
-    statusIdle: 'Creator Pro — upload or record for one-tap clean voice',
+    statusIdle: 'Creator Pro — upload audio for one-tap clean voice',
     defaultPreset: 'Voice Clarity',
     presets: ['Voice Clarity', 'Podcast Clean', 'Whisper Boost'],
     groups: ['gate', 'nr', 'out'],
