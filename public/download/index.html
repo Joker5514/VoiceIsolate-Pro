@@ -46,14 +46,15 @@
     </nav>
 
     <h1 class="section-label" style="font-size:1.4rem;letter-spacing:.06em;">Download VoiceIsolate Pro</h1>
-    <p class="hint">Privacy-first voice isolation. Audio never leaves your device.</p>
+    <p class="hint">Privacy-first voice isolation. Audio never leaves your device. Same web shell on Web, Android, and Desktop.</p>
 
     <!-- ── Android ─────────────────────────────────────────────────────── -->
     <section class="dl-card" aria-labelledby="android-dl">
       <h2 id="android-dl">Android (APK) — complete offline app</h2>
       <p>
         Full on-device studio: <strong>Landing + Engineer Mode</strong>, BS-RNN isolation,
-        worklets, and ONNX models bundled — <strong>no network required</strong> after install.
+        worklets, ONNX models, and the optional <strong>SAM 3 vision</strong> JS sidecar
+        (feature-flagged) — <strong>no network required</strong> after install.
         Enable <strong>Install unknown apps</strong>, then open the file.
       </p>
       <div class="dl-actions">
@@ -70,7 +71,7 @@
            rel="noopener noreferrer"
            target="_blank"
            download="VoiceIsolate-Pro-android-debug.apk">
-          v24.0.0 direct
+          v24.0.0 prior
         </a>
         <a class="btn btn-outline"
            href="https://github.com/Joker5514/VoiceIsolate-Pro/releases"
@@ -80,13 +81,12 @@
         </a>
       </div>
       <p class="dl-meta dl-ok">
-        Complete offline app · Landing + Engineer Mode · models + ORT ·
-        real APK (~238&nbsp;MB)
+        Offline app · Landing + Engineer · BSRNN/ORT · SAM3 vision modules (flag OFF) ·
+        SAM-Audio only if ONNX present
       </p>
-      <p class="dl-meta warn">Debug/sideload build · not Play Store signed</p>
+      <p class="dl-meta warn">Debug/sideload build · not Play Store signed · <code>latest</code> may lag in-repo v25.0.1 until a new release is cut</p>
       <p class="dl-meta">
-        Asset: <code>VoiceIsolate-Pro-android-debug.apk</code> · in-repo <strong>v25.0.0</strong> (versionCode 250000)<br />
-        Prior published release <time datetime="2026-07-21">2026-07-21</time> — WebView MIME/COEP fix, SW disabled on native, lean models<br />
+        Asset: <code>VoiceIsolate-Pro-android-debug.apk</code> · in-repo <strong>v25.0.1</strong><br />
         Latest:
         <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"
            rel="noopener noreferrer" target="_blank" style="color:#f87171">
@@ -106,8 +106,9 @@
       <h2 id="desktop-dl">Desktop (Windows) — 100% offline</h2>
       <p>
         NSIS installer for Windows x64. Install once, then isolate with
-        <strong>no internet</strong>. UI, ORT WASM, and default ONNX models
-        (BS-RNN + denoise + VAD) ship inside the package.
+        <strong>no internet</strong>. UI, ORT WASM, default ONNX models
+        (BS-RNN + denoise + VAD), optional <strong>SAM-Audio</strong> local worker,
+        and <strong>SAM 3 vision</strong> modules (flag OFF) ship in the package layout.
       </p>
       <div class="dl-actions">
         <a class="btn" id="desktopPrimary"
@@ -131,11 +132,10 @@
           All releases
         </a>
       </div>
-      <p class="dl-meta dl-ok">NSIS · BS-RNN + denoise + VAD bundled · offline after install · ~178&nbsp;MB</p>
-      <p class="dl-meta warn">Unsigned builds may trigger SmartScreen — More info → Run anyway</p>
+      <p class="dl-meta dl-ok">NSIS · BSRNN + denoise + VAD · SAM-Audio worker package · SAM3 vision JS · offline after install</p>
+      <p class="dl-meta warn">Unsigned builds may trigger SmartScreen — More info → Run anyway · artifact name may still say 25.0.0</p>
       <p class="dl-meta">
-        Asset: <code>VoiceIsolate-Pro-25.0.0-win-x64.exe</code> · in-repo <strong>v25.0.0</strong><br />
-        Prior published binary <time datetime="2026-07-21">2026-07-21</time> (analysis workspace + stall fixes)<br />
+        Asset: <code>VoiceIsolate-Pro-25.0.0-win-x64.exe</code> · in-repo <strong>v25.0.1</strong><br />
         Latest:
         <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe"
            rel="noopener noreferrer" target="_blank" style="color:#f87171">
@@ -159,12 +159,18 @@ pnpm build:electron:dir    # portable win-unpacked/</pre>
     <!-- ── Web ─────────────────────────────────────────────────────────── -->
     <section class="dl-card" aria-labelledby="web-dl">
       <h2 id="web-dl">Web (no install)</h2>
-      <p>Run fully in the browser — Landing (stem-split) or Engineer Mode (full DSP).</p>
+      <p>
+        Run fully in the browser — Landing (stem-split / Live-Mix) or Engineer Mode (full DSP).
+        SAM 3 vision modules load from same-origin <code>/src/sam3_integration/</code> when enabled.
+      </p>
       <div class="dl-actions">
         <a class="btn" href="/">Open Landing</a>
         <a class="btn btn-outline" href="/app/">Open Engineer Mode</a>
+        <a class="btn btn-outline" href="https://github.com/Joker5514/VoiceIsolate-Pro" rel="noopener noreferrer" target="_blank">Source</a>
       </div>
+      <p class="dl-meta">Docs: <code>docs/SAM3_TECHNICAL_DOCUMENTATION.md</code> · <code>docs/guides/SAM_AUDIO.md</code> · <code>docs/DOWNLOADS.md</code></p>
     </section>
   </main>
 </body>
 </html>
+

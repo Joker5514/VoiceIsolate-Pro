@@ -1,0 +1,12 @@
+{
+  "packageId": "vip-sam3-vision",
+  "version": "25.0.1",
+  "bundled": true,
+  "featureFlagDefault": false,
+  "enableEnv": "VIP_SAM3_ENABLED",
+  "platforms": ["web", "android", "desktop"],
+  "worker": "/src/sam3_integration/worker.js",
+  "publicWorker": "/app/sam3-worker.js",
+  "modelDir": "/app/models/sam3/",
+  "note": "Vision/video sidecar only — not SAM-Audio; not in Live AudioWorklet DSP"
+}
