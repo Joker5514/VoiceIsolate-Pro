@@ -53,10 +53,12 @@ const MAX_SAB_FALLBACK_POSTS = 3;
 const FLAG_SLOTS = 5;                                                   // Bug #2 fix: 5 slots = 20 bytes, matches SharedRingBuffer header
 const SAB_HEADER_BYTES = Int32Array.BYTES_PER_ELEMENT * FLAG_SLOTS;     // 20
 
-// ─── OLA normalisation scalar for periodic Hann at 75% overlap ───────────────
-// sum of (unsquared) Hann windows spaced HOP apart = FFT_SIZE / (2 * HOP_SIZE) = 2.0
-// So we divide by 2 during synthesis to normalise energy
-const OLA_NORM = 1.0 / (FFT_SIZE / (2.0 * HOP_SIZE)); // = 0.5
+// ─── OLA normalisation for periodic Hann @ 75% hop (analysis × synthesis = w²) ─
+// ∑ w² of periodic Hann spaced HOP apart ≈ 1.5 (not 2.0 — that was ∑w not ∑w²).
+// dsp-core normalizes per-sample with windowSum += w²; constant form is 1/1.5.
+const OLA_NORM = 1.0 / 1.5; // ≈ 0.6667 — restores ~0 dB vs previous 0.5 (−2.5 dB)
+// Algorithmic STFT latency for dry/wet alignment (samples)
+const DRY_DELAY = FFT_SIZE;
 
 // ─── In-place Cooley-Tukey radix-2 FFT (worklet-safe, no imports) ─────────────
 function fftInPlace(re, im, inverse = false) {
@@ -228,6 +230,12 @@ class DSPProcessor extends AudioWorkletProcessor {
     this._outRing = new Float32Array(FFT_SIZE * 8);
     this._outRd   = 0;
     this._outWr   = 0;
+
+    // Dry delay ring — aligns dry path with wet STFT latency (kills comb/phasey blend)
+    this._dryRing = new Float32Array(DRY_DELAY + RENDER_QUANTUM * 2);
+    this._dryWr = 0;
+    this._dryRd = 0;
+    this._dryFilled = 0;
 
     // How many new samples have arrived since last frame trigger
     this._newSamples = STARTUP_PRIME_SAMPLES; // primes hop counter so the first render quantum can emit a frame
@@ -461,9 +469,15 @@ class DSPProcessor extends AudioWorkletProcessor {
 
     // Write gated mono into input ring (analysis path)
     const inLen = this._inRing.length;
+    const dryLen = this._dryRing.length;
     for (let i = 0; i < Q; i++) {
-      this._inRing[this._inWr] = mono[i] * g;
+      const sample = mono[i] * g;
+      this._inRing[this._inWr] = sample;
       this._inWr = (this._inWr + 1) % inLen;
+      // Dry delay (ungated dry would comb with gated wet; use same gated feed for blend)
+      this._dryRing[this._dryWr] = mono[i];
+      this._dryWr = (this._dryWr + 1) % dryLen;
+      if (this._dryFilled < DRY_DELAY) this._dryFilled++;
     }
     this._newSamples += Q;
 
@@ -487,6 +501,14 @@ class DSPProcessor extends AudioWorkletProcessor {
     const cAtk = Math.exp(-1 / ((this._params.compAttack || 10) * sr / 1000));
     const cRel = Math.exp(-1 / ((this._params.compRelease || 150) * sr / 1000));
     const cMakeup = Math.pow(10.0, (this._params.compMakeup || 0) / 20.0);
+    const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
+
+    // Read delayed dry (aligned with wet); if not primed yet, use current mono
+    const readDry = (i) => {
+      if (this._dryFilled < DRY_DELAY) return mono[i];
+      const idx = (this._dryWr - DRY_DELAY + i + dryLen) % dryLen;
+      return this._dryRing[idx];
+    };
 
     if (avail >= Q) {
       for (let i = 0; i < Q; i++) {
@@ -526,16 +548,14 @@ class DSPProcessor extends AudioWorkletProcessor {
         if (s > 0.999) s = 0.999;
         if (s < -0.999) s = -0.999;
 
-        // Dry/Wet mixing
-        const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
-        outCh[i] = mono[i] * (1.0 - dryWet) + s * dryWet;
+        // Dry/Wet with delay-aligned dry (reduces phasey comb)
+        const d = readDry(i);
+        outCh[i] = d * (1.0 - dryWet) + s * dryWet;
       }
     } else {
-      // Pipeline latency — not enough processed samples yet.
-      // Output scaled dry signal only.
-      const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
+      // Wet underrun: never hard-silence at dryWet=1 — emit delay-aligned dry
       for (let i = 0; i < Q; i++) {
-        outCh[i] = mono[i] * (1.0 - dryWet);
+        outCh[i] = readDry(i);
       }
     }
 

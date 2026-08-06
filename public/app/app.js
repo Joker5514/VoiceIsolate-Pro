@@ -1439,20 +1439,43 @@ class VoiceIsolatePro {
   }
 
   // ── SAB ring buffer init ─────────────────────────────────────────────────
+  // Layout must match public/app/dsp-processor.js + ml-worker dual-SAB protocol:
+  //   input  = header(20) + mag(HALF_BINS) + pha(HALF_BINS) + pcm(HOP_SIZE)
+  //   output = header(20) + mask(HALF_BINS)
   _initSABRings() {
     if (typeof SharedArrayBuffer === 'undefined') return;
-    const inputByteLen = SAB_HEADER_BYTES + HALF_BINS * 4 * 2;
-    const outputByteLen = SAB_HEADER_BYTES + HALF_BINS * 4 * 2;
+    const f32 = Float32Array.BYTES_PER_ELEMENT;
+    const inputByteLen = SAB_HEADER_BYTES + (HALF_BINS * 2 + HOP_SIZE) * f32;
+    const outputByteLen = SAB_HEADER_BYTES + HALF_BINS * f32;
     const inputSAB = new SharedArrayBuffer(inputByteLen);
     const outputSAB = new SharedArrayBuffer(outputByteLen);
     this._inputSAB = inputSAB;
     this._outputSAB = outputSAB;
     const worker = window._vipOrch && window._vipOrch.mlWorker;
     if (worker) {
-      worker.postMessage({ type: 'initRingBuffers', inputRing: inputSAB, maskRing: outputSAB }, []);
+      try {
+        worker.postMessage({
+          type: 'initRingBuffers',
+          inputRing: inputSAB,
+          maskRing: outputSAB,
+          halfN: HALF_BINS,
+          hop: HOP_SIZE,
+          headerBytes: SAB_HEADER_BYTES,
+        }, []);
+      } catch { /* worker may not accept transfer list */ }
     }
+    // If legacy spectral worklet is mounted, hand SABs via canonical initSAB
     const workletNode = window._vipOrch && window._vipOrch.workletNode;
-    if (workletNode) {
+    if (workletNode?.port) {
+      try {
+        workletNode.port.postMessage({
+          type: 'initSAB',
+          inputSAB,
+          outputSAB,
+          halfN: HALF_BINS,
+          hop: HOP_SIZE,
+        });
+      } catch { /* port closed */ }
       workletNode.port.addEventListener('message', (ev) => {
         if (ev.data && ev.data.type === 'sabReady' && ev.data.inputSAB && ev.data.outputSAB) {
           this._inputSAB = ev.data.inputSAB;
