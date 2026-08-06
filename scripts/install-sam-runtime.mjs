@@ -105,17 +105,19 @@ function ensureVenv(pythonCmd) {
   return { pip, py };
 }
 
-function installSam(pip) {
+function installSam(py, pip) {
   log('upgrading pip …');
-  run(pip, ['install', '-U', 'pip', 'wheel', 'setuptools']);
+  // Must use python -m pip to upgrade pip itself on Windows.
+  run(py, ['-m', 'pip', 'install', '-U', 'pip', 'wheel', 'setuptools']);
   log('installing official sam-audio from GitHub …');
-  // May take several minutes; requires network.
-  run(pip, ['install', 'git+https://github.com/facebookresearch/sam-audio.git']);
+  // May take several minutes; requires network + git.
+  run(py, ['-m', 'pip', 'install', 'git+https://github.com/facebookresearch/sam-audio.git']);
   log('installing worker extras (numpy) …');
-  run(pip, ['install', '-r', path.join('services', 'sam-audio', 'requirements.txt')]);
+  run(py, ['-m', 'pip', 'install', '-r', path.join('services', 'sam-audio', 'requirements.txt')]);
   log('REAL sam-audio package installed into .venv-sam');
   log('Next: hf auth login  (after Meta HF access approval)');
   log('Then: pnpm sam:worker   or Electron samWorkerStart()');
+  void pip;
 }
 
 function writeDesktopPythonPointer(py) {
@@ -148,7 +150,7 @@ function main() {
   try {
     const pyCmd = findPython();
     const { pip, py } = ensureVenv(pyCmd);
-    installSam(pip);
+    installSam(py, pip);
     writeDesktopPythonPointer(py);
   } catch (err) {
     log(`WARNING: pip install failed: ${err.message}`);
