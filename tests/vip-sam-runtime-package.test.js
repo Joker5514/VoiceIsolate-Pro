@@ -16,13 +16,30 @@ describe('vip-sam-runtime package in program', () => {
       'packages/vip-sam-runtime/index.js',
       'packages/vip-sam-runtime/paths.js',
       'services/sam-audio/server.py',
+      'services/sam-audio/torchcodec_bootstrap.py',
+      'services/sam-audio/sam_hub_compat.py',
       'services/sam-audio/requirements.txt',
       'scripts/install-sam-runtime.mjs',
+      'scripts/sam-production-setup.mjs',
       'scripts/ensure-sam-in-build.mjs',
       'scripts/run-sam-worker.mjs',
     ]) {
       expect(fs.existsSync(path.join(ROOT, rel))).toBe(true);
     }
+  });
+
+  test('worker production hardening is present', () => {
+    const server = fs.readFileSync(path.join(ROOT, 'services/sam-audio/server.py'), 'utf8');
+    expect(server).toMatch(/SAM_AUDIO_PRODUCTION/);
+    expect(server).toMatch(/SAM_AUDIO_ALLOW_MOCK/);
+    expect(server).toMatch(/torchcodec_bootstrap/);
+    expect(server).toMatch(/sam_hub_compat|apply_sam_hub_compat|_apply_hub_compat/);
+    expect(server).toMatch(/\/ready/);
+    expect(server).toMatch(/real-sam-required/);
+    const electron = fs.readFileSync(path.join(ROOT, 'electron/main.cjs'), 'utf8');
+    expect(electron).toMatch(/SAM_AUDIO_PRODUCTION/);
+    expect(electron).toMatch(/VIP_FFMPEG_SHARED_BIN|resolveFfmpegSharedBin/);
+    expect(electron).toMatch(/--preload/);
   });
 
   test('manifest lists web, android, desktop', () => {

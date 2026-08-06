@@ -101,3 +101,11 @@ sam-out*.txt
 .venv-sam/
 services/sam-audio/.python-path
 
+
+# Local tooling (shared FFmpeg for SAM torchcodec, etc.)
+.tools/
+
+
+services/sam-audio/.ffmpeg-bin
+sam-prod-err.log
+

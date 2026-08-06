@@ -36,6 +36,13 @@ describe('Electron SAM worker IPC', () => {
     expect(src).toMatch(/sandbox:\s*true/);
   });
 
+  test('main production defaults require real SAM', () => {
+    const src = read('electron/main.cjs');
+    expect(src).toMatch(/SAM_AUDIO_PRODUCTION.*\|\|\s*['"]1['"]/);
+    expect(src).toMatch(/SAM_AUDIO_ALLOW_MOCK.*\|\|\s*['"]0['"]/);
+    expect(src).toMatch(/resolveFfmpegSharedBin|VIP_FFMPEG_SHARED_BIN/);
+  });
+
   test('no shell exec from renderer-facing surfaces', () => {
     const preload = read('electron/preload.cjs');
     expect(preload).not.toMatch(/exec\(/);

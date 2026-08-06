@@ -41,11 +41,27 @@ function main() {
   const pkgDest = path.join(BUILD, 'packages', 'vip-sam-runtime');
   if (fs.existsSync(pkgSrc)) cpDir(pkgSrc, pkgDest);
 
-  // Worker sources for Electron extraResources staging
+  // Worker sources for Electron extraResources staging (no venv pointers / pyc)
   const workerSrc = path.join(ROOT, 'services', 'sam-audio');
   const workerDest = path.join(BUILD, 'sam-audio');
   if (fs.existsSync(workerSrc)) {
-    cpDir(workerSrc, workerDest);
+    fs.mkdirSync(workerDest, { recursive: true });
+    for (const name of fs.readdirSync(workerSrc)) {
+      if (
+        name === '__pycache__' ||
+        name.endsWith('.pyc') ||
+        name === '.python-path' ||
+        name === '.ffmpeg-bin' ||
+        name.startsWith('.')
+      ) {
+        continue;
+      }
+      const from = path.join(workerSrc, name);
+      const to = path.join(workerDest, name);
+      const st = fs.statSync(from);
+      if (st.isDirectory()) cpDir(from, to);
+      else fs.copyFileSync(from, to);
+    }
   }
 
   // Copy optional onnx if present
@@ -55,6 +71,14 @@ function main() {
     console.log('[ensure-sam] included sam_audio.onnx in build');
   } else {
     console.log('[ensure-sam] sam_audio.onnx not present (optional); marker + worker still bundled');
+  }
+
+  // Optional shared FFmpeg for packaged Electron (process.resourcesPath/ffmpeg-shared)
+  const ffmpegSrc = path.join(ROOT, '.tools', 'ffmpeg-shared');
+  const ffmpegDest = path.join(BUILD, 'ffmpeg-shared');
+  if (fs.existsSync(ffmpegSrc)) {
+    cpDir(ffmpegSrc, ffmpegDest);
+    console.log('[ensure-sam] staged .tools/ffmpeg-shared → build/ffmpeg-shared');
   }
 
   console.log('[ensure-sam] SAM runtime package staged into build/ for web+android+desktop');

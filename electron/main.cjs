@@ -428,22 +428,38 @@ function registerIpc() {
     const python = resolveSamPython();
     try {
       samWorkerPort = port;
+      const ffmpegBin = resolveFfmpegSharedBin();
+      const env = {
+        ...process.env,
+        SAM_AUDIO_MODE: process.env.SAM_AUDIO_MODE || 'local-worker',
+        SAM_AUDIO_HOST: '127.0.0.1',
+        SAM_AUDIO_PORT: String(port),
+        SAM_AUDIO_MODEL: process.env.SAM_AUDIO_MODEL || 'facebook/sam-audio-small',
+        // Production desktop: prefer real model; allow mock only if explicitly set
+        SAM_AUDIO_PRODUCTION: process.env.SAM_AUDIO_PRODUCTION || '1',
+        SAM_AUDIO_ALLOW_MOCK: process.env.SAM_AUDIO_ALLOW_MOCK || '0',
+        SAM_AUDIO_PRELOAD: process.env.SAM_AUDIO_PRELOAD || '1',
+      };
+      if (ffmpegBin) {
+        env.PATH = `${ffmpegBin}${path.delimiter}${env.PATH || ''}`;
+        env.VIP_FFMPEG_SHARED_BIN = ffmpegBin;
+      }
+      let spawnErr = null;
       samWorkerProc = spawn(
         python,
-        [script, '--host', '127.0.0.1', '--port', String(port)],
+        [script, '--host', '127.0.0.1', '--port', String(port), '--preload'],
         {
           cwd: path.dirname(script),
-          env: {
-            ...process.env,
-            SAM_AUDIO_MODE: process.env.SAM_AUDIO_MODE || 'local-worker',
-            SAM_AUDIO_HOST: '127.0.0.1',
-            SAM_AUDIO_PORT: String(port),
-            SAM_AUDIO_MODEL: process.env.SAM_AUDIO_MODEL || 'facebook/sam-audio-small',
-          },
+          env,
           stdio: ['ignore', 'ignore', 'pipe'],
           windowsHide: true,
         },
       );
+      samWorkerProc.on('error', (err) => {
+        spawnErr = err;
+        console.error('[electron][sam-worker] spawn error', err?.message || err);
+        samWorkerProc = null;
+      });
       samWorkerProc.on('exit', () => {
         samWorkerProc = null;
       });
@@ -452,8 +468,15 @@ function registerIpc() {
         const line = String(buf).trim().slice(0, 200);
         if (line) console.info('[electron][sam-worker]', line);
       });
-      // Brief wait for listen
+      // Brief wait for listen (or async spawn failure)
       await new Promise((r) => setTimeout(r, 400));
+      if (spawnErr || !samWorkerProc) {
+        return {
+          ok: false,
+          reason: spawnErr?.message || 'spawn-failed',
+          baseUrl: `http://127.0.0.1:${port}`,
+        };
+      }
       const baseUrl = `http://127.0.0.1:${port}`;
       const healthy = await probeSamHealth(baseUrl);
       return { ok: true, baseUrl, healthy };
@@ -517,6 +540,42 @@ function resolveSamPython() {
     } catch { /* continue */ }
   }
   return process.platform === 'win32' ? 'python' : 'python3';
+}
+
+/** Shared FFmpeg bin dir (Windows torchcodec / production SAM). */
+function resolveFfmpegSharedBin() {
+  if (process.env.VIP_FFMPEG_SHARED_BIN && fsSync.existsSync(process.env.VIP_FFMPEG_SHARED_BIN)) {
+    return process.env.VIP_FFMPEG_SHARED_BIN;
+  }
+  const pointer = path.join(ROOT, 'services', 'sam-audio', '.ffmpeg-bin');
+  try {
+    if (fsSync.existsSync(pointer)) {
+      const line = fsSync.readFileSync(pointer, 'utf8').trim();
+      if (line && fsSync.existsSync(line)) return line;
+    }
+  } catch { /* ignore */ }
+  const roots = [
+    path.join(ROOT, '.tools', 'ffmpeg-shared'),
+    path.join(process.resourcesPath || '', 'ffmpeg-shared'),
+  ];
+  for (const root of roots) {
+    if (!fsSync.existsSync(root)) continue;
+    const stack = [root];
+    while (stack.length) {
+      const d = stack.pop();
+      let ents;
+      try {
+        ents = fsSync.readdirSync(d, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      if (ents.some((e) => e.isFile() && /^avcodec/i.test(e.name))) return d;
+      for (const e of ents) {
+        if (e.isDirectory()) stack.push(path.join(d, e.name));
+      }
+    }
+  }
+  return null;
 }
 
 function probeSamHealth(baseUrl) {

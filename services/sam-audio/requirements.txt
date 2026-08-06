@@ -1,7 +1,12 @@
 # Optional production deps for real Meta SAM-Audio (gated weights).
-# CI uses the built-in mock separator when these are absent.
+# Prefer: pnpm sam:setup  (creates .venv-sam + official package + FFmpeg shared).
 #
-# torch
-# torchaudio
-# sam-audio  # install per Meta / project docs when licensed
+# Official stack (also pulled by sam-audio):
+#   pip install git+https://github.com/facebookresearch/sam-audio.git
+#
+# Worker-only extras used by server.py mock / PCM path:
 numpy>=1.24
+
+# Pin note: sam_audio BaseModel expects proxies/resume_download on
+# _from_pretrained; hub 1.x dropped them. services/sam-audio/sam_hub_compat.py
+# patches this at runtime — do not rely on ancient hub pins alone.
