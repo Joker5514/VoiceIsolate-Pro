@@ -96,3 +96,8 @@ landing-vercel.png
 sam-err*.txt
 sam-out*.txt
 
+
+# Local SAM Python venv (install via pnpm sam:install)
+.venv-sam/
+services/sam-audio/.python-path
+
