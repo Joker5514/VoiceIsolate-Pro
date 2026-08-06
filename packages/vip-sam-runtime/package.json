@@ -1,0 +1,19 @@
+{
+  "name": "@voiceisolate/vip-sam-runtime",
+  "version": "25.0.1",
+  "description": "Shared SAM-Audio runtime contract for Web, Android (Capacitor), and Electron",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./paths": "./paths.js",
+    "./manifest": "./manifest.json"
+  },
+  "files": [
+    "index.js",
+    "paths.js",
+    "manifest.json",
+    "README.md"
+  ],
+  "license": "SEE LICENSE IN ../../LICENSE"
+}

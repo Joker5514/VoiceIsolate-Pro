@@ -1,0 +1,47 @@
+{
+  "packageId": "vip-sam-runtime",
+  "version": "25.0.1",
+  "product": "VoiceIsolate Pro",
+  "sam": {
+    "officialRepo": "https://github.com/facebookresearch/sam-audio",
+    "defaultModelId": "facebook/sam-audio-small",
+    "models": [
+      "facebook/sam-audio-small",
+      "facebook/sam-audio-base",
+      "facebook/sam-audio-large"
+    ],
+    "install": {
+      "pip": "git+https://github.com/facebookresearch/sam-audio.git",
+      "python": ">=3.11",
+      "notes": "HF gated weights require hf auth login after access approval"
+    },
+    "onnx": {
+      "filename": "sam_audio.onnx",
+      "webPath": "/app/models/sam_audio.onnx",
+      "optional": true,
+      "note": "Optional on-device ORT path for Android WebView / browser when export is present"
+    },
+    "worker": {
+      "module": "services/sam-audio/server.py",
+      "defaultHost": "127.0.0.1",
+      "defaultPort": 8765
+    }
+  },
+  "platforms": {
+    "web": {
+      "bundled": true,
+      "runtime": "js-providers + optional onnx",
+      "realSam": "local-worker loopback or optional onnx"
+    },
+    "android": {
+      "bundled": true,
+      "runtime": "shared web renderer + optional onnx asset",
+      "realSam": "sam_audio.onnx in assets/WebView ORT; else USM/BSRNN"
+    },
+    "desktop": {
+      "bundled": true,
+      "runtime": "electron extraResources + python worker",
+      "realSam": "Meta sam_audio via local worker (CUDA/CPU)"
+    }
+  }
+}

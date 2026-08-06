@@ -9,10 +9,31 @@ directories:
   output: dist/electron
   buildResources: electron/resources
 
+# Bundle the real SAM-Audio *runtime package* (worker + vip-sam-runtime) into
+# every Desktop install. Model weights download on first use (HF gated).
+extraResources:
+  - from: services/sam-audio
+    to: sam-audio
+    filter:
+      - '**/*'
+      - '!**/.venv*/**'
+      - '!**/*.pyc'
+  - from: packages/vip-sam-runtime
+    to: vip-sam-runtime
+    filter:
+      - '**/*'
+  - from: build/app/models
+    to: sam-models
+    filter:
+      - 'sam-runtime.marker.json'
+      - 'sam_audio.onnx'
+      - 'README.md'
+
 files:
   - build/**/*
   - electron/**/*
   - package.json
+  - packages/vip-sam-runtime/**/*
   # Exclude huge optional weights not needed for default offline isolation.
   # Default chain is bsrnn_vocals (~4 MB); demucs FP32 is ~350 MB.
   - '!build/app/models/demucs_v4_fp32.onnx'

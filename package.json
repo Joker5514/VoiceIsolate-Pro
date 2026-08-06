@@ -1,6 +1,6 @@
 {
   "name": "voiceisolate-pro",
-  "version": "25.0.0",
+  "version": "25.0.1",
   "type": "module",
   "description": "Studio-grade voice isolation platform. Upload-only workflow — 32-stage Octa-Pass DSP with hybrid ML + classical spectral processing. Web, Electron desktop, and Capacitor Android.",
   "private": true,
@@ -38,7 +38,7 @@
     "start": "node server.js",
     "dev": "node server.js",
     "serve": "npx serve public -l 3000 --cors",
-    "build": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs && node scripts/ensure-sam-in-build.mjs",
     "lint": "eslint public/app/app.js public/app/workflow-tier.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js public/app/vip-enhancements.js public/landing.js src server electron",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node",
     "test:ci": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit",
@@ -55,7 +55,7 @@
     "test:engineer": "node scripts/engineer-rt-smoke.cjs",
     "pretest:engineer": "playwright install chromium",
     "pretest:live": "playwright install chromium",
-    "build:mobile": "pnpm run build && npx cap sync",
+    "build:mobile": "pnpm run build && npx cap sync && node scripts/ensure-sam-in-build.mjs",
     "cap:sync": "npx cap sync",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios",
@@ -82,7 +82,13 @@
     "electron:dev": "cross-env VIP_ELECTRON_DEV=1 electron .",
     "electron:start": "electron .",
     "build:electron": "node scripts/electron-build-win.mjs",
-    "build:electron:dir": "node scripts/electron-build-win.mjs --dir"
+    "build:electron:dir": "node scripts/electron-build-win.mjs --dir",
+    "sam:worker": "node scripts/run-sam-worker.mjs",
+    "check:cloud-audio": "node scripts/check-no-cloud-audio.js",
+    "test:sam": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit tests/providers-sam.test.js tests/electron-sam-ipc.test.js",
+    "sam:install": "node scripts/install-sam-runtime.mjs",
+    "sam:install:layout": "node scripts/install-sam-runtime.mjs --skip-pip",
+    "sam:ensure-build": "node scripts/ensure-sam-in-build.mjs"
   },
   "devDependencies": {
     "@capacitor/android": "^8.3.1",

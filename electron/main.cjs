@@ -21,12 +21,18 @@ const path = require('path');
 const fs = require('fs/promises');
 const fsSync = require('fs');
 const { pathToFileURL } = require('url');
+const { spawn } = require('child_process');
+const http = require('http');
 const { autoUpdater } = require('electron-updater');
 const { IPC } = require('./ipc-channels.cjs');
 
 const ROOT = path.join(__dirname, '..');
 const isDev = process.env.VIP_ELECTRON_DEV === '1' || !app.isPackaged;
 const DEV_URL = process.env.VIP_DEV_URL || 'http://localhost:3000';
+
+/** @type {import('child_process').ChildProcess|null} */
+let samWorkerProc = null;
+let samWorkerPort = Number(process.env.SAM_AUDIO_PORT || 8765) || 8765;
 
 /** Essential ONNX assets for offline isolation (DEFAULT_ML_CHAIN + common fallbacks). */
 const OFFLINE_MODELS = Object.freeze([
@@ -391,6 +397,153 @@ function registerIpc() {
     autoUpdater.quitAndInstall();
     return { ok: true };
   });
+
+  // ── Local SAM-Audio worker (Option B) ───────────────────────────────────
+  ipcMain.handle(IPC.SAM_WORKER_STATUS, async () => {
+    const running = !!(samWorkerProc && !samWorkerProc.killed);
+    const baseUrl = `http://127.0.0.1:${samWorkerPort}`;
+    let healthy = false;
+    if (running) {
+      healthy = await probeSamHealth(baseUrl);
+    }
+    return {
+      running,
+      healthy,
+      baseUrl,
+      port: samWorkerPort,
+      mode: process.env.SAM_AUDIO_MODE || 'local-worker',
+      browserSam: false,
+    };
+  });
+
+  ipcMain.handle(IPC.SAM_WORKER_START, async (_evt, opts) => {
+    const port = Number(opts?.port || process.env.SAM_AUDIO_PORT || 8765) || 8765;
+    if (samWorkerProc && !samWorkerProc.killed) {
+      return { ok: true, already: true, baseUrl: `http://127.0.0.1:${samWorkerPort}` };
+    }
+    const script = resolveSamWorkerScript();
+    if (!script || !fsSync.existsSync(script)) {
+      return { ok: false, reason: 'worker-script-missing', tried: script };
+    }
+    const python = resolveSamPython();
+    try {
+      samWorkerPort = port;
+      samWorkerProc = spawn(
+        python,
+        [script, '--host', '127.0.0.1', '--port', String(port)],
+        {
+          cwd: path.dirname(script),
+          env: {
+            ...process.env,
+            SAM_AUDIO_MODE: process.env.SAM_AUDIO_MODE || 'local-worker',
+            SAM_AUDIO_HOST: '127.0.0.1',
+            SAM_AUDIO_PORT: String(port),
+            SAM_AUDIO_MODEL: process.env.SAM_AUDIO_MODEL || 'facebook/sam-audio-small',
+          },
+          stdio: ['ignore', 'ignore', 'pipe'],
+          windowsHide: true,
+        },
+      );
+      samWorkerProc.on('exit', () => {
+        samWorkerProc = null;
+      });
+      samWorkerProc.stderr?.on('data', (buf) => {
+        // Avoid logging potential secrets; only short process noise.
+        const line = String(buf).trim().slice(0, 200);
+        if (line) console.info('[electron][sam-worker]', line);
+      });
+      // Brief wait for listen
+      await new Promise((r) => setTimeout(r, 400));
+      const baseUrl = `http://127.0.0.1:${port}`;
+      const healthy = await probeSamHealth(baseUrl);
+      return { ok: true, baseUrl, healthy };
+    } catch (err) {
+      samWorkerProc = null;
+      return { ok: false, reason: err?.message || 'spawn-failed' };
+    }
+  });
+
+  ipcMain.handle(IPC.SAM_WORKER_STOP, async () => {
+    if (samWorkerProc && !samWorkerProc.killed) {
+      try {
+        samWorkerProc.kill();
+      } catch { /* ignore */ }
+      samWorkerProc = null;
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC.SAM_WORKER_CAPABILITIES, async () => {
+    const baseUrl = `http://127.0.0.1:${samWorkerPort}`;
+    try {
+      const body = await httpGetJson(`${baseUrl}/capabilities`);
+      return { ok: true, capabilities: body, baseUrl };
+    } catch (err) {
+      return { ok: false, reason: err?.message || 'unreachable', baseUrl };
+    }
+  });
+}
+
+/** Packaged Electron: process.resourcesPath/sam-audio; dev: repo services/sam-audio */
+function resolveSamWorkerScript() {
+  const candidates = [
+    process.env.SAM_AUDIO_WORKER_SCRIPT,
+    path.join(process.resourcesPath || '', 'sam-audio', 'server.py'),
+    path.join(ROOT, 'services', 'sam-audio', 'server.py'),
+    path.join(ROOT, 'build', 'sam-audio', 'server.py'),
+  ].filter(Boolean);
+  for (const c of candidates) {
+    if (fsSync.existsSync(c)) return c;
+  }
+  return candidates[candidates.length - 1] || null;
+}
+
+function resolveSamPython() {
+  if (process.env.SAM_AUDIO_PYTHON) return process.env.SAM_AUDIO_PYTHON;
+  if (process.env.PYTHON) return process.env.PYTHON;
+  const pointers = [
+    path.join(process.resourcesPath || '', 'sam-audio', '.python-path'),
+    path.join(ROOT, 'services', 'sam-audio', '.python-path'),
+    path.join(ROOT, '.venv-sam', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
+  ];
+  for (const p of pointers) {
+    try {
+      if (p.endsWith('python') || p.endsWith('python.exe')) {
+        if (fsSync.existsSync(p)) return p;
+      } else if (fsSync.existsSync(p)) {
+        const line = fsSync.readFileSync(p, 'utf8').trim();
+        if (line && fsSync.existsSync(line)) return line;
+      }
+    } catch { /* continue */ }
+  }
+  return process.platform === 'win32' ? 'python' : 'python3';
+}
+
+function probeSamHealth(baseUrl) {
+  return httpGetJson(`${baseUrl}/health`)
+    .then((b) => !!b.ok)
+    .catch(() => false);
+}
+
+function httpGetJson(url) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, { timeout: 2000 }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('timeout'));
+    });
+  });
 }
 
 app.whenReady().then(async () => {
@@ -424,5 +577,16 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
+  if (samWorkerProc && !samWorkerProc.killed) {
+    try { samWorkerProc.kill(); } catch { /* ignore */ }
+    samWorkerProc = null;
+  }
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  if (samWorkerProc && !samWorkerProc.killed) {
+    try { samWorkerProc.kill(); } catch { /* ignore */ }
+    samWorkerProc = null;
+  }
 });

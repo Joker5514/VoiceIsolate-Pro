@@ -1,0 +1,7 @@
+# Optional production deps for real Meta SAM-Audio (gated weights).
+# CI uses the built-in mock separator when these are absent.
+#
+# torch
+# torchaudio
+# sam-audio  # install per Meta / project docs when licensed
+numpy>=1.24

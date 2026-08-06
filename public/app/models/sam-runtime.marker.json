@@ -1,0 +1,15 @@
+{
+  "packageId": "vip-sam-runtime",
+  "version": "25.0.1",
+  "bundled": true,
+  "platforms": [
+    "web",
+    "android",
+    "desktop"
+  ],
+  "worker": "services/sam-audio/server.py",
+  "onnxOptional": "/app/models/sam_audio.onnx",
+  "officialInstall": "git+https://github.com/facebookresearch/sam-audio.git",
+  "defaultModel": "facebook/sam-audio-small",
+  "installedAt": "2026-08-06T02:13:46.473Z"
+}

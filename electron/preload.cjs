@@ -69,6 +69,13 @@ const vipDesktop = Object.freeze({
     ipcRenderer.on(IPC.UPDATE_STATUS, handler);
     return () => ipcRenderer.removeListener(IPC.UPDATE_STATUS, handler);
   },
+
+  /** Local SAM-Audio worker status (never exposes shell/python paths to UI logs). */
+  samWorkerStatus: () => ipcRenderer.invoke(IPC.SAM_WORKER_STATUS),
+  /** @param {{ port?: number }=} opts */
+  samWorkerStart: (opts) => ipcRenderer.invoke(IPC.SAM_WORKER_START, opts || {}),
+  samWorkerStop: () => ipcRenderer.invoke(IPC.SAM_WORKER_STOP),
+  samWorkerCapabilities: () => ipcRenderer.invoke(IPC.SAM_WORKER_CAPABILITIES),
 });
 
 contextBridge.exposeInMainWorld('vipDesktop', vipDesktop);
