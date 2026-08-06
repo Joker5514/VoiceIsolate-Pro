@@ -90,13 +90,32 @@ describe('selectIsolationProvider', () => {
     expect(sel.fallback).toBe(true);
   });
 
-  test('android auto defaults onnx', async () => {
+  test('android auto falls back to onnx/usm when worker down', async () => {
     const sel = await providers.selectIsolationProvider({
       samMode: 'auto',
       isAndroid: true,
-      fetchImpl: async () => ({ ok: false }),
+      fetchImpl: async () => { throw new Error('offline'); },
     });
     expect(sel.provider.id).toBe('onnx-local');
+    expect(sel.fallback).toBe(true);
+  });
+
+  test('local-worker real path selected when capabilities available', async () => {
+    const fetchImpl = async (url) => {
+      if (String(url).includes('/capabilities')) {
+        return {
+          ok: true,
+          json: async () => ({ available: true, mock: false, backends: ['sam-audio-worker'] }),
+        };
+      }
+      throw new Error('unexpected');
+    };
+    const sel = await providers.selectIsolationProvider({
+      samMode: 'local-worker',
+      fetchImpl,
+    });
+    expect(sel.provider.id).toBe('sam-local-worker');
+    expect(sel.reason).toMatch(/local-worker/);
   });
 });
 

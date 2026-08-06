@@ -54,24 +54,21 @@ export async function selectIsolationProvider(opts = {}) {
   }
 
   if (samMode === 'local-worker' || samMode === 'auto') {
-    // Android: still allow private worker if user configured loopback via reverse
-    // tunnel — but default health will fail and we keep onnx.
-    if (opts.isAndroid && samMode === 'auto' && !opts.preferSam) {
+    // Desktop / explicit local-worker: prefer real SAM worker when healthy.
+    // Android WebView: try worker first (ADB reverse / LAN loopback rare), then ONNX/USM.
+    const caps = await worker.getCapabilities();
+    if (caps.available) {
       return {
-        provider: onnx,
-        reason: 'android-default-onnx',
+        provider: worker,
+        reason: caps.mock ? 'local-worker-mock' : 'local-worker-real',
+        caps,
         candidates: { onnx, browserSam, worker },
       };
     }
-    const caps = await worker.getCapabilities();
-    if (caps.available || opts.preferSam) {
-      if (caps.available) {
-        return { provider: worker, reason: 'local-worker', caps, candidates: { onnx, browserSam, worker } };
-      }
-    }
+    // Real SAM worker not reachable — classical USM/ONNX still works on all platforms.
     return {
       provider: onnx,
-      reason: 'local-worker-unavailable',
+      reason: opts.isAndroid ? 'android-usm-onnx-fallback' : 'local-worker-unavailable',
       fallback: true,
       caps,
       candidates: { onnx, browserSam, worker },
@@ -81,10 +78,17 @@ export async function selectIsolationProvider(opts = {}) {
   return { provider: onnx, reason: 'unknown-mode', candidates: { onnx, browserSam, worker } };
 }
 
+function envLookup(key) {
+  try {
+    const proc = typeof globalThis !== 'undefined' ? globalThis.process : undefined;
+    if (proc && proc.env && proc.env[key]) return proc.env[key];
+  } catch { /* browser / sandbox */ }
+  return undefined;
+}
+
 function readEnvMode() {
-  if (typeof process !== 'undefined' && process.env && process.env.SAM_AUDIO_MODE) {
-    return process.env.SAM_AUDIO_MODE;
-  }
+  const fromEnv = envLookup('SAM_AUDIO_MODE');
+  if (fromEnv) return fromEnv;
   if (typeof globalThis !== 'undefined' && globalThis.__VIP_SAM_AUDIO_MODE) {
     return globalThis.__VIP_SAM_AUDIO_MODE;
   }
@@ -93,13 +97,18 @@ function readEnvMode() {
       return localStorage.getItem('vip-sam-audio-mode') || undefined;
     }
   } catch { /* ignore */ }
+  // Desktop: prefer local worker when Electron preload is present.
+  try {
+    if (typeof globalThis !== 'undefined' && globalThis.vipDesktop?.samWorkerStatus) {
+      return 'local-worker';
+    }
+  } catch { /* ignore */ }
   return undefined;
 }
 
 function readEnvWorkerUrl() {
-  if (typeof process !== 'undefined' && process.env && process.env.SAM_AUDIO_BASE_URL) {
-    return process.env.SAM_AUDIO_BASE_URL;
-  }
+  const fromEnv = envLookup('SAM_AUDIO_BASE_URL');
+  if (fromEnv) return fromEnv;
   if (typeof globalThis !== 'undefined' && globalThis.__VIP_SAM_AUDIO_BASE_URL) {
     return globalThis.__VIP_SAM_AUDIO_BASE_URL;
   }

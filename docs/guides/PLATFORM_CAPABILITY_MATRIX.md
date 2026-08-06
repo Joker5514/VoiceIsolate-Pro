@@ -7,15 +7,17 @@
 | Live-Mix worklets (gate/de-ess) | ✅ | ✅ if WebAudio OK | ✅ |
 | Live microphone capture | ❌ by design | ❌ by design | ❌ by design |
 | Prompted Isolation (USM query) | ✅ offline | ✅ offline | ✅ offline |
-| Browser SAM-Audio ONNX | ❌ not verified | ❌ | ❌ |
-| Local SAM-Audio worker (loopback) | ⚪ user-run | ⚪ advanced only | ✅ IPC spawn |
+| Real SAM-Audio (Meta PyTorch worker) | ⚪ loopback if user runs worker | ❌ (use ONNX path) | ✅ IPC + CUDA/CPU |
+| SAM-Audio ONNX on-device | ⚪ if `sam_audio.onnx` shipped | ⚪ if model in assets/WebView | ⚪ optional |
+| Local SAM-Audio worker (loopback) | ⚪ user-run | ⚪ advanced (ADB reverse) | ✅ IPC spawn |
 | Cloud/fal/Replicate audio | ❌ forbidden | ❌ forbidden | ❌ forbidden |
 | Single-pass STFT budget | ✅ | ✅ | ✅ |
 
 ## Android notes
 
 - minSdk effective **26**, target/compile **35**, Capacitor **8.3**
-- Do **not** claim on-device SAM without device matrix + model export
+- Real on-device SAM = optional **SAM-Audio ONNX** under `/app/models/sam_audio.onnx` (ORT in WebView)
+- Without that file, prompted isolation uses **USM + existing ONNX** (still fully local)
 - largeHeap enabled; long jobs must yield / cancel
 
 ## Desktop notes

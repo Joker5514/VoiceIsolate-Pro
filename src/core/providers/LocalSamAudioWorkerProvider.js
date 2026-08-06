@@ -204,20 +204,30 @@ function toMono(audio) {
   throw new TypeError('[VIP][sam-worker] audio must be Float32Array or Float32Array[]');
 }
 
+function getNodeBuffer() {
+  try {
+    if (typeof globalThis !== 'undefined' && globalThis.Buffer) return globalThis.Buffer;
+  } catch { /* ignore */ }
+  return null;
+}
+
 export function float32ToBase64(f32) {
   const bytes = new Uint8Array(f32.buffer, f32.byteOffset, f32.byteLength);
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(bytes).toString('base64');
-  }
+  const Buf = getNodeBuffer();
+  if (Buf) return Buf.from(bytes).toString('base64');
   let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
   return btoa(bin);
 }
 
 export function base64ToFloat32(b64) {
   let bytes;
-  if (typeof Buffer !== 'undefined') {
-    bytes = new Uint8Array(Buffer.from(b64, 'base64'));
+  const Buf = getNodeBuffer();
+  if (Buf) {
+    bytes = new Uint8Array(Buf.from(b64, 'base64'));
   } else {
     const bin = atob(b64);
     bytes = new Uint8Array(bin.length);

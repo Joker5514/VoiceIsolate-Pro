@@ -8,3 +8,4 @@ export {
   base64ToFloat32,
 } from './LocalSamAudioWorkerProvider.js';
 export { selectIsolationProvider } from './selectProvider.js';
+export { probeSamOnnxModel, getSamPlatformCapabilities } from './SamOnnxCapability.js';

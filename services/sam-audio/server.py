@@ -56,24 +56,32 @@ def _resolve_device() -> str:
 
 
 def _try_load_sam() -> Tuple[Any, Any, str, bool]:
-    """Returns (model, processor, device, mock)."""
+    """Returns (model, processor, device, mock).
+
+    Real Meta SAM-Audio when `sam_audio` + weights are available (Desktop GPU/CPU).
+    Set SAM_AUDIO_REQUIRE_REAL=1 to fail instead of mock (production Desktop).
+    """
     global _sam_bundle
     if _sam_bundle is not None:
         return _sam_bundle
     device = _resolve_device()
+    require_real = os.environ.get("SAM_AUDIO_REQUIRE_REAL", "").lower() in ("1", "true", "yes")
     try:
         from sam_audio import SAMAudio, SAMAudioProcessor  # type: ignore
 
+        # HF token stays in process env only (never sent to clients).
         model = SAMAudio.from_pretrained(MODEL_ID)
         processor = SAMAudioProcessor.from_pretrained(MODEL_ID)
+        model = model.eval()
         if device == "cuda":
-            model = model.eval().cuda()
-        else:
-            model = model.eval()
+            model = model.cuda()
         _sam_bundle = (model, processor, device, False)
-        _log(f"loaded real sam_audio model on {device}")
+        _log(f"REAL sam_audio loaded on {device} model={MODEL_ID}")
         return _sam_bundle
     except Exception as exc:
+        if require_real:
+            _log(f"REAL sam required but load failed: {type(exc).__name__}")
+            raise
         _log(f"sam_audio unavailable ({type(exc).__name__}); using mock separator")
         _sam_bundle = (None, None, device, True)
         return _sam_bundle

@@ -161,6 +161,29 @@ export const MODEL_MANIFEST = Object.freeze({
     }),
   }),
 
+  // ── SAM-Audio ONNX (optional) — Android WebView / browser ORT path ─────
+  // Place a verified SAM-Audio ONNX export at this path for on-device ORT.
+  // Desktop prefers the Python local worker (real Meta weights). Without the
+  // file, prompted isolation uses USM query priors (always local).
+  sam_audio: Object.freeze({
+    id: 'sam_audio',
+    name: 'SAM-Audio (ONNX, optional)',
+    task: 'prompted-source-separation',
+    url: '/app/models/sam_audio.onnx',
+    sizeBytes: null,
+    quantization: 'fp16',
+    delivery: 'optional',
+    optional: true,
+    shipped: false,
+    sha256: null,
+    strategy: 'sam-audio-onnx',
+    sampleRate: 48000,
+    io: Object.freeze({
+      input: 'input',
+      output: 'output',
+    }),
+  }),
+
   // ── Universal / query-based source separation (optional AudioSep-class) ──
   // Weights are optional. When missing, USMNode falls back to classical NMF +
   // language-prior masks in src/core/UniversalSourceMatrix.js (always available).

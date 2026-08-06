@@ -46,6 +46,8 @@ const MODE_TO_MODELS = Object.freeze({
   'standard': ['bsrnn_vocals'],
   'maximum': ['bsrnn_vocals', 'rnnoise'],
   'noise-suppression': ['rnnoise'],
+  // Prompted / SAM path — no ONNX chain; ProcessingOrchestrator routes to providers.
+  'prompted': [],
 });
 
 /** Default isolation mode when none is specified. */

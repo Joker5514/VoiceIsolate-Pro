@@ -2,25 +2,45 @@
 
 ## Decision
 
-**Option B — local/self-hosted worker only.**
+**Real SAM-Audio where the platform can run it; local fallbacks otherwise.**
 
-There is **no verified browser ONNX/WebGPU export** of Meta SAM-Audio in this repository. Claims of in-browser SAM are forbidden until a tested export + redistribution rights exist.
+| Platform | Real SAM path | Fallback |
+|----------|---------------|----------|
+| **Desktop Electron** | **Yes** — Meta `sam_audio` via local Python worker (CUDA/CPU). Electron IPC starts worker. | Mock separator if package/weights missing (dev/CI) |
+| **Android** | **Yes when ONNX present** — place `public/app/models/sam_audio.onnx` (or asset) for on-device ORT WebView path; same shared renderer. | Classical USM query + BSRNN/RNNoise (always local) |
+| **Web/PWA** | Optional ONNX if same-origin model shipped; optional loopback worker on same machine | USM query priors |
 
-| Platform | SAM support |
-|----------|-------------|
-| Web/PWA | Local worker on `127.0.0.1` if user starts it; else USM/ONNX prompted path |
-| Android | **No on-device SAM claim**; WebView uses shared ONNX/USM; optional private worker is advanced |
-| Desktop Electron | Main process can spawn `services/sam-audio/server.py` on loopback |
+There is **no cloud SAM** (no fal/Replicate). Live/AudioWorklet never runs SAM.
+
+## Desktop — real SAM
+
+```bash
+# Install Meta SAM-Audio per upstream docs, then:
+set SAM_AUDIO_MODEL=facebook/sam-audio-small
+set SAM_AUDIO_DEVICE=cuda
+python services/sam-audio/server.py --port 8765
+# Or from Electron: vipDesktop.samWorkerStart()
+```
+
+Set `SAM_AUDIO_REQUIRE_REAL=1` to refuse mock fallback.
+
+## Android — real SAM (ONNX)
+
+1. Export or obtain a licensed SAM-Audio ONNX.
+2. Place at `public/app/models/sam_audio.onnx` (synced into Capacitor `build/`).
+3. Rebuild Android. Prompted isolation probes the file; if present, ORT path is eligible.
+4. If absent, USM + BSRNN remain fully local.
 
 ## Modes
 
 ```text
-SAM_AUDIO_MODE=disabled|browser|local-worker
+SAM_AUDIO_MODE=disabled|browser|local-worker|auto
 ```
 
-- `disabled` (default for safety in docs; Electron may set `local-worker` when user starts worker)
-- `browser` — always unavailable until real export lands (`BrowserSamAudioProvider`)
-- `local-worker` — HTTP to loopback only
+- `disabled` — USM/ONNX only
+- `auto` — worker if healthy, else USM/ONNX (Desktop Electron defaults toward worker)
+- `local-worker` — require loopback worker
+- `browser` — only if verified browser export exists (currently not)
 
 ## Provider selection
 
