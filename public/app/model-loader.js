@@ -12,13 +12,13 @@ const CACHE_NAME = 'vip-models-v1';
  * priority: 'lazy'   → deferred until first file drop (large models)
  */
 export const MODEL_REGISTRY = [
+  // Filenames must match public/app/models-manifest.json + shipped /app/models/*
   // EAGER — small, load immediately
-  { id: 'rnnoise',    filename: 'rnnoise.onnx',             priority: 'eager' },
-  { id: 'nsnet2',     filename: 'nsnet2.onnx',              priority: 'eager' },
+  { id: 'rnnoise',    filename: 'rnnoise_suppressor.onnx',  priority: 'eager' },
   { id: 'silero_vad', filename: 'silero_vad.onnx',          priority: 'eager' },
-  // LAZY — large, defer until first audio drop
+  // LAZY — large / optional, defer until first audio drop
+  { id: 'bsrnn',      filename: 'bsrnn_vocals.onnx',        priority: 'lazy'  },
   { id: 'demucs',     filename: 'demucs_v4_quantized.onnx', priority: 'lazy'  },
-  { id: 'bsrnn',      filename: 'bsrnn_quantized.onnx',     priority: 'lazy'  },
 ];
 
 function broadcast(type, model, progress) {

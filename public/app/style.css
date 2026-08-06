@@ -1947,28 +1947,33 @@ details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-ne
   flex-wrap: wrap;
   gap: 6px;
 }
+/* Workflow tiers — red DS language (matches landing / ds-tokens) */
 .vip-tier-pill {
   appearance: none;
-  border: 1px solid rgba(0, 255, 231, 0.22);
-  background: rgba(8, 18, 28, 0.65);
-  color: #b8e8e4;
+  border: 1px solid var(--border-red, rgba(220, 38, 38, 0.28));
+  background: var(--surface-3, rgba(21, 21, 29, 0.9));
+  color: var(--text-2, #9090a4);
   border-radius: 999px;
   padding: 6px 12px;
-  font-size: 0.72rem;
-  font-family: var(--fm);
+  font-size: var(--fs-xs, 0.72rem);
+  font-family: var(--font-mono, var(--fm), monospace);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   cursor: pointer;
   transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 .vip-tier-pill:hover {
-  border-color: rgba(0, 255, 231, 0.45);
-  color: #e8fffd;
+  border-color: rgba(239, 68, 68, 0.55);
+  color: var(--text-hi, #eeeef2);
+  background: var(--hover-fill, rgba(255, 255, 255, 0.04));
 }
 .vip-tier-pill.is-active,
 .vip-tier-pill[aria-pressed="true"] {
-  border-color: rgba(0, 255, 231, 0.75);
-  background: linear-gradient(135deg, rgba(0, 255, 231, 0.18), rgba(157, 77, 255, 0.14));
-  color: #ecfeff;
-  box-shadow: 0 0 18px rgba(0, 255, 231, 0.18);
+  border-color: rgba(239, 68, 68, 0.75);
+  background: linear-gradient(135deg, rgba(220, 38, 38, 0.22), rgba(127, 29, 29, 0.18));
+  color: var(--text-hi, #eeeef2);
+  box-shadow: var(--glow-red, 0 0 18px rgba(220, 38, 38, 0.28));
 }
 .vip-hero-scene {
   display: flex;

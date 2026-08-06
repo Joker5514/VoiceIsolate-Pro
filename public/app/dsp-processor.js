@@ -172,17 +172,24 @@ class WhisperHunterCore {
       return 0;
     }
     this._trackF0(mags);
-    const wStr = 1 + 2.2 * pThreshold;
-    const oversub = 1.15 + 2.8 * pThreshold;
-    const minGain = Math.max(0.08, pClarity * 0.35);
+    // Softer oversubtraction / Wiener exponent — reduce metallic pumping
+    const wStr = 1 + 1.4 * pThreshold;
+    const oversub = 1.05 + 1.6 * pThreshold;
+    const minGain = Math.max(0.12, pClarity * 0.4);
+    // Cap speech boost to avoid harshness / post-limit clipping
+    const speechBoostCap = 1.22;
     for (let k = 0; k < halfN; k++) {
       const sigPow = mags[k] * mags[k];
       const snrNum = Math.max(0, sigPow - oversub * this.noisePsd[k]);
-      const wiener = snrNum / (sigPow + 0.02 * this.noisePsd[k] + this._epsilon);
+      const wiener = snrNum / (sigPow + 0.04 * this.noisePsd[k] + this._epsilon);
       let gain = Math.pow(Math.max(0, wiener), wStr);
       const inVoice = k >= this._voiceLo && k <= this._voiceHi;
-      gain = Math.max(minGain * (inVoice ? 1 : 0.3 + 0.25 * (1 - pThreshold)), gain);
-      if (inVoice && voiceRatio > 0.2) gain = Math.min(1.8, gain * (1 + 0.15 * pClarity));
+      gain = Math.max(minGain * (inVoice ? 1 : 0.35 + 0.3 * (1 - pThreshold)), gain);
+      if (inVoice && voiceRatio > 0.2) {
+        gain = Math.min(speechBoostCap, gain * (1 + 0.1 * pClarity));
+      }
+      // Never amplify non-voice bins (prevents metallic ringing)
+      if (!inVoice) gain = Math.min(1.0, gain);
       re[k] *= gain; im[k] *= gain;
     }
     if (pHarm > 0.08) {
@@ -191,7 +198,7 @@ class WhisperHunterCore {
         for (let dk = -1; dk <= 1; dk++) {
           const k = kh + dk;
           if (k > 0 && k < halfN) {
-            const b = 1 + (pHarm * 0.4) / h;
+            const b = 1 + (pHarm * 0.28) / h;
             re[k] *= b; im[k] *= b;
           }
         }
@@ -261,14 +268,14 @@ class DSPProcessor extends AudioWorkletProcessor {
       eqClarity:   0.0,
       eqAir:       0.0,
       eqBrill:     0.0,
-      whisperLift: 18,
-      crowdNull:   72,
-      bassCrush:   90,
-      reverbStrip: 600,
-      voiceTunnel: 65,
-      musicKill:   80,
+      whisperLift: 6,   // dB — was 18 (harsh); UI default is 0
+      crowdNull:   48,
+      bassCrush:   55,
+      reverbStrip: 400,
+      voiceTunnel: 40,
+      musicKill:   50,
       snrFloor:    -52,
-      whisperMode: 2,
+      whisperMode: 1,
       whisperClarity: 65,
       whisperSensitivity: 55,
       whisperThreshold: 50,
@@ -324,11 +331,15 @@ class DSPProcessor extends AudioWorkletProcessor {
       harmRecov: [0, 100]
     };
 
-    // Gate hold state: prevents clicking on rapid gate transitions
+    // Soft noise gate state (envelope + hold) — never hard-zero samples
     this._gateHoldSamples = 0;
-    const GATE_HOLD_MS    = 20;
+    this._gateGain = 1.0;
+    const GATE_HOLD_MS    = 40;
     const ctorSampleRate  = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
     this._GATE_HOLD_LEN   = Math.round((GATE_HOLD_MS / 1000) * ctorSampleRate);
+    // Attack ~4 ms open, release ~90 ms close (sample-rate adaptive coeffs)
+    this._gateAtkCoeff = Math.exp(-1 / (0.004 * ctorSampleRate));
+    this._gateRelCoeff = Math.exp(-1 / (0.090 * ctorSampleRate));
 
     // Compressor envelope state
     this._envDb  = 0;
@@ -420,24 +431,38 @@ class DSPProcessor extends AudioWorkletProcessor {
       for (let i = 0; i < Q; i++) mono[i] *= inv;
     }
 
-    // Noise gate with hold to prevent clicks
+    // Soft noise gate: RMS detector + hold + exponential gain envelope.
+    // Uses gateRange (dB) as closed floor instead of hard-zero (stops pumping/clicks).
     let rms = 0;
     for (let i = 0; i < Q; i++) rms += mono[i] * mono[i];
     rms = Math.sqrt(rms / Q);
     const rmsDb = rms > 0 ? 20.0 * Math.log10(rms) : -160.0;
-    const belowGate = rmsDb < this._params.gateThresh;
+    const gateThresh = Number.isFinite(this._params.gateThresh) ? this._params.gateThresh : -42;
+    const belowGate = rmsDb < gateThresh;
 
     if (!belowGate) {
       this._gateHoldSamples = this._GATE_HOLD_LEN;
     } else if (this._gateHoldSamples > 0) {
       this._gateHoldSamples -= Q;
     }
-    const gated = belowGate && this._gateHoldSamples <= 0;
+    const gateOpen = !belowGate || this._gateHoldSamples > 0;
+    // gateRange is negative dB attenuation when closed (e.g. -60 → floor ≈ 0.001)
+    let rangeDb = Number(this._params.gateRange);
+    if (!Number.isFinite(rangeDb)) rangeDb = -60;
+    // Accept UI values as either negative dB or positive depth
+    if (rangeDb > 0) rangeDb = -rangeDb;
+    const floorGain = Math.pow(10.0, Math.max(-120, rangeDb) / 20.0);
+    const targetGain = gateOpen ? 1.0 : Math.max(0, Math.min(1, floorGain));
+    const gCoeff = targetGain > this._gateGain ? this._gateAtkCoeff : this._gateRelCoeff;
+    // One-pole toward target per quantum (smooth, non-clicking)
+    this._gateGain = gCoeff * this._gateGain + (1 - gCoeff) * targetGain;
+    if (!Number.isFinite(this._gateGain)) this._gateGain = 1.0;
+    const g = Math.max(0, Math.min(1, this._gateGain));
 
-    // Write mono (or silence) into input ring
+    // Write gated mono into input ring (analysis path)
     const inLen = this._inRing.length;
     for (let i = 0; i < Q; i++) {
-      this._inRing[this._inWr] = gated ? 0.0 : mono[i];
+      this._inRing[this._inWr] = mono[i] * g;
       this._inWr = (this._inWr + 1) % inLen;
     }
     this._newSamples += Q;
@@ -489,10 +514,18 @@ class DSPProcessor extends AudioWorkletProcessor {
         }
         s *= Math.pow(10.0, -this._envDb / 20.0) * cMakeup * outGain;
 
-        // Brickwall limiter
-        if (s >  lim) s =  lim;
-        if (s < -lim) s = -lim;
-        
+        // Soft knee brickwall — reduce harsh clipping discontinuities
+        if (s > lim) {
+          const over = s - lim;
+          s = lim + over / (1 + over / (lim * 0.35 + 1e-9));
+        } else if (s < -lim) {
+          const over = -s - lim;
+          s = -(lim + over / (1 + over / (lim * 0.35 + 1e-9)));
+        }
+        // Hard ceiling safety
+        if (s > 0.999) s = 0.999;
+        if (s < -0.999) s = -0.999;
+
         // Dry/Wet mixing
         const dryWet = typeof this._params.dryWet === 'number' ? this._params.dryWet : 1.0;
         outCh[i] = mono[i] * (1.0 - dryWet) + s * dryWet;
@@ -655,11 +688,12 @@ class DSPProcessor extends AudioWorkletProcessor {
       }
     }
 
-    // [WHISPER UPDATE] Step F — whisper lift on high-confidence mask bins
-    const liftGain = Math.pow(10, params.whisperLift / 20) * wm.postGain;
+    // Whisper lift on high-confidence mask bins (capped — default 18 dB was harsh)
+    const liftDb = Math.min(12, Math.max(0, Number(params.whisperLift) || 0));
+    const liftGain = Math.min(4.0, Math.pow(10, liftDb / 20) * (wm.postGain || 1));
     for (let k = 0; k < HALF_BINS; k++) {
       const m = mask ? Math.max(0.0, Math.min(1.0, mask[k])) : 0.6;
-      if (m > 0.55) maskedMag[k] *= liftGain;
+      if (m > 0.62) maskedMag[k] *= liftGain;
     }
 
     // ── Spectral EQ & Filters ──
