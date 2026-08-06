@@ -345,9 +345,12 @@ class DSPProcessor extends AudioWorkletProcessor {
     const GATE_HOLD_MS    = 40;
     const ctorSampleRate  = typeof sampleRate !== 'undefined' ? sampleRate : 48000;
     this._GATE_HOLD_LEN   = Math.round((GATE_HOLD_MS / 1000) * ctorSampleRate);
-    // Attack ~4 ms open, release ~90 ms close (sample-rate adaptive coeffs)
-    this._gateAtkCoeff = Math.exp(-1 / (0.004 * ctorSampleRate));
-    this._gateRelCoeff = Math.exp(-1 / (0.090 * ctorSampleRate));
+    // Attack ~4 ms open, release ~90 ms close.
+    // Applied once per render quantum (Q samples), so raise per-sample coeff to Q.
+    const atkSample = Math.exp(-1 / (0.004 * ctorSampleRate));
+    const relSample = Math.exp(-1 / (0.090 * ctorSampleRate));
+    this._gateAtkCoeff = Math.pow(atkSample, RENDER_QUANTUM);
+    this._gateRelCoeff = Math.pow(relSample, RENDER_QUANTUM);
 
     // Compressor envelope state
     this._envDb  = 0;
@@ -536,15 +539,22 @@ class DSPProcessor extends AudioWorkletProcessor {
         }
         s *= Math.pow(10.0, -this._envDb / 20.0) * cMakeup * outGain;
 
-        // Soft knee brickwall — reduce harsh clipping discontinuities
-        if (s > lim) {
-          const over = s - lim;
-          s = lim + over / (1 + over / (lim * 0.35 + 1e-9));
-        } else if (s < -lim) {
-          const over = -s - lim;
-          s = -(lim + over / (1 + over / (lim * 0.35 + 1e-9)));
+        // Soft knee into limThresh, then hard clamp to lim (brickwall contract)
+        const soft = lim * 0.85;
+        const abs = Math.abs(s);
+        if (abs > soft) {
+          const sign = s < 0 ? -1 : 1;
+          if (abs >= lim) {
+            s = sign * lim;
+          } else {
+            // Smooth blend soft→lim (stays ≤ lim)
+            const t = (abs - soft) / (lim - soft + 1e-12);
+            const shaped = soft + (lim - soft) * (1 - Math.exp(-3 * t));
+            s = sign * Math.min(lim, shaped);
+          }
         }
-        // Hard ceiling safety
+        if (s > lim) s = lim;
+        if (s < -lim) s = -lim;
         if (s > 0.999) s = 0.999;
         if (s < -0.999) s = -0.999;
 

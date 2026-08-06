@@ -61,7 +61,7 @@
         {
           "provider": "same-origin",
           "url": "/app/dsp-processor.js",
-          "sha256": "e725784ff7bc2d3efd52a4b6e5aa3e0d83c7dc932635352c3f17148a5230cb3a"
+          "sha256": "17e59d7aac0bb6504244f6f677a3bca9d9770b28a4a94e86ddf95a09afc3201f"
         }
       ]
     },
