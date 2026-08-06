@@ -81,7 +81,64 @@ function main() {
     console.log('[ensure-sam] staged .tools/ffmpeg-shared → build/ffmpeg-shared');
   }
 
-  console.log('[ensure-sam] SAM runtime package staged into build/ for web+android+desktop');
+  // ── SAM 3 vision sidecar (all platforms — feature-flagged, not audio) ──
+  // build.mjs already copies src/ → build/src/; re-assert marker + public entry.
+  const sam3Src = path.join(ROOT, 'src', 'sam3_integration');
+  const sam3Dest = path.join(BUILD, 'src', 'sam3_integration');
+  if (fs.existsSync(sam3Src)) {
+    cpDir(sam3Src, sam3Dest);
+    console.log('[ensure-sam] staged src/sam3_integration → build/src/sam3_integration');
+  } else {
+    console.warn('[ensure-sam] src/sam3_integration missing — vision sidecar not in build');
+  }
+
+  const sam3WorkerPub = path.join(ROOT, 'public', 'app', 'sam3-worker.js');
+  const sam3WorkerBuild = path.join(BUILD, 'app', 'sam3-worker.js');
+  if (fs.existsSync(sam3WorkerPub)) {
+    fs.mkdirSync(path.dirname(sam3WorkerBuild), { recursive: true });
+    fs.copyFileSync(sam3WorkerPub, sam3WorkerBuild);
+  }
+
+  // Optional local vision model dir (weights not shipped by default)
+  const sam3ModelsPub = path.join(ROOT, 'public', 'app', 'models', 'sam3');
+  const sam3ModelsBuild = path.join(BUILD, 'app', 'models', 'sam3');
+  fs.mkdirSync(sam3ModelsBuild, { recursive: true });
+  if (fs.existsSync(sam3ModelsPub)) {
+    cpDir(sam3ModelsPub, sam3ModelsBuild);
+  }
+  const sam3Marker = {
+    packageId: 'vip-sam3-vision',
+    version: '25.0.1',
+    bundled: true,
+    featureFlagDefault: false,
+    enableEnv: 'VIP_SAM3_ENABLED',
+    platforms: ['web', 'android', 'desktop'],
+    worker: '/src/sam3_integration/worker.js',
+    publicWorker: '/app/sam3-worker.js',
+    modelDir: '/app/models/sam3/',
+    note: 'Vision/video sidecar only — not SAM-Audio; not in Live AudioWorklet DSP',
+    installedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(
+    path.join(modelsDest, 'sam3-runtime.marker.json'),
+    JSON.stringify(sam3Marker, null, 2),
+  );
+  fs.writeFileSync(
+    path.join(sam3ModelsBuild, 'README.md'),
+    [
+      '# SAM 3 local model assets',
+      '',
+      'Place licensed browser-compatible SAM 3 weights here only.',
+      'Never fetch remote inference hosts at runtime.',
+      '',
+      'Expected path (same-origin): `/app/models/sam3/model.onnx` (or package layout)',
+      '',
+      'Enable: `VIP_SAM3_ENABLED=1` or `localStorage vip-sam3-enabled=1`',
+      '',
+    ].join('\n'),
+  );
+
+  console.log('[ensure-sam] SAM-Audio + SAM3 vision staged for web+android+desktop');
 }
 
 main();

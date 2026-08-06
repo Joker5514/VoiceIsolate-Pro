@@ -26,8 +26,15 @@ extraResources:
     to: sam-models
     filter:
       - 'sam-runtime.marker.json'
+      - 'sam3-runtime.marker.json'
       - 'sam_audio.onnx'
       - 'README.md'
+      - 'sam3/**/*'
+  # SAM 3 vision modules (also under build/src via files: build/**/*)
+  - from: src/sam3_integration
+    to: sam3_integration
+    filter:
+      - '**/*'
 
 files:
   - build/**/*

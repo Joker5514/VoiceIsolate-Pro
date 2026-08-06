@@ -23,6 +23,12 @@ describe('vip-sam-runtime package in program', () => {
       'scripts/sam-production-setup.mjs',
       'scripts/ensure-sam-in-build.mjs',
       'scripts/run-sam-worker.mjs',
+      // SAM 3 vision sidecar (all platforms)
+      'src/sam3_integration/index.js',
+      'src/sam3_integration/worker.js',
+      'public/app/sam3-worker.js',
+      'public/app/models/sam3/README.md',
+      'public/app/models/sam3-runtime.marker.json',
     ]) {
       expect(fs.existsSync(path.join(ROOT, rel))).toBe(true);
     }
@@ -53,11 +59,12 @@ describe('vip-sam-runtime package in program', () => {
     expect(m.sam.defaultModelId).toMatch(/sam-audio/);
   });
 
-  test('electron-builder bundles sam-audio extraResources', () => {
+  test('electron-builder bundles sam-audio + sam3 extraResources', () => {
     const yml = fs.readFileSync(path.join(ROOT, 'electron/electron-builder.yml'), 'utf8');
     expect(yml).toMatch(/extraResources/);
     expect(yml).toMatch(/services\/sam-audio/);
     expect(yml).toMatch(/vip-sam-runtime/);
+    expect(yml).toMatch(/sam3_integration|sam3-runtime\.marker/);
   });
 
   test('layout install writes marker for all platforms', () => {
@@ -85,5 +92,10 @@ describe('vip-sam-runtime package in program', () => {
     expect(fs.existsSync(path.join(ROOT, 'build/app/models/sam-runtime.marker.json'))).toBe(true);
     expect(fs.existsSync(path.join(ROOT, 'build/sam-audio/server.py'))).toBe(true);
     expect(fs.existsSync(path.join(ROOT, 'build/packages/vip-sam-runtime/package.json'))).toBe(true);
+    // SAM 3 vision on all three surfaces via build/
+    expect(fs.existsSync(path.join(ROOT, 'build/app/models/sam3-runtime.marker.json'))).toBe(true);
+    expect(fs.existsSync(path.join(ROOT, 'build/src/sam3_integration/index.js'))).toBe(true);
+    expect(fs.existsSync(path.join(ROOT, 'build/app/sam3-worker.js'))).toBe(true);
+    expect(fs.existsSync(path.join(ROOT, 'build/app/models/sam3/README.md'))).toBe(true);
   });
 });
