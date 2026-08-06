@@ -421,23 +421,24 @@ function registerIpc() {
     if (samWorkerProc && !samWorkerProc.killed) {
       return { ok: true, already: true, baseUrl: `http://127.0.0.1:${samWorkerPort}` };
     }
-    const script = path.join(ROOT, 'services', 'sam-audio', 'server.py');
-    if (!fsSync.existsSync(script)) {
-      return { ok: false, reason: 'worker-script-missing' };
+    const script = resolveSamWorkerScript();
+    if (!script || !fsSync.existsSync(script)) {
+      return { ok: false, reason: 'worker-script-missing', tried: script };
     }
-    const python = process.env.SAM_AUDIO_PYTHON || process.env.PYTHON || 'python';
+    const python = resolveSamPython();
     try {
       samWorkerPort = port;
       samWorkerProc = spawn(
         python,
         [script, '--host', '127.0.0.1', '--port', String(port)],
         {
-          cwd: ROOT,
+          cwd: path.dirname(script),
           env: {
             ...process.env,
             SAM_AUDIO_MODE: process.env.SAM_AUDIO_MODE || 'local-worker',
             SAM_AUDIO_HOST: '127.0.0.1',
             SAM_AUDIO_PORT: String(port),
+            SAM_AUDIO_MODEL: process.env.SAM_AUDIO_MODEL || 'facebook/sam-audio-small',
           },
           stdio: ['ignore', 'ignore', 'pipe'],
           windowsHide: true,
@@ -481,6 +482,41 @@ function registerIpc() {
       return { ok: false, reason: err?.message || 'unreachable', baseUrl };
     }
   });
+}
+
+/** Packaged Electron: process.resourcesPath/sam-audio; dev: repo services/sam-audio */
+function resolveSamWorkerScript() {
+  const candidates = [
+    process.env.SAM_AUDIO_WORKER_SCRIPT,
+    path.join(process.resourcesPath || '', 'sam-audio', 'server.py'),
+    path.join(ROOT, 'services', 'sam-audio', 'server.py'),
+    path.join(ROOT, 'build', 'sam-audio', 'server.py'),
+  ].filter(Boolean);
+  for (const c of candidates) {
+    if (fsSync.existsSync(c)) return c;
+  }
+  return candidates[candidates.length - 1] || null;
+}
+
+function resolveSamPython() {
+  if (process.env.SAM_AUDIO_PYTHON) return process.env.SAM_AUDIO_PYTHON;
+  if (process.env.PYTHON) return process.env.PYTHON;
+  const pointers = [
+    path.join(process.resourcesPath || '', 'sam-audio', '.python-path'),
+    path.join(ROOT, 'services', 'sam-audio', '.python-path'),
+    path.join(ROOT, '.venv-sam', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
+  ];
+  for (const p of pointers) {
+    try {
+      if (p.endsWith('python') || p.endsWith('python.exe')) {
+        if (fsSync.existsSync(p)) return p;
+      } else if (fsSync.existsSync(p)) {
+        const line = fsSync.readFileSync(p, 'utf8').trim();
+        if (line && fsSync.existsSync(line)) return line;
+      }
+    } catch { /* continue */ }
+  }
+  return process.platform === 'win32' ? 'python' : 'python3';
 }
 
 function probeSamHealth(baseUrl) {

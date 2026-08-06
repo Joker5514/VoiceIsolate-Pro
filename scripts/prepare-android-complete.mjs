@@ -29,6 +29,9 @@ const REQUIRED_MODELS = [
 /** Optional but useful if present (still keep APK lean). */
 const OPTIONAL_MODELS = [
   'silero_vad_int8.onnx',
+  // Real SAM-Audio ONNX when shipped — stays in APK for on-device prompted isolation.
+  'sam_audio.onnx',
+  'sam-runtime.marker.json',
 ];
 
 /** Never ship these in the Android APK (bloat / unused on mobile default path). */
@@ -258,3 +261,10 @@ const libMB = dirSizeMB(path.join(BUILD, 'lib'));
 const buildMB = dirSizeMB(BUILD);
 console.log(`[prepare-android] models ≈ ${modelsMB.toFixed(1)} MB | lib ≈ ${libMB.toFixed(1)} MB | build total ≈ ${buildMB.toFixed(1)} MB`);
 console.log('[prepare-android] Complete offline Android package ready for cap sync.');
+
+// SAM runtime package (web+android+desktop shared marker / optional onnx)
+import { spawnSync as __samSpawn } from 'node:child_process';
+{
+  const r = __samSpawn(process.execPath, [path.join(ROOT, 'scripts', 'ensure-sam-in-build.mjs')], { stdio: 'inherit', cwd: ROOT });
+  if (r.status !== 0) console.warn('[prepare-android] ensure-sam-in-build status', r.status);
+}

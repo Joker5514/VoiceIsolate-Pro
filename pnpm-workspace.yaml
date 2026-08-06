@@ -2,6 +2,7 @@
 # (package.json "pnpm" field is no longer read by pnpm ≥10.x/11)
 packages:
   - '.'
+  - 'packages/*'
 
 # Allow postinstall scripts for packages that need them.
 # true  = run build scripts (required for electron, esbuild, etc.)
