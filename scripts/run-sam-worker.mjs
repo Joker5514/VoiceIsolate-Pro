@@ -108,4 +108,8 @@ const child = spawn(python, args, {
   env,
   stdio: 'inherit',
 });
-child.on('exit', (code) => process.exit(code ?? 0));
+child.on('error', (err) => {
+  console.error(`[sam-worker] spawn error: ${err?.message || err}`);
+  process.exitCode = 1;
+});
+child.on('exit', (code) => process.exit(code ?? process.exitCode ?? 0));

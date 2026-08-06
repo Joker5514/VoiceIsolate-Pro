@@ -132,10 +132,16 @@ function ensureVenvAndSam(ffmpegBin) {
 
   log('pip install sam-audio (official GitHub)…');
   run(py, ['-m', 'pip', 'install', '-U', 'pip', 'wheel', 'setuptools'], { env });
-  run(py, ['-m', 'pip', 'install', 'git+https://github.com/facebookresearch/sam-audio.git'], { env });
+  // Pin to a reviewed tag/commit when available; default branch otherwise.
+  const samRef = process.env.SAM_AUDIO_GIT_REF || 'main';
+  const samUrl =
+    samRef === 'main'
+      ? 'git+https://github.com/facebookresearch/sam-audio.git'
+      : `git+https://github.com/facebookresearch/sam-audio.git@${samRef}`;
+  run(py, ['-m', 'pip', 'install', samUrl], { env });
   run(py, ['-m', 'pip', 'install', '-r', path.join('services', 'sam-audio', 'requirements.txt')], { env });
-  // Ensure huggingface_hub present (pulled transitively; re-assert for worker)
-  run(py, ['-m', 'pip', 'install', 'huggingface_hub'], { env });
+  // hub 1.x + sam_hub_compat.py (proxies/resume_download patch)
+  run(py, ['-m', 'pip', 'install', 'huggingface_hub>=1.0,<2'], { env });
 
   fs.writeFileSync(path.join(ROOT, 'services', 'sam-audio', '.python-path'), py + '\n');
   if (ffmpegBin) {
@@ -154,7 +160,10 @@ print('torchcodec', bootstrap_torchcodec())
 import sam_audio
 from sam_audio import SAMAudio, SAMAudioProcessor
 from sam_hub_compat import apply_sam_hub_compat
-print('hub_compat', apply_sam_hub_compat())
+compat = apply_sam_hub_compat()
+print('hub_compat', compat)
+if not (compat.get('ok') and compat.get('patched')):
+    raise SystemExit('hub_compat_failed')
 print('IMPORT_OK', sam_audio.__file__)
 `;
   const r = spawnSync(py, ['-c', code], {
@@ -166,7 +175,7 @@ print('IMPORT_OK', sam_audio.__file__)
   process.stdout.write(r.stdout || '');
   process.stderr.write(r.stderr || '');
   if (r.status !== 0) {
-    log('WARNING: import smoke failed — worker may still mock until HF auth / CUDA fixed');
+    log('ERROR: import/hub-compat smoke failed');
     return false;
   }
   log('IMPORT_OK — real package importable + hub compat patched');
@@ -191,7 +200,12 @@ async function main() {
     const { py, env } = ensureVenvAndSam(ffmpegBin);
     if (ffmpegBin) env.PATH = `${ffmpegBin}${path.delimiter}${env.PATH || ''}`;
     env.VIP_FFMPEG_SHARED_BIN = ffmpegBin || '';
-    smokeImport(py, env);
+    const ok = smokeImport(py, env);
+    if (!ok) {
+      log('Production setup incomplete — import smoke failed');
+      process.exitCode = 1;
+      return;
+    }
     log('Production setup complete.');
     log('If model weights gated: hf auth login');
     log('Start worker:  set SAM_AUDIO_PRODUCTION=1 && pnpm sam:worker');

@@ -19,15 +19,17 @@ def _prepend_ffmpeg_path() -> str | None:
         os.environ.get("VIP_FFMPEG_SHARED_BIN"),
         os.environ.get("FFMPEG_BIN"),
     ]
-    # Repo-relative defaults
+    # Repo-relative defaults (only scan real paths — never Path("") cwd)
     here = Path(__file__).resolve()
-    candidates = [
+    candidates: list[Path] = [
         here.parents[2] / ".tools" / "ffmpeg-shared",
         here.parents[1] / "ffmpeg-shared",
-        Path(os.environ.get("VIP_TOOLS", "")) / "ffmpeg-shared",
     ]
+    vip_tools = (os.environ.get("VIP_TOOLS") or "").strip()
+    if vip_tools:
+        candidates.append(Path(vip_tools) / "ffmpeg-shared")
     for c in candidates:
-        if not c or not str(c):
+        if not c.exists():
             continue
         for bin_dir in c.rglob("bin"):
             if any(bin_dir.glob("avcodec*.dll")) or any(bin_dir.glob("libavcodec*.so*")):

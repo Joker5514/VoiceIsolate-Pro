@@ -444,6 +444,7 @@ function registerIpc() {
         env.PATH = `${ffmpegBin}${path.delimiter}${env.PATH || ''}`;
         env.VIP_FFMPEG_SHARED_BIN = ffmpegBin;
       }
+      let spawnErr = null;
       samWorkerProc = spawn(
         python,
         [script, '--host', '127.0.0.1', '--port', String(port), '--preload'],
@@ -454,6 +455,11 @@ function registerIpc() {
           windowsHide: true,
         },
       );
+      samWorkerProc.on('error', (err) => {
+        spawnErr = err;
+        console.error('[electron][sam-worker] spawn error', err?.message || err);
+        samWorkerProc = null;
+      });
       samWorkerProc.on('exit', () => {
         samWorkerProc = null;
       });
@@ -462,8 +468,15 @@ function registerIpc() {
         const line = String(buf).trim().slice(0, 200);
         if (line) console.info('[electron][sam-worker]', line);
       });
-      // Brief wait for listen
+      // Brief wait for listen (or async spawn failure)
       await new Promise((r) => setTimeout(r, 400));
+      if (spawnErr || !samWorkerProc) {
+        return {
+          ok: false,
+          reason: spawnErr?.message || 'spawn-failed',
+          baseUrl: `http://127.0.0.1:${port}`,
+        };
+      }
       const baseUrl = `http://127.0.0.1:${port}`;
       const healthy = await probeSamHealth(baseUrl);
       return { ok: true, baseUrl, healthy };

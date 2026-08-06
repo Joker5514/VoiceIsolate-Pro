@@ -73,6 +73,14 @@ function main() {
     console.log('[ensure-sam] sam_audio.onnx not present (optional); marker + worker still bundled');
   }
 
+  // Optional shared FFmpeg for packaged Electron (process.resourcesPath/ffmpeg-shared)
+  const ffmpegSrc = path.join(ROOT, '.tools', 'ffmpeg-shared');
+  const ffmpegDest = path.join(BUILD, 'ffmpeg-shared');
+  if (fs.existsSync(ffmpegSrc)) {
+    cpDir(ffmpegSrc, ffmpegDest);
+    console.log('[ensure-sam] staged .tools/ffmpeg-shared → build/ffmpeg-shared');
+  }
+
   console.log('[ensure-sam] SAM runtime package staged into build/ for web+android+desktop');
 }
 

@@ -67,6 +67,7 @@ def _apply_hub_compat() -> Dict[str, Any]:
 
 _cancelled: set[str] = set()
 _lock = threading.Lock()
+_model_load_lock = threading.Lock()
 # (model, processor, device, mock, load_error)
 _sam_bundle: Optional[Tuple[Any, Any, str, bool, Optional[str]]] = None
 
@@ -74,6 +75,11 @@ _sam_bundle: Optional[Tuple[Any, Any, str, bool, Optional[str]]] = None
 def _log(msg: str) -> None:
     sys.stderr.write(f"[sam-audio-worker] {msg}\n")
     sys.stderr.flush()
+
+
+def _mock_allowed() -> bool:
+    """Mock is blocked whenever real is required (production or REQUIRE_REAL)."""
+    return _ALLOW_MOCK and not _REQUIRE_REAL
 
 
 def _resolve_device() -> str:
@@ -88,44 +94,49 @@ def _resolve_device() -> str:
 
 
 def _try_load_sam() -> Tuple[Any, Any, str, bool, Optional[str]]:
-    """Returns (model, processor, device, mock, error)."""
+    """Returns (model, processor, device, mock, error). Thread-safe lazy load."""
     global _sam_bundle
     if _sam_bundle is not None:
         return _sam_bundle
-    device = _resolve_device()
-    try:
-        from sam_audio import SAMAudio, SAMAudioProcessor  # type: ignore
+    with _model_load_lock:
+        if _sam_bundle is not None:
+            return _sam_bundle
+        device = _resolve_device()
+        try:
+            from sam_audio import SAMAudio, SAMAudioProcessor  # type: ignore
 
-        # Must run after sam_audio is importable; before from_pretrained.
-        compat = _apply_hub_compat()
-        if not compat.get("ok"):
-            _log(f"hub compat patch skipped: {compat.get('reason')}")
+            # Must run after sam_audio is importable; before from_pretrained.
+            compat = _apply_hub_compat()
+            if not compat.get("ok"):
+                _log(f"hub compat patch skipped: {compat.get('reason')}")
 
-        token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
-        # token=None still uses cached `hf auth login` when present
-        fp_kwargs: Dict[str, Any] = {}
-        if token:
-            fp_kwargs["token"] = token
-        model = SAMAudio.from_pretrained(MODEL_ID, **fp_kwargs)
-        processor = SAMAudioProcessor.from_pretrained(MODEL_ID)
-        model = model.eval()
-        if device == "cuda":
-            model = model.cuda()
-        _sam_bundle = (model, processor, device, False, None)
-        _log(f"REAL sam_audio loaded on {device} model={MODEL_ID}")
-        return _sam_bundle
-    except Exception as exc:
-        err = f"{type(exc).__name__}: {exc}"
-        # Truncate long HF errors but keep signal
-        if len(err) > 400:
-            err = err[:400] + "…"
-        if _REQUIRE_REAL and not _ALLOW_MOCK:
-            _log(f"REAL sam required but load failed: {err}")
+            token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+            # token=None still uses cached `hf auth login` when present
+            fp_kwargs: Dict[str, Any] = {}
+            if token:
+                fp_kwargs["token"] = token
+            model = SAMAudio.from_pretrained(MODEL_ID, **fp_kwargs)
+            processor = SAMAudioProcessor.from_pretrained(MODEL_ID)
+            model = model.eval()
+            if device == "cuda":
+                model = model.cuda()
+            _sam_bundle = (model, processor, device, False, None)
+            _log(f"REAL sam_audio loaded on {device} model={MODEL_ID}")
+            return _sam_bundle
+        except Exception as exc:
+            err = f"{type(exc).__name__}: {exc}"
+            # Truncate long HF errors but keep signal
+            if len(err) > 400:
+                err = err[:400] + "…"
+            if _REQUIRE_REAL:
+                _log(f"REAL sam required but load failed: {err}")
+            else:
+                _log(
+                    f"sam_audio load failed ({type(exc).__name__}); "
+                    f"mock={'yes' if _mock_allowed() else 'blocked'}"
+                )
             _sam_bundle = (None, None, device, True, err)
             return _sam_bundle
-        _log(f"sam_audio load failed ({type(exc).__name__}); mock={'yes' if _ALLOW_MOCK else 'blocked'}")
-        _sam_bundle = (None, None, device, True, err)
-        return _sam_bundle
 
 
 def _readiness() -> Dict[str, Any]:
@@ -146,10 +157,11 @@ def _readiness() -> Dict[str, Any]:
     )
     real = package_ok and not mock and model is not None
     production = os.environ.get("SAM_AUDIO_PRODUCTION", "").lower() in ("1", "true", "yes")
+    # REQUIRE_REAL / production: never report ready on mock
     ready = MODE not in ("disabled", "off", "0", "false") and (
-        real or (_ALLOW_MOCK and mock)
+        real or (_mock_allowed() and mock)
     )
-    if production and not real:
+    if _REQUIRE_REAL and not real:
         ready = False
 
     return {
@@ -164,7 +176,8 @@ def _readiness() -> Dict[str, Any]:
         "torchcodec": _TORCHCODEC_STATUS,
         "hubCompat": _HUB_COMPAT_STATUS,
         "loadError": load_err,
-        "allowMock": _ALLOW_MOCK,
+        "allowMock": _mock_allowed(),
+        "requireReal": _REQUIRE_REAL,
         "mode": MODE,
         "backends": ["sam-audio-worker"],
         "live": False,
@@ -181,7 +194,7 @@ def _readiness() -> Dict[str, Any]:
             if MODE in ("disabled", "off", "0", "false")
             else (
                 ["real-sam-required", load_err or "model-not-loaded"]
-                if production or _REQUIRE_REAL
+                if _REQUIRE_REAL
                 else [load_err or "not-ready"]
             )
         ),
@@ -225,14 +238,34 @@ def _mock_separate(pcm: list[float], prompt: str) -> Tuple[list[float], list[flo
 
 
 def _to_list(x: Any) -> list[float]:
+    """Flatten model outputs (tensor, nested list of tensors, or numeric seq)."""
+    # SAM separate() returns lists of batch tensors for target/residual
+    if isinstance(x, (list, tuple)):
+        if not x:
+            return []
+        first = x[0]
+        # Unwrap batch-of-tensors / nested batch once
+        if hasattr(first, "detach"):
+            return _to_list(first)
+        if isinstance(first, (list, tuple)) and first and hasattr(first[0], "detach"):
+            return _to_list(first)
+        # Already sample floats (or nested numeric seq)
+        try:
+            return [float(v) for v in x]
+        except (TypeError, ValueError):
+            return _to_list(first)
     if hasattr(x, "detach"):
-        import numpy as np  # type: ignore
-
-        arr = x.detach().float().cpu().numpy().reshape(-1)
-        return arr.astype(float).tolist()
-    if hasattr(x, "reshape"):
-        return list(x.reshape(-1))
-    return list(x)
+        arr = x.detach().float().cpu().reshape(-1)
+        return [float(v) for v in arr.tolist()]
+    if hasattr(x, "reshape") and hasattr(x, "__len__"):
+        try:
+            return [float(v) for v in list(x.reshape(-1))]
+        except Exception:
+            pass
+    try:
+        return [float(v) for v in x]
+    except TypeError:
+        return [float(x)]
 
 
 def _real_separate(
@@ -240,7 +273,7 @@ def _real_separate(
 ) -> Tuple[list[float], list[float], bool]:
     model, processor, device, mock, load_err = _try_load_sam()
     if mock or model is None or processor is None:
-        if _REQUIRE_REAL and not _ALLOW_MOCK:
+        if _REQUIRE_REAL or not _mock_allowed():
             raise RuntimeError(load_err or "real-sam-unavailable")
         t, r = _mock_separate(pcm, prompt)
         return t, r, True
@@ -399,7 +432,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(499, {"error": "cancelled"})
                 return
 
-        if mock and _REQUIRE_REAL and not _ALLOW_MOCK:
+        if mock and (_REQUIRE_REAL or not _mock_allowed()):
             self._send(503, {"error": "real-sam-required", "mock": True})
             return
 
