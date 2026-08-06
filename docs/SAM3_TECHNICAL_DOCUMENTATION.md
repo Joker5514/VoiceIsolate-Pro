@@ -22,6 +22,16 @@ SAM 3 should operate as an optional local video-vision sidecar that produces per
 
 A SAM 3 mask can be used to select or track a visual speaker/object, then map that selection to an audio source, camera channel, diarization result, or user-selected segment. SAM 3 must not be assumed to identify a speaker from pixels alone; audio speaker verification and source separation remain separate systems.
 
+### Relation to SAM-Audio
+
+VoiceIsolate Pro also documents **SAM-Audio** (Meta’s audio foundation model for text-prompted sound separation) under [`docs/guides/SAM_AUDIO.md`](guides/SAM_AUDIO.md) and the optional Desktop local worker (`services/sam-audio/`). **SAM 3 (vision) and SAM-Audio (audio) are different products.** Do not conflate them in UI copy, model loading, or architecture diagrams.
+
+| System | Domain | VIP role |
+|--------|--------|----------|
+| **SAM 3** | Image / video segmentation & tracking | Optional vision sidecar → masks / tracks |
+| **SAM-Audio** | Audio source separation | Optional offline prompted isolation (Desktop worker / optional ONNX) |
+| **VIP DSP / BSRNN / USM** | Audio isolation & cleanup | Default local audio path |
+
 ## Intended use cases
 
 1. Track a selected person across video frames and preserve the selection through cuts and movement.
