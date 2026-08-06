@@ -9,12 +9,20 @@ The **SAM-Audio runtime package** shipped with VoiceIsolate Pro on:
 This package is the **program-side** SAM integration (contracts, paths, manifests).  
 **Model weights** are gated by Meta and install via Hugging Face after access is granted.
 
-## Desktop (real Meta SAM)
+## Desktop (real Meta SAM — production)
 
 ```bash
-pnpm sam:install          # creates .venv-sam, installs facebookresearch/sam-audio
+pnpm sam:setup            # FFmpeg shared + .venv-sam + official sam-audio
 hf auth login             # after HF access to facebook/sam-audio-*
-pnpm sam:worker           # or Electron vipDesktop.samWorkerStart()
+pnpm sam:worker -- --production --preload
+# or Electron vipDesktop.samWorkerStart()  (production defaults)
+```
+
+Dev/CI mock (no HF weights):
+
+```bash
+set SAM_AUDIO_ALLOW_MOCK=1
+pnpm sam:worker
 ```
 
 ## Android / Web (on-device ORT)

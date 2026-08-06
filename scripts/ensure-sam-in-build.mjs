@@ -41,11 +41,27 @@ function main() {
   const pkgDest = path.join(BUILD, 'packages', 'vip-sam-runtime');
   if (fs.existsSync(pkgSrc)) cpDir(pkgSrc, pkgDest);
 
-  // Worker sources for Electron extraResources staging
+  // Worker sources for Electron extraResources staging (no venv pointers / pyc)
   const workerSrc = path.join(ROOT, 'services', 'sam-audio');
   const workerDest = path.join(BUILD, 'sam-audio');
   if (fs.existsSync(workerSrc)) {
-    cpDir(workerSrc, workerDest);
+    fs.mkdirSync(workerDest, { recursive: true });
+    for (const name of fs.readdirSync(workerSrc)) {
+      if (
+        name === '__pycache__' ||
+        name.endsWith('.pyc') ||
+        name === '.python-path' ||
+        name === '.ffmpeg-bin' ||
+        name.startsWith('.')
+      ) {
+        continue;
+      }
+      const from = path.join(workerSrc, name);
+      const to = path.join(workerDest, name);
+      const st = fs.statSync(from);
+      if (st.isDirectory()) cpDir(from, to);
+      else fs.copyFileSync(from, to);
+    }
   }
 
   // Copy optional onnx if present

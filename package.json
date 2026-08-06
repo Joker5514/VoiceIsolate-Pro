@@ -85,10 +85,13 @@
     "build:electron:dir": "node scripts/electron-build-win.mjs --dir",
     "sam:worker": "node scripts/run-sam-worker.mjs",
     "check:cloud-audio": "node scripts/check-no-cloud-audio.js",
-    "test:sam": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit tests/providers-sam.test.js tests/electron-sam-ipc.test.js",
+    "test:sam": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit tests/providers-sam.test.js tests/electron-sam-ipc.test.js tests/vip-sam-runtime-package.test.js",
+    "sam:worker:prod": "node scripts/run-sam-worker.mjs --production --preload",
     "sam:install": "node scripts/install-sam-runtime.mjs",
     "sam:install:layout": "node scripts/install-sam-runtime.mjs --skip-pip",
-    "sam:ensure-build": "node scripts/ensure-sam-in-build.mjs"
+    "sam:ensure-build": "node scripts/ensure-sam-in-build.mjs",
+    "sam:setup": "node scripts/sam-production-setup.mjs",
+    "sam:setup:layout": "node scripts/sam-production-setup.mjs --skip-pip --skip-ffmpeg"
   },
   "devDependencies": {
     "@capacitor/android": "^8.3.1",
