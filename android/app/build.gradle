@@ -19,8 +19,8 @@ android {
         // API 24 (previous value) allowed Chrome 87 which breaks SAB permanently.
         minSdkVersion 26
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 250000
-        versionName "25.0.0"
+        versionCode 250001
+        versionName "25.0.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Do not compress ML/WASM/JS — WebView + ORT need seekable raw assets.
@@ -79,4 +79,5 @@ try {
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
+
 

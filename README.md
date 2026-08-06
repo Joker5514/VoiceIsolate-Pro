@@ -362,3 +362,19 @@ android/             Capacitor Android project
 ## License
 
 UNLICENSED — © 2026 Randy Jordan / Conqueror Studios. All rights reserved.
+---
+
+## SAM-Audio (Prompted Isolation)
+
+**Decision: local worker only (Option B).** There is no verified browser ONNX export of Meta SAM-Audio in this repo.
+
+| Path | Behavior |
+|------|----------|
+| Default | BSRNN / RNNoise / classical USM query priors — 100% on-device |
+| Optional | Localhost SAM-Audio worker (services/sam-audio/) for Creator/Forensic |
+| Live mode | SAM never runs inside AudioWorklet |
+| Android | No on-device SAM claim; shared ONNX/USM only |
+| Desktop | Electron may start/stop the loopback worker via secure IPC |
+
+See [docs/guides/SAM_AUDIO.md](docs/guides/SAM_AUDIO.md) and [docs/guides/PLATFORM_CAPABILITY_MATRIX.md](docs/guides/PLATFORM_CAPABILITY_MATRIX.md).
+

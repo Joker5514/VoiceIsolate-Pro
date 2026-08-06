@@ -57,18 +57,22 @@ export const ISOLATION_MODES = Object.freeze({
     icon: '🔇',
   }),
   /**
-   * Offline Prompted Isolation entry (USM query priors / future SAM-class ONNX).
-   * Does not run in Live-Mix; route via Analyze / USM worker only.
+   * Offline Prompted Isolation entry.
+   * Default: classical USM query priors (always local).
+   * Optional: LocalSamAudioWorker when SAM_AUDIO_MODE=local-worker + healthy loopback.
+   * Browser SAM ONNX is NOT claimed. Never Live-Mix / AudioWorklet.
    */
   prompted: Object.freeze({
     id: 'prompted',
     name: 'Prompted Isolation',
-    description: 'Text/span guided source separation via Universal Source Matrix (classical query priors; optional AudioSep ONNX). Offline only — never Live-Mix.',
+    description: 'Text/span guided separation. Default: local USM query priors. Optional: private localhost SAM-Audio worker (Creator/Forensic only). Never Live-Mix; never cloud upload.',
     modelIds: [],
     usmMode: 'query',
-    estimatedTime: 'Depends on length — offline USM pass',
+    providerPreference: 'auto', // onnx-usm first; sam-local-worker if enabled+healthy
+    estimatedTime: 'Depends on length — offline pass',
     icon: '✨',
     offlineOnly: true,
+    samEligible: true,
   }),
 });
 

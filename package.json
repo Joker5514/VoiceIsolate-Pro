@@ -1,6 +1,6 @@
 {
   "name": "voiceisolate-pro",
-  "version": "25.0.0",
+  "version": "25.0.1",
   "type": "module",
   "description": "Studio-grade voice isolation platform. Upload-only workflow — 32-stage Octa-Pass DSP with hybrid ML + classical spectral processing. Web, Electron desktop, and Capacitor Android.",
   "private": true,
@@ -82,7 +82,10 @@
     "electron:dev": "cross-env VIP_ELECTRON_DEV=1 electron .",
     "electron:start": "electron .",
     "build:electron": "node scripts/electron-build-win.mjs",
-    "build:electron:dir": "node scripts/electron-build-win.mjs --dir"
+    "build:electron:dir": "node scripts/electron-build-win.mjs --dir",
+    "sam:worker": "python services/sam-audio/server.py",
+    "check:cloud-audio": "node scripts/check-no-cloud-audio.js",
+    "test:sam": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit tests/providers-sam.test.js tests/electron-sam-ipc.test.js"
   },
   "devDependencies": {
     "@capacitor/android": "^8.3.1",

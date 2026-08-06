@@ -88,3 +88,8 @@ docs/
   audits/                   dated audit reports
   archive/                  historical / superseded material
 ```
+
+| [guides/SAM_AUDIO.md](guides/SAM_AUDIO.md) | SAM-Audio Option B local worker |
+| [guides/PLATFORM_CAPABILITY_MATRIX.md](guides/PLATFORM_CAPABILITY_MATRIX.md) | Web / Android / Desktop matrix |
+| [audits/CROSS_PLATFORM_SAM_AUDIT_2026-08-05.md](audits/CROSS_PLATFORM_SAM_AUDIT_2026-08-05.md) | Full audit |
+

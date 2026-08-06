@@ -57,6 +57,32 @@ export async function pickAudioFile() {
  * @param {{ name: string, extensions: string[] }[]} [opts.filters]
  * @returns {Promise<{ canceled: boolean, filePath?: string }>}
  */
+/**
+ * Local SAM-Audio worker controls (Electron main process only).
+ * @returns {Promise<object|null>}
+ */
+export async function samWorkerStatus() {
+  if (!isDesktopShell() || typeof globalThis.vipDesktop.samWorkerStatus !== 'function') {
+    return null;
+  }
+  return globalThis.vipDesktop.samWorkerStatus();
+}
+
+/** @param {{ port?: number }=} opts */
+export async function samWorkerStart(opts) {
+  if (!isDesktopShell() || typeof globalThis.vipDesktop.samWorkerStart !== 'function') {
+    return { ok: false, reason: 'not-desktop' };
+  }
+  return globalThis.vipDesktop.samWorkerStart(opts || {});
+}
+
+export async function samWorkerStop() {
+  if (!isDesktopShell() || typeof globalThis.vipDesktop.samWorkerStop !== 'function') {
+    return { ok: false, reason: 'not-desktop' };
+  }
+  return globalThis.vipDesktop.samWorkerStop();
+}
+
 export async function saveExportBlob(blob, opts) {
   if (!isDesktopShell()) {
     return { canceled: true };

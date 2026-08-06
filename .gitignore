@@ -91,3 +91,8 @@ notebooks/
 landing-vercel.png
 
 .env*.local
+
+# local SAM worker smoke logs
+sam-err*.txt
+sam-out*.txt
+
