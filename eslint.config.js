@@ -268,11 +268,30 @@ export default [
       'src/workers/FullAnalysisWorker.js',
       'src/workers/AudioEncoderWorker.js',
       'src/workers/USMWorker.js',
+      'src/sam3_integration/worker.js',
+      'public/app/sam3-worker.js',
     ],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
       globals: { ...globals.worker },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],
+      'no-undef': 'error',
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      'semi': ['warn', 'always'],
+      'quotes': ['warn', 'single', { avoidEscape: true }],
+    },
+  },
+  {
+    // SAM 3 vision sidecar (main-thread modules; no AudioWorklet)
+    files: ['src/sam3_integration/**/*.js'],
+    ignores: ['src/sam3_integration/worker.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.browser, ...globals.node },
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_|^e$', caughtErrorsIgnorePattern: '^_' }],

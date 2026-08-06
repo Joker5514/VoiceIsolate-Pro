@@ -75,6 +75,69 @@ The supplied brief describes a March 2026 SAM 3.1 Object Multiplex update using 
 
 The supplied brief lists Python 3.12+, PyTorch 2.7+, CUDA 12.6+, and a CUDA-capable GPU for the reference implementation. Those requirements apply to a native/server-side reference workflow, not automatically to VoiceIsolate Pro's browser runtime. The browser build must preserve local-only processing and should use a separately packaged, browser-compatible model/runtime only after licensing, memory, and performance validation.
 
+## Implementation status (repository)
+
+| Piece | Path | Notes |
+|-------|------|--------|
+| Feature flag | `src/sam3_integration/featureFlag.js` | Default **OFF** (`VIP_SAM3_ENABLED=1` or `localStorage vip-sam3-enabled=1`) |
+| Local-only policy | `src/sam3_integration/policy.js` | Allowlist `/app/models/sam3/*` only |
+| Types / validation | `src/sam3_integration/types.js` | `Sam3FrameResult`, worklet-safe metadata |
+| Prompts | `src/sam3_integration/text_prompt_handler.js` | text / box / click / mask-ref |
+| Image segmenter | `src/sam3_integration/image_segmenter.js` | Heuristic until local checkpoint; `setBackend()` for real ORT |
+| Video tracker | `src/sam3_integration/video_tracker.js` | IoU association, order gate, manual correct |
+| Module worker | `src/sam3_integration/worker.js` | Off-main-thread protocol |
+| Public entry | `public/app/sam3-worker.js` | Module worker bootstrap |
+| Host API | `src/sam3_integration/host.js` | `Sam3Host` for UI / orchestrators |
+| Tests | `tests/sam3-integration.test.js` | Policy, prompts, 10+ tracks, drop-frame |
+
+### Enable (dev)
+
+```bash
+# env (Node tooling / Electron main)
+set VIP_SAM3_ENABLED=1
+
+# or browser
+localStorage.setItem('vip-sam3-enabled', '1')
+# or ?sam3=1
+```
+
+```js
+import { Sam3Host, isSam3Enabled } from '/src/sam3_integration/index.js';
+
+if (isSam3Enabled(null, { queryParam: true })) {
+  const host = new Sam3Host();
+  await host.start(); // status: ready-heuristic without weights
+  await host.setPrompt({ kind: 'text', text: 'the speaker in white' });
+  const out = await host.segmentFrame({
+    frameIndex: 0, timestampMs: 0, width: 1280, height: 720,
+  });
+  // out.results[].workletMeta → optional port.postMessage (no masks)
+}
+```
+
+### Model assets
+
+Place licensed browser-compatible weights only under:
+
+```text
+public/app/models/sam3/
+```
+
+Do not load from Hugging Face, fal, Replicate, or other remote hosts at runtime. Verify Meta license before shipping any checkpoint.
+
+### Known limitations
+
+- No official browser SAM 3 ONNX is bundled; inference is **heuristic scaffolding** until a verified local runtime is added via `ImageSegmenter.setBackend`.
+- SAM 3.1 Object Multiplex remains behind `VIP_SAM3_1_MULTIPLEX` (default off).
+- Not wired into Live-Mix AudioWorklet DSP; only optional compact metadata may be posted by the host.
+- Does not identify speakers from pixels; bind tracks to diarization / channels separately.
+
+### Verify local-only in DevTools
+
+1. Enable SAM 3 flag; open Network panel.
+2. Run segmentation prompts — expect **no** requests to huggingface.co, fal.ai, replicate.com, or segment-anything.com for inference.
+3. Optional model probe may `HEAD` only same-origin `/app/models/sam3/*`.
+
 ## Official resources from the supplied brief
 
 - GitHub: https://github.com/facebookresearch/sam3
