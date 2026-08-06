@@ -1,5 +1,8 @@
 # VoiceIsolate Pro — pnpm 11 workspace config
 # (package.json "pnpm" field is no longer read by pnpm ≥10.x/11)
+# Non-auth settings live here (pnpm 11 ignores most .npmrc keys).
+ignoreWorkspaceRootCheck: true
+
 packages:
   - '.'
   - 'packages/*'
