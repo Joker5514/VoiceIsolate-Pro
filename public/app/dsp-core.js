@@ -1372,17 +1372,20 @@ const DSPCore = {
   /** S32: Soft-knee peak limiter. Output is strictly bounded by `ceiling`.
    *  The knee starts ~3 dB below the ceiling so peaks compress smoothly
    *  rather than slamming into a hard threshold (which created derivative
-   *  discontinuities and clicks on transients). */
+   *  discontinuities and clicks on transients). A final hard clamp guarantees
+   *  |sample| ≤ ceiling even for pathological super-unity ML stems. */
   truePeakLimit(data, ceilingDb) {
-    const ceiling = Math.pow(10, ceilingDb / 20);
+    const ceilDb = Number.isFinite(ceilingDb) ? Math.min(ceilingDb, 0) : -1;
+    const ceiling = Math.pow(10, ceilDb / 20);
     const knee = ceiling * 0.7079;             // -3 dB below ceiling
-    const range = ceiling - knee;
+    const range = Math.max(1e-12, ceiling - knee);
     for (let i = 0; i < data.length; i++) {
       const x = data[i];
       const a = Math.abs(x);
       if (a <= knee) continue;                 // linear region
       const over = (a - knee) / range;         // ≥ 0
-      const compressed = knee + range * Math.tanh(over);
+      let compressed = knee + range * Math.tanh(over);
+      if (compressed > ceiling) compressed = ceiling; // hard contract
       data[i] = (x < 0 ? -compressed : compressed);
     }
     return data;

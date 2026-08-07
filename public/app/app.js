@@ -3728,6 +3728,21 @@ class VoiceIsolatePro {
         // Guard: never leave processing "done" with no playable buffer.
         this.outputBuffer = this.procBuffer = this.origBuffer || this.inputBuffer;
       }
+      // ML isolation path can emit super-unity peaks (mask gain / OLA). The offline
+      // DSP path already limits, but ML success skips that path — enforce a final
+      // brickwall safety limit on every processed buffer before Live-Mix / export.
+      try {
+        if (
+          this.outputBuffer &&
+          this.outputBuffer !== this.origBuffer &&
+          this.outputBuffer !== this.inputBuffer
+        ) {
+          this._applyOutputSafetyLimit(this.outputBuffer);
+          this.procBuffer = this.outputBuffer;
+        }
+      } catch (limErr) {
+        structuredLog('warn', '[VIP] output safety limit failed', { err: limErr?.message });
+      }
       if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = false;
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
       if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = false;
@@ -4260,15 +4275,53 @@ class VoiceIsolatePro {
     }
 
     // Final brickwall safety limit + optional dither.
-    const ceil = Math.min(p.limThresh ?? -1, -0.1);
-    for (let ch = 0; ch < processed.numberOfChannels; ch++) {
-      const out = processed.getChannelData(ch);
-      DSP.truePeakLimit(out, ceil);
-      if ((p.ditherAmt ?? 0) > 0) this.applyDither(out, p);
+    this._applyOutputSafetyLimit(processed, p);
+    if ((p.ditherAmt ?? 0) > 0) {
+      for (let ch = 0; ch < processed.numberOfChannels; ch++) {
+        this.applyDither(processed.getChannelData(ch), p);
+      }
     }
 
     this.procBuffer = processed;
     this.outputBuffer = processed;
+  }
+
+  /**
+   * Brickwall peak safety for export/playback buffers.
+   * ML stems and aggressive makeup can exceed ±1; truePeakLimit keeps samples
+   * within limThresh (default −1 dBFS). Mutates channel data in place.
+   * @param {AudioBuffer} buf
+   * @param {object} [params] optional slider map (uses limThresh)
+   */
+  _applyOutputSafetyLimit(buf, params) {
+    if (!buf || typeof buf.numberOfChannels !== 'number') return buf;
+    const DSP = this._resolveDSP?.() || (typeof globalThis !== 'undefined' ? globalThis.DSP : null);
+    if (!DSP || typeof DSP.truePeakLimit !== 'function') {
+      // Fallback hard clamp to full-scale if DSP core not loaded.
+      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+        const out = buf.getChannelData(ch);
+        for (let i = 0; i < out.length; i++) {
+          if (out[i] > 1) out[i] = 1;
+          else if (out[i] < -1) out[i] = -1;
+        }
+      }
+      return buf;
+    }
+    let p = params;
+    if (!p) {
+      try {
+        p = (typeof this.getEffectiveParams === 'function')
+          ? this.getEffectiveParams(this.params || {})
+          : (this.params || {});
+      } catch {
+        p = this.params || {};
+      }
+    }
+    const ceil = Math.min(Number.isFinite(p.limThresh) ? p.limThresh : -1, -0.1);
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+      DSP.truePeakLimit(buf.getChannelData(ch), ceil);
+    }
+    return buf;
   }
 
   // Yield to the event loop between heavy passes so the processing overlay /
