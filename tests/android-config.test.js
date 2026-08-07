@@ -75,9 +75,10 @@ describe('capacitor.config.json — structure and values', () => {
     expect(cfg.android.captureInput).toBe(true);
   });
 
-  test('android.appendUserAgent includes VoiceIsolatePro/25.0', () => {
+  test('android.appendUserAgent includes product version from package.json', () => {
     // Platform-tagged UA aids diagnostics in WebView logs.
-    expect(cfg.android.appendUserAgent).toMatch(/^VoiceIsolatePro\/25\.0(\s+Android)?$/);
+    const pkg = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '..', 'package.json'), 'utf8'));
+    expect(cfg.android.appendUserAgent).toBe(`VoiceIsolatePro/${pkg.version} Android`);
   });
 
   test('ios section is defined', () => {

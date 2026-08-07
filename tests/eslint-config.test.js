@@ -100,7 +100,10 @@ describe('ESLint Configuration Validation', () => {
   });
 
   test('should define ignore patterns for node_modules and demo', () => {
-    const ignoreConfig = config.find(c => c.ignores);
+    // Flat config may have per-block ignores (e.g. SAM3 worker). Prefer the global ignore list.
+    const ignoreConfig =
+      config.find(c => Array.isArray(c.ignores) && c.ignores.includes('node_modules/**')) ||
+      config.find(c => c.ignores);
     expect(ignoreConfig).toBeDefined();
     expect(ignoreConfig.ignores).toContain('node_modules/**');
     expect(ignoreConfig.ignores).toContain('v19-demo/**');

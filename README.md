@@ -7,7 +7,7 @@
   &nbsp;·&nbsp;
   <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"><strong>Android APK</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe"><strong>Windows</strong></a>
+  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe"><strong>Windows</strong></a>
   &nbsp;·&nbsp;
   <a href="docs/README.md">Documentation</a>
   &nbsp;·&nbsp;
@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v25.0.0-red" alt="v25">
+  <img src="https://img.shields.io/badge/version-v25.0.1-red" alt="v25.0.1">
   <img src="https://img.shields.io/badge/architecture-Threads%20from%20Space%20v8-blueviolet" alt="Architecture">
   <img src="https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white" alt="Node 22+">
   <img src="https://img.shields.io/badge/pnpm-11-000000?logo=pnpm&logoColor=f69220" alt="pnpm 11">
@@ -241,16 +241,17 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 | **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 | **Latest Android APK** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
 | **Pinned Android v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
-| **Latest Windows installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe |
-| **Pinned Windows v24.0.0** (prior) | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| **Working Windows installer (published)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| **Pinned Windows v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 
-| Asset | Name | Approx. size | Updated |
+| Asset | Name | Approx. size | Notes |
 |-------|------|----------------|---------|
-| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~238 MB | code **v25.0.0** |
-| Windows NSIS installer | `VoiceIsolate-Pro-25.0.0-win-x64.exe` | ~178 MB | code **v25.0.0** |
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~238 MB | **published** on `latest` (v24 binary today) |
+| Windows NSIS installer (published) | `VoiceIsolate-Pro-24.0.0-win-x64.exe` | ~178 MB | **only** Windows asset on GitHub today |
+| Windows NSIS (local build) | `VoiceIsolate-Pro-25.0.1-win-x64.exe` | ~178 MB | after `pnpm build:electron` — upload with new release |
 
-In-repo version (Web / Android `versionName` / Electron artifact): **25.0.0** (`versionCode` / iOS build **250000**).  
-Published GitHub Release binaries are cut separately — until a **v25.0.0** release is uploaded, `latest` may still resolve to the prior **[v24.0.0](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v24.0.0)** assets.
+In-repo version (Web / Android `versionName` / Electron artifact): **25.0.1** (`versionCode` / iOS build **250001**).  
+Published GitHub Release binaries are cut separately — **`latest` is still [v24.0.0](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v24.0.0)**. Do **not** link `VoiceIsolate-Pro-25.*.exe` until that asset is uploaded (those URLs **404**).
 
 The download page always points at **real GitHub Release binaries** (never SPA HTML).  
 Same-origin `/download/*.apk` and `/download/*.exe` redirect to Releases (`vercel.json`).
@@ -259,10 +260,10 @@ Build locally (Windows):
 
 ```bash
 pnpm android:build:win
-# → dist/android/VoiceIsolate-Pro-android-debug.apk  (versionName 25.0.0)
+# → dist/android/VoiceIsolate-Pro-android-debug.apk  (versionName 25.0.1)
 
 pnpm build:electron
-# → dist/electron/VoiceIsolate-Pro-25.0.0-win-x64.exe
+# → dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe
 ```
 
 Sideload APK: enable **Install unknown apps**, then open the file.  
@@ -343,19 +344,18 @@ android/             Capacitor Android project
 
 ---
 
-## Recent changes (v25.0.0)
+## Recent changes (v25.0.1)
 
-- **Version sync** — `package.json`, Android (`25.0.0` / `250000`), iOS, Capacitor UA, API version, Electron artifact name
-- **Slider discipline** — non-linear calibration + coupling + soft clamps (effective DSP only; UI ranges preserved)
-- **Per-slider locks** — SVG padlocks, cyan protected state, localStorage persistence, Reset Unlocked Only
-- **Unified metrics** — Voice % / Noise % / SNR dB via one `updateAudioMetrics()` writer
-- **Collapsible sections** — native details/summary for major Engineer panels
-- **Stage-aware overlay** — processing variants + always-hide in `runPipeline` finally
-- **Docs** — README, CLAUDE.md §5.1, DOWNLOADS, snapshot PDF `docs/releases/VoiceIsolate_Pro_v25_Current_State.pdf`
+- **Version sync** — `package.json`, Android (`25.0.1` / `250001`), iOS, Capacitor UA, API health, SAM runtime package
+- **Download links** — Windows primary URL points at published **v24.0.0** asset (25.x installer names 404 until a new release)
+- **SAM-Audio** — production Desktop worker path + hub/FFmpeg bootstrap
+- **SAM 3 vision** — local sidecar scaffold (feature-flagged OFF) on web shell
+- **Audio / UI polish** — soft gate, spectral OLA, unified Creator/Studio/Forensic tiers
 
-### Prior (v24)
+### Prior (v25.0.0 / v24)
 
-- Upload-only workflow · Chromium picker fix · WhisperHunter single-pass · gate/de-esser worklets · STFT yields · Android download channel
+- Slider discipline · per-slider locks · unified metrics · collapsible Engineer panels
+- Upload-only workflow · Chromium picker fix · WhisperHunter single-pass · gate/de-esser worklets · STFT yields
 
 ---
 

@@ -1,80 +1,82 @@
 # Downloads — VoiceIsolate Pro
 
 **In-repo version:** **25.0.1** (`package.json`)  
-**Android / Electron product lines** may still publish under **25.0.0** artifact names until the next release cut.
+**Android:** `versionName "25.0.1"` · `versionCode` **250001**  
+**iOS:** `CFBundleShortVersionString` **25.0.1** · `CFBundleVersion` **250001**  
+**Published GitHub Release (only):** **[v24.0.0](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v24.0.0)** (2026-07-18 / assets 2026-07-21)
 
-**Platform web-shell sync:** after pulling `main`, regenerate local packages:
+> **Verified 2026-08-07:** Windows `…/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe` **404s**.  
+> Working Windows asset name on `latest` is **`VoiceIsolate-Pro-24.0.0-win-x64.exe`**.  
+> Android APK name is version-stable (`VoiceIsolate-Pro-android-debug.apk`) and **200 OK**.
 
-```bash
-pnpm build                 # public/ + src/ → build/ (includes sam3_integration)
-pnpm sam:ensure-build      # SAM-Audio + SAM3 markers into build/
-# Android / Electron then pack from build/
-```
+## Public URLs (must not 404)
+
+| Platform | Working URL | HTTP (2026-08-07) |
+|----------|-------------|-------------------|
+| **Web download hub** | https://voice-isolate-pro.vercel.app/download/ | 200 |
+| **Web Landing** | https://voice-isolate-pro.vercel.app/ | 200 |
+| **Web Engineer** | https://voice-isolate-pro.vercel.app/app/ | 200 |
+| **Android APK (latest)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk | 200 |
+| **Windows installer (latest / published)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe | 200 |
+| **Android pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk | 200 |
+| **Windows pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe | 200 |
+| **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases | 200 |
+
+### Broken (do not use until a new release is uploaded)
+
+| URL | Status |
+|-----|--------|
+| `…/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe` | **404** |
+| `…/latest/download/VoiceIsolate-Pro-25.0.1-win-x64.exe` | **404** |
+
+Site redirects under `vercel.json` map legacy `/download/VoiceIsolate-Pro-25.*.exe` paths to the **published v24 Windows asset** so bookmarks keep working until `v25.0.1` is cut.
+
+## Platform matrix (code on `main`)
+
+| Platform | Artifact when you build today | What’s included |
+|----------|-------------------------------|-----------------|
+| **Web** | Vercel → `public/` | Live-Mix + Engineer; SAM3 vision modules (flag OFF); SAM-Audio optional |
+| **Android** | `VoiceIsolate-Pro-android-debug.apk` | Capacitor shell from `build/` — same web + SAM3 JS |
+| **Windows** | `VoiceIsolate-Pro-25.0.1-win-x64.exe` (electron-builder `${version}`) | Electron + `build/**` + SAM-Audio worker package |
 
 `build/`, `android/.../assets/public`, and `dist/*` binaries are **gitignored** — regenerate after pulling.
-
-Published GitHub Release assets are cut separately. Prefer **`/releases/latest/download/…`** for current files; pinned v24 links remain for rollback.
-
-## Current code target
-
-| Platform | Artifact | What’s included |
-|----------|----------|-----------------|
-| **Web** | https://voice-isolate-pro.vercel.app/ · `/app/` | Live-Mix + Engineer; SAM3 vision modules under `/src/sam3_integration/` (flag OFF); SAM-Audio optional loopback |
-| **Android** | `VoiceIsolate-Pro-android-debug.apk` | Capacitor shell from `build/` — same web + SAM3 JS; no cloud vision |
-| **Windows** | `VoiceIsolate-Pro-25.0.0-win-x64.exe` (name may lag version) | Electron + `build/**` + SAM-Audio worker package + SAM3 modules |
-
-### Published release URLs
-
-| Platform | Latest (preferred) | Pinned prior |
-|----------|--------------------|--------------|
-| **Android APK** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
-| **Windows installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
-| **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases | |
-
-> If `latest` still points at an older tag, use the pinned v24 URLs or wait for a new GitHub Release that packs post-SAM3 `build/`.
-
-### Download page (site)
-
-https://voice-isolate-pro.vercel.app/download/
-
-## SAM stack in downloads (all three platforms)
-
-| Component | Web | Android | Desktop |
-|-----------|-----|---------|---------|
-| **SAM-Audio** (audio separation) | optional loopback worker / ONNX | optional `sam_audio.onnx` | real worker via Electron IPC |
-| **SAM 3** (vision sidecar) | JS bundled; flag OFF | same in WebView | same + extraResources |
-| Default isolation | BSRNN / RNNoise / USM | same | same |
-
-Enable SAM 3 (vision) after install: `VIP_SAM3_ENABLED=1` or browser `localStorage.setItem('vip-sam3-enabled','1')`.  
-Docs: [SAM3_TECHNICAL_DOCUMENTATION.md](SAM3_TECHNICAL_DOCUMENTATION.md) · [SAM_AUDIO.md](guides/SAM_AUDIO.md)
 
 ## Build & publish (maintainers)
 
 ```bash
-# Web shell + SAM markers
 pnpm install
-pnpm build
-pnpm sam:ensure-build
-pnpm test:sam3
+pnpm build                 # includes ensure-sam-in-build via package script
+pnpm mobile:sync-version   # android + iOS from package.json
+pnpm test:ci
+pnpm check:cloud-audio
 
 # Android
-pnpm android:build:win   # or pnpm android:build on Unix
-# → dist/android/VoiceIsolate-Pro-android-debug.apk
+pnpm android:build:win     # → dist/android/VoiceIsolate-Pro-android-debug.apk
 
 # Desktop
-pnpm build:electron
-# → dist/electron/VoiceIsolate-Pro-<version>-win-x64.exe
+pnpm setup:electron
+pnpm build:electron        # → dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe
 
-# Upload to a release tag (example)
-gh release upload v25.0.1 dist/android/VoiceIsolate-Pro-android-debug.apk --clobber
-gh release upload v25.0.1 dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe --clobber
+# Cut + upload (creates new latest)
+gh release create v25.0.1 \
+  dist/android/VoiceIsolate-Pro-android-debug.apk \
+  dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe \
+  --title "VoiceIsolate Pro v25.0.1" \
+  --notes "Web/Android/Desktop shell sync to 25.0.1 (SAM-Audio, SAM3 flag-off, DSP polish)."
+
+# Then update download page + vercel.json primary Windows filename to 25.0.1
 ```
 
-Sync versions after editing `package.json#version`:
+## SAM stack (all three platforms)
 
-```bash
-pnpm mobile:sync-version
-```
+| Component | Web | Android | Desktop |
+|-----------|-----|---------|---------|
+| **SAM-Audio** | optional loopback / ONNX | optional `sam_audio.onnx` | real worker via Electron IPC |
+| **SAM 3** (vision) | JS bundled; flag OFF | same in WebView | same + extraResources |
+| Default isolation | BSRNN / RNNoise / USM | same | same |
+
+Enable SAM 3: `VIP_SAM3_ENABLED=1` or `localStorage.setItem('vip-sam3-enabled','1')`.  
+Docs: [SAM3_TECHNICAL_DOCUMENTATION.md](SAM3_TECHNICAL_DOCUMENTATION.md) · [SAM_AUDIO.md](guides/SAM_AUDIO.md)
 
 ## Product snapshot PDF
 

@@ -322,6 +322,8 @@ describe('Transport Methods', () => {
       // _ensureBridgeAndWorklets). Stub it so the partial mock context resolves like the
       // real prototype method instead of throwing "not a function".
       mockContext._ensureBridgeAndWorklets = jest.fn().mockResolvedValue(null);
+      // play() may call showNotification when no buffer is loaded
+      mockContext.showNotification = jest.fn();
     });
 
     it('returns early when there is no buffer', async () => {

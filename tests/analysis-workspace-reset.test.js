@@ -16,8 +16,13 @@ const workspaceJs = fs.readFileSync(
 describe('analysis collaboration reset wiring', () => {
   test('handleFile and _clearFile reset collaboration state', () => {
     expect(appJs).toContain('_resetCollaborationState() {');
-    expect(appJs).toMatch(/async handleFile\(file\) \{[\s\S]*this\._decodeReady = false;[\s\S]*this\._resetCollaborationState\?\.\(\);/);
-    expect(appJs).toMatch(/_clearFile\(\) \{[\s\S]*this\._decodeReady = false;[\s\S]*this\._resetCollaborationState\?\.\(\);/);
+    // Signature may include options = {} (library open / re-entry).
+    expect(appJs).toMatch(
+      /async handleFile\(file(?:,\s*options\s*=\s*\{\})?\)\s*\{[\s\S]*?this\._decodeReady\s*=\s*false;[\s\S]*?this\._resetCollaborationState\?\.\(\);/
+    );
+    expect(appJs).toMatch(
+      /_clearFile\(\)\s*\{[\s\S]*?this\._decodeReady\s*=\s*false;[\s\S]*?this\._resetCollaborationState\?\.\(\);/
+    );
   });
 
   test('analysis workspace exposes clearState for upload resets', () => {

@@ -259,10 +259,11 @@ Hardening pass only — **not** an architecture rewrite. Scope stays in
 | Collapsible sections | Native `<details>`/`<summary>` with non-empty summary text (a11y). |
 | Processing overlay | Stage-aware `data-variant` (uploading → … → exporting). Always `hideProcessingOverlay()` in `runPipeline` `finally`. |
 
-**Version:** product version is **`package.json` → 25.0.0**. Sync Android/iOS with
+**Version:** product version is **`package.json` → 25.0.1**. Sync Android/iOS with
 `pnpm mobile:sync-version` (writes `versionCode` / `CFBundleVersion` as
-`major*10000 + minor*100 + patch` → **250000**). Electron artifact name uses
-`${version}` from package.json.
+`major*10000 + minor*100 + patch` → **250001**). Electron artifact name uses
+`${version}` from package.json. Published GitHub Release binaries may lag until a
+new tag is cut (currently **v24.0.0** assets on `latest`).
 
 ---
 
