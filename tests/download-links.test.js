@@ -1,9 +1,8 @@
 /**
  * Guardrails: download page + README point at real GitHub Release assets.
- * Published `latest` (as of 2026-08-07) is still v24.0.0:
- *   - APK name is version-stable → latest/download/...apk works
- *   - Windows asset is VoiceIsolate-Pro-24.0.0-win-x64.exe only
- *   - VoiceIsolate-Pro-25.*.exe latest URLs 404 until a new release is cut
+ * Published `latest` (2026-08-07): v25.0.1
+ *   - APK: VoiceIsolate-Pro-android-debug.apk
+ *   - Windows: VoiceIsolate-Pro-25.0.1-win-x64.exe
  */
 'use strict';
 
@@ -20,53 +19,44 @@ const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 
 const APK_LATEST =
   'https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk';
-const APK_PINNED =
-  'https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk';
-/** Only Windows asset published on GitHub today (v24.0.0). */
-const EXE_PUBLISHED_LATEST =
-  'https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe';
-const EXE_PINNED =
+const EXE_LATEST =
+  `https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-${pkg.version}-win-x64.exe`;
+const EXE_PINNED_V24 =
   'https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe';
-/** Broken until maintainers upload a 25.x Windows installer. */
-const EXE_25_BROKEN =
+const EXE_LEGACY_250 =
   'https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe';
 
 describe('Download page links', () => {
-  test('Android APK latest + pinned direct download URLs', () => {
+  test('Android APK latest direct download URL', () => {
     expect(dl).toContain(APK_LATEST);
-    expect(dl).toContain(APK_PINNED);
     expect(dl).toContain('VoiceIsolate-Pro-android-debug.apk');
   });
 
-  test('Windows primary button uses published v24 asset (not 404 25.x names)', () => {
-    expect(dl).toContain(EXE_PUBLISHED_LATEST);
-    expect(dl).toContain(EXE_PINNED);
-    expect(dl).toContain('VoiceIsolate-Pro-24.0.0-win-x64.exe');
-    // Must not advertise a non-existent 25.x latest asset as the primary download
-    expect(dl).not.toContain(EXE_25_BROKEN);
-    expect(dl).not.toMatch(/releases\/latest\/download\/VoiceIsolate-Pro-25\.\d+\.\d+-win-x64\.exe/);
+  test('Windows primary button uses published package-version asset', () => {
+    expect(dl).toContain(EXE_LATEST);
+    expect(dl).toContain(`VoiceIsolate-Pro-${pkg.version}-win-x64.exe`);
+    expect(dl).toContain(EXE_PINNED_V24);
+    // Stale 25.0.0 latest name must not be the primary target
+    expect(dl).not.toContain(EXE_LEGACY_250);
   });
 
-  test('download page states in-repo version and published lag honestly', () => {
+  test('download page states product version', () => {
     expect(dl).toContain(pkg.version);
-    expect(dl).toMatch(/v24\.0\.0/);
   });
 });
 
 describe('README + download docs', () => {
   test('README lists working APK and Windows asset URLs', () => {
     expect(readme).toContain(APK_LATEST);
-    expect(readme).toContain(EXE_PUBLISHED_LATEST);
-    expect(readme).toContain('VoiceIsolate-Pro-24.0.0-win-x64.exe');
-    expect(readme).not.toContain(EXE_25_BROKEN);
+    expect(readme).toContain(EXE_LATEST);
+    expect(readme).toContain(`VoiceIsolate-Pro-${pkg.version}-win-x64.exe`);
   });
 
   test('download/README.md + docs/DOWNLOADS.md document working assets', () => {
     expect(dlDoc).toContain(APK_LATEST);
-    expect(dlDoc).toContain(EXE_PUBLISHED_LATEST);
-    expect(dlDoc).toContain('VoiceIsolate-Pro-android-debug.apk');
-    expect(downloadsMd).toContain(EXE_PUBLISHED_LATEST);
-    expect(downloadsMd).toContain('404');
+    expect(dlDoc).toContain(EXE_LATEST);
+    expect(downloadsMd).toContain(EXE_LATEST);
+    expect(downloadsMd).toContain(`v${pkg.version}`);
   });
 });
 
@@ -74,12 +64,12 @@ describe('Vercel download redirects', () => {
   test('redirects APK and EXE to GitHub Releases with working destinations', () => {
     expect(vercel).toContain('VoiceIsolate-Pro-android-debug.apk');
     expect(vercel).toContain('releases/latest/download/VoiceIsolate-Pro-android-debug.apk');
-    // Legacy 25.x paths must remap to the published v24 Windows asset (not a 404)
-    expect(vercel).toContain('VoiceIsolate-Pro-25.0.0-win-x64.exe');
-    expect(vercel).toContain('VoiceIsolate-Pro-25.0.1-win-x64.exe');
+    expect(vercel).toContain(`VoiceIsolate-Pro-${pkg.version}-win-x64.exe`);
     expect(vercel).toContain(
-      'releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe'
+      `releases/latest/download/VoiceIsolate-Pro-${pkg.version}-win-x64.exe`
     );
+    // Legacy 25.0.0 path must not destination-404; remap to current latest name
+    expect(vercel).toContain('VoiceIsolate-Pro-25.0.0-win-x64.exe');
     expect(vercel).not.toContain(
       'releases/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe'
     );
