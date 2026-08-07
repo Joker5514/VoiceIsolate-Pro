@@ -3,41 +3,32 @@
 **In-repo version:** **25.0.1** (`package.json`)  
 **Android:** `versionName "25.0.1"` · `versionCode` **250001**  
 **iOS:** `CFBundleShortVersionString` **25.0.1** · `CFBundleVersion` **250001**  
-**Published GitHub Release (only):** **[v24.0.0](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v24.0.0)** (2026-07-18 / assets 2026-07-21)
+**Published GitHub Release (latest):** **[v25.0.1](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.1)** (2026-08-07)
 
-> **Verified 2026-08-07:** Windows `…/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe` **404s**.  
-> Working Windows asset name on `latest` is **`VoiceIsolate-Pro-24.0.0-win-x64.exe`**.  
-> Android APK name is version-stable (`VoiceIsolate-Pro-android-debug.apk`) and **200 OK**.
+## Public URLs (verified)
 
-## Public URLs (must not 404)
-
-| Platform | Working URL | HTTP (2026-08-07) |
-|----------|-------------|-------------------|
+| Platform | Working URL | HTTP |
+|----------|-------------|------|
 | **Web download hub** | https://voice-isolate-pro.vercel.app/download/ | 200 |
 | **Web Landing** | https://voice-isolate-pro.vercel.app/ | 200 |
 | **Web Engineer** | https://voice-isolate-pro.vercel.app/app/ | 200 |
 | **Android APK (latest)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk | 200 |
-| **Windows installer (latest / published)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe | 200 |
-| **Android pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk | 200 |
-| **Windows pinned v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe | 200 |
+| **Windows installer (latest)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.1-win-x64.exe | 200 |
+| **Android pinned v25.0.1** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.1/VoiceIsolate-Pro-android-debug.apk | 200 |
+| **Windows pinned v25.0.1** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.1/VoiceIsolate-Pro-25.0.1-win-x64.exe | 200 |
+| **Android prior v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk | 200 |
+| **Windows prior v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe | 200 |
 | **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases | 200 |
 
-### Broken (do not use until a new release is uploaded)
+Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` to GitHub Releases.
 
-| URL | Status |
-|-----|--------|
-| `…/latest/download/VoiceIsolate-Pro-25.0.0-win-x64.exe` | **404** |
-| `…/latest/download/VoiceIsolate-Pro-25.0.1-win-x64.exe` | **404** |
+## Platform matrix
 
-Site redirects under `vercel.json` map legacy `/download/VoiceIsolate-Pro-25.*.exe` paths to the **published v24 Windows asset** so bookmarks keep working until `v25.0.1` is cut.
-
-## Platform matrix (code on `main`)
-
-| Platform | Artifact when you build today | What’s included |
-|----------|-------------------------------|-----------------|
+| Platform | Artifact | What’s included |
+|----------|----------|-----------------|
 | **Web** | Vercel → `public/` | Live-Mix + Engineer; SAM3 vision modules (flag OFF); SAM-Audio optional |
 | **Android** | `VoiceIsolate-Pro-android-debug.apk` | Capacitor shell from `build/` — same web + SAM3 JS |
-| **Windows** | `VoiceIsolate-Pro-25.0.1-win-x64.exe` (electron-builder `${version}`) | Electron + `build/**` + SAM-Audio worker package |
+| **Windows** | `VoiceIsolate-Pro-25.0.1-win-x64.exe` | Electron + `build/**` + SAM-Audio worker package |
 
 `build/`, `android/.../assets/public`, and `dist/*` binaries are **gitignored** — regenerate after pulling.
 
@@ -45,8 +36,8 @@ Site redirects under `vercel.json` map legacy `/download/VoiceIsolate-Pro-25.*.e
 
 ```bash
 pnpm install
-pnpm build                 # includes ensure-sam-in-build via package script
-pnpm mobile:sync-version   # android + iOS from package.json
+pnpm build
+pnpm mobile:sync-version
 pnpm test:ci
 pnpm check:cloud-audio
 
@@ -57,14 +48,11 @@ pnpm android:build:win     # → dist/android/VoiceIsolate-Pro-android-debug.apk
 pnpm setup:electron
 pnpm build:electron        # → dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe
 
-# Cut + upload (creates new latest)
+# Release
 gh release create v25.0.1 \
   dist/android/VoiceIsolate-Pro-android-debug.apk \
   dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe \
-  --title "VoiceIsolate Pro v25.0.1" \
-  --notes "Web/Android/Desktop shell sync to 25.0.1 (SAM-Audio, SAM3 flag-off, DSP polish)."
-
-# Then update download page + vercel.json primary Windows filename to 25.0.1
+  --title "VoiceIsolate Pro v25.0.1"
 ```
 
 ## SAM stack (all three platforms)

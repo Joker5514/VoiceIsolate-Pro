@@ -7,7 +7,7 @@
   &nbsp;·&nbsp;
   <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk"><strong>Android APK</strong></a>
   &nbsp;·&nbsp;
-  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe"><strong>Windows</strong></a>
+  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.1-win-x64.exe"><strong>Windows</strong></a>
   &nbsp;·&nbsp;
   <a href="docs/README.md">Documentation</a>
   &nbsp;·&nbsp;
@@ -240,18 +240,17 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 | **Web download page** | https://voice-isolate-pro.vercel.app/download/ |
 | **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 | **Latest Android APK** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
-| **Pinned Android v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
-| **Working Windows installer (published)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-24.0.0-win-x64.exe |
-| **Pinned Windows v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| **Pinned Android v25.0.1** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.1/VoiceIsolate-Pro-android-debug.apk |
+| **Latest Windows installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.1-win-x64.exe |
+| **Prior Windows v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 
 | Asset | Name | Approx. size | Notes |
 |-------|------|----------------|---------|
-| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~238 MB | **published** on `latest` (v24 binary today) |
-| Windows NSIS installer (published) | `VoiceIsolate-Pro-24.0.0-win-x64.exe` | ~178 MB | **only** Windows asset on GitHub today |
-| Windows NSIS (local build) | `VoiceIsolate-Pro-25.0.1-win-x64.exe` | ~178 MB | after `pnpm build:electron` — upload with new release |
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~250 MB | **v25.0.1** on `latest` |
+| Windows NSIS installer | `VoiceIsolate-Pro-25.0.1-win-x64.exe` | ~267 MB | **v25.0.1** on `latest` |
 
 In-repo version (Web / Android `versionName` / Electron artifact): **25.0.1** (`versionCode` / iOS build **250001**).  
-Published GitHub Release binaries are cut separately — **`latest` is still [v24.0.0](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v24.0.0)**. Do **not** link `VoiceIsolate-Pro-25.*.exe` until that asset is uploaded (those URLs **404**).
+Published GitHub Release **`latest` = [v25.0.1](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.1)**.
 
 The download page always points at **real GitHub Release binaries** (never SPA HTML).  
 Same-origin `/download/*.apk` and `/download/*.exe` redirect to Releases (`vercel.json`).
