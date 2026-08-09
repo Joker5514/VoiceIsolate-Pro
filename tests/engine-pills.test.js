@@ -72,4 +72,13 @@ describe('app.js + MLWorkerHost pill hooks', () => {
     expect(host).toContain("setPill('engMlPill', 'ready')");
     expect(host).toContain("msg.type === 'ready'");
   });
+
+  test('exposes visible WebGPU/WASM backend label and model chain', () => {
+    expect(html).toContain('id="ortBackendLabel"');
+    expect(html).toContain('id="activeModelChain"');
+    expect(host).toContain('WebGPU');
+    expect(host).toContain('WASM');
+    expect(host).toContain('activeModelChain');
+  });
 });
+

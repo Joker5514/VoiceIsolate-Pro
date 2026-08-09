@@ -947,6 +947,10 @@ class VoiceIsolatePro {
       for (const id of this._sliderLocks) this._syncSliderLockUi(id);
       HeroExperience.init(this);
       WorkflowTier.init(this);
+      // Target-speaker panel (local voiceprint) — non-blocking if module fails.
+      try { this._mountTargetSpeakerPanel?.(); } catch (tsErr) {
+        structuredLog('warn', '[VIP] target speaker UI mount failed', { err: tsErr?.message });
+      }
       // Upload controls are live — do not leave the splash intercepting clicks.
       this._dismissBootSplash();
     } catch (initErr) {
@@ -2108,6 +2112,59 @@ class VoiceIsolatePro {
     if (orch && typeof orch.onSlider === 'function') {
       orch.onSlider(id, value);
     }
+  }
+
+  /**
+   * Experimental Engineer-mode STFT path (not the shipping ML single-STFT path).
+   * Enable with localStorage vip-experimental-engineer-spectral=1 or env-style flag.
+   */
+  _isExperimentalEngineerSpectralEnabled(p) {
+    try {
+      if (typeof globalThis !== 'undefined' && globalThis.VIP_EXPERIMENTAL_ENGINEER_SPECTRAL === true) {
+        return true;
+      }
+      if (typeof localStorage !== 'undefined'
+        && localStorage.getItem('vip-experimental-engineer-spectral') === '1') {
+        return true;
+      }
+    } catch { /* ignore */ }
+    // Whisper forensic aggression still needs the Engineer spectral stage in DSP fallback.
+    const w = Number(p?.whisperMode ?? 0);
+    return Number.isFinite(w) && w >= 2;
+  }
+
+  /**
+   * Mount target-speaker enrollment UI (local mel voiceprint; no network).
+   * Applies soft gain isolation to the processed/clean stem after Process.
+   */
+  async _mountTargetSpeakerPanel() {
+    const host = typeof document !== 'undefined'
+      ? document.getElementById('targetSpeakerPanel')
+      : null;
+    if (!host || this._targetSpeakerUi) return;
+    const { mountTargetSpeakerUI } = await import('/src/presentation/TargetSpeakerUI.js');
+    this._targetSpeakerUi = mountTargetSpeakerUI({
+      container: host,
+      getAudio: () => {
+        const buf = this.outputBuffer || this.procBuffer || this.origBuffer || this.inputBuffer;
+        if (!buf) return null;
+        const channelData = [];
+        for (let c = 0; c < buf.numberOfChannels; c++) {
+          channelData.push(buf.getChannelData(c));
+        }
+        return { channelData, sampleRate: buf.sampleRate };
+      },
+      onIsolated: async (channels, sampleRate) => {
+        await this.ensureCtx();
+        const out = this.ctx.createBuffer(channels.length, channels[0].length, sampleRate);
+        for (let c = 0; c < channels.length; c++) out.copyToChannel(channels[c], c);
+        this.outputBuffer = out;
+        this.procBuffer = out;
+        this._setProcessedPlaybackMode?.();
+        this._updateProcessButtonsState?.();
+      },
+      notify: (msg, kind) => this.showNotification?.(msg, kind || 'info'),
+    });
   }
 
   // ── Event binding ────────────────────────────────────────────────────────
@@ -4256,18 +4313,25 @@ class VoiceIsolatePro {
       channels[ch] = data;
     }
 
-    // ── Pass 3–5: spectral isolation — ONE STFT/iSTFT per process channel ──
-    this.updatePipelineProgress(10, 'Spectral isolation…', 20);
-    const regionMaps = {
-      protect: this._protectRegions || [],
-      suppress: this._suppressRegions || [],
-    };
-    for (let ch = 0; ch < channels.length; ch++) {
-      if (this.abortFlag) break;
-      channels[ch] = await this._spectralStageAsync(channels[ch], sr, p, (frac) => {
-        const pct = 20 + Math.round(frac * 40);
-        this.updatePipelineProgress(10, 'Spectral isolation…', pct);
-      }, regionMaps) || channels[ch];
+    // ── Pass 3–5: Engineer spectral (experimental / DSP-fallback only) ──
+    // Production ML shipping path is MLWorker fused spectral-mask (single STFT).
+    // This stage is gated: VIP_EXPERIMENTAL_ENGINEER_SPECTRAL=1 or forensic whisper.
+    const engSpectralOn = this._isExperimentalEngineerSpectralEnabled?.(p);
+    if (engSpectralOn) {
+      this.updatePipelineProgress(10, 'Spectral isolation (experimental Engineer path)…', 20);
+      const regionMaps = {
+        protect: this._protectRegions || [],
+        suppress: this._suppressRegions || [],
+      };
+      for (let ch = 0; ch < channels.length; ch++) {
+        if (this.abortFlag) break;
+        channels[ch] = await this._spectralStageAsync(channels[ch], sr, p, (frac) => {
+          const pct = 20 + Math.round(frac * 40);
+          this.updatePipelineProgress(10, 'Spectral isolation…', pct);
+        }, regionMaps) || channels[ch];
+      }
+    } else {
+      this.updatePipelineProgress(10, 'Skipping experimental Engineer STFT (ML path owns production spectral)…', 25);
     }
 
     // Expand mono-processed mid back to stereo with gain envelope.

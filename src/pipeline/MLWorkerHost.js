@@ -40,7 +40,29 @@ export function createMLWorker() {
       setPill('engMlPill', 'ready');
       try {
         const el = globalThis.document?.getElementById?.('engOrtPill');
-        if (el) el.title = `ORT provider: ${backend || 'unknown'}`;
+        if (el) {
+          el.title = backend === 'webgpu'
+            ? 'ONNX Runtime: WebGPU (preferred)'
+            : backend === 'wasm'
+              ? 'ONNX Runtime: WASM fallback'
+              : `ONNX Runtime: ${backend || 'unknown'}`;
+          el.textContent = backend === 'webgpu' ? 'WebGPU' : backend === 'wasm' ? 'WASM' : 'ORT';
+        }
+        const ml = globalThis.document?.getElementById?.('engMlPill');
+        if (ml) ml.title = `Local ONNX ready (${backend || 'unknown'})`;
+        const strip = globalThis.document?.getElementById?.('ortBackendLabel');
+        if (strip) {
+          strip.textContent = backend === 'webgpu' ? 'Backend: WebGPU' : backend === 'wasm' ? 'Backend: WASM' : 'Backend: —';
+          strip.dataset.backend = backend || '';
+        }
+      } catch { /* ignore */ }
+    } else if (msg.type === 'stems' && msg.modelChain) {
+      try {
+        const chainEl = globalThis.document?.getElementById?.('activeModelChain');
+        if (chainEl) {
+          chainEl.textContent = `Chain: ${(msg.modelChain || []).join(' → ') || '—'}`
+            + (msg.pipelineMode === 'fused-spectral-single-stft' ? ' · single-STFT fuse' : '');
+        }
       } catch { /* ignore */ }
     } else if (msg.type === 'error' && !msg.requestId) {
       setPill('engOrtPill', 'error');

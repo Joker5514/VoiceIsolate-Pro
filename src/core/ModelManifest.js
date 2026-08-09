@@ -161,6 +161,29 @@ export const MODEL_MANIFEST = Object.freeze({
     }),
   }),
 
+  // ── Speaker embedding (optional ECAPA) ────────────────────────────────
+  // When a pinned ECAPA-TDNN ONNX is placed here, TargetSpeaker can switch
+  // from local mel voiceprint to neural embeddings. Until then, enrollment
+  // uses src/core/TargetSpeaker.js (melBands) — still fully local.
+  ecapa_tdnn: Object.freeze({
+    id: 'ecapa_tdnn',
+    name: 'ECAPA-TDNN Speaker Embedding (optional)',
+    task: 'speaker-embedding',
+    url: '/app/models/ecapa_tdnn.onnx',
+    sizeBytes: null,
+    quantization: 'fp32',
+    delivery: 'optional',
+    optional: true,
+    shipped: false,
+    sha256: null,
+    strategy: 'speaker-embedding',
+    sampleRate: 16000,
+    io: Object.freeze({
+      input: 'input',
+      output: 'embedding',
+    }),
+  }),
+
   // ── SAM-Audio ONNX (optional) — Android WebView / browser ORT path ─────
   // Place a verified SAM-Audio ONNX export at this path for on-device ORT.
   // Desktop prefers the Python local worker (real Meta weights). Without the

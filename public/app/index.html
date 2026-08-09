@@ -304,6 +304,8 @@
         <div class="cockpit-models">
           <span class="cockpit-label">Model Cache &amp; Providers</span>
           <div id="modelStatusPills" class="engine-pills"></div>
+          <p class="hint" id="ortBackendLabel" data-backend="">Backend: —</p>
+          <p class="hint" id="activeModelChain">Chain: —</p>
         </div>
         <div id="cdnHealthPanel" class="cockpit-health"></div>
       </div>
@@ -362,6 +364,14 @@
             <ul id="fileLibraryList" class="file-library-list" aria-label="Saved files"></ul>
           </div>
         </details>
+        </div>
+      </details>
+
+      <!-- Target-speaker isolation (local mel voiceprint; no network) -->
+      <details class="card vip-section" id="section-target-speaker" open>
+        <summary class="vip-section-summary">Target speaker isolation (local)</summary>
+        <div class="vip-section-body">
+          <div id="targetSpeakerPanel" aria-label="Target speaker enrollment"></div>
         </div>
       </details>
 
