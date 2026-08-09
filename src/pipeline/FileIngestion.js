@@ -25,7 +25,7 @@
 'use strict';
 
 import { SAMPLE_RATE, MAX_CHANNELS, resampledLength } from '../core/audio-config.js';
-import { inferMediaKind } from '../core/media-types.js';
+import { inferMediaKind, isGenericMimeType, resolveMediaKind } from '../core/media-types.js';
 import { pickAudioFile, isDesktopShell } from '../core/DesktopBridge.js';
 import { decodeBlobToAudioBuffer } from './media-decode.js';
 import { stageEnd, stageStart } from './PipelineTiming.js';
@@ -94,6 +94,10 @@ export function isValidIsolationMode(mode) {
 /**
  * Validate that a blob looks ingestible. Throws descriptive errors so the
  * presentation layer can surface them verbatim.
+ *
+ * Generic MIME types (`application/octet-stream`, empty) are allowed through —
+ * Windows often tags valid media this way. The decoder is the final judge.
+ *
  * @param {Blob} blob
  */
 export function assertIngestible(blob) {
@@ -114,12 +118,46 @@ export function assertIngestible(blob) {
   }
   const type = blob.type || '';
   // Some OSes hand over files with an empty or generic MIME type — fall back to
-  // filename extension before rejecting.
-  if (type && !ACCEPTED_TYPES.some((p) => type.startsWith(p)) && kind === null) {
+  // filename extension (and later magic-byte sniff) before rejecting.
+  if (
+    type &&
+    !isGenericMimeType(type) &&
+    !ACCEPTED_TYPES.some((p) => type.startsWith(p)) &&
+    kind === null
+  ) {
     throw new TypeError(
       `[VIP][FileIngestion] Unsupported type '${type}'. Provide an audio or video file.`
     );
   }
+}
+
+/**
+ * Async validation that also sniffs magic bytes when MIME/extension are useless.
+ * Prefer this over assertIngestible for user-facing upload paths.
+ * @param {Blob} blob
+ * @returns {Promise<'audio'|'video'>}
+ */
+export async function assertIngestibleAsync(blob) {
+  assertIngestible(blob);
+  let kind = inferMediaKind(blob);
+  if (kind === 'midi') {
+    throw new TypeError(
+      '[VIP][FileIngestion] MIDI files are not supported. Use an audio file (WAV, MP3, etc).'
+    );
+  }
+  if (!kind) {
+    kind = await resolveMediaKind(blob);
+  }
+  if (kind !== 'audio' && kind !== 'video') {
+    // Still allow empty/generic types into the decoder — many valid files sniff poorly.
+    if (isGenericMimeType(blob.type) || !blob.type) {
+      return 'audio';
+    }
+    throw new TypeError(
+      `[VIP][FileIngestion] Unsupported type '${blob.type || 'unknown'}'. Provide an audio or video file.`
+    );
+  }
+  return kind;
 }
 
 /**
@@ -190,7 +228,8 @@ export async function pickAndIngestFile(hooks = {}) {
 
 export async function ingestFile(file, hooks = {}) {
   const { onProgress = () => {}, isolationMode } = hooks;
-  assertIngestible(file);
+  // Magic-byte sniff for Windows octet-stream / extensionless renames.
+  await assertIngestibleAsync(file);
 
   onProgress('decoding', 5);
   stageStart('decode');

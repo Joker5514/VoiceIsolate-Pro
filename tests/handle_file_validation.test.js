@@ -204,10 +204,10 @@ describe('handleFile() — file type validation', () => {
     expect(mockVip.dom.fileInfo.textContent).toContain('MIDI');
   });
 
-  test('rejects unsupported MIME types', async () => {
+  test('rejects explicit non-media MIME types (e.g. PDF)', async () => {
     const mockVip = makeMockVip();
     const mockFile = {
-      name: 'data.bin', size: 1024, type: 'application/octet-stream',
+      name: 'doc.pdf', size: 1024, type: 'application/pdf',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
     };
 
@@ -217,13 +217,28 @@ describe('handleFile() — file type validation', () => {
     expect(mockVip.dom.fileInfo.textContent).toContain('Unsupported');
   });
 
+  test('accepts application/octet-stream for decode-later (Windows generic MIME)', async () => {
+    // Real media often arrives as octet-stream with/without extension — do not reject here.
+    const mockVip = makeMockVip();
+    const mockFile = {
+      name: 'recording', size: 1024, type: 'application/octet-stream',
+      arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
+      slice: function (a, b) { return { arrayBuffer: () => Promise.resolve(new ArrayBuffer(Math.max(0, (b || 0) - (a || 0)))) }; },
+    };
+
+    await handleFile.call(mockVip, mockFile);
+
+    expect(mockVip._sourceFile).toBe(mockFile);
+    expect(mockVip.setStatus).toHaveBeenCalledWith('READY');
+  });
+
   test('restores process button states after a rejected file', async () => {
     const mockVip = makeMockVip();
     mockVip.dom.processBtn.disabled = false;
     mockVip.dom.reprocessBtn.disabled = true;
     mockVip.dom.mobileReprocessBtn.disabled = false;
     const mockFile = {
-      name: 'data.bin', size: 1024, type: 'application/octet-stream',
+      name: 'doc.pdf', size: 1024, type: 'application/pdf',
       arrayBuffer: jest.fn().mockResolvedValue(new ArrayBuffer(10)),
     };
 
