@@ -965,11 +965,19 @@ self.onmessage = async (event) => {
           ort.env.wasm.wasmPaths = '/lib/';
           const cores = self.navigator?.hardwareConcurrency || 4;
           const mobile = isConstrainedDevice();
-          // Threaded WASM needs COOP/COEP (Android MainActivity injects headers).
-          // Cap threads on mobile — oversubscription hurts more than it helps.
-          ort.env.wasm.numThreads = mobile
-            ? Math.min(2, Math.max(1, cores))
-            : Math.min(8, Math.max(1, cores - 1));
+          // Threaded WASM needs SharedArrayBuffer + crossOriginIsolated.
+          // Android WebView often lacks SAB even when MainActivity injects COOP/COEP —
+          // force single-thread so ORT does not crash on worker boot.
+          const sabOk = typeof SharedArrayBuffer !== 'undefined'
+            && typeof Atomics !== 'undefined'
+            && self.crossOriginIsolated !== false;
+          if (!sabOk) {
+            ort.env.wasm.numThreads = 1;
+          } else if (mobile) {
+            ort.env.wasm.numThreads = Math.min(2, Math.max(1, cores));
+          } else {
+            ort.env.wasm.numThreads = Math.min(8, Math.max(1, cores - 1));
+          }
         }
         const backend = await resolveBackend();
         self.postMessage({ type: 'ready', backend });

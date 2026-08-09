@@ -235,10 +235,22 @@
       const audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
       window._vipAudioCtx = audioCtx;
 
-      const inputSAB  = new SharedArrayBuffer(INPUT_SAB_BYTES);
-      const outputSAB = new SharedArrayBuffer(OUTPUT_SAB_BYTES);
-      window._vipInputSAB  = inputSAB;
-      window._vipOutputSAB = outputSAB;
+      // SAB is optional — Android WebView / non-isolated pages skip multi-thread rings.
+      if (typeof SharedArrayBuffer !== 'undefined') {
+        try {
+          const inputSAB  = new SharedArrayBuffer(INPUT_SAB_BYTES);
+          const outputSAB = new SharedArrayBuffer(OUTPUT_SAB_BYTES);
+          window._vipInputSAB  = inputSAB;
+          window._vipOutputSAB = outputSAB;
+        } catch (sabErr) {
+          console.info('[DSP-Bootstrap] SharedArrayBuffer allocate failed — continuing without SAB', sabErr?.message || sabErr);
+          window._vipInputSAB = null;
+          window._vipOutputSAB = null;
+        }
+      } else {
+        window._vipInputSAB = null;
+        window._vipOutputSAB = null;
+      }
 
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 512;

@@ -133,6 +133,24 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         });
+
+        // BridgeActivity starts the first navigation during super.onCreate() with the
+        // default WebViewClient (no COOP/COEP). Reload once our interceptor is installed
+        // so the document + workers load under isolation headers when the WebView supports it.
+        // Even then, many Android WebViews still omit SharedArrayBuffer — JS must not
+        // treat that as fatal (vip-boot uses single-thread WASM fallback).
+        try {
+            webView.post(() -> {
+                try {
+                    Log.i(TAG, "Reloading WebView so COOP/COEP apply to document load");
+                    webView.reload();
+                } catch (Throwable t) {
+                    Log.w(TAG, "WebView reload after header injection failed", t);
+                }
+            });
+        } catch (Throwable t) {
+            Log.w(TAG, "Could not schedule WebView reload", t);
+        }
     }
 
     /**

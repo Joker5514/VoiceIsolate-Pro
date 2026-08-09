@@ -1,5 +1,5 @@
 /**
- * vip-boot.js — VoiceIsolate Pro v24.0 bootstrap shim
+ * vip-boot.js — VoiceIsolate Pro bootstrap shim
  *
  * Responsibilities:
  *   1. Instantiate VoiceIsolatePro and alias window.vip ↔ window._vipApp.
@@ -7,17 +7,19 @@
  *      capability flags and live module state.
  *   3. Show the #vip-startup-banner ONLY for genuinely fatal conditions.
  *
- * Banner policy (per ISSUE 5):
+ * Banner policy:
  *   FATAL  -> show banner
  *     - location.protocol === 'file:'         (no server)
- *     - SharedArrayBuffer unavailable         (COOP/COEP misconfigured)
  *     - AudioContext API unavailable          (browser too old)
  *     - VoiceIsolatePro class never appeared  (critical script load failure)
- *   NOT FATAL -> never show banner
- *     - ONNX models not yet downloaded        (lazy on first file drop)
- *     - Three.js 3D init fails                (graceful degradation)
- *     - Service worker registration pending   (non-blocking)
- *     - Server reachability flake             (transient)
+ *   NOT FATAL -> never block the app
+ *     - SharedArrayBuffer / crossOriginIsolated missing
+ *         Desktop browser: usually COOP/COEP misconfig → soft console + SAB pill
+ *         Android WebView / Capacitor: often unsupported even with headers →
+ *         message-port / single-thread WASM fallback (upload + ML still work)
+ *     - ONNX models not yet downloaded
+ *     - Three.js 3D init fails
+ *     - Service worker registration pending
  *
  * A 2-second grace period lets async pills resolve before the check runs.
  */
@@ -51,6 +53,16 @@
     if (typeof self !== 'undefined' && self.crossOriginIsolated === false) return false;
     return true;
   }
+  function isAndroidWebViewShell() {
+    try {
+      var ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+      // Capacitor Android WebView (product UA) or generic Android WebView tokens.
+      if (/VoiceIsolatePro\/|Capacitor/i.test(ua) && /Android/i.test(ua)) return true;
+      if (/; wv\)/i.test(ua)) return true; // Chrome WebView marker
+      if (typeof window !== 'undefined' && window.Capacitor && /Android/i.test(ua)) return true;
+    } catch (e) { /* ignore */ }
+    return false;
+  }
   function hasAudioContext() {
     return typeof AudioContext !== 'undefined' ||
            (typeof window !== 'undefined' && typeof window.webkitAudioContext !== 'undefined');
@@ -67,24 +79,28 @@
     if (location.protocol === 'file:') {
       showBanner(
         '&#x1F5A5;&#xFE0F; <b>No local server detected.</b> ' +
-        'Run <code style="background:#111;padding:1px 4px;border-radius:3px">python -m http.server 8080</code> ' +
-        'inside <code style="background:#111;padding:1px 4px;border-radius:3px">public/app/</code>, ' +
-        'then open <a href="http://localhost:8080" style="color:#ef4444">http://localhost:8080</a>. ' +
-        'SharedArrayBuffer + ONNX models require an HTTP server.'
+        'Run <code style="background:#111;padding:1px 4px;border-radius:3px">pnpm dev</code> ' +
+        'or open the installed Android / Desktop app. ' +
+        'Do not open index.html via file://.'
       );
       return false;
     }
 
-    // B. SharedArrayBuffer / cross-origin isolation
+    // B. SharedArrayBuffer / cross-origin isolation — NOT fatal.
+    // Upload-only isolation uses OfflineAudioContext + workers; SAB is optional
+    // (legacy live ring-buffer / multi-thread WASM). Android WebView often
+    // cannot enable SAB even when MainActivity injects COOP/COEP.
     if (!hasSAB()) {
-      showBanner(
-        '&#x1F512; <b>SharedArrayBuffer unavailable.</b> ' +
-        'The page is not cross-origin isolated. Verify ' +
-        '<code style="background:#111;padding:1px 4px;border-radius:3px">COOP: same-origin</code> + ' +
-        '<code style="background:#111;padding:1px 4px;border-radius:3px">COEP: require-corp</code> headers ' +
-        'are set, then hard-reload (Ctrl+Shift+R).'
-      );
-      return false;
+      var sabNote = isAndroidWebViewShell()
+        ? '[vip-boot] SharedArrayBuffer unavailable in Android WebView — using single-thread WASM / message-port path (normal).'
+        : '[vip-boot] SharedArrayBuffer unavailable (page not cross-origin isolated). ' +
+          'Upload + local ML still work. For desktop Chrome, ensure COOP/COEP headers then hard-reload.';
+      console.info(sabNote);
+      // Soft status only — never block Process/Upload.
+      setEnginePill('engSabPill', 'unavailable');
+      setPillTitle('engSabPill', isAndroidWebViewShell()
+        ? 'SAB optional on Android WebView — app uses fallback path'
+        : 'SAB missing — optional; isolation still works without multi-thread WASM');
     }
 
     // C. AudioContext API surface
@@ -149,10 +165,13 @@
   // -- Pill driver: keeps ALL cockpit pills (CTX/WORKLET/GATE/DEESS/SAB/ML/ORT/NET) fresh --
   function startPillDriver() {
     var awOk = hasAudioWorklet();
-    setEnginePill('engSabPill', hasSAB() ? 'ready' : 'error');
-    setPillTitle('engSabPill', hasSAB()
+    var sabOk0 = hasSAB();
+    setEnginePill('engSabPill', sabOk0 ? 'ready' : 'unavailable');
+    setPillTitle('engSabPill', sabOk0
       ? 'SharedArrayBuffer available (cross-origin isolated)'
-      : 'SharedArrayBuffer missing — need COOP/COEP');
+      : (isAndroidWebViewShell()
+        ? 'SAB optional on Android WebView — fallback path active'
+        : 'SAB missing — optional for upload isolation; check COOP/COEP on desktop'));
     setEnginePill('engNetPill', getInitialNetworkState() ? 'ready' : 'error');
     setEnginePill('engCtxPill', hasAudioContext() ? 'loading' : 'error');
     setPillTitle('engCtxPill', 'AudioContext awaits first user gesture');
@@ -172,9 +191,9 @@
     var iv = setInterval(function () {
       ticks += 1;
 
-      // SAB — re-check isolation (headers can matter after nav)
+      // SAB — re-check isolation (headers can matter after nav). Never fatal.
       var sabOk = hasSAB();
-      setEnginePill('engSabPill', sabOk ? 'ready' : 'error');
+      setEnginePill('engSabPill', sabOk ? 'ready' : 'unavailable');
 
       // NET
       var online = (typeof navigator !== 'undefined' && typeof navigator.onLine === 'boolean')
