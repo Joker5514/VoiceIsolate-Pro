@@ -1,7 +1,12 @@
 'use strict';
 
 /**
- * Local microphone capture — outside public/app (validate.js bans getUserMedia there).
+ * Local microphone capture — OUTSIDE public/app (validate.js bans getUserMedia there).
+ *
+ * NOT part of the product shell (Landing / Engineer). Not imported by index.html,
+ * landing.js, or app.js. Product workflow is upload-only. Keep this file for
+ * experimental tooling only; do not wire into production UI without an explicit
+ * product decision (would violate the no-mic hard rule).
  */
 
 /** @type {{ recorder: MediaRecorder, filePromise: Promise<File> } | null} */
