@@ -470,27 +470,68 @@ function makeStftBatchBuf(batchMax, bins) {
   };
 }
 
+/** Per-process STFT/iSTFT counters (compatible spectral-mask production path). */
+let _stftForwardCount = 0;
+let _stftInverseCount = 0;
+
+function resetStftCounters() {
+  _stftForwardCount = 0;
+  _stftInverseCount = 0;
+}
+
+function getStftCounters() {
+  return { forward: _stftForwardCount, inverse: _stftInverseCount };
+}
+
+/**
+ * Spectral-mask inference: shared contract for BSRNN / RNNoise-class models.
+ *
+ * Compatible multi-head chains (same fft/hop/bins) use
+ * {@link runFusedSpectralMaskChain}: **one forward STFT**, product of masks,
+ * **one inverse STFT**. Waveform-only models never enter this function.
+ */
 async function runSpectralMask(entry, session, samples, onProgress) {
-  const N = entry.fftSize;
-  const hop = adaptiveHopSize(entry, samples.length, entry.sampleRate || 48000);
-  const bins = entry.bins || (N / 2 + 1);
-  const batchMax = effectiveBatchFrames(entry);
+  return runFusedSpectralMaskChain(
+    [{ entry, session }],
+    samples,
+    onProgress,
+  );
+}
+
+/**
+ * Fuse one or more spectral-mask heads on a single complex STFT.
+ * @param {Array<{entry: object, session: object}>} heads
+ * @param {Float32Array} samples
+ * @param {(p: number) => void} onProgress
+ * @returns {Promise<Float32Array>}
+ */
+async function runFusedSpectralMaskChain(heads, samples, onProgress) {
+  if (!heads?.length) throw new Error('[VIP][MLWorker] empty spectral head list');
+  const entry0 = heads[0].entry;
+  const N = entry0.fftSize;
+  const hop = adaptiveHopSize(entry0, samples.length, entry0.sampleRate || 48000);
+  const bins = entry0.bins || (N / 2 + 1);
+  const batchMax = effectiveBatchFrames(entry0);
   const win = hann(N);
-  // Cover every sample: full frames plus a zero-padded tail frame.
   const totalFrames = Math.max(1, Math.ceil(Math.max(0, samples.length - N) / hop) + 1);
-  if (hop !== entry.hopSize) {
-    console.info(
-      `[VIP][MLWorker] adaptive hop ${entry.hopSize}→${hop} (${totalFrames} frames, ${(samples.length / (entry.sampleRate || 48000)).toFixed(1)}s)`,
-    );
+
+  // Geometry must match for fusion (caller guarantees for multi-head).
+  for (const h of heads) {
+    if (h.entry.fftSize !== N || (h.entry.bins || (N / 2 + 1)) !== bins) {
+      throw new Error('[VIP][MLWorker] incompatible spectral geometry for fusion');
+    }
   }
 
   const out = new Float32Array(samples.length);
   const norm = new Float32Array(samples.length);
-
   const re = new Float32Array(N);
   const im = new Float32Array(N);
   let cur = makeStftBatchBuf(batchMax, bins);
   let nxt = makeStftBatchBuf(batchMax, bins);
+
+  // One analysis + one reconstruction cycle per channel (batches are chunking only).
+  _stftForwardCount += 1;
+  _stftInverseCount += 1;
 
   const forwardStftBatch = (buf, f0, count) => {
     for (let b = 0; b < count; b++) {
@@ -500,7 +541,6 @@ async function runSpectralMask(entry, session, samples, onProgress) {
       for (let i = 0; i < avail; i++) re[i] = samples[start + i] * win[i];
       fftInPlace(re, im, false);
       const off = b * bins;
-      // sqrt(re²+im²) is faster than Math.hypot for dense spectral loops.
       for (let k = 0; k < bins; k++) {
         const rr = re[k];
         const ii = im[k];
@@ -512,6 +552,8 @@ async function runSpectralMask(entry, session, samples, onProgress) {
   };
 
   let prefetch = null;
+  const fusedMask = new Float32Array(batchMax * bins);
+  const hfStart = Math.floor(bins * 0.35);
 
   for (let f0 = 0; f0 < totalFrames; f0 += batchMax) {
     const count = Math.min(batchMax, totalFrames - f0);
@@ -529,26 +571,32 @@ async function runSpectralMask(entry, session, samples, onProgress) {
       ? Promise.resolve().then(() => forwardStftBatch(nxt, nextF0, nextCount))
       : null;
 
-    // ── Mask inference (prefetch overlaps ONNX on the WASM thread pool) ─
     const magSlice = cur.batchMags.subarray(0, count * bins);
-    const input = new ort.Tensor('float32', magSlice, [count, bins]);
-    const results = await queuedSessionRun(entry.id, session, { [entry.io.input]: input });
-    const mask = results[entry.io.output]?.data;
-    if (!mask || mask.length < count * bins) {
-      throw new Error(`[VIP][MLWorker] '${entry.id}' returned a malformed output tensor.`);
+    fusedMask.fill(1, 0, count * bins);
+
+    for (const head of heads) {
+      const input = new ort.Tensor('float32', magSlice, [count, bins]);
+      const results = await queuedSessionRun(
+        head.entry.id,
+        head.session,
+        { [head.entry.io.input]: input },
+      );
+      const mask = results[head.entry.io.output]?.data;
+      if (!mask || mask.length < count * bins) {
+        throw new Error(`[VIP][MLWorker] '${head.entry.id}' returned a malformed output tensor.`);
+      }
+      // In-domain fusion: product of independent sigmoid masks.
+      for (let i = 0; i < count * bins; i++) {
+        fusedMask[i] *= mask[i];
+      }
     }
 
-    // ── Masked inverse STFT + overlap-add ───────────────────────────────
-    // Soft HF mask floor: thin residual bins at high k become a high-pitch ring
-    // when the mask is near 1 but the phase is noise-like. Tame without a 2nd pass.
-    const hfStart = Math.floor(bins * 0.35); // ~8 kHz @ 48k/4096
     for (let b = 0; b < count; b++) {
       const off = b * bins;
       for (let k = 0; k < bins; k++) {
-        let m = mask[off + k];
+        let m = fusedMask[off + k];
         if (k >= hfStart) {
           const t = (k - hfStart) / Math.max(1, bins - 1 - hfStart);
-          // Cap mask contribution in air band (anti-whistle)
           m *= 1 - t * 0.55;
         }
         re[k] = cur.batchRe[off + k] * m;
@@ -575,6 +623,18 @@ async function runSpectralMask(entry, session, samples, onProgress) {
   }
   onProgress(1);
   return out;
+}
+
+/** True when all entries share spectral-mask geometry (compatible fusion). */
+function canFuseSpectralChain(entries) {
+  if (!entries.length) return false;
+  if (!entries.every((e) => e.strategy === 'spectral-mask')) return false;
+  const N = entries[0].fftSize;
+  const hop = entries[0].hopSize;
+  const bins = entries[0].bins || (N / 2 + 1);
+  return entries.every(
+    (e) => e.fftSize === N && e.hopSize === hop && (e.bins || (N / 2 + 1)) === bins,
+  );
 }
 
 /** Linear resample mono PCM between sample rates. */
@@ -870,11 +930,10 @@ async function runUniversalSeparate(msg) {
 }
 
 async function processRequest({ requestId, modelId, modelIds, channelData, sampleRate }) {
-  // A chain (`modelIds`) runs models in series for maximum isolation —
-  // e.g. ['bsrnn_vocals', 'rnnoise'] extracts the voice, then strips any
-  // residual background. A single `modelId` is the one-pass case. Each stage
-  // feeds its clean output into the next; the noise stem is always the
-  // sample-wise residual against the ORIGINAL input (input − final clean).
+  // Production spectral path: compatible spectral-mask heads (same geometry)
+  // fuse on **one STFT → product of masks → one iSTFT** per channel.
+  // Waveform-only models (e.g. demucs) are a separate branch and never claim
+  // the single-STFT invariant.
   const chain = (Array.isArray(modelIds) && modelIds.length ? modelIds : [modelId])
     .filter((id) => typeof id === 'string' && id);
   if (chain.length === 0) {
@@ -887,6 +946,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   }
 
   ACTIVE_REQUEST_ID = requestId;
+  resetStftCounters();
   let lastProgressSent = -1;
   const onProgress = (p) => {
     const pct = Math.round(p * 100);
@@ -896,45 +956,74 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
     self.postMessage({ type: 'progress', requestId, percent: pct });
   };
 
-  const totalSteps = chain.length * channelData.length;
-  let stepBase = 0;
-  let current = channelData;
+  const entries = chain.map((id) => MANIFEST[id]);
+  let pipelineMode = 'serial';
+  let clean;
+
   try {
-    for (let ci = 0; ci < chain.length; ci++) {
-      const id = chain[ci];
-      const entry = MANIFEST[id];
-      const nextId = chain[ci + 1];
-      const nextWarm = nextId && MANIFEST[nextId]
-        ? getSession(MANIFEST[nextId], MANIFEST[nextId].id, { quiet: true }).catch(() => {})
-        : null;
-      postStage('separate', Math.round((stepBase / totalSteps) * 100), { modelId: id });
-      const session = await getSession(entry, entry.id);
-      const next = await Promise.all(current.map(async (samples, ch) => {
-        const step = stepBase + ch;
-        const progress = (p) => onProgress((step + p) / totalSteps);
-        if (entry.strategy === 'spectral-mask') {
-          return runSpectralMask(entry, session, samples, progress);
-        }
-        if (entry.strategy === 'waveform') {
-          return runWaveformMask(entry, session, samples, sampleRate, progress);
-        }
-        throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
+    if (canFuseSpectralChain(entries)) {
+      // ── Production shipping path: fused spectral-mask chain ───────────
+      pipelineMode = 'fused-spectral-single-stft';
+      postStage('separate-fused', 5, { modelId: chain.join('+') });
+      const heads = [];
+      for (const entry of entries) {
+        heads.push({ entry, session: await getSession(entry, entry.id) });
+      }
+      clean = await Promise.all(channelData.map((samples, ch) => {
+        const progress = (p) => onProgress((ch + p) / channelData.length);
+        return runFusedSpectralMaskChain(heads, samples, progress);
       }));
-      current = next;
-      stepBase += channelData.length;
-      if (nextWarm) await nextWarm;
+    } else {
+      // ── Mixed / waveform-only branch (not single-STFT invariant) ──────
+      pipelineMode = 'serial-mixed';
+      const totalSteps = chain.length * channelData.length;
+      let stepBase = 0;
+      let current = channelData;
+      for (let ci = 0; ci < chain.length; ci++) {
+        const id = chain[ci];
+        const entry = MANIFEST[id];
+        postStage('separate', Math.round((stepBase / totalSteps) * 100), {
+          modelId: id,
+          branch: entry.strategy === 'waveform' ? 'waveform-only' : entry.strategy,
+        });
+        const session = await getSession(entry, entry.id);
+        const next = await Promise.all(current.map(async (samples, ch) => {
+          const step = stepBase + ch;
+          const progress = (p) => onProgress((step + p) / totalSteps);
+          if (entry.strategy === 'spectral-mask') {
+            return runSpectralMask(entry, session, samples, progress);
+          }
+          if (entry.strategy === 'waveform') {
+            return runWaveformMask(entry, session, samples, sampleRate, progress);
+          }
+          throw new Error(`[VIP][MLWorker] Unsupported strategy '${entry.strategy}' for '${entry.id}'.`);
+        }));
+        current = next;
+        stepBase += channelData.length;
+      }
+      clean = current;
     }
   } finally {
     ACTIVE_REQUEST_ID = null;
   }
   onProgress(1);
-  const clean = current;
   const noise = residual(channelData, clean);
+  const stft = getStftCounters();
 
   const transfers = [...clean, ...noise].map((a) => a.buffer);
   self.postMessage(
-    { type: 'stems', requestId, clean, noise, sampleRate, passthrough: false },
-    transfers
+    {
+      type: 'stems',
+      requestId,
+      clean,
+      noise,
+      sampleRate,
+      passthrough: false,
+      pipelineMode,
+      modelChain: chain,
+      stftCounts: stft,
+    },
+    transfers,
   );
 }
 

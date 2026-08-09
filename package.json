@@ -85,6 +85,7 @@
     "build:electron:dir": "node scripts/electron-build-win.mjs --dir",
     "sam:worker": "node scripts/run-sam-worker.mjs",
     "check:cloud-audio": "node scripts/check-no-cloud-audio.js",
+    "check:privacy": "node scripts/check-privacy-invariants.js && node scripts/check-no-cloud-audio.js",
     "test:sam": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit tests/providers-sam.test.js tests/electron-sam-ipc.test.js tests/vip-sam-runtime-package.test.js",
     "sam:worker:prod": "node scripts/run-sam-worker.mjs --production --preload",
     "sam:install": "node scripts/install-sam-runtime.mjs",
