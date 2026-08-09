@@ -2,7 +2,7 @@
   "name": "VoiceIsolate Pro",
   "short_name": "VoiceIsolate",
   "description": "Studio-grade voice isolation and audio enhancement. 32-stage Deca-Pass DSP pipeline with ML-powered noise removal. 100% local processing.",
-  "version": "21.0.0",
+  "version": "25.0.1",
   "start_url": "/app/",
   "scope": "/",
   "display": "standalone",
