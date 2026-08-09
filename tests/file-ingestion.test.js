@@ -68,8 +68,13 @@ describe('FileIngestion.assertIngestible', () => {
     expect(() => assertIngestible(makeFile('voice.wav', 'application/octet-stream'))).not.toThrow();
   });
 
-  test('rejects unknown octet-stream without media extension', () => {
-    expect(() => assertIngestible(makeFile('archive.bin', 'application/octet-stream')))
+  test('allows generic octet-stream without extension (decoder is final judge)', () => {
+    // Windows often tags downloads as application/octet-stream; sniff/decode later.
+    expect(() => assertIngestible(makeFile('archive.bin', 'application/octet-stream'))).not.toThrow();
+  });
+
+  test('rejects explicit non-media MIME types', () => {
+    expect(() => assertIngestible(makeFile('doc.pdf', 'application/pdf')))
       .toThrow(/Unsupported type/);
   });
 

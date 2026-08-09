@@ -44,6 +44,27 @@ export const VIDEO_OPEN_EXTENSIONS = [
   'ts', 'm2ts', 'mts', 'flv', 'f4v', 'asf',
 ];
 
+/** MIME types that do not identify a container (Windows Explorer / some browsers). */
+export const GENERIC_MIME_TYPES = new Set([
+  '',
+  'application/octet-stream',
+  'binary/octet-stream',
+  'application/x-download',
+  'application/force-download',
+  'application/unknown',
+  'unknown',
+]);
+
+/**
+ * True when the browser/OS gave no useful content type (decoder must decide).
+ * @param {string|null|undefined} type
+ * @returns {boolean}
+ */
+export function isGenericMimeType(type) {
+  const t = (type || '').toLowerCase().trim();
+  return !t || GENERIC_MIME_TYPES.has(t);
+}
+
 /**
  * Infer whether a blob is ingestible audio/video from its MIME type and/or
  * filename extension. Windows often reports `application/octet-stream` or an
@@ -75,6 +96,81 @@ export function inferMediaKind(blob) {
   if (type.startsWith('audio/')) return 'audio';
   if (type.startsWith('video/')) return 'video';
   return null;
+}
+
+/**
+ * Sniff the first bytes of a blob when MIME/extension are useless
+ * (e.g. `application/octet-stream` with no extension — common on Windows).
+ *
+ * @param {Blob|File} blob
+ * @returns {Promise<'audio'|'video'|null>}
+ */
+export async function sniffMediaKind(blob) {
+  if (!blob || typeof blob.slice !== 'function') return null;
+  try {
+    const head = new Uint8Array(await blob.slice(0, 32).arrayBuffer());
+    if (head.length < 4) return null;
+
+    // RIFF....WAVE / AVI / WEBP
+    if (head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46) {
+      const tag = String.fromCharCode(head[8] || 0, head[9] || 0, head[10] || 0, head[11] || 0);
+      if (tag === 'WAVE') return 'audio';
+      if (tag === 'AVI ') return 'video';
+      if (tag === 'WEBP') return null; // not audio pipeline
+      return 'audio'; // other RIFF — try audio decode first
+    }
+
+    // OggS (audio/video containers — demuxer decides)
+    if (head[0] === 0x4f && head[1] === 0x67 && head[2] === 0x67 && head[3] === 0x53) {
+      return 'audio';
+    }
+
+    // fLaC
+    if (head[0] === 0x66 && head[1] === 0x4c && head[2] === 0x61 && head[3] === 0x43) {
+      return 'audio';
+    }
+
+    // ID3 tag (MP3) or MPEG audio frame sync
+    if (head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) return 'audio';
+    if (head[0] === 0xff && (head[1] & 0xe0) === 0xe0) return 'audio';
+
+    // ISO BMFF: ....ftyp.... (MP4 / M4A / MOV)
+    if (head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70) {
+      const brand = String.fromCharCode(head[8] || 0, head[9] || 0, head[10] || 0, head[11] || 0);
+      if (/^(M4A |M4B |M4P |mp3 )/i.test(brand)) return 'audio';
+      // qt / isom / mp41 / mp42 — often video; decoder path handles audio-only mp4
+      return 'video';
+    }
+
+    // EBML (WebM / MKV)
+    if (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3) {
+      return 'video';
+    }
+
+    // CAF
+    if (head[0] === 0x63 && head[1] === 0x61 && head[2] === 0x66 && head[3] === 0x66) {
+      return 'audio';
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve media kind: MIME/extension first, then magic-byte sniff for generic types.
+ * @param {Blob|File} blob
+ * @returns {Promise<'audio'|'video'|'midi'|null>}
+ */
+export async function resolveMediaKind(blob) {
+  const quick = inferMediaKind(blob);
+  if (quick) return quick;
+  if (!isGenericMimeType(blob?.type) && blob?.type) {
+    // Explicit non-media MIME without a recognized extension — reject.
+    return null;
+  }
+  return sniffMediaKind(blob);
 }
 
 /**
@@ -112,11 +208,15 @@ export function isIngestibleMedia(blob) {
 
 export default {
   inferMediaKind,
+  sniffMediaKind,
+  resolveMediaKind,
+  isGenericMimeType,
   isVideoSource,
   isIngestibleMedia,
   AUDIO_EXTENSIONS,
   VIDEO_EXTENSIONS,
   AMBIGUOUS_MEDIA_EXTENSIONS,
+  GENERIC_MIME_TYPES,
   FILE_INPUT_ACCEPT,
   AUDIO_OPEN_EXTENSIONS,
   VIDEO_OPEN_EXTENSIONS,

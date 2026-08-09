@@ -56,7 +56,13 @@ import { clearStemCache } from '/src/pipeline/MLStemCache.js';
 import { resetTimings, stageEnd, stageStart } from '/src/pipeline/PipelineTiming.js';
 import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportRegionControls.js';
 import { isDesktopShell, pickAudioFile, saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
-import { FILE_INPUT_ACCEPT, inferMediaKind, isVideoSource } from '/src/core/media-types.js';
+import {
+  FILE_INPUT_ACCEPT,
+  inferMediaKind,
+  isGenericMimeType,
+  isVideoSource,
+  resolveMediaKind,
+} from '/src/core/media-types.js';
 import * as FileLibrary from '/src/core/FileLibrary.js';
 import * as ProjectStore from '/src/core/ProjectStore.js';
 import {
@@ -2155,14 +2161,35 @@ class VoiceIsolatePro {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openFilePicker(); }
       });
     }
-    bind('fileInput', d.fileInput, 'change', e => this.handleFile(e.target.files[0]));
+    const acceptUpload = (file) => {
+      if (!file) return;
+      Promise.resolve(this.handleFile(file)).catch((err) => {
+        structuredLog('error', '[VIP] handleFile failed', { err: err?.message });
+        this.showNotification?.(err?.message || 'Upload failed — try WAV or MP3', 'error');
+        this.setStatus?.('ERROR');
+      });
+    };
+    bind('fileInput', d.fileInput, 'change', (e) => acceptUpload(e.target?.files?.[0]));
     if (d.dropZone) {
       d.dropZone.addEventListener('dragover', e => { e.preventDefault(); d.dropZone.classList.add('drag-over'); });
       d.dropZone.addEventListener('dragleave', () => d.dropZone.classList.remove('drag-over'));
       d.dropZone.addEventListener('drop', e => {
         e.preventDefault();
         d.dropZone.classList.remove('drag-over');
-        this.handleFile(e.dataTransfer.files[0]);
+        acceptUpload(e.dataTransfer?.files?.[0]);
+      });
+    }
+    // Engineer upload zone (id=uploadZone) also drops files.
+    if (d.uploadZone && d.uploadZone !== d.dropZone) {
+      d.uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        d.uploadZone.classList.add('drag-over');
+      });
+      d.uploadZone.addEventListener('dragleave', () => d.uploadZone.classList.remove('drag-over'));
+      d.uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        d.uploadZone.classList.remove('drag-over');
+        acceptUpload(e.dataTransfer?.files?.[0]);
       });
     }
     bind('clearFile', d.clearFile, 'click', () => { if (this.inputBuffer && !confirm('Are you sure you want to clear the current file? Unsaved processed audio will be lost.')) return; this._clearFile(); });
@@ -3061,15 +3088,28 @@ class VoiceIsolatePro {
       return;
     }
 
-    // Reject clearly non-audio/non-video MIME types. Browsers often report
-    // application/octet-stream for valid media files — fall back to extension.
-    const mediaKind = inferMediaKind(file);
+    // Reject clearly non-audio/non-video MIME types. Browsers/OS often report
+    // application/octet-stream (or empty type) for valid media — fall back to
+    // extension, then magic-byte sniff before giving up.
+    let mediaKind = inferMediaKind(file);
     const mime = (file.type || '').toLowerCase();
+    if (!mediaKind && isGenericMimeType(mime)) {
+      try {
+        mediaKind = await resolveMediaKind(file);
+      } catch (sniffErr) {
+        structuredLog('warn', '[VIP] media sniff failed', { err: sniffErr?.message });
+      }
+    }
     const isAudio = mediaKind === 'audio' || mediaKind === 'video'
-      || !mime || mime.startsWith('audio/') || mime.startsWith('video/');
+      || isGenericMimeType(mime)
+      || mime.startsWith('audio/') || mime.startsWith('video/');
     if (!isAudio) {
-      if (this.dom && this.dom.fileInfo) this.dom.fileInfo.textContent = 'Unsupported file type: ' + (file.type || 'unknown');
+      if (this.dom && this.dom.fileInfo) {
+        this.dom.fileInfo.textContent = 'Unsupported file type: ' + (file.type || 'unknown')
+          + ' — use WAV, MP3, M4A, FLAC, or a common video container';
+      }
       this.setStatus('ERROR');
+      this.showNotification?.('Unsupported file type — try WAV or MP3', 'error');
       return;
     }
     const isLargeUpload = (file.size || 0) > LARGE_FILE_WARNING_BYTES;
@@ -3095,15 +3135,25 @@ class VoiceIsolatePro {
     this.noiseBuffer = null;
 
     // Persist source to OPFS/IDB (library/project) unless opening an existing entry.
+    // Cap wait time so a hung OPFS/IDB never blocks the upload UX.
     if (!skipPersist) {
       try {
         const { mode, projectId } = await readImportOptionsFromUi();
-        const meta = await FileLibrary.importFile(file, { mode, projectId });
+        const persistWork = (async () => {
+          const meta = await FileLibrary.importFile(file, { mode, projectId });
+          if (mode === 'project' && projectId) {
+            await ProjectStore.linkSourceFile(projectId, meta.id);
+            await FileLibrary.updateFileMeta(meta.id, { projectId });
+          }
+          return meta;
+        })();
+        const meta = await Promise.race([
+          persistWork,
+          new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('library persist timed out')), 10_000);
+          }),
+        ]);
         this._libraryFileId = meta.id;
-        if (mode === 'project' && projectId) {
-          await ProjectStore.linkSourceFile(projectId, meta.id);
-          await FileLibrary.updateFileMeta(meta.id, { projectId });
-        }
         if (mode === 'temporary') {
           structuredLog('info', '[VIP] Quick import — not written to durable library');
         } else {
@@ -3113,7 +3163,7 @@ class VoiceIsolatePro {
             backend: meta.blobRef?.backend,
           });
         }
-        await refreshLibraryList(this);
+        refreshLibraryList(this).catch(() => {});
       } catch (persistErr) {
         structuredLog('warn', '[VIP] library persist failed — file still usable this session', {
           err: persistErr?.message,
