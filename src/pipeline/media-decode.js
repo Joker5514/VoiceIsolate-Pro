@@ -28,25 +28,27 @@ const SPN_BLOCK_SIZE = 8192;
  * @param {Blob|File} blob
  * @param {object} [hooks]
  * @param {(percent: number) => void} [hooks.onProgress] 0–100 during decode
+ * @param {AudioContext} [hooks.audioContext] Optional existing AudioContext to
+ *   reuse — prevents browser AudioContext limit exhaustion on rapid re-uploads.
  * @returns {Promise<AudioBuffer>}
  */
 export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
-  const { onProgress = () => {} } = hooks;
+  const { onProgress = () => {}, audioContext = null } = hooks;
   const kind = inferMediaKind(blob) || 'audio';
 
   if (kind === 'video') {
     try {
-      const fast = await _decodeWithAudioData(blob, onProgress);
+      const fast = await _decodeWithAudioData(blob, onProgress, audioContext);
       if (!_likelyTruncatedDecode(blob, fast)) return fast;
     } catch {
       /* fall through to media-element capture */
     }
-    return _decodeViaMediaElement(blob, kind, onProgress);
+    return _decodeViaMediaElement(blob, kind, onProgress, audioContext);
   }
 
   let primaryErr = null;
   try {
-    return await _decodeWithAudioData(blob, onProgress);
+    return await _decodeWithAudioData(blob, onProgress, audioContext);
   } catch (err) {
     primaryErr = err;
   }
@@ -54,7 +56,7 @@ export async function decodeBlobToAudioBuffer(blob, hooks = {}) {
   try {
     // Must await — otherwise rejections bypass this catch and surface as
     // unhandled rejections, leaving upload UI stuck mid-decode.
-    return await _decodeViaMediaElement(blob, kind, onProgress);
+    return await _decodeViaMediaElement(blob, kind, onProgress, audioContext);
   } catch (fallbackErr) {
     throw new Error(
       `[VIP][FileIngestion] Could not decode '${blob.name || 'file'}'. ` +
@@ -137,6 +139,8 @@ async function decodeAudioBufferSafe(ctx, arrayBuffer) {
     const fresh = new Ctx();
     try {
       if (fresh.state === 'suspended') await fresh.resume();
+      // .slice(0) clones the buffer — Chromium neuters (detaches) the original
+      // ArrayBuffer after decodeAudioData, breaking any retry that reuses it.
       const retryBuf = arrayBuffer.byteLength > 0 ? arrayBuffer.slice(0) : arrayBuffer;
       return await decodeOnce(fresh, retryBuf);
     } catch {
@@ -150,6 +154,10 @@ async function decodeAudioBufferSafe(ctx, arrayBuffer) {
 /**
  * decodeAudioData on MP4/MOV often returns only the first ~15 s. Detect that
  * so we can fall back to full media-element capture.
+ *
+ * FIX: Previously this triggered on large WAV/AIFF files (sizeMB >= 8 &&
+ * duration < 45) even though the decode was correct. Guard is now gated
+ * exclusively on video containers — audio blobs never enter this branch.
  */
 function _likelyTruncatedDecode(blob, buffer) {
   if (!buffer?.duration || buffer.duration <= 0) return true;
@@ -157,6 +165,8 @@ function _likelyTruncatedDecode(blob, buffer) {
   const name = blob.name || '';
   const isVideoContainer = /\.(mp4|m4v|mov|mkv|webm|avi|ogv|3gp|wmv)$/i.test(name)
     || (blob.type || '').startsWith('video/');
+  // Only apply duration heuristic for actual video containers — audio
+  // blobs (WAV, AIFF, FLAC) can legitimately be large with short durations.
   if (!isVideoContainer) return false;
   if (sizeMB >= 1.5 && buffer.duration < 18) return true;
   if (sizeMB >= 8 && buffer.duration < 45) return true;
@@ -202,8 +212,12 @@ function createGrowingChannel() {
 
 // ---------------------------------------------------------------------------
 // Fast path — decodeAudioData
+//
+// FIX: Accepts an optional externalCtx to reuse the app-level AudioContext
+// instead of spawning a new one on every upload. Chrome enforces a ~6-context
+// cap; exceeding it causes decodeAudioData to return null/empty silently.
 // ---------------------------------------------------------------------------
-async function _decodeWithAudioData(blob, onProgress) {
+async function _decodeWithAudioData(blob, onProgress, externalCtx = null) {
   const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
   if (!Ctx) throw new Error('Web Audio API is not available.');
 
@@ -211,7 +225,10 @@ async function _decodeWithAudioData(blob, onProgress) {
   const arrayBuffer = await readBlobWithProgress(blob, onProgress);
 
   onProgress(50);
-  const ctx = new Ctx();
+
+  // Reuse the caller's context when available — avoids context limit exhaustion.
+  const isOwned = !externalCtx;
+  const ctx = externalCtx || new Ctx();
   try {
     if (ctx.state === 'suspended') await ctx.resume();
     onProgress(55);
@@ -219,14 +236,23 @@ async function _decodeWithAudioData(blob, onProgress) {
     onProgress(100);
     return decoded;
   } finally {
-    try { await ctx.close(); } catch { /* already closed */ }
+    // Only close contexts we created — never close the app's main AudioContext.
+    if (isOwned) {
+      try { await ctx.close(); } catch { /* already closed */ }
+    }
   }
 }
 
 // ---------------------------------------------------------------------------
 // Fallback — accelerated media-element capture via ScriptProcessorNode
+//
+// FIX: media.muted was false and only volume=0 was set. On Chrome/Safari,
+// volume=0 without muted=true still triggers autoplay policy enforcement —
+// play() throws NotAllowedError when no prior user-gesture AudioContext
+// unlock has been recorded. Set muted=true for the capture element; the
+// ScriptProcessorNode captures PCM from the graph regardless of muted state.
 // ---------------------------------------------------------------------------
-async function _decodeViaMediaElement(blob, kind, onProgress) {
+async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null) {
   const doc = globalThis.document;
   if (!doc?.createElement || !doc.body) {
     throw new Error('Media element decode requires a browser document.');
@@ -239,16 +265,18 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
   const tag = kind === 'video' ? 'video' : 'audio';
   const media = doc.createElement(tag);
   media.preload = 'auto';
-  // Prefer volume=0 over muted=true: WebKit/Safari (and some Chromium paths)
-  // feed silence into MediaElementAudioSourceNode when muted is set, which
-  // makes video fallback decode produce empty stems.
-  media.muted = false;
-  try { media.volume = 0; } catch { /* ignore */ }
+  // FIX: Set muted=true so play() is not blocked by autoplay policy.
+  // The ScriptProcessorNode captures audio from the graph regardless of the
+  // muted attribute — muted only affects the speaker output, not the SPN tap.
+  media.muted = true;
+  try { media.volume = 0; } catch { /* ignore — belt-and-suspenders */ }
   media.setAttribute('playsinline', '');
   media.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
   doc.body.appendChild(media);
   media.src = url;
 
+  // Reuse the app's AudioContext when provided — avoids context cap exhaustion.
+  const isOwnedCtx = !externalCtx;
   let ctx = null;
   let timeoutHandle = null;
   try {
@@ -322,7 +350,7 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
       }, captureTimeoutMs);
     };
 
-    ctx = new Ctx({ sampleRate: SAMPLE_RATE });
+    ctx = externalCtx || new Ctx({ sampleRate: SAMPLE_RATE });
     if (ctx.state === 'suspended') await ctx.resume();
     const source = ctx.createMediaElementSource(media);
     spn = ctx.createScriptProcessor(SPN_BLOCK_SIZE, numChannels, numChannels);
@@ -356,6 +384,16 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
     try {
       await media.play();
     } catch (playErr) {
+      // NotAllowedError = autoplay policy (should not reach here after the
+      // muted=true fix above, but guard in case the browser is strict).
+      const isAutoplayBlock = playErr?.name === 'NotAllowedError'
+        || /not allowed/i.test(playErr?.message || '');
+      if (isAutoplayBlock) {
+        throw new Error(
+          'Audio playback was blocked by the browser autoplay policy. ' +
+          'Tap or click anywhere on the page first, then upload again.'
+        );
+      }
       throw new Error(
         `Media playback blocked or failed: ${playErr?.message || playErr}. ` +
         'Tap Browse and try again (audio unlock required).'
@@ -393,7 +431,10 @@ async function _decodeViaMediaElement(blob, kind, onProgress) {
     try { media.pause(); } catch { /* ignore */ }
     try { media.removeAttribute('src'); media.load(); media.remove(); } catch { /* ignore */ }
     URL.revokeObjectURL(url);
-    if (ctx) try { await ctx.close(); } catch { /* already closed */ }
+    // Only close contexts we created — never close the app's main AudioContext.
+    if (ctx && isOwnedCtx) {
+      try { await ctx.close(); } catch { /* already closed */ }
+    }
   }
 }
 
