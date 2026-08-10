@@ -1,5 +1,5 @@
 /**
- * mobile-upload-fix.js  v2
+ * mobile-upload-fix.js  v3
  * VoiceIsolate Pro — Mobile Upload Patch
  *
  * Fixes:
@@ -12,6 +12,14 @@
  *     — clones the ArrayBuffer so it is never neutered before retry
  *     — retries with webkitAudioContext fallback on EncodingError
  *     — patches the existing loadFile error path to surface real errors
+ *
+ * v3 fixes:
+ *  - Removed double-decode in patchLoadFile: calling original() after
+ *    safeDecodeAudioData neutered the ArrayBuffer on Android Chrome,
+ *    causing a silent second decode failure.
+ *  - Removed window._vipAudioCtx swap inside safeDecodeAudioData retry:
+ *    replacing the singleton context orphaned the AudioWorklet graph and
+ *    all downstream GainNode routing, producing silence after any retry.
  *
  * Load AFTER app.js. Monkey-patches global helpers and re-wires the
  * upload zone without touching existing logic.
@@ -27,6 +35,11 @@
    *   a) ensures the context is resumed before every decode attempt
    *   b) clones the ArrayBuffer so the original is never neutered
    *   c) retries once with a fresh AudioContext on failure
+   *
+   * FIX (v3): The retry path no longer swaps window._vipAudioCtx to the
+   * freshCtx. Replacing the app singleton with an untracked context orphaned
+   * the AudioWorklet graph and all GainNode routing. The fresh context is
+   * used only for the decode operation and then closed.
    */
   window.safeDecodeAudioData = async function (ctx, arrayBuffer) {
     // Always resume first — Android Chrome requires this before decode
@@ -42,17 +55,21 @@
       ctx.decodeAudioData(buf1, resolve, async function (err) {
         console.warn('[VIP] decodeAudioData attempt 1 failed:', err);
 
-        // ── Retry: create a fresh context and try again ──────────────────
+        // ── Retry: create a fresh context for decode only ────────────────
+        // FIX: Do NOT assign freshCtx to window._vipAudioCtx — doing so
+        // replaces the app's singleton and orphans the AudioWorklet graph.
+        let freshCtx = null;
         try {
           const Ctor = window.AudioContext || window.webkitAudioContext;
-          const freshCtx = new Ctor();
+          freshCtx = new Ctor();
           await freshCtx.resume();
           const buf2 = arrayBuffer.slice(0); // fresh clone for retry
           freshCtx.decodeAudioData(buf2, function (decoded) {
-            // Swap the global context to the working one
-            window._vipAudioCtx = freshCtx;
+            // Close the temporary context — we only needed it for decode.
+            try { freshCtx.close(); } catch (_) {}
             resolve(decoded);
           }, function (err2) {
+            try { freshCtx.close(); } catch (_) {}
             console.error('[VIP] decodeAudioData retry also failed:', err2);
             reject(new Error(
               'Cannot decode audio. File may be corrupted or format unsupported by this browser. ' +
@@ -60,6 +77,7 @@
             ));
           });
         } catch (retryEx) {
+          if (freshCtx) try { freshCtx.close(); } catch (_) {}
           reject(retryEx);
         }
       });
@@ -205,59 +223,56 @@
 
   /* ─── 6. Patch loadFile — intercept the decode call with safeDecodeAudioData
    *
-   * This is the core Android m4a fix. app.js calls ctx.decodeAudioData()
-   * directly. We replace loadFile so that:
+   * This is the core Android m4a fix. Ensures:
    *   a) AudioContext is resumed before the file reader runs
    *   b) The ArrayBuffer is decoded via safeDecodeAudioData (with retry)
    *   c) A meaningful error is shown instead of the generic string
+   *
+   * FIX (v3): Removed the call to original() after safeDecodeAudioData
+   * succeeds. The original loadFile path calls decodeBlobToAudioBuffer via
+   * FileIngestion — a separate code path that never reads _vipDecodedBuffer.
+   * Calling it after safeDecodeAudioData had already neutered the ArrayBuffer
+   * (Android Chrome detaches the buffer after decodeAudioData) caused a
+   * silent second-decode failure swallowed by the catch block.
+   * Now: safeDecodeAudioData succeeds → store buffer → done. No double-decode.
    */
   function patchLoadFile() {
     if (typeof window.loadFile !== 'function') return;
     if (window.loadFile._mobilePatchApplied) return;
-
-    const original = window.loadFile;
 
     window.loadFile = async function (file) {
       // Step 1: ensure AudioContext is alive inside this gesture stack
       let ctx;
       try { ctx = await window.getAudioContext(); } catch (_) {}
 
-      // Step 2: read the file into an ArrayBuffer ourselves so we can
-      //         feed it through safeDecodeAudioData with retry logic
+      // Step 2: read the file into an ArrayBuffer and decode via the shim
       return new Promise(function (resolve, reject) {
         const reader = new FileReader();
         reader.onload = async function (e) {
           const ab = e.target.result;
           try {
-            // Use whichever context is active (may have been swapped by retry)
             const activeCtx = window._vipAudioCtx || ctx;
             const audioBuffer = await window.safeDecodeAudioData(activeCtx, ab);
 
-            // Inject decoded buffer onto the global so app.js picks it up
+            // Store decoded buffer for app.js to pick up
             window._vipDecodedBuffer = audioBuffer;
 
-            // Also call original — it will re-decode OR app.js may check
-            // window._vipDecodedBuffer first. Either way audio is available.
-            try {
-              await original.call(this, file);
-            } catch (origErr) {
-              // Original failed (likely same decode path) — that's fine,
-              // we already have the decoded buffer stored.
-              console.warn('[VIP] original loadFile threw after decode shim, ignoring:', origErr);
-            }
+            // FIX: Do NOT call original(file) here. The original path
+            // triggers a second decode (FileIngestion → decodeBlobToAudioBuffer)
+            // on an already-neutered ArrayBuffer, producing silence or an
+            // EncodingError silently swallowed by the catch below.
             resolve();
           } catch (decodeErr) {
             console.error('[VIP] safeDecodeAudioData failed:', decodeErr);
-            // Surface a real error message in the UI
             const fi = document.getElementById('fileInfo');
-            if (fi) fi.textContent = '⚠ ' + (decodeErr.message || 'Decode failed — try WAV or MP3');
+            if (fi) fi.textContent = '\u26a0 ' + (decodeErr.message || 'Decode failed — try WAV or MP3');
             reject(decodeErr);
           }
         };
         reader.onerror = function () {
           const msg = 'File read error — cannot open ' + (file.name || 'file');
           const fi = document.getElementById('fileInfo');
-          if (fi) fi.textContent = '⚠ ' + msg;
+          if (fi) fi.textContent = '\u26a0 ' + msg;
           reject(new Error(msg));
         };
         reader.readAsArrayBuffer(file);
@@ -283,7 +298,7 @@
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[VIP] mobile-upload-fix.js v2 loaded — 6 patches applied (incl. Android m4a retry)');
+    console.log('[VIP] mobile-upload-fix.js v3 loaded — double-decode & context-swap bugs fixed');
   }
 
   if (document.readyState === 'loading') {
