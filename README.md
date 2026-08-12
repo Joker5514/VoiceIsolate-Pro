@@ -48,8 +48,8 @@
 
 | Route | Surface | What it does |
 |-------|---------|--------------|
-| [`/`](https://voice-isolate-pro.vercel.app/) | **Landing — Stem-Split** | Fast ML stem separation (vocals / accompaniment / noise). Upload → auto-process → preview stems. |
-| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Mode v25** | Full 67-slider DSP suite with calibrated separation discipline, per-slider locks, collapsible sections (localStorage), stage-aware processing overlay, scene presets, 3D spectrogram, **Compare Original** A/B transport, forensic audit log, WhisperHunter AI. Universal Source Matrix runs as an **internal backend** after Analyze (stems for chips + WhisperHunter) — not a separate user Process panel. |
+| [`/`](https://voice-isolate-pro.vercel.app/) | **Landing — Stem-Split** | Fast ML stem separation → Live-Mix sliders → per-speaker mute/solo → **Focus on one voice** enrollment → export. |
+| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Mode v25** | Full 67-slider DSP suite (Creator / Studio / Forensic tiers), analysis workspace, WhisperHunter, **target-speaker enrollment** (shared UI), Live-Mix bridge, forensic audit, library/OPFS. Universal Source Matrix is an internal Analyze backend — not a separate Process panel. |
 | [`/download/`](https://voice-isolate-pro.vercel.app/download/) | **Downloads** | Android APK + Windows installer (GitHub Releases), web app links. |
 
 **Upload controls (both pages):** Browse Files (`<label for="fileInput">`), click the drop zone, drag-and-drop, or **Upload Audio or Video** in the Engineer hero. Shared wiring lives in `src/presentation/UploadWiring.js`.
@@ -94,6 +94,7 @@ Audio flows through **one Forward STFT** at the start of the spectral phase, in-
 | **ML models (shipped)** | Demucs v4 quant, BSRNN vocals, RNNoise suppressor, Silero VAD — ONNX Runtime Web |
 | **GPU execution** | WebGPU preferred → WASM fallback |
 | **Speaker diarization** | Classical + optional worker path on clean stem; mute/solo/volume per speaker |
+| **Target voice focus** | Step-by-step local enrollment (mel voiceprint) on **Landing + Engineer** (+ Android/Electron same shell); soft gain isolate; diarization fusion when available; no re-ML |
 | **Format support** | MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MOV, WEBM, MKV, AVI, WMV, TS |
 | **Privacy** | 100% local processing · no telemetry · audio never uploaded |
 | **Engineer presets** | Voice Clarity · Podcast Clean · Whisper Boost · Phone/Radio · Room Echo · Hum Removal · Forensic · Aggressive Isolate · Surveillance |

@@ -2162,6 +2162,25 @@ class VoiceIsolatePro {
         } catch { /* ignore */ }
         return this._lastDiarizationSegments || null;
       },
+      getDurationSec: () => {
+        const buf = this.outputBuffer || this.procBuffer || this.origBuffer || this.inputBuffer;
+        if (buf?.duration) return buf.duration;
+        if (buf?.length && buf.sampleRate) return buf.length / buf.sampleRate;
+        try {
+          const d = this._bridge?.duration?.() ?? this._playbackMixer?.duration?.();
+          if (Number.isFinite(d) && d > 0) return d;
+        } catch { /* ignore */ }
+        return null;
+      },
+      getPlayheadSec: () => {
+        try {
+          const t = this._bridge?.currentTime?.()
+            ?? this._playbackMixer?.currentTime?.()
+            ?? this.currentTime?.();
+          if (Number.isFinite(t)) return t;
+        } catch { /* ignore */ }
+        return null;
+      },
       onIsolated: async (channels, sampleRate) => {
         await this.ensureCtx();
         const out = this.ctx.createBuffer(channels.length, channels[0].length, sampleRate);

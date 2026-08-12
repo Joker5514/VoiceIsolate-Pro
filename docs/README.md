@@ -55,7 +55,9 @@ Single map of product, architecture, platform, and historical docs.
 |----------|-------------|
 | [adr/001-firebase-exception.md](adr/001-firebase-exception.md) | Sole cloud exception (auth/billing UI, not audio) |
 | [audits/README.md](audits/README.md) | Point-in-time audit index |
-| [audits/AUDIT-REPORT-2026-06-21.md](audits/AUDIT-REPORT-2026-06-21.md) | **Latest** comprehensive audit |
+| [audits/REMEDIATION-CLICKS-AUDIT-2026-08-12.md](audits/REMEDIATION-CLICKS-AUDIT-2026-08-12.md) | Click/pop remediation + Clear Local Data + target-speaker honesty |
+| [PRODUCTION_PIPELINE.md](PRODUCTION_PIPELINE.md) | Shipping ML fused single-STFT path vs experimental DSP |
+| [audits/AUDIT-REPORT-2026-06-21.md](audits/AUDIT-REPORT-2026-06-21.md) | Comprehensive audit (historical) |
 | [audits/AUDIT-REPORT-2026-05-30.md](audits/AUDIT-REPORT-2026-05-30.md) | Superseded baseline |
 
 ---

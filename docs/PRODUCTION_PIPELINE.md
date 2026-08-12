@@ -15,11 +15,12 @@
 4. **Waveform-only branch** (`strategy: 'waveform'`, e.g. optional Demucs):  
    - Separate path; **does not** claim single-STFT invariants.  
 5. **Live-Mix** — `PlaybackMixer` AudioParams only (no re-ML).  
-6. **Target speaker** (optional) — local mel voiceprint enrollment + soft gain (no re-STFT).  
+6. **Target speaker** (optional) — shared UI `src/presentation/TargetSpeakerUI.js` on **Landing + Engineer** (and Capacitor/Electron shells after `sync:src` / build). Local mel voiceprint enrollment + soft gain (no re-STFT). Diarization clusters fused when present. ECAPA-TDNN is **not** required for the shipping path.  
+7. **Clear Local Data** — `src/core/ClearLocalData.js` (library, OPFS/IDB, stems, model cache, VIP localStorage).
 
 ### ORT backend
 
-WebGPU preferred, WASM fallback. UI shows `engOrtPill` + `#ortBackendLabel` (`WebGPU` / `WASM`) and `#activeModelChain`.
+WebGPU preferred, WASM fallback. Landing privacy line + Engineer `engOrtPill` / `#ortBackendLabel` / `#activeModelChain` and Landing `#backendStatusLine`.
 
 ## Experimental / not production spectral claims
 
