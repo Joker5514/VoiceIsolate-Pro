@@ -588,6 +588,11 @@ function getWorker() {
           const label = msg.backend === 'webgpu' ? 'WebGPU' : (msg.backend || 'WASM');
           const el = document.getElementById('ortProviderHint');
           if (el) el.textContent = `Inference: ${label} (local)`;
+          const backendLine = document.getElementById('backendStatusLine');
+          if (backendLine) {
+            backendLine.textContent = `Backend: ${label} · Fast/Balanced/Max via model chain · 100% local`;
+            backendLine.dataset.backend = String(msg.backend || 'wasm');
+          }
         } catch (_) { /* ignore */ }
         warmupWorkerModels(DEFAULT_WARMUP_CHAIN).catch(() => {});
         break;
@@ -1311,4 +1316,38 @@ wireMuteButtons();
 wireDragAndDrop();
 mountBadge();
 getWorker();
+wireClearLocalData();
 setStatus('Idle — choose a file to begin', '');
+
+/**
+ * Privacy panel: Clear Local Data (library, OPFS/IDB, stems, model cache).
+ */
+function wireClearLocalData() {
+  const btn = document.getElementById('clearLocalDataBtn');
+  const statusEl = document.getElementById('clearLocalDataStatus');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const ok = confirm(
+      'Clear ALL local VoiceIsolate data on this device?\n\n'
+      + 'Deletes the library, cached stems, embeddings, and model cache. '
+      + 'No audio ever left this device.',
+    );
+    if (!ok) return;
+    btn.disabled = true;
+    if (statusEl) statusEl.textContent = 'Clearing…';
+    try {
+      const { clearAllLocalData } = await import('/src/core/ClearLocalData.js');
+      const result = await clearAllLocalData({ includeModels: true });
+      if (statusEl) {
+        statusEl.textContent = `Cleared ${result.filesRemoved} file(s), ${result.localStorageKeys} keys. Reloading…`;
+      }
+      setStatus('Local data cleared — reloading…', 'active');
+      setTimeout(() => location.reload(), 500);
+    } catch (err) {
+      btn.disabled = false;
+      const msg = err?.message || String(err);
+      if (statusEl) statusEl.textContent = `Failed: ${msg}`;
+      setStatus(`Clear Local Data failed: ${msg}`, 'error');
+    }
+  });
+}

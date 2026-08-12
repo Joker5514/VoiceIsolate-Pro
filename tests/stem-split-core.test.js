@@ -155,7 +155,21 @@ describe('ModelManifest (Layer 1)', () => {
 
 // ── PlaybackMixer (mock AudioContext) ─────────────────────────────────────────
 function mockParam() {
-  return { value: 0, setTargetAtTime: jest.fn(), cancelScheduledValues: jest.fn() };
+  return {
+    value: 0,
+    setTargetAtTime: jest.fn(),
+    setValueAtTime: jest.fn(),
+    linearRampToValueAtTime: jest.fn(),
+    cancelScheduledValues: jest.fn(),
+  };
+}
+
+/** Speaker automation may use linearRamp (preferred) or setTargetAtTime (legacy). */
+function speakerGainCalls(gainParam) {
+  const ramps = gainParam.linearRampToValueAtTime.mock.calls || [];
+  const targets = gainParam.setTargetAtTime.mock.calls || [];
+  const values = gainParam.setValueAtTime.mock.calls || [];
+  return [...ramps, ...targets, ...values];
 }
 
 function mockNode(extra = {}) {
@@ -394,10 +408,12 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     await mixer.play();
 
     mixer.setSpeakerMuted('S1', true);
-    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
-    // _startedAt = (currentTime + 0.01) − offset 0 → segment times shift by 0.01.
-    const mutedRamp = calls.find(([v, t]) => v === 0 && Math.abs(t - 0.21) < 1e-6);
-    const restore = calls.find(([v, t]) => v === 1 && Math.abs(t - 0.51) < 1e-6);
+    const calls = speakerGainCalls(mixer.speakerGain.gain);
+    // _startedAt = (currentTime + 0.01) − offset 0 → segment times near 0.2/0.5 + 0.01.
+    // linearRamp ends at boundary; allow ±12 ms ramp window.
+    const near = (t, target) => Math.abs(t - target) < 0.02;
+    const mutedRamp = calls.find(([v, t]) => v === 0 && near(t, 0.21));
+    const restore = calls.find(([v, t]) => v === 1 && near(t, 0.51));
     expect(mutedRamp).toBeDefined();
     expect(restore).toBeDefined();
     expect(mixer.speakerGain.gain.cancelScheduledValues).toHaveBeenCalled();
@@ -413,16 +429,19 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.getSoloSpeaker()).toBe('S2');
     expect(mixer.getSpeakerState('S1').solo).toBe(false);
     expect(mixer.getSpeakerState('S2').solo).toBe(true);
-    let calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
-    // S1's segment (0.2–0.5 → 0.21) must ramp to 0, S2's (0.6 → 0.61) stays 1.
-    expect(calls.some(([v, t]) => v === 0 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
-    expect(calls.some(([v, t]) => v === 1 && Math.abs(t - 0.61) < 1e-6)).toBe(true);
+    let calls = speakerGainCalls(mixer.speakerGain.gain);
+    const near = (t, target) => Math.abs(t - target) < 0.02;
+    // S1's segment (0.2–0.5 → ~0.21) must ramp to 0, S2's (0.6 → ~0.61) stays 1.
+    expect(calls.some(([v, t]) => v === 0 && near(t, 0.21))).toBe(true);
+    expect(calls.some(([v, t]) => v === 1 && near(t, 0.61))).toBe(true);
 
     mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.speakerGain.gain.linearRampToValueAtTime.mockClear();
+    mixer.speakerGain.gain.setValueAtTime.mockClear();
     mixer.setSpeakerSolo(null);
     expect(mixer.getSoloSpeaker()).toBeNull();
-    calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
-    expect(calls.some(([v, t]) => v === 1 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
+    calls = speakerGainCalls(mixer.speakerGain.gain);
+    expect(calls.some(([v, t]) => v === 1 && near(t, 0.21))).toBe(true);
   });
 
   test('per-speaker volume scales its segments and is clamped', async () => {
@@ -430,8 +449,9 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     mixer.loadSpeakerSegments(SEGMENTS);
     await mixer.play();
     mixer.setSpeakerVolume('S1', 40);
-    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
-    expect(calls.some(([v, t]) => Math.abs(v - 0.4) < 1e-9 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
+    const calls = speakerGainCalls(mixer.speakerGain.gain);
+    const near = (t, target) => Math.abs(t - target) < 0.02;
+    expect(calls.some(([v, t]) => Math.abs(v - 0.4) < 1e-9 && near(t, 0.21))).toBe(true);
     // Round-trip: the getter returns the same scale the setter accepts.
     expect(mixer.getSpeakerState('S1').volume).toBe(40);
     // Clamp ceiling is now 200 (per-speaker ENHANCE / boost).
@@ -444,11 +464,14 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     mixer.loadSpeakerSegments(SEGMENTS);
     await mixer.play();
     mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.speakerGain.gain.linearRampToValueAtTime.mockClear();
+    mixer.speakerGain.gain.setValueAtTime.mockClear();
     mixer.setSpeakerVolume('S1', 175); // +~4.9 dB boost
     expect(mixer.getSpeakerState('S1').volume).toBe(175);
-    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
-    // S1's segment (0.2–0.5 → ctx 0.21) ramps to the boosted gain 1.75.
-    expect(calls.some(([v, t]) => Math.abs(v - 1.75) < 1e-9 && Math.abs(t - 0.21) < 1e-6)).toBe(true);
+    const calls = speakerGainCalls(mixer.speakerGain.gain);
+    const near = (t, target) => Math.abs(t - target) < 0.02;
+    // S1's segment (0.2–0.5 → ctx ~0.21) ramps to the boosted gain 1.75.
+    expect(calls.some(([v, t]) => Math.abs(v - 1.75) < 1e-9 && near(t, 0.21))).toBe(true);
   });
 
   test('setSpeakerVolume 200 schedules gain 2.0 (maximum +6 dB ENHANCE)', async () => {
@@ -456,9 +479,11 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     mixer.loadSpeakerSegments(SEGMENTS);
     await mixer.play();
     mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.speakerGain.gain.linearRampToValueAtTime.mockClear();
+    mixer.speakerGain.gain.setValueAtTime.mockClear();
     mixer.setSpeakerVolume('S1', 200);
     expect(mixer.getSpeakerState('S1').volume).toBe(200);
-    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    const calls = speakerGainCalls(mixer.speakerGain.gain);
     expect(calls.some(([v]) => Math.abs(v - 2.0) < 1e-9)).toBe(true);
   });
 
@@ -467,9 +492,11 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     mixer.loadSpeakerSegments(SEGMENTS);
     await mixer.play();
     mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.speakerGain.gain.linearRampToValueAtTime.mockClear();
+    mixer.speakerGain.gain.setValueAtTime.mockClear();
     mixer.setSpeakerVolume('S1', 0);
     expect(mixer.getSpeakerState('S1').volume).toBe(0);
-    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    const calls = speakerGainCalls(mixer.speakerGain.gain);
     expect(calls.some(([v]) => Math.abs(v - 0.0) < 1e-9)).toBe(true);
   });
 
@@ -485,9 +512,11 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     mixer.loadSpeakerSegments(SEGMENTS);
     await mixer.play();
     mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.speakerGain.gain.linearRampToValueAtTime.mockClear();
+    mixer.speakerGain.gain.setValueAtTime.mockClear();
     mixer.setSpeakerVolume('S2', 100);
     expect(mixer.getSpeakerState('S2').volume).toBe(100);
-    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
+    const calls = speakerGainCalls(mixer.speakerGain.gain);
     expect(calls.some(([v]) => Math.abs(v - 1.0) < 1e-9)).toBe(true);
   });
 
@@ -501,20 +530,24 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
   test('contiguous segments share one boundary ramp (no AudioParam collision)', async () => {
     mixer.loadStems(stems(), stems());
     mixer.loadSpeakerSegments([
-
+      { speakerId: 'S1', start: 0.2, end: 0.5 },
       { speakerId: 'S2', start: 0.5, end: 0.9 }, // starts exactly at S1's end
     ]);
     await mixer.play();
     mixer.speakerGain.gain.setTargetAtTime.mockClear();
+    mixer.speakerGain.gain.linearRampToValueAtTime.mockClear();
+    mixer.speakerGain.gain.setValueAtTime.mockClear();
 
     mixer.setSpeakerMuted('S2', true);
-    const calls = mixer.speakerGain.gain.setTargetAtTime.mock.calls;
-    // S2's mute ramp owns the shared boundary (0.5 → ctx time 0.51)…
-    expect(calls.some(([v, t]) => v === 0 && Math.abs(t - 0.51) < 1e-6)).toBe(true);
-    // …with no competing restore-to-1 event at the same instant.
-    expect(calls.some(([v, t]) => v === 1 && Math.abs(t - 0.51) < 1e-6)).toBe(false);
+    // Prefer linearRamp events (terminal values of each crossfade).
+    const ramps = mixer.speakerGain.gain.linearRampToValueAtTime.mock.calls;
+    const near = (t, target) => Math.abs(t - target) < 0.02;
+    // S2's mute ramp owns the shared boundary (0.5 → ctx time ~0.51)…
+    expect(ramps.some(([v, t]) => v === 0 && near(t, 0.51))).toBe(true);
+    // …with no competing restore-to-1 ramp at the same instant.
+    expect(ramps.some(([v, t]) => v === 1 && near(t, 0.51))).toBe(false);
     // The restore lands only after the contiguous run ends.
-    expect(calls.some(([v, t]) => v === 1 && Math.abs(t - 0.91) < 1e-6)).toBe(true);
+    expect(ramps.some(([v, t]) => v === 1 && near(t, 0.91))).toBe(true);
   });
 
   test('loading new stems clears stale diarization state', () => {

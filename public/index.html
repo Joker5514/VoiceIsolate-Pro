@@ -290,6 +290,16 @@
         (WebGPU when available, WASM fallback). No microphone access, no audio
         upload, no telemetry.
       </p>
+      <p class="hint" id="backendStatusLine" role="status" aria-live="polite">
+        Backend: detecting…
+      </p>
+      <div class="privacy-actions" style="margin-top:0.75rem;display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
+        <button type="button" id="clearLocalDataBtn" class="btn btn-outline"
+          aria-label="Clear all local data: library, stems, embeddings, model cache">
+          Clear Local Data
+        </button>
+        <span id="clearLocalDataStatus" class="hint" role="status" aria-live="polite"></span>
+      </div>
     </section>
   </main>
 

@@ -2154,6 +2154,14 @@ class VoiceIsolatePro {
         }
         return { channelData, sampleRate: buf.sampleRate };
       },
+      getDiarizationSegments: () => {
+        // Prefer PlaybackMixer speaker segments; fall back to last diarization result.
+        try {
+          const fromMixer = this._bridge?.mixer?._segments || this._playbackMixer?._segments;
+          if (Array.isArray(fromMixer) && fromMixer.length) return fromMixer;
+        } catch { /* ignore */ }
+        return this._lastDiarizationSegments || null;
+      },
       onIsolated: async (channels, sampleRate) => {
         await this.ensureCtx();
         const out = this.ctx.createBuffer(channels.length, channels[0].length, sampleRate);
@@ -2250,6 +2258,9 @@ class VoiceIsolatePro {
       });
     }
     bind('clearFile', d.clearFile, 'click', () => { if (this.inputBuffer && !confirm('Are you sure you want to clear the current file? Unsaved processed audio will be lost.')) return; this._clearFile(); });
+    bind('clearLocalDataBtn', document.getElementById('clearLocalDataBtn'), 'click', () => {
+      this._clearAllLocalData?.();
+    });
 
     // Process buttons
     bind('processBtn', d.processBtn, 'click', () => this.runPipeline());
@@ -3558,6 +3569,39 @@ class VoiceIsolatePro {
     }
   }
 
+  /**
+   * Wipe library, OPFS/IDB blobs, stems, embeddings, model cache, VIP localStorage.
+   * Confirms with the user. Reloads after success so UI state is consistent.
+   */
+  async _clearAllLocalData() {
+    const ok = typeof confirm === 'function'
+      ? confirm(
+        'Clear ALL local VoiceIsolate data?\n\n'
+        + 'This permanently deletes the file library, cached stems, embeddings, '
+        + 'track state, and ONNX model cache on this device. Audio never left this device.',
+      )
+      : true;
+    if (!ok) return;
+    try {
+      this.showNotification?.('Clearing local data…', 'info');
+      const { clearAllLocalData } = await import('/src/core/ClearLocalData.js');
+      const result = await clearAllLocalData({ includeModels: true });
+      try { this._clearFile?.(); } catch { /* ignore */ }
+      this.showNotification?.(
+        `Local data cleared (${result.filesRemoved} library file(s), ${result.localStorageKeys} keys). Reloading…`,
+        'ok',
+      );
+      if (typeof location !== 'undefined' && location.reload) {
+        setTimeout(() => location.reload(), 600);
+      }
+    } catch (err) {
+      this.showNotification?.(
+        `Clear Local Data failed: ${err?.message || err}`,
+        'error',
+      );
+    }
+  }
+
   _clearFile() {
     clearStemCache();
     this._sourceName = '';
@@ -4294,10 +4338,17 @@ class VoiceIsolatePro {
     await yieldToBrowser();
 
     // ── Pass 1–2: input conditioning + time-domain cleanup ──
+    // Order: DC → classical click removal → gate → de-ess.
+    // removeClicks was previously implemented but never wired (audit residual pops).
     this.updatePipelineProgress(3, 'Conditioning input…', 8);
     for (let ch = 0; ch < channels.length; ch++) {
       let data = channels[ch];
       DSP.removeDCOffset(data, sr);
+      // S07: click/pop repair (sensitivity 1–10; default 3). Always on for
+      // classical path; lightweight O(N) median detector + Hermite fill.
+      if (typeof DSP.removeClicks === 'function') {
+        DSP.removeClicks(data, p.clickSensitivity ?? 3);
+      }
       const gateThresh = p.gateThresh ?? -42;
       if (gateThresh > -80) {
         data = DSP.noiseGate(data, {
@@ -4310,6 +4361,13 @@ class VoiceIsolatePro {
         }, sr);
       }
       if ((p.deEssAmt ?? 0) > 0) DSP.deEss(data, p.deEssFreq ?? 6000, p.deEssAmt ?? 0, sr);
+      // Process-boundary micro-fades (~8 ms) kill residual edge discontinuities.
+      const fadeN = Math.min(Math.floor(data.length / 4), Math.round(0.008 * sr));
+      for (let i = 0; i < fadeN; i++) {
+        const g = i / Math.max(1, fadeN);
+        data[i] *= g;
+        data[data.length - 1 - i] *= g;
+      }
       channels[ch] = data;
     }
 

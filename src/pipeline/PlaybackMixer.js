@@ -33,6 +33,9 @@
 
 import { SAMPLE_RATE, PARAM_SMOOTHING, verifyContextSampleRate } from '../core/audio-config.js';
 
+/** Crossfade duration (seconds) for speaker solo/mute/segment boundaries. */
+const SPEAKER_RAMP_SEC = 0.012;
+
 // Web Audio BiquadFilter `type` values are fixed spec strings. They are hoisted
 // to named constants whose identifiers avoid the substring flagged by njsscan's
 // hardcoded-credential rule, which false-positives on these filter type names.
@@ -1106,8 +1109,9 @@ export class PlaybackMixer {
     const offset = this.currentTime();
     // ctx time at which stem position `pos` is audible (play() set _startedAt).
     const timeAt = (pos) => this._startedAt + pos;
+    const ramp = SPEAKER_RAMP_SEC;
 
-    // Value at the current position, applied immediately…
+    // Value at the current position…
     let current = 1;
     for (const seg of this._segments) {
       if (offset >= seg.start && offset < seg.end) {
@@ -1115,24 +1119,34 @@ export class PlaybackMixer {
         break;
       }
     }
-    g.setTargetAtTime(current, now, PARAM_SMOOTHING);
+    // Hold current immediately, then short linear ramp (mute/solo mid-play).
+    g.setValueAtTime(current, now);
+    let lastT = now;
+    let lastV = current;
 
-    // …then boundary ramps for everything still ahead. Gaps between
-    // segments return to 1 (the clean stem is silent there anyway). When the
-    // next segment starts exactly at this one's end (the common case — the
-    // diarizer splits on frame boundaries), skip the restore ramp: two events
-    // at the same instant would collide on the AudioParam, and the next
-    // segment's own ramp governs the boundary.
+    const rampTo = (value, tAbs) => {
+      const t0 = Math.max(lastT, tAbs - ramp);
+      const t1 = Math.max(t0 + 1e-4, tAbs);
+      if (t0 > lastT + 1e-5) {
+        g.setValueAtTime(lastV, t0);
+      }
+      g.linearRampToValueAtTime(value, t1);
+      lastT = t1;
+      lastV = value;
+    };
+
+    // Boundary ramps for upcoming segments. Gaps restore to 1. Adjacent
+    // segments get a ~12 ms linear crossfade (click-free diarization cuts).
     for (let i = 0; i < this._segments.length; i++) {
       const seg = this._segments[i];
       if (seg.end <= offset) continue;
       const vol = this._effectiveSpeakerVolume(seg.speakerId);
       if (seg.start > offset) {
-        g.setTargetAtTime(vol, timeAt(seg.start), PARAM_SMOOTHING);
+        rampTo(vol, timeAt(seg.start));
       }
       const next = this._segments[i + 1];
-      if (!next || next.start > seg.end) {
-        g.setTargetAtTime(1, timeAt(seg.end), PARAM_SMOOTHING);
+      if (!next || next.start > seg.end + 1e-4) {
+        rampTo(1, timeAt(seg.end));
       }
     }
   }

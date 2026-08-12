@@ -10,6 +10,7 @@ import {
   enrollFromRange,
   buildTargetGainCurve,
   applyGainToChannels,
+  matchEmbeddingToDiarization,
 } from '../core/TargetSpeaker.js';
 
 /**
@@ -18,9 +19,10 @@ import {
  * @param {() => { channelData: Float32Array[], sampleRate: number }|null} opts.getAudio
  * @param {(channels: Float32Array[], sampleRate: number) => void|Promise<void>} opts.onIsolated
  * @param {(msg: string, kind?: string) => void} [opts.notify]
+ * @param {() => Array<{speakerId:string,start:number,end:number}>|null} [opts.getDiarizationSegments]
  */
 export function mountTargetSpeakerUI(opts) {
-  const { container, getAudio, onIsolated, notify = () => {} } = opts;
+  const { container, getAudio, onIsolated, notify = () => {}, getDiarizationSegments } = opts;
   if (!container) throw new TypeError('[VIP][TargetSpeakerUI] container required');
 
   container.textContent = '';
@@ -31,7 +33,8 @@ export function mountTargetSpeakerUI(opts) {
     'p',
     'hint',
     'Select a short clean speech region (seconds), Enroll, then Isolate. '
-    + 'Uses on-device mel voiceprint — no audio leaves the device.',
+    + 'Uses on-device mel-band voiceprint (not ECAPA-TDNN yet) — no audio leaves the device. '
+    + 'When diarization segments are available they are fused into the gain curve.',
   );
 
   const row = el('div', 'target-speaker-row');
@@ -87,10 +90,26 @@ export function mountTargetSpeakerUI(opts) {
     const mono = audio.channelData[0];
     const sr = audio.sampleRate || 48000;
     status.textContent = 'Building target gain (local)…';
-    const gain = buildTargetGainCurve(mono, sr, embedding);
+    const segs = typeof getDiarizationSegments === 'function'
+      ? (getDiarizationSegments() || null)
+      : null;
+    let targetSpeakerId = null;
+    let matchNote = '';
+    if (segs && segs.length) {
+      const match = matchEmbeddingToDiarization(mono, sr, embedding, segs);
+      if (match && match.similarity >= 0.25) {
+        targetSpeakerId = match.speakerId;
+        matchNote = ` · diarization cluster ${match.speakerId} (sim ${match.similarity.toFixed(2)})`;
+      }
+    }
+    const gain = buildTargetGainCurve(mono, sr, embedding, {
+      diarizationSegments: segs || undefined,
+      targetSpeakerId: targetSpeakerId || undefined,
+      smoothMs: 15,
+    });
     const isolated = applyGainToChannels(audio.channelData, gain);
     await onIsolated(isolated, sr);
-    status.textContent = 'Target isolation applied (soft gain on non-matching regions).';
+    status.textContent = `Target isolation applied (mel voiceprint soft gain${matchNote}).`;
     notify('Target isolation applied locally', 'ok');
   });
 
