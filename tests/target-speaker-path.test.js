@@ -91,11 +91,12 @@ describe('TargetSpeaker local voiceprint', () => {
     expect(m.speakerId).toBe('spk0');
   });
 
-  test('UI honesty: mel voiceprint not ECAPA claim', () => {
+  test('UI honesty: mel voiceprint; does not claim ECAPA is required', () => {
     const fs = require('fs');
     const path = require('path');
     const ui = fs.readFileSync(path.join(__dirname, '../src/presentation/TargetSpeakerUI.js'), 'utf8');
-    expect(ui).toMatch(/mel-band voiceprint|mel voiceprint/i);
-    expect(ui).toMatch(/not ECAPA/);
+    expect(ui).toMatch(/mel-band|local voiceprint/i);
+    expect(ui).toMatch(/ECAPA-TDNN ONNX is not required|not ECAPA/i);
+    expect(ui).toMatch(/How to enroll|step-by-step|Focus on one voice/i);
   });
 });

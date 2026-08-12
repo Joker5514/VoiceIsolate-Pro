@@ -133,6 +133,8 @@ let sliderUI = null;
 let speakerControls = null;
 let visualizer = null;
 let worker = null;
+/** @type {ReturnType<typeof import('/src/presentation/TargetSpeakerUI.js').mountTargetSpeakerUI>|null} */
+let targetSpeakerUi = null;
 
 let ingested = null;
 /** @type {File|Blob|null} original upload retained for video remux export */
@@ -663,6 +665,77 @@ async function detectSpeakers(clean, sampleRate) {
     console.error('[VIP][landing] diarization failed:', err);
     mixer.loadSpeakerSegments([]);
     ui.speakerStatus.textContent = `Speaker detection unavailable: ${err.message}`;
+  }
+  // Target enrollment becomes available once stems exist (same module as Engineer).
+  void ensureTargetSpeakerUi();
+}
+
+/**
+ * Mount shared TargetSpeakerUI on Landing (post stem-split).
+ * Soft-gain isolation on the clean stem; never re-runs ML.
+ */
+async function ensureTargetSpeakerUi() {
+  const panel = document.getElementById('targetSpeakerLandingPanel');
+  const host = document.getElementById('targetSpeakerPanel');
+  if (!host || !mixer) return;
+  if (panel) panel.hidden = false;
+  if (targetSpeakerUi) return;
+  try {
+    const { mountTargetSpeakerUI } = await import('/src/presentation/TargetSpeakerUI.js');
+    targetSpeakerUi = mountTargetSpeakerUI({
+      container: host,
+      getAudio: () => {
+        if (!mixer?.cleanBuffer) return null;
+        const buf = mixer.cleanBuffer;
+        const channelData = [];
+        for (let c = 0; c < buf.numberOfChannels; c++) {
+          channelData.push(buf.getChannelData(c));
+        }
+        return { channelData, sampleRate: buf.sampleRate || 48000 };
+      },
+      getDiarizationSegments: () => {
+        try {
+          const segs = mixer?.getSpeakerSegments?.() || mixer?._segments || [];
+          return Array.isArray(segs) && segs.length ? segs : null;
+        } catch {
+          return null;
+        }
+      },
+      getDurationSec: () => {
+        try {
+          const d = mixer?.duration?.();
+          return Number.isFinite(d) && d > 0 ? d : null;
+        } catch {
+          return null;
+        }
+      },
+      getPlayheadSec: () => {
+        try {
+          const t = mixer?.currentTime?.();
+          return Number.isFinite(t) ? t : null;
+        } catch {
+          return null;
+        }
+      },
+      onIsolated: async (channels, sampleRate) => {
+        // Replace clean stem; preserve diarization (loadStems clears segments).
+        const segs = mixer.getSpeakerSegments?.() || [];
+        const noise = mixer.noiseBuffer
+          ? Array.from({ length: mixer.noiseBuffer.numberOfChannels }, (_, c) =>
+            mixer.noiseBuffer.getChannelData(c).slice())
+          : channels.map((ch) => new Float32Array(ch.length));
+        mixer.loadStems(channels, noise, sampleRate);
+        if (segs.length) mixer.loadSpeakerSegments(segs);
+        visualizer?.loadStems?.(channels, noise, mixer.duration());
+        setStatus('Target isolation applied on clean stem (local voiceprint). Press Play.', 'active');
+      },
+      notify: (msg, kind) => {
+        const map = { ok: 'active', error: 'error', warn: 'error', info: 'active' };
+        setStatus(msg, map[kind] || 'active');
+      },
+    });
+  } catch (err) {
+    console.warn('[VIP][landing] TargetSpeaker UI failed to mount:', err);
   }
 }
 

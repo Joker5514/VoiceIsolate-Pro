@@ -11,5 +11,5 @@
   "onnxOptional": "/app/models/sam_audio.onnx",
   "officialInstall": "git+https://github.com/facebookresearch/sam-audio.git",
   "defaultModel": "facebook/sam-audio-small",
-  "installedAt": "2026-08-06T03:04:39.401Z"
+  "installedAt": "2026-08-12T17:01:25.515Z"
 }
