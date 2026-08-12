@@ -16,7 +16,7 @@
 
 <p align="center">
   <strong>Best-in-class voice isolation &amp; audio enhancement — 100% on-device, zero cloud.</strong><br>
-  32-stage Octa-Pass DSP · Hybrid ML (Demucs v4 + BSRNN + ECAPA-TDNN) · WebGPU-Accelerated · Privacy-First
+  32-stage Octa-Pass DSP · Hybrid ML (Demucs v4 + BSRNN + local target voiceprint) · WebGPU-Accelerated · Privacy-First
 </p>
 
 <p align="center">
@@ -73,7 +73,7 @@ Audio flows through **one Forward STFT** at the start of the spectral phase, in-
 | Pass | Stages | Purpose |
 |------|--------|---------|
 | **Pass 1** — Classical DSP Annihilation | 1–8 | DC removal, continuous noise profiling, 32-band ERB spectral gate, hum annihilation, Wiener-MMSE, click removal, spectral subtraction, residual gate |
-| **Pass 2** — Deep ML Source Separation | 9–14 | Demucs v4 hybrid U-Net, Band-Split RNN, ensemble mask fusion, ECAPA-TDNN voiceprint isolation, speaker diarization, VAD hard gate |
+| **Pass 2** — Deep ML Source Separation | 9–14 | Demucs v4 hybrid U-Net, Band-Split RNN, ensemble mask fusion, **local mel voiceprint** target isolation (ECAPA-TDNN planned), speaker diarization, VAD hard gate |
 | **Pass 3** — Room Isolation & Reconstruction | 15–18 | WPE dereverberation, harmonic reconstruction, Griffin-Lim phase reconstruction, HiFi-GAN neural vocoder |
 | **Pass 4** — Enhancement & Export | 19–24 | Broadcast EQ, de-esser, voice-gated HF boost, multi-band dynamics, ITU-R BS.1770 loudness normalize, WAV/MP3/FLAC/OGG encode |
 | **Passes 5–8** *(Engineer Mode)* | 25–32 | Extended per-stage controls — 67-slider UI with 3D spectrogram & Whisper Hunter forensic pass |

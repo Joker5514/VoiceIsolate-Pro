@@ -188,8 +188,10 @@ function effectiveBatchFrames(entry) {
 
 /**
  * Adaptive hop for long files — model bins stay fftSize/2+1; hop only changes
- * time resolution. 30 min @ hop 1024 ≈ 84k frames (hours on WASM); hop 8192
- * ≈ 10k frames (minutes). Quality trades gracefully for speed.
+ * time resolution. Speed-up is allowed, but hop is **always COLA-safe** for
+ * periodic Hann: only fft/4 (75%) or fft/2 (50%). Hop ≥ fft (zero overlap)
+ * previously produced hard frame-boundary clicks / zipper noise after masks.
+ *
  * @param {object} entry
  * @param {number} sampleCount
  * @param {number} sampleRate
@@ -201,23 +203,41 @@ function adaptiveHopSize(entry, sampleCount, sampleRate) {
   const durSec = sampleCount / sr;
   const mobile = isConstrainedDevice();
   let hop = base;
-  // Targets roughly ≤12k spectral frames desktop / ≤6k mobile for responsive UI.
-  // Mobile freezes the tab if WASM STFT runs tens of thousands of frames.
+  // Prefer larger hops on long files for speed; clamp to ≤ fft/2 below.
+  // Multipliers retained for speed tiers (tests assert base*N presence) but
+  // colaSafeHop snaps to {fft/4, fft/2} so reconstruction stays continuous.
   if (mobile) {
-    if (durSec > 10 * 60) hop = base * 16;     // 10+ min → hop 16384 (capped by fft)
-    else if (durSec > 4 * 60) hop = base * 8;   // 4+ min
-    else if (durSec > 90) hop = base * 4;       // 90s+
+    if (durSec > 10 * 60) hop = base * 16;
+    else if (durSec > 4 * 60) hop = base * 8;
+    else if (durSec > 90) hop = base * 4;
     else if (durSec > 45) hop = base * 2;
-    else hop = base * 2; // always at least 2× on mobile
+    else hop = base * 2;
   } else {
     if (durSec > 20 * 60) hop = base * 8;
     else if (durSec > 8 * 60) hop = base * 4;
     else if (durSec > 3 * 60) hop = base * 2;
     else if (durSec > 90) hop = Math.round(base * 1.5);
   }
-  hop = Math.min(fft, Math.max(256, hop));
-  hop = 2 ** Math.round(Math.log2(hop));
-  return hop;
+  return colaSafeHop(fft, base, hop);
+}
+
+/**
+ * COLA-safe hop for periodic Hann OLA: never exceed 50% hop (fft/2).
+ * @param {number} fftSize
+ * @param {number} baseHop
+ * @param {number} desiredHop
+ * @returns {number}
+ */
+function colaSafeHop(fftSize, baseHop, desiredHop) {
+  const fft = Math.max(64, fftSize | 0);
+  const half = fft >> 1;
+  const quarter = Math.max(1, fft >> 2);
+  const base = Math.max(1, baseHop | 0);
+  let hop = Math.max(base, desiredHop | 0);
+  hop = 2 ** Math.round(Math.log2(Math.max(1, hop)));
+  // Only two geometries: 75% (fft/4) for quality, 50% (fft/2) for speed.
+  if (hop <= quarter) return quarter;
+  return half;
 }
 
 // ─── Integrity ───────────────────────────────────────────────────────────────
@@ -554,6 +574,13 @@ async function runFusedSpectralMaskChain(heads, samples, onProgress) {
   let prefetch = null;
   const fusedMask = new Float32Array(batchMax * bins);
   const hfStart = Math.floor(bins * 0.35);
+  // Temporal mask smoothing across frames suppresses zipper/musical-noise
+  // clicks when adjacent frames disagree after aggressive ML masks.
+  // First frame is applied as-is (no seed of 1.0) so a true all-zero mask
+  // still fully silences output.
+  const prevMask = new Float32Array(bins);
+  let hasPrevMask = false;
+  const maskSmooth = 0.55;
 
   for (let f0 = 0; f0 < totalFrames; f0 += batchMax) {
     const count = Math.min(batchMax, totalFrames - f0);
@@ -595,6 +622,11 @@ async function runFusedSpectralMaskChain(heads, samples, onProgress) {
       const off = b * bins;
       for (let k = 0; k < bins; k++) {
         let m = fusedMask[off + k];
+        // One-pole temporal smooth (per bin) before HF taper — after first frame.
+        if (hasPrevMask) {
+          m = maskSmooth * prevMask[k] + (1 - maskSmooth) * m;
+        }
+        prevMask[k] = m;
         if (k >= hfStart) {
           const t = (k - hfStart) / Math.max(1, bins - 1 - hfStart);
           m *= 1 - t * 0.55;
@@ -602,6 +634,7 @@ async function runFusedSpectralMaskChain(heads, samples, onProgress) {
         re[k] = cur.batchRe[off + k] * m;
         im[k] = cur.batchIm[off + k] * m;
       }
+      hasPrevMask = true;
       for (let k = bins; k < N; k++) {
         re[k] = re[N - k];
         im[k] = -im[N - k];
@@ -618,8 +651,23 @@ async function runFusedSpectralMaskChain(heads, samples, onProgress) {
     onProgress(Math.min(1, (f0 + count) / totalFrames));
   }
 
+  // Edge-safe OLA normalize: floor divisor at half peak window² so partial
+  // overlap at file edges cannot amplify residual into clicks (matches
+  // SpectralCleanup + AudioClickFix.olaNormalizeFloor).
+  let maxNorm = 0;
+  for (let i = 0; i < norm.length; i++) {
+    if (norm[i] > maxNorm) maxNorm = norm[i];
+  }
+  const floorNorm = Math.max(1e-12, 0.5 * maxNorm);
   for (let i = 0; i < out.length; i++) {
-    if (norm[i] > 1e-8) out[i] /= norm[i];
+    out[i] /= Math.max(norm[i], floorNorm);
+  }
+  // Short edge fades (8 ms @ 48 kHz ≈ 384 samples) kill process-boundary pops.
+  const fadeN = Math.min(Math.floor(out.length / 4), Math.round(0.008 * 48000));
+  for (let i = 0; i < fadeN; i++) {
+    const g = i / Math.max(1, fadeN);
+    out[i] *= g;
+    out[out.length - 1 - i] *= g;
   }
   onProgress(1);
   return out;

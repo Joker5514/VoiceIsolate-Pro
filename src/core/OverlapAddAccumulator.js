@@ -201,12 +201,19 @@ export class OverlapAddReconstructor {
 
   /**
    * Finalize reconstruction by dividing accumulated output by the window² sum.
+   * Floors the divisor at half peak norm so partial-overlap edges do not
+   * amplify into clicks (matches SpectralCleanup / MLWorker OLA).
    * @returns {Float32Array}
    */
   finalize() {
     const out = new Float32Array(this._outputLength);
+    let maxNorm = 0;
     for (let i = 0; i < this._outputLength; i++) {
-      out[i] = this._norm[i] > 1e-12 ? this._output[i] / this._norm[i] : 0;
+      if (this._norm[i] > maxNorm) maxNorm = this._norm[i];
+    }
+    const floor = Math.max(1e-12, 0.5 * maxNorm);
+    for (let i = 0; i < this._outputLength; i++) {
+      out[i] = this._output[i] / Math.max(this._norm[i], floor);
     }
     return out;
   }

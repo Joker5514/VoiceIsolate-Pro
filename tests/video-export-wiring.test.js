@@ -23,8 +23,10 @@ describe('Video export module', () => {
 });
 
 describe('Media decode video fallback', () => {
-  test('does not mute the capture element (WebKit silence bug)', () => {
-    expect(mediaDecode).toMatch(/media\.muted\s*=\s*false/);
+  test('uses muted capture + silentGain (autoplay-safe; SPN still hears graph)', () => {
+    // muted=true unblocks play() under autoplay policy; ScriptProcessor still
+    // receives PCM from createMediaElementSource. silentGain=0 avoids speaker bleed.
+    expect(mediaDecode).toMatch(/media\.muted\s*=\s*true/);
     expect(mediaDecode).toMatch(/media\.volume\s*=\s*0/);
     expect(mediaDecode).toContain('silentGain');
   });

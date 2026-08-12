@@ -4,14 +4,16 @@
  * Fully on-device. No network. Uses:
  *   • Energy + SoftVad-style speech checks for enrollment validity
  *   • Mel-band loudness-invariant voiceprint (diarization.melBands) as the
- *     local embedding until a pinned ECAPA-TDNN ONNX ships in the manifest
+ *     **shipping** local embedding (ECAPA-TDNN ONNX is not yet in the
+ *     manifest — do not claim ECAPA until weights + extractEmbeddingAsync land)
  *
- * When ECAPA weights are added to ModelManifest under id `ecapa_tdnn`,
- * extractEmbeddingAsync() can load them via MLWorker; today we stay pure-JS.
+ * Optional: diarization cluster ids can be fused into the gain curve so
+ * non-target speaker segments are attenuated more aggressively.
  */
 'use strict';
 
 import { melBands } from './diarization.js';
+import { smoothGainCurve } from './AudioClickFix.js';
 
 export const MIN_ENROLL_SEC = 0.4;
 export const MAX_ENROLL_SEC = 12;
@@ -162,16 +164,73 @@ export function buildTargetGainCurve(samples, sampleRate, targetEmbedding, opts 
       if (g > gain[idx]) gain[idx] = g;
     }
   }
-  // Smooth
-  const sm = Math.max(1, Math.floor(sampleRate * 0.01));
-  const out = new Float32Array(samples.length);
-  let run = 0;
-  for (let i = 0; i < samples.length; i++) {
-    run += gain[i];
-    if (i >= sm) run -= gain[i - sm];
-    out[i] = run / Math.min(sm, i + 1);
+
+  // Optional diarization fusion: when segments + targetSpeakerId provided,
+  // boost target cluster windows and attenuate other speakers more firmly.
+  const segs = opts.diarizationSegments;
+  const targetId = opts.targetSpeakerId;
+  if (Array.isArray(segs) && targetId != null) {
+    for (const seg of segs) {
+      if (!seg || !Number.isFinite(seg.start) || !Number.isFinite(seg.end)) continue;
+      const a = Math.max(0, Math.floor(seg.start * sampleRate));
+      const b = Math.min(samples.length, Math.ceil(seg.end * sampleRate));
+      const isTarget = String(seg.speakerId) === String(targetId);
+      const floor = isTarget ? 0.85 : 0.08;
+      for (let i = a; i < b; i++) {
+        if (isTarget) gain[i] = Math.max(gain[i], floor);
+        else gain[i] = Math.min(gain[i], Math.max(floor, gain[i] * 0.5));
+      }
+    }
   }
-  return out;
+
+  // 15 ms one-pole + rate-limited smooth prevents gain zipper clicks.
+  return smoothGainCurve(gain, sampleRate, {
+    smoothMs: opts.smoothMs ?? 15,
+    maxStepPerMs: opts.maxStepPerMs ?? 0.06,
+  });
+}
+
+/**
+ * Match enrolled embedding to diarization speaker clusters by mean voiceprint
+ * of each cluster's talk time. Returns best speakerId or null.
+ *
+ * @param {Float32Array} samples mono
+ * @param {number} sampleRate
+ * @param {Float32Array} targetEmbedding
+ * @param {Array<{speakerId: string, start: number, end: number}>} segments
+ * @returns {{ speakerId: string, similarity: number }|null}
+ */
+export function matchEmbeddingToDiarization(samples, sampleRate, targetEmbedding, segments) {
+  if (!Array.isArray(segments) || !segments.length || !targetEmbedding) return null;
+  /** @type {Map<string, { sum: Float32Array, n: number }>} */
+  const byId = new Map();
+  for (const seg of segments) {
+    if (!seg?.speakerId) continue;
+    const a = Math.max(0, Math.floor((seg.start || 0) * sampleRate));
+    const b = Math.min(samples.length, Math.ceil((seg.end || 0) * sampleRate));
+    if (b - a < sampleRate * 0.2) continue;
+    const emb = extractLocalVoiceprint(samples.subarray(a, b), sampleRate);
+    let row = byId.get(seg.speakerId);
+    if (!row) {
+      row = { sum: new Float32Array(emb.length), n: 0 };
+      byId.set(seg.speakerId, row);
+    }
+    for (let i = 0; i < emb.length; i++) row.sum[i] += emb[i];
+    row.n += 1;
+  }
+  let best = null;
+  let bestSim = -2;
+  for (const [speakerId, row] of byId) {
+    if (!row.n) continue;
+    const mean = new Float32Array(row.sum.length);
+    for (let i = 0; i < mean.length; i++) mean[i] = row.sum[i] / row.n;
+    const sim = cosineSimilarity(mean, targetEmbedding);
+    if (sim > bestSim) {
+      bestSim = sim;
+      best = speakerId;
+    }
+  }
+  return best ? { speakerId: best, similarity: bestSim } : null;
 }
 
 /**
@@ -220,5 +279,6 @@ export default {
   buildTargetGainCurve,
   applyGainToChannels,
   enrollFromRange,
+  matchEmbeddingToDiarization,
   sliceSeconds,
 };

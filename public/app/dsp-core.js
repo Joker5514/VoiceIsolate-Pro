@@ -355,8 +355,13 @@ const DSPCore = {
         await yieldUI();
       }
     }
+    let maxNormA = 0;
     for (let i = 0; i < len; i++) {
-      if (windowSum[i] > 1e-12) output[i] /= windowSum[i];
+      if (windowSum[i] > maxNormA) maxNormA = windowSum[i];
+    }
+    const floorNormA = Math.max(1e-12, 0.5 * maxNormA);
+    for (let i = 0; i < len; i++) {
+      output[i] /= Math.max(windowSum[i], floorNormA);
     }
     if (onProgress) onProgress(1);
     return output;
@@ -415,9 +420,15 @@ const DSPCore = {
       }
     }
 
-    // Normalize by window sum
+    // Edge-safe OLA normalize: floor divisor at half peak so file edges (partial
+    // overlap) do not amplify residual into clicks / zipper noise.
+    let maxNorm = 0;
     for (let i = 0; i < len; i++) {
-      if (windowSum[i] > 1e-8) output[i] /= windowSum[i];
+      if (windowSum[i] > maxNorm) maxNorm = windowSum[i];
+    }
+    const floorNorm = Math.max(1e-12, 0.5 * maxNorm);
+    for (let i = 0; i < len; i++) {
+      output[i] /= Math.max(windowSum[i], floorNorm);
     }
 
     return output;
@@ -677,6 +688,8 @@ const DSPCore = {
     const hop = blockSize >> 1;
     // Sensitivity 1..10 → K ≈ 15..6 (lower = more aggressive). Default 3 → K≈12.
     const K = Math.max(6, 18 - sensitivity * 2);
+    // Cap run length so long speech peaks are never wholesale replaced.
+    const MAX_RUN = 48;
 
     // Content-scaled absolute floor: use a cheap O(N) estimate of the global
     // |x| level (mean of |x|) as a proxy for signal strength, then anchor the
@@ -685,6 +698,12 @@ const DSPCore = {
     for (let i = 0; i < N; i++) absSum += Math.abs(data[i]);
     const globalLevel = absSum / N;
     const ABS_FLOOR = Math.max(0.005, globalLevel * 0.5);
+
+    // Also flag first-difference spikes (pops that are not peak-loud but jump).
+    let dSum = 0;
+    for (let i = 1; i < N; i++) dSum += Math.abs(data[i] - data[i - 1]);
+    const dMean = dSum / Math.max(1, N - 1);
+    const D_THRESH = Math.max(ABS_FLOOR * 2, dMean * (8 - Math.min(4, sensitivity)));
 
     const flagged = new Uint8Array(N);
     const tmp = new Float32Array(blockSize);
@@ -705,6 +724,12 @@ const DSPCore = {
         if (tmp[i] > thresh) flagged[b + i] = 1;
       }
     }
+    for (let i = 1; i < N; i++) {
+      if (Math.abs(data[i] - data[i - 1]) > D_THRESH) {
+        flagged[i] = 1;
+        flagged[i - 1] = 1;
+      }
+    }
 
     // Coalesce single-sample gaps so we treat short bursts as one click.
     for (let i = 1; i < N - 1; i++) {
@@ -719,7 +744,13 @@ const DSPCore = {
     while (i < N) {
       if (!flagged[i]) { i++; continue; }
       let j = i;
-      while (j < N && flagged[j]) j++;
+      while (j < N && flagged[j] && (j - i) < MAX_RUN) j++;
+      // Skip over-long runs (likely real signal, not a click).
+      if ((j - i) >= MAX_RUN) {
+        while (j < N && flagged[j]) j++;
+        i = j;
+        continue;
+      }
       // Run is [i, j). Find outer support points for Catmull–Rom.
       const p1i = i - 1;                      // last good sample before run
       const p2i = j;                          // first good sample after run
@@ -739,7 +770,7 @@ const DSPCore = {
                  (-p0 + p2) * t +
                  (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
                  (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
-        data[k] = interp;
+        data[k] = Number.isFinite(interp) ? interp : 0;
       }
       i = j;
     }

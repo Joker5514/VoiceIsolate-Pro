@@ -67,7 +67,7 @@ constraints every contributor must enforce:
 | Constraint | Rule |
 |---|---|
 | **Privacy** | 100% local inference. No audio or derivatives sent to cloud. |
-| **Single STFT / single iSTFT** | Exactly one forward STFT and one inverse iSTFT per processing path. No repeated phase damage. |
+| **Single STFT / single iSTFT** | Exactly one forward STFT and one inverse iSTFT per **compatible spectral-mask chain** (fused production path). Waveform-only models (e.g. Demucs) are a separate branch and do not claim this invariant. No repeated phase damage on the fused path. |
 | **Dual pipeline** | Lightweight Live path (<80–100 ms, FFT 512/1024 + RNNoise fallback) vs. heavy Creator/Forensic path (FFT 4096–8192 + full ML). |
 | **Ring-buffer math** | `HOP_SIZE` **must** be an integer multiple of `QUANTUM` (128). See §8. |
 | **Mask equation** | `X_out = X · max(M_hum · M_noise · M_speech · M_speaker · M_dereverb · M_res, M_floor)` with typical `M_floor = -30 dB`. |
@@ -289,21 +289,24 @@ pnpm test:live             # Playwright headless Engineer pipeline smoke
 
 ---
 
-## 7. Target-Speaker Enrollment (ECAPA-TDNN)
+## 7. Target-Speaker Enrollment (current: local mel voiceprint)
 
-Per blueprint v2.1 §III — session-scoped speaker focus for Live and Creator modes:
+Per blueprint v2.1 §III — session-scoped speaker focus. **Shipping today uses an
+on-device mel-band voiceprint**, not ECAPA-TDNN. ECAPA remains a planned upgrade
+when a pinned `ecapa_tdnn` ONNX entry lands in `ModelManifest`.
 
-| Parameter | Value |
-|---|---|
-| Minimum enrollment | **3 seconds** of clean target speech at **SNR > 10 dB** |
-| Embedding model | ECAPA-TDNN → **192-dim** vector |
-| Update strategy | EMA with **α = 0.05** (smooth within-session adaptation) |
-| Similarity threshold | Configurable; **default cosine = 0.75** |
-| Soft mask | `clamp((cos_sim − threshold) / (1 − threshold), 0, 1)` |
-| Multi-speaker | Up to N enrolled embeddings; **union mask** (logical OR) with per-speaker gain |
-| Persistence | Session-scoped by default; disk persistence only when user explicitly saves a voice profile |
+| Parameter | Shipping value | Blueprint target |
+|---|---|---|
+| Minimum enrollment | **≥ 0.4 s** speech energy (UI typically 1–3 s) | 3 s clean speech, SNR > 10 dB |
+| Embedding model | **24-D mel voiceprint** (`TargetSpeaker.extractLocalVoiceprint`) | ECAPA-TDNN 192-D |
+| Similarity | Cosine; default threshold **0.42** (soft width 0.12) | default cosine 0.75 |
+| Soft gain | Per-sample gain curve, **15 ms** smooth + rate limit (anti-click) | soft mask in STFT domain |
+| Diarization fusion | Optional: match enrollment → cluster id, attenuate non-target segments | full multi-speaker union mask |
+| Persistence | Session / in-memory embedding in UI | optional saved voice profile |
 
-Enrollment UI: user highlights a clean region in the spectrogram (`visual-click-isolation.js`).
+Enrollment UI: Engineer `TargetSpeakerUI` (start/end seconds → Enroll → Isolate).
+Diarization clusters from Landing/Engineer can be fused when segments exist.
+**Do not claim ECAPA or “full target mask fusion inside ML STFT” until those land.**
 
 ---
 

@@ -83,7 +83,8 @@ describe('M4A decode fallback — media-decode.js', () => {
   test('video tries fast decodeAudioData then accelerated media-element fallback', () => {
     expect(mdjs).toContain("if (kind === 'video')");
     expect(mdjs).toContain('_likelyTruncatedDecode');
-    expect(mdjs).toContain('_decodeViaMediaElement(blob, kind, onProgress)');
+    // Optional external AudioContext is the 4th arg (avoids context exhaustion).
+    expect(mdjs).toMatch(/_decodeViaMediaElement\s*\(\s*blob\s*,\s*kind\s*,\s*onProgress/);
     expect(mdjs).toContain('playbackRate');
     expect(mdjs).toContain('MAX_CAPTURE_PLAYBACK_RATE');
   });
