@@ -3948,6 +3948,28 @@ class VoiceIsolatePro {
         this.updateAudioMetrics(this._computeAudioMetricsState());
       } catch (_) { /* metrics must not fail the pipeline */ }
       try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}
+      // Auto Analysis + USM/diarization as part of Process (no extra user click).
+      // Non-blocking: never fail the pipeline if analysis errors.
+      try {
+        const seq = fileSeq;
+        const schedule = globalThis.requestIdleCallback
+          ? (cb) => requestIdleCallback(cb, { timeout: 3500 })
+          : (cb) => setTimeout(cb, 80);
+        schedule(() => {
+          if (seq !== this._fileSeq) return;
+          if (typeof this.runFullAnalysis === 'function') {
+            this.runFullAnalysis().then(() => {
+              try {
+                window.__VIP_ENGINEER_CONSOLE__?.refreshSummaryFromApp?.();
+              } catch { /* cosmetic */ }
+            }).catch((aErr) => {
+              structuredLog('warn', '[VIP] auto-analysis after process failed', {
+                err: aErr?.message || String(aErr),
+              });
+            });
+          }
+        });
+      } catch { /* auto-analysis is best-effort */ }
     } catch (err) {
       structuredLog('error', '[VIP] Pipeline error', { err: err.message });
       this.setStatus('ERROR');

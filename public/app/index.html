@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>VoiceIsolate Pro v25.0 – Engineer Mode</title>
+  <title>VoiceIsolate Pro – Engineer Mode Console</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="VoiceIsolate Pro Engineer Mode — 32-stage local DSP, WhisperHunter AI, and forensic voice isolation. No cloud uploads." />
   <link rel="manifest" href="/manifest.json" />
@@ -53,6 +53,8 @@
   <link id="vip-enh-css" rel="stylesheet" href="vip-enhancements.css" />
   <link rel="stylesheet" href="debug-menu.css" />
   <link rel="stylesheet" href="../transport-polish.css" />
+  <!-- Studio console skin (layout/visual only — preserves IDs) -->
+  <link rel="stylesheet" href="engineer-console.css" />
 
   <!-- Module-error guard: surfaces broken imports as a red banner instead of blank page -->
   <style>
@@ -151,8 +153,9 @@
         <span class="hdr-ver">PRO</span>
       </div>
       <div style="width:1px;height:22px;background:var(--border-strong);margin:0 2px;flex:none;"></div>
-      <span class="hdr-title" style="font-size:11px;font-weight:500;color:var(--text-dim);letter-spacing:0;">Engineer Mode</span>
+      <span class="hdr-title" style="font-size:11px;font-weight:500;color:var(--text-dim);letter-spacing:0;">Engineer Console</span>
       <span class="hdr-badge">LOCAL DSP</span>
+      <span class="hdr-badge" title="Studio rack skin · single-pass STFT · click-safe controls">CONSOLE</span>
       <span class="hdr-badge diag-badge" style="display:none;">32-Stage Deca-Pass</span>
     </div>
     <div class="hdr-scale" role="group" aria-label="UI scale">
@@ -204,9 +207,9 @@
         </div>
       </div>
       <div class="vip-hero-copy">
-        <p class="vip-hero-kicker">LOCAL-ONLY · ENGINEER MODE · v25</p>
+        <p class="vip-hero-kicker">LOCAL-ONLY · ENGINEER CONSOLE · SINGLE-PASS STFT · CLICK-SAFE</p>
         <h2 id="heroTitle" class="vip-hero-title">VoiceIsolate Pro</h2>
-        <p id="heroTagline" class="vip-hero-tagline">Isolate voice. Erase noise. Export broadcast-ready audio — entirely on your device.</p>
+        <p id="heroTagline" class="vip-hero-tagline">Studio rack for on-device isolation — Process auto-runs analysis &amp; diarization. Export broadcast-ready audio without leaving your device.</p>
         <div class="vip-hero-tier" role="group" aria-label="Workflow tier">
           <span class="vip-hero-tier-label">Workflow</span>
           <div id="heroTierPicker" class="vip-hero-tier-picker">
@@ -370,9 +373,9 @@
         </div>
       </details>
 
-      <!-- Target-speaker isolation (local mel voiceprint; no network) — shared UI module -->
-      <details class="card vip-section" id="section-target-speaker" open>
-        <summary class="vip-section-summary">Focus on one voice (target enrollment)</summary>
+      <!-- Target-speaker isolation (local mel voiceprint; no network) — shared UI module; collapsed by default in console -->
+      <details class="card vip-section" id="section-target-speaker">
+        <summary class="vip-section-summary">Focus on one voice (target enrollment)<span class="module-sub">Local voiceprint · soft gain · no re-ML</span></summary>
         <div class="vip-section-body">
           <div id="targetSpeakerPanel" aria-label="Target speaker enrollment and isolation"></div>
         </div>
@@ -518,19 +521,19 @@
         <div id="preset-desc-panel" class="preset-desc-panel" style="display:none;" aria-live="polite"></div>
 
         <details class="slider-group vip-section active" id="section-gate" open>
-          <summary class="vip-section-summary slider-group-header" id="btn-noise-reduction" aria-controls="group-noise-reduction">Noise Reduction / Gate</summary>
+          <summary class="vip-section-summary slider-group-header" id="btn-noise-reduction" aria-controls="group-noise-reduction">Noise Reduction / Gate<span class="module-sub">Input &amp; pre-cleaning</span></summary>
           <div id="group-noise-reduction" class="slider-group-content vip-section-body" role="region" aria-labelledby="btn-noise-reduction">
             <p class="group-desc">Removes unwanted background sound. The <strong>gate</strong> silences the gaps between words, while <strong>spectral NR</strong> learns the steady noise (hiss, hum, fans) and subtracts it. <em>Example:</em> clean up a phone interview recorded next to an air conditioner — set NR Amount ~70% and a Gate Threshold around −40 dB.</p>
             <div id="tab-gate" class="slider-panel"></div>
             <div id="tab-nr" class="slider-panel"></div>
           </div>
         </details>
-        <details class="slider-group vip-section" id="section-eq"><summary class="vip-section-summary">EQ (10 bands)</summary><div id="group-eq" class="slider-group-content vip-section-body"><p class="group-desc">Ten tone controls from deep bass to bright "air". Boost a band to bring it forward, cut it to push it back. <em>Example:</em> for a thin laptop-mic voice, add ~+2 dB Body and +1.5 dB Presence; for a boomy close mic, cut ~−4 dB Bass.</p><div id="tab-eq" class="slider-panel"></div></div></details>
-        <details class="slider-group vip-section" id="section-dynamics"><summary class="vip-section-summary">Dynamics</summary><div id="group-dynamics" class="slider-group-content vip-section-body"><p class="group-desc">Evens out volume. The <strong>compressor</strong> brings loud and soft words closer together; the <strong>limiter</strong> sets a hard ceiling so nothing clips. <em>Example:</em> a guest who keeps drifting from the mic — Threshold ~−24 dB, Ratio 4:1, Makeup +3 dB for a steady, broadcast-level voice.</p><div id="tab-dyn" class="slider-panel"></div></div></details>
-        <details class="slider-group vip-section" id="section-spectral"><summary class="vip-section-summary">Spectral</summary><div id="group-spectral" class="slider-group-content vip-section-body"><p class="group-desc">Surgical frequency tools: high-/low-pass filters to trim the extremes, a de-esser to tame harsh "s" sounds, tilt for quick brighter/darker, and formant shift for vocal character. <em>Example:</em> a sharp, sibilant narrator — De-ess Amount ~6 dB at 7 kHz, HP Freq 90 Hz to drop rumble.</p><div id="tab-spec" class="slider-panel"></div></div></details>
-        <details class="slider-group vip-section" id="section-advanced"><summary class="vip-section-summary">Advanced</summary><div id="group-advanced" class="slider-group-content vip-section-body"><p class="group-desc">Restoration and stereo tools: <strong>dereverb</strong> pulls a voice out of an echoey room, <strong>harmonic recovery</strong> rebuilds detail lost to noise reduction, and width/phase shape the stereo image. <em>Example:</em> speech recorded in an empty hall — Dereverb ~50% with Rev Decay raised toward 70% for the long tail.</p><div id="tab-adv" class="slider-panel"></div></div></details>
-        <details class="slider-group vip-section" id="section-output"><summary class="vip-section-summary">Output</summary><div id="group-output" class="slider-group-content vip-section-body"><p class="group-desc">Final mastering: overall volume trim, the dry/wet blend between original and processed, output stereo width, and export dither. <em>Example:</em> if cleanup sounds too aggressive, pull Dry/Wet to ~75% to mix a little of the natural original back in.</p><div id="tab-out" class="slider-panel"></div></div></details>
-        <details class="slider-group vip-section" id="section-separation"><summary class="vip-section-summary">Separation → Isolation</summary><div id="group-separation" class="slider-group-content vip-section-body"><p class="group-desc"><strong>Separation</strong> (ML, once per Process) splits voice vs background stems. <strong>Isolation</strong> sliders below refine that mix in real time — Voice Iso lifts the clean stem, BG Suppress ducks residual noise — without re-running ML. <em>Example:</em> after Process, set Voice Iso ~85% and BG Suppress ~60% to hear a clearer dialogue stem.</p><div id="tab-sep" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section" id="section-eq"><summary class="vip-section-summary">EQ (10 bands)<span class="module-sub">Tone &amp; presence</span></summary><div id="group-eq" class="slider-group-content vip-section-body"><p class="group-desc">Ten tone controls from deep bass to bright "air". Boost a band to bring it forward, cut it to push it back. <em>Example:</em> for a thin laptop-mic voice, add ~+2 dB Body and +1.5 dB Presence; for a boomy close mic, cut ~−4 dB Bass.</p><div id="tab-eq" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section" id="section-dynamics"><summary class="vip-section-summary">Dynamics<span class="module-sub">Dynamics &amp; loudness · smoothed</span></summary><div id="group-dynamics" class="slider-group-content vip-section-body"><p class="group-desc">Evens out volume. The <strong>compressor</strong> brings loud and soft words closer together; the <strong>limiter</strong> sets a hard ceiling so nothing clips. <em>Example:</em> a guest who keeps drifting from the mic — Threshold ~−24 dB, Ratio 4:1, Makeup +3 dB for a steady, broadcast-level voice.</p><div id="tab-dyn" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section" id="section-spectral"><summary class="vip-section-summary">Spectral<span class="module-sub">Filters · de-ess · formants</span></summary><div id="group-spectral" class="slider-group-content vip-section-body"><p class="group-desc">Surgical frequency tools: high-/low-pass filters to trim the extremes, a de-esser to tame harsh "s" sounds, tilt for quick brighter/darker, and formant shift for vocal character. <em>Example:</em> a sharp, sibilant narrator — De-ess Amount ~6 dB at 7 kHz, HP Freq 90 Hz to drop rumble.</p><div id="tab-spec" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section" id="section-advanced"><summary class="vip-section-summary">Advanced<span class="module-sub">Room &amp; stereo</span></summary><div id="group-advanced" class="slider-group-content vip-section-body"><p class="group-desc">Restoration and stereo tools: <strong>dereverb</strong> pulls a voice out of an echoey room, <strong>harmonic recovery</strong> rebuilds detail lost to noise reduction, and width/phase shape the stereo image. <em>Example:</em> speech recorded in an empty hall — Dereverb ~50% with Rev Decay raised toward 70% for the long tail.</p><div id="tab-adv" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section" id="section-output" open><summary class="vip-section-summary">Output<span class="module-sub">Master bus · −1 dBTP ceiling</span></summary><div id="group-output" class="slider-group-content vip-section-body"><p class="group-desc">Final mastering: overall volume trim, the dry/wet blend between original and processed, output stereo width, and export dither. <em>Example:</em> if cleanup sounds too aggressive, pull Dry/Wet to ~75% to mix a little of the natural original back in.</p><div id="tab-out" class="slider-panel"></div></div></details>
+        <details class="slider-group vip-section" id="section-separation" open><summary class="vip-section-summary">Separation → Isolation<span class="module-sub">Isolation depth · Live-Mix</span></summary><div id="group-separation" class="slider-group-content vip-section-body"><p class="group-desc"><strong>Separation</strong> (ML, once per Process) splits voice vs background stems. <strong>Isolation</strong> sliders below refine that mix in real time — Voice Iso lifts the clean stem, BG Suppress ducks residual noise — without re-running ML. <em>Example:</em> after Process, set Voice Iso ~85% and BG Suppress ~60% to hear a clearer dialogue stem.</p><div id="tab-sep" class="slider-panel"></div></div></details>
         <details class="slider-group vip-section" id="tab-extreme-group">
           <summary class="vip-section-summary">EXTREME / Whisper isolation</summary>
           <div id="group-extreme" class="slider-group-content vip-section-body" role="region">
@@ -751,6 +754,10 @@
     await import('./vip-boot.js').catch(err => {
       console.error('[VIP] Failed to load module: ./vip-boot.js', err);
       if (typeof window._vipReportError === 'function') window._vipReportError('./vip-boot.js', err);
+    });
+    // Studio console layout (reparents existing IDs; load after workspace for analysis hooks)
+    import('./engineer-console.js').catch(err => {
+      console.warn('[VIP] engineer-console.js not loaded (non-fatal):', err);
     });
     import('./vip-enhancements.js').catch(err => {
       console.error('[VIP] Failed to load module: ./vip-enhancements.js', err);
