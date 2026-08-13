@@ -1,6 +1,6 @@
 # Android — complete offline app
 
-Capacitor 8 package: **Landing** at `/` + **Engineer Mode** at `/app/`, models and ORT WASM embedded.
+Capacitor 8 package: **Landing** at `/` + **Engineer Console** at `/app/` (same 3-column studio shell as web/desktop), models and ORT WASM embedded.
 
 ## Download (users)
 
@@ -32,7 +32,8 @@ Pipeline:
 
 | Topic | Behavior |
 |-------|----------|
-| Entry | Landing (`index.html`); Engineer at `/app/` |
+| Entry | Landing (`index.html`); Engineer Console at `/app/` |
+| Engineer UI | Same `engineer-console.js/css` as web — offline prepare **requires** these files |
 | Models shipped | `bsrnn_vocals`, `rnnoise_suppressor`, `silero_vad` (+ int8 if present) |
 | Not shipped | `demucs_v4_fp32`, `demucs_v4_quantized` (OOM / size) |
 | Service Worker | **Disabled** on native / `vip-android.json` packages |

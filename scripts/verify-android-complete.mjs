@@ -16,9 +16,11 @@ const REQUIRED = [
   'landing.js',
   'landing.css',
   'vip-android.json',
-  // Engineer Mode
+  // Engineer Mode (+ studio console skin shared with web/desktop)
   'app/index.html',
   'app/app.js',
+  'app/engineer-console.css',
+  'app/engineer-console.js',
   'app/models/bsrnn_vocals.onnx',
   'app/models/rnnoise_suppressor.onnx',
   'app/models/silero_vad.onnx',

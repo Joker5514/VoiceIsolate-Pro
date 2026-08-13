@@ -16,7 +16,8 @@
    - Separate path; **does not** claim single-STFT invariants.  
 5. **Live-Mix** — `PlaybackMixer` AudioParams only (no re-ML).  
 6. **Target speaker** (optional) — shared UI `src/presentation/TargetSpeakerUI.js` on **Landing + Engineer** (and Capacitor/Electron shells after `sync:src` / build). Local mel voiceprint enrollment + soft gain (no re-STFT). Diarization clusters fused when present. ECAPA-TDNN is **not** required for the shipping path.  
-7. **Clear Local Data** — `src/core/ClearLocalData.js` (library, OPFS/IDB, stems, model cache, VIP localStorage).
+7. **Clear Local Data** — `src/core/ClearLocalData.js` (library, OPFS/IDB, stems, model cache, VIP localStorage).  
+8. **Engineer Console** — `public/app/engineer-console.js` + `.css`: 3-column studio rack (session · stage · control rack), DSP Integrity + Output Safety cards, Voice Matrix, Process → auto `runFullAnalysis`. Layout-only; all control IDs preserved. Ships on Web + Android + Desktop from the same `public/app/` tree.
 
 ### ORT backend
 

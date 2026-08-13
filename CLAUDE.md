@@ -75,8 +75,22 @@ constraints every contributor must enforce:
 | **Model storage** | Platform-aware: IndexedDB + Cache API (web; warn on iOS Safari ~50 MB quota), filesystem (desktop), scoped storage (Android). SHA-256 manifest before every session. |
 | **HTDemucs strategy** | Full/specialist ONNX on web/desktop; quantized specialist or ExecuTorch (Vulkan/NNAPI) on Android — validate SDR vs. size before committing. |
 | **Electron security** | `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, preload-only IPC. See `electron/main.cjs`. |
+| **UI shell parity** | **One Engineer Console** under `public/app/` (HTML + `engineer-console.js/css`) ships on Web, Capacitor Android, and Electron. `pnpm build` copies `public/` → `build/`; Android `cap sync` and electron-builder consume `build/`. Do not fork a separate mobile/desktop Engineer UI. |
 
 **Timelines (realistic):** Electron MVP 3–4 weeks (signing + auto-update); Android hardening 5–6 weeks.
+
+### 1.3 Engineer Console UI (layout rules)
+
+The studio-console skin is **layout/visual only**. Contributors must:
+
+| Rule | Detail |
+|------|--------|
+| **Preserve IDs** | Never rename `processBtn`, `fileInput`, `tab-*`, canvases (`spectroCanvas`, `waveCanvas`, …), `section-*`, slider hosts, or transport IDs. |
+| **Preserve data bindings** | Slider parameter names / `VIP_PARAMS` / worklet params stay as-is. Rearrange DOM order only. |
+| **Console modules** | `public/app/engineer-console.css` + `engineer-console.js` reparent into session · stage · rack columns and inject Integrity / Output Safety cards. |
+| **Auto-analysis** | After successful `runPipeline`, idle-callback invokes `app.runFullAnalysis` (from `analysis-workspace.js`). Manual Analyze buttons remain for re-run. |
+| **Focus on one voice** | Shared `src/presentation/TargetSpeakerUI.js`; section + explain accordion **collapsed by default** in Engineer Console. |
+| **Android packaging** | `scripts/prepare-android-complete.mjs` + `verify-android-complete.mjs` **require** `app/engineer-console.css` and `app/engineer-console.js` in the offline bundle. |
 
 ---
 

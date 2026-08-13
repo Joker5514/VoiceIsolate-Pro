@@ -27,6 +27,9 @@ describe('Android complete app pipeline', () => {
     expect(prepare).toContain('silero_vad.onnx');
     expect(prepare).toContain('demucs_v4_fp32.onnx');
     expect(prepare).toMatch(/EXCLUDE_MODELS/);
+    // Studio console skin required offline (same as web/Electron)
+    expect(prepare).toContain('app/engineer-console.css');
+    expect(prepare).toContain('app/engineer-console.js');
     // Must NOT force-redirect away from landing into Engineer only
     expect(prepare).not.toContain("location.replace('/app/index.html')");
   });
@@ -68,5 +71,7 @@ describe('Android complete app pipeline', () => {
     expect(verify).toContain('fonts.googleapis.com');
     expect(verify).toContain('bsrnn_vocals.onnx');
     expect(verify).toContain('demucs_v4_fp32.onnx');
+    expect(verify).toContain('app/engineer-console.css');
+    expect(verify).toContain('app/engineer-console.js');
   });
 });

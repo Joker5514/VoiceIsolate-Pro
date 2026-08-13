@@ -38,7 +38,8 @@
 | **Workflow** | Upload (no decode freeze) → Analyze maps noise/voice → joint WhisperHunter isolation → Live-Mix preview & export |
 | **Architecture** | Threads from Space v8 — Dispatcher-Worker model, SharedArrayBuffer ring buffers, single Forward STFT + single iSTFT constraint |
 | **Execution** | Deferred decode on Analyze/Process · offline ML isolation · real-time Live-Mix via AudioWorklet · Forensic export via OfflineAudioContext |
-| **Platforms** | Web (Vercel) · Desktop (Electron) · Android (Capacitor) |
+| **Platforms** | Web (Vercel) · Desktop (Electron) · Android (Capacitor) — **one Engineer Console shell** (`public/app/`) on all three |
+| **Engineer UI** | 3-col studio console · Process auto-chains analysis · click-safe / −1 dBTP cues · Focus enrollment collapsible |
 
 > **Upload-only:** live microphone capture is intentionally disabled. Drop or browse for audio/video files on both surfaces — nothing is streamed to the cloud.
 
@@ -49,7 +50,7 @@
 | Route | Surface | What it does |
 |-------|---------|--------------|
 | [`/`](https://voice-isolate-pro.vercel.app/) | **Landing — Stem-Split** | Fast ML stem separation → Live-Mix sliders → per-speaker mute/solo → **Focus on one voice** enrollment → export. |
-| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Mode v25** | Full 67-slider DSP suite (Creator / Studio / Forensic tiers), analysis workspace, WhisperHunter, **target-speaker enrollment** (shared UI), Live-Mix bridge, forensic audit, library/OPFS. Universal Source Matrix is an internal Analyze backend — not a separate Process panel. |
+| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Console** | Studio-rack UI (3-column session · stage · control rack): 67 sliders in module cards, spectrogram center stage, **DSP Integrity** + **Output Safety**, auto analysis/diarization after Process, collapsible **Focus on one voice**, Simple view toggle. Creator / Studio / Forensic tiers. Same shell on **Web, Android (Capacitor), Desktop (Electron)** via `pnpm build` → `build/` → cap sync / electron-builder. |
 | [`/download/`](https://voice-isolate-pro.vercel.app/download/) | **Downloads** | Android APK + Windows installer (GitHub Releases), web app links. |
 
 **Upload controls (both pages):** Browse Files (`<label for="fileInput">`), click the drop zone, drag-and-drop, or **Upload Audio or Video** in the Engineer hero. Shared wiring lives in `src/presentation/UploadWiring.js`.
@@ -61,8 +62,12 @@
 | `vip-gate` | Real-time noise gate (`src/workers/GateProcessor.js`) |
 | `vip-deesser` | Real-time de-esser (`src/workers/DeEsserProcessor.js`) |
 | Cockpit pills | **CTX · WORKLET · GATE · DEESS · SAB · ML · ORT · NET** — driven by `vip-boot.js` + `PlaybackMixer` |
+| Studio console | `engineer-console.css` / `engineer-console.js` — layout only; **all slider/canvas IDs preserved** |
+| DSP Integrity UI | Phase · smoothed params · COLA · single-STFT cues |
+| Output Safety UI | Peak / true-peak vs −1 dBTP ceiling (Clean / Near / Risk) |
 
-Verify packaging: `pnpm worklets:verify`.
+Verify packaging: `pnpm worklets:verify`.  
+Cross-platform assets: `pnpm build` (copies `public/` + `src/` → `build/`) then `pnpm android:prepare` / `pnpm build:electron`.
 
 ---
 
