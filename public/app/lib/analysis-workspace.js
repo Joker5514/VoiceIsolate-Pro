@@ -820,6 +820,15 @@ export function installAnalysisWorkspace(app) {
     }
   }
 
+  // Expose for Process auto-chain (Engineer Console) — same entry as Analyze button.
+  app.runFullAnalysis = runAnalysis;
+  app._analysisWorkspaceApi = {
+    runAnalysis,
+    analyzeAndProcess,
+    analyzeAndWhisperCollab,
+    runUsmBackend,
+  };
+
   // Events
   els.btnAnalyze?.addEventListener('click', () => { runAnalysis(); });
   els.btnApplyRec?.addEventListener('click', () => applyRecommendations());
