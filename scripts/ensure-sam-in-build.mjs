@@ -30,7 +30,7 @@ function main() {
     // generate minimal marker
     fs.writeFileSync(
       path.join(modelsDest, 'sam-runtime.marker.json'),
-      JSON.stringify({ packageId: 'vip-sam-runtime', bundled: true, version: '25.0.1' }, null, 2),
+      JSON.stringify({ packageId: 'vip-sam-runtime', bundled: true, version: '25.0.2' }, null, 2),
     );
   } else {
     fs.copyFileSync(markerSrc, path.join(modelsDest, 'sam-runtime.marker.json'));
@@ -108,7 +108,7 @@ function main() {
   }
   const sam3Marker = {
     packageId: 'vip-sam3-vision',
-    version: '25.0.1',
+    version: '25.0.2',
     bundled: true,
     featureFlagDefault: false,
     enableEnv: 'VIP_SAM3_ENABLED',

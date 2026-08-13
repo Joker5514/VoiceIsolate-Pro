@@ -1,6 +1,6 @@
 {
   "packageId": "vip-sam3-vision",
-  "version": "25.0.1",
+  "version": "25.0.2",
   "bundled": true,
   "featureFlagDefault": false,
   "enableEnv": "VIP_SAM3_ENABLED",

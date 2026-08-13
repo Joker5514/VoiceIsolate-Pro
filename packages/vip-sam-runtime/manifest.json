@@ -1,6 +1,6 @@
 {
   "packageId": "vip-sam-runtime",
-  "version": "25.0.1",
+  "version": "25.0.2",
   "product": "VoiceIsolate Pro",
   "sam": {
     "officialRepo": "https://github.com/facebookresearch/sam-audio",

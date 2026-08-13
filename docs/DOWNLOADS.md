@@ -3,7 +3,7 @@
 **In-repo version:** **25.0.2** (`package.json`)  
 **Android:** `versionName "25.0.2"` · `versionCode` **250002**  
 **iOS:** `CFBundleShortVersionString` **25.0.2** · `CFBundleVersion` **250002**  
-**Published GitHub Release (latest):** **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (2026-08-13; publish after CI build)
+**Published GitHub Release (latest):** **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (2026-08-13 — Android freeze@88 fix + full platform sync)
 
 ## Public URLs (verified)
 

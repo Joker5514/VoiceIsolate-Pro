@@ -252,8 +252,8 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 
 | Asset | Name | Approx. size | Notes |
 |-------|------|----------------|---------|
-| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~250 MB | **v25.0.2** on `latest` |
-| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | ~267 MB | **v25.0.2** on `latest` |
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~97 MB | **v25.0.2** on `latest` |
+| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | ~138 MB | **v25.0.2** on `latest` |
 
 In-repo version (Web / Android `versionName` / Electron artifact): **25.0.2** (`versionCode` / iOS build **250002**).  
 Published GitHub Release **`latest` = [v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**.

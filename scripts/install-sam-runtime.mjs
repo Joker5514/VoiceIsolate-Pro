@@ -56,7 +56,7 @@ function ensureLayout() {
     JSON.stringify(
       {
         packageId: 'vip-sam-runtime',
-        version: '25.0.1',
+        version: '25.0.2',
         bundled: true,
         platforms: ['web', 'android', 'desktop'],
         worker: 'services/sam-audio/server.py',

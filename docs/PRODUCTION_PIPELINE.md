@@ -1,6 +1,6 @@
 # Production pipeline (shipping)
 
-**Version:** 25.0.1+  
+**Version:** 25.0.2+  
 **Privacy:** All audio, spectrograms, embeddings, and stems stay on-device. Upload-only (no product microphone).
 
 ## Shipping path (production)

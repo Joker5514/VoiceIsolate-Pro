@@ -15,4 +15,4 @@ export const manifest = JSON.parse(
 /** True when this package is loaded (bundled in all three app versions). */
 export const VIP_SAM_RUNTIME_BUNDLED = true;
 
-export const VIP_SAM_RUNTIME_VERSION = '25.0.1';
+export const VIP_SAM_RUNTIME_VERSION = '25.0.2';
