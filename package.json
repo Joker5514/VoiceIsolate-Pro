@@ -93,7 +93,9 @@
     "sam:ensure-build": "node scripts/ensure-sam-in-build.mjs",
     "sam:setup": "node scripts/sam-production-setup.mjs",
     "sam:setup:layout": "node scripts/sam-production-setup.mjs --skip-pip --skip-ffmpeg",
-    "test:sam3": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit tests/sam3-integration.test.js"
+    "test:sam3": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --forceExit tests/sam3-integration.test.js",
+    "ci:apply-patches": "node scripts/apply-ci-patches.mjs",
+    "ci:check-patches": "node scripts/apply-ci-patches.mjs --check"
   },
   "devDependencies": {
     "@capacitor/android": "^8.3.1",
