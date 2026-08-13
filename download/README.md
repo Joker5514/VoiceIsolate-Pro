@@ -7,8 +7,8 @@ https://github.com/Joker5514/VoiceIsolate-Pro/releases
 
 Web download page: https://voice-isolate-pro.vercel.app/download/
 
-**In-repo version:** **25.0.1** · build **250001**  
-**Published GitHub Release (latest):** **v25.0.1**
+**In-repo version:** **25.0.2** · build **250002**  
+**Published GitHub Release (latest):** **v25.0.2**
 
 Local rebuild (artifacts under `dist/`, not committed):
 
@@ -16,7 +16,7 @@ Local rebuild (artifacts under `dist/`, not committed):
 pnpm run build
 pnpm android:build:win          # → dist/android/VoiceIsolate-Pro-android-debug.apk
 pnpm build:electron:dir         # → dist/electron/win-unpacked/
-pnpm build:electron             # → dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe
+pnpm build:electron             # → dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe
 ```
 
 ---
@@ -34,18 +34,18 @@ pnpm build:electron             # → dist/electron/VoiceIsolate-Pro-25.0.1-win-
 | Channel | URL |
 |---------|-----|
 | **Latest APK** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
-| **Pinned v25.0.1** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.1/VoiceIsolate-Pro-android-debug.apk |
+| **Pinned v25.0.2** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk |
 | **Prior v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk |
 | **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases |
 
 Asset name: `VoiceIsolate-Pro-android-debug.apk` · complete offline app.  
-Gradle: `versionName "25.0.1"`, `versionCode 250001`.
+Gradle: `versionName "25.0.2"`, `versionCode 250002`.
 
 ### Publish Android (maintainers)
 
 ```bash
 pnpm android:build:win
-gh release upload v25.0.1 dist/android/VoiceIsolate-Pro-android-debug.apk --clobber
+gh release upload v25.0.2 dist/android/VoiceIsolate-Pro-android-debug.apk --clobber
 ```
 
 ---
@@ -54,10 +54,10 @@ gh release upload v25.0.1 dist/android/VoiceIsolate-Pro-android-debug.apk --clob
 
 | Goal | Asset / command |
 |------|-----------------|
-| **Latest installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.1-win-x64.exe |
-| **Pinned v25.0.1** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.1/VoiceIsolate-Pro-25.0.1-win-x64.exe |
+| **Latest installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe |
+| **Pinned v25.0.2** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe |
 | **Prior v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
-| Local build | `pnpm build:electron` → `dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe` |
+| Local build | `pnpm build:electron` → `dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe` |
 | Portable smoke | `pnpm build:electron:dir` → `dist/electron/win-unpacked/` |
 
 ### Publish desktop (maintainers)
@@ -65,7 +65,7 @@ gh release upload v25.0.1 dist/android/VoiceIsolate-Pro-android-debug.apk --clob
 ```bash
 pnpm setup:electron
 pnpm build:electron
-gh release upload v25.0.1 dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe --clobber
+gh release upload v25.0.2 dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe --clobber
 ```
 
 See [docs/guides/electron-desktop.md](../docs/guides/electron-desktop.md) and [docs/DOWNLOADS.md](../docs/DOWNLOADS.md).

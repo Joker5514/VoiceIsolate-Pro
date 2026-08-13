@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-09 (UTC)  
 **Git HEAD:** `26bb58f` (`main`) + local audit branch fixes  
-**Product version:** **25.0.1** (`package.json` / Android `versionCode` **250001** / iOS **250001**)  
+**Product version:** **25.0.2** (`package.json` / Android `versionCode` **250002** / iOS **250002**)  
 **Auditor mode:** principal eng + QA + release + multi-platform  
 
 This baseline is the Phase 0 source-of-truth map. It reflects the **actual repository**, not aspirational architecture.
@@ -13,7 +13,7 @@ This baseline is the Phase 0 source-of-truth map. It reflects the **actual repos
 
 ```
 VoiceIsolate-Pro/
-├── package.json              # Root app + scripts (v25.0.1)
+├── package.json              # Root app + scripts (v25.0.2)
 ├── pnpm-workspace.yaml       # packages/* workspace
 ├── pnpm-lock.yaml
 ├── server.js                 # Dev server (COOP/COEP, static public/)
@@ -61,7 +61,7 @@ VoiceIsolate-Pro/
 | **PWA** | `manifest.json` + `sw.js` → `/app/sw.js` | static | standalone display |
 | **Android** | Capacitor `android/` WebView `webDir=build` | `pnpm android:build:win` | `VoiceIsolate-Pro-android-debug.apk` |
 | **iOS** | Capacitor `ios/` | `pnpm ios:build` | scaffold (not primary ship) |
-| **Desktop** | `electron/main.cjs` + `build/` | `pnpm build:electron` | `VoiceIsolate-Pro-25.0.1-win-x64.exe` |
+| **Desktop** | `electron/main.cjs` + `build/` | `pnpm build:electron` | `VoiceIsolate-Pro-25.0.2-win-x64.exe` |
 | **SAM-Audio worker** | `services/sam-audio/server.py` | `pnpm sam:worker:prod` | localhost only |
 
 ---
@@ -112,10 +112,10 @@ VoiceIsolate-Pro/
 |-------|-----|------|
 | Download hub | https://voice-isolate-pro.vercel.app/download/ | **200** |
 | Android APK latest | …/releases/latest/download/VoiceIsolate-Pro-android-debug.apk | **200** |
-| Windows NSIS latest | …/releases/latest/download/VoiceIsolate-Pro-25.0.1-win-x64.exe | **200** |
-| GitHub Latest tag | **v25.0.1** | — |
+| Windows NSIS latest | …/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe | **200** |
+| GitHub Latest tag | **v25.0.2** | — |
 
-**In-repo links** in `public/download/index.html` and `docs/DOWNLOADS.md` match published v25.0.1 names (fixed in #743–#744).
+**In-repo links** in `public/download/index.html` and `docs/DOWNLOADS.md` match published v25.0.2 names (fixed in #743–#744).
 
 ---
 
@@ -145,7 +145,7 @@ VoiceIsolate-Pro/
 | `src/pipeline/*` used by Landing + Engineer | Engineer still owns large `public/app/app.js` (~6k lines) |
 | `UploadWiring` shared | Landing decode-on-upload vs Engineer deferred decode |
 | Worklets under `src/workers` + `public/app` packaging | Legacy `dsp-processor.js` still shipped |
-| Version sync script for mobile | PWA `manifest.json` was **21.0.0** (fixed this pass → 25.0.1) |
+| Version sync script for mobile | PWA `manifest.json` was **21.0.0** (fixed this pass → 25.0.2) |
 | COOP/COEP on server + vercel | Electron custom protocol must keep SAB path careful |
 
 ---
@@ -157,7 +157,7 @@ VoiceIsolate-Pro/
 |----|---------|--------|
 | C1 | ML isolation export peaks ~7.0 (no brickwall) | **Fixed** #745 |
 | C2 | Windows `application/octet-stream` uploads rejected | **Fixed** #746 |
-| C3 | Windows download URL pointed at non-existent 25.0.0 asset (404) | **Fixed** #743–#744; v25.0.1 released |
+| C3 | Windows download URL pointed at non-existent 25.0.0 asset (404) | **Fixed** #743–#744; v25.0.2 released |
 
 ### High
 | ID | Finding | Status / action |
@@ -169,7 +169,7 @@ VoiceIsolate-Pro/
 ### Medium
 | ID | Finding | Status / action |
 |----|---------|-----------------|
-| M1 | PWA manifest version stale **21.0.0** | **Fixed this pass → 25.0.1** |
+| M1 | PWA manifest version stale **21.0.0** | **Fixed this pass → 25.0.2** |
 | M2 | `public/mic-capture.js` implements `getUserMedia` (not wired) | Documented; keep unwired |
 | M3 | Demucs not always local (Blob CDN for large model) | By design optional; isolation chain defaults BSRNN |
 | M4 | iOS scaffold only | OK if Android+Web+Desktop are ship targets |
@@ -211,7 +211,7 @@ VoiceIsolate-Pro/
 ## 10. Assumptions requiring verification
 
 1. Production Vercel auto-deploys `main` after each merge (preview/prod links observed green).  
-2. Release assets on GitHub `v25.0.1` were rebuilt with peak-safety; **upload fix #746 may post-date last APK/EXE** — rebuild to be definitive.  
+2. Release assets on GitHub `v25.0.2` were rebuilt with peak-safety; **upload fix #746 may post-date last APK/EXE** — rebuild to be definitive.  
 3. “Wispr AI” in product language maps to **WhisperHunter** + AI enhancement modules in-repo (not a separate cloud service).  
 4. Store credentials (Apple/Google) only via env for CI, never committed.  
 
@@ -238,7 +238,7 @@ VoiceIsolate-Pro/
 | Change | Why |
 |--------|-----|
 | `AUDIT_BASELINE.md` | Phase 0 map (this document) |
-| `public/manifest.json` version **25.0.1** | PWA was stale at 21.0.0 |
+| `public/manifest.json` version **25.0.2** | PWA was stale at 21.0.0 |
 | `.github/workflows/ci.yml` → pnpm + test:ci | Align CI with lockfile; run unit tests |
 | `public/mic-capture.js` header | Explicit “not product shell / no-mic rule” |
 | Prior main: #743–#746 | Downloads, peak safety, upload octet-stream |

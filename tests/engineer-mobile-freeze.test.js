@@ -66,4 +66,25 @@ describe('Engineer mobile freeze suite (10+ checks)', () => {
   test('12. transferOwned mid path still used', () => {
     expect(appJs).toContain('transferOwned: true');
   });
+
+  test('13. post-ML dewhistle is async with yields (no 88% freeze)', () => {
+    expect(appJs).toMatch(/async _postIsolationDeWhistle/);
+    expect(appJs).toMatch(/await this\._postIsolationDeWhistle/);
+    expect(appJs).toMatch(/Smoothing residual/);
+  });
+
+  test('14. reconstruct progress ticks past 85 before complete', () => {
+    expect(appJs).toMatch(/Expanding stereo/);
+    expect(appJs).toMatch(/Building output/);
+    expect(appJs).toMatch(/w \* 0\.70/);
+  });
+
+  test('15. mobile skips auto full-analysis after process', () => {
+    expect(appJs).toMatch(/auto-analysis skipped on mobile/);
+  });
+
+  test('16. durable stem cache awaits async expand', () => {
+    expect(appJs).toMatch(/await this\._mlChannelPlan\(buf\)/);
+    expect(appJs).toMatch(/await this\._expandMonoCleanToStereo/);
+  });
 });

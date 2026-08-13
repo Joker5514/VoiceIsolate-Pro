@@ -1,9 +1,9 @@
 # Downloads — VoiceIsolate Pro
 
-**In-repo version:** **25.0.1** (`package.json`)  
-**Android:** `versionName "25.0.1"` · `versionCode` **250001**  
-**iOS:** `CFBundleShortVersionString` **25.0.1** · `CFBundleVersion` **250001**  
-**Published GitHub Release (latest):** **[v25.0.1](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.1)** (2026-08-07)
+**In-repo version:** **25.0.2** (`package.json`)  
+**Android:** `versionName "25.0.2"` · `versionCode` **250002**  
+**iOS:** `CFBundleShortVersionString` **25.0.2** · `CFBundleVersion` **250002**  
+**Published GitHub Release (latest):** **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (2026-08-13; publish after CI build)
 
 ## Public URLs (verified)
 
@@ -13,9 +13,9 @@
 | **Web Landing** | https://voice-isolate-pro.vercel.app/ | 200 |
 | **Web Engineer** | https://voice-isolate-pro.vercel.app/app/ | 200 |
 | **Android APK (latest)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk | 200 |
-| **Windows installer (latest)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.1-win-x64.exe | 200 |
-| **Android pinned v25.0.1** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.1/VoiceIsolate-Pro-android-debug.apk | 200 |
-| **Windows pinned v25.0.1** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.1/VoiceIsolate-Pro-25.0.1-win-x64.exe | 200 |
+| **Windows installer (latest)** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe | 200 |
+| **Android pinned v25.0.2** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk | 200 |
+| **Windows pinned v25.0.2** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe | 200 |
 | **Android prior v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-android-debug.apk | 200 |
 | **Windows prior v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe | 200 |
 | **All releases** | https://github.com/Joker5514/VoiceIsolate-Pro/releases | 200 |
@@ -28,7 +28,7 @@ Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` t
 |----------|----------|-----------------|
 | **Web** | Vercel → `public/` | Landing Live-Mix + **Engineer Console** (3-col rack, integrity/safety, auto-analysis); SAM3 vision (flag OFF); SAM-Audio optional |
 | **Android** | `VoiceIsolate-Pro-android-debug.apk` | Capacitor WebView of **same** `build/` shell (Landing + Engineer Console + worklets + ONNX) |
-| **Windows** | `VoiceIsolate-Pro-25.0.1-win-x64.exe` | Electron loads **same** `build/**` + optional SAM-Audio worker |
+| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | Electron loads **same** `build/**` + optional SAM-Audio worker |
 
 Engineer Console files that must ship offline: `app/engineer-console.css`, `app/engineer-console.js` (asserted by Android prepare/verify scripts).
 
@@ -48,13 +48,13 @@ pnpm android:build:win     # → dist/android/VoiceIsolate-Pro-android-debug.apk
 
 # Desktop
 pnpm setup:electron
-pnpm build:electron        # → dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe
+pnpm build:electron        # → dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe
 
 # Release
-gh release create v25.0.1 \
+gh release create v25.0.2 \
   dist/android/VoiceIsolate-Pro-android-debug.apk \
-  dist/electron/VoiceIsolate-Pro-25.0.1-win-x64.exe \
-  --title "VoiceIsolate Pro v25.0.1"
+  dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe \
+  --title "VoiceIsolate Pro v25.0.2"
 ```
 
 ## SAM stack (all three platforms)
