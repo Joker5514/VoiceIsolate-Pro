@@ -1,8 +1,8 @@
 /**
  * Guardrails: download page + README point at real GitHub Release assets.
- * Published `latest` (2026-08-07): v25.0.1
+ * In-repo / intended `latest`: v25.0.2 (rebuild + release upload required for artifacts)
  *   - APK: VoiceIsolate-Pro-android-debug.apk
- *   - Windows: VoiceIsolate-Pro-25.0.1-win-x64.exe
+ *   - Windows: VoiceIsolate-Pro-${pkg.version}-win-x64.exe
  */
 'use strict';
 

@@ -1,5 +1,5 @@
 /**
- * VoiceIsolate Pro — app.js  v25.0.0
+ * VoiceIsolate Pro — app.js  v25.0.2
  * ====================================
  * Exports:  class VoiceIsolatePro  (also assigned to window.VoiceIsolatePro)
  *
@@ -1294,10 +1294,10 @@ class VoiceIsolatePro {
     HeroExperience.onPipelineProgress(stage, detail, p);
   }
 
-  /** Map ML worker percent (0–100) into the isolation band (15–88). */
+  /** Map ML worker percent (0–100) into the isolation band (15–85). Leave 86–100 for reconstruct. */
   _mapMlProgressPercent(workerPercent) {
     const w = Math.max(0, Math.min(100, Number(workerPercent) || 0));
-    return 15 + Math.round(w * 0.73);
+    return 15 + Math.round(w * 0.70);
   }
 
   // ── Render static visuals (waveform/spectrogram) — throttled, fingerprint-deduped ─
@@ -3907,8 +3907,11 @@ class VoiceIsolatePro {
           this.outputBuffer !== this.origBuffer &&
           this.outputBuffer !== this.inputBuffer
         ) {
+          this.updatePipelineProgress(26, 'Output safety…', 91);
+          await yieldToBrowser();
           this._applyOutputSafetyLimit(this.outputBuffer);
           this.procBuffer = this.outputBuffer;
+          await yieldToBrowser();
         }
       } catch (limErr) {
         structuredLog('warn', '[VIP] output safety limit failed', { err: limErr?.message });
@@ -3919,12 +3922,14 @@ class VoiceIsolatePro {
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = false;
       this._updateSaveButtonLabels();
 
-      this.updatePipelineProgress(28, 'Loading Live-Mix…', 92);
+      this.updatePipelineProgress(28, 'Loading Live-Mix…', 94);
+      await yieldToBrowser();
       try {
         this._setProcessedPlaybackMode();
       } catch (playErr) {
         structuredLog('warn', '[VIP] Live-Mix load failed after process', { err: playErr?.message });
       }
+      await yieldToBrowser();
 
       if (this.outputBuffer) {
         const scheduleIdle = globalThis.requestIdleCallback
@@ -3934,7 +3939,9 @@ class VoiceIsolatePro {
           if (fileSeq !== this._fileSeq) return;
           try {
             this.renderStaticVisuals(this.outputBuffer);
-            this._autoCalibratePreset(this.outputBuffer);
+            if (!this._isMobileEngineer?.()) {
+              this._autoCalibratePreset(this.outputBuffer);
+            }
             this._syncBridgeParams();
           } catch (idleErr) {
             structuredLog('warn', '[VIP] post-process idle work failed', { err: idleErr?.message });
@@ -3948,27 +3955,31 @@ class VoiceIsolatePro {
         this.updateAudioMetrics(this._computeAudioMetricsState());
       } catch (_) { /* metrics must not fail the pipeline */ }
       try { window.dispatchEvent(new CustomEvent('vip:processingDone')); } catch (_) {}
-      // Auto Analysis + USM/diarization as part of Process (no extra user click).
-      // Non-blocking: never fail the pipeline if analysis errors.
+      // Auto Analysis + USM/diarization after Process (desktop). On Android/mobile
+      // WebView this freezes after 88–100% — user taps Analyze when ready.
       try {
         const seq = fileSeq;
-        const schedule = globalThis.requestIdleCallback
-          ? (cb) => requestIdleCallback(cb, { timeout: 3500 })
-          : (cb) => setTimeout(cb, 80);
-        schedule(() => {
-          if (seq !== this._fileSeq) return;
-          if (typeof this.runFullAnalysis === 'function') {
-            this.runFullAnalysis().then(() => {
-              try {
-                window.__VIP_ENGINEER_CONSOLE__?.refreshSummaryFromApp?.();
-              } catch { /* cosmetic */ }
-            }).catch((aErr) => {
-              structuredLog('warn', '[VIP] auto-analysis after process failed', {
-                err: aErr?.message || String(aErr),
+        if (this._isMobileEngineer?.()) {
+          structuredLog('info', '[VIP] auto-analysis skipped on mobile — tap Analyze when ready');
+        } else {
+          const schedule = globalThis.requestIdleCallback
+            ? (cb) => requestIdleCallback(cb, { timeout: 3500 })
+            : (cb) => setTimeout(cb, 80);
+          schedule(() => {
+            if (seq !== this._fileSeq) return;
+            if (typeof this.runFullAnalysis === 'function') {
+              this.runFullAnalysis().then(() => {
+                try {
+                  window.__VIP_ENGINEER_CONSOLE__?.refreshSummaryFromApp?.();
+                } catch { /* cosmetic */ }
+              }).catch((aErr) => {
+                structuredLog('warn', '[VIP] auto-analysis after process failed', {
+                  err: aErr?.message || String(aErr),
+                });
               });
-            });
-          }
-        });
+            }
+          });
+        }
       } catch { /* auto-analysis is best-effort */ }
     } catch (err) {
       structuredLog('error', '[VIP] Pipeline error', { err: err.message });
@@ -4147,15 +4158,32 @@ class VoiceIsolatePro {
           let noise = durable.noise;
           // Mid-only durable packs expand to mono; stereo expand if source is stereo.
           if (buf.numberOfChannels >= 2 && clean.length === 1) {
-            const plan = this._mlChannelPlan(buf);
-            const midCopy = plan.mid ? new Float32Array(plan.mid) : null;
-            clean = this._expandMonoCleanToStereo(clean[0], midCopy, plan.left, plan.right);
+            this.updatePipelineProgress(18, 'Reconstructing stems (cache)…', 86);
+            await yieldToBrowser();
+            const plan = await this._mlChannelPlan(buf);
+            const midCopy = plan.mid && !this._isMobileEngineer()
+              ? new Float32Array(plan.mid)
+              : null;
+            clean = await this._expandMonoCleanToStereo(
+              clean[0],
+              midCopy || plan.mid,
+              plan.left,
+              plan.right,
+            );
+            await yieldToBrowser();
             if (noise?.[0]) {
               const n = noise[0].length;
-              noise = [new Float32Array(noise[0]), new Float32Array(noise[0])];
+              // Share the mono residual across L/R without a second full copy on mobile.
+              if (this._isMobileEngineer()) {
+                noise = [noise[0], noise[0]];
+              } else {
+                noise = [new Float32Array(noise[0]), new Float32Array(noise[0])];
+              }
               void n;
             }
           }
+          this.updatePipelineProgress(19, 'Building output…', 89);
+          await yieldToBrowser();
           this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, durable.sampleRate || buf.sampleRate);
           this.procBuffer = this.outputBuffer;
           this._stemFileSeq = fileSeq;
@@ -4226,10 +4254,14 @@ class VoiceIsolatePro {
       if (fileSeq !== this._fileSeq) return false;
       if (result.passthrough) return false;
 
-      this.updatePipelineProgress(18, 'Reconstructing stems…', 88);
+      // Post-ML reconstruct used to stick the UI at 88% on Android WebView while
+      // expand + dewhistle + buffer build ran fully sync. Tick 86→90 with yields.
+      this.updatePipelineProgress(18, 'Reconstructing stems…', 86);
       await yieldToBrowser();
       let clean = result.clean;
       if (plan.expandStereo && clean?.[0] && plan.left && plan.right) {
+        this.updatePipelineProgress(18, 'Expanding stereo…', 87);
+        await yieldToBrowser();
         clean = await this._expandMonoCleanToStereo(
           clean[0],
           midCopy || plan.mid,
@@ -4239,11 +4271,16 @@ class VoiceIsolatePro {
       }
       await yieldToBrowser();
       // Fast time-domain HF tame — kills residual ML mask whistle without a 2nd STFT.
+      // Async + yielded so multi-minute files do not freeze Android at ~88%.
       try {
-        this._postIsolationDeWhistle(clean, result.sampleRate || buf.sampleRate);
+        this.updatePipelineProgress(19, 'Smoothing residual…', 88);
+        await yieldToBrowser();
+        await this._postIsolationDeWhistle(clean, result.sampleRate || buf.sampleRate);
       } catch (dwErr) {
         structuredLog('warn', '[VIP] post-isolation dewhistle skipped', { err: dwErr?.message });
       }
+      this.updatePipelineProgress(19, 'Building output…', 89);
+      await yieldToBrowser();
       this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
       this._stemFileSeq = fileSeq;
@@ -4252,15 +4289,22 @@ class VoiceIsolatePro {
       try {
         let noise = result.noise;
         if (plan.expandStereo && noise?.[0] && plan.left && plan.right) {
-          // Mid-only residual expanded to stereo via inverse envelope on residual energy
-          const n = noise[0].length;
-          const noiseL = new Float32Array(n);
-          const noiseR = new Float32Array(n);
-          for (let i = 0; i < n; i++) {
-            noiseL[i] = noise[0][i];
-            noiseR[i] = noise[0][i];
+          // Mid residual as stereo: share buffer on mobile (saves RAM + avoids tight copy).
+          if (this._isMobileEngineer()) {
+            noise = [noise[0], noise[0]];
+          } else {
+            const n = noise[0].length;
+            const noiseL = new Float32Array(n);
+            const noiseR = new Float32Array(n);
+            const yieldBudget = createYieldBudget(16);
+            const CHUNK = 48000 * 4;
+            for (let i = 0; i < n; i++) {
+              noiseL[i] = noise[0][i];
+              noiseR[i] = noise[0][i];
+              if (i > 0 && (i % CHUNK) === 0) await yieldBudget();
+            }
+            noise = [noiseL, noiseR];
           }
-          noise = [noiseL, noiseR];
         }
         if (noise?.length && noise[0]?.length) {
           this.noiseBuffer = stemsToAudioBuffer(this.ctx, noise, result.sampleRate || buf.sampleRate);
@@ -4283,6 +4327,8 @@ class VoiceIsolatePro {
       if (!this.origBuffer) this.origBuffer = buf;
       // Load separation stems into Live-Mix so isolation sliders refine immediately.
       try {
+        this.updatePipelineProgress(20, 'Loading Live-Mix…', 90);
+        await yieldToBrowser();
         await this._loadSeparationStemsToBridge();
       } catch (loadErr) {
         structuredLog('warn', '[VIP] stem Live-Mix load deferred', { err: loadErr?.message });
@@ -4464,18 +4510,32 @@ class VoiceIsolatePro {
       }
     }
 
-    // Assemble the processed AudioBuffer.
+    // Assemble the processed AudioBuffer — yield so Android does not stick at 88%.
     this.updatePipelineProgress(28, 'Rendering output…', 88);
+    await yieldToBrowser();
     const outCh = channels.length;
     let processed = this.ctx.createBuffer(outCh, len, sr);
+    const copyYield = createYieldBudget(mobile ? 10 : 20);
     for (let ch = 0; ch < outCh; ch++) {
       const src = channels[ch];
-      processed.getChannelData(ch).set(src.length === len ? src : src.subarray(0, len));
+      const dst = processed.getChannelData(ch);
+      const copyLen = Math.min(len, src.length);
+      const CHUNK = mobile ? 48000 : 48000 * 4;
+      for (let i = 0; i < copyLen; i += CHUNK) {
+        const end = Math.min(copyLen, i + CHUNK);
+        dst.set(src.subarray(i, end), i);
+        if (end < copyLen) await copyYield();
+      }
     }
+    await yieldToBrowser();
 
     // S28 dry/wet blend with the untouched original.
     const dryWetPct = Math.max(0, Math.min(100, p.dryWet ?? 100));
-    if (dryWetPct < 100) processed = this.mixDW(buf, processed, dryWetPct / 100);
+    if (dryWetPct < 100) {
+      this.updatePipelineProgress(28, 'Dry/wet blend…', 90);
+      await yieldToBrowser();
+      processed = this.mixDW(buf, processed, dryWetPct / 100);
+    }
 
     // Output gain trim.
     const outGainDb = p.outGain ?? 0;
@@ -4485,15 +4545,19 @@ class VoiceIsolatePro {
         const out = processed.getChannelData(ch);
         for (let i = 0; i < out.length; i++) out[i] *= gain;
       }
+      await yieldToBrowser();
     }
 
     // Final brickwall safety limit + optional dither.
+    this.updatePipelineProgress(29, 'Output safety…', 92);
+    await yieldToBrowser();
     this._applyOutputSafetyLimit(processed, p);
     if ((p.ditherAmt ?? 0) > 0) {
       for (let ch = 0; ch < processed.numberOfChannels; ch++) {
         this.applyDither(processed.getChannelData(ch), p);
       }
     }
+    await yieldToBrowser();
 
     this.procBuffer = processed;
     this.outputBuffer = processed;
@@ -4701,14 +4765,26 @@ class VoiceIsolatePro {
   /**
    * Soft one-pole low-pass + light HF peak clamp after ML isolation.
    * Removes thin high-pitch residual without a full STFT pass (keeps speed).
+   * Async + time-budgeted yields so Android WebView never freezes at ~88%.
    */
-  _postIsolationDeWhistle(channels, sampleRate = 48000) {
+  async _postIsolationDeWhistle(channels, sampleRate = 48000) {
     if (!channels?.length) return;
     const sr = sampleRate || 48000;
+    const mobile = this._isMobileEngineer?.() || false;
+    const n0 = channels[0]?.length || 0;
+    // Very long clips on mobile: skip full dewhistle (main freeze source at 88%).
+    if (mobile && n0 > 48000 * 180) {
+      structuredLog('info', '[VIP] dewhistle skipped on mobile for long file', {
+        samples: n0,
+      });
+      return;
+    }
     // ~11 kHz cutoff — speech stays clear, whistle/hiss ring dies.
     const fc = 11000;
     const x = Math.exp(-2 * Math.PI * fc / sr);
     const a0 = 1 - x;
+    const yieldBudget = createYieldBudget(mobile ? 8 : 16);
+    const CHUNK = mobile ? 24000 : 48000 * 2; // ~0.5s mobile / 2s desktop
     for (let ch = 0; ch < channels.length; ch++) {
       const d = channels[ch];
       if (!d?.length) continue;
@@ -4722,7 +4798,9 @@ class VoiceIsolatePro {
         const out = prev + limited * 0.35 + (y - prev) * 0.65;
         prev = out;
         d[i] = out;
+        if (i > 0 && (i % CHUNK) === 0) await yieldBudget();
       }
+      await yieldToBrowser();
     }
   }
 

@@ -19,8 +19,8 @@ android {
         // API 24 (previous value) allowed Chrome 87 which breaks SAB permanently.
         minSdkVersion 26
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 250001
-        versionName "25.0.1"
+        versionCode 250002
+        versionName "25.0.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Do not compress ML/WASM/JS — WebView + ORT need seekable raw assets.

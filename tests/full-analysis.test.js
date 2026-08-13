@@ -271,11 +271,11 @@ describe('SoftVad + analysis VAD hints', () => {
 
 describe('pipeline progress monotonic mapping', () => {
   test('map formula covers isolation band without dead zone at 55', () => {
-    // Mirror app.js _mapMlProgressPercent: 15 + round(w * 0.73)
-    const map = (w) => 15 + Math.round(Math.max(0, Math.min(100, w)) * 0.73);
+    // Mirror app.js _mapMlProgressPercent: 15 + round(w * 0.70) — leaves 86–100 for reconstruct
+    const map = (w) => 15 + Math.round(Math.max(0, Math.min(100, w)) * 0.70);
     expect(map(0)).toBe(15);
-    expect(map(50)).toBe(52);
-    expect(map(57)).toBe(57); // no longer pins UI at 55 from 0.55 multiplier
-    expect(map(100)).toBe(88);
+    expect(map(50)).toBe(50);
+    expect(map(57)).toBe(55);
+    expect(map(100)).toBe(85);
   });
 });
