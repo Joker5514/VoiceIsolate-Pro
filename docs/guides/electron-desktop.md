@@ -1,6 +1,6 @@
 # VoiceIsolate Pro — Electron Desktop MVP
 
-Master Blueprint v2.1 §IV / §VIII. Short-term desktop path reusing 85–95% of the web renderer.
+Master Blueprint v2.1 §IV / §VIII. Desktop path reuses the **same web renderer** as Vercel/Android: Landing + **Engineer Console** (`public/app/engineer-console.*`) from `build/` after `pnpm build`.
 
 ## Security Model
 
@@ -40,7 +40,7 @@ Desktop uses the same renderer FileLibrary stack as the web app:
 | Boot restore | Lazy hydrate — no giant File copy on startup |
 | Project packs | Export/import .vippack for Android/web handoff |
 
-Rebuild after web changes: pnpm build:electron:dir or pnpm build:electron.
+Rebuild after web/Engineer Console changes: `pnpm build && pnpm build:electron:dir` (or `pnpm build:electron`) so NSIS packages the updated `build/app/engineer-console.*` assets.
 
 ## Development
 

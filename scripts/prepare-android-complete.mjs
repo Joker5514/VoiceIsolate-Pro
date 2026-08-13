@@ -53,10 +53,12 @@ const REQUIRED_PATHS = [
   'landing.js',
   'landing.css',
   'transport-polish.css',
-  // Engineer Mode
+  // Engineer Mode (+ studio console skin — same shell as web/Electron)
   'app/index.html',
   'app/app.js',
   'app/style.css',
+  'app/engineer-console.css',
+  'app/engineer-console.js',
   'app/models-manifest.json',
   // Worklets + ORT
   'src/workers/GateProcessor.js',
