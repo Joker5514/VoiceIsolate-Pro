@@ -46,6 +46,7 @@ Single map of product, architecture, platform, and historical docs.
 | [guides/SAM_AUDIO.md](guides/SAM_AUDIO.md) | SAM-**Audio** (sound separation) — Desktop worker / optional ONNX |
 | [SAM3_TECHNICAL_DOCUMENTATION.md](SAM3_TECHNICAL_DOCUMENTATION.md) | SAM **3** (vision/video) — sidecar brief, flags, `src/sam3_integration/` status |
 | [DOWNLOADS.md](DOWNLOADS.md) | Canonical GitHub Release download URLs |
+| [audits/CI-FIX-PENDING-WORKFLOW-SCOPE.md](audits/CI-FIX-PENDING-WORKFLOW-SCOPE.md) · `pnpm ci:apply-patches` | Apply deploy/Android workflow patches (needs OAuth `workflow` scope) |
 
 ---
 
