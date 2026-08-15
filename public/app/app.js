@@ -938,7 +938,8 @@ class VoiceIsolatePro {
     this.cacheDom();
     this.initBootSplash();
     try {
-      this._renderSliders();
+      // Yielded on mobile so 50+ slider rows do not freeze WebView before first paint.
+      await this._renderSliders();
       this.bindEvents();
       this._initCollapsibleSections();
       fixUploadTouchTargets();
@@ -1043,7 +1044,18 @@ class VoiceIsolatePro {
       document.addEventListener('touchstart', unlock, { once: true, passive: true });
     }
 
-    this._warmupMLModels().catch(() => {});
+    // ML warmup: never block first paint. Skip entirely on mobile/Android WebView
+    // (ONNX compile freezes Engineer Mode instantly). Desktop: idle-only.
+    if (this._isMobileEngineer?.()) {
+      structuredLog('info', '[VIP] ML warmup deferred until Process on mobile');
+    } else {
+      const scheduleIdle = globalThis.requestIdleCallback
+        ? (cb) => requestIdleCallback(cb, { timeout: 8000 })
+        : (cb) => setTimeout(cb, 1200);
+      scheduleIdle(() => {
+        this._warmupMLModels().catch(() => {});
+      });
+    }
 
     window.__vipAppReady = true;
     if (typeof CustomEvent !== 'undefined' && typeof window.dispatchEvent === 'function') {
@@ -1656,13 +1668,20 @@ class VoiceIsolatePro {
   }
 
   // ── Slider rendering ─────────────────────────────────────────────────────
-  _renderSliders() {
+  async _renderSliders() {
+    const mobile = this._isMobileEngineer?.() || false;
+    let rendered = 0;
     for (const s of RENDER_SLIDERS) {
       if (s.id === 'whisperMode') continue; // [WHISPER UPDATE] rendered as button group
       const panelId = this._getSliderPanelId(s.id);
       const panel = panelId ? document.getElementById(panelId) : null;
       const container = panel || document.getElementById('sliderContainer');
       if (!container) continue;
+      rendered += 1;
+      // Cooperative paint: every ~10 rows on mobile so boot never freezes the tab.
+      if (mobile && rendered > 1 && (rendered % 10) === 0) {
+        await yieldToBrowser();
+      }
 
       const row = document.createElement('div');
       row.className = 'sr-row slider-row';
@@ -3582,9 +3601,14 @@ class VoiceIsolatePro {
     this.showNotification('Decoded: ' + name + ' — run Analyze or Process', 'info');
 
     // No auto-pipeline on decode — user drives Analyze / Process / WhisperHunter.
-    // Keeps the UI free; ML warmup continues in idle if already scheduled.
-    if (typeof this._warmupMLModels === 'function') {
-      this._warmupMLModels().catch(() => {});
+    // Idle warmup on desktop only (mobile freezes if ONNX compiles during UI work).
+    if (typeof this._warmupMLModels === 'function' && !this._isMobileEngineer?.()) {
+      const scheduleIdle = globalThis.requestIdleCallback
+        ? (cb) => requestIdleCallback(cb, { timeout: 5000 })
+        : (cb) => setTimeout(cb, 400);
+      scheduleIdle(() => {
+        this._warmupMLModels().catch(() => {});
+      });
     }
   }
 

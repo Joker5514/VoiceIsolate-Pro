@@ -181,7 +181,17 @@
     setEnginePill('engMlPill', 'loading');
     setEnginePill('engOrtPill', 'loading');
 
-    var POLL_MS = 250;
+    // Desktop: 250ms. Mobile/Android: slower so cold open / Process stay responsive.
+    var mobileShell = (function () {
+      try {
+        var ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+        if (/Android|iPhone|iPad|Mobile|Capacitor/i.test(ua)) return true;
+        if (typeof window !== 'undefined' && window.Capacitor && window.Capacitor.isNativePlatform
+          && window.Capacitor.isNativePlatform()) return true;
+      } catch (e) { /* ignore */ }
+      return false;
+    })();
+    var POLL_MS = mobileShell ? 1000 : 250;
     // Keep polling long enough that late ensureCtx()/worklet boot still paints pills.
     // (~10 min). Stops early once every pill has left pending/loading where possible.
     var MAX_TICKS = 2400;

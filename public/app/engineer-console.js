@@ -9,27 +9,54 @@
   if (typeof document === 'undefined') return;
   if (document.documentElement.dataset.engConsole === '1') return;
 
+  const isMobileShell = () => {
+    try {
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+      if (/Android|iPhone|iPad|Mobile|Capacitor/i.test(ua)) return true;
+      if (typeof navigator !== 'undefined' && navigator.deviceMemory > 0 && navigator.deviceMemory <= 4) {
+        return true;
+      }
+      if (typeof window !== 'undefined' && window.Capacitor?.isNativePlatform?.()) return true;
+    } catch { /* ignore */ }
+    return false;
+  };
+
   const ready = () => {
     try {
       document.body.classList.add('eng-console', 'ec-auto-analysis');
       document.documentElement.dataset.engConsole = '1';
+      // Mobile: Simple view first — fewer open panels, less layout thrash on cold open.
+      if (isMobileShell()) {
+        document.body.classList.add('ec-simple');
+      }
       buildLayout();
       injectIntegrityCards();
       injectSummaryCards();
       wireViewToggle();
       wireFocusExplain();
-      startIntegrityTicker();
-      refreshSummaryFromApp();
+      // Defer ticker + summary so reparent paints before any interval work.
+      const schedule = globalThis.requestIdleCallback
+        ? (cb) => requestIdleCallback(cb, { timeout: 2500 })
+        : (cb) => setTimeout(cb, 400);
+      schedule(() => {
+        startIntegrityTicker();
+        try { refreshSummaryFromApp(); } catch { /* cosmetic */ }
+      });
     } catch (err) {
       console.warn('[VIP][engineer-console] layout install failed', err);
     }
   };
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', ready, { once: true });
+    document.addEventListener('DOMContentLoaded', () => {
+      // Two frames after DOM so first paint / boot splash can show before reparent.
+      requestAnimationFrame(() => requestAnimationFrame(ready));
+    }, { once: true });
   } else {
-    // Defer one frame so app.js modules can attach
-    requestAnimationFrame(ready);
+    // Defer after app.js modules attach — never run layout sync on the same turn as import.
+    requestAnimationFrame(() => {
+      setTimeout(ready, isMobileShell() ? 80 : 0);
+    });
   }
 
   function buildLayout() {
@@ -299,9 +326,10 @@
     btn.id = 'ecViewToggle';
     btn.type = 'button';
     btn.className = 'btn btn-outline hdr-link';
-    btn.setAttribute('aria-pressed', 'false');
+    const simpleOn = document.body.classList.contains('ec-simple');
+    btn.setAttribute('aria-pressed', String(simpleOn));
     btn.title = 'Toggle Simple vs full Engineer rack';
-    btn.textContent = 'Simple view';
+    btn.textContent = simpleOn ? 'Engineer view' : 'Simple view';
     btn.addEventListener('click', () => {
       const simple = document.body.classList.toggle('ec-simple');
       btn.setAttribute('aria-pressed', String(simple));
@@ -321,20 +349,18 @@
     const tick = () => {
       try {
         updateIntegrityFromDom();
+        // Summary DOM walks are heavier — skip when tab hidden or during process.
+        if (typeof document !== 'undefined' && document.hidden) return;
+        if (window._vipApp?.isProcessing) return;
         refreshSummaryFromApp();
       } catch { /* cosmetic */ }
     };
     tick();
-    setInterval(tick, 1200);
+    // Mobile: slower ticker (less main-thread competition with Process / UI).
+    const period = isMobileShell() ? 2800 : 1200;
+    setInterval(tick, period);
     window.addEventListener('vip:processingDone', () => {
       setTimeout(tick, 200);
-      setTimeout(() => {
-        try {
-          if (typeof window.app?.runFullAnalysis === 'function') {
-            // Analysis workspace exposes this after install
-          }
-        } catch { /* ignore */ }
-      }, 400);
     });
   }
 
