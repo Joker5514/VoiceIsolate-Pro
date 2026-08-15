@@ -331,8 +331,8 @@ for AudioWorklet / legacy worker glue:
 
 ```javascript
 const QUANTUM = 128;           // AudioWorklet render quantum
-const FFT_SIZE_LIVE = 1024;    // Live mode (<80–100 ms latency target)
-const FFT_SIZE_CREATOR = 4096; // Creator / Forensic
+const FFT_SIZE_LIVE = 1024;    // Historical ring-buffer constant (legacy SAB path)
+const FFT_SIZE_CREATOR = 4096; // Offline spectral / forensic sizing reference
 const HOP_SIZE = 512;          // 75% overlap when FFT = 4 × HOP
 const QUANTA_PER_HOP = HOP_SIZE / QUANTUM; // MUST be integer (4)
 ```
@@ -341,10 +341,11 @@ const QUANTA_PER_HOP = HOP_SIZE / QUANTUM; // MUST be integer (4)
 1. `HOP_SIZE % QUANTUM === 0` — enforced by `validateRingBufferConstants()`.
 2. `QuantumHopBridge` accumulates exactly `QUANTA_PER_HOP` quanta before each hop advance.
 3. Analysis and synthesis use **symmetric periodic Hann**; reconstruction divides by the summed window² envelope (COLA).
-4. Live mode uses `FFT_SIZE_LIVE` (1024 or 512) + RNNoise fallback; Creator/Forensic uses `FFT_SIZE_CREATOR` (4096–8192) with full ML.
-5. Tests in `tests/overlap-add.test.js` must pass before merging ring-buffer changes.
+4. **Product is upload-only** (`Permissions-Policy: microphone=()`). Real-time AudioWorklets are **playback-only** Gate + DeEsser (`/src/workers/GateProcessor.js`, `DeEsserProcessor.js`) — **not** a full spectral Live-Mode mic path and **not** a sub-10 ms isolation claim.
+5. Offline isolation STFT lives in **`src/workers/MLWorker.js`** (`fused-spectral-single-stft` for DEFAULT `bsrnn_vocals`; serial multi-STFT only for mixed/waveform chains e.g. Demucs). Engineer offline spectral refine uses one STFT/iSTFT in `app.js` `_spectralStageAsync` when ML is unavailable.
+6. Tests in `tests/overlap-add.test.js` must pass before merging ring-buffer changes.
 
-Lock-free `SharedRingBuffer` / `RingBuffer` FIFO transport (zero-copy worklet ↔ worker) remains in `public/app/ring-buffer.js`; the new `QuantumHopBridge` sits above it for hop-aligned FFT triggering.
+Lock-free `SharedRingBuffer` / `RingBuffer` FIFO transport remains in `public/app/ring-buffer.js` for legacy glue; production ML does not require a live-mic SAB ring path.
 
 ---
 

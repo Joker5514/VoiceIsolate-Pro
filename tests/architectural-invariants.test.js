@@ -76,7 +76,12 @@ describe('CLAUDE.md §1 — single STFT + iSTFT per processing path', () => {
     const files = fs.readdirSync(APP_DIR).filter((f) => f.endsWith('.js'));
     const registerFiles = files.filter((f) => /^\s*registerProcessor\s*\(/m.test(fs.readFileSync(path.join(APP_DIR, f), 'utf8')));
     expect(registerFiles).toEqual(['dsp-processor.js']);
-    expect(fs.existsSync(path.join(APP_DIR, 'voice-isolate-processor.js'))).toBe(false);
+    // Retired live-mic entry is a throw-stub (routing safety) — must not registerProcessor.
+    const dead = path.join(APP_DIR, 'voice-isolate-processor.js');
+    expect(fs.existsSync(dead)).toBe(true);
+    const deadSrc = fs.readFileSync(dead, 'utf8');
+    expect(deadSrc).toMatch(/throw new Error/);
+    expect(deadSrc).not.toMatch(/^\s*registerProcessor\s*\(/m);
   });
 });
 
