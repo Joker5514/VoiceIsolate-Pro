@@ -2312,7 +2312,10 @@ class VoiceIsolatePro {
       this.dom.mobileReprocessBtn.addEventListener('click', () => this.runPipeline());
     }
     if (this.dom.mobileStopBtn) {
-      this.dom.mobileStopBtn.addEventListener('click', () => { this.abortFlag = true; });
+      this.dom.mobileStopBtn.addEventListener('click', () => {
+        this.abortFlag = true;
+        if (typeof this.cancelActiveJobs === 'function') this.cancelActiveJobs();
+      });
     }
     if (this.dom.statsToggle && this.dom.hdrStats) {
       this.dom.statsToggle.addEventListener('click', () => {
@@ -3770,6 +3773,23 @@ class VoiceIsolatePro {
     }
   }
 
+  /** Cooperative cancel for Process / Analyze / MOPE (JobController + workers). */
+  cancelActiveJobs() {
+    this.abortFlag = true;
+    try {
+      const jobs = globalThis.__VIP_JOBS__;
+      if (jobs?.cancelCurrent) jobs.cancelCurrent('user');
+    } catch { /* ignore */ }
+    try {
+      import('/src/pipeline/StemSeparation.js')
+        .then((m) => {
+          // Best-effort: reset host so a new Process can start cleanly.
+          if (typeof m.resetStemSeparation === 'function') m.resetStemSeparation();
+        })
+        .catch(() => {});
+    } catch { /* ignore */ }
+  }
+
   // ── Main pipeline (32-stage Deca-Pass) ────────────────────────────────────
   async runPipeline(fileSeq = this._fileSeq) {
     if (this.isProcessing) {
@@ -3789,6 +3809,16 @@ class VoiceIsolatePro {
     }
     this.isProcessing = true;
     this.abortFlag = false;
+    // Mirror JobController signal when available (overlay cancel / supersede).
+    try {
+      const jobs = globalThis.__VIP_JOBS__;
+      const sig = jobs?.getCurrentSignal?.();
+      if (sig) {
+        const onAbort = () => { this.abortFlag = true; };
+        if (sig.aborted) this.abortFlag = true;
+        else sig.addEventListener('abort', onAbort, { once: true });
+      }
+    } catch { /* ignore */ }
     this._mlIsolationSucceeded = false;
     this._pipelinePct = 0;
     // STFT owner budget for this Process job (audit F-02) — soft observability.

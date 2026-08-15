@@ -621,7 +621,11 @@
           '</div>',
         '</div>',
 
-        '<div class="proc-cancel-hint">Processing runs entirely on-device · no audio upload</div>',
+        '<div class="proc-actions">',
+          '<button type="button" id="procCancelBtn" class="proc-cancel-btn" aria-label="Cancel processing">Cancel</button>',
+        '</div>',
+        '<div class="proc-cancel-hint" id="procCancelHint">Processing runs entirely on-device · no audio upload</div>',
+        '<div class="proc-sr-status visually-hidden" id="procSrStatus" aria-live="assertive"></div>',
 
       '</div>'
     ].join('');
@@ -693,21 +697,99 @@
     show(stageName, pct) {
       var el = this._el();
       if (!el) return;
+      this._focusBefore = document.activeElement;
       this.update(stageName || 'Preparing pipeline…', pct || 0, 0);
       el.classList.add('active');
       el.setAttribute('aria-hidden', 'false');
       document.body.classList.add('vip-processing-lock');
+      this._setBusyControls(true);
       this._initCanvases();
       this._startMessages(0);
+      this._wireCancel();
+      var cancelBtn = document.getElementById('procCancelBtn');
+      if (cancelBtn) {
+        cancelBtn.disabled = false;
+        cancelBtn.hidden = false;
+        try { cancelBtn.focus({ preventScroll: true }); } catch (_) {
+          try { cancelBtn.focus(); } catch (__) { /* ignore */ }
+        }
+      }
+      this._announce(stageName || 'Processing started');
     },
 
-    hide() {
+    hide(opts) {
       var el = this._el();
       if (!el) return;
       el.classList.remove('active');
       el.setAttribute('aria-hidden', 'true');
       document.body.classList.remove('vip-processing-lock');
+      this._setBusyControls(false);
       this._stopMessages();
+      var restore = opts && opts.restoreFocus !== false;
+      if (restore && this._focusBefore && typeof this._focusBefore.focus === 'function') {
+        try {
+          if (document.contains(this._focusBefore)) this._focusBefore.focus({ preventScroll: true });
+        } catch (_) { /* ignore */ }
+      }
+      this._focusBefore = null;
+    },
+
+    _announce(text) {
+      var sr = document.getElementById('procSrStatus');
+      if (sr) sr.textContent = text || '';
+    },
+
+    _setBusyControls(busy) {
+      var ids = ['processBtn', 'reprocessBtn', 'mobileProcessBtn', 'mobileReprocessBtn', 'fileBtn', 'analyzeBtn', 'runAnalysisBtn'];
+      for (var i = 0; i < ids.length; i++) {
+        var btn = document.getElementById(ids[i]);
+        if (!btn) continue;
+        if (busy) {
+          if (!btn.dataset.vipPrevDisabled) {
+            btn.dataset.vipPrevDisabled = btn.disabled ? '1' : '0';
+          }
+          btn.disabled = true;
+          btn.setAttribute('aria-busy', 'true');
+        } else {
+          if (btn.dataset.vipPrevDisabled === '0') btn.disabled = false;
+          delete btn.dataset.vipPrevDisabled;
+          btn.removeAttribute('aria-busy');
+        }
+      }
+    },
+
+    _wireCancel() {
+      var btn = document.getElementById('procCancelBtn');
+      if (!btn || btn.dataset.vipCancelWired === '1') return;
+      btn.dataset.vipCancelWired = '1';
+      var self = this;
+      btn.addEventListener('click', function () {
+        self.requestCancel();
+      });
+    },
+
+    requestCancel() {
+      this._announce('Cancelling…');
+      var hint = document.getElementById('procCancelHint');
+      if (hint) hint.textContent = 'Cancelling… stopping current job';
+      var btn = document.getElementById('procCancelBtn');
+      if (btn) btn.disabled = true;
+
+      // Prefer JobController; fall back to app.abortFlag.
+      var jobs = global.__VIP_JOBS__;
+      if (jobs && typeof jobs.cancelCurrent === 'function') {
+        jobs.cancelCurrent('user');
+      }
+      var app = global.vip || global._vipApp || global.app;
+      if (app) {
+        app.abortFlag = true;
+        if (typeof app.cancelActiveJobs === 'function') {
+          try { app.cancelActiveJobs(); } catch (_) { /* ignore */ }
+        }
+      }
+      try {
+        window.dispatchEvent(new CustomEvent('vip:processingCancel', { detail: { reason: 'user' } }));
+      } catch (_) { /* ignore */ }
     },
 
     update(stageName, pct, stageIndex) {
@@ -853,16 +935,60 @@
 
     var origRun = vip.runPipeline.bind(vip);
     vip.runPipeline = async function () {
+      var jobs = global.__VIP_JOBS__;
+      var job = null;
+      if (jobs && typeof jobs.beginJob === 'function') {
+        job = jobs.beginJob('Process · isolate', { kind: 'pipeline' });
+        this._activeJobId = job.id;
+      }
       this.showProcessingOverlay('Preparing pipeline…', 0, 'analyzing');
       try {
         return await origRun.apply(this, arguments);
+      } catch (err) {
+        var cancelled = jobs && jobs.isCancellationError && jobs.isCancellationError(err);
+        if (cancelled || this.abortFlag) {
+          if (job && jobs.endJob) jobs.endJob(job.id, 'cancelled', err);
+          this.showNotification?.('Processing cancelled', 'info');
+          return;
+        }
+        if (job && jobs.endJob) jobs.endJob(job.id, 'error', err);
+        throw err;
       } finally {
+        if (job && jobs.getCurrentJobId && jobs.getCurrentJobId() === job.id) {
+          jobs.endJob(job.id, this.abortFlag ? 'cancelled' : 'completed');
+        }
+        this._activeJobId = null;
         // Always hide — covers success, failure, and user-abort.
         this.hideProcessingOverlay();
+        var hint = document.getElementById('procCancelHint');
+        if (hint) {
+          hint.textContent = 'Processing runs entirely on-device · no audio leaves this browser';
+        }
       }
     };
 
-    console.info('[VIPOverlay] v3 ASTM FTS overlay patch applied.');
+    // Global helpers for any long op (analysis, export, MOPE).
+    vip.beginGlobalJob = function (title, meta) {
+      var jobs = global.__VIP_JOBS__;
+      if (!jobs) return null;
+      var job = jobs.beginJob(title, meta || {});
+      this._activeJobId = job.id;
+      this.showProcessingOverlay(title || 'Working…', 0, 'analyzing');
+      return job;
+    };
+    vip.endGlobalJob = function (jobId, status, detail) {
+      var jobs = global.__VIP_JOBS__;
+      if (jobs && jobId) jobs.endJob(jobId, status || 'completed', detail);
+      if (this._activeJobId === jobId) this._activeJobId = null;
+      this.hideProcessingOverlay();
+    };
+    vip.cancelActiveJobs = function () {
+      this.abortFlag = true;
+      var jobs = global.__VIP_JOBS__;
+      if (jobs) jobs.cancelCurrent('user');
+    };
+
+    console.info('[VIPOverlay] v3 ASTM FTS overlay patch applied (+ cancel).');
   }
 
   function patchOverlayWhenReady(attempts) {

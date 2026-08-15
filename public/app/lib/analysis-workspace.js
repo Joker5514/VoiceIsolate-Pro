@@ -571,6 +571,8 @@ export function installAnalysisWorkspace(app) {
   async function runAnalysis() {
     showError('');
     cancelled = false;
+    const jobs = globalThis.__VIP_JOBS__;
+    let job = null;
     // Decode on the analyzer path (not at upload) — keeps the tab responsive.
     if (typeof app.ensureDecoded === 'function') {
       const decoded = await app.ensureDecoded();
@@ -586,6 +588,12 @@ export function installAnalysisWorkspace(app) {
     }
     setBusy(true);
     if (els.root) els.root.dataset.state = 'running';
+    if (jobs?.beginJob) {
+      job = jobs.beginJob('Full analysis', { kind: 'analysis' });
+    }
+    if (typeof app.showProcessingOverlay === 'function') {
+      app.showProcessingOverlay('Analyzing…', 0, 'analyzing');
+    }
     try {
       // Restore durable analysis when available (same library file after reload).
       const libId = app._libraryFileId;
@@ -603,6 +611,7 @@ export function installAnalysisWorkspace(app) {
             if (els.progressLabel) els.progressLabel.textContent = 'Analysis restored (local cache)';
             // USM chips in background — never block listen/process
             void runUsmBackend({ mode: 'auto', numSources: 6 }).catch(() => {});
+            if (job && jobs?.endJob) jobs.endJob(job.id, 'completed', { fromCache: true });
             return analysis;
           }
         } catch (cacheErr) {
@@ -616,12 +625,32 @@ export function installAnalysisWorkspace(app) {
       }
       // Use mono mix for speed on long files — still multi-channel aware via count
       const mono = downmixToMono(channels);
-      let analysis = await host.analyze([mono], buf.sampleRate, {
-        platformHints: {
-          lowMemory: /Android/i.test(navigator.userAgent || ''),
-        },
-      });
-      if (cancelled) return null;
+      const signal = job?.controller?.signal || jobs?.getCurrentSignal?.() || null;
+      const prevProgress = host.onProgress;
+      host.onProgress = (pct, stage) => {
+        try { prevProgress?.(pct, stage); } catch { /* ignore */ }
+        if (job && jobs?.updateJob) jobs.updateJob(job.id, stage || 'analysis', pct);
+        if (typeof app.updateProcessingOverlay === 'function') {
+          app.updateProcessingOverlay(stage || 'Analyzing…', pct, 8);
+        }
+        if (els.progressLabel) els.progressLabel.textContent = `${stage || 'analysis'} · ${Math.round(pct || 0)}%`;
+      };
+      let analysis;
+      try {
+        analysis = await host.analyze([mono], buf.sampleRate, {
+          platformHints: {
+            lowMemory: /Android/i.test(navigator.userAgent || ''),
+          },
+          signal,
+        });
+      } finally {
+        host.onProgress = prevProgress;
+      }
+      if (cancelled || signal?.aborted) {
+        if (job && jobs?.endJob) jobs.endJob(job.id, 'cancelled');
+        showError('Analysis cancelled');
+        return null;
+      }
       // Analyzer → WhisperHunter env fuse (protect voices, suppress horns/music/etc.)
       analysis = collaborateWithHunter(analysis, buf);
       if (libId) {
@@ -657,14 +686,26 @@ export function installAnalysisWorkspace(app) {
           }
         })
         .catch((e) => console.warn('[VIP] USM backend skipped:', e?.message || e));
+      if (job && jobs?.endJob) jobs.endJob(job.id, 'completed');
       return analysis;
     } catch (err) {
-      showError(err.message || String(err));
-      if (els.root) els.root.dataset.state = 'error';
+      const cancelledErr = jobs?.isCancellationError?.(err)
+        || /cancell?ed|aborted/i.test(String(err?.message || err));
+      if (cancelledErr) {
+        showError('Analysis cancelled');
+        if (job && jobs?.endJob) jobs.endJob(job.id, 'cancelled', err);
+      } else {
+        showError(err.message || String(err));
+        if (job && jobs?.endJob) jobs.endJob(job.id, 'error', err);
+      }
+      if (els.root) els.root.dataset.state = cancelledErr ? 'idle' : 'error';
       return null;
     } finally {
       setBusy(false);
       if (els.progress) els.progress.hidden = true;
+      if (typeof app.hideProcessingOverlay === 'function') {
+        try { app.hideProcessingOverlay(); } catch { /* ignore */ }
+      }
     }
   }
 
@@ -836,7 +877,12 @@ export function installAnalysisWorkspace(app) {
   els.btnCollab?.addEventListener('click', () => { analyzeAndWhisperCollab(); });
   els.btnCancel?.addEventListener('click', () => {
     cancelled = true;
-    host.dispose();
+    try {
+      if (typeof host.cancelActive === 'function') host.cancelActive();
+      else host.dispose();
+      globalThis.__VIP_JOBS__?.cancelCurrent?.('user');
+      if (typeof app?.hideProcessingOverlay === 'function') app.hideProcessingOverlay();
+    } catch { /* ignore */ }
     setBusy(false);
     showError('Analysis cancelled');
   });
