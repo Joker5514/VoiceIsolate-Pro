@@ -22,12 +22,17 @@ import { STFT_OWNERS } from '../core/stft-budget.js';
  * @param {boolean} [opts.isAndroid]
  * @param {boolean} [opts.isDesktop]
  * @param {typeof fetch} [opts.fetchImpl]
+ * @param {AbortSignal} [opts.signal]
+ * @param {string} [opts.jobId]
  */
 export async function runPromptedIsolation(opts) {
   const processingMode = opts.processingMode || 'creator';
   if (processingMode === 'live') {
     throw new Error('[VIP][PromptedIsolation] not available in live mode');
   }
+
+  const { throwIfAborted } = await import('./JobController.js');
+  throwIfAborted(opts.signal, opts.jobId);
 
   // Record that prompted path may use USM STFT once (budget soft-guard).
   try {
@@ -43,6 +48,7 @@ export async function runPromptedIsolation(opts) {
     usmFn: (pcm, sr, cfg) => separateUniversal(pcm, sr, cfg),
     fetchImpl: opts.fetchImpl,
   });
+  throwIfAborted(opts.signal, opts.jobId);
 
   const provider = selection.provider;
   const result = await provider.isolate({
@@ -54,7 +60,9 @@ export async function runPromptedIsolation(opts) {
     output: opts.output || 'both',
     preserveResidual: true,
     processingMode,
+    signal: opts.signal,
   });
+  throwIfAborted(opts.signal, opts.jobId);
 
   return {
     ...result,

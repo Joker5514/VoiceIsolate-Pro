@@ -137,13 +137,38 @@ export class LocalSamAudioWorkerProvider extends AudioIsolationProvider {
       audioBase64: float32ToBase64(mono),
     };
 
-    const res = await this._timedFetch(`${this.baseUrl}/separate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (this._aborted.has(jobId)) {
-      throw new Error('[VIP][sam-worker] cancelled');
+    // External AbortSignal (JobController) + internal job abort set.
+    if (request.signal?.aborted) {
+      this._aborted.add(jobId);
+      throw Object.assign(new Error('[VIP][sam-worker] cancelled'), {
+        name: 'CancellationError',
+        code: 'CANCELLED',
+      });
+    }
+    const onExtAbort = () => {
+      this._aborted.add(jobId);
+      void this.cancel(jobId);
+    };
+    try {
+      request.signal?.addEventListener?.('abort', onExtAbort, { once: true });
+    } catch { /* ignore */ }
+
+    let res;
+    try {
+      res = await this._timedFetch(`${this.baseUrl}/separate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        externalSignal: request.signal,
+      });
+    } finally {
+      try { request.signal?.removeEventListener?.('abort', onExtAbort); } catch { /* ignore */ }
+    }
+    if (this._aborted.has(jobId) || request.signal?.aborted) {
+      throw Object.assign(new Error('[VIP][sam-worker] cancelled'), {
+        name: 'CancellationError',
+        code: 'CANCELLED',
+      });
     }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
@@ -177,13 +202,18 @@ export class LocalSamAudioWorkerProvider extends AudioIsolationProvider {
     return { ok: true };
   }
 
-  async _timedFetch(url, init) {
+  async _timedFetch(url, init = {}) {
+    const { externalSignal, ...fetchInit } = init;
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const t = ctrl ? setTimeout(() => ctrl.abort(), this.timeoutMs) : null;
+    const onExt = () => { try { ctrl?.abort(); } catch { /* ignore */ } };
     try {
-      return await this._fetch(url, { ...init, signal: ctrl?.signal });
+      externalSignal?.addEventListener?.('abort', onExt, { once: true });
+      if (externalSignal?.aborted) onExt();
+      return await this._fetch(url, { ...fetchInit, signal: ctrl?.signal || externalSignal });
     } finally {
       if (t) clearTimeout(t);
+      try { externalSignal?.removeEventListener?.('abort', onExt); } catch { /* ignore */ }
     }
   }
 }

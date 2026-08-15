@@ -2,7 +2,7 @@
  * VoiceIsolate Pro — Full Analysis Host (Layer 3: Pipeline)
  *
  * Spawns FullAnalysisWorker, falls back to main-thread analyzeAudio if
- * workers are unavailable.
+ * workers are unavailable. Supports AbortSignal cooperative cancel.
  */
 'use strict';
 
@@ -10,6 +10,10 @@ import { analyzeAudio } from '../core/FullAnalysis.js';
 import { extractFrameFeatures, downmixToMono } from '../core/FeatureExtractor.js';
 import { buildVadHints } from './VadAnalysis.js';
 import { debugLog } from '../core/debug.js';
+import {
+  CancellationError,
+  throwIfAborted,
+} from './JobController.js';
 
 export class FullAnalysisHost {
   constructor(options = {}) {
@@ -18,13 +22,13 @@ export class FullAnalysisHost {
     this._requestId = 0;
     this._useWorker = options.useWorker !== false && typeof Worker !== 'undefined';
     this._enableMlVad = options.enableMlVad !== false;
+    this._activeRequestId = null;
   }
 
   _ensureWorker() {
     if (!this._useWorker) return null;
     if (this._worker) return this._worker;
     try {
-      // Module worker — path resolved from page origin
       const url = new URL('/src/workers/FullAnalysisWorker.js', globalThis.location?.href || 'http://localhost/');
       this._worker = new Worker(url.href, { type: 'module' });
       return this._worker;
@@ -35,17 +39,9 @@ export class FullAnalysisHost {
     }
   }
 
-  /**
-   * @param {Float32Array[]} channels
-   * @param {number} sampleRate
-   * @param {object} [opts]
-   * @returns {Promise<object>} analysis
-   */
-  /**
-   * Enrich opts with Silero/classical soft-VAD hints before analyzeAudio.
-   */
   async _withVadHints(channels, sampleRate, opts = {}) {
     if (opts.mlHints?.vadScores || opts.skipVad) return opts;
+    throwIfAborted(opts.signal);
     try {
       this.onProgress(8, 'vad');
       const mono = downmixToMono(channels);
@@ -53,8 +49,10 @@ export class FullAnalysisHost {
         frameSec: opts.frameSec,
         hopSec: opts.hopSec,
       });
+      throwIfAborted(opts.signal);
       if (this._enableMlVad) {
         const hints = await buildVadHints(mono, sampleRate, extraction);
+        throwIfAborted(opts.signal);
         return {
           ...opts,
           mlHints: {
@@ -64,30 +62,48 @@ export class FullAnalysisHost {
         };
       }
     } catch (err) {
+      if (err instanceof CancellationError || err?.name === 'CancellationError') throw err;
       debugLog('FullAnalysisHost', `VAD hints skipped: ${err.message || err}`);
     }
     return opts;
   }
 
+  /**
+   * @param {Float32Array[]} channels
+   * @param {number} sampleRate
+   * @param {object} [opts]
+   * @param {AbortSignal} [opts.signal]
+   */
   async analyze(channels, sampleRate, opts = {}) {
+    const signal = opts.signal;
+    throwIfAborted(signal);
     const enriched = await this._withVadHints(channels, sampleRate, opts);
+    throwIfAborted(signal);
+
     const worker = this._ensureWorker();
     if (!worker) {
       this.onProgress(20, 'features');
+      throwIfAborted(signal);
       const analysis = analyzeAudio(channels, sampleRate, enriched);
+      throwIfAborted(signal);
       this.onProgress(100, 'complete');
       return analysis;
     }
 
     const requestId = ++this._requestId;
+    this._activeRequestId = requestId;
     return new Promise((resolve, reject) => {
       const timeoutMs = enriched.timeoutMs ?? 180000;
-      // Stall = no heartbeat/progress for stallMs (hard timeout still overall).
       const stallMs = enriched.stallMs ?? 45000;
       let lastActivity = Date.now();
       const hardDeadline = Date.now() + timeoutMs;
       const timer = setInterval(() => {
         const now = Date.now();
+        if (signal?.aborted) {
+          cleanup();
+          reject(new CancellationError('Cancelled'));
+          return;
+        }
         if (now - lastActivity > stallMs) {
           cleanup();
           reject(new Error('Full analysis stalled (no worker heartbeat) — retry Analyze'));
@@ -96,6 +112,21 @@ export class FullAnalysisHost {
           reject(new Error('Full analysis timed out'));
         }
       }, 2000);
+
+      const onAbort = () => {
+        try {
+          worker.postMessage({ type: 'cancel', requestId });
+        } catch { /* ignore */ }
+        cleanup();
+        reject(new CancellationError('Cancelled'));
+      };
+      if (signal) {
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
 
       const onMessage = (event) => {
         const msg = event.data || {};
@@ -106,6 +137,9 @@ export class FullAnalysisHost {
         } else if (msg.type === 'result') {
           cleanup();
           resolve(msg.analysis);
+        } else if (msg.type === 'cancelled') {
+          cleanup();
+          reject(new CancellationError('Cancelled'));
         } else if (msg.type === 'error') {
           cleanup();
           reject(new Error(msg.message || 'Analysis failed'));
@@ -114,7 +148,10 @@ export class FullAnalysisHost {
 
       const onError = (err) => {
         cleanup();
-        // Fallback to main thread
+        if (signal?.aborted) {
+          reject(new CancellationError('Cancelled'));
+          return;
+        }
         debugLog('FullAnalysisHost', `Worker error, falling back: ${err.message || err}`);
         try {
           const analysis = analyzeAudio(channels, sampleRate, enriched);
@@ -126,15 +163,17 @@ export class FullAnalysisHost {
 
       const cleanup = () => {
         clearInterval(timer);
+        signal?.removeEventListener?.('abort', onAbort);
         worker.removeEventListener('message', onMessage);
         worker.removeEventListener('error', onError);
+        if (this._activeRequestId === requestId) this._activeRequestId = null;
       };
 
       worker.addEventListener('message', onMessage);
       worker.addEventListener('error', onError);
 
-      // Serialize mlHints (typed arrays → plain) for worker postMessage clone
       const optsForWorker = { ...enriched };
+      delete optsForWorker.signal;
       if (optsForWorker.mlHints) {
         const h = { ...optsForWorker.mlHints };
         if (h.vadScores && typeof h.vadScores.length === 'number') {
@@ -146,7 +185,6 @@ export class FullAnalysisHost {
         optsForWorker.mlHints = h;
       }
 
-      // Copy channels for transfer if possible
       const transfer = [];
       const payloadChannels = channels.map((ch) => {
         const copy = ch.slice();
@@ -168,7 +206,15 @@ export class FullAnalysisHost {
     });
   }
 
+  cancelActive() {
+    if (this._activeRequestId == null || !this._worker) return;
+    try {
+      this._worker.postMessage({ type: 'cancel', requestId: this._activeRequestId });
+    } catch { /* ignore */ }
+  }
+
   dispose() {
+    this.cancelActive();
     if (this._worker) {
       try { this._worker.terminate(); } catch { /* ignore */ }
       this._worker = null;

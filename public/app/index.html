@@ -281,7 +281,13 @@
         <div class="proc-message-label">Current operation</div>
         <div class="proc-message" id="procMessage">Loading models…</div>
       </div>
-      <div class="proc-cancel-hint">Processing runs entirely on-device · no audio leaves this browser</div>
+      <div class="proc-actions">
+        <button type="button" id="procCancelBtn" class="proc-cancel-btn" aria-label="Cancel processing">
+          Cancel
+        </button>
+      </div>
+      <div class="proc-cancel-hint" id="procCancelHint">Processing runs entirely on-device · no audio leaves this browser</div>
+      <div class="proc-sr-status visually-hidden" id="procSrStatus" aria-live="assertive"></div>
     </div>
   </div>
 
@@ -732,6 +738,10 @@
 
   <script type="module">
     // Offline Engineer pipeline runs through app.js (32-stage Deca-Pass + WhisperHunter).
+    // JobController first so overlay cancel / AbortSignal is available immediately.
+    await import('/src/pipeline/JobController.js').catch(err => {
+      console.warn('[VIP] JobController not loaded:', err);
+    });
     const _parallel = [
       './processing-overlay.js',
       './session-persist.js',

@@ -1080,6 +1080,18 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
 self.onmessage = async (event) => {
   const msg = event.data || {};
   try {
+    // Cooperative cancel — drop active request so progress/stems are ignored.
+    if (msg.type === 'cancel') {
+      if (msg.requestId == null || msg.requestId === ACTIVE_REQUEST_ID) {
+        ACTIVE_REQUEST_ID = null;
+        self.postMessage({
+          type: 'cancelled',
+          requestId: msg.requestId ?? null,
+        });
+      }
+      return;
+    }
+
     if (msg.type === 'cache-response') {
       const pending = _cachePending.get(msg.requestId);
       if (!pending) return;

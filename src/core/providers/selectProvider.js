@@ -21,6 +21,19 @@ import { LocalSamAudioWorkerProvider } from './LocalSamAudioWorkerProvider.js';
  * @param {(pcm: Float32Array, sr: number, cfg: object) => object} [opts.usmFn]
  * @param {typeof fetch} [opts.fetchImpl]
  */
+/** Short-lived capability cache — avoids re-probing SAM worker every MOPE job. */
+const _capsCache = new Map();
+const CAPS_TTL_MS = 15000;
+
+async function cachedCaps(key, fn) {
+  const hit = _capsCache.get(key);
+  const now = Date.now();
+  if (hit && now - hit.at < CAPS_TTL_MS) return hit.caps;
+  const caps = await fn();
+  _capsCache.set(key, { at: now, caps });
+  return caps;
+}
+
 export async function selectIsolationProvider(opts = {}) {
   const samMode = opts.samMode || readEnvMode() || 'disabled';
   const onnx = new ExistingOnnxProvider({
@@ -39,7 +52,7 @@ export async function selectIsolationProvider(opts = {}) {
   }
 
   if (samMode === 'browser') {
-    const caps = await browserSam.getCapabilities();
+    const caps = await cachedCaps('browser-sam', () => browserSam.getCapabilities());
     if (caps.available) {
       return { provider: browserSam, reason: 'browser-sam', candidates: { onnx, browserSam, worker } };
     }
@@ -55,8 +68,9 @@ export async function selectIsolationProvider(opts = {}) {
 
   if (samMode === 'local-worker' || samMode === 'auto') {
     // Desktop / explicit local-worker: prefer real SAM worker when healthy.
-    // Android WebView: try worker first (ADB reverse / LAN loopback rare), then ONNX/USM.
-    const caps = await worker.getCapabilities();
+    // Capability probe is cached ~15s so repeated MOPE jobs don't re-HTTP /ready.
+    const base = opts.workerBaseUrl || readEnvWorkerUrl() || 'http://127.0.0.1:8765';
+    const caps = await cachedCaps(`worker:${base}`, () => worker.getCapabilities());
     if (caps.available) {
       return {
         provider: worker,

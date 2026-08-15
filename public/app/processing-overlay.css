@@ -26,6 +26,45 @@ body.vip-processing-lock {
   touch-action: none;
 }
 
+/* Cancel control (all long-running ops) */
+.proc-actions {
+  display: flex;
+  justify-content: center;
+  margin: 14px 0 4px;
+}
+.proc-cancel-btn {
+  min-height: 44px;
+  min-width: 120px;
+  padding: 10px 22px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 255, 231, 0.35);
+  background: rgba(0, 20, 30, 0.75);
+  color: var(--vip-text, #d8e6f4);
+  font: 600 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: border-color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+.proc-cancel-btn:hover:not(:disabled) {
+  border-color: var(--vip-cyan, #00ffe7);
+  background: rgba(0, 40, 50, 0.9);
+}
+.proc-cancel-btn:focus-visible {
+  outline: 2px solid var(--vip-cyan, #00ffe7);
+  outline-offset: 2px;
+}
+.proc-cancel-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0);
+  white-space: nowrap; border: 0;
+}
+
 /* ── Overlay shell ─────────────────────────────────────────── */
 .processing-overlay {
   position: fixed;
