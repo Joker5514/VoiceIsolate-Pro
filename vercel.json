@@ -144,10 +144,6 @@
       "source": "/(.*\\.js)",
       "headers": [
         {
-          "key": "Content-Type",
-          "value": "text/javascript; charset=utf-8"
-        },
-        {
           "key": "Cross-Origin-Resource-Policy",
           "value": "same-origin"
         }
