@@ -2,14 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="VoiceIsolate Pro — AI voice isolation, 100% in your browser. Upload, separate, and mix in real time. No cloud, no uploads.">
-  <title>VoiceIsolate Pro — Stem-Split &amp; Live-Mix</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="VoiceIsolate Pro — studio-grade voice isolation 100% on your device. Browser, Android &amp; desktop. No cloud audio, no telemetry, no mic. Separate stems and Live-Mix locally.">
+  <meta name="theme-color" content="#0a0a0e">
+  <meta name="color-scheme" content="dark">
+  <meta property="og:title" content="VoiceIsolate Pro — Local voice isolation">
+  <meta property="og:description" content="100% on-device voice isolation. Zero cloud audio. Zero telemetry. Upload, separate stems, Live-Mix — private by design.">
+  <meta property="og:type" content="website">
+  <title>VoiceIsolate Pro — Local voice isolation · Stem-Split &amp; Live-Mix</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/icon.jpg">
+  <!-- Fonts: limited weights + display=swap (no inline onload — strict CSP) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/landing.css">
   <link rel="stylesheet" href="/transport-polish.css">
   <!--
@@ -18,6 +24,7 @@
     integration of the Stem-Split & Live-Mix pipeline:
       FileIngestion → MLWorker (offline ONNX) → PlaybackMixer → SliderUI.
     There is intentionally no microphone access anywhere on this page.
+    ORT loads inside MLWorker via importScripts — not on the landing main thread.
   -->
 </head>
 <body>
@@ -29,24 +36,44 @@
         </svg>
       </div>
       <span class="app-title">VoiceIsolate Pro</span>
-      <span class="arch-badge" id="archBadgeMount">STEM-SPLIT &amp; LIVE-MIX</span>
+      <span class="arch-badge" id="archBadgeMount">LOCAL · STEM-SPLIT</span>
     </div>
     <div class="titlebar-right">
       <a href="/download/" class="eng-mode-link">Download</a>
-      <a href="/app/" class="eng-mode-link">Engineer Mode</a>
+      <a href="/app/" class="eng-mode-link eng-mode-link--primary">Engineer</a>
     </div>
   </header>
+
+  <!-- First-impression hero (conversion + trust) — does not alter pipeline IDs -->
+  <section class="vip-hero" aria-labelledby="heroTitle">
+    <p class="vip-hero__eyebrow">Privacy-first voice isolation</p>
+    <h1 id="heroTitle" class="vip-hero__title">Clean voice. Zero cloud audio.</h1>
+    <p class="vip-hero__sub">
+      Upload a noisy clip and isolate speech <strong>entirely on this device</strong> —
+      browser, Android, or desktop. No audio leaves your machine. No microphone. No telemetry.
+    </p>
+    <div class="vip-hero__actions">
+      <a href="#uploadPanel" class="vip-btn vip-btn--primary vip-btn--lg vip-hero__cta">Upload &amp; isolate</a>
+      <a href="/app/" class="vip-btn vip-btn--ghost vip-btn--lg">Open Engineer Mode</a>
+    </div>
+    <ul class="vip-trust" aria-label="Trust signals">
+      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> 100% local ONNX</li>
+      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> Zero cloud inference</li>
+      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> Zero telemetry</li>
+      <li class="vip-trust__item"><span class="vip-trust__mark" aria-hidden="true">✓</span> Upload-only · no mic</li>
+    </ul>
+  </section>
 
   <main class="main-area">
     <!-- ── STEP 1: Upload ──────────────────────────────────────────────── -->
     <section class="panel vip-card" id="uploadPanel" aria-labelledby="uploadLabel">
       <h2 id="uploadLabel" class="section-label">1 · Upload</h2>
-      <p class="hint">Audio or video. Decoded and resampled to 48&nbsp;kHz on your device — nothing is uploaded anywhere.</p>
+      <p class="hint">Audio or video · decoded at 48&nbsp;kHz <strong>on your device</strong>. Nothing is uploaded to a server.</p>
       <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Drop audio or video here, or press Enter to browse">
         <svg class="upload-svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <p class="upload-title">Drop audio or video here</p>
-        <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · OPUS · AAC · AIFF · WMA · MP4 · MOV · MKV · AVI · WEBM · WMV · TS and more</p>
-        <label for="fileInput" id="browseBtn" class="btn" role="button">Browse Files</label>
+        <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · MP4 · MOV and more</p>
+        <label for="fileInput" id="browseBtn" class="btn btn-primary vip-tap" role="button">Browse files</label>
         <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,audio/ogg,audio/flac,audio/x-flac,audio/aac,audio/x-m4a,audio/m4a,audio/mp4,audio/webm,audio/amr,audio/aiff,audio/x-aiff,audio/x-caf,audio/x-ms-wma,audio/opus,audio/ac3,audio/eac3,video/mp4,video/webm,video/quicktime,video/x-msvideo,video/x-matroska,video/ogg,video/3gpp,video/3gpp2,video/x-ms-wmv,video/mpeg,video/mp2t,video/x-flv,audio/*,video/*,.wav,.wave,.mp3,.m4a,.aac,.ogg,.oga,.opus,.flac,.webm,.weba,.aiff,.aif,.caf,.wma,.mka,.m4b,.m4r,.amr,.ac3,.eac3,.mp4,.m4v,.mov,.mkv,.avi,.ogv,.3gp,.3g2,.wmv,.mpeg,.mpg,.ts,.m2ts,.mts,.flv,.f4v,.asf" aria-label="Choose audio or video file">
       </div>
       <div class="upload-row">
@@ -58,7 +85,7 @@
           <option value="studio_isolation">Studio — Demucs → Denoise (very slow, ~149 MB)</option>
           <option value="demucs">Demucs v4 only (very slow, ~149 MB)</option>
         </select>
-        <button id="processBtn" class="vip-btn vip-btn--primary" type="button" disabled>Separate Stems</button>
+        <button id="processBtn" class="vip-btn vip-btn--primary vip-tap" type="button" disabled>Separate stems</button>
       </div>
       <div class="status-row">
         <span id="statusPillMount" role="status" aria-live="polite">
@@ -79,7 +106,7 @@
     <!-- ── STEP 2: Live-Mix playback ───────────────────────────────────── -->
     <section class="panel vip-card" aria-labelledby="mixLabel">
       <h2 id="mixLabel" class="section-label">2 · Live Mix</h2>
-      <p class="hint">Stems play through the Web Audio graph. Sliders act instantly on GainNodes — the AI never re-runs.</p>
+      <p class="hint">Stems play through the Web Audio graph. Sliders rebalance gains instantly — the AI never re-runs.</p>
 
       <!--
         Video preview. Shown only when the uploaded file is a video. The element
@@ -150,7 +177,7 @@
         <span id="downloadStatus" class="hint" role="status" aria-live="polite"></span>
       </div>
 
-      <div class="slider-grid">
+      <div class="slider-grid slider-grid--primary">
         <div class="slider-row">
           <label for="noiseReductionSlider">Noise Reduction</label>
           <input type="range" id="noiseReductionSlider" min="0" max="100" value="100" step="1" disabled>
@@ -166,6 +193,12 @@
           <input type="range" id="volumeSlider" min="0" max="100" value="100" step="1" disabled>
           <span class="slider-val" id="volumeVal">100%</span>
         </div>
+      </div>
+
+      <!-- Advanced rack stays in DOM (same IDs for landing.js) — collapsed on mobile by CSS/details -->
+      <details class="vip-advanced" id="advancedMixDetails">
+        <summary class="vip-advanced__summary">Advanced mix · EQ · dynamics · gate</summary>
+        <div class="slider-grid slider-grid--advanced">
         <div class="slider-row">
           <label for="eqLowSlider">EQ Low Shelf</label>
           <input type="range" id="eqLowSlider" min="-24" max="24" value="0" step="1" disabled>
@@ -266,7 +299,8 @@
           <input type="range" id="deEsserAmountSlider" min="0" max="100" value="0" step="1" disabled>
           <span class="slider-val" id="deEsserAmountVal">0%</span>
         </div>
-      </div>
+        </div>
+      </details>
     </section>
 
     <!-- ── STEP 3: Per-speaker isolation ───────────────────────────────── -->
@@ -289,30 +323,54 @@
       <div id="targetSpeakerPanel" aria-label="Target speaker enrollment and isolation"></div>
     </section>
 
+    <!-- Conversion sections (below fold on phones — after the product flow) -->
+    <section class="panel vip-card vip-pitch" aria-labelledby="whyLabel">
+      <h2 id="whyLabel" class="section-label">Why it’s different</h2>
+      <ul class="vip-pitch__list">
+        <li><strong>100% local audio</strong> — ONNX runs in a Web Worker on your device (WebGPU when available). No cloud inference API for your files.</li>
+        <li><strong>Privacy by architecture</strong> — no microphone, no telemetry, nothing leaves the device for isolation.</li>
+        <li><strong>Live-Mix after one separation</strong> — rebalance voice vs background instantly without re-running ML.</li>
+        <li><strong>Engineer Mode when you need depth</strong> — Creator · Studio · Forensic racks, same privacy model.</li>
+      </ul>
+    </section>
+
+    <section class="panel vip-card vip-pitch" aria-labelledby="howLabel">
+      <h2 id="howLabel" class="section-label">How it works</h2>
+      <ol class="vip-steps">
+        <li><span class="vip-steps__n">1</span><span><strong>Upload</strong> audio or video — decode stays on-device.</span></li>
+        <li><span class="vip-steps__n">2</span><span><strong>Separate</strong> with local BS-RNN (or denoise-only for speed).</span></li>
+        <li><span class="vip-steps__n">3</span><span><strong>Live-Mix</strong> voice vs residual, then download the result.</span></li>
+      </ol>
+      <p class="hint vip-pitch__foot">Creators: cleaner podcasts &amp; calls. Engineers: full rack in <a href="/app/">Engineer Mode</a>. Offline apps on <a href="/download/">Download</a>.</p>
+    </section>
+
     <section class="panel vip-card privacy-panel">
-      <h2 class="section-label">Privacy</h2>
+      <h2 class="section-label">Privacy &amp; performance</h2>
       <p class="hint">
-        100% local processing — ONNX models run in a Web Worker on your device
+        100% local processing — models run in a Web Worker on your device
         (WebGPU when available, WASM fallback). No microphone access, no audio
-        upload, no telemetry.
+        upload to our servers, no telemetry.
       </p>
       <p class="hint" id="backendStatusLine" role="status" aria-live="polite">
         Backend: detecting…
       </p>
-      <div class="privacy-actions" style="margin-top:0.75rem;display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center">
-        <button type="button" id="clearLocalDataBtn" class="btn btn-outline"
+      <div class="privacy-actions">
+        <button type="button" id="clearLocalDataBtn" class="btn btn-outline vip-tap"
           aria-label="Clear all local data: library, stems, embeddings, model cache">
           Clear Local Data
         </button>
         <span id="clearLocalDataStatus" class="hint" role="status" aria-live="polite"></span>
       </div>
+      <div class="vip-cta-band">
+        <a href="#uploadPanel" class="vip-btn vip-btn--primary vip-tap">Start isolating</a>
+        <a href="/download/" class="vip-btn vip-btn--ghost vip-tap">Get Android / Windows</a>
+      </div>
     </section>
   </main>
 
-  <!-- Design-system bundle (React shim must load first) -->
-  <script src="/lib/react-mini.js"></script>
-  <script src="/lib/_ds_bundle.js"></script>
-  <script src="/lib/ort.min.js"></script>
+  <!-- DS bundle first; ORT is loaded by MLWorker (importScripts) — omit main-thread ORT for faster first paint -->
+  <script defer src="/lib/react-mini.js"></script>
+  <script defer src="/lib/_ds_bundle.js"></script>
   <script type="module" src="/landing.js"></script>
 </body>
 </html>
