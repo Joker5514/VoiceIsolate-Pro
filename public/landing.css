@@ -910,9 +910,27 @@ input[type="range"]:disabled { opacity: 0.34; cursor: not-allowed; }
   .slider-hint { grid-column: 1 / -1; grid-row: 3; font-size: var(--fs-xs); padding: 10px; }
   .hint-range-meter { min-width: 0; flex: 1 1 100%; }
 
-  .titlebar { padding: 0 10px 0 12px; gap: 8px; }
-  .arch-badge { display: none; } /* free horizontal space for CTAs */
-  .app-title { font-size: 12px; }
+  .titlebar {
+    padding: 0 10px 0 12px;
+    gap: 8px;
+  }
+  .titlebar-left { flex: 1 1 auto; min-width: 0; overflow: hidden; }
+  /* Never let the mono badge collide with Download / Engineer */
+  .arch-badge,
+  #archBadgeMount {
+    display: none !important;
+  }
+  .app-title {
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .titlebar-right {
+    position: relative;
+    z-index: 2;
+    flex: 0 0 auto;
+  }
   .vip-hero { padding: 20px 14px 4px; }
   .vip-hero__title { max-width: none; }
   .vip-hero__actions .vip-btn,
