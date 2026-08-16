@@ -740,7 +740,7 @@
     },
 
     _setBusyControls(busy) {
-      var ids = ['processBtn', 'reprocessBtn', 'mobileProcessBtn', 'mobileReprocessBtn', 'fileBtn', 'analyzeBtn', 'runAnalysisBtn'];
+      var ids = ['processBtn', 'reprocessBtn', 'mobileProcessBtn', 'mobileReprocessBtn', 'fileBtn', 'analyzeBtn', 'runAnalysisBtn', 'saveProcBtn', 'downloadBtn'];
       for (var i = 0; i < ids.length; i++) {
         var btn = document.getElementById(ids[i]);
         if (!btn) continue;

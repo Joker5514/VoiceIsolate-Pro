@@ -527,11 +527,21 @@ body.eng-console .vip-ts-lead {
   }
 }
 
-/* Simple view: hide advanced rack groups */
+/* Simple view: hide advanced rack groups + heavy chrome */
 body.eng-console.ec-simple #section-advanced,
 body.eng-console.ec-simple #tab-extreme-group,
 body.eng-console.ec-simple #section-spectral,
+body.eng-console.ec-simple #section-dynamics,
+body.eng-console.ec-simple #section-eq,
 body.eng-console.ec-simple .engine-cockpit,
-body.eng-console.ec-simple #section-whisper-hunter {
+body.eng-console.ec-simple #section-whisper-hunter,
+body.eng-console.ec-simple #section-target-speaker,
+body.eng-console.ec-simple #ecSummaryGrid {
   display: none !important;
+}
+/* Keep gate/NR + isolation + output for a usable Simple path */
+body.eng-console.ec-simple #section-gate,
+body.eng-console.ec-simple #section-separation,
+body.eng-console.ec-simple #section-output {
+  display: block !important;
 }

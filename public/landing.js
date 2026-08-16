@@ -35,6 +35,14 @@ import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportR
 import { SLIDER_HINTS } from '/app/slider-map.js';
 import { buildHintPanel } from '/app/slider-hint-ui.js';
 import * as FileLibrary from '/src/core/FileLibrary.js';
+import {
+  beginJob,
+  endJob,
+  updateJob,
+  cancelCurrent,
+  getCurrentJobId,
+  isCancellationError,
+} from '/src/pipeline/JobController.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -76,6 +84,8 @@ const ui = {
   browseBtn: $('browseBtn'),
   modelSelect: $('modelSelect'),
   processBtn: $('processBtn'),
+  cancelProcessBtn: $('cancelProcessBtn'),
+  landingJobStatus: $('landingJobStatus'),
   playBtn: $('playBtn'),
   pauseBtn: $('pauseBtn'),
   stopBtn: $('stopBtn'),
@@ -249,11 +259,48 @@ function setProcStage(stage, localPercent = 0, statusLabel, { updateJobLabel = t
   const idx = STAGE_INDEX[stage] ?? 0;
   _procState = { active: idx, progress: mapPipelinePercent(stage, localPercent) };
   ui.procLoaderMount.hidden = false;
+  setLandingCancelVisible(true);
   if (statusLabel) {
     if (updateJobLabel) currentJobLabel = statusLabel;
     setStatus(statusLabel, 'warn');
   }
+  const jobId = getCurrentJobId();
+  if (jobId) updateJob(jobId, statusLabel || stage, _procState.progress);
+  if (ui.landingJobStatus) {
+    ui.landingJobStatus.hidden = false;
+    ui.landingJobStatus.textContent = statusLabel
+      ? `${statusLabel} · ${_procState.progress}%`
+      : `Processing… ${_procState.progress}%`;
+  }
   scheduleProcRender();
+}
+
+function setLandingCancelVisible(visible) {
+  if (!ui.cancelProcessBtn) return;
+  ui.cancelProcessBtn.hidden = !visible;
+  ui.cancelProcessBtn.disabled = !visible;
+}
+
+function cancelLandingJob() {
+  cancelCurrent('user');
+  // Stale-proof: bump request seq so worker stems/errors are ignored.
+  requestSeq += 1;
+  if (worker) {
+    try { worker.postMessage({ type: 'cancel', requestId: requestSeq }); } catch { /* ignore */ }
+  }
+  processingInFlight = false;
+  downloadInFlight = false;
+  hideSpinner();
+  setLandingCancelVisible(false);
+  if (ui.processBtn) ui.processBtn.disabled = !ingested;
+  if (ui.fileInput) ui.fileInput.disabled = false;
+  if (ui.modelSelect) ui.modelSelect.disabled = false;
+  setStatus('Cancelled', 'active');
+  if (ui.landingJobStatus) {
+    ui.landingJobStatus.hidden = false;
+    ui.landingJobStatus.textContent = 'Cancelled — ready when you are';
+  }
+  updateDownloadButton();
 }
 
 function _renderProcLoader() {
@@ -304,6 +351,10 @@ function setProgress(percent) {
 
 function hideSpinner() {
   ui.procLoaderMount.hidden = true;
+  setLandingCancelVisible(false);
+  if (ui.landingJobStatus && !processingInFlight && !downloadInFlight) {
+    ui.landingJobStatus.hidden = true;
+  }
   if (_procRenderRAF) {
     cancelAnimationFrame(_procRenderRAF);
     _procRenderRAF = 0;
@@ -411,6 +462,10 @@ async function onDownloadProcessed() {
   downloadInFlight = true;
   updateDownloadButton();
   const setDl = (msg) => { if (ui.downloadStatus) ui.downloadStatus.textContent = msg || ''; };
+  const job = beginJob('Export processed', { kind: 'export' });
+  const signal = job?.controller?.signal;
+  setLandingCancelVisible(true);
+  setProcStage('export', 5, 'Exporting…');
 
   try {
     let cropIn = 0;
@@ -427,11 +482,21 @@ async function onDownloadProcessed() {
       setDl('Encoding video with processed audio…');
       setStatus('Encoding processed video…', 'warn');
       try {
-        // Full buffer + crop window keeps picture/audio aligned on remux.
         const result = await exportVideoWithProcessedAudio(sourceFile, full, {
           startSec: cropIn,
           endSec: cropOut,
-          onProgress: (pct) => setDl(`Encoding video… ${Math.round(pct)}%`),
+          signal,
+          onProgress: (pct) => {
+            if (signal?.aborted) {
+              const e = new Error('Cancelled');
+              e.name = 'CancellationError';
+              e.code = 'CANCELLED';
+              throw e;
+            }
+            const p = Math.round(pct);
+            setDl(`Encoding video… ${p}%`);
+            setProcStage('export', p, `Encoding video… ${p}%`);
+          },
         });
         if (isDesktopShell()) {
           await saveExportBlob(result.blob, {
@@ -443,11 +508,25 @@ async function onDownloadProcessed() {
         }
         setDl(`Saved ${result.filename}`);
         setStatus(`Processed video ready — ${result.filename}`, 'active');
+        endJob(job.id, 'completed');
         return;
       } catch (err) {
+        if (isCancellationError(err) || signal?.aborted) {
+          setDl('Export cancelled');
+          setStatus('Export cancelled', 'active');
+          endJob(job.id, 'cancelled', err);
+          return;
+        }
         console.warn('[VIP][landing] video export failed, falling back to WAV:', err);
         setDl('Video remux unavailable — saving WAV…');
       }
+    }
+
+    if (signal?.aborted) {
+      setDl('Export cancelled');
+      setStatus('Export cancelled', 'active');
+      endJob(job.id, 'cancelled');
+      return;
     }
 
     // WAV path: materialize crop window into a new buffer.
@@ -486,12 +565,21 @@ async function onDownloadProcessed() {
     }
     setDl(`Saved ${filename}`);
     setStatus(`Processed audio ready — ${filename}`, 'active');
+    endJob(job.id, 'completed');
   } catch (err) {
-    console.error('[VIP][landing] download failed:', err);
-    setDl(err?.message || 'Download failed');
-    setStatus(err?.message || 'Download failed', 'error');
+    if (isCancellationError(err)) {
+      setDl('Export cancelled');
+      setStatus('Export cancelled', 'active');
+      endJob(job.id, 'cancelled', err);
+    } else {
+      console.error('[VIP][landing] download failed:', err);
+      setDl(err?.message || 'Download failed');
+      setStatus(err?.message || 'Download failed', 'error');
+      endJob(job.id, 'error', err);
+    }
   } finally {
     downloadInFlight = false;
+    hideSpinner();
     updateDownloadButton();
   }
 }
@@ -621,6 +709,22 @@ function getWorker() {
       case 'stems':
         onStems(msg);
         break;
+      case 'cancelled':
+        if (stale) break;
+        stageEnd('isolate');
+        stageEnd('model_load');
+        processingInFlight = false;
+        setStatus('Cancelled', 'active');
+        hideSpinner();
+        {
+          const jid = window.__vipLandingJobId || getCurrentJobId();
+          if (jid) endJob(jid, 'cancelled');
+          window.__vipLandingJobId = null;
+        }
+        ui.processBtn.disabled = !ingested;
+        ui.fileInput.disabled = false;
+        ui.modelSelect.disabled = false;
+        break;
       case 'error':
         if (stale) break;
         stageEnd('isolate');
@@ -628,6 +732,11 @@ function getWorker() {
         processingInFlight = false;
         setStatus(`Processing failed: ${msg.message}`, 'error');
         hideSpinner();
+        {
+          const jid = window.__vipLandingJobId || getCurrentJobId();
+          if (jid) endJob(jid, 'error', msg);
+          window.__vipLandingJobId = null;
+        }
         ui.processBtn.disabled = false;
         ui.fileInput.disabled = false;
         ui.modelSelect.disabled = false;
@@ -1091,7 +1200,7 @@ const MODEL_CHAINS = Object.freeze({
 });
 
 function onProcess() {
-  if (!ingested) return;
+  if (!ingested || processingInFlight) return;
   processingInFlight = true;
   ui.fileInput.disabled = true;
   const selection = ui.modelSelect.value;
@@ -1106,8 +1215,11 @@ function onProcess() {
   ui.processBtn.disabled = true;
   ui.fileInput.disabled = true;
   ui.modelSelect.disabled = true;
+  const job = beginJob(chain ? 'Maximum isolation' : 'Separate stems', { kind: 'separate' });
+  window.__vipLandingJobId = job.id;
   currentJobLabel = chain ? 'Maximum isolation (2 passes)…' : 'Separating stems…';
-  setProgress(0, currentJobLabel);
+  setProgress(0);
+  setProcStage('separate', 0, currentJobLabel);
   setStatus(currentJobLabel, 'warn');
 
   const cached = getCachedStems(cacheKey);
@@ -1147,6 +1259,9 @@ function onStems({ requestId, clean, noise, sampleRate, passthrough, _cacheKey }
   stageEnd('model_load');
   setProgress(100);
   hideSpinner();
+  const jid = window.__vipLandingJobId || getCurrentJobId();
+  if (jid) endJob(jid, passthrough ? 'error' : 'completed');
+  window.__vipLandingJobId = null;
 
   const cacheKey = _cacheKey || ingested?._stemCacheKey;
   if (!passthrough && cacheKey) {
@@ -1380,6 +1495,7 @@ window.addEventListener('unhandledrejection', (event) => {
   setStatus(`Upload failed: ${msg}`, 'error');
 });
 ui.processBtn.addEventListener('click', onProcess);
+ui.cancelProcessBtn?.addEventListener('click', () => { cancelLandingJob(); });
 ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.value));
 ui.downloadBtn?.addEventListener('click', () => { onDownloadProcessed().catch(() => {}); });
 wireReadouts();

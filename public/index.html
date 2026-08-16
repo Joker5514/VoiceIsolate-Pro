@@ -86,6 +86,7 @@
           <option value="demucs">Demucs v4 only (very slow, ~149 MB)</option>
         </select>
         <button id="processBtn" class="vip-btn vip-btn--primary vip-tap" type="button" disabled>Separate stems</button>
+        <button id="cancelProcessBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" hidden disabled aria-label="Cancel processing">Cancel</button>
       </div>
       <div class="status-row">
         <span id="statusPillMount" role="status" aria-live="polite">
@@ -101,6 +102,7 @@
         updates it; no inline scripts so strict CSP is maintained.
       -->
       <div id="procLoaderMount" hidden></div>
+      <p id="landingJobStatus" class="hint" role="status" aria-live="polite" hidden></p>
     </section>
 
     <!-- ── STEP 2: Live-Mix playback ───────────────────────────────────── -->
