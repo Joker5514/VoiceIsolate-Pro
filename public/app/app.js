@@ -1668,8 +1668,36 @@ class VoiceIsolatePro {
   }
 
   // ── Slider rendering ─────────────────────────────────────────────────────
+  /**
+   * Lazy accordion: closed details sections do not mount slider DOM until first open.
+   * Reduces cold-open node count (esp. mobile Simple / collapsed rack).
+   */
+  _wireLazySliderPanel(details, container) {
+    if (!details || details.dataset.vipLazyWired === '1') return;
+    details.dataset.vipLazyWired = '1';
+    details.addEventListener('toggle', () => {
+      if (!details.open) return;
+      void this._flushPendingSlidersFor(container);
+    });
+  }
+
+  async _flushPendingSlidersFor(container) {
+    const list = this._pendingSlidersByPanel?.get(container);
+    if (!list?.length) return;
+    this._pendingSlidersByPanel.set(container, []);
+    const mobile = this._isMobileEngineer?.() || false;
+    let rendered = 0;
+    for (const s of list) {
+      if (container.querySelector(`[data-slider-id="${s.id}"]`)) continue;
+      rendered += 1;
+      if (mobile && rendered > 1 && (rendered % 10) === 0) await yieldToBrowser();
+      this._appendSliderRow(s, container);
+    }
+  }
+
   async _renderSliders() {
     const mobile = this._isMobileEngineer?.() || false;
+    this._pendingSlidersByPanel = this._pendingSlidersByPanel || new Map();
     let rendered = 0;
     for (const s of RENDER_SLIDERS) {
       if (s.id === 'whisperMode') continue; // [WHISPER UPDATE] rendered as button group
@@ -1677,12 +1705,40 @@ class VoiceIsolatePro {
       const panel = panelId ? document.getElementById(panelId) : null;
       const container = panel || document.getElementById('sliderContainer');
       if (!container) continue;
+
+      // Defer closed accordion bodies — mount on first open.
+      const details = typeof container.closest === 'function'
+        ? container.closest('details.vip-section, details.slider-group')
+        : null;
+      if (details && !details.open) {
+        let pending = this._pendingSlidersByPanel.get(container);
+        if (!pending) {
+          pending = [];
+          this._pendingSlidersByPanel.set(container, pending);
+          this._wireLazySliderPanel(details, container);
+        }
+        pending.push(s);
+        window.VIP_PARAMS = window.VIP_PARAMS || {};
+        const initVal = (window.VIP_PARAMS[s.id] !== undefined) ? window.VIP_PARAMS[s.id] : s.val;
+        window.VIP_PARAMS[s.id] = initVal;
+        this.params[s.id] = initVal;
+        continue;
+      }
+
       rendered += 1;
       // Cooperative paint: every ~10 rows on mobile so boot never freezes the tab.
       if (mobile && rendered > 1 && (rendered % 10) === 0) {
         await yieldToBrowser();
       }
+      this._appendSliderRow(s, container);
+    }
+    this._renderWhisperModeGroup();
+    this._bindInfoPopoverDismiss();
+    this._bindHintDismiss();
+  }
 
+  _appendSliderRow(s, container) {
+      if (!container || container.querySelector(`[data-slider-id="${s.id}"]`)) return;
       const row = document.createElement('div');
       row.className = 'sr-row slider-row';
       row.dataset.sliderId = s.id;
@@ -1860,10 +1916,7 @@ class VoiceIsolatePro {
 
       window.VIP_PARAMS = window.VIP_PARAMS || {};
       window.VIP_PARAMS[s.id] = initVal;
-    }
-    this._renderWhisperModeGroup();
-    this._bindInfoPopoverDismiss();
-    this._bindHintDismiss();
+      this.params[s.id] = initVal;
   }
 
   _bindHintDismiss() {
@@ -3510,6 +3563,7 @@ class VoiceIsolatePro {
   /**
    * Download processed audio, remuxed into the original video container when
    * the source was a video file. Falls back to WAV if remux is unavailable.
+   * Uses JobController + processing overlay Cancel (same path as Process).
    */
   async _downloadProcessed() {
     const fullBuf = this.procBuffer || this.outputBuffer;
@@ -3517,52 +3571,109 @@ class VoiceIsolatePro {
       this.showNotification('Nothing to save yet — process a file first.', 'info');
       return;
     }
-    await this.ensureCtx();
-
-    let cropIn = 0;
-    let cropOut = fullBuf.duration;
-    const transport = this._getTransportMixer?.();
-    if (transport?.hasCrop?.()) {
-      const region = transport.getCropRegion();
-      cropIn = region.in;
-      cropOut = region.out;
+    if (this._exportInFlight) {
+      this.showNotification('Export already in progress…', 'info');
+      return;
     }
+    this._exportInFlight = true;
+    const jobs = globalThis.__VIP_JOBS__;
+    const job = jobs?.beginJob?.('Export processed', { kind: 'export' }) || null;
+    const signal = job?.controller?.signal || jobs?.getCurrentSignal?.() || null;
+    if (typeof this.showProcessingOverlay === 'function') {
+      this.showProcessingOverlay('Exporting…', 0, 'exporting');
+    }
+    try {
+      await this.ensureCtx();
+      if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
 
-    const wantsVideo = this.isVideo && this._sourceFile && isVideoSource(this._sourceFile);
-    if (wantsVideo) {
-      try {
-        this.showNotification('Encoding processed video…', 'info');
-        // Pass the full buffer + crop window so the picture seeks to crop-in
-        // while audio is sliced to the same window inside the exporter.
-        const result = await exportVideoWithProcessedAudio(this._sourceFile, fullBuf, {
-          startSec: cropIn,
-          endSec: cropOut,
-          onProgress: (pct, stage) => {
-            if (pct === 100 || stage === 'complete') return;
-            this.updatePipelineProgress?.(Math.round(pct), `Exporting video… ${Math.round(pct)}%`, 1);
-          },
-        });
-        if (isDesktopShell()) {
-          await saveExportBlob(result.blob, {
-            defaultName: result.filename,
-            filters: filtersForFilename(result.filename),
+      let cropIn = 0;
+      let cropOut = fullBuf.duration;
+      const transport = this._getTransportMixer?.();
+      if (transport?.hasCrop?.()) {
+        const region = transport.getCropRegion();
+        cropIn = region.in;
+        cropOut = region.out;
+      }
+
+      const wantsVideo = this.isVideo && this._sourceFile && isVideoSource(this._sourceFile);
+      if (wantsVideo) {
+        try {
+          this.showNotification('Encoding processed video…', 'info');
+          const result = await exportVideoWithProcessedAudio(this._sourceFile, fullBuf, {
+            startSec: cropIn,
+            endSec: cropOut,
+            signal,
+            onProgress: (pct, stage) => {
+              if (signal?.aborted) {
+                throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
+              }
+              if (pct === 100 || stage === 'complete') return;
+              const p = Math.round(pct);
+              if (job && jobs?.updateJob) jobs.updateJob(job.id, 'Exporting video…', p);
+              if (typeof this.updateProcessingOverlay === 'function') {
+                this.updateProcessingOverlay(`Exporting video… ${p}%`, p, 28);
+              }
+              this.updatePipelineProgress?.(p, `Exporting video… ${p}%`, 1);
+            },
           });
-        } else {
-          triggerBlobDownload(result.blob, result.filename);
+          if (signal?.aborted) throw Object.assign(new Error('Cancelled'), { name: 'CancellationError', code: 'CANCELLED' });
+          if (isDesktopShell()) {
+            await saveExportBlob(result.blob, {
+              defaultName: result.filename,
+              filters: filtersForFilename(result.filename),
+            });
+          } else {
+            triggerBlobDownload(result.blob, result.filename);
+          }
+          this.showNotification('Processed video saved: ' + result.filename, 'info');
+          if (job && jobs?.endJob) jobs.endJob(job.id, 'completed');
+          return;
+        } catch (err) {
+          const cancelled = jobs?.isCancellationError?.(err)
+            || /cancell?ed|aborted/i.test(String(err?.message || err));
+          if (cancelled) {
+            this.showNotification('Export cancelled', 'info');
+            if (job && jobs?.endJob) jobs.endJob(job.id, 'cancelled', err);
+            return;
+          }
+          structuredLog('warn', '[VIP] video export failed — falling back to WAV', { err: err?.message });
+          this.showNotification('Video remux unavailable — saving WAV instead.', 'info');
         }
-        this.showNotification('Processed video saved: ' + result.filename, 'info');
+      }
+
+      if (signal?.aborted) {
+        this.showNotification('Export cancelled', 'info');
+        if (job && jobs?.endJob) jobs.endJob(job.id, 'cancelled');
         return;
-      } catch (err) {
-        structuredLog('warn', '[VIP] video export failed — falling back to WAV', { err: err?.message });
-        this.showNotification('Video remux unavailable — saving WAV instead.', 'info');
+      }
+
+      let buf = fullBuf;
+      if (cropIn > 0 || cropOut < fullBuf.duration) {
+        buf = sliceAudioBuffer(this.ctx, fullBuf, cropIn, cropOut);
+      }
+      if (typeof this.updateProcessingOverlay === 'function') {
+        this.updateProcessingOverlay('Writing WAV…', 90, 30);
+      }
+      downloadWav(buf, 'processed-' + Date.now() + '.wav');
+      this.showNotification('Processed audio saved', 'info');
+      if (job && jobs?.endJob) jobs.endJob(job.id, 'completed');
+    } catch (err) {
+      const cancelled = jobs?.isCancellationError?.(err)
+        || /cancell?ed|aborted/i.test(String(err?.message || err));
+      if (cancelled) {
+        this.showNotification('Export cancelled', 'info');
+        if (job && jobs?.endJob) jobs.endJob(job.id, 'cancelled', err);
+      } else {
+        this.showNotification(err?.message || 'Export failed', 'error');
+        if (job && jobs?.endJob) jobs.endJob(job.id, 'error', err);
+        throw err;
+      }
+    } finally {
+      this._exportInFlight = false;
+      if (typeof this.hideProcessingOverlay === 'function') {
+        try { this.hideProcessingOverlay(); } catch { /* ignore */ }
       }
     }
-
-    let buf = fullBuf;
-    if (cropIn > 0 || cropOut < fullBuf.duration) {
-      buf = sliceAudioBuffer(this.ctx, fullBuf, cropIn, cropOut);
-    }
-    downloadWav(buf, 'processed-' + Date.now() + '.wav');
   }
 
   /** @deprecated Use decodeBlobToAudioBuffer — kept for legacy patch scripts. */

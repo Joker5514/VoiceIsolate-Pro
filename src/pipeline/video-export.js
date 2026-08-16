@@ -107,6 +107,16 @@ export async function exportVideoWithProcessedAudio(sourceVideo, audioBuffer, op
   }
 
   const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
+  const signal = opts.signal || null;
+  const throwIfAborted = () => {
+    if (signal?.aborted) {
+      const err = new Error('Cancelled');
+      err.name = 'CancellationError';
+      err.code = 'CANCELLED';
+      throw err;
+    }
+  };
+  throwIfAborted();
   const startSec = Math.max(0, Number(opts.startSec) || 0);
   const endSec = Number.isFinite(opts.endSec)
     ? Math.max(startSec + 0.05, opts.endSec)
@@ -119,6 +129,7 @@ export async function exportVideoWithProcessedAudio(sourceVideo, audioBuffer, op
   }
 
   onProgress(2, 'loading-video');
+  throwIfAborted();
 
   const objectUrl = URL.createObjectURL(sourceVideo);
   const video = document.createElement('video');
@@ -135,6 +146,7 @@ export async function exportVideoWithProcessedAudio(sourceVideo, audioBuffer, op
 
   try {
     await waitForVideoReady(video);
+    throwIfAborted();
     onProgress(8, 'preparing');
 
     // Seek video to crop start before capturing the stream.
@@ -208,11 +220,20 @@ export async function exportVideoWithProcessedAudio(sourceVideo, audioBuffer, op
 
     // Progress ticker while recording in (near) real time.
     const t0 = performance.now();
-    await new Promise((resolve) => {
+    await new Promise((resolve, reject) => {
       const tick = () => {
+        if (signal?.aborted) {
+          try { if (recorder.state !== 'inactive') recorder.stop(); } catch { /* ignore */ }
+          try { bufferSource.stop(); } catch { /* ignore */ }
+          const err = new Error('Cancelled');
+          err.name = 'CancellationError';
+          err.code = 'CANCELLED';
+          reject(err);
+          return;
+        }
         const elapsed = (performance.now() - t0) / 1000;
         const pct = Math.min(96, 12 + Math.round((elapsed / exportDuration) * 84));
-        onProgress(pct, 'recording');
+        try { onProgress(pct, 'recording'); } catch (e) { reject(e); return; }
         if (elapsed >= exportDuration - 0.02) {
           resolve();
           return;
