@@ -219,6 +219,7 @@ const PROC_STAGES = [
   { id: 'resample', label: 'Resample' },
   { id: 'load',     label: 'Load model' },
   { id: 'separate', label: 'Separate' },
+  { id: 'export',   label: 'Export' },
 ];
 
 const STAGE_INDEX = Object.freeze({
@@ -226,14 +227,16 @@ const STAGE_INDEX = Object.freeze({
   resample: 1,
   load: 2,
   separate: 3,
+  export: 4,
 });
 
-/** Unified 0–100% weights: decode → resample → model load → inference. */
+/** Unified 0–100% weights: decode → resample → model load → inference → export. */
 const PIPELINE_WEIGHTS = Object.freeze({
   decode: [0, 12],
   resample: [12, 20],
   load: [20, 35],
-  separate: [35, 100],
+  separate: [35, 95],
+  export: [0, 100],
 });
 
 let _procState = { active: 0, progress: 0 };
@@ -283,8 +286,10 @@ function setLandingCancelVisible(visible) {
 
 function cancelLandingJob() {
   cancelCurrent('user');
-  // Stale-proof: bump request seq so worker stems/errors are ignored.
+  // Stale-proof: bump seqs so in-flight decode / worker results are ignored.
   requestSeq += 1;
+  ingestSeq += 1;
+  ingestInFlight = false;
   if (worker) {
     try { worker.postMessage({ type: 'cancel', requestId: requestSeq }); } catch { /* ignore */ }
   }
@@ -300,6 +305,7 @@ function cancelLandingJob() {
     ui.landingJobStatus.hidden = false;
     ui.landingJobStatus.textContent = 'Cancelled — ready when you are';
   }
+  window.__vipLandingJobId = null;
   updateDownloadButton();
 }
 
@@ -1035,6 +1041,8 @@ async function ingestFrom(file) {
   ui.fileInput.disabled = true;
   if (ui.downloadBtn) ui.downloadBtn.disabled = true;
   if (ui.exportRow) ui.exportRow.hidden = true;
+  const job = beginJob('Decode upload', { kind: 'decode' });
+  window.__vipLandingJobId = job.id;
   // Unlock Web Audio inside the user gesture (required on mobile + some desktop builds).
   try { await primeAudioGesture(); } catch { /* best-effort */ }
   // Avoid loading the preview <video> during decode — demuxing the same file twice
@@ -1075,14 +1083,24 @@ async function ingestFrom(file) {
         }
       },
     });
-    if (seq !== ingestSeq) return;
+    if (seq !== ingestSeq) {
+      endJob(job.id, 'cancelled');
+      window.__vipLandingJobId = null;
+      return;
+    }
     ingested = next;
     // Always attempt preview for video sources after decode succeeds.
     if (isVideoFile(file)) loadVideo(file);
-    if (seq !== ingestSeq) return;
+    if (seq !== ingestSeq) {
+      endJob(job.id, 'cancelled');
+      window.__vipLandingJobId = null;
+      return;
+    }
 
     // CRITICAL UX: enable listen immediately after decode — do not force-wait on ML.
     hideSpinner();
+    endJob(job.id, 'completed');
+    window.__vipLandingJobId = null;
     ui.processBtn.disabled = false;
     ui.fileInput.disabled = false;
     setStatus(
@@ -1114,11 +1132,19 @@ async function ingestFrom(file) {
     // Short files: auto-isolate in background; playback already available.
     onProcess();
   } catch (err) {
-    if (seq !== ingestSeq) return;
+    if (seq !== ingestSeq) {
+      if (window.__vipLandingJobId === job.id) {
+        endJob(job.id, 'cancelled');
+        window.__vipLandingJobId = null;
+      }
+      return;
+    }
     hideSpinner();
     clearVideo(); // nothing to play — don't leave a dangling preview/object URL
     console.error('[VIP][landing] ingestion failed:', err);
     setStatus(err.message, 'error');
+    endJob(job.id, 'error', err);
+    window.__vipLandingJobId = null;
     ingested = null;
     sourceFile = null;
     ui.processBtn.disabled = true;

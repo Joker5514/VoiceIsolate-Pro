@@ -2789,9 +2789,11 @@ class VoiceIsolatePro {
       const unit = SLIDER_REG_BY_ID[id]?.unit || SLIDER_BY_ID[id]?.unit || '';
       if (valEl) valEl.textContent = value + _formatSliderUnit(unit);
     }
+    // Lazy accordion: params apply even when slider DOM is not mounted yet.
+    // Flush will read VIP_PARAMS when the panel opens.
     this.onSlider(id, value);
     this._applySliderToWorklet(id, value);
-    if (notify) el?.dispatchEvent(new Event('change', { bubbles: true }));
+    if (notify && el) el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   // ── Preset application ────────────────────────────────────────────────────
@@ -3449,24 +3451,47 @@ class VoiceIsolatePro {
       HeroExperience.onDecodeStart();
       this._showFileLoading(file.name ? `Decoding ${file.name}…` : 'Decoding…');
       resetTimings();
+      // Standalone decode (Play / Analyze / Save Original) gets its own job + Cancel.
+      // When Process already owns the overlay/job, nest quietly under it.
+      const jobs = globalThis.__VIP_JOBS__;
+      const nestUnderProcess = !!this.isProcessing || !!jobs?.getCurrentJobId?.();
+      let decodeJob = null;
+      if (!nestUnderProcess && jobs?.beginJob) {
+        decodeJob = jobs.beginJob('Decoding…', { kind: 'decode' });
+        if (typeof this.showProcessingOverlay === 'function') {
+          this.showProcessingOverlay('Decoding…', 0, 'decoding');
+        }
+      }
       try {
         await this.ensureCtx();
         if (this.ctx?.state === 'suspended') await this.ctx.resume();
-        if (fileSeq !== this._fileSeq) return null;
+        if (fileSeq !== this._fileSeq) {
+          if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
+          return null;
+        }
 
         stageStart('decode');
         const decoded = await decodeBlobToAudioBuffer(file, {
           onProgress: (pct) => {
             if (fileSeq !== this._fileSeq) return;
+            const p = Math.round(pct);
             const label = pct < 50 ? 'Reading file…' : pct < 100 ? 'Decoding audio…' : 'Decode complete';
-            this._showFileLoading(`${label} (${Math.round(pct)}%)`);
+            this._showFileLoading(`${label} (${p}%)`);
+            if (decodeJob && jobs?.updateJob) jobs.updateJob(decodeJob.id, label, p);
+            if (decodeJob && typeof this.updateProcessingOverlay === 'function') {
+              this.updateProcessingOverlay(label, p, 2);
+            }
           },
         });
         stageEnd('decode');
         await yieldToBrowser();
-        if (fileSeq !== this._fileSeq) return null;
+        if (fileSeq !== this._fileSeq) {
+          if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
+          return null;
+        }
 
         stageStart('resample');
+        if (decodeJob && jobs?.updateJob) jobs.updateJob(decodeJob.id, 'Resampling…', 85);
         const buffer = await resampleToCanonical(decoded);
         stageEnd('resample');
         await yieldToBrowser();
@@ -3474,7 +3499,10 @@ class VoiceIsolatePro {
         if (!buffer || !buffer.length) {
           throw new Error('Decoded audio is empty or unreadable');
         }
-        if (fileSeq !== this._fileSeq) return null;
+        if (fileSeq !== this._fileSeq) {
+          if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
+          return null;
+        }
 
         this.inputBuffer = buffer;
         this.origBuffer = buffer;
@@ -3498,11 +3526,24 @@ class VoiceIsolatePro {
           });
         }
         this.onAudioLoaded(file.name, fileSeq);
+        if (decodeJob) jobs.endJob(decodeJob.id, 'completed');
         return buffer;
       } catch (decodeErr) {
-        if (fileSeq !== this._fileSeq) return null;
+        if (fileSeq !== this._fileSeq) {
+          if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled');
+          return null;
+        }
         this._decodePromise = null;
         this._decodeReady = false;
+        const cancelled = jobs?.isCancellationError?.(decodeErr)
+          || /cancell?ed|aborted/i.test(String(decodeErr?.message || decodeErr));
+        if (cancelled) {
+          if (decodeJob) jobs.endJob(decodeJob.id, 'cancelled', decodeErr);
+          this.setStatus('READY');
+          this.showNotification('Decode cancelled', 'info');
+          return null;
+        }
+        if (decodeJob) jobs.endJob(decodeJob.id, 'error', decodeErr);
         const isVideoFile = this.isVideo;
         const detail = decodeErr?.message ? ` (${decodeErr.message})` : '';
         const msg = isVideoFile
@@ -3519,6 +3560,10 @@ class VoiceIsolatePro {
         // but only if a newer decode hasn't already taken ownership of the UI.
         if (decodeUiSeq === this._fileSeq) {
           this._hideFileLoading();
+        }
+        // Only hide overlay if we opened a standalone decode job (not nested under Process).
+        if (decodeJob && !this.isProcessing && typeof this.hideProcessingOverlay === 'function') {
+          try { this.hideProcessingOverlay(); } catch { /* ignore */ }
         }
       }
     })();

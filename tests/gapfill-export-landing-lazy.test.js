@@ -43,4 +43,16 @@ describe('Gap-fill export + landing cancel + lazy sliders', () => {
     expect(engCss).toMatch(/ec-simple #section-eq/);
     expect(engCss).toMatch(/ec-simple #section-dynamics/);
   });
+
+  test('Landing decode job + cancel bumps ingestSeq', () => {
+    expect(landingJs).toMatch(/beginJob\('Decode upload'/);
+    expect(landingJs).toMatch(/ingestSeq \+= 1/);
+    expect(landingJs).toMatch(/export:\s*\[0,\s*100\]|id: 'export'/);
+  });
+
+  test('ensureDecoded can open standalone decode job/overlay', () => {
+    expect(appJs).toMatch(/beginJob\('Decoding/);
+    expect(appJs).toMatch(/nestUnderProcess/);
+    expect(appJs).toMatch(/Decode cancelled/);
+  });
 });
