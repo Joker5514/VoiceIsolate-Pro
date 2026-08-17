@@ -6,7 +6,7 @@
  */
 'use strict';
 
-/* global document, KeyboardEvent, MouseEvent, Event */
+/* global document, KeyboardEvent, MouseEvent */
 
 let createDspSliderRow;
 let clampSnap;
