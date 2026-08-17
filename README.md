@@ -252,11 +252,12 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 
 | Asset | Name | Approx. size | Notes |
 |-------|------|----------------|---------|
-| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~97 MB | **v25.0.2** on `latest` |
-| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | ~138 MB | **v25.0.2** on `latest` |
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~96.5 MB | **v25.0.2** on `latest` · rebuilt **2026-08-17** (`a17ce35`) |
+| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | ~138 MB | **v25.0.2** on `latest` · rebuilt **2026-08-17** (`a17ce35`) |
 
 In-repo version (Web / Android `versionName` / Electron artifact): **25.0.2** (`versionCode` / iOS build **250002**).  
-Published GitHub Release **`latest` = [v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**.
+Published GitHub Release **`latest` = [v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**.  
+Native APK + EXE match current `main` shell (cancel jobs, Engineer freeze fixes, mobile landing) as of the 2026-08-17 rebuild.
 
 The download page always points at **real GitHub Release binaries** (never SPA HTML).  
 Same-origin `/download/*.apk` and `/download/*.exe` redirect to Releases (`vercel.json`).
@@ -351,10 +352,14 @@ android/             Capacitor Android project
 
 ## Recent changes (v25.0.2)
 
-- **Android freeze fix** — Process no longer sticks at **88%** after ML: async/yielded dewhistle + stereo expand, progress ticks 86→100, skip auto full-analysis on mobile (tap Analyze)
-- **Version sync** — `package.json`, Android (`25.0.2` / `250002`), iOS, Capacitor UA, API health, SAM runtime, download docs
+- **Native rebuild (2026-08-17)** — Android APK + Windows EXE re-published from `main` @ `a17ce35` so desktop/Android match web
+- **Cancellable UX** — global processing overlay Cancel; decode/export jobs with AbortSignal (Landing + Engineer) (#763–#765)
+- **Engineer cold-open** — no forced mobile warmup; lazy accordion sliders; lighter tickers (#762)
+- **Prod shell** — dead worklet URL no longer forced as `application/javascript` (#761)
+- **Landing mobile** — premium first paint; titlebar badge no longer collides with Download/Engineer (#759–#760)
+- **Android freeze@88** — Process completes after ML: yielded dewhistle/expand, progress 86→100, skip auto full-analysis on mobile (#758)
 - **Engineer Console** — studio 3-col rack on Web / Android / Desktop; Creator · Studio · Forensic tiers share the same shell
-- **Audio** — soft gate, spectral OLA, single-pass STFT, peak safety after ML
+- **Version sync** — `package.json` **25.0.2** / Android `versionCode` **250002** / iOS build **250002**
 
 ### Prior (v25.0.1 / v25.0.0 / v24)
 

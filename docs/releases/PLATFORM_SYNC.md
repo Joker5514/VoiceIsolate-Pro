@@ -2,12 +2,12 @@
 
 | Field | Value |
 |-------|--------|
-| **Git SHA (release cut)** | `main` @ freeze-fix #758 + release assets |
+| **Git SHA (native rebuild)** | `main` @ `a17ce35` (#758–#765) |
 | **Package version** | `25.0.2` / build `250002` |
 | **Published GitHub binaries** | **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (Latest) |
-| **Synced at (UTC)** | 2026-08-13 |
-| **Artifacts** | APK ~97 MB (debug offline) · Windows NSIS ~138 MB |
-| **Notes** | Android Process no longer freezes at 88%; all surfaces share Engineer Console shell |
+| **Synced at (UTC)** | 2026-08-17 |
+| **Artifacts** | APK ~96.5 MB (debug offline) · Windows NSIS ~138 MB |
+| **Notes** | Native shell matches web: freeze@88, Engineer cold-open, cancellable decode/export/process, landing mobile |
 
 ## Version sources of truth
 
