@@ -102,8 +102,19 @@ body.eng-console .ec-col-rack {
   max-height: calc(100vh - 72px);
   overflow-y: auto;
   overflow-x: hidden;
+  /* Last control fully usable above sticky status / window chrome */
   padding-right: 4px;
+  padding-bottom: max(96px, env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: 96px;
+  scroll-padding-top: 56px;
   scrollbar-gutter: stable;
+  z-index: 2;
+  isolation: isolate;
+}
+/* Sticky rack nav must never cover slider thumbs */
+body.eng-console .ec-col-rack .ec-rack-nav {
+  pointer-events: auto;
+  background: linear-gradient(180deg, rgba(7, 8, 12, 0.99), rgba(7, 8, 12, 0.94));
 }
 body.eng-console .ec-col-rack::-webkit-scrollbar {
   width: 8px;
@@ -200,20 +211,49 @@ body.eng-console .module-sub {
   letter-spacing: 0.02em;
 }
 
-/* Two-column slider panels inside rack */
+/*
+ * Rack is ~300–360px wide — two-column slider grids crushed labels/thumbs.
+ * Single column is the desktop default; dual column only on very wide racks.
+ */
 body.eng-console .ec-col-rack .slider-panel {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: visible;
+  padding-bottom: 8px;
 }
 body.eng-console .ec-col-rack .slider-panel .slider-row,
 body.eng-console .ec-col-rack .slider-panel .control-row,
 body.eng-console .ec-col-rack .slider-panel > * {
   min-width: 0;
+  max-width: 100%;
 }
-@media (max-width: 420px) {
+body.eng-console .ec-col-rack .vip-section-body {
+  overflow: visible;
+}
+/* Ultrawide / expanded rack only */
+@media (min-width: 1800px) {
+  body.eng-console {
+    --ec-rack-w: minmax(420px, 520px);
+  }
   body.eng-console .ec-col-rack .slider-panel {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 12px;
+  }
+}
+/* Compact laptop heights: keep rack scrollable and last row reachable */
+@media (max-height: 800px) {
+  body.eng-console .ec-col-rack {
+    max-height: calc(100vh - 56px);
+    top: 52px;
+    padding-bottom: 120px;
+  }
+}
+/* Prefer readable labels over clipping at common desktop zooms */
+@media (min-resolution: 1.25dppx) {
+  body.eng-console .ec-col-rack .sr-label {
+    font-size: 0.7rem;
   }
 }
 

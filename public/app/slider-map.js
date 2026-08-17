@@ -691,6 +691,62 @@ const RAW_SLIDER_REGISTRY = [
   },
 ];
 
+/**
+ * Search aliases for Engineer control filter (denoise, SNR, de-reverb, …).
+ * Merged onto registry entries; UI may also use SLIDER_SEARCH_ALIASES from dsp-slider.js.
+ */
+export const SLIDER_ALIASES = Object.freeze({
+  nrAmount: ['denoise', 'noise reduction', 'nr', 'hiss', 'snr'],
+  nrSensitivity: ['denoise', 'sensitivity', 'noise profile'],
+  nrSpectralSub: ['spectral subtraction', 'wiener', 'subtraction'],
+  nrFloor: ['noise floor', 'gain floor'],
+  nrSmoothing: ['smooth', 'warble'],
+  gateThresh: ['gate', 'noise gate', 'threshold'],
+  gateRange: ['gate depth', 'mute depth'],
+  gateAttack: ['gate open', 'attack'],
+  gateRelease: ['gate close', 'release'],
+  gateHold: ['hold', 'chatter'],
+  gateLookahead: ['lookahead', 'pre-read'],
+  voiceIso: ['voice', 'isolation', 'ml mask', 'separate', 'stem'],
+  bgSuppress: ['background', 'ambience', 'stem', 'music', 'noise'],
+  voiceFocusLo: ['focus', 'band', 'speech low', 'formant low'],
+  voiceFocusHi: ['focus', 'band', 'speech high', 'formant high'],
+  crosstalkCancel: ['crosstalk', 'bleed', 'dual mic'],
+  derevAmt: ['de-reverb', 'dereverb', 'room', 'echo', 'reverb'],
+  derevDecay: ['reverb', 'decay', 'room tail'],
+  deEssFreq: ['de-ess', 'deess', 'sibilance', 'ess'],
+  deEssAmt: ['de-ess', 'deess', 'sibilance'],
+  hpFreq: ['highpass', 'high-pass', 'rumble', 'hpf'],
+  lpFreq: ['lowpass', 'low-pass', 'lpf'],
+  hpQ: ['highpass q', 'resonance'],
+  lpQ: ['lowpass q'],
+  compThresh: ['compressor', 'dynamics', 'threshold'],
+  compRatio: ['compressor', 'ratio'],
+  compAttack: ['compressor attack'],
+  compRelease: ['compressor release'],
+  compKnee: ['knee'],
+  compMakeup: ['makeup', 'gain'],
+  limThresh: ['limiter', 'ceiling', 'clip'],
+  limRelease: ['limiter release'],
+  dryWet: ['mix', 'blend', 'wet', 'dry'],
+  outGain: ['gain', 'volume', 'level', 'output'],
+  outWidth: ['width', 'stereo out'],
+  ditherAmt: ['dither', 'bit depth'],
+  whisperLift: ['whisper', 'forensic', 'lift'],
+  crowdNull: ['crowd', 'murmur', 'stadium'],
+  bassCrush: ['kick', 'sub', 'bass crush'],
+  stereoWidth: ['width', 'stereo', 'mono'],
+  phaseCorr: ['phase', 'alignment'],
+  formantShift: ['formant', 'vowel', 'character'],
+  harmRecov: ['harmonic', 'reconstruction', 'recover'],
+  harmOrder: ['harmonics', 'overtones'],
+  specTilt: ['tilt', 'brightness'],
+  reverbStrip: ['reverb strip', 'room'],
+  voiceTunnel: ['tunnel', 'formant focus'],
+  roomCorrection: ['room correction'],
+  subHarmonic: ['sub harmonic', 'body'],
+});
+
 /** Attach inline hints + structured metadata from SLIDER_HINTS to each registry entry. */
 function attachSliderHints(entries) {
   return entries.map((entry) => {
@@ -698,6 +754,7 @@ function attachSliderHints(entries) {
     const hintText = typeof entry.hint === 'string' && entry.hint
       ? entry.hint
       : (meta.hint || '');
+    const aliases = SLIDER_ALIASES[entry.id] || entry.aliases || [];
     return {
       ...entry,
       hint: hintText,
@@ -707,6 +764,7 @@ function attachSliderHints(entries) {
       artifactRisk: meta.artifactRisk,
       pairedWith: meta.pairedWith,
       modeDefaults: meta.modeDefaults,
+      aliases: Array.isArray(aliases) ? aliases : [],
     };
   });
 }

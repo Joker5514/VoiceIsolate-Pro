@@ -284,6 +284,13 @@ cancel-job changes on `main`, re-run `pnpm android:build:win` + `pnpm build:elec
 and `gh release upload v25.0.2 … --clobber` so installers stay in parity with web.
 Canonical pins: [docs/DOWNLOADS.md](docs/DOWNLOADS.md), [docs/releases/PLATFORM_SYNC.md](docs/releases/PLATFORM_SYNC.md).
 
+**Engineer DSP sliders (desktop-first):** rows are built by
+`src/presentation/DspSlider.js` (`createDspSliderRow`) from `SLIDER_REGISTRY` in
+`public/app/slider-map.js`. Do not reintroduce tiny hit targets, two-column rack
+grids under ~1800px, or readout-only values without a synchronized number field.
+Locks must block drag/keys/number/presets/reset. Guide:
+[docs/guides/DSP_SLIDERS.md](docs/guides/DSP_SLIDERS.md).
+
 ---
 
 ## 6. Commands
