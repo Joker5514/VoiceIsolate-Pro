@@ -42,6 +42,7 @@ Single map of product, architecture, platform, and historical docs.
 | [guides/MODEL_DELIVERY.md](guides/MODEL_DELIVERY.md) | ONNX delivery, integrity, offline packaging |
 | [guides/electron-desktop.md](guides/electron-desktop.md) | Electron shell, offline installer, IPC |
 | [guides/ANDROID.md](guides/ANDROID.md) | Capacitor Android build, sideload, WebView notes |
+| [guides/DSP_SLIDERS.md](guides/DSP_SLIDERS.md) | Engineer DSP slider registry, keyboard, lock, search, a11y |
 | [guides/REVENUECAT_ISOLATION.md](guides/REVENUECAT_ISOLATION.md) | IAP boundary — never leak into DSP |
 | [guides/SAM_AUDIO.md](guides/SAM_AUDIO.md) | SAM-**Audio** (sound separation) — Desktop worker / optional ONNX |
 | [SAM3_TECHNICAL_DOCUMENTATION.md](SAM3_TECHNICAL_DOCUMENTATION.md) | SAM **3** (vision/video) — sidecar brief, flags, `src/sam3_integration/` status |

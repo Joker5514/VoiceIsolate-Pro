@@ -42,12 +42,18 @@
  *   - Transport A/B and playhead remain available after Process completes.
  */
 
-import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
+import { SLIDER_REGISTRY, STAGES, SLIDER_ALIASES } from './slider-map.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import {
   calibrate,
   getEffectiveDspParams,
 } from './slider-calibration.js';
+import {
+  createDspSliderRow,
+  sliderMatchesQuery,
+  SLIDER_SEARCH_ALIASES,
+  buildAriaValueText,
+} from '/src/presentation/DspSlider.js';
 import { decodeBlobToAudioBuffer } from '/src/pipeline/media-decode.js';
 import { resampleToCanonical } from '/src/pipeline/FileIngestion.js';
 import { createYieldBudget, yieldToBrowser } from '/src/pipeline/ui-yield.js';
@@ -1107,6 +1113,11 @@ class VoiceIsolatePro {
       resetSlidersBtn:g('resetSlidersBtn'),
       resetUnlockedBtn:g('resetUnlockedBtn'),
       sliderSearch:g('sliderSearch'),
+      sliderSearchClear:g('sliderSearchClear'),
+      sliderFilterAll:g('sliderFilterAll'),
+      sliderFilterChanged:g('sliderFilterChanged'),
+      sliderFilterLocked:g('sliderFilterLocked'),
+      sliderFilterStatus:g('sliderFilterStatus'),
       pipeFill:g('pipeFill'),
       pipeBar:g('pipeBar'),
       pipeDetail:g('pipeDetail'),
@@ -1577,12 +1588,18 @@ class VoiceIsolatePro {
     row.classList.toggle('is-locked', locked);
     btn.classList.toggle('is-locked', locked);
     btn.setAttribute('aria-pressed', String(locked));
-    btn.setAttribute('aria-label', locked ? `Unlock ${id}` : `Lock ${id}`);
-    btn.title = locked ? 'Unlock slider (allow preset/reset changes)' : 'Lock slider (ignore preset changes)';
+    const labelText = (row.querySelector('.sr-label')?.textContent || id).replace(/\s*RT\s*$/, '').trim() || id;
+    btn.setAttribute('aria-label', locked ? `Unlock ${labelText}` : `Lock ${labelText}`);
+    btn.title = locked
+      ? `Unlock ${labelText} (allow preset/reset changes)`
+      : `Lock ${labelText} (ignore preset changes)`;
+    if (typeof row._dspSlider?.setLocked === 'function') {
+      row._dspSlider.setLocked(locked);
+    }
     const input = row.querySelector('input[type="range"]');
     if (input) {
       input.classList.toggle('slider-input-locked', locked);
-      // Keep visually present; block pointer interaction only.
+      // Keep visually present; block pointer interaction only when locked.
       input.style.pointerEvents = locked ? 'none' : '';
       if (locked) input.setAttribute('aria-readonly', 'true');
       else input.removeAttribute('aria-readonly');
@@ -1593,6 +1610,15 @@ class VoiceIsolatePro {
         tickWrap.dataset.locked = locked ? 'true' : 'false';
       }
     }
+    const num = row.querySelector('input.dsp-slider-number, input[type="number"].sr-val');
+    if (num) {
+      num.readOnly = locked;
+      num.classList.toggle('slider-input-locked', locked);
+      if (locked) num.setAttribute('aria-readonly', 'true');
+      else num.removeAttribute('aria-readonly');
+    }
+    const resetBtn = row.querySelector('.slider-reset-btn');
+    if (resetBtn) resetBtn.disabled = locked;
   }
 
   /**
@@ -1739,116 +1765,81 @@ class VoiceIsolatePro {
 
   _appendSliderRow(s, container) {
       if (!container || container.querySelector(`[data-slider-id="${s.id}"]`)) return;
-      const row = document.createElement('div');
-      row.className = 'sr-row slider-row';
-      row.dataset.sliderId = s.id;
-
-      const labelEl = document.createElement('label');
-      labelEl.className = 'sr-label';
-      labelEl.htmlFor = 'sl_' + s.id;
-      labelEl.textContent = s.label;
-      labelEl.title = s.desc || '';
-
-      if (s.rt) {
-        const badge = document.createElement('span');
-        badge.className = 'rt-badge';
-        badge.textContent = 'RT';
-        labelEl.appendChild(badge);
-      }
-
-      const inputEl = document.createElement('input');
-      inputEl.type = 'range';
-      inputEl.id = 'sl_' + s.id;
-      inputEl.name = s.id;
-      inputEl.classList.add('dsp-slider');
-      if (EXTREME_DATA_PARAMS[s.id]) inputEl.dataset.param = EXTREME_DATA_PARAMS[s.id];
-      inputEl.min = s.min;
-      inputEl.max = s.max;
-      inputEl.step = s.step;
-      const initVal = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined) ? window.VIP_PARAMS[s.id] : s.val;
-      inputEl.value = initVal;
-      inputEl.setAttribute('aria-label', s.label);
-      inputEl.setAttribute('aria-valuenow', initVal);
-      if (s.rt) inputEl.classList.add('realtime');
-
-      const range = s.max - s.min;
-      const initPct = range > 0 ? ((initVal - s.min) / range) * 100 : 0;
-      inputEl.style.setProperty('--pct', `${initPct.toFixed(1)}%`);
-
-      const valEl = document.createElement('span');
-      valEl.className = 'sr-val';
-      valEl.id = 'val_' + s.id;
-      valEl.textContent = initVal + (s.unit || '');
-
-      // PATCHED BY vip-fixes.js — consider merging
-      inputEl.addEventListener('pointerdown', (ev) => {
-        if (this._isSliderLocked(s.id)) {
-          ev.preventDefault();
-          ev.stopPropagation();
-        }
-      });
-      inputEl.addEventListener('input', () => {
-        if (this._isSliderLocked(s.id) && !this._programmaticSliderUpdate) {
-          // Restore locked value — block manual drag.
-          const lockedVal = window.VIP_PARAMS?.[s.id] ?? s.val;
-          inputEl.value = lockedVal;
-          return;
-        }
-        if (!this._programmaticSliderUpdate) this._userTouchedSliders.add(s.id);
-        const el = inputEl;
-        const v = parseFloat(el.value);
-        const min = parseFloat(el.min);
-        const max = parseFloat(el.max);
-        const r = parseFloat(el.max) - parseFloat(el.min);
-        const pct = r > 0 ? ((v - min) / (max - min)) * 100 : 0;
-        el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
-        el.setAttribute('aria-valuenow', v);
-        valEl.textContent = v + (s.unit || '');
-        window.VIP_PARAMS = window.VIP_PARAMS || {};
-        window.VIP_PARAMS[s.id] = v;
-        this.params[s.id] = v;
-        if (this.sharedParams) {
-          const idx = this._sliderIndexById.get(s.id);
-          if (idx !== undefined) this.sharedParams[idx] = v;
-        }
-        this.onSlider(s.id, v);
-        // Coalesce Live-Mix param storm — one rAF batch for bridge/worklet.
-        this._pendingLiveParam = this._pendingLiveParam || {};
-        this._pendingLiveParam[s.id] = v;
-        if (!this._liveParamRaf) {
-          this._liveParamRaf = requestAnimationFrame(() => {
-            this._liveParamRaf = 0;
-            const batch = this._pendingLiveParam || {};
-            this._pendingLiveParam = null;
-            for (const [pid, pval] of Object.entries(batch)) {
-              this._applySliderToWorklet(pid, pval);
-            }
-            this._syncBridgeParams?.();
-          });
-        }
-        this._scheduleSessionPersist();
-      });
-
-      const lockBtn = document.createElement('button');
-      lockBtn.type = 'button';
-      lockBtn.className = 'slider-lock-btn';
-      lockBtn.setAttribute('aria-label', `Lock ${s.label}`);
-      lockBtn.setAttribute('aria-pressed', 'false');
-      lockBtn.title = 'Lock slider (ignore preset changes)';
-      lockBtn.innerHTML = this._lockButtonSvgHtml();
-      lockBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.toggleSliderLock(s.id);
-      });
-
-      row.dataset.locked = 'false';
-      row.appendChild(labelEl);
-      row.appendChild(inputEl);
-      row.appendChild(valEl);
-      row.appendChild(lockBtn);
-
+      const initVal = (window.VIP_PARAMS && window.VIP_PARAMS[s.id] !== undefined)
+        ? window.VIP_PARAMS[s.id]
+        : s.val;
       const regEntry = SLIDER_REG_BY_ID[s.id];
+      const groupEl = typeof container.closest === 'function'
+        ? container.closest('details.slider-group, details.vip-section')
+        : null;
+      const groupLabel = groupEl?.querySelector('.vip-section-summary')?.childNodes?.[0]?.textContent?.trim()
+        || groupEl?.id
+        || s.group
+        || '';
+
+      const widget = createDspSliderRow({
+        spec: {
+          id: s.id,
+          label: s.label,
+          min: s.min,
+          max: s.max,
+          step: s.step,
+          val: s.val,
+          default: s.val,
+          unit: s.unit || '',
+          rt: !!s.rt,
+          desc: s.desc || regEntry?.tip || '',
+          tip: regEntry?.tip || s.desc || '',
+          group: s.group || regEntry?.group,
+        },
+        value: initVal,
+        groupLabel,
+        isLocked: () => this._isSliderLocked(s.id),
+        onToggleLock: (id) => this.toggleSliderLock(id),
+        onReset: (id) => {
+          if (this._isSliderLocked(id)) return;
+          const spec = SLIDER_BY_ID[id] || SLIDER_REG_BY_ID[id];
+          const def = spec?.val != null ? spec.val : (spec?.default ?? s.val);
+          this._setSliderUi(id, def, { notify: true, force: false });
+          this._userTouchedSliders.delete(id);
+          this._applyControlFilters?.();
+        },
+        onChange: (id, v, meta = {}) => {
+          if (this._isSliderLocked(id) && !this._programmaticSliderUpdate) return;
+          if (!this._programmaticSliderUpdate && meta.source !== 'programmatic') {
+            this._userTouchedSliders.add(id);
+          }
+          window.VIP_PARAMS = window.VIP_PARAMS || {};
+          window.VIP_PARAMS[id] = v;
+          this.params[id] = v;
+          if (this.sharedParams) {
+            const idx = this._sliderIndexById.get(id);
+            if (idx !== undefined) this.sharedParams[idx] = v;
+          }
+          this.onSlider(id, v);
+          // Coalesce Live-Mix param storm — one rAF batch for bridge/worklet.
+          this._pendingLiveParam = this._pendingLiveParam || {};
+          this._pendingLiveParam[id] = v;
+          if (!this._liveParamRaf) {
+            this._liveParamRaf = requestAnimationFrame(() => {
+              this._liveParamRaf = 0;
+              const batch = this._pendingLiveParam || {};
+              this._pendingLiveParam = null;
+              for (const [pid, pval] of Object.entries(batch)) {
+                this._applySliderToWorklet(pid, pval);
+              }
+              this._syncBridgeParams?.();
+            });
+          }
+          this._scheduleSessionPersist();
+          if (meta.source !== 'programmatic') this._applyControlFilters?.();
+        },
+      });
+
+      const { row, range: inputEl } = widget;
+      row._dspSlider = widget;
+      if (EXTREME_DATA_PARAMS[s.id]) inputEl.dataset.param = EXTREME_DATA_PARAMS[s.id];
+
       const examples = (regEntry && regEntry.examples && regEntry.examples.length)
         ? regEntry.examples
         : this._defaultSliderExamples(s);
@@ -1893,13 +1884,12 @@ class VoiceIsolatePro {
           },
         });
         inputEl.setAttribute('aria-describedby', hintPanel.id);
-
         row.appendChild(hintBtn);
       }
       const infoBtn = document.createElement('button');
       infoBtn.type = 'button';
       infoBtn.className = 'info-btn';
-      infoBtn.setAttribute('aria-label', `Examples for ${s.id}`);
+      infoBtn.setAttribute('aria-label', `Examples for ${s.label}`);
       infoBtn.dataset.sliderId = s.id;
       infoBtn.tabIndex = 0;
       infoBtn.textContent = 'ℹ';
@@ -1911,12 +1901,88 @@ class VoiceIsolatePro {
       row.appendChild(infoBtn);
       if (hintPanel) row.appendChild(hintPanel);
 
+      // Index aliases for search (registry + shared dictionary).
+      const aliases = [
+        ...(regEntry?.aliases || []),
+        ...(SLIDER_ALIASES[s.id] || []),
+        ...(SLIDER_SEARCH_ALIASES[s.id] || []),
+      ];
+      row.dataset.searchText = [s.id, s.label, s.desc, regEntry?.tip, regEntry?.hint, groupLabel, ...aliases]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
       container.appendChild(row);
       if (this._isSliderLocked(s.id)) this._syncSliderLockUi(s.id);
 
       window.VIP_PARAMS = window.VIP_PARAMS || {};
       window.VIP_PARAMS[s.id] = initVal;
       this.params[s.id] = initVal;
+  }
+
+  /**
+   * Apply search query + All/Changed/Locked filter chips to Engineer slider rows.
+   * Opens parent groups when matches exist; never covers controls with overlays.
+   */
+  _applyControlFilters() {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    const d = this.dom || {};
+    const q = (d.sliderSearch?.value || '').trim().toLowerCase();
+    const mode = this._sliderFilterMode || 'all';
+    let visible = 0;
+    let total = 0;
+    document.querySelectorAll('.sr-row[data-slider-id], .slider-row[data-slider-id]').forEach((row) => {
+      const id = row.dataset.sliderId;
+      if (!id) return;
+      total += 1;
+      const locked = this._isSliderLocked(id);
+      const changed = this._userTouchedSliders?.has(id)
+        || (() => {
+          const spec = SLIDER_BY_ID[id] || SLIDER_REG_BY_ID[id];
+          if (!spec) return false;
+          const def = spec.val != null ? spec.val : spec.default;
+          const cur = window.VIP_PARAMS?.[id];
+          return cur != null && def != null && Number(cur) !== Number(def);
+        })();
+      const hay = row.dataset.searchText
+        || ((row.querySelector('.sr-label') || {}).textContent || '').toLowerCase();
+      const matchesQuery = !q || hay.includes(q)
+        || sliderMatchesQuery({
+          id,
+          label: row.querySelector('.sr-label')?.textContent || id,
+          aliases: SLIDER_ALIASES[id] || SLIDER_SEARCH_ALIASES[id] || [],
+        }, q);
+      let matchesMode = true;
+      if (mode === 'locked') matchesMode = locked;
+      else if (mode === 'changed') matchesMode = changed;
+      const show = matchesQuery && matchesMode;
+      row.hidden = !show;
+      row.style.display = show ? '' : 'none';
+      if (show) {
+        visible += 1;
+        const details = row.closest('details.slider-group, details.vip-section');
+        if (details && q) details.open = true;
+      }
+    });
+    // When filtering, hide empty groups; when clearing, leave open state alone.
+    document.querySelectorAll('details.slider-group, details.vip-section').forEach((details) => {
+      if (!details.querySelector('.sr-row[data-slider-id], .slider-row[data-slider-id]')) return;
+      if (!q && mode === 'all') {
+        details.classList.remove('filter-empty');
+        return;
+      }
+      const any = Array.from(details.querySelectorAll('.sr-row[data-slider-id], .slider-row[data-slider-id]'))
+        .some((r) => !r.hidden && r.style.display !== 'none');
+      details.classList.toggle('filter-empty', !any);
+      if (any && (q || mode !== 'all')) details.open = true;
+    });
+    const status = d.sliderFilterStatus || document.getElementById('sliderFilterStatus');
+    if (status) {
+      const modeLabel = mode === 'all' ? 'all' : mode;
+      status.textContent = q || mode !== 'all'
+        ? `Showing ${visible} of ${total} controls (${modeLabel}${q ? `, “${q}”` : ''})`
+        : `${total} controls`;
+    }
   }
 
   _bindHintDismiss() {
@@ -2505,13 +2571,43 @@ class VoiceIsolatePro {
       }
     });
 
-    // PATCHED BY vip-fixes.js — consider merging
-    // Slider search
-    bind('sliderSearch', d.sliderSearch, 'input', () => {
-      const q = d.sliderSearch.value.trim().toLowerCase();
-      qsa('.sr-row').forEach(row => {
-        const label = (row.querySelector('.sr-label') || {}).textContent || '';
-        row.style.display = (!q || label.toLowerCase().includes(q)) ? '' : 'none';
+    // Control search + All / Changed / Locked filter chips
+    this._sliderFilterMode = 'all';
+    const setFilterMode = (mode) => {
+      this._sliderFilterMode = mode || 'all';
+      const chips = [
+        [d.sliderFilterAll || $('sliderFilterAll'), 'all'],
+        [d.sliderFilterChanged || $('sliderFilterChanged'), 'changed'],
+        [d.sliderFilterLocked || $('sliderFilterLocked'), 'locked'],
+      ];
+      chips.forEach(([el, m]) => {
+        if (!el) return;
+        const on = m === this._sliderFilterMode;
+        el.setAttribute('aria-pressed', String(on));
+        el.classList.toggle('is-active', on);
+      });
+      this._applyControlFilters();
+    };
+    bind('sliderSearch', d.sliderSearch, 'input', () => this._applyControlFilters());
+    bind('sliderSearchClear', d.sliderSearchClear || $('sliderSearchClear'), 'click', () => {
+      if (d.sliderSearch) d.sliderSearch.value = '';
+      const clearBtn = d.sliderSearchClear || $('sliderSearchClear');
+      if (d.sliderSearch) d.sliderSearch.focus();
+      if (clearBtn) clearBtn.blur();
+      this._applyControlFilters();
+    });
+    bind('sliderFilterAll', d.sliderFilterAll || $('sliderFilterAll'), 'click', () => setFilterMode('all'));
+    bind('sliderFilterChanged', d.sliderFilterChanged || $('sliderFilterChanged'), 'click', () => setFilterMode('changed'));
+    bind('sliderFilterLocked', d.sliderFilterLocked || $('sliderFilterLocked'), 'click', () => setFilterMode('locked'));
+    setFilterMode('all');
+
+    // Per-group "Reset unlocked in group" actions
+    qsa('[data-reset-group]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const groupId = btn.getAttribute('data-reset-group');
+        this._resetSliderGroup(groupId, { unlockedOnly: true });
       });
     });
 
@@ -2732,20 +2828,78 @@ class VoiceIsolatePro {
     const rows = (typeof document !== 'undefined' && document.querySelectorAll)
       ? document.querySelectorAll('[id^="sl_"]')
       : [];
+    let changed = 0;
     rows.forEach((el) => {
       const id = el.id.slice(3);
       if (unlockedOnly && this._isSliderLocked(id)) return;
       const spec = SLIDER_BY_ID[id] || SLIDER_REG_BY_ID[id];
       if (!spec) return;
       const def = spec.val != null ? spec.val : spec.default;
+      const cur = window.VIP_PARAMS?.[id];
+      if (cur != null && Number(cur) === Number(def) && unlockedOnly) {
+        this._userTouchedSliders.delete(id);
+        return;
+      }
       this._setSliderUi(id, def, { notify: true, force: !unlockedOnly });
       this._userTouchedSliders.delete(id);
+      changed += 1;
     });
     if (!unlockedOnly || !this._isSliderLocked('whisperMode')) {
       this._setWhisperMode(SLIDER_BY_ID.whisperMode ? SLIDER_BY_ID.whisperMode.val : 0);
       this._userTouchedSliders.delete('whisperMode');
     }
-    this.showNotification(unlockedOnly ? 'Unlocked controls reset' : 'All controls reset', 'info');
+    this._applyControlFilters?.();
+    this.showNotification(
+      unlockedOnly
+        ? (changed ? `Reset ${changed} unlocked control(s)` : 'No unlocked controls needed reset')
+        : 'All controls reset',
+      'info',
+    );
+  }
+
+  /**
+   * Reset unlocked sliders belonging to a panel/section (by DOM id).
+   * Locked parameters are never touched.
+   */
+  _resetSliderGroup(groupKey, { unlockedOnly = true } = {}) {
+    if (!groupKey) return;
+    const root = document.getElementById(groupKey);
+    let n = 0;
+    if (root) {
+      const rows = root.querySelectorAll('.sr-row[data-slider-id], .slider-row[data-slider-id]');
+      rows.forEach((row) => {
+        const id = row.dataset.sliderId;
+        if (!id) return;
+        if (unlockedOnly && this._isSliderLocked(id)) return;
+        const spec = SLIDER_BY_ID[id] || SLIDER_REG_BY_ID[id];
+        if (!spec) return;
+        const def = spec.val != null ? spec.val : spec.default;
+        this._setSliderUi(id, def, { notify: true, force: false });
+        this._userTouchedSliders.delete(id);
+        n += 1;
+      });
+    }
+    if (n === 0) {
+      for (const s of RENDER_SLIDERS) {
+        const panelId = this._getSliderPanelId(s.id);
+        const section = root;
+        const inPanel = panelId === groupKey
+          || s.group === groupKey
+          || (section && panelId && section.querySelector(`#${panelId}`));
+        if (!inPanel) continue;
+        if (unlockedOnly && this._isSliderLocked(s.id)) continue;
+        const def = s.val != null ? s.val : s.default;
+        this._setSliderUi(s.id, def, { notify: true, force: false });
+        this._userTouchedSliders.delete(s.id);
+        n += 1;
+      }
+    }
+    this._applyControlFilters?.();
+    if (n === 0) {
+      this.showNotification('No unlocked controls to reset in this group', 'info');
+      return;
+    }
+    this.showNotification(`Reset ${n} unlocked control(s) in group`, 'info');
   }
 
   /** Push a calibrated slider value through VIP_PARAMS, DOM, bridge, and worklet. */
@@ -2777,7 +2931,12 @@ class VoiceIsolatePro {
       if (idx !== undefined) this.sharedParams[idx] = value;
     }
     const el = document.getElementById('sl_' + id);
-    if (el) {
+    const row = document.querySelector(
+      `.slider-row[data-slider-id="${id}"], .sr-row[data-slider-id="${id}"]`,
+    );
+    if (row?._dspSlider && typeof row._dspSlider.setValue === 'function') {
+      row._dspSlider.setValue(value, { silent: true });
+    } else if (el) {
       el.value = value;
       el.setAttribute('aria-valuenow', value);
       const min = parseFloat(el.min);
@@ -2785,9 +2944,14 @@ class VoiceIsolatePro {
       const range = max - min;
       const pct = range > 0 ? ((value - min) / range) * 100 : 0;
       el.style.setProperty('--pct', `${pct.toFixed(1)}%`);
-      const valEl = document.getElementById('val_' + id);
       const unit = SLIDER_REG_BY_ID[id]?.unit || SLIDER_BY_ID[id]?.unit || '';
-      if (valEl) valEl.textContent = value + _formatSliderUnit(unit);
+      const label = SLIDER_REG_BY_ID[id]?.label || SLIDER_BY_ID[id]?.label || id;
+      el.setAttribute('aria-valuetext', buildAriaValueText(label, value, unit));
+      const valEl = document.getElementById('val_' + id);
+      if (valEl) {
+        if (valEl.tagName === 'INPUT') valEl.value = String(value);
+        else valEl.textContent = value + _formatSliderUnit(unit);
+      }
     }
     // Lazy accordion: params apply even when slider DOM is not mounted yet.
     // Flush will read VIP_PARAMS when the panel opens.

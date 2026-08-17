@@ -319,6 +319,7 @@ android/             Capacitor Android project
 | AudioWorklets | [docs/guides/WORKLETS.md](docs/guides/WORKLETS.md) |
 | Android app | [docs/guides/ANDROID.md](docs/guides/ANDROID.md) |
 | Downloads (APK / Windows) | [docs/DOWNLOADS.md](docs/DOWNLOADS.md) |
+| Engineer DSP sliders (a11y, lock, search) | [docs/guides/DSP_SLIDERS.md](docs/guides/DSP_SLIDERS.md) |
 | Model delivery | [docs/guides/MODEL_DELIVERY.md](docs/guides/MODEL_DELIVERY.md) |
 | Desktop | [docs/guides/electron-desktop.md](docs/guides/electron-desktop.md) |
 | Archive (historical) | [docs/archive/README.md](docs/archive/README.md) |
