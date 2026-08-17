@@ -2,12 +2,12 @@
 
 | Field | Value |
 |-------|--------|
-| **Git SHA (native rebuild)** | `main` @ `a17ce35` (#758–#765) |
+| **Git SHA (native rebuild)** | `main` @ `34d0981` (#767 + #758–#765) |
 | **Package version** | `25.0.2` / build `250002` |
 | **Published GitHub binaries** | **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (Latest) |
-| **Synced at (UTC)** | 2026-08-17 |
-| **Artifacts** | APK ~96.5 MB (debug offline) · Windows NSIS ~138 MB |
-| **Notes** | Native shell matches web: freeze@88, Engineer cold-open, cancellable decode/export/process, landing mobile |
+| **Synced at (UTC)** | 2026-08-17T06:56Z |
+| **Artifacts** | APK ~96.8 MB (debug offline) · Windows NSIS ~138 MB |
+| **Notes** | Native = web shell: accessible Engineer DSP sliders, freeze@88, cancel jobs, landing mobile |
 
 ## Version sources of truth
 

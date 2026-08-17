@@ -4,7 +4,7 @@
 **Android:** `versionName "25.0.2"` · `versionCode` **250002**  
 **iOS:** `CFBundleShortVersionString` **25.0.2** · `CFBundleVersion` **250002**  
 **Published GitHub Release (latest):** **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**  
-**Native rebuild (APK + Windows EXE):** **2026-08-17** from `main` @ `a17ce35` (#758–#765 — freeze@88, Engineer cold-open, cancellable decode/export/process UI, landing mobile shell)
+**Native rebuild (APK + Windows EXE):** **2026-08-17T06:56Z** from `main` @ `34d0981` (#767 desktop Engineer slider a11y + #758–#765 cancel/freeze shell)
 
 ## Public URLs (verified)
 
@@ -28,8 +28,8 @@ Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` t
 | Platform | Artifact | What’s included |
 |----------|----------|-----------------|
 | **Web** | Vercel → `public/` | Landing Live-Mix + **Engineer Console** (3-col rack, integrity/safety, auto-analysis); SAM3 vision (flag OFF); SAM-Audio optional |
-| **Android** | `VoiceIsolate-Pro-android-debug.apk` (~96.5 MB) | Capacitor WebView of **same** `build/` shell (Landing + Engineer Console + worklets + ONNX); last upload 2026-08-17 |
-| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (~138 MB) | Electron loads **same** `build/**` + optional SAM-Audio worker; last upload 2026-08-17 |
+| **Android** | `VoiceIsolate-Pro-android-debug.apk` (~96.8 MB) | Capacitor WebView of **same** `build/` shell (Landing + Engineer Console + worklets + ONNX); last upload **2026-08-17T06:56Z** |
+| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (~138 MB) | Electron loads **same** `build/**` + optional SAM-Audio worker; last upload **2026-08-17T06:56Z** |
 
 Engineer Console files that must ship offline: `app/engineer-console.css`, `app/engineer-console.js` (asserted by Android prepare/verify scripts).
 

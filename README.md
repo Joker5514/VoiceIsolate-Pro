@@ -252,12 +252,12 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 
 | Asset | Name | Approx. size | Notes |
 |-------|------|----------------|---------|
-| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~96.5 MB | **v25.0.2** on `latest` · rebuilt **2026-08-17** (`a17ce35`) |
-| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | ~138 MB | **v25.0.2** on `latest` · rebuilt **2026-08-17** (`a17ce35`) |
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~96.8 MB | **v25.0.2** on `latest` · rebuilt **2026-08-17T06:56Z** (`34d0981`) |
+| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | ~138 MB | **v25.0.2** on `latest` · rebuilt **2026-08-17T06:56Z** (`34d0981`) |
 
 In-repo version (Web / Android `versionName` / Electron artifact): **25.0.2** (`versionCode` / iOS build **250002**).  
 Published GitHub Release **`latest` = [v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**.  
-Native APK + EXE match current `main` shell (cancel jobs, Engineer freeze fixes, mobile landing) as of the 2026-08-17 rebuild.
+Native APK + EXE match current `main` shell (Engineer DSP slider a11y #767, cancel jobs, freeze fixes) as of the **2026-08-17T06:56Z** rebuild.
 
 The download page always points at **real GitHub Release binaries** (never SPA HTML).  
 Same-origin `/download/*.apk` and `/download/*.exe` redirect to Releases (`vercel.json`).
@@ -353,7 +353,8 @@ android/             Capacitor Android project
 
 ## Recent changes (v25.0.2)
 
-- **Native rebuild (2026-08-17)** — Android APK + Windows EXE re-published from `main` @ `a17ce35` so desktop/Android match web
+- **Native rebuild (2026-08-17T06:56Z)** — Android APK + Windows EXE from `main` @ `34d0981` (Engineer slider a11y #767 + cancel/freeze shell)
+- **Engineer DSP sliders (desktop)** — usable rack layout, 40px targets, numeric entry, lock/search/filter ([DSP_SLIDERS.md](docs/guides/DSP_SLIDERS.md)) (#767)
 - **Cancellable UX** — global processing overlay Cancel; decode/export jobs with AbortSignal (Landing + Engineer) (#763–#765)
 - **Engineer cold-open** — no forced mobile warmup; lazy accordion sliders; lighter tickers (#762)
 - **Prod shell** — dead worklet URL no longer forced as `application/javascript` (#761)
