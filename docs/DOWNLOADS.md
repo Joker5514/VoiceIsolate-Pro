@@ -3,7 +3,8 @@
 **In-repo version:** **25.0.2** (`package.json`)  
 **Android:** `versionName "25.0.2"` · `versionCode` **250002**  
 **iOS:** `CFBundleShortVersionString` **25.0.2** · `CFBundleVersion` **250002**  
-**Published GitHub Release (latest):** **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (2026-08-13 — Android freeze@88 fix + full platform sync)
+**Published GitHub Release (latest):** **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**  
+**Native rebuild (APK + Windows EXE):** **2026-08-17** from `main` @ `a17ce35` (#758–#765 — freeze@88, Engineer cold-open, cancellable decode/export/process UI, landing mobile shell)
 
 ## Public URLs (verified)
 
@@ -27,8 +28,8 @@ Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` t
 | Platform | Artifact | What’s included |
 |----------|----------|-----------------|
 | **Web** | Vercel → `public/` | Landing Live-Mix + **Engineer Console** (3-col rack, integrity/safety, auto-analysis); SAM3 vision (flag OFF); SAM-Audio optional |
-| **Android** | `VoiceIsolate-Pro-android-debug.apk` | Capacitor WebView of **same** `build/` shell (Landing + Engineer Console + worklets + ONNX) |
-| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | Electron loads **same** `build/**` + optional SAM-Audio worker |
+| **Android** | `VoiceIsolate-Pro-android-debug.apk` (~96.5 MB) | Capacitor WebView of **same** `build/` shell (Landing + Engineer Console + worklets + ONNX); last upload 2026-08-17 |
+| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (~138 MB) | Electron loads **same** `build/**` + optional SAM-Audio worker; last upload 2026-08-17 |
 
 Engineer Console files that must ship offline: `app/engineer-console.css`, `app/engineer-console.js` (asserted by Android prepare/verify scripts).
 
@@ -50,11 +51,11 @@ pnpm android:build:win     # → dist/android/VoiceIsolate-Pro-android-debug.apk
 pnpm setup:electron
 pnpm build:electron        # → dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe
 
-# Release
-gh release create v25.0.2 \
+# Publish / refresh assets on existing tag (clobber)
+gh release upload v25.0.2 \
   dist/android/VoiceIsolate-Pro-android-debug.apk \
   dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe \
-  --title "VoiceIsolate Pro v25.0.2"
+  --clobber
 ```
 
 ## SAM stack (all three platforms)
