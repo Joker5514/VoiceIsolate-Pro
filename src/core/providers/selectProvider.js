@@ -69,8 +69,12 @@ export async function selectIsolationProvider(opts = {}) {
   if (samMode === 'local-worker' || samMode === 'auto') {
     // Desktop / explicit local-worker: prefer real SAM worker when healthy.
     // Capability probe is cached ~15s so repeated MOPE jobs don't re-HTTP /ready.
+    // Skip the process-wide cache when a custom fetchImpl is injected (tests / one-off probes)
+    // so a prior failure cannot poison a later successful selection.
     const base = opts.workerBaseUrl || readEnvWorkerUrl() || 'http://127.0.0.1:8765';
-    const caps = await cachedCaps(`worker:${base}`, () => worker.getCapabilities());
+    const caps = opts.fetchImpl
+      ? await worker.getCapabilities()
+      : await cachedCaps(`worker:${base}`, () => worker.getCapabilities());
     if (caps.available) {
       return {
         provider: worker,
@@ -132,6 +136,11 @@ function readEnvWorkerUrl() {
     }
   } catch { /* ignore */ }
   return undefined;
+}
+
+/** Test / diagnostics helper — clears short-lived SAM capability cache. */
+export function clearSamCapabilityCache() {
+  _capsCache.clear();
 }
 
 export {

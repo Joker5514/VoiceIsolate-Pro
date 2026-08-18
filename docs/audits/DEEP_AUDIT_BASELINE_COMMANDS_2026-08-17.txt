@@ -1,0 +1,39 @@
+# VoiceIsolate Pro — baseline command log
+# Date: 2026-08-17
+# Audit branch: audit/deep-hardening-2026-08-17
+# Base main tip at start: 36f381b
+
+## Commands and results (local workstation)
+
+pnpm validate
+  exit=0  All checks passed
+
+pnpm check:cloud-audio
+  exit=0  [pass] no hosted cloud audio backends in processing sources
+
+pnpm check:privacy
+  exit=0  [pass] privacy invariants ...
+
+pnpm lint
+  exit=0  0 errors, warnings only (unused vars / eslint-disable)
+
+pnpm test:ci  (after audit fixes)
+  exit=0  Test Suites: 148 passed; Tests: 2757 passed
+
+pnpm build
+  exit=0  Copied public/ + src/ → build/; SAM staged
+
+Focused STFT / architecture:
+  tests/stft-math.test.js PASS
+  tests/single-stft-assert.test.js PASS
+  tests/mlworker-fused-stft.test.js PASS
+  tests/architectural-invariants.test.js PASS
+
+Production HEAD (2026-08-17):
+  https://voice-isolate-pro.vercel.app/     200  COOP=same-origin COEP=require-corp  Permissions-Policy=microphone=(), camera=(), geolocation=()
+  https://voice-isolate-pro.vercel.app/app/ 200  same headers
+
+Pre-fix failure (historical):
+  pnpm test:ci initially: 2 suites failed / 7 tests failed
+    - providers-sam.test.js (capability cache poison)
+    - mobile-ui.test.js (stale DspSlider string contracts)

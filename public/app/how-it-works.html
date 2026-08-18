@@ -47,7 +47,7 @@
       <article class="how-card">
         <span class="how-kicker">Privacy-first local processing</span>
         <h2 class="how-title">One forward STFT. In-place spectral work. One inverse STFT.</h2>
-        <p class="how-copy">VoiceIsolate Pro keeps audio inside the browser. Files or live input are decoded locally, cleaned in the time domain, routed through a single spectral pass, reconstructed once, and then polished in an OfflineAudioContext or live AudioWorklet chain. No cloud inference, no telemetry, and no server-side audio processing are introduced in the active pipeline.</p>
+        <p class="how-copy">VoiceIsolate Pro keeps audio inside the browser. Uploaded files (and optional video) are decoded locally, cleaned in the time domain, routed through a single spectral pass, reconstructed once, and then polished in an OfflineAudioContext and playback-only AudioWorklet chain (Gate + De-Esser). Product workflow is upload-only — no microphone. No cloud inference, no audio telemetry, and no server-side audio processing are introduced in the active pipeline.</p>
         <div class="how-link-row">
           <a class="btn btn-primary" href="index.html">Launch Engineer Mode</a>
           <a class="btn btn-outline" href="../docs/TECHNICAL_GUIDE.md">Technical Guide</a>
@@ -56,7 +56,7 @@
       <aside class="how-card">
         <h2>Plain-English flow</h2>
         <div class="how-flow">
-          <div class="flow-step"><div class="flow-num">01</div><div><h3>Input</h3><p class="how-copy">Upload audio/video or capture live input. Decode and allocate buffers locally.</p></div></div>
+          <div class="flow-step"><div class="flow-num">01</div><div><h3>Input</h3><p class="how-copy">Upload audio or video. Decode and allocate buffers locally (no microphone).</p></div></div>
           <div class="flow-step"><div class="flow-num">02</div><div><h3>Cleanup</h3><p class="how-copy">Apply gating, hum cleanup, de-essing, and pre-spectral conditioning before FFT.</p></div></div>
           <div class="flow-step"><div class="flow-num">03</div><div><h3>Isolation</h3><p class="how-copy">Run Wiener-style suppression, voice emphasis, crosstalk control, dereverb, and optional local ML masks in the same spectral buffer.</p></div></div>
           <div class="flow-step"><div class="flow-num">04</div><div><h3>Rebuild</h3><p class="how-copy">Reconstruct once, then finish with EQ, dynamics, limiting, loudness metrics, A/B review, and export.</p></div></div>
@@ -68,9 +68,9 @@
       <article class="how-card">
         <h2>Execution paths</h2>
         <ul class="how-list">
-          <li><strong>Live path:</strong> AudioWorklet + SharedArrayBuffer ring buffer for responsive monitoring.</li>
-          <li><strong>Creator / forensic path:</strong> OfflineAudioContext render for deeper cleanup and export-ready output.</li>
-          <li><strong>ML path:</strong> ONNX Runtime Web loads local model assets, preferring WebGPU with WASM fallback.</li>
+          <li><strong>Live-Mix path:</strong> After offline separation, playback uses AudioParams + Gate/De-Esser worklets only (no ML on the audio render thread).</li>
+          <li><strong>Creator / Studio / Forensic path:</strong> OfflineAudioContext / worker render for deeper cleanup and export-ready output.</li>
+          <li><strong>ML path:</strong> ONNX Runtime Web loads same-origin model assets, preferring WebGPU with WASM fallback.</li>
         </ul>
       </article>
       <article class="how-card">

@@ -99,24 +99,14 @@ describe('--pct CSS variable formula', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('app.js — --pct CSS variable wiring', () => {
-  test('initPct calculation present in slider render method', () => {
-    expect(appJs).toContain('initPct');
-    expect(appJs).toContain('const range = s.max - s.min');
-    expect(appJs).toContain('range > 0 ? ((initVal - s.min) / range) * 100 : 0');
+  test('Engineer rows are mounted via DspSlider (track fill --pct owned there)', () => {
+    expect(appJs).toMatch(/createDspSliderRow\s*\(/);
+    expect(appJs).toMatch(/DspSlider\.js/);
   });
 
-  test('initPct result applied via style.setProperty', () => {
-    expect(appJs).toContain("inputEl.style.setProperty('--pct'");
-    expect(appJs).toContain('`${initPct.toFixed(1)}%`');
-  });
-
-  test('onSlider updates --pct via style.setProperty', () => {
-    // Changed line in onSlider
+  test('_setSliderUiInner keeps --pct sync for legacy range inputs', () => {
     expect(appJs).toContain("el.style.setProperty('--pct'");
     expect(appJs).toContain('`${pct.toFixed(1)}%`');
-  });
-
-  test('onSlider --pct formula uses parseFloat for el.min and el.max', () => {
     expect(appJs).toContain('parseFloat(el.min)');
     expect(appJs).toContain('parseFloat(el.max)');
   });
@@ -126,10 +116,11 @@ describe('app.js — --pct CSS variable wiring', () => {
     expect(presetBlock).toContain('_setSliderUi(key, rawValue');
   });
 
-  test('_setSliderUi updates slider value and aria metadata', () => {
-    const setterBlock = appJs.match(/_setSliderUiInner\(id, rawValue[\s\S]*?if \(notify\)/)?.[0] || '';
-    expect(setterBlock).toContain('el.value = value');
-    expect(setterBlock).toContain("el.setAttribute('aria-valuenow', value)");
+  test('_setSliderUi updates via DspSlider.setValue or legacy range + aria', () => {
+    const setterBlock = appJs.match(/_setSliderUiInner\(id, rawValue[\s\S]*?if \(notify && el\)/)?.[0] || '';
+    expect(setterBlock.length).toBeGreaterThan(80);
+    expect(setterBlock).toMatch(/_dspSlider\.setValue|el\.value = value/);
+    expect(setterBlock).toMatch(/aria-valuenow|setValue\(value/);
   });
 });
 
@@ -160,11 +151,11 @@ describe('app.js — slider hint button creation', () => {
     expect(appJs).toContain('row.appendChild(hintBtn)');
   });
 
-  test('hint button creation appears after rt-badge block in render loop', () => {
-    const rtBadgePos = appJs.indexOf("badge.className = 'rt-badge'");
+  test('hint button is created in _appendSliderRow after DspSlider mount', () => {
+    const mountPos = appJs.indexOf('createDspSliderRow(');
     const hintBtnPos = appJs.indexOf("hintBtn.className = 'slider-hint-btn'");
-    expect(rtBadgePos).toBeGreaterThan(-1);
-    expect(hintBtnPos).toBeGreaterThan(rtBadgePos);
+    expect(mountPos).toBeGreaterThan(-1);
+    expect(hintBtnPos).toBeGreaterThan(mountPos);
   });
 });
 
@@ -604,21 +595,25 @@ describe('--pct formula — range variable approach (regression for removed asse
     expect(appJs).not.toContain('((s.val - s.min) / (s.max - s.min)) * 100');
   });
 
-  test('app.js uses the range-variable form in the render loop (not inline division)', () => {
-    // The render-loop formula stores denominator in `range` first
-    expect(appJs).toContain('const range = s.max - s.min');
-    expect(appJs).toContain('range > 0 ? ((initVal - s.min) / range) * 100 : 0');
+  test('app.js uses DspSlider factory for Engineer rows (zero-range safe)', () => {
+    // Rows are built by createDspSliderRow; percent fill uses clampSnap + --pct.
+    expect(appJs).toMatch(/createDspSliderRow\s*\(/);
+    expect(appJs).toMatch(/from '\/src\/presentation\/DspSlider\.js'/);
   });
 
-  test('app.js guards against zero-range in render loop with range > 0 check', () => {
-    // When min === max the guard returns 0 instead of dividing by zero
+  test('app.js guards against zero-range when syncing legacy range inputs', () => {
+    // _setSliderUiInner still paints legacy inputs with an explicit range > 0 guard
     const occurrences = (appJs.match(/range > 0 \? .* : 0/g) || []).length;
     expect(occurrences).toBeGreaterThanOrEqual(1);
+    expect(appJs).toMatch(/const min = parseFloat\(el\.min\)/);
+    expect(appJs).toMatch(/const max = parseFloat\(el\.max\)/);
+    expect(appJs).toMatch(/const range = max - min/);
   });
 
-  test('app.js guards against zero-range in onSlider with range > 0 check', () => {
-    // onSlider also stores denominator in range before division
-    expect(appJs).toContain('parseFloat(el.max) - parseFloat(el.min)');
+  test('DspSlider clampSnap rejects divide-by-zero style ranges safely', async () => {
+    const { clampSnap } = await import('../src/presentation/DspSlider.js');
+    expect(clampSnap(5, 5, 5, 1)).toBe(5);
+    expect(Number.isFinite(clampSnap(12, 0, 100, 5))).toBe(true);
   });
 
   test('calcPct helper: identical result whether computed inline or via range variable', () => {
