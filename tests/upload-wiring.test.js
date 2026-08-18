@@ -24,6 +24,12 @@ describe('UploadWiring.js', () => {
     expect(uploadJs).toContain('showPicker');
   });
 
+  test('openFilePicker applies compact accept on Android native shells', () => {
+    // Capacitor BridgeWebChromeClient breaks with oversized MIME/extension accept lists.
+    expect(uploadJs).toMatch(/audio\/\*,video\/\*/);
+    expect(uploadJs).toMatch(/isNativePlatform|Android/);
+  });
+
   test('exports primeAudioGesture for mobile decode unlock', () => {
     expect(uploadJs).toContain('export async function primeAudioGesture');
   });

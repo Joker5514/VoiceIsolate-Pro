@@ -40,18 +40,46 @@ import java.util.Map;
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "VIPMainActivity";
     private static final int REQUEST_RECORD_AUDIO = 1001;
+    private static final int REQUEST_READ_MEDIA = 1002;
     private static final String ASSET_PATH_PREFIX = "public";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Non-blocking; upload-only product does not require mic.
+        // Upload-only: media read helps some OEMs resolve picker URIs; mic is optional.
+        requestReadMediaPermissionIfNeeded();
         requestRecordAudioPermissionIfNeeded();
         // Bridge WebView is ready after super.onCreate — wire isolation + MIME.
         try {
             setupWebViewHardening();
         } catch (Throwable t) {
             Log.e(TAG, "WebView hardening failed — app may run without SAB", t);
+        }
+    }
+
+    private void requestReadMediaPermissionIfNeeded() {
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(
+                            this,
+                            new String[]{Manifest.permission.READ_MEDIA_AUDIO},
+                            REQUEST_READ_MEDIA
+                    );
+                }
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                        != PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(
+                            this,
+                            new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
+                            REQUEST_READ_MEDIA
+                    );
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "READ_MEDIA permission request skipped", t);
         }
     }
 

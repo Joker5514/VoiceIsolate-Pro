@@ -23,8 +23,8 @@ describe('Engineer upload decode wiring', () => {
   });
 
   test('app.js refreshes the upload input accept list from shared media-types metadata', () => {
-    expect(appJs).toContain('FILE_INPUT_ACCEPT');
-    expect(appJs).toContain("d.fileInput.setAttribute('accept', FILE_INPUT_ACCEPT)");
+    expect(appJs).toContain('getFileInputAccept');
+    expect(appJs).toContain("d.fileInput.setAttribute('accept', getFileInputAccept())");
   });
 
   test('handleFile accepts uploads without decoding and ensureDecoded owns shared decode path', () => {

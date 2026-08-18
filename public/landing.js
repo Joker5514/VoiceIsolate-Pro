@@ -19,7 +19,7 @@ import { LANDING_PRESETS, calibrateFromStems } from '/src/core/MixCalibration.js
 import { SpeakerControls } from '/src/presentation/SpeakerControls.js';
 import { LandingVisualizer } from '/src/presentation/LandingVisualizer.js';
 import { getModel } from '/src/core/ModelManifest.js';
-import { isVideoSource } from '/src/core/media-types.js';
+import { isVideoSource, getFileInputAccept } from '/src/core/media-types.js';
 import { saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
 import {
   exportVideoWithProcessedAudio,
@@ -1506,6 +1506,7 @@ function wireDragAndDrop() {
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 
+if (ui.fileInput?.setAttribute) ui.fileInput.setAttribute('accept', getFileInputAccept());
 ui.fileInput.addEventListener('click', () => { primeAudioGesture().catch(() => {}); });
 ui.fileInput.addEventListener('change', onFileChosen);
 fixUploadTouchTargets();

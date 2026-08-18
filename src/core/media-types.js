@@ -16,7 +16,7 @@ export const MIDI_EXTENSIONS = /\.(mid|midi)$/i;
 
 const MIDI_MIMES = new Set(['audio/midi', 'audio/x-midi', 'audio/mid']);
 
-/** Explicit MIME list for <input type="file" accept="…"> (iOS/Android pickers). */
+/** Explicit MIME list for <input type="file" accept="…"> (desktop / mobile web). */
 export const FILE_INPUT_ACCEPT = [
   'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave',
   'audio/ogg', 'audio/flac', 'audio/x-flac', 'audio/aac', 'audio/x-aac',
@@ -33,6 +33,60 @@ export const FILE_INPUT_ACCEPT = [
   '.mp4', '.m4v', '.mov', '.mkv', '.avi', '.ogv', '.3gp', '.3g2',
   '.wmv', '.mpeg', '.mpg', '.ts', '.m2ts', '.mts', '.flv', '.f4v', '.asf',
 ].join(',');
+
+/**
+ * Compact accept for Capacitor Android WebView.
+ * Capacitor BridgeWebChromeClient remaps multi-type accept via EXTRA_MIME_TYPES;
+ * a 70+ entry list (many unknown extensions) breaks OEM file pickers.
+ * Wildcards keep audio/video selectable without choking Intent extras.
+ */
+export const FILE_INPUT_ACCEPT_ANDROID_NATIVE = [
+  'audio/*',
+  'video/*',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/mp4',
+  'audio/aac',
+  'audio/ogg',
+  'audio/flac',
+  'audio/webm',
+  'video/mp4',
+  'video/webm',
+  'video/quicktime',
+  '.mp3',
+  '.wav',
+  '.m4a',
+  '.aac',
+  '.ogg',
+  '.flac',
+  '.webm',
+  '.mp4',
+  '.mov',
+].join(',');
+
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.forceAndroidNative]
+ * @returns {string}
+ */
+export function getFileInputAccept(opts = {}) {
+  if (opts.forceAndroidNative === true) return FILE_INPUT_ACCEPT_ANDROID_NATIVE;
+  try {
+    const cap = globalThis.Capacitor;
+    if (cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform()) {
+      const platform = typeof cap.getPlatform === 'function' ? cap.getPlatform() : '';
+      if (platform === 'android' || /Android/i.test(globalThis.navigator?.userAgent || '')) {
+        return FILE_INPUT_ACCEPT_ANDROID_NATIVE;
+      }
+    }
+  } catch { /* ignore */ }
+  if (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent || '')
+      && /; wv\)|Version\/\d+\.\d+ Chrome\/\d+.*Mobile/i.test(navigator.userAgent || '')) {
+    // Android WebView UA (Capacitor) even before Capacitor global is ready
+    return FILE_INPUT_ACCEPT_ANDROID_NATIVE;
+  }
+  return FILE_INPUT_ACCEPT;
+}
 
 /** Native open-dialog extension lists (Electron). */
 export const AUDIO_OPEN_EXTENSIONS = [
@@ -218,6 +272,8 @@ export default {
   AMBIGUOUS_MEDIA_EXTENSIONS,
   GENERIC_MIME_TYPES,
   FILE_INPUT_ACCEPT,
+  FILE_INPUT_ACCEPT_ANDROID_NATIVE,
+  getFileInputAccept,
   AUDIO_OPEN_EXTENSIONS,
   VIDEO_OPEN_EXTENSIONS,
 };

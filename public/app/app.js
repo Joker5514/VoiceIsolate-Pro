@@ -64,6 +64,7 @@ import { paintSeekFill, wireTransportRegion } from '/src/presentation/TransportR
 import { isDesktopShell, pickAudioFile, saveExportBlob, filtersForFilename } from '/src/core/DesktopBridge.js';
 import {
   FILE_INPUT_ACCEPT,
+  getFileInputAccept,
   inferMediaKind,
   isGenericMimeType,
   isVideoSource,
@@ -2335,7 +2336,7 @@ class VoiceIsolatePro {
   // ── Event binding ────────────────────────────────────────────────────────
   bindEvents() {
     const d = this.dom;
-    if (d.fileInput?.setAttribute) d.fileInput.setAttribute('accept', FILE_INPUT_ACCEPT);
+    if (d.fileInput?.setAttribute) d.fileInput.setAttribute('accept', getFileInputAccept());
 
     // Helper: safe addEventListener
     const bind = (name, el, event, fn) => {

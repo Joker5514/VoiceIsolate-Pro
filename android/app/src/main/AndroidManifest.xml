@@ -52,4 +52,26 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
+    <!--
+      Android 11+ package visibility: without these <queries>, ACTION_GET_CONTENT /
+      OPEN_DOCUMENT resolvers are invisible → Capacitor BridgeWebChromeClient file
+      chooser throws ActivityNotFoundException and <input type="file"> appears broken.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.GET_CONTENT" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.PICK" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.CHOOSER" />
+        </intent>
+    </queries>
+
 </manifest>

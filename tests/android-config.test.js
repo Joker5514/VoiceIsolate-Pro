@@ -201,6 +201,13 @@ describe('AndroidManifest.xml — structure and security', () => {
     expect(manifest).toContain('android.permission.READ_MEDIA_AUDIO');
   });
 
+  test('declares Android 11+ package-visibility queries for file picker intents', () => {
+    // Without these, Capacitor onShowFileChooser → ActivityNotFoundException on API 30+.
+    expect(manifest).toMatch(/<queries>[\s\S]*GET_CONTENT[\s\S]*<\/queries>/);
+    expect(manifest).toContain('android.intent.action.OPEN_DOCUMENT');
+    expect(manifest).toContain('android.intent.action.GET_CONTENT');
+  });
+
   test('FOREGROUND_SERVICE permission is declared (background audio processing)', () => {
     expect(manifest).toContain('android.permission.FOREGROUND_SERVICE');
   });
@@ -547,6 +554,12 @@ describe('MainActivity.java — WebView isolation and mic permission flow', () =
     expect(mainActivity).toContain('Manifest.permission.RECORD_AUDIO');
     expect(mainActivity).toContain('requestPermissions');
     expect(mainActivity).toContain('checkSelfPermission');
+  });
+
+  test('requests READ_MEDIA_AUDIO / READ_EXTERNAL_STORAGE for upload URI access', () => {
+    expect(mainActivity).toContain('requestReadMediaPermissionIfNeeded');
+    expect(mainActivity).toContain('READ_MEDIA_AUDIO');
+    expect(mainActivity).toContain('READ_EXTERNAL_STORAGE');
   });
 });
 
