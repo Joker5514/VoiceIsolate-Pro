@@ -94,13 +94,14 @@ function scan(file) {
 
 for (const r of ROOTS) walk(path.join(ROOT, r));
 
-// Ensure product app shell does not import mic-capture
-const appJs = path.join(ROOT, 'public/app/app.js');
-if (fs.existsSync(appJs)) {
-  const t = fs.readFileSync(appJs, 'utf8');
-  if (/mic-capture/.test(t) && !/not.*mic-capture|never.*mic-capture/i.test(t)) {
+// Ensure product shells do not import mic-capture
+for (const rel of ['public/app/app.js', 'public/landing.js', 'public/app/index.html', 'public/index.html']) {
+  const abs = path.join(ROOT, rel);
+  if (!fs.existsSync(abs)) continue;
+  const t = fs.readFileSync(abs, 'utf8');
+  if (/mic-capture/.test(t) && !/not.*mic-capture|never.*mic-capture|OUTSIDE public\/app/i.test(t)) {
     failed = true;
-    hits.push('public/app/app.js: imports mic-capture (forbidden in product shell)');
+    hits.push(`${rel}: references mic-capture (forbidden in product shell)`);
   }
 }
 
