@@ -309,16 +309,32 @@
     waitForUploadWiring();
     patchLoadFile();
 
-    // MutationObserver: re-apply if DOM is rebuilt by app.js
-    const observer = new MutationObserver(function () {
-      fixUploadZoneTouchTarget();
-      patchFileInput();
-      patchLoadFile();
-      ensureUploadWiring();
+    // Debounced observer — subtree:true + sync work on every slider row mount
+    // freezes Android WebView during Engineer _renderSliders (50+ nodes).
+    var debounceTimer = null;
+    var fires = 0;
+    var observer = new MutationObserver(function () {
+      if (fires > 8) {
+        try { observer.disconnect(); } catch (_) {}
+        return;
+      }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function () {
+        debounceTimer = null;
+        fires += 1;
+        fixUploadZoneTouchTarget();
+        patchFileInput();
+        patchLoadFile();
+        ensureUploadWiring();
+        // Stop watching once upload controls are stably wired.
+        if (document.getElementById('fileInput')?.dataset?.vipChangeBound === '1' && fires >= 2) {
+          try { observer.disconnect(); } catch (_) {}
+        }
+      }, 400);
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    console.log('[VIP] mobile-upload-fix.js v3 loaded — double-decode & context-swap bugs fixed');
+    console.log('[VIP] mobile-upload-fix.js v3.1 loaded — debounced DOM observer (Android freeze)');
   }
 
   if (document.readyState === 'loading') {

@@ -2,12 +2,12 @@
 
 | Field | Value |
 |-------|--------|
-| **Git SHA (native rebuild)** | `main` @ `34d0981` (#767 + #758–#765) |
+| **Git SHA (native rebuild)** | `main` @ android freeze + upload (#770) branch (merge PR) |
 | **Package version** | `25.0.2` / build `250002` |
 | **Published GitHub binaries** | **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (Latest) |
-| **Synced at (UTC)** | 2026-08-17T06:56Z |
+| **Synced at (UTC)** | 2026-08-18T23:15Z |
 | **Artifacts** | APK ~96.8 MB (debug offline) · Windows NSIS ~138 MB |
-| **Notes** | Native = web shell: accessible Engineer DSP sliders, freeze@88, cancel jobs, landing mobile |
+| **Notes** | Native = web: Android upload picker, UI freeze mitigations, Engineer slider a11y, cancel jobs |
 
 ## Version sources of truth
 

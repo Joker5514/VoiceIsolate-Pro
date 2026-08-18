@@ -550,16 +550,22 @@ describe('MainActivity.java — WebView isolation and mic permission flow', () =
     expect(mainActivity).toContain('Cross-Origin-Embedder-Policy');
   });
 
-  test('requests RECORD_AUDIO permission at runtime', () => {
-    expect(mainActivity).toContain('Manifest.permission.RECORD_AUDIO');
-    expect(mainActivity).toContain('requestPermissions');
-    expect(mainActivity).toContain('checkSelfPermission');
+  test('does not prompt RECORD_AUDIO at boot (upload-only — avoids startup jank)', () => {
+    expect(mainActivity).toMatch(/do NOT prompt for RECORD_AUDIO at boot/);
+    expect(mainActivity).not.toMatch(/requestRecordAudioPermissionIfNeeded/);
   });
 
-  test('requests READ_MEDIA_AUDIO / READ_EXTERNAL_STORAGE for upload URI access', () => {
+  test('defers READ_MEDIA permission until after first paint', () => {
+    expect(mainActivity).toContain('scheduleDeferredMediaPermission');
     expect(mainActivity).toContain('requestReadMediaPermissionIfNeeded');
     expect(mainActivity).toContain('READ_MEDIA_AUDIO');
     expect(mainActivity).toContain('READ_EXTERNAL_STORAGE');
+    expect(mainActivity).toMatch(/postDelayed/);
+  });
+
+  test('reloads WebView at most once per process for COOP/COEP', () => {
+    expect(mainActivity).toContain('sIsolationReloadDone');
+    expect(mainActivity).toMatch(/Reloading WebView once/);
   });
 });
 

@@ -39,16 +39,16 @@ import java.util.Map;
  */
 public class MainActivity extends BridgeActivity {
     private static final String TAG = "VIPMainActivity";
-    private static final int REQUEST_RECORD_AUDIO = 1001;
     private static final int REQUEST_READ_MEDIA = 1002;
     private static final String ASSET_PATH_PREFIX = "public";
+    /** One COOP/COEP reload per process — avoids stacked freezes on activity recreate. */
+    private static boolean sIsolationReloadDone = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Upload-only: media read helps some OEMs resolve picker URIs; mic is optional.
-        requestReadMediaPermissionIfNeeded();
-        requestRecordAudioPermissionIfNeeded();
+        // Upload-only product: do NOT prompt for RECORD_AUDIO at boot (jank + wrong UX).
+        // Media-read is deferred until after first content paint (see scheduleDeferredMediaPermission).
         // Bridge WebView is ready after super.onCreate — wire isolation + MIME.
         try {
             setupWebViewHardening();
@@ -83,18 +83,12 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    private void requestRecordAudioPermissionIfNeeded() {
+    /** Ask for media access after UI is interactive — never block first paint. */
+    private void scheduleDeferredMediaPermission(WebView webView) {
         try {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                    != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(
-                        this,
-                        new String[]{Manifest.permission.RECORD_AUDIO},
-                        REQUEST_RECORD_AUDIO
-                );
-            }
+            webView.postDelayed(this::requestReadMediaPermissionIfNeeded, 1800);
         } catch (Throwable t) {
-            Log.w(TAG, "RECORD_AUDIO permission request skipped", t);
+            Log.w(TAG, "Deferred media permission schedule failed", t);
         }
     }
 
@@ -163,21 +157,28 @@ public class MainActivity extends BridgeActivity {
         });
 
         // BridgeActivity starts the first navigation during super.onCreate() with the
-        // default WebViewClient (no COOP/COEP). Reload once our interceptor is installed
-        // so the document + workers load under isolation headers when the WebView supports it.
-        // Even then, many Android WebViews still omit SharedArrayBuffer — JS must not
-        // treat that as fatal (vip-boot uses single-thread WASM fallback).
-        try {
-            webView.post(() -> {
-                try {
-                    Log.i(TAG, "Reloading WebView so COOP/COEP apply to document load");
-                    webView.reload();
-                } catch (Throwable t) {
-                    Log.w(TAG, "WebView reload after header injection failed", t);
-                }
-            });
-        } catch (Throwable t) {
-            Log.w(TAG, "Could not schedule WebView reload", t);
+        // default WebViewClient (no COOP/COEP). Reload once per process after our
+        // interceptor is installed so document + workers get isolation headers.
+        // Skip repeat reloads on configuration changes — they freeze the WebView.
+        // Many Android WebViews still omit SharedArrayBuffer; JS falls back (vip-boot).
+        if (!sIsolationReloadDone) {
+            sIsolationReloadDone = true;
+            try {
+                webView.post(() -> {
+                    try {
+                        Log.i(TAG, "Reloading WebView once so COOP/COEP apply to document load");
+                        webView.reload();
+                    } catch (Throwable t) {
+                        Log.w(TAG, "WebView reload after header injection failed", t);
+                    }
+                    scheduleDeferredMediaPermission(webView);
+                });
+            } catch (Throwable t) {
+                Log.w(TAG, "Could not schedule WebView reload", t);
+                scheduleDeferredMediaPermission(webView);
+            }
+        } else {
+            scheduleDeferredMediaPermission(webView);
         }
     }
 
