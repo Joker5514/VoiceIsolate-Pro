@@ -35,6 +35,25 @@ function wavBytes(seconds = 0.05) {
   return buf;
 }
 
+describe('file input accept helpers', () => {
+  test('FILE_INPUT_ACCEPT_ANDROID_NATIVE is compact and includes wildcards', () => {
+    const a = mediaTypes.FILE_INPUT_ACCEPT_ANDROID_NATIVE;
+    expect(a).toMatch(/audio\/\*/);
+    expect(a).toMatch(/video\/\*/);
+    expect(a.split(',').length).toBeLessThan(30);
+    expect(mediaTypes.FILE_INPUT_ACCEPT.split(',').length).toBeGreaterThan(a.split(',').length);
+  });
+
+  test('getFileInputAccept(forceAndroidNative) returns compact list', () => {
+    expect(mediaTypes.getFileInputAccept({ forceAndroidNative: true }))
+      .toBe(mediaTypes.FILE_INPUT_ACCEPT_ANDROID_NATIVE);
+  });
+
+  test('getFileInputAccept() defaults to full list outside Android native', () => {
+    expect(mediaTypes.getFileInputAccept()).toBe(mediaTypes.FILE_INPUT_ACCEPT);
+  });
+});
+
 describe('media-types sniff + generic MIME', () => {
   test('isGenericMimeType covers Windows octet-stream', () => {
     expect(mediaTypes.isGenericMimeType('')).toBe(true);

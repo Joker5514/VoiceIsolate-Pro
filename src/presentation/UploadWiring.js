@@ -14,6 +14,20 @@
 export function openFilePicker(fileInput) {
   if (!fileInput || fileInput.disabled) return false;
 
+  // Capacitor Android: keep accept compact so BridgeWebChromeClient Intent extras stay valid.
+  try {
+    const cap = globalThis.Capacitor;
+    const ua = globalThis.navigator?.userAgent || '';
+    const androidNative = (cap?.isNativePlatform?.() && cap?.getPlatform?.() === 'android')
+      || (/Android/i.test(ua) && (/; wv\)/i.test(ua) || /VoiceIsolatePro\//i.test(ua)));
+    if (androidNative && typeof fileInput.setAttribute === 'function') {
+      fileInput.setAttribute(
+        'accept',
+        'audio/*,video/*,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac,audio/webm,video/mp4,video/webm,video/quicktime,.mp3,.wav,.m4a,.aac,.ogg,.flac,.webm,.mp4,.mov',
+      );
+    }
+  } catch { /* ignore */ }
+
   const style = fileInput.style;
   const prev = {
     position: style.position,

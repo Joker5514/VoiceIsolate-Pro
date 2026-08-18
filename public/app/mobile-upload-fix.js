@@ -127,7 +127,8 @@
   /* ─── 4. Expand <input type="file"> accept to full MIME list ─────────────
    * Explicit MIME list forces the correct native picker on iOS + Android.
    */
-  const AUDIO_ACCEPT = [
+  /** Desktop/mobile-web: full list. Capacitor Android: compact wildcards (OEM picker safe). */
+  const AUDIO_ACCEPT_FULL = [
     'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave',
     'audio/ogg', 'audio/flac', 'audio/x-flac', 'audio/aac', 'audio/x-aac',
     'audio/x-m4a', 'audio/m4a', 'audio/mp4', 'audio/webm', 'audio/amr',
@@ -143,10 +144,29 @@
     '.mp4', '.m4v', '.mov', '.mkv', '.avi', '.ogv', '.3gp', '.3g2',
     '.wmv', '.mpeg', '.mpg', '.ts', '.m2ts', '.mts', '.flv', '.f4v', '.asf',
   ].join(',');
+  const AUDIO_ACCEPT_ANDROID_NATIVE = [
+    'audio/*', 'video/*',
+    'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm',
+    'video/mp4', 'video/webm', 'video/quicktime',
+    '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.webm', '.mp4', '.mov',
+  ].join(',');
+
+  function isAndroidNativeShell() {
+    try {
+      if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
+          && window.Capacitor.isNativePlatform()) {
+        var p = typeof window.Capacitor.getPlatform === 'function' ? window.Capacitor.getPlatform() : '';
+        if (p === 'android') return true;
+      }
+    } catch (_) {}
+    var ua = navigator.userAgent || '';
+    return /Android/i.test(ua) && (/; wv\)/i.test(ua) || /VoiceIsolatePro\//i.test(ua));
+  }
 
   function patchFileInput() {
+    var accept = isAndroidNativeShell() ? AUDIO_ACCEPT_ANDROID_NATIVE : AUDIO_ACCEPT_FULL;
     document.querySelectorAll('input[type="file"]').forEach(function (inp) {
-      inp.setAttribute('accept', AUDIO_ACCEPT);
+      inp.setAttribute('accept', accept);
     });
   }
 
