@@ -357,7 +357,7 @@
     };
     tick();
     // Mobile: slower ticker (less main-thread competition with Process / UI).
-    const period = isMobileShell() ? 2800 : 1200;
+    const period = isMobileShell() ? 4500 : 1200;
     setInterval(tick, period);
     window.addEventListener('vip:processingDone', () => {
       setTimeout(tick, 200);

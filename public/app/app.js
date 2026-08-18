@@ -1166,11 +1166,17 @@ class VoiceIsolatePro {
     const narrow = typeof window !== 'undefined'
       && window.matchMedia
       && window.matchMedia('(max-width: 900px)').matches;
-    const defaultOpen = new Set([
-      'section-upload', 'section-presets', 'section-processing',
-      'section-gate', 'section-analysis', 'section-separation',
-    ]);
-    if (!narrow) defaultOpen.add('vizCard');
+    const mobile = this._isMobileEngineer?.() || false;
+    // Mobile/Android: keep rack closed except upload+process — fewer DOM mounts, less freeze.
+    const defaultOpen = new Set(
+      mobile
+        ? ['section-upload', 'section-processing']
+        : [
+          'section-upload', 'section-presets', 'section-processing',
+          'section-gate', 'section-analysis', 'section-separation',
+        ],
+    );
+    if (!narrow && !mobile) defaultOpen.add('vizCard');
 
     const syncActive = (el) => {
       el.classList.toggle('active', !!el.open);

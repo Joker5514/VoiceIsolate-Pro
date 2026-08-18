@@ -278,10 +278,10 @@ Hardening pass only — **not** an architecture rewrite. Scope stays in
 `major*10000 + minor*100 + patch` → **250002**). Electron artifact name uses
 `${version}` from package.json. Published GitHub Release **`latest` = v25.0.2**.
 
-**Native binaries (APK + Windows NSIS):** last rebuilt **2026-08-17T06:56Z** from
-`main` @ `34d0981` (#767) and clobber-uploaded to the v25.0.2 release. After shell/UX
-or slider-rack changes on `main`, re-run `pnpm android:build:win` + `pnpm build:electron`
-and `gh release upload v25.0.2 … --clobber` so installers stay in parity with web.
+**Native binaries (APK + Windows NSIS):** last rebuilt **2026-08-18T23:15Z**
+(Android upload #770 + UI freeze mitigations) and clobber-uploaded to v25.0.2.
+After shell/UX or Android WebView changes on `main`, re-run `pnpm android:build:win` +
+`pnpm build:electron` and `gh release upload v25.0.2 … --clobber`.
 Canonical pins: [docs/DOWNLOADS.md](docs/DOWNLOADS.md), [docs/releases/PLATFORM_SYNC.md](docs/releases/PLATFORM_SYNC.md).
 
 **Engineer DSP sliders (desktop-first):** rows are built by

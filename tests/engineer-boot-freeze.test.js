@@ -32,10 +32,20 @@ describe('Engineer boot freeze guards', () => {
   test('engineer-console defers integrity ticker and prefers simple view on mobile', () => {
     expect(consoleJs).toMatch(/ec-simple/);
     expect(consoleJs).toMatch(/requestIdleCallback/);
-    expect(consoleJs).toMatch(/2800/);
+    expect(consoleJs).toMatch(/4500/);
   });
 
   test('vip-boot pill poll is slower on mobile', () => {
     expect(bootJs).toMatch(/mobileShell \? 1000 : 250/);
+  });
+
+  test('mobile-upload-fix debounces MutationObserver (Android slider mount freeze)', () => {
+    const fixJs = fs.readFileSync(path.join(ROOT, 'public/app/mobile-upload-fix.js'), 'utf8');
+    expect(fixJs).toMatch(/debounced DOM observer|debounceTimer/);
+    expect(fixJs).toMatch(/observer\.disconnect/);
+  });
+
+  test('mobile collapses Engineer sections by default to reduce cold-open work', () => {
+    expect(appJs).toMatch(/mobile[\s\S]{0,120}section-upload[\s\S]{0,80}section-processing/);
   });
 });
