@@ -9,7 +9,7 @@ Web download page: https://voice-isolate-pro.vercel.app/download/
 
 **In-repo version:** **25.0.2** · build **250002**  
 **Published GitHub Release (latest):** **v25.0.2**  
-**Last native rebuild:** **2026-08-18T23:15Z** (Android upload #770 + UI freeze mitigations)
+**Last native rebuild:** **2026-08-19T00:43Z** (`aa72a21` — desktop 88% #772 + Android #770/#771)
 
 Local rebuild (artifacts under `dist/`, not committed):
 

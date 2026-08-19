@@ -1,0 +1,45 @@
+# VoiceIsolate Pro — baseline command log
+# Date: 2026-08-19
+# Audit branch: audit/deep-hardening-2026-08-19
+# Base main tip: aa72a21 (desktop 88% #772)
+
+## Commands and results
+
+pnpm validate
+  exit=0  All checks passed
+
+pnpm check:privacy
+  exit=0
+
+pnpm check:cloud-audio
+  exit=0
+
+pnpm lint
+  exit=0  0 errors (warnings reduced by removing unused DerivedCache imports)
+
+pnpm test:ci
+  exit=0  Test Suites: 149 passed; Tests: 2780 passed
+
+pnpm build
+  exit=0
+
+pnpm test -- tests/desktop-88-progress.test.js tests/stft-math.test.js tests/single-stft-assert.test.js tests/mlworker-fused-stft.test.js tests/architectural-invariants.test.js
+  exit=0  53 passed
+
+pnpm android:build:win
+  exit=0  APK ~96.9 MB
+
+pnpm build:electron
+  exit=0  EXE ~138 MB
+
+gh release upload v25.0.2 … --clobber
+  APK updated 2026-08-19T00:43:28Z
+  EXE updated 2026-08-19T00:43:30Z
+
+Production HEAD:
+  https://voice-isolate-pro.vercel.app/     200 COOP=same-origin COEP=require-corp microphone=()
+  https://voice-isolate-pro.vercel.app/app/ 200 same
+
+Download HEAD:
+  APK 200 len=101550043 (pre-rebuild check) / new upload 00:43Z
+  EXE 200
