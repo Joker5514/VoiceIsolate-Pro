@@ -108,6 +108,8 @@ async function main() {
   let lastPct = -1;
   let lastChange = Date.now();
   let stallAt = null;
+  let maxPct = 0;
+  let sawPast88 = false;
 
   while (Date.now() < deadline) {
     const snap = await page.evaluate(() => {
@@ -119,8 +121,17 @@ async function main() {
       return { status, pct, hidden };
     });
 
+    if (snap.pct != null && snap.pct > maxPct) maxPct = snap.pct;
+    if (snap.pct != null && snap.pct > 88) sawPast88 = true;
+
     if (snap.status.includes('Stems ready')) {
-      console.log(`✓ Completed — status: ${snap.status}`);
+      console.log(`✓ Completed — status: ${snap.status} (maxPct=${maxPct})`);
+      if (!sawPast88 && maxPct >= 80) {
+        console.error('✗ Completed but progress never advanced past 88% (desktop freeze regression)');
+        await browser.close();
+        cleanup();
+        process.exit(4);
+      }
       await browser.close();
       cleanup();
       return;
@@ -141,7 +152,9 @@ async function main() {
     } else if (!snap.hidden && snap.pct != null) {
       const idleMs = Date.now() - lastChange;
       if (idleMs > 45_000 && stallAt == null) stallAt = snap.pct;
-      if (idleMs > 60_000) {
+      // Explicit 86–89% stall is the historical desktop/Android freeze band.
+      const stallLimit = (snap.pct >= 86 && snap.pct <= 89) ? 35_000 : 60_000;
+      if (idleMs > stallLimit) {
         console.error(`✗ STALL at ${snap.pct}% for ${Math.round(idleMs / 1000)}s`);
         console.error(`  status: ${snap.status}`);
         console.error(logs.slice(-15).join('\n'));

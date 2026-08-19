@@ -137,6 +137,7 @@ export async function separateStems(channelData, sampleRate, options = {}) {
 
   return new Promise((resolve, reject) => {
     let lastProgressAt = Date.now();
+    let settled = false;
     const timer = setTimeout(() => {
       cleanup();
       resetStemSeparation();
@@ -149,36 +150,65 @@ export async function separateStems(channelData, sampleRate, options = {}) {
       resetStemSeparation();
       reject(new Error('[VIP][StemSeparation] processing stalled (no progress)'));
     }, 5000);
+    const finish = (fn) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      fn();
+    };
     const onMsg = (ev) => {
       const m = ev.data || {};
-      if (m.requestId !== requestId) return;
+      // Ignore stale messages from a prior/cancelled requestId.
+      if (m.requestId != null && m.requestId !== requestId) return;
       if (m.type === 'progress' || m.type === 'stage') {
+        if (m.requestId !== requestId) return;
         lastProgressAt = Date.now();
         onProgress?.(m);
       } else if (m.type === 'stems') {
-        cleanup();
-        const out = {
-          clean: m.clean,
-          noise: m.noise,
-          sampleRate: m.sampleRate,
-          passthrough: Boolean(m.passthrough),
-        };
-        if (!out.passthrough) setCachedStems(cacheKey, out);
-        resolve(out);
+        if (m.requestId !== requestId) return;
+        finish(() => {
+          const out = {
+            clean: m.clean,
+            noise: m.noise,
+            sampleRate: m.sampleRate,
+            passthrough: Boolean(m.passthrough),
+            pipelineMode: m.pipelineMode || null,
+            backend: m.backend || null,
+          };
+          if (!out.passthrough) setCachedStems(cacheKey, out);
+          resolve(out);
+        });
+      } else if (m.type === 'cancelled') {
+        if (m.requestId != null && m.requestId !== requestId) return;
+        finish(() => {
+          const err = typeof DOMException !== 'undefined'
+            ? new DOMException('Processing cancelled', 'AbortError')
+            : Object.assign(new Error('Processing cancelled'), { name: 'AbortError' });
+          reject(err);
+        });
       } else if (m.type === 'error') {
-        cleanup();
-        reject(new Error(m.message || 'Separation failed'));
+        if (m.requestId != null && m.requestId !== requestId) return;
+        finish(() => reject(new Error(m.message || 'Separation failed')));
       }
     };
-    const onErr = (e) => { cleanup(); reject(new Error(e.message || 'MLWorker error')); };
+    const onErr = (e) => {
+      finish(() => reject(new Error(e?.message || 'MLWorker error')));
+    };
+    const onMessageError = (e) => {
+      finish(() => reject(new Error(
+        e?.message || '[VIP][StemSeparation] worker messageerror (deserialize failed)',
+      )));
+    };
     const cleanup = () => {
       clearTimeout(timer);
       clearInterval(stallWatch);
       w.removeEventListener('message', onMsg);
       w.removeEventListener('error', onErr);
+      w.removeEventListener('messageerror', onMessageError);
     };
     w.addEventListener('message', onMsg);
     w.addEventListener('error', onErr);
+    w.addEventListener('messageerror', onMessageError);
     w.postMessage(msg, copies.map((c) => c.buffer));
   });
 }
