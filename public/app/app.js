@@ -80,8 +80,6 @@ import * as ProjectStore from '/src/core/ProjectStore.js';
 import {
   saveStemsDurable,
   loadStemsDurable,
-  saveAnalysisDurable,
-  loadAnalysisDurable,
 } from '/src/core/storage/DerivedCache.js';
 import { ensureCacheFresh } from '/src/core/storage/CacheManifest.js';
 import {
@@ -1374,8 +1372,7 @@ class VoiceIsolatePro {
         mobile: this._isMobileEngineer?.() || false,
         ...extra,
       };
-      // eslint-disable-next-line no-console
-      console.info('[VIP][progress]', payload);
+      console.info('[VIP][progress]', payload); // local diagnostics only (gated above)
     } catch { /* ignore */ }
   }
 
