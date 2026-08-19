@@ -106,6 +106,29 @@ describe('StemSeparation worker terminal contract', () => {
   test('ignores stale requestId on stems/error', () => {
     expect(stemJs).toMatch(/m\.requestId !== requestId/);
   });
+
+  test('forwards AbortSignal as worker cancel and rejects late stems', () => {
+    expect(stemJs).toMatch(/options\.signal/);
+    expect(stemJs).toMatch(/type: 'cancel'/);
+    expect(stemJs).toMatch(/cancelPosted/);
+    expect(stemJs).toMatch(/cancelStemSeparation/);
+  });
+
+  test('cancelActiveJobs posts cancel before recycle', () => {
+    expect(appJs).toMatch(/cancelStemSeparation/);
+    expect(appJs).toMatch(/signal:\s*this\._processAbortSignal\(\)/);
+  });
+});
+
+describe('DSP fallback must not pin at 88%', () => {
+  test('fallback render uses cooperative chunks past 88', () => {
+    expect(appJs).toMatch(/Rendering output…',\s*90/);
+    expect(appJs).toMatch(/fallback-render-start/);
+    const fbStart = appJs.indexOf('async _runFallbackPipeline');
+    const fbBody = appJs.slice(fbStart, fbStart + 12000);
+    expect(fbBody).toMatch(/processInChunks/);
+    expect(fbBody).not.toMatch(/Rendering output…',\s*88/);
+  });
 });
 
 describe('local-only / architecture guards still present', () => {
@@ -121,6 +144,34 @@ describe('local-only / architecture guards still present', () => {
   test('progress diagnostics are local-only gated', () => {
     expect(appJs).toMatch(/vip-debug-progress/);
     expect(appJs).toMatch(/VIP_DEBUG_PROGRESS/);
+    expect(appJs).toMatch(/elapsedMs/);
+    expect(appJs).toMatch(/abortReason/);
     expect(appJs).not.toMatch(/fetch\(.*progress/i);
+  });
+
+  test('production Process does not import dsp-stages.js', () => {
+    expect(appJs).not.toMatch(/dsp-stages/);
+    expect(appJs).not.toMatch(/offline-processor/);
+  });
+});
+
+describe('USM / ORT hardening markers', () => {
+  const usmWorker = fs.readFileSync(path.join(ROOT, 'src/workers/USMWorker.js'), 'utf8');
+  const mlWorker = fs.readFileSync(path.join(ROOT, 'src/workers/MLWorker.js'), 'utf8');
+  const usmNode = fs.readFileSync(path.join(ROOT, 'src/pipeline/USMNode.js'), 'utf8');
+
+  test('USMWorker clears heartbeat in finally', () => {
+    expect(usmWorker).toMatch(/finally\s*\{/);
+    expect(usmWorker).toMatch(/clearHeartbeat/);
+  });
+
+  test('USMNode handles messageerror', () => {
+    expect(usmNode).toMatch(/messageerror/);
+  });
+
+  test('MLWorker allows one local WASM retry after WebGPU session failure', () => {
+    expect(mlWorker).toMatch(/_webgpuWasmFallbackUsed/);
+    expect(mlWorker).toMatch(/one local WASM retry/);
+    expect(mlWorker).toMatch(/ort-fallback/);
   });
 });

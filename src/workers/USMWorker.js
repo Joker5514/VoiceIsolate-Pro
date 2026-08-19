@@ -19,6 +19,12 @@ self.onmessage = (event) => {
   if (msg.type !== 'separate') return;
   const requestId = msg.requestId;
   let heartbeat = null;
+  const clearHeartbeat = () => {
+    if (heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+  };
   try {
     const post = (type, extra = {}) => {
       self.postMessage({ type, requestId, ...extra });
@@ -43,10 +49,7 @@ self.onmessage = (event) => {
 
     post('progress', { percent: 15, stage: 'stft-nmf' });
     const result = separateUniversal(samples, sampleRate, config);
-    if (heartbeat) {
-      clearInterval(heartbeat);
-      heartbeat = null;
-    }
+    clearHeartbeat();
     post('progress', { percent: 95, stage: 'pack' });
 
     // Transfer PCM + masks to avoid structured-clone cost on large stems.
@@ -81,11 +84,13 @@ self.onmessage = (event) => {
       transfer,
     );
   } catch (err) {
-    if (heartbeat) clearInterval(heartbeat);
     self.postMessage({
       type: 'error',
       requestId,
       message: err && err.message ? err.message : String(err),
     });
+  } finally {
+    // Always clear heartbeat for success, failure, and unexpected throws.
+    clearHeartbeat();
   }
 };

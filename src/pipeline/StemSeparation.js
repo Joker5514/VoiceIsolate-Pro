@@ -117,6 +117,14 @@ export async function separateStems(channelData, sampleRate, options = {}) {
     };
   }
 
+  const signal = options.signal || null;
+  if (signal?.aborted) {
+    const err = typeof DOMException !== 'undefined'
+      ? new DOMException('Processing cancelled', 'AbortError')
+      : Object.assign(new Error('Processing cancelled'), { name: 'AbortError' });
+    throw err;
+  }
+
   await ensureReady();
   const w = getWorker();
   const requestId = ++_seq;
@@ -138,6 +146,8 @@ export async function separateStems(channelData, sampleRate, options = {}) {
   return new Promise((resolve, reject) => {
     let lastProgressAt = Date.now();
     let settled = false;
+    let cancelPosted = false;
+    let cancelGraceTimer = null;
     const timer = setTimeout(() => {
       cleanup();
       resetStemSeparation();
@@ -156,6 +166,29 @@ export async function separateStems(channelData, sampleRate, options = {}) {
       cleanup();
       fn();
     };
+    const abortError = () => (typeof DOMException !== 'undefined'
+      ? new DOMException('Processing cancelled', 'AbortError')
+      : Object.assign(new Error('Processing cancelled'), { name: 'AbortError' }));
+    const postCancel = () => {
+      if (cancelPosted || settled) return;
+      cancelPosted = true;
+      try {
+        w.postMessage({ type: 'cancel', requestId });
+      } catch { /* worker may already be gone */ }
+    };
+    const onAbort = () => {
+      postCancel();
+      // Do not wait forever for a cancelled ack — settle cleanly if silent.
+      if (cancelGraceTimer != null) return;
+      cancelGraceTimer = setTimeout(() => {
+        cancelGraceTimer = null;
+        if (settled) return;
+        finish(() => {
+          resetStemSeparation();
+          reject(abortError());
+        });
+      }, 1500);
+    };
     const onMsg = (ev) => {
       const m = ev.data || {};
       // Ignore stale messages from a prior/cancelled requestId.
@@ -166,6 +199,11 @@ export async function separateStems(channelData, sampleRate, options = {}) {
         onProgress?.(m);
       } else if (m.type === 'stems') {
         if (m.requestId !== requestId) return;
+        // Late stems after user cancel must not become a false "complete" output.
+        if (signal?.aborted || cancelPosted) {
+          finish(() => reject(abortError()));
+          return;
+        }
         finish(() => {
           const out = {
             clean: m.clean,
@@ -180,12 +218,7 @@ export async function separateStems(channelData, sampleRate, options = {}) {
         });
       } else if (m.type === 'cancelled') {
         if (m.requestId != null && m.requestId !== requestId) return;
-        finish(() => {
-          const err = typeof DOMException !== 'undefined'
-            ? new DOMException('Processing cancelled', 'AbortError')
-            : Object.assign(new Error('Processing cancelled'), { name: 'AbortError' });
-          reject(err);
-        });
+        finish(() => reject(abortError()));
       } else if (m.type === 'error') {
         if (m.requestId != null && m.requestId !== requestId) return;
         finish(() => reject(new Error(m.message || 'Separation failed')));
@@ -202,15 +235,37 @@ export async function separateStems(channelData, sampleRate, options = {}) {
     const cleanup = () => {
       clearTimeout(timer);
       clearInterval(stallWatch);
+      if (cancelGraceTimer != null) {
+        clearTimeout(cancelGraceTimer);
+        cancelGraceTimer = null;
+      }
       w.removeEventListener('message', onMsg);
       w.removeEventListener('error', onErr);
       w.removeEventListener('messageerror', onMessageError);
+      if (signal && typeof signal.removeEventListener === 'function') {
+        signal.removeEventListener('abort', onAbort);
+      }
     };
     w.addEventListener('message', onMsg);
     w.addEventListener('error', onErr);
     w.addEventListener('messageerror', onMessageError);
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    if (signal && typeof signal.addEventListener === 'function') {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
     w.postMessage(msg, copies.map((c) => c.buffer));
   });
+}
+
+/** Ask the active ML job to cancel (terminal `cancelled` or host AbortError). */
+export function cancelStemSeparation(requestId = null) {
+  if (!_worker) return;
+  try {
+    _worker.postMessage({ type: 'cancel', requestId });
+  } catch { /* ignore */ }
 }
 
 /** Build an AudioBuffer from separated mono/stereo clean stem. */
@@ -241,4 +296,12 @@ export function resetStemSeparation() {
 
 export { clearStemCache };
 
-export default { ensureReady, warmupModels, separateStems, stemsToAudioBuffer, resetStemSeparation, clearStemCache };
+export default {
+  ensureReady,
+  warmupModels,
+  separateStems,
+  stemsToAudioBuffer,
+  resetStemSeparation,
+  cancelStemSeparation,
+  clearStemCache,
+};

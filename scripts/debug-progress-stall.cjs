@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * Reproduce landing-page progress stalls on longer audio.
+ * Reproduce progress stalls on longer audio (Landing by default).
+ * Expectation: progress advances past 88% and reaches completion (or fails clearly).
+ * Production Process path is StemSeparation → MLWorker (not dsp-stages.js).
  * Usage: node scripts/debug-progress-stall.cjs [seconds]
  */
 'use strict';

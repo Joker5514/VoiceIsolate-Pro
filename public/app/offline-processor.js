@@ -1,6 +1,12 @@
 /**
  * offline-processor.js — VoiceIsolate Pro · Creator & Forensic Mode
  *
+ * ⚠️  LEGACY / NOT ON THE PRODUCTION ENGINEER PROCESS PATH
+ * Production Process uses StemSeparation → MLWorker (+ dsp-core fallback in app.js).
+ * This file is retained for scripts/tests/historical offline tooling only.
+ * Do NOT import from public/app/index.html or app.js Process handler.
+ * Guard: tests/production-dsp-import-graph.test.js
+ *
  * Self-contained module for offline (non-real-time) audio processing.
  * This file owns offline / creator mode only; live mode belongs to
  * pipeline-orchestrator.js and bulk queue coordination belongs to

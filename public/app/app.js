@@ -1363,11 +1363,35 @@ class VoiceIsolatePro {
         || (typeof globalThis !== 'undefined' && globalThis.VIP_DEBUG_PROGRESS === true);
       if (!enabled) return;
       const jobs = globalThis.__VIP_JOBS__;
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      if (!this._progressDiagStages) this._progressDiagStages = Object.create(null);
+      const prev = this._progressDiagStages[stage];
+      const isEnd = /(?:^|[-_])(?:end|done|complete|ready|error|cancelled)$/i.test(stage)
+        || Boolean(extra.end);
+      if (!prev && !isEnd) {
+        this._progressDiagStages[stage] = { start: now };
+      }
+      const startAt = prev?.start ?? extra.stageStart ?? null;
+      const elapsedMs = startAt != null ? Math.round(now - startAt) : (extra.elapsedMs ?? null);
+      if (isEnd && prev) delete this._progressDiagStages[stage];
+      let provider = null;
+      try {
+        provider = globalThis.__vipOrtStatus?.provider
+          || globalThis.__VIP_ORT_STATUS__?.provider
+          || null;
+      } catch { /* ignore */ }
       const payload = {
-        t: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+        t: now,
         jobId: jobs?.getCurrentJobId?.() || null,
         stage,
+        stageStart: startAt,
+        stageEnd: isEnd ? now : null,
+        elapsedMs,
         pct: this._pipelinePct,
+        provider,
+        abortFlag: Boolean(this.abortFlag),
+        abortReason: extra.abortReason
+          || (this.abortFlag ? (jobs?.getCurrentAbortReason?.() || 'abortFlag') : null),
         desktop: isDesktopShell(),
         mobile: this._isMobileEngineer?.() || false,
         ...extra,
@@ -2788,10 +2812,8 @@ class VoiceIsolatePro {
     }
     if (e.key === 'Escape') {
       if (this.isProcessing) {
-        this.abortFlag = true;
-        import('/src/pipeline/StemSeparation.js')
-          .then((m) => { if (m.resetStemSeparation) m.resetStemSeparation(); })
-          .catch(() => {});
+        if (typeof this.cancelActiveJobs === 'function') this.cancelActiveJobs();
+        else this.abortFlag = true;
       } else {
         this.stop();
       }
@@ -4156,6 +4178,7 @@ class VoiceIsolatePro {
   /** Cooperative cancel for Process / Analyze / MOPE (JobController + workers). */
   cancelActiveJobs() {
     this.abortFlag = true;
+    this._logProgressDiag('cancel-requested', { abortReason: 'user', end: true });
     try {
       const jobs = globalThis.__VIP_JOBS__;
       if (jobs?.cancelCurrent) jobs.cancelCurrent('user');
@@ -4163,8 +4186,13 @@ class VoiceIsolatePro {
     try {
       import('/src/pipeline/StemSeparation.js')
         .then((m) => {
-          // Best-effort: reset host so a new Process can start cleanly.
-          if (typeof m.resetStemSeparation === 'function') m.resetStemSeparation();
+          // Prefer cooperative cancel (terminal `cancelled`) then recycle host.
+          if (typeof m.cancelStemSeparation === 'function') m.cancelStemSeparation();
+          if (typeof m.resetStemSeparation === 'function') {
+            setTimeout(() => {
+              try { m.resetStemSeparation(); } catch { /* ignore */ }
+            }, 1600);
+          }
         })
         .catch(() => {});
     } catch { /* ignore */ }
@@ -4708,12 +4736,14 @@ class VoiceIsolatePro {
         );
       }
       this.updatePipelineProgress(4, plan.expandStereo ? 'ML isolation (mid)…' : 'ML isolation…', 15);
+      this._logProgressDiag('ml-isolation-start');
       // Always single fast model (bsrnn) — never chain demucs on engineer default path.
       const result = await separateStems(plan.channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
         sourceName: this._sourceName || '',
         // Owned Float32Arrays from _mlChannelPlan — transfer, don't re-copy.
         transferOwned: true,
+        signal: this._processAbortSignal(),
         onProgress: (ev) => {
           if (fileSeq !== this._fileSeq || this.abortFlag) return;
           const workerPct = Number(ev.percent);
@@ -4723,10 +4753,21 @@ class VoiceIsolatePro {
           if (ev.type === 'stage') {
             const label = ev.label || `ML: ${ev.stage} (${ev.modelId || 'model'})…`;
             this.updatePipelineProgress(4, label, mapped);
+            this._logProgressDiag('ml-worker-stage', {
+              workerStage: ev.stage || null,
+              workerPct: Number.isFinite(workerPct) ? workerPct : null,
+              mappedPct: mapped,
+              provider: ev.backend || null,
+            });
           } else if (ev.type === 'progress') {
             this.updatePipelineProgress(4, 'ML isolation…', mapped);
           }
         },
+      });
+      this._logProgressDiag('ml-isolation-end', {
+        end: true,
+        backend: result.backend || null,
+        fromCache: Boolean(result.fromCache),
       });
       if (fileSeq !== this._fileSeq) return false;
       if (result.passthrough) return false;
@@ -4907,24 +4948,35 @@ class VoiceIsolatePro {
     // Stereo → process mid once (halves STFT + spectral cost). Re-expand at end.
     const processStereoAsMid = nCh >= 2;
     let channels;
-    // Mobile yields every ~1s of audio so WebView stays interactive.
-    const mobile = this._isMobileEngineer();
-    const yieldBudget = createYieldBudget(mobile ? 10 : 20);
+    // Mobile / Electron: cooperative mid build — never pin UI during fallback.
+    const signal = this._processAbortSignal();
+    const postChunk = this._postMlChunkSamples();
     if (processStereoAsMid) {
       const L = buf.getChannelData(0);
       const R = buf.getChannelData(1);
       const mid = new Float32Array(len);
-      const CHUNK = mobile ? 48000 : 48000 * 2;
-      for (let i = 0; i < len; i++) {
-        mid[i] = 0.5 * (L[i] + R[i]);
-        if (i > 0 && (i % CHUNK) === 0) await yieldBudget();
-      }
+      this.updatePipelineProgress(3, 'Preparing mid channel…', 8);
+      await processInChunks({
+        total: len,
+        chunkSize: postChunk,
+        signal,
+        onProgress: (r) => {
+          if (this.abortFlag) return;
+          this.updatePipelineProgress(3, 'Preparing mid channel…', 8 + Math.round(r * 4));
+        },
+        runChunk: (start, end) => {
+          for (let i = start; i < end; i++) {
+            mid[i] = 0.5 * (L[i] + R[i]);
+          }
+        },
+      });
       channels = [mid];
       this._dspStereoSources = { L, R, mid };
     } else {
       channels = [buf.getChannelData(0).slice()];
       this._dspStereoSources = null;
     }
+    this._throwIfProcessAborted();
     await yieldToBrowser();
 
     // ── Pass 1–2: input conditioning + time-domain cleanup ──
@@ -5013,29 +5065,37 @@ class VoiceIsolatePro {
       }
     }
 
-    // Assemble the processed AudioBuffer — yield so Android does not stick at 88%.
-    this.updatePipelineProgress(28, 'Rendering output…', 88);
+    // Assemble the processed AudioBuffer — cooperative; never pin live jobs at 88%.
+    this._throwIfProcessAborted();
+    this.updatePipelineProgress(28, 'Rendering output…', 90);
+    this._logProgressDiag('fallback-render-start');
     await yieldToBrowser();
     const outCh = channels.length;
     let processed = this.ctx.createBuffer(outCh, len, sr);
-    const copyYield = createYieldBudget(mobile ? 10 : 20);
     for (let ch = 0; ch < outCh; ch++) {
       const src = channels[ch];
       const dst = processed.getChannelData(ch);
       const copyLen = Math.min(len, src.length);
-      const CHUNK = mobile ? 48000 : 48000 * 4;
-      for (let i = 0; i < copyLen; i += CHUNK) {
-        const end = Math.min(copyLen, i + CHUNK);
-        dst.set(src.subarray(i, end), i);
-        if (end < copyLen) await copyYield();
-      }
+      await processInChunks({
+        total: copyLen,
+        chunkSize: postChunk,
+        signal,
+        onProgress: (r) => {
+          if (this.abortFlag) return;
+          const base = 90 + Math.round(((ch + r) / outCh) * 4); // 90→94
+          this.updatePipelineProgress(28, 'Rendering output…', Math.min(94, base));
+        },
+        runChunk: (start, end) => {
+          dst.set(src.subarray(start, end), start);
+        },
+      });
     }
     await yieldToBrowser();
 
     // S28 dry/wet blend with the untouched original.
     const dryWetPct = Math.max(0, Math.min(100, p.dryWet ?? 100));
     if (dryWetPct < 100) {
-      this.updatePipelineProgress(28, 'Dry/wet blend…', 90);
+      this.updatePipelineProgress(28, 'Dry/wet blend…', 95);
       await yieldToBrowser();
       processed = this.mixDW(buf, processed, dryWetPct / 100);
     }
@@ -5046,13 +5106,21 @@ class VoiceIsolatePro {
       const gain = Math.pow(10, outGainDb / 20);
       for (let ch = 0; ch < processed.numberOfChannels; ch++) {
         const out = processed.getChannelData(ch);
-        for (let i = 0; i < out.length; i++) out[i] *= gain;
+        await processInChunks({
+          total: out.length,
+          chunkSize: postChunk,
+          signal,
+          runChunk: (start, end) => {
+            for (let i = start; i < end; i++) out[i] *= gain;
+          },
+        });
       }
       await yieldToBrowser();
     }
 
     // Final brickwall safety limit + optional dither.
-    this.updatePipelineProgress(29, 'Output safety…', 92);
+    this._throwIfProcessAborted();
+    this.updatePipelineProgress(29, 'Output safety…', 97);
     await yieldToBrowser();
     this._applyOutputSafetyLimit(processed, p);
     if ((p.ditherAmt ?? 0) > 0) {
@@ -5061,6 +5129,7 @@ class VoiceIsolatePro {
       }
     }
     await yieldToBrowser();
+    this._logProgressDiag('fallback-render-end', { end: true });
 
     this.procBuffer = processed;
     this.outputBuffer = processed;

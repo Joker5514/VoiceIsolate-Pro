@@ -112,6 +112,15 @@ export async function probeWebGpuAvailable() {
  * @param {object} msg
  */
 export function applyMlWorkerMessage(msg = {}) {
+  if (msg.type === 'stage' && msg.stage === 'ort-fallback') {
+    const backend = String(msg.backend || 'wasm').toLowerCase();
+    setOrtStatus({
+      provider: backend === 'webgpu' ? 'webgpu' : 'wasm',
+      detail: msg.detail || msg.label || 'WebGPU failed — local WASM retry',
+      webgpuAvailable: _status.webgpuAvailable,
+    });
+    return;
+  }
   if (msg.type === 'ready') {
     const backend = String(msg.backend || '').toLowerCase();
     setOrtStatus({

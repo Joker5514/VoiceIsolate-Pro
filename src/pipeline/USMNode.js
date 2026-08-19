@@ -91,13 +91,21 @@ function runClassicalInWorker(mono, sampleRate, cfg, onProgress, timeoutMs = 120
       cleanup();
       reject(new Error(e?.message || 'USMWorker error'));
     };
+    const onMessageError = (e) => {
+      cleanup();
+      reject(new Error(
+        e?.message || '[VIP][USMNode] worker messageerror (deserialize failed)',
+      ));
+    };
     const cleanup = () => {
       clearTimeout(timer);
       w.removeEventListener('message', onMsg);
       w.removeEventListener('error', onErr);
+      w.removeEventListener('messageerror', onMessageError);
     };
     w.addEventListener('message', onMsg);
     w.addEventListener('error', onErr);
+    w.addEventListener('messageerror', onMessageError);
     onProgress?.(0.12, 'dispatch-usm-worker');
     w.postMessage(
       { type: 'separate', requestId, samples: copy, sampleRate, config: cfg },
