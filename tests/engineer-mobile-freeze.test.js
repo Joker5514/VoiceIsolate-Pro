@@ -76,11 +76,28 @@ describe('Engineer mobile freeze suite (10+ checks)', () => {
   test('14. reconstruct progress ticks past 85 before complete', () => {
     expect(appJs).toMatch(/Expanding stereo/);
     expect(appJs).toMatch(/Building output/);
-    expect(appJs).toMatch(/w \* 0\.70/);
+    expect(appJs).toMatch(/Smoothing residual/);
+    // Weighted ML band 8→82; post-ML 82→100 (never pin at 88).
+    expect(appJs).toMatch(/w \* 0\.74/);
+    expect(appJs).toMatch(/82 \+ Math\.round/);
+    expect(appJs).toMatch(/90 \+ Math\.round/);
   });
 
   test('15. mobile skips auto full-analysis after process', () => {
     expect(appJs).toMatch(/auto-analysis skipped on mobile/);
+  });
+
+  test('17. deferred analysis cannot block playable output (Complete before analysis)', () => {
+    const doneIdx = appJs.indexOf("updatePipelineProgress(32, 'Complete', 100");
+    const analysisIdx = appJs.indexOf('_deferredAnalysisFileSeq');
+    expect(doneIdx).toBeGreaterThan(0);
+    expect(analysisIdx).toBeGreaterThan(doneIdx);
+  });
+
+  test('18. AbortError during process is treated as cancel not failure', () => {
+    expect(appJs).toMatch(/Processing cancelled/);
+    expect(appJs).toMatch(/isCancellationError/);
+    expect(appJs).toMatch(/_throwIfProcessAborted/);
   });
 
   test('16. durable stem cache awaits async expand', () => {

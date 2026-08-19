@@ -44,6 +44,7 @@ Single map of product, architecture, platform, and historical docs.
 | [guides/ANDROID.md](guides/ANDROID.md) | Capacitor Android build, sideload, WebView notes |
 | [guides/DSP_SLIDERS.md](guides/DSP_SLIDERS.md) | Engineer DSP slider registry, keyboard, lock, search, a11y |
 | [audits/DEEP_AUDIT_2026-08-17.md](audits/DEEP_AUDIT_2026-08-17.md) | Deep audit — CONDITIONAL GO, issue register, matrix, privacy |
+| [guides/PROCESS_PROGRESS.md](guides/PROCESS_PROGRESS.md) | Process stage progress, cancel, worker terminal contract |
 | [guides/REVENUECAT_ISOLATION.md](guides/REVENUECAT_ISOLATION.md) | IAP boundary — never leak into DSP |
 | [guides/SAM_AUDIO.md](guides/SAM_AUDIO.md) | SAM-**Audio** (sound separation) — Desktop worker / optional ONNX |
 | [SAM3_TECHNICAL_DOCUMENTATION.md](SAM3_TECHNICAL_DOCUMENTATION.md) | SAM **3** (vision/video) — sidecar brief, flags, `src/sam3_integration/` status |
