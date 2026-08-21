@@ -764,10 +764,12 @@ export class PlaybackMixer {
    */
   _applyParam(param, target) {
     const now = this.ctx.currentTime;
-    if (this._isPlaying) {
+    if (this._isPlaying && this.ctx.state === 'running') {
       param.setTargetAtTime(target, now, PARAM_SMOOTHING);
     } else {
-      param.cancelScheduledValues(now);
+      // Suspended Electron contexts can hold currentTime at zero. Snap rather
+      // than scheduling automation so pre-playback changes are retained.
+      param.cancelScheduledValues(Math.max(now, 0));
       param.value = target;
     }
   }

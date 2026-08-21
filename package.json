@@ -45,6 +45,7 @@
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testEnvironment=node --watch",
     "lint:fix": "eslint public/app/app.js public/app/dsp-worker.js public/app/dsp-processor.js public/app/ml-worker.js public/app/vip-enhancements.js public/landing.js src server --fix",
     "validate": "node scripts/validate.js",
+    "version:check": "node scripts/check-version-sync.cjs",
     "worklets:hash": "node scripts/hash-worklets.js",
     "worklets:verify": "node scripts/verify-worklets.js",
     "worklets:verify:build": "node scripts/verify-worklets.js --require-build",

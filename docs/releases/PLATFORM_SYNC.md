@@ -25,6 +25,7 @@
 ```bash
 pnpm install
 pnpm mobile:sync-version
+pnpm version:check
 pnpm build
 pnpm android:build:win
 pnpm build:electron

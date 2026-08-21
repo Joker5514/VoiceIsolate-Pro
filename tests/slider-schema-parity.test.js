@@ -83,7 +83,8 @@ describe('slider schema parity', () => {
     expect(workflowJs).toMatch(/creator:[\s\S]*?groups:\s*null/);
     expect(workflowJs).toMatch(/studio:[\s\S]*?groups:\s*null/);
     expect(workflowJs).toMatch(/forensic:[\s\S]*?groups:\s*null/);
-    expect(workflowJs).toMatch(/defaultFilterMode:\s*'essentials'/);
+    expect(workflowJs).not.toMatch(/defaultFilterMode:\s*'essentials'/);
+    expect((workflowJs.match(/defaultFilterMode:\s*'all'/g) || []).length).toBe(3);
   });
 
   test('Essentials filter chip is wired in HTML + app.js', () => {
@@ -95,5 +96,12 @@ describe('slider schema parity', () => {
   test('app prefers registry ranges for SLIDER_BY_ID', () => {
     expect(appJs).toMatch(/for \(const s of SLIDER_REGISTRY\)/);
     expect(appJs).toMatch(/SLIDER_REGISTRY/);
+  });
+
+  test('Engineer startup eagerly mounts controls in closed accordion groups', () => {
+    expect(appJs).toMatch(/Mount the complete 67-control rack/);
+    expect(appJs).not.toMatch(/_pendingSlidersByPanel/);
+    expect(appJs).not.toMatch(/_wireLazySliderPanel/);
+    expect(appJs).toMatch(/Engineer control rack incomplete/);
   });
 });

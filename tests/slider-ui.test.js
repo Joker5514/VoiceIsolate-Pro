@@ -225,6 +225,55 @@ describe('SliderUI', () => {
     expect(ui.bind()).toBe(SLIDER_BINDINGS.length - 2);
   });
 
+  test('rebind wires sliders that mount after the initial bind without duplicates', () => {
+    const lateSlider = document.getElementById('volumeSlider');
+    lateSlider.remove();
+    const ui = new SliderUI(mixer);
+    expect(ui.bind()).toBe(SLIDER_BINDINGS.length - 1);
+
+    document.body.appendChild(lateSlider);
+    mixer.calls.length = 0;
+    expect(ui.rebind()).toBe(1);
+    expect(ui.rebind()).toBe(0);
+    expect(mixer.calls).toEqual([['setVolume', 100]]);
+
+    lateSlider.value = '35';
+    lateSlider.dispatchEvent(new Event('input'));
+    flushRaf();
+    expect(mixer.calls.at(-1)).toEqual(['setVolume', 35]);
+  });
+
+  test('bind warns when the panel has not mounted any sliders', () => {
+    document.body.innerHTML = '';
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const ui = new SliderUI(mixer);
+    expect(ui.bind()).toBe(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('found 0 sliders'));
+    warn.mockRestore();
+  });
+
+  test('rebind wires a replacement node that reuses an already-bound id', () => {
+    const ui = new SliderUI(mixer);
+    ui.bind();
+    mixer.calls.length = 0;
+
+    const oldSlider = document.getElementById('volumeSlider');
+    const replacement = oldSlider.cloneNode();
+    replacement.value = '65';
+    oldSlider.replaceWith(replacement);
+
+    expect(ui.rebind()).toBe(1);
+    replacement.value = '45';
+    replacement.dispatchEvent(new Event('input'));
+    oldSlider.value = '20';
+    oldSlider.dispatchEvent(new Event('input'));
+    flushRaf();
+    expect(mixer.calls).toEqual([
+      ['setVolume', 65],
+      ['setVolume', 45],
+    ]);
+  });
+
   test('a missing mixer method is skipped with a warning, not a crash', () => {
     delete mixer.setVolume;
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});

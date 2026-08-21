@@ -28,6 +28,11 @@
   <img src="https://img.shields.io/badge/license-Proprietary-red" alt="License">
 </p>
 
+> **Cross-platform release:** Web/PWA, Electron desktop, and Capacitor Android
+> all use **v25.0.2** from `package.json`. Run `pnpm version:check` before a
+> release; `pnpm mobile:sync-version` updates the packaged browser and native
+> metadata after any version bump.
+
 ---
 
 ## Overview
@@ -250,6 +255,11 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 | **Latest Windows installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe |
 | **Prior Windows v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 
+The versioned v25.0.2 URLs above are the canonical release pins. The `latest`
+aliases are convenience links and must resolve to the same v25.0.2 assets before
+publishing. Repository CI can verify metadata parity with `pnpm version:check`;
+binary availability still requires an HTTP check against GitHub Releases.
+
 | Asset | Name | Approx. size | Notes |
 |-------|------|----------------|---------|
 | Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~96.9 MB | **v25.0.2** on `latest` · rebuilt **2026-08-21T10:04Z** (`17692f9`) |
@@ -392,4 +402,3 @@ UNLICENSED — © 2026 Randy Jordan / Conqueror Studios. All rights reserved.
 | Desktop | Electron may start/stop the loopback worker via secure IPC |
 
 See [docs/guides/SAM_AUDIO.md](docs/guides/SAM_AUDIO.md) and [docs/guides/PLATFORM_CAPABILITY_MATRIX.md](docs/guides/PLATFORM_CAPABILITY_MATRIX.md).
-
