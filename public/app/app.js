@@ -43,6 +43,11 @@
  */
 
 import { SLIDER_REGISTRY, STAGES, SLIDER_ALIASES } from './slider-map.js';
+import {
+  getCalibratedPresets,
+  PRESET_REDIRECTS as CALIBRATED_PRESET_REDIRECTS,
+  resolvePresetName as resolveCalibratedPresetName,
+} from '/src/core/PresetCalibration.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import {
   calibrate,
@@ -600,10 +605,32 @@ const WHISPER_MODE_STATES = {
 };
 // SLIDER_MAP removed - unused (SLIDER_BY_ID is used instead)
 
-// Flat lookup (frozen, used by clampToSlider and applyPreset)
-const SLIDER_BY_ID = Object.freeze(
-  Object.values(SLIDERS).flat().reduce((acc, s) => { acc[s.id] = s; return acc; }, {})
-);
+// Flat lookup — prefer SLIDER_REGISTRY (SSOT) for min/max/step/default so clamp,
+// presets, and mounted DspSlider rows never drift. Legacy SLIDERS keeps rich copy
+// for tests that parse the inline block; ranges overlay from the registry.
+const SLIDER_BY_ID = Object.freeze((() => {
+  const acc = Object.create(null);
+  for (const s of Object.values(SLIDERS).flat()) {
+    acc[s.id] = { ...s };
+  }
+  for (const s of SLIDER_REGISTRY) {
+    const prev = acc[s.id] || {};
+    acc[s.id] = {
+      ...prev,
+      id: s.id,
+      label: s.label || prev.label,
+      min: s.min,
+      max: s.max,
+      val: s.default,
+      step: s.step,
+      unit: _formatSliderUnit(s.unit || prev.unit || ''),
+      rt: BRIDGE_RT_SLIDER_IDS.has(s.id) || Boolean(s.rt),
+      desc: prev.desc || s.hint || s.tip || '',
+      group: s.group || prev.group,
+    };
+  }
+  return acc;
+})());
 
 // [WHISPER UPDATE] Build a complete preset from SLIDER defaults + overrides
 function _presetDefaults(overrides = {}) {
@@ -625,124 +652,31 @@ const EXTREME_OFF = {
   transientShaper: 0, breathControl: 0, roomCorrection: 0, subHarmonic: 0,
 };
 
-const PRESETS = {
-  'Voice Clarity': {
-    description: 'Isolate speech and enhance intelligibility with balanced noise reduction',
-    gateThresh: -44, gateRange: -58, gateAttack: 4, gateRelease: 180, gateHold: 40, gateLookahead: 5,
-    nrAmount: 52, nrSensitivity: 48, nrSpectralSub: 32, nrFloor: -68, nrSmoothing: 30,
-    eqSub: 0, eqBass: 0, eqWarmth: 0.5, eqBody: 1, eqLowMid: 0.5, eqMid: 1, eqPresence: 1, eqClarity: 0.5, eqAir: 0, eqBrill: 0,
-    compThresh: -22, compRatio: 3.5, compAttack: 8, compRelease: 140, compKnee: 5, compMakeup: 1.5, limThresh: -1, limRelease: 45,
-    hpFreq: 70, hpQ: 0.7, lpFreq: 14000, lpQ: 0.7, deEssFreq: 6500, deEssAmt: 5, specTilt: 0, formantShift: 0,
-    derevAmt: 8, derevDecay: 30, harmRecov: 0, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
-    voiceIso: 72, bgSuppress: 38, voiceFocusLo: 100, voiceFocusHi: 4200, crosstalkCancel: 0,
-    outGain: 1, dryWet: 100, ditherAmt: 0, outWidth: 100,
-    ...EXTREME_OFF,
-  },
-  'Podcast Clean': {
-    description: 'Studio-clean podcast isolation with de-essing and steady loudness',
-    gateThresh: -52, gateRange: -62, gateAttack: 5, gateRelease: 200, gateHold: 45, gateLookahead: 5,
-    nrAmount: 55, nrSensitivity: 50, nrSpectralSub: 35, nrFloor: -68, nrSmoothing: 32,
-    eqSub: -1, eqBass: 0, eqWarmth: 1, eqBody: 0.5, eqLowMid: 0, eqMid: 0.5, eqPresence: 1, eqClarity: 0, eqAir: 0, eqBrill: 0,
-    compThresh: -18, compRatio: 3, compAttack: 12, compRelease: 160, compKnee: 6, compMakeup: 2, limThresh: -1, limRelease: 50,
-    hpFreq: 90, hpQ: 0.7, lpFreq: 14000, lpQ: 0.7, deEssFreq: 6500, deEssAmt: 6, specTilt: 0, formantShift: 0,
-    derevAmt: 8, derevDecay: 35, harmRecov: 0, harmOrder: 3, stereoWidth: 100, phaseCorr: 0,
-    voiceIso: 74, bgSuppress: 42, voiceFocusLo: 110, voiceFocusHi: 3800, crosstalkCancel: 0,
-    outGain: 0, dryWet: 100, ditherAmt: 0, outWidth: 100,
-    ...EXTREME_OFF,
-    breathControl: 28,
-  },
-  'Forensic Extract': {
-    description: 'Maximum voice extraction for forensic / low-SNR analysis',
-    gateThresh: -62, gateRange: -78, gateAttack: 2, gateRelease: 90, gateHold: 18, gateLookahead: 8,
-    nrAmount: 94, nrSensitivity: 80, nrSpectralSub: 82, nrFloor: -82, nrSmoothing: 78,
-    eqSub: -6, eqBass: -2, eqWarmth: 0, eqBody: 1.5, eqLowMid: 1.5, eqMid: 2.5, eqPresence: 2.5, eqClarity: 1.5, eqAir: 0, eqBrill: -2,
-    compThresh: -28, compRatio: 7, compAttack: 4, compRelease: 90, compKnee: 3, compMakeup: 6, limThresh: -1, limRelease: 28,
-    hpFreq: 140, hpQ: 0.85, lpFreq: 11000, lpQ: 0.7, deEssFreq: 7500, deEssAmt: 8, specTilt: 1.2, formantShift: 0,
-    derevAmt: 50, derevDecay: 50, harmRecov: 30, harmOrder: 4, stereoWidth: 100, phaseCorr: 22,
-    voiceIso: 96, bgSuppress: 90, voiceFocusLo: 90, voiceFocusHi: 4500, crosstalkCancel: 30,
-    outGain: 6, dryWet: 100, ditherAmt: 1, outWidth: 100,
-    whisperLift: 14, crowdNull: 58, bassCrush: 42, reverbStrip: 320, voiceTunnel: 62, musicKill: 48, snrFloor: -56, whisperMode: 2,
-    whisperClarity: 74, whisperSensitivity: 70, whisperThreshold: 58, transientShaper: 18, breathControl: 30, roomCorrection: 38, subHarmonic: 12,
-  },
-  'Whisper Boost': {
-    description: 'Amplify and isolate soft whispering voices from ambience',
-    gateThresh: -70, gateRange: -78, gateAttack: 2, gateRelease: 140, gateHold: 35, gateLookahead: 8,
-    nrAmount: 62, nrSensitivity: 48, nrSpectralSub: 45, nrFloor: -78, nrSmoothing: 70,
-    eqSub: -5, eqBass: -2, eqWarmth: 0.5, eqBody: 2.5, eqLowMid: 2.5, eqMid: 3.5, eqPresence: 4, eqClarity: 2.5, eqAir: 1.5, eqBrill: 0.5,
-    compThresh: -38, compRatio: 5, compAttack: 6, compRelease: 110, compKnee: 5, compMakeup: 9, limThresh: -1, limRelease: 35,
-    hpFreq: 100, hpQ: 0.7, lpFreq: 13000, lpQ: 0.7, deEssFreq: 5200, deEssAmt: 2, specTilt: 1.2, formantShift: 0,
-    derevAmt: 18, derevDecay: 35, harmRecov: 22, harmOrder: 4, stereoWidth: 100, phaseCorr: 8,
-    voiceIso: 80, bgSuppress: 68, voiceFocusLo: 140, voiceFocusHi: 4200, crosstalkCancel: 6,
-    outGain: 7, dryWet: 100, ditherAmt: 1, outWidth: 100,
-    whisperLift: 22, crowdNull: 38, bassCrush: 30, reverbStrip: 220, voiceTunnel: 72, musicKill: 28, snrFloor: -58, whisperMode: 1,
-    whisperClarity: 78, whisperSensitivity: 72, whisperThreshold: 42, transientShaper: 14, breathControl: 42, roomCorrection: 28, subHarmonic: 16,
-  },
-  'Phone/Radio': {
-    description: 'Band-limit and isolate speech for phone / radio recovery',
-    gateThresh: -48, gateRange: -62, gateAttack: 4, gateRelease: 180, gateHold: 45, gateLookahead: 5,
-    nrAmount: 82, nrSensitivity: 70, nrSpectralSub: 64, nrFloor: -74, nrSmoothing: 70,
-    eqSub: -12, eqBass: -8, eqWarmth: -3, eqBody: 0.5, eqLowMid: 2.5, eqMid: 1.5, eqPresence: 0.5, eqClarity: -1, eqAir: -6, eqBrill: -10,
-    compThresh: -20, compRatio: 5, compAttack: 8, compRelease: 120, compKnee: 4, compMakeup: 4, limThresh: -1, limRelease: 40,
-    hpFreq: 280, hpQ: 1.1, lpFreq: 3800, lpQ: 1.0, deEssFreq: 3200, deEssAmt: 5, specTilt: -0.4, formantShift: 0,
-    derevAmt: 12, derevDecay: 28, harmRecov: 28, harmOrder: 5, stereoWidth: 0, phaseCorr: 5,
-    voiceIso: 88, bgSuppress: 74, voiceFocusLo: 300, voiceFocusHi: 3400, crosstalkCancel: 18,
-    outGain: 3, dryWet: 100, ditherAmt: 1, outWidth: 0,
-    ...EXTREME_OFF,
-  },
-  'Surveillance': {
-    description: 'Aggressive isolation for challenging surveillance / outdoor noise',
-    gateThresh: -68, gateRange: -78, gateAttack: 2, gateRelease: 100, gateHold: 20, gateLookahead: 8,
-    nrAmount: 92, nrSensitivity: 84, nrSpectralSub: 80, nrFloor: -82, nrSmoothing: 80,
-    eqSub: -6, eqBass: -3, eqWarmth: 0, eqBody: 1.5, eqLowMid: 2, eqMid: 3, eqPresence: 2.5, eqClarity: 1.5, eqAir: 0, eqBrill: -2,
-    compThresh: -30, compRatio: 7, compAttack: 4, compRelease: 95, compKnee: 3, compMakeup: 7, limThresh: -1, limRelease: 30,
-    hpFreq: 110, hpQ: 0.9, lpFreq: 11000, lpQ: 0.7, deEssFreq: 7000, deEssAmt: 7, specTilt: 1, formantShift: 0,
-    derevAmt: 38, derevDecay: 48, harmRecov: 22, harmOrder: 4, stereoWidth: 100, phaseCorr: 15,
-    voiceIso: 93, bgSuppress: 88, voiceFocusLo: 100, voiceFocusHi: 4200, crosstalkCancel: 22,
-    outGain: 7, dryWet: 100, ditherAmt: 1, outWidth: 100,
-    whisperLift: 15, crowdNull: 72, bassCrush: 58, reverbStrip: 380, voiceTunnel: 70, musicKill: 52, snrFloor: -56, whisperMode: 2,
-    whisperClarity: 74, whisperSensitivity: 76, whisperThreshold: 64, transientShaper: 20, breathControl: 35, roomCorrection: 42, subHarmonic: 12,
-  },
-  'Room Echo Reduction': _presetDefaults({
-    description: 'Reduce room tone and reverb tails while preserving speech clarity',
-    gateThresh: -50, gateRange: -62, gateAttack: 4, gateRelease: 180, gateHold: 40,
-    nrAmount: 48, nrSensitivity: 45, nrSpectralSub: 30, nrFloor: -68, nrSmoothing: 40,
-    eqPresence: 1.5, eqClarity: 1, eqAir: 0,
-    derevAmt: 62, derevDecay: 58, roomCorrection: 55, reverbStrip: 420,
-    voiceIso: 70, bgSuppress: 45, outGain: 1,
-    ...EXTREME_OFF,
-  }),
-  'Hum Removal': _presetDefaults({
-    description: 'Target mains hum/buzz with conservative speech preservation',
-    gateThresh: -46, gateRange: -58, gateAttack: 4, gateRelease: 180,
-    nrAmount: 40, nrSensitivity: 40, nrSpectralSub: 28, nrFloor: -68,
-    eqSub: -2, eqBass: -1, hpFreq: 85,
-    phaseCorr: 28, voiceIso: 65, bgSuppress: 30, outGain: 0,
-    ...EXTREME_OFF,
-  }),
-  'Aggressive Isolate': _presetDefaults({
-    description: 'Strong voice isolation against music beds and dense backgrounds',
-    gateThresh: -58, gateRange: -72, gateAttack: 2, gateRelease: 120, gateHold: 25,
-    nrAmount: 88, nrSensitivity: 80, nrSpectralSub: 72, nrFloor: -80, nrSmoothing: 70,
-    eqPresence: 3, eqClarity: 2,
-    voiceIso: 94, bgSuppress: 90, outGain: 3,
-    musicKill: 82, bassCrush: 70, crowdNull: 70, voiceTunnel: 75,
-    snrFloor: -56, whisperMode: 0,
-  }),
-  // Legacy aliases (redirect to calibrated presets)
-  'Whisper in a Club': null,
-  'Stadium Crowd': null,
-};
-
-// Resolve legacy null aliases (calibrated merge may refine these after ESM loads)
-PRESETS['Whisper in a Club'] = PRESETS['Aggressive Isolate'];
-PRESETS['Stadium Crowd'] = PRESETS['Surveillance'];
-
-// Ensure every preset covers all 67 slider IDs
-for (const preset of Object.values(PRESETS)) {
-  for (const s of Object.values(SLIDERS).flat()) {
-    if (preset[s.id] === undefined) preset[s.id] = s.val;
+/**
+ * Canonical presets from src/core/PresetCalibration.js (SSOT).
+ * Mutated copies so fill/clamp can complete every slider id safely.
+ * Legacy aliases redirect via CALIBRATED_PRESET_REDIRECTS.
+ */
+const PRESETS = (() => {
+  const calibrated = getCalibratedPresets();
+  const out = Object.create(null);
+  for (const [name, preset] of Object.entries(calibrated)) {
+    out[name] = { ...EXTREME_OFF, ...preset };
   }
-}
+  for (const [from, to] of Object.entries(CALIBRATED_PRESET_REDIRECTS || {})) {
+    if (out[to]) out[from] = out[to];
+  }
+  // Ensure every preset covers all registry slider IDs (canonical defaults).
+  for (const preset of Object.values(out)) {
+    for (const s of Object.values(SLIDER_BY_ID)) {
+      if (preset[s.id] === undefined) preset[s.id] = s.val;
+      else if (Number.isFinite(s.min) && Number.isFinite(s.max) && Number.isFinite(Number(preset[s.id]))) {
+        preset[s.id] = Math.min(s.max, Math.max(s.min, Number(preset[s.id])));
+      }
+    }
+  }
+  return out;
+})();
 
 // PRESET_NAMES removed - unused (Object.keys(PRESETS) can be used directly if needed)
 
@@ -2005,7 +1939,7 @@ class VoiceIsolatePro {
   }
 
   /**
-   * Apply search query + All/Changed/Locked filter chips to Engineer slider rows.
+   * Apply search query + All/Essentials/Changed/Locked filter chips to Engineer slider rows.
    * Opens parent groups when matches exist; never covers controls with overlays.
    */
   _applyControlFilters() {
@@ -2013,6 +1947,11 @@ class VoiceIsolatePro {
     const d = this.dom || {};
     const q = (d.sliderSearch?.value || '').trim().toLowerCase();
     const mode = this._sliderFilterMode || 'all';
+    const essentialsPanels = new Set(
+      (this._essentialsPanels && this._essentialsPanels.length)
+        ? this._essentialsPanels
+        : ['tab-gate', 'tab-nr', 'tab-out'],
+    );
     let visible = 0;
     let total = 0;
     document.querySelectorAll('.sr-row[data-slider-id], .slider-row[data-slider-id]').forEach((row) => {
@@ -2039,13 +1978,19 @@ class VoiceIsolatePro {
       let matchesMode = true;
       if (mode === 'locked') matchesMode = locked;
       else if (mode === 'changed') matchesMode = changed;
+      else if (mode === 'essentials') {
+        const panel = row.closest('.slider-panel')?.id
+          || SLIDER_REG_BY_ID[id]?.group
+          || '';
+        matchesMode = essentialsPanels.has(panel);
+      }
       const show = matchesQuery && matchesMode;
       row.hidden = !show;
       row.style.display = show ? '' : 'none';
       if (show) {
         visible += 1;
         const details = row.closest('details.slider-group, details.vip-section');
-        if (details && q) details.open = true;
+        if (details && (q || mode === 'essentials')) details.open = true;
       }
     });
     // When filtering, hide empty groups; when clearing, leave open state alone.
@@ -2655,12 +2600,14 @@ class VoiceIsolatePro {
       }
     });
 
-    // Control search + All / Changed / Locked filter chips
+    // Control search + All / Essentials / Changed / Locked filter chips
     this._sliderFilterMode = 'all';
+    this._essentialsPanels = ['tab-gate', 'tab-nr', 'tab-out'];
     const setFilterMode = (mode) => {
       this._sliderFilterMode = mode || 'all';
       const chips = [
         [d.sliderFilterAll || $('sliderFilterAll'), 'all'],
+        [d.sliderFilterEssentials || $('sliderFilterEssentials'), 'essentials'],
         [d.sliderFilterChanged || $('sliderFilterChanged'), 'changed'],
         [d.sliderFilterLocked || $('sliderFilterLocked'), 'locked'],
       ];
@@ -2672,6 +2619,7 @@ class VoiceIsolatePro {
       });
       this._applyControlFilters();
     };
+    this._setSliderFilterMode = setFilterMode;
     bind('sliderSearch', d.sliderSearch, 'input', () => this._applyControlFilters());
     bind('sliderSearchClear', d.sliderSearchClear || $('sliderSearchClear'), 'click', () => {
       if (d.sliderSearch) d.sliderSearch.value = '';
@@ -2681,9 +2629,22 @@ class VoiceIsolatePro {
       this._applyControlFilters();
     });
     bind('sliderFilterAll', d.sliderFilterAll || $('sliderFilterAll'), 'click', () => setFilterMode('all'));
+    bind('sliderFilterEssentials', d.sliderFilterEssentials || $('sliderFilterEssentials'), 'click', () => setFilterMode('essentials'));
     bind('sliderFilterChanged', d.sliderFilterChanged || $('sliderFilterChanged'), 'click', () => setFilterMode('changed'));
     bind('sliderFilterLocked', d.sliderFilterLocked || $('sliderFilterLocked'), 'click', () => setFilterMode('locked'));
-    setFilterMode('all');
+    // Tier may prefer Essentials (Creator) without unmounting the full rack.
+    try {
+      const tierMode = WorkflowTier.getConfig?.()?.defaultFilterMode || 'all';
+      setFilterMode(tierMode);
+    } catch {
+      setFilterMode('all');
+    }
+    window.addEventListener('vip:tierChanged', (ev) => {
+      const mode = ev?.detail?.defaultFilterMode;
+      if (mode && typeof this._setSliderFilterMode === 'function') {
+        this._setSliderFilterMode(mode);
+      }
+    });
 
     // Per-group "Reset unlocked in group" actions
     qsa('[data-reset-group]').forEach((btn) => {

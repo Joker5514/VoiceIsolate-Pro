@@ -572,6 +572,7 @@
           '<div class="proc-stage-meta">',
             '<span class="proc-stage-index" id="procStageIndex">Stage 1 / 32</span>',
             '<span class="proc-pct" id="procPct">0%</span>',
+            '<span class="proc-elapsed" id="procElapsed" title="Elapsed local processing time">0.0s</span>',
           '</div>',
         '</div>',
 
@@ -616,6 +617,10 @@
             '<span class="proc-status-v" id="procModeVal">Creator / Forensic</span>',
           '</div>',
           '<div class="proc-status-cell">',
+            '<span class="proc-status-k">ORT</span>',
+            '<span class="proc-status-v" id="procOrtVal">Probing…</span>',
+          '</div>',
+          '<div class="proc-status-cell">',
             '<span class="proc-status-k">Focus</span>',
             '<span class="proc-status-v" id="procFocusVal">Spectral isolation</span>',
           '</div>',
@@ -641,6 +646,8 @@
     _currentGroupIdx: 0,
     _msgIdx:          0,
     _lastStageIndex:  0,
+    _startedAt:       0,
+    _elapsedTimer:    null,
     _spinner:         null,
     _spectro:         null,
     _pills:           null,
@@ -656,6 +663,8 @@
         stageName:  document.getElementById('procStageName'),
         stageIndex: document.getElementById('procStageIndex'),
         pct:        document.getElementById('procPct'),
+        elapsed:    document.getElementById('procElapsed'),
+        ort:        document.getElementById('procOrtVal'),
         bar:        document.getElementById('procBarFill'),
         msg:        document.getElementById('procMessage'),
         focus:      document.getElementById('procFocusVal'),
@@ -694,10 +703,35 @@
       }
     },
 
+    _tickElapsed() {
+      this._initRefs();
+      var el = this._refs && this._refs.elapsed;
+      if (!el || !this._startedAt) return;
+      var sec = Math.max(0, (Date.now() - this._startedAt) / 1000);
+      el.textContent = sec < 60 ? (sec.toFixed(1) + 's') : (Math.floor(sec / 60) + 'm ' + Math.floor(sec % 60) + 's');
+    },
+
+    _refreshOrtPill() {
+      this._initRefs();
+      var el = this._refs && this._refs.ort;
+      if (!el) return;
+      var provider = '—';
+      try {
+        var st = global.__vipOrtStatus || global.__VIP_ORT_STATUS__ || null;
+        var p = String(st?.provider || '').toLowerCase();
+        if (p === 'webgpu') provider = 'WebGPU';
+        else if (p === 'wasm') provider = st?.detail ? 'WASM fallback' : 'WASM';
+        else if (p === 'probing') provider = 'Probing…';
+        else if (p === 'error') provider = 'ORT error';
+      } catch (_) { /* ignore */ }
+      el.textContent = provider;
+    },
+
     show(stageName, pct) {
       var el = this._el();
       if (!el) return;
       this._focusBefore = document.activeElement;
+      this._startedAt = Date.now();
       this.update(stageName || 'Preparing pipeline…', pct || 0, 0);
       el.classList.add('active');
       el.setAttribute('aria-hidden', 'false');
@@ -706,6 +740,14 @@
       this._initCanvases();
       this._startMessages(0);
       this._wireCancel();
+      this._refreshOrtPill();
+      this._tickElapsed();
+      if (this._elapsedTimer) clearInterval(this._elapsedTimer);
+      var self = this;
+      this._elapsedTimer = setInterval(function () {
+        self._tickElapsed();
+        self._refreshOrtPill();
+      }, 250);
       var cancelBtn = document.getElementById('procCancelBtn');
       if (cancelBtn) {
         cancelBtn.disabled = false;
@@ -725,6 +767,10 @@
       document.body.classList.remove('vip-processing-lock');
       this._setBusyControls(false);
       this._stopMessages();
+      if (this._elapsedTimer) {
+        clearInterval(this._elapsedTimer);
+        this._elapsedTimer = null;
+      }
       var restore = opts && opts.restoreFocus !== false;
       if (restore && this._focusBefore && typeof this._focusBefore.focus === 'function') {
         try {
@@ -815,6 +861,8 @@
       if (this._stageIndex())                   this._stageIndex().textContent = 'Stage ' + Math.min(32, this._lastStageIndex + 1) + ' / 32';
       if (this._focus())                        this._focus().textContent = group.label;
       if (this._mode())                         this._mode().textContent  = /offline|creator|forensic/i.test(stageName || '') ? 'Creator / Forensic' : 'Live / Hybrid';
+      this._tickElapsed();
+      this._refreshOrtPill();
 
       if (this._stageChip()) {
         this._stageChip().textContent = group.icon + ' ' + group.label;

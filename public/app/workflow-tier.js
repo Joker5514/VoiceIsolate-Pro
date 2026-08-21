@@ -8,36 +8,41 @@ export const WORKFLOW_TIERS = Object.freeze({
     id: 'creator',
     label: 'Creator Pro',
     short: 'Creator',
-    tagline: 'Fast clean voice — one tap to share-ready audio',
+    tagline: 'Fast clean voice — full DSP rack with one-tap presets',
     statusIdle: 'Creator Pro — upload audio for one-tap clean voice',
     defaultPreset: 'Voice Clarity',
     presets: ['Voice Clarity', 'Podcast Clean', 'Whisper Boost'],
-    groups: ['gate', 'nr', 'out'],
+    // Full ~67-slider rack (same as Forensic). Use Essentials chip to focus gate/nr/out.
+    groups: null,
+    essentialsGroups: ['gate', 'nr', 'out'],
     showPresetGrid: false,
     showPresetSelect: false,
     showScenePicker: false,
-    showSearch: false,
+    showSearch: true,
     showWhisperHunter: true,
     showSaveCustom: false,
+    defaultFilterMode: 'essentials',
   },
   studio: {
     id: 'studio',
     label: 'Studio',
     short: 'Studio',
-    tagline: 'Scene presets with guided engineer controls',
-    statusIdle: 'Studio — pick a scene preset, tune lightly, then process',
+    tagline: 'Scene presets with the full engineer control rack',
+    statusIdle: 'Studio — pick a scene preset, tune, then process',
     defaultPreset: 'Podcast Clean',
     presets: [
       'Podcast Clean', 'Phone/Radio',
       'Whisper Boost', 'Voice Clarity', 'Stadium Crowd', 'Surveillance',
     ],
-    groups: ['gate', 'nr', 'eq', 'dyn', 'sep', 'out', 'extreme'],
+    groups: null,
+    essentialsGroups: ['gate', 'nr', 'out'],
     showPresetGrid: true,
     showPresetSelect: true,
     showScenePicker: true,
     showSearch: true,
     showWhisperHunter: true,
     showSaveCustom: true,
+    defaultFilterMode: 'all',
   },
   forensic: {
     id: 'forensic',
@@ -48,12 +53,14 @@ export const WORKFLOW_TIERS = Object.freeze({
     defaultPreset: 'Forensic Extract',
     presets: null,
     groups: null,
+    essentialsGroups: ['gate', 'nr', 'out'],
     showPresetGrid: true,
     showPresetSelect: true,
     showScenePicker: false,
     showSearch: true,
     showWhisperHunter: true,
     showSaveCustom: true,
+    defaultFilterMode: 'all',
   },
 });
 
@@ -153,7 +160,9 @@ const WorkflowTier = (() => {
       const visible = showAll || meta.groups.some((g) => allowed.includes(g));
       section.hidden = !visible;
       section.style.display = visible ? '' : 'none';
-      if (visible && tier.id === 'creator' && meta.groups.includes('gate')) {
+      // Creator: open gate/nr + output by default for a fast first path.
+      if (visible && tier.id === 'creator' && meta.groups.some((g) => ['gate', 'nr', 'out'].includes(g))) {
+        try { section.open = true; } catch { /* ignore */ }
         section.classList.add('active');
         const header = section.querySelector('.slider-group-header');
         const content = section.querySelector('.slider-group-content');
@@ -236,7 +245,13 @@ const WorkflowTier = (() => {
     applyPanelVisibility(tier);
     if (applyPreset) applyTierPreset(tier, scenePreset);
     try {
-      window.dispatchEvent(new CustomEvent('vip:tierChanged', { detail: { tier: resolved } }));
+      window.dispatchEvent(new CustomEvent('vip:tierChanged', {
+        detail: {
+          tier: resolved,
+          defaultFilterMode: tier.defaultFilterMode || 'all',
+          essentialsGroups: tier.essentialsGroups || ['gate', 'nr', 'out'],
+        },
+      }));
     } catch { /* ignore */ }
     return resolved;
   }

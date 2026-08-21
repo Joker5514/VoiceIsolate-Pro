@@ -618,3 +618,19 @@ body.vip-processing-lock {
     animation: none !important;
   }
 }
+
+/* Release polish: elapsed + reduced motion + filter-empty */
+.proc-elapsed {
+  font-variant-numeric: tabular-nums;
+  color: var(--vip-dim, #5a7a96);
+  letter-spacing: 0.04em;
+  margin-left: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .proc-cancel-btn,
+  .processing-overlay,
+  .proc-bar-fill {
+    transition: none !important;
+    animation: none !important;
+  }
+}
