@@ -58,7 +58,9 @@ Single map of product, architecture, platform, and historical docs.
 
 | Document | Description |
 |----------|-------------|
-| [adr/001-firebase-exception.md](adr/001-firebase-exception.md) | Sole cloud exception (auth/billing UI, not audio) |
+| [adr/001-firebase-exception.md](adr/001-firebase-exception.md) | Firebase auth/billing UI exception (not audio processing) |
+| [adr/002-google-drive-file-io.md](adr/002-google-drive-file-io.md) | Optional user-initiated Google Drive import/export |
+| [guides/GOOGLE_DRIVE.md](guides/GOOGLE_DRIVE.md) | Drive setup (scopes, origins, privacy copy) |
 | [audits/README.md](audits/README.md) | Point-in-time audit index |
 | [audits/REMEDIATION-CLICKS-AUDIT-2026-08-12.md](audits/REMEDIATION-CLICKS-AUDIT-2026-08-12.md) | Click/pop remediation + Clear Local Data + target-speaker honesty |
 | [PRODUCTION_PIPELINE.md](PRODUCTION_PIPELINE.md) | Shipping ML fused single-STFT path, Engineer Console, Clear Local Data |

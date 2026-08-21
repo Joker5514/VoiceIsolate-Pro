@@ -333,6 +333,7 @@
             <p class="upload-title">Drop Audio or Video</p>
             <p class="upload-sub">MP3 · WAV · FLAC · OGG · OPUS · M4A · AAC · AIFF · WMA · MP4 · MOV · MKV · AVI · WEBM · WMV · TS and more</p>
             <label for="fileInput" id="fileBtn" class="btn btn-outline" role="button">Browse Files</label>
+            <button id="openDriveUploadBtn" class="btn btn-outline" type="button" title="Open audio/video from Google Drive">Open from Drive</button>
           </div>
         </div>
         <div class="upload-row">
@@ -599,7 +600,10 @@
       <div class="card save-row">
         <button id="saveOrigBtn" class="btn btn-save" disabled>Save Original WAV</button>
         <button id="saveProcBtn" class="btn btn-save-proc" disabled title="Download processed audio (or video with processed audio when the source is a video)">Save Processed</button>
+        <button id="openDriveBtn" class="btn btn-outline" type="button" title="Open an audio/video file from your Google Drive (downloads a local copy for on-device processing)">Open from Drive</button>
+        <button id="saveDriveBtn" class="btn btn-outline" type="button" disabled title="Upload the processed export to Google Drive (only when you choose — processing stays local)">Save to Drive</button>
         <button id="exportBtn" class="btn btn-save-proc vip-export-alias" type="button" disabled hidden aria-hidden="true">Export WAV</button>
+        <p class="hint" style="margin:8px 0 0;font-size:12px;opacity:.75;">Google Drive is optional. Processing never uses Drive — files leave the device only when you tap Save to Drive.</p>
       </div>
 
       <!-- Mobile sticky action bar -->
