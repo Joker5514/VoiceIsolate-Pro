@@ -1046,6 +1046,8 @@ class VoiceIsolatePro {
       tpDur:g('tpDur'),
       saveOrigBtn:g('saveOrigBtn'),
       saveProcBtn:g('saveProcBtn'),
+      openDriveBtn:g('openDriveBtn') || g('openDriveUploadBtn'),
+      saveDriveBtn:g('saveDriveBtn'),
       auditLogBtn:g('auditLogBtn'),
       presetSel:g('presetSel'),
       resetSlidersBtn:g('resetSlidersBtn'),
@@ -2542,6 +2544,24 @@ class VoiceIsolatePro {
     bind('saveProcBtn', d.saveProcBtn, 'click', async () => {
       await this._downloadProcessed();
     });
+    const openDriveEl = d.openDriveBtn || $('openDriveBtn') || $('openDriveUploadBtn');
+    if (openDriveEl) {
+      openDriveEl.addEventListener('click', () => {
+        this._openFromGoogleDrive().catch((err) => {
+          if (err?.code === 'CANCELLED') return;
+          this.showNotification(err?.message || 'Google Drive open failed', 'error');
+        });
+      });
+    }
+    const saveDriveEl = d.saveDriveBtn || $('saveDriveBtn');
+    if (saveDriveEl) {
+      saveDriveEl.addEventListener('click', () => {
+        this._saveProcessedToGoogleDrive().catch((err) => {
+          if (err?.code === 'CANCELLED') return;
+          this.showNotification(err?.message || 'Google Drive save failed', 'error');
+        });
+      });
+    }
     bind('auditLogBtn', d.auditLogBtn, 'click', () => this.downloadAuditLog());
 
     // PATCHED BY vip-fixes.js — consider merging
@@ -3813,6 +3833,63 @@ class VoiceIsolatePro {
   }
 
   /**
+   * User-initiated: pick a media file from Google Drive and load it locally.
+   * Processing remains on-device — Drive is only the source of the file bytes.
+   */
+  async _openFromGoogleDrive() {
+    const { openMediaFileFromDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
+    if (!isDriveConfigured()) {
+      this.showNotification(
+        'Google Drive is not configured. Set FIREBASE_API_KEY / GOOGLE_API_KEY (see docs/guides/GOOGLE_DRIVE.md).',
+        'warn',
+      );
+      return;
+    }
+    this.showNotification('Sign in to Google Drive to pick a file…', 'info');
+    const file = await openMediaFileFromDrive();
+    if (!file) return;
+    if (typeof this.handleFile === 'function') {
+      await this.handleFile(file);
+    } else if (typeof this.loadFile === 'function') {
+      await this.loadFile(file);
+    } else {
+      throw new Error('No file loader available');
+    }
+    this.showNotification(`Loaded from Drive: ${file.name || 'file'}`, 'ok');
+  }
+
+  /**
+   * User-initiated: upload processed WAV to Google Drive (VoiceIsolate Pro folder).
+   * Never runs automatically after Process.
+   */
+  async _saveProcessedToGoogleDrive() {
+    const fullBuf = this.procBuffer || this.outputBuffer;
+    if (!fullBuf) {
+      this.showNotification('Nothing to save yet — process a file first.', 'info');
+      return;
+    }
+    const { saveBlobToDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
+    const { encodeWav } = await import('/src/pipeline/ExportManager.js');
+    if (!isDriveConfigured()) {
+      this.showNotification(
+        'Google Drive is not configured. Set FIREBASE_API_KEY / GOOGLE_API_KEY (see docs/guides/GOOGLE_DRIVE.md).',
+        'warn',
+      );
+      return;
+    }
+    const channels = [];
+    for (let c = 0; c < fullBuf.numberOfChannels; c++) {
+      channels.push(fullBuf.getChannelData(c));
+    }
+    const blob = encodeWav(channels, fullBuf.sampleRate);
+    const filename = `processed-${Date.now()}.wav`;
+    this.showNotification('Uploading to Google Drive…', 'info');
+    const meta = await saveBlobToDrive({ blob, filename, mimeType: 'audio/wav' });
+    const link = meta?.webViewLink ? ` · ${meta.webViewLink}` : '';
+    this.showNotification(`Saved to Drive: ${meta?.name || filename}${link}`, 'ok');
+  }
+
+  /**
    * Download processed audio, remuxed into the original video container when
    * the source was a video file. Falls back to WAV if remux is unavailable.
    * Uses JobController + processing overlay Cancel (same path as Process).
@@ -4043,7 +4120,7 @@ class VoiceIsolatePro {
     if (this.dom.fileInfo) this.dom.fileInfo.textContent = 'No file loaded';
     if (this.dom.fileInput) this.dom.fileInput.value = '';
     [this.dom.processBtn, this.dom.reprocessBtn, this.dom.saveProcBtn,
-     this.dom.saveOrigBtn, this.dom.auditLogBtn,
+     this.dom.saveDriveBtn, this.dom.saveOrigBtn, this.dom.auditLogBtn,
      this.dom.mobileProcessBtn, this.dom.mobileReprocessBtn].forEach(b => {
       if (b) b.disabled = true;
     });
@@ -4346,6 +4423,7 @@ class VoiceIsolatePro {
       if (this.dom.reprocessBtn) this.dom.reprocessBtn.disabled = false;
       if (this.dom.mobileReprocessBtn) this.dom.mobileReprocessBtn.disabled = false;
       if (this.dom.saveProcBtn) this.dom.saveProcBtn.disabled = false;
+      if (this.dom.saveDriveBtn) this.dom.saveDriveBtn.disabled = false;
       if (this.dom.auditLogBtn) this.dom.auditLogBtn.disabled = false;
       this._updateSaveButtonLabels();
 

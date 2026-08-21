@@ -74,6 +74,7 @@
         <p class="upload-title">Drop audio or video here</p>
         <p class="upload-sub">WAV · MP3 · M4A · FLAC · OGG · MP4 · MOV and more</p>
         <label for="fileInput" id="browseBtn" class="btn btn-primary vip-tap" role="button">Browse files</label>
+        <button id="openDriveBtn" class="btn btn-outline vip-tap" type="button" title="Open audio/video from Google Drive (local processing)">Open from Drive</button>
         <input type="file" id="fileInput" class="visually-hidden-file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/wave,audio/ogg,audio/flac,audio/x-flac,audio/aac,audio/x-m4a,audio/m4a,audio/mp4,audio/webm,audio/amr,audio/aiff,audio/x-aiff,audio/x-caf,audio/x-ms-wma,audio/opus,audio/ac3,audio/eac3,video/mp4,video/webm,video/quicktime,video/x-msvideo,video/x-matroska,video/ogg,video/3gpp,video/3gpp2,video/x-ms-wmv,video/mpeg,video/mp2t,video/x-flv,audio/*,video/*,.wav,.wave,.mp3,.m4a,.aac,.ogg,.oga,.opus,.flac,.webm,.weba,.aiff,.aif,.caf,.wma,.mka,.m4b,.m4r,.amr,.ac3,.eac3,.mp4,.m4v,.mov,.mkv,.avi,.ogv,.3gp,.3g2,.wmv,.mpeg,.mpg,.ts,.m2ts,.mts,.flv,.f4v,.asf" aria-label="Choose audio or video file">
       </div>
       <div class="upload-row">
@@ -175,6 +176,10 @@
         <button id="downloadBtn" class="vip-btn vip-btn--primary" type="button" disabled
                 title="Download isolated voice (video with processed audio when the source is a video)">
           Download Processed
+        </button>
+        <button id="saveDriveBtn" class="vip-btn vip-btn--ghost vip-tap" type="button" disabled
+                title="Upload processed export to Google Drive (optional — processing stays local)">
+          Save to Drive
         </button>
         <span id="downloadStatus" class="hint" role="status" aria-live="polite"></span>
       </div>

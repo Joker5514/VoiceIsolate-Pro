@@ -101,7 +101,7 @@ Audio flows through **one Forward STFT** at the start of the spectral phase, in-
 | **Speaker diarization** | Classical + optional worker path on clean stem; mute/solo/volume per speaker |
 | **Target voice focus** | Step-by-step local enrollment (mel voiceprint) on **Landing + Engineer** (+ Android/Electron same shell); soft gain isolate; diarization fusion when available; no re-ML |
 | **Format support** | MP3, WAV, M4A, FLAC, OGG, OPUS, MP4, MOV, WEBM, MKV, AVI, WMV, TS |
-| **Privacy** | 100% local processing · no telemetry · audio never uploaded |
+| **Privacy** | 100% local processing · no telemetry · optional user-initiated Google Drive import/export only |
 | **Engineer presets** | Voice Clarity · Podcast Clean · Whisper Boost · Phone/Radio · Room Echo · Hum Removal · Forensic · Aggressive Isolate · Surveillance |
 | **Slider discipline (v25)** | Non-linear calibration for Voice Iso / BG Suppress / Crosstalk; coupling + soft artifact clamps on **effective DSP values only** (UI ranges never snapped) |
 | **Per-slider lock** | Padlock on every row; locks survive reload (`localStorage`); presets/reset skip locked controls; **Reset Unlocked Only** |

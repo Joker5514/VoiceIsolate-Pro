@@ -8,11 +8,12 @@
  *   - script-src adds https://www.gstatic.com (Firebase) and /_vercel/insights/
  *     (Vercel Analytics).
  *   - connect-src adds Vercel Blob (*.public.blob.vercel-storage.com),
- *     Firebase (identitytoolkit / firestore / securetoken) and
- *     api.revenuecat.com (in-app purchase validation).
- * Audio still never leaves the device under either policy. Keep the two in
- * sync intentionally: a new prod origin belongs in vercel.json with a comment,
- * never silently here.
+ *     Firebase (identitytoolkit / firestore / securetoken),
+ *     Google Drive/Picker (www.googleapis.com / apis.google.com / accounts.google.com),
+ *     and api.revenuecat.com (in-app purchase validation).
+ * Audio processing still never leaves the device. Optional user-initiated Drive
+ * file I/O is documented in ADR-002. Keep Express vs Vercel CSP in sync
+ * intentionally: a new prod origin belongs in vercel.json with a comment.
  *
  * Enforced policy:
  *   - Cross-Origin-Opener-Policy: same-origin   (cross-origin isolation)
@@ -41,7 +42,7 @@ function isLegacyInlinePath(reqPath) {
 
 function buildCsp({ allowLegacyInline }) {
   const scriptSrc = allowLegacyInline
-    ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'"
+    ? "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.gstatic.com https://apis.google.com https://accounts.google.com"
     : "script-src 'self' 'wasm-unsafe-eval'";
   return [
     "default-src 'self'",
@@ -52,11 +53,13 @@ function buildCsp({ allowLegacyInline }) {
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
     "media-src 'self' blob:",
-    "connect-src 'self' data: blob:",
+    // Dev server: allow Google auth/Drive when testing Drive import/export locally.
+    "connect-src 'self' data: blob: https://www.googleapis.com https://content.googleapis.com https://oauth2.googleapis.com https://accounts.google.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com",
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
+    "frame-src https://accounts.google.com https://apis.google.com https://docs.google.com",
     "frame-ancestors 'none'",
   ].join('; ');
 }

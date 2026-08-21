@@ -5,16 +5,16 @@
 /**
  * ARCHITECTURE EXCEPTION — INTENTIONAL CLOUD SERVICE
  * =====================================================
- * Firebase (Auth + Firestore) is the ONLY intentional cloud dependency
- * in VoiceIsolate Pro. It is used exclusively for:
+ * Firebase (Auth + Firestore) is an intentional cloud dependency used for:
  *   - User authentication (Google sign-in)
  *   - Preset cloud sync (optional, user-initiated)
  *   - Session logging for billing/tier enforcement
+ *   - Optional Google Drive file I/O scopes (user-initiated import/export only)
  *
- * ALL AUDIO PROCESSING is 100% local and never touches Firebase.
- * Firebase is never called from AudioWorklet, ml-worker, or dsp-* files.
+ * ALL AUDIO PROCESSING is 100% local and never touches Firebase or Drive.
+ * Firebase/Drive are never called from AudioWorklet, ml-worker, or dsp-* files.
  *
- * This exception is documented in ADR-001 (docs/adr/001-firebase-exception.md).
+ * Documented in ADR-001 and ADR-002 (Drive file I/O).
  */
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -34,14 +34,61 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
+/** Least-privilege Drive scope — only files created or opened by this app. */
+export const GOOGLE_DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+
+function isFirebaseConfigured() {
+  const key = firebaseConfig.apiKey;
+  return Boolean(key && key !== 'YOUR_API_KEY');
+}
+
 // ---- Auth helpers ----
 export async function signInWithGoogle() {
+  if (!isFirebaseConfigured()) {
+    throw new Error('Firebase is not configured (set window.FIREBASE_API_KEY).');
+  }
   const provider = new GoogleAuthProvider();
   return signInWithPopup(auth, provider);
 }
 
+/**
+ * Google sign-in with Drive file scope. Returns accessToken for Drive REST/Picker.
+ * User-initiated only — never call from Process / ML / worklets.
+ */
+export async function signInWithGoogleDrive() {
+  if (!isFirebaseConfigured()) {
+    throw new Error('Firebase is not configured (set window.FIREBASE_API_KEY).');
+  }
+  const provider = new GoogleAuthProvider();
+  provider.addScope(GOOGLE_DRIVE_FILE_SCOPE);
+  provider.setCustomParameters({ prompt: 'consent' });
+  const result = await signInWithPopup(auth, provider);
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  const accessToken = credential?.accessToken || null;
+  if (!accessToken) {
+    throw new Error('Google Drive permission was not granted (missing access token).');
+  }
+  try {
+    if (typeof globalThis !== 'undefined') {
+      globalThis.__vipGoogleDriveAccessToken = accessToken;
+    }
+  } catch { /* ignore */ }
+  return { user: result.user, accessToken, credential, result };
+}
+
 export function signOutUser() {
+  try {
+    if (typeof globalThis !== 'undefined') delete globalThis.__vipGoogleDriveAccessToken;
+  } catch { /* ignore */ }
   return signOut(auth);
+}
+
+// Hook used by GoogleDriveBridge.ensureGoogleDriveAuth()
+if (typeof globalThis !== 'undefined') {
+  globalThis.__vipSignInGoogleDrive = async () => {
+    const out = await signInWithGoogleDrive();
+    return { accessToken: out.accessToken, user: out.user };
+  };
 }
 
 export function onAuthChange(callback) {

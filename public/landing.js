@@ -135,6 +135,8 @@ const ui = {
   uploadPanel: $('uploadPanel'),
   exportRow: $('exportRow'),
   downloadBtn: $('downloadBtn'),
+  saveDriveBtn: $('saveDriveBtn'),
+  openDriveBtn: $('openDriveBtn'),
   downloadStatus: $('downloadStatus'),
 };
 
@@ -417,11 +419,15 @@ function hasVideo() { return Boolean(videoUrl) && ui.videoCard && !ui.videoCard.
 function updateDownloadButton() {
   const ready = Boolean(mixer?.cleanBuffer);
   if (ui.exportRow) ui.exportRow.hidden = !ready;
-  if (!ui.downloadBtn) return;
-  ui.downloadBtn.disabled = !ready || downloadInFlight;
-  ui.downloadBtn.textContent = (sourceFile && isVideoFile(sourceFile))
-    ? 'Download Processed Video'
-    : 'Download Processed WAV';
+  if (ui.downloadBtn) {
+    ui.downloadBtn.disabled = !ready || downloadInFlight;
+    ui.downloadBtn.textContent = (sourceFile && isVideoFile(sourceFile))
+      ? 'Download Processed Video'
+      : 'Download Processed WAV';
+  }
+  if (ui.saveDriveBtn) {
+    ui.saveDriveBtn.disabled = !ready || downloadInFlight;
+  }
 }
 
 /** Encode clean stem to a 16-bit stereo/mono WAV Blob. */
@@ -461,6 +467,61 @@ function encodeCleanStemWav(audioBuffer) {
     }
   }
   return new Blob([buf], { type: 'audio/wav' });
+}
+
+async function onOpenFromDrive() {
+  try {
+    const { openMediaFileFromDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
+    if (!isDriveConfigured()) {
+      setStatus('Google Drive not configured — set FIREBASE_API_KEY / GOOGLE_API_KEY', 'error');
+      return;
+    }
+    setStatus('Sign in to Google Drive to pick a file…', 'warn');
+    const file = await openMediaFileFromDrive();
+    if (!file) return;
+    await ingestFrom(file);
+  } catch (err) {
+    if (err?.code === 'CANCELLED') {
+      setStatus('Drive picker cancelled', 'active');
+      return;
+    }
+    console.error('[VIP][landing] Drive open failed:', err);
+    setStatus(err?.message || 'Google Drive open failed', 'error');
+  }
+}
+
+async function onSaveToDrive() {
+  if (!mixer?.cleanBuffer || downloadInFlight) return;
+  downloadInFlight = true;
+  updateDownloadButton();
+  try {
+    const { saveBlobToDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
+    if (!isDriveConfigured()) {
+      setStatus('Google Drive not configured — set FIREBASE_API_KEY / GOOGLE_API_KEY', 'error');
+      return;
+    }
+    const wavBlob = encodeCleanStemWav(mixer.cleanBuffer);
+    const base = (sourceFile?.name || ingested?.sourceName || 'export')
+      .replace(/\.[^.]+$/, '')
+      .slice(0, 80) || 'export';
+    const filename = `${base}-processed.wav`;
+    setDl('Uploading to Google Drive…');
+    setStatus('Uploading to Google Drive…', 'warn');
+    const meta = await saveBlobToDrive({ blob: wavBlob, filename, mimeType: 'audio/wav' });
+    setDl(`Saved to Drive: ${meta?.name || filename}`);
+    setStatus(`Saved to Drive: ${meta?.name || filename}`, 'active');
+  } catch (err) {
+    if (err?.code === 'CANCELLED') {
+      setDl('Drive upload cancelled');
+      return;
+    }
+    console.error('[VIP][landing] Drive save failed:', err);
+    setDl(err?.message || 'Drive upload failed');
+    setStatus(err?.message || 'Drive upload failed', 'error');
+  } finally {
+    downloadInFlight = false;
+    updateDownloadButton();
+  }
 }
 
 async function onDownloadProcessed() {
@@ -1186,7 +1247,7 @@ function wireUploadDropZone() {
     primeAudioGesture().catch(() => {});
   };
   zone.addEventListener('click', (event) => {
-    if (event.target.closest('#browseBtn')) return;
+    if (event.target.closest('#browseBtn') || event.target.closest('#openDriveBtn')) return;
     openPicker();
   });
   zone.addEventListener('keydown', (event) => {
@@ -1525,6 +1586,8 @@ ui.processBtn.addEventListener('click', onProcess);
 ui.cancelProcessBtn?.addEventListener('click', () => { cancelLandingJob(); });
 ui.presetSelect.addEventListener('change', () => applyPreset(ui.presetSelect.value));
 ui.downloadBtn?.addEventListener('click', () => { onDownloadProcessed().catch(() => {}); });
+ui.openDriveBtn?.addEventListener('click', () => { onOpenFromDrive().catch(() => {}); });
+ui.saveDriveBtn?.addEventListener('click', () => { onSaveToDrive().catch(() => {}); });
 wireReadouts();
 wireSliderHints();
 wireTransport();

@@ -266,7 +266,33 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    // Keep users offline-capable: only open external when online & user-initiated.
+    // Allow Google / Firebase OAuth + Drive Picker popups inside Electron.
+    // Everything else opens in the system browser (offline-capable default).
+    try {
+      const u = new URL(url);
+      const host = u.hostname || '';
+      const allowPopup = host === 'accounts.google.com'
+        || host === 'apis.google.com'
+        || host.endsWith('.google.com')
+        || host.endsWith('.googleusercontent.com')
+        || host.endsWith('.firebaseapp.com')
+        || host === 'www.gstatic.com';
+      if (allowPopup) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            width: 520,
+            height: 740,
+            autoHideMenuBar: true,
+            webPreferences: {
+              contextIsolation: true,
+              nodeIntegration: false,
+              sandbox: true,
+            },
+          },
+        };
+      }
+    } catch { /* fall through */ }
     shell.openExternal(url);
     return { action: 'deny' };
   });
