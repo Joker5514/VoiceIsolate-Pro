@@ -274,17 +274,37 @@ export class ProcessingOrchestrator {
 
   _processWithMLWorker(channelData, sampleRate, modelIds, requestId, signal) {
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      let lastProgressAt = Date.now();
+      let settled = false;
+      let handler = null;
+      const worker = this.mlWorker;
+      function cleanup() {
+        clearTimeout(timeout);
+        clearInterval(stallWatch);
+        signal?.removeEventListener?.('abort', onAbort);
+        if (handler) worker.removeEventListener('message', handler);
+      }
+      const settle = (callback) => {
+        if (settled) return;
+        settled = true;
         cleanup();
-        reject(new Error('[VIP][ProcessingOrchestrator] MLWorker processing timeout'));
-      }, 600000);
+        callback();
+      };
+      const timeout = setTimeout(() => {
+        try { this.mlWorker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
+        settle(() => reject(new Error('[VIP][ProcessingOrchestrator] MLWorker processing timeout')));
+      }, 300000);
+      const stallWatch = setInterval(() => {
+        if (Date.now() - lastProgressAt < 45000) return;
+        try { this.mlWorker.postMessage({ type: 'cancel', requestId }); } catch { /* ignore */ }
+        settle(() => reject(new Error('[VIP][ProcessingOrchestrator] processing stalled')));
+      }, 5000);
 
       const onAbort = () => {
         try {
           this.mlWorker.postMessage({ type: 'cancel', requestId });
         } catch { /* ignore */ }
-        cleanup();
-        reject(new CancellationError('Cancelled'));
+        settle(() => reject(new CancellationError('Cancelled')));
       };
 
       if (signal) {
@@ -295,32 +315,24 @@ export class ProcessingOrchestrator {
         signal.addEventListener('abort', onAbort, { once: true });
       }
 
-      const handler = (event) => {
+      handler = (event) => {
         const msg = event.data || {};
         if (msg.requestId != null && msg.requestId !== requestId) return;
 
         if (msg.type === 'progress') {
+          lastProgressAt = Date.now();
           this.onProgress(0.2 + (msg.percent / 100) * 0.8, 'processing');
         } else if (msg.type === 'stems') {
-          cleanup();
-          resolve({
+          settle(() => resolve({
             clean: msg.clean,
             noise: msg.noise,
             passthrough: Boolean(msg.passthrough),
-          });
+          }));
         } else if (msg.type === 'cancelled') {
-          cleanup();
-          reject(new CancellationError('Cancelled'));
+          settle(() => reject(new CancellationError('Cancelled')));
         } else if (msg.type === 'error') {
-          cleanup();
-          reject(new Error(msg.message || 'MLWorker error'));
+          settle(() => reject(new Error(msg.message || 'MLWorker error')));
         }
-      };
-
-      const cleanup = () => {
-        clearTimeout(timeout);
-        signal?.removeEventListener?.('abort', onAbort);
-        this.mlWorker.removeEventListener('message', handler);
       };
 
       this.mlWorker.addEventListener('message', handler);

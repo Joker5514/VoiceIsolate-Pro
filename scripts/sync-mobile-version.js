@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
- * Sync native mobile version strings to `package.json#version`.
+ * Sync packaged application version strings to `package.json#version`.
  *
  * Writes:
  *   - android/app/build.gradle  → versionCode + versionName
  *   - ios/App/App/Info.plist    → CFBundleShortVersionString + CFBundleVersion
+ *   - capacitor.config.json     → Android/iOS user-agent version
+ *   - public/manifest.json      → installed browser/PWA version
  *
  * versionCode / CFBundleVersion are derived as major * 10000 + minor * 100 + patch.
  * Run manually, or wire into `postversion` to update automatically on bump.
@@ -45,5 +47,17 @@ plist = plist
     `$1${buildNumber}$2`
   );
 writeFileSync(plistPath, plist);
+
+// ── Capacitor + browser metadata ────────────────────────────────────────────
+const capacitorPath = join(ROOT, 'capacitor.config.json');
+const capacitor = JSON.parse(readFileSync(capacitorPath, 'utf8'));
+capacitor.android.appendUserAgent = `VoiceIsolatePro/${version} Android`;
+capacitor.ios.appendUserAgent = `VoiceIsolatePro/${version}`;
+writeFileSync(capacitorPath, `${JSON.stringify(capacitor, null, 2)}\n`);
+
+const manifestPath = join(ROOT, 'public/manifest.json');
+const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+manifest.version = version;
+writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
 console.log(`[sync-mobile-version] version=${version} buildNumber=${buildNumber}`);

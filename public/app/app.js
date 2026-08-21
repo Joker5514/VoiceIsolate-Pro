@@ -1714,36 +1714,9 @@ class VoiceIsolatePro {
   }
 
   // ── Slider rendering ─────────────────────────────────────────────────────
-  /**
-   * Lazy accordion: closed details sections do not mount slider DOM until first open.
-   * Reduces cold-open node count (esp. mobile Simple / collapsed rack).
-   */
-  _wireLazySliderPanel(details, container) {
-    if (!details || details.dataset.vipLazyWired === '1') return;
-    details.dataset.vipLazyWired = '1';
-    details.addEventListener('toggle', () => {
-      if (!details.open) return;
-      void this._flushPendingSlidersFor(container);
-    });
-  }
-
-  async _flushPendingSlidersFor(container) {
-    const list = this._pendingSlidersByPanel?.get(container);
-    if (!list?.length) return;
-    this._pendingSlidersByPanel.set(container, []);
-    const mobile = this._isMobileEngineer?.() || false;
-    let rendered = 0;
-    for (const s of list) {
-      if (container.querySelector(`[data-slider-id="${s.id}"]`)) continue;
-      rendered += 1;
-      if (mobile && rendered > 1 && (rendered % 10) === 0) await yieldToBrowser();
-      this._appendSliderRow(s, container);
-    }
-  }
-
+  /** Mount the complete 67-control rack, including controls in closed groups. */
   async _renderSliders() {
     const mobile = this._isMobileEngineer?.() || false;
-    this._pendingSlidersByPanel = this._pendingSlidersByPanel || new Map();
     let rendered = 0;
     for (const s of RENDER_SLIDERS) {
       if (s.id === 'whisperMode') continue; // [WHISPER UPDATE] rendered as button group
@@ -1751,25 +1724,6 @@ class VoiceIsolatePro {
       const panel = panelId ? document.getElementById(panelId) : null;
       const container = panel || document.getElementById('sliderContainer');
       if (!container) continue;
-
-      // Defer closed accordion bodies — mount on first open.
-      const details = typeof container.closest === 'function'
-        ? container.closest('details.vip-section, details.slider-group')
-        : null;
-      if (details && !details.open) {
-        let pending = this._pendingSlidersByPanel.get(container);
-        if (!pending) {
-          pending = [];
-          this._pendingSlidersByPanel.set(container, pending);
-          this._wireLazySliderPanel(details, container);
-        }
-        pending.push(s);
-        window.VIP_PARAMS = window.VIP_PARAMS || {};
-        const initVal = (window.VIP_PARAMS[s.id] !== undefined) ? window.VIP_PARAMS[s.id] : s.val;
-        window.VIP_PARAMS[s.id] = initVal;
-        this.params[s.id] = initVal;
-        continue;
-      }
 
       rendered += 1;
       // Cooperative paint: every ~10 rows on mobile so boot never freezes the tab.
@@ -1779,6 +1733,15 @@ class VoiceIsolatePro {
       this._appendSliderRow(s, container);
     }
     this._renderWhisperModeGroup();
+    const mountedIds = new Set(
+      Array.from(document.querySelectorAll('[data-slider-id]'), (row) => row.dataset.sliderId)
+    );
+    const missing = RENDER_SLIDERS.filter((slider) => !mountedIds.has(slider.id));
+    if (missing.length) {
+      console.error(
+        `[VIP] Engineer control rack incomplete: ${missing.map((slider) => slider.id).join(', ')}`
+      );
+    }
     this._bindInfoPopoverDismiss();
     this._bindHintDismiss();
   }
@@ -2652,7 +2615,8 @@ class VoiceIsolatePro {
     bind('sliderFilterEssentials', d.sliderFilterEssentials || $('sliderFilterEssentials'), 'click', () => setFilterMode('essentials'));
     bind('sliderFilterChanged', d.sliderFilterChanged || $('sliderFilterChanged'), 'click', () => setFilterMode('changed'));
     bind('sliderFilterLocked', d.sliderFilterLocked || $('sliderFilterLocked'), 'click', () => setFilterMode('locked'));
-    // Tier may prefer Essentials (Creator) without unmounting the full rack.
+    // Every Engineer workflow defaults to the complete rack. Reduced views are
+    // explicit user choices through the filter chips, never platform defaults.
     try {
       const tierMode = WorkflowTier.getConfig?.()?.defaultFilterMode || 'all';
       setFilterMode(tierMode);

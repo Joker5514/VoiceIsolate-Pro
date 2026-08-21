@@ -18,6 +18,9 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUILD = path.join(ROOT, 'build');
+const PACKAGE_VERSION = JSON.parse(
+  fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'),
+).version;
 
 /** Models required for a complete offline isolation app (default + denoise + VAD). */
 const REQUIRED_MODELS = [
@@ -56,6 +59,10 @@ const REQUIRED_PATHS = [
   // Engineer Mode (+ studio console skin — same shell as web/Electron)
   'app/index.html',
   'app/app.js',
+  'app/slider-map.js',
+  'app/workflow-tier.js',
+  'app/whisper-hunter.js',
+  'app/sw.js',
   'app/style.css',
   'app/engineer-console.css',
   'app/engineer-console.js',
@@ -64,6 +71,7 @@ const REQUIRED_PATHS = [
   'src/workers/GateProcessor.js',
   'src/workers/DeEsserProcessor.js',
   'src/workers/MLWorker.js',
+  'src/presentation/DspSlider.js',
   'lib/ort.min.js',
   'lib/react-mini.js',
 ];
@@ -240,7 +248,7 @@ fs.writeFileSync(
     landing: true,
     engineer: '/app/index.html',
     models: REQUIRED_MODELS,
-    version: '24.0.0',
+    version: PACKAGE_VERSION,
     preparedAt: new Date().toISOString(),
   }, null, 2),
   'utf8',
