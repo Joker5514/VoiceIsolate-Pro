@@ -9,6 +9,9 @@ import { fileURLToPath } from 'url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ASSETS = path.join(ROOT, 'android', 'app', 'src', 'main', 'assets', 'public');
+const PACKAGE_VERSION = JSON.parse(
+  fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'),
+).version;
 
 const REQUIRED = [
   // Landing home
@@ -19,6 +22,10 @@ const REQUIRED = [
   // Engineer Mode (+ studio console skin shared with web/desktop)
   'app/index.html',
   'app/app.js',
+  'app/slider-map.js',
+  'app/workflow-tier.js',
+  'app/whisper-hunter.js',
+  'app/sw.js',
   'app/engineer-console.css',
   'app/engineer-console.js',
   'app/models/bsrnn_vocals.onnx',
@@ -29,6 +36,7 @@ const REQUIRED = [
   'src/workers/MLWorker.js',
   'src/workers/GateProcessor.js',
   'src/workers/DeEsserProcessor.js',
+  'src/presentation/DspSlider.js',
 ];
 
 const FORBIDDEN = [
@@ -78,9 +86,29 @@ if (fs.existsSync(marker)) {
   try {
     const meta = JSON.parse(fs.readFileSync(marker, 'utf8'));
     if (meta.landing !== true) warnings.push('vip-android.json should set landing: true');
+    if (meta.version !== PACKAGE_VERSION) {
+      errors.push(`vip-android.json version ${meta.version} != package ${PACKAGE_VERSION}`);
+    }
   } catch {
     warnings.push('vip-android.json is not valid JSON');
   }
+}
+
+const engineerApp = fs.readFileSync(path.join(ASSETS, 'app/app.js'), 'utf8');
+const workflowTier = fs.readFileSync(path.join(ASSETS, 'app/workflow-tier.js'), 'utf8');
+const engineerHtml = fs.readFileSync(path.join(ASSETS, 'app/index.html'), 'utf8');
+const engineerSw = fs.readFileSync(path.join(ASSETS, 'app/sw.js'), 'utf8');
+if (!engineerApp.includes('Mount the complete 67-control rack')) {
+  errors.push('Engineer app does not eagerly mount the complete slider rack');
+}
+if (!engineerHtml.includes('section-eq') || !engineerHtml.includes('tab-extreme')) {
+  errors.push('Engineer HTML missing EQ or Whisper/Extreme panels');
+}
+if (!workflowTier.includes("defaultFilterMode: 'all'")) {
+  errors.push('Engineer workflow does not default to the full control rack');
+}
+if (!engineerSw.match(/const CACHE_VERSION\s*=\s*'vip-app-[a-f0-9]{12}'/)) {
+  errors.push('Engineer service worker cache was not stamped from current shell assets');
 }
 
 const mainJava = path.join(

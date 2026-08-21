@@ -9,6 +9,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const prepare = fs.readFileSync(path.join(ROOT, 'scripts/prepare-android-complete.mjs'), 'utf8');
 const verify = fs.readFileSync(path.join(ROOT, 'scripts/verify-android-complete.mjs'), 'utf8');
+const build = fs.readFileSync(path.join(ROOT, 'scripts/build.mjs'), 'utf8');
 const winBuild = fs.readFileSync(path.join(ROOT, 'scripts/android-build-win.mjs'), 'utf8');
 const gradle = fs.readFileSync(path.join(ROOT, 'android/app/build.gradle'), 'utf8');
 const manifest = fs.readFileSync(path.join(ROOT, 'android/app/src/main/AndroidManifest.xml'), 'utf8');
@@ -30,6 +31,11 @@ describe('Android complete app pipeline', () => {
     // Studio console skin required offline (same as web/Electron)
     expect(prepare).toContain('app/engineer-console.css');
     expect(prepare).toContain('app/engineer-console.js');
+    expect(prepare).toContain('app/slider-map.js');
+    expect(prepare).toContain('app/workflow-tier.js');
+    expect(prepare).toContain('app/whisper-hunter.js');
+    expect(prepare).toContain('src/presentation/DspSlider.js');
+    expect(prepare).toContain('version: PACKAGE_VERSION');
     // Must NOT force-redirect away from landing into Engineer only
     expect(prepare).not.toContain("location.replace('/app/index.html')");
   });
@@ -73,5 +79,18 @@ describe('Android complete app pipeline', () => {
     expect(verify).toContain('demucs_v4_fp32.onnx');
     expect(verify).toContain('app/engineer-console.css');
     expect(verify).toContain('app/engineer-console.js');
+    expect(verify).toContain('Mount the complete 67-control rack');
+    expect(verify).toContain('section-eq');
+    expect(verify).toContain('tab-extreme');
+    expect(verify).toContain("defaultFilterMode: 'all'");
+    expect(verify).toContain('meta.version !== PACKAGE_VERSION');
+  });
+
+  test('shared build stamps the Engineer service worker from current rack assets', () => {
+    expect(build).toContain('app/slider-map.js');
+    expect(build).toContain('app/workflow-tier.js');
+    expect(build).toContain('app/whisper-hunter.js');
+    expect(build).toContain('src/presentation/DspSlider.js');
+    expect(build).toMatch(/CACHE_VERSION[\s\S]*cacheVersion/);
   });
 });
