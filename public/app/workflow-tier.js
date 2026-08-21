@@ -21,7 +21,9 @@ export const WORKFLOW_TIERS = Object.freeze({
     showSearch: true,
     showWhisperHunter: true,
     showSaveCustom: false,
-    defaultFilterMode: 'essentials',
+    // Engineer Mode must expose the complete rack on every platform. Users can
+    // still choose the Essentials chip explicitly when they want a reduced view.
+    defaultFilterMode: 'all',
   },
   studio: {
     id: 'studio',
