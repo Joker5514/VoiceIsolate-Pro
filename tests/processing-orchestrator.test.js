@@ -164,6 +164,42 @@ describe('ProcessingOrchestrator', () => {
     });
   });
 
+  describe('_processWithMLWorker()', () => {
+    afterEach(() => jest.useRealTimers());
+
+    test('rejects a job after 45 seconds without worker progress', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(0);
+      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+      const pending = orchestrator._processWithMLWorker(
+        [new Float32Array(1)], 48000, ['demucs'], 7
+      );
+
+      jest.setSystemTime(45001);
+      jest.advanceTimersByTime(45000);
+      await expect(pending).rejects.toThrow('processing stalled');
+      expect(mockMLWorker.removeEventListener).toHaveBeenCalled();
+      expect(mockMLWorker.postMessage).toHaveBeenCalledWith({ type: 'cancel', requestId: 7 });
+    });
+
+    test('worker progress refreshes the stall watchdog', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(0);
+      const orchestrator = new ProcessingOrchestrator({ mlWorker: mockMLWorker });
+      const pending = orchestrator._processWithMLWorker(
+        [new Float32Array(1)], 48000, ['demucs'], 8
+      );
+      const handler = mockMLWorker.addEventListener.mock.calls[0][1];
+
+      jest.setSystemTime(40000);
+      handler({ data: { type: 'progress', requestId: 8, percent: 20 } });
+      jest.advanceTimersByTime(40000);
+      handler({ data: { type: 'stems', requestId: 8, clean: [], noise: [] } });
+
+      await expect(pending).resolves.toMatchObject({ clean: [], noise: [] });
+    });
+  });
+
 
 
   describe('dispose()', () => {

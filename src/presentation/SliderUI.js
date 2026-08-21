@@ -74,10 +74,37 @@ export class SliderUI {
 
   /** Wire every known slider present in the DOM. Returns count bound. */
   bind() {
+    const bound = this.rebind();
+    if (this._listeners.length === 0) {
+      console.warn(
+        '[VIP][SliderUI] bind() found 0 sliders — panel may not be in DOM yet. ' +
+        'Call rebind() after panel renders.'
+      );
+    }
+    return bound;
+  }
+
+  /**
+   * Wire known sliders that appeared after the initial bind.
+   * Safe to call repeatedly: elements that already have listeners are skipped.
+   * @returns {number} number of newly-bound sliders
+   */
+  rebind() {
+    // A framework/panel refresh can replace an element with a new node carrying
+    // the same id. Detach stale nodes and compare by identity, not id, so the
+    // replacement is wired on this pass.
+    this._listeners = this._listeners.filter(({ el, handler }) => {
+      const current = this.doc.getElementById(el.id);
+      if (current === el) return true;
+      el.removeEventListener('input', handler);
+      return false;
+    });
+    const alreadyBound = new Set(this._listeners.map(({ el }) => el));
     let bound = 0;
     for (const { id, method, initial } of SLIDER_BINDINGS) {
       const el = this.doc.getElementById(id);
       if (!el) continue;
+      if (alreadyBound.has(el)) continue;
       if (typeof this.mixer[method] !== 'function') {
         console.warn(`[VIP][SliderUI] Mixer is missing ${method}(); skipping #${id}.`);
         continue;

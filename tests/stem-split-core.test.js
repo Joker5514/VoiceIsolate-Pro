@@ -237,6 +237,16 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.noiseGain.gain.value).toBeCloseTo(0.25);
   });
 
+  test('while marked playing on a suspended context, controls still snap', () => {
+    mixer._isPlaying = true;
+    mixer.ctx.state = 'suspended';
+    mixer.ctx.currentTime = 0;
+    mixer.setNoiseReduction(75);
+    expect(mixer.noiseGain.gain.setTargetAtTime).not.toHaveBeenCalled();
+    expect(mixer.noiseGain.gain.cancelScheduledValues).toHaveBeenCalledWith(0);
+    expect(mixer.noiseGain.gain.value).toBeCloseTo(0.25);
+  });
+
   test('control inputs are clamped on both paths', async () => {
     mixer.setNoiseReduction(250);
     expect(mixer.noiseGain.gain.value).toBe(0);

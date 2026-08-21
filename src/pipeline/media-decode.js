@@ -8,7 +8,7 @@ const MEDIA_DECODE_MIN_TIMEOUT_MS = 120_000;
 /** Below 64 MiB a single arrayBuffer() read is faster than streaming chunks. */
 const FAST_READ_BYTES = 64 * 1024 * 1024;
 /** Yield during streaming reads at most every N bytes. */
-const STREAM_YIELD_BYTES = 32 * 1024 * 1024;
+const STREAM_YIELD_BYTES = 8 * 1024 * 1024;
 /** Target media-element capture rate (16× is widely supported). */
 const MAX_CAPTURE_PLAYBACK_RATE = 16;
 // ScriptProcessorNode block size — must be a power-of-two 256–16384.
@@ -296,6 +296,7 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
     let writeOffset = 0;
     let captureDone = false;
     let captureSettled = false;
+    let progressScheduled = false;
     let resolveCapture = null;
     /** @type {ScriptProcessorNode|null} */
     let spn = null;
@@ -304,8 +305,17 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
     const estimatedFrames = Math.max(1, Math.ceil(duration * SAMPLE_RATE));
 
     const reportProgress = () => {
-      const pct = Math.min(99, Math.round((writeOffset / estimatedFrames) * 100));
-      onProgress(Math.max(15, pct));
+      if (progressScheduled) return;
+      progressScheduled = true;
+      const schedule = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (callback) => setTimeout(callback, 16);
+      schedule(() => {
+        progressScheduled = false;
+        if (captureDone) return;
+        const pct = Math.min(99, Math.round((writeOffset / estimatedFrames) * 100));
+        onProgress(Math.max(15, pct));
+      });
     };
 
     const updateDuration = (newDuration) => {
@@ -369,6 +379,9 @@ async function _decodeViaMediaElement(blob, kind, onProgress, externalCtx = null
         channels[ch].append(e.inputBuffer.getChannelData(ch), copyLen);
       }
       writeOffset += copyLen;
+      // ScriptProcessor callbacks already run as separate tasks and cannot be
+      // made async safely. Coalesce UI progress above instead of queuing no-op
+      // timers, which do not yield the callback that scheduled them.
       reportProgress();
     };
 
