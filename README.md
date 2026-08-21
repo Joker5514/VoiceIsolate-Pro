@@ -252,12 +252,12 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 
 | Asset | Name | Approx. size | Notes |
 |-------|------|----------------|---------|
-| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~96.8 MB | **v25.0.2** on `latest` · rebuilt **2026-08-21T04:16Z** (`b6beea1`) |
-| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | ~137.9 MB | **v25.0.2** on `latest` · rebuilt **2026-08-21T04:16Z** (`b6beea1`) |
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~96.9 MB | **v25.0.2** on `latest` · rebuilt **2026-08-21T10:04Z** (`17692f9`) |
+| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | ~138 MB | **v25.0.2** on `latest` · rebuilt **2026-08-21T10:04Z** (`17692f9`) |
 
 In-repo version (Web / Android `versionName` / Electron artifact): **25.0.2** (`versionCode` / iOS build **250002**).  
 Published GitHub Release **`latest` = [v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**.  
-Native APK + EXE match current shell (#774 release) as of **2026-08-21T04:16Z**.
+Native APK + EXE match current shell (#776 Google Drive + #774) as of **2026-08-21T10:04Z**.
 
 The download page always points at **real GitHub Release binaries** (never SPA HTML).  
 Same-origin `/download/*.apk` and `/download/*.exe` redirect to Releases (`vercel.json`).
@@ -355,7 +355,7 @@ android/             Capacitor Android project
 ## Recent changes (v25.0.2)
 
 - **Google Drive** — optional import/export on Web, Desktop, and Android (same shell); Firebase `drive.file` scope; ADR-002 (#776)
-- **Native rebuild (2026-08-21T04:16Z)** — Android APK + Windows EXE from `b6beea1` (#774 release); rebuild again after #776 for Drive parity on natives
+- **Native rebuild (2026-08-21T10:04Z)** — Android APK + Windows EXE from `17692f9` (#776 Drive + #774 DSP)
 - **Desktop 88% freeze** — cooperative post-ML finalization; truthful progress 82→100 ([PROCESS_PROGRESS.md](docs/guides/PROCESS_PROGRESS.md)) (#772)
 - **Android upload** — package-visibility `<queries>`, compact accept, deferred media permission (#770)
 - **Engineer DSP sliders (desktop)** — usable rack layout, 40px targets, numeric entry, lock/search/filter ([DSP_SLIDERS.md](docs/guides/DSP_SLIDERS.md)) (#767)

@@ -4,8 +4,8 @@
 **Android:** `versionName "25.0.2"` · `versionCode` **250002**  
 **iOS:** `CFBundleShortVersionString` **25.0.2** · `CFBundleVersion` **250002**  
 **Published GitHub Release (latest):** **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**  
-**Native rebuild (APK + Windows EXE):** **2026-08-21T04:16Z** from `main` @ `b6beea1` (#774).  
-**Web shell:** includes optional **Google Drive** import/export after #776 — rebuild natives after merging #776 so APK/EXE match web. Setup: [guides/GOOGLE_DRIVE.md](guides/GOOGLE_DRIVE.md).
+**Native rebuild (APK + Windows EXE):** **2026-08-21T10:04Z** from `main` @ `17692f9` (#776 Google Drive import/export + #774 DSP release).  
+Setup: [guides/GOOGLE_DRIVE.md](guides/GOOGLE_DRIVE.md).
 
 ## Public URLs (verified)
 
@@ -29,8 +29,8 @@ Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` t
 | Platform | Artifact | What’s included |
 |----------|----------|-----------------|
 | **Web** | Vercel → `public/` | Landing Live-Mix + **Engineer Console**; optional Google Drive open/save; SAM3 vision (flag OFF); SAM-Audio optional |
-| **Android** | `VoiceIsolate-Pro-android-debug.apk` (~96.8 MB) | Capacitor WebView of **same** `build/` shell (+ Drive UI once rebuilt past #776); last upload **2026-08-21T04:16Z** |
-| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (~138 MB) | Electron loads **same** `build/**` (+ Drive OAuth popups); last upload **2026-08-21T04:16Z** |
+| **Android** | `VoiceIsolate-Pro-android-debug.apk` (~96.9 MB) | Capacitor WebView of **same** `build/` shell (Drive UI included); last upload **2026-08-21T10:04Z** |
+| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (~138 MB) | Electron loads **same** `build/**` (+ Drive OAuth popups); last upload **2026-08-21T10:04Z** |
 
 Engineer Console files that must ship offline: `app/engineer-console.css`, `app/engineer-console.js` (asserted by Android prepare/verify scripts).
 
