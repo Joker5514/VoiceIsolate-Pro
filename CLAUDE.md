@@ -273,10 +273,13 @@ Hardening pass only — **not** an architecture rewrite. Scope stays in
 | Collapsible sections | Native `<details>`/`<summary>` with non-empty summary text (a11y). |
 | Processing overlay | Stage-aware `data-variant` (uploading → … → exporting). Always `hideProcessingOverlay()` in `runPipeline` `finally`. |
 
-**Version:** product version is **`package.json` → 25.0.2**. Sync Android/iOS with
-`pnpm mobile:sync-version` (writes `versionCode` / `CFBundleVersion` as
-`major*10000 + minor*100 + patch` → **250002**). Electron artifact name uses
-`${version}` from package.json. Published GitHub Release **`latest` = v25.0.2**.
+**Version:** `package.json` is the release source of truth and is currently
+**25.0.2**. `pnpm mobile:sync-version` synchronizes Android/iOS, Capacitor user
+agents, and the browser PWA manifest; Electron reads the same package version
+and uses it in artifact names. `pnpm version:check` must pass before packaging
+and verifies Web/PWA, Electron, Android, API health metadata, and download-page
+asset naming (`versionCode` / `CFBundleVersion` = **250002**). Published GitHub
+Release **`latest` = v25.0.2**.
 
 **Native binaries (APK + Windows NSIS):** last rebuilt **2026-08-21T10:04Z** from
 `main` @ `17692f9` (#776 Google Drive + #774 DSP release) and clobber-uploaded to v25.0.2.

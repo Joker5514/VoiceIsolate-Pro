@@ -18,7 +18,7 @@ export const YIELD_BUDGET_MOBILE_MS = 12;
 export const YIELD_BUDGET_DESKTOP_MS = 10;
 
 /** Above this sample count, bulk copies may use budgeted chunking. */
-export const LARGE_CHANNEL_SAMPLES = 48000 * 180; // 3 min @ 48 kHz
+export const LARGE_CHANNEL_SAMPLES = 48000 * 30; // 30 sec @ 48 kHz
 
 /** Chunk size when budgeted copying is used (~20 s of audio). */
 export const COPY_CHUNK_SAMPLES = 48000 * 20;

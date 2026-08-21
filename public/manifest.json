@@ -10,7 +10,11 @@
   "background_color": "#0a0a0f",
   "theme_color": "#0a0a0f",
   "lang": "en",
-  "categories": ["audio", "productivity", "utilities"],
+  "categories": [
+    "audio",
+    "productivity",
+    "utilities"
+  ],
   "icons": [
     {
       "src": "/icon.jpg",
