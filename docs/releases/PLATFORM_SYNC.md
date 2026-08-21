@@ -2,12 +2,12 @@
 
 | Field | Value |
 |-------|--------|
-| **Git SHA (native rebuild)** | `main` @ `aa72a21` (#772 + #770/#771) |
+| **Git SHA (native rebuild)** | `main` @ `b6beea1` (#774) |
 | **Package version** | `25.0.2` / build `250002` |
 | **Published GitHub binaries** | **[v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (Latest) |
-| **Synced at (UTC)** | 2026-08-19T00:43Z |
-| **Artifacts** | APK ~96.9 MB (debug offline) · Windows NSIS ~138 MB |
-| **Notes** | Native = web: desktop 88% cooperative post-ML, Android upload/freeze, Engineer slider a11y |
+| **Synced at (UTC)** | 2026-08-21T04:16Z |
+| **Artifacts** | APK ~96.8 MB (debug offline) · Windows NSIS ~137.9 MB |
+| **Notes** | Native = web: #774 release (88% unstick, full slider rack all tiers, preset/math hardening, overlay polish) |
 
 ## Version sources of truth
 

@@ -93,7 +93,7 @@ Publish installer to GitHub Releases; the web download page links there:
 | Pinned v25.0.2 | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe |
 | Prior v24.0.0 | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
 | Approx. size | ~138 MB (BS-RNN + denoise + VAD offline; Demucs not in installer) |
-| Last release upload | 2026-08-19T00:43Z (v25.0.2 — `aa72a21` desktop 88% #772) |
+| Last release upload | 2026-08-21T04:16Z (v25.0.2 — `b6beea1` #774 release) |
 
 ## Model Cache (Desktop)
 
