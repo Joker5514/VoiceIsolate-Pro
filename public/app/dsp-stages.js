@@ -1,6 +1,22 @@
 /**
  * dsp-stages.js — VoiceIsolate Pro · Threads from Space v8
  * ==========================================================
+ *
+ * ⚠️  DEPRECATED / QUARANTINED — NOT ON THE PRODUCTION PROCESS PATH
+ * -----------------------------------------------------------------
+ * Production Engineer + Landing isolation uses:
+ *   public/app/app.js
+ *     → src/pipeline/StemSeparation.js
+ *       → src/pipeline/MLWorkerHost.js
+ *         → src/workers/MLWorker.js  (fused-spectral-single-stft)
+ *   DSP math fallback: public/app/dsp-core.js (window.DSPCore) via app.js
+ *
+ * This module is retained only for unit tests (`tests/dsp-stages.test.js`)
+ * and historical reference. Do NOT import it from index.html, app.js,
+ * landing.js, StemSeparation, MLWorker, or Electron renderer code.
+ * Accidental reintroduction is guarded by
+ * `tests/production-dsp-import-graph.test.js`.
+ *
  * Implements the 32 named DSP stages of the Deca-Pass pipeline as
  * pure, side-effect-free spectral operators (magnitude/phase arrays in-place).
  *
@@ -17,7 +33,7 @@
  *   Pass 3 (17–24) : Voice EQ & formant shaping
  *   Pass 4 (25–32) : Dynamics, limiting & output
  *
- * Usage:
+ * Usage (tests / legacy only):
  *   import { applyStage } from './dsp-stages.js';
  *   applyStage(stageName, mag, pha, params, sampleRate);
  */

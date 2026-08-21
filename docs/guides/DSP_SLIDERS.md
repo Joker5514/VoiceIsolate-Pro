@@ -6,13 +6,20 @@ Canonical guide for the **Engineer Console** control rack on Web, Desktop (Elect
 
 | Piece | Role |
 |-------|------|
-| `public/app/slider-map.js` | Pure **parameter registry** (`SLIDER_REGISTRY`): id, label, min/max/step/default, unit, group, target, hints, **aliases** |
+| `public/app/slider-map.js` | Pure **parameter registry** (`SLIDER_REGISTRY` SSOT): id, label, min/max/step/default, unit, group, target, hints, **aliases** |
+| `src/core/ParameterSchema.js` | Research/tooltip schema — bounds kept in parity with the registry (CI) |
+| `src/core/PresetCalibration.js` | Canonical Engineer presets (SSOT); `app.js` loads via `getCalibratedPresets()` |
 | `src/presentation/DspSlider.js` | Reusable **accessible row factory** (`createDspSliderRow`) — range + number + reset + lock |
 | `public/app/app.js` | Mounts rows into panel groups, Live-Mix/worklet wiring, locks, presets, search/filter |
+| `public/app/workflow-tier.js` | Creator/Studio/Forensic — **full ~67-slider rack** on all tiers; Essentials chip focuses gate/nr/out |
 | `public/app/slider-theme.css` | Dark studio styling, 40×40 hit targets, drag isolation |
 | `public/app/engineer-console.css` | Desktop rack scroll, **single-column** panels, bottom padding |
 
 No cloud, no remote analytics. Slider events update local `VIP_PARAMS` / PlaybackMixer / workers only. **No re-run of ML on drag.**
+
+### Workflow tiers
+
+All three tiers mount the complete rack. Creator defaults the filter chip to **Essentials** (gate / NR / output) so the first path stays simple; **All** reveals every control. Studio/Forensic default to **All**.
 
 ## Keyboard
 
@@ -36,7 +43,7 @@ No cloud, no remote analytics. Slider events update local `VIP_PARAMS` / Playbac
 ## Search and filters
 
 - Search matches **label, id, tip/hint, group, aliases** (e.g. denoise, SNR, de-reverb, voice).
-- Chips: **All** · **Changed** · **Locked**.
+- Chips: **All** · **Essentials** · **Changed** · **Locked**.
 - **Clear** empties the query; status line is `aria-live="polite"`.
 - Matching groups auto-open; empty groups get `filter-empty` while a filter is active.
 
@@ -62,6 +69,8 @@ No cloud, no remote analytics. Slider events update local `VIP_PARAMS` / Playbac
 ```bash
 pnpm test -- tests/dsp-slider.test.js tests/desktop-dsp-slider-a11y.test.js
 pnpm test -- tests/engineer-lock-ui.test.js tests/slider-map.test.js
+pnpm test -- tests/slider-schema-parity.test.js tests/slider-math-contracts.test.js
+pnpm test -- tests/preset-validation.test.js tests/presets.test.js
 ```
 
 ## Manual QA checklist

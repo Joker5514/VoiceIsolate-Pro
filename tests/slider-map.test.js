@@ -68,7 +68,7 @@ describe('SLIDER_REGISTRY', () => {
     const appJs = fs.readFileSync(
       path.join(__dirname, '../public/app/app.js'), 'utf8'
     ).replace(/\r\n/g, '\n');
-    const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\};\s*\n(?:\/\/[^\n]*\n\s*)*const SLIDER_BY_ID/);
+    const slidersBlockMatch = appJs.match(/const SLIDERS = \{([\s\S]*?)\n\};/);
     expect(slidersBlockMatch).not.toBeNull();
     const appIds = [...slidersBlockMatch[1].matchAll(/id\s*:\s*'([^']+)'/g)].map(x => x[1]);
     const registryIds = entries.map(e => e.id);

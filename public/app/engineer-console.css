@@ -585,3 +585,21 @@ body.eng-console.ec-simple #section-separation,
 body.eng-console.ec-simple #section-output {
   display: block !important;
 }
+
+/* Full-rack Essentials / filter polish */
+.slider-filter-chip.is-active {
+  border-color: rgba(0, 255, 231, 0.55);
+  box-shadow: 0 0 0 1px rgba(0, 255, 231, 0.18);
+}
+details.slider-group.filter-empty,
+details.vip-section.filter-empty {
+  display: none !important;
+}
+.control-search-row {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  backdrop-filter: blur(10px);
+  background: rgba(8, 12, 18, 0.92);
+  padding-bottom: 8px;
+}

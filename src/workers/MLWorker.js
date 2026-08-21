@@ -81,8 +81,10 @@ async function queuedSessionRun(sessionKey, session, feeds) {
   }
 }
 
-/** Resolved execution backend, decided once. */
+/** Resolved execution backend, decided once (WebGPU preferred; WASM fallback). */
 let BACKEND = null;
+/** One-shot local WASM retry after a WebGPU session/compile failure. */
+let _webgpuWasmFallbackUsed = false;
 
 /** Active process request id for stage/progress messages. */
 let ACTIVE_REQUEST_ID = null;
@@ -359,7 +361,35 @@ async function createSessionFromBytes(entry, bytes) {
   // Slice: InferenceSession.create may detach/neuter the input ArrayBuffer.
   // Callers (and IDB cache entries) must keep a usable copy for retries.
   const safeBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
-  return ort.InferenceSession.create(safeBytes, opts);
+  try {
+    return await ort.InferenceSession.create(safeBytes, opts);
+  } catch (err) {
+    const msg = String(err?.message || err || '');
+    const looksGpuFail = /webgpu|gpu|device.?lost|out of memory|oom|Failed to create/i.test(msg);
+    // Never endlessly retry WebGPU — one approved local WASM retry when safe.
+    if (backend === 'webgpu' && looksGpuFail && !_webgpuWasmFallbackUsed) {
+      _webgpuWasmFallbackUsed = true;
+      BACKEND = 'wasm';
+      console.warn(
+        '[VIP][MLWorker] WebGPU session failed; one local WASM retry:',
+        msg,
+      );
+      self.postMessage({
+        type: 'stage',
+        stage: 'ort-fallback',
+        percent: 0,
+        label: 'WebGPU failed — local WASM retry',
+        backend: 'wasm',
+        detail: msg.slice(0, 240),
+      });
+      const wasmBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
+      return ort.InferenceSession.create(wasmBytes, {
+        ...opts,
+        executionProviders: ['wasm'],
+      });
+    }
+    throw err;
+  }
 }
 
 async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) {
@@ -1070,6 +1100,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       pipelineMode,
       modelChain: chain,
       stftCounts: stft,
+      backend: BACKEND || null,
     },
     transfers,
   );

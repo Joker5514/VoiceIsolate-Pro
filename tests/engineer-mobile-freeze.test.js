@@ -81,6 +81,8 @@ describe('Engineer mobile freeze suite (10+ checks)', () => {
     expect(appJs).toMatch(/w \* 0\.74/);
     expect(appJs).toMatch(/82 \+ Math\.round/);
     expect(appJs).toMatch(/90 \+ Math\.round/);
+    // DSP fallback must also avoid a hard pin at 88%.
+    expect(appJs).toMatch(/Rendering output…',\s*90/);
   });
 
   test('15. mobile skips auto full-analysis after process', () => {
