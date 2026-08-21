@@ -341,7 +341,8 @@ android/             Capacitor Android project
 
 ## Security & Privacy
 
-- **Zero cloud audio** — all DSP and ML inference execute in the browser sandbox
+- **Zero cloud audio processing** — all DSP and ML inference execute on-device
+- **Optional Google Drive** — user-initiated **Open from Drive** / **Save to Drive** only (never during Process); see [GOOGLE_DRIVE.md](docs/guides/GOOGLE_DRIVE.md)
 - Strict headers: COOP / COEP / CSP / `nosniff` via `server/securityHeaders.js` and `vercel.json`
 - Microphone permission denied via Permissions-Policy (`microphone=()`)
 - ONNX models verified against pinned SHA-256 before every session
@@ -353,7 +354,8 @@ android/             Capacitor Android project
 
 ## Recent changes (v25.0.2)
 
-- **Native rebuild (2026-08-21T04:16Z)** — Android APK + Windows EXE from `b6beea1` (#774 release)
+- **Google Drive** — optional import/export on Web, Desktop, and Android (same shell); Firebase `drive.file` scope; ADR-002 (#776)
+- **Native rebuild (2026-08-21T04:16Z)** — Android APK + Windows EXE from `b6beea1` (#774 release); rebuild again after #776 for Drive parity on natives
 - **Desktop 88% freeze** — cooperative post-ML finalization; truthful progress 82→100 ([PROCESS_PROGRESS.md](docs/guides/PROCESS_PROGRESS.md)) (#772)
 - **Android upload** — package-visibility `<queries>`, compact accept, deferred media permission (#770)
 - **Engineer DSP sliders (desktop)** — usable rack layout, 40px targets, numeric entry, lock/search/filter ([DSP_SLIDERS.md](docs/guides/DSP_SLIDERS.md)) (#767)

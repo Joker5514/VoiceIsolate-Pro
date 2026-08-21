@@ -3840,7 +3840,7 @@ class VoiceIsolatePro {
     const { openMediaFileFromDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
     if (!isDriveConfigured()) {
       this.showNotification(
-        'Google Drive is not configured. Set FIREBASE_API_KEY / GOOGLE_API_KEY (see docs/guides/GOOGLE_DRIVE.md).',
+        'Google Drive is not configured — see docs/guides/GOOGLE_DRIVE.md',
         'warn',
       );
       return;
@@ -3872,7 +3872,7 @@ class VoiceIsolatePro {
     const { encodeWav } = await import('/src/pipeline/ExportManager.js');
     if (!isDriveConfigured()) {
       this.showNotification(
-        'Google Drive is not configured. Set FIREBASE_API_KEY / GOOGLE_API_KEY (see docs/guides/GOOGLE_DRIVE.md).',
+        'Google Drive is not configured — see docs/guides/GOOGLE_DRIVE.md',
         'warn',
       );
       return;

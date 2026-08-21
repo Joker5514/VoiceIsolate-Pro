@@ -9,7 +9,7 @@ Web download page: https://voice-isolate-pro.vercel.app/download/
 
 **In-repo version:** **25.0.2** · build **250002**  
 **Published GitHub Release (latest):** **v25.0.2**  
-**Last native rebuild:** **2026-08-21T04:16Z** (`b6beea1` — #774 release: DSP controls + reliable local processing)
+**Last native rebuild:** **2026-08-21T04:16Z** (`b6beea1` — #774). Web #776 adds optional Google Drive import/export — rebuild natives after merge for APK/EXE parity. Guide: `docs/guides/GOOGLE_DRIVE.md`.
 
 Local rebuild (artifacts under `dist/`, not committed):
 

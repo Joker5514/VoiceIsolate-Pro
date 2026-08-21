@@ -282,7 +282,7 @@ export async function pickDriveMediaFile(opts) {
   const cfg = getDriveConfig();
   const apiKey = opts.apiKey || cfg.apiKey;
   if (!apiKey) {
-    throw new Error('Google API key required for Drive Picker (set window.GOOGLE_API_KEY).');
+    throw new Error('Google developer key required for Drive Picker (see docs/guides/GOOGLE_DRIVE.md).');
   }
   await loadPickerApi();
   const google = globalThis.google;

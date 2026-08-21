@@ -56,7 +56,7 @@ one-shot offline pass.
 | Hardcoded secrets, seeded credentials, dev-bypass license stubs | Secrets come from environment variables only (see `.env.example`). |
 | Loading ONNX Runtime, Three.js, or any library from a CDN | Vendored locally under `public/lib/`. CSP blocks third-party script origins. |
 | `'unsafe-inline'` in `script-src` for new surfaces | `server/securityHeaders.js` enforces strict CSP. Only the legacy `/app/` shell has a temporary, explicitly-scoped exception. |
-| Sending audio (or any derivative of audio) to a server | 100% local processing is the product's core promise. |
+| Sending audio to a server for **processing / inference** | 100% local processing is the product's core promise. Optional **user-initiated** Google Drive import/export (ADR-002) is file I/O only — never automatic, never during Process. |
 
 ### 1.2 Master Blueprint v2.1 — Cross-Platform Mandate
 
@@ -66,7 +66,7 @@ constraints every contributor must enforce:
 
 | Constraint | Rule |
 |---|---|
-| **Privacy** | 100% local inference. No audio or derivatives sent to cloud. |
+| **Privacy** | 100% local inference. No cloud audio processing. Optional user-initiated Google Drive file I/O only ([GOOGLE_DRIVE.md](docs/guides/GOOGLE_DRIVE.md)). |
 | **Single STFT / single iSTFT** | Exactly one forward STFT and one inverse iSTFT per **compatible spectral-mask chain** (fused production path). Waveform-only models (e.g. Demucs) are a separate branch and do not claim this invariant. No repeated phase damage on the fused path. |
 | **Dual pipeline** | Lightweight Live path (<80–100 ms, FFT 512/1024 + RNNoise fallback) vs. heavy Creator/Forensic path (FFT 4096–8192 + full ML). |
 | **Ring-buffer math** | `HOP_SIZE` **must** be an integer multiple of `QUANTUM` (128). See §8. |
@@ -290,6 +290,12 @@ Canonical pins: [docs/DOWNLOADS.md](docs/DOWNLOADS.md), [docs/releases/PLATFORM_
 grids under ~1800px, or readout-only values without a synchronized number field.
 Locks must block drag/keys/number/presets/reset. Guide:
 [docs/guides/DSP_SLIDERS.md](docs/guides/DSP_SLIDERS.md).
+
+**Google Drive (optional):** Landing + Engineer expose **Open from Drive** /
+**Save to Drive** via `src/core/GoogleDriveBridge.js` + Firebase Google Auth
+(`drive.file` scope). Never call from MLWorker / worklets / Process. Setup:
+[docs/guides/GOOGLE_DRIVE.md](docs/guides/GOOGLE_DRIVE.md). ADR:
+[docs/adr/002-google-drive-file-io.md](docs/adr/002-google-drive-file-io.md).
 
 ---
 

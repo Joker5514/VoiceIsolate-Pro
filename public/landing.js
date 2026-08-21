@@ -469,11 +469,15 @@ function encodeCleanStemWav(audioBuffer) {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
+function setDownloadHint(msg) {
+  if (ui.downloadStatus) ui.downloadStatus.textContent = msg || '';
+}
+
 async function onOpenFromDrive() {
   try {
     const { openMediaFileFromDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
     if (!isDriveConfigured()) {
-      setStatus('Google Drive not configured — set FIREBASE_API_KEY / GOOGLE_API_KEY', 'error');
+      setStatus('Google Drive not configured — see docs/guides/GOOGLE_DRIVE.md', 'error');
       return;
     }
     setStatus('Sign in to Google Drive to pick a file…', 'warn');
@@ -497,7 +501,7 @@ async function onSaveToDrive() {
   try {
     const { saveBlobToDrive, isDriveConfigured } = await import('/src/core/GoogleDriveBridge.js');
     if (!isDriveConfigured()) {
-      setStatus('Google Drive not configured — set FIREBASE_API_KEY / GOOGLE_API_KEY', 'error');
+      setStatus('Google Drive not configured — see docs/guides/GOOGLE_DRIVE.md', 'error');
       return;
     }
     const wavBlob = encodeCleanStemWav(mixer.cleanBuffer);
@@ -505,18 +509,18 @@ async function onSaveToDrive() {
       .replace(/\.[^.]+$/, '')
       .slice(0, 80) || 'export';
     const filename = `${base}-processed.wav`;
-    setDl('Uploading to Google Drive…');
+    setDownloadHint('Uploading to Google Drive…');
     setStatus('Uploading to Google Drive…', 'warn');
     const meta = await saveBlobToDrive({ blob: wavBlob, filename, mimeType: 'audio/wav' });
-    setDl(`Saved to Drive: ${meta?.name || filename}`);
+    setDownloadHint(`Saved to Drive: ${meta?.name || filename}`);
     setStatus(`Saved to Drive: ${meta?.name || filename}`, 'active');
   } catch (err) {
     if (err?.code === 'CANCELLED') {
-      setDl('Drive upload cancelled');
+      setDownloadHint('Drive upload cancelled');
       return;
     }
     console.error('[VIP][landing] Drive save failed:', err);
-    setDl(err?.message || 'Drive upload failed');
+    setDownloadHint(err?.message || 'Drive upload failed');
     setStatus(err?.message || 'Drive upload failed', 'error');
   } finally {
     downloadInFlight = false;
