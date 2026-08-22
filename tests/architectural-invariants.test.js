@@ -89,15 +89,22 @@ describe('CLAUDE.md §1 — single STFT + iSTFT per processing path', () => {
 describe('CLAUDE.md §1.1 — live real-time pipeline stays removed', () => {
   const SRC_DIR = path.join(ROOT, 'src');
 
-  const walkJs = (dir) => {
+  const walkRuntimeFiles = (dir, extensions = new Set(['.js'])) => {
     const out = [];
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) out.push(...walkJs(full));
-      else if (entry.name.endsWith('.js')) out.push(full);
+      const rel = path.relative(ROOT, full).replace(/\\/g, '/');
+      if (entry.isDirectory()) {
+        if (/^(public\/docs|public\/lib|public\/app\/models|public\/models)\b/.test(rel)) continue;
+        out.push(...walkRuntimeFiles(full, extensions));
+      } else if (extensions.has(path.extname(entry.name))) {
+        out.push(full);
+      }
     }
     return out;
   };
+
+  const walkJs = (dir) => walkRuntimeFiles(dir, new Set(['.js']));
 
   test('audioWorklet.addModule() only loads the allowlisted playback gate worklet', () => {
     // The live-mic worklet pipeline stays removed; the one permitted worklet is
@@ -125,8 +132,7 @@ describe('CLAUDE.md §1.1 — live real-time pipeline stays removed', () => {
     const candidates = [
       ...walkJs(APP_DIR),
       ...walkJs(SRC_DIR),
-      path.join(ROOT, 'public/index.html'),
-      path.join(ROOT, 'public/landing.js'),
+      ...walkRuntimeFiles(path.join(ROOT, 'public'), new Set(['.js', '.html'])),
     ];
     const offenders = [];
     for (const f of candidates) {
@@ -249,10 +255,14 @@ describe('CLAUDE.md §6 — COOP/COEP set to the exact values SharedArrayBuffer 
 
 // ── Bonus: CSP locks ONNX/Three.js to same-origin ─────────────────────────────
 describe('Content-Security-Policy keeps script-src on self only', () => {
-  // The sole permitted external script origin is the Firebase SDK on
-  // gstatic.com — a documented, accepted exception (docs/adr/001-firebase-exception.md).
-  // It is UI/auth-layer only and never touches the audio pipeline.
-  const ALLOWED_SCRIPT_ORIGINS = ['https://www.gstatic.com'];
+  // Permitted external script origins are documented UI/auth/Drive exceptions
+  // in docs/adr/001-firebase-exception.md and server/securityHeaders.js. They
+  // must never become ONNX, Three.js, worklet, worker, or audio-pipeline hosts.
+  const ALLOWED_SCRIPT_ORIGINS = [
+    'https://www.gstatic.com',
+    'https://apis.google.com',
+    'https://accounts.google.com',
+  ];
 
   test('vercel.json CSP includes script-src \'self\' (no unapproved http(s) sources)', () => {
     const vercel = JSON.parse(read('vercel.json'));

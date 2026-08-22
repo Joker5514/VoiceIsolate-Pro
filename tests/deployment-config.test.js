@@ -69,9 +69,12 @@ describe('vercel.json — build & install (pnpm-only)', () => {
 
   test('installCommand uses pnpm via vercel-install.sh (not npm)', () => {
     expect(cfg.installCommand).toBe('bash scripts/vercel-install.sh');
-    expect(fs.readFileSync(path.join(ROOT, 'scripts/vercel-install.sh'), 'utf8')).toMatch(/pnpm install/);
     const installSh = fs.readFileSync(path.join(ROOT, 'scripts/vercel-install.sh'), 'utf8');
+    expect(installSh).toMatch(/pnpm install/);
+    expect(installSh).toMatch(/package\.json/);
+    expect(installSh).toMatch(/corepack prepare "pnpm@\$\{PNPM_VERSION\}"/);
     expect(installSh).not.toMatch(/^\s*npm install/m);
+    expect(installSh).not.toMatch(/pnpm@10\.0\.0/);
   });
 
   test('pnpm-lock.yaml is committed (Vercel falls back to npm without it)', () => {
@@ -136,9 +139,9 @@ describe('vercel.json — Content-Security-Policy header', () => {
     expect(directives['form-action']).toContain("'self'");
   });
 
-  test('script-src includes /_vercel (Vercel runtime scripts)', () => {
+  test('script-src does not include invalid relative path sources', () => {
     const scriptSrc = directives['script-src'].join(' ');
-    expect(scriptSrc).toContain('/_vercel');
+    expect(scriptSrc).not.toContain('/_vercel');
   });
 
   // ── Required CSP directives ───────────────────────────────────────────────

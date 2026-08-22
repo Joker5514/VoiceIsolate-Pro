@@ -86,14 +86,14 @@ class DeEsserProcessor extends AudioWorkletProcessor {
     const a1 = -2 * cosOmega;
     const a2 = 1 - alpha;
     
-    // Normalize by a0
-    this.filterCoeffs = {
-      b0: b0 / a0,
-      b1: b1 / a0,
-      b2: b2 / a0,
-      a1: a1 / a0,
-      a2: a2 / a0
-    };
+    // Normalize by a0 without replacing the coefficient object. This method is
+    // reached from process() when the k-rate frequency changes.
+    const coeffs = this.filterCoeffs;
+    coeffs.b0 = b0 / a0;
+    coeffs.b1 = b1 / a0;
+    coeffs.b2 = b2 / a0;
+    coeffs.a1 = a1 / a0;
+    coeffs.a2 = a2 / a0;
   }
 
   /**

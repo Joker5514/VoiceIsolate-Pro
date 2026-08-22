@@ -102,6 +102,15 @@ describe('DeEsserProcessor', () => {
   });
 
   describe('Filter Coefficient Calculation', () => {
+    it('mutates the existing coefficient object instead of reallocating it', () => {
+      const coeffs = processor.filterCoeffs;
+
+      processor.calculateHighPassCoeffs(8000, 48000, 0.707);
+
+      expect(processor.filterCoeffs).toBe(coeffs);
+      expect(processor.filterCoeffs.b0).not.toBe(1);
+    });
+
     it('should calculate high-pass filter coefficients', () => {
       processor.calculateHighPassCoeffs(6000, 48000, 0.707);
 
@@ -295,6 +304,7 @@ describe('DeEsserProcessor', () => {
 
       processor.process(inputs, outputs, parameters);
       const firstFreq = processor.lastFrequency;
+      const coeffs = processor.filterCoeffs;
 
       // Process with different frequency
       parameters = {
@@ -307,6 +317,7 @@ describe('DeEsserProcessor', () => {
 
       expect(secondFreq).not.toBe(firstFreq);
       expect(secondFreq).toBe(8000);
+      expect(processor.filterCoeffs).toBe(coeffs);
     });
 
     it('should not recalculate filter for small frequency changes', () => {

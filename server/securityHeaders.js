@@ -5,8 +5,8 @@
  * Express dev server. Production (Vercel) does NOT mirror these 1:1 — it
  * deliberately *extends* this policy in vercel.json with explicitly-scoped
  * third-party origins that only exist in the deployed app:
- *   - script-src adds https://www.gstatic.com (Firebase) and /_vercel/insights/
- *     (Vercel Analytics).
+ *   - script-src adds https://www.gstatic.com (Firebase). Same-origin Vercel
+ *     runtime scripts are already covered by 'self'.
  *   - connect-src adds Vercel Blob (*.public.blob.vercel-storage.com),
  *     Firebase (identitytoolkit / firestore / securetoken),
  *     Google Drive/Picker (www.googleapis.com / apis.google.com / accounts.google.com),
