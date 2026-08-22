@@ -3,7 +3,7 @@
  * Privacy / upload-only CI gate for VoiceIsolate Pro.
  *
  * Fails if product sources introduce:
- *   - getUserMedia outside the documented non-product mic-capture module
+ *   - getUserMedia in deployed/product code
  *   - Hosted cloud audio backends (delegates patterns + expands coverage)
  *   - Fetch/WebSocket of audio buffers to third parties
  *
@@ -15,13 +15,8 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = process.cwd();
-const ROOTS = ['public/app', 'public/landing.js', 'src', 'electron', 'services/sam-audio'];
-const EXT = new Set(['.js', '.cjs', '.mjs', '.ts', '.tsx']);
-
-/** getUserMedia allowed only in these relative paths (explicitly non-product). */
-const GUM_ALLOW = [
-  /^public\/mic-capture\.js$/,
-];
+const ROOTS = ['public', 'src', 'electron', 'services/sam-audio'];
+const EXT = new Set(['.js', '.cjs', '.mjs', '.ts', '.tsx', '.html']);
 
 const CLOUD = [
   { re: /fal\.ai/i, label: 'fal.ai' },
@@ -36,6 +31,10 @@ const SKIP = [
   /check-privacy-invariants\.js$/,
   /check-no-cloud-audio\.js$/,
   /node_modules/,
+  /^public\/docs\//,
+  /^public\/lib\//,
+  /^public\/app\/models\//,
+  /^public\/models\//,
   /\.test\.js$/,
   /tests\//,
   /docs\//,
@@ -71,13 +70,8 @@ function scan(file) {
     const line = lines[i];
     if (!/getUserMedia\s*\(/.test(line)) continue;
     if (/^\s*(\/\/|#|\*|\/\*)/.test(line)) continue;
-    if (GUM_ALLOW.some((rx) => rx.test(rel))) continue;
-    // Feature-flagged live mic must use VIP_FEATURE_LIVE_MIC === true
-    if (/VIP_FEATURE_LIVE_MIC/.test(line) || /VIP_FEATURE_LIVE_MIC/.test(lines[Math.max(0, i - 2)] || '')) {
-      continue;
-    }
     failed = true;
-    hits.push(`${rel}:${i + 1}: getUserMedia without VIP_FEATURE_LIVE_MIC :: ${line.trim().slice(0, 100)}`);
+    hits.push(`${rel}:${i + 1}: getUserMedia is forbidden in deployed/product code :: ${line.trim().slice(0, 100)}`);
   }
 
   for (const { re, label } of CLOUD) {
@@ -94,7 +88,7 @@ function scan(file) {
 
 for (const r of ROOTS) walk(path.join(ROOT, r));
 
-// Ensure product shells do not import mic-capture
+// Ensure product shells do not import a mic-capture helper from any path.
 for (const rel of ['public/app/app.js', 'public/landing.js', 'public/app/index.html', 'public/index.html']) {
   const abs = path.join(ROOT, rel);
   if (!fs.existsSync(abs)) continue;

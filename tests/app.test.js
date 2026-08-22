@@ -27,6 +27,11 @@ const sliderMapSrc = fs.readFileSync(
   'utf8'
 );
 
+const presetCalibrationSrc = fs.readFileSync(
+  path.join(__dirname, '../src/core/PresetCalibration.js'),
+  'utf8'
+);
+
 // Extract the SLIDERS object literal from source
 // (used in structural tests without requiring the module)
 function extractSlidersFromSrc() {
@@ -138,23 +143,36 @@ describe('SLIDERS constant', () => {
 describe('PRESETS constant', () => {
   test('source defines a PRESETS constant', () => {
     expect(appSrc).toContain('const PRESETS');
+    expect(appSrc).toContain('getCalibratedPresets()');
   });
 
-  test('contains the eight calibrated isolation preset names', () => {
-    const presets = ['Voice Clarity', 'Podcast Clean', 'Forensic Extract', 'Whisper Boost', 'Phone/Radio', 'Surveillance', 'Whisper in a Club', 'Stadium Crowd'];
+  test('PresetCalibration contains the calibrated isolation preset names and redirects', () => {
+    const presets = [
+      'Voice Clarity',
+      'Podcast Clean',
+      'Room Echo Reduction',
+      'Hum Removal',
+      'Forensic Extract',
+      'Whisper Boost',
+      'Phone/Radio',
+      'Aggressive Isolate',
+      'Surveillance',
+    ];
     for (const name of presets) {
-      expect(appSrc).toContain(`'${name}':`);
+      expect(presetCalibrationSrc).toContain(`'${name}':`);
     }
+    expect(presetCalibrationSrc).toContain("'Whisper in a Club': 'Aggressive Isolate'");
+    expect(presetCalibrationSrc).toContain("'Stadium Crowd': 'Surveillance'");
     // Redundant presets removed
-    expect(appSrc).not.toContain("'Phone Wiretap':");
-    expect(appSrc).not.toContain("'Heavy Rain Call':");
-    expect(appSrc).not.toContain("'Helicopter Rescue':");
+    expect(presetCalibrationSrc).not.toContain("'Phone Wiretap':");
+    expect(presetCalibrationSrc).not.toContain("'Heavy Rain Call':");
+    expect(presetCalibrationSrc).not.toContain("'Helicopter Rescue':");
   });
 
   test('preset objects use actual slider IDs as keys', () => {
-    // Verify presets use the real 52-slider parameter IDs
+    // Verify presets use the real 67-slider parameter IDs through PresetCalibration.
     ['nrAmount:', 'voiceIso:', 'hpFreq:', 'lpFreq:', 'deEssAmt:', 'derevAmt:', 'compThresh:', 'compRatio:', 'gateThresh:', 'outGain:'].forEach((key) => {
-      expect(appSrc).toContain(key);
+      expect(presetCalibrationSrc).toContain(key);
     });
   });
 
@@ -162,7 +180,7 @@ describe('PRESETS constant', () => {
     // Spot-check that every slider tab group has entries in preset block
     const sectionsPresent = ['gateThresh:', 'nrAmount:', 'eqSub:', 'compThresh:', 'hpFreq:', 'derevAmt:', 'voiceIso:', 'outGain:'];
     for (const key of sectionsPresent) {
-      expect(appSrc).toContain(key);
+      expect(presetCalibrationSrc).toContain(key);
     }
   });
 });

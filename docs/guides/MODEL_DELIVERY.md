@@ -1,63 +1,59 @@
 # ONNX Model Delivery Strategy
 
-VoiceIsolate Pro processes all audio **100% locally in the browser**. No audio data
-ever leaves the device. However, the ML models themselves (`.onnx` files, up to
-several hundred MB) cannot be committed to Git and must be fetched on first use.
+VoiceIsolate Pro processes user audio locally in the browser. ONNX model files
+are read-only application assets and are not user data, but their delivery still
+has to preserve the local-processing and CSP boundaries.
 
-## Why models are not in the repo
+## Current Delivery Path
 
-- Binary ONNX files are typically 50–400 MB each.
-- Git / GitHub LFS is not suitable for large binary assets served to end users.
-- The models are **read-only weights** — not user data. Fetching them is equivalent
-  to a browser downloading a font or wasm binary.
-
-## Delivery pipeline (`model-cdn-loader.js`)
-
-```
- Browser first load
-       │
-       ▼
- SW Cache (Cache API) ──hit──▶ return ArrayBuffer immediately (zero network)
-       │ miss
-       ▼
- Vercel Blob  (/app/models/ rewrite — served from same origin, satisfies CSP)
-       │ fail
-       ▼
- Cloudflare R2  (CORS-enabled, connect-src whitelisted in vercel.json)
-       │ fail
-       ▼
- HuggingFace Hub  (last resort fallback)
-       │
-       ▼
- Stored in SW Cache (vip-models-v1) for all future sessions
+```text
+Browser
+  -> same-origin /app/models/*.onnx URL
+  -> Vercel rewrite to the configured Blob object
+  -> browser cache / service worker cache where available
 ```
 
-After first download, the model is served from the **SW Cache** — no network
-request is made for subsequent sessions.
+There are no browser-facing fallback providers. The model loader only accepts
+same-origin `/app/models/*.onnx` paths, and `src/core/ModelManifest.js` is the
+canonical source for model filenames, sizes, and SHA-256 hashes.
 
-## Compliance with local-processing constraint
+## Why Models Are Not Committed
 
-- **Audio processing**: always 100% local (AudioWorklet + ONNX Runtime Web).
-- **Model weights**: fetched once, then cached permanently in the browser.
-- **User audio data**: never transmitted anywhere.
+- Binary ONNX weights are large.
+- The repository should stay cloneable without large binary artifacts.
+- Model weights are immutable application assets.
+- The browser verifies model hashes when a manifest hash is available.
 
-## Model files location
+## Runtime Responsibilities
 
-Model files are hosted on Vercel Blob Storage and mirrored on Cloudflare R2.
-The `models-manifest.json` file at `public/app/models-manifest.json` lists all
-models, their sizes, checksums, and provider URLs.
+- `src/core/ModelManifest.js` defines canonical model URLs and expected hashes.
+- `src/workers/MLWorker.js` fetches model bytes, verifies hashes, and initializes
+  ONNX Runtime Web.
+- `public/app/model-cdn-loader.js` only accepts same-origin model URLs for the
+  legacy Engineer Mode shell.
+- `vercel.json` rewrites `/app/models/:filename` and `/models/:filename` to the
+  configured Vercel Blob object route.
 
-## AudioWorklet delivery
+## Privacy Boundary
 
-Processor scripts (gate, de-esser, legacy dsp-processor) follow the same
-same-origin packaging path as ONNX models but are committed to the repo and
-pinned by SHA-256 in `models-manifest.json` → `worklets`. See
-[`docs/WORKLETS.md`](WORKLETS.md) for the full cross-platform matrix and CI
-checks.
+- User audio is never transmitted to model storage.
+- Inference runs locally through ONNX Runtime Web.
+- WebGPU is attempted when supported and falls back to WASM.
+- The AudioWorklet render thread never waits on model loading or inference.
 
-## Adding a new model
+## Adding Or Replacing A Model
 
-1. Upload the `.onnx` file to Vercel Blob (`vercel blob upload`).
-2. Mirror to R2 and HuggingFace Hub.
-3. Add an entry to `models-manifest.json` with all three provider URLs.
-4. Set `eager: true` if the model should preload on app boot.
+1. Upload the `.onnx` object to the configured Vercel Blob store.
+2. Add or update the matching entry in `src/core/ModelManifest.js`.
+3. Include the expected SHA-256 when the model is required for production.
+4. Keep the browser URL under `/app/models/*.onnx`.
+5. Run `pnpm run validate`, `pnpm run worklets:verify`, and the model-loading
+   tests before shipping.
+
+## AudioWorklet Delivery
+
+Playback worklet scripts are committed to the repository and served from
+same-origin `/src/workers/*.js` URLs after the Vercel build copies `src/` into
+`public/src/`. The legacy `public/app/dsp-processor.js` route is still shipped
+with no-cache headers for maintenance compatibility. See
+[`WORKLETS.md`](WORKLETS.md) for the cross-platform matrix and CI checks.

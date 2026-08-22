@@ -3,6 +3,7 @@
  *
  * app.js uses ES module imports:
  *   import { SLIDER_REGISTRY, STAGES } from './slider-map.js';
+ *   import { getCalibratedPresets } from '/src/core/PresetCalibration.js';
  *   import { ModelStatusUI } from './model-status-ui.js';
  *
  * slider-map.js imports calibrateRegistry from slider-calibration.js — both
@@ -25,6 +26,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const APP_DIR = path.join(__dirname, '../../public/app');
+const SRC_CORE_DIR = path.join(__dirname, '../../src/core');
 
 // Sibling modules imported by app.js. The `exports` list must include every
 // symbol app.js destructures from that module.
@@ -95,6 +97,33 @@ function stripRelativeImports(src) {
     /^import\s+(?:[\w*${},\s]+\s+from\s+)?['"]\/src\/[^'"]+['"]\s*;?\s*\n?/gm,
     ''
   );
+}
+
+function stripModuleSyntax(src) {
+  return src
+    .replace(/^import\s+(?:[\w*${},\s]+\s+from\s+)?['"][^'"]+['"]\s*;?\s*\n?/gm, '')
+    .replace(/^export default\s*\{[\s\S]*$/m, '')
+    .replace(/^export\s+/gm, '');
+}
+
+function buildPresetCalibrationShim() {
+  const dspCalibration = stripModuleSyntax(fs.readFileSync(path.join(SRC_CORE_DIR, 'DspCalibration.js'), 'utf8'));
+  const presetCalibration = stripModuleSyntax(fs.readFileSync(path.join(SRC_CORE_DIR, 'PresetCalibration.js'), 'utf8'));
+  return `
+const { bootstrapScenario } = (function _injectDspCalibration() {
+  const SAMPLE_RATE = 48000;
+${dspCalibration}
+  return { bootstrapScenario };
+})();
+const {
+  getCalibratedPresets,
+  PRESET_REDIRECTS: CALIBRATED_PRESET_REDIRECTS,
+  resolvePresetName: resolveCalibratedPresetName,
+} = (function _injectPresetCalibration() {
+${presetCalibration}
+  return { getCalibratedPresets, PRESET_REDIRECTS, resolvePresetName };
+})();
+`;
 }
 
 function buildMediaTypesShim() {
@@ -175,9 +204,10 @@ function getAppCode() {
     );
   }
   const mediaTypesShim = buildMediaTypesShim();
+  const presetCalibrationShim = buildPresetCalibrationShim();
   const mediaDecodeShim = buildMediaDecodeShim();
   const pipelineShim = buildPipelineShim();
-  return preamble + '\n' + inlined + '\n' + mediaTypesShim + '\n' + mediaDecodeShim + '\n' + pipelineShim + '\n' + appJsCode;
+  return preamble + '\n' + inlined + '\n' + presetCalibrationShim + '\n' + mediaTypesShim + '\n' + mediaDecodeShim + '\n' + pipelineShim + '\n' + appJsCode;
 }
 
 module.exports = getAppCode;

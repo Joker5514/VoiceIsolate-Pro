@@ -265,9 +265,12 @@ check(openBraces === closeBraces, `Braces: ${openBraces} open / ${closeBraces} c
 // 4. Blueprint check
 console.log('\nBlueprint:');
 const blueprint = fs.readFileSync(path.resolve(__dirname, '..', 'public/blueprint/index.html'), 'utf8');
-check(blueprint.includes('Deca-Pass'), 'Contains Deca-Pass pipeline reference');
-check(blueprint.includes('32'), 'References 32 stages');
-check(blueprint.includes('Threads from Space'), 'Threads from Space architecture');
+check(blueprint.includes('Stem-Split and Live-Mix'), 'References current Stem-Split & Live-Mix architecture');
+check(blueprint.includes('67 sliders'), 'References current 67-slider registry');
+check(blueprint.includes('user audio stays local'), 'States local-audio privacy boundary');
+check(blueprint.includes('/app/models/*.onnx'), 'Documents same-origin ONNX model route');
+check(blueprint.includes('one forward STFT'), 'Documents single forward STFT rule');
+check(blueprint.includes('one inverse STFT'), 'Documents single inverse STFT rule');
 
 // 5. Duplicate JSON key check
 console.log('\nJSON duplicate key check:');
