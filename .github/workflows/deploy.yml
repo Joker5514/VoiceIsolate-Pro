@@ -62,7 +62,7 @@ jobs:
           cache: 'pnpm'
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Validate ONNX model CDN URLs
+      - name: Validate ONNX model delivery URLs
         run: node scripts/validate-onnx-models.js
         continue-on-error: true  # warn but don't block smoke test (models may not be uploaded yet in PR context)
       - name: Install Playwright Chromium
@@ -104,7 +104,7 @@ jobs:
 
 
   validate-models:
-    name: Validate ONNX Model CDN URLs
+    name: Validate ONNX Model Delivery URLs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -112,14 +112,17 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
-      - name: Check ONNX models are real binaries on HuggingFace CDN
+      - name: Check ONNX model delivery assets are real binaries
         run: node scripts/validate-onnx-models.js
 
 
   deploy-preview:
     name: Deploy Preview
     needs: [lint-test, validate, smoke-test, validate-models]
-    if: github.event_name == 'pull_request' && secrets.VERCEL_TOKEN != ''
+    # GitHub does not allow the secrets context in a job-level condition. Keep
+    # the PR gate here and let the token-guarded steps below report a skipped
+    # deploy when the optional Vercel secret is not configured.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -145,7 +148,9 @@ jobs:
   deploy-production:
     name: Deploy Production
     needs: [lint-test, validate, smoke-test, validate-models]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && secrets.VERCEL_TOKEN != ''
+    # See deploy-preview: optional deployment credentials are handled at the
+    # step level because job-level conditions cannot reference secrets.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
