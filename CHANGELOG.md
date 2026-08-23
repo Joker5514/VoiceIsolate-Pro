@@ -12,7 +12,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Canonical process-time Engineer configuration snapshots with revision-keyed
   stem caching and worker acknowledgement.
 - Automated coverage for the Engineer processing configuration, gate lookahead,
-  slider tick wiring, and Vercel API route ordering.
+  slider tick wiring, and static Vercel routing boundary.
 
 ### Changed
 
@@ -38,8 +38,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   as well as Save Processed and Save to Drive; dither remains encoder-only.
 - Removed the stale Android microphone permission and optional hardware feature;
   the native manifest now matches the upload-only product contract.
-- Added the missing Vercel `/api/:path*` rewrite so API requests reach the
-  mounted serverless handler before the SPA fallback.
+- Restored Vercel's static-only routing boundary: `api/` and `api-routes/` are
+  excluded from production, so no unreachable serverless `/api` rewrite remains.
 - Corrected the CI workflow's invalid job-level secret conditions so optional
   Vercel CLI deployment steps skip cleanly when repository secrets are absent.
 

@@ -333,7 +333,7 @@ public/              Static shells
   landing.js         Landing upload + ML ingest pipeline
   app/               Engineer Mode v25 (app.js, style.css, worklets, models)
 server/              Express dev server + COOP/COEP/CSP security headers
-api/                 Vercel serverless API routes
+api/                 Optional serverful routes (excluded from static Vercel production)
 scripts/             Build, validation, model & worklet tooling
 tests/               Jest suites (upload wiring, decode, DSP, presets)
 docs/                Product & engineering documentation
@@ -395,7 +395,7 @@ android/             Capacitor Android project
 
 - **Engineer Mode control restoration** — all 66 range sliders mount in the shared Web / Android / Electron shell; each path is now live-mix, process-time, stereo post-stem, or export-only with a verified consumer.
 - **Control-path hardening** — fresh and durable ML results now share post-stem cleanup, DSP fallback invalidates stale stem pairs, Whisper Mode has reset/lock/persistence parity, and all processed WAV exports use the same encoder-only dither snapshot.
-- **Production API routing** — Vercel now explicitly rewrites `/api/:path*` to the mounted serverless handler ahead of the SPA fallback.
+- **Production static routing** — Vercel intentionally excludes `api/` and `api-routes/`; model rewrites remain active, while no serverless `/api` endpoint is advertised.
 
 ## Release notes (v25.0.2)
 

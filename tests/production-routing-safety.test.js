@@ -9,6 +9,7 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const vercel = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
+const vercelIgnore = fs.readFileSync(path.join(ROOT, '.vercelignore'), 'utf8');
 const deadWorklet = fs.readFileSync(
   path.join(ROOT, 'public/app/voice-isolate-processor.js'),
   'utf8',
@@ -21,15 +22,15 @@ describe('Production routing safety', () => {
     expect(vercel.outputDirectory).toBe('public');
   });
 
-  test('all /api routes reach the mounted Express handler before the SPA fallback', () => {
+  test('static Vercel deployment does not rewrite to an ignored serverless handler', () => {
     const rewrites = vercel.rewrites || [];
-    const apiRewriteIndex = rewrites.findIndex((rule) =>
-      rule.source === '/api/:path*' && rule.destination === '/api/handler',
+    const apiRewrite = rewrites.find((rule) =>
+      rule.source === '/api/:path*' || rule.destination === '/api/handler',
     );
-    const spaFallbackIndex = rewrites.findIndex((rule) => rule.destination === '/index.html');
 
-    expect(apiRewriteIndex).toBeGreaterThanOrEqual(0);
-    expect(spaFallbackIndex).toBeGreaterThan(apiRewriteIndex);
+    expect(vercelIgnore).toMatch(/^api\/$/m);
+    expect(vercelIgnore).toMatch(/^api-routes\/$/m);
+    expect(apiRewrite).toBeUndefined();
   });
 
   test('COOP/COEP isolation headers remain configured', () => {

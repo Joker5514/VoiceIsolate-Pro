@@ -14,10 +14,13 @@
  * so Express strips the /api prefix before dispatching to the sub-routers —
  * matching exactly what server.js does locally.
  *
- * Routing
- * -------
- * vercel.json rewrites /api/:path* → /api/handler so every API request
- * reaches this file regardless of the other files in the api/ directory.
+ * Deployment boundary
+ * -------------------
+ * `.vercelignore` intentionally excludes `api/` and `api-routes/` from the
+ * static Vercel production deployment. This entry point is for local Express
+ * or an explicitly configured serverful deployment; do not add a Vercel
+ * rewrite until the API directory is included and production function smoke
+ * tests are enabled.
  */
 
 import express    from 'express';
