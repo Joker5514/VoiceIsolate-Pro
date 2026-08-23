@@ -47,7 +47,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // Upload-only product: do NOT prompt for RECORD_AUDIO at boot (jank + wrong UX).
+        // Upload-only product: the manifest does not request RECORD_AUDIO.
         // Media-read is deferred until after first content paint (see scheduleDeferredMediaPermission).
         // Bridge WebView is ready after super.onCreate — wire isolation + MIME.
         try {

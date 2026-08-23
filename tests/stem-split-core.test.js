@@ -278,8 +278,8 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.eqMid.gain.value).toBe(24);
     mixer.setEqLowMid(-99);
     expect(mixer.eqLowMid.gain.value).toBe(-24);
-    mixer.setHighpass(5);                 // below min → 20
-    expect(mixer.highpass.frequency.value).toBe(20);
+    mixer.setHighpass(5);                 // below min → 10
+    expect(mixer.highpass.frequency.value).toBe(10);
     mixer.setLowpass(99999);              // above max → 20000
     expect(mixer.lowpass.frequency.value).toBe(20000);
     mixer.setCompThreshold(-80);          // → -60
@@ -306,10 +306,10 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.gate).toBe(null);
     expect(mixer.gateInput).toBeDefined();
     expect(mixer._gateParams.range).toBe(0); // 0 dB range = transparent default
-    mixer.setGateThreshold(-200);            // clamps to -100
-    expect(mixer._gateParams.threshold).toBe(-100);
-    mixer.setGateRange(999);                 // clamps to 80
-    expect(mixer._gateParams.range).toBe(80);
+    mixer.setGateThreshold(-200);            // clamps to -120
+    expect(mixer._gateParams.threshold).toBe(-120);
+    mixer.setGateRange(999);                 // clamps to 120
+    expect(mixer._gateParams.range).toBe(120);
     mixer.setGateAttack(999);                // clamps to 200
     expect(mixer._gateParams.attack).toBe(200);
     mixer.setGateRelease(-5);                // clamps to 0
@@ -331,15 +331,15 @@ describe('PlaybackMixer (Layer 3) — Live-Mix control surface', () => {
     expect(mixer.deEsser).toBe(null);
     expect(mixer.deEsserInput).toBeDefined();
     expect(mixer._deEsserParams.amount).toBe(0);       // amount 0 = transparent
-    expect(mixer._deEsserParams.frequency).toBe(6000);
+    expect(mixer._deEsserParams.frequency).toBe(6500);
     mixer.setDeEsserAmount(150);                        // 150% → clamps to 100 → 1.0
     expect(mixer._deEsserParams.amount).toBe(1);
     mixer.setDeEsserAmount(-10);                        // clamps to 0
     expect(mixer._deEsserParams.amount).toBe(0);
     mixer.setDeEsserFreq(500);                          // clamps to 2000
     expect(mixer._deEsserParams.frequency).toBe(2000);
-    mixer.setDeEsserFreq(99999);                        // clamps to 12000
-    expect(mixer._deEsserParams.frequency).toBe(12000);
+    mixer.setDeEsserFreq(99999);                        // clamps to 16000
+    expect(mixer._deEsserParams.frequency).toBe(16000);
   });
 
   test('loadStems builds sample-locked buffers; transport round-trips', async () => {

@@ -41,6 +41,7 @@ const APP_SHELL = [
   // Playback Live-Mix worklets (Gate + De-esser) — loaded by PlaybackMixer on landing + engineer playback
   '/src/workers/GateProcessor.js',
   '/src/workers/DeEsserProcessor.js',
+  '/src/workers/EngineerSpectralControls.js',
   '/src/pipeline/PlaybackMixer.js',
   '/app/dsp-worker.js',
   '/app/pipeline-state.js',

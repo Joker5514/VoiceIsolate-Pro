@@ -51,12 +51,12 @@ describe('slider math contracts', () => {
     }
   });
 
-  test('nrAmount transform is monotonic 0→1', () => {
+  test('nrAmount preserves the 0→100 process-time percentage contract', () => {
     const nr = registry.find((s) => s.id === 'nrAmount');
     expect(nr).toBeTruthy();
     expect(evalTransform(nr.transformSrc, 0)).toBeCloseTo(0, 5);
-    expect(evalTransform(nr.transformSrc, 100)).toBeCloseTo(1, 5);
-    expect(evalTransform(nr.transformSrc, 50)).toBeCloseTo(0.5, 5);
+    expect(evalTransform(nr.transformSrc, 100)).toBeCloseTo(100, 5);
+    expect(evalTransform(nr.transformSrc, 50)).toBeCloseTo(50, 5);
     expect(evalTransform(nr.transformSrc, 80)).toBeGreaterThan(evalTransform(nr.transformSrc, 20));
   });
 

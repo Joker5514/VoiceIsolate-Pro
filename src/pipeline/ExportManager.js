@@ -13,9 +13,10 @@ import { debugLog } from '../core/debug.js';
  * Encode Float32 channels to 16-bit PCM WAV.
  * @param {Float32Array[]} channels
  * @param {number} sampleRate
+ * @param {{ ditherAmt?: number }} [options]
  * @returns {Blob}
  */
-export function encodeWav(channels, sampleRate) {
+export function encodeWav(channels, sampleRate, options = {}) {
   const numChannels = channels.length || 1;
   const length = channels[0]?.length || 0;
   const bytesPerSample = 2;
@@ -43,9 +44,19 @@ export function encodeWav(channels, sampleRate) {
   view.setUint32(40, dataSize, true);
 
   let offset = 44;
+  const ditherMode = Math.max(0, Math.min(3, Math.round(Number(options.ditherAmt) || 0)));
+  const previousNoise = new Float32Array(numChannels);
   for (let i = 0; i < length; i++) {
     for (let ch = 0; ch < numChannels; ch++) {
       let s = channels[ch][i] || 0;
+      if (ditherMode > 0) {
+        const rawNoise = (Math.random() - Math.random()) / 32768;
+        const shaped = ditherMode === 1
+          ? rawNoise
+          : rawNoise - previousNoise[ch] * (ditherMode === 2 ? 0.45 : 0.82);
+        previousNoise[ch] = rawNoise;
+        s += shaped;
+      }
       s = Math.max(-1, Math.min(1, s));
       view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
       offset += 2;
@@ -108,7 +119,7 @@ export async function downloadBlob(blob, filename) {
  * @param {AudioBuffer} audioBuffer
  * @param {string} [filename]
  */
-export async function exportAudioBuffer(audioBuffer, filename = 'voiceisolate-export.wav') {
+export async function exportAudioBuffer(audioBuffer, filename = 'voiceisolate-export.wav', options = {}) {
   if (!audioBuffer) {
     return { ok: false, error: 'No audio buffer to export', filename };
   }
@@ -116,7 +127,7 @@ export async function exportAudioBuffer(audioBuffer, filename = 'voiceisolate-ex
   for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
     channels.push(audioBuffer.getChannelData(c));
   }
-  const blob = encodeWav(channels, audioBuffer.sampleRate);
+  const blob = encodeWav(channels, audioBuffer.sampleRate, options);
   return downloadBlob(blob, filename);
 }
 

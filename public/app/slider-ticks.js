@@ -30,9 +30,16 @@
  */
 
 import { SLIDER_REGISTRY } from './slider-map.js';
+import {
+  EXPORT_PARAM_IDS,
+  LIVE_MIX_PARAM_IDS,
+  ML_POST_STEM_PARAM_IDS,
+  ML_SPECTRAL_PARAM_IDS,
+} from '/src/core/ParameterSchema.js';
 
 // Build a lookup: id → registry entry
 const REGISTRY_MAP = Object.fromEntries(SLIDER_REGISTRY.map(s => [s.id, s]));
+let initialized = false;
 
 /**
  * Round `value` to the nearest `step`, with correct decimal precision.
@@ -87,11 +94,14 @@ function generateTicks(min, max, step) {
  */
 function attachTicks(input) {
   if (input._ticksAttached) return;
-  input._ticksAttached = true;
 
-  const id = input.id || input.dataset.sliderId;
+  const id = input.dataset.sliderId
+    || input.closest?.('[data-slider-id]')?.dataset.sliderId
+    || input.name
+    || input.id?.replace(/^sl_/, '');
   const def = REGISTRY_MAP[id];
   if (!def) return; // unknown slider, skip
+  input._ticksAttached = true;
 
   const min  = def.min  ?? parseFloat(input.min)  ?? 0;
   const max  = def.max  ?? parseFloat(input.max)  ?? 100;
@@ -172,6 +182,8 @@ function attachTicks(input) {
  * Also sets up a MutationObserver to catch dynamically-added sliders.
  */
 export function initSliderTicks() {
+  if (initialized) return;
+  initialized = true;
   // Process existing sliders
   document.querySelectorAll(
     '.sr-row input[type="range"], .slider-row input[type="range"]'
@@ -198,32 +210,28 @@ export function initSliderTicks() {
 /**
  * AUDIT LOG — dispatch routing verification.
  * Run in browser console: VIPSliderAudit.run()
- * Reports any SLIDER_REGISTRY entry whose worklet/worker key is
- * not found in the dsp-processor _params or a known ml-worker param.
+ * Reports any SLIDER_REGISTRY entry whose live-mix/process-time key is
+ * not found in the active bridge map or ML processing schema.
  */
-const WORKLET_KNOWN_PARAMS = new Set([
-  'outGain','dryWet','nrAmount','gateThresh','gateRange','gateAttack','gateRelease','gateHold',
-  'hpFreq','hpQ','lpFreq','lpQ','compThresh','compRatio','compAttack','compRelease',
-  'compKnee','compMakeup','limThresh','limRelease','specTilt','stereoWidth','outWidth','ditherAmt',
-  'eqSub','eqBass','eqWarmth','eqBody','eqLowMid','eqMid','eqPresence','eqClarity','eqAir','eqBrill'
-]);
-const WORKER_KNOWN_PARAMS = new Set([
-  'nrSensitivity','nrSpectralSub','nrFloor','nrSmoothing','gateLookahead',
-  'deEssFreq','deEssAmt','formantShift','derevAmt','derevDecay','harmRecov','harmOrder',
-  'phaseCorr','voiceIso','bgSuppress','voiceFocusLo','voiceFocusHi','crosstalkCancel'
-]);
+const TARGET_CONSUMERS = Object.freeze({
+  worklet: new Set(LIVE_MIX_PARAM_IDS),
+  worker: new Set(ML_SPECTRAL_PARAM_IDS),
+  postStem: new Set(ML_POST_STEM_PARAM_IDS),
+  export: new Set(EXPORT_PARAM_IDS),
+});
 
 export const VIPSliderAudit = {
   run() {
     const issues = [];
     SLIDER_REGISTRY.forEach(s => {
-      const toWorklet = s.target === 'worklet' || s.target === 'both';
-      const toWorker  = s.target === 'worker'  || s.target === 'both';
-      if (toWorklet && !WORKLET_KNOWN_PARAMS.has(s.key)) {
-        issues.push({ id: s.id, problem: `target=worklet but key "${s.key}" not in dsp-processor._params` });
+      const consumer = TARGET_CONSUMERS[s.target];
+      if (!consumer) {
+        issues.push({ id: s.id, problem: `unknown target "${s.target}"` });
+      } else if (!consumer.has(s.key)) {
+        issues.push({ id: s.id, problem: `target=${s.target} but key "${s.key}" has no canonical consumer` });
       }
-      if (toWorker && !WORKER_KNOWN_PARAMS.has(s.key)) {
-        issues.push({ id: s.id, problem: `target=worker but key "${s.key}" not recognised by ml-worker` });
+      if (Boolean(s.rt) !== (s.target === 'worklet')) {
+        issues.push({ id: s.id, problem: `rt=${Boolean(s.rt)} conflicts with target=${s.target}` });
       }
       if (s.min >= s.max) {
         issues.push({ id: s.id, problem: `min (${s.min}) >= max (${s.max})` });

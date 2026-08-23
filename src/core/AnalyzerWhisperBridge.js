@@ -116,7 +116,7 @@ export function classifyUnwantedSounds(analysis) {
       severity: Math.min(1, Math.max(humStrength, humCov)),
       coverage: humCov,
       label: `Hum / buzz (~${analysis?.humProfile?.freq || 60} Hz)`,
-      hint: 'Engage hum removal and phase correction.',
+      hint: 'Engage hum removal and a stereo mono-correlation blend.',
     },
     impulse: {
       present: impulseCov > 0.015,

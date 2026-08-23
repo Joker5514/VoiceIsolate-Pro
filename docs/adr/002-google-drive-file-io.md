@@ -8,7 +8,7 @@
 
 ## Context
 
-Users asked for Google Drive on Web, Electron, and Android. Product rules require **100% local audio processing** (no cloud inference). Firebase Google sign-in already exists as ADR-001 for auth/presets.
+Users asked for Google Drive on Web, Electron, and Android. Product rules require **100% local audio processing** (no cloud inference). The Firebase configuration is lazily loaded only to obtain user-authorized `drive.file` access; ADR-001's broader auth, preset, and billing proposal is superseded.
 
 ## Decision
 

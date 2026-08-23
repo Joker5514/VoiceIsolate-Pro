@@ -24,7 +24,7 @@ const META_VER = 1;
 const META_STORE = 'entries';
 
 /**
- * @typedef {{ key: string, kind: 'stems'|'analysis', fileId: string, blobRef: {backend:string,path:string}, createdAt: number, modelIds?: string[], sampleRate?: number }} DerivedMeta
+ * @typedef {{ key: string, kind: 'stems'|'analysis', fileId: string, blobRef: {backend:string,path:string}, createdAt: number, modelIds?: string[], sampleRate?: number, processingRevision?: string }} DerivedMeta
  */
 
 function openMeta() {
@@ -39,10 +39,12 @@ function openMeta() {
 /**
  * @param {string} fileId
  * @param {string[]} modelIds
+ * @param {string} [processingRevision]
  */
-export function stemDurableKey(fileId, modelIds = []) {
+export function stemDurableKey(fileId, modelIds = [], processingRevision = '') {
   const chain = (modelIds || []).join('→') || 'default';
-  return `stems:${fileId}:${chain}`;
+  const variant = processingRevision ? `:engineer-${String(processingRevision).replace(/[^a-zA-Z0-9._-]/g, '_')}` : '';
+  return `stems:${fileId}:${chain}${variant}`;
 }
 
 /**
@@ -149,13 +151,14 @@ export function decodeStemPack(buf) {
  * @param {string} fileId
  * @param {string[]} modelIds
  * @param {{ clean: Float32Array[], noise: Float32Array[], sampleRate: number }} result
+ * @param {string} [processingRevision]
  */
-export async function saveStemsDurable(fileId, modelIds, result) {
+export async function saveStemsDurable(fileId, modelIds, result, processingRevision = '') {
   if (!fileId || !result?.clean?.length) return null;
   if (!canPersistStems(result)) {
     return null; // skip silently — too large for browser storage / RAM
   }
-  const key = stemDurableKey(fileId, modelIds);
+  const key = stemDurableKey(fileId, modelIds, processingRevision);
   let ab;
   try {
     ab = encodeStemPack(result);
@@ -175,6 +178,7 @@ export async function saveStemsDurable(fileId, modelIds, result) {
     createdAt: Date.now(),
     modelIds: modelIds || [],
     sampleRate: result.sampleRate,
+    processingRevision: processingRevision || undefined,
   };
   const db = await openMeta();
   const tx = db.transaction(META_STORE, 'readwrite');
@@ -186,10 +190,11 @@ export async function saveStemsDurable(fileId, modelIds, result) {
 /**
  * @param {string} fileId
  * @param {string[]} modelIds
+ * @param {string} [processingRevision]
  */
-export async function loadStemsDurable(fileId, modelIds) {
+export async function loadStemsDurable(fileId, modelIds, processingRevision = '') {
   if (!fileId) return null;
-  const key = stemDurableKey(fileId, modelIds);
+  const key = stemDurableKey(fileId, modelIds, processingRevision);
   try {
     const db = await openMeta();
     const tx = db.transaction(META_STORE, 'readonly');

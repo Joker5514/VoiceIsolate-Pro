@@ -132,7 +132,7 @@ CLAUDE.md §3 / `.env.example`, or wire them if they are intended future control
 ### 4. [Low / Informational] Dev ↔ prod CSP divergence is wider than "mirrors"
 `server/securityHeaders.js` states "Production (Vercel) mirrors these," but `vercel.json` is
 deliberately **broader** than the dev CSP:
-- `script-src` adds `https://www.gstatic.com` and `/_vercel/insights/` (third-party script origins).
+- `script-src` adds the `www.gstatic.com` origin and `/_vercel/insights/` (third-party script origins).
 - `connect-src` adds Vercel Blob (`*.public.blob.vercel-storage.com`), Firebase
   (`identitytoolkit` / `firestore` / `securetoken`), and `api.revenuecat.com`.
 

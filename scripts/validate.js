@@ -115,8 +115,10 @@ check(!appJs.includes('applyNR(buf,amt,smooth'), 'Old stub applyNR removed');
 // Phase 2: Wired sliders (legacy monolith only — modular shell delegates to slider-map)
 console.log('\nWired Sliders (Phase 2):');
 if (isLegacyMonolith) {
-  const wiredSliders = ['applyBgSuppress','applyCrosstalkCancel','applyFormantShift','applyPhaseCorr','applyDereverb','applyDither'];
+  const wiredSliders = ['applyBgSuppress','applyCrosstalkCancel','applyFormantShift','applyPhaseCorr','applyDereverb'];
   wiredSliders.forEach(fn => check(appJs.includes(fn), `${fn} implemented`));
+  check(appJs.includes('function encodeWavBuffer(audioBuffer, ditherMode = 0)'), 'dither encoding boundary implemented');
+  check(!appJs.includes('applyDither'), 'Dither stays out of preview PCM');
 } else {
   console.log('  ℹ  Wired-slider body checks skipped (modular Engineer shell)');
 }

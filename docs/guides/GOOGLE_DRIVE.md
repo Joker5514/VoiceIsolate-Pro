@@ -12,7 +12,7 @@ Optional **Open from Drive** and **Save to Drive** on Landing + Engineer (Web, E
 4. Authorized JavaScript origins (examples):
    - `https://voice-isolate-pro.vercel.app`
    - `http://127.0.0.1:3000` (dev)
-   - Capacitor origin (e.g. `https://voiceisolatepro.app`)
+   - Capacitor virtual origin (e.g. `voiceisolatepro.app`; not a public URL)
    - Electron: your `vip://` / localhost dev URL as configured
 5. Inject at runtime (never commit real secrets):
 

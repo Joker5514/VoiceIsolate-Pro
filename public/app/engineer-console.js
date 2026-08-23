@@ -25,10 +25,14 @@
     try {
       document.body.classList.add('eng-console', 'ec-auto-analysis');
       document.documentElement.dataset.engConsole = '1';
-      // Mobile: Simple view first — fewer open panels, less layout thrash on cold open.
-      if (isMobileShell()) {
-        document.body.classList.add('ec-simple');
-      }
+      // Engineer Mode is a complete shared rack on web, Android, and desktop.
+      // Simple view is an explicit user preference, never a device-memory or
+      // platform heuristic that silently hides controls.
+      try {
+        if (localStorage.getItem('vip-engineer-view') === 'simple') {
+          document.body.classList.add('ec-simple');
+        }
+      } catch { /* preference is optional */ }
       buildLayout();
       injectIntegrityCards();
       injectSummaryCards();
@@ -334,6 +338,9 @@
       const simple = document.body.classList.toggle('ec-simple');
       btn.setAttribute('aria-pressed', String(simple));
       btn.textContent = simple ? 'Engineer view' : 'Simple view';
+      try {
+        localStorage.setItem('vip-engineer-view', simple ? 'simple' : 'full');
+      } catch { /* preference is optional */ }
     });
     actions.appendChild(btn);
   }

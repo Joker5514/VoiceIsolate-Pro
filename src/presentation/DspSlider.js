@@ -224,6 +224,7 @@ export function createDspSliderRow(options) {
   range.type = 'range';
   range.id = `sl_${id}`;
   range.name = id;
+  range.dataset.sliderId = id;
   range.className = 'dsp-slider';
   if (spec.rt) range.classList.add('realtime');
   range.min = String(min);

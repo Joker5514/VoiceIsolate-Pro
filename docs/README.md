@@ -36,7 +36,7 @@ Single map of product, architecture, platform, and historical docs.
 | Document | Description |
 |----------|-------------|
 | [guides/ANALYSIS_WORKSPACE.md](guides/ANALYSIS_WORKSPACE.md) | Full-audio analysis, Analyzer↔WhisperHunter joint map, deferred decode |
-| [releases/VoiceIsolate_Pro_v25_Current_State.pdf](releases/VoiceIsolate_Pro_v25_Current_State.pdf) | **Latest product snapshot PDF** (v25.0.0 current state) |
+| [releases/VoiceIsolate_Pro_v25_Current_State.pdf](releases/VoiceIsolate_Pro_v25_Current_State.pdf) | Historical v25.0.0 product snapshot; current published release is v25.0.2 |
 | [releases/VoiceIsolate_Pro_v24_Latest.pdf](releases/VoiceIsolate_Pro_v24_Latest.pdf) | Prior v24 release notes PDF |
 | [guides/WORKLETS.md](guides/WORKLETS.md) | AudioWorklet packaging (web, Android, desktop) |
 | [guides/MODEL_DELIVERY.md](guides/MODEL_DELIVERY.md) | ONNX delivery, integrity, offline packaging |
@@ -50,6 +50,7 @@ Single map of product, architecture, platform, and historical docs.
 | [guides/SAM_AUDIO.md](guides/SAM_AUDIO.md) | SAM-**Audio** (sound separation) — Desktop worker / optional ONNX |
 | [SAM3_TECHNICAL_DOCUMENTATION.md](SAM3_TECHNICAL_DOCUMENTATION.md) | SAM **3** (vision/video) — sidecar brief, flags, `src/sam3_integration/` status |
 | [DOWNLOADS.md](DOWNLOADS.md) | Canonical GitHub Release download URLs |
+| [../CHANGELOG.md](../CHANGELOG.md) | Keep a Changelog release history |
 | [audits/CI-FIX-PENDING-WORKFLOW-SCOPE.md](audits/CI-FIX-PENDING-WORKFLOW-SCOPE.md) · `pnpm ci:apply-patches` | Apply deploy/Android workflow patches (needs OAuth `workflow` scope) |
 
 ---
@@ -58,7 +59,7 @@ Single map of product, architecture, platform, and historical docs.
 
 | Document | Description |
 |----------|-------------|
-| [adr/001-firebase-exception.md](adr/001-firebase-exception.md) | Firebase auth/billing UI exception (not audio processing) |
+| [adr/001-firebase-exception.md](adr/001-firebase-exception.md) | Superseded Firebase auth/billing proposal; current Firebase use is Drive OAuth only |
 | [adr/002-google-drive-file-io.md](adr/002-google-drive-file-io.md) | Optional user-initiated Google Drive import/export |
 | [guides/GOOGLE_DRIVE.md](guides/GOOGLE_DRIVE.md) | Drive setup (scopes, origins, privacy copy) |
 | [audits/README.md](audits/README.md) | Point-in-time audit index |

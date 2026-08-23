@@ -43,6 +43,10 @@
 'use strict';
 
 importScripts('/lib/ort.min.js');
+// Classic-worker helper: applies the immutable Engineer Mode snapshot inside
+// the existing fused STFT/iSTFT. Do not convert this worker to ESM; ORT uses
+// importScripts in this production path.
+importScripts('/src/workers/EngineerSpectralControls.js');
 
 // Canonical schema (keep in sync with ModelIdbSchema.js + ml-worker-fetch-cache.js)
 const IDB_NAME = 'vip-model-cache';
@@ -540,11 +544,13 @@ function getStftCounters() {
  * {@link runFusedSpectralMaskChain}: **one forward STFT**, product of masks,
  * **one inverse STFT**. Waveform-only models never enter this function.
  */
-async function runSpectralMask(entry, session, samples, onProgress) {
+async function runSpectralMask(entry, session, samples, onProgress, processingConfig = null, sampleRate = 48000) {
   return runFusedSpectralMaskChain(
     [{ entry, session }],
     samples,
     onProgress,
+    processingConfig,
+    sampleRate,
   );
 }
 
@@ -555,7 +561,13 @@ async function runSpectralMask(entry, session, samples, onProgress) {
  * @param {(p: number) => void} onProgress
  * @returns {Promise<Float32Array>}
  */
-async function runFusedSpectralMaskChain(heads, samples, onProgress) {
+async function runFusedSpectralMaskChain(
+  heads,
+  samples,
+  onProgress,
+  processingConfig = null,
+  sampleRate = 48000,
+) {
   if (!heads?.length) throw new Error('[VIP][MLWorker] empty spectral head list');
   const entry0 = heads[0].entry;
   const N = entry0.fftSize;
@@ -578,6 +590,16 @@ async function runFusedSpectralMaskChain(heads, samples, onProgress) {
   const im = new Float32Array(N);
   let cur = makeStftBatchBuf(batchMax, bins);
   let nxt = makeStftBatchBuf(batchMax, bins);
+  // One stateful processor per channel/job. It mutates the already-masked
+  // bins before the one existing iSTFT; no extra analysis/reconstruction pass.
+  const engineerProcessor = typeof self.createEngineerFrameProcessor === 'function'
+    ? self.createEngineerFrameProcessor(processingConfig, {
+      fftSize: N,
+      hop,
+      bins,
+      sampleRate,
+    })
+    : null;
 
   // One analysis + one reconstruction cycle per channel (batches are chunking only).
   _stftForwardCount += 1;
@@ -663,6 +685,9 @@ async function runFusedSpectralMaskChain(heads, samples, onProgress) {
         }
         re[k] = cur.batchRe[off + k] * m;
         im[k] = cur.batchIm[off + k] * m;
+      }
+      if (engineerProcessor) {
+        engineerProcessor.applyFrame(re, im, cur.batchMags, off);
       }
       hasPrevMask = true;
       for (let k = bins; k < N; k++) {
@@ -1007,7 +1032,7 @@ async function runUniversalSeparate(msg) {
   }
 }
 
-async function processRequest({ requestId, modelId, modelIds, channelData, sampleRate }) {
+async function processRequest({ requestId, modelId, modelIds, channelData, sampleRate, processingConfig = null }) {
   // Production spectral path: compatible spectral-mask heads (same geometry)
   // fuse on **one STFT → product of masks → one iSTFT** per channel.
   // Waveform-only models (e.g. demucs) are a separate branch and never claim
@@ -1035,6 +1060,11 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
   };
 
   const entries = chain.map((id) => MANIFEST[id]);
+  const engineerConfigAccepted = typeof self.sanitizeEngineerProcessingConfig === 'function'
+    && Boolean(self.sanitizeEngineerProcessingConfig(processingConfig));
+  const requestedProcessingRevision = engineerConfigAccepted && typeof processingConfig?.revision === 'string'
+    ? processingConfig.revision
+    : null;
   let pipelineMode = 'serial';
   let clean;
 
@@ -1049,7 +1079,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       }
       clean = await Promise.all(channelData.map((samples, ch) => {
         const progress = (p) => onProgress((ch + p) / channelData.length);
-        return runFusedSpectralMaskChain(heads, samples, progress);
+        return runFusedSpectralMaskChain(heads, samples, progress, processingConfig, sampleRate);
       }));
     } else {
       // ── Mixed / waveform-only branch (not single-STFT invariant) ──────
@@ -1069,7 +1099,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
           const step = stepBase + ch;
           const progress = (p) => onProgress((step + p) / totalSteps);
           if (entry.strategy === 'spectral-mask') {
-            return runSpectralMask(entry, session, samples, progress);
+            return runSpectralMask(entry, session, samples, progress, processingConfig, sampleRate);
           }
           if (entry.strategy === 'waveform') {
             return runWaveformMask(entry, session, samples, sampleRate, progress);
@@ -1100,6 +1130,9 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       pipelineMode,
       modelChain: chain,
       stftCounts: stft,
+      appliedProcessingConfigRevision: entries.some((entry) => entry.strategy === 'spectral-mask')
+        ? requestedProcessingRevision
+        : null,
       backend: BACKEND || null,
     },
     transfers,

@@ -13,7 +13,7 @@ import { calibrateRegistry } from './slider-calibration.js';
  *   default   – value at boot / reset
  *   unit      – display suffix
  *   transform – value → worklet/worker scale conversion
- *   target    – 'worklet' | 'worker' | 'both'
+ *   target    – 'worklet' | 'worker' | 'postStem' | 'export'
  *   rt        – true → cyan accent (live, <10 ms latency)
  *   group     – panel id inside index.html
  *   tip       – tooltip description
@@ -23,11 +23,10 @@ import { calibrateRegistry } from './slider-calibration.js';
  *  • gateAttack / gateRelease / gateHold / gateLookahead:  added
  *    correct dsp-processor._params keys (worklet ignores unknowns
  *    gracefully so old entries were no-ops — now correctly routed).
- *  • nrAmount transform fixed: registry had v/100 but dsp-processor
- *    already expects 0-1 float, so transform kept as v/100 matching
- *    index slider range 0-100.
- *  • deEssFreq / deEssAmt: were 'worklet' but dsp-processor does NOT
- *    implement them — rerouted to 'worker' (ml-worker handles de-ess).
+ *  • nrAmount retains its 0–100 percentage contract because the process-time
+ *    ML spectral snapshot performs the normalized conversion at its consumer.
+ *  • deEssFreq / deEssAmt target the active vip-deesser AudioWorklet through
+ *    the Live-Mix bridge; they are not handled by the legacy dsp-processor.
  *  • stereoWidth / outWidth: dsp-processor has no stereo path —
  *    kept as worklet with step 1 for future OfflineAudioContext node.
  *  • harmOrder: integer-only param → step 1.
@@ -84,7 +83,7 @@ export const SLIDER_HINTS = {
   gateAttack: 'Sets how quickly the gate opens when speech returns. Shorten toward 5 ms for tight podcast edits; lengthen toward 30 ms to avoid chopping soft consonants.',
   gateRelease: 'Sets how slowly the gate closes after speech ends. Lengthen toward 400 ms for natural room tails; shorten toward 100 ms for aggressive noise removal.',
   gateHold: 'Keeps the gate open briefly after level drops to prevent flutter between syllables. Raise toward 80 ms when quiet vowels get chopped in forensic clips.',
-  gateLookahead: 'Pre-reads audio so the gate opens before a word starts (offline only). Raise toward 5 ms when plosives are late-cutting in an interview export.',
+  gateLookahead: 'Delays Live-Mix playback slightly so the gate opens before a word starts. Raise toward 5 ms when plosives are late-cutting; it adds matching preview latency.',
   nrAmount: 'Sets overall spectral noise reduction strength. Raise toward 85% for steady hiss or air-conditioning; lower toward 50% if voices sound underwater.',
   nrSensitivity: 'Controls how aggressively quiet bins are treated as noise. Raise toward 70% in constant background hum; lower toward 30% to protect soft consonants.',
   nrSpectralSub: 'Balances subtraction depth against musical noise artifacts. Increase toward 65% for fan noise; decrease toward 25% when tonal ringing appears.',
@@ -121,7 +120,7 @@ export const SLIDER_HINTS = {
   harmRecov: 'Rebuilds harmonics lost to aggressive noise reduction. Raise toward 40% when the voice sounds fizzy or hollow after heavy NR.',
   harmOrder: 'Sets how many overtones are restored. Raise toward 5 for fuller speech recovery; lower toward 2 if artifacts appear in the highs.',
   stereoWidth: 'Widens or collapses the stereo image. Pull toward 0% for mono podcast delivery; push toward 140% only when the source is a clean stereo room mic.',
-  phaseCorr: 'Aligns stereo channels to fix cancellation. Raise toward 50% when dual lav mics on one subject sound thin or swishy.',
+  phaseCorr: 'Blends each stereo channel toward their shared midpoint for a more mono-stable result. It does not measure or correct a microphone time offset.',
 
   voiceIso: {
     hint: 'Sets machine-learning voice mask strength. Raise toward 85% to pull speech from crowd noise; lower toward 55% if words sound gargled.',
@@ -170,7 +169,7 @@ export const SLIDER_HINTS = {
   outWidth: 'Sets final stereo spread on the output bus. Narrow toward 0% for mono distribution; widen toward 130% only when the source is true stereo.',
 
   whisperLift: {
-    hint: 'Boosts bins where the voice mask is confident after isolation. Raise toward 24 dB when a whisper is buried under club noise; lower toward 10 dB for subtle lift.',
+    hint: 'Boosts bins where the voice mask is confident after isolation. The 0–40 dB display maps continuously to a bounded 0–12 dB internal lift; start low for buried whispers.',
     purpose: 'Post-mask gain for high-confidence whisper bins after isolation.',
     bestFor: ['whisper', 'forensic', 'crowd'],
     artifactRisk: 'pumping, harsh consonants, noise floor lift',
@@ -302,16 +301,16 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'gateLookahead', key: 'gateLookahead', label: 'Lookahead',
     min: 0, max: 20, step: 1, default: 2, unit: 'ms',
-    transform: v => v, target: 'worker', rt: false, group: 'tab-gate',
-    tip: 'Offline only. Pre-reads upcoming signal so the gate opens before a transient hits.'
+    transform: v => v, target: 'worklet', rt: true, group: 'tab-gate',
+    tip: 'Delays Live-Mix playback by up to 20 ms so the gate opens before a transient hits.'
   },
 
   // ── Noise Reduction (5 sliders) ────────────────────────────────────────────
   {
     id: 'nrAmount', key: 'nrAmount', label: 'NR Amount',
     min: 0, max: 100, step: 5, default: 52, unit: '%',
-    transform: v => v / 100, target: 'both', rt: false, group: 'tab-nr',
-    tip: 'Strength of spectral noise reduction. 0 = off, 100 = maximum suppression. Start at 70–80% for hiss/fan noise.'
+    transform: v => v, target: 'worker', rt: false, group: 'tab-nr',
+    tip: 'Strength of spectral noise reduction. Captured at Process; 0 = off, 100 = maximum suppression. Start at 70–80% for hiss/fan noise.'
   },
   {
     id: 'nrSensitivity', key: 'nrSensitivity', label: 'NR Sensitivity',
@@ -532,24 +531,24 @@ const RAW_SLIDER_REGISTRY = [
     tip: '0% = mono, 100% = natural stereo, 200% = extra-wide. Affects M/S balance post-processing.'
   },
   {
-    id: 'phaseCorr', key: 'phaseCorr', label: 'Phase Correlation',
+    id: 'phaseCorr', key: 'phaseCorr', label: 'Mono Correlation',
     min: 0, max: 100, step: 5, default: 0, unit: '%',
-    transform: v => v, target: 'worker', rt: false, group: 'tab-adv',
-    tip: 'Corrects phase cancellation between stereo channels. Useful for dual-mic setups with time offset.'
+    transform: v => v, target: 'postStem', rt: false, group: 'tab-adv',
+    tip: 'Blends stereo channels toward their shared midpoint for mono stability. It does not estimate or correct a dual-mic time offset.'
   },
 
   // ── Separation (6 sliders) ─────────────────────────────────────────────────
   {
     id: 'voiceIso', key: 'voiceIso', label: 'Voice Isolation',
     min: 0, max: 100, step: 5, default: 72, unit: '%',
-    transform: v => v, target: 'worker', rt: false, group: 'tab-sep',
-    tip: 'ML mask strength for isolating the primary voice from all other sources. ~70% is clean without over-processing.'
+    transform: v => v, target: 'worklet', rt: true, group: 'tab-sep',
+    tip: 'Live-Mix clean-stem balance after one ML separation. ~70% is clean without over-processing.'
   },
   {
     id: 'bgSuppress', key: 'bgSuppress', label: 'BG Suppress',
     min: 0, max: 100, step: 5, default: 38, unit: '%',
-    transform: v => v, target: 'worker', rt: false, group: 'tab-sep',
-    tip: 'Suppression strength on non-voice bands. Moderate values avoid thin/hollow speech.'
+    transform: v => v, target: 'worklet', rt: true, group: 'tab-sep',
+    tip: 'Live-Mix residual-stem attenuation after one ML separation. Moderate values avoid thin/hollow speech.'
   },
   {
     id: 'voiceFocusLo', key: 'voiceFocusLo', label: 'Voice Focus Lo',
@@ -566,7 +565,7 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'crosstalkCancel', key: 'crosstalkCancel', label: 'Crosstalk Cancel',
     min: 0, max: 100, step: 5, default: 0, unit: '%',
-    transform: v => v, target: 'worker', rt: false, group: 'tab-sep',
+    transform: v => v, target: 'postStem', rt: false, group: 'tab-sep',
     tip: 'Reduces bleed between two simultaneous microphones by subtracting the correlated signal.'
   },
 
@@ -586,7 +585,7 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'ditherAmt', key: 'ditherAmt', label: 'Dither',
     min: 0, max: 3, step: 1, default: 0, unit: '',
-    transform: v => v, target: 'worklet', rt: false, group: 'tab-out',
+    transform: v => v, target: 'export', rt: false, group: 'tab-out',
     tip: 'Noise shaping dither applied before bit-depth reduction: 0=off, 1=TPDF, 2=shaped, 3=high-pass.'
   },
   {
@@ -600,49 +599,49 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'whisperLift', key: 'whisperLift', label: 'Whisper Lift Gain',
     min: 0, max: 40, step: 1, default: 0, unit: 'dB',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
-    tip: 'Post-mask amplification on bins where voice confidence exceeds 0.55. Off by default — only enable for buried whispers.'
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
+    tip: 'Post-mask lift on high-confidence voice bins. The 0–40 dB display maps continuously to a bounded 0–12 dB internal gain; off by default.'
   },
   {
     id: 'crowdNull', key: 'crowdNull', label: 'Crowd Null Depth',
     min: 0, max: 100, step: 1, default: 0, unit: '%',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Spectral subtraction targeting 200–2500 Hz crowd murmur. Off by default (expensive extreme path).'
   },
   {
     id: 'bassCrush', key: 'bassCrush', label: 'Bass Crush (Sub/Kick)',
     min: 0, max: 100, step: 1, default: 0, unit: '%',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Attenuates kick drum and sub bass that mask whisper formants. Off by default.'
   },
   {
     id: 'reverbStrip', key: 'reverbStrip', label: 'Reverb Strip (RT60)',
     min: 0, max: 2000, step: 10, default: 0, unit: 'ms',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Single-pass spectral dereverb driven by estimated RT60. Prefer Dereverb Amount for standard rooms.'
   },
   {
     id: 'voiceTunnel', key: 'voiceTunnel', label: 'Voice Tunnel (Formant)',
     min: 0, max: 100, step: 1, default: 0, unit: '%',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Narrow-band formant emphasis for whisper intelligibility. Off by default.'
   },
   {
     id: 'musicKill', key: 'musicKill', label: 'Music Kill (Comb)',
     min: 0, max: 100, step: 1, default: 0, unit: '%',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Suppresses steady-state harmonic music while preserving speech transients. Off by default.'
   },
   {
     id: 'snrFloor', key: 'snrFloor', label: 'SNR Rescue Floor',
     min: -80, max: -20, step: 1, default: -52, unit: 'dBFS',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Minimum power threshold — bins below are treated as noise-only (active only with extreme isolation).'
   },
   {
     id: 'whisperMode', key: 'whisperMode', label: 'Whisper Mode',
     min: 0, max: 3, step: 1, default: 0, unit: '',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Processing aggression: Off, Light, Heavy, or Forensic multi-pass. Keep Off when ML isolation succeeds.'
   },
 
@@ -650,25 +649,25 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'whisperClarity', key: 'whisperClarity', label: 'Whisper Clarity',
     min: 0, max: 100, step: 1, default: 65, unit: '%',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Sigmoid-mapped clarity floor for WhisperHunter gain (p_clarity).'
   },
   {
     id: 'whisperSensitivity', key: 'whisperSensitivity', label: 'Whisper Sensitivity',
     min: 0, max: 100, step: 1, default: 55, unit: '%',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Scales W-VAD energy threshold θ_e — higher catches quieter whispers.'
   },
   {
     id: 'whisperThreshold', key: 'whisperThreshold', label: 'Whisper Threshold',
     min: 0, max: 100, step: 1, default: 50, unit: '%',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Steepens suppression curve w_str = 1 + 2·p_threshold.'
   },
   {
     id: 'transientShaper', key: 'transientShaper', label: 'Transient Shaper',
     min: -100, max: 100, step: 5, default: 0, unit: '',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Bipolar transient emphasis: negative softens, positive sharpens consonants.'
   },
   {
@@ -680,13 +679,13 @@ const RAW_SLIDER_REGISTRY = [
   {
     id: 'roomCorrection', key: 'roomCorrection', label: 'Room Correction',
     min: 0, max: 100, step: 1, default: 0, unit: '%',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Adds to dereverb strength for whisper tails. Prefer Dereverb Amount for standard rooms.'
   },
   {
     id: 'subHarmonic', key: 'subHarmonic', label: 'Sub Harmonic',
     min: 0, max: 100, step: 1, default: 0, unit: '%',
-    transform: v => v, target: 'both', rt: false, group: 'tab-extreme',
+    transform: v => v, target: 'worker', rt: false, group: 'tab-extreme',
     tip: 'Sub-harmonic body reinforcement for thin whisper recordings.'
   },
 ];

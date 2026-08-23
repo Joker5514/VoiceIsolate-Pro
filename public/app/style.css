@@ -1758,8 +1758,21 @@ details.slider-group[open] > .vip-section-summary .chevron { color: var(--vip-ne
 #tab-extreme-group .slider-group-header { color: #a78bfa; }
 #tab-extreme-group.active .slider-group-header { border-bottom-color: #7c3aed; color: #c4b5fd; }
 
-.whisper-mode-row{grid-template-columns:130px 1fr 22px}
-.whisper-mode-row .whisper-mode-group{grid-column:2}
+.whisper-mode-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr) var(--vip-hit, 40px) var(--vip-hit, 40px) 22px;
+  grid-template-areas:
+    "label group reset lock hint"
+    "panel panel panel panel panel";
+  align-items: center;
+  gap: 6px 8px;
+}
+.whisper-mode-row .sr-label { grid-area: label; }
+.whisper-mode-row .whisper-mode-group { grid-area: group; margin: 8px 0; }
+.whisper-mode-row .whisper-mode-reset { grid-area: reset; }
+.whisper-mode-row .slider-lock-btn { grid-area: lock; }
+.whisper-mode-row .slider-hint-btn { grid-area: hint; }
+.whisper-mode-row .slider-hint { grid-area: panel; }
 .whisper-mode-group { display: flex; gap: 4px; margin: 8px 0 14px; width: 100%; }
 .wm-btn {
   flex: 1; padding: 7px 4px; font-size: 0.72em; font-weight: 700;

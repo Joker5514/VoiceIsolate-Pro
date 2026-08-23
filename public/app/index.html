@@ -796,10 +796,11 @@
       console.error('[VIP] Failed to load module: ./vip-fixes.js', err);
       if (typeof window._vipReportError === 'function') window._vipReportError('./vip-fixes.js', err);
     });
-    /* ✅ WIRED: slider-ticks.js — tick marks, value callout bubbles, snap-to-default.
-       Loads AFTER app.js + vip-boot.js so all slider panels are in the DOM before
-       initSliderTicks() scans for [data-ticks] attributes. */
-    import('./slider-ticks.js').catch(err => {
+    /* Tick marks + snap wiring. The idempotent initializer observes rows that
+       finish mounting after boot, so every canonical DspSlider gets attached. */
+    await import('./slider-ticks.js').then(({ initSliderTicks }) => {
+      initSliderTicks();
+    }).catch(err => {
       console.warn('[VIP] slider-ticks.js not loaded (non-fatal):', err);
     });
     /* debug-menu.js — live system debug panel (` key to toggle) */

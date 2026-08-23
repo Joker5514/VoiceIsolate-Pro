@@ -34,6 +34,7 @@ const REQUIRED = [
   'lib/ort.min.js',
   'lib/ort-wasm-simd-threaded.wasm',
   'src/workers/MLWorker.js',
+  'src/workers/EngineerSpectralControls.js',
   'src/workers/GateProcessor.js',
   'src/workers/DeEsserProcessor.js',
   'src/presentation/DspSlider.js',

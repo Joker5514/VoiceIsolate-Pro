@@ -126,6 +126,18 @@ ${presetCalibration}
 `;
 }
 
+function buildParameterSchemaShim() {
+  const parameterSchema = stripModuleSyntax(
+    fs.readFileSync(path.join(SRC_CORE_DIR, 'ParameterSchema.js'), 'utf8')
+  );
+  return `
+const { buildMlProcessingConfig, LIVE_MIX_PARAM_IDS } = (function _injectParameterSchema() {
+${parameterSchema}
+  return { buildMlProcessingConfig, LIVE_MIX_PARAM_IDS };
+})();
+`;
+}
+
 function buildMediaTypesShim() {
   return fs.readFileSync(path.join(__dirname, '../../src/core/media-types.js'), 'utf8')
     .replace(/^export default\s*\{[\s\S]*$/m, '')
@@ -138,6 +150,10 @@ function clearStemCache() {}
 function resetTimings() {}
 function stageStart() {}
 function stageEnd() {}
+async function processInChunks({ total, runChunk, onProgress }) {
+  runChunk(0, total);
+  if (onProgress) onProgress(1);
+}
 `;
 }
 
@@ -205,9 +221,10 @@ function getAppCode() {
   }
   const mediaTypesShim = buildMediaTypesShim();
   const presetCalibrationShim = buildPresetCalibrationShim();
+  const parameterSchemaShim = buildParameterSchemaShim();
   const mediaDecodeShim = buildMediaDecodeShim();
   const pipelineShim = buildPipelineShim();
-  return preamble + '\n' + inlined + '\n' + presetCalibrationShim + '\n' + mediaTypesShim + '\n' + mediaDecodeShim + '\n' + pipelineShim + '\n' + appJsCode;
+  return preamble + '\n' + inlined + '\n' + presetCalibrationShim + '\n' + parameterSchemaShim + '\n' + mediaTypesShim + '\n' + mediaDecodeShim + '\n' + pipelineShim + '\n' + appJsCode;
 }
 
 module.exports = getAppCode;

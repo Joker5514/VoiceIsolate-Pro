@@ -39,6 +39,14 @@ describe('MLStemCache', () => {
     expect(a).not.toBe(b);
   });
 
+  test('stemCacheKey differentiates Process-time Engineer snapshots', () => {
+    const ch = [new Float32Array([0.1, 0.2, 0.3, 0.4])];
+    const a = stemCacheKey(ch, 48000, ['bsrnn_vocals'], 'clip.wav', 'emc1-alpha');
+    const b = stemCacheKey(ch, 48000, ['bsrnn_vocals'], 'clip.wav', 'emc1-beta');
+    expect(a).not.toBe(b);
+    expect(a).toContain('engineer:emc1-alpha');
+  });
+
   test('setCachedStems stores and getCachedStems retrieves copies', () => {
     const key = 'test-key';
     const cleanIn = new Float32Array([1, 2]);

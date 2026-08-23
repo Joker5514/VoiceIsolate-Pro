@@ -4,21 +4,27 @@ VoiceIsolate Pro ships **three** AudioWorklet processor files on every platform 
 
 ## Registry
 
-Canonical list: [`scripts/worklet-manifest.json`](../scripts/worklet-manifest.json)
+Canonical list: [`scripts/worklet-manifest.json`](../../scripts/worklet-manifest.json)
 
 | ID | File | Processor | Role | Loaded at runtime |
 |----|------|-----------|------|-----------------|
-| `vip-gate` | `src/workers/GateProcessor.js` | `vip-gate` | **Active** | `PlaybackMixer._loadGate()` |
+| `vip-gate` | `src/workers/GateProcessor.js` | `vip-gate` | **Active, 0–20 ms lookahead** | `PlaybackMixer._loadGate()` |
 | `vip-deesser` | `src/workers/DeEsserProcessor.js` | `vip-deesser` | **Active** | `PlaybackMixer._loadDeEsser()` |
 | `dsp-processor` | `public/app/dsp-processor.js` | `dsp-processor` | **Legacy-shipped** | Not `addModule`-loaded (live SAB pipeline removed; see CLAUDE.md §1.1) |
 
 Active worklets run on **playback stems only** — never on a live microphone and never re-running ML.
+
+`src/workers/EngineerSpectralControls.js` is deliberately **not** an
+AudioWorklet. `MLWorker` imports it during offline Process work, where it applies
+the Engineer spectral configuration inside the already-existing STFT frame loop.
+It is copied and precached with the worker assets on Web, Android, and Desktop.
 
 ## Delivery path
 
 ```
 src/workers/GateProcessor.js
 src/workers/DeEsserProcessor.js          ──► pnpm build ──► build/src/workers/*.js
+src/workers/EngineerSpectralControls.js  ──►              ──► build/src/workers/*.js
 public/app/dsp-processor.js              ──►              ──► build/app/dsp-processor.js
                                                     │
                     ┌───────────────────────────────┼───────────────────────────────┐
@@ -34,7 +40,9 @@ public/app/dsp-processor.js              ──►              ──► build/
 
 ## Offline precache
 
-`public/app/sw.js` `APP_SHELL` precaches all three worklet URLs so the service worker can serve them without a network round-trip after install.
+`public/app/sw.js` `APP_SHELL` precaches all three worklet URLs and the offline
+Engineer spectral helper so the service worker can serve them without a network
+round-trip after install.
 
 ## Integrity
 

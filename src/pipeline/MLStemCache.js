@@ -15,11 +15,13 @@ const _cache = new Map();
  * @param {number} sampleRate
  * @param {string[]} modelIds
  * @param {string} [sourceName]
+ * @param {string} [processingRevision] Process-time Engineer configuration.
  */
-export function stemCacheKey(channelData, sampleRate, modelIds, sourceName = '') {
+export function stemCacheKey(channelData, sampleRate, modelIds, sourceName = '', processingRevision = '') {
   const models = modelIds.join('→');
+  const variant = processingRevision ? `|engineer:${processingRevision}` : '';
   const ch0 = channelData[0];
-  if (!ch0?.length) return `${models}|${sampleRate}|0|${sourceName}`;
+  if (!ch0?.length) return `${models}|${sampleRate}|0|${sourceName}${variant}`;
   const len = ch0.length;
   const nCh = channelData.length;
   const mid = ch0[len >> 1] ?? 0;
@@ -27,7 +29,7 @@ export function stemCacheKey(channelData, sampleRate, modelIds, sourceName = '')
   let sum = 0;
   const step = Math.max(1, Math.floor(len / 64));
   for (let i = 0; i < len; i += step) sum += Math.abs(ch0[i]);
-  return `${models}|${sampleRate}|${nCh}|${len}|${sum.toFixed(4)}|${ch0[0]}|${mid}|${end}|${sourceName}`;
+  return `${models}|${sampleRate}|${nCh}|${len}|${sum.toFixed(4)}|${ch0[0]}|${mid}|${end}|${sourceName}${variant}`;
 }
 
 export function getCachedStems(key) {

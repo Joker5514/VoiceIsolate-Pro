@@ -97,6 +97,7 @@ describe('createDspSliderRow', () => {
     expect(widget.row.dataset.sliderId).toBe('nrAmount');
     expect(widget.range.type).toBe('range');
     expect(widget.range.id).toBe('sl_nrAmount');
+    expect(widget.range.dataset.sliderId).toBe('nrAmount');
     expect(widget.range.getAttribute('aria-label')).toBe('NR Amount');
     expect(widget.range.getAttribute('aria-valuemin')).toBe('0');
     expect(widget.range.getAttribute('aria-valuemax')).toBe('100');

@@ -134,9 +134,7 @@ describe('DSP fallback must not pin at 88%', () => {
 describe('local-only / architecture guards still present', () => {
   test('no new STFT in postIsolationDeWhistle', () => {
     const start = appJs.indexOf('async _postIsolationDeWhistle');
-    const end = appJs.indexOf('async _applyOutputSafetyLimitAsync') > start
-      ? appJs.indexOf('async _applyOutputSafetyLimitAsync')
-      : appJs.indexOf('applyDither(buf');
+    const end = appJs.indexOf('\n  applyVoiceFocus(', start);
     const body = appJs.slice(start, end);
     expect(body).not.toMatch(/\._fft\(|forwardStft|inverseStft/i);
   });

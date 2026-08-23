@@ -48,7 +48,7 @@ const SLIDER_BINDINGS = Object.freeze([
   { id: 'gateAttackSlider', method: 'setGateAttack', initial: 5 },
   { id: 'gateReleaseSlider', method: 'setGateRelease', initial: 100 },
   // Tier-B: de-esser
-  { id: 'deEsserFreqSlider', method: 'setDeEsserFreq', initial: 6000 },
+  { id: 'deEsserFreqSlider', method: 'setDeEsserFreq', initial: 6500 },
   { id: 'deEsserAmountSlider', method: 'setDeEsserAmount', initial: 0 },
 ]);
 

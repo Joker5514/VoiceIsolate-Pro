@@ -51,6 +51,10 @@ describe('Slider DSP wiring', () => {
 
   criticalSliders.forEach(id => {
     test(`Slider '${id}' should appear in DSP processing code`, () => {
+      if (id === 'ditherAmt') {
+        expect(appJs).toContain(').export.ditherAmt');
+        return;
+      }
       // Check it's referenced in processing functions (not just the SLIDERS definition)
       const occurrences = (appJs.match(new RegExp(`p\\.${id}|params\\.${id}|p\\['${id}'\\]`, 'g')) || []).length;
       expect(occurrences).toBeGreaterThan(0);
@@ -81,8 +85,11 @@ describe('Slider DSP wiring', () => {
     expect(appJs).toContain('applyCrosstalkCancel');
   });
 
-  test('applyDither should exist', () => {
-    expect(appJs).toContain('applyDither');
+  test('dither is owned by the 16-bit encoder boundary, not preview PCM', () => {
+    expect(appJs).toContain('function encodeWavBuffer(audioBuffer, ditherMode = 0)');
+    const fallbackStart = appJs.indexOf('async _runFallbackPipeline');
+    const fallbackEnd = appJs.indexOf('\n  _applyOutputSafetyLimit(', fallbackStart);
+    expect(appJs.slice(fallbackStart, fallbackEnd)).not.toContain('applyDither');
   });
 });
 
