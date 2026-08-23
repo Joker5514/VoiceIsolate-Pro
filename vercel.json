@@ -48,10 +48,6 @@
   ],
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "/api/handler"
-    },
-    {
       "source": "/app/models/:filename",
       "destination": "https://3jq9akm8vl1tub82.public.blob.vercel-storage.com/:filename"
     },
