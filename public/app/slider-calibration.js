@@ -143,8 +143,8 @@ export const SLIDER_EXAMPLES = {
   ],
   phaseCorr: [
     { label: 'Off', value: 0 },
-    { label: 'Dual Mic Fix', value: 40 },
-    { label: 'Max Correction', value: 80 },
+    { label: 'Mono Stabilize', value: 40 },
+    { label: 'Maximum Blend', value: 80 },
   ],
   voiceIso: [
     { label: 'Podcast Voice', value: 72 },

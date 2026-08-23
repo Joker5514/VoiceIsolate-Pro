@@ -104,7 +104,19 @@ export async function separateStems(channelData, sampleRate, options = {}) {
     : options.modelId
       ? [options.modelId]
       : [...DEFAULT_ML_MODEL_IDS];
-  const cacheKey = stemCacheKey(channelData, sampleRate, modelIds, options.sourceName);
+  const processingRevision = typeof options.processingConfig?.revision === 'string'
+    ? options.processingConfig.revision
+    : '';
+  // Engineer spectral controls alter the reconstructed stems, so the result
+  // cache must be keyed by their Process-time snapshot. Slider drags do not
+  // reach this path; the key changes only when the user presses Process.
+  const cacheKey = stemCacheKey(
+    channelData,
+    sampleRate,
+    modelIds,
+    options.sourceName,
+    processingRevision,
+  );
   const cached = getCachedStems(cacheKey);
   if (cached) {
     options.onProgress?.({ type: 'stage', stage: 'separate', percent: 100, label: 'Using cached stems…' });
@@ -114,6 +126,7 @@ export async function separateStems(channelData, sampleRate, options = {}) {
       sampleRate: cached.sampleRate,
       passthrough: cached.passthrough,
       fromCache: true,
+      appliedProcessingConfigRevision: processingRevision || null,
     };
   }
 
@@ -141,7 +154,14 @@ export async function separateStems(channelData, sampleRate, options = {}) {
       copies.push(await copyFloat32Channel(channelData[ch], { yieldBudget }));
     }
   }
-  const msg = { type: 'process', requestId, channelData: copies, sampleRate, modelIds };
+  const msg = {
+    type: 'process',
+    requestId,
+    channelData: copies,
+    sampleRate,
+    modelIds,
+    processingConfig: options.processingConfig || null,
+  };
 
   return new Promise((resolve, reject) => {
     let lastProgressAt = Date.now();
@@ -212,6 +232,7 @@ export async function separateStems(channelData, sampleRate, options = {}) {
             passthrough: Boolean(m.passthrough),
             pipelineMode: m.pipelineMode || null,
             backend: m.backend || null,
+            appliedProcessingConfigRevision: m.appliedProcessingConfigRevision || null,
           };
           if (!out.passthrough) setCachedStems(cacheKey, out);
           resolve(out);

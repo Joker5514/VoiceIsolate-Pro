@@ -43,8 +43,8 @@ describe('SLIDER_REGISTRY', () => {
     }
   });
 
-  test('all target values are valid (worklet | worker | both)', () => {
-    const valid = new Set(['worklet', 'worker', 'both']);
+  test('all target values name an actual execution boundary', () => {
+    const valid = new Set(['worklet', 'worker', 'postStem', 'export']);
     for (const e of entries) {
       expect(valid.has(e.target)).toBe(true);
     }
@@ -56,12 +56,11 @@ describe('SLIDER_REGISTRY', () => {
     expect(entry.target).toBe('worklet');
   });
 
-  test('includes expected both-target slider: nrAmount (worklet needs 0..1 normalized value)', () => {
+  test('classifies nrAmount as a Process-time worker control', () => {
     const entry = entries.find(e => e.id === 'nrAmount');
     expect(entry).toBeDefined();
-    expect(entry.target).toBe('both');
-    // Verify the source contains a normalizing transform (v / 100) for nrAmount
-    expect(sliderMapSrc).toMatch(/id\s*:\s*'nrAmount'.*transform\s*:\s*v\s*=>\s*v\s*\/\s*100/s);
+    expect(entry.target).toBe('worker');
+    expect(sliderMapSrc).toMatch(/id\s*:\s*'nrAmount'.*rt\s*:\s*false/s);
   });
 
   test('all 67 slider IDs match the SLIDERS definition in app.js', () => {

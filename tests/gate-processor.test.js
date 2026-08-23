@@ -70,7 +70,7 @@ describe('GateProcessor', () => {
 
       expect(threshold).toBeDefined();
       expect(threshold.defaultValue).toBe(-40);
-      expect(threshold.minValue).toBe(-100);
+      expect(threshold.minValue).toBe(-120);
       expect(threshold.maxValue).toBe(0);
       expect(threshold.automationRate).toBe('k-rate');
     });
@@ -82,7 +82,7 @@ describe('GateProcessor', () => {
       expect(range).toBeDefined();
       expect(range.defaultValue).toBe(0);
       expect(range.minValue).toBe(0);
-      expect(range.maxValue).toBe(80);
+      expect(range.maxValue).toBe(120);
       expect(range.automationRate).toBe('k-rate');
     });
 

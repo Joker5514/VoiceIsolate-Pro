@@ -1804,3 +1804,34 @@ describe('Spectral subtraction through the full STFT pipeline', () => {
     expect(Math.abs(maxBin - expectedBin)).toBeLessThanOrEqual(3);
   });
 });
+
+describe('Live-Mix residual reconciliation', () => {
+  test('derives residual from the final clean stem instead of retaining stale ML noise', async () => {
+    const source = {
+      numberOfChannels: 2,
+      getChannelData(channel) {
+        return channel === 0
+          ? Float32Array.from([1, 0.5, -0.25, 0])
+          : Float32Array.from([0.75, -0.5, 0.25, 1]);
+      },
+    };
+    const clean = [
+      Float32Array.from([0.6, 0.25, -0.1, 0]),
+      Float32Array.from([0.5, -0.25, 0.1, 0.75]),
+    ];
+    const runtime = {
+      _postMlChunkSamples: () => 2,
+      _processAbortSignal: () => null,
+    };
+
+    const residual = await VoiceIsolatePro.prototype
+      ._reconcileLiveMixNoiseStem.call(runtime, clean, source);
+
+    [0.4, 0.25, -0.15, 0].forEach((value, index) => {
+      expect(residual[0][index]).toBeCloseTo(value, 6);
+    });
+    [0.25, -0.25, 0.15, 0.25].forEach((value, index) => {
+      expect(residual[1][index]).toBeCloseTo(value, 6);
+    });
+  });
+});

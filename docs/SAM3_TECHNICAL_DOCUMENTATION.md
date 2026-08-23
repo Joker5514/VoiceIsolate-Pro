@@ -144,7 +144,6 @@ Do not load from Hugging Face, fal, Replicate, or other remote hosts at runtime.
 - Hugging Face: https://huggingface.co/facebook/sam3
 - Meta AI: https://ai.meta.com/research/sam3/
 - Paper: https://arxiv.org/abs/2511.16719
-- Playground: https://segment-anything.com/
 
 Verify availability, access requirements, version compatibility, and license terms before adding any dependency or model asset.
 

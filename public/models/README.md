@@ -1,5 +1,11 @@
 # VoiceIsolate Pro — Speaker Diarization ONNX Models
 
+> This is an optional local diarization integration note, not the VoiceIsolate
+> production model card. The shipped isolation models are delivered through the
+> same-origin manifest described in [`docs/guides/MODEL_DELIVERY.md`](../../docs/guides/MODEL_DELIVERY.md).
+> The Hugging Face links below are third-party source references and are never
+> used as browser runtime fallback URLs.
+
 Place the following ONNX model files at these **exact** URL paths (served from `public/models/`):
 
 | Path | Model | Purpose |
@@ -42,7 +48,7 @@ const session = await ort.InferenceSession.create('/models/silero-vad.onnx', {
 ### 2. wespeaker-resnet34.onnx
 
 - **Repo:** [onnx-community/wespeaker-voxceleb-resnet34-LM](https://huggingface.co/onnx-community/wespeaker-voxceleb-resnet34-LM) (community ONNX export)
-- **Alternate:** [k2-fsa/sherpa-onnx speaker models](https://huggingface.co/csukuangfj/sherpa-onnx-wespeaker-voxceleb-resnet34-LM) — export ONNX ResNet34 256-dim
+- **Alternate:** [k2-fsa/sherpa-onnx model collection](https://github.com/k2-fsa/sherpa-onnx) — obtain a compatible ONNX ResNet34 256-dim export; access conditions are defined upstream
 - **Place as:** `/models/wespeaker-resnet34.onnx`
 - **Input:** `float32 [1, num_frames, 80]` log-mel spectrogram (25 ms window, 10 ms hop @ 16 kHz)
 - **Output:** `float32 [1, 256]` speaker embedding

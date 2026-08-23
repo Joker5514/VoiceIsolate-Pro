@@ -61,7 +61,7 @@ describe('DeEsserProcessor', () => {
       const input = [new Float32Array(128).fill(0.5)];
       const output = [new Float32Array(128)];
       expect(() => processor.process([input], [output], { frequency: [99999] })).not.toThrow();
-      expect(processor.lastFrequency).toBe(10000);
+      expect(processor.lastFrequency).toBe(16000);
     });
   });
 
@@ -82,9 +82,9 @@ describe('DeEsserProcessor', () => {
       const frequency = descriptors.find(d => d.name === 'frequency');
 
       expect(frequency).toBeDefined();
-      expect(frequency.defaultValue).toBe(6000);
-      expect(frequency.minValue).toBe(3500);
-      expect(frequency.maxValue).toBe(10000);
+      expect(frequency.defaultValue).toBe(6500);
+      expect(frequency.minValue).toBe(2000);
+      expect(frequency.maxValue).toBe(16000);
       expect(frequency.automationRate).toBe('k-rate');
     });
   });
@@ -97,7 +97,7 @@ describe('DeEsserProcessor', () => {
       expect(processor.sibilantEnvelope).toEqual([0, 0]);
       expect(processor.currentGain).toEqual([1, 1]);
       expect(processor.sampleRate).toBe(48000);
-      expect(processor.lastFrequency).toBe(6000);
+      expect(processor.lastFrequency).toBe(6500);
     });
   });
 

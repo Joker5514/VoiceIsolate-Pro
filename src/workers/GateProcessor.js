@@ -17,7 +17,7 @@ class GateProcessor extends AudioWorkletProcessor {
       {
         name: 'threshold',
         defaultValue: -40,
-        minValue: -100,
+        minValue: -120,
         maxValue: 0,
         automationRate: 'k-rate'
       },
@@ -27,7 +27,7 @@ class GateProcessor extends AudioWorkletProcessor {
         name: 'range',
         defaultValue: 0,
         minValue: 0,
-        maxValue: 80,
+        maxValue: 120,
         automationRate: 'k-rate'
       },
       {
@@ -52,6 +52,15 @@ class GateProcessor extends AudioWorkletProcessor {
         minValue: 0,
         maxValue: 1000,
         automationRate: 'k-rate'
+      },
+      {
+        // Delay the audible path while the detector sees the current block.
+        // This lets the gate open before a plosive reaches the output.
+        name: 'lookahead',
+        defaultValue: 0,
+        minValue: 0,
+        maxValue: 20,
+        automationRate: 'k-rate'
       }
     ];
   }
@@ -71,8 +80,23 @@ class GateProcessor extends AudioWorkletProcessor {
     // Remaining hold time, in samples, for each channel
     this.holdCounter = [0, 0];
 
+    // Per-channel delay rings for the bounded (0–20 ms) lookahead path.
+    // Allocated lazily once the AudioWorklet sample rate is known; never in
+    // the sample loop.
+    this.delayBuffers = [null, null];
+    this.delayIndexes = [0, 0];
+    this.delayLength = 0;
+
     // Sample rate (will be set on first process call)
     this.sampleRate = 48000; // Default, will be updated
+
+    // Clear lookahead history when PlaybackMixer starts a new source so prior
+    // file/seek audio can never bleed into the next transport segment.
+    if (this.port) {
+      this.port.onmessage = (event) => {
+        if (event?.data?.type === 'reset') this._resetState();
+      };
+    }
   }
 
   /**
@@ -119,6 +143,22 @@ class GateProcessor extends AudioWorkletProcessor {
     return Math.min(max, Math.max(min, n));
   }
 
+  _ensureLookaheadBuffers(sr) {
+    const length = Math.max(2, Math.ceil(0.02 * sr) + 1);
+    if (length === this.delayLength && this.delayBuffers[0] && this.delayBuffers[1]) return;
+    this.delayBuffers = [new Float32Array(length), new Float32Array(length)];
+    this.delayIndexes = [0, 0];
+    this.delayLength = length;
+  }
+
+  _resetState() {
+    this.envelopes = [0, 0];
+    this.currentGain = [1, 1];
+    this.holdCounter = [0, 0];
+    this.delayIndexes = [0, 0];
+    for (const delay of this.delayBuffers) delay?.fill(0);
+  }
+
   process(inputs, outputs, parameters) {
     const input = inputs[0];
     const output = outputs[0];
@@ -131,15 +171,17 @@ class GateProcessor extends AudioWorkletProcessor {
     // Get parameter values (k-rate, so one value per block). Every param is read
     // defensively against its descriptor default so the processor still runs if
     // a caller (or a mock/test) omits one.
-    const thresholdDb = this._clampParam(parameters.threshold?.[0], -40, -100, 0);
-    const rangeDb = this._clampParam(parameters.range?.[0], 0, 0, 80);
+    const thresholdDb = this._clampParam(parameters.threshold?.[0], -40, -120, 0);
+    const rangeDb = this._clampParam(parameters.range?.[0], 0, 0, 120);
     const attackMs = this._clampParam(parameters.attack?.[0], 10, 0, 1000);
     const releaseMs = this._clampParam(parameters.release?.[0], 100, 0, 5000);
     const holdMs = this._clampParam(parameters.hold?.[0], 0, 0, 1000);
+    const lookaheadMs = this._clampParam(parameters.lookahead?.[0], 0, 0, 20);
 
     // Update sample rate from the AudioWorklet global (falls back to 48 kHz)
     const sr = typeof sampleRate !== 'undefined' ? sampleRate : this.sampleRate;
     if (Number.isFinite(sr) && sr > 0) this.sampleRate = sr;
+    this._ensureLookaheadBuffers(this.sampleRate);
 
     // Calculate time constants for attack and release
     const attackCoeff = this.calculateTimeConstant(attackMs, this.sampleRate);
@@ -152,6 +194,10 @@ class GateProcessor extends AudioWorkletProcessor {
     const floorGain = this.dbToLinear(-rangeDb);
     // Hold time converted to whole samples.
     const holdSamples = Math.max(0, Math.round(holdMs * 0.001 * this.sampleRate));
+    const lookaheadSamples = Math.min(
+      Math.max(0, this.delayLength - 1),
+      Math.round(lookaheadMs * 0.001 * this.sampleRate),
+    );
 
     // Process each channel
     const channelCount = Math.min(input.length, output.length, 2);
@@ -163,10 +209,21 @@ class GateProcessor extends AudioWorkletProcessor {
       if (!inputChannel || !outputChannel) continue;
 
       const blockSize = inputChannel.length;
+      const delay = this.delayBuffers[channel];
+      let delayIndex = this.delayIndexes[channel];
 
       // Process each sample
       for (let i = 0; i < blockSize; i++) {
         const sample = inputChannel[i];
+
+        // Detector sees the current sample; audible output is delayed by the
+        // requested lookahead. With lookahead=0 this stays transparent.
+        const delayedIndex = delayIndex - lookaheadSamples < 0
+          ? delayIndex - lookaheadSamples + delay.length
+          : delayIndex - lookaheadSamples;
+        const delayedSample = lookaheadSamples > 0 ? delay[delayedIndex] : sample;
+        delay[delayIndex] = Number.isFinite(sample) ? sample : 0;
+        delayIndex = (delayIndex + 1) % delay.length;
 
         // Handle edge cases
         if (!isFinite(sample)) {
@@ -213,8 +270,9 @@ class GateProcessor extends AudioWorkletProcessor {
                                     (1 - coeff) * targetGain;
 
         // Apply gain to output
-        outputChannel[i] = sample * this.currentGain[channel];
+        outputChannel[i] = delayedSample * this.currentGain[channel];
       }
+      this.delayIndexes[channel] = delayIndex;
     }
 
     // Keep processor alive

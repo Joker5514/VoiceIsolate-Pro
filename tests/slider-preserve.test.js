@@ -54,11 +54,11 @@ describe('Slider preserve + lock', () => {
 });
 
 describe('BRIDGE_RT_SLIDER_IDS', () => {
-  test('matches EngineerModeBridge PARAM_MAP count (34 live controls)', () => {
+  test('matches EngineerModeBridge PARAM_MAP count (37 live controls)', () => {
     const safeCode = appJs.replace(/document\.addEventListener\('DOMContentLoaded'[\s\S]*?\}\);/, '');
     const fn = new Function('window', 'document', safeCode + '; return BRIDGE_RT_SLIDER_IDS;');
     const ids = fn({ BRIDGE_RT_SLIDER_IDS: undefined }, {});
-    expect(ids.size).toBe(34);
+    expect(ids.size).toBe(37);
     expect(ids.has('hpQ')).toBe(true);
     expect(ids.has('deEssFreq')).toBe(true);
     expect(ids.has('nrAmount')).toBe(false);

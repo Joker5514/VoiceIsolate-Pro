@@ -48,6 +48,10 @@ import {
   PRESET_REDIRECTS as CALIBRATED_PRESET_REDIRECTS,
   resolvePresetName as resolveCalibratedPresetName,
 } from '/src/core/PresetCalibration.js';
+import {
+  buildMlProcessingConfig,
+  LIVE_MIX_PARAM_IDS,
+} from '/src/core/ParameterSchema.js';
 import { buildHintPanel, mountInfoPopover, removeAllInfoPopovers } from './slider-hint-ui.js';
 import {
   calibrate,
@@ -431,16 +435,8 @@ function _formatSliderUnit(unit) {
   return ` ${unit}`;
 }
 
-/** Live-mix bridge sliders — only these affect playback in real time (EngineerModeBridge.PARAM_MAP). */
-const BRIDGE_RT_SLIDER_IDS = new Set([
-  'gateThresh', 'gateRange', 'gateAttack', 'gateRelease', 'gateHold',
-  'eqSub', 'eqBass', 'eqWarmth', 'eqBody', 'eqLowMid', 'eqMid', 'eqPresence', 'eqClarity', 'eqAir', 'eqBrill',
-  'compThresh', 'compRatio', 'compAttack', 'compRelease', 'compKnee', 'compMakeup',
-  'limThresh', 'limRelease',
-  'hpFreq', 'hpQ', 'lpFreq', 'lpQ',
-  'deEssFreq', 'deEssAmt',
-  'specTilt', 'outGain', 'dryWet', 'outWidth', 'stereoWidth',
-]);
+/** Live-Mix bridge sliders — canonical list in ParameterSchema / EngineerModeBridge. */
+const BRIDGE_RT_SLIDER_IDS = new Set(LIVE_MIX_PARAM_IDS);
 
 /** Calibrated render contract — min/max/step/default from SLIDER_REGISTRY. */
 const RENDER_SLIDERS = SLIDER_REGISTRY.map((s) => ({
@@ -496,7 +492,7 @@ const SLIDERS = {
     { id:'gateAttack', label:'Attack', min:0, max:500, val:5, step:1, unit:' ms', rt:true, desc:'How fast the gate opens when speech starts.', example:'Keep at ~5 ms so the start of each word ("Hello") is not clipped; longer values soften hard consonants.' },
     { id:'gateRelease', label:'Release', min:50, max:2000, val:200, step:10, unit:' ms', rt:true, desc:'How fast the gate closes after sound stops.', example:'~200 ms feels natural for speech; raise to 800 ms so the tail of a sung note or reverb is not chopped off abruptly.' },
     { id:'gateHold', label:'Hold', min:0, max:500, val:50, step:1, unit:' ms', rt:true, desc:'Minimum time the gate stays open after a sound.', example:'Set ~80 ms to stop the gate "chattering" open and shut during a stuttered or breathy phrase.' },
-    { id:'gateLookahead', label:'Lookahead', min:0, max:50, val:5, step:1, unit:' ms', rt:false, desc:'Lets the gate peek ahead so it opens just before a sound arrives.', example:'5–10 ms preserves the sharp attack of a clapper or plosive that a zero-lookahead gate would shave off.' },
+    { id:'gateLookahead', label:'Lookahead', min:0, max:20, val:5, step:1, unit:' ms', rt:true, desc:'Delays the Live-Mix gate path so its detector can open before a sound arrives.', example:'5–10 ms preserves a plosive attack; higher values add the same amount of preview latency.' },
   ],
   nr: [
     { id:'nrAmount', label:'NR Amount', min:0, max:100, val:52, step:1, unit:'%', rt:false, desc:'Overall strength of the spectral noise removal.', example:'~50–55% cleans steady hiss without high-pitch musical noise; push past 85% only for heavy noise (can sound underwater).' },
@@ -543,11 +539,11 @@ const SLIDERS = {
     { id:'harmRecov', label:'Harm Recovery', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Rebuilds harmonics lost to heavy noise reduction or low bitrate.', example:'Add ~40% to restore richness to a muffled phone-call or over-denoised voice.' },
     { id:'harmOrder', label:'Harm Order', min:1, max:10, val:3, step:1, unit:'', rt:false, desc:'How many harmonic overtones are reconstructed.', example:'3 is natural for speech; higher orders add more brightness/edge to the recovered tone.' },
     { id:'stereoWidth', label:'Stereo Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Widens or narrows the stereo image (mid/side).', example:'120% makes music vocals feel wider; 0% collapses to mono for a focused, centered voice.' },
-    { id:'phaseCorr', label:'Phase Corr', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Fixes out-of-phase stereo so it stays solid in mono.', example:'Raise to ~40% when a stereo clip goes hollow/thin on a phone speaker that sums to mono.' },
+    { id:'phaseCorr', label:'Mono Correlation', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Blends stereo channels toward their shared midpoint for a more mono-stable result; it does not estimate time offset.', example:'Raise to ~40% when a stereo clip sounds hollow after mono summing.' },
   ],
   sep: [
-    { id:'voiceIso', label:'Voice Iso', min:0, max:100, val:72, step:1, unit:'%', rt:false, desc:'Emphasises the human voice over everything else.', example:'~70% lifts a speaker out of background music; near 100% is forensic-grade but can sound processed.' },
-    { id:'bgSuppress', label:'BG Suppress', min:0, max:100, val:38, step:1, unit:'%', rt:false, desc:'Lowers sound that sits outside the voice focus band.', example:'Set ~60% to push down street noise and crowd chatter while keeping the dialogue forward.' },
+    { id:'voiceIso', label:'Voice Iso', min:0, max:100, val:72, step:1, unit:'%', rt:true, desc:'Rebalances the retained clean stem in Live-Mix after one ML separation.', example:'~70% lifts a speaker out of background music without running ML again.' },
+    { id:'bgSuppress', label:'BG Suppress', min:0, max:100, val:38, step:1, unit:'%', rt:true, desc:'Attenuates the retained residual stem in Live-Mix after one ML separation.', example:'Set ~60% to lower street noise and crowd chatter without another ML pass.' },
     { id:'voiceFocusLo', label:'Focus Lo', min:80, max:500, val:100, step:10, unit:' Hz', rt:false, desc:'Bottom edge of the band kept as "voice".', example:'~100–120 Hz suits most voices; raise to 200 Hz to ignore deep rumble, lower for very deep male voices.' },
     { id:'voiceFocusHi', label:'Focus Hi', min:1000, max:8000, val:4200, step:100, unit:' Hz', rt:false, desc:'Top edge of the band kept as "voice" (lower blocks high-pitch residual).', example:'4200 Hz mimics telephone clarity; raise to 5000 Hz to keep crisp consonants and a more natural top.' },
     { id:'crosstalkCancel', label:'Crosstalk', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Removes bleed of one stereo channel into the other.', example:'Use ~40% on a two-mic interview where each voice leaks into the opposite channel.' },
@@ -555,25 +551,25 @@ const SLIDERS = {
   out: [
     { id:'outGain', label:'Output Gain', min:-24, max:24, val:0, step:0.5, unit:' dB', rt:true, desc:'Final overall volume trim on the processed output.', example:'Add +3 dB if the cleaned voice is too quiet; the limiter still prevents clipping above its ceiling.' },
     { id:'dryWet', label:'Dry/Wet', min:0, max:100, val:100, step:1, unit:'%', rt:true, desc:'Blends the original (dry) with the processed (wet) signal.', example:'100% is fully processed; drop to 70% to keep a touch of the natural original and soften aggressive cleanup.' },
-    { id:'ditherAmt', label:'Dither', min:0, max:10, val:0, step:0.1, unit:' bits', rt:false, desc:'Adds tiny noise that smooths quiet detail when exporting.', example:'Leave at 0 for full float quality; set ~1 only when dithering for 16-bit export.' },
+    { id:'ditherAmt', label:'Dither', min:0, max:3, val:0, step:1, unit:'', rt:false, desc:'Adds encoder-only dither while quantising a 16-bit WAV: 0=off, 1=TPDF, 2=shaped, 3=high-pass.', example:'Leave at 0 for deterministic 16-bit exports; use 1 for a standard TPDF export.' },
     { id:'outWidth', label:'Out Width', min:0, max:200, val:100, step:1, unit:'%', rt:true, desc:'Final stereo width applied at the very end of the chain.', example:'100% leaves width unchanged; 0% guarantees a centered mono output for phone playback.' },
   ],
   extreme: [
-    { id:'whisperLift', label:'Whisper Lift Gain', min:0, max:40, val:0, step:1, unit:' dB', rt:true, desc:'Post-mask amplification applied only where voice confidence exceeds 0.55. Off by default — enable for buried whispers.', example:'Raise to ~22 dB when the whisper is buried under club noise; keeps the noise floor untouched.' },
+    { id:'whisperLift', label:'Whisper Lift Gain', min:0, max:40, val:0, step:1, unit:' dB', rt:false, desc:'Process-time post-mask lift where voice confidence is high. The 0–40 dB display maps to a bounded 0–12 dB internal gain.', example:'Start near 10 dB for a buried whisper; Process to hear the result.' },
     { id:'crowdNull', label:'Crowd Null Depth', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Spectral subtraction targeting 200–2500 Hz crowd murmur. Off by default (triggers extreme path).', example:'~88% pulls down stadium chatter while leaving consonants in the 3–4 kHz band.' },
-    { id:'bassCrush', label:'Bass Crush (Sub/Kick)', min:0, max:100, val:0, step:1, unit:'%', rt:true, desc:'Attenuates kick drum and sub bass that mask whisper formants. Off by default.', example:'~95% for nightclub recordings with heavy sub; lower if the whisper has a deep fundamental.' },
+    { id:'bassCrush', label:'Bass Crush (Sub/Kick)', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Process-time attenuation of kick drum and sub bass that mask whisper formants. Off by default.', example:'~95% for nightclub recordings with heavy sub; lower if the whisper has a deep fundamental.' },
     { id:'reverbStrip', label:'Reverb Strip (RT60 Suppressor)', min:0, max:2000, val:0, step:10, unit:' ms', rt:false, desc:'Extreme spectral dereverb by RT60. Prefer Dereverb Amount for standard rooms.', example:'Match to the room — ~900 ms for a reverberant club, ~200 ms for a tight office.' },
-    { id:'voiceTunnel', label:'Voice Tunnel (Formant Focus)', min:0, max:100, val:0, step:1, unit:'%', rt:true, desc:'Narrow-band emphasis on speech formants. Off by default.', example:'~78% concentrates energy on vowel formants so a whisper cuts through music.' },
+    { id:'voiceTunnel', label:'Voice Tunnel (Formant Focus)', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Process-time narrow-band emphasis on speech formants. Off by default.', example:'~78% concentrates energy on vowel formants so a whisper cuts through music.' },
     { id:'musicKill', label:'Music Kill (Harmonic Comb)', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Suppresses steady-state harmonic music while preserving transient speech. Off by default.', example:'~92% when a DJ track is constant under the target whisper.' },
     { id:'snrFloor', label:'SNR Rescue Floor', min:-80, max:-20, val:-52, step:1, unit:' dBFS', rt:false, desc:'Minimum power threshold used by extreme isolation — bins below are treated as noise-only.', example:'Lower toward −58 dBFS to catch quieter whispers; raise if musical noise appears.' },
     { id:'whisperMode', label:'Whisper Mode (Processing Aggression)', min:0, max:3, val:0, step:1, unit:'', rt:false, desc:'Compound processing aggression: Off, Light, Heavy, or Forensic multi-pass. Keep Off when ML isolation succeeds.', example:'Forensic (3) runs four iterative refinement passes for surveillance recovery.' },
-    { id:'whisperClarity', label:'Whisper Clarity', min:0, max:100, val:65, step:1, unit:'%', rt:true, desc:'Sigmoid-mapped clarity floor for WhisperHunter gain.', example:'~72% for podcast whispers; ~88% for buried field recordings.' },
-    { id:'whisperSensitivity', label:'Whisper Sensitivity', min:0, max:100, val:55, step:1, unit:'%', rt:true, desc:'Scales W-VAD energy threshold — higher catches quieter whispers.', example:'~82% in a noisy club; ~28% in a silent room.' },
-    { id:'whisperThreshold', label:'Whisper Threshold', min:0, max:100, val:50, step:1, unit:'%', rt:true, desc:'Steepens WhisperHunter suppression curve.', example:'~35% gentle; ~78% aggressive forensic extraction.' },
-    { id:'transientShaper', label:'Transient Shaper', min:-100, max:100, val:0, step:5, unit:'', rt:true, desc:'Bipolar transient emphasis for consonant shaping.', example:'−40 softens plosives; +45 sharpens whisper consonants.' },
+    { id:'whisperClarity', label:'Whisper Clarity', min:0, max:100, val:65, step:1, unit:'%', rt:false, desc:'Process-time clarity floor for WhisperHunter gain.', example:'~72% for podcast whispers; ~88% for buried field recordings.' },
+    { id:'whisperSensitivity', label:'Whisper Sensitivity', min:0, max:100, val:55, step:1, unit:'%', rt:false, desc:'Process-time energy sensitivity for quiet speech.', example:'~82% in a noisy club; ~28% in a silent room.' },
+    { id:'whisperThreshold', label:'Whisper Threshold', min:0, max:100, val:50, step:1, unit:'%', rt:false, desc:'Process-time WhisperHunter suppression curve steepness.', example:'~35% gentle; ~78% aggressive forensic extraction.' },
+    { id:'transientShaper', label:'Transient Shaper', min:-100, max:100, val:0, step:5, unit:'', rt:false, desc:'Process-time bipolar transient emphasis for consonant shaping.', example:'−40 softens plosives; +45 sharpens whisper consonants.' },
     { id:'breathControl', label:'Breath Control', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Attenuates breath noise between whisper phrases. Off by default.', example:'~55% for ASMR-style cleanup; ~85% to strip breaths.' },
     { id:'roomCorrection', label:'Room Correction', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Adds to dereverb for whisper tails. Prefer Dereverb Amount for standard rooms.', example:'~60% for echoey hall; ~90% for deep dereverb.' },
-    { id:'subHarmonic', label:'Sub Harmonic', min:0, max:100, val:0, step:1, unit:'%', rt:true, desc:'Sub-harmonic body reinforcement for thin whispers.', example:'~35% adds warmth; ~65% restores chest body.' },
+    { id:'subHarmonic', label:'Sub Harmonic', min:0, max:100, val:0, step:1, unit:'%', rt:false, desc:'Process-time sub-harmonic body reinforcement for thin whispers.', example:'~35% adds warmth; ~65% restores chest body.' },
   ],
 };
 
@@ -624,8 +620,8 @@ const SLIDER_BY_ID = Object.freeze((() => {
       val: s.default,
       step: s.step,
       unit: _formatSliderUnit(s.unit || prev.unit || ''),
-      rt: BRIDGE_RT_SLIDER_IDS.has(s.id) || Boolean(s.rt),
-      desc: prev.desc || s.hint || s.tip || '',
+      rt: BRIDGE_RT_SLIDER_IDS.has(s.id),
+      desc: s.hint || s.tip || prev.desc || '',
       group: s.group || prev.group,
     };
   }
@@ -635,7 +631,7 @@ const SLIDER_BY_ID = Object.freeze((() => {
 // [WHISPER UPDATE] Build a complete preset from SLIDER defaults + overrides
 function _presetDefaults(overrides = {}) {
   const base = { description: '' };
-  for (const s of Object.values(SLIDERS).flat()) base[s.id] = s.val;
+  for (const s of RENDER_SLIDERS) base[s.id] = s.val;
   return { ...base, ...overrides };
 }
 
@@ -730,7 +726,7 @@ function fmtTime(s) {
 // ---------------------------------------------------------------------------
 // WAV encoder (standalone helper)
 // ---------------------------------------------------------------------------
-function encodeWavBuffer(audioBuffer) {
+function encodeWavBuffer(audioBuffer, ditherMode = 0) {
   const numCh = audioBuffer.numberOfChannels;
   const numSamples = audioBuffer.length;
   const sr = audioBuffer.sampleRate;
@@ -744,9 +740,22 @@ function encodeWavBuffer(audioBuffer) {
   v.setUint32(28, sr * numCh * bps, true); v.setUint16(32, numCh * bps, true);
   v.setUint16(34, 16, true); ws(36, 'data'); v.setUint32(40, numSamples * numCh * bps, true);
   let off = 44;
+  const mode = Math.max(0, Math.min(3, Math.round(Number(ditherMode) || 0)));
+  const previousNoise = new Float32Array(numCh);
   for (let i = 0; i < numSamples; i++) {
     for (let ch = 0; ch < numCh; ch++) {
-      const s = Math.max(-1, Math.min(1, audioBuffer.getChannelData(ch)[i]));
+      let s = audioBuffer.getChannelData(ch)[i];
+      if (mode > 0) {
+        // 1 = TPDF, 2 = shaped, 3 = high-pass-shaped. Dither is injected at
+        // the 16-bit quantisation boundary only and never mutates playback PCM.
+        const rawNoise = (Math.random() - Math.random()) / 32768;
+        const shaped = mode === 1
+          ? rawNoise
+          : rawNoise - previousNoise[ch] * (mode === 2 ? 0.45 : 0.82);
+        previousNoise[ch] = rawNoise;
+        s += shaped;
+      }
+      s = Math.max(-1, Math.min(1, s));
       v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
       off += 2;
     }
@@ -754,8 +763,8 @@ function encodeWavBuffer(audioBuffer) {
   return buf;
 }
 
-function downloadWav(audioBuffer, name) {
-  const blob = new Blob([encodeWavBuffer(audioBuffer)], { type: 'audio/wav' });
+function downloadWav(audioBuffer, name, ditherMode = 0) {
+  const blob = new Blob([encodeWavBuffer(audioBuffer, ditherMode)], { type: 'audio/wav' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
@@ -810,6 +819,8 @@ class VoiceIsolatePro {
     this._libraryFileId = null;
     /** @type {number|null} fileSeq for which _cleanStemChannels were produced */
     this._stemFileSeq = null;
+    /** @type {string|null} Process-time Engineer snapshot used for retained stems */
+    this._stemProcessingRevision = null;
     /** @type {ReturnType<typeof setTimeout>|null} */
     this._sessionPersistTimer = null;
     /** @type {string|null} object URL currently assigned to #videoPlayer */
@@ -855,9 +866,7 @@ class VoiceIsolatePro {
 
     // Flat params snapshot — mirrors window.VIP_PARAMS, kept in sync by
     // _renderSliders() and applyPreset() so the orchestrator patches work.
-    this.params = Object.fromEntries(
-      Object.values(SLIDERS).flat().map(s => [s.id, s.val])
-    );
+    this.params = Object.fromEntries(RENDER_SLIDERS.map((s) => [s.id, s.val]));
 
     // Model status UI
     this._modelStatusUI = null;
@@ -1639,6 +1648,10 @@ class VoiceIsolatePro {
     }
     const resetBtn = row.querySelector('.slider-reset-btn');
     if (resetBtn) resetBtn.disabled = locked;
+    row.querySelectorAll('.wm-btn').forEach((modeBtn) => {
+      modeBtn.disabled = locked;
+      modeBtn.setAttribute('aria-disabled', String(locked));
+    });
   }
 
   /**
@@ -1800,19 +1813,22 @@ class VoiceIsolatePro {
             if (idx !== undefined) this.sharedParams[idx] = v;
           }
           this.onSlider(id, v);
-          // Coalesce Live-Mix param storm — one rAF batch for bridge/worklet.
-          this._pendingLiveParam = this._pendingLiveParam || {};
-          this._pendingLiveParam[id] = v;
-          if (!this._liveParamRaf) {
-            this._liveParamRaf = requestAnimationFrame(() => {
-              this._liveParamRaf = 0;
-              const batch = this._pendingLiveParam || {};
-              this._pendingLiveParam = null;
-              for (const [pid, pval] of Object.entries(batch)) {
-                this._applySliderToWorklet(pid, pval);
-              }
-              this._syncBridgeParams?.();
-            });
+          // Coalesce Live-Mix param storms. Process-time/export controls stay
+          // in canonical state until their explicit consumer runs.
+          if (BRIDGE_RT_SLIDER_IDS.has(id)) {
+            this._pendingLiveParam = this._pendingLiveParam || {};
+            this._pendingLiveParam[id] = v;
+            if (!this._liveParamRaf) {
+              this._liveParamRaf = requestAnimationFrame(() => {
+                this._liveParamRaf = 0;
+                const batch = this._pendingLiveParam || {};
+                this._pendingLiveParam = null;
+                for (const [pid, pval] of Object.entries(batch)) {
+                  this._applySliderToWorklet(pid, pval);
+                }
+                this._syncBridgeParams?.();
+              });
+            }
           }
           this._scheduleSessionPersist();
           if (meta.source !== 'programmatic') this._applyControlFilters?.();
@@ -2066,7 +2082,7 @@ class VoiceIsolatePro {
   // Separation sliders: apply discipline curve on UI value before family transform.
   _applySliderToWorklet(id, uiValue) {
     const entry = SLIDER_REG_BY_ID[id];
-    if (!entry || typeof entry.transform !== 'function') return;
+    if (!entry || !entry.rt || typeof entry.transform !== 'function') return;
     const disciplined = calibrate(id, uiValue);
     const dspVal = entry.transform(disciplined);
     const paramId = entry.workletParam || entry.id;
@@ -2117,20 +2133,41 @@ class VoiceIsolatePro {
       btn.dataset.mode = String(m.id);
       btn.dataset.param = 'whisper-mode';
       btn.textContent = m.label;
+      btn.setAttribute('aria-pressed', String(m.id === initMode));
       btn.addEventListener('click', () => {
-        group.querySelectorAll('.wm-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        window.VIP_PARAMS = window.VIP_PARAMS || {};
-        window.VIP_PARAMS.whisperMode = m.id;
-        this.params.whisperMode = m.id;
-        this.whisperMode = m.id;
-        this.onSlider('whisperMode', m.id);
+        if (this._isSliderLocked('whisperMode')) return;
+        this._setWhisperMode(m.id);
+        this._applyControlFilters?.();
       });
       group.appendChild(btn);
     });
 
+    const resetBtn = document.createElement('button');
+    resetBtn.type = 'button';
+    resetBtn.className = 'slider-reset-btn whisper-mode-reset';
+    resetBtn.innerHTML = '<span aria-hidden="true">↺</span>';
+    resetBtn.setAttribute('aria-label', 'Reset Whisper Mode to Off');
+    resetBtn.title = 'Reset Whisper Mode to Off';
+    resetBtn.addEventListener('click', () => {
+      if (this._isSliderLocked('whisperMode')) return;
+      this._setWhisperMode(0);
+      this._userTouchedSliders.delete('whisperMode');
+      this._applyControlFilters?.();
+    });
+
+    const lockBtn = document.createElement('button');
+    lockBtn.type = 'button';
+    lockBtn.className = 'slider-lock-btn';
+    lockBtn.setAttribute('aria-pressed', 'false');
+    lockBtn.setAttribute('aria-label', 'Lock Whisper Mode');
+    lockBtn.title = 'Lock Whisper Mode (ignore preset and reset changes)';
+    lockBtn.innerHTML = this._lockButtonSvgHtml();
+    lockBtn.addEventListener('click', () => this.toggleSliderLock('whisperMode'));
+
     row.appendChild(labelEl);
     row.appendChild(group);
+    row.appendChild(resetBtn);
+    row.appendChild(lockBtn);
 
     const wmReg = SLIDER_REG_BY_ID.whisperMode;
     if (wmReg && wmReg.hint) {
@@ -2158,11 +2195,8 @@ class VoiceIsolatePro {
     }
 
     panel.insertBefore(row, panel.firstChild);
-
-    window.VIP_PARAMS = window.VIP_PARAMS || {};
-    window.VIP_PARAMS.whisperMode = initMode;
-    this.params.whisperMode = initMode;
-    this.whisperMode = initMode;
+    this._setWhisperMode(initMode, { persist: false });
+    this._syncSliderLockUi('whisperMode');
   }
 
   _getSliderPanelId(sliderId) {
@@ -2207,11 +2241,12 @@ class VoiceIsolatePro {
 
   /** Immediate Live-Mix / worklet application (one id). Called from rAF flush. */
   _applySliderImmediate(id, value) {
+    if (!BRIDGE_RT_SLIDER_IDS.has(id)) return;
     if (this._bridge && typeof this._bridge.applyParam === 'function') {
       try {
         // Calibrate separation-family ids so extreme isolation never NaNs gains
         let v = value;
-        if (id === 'voiceIso' || id === 'bgSuppress' || id === 'nrAmount') {
+        if (id === 'voiceIso' || id === 'bgSuppress') {
           try {
             const eff = this.getEffectiveParams({ ...(window.VIP_PARAMS || {}), [id]: value });
             if (eff && Number.isFinite(eff[id])) v = eff[id];
@@ -2244,25 +2279,6 @@ class VoiceIsolatePro {
     if (orch && typeof orch.onSlider === 'function') {
       orch.onSlider(id, value);
     }
-  }
-
-  /**
-   * Experimental Engineer-mode STFT path (not the shipping ML single-STFT path).
-   * Enable with localStorage vip-experimental-engineer-spectral=1 or env-style flag.
-   */
-  _isExperimentalEngineerSpectralEnabled(p) {
-    try {
-      if (typeof globalThis !== 'undefined' && globalThis.VIP_EXPERIMENTAL_ENGINEER_SPECTRAL === true) {
-        return true;
-      }
-      if (typeof localStorage !== 'undefined'
-        && localStorage.getItem('vip-experimental-engineer-spectral') === '1') {
-        return true;
-      }
-    } catch { /* ignore */ }
-    // Whisper forensic aggression still needs the Engineer spectral stage in DSP fallback.
-    const w = Number(p?.whisperMode ?? 0);
-    return Number.isFinite(w) && w >= 2;
   }
 
   /**
@@ -2931,24 +2947,26 @@ class VoiceIsolatePro {
 
   /** Push a calibrated slider value through VIP_PARAMS, DOM, bridge, and worklet. */
   _setSliderUi(id, rawValue, { notify = true, force = false } = {}) {
+    let changed = false;
     this._programmaticSliderUpdate = true;
     try {
-      this._setSliderUiInner(id, rawValue, { notify, force });
+      changed = this._setSliderUiInner(id, rawValue, { notify, force });
     } finally {
       this._programmaticSliderUpdate = false;
     }
+    if (changed) this._scheduleSessionPersist();
+    return changed;
   }
 
   _setSliderUiInner(id, rawValue, { notify = true, force = false } = {}) {
     if (id === 'whisperMode') {
-      if (this._isSliderLocked(id) && !force) return;
-      this._setWhisperMode(rawValue);
-      return;
+      if (this._isSliderLocked(id) && !force) return false;
+      return this._setWhisperMode(rawValue);
     }
     // Presets / auto-calibrate must not overwrite locked sliders unless force.
-    if (this._isSliderLocked(id) && !force) return;
+    if (this._isSliderLocked(id) && !force) return false;
     const hasSpec = SLIDER_REG_BY_ID[id] || SLIDER_BY_ID[id];
-    if (!hasSpec) return;
+    if (!hasSpec) return false;
     const value = clampToSlider(id, rawValue);
     window.VIP_PARAMS = window.VIP_PARAMS || {};
     window.VIP_PARAMS[id] = value;
@@ -2985,6 +3003,7 @@ class VoiceIsolatePro {
     this.onSlider(id, value);
     this._applySliderToWorklet(id, value);
     if (notify && el) el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
   }
 
   // ── Preset application ────────────────────────────────────────────────────
@@ -3412,6 +3431,7 @@ class VoiceIsolatePro {
     if (!sameSource) {
       clearStemCache();
       this._stemFileSeq = null;
+      this._stemProcessingRevision = null;
       this._cleanStemChannels = null;
       this._noiseStemChannels = null;
       this._visualsDrawn = false;
@@ -3845,7 +3865,10 @@ class VoiceIsolatePro {
     for (let c = 0; c < fullBuf.numberOfChannels; c++) {
       channels.push(fullBuf.getChannelData(c));
     }
-    const blob = encodeWav(channels, fullBuf.sampleRate);
+    const ditherAmt = buildMlProcessingConfig(
+      this.getEffectiveParams(window.VIP_PARAMS || {}),
+    ).export.ditherAmt;
+    const blob = encodeWav(channels, fullBuf.sampleRate, { ditherAmt });
     const filename = `processed-${Date.now()}.wav`;
     this.showNotification('Uploading to Google Drive…', 'info');
     const meta = await saveBlobToDrive({ blob, filename, mimeType: 'audio/wav' });
@@ -3947,7 +3970,10 @@ class VoiceIsolatePro {
       if (typeof this.updateProcessingOverlay === 'function') {
         this.updateProcessingOverlay('Writing WAV…', 90, 30);
       }
-      downloadWav(buf, 'processed-' + Date.now() + '.wav');
+      const ditherAmt = buildMlProcessingConfig(
+        this.getEffectiveParams(window.VIP_PARAMS || {}),
+      ).export.ditherAmt;
+      downloadWav(buf, 'processed-' + Date.now() + '.wav', ditherAmt);
       this.showNotification('Processed audio saved', 'info');
       if (job && jobs?.endJob) jobs.endJob(job.id, 'completed');
     } catch (err) {
@@ -4059,6 +4085,7 @@ class VoiceIsolatePro {
     // Clear only the working set — library entries remain until Remove/Delete.
     this._libraryFileId = null;
     this._stemFileSeq = null;
+    this._stemProcessingRevision = null;
     this._decodePromise = null;
     this._decodeReady = false;
     this._resetCollaborationState?.();
@@ -4144,16 +4171,28 @@ class VoiceIsolatePro {
   }
 
   // [WHISPER UPDATE] Set whisper-mode button group state
-  _setWhisperMode(mode) {
+  _setWhisperMode(mode, { persist = true } = {}) {
     const m = Math.max(0, Math.min(3, Math.round(mode)));
+    const prior = Number(window.VIP_PARAMS?.whisperMode);
     window.VIP_PARAMS = window.VIP_PARAMS || {};
     window.VIP_PARAMS.whisperMode = m;
     this.params.whisperMode = m;
     this.whisperMode = m;
-    document.querySelectorAll('.wm-btn').forEach((btn) => {
-      btn.classList.toggle('active', parseInt(btn.dataset.mode, 10) === m);
-    });
+    if (this.sharedParams) {
+      const idx = this._sliderIndexById.get('whisperMode');
+      if (idx !== undefined) this.sharedParams[idx] = m;
+    }
+    if (typeof document !== 'undefined') {
+      document.querySelectorAll('.wm-btn').forEach((btn) => {
+        const active = parseInt(btn.dataset.mode, 10) === m;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', String(active));
+      });
+    }
     this.onSlider('whisperMode', m);
+    const changed = !Number.isFinite(prior) || prior !== m;
+    if (persist && changed) this._scheduleSessionPersist();
+    return changed;
   }
 
   /** Wait for an in-flight pipeline (after abort) before loading or re-running. */
@@ -4630,6 +4669,155 @@ class VoiceIsolatePro {
   }
 
   /**
+   * Apply the two stereo-only Engineer controls after a mono ML stem has been
+   * expanded back to L/R. This is O(N), chunked, and deliberately avoids a
+   * second STFT/iSTFT. Mono input has no truthful phase/crosstalk consumer, so
+   * runtime telemetry reports it as unavailable instead of claiming success.
+   * @param {Float32Array[]} channels
+   * @param {object} processingConfig
+   */
+  async _applyMlPostStemControls(channels, processingConfig) {
+    const post = processingConfig?.postStem || {};
+    const phase = Math.max(0, Math.min(1, Number(post.phaseCorr || 0) / 100));
+    const crosstalk = Math.max(0, Math.min(1, Number(post.crosstalkCancel || 0) / 100));
+    const requested = phase > 0 || crosstalk > 0;
+    const revision = processingConfig?.revision || null;
+    const status = {
+      revision,
+      phaseCorr: phase > 0 ? 'pending' : 'not-requested',
+      crosstalkCancel: crosstalk > 0 ? 'pending' : 'not-requested',
+    };
+    if (!requested) {
+      this._engineerPostStemStatus = status;
+      return status;
+    }
+    if (!channels?.[0] || !channels?.[1] || channels[0] === channels[1]) {
+      if (phase > 0) status.phaseCorr = 'unavailable-mono';
+      if (crosstalk > 0) status.crosstalkCancel = 'unavailable-mono';
+      this._engineerPostStemStatus = status;
+      return status;
+    }
+    const left = channels[0];
+    const right = channels[1];
+    const total = Math.min(left.length, right.length);
+    const signal = this._processAbortSignal();
+    await processInChunks({
+      total,
+      chunkSize: this._postMlChunkSamples(),
+      signal,
+      runChunk: (start, end) => {
+        for (let i = start; i < end; i++) {
+          const sourceL = left[i];
+          const sourceR = right[i];
+          let nextL = sourceL;
+          let nextR = sourceR;
+          if (crosstalk > 0) {
+            const depth = crosstalk * 0.5;
+            nextL = sourceL - depth * sourceR;
+            nextR = sourceR - depth * sourceL;
+          }
+          if (phase > 0) {
+            const mid = (nextL + nextR) * 0.5;
+            nextL = nextL * (1 - phase) + mid * phase;
+            nextR = nextR * (1 - phase) + mid * phase;
+          }
+          left[i] = nextL;
+          right[i] = nextR;
+        }
+      },
+    });
+    if (phase > 0) status.phaseCorr = 'applied';
+    if (crosstalk > 0) status.crosstalkCancel = 'applied';
+    this._engineerPostStemStatus = status;
+    try {
+      globalThis.__vipEngineerRuntime = {
+        ...(globalThis.__vipEngineerRuntime || {}),
+        postStem: status,
+      };
+    } catch { /* telemetry is best-effort */ }
+    return status;
+  }
+
+  /**
+   * Apply the deterministic time-domain cleanup shared by fresh and durable
+   * ML results. Durable storage intentionally keeps raw worker stems, so this
+   * must run after clone/expand/post-stem controls on every cache path.
+   */
+  async _applyPostIsolationCleanup(channels, sampleRate) {
+    try {
+      this.updatePipelineProgress(19, 'Smoothing residual…', 90);
+      this._logProgressDiag('dewhistle-start');
+      await yieldToBrowser();
+      await this._postIsolationDeWhistle(channels, sampleRate, {
+        onProgress: (r) => {
+          if (this.abortFlag) return;
+          const pct = 90 + Math.round(Math.max(0, Math.min(1, r)) * 6); // 90→96
+          this.updatePipelineProgress(19, 'Smoothing residual…', pct);
+        },
+      });
+    } catch (dwErr) {
+      const jobs = globalThis.__VIP_JOBS__;
+      if (jobs?.isCancellationError?.(dwErr) || dwErr?.name === 'AbortError') throw dwErr;
+      structuredLog('warn', '[VIP] post-isolation dewhistle skipped', { err: dwErr?.message });
+    }
+  }
+
+  /**
+   * Build the residual that is paired with the final clean stem in Live-Mix.
+   *
+   * MLWorker's residual is correct for its pre-main-thread clean stem. Stereo
+   * expansion, post-stem controls, and de-whistling can subsequently mutate
+   * clean, so retaining that older residual would make clean + noise describe
+   * different processing states. Reconcile only at this playback boundary;
+   * cached ML stems remain the immutable pre-post-processing artifacts.
+   *
+   * @param {Float32Array[]} clean final output clean channels
+   * @param {AudioBuffer} sourceBuffer canonical input source at the same rate
+   * @returns {Promise<Float32Array[]|null>}
+   */
+  async _reconcileLiveMixNoiseStem(clean, sourceBuffer) {
+    if (!Array.isArray(clean) || !clean.length || !sourceBuffer
+      || typeof sourceBuffer.getChannelData !== 'function') return null;
+    const total = clean[0]?.length || 0;
+    const sourceCount = Number(sourceBuffer.numberOfChannels) || 0;
+    if (!total || !sourceCount || clean.length > sourceCount) return null;
+    for (const channel of clean) {
+      if (!(channel instanceof Float32Array) || channel.length !== total) return null;
+    }
+
+    const midSource = clean.length === 1 && sourceCount >= 2;
+    const sourceChannels = midSource
+      ? [sourceBuffer.getChannelData(0), sourceBuffer.getChannelData(1)]
+      : clean.map((_, channel) => sourceBuffer.getChannelData(channel));
+    if (sourceChannels.some((channel) => !channel || channel.length !== total)) return null;
+
+    const residual = clean.map(() => new Float32Array(total));
+    await processInChunks({
+      total,
+      chunkSize: this._postMlChunkSamples(),
+      signal: this._processAbortSignal(),
+      runChunk: (start, end) => {
+        for (let i = start; i < end; i++) {
+          if (midSource) {
+            residual[0][i] = 0.5 * (sourceChannels[0][i] + sourceChannels[1][i]) - clean[0][i];
+          } else {
+            for (let channel = 0; channel < clean.length; channel++) {
+              residual[channel][i] = sourceChannels[channel][i] - clean[channel][i];
+            }
+          }
+        }
+      },
+    });
+    try {
+      globalThis.__vipEngineerRuntime = {
+        ...(globalThis.__vipEngineerRuntime || {}),
+        liveMixResidual: 'reconciled',
+      };
+    } catch { /* telemetry is best-effort */ }
+    return residual;
+  }
+
+  /**
    * Offline ML isolation — BS-RNN vocals (DEFAULT_ML_CHAIN). Stereo files are
    * reduced to mid for a single inference pass (≈2× faster than per-channel).
    * @returns {Promise<boolean>} true when ML produced a non-passthrough result
@@ -4639,11 +4827,18 @@ class VoiceIsolatePro {
     const buf = this.origBuffer || this.inputBuffer;
     if (!buf) return false;
     if (fileSeq !== this._fileSeq) return false;
+    // Snapshot once per explicit Process. Offline/spectral controls cannot
+    // truthfully alter already-iSTFT'd stems without another process pass.
+    const processingConfig = buildMlProcessingConfig(
+      this.getEffectiveParams(window.VIP_PARAMS || {}),
+    );
+    const processingRevision = processingConfig.revision;
 
     // Reprocess with retained stems: skip ONNX (audit P-04) unless forced.
     if (
       !this._forceMlRerun
       && this._stemFileSeq === fileSeq
+      && this._stemProcessingRevision === processingRevision
       && this._cleanStemChannels?.length
       && this.outputBuffer
     ) {
@@ -4658,12 +4853,19 @@ class VoiceIsolatePro {
     // Durable stem cache (OPFS/IDB) for library files — skip re-inference after reload.
     if (!this._forceMlRerun && this._libraryFileId) {
       try {
-        const durable = await loadStemsDurable(this._libraryFileId, DEFAULT_ML_CHAIN);
+        const durable = await loadStemsDurable(
+          this._libraryFileId,
+          DEFAULT_ML_CHAIN,
+          processingRevision,
+        );
         if (durable?.clean?.length) {
           await this.ensureCtx();
           const { stemsToAudioBuffer } = await import('/src/pipeline/StemSeparation.js');
-          let clean = durable.clean;
-          let noise = durable.noise;
+          // Durable cache stores immutable, pre-post-processing worker stems.
+          // Clone before post-stem shaping/dewhistling so a cache hit equals a
+          // fresh result and never mutates the retained cache backing.
+          let clean = durable.clean.map((channel) => new Float32Array(channel));
+          let noise = null;
           // Mid-only durable packs expand to mono; stereo expand if source is stereo.
           if (buf.numberOfChannels >= 2 && clean.length === 1) {
             this.updatePipelineProgress(18, 'Reconstructing stems (cache)…', 86);
@@ -4679,29 +4881,25 @@ class VoiceIsolatePro {
               plan.right,
             );
             await yieldToBrowser();
-            if (noise?.[0]) {
-              const n = noise[0].length;
-              // Share the mono residual across L/R without a second full copy on mobile.
-              if (this._isMobileEngineer()) {
-                noise = [noise[0], noise[0]];
-              } else {
-                noise = [new Float32Array(noise[0]), new Float32Array(noise[0])];
-              }
-              void n;
-            }
           }
+          await this._applyMlPostStemControls(clean, processingConfig);
+          await this._applyPostIsolationCleanup(clean, durable.sampleRate || buf.sampleRate);
+          noise = await this._reconcileLiveMixNoiseStem(clean, buf);
           this.updatePipelineProgress(19, 'Building output…', 89);
           await yieldToBrowser();
           this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, durable.sampleRate || buf.sampleRate);
           this.procBuffer = this.outputBuffer;
           this._stemFileSeq = fileSeq;
-          // Reuse channel views when possible — avoid 2× float copies (OOM risk).
+          this._stemProcessingRevision = processingRevision;
+          // Processed channel copies are separate from the immutable raw cache artifact.
           this._cleanStemChannels = clean;
           this._noiseStemChannels = noise?.length ? noise : null;
           this._stemSampleRate = durable.sampleRate || buf.sampleRate;
           this._durableStemBacking = durable._backing || null;
           if (this._noiseStemChannels) {
             this.noiseBuffer = stemsToAudioBuffer(this.ctx, this._noiseStemChannels, this._stemSampleRate);
+          } else {
+            this.noiseBuffer = null;
           }
           await this._loadSeparationStemsToBridge().catch(() => {});
           this.updatePipelineProgress(20, 'ML isolation (disk cache)', 90);
@@ -4744,6 +4942,7 @@ class VoiceIsolatePro {
       const result = await separateStems(plan.channelData, buf.sampleRate, {
         modelIds: DEFAULT_ML_CHAIN,
         sourceName: this._sourceName || '',
+        processingConfig,
         // Owned Float32Arrays from _mlChannelPlan — transfer, don't re-copy.
         transferOwned: true,
         signal: this._processAbortSignal(),
@@ -4774,13 +4973,25 @@ class VoiceIsolatePro {
       });
       if (fileSeq !== this._fileSeq) return false;
       if (result.passthrough) return false;
+      if (result.appliedProcessingConfigRevision !== processingRevision) {
+        throw new Error('[VIP] ML worker did not acknowledge the Engineer processing snapshot');
+      }
+      try {
+        globalThis.__vipEngineerRuntime = {
+          ...(globalThis.__vipEngineerRuntime || {}),
+          processingConfigRevision: processingRevision,
+          mlSpectral: 'applied',
+        };
+      } catch { /* telemetry is best-effort */ }
 
       // Post-ML reconstruct — cooperative on Electron + Android (never pin at 88%).
       this._throwIfProcessAborted();
       this.updatePipelineProgress(18, 'Reconstructing stems…', 82);
       this._logProgressDiag('reconstruct-start', { backend: result.backend || null });
       await yieldToBrowser();
-      let clean = result.clean;
+      // Keep result.clean immutable for durable cache persistence. The output
+      // copy receives expansion, post-stem controls, and dewhistling.
+      let clean = result.clean.map((channel) => new Float32Array(channel));
       if (plan.expandStereo && clean?.[0] && plan.left && plan.right) {
         this.updatePipelineProgress(18, 'Expanding stereo…', 83);
         await yieldToBrowser();
@@ -4798,25 +5009,10 @@ class VoiceIsolatePro {
           },
         );
       }
+      await this._applyMlPostStemControls(clean, processingConfig);
       this._throwIfProcessAborted();
       await yieldToBrowser();
-      // Fast time-domain HF tame — kills residual ML mask whistle without a 2nd STFT.
-      try {
-        this.updatePipelineProgress(19, 'Smoothing residual…', 90);
-        this._logProgressDiag('dewhistle-start');
-        await yieldToBrowser();
-        await this._postIsolationDeWhistle(clean, result.sampleRate || buf.sampleRate, {
-          onProgress: (r) => {
-            if (this.abortFlag) return;
-            const pct = 90 + Math.round(Math.max(0, Math.min(1, r)) * 6); // 90→96
-            this.updatePipelineProgress(19, 'Smoothing residual…', pct);
-          },
-        });
-      } catch (dwErr) {
-        const jobs = globalThis.__VIP_JOBS__;
-        if (jobs?.isCancellationError?.(dwErr) || dwErr?.name === 'AbortError') throw dwErr;
-        structuredLog('warn', '[VIP] post-isolation dewhistle skipped', { err: dwErr?.message });
-      }
+      await this._applyPostIsolationCleanup(clean, result.sampleRate || buf.sampleRate);
       this._throwIfProcessAborted();
       this.updatePipelineProgress(19, 'Building output…', 96);
       this._logProgressDiag('build-output');
@@ -4824,33 +5020,11 @@ class VoiceIsolatePro {
       this.outputBuffer = stemsToAudioBuffer(this.ctx, clean, result.sampleRate);
       this.procBuffer = this.outputBuffer;
       this._stemFileSeq = fileSeq;
+      this._stemProcessingRevision = processingRevision;
       // Retain residual/noise stem for Live-Mix isolation refinements (bgSuppress).
       // Separation once → isolation sliders only rebalance stems (never re-ML).
       try {
-        let noise = result.noise;
-        if (plan.expandStereo && noise?.[0] && plan.left && plan.right) {
-          // Mid residual as stereo: share buffer on mobile (saves RAM + avoids tight copy).
-          if (this._isMobileEngineer()) {
-            noise = [noise[0], noise[0]];
-          } else {
-            const n = noise[0].length;
-            const noiseL = new Float32Array(n);
-            const noiseR = new Float32Array(n);
-            const signal = this._processAbortSignal();
-            await processInChunks({
-              total: n,
-              chunkSize: this._postMlChunkSamples(),
-              signal,
-              runChunk: (start, end) => {
-                for (let i = start; i < end; i++) {
-                  noiseL[i] = noise[0][i];
-                  noiseR[i] = noise[0][i];
-                }
-              },
-            });
-            noise = [noiseL, noiseR];
-          }
-        }
+        const noise = await this._reconcileLiveMixNoiseStem(clean, buf);
         if (noise?.length && noise[0]?.length) {
           this.noiseBuffer = stemsToAudioBuffer(this.ctx, noise, result.sampleRate || buf.sampleRate);
           // Keep references without cloning when arrays are already owned.
@@ -4901,7 +5075,7 @@ class VoiceIsolatePro {
             clean: durableClean,
             noise: durableNoise,
             sampleRate,
-          }).catch((err) => {
+          }, processingRevision).catch((err) => {
             structuredLog('warn', '[VIP] durable stem save failed', { err: err?.message });
           });
         });
@@ -4932,6 +5106,20 @@ class VoiceIsolatePro {
   async _runFallbackPipeline(sourceBuf) {
     const buf = sourceBuf || this.origBuffer || this.inputBuffer;
     if (!buf) return;
+
+    // ML may have succeeded for an earlier Process. A fallback output is not a
+    // compatible stem pair, so invalidate it before any passthrough/DSP return
+    // can hand stale audio to the Live-Mix bridge.
+    this._stemFileSeq = null;
+    this._stemProcessingRevision = null;
+    this._cleanStemChannels = null;
+    this._noiseStemChannels = null;
+    this._stemSampleRate = null;
+    this._durableStemBacking = null;
+    this.noiseBuffer = null;
+    this._bridgeBuf = null;
+    this.liveChainBuilt = false;
+    try { this._bridge?.stop?.(); } catch { /* best-effort */ }
 
     await this.ensureCtx();
     const DSP = this._resolveDSP();
@@ -5005,7 +5193,7 @@ class VoiceIsolatePro {
           lookahead: p.gateLookahead ?? 5,
         }, sr);
       }
-      if ((p.deEssAmt ?? 0) > 0) DSP.deEss(data, p.deEssFreq ?? 6000, p.deEssAmt ?? 0, sr);
+      if ((p.deEssAmt ?? 0) > 0) DSP.deEss(data, p.deEssFreq ?? 6500, p.deEssAmt ?? 0, sr);
       // Process-boundary micro-fades (~8 ms) kill residual edge discontinuities.
       const fadeN = Math.min(Math.floor(data.length / 4), Math.round(0.008 * sr));
       for (let i = 0; i < fadeN; i++) {
@@ -5016,25 +5204,21 @@ class VoiceIsolatePro {
       channels[ch] = data;
     }
 
-    // ── Pass 3–5: Engineer spectral (experimental / DSP-fallback only) ──
-    // Production ML shipping path is MLWorker fused spectral-mask (single STFT).
-    // This stage is gated: VIP_EXPERIMENTAL_ENGINEER_SPECTRAL=1 or forensic whisper.
-    const engSpectralOn = this._isExperimentalEngineerSpectralEnabled?.(p);
-    if (engSpectralOn) {
-      this.updatePipelineProgress(10, 'Spectral isolation (experimental Engineer path)…', 20);
-      const regionMaps = {
-        protect: this._protectRegions || [],
-        suppress: this._suppressRegions || [],
-      };
-      for (let ch = 0; ch < channels.length; ch++) {
-        if (this.abortFlag) break;
-        channels[ch] = await this._spectralStageAsync(channels[ch], sr, p, (frac) => {
-          const pct = 20 + Math.round(frac * 40);
-          this.updatePipelineProgress(10, 'Spectral isolation…', pct);
-        }, regionMaps) || channels[ch];
-      }
-    } else {
-      this.updatePipelineProgress(10, 'Skipping experimental Engineer STFT (ML path owns production spectral)…', 25);
+    // ── Pass 3–5: Engineer spectral fallback ──────────────────────────────
+    // MLWorker owns the fast fused production path. If it is unavailable, this
+    // bounded single-STFT fallback is the real consumer for the same Process
+    // snapshot—never silently downgrade Engineer controls into UI-only state.
+    this.updatePipelineProgress(10, 'Spectral isolation (DSP fallback)…', 20);
+    const regionMaps = {
+      protect: this._protectRegions || [],
+      suppress: this._suppressRegions || [],
+    };
+    for (let ch = 0; ch < channels.length; ch++) {
+      if (this.abortFlag) break;
+      channels[ch] = await this._spectralStageAsync(channels[ch], sr, p, (frac) => {
+        const pct = 20 + Math.round(frac * 40);
+        this.updatePipelineProgress(10, 'Spectral isolation (DSP fallback)…', pct);
+      }, regionMaps) || channels[ch];
     }
 
     // Expand mono-processed mid back to stereo with gain envelope.
@@ -5121,16 +5305,13 @@ class VoiceIsolatePro {
       await yieldToBrowser();
     }
 
-    // Final brickwall safety limit + optional dither.
+    // Final brickwall safety limit. Dither is intentionally deferred to the
+    // 16-bit encoder boundary so preview PCM stays deterministic and exports
+    // are never dithered twice.
     this._throwIfProcessAborted();
     this.updatePipelineProgress(29, 'Output safety…', 97);
     await yieldToBrowser();
     this._applyOutputSafetyLimit(processed, p);
-    if ((p.ditherAmt ?? 0) > 0) {
-      for (let ch = 0; ch < processed.numberOfChannels; ch++) {
-        this.applyDither(processed.getChannelData(ch), p);
-      }
-    }
     await yieldToBrowser();
     this._logProgressDiag('fallback-render-end', { end: true });
 
@@ -5370,7 +5551,7 @@ class VoiceIsolatePro {
 
   applyPhaseCorr(spec, p) {
     if (!p.phaseCorr) return;
-    // Phase correlation correction
+    // Compatibility hook for the process-time mono-correlation blend.
     const strength = (p.phaseCorr || 0) / 100;
     if (strength < 0.001) return;
   }
@@ -5441,16 +5622,6 @@ class VoiceIsolatePro {
       await yieldToBrowser();
     }
     opts.onProgress?.(1);
-  }
-
-  applyDither(buf, p) {
-    const bits = p.ditherAmt || 0;
-    if (!bits || bits <= 0) return;
-    // Interpret ditherAmt as optional 16-bit-ish TPDF level (not bits*8 — that was too loud/harsh).
-    const amp = Math.min(1e-3, Math.pow(2, -(16 + bits)) * 0.5);
-    for (let i = 0; i < buf.length; i++) {
-      buf[i] += (Math.random() + Math.random() - 1) * amp;
-    }
   }
 
   applyVoiceFocus(spec, p) {
@@ -5967,8 +6138,9 @@ class VoiceIsolatePro {
     }
   }
 
-  // Phase-correlation correction — pull out-of-phase stereo content toward the
-  // mono centre so the mix stays solid when summed to mono.
+  // Mono-correlation blend — pull stereo content toward the shared midpoint so
+  // the mix stays more stable when summed to mono. This does not estimate or
+  // correct a channel time offset.
   _applyPhaseCorrection(channels, amount) {
     const L = channels[0], R = channels[1];
     const n = Math.min(L.length, R.length);

@@ -26,9 +26,9 @@ class DeEsserProcessor extends AudioWorkletProcessor {
       },
       {
         name: 'frequency',
-        defaultValue: 6000,
-        minValue: 3500,
-        maxValue: 10000,
+        defaultValue: 6500,
+        minValue: 2000,
+        maxValue: 16000,
         automationRate: 'k-rate'
       }
     ];
@@ -60,7 +60,7 @@ class DeEsserProcessor extends AudioWorkletProcessor {
     };
     
     // Last frequency used (to detect when to recalculate coefficients)
-    this.lastFrequency = 6000;
+    this.lastFrequency = 6500;
     
     // Sample rate
     this.sampleRate = 48000; // Default, will be updated
@@ -160,11 +160,14 @@ class DeEsserProcessor extends AudioWorkletProcessor {
     // defensively against their descriptor defaults so the processor still runs
     // if a caller (or a mock/test) omits one.
     const amount = this._clampParam(parameters.amount?.[0], 0, 0, 1);
-    const frequency = this._clampParam(parameters.frequency?.[0], 6000, 3500, 10000);
+    let frequency = this._clampParam(parameters.frequency?.[0], 6000, 2000, 16000);
 
     // Update sample rate from the AudioWorklet global (falls back to 48 kHz)
     const sr = typeof sampleRate !== 'undefined' ? sampleRate : this.sampleRate;
     if (Number.isFinite(sr) && sr > 0) this.sampleRate = sr;
+    // Stay below Nyquist for low-rate mobile sources while preserving the
+    // shared UI contract on normal 44.1/48 kHz playback.
+    frequency = Math.min(frequency, this.sampleRate * 0.45);
 
     // Recalculate filter coefficients if frequency changed
     if (Math.abs(frequency - this.lastFrequency) > 0.1) {

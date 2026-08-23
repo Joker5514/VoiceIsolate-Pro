@@ -180,13 +180,9 @@ describe('AndroidManifest.xml — structure and security', () => {
     expect(manifest).toContain('android.permission.INTERNET');
   });
 
-  test('RECORD_AUDIO permission is declared (required for live audio capture)', () => {
-    expect(manifest).toContain('android.permission.RECORD_AUDIO');
-  });
-
-  test('microphone hardware feature is declared as optional', () => {
-    expect(manifest).toContain('android.hardware.microphone');
-    expect(manifest).toContain('android:required="false"');
+  test('does not declare microphone capture permissions or hardware for the upload-only product', () => {
+    expect(manifest).not.toContain('android.permission.RECORD_AUDIO');
+    expect(manifest).not.toContain('android.hardware.microphone');
   });
 
   test('cleartext traffic is explicitly disabled', () => {
@@ -531,9 +527,9 @@ describe('build.gradle — app namespace and applicationId', () => {
   });
 });
 
-// ─── MainActivity.java — WebView isolation and runtime mic permission ───────
+// ─── MainActivity.java — WebView isolation and upload-only permission flow ──
 
-describe('MainActivity.java — WebView isolation and mic permission flow', () => {
+describe('MainActivity.java — WebView isolation and upload-only permission flow', () => {
   let mainActivity;
 
   beforeAll(() => {
@@ -550,8 +546,8 @@ describe('MainActivity.java — WebView isolation and mic permission flow', () =
     expect(mainActivity).toContain('Cross-Origin-Embedder-Policy');
   });
 
-  test('does not prompt RECORD_AUDIO at boot (upload-only — avoids startup jank)', () => {
-    expect(mainActivity).toMatch(/do NOT prompt for RECORD_AUDIO at boot/);
+  test('does not request RECORD_AUDIO at boot (upload-only — avoids startup jank)', () => {
+    expect(mainActivity).toMatch(/does not request RECORD_AUDIO/);
     expect(mainActivity).not.toMatch(/requestRecordAudioPermissionIfNeeded/);
   });
 

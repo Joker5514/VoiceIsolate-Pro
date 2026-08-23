@@ -41,16 +41,25 @@ It does **NOT** process a live microphone signal. It uses a two-phase model:
 
 **Why:** the old live-microphone pipeline required fragile SharedArrayBuffer
 ring buffers and suffered audible clipping from V8 garbage collection. The
-Stem-Split & Live-Mix model gives latency-free slider response (it is just a
-`GainNode.gain.setTargetAtTime()` call) while keeping the heavy ML work in a
-one-shot offline pass.
+Stem-Split & Live-Mix model gives latency-free response for Live-Mix controls
+(AudioParams / smoothing) while keeping heavy ML work in an explicit offline
+Process pass. Process-time Engineer controls are captured as one immutable
+configuration snapshot only when the user starts Process; dragging a control
+never starts inference.
+
+The 67-control Engineer contract is explicit: **37 Live-Mix** controls drive
+`PlaybackMixer`/worklets immediately; **27 Process-time spectral** controls
+travel in the versioned snapshot to `MLWorker`; two stereo post-stem controls
+run after reconstruction; and `ditherAmt` is encoder-only. Durable stem cache
+entries remain raw worker artifacts; fresh and cache-hit results both clone,
+post-process, dewhistle, and reconcile their Live-Mix residual before playback.
 
 ### 1.1 Hard prohibitions (never reintroduce)
 
 | ✗ Forbidden | Why |
 |---|---|
 | `navigator.mediaDevices.getUserMedia` or any live-mic ingestion | Live-mic processing was removed by design. The Permissions-Policy header denies the microphone (`microphone=()`). |
-| Re-running ML inference from a slider/UI event | Sliders are wired to Web Audio nodes only. Inference happens once, at ingestion. |
+| Re-running ML inference from a slider/UI event | A slider event must never start inference. An explicit user **Process** may consume one immutable Engineer config snapshot and then runs once per file/config revision. |
 | Restoring the deleted `pipeline-orchestrator.js` live-mic monolith | Replaced by Stem-Split & Live-Mix (shipped) and the v2.1 Live-mode ring-buffer path (in progress). |
 | Client-side authentication or tier gating as a security boundary | All auth/licensing decisions are server-side (JWT). Client code may only *display* state. |
 | Hardcoded secrets, seeded credentials, dev-bypass license stubs | Secrets come from environment variables only (see `.env.example`). |
@@ -248,10 +257,12 @@ The Engineer Mode app under `public/app/` predates this architecture. It is in
   remains the shipped UI until the new presentation layer replaces it.
 - Do not add features to `public/app/`. New work targets `src/`.
 - Legacy data invariants still enforced by tests/`scripts/validate.js`:
-  **67 sliders** — `SLIDER_REGISTRY` in `slider-map.js` is the calibrated source
-  of truth; `app.js` `RENDER_SLIDERS` mirrors it for DOM rendering. The inline
-  `SLIDERS` block remains for preset/test parsing. 32 `STAGES` in `slider-map.js`,
-  presets covering all slider IDs, single STFT/iSTFT pass per processing path.
+  **67 registered controls** (66 native range sliders plus Whisper mode) —
+  `SLIDER_REGISTRY` in `slider-map.js` is the calibrated source of truth;
+  `ParameterSchema.js` owns validated execution grouping and `app.js`
+  `RENDER_SLIDERS` mirrors the registry for DOM rendering. The inline `SLIDERS`
+  block remains for preset/test parsing. 32 `STAGES` in `slider-map.js`, presets
+  covering all slider IDs, single STFT/iSTFT pass per processing path.
 - Deleted legacy files (do not restore): `handoff-bridge.js`, `ai-engine-v2.js`,
   `speaker-ui.js`, `speaker-mixer.js`, `isolation-controls.js`, root `engineer.html`,
   root `landing.html`. Surfaces are `public/index.html` and `public/app/` only.
@@ -364,7 +375,7 @@ const QUANTA_PER_HOP = HOP_SIZE / QUANTUM; // MUST be integer (4)
 2. `QuantumHopBridge` accumulates exactly `QUANTA_PER_HOP` quanta before each hop advance.
 3. Analysis and synthesis use **symmetric periodic Hann**; reconstruction divides by the summed window² envelope (COLA).
 4. **Product is upload-only** (`Permissions-Policy: microphone=()`). Real-time AudioWorklets are **playback-only** Gate + DeEsser (`/src/workers/GateProcessor.js`, `DeEsserProcessor.js`) — **not** a full spectral Live-Mode mic path and **not** a sub-10 ms isolation claim.
-5. Offline isolation STFT lives in **`src/workers/MLWorker.js`** (`fused-spectral-single-stft` for DEFAULT `bsrnn_vocals`; serial multi-STFT only for mixed/waveform chains e.g. Demucs). Engineer offline spectral refine uses one STFT/iSTFT in `app.js` `_spectralStageAsync` when ML is unavailable.
+5. Offline isolation STFT lives in **`src/workers/MLWorker.js`** (`fused-spectral-single-stft` for DEFAULT `bsrnn_vocals`; serial multi-STFT only for mixed/waveform chains e.g. Demucs). `EngineerSpectralControls.js` applies the Process snapshot inside that existing frame loop; the `app.js` `_spectralStageAsync` fallback still uses one STFT/iSTFT when ML is unavailable.
 6. Tests in `tests/overlap-add.test.js` must pass before merging ring-buffer changes.
 
 Lock-free `SharedRingBuffer` / `RingBuffer` FIFO transport remains in `public/app/ring-buffer.js` for legacy glue; production ML does not require a live-mic SAB ring path.

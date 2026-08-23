@@ -16,6 +16,7 @@ import { TimelineRenderer } from '/src/presentation/TimelineRenderer.js';
 import { TransportSync } from '/src/presentation/TransportSync.js';
 import { checkCapabilities, formatCapabilityLines } from '/src/core/CapabilityChecker.js';
 import { getCalibratedPresets, resolvePresetName } from '/src/core/PresetCalibration.js';
+import { buildMlProcessingConfig } from '/src/core/ParameterSchema.js';
 import { exportAudioBuffer, safeFilename } from '/src/pipeline/ExportManager.js';
 import { downmixToMono } from '/src/core/FeatureExtractor.js';
 import {
@@ -926,7 +927,12 @@ export function installAnalysisWorkspace(app) {
   els.btnExport?.addEventListener('click', async () => {
     const buf = app.procBuffer || app.outputBuffer || app.origBuffer;
     const name = safeFilename((app.fileName || 'voiceisolate') + '-export', 'wav');
-    const result = await exportAudioBuffer(buf, name);
+    const rawParams = globalThis.VIP_PARAMS || app.params || {};
+    const params = typeof app.getEffectiveParams === 'function'
+      ? app.getEffectiveParams(rawParams)
+      : rawParams;
+    const ditherAmt = buildMlProcessingConfig(params).export.ditherAmt;
+    const result = await exportAudioBuffer(buf, name, { ditherAmt });
     if (!result.ok) showError(result.error || 'Export failed');
     else if (typeof app.setStatus === 'function') app.setStatus(`Exported ${result.filename}`);
   });

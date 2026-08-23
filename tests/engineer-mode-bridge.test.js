@@ -84,11 +84,11 @@ describe('PlaybackMixer — Engineer Mode parity controls', () => {
     }
   });
 
-  test('setGraphicEq drives the right band and clamps to ±12 dB (idle snaps)', () => {
+  test('setGraphicEq drives the right band and honors the full ±24 dB UI range', () => {
     mixer.setGraphicEq('presence', 5);
     expect(mixer.graphicBands.get('presence').gain.value).toBeCloseTo(5);
     mixer.setGraphicEq('presence', 99);
-    expect(mixer.graphicBands.get('presence').gain.value).toBe(12);
+    expect(mixer.graphicBands.get('presence').gain.value).toBe(24);
     mixer.setGraphicEq('nope', 4); // unknown band → ignored, no throw
   });
 
@@ -96,8 +96,8 @@ describe('PlaybackMixer — Engineer Mode parity controls', () => {
     mixer.setSpectralTilt(4);
     expect(mixer.tiltLow.gain.value).toBeCloseTo(-4);
     expect(mixer.tiltHigh.gain.value).toBeCloseTo(4);
-    mixer.setSpectralTilt(99); // clamp to 6
-    expect(mixer.tiltHigh.gain.value).toBe(6);
+    mixer.setSpectralTilt(99); // clamp to 12
+    expect(mixer.tiltHigh.gain.value).toBe(12);
   });
 
   test('limiter is transparent until engaged, then 20:1', () => {
@@ -131,6 +131,13 @@ describe('PlaybackMixer — Engineer Mode parity controls', () => {
     expect(mixer._gateParams.hold).toBe(500);
   });
 
+  test('gate lookahead is tracked in the active worklet contract', () => {
+    mixer.setGateLookahead(12);
+    expect(mixer._gateParams.lookahead).toBe(12);
+    mixer.setGateLookahead(999);
+    expect(mixer._gateParams.lookahead).toBe(20);
+  });
+
   test('HP/LP Q setters drive the filter resonance and clamp to 0.1…10', () => {
     mixer.setHighpassQ(2.5);
     expect(mixer.highpass.Q.value).toBeCloseTo(2.5);
@@ -155,7 +162,8 @@ describe('EngineerModeBridge', () => {
     // Separation→isolation Live-Mix refinements (stem balance)
     expect(EngineerModeBridge.handles('voiceIso')).toBe(true);
     expect(EngineerModeBridge.handles('bgSuppress')).toBe(true);
-    expect(EngineerModeBridge.handles('nrAmount')).toBe(true);
+    expect(EngineerModeBridge.handles('nrAmount')).toBe(false); // Process-time spectral only
+    expect(EngineerModeBridge.handles('gateLookahead')).toBe(true);
     expect(EngineerModeBridge.handles('whisperMode')).toBe(false); // offline Process only
     expect(EngineerModeBridge.supportedIds().length).toBeGreaterThanOrEqual(30);
   });
@@ -196,6 +204,7 @@ describe('EngineerModeBridge', () => {
       setOutputGain: jest.spyOn(mixer, 'setOutputGain'),
       setDryWet: jest.spyOn(mixer, 'setDryWet'),
       setGateHold: jest.spyOn(mixer, 'setGateHold'),
+      setGateLookahead: jest.spyOn(mixer, 'setGateLookahead'),
       setGateRange: jest.spyOn(mixer, 'setGateRange'),
       setDeEsserAmount: jest.spyOn(mixer, 'setDeEsserAmount'),
       setStereoWidth: jest.spyOn(mixer, 'setStereoWidth'),
@@ -210,6 +219,8 @@ describe('EngineerModeBridge', () => {
     expect(spies.setDryWet).toHaveBeenCalledWith(50);
     bridge.applyParam('gateHold', 100);
     expect(spies.setGateHold).toHaveBeenCalledWith(100);
+    bridge.applyParam('gateLookahead', 8);
+    expect(spies.setGateLookahead).toHaveBeenCalledWith(8);
     bridge.applyParam('outWidth', 120);
     expect(spies.setStereoWidth).toHaveBeenCalledWith(120);
   });
@@ -220,9 +231,9 @@ describe('EngineerModeBridge', () => {
     expect(spy).toHaveBeenCalledWith(60);
   });
 
-  test('de-esser amount converts 0–30 dB to 0–100 %', () => {
+  test('de-esser amount converts 0–24 dB to 0–100 %', () => {
     const spy = jest.spyOn(mixer, 'setDeEsserAmount');
-    bridge.applyParam('deEssAmt', 15);
+    bridge.applyParam('deEssAmt', 12);
     expect(spy).toHaveBeenCalledWith(50);
   });
 
@@ -238,7 +249,7 @@ describe('EngineerModeBridge', () => {
   test('unsupported ids and non-finite values are ignored', () => {
     expect(bridge.applyParam('formantShift', 2)).toBe(false); // worker param, no mixer control
     expect(bridge.applyParam('whisperMode', 2)).toBe(false);  // offline Process tier, not Live-Mix
-    expect(bridge.applyParam('nrAmount', 50)).toBe(true);     // residual duck via Live-Mix
+    expect(bridge.applyParam('nrAmount', 50)).toBe(false);    // Process-time spectral only
     expect(bridge.applyParam('eqMid', NaN)).toBe(false);      // non-finite
     expect(bridge.applyParam('eqMid', 4)).toBe(true);
   });

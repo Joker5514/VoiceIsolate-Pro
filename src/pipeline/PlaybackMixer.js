@@ -231,7 +231,7 @@ export class PlaybackMixer {
     this.compressor = this.ctx.createDynamicsCompressor();
     this.makeupGain = this.ctx.createGain();
     // De-esser slot: makeupGain → deEsserInput → stereo matrix. The de-esser
-    // worklet (true sidechain, no lookahead) is spliced between them once it
+    // worklet (true sidechain with bounded lookahead) is spliced between them once it
     // loads (see _loadDeEsser); until then deEsserInput is a pass-through.
     this.deEsserInput = this.ctx.createGain();
     // ── Stereo-width mid/side matrix (transparent at width = 100%) ────────
@@ -404,11 +404,11 @@ export class PlaybackMixer {
     // (avoids a splice-after-dispose race).
     this._disposed = false;
     /** @type {AudioWorkletNode|null} */ this.gate = null;
-    this._gateParams = { threshold: -45, range: 0, attack: 5, release: 100, hold: 0 };
+    this._gateParams = { threshold: -45, range: 0, attack: 5, release: 100, hold: 0, lookahead: 0 };
     this._gateLoadState = 'pending';
     this._gatePromise = this._loadGate();
     /** @type {AudioWorkletNode|null} */ this.deEsser = null;
-    this._deEsserParams = { frequency: 6000, amount: 0 };
+    this._deEsserParams = { frequency: 6500, amount: 0 };
     this._deEsserLoadState = 'pending';
     this._deEsserPromise = this._loadDeEsser();
 
@@ -583,6 +583,7 @@ export class PlaybackMixer {
       throw new TypeError('[VIP][PlaybackMixer] loadStems requires non-empty channel arrays.');
     }
     this.stop();
+    this._resetGateWorklet();
     this.cleanBuffer = this._toAudioBuffer(cleanChannels, sampleRate);
     this.noiseBuffer = this._toAudioBuffer(noiseChannels, sampleRate);
     this._offset = 0;
@@ -680,6 +681,7 @@ export class PlaybackMixer {
     }
 
     this._teardownSources();
+    this._resetGateWorklet();
     this._cleanSource = this.ctx.createBufferSource();
     this._cleanSource.buffer = this.cleanBuffer;
     this._cleanSource.connect(this.speakerGain);
@@ -748,6 +750,12 @@ export class PlaybackMixer {
     }
     this._cleanSource = null;
     this._noiseSource = null;
+  }
+
+  /** Clear bounded gate lookahead history before a new transport source starts. */
+  _resetGateWorklet() {
+    const port = this.gate?.port;
+    if (port && typeof port.postMessage === 'function') port.postMessage({ type: 'reset' });
   }
 
   // ─── Real-time controls (AudioParam only — never ML) ──────────────────
@@ -835,9 +843,9 @@ export class PlaybackMixer {
     this._applyParam(this.eqHighMid.gain, clamp(db, -24, 24));
   }
 
-  /** High-pass cutoff in Hz (20 … 2000). 20 Hz ≈ off. */
+  /** High-pass cutoff in Hz (10 … 2000). 10 Hz ≈ off. */
   setHighpass(hz) {
-    this._applyParam(this.highpass.frequency, clamp(hz, 20, 2000));
+    this._applyParam(this.highpass.frequency, clamp(hz, 10, 2000));
   }
 
   /** High-pass resonance / steepness (0.1 … 10). 0.7 ≈ a smooth Butterworth roll-off. */
@@ -870,9 +878,9 @@ export class PlaybackMixer {
     this._applyParam(this.compressor.attack, clamp(ms, 0, 200) / 1000);
   }
 
-  /** Bus compressor release in milliseconds (0 … 1000); stored as seconds. */
+  /** Bus compressor release in milliseconds (0 … 2000); stored as seconds. */
   setCompRelease(ms) {
-    this._applyParam(this.compressor.release, clamp(ms, 0, 1000) / 1000);
+    this._applyParam(this.compressor.release, clamp(ms, 0, 2000) / 1000);
   }
 
   /** Bus compressor knee softness in dB (0 … 40). */
@@ -880,9 +888,9 @@ export class PlaybackMixer {
     this._applyParam(this.compressor.knee, clamp(db, 0, 40));
   }
 
-  /** Post-compressor makeup gain in dB (0 … +24); applied as a linear gain. */
+  /** Post-compressor makeup gain in dB (−12 … +24); applied as a linear gain. */
   setMakeupGain(db) {
-    this._applyParam(this.makeupGain.gain, Math.pow(10, clamp(db, 0, 24) / 20));
+    this._applyParam(this.makeupGain.gain, Math.pow(10, clamp(db, -12, 24) / 20));
   }
 
   /**
@@ -900,7 +908,7 @@ export class PlaybackMixer {
   // become real-time the same way the 5-band console does (CLAUDE.md §1).
 
   /**
-   * Set one graphic-EQ band's gain in dB (−12 … +12). `band` is one of the
+   * Set one graphic-EQ band's gain in dB (−24 … +24). `band` is one of the
    * GRAPHIC_EQ_BANDS names (sub, bass, warmth, body, lowMid, mid, presence,
    * clarity, air, brilliance). Unknown bands are ignored.
    * @param {string} band
@@ -909,16 +917,16 @@ export class PlaybackMixer {
   setGraphicEq(band, db) {
     const node = this.graphicBands.get(band);
     if (!node) return;
-    this._applyParam(node.gain, clamp(db, -12, 12));
+    this._applyParam(node.gain, clamp(db, -24, 24));
   }
 
   /**
-   * Spectral tilt in dB (−6 … +6). Positive brightens (lifts highs, dips lows)
+   * Spectral tilt in dB (−12 … +12). Positive brightens (lifts highs, dips lows)
    * around the 1 kHz pivot; negative darkens. 0 = flat.
    * @param {number} db
    */
   setSpectralTilt(db) {
-    const tilt = clamp(db, -6, 6);
+    const tilt = clamp(db, -12, 12);
     this._applyParam(this.tiltLow.gain, -tilt);
     this._applyParam(this.tiltHigh.gain, tilt);
   }
@@ -936,9 +944,9 @@ export class PlaybackMixer {
     this._applyParam(this.limiter.threshold, clamp(db, -24, 0));
   }
 
-  /** Limiter release in milliseconds (10 … 500); stored as seconds. */
+  /** Limiter release in milliseconds (1 … 500); stored as seconds. */
   setLimiterRelease(ms) {
-    this._applyParam(this.limiter.release, clamp(ms, 10, 500) / 1000);
+    this._applyParam(this.limiter.release, clamp(ms, 1, 500) / 1000);
   }
 
   /** Final output trim in dB (−24 … +24), applied as a linear gain. */
@@ -960,20 +968,23 @@ export class PlaybackMixer {
   /** Noise-gate hold time in ms (0 … 500): how long the gate stays open after the signal drops. */
   setGateHold(ms) { this._setGateParam('hold', clamp(ms, 0, 500)); }
 
-  /** Noise-gate threshold in dB (−100 … 0): level below which it attenuates. */
-  setGateThreshold(db) { this._setGateParam('threshold', clamp(db, -100, 0)); }
+  /** Noise-gate threshold in dB (−120 … 0): level below which it attenuates. */
+  setGateThreshold(db) { this._setGateParam('threshold', clamp(db, -120, 0)); }
 
-  /** Noise-gate range in dB (0 … 80): attenuation depth when closed. 0 = off. */
-  setGateRange(db) { this._setGateParam('range', clamp(db, 0, 80)); }
+  /** Noise-gate range in dB (0 … 120): attenuation depth when closed. 0 = off. */
+  setGateRange(db) { this._setGateParam('range', clamp(db, 0, 120)); }
 
   /** Noise-gate attack in ms (0 … 200). */
   setGateAttack(ms) { this._setGateParam('attack', clamp(ms, 0, 200)); }
 
-  /** Noise-gate release in ms (0 … 1000). */
-  setGateRelease(ms) { this._setGateParam('release', clamp(ms, 0, 1000)); }
+  /** Noise-gate release in ms (0 … 2000). */
+  setGateRelease(ms) { this._setGateParam('release', clamp(ms, 0, 2000)); }
 
-  /** De-esser band frequency in Hz (2000 … 12000): where sibilance reduction starts. */
-  setDeEsserFreq(hz) { this._setDeEsserParam('frequency', clamp(hz, 2000, 12000)); }
+  /** Gate detector lookahead in ms (0 … 20). Adds bounded playback latency. */
+  setGateLookahead(ms) { this._setGateParam('lookahead', clamp(ms, 0, 20)); }
+
+  /** De-esser band frequency in Hz (2000 … 16000): where sibilance reduction starts. */
+  setDeEsserFreq(hz) { this._setDeEsserParam('frequency', clamp(hz, 2000, 16000)); }
 
   /** De-esser amount as a percentage (0 … 100). 0 = off (transparent). */
   setDeEsserAmount(percentage) {

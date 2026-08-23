@@ -1,8 +1,22 @@
 # ADR-001: Firebase as Intentional Cloud Exception
 
 **Date:** 2026-05-20
-**Status:** Accepted
+**Status:** Superseded (2026-08-22)
 **Deciders:** VoiceIsolate Pro core team
+
+---
+
+## Supersession note
+
+This ADR records a historical proposal and is **not** the current product
+contract. The active shell has no client-side product auth, preset-sync,
+billing, telemetry, or `api/auth.js` route. `public/app/firebase-config.js` is
+lazily imported only by `GoogleDriveBridge` to request user-initiated
+`drive.file` access; its older auth, Firestore, preset, and session helper
+exports have no active caller. See [ADR-002](002-google-drive-file-io.md) for
+the current, narrowly scoped Drive decision.
+
+Audio processing remains local in every case.
 
 ---
 
@@ -76,4 +90,7 @@ Audio data (PCM samples, spectral frames, model inputs/outputs) is **never sent 
 
 - Firebase credentials are injected at runtime via `window.FIREBASE_*` variables (set by the Vercel environment or the service worker) — never hardcoded in source
 - `firebase-config.js` exports `auth`, `db`, and helper functions — callers must guard against Firebase being unavailable in non-authenticated sessions
-- The CSP in `vercel.json` must explicitly allow Firebase network endpoints in `connect-src` (for example `https://identitytoolkit.googleapis.com`, `https://securetoken.googleapis.com`, and `https://firestore.googleapis.com` as used by Auth and Firestore); `'self'` does **not** cover these third-party origins. If the Firebase SDK is loaded from the `gstatic.com` CDN, `script-src` must also allow `https://www.gstatic.com`.
+- Historical Firebase CSP examples used the `identitytoolkit.googleapis.com`,
+  `securetoken.googleapis.com`, `firestore.googleapis.com`, and
+  `www.gstatic.com` origins. They are not current product endpoints; consult
+  the active Drive configuration before adding any third-party CSP exception.

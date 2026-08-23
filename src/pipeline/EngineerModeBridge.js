@@ -1,7 +1,7 @@
 /**
  * VoiceIsolate Pro — Engineer Mode ↔ Live-Mix Bridge (Layer 3: Pipeline)
  *
- * The legacy Engineer Mode (`public/app/`) has 34 sliders flagged `rt:true`
+ * The legacy Engineer Mode has a defined Live-Mix subset flagged `rt:true`
  * that were meant to apply in real time. Their old real-time path ran through
  * the `PipelineOrchestrator`, which was deliberately deleted with the live-mic
  * pipeline (CLAUDE.md §1.1 / §5). With it gone, those sliders only took effect
@@ -40,6 +40,7 @@ const PARAM_MAP = Object.freeze({
   gateAttack: (m, v) => m.setGateAttack(v),
   gateRelease: (m, v) => m.setGateRelease(v),
   gateHold: (m, v) => m.setGateHold(v),
+  gateLookahead: (m, v) => m.setGateLookahead(v),
 
   // ── 10-band graphic EQ (dB) ─────────────────────────────────────────────
   eqSub: (m, v) => m.setGraphicEq('sub', v),
@@ -71,9 +72,9 @@ const PARAM_MAP = Object.freeze({
   lpFreq: (m, v) => m.setLowpass(v),
   lpQ: (m, v) => m.setLowpassQ(v),
 
-  // ── De-esser (legacy amount is 0–30 dB → 0–100%) ────────────────────────
+  // ── De-esser (UI amount is 0–24 dB → 0–100%) ───────────────────────────
   deEssFreq: (m, v) => m.setDeEsserFreq(v),
-  deEssAmt: (m, v) => m.setDeEsserAmount((v / 30) * 100),
+  deEssAmt: (m, v) => m.setDeEsserAmount((v / 24) * 100),
 
   // ── Tone / output ───────────────────────────────────────────────────────
   specTilt: (m, v) => m.setSpectralTilt(v),
@@ -92,10 +93,6 @@ const PARAM_MAP = Object.freeze({
   // bgSuppress: duck residual/noise stem
   bgSuppress: (m, v) => {
     const pct = Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 38;
-    m.setNoiseReduction(pct);
-  },
-  nrAmount: (m, v) => {
-    const pct = Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0;
     m.setNoiseReduction(pct);
   },
 });

@@ -38,7 +38,8 @@ describe('Anti high-pitch / smear', () => {
 
   test('post-ML de-whistle runs without second STFT', () => {
     expect(appJs).toContain('_postIsolationDeWhistle');
-    expect(appJs).toMatch(/await this\._postIsolationDeWhistle\(clean/);
+    expect(appJs).toMatch(/async _applyPostIsolationCleanup[\s\S]*?await this\._postIsolationDeWhistle\(channels/);
+    expect(appJs).toMatch(/await this\._applyPostIsolationCleanup\(clean/);
   });
 
   test('ML worker softens high-frequency mask contribution', () => {

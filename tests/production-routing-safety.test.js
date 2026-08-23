@@ -21,6 +21,17 @@ describe('Production routing safety', () => {
     expect(vercel.outputDirectory).toBe('public');
   });
 
+  test('all /api routes reach the mounted Express handler before the SPA fallback', () => {
+    const rewrites = vercel.rewrites || [];
+    const apiRewriteIndex = rewrites.findIndex((rule) =>
+      rule.source === '/api/:path*' && rule.destination === '/api/handler',
+    );
+    const spaFallbackIndex = rewrites.findIndex((rule) => rule.destination === '/index.html');
+
+    expect(apiRewriteIndex).toBeGreaterThanOrEqual(0);
+    expect(spaFallbackIndex).toBeGreaterThan(apiRewriteIndex);
+  });
+
   test('COOP/COEP isolation headers remain configured', () => {
     const all = JSON.stringify(vercel.headers || []);
     expect(all).toContain('Cross-Origin-Opener-Policy');

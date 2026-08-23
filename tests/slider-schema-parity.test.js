@@ -12,6 +12,8 @@ const workflowJs = fs.readFileSync(path.join(ROOT, 'public/app/workflow-tier.js'
 const html = fs.readFileSync(path.join(ROOT, 'public/app/index.html'), 'utf8');
 const sliderMapSrc = fs.readFileSync(path.join(ROOT, 'public/app/slider-map.js'), 'utf8');
 const schemaSrc = fs.readFileSync(path.join(ROOT, 'src/core/ParameterSchema.js'), 'utf8');
+const stemSeparationSrc = fs.readFileSync(path.join(ROOT, 'src/pipeline/StemSeparation.js'), 'utf8');
+const mlWorkerSrc = fs.readFileSync(path.join(ROOT, 'src/workers/MLWorker.js'), 'utf8');
 
 function parseRegistryEntries(src) {
   const entries = [];
@@ -103,5 +105,16 @@ describe('slider schema parity', () => {
     expect(appJs).not.toMatch(/_pendingSlidersByPanel/);
     expect(appJs).not.toMatch(/_wireLazySliderPanel/);
     expect(appJs).toMatch(/Engineer control rack incomplete/);
+  });
+
+  test('successful ML path forwards one versioned snapshot into its existing fused STFT', () => {
+    expect(appJs).toMatch(/buildMlProcessingConfig/);
+    expect(appJs).toMatch(/processingConfig,/);
+    expect(appJs).toMatch(/_stemProcessingRevision === processingRevision/);
+    expect(stemSeparationSrc).toMatch(/processingConfig: options\.processingConfig \|\| null/);
+    expect(stemSeparationSrc).toMatch(/appliedProcessingConfigRevision/);
+    expect(mlWorkerSrc).toMatch(/EngineerSpectralControls\.js/);
+    expect(mlWorkerSrc).toMatch(/engineerProcessor\.applyFrame/);
+    expect(mlWorkerSrc).toMatch(/appliedProcessingConfigRevision/);
   });
 });

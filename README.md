@@ -20,7 +20,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-v25.0.2-red" alt="v25.0.2">
+  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml"><img src="https://github.com/Joker5514/VoiceIsolate-Pro/actions/workflows/deploy.yml/badge.svg?branch=main" alt="CI and deploy status"></a>
+  <a href="https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest"><img src="https://img.shields.io/github/v/release/Joker5514/VoiceIsolate-Pro?display_name=tag&label=release" alt="Latest release"></a>
+  <a href="https://voice-isolate-pro.vercel.app"><img src="https://img.shields.io/website?url=https%3A%2F%2Fvoice-isolate-pro.vercel.app&label=vercel&up_message=production&down_message=offline" alt="Vercel production status"></a>
+  <img src="https://img.shields.io/badge/platform-web%20%7C%20android%20%7C%20windows-2563eb" alt="Published platforms: web, Android, Windows">
   <img src="https://img.shields.io/badge/architecture-Threads%20from%20Space%20v8-blueviolet" alt="Architecture">
   <img src="https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white" alt="Node 22+">
   <img src="https://img.shields.io/badge/pnpm-11-000000?logo=pnpm&logoColor=f69220" alt="pnpm 11">
@@ -28,9 +31,10 @@
   <img src="https://img.shields.io/badge/license-Proprietary-red" alt="License">
 </p>
 
-> **Cross-platform release:** Web/PWA, Electron desktop, and Capacitor Android
-> all use **v25.0.2** from `package.json`. Run `pnpm version:check` before a
-> release; `pnpm mobile:sync-version` updates the packaged browser and native
+> **Current published release:** **v25.0.2** ships Web/PWA, a Capacitor Android
+> APK, and a Windows Electron installer. macOS and Linux remain supported build
+> targets but have no v25.0.2 release assets. Run `pnpm version:check` before a
+> release; `pnpm mobile:sync-version` updates packaged browser and native
 > metadata after any version bump.
 
 ---
@@ -55,7 +59,7 @@
 | Route | Surface | What it does |
 |-------|---------|--------------|
 | [`/`](https://voice-isolate-pro.vercel.app/) | **Landing — Stem-Split** | Fast ML stem separation → Live-Mix sliders → per-speaker mute/solo → **Focus on one voice** enrollment → export. |
-| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Console** | Studio-rack UI (3-column session · stage · control rack): 67 sliders in module cards, spectrogram center stage, **DSP Integrity** + **Output Safety**, auto analysis/diarization after Process, collapsible **Focus on one voice**, Simple view toggle. Creator / Studio / Forensic tiers. Same shell on **Web, Android (Capacitor), Desktop (Electron)** via `pnpm build` → `build/` → cap sync / electron-builder. |
+| [`/app/`](https://voice-isolate-pro.vercel.app/app/) | **Engineer Console** | Studio-rack UI (3-column session · stage · control rack): **66 range sliders plus Whisper mode** (67 registered controls) in module cards, spectrogram center stage, **DSP Integrity** + **Output Safety**, auto analysis/diarization after Process, collapsible **Focus on one voice**, explicit Simple View toggle. Creator / Studio / Forensic tiers. Same shell on **Web, Android (Capacitor), Desktop (Electron)** via `pnpm build` → `build/` → cap sync / electron-builder. |
 | [`/download/`](https://voice-isolate-pro.vercel.app/download/) | **Downloads** | Android APK + Windows installer (GitHub Releases), web app links. |
 
 **Upload controls (both pages):** Browse Files (`<label for="fileInput">`), click the drop zone, drag-and-drop, or **Upload Audio or Video** in the Engineer hero. Shared wiring lives in `src/presentation/UploadWiring.js`.
@@ -64,7 +68,7 @@
 
 | Component | Role |
 |-----------|------|
-| `vip-gate` | Real-time noise gate (`src/workers/GateProcessor.js`) |
+| `vip-gate` | Real-time noise gate with 0–20 ms lookahead (`src/workers/GateProcessor.js`) |
 | `vip-deesser` | Real-time de-esser (`src/workers/DeEsserProcessor.js`) |
 | Cockpit pills | **CTX · WORKLET · GATE · DEESS · SAB · ML · ORT · NET** — driven by `vip-boot.js` + `PlaybackMixer` |
 | Studio console | `engineer-console.css` / `engineer-console.js` — layout only; **all slider/canvas IDs preserved** |
@@ -99,8 +103,8 @@ Audio flows through **one Forward STFT** at the start of the spectral phase, in-
 | **Deferred decode** | Upload accepts the file instantly; PCM decode starts on Analyze / Process / Play (no upload freeze) |
 | **Source workspace** | Timeline lanes, source chips, independent layer audition (solo/mute/gain), original/layer/processed compare |
 | **Whisper / faint speech** | WhisperLogic + WhisperHunter — detect low-level speech-like zones and process carefully (no word hallucination; no cloud ASR) |
-| **Live-Mix (preview)** | Real-time gate/de-esser/EQ/comp via AudioWorklet + PlaybackMixer — sliders never re-run ML |
-| **Offline process** | Higher-quality ML stem separation + single-pass spectral chain (one STFT → ops → one iSTFT) |
+| **Live-Mix (preview)** | 37 real-time controls via AudioWorklet + PlaybackMixer — sliders never re-run ML |
+| **Offline process** | 27 process-time spectral controls + single-pass ML stem separation (one STFT → ops → one iSTFT) |
 | **ML models (shipped)** | Demucs v4 quant, BSRNN vocals, RNNoise suppressor, Silero VAD — ONNX Runtime Web |
 | **GPU execution** | WebGPU preferred → WASM fallback |
 | **Speaker diarization** | Classical + optional worker path on clean stem; mute/solo/volume per speaker |
@@ -151,6 +155,23 @@ Capability / Init
 | **Live-Mix** | Preview processed stems; tweak gate/EQ/comp in real time | Low latency; no re-inference |
 | **Offline analysis** | Understand the whole file before processing | Full-file features + recommendations |
 | **Offline process** | ML isolation + spectral chain for final quality | Higher fidelity than preview-only |
+
+### Engineer Mode control contract
+
+All Engineer Mode controls mount in the shared `public/app/` shell on Web,
+Android, and Electron. The full rack is the default; **Simple View** is an
+explicit, persisted user choice rather than an Android or low-memory auto-hide.
+
+| Timing | Controls | Verified consumer | Persistence / effect |
+|---|---|---|---|
+| Live-Mix | 37 controls, including gate (with lookahead), de-esser, EQ, dynamics, output, `voiceIso`, and `bgSuppress` | `EngineerModeBridge` → `PlaybackMixer` → AudioParam / active worklet | Local settings and presets; smoothed during playback where applicable |
+| Process-time spectral | 27 controls, including NR shaping, formant, dereverb, harmonics, focus, and Whisper Hunter shaping | `buildMlProcessingConfig()` → `StemSeparation` → `MLWorker` → `EngineerSpectralControls` inside the existing STFT loop | Captured when **Process** starts; revision-keyed stem cache; requires a new Process run |
+| Stereo post-stem | `phaseCorr` (Mono Correlation), `crosstalkCancel` | `app.js` post-stem stage | Captured when **Process** starts; unavailable for mono sources. Mono Correlation blends channels toward their midpoint; it does not estimate a channel delay. |
+| Export-only | `ditherAmt` | 16-bit WAV encoder boundary in Save Processed, Save to Drive, and Analysis Workspace export | Applied only while encoding; never mutates preview PCM |
+
+The process-time spectral path remains one forward STFT and one iSTFT. No
+Engineer slider starts a second transform, and no control is presented as a
+visual-only placeholder.
 
 ### Critical Constraints
 - **Single-Pass Spectral Architecture** — exactly ONE Forward STFT, in-place spectral operations, exactly ONE iSTFT per offline spectral branch.
@@ -253,7 +274,8 @@ No `.env` required for local audio processing. Optional payment/licensing vars i
 | **Latest Android APK** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-android-debug.apk |
 | **Pinned Android v25.0.2** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk |
 | **Latest Windows installer** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/latest/download/VoiceIsolate-Pro-25.0.2-win-x64.exe |
-| **Prior Windows v24.0.0** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v24.0.0/VoiceIsolate-Pro-24.0.0-win-x64.exe |
+| **Pinned Windows v25.0.2** | https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe |
+| **macOS / Linux** | No v25.0.2 release asset; build locally with `pnpm build:electron` on the target platform |
 
 The versioned v25.0.2 URLs above are the canonical release pins. The `latest`
 aliases are convenience links and must resolve to the same v25.0.2 assets before
@@ -262,12 +284,12 @@ binary availability still requires an HTTP check against GitHub Releases.
 
 | Asset | Name | Approx. size | Notes |
 |-------|------|----------------|---------|
-| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | ~96.9 MB | **v25.0.2** on `latest` · rebuilt **2026-08-21T10:04Z** (`17692f9`) |
-| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | ~138 MB | **v25.0.2** on `latest` · rebuilt **2026-08-21T10:04Z** (`17692f9`) |
+| Android complete offline APK | `VoiceIsolate-Pro-android-debug.apk` | 101,620,559 bytes | **v25.0.2** release asset, last updated **2026-08-21T10:04:08Z** |
+| Windows NSIS installer | `VoiceIsolate-Pro-25.0.2-win-x64.exe` | 144,646,374 bytes | **v25.0.2** release asset, last updated **2026-08-21T10:04:10Z** |
 
 In-repo version (Web / Android `versionName` / Electron artifact): **25.0.2** (`versionCode` / iOS build **250002**).  
-Published GitHub Release **`latest` = [v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)**.  
-Native APK + EXE match current shell (#776 Google Drive + #774) as of **2026-08-21T10:04Z**.
+Published GitHub Release **`latest` = [v25.0.2](https://github.com/Joker5514/VoiceIsolate-Pro/releases/tag/v25.0.2)** (published **2026-08-13T06:28:53Z**).
+Release-asset timestamps above are verified from GitHub Releases; do not infer a source commit from asset metadata.
 
 The download page always points at **real GitHub Release binaries** (never SPA HTML).  
 Same-origin `/download/*.apk` and `/download/*.exe` redirect to Releases (`vercel.json`).
@@ -284,6 +306,12 @@ pnpm build:electron
 
 Sideload APK: enable **Install unknown apps**, then open the file.  
 Details: [download/README.md](download/README.md).
+
+### Vercel deployment
+
+- **Production:** [`main`](https://github.com/Joker5514/VoiceIsolate-Pro/tree/main) pushes target [voice-isolate-pro.vercel.app](https://voice-isolate-pro.vercel.app). Native Vercel Git integration is the authoritative production deployment path.
+- **Preview:** pull requests targeting `main` run the preview job in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). It deploys through the Vercel CLI only when `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID` are configured; otherwise the job records an intentional skip while Git-connected Vercel may still publish its own preview.
+- **Environment variables:** local audio processing requires none. Optional deployment, Drive, and licensing variables are named—but never valued—in [`.env.example`](.env.example).
 
 ### Upload troubleshooting
 
@@ -321,6 +349,7 @@ android/             Capacitor Android project
 | Topic | Link |
 |-------|------|
 | Full docs index | [docs/README.md](docs/README.md) |
+| Changelog | [CHANGELOG.md](CHANGELOG.md) |
 | Architecture v26 | [docs/architecture/VoiceIsolate_Pro_Architecture_v26.md](docs/architecture/VoiceIsolate_Pro_Architecture_v26.md) |
 | Technical whitepaper | [docs/architecture/VoiceIsolate_Pro_Technical_Whitepaper.md](docs/architecture/VoiceIsolate_Pro_Technical_Whitepaper.md) |
 | Master Blueprint | [docs/architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md](docs/architecture/VoiceIsolate-Pro_Master_Blueprint_v2.1.md) |
@@ -354,7 +383,7 @@ android/             Capacitor Android project
 - **Zero cloud audio processing** — all DSP and ML inference execute on-device
 - **Optional Google Drive** — user-initiated **Open from Drive** / **Save to Drive** only (never during Process); see [GOOGLE_DRIVE.md](docs/guides/GOOGLE_DRIVE.md)
 - Strict headers: COOP / COEP / CSP / `nosniff` via `server/securityHeaders.js` and `vercel.json`
-- Microphone permission denied via Permissions-Policy (`microphone=()`)
+- Microphone capture denied by Web Permissions-Policy (`microphone=()`) and omitted from the Android manifest
 - ONNX models verified against pinned SHA-256 before every session
 - AES-256 encryption available for exported files (optional, user-controlled key)
 - DOD 5220.22-M compliant secure delete of temporary buffers
@@ -362,10 +391,16 @@ android/             Capacitor Android project
 
 ---
 
-## Recent changes (v25.0.2)
+## Unreleased changes
+
+- **Engineer Mode control restoration** — all 66 range sliders mount in the shared Web / Android / Electron shell; each path is now live-mix, process-time, stereo post-stem, or export-only with a verified consumer.
+- **Control-path hardening** — fresh and durable ML results now share post-stem cleanup, DSP fallback invalidates stale stem pairs, Whisper Mode has reset/lock/persistence parity, and all processed WAV exports use the same encoder-only dither snapshot.
+- **Production API routing** — Vercel now explicitly rewrites `/api/:path*` to the mounted serverless handler ahead of the SPA fallback.
+
+## Release notes (v25.0.2)
 
 - **Google Drive** — optional import/export on Web, Desktop, and Android (same shell); Firebase `drive.file` scope; ADR-002 (#776)
-- **Native rebuild (2026-08-21T10:04Z)** — Android APK + Windows EXE from `17692f9` (#776 Drive + #774 DSP)
+- **Native rebuild (2026-08-21T10:04Z)** — Android APK + Windows EXE release assets refreshed (#776 Drive + #774 DSP)
 - **Desktop 88% freeze** — cooperative post-ML finalization; truthful progress 82→100 ([PROCESS_PROGRESS.md](docs/guides/PROCESS_PROGRESS.md)) (#772)
 - **Android upload** — package-visibility `<queries>`, compact accept, deferred media permission (#770)
 - **Engineer DSP sliders (desktop)** — usable rack layout, 40px targets, numeric entry, lock/search/filter ([DSP_SLIDERS.md](docs/guides/DSP_SLIDERS.md)) (#767)

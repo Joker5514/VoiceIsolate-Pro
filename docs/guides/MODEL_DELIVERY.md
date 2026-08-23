@@ -24,6 +24,26 @@ canonical source for model filenames, sizes, and SHA-256 hashes.
 - Model weights are immutable application assets.
 - The browser verifies model hashes when a manifest hash is available.
 
+## Hugging Face model-card status
+
+The production VoiceIsolate model delivery path is the same-origin Vercel Blob
+route above. `scripts/upload-to-huggingface.py` names
+`Joker5514/voice-isolate-models` as an **optional publishing target**, but the
+current release manifest has no Hugging Face source, immutable revision, or
+runtime fallback URL. The repository/model card was not accessible during the
+2026-08-22 documentation audit, so it is not a verified shipped-model source.
+The Hugging Face links in [`public/models/README.md`](../../public/models/README.md)
+are third-party diarization references and must not be represented as the
+product's model card.
+
+Before publishing or changing a VoiceIsolate model card, record all of the
+following in the owned model repository and then mirror the immutable revision
+here: model name/version, license, input/output tensor schema, sample rate,
+quantization, platform compatibility, limitations, SHA-256, and the exact
+`ModelManifest` entry. Until a maintainer publishes and pins an accessible
+revision, the Vercel Blob manifest is the only canonical shipped-model
+reference.
+
 ## Runtime Responsibilities
 
 - `src/core/ModelManifest.js` defines canonical model URLs and expected hashes.
