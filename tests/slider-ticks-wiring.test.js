@@ -1,5 +1,5 @@
 /** @jest-environment jsdom */
-/* global document, navigator, MutationObserver, Event */
+/* global document, MutationObserver */
 'use strict';
 
 const fs = require('fs');
