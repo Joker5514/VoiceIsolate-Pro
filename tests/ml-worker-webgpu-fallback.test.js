@@ -158,6 +158,31 @@ describe('MLWorker WebGPU session ownership', () => {
     expect(read(sb, 'BACKEND')).toBe('webgpu');
   });
 
+  test('device loss invalidates already-cached WebGPU sessions', async () => {
+    const sb = loadSandbox({
+      gpuOk: true,
+      createImpl: async (_bytes, opts) => {
+        if (opts.executionProviders[0] === 'webgpu' && sb.__creates.length > 1) {
+          throw new Error('GPUDevice was lost');
+        }
+        return { run: async () => ({}), _providers: opts.executionProviders.slice() };
+      },
+    });
+    await sb.createSessionFromBytes(ENTRY_A, bytes(), ENTRY_A.id);
+    vm.runInContext(
+      `SESSIONS[${JSON.stringify(ENTRY_A.id)}] = { cached: true };`,
+      sb,
+    );
+    expect(read(sb, `SESSION_BACKENDS[${JSON.stringify(ENTRY_A.id)}]`)).toBe('webgpu');
+    await sb.createSessionFromBytes(ENTRY_B, bytes(), ENTRY_B.id);
+    expect(read(sb, '_webgpuDisabledReason')).toMatch(/lost/i);
+    expect(read(sb, `SESSIONS[${JSON.stringify(ENTRY_A.id)}]`)).toBeUndefined();
+    expect(read(sb, `_wasmSessionKeys[${JSON.stringify(ENTRY_A.id)}]`)).toBe(true);
+    sb.__creates.length = 0;
+    await sb.createSessionFromBytes(ENTRY_A, bytes(), ENTRY_A.id);
+    expect(sb.__creates.map((c) => c.providers)).toEqual([['wasm']]);
+  });
+
   test('device loss disables subsequent WebGPU attempts worker-wide', async () => {
     const sb = loadSandbox({
       gpuOk: true,

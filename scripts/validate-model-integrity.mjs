@@ -19,12 +19,17 @@ const ROOT = path.resolve(path.dirname(__filename), '..');
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 
+export function isExplicitlyOptional(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (entry.shipped === false) return true;
+  if (entry.optional === true && entry.shipped !== true) return true;
+  if (entry.delivery === 'optional' && entry.shipped !== true) return true;
+  return false;
+}
+
 export function isRequiredShippedModel(entry) {
   if (!entry || typeof entry !== 'object') return false;
-  if (entry.shipped === false) return false;
-  if (entry.optional === true && entry.shipped !== true) return false;
-  if (entry.delivery === 'optional' && entry.shipped !== true) return false;
-  if (entry.sha256 == null || entry.sizeBytes == null) return false;
+  if (isExplicitlyOptional(entry)) return false;
   return true;
 }
 
@@ -98,10 +103,8 @@ export function validateModelIntegrity(options = {}) {
   for (const id of Object.keys(manifest)) {
     const entry = manifest[id];
     if (isRequiredShippedModel(entry)) continue;
-    if (entry?.shipped === false || entry?.optional === true || entry?.delivery === 'optional') {
+    if (isExplicitlyOptional(entry)) {
       notices.push(`skip optional/unshipped model ${id}`);
-    } else if (entry?.sha256 == null || entry?.sizeBytes == null) {
-      notices.push(`skip unpinned model ${id} (not treated as shipped)`);
     }
   }
 

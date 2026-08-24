@@ -97,6 +97,19 @@ export function validateProvenance(doc, options = {}) {
   }
   if (typeof doc.tag !== 'string' || !/^v\d+\.\d+\.\d+$/.test(doc.tag)) {
     push(errors, 'tag', 'tag must look like vX.Y.Z');
+  } else if (typeof doc.productVersion === 'string' && doc.tag !== `v${doc.productVersion}`) {
+    push(errors, 'tag', `tag must be v\${productVersion} (expected v${doc.productVersion})`);
+  }
+  if (
+    typeof options.packageVersion === 'string'
+    && typeof doc.productVersion === 'string'
+    && options.packageVersion !== doc.productVersion
+  ) {
+    push(
+      errors,
+      'productVersion',
+      `productVersion must match package.json version ${options.packageVersion}`,
+    );
   }
 
   if (!doc.claims || typeof doc.claims !== 'object' || Array.isArray(doc.claims)) {
@@ -278,6 +291,12 @@ function validatePlatformRecord(rec, p, doc, errors, notices, strictFailures) {
 function validateCurrentRecord(rec, p, doc, errors) {
   if (typeof rec.sourceSha !== 'string' || !GIT_SHA_RE.test(rec.sourceSha)) {
     push(errors, `${p}.sourceSha`, 'current records require a full 40-character sourceSha');
+  } else if (rec.sourceSha !== doc.reviewedMainSha) {
+    push(
+      errors,
+      `${p}.sourceSha`,
+      'current records must use reviewedMainSha; an older SHA cannot be marked current',
+    );
   }
   if (!isIsoTimestamp(rec.builtAt)) {
     push(errors, `${p}.builtAt`, 'current records require builtAt as an ISO-8601 UTC timestamp');
@@ -346,7 +365,15 @@ export function validateProvenanceFile(filePath, options = {}) {
   }
   const root = options.root || ROOT;
   const docs = options.docs === null ? undefined : (options.docs || loadAuthoritativeDocs(root));
-  return validateProvenance(doc, { ...options, docs });
+  let packageVersion = options.packageVersion;
+  if (packageVersion === undefined) {
+    try {
+      packageVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+    } catch {
+      packageVersion = undefined;
+    }
+  }
+  return validateProvenance(doc, { ...options, docs, packageVersion });
 }
 
 function printReport(result, { strict, filePath }) {

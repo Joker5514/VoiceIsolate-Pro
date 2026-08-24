@@ -128,6 +128,31 @@ describe('release provenance validator', () => {
     expect(result.errors.some((e) => /builtAt/.test(e.message))).toBe(true);
   });
 
+  test('rejects current records whose sourceSha is not reviewedMainSha', () => {
+    const doc = validDoc();
+    const android = doc.platforms.find((p) => p.platform === 'android');
+    android.status = 'current';
+    android.artifact.sha256 = '24f8bdf372630925eee764dee65b291a00fe722bd9033861afd7217b9206271f';
+    android.builtAt = '2026-08-21T10:04:08Z';
+    android.sourceSha = '17692f98e1023ea7b18b7bd8a5c374291ccb67f8';
+    const result = provenance.validateProvenance(doc, { strict: true });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => /reviewedMainSha/.test(e.message))).toBe(true);
+  });
+
+  test('rejects a tag that does not match productVersion or package.json', () => {
+    const doc = validDoc();
+    doc.tag = 'v99.0.0';
+    const result = provenance.validateProvenance(doc, { packageVersion: '25.0.2' });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path === 'tag')).toBe(true);
+    doc.tag = 'v25.0.2';
+    doc.productVersion = '25.0.1';
+    const result2 = provenance.validateProvenance(doc, { packageVersion: '25.0.2' });
+    expect(result2.ok).toBe(false);
+    expect(result2.errors.some((e) => /package.json/.test(e.message) || e.path === 'productVersion' || e.path === 'tag')).toBe(true);
+  });
+
   test('rejects truncated SHA-256 and short git SHAs', () => {
     const doc = validDoc();
     const win = doc.platforms.find((p) => p.platform === 'windows');

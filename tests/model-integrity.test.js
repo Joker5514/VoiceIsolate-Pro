@@ -53,6 +53,30 @@ describe('model integrity validator', () => {
     expect(integrity.shippedModelIds()).not.toContain('demucs');
   });
 
+  test('rejects unpinned models that are not explicitly optional', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vip-models-unpinned-'));
+    const result = integrity.validateModelIntegrity({
+      root,
+      manifest: {
+        probe: {
+          id: 'probe',
+          name: 'probe',
+          url: '/app/models/probe.onnx',
+          sizeBytes: null,
+          sha256: null,
+          io: { input: 'input', output: 'output' },
+        },
+      },
+      vercelJson: {
+        rewrites: [
+          { source: '/app/models/:filename', destination: 'https://x.blob.vercel-storage.com/:filename' },
+        ],
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join('\n')).toMatch(/probe/);
+  });
+
   test('negative: missing file reports id, expected size/hash, and delivery path', () => {
     const bytes = Buffer.from('ok-model');
     const entry = fixtureEntry('probe', bytes);

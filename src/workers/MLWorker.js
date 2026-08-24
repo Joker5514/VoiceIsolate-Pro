@@ -81,6 +81,17 @@ function sessionBackend(sessionKey) {
   return BACKEND || 'wasm';
 }
 
+function disableWebGpu(reason) {
+  _webgpuDisabledReason = String(reason || 'device-loss').slice(0, 240);
+  for (const key of Object.keys(SESSION_BACKENDS)) {
+    if (SESSION_BACKENDS[key] !== 'webgpu') continue;
+    delete SESSIONS[key];
+    delete _sessionInflight[key];
+    _wasmSessionKeys[key] = true;
+    delete SESSION_BACKENDS[key];
+  }
+}
+
 function inferenceQueueKey(sessionKey) {
   return sessionBackend(sessionKey) === 'webgpu' ? sessionKey : '__wasm_global__';
 }
@@ -429,7 +440,7 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
     if (kind === 'other') throw err;
     const msg = String(err?.message || err || '');
     if (kind === 'device-loss') {
-      _webgpuDisabledReason = msg.slice(0, 240);
+      disableWebGpu(msg);
     } else {
       _wasmSessionKeys[key] = true;
     }

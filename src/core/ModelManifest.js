@@ -144,6 +144,9 @@ export const MODEL_MANIFEST = Object.freeze({
     url: '/app/models/bsrnn_vocals_complex.onnx',
     sizeBytes: null, // TODO: measure actual file size when model is exported
     quantization: 'fp32',
+    delivery: 'optional',
+    optional: true,
+    shipped: false,
     // TODO: Model file not yet available (future use for offline processing).
     // Export using scripts/export_bsrnn_onnx.py with complex spectrogram output, then compute hash:
     // node -e "const c=require('crypto'),f=require('fs');console.log(c.createHash('sha256').update(f.readFileSync(process.argv[1])).digest('hex'))" public/app/models/bsrnn_vocals_complex.onnx
