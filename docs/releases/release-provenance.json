@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "25.0.2",
+  "generatedAt": "2026-08-24T10:00:00Z",
+  "reviewedMainSha": "3385ca3df7be5f49d1f2e22d5d45f4e17bd39f7c",
+  "tag": "v25.0.2",
+  "platforms": [
+    {
+      "platform": "web",
+      "status": "unknown",
+      "version": "25.0.2",
+      "sourceSha": null,
+      "builtAt": null,
+      "artifact": {
+        "kind": "vercel-hosting",
+        "filename": null,
+        "url": "https://voice-isolate-pro.vercel.app/",
+        "sha256": null,
+        "sizeBytes": null
+      },
+      "verification": {
+        "method": "unknown",
+        "evidence": "Production Vercel deployment SHA was not independently verified. Repository HEAD must not be recorded as the deployed Web SHA."
+      },
+      "notes": "Web is hosted at the Vercel production URL. This record does not treat git HEAD as proof of what is currently served."
+    },
+    {
+      "platform": "android",
+      "status": "stale",
+      "version": "25.0.2",
+      "sourceSha": "17692f98e1023ea7b18b7bd8a5c374291ccb67f8",
+      "builtAt": "2026-08-21T10:04:08Z",
+      "artifact": {
+        "kind": "github-release",
+        "filename": "VoiceIsolate-Pro-android-debug.apk",
+        "url": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-android-debug.apk",
+        "sha256": "24f8bdf372630925eee764dee65b291a00fe722bd9033861afd7217b9206271f",
+        "sizeBytes": 101620559
+      },
+      "verification": {
+        "method": "github-release-asset",
+        "evidence": "GitHub Release v25.0.2 asset digest from gh release view (updated 2026-08-21T10:04:08Z)."
+      },
+      "notes": "Published APK was rebuilt from main@17692f9 (#776 Drive + #774). Reviewed main 3385ca3 is newer. Native rebuild required before claiming platform sync."
+    },
+    {
+      "platform": "windows",
+      "status": "stale",
+      "version": "25.0.2",
+      "sourceSha": "17692f98e1023ea7b18b7bd8a5c374291ccb67f8",
+      "builtAt": "2026-08-21T10:04:10Z",
+      "artifact": {
+        "kind": "github-release",
+        "filename": "VoiceIsolate-Pro-25.0.2-win-x64.exe",
+        "url": "https://github.com/Joker5514/VoiceIsolate-Pro/releases/download/v25.0.2/VoiceIsolate-Pro-25.0.2-win-x64.exe",
+        "sha256": "9e40c03f5b365f0f0ccd88cc57850837e3933edb074b72151587b4512198903d",
+        "sizeBytes": 144646374
+      },
+      "verification": {
+        "method": "github-release-asset",
+        "evidence": "GitHub Release v25.0.2 asset digest from gh release view (updated 2026-08-21T10:04:10Z)."
+      },
+      "notes": "Published NSIS installer was rebuilt from main@17692f9 (#776 Drive + #774). Reviewed main 3385ca3 is newer. Native rebuild required before claiming platform sync."
+    }
+  ],
+  "claims": {
+    "sameBuildAcrossWebAndroidWindowsMainAndTag": false,
+    "synchronizedPublishedArtifacts": false,
+    "tagMoved": false
+  },
+  "rebuildRequired": {
+    "android": true,
+    "windows": true,
+    "commandsNotPerformed": [
+      "pnpm android:build:win",
+      "pnpm build:electron",
+      "gh release upload v25.0.2 dist/android/VoiceIsolate-Pro-android-debug.apk dist/electron/VoiceIsolate-Pro-25.0.2-win-x64.exe --clobber"
+    ]
+  }
+}

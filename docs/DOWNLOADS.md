@@ -28,10 +28,12 @@ Site redirects under `vercel.json` map `/download/*.apk` and `/download/*.exe` t
 
 | Platform | Artifact | What’s included |
 |----------|----------|-----------------|
-| **Web** | Vercel → `public/` | Landing Live-Mix + **Engineer Console**; optional Google Drive open/save; SAM3 vision (flag OFF); SAM-Audio optional |
-| **Android** | `VoiceIsolate-Pro-android-debug.apk` (101,620,559 bytes) | Capacitor WebView of **same** `build/` shell (Drive UI included); release asset updated **2026-08-21T10:04:08Z** |
-| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (144,646,374 bytes) | Electron loads **same** `build/**` (+ Drive OAuth popups); release asset updated **2026-08-21T10:04:10Z** |
+| **Web** | Vercel → `public/` | Landing Live-Mix + **Engineer Console**; optional Google Drive open/save; SAM3 vision (flag OFF); SAM-Audio optional. Deployed production SHA is **not** inferred from repository HEAD. |
+| **Android** | `VoiceIsolate-Pro-android-debug.apk` (101,620,559 bytes) | Capacitor WebView wrapping a `build/` shell. **Published** asset updated **2026-08-21T10:04:08Z** from `17692f9`, which is behind current `main`. |
+| **Windows** | `VoiceIsolate-Pro-25.0.2-win-x64.exe` (144,646,374 bytes) | Electron loads a `build/` shell (+ Drive OAuth popups). **Published** asset updated **2026-08-21T10:04:10Z** from `17692f9`, which is behind current `main`. |
 | **macOS / Linux** | Build targets only | Electron config can produce `.dmg` / `.AppImage`; no v25.0.2 GitHub Release assets are published |
+
+Packaging rule: Web, Android, and Desktop **consume** `pnpm build` → `build/` when each surface is rebuilt from the same commit. That is not a claim that the currently published Web host, GitHub APK, GitHub EXE, `main`, and tag v25.0.2 are the same build. Provenance: [releases/release-provenance.json](releases/release-provenance.json).
 
 Engineer Console files that must ship offline: `app/engineer-console.css`, `app/engineer-console.js` (asserted by Android prepare/verify scripts).
 

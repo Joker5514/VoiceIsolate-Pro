@@ -215,20 +215,23 @@ Rules:
 
 | Model | Task | Format | Size | Status |
 |---|---|---|---|---|
-| Demucs HT Demucs (`demucs_htdemucs.onnx`) | Vocal-ratio waveform mask (default chain) | ONNX, fp32 | ~149 MB | **Blob-hosted, hash-pinned** |
-| BiGRU Noise Suppressor (`rnnoise_suppressor.onnx`) | Noise-suppression mask | ONNX, fp32 | ~2 MB | **Committed, trained, hash-pinned** |
-| Band-Split RNN Vocal Extractor (`bsrnn_vocals.onnx`) | Vocal-separation mask | ONNX, fp32 | ~3.7 MB | **Committed, trained, hash-pinned** |
+| Band-Split RNN Vocal Extractor (`bsrnn_vocals.onnx`) | Vocal-separation mask | ONNX, fp32 | ~3.7 MB | **Committed, trained, hash-pinned. Shipped default.** |
+| BiGRU Noise Suppressor (`rnnoise_suppressor.onnx`) | Noise-suppression mask | ONNX, fp32 | ~2 MB | **Committed, trained, hash-pinned. Optional second stage.** |
 | Silero VAD (`silero_vad.onnx`) | Voice activity detection | ONNX, fp32 | ~2.2 MB | **Committed, hash-pinned** |
 | Silero VAD INT8 (`silero_vad_int8.onnx`) | Voice activity detection (fast path) | ONNX, int8 | ~2.3 MB | **Committed, hash-pinned** |
-| Diarization ONNX bundle | Speaker embedding + clustering | ONNX, fp32 | ~3 files | **Blob-hosted, hash-pinned** |
+| Demucs HT / v4 (`demucs_v4_quantized.onnx`) | Vocal-ratio waveform mask | ONNX, int8 | ~149 MB | **Optional / unshipped** in the default git tree |
+| Diarization ONNX bundle | Speaker embedding + clustering | ONNX, fp32 | ~3 files | **Optional Blob-hosted, hash-pinned when present** |
 
-**Default isolation chain:** `['demucs', 'rnnoise']` — Demucs extracts the vocal
-ratio mask (waveform strategy, 44.1 kHz internal resample), then RNNoise strips
-residual background. Spectral-mask models (`bsrnn_vocals`, `rnnoise`) share one
-inference contract: `float32 [batch, 2049]` STFT magnitudes in → sigmoid mask out
-(fft 4096, hop 1024, Hann, 48 kHz). VAD models gate silence before diarization.
-Larger upgrades (DeepFilterNet INT8, MDX-Net INT8) are planned and must follow
-the same manifest + integrity flow.
+**Default isolation chain:** `['bsrnn_vocals']` (`src/core/ml-defaults.js`).
+**Optional maximum chain:** `['bsrnn_vocals', 'rnnoise']` (user-selected maximum isolation).
+Demucs is optional and unshipped; do not document it as the default. Spectral-mask
+models (`bsrnn_vocals`, `rnnoise`) share one inference contract: `float32 [batch, 2049]`
+STFT magnitudes in → sigmoid mask out (fft 4096, hop 1024, Hann, 48 kHz). VAD models
+gate silence before diarization. Larger upgrades (DeepFilterNet INT8, MDX-Net INT8)
+are planned and must follow the same manifest + integrity flow.
+
+Shipped-model bytes are verified by `scripts/validate-model-integrity.mjs`
+(`pnpm models:validate`) against `ModelManifest.js`. Do not add a second manifest.
 
 **Dual worker note:** `src/workers/MLWorker.js` is the canonical offline worker
 (Landing + `StemSeparation.js`). `public/app/ml-worker.js` is the legacy Engineer
@@ -293,10 +296,15 @@ asset naming (`versionCode` / `CFBundleVersion` = **250002**). Published GitHub
 Release **`latest` = v25.0.2**.
 
 **Native binaries (APK + Windows NSIS):** last rebuilt **2026-08-21T10:04Z** from
-`main` @ `17692f9` (#776 Google Drive + #774 DSP release) and clobber-uploaded to v25.0.2.
-After shell/UX or native WebView changes on `main`, re-run `pnpm android:build:win` +
-`pnpm build:electron` and `gh release upload v25.0.2 … --clobber`.
+`main` @ `17692f98e1023ea7b18b7bd8a5c374291ccb67f8` (#776 Google Drive + #774 DSP release)
+and clobber-uploaded to **existing** tag v25.0.2. That SHA is **behind** current `main`
+(`3385ca3df7be5f49d1f2e22d5d45f4e17bd39f7c`). Web, Android, Windows, `main`, and
+v25.0.2 do **not** currently contain the same build. Do not move the tag.
+Machine-readable record: [docs/releases/release-provenance.json](docs/releases/release-provenance.json).
 Canonical pins: [docs/DOWNLOADS.md](docs/DOWNLOADS.md), [docs/releases/PLATFORM_SYNC.md](docs/releases/PLATFORM_SYNC.md).
+After shell/UX or native WebView changes on `main`, re-run `pnpm android:build:win` +
+`pnpm build:electron` and `gh release upload v25.0.2 … --clobber` (human release
+publish; not part of this code PR).
 
 **Engineer DSP sliders (desktop-first):** rows are built by
 `src/presentation/DspSlider.js` (`createDspSliderRow`) from `SLIDER_REGISTRY` in

@@ -5,6 +5,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 let errors = 0;
 const check = (condition, msg) => {
@@ -165,6 +166,20 @@ srcFiles.forEach(f => check(fs.existsSync(path.resolve(__dirname, '..', f)), f))
 const newMlWorker = fs.readFileSync(path.resolve(__dirname, '..', 'src/workers/MLWorker.js'), 'utf8');
 check(newMlWorker.includes("importScripts('/lib/ort.min.js')"), 'MLWorker loads ORT locally (never CDN)');
 check(newMlWorker.includes('SHA-256'), 'MLWorker verifies model SHA-256 integrity');
+check(newMlWorker.includes('_wasmSessionKeys'), 'MLWorker pins WebGPU compile fallback per session key');
+check(newMlWorker.includes('_webgpuDisabledReason'), 'MLWorker disables WebGPU worker-wide only on device loss');
+check(fs.existsSync(path.resolve(__dirname, '..', 'docs/releases/release-provenance.json')), 'release-provenance.json present');
+check(fs.existsSync(path.resolve(__dirname, '..', 'scripts/validate-release-provenance.mjs')), 'provenance validator present');
+check(fs.existsSync(path.resolve(__dirname, '..', 'scripts/validate-model-integrity.mjs')), 'model-integrity validator present');
+const claudeMd = fs.readFileSync(path.resolve(__dirname, '..', 'CLAUDE.md'), 'utf8');
+check(
+  /^\*\*Default isolation chain:\*\* `\['bsrnn_vocals'\]`/m.test(claudeMd),
+  'CLAUDE.md Default isolation chain heading is BSRNN-only',
+);
+check(
+  !/^\*\*Default isolation chain:\*\* `\['demucs'/m.test(claudeMd),
+  'CLAUDE.md does not claim Demucs as the default chain',
+);
 check(fs.readFileSync(path.resolve(__dirname, '..', 'src/core/audio-config.js'), 'utf8')
   .includes('SAMPLE_RATE = 48000'), 'Canonical SAMPLE_RATE = 48000 in audio-config.js');
 
@@ -295,6 +310,16 @@ if (fs.existsSync(dupKeyScriptPath)) {
 console.log('\nVercel config:');
 const vercelJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', 'vercel.json'), 'utf8'));
 check(vercelJson.outputDirectory === 'public', 'Output directory: public');
+
+console.log('\nRelease provenance & shipped models:');
+const provenance = spawnSync(process.execPath, [path.join(__dirname, 'validate-release-provenance.mjs')], {
+  stdio: 'inherit',
+});
+check(provenance.status === 0, 'release provenance schema valid (default mode; stale/unknown natives allowed)');
+const modelIntegrity = spawnSync(process.execPath, [path.join(__dirname, 'validate-model-integrity.mjs')], {
+  stdio: 'inherit',
+});
+check(modelIntegrity.status === 0, 'shipped ModelManifest entries hash-verify locally');
 
 console.log(`\n${errors === 0 ? '✅ All checks passed' : `❌ ${errors} check(s) failed`}\n`);
 process.exit(errors > 0 ? 1 : 0);

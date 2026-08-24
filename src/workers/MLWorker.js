@@ -68,8 +68,31 @@ let _processChain = Promise.resolve();
 /** Per-session ONNX run queue. WASM JSEP allows only one active run worker-wide. */
 const _runQueues = Object.create(null);
 
+/** Actual backend used to compile each sessionKey ('webgpu' | 'wasm'). */
+const SESSION_BACKENDS = Object.create(null);
+
+/** Session keys pinned to WASM after a graph compile/OOM WebGPU failure. */
+const _wasmSessionKeys = Object.create(null);
+
+function sessionBackend(sessionKey) {
+  if (sessionKey && SESSION_BACKENDS[sessionKey]) return SESSION_BACKENDS[sessionKey];
+  if (sessionKey && _wasmSessionKeys[sessionKey]) return 'wasm';
+  if (_webgpuDisabledReason) return 'wasm';
+  return BACKEND || 'wasm';
+}
+
+function disableWebGpu(reason) {
+  _webgpuDisabledReason = String(reason || 'device-loss').slice(0, 240);
+  for (const key of Object.keys(SESSION_BACKENDS)) {
+    if (SESSION_BACKENDS[key] !== 'webgpu') continue;
+    delete SESSIONS[key];
+    _wasmSessionKeys[key] = true;
+    delete SESSION_BACKENDS[key];
+  }
+}
+
 function inferenceQueueKey(sessionKey) {
-  return BACKEND === 'webgpu' ? sessionKey : '__wasm_global__';
+  return sessionBackend(sessionKey) === 'webgpu' ? sessionKey : '__wasm_global__';
 }
 
 async function queuedSessionRun(sessionKey, session, feeds) {
@@ -85,10 +108,10 @@ async function queuedSessionRun(sessionKey, session, feeds) {
   }
 }
 
-/** Resolved execution backend, decided once (WebGPU preferred; WASM fallback). */
+/** Preferred execution backend from the one-shot GPU probe (not mutated by per-session fallback). */
 let BACKEND = null;
-/** One-shot local WASM retry after a WebGPU session/compile failure. */
-let _webgpuWasmFallbackUsed = false;
+/** Worker-wide WebGPU disable reason (device loss). Null while WebGPU remains eligible. */
+let _webgpuDisabledReason = null;
 
 /** Active process request id for stage/progress messages. */
 let ACTIVE_REQUEST_ID = null;
@@ -179,10 +202,11 @@ function isConstrainedDevice() {
   return false;
 }
 
-function effectiveBatchFrames(entry) {
+function effectiveBatchFrames(entry, sessionKey) {
   const base = entry.maxBatchFrames || 64;
   const mobile = isConstrainedDevice();
-  if (BACKEND === 'webgpu') {
+  const backend = sessionKey ? sessionBackend(sessionKey) : (BACKEND || 'wasm');
+  if (backend === 'webgpu') {
     // WebGPU is fast; still cap mobile VRAM/host allocs.
     return mobile ? Math.min(256, base * 3) : Math.min(512, base * 4);
   }
@@ -190,6 +214,33 @@ function effectiveBatchFrames(entry) {
   // avoid OOM on mid-tier Android while staying faster than tiny batches.
   if (mobile) return Math.min(160, Math.max(base, 96));
   return Math.min(384, Math.max(base * 3, 192));
+}
+
+function classifyOrtFailure(err) {
+  const msg = String(err?.message || err || '');
+  if (/device.?lost|GPUDevice was lost|lost the (gpu )?device/i.test(msg)) return 'device-loss';
+  if (/webgpu|gpu|out of memory|\boom\b|failed to create|graph compile|compile error/i.test(msg)) {
+    return 'graph-compile';
+  }
+  return 'other';
+}
+
+function actualBackendsFor(chain) {
+  const ids = Array.isArray(chain) ? chain : [];
+  const map = Object.create(null);
+  let backend = null;
+  let mixed = false;
+  for (const id of ids) {
+    const used = sessionBackend(id);
+    map[id] = used;
+    if (backend == null) backend = used;
+    else if (used !== backend) mixed = true;
+  }
+  return {
+    preferredBackend: BACKEND || null,
+    backend: mixed ? 'mixed' : (backend || BACKEND || null),
+    sessionBackends: map,
+  };
 }
 
 /**
@@ -354,50 +405,87 @@ async function resolveBackend() {
   return BACKEND;
 }
 
-async function createSessionFromBytes(entry, bytes) {
-  const backend = await resolveBackend();
+async function createSessionFromBytes(entry, bytes, sessionKey) {
+  const preferred = await resolveBackend();
+  const key = sessionKey || entry.id;
+  const webgpuBlocked = preferred !== 'webgpu'
+    || Boolean(_webgpuDisabledReason)
+    || Boolean(_wasmSessionKeys[key]);
   const opts = {
-    executionProviders: backend === 'webgpu' ? ['webgpu', 'wasm'] : ['wasm'],
     graphOptimizationLevel: 'all',
     enableCpuMemArena: true,
     enableMemPattern: true,
   };
+  const create = (providers, buf) => ort.InferenceSession.create(buf, {
+    ...opts,
+    executionProviders: providers,
+  });
   // Slice: InferenceSession.create may detach/neuter the input ArrayBuffer.
   // Callers (and IDB cache entries) must keep a usable copy for retries.
   const safeBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
+
+  if (webgpuBlocked) {
+    const session = await create(['wasm'], safeBytes);
+    SESSION_BACKENDS[key] = 'wasm';
+    return session;
+  }
+
   try {
-    return await ort.InferenceSession.create(safeBytes, opts);
-  } catch (err) {
-    const msg = String(err?.message || err || '');
-    const looksGpuFail = /webgpu|gpu|device.?lost|out of memory|oom|Failed to create/i.test(msg);
-    // Never endlessly retry WebGPU — one approved local WASM retry when safe.
-    if (backend === 'webgpu' && looksGpuFail && !_webgpuWasmFallbackUsed) {
-      _webgpuWasmFallbackUsed = true;
-      BACKEND = 'wasm';
-      console.warn(
-        '[VIP][MLWorker] WebGPU session failed; one local WASM retry:',
-        msg,
-      );
-      self.postMessage({
-        type: 'stage',
-        stage: 'ort-fallback',
-        percent: 0,
-        label: 'WebGPU failed — local WASM retry',
-        backend: 'wasm',
-        detail: msg.slice(0, 240),
-      });
+    const session = await create(['webgpu'], safeBytes);
+    if (_webgpuDisabledReason) {
+      _wasmSessionKeys[key] = true;
+      try {
+        if (session && typeof session.release === 'function') await session.release();
+      } catch { /* ignore */ }
       const wasmBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
-      return ort.InferenceSession.create(wasmBytes, {
-        ...opts,
-        executionProviders: ['wasm'],
-      });
+      const wasmSession = await create(['wasm'], wasmBytes);
+      SESSION_BACKENDS[key] = 'wasm';
+      return wasmSession;
     }
-    throw err;
+    SESSION_BACKENDS[key] = 'webgpu';
+    return session;
+  } catch (err) {
+    const kind = classifyOrtFailure(err);
+    if (kind === 'other') throw err;
+    const msg = String(err?.message || err || '');
+    if (kind === 'device-loss') {
+      disableWebGpu(msg);
+    } else {
+      _wasmSessionKeys[key] = true;
+    }
+    console.warn(
+      '[VIP][MLWorker] WebGPU session failed; one local WASM retry for',
+      key,
+      kind,
+      msg,
+    );
+    self.postMessage({
+      type: 'stage',
+      stage: 'ort-fallback',
+      percent: 0,
+      label: kind === 'device-loss'
+        ? 'WebGPU device lost — worker-wide WASM'
+        : 'WebGPU failed — local WASM retry',
+      backend: 'wasm',
+      sessionKey: key,
+      reason: kind,
+      detail: msg.slice(0, 240),
+    });
+    const wasmBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
+    const session = await create(['wasm'], wasmBytes);
+    SESSION_BACKENDS[key] = 'wasm';
+    return session;
   }
 }
 
 async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) {
-  if (SESSIONS[sessionKey]) return SESSIONS[sessionKey];
+  if (SESSIONS[sessionKey]) {
+    if (_webgpuDisabledReason && SESSION_BACKENDS[sessionKey] !== 'wasm') {
+      delete SESSIONS[sessionKey];
+    } else {
+      return SESSIONS[sessionKey];
+    }
+  }
   if (_sessionInflight[sessionKey]) return _sessionInflight[sessionKey];
   _sessionInflight[sessionKey] = (async () => {
     // Re-check after awaiting the lock — concurrent warmup/process share one compile.
@@ -407,10 +495,22 @@ async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) 
     if (!quiet) postStage('load', 40, { modelId: entry.id, label: `Verifying ${entry.name || entry.id}…` });
     if (!quiet) postStage('load', 55, { modelId: entry.id, label: `Compiling ${entry.name || entry.id}…` });
     const session = await withTimeout(
-      createSessionFromBytes(entry, bytes),
+      createSessionFromBytes(entry, bytes, sessionKey),
       SESSION_COMPILE_TIMEOUT_MS,
       `Compile ${entry.id}`,
     );
+    if (_webgpuDisabledReason && SESSION_BACKENDS[sessionKey] !== 'wasm') {
+      delete SESSIONS[sessionKey];
+      _wasmSessionKeys[sessionKey] = true;
+      const wasmSession = await withTimeout(
+        createSessionFromBytes(entry, bytes, sessionKey),
+        SESSION_COMPILE_TIMEOUT_MS,
+        `Compile ${entry.id} (WASM after device loss)`,
+      );
+      SESSIONS[sessionKey] = wasmSession;
+      if (!quiet) postStage('load', 100, { modelId: entry.id, label: `${entry.name || entry.id} ready` });
+      return wasmSession;
+    }
     SESSIONS[sessionKey] = session;
     if (!quiet) postStage('load', 100, { modelId: entry.id, label: `${entry.name || entry.id} ready` });
     return session;
@@ -573,7 +673,9 @@ async function runFusedSpectralMaskChain(
   const N = entry0.fftSize;
   const hop = adaptiveHopSize(entry0, samples.length, entry0.sampleRate || 48000);
   const bins = entry0.bins || (N / 2 + 1);
-  const batchMax = effectiveBatchFrames(entry0);
+  const batchMax = Math.min(
+    ...heads.map((h) => effectiveBatchFrames(h.entry, h.entry.id)),
+  );
   const win = hann(N);
   const totalFrames = Math.max(1, Math.ceil(Math.max(0, samples.length - N) / hop) + 1);
 
@@ -1133,7 +1235,7 @@ async function processRequest({ requestId, modelId, modelIds, channelData, sampl
       appliedProcessingConfigRevision: entries.some((entry) => entry.strategy === 'spectral-mask')
         ? requestedProcessingRevision
         : null,
-      backend: BACKEND || null,
+      ...actualBackendsFor(chain),
     },
     transfers,
   );
