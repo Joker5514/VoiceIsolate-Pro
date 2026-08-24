@@ -188,6 +188,17 @@ describe('release provenance validator', () => {
     expect(result.errors.some((e) => /hostname/.test(e.message))).toBe(true);
   });
 
+  test('treats varied markdown denials as not same-build claims', () => {
+    const doc = validDoc();
+    const result = provenance.validateProvenance(doc, {
+      docs: {
+        'CLAUDE.md': 'Web, Android, and Windows does **not** share the same build.',
+        'docs/DOWNLOADS.md': 'Web, Android and Windows do not share the same build.',
+      },
+    });
+    expect(result.errors.filter((e) => String(e.path).startsWith('docs:'))).toEqual([]);
+  });
+
   test('rejects unsupported same-build claims', () => {
     const doc = validDoc();
     doc.claims.sameBuildAcrossWebAndroidWindowsMainAndTag = true;

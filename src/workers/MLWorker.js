@@ -86,7 +86,6 @@ function disableWebGpu(reason) {
   for (const key of Object.keys(SESSION_BACKENDS)) {
     if (SESSION_BACKENDS[key] !== 'webgpu') continue;
     delete SESSIONS[key];
-    delete _sessionInflight[key];
     _wasmSessionKeys[key] = true;
     delete SESSION_BACKENDS[key];
   }
@@ -433,6 +432,13 @@ async function createSessionFromBytes(entry, bytes, sessionKey) {
 
   try {
     const session = await create(['webgpu'], safeBytes);
+    if (_webgpuDisabledReason) {
+      _wasmSessionKeys[key] = true;
+      const wasmBytes = bytes.byteLength > 0 ? bytes.slice(0) : bytes;
+      const wasmSession = await create(['wasm'], wasmBytes);
+      SESSION_BACKENDS[key] = 'wasm';
+      return wasmSession;
+    }
     SESSION_BACKENDS[key] = 'webgpu';
     return session;
   } catch (err) {
@@ -484,6 +490,18 @@ async function getSession(entry, sessionKey = entry.id, { quiet = false } = {}) 
       SESSION_COMPILE_TIMEOUT_MS,
       `Compile ${entry.id}`,
     );
+    if (_webgpuDisabledReason && SESSION_BACKENDS[sessionKey] === 'webgpu') {
+      delete SESSIONS[sessionKey];
+      _wasmSessionKeys[sessionKey] = true;
+      const wasmSession = await withTimeout(
+        createSessionFromBytes(entry, bytes, sessionKey),
+        SESSION_COMPILE_TIMEOUT_MS,
+        `Compile ${entry.id} (WASM after device loss)`,
+      );
+      SESSIONS[sessionKey] = wasmSession;
+      if (!quiet) postStage('load', 100, { modelId: entry.id, label: `${entry.name || entry.id} ready` });
+      return wasmSession;
+    }
     SESSIONS[sessionKey] = session;
     if (!quiet) postStage('load', 100, { modelId: entry.id, label: `${entry.name || entry.id} ready` });
     return session;

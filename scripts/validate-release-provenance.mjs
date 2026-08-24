@@ -43,15 +43,13 @@ function isHttpsUrl(value) {
 function hasUnsupportedSameBuildClaim(text) {
   const sentences = String(text || '').split(/(?<=[.!?])\s+/);
   return sentences.some((sentence) => {
-    const claim = /same (build|commit|binar(?:y|ies)|artifacts?|sha)\b/i.test(sentence);
+    const plain = String(sentence || '').replace(/\*+/g, '');
+    const claim = /same (build|commit|binar(?:y|ies)|artifacts?|sha)\b/i.test(plain);
     if (!claim) return false;
-    if (!(/web/i.test(sentence) && /android/i.test(sentence) && /windows/i.test(sentence))) {
+    if (!(/web/i.test(plain) && /android/i.test(plain) && /windows/i.test(plain))) {
       return false;
     }
-    if (
-      /do\s+\*\*not\*\*|do not claim|\*\*not\*\*\s+currently contain the same|not currently contain the same|not a claim that/i
-        .test(sentence)
-    ) {
+    if (/\b(?:do(?:es)?\s+)?not\b.{0,120}same (build|commit|binar(?:y|ies)|artifacts?|sha)\b/i.test(plain)) {
       return false;
     }
     return true;

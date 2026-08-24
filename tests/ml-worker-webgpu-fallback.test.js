@@ -183,6 +183,37 @@ describe('MLWorker WebGPU session ownership', () => {
     expect(sb.__creates.map((c) => c.providers)).toEqual([['wasm']]);
   });
 
+  test('in-flight WebGPU compile publishes WASM if device loss happens first', async () => {
+    let releaseFirst;
+    const firstGpu = new Promise((resolve) => { releaseFirst = resolve; });
+    let firstEntered = false;
+    const sb = loadSandbox({
+      gpuOk: true,
+      createImpl: async (_bytes, opts) => {
+        if (opts.executionProviders[0] === 'webgpu') {
+          if (!firstEntered) {
+            firstEntered = true;
+            await firstGpu;
+            return { run: async () => ({}), _providers: ['webgpu'] };
+          }
+          throw new Error('GPUDevice was lost');
+        }
+        return { run: async () => ({}), _providers: opts.executionProviders.slice() };
+      },
+    });
+    const pendingA = sb.createSessionFromBytes(ENTRY_A, bytes(), ENTRY_A.id);
+    const deadline = Date.now() + 1000;
+    while (!firstEntered && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    expect(firstEntered).toBe(true);
+    await sb.createSessionFromBytes(ENTRY_B, bytes(), ENTRY_B.id);
+    releaseFirst();
+    const sessionA = await pendingA;
+    expect(sessionA._providers).toEqual(['wasm']);
+    expect(read(sb, `SESSION_BACKENDS[${JSON.stringify(ENTRY_A.id)}]`)).toBe('wasm');
+  });
+
   test('device loss disables subsequent WebGPU attempts worker-wide', async () => {
     const sb = loadSandbox({
       gpuOk: true,
