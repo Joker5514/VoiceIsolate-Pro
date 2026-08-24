@@ -2,8 +2,9 @@
 
 **Date:** 2026-08-24  
 **Original reviewed main:** `3385ca3df7be5f49d1f2e22d5d45f4e17bd39f7c`  
-**Merged code SHA:** `0b791c2001d89f7005ea67d7b8ecefd68c8e82d3` (#784)  
-**Docs pin SHA:** `6ed4a668c128cdc73f6641ddbd1baad6c53df7cd` (#785)
+**Merged code / product SHA:** `0b791c2001d89f7005ea67d7b8ecefd68c8e82d3` (#784)  
+**Pin-alignment merge:** `30f40d6ca2a2526e96164791d9b9e1e92b929e21` (#786)  
+Later docs-only commits on `main` do not require a native rebuild. Product SHA remains `0b791c2`.
 
 ## Verdict
 
@@ -40,13 +41,18 @@ Web production, Android APK, and Windows NSIS were rebuilt from `0b791c2`. Tag v
 
 None claimed. No timing measurements were collected. Batch-size changes after WASM fallback are correctness (avoid WebGPU-sized batches on a WASM session), not a measured speedup.
 
-## Speculative work (not implemented)
+## Speculative work
 
-- Rebuilding or uploading APK/EXE.
-- Moving or republishing v25.0.2.
-- Inferring the live Vercel production SHA from git HEAD.
+Completed after the original review:
+
+- Rebuilding and clobber-uploading APK/EXE to existing tag v25.0.2 (tag not moved).
+- Recording the production Vercel SHA from GitHub Actions Deploy Production of `0b791c2`.
+
+Still not implemented:
+
+- Inferring the live Vercel production SHA from git HEAD without deploy evidence.
 - Downloading remote Blob objects to claim remote hashes.
-- Changing credentials, hosted processing, or binary assets.
+- Changing credentials, hosted processing, or moving tag v25.0.2.
 
 ## Tests that passed
 
@@ -77,17 +83,17 @@ Targeted new suites (included in `test:ci`): `tests/release-provenance.test.js`,
 
 Those failures are not present in the final `pnpm test:ci` run.
 
-## Tests that failed in the final run
+## Tests that failed in the original review run
 
 | Command | Exit | Notes |
 |---------|------|-------|
-| `pnpm test:landing` | 1 | Chromium **did install and run**. 1 check failed: page title is `VoiceIsolate Pro — Local voice isolation · Stem-Split & Live-Mix`, smoke script expects `VoiceIsolate Pro — Stem-Split & Live-Mix`. Unrelated to this PR; landing HTML was not changed. **Not recorded as passed.** |
+| `pnpm test:landing` | 1 | Chromium ran. Page title is `VoiceIsolate Pro — Local voice isolation · Stem-Split & Live-Mix`; smoke originally expected `VoiceIsolate Pro — Stem-Split & Live-Mix`. Landing HTML was not changed in #784. **Not recorded as passed at review time.** |
 
 ## Tests not run because of environment limitations
 
-None of the mandated commands were skipped. Playwright Chromium installed successfully; landing is a functional failure, not an install blocker.
+None of the mandated commands were skipped. Playwright Chromium installed successfully; the original landing failure was a title-string mismatch, not an install blocker.
 
-`pnpm provenance:validate --strict` now **exits 0** after the 2026-08-24 native rebuild and #785 pin.
+`pnpm provenance:validate --strict` **exits 0** after the 2026-08-24 native rebuild and #785 pin.
 
 ## Remaining release-provenance / native rebuild work
 
@@ -98,5 +104,4 @@ Completed after #784:
 3. `gh release upload v25.0.2 … --clobber` (tag not moved).
 4. Provenance records marked `current` in #785.
 5. `pnpm provenance:validate --strict` exits 0.
-
-Landing smoke title expectation is aligned to the shipped `<title>` in this follow-up.
+6. Landing smoke title aligned to the shipped `<title>` and remaining download/docs pins aligned in #786 (`30f40d6`).

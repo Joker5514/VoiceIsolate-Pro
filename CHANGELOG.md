@@ -23,6 +23,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   worker-wide disable on device loss.
 - Published v25.0.2 Android APK and Windows NSIS rebuilt from `0b791c2` (#784)
   on 2026-08-24T17:20Z; existing tag was clobber-updated, not moved.
+- Repo-wide download/release pins and landing-smoke title expectation aligned
+  to the `0b791c2` platform sync (#786).
 - The shared Engineer rack now defaults to the complete control set on Web,
   Android, and Electron; Simple View remains an explicit persisted preference.
 - Offline Engineer spectral controls now run in the existing ML STFT frame loop;
