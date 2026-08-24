@@ -9,6 +9,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Added
 
+- Release provenance (`docs/releases/release-provenance.json`) and
+  `ModelManifest.js` byte/hash integrity validators (`pnpm provenance:validate`,
+  `pnpm models:validate`).
 - Canonical process-time Engineer configuration snapshots with revision-keyed
   stem caching and worker acknowledgement.
 - Automated coverage for the Engineer processing configuration, gate lookahead,
@@ -16,6 +19,10 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ### Changed
 
+- Scoped MLWorker WebGPU fallback: per-session WASM pin on graph compile/OOM,
+  worker-wide disable on device loss.
+- Published v25.0.2 Android APK and Windows NSIS rebuilt from `0b791c2` (#784)
+  on 2026-08-24T17:20Z; existing tag was clobber-updated, not moved.
 - The shared Engineer rack now defaults to the complete control set on Web,
   Android, and Electron; Simple View remains an explicit persisted preference.
 - Offline Engineer spectral controls now run in the existing ML STFT frame loop;
